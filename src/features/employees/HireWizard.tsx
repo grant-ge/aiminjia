@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { employeeCreate } from '@/lib/tauri'
+import { employeeCreate, employeeIndexKnowledgeAsync, type PendingKnowledgeSource } from '@/lib/tauri'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -53,7 +53,7 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
     setBusy(true)
     setError(null)
     try {
-      await employeeCreate({
+      const created = await employeeCreate({
         name: name.trim(),
         role: selected.role,
         description: selected.description,
@@ -68,6 +68,16 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
         defaultSkillId: selected.defaultSkillId ?? undefined,
         resourceConfig: cfg,
       })
+      const rawSources = (cfg.knowledgeSources as Array<Record<string, unknown>> | undefined) ?? []
+      const pending: PendingKnowledgeSource[] = rawSources.flatMap((s) => {
+        if (typeof s.path !== 'string' || typeof s.originalName !== 'string') return []
+        const status = s.status
+        if (status && status !== 'pending' && status !== 'failed') return []
+        return [{ path: s.path, originalName: s.originalName, size: typeof s.size === 'number' ? s.size : 0 }]
+      })
+      if (pending.length > 0) {
+        void employeeIndexKnowledgeAsync(created.id, pending)
+      }
       await onHired()
       handleClose()
     } catch (err) {
