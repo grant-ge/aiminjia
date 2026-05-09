@@ -107,6 +107,10 @@ fn render_persona_section(persona: &crate::storage::file_store::persona::Persona
     if !persona.identity.is_empty() {
         parts.push(format!("【角色设定】{}", persona.identity));
     }
+    parts.push(format!(
+        "【人称约定】对话中的「你」=「{}」（你自己，是一个数字员工）；「我/我的/老板」=用户本人。当用户说「你的日程/你的任务/你定了什么计划」时，问的是你自己的循环任务（用 list_agenda_items 查）；当用户说「我的日程/我今天有什么会」时，问的是用户本人的钉钉日历（用钉钉相关 skill 查）。",
+        persona.name
+    ));
     if !persona.expertise.is_empty() {
         parts.push(format!("【专业领域】{}", persona.expertise.join("、")));
     }

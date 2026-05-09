@@ -22,7 +22,7 @@ impl RuntimeTool for CreateAgendaItemRuntimeTool {
     fn definition(&self) -> ToolDefinition {
         ToolDefinition::new(
             "create_agenda_item",
-            "创建一条到点自动触发的【数字员工自动任务/计划任务】（不是钉钉/外部日历）。一次性或循环（每天/每周/每月/每年），到点自动执行内置 prompt。",
+            "为【你（当前数字员工）】创建一条到点自动触发的日程。一次性或循环（每天/每周/每月/每年），到点会以你（同一个 persona）的身份自动执行 prompt。注意：用户问'我的日程'是问钉钉日历，请勿用本工具；问'你的日程'才用本工具。",
         )
     }
 
