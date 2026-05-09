@@ -43,4 +43,37 @@ describe('MonitoringUrlsForm', () => {
       monitoringTargets: [{ name: 'Anthropic', url: 'https://anthropic.com', tags: [] }],
     })
   })
+
+  it('allows save with name only when url is left empty', () => {
+    const onSubmit = vi.fn()
+    render(<MonitoringUrlsForm initial={{}} onSubmit={onSubmit} onCancel={vi.fn()} />)
+
+    fireEvent.change(
+      screen.getAllByPlaceholderText('employee.config.monitoringUrls.namePlaceholder')[0],
+      { target: { value: 'OpenAI' } },
+    )
+
+    const saveBtn = screen.getByRole('button', { name: 'employee.config.save' })
+    expect(saveBtn).not.toBeDisabled()
+
+    fireEvent.click(saveBtn)
+    expect(onSubmit).toHaveBeenCalledWith({
+      monitoringTargets: [{ name: 'OpenAI', url: '', tags: [] }],
+    })
+  })
+
+  it('rejects save when url is non-empty but malformed', () => {
+    render(<MonitoringUrlsForm initial={{}} onSubmit={vi.fn()} onCancel={vi.fn()} />)
+
+    fireEvent.change(
+      screen.getAllByPlaceholderText('employee.config.monitoringUrls.namePlaceholder')[0],
+      { target: { value: 'X' } },
+    )
+    fireEvent.change(
+      screen.getAllByPlaceholderText('employee.config.monitoringUrls.urlPlaceholder')[0],
+      { target: { value: 'not-a-url' } },
+    )
+
+    expect(screen.getByRole('button', { name: 'employee.config.save' })).toBeDisabled()
+  })
 })

@@ -52,7 +52,12 @@ export function MonitoringUrlsForm({ initial, onSubmit, onCancel }: MonitoringUr
   const [rows, setRows] = useState<Row[]>(() => rowsFromInitial(initial))
 
   const valid = useMemo(
-    () => rows.length > 0 && rows.every((r) => r.name.trim() && isValidUrl(r.url.trim())),
+    () =>
+      rows.length > 0 &&
+      rows.every((r) => {
+        const url = r.url.trim()
+        return r.name.trim() && (url === '' || isValidUrl(url))
+      }),
     [rows],
   )
 

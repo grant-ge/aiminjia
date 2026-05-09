@@ -505,7 +505,7 @@
         "addPlaceholder": "https://...",
         "addButton": "添加",
         "namePlaceholder": "监测对象名称（如 Anthropic）",
-        "urlPlaceholder": "https://example.com/news",
+        "urlPlaceholder": "https://example.com/news（可选）",
         "tagsPlaceholder": "标签（逗号分隔，可选）",
         "addRow": "添加监测对象"
       },

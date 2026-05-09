@@ -505,7 +505,7 @@
         "addPlaceholder": "https://...",
         "addButton": "Add",
         "namePlaceholder": "Target name (e.g. Anthropic)",
-        "urlPlaceholder": "https://example.com/news",
+        "urlPlaceholder": "https://example.com/news (optional)",
         "tagsPlaceholder": "Tags (comma-separated, optional)",
         "addRow": "Add target"
       },
