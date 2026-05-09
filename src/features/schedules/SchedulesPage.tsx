@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
-import { CalendarClock } from 'lucide-react'
+import { CalendarClock, Plus } from 'lucide-react'
 import { invoke } from '@tauri-apps/api/core'
 
+import { Button } from '@/components/ui/button'
 import { ScheduleEmptyState } from '@/components/schedules/ScheduleEmptyState'
 import { ScheduleListCard } from '@/components/schedules/ScheduleListCard'
 import { ScheduleTableHeader } from '@/components/schedules/ScheduleTableHeader'
@@ -125,6 +126,12 @@ export function SchedulesPage() {
     setEditorOpen(true)
   }, [])
 
+  const handleCreateBlank = useCallback(() => {
+    setEditing(null)
+    setDraftFromTemplate(null)
+    setEditorOpen(true)
+  }, [])
+
   const closeEditor = useCallback(() => {
     setEditorOpen(false)
     setEditing(null)
@@ -166,8 +173,14 @@ export function SchedulesPage() {
       <ScheduleListCard
         header={
           <div className="flex items-center justify-between">
-            <div className="text-sm font-semibold text-foreground">任务列表</div>
-            <div className="text-[0.8125rem] text-muted-foreground">共 {items.length} 条</div>
+            <div className="flex items-center gap-3">
+              <div className="text-sm font-semibold text-foreground">任务列表</div>
+              <div className="text-[0.8125rem] text-muted-foreground">共 {items.length} 条</div>
+            </div>
+            <Button size="sm" onClick={handleCreateBlank} aria-label="新建日程">
+              <Plus className="h-4 w-4" />
+              新建
+            </Button>
           </div>
         }
         table={<ScheduleTableHeader columns={['任务名称', '执行频率', '状态', '操作']} />}
