@@ -23,7 +23,6 @@ describe('ChannelConfigDetails', () => {
     useChannelStore.setState({
       platforms: {},
       conversations: [],
-      activeSessionId: null,
       revealSecret: vi.fn().mockResolvedValue('plain-secret'),
     })
   })

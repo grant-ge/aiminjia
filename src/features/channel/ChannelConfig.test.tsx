@@ -40,7 +40,7 @@ describe('ChannelConfig OPEN_CLAW registration', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.useRealTimers()
-    useChannelStore.setState({ platforms: {}, conversations: [], activeSessionId: null })
+    useChannelStore.setState({ platforms: {}, conversations: [] })
   })
 
   afterEach(() => {
