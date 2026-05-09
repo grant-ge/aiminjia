@@ -64,6 +64,9 @@ pub fn build_dispatch_prompt(
             serde_json::to_string(&employee.resource_config).unwrap_or_else(|_| "{}".to_string());
         config_lines.push(format!("- 资源配置：{json}"));
     }
+    if let Some(hint) = knowledge_memory_hint(employee) {
+        config_lines.push(hint);
+    }
     let config_block = if config_lines.is_empty() {
         String::new()
     } else {
@@ -80,6 +83,27 @@ pub fn build_dispatch_prompt(
     format!(
         "{identity_block}{extra}\n{trigger_label}{catchup}{user_block}{config_block}\n\n请立即开始按职责执行，不要等待用户额外指示。"
     )
+}
+
+/// 当员工已配置 knowledgeSources（且模板为 xiaoke/xiaogong）时，告诉 LLM
+/// 知识库已切片入 cognitive memory，应用 memory_search 检索而不是 load_file 全文。
+fn knowledge_memory_hint(employee: &EmployeeRecord) -> Option<String> {
+    let template_id = employee.template_id.as_deref()?;
+    if !matches!(template_id, "builtin:xiaoke" | "builtin:xiaogong") {
+        return None;
+    }
+    let sources = employee
+        .resource_config
+        .get("knowledgeSources")
+        .and_then(|v| v.as_array())?;
+    if sources.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "- 知识库：已切片入 cognitive memory（category=`fact`，tag=`knowledge:{}`）。\
+         请用 memory_search 按用户问题检索，不要直接读 knowledgeSources[].path 全文。",
+        employee.id
+    ))
 }
 
 #[cfg(test)]
@@ -220,5 +244,42 @@ mod tests {
             p.contains("[定时触发]\n（补跑，跳过了 2 次）"),
             "catchup not properly joined: {p}"
         );
+    }
+
+    fn xiaoke(resource: serde_json::Value) -> EmployeeRecord {
+        let mut e = employee(None, resource);
+        e.template_id = Some("builtin:xiaoke".into());
+        e.id = "emp-xk".into();
+        e
+    }
+
+    #[test]
+    fn knowledge_memory_hint_included_for_xiaoke_with_sources() {
+        let e = xiaoke(serde_json::json!({
+            "knowledgeSources": [
+                { "path": "/tmp/faq.md", "originalName": "faq.md", "status": "done", "slicedCount": 12 }
+            ]
+        }));
+        let p = build_dispatch_prompt(&e, "[按需派活]", None, None);
+        assert!(p.contains("memory_search"), "missing memory_search hint: {p}");
+        assert!(p.contains("knowledge:emp-xk"), "missing tag hint: {p}");
+    }
+
+    #[test]
+    fn knowledge_memory_hint_omitted_when_no_sources() {
+        let e = xiaoke(serde_json::json!({}));
+        let p = build_dispatch_prompt(&e, "[按需派活]", None, None);
+        assert!(!p.contains("memory_search"), "unexpected memory hint: {p}");
+    }
+
+    #[test]
+    fn knowledge_memory_hint_omitted_for_unrelated_template() {
+        let e = employee(None, serde_json::json!({
+            "knowledgeSources": [
+                { "path": "/tmp/x.md", "originalName": "x.md", "status": "done", "slicedCount": 1 }
+            ]
+        }));
+        let p = build_dispatch_prompt(&e, "[按需派活]", None, None);
+        assert!(!p.contains("memory_search"), "hint leaked to wrong template: {p}");
     }
 }
