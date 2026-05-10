@@ -169,13 +169,14 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
     <div className="flex w-full flex-col gap-2">
       <div
         data-testid="composer-root"
-        className="flex w-full flex-col rounded-[18px] border border-border bg-card px-4 pb-1 pt-4"
+        className="flex w-full flex-col rounded-xl border border-border bg-card px-4 pb-1 pt-4"
       >
         {topSlot}
         {skillCommand ? (
           <div className="mb-2 flex items-center gap-2">
             <div
-              className="group inline-flex max-w-full items-center gap-2 rounded-full border px-3 py-1.5 text-[0.8125rem] font-semibold shadow-[0_8px_24px_rgba(212,168,67,0.12)]"
+              // TODO: 注册为 --shadow-accent-glow token
+              className="group inline-flex max-w-full items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-semibold shadow-[0_8px_24px_rgba(212,168,67,0.12)]"
               style={{
                 borderColor: 'var(--color-accent-border)',
                 background: 'var(--color-accent-subtle)',
@@ -193,7 +194,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
               </span>
               <span className="truncate">{skillCommand.label}</span>
               <span
-                className="rounded-md px-1.5 py-0.5 text-[0.6875rem] font-medium"
+                className="rounded-md px-1.5 py-0.5 text-xs font-medium"
                 style={{
                   background: 'var(--color-accent-muted)',
                   color: 'var(--color-accent-600)',
@@ -217,7 +218,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
         ) : null}
         <EditorContent
           editor={editor}
-          className="min-h-[40px] w-full text-[0.8125rem] text-foreground [&_.ProseMirror]:outline-none [&_.ProseMirror_p.is-editor-empty:first-child]:before:pointer-events-none [&_.ProseMirror_p.is-editor-empty:first-child]:before:content-[attr(data-placeholder)] [&_.ProseMirror_p.is-editor-empty:first-child]:before:text-muted-foreground [&_.ProseMirror_p.is-editor-empty:first-child]:before:float-left [&_.ProseMirror_p.is-editor-empty:first-child]:before:h-0 [&_.ProseMirror_a]:text-primary [&_.ProseMirror_a]:underline [&_.ProseMirror_a]:underline-offset-2 [&_.ProseMirror_a]:cursor-pointer [&_.ProseMirror_strong]:font-semibold [&_.ProseMirror_em]:italic [&_.ProseMirror_code]:rounded [&_.ProseMirror_code]:bg-muted [&_.ProseMirror_code]:px-1 [&_.ProseMirror_code]:text-[0.85em] [&_.ProseMirror_pre]:overflow-x-auto [&_.ProseMirror_pre]:rounded [&_.ProseMirror_pre]:bg-muted [&_.ProseMirror_pre]:p-2 [&_.ProseMirror_pre]:text-xs [&_.ProseMirror_pre_code]:bg-transparent [&_.ProseMirror_pre_code]:p-0 [&_.ProseMirror_ul]:list-disc [&_.ProseMirror_ul]:pl-5 [&_.ProseMirror_ol]:list-decimal [&_.ProseMirror_ol]:pl-5 [&_.ProseMirror_blockquote]:border-l-2 [&_.ProseMirror_blockquote]:border-border [&_.ProseMirror_blockquote]:pl-3 [&_.ProseMirror_blockquote]:opacity-90"
+          className="min-h-[40px] w-full text-sm text-foreground [&_.ProseMirror]:outline-none [&_.ProseMirror_p.is-editor-empty:first-child]:before:pointer-events-none [&_.ProseMirror_p.is-editor-empty:first-child]:before:content-[attr(data-placeholder)] [&_.ProseMirror_p.is-editor-empty:first-child]:before:text-muted-foreground [&_.ProseMirror_p.is-editor-empty:first-child]:before:float-left [&_.ProseMirror_p.is-editor-empty:first-child]:before:h-0 [&_.ProseMirror_a]:text-primary [&_.ProseMirror_a]:underline [&_.ProseMirror_a]:underline-offset-2 [&_.ProseMirror_a]:cursor-pointer [&_.ProseMirror_strong]:font-semibold [&_.ProseMirror_em]:italic [&_.ProseMirror_code]:rounded [&_.ProseMirror_code]:bg-muted [&_.ProseMirror_code]:px-1 [&_.ProseMirror_code]:text-[0.85em] [&_.ProseMirror_pre]:overflow-x-auto [&_.ProseMirror_pre]:rounded [&_.ProseMirror_pre]:bg-muted [&_.ProseMirror_pre]:p-2 [&_.ProseMirror_pre]:text-xs [&_.ProseMirror_pre_code]:bg-transparent [&_.ProseMirror_pre_code]:p-0 [&_.ProseMirror_ul]:list-disc [&_.ProseMirror_ul]:pl-5 [&_.ProseMirror_ol]:list-decimal [&_.ProseMirror_ol]:pl-5 [&_.ProseMirror_blockquote]:border-l-2 [&_.ProseMirror_blockquote]:border-border [&_.ProseMirror_blockquote]:pl-3 [&_.ProseMirror_blockquote]:opacity-90"
         />
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-0">
@@ -242,8 +243,8 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
               aria-pressed={Boolean(skillCommand)}
               className={
                 skillCommand
-                  ? 'flex items-center gap-1.5 rounded-md px-2 py-1 text-[0.8125rem] font-semibold transition-colors hover:bg-[var(--color-accent-muted)] disabled:opacity-40'
-                  : 'flex items-center gap-1.5 rounded-md px-2 py-1 text-[0.8125rem] text-muted-foreground transition-colors hover:bg-muted disabled:opacity-40'
+                  ? 'flex items-center gap-1.5 rounded-md px-2 py-1 text-sm font-semibold transition-colors hover:bg-[var(--color-accent-muted)] disabled:opacity-40'
+                  : 'flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-muted-foreground transition-colors hover:bg-muted disabled:opacity-40'
               }
               style={
                 skillCommand
@@ -259,7 +260,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
                 type="button"
                 onClick={onPickProject}
                 disabled={disabled}
-                className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[0.8125rem] text-muted-foreground transition-colors hover:bg-muted disabled:opacity-40"
+                className="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-muted-foreground transition-colors hover:bg-muted disabled:opacity-40"
               >
                 <Folder className="h-3.5 w-3.5" />
                 <span>{projectLabel}</span>
@@ -280,11 +281,12 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
               disabled={isStreaming ? false : sendDisabled}
               className={
                 sendDisabled
-                  ? 'flex h-8 w-8 items-center justify-center rounded-full bg-muted text-muted-foreground'
-                  : 'flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:opacity-90'
+                  ? 'flex h-7 w-7 items-center justify-center rounded-full bg-muted text-muted-foreground'
+                  : 'flex h-7 w-7 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:opacity-90'
               }
             >
               {isStreaming ? (
+                // stop icon: square by design
                 <span className="block h-3.5 w-3.5 rounded-[2px] bg-current" />
               ) : (
                 <ArrowUp className="h-4 w-4" />
@@ -296,7 +298,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
       {tips ? (
         <div
           data-testid="composer-tips"
-          className="flex items-center justify-between gap-3 px-3 text-[0.6875rem] text-muted-foreground"
+          className="flex items-center justify-between gap-3 px-3 text-xs text-muted-foreground"
         >
           {tips}
         </div>

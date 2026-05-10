@@ -17,7 +17,7 @@ function WindowControls() {
   const btnClass =
     'flex h-7 w-11 items-center justify-center text-primary-foreground/70 transition-colors hover:bg-black/15 hover:text-primary-foreground'
   return (
-    <div className="flex shrink-0" onMouseDown={(e) => e.stopPropagation()}>
+    <div className="flex shrink-0 items-center" onMouseDown={(e) => e.stopPropagation()}>
       <button className={btnClass} onClick={() => getCurrentWindow().minimize()} aria-label="Minimize">
         <svg width="10" height="1" viewBox="0 0 10 1"><rect fill="currentColor" width="10" height="1"/></svg>
       </button>

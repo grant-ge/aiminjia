@@ -145,7 +145,7 @@ function FileLinkChip({
       className="mx-0.5 my-0.5 inline-flex h-6 items-center gap-1.5 rounded-md bg-primary-foreground/15 px-2 align-middle text-xs leading-none text-primary-foreground transition-opacity hover:opacity-80"
       title={text}
     >
-      <span aria-hidden="true" className="rounded bg-primary-foreground/15 px-1 text-[10px] font-bold">{label}</span>
+      <span aria-hidden="true" className="rounded bg-primary-foreground/15 px-1 text-xs font-bold">{label}</span>
       <span className="max-w-[200px] truncate">{text}</span>
     </button>
   )

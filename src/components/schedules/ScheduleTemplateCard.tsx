@@ -14,10 +14,10 @@ export function ScheduleTemplateCard({ title, desc, cta }: ScheduleTemplateCardP
   return (
     <div
       data-testid="schedule-template-card"
-      className="flex w-full flex-col gap-2.5 rounded-[14px] border border-border bg-card p-[18px]"
+      className="flex w-full flex-col gap-2.5 rounded-lg border border-border bg-card p-5"
     >
-      <div className="text-[0.9375rem] font-semibold text-foreground">{title}</div>
-      <p className="flex-1 text-[0.8125rem] text-muted-foreground">{desc}</p>
+      <div className="text-md font-semibold text-foreground">{title}</div>
+      <p className="flex-1 text-sm text-muted-foreground">{desc}</p>
       <div>
         <Button variant="secondary" onClick={cta.onClick}>
           {cta.label}

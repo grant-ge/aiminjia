@@ -33,7 +33,7 @@ export function AttachmentTokenView({ node, deleteNode }: AttachmentTokenViewPro
       ) : attrs.kind === 'folder' ? (
         <Folder aria-label="folder attachment" className="h-3.5 w-3.5 shrink-0" />
       ) : (
-        <span className="shrink-0 rounded bg-background px-1 text-[10px] font-bold text-muted-foreground">
+        <span className="shrink-0 rounded bg-background px-1 text-xs font-bold text-muted-foreground">
           {FILE_TYPE_LABEL[attrs.fileType] ?? 'FILE'}
         </span>
       )}

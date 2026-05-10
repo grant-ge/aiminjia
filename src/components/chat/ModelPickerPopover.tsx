@@ -86,7 +86,7 @@ export function ModelPickerPopover({ open, value, onChange, onClose }: ModelPick
 
   return (
     <div
-      className="absolute right-0 bottom-[calc(100%+10px)] z-50 flex h-[400px] w-[min(620px,calc(100vw-48px))] flex-col overflow-hidden rounded-[20px] border border-border bg-card"
+      className="absolute right-0 bottom-[calc(100%+10px)] z-50 flex h-[400px] w-[min(620px,calc(100vw-48px))] flex-col overflow-hidden rounded-full border border-border bg-card"
       style={{
         boxShadow: '0 22px 56px rgba(15, 23, 42, 0.16), 0 8px 20px rgba(15, 23, 42, 0.08)',
       }}
@@ -96,7 +96,7 @@ export function ModelPickerPopover({ open, value, onChange, onClose }: ModelPick
     >
       <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
         <div className="min-w-0">
-          <div className="flex items-center gap-2 text-[0.9375rem] font-semibold text-foreground">
+          <div className="flex items-center gap-2 text-md font-semibold text-foreground">
             <Sparkles className="h-4 w-4 text-[var(--color-accent)]" />
             <span>选择模型</span>
           </div>
@@ -129,7 +129,7 @@ export function ModelPickerPopover({ open, value, onChange, onClose }: ModelPick
                   onChange(option.value)
                   onClose()
                 }}
-                className="relative flex h-[132px] flex-col rounded-[18px] border p-4 text-left transition-colors border-border"
+                className="relative flex h-[132px] flex-col rounded-xl border p-4 text-left transition-colors border-border"
                 style={{
                   background: option.tone.bg,
                   borderColor: selected ? 'var(--color-accent)' : option.tone.border,
@@ -138,10 +138,10 @@ export function ModelPickerPopover({ open, value, onChange, onClose }: ModelPick
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="text-[0.9375rem] font-semibold" style={{ color: option.tone.text }}>
+                    <div className="text-md font-semibold" style={{ color: option.tone.text }}>
                       {LLM_PROVIDER_LABELS[option.value]}
                     </div>
-                    <div className="mt-1 inline-flex rounded-full px-2 py-0.5 text-[0.6875rem] font-medium" style={{ background: 'rgba(255,255,255,0.74)', color: option.tone.muted }}>
+                    <div className="mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-medium" style={{ background: 'rgba(255,255,255,0.74)', color: option.tone.muted }}>
                       {option.badge}
                     </div>
                   </div>
@@ -159,7 +159,7 @@ export function ModelPickerPopover({ open, value, onChange, onClose }: ModelPick
                 <p className="mt-4 line-clamp-2 text-xs leading-5" style={{ color: option.tone.muted }}>
                   {PROVIDER_CAPABILITIES[option.value].modelsDesc}
                 </p>
-                <div className="mt-auto text-[0.6875rem] font-medium" style={{ color: option.tone.text }}>
+                <div className="mt-auto text-xs font-medium" style={{ color: option.tone.text }}>
                   {PROVIDER_CAPABILITIES[option.value].hasReasoning ? '支持推理模型' : '标准模型入口'}
                 </div>
               </button>

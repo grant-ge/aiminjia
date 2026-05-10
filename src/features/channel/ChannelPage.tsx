@@ -107,7 +107,7 @@ function PlatformCard({
   onToggle: (enabled: boolean) => void
 }) {
   return (
-    <div className="flex min-h-[92px] items-center justify-between rounded-2xl border border-border bg-card px-6 py-4">
+    <div className="flex min-h-[92px] items-center justify-between rounded-xl border border-border bg-card px-6 py-4">
       <div className="flex min-w-0 items-center gap-4">
         <PlatformIcon platform={platform} />
         <div className="min-w-0">
@@ -340,7 +340,7 @@ export function ChannelPage({ sessionId }: ChannelPageProps) {
         description: '通过钉钉机器人接收并回复用户消息',
         icon: '钉',
         // 钉钉品牌蓝 #0b8cff：是平台 logo 识别色，不随主题切换
-        iconClassName: 'bg-sky-50 text-[#0b8cff]',
+        iconClassName: 'bg-sky-50 text-[var(--color-semantic-blue)]',
         state: states.dingtalk,
         ...statusMeta(states.dingtalk),
       },
@@ -368,7 +368,7 @@ export function ChannelPage({ sessionId }: ChannelPageProps) {
         description: '通过企业微信机器人接收并回复用户消息',
         icon: '企',
         // 企业微信复用钉钉蓝 #0b8cff（设计稿决定）
-        iconClassName: 'bg-slate-50 text-[#0b8cff]',
+        iconClassName: 'bg-slate-50 text-[var(--color-semantic-blue)]',
         state: states.wecom,
         ...statusMeta(states.wecom),
       },
@@ -390,7 +390,7 @@ export function ChannelPage({ sessionId }: ChannelPageProps) {
       )}
 
       <Dialog open={registrationOpen} onOpenChange={setRegistrationOpen}>
-        <DialogContent className="max-w-xl overflow-hidden rounded-[28px] border border-border bg-background p-0 shadow-2xl">
+        <DialogContent className="max-w-xl overflow-hidden rounded-xl border border-border bg-background p-0 shadow-[var(--shadow-modal)]">
           <DialogHeader className="sr-only">
             <DialogTitle>配置钉钉</DialogTitle>
             <DialogDescription>在钉钉中扫码完成应用注册，也可以手动填写应用凭证。</DialogDescription>

@@ -30,7 +30,7 @@ export function UserMessageBubble({
     <div className="flex w-full flex-col items-end gap-1.5">
       <div
         data-testid="user-bubble"
-        className="max-w-[80%] rounded-2xl bg-primary px-3 py-2 text-sm leading-relaxed text-primary-foreground"
+        className="max-w-[80%] rounded-xl rounded-br-[4px] bg-primary px-3 py-2 text-sm leading-relaxed text-primary-foreground"
       >
         {tokenLabel ? (
           <span

@@ -15,7 +15,7 @@ export function LoginOptionsRow({ rememberSlot, onForget }: LoginOptionsRowProps
       <button
         type="button"
         onClick={onForget}
-        className="text-[0.8125rem] font-medium text-brand-secondary transition-colors hover:opacity-80"
+        className="text-sm font-medium text-brand-secondary transition-colors hover:opacity-80"
       >
         忘记密码？
       </button>

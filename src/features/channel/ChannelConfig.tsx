@@ -74,7 +74,7 @@ function QrCodePanel({ value, loading }: { value: string; loading: boolean }) {
         </div>
       )}
       {loading && (
-        <div className="absolute inset-4 flex items-center justify-center rounded-2xl bg-background/75 backdrop-blur-[1px]">
+        <div className="absolute inset-4 flex items-center justify-center rounded-xl bg-background/75 backdrop-blur-[1px]">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
       )}
@@ -182,12 +182,12 @@ export function ChannelConfig({ onSaved, onClose }: ChannelConfigProps) {
         <div className="flex flex-col items-center gap-5">
           {registrationDone && credentials ? (
             <div className="flex w-full flex-col items-center gap-5">
-              <div className="flex w-64 flex-col items-center rounded-2xl bg-emerald-50 px-8 py-5 text-emerald-500">
+              <div className="flex w-64 flex-col items-center rounded-xl bg-emerald-50 px-8 py-5 text-emerald-500">
                 <CheckCircle2 className="h-8 w-8" />
                 <div className="mt-3 text-xl font-bold">扫码开通成功</div>
                 <div className="mt-1 text-sm font-semibold">应用已创建</div>
               </div>
-              <div className="grid w-full gap-3 rounded-2xl border border-border bg-card p-4 text-left">
+              <div className="grid w-full gap-3 rounded-xl border border-border bg-card p-4 text-left">
                 <CredentialRow label="AppKey" value={credentials.config.appKey} />
                 <CredentialRow label="AppSecret" value={credentials.config.appSecretMasked} />
                 <CredentialRow label="RobotCode" value={credentials.config.robotCode} />
@@ -202,7 +202,7 @@ export function ChannelConfig({ onSaved, onClose }: ChannelConfigProps) {
               {registrationStatus === 'error' && (
                 <Button
                   onClick={handleStartRegistration}
-                  className="h-11 w-64 rounded-full"
+                  className="h-10 w-64 rounded-full"
                 >
                   重新生成二维码
                 </Button>
@@ -222,7 +222,7 @@ export function ChannelConfig({ onSaved, onClose }: ChannelConfigProps) {
 
           {registrationMessage && (
             <div
-              className={`flex items-center gap-2 rounded-2xl px-5 py-3 text-sm font-semibold ${
+              className={`flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold ${
                 registrationStatus === 'error'
                   ? 'bg-red-50 text-red-500'
                   : registrationDone
@@ -241,7 +241,7 @@ export function ChannelConfig({ onSaved, onClose }: ChannelConfigProps) {
       {registrationDone && (
         <div className="border-t border-border bg-background px-10 py-4">
           <Button
-            className="h-11 w-full rounded-full"
+            className="h-10 w-full rounded-full"
             onClick={() => {
               onSaved?.()
               onClose?.()

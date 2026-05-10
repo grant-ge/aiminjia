@@ -119,7 +119,7 @@ export function SchedulesPage() {
         ))}
       </div>
       {error ? (
-        <div className="rounded-[12px] border border-destructive/30 bg-destructive/5 px-4 py-3 text-[0.8125rem] text-destructive">
+        <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
           {error}
         </div>
       ) : null}
@@ -127,7 +127,7 @@ export function SchedulesPage() {
         header={
           <div className="flex items-center justify-between">
             <div className="text-sm font-semibold text-foreground">任务列表</div>
-            <div className="text-[0.8125rem] text-muted-foreground">共 {schedules.length} 条</div>
+            <div className="text-sm text-muted-foreground">共 {schedules.length} 条</div>
           </div>
         }
         table={<ScheduleTableHeader columns={['任务名称', '执行频率', '状态', '操作']} />}

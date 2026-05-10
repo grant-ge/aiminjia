@@ -43,7 +43,7 @@ export function SidebarNav({ activeKey = null, onSelect = () => {} }: SidebarNav
             <Icon className="h-4 w-4 shrink-0" />
             <span className="flex-1 truncate">{label}</span>
             {count > 0 && (
-              <span className="ml-auto rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold leading-none text-primary-foreground">
+              <span className="ml-auto rounded-full bg-primary px-1.5 py-0.5 text-xs font-semibold leading-none text-primary-foreground">
                 {count > 99 ? '99+' : count}
               </span>
             )}

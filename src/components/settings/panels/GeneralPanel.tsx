@@ -36,7 +36,7 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
     <div className="flex flex-col gap-5 text-foreground">
       <section className="flex items-center justify-between gap-8">
         <div className="flex min-w-0 items-center gap-4">
-          <div className="h-12 w-12 shrink-0 overflow-hidden rounded-[14px] bg-primary">
+          <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-primary">
             {user.avatarUrl ? (
               <img src={user.avatarUrl} alt="" className="h-full w-full object-cover" />
             ) : (
@@ -50,7 +50,7 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
             <div className="truncate text-sm leading-none text-muted-foreground">{user.tenantName}</div>
           </div>
         </div>
-        <Button variant="outline" className="h-10 rounded-[12px] px-5 text-sm font-semibold" onClick={onLogout}>
+        <Button variant="outline" className="h-9 rounded-lg px-5 text-sm font-semibold" onClick={onLogout}>
           退出登录
         </Button>
       </section>
@@ -65,7 +65,7 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
             <div className="text-base font-semibold text-foreground">字体大小</div>
             <div className="text-sm text-muted-foreground">调整界面文字和间距的整体缩放</div>
           </div>
-          <div className="inline-flex rounded-[12px] bg-muted p-1" role="radiogroup" aria-label="字体大小">
+          <div className="inline-flex rounded-lg bg-muted p-1" role="radiogroup" aria-label="字体大小">
             {FONT_SCALE_OPTIONS.map((option) => {
               const selected = fontScale === option.value
               return (
@@ -79,8 +79,8 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
                   onClick={() => handleFontScaleChange(option.value)}
                   className={
                     selected
-                      ? 'rounded-[10px] bg-card px-3 py-1.5 text-sm font-semibold text-foreground shadow-sm'
-                      : 'rounded-[10px] px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground'
+                      ? 'rounded-md bg-card px-3 py-1.5 text-sm font-semibold text-foreground shadow-sm'
+                      : 'rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground'
                   }
                 >
                   {option.label}

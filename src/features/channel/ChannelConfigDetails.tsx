@@ -78,7 +78,7 @@ export function ChannelConfigDetails({ config, open, onOpenChange }: ChannelConf
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl rounded-[28px] border border-border bg-background p-0 shadow-2xl">
+      <DialogContent className="max-w-xl rounded-xl border border-border bg-background p-0 shadow-[var(--shadow-modal)]">
         <DialogHeader className="px-8 pt-8 text-left">
           <DialogTitle className="text-2xl font-bold">钉钉配置</DialogTitle>
           <DialogDescription>当前配置为只读。需要更换凭证时，请移除后重新扫码配置。</DialogDescription>

@@ -141,7 +141,7 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
               >
                 <div className="flex items-center justify-between">
                   <span className="text-2xl">{t.avatar}</span>
-                  <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                  <span className="rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
                     {t.badge}
                   </span>
                 </div>

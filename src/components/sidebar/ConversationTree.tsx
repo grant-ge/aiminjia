@@ -38,7 +38,7 @@ export function ConversationTree({
 
   if (projects.length === 0) {
     return (
-      <div className="px-2 py-4 text-[0.8125rem] text-muted-foreground">还没有历史任务</div>
+      <div className="px-2 py-4 text-sm text-muted-foreground">还没有历史任务</div>
     )
   }
 

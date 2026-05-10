@@ -65,7 +65,7 @@ export function McpServerList({
                   {server.name}
                 </span>
                 <span
-                  className="rounded-full px-2 py-0.5 text-[0.6875rem] uppercase tracking-[0.08em]"
+                  className="rounded-full px-2 py-0.5 text-xs uppercase tracking-[0.08em]"
                   style={{
                     background: 'var(--color-bg-card)',
                     color: 'var(--color-text-muted)',

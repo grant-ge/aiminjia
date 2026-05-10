@@ -68,7 +68,7 @@ export function SkillUploadModal({ open: isOpen, onOpenChange }: SkillUploadModa
         </DialogHeader>
         <div className="flex flex-col gap-3">
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
-          <div className="flex justify-end gap-2">
+          <div className="flex items-center justify-end gap-2">
             <Button size="sm" variant="outline" onClick={() => onOpenChange(false)} disabled={isUploading}>
               取消
             </Button>

@@ -67,7 +67,7 @@ function InlineTagEditor({ label, hint, tags, onChange }: { label: string; hint:
         {tags.map((tag, i) => (
           <span key={`${tag}-${i}`} className="flex items-center gap-0.5 rounded-md bg-accent px-2 py-0.5 text-xs">
             {tag}
-            <button type="button" onClick={() => onChange(tags.filter((_, idx) => idx !== i))} className="ml-0.5 text-[10px] text-muted-foreground hover:text-destructive">×</button>
+            <button type="button" onClick={() => onChange(tags.filter((_, idx) => idx !== i))} className="ml-0.5 text-xs text-muted-foreground hover:text-destructive">×</button>
           </span>
         ))}
         <input
@@ -141,7 +141,7 @@ export function CustomerSupportConfigForm({ initial, onSubmit, onCancel }: Props
         </div>
       </div>
 
-      <div className="flex gap-3">
+      <div className="flex items-center gap-3">
         <div className="flex flex-1 flex-col gap-1.5">
           <label className="text-xs font-medium text-muted-foreground">{t('employee.config.greeting')}</label>
           <Input value={state.greeting} onChange={(e) => update({ greeting: e.target.value })} className="text-xs" />

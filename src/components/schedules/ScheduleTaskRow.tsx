@@ -14,7 +14,7 @@ export function ScheduleTaskRow({ schedule, onDelete, deleting }: ScheduleTaskRo
   const nextRun = schedule.nextRunAt ? formatNextRun(schedule.nextRunAt) : '待计算'
 
   return (
-    <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,0.9fr)_minmax(0,0.7fr)_auto] items-center gap-3 border-t border-border px-5 py-3 text-[0.8125rem]">
+    <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,0.9fr)_minmax(0,0.7fr)_auto] items-center gap-3 border-t border-border px-5 py-3 text-sm">
       <div className="min-w-0">
         <div className="truncate font-medium text-foreground">{schedule.title}</div>
         <div className="mt-1 truncate text-muted-foreground">{schedule.prompt}</div>

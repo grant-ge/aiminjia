@@ -140,11 +140,11 @@ export function InboxPage() {
 
       {/* Entry list */}
       {filtered.length === 0 ? (
-        <div className="flex h-[240px] items-center justify-center rounded-2xl border border-dashed border-border">
+        <div className="flex h-[240px] items-center justify-center rounded-xl border border-dashed border-border">
           <p className="text-sm text-muted-foreground">暂无记录</p>
         </div>
       ) : (
-        <div className="flex flex-col divide-y divide-border overflow-hidden rounded-2xl border border-border">
+        <div className="flex flex-col divide-y divide-border overflow-hidden rounded-xl border border-border">
           {filtered.map((entry) => {
             const emp = employees.find((e) => e.id === entry.employeeId)
             const clickable = !!entry.conversationId

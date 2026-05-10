@@ -23,8 +23,8 @@ export function HomeSuggestionPanel({
             onClick={() => onSelect(item)}
             className={
               index === items.length - 1
-                ? 'flex w-full items-start gap-3.5 py-3 text-left transition-colors hover:text-primary'
-                : 'flex w-full items-start gap-3.5 border-b border-border/80 py-3 text-left transition-colors hover:text-primary'
+                ? 'flex w-full items-start gap-3 py-3 text-left transition-colors hover:text-primary'
+                : 'flex w-full items-start gap-3 border-b border-border/80 py-3 text-left transition-colors hover:text-primary'
             }
           >
             <span className="shrink-0 text-sm font-semibold leading-6 text-foreground">
@@ -34,7 +34,7 @@ export function HomeSuggestionPanel({
               aria-hidden="true"
               className="mt-0.5 h-5 w-px shrink-0 bg-border"
             />
-            <span className="text-[0.8125rem] leading-6 text-muted-foreground">
+            <span className="text-sm leading-6 text-muted-foreground">
               {item.desc}
             </span>
           </button>

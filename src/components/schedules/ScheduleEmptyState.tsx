@@ -15,10 +15,10 @@ interface ScheduleEmptyStateProps {
 
 export function ScheduleEmptyState({ icon, title, desc, cta }: ScheduleEmptyStateProps) {
   return (
-    <div className="flex flex-col items-center gap-3.5">
+    <div className="flex flex-col items-center gap-3">
       {icon}
       <div className="text-sm font-semibold text-foreground">{title}</div>
-      {desc ? <div className="text-[0.8125rem] text-muted-foreground">{desc}</div> : null}
+      {desc ? <div className="text-sm text-muted-foreground">{desc}</div> : null}
       {cta ? <Button onClick={cta.onClick}>{cta.label}</Button> : null}
     </div>
   )

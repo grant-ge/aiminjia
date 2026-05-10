@@ -225,7 +225,7 @@ export function SkillCenterPage() {
         <header data-tauri-drag-region className="flex h-[45px] items-center justify-between border-b border-border px-6">
           <div className="flex items-center gap-3">
             <span className="text-base font-semibold text-foreground">技能中心</span>
-            <span className="rounded-full bg-secondary px-2 py-0.5 text-[0.6875rem] font-medium text-muted-foreground">
+            <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-muted-foreground">
               已安装 {skills.length} 个技能
             </span>
           </div>
@@ -340,7 +340,7 @@ function SkillCenterState({
   onAction?: () => void
 }) {
   return (
-    <div className="col-span-full rounded-[14px] border border-dashed border-border bg-card/60 p-6 text-sm">
+    <div className="col-span-full rounded-lg border border-dashed border-border bg-card/60 p-6 text-sm">
       <div className="font-semibold text-foreground">{title}</div>
       {desc ? <p className="mt-1 text-muted-foreground">{desc}</p> : null}
       {actionLabel && onAction ? (

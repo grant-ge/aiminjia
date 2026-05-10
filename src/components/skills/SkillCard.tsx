@@ -34,10 +34,10 @@ export function SkillCard({ title, meta, desc, iconNode, iconBg = 'bg-brand-prim
     <div
       data-testid="skill-card"
       {...interactiveProps}
-      className={`group relative flex ${height} flex-col rounded-[14px] border border-border bg-card p-4 transition-all duration-150 ${interactiveClass}`}
+      className={`group relative flex ${height} flex-col rounded-lg border border-border bg-card p-4 transition-all duration-150 ${interactiveClass}`}
     >
       <div className="flex items-center gap-2.5">
-        <div className={`flex ${iconSize} shrink-0 items-center justify-center rounded-[10px] ${iconBg}`}>
+        <div className={`flex ${iconSize} shrink-0 items-center justify-center rounded-md ${iconBg}`}>
           {iconNode}
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">

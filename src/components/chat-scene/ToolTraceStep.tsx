@@ -50,7 +50,7 @@ export function ToolTraceStep({ step, expanded, onToggle }: ToolTraceStepProps) 
             strokeLinejoin="round"
           />
         </svg>
-        <span className="truncate font-mono text-[0.78125rem]" style={{ color: 'var(--color-text-primary)' }}>
+        <span className="truncate font-mono text-xs" style={{ color: 'var(--color-text-primary)' }}>
           {step.name}
         </span>
         <span style={{ color: statusColor(step.status) }}>{statusLabel(step.status)}</span>

@@ -235,7 +235,7 @@ export function SkillsTab(_props: SkillsTabProps = {}) {
             <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
               {t('settings.skills.description')}
             </p>
-            <div className="flex gap-2">
+            <div className="flex items-center gap-2">
               <Button variant="secondary" size="sm" onClick={handleCreateNew}>
                 {t('settings.skills.createNew')}
               </Button>
@@ -288,7 +288,7 @@ export function SkillsTab(_props: SkillsTabProps = {}) {
                       </span>
                     )}
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex items-center gap-2">
                     <Button
                       variant="secondary"
                       size="sm"

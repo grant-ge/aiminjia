@@ -20,7 +20,7 @@ interface SkillPopoverPanelProps {
 export function SkillPopoverPanel({ items, onPick, onClose }: SkillPopoverPanelProps) {
   return (
     <div
-      className="w-[560px] overflow-hidden rounded-[14px] border border-border bg-popover"
+      className="w-[560px] overflow-hidden rounded-lg border border-border bg-popover"
       style={{ boxShadow: '0 4px 12px -4px rgba(0,0,0,0.08)' }}
     >
       <header className="flex items-center justify-between border-b border-border px-4 py-3 text-xs font-semibold text-muted-foreground">

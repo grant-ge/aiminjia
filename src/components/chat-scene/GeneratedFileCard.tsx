@@ -139,7 +139,7 @@ export function GeneratedFileCard({
   ]
 
   return (
-    <div data-testid="generated-file-card" className="flex h-16 items-center justify-between gap-4 overflow-hidden rounded-[14px] border border-border bg-card px-4">
+    <div data-testid="generated-file-card" className="flex h-16 items-center justify-between gap-4 overflow-hidden rounded-lg border border-border bg-card px-4">
       <div className="flex min-w-0 items-center gap-2">
         <div className="flex h-16 w-12 shrink-0 items-center justify-center">
           <TiltedFileIcon title={title} sub={sub} />
@@ -149,7 +149,7 @@ export function GeneratedFileCard({
           <div className="truncate text-xs leading-4 text-muted-foreground">{sub}</div>
         </div>
       </div>
-      <div className="flex shrink-0 items-center rounded-full border border-border bg-background text-[0.8125rem] text-foreground">
+      <div className="flex shrink-0 items-center rounded-full border border-border bg-background text-sm text-foreground">
         <button
           type="button"
           onClick={handlePrimaryAction}

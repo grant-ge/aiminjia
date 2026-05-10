@@ -26,19 +26,19 @@ export function ChatTopBar({
   return (
     <header data-tauri-drag-region className="flex h-10 shrink-0 items-center justify-between border-b border-border bg-background px-6">
       <div className="flex min-w-0 items-center gap-3">
-        <div className="truncate text-[0.9375rem] font-semibold text-foreground">
+        <div className="truncate text-md font-semibold text-foreground">
           {title}
         </div>
         {workspace ? (
           <>
-            <span className="text-[0.8125rem] text-muted-foreground">/</span>
-            <span className="truncate text-[0.8125rem] text-muted-foreground">
+            <span className="text-sm text-muted-foreground">/</span>
+            <span className="truncate text-sm text-muted-foreground">
               {workspace}
             </span>
           </>
         ) : null}
       </div>
-      <div className="flex items-center gap-3.5">
+      <div className="flex items-center gap-4">
         {trailing}
         {onShare ? (
           <button

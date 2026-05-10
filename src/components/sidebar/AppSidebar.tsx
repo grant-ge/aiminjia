@@ -159,7 +159,7 @@ export function AppSidebar() {
       />
 
       <div className="flex min-h-0 flex-1 flex-col gap-2">
-        <div className="grid grid-cols-2 rounded-lg bg-sidebar-accent p-0.5 text-[0.75rem] font-medium text-muted-foreground">
+        <div className="grid grid-cols-2 rounded-lg bg-sidebar-accent p-0.5 text-xs font-medium text-muted-foreground">
           <button
             type="button"
             onClick={() => switchTab('project')}
@@ -203,9 +203,9 @@ export function AppSidebar() {
               <div>
                 <div className="mb-2 flex items-center gap-2 px-2 text-sm font-semibold text-sidebar-foreground">
                   {/* 钉钉品牌色 #0b8cff，跨主题保持品牌识别 */}
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-sky-50 text-xs text-[#0b8cff]">钉</span>
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-sky-50 text-xs text-[var(--color-semantic-blue)]">钉</span>
                   钉钉
-                  <span className="ml-auto rounded-md bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                  <span className="ml-auto rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
                     {dingtalkChannelLabel}
                   </span>
                 </div>
@@ -257,7 +257,7 @@ export function AppSidebar() {
                       <div className="mt-1 flex flex-col gap-1 pl-4">
                         {Object.entries(legacyByRobot).map(([robotCode, list]) => (
                           <div key={robotCode}>
-                            <div className="px-3 py-1 text-[11px] font-medium text-muted-foreground/70">
+                            <div className="px-3 py-1 text-xs font-medium text-muted-foreground/70">
                               {robotCode.length > 14 ? `${robotCode.slice(0, 14)}…` : robotCode}
                             </div>
                             {list.map((conversation) => (
