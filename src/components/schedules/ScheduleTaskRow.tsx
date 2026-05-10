@@ -1,7 +1,7 @@
 import { Pause, Pencil, Play, RotateCcw, Trash2, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
-import { PersonaAvatar } from '@/components/agenda/PersonaAvatar'
+import { OrganizerName } from '@/components/agenda/OrganizerName'
 import { describeFrequency } from '@/features/agenda/describeFrequency'
 import type { AgendaItem } from '@/lib/tauri'
 
@@ -50,9 +50,11 @@ export function ScheduleTaskRow({
     >
       {/* 列 1：任务名称 */}
       <div className="flex min-w-0 items-center gap-2">
-        <PersonaAvatar personaId={item.organizerEmployeeId} size="sm" />
         <div className="min-w-0">
-          <div className="truncate font-medium text-foreground">{item.title}</div>
+          <div className="flex items-center gap-2">
+            <span className="truncate font-medium text-foreground">{item.title}</span>
+            <OrganizerName employeeId={item.organizerEmployeeId} />
+          </div>
           {item.workspacePath ? (
             <div
               className="truncate text-xs text-muted-foreground/70"
