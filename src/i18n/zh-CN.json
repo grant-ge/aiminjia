@@ -388,6 +388,8 @@
     "versionLine": "当前 {{current}} → 新版本 {{next}}（已下载 {{size}}）",
     "installAndRestart": "立即安装并重启",
     "installing": "正在安装...",
+    "installFailedTitle": "更新安装失败",
+    "notReadyMessage": "更新尚未就绪，请稍候再试或重启应用",
     "offlineHint": "网络不可用，无法安装更新，请稍后重试"
   },
   "auth": {

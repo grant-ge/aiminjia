@@ -388,6 +388,8 @@
     "versionLine": "{{current}} → {{next}} ({{size}} downloaded)",
     "installAndRestart": "Install & Restart",
     "installing": "Installing...",
+    "installFailedTitle": "Update install failed",
+    "notReadyMessage": "Update not ready yet. Please wait or restart the app.",
     "offlineHint": "Network unavailable, cannot install update. Please try again later."
   },
   "auth": {

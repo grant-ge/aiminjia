@@ -52,6 +52,20 @@ def main():
         subprocess.run(["gh", "auth", "switch", "--user", "gezhigang000"], capture_output=True)
 
     if r.returncode == 0:
+        # Double-check: push reported success, but verify remote actually has
+        # this commit (v0.5.18 / v0.5.20 silently stayed local once — unclear
+        # cause, probably gh auth switch race). Fetch and compare.
+        subprocess.run(["git", "fetch", "origin", "main"], cwd=tap_path,
+                       capture_output=True)
+        ahead = subprocess.run(
+            ["git", "rev-list", "--count", "origin/main..HEAD"],
+            cwd=tap_path, capture_output=True, text=True,
+        ).stdout.strip()
+        if ahead != "0":
+            print(f"[error] git push reported success but local is {ahead} commit(s) "
+                  f"ahead of origin/main — re-push manually: "
+                  f"(cd {tap_path} && git push origin main)")
+            sys.exit(1)
         print(f"[ok] Homebrew cask updated to v{version}")
         print(f"    brew tap grant-ge/tap && brew install --cask aijia")
     else:
