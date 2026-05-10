@@ -32,7 +32,7 @@ import {
   onConversationTitleUpdated,
 } from '@/lib/tauri'
 import { useAuthStore } from '@/stores/authStore'
-import { useBrandingStore, applyAccentColor, loadPersistedAccentColor } from '@/stores/brandingStore'
+import { useBrandingStore } from '@/stores/brandingStore'
 import { useChatStore } from '@/stores/chatStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { usePluginStore } from '@/stores/pluginStore'
@@ -45,7 +45,6 @@ import { initChannelListeners } from '@/stores/channelStore'
 import { applyFontScale, loadPersistedFontScale, normalizeFontScale, persistFontScale } from '@/styles/fontScale'
 
 applyFontScale(loadPersistedFontScale())
-applyAccentColor(loadPersistedAccentColor())
 
 function RouteSwitch() {
   const route = useUiStore((state) => state.route)
@@ -115,7 +114,7 @@ function AppShell() {
   const isWindows = navigator.userAgent.includes('Windows')
 
   return (
-    <div className="flex h-screen w-screen flex-col bg-sidebar text-foreground">
+    <div className="flex h-screen w-screen flex-col bg-background text-foreground">
       <TitleBar />
       <div className="flex min-h-0 flex-1">
         <AppSidebar />
@@ -167,9 +166,6 @@ function App() {
           persistFontScale(fontScale)
           applyFontScale(fontScale)
           useSettingsStore.setState({ fontScale })
-        }
-        if (settings.accentColor) {
-          useBrandingStore.getState().applyBranding({ accentColor: settings.accentColor })
         }
       })
       .catch((err) => console.error('Failed to load settings:', err))

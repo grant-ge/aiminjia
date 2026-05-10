@@ -753,7 +753,6 @@ pub fn run() {
             commands::auth::get_cloud_auth,
             commands::auth::get_cloud_models,
             commands::auth::cloud_change_password,
-            commands::auth::get_branding,
             // Skill management commands
             commands::skill_management::list_custom_skills,
             commands::skill_management::install_custom_skill,
