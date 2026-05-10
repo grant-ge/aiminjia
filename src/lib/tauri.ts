@@ -30,7 +30,6 @@ export const TAURI_EVENTS = {
   STREAMING_ERROR: 'streaming:error',
   STREAMING_RETRY_RESET: 'streaming:retry-reset',
   MESSAGE_UPDATED: 'message:updated',
-  ANALYSIS_STEP_CHANGED: 'analysis:step-changed',
   STOP_PREVENTED_CONTINUATION: 'stop:prevented-continuation',
   /** @deprecated 后端不发送此事件 */
   FILE_PARSED: 'file:parsed',
@@ -41,7 +40,6 @@ export const TAURI_EVENTS = {
   CONVERSATION_TITLE_UPDATED: 'conversation:title-updated',
   AGENT_IDLE: 'agent:idle',
   TASK_STATUS_CHANGED: 'task:status-changed',
-  STREAMING_STEP_RESET: 'streaming:step-reset',
   AUTH_EXPIRED: 'auth:expired',
   SKILL_FILE_CHANGED: 'skill-file-changed',
   PERMISSION_ASK: 'permission:ask',
@@ -82,11 +80,6 @@ export interface AgentIdlePayload {
   runId?: string
   agentId?: string
   scope?: 'primary' | 'child'
-}
-
-export interface StreamingStepResetPayload {
-  conversationId: string
-  step: number
 }
 
 export interface ToolExecutingPayload {
@@ -1288,20 +1281,6 @@ export function onMessageUpdated(
 }
 
 /**
- * Listen for analysis pipeline step transitions.
- *
- * @param handler - Callback receiving the current step index and its status
- * @returns A function to unlisten (unsubscribe) from the event
- */
-export function onAnalysisStepChanged(
-  handler: (payload: { step: number; status: string }) => void,
-): Promise<() => void> {
-  return listen<{ step: number; status: string }>(TAURI_EVENTS.ANALYSIS_STEP_CHANGED, createInstrumentedEventHandler(TAURI_EVENTS.ANALYSIS_STEP_CHANGED, (event) => {
-    handler(event.payload)
-  }))
-}
-
-/**
  * Listen for application-level notification events (toast messages).
  *
  * @param handler - Callback receiving the notification level, title, and message
@@ -1371,23 +1350,7 @@ export function onAgentIdle(
   }))
 }
 
-/**
- * Listen for streaming step-reset events during auto-advance between analysis steps.
 
-/**
- * Listen for streaming step-reset events during auto-advance between analysis steps.
- *
- * When the backend auto-advances from step N to step N+1, it emits this event
- * so the frontend clears the previous step's streaming content and tool executions
- * while keeping isStreaming=true (the next step's deltas are about to start).
- */
-export function onStreamingStepReset(
-  handler: (payload: StreamingStepResetPayload) => void,
-): Promise<() => void> {
-  return listen<StreamingStepResetPayload>(TAURI_EVENTS.STREAMING_STEP_RESET, createInstrumentedEventHandler(TAURI_EVENTS.STREAMING_STEP_RESET, (event) => {
-    handler(event.payload)
-  }))
-}
 
 /**
  * Listen for file:generated events (emitted directly by the tool execution layer,

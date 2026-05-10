@@ -47,12 +47,10 @@ import {
   onMessageUpdated,
   onToolExecuting,
   onToolCompleted,
-  onAnalysisStepChanged,
   onAgentIdle,
   onPermissionAsk,
   onInteractionRequired,
   onInteractionResolved,
-  onStreamingStepReset,
   onFileGenerated,
   onTaskStatusChanged,
   onTurnCompleted,
@@ -70,14 +68,11 @@ import type {
   PermissionAskPayload,
   InteractionRequiredPayload,
   InteractionResolvedPayload,
-  StreamingStepResetPayload,
   FileGeneratedPayload,
   TaskStatusChangedPayload,
   TurnCompletedPayload,
   DiagnosticsEventPayload,
 } from '@/lib/tauri'
-import { useAnalysisStore } from '@/stores/analysisStore'
-import type { StepStatus } from '@/types/analysis'
 import { useStreamingStore } from '@/stores/streamingStore'
 import type { ConversationTaskState } from '@/stores/streamingStore'
 import { useInteractionStore } from '@/stores/interactionStore'
@@ -490,39 +485,6 @@ export function useStreaming() {
           },
         )
       }
-    }),
-  )
-
-  // --- analysis:step-changed --------------------------------------------
-  useTauriEvent(() =>
-    onAnalysisStepChanged(({ step, status }) => {
-      console.log('[analysis:step-changed]', step, status)
-      recordDiagnostic({
-        event: 'analysis.step.changed.received',
-        payload: { step, status },
-      })
-      const store = useAnalysisStore.getState()
-      store.setCurrentStep(step)
-      store.setStepStatus(step, status as StepStatus)
-    }),
-  )
-
-  // --- streaming:step-reset -----------------------------------------------
-  // Emitted when the backend auto-advances to a new analysis step.
-  // Clears the previous step's streaming content and tool executions,
-  // but keeps isStreaming=true so StreamingBubble stays visible.
-  useTauriEvent(() =>
-    onStreamingStepReset(({ conversationId, step }: StreamingStepResetPayload) => {
-      console.log('[streaming:step-reset] conversationId:', conversationId, 'step:', step)
-      touchActivity(conversationId)
-      recordDiagnostic({
-        event: 'streaming.step_reset.received',
-        conversationId,
-        payload: { step },
-      })
-      // Discard buffered deltas from the previous step
-      delete deltaBufferRef.current[conversationId]
-      useChatStore.getState().resetConversationStreamContent(conversationId)
     }),
   )
 
