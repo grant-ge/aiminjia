@@ -57,10 +57,16 @@ impl LotusProvider {
     /// equivalent). The argument is unused but preserved to avoid
     /// rippling a signature change through `gateway.rs` callers.
     pub fn new(session_key: String, model: String, _model_type: &str) -> Self {
-        let model = if model.is_empty() {
+        // Strip BOM (\u{FEFF}) and surrounding whitespace/control chars before
+        // sending to the gateway. Observed in the wild on Windows when the model
+        // id round-trips through clipboard / config files — the gateway's
+        // model-name regex rejects `\r`, leading spaces, BOM etc. and the user
+        // sees a confusing "model name contains invalid characters" 400.
+        let trimmed = model.trim_matches(|c: char| c.is_whitespace() || c == '\u{FEFF}');
+        let model = if trimmed.is_empty() {
             DEFAULT_MODEL.to_string()
         } else {
-            model
+            trimmed.to_string()
         };
         Self {
             inner: ClaudeProvider::with_url(
