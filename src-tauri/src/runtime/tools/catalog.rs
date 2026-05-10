@@ -609,7 +609,7 @@ fn build_default_catalog() -> ToolCatalog {
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
             "create_agenda_item",
-            "为【你（当前数字员工）】创建一条到点自动触发的日程。一次性或循环（每天/每周/每月/每年），到点会以你（同一个 persona）的身份自动执行 prompt。注意：用户问'我的日程'是问钉钉日历，请勿用本工具；问'你的日程'才用本工具。",
+            "【自用】为你（当前数字员工）自己创建一条到点自动触发的日程：一次性或循环（每天/每周/每月/每年），到点会以你（同一个 persona）的身份自动执行内置 prompt。",
         )
             .with_kind(ToolKind::Primitive)
             .with_read_only(false),
@@ -643,7 +643,7 @@ fn build_default_catalog() -> ToolCatalog {
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
             "list_agenda_items",
-            "列出【你（当前数字员工）自己】的日程清单——你给自己设的循环任务、自动提醒。用户说'你的日程/你的安排/你定了什么计划'时用本工具；用户说'我的日程'是问钉钉日历，请勿用本工具。",
+            "【自用】列出你（当前数字员工）自己的日程清单——你给自己设的循环任务、定时提醒。",
         )
             .with_kind(ToolKind::Primitive)
             .with_read_only(true),
@@ -663,7 +663,7 @@ fn build_default_catalog() -> ToolCatalog {
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
             "update_agenda_item",
-            "修改【你自己】创建的日程（标题/触发内容/频率/启用状态）。",
+            "【自用】修改你自己创建的日程（标题/触发内容/频率/启用状态）。",
         )
             .with_kind(ToolKind::Primitive)
             .with_read_only(false),
@@ -683,7 +683,7 @@ fn build_default_catalog() -> ToolCatalog {
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
             "cancel_agenda_item",
-            "取消【你自己】创建的日程（软删除，可在 UI 恢复）。",
+            "【自用】取消你自己创建的日程（软删除，可在 UI 恢复）。",
         )
             .with_kind(ToolKind::Primitive)
             .with_read_only(false)
@@ -698,7 +698,7 @@ fn build_default_catalog() -> ToolCatalog {
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
             "skip_occurrence",
-            "跳过【你自己】循环日程的某一次触发。",
+            "【自用】跳过你自己循环日程的某一次触发。",
         )
             .with_kind(ToolKind::Primitive)
             .with_read_only(false),
@@ -715,7 +715,7 @@ fn build_default_catalog() -> ToolCatalog {
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
             "list_agenda_occurrences",
-            "查看【你自己】日程过往的执行历史（成功/失败记录）。",
+            "【自用】查看你自己日程过往的执行历史（成功/失败记录）。",
         )
             .with_kind(ToolKind::Primitive)
             .with_read_only(true),

@@ -19,7 +19,7 @@ impl RuntimeTool for ListAgendaItemsRuntimeTool {
     fn definition(&self) -> ToolDefinition {
         ToolDefinition::new(
             "list_agenda_items",
-            "列出【你（当前数字员工）自己】的日程清单——你给自己设的循环任务、自动提醒。用户说'你的日程/你的安排/你定了什么计划'时用本工具；用户说'我的日程'是问钉钉日历，请勿用本工具。",
+            "【自用】列出你（当前数字员工）自己的日程清单——你给自己设的循环任务、定时提醒。",
         )
     }
 

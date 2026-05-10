@@ -19,7 +19,7 @@ impl RuntimeTool for ListAgendaOccurrencesRuntimeTool {
     fn definition(&self) -> ToolDefinition {
         ToolDefinition::new(
             "list_agenda_occurrences",
-            "查看【你自己】日程过往的执行历史（成功/失败记录）。",
+            "【自用】查看你自己日程过往的执行历史（成功/失败记录）。",
         )
     }
 

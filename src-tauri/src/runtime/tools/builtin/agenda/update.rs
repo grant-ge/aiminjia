@@ -19,7 +19,7 @@ impl RuntimeTool for UpdateAgendaItemRuntimeTool {
     fn definition(&self) -> ToolDefinition {
         ToolDefinition::new(
             "update_agenda_item",
-            "修改【你自己】创建的日程（标题/触发内容/频率/启用状态）。",
+            "【自用】修改你自己创建的日程（标题/触发内容/频率/启用状态）。",
         )
     }
 

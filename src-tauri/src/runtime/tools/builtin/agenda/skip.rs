@@ -20,7 +20,7 @@ impl RuntimeTool for SkipOccurrenceRuntimeTool {
     fn definition(&self) -> ToolDefinition {
         ToolDefinition::new(
             "skip_occurrence",
-            "跳过【你自己】循环日程的某一次触发。",
+            "【自用】跳过你自己循环日程的某一次触发。",
         )
     }
 
