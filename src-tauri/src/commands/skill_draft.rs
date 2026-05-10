@@ -131,15 +131,15 @@ pub async fn import_skill_package(
     // 2) 检查目标
     let user_skills = home.user_skills_dir(&scope);
     std::fs::create_dir_all(&user_skills).map_err(|e| e.to_string())?;
-    let target = user_skills.join(&res.manifest.id);
+    let target = user_skills.join(&res.skill_id);
 
     if target.exists() && !force {
         // 清理 tmp，把冲突信息丢回去
         let _ = remove_dir_all_retry(&tmp_root);
         return Ok(ImportSkillOutcome::Conflict {
-            id: res.manifest.id.clone(),
-            name: res.manifest.name.clone(),
-            version: res.manifest.version.clone(),
+            id: res.skill_id.clone(),
+            name: res.skill_id.clone(),
+            version: String::new(),
             existing_path: target.to_string_lossy().to_string(),
         });
     }
@@ -160,9 +160,9 @@ pub async fn import_skill_package(
     }
 
     Ok(ImportSkillOutcome::Installed {
-        id: res.manifest.id,
-        name: res.manifest.name,
-        version: res.manifest.version,
+        id: res.skill_id.clone(),
+        name: res.skill_id,
+        version: String::new(),
         installed_to: target.to_string_lossy().to_string(),
     })
 }
@@ -205,17 +205,10 @@ pub async fn export_installed_skill(
         Some(p) => PathBuf::from(p),
         None => default_export_dest(&skill_id, &version),
     };
+    let _ = author; // OPS 标准包不嵌作者，保留入参兼容前端
 
-    skill_package::pack_skill_dir(
-        &source_dir,
-        &dest,
-        &skill_id,
-        &skill_id,
-        &version,
-        author.as_deref(),
-        concat!("skill-smith@", env!("CARGO_PKG_VERSION")),
-    )
-    .map_err(|e| format!("打包失败：{}", e))?;
+    skill_package::pack_skill_dir(&source_dir, &dest, &skill_id)
+        .map_err(|e| format!("打包失败：{}", e))?;
     Ok(dest.to_string_lossy().to_string())
 }
 

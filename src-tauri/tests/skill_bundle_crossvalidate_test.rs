@@ -1,7 +1,7 @@
 //! Cross-validation: the Python-built `.aijia-skill` packages (produced by
 //! `scripts/skills/build-bundle.py`) must be consumable by the Rust
-//! unpacker — same checksum algorithm, same zip layout, same manifest
-//! shape.
+//! unpacker — same OPS-standard zip layout (SKILL.md at root or one-level
+//! subdirectory).
 //!
 //! Skipped (not failed) when `dist-skills/` doesn't exist — so `cargo test`
 //! works on a fresh checkout without first running the build script.
@@ -48,8 +48,7 @@ fn python_built_bundles_match_rust_unpacker() {
                 e
             )
         });
-        assert_eq!(res.manifest.format_version, 1);
-        assert!(!res.manifest.id.is_empty());
+        assert!(!res.skill_id.is_empty());
         assert!(res.skill_dir.join("SKILL.md").is_file());
         verified += 1;
     }

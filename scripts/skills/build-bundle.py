@@ -150,13 +150,21 @@ def validate_skill(skill_dir: Path) -> dict:
                 )
 
     # Disallow extra top-level files / unsupported subdirs
+    # Allowed: SKILL.md / LICENSE / README.md / scripts/ / references/ / templates/ / assets/
+    extra_allowed_files = {"LICENSE", "LICENSE.txt", "LICENSE.md", "README.md", "README"}
+    extra_allowed_dirs = {"templates", "assets"}
     for entry in skill_dir.iterdir():
         if entry.name in ("SKILL.md", *ALLOWED_SUBDIRS):
+            continue
+        if entry.name in extra_allowed_files and entry.is_file():
+            continue
+        if entry.name in extra_allowed_dirs and entry.is_dir():
             continue
         if entry.name.startswith("."):
             continue
         raise SystemExit(
-            f"[FAIL] {skill_dir.name}: unexpected entry '{entry.name}' (only SKILL.md / scripts/ / references/ allowed)"
+            f"[FAIL] {skill_dir.name}: unexpected entry '{entry.name}' "
+            f"(allowed: SKILL.md / LICENSE / README.md / scripts/ / references/ / templates/ / assets/)"
         )
 
     return {
@@ -176,16 +184,33 @@ def _extract_label(fm: dict) -> str:
 
 
 def collect_entries(skill_dir: Path) -> list[tuple[str, Path]]:
-    """Sorted list of (rel_path, abs_path) for files we ship."""
+    """Sorted list of (rel_path, abs_path) for files we ship.
+
+    Includes SKILL.md, optional LICENSE / README.md root files, and the
+    top-level scripts/ references/ templates/ assets/ subtrees (recursive).
+    Skips dotfiles and .DS_Store.
+    """
     out: list[tuple[str, Path]] = []
-    out.append(("SKILL.md", skill_dir / "SKILL.md"))
-    for sub in sorted(ALLOWED_SUBDIRS):
+    if (skill_dir / "SKILL.md").is_file():
+        out.append(("SKILL.md", skill_dir / "SKILL.md"))
+    for fname in ("LICENSE", "LICENSE.txt", "LICENSE.md", "README.md", "README"):
+        f = skill_dir / fname
+        if f.is_file():
+            out.append((fname, f))
+    walked_dirs = list(ALLOWED_SUBDIRS) + ["templates", "assets"]
+    for sub in sorted(walked_dirs):
         d = skill_dir / sub
         if not d.is_dir():
             continue
-        for f in sorted(d.iterdir()):
-            if f.is_file():
-                out.append((f"{sub}/{f.name}", f))
+        for f in sorted(d.rglob("*")):
+            if not f.is_file():
+                continue
+            name = f.name
+            if name.startswith(".") or name == ".DS_Store":
+                continue
+            rel = f.relative_to(skill_dir).as_posix()
+            out.append((rel, f))
+    out.sort(key=lambda x: x[0])
     return out
 
 
@@ -200,25 +225,17 @@ def compute_checksum(entries: list[tuple[str, Path]]) -> str:
 
 
 def build_aijia_skill(skill_dir: Path, manifest: dict, out_path: Path) -> None:
-    """Write a .aijia-skill zip identical in shape to the Rust packer."""
+    """Write an OPS-standard skill zip: <skill_id>/SKILL.md + scripts/ + references/.
+
+    Compatible with lotus OPS skill_packages POST endpoint and aijia desktop
+    side unpacker (storage/skill_package.rs).
+    """
     entries = collect_entries(skill_dir)
-    full_manifest = {
-        "format_version": 1,
-        "id": manifest["id"],
-        "name": manifest["name"],
-        "version": manifest["version"],
-        "author": "AIjia builtin",
-        "created_at": _dt.datetime.now(tz=_dt.timezone.utc)
-        .isoformat(timespec="seconds")
-        .replace("+00:00", "Z"),
-        "exported_from": "build-bundle.py",
-        "checksum_sha256": compute_checksum(entries),
-    }
+    skill_id = manifest["id"]
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as z:
-        z.writestr("manifest.json", json.dumps(full_manifest, indent=2))
         for rel, abs_path in entries:
-            z.write(abs_path, f"skill/{rel}")
+            z.write(abs_path, f"{skill_id}/{rel}")
 
 
 def build_managed_tarball(bundles: list[Path], out_path: Path) -> None:

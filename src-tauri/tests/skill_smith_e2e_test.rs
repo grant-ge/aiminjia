@@ -190,8 +190,8 @@ metadata:
     // 9. unpack the archive — 模拟同事拿到这个包后导入流程的核心步骤
     let unpack_root = tmp.path().join("unpack");
     let res = unpack_skill_archive(&archive, &unpack_root).expect("unpack");
-    assert_eq!(res.manifest.id, "meeting-summary");
-    assert_eq!(res.manifest.author.as_deref(), Some("alice@example.com"));
+    assert_eq!(res.skill_id, "meeting-summary");
+    assert!(res.skill_dir.join("SKILL.md").is_file());
     assert!(res.skill_dir.join("SKILL.md").is_file());
     assert!(res.skill_dir.join("references/template.md").is_file());
 

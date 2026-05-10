@@ -1112,31 +1112,22 @@ impl RuntimeTool for SkillExportTool {
             Some(p) => std::path::PathBuf::from(p),
             None => default_export_dest(&skill_id, &version),
         };
+        let _ = (author, &skill_name); // 当前 OPS 标准包不嵌作者/中文名，保留入参兼容
 
-        let manifest = crate::storage::skill_package::pack_skill_dir(
-            &source_dir,
-            &dest_path,
-            &skill_id,
-            &skill_name,
-            &version,
-            author.as_deref(),
-            concat!("skill-smith@", env!("CARGO_PKG_VERSION")),
-        )
-        .map_err(|e| ToolError::ExecutionFailed(format!("打包失败：{}", e)))?;
+        crate::storage::skill_package::pack_skill_dir(&source_dir, &dest_path, &skill_id)
+            .map_err(|e| ToolError::ExecutionFailed(format!("打包失败：{}", e)))?;
 
         let data = json!({
-            "id": manifest.id,
-            "name": manifest.name,
-            "version": manifest.version,
-            "checksum_sha256": manifest.checksum_sha256,
+            "id": skill_id,
+            "version": version,
             "dest": dest_path.to_string_lossy(),
         });
         Ok(ToolResult::new(
             "skill_export",
             format!(
                 "✅ 已导出 {} v{} 到 {}\n   把这个 .aijia-skill 文件发给同事，对方双击即可导入。",
-                manifest.name,
-                manifest.version,
+                skill_id,
+                version,
                 dest_path.display()
             ),
             Some(data),
@@ -1877,8 +1868,8 @@ mod tests {
         // verify roundtrip via the package module
         let unpack_root = tmp.path().join("unpack");
         let res = crate::storage::skill_package::unpack_skill_archive(&dest, &unpack_root).unwrap();
-        assert_eq!(res.manifest.id, "my-skill");
-        assert_eq!(res.manifest.version, "0.2.0");
+        assert_eq!(res.skill_id, "my-skill");
+        assert!(res.skill_dir.join("SKILL.md").is_file());
     }
 
     #[tokio::test]
