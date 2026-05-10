@@ -210,7 +210,9 @@ export function SkillCenterPage() {
   const officeSkills =
     category === 'recommended'
       ? skills.filter(matchesQuery)
-      : listByCategory(category).filter(matchesQuery)
+      : category === 'mine'
+        ? skills.filter((s) => s.source === 'user').filter(matchesQuery)
+        : listByCategory(category).filter(matchesQuery)
 
   function getSkillMeta(source: string, cat: string) {
     const normalizedCategory = cat || 'general'
