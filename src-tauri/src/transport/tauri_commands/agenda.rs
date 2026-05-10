@@ -20,7 +20,8 @@ fn store_for(
 #[serde(rename_all = "camelCase")]
 pub struct ItemFilter {
     pub status_in: Option<Vec<ItemStatus>>,
-    pub persona_id: Option<String>,
+    #[serde(alias = "personaId")]
+    pub employee_id: Option<String>,
     pub search: Option<String>,
 }
 
@@ -35,8 +36,8 @@ pub async fn list_agenda_items(
         if let Some(statuses) = filter.status_in {
             items.retain(|i| statuses.contains(&i.status));
         }
-        if let Some(persona) = filter.persona_id {
-            items.retain(|i| i.organizer_persona_id == persona);
+        if let Some(employee_id) = filter.employee_id {
+            items.retain(|i| i.organizer_employee_id == employee_id);
         }
         if let Some(search) = filter.search.filter(|s| !s.is_empty()) {
             let lower = search.to_lowercase();
@@ -64,7 +65,8 @@ pub async fn get_agenda_item(
 pub struct CreateAgendaItemRequest {
     pub title: String,
     pub prompt: String,
-    pub organizer_persona_id: String,
+    #[serde(alias = "organizerPersonaId")]
+    pub organizer_employee_id: String,
     pub start_at: DateTime<Utc>,
     pub timezone: Option<String>,
     pub rule: Option<crate::runtime::agenda::RecurrenceRule>,
@@ -86,9 +88,9 @@ fn build_agenda_item_from_create_request(
         return Err("prompt is required".into());
     }
 
-    let organizer_persona_id = request.organizer_persona_id.trim().to_string();
-    if organizer_persona_id.is_empty() {
-        return Err("organizer_persona_id is required".into());
+    let organizer_employee_id = request.organizer_employee_id.trim().to_string();
+    if organizer_employee_id.is_empty() {
+        return Err("organizer_employee_id is required".into());
     }
 
     let timezone = request
@@ -113,9 +115,9 @@ fn build_agenda_item_from_create_request(
         id: AgendaItemId::new(),
         title,
         prompt,
-        organizer_persona_id: organizer_persona_id.clone(),
+        organizer_employee_id: organizer_employee_id.clone(),
         participants: vec![Participant {
-            persona_id: organizer_persona_id,
+            employee_id: organizer_employee_id,
             joined_at: now,
         }],
         start_at: request.start_at,
@@ -334,13 +336,13 @@ mod tests {
     fn create_request(
         title: &str,
         prompt: &str,
-        organizer_persona_id: &str,
+        organizer_employee_id: &str,
         timezone: Option<&str>,
     ) -> CreateAgendaItemRequest {
         CreateAgendaItemRequest {
             title: title.into(),
             prompt: prompt.into(),
-            organizer_persona_id: organizer_persona_id.into(),
+            organizer_employee_id: organizer_employee_id.into(),
             start_at: Utc.with_ymd_and_hms(2026, 5, 7, 9, 0, 0).unwrap(),
             timezone: timezone.map(str::to_string),
             rule: None,
@@ -359,8 +361,8 @@ mod tests {
 
         assert_eq!(item.title, "Standup");
         assert_eq!(item.prompt, "Discuss blockers");
-        assert_eq!(item.organizer_persona_id, "persona-1");
-        assert_eq!(item.participants[0].persona_id, "persona-1");
+        assert_eq!(item.organizer_employee_id, "persona-1");
+        assert_eq!(item.participants[0].employee_id, "persona-1");
         assert_eq!(item.timezone, "Asia/Shanghai");
     }
 
@@ -390,7 +392,7 @@ mod tests {
             now,
         )
         .unwrap_err();
-        assert_eq!(err, "organizer_persona_id is required");
+        assert_eq!(err, "organizer_employee_id is required");
     }
 
     #[test]
@@ -409,9 +411,9 @@ mod tests {
             id: AgendaItemId("agenda-update-test".into()),
             title: "Old".into(),
             prompt: "Old prompt".into(),
-            organizer_persona_id: "p1".into(),
+            organizer_employee_id: "p1".into(),
             participants: vec![Participant {
-                persona_id: "p1".into(),
+                employee_id: "p1".into(),
                 joined_at: now,
             }],
             start_at: Utc.with_ymd_and_hms(2026, 5, 7, 9, 0, 0).unwrap(),
@@ -432,7 +434,7 @@ mod tests {
     fn apply_update_trims_fields_and_recomputes_next_fire() {
         let now = Utc.with_ymd_and_hms(2026, 5, 7, 8, 0, 0).unwrap();
         let mut item = make_item_for_update(now);
-        let original_organizer = item.organizer_persona_id.clone();
+        let original_organizer = item.organizer_employee_id.clone();
         let updated = apply_update_agenda_item_request(
             &mut item,
             UpdateAgendaItemRequest {
@@ -452,8 +454,8 @@ mod tests {
         assert_eq!(updated.prompt, "New prompt");
         assert_eq!(updated.timezone, "UTC");
         assert_eq!(updated.status, ItemStatus::Paused);
-        assert_eq!(updated.organizer_persona_id, original_organizer);
-        assert_eq!(updated.participants[0].persona_id, original_organizer);
+        assert_eq!(updated.organizer_employee_id, original_organizer);
+        assert_eq!(updated.participants[0].employee_id, original_organizer);
         assert_eq!(updated.updated_at, now);
         assert_eq!(updated.next_fire_at, Some(updated.start_at));
     }

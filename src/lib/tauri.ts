@@ -454,7 +454,7 @@ export interface Occurrence {
 
 export interface ItemFilter {
   statusIn?: ItemStatus[]
-  personaId?: string
+  employeeId?: string
   search?: string
 }
 
