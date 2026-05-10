@@ -20,8 +20,8 @@ Agenda 基座是把"定时任务"重做为日程模型：用户创建一个 agen
 - 构造一个 `AgendaItem`：
   - `id = AgendaItemId::new()`
   - `title = "T"`、`prompt = "P"`
-  - `organizer_persona_id = "p1"`
-  - `participants = vec![Participant { persona_id: "p1", joined_at: now }]`
+  - `organizer_employee_id = "p1"`
+  - `participants = vec![Participant { employee_id: "p1", joined_at: now }]`
   - `start_at = now`、`timezone = "Asia/Shanghai"`
   - `rule = None`、`skip_dates = vec![]`
   - `next_fire_at = None`、`occurrence_count = 0`
@@ -44,7 +44,7 @@ Agenda 基座是把"定时任务"重做为日程模型：用户创建一个 agen
 本期不开放多 persona 协作，store 必须挡住违反约束的写入。
 
 **前提**
-- 合法 base item（`organizer_persona_id = "p1"`），但 `participants` 追加一个 `Participant { persona_id: "p2", joined_at: now }`，使长度为 2
+- 合法 base item（`organizer_employee_id = "p1"`），但 `participants` 追加一个 `Participant { employee_id: "p2", joined_at: now }`，使长度为 2
 
 **操作**
 - `store.create(item)`
@@ -59,7 +59,7 @@ Agenda 基座是把"定时任务"重做为日程模型：用户创建一个 agen
 ## 意图 3：organizer 不在 participants[0] 时拒绝写入
 
 **前提**
-- 合法 base item，`organizer_persona_id = "p1"`，但 `participants[0].persona_id = "other"`（与 organizer 不一致），长度仍为 1
+- 合法 base item，`organizer_employee_id = "p1"`，但 `participants[0].employee_id = "other"`（与 organizer 不一致），长度仍为 1
 
 **操作**
 - `store.create(item)`
@@ -135,11 +135,11 @@ skip_dates 仅对循环有意义，一次性日程不能跳过自己。
 ## 意图 8：update 时 organizer 不可改（除非 status 是 Orphaned）
 
 **场景**
-活跃 / 暂停 / 已完成的日程，organizer_persona_id 是不变量；只有 organizer 被删除导致日程进入 Orphaned 后，用户重新指派 organizer 才允许改。
+活跃 / 暂停 / 已完成的日程，organizer_employee_id 是不变量；只有 organizer 被删除导致日程进入 Orphaned 后，用户重新指派 organizer 才允许改。
 
 **前提**
-- 合法 base item（`organizer_persona_id = "p1"`、`status = Active`）已 `create`
-- 拷贝 saved，把 `organizer_persona_id` 改为 `"p2"`，`participants` 同步改为 `[Participant { persona_id: "p2", joined_at: now }]`
+- 合法 base item（`organizer_employee_id = "p1"`、`status = Active`）已 `create`
+- 拷贝 saved，把 `organizer_employee_id` 改为 `"p2"`，`participants` 同步改为 `[Participant { employee_id: "p2", joined_at: now }]`
 
 **操作**
 - `store.update(modified)`
@@ -154,16 +154,16 @@ skip_dates 仅对循环有意义，一次性日程不能跳过自己。
 ## 意图 9：update 在 status 是 Orphaned 时允许改 organizer
 
 **前提**
-- 合法 base item（`organizer_persona_id = "p1"`）已 `create`
+- 合法 base item（`organizer_employee_id = "p1"`）已 `create`
 - 把 saved 的 `status` 改为 `Orphaned` 并 `update` 一次（持久化 Orphaned）
-- 再拷贝一份，`organizer_persona_id = "p2"`、`participants[0].persona_id = "p2"`、`status = Active`
+- 再拷贝一份，`organizer_employee_id = "p2"`、`participants[0].employee_id = "p2"`、`status = Active`
 
 **操作**
 - `store.update(revived)`
 
 **断言**
 - 返回 `Ok(updated)`
-- `updated.organizer_persona_id == "p2"`
+- `updated.organizer_employee_id == "p2"`
 - `updated.status == Active`
 
 ---
@@ -198,7 +198,7 @@ item id 直接拼进文件路径，必须挡住 `..`、`/`、`\` 等字符，避
   - `agenda_item_id = item.id`
   - `fired_at = 2026-05-07T01:02:03Z`
   - `planned_fire_at = fired_at`、`started_at = fired_at`、`finished_at = None`
-  - `primary_persona_id = "p1"`、`conversation_id = "conv-1"`
+  - `primary_employee_id = "p1"`、`conversation_id = "conv-1"`
   - `session_id = SessionId::new("conv-1")`、`run_id = RunId::new("run-1")`
   - `status = Running`、`error_summary = None`、`trigger_source = Scheduled`
 
@@ -606,7 +606,7 @@ CLAUDE.md 要求 transport 层只做参数接收 → 转发 runtime。本意图�
 ## 意图 40：create_agenda_item 接收的 title trim 后为空时返回错误
 
 **前提**
-- `CreateAgendaItemRequest { title: "   ", prompt: "Prompt", organizer_persona_id: "p1", start_at: 2026-05-07T09:00:00Z, timezone: None, rule: None }`
+- `CreateAgendaItemRequest { title: "   ", prompt: "Prompt", organizer_employee_id: "p1", start_at: 2026-05-07T09:00:00Z, timezone: None, rule: None }`
 - `now = 2026-05-07T08:00:00Z`
 
 **操作**
@@ -621,7 +621,7 @@ CLAUDE.md 要求 transport 层只做参数接收 → 转发 runtime。本意图�
 ## 意图 41：create_agenda_item 接收的 prompt trim 后为空时返回错误
 
 **前提**
-- `CreateAgendaItemRequest { title: "Title", prompt: "   ", organizer_persona_id: "p1", start_at: 2026-05-07T09:00:00Z, timezone: None, rule: None }`
+- `CreateAgendaItemRequest { title: "Title", prompt: "   ", organizer_employee_id: "p1", start_at: 2026-05-07T09:00:00Z, timezone: None, rule: None }`
 - `now = 2026-05-07T08:00:00Z`
 
 **操作**
@@ -632,24 +632,24 @@ CLAUDE.md 要求 transport 层只做参数接收 → 转发 runtime。本意图�
 
 ---
 
-## 意图 42：create_agenda_item 接收的 organizer_persona_id trim 后为空时返回错误
+## 意图 42：create_agenda_item 接收的 organizer_employee_id trim 后为空时返回错误
 
 **前提**
-- `CreateAgendaItemRequest { title: "Title", prompt: "Prompt", organizer_persona_id: "   ", start_at: 2026-05-07T09:00:00Z, timezone: None, rule: None }`
+- `CreateAgendaItemRequest { title: "Title", prompt: "Prompt", organizer_employee_id: "   ", start_at: 2026-05-07T09:00:00Z, timezone: None, rule: None }`
 - `now = 2026-05-07T08:00:00Z`
 
 **操作**
 - `build_agenda_item_from_create_request(request, now)`
 
 **断言**
-- 错误信息字面值等于字符串 `"organizer_persona_id is required"`
+- 错误信息字面值等于字符串 `"organizer_employee_id is required"`
 
 ---
 
 ## 意图 43：create_agenda_item 的 timezone 不是有效 IANA 时区时返回错误
 
 **前提**
-- `CreateAgendaItemRequest { title: "Title", prompt: "Prompt", organizer_persona_id: "p1", start_at: 2026-05-07T09:00:00Z, timezone: Some("Not/AZone"), rule: None }`
+- `CreateAgendaItemRequest { title: "Title", prompt: "Prompt", organizer_employee_id: "p1", start_at: 2026-05-07T09:00:00Z, timezone: Some("Not/AZone"), rule: None }`
 - `now = 2026-05-07T08:00:00Z`
 
 **操作**
@@ -663,7 +663,7 @@ CLAUDE.md 要求 transport 层只做参数接收 → 转发 runtime。本意图�
 ## 意图 44：create_agenda_item 在 timezone 为空白或缺失时默认使用 "Asia/Shanghai"
 
 **前提**
-- `CreateAgendaItemRequest { title: "  Standup  ", prompt: "  Discuss blockers  ", organizer_persona_id: " persona-1 ", start_at: 2026-05-07T09:00:00Z, timezone: Some("   "), rule: None }`
+- `CreateAgendaItemRequest { title: "  Standup  ", prompt: "  Discuss blockers  ", organizer_employee_id: " persona-1 ", start_at: 2026-05-07T09:00:00Z, timezone: Some("   "), rule: None }`
 - `now = 2026-05-07T08:00:00Z`
 
 **操作**
@@ -673,8 +673,8 @@ CLAUDE.md 要求 transport 层只做参数接收 → 转发 runtime。本意图�
 - 返回 `Ok(item)`
 - `item.title == "Standup"`（trim）
 - `item.prompt == "Discuss blockers"`（trim）
-- `item.organizer_persona_id == "persona-1"`（trim）
-- `item.participants[0].persona_id == "persona-1"`
+- `item.organizer_employee_id == "persona-1"`（trim）
+- `item.participants[0].employee_id == "persona-1"`
 - `item.timezone == "Asia/Shanghai"`
 
 ---
@@ -686,7 +686,7 @@ CLAUDE.md 要求 transport 层只做参数接收 → 转发 runtime。本意图�
 - `now = 2026-05-07T08:00:00Z`
 
 **操作 + 断言**（每个动作一条独立断言）
-- `apply_update(item, UpdateAgendaItemRequest { title: Some("  New title  "), prompt: Some("  New prompt  "), start_at: Some(2026-05-07T10:00:00Z), timezone: Some("  UTC  "), rule: Some(None), status: Some(Paused) }, now)`：返回 `Ok(updated)`，`updated.title == "New title"`、`updated.prompt == "New prompt"`、`updated.timezone == "UTC"`、`updated.status == Paused`、`updated.organizer_persona_id == "p1"`（不变）、`updated.participants[0].persona_id == "p1"`（不变）、`updated.updated_at == now`、`updated.next_fire_at == Some(updated.start_at)`
+- `apply_update(item, UpdateAgendaItemRequest { title: Some("  New title  "), prompt: Some("  New prompt  "), start_at: Some(2026-05-07T10:00:00Z), timezone: Some("  UTC  "), rule: Some(None), status: Some(Paused) }, now)`：返回 `Ok(updated)`，`updated.title == "New title"`、`updated.prompt == "New prompt"`、`updated.timezone == "UTC"`、`updated.status == Paused`、`updated.organizer_employee_id == "p1"`（不变）、`updated.participants[0].employee_id == "p1"`（不变）、`updated.updated_at == now`、`updated.next_fire_at == Some(updated.start_at)`
 - `apply_update(item, UpdateAgendaItemRequest { title: Some("   "), ..Default::default() }, now)`：错误信息字面值 `"title is required"`
 - `apply_update(item, UpdateAgendaItemRequest { prompt: Some("   "), ..Default::default() }, now)`：错误信息字面值 `"prompt is required"`
 - `apply_update(item, UpdateAgendaItemRequest { timezone: Some("   "), ..Default::default() }, now)`：错误信息字面值 `"timezone is required"`
