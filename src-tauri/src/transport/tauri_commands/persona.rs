@@ -1,3 +1,11 @@
+//! Tauri command adapter for persona IPC.
+//!
+//! # DEPRECATED (2026-05-10)
+//!
+//! Persona 系统已进入退役流程，由数字员工（Employee, `employee_*` commands）替代。
+//! 这些命令在 PR-5 完成 agenda 迁移后会被移除；前端 `tauri.ts` 中对应的导出
+//! 已全部带 `@deprecated` JSDoc。新代码请使用 `employee_list` / `employee_get` 等。
+
 use std::sync::Arc;
 
 use crate::storage::file_store::{

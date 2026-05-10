@@ -1017,7 +1017,10 @@ export interface CloudModel {
   modelType: string
 }
 
-/** Persona summary for list API */
+/**
+ * Persona summary for list API
+ * @deprecated Persona 系统将在 PR-5 退役，由 Employee 替代。
+ */
 export interface PersonaSummary {
   id: string
   name: string
@@ -1028,7 +1031,10 @@ export interface PersonaSummary {
   builtin: boolean
 }
 
-/** Full persona definition */
+/**
+ * Full persona definition
+ * @deprecated Persona 系统将在 PR-5 退役，由 Employee 替代。
+ */
 export interface Persona {
   id: string
   version: number
@@ -1083,44 +1089,49 @@ export function cloudChangePassword(oldPassword: string, newPassword: string): P
 
 // ---------------------------------------------------------------------------
 // Persona Commands
+//
+// @deprecated Persona 系统已进入退役流程（2026-05-10 决定）。
+// 新方向是数字员工（Employee, `employee_*` commands）一统，PR-5 会把
+// `AgendaItem.organizer_persona_id` 迁到 `organizer_employee_id`。
+// 保留这些导出仅是为了 agenda runtime 切换前的兼容窗口；新代码不要再引用。
 // ---------------------------------------------------------------------------
 
-/** @deprecated 前端 Skill-First 改版后不再引用，仅为后端兼容保留。 */
+/** @deprecated Persona 系统将在 PR-5 退役，由 Employee 替代。 */
 export function listPersonas(): Promise<PersonaSummary[]> {
   return invoke<PersonaSummary[]>('list_personas')
 }
 
-/** @deprecated 前端 Skill-First 改版后不再引用，仅为后端兼容保留。 */
+/** @deprecated Persona 系统将在 PR-5 退役，由 Employee 替代。 */
 export function getPersona(id: string): Promise<Persona> {
   return invoke<Persona>('get_persona', { id })
 }
 
-/** @deprecated 前端 Skill-First 改版后不再引用，仅为后端兼容保留。 */
+/** @deprecated Persona 系统将在 PR-5 退役，由 Employee 替代。 */
 export function savePersona(persona: Persona): Promise<void> {
   return invoke<void>('save_persona', { persona })
 }
 
-/** @deprecated 前端 Skill-First 改版后不再引用，仅为后端兼容保留。 */
+/** @deprecated Persona 系统将在 PR-5 退役，由 Employee 替代。 */
 export function deletePersona(id: string): Promise<void> {
   return invoke<void>('delete_persona', { id })
 }
 
-/** @deprecated 前端 Skill-First 改版后不再引用，仅为后端兼容保留。 */
+/** @deprecated Persona 系统将在 PR-5 退役，由 Employee 替代。 */
 export function setActivePersona(id: string): Promise<void> {
   return invoke<void>('set_active_persona', { id })
 }
 
-/** @deprecated 前端 Skill-First 改版后不再引用，仅为后端兼容保留。 */
+/** @deprecated Persona 系统将在 PR-5 退役，由 Employee 替代。 */
 export function getActivePersona(): Promise<Persona> {
   return invoke<Persona>('get_active_persona')
 }
 
-/** Export a persona to JSON. */
+/** @deprecated Persona 系统将在 PR-5 退役，由 Employee 替代。 */
 export function exportPersonas(id: string): Promise<string> {
   return invoke<string>('export_personas', { id })
 }
 
-/** Import a persona from JSON. Returns the new persona ID. */
+/** @deprecated Persona 系统将在 PR-5 退役，由 Employee 替代。 */
 export function importPersonas(json: string): Promise<string> {
   return invoke<string>('import_personas', { json })
 }

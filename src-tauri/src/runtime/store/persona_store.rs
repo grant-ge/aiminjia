@@ -1,5 +1,11 @@
 //! Domain trait for persona management.
 //!
+//! # DEPRECATED (2026-05-10)
+//!
+//! Persona 系统已进入退役流程，由数字员工（Employee, `runtime/employee/`）替代。
+//! agenda 切换到 `organizer_employee_id`（PR-5）之前保留这个 trait；
+//! 新代码请用 `runtime::employee::store::EmployeeStore`。
+//!
 //! Commands that manage personas (list, get, save, delete, set-active, export/import)
 //! go through this trait so they are decoupled from the `AppStorage` file-store details.
 
