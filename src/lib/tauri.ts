@@ -397,7 +397,7 @@ export type OccurrenceStatus = 'running' | 'succeeded' | 'failed'
 export type Freq = 'daily' | 'weekly' | 'monthly' | 'yearly'
 
 export interface Participant {
-  personaId: string
+  employeeId: string
   joinedAt: string
 }
 
@@ -421,7 +421,7 @@ export interface AgendaItem {
   id: string
   title: string
   prompt: string
-  organizerPersonaId: string
+  organizerEmployeeId: string
   participants: Participant[]
   startAt: string
   timezone: string
@@ -443,7 +443,7 @@ export interface Occurrence {
   plannedFireAt: string
   startedAt: string
   finishedAt: string | null
-  primaryPersonaId: string
+  primaryEmployeeId: string
   conversationId: string
   sessionId: string
   runId: string
@@ -461,7 +461,7 @@ export interface ItemFilter {
 export interface CreateAgendaItemRequest {
   title: string
   prompt: string
-  organizerPersonaId: string
+  organizerEmployeeId: string
   startAt: string
   timezone?: string
   rule?: RecurrenceRule | null
