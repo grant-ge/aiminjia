@@ -45,7 +45,6 @@ pub fn migrate_if_needed(old_dir: &Path, new_dir: &Path) -> std::io::Result<()> 
         ("agent_invocations.json", "agent_invocations.json"),
         ("subagent_transcripts", "subagent_transcripts"),
         ("custom_plugins", "skills"),
-        ("playwright-profile", "playwright-profile"),
         ("api-data", "api-data"),
         ("screenshots", "screenshots"),
         ("site-profiles", "site-profiles"),

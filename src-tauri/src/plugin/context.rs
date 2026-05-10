@@ -38,7 +38,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::auth::AuthManager;
-use crate::connector::ConnectorEngine;
 use crate::connector::dingtalk::DingtalkBridge;
 use crate::llm::gateway::LlmGateway;
 use crate::models::settings::AppSettings;
@@ -88,7 +87,6 @@ pub struct PluginContext {
     pub bocha_api_key: Option<String>,
     pub app_handle: Option<tauri::AppHandle>,
     pub auth_manager: Option<Arc<AuthManager>>,
-    pub connector_engine: Option<Arc<ConnectorEngine>>,
     pub dingtalk_bridge: Option<Arc<DingtalkBridge>>,
     pub use_cloud: bool,
     pub model: String,

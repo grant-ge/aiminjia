@@ -70,7 +70,6 @@ async fn runtime_tool_reads_workspace_from_capability_context() {
     let cap_ctx = CapabilityContext {
         storage: Some(storage_cap),
         workspace_id: Some("ws-42".to_string()),
-        browser_available: false,
         runtime_resolver: None,
         file_ops: None,
         read_file_state: None,
@@ -95,7 +94,6 @@ fn capability_context_does_not_expose_full_plugin_context() {
     let cap = CapabilityContext {
         storage: None,
         workspace_id: Some("ws-1".to_string()),
-        browser_available: false,
         runtime_resolver: None,
         file_ops: None,
         read_file_state: None,
@@ -152,7 +150,6 @@ fn capability_context_new_fields_default_to_none() {
     let ctx = CapabilityContext {
         storage: None,
         workspace_id: None,
-        browser_available: false,
         runtime_resolver: None,
         file_ops: None,
         read_file_state: None,
@@ -438,7 +435,6 @@ fn notification_sink_receives_message_from_tool_context() {
     let cap = CapabilityContext {
         storage: None,
         workspace_id: None,
-        browser_available: false,
         runtime_resolver: None,
         file_ops: None,
         read_file_state: None,

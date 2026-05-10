@@ -494,7 +494,6 @@ pub mod testsupport {
             bocha_api_key: None,
             app_handle: None,
             auth_manager: None,
-            connector_engine: None,
             use_cloud: false,
             model: String::new(),
             gateway: None,

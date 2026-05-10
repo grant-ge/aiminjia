@@ -293,19 +293,6 @@ pub fn run() {
                 }
             }
 
-            // Initialize Playwright browser — primary browser automation
-            let playwright_browser = Arc::new(
-                connector::playwright_browser::PlaywrightBrowser::new(app.handle().clone()),
-            );
-
-            // Initialize connector engine (browser automation only)
-            let connector_engine = Arc::new(connector::ConnectorEngine::new());
-            tauri::async_runtime::block_on(async {
-                connector_engine
-                    .set_playwright_browser(playwright_browser.clone())
-                    .await;
-            });
-
             // Initialize DingTalk bridge (dws CLI sidecar)
             let dingtalk_bridge = Arc::new(connector::dingtalk::DingtalkBridge::new(
                 app.handle().clone(),
@@ -543,7 +530,6 @@ pub fn run() {
             app.manage(current_user_storage.clone());
             app.manage(current_user_storage.clone() as Arc<dyn storage::UserScopedPathResolver>);
             app.manage(auth_manager);
-            app.manage(connector_engine);
             app.manage(dingtalk_bridge);
             app.manage(tool_registry);
             app.manage(mcp_server_manager);
@@ -727,12 +713,7 @@ pub fn run() {
                             "Failed to flush pending assistant message writes on exit: {err}"
                         );
                     }
-                }
-
-                // Shutdown CDP browser (kill Chromium process) via connector engine
-                let engine = app_handle.state::<Arc<connector::ConnectorEngine>>();
-                tauri::async_runtime::block_on(engine.shutdown_cdp());
-            }
+                }            }
         });
 }
 

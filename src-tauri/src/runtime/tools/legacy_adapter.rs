@@ -179,7 +179,6 @@ mod tests {
             app_handle: None,
             auth_manager: None,
             dingtalk_bridge: None,
-            connector_engine: None,
             use_cloud: false,
             model: String::new(),
             gateway: None,
