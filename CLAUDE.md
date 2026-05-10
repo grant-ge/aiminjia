@@ -280,16 +280,39 @@ python3 scripts/bump-homebrew.py X.Y.Z
 
 ### macOS Intel（x86_64）— 本地构建 + 双传
 
-CI matrix 只覆盖 Windows + macOS arm64。**Intel 包必须本地补打**（不补就会停留在旧版本，老用户拿不到新版）。在 macOS 机器上跑：
+CI matrix 只覆盖 Windows + macOS arm64。**Intel 包必须本地补打**（不补就会停留在旧版本，老用户拿不到新版）。在 macOS 机器（arm64 或 Intel 皆可）上跑：
 
 ```bash
 rustup target add x86_64-apple-darwin             # 首次
-# 设置 Tauri 签名密钥（rsign 加密格式，密码在 Keychain "aijia-tauri-signer"）
+
+# 🚨 关键：跨架构准备 sidecar 资源（详见下节）
+rm -rf src-tauri/playwright-runtime src-tauri/resources/dws
+TARGET_ARCH=x86_64 bash scripts/setup-playwright.sh
+TARGET_ARCH=x86_64 bash scripts/setup-dws.sh
+
+# 签名密钥（rsign 加密格式，密码在 Keychain "aijia-tauri-signer"）
 export TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/aijia.key)"
 export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$(security find-generic-password -s aijia-tauri-signer -a password -w)"
+
 pnpm tauri build --target x86_64-apple-darwin     # 5–10 分钟
 python3 scripts/upload-x64.py X.Y.Z               # 双传 OSS + GitHub Release
 ```
+
+**跨架构 sidecar（2026-05-10 修复，v0.5.21 起生效）**：`pnpm tauri build --target` 只重编 Rust 主二进制，**sidecar 资源直接从 `src-tauri/playwright-runtime/` 和 `src-tauri/resources/dws` 原样拷贝进 bundle**。历史上在 arm64 Mac 上跑 `setup-*.sh` 会把 arm64 的 node / chromium / dws 写进去，然后 Intel bundle 里就塞了 arm64 sidecar —— Intel 用户一旦触发 playwright 或钉钉工具就崩。
+
+两个 setup 脚本都接受 `TARGET_ARCH` 覆盖 `uname -m`：
+- `setup-playwright.sh`：下载目标架构的 Node.js + 在 Rosetta 2 (`arch -x86_64`) 下跑 npm install + `playwright install chromium`；同时设 `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=mac15` 绕过 playwright 的 Apple Silicon 自动识别（`os.cpus()[].model.includes("Apple")` 在 Rosetta 下仍是 true），强制拉 Intel Chromium。
+- `setup-dws.sh`：从 `npmmirror` 拉 `dingtalk-workspace-cli` npm 包（`assets/` 下自带所有平台 tarball），选 `dws-darwin-amd64.tar.gz` 解压 —— 因为 CN 网络直连 GitHub release 超时常见。
+
+**验证 Intel bundle 纯净**：
+```bash
+APP=src-tauri/target/x86_64-apple-darwin/release/bundle/macos/AIjia.app
+file "$APP/Contents/MacOS/aijia"                                   # x86_64 ✅
+file "$APP/Contents/Resources/dws"                                 # x86_64 ✅
+file "$APP/Contents/Resources/playwright-runtime/node/bin/node"    # x86_64 ✅
+find "$APP/Contents/Resources/playwright-runtime/browsers" -name 'chrome-headless-shell' | head -1 | xargs file  # x86_64 ✅
+```
+任何一条是 arm64 就是跨架构污染，必须 `rm -rf` + 重跑 setup-*.sh。
 
 **顺序约束**：必须等 GitHub CI（`finalize` job）跑完再跑 `upload-x64.py`。否则 CI 的 `ci-finalize.py` 会**覆盖** update.json，丢失 `darwin-x86_64` 平台条目（preserve 逻辑只在版本号一致时生效，但 CI 写入是覆盖性的，最后写的赢）。
 
