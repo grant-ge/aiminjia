@@ -22,6 +22,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { invoke } from '@tauri-apps/api/core'
 
 import { AppDropdown } from '@/components/common/AppDropdown'
 import { requestConfirm } from '@/components/common/ConfirmDialogHost'
@@ -61,8 +62,6 @@ const ICONS: Record<string, LucideIcon> = {
   'trending-up': TrendingUp,
   users: Users,
 }
-
-const HIDE_SKILL_ACTIONS = true
 
 const CATEGORY_STYLE: Record<string, { bg: string }> = {
   hr:      { bg: 'bg-blue-500' },
@@ -134,6 +133,31 @@ export function SkillCenterPage() {
         level: 'error',
         title: '删除技能失败',
         message,
+        actions: [],
+        dismissible: true,
+        autoHide: 6,
+        context: 'toast',
+      })
+    }
+  }
+
+  const handleExportSkill = async (skillId: string, displayName: string) => {
+    try {
+      const dest = await invoke<string>('export_installed_skill', { skillId })
+      pushNotification({
+        level: 'success',
+        title: '技能已导出',
+        message: `「${displayName}」已保存到 ${dest}。把这个 .aijia-skill 文件发给同事，对方双击即可安装。`,
+        actions: [],
+        dismissible: true,
+        autoHide: 10,
+        context: 'toast',
+      })
+    } catch (err) {
+      pushNotification({
+        level: 'error',
+        title: '导出失败',
+        message: String(err),
         actions: [],
         dismissible: true,
         autoHide: 6,
@@ -253,7 +277,7 @@ export function SkillCenterPage() {
               iconNode={getSkillIcon(skill.icon)}
               iconBg={getIconBg(skill.category)}
               onClick={() => setRoute({ kind: 'skill-detail', skillId: skill.id })}
-              actionsSlot={HIDE_SKILL_ACTIONS ? (
+              actionsSlot={skill.source !== 'user' ? (
                 <div aria-hidden="true" className="h-7 w-7" />
               ) : (
                 <AppDropdown
@@ -267,6 +291,11 @@ export function SkillCenterPage() {
                     </button>
                   }
                   items={[
+                    {
+                      id: 'export',
+                      label: '导出 .aijia-skill',
+                      onSelect: () => void handleExportSkill(skill.id, skill.displayName),
+                    },
                     {
                       id: 'delete',
                       label: '删除技能',

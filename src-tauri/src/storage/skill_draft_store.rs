@@ -22,6 +22,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::storage::fs_atomic::{remove_dir_all_retry, write_atomic};
 use crate::storage::safe_filename::ensure_safe_filename;
 use crate::storage::{AiJiaHome, UserScope};
 
@@ -125,7 +126,7 @@ impl SkillDraftStore {
         fs::create_dir_all(&dir)?;
         let path = dir.join(META_FILENAME);
         let bytes = serde_json::to_vec_pretty(meta)?;
-        fs::write(&path, bytes).with_context(|| format!("write {:?}", path))?;
+        write_atomic(&path, &bytes).with_context(|| format!("write atomic {:?}", path))?;
         Ok(())
     }
 
@@ -136,7 +137,8 @@ impl SkillDraftStore {
             return Err(anyhow!("draft '{}' does not exist", draft_id));
         }
         let path = dir.join(SKILL_FILENAME);
-        fs::write(&path, content).with_context(|| format!("write {:?}", path))?;
+        write_atomic(&path, content.as_bytes())
+            .with_context(|| format!("write atomic {:?}", path))?;
         // bump meta
         if let Ok(mut meta) = self.read_meta(scope, draft_id) {
             meta.touch();
@@ -162,7 +164,8 @@ impl SkillDraftStore {
         let dir = self.draft_dir(scope, draft_id)?.join(subdir);
         fs::create_dir_all(&dir)?;
         let path = dir.join(fname);
-        fs::write(&path, content).with_context(|| format!("write {:?}", path))?;
+        write_atomic(&path, content.as_bytes())
+            .with_context(|| format!("write atomic {:?}", path))?;
         if let Ok(mut meta) = self.read_meta(scope, draft_id) {
             meta.touch();
             self.write_meta(scope, &meta).ok();
@@ -191,12 +194,12 @@ impl SkillDraftStore {
         Ok(out)
     }
 
-    /// 删除草稿目录（包括 meta + SKILL.md + 子目录）。
+    /// 删除草稿目录（包括 meta + SKILL.md + 子目录）。Windows 上走 retry-loop
+    /// 应对 AV / 缩略图缓存短暂占用文件句柄的情况。
     pub fn discard(&self, scope: &UserScope, draft_id: &str) -> Result<()> {
         let dir = self.draft_dir(scope, draft_id)?;
-        if dir.exists() {
-            fs::remove_dir_all(&dir).with_context(|| format!("rm -rf {:?}", dir))?;
-        }
+        remove_dir_all_retry(&dir)
+            .with_context(|| format!("remove draft dir {:?}", dir))?;
         Ok(())
     }
 
@@ -321,7 +324,7 @@ pub fn gc_all_users(home: &AiJiaHome, max_age_days: i64) -> Result<usize> {
                 continue;
             }
             if meta.last_modified_at < cutoff {
-                if fs::remove_dir_all(&dir).is_ok() {
+                if remove_dir_all_retry(&dir).is_ok() {
                     total += 1;
                 }
             }

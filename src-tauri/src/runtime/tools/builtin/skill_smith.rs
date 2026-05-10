@@ -439,16 +439,25 @@ impl RuntimeTool for SkillInstallTool {
             ));
         }
 
-        if target.exists() {
-            std::fs::remove_dir_all(&target).map_err(|e| {
-                ToolError::ExecutionFailed(format!("rm existing target: {}", e))
-            })?;
-        }
-
+        // Atomic install: 先 copy 到 staging dir，再用 replace_dir_atomic 一步把 staging
+        // 翻成 target。这样 force=true 时不会出现"目标已删但新内容还没拷完"的窗口，
+        // Windows 上 AV / 文件占用导致的中断也不会破坏现有 skill。
+        let user_skills = self.deps.home.user_skills_dir(&self.deps.scope);
+        std::fs::create_dir_all(&user_skills).map_err(|e| {
+            ToolError::ExecutionFailed(format!("mkdir user skills: {}", e))
+        })?;
+        let staging = user_skills.join(format!(".{}.installing.{}", name, uuid::Uuid::new_v4().simple()));
         self.deps
             .store
-            .copy_to(&self.deps.scope, &draft_id, &target)
-            .map_err(|e| ToolError::ExecutionFailed(format!("install (copy): {}", e)))?;
+            .copy_to(&self.deps.scope, &draft_id, &staging)
+            .map_err(|e| {
+                let _ = crate::storage::fs_atomic::remove_dir_all_retry(&staging);
+                ToolError::ExecutionFailed(format!("install (stage): {}", e))
+            })?;
+        crate::storage::fs_atomic::replace_dir_atomic(&staging, &target).map_err(|e| {
+            let _ = crate::storage::fs_atomic::remove_dir_all_retry(&staging);
+            ToolError::ExecutionFailed(format!("install (commit): {}", e))
+        })?;
         self.deps
             .store
             .mark_installed(&self.deps.scope, &draft_id, &target)
@@ -613,12 +622,18 @@ fn split_frontmatter(s: &str) -> Result<(String, String)> {
 
 /// 在 body 文本里寻找形如 `scripts/foo.py` 或 `references/bar.md` 的相对路径引用。
 fn find_referenced_paths(body: &str, subdir: &str) -> Vec<String> {
-    let prefix = format!("{}/", subdir);
+    // Match both `subdir/x` (POSIX) and `subdir\x` (Windows) — LLM running on a
+    // Windows machine often emits backslash references when introspecting paths.
+    let prefix_fwd = format!("{}/", subdir);
+    let prefix_back = format!("{}\\", subdir);
     let mut out = vec![];
     for token in body.split(|c: char| {
         c.is_whitespace() || matches!(c, '`' | '"' | '\'' | '(' | ')' | '[' | ']' | '<' | '>' | ',' | ';')
     }) {
-        if let Some(rest) = token.strip_prefix(&prefix) {
+        let rest = token
+            .strip_prefix(&prefix_fwd)
+            .or_else(|| token.strip_prefix(&prefix_back));
+        if let Some(rest) = rest {
             // 仅一级文件名，不能含 / 或 ..
             if !rest.is_empty() && !rest.contains('/') && !rest.contains('\\') && rest != ".." {
                 out.push(rest.trim_end_matches(|c: char| matches!(c, '.' | ',' | ';' | ':')).to_string());

@@ -12,6 +12,7 @@ use std::sync::Arc;
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
 
+use crate::storage::fs_atomic::{remove_dir_all_retry, replace_dir_atomic};
 use crate::storage::skill_draft_store::{DraftMeta, SkillDraftStore};
 use crate::storage::skill_package;
 use crate::storage::CurrentUserStorage;
@@ -134,7 +135,7 @@ pub async fn import_skill_package(
 
     if target.exists() && !force {
         // 清理 tmp，把冲突信息丢回去
-        let _ = std::fs::remove_dir_all(&tmp_root);
+        let _ = remove_dir_all_retry(&tmp_root);
         return Ok(ImportSkillOutcome::Conflict {
             id: res.manifest.id.clone(),
             name: res.manifest.name.clone(),
@@ -143,25 +144,12 @@ pub async fn import_skill_package(
         });
     }
 
-    if target.exists() {
-        std::fs::remove_dir_all(&target).map_err(|e| format!("rm existing: {}", e))?;
+    // 3) 原子替换：先 stage 再 swap，失败时回滚
+    if let Err(e) = replace_dir_atomic(&res.skill_dir, &target) {
+        let _ = remove_dir_all_retry(&tmp_root);
+        return Err(format!("install (commit): {}", e));
     }
-    // 3) 把 tmp/skill 整体移动到 target
-    let mut moved_ok = false;
-    if let Some(parent) = target.parent() {
-        std::fs::create_dir_all(parent).ok();
-    }
-    if std::fs::rename(&res.skill_dir, &target).is_ok() {
-        moved_ok = true;
-    } else {
-        // rename 跨设备会失败，fallback 到递归 copy
-        copy_dir_recursive(&res.skill_dir, &target).map_err(|e| format!("copy: {}", e))?;
-        moved_ok = true;
-    }
-    let _ = std::fs::remove_dir_all(&tmp_root);
-    if !moved_ok {
-        return Err("install: target not created".into());
-    }
+    let _ = remove_dir_all_retry(&tmp_root);
 
     Ok(ImportSkillOutcome::Installed {
         id: res.manifest.id,
@@ -171,17 +159,61 @@ pub async fn import_skill_package(
     })
 }
 
-fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
-    std::fs::create_dir_all(dst)?;
-    for entry in std::fs::read_dir(src)? {
-        let entry = entry?;
-        let from = entry.path();
-        let to = dst.join(entry.file_name());
-        if from.is_dir() {
-            copy_dir_recursive(&from, &to)?;
-        } else {
-            std::fs::copy(&from, &to)?;
-        }
-    }
-    Ok(())
+/// 把已安装技能打包成 .aijia-skill 文件。前端 SkillCard 的"导出"按钮调用此命令。
+///
+/// - `skill_id`：已安装技能 id（= ~/.renlijia/users/{scope}/skills/<id>/）
+/// - `dest_path`：可选目标路径，默认 ~/Desktop/<id>-v<version>.aijia-skill
+/// - `version` / `author`：写入 manifest，默认 "0.1.0"
+///
+/// 返回最终落盘的绝对路径，前端可以用 `revealItemInDir` 高亮给用户看。
+#[tauri::command]
+pub async fn export_installed_skill(
+    app: AppHandle,
+    skill_id: String,
+    dest_path: Option<String>,
+    version: Option<String>,
+    author: Option<String>,
+) -> Result<String, String> {
+    let cus = app
+        .try_state::<Arc<CurrentUserStorage>>()
+        .ok_or_else(|| "CurrentUserStorage not registered".to_string())?
+        .inner()
+        .clone();
+    let scope = cus.scope().ok_or_else(|| "no active user scope".to_string())?;
+    let home = cus.home();
+
+    let user_dir = home.user_skills_dir(&scope).join(&skill_id);
+    let global_dir = home.skills_dir().join(&skill_id);
+    let source_dir = if user_dir.is_dir() {
+        user_dir
+    } else if global_dir.is_dir() {
+        global_dir
+    } else {
+        return Err(format!("已安装技能 '{}' 不存在", skill_id));
+    };
+
+    let version = version.unwrap_or_else(|| "0.1.0".to_string());
+    let dest = match dest_path {
+        Some(p) => PathBuf::from(p),
+        None => default_export_dest(&skill_id, &version),
+    };
+
+    skill_package::pack_skill_dir(
+        &source_dir,
+        &dest,
+        &skill_id,
+        &skill_id,
+        &version,
+        author.as_deref(),
+        concat!("skill-smith@", env!("CARGO_PKG_VERSION")),
+    )
+    .map_err(|e| format!("打包失败：{}", e))?;
+    Ok(dest.to_string_lossy().to_string())
+}
+
+fn default_export_dest(skill_id: &str, version: &str) -> PathBuf {
+    let desktop = dirs::desktop_dir()
+        .or_else(dirs::home_dir)
+        .unwrap_or_else(|| PathBuf::from("."));
+    desktop.join(format!("{}-v{}.aijia-skill", skill_id, version))
 }

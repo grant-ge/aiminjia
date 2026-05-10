@@ -4,6 +4,7 @@ pub mod crypto;
 pub mod current_user_storage;
 pub mod file_manager;
 pub mod file_store;
+pub mod fs_atomic;
 pub mod global_config_store;
 pub mod mcp_config_store;
 pub mod message_write_queue;
