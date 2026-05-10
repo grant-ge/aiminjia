@@ -39,6 +39,9 @@ pub struct SkillSmithDeps {
     pub home: Arc<AiJiaHome>,
     pub scope: UserScope,
     pub conversation_id: String,
+    /// 全局 SkillRegistry — install 后调 reload_skill_registry 让新技能立即可用，
+    /// 无需重启 app。None 仅用于测试 / dummy 构造。
+    pub skill_registry: Option<Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>>,
 }
 
 impl SkillSmithDeps {
@@ -53,7 +56,16 @@ impl SkillSmithDeps {
             home,
             scope,
             conversation_id,
+            skill_registry: None,
         }
+    }
+
+    pub fn with_skill_registry(
+        mut self,
+        registry: Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>,
+    ) -> Self {
+        self.skill_registry = Some(registry);
+        self
     }
 }
 
@@ -463,6 +475,15 @@ impl RuntimeTool for SkillInstallTool {
             .mark_installed(&self.deps.scope, &draft_id, &target)
             .ok();
 
+        // 热加载：刷新全局 SkillRegistry，让新技能立即可被 load_skill 找到，
+        // 无需重启 app。registry None 仅用于测试，生产路径必有。
+        if let Some(registry) = self.deps.skill_registry.as_ref() {
+            let user_skills = self.deps.home.user_skills_dir(&self.deps.scope);
+            let global_skills = self.deps.home.skills_dir();
+            let roots = vec![user_skills, global_skills];
+            crate::plugin::skill::global_sync::reload_skill_registry(&roots, registry);
+        }
+
         let data = json!({
             "draft_id": draft_id,
             "status": "installed",
@@ -472,7 +493,7 @@ impl RuntimeTool for SkillInstallTool {
         Ok(ToolResult::new(
             "skill_install",
             format!(
-                "✅ 已安装到 {}\n   下次新对话中可以让 AI 调用 load_skill 加载，或者你直接用 /{} 触发。",
+                "✅ 已安装到 {}\n   现在就可以在新对话里直接用 /{} 触发，或者让 AI 自主 load_skill 调用——无需重启 app。",
                 target.display(),
                 name
             ),
@@ -1253,6 +1274,7 @@ impl DummyCtor for SkillCreateDraftTool {
                 home: Arc::new(AiJiaHome::from_path(PathBuf::from("/tmp/__skill_smith_dummy__"))),
                 scope: UserScope::new(0, 0),
                 conversation_id: String::new(),
+                skill_registry: None,
             },
         }
     }

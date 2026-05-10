@@ -934,12 +934,15 @@ impl ToolRegistry {
                 let store = std::sync::Arc::new(
                     crate::storage::skill_draft_store::SkillDraftStore::new(home.clone()),
                 );
-                let deps = builtin::skill_smith::SkillSmithDeps::new(
+                let mut deps = builtin::skill_smith::SkillSmithDeps::new(
                     store,
                     home,
                     scope,
                     ctx.conversation_id.clone(),
                 );
+                if let Some(reg) = ctx.skill_registry.clone() {
+                    deps = deps.with_skill_registry(reg);
+                }
                 Some(match name {
                     "skill_create_draft" => Arc::new(builtin::skill_smith::SkillCreateDraftTool::new(deps))
                         as Arc<dyn crate::runtime::tools::RuntimeTool>,

@@ -151,6 +151,14 @@ pub async fn import_skill_package(
     }
     let _ = remove_dir_all_retry(&tmp_root);
 
+    // 热加载：刷新全局 SkillRegistry，让新导入的技能立即可用，无需重启 app。
+    if let Some(registry) = app
+        .try_state::<Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>>()
+    {
+        let roots = vec![home.user_skills_dir(&scope), home.skills_dir()];
+        crate::plugin::skill::global_sync::reload_skill_registry(&roots, registry.inner());
+    }
+
     Ok(ImportSkillOutcome::Installed {
         id: res.manifest.id,
         name: res.manifest.name,
