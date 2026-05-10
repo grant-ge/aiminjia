@@ -37,7 +37,6 @@ import { useNotificationStore } from '@/stores/notificationStore'
 import { useSkillStore } from '@/stores/skillStore'
 import { useUiStore } from '@/stores/uiStore'
 
-import { SkillUploadModal } from './SkillUploadModal'
 import { SkillDraftBanner } from './SkillDraftBanner'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { importSkillPackagesWithUI } from '@/hooks/useDragDropListener'
@@ -84,7 +83,6 @@ function getIconBg(category: string) {
 export function SkillCenterPage() {
   const [category, setCategory] = useState<SkillCategoryId>('recommended')
   const [query, setQuery] = useState('')
-  const [uploadOpen, setUploadOpen] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const skills = useSkillStore((s) => s.skills)
   const isLoading = useSkillStore((s) => s.isLoading)
@@ -241,12 +239,11 @@ export function SkillCenterPage() {
                 placeholder="搜索技能名称或场景"
               />
             </div>
-            <Button size="sm" variant="outline" onClick={() => void handleImportPackage()}>
-              + 导入 .aijia-skill
-            </Button>
-            <Button size="sm" onClick={() => setUploadOpen(true)}>
+            <Button size="sm" onClick={() => void handleImportPackage()}>
               + 导入技能
             </Button>
+            {/* SkillUploadModal (从目录导入) 已隐藏 — 入口待挪到设置 - 开发者选项里。
+                普通用户用 + 导入技能 选 .aijia-skill 文件即可。 */}
           </div>
         </header>
       }
@@ -312,7 +309,6 @@ export function SkillCenterPage() {
           ))
         )}
       </SkillOfficeSection>
-      <SkillUploadModal open={uploadOpen} onOpenChange={setUploadOpen} />
     </PageSectionShell>
   )
 }

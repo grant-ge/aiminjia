@@ -60,16 +60,20 @@ export function SkillUploadModal({ open: isOpen, onOpenChange }: SkillUploadModa
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>上传技能</DialogTitle>
+          <DialogTitle>从目录导入技能</DialogTitle>
           <DialogDescription>
-            选择一个包含 <code>SKILL.md</code> 的本地技能目录，安装后会自动刷新技能中心。
+            开发者选项：选一个本地目录，目录内须有 <code>SKILL.md</code>。<br />
+            一般用户请用 <strong>"导入 .aijia-skill"</strong> 选择同事发来的技能包文件。
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-3">
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            <Button size="sm" variant="outline" onClick={() => onOpenChange(false)} disabled={isUploading}>
+              取消
+            </Button>
             <Button size="sm" onClick={() => void handlePickDirectory()} disabled={isUploading}>
-              {isUploading ? '正在上传...' : '选择技能目录'}
+              {isUploading ? '正在导入...' : '选择目录'}
             </Button>
           </div>
         </div>
