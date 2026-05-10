@@ -4,13 +4,13 @@ import { Folder } from 'lucide-react'
 import {
   type AgendaItem,
   type CreateAgendaItemRequest,
+  type EmployeeRecord,
   type Freq,
-  type PersonaSummary,
   type RecurrenceRule,
   type UpdateAgendaItemRequest,
   createAgendaItem,
+  employeeList,
   getDefaultFolder,
-  listPersonas,
   pickLocalDirectory,
   updateAgendaItem,
 } from '@/lib/tauri'
@@ -31,7 +31,7 @@ interface AgendaItemEditorProps {
   open: boolean
   initial?: AgendaItem | null
   initialDraft?: Partial<CreateAgendaItemRequest> | null
-  organizerPersonaId: string
+  organizerEmployeeId: string
   onClose: () => void
   onSaved: () => void
 }
@@ -47,7 +47,7 @@ export function AgendaItemEditor({
   open,
   initial,
   initialDraft,
-  organizerPersonaId,
+  organizerEmployeeId,
   onClose,
   onSaved,
 }: AgendaItemEditorProps) {
@@ -61,23 +61,24 @@ export function AgendaItemEditor({
   const [endCount, setEndCount] = useState(10)
   const [endUntilLocal, setEndUntilLocal] = useState('')
   const [workspacePath, setWorkspacePath] = useState<string | null>(null)
-  const [personas, setPersonas] = useState<PersonaSummary[]>([])
-  const [selectedPersonaId, setSelectedPersonaId] = useState<string>(organizerPersonaId)
+  const [employees, setEmployees] = useState<EmployeeRecord[]>([])
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>(organizerEmployeeId)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const homeWorkspace = useHomeStore((s) => s.selectedWorkspace)
 
-  // 拉员工名册（一次性，Sheet 打开时）。失败不阻塞，回退为只能用当前 persona。
+  // 拉员工名册（一次性，Sheet 打开时）。失败不阻塞，回退为空列表。
   useEffect(() => {
     if (!open) return
     let cancelled = false
-    listPersonas()
+    employeeList()
       .then((list) => {
-        if (!cancelled) setPersonas(list)
+        if (cancelled) return
+        setEmployees(list.filter((e) => e.lifecycle === 'active'))
       })
       .catch(() => {
-        if (!cancelled) setPersonas([])
+        if (!cancelled) setEmployees([])
       })
     return () => {
       cancelled = true
@@ -103,9 +104,9 @@ export function AgendaItemEditor({
         setEndUntilLocal(toLocalInput(ec.at))
       }
       setWorkspacePath(initial.workspacePath ?? null)
-      setSelectedPersonaId(initial.organizerPersonaId)
+      setSelectedEmployeeId(initial.organizerEmployeeId)
     } else {
-      setSelectedPersonaId(organizerPersonaId)
+      setSelectedEmployeeId(organizerEmployeeId)
       setTitle(initialDraft?.title ?? '')
       setPrompt(initialDraft?.prompt ?? '')
       setStartAtLocal('')
@@ -142,7 +143,7 @@ export function AgendaItemEditor({
       }
     }
     setError(null)
-  }, [initial, initialDraft, open, homeWorkspace, organizerPersonaId])
+  }, [initial, initialDraft, open, homeWorkspace, organizerEmployeeId])
 
   const buildRule = (): RecurrenceRule | null => {
     if (frequency === 'one_shot') return null
@@ -157,7 +158,8 @@ export function AgendaItemEditor({
     return { freq: frequency, interval: intervalCount, endCondition }
   }
 
-  const canSave = !!title && !!prompt && !!startAtLocal && !saving
+  const canSave =
+    !!title && !!prompt && !!startAtLocal && !saving && employees.length > 0 && !!selectedEmployeeId
 
   const handleSave = async () => {
     setSaving(true)
@@ -180,7 +182,7 @@ export function AgendaItemEditor({
           prompt,
           startAt,
           timezone,
-          organizerPersonaId: selectedPersonaId,
+          organizerEmployeeId: selectedEmployeeId,
           rule: buildRule(),
           workspacePath,
         }
@@ -218,28 +220,36 @@ export function AgendaItemEditor({
           <label className="text-xs text-muted-foreground" htmlFor="agenda-editor-organizer">
             执行员工
           </label>
-          <select
-            id="agenda-editor-organizer"
-            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
-            value={selectedPersonaId}
-            onChange={(e) => setSelectedPersonaId(e.target.value)}
-            disabled={!!initial}
-            aria-label="执行员工"
-          >
-            {personas.length === 0 && selectedPersonaId ? (
-              <option value={selectedPersonaId}>{selectedPersonaId}</option>
-            ) : null}
-            {personas.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-          {initial ? (
-            <p className="text-xs text-muted-foreground">
-              已创建的日程不能改派给其他员工。
-            </p>
-          ) : null}
+          {employees.length === 0 ? (
+            <div className="rounded-md border border-dashed border-input px-3 py-3 text-xs">
+              <p className="text-muted-foreground">还没有数字员工，无法新建日程。</p>
+              <Button type="button" variant="outline" size="sm" className="mt-2" onClick={onClose}>
+                去「数字员工」页雇一个
+              </Button>
+            </div>
+          ) : (
+            <>
+              <select
+                id="agenda-editor-organizer"
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+                value={selectedEmployeeId}
+                onChange={(e) => setSelectedEmployeeId(e.target.value)}
+                disabled={!!initial}
+                aria-label="执行员工"
+              >
+                {employees.map((emp) => (
+                  <option key={emp.id} value={emp.id}>
+                    {emp.avatar} {emp.name} · {emp.role}
+                  </option>
+                ))}
+              </select>
+              {initial ? (
+                <p className="text-xs text-muted-foreground">
+                  已创建的日程不能改派给其他员工。
+                </p>
+              ) : null}
+            </>
+          )}
         </div>
 
         <Input
