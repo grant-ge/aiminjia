@@ -2752,7 +2752,7 @@ impl crate::runtime::agenda::AgendaRunDispatcher for TauriChatCommandAdapter {
             planned_fire_at,
             started_at: now,
             finished_at: None,
-            primary_persona_id: item.organizer_persona_id.clone(),
+            primary_employee_id: item.organizer_employee_id.clone(),
             conversation_id: conversation_id.clone(),
             session_id: session_id.clone(),
             run_id: run_id.clone(),
@@ -2778,12 +2778,45 @@ impl crate::runtime::agenda::AgendaRunDispatcher for TauriChatCommandAdapter {
             }
         }
 
-        // 4. 构造 prompt 并触发 agent
-        let prompt = format!(
-            "[日程触发] {}\n计划触发时间：{}\n\n{}",
-            item.title, planned_fire_at, item.prompt
-        );
+        // 4. 读 employee 拿 system_prompt_extra / default_skill_id 拼 prompt。
+        //    任何步骤失败都退化为兜底 prompt（fallback），不阻塞 agenda 触发；occurrence
+        //    已写盘为 Running，绝不能因为加载 employee 失败而留孤儿。
+        let employee = (|| -> Option<crate::runtime::employee::store::EmployeeRecord> {
+            use crate::runtime::employee::store::EmployeeStore;
+            use crate::storage::{CurrentUserStorage, UserScopedPathResolver};
+            let cus = self
+                .services
+                .app
+                .try_state::<Arc<CurrentUserStorage>>()?;
+            let paths = cus.require_paths().ok()?;
+            let store = EmployeeStore::new(paths.employees_dir());
+            match store.get(&item.organizer_employee_id) {
+                Ok(emp) => Some(emp),
+                Err(e) => {
+                    log::warn!(
+                        "[agenda-dispatch] failed to load employee {}: {e}",
+                        item.organizer_employee_id
+                    );
+                    None
+                }
+            }
+        })();
 
+        // 没有匹配的员工（比如老 agenda 写的是 persona id "default"）就用 agenda 自己的 prompt 兜底，
+        // 不阻塞触发。
+        let trigger_label = format!("[日程触发] {}\n计划触发时间：{planned_fire_at}", item.title);
+        let prompt = if let Some(emp) = employee.as_ref() {
+            crate::runtime::employee::dispatch_prompt::build_dispatch_prompt(
+                emp,
+                &trigger_label,
+                None,
+                Some(&item.prompt),
+            )
+        } else {
+            format!("{trigger_label}\n\n{}", item.prompt)
+        };
+
+        // persona_id_override = None：让 chat 层走 active persona 兜底（PR-6 彻底切掉 persona）
         let result = self
             .send_message_with_overrides(
                 conversation_id.clone(),
@@ -2792,7 +2825,7 @@ impl crate::runtime::agenda::AgendaRunDispatcher for TauriChatCommandAdapter {
                 None,
                 None,
                 None,
-                Some(item.organizer_persona_id.clone()),
+                None,
                 Some(run_id.clone()),
             )
             .await;
