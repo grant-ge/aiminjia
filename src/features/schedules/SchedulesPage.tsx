@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
 import { CalendarClock, Plus } from 'lucide-react'
-import { invoke } from '@tauri-apps/api/core'
 
 import { Button } from '@/components/ui/button'
 import { ScheduleEmptyState } from '@/components/schedules/ScheduleEmptyState'
@@ -19,6 +18,7 @@ import {
   type CreateAgendaItemRequest,
   cancelAgendaItem,
   deleteAgendaItem,
+  employeeList,
   restoreAgendaItem,
   runAgendaItemNow,
   updateAgendaItem,
@@ -55,17 +55,19 @@ export function SchedulesPage() {
   const [editing, setEditing] = useState<AgendaItem | null>(null)
   const [editorOpen, setEditorOpen] = useState(false)
   const [detail, setDetail] = useState<AgendaItem | null>(null)
-  const [activePersonaId, setActivePersonaId] = useState('default')
+  const [defaultEmployeeId, setDefaultEmployeeId] = useState<string>('')
   const [pageError, setPageError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
-    void invoke<{ id?: string } | null>('get_active_persona')
-      .then((p) => {
-        if (!cancelled && p?.id) setActivePersonaId(p.id)
+    void employeeList()
+      .then((list) => {
+        if (cancelled) return
+        const first = list.find((e) => e.lifecycle === 'active')
+        setDefaultEmployeeId(first?.id ?? '')
       })
       .catch(() => {
-        // 没有 persona 也不阻塞页面，组织者用 'default' 兜底
+        if (!cancelled) setDefaultEmployeeId('')
       })
     return () => {
       cancelled = true
@@ -287,7 +289,7 @@ export function SchedulesPage() {
         open={editorOpen}
         initial={editing}
         initialDraft={draftFromTemplate}
-        organizerPersonaId={editing?.organizerPersonaId ?? activePersonaId}
+        organizerEmployeeId={editing?.organizerEmployeeId ?? defaultEmployeeId}
         onClose={closeEditor}
         onSaved={onEditorSaved}
       />

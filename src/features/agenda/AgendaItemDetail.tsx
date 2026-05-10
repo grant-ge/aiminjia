@@ -65,7 +65,7 @@ export function AgendaItemDetail({
               <TabsTrigger value="settings">设置</TabsTrigger>
             </TabsList>
             <TabsContent value="overview" className="space-y-2">
-              <Row label="组织者" value={item.organizerPersonaId} />
+              <Row label="组织者" value={item.organizerEmployeeId} />
               <Row
                 label="频率"
                 value={describeFrequency(item.rule, item.startAt, item.timezone)}
@@ -101,7 +101,7 @@ export function AgendaItemDetail({
       <AgendaItemEditor
         open={editorOpen}
         initial={item}
-        organizerPersonaId={item.organizerPersonaId}
+        organizerEmployeeId={item.organizerEmployeeId}
         onClose={() => setEditorOpen(false)}
         onSaved={() => {
           onChanged()

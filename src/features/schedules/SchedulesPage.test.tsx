@@ -20,7 +20,7 @@ const sampleItem = (over: Partial<AgendaItem> = {}): AgendaItem => ({
   id: 'agenda-1',
   title: '测试日程',
   prompt: 'P',
-  organizerPersonaId: 'p1',
+  organizerEmployeeId: 'emp-1',
   participants: [],
   startAt: '2026-05-07T01:00:00Z',
   timezone: 'Asia/Shanghai',
@@ -47,11 +47,29 @@ interface InvokeQueueHandlers {
 function setupInvokeQueue(handlers: InvokeQueueHandlers) {
   let listIdx = 0
   invokeMock.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
-    if (cmd === 'get_active_persona') {
-      return { id: 'p1', name: 'P1' }
-    }
-    if (cmd === 'get_persona') {
-      return { id: 'p1', name: 'P1' }
+    if (cmd === 'employee_list') {
+      return [
+        {
+          id: 'emp-1',
+          name: '小研',
+          avatar: '🔍',
+          role: '调研',
+          description: '',
+          templateId: null,
+          toolWhitelist: [],
+          cron: null,
+          timezone: 'Asia/Shanghai',
+          lifecycle: 'active',
+          cronEnabled: true,
+          resourceConfig: {},
+          systemPromptExtra: null,
+          defaultSkillId: null,
+          createdAt: '2026-05-09T00:00:00Z',
+          updatedAt: '2026-05-09T00:00:00Z',
+          lastRunAt: null,
+          nextRunAt: null,
+        },
+      ]
     }
     if (cmd === 'list_agenda_items') {
       const next = handlers.agendaListSequence[Math.min(listIdx, handlers.agendaListSequence.length - 1)]

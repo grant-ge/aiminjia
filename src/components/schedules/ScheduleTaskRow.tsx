@@ -50,7 +50,7 @@ export function ScheduleTaskRow({
     >
       {/* 列 1：任务名称 */}
       <div className="flex min-w-0 items-center gap-2">
-        <PersonaAvatar personaId={item.organizerPersonaId} size="sm" />
+        <PersonaAvatar personaId={item.organizerEmployeeId} size="sm" />
         <div className="min-w-0">
           <div className="truncate font-medium text-foreground">{item.title}</div>
           {item.workspacePath ? (
