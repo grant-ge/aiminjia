@@ -49,7 +49,6 @@ import {
   onToolCompleted,
   onAnalysisStepChanged,
   onAgentIdle,
-  onAgentPhase,
   onPermissionAsk,
   onInteractionRequired,
   onInteractionResolved,
@@ -67,7 +66,6 @@ import type {
   StreamingErrorPayload,
   StreamingRetryResetPayload,
   AgentIdlePayload,
-  AgentPhasePayload,
   ToolExecutingPayload,
   PermissionAskPayload,
   InteractionRequiredPayload,
@@ -539,14 +537,6 @@ export function useStreaming() {
         useChatStore.getState().removeBusyConversation(conversationId)
       },
     ),
-  )
-
-  // --- agent:phase --------------------------------------------------------
-  useTauriEvent(() =>
-    onAgentPhase(({ conversationId, phase }: AgentPhasePayload) => {
-      recordDiagnostic({ event: 'agent.phase.received', conversationId, payload: { phase } })
-      useChatStore.getState().setConversationAgentPhase(conversationId, phase)
-    }),
   )
 
   // --- agent:idle --------------------------------------------------------

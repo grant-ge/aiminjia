@@ -27,24 +27,16 @@ export function StreamingBubble({ content }: StreamingBubbleProps) {
       ? (s.streamStates[activeId]?.toolExecutions ?? s.toolExecutions)
       : (s.toolExecutions ?? EMPTY_TOOL_EXECUTIONS)
   })
-  const agentPhase = useChatStore((s) => {
-    const activeId = s.activeConversationId
-    return activeId ? s.streamStates[activeId]?.agentPhase : undefined
-  })
   const activeTool = toolExecutions.find((t) => t.status === 'executing')
 
   // Strip hallucinated XML blocks that some models emit in text content
   const cleanContent = stripHallucinatedXml(content)
 
   const toolLabel = activeTool ? t('streaming.tools.' + activeTool.toolName, activeTool.toolName) : ''
-  const phaseLabel = agentPhase ? t('streaming.phases.' + agentPhase) : ''
 
-  // Phase-aware status text: use TAOR phase if available, otherwise fall back
   const statusText = activeTool
     ? toolLabel
-    : agentPhase
-      ? phaseLabel
-      : (cleanContent ? '' : t('streaming.phases.think'))
+    : (cleanContent ? '' : t('streaming.phases.think'))
 
   return (
     <div className="mb-7">
@@ -64,7 +56,7 @@ export function StreamingBubble({ content }: StreamingBubbleProps) {
           </div>
         ) : (
           <div className={cleanContent ? 'mt-2' : ''}>
-            <TypingIndicator variant={agentPhase === 'observe' ? 'organize' : 'default'} />
+            <TypingIndicator variant="default" />
             {statusText && cleanContent ? (
               <span className="sr-only">{statusText}</span>
             ) : null}

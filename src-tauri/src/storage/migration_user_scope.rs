@@ -43,7 +43,6 @@ const USER_CONFIG_KEYS: &[&str] = &[
     "thinkingType",
     "thinkingBudgetTokens",
     "analysisThreshold",
-    "enableTaorTracking",
 ];
 
 const AUTH_KEYS: &[&str] = &["cloud_auth"];

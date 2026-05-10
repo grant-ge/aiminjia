@@ -40,7 +40,6 @@ export const TAURI_EVENTS = {
   TOOL_COMPLETED: 'tool:completed',
   CONVERSATION_TITLE_UPDATED: 'conversation:title-updated',
   AGENT_IDLE: 'agent:idle',
-  AGENT_PHASE: 'agent:phase',
   TASK_STATUS_CHANGED: 'task:status-changed',
   STREAMING_STEP_RESET: 'streaming:step-reset',
   AUTH_EXPIRED: 'auth:expired',
@@ -83,15 +82,6 @@ export interface AgentIdlePayload {
   runId?: string
   agentId?: string
   scope?: 'primary' | 'child'
-}
-
-export interface AgentPhasePayload {
-  conversationId: string
-  iteration: number
-  phase: 'think' | 'act' | 'observe'
-  prevPhaseDurationMs: number
-  toolNames: string[]
-  maxIterations: number
 }
 
 export interface StreamingStepResetPayload {
@@ -1382,18 +1372,7 @@ export function onAgentIdle(
 }
 
 /**
- * Listen for agent TAOR phase transitions (Think → Act → Observe).
- *
- * @param handler - Callback receiving the phase event payload
- * @returns A function to unlisten (unsubscribe) from the event
- */
-export function onAgentPhase(
-  handler: (payload: AgentPhasePayload) => void,
-): Promise<() => void> {
-  return listen<AgentPhasePayload>(TAURI_EVENTS.AGENT_PHASE, createInstrumentedEventHandler(TAURI_EVENTS.AGENT_PHASE, (event) => {
-    handler(event.payload)
-  }))
-}
+ * Listen for streaming step-reset events during auto-advance between analysis steps.
 
 /**
  * Listen for streaming step-reset events during auto-advance between analysis steps.

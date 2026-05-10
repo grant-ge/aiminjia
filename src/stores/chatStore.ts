@@ -17,7 +17,6 @@ import { recordDiagnostic } from '@/lib/diagnostics'
 import {
   bindStreamingStore,
   createStreamingSlice,
-  type AgentPhase,
   type ConversationStreamState,
   type ConversationTaskState,
   type StreamingState,
@@ -91,7 +90,6 @@ export const useChatStore = create<ChatState>()((set, get) => ({
             payload: {
               hadStreaming: previous.isStreaming,
               hadContent: previous.streamingContent.length > 0,
-              hadAgentPhase: previous.agentPhase != null,
             },
           })
         }
@@ -135,7 +133,6 @@ useUiStore.subscribe((state, prev) => {
 
 export { useSessionStore, useStreamingStore }
 export type {
-  AgentPhase,
   ConversationStreamState,
   ConversationTaskState,
   ToolExecution,
