@@ -9,7 +9,6 @@ pub mod chat;
 pub mod file;
 pub mod mcp;
 pub mod persona;
-pub mod plugin;
 pub mod runtime;
 pub mod settings;
 pub mod workspace;
