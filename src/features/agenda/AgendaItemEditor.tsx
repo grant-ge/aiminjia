@@ -5,10 +5,12 @@ import {
   type AgendaItem,
   type CreateAgendaItemRequest,
   type Freq,
+  type PersonaSummary,
   type RecurrenceRule,
   type UpdateAgendaItemRequest,
   createAgendaItem,
   getDefaultFolder,
+  listPersonas,
   pickLocalDirectory,
   updateAgendaItem,
 } from '@/lib/tauri'
@@ -59,10 +61,28 @@ export function AgendaItemEditor({
   const [endCount, setEndCount] = useState(10)
   const [endUntilLocal, setEndUntilLocal] = useState('')
   const [workspacePath, setWorkspacePath] = useState<string | null>(null)
+  const [personas, setPersonas] = useState<PersonaSummary[]>([])
+  const [selectedPersonaId, setSelectedPersonaId] = useState<string>(organizerPersonaId)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const homeWorkspace = useHomeStore((s) => s.selectedWorkspace)
+
+  // 拉员工名册（一次性，Sheet 打开时）。失败不阻塞，回退为只能用当前 persona。
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    listPersonas()
+      .then((list) => {
+        if (!cancelled) setPersonas(list)
+      })
+      .catch(() => {
+        if (!cancelled) setPersonas([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [open])
 
   useEffect(() => {
     if (initial) {
@@ -83,7 +103,9 @@ export function AgendaItemEditor({
         setEndUntilLocal(toLocalInput(ec.at))
       }
       setWorkspacePath(initial.workspacePath ?? null)
+      setSelectedPersonaId(initial.organizerPersonaId)
     } else {
+      setSelectedPersonaId(organizerPersonaId)
       setTitle(initialDraft?.title ?? '')
       setPrompt(initialDraft?.prompt ?? '')
       setStartAtLocal('')
@@ -120,7 +142,7 @@ export function AgendaItemEditor({
       }
     }
     setError(null)
-  }, [initial, initialDraft, open, homeWorkspace])
+  }, [initial, initialDraft, open, homeWorkspace, organizerPersonaId])
 
   const buildRule = (): RecurrenceRule | null => {
     if (frequency === 'one_shot') return null
@@ -158,7 +180,7 @@ export function AgendaItemEditor({
           prompt,
           startAt,
           timezone,
-          organizerPersonaId,
+          organizerPersonaId: selectedPersonaId,
           rule: buildRule(),
           workspacePath,
         }
@@ -191,6 +213,34 @@ export function AgendaItemEditor({
         <SheetHeader>
           <SheetTitle>{initial ? '编辑日程' : '新建日程'}</SheetTitle>
         </SheetHeader>
+
+        <div className="space-y-2">
+          <label className="text-xs text-muted-foreground" htmlFor="agenda-editor-organizer">
+            执行员工
+          </label>
+          <select
+            id="agenda-editor-organizer"
+            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+            value={selectedPersonaId}
+            onChange={(e) => setSelectedPersonaId(e.target.value)}
+            disabled={!!initial}
+            aria-label="执行员工"
+          >
+            {personas.length === 0 && selectedPersonaId ? (
+              <option value={selectedPersonaId}>{selectedPersonaId}</option>
+            ) : null}
+            {personas.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+          {initial ? (
+            <p className="text-xs text-muted-foreground">
+              已创建的日程不能改派给其他员工。
+            </p>
+          ) : null}
+        </div>
 
         <Input
           placeholder="标题"

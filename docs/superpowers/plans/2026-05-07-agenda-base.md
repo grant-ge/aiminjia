@@ -5565,6 +5565,69 @@ Employee 路径被 `setRoute({ kind: 'chat', conversationId: convId })` 主动�
 
 ---
 
+# PR-4 烟测与 4 个收尾修复（2026-05-09 / 05-10）
+
+PR-4 任务 45-58 全部落地后做手动烟测，发现 4 个真实 bug，已就地修复并保留测试基线：
+
+## bugfix 1：6 个 agenda 工具未暴露给 LLM（commit f04cf62f）
+
+**现象**：dev 启动后 `tool_count=17`，应该是 23（17 + 6 agenda）。LLM 回答"我没有 list_agenda_items 之类的能力"。
+
+**根因**：`build_visible_tool_defs` 通过 `ToolRegistry::get_schemas_filtered` 拉 visible tools，对 request-scoped tool 走 `REQUEST_SCOPED_RUNTIME_TOOL_NAMES`（registry.rs:121）白名单——这个常量原版只有 `WebSearch / Agent / WriteMemory / SearchMemory / Skill / TaskOutput / TaskStop` 7 个，**不含 6 个 agenda 工具**。catalog 注册了不代表 LLM 看得见。
+
+**修复**：把 6 个 agenda id 追加进 `REQUEST_SCOPED_RUNTIME_TOOL_NAMES`。后端日志确认 `tool_count` 升到 23。
+
+## bugfix 2：list_agenda_items schema 缺 `required` 字段（commit 2de24055）
+
+**现象**：`llm::tools::test_all_tools_have_valid_parameters` lib test 失败，断言 "Tool 'list_agenda_items' must declare required fields"。
+
+**根因**：catalog 里所有 tool 的 JSON schema 必须显式有 `required` 字段（即使是空数组）。我加 list 工具时 schema 里没写 `required`。
+
+**修复**：补 `"required": []`。
+
+## bugfix 3：'日程' 一词在数字员工 agenda vs 钉钉日历之间歧义（commit ef1a8696 → 16d4b730）
+
+**���象**：用户说「查看一下你的日程」时，LLM 调 `Skill(dingtalk-workspace)` → `dws calendar event list` 查钉钉日历，**而不是** `list_agenda_items` 查自己的循环任务。
+
+**根因**：'日程' 同时是钉钉日历事件和数字员工 agenda 的中文称谓，工具描述都写「日程」让 LLM 没法选。LLM 也不清楚对话里"你"指代谁。
+
+**演进过程**（保留作教训）：
+1. 第一版改名 `[自动任务/计划任务]` → 用户反对："感觉还是应该叫日程"
+2. 第二版给 persona 段加`【人称约定】` + 工具描述里写"用户问 X 时用本工具" → 用户反对："这个写的太死板了，那我后续要是有更多工具咋办"
+3. **最终方案（已落地）**：身份信息进 `prompts/base.md`，工具描述加 `【自用】` 主语前缀，**不在 prompt 里写具体工具名**
+
+**生效约定**（base.md `[身份背景]` 段）：
+- 「你/你的」= 当前数字员工
+- 「我/我的/老板」= 用户
+- 用户指代不清时**先看工具描述里的 `【自用】/【老板】` 标签**，看不出再追问，**不替用户假设**
+
+**未来扩展**：所有给数字员工自己用的工具描述加 `【自用】`；所有帮老板操作外部资源（钉钉/邮件/审批）的工具加 `【老板】`；通用工具（Bash/Read/WebSearch/Edit/Glob 等）不加。**不要硬编码工具名进 base.md**——身份在 prompt，路由在 catalog。
+
+## bugfix 4：skill catalog footer 写错工具名 `load_skill` → `Skill`（commit 0cffdfbe）
+
+**现象**：用户问"我的钉钉日历"，LLM 第一轮主动提示"可以让我帮你加载钉钉相关能力"，第二轮用户确认后却说"当前环境中没有接入钉钉相关工具"，**自相矛盾**。
+
+**根因**：`format_skill_catalog_with_budget`（catalog_prompt.rs:34）footer 写的是 `Use load_skill({ skill_id: ... })`——但实际工具名是 `Skill`，不是 `load_skill`。LLM 看完 catalog 想找 `load_skill` 工具找不到，就回答"没有"。
+
+**修复**：footer + header 都改为 `Skill`。`tests/s4_driver_loop_test.rs::driver_injects_skill_catalog_into_dynamic_context` 的断言字符串同步更新。
+
+## 测试基线（PR-4 + 4 个修复全部完成时）
+
+- 后端 lib：769 passed / 4 failed（4 条全是 main 上既存 baseline failure：streaming default tokens / markdown_loader read_workspace_file / build_history 文案 / PowerShell 平台）
+- 后端 agenda lib：54/54 ✅
+- 后端 agenda tools lib：10/10 ✅
+- 后端 agenda 集成 + review：18/18 ✅
+- 后端 plugin::registry lib：5/5 ✅（含 2 条 persona id 测试）
+- 后端 employee store：11/11 ✅
+- 前端 agenda 套件：11/11 ✅
+- tsc app：0 error ✅
+
+## 与主仓库 main 合并（merge commit 5940fa52）
+
+PR-4 完成后从主仓库 main `6b033e5a` 合并了 21 个 commit（PR-A/B/C：删除 ConnectorEngine + browser_available + playwright sidecar + 各种 chat/runtime 简化）。git 自动解决所有字段冲突；唯一手动修复是 `registry.rs::current_persona_id_tests::make_plugin_ctx` 残留的 `connector_engine: None`，已删除。合并后所有测试基线维持。
+
+---
+
 # PR-4：Agent 工具 + Persona 删除联动 + review tests + 删旧代码
 
 > 这一段补 6 个 RuntimeTool（让数字员工自管日程）、persona 删除时把 organizer 命中的 item 转 Orphaned、3 个 review test、删除老 schedule 模块。

@@ -15,18 +15,55 @@ describe('AgendaItemEditor', () => {
       if (cmd === 'get_default_folder') {
         return { id: 'default', rootPath: '/tmp/default', displayName: 'default' }
       }
+      if (cmd === 'list_personas') {
+        return [
+          {
+            id: 'p1',
+            name: '小一',
+            nameEn: 'p1',
+            icon: '',
+            description: '',
+            descriptionEn: '',
+            builtin: true,
+          },
+          {
+            id: 'p2',
+            name: '小二',
+            nameEn: 'p2',
+            icon: '',
+            description: '',
+            descriptionEn: '',
+            builtin: true,
+          },
+        ]
+      }
       return null
     })
   })
 
   it('saves new one-shot item', async () => {
-    invokeMock.mockImplementationOnce(async (cmd: string) => {
+    invokeMock.mockImplementation(async (cmd: string) => {
       if (cmd === 'get_default_folder') {
         return { id: 'default', rootPath: '/tmp/default', displayName: 'default' }
       }
+      if (cmd === 'list_personas') {
+        return [
+          {
+            id: 'p1',
+            name: '小一',
+            nameEn: 'p1',
+            icon: '',
+            description: '',
+            descriptionEn: '',
+            builtin: true,
+          },
+        ]
+      }
+      if (cmd === 'create_agenda_item') {
+        return { id: 'agenda-x' }
+      }
       return null
     })
-    invokeMock.mockResolvedValueOnce({ id: 'agenda-x' })
     const onSaved = vi.fn()
 
     render(
@@ -81,5 +118,84 @@ describe('AgendaItemEditor', () => {
     await waitFor(() =>
       expect(screen.getByLabelText('结束条件')).toBeInTheDocument(),
     )
+  })
+
+  it('defaults organizer to the active persona when creating', async () => {
+    render(
+      <AgendaItemEditor
+        open
+        organizerPersonaId="p2"
+        onClose={() => {}}
+        onSaved={() => {}}
+      />,
+    )
+
+    const select = (await screen.findByLabelText('执行员工')) as HTMLSelectElement
+    expect(select.value).toBe('p2')
+    expect(select.disabled).toBe(false)
+  })
+
+  it('passes the chosen persona id when creating', async () => {
+    const onSaved = vi.fn()
+
+    render(
+      <AgendaItemEditor
+        open
+        organizerPersonaId="p1"
+        onClose={() => {}}
+        onSaved={onSaved}
+      />,
+    )
+
+    const select = (await screen.findByLabelText('执行员工')) as HTMLSelectElement
+    await waitFor(() => expect(select.querySelectorAll('option').length).toBeGreaterThan(1))
+    fireEvent.change(select, { target: { value: 'p2' } })
+
+    fireEvent.change(screen.getByPlaceholderText('标题'), { target: { value: 'T' } })
+    fireEvent.change(screen.getByPlaceholderText('到点要做什么？'), {
+      target: { value: 'P' },
+    })
+    fireEvent.change(screen.getByLabelText(/开始时间/), {
+      target: { value: '2026-05-07T09:00' },
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith(
+        'create_agenda_item',
+        expect.objectContaining({
+          request: expect.objectContaining({ organizerPersonaId: 'p2' }),
+        }),
+      )
+      expect(onSaved).toHaveBeenCalled()
+    })
+  })
+
+  it('locks organizer when editing an existing item', async () => {
+    const item = {
+      id: 'a1',
+      title: 'X',
+      prompt: 'Y',
+      startAt: '2026-05-07T01:00:00.000Z',
+      timezone: 'Asia/Shanghai',
+      organizerPersonaId: 'p2',
+      rule: null,
+      workspacePath: null,
+    } as unknown as Parameters<typeof AgendaItemEditor>[0]['initial']
+
+    render(
+      <AgendaItemEditor
+        open
+        initial={item}
+        organizerPersonaId="p1"
+        onClose={() => {}}
+        onSaved={() => {}}
+      />,
+    )
+
+    const select = (await screen.findByLabelText('执行员工')) as HTMLSelectElement
+    expect(select.value).toBe('p2')
+    expect(select.disabled).toBe(true)
   })
 })
