@@ -60,9 +60,9 @@ impl RuntimeTool for CreateAgendaItemRuntimeTool {
             id: AgendaItemId::new(),
             title,
             prompt,
-            organizer_persona_id: self.deps.current_persona_id.clone(),
+            organizer_employee_id: self.deps.current_persona_id.clone(),
             participants: vec![Participant {
-                persona_id: self.deps.current_persona_id.clone(),
+                employee_id: self.deps.current_persona_id.clone(),
                 joined_at: now,
             }],
             start_at,
@@ -109,14 +109,14 @@ mod tests {
     use serde_json::json;
     use tempfile::TempDir;
 
-    fn make_tool(dir: &std::path::Path, persona: &str) -> CreateAgendaItemRuntimeTool {
+    fn make_tool(dir: &std::path::Path, employee_id: &str) -> CreateAgendaItemRuntimeTool {
         CreateAgendaItemRuntimeTool {
-            deps: Arc::new(AgendaToolDeps::new(dir.to_path_buf(), persona.into())),
+            deps: Arc::new(AgendaToolDeps::new(dir.to_path_buf(), employee_id.into())),
         }
     }
 
     #[tokio::test]
-    async fn create_returns_item_with_organizer_forced_to_current_persona() {
+    async fn create_returns_item_with_organizer_forced_to_current_employee_id() {
         let dir = TempDir::new().unwrap();
         let tool = make_tool(dir.path(), "alice");
         let input = json!({
@@ -127,7 +127,7 @@ mod tests {
         let ctx = ToolExecutionContext::for_test("s", "r", "c");
         let result = tool.execute(input, ctx).await.unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&result.content).unwrap();
-        assert_eq!(parsed["organizerPersonaId"], "alice");
+        assert_eq!(parsed["organizerEmployeeId"], "alice");
     }
 
     #[tokio::test]

@@ -46,7 +46,7 @@ impl RuntimeTool for ListAgendaOccurrencesRuntimeTool {
             .store
             .get(&id)
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
-        if item.organizer_persona_id != self.deps.current_persona_id {
+        if item.organizer_employee_id != self.deps.current_persona_id {
             return Err(ToolError::PermissionDenied(
                 "can only list own agenda occurrences".into(),
             ));
@@ -73,9 +73,9 @@ mod tests {
     use serde_json::json;
     use tempfile::TempDir;
 
-    async fn make_owned_item(dir: &std::path::Path, persona: &str) -> String {
+    async fn make_owned_item(dir: &std::path::Path, employee_id: &str) -> String {
         let create = super::super::create::CreateAgendaItemRuntimeTool {
-            deps: Arc::new(AgendaToolDeps::new(dir.to_path_buf(), persona.into())),
+            deps: Arc::new(AgendaToolDeps::new(dir.to_path_buf(), employee_id.into())),
         };
         let result = create
             .execute(

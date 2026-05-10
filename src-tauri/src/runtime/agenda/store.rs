@@ -74,7 +74,7 @@ impl AgendaStore {
             anyhow::bail!("agenda item not found: {}", item.id.as_str());
         }
         let prev: AgendaItem = serde_json::from_slice(&std::fs::read(&path)?)?;
-        if prev.organizer_persona_id != item.organizer_persona_id
+        if prev.organizer_employee_id != item.organizer_employee_id
             && prev.status != super::item::ItemStatus::Orphaned
         {
             anyhow::bail!(
@@ -160,7 +160,7 @@ impl AgendaStore {
         Ok(item)
     }
 
-    pub fn mark_orphaned_by_organizer(&self, persona_id: &str) -> anyhow::Result<usize> {
+    pub fn mark_orphaned_by_organizer(&self, employee_id: &str) -> anyhow::Result<usize> {
         use super::item::ItemStatus;
         let _guard = self.lock.lock().unwrap();
         let mut count = 0;
@@ -174,7 +174,7 @@ impl AgendaStore {
             }
             let bytes = std::fs::read(&path)?;
             let mut item: AgendaItem = serde_json::from_slice(&bytes)?;
-            if item.organizer_persona_id != persona_id {
+            if item.organizer_employee_id != employee_id {
                 continue;
             }
             if matches!(item.status, ItemStatus::Active | ItemStatus::Paused) {
@@ -355,7 +355,7 @@ pub(crate) fn validate_phase1_constraints(item: &AgendaItem) -> anyhow::Result<(
     if item.participants.len() != 1 {
         anyhow::bail!("phase1 constraint: participants.len() must be 1");
     }
-    if item.participants[0].persona_id != item.organizer_persona_id {
+    if item.participants[0].employee_id != item.organizer_employee_id {
         anyhow::bail!("phase1 constraint: organizer must equal participants[0]");
     }
     if item.override_of.is_some() {
@@ -412,7 +412,7 @@ mod tests {
         );
     }
 
-    fn make_valid_item(persona: &str) -> super::super::item::AgendaItem {
+    fn make_valid_item(employee_id: &str) -> super::super::item::AgendaItem {
         use super::super::item::*;
         use chrono::Utc;
         let now = Utc::now();
@@ -420,9 +420,9 @@ mod tests {
             id: AgendaItemId::new(),
             title: "T".into(),
             prompt: "P".into(),
-            organizer_persona_id: persona.into(),
+            organizer_employee_id: employee_id.into(),
             participants: vec![Participant {
-                persona_id: persona.into(),
+                employee_id: employee_id.into(),
                 joined_at: now,
             }],
             start_at: now,
@@ -451,7 +451,7 @@ mod tests {
             planned_fire_at: now,
             started_at: now,
             finished_at: None,
-            primary_persona_id: "p1".into(),
+            primary_employee_id: "p1".into(),
             conversation_id: "conv-x".into(),
             session_id: SessionId::new("conv-x"),
             run_id: RunId::new("run-y"),
@@ -516,7 +516,7 @@ mod tests {
         let store = AgendaStore::new(dir.path());
         let mut item = make_valid_item("p1");
         item.participants.push(Participant {
-            persona_id: "p2".into(),
+            employee_id: "p2".into(),
             joined_at: Utc::now(),
         });
         let err = store.create(item).unwrap_err();
@@ -528,7 +528,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let store = AgendaStore::new(dir.path());
         let mut item = make_valid_item("p1");
-        item.participants[0].persona_id = "other".into();
+        item.participants[0].employee_id = "other".into();
         let err = store.create(item).unwrap_err();
         assert!(err.to_string().contains("organizer"));
     }
@@ -621,9 +621,9 @@ mod tests {
         let store = AgendaStore::new(dir.path());
         let saved = store.create(make_valid_item("p1")).unwrap();
         let mut modified = saved.clone();
-        modified.organizer_persona_id = "p2".into();
+        modified.organizer_employee_id = "p2".into();
         modified.participants = vec![Participant {
-            persona_id: "p2".into(),
+            employee_id: "p2".into(),
             joined_at: Utc::now(),
         }];
         let err = store.update(modified).unwrap_err();
@@ -641,14 +641,14 @@ mod tests {
         store.update(saved.clone()).unwrap();
 
         let mut revived = saved.clone();
-        revived.organizer_persona_id = "p2".into();
+        revived.organizer_employee_id = "p2".into();
         revived.participants = vec![Participant {
-            persona_id: "p2".into(),
+            employee_id: "p2".into(),
             joined_at: Utc::now(),
         }];
         revived.status = ItemStatus::Active;
         let updated = store.update(revived).unwrap();
-        assert_eq!(updated.organizer_persona_id, "p2");
+        assert_eq!(updated.organizer_employee_id, "p2");
         assert_eq!(updated.status, ItemStatus::Active);
     }
 

@@ -41,7 +41,7 @@ impl RuntimeTool for UpdateAgendaItemRuntimeTool {
             .store
             .get(&id)
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
-        if item.organizer_persona_id != self.deps.current_persona_id {
+        if item.organizer_employee_id != self.deps.current_persona_id {
             return Err(ToolError::PermissionDenied(
                 "can only update own agenda items".into(),
             ));
@@ -99,9 +99,9 @@ mod tests {
     use serde_json::json;
     use tempfile::TempDir;
 
-    async fn create_item(dir: &std::path::Path, persona: &str) -> String {
+    async fn create_item(dir: &std::path::Path, employee_id: &str) -> String {
         let tool = super::super::create::CreateAgendaItemRuntimeTool {
-            deps: Arc::new(AgendaToolDeps::new(dir.to_path_buf(), persona.into())),
+            deps: Arc::new(AgendaToolDeps::new(dir.to_path_buf(), employee_id.into())),
         };
         let result = tool
             .execute(
@@ -136,7 +136,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn update_rejects_other_personas_item() {
+    async fn update_rejects_other_employees_item() {
         let dir = TempDir::new().unwrap();
         let id = create_item(dir.path(), "alice").await;
         let tool = UpdateAgendaItemRuntimeTool {

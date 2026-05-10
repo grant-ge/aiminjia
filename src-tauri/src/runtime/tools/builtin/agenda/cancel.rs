@@ -43,7 +43,7 @@ impl RuntimeTool for CancelAgendaItemRuntimeTool {
             .store
             .get(&id)
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
-        if item.organizer_persona_id != self.deps.current_persona_id {
+        if item.organizer_employee_id != self.deps.current_persona_id {
             return Err(ToolError::PermissionDenied(
                 "can only cancel own agenda items".into(),
             ));
@@ -72,9 +72,9 @@ mod tests {
     use serde_json::json;
     use tempfile::TempDir;
 
-    async fn make_item(dir: &std::path::Path, persona: &str) -> String {
+    async fn make_item(dir: &std::path::Path, employee_id: &str) -> String {
         let tool = super::super::create::CreateAgendaItemRuntimeTool {
-            deps: Arc::new(AgendaToolDeps::new(dir.to_path_buf(), persona.into())),
+            deps: Arc::new(AgendaToolDeps::new(dir.to_path_buf(), employee_id.into())),
         };
         let result = tool
             .execute(

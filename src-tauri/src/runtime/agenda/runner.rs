@@ -71,14 +71,14 @@ mod tests {
         }
     }
 
-    fn make_active_due_item(persona: &str, when: DateTime<Utc>) -> super::super::item::AgendaItem {
+    fn make_active_due_item(employee_id: &str, when: DateTime<Utc>) -> super::super::item::AgendaItem {
         use super::super::item::*;
         AgendaItem {
             id: AgendaItemId::new(),
             title: "T".into(),
             prompt: "P".into(),
-            organizer_persona_id: persona.into(),
-            participants: vec![Participant { persona_id: persona.into(), joined_at: when }],
+            organizer_employee_id: employee_id.into(),
+            participants: vec![Participant { employee_id: employee_id.into(), joined_at: when }],
             start_at: when,
             timezone: "UTC".into(),
             rule: None,

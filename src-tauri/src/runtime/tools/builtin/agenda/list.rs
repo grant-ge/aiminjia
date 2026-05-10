@@ -46,7 +46,7 @@ impl RuntimeTool for ListAgendaItemsRuntimeTool {
             .unwrap_or(50) as usize;
         let mut filtered: Vec<_> = items
             .into_iter()
-            .filter(|i| i.organizer_persona_id == self.deps.current_persona_id)
+            .filter(|i| i.organizer_employee_id == self.deps.current_persona_id)
             .filter(|i| match &status_filter {
                 Some(allowed) => allowed.contains(&i.status),
                 None => true,
@@ -70,11 +70,11 @@ mod tests {
     use tempfile::TempDir;
 
     #[tokio::test]
-    async fn list_returns_only_current_persona_items() {
+    async fn list_returns_only_current_employee_items() {
         let dir = TempDir::new().unwrap();
-        for persona in ["alice", "bob"] {
+        for employee_id in ["alice", "bob"] {
             let tool = super::super::create::CreateAgendaItemRuntimeTool {
-                deps: Arc::new(AgendaToolDeps::new(dir.path().to_path_buf(), persona.into())),
+                deps: Arc::new(AgendaToolDeps::new(dir.path().to_path_buf(), employee_id.into())),
             };
             tool.execute(
                 json!({ "title": "T", "prompt": "P", "start_at": "2999-05-07T01:00:00Z" }),
@@ -96,6 +96,6 @@ mod tests {
             .unwrap();
         let arr: Vec<serde_json::Value> = serde_json::from_str(&result.content).unwrap();
         assert_eq!(arr.len(), 1);
-        assert_eq!(arr[0]["organizerPersonaId"], "alice");
+        assert_eq!(arr[0]["organizerEmployeeId"], "alice");
     }
 }
