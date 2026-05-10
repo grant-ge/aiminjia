@@ -241,13 +241,16 @@ def main() -> int:
     args = ap.parse_args()
 
     if not BUNDLES_DIR.is_dir():
-        print(f"❌ skill-bundles dir not found: {BUNDLES_DIR}", file=sys.stderr)
-        return 2
+        print(
+            f"ℹ️  no skill-bundles dir at {BUNDLES_DIR} — nothing to bundle (this is OK)",
+            file=sys.stderr,
+        )
+        return 0
 
     bundles = sorted(p for p in BUNDLES_DIR.iterdir() if p.is_dir())
     if not bundles:
-        print(f"⚠️  no skill bundles under {BUNDLES_DIR}", file=sys.stderr)
-        return 1
+        print(f"ℹ️  no bundles under {BUNDLES_DIR} — nothing to do")
+        return 0
 
     print(f"🔍 validating {len(bundles)} skill bundles in {BUNDLES_DIR}")
     manifests: list[dict] = []
