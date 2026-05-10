@@ -11,6 +11,7 @@ pub mod migration;
 pub mod migration_user_scope;
 pub mod process_ext;
 pub mod safe_filename;
+pub mod skill_draft_store;
 pub mod text_io;
 pub mod user_scope;
 pub mod user_scoped_paths;

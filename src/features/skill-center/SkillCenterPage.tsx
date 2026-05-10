@@ -37,6 +37,7 @@ import { useSkillStore } from '@/stores/skillStore'
 import { useUiStore } from '@/stores/uiStore'
 
 import { SkillUploadModal } from './SkillUploadModal'
+import { SkillDraftBanner } from './SkillDraftBanner'
 
 const ICONS: Record<string, LucideIcon> = {
   'bar-chart-2': BarChart2,
@@ -209,6 +210,7 @@ export function SkillCenterPage() {
       padding="px-7 pt-6 pb-8"
       gap="gap-5"
     >
+      <SkillDraftBanner />
       <SkillOfficeSection
         categoryBar={
           <SkillCategoryBar

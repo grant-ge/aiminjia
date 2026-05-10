@@ -917,6 +917,41 @@ impl ToolRegistry {
                 Some(Arc::new(builtin::task_stop::TaskStopRuntimeTool { store: task_store })
                     as Arc<dyn crate::runtime::tools::RuntimeTool>)
             }
+            "skill_create_draft"
+            | "skill_write_md"
+            | "skill_add_file"
+            | "skill_validate"
+            | "skill_install" => {
+                use tauri::Manager;
+                let app = ctx.app_handle.as_ref()?;
+                let cus = app
+                    .try_state::<Arc<crate::storage::CurrentUserStorage>>()
+                    .map(|s| s.inner().clone())?;
+                let scope = cus.scope()?;
+                let home = std::sync::Arc::new(cus.home().clone());
+                let store = std::sync::Arc::new(
+                    crate::storage::skill_draft_store::SkillDraftStore::new(home.clone()),
+                );
+                let deps = builtin::skill_smith::SkillSmithDeps::new(
+                    store,
+                    home,
+                    scope,
+                    ctx.conversation_id.clone(),
+                );
+                Some(match name {
+                    "skill_create_draft" => Arc::new(builtin::skill_smith::SkillCreateDraftTool::new(deps))
+                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
+                    "skill_write_md" => Arc::new(builtin::skill_smith::SkillWriteMdTool::new(deps))
+                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
+                    "skill_add_file" => Arc::new(builtin::skill_smith::SkillAddFileTool::new(deps))
+                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
+                    "skill_validate" => Arc::new(builtin::skill_smith::SkillValidateTool::new(deps))
+                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
+                    "skill_install" => Arc::new(builtin::skill_smith::SkillInstallTool::new(deps))
+                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
+                    _ => unreachable!(),
+                })
+            }
             _ => None,
         }
     }
