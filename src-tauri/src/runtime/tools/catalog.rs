@@ -642,6 +642,7 @@ pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
     "skill_validate",
     "skill_dry_run",
     "skill_install",
+    "skill_export",
 ];
 
 /// 全局默认 catalog（延迟初始化）。

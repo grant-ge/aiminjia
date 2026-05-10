@@ -38,6 +38,8 @@ import { useUiStore } from '@/stores/uiStore'
 
 import { SkillUploadModal } from './SkillUploadModal'
 import { SkillDraftBanner } from './SkillDraftBanner'
+import { open as openDialog } from '@tauri-apps/plugin-dialog'
+import { importSkillPackagesWithUI } from '@/hooks/useDragDropListener'
 
 const ICONS: Record<string, LucideIcon> = {
   'bar-chart-2': BarChart2,
@@ -93,6 +95,18 @@ export function SkillCenterPage() {
   const setRoute = useUiStore((s) => s.setRoute)
   const pushNotification = useNotificationStore((s) => s.push)
   useChat()
+
+  const handleImportPackage = useCallback(async () => {
+    const picked = await openDialog({
+      multiple: true,
+      filters: [{ name: 'AIjia Skill Package', extensions: ['aijia-skill'] }],
+    })
+    if (!picked) return
+    const paths = Array.isArray(picked) ? picked : [picked]
+    if (paths.length === 0) return
+    await importSkillPackagesWithUI(paths)
+    void reload()
+  }, [reload])
 
   const handleDeleteSkill = async (skillId: string, displayName: string) => {
     const confirmed = await requestConfirm({
@@ -201,6 +215,9 @@ export function SkillCenterPage() {
                 placeholder="搜索技能名称或场景"
               />
             </div>
+            <Button size="sm" variant="outline" onClick={() => void handleImportPackage()}>
+              + 导入 .aijia-skill
+            </Button>
             <Button size="sm" onClick={() => setUploadOpen(true)}>
               + 导入技能
             </Button>

@@ -966,10 +966,160 @@ fn format_dry_run_summary(r: &DryRunReport, sample_input: Option<&str>) -> Strin
 }
 
 // ============================================================================
+// 7. skill_export
+// ============================================================================
+
+#[derive(Deserialize)]
+struct ExportInput {
+    /// `draft_id` 或 `installed_id`（已安装技能 id）二选一。优先 draft_id。
+    #[serde(default)]
+    draft_id: Option<String>,
+    #[serde(default)]
+    installed_id: Option<String>,
+    /// 导出文件目标路径。默认 `~/Desktop/<name>-<version>.aijia-skill`。
+    #[serde(default)]
+    dest: Option<String>,
+    /// 包元数据：版本号 / 作者。版本号默认 "0.1.0"。
+    #[serde(default)]
+    version: Option<String>,
+    #[serde(default)]
+    author: Option<String>,
+}
+
+pub struct SkillExportTool {
+    deps: SkillSmithDeps,
+}
+
+impl SkillExportTool {
+    pub fn new(deps: SkillSmithDeps) -> Self {
+        Self { deps }
+    }
+}
+
+#[async_trait]
+impl RuntimeTool for SkillExportTool {
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition::new(
+            "skill_export",
+            "把草稿或已安装技能打包成 .aijia-skill zip 包，方便发给同事。\n\n参数：\n- draft_id 或 installed_id 二选一（优先 draft_id）\n- dest：可选目标路径，默认 ~/Desktop/<name>-<version>.aijia-skill\n- version：版本号，默认 \"0.1.0\"\n- author：作者，可选\n\n包格式：zip 含 manifest.json + skill/ 目录（SKILL.md + scripts/ + references/），带 SHA-256 校验。",
+        )
+        .with_kind(ToolKind::Power)
+        .with_destructive(false)
+    }
+
+    async fn execute(
+        &self,
+        input: Value,
+        _ctx: ToolExecutionContext,
+    ) -> Result<ToolResult, ToolError> {
+        let ExportInput {
+            draft_id,
+            installed_id,
+            dest,
+            version,
+            author,
+        } = serde_json::from_value(input).map_err(|e| ToolError::InputValidationError {
+            tool_name: "skill_export".into(),
+            message: format!("invalid input: {}", e),
+        })?;
+
+        // 解析源目录
+        let (source_dir, skill_id, skill_name) = if let Some(id) = draft_id {
+            let dir = self
+                .deps
+                .store
+                .draft_dir(&self.deps.scope, &id)
+                .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+            // 从草稿的 SKILL.md frontmatter 取 id/name
+            let body = self
+                .deps
+                .store
+                .read_skill_md(&self.deps.scope, &id)
+                .map_err(|e| ToolError::ExecutionFailed(format!("read SKILL.md: {}", e)))?;
+            let fm = parse_frontmatter(&body).map_err(|e| {
+                ToolError::ExecutionFailed(format!(
+                    "frontmatter 解析失败：{}（请先 skill_dry_run）",
+                    e
+                ))
+            })?;
+            let name = fm
+                .get(serde_yaml::Value::String("name".into()))
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| ToolError::ExecutionFailed("frontmatter 缺 name".into()))?
+                .to_string();
+            let label = fm
+                .get(serde_yaml::Value::String("metadata".into()))
+                .and_then(|v| v.as_mapping())
+                .and_then(|m| m.get(serde_yaml::Value::String("label".into())))
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+                .unwrap_or_else(|| name.clone());
+            (dir, name, label)
+        } else if let Some(id) = installed_id {
+            let dir = self.deps.home.user_skills_dir(&self.deps.scope).join(&id);
+            if !dir.is_dir() {
+                return Err(ToolError::ExecutionFailed(format!(
+                    "已安装技能 '{}' 不存在",
+                    id
+                )));
+            }
+            (dir, id.clone(), id)
+        } else {
+            return Err(ToolError::InputValidationError {
+                tool_name: "skill_export".into(),
+                message: "必须提供 draft_id 或 installed_id 之一".into(),
+            });
+        };
+
+        let version = version.unwrap_or_else(|| "0.1.0".to_string());
+        let dest_path = match dest {
+            Some(p) => std::path::PathBuf::from(p),
+            None => default_export_dest(&skill_id, &version),
+        };
+
+        let manifest = crate::storage::skill_package::pack_skill_dir(
+            &source_dir,
+            &dest_path,
+            &skill_id,
+            &skill_name,
+            &version,
+            author.as_deref(),
+            concat!("skill-smith@", env!("CARGO_PKG_VERSION")),
+        )
+        .map_err(|e| ToolError::ExecutionFailed(format!("打包失败：{}", e)))?;
+
+        let data = json!({
+            "id": manifest.id,
+            "name": manifest.name,
+            "version": manifest.version,
+            "checksum_sha256": manifest.checksum_sha256,
+            "dest": dest_path.to_string_lossy(),
+        });
+        Ok(ToolResult::new(
+            "skill_export",
+            format!(
+                "✅ 已导出 {} v{} 到 {}\n   把这个 .aijia-skill 文件发给同事，对方双击即可导入。",
+                manifest.name,
+                manifest.version,
+                dest_path.display()
+            ),
+            Some(data),
+        ))
+    }
+}
+
+fn default_export_dest(skill_id: &str, version: &str) -> std::path::PathBuf {
+    let desktop = dirs::desktop_dir()
+        .or_else(dirs::home_dir)
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    desktop.join(format!("{}-v{}.aijia-skill", skill_id, version))
+}
+
+// ============================================================================
 // Catalog JSON schemas (for LLM tool definitions)
 // ============================================================================
 
-/// 注册到 ToolCatalog 的 6 条 (id, schema) 元组。
+/// 注册到 ToolCatalog 的 7 条 (id, schema) 元组。
 pub fn catalog_entries() -> Vec<(ToolDefinition, Value)> {
     vec![
         (
@@ -1057,6 +1207,20 @@ pub fn catalog_entries() -> Vec<(ToolDefinition, Value)> {
                 }
             }),
         ),
+        (
+            SkillExportTool::dummy().definition(),
+            json!({
+                "type": "object",
+                "required": [],
+                "properties": {
+                    "draft_id": { "type": "string", "description": "导出草稿（与 installed_id 二选一）" },
+                    "installed_id": { "type": "string", "description": "导出已安装技能（与 draft_id 二选一）" },
+                    "dest": { "type": "string", "description": "目标路径，默认 ~/Desktop/<id>-v<version>.aijia-skill" },
+                    "version": { "type": "string", "default": "0.1.0" },
+                    "author": { "type": "string" }
+                }
+            }),
+        ),
     ]
 }
 
@@ -1107,6 +1271,13 @@ impl DummyCtor for SkillDryRunTool {
     }
 }
 impl DummyCtor for SkillInstallTool {
+    fn dummy() -> Self {
+        Self {
+            deps: SkillCreateDraftTool::dummy().deps,
+        }
+    }
+}
+impl DummyCtor for SkillExportTool {
     fn dummy() -> Self {
         Self {
             deps: SkillCreateDraftTool::dummy().deps,
@@ -1446,16 +1617,21 @@ mod tests {
     }
 
     #[test]
-    fn catalog_entries_have_6_tools() {
+    fn catalog_entries_have_7_tools() {
         let entries = catalog_entries();
-        assert_eq!(entries.len(), 6);
+        assert_eq!(entries.len(), 7);
         let ids: Vec<String> = entries.iter().map(|(d, _)| d.id.clone()).collect();
-        assert!(ids.contains(&"skill_create_draft".to_string()));
-        assert!(ids.contains(&"skill_write_md".to_string()));
-        assert!(ids.contains(&"skill_add_file".to_string()));
-        assert!(ids.contains(&"skill_validate".to_string()));
-        assert!(ids.contains(&"skill_dry_run".to_string()));
-        assert!(ids.contains(&"skill_install".to_string()));
+        for id in [
+            "skill_create_draft",
+            "skill_write_md",
+            "skill_add_file",
+            "skill_validate",
+            "skill_dry_run",
+            "skill_install",
+            "skill_export",
+        ] {
+            assert!(ids.contains(&id.to_string()), "missing {}", id);
+        }
     }
 
     // ── dry_run tests ──────────────────────────────────────────────
@@ -1629,5 +1805,52 @@ mod tests {
         assert!(msgs.iter().any(|m| m.contains("eval")));
         assert!(msgs.iter().any(|m| m.contains("exec")));
         assert!(msgs.iter().any(|m| m.contains("__import__")));
+    }
+
+    // ── export tests ──────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn export_draft_produces_aijia_skill_zip() {
+        let (tmp, deps) = fixture();
+        SkillCreateDraftTool::new(deps.clone())
+            .execute(json!({"name": "tmp-skill", "description": "y"}), ctx())
+            .await
+            .unwrap();
+        let body = "---\nname: my-skill\ndescription: ok\n---\nbody";
+        SkillWriteMdTool::new(deps.clone())
+            .execute(
+                json!({"draft_id": deps.conversation_id, "content": body}),
+                ctx(),
+            )
+            .await
+            .unwrap();
+        let dest = tmp.path().join("out.aijia-skill");
+        let r = SkillExportTool::new(deps.clone())
+            .execute(
+                json!({"draft_id": deps.conversation_id, "dest": dest.to_string_lossy(), "version": "0.2.0"}),
+                ctx(),
+            )
+            .await
+            .unwrap();
+        let data = r.data.unwrap();
+        assert_eq!(data["id"], "my-skill");
+        assert_eq!(data["version"], "0.2.0");
+        assert!(dest.exists());
+
+        // verify roundtrip via the package module
+        let unpack_root = tmp.path().join("unpack");
+        let res = crate::storage::skill_package::unpack_skill_archive(&dest, &unpack_root).unwrap();
+        assert_eq!(res.manifest.id, "my-skill");
+        assert_eq!(res.manifest.version, "0.2.0");
+    }
+
+    #[tokio::test]
+    async fn export_requires_draft_or_installed_id() {
+        let (_tmp, deps) = fixture();
+        let err = SkillExportTool::new(deps.clone())
+            .execute(json!({"dest": "/tmp/x.aijia-skill"}), ctx())
+            .await
+            .unwrap_err();
+        assert!(matches!(err, ToolError::InputValidationError { .. }));
     }
 }

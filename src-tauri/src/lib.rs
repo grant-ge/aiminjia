@@ -773,6 +773,7 @@ pub fn run() {
             commands::skill_draft::list_skill_drafts,
             commands::skill_draft::discard_skill_draft,
             commands::skill_draft::get_skill_draft_meta,
+            commands::skill_draft::import_skill_package,
             commands::skill_management::reload_skill,
             commands::skill_management::start_skill_watch,
             commands::skill_management::stop_skill_watch,
