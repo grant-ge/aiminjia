@@ -921,6 +921,7 @@ impl ToolRegistry {
             | "skill_write_md"
             | "skill_add_file"
             | "skill_validate"
+            | "skill_dry_run"
             | "skill_install" => {
                 use tauri::Manager;
                 let app = ctx.app_handle.as_ref()?;
@@ -946,6 +947,8 @@ impl ToolRegistry {
                     "skill_add_file" => Arc::new(builtin::skill_smith::SkillAddFileTool::new(deps))
                         as Arc<dyn crate::runtime::tools::RuntimeTool>,
                     "skill_validate" => Arc::new(builtin::skill_smith::SkillValidateTool::new(deps))
+                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
+                    "skill_dry_run" => Arc::new(builtin::skill_smith::SkillDryRunTool::new(deps))
                         as Arc<dyn crate::runtime::tools::RuntimeTool>,
                     "skill_install" => Arc::new(builtin::skill_smith::SkillInstallTool::new(deps))
                         as Arc<dyn crate::runtime::tools::RuntimeTool>,

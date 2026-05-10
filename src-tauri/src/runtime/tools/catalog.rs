@@ -640,6 +640,7 @@ pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
     "skill_write_md",
     "skill_add_file",
     "skill_validate",
+    "skill_dry_run",
     "skill_install",
 ];
 

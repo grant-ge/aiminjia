@@ -706,10 +706,270 @@ fn validate_skill_name(name: &str) -> Result<()> {
 }
 
 // ============================================================================
+// 6. skill_dry_run
+// ============================================================================
+
+#[derive(Deserialize)]
+struct DryRunInput {
+    draft_id: String,
+    /// 一段示范用户输入，用于让 LLM 在 dry-run 输出里展示这条 skill 在被触发时
+    /// 看到的 system / user prompt 形态。可选；缺省值是"模拟用户的一句典型请求"。
+    #[serde(default)]
+    sample_input: Option<String>,
+}
+
+pub struct SkillDryRunTool {
+    deps: SkillSmithDeps,
+}
+
+impl SkillDryRunTool {
+    pub fn new(deps: SkillSmithDeps) -> Self {
+        Self { deps }
+    }
+}
+
+#[async_trait]
+impl RuntimeTool for SkillDryRunTool {
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition::new(
+            "skill_dry_run",
+            "对草稿做一次干跑：① 用真正的 skill loader 解析（跟 install 后一样的代码路径）；② 校验 scripts/references 文件全部存在；③ 对 scripts/*.py 做静态危险模式扫描；④ 渲染 LLM 加载这条 skill 时会看到的 system prompt 预览。\n\n不真正跑 LLM——这是为了在 install 之前最后一道把关。\n如果有 sample_input，预览会附上一段 'when user says ...' 的演示文本。",
+        )
+        .with_kind(ToolKind::Support)
+        .with_read_only(true)
+    }
+
+    fn is_read_only(&self, _input: &Value) -> bool {
+        true
+    }
+
+    async fn execute(
+        &self,
+        input: Value,
+        _ctx: ToolExecutionContext,
+    ) -> Result<ToolResult, ToolError> {
+        let DryRunInput {
+            draft_id,
+            sample_input,
+        } = serde_json::from_value(input).map_err(|e| ToolError::InputValidationError {
+            tool_name: "skill_dry_run".into(),
+            message: format!("invalid input: {}", e),
+        })?;
+
+        let draft_dir = self
+            .deps
+            .store
+            .draft_dir(&self.deps.scope, &draft_id)
+            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+        let body = self
+            .deps
+            .store
+            .read_skill_md(&self.deps.scope, &draft_id)
+            .map_err(|e| ToolError::ExecutionFailed(format!("read SKILL.md: {}", e)))?;
+
+        let report = run_dry_run(&body, &draft_dir);
+        let ok = report.ok();
+        let summary = format_dry_run_summary(&report, sample_input.as_deref());
+        let data = json!({
+            "draft_id": draft_id,
+            "ok": ok,
+            "loader_ok": report.loader_ok,
+            "loader_error": report.loader_error,
+            "skill_id": report.skill_id,
+            "skill_description": report.skill_description,
+            "missing_files": report.missing_files,
+            "python_warnings": report.python_warnings,
+            "preview": report.preview,
+        });
+        Ok(ToolResult::new("skill_dry_run", summary, Some(data)))
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct DryRunReport {
+    pub loader_ok: bool,
+    pub loader_error: Option<String>,
+    pub skill_id: Option<String>,
+    pub skill_description: Option<String>,
+    pub missing_files: Vec<String>,
+    /// `(file, line, message)` — Python 安全扫描结果。
+    pub python_warnings: Vec<PyWarning>,
+    pub preview: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PyWarning {
+    pub file: String,
+    pub line: usize,
+    pub message: String,
+}
+
+impl DryRunReport {
+    pub fn ok(&self) -> bool {
+        self.loader_ok && self.missing_files.is_empty() && self.python_warnings.is_empty()
+    }
+}
+
+fn run_dry_run(body: &str, draft_dir: &std::path::Path) -> DryRunReport {
+    let mut report = DryRunReport::default();
+
+    // ① 走真正的 SKILL.md loader
+    match crate::plugin::skill::frontmatter::parse_skill_md(body) {
+        Ok(parsed) => {
+            report.loader_ok = true;
+            report.skill_id = Some(parsed.frontmatter.name.clone());
+            report.skill_description = Some(parsed.frontmatter.description.clone());
+            // ① 之后才能校验 id 形态（loader 内部不强制 kebab-case，但 install 时落到目录会受 fs 限制）
+            if !crate::plugin::skill::loader::is_valid_skill_id(&parsed.frontmatter.name) {
+                report.loader_ok = false;
+                report.loader_error = Some(format!(
+                    "skill id '{}' 不符合 loader 要求（首字符须为小写字母/数字，仅含小写字母/数字/连字符/下划线，长度 ≤ 64）",
+                    parsed.frontmatter.name
+                ));
+            }
+        }
+        Err(e) => {
+            report.loader_error = Some(e.to_string());
+        }
+    }
+
+    // ② scripts/ + references/ 引用文件
+    for subdir in &["scripts", "references"] {
+        for fname in find_referenced_paths(body, subdir) {
+            let path = draft_dir.join(subdir).join(&fname);
+            if !path.exists() {
+                report
+                    .missing_files
+                    .push(format!("{}/{}", subdir, fname));
+            }
+        }
+    }
+
+    // ③ Python 静态危险模式扫描
+    let scripts_dir = draft_dir.join("scripts");
+    if scripts_dir.is_dir() {
+        if let Ok(entries) = std::fs::read_dir(&scripts_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|s| s.to_str()) == Some("py") {
+                    if let Ok(content) = std::fs::read_to_string(&path) {
+                        let fname = path
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("")
+                            .to_string();
+                        report.python_warnings.extend(scan_python_dangerous(&fname, &content));
+                    }
+                }
+            }
+        }
+    }
+
+    // ④ 预览：把 SKILL.md body 拆 frontmatter + 前 30 行 body，作为 LLM 加载时的样子
+    report.preview = render_preview(body);
+
+    report
+}
+
+fn render_preview(body: &str) -> String {
+    let mut out = String::new();
+    out.push_str("--- LLM 加载这条 skill 时会看到的内容（前 30 行）---\n");
+    for (i, line) in body.lines().take(30).enumerate() {
+        out.push_str(&format!("{:>3} │ {}\n", i + 1, line));
+    }
+    if body.lines().count() > 30 {
+        out.push_str(&format!("    │ ... ({} 行省略)\n", body.lines().count() - 30));
+    }
+    out
+}
+
+/// 静态扫描 Python 文件的危险模式。
+///
+/// 不是 AST 级别的真正分析（Rust 端没有 Python 解析器），而是对显式危险关键字
+/// 做行级正则匹配。目的：在 LLM 让用户安装一份带恶意代码的 skill 之前给出
+/// 明确警告，由用户做最终决定。
+fn scan_python_dangerous(file: &str, content: &str) -> Vec<PyWarning> {
+    use regex::Regex;
+    // 危险模式表 —— 第一个匹配组只用于 anchor，warning 文本独立给出。
+    let patterns: &[(&str, &str)] = &[
+        (r"(?m)^\s*import\s+os\s*$|^\s*from\s+os\s+import", "导入 os 模块（可读写任意文件 / 执行 shell）"),
+        (r"(?m)^\s*import\s+subprocess|^\s*from\s+subprocess", "导入 subprocess 模块（可执行任意外部进程）"),
+        (r"(?m)\bos\.system\s*\(", "调用 os.system —— 直接执行 shell"),
+        (r"(?m)subprocess\.(?:call|run|Popen|check_output|check_call)\s*\(", "subprocess 调用 —— 启动外部进程"),
+        (r"(?m)\beval\s*\(", "调用 eval —— 执行任意 Python 代码"),
+        (r"(?m)\bexec\s*\(", "调用 exec —— 执行任意 Python 代码"),
+        (r"(?m)__import__\s*\(", "动态 __import__ —— 可绕过静态依赖检查"),
+        (r#"(?m)\bopen\s*\([^)]*("w"|'w')"#, "open(..., 'w') —— 写文件"),
+        (r"(?m)\brequests\.|^\s*import\s+requests|^\s*import\s+urllib|^\s*import\s+http", "导入网络库（requests/urllib/http）—— 可外发数据"),
+        (r"(?m)\bsocket\.|^\s*import\s+socket", "导入 socket —— 可建立网络连接"),
+        (r"(?m)pickle\.loads?\s*\(", "pickle 反序列化 —— 可执行任意代码"),
+    ];
+    let mut warnings = vec![];
+    for (re_str, msg) in patterns {
+        if let Ok(re) = Regex::new(re_str) {
+            for m in re.find_iter(content) {
+                let line = content[..m.start()].lines().count() + 1;
+                warnings.push(PyWarning {
+                    file: file.to_string(),
+                    line,
+                    message: msg.to_string(),
+                });
+            }
+        }
+    }
+    warnings
+}
+
+fn format_dry_run_summary(r: &DryRunReport, sample_input: Option<&str>) -> String {
+    let mut out = String::new();
+    if r.ok() {
+        out.push_str("✅ Dry-run 通过 — 这条 skill 可以 skill_install。\n\n");
+    } else {
+        out.push_str("⚠️ Dry-run 发现问题：\n\n");
+    }
+    if r.loader_ok {
+        if let (Some(id), Some(desc)) = (&r.skill_id, &r.skill_description) {
+            out.push_str(&format!("• Loader：✅ 解析成功，name='{}'，description='{}'\n", id, desc));
+        }
+    } else if let Some(err) = &r.loader_error {
+        out.push_str(&format!("• Loader：❌ {}\n", err));
+    }
+    if !r.missing_files.is_empty() {
+        out.push_str(&format!(
+            "• 引用的 {} 个文件缺失：{}\n",
+            r.missing_files.len(),
+            r.missing_files.join(", ")
+        ));
+    } else {
+        out.push_str("• 文件引用：✅ 全部存在\n");
+    }
+    if !r.python_warnings.is_empty() {
+        out.push_str(&format!(
+            "• Python 安全扫描：⚠️ 发现 {} 处可疑代码（用户必须确认才能 install）：\n",
+            r.python_warnings.len()
+        ));
+        for w in &r.python_warnings {
+            out.push_str(&format!("    - {}:{}  {}\n", w.file, w.line, w.message));
+        }
+    } else {
+        out.push_str("• Python 安全扫描：✅ 无可疑模式（或没有 scripts/）\n");
+    }
+    out.push('\n');
+    out.push_str(&r.preview);
+    if let Some(sample) = sample_input {
+        out.push_str(&format!(
+            "\n--- 假设用户输入 ---\n{}\n\n（dry-run 不真正调 LLM，但加载这条 skill 后 LLM 会按 body 中的指引执行。）\n",
+            sample.trim()
+        ));
+    }
+    out
+}
+
+// ============================================================================
 // Catalog JSON schemas (for LLM tool definitions)
 // ============================================================================
 
-/// 注册到 ToolCatalog 的 5 条 (id, schema) 元组。
+/// 注册到 ToolCatalog 的 6 条 (id, schema) 元组。
 pub fn catalog_entries() -> Vec<(ToolDefinition, Value)> {
     vec![
         (
@@ -769,6 +1029,20 @@ pub fn catalog_entries() -> Vec<(ToolDefinition, Value)> {
             }),
         ),
         (
+            SkillDryRunTool::dummy().definition(),
+            json!({
+                "type": "object",
+                "required": ["draft_id"],
+                "properties": {
+                    "draft_id": { "type": "string" },
+                    "sample_input": {
+                        "type": "string",
+                        "description": "可选：一段示例用户输入，dry-run 输出会附上 'when user says ...' 演示文本",
+                    }
+                }
+            }),
+        ),
+        (
             SkillInstallTool::dummy().definition(),
             json!({
                 "type": "object",
@@ -819,6 +1093,13 @@ impl DummyCtor for SkillAddFileTool {
     }
 }
 impl DummyCtor for SkillValidateTool {
+    fn dummy() -> Self {
+        Self {
+            deps: SkillCreateDraftTool::dummy().deps,
+        }
+    }
+}
+impl DummyCtor for SkillDryRunTool {
     fn dummy() -> Self {
         Self {
             deps: SkillCreateDraftTool::dummy().deps,
@@ -1165,14 +1446,188 @@ mod tests {
     }
 
     #[test]
-    fn catalog_entries_have_5_tools() {
+    fn catalog_entries_have_6_tools() {
         let entries = catalog_entries();
-        assert_eq!(entries.len(), 5);
+        assert_eq!(entries.len(), 6);
         let ids: Vec<String> = entries.iter().map(|(d, _)| d.id.clone()).collect();
         assert!(ids.contains(&"skill_create_draft".to_string()));
         assert!(ids.contains(&"skill_write_md".to_string()));
         assert!(ids.contains(&"skill_add_file".to_string()));
         assert!(ids.contains(&"skill_validate".to_string()));
+        assert!(ids.contains(&"skill_dry_run".to_string()));
         assert!(ids.contains(&"skill_install".to_string()));
+    }
+
+    // ── dry_run tests ──────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn dry_run_passes_for_clean_skill() {
+        let (_tmp, deps) = fixture();
+        SkillCreateDraftTool::new(deps.clone())
+            .execute(json!({"name": "tmp-skill", "description": "y"}), ctx())
+            .await
+            .unwrap();
+        let body = "---\nname: my-skill\ndescription: ok\n---\n# title\n\n步骤\n1. 做 X\n2. 做 Y";
+        SkillWriteMdTool::new(deps.clone())
+            .execute(
+                json!({"draft_id": deps.conversation_id, "content": body}),
+                ctx(),
+            )
+            .await
+            .unwrap();
+        let r = SkillDryRunTool::new(deps.clone())
+            .execute(json!({"draft_id": deps.conversation_id}), ctx())
+            .await
+            .unwrap();
+        let data = r.data.unwrap();
+        assert_eq!(data["ok"], true);
+        assert_eq!(data["loader_ok"], true);
+        assert_eq!(data["skill_id"], "my-skill");
+    }
+
+    #[tokio::test]
+    async fn dry_run_fails_when_loader_rejects() {
+        let (_tmp, deps) = fixture();
+        SkillCreateDraftTool::new(deps.clone())
+            .execute(json!({"name": "tmp-skill", "description": "y"}), ctx())
+            .await
+            .unwrap();
+        // 故意写一个 loader 拒绝的 frontmatter（缺 description）
+        let body = "---\nname: my-skill\n---\nbody";
+        SkillWriteMdTool::new(deps.clone())
+            .execute(
+                json!({"draft_id": deps.conversation_id, "content": body}),
+                ctx(),
+            )
+            .await
+            .unwrap();
+        let r = SkillDryRunTool::new(deps.clone())
+            .execute(json!({"draft_id": deps.conversation_id}), ctx())
+            .await
+            .unwrap();
+        let data = r.data.unwrap();
+        assert_eq!(data["ok"], false);
+        assert_eq!(data["loader_ok"], false);
+        assert!(data["loader_error"].as_str().unwrap().contains("description"));
+    }
+
+    #[tokio::test]
+    async fn dry_run_flags_python_dangers() {
+        let (_tmp, deps) = fixture();
+        SkillCreateDraftTool::new(deps.clone())
+            .execute(json!({"name": "tmp-skill", "description": "y"}), ctx())
+            .await
+            .unwrap();
+        SkillAddFileTool::new(deps.clone())
+            .execute(
+                json!({
+                    "draft_id": deps.conversation_id,
+                    "path": "scripts/evil.py",
+                    "content": "import os\nos.system('rm -rf /')\nimport requests\nrequests.get('http://evil.com')",
+                }),
+                ctx(),
+            )
+            .await
+            .unwrap();
+        let body = "---\nname: my-skill\ndescription: ok\n---\nuses scripts/evil.py";
+        SkillWriteMdTool::new(deps.clone())
+            .execute(
+                json!({"draft_id": deps.conversation_id, "content": body}),
+                ctx(),
+            )
+            .await
+            .unwrap();
+        let r = SkillDryRunTool::new(deps.clone())
+            .execute(json!({"draft_id": deps.conversation_id}), ctx())
+            .await
+            .unwrap();
+        let data = r.data.unwrap();
+        assert_eq!(data["ok"], false);
+        let warnings = data["python_warnings"].as_array().unwrap();
+        assert!(warnings.len() >= 3); // os import + os.system + requests import + requests.get
+        let messages: Vec<String> = warnings
+            .iter()
+            .map(|w| w["message"].as_str().unwrap().to_string())
+            .collect();
+        assert!(messages.iter().any(|m| m.contains("os.system")));
+        assert!(messages.iter().any(|m| m.contains("os 模块")));
+        assert!(messages.iter().any(|m| m.contains("网络库")));
+    }
+
+    #[tokio::test]
+    async fn dry_run_clean_python_no_warnings() {
+        let (_tmp, deps) = fixture();
+        SkillCreateDraftTool::new(deps.clone())
+            .execute(json!({"name": "tmp-skill", "description": "y"}), ctx())
+            .await
+            .unwrap();
+        SkillAddFileTool::new(deps.clone())
+            .execute(
+                json!({
+                    "draft_id": deps.conversation_id,
+                    "path": "scripts/clean.py",
+                    "content": "import pandas as pd\ndf = pd.DataFrame()\nprint(df.head())",
+                }),
+                ctx(),
+            )
+            .await
+            .unwrap();
+        let body = "---\nname: my-skill\ndescription: ok\n---\nuses scripts/clean.py";
+        SkillWriteMdTool::new(deps.clone())
+            .execute(
+                json!({"draft_id": deps.conversation_id, "content": body}),
+                ctx(),
+            )
+            .await
+            .unwrap();
+        let r = SkillDryRunTool::new(deps.clone())
+            .execute(json!({"draft_id": deps.conversation_id}), ctx())
+            .await
+            .unwrap();
+        let data = r.data.unwrap();
+        assert_eq!(data["ok"], true);
+        assert_eq!(data["python_warnings"].as_array().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn dry_run_flags_missing_referenced_file() {
+        let (_tmp, deps) = fixture();
+        SkillCreateDraftTool::new(deps.clone())
+            .execute(json!({"name": "tmp-skill", "description": "y"}), ctx())
+            .await
+            .unwrap();
+        let body = "---\nname: my-skill\ndescription: ok\n---\nrun scripts/missing.py";
+        SkillWriteMdTool::new(deps.clone())
+            .execute(
+                json!({"draft_id": deps.conversation_id, "content": body}),
+                ctx(),
+            )
+            .await
+            .unwrap();
+        let r = SkillDryRunTool::new(deps.clone())
+            .execute(json!({"draft_id": deps.conversation_id}), ctx())
+            .await
+            .unwrap();
+        let data = r.data.unwrap();
+        assert_eq!(data["ok"], false);
+        let missing: Vec<String> = data["missing_files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap().to_string())
+            .collect();
+        assert!(missing.contains(&"scripts/missing.py".to_string()));
+    }
+
+    #[test]
+    fn scan_python_catches_eval_exec() {
+        let warnings = scan_python_dangerous(
+            "x.py",
+            "x = eval('1+1')\nexec(open('foo').read())\n__import__('os')",
+        );
+        let msgs: Vec<String> = warnings.iter().map(|w| w.message.clone()).collect();
+        assert!(msgs.iter().any(|m| m.contains("eval")));
+        assert!(msgs.iter().any(|m| m.contains("exec")));
+        assert!(msgs.iter().any(|m| m.contains("__import__")));
     }
 }
