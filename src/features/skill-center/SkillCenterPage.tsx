@@ -265,7 +265,22 @@ export function SkillCenterPage() {
         ) : loadError && skills.length === 0 ? (
           <SkillCenterState title="技能加载失败" desc={loadError} actionLabel="重试" onAction={() => void loadSkills()} />
         ) : officeSkills.length === 0 ? (
-          <SkillCenterState title="还没有可用技能" desc="可以上传本地技能目录，或点击创建技能开始制作。" actionLabel="重新加载" onAction={() => void loadSkills()} />
+          category === 'mine' ? (
+            <SkillCenterState
+              title="还没有本地技能"
+              desc='在对话里找数字员工"小程"聊聊，让它帮你把工作流程沉淀成可复用技能；或点右上角"+ 导入技能"装一个同事发来的 .aijia-skill 文件。'
+            />
+          ) : normalizedQuery ? (
+            <SkillCenterState
+              title="没有匹配的技能"
+              desc={`"${normalizedQuery}" 下没找到技能。试试切到"全部"或换个关键词。`}
+            />
+          ) : (
+            <SkillCenterState
+              title="该分类下还没有技能"
+              desc='试试"全部"或"本地"分类；或者点右上角"+ 导入技能"装一个 .aijia-skill 文件。'
+            />
+          )
         ) : (
           officeSkills.map((skill) => (
             <SkillCard
