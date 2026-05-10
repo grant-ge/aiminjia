@@ -42,9 +42,9 @@ fn make(persona: &str, when: DateTime<Utc>) -> AgendaItem {
         id: AgendaItemId::new(),
         title: "T".into(),
         prompt: "P".into(),
-        organizer_persona_id: persona.into(),
+        organizer_employee_id: persona.into(),
         participants: vec![Participant {
-            persona_id: persona.into(),
+            employee_id: persona.into(),
             joined_at: when,
         }],
         start_at: when,

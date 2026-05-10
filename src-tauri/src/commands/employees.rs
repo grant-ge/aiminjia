@@ -22,6 +22,18 @@ fn inbox_store(app: &AppHandle) -> Result<InboxStore, String> {
     Ok(InboxStore::new(paths.employees_dir()))
 }
 
+/// Returns an `AgendaStore` scoped to the current user, or `None` when the
+/// user session is not available (logged out, state not yet registered, etc.).
+///
+/// Returning `Option` keeps the orphan hook non-fatal: callers log a warning
+/// and continue — agenda orphaning is a secondary side-effect that must not
+/// block the primary employee lifecycle transition.
+fn agenda_store_for(app: &AppHandle) -> Option<crate::runtime::agenda::AgendaStore> {
+    let cus = app.try_state::<Arc<CurrentUserStorage>>()?;
+    let paths = cus.require_paths().ok()?;
+    Some(crate::runtime::agenda::AgendaStore::new(paths.base_dir()))
+}
+
 // ─── employee CRUD ────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -50,9 +62,30 @@ pub async fn employee_update(
     id: String,
     request: UpdateEmployeeRequest,
 ) -> Result<EmployeeRecord, String> {
-    employee_store(&app)?
+    // Detect whether this update is archiving the employee so we can cascade
+    // the orphan hook. We check the request *before* applying it — if the
+    // caller explicitly sets lifecycle=Archived we treat it the same as
+    // employee_delete (which is the canonical path, but the store does not
+    // reject lifecycle changes via update).
+    let archiving = request.lifecycle == Some(EmployeeLifecycle::Archived);
+
+    let record = employee_store(&app)?
         .update(&id, request)
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    if archiving {
+        if let Some(agenda_store) = agenda_store_for(&app) {
+            if let Err(e) = agenda_store.mark_orphaned_by_organizer(&id) {
+                log::warn!(
+                    "[employee_update] mark_orphaned_by_organizer({}) failed: {}",
+                    id,
+                    e
+                );
+            }
+        }
+    }
+
+    Ok(record)
 }
 
 /// Soft-delete: set lifecycle = Archived. The employee is hidden from the
@@ -76,8 +109,21 @@ pub async fn employee_delete(app: AppHandle, id: String) -> Result<bool, String>
                 ..Default::default()
             },
         )
-        .map(|_| true)
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    // 联动：把这个 employee 作 organizer 的 agenda items 转 Orphaned。
+    // 失败仅 log，不阻塞软删除——孤儿 item 调度器不会再 dispatch（runner 只接 Active）。
+    if let Some(agenda_store) = agenda_store_for(&app) {
+        if let Err(e) = agenda_store.mark_orphaned_by_organizer(&id) {
+            log::warn!(
+                "[employee_delete] mark_orphaned_by_organizer({}) failed: {}",
+                id,
+                e
+            );
+        }
+    }
+
+    Ok(true)
 }
 
 /// Restore an archived employee: lifecycle Archived -> Active.
@@ -116,7 +162,23 @@ pub async fn employee_purge(app: AppHandle, id: String) -> Result<bool, String> 
     if current.lifecycle != EmployeeLifecycle::Archived {
         return Err("只能永久删除已解雇的员工".to_string());
     }
-    store.purge(&id).map_err(|e| e.to_string())
+    store.purge(&id).map_err(|e| e.to_string())?;
+
+    // 幂等地 mark_orphaned：archive 时已触发过；purge 后再确保一次，避免
+    // 用户手动恢复 agenda 后再走 purge 路径造成残留 Active 孤儿。
+    // purge 后 employee 目录已删除，AgendaStore 操作的是独立的 agenda/ 目录，
+    // 所以此时调用仍然有效。
+    if let Some(agenda_store) = agenda_store_for(&app) {
+        if let Err(e) = agenda_store.mark_orphaned_by_organizer(&id) {
+            log::warn!(
+                "[employee_purge] mark_orphaned_by_organizer({}) failed: {}",
+                id,
+                e
+            );
+        }
+    }
+
+    Ok(true)
 }
 
 // ─── trigger ─────────────────────────────────────────────────────────────────
