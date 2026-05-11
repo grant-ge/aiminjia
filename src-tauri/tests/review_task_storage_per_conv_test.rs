@@ -28,7 +28,7 @@ fn ctx_with_root(root: &TempDir, conv_id: &str) -> ToolExecutionContext {
 }
 
 /// TaskCreate must write the task file under
-/// `<root>/conversations/<conv_id>/tasks/<conv_id>/<task_id>.json`.
+/// `<root>/conversations/<conv_id>/tasks/<task_id>.json` (flat, no inner conv_id).
 /// The old global root `<root>/tasks/` must NOT be created.
 #[tokio::test]
 async fn task_create_writes_to_conversation_scoped_dir() {
@@ -53,13 +53,12 @@ async fn task_create_writes_to_conversation_scoped_dir() {
         result.content
     );
 
-    // The task file must be under the per-conversation directory.
+    // The task file must be flat under the per-conversation tasks dir.
     let conv_tasks_dir = tmp
         .path()
         .join("conversations")
         .join(conv_id)
-        .join("tasks")
-        .join(conv_id); // task_list_id = session_id = conv_id
+        .join("tasks");
     assert!(
         conv_tasks_dir.exists(),
         "per-conversation tasks dir must exist: {}",
@@ -70,6 +69,14 @@ async fn task_create_writes_to_conversation_scoped_dir() {
         task_file.exists(),
         "task file must exist at: {}",
         task_file.display()
+    );
+
+    // No spurious second-level conv_id directory.
+    let nested = conv_tasks_dir.join(conv_id);
+    assert!(
+        !nested.exists(),
+        "tasks must be flat under tasks/; spurious nested dir found: {}",
+        nested.display()
     );
 
     // The old global tasks/ root must NOT have been created.
@@ -108,12 +115,8 @@ async fn tasks_from_different_conversations_are_isolated() {
     assert!(conv_b_dir.exists(), "conv-b tasks dir must exist");
 
     // Files in conv-a must not appear in conv-b and vice-versa.
-    let count_a = std::fs::read_dir(conv_a_dir.join("conv-a"))
-        .map(|d| d.count())
-        .unwrap_or(0);
-    let count_b = std::fs::read_dir(conv_b_dir.join("conv-b"))
-        .map(|d| d.count())
-        .unwrap_or(0);
+    let count_a = std::fs::read_dir(&conv_a_dir).map(|d| d.count()).unwrap_or(0);
+    let count_b = std::fs::read_dir(&conv_b_dir).map(|d| d.count()).unwrap_or(0);
     assert_eq!(count_a, 2, "conv-a should have 1 task file + 1 highwatermark");
     assert_eq!(count_b, 2, "conv-b should have 1 task file + 1 highwatermark");
 }

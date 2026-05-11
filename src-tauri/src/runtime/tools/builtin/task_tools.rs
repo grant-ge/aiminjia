@@ -26,8 +26,13 @@ pub struct TaskListRuntimeTool;
 pub struct TaskGetRuntimeTool;
 pub struct TaskClaimRuntimeTool;
 
-fn task_list_id(ctx: &ToolExecutionContext) -> String {
-    ctx.session_id.as_str().to_string()
+fn task_list_id(_ctx: &ToolExecutionContext) -> String {
+    // P1.5 follow-up: store is already rooted at the per-conversation
+    // `tasks/` directory, so we pass an empty list id and let the store
+    // keep task files flat at `<root>/<id>.json`.  Previously this
+    // returned the session id, producing a redundant
+    // `<root>/<conv_id>/<id>.json` second level.
+    String::new()
 }
 
 fn store_for(ctx: &ToolExecutionContext) -> Result<FileTaskV2Store, ToolError> {

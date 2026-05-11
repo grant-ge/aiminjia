@@ -45,10 +45,9 @@ fn seed_task(root: &TempDir, task_id: &str, owner: Option<&str>) {
         .join(CONV_ID)
         .join("tasks");
     let store = FileTaskV2Store::new(tasks_root);
-    let session_id = SessionId::new(CONV_ID);
     store
         .create(
-            session_id.as_str(),
+            "",
             &TaskRecord {
                 id: task_id.to_string(),
                 subject: format!("Task {}", task_id),

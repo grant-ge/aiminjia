@@ -139,15 +139,18 @@ async fn task_update_delete_removes_task() {
 #[test]
 fn task_frontend_records_are_loaded_from_file_task_v2_store() {
     let root = TempDir::new().unwrap();
-    // Use deprecated constructor to write into the legacy global tasks/ root,
-    // which is what list_from_task_v2_store reads via its from_aijia_home path.
-    #[allow(deprecated)]
-    let store = FileTaskV2Store::from_aijia_home(root.path().to_path_buf());
     let session_id = SessionId::new("sess-file-task-ui");
+    // P1.5 path: tasks live at <root>/conversations/<conv_id>/tasks/<id>.json.
+    let per_conv_root = root
+        .path()
+        .join("conversations")
+        .join(session_id.as_str())
+        .join("tasks");
+    let store = FileTaskV2Store::new(per_conv_root);
 
     store
         .create(
-            session_id.as_str(),
+            "",
             &TaskRecord {
                 id: "1".to_string(),
                 subject: "Fix task monitor".to_string(),

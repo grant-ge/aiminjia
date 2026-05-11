@@ -183,9 +183,14 @@ fn list_task_records_with_legacy_root_fallback(
     conversation_id: &str,
 ) -> anyhow::Result<Vec<crate::runtime::task::task_models::TaskRecord>> {
     // P1.5: primary store is per-conversation; legacy store is the old global tasks/ root.
-    #[allow(deprecated)]
-    let primary_store = crate::runtime::task::FileTaskV2Store::from_aijia_home(aijia_home.to_path_buf());
-    let primary = primary_store.list(conversation_id)?;
+    let primary_root = aijia_home
+        .join("conversations")
+        .join(conversation_id)
+        .join("tasks");
+    let primary_store = crate::runtime::task::FileTaskV2Store::new(primary_root);
+    // Empty task_list_id keeps task files flat at <root>/<id>.json — matches
+    // the write path in runtime::tools::builtin::task_tools.
+    let primary = primary_store.list("")?;
 
     let Some(legacy_root) = legacy_aijia_root_for_user_scoped_base(aijia_home) else {
         return Ok(primary);

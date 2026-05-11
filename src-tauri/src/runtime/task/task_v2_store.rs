@@ -66,7 +66,15 @@ impl FileTaskV2Store {
     }
 
     fn list_dir(&self, task_list_id: &str) -> PathBuf {
-        self.root.join(Self::sanitize(task_list_id))
+        // P1.5 follow-up: each store is already rooted at a per-conversation
+        // tasks directory, so callers can pass an empty `task_list_id` to keep
+        // task files flat at `<root>/<id>.json`.  Non-empty values still nest
+        // under a sanitized subdirectory for legacy / multi-list use cases.
+        if task_list_id.is_empty() {
+            self.root.clone()
+        } else {
+            self.root.join(Self::sanitize(task_list_id))
+        }
     }
 
     fn task_path(&self, task_list_id: &str, task_id: &str) -> PathBuf {
