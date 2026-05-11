@@ -29,3 +29,4 @@ pub use subagent_transcript_store::{
     FileSubagentTranscriptStore, InMemorySubagentTranscriptStore, SubagentTranscriptEntryRecord,
     SubagentTranscriptStore,
 };
+pub use team::{Member, MemberRole, Team, TeamError, TeamRegistry, MAX_TEAMMATES};

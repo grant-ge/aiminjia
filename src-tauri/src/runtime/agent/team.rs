@@ -1,21 +1,111 @@
-// TODO(coordinator-not-implemented): 这是一个占位 stub，未实现。
-//
-// Claude Code 的 coordinatorMode 需要：
-//   1. 多 worker 并发调度入口（dispatch_workers）
-//   2. 综合层 prompt（汇总 worker 输出 → 给主对话一个最终答案）
-//   3. worker prompt 自包含上下文（worker 不能依赖 coordinator 的对话历史）
-//
-// 落地路径见:
-//   - docs/superpowers/specs/2026-04-20-subagent-alignment-design.md
-//   - claude-code-best/src/coordinator/coordinatorMode.ts
-//
-// 暂不实施原因：当前没有真实业务在等多 worker 调度。
-// 何时实施：当出现"一个任务需要多个独立子代理并行 + 综合"的真实需求时。
+use crate::runtime::ids::{AgentId, SessionId};
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
-use crate::runtime::ids::AgentId;
+pub const MAX_TEAMMATES: usize = 4;
 
-#[derive(Clone, Debug)]
-pub struct TeamContext {
-    pub team_id: String,
-    pub agent_ids: Vec<AgentId>,
+#[derive(Debug, Clone)]
+pub enum MemberRole {
+    Lead,
+    Teammate {
+        employee_id: String,
+        spawned_by: AgentId,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub struct Member {
+    pub agent_id: AgentId,
+    pub name: String,
+    pub role: MemberRole,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub last_active_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug)]
+pub struct Team {
+    pub session_id: SessionId,
+    pub team_name: String,
+    pub lead: Member,
+    pub teammates: Vec<Member>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum TeamError {
+    #[error("max teammate limit reached (4)")]
+    MaxTeammateLimitReached,
+    #[error("name already taken in this team: {0}")]
+    NameAlreadyTaken(String),
+    #[error("team not found for session {0:?}")]
+    TeamNotFound(SessionId),
+    #[error("team already exists for session {0:?}")]
+    TeamAlreadyExists(SessionId),
+}
+
+impl Team {
+    pub fn new(session_id: SessionId, lead: Member, team_name: String) -> Self {
+        let now = chrono::Utc::now();
+        Self {
+            session_id,
+            team_name,
+            lead,
+            teammates: Vec::new(),
+            created_at: now,
+        }
+    }
+
+    pub fn add_teammate(&mut self, m: Member) -> Result<(), TeamError> {
+        if self.teammates.len() >= MAX_TEAMMATES {
+            return Err(TeamError::MaxTeammateLimitReached);
+        }
+        if self.lead.name == m.name || self.teammates.iter().any(|t| t.name == m.name) {
+            return Err(TeamError::NameAlreadyTaken(m.name));
+        }
+        self.teammates.push(m);
+        Ok(())
+    }
+
+    pub fn members(&self) -> impl Iterator<Item = &Member> {
+        std::iter::once(&self.lead).chain(self.teammates.iter())
+    }
+
+    pub fn find_by_name(&self, name: &str) -> Option<&Member> {
+        self.members().find(|m| m.name == name)
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct TeamRegistry {
+    teams: Mutex<HashMap<SessionId, Arc<Mutex<Team>>>>,
+}
+
+impl TeamRegistry {
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self::default())
+    }
+
+    pub async fn create(
+        &self,
+        session_id: SessionId,
+        lead: Member,
+        team_name: String,
+    ) -> Result<Arc<Mutex<Team>>, TeamError> {
+        let mut g = self.teams.lock().await;
+        if g.contains_key(&session_id) {
+            return Err(TeamError::TeamAlreadyExists(session_id));
+        }
+        let team = Arc::new(Mutex::new(Team::new(session_id.clone(), lead, team_name)));
+        g.insert(session_id, team.clone());
+        Ok(team)
+    }
+
+    pub async fn get(&self, session_id: &SessionId) -> Option<Arc<Mutex<Team>>> {
+        self.teams.lock().await.get(session_id).cloned()
+    }
+
+    pub async fn delete(&self, session_id: &SessionId) -> Option<Arc<Mutex<Team>>> {
+        self.teams.lock().await.remove(session_id)
+    }
 }
