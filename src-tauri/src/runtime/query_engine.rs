@@ -63,6 +63,7 @@ pub struct QueryEngine {
     team_registry: Option<Arc<crate::runtime::agent::TeamRegistry>>,
     agent_names: Option<Arc<crate::runtime::agent::AgentNameRegistry>>,
     inbox_registry: Option<Arc<crate::runtime::agent::InboxRegistry>>,
+    lead_idle: Option<Arc<crate::runtime::agent::LeadIdleSupervisor>>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -94,6 +95,7 @@ impl QueryEngine {
             team_registry: None,
             agent_names: None,
             inbox_registry: None,
+            lead_idle: None,
         }
     }
 
@@ -123,6 +125,7 @@ impl QueryEngine {
             team_registry: self.team_registry.clone(),
             agent_names: self.agent_names.clone(),
             inbox_registry: self.inbox_registry.clone(),
+            lead_idle: self.lead_idle.clone(),
         }
     }
 
@@ -149,6 +152,14 @@ impl QueryEngine {
         self
     }
 
+    pub fn with_lead_idle(
+        mut self,
+        sup: Arc<crate::runtime::agent::LeadIdleSupervisor>,
+    ) -> Self {
+        self.lead_idle = Some(sup);
+        self
+    }
+
     /// Attach LTR registries (Team / name / inbox) onto an already-built
     /// ToolExecutionContext.  Helper to avoid duplicating the wiring in every
     /// tool-call build site.  No-op for whichever registry isn't configured
@@ -165,6 +176,9 @@ impl QueryEngine {
         }
         if let Some(inbox) = self.inbox_registry.clone() {
             ctx = ctx.with_inbox_registry(inbox);
+        }
+        if let Some(sup) = self.lead_idle.clone() {
+            ctx = ctx.with_lead_idle(sup);
         }
         ctx
     }

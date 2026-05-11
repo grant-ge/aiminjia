@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use crate::runtime::agent::{AgentNameRegistry, InboxRegistry, TeamRegistry};
+use crate::runtime::agent::{AgentNameRegistry, InboxRegistry, LeadIdleSupervisor, TeamRegistry};
 use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::hooks::config::HookRegistry;
 use crate::runtime::ids::{AgentId, RunId, SessionId, ToolCallId};
@@ -75,6 +75,10 @@ pub struct ToolExecutionContext {
     /// Per-process inbox registry — looks up an agent's mpsc inbox from its
     /// AgentId.  Required by SendMessage (P2.2); `None` elsewhere.
     pub inbox_registry: Option<Arc<InboxRegistry>>,
+    /// LTR (P2.4): per-process Lead idle-state supervisor.  Used by SendMessage
+    /// to enqueue/wake the Lead, and by the chat turn driver to self-check
+    /// at turn end.  `None` for legacy paths.
+    pub lead_idle: Option<Arc<LeadIdleSupervisor>>,
 }
 
 impl ToolExecutionContext {
@@ -103,6 +107,7 @@ impl ToolExecutionContext {
             team_registry: None,
             agent_names: None,
             inbox_registry: None,
+            lead_idle: None,
         }
     }
 
@@ -160,6 +165,11 @@ impl ToolExecutionContext {
 
     pub fn with_inbox_registry(mut self, registry: Arc<InboxRegistry>) -> Self {
         self.inbox_registry = Some(registry);
+        self
+    }
+
+    pub fn with_lead_idle(mut self, supervisor: Arc<LeadIdleSupervisor>) -> Self {
+        self.lead_idle = Some(supervisor);
         self
     }
 

@@ -192,6 +192,31 @@ impl RuntimeTool for SendMessageRuntimeTool {
                 ToolError::ExecutionFailed(format!("agent `{to}` inbox closed; message dropped"))
             })?;
 
+        // P2.4: if the recipient is the Lead, ask the supervisor whether we
+        // need to wake it.  Path A (turn-end self-check) handles the case
+        // where the Lead is currently running.  When `enqueue` returns true
+        // here, the Lead was idle — full wake wiring (run_chat_turn_continuation)
+        // arrives in P2.5/P2.6 follow-up; for now we log the wake intent so
+        // the supervisor's CAS still produces correct accounting.
+        if to == LEAD_NAME {
+            if let (Some(sup), Some(names_reg)) =
+                (ctx.lead_idle.as_ref(), ctx.agent_names.as_ref())
+            {
+                if let Some(lead_id) = names_reg.resolve(&session, LEAD_NAME).await {
+                    let key = (session.clone(), lead_id);
+                    if sup.enqueue(&key).await {
+                        log::info!(
+                            "[SendMessage] Lead idle → wake requested (continuation wiring lands in follow-up)"
+                        );
+                    } else {
+                        log::debug!(
+                            "[SendMessage] Lead running → pending mark recorded for Path A"
+                        );
+                    }
+                }
+            }
+        }
+
         Ok(ToolResult::new(
             "SendMessage",
             format!("delivered {} to `{to}`", message.variant_name()),

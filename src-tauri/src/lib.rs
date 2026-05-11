@@ -545,6 +545,7 @@ pub fn run() {
             app.manage(runtime::agent::TeamRegistry::new());
             app.manage(runtime::agent::AgentNameRegistry::new());
             app.manage(runtime::agent::InboxRegistry::new());
+            app.manage(runtime::agent::LeadIdleSupervisor::new());
 
             runtime::schedule_runner::spawn_schedule_runner(
                 current_user_storage.clone() as Arc<dyn storage::UserScopedPathResolver>,

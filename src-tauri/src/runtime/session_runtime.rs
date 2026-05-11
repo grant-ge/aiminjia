@@ -51,6 +51,9 @@ pub struct SessionRuntime {
     /// ToolExecutionContext can route SendMessage.  Not cleared on
     /// cancel_session — Teammate cleanup handles deregister.
     inbox_registry: Option<Arc<crate::runtime::agent::InboxRegistry>>,
+    /// LTR (P2.4): per-process Lead idle supervisor.  Propagated to QueryEngine
+    /// so SendMessage can enqueue/wake the Lead.
+    lead_idle: Option<Arc<crate::runtime::agent::LeadIdleSupervisor>>,
 }
 
 impl SessionRuntime {
@@ -70,6 +73,7 @@ impl SessionRuntime {
             team_registry: None,
             agent_names: None,
             inbox_registry: None,
+            lead_idle: None,
         }
     }
 
@@ -98,6 +102,7 @@ impl SessionRuntime {
             team_registry: None,
             agent_names: None,
             inbox_registry: None,
+            lead_idle: None,
         }
     }
 
@@ -170,6 +175,15 @@ impl SessionRuntime {
         registry: Arc<crate::runtime::agent::InboxRegistry>,
     ) -> Self {
         self.inbox_registry = Some(registry);
+        self
+    }
+
+    /// LTR (P2.4): inject the per-process Lead idle supervisor.
+    pub fn with_lead_idle(
+        mut self,
+        sup: Arc<crate::runtime::agent::LeadIdleSupervisor>,
+    ) -> Self {
+        self.lead_idle = Some(sup);
         self
     }
 
@@ -444,6 +458,9 @@ impl SessionRuntime {
             self.inbox_registry.clone(),
         ) {
             engine = engine.with_ltr_registries(team, names, inboxes);
+        }
+        if let Some(sup) = self.lead_idle.clone() {
+            engine = engine.with_lead_idle(sup);
         }
         engine
     }

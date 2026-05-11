@@ -2110,6 +2110,12 @@ impl TauriChatCommandAdapter {
         {
             runtime = runtime.with_inbox_registry(inbox_reg.inner().clone());
         }
+        if let Some(sup) = services
+            .app
+            .try_state::<Arc<crate::runtime::agent::LeadIdleSupervisor>>()
+        {
+            runtime = runtime.with_lead_idle(sup.inner().clone());
+        }
         Self { runtime, services }
     }
 
