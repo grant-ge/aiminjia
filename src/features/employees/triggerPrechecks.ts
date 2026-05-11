@@ -6,6 +6,7 @@ export type TriggerPrecheckResult =
   | { kind: 'attachments'; spec: RequiresAttachmentSpec }
   | { kind: 'resource'; resourceConfigKind: ResourceConfigKind }
   | { kind: 'dingtalk' }
+  | { kind: 'knowledge-indexing' }
 
 export interface RunTriggerPrechecksParams {
   template: EmployeeTemplate
@@ -48,7 +49,22 @@ export function runTriggerPrechecks(params: RunTriggerPrechecksParams): TriggerP
     return { kind: 'dingtalk' }
   }
 
+  if (hasPendingKnowledgeSources(employee)) {
+    return { kind: 'knowledge-indexing' }
+  }
+
   return { kind: 'ready' }
+}
+
+function hasPendingKnowledgeSources(employee: EmployeeRecord): boolean {
+  const cfg = employee.resourceConfig as Record<string, unknown> | null | undefined
+  const sources = cfg?.knowledgeSources
+  if (!Array.isArray(sources)) return false
+  return sources.some((s) => {
+    if (!s || typeof s !== 'object') return false
+    const status = (s as Record<string, unknown>).status
+    return status === 'pending' || status === 'indexing'
+  })
 }
 
 /** Whether the resource_config is mandatory before dispatch. */
@@ -61,6 +77,11 @@ function isResourceConfigRequired(template: EmployeeTemplate): boolean {
     case 'sales-table':
       // Soft requirement: employee can ask the user inside chat and persist
       // to memory (path A). The form is a convenience.
+      return false
+    case 'tech-support':
+      // Soft: employee can work without pre-config — will scan all groups
+      return false
+    case 'customer-support':
       return false
     case 'none':
       return false
@@ -88,6 +109,15 @@ function isResourceConfigured(template: EmployeeTemplate, employee: EmployeeReco
       // Configured = template selected (defaults to 'standard' on first save).
       const tpl = cfg.template
       return typeof tpl === 'string' && tpl.length > 0
+    }
+    case 'tech-support': {
+      // Configured = at least groupMatch keywords are set
+      const gm = cfg.groupMatch as Record<string, unknown> | undefined
+      return !!gm && Array.isArray(gm.keywords) && gm.keywords.length > 0
+    }
+    case 'customer-support': {
+      const gm = cfg.groupMatch as Record<string, unknown> | undefined
+      return !!gm && Array.isArray(gm.keywords) && gm.keywords.length > 0
     }
     case 'none':
       return true

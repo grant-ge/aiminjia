@@ -104,6 +104,10 @@ fn tool_result_bash(content: String, data: Value) -> ToolResult {
     }
 }
 
+fn command_with_merged_stderr(command: &str) -> String {
+    format!("{{\n{command}\n}} 2>&1")
+}
+
 #[cfg(unix)]
 fn configure_child_process_group(command: &mut Command) {
     unsafe {
@@ -204,12 +208,13 @@ impl RuntimeTool for BashTool {
             .ok_or_else(|| ToolError::ExecutionFailed("Missing required: command".into()))?
             .to_string();
         let timeout_secs = resolve_timeout_secs(&input);
+        let shell_command = command_with_merged_stderr(&command);
 
         let mut shell = Command::new("/bin/sh");
         configure_child_process_group(&mut shell);
         let mut child = shell
             .arg("-c")
-            .arg(&command)
+            .arg(&shell_command)
             .current_dir(&root)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())

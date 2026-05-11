@@ -66,6 +66,8 @@ impl RuntimeLlmExecutor for MockLlmExecutor {
                 content: "done".to_string(),
                 tokens_in: 0,
                 tokens_out: 0,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
                 stop_reason: Some("end_turn".to_string()),
             })
         } else {
@@ -95,6 +97,8 @@ fn mock_executor_implements_trait() {
         content: "hello".to_string(),
         tokens_in: 10,
         tokens_out: 5,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0,
         stop_reason: Some("end_turn".to_string()),
     }]);
     let _arc: Arc<dyn RuntimeLlmExecutor> = Arc::new(executor);
@@ -295,6 +299,8 @@ async fn driver_s4_loop_content_complete() {
         content: "Hello world".to_string(),
         tokens_in: 10,
         tokens_out: 5,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0,
         stop_reason: Some("end_turn".to_string()),
     }]));
 
@@ -399,11 +405,15 @@ async fn driver_s4_loop_tool_calls_then_content() {
             tool_calls: vec![], // empty: no real dispatcher needed
             tokens_in: 20,
             tokens_out: 10,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
         },
         LlmStepResult::ContentComplete {
             content: "Done.".to_string(),
             tokens_in: 5,
             tokens_out: 3,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
             stop_reason: Some("end_turn".to_string()),
         },
     ]));
@@ -442,6 +452,8 @@ async fn driver_s4_message_persisted_carries_content() {
         content: "The answer is 42.".to_string(),
         tokens_in: 8,
         tokens_out: 4,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0,
         stop_reason: Some("end_turn".to_string()),
     }]));
 
@@ -567,6 +579,8 @@ impl RuntimeLlmExecutor for RecordingMockExecutor {
                 content: "done".to_string(),
                 tokens_in: 0,
                 tokens_out: 0,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
                 stop_reason: Some("end_turn".to_string()),
             })
         } else {
@@ -597,6 +611,8 @@ async fn driver_s4_injects_system_reminder_as_first_user_message() {
             content: "ok".to_string(),
             tokens_in: 0,
             tokens_out: 0,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
             stop_reason: Some("end_turn".to_string()),
         },
     ]));
@@ -643,6 +659,8 @@ async fn driver_s4_system_reminder_precedes_user_content_message() {
             content: "ok".to_string(),
             tokens_in: 0,
             tokens_out: 0,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
             stop_reason: Some("end_turn".to_string()),
         },
     ]));
@@ -709,6 +727,8 @@ impl RuntimeLlmExecutor for EnrichedUserMessageExecutor {
             content: "ok".to_string(),
             tokens_in: 0,
             tokens_out: 0,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
             stop_reason: Some("end_turn".to_string()),
         })
     }
@@ -792,6 +812,8 @@ impl CapturingMockExecutor {
                 content: "ok".to_string(),
                 tokens_in: 0,
                 tokens_out: 0,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
                 stop_reason: Some("end_turn".to_string()),
             }]),
             received_system_prompts: std::sync::Mutex::new(Vec::new()),
@@ -817,6 +839,8 @@ impl RuntimeLlmExecutor for CapturingMockExecutor {
                 content: "done".to_string(),
                 tokens_in: 0,
                 tokens_out: 0,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
                 stop_reason: Some("end_turn".to_string()),
             })
         } else {
@@ -824,7 +848,7 @@ impl RuntimeLlmExecutor for CapturingMockExecutor {
         }
     }
 
-    async fn build_system_prompt(&self, _conversation_id: &str) -> Result<String, TurnError> {
+    async fn build_system_prompt(&self, _request: &ChatTurnRequest) -> Result<String, TurnError> {
         Ok("[UNIFIED-SYSTEM-PROMPT]".to_string())
     }
 
@@ -921,6 +945,8 @@ impl RuntimeLlmExecutor for ToolDefsCapturingExecutor {
             content: "ok".to_string(),
             tokens_in: 0,
             tokens_out: 0,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
             stop_reason: Some("end_turn".to_string()),
         })
     }
@@ -1069,6 +1095,8 @@ impl RuntimeLlmExecutor for TurnConfigOverrideExecutor {
                 content: "done".to_string(),
                 tokens_in: 0,
                 tokens_out: 0,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
                 stop_reason: Some("end_turn".to_string()),
             })
         } else {
@@ -1076,7 +1104,7 @@ impl RuntimeLlmExecutor for TurnConfigOverrideExecutor {
         }
     }
 
-    async fn build_system_prompt(&self, _conversation_id: &str) -> Result<String, TurnError> {
+    async fn build_system_prompt(&self, _request: &ChatTurnRequest) -> Result<String, TurnError> {
         Ok("[BASE-SYSTEM-PROMPT]".to_string())
     }
 
@@ -1131,6 +1159,8 @@ async fn driver_s4_prefers_turn_override_system_prompt_and_tool_defs() {
             content: "ok".to_string(),
             tokens_in: 0,
             tokens_out: 0,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
             stop_reason: Some("end_turn".to_string()),
         }],
     ));
@@ -1171,11 +1201,15 @@ async fn driver_s4_turn_override_allowed_tools_blocks_runtime_execution() {
                 }],
                 tokens_in: 0,
                 tokens_out: 0,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
             },
             LlmStepResult::ContentComplete {
                 content: "done".to_string(),
                 tokens_in: 0,
                 tokens_out: 0,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
                 stop_reason: Some("end_turn".to_string()),
             },
         ],
@@ -1241,6 +1275,8 @@ impl RuntimeLlmExecutor for HistoryAwareMockExecutor {
             content: "response".to_string(),
             tokens_in: 0,
             tokens_out: 0,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
             stop_reason: Some("end_turn".to_string()),
         })
     }
@@ -1458,6 +1494,8 @@ impl RuntimeLlmExecutor for EnvInfoCapturingExecutor {
             content: "ok".to_string(),
             tokens_in: 0,
             tokens_out: 0,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
             stop_reason: Some("end_turn".to_string()),
         })
     }
@@ -1564,6 +1602,8 @@ impl RuntimeLlmExecutor for CountingEnvInfoExecutor {
             content: "ok".to_string(),
             tokens_in: 0,
             tokens_out: 0,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
             stop_reason: Some("end_turn".to_string()),
         })
     }
@@ -1715,6 +1755,8 @@ impl RuntimeLlmExecutor for SkillCatalogCapturingExecutor {
             content: "ok".to_string(),
             tokens_in: 0,
             tokens_out: 0,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
             stop_reason: Some("end_turn".to_string()),
         })
     }
@@ -1741,7 +1783,7 @@ impl RuntimeLlmExecutor for SkillCatalogCapturingExecutor {
 
 #[tokio::test]
 async fn driver_injects_skill_catalog_into_dynamic_context() {
-    let catalog = "The following skills are available for use with the load_skill tool:\n\n- `salary-query` — 薪酬查询";
+    let catalog = "The following skills are available for use with the Skill tool:\n\n- `salary-query` — 薪酬查询";
     let executor = Arc::new(SkillCatalogCapturingExecutor::new(catalog));
     let bus = RuntimeEventBus::new();
     let qe = QueryEngine::default();
@@ -1755,7 +1797,7 @@ async fn driver_injects_skill_catalog_into_dynamic_context() {
     assert!(!captured.is_empty(), "must capture dynamic_context");
     let ctx = &captured[0];
     assert!(
-        ctx.contains("The following skills are available for use with the load_skill tool"),
+        ctx.contains("The following skills are available for use with the Skill tool"),
         "dynamic context must contain skill catalog header, got: {}",
         ctx
     );

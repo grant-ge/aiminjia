@@ -12,6 +12,7 @@ import { SettingsModal } from '@/components/settings/SettingsModal'
 import { TitleBar } from '@/components/layout/TitleBar'
 import { AppSidebar } from '@/components/sidebar/AppSidebar'
 import { ChatPage } from '@/features/chat/ChatPage'
+import { ChannelPage } from '@/features/channel/ChannelPage'
 import { EmployeesPage } from '@/features/home/EmployeesPage'
 import { HomePage } from '@/features/home/HomePage'
 import { InboxPage } from '@/features/inbox/InboxPage'
@@ -25,13 +26,15 @@ import {
   approvePermissionRequest,
   cancelPermissionRequest,
   denyPermissionRequest,
+  getConversations,
   getPluginInfo,
   getSettings,
   onAuthExpired,
+  onConversationCreated,
   onConversationTitleUpdated,
 } from '@/lib/tauri'
 import { useAuthStore } from '@/stores/authStore'
-import { useBrandingStore, applyAccentColor, loadPersistedAccentColor } from '@/stores/brandingStore'
+import { useBrandingStore } from '@/stores/brandingStore'
 import { useChatStore } from '@/stores/chatStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { usePluginStore } from '@/stores/pluginStore'
@@ -40,10 +43,10 @@ import { useSkillStore } from '@/stores/skillStore'
 import { useStreamingStore } from '@/stores/streamingStore'
 import { useInteractionStore } from '@/stores/interactionStore'
 import { useUiStore } from '@/stores/uiStore'
+import { initChannelListeners } from '@/stores/channelStore'
 import { applyFontScale, loadPersistedFontScale, normalizeFontScale, persistFontScale } from '@/styles/fontScale'
 
 applyFontScale(loadPersistedFontScale())
-applyAccentColor(loadPersistedAccentColor())
 
 function RouteSwitch() {
   const route = useUiStore((state) => state.route)
@@ -63,6 +66,8 @@ function RouteSwitch() {
       return <InboxPage />
     case 'chat':
       return <ChatPage conversationId={route.conversationId} />
+    case 'channel':
+      return <ChannelPage sessionId={route.sessionId} />
   }
 }
 
@@ -108,14 +113,12 @@ function AppShell() {
     }
   }
 
-  const isWindows = navigator.userAgent.includes('Windows')
-
   return (
-    <div className="flex h-screen w-screen flex-col bg-sidebar text-foreground">
+    <div className="flex h-screen w-screen flex-col bg-background text-foreground">
       <TitleBar />
       <div className="flex min-h-0 flex-1">
         <AppSidebar />
-        <main className={`min-w-0 flex-1 overflow-hidden border-l border-border${isWindows ? '' : ' rounded-tl-xl'}`}>
+        <main className="min-w-0 flex-1 overflow-hidden border-l border-border">
           <RouteSwitch />
         </main>
       </div>
@@ -164,9 +167,6 @@ function App() {
           applyFontScale(fontScale)
           useSettingsStore.setState({ fontScale })
         }
-        if (settings.accentColor) {
-          useBrandingStore.getState().applyBranding({ accentColor: settings.accentColor })
-        }
       })
       .catch((err) => console.error('Failed to load settings:', err))
   }, [])
@@ -203,6 +203,35 @@ function App() {
     return () => {
       unlisten.then((fn) => fn())
     }
+  }, [])
+
+  // 监听后端创建新 conversation：每次 agenda / employee / schedule_runner 或用户自己
+  // 建新对话时，sidebar 的 chatStore 需要 reload 才能看到。此处只刷列表，
+  // 不改 activeConversationId / 路由 —— 用户可能正在别的对话里操作。
+  useEffect(() => {
+    const unlisten = onConversationCreated(async () => {
+      try {
+        const raw = await getConversations()
+        const convs = raw.map((c) => ({
+          id: (c.id as string) ?? '',
+          title: (c.title as string) ?? '新对话',
+          createdAt: (c.createdAt as string) ?? new Date().toISOString(),
+          updatedAt: (c.updatedAt as string) ?? new Date().toISOString(),
+          isArchived: (c.isArchived as boolean) ?? false,
+          workspaceName: (c.workspaceName as string | undefined) ?? undefined,
+        }))
+        useChatStore.getState().setConversations(convs)
+      } catch (err) {
+        console.error('[App] reload conversations after conversation:created failed:', err)
+      }
+    })
+    return () => {
+      unlisten.then((fn) => fn())
+    }
+  }, [])
+
+  useEffect(() => {
+    void initChannelListeners()
   }, [])
 
   return (

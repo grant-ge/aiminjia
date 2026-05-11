@@ -54,3 +54,9 @@ __pycache__/
 
 # Plan-A: visual realignment captures
 tmp/ui-capture/
+
+dist-skills/
+
+# Release
+.release-state.json
+signing-workspace/

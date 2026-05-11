@@ -1,12 +1,14 @@
 import '@testing-library/jest-dom'
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { render, screen, waitFor } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useChatStore } from '@/stores/chatStore'
 import { ChatPage } from './ChatPage'
 
+const switchConversationMock = vi.hoisted(() => vi.fn())
+
 vi.mock('@/hooks/useChat', () => ({
-  useChat: () => ({ switchConversation: vi.fn() }),
+  useChat: () => ({ switchConversation: switchConversationMock }),
 }))
 
 vi.mock('@/components/shell/ChatTopBar', () => ({
@@ -26,6 +28,26 @@ vi.mock('@/components/chat/RightPanel', () => ({
 }))
 
 describe('ChatPage layout', () => {
+  beforeEach(() => {
+    switchConversationMock.mockClear()
+    useChatStore.setState({ activeConversationId: null, conversations: [], messages: [] })
+  })
+
+
+  it('loads messages on reload when route conversation is already active but message cache is empty', async () => {
+    useChatStore.setState({
+      activeConversationId: 'conv-reload',
+      conversations: [{ id: 'conv-reload', title: '刷新恢复', createdAt: '', updatedAt: '', isArchived: false }],
+      messages: [],
+    })
+
+    render(<ChatPage conversationId="conv-reload" />)
+
+    await waitFor(() => {
+      expect(switchConversationMock).toHaveBeenCalledWith('conv-reload')
+    })
+  })
+
   it('composes the chat column as header, content, and footer using flex layout', () => {
     useChatStore.setState({
       activeConversationId: 'conv-layout',

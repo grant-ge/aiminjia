@@ -45,7 +45,7 @@ export function SettingsShell({
       />
       <div
         data-testid="settings-modal-box"
-        className="relative z-10 grid h-[720px] w-[980px] max-h-[calc(100vh-48px)] max-w-[calc(100vw-48px)] grid-cols-[220px_minmax(0,1fr)] overflow-hidden rounded-[18px] border border-border bg-card"
+        className="relative z-10 grid h-[720px] w-[980px] max-h-[calc(100vh-48px)] max-w-[calc(100vw-48px)] grid-cols-[220px_minmax(0,1fr)] overflow-hidden rounded-xl border border-border bg-card"
         style={{
           height,
           boxShadow: '0 20px 20px rgba(0,0,0,0.10), 0 10px 10px rgba(0,0,0,0.04)',

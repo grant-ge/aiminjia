@@ -90,6 +90,8 @@ async fn review_session_state_b2_driver_turn_accumulates_step_tokens_into_query_
             content: "b2 done".to_string(),
             tokens_in: 13,
             tokens_out: 21,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
             stop_reason: Some("end_turn".to_string()),
         })),
     });

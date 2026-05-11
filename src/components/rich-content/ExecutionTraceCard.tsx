@@ -44,7 +44,7 @@ export function ExecutionTraceCard({
 
   return (
     <div
-      className="overflow-hidden rounded-lg border"
+      className="overflow-hidden rounded-lg border border-border"
       style={{
         background: 'var(--color-bg-card)',
         borderColor: 'var(--color-border)',
@@ -54,7 +54,7 @@ export function ExecutionTraceCard({
         <button
           type="button"
           onClick={() => setHeaderExpanded((prev) => !prev)}
-          className={`flex w-full items-center justify-between px-4 py-2.5 text-left transition-colors hover:bg-[var(--color-bg-hover)] ${headerExpanded ? 'rounded-t-lg border-b' : 'rounded-lg'}`}
+          className={`flex w-full items-center justify-between px-4 py-2.5 text-left transition-colors hover:bg-[var(--color-bg-hover)] ${headerExpanded ? 'rounded-t-lg border-b border-border' : 'rounded-lg'}`}
           style={{
             background: 'var(--color-bg-elevated)',
             borderColor: 'var(--color-border)',
@@ -100,7 +100,7 @@ export function ExecutionTraceCard({
         </button>
       ) : (
         <div
-          className="flex items-center justify-between rounded-t-lg border-b px-4 py-2.5"
+          className="flex items-center justify-between rounded-t-lg border-b px-4 py-2.5 border-border"
           style={{
             background: 'var(--color-bg-elevated)',
             borderColor: 'var(--color-border)',
@@ -138,7 +138,7 @@ export function ExecutionTraceCard({
       {headerExpanded && sections.map((section, sectionIndex) => (
         <div
           key={`${section.title}-${sectionIndex}`}
-          className={`${summary || sectionIndex > 0 ? 'border-t' : ''} px-4 py-2.5`}
+          className={`${summary || sectionIndex > 0 ? 'border-t border-border' : ''} px-4 py-2.5`}
           style={{ borderColor: 'var(--color-border)' }}
         >
           <div
@@ -167,7 +167,7 @@ export function ExecutionTraceCard({
 
       {headerExpanded && children ? (
         <div
-          className={summary || sections.length > 0 ? 'border-t' : ''}
+          className={summary || sections.length > 0 ? 'border-t border-border' : ''}
           style={{ borderColor: 'var(--color-border)' }}
         >
           {children}
@@ -176,7 +176,7 @@ export function ExecutionTraceCard({
 
       {headerExpanded && canExpand ? (
         <div
-          className={hasContentBeforeExpander ? 'border-t' : ''}
+          className={hasContentBeforeExpander ? 'border-t border-border' : ''}
           style={{ borderColor: 'var(--color-border)' }}
         >
           <button
@@ -207,7 +207,7 @@ export function ExecutionTraceCard({
             <span className="font-medium">{expanded ? collapseLabel ?? expandLabel : expandLabel}</span>
           </button>
           {body ? (
-            <div className="border-t" style={{ borderColor: 'var(--color-border)' }}>
+            <div className="border-t border-border" style={{ borderColor: 'var(--color-border)' }}>
               {body}
             </div>
           ) : null}

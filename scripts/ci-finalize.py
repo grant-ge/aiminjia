@@ -85,7 +85,7 @@ def load_release_notes(version: str) -> str:
         bullets = entry.get("changes", {}).get("zh") or entry.get("changes", {}).get("en") or []
         if bullets:
             return "\n".join(bullets)
-    print(f"[warn] no changelog entry for desktop v{version}")
+    print(f"[warn] no changelog entry for desktop v{version} — update.json notes will fall back to bundle name; ensure home container is redeployed before this runs")
     return f"AIjia v{version}"
 
 

@@ -79,6 +79,7 @@ fn maps_permission_ask_runtime_event_to_legacy_permission_ask() {
                 PermissionDestination::User,
             ],
             default_destination: Some(PermissionDestination::Session),
+            primary_model: "deepseek-v3".into(),
         },
     );
     let mapped = map_runtime_event(&event).expect("legacy adapter should expose permission ask");
@@ -147,6 +148,8 @@ fn maps_turn_completed_runtime_event_to_legacy_turn_completed() {
             },
             total_input_tokens: 100,
             total_output_tokens: 50,
+            total_cache_creation_input_tokens: 0,
+            total_cache_read_input_tokens: 0,
             total_cost_usd: Some(0.75),
             permission_denial_count: 2,
         },

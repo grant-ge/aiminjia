@@ -11,6 +11,14 @@ use std::pin::Pin;
 pub struct TokenUsage {
     pub input_tokens: u32,
     pub output_tokens: u32,
+    /// Anthropic-style prompt-cache write tokens (tokens that resulted in new
+    /// cache entries this turn). `None` when the provider does not report it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_creation_input_tokens: Option<u32>,
+    /// Anthropic-style prompt-cache read tokens (tokens served from existing
+    /// cache entries this turn). `None` when the provider does not report it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_read_input_tokens: Option<u32>,
 }
 
 /// Why the model stopped generating.
@@ -93,6 +101,10 @@ pub struct ChatMessage {
     /// back verbatim so the upstream can validate them.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thinking_blocks: Option<Vec<serde_json::Value>>,
+    /// Current-turn Anthropic image sidecar. This is never persisted and only
+    /// the Claude/Lotus Anthropic serializer consumes it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub anthropic_multimodal_turn: Option<AnthropicMultimodalTurn>,
 }
 
 impl ChatMessage {
@@ -106,6 +118,7 @@ impl ChatMessage {
             name: None,
             thinking: None,
             thinking_blocks: None,
+            anthropic_multimodal_turn: None,
         }
     }
 
@@ -124,6 +137,7 @@ impl ChatMessage {
             name: None,
             thinking,
             thinking_blocks,
+            anthropic_multimodal_turn: None,
         }
     }
 
@@ -137,6 +151,7 @@ impl ChatMessage {
             name: Some(tool_name.to_string()),
             thinking: None,
             thinking_blocks: None,
+            anthropic_multimodal_turn: None,
         }
     }
 }
@@ -147,6 +162,27 @@ pub struct ToolDefinition {
     pub name: String,
     pub description: String,
     pub parameters: serde_json::Value, // JSON Schema
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum AnthropicContentBlock {
+    Text { text: String },
+    Image { source: AnthropicImageSource },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum AnthropicImageSource {
+    Base64 { media_type: String, data: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AnthropicMultimodalTurn {
+    pub image_blocks: Vec<AnthropicContentBlock>,
+    pub image_count: usize,
+    pub image_bytes_total: u64,
+    pub degraded_count: usize,
 }
 
 /// Extended thinking configuration for providers that support explicit reasoning controls.
@@ -167,6 +203,26 @@ pub struct LlmRequest {
     pub temperature: f32,
     pub stream: bool,
     pub thinking_config: Option<ThinkingConfig>,
+    pub anthropic_multimodal_turn: Option<AnthropicMultimodalTurn>,
+    /// Per-block cache_control passthrough for Anthropic-style prompt caching.
+    /// When `Some` and non-empty, providers that support block-level
+    /// `cache_control` (currently `claude.rs`) render the `system` field as
+    /// an array of text blocks where each segment with `cache=true` carries
+    /// `cache_control: {type: "ephemeral"}`. Other providers ignore this and
+    /// fall back to reading the flattened system message from `messages`.
+    pub system_segments: Option<Vec<SystemPromptSegment>>,
+}
+
+/// A single segment of the assembled system prompt with caching intent.
+/// Mirrors `PromptCachePolicy` semantics at the wire-protocol boundary so we
+/// can transport per-block caching decisions to providers that support them
+/// (Anthropic) without leaking renderer types into the llm layer.
+#[derive(Debug, Clone, Default)]
+pub struct SystemPromptSegment {
+    pub text: String,
+    /// If true, the segment is marked as a cache breakpoint
+    /// (`cache_control: {type: "ephemeral"}` for Anthropic).
+    pub cache: bool,
 }
 
 impl Default for LlmRequest {
@@ -178,6 +234,8 @@ impl Default for LlmRequest {
             temperature: 0.7,
             stream: true,
             thinking_config: None,
+            anthropic_multimodal_turn: None,
+            system_segments: None,
         }
     }
 }
@@ -250,7 +308,7 @@ mod tests {
         let req = LlmRequest::default();
         assert!(req.messages.is_empty());
         assert!(req.tools.is_empty());
-        assert_eq!(req.max_tokens, 4096);
+        assert_eq!(req.max_tokens, 8192);
         assert!((req.temperature - 0.7).abs() < f32::EPSILON);
         assert!(req.stream);
     }
@@ -272,6 +330,8 @@ mod tests {
             usage: TokenUsage {
                 input_tokens: 100,
                 output_tokens: 50,
+                cache_creation_input_tokens: None,
+                cache_read_input_tokens: None,
             },
         };
         let json = serde_json::to_string(&event).unwrap();

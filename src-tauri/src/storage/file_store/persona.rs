@@ -1,5 +1,15 @@
 //! Persona storage — user-defined roles with identity, expertise, and memory hints.
 //!
+//! # DEPRECATED (2026-05-10)
+//!
+//! Persona 系统已进入退役流程。新方向是数字员工（Employee, `runtime/employee/`）一统：
+//! Employee 已覆盖 Persona 全部能力（identity / expertise via `system_prompt_extra`）
+//! 加上 cron / tool_whitelist / default_skill_id / resource_config / lifecycle 等。
+//!
+//! PR-5 会把 `AgendaItem.organizer_persona_id` 迁到 `organizer_employee_id`。
+//! 在 agenda 切换完成前，本模块仍被 agenda dispatcher（`transport/tauri_commands/chat.rs`）
+//! 依赖，所以不加 `#[deprecated]` attribute；新代码请直接使用 `runtime::employee`。
+//!
 //! Directory layout:
 //! ```text
 //! {base_dir}/personas/

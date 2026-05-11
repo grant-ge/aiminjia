@@ -51,6 +51,8 @@ impl RuntimeLlmExecutor for CoreMemoryCapturingExecutor {
                 content: "ok".to_string(),
                 tokens_in: 0,
                 tokens_out: 0,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
                 stop_reason: Some("end_turn".to_string()),
             })
         } else {
@@ -87,6 +89,8 @@ async fn ab1_core_memory_appears_in_dynamic_context() {
             content: "done".to_string(),
             tokens_in: 0,
             tokens_out: 0,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
             stop_reason: Some("end_turn".to_string()),
         }],
     ));
@@ -122,11 +126,15 @@ async fn ab1_load_core_memory_called_once_per_turn() {
                 tool_calls: vec![],
                 tokens_in: 0,
                 tokens_out: 0,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
             },
             LlmStepResult::ContentComplete {
                 content: "done".to_string(),
                 tokens_in: 0,
                 tokens_out: 0,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
                 stop_reason: Some("end_turn".to_string()),
             },
         ],

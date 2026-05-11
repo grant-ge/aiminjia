@@ -14,8 +14,6 @@ export interface ToolExecution {
   output?: string   // 来自 tool:completed 事件
 }
 
-export type AgentPhase = 'think' | 'act' | 'observe'
-
 export interface ConversationTaskState {
   taskId: string
   status: string
@@ -32,6 +30,8 @@ export interface TurnSummary {
   outcome: TurnOutcome
   totalInputTokens?: number
   totalOutputTokens?: number
+  totalCacheCreationInputTokens?: number
+  totalCacheReadInputTokens?: number
   totalCostUsd?: number | null
   completedAt: number
 }
@@ -52,7 +52,6 @@ export interface ConversationStreamState {
   isStreaming: boolean
   streamingContent: string
   toolExecutions: ToolExecution[]
-  agentPhase?: AgentPhase
   lastTurnSummary?: TurnSummary
 }
 
@@ -74,7 +73,6 @@ export interface StreamingState {
   deleteConversationStreamState: (convId: string) => void
   addConversationToolExecution: (convId: string, exec: ToolExecution) => void
   updateConversationToolExecution: (convId: string, toolId: string, update: Partial<ToolExecution>) => void
-  setConversationAgentPhase: (convId: string, phase: AgentPhase | undefined) => void
   upsertConversationTaskState: (convId: string, task: ConversationTaskState) => void
   addPendingAsk: (ask: PendingAsk) => void
   removePendingAsk: (toolCallId: string) => void
@@ -222,7 +220,6 @@ export function createStreamingSlice<T extends StreamingState & StreamingSliceBr
         if (
           !previous.isStreaming &&
           previous.streamingContent === '' &&
-          !previous.agentPhase &&
           previous.toolExecutions.length === 0
         ) {
           return {} as Partial<T>
@@ -233,7 +230,6 @@ export function createStreamingSlice<T extends StreamingState & StreamingSliceBr
             isStreaming: false,
             streamingContent: '',
             toolExecutions: [],
-            agentPhase: undefined,
             lastTurnSummary: previous.lastTurnSummary,
           },
         }
@@ -284,16 +280,6 @@ export function createStreamingSlice<T extends StreamingState & StreamingSliceBr
         }
         const legacy = deriveLegacy(state.activeConversationId, streamStates)
         return { streamStates, ...legacy } as Partial<T>
-      }),
-
-    setConversationAgentPhase: (convId, phase) =>
-      apply((state) => {
-        const previous = getStreamState(state.streamStates, convId)
-        const streamStates = {
-          ...state.streamStates,
-          [convId]: { ...previous, agentPhase: phase },
-        }
-        return { streamStates } as Partial<T>
       }),
 
     upsertConversationTaskState: (convId, task) =>

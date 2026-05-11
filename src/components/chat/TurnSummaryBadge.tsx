@@ -64,7 +64,7 @@ export function TurnSummaryBadge({ summary }: TurnSummaryBadgeProps) {
     <div className="mt-3 pl-9">
       <div
         aria-label="turn summary"
-        className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs"
+        className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs border-border"
         style={style}
       >
         <span>{label}</span>

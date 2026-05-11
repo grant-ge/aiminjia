@@ -11,6 +11,8 @@ import {
   remove,
   mkdir,
 } from '@tauri-apps/plugin-fs'
+import { useNotificationStore } from '@/stores/notificationStore'
+import i18n from '@/i18n'
 
 type Phase = 'idle' | 'downloading' | 'ready' | 'failed' | 'installing'
 
@@ -50,6 +52,8 @@ async function pendingPath(): Promise<{ dir: string; file: string }> {
 }
 
 async function readPending(): Promise<PendingMeta | null> {
+  // Currently unused (bootstrap clears unconditionally), kept for diagnostics
+  // and future re-enablement. eslint-disable-next-line @typescript-eslint/no-unused-vars
   try {
     const { file } = await pendingPath()
     if (!(await exists(file))) return null
@@ -61,6 +65,7 @@ async function readPending(): Promise<PendingMeta | null> {
     return null
   }
 }
+void readPending
 
 async function writePending(meta: PendingMeta): Promise<void> {
   const { dir, file } = await pendingPath()
@@ -98,51 +103,37 @@ export const useUpdaterStore = create<UpdaterState>()((set, get) => ({
       window.addEventListener('offline', () => set({ online: false }))
     }
 
-    const prior = await readPending()
-    if (prior && prior.status !== 'ready') {
-      // downloading or failed → discard
-      await clearPending()
-    } else if (prior && prior.status === 'ready') {
-      // surface the ready link immediately so the user sees it on launch
-      set({
-        phase: 'ready',
-        version: prior.version,
-        progress: { downloaded: prior.downloadedBytes, total: prior.totalBytes },
-      })
-    }
+    // pending.json from a prior session is unreliable: the Tauri Update handle
+    // can't be persisted across launches, so even a "ready" status would mean
+    // we'd have to re-download anyway. Worse, surfacing an old version (e.g.
+    // 0.5.18 cached while the server is now on 0.5.20) confuses users and the
+    // install button silently no-ops without an Update handle. Always start
+    // from a clean slate and trust this session's check() result.
+    await clearPending()
 
     let update: Update | null = null
     try {
       update = await check()
     } catch (e) {
       console.warn('[updater] check failed:', e)
-      // Offline + prior ready → keep ready phase, but install will fail without an Update handle
       return
     }
 
     if (!update) {
-      if (prior) await clearPending()
       set({ phase: 'idle', version: null, notes: '', progress: null, _update: null })
       return
     }
 
     const currentVersion = await getVersion()
     if (update.version === currentVersion) {
-      if (prior) await clearPending()
       set({ phase: 'idle', version: null, notes: '', progress: null, _update: null })
       return
     }
 
-    if (prior && prior.status === 'ready' && prior.version !== update.version) {
-      // remote moved on; discard old pending and re-download new version
-      await clearPending()
-      set({ phase: 'idle', version: null, notes: '', progress: null })
-    }
-
-    set({ _update: update, version: update.version, notes: update.body ?? '' })
-
-    // start download (or re-fill in-process bytes if prior was ready)
     set({
+      _update: update,
+      version: update.version,
+      notes: update.body ?? '',
       phase: 'downloading',
       progress: { downloaded: 0, total: 0 },
     })
@@ -202,7 +193,17 @@ export const useUpdaterStore = create<UpdaterState>()((set, get) => ({
   async installNow() {
     const { _update } = get()
     if (!_update) {
-      console.warn('[updater] installNow called without an Update handle (likely offline)')
+      // Should not happen with the simplified bootstrap flow, but guard anyway
+      // so the user gets a visible error instead of a silent no-op.
+      useNotificationStore.getState().push({
+        context: 'toast',
+        level: 'error',
+        title: i18n.t('updater.installFailedTitle'),
+        message: i18n.t('updater.notReadyMessage'),
+        actions: [],
+        dismissible: true,
+        autoHide: 6,
+      })
       return
     }
     set({ phase: 'installing' })
@@ -212,6 +213,15 @@ export const useUpdaterStore = create<UpdaterState>()((set, get) => ({
       await relaunch()
     } catch (e) {
       console.error('[updater] install failed:', e)
+      useNotificationStore.getState().push({
+        context: 'toast',
+        level: 'error',
+        title: i18n.t('updater.installFailedTitle'),
+        message: String((e as Error)?.message ?? e),
+        actions: [],
+        dismissible: true,
+        autoHide: 8,
+      })
       set({ phase: 'ready' })
     }
   },

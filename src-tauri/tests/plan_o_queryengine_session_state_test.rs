@@ -188,6 +188,25 @@ fn o4_estimated_cost_usd_calculation() {
     assert!((cost - expected).abs() < 1e-9);
 }
 
+#[test]
+fn o4_estimated_cost_usd_anthropic_cache_weighting() {
+    // Anthropic pricing: cache_creation = 1.25x input, cache_read = 0.1x input
+    let engine = QueryEngine::new().with_cost_per_1k_tokens(0.001);
+    // 1000 plain input + 1000 output + 1000 cache_creation + 1000 cache_read
+    // weighted = 1000 + 1000 + 1000*1.25 + 1000*0.1 = 3350 tokens
+    // cost = 3350/1000 * 0.001 = 0.00335
+    engine.accumulate_usage(1000, 1000);
+    engine.accumulate_cache_usage(1000, 1000);
+    let cost = engine.estimated_cost_usd();
+    let expected = 3.350 * 0.001;
+    assert!(
+        (cost - expected).abs() < 1e-9,
+        "got {} expected {}",
+        cost,
+        expected
+    );
+}
+
 struct ImmediateContentExecutor;
 
 #[async_trait]
@@ -202,6 +221,8 @@ impl RuntimeLlmExecutor for ImmediateContentExecutor {
             content: "done".to_string(),
             tokens_in: 500_000,
             tokens_out: 500_000,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
             stop_reason: Some("end_turn".to_string()),
         })
     }

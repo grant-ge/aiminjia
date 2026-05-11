@@ -127,12 +127,12 @@ export function FilePreviewPane({ target, onOpenExternal, onClosePreview }: File
         : 'flex-1 overflow-auto p-6'}
       >
         {!isCurrentPreviewState ? (
-          <div className="flex h-full items-center justify-center text-[13px] text-muted-foreground">
+          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             正在加载预览
           </div>
         ) : previewState.status === 'error' ? (
-          <div className="space-y-3 rounded-xl border border-destructive/20 bg-destructive/5 p-4 text-[13px] text-destructive">
+          <div className="space-y-3 rounded-xl border border-destructive/20 bg-destructive/5 p-4 text-sm text-destructive">
             <p>{previewState.error}</p>
             <Button type="button" variant="outline" size="sm" onClick={retryPreview}>
               重试
@@ -173,13 +173,13 @@ function PreviewContent({ preview }: { preview: FilePreview }) {
     case 'csv':
     case 'text':
       return (
-        <pre className="whitespace-pre-wrap rounded-xl bg-muted p-4 text-[12px] leading-6 text-foreground">
+        <pre className="whitespace-pre-wrap rounded-xl bg-muted p-4 text-xs leading-6 text-foreground">
           {preview.content}
         </pre>
       )
     case 'unsupported':
       return (
-        <div className="rounded-xl border border-border bg-muted/40 p-4 text-[13px] text-muted-foreground">
+        <div className="rounded-xl border border-border bg-muted/40 p-4 text-sm text-muted-foreground">
           {preview.reason}
         </div>
       )

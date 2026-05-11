@@ -153,6 +153,7 @@ mod runner_tests {
             resource_config: serde_json::json!({}),
             system_prompt_extra: None,
             default_skill_id: None,
+            template_ref: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
             last_run_at: None,

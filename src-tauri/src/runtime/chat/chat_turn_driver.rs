@@ -11,6 +11,9 @@ use crate::runtime::agent::task_notification::{QueuedNotification, TaskNotificat
 use crate::runtime::chat::compact_client::CompactSummaryClient;
 use crate::runtime::cancellation::{CancellationReason, CancellationToken};
 use crate::runtime::chat::context_builder::build_iteration_context;
+use crate::runtime::chat::multimodal::{
+    build_anthropic_image_blocks, retain_text_fallback_attachments,
+};
 use crate::runtime::chat::post_process;
 use crate::runtime::chat::preprocess::{
     prepare_messages_for_llm, PreprocessConfig, PreprocessRetryAction, PreprocessTrigger,
@@ -55,8 +58,6 @@ pub struct ChatAttachmentRef {
 pub fn build_user_content_json(
     content: &str,
     attachments: &[ChatAttachmentRef],
-    selected_skill_id: Option<&str>,
-    selected_skill_label: Option<&str>,
 ) -> serde_json::Value {
     let mut value = serde_json::json!({ "text": content });
     if !attachments.is_empty() {
@@ -78,18 +79,6 @@ pub fn build_user_content_json(
                 .collect(),
         );
     }
-    if let Some(skill_id) = selected_skill_id.map(str::trim).filter(|id| !id.is_empty()) {
-        let command = format!("/{skill_id}");
-        value["commandText"] = serde_json::json!(format!("{} {}", command, content).trim());
-        value["skillCommand"] = serde_json::json!({
-            "id": skill_id,
-            "label": selected_skill_label
-                .map(str::trim)
-                .filter(|label| !label.is_empty())
-                .unwrap_or(skill_id),
-            "command": command,
-        });
-    }
     value
 }
 
@@ -108,8 +97,7 @@ pub struct ChatTurnRequest {
     pub run_id: RunId,
     pub hook_registry: Option<Arc<HookRegistry>>,
     pub client_message_id: Option<String>,
-    pub selected_skill_id: Option<String>,
-    pub selected_skill_label: Option<String>,
+    pub persona_id_override: Option<String>,
     /// Working directories derived from this turn's attachments at the transport
     /// layer (backend side only — frontend paths are untrusted).  These are merged
     /// into the per-turn `ToolPermissionContext.additional_working_dirs` with
@@ -133,10 +121,14 @@ impl ChatTurnRequest {
             run_id: RunId::new(uuid::Uuid::new_v4().to_string()),
             hook_registry: None,
             client_message_id: None,
-            selected_skill_id: None,
-            selected_skill_label: None,
+            persona_id_override: None,
             session_attachment_dirs: Vec::new(),
         }
+    }
+
+    pub fn with_persona_id_override(mut self, persona_id: String) -> Self {
+        self.persona_id_override = Some(persona_id);
+        self
     }
 }
 
@@ -223,13 +215,13 @@ pub trait RuntimeLlmExecutor: Send + Sync {
     /// 构建 Turn 级的 system prompt。
     /// 由 executor 从 DB / settings / persona / product_name 合成。
     /// 默认 no-op（返回空字符串），生产 executor 必须 override。
-    async fn build_system_prompt(&self, _conversation_id: &str) -> Result<String, TurnError> {
+    async fn build_system_prompt(&self, _request: &ChatTurnRequest) -> Result<String, TurnError> {
         Ok(String::new())
     }
 
     async fn build_prompt_snapshot(
         &self,
-        _conversation_id: &str,
+        _request: &ChatTurnRequest,
     ) -> Result<Option<crate::runtime::chat::prompt::TurnPromptSnapshot>, TurnError> {
         Ok(None)
     }
@@ -721,6 +713,7 @@ impl RuntimeChatTurnDriver {
                         mode,
                         remember_options: remember_options.clone(),
                         default_destination: *default_destination,
+                        primary_model: turn.primary_model().to_string(),
                     },
                 ))
                 .await?;
@@ -745,7 +738,7 @@ impl RuntimeChatTurnDriver {
                 ),
                 PendingPermissionResolution::Deny { message, .. } => {
                     record_turn_diagnostic(
-                        &std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+                        &crate::telemetry::diagnostics_workspace(),
                         "permission.resolve.completed",
                         turn.session_id(),
                         turn.run_id(),
@@ -787,7 +780,7 @@ impl RuntimeChatTurnDriver {
                 }
                 PendingPermissionResolution::Cancel { message } => {
                     record_turn_diagnostic(
-                        &std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+                        &crate::telemetry::diagnostics_workspace(),
                         "permission.resolve.completed",
                         turn.session_id(),
                         turn.run_id(),
@@ -900,6 +893,7 @@ impl RuntimeChatTurnDriver {
                         tool_name: interaction_request.tool_name.clone(),
                         kind: interaction_request.kind.clone(),
                         payload: interaction_request.payload.clone(),
+                        primary_model: turn.primary_model().to_string(),
                     },
                 ))
                 .await?;
@@ -915,7 +909,7 @@ impl RuntimeChatTurnDriver {
             let resolved = match resolution {
                 InteractionResolution::Submit { value } => {
                     record_turn_diagnostic(
-                        &std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+                        &crate::telemetry::diagnostics_workspace(),
                         "interaction.resolve.completed",
                         turn.session_id(),
                         turn.run_id(),
@@ -953,7 +947,7 @@ impl RuntimeChatTurnDriver {
                 }
                 InteractionResolution::Cancel { message } => {
                     record_turn_diagnostic(
-                        &std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+                        &crate::telemetry::diagnostics_workspace(),
                         "interaction.resolve.completed",
                         turn.session_id(),
                         turn.run_id(),
@@ -1085,39 +1079,31 @@ impl RuntimeChatTurnDriver {
             .map_err(|e| anyhow::anyhow!("{}", e))?;
 
         let prompt_snapshot = match executor
-            .build_prompt_snapshot(request.conversation_id.as_str())
+            .build_prompt_snapshot(request)
             .await
             .map_err(|e| anyhow::anyhow!("{}", e))?
         {
             Some(snapshot) => snapshot,
             None => {
-                let system_prompt = executor
-                    .build_system_prompt(request.conversation_id.as_str())
-                    .await
-                    .map_err(|e| anyhow::anyhow!("{}", e))?;
+                let system_prompt = match overrides.system_prompt.clone() {
+                    Some(prompt) => prompt,
+                    None => executor
+                        .build_system_prompt(request)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("{}", e))?,
+                };
                 single_dynamic_prompt_snapshot("legacy_system_prompt", system_prompt)
             }
         };
-        let system_prompt = prompt_snapshot.compat_system_prompt();
-        let effective_system_prompt = overrides
-            .system_prompt
-            .clone()
-            .unwrap_or_else(|| system_prompt.clone());
-        let effective_prompt_snapshot = if overrides.system_prompt.is_some() {
-            single_dynamic_prompt_snapshot(
-                "override_system_prompt",
-                effective_system_prompt.clone(),
-            )
-        } else {
-            prompt_snapshot
-        };
+        let effective_system_prompt = prompt_snapshot.compat_system_prompt();
+        let effective_prompt_snapshot = prompt_snapshot;
 
         let config = TurnConfig {
             system_prompt: effective_system_prompt,
             prompt_snapshot: Some(effective_prompt_snapshot),
             tool_defs: overrides.tool_defs.unwrap_or(tool_defs),
             allowed_tools: overrides.allowed_tools,
-            max_iterations: overrides.max_iterations.unwrap_or(30),
+            max_iterations: overrides.max_iterations.unwrap_or(60),
             token_budget: overrides.token_budget.unwrap_or_else(|| {
                 crate::llm::max_tokens::default_max_tokens_for_model(
                     &llm_settings.primary_model,
@@ -1132,6 +1118,9 @@ impl RuntimeChatTurnDriver {
             run_id: request.run_id.clone(),
             hook_registry: request.hook_registry.clone(),
         };
+        // Make primary_model available on TurnState so downstream emit sites
+        // (resolve_permission_asks / resolve_interaction_requests) can forward it.
+        turn.set_primary_model(config.llm_settings.primary_model.clone());
         if let Some(snapshot) = &config.prompt_snapshot {
             let diagnostics =
                 crate::runtime::chat::prompt::PromptDiagnostics::from_assembly(snapshot.assembly());
@@ -1184,9 +1173,34 @@ impl RuntimeChatTurnDriver {
         // task-notifications, but we must NOT persist or surface a fake user
         // turn. The drain step below will inject the actual notification XML
         // as the user-role message that the LLM responds to.
-        let is_resume_for_task_notification =
-            request.content == "__resume_from_task_notification__"
-                && request.attachments.is_empty();
+        let is_resume_for_task_notification = request.content
+            == "__resume_from_task_notification__"
+            && request.attachments.is_empty();
+
+        let should_try_anthropic_images = config.llm_settings.use_cloud
+            && crate::llm::vision_support::supports_lotus_anthropic_vision(
+                &config.llm_settings.cloud_model,
+            );
+        let anthropic_image_result =
+            if !is_resume_for_task_notification && should_try_anthropic_images {
+                build_anthropic_image_blocks(&request.attachments)
+            } else {
+                crate::runtime::chat::multimodal::AnthropicImageBuildResult::empty()
+            };
+        let attachments_for_text = retain_text_fallback_attachments(
+            &request.attachments,
+            &anthropic_image_result.converted_attachment_ids,
+        );
+        let anthropic_multimodal_turn = if anthropic_image_result.image_blocks.is_empty() {
+            None
+        } else {
+            Some(crate::llm::streaming::AnthropicMultimodalTurn {
+                image_count: anthropic_image_result.image_blocks.len(),
+                image_bytes_total: anthropic_image_result.image_bytes_total,
+                degraded_count: anthropic_image_result.degraded_attachment_ids.len(),
+                image_blocks: anthropic_image_result.image_blocks.clone(),
+            })
+        };
 
         let llm_user_content = if is_resume_for_task_notification {
             String::new()
@@ -1195,7 +1209,7 @@ impl RuntimeChatTurnDriver {
                 .build_user_message_content(
                     request.conversation_id.as_str(),
                     &request.content,
-                    &request.attachments,
+                    &attachments_for_text,
                 )
                 .await
                 .map_err(|e| anyhow::anyhow!("{}", e))?
@@ -1302,8 +1316,6 @@ impl RuntimeChatTurnDriver {
         let pending_user_content = build_user_content_json(
             &request.content,
             &request.attachments,
-            request.selected_skill_id.as_deref(),
-            request.selected_skill_label.as_deref(),
         );
         self.event_bus
             .emit(RuntimeEvent::new(
@@ -1456,10 +1468,10 @@ impl RuntimeChatTurnDriver {
 
             let input = LlmStepInput {
                 system_prompt: &config.system_prompt,
-                openai_system_message: config
+                system_message: config
                     .prompt_snapshot
                     .as_ref()
-                    .and_then(|snapshot| snapshot.openai_system_message()),
+                    .and_then(|snapshot| snapshot.system_message()),
                 dynamic_context: &iteration_delta_context,
                 // Pass a clone of the current messages slice so executor cannot
                 // mutate driver state.
@@ -1473,6 +1485,7 @@ impl RuntimeChatTurnDriver {
                 conversation_id: config.conversation_id.as_str(),
                 run_id: config.run_id.as_str(),
                 estimated_tokens,
+                anthropic_multimodal_turn: anthropic_multimodal_turn.clone(),
             };
 
             // CP-1: check cancellation before invoking provider.
@@ -1561,11 +1574,15 @@ impl RuntimeChatTurnDriver {
                     content,
                     tokens_in,
                     tokens_out,
+                    cache_creation_input_tokens,
+                    cache_read_input_tokens,
                     stop_reason,
                 } => {
                     state.full_content.push_str(&content);
                     state.step_tokens_in += tokens_in;
                     state.step_tokens_out += tokens_out;
+                    state.step_cache_creation_input_tokens += cache_creation_input_tokens;
+                    state.step_cache_read_input_tokens += cache_read_input_tokens;
                     state.iteration_count = iteration + 1;
 
                     if stop_reason.as_deref() == Some("max_tokens") {
@@ -1650,6 +1667,8 @@ impl RuntimeChatTurnDriver {
                     tool_calls,
                     tokens_in,
                     tokens_out,
+                    cache_creation_input_tokens,
+                    cache_read_input_tokens,
                 } => {
                     if !assistant_content.is_empty() {
                         state.full_content.push_str(&assistant_content);
@@ -1672,6 +1691,8 @@ impl RuntimeChatTurnDriver {
                     });
                     state.step_tokens_in += tokens_in;
                     state.step_tokens_out += tokens_out;
+                    state.step_cache_creation_input_tokens += cache_creation_input_tokens;
+                    state.step_cache_read_input_tokens += cache_read_input_tokens;
                     state.iteration_count = iteration + 1;
 
                     // Execute the tool round.
@@ -1825,6 +1846,10 @@ impl RuntimeChatTurnDriver {
 
         self.query_engine
             .accumulate_usage(state.step_tokens_in, state.step_tokens_out);
+        self.query_engine.accumulate_cache_usage(
+            state.step_cache_creation_input_tokens,
+            state.step_cache_read_input_tokens,
+        );
 
         let final_outcome = if state.stream_cancelled {
             ChatTurnOutcome::Cancelled
@@ -1937,6 +1962,8 @@ impl RuntimeChatTurnDriver {
                     outcome: final_outcome,
                     total_input_tokens: state.step_tokens_in,
                     total_output_tokens: state.step_tokens_out,
+                    total_cache_creation_input_tokens: state.step_cache_creation_input_tokens,
+                    total_cache_read_input_tokens: state.step_cache_read_input_tokens,
                     total_cost_usd: self
                         .query_engine
                         .max_budget_usd()
@@ -2133,6 +2160,10 @@ mod tests {
         fn pending_count_for_session(&self, _session_id: &crate::runtime::ids::SessionId) -> usize {
             0
         }
+
+        fn is_pending(&self, _tool_call_id: &ToolCallId) -> bool {
+            false
+        }
     }
 
     #[test]
@@ -2140,8 +2171,6 @@ mod tests {
         let request = ChatTurnRequest::new("conv-chat-mode", "hello", vec![]);
 
         assert_eq!(request.permission_mode, PermissionMode::Default);
-        assert_eq!(request.selected_skill_id, None);
-        assert_eq!(request.selected_skill_label, None);
     }
 
     #[test]
@@ -2157,8 +2186,6 @@ mod tests {
                 file_type: "csv".to_string(),
                 mime_type: Some("text/csv".to_string()),
             }],
-            None,
-            None,
         );
 
         assert_eq!(
@@ -2178,38 +2205,6 @@ mod tests {
                 .and_then(|value| value.get("filePath"))
                 .and_then(|value| value.as_str()),
             Some("/tmp/report.csv")
-        );
-    }
-
-    #[test]
-    fn build_user_content_json_includes_selected_skill_metadata() {
-        let content =
-            build_user_content_json("用这个技能吧", &[], Some("salary-query"), Some("薪资查询"));
-
-        assert_eq!(
-            content.get("text").and_then(|value| value.as_str()),
-            Some("用这个技能吧")
-        );
-        assert_eq!(
-            content
-                .get("skillCommand")
-                .and_then(|value| value.get("id"))
-                .and_then(|value| value.as_str()),
-            Some("salary-query")
-        );
-        assert_eq!(
-            content
-                .get("skillCommand")
-                .and_then(|value| value.get("command"))
-                .and_then(|value| value.as_str()),
-            Some("/salary-query")
-        );
-        assert_eq!(
-            content
-                .get("skillCommand")
-                .and_then(|value| value.get("label"))
-                .and_then(|value| value.as_str()),
-            Some("薪资查询")
         );
     }
 
@@ -2348,6 +2343,7 @@ mod tests {
         seen_system_prompts: Mutex<Vec<String>>,
         seen_dynamic_contexts: Mutex<Vec<String>>,
         skill_catalog: Option<String>,
+        override_system_prompt: Option<String>,
     }
 
     impl SnapshotPromptExecutor {
@@ -2357,6 +2353,7 @@ mod tests {
                 seen_system_prompts: Mutex::new(Vec::new()),
                 seen_dynamic_contexts: Mutex::new(Vec::new()),
                 skill_catalog: None,
+                override_system_prompt: None,
             }
         }
 
@@ -2366,7 +2363,13 @@ mod tests {
                 seen_system_prompts: Mutex::new(Vec::new()),
                 seen_dynamic_contexts: Mutex::new(Vec::new()),
                 skill_catalog: Some(skill_catalog.into()),
+                override_system_prompt: None,
             }
+        }
+
+        fn with_override_system_prompt(mut self, system_prompt: impl Into<String>) -> Self {
+            self.override_system_prompt = Some(system_prompt.into());
+            self
         }
     }
 
@@ -2390,6 +2393,8 @@ mod tests {
                 content: "snapshot done".to_string(),
                 tokens_in: 0,
                 tokens_out: 0,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
                 stop_reason: Some("end_turn".to_string()),
             })
         }
@@ -2417,7 +2422,7 @@ mod tests {
 
         async fn build_prompt_snapshot(
             &self,
-            _conversation_id: &str,
+            _request: &ChatTurnRequest,
         ) -> Result<Option<crate::runtime::chat::prompt::TurnPromptSnapshot>, TurnError> {
             Ok(Some(crate::runtime::chat::prompt::TurnPromptSnapshot::new(
                 crate::runtime::chat::prompt::PromptAssembly::new(vec![
@@ -2434,7 +2439,7 @@ mod tests {
             )))
         }
 
-        async fn build_system_prompt(&self, _conversation_id: &str) -> Result<String, TurnError> {
+        async fn build_system_prompt(&self, _request: &ChatTurnRequest) -> Result<String, TurnError> {
             self.legacy_calls.fetch_add(1, Ordering::SeqCst);
             Ok("legacy prompt should not be used".to_string())
         }
@@ -2445,6 +2450,16 @@ mod tests {
 
         async fn get_skill_catalog(&self, _agent_id: Option<&str>) -> String {
             self.skill_catalog.clone().unwrap_or_default()
+        }
+
+        async fn load_turn_config_overrides(
+            &self,
+            _request: &ChatTurnRequest,
+        ) -> Result<TurnConfigOverrides, TurnError> {
+            Ok(TurnConfigOverrides {
+                system_prompt: self.override_system_prompt.clone(),
+                ..TurnConfigOverrides::default()
+            })
         }
 
         async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
@@ -2474,6 +2489,36 @@ mod tests {
         let prompts = executor.seen_system_prompts.lock().unwrap().clone();
         assert_eq!(prompts, vec![expected_snapshot_prompt]);
         assert_eq!(executor.legacy_calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn driver_keeps_prompt_snapshot_when_system_prompt_override_is_set() {
+        let executor = Arc::new(
+            SnapshotPromptExecutor::new().with_override_system_prompt("override prompt"),
+        );
+        let bus = RuntimeEventBus::new();
+        let driver =
+            RuntimeChatTurnDriver::with_llm_executor(QueryEngine::new(), bus, executor.clone());
+        let mut turn = TurnState::new(
+            IdentityMapping::from_legacy_conversation_id(
+                "conv-driver-snapshot-override".to_string(),
+            ),
+            RunId::new("run-driver-snapshot-override"),
+            "use snapshot".to_string(),
+        );
+        let request =
+            ChatTurnRequest::new("conv-driver-snapshot-override", "use snapshot", vec![]);
+
+        driver
+            .run_chat_turn(&mut turn, &request)
+            .await
+            .expect("driver should run with prompt snapshot");
+
+        let prompts = executor.seen_system_prompts.lock().unwrap().clone();
+        assert_eq!(
+            prompts,
+            vec!["snapshot static\n\nsnapshot dynamic".to_string()]
+        );
     }
 
     #[tokio::test]
@@ -2661,5 +2706,18 @@ mod tests {
             "should NOT emit pending event, got: {:?}",
             kinds
         );
+    }
+
+    #[test]
+    fn chat_turn_request_default_has_no_persona_override() {
+        let req = ChatTurnRequest::new("conv-1".to_string(), "hello".to_string(), vec![]);
+        assert!(req.persona_id_override.is_none());
+    }
+
+    #[test]
+    fn chat_turn_request_with_persona_override() {
+        let req = ChatTurnRequest::new("conv-1".to_string(), "hello".to_string(), vec![])
+            .with_persona_id_override("persona-x".into());
+        assert_eq!(req.persona_id_override.as_deref(), Some("persona-x"));
     }
 }

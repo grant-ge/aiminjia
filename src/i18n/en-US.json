@@ -388,6 +388,8 @@
     "versionLine": "{{current}} → {{next}} ({{size}} downloaded)",
     "installAndRestart": "Install & Restart",
     "installing": "Installing...",
+    "installFailedTitle": "Update install failed",
+    "notReadyMessage": "Update not ready yet. Please wait or restart the app.",
     "offlineHint": "Network unavailable, cannot install update. Please try again later."
   },
   "auth": {
@@ -407,7 +409,9 @@
     "chatBusy": "This conversation is being processed. Please wait for it to finish before sending.",
     "maxConcurrent": "Up to {{max}} conversations can be processed simultaneously. Please wait for others to finish.",
     "sendFailed": "Send failed",
-    "sendFailedDesc": "Failed to send message. Please check your network and settings."
+    "sendFailedDesc": "Failed to send message. Please check your network and settings.",
+    "modelRouteUnavailable": "Model switched",
+    "modelRouteUnavailableDesc": "The previous model is unavailable. Auto-switched to {{model}} — please resend your message."
   },
   "format": {
     "justNow": "Just now",
@@ -443,5 +447,129 @@
     "executionErrorDesc": "The agent encountered an error and this turn was aborted. Please retry or check settings.",
     "successSummaryTitle": "Turn complete",
     "successSummaryDesc": "Used {{tokens}} tokens, estimated cost ${{cost}}."
+  },
+  "employee": {
+    "config": {
+      "knowledge": {
+        "label": "Knowledge sources",
+        "hint": "Upload FAQ / product manual / tech docs. After hiring, files are sliced into memory in the background; the AI retrieves on demand via semantic search instead of stuffing the full text each turn.",
+        "upload": "Upload document",
+        "retry": "Retry",
+        "statusPending": "Pending",
+        "statusIndexing": "Indexing…",
+        "statusDone": "{{count}} chunks indexed",
+        "statusFailed": "Failed"
+      },
+      "groupMatch": {
+        "label": "Monitor groups (keyword matching)",
+        "include": "Include keywords",
+        "exclude": "Exclude keywords",
+        "addPlaceholder": "+ Add",
+        "matchedHint": "{{count}} groups matched",
+        "includeLabel": "Include keywords",
+        "excludeLabel": "Exclude keywords (optional)",
+        "includeHintSimple": "Group names containing any keyword will be matched. New groups matching these keywords are auto-included on next scan.",
+        "maxGroupsLabel": "Max groups",
+        "eg": "e.g."
+      },
+      "responseStyle": {
+        "label": "Response style",
+        "professional": "Professional",
+        "friendly": "Friendly",
+        "concise": "Concise"
+      },
+      "greeting": "Greeting",
+      "closing": "Closing",
+      "escalation": {
+        "label": "Escalation keywords (skip auto-reply, flag for human handling)",
+        "hint": "Messages containing these words will be flagged 🔴 for manual handling."
+      },
+      "techKeywords": {
+        "label": "Tech keywords (route to tech support)",
+        "hint": "Messages containing these words will be tagged 🔧 for tech support."
+      },
+      "summaryFreq": {
+        "label": "Conversation summary frequency",
+        "daily": "Daily",
+        "weekly": "Weekly",
+        "off": "Off"
+      },
+      "customerSupport": {
+        "title": "Customer support setup",
+        "intro": "The employee scans matching DingTalk groups for business inquiries, searches the knowledge base + past conversations, then drafts friendly replies for your review."
+      },
+      "techSupport": {
+        "title": "Tech support setup",
+        "intro": "The employee scans matching DingTalk groups for errors and integration questions, searches tech docs + past experience, then drafts replies for your review."
+      },
+      "monitoringUrls": {
+        "title": "Monitoring targets",
+        "label": "Monitor URLs",
+        "hint": "The researcher will periodically visit these URLs to detect changes.",
+        "addPlaceholder": "https://...",
+        "addButton": "Add",
+        "namePlaceholder": "Target name (e.g. Anthropic)",
+        "urlPlaceholder": "https://example.com/news (optional)",
+        "tagsPlaceholder": "Tags (comma-separated, optional)",
+        "addRow": "Add target"
+      },
+      "salesTable": {
+        "title": "Data source",
+        "intro": "Paste a DingTalk AI Table link. XiaoXiao reads active deals from this table. You can leave the field mapping blank — the employee will guide you through it the first time a task is assigned.",
+        "shareUrlLabel": "DingTalk AI Table link",
+        "shareUrlPlaceholder": "https://docs.dingtalk.com/i/nodes/.../?iframeQuery=...",
+        "parseOk": "Detected: base {{baseId}} / table {{tableId}}",
+        "parseError": "Link format not recognized. Fill in baseId / tableId manually below, or save now — XiaoXiao will guide you to locate the table when the first task is assigned.",
+        "baseIdLabel": "Base ID (manual)",
+        "baseIdPlaceholder": "e.g. oP0MALyR8k73krjmIQeMLXrz83bzYmDO",
+        "tableIdLabel": "Table ID (manual)",
+        "tableIdPlaceholder": "e.g. 26qlT0c",
+        "scopeLabel": "Scope",
+        "scopeSelf": "My deals only",
+        "scopeDepartment": "Entire department",
+        "advancedToggle": "Advanced: pre-fill field mapping",
+        "fieldMappingHint": "Leave blank — on the first task the employee will call dws to list real field names for you.",
+        "fieldMappingError_object": "Must be a JSON object ({}) — not an array or null",
+        "fieldMappingError_string": "Column name for field {{field}} must be a string",
+        "fieldMappingError_parse": "JSON parse error: {{error}}"
+      },
+      "weeklyReport": {
+        "title": "Weekly report preferences",
+        "intro": "Configure your weekly report. XiaoZhou auto-summarises DingTalk calendar, todos, and group chats every Friday, then surfaces a structured draft for you to review and edit.",
+        "styleLabel": "Report style",
+        "templateStandard": "Standard",
+        "templateStandardDesc": "Schedule + todos + chats, grouped by day",
+        "templateBrief": "Brief",
+        "templateBriefDesc": "Key points list, one page",
+        "templateOkr": "OKR-aligned",
+        "templateOkrDesc": "This week's progress mapped to O/KRs",
+        "scopeLabel": "Scope",
+        "scopeSelf": "Personal report",
+        "scopeTeam": "Team report (aggregate reports)",
+        "watchGroupsLabel": "Watch groups (optional)",
+        "watchGroupsPlaceholder": "e.g. Product weekly, Engineering daily, Customer support",
+        "watchGroupsHintSimple": "Enter DingTalk group names, separated by commas (English or Chinese) or newlines. XiaoZhou searches by name and extracts key discussions for the week. Leave blank to skip chat summaries.",
+        "watchGroupsSummary": "Watching {{count}} group(s):"
+      },
+      "save": "Save",
+      "cancel": "Cancel",
+      "wizard": {
+        "titleStep1": "Pick a template",
+        "titleStep2": "Configure employee",
+        "titleStep3": "Configure resources",
+        "stepLabel1": "1 Template",
+        "stepLabel2": "2 Configure",
+        "stepLabel3": "3 Resources",
+        "nameLabel": "Employee name",
+        "cronLabel": "Scheduled trigger",
+        "cronEnabled": "Enabled",
+        "cronDisabled": "Disabled",
+        "cronPlaceholder": "30 9 * * 1  (5-field cron)",
+        "back": "← Back",
+        "hiring": "Hiring…",
+        "confirmHire": "✅ Confirm hire",
+        "next": "Next →"
+      }
+    }
   }
 }

@@ -143,6 +143,8 @@ impl RuntimeLlmExecutor for CompactingExecutor {
             content: "done".to_string(),
             tokens_in: 1,
             tokens_out: 1,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
             stop_reason: Some("end_turn".to_string()),
         })
     }

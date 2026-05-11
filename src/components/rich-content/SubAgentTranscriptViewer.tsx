@@ -67,7 +67,7 @@ function TranscriptBody({
           {entries.map((entry, index) => {
             const badgeStyle = roleBadgeStyle(entry.role)
             return (
-              <div key={`${entry.role}-${index}`} className="flex gap-2.5">
+              <div key={`${entry.role}-${index}`} className="flex items-center gap-2.5">
                 <span
                   className="mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-xs font-semibold"
                   style={{
@@ -199,7 +199,7 @@ export function SubAgentTranscriptViewer({
 
       {expanded && (
         <div
-          className="border-t"
+          className="border-t border-border"
           style={{ borderColor: 'var(--color-border)' }}
         >
           <TranscriptBody loadState={loadState} entries={entries} errorMsg={errorMsg} />

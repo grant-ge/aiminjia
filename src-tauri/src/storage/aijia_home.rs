@@ -73,6 +73,14 @@ impl AiJiaHome {
         self.root.join("users")
     }
 
+    /// `~/.renlijia/employee-templates-cache/` — global, content-addressed
+    /// cache for digital-employee templates downloaded from lotus OPS. Not
+    /// scoped to user — all users on this machine share the same immutable
+    /// template versions (cf. `lotus/docs/superpowers/specs/2026-05-10-employee-templates-as-a-service.md` §5).
+    pub fn employee_templates_cache_dir(&self) -> PathBuf {
+        self.root.join("employee-templates-cache")
+    }
+
     pub fn user_dir(&self, scope: &UserScope) -> PathBuf {
         self.users_dir().join(scope.key())
     }
@@ -111,6 +119,11 @@ impl AiJiaHome {
 
     pub fn user_skills_dir(&self, scope: &UserScope) -> PathBuf {
         self.user_dir(scope).join("skills")
+    }
+
+    /// `~/.renlijia/users/{scope}/skill-drafts/` — Skill-Smith (小程) 草稿区。
+    pub fn user_skill_drafts_dir(&self, scope: &UserScope) -> PathBuf {
+        self.user_dir(scope).join("skill-drafts")
     }
 
     pub fn user_agents_dir(&self, scope: &UserScope) -> PathBuf {
@@ -196,6 +209,22 @@ impl AiJiaHome {
         self.root.join("defaultFolder")
     }
 
+    /// 临时文件根目录 `~/.renlijia/tmp/`。剪贴板图片、IM 渠道附件下载等
+    /// "用户没主动产生、可重新生成"的内容都丢这里，方便统一清理。
+    pub fn tmp_dir(&self) -> PathBuf {
+        self.root.join("tmp")
+    }
+
+    /// 剪贴板贴图保存目录 `~/.renlijia/tmp/clipboard/`。
+    pub fn tmp_clipboard_dir(&self) -> PathBuf {
+        self.tmp_dir().join("clipboard")
+    }
+
+    /// 钉钉附件下载目录 `~/.renlijia/tmp/dingtalk_downloads/`。
+    pub fn tmp_dingtalk_downloads_dir(&self) -> PathBuf {
+        self.tmp_dir().join("dingtalk_downloads")
+    }
+
     /// 确保全局层目录存在，供 auth restore 等登录前流程使用。
     pub fn ensure_global_dirs(&self) -> std::io::Result<()> {
         std::fs::create_dir_all(self.global_dir())?;
@@ -213,6 +242,9 @@ impl AiJiaHome {
         std::fs::create_dir_all(user_dir.join("shared").join("cache"))?;
         std::fs::create_dir_all(self.user_audit_dir(scope))?;
         std::fs::create_dir_all(self.user_schedules_dir(scope))?;
+        let agenda_dir = self.user_dir(scope).join("agenda");
+        std::fs::create_dir_all(agenda_dir.join("items"))?;
+        std::fs::create_dir_all(agenda_dir.join("occurrences"))?;
         std::fs::create_dir_all(self.user_skills_dir(scope))?;
         std::fs::create_dir_all(self.user_agents_dir(scope))?;
         std::fs::create_dir_all(self.user_subagent_transcripts_dir(scope))?;
@@ -220,6 +252,7 @@ impl AiJiaHome {
         std::fs::create_dir_all(self.user_screenshots_dir(scope))?;
         std::fs::create_dir_all(self.user_site_profiles_dir(scope))?;
         std::fs::create_dir_all(self.user_logs_dir(scope))?;
+        std::fs::create_dir_all(user_dir.join("channels"))?;
         Ok(())
     }
 
@@ -395,6 +428,8 @@ mod tests {
         assert!(user_dir.join("shared").join("cache").exists());
         assert!(home.user_audit_dir(&scope).exists());
         assert!(home.user_schedules_dir(&scope).exists());
+        assert!(user_dir.join("agenda").join("items").exists());
+        assert!(user_dir.join("agenda").join("occurrences").exists());
         assert!(home.user_skills_dir(&scope).exists());
         assert!(home.user_agents_dir(&scope).exists());
         assert!(home.user_subagent_transcripts_dir(&scope).exists());

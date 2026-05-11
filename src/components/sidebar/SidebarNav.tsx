@@ -2,10 +2,10 @@
  * @designSource design.pen#47U5w (nv1/nv2/nv3)
  * @sizing each row padding [6,8], gap 2
  */
-import { Blocks, Clock3, Inbox, SquarePen, Users, type LucideIcon } from 'lucide-react'
+import { Blocks, Clock3, Inbox, MessageSquare, SquarePen, Users, type LucideIcon } from 'lucide-react'
 import { useGlobalUnreadCount } from '@/features/employees/useInbox'
 
-export type SidebarNavKey = 'home' | 'employees' | 'skill-center' | 'schedules' | 'inbox'
+export type SidebarNavKey = 'home' | 'employees' | 'skill-center' | 'schedules' | 'inbox' | 'channel'
 
 interface SidebarNavProps {
   activeKey?: SidebarNavKey | null
@@ -18,6 +18,7 @@ const NAV: Array<{ key: SidebarNavKey; label: string; icon: LucideIcon; badge?: 
   { key: 'inbox', label: '汇报中心', icon: Inbox, badge: true },
   { key: 'skill-center', label: '技能中心', icon: Blocks },
   { key: 'schedules', label: '定时任务', icon: Clock3 },
+  { key: 'channel', label: 'IM 频道', icon: MessageSquare },
 ]
 
 export function SidebarNav({ activeKey = null, onSelect = () => {} }: SidebarNavProps) {
@@ -42,7 +43,7 @@ export function SidebarNav({ activeKey = null, onSelect = () => {} }: SidebarNav
             <Icon className="h-4 w-4 shrink-0" />
             <span className="flex-1 truncate">{label}</span>
             {count > 0 && (
-              <span className="ml-auto rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold leading-none text-primary-foreground">
+              <span className="ml-auto rounded-full bg-primary px-1.5 py-0.5 text-xs font-semibold leading-none text-primary-foreground">
                 {count > 99 ? '99+' : count}
               </span>
             )}

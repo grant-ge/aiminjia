@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "AIjia",
-  "version": "0.5.16",
+  "version": "0.5.22",
   "identifier": "com.aijia.app",
   "build": {
     "frontendDist": "../dist",
@@ -54,6 +54,16 @@
     "resources": {
       "prompts": "prompts",
       "resources/dws*": ""
-    }
+    },
+    "fileAssociations": [
+      {
+        "ext": [
+          "aijia-skill"
+        ],
+        "name": "AIjia Skill Package",
+        "description": "AIjia 技能包",
+        "role": "Editor"
+      }
+    ]
   }
 }

@@ -1,12 +1,13 @@
-//! Claude (Anthropic) provider — Anthropic Messages API format.
+//! Claude (Anthropic) provider — Anthropic Messages API.
 //!
 //! Uses `x-api-key` auth, `input_schema` for tools, and Anthropic-specific SSE
 //! event types (`content_block_start`, `content_block_delta`, `message_delta`).
 //!
-//! ## ⚠ DEPRECATED — 待删除
-//! 产品仅对外暴露 OpenAI 协议（lotus / custom）。本 provider 是 Anthropic
-//! Messages API 协议，与产品接入层不通用，UI 不会触发。保留为历史代码。
-//! 删除计划：专项 P-router-model-passthrough。详见 `providers/mod.rs` 顶部说明。
+//! Phase C (2026-05-09): URL is parameterized via `with_url(...)` so this same
+//! impl drives both direct anthropic.com calls (via `new(...)`, `is_direct=true`)
+//! and the lotus gateway anthropic ingress (via `LotusProvider`,
+//! `is_direct=false`). Beta thinking headers are gated on `is_direct` because
+//! the gateway is byte-level passthrough but does not advertise beta gating.
 #![allow(dead_code)]
 
 use anyhow::{anyhow, Result};
@@ -17,8 +18,8 @@ use serde_json::{json, Value};
 use std::pin::Pin;
 
 use crate::llm::streaming::{
-    parse_sse_line, LlmRequest, LlmResponse, StopReason, StreamBox, StreamEvent, TokenUsage,
-    ToolCall,
+    parse_sse_line, AnthropicContentBlock, AnthropicMultimodalTurn, LlmRequest, LlmResponse,
+    StopReason, StreamBox, StreamEvent, TokenUsage, ToolCall,
 };
 
 use super::LlmProviderTrait;
@@ -28,11 +29,20 @@ const ANTHROPIC_VERSION: &str = "2023-06-01";
 const DEFAULT_MODEL: &str = "claude-sonnet-4-20250514";
 const ANTHROPIC_BETA_THINKING: &str = "interleaved-thinking-2025-05-14";
 
-/// Anthropic Claude provider.
+/// Anthropic Claude provider. URL is configurable so the same SSE state
+/// machine, body builder, tool/thinking handling can drive both direct
+/// `api.anthropic.com` calls and lotus-gateway `/anthropic/v1/messages`
+/// calls (the gateway is byte-level passthrough).
+///
+/// `anthropic-beta` headers are direct-only — the gateway forwards bodies
+/// verbatim but does not advertise beta feature gating, so betas like
+/// `interleaved-thinking-*` are suppressed when `is_direct=false`.
 pub struct ClaudeProvider {
     client: Client,
     api_key: String,
     model: String,
+    api_url: String,
+    is_direct: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -51,6 +61,10 @@ struct SseState {
     tool_json_fragments: String,
     /// Input token count (reported in `message_start`).
     input_tokens: u32,
+    /// Cache-creation input tokens (reported in `message_start.usage`).
+    cache_creation_input_tokens: Option<u32>,
+    /// Cache-read input tokens (reported in `message_start.usage`).
+    cache_read_input_tokens: Option<u32>,
     /// Whether the currently open content block is a thinking block.
     in_thinking_block: bool,
     /// Accumulated thinking text for the current thinking block.
@@ -67,6 +81,8 @@ impl SseState {
             current_tool_name: None,
             tool_json_fragments: String::new(),
             input_tokens: 0,
+            cache_creation_input_tokens: None,
+            cache_read_input_tokens: None,
             in_thinking_block: false,
             thinking_text: String::new(),
             thinking_signature: String::new(),
@@ -75,11 +91,25 @@ impl SseState {
 }
 
 impl ClaudeProvider {
+    /// Direct anthropic.com client (uses `x-api-key` + `anthropic-beta` headers).
     pub fn new(api_key: String, model: Option<String>) -> Self {
+        Self::with_url(api_key, model, ANTHROPIC_API_URL.to_string(), true)
+    }
+
+    /// Construct with a custom URL. Pass `is_direct=false` for the lotus
+    /// gateway path so beta thinking headers are suppressed.
+    pub fn with_url(
+        api_key: String,
+        model: Option<String>,
+        api_url: String,
+        is_direct: bool,
+    ) -> Self {
         Self {
             client: super::build_http_client(),
             api_key,
             model: model.unwrap_or_else(|| DEFAULT_MODEL.to_string()),
+            api_url,
+            is_direct,
         }
     }
 
@@ -94,15 +124,20 @@ impl ClaudeProvider {
             ANTHROPIC_VERSION.to_string(),
         );
         headers.insert("content-type".to_string(), "application/json".to_string());
-        match request.thinking_config {
-            Some(crate::llm::streaming::ThinkingConfig::Adaptive)
-            | Some(crate::llm::streaming::ThinkingConfig::Enabled { .. }) => {
-                headers.insert(
-                    "anthropic-beta".to_string(),
-                    ANTHROPIC_BETA_THINKING.to_string(),
-                );
+        // Beta features (interleaved thinking) are direct-anthropic-only:
+        // the lotus gateway forwards bodies verbatim but does not advertise
+        // beta gating, and unknown beta tags would be silently ignored.
+        if self.is_direct {
+            match request.thinking_config {
+                Some(crate::llm::streaming::ThinkingConfig::Adaptive)
+                | Some(crate::llm::streaming::ThinkingConfig::Enabled { .. }) => {
+                    headers.insert(
+                        "anthropic-beta".to_string(),
+                        ANTHROPIC_BETA_THINKING.to_string(),
+                    );
+                }
+                _ => {}
             }
-            _ => {}
         }
         headers
     }
@@ -113,10 +148,15 @@ impl ClaudeProvider {
     /// structured content block arrays, as required by the Anthropic API.
     /// Tool result messages use `tool_result` content blocks.
     fn build_request_body(&self, request: &LlmRequest) -> Value {
+        let last_user_index = request
+            .messages
+            .iter()
+            .rposition(|message| message.role == "user");
         let messages: Vec<Value> = request
             .messages
             .iter()
-            .filter_map(|msg| {
+            .enumerate()
+            .filter_map(|(index, msg)| {
                 // System messages handled via top-level "system" field
                 if msg.role == "system" {
                     return None;
@@ -183,6 +223,22 @@ impl ClaudeProvider {
                     }
                 }
 
+                if msg.role == "user" {
+                    let request_turn = if Some(index) == last_user_index
+                        && msg.anthropic_multimodal_turn.is_none()
+                    {
+                        request.anthropic_multimodal_turn.as_ref()
+                    } else {
+                        None
+                    };
+                    if let Some(content) = anthropic_user_content_blocks(msg, request_turn) {
+                        return Some(json!({
+                            "role": "user",
+                            "content": content,
+                        }));
+                    }
+                }
+
                 // Default: plain text message
                 Some(json!({
                     "role": msg.role,
@@ -206,7 +262,58 @@ impl ClaudeProvider {
 
         if let Some(system) = system_content {
             if !system.is_empty() {
-                if self.supports_prompt_caching() {
+                // Prefer structured per-block cache passthrough when the
+                // caller supplied segments; otherwise fall back to the old
+                // single-block wrap-or-string behaviour.
+                let segments_non_empty = request
+                    .system_segments
+                    .as_ref()
+                    .map(|segs| segs.iter().any(|s| !s.text.trim().is_empty()))
+                    .unwrap_or(false);
+
+                if segments_non_empty && self.supports_prompt_caching() {
+                    let segments = request.system_segments.as_ref().expect("checked non-empty");
+                    // Anthropic allows at most 4 cache_control breakpoints
+                    // across the whole request. The tools array may also
+                    // carry one (see below), so keep a conservative cap of
+                    // 3 on the system side and warn if exceeded.
+                    const MAX_SYSTEM_CACHE_BREAKPOINTS: usize = 3;
+                    let mut remaining = MAX_SYSTEM_CACHE_BREAKPOINTS;
+                    let mut blocks: Vec<Value> = Vec::with_capacity(segments.len());
+                    let mut dropped_cache_flags: usize = 0;
+                    for seg in segments {
+                        let trimmed = seg.text.trim();
+                        if trimmed.is_empty() {
+                            continue;
+                        }
+                        let mut block = json!({
+                            "type": "text",
+                            "text": seg.text,
+                        });
+                        if seg.cache {
+                            if remaining > 0 {
+                                block["cache_control"] = json!({ "type": "ephemeral" });
+                                remaining -= 1;
+                            } else {
+                                dropped_cache_flags += 1;
+                            }
+                        }
+                        blocks.push(block);
+                    }
+                    if dropped_cache_flags > 0 {
+                        log::warn!(
+                            "[claude] dropped {} cache_control breakpoints beyond the system-side cap of {}",
+                            dropped_cache_flags,
+                            MAX_SYSTEM_CACHE_BREAKPOINTS
+                        );
+                    }
+                    if blocks.is_empty() {
+                        // all segments empty after trim — fall back to string
+                        body["system"] = json!(system);
+                    } else {
+                        body["system"] = json!(blocks);
+                    }
+                } else if self.supports_prompt_caching() {
                     body["system"] = json!([{
                         "type": "text",
                         "text": system,
@@ -322,6 +429,12 @@ impl ClaudeProvider {
         let usage = TokenUsage {
             input_tokens: body["usage"]["input_tokens"].as_u64().unwrap_or(0) as u32,
             output_tokens: body["usage"]["output_tokens"].as_u64().unwrap_or(0) as u32,
+            cache_creation_input_tokens: body["usage"]["cache_creation_input_tokens"]
+                .as_u64()
+                .map(|v| v as u32),
+            cache_read_input_tokens: body["usage"]["cache_read_input_tokens"]
+                .as_u64()
+                .map(|v| v as u32),
         };
 
         Ok(LlmResponse {
@@ -344,6 +457,39 @@ impl ClaudeProvider {
                 StopReason::EndTurn
             }
         }
+    }
+}
+
+fn anthropic_user_content_blocks(
+    msg: &crate::llm::streaming::ChatMessage,
+    request_turn: Option<&AnthropicMultimodalTurn>,
+) -> Option<Vec<Value>> {
+    let turn = msg.anthropic_multimodal_turn.as_ref().or(request_turn)?;
+    if turn.image_blocks.is_empty() {
+        return None;
+    }
+
+    let mut blocks = Vec::with_capacity(1 + turn.image_blocks.len());
+    if !msg.content.is_empty() {
+        blocks.push(json!({
+            "type": "text",
+            "text": msg.content,
+        }));
+    }
+    blocks.extend(turn.image_blocks.iter().map(anthropic_block_to_json));
+    Some(blocks)
+}
+
+fn anthropic_block_to_json(block: &AnthropicContentBlock) -> Value {
+    match block {
+        AnthropicContentBlock::Text { text } => json!({
+            "type": "text",
+            "text": text,
+        }),
+        AnthropicContentBlock::Image { source } => json!({
+            "type": "image",
+            "source": source,
+        }),
     }
 }
 
@@ -370,7 +516,7 @@ impl LlmProviderTrait for ClaudeProvider {
         debug!("Claude send request to model: {}", self.model);
 
         let headers = self.build_request_headers(&request);
-        let mut req = self.client.post(ANTHROPIC_API_URL);
+        let mut req = self.client.post(&self.api_url);
         for (key, value) in headers {
             req = req.header(key, value);
         }
@@ -401,7 +547,7 @@ impl LlmProviderTrait for ClaudeProvider {
         debug!("Claude stream request to model: {}", self.model);
 
         let headers = self.build_request_headers(&stream_request);
-        let mut req = self.client.post(ANTHROPIC_API_URL);
+        let mut req = self.client.post(&self.api_url);
         for (key, value) in headers {
             req = req.header(key, value);
         }
@@ -484,7 +630,7 @@ impl LlmProviderTrait for ClaudeProvider {
 
         let response = self
             .client
-            .post(ANTHROPIC_API_URL)
+            .post(&self.api_url)
             .header("x-api-key", &self.api_key)
             .header("anthropic-version", ANTHROPIC_VERSION)
             .header("content-type", "application/json")
@@ -528,15 +674,21 @@ fn process_sse_data(data: &str, state: &mut SseState) -> Option<Vec<StreamEvent>
     let event_type = parsed["type"].as_str().unwrap_or("");
 
     match event_type {
-        // message_start: extract input token count
+        // message_start: extract input token count + cache usage
         "message_start" => {
             if let Some(tokens) = parsed["message"]["usage"]["input_tokens"].as_u64() {
                 state.input_tokens = tokens as u32;
             }
+            if let Some(v) = parsed["message"]["usage"]["cache_creation_input_tokens"].as_u64() {
+                state.cache_creation_input_tokens = Some(v as u32);
+            }
+            if let Some(v) = parsed["message"]["usage"]["cache_read_input_tokens"].as_u64() {
+                state.cache_read_input_tokens = Some(v as u32);
+            }
             None
         }
 
-        // content_block_start: may begin a tool_use or thinking block
+        // content_block_start: may begin a tool_use, thinking, or redacted_thinking block
         "content_block_start" => {
             let block = &parsed["content_block"];
             match block["type"].as_str() {
@@ -549,6 +701,16 @@ fn process_sse_data(data: &str, state: &mut SseState) -> Option<Vec<StreamEvent>
                     state.in_thinking_block = true;
                     state.thinking_text.clear();
                     state.thinking_signature.clear();
+                }
+                Some("redacted_thinking") => {
+                    // Pass the encrypted block through verbatim so the caller can
+                    // echo it back on subsequent turns (Anthropic requires it for
+                    // tool-use validation when extended thinking is enabled).
+                    // Clone the whole block to preserve any future fields beyond
+                    // `type` / `data` that the API may add.
+                    return Some(vec![StreamEvent::ThinkingBlock {
+                        block: block.clone(),
+                    }]);
                 }
                 _ => {}
             }
@@ -621,12 +783,25 @@ fn process_sse_data(data: &str, state: &mut SseState) -> Option<Vec<StreamEvent>
                 .unwrap_or("end_turn");
             let stop_reason = ClaudeProvider::parse_stop_reason(stop_reason_str);
             let output_tokens = parsed["usage"]["output_tokens"].as_u64().unwrap_or(0) as u32;
+            // Anthropic also re-emits cache_* fields on message_delta when the
+            // final values differ from message_start; prefer the latest.
+            if let Some(v) = parsed["usage"]["cache_creation_input_tokens"].as_u64() {
+                state.cache_creation_input_tokens = Some(v as u32);
+            }
+            if let Some(v) = parsed["usage"]["cache_read_input_tokens"].as_u64() {
+                state.cache_read_input_tokens = Some(v as u32);
+            }
+            if let Some(v) = parsed["usage"]["input_tokens"].as_u64() {
+                state.input_tokens = v as u32;
+            }
 
             Some(vec![StreamEvent::Done {
                 stop_reason,
                 usage: TokenUsage {
                     input_tokens: state.input_tokens,
                     output_tokens,
+                    cache_creation_input_tokens: state.cache_creation_input_tokens,
+                    cache_read_input_tokens: state.cache_read_input_tokens,
                 },
             }])
         }
@@ -798,6 +973,8 @@ mod tests {
             temperature: 1.0,
             stream: false,
             thinking_config: None,
+            anthropic_multimodal_turn: None,
+            system_segments: None,
         };
 
         let body = provider.build_request_body(&request);
@@ -825,6 +1002,8 @@ mod tests {
             temperature: 0.7,
             stream: true,
             thinking_config: None,
+            anthropic_multimodal_turn: None,
+            system_segments: None,
         };
 
         let body = provider.build_request_body(&request);
@@ -839,6 +1018,54 @@ mod tests {
         assert!(tools[0].get("input_schema").is_some());
         assert!(tools[0].get("parameters").is_none());
         assert_eq!(tools[0]["name"], "WebSearch");
+    }
+
+    #[test]
+    fn test_build_request_body_with_anthropic_image_blocks() {
+        use crate::llm::streaming::{
+            AnthropicContentBlock, AnthropicImageSource, AnthropicMultimodalTurn,
+        };
+
+        let provider = ClaudeProvider::new("test-key".to_string(), None);
+        let request = LlmRequest {
+            messages: vec![
+                ChatMessage::text("user", "Context message"),
+                ChatMessage::text("user", "Describe this image"),
+            ],
+            tools: vec![],
+            max_tokens: 1024,
+            temperature: 1.0,
+            stream: false,
+            thinking_config: None,
+            anthropic_multimodal_turn: Some(AnthropicMultimodalTurn {
+                image_blocks: vec![AnthropicContentBlock::Image {
+                    source: AnthropicImageSource::Base64 {
+                        media_type: "image/png".to_string(),
+                        data: "iVBORw0KGgo=".to_string(),
+                    },
+                }],
+                image_count: 1,
+                image_bytes_total: 8,
+                degraded_count: 0,
+            }),
+            system_segments: None,
+        };
+
+        let body = provider.build_request_body(&request);
+        let messages = body["messages"].as_array().unwrap();
+        assert_eq!(messages[0]["content"], "Context message");
+        let content = messages[1]["content"].as_array().unwrap();
+
+        assert_eq!(
+            content[0],
+            json!({"type": "text", "text": "Describe this image"})
+        );
+        assert_eq!(content[1]["type"], "image");
+        assert_eq!(content[1]["source"]["type"], "base64");
+        assert_eq!(content[1]["source"]["media_type"], "image/png");
+        assert_eq!(content[1]["source"]["data"], "iVBORw0KGgo=");
+        assert!(!body.to_string().contains("image_url"));
+        assert!(!body.to_string().contains("data:image/png;base64"));
     }
 
     #[test]
@@ -958,5 +1185,224 @@ mod tests {
             }
             _ => panic!("Expected ToolCallStart"),
         }
+    }
+
+    /// message_delta 缺失 cache_* 字段时，必须保留 message_start 已读到的值，
+    /// 不能用 None 覆盖。
+    #[test]
+    fn test_message_delta_does_not_clobber_cache_tokens_from_message_start() {
+        let mut state = SseState::new();
+
+        // message_start: cache_creation=100, cache_read=200
+        let start = json!({
+            "type": "message_start",
+            "message": {
+                "usage": {
+                    "input_tokens": 50,
+                    "cache_creation_input_tokens": 100,
+                    "cache_read_input_tokens": 200,
+                }
+            }
+        });
+        process_sse_data(&start.to_string(), &mut state);
+        assert_eq!(state.cache_creation_input_tokens, Some(100));
+        assert_eq!(state.cache_read_input_tokens, Some(200));
+
+        // message_delta WITHOUT cache_* fields — must keep prior values.
+        let delta = json!({
+            "type": "message_delta",
+            "delta": { "stop_reason": "end_turn" },
+            "usage": { "output_tokens": 17 }
+        });
+        let events = process_sse_data(&delta.to_string(), &mut state).expect("Done event");
+        match &events[0] {
+            StreamEvent::Done { usage, .. } => {
+                assert_eq!(usage.cache_creation_input_tokens, Some(100));
+                assert_eq!(usage.cache_read_input_tokens, Some(200));
+                assert_eq!(usage.output_tokens, 17);
+                assert_eq!(usage.input_tokens, 50);
+            }
+            _ => panic!("Expected Done event"),
+        }
+    }
+
+    /// usage 字段为 null / 字段不是数字时，as_u64() 应返回 None，
+    /// cache token 字段保持 None，不应 panic。
+    #[test]
+    fn test_cache_tokens_robust_to_missing_or_invalid_usage() {
+        // parse_response: usage 字段缺失
+        let body = json!({
+            "content": [{ "type": "text", "text": "hi" }],
+            "stop_reason": "end_turn",
+            // no "usage"
+        });
+        let resp = ClaudeProvider::parse_response(&body).expect("ok");
+        assert_eq!(resp.usage.input_tokens, 0);
+        assert_eq!(resp.usage.cache_creation_input_tokens, None);
+        assert_eq!(resp.usage.cache_read_input_tokens, None);
+
+        // parse_response: usage.cache_* = null / 浮点 / 负数 → None
+        let body2 = json!({
+            "content": [{ "type": "text", "text": "hi" }],
+            "stop_reason": "end_turn",
+            "usage": {
+                "input_tokens": 1,
+                "output_tokens": 2,
+                "cache_creation_input_tokens": null,
+                "cache_read_input_tokens": -1,
+            }
+        });
+        let resp2 = ClaudeProvider::parse_response(&body2).expect("ok");
+        assert_eq!(resp2.usage.cache_creation_input_tokens, None);
+        // -1 is not a valid u64 → as_u64() returns None
+        assert_eq!(resp2.usage.cache_read_input_tokens, None);
+
+        // SSE message_start with non-numeric cache fields
+        let mut state = SseState::new();
+        let start = json!({
+            "type": "message_start",
+            "message": {
+                "usage": {
+                    "input_tokens": 5,
+                    "cache_creation_input_tokens": "oops",
+                    "cache_read_input_tokens": 1.5,
+                }
+            }
+        });
+        process_sse_data(&start.to_string(), &mut state);
+        assert_eq!(state.cache_creation_input_tokens, None);
+        assert_eq!(state.cache_read_input_tokens, None);
+        assert_eq!(state.input_tokens, 5);
+    }
+
+    /// redacted_thinking 块必须原样透传所有字段（不仅是 type/data），
+    /// 防止未来 Anthropic 加新字段时丢失。
+    #[test]
+    fn test_redacted_thinking_block_preserves_all_fields() {
+        let mut state = SseState::new();
+        let evt = json!({
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": {
+                "type": "redacted_thinking",
+                "data": "ENC...payload",
+                "future_field": "should-survive",
+            }
+        });
+        let events = process_sse_data(&evt.to_string(), &mut state).expect("ThinkingBlock");
+        match &events[0] {
+            StreamEvent::ThinkingBlock { block } => {
+                assert_eq!(block["type"], "redacted_thinking");
+                assert_eq!(block["data"], "ENC...payload");
+                assert_eq!(block["future_field"], "should-survive");
+            }
+            _ => panic!("Expected ThinkingBlock"),
+        }
+    }
+
+    #[test]
+    fn test_build_request_body_with_system_segments_blocks() {
+        // Anthropic-capable model so supports_prompt_caching() == true
+        let provider = ClaudeProvider::new(
+            "key".to_string(),
+            Some("claude-3-5-sonnet-20241022".to_string()),
+        );
+        let request = LlmRequest {
+            messages: vec![
+                ChatMessage::text("system", "static\n\ndynamic\n\nvolatile"),
+                ChatMessage::text("user", "hello"),
+            ],
+            tools: vec![],
+            max_tokens: 1024,
+            temperature: 1.0,
+            stream: false,
+            thinking_config: None,
+            system_segments: Some(vec![
+                crate::llm::streaming::SystemPromptSegment {
+                    text: "static".to_string(),
+                    cache: true,
+                },
+                crate::llm::streaming::SystemPromptSegment {
+                    text: "dynamic".to_string(),
+                    cache: true,
+                },
+                crate::llm::streaming::SystemPromptSegment {
+                    text: "volatile".to_string(),
+                    cache: false,
+                },
+            ]),
+            anthropic_multimodal_turn: None,
+        };
+
+        let body = provider.build_request_body(&request);
+        let system_arr = body["system"].as_array().expect("system is array");
+        assert_eq!(system_arr.len(), 3);
+        assert_eq!(system_arr[0]["text"], "static");
+        assert!(system_arr[0].get("cache_control").is_some());
+        assert_eq!(system_arr[1]["text"], "dynamic");
+        assert!(system_arr[1].get("cache_control").is_some());
+        assert_eq!(system_arr[2]["text"], "volatile");
+        assert!(system_arr[2].get("cache_control").is_none());
+    }
+
+    #[test]
+    fn test_build_request_body_segments_cap_warns_beyond_three() {
+        let provider = ClaudeProvider::new(
+            "key".to_string(),
+            Some("claude-3-5-sonnet-20241022".to_string()),
+        );
+        let segs: Vec<_> = (0..5)
+            .map(|i| crate::llm::streaming::SystemPromptSegment {
+                text: format!("seg{}", i),
+                cache: true,
+            })
+            .collect();
+        let request = LlmRequest {
+            messages: vec![ChatMessage::text(
+                "system",
+                "seg0\n\nseg1\n\nseg2\n\nseg3\n\nseg4",
+            )],
+            tools: vec![],
+            max_tokens: 1024,
+            temperature: 1.0,
+            stream: false,
+            thinking_config: None,
+            system_segments: Some(segs),
+            anthropic_multimodal_turn: None,
+        };
+
+        let body = provider.build_request_body(&request);
+        let system_arr = body["system"].as_array().expect("system is array");
+        assert_eq!(system_arr.len(), 5);
+        // first 3 keep cache_control; last 2 get dropped flags
+        let kept: usize = system_arr
+            .iter()
+            .filter(|b| b.get("cache_control").is_some())
+            .count();
+        assert_eq!(kept, 3);
+    }
+
+    #[test]
+    fn test_build_request_body_no_segments_falls_back_to_single_block() {
+        let provider = ClaudeProvider::new(
+            "key".to_string(),
+            Some("claude-3-5-sonnet-20241022".to_string()),
+        );
+        let request = LlmRequest {
+            messages: vec![ChatMessage::text("system", "you are helpful")],
+            tools: vec![],
+            max_tokens: 1024,
+            temperature: 1.0,
+            stream: false,
+            thinking_config: None,
+            system_segments: None,
+            anthropic_multimodal_turn: None,
+        };
+
+        let body = provider.build_request_body(&request);
+        let system_arr = body["system"].as_array().expect("system is array");
+        assert_eq!(system_arr.len(), 1);
+        assert_eq!(system_arr[0]["text"], "you are helpful");
+        assert!(system_arr[0].get("cache_control").is_some());
     }
 }

@@ -77,6 +77,10 @@ pub struct QueryEngine {
 pub struct TotalTokenUsage {
     pub tokens_in: u64,
     pub tokens_out: u64,
+    /// Anthropic-style accumulated prompt-cache write tokens.
+    pub cache_creation_input_tokens: u64,
+    /// Anthropic-style accumulated prompt-cache read tokens.
+    pub cache_read_input_tokens: u64,
 }
 
 impl QueryEngine {
@@ -443,13 +447,40 @@ impl QueryEngine {
         usage.tokens_out += tokens_out;
     }
 
+    /// Accumulate Anthropic-style prompt-cache token counters. Called separately
+    /// from `accumulate_usage` so existing call sites keep compiling.
+    pub fn accumulate_cache_usage(
+        &self,
+        cache_creation_input_tokens: u64,
+        cache_read_input_tokens: u64,
+    ) {
+        if cache_creation_input_tokens == 0 && cache_read_input_tokens == 0 {
+            return;
+        }
+        let mut usage = self
+            .total_usage
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        usage.cache_creation_input_tokens += cache_creation_input_tokens;
+        usage.cache_read_input_tokens += cache_read_input_tokens;
+    }
+
     pub fn estimated_cost_usd(&self) -> f64 {
         let Some(rate) = self.cost_per_1k_tokens else {
             return 0.0;
         };
         let usage = self.get_total_usage();
-        let total_k_tokens = (usage.tokens_in + usage.tokens_out) as f64 / 1000.0;
-        total_k_tokens * rate
+        // Anthropic prompt caching pricing: cache_creation_input_tokens are
+        // *additional* to tokens_in and cost 1.25× the input rate; cache_read
+        // tokens cost 0.1× the input rate. tokens_in itself counts only the
+        // non-cached portion of the prompt. We don't have separate
+        // input/output rates here, so use `rate` as the common unit price and
+        // weight cache tokens accordingly.
+        let weighted_tokens = usage.tokens_in as f64
+            + usage.tokens_out as f64
+            + (usage.cache_creation_input_tokens as f64) * 1.25
+            + (usage.cache_read_input_tokens as f64) * 0.1;
+        weighted_tokens / 1000.0 * rate
     }
 
     pub fn is_budget_exceeded(&self) -> bool {

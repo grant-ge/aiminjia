@@ -109,6 +109,10 @@ pub struct SkillInfo {
     pub description: String,
     pub icon: Option<String>,
     pub category: Option<String>,
+    /// "user"  — installed under ~/.renlijia/users/{scope}/skills/
+    /// "global" — managed bundle in ~/.renlijia/skills/
+    /// 用于前端区分"本地技能"分类。
+    pub source: String,
 }
 
 /// Pure function for testability: list all skills in the new disk-backed registry.
@@ -129,6 +133,10 @@ pub fn list_skills_from_registry(registry: &Arc<Mutex<SkillRegistry>>) -> Vec<Sk
                 description: skill.frontmatter.description.clone(),
                 icon: None,
                 category: skill.frontmatter.category.clone(),
+                source: match skill.source {
+                    crate::plugin::skill::types::SkillSource::User => "user".to_string(),
+                    crate::plugin::skill::types::SkillSource::Global => "global".to_string(),
+                },
             })
         })
         .collect()

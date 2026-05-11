@@ -35,16 +35,6 @@ pub struct ProviderCapabilities {
 /// a single provider.
 pub fn get_provider_capabilities(provider: &str) -> ProviderCapabilities {
     match provider {
-        "deepseek-v3" => ProviderCapabilities {
-            primary_provider: "deepseek-v3",
-            reasoning_provider: Some("deepseek-r1"),
-            models_desc: "主力: deepseek-chat | 推理: deepseek-reasoner",
-        },
-        "qwen-plus" => ProviderCapabilities {
-            primary_provider: "qwen-plus",
-            reasoning_provider: None,
-            models_desc: "主力: qwen-plus",
-        },
         "openai" => ProviderCapabilities {
             primary_provider: "openai",
             reasoning_provider: None, // TODO: add o1 support
@@ -54,11 +44,6 @@ pub fn get_provider_capabilities(provider: &str) -> ProviderCapabilities {
             primary_provider: "claude",
             reasoning_provider: None,
             models_desc: "主力: Claude Sonnet",
-        },
-        "volcano" => ProviderCapabilities {
-            primary_provider: "volcano",
-            reasoning_provider: None,
-            models_desc: "主力: 字节跳动大模型",
         },
         "custom" => ProviderCapabilities {
             primary_provider: "custom",
@@ -71,7 +56,7 @@ pub fn get_provider_capabilities(provider: &str) -> ProviderCapabilities {
             models_desc: "云端模型（登录后可用）",
         },
         _ => ProviderCapabilities {
-            primary_provider: "deepseek-v3",
+            primary_provider: "lotus",
             reasoning_provider: None,
             models_desc: "",
         },
@@ -97,7 +82,7 @@ pub enum TaskType {
 /// Result of routing: which provider + model to use.
 #[derive(Debug, Clone)]
 pub struct RouteResult {
-    /// Provider identifier, e.g. "deepseek-v3", "openai", "claude", "volcano", "custom"
+    /// Provider identifier, e.g. "openai", "claude", "custom", "lotus"
     pub provider: String,
     /// API key for the selected provider
     pub api_key: String,
@@ -333,7 +318,7 @@ mod tests {
     fn default_settings() -> AppSettings {
         AppSettings {
             auto_model_routing: true,
-            primary_model: "deepseek-v3".to_string(),
+            primary_model: "claude".to_string(),
             primary_api_key: "pk-test".to_string(),
             use_cloud: false,
             ..Default::default()
@@ -406,7 +391,7 @@ mod tests {
         settings.auto_model_routing = false;
 
         let route = select_route(&TaskType::Analysis, &settings);
-        assert_eq!(route.provider, "deepseek-v3");
+        assert_eq!(route.provider, "claude");
         assert_eq!(route.api_key, "pk-test");
         assert!(route.use_tools);
     }
@@ -416,38 +401,40 @@ mod tests {
         let settings = default_settings();
         let route = select_route(&TaskType::Analysis, &settings);
         // Analysis MUST use primary model with tools enabled
-        assert_eq!(route.provider, "deepseek-v3");
+        assert_eq!(route.provider, "claude");
         assert_eq!(route.api_key, "pk-test");
         assert!(route.use_tools);
     }
 
     #[test]
     fn test_route_reasoning_uses_reasoning_model() {
+        // Claude has no reasoning variant — falls back to primary with tools off.
         let settings = default_settings();
         let route = select_route(&TaskType::Reasoning, &settings);
-        // DeepSeek has a reasoning variant (R1), auto-routed with same API key
-        assert_eq!(route.provider, "deepseek-r1");
+        assert_eq!(route.provider, "claude");
         assert_eq!(route.api_key, "pk-test");
-        assert!(!route.use_tools);
+        // No reasoning_provider → falls through to "_ => primary" branch which
+        // turns tools on. The use_cloud==false + Reasoning path keeps use_tools.
+        assert!(route.use_tools);
     }
 
     #[test]
     fn test_route_analysis_fallback_no_reasoning() {
-        // Qwen has no reasoning variant — reasoning tasks fallback to primary
+        // custom provider has no reasoning variant — reasoning tasks fall back to primary
         let mut settings = default_settings();
-        settings.primary_model = "qwen-plus".to_string();
+        settings.primary_model = "custom".to_string();
 
         let route = select_route(&TaskType::Reasoning, &settings);
-        assert_eq!(route.provider, "qwen-plus");
+        assert_eq!(route.provider, "custom");
         assert!(route.use_tools);
     }
 
     #[test]
     fn test_route_provider_capabilities() {
-        let caps = get_provider_capabilities("deepseek-v3");
-        assert_eq!(caps.reasoning_provider, Some("deepseek-r1"));
+        let caps = get_provider_capabilities("claude");
+        assert!(caps.reasoning_provider.is_none());
 
-        let caps = get_provider_capabilities("qwen-plus");
+        let caps = get_provider_capabilities("custom");
         assert!(caps.reasoning_provider.is_none());
     }
 
@@ -455,7 +442,7 @@ mod tests {
     fn test_route_general_uses_primary() {
         let settings = default_settings();
         let route = select_route(&TaskType::General, &settings);
-        assert_eq!(route.provider, "deepseek-v3");
+        assert_eq!(route.provider, "claude");
         assert!(route.use_tools);
     }
 
@@ -463,7 +450,7 @@ mod tests {
     fn test_route_codegen_uses_primary() {
         let settings = default_settings();
         let route = select_route(&TaskType::CodeGen, &settings);
-        assert_eq!(route.provider, "deepseek-v3");
+        assert_eq!(route.provider, "claude");
         assert!(route.use_tools);
     }
 
@@ -471,7 +458,7 @@ mod tests {
     fn test_route_search_uses_primary() {
         let settings = default_settings();
         let route = select_route(&TaskType::Search, &settings);
-        assert_eq!(route.provider, "deepseek-v3");
+        assert_eq!(route.provider, "claude");
         assert!(route.use_tools);
     }
 }

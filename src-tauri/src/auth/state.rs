@@ -28,13 +28,13 @@ pub struct TenantInfo {
     /// Custom accent color hex (empty/None = default #D4A843).
     #[serde(default)]
     pub accent_color: Option<String>,
-    /// Custom primary color hex (empty/None = default #1D1D1F).
+    /// Custom primary/foreground color hex (empty/None = default #1D1D1F).
     #[serde(default)]
     pub primary_color: Option<String>,
-    /// Custom background color (empty/None = default).
+    /// Custom main background color (empty/None = default #FAFAF8).
     #[serde(default)]
     pub bg_color: Option<String>,
-    /// Custom sidebar background color (empty/None = default).
+    /// Custom sidebar background color (empty/None = default #F5F4F1).
     #[serde(default)]
     pub sidebar_bg_color: Option<String>,
     /// Custom font family identifier (empty/None = system default).

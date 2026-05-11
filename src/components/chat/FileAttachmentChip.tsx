@@ -68,7 +68,7 @@ export function FileAttachmentChip({ file }: FileAttachmentChipProps) {
 
   return (
     <div
-      className="mb-1.5 inline-flex max-w-[360px] items-center gap-2.5 rounded-lg border px-3.5 py-2.5"
+      className="mb-1.5 inline-flex max-w-[360px] items-center gap-2.5 rounded-lg border px-3.5 py-2.5 border-border"
       style={{
         background: 'var(--color-bg-card)',
         borderColor: 'var(--color-border)',

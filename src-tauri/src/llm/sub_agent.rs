@@ -47,6 +47,11 @@ pub struct SubAgentRuntimeDeps {
     /// run by the sub-agent respect the parent's authorized paths.  `None` for test
     /// and legacy paths that haven't yet been wired.
     pub permission_ctx: Option<Arc<ToolPermissionContext>>,
+    /// Snapshot of the parent turn's active persona id, propagated into
+    /// `RequestScopedRuntimeDeps.current_persona_id` so that request-scoped
+    /// tools (e.g. agenda) running inside the sub-agent still see the parent's
+    /// persona identity. `None` for legacy / test paths.
+    pub current_persona_id: Option<String>,
 }
 
 impl SubAgentRuntimeDeps {
@@ -83,6 +88,7 @@ impl SubAgentRuntimeDeps {
             permission_mode: PermissionMode::Default,
             runtime_resolver: self.runtime_resolver.clone(),
             permission_ctx: self.permission_ctx.clone(),
+            current_persona_id: self.current_persona_id.clone(),
         }
     }
 }
@@ -162,7 +168,7 @@ mod tests {
             dynamic_context: String::new(),
             conversation_id: "c1".into(),
             parent_run_id: None,
-            background: false,
+            background: Default::default(),
             app_handle: None,
             cancel_token: None,
             permission_mode: PermissionMode::Default,
@@ -188,7 +194,7 @@ mod tests {
             dynamic_context: String::new(),
             conversation_id: "c1".into(),
             parent_run_id: None,
-            background: false,
+            background: Default::default(),
             app_handle: None,
             cancel_token: None,
             permission_mode: PermissionMode::Default,

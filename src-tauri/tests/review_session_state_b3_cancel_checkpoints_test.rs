@@ -41,6 +41,8 @@ impl RuntimeLlmExecutor for CountingExecutor {
             content: "should-not-run".to_string(),
             tokens_in: 0,
             tokens_out: 0,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
             stop_reason: Some("end_turn".to_string()),
         })
     }

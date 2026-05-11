@@ -13,6 +13,9 @@ pub struct TurnState {
     active_tool_call: Option<ToolCallId>,
     cancellation: CancellationToken,
     permission_mode: PermissionMode,
+    /// The primary LLM model name used for this turn (e.g. "deepseek-v3").
+    /// Populated by the driver after TurnConfig is built; empty string until set.
+    primary_model: String,
 }
 
 impl TurnState {
@@ -27,6 +30,7 @@ impl TurnState {
             active_tool_call: None,
             cancellation: CancellationToken::new(),
             permission_mode: PermissionMode::Default,
+            primary_model: String::new(),
         }
     }
 
@@ -113,6 +117,14 @@ impl TurnState {
 
     pub fn permission_mode(&self) -> PermissionMode {
         self.permission_mode
+    }
+
+    pub fn primary_model(&self) -> &str {
+        &self.primary_model
+    }
+
+    pub fn set_primary_model(&mut self, model: String) {
+        self.primary_model = model;
     }
 }
 

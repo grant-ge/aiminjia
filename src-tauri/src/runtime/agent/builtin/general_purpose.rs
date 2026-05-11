@@ -8,7 +8,7 @@ pub fn general_purpose_agent_definition() -> AgentDefinition {
         description: "通用 subagent，可调用绝大多数工具完成任务".into(),
         allowed_tools: vec![], // 空 = 全集（受 ALL_AGENT_DISALLOWED 过滤）
         disallowed_tools: vec![],
-        max_iterations: 30,
+        max_iterations: 60,
         model: AgentModel::Inherit,
         system_prompt: AgentPrompt::Inline(
             "你是一个子代理，由调用方派出来完成一项任务。利用可用工具把任务完整做完——不要镀金，但也别留半截。\n\

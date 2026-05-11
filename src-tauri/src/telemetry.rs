@@ -7,8 +7,9 @@
 use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 use tauri::Emitter;
@@ -190,6 +191,34 @@ const METRICS_FILE: &str = "metrics.jsonl";
 const SPLIT_THRESHOLD: u64 = 2 * 1024 * 1024;
 
 static DIAGNOSTIC_SEQ: AtomicU64 = AtomicU64::new(1);
+
+/// Process-wide fallback workspace for telemetry writes.
+///
+/// Set once at startup (`lib.rs`) to `AiJiaHome::root()`. Code paths that
+/// don't have a `workspace_path` in hand (global tool dispatcher,
+/// sub-agent worker, interaction control plane) call
+/// [`diagnostics_workspace`] instead of `std::env::current_dir()`—on
+/// macOS the cwd is `/` when launched from Finder, which is read-only
+/// and caused "Failed to write diagnostic entry: Read-only file system"
+/// spam (~1300/day).
+static DIAGNOSTICS_WORKSPACE: OnceLock<PathBuf> = OnceLock::new();
+
+/// Initialize the process-wide telemetry workspace. Safe to call multiple
+/// times; the first value wins. Call from `lib.rs` after `AiJiaHome` is
+/// resolved.
+pub fn set_diagnostics_workspace(path: PathBuf) {
+    let _ = DIAGNOSTICS_WORKSPACE.set(path);
+}
+
+/// Returns the workspace path callers without explicit context should use
+/// for `record_diagnostic`. Falls back to `./` only if initialization was
+/// somehow skipped (tests, early-boot paths).
+pub fn diagnostics_workspace() -> PathBuf {
+    DIAGNOSTICS_WORKSPACE
+        .get()
+        .cloned()
+        .unwrap_or_else(|| PathBuf::from("."))
+}
 
 /// Metrics base path: `{workspace}/logs/metrics.jsonl`.
 fn metrics_path(workspace: &Path) -> std::path::PathBuf {
@@ -398,14 +427,22 @@ pub fn record(category: &str, workspace: &Path, fields: &[(&str, &str)]) {
 
     let path = metrics_path(workspace);
     if let Err(e) = append_plain_jsonl_with_split(&path, &entry, SPLIT_THRESHOLD) {
-        log::warn!("[telemetry] Failed to write metrics entry: {}", e);
+        log::warn!(
+            "[telemetry] Failed to write metrics entry to {}: {}",
+            path.display(),
+            e
+        );
     }
 }
 
 pub fn record_diagnostic(workspace: &Path, event: DiagnosticEvent) {
     let path = metrics_path(workspace);
     if let Err(e) = append_plain_jsonl_with_split(&path, &event, SPLIT_THRESHOLD) {
-        log::warn!("[telemetry] Failed to write diagnostic entry: {}", e);
+        log::warn!(
+            "[telemetry] Failed to write diagnostic entry to {}: {}",
+            path.display(),
+            e
+        );
     }
 }
 

@@ -1,18 +1,7 @@
 import { Button } from '@/components/ui/button'
 import { getSettings, updateSettings } from '@/lib/tauri'
-import { useBrandingStore } from '@/stores/brandingStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import type { FontScale } from '@/types/settings'
-
-const ACCENT_PRESETS = [
-  '#DBAA22',
-  '#4f46e5',
-  '#0ea5e9',
-  '#10b981',
-  '#f43f5e',
-  '#8b5cf6',
-  '#f97316',
-]
 
 const FONT_SCALE_OPTIONS: Array<{ value: FontScale; label: string; description: string }> = [
   { value: 'small', label: '小', description: '14px' },
@@ -26,12 +15,10 @@ interface GeneralPanelProps {
 }
 
 export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
-  const accentColor = useBrandingStore((s) => s.accentColor)
-  const applyBranding = useBrandingStore((s) => s.applyBranding)
   const fontScale = useSettingsStore((s) => s.fontScale ?? 'medium')
   const setFontScale = useSettingsStore((s) => s.setFontScale)
 
-  const persistToBackend = async (patch: { fontScale?: FontScale; accentColor?: string }) => {
+  const persistToBackend = async (patch: { fontScale?: FontScale }) => {
     try {
       const current = await getSettings()
       await updateSettings({ ...current, ...patch })
@@ -45,20 +32,15 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
     void persistToBackend({ fontScale: value })
   }
 
-  const handleAccentChange = (color: string) => {
-    applyBranding({ accentColor: color })
-    void persistToBackend({ accentColor: color })
-  }
-
   return (
     <div className="flex flex-col gap-5 text-foreground">
       <section className="flex items-center justify-between gap-8">
         <div className="flex min-w-0 items-center gap-4">
-          <div className="h-12 w-12 shrink-0 overflow-hidden rounded-[14px] bg-primary">
+          <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-primary">
             {user.avatarUrl ? (
               <img src={user.avatarUrl} alt="" className="h-full w-full object-cover" />
             ) : (
-              <span className="flex h-full w-full items-center justify-center text-2xl font-semibold text-white">
+              <span className="flex h-full w-full items-center justify-center text-2xl font-semibold text-primary-foreground">
                 {(user.name.charAt(0) || '?').toUpperCase()}
               </span>
             )}
@@ -68,7 +50,7 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
             <div className="truncate text-sm leading-none text-muted-foreground">{user.tenantName}</div>
           </div>
         </div>
-        <Button variant="outline" className="h-10 rounded-[12px] px-5 text-sm font-semibold" onClick={onLogout}>
+        <Button variant="outline" className="h-9 rounded-lg px-5 text-sm font-semibold" onClick={onLogout}>
           退出登录
         </Button>
       </section>
@@ -83,7 +65,7 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
             <div className="text-base font-semibold text-foreground">字体大小</div>
             <div className="text-sm text-muted-foreground">调整界面文字和间距的整体缩放</div>
           </div>
-          <div className="inline-flex rounded-[12px] bg-muted p-1" role="radiogroup" aria-label="字体大小">
+          <div className="inline-flex rounded-lg bg-muted p-1" role="radiogroup" aria-label="字体大小">
             {FONT_SCALE_OPTIONS.map((option) => {
               const selected = fontScale === option.value
               return (
@@ -97,38 +79,14 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
                   onClick={() => handleFontScaleChange(option.value)}
                   className={
                     selected
-                      ? 'rounded-[10px] bg-card px-3 py-1.5 text-sm font-semibold text-foreground shadow-sm'
-                      : 'rounded-[10px] px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground'
+                      ? 'rounded-md bg-card px-3 py-1.5 text-sm font-semibold text-foreground shadow-sm'
+                      : 'rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground'
                   }
                 >
                   {option.label}
                 </button>
               )
             })}
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between gap-8">
-          <div className="flex min-w-0 flex-col gap-1">
-            <div className="text-base font-semibold text-foreground">强调色</div>
-            <div className="text-sm text-muted-foreground">选择界面的主题强调色</div>
-          </div>
-          <div className="flex items-center gap-2" role="radiogroup" aria-label="强调色">
-            {ACCENT_PRESETS.map((color) => (
-              <button
-                key={color}
-                role="radio"
-                aria-checked={accentColor === color}
-                aria-label={color}
-                onClick={() => handleAccentChange(color)}
-                className="h-6 w-6 rounded-full transition-transform hover:scale-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                style={{
-                  background: color,
-                  outline: accentColor === color ? '2px solid #cbcbcb' : 'none',
-                  outlineOffset: '2px',
-                }}
-              />
-            ))}
           </div>
         </div>
       </section>

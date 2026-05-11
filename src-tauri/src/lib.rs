@@ -40,7 +40,8 @@ pub fn run() {
             aijia_home
                 .ensure_global_dirs()
                 .expect("Failed to create global dirs");
-            commands::file::cleanup_workspace_clipboard_staging(&aijia_home.default_folder(), 7);
+            telemetry::set_diagnostics_workspace(aijia_home.root().to_path_buf());
+            commands::file::cleanup_workspace_clipboard_staging(&aijia_home.tmp_clipboard_dir(), 7);
             if let Err(e) = storage::migration::migrate_if_needed(&app_data_dir, aijia_home.root())
             {
                 log::warn!("[setup] migration warning (non-fatal): {}", e);
@@ -494,6 +495,16 @@ pub fn run() {
                 }
             }
 
+            match storage::skill_draft_store::gc_all_users(&aijia_home, 7) {
+                Ok(removed) if removed > 0 => {
+                    log::info!("Cleaned up {} stale skill drafts (>7d)", removed);
+                }
+                Ok(_) => {}
+                Err(err) => {
+                    log::warn!("Failed to gc skill drafts: {}", err);
+                }
+            }
+
             // Initialize runtime repository facade (routes settings/persona/file/export
             // commands through domain traits instead of direct AppStorage access).
             // IMPORTANT: facade must be managed before TauriChatCommandAdapter::new() is
@@ -504,8 +515,15 @@ pub fn run() {
             ));
             app.manage(facade);
 
+            // Shared registry: ChannelManager worker inserts new session ids here;
+            // IMAskCoordinator reads from it to decide if an event belongs to an IM session.
+            // Created unconditionally before TauriChatCommandAdapter so the event adapter
+            // can use it to suppress desktop-dialog forwarding for IM-channel sessions.
+            let channel_session_ids: Arc<std::sync::RwLock<std::collections::HashSet<String>>> =
+                Arc::new(std::sync::RwLock::new(std::collections::HashSet::new()));
+
             let chat_adapter = Arc::new(
-                transport::tauri_commands::chat::TauriChatCommandAdapter::new(
+                transport::tauri_commands::chat::TauriChatCommandAdapter::new_with_channel_sessions(
                     current_user_storage.clone(),
                     root_db.clone(),
                     gateway.clone(),
@@ -516,6 +534,8 @@ pub fn run() {
                     auth_manager.clone(),
                     permission_store.clone(),
                     app.handle().clone(),
+                    Some(channel_session_ids.clone()
+                        as Arc<dyn connector::channel::ask_coordinator::ChannelSessionRegistry>),
                 ),
             );
 
@@ -548,11 +568,63 @@ pub fn run() {
             app.manage(runtime::agent::LeadIdleSupervisor::new());
             app.manage(runtime::agent::CancellationRegistry::new());
 
-            runtime::schedule_runner::spawn_schedule_runner(
+            // Initialize ChannelManager for IM channel integration
+            if let Some(paths) = current_user_storage.resolve_paths() {
+                let chat_adapter_ref = app
+                    .state::<Arc<transport::tauri_commands::chat::TauriChatCommandAdapter>>()
+                    .inner()
+                    .clone();
+                let gateway_ref = app
+                    .state::<Arc<llm::gateway::LlmGateway>>()
+                    .inner()
+                    .clone();
+
+                // reply_manager is shared between ChannelManager and the coordinator (as AskOutputSink)
+                let reply_manager = Arc::new(connector::channel::DingtalkReplyManager::new());
+
+                let judge = Arc::new(connector::channel::ask_coordinator::GatewayAskReplyJudge::new(
+                    gateway_ref,
+                    models::settings::AppSettings::default(),
+                ));
+                let ask_coordinator = Arc::new(
+                    connector::channel::ask_coordinator::IMAskCoordinator::new(
+                        channel_session_ids.clone()
+                            as Arc<dyn connector::channel::ask_coordinator::ChannelSessionRegistry>,
+                        reply_manager.clone()
+                            as Arc<dyn connector::channel::ask_coordinator::AskOutputSink>,
+                        chat_adapter_ref.permission_control_plane(),
+                        chat_adapter_ref.interaction_control_plane(),
+                        judge,
+                    ),
+                );
+
+                let channel_manager = Arc::new(connector::channel::ChannelManager::new(
+                    app.handle().clone(),
+                    chat_adapter_ref,
+                    app.state::<Arc<storage::file_store::RuntimeRepositoryFacade>>()
+                        .inner()
+                        .conversation_store_arc(),
+                    app.state::<Option<Arc<storage::crypto::SecureStorage>>>()
+                        .inner()
+                        .clone(),
+                    paths.channels_dir(),
+                    Some(ask_coordinator),
+                    reply_manager,
+                    channel_session_ids,
+                ));
+                let cm = channel_manager.clone();
+                tauri::async_runtime::spawn(async move {
+                    cm.hydrate_conversations().await;
+                    cm.auto_connect_if_configured().await;
+                });
+                app.manage(channel_manager);
+            }
+
+            runtime::agenda::spawn_agenda_runner(
                 current_user_storage.clone() as Arc<dyn storage::UserScopedPathResolver>,
                 app.state::<Arc<transport::tauri_commands::chat::TauriChatCommandAdapter>>()
                     .inner()
-                    .clone(),
+                    .clone() as Arc<dyn runtime::agenda::AgendaRunDispatcher>,
             );
 
             runtime::employee::runner::spawn_employee_scheduler(
@@ -561,6 +633,35 @@ pub fn run() {
                     .inner()
                     .clone(),
             );
+
+            // Background diagnostic auto-upload: ships only bytes after the
+            // persisted watermark so each tick stays small. Initial run is
+            // delayed 30s after startup to let auth restore + first-screen
+            // render settle, then 15min cadence afterwards. Failures are
+            // logged at warn-level and do not block the loop.
+            {
+                let auth = app.state::<Arc<auth::AuthManager>>().inner().clone();
+                let home = aijia_home.clone();
+                let fmgr = app.state::<Arc<storage::file_manager::FileManager>>().inner().clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                    match commands::diagnostics::upload_incremental(&auth, &home, &fmgr, "startup").await {
+                        Ok(n) if n > 0 => log::info!("[diag-auto] startup uploaded {n} chunks"),
+                        Ok(_) => log::debug!("[diag-auto] startup: nothing to upload"),
+                        Err(e) => log::warn!("[diag-auto] startup upload failed: {e}"),
+                    }
+                    let mut tick = tokio::time::interval(std::time::Duration::from_secs(15 * 60));
+                    tick.tick().await; // skip the immediate first tick
+                    loop {
+                        tick.tick().await;
+                        match commands::diagnostics::upload_incremental(&auth, &home, &fmgr, "periodic").await {
+                            Ok(n) if n > 0 => log::info!("[diag-auto] periodic uploaded {n} chunks"),
+                            Ok(_) => log::debug!("[diag-auto] periodic: nothing to upload"),
+                            Err(e) => log::warn!("[diag-auto] periodic upload failed: {e}"),
+                        }
+                    }
+                });
+            }
 
             Ok(())
         })
@@ -591,7 +692,6 @@ pub fn run() {
             file::read_clipboard_file_paths,
             file::save_clipboard_image_to_tmp_dir,
             file::save_clipboard_image_to_workspace_staging,
-            file::read_local_image_as_data_url,
             file::open_generated_file,
             file::reveal_file_in_folder,
             file::get_file_preview,
@@ -653,10 +753,18 @@ pub fn run() {
             // Project memory commands
             commands::project_memory::save_project_memory,
             commands::project_memory::distill_project_memory,
-            // Schedule commands
-            commands::schedules::list_schedules,
-            commands::schedules::create_schedule,
-            commands::schedules::delete_schedule,
+            // Agenda commands
+            transport::tauri_commands::agenda::list_agenda_items,
+            transport::tauri_commands::agenda::create_agenda_item,
+            transport::tauri_commands::agenda::get_agenda_item,
+            transport::tauri_commands::agenda::update_agenda_item,
+            transport::tauri_commands::agenda::delete_agenda_item,
+            transport::tauri_commands::agenda::cancel_agenda_item,
+            transport::tauri_commands::agenda::restore_agenda_item,
+            transport::tauri_commands::agenda::run_agenda_item_now,
+            transport::tauri_commands::agenda::list_agenda_occurrences,
+            transport::tauri_commands::agenda::skip_occurrence,
+            transport::tauri_commands::agenda::unskip_occurrence,
             // Employee commands
             commands::employees::employee_list,
             commands::employees::employee_get,
@@ -668,6 +776,9 @@ pub fn run() {
             commands::employees::employee_trigger,
             commands::employees::employee_stop_run,
             commands::employees::employee_active_run,
+            commands::employees::employee_index_knowledge_async,
+            commands::employees::employee_template_catalog,
+            commands::employees::employee_template_refresh,
             commands::employees::inbox_list,
             commands::employees::inbox_mark_read,
             commands::employees::inbox_mark_all_read,
@@ -683,13 +794,18 @@ pub fn run() {
             commands::auth::get_cloud_auth,
             commands::auth::get_cloud_models,
             commands::auth::cloud_change_password,
-            commands::auth::get_branding,
             // Skill management commands
             commands::skill_management::list_custom_skills,
             commands::skill_management::install_custom_skill,
             commands::skill_management::uninstall_custom_skill,
             commands::skill_management::init_skill_template,
             commands::skill_management::pack_skill,
+            // Skill-Smith (小程) draft commands
+            commands::skill_draft::list_skill_drafts,
+            commands::skill_draft::discard_skill_draft,
+            commands::skill_draft::get_skill_draft_meta,
+            commands::skill_draft::import_skill_package,
+            commands::skill_draft::export_installed_skill,
             commands::skill_management::reload_skill,
             commands::skill_management::start_skill_watch,
             commands::skill_management::stop_skill_watch,
@@ -697,6 +813,15 @@ pub fn run() {
             // Marketplace commands
             commands::skill_management::list_marketplace_skills,
             commands::skill_management::install_marketplace_skill,
+            // Channel commands
+            commands::channel::channel_get_platforms,
+            commands::channel::channel_get_platform,
+            commands::channel::channel_get_conversations,
+            commands::channel::channel_begin_registration,
+            commands::channel::channel_poll_registration,
+            commands::channel::channel_set_enabled,
+            commands::channel::channel_remove_platform,
+            commands::channel::channel_reveal_secret,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

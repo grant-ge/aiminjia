@@ -185,7 +185,13 @@ mod tests {
         let defs = build_visible_tool_defs(&registry, true, ToolSchemaFilter::None).await;
         let names: Vec<&str> = defs.iter().map(|def| def.name.as_str()).collect();
 
+        // Bash / PowerShell are mutually exclusive (registered per-platform):
+        // unix → Bash, windows → PowerShell. Only assert the platform-relevant one.
+        let unavailable_shell: &str = if cfg!(windows) { "Bash" } else { "PowerShell" };
         for tool_name in WORKSPACE_TOOL_NAMES {
+            if *tool_name == unavailable_shell {
+                continue;
+            }
             assert!(
                 names.contains(tool_name),
                 "workspace tool '{}' should be visible when authorized, got {:?}",

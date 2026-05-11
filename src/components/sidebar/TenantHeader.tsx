@@ -23,7 +23,7 @@ export function TenantHeader({
       <div className="flex min-w-0 items-center gap-1.5">
         <div
           data-testid="tenant-logo"
-          className="h-6 w-6 shrink-0 overflow-hidden rounded-[10px]"
+          className="h-6 w-6 shrink-0 overflow-hidden rounded-md"
         >
           <img
             src={logoUrl}

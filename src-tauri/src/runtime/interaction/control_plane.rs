@@ -30,6 +30,8 @@ pub trait PendingInteractionControlPlane: Send + Sync {
     fn cancel_for_session(&self, session_id: &str, message: &str) -> usize;
 
     fn pending_count_for_session(&self, session_id: &str) -> usize;
+
+    fn is_pending(&self, interaction_id: &InteractionId) -> bool;
 }
 
 #[derive(Default)]
@@ -69,7 +71,7 @@ impl PendingInteractionControlPlane for InMemoryInteractionControlPlane {
         );
         let entry = inner.get(&key).unwrap();
         record_diagnostic(
-            &std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+            &crate::telemetry::diagnostics_workspace(),
             DiagnosticEvent::new("interaction.required.received", DiagnosticSource::Backend)
                 .conversation_id(entry.request.session_id.as_str())
                 .run_id(entry.request.run_id.as_str())
@@ -94,7 +96,7 @@ impl PendingInteractionControlPlane for InMemoryInteractionControlPlane {
             .remove(interaction_id.as_str())
             .ok_or_else(|| anyhow!("pending interaction not found: {}", interaction_id))?;
         record_diagnostic(
-            &std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+            &crate::telemetry::diagnostics_workspace(),
             DiagnosticEvent::new("interaction.resolve.completed", DiagnosticSource::Backend)
                 .conversation_id(entry.request.session_id.as_str())
                 .run_id(entry.request.run_id.as_str())
@@ -142,5 +144,12 @@ impl PendingInteractionControlPlane for InMemoryInteractionControlPlane {
             .values()
             .filter(|entry| entry.request.session_id.as_str() == session_id)
             .count()
+    }
+
+    fn is_pending(&self, interaction_id: &InteractionId) -> bool {
+        self.inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .contains_key(interaction_id.as_str())
     }
 }

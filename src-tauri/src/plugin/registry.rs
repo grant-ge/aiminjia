@@ -55,6 +55,11 @@ pub struct RequestScopedRuntimeDeps {
     /// parent's authorized paths into `StorageCapability` when executing tools.
     /// `None` for non-sub-agent paths (legacy tools, test helpers).
     pub permission_ctx: Option<Arc<crate::runtime::path_auth::ToolPermissionContext>>,
+    /// Active persona id resolved by the chat main path. Threaded via
+    /// `PluginContext.current_persona_id` so request-scoped tools (e.g. agenda)
+    /// can bind organizer identity at construction time. `None` for legacy /
+    /// test paths; tools that require it should `?` short-circuit.
+    pub current_persona_id: Option<String>,
 }
 
 impl RequestScopedRuntimeDeps {
@@ -85,6 +90,7 @@ impl RequestScopedRuntimeDeps {
             permission_mode: ctx.permission_mode,
             runtime_resolver: ctx.runtime_resolver.clone(),
             permission_ctx: ctx.permission_ctx.clone(),
+            current_persona_id: ctx.current_persona_id.clone(),
         }
     }
 
@@ -118,6 +124,13 @@ const REQUEST_SCOPED_RUNTIME_TOOL_NAMES: &[&str] = &[
     "Skill",
     "TaskOutput",
     "TaskStop",
+    // Agenda tools (request-scoped — built per-turn from RequestScopedRuntimeDeps.current_persona_id)
+    "create_agenda_item",
+    "list_agenda_items",
+    "update_agenda_item",
+    "cancel_agenda_item",
+    "skip_occurrence",
+    "list_agenda_occurrences",
 ];
 
 /// Info about a registered tool (for management UI).
@@ -625,6 +638,7 @@ impl ToolRegistry {
                 runtime_resolver: ctx.runtime_resolver.clone(),
                 dingtalk_bridge: None,
                 permission_ctx: ctx.permission_ctx.clone(),
+                current_persona_id: ctx.current_persona_id.clone(),
             },
         )));
         let runtime_ctx = crate::runtime::tools::ToolExecutionContext::new(
@@ -912,7 +926,88 @@ impl ToolRegistry {
                 Some(Arc::new(builtin::task_stop::TaskStopRuntimeTool { store: task_store })
                     as Arc<dyn crate::runtime::tools::RuntimeTool>)
             }
+            "create_agenda_item"
+            | "list_agenda_items"
+            | "update_agenda_item"
+            | "cancel_agenda_item"
+            | "skip_occurrence"
+            | "list_agenda_occurrences" => {
+                let deps = Self::try_build_agenda_deps(ctx)?;
+                Some(Self::make_agenda_tool(name, deps))
+            }
+            "skill_create_draft"
+            | "skill_write_md"
+            | "skill_add_file"
+            | "skill_validate"
+            | "skill_dry_run"
+            | "skill_install"
+            | "skill_export" => {
+                use tauri::Manager;
+                let app = ctx.app_handle.as_ref()?;
+                let cus = app
+                    .try_state::<Arc<crate::storage::CurrentUserStorage>>()
+                    .map(|s| s.inner().clone())?;
+                let scope = cus.scope()?;
+                let home = std::sync::Arc::new(cus.home().clone());
+                let store = std::sync::Arc::new(
+                    crate::storage::skill_draft_store::SkillDraftStore::new(home.clone()),
+                );
+                let mut deps = builtin::skill_smith::SkillSmithDeps::new(
+                    store,
+                    home,
+                    scope,
+                    ctx.conversation_id.clone(),
+                );
+                if let Some(reg) = ctx.skill_registry.clone() {
+                    deps = deps.with_skill_registry(reg);
+                }
+                Some(match name {
+                    "skill_create_draft" => Arc::new(builtin::skill_smith::SkillCreateDraftTool::new(deps))
+                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
+                    "skill_write_md" => Arc::new(builtin::skill_smith::SkillWriteMdTool::new(deps))
+                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
+                    "skill_add_file" => Arc::new(builtin::skill_smith::SkillAddFileTool::new(deps))
+                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
+                    "skill_validate" => Arc::new(builtin::skill_smith::SkillValidateTool::new(deps))
+                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
+                    "skill_dry_run" => Arc::new(builtin::skill_smith::SkillDryRunTool::new(deps))
+                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
+                    "skill_install" => Arc::new(builtin::skill_smith::SkillInstallTool::new(deps))
+                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
+                    "skill_export" => Arc::new(builtin::skill_smith::SkillExportTool::new(deps))
+                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
+                    _ => unreachable!(),
+                })
+            }
             _ => None,
+        }
+    }
+
+    fn try_build_agenda_deps(
+        ctx: &RequestScopedRuntimeDeps,
+    ) -> Option<Arc<crate::runtime::tools::builtin::agenda::AgendaToolDeps>> {
+        // user-scoped 根目录走 ctx.storage（同 builtin::memory 的 WriteMemory/SearchMemory）
+        let base_dir = ctx.storage.base_dir().to_path_buf();
+        // 任务 45 注入的 active persona id；未解析（test/legacy）→ 拒绝构造工具
+        let persona_id = ctx.current_persona_id.clone()?;
+        Some(Arc::new(
+            crate::runtime::tools::builtin::agenda::AgendaToolDeps::new(base_dir, persona_id),
+        ))
+    }
+
+    fn make_agenda_tool(
+        name: &str,
+        deps: Arc<crate::runtime::tools::builtin::agenda::AgendaToolDeps>,
+    ) -> Arc<dyn crate::runtime::tools::RuntimeTool> {
+        use crate::runtime::tools::builtin::agenda::*;
+        match name {
+            "create_agenda_item" => Arc::new(CreateAgendaItemRuntimeTool { deps }),
+            "list_agenda_items" => Arc::new(ListAgendaItemsRuntimeTool { deps }),
+            "update_agenda_item" => Arc::new(UpdateAgendaItemRuntimeTool { deps }),
+            "cancel_agenda_item" => Arc::new(CancelAgendaItemRuntimeTool { deps }),
+            "skip_occurrence" => Arc::new(SkipOccurrenceRuntimeTool { deps }),
+            "list_agenda_occurrences" => Arc::new(ListAgendaOccurrencesRuntimeTool { deps }),
+            _ => unreachable!("agenda tool name list out of sync"),
         }
     }
 }
@@ -1041,6 +1136,66 @@ impl SkillRegistry {
                 short_description_en: rs.skill.short_description_en().to_string(),
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod current_persona_id_tests {
+    use super::*;
+
+    fn make_plugin_ctx(persona_id: Option<String>) -> crate::plugin::context::PluginContext {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let storage =
+            Arc::new(crate::storage::file_store::AppStorage::new(tmp.path()).unwrap());
+        let file_manager =
+            Arc::new(crate::storage::file_manager::FileManager::new(tmp.path()));
+        let mut ctx = crate::plugin::context::PluginContext {
+            storage,
+            file_manager,
+            workspace_path: tmp.path().to_path_buf(),
+            conversation_id: "conv-current-persona-test".to_string(),
+            session_id: crate::runtime::ids::SessionId::new("conv-current-persona-test"),
+            run_id: None,
+            agent_id: None,
+            tavily_api_key: None,
+            bocha_api_key: None,
+            app_handle: None,
+            auth_manager: None,
+            dingtalk_bridge: None,
+            use_cloud: false,
+            model: String::new(),
+            gateway: None,
+            tool_registry: None,
+            app_settings: None,
+            agent_runtime: None,
+            event_bus: None,
+            skill_registry: None,
+            authorized_workspace: None,
+            read_file_state: None,
+            cancellation: None,
+            permission_mode: crate::runtime::tools::permission::PermissionMode::Default,
+            runtime_resolver: None,
+            permission_ctx: None,
+            current_persona_id: None,
+        };
+        ctx.current_persona_id = persona_id;
+        // 顺手保留 tmp 直到测试结束
+        std::mem::forget(tmp);
+        ctx
+    }
+
+    #[test]
+    fn from_plugin_context_propagates_current_persona_id() {
+        let plugin = make_plugin_ctx(Some("alice".into()));
+        let deps = RequestScopedRuntimeDeps::from_plugin_context(&plugin);
+        assert_eq!(deps.current_persona_id.as_deref(), Some("alice"));
+    }
+
+    #[test]
+    fn from_plugin_context_persona_defaults_to_none() {
+        let plugin = make_plugin_ctx(None);
+        let deps = RequestScopedRuntimeDeps::from_plugin_context(&plugin);
+        assert!(deps.current_persona_id.is_none());
     }
 }
 

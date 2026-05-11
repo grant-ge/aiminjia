@@ -44,6 +44,9 @@ impl UserScopedPaths {
     pub fn schedules_dir(&self) -> PathBuf {
         self.base.join("schedules")
     }
+    pub fn agenda_dir(&self) -> PathBuf {
+        self.base.join("agenda")
+    }
     pub fn permissions_path(&self) -> PathBuf {
         self.base.join("permissions.json")
     }
@@ -104,6 +107,18 @@ impl UserScopedPaths {
     }
     pub fn downloads_dir(&self) -> PathBuf {
         self.base.join("downloads")
+    }
+    pub fn channels_dir(&self) -> PathBuf {
+        self.base.join("channels")
+    }
+    pub fn channel_platform_dir(&self, platform: &str) -> PathBuf {
+        self.channels_dir().join(platform)
+    }
+    pub fn channel_platform_config_path(&self, platform: &str) -> PathBuf {
+        self.channel_platform_dir(platform).join("config.json")
+    }
+    pub fn channel_platform_sessions_path(&self, platform: &str) -> PathBuf {
+        self.channel_platform_dir(platform).join("sessions.json")
     }
     pub fn employees_dir(&self) -> PathBuf {
         self.base.join("employees")
@@ -193,5 +208,30 @@ mod tests {
         assert_eq!(paths.audit_dir(), base.join("audit"));
         assert_eq!(paths.logs_dir(), base.join("logs"));
         assert_eq!(paths.downloads_dir(), base.join("downloads"));
+    }
+
+    #[test]
+    fn agenda_dir_under_base() {
+        use tempfile::TempDir;
+        let dir = TempDir::new().unwrap();
+        let paths = UserScopedPaths::new(dir.path(), "t_1__u_2");
+        assert_eq!(paths.agenda_dir(), dir.path().join("users/t_1__u_2/agenda"));
+    }
+
+    #[test]
+    fn channel_platform_paths_are_nested_under_user_scope() {
+        let root = PathBuf::from("/tmp/test-renlijia");
+        let paths = UserScopedPaths::new(&root, "t_1__u_2");
+        let base = root.join("users/t_1__u_2/channels/dingtalk");
+
+        assert_eq!(paths.channel_platform_dir("dingtalk"), base);
+        assert_eq!(
+            paths.channel_platform_config_path("dingtalk"),
+            base.join("config.json")
+        );
+        assert_eq!(
+            paths.channel_platform_sessions_path("dingtalk"),
+            base.join("sessions.json")
+        );
     }
 }

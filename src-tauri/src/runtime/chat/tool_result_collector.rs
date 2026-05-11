@@ -15,6 +15,7 @@
 //! depends on an external `MaskingContext` — see the FIXME in the driver.
 
 use serde_json::{json, Value as JsonValue};
+use std::collections::HashSet;
 
 use crate::runtime::chat::tool_round_driver::ToolRoundResult;
 use crate::runtime::chat::tool_round_types::RuntimeToolCallOutcome;
@@ -71,6 +72,12 @@ pub fn collect_results(round_results: Vec<ToolRoundResult>) -> ToolRoundResults 
     let mut new_generated_file_ids: Vec<String> = Vec::new();
     let mut success_count: usize = 0;
     let mut error_count: usize = 0;
+    // Anthropic rejects assistant turns whose content has more than one
+    // tool_result with the same tool_use_id. Dedup at collection time so an
+    // upstream double-emit (round runner glitch, retry path) cannot poison
+    // the conversation. First occurrence wins; subsequent ones are dropped
+    // with a warn log so we can trace the source if it recurs.
+    let mut seen_tool_call_ids: HashSet<String> = HashSet::new();
 
     for round_result in &round_results {
         // Unpack the result into common fields for downstream processing.
@@ -92,6 +99,15 @@ pub fn collect_results(round_results: Vec<ToolRoundResult>) -> ToolRoundResults 
                 8_000,
             ),
         };
+
+        if !seen_tool_call_ids.insert(tr_id.to_string()) {
+            log::warn!(
+                "[tool_result_collector] dropping duplicate tool_result for tool_call_id={} tool={}",
+                tr_id,
+                tr_name
+            );
+            continue;
+        }
 
         // Collect file_meta from successful tool outcomes into new_file_metas
         // so verify_file_claims and file card semantics work correctly.
@@ -225,6 +241,30 @@ mod tests {
         let out = collect_results(results);
         assert_eq!(out.success_count, 1);
         assert_eq!(out.error_count, 1);
+    }
+
+    #[test]
+    fn duplicate_tool_call_ids_are_deduplicated() {
+        let results = vec![
+            completed("dup-id", "Glob", "first result", false),
+            completed("dup-id", "Glob", "second result", false),
+            completed("other", "Bash", "ok", false),
+        ];
+        let out = collect_results(results);
+        assert_eq!(out.tool_result_messages.len(), 2);
+        assert_eq!(out.success_count, 2);
+        assert_eq!(out.error_count, 0);
+        let ids: Vec<&str> = out
+            .tool_result_messages
+            .iter()
+            .map(|m| m.get("toolCallId").and_then(|v| v.as_str()).unwrap())
+            .collect();
+        assert_eq!(ids, vec!["dup-id", "other"]);
+        let first_content = out.tool_result_messages[0]
+            .get("content")
+            .and_then(|v| v.as_str())
+            .unwrap();
+        assert_eq!(first_content, "first result");
     }
 
     #[test]

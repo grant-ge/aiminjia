@@ -297,7 +297,7 @@ pub trait Skill: Send + Sync + 'static {
         None
     }
 
-    /// Whether this skill uses SKILL.md format (no workflow.toml).
+    /// Whether this skill uses SKILL.md format instead of the retired declarative manifest.
     /// SKILL.md skills run in guided daily mode with enhanced system prompt.
     fn has_skill_md(&self) -> bool {
         false

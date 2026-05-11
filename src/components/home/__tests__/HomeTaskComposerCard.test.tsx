@@ -1,193 +1,136 @@
 import '@testing-library/jest-dom'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-
-import { useHomeStore } from '@/stores/homeStore'
-import type { PendingAttachment } from '@/hooks/useChatAttachments'
-
+import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { render, waitFor, fireEvent, act } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { HomeTaskComposerCard } from '../HomeTaskComposerCard'
+import { useChatStore } from '@/stores/chatStore'
+import { useUiStore } from '@/stores/uiStore'
+import { useHomeStore } from '@/stores/homeStore'
 
-const sendUserMessageMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
-const pickAttachmentsMock = vi.hoisted(() => vi.fn(async (): Promise<PendingAttachment[]> => []))
-
-vi.mock('@/lib/tauri', () => ({
-  getDefaultFolder: vi.fn().mockResolvedValue({
-    id: 'default',
-    rootPath: '/Users/test/.renlijia/defaultFolder',
-    displayName: '测试默认项目', // distinct from static fallback '默认项目'
-  }),
-  pickLocalDirectory: vi.fn(),
-  authorizeLocalDirectory: vi.fn().mockResolvedValue({ id: 'ws1', rootPath: '/tmp/proj', displayName: 'proj' }),
-  createConversation: vi.fn().mockResolvedValue('conv-123'),
-}))
-
-vi.mock('@/hooks/useChat', () => ({
-  useChat: () => ({ sendUserMessage: sendUserMessageMock }),
-}))
-
-vi.mock('@/hooks/useChatAttachments', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/hooks/useChatAttachments')>()
-  return {
-    ...actual,
-    useChatAttachments: () => ({
-      isPickingAttachments: false,
-      pickAttachments: pickAttachmentsMock,
-      resolvePastedPaths: vi.fn(async () => []),
-      saveClipboardImage: vi.fn(),
-    }),
-  }
+vi.mock('@tiptap/react', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('@tiptap/react')>()
+  return { ...mod, ReactNodeViewRenderer: () => () => ({}) }
 })
 
-vi.mock('@/stores/chatStore', () => ({
-  useChatStore: {
-    getState: () => ({
-      conversations: [],
-      setConversations: vi.fn(),
-      setActiveConversation: vi.fn(),
-      setMessages: vi.fn(),
-    }),
-  },
+const mockSendUserMessage = vi.fn()
+const mockCreateConversation = vi.fn()
+const mockAuthorizeLocalDirectory = vi.fn()
+const mockGetDefaultFolder = vi.fn()
+const mockPickLocalDirectory = vi.fn()
+const mockPickAttachments = vi.fn()
+
+vi.mock('@/hooks/useChat', () => ({
+  useChat: () => ({ sendUserMessage: mockSendUserMessage, isStreaming: false, stopCurrentStream: vi.fn() }),
 }))
 
-vi.mock('@/stores/uiStore', () => ({
-  useUiStore: {
-    getState: () => ({ setRoute: vi.fn(), consumePrefillText: vi.fn(() => null) }),
-  },
-}))
-
-vi.mock('@/stores/homeStore', () => ({
-  useHomeStore: vi.fn().mockReturnValue({
-    selectedWorkspace: null,
-    setSelectedWorkspace: vi.fn(),
+vi.mock('@/hooks/useChatAttachments', () => ({
+  useChatAttachments: () => ({
+    isPickingAttachments: false,
+    pickAttachments: mockPickAttachments,
+    saveClipboardImage: vi.fn(),
+    resolvePastedPaths: vi.fn(),
   }),
 }))
 
-vi.mock('@/components/chat/SkillPopover', () => ({ SkillPopover: () => null }))
+vi.mock('@/lib/tauri', () => ({
+  authorizeLocalDirectory: (...args: unknown[]) => mockAuthorizeLocalDirectory(...args),
+  createConversation: () => mockCreateConversation(),
+  getDefaultFolder: () => mockGetDefaultFolder(),
+  pickLocalDirectory: (opts: unknown) => mockPickLocalDirectory(opts),
+  readClipboardFilePaths: vi.fn().mockResolvedValue([]),
+  saveClipboardImageToWorkspaceStaging: vi.fn(),
+}))
+
+beforeEach(() => {
+  mockSendUserMessage.mockReset().mockResolvedValue(undefined)
+  mockCreateConversation.mockReset().mockResolvedValue('new-conv-1')
+  mockAuthorizeLocalDirectory.mockReset().mockResolvedValue(undefined)
+  mockGetDefaultFolder.mockReset().mockResolvedValue({ id: 'default', rootPath: '/home', displayName: '默认' })
+  mockPickLocalDirectory.mockReset()
+  mockPickAttachments.mockReset().mockResolvedValue([])
+  useChatStore.setState({ activeConversationId: null, conversations: [], messages: [] })
+  useUiStore.setState({ route: { kind: 'home' }, prefillText: undefined })
+  useHomeStore.setState({ selectedWorkspace: null })
+})
 
 describe('HomeTaskComposerCard', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    // Restore default homeStore mock so each test starts clean
-    vi.mocked(useHomeStore).mockReturnValue({
-      selectedWorkspace: null,
-      setSelectedWorkspace: vi.fn(),
-    })
-    pickAttachmentsMock.mockResolvedValue([])
-  })
-
-  it('shows 测试默认项目 after loading default folder', async () => {
+  it('renders RichComposer', async () => {
     render(<HomeTaskComposerCard />)
-    await waitFor(() => {
-      expect(screen.getByText('测试默认项目')).toBeInTheDocument()
-    })
+    await waitFor(() => expect(document.querySelector('.ProseMirror')).toBeTruthy())
   })
 
-  it('updates project label after user picks a directory', async () => {
-    const { pickLocalDirectory } = await import('@/lib/tauri')
-    vi.mocked(pickLocalDirectory).mockResolvedValueOnce('/Users/test/myproject')
-
+  it('Enter with text → creates conversation, switches route, sends message', async () => {
+    const user = userEvent.setup()
     render(<HomeTaskComposerCard />)
-    await waitFor(() => screen.getByText('测试默认项目'))
-
-    fireEvent.click(screen.getByText('测试默认项目'))
-    await waitFor(() => {
-      expect(screen.getByText('myproject')).toBeInTheDocument()
-    })
-    expect(vi.mocked(pickLocalDirectory)).toHaveBeenCalledOnce()
+    await waitFor(() => expect(document.querySelector('.ProseMirror')).toBeTruthy())
+    const editor = document.querySelector('.ProseMirror') as HTMLElement
+    await user.click(editor)
+    await user.type(editor, 'analyze sales')
+    fireEvent.keyDown(editor, { key: 'Enter', code: 'Enter' })
+    await waitFor(() => expect(mockSendUserMessage).toHaveBeenCalled())
+    expect(mockCreateConversation).toHaveBeenCalled()
+    expect(useChatStore.getState().activeConversationId).toBe('new-conv-1')
+    expect(useUiStore.getState().route).toEqual({ kind: 'chat', conversationId: 'new-conv-1' })
+    expect(mockSendUserMessage.mock.calls[0][0]).toBe('analyze sales')
   })
 
-  it('persists workspace to homeStore on pick', async () => {
-    const setSelectedWorkspace = vi.fn()
-    vi.mocked(useHomeStore).mockReturnValue({
-      selectedWorkspace: null,
-      setSelectedWorkspace,
-    })
-
-    const { pickLocalDirectory } = await import('@/lib/tauri')
-    vi.mocked(pickLocalDirectory).mockResolvedValueOnce('/Users/test/myproject')
-
-    render(<HomeTaskComposerCard />)
-    await waitFor(() => screen.getByText('测试默认项目'))
-    fireEvent.click(screen.getByText('测试默认项目'))
-
-    await waitFor(() => {
-      expect(setSelectedWorkspace).toHaveBeenCalledWith({
-        id: 'myproject',
-        rootPath: '/Users/test/myproject',
-        displayName: 'myproject',
-      })
-    })
-  })
-
-  it('uses the attachment button to attach a local path and sends that path without uploading', async () => {
-    pickAttachmentsMock.mockResolvedValueOnce([
+  it('attachment via picker shows token + Enter sends with file refs', async () => {
+    mockPickAttachments.mockResolvedValueOnce([
       {
-        id: '/Users/test/report.csv',
-        fileName: 'report.csv',
-        path: '/Users/test/report.csv',
+        id: 'p1',
+        fileName: 'plan.pdf',
+        path: '/p/plan.pdf',
         kind: 'file',
-        fileType: 'csv',
+        fileType: 'pdf',
         fileSize: 0,
+        mimeType: undefined,
         source: 'picker',
       },
     ])
-
-    render(<HomeTaskComposerCard />)
-
-    fireEvent.click(screen.getByRole('button', { name: '添加附件' }))
-
+    const { container } = render(<HomeTaskComposerCard />)
+    await waitFor(() => expect(document.querySelector('.ProseMirror')).toBeTruthy())
+    const attachBtn = container.querySelector('[aria-label="添加附件"]') as HTMLElement
+    await act(async () => {
+      attachBtn.click()
+    })
     await waitFor(() => {
-      expect(pickAttachmentsMock).toHaveBeenCalledOnce()
+      const html = document.querySelector('.ProseMirror')?.innerHTML ?? ''
+      expect(html).toContain('plan.pdf')
     })
-    expect(await screen.findByText('report.csv')).toBeInTheDocument()
-
-    fireEvent.change(screen.getByRole('textbox'), {
-      target: { value: '请分析' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: '发送' }))
-
-    await waitFor(() => {
-      expect(sendUserMessageMock).toHaveBeenCalledWith('请分析', [
-        {
-          id: '/Users/test/report.csv',
-          fileName: 'report.csv',
-          filePath: '/Users/test/report.csv',
-          kind: 'file',
-          fileSize: 0,
-          fileType: 'csv',
-          mimeType: undefined,
-        },
-      ])
-    })
+    const editor = document.querySelector('.ProseMirror') as HTMLElement
+    fireEvent.keyDown(editor, { key: 'Enter', code: 'Enter' })
+    await waitFor(() => expect(mockSendUserMessage).toHaveBeenCalled())
+    const [text, files] = mockSendUserMessage.mock.calls[0]
+    expect(text).toContain('[附件: plan.pdf](<file:///p/plan.pdf>)')
+    expect(files).toHaveLength(1)
+    expect(files[0].filePath).toBe('/p/plan.pdf')
   })
 
-  it('sends attachment-only home tasks with the local path payload', async () => {
-    pickAttachmentsMock.mockResolvedValueOnce([
-      {
-        id: '/Users/test/only.csv',
-        fileName: 'only.csv',
-        path: '/Users/test/only.csv',
-        kind: 'file',
-        fileType: 'csv',
-        fileSize: 0,
-        source: 'picker',
-      },
-    ])
-
-    render(<HomeTaskComposerCard />)
-
-    fireEvent.click(screen.getByRole('button', { name: '添加附件' }))
-    expect(await screen.findByText('only.csv')).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: '发送' }))
-
-    await waitFor(() => {
-      expect(sendUserMessageMock).toHaveBeenCalledWith('请分析附件', [
-        expect.objectContaining({
-          id: '/Users/test/only.csv',
-          filePath: '/Users/test/only.csv',
-        }),
-      ])
+  it('non-default workspace → authorizeLocalDirectory called before send', async () => {
+    useHomeStore.setState({
+      selectedWorkspace: { id: 'proj', rootPath: '/Users/me/proj', displayName: 'proj' },
     })
+    const user = userEvent.setup()
+    render(<HomeTaskComposerCard />)
+    await waitFor(() => expect(document.querySelector('.ProseMirror')).toBeTruthy())
+    const editor = document.querySelector('.ProseMirror') as HTMLElement
+    await user.click(editor)
+    await user.type(editor, 'go')
+    fireEvent.keyDown(editor, { key: 'Enter', code: 'Enter' })
+    await waitFor(() => expect(mockSendUserMessage).toHaveBeenCalled())
+    expect(mockAuthorizeLocalDirectory).toHaveBeenCalledWith('/Users/me/proj', 'new-conv-1')
+  })
+
+  it('default workspace → authorizeLocalDirectory NOT called', async () => {
+    // selectedWorkspace null → getDefaultFolder returns id=default
+    const user = userEvent.setup()
+    render(<HomeTaskComposerCard />)
+    await waitFor(() => expect(document.querySelector('.ProseMirror')).toBeTruthy())
+    const editor = document.querySelector('.ProseMirror') as HTMLElement
+    await user.click(editor)
+    await user.type(editor, 'go')
+    fireEvent.keyDown(editor, { key: 'Enter', code: 'Enter' })
+    await waitFor(() => expect(mockSendUserMessage).toHaveBeenCalled())
+    expect(mockAuthorizeLocalDirectory).not.toHaveBeenCalled()
   })
 })

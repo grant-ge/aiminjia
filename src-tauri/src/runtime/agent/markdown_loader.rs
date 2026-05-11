@@ -174,7 +174,7 @@ mod tests {
     #[test]
     fn accepts_valid_definition() {
         let f = write_md(
-            "---\nname: foo\ndescription: A test agent\nallowed_tools: ['read_workspace_file']\n---\n\nYou are a test agent.\n",
+            "---\nname: foo\ndescription: A test agent\nallowed_tools: ['Read']\n---\n\nYou are a test agent.\n",
         );
         let def = load_agent_from_markdown(f.path()).expect("valid def must parse");
         assert_eq!(def.name, "foo");

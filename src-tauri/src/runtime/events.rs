@@ -48,6 +48,7 @@ pub enum RuntimeEventKind {
         mode: PermissionMode,
         remember_options: Vec<PermissionDestination>,
         default_destination: Option<PermissionDestination>,
+        primary_model: String,
     },
     UserInteractionRequired {
         interaction_id: crate::runtime::interaction::InteractionId,
@@ -55,6 +56,7 @@ pub enum RuntimeEventKind {
         tool_name: String,
         kind: crate::runtime::interaction::InteractionKind,
         payload: serde_json::Value,
+        primary_model: String,
     },
     UserInteractionResolved {
         interaction_id: crate::runtime::interaction::InteractionId,
@@ -101,6 +103,12 @@ pub enum RuntimeEventKind {
         outcome: ChatTurnOutcome,
         total_input_tokens: u64,
         total_output_tokens: u64,
+        /// Anthropic-style accumulated prompt-cache write tokens for this turn.
+        #[serde(default)]
+        total_cache_creation_input_tokens: u64,
+        /// Anthropic-style accumulated prompt-cache read tokens for this turn.
+        #[serde(default)]
+        total_cache_read_input_tokens: u64,
         total_cost_usd: Option<f64>,
         permission_denial_count: usize,
     },

@@ -10,6 +10,7 @@ import {
   type CloudAuthInfo,
   type CloudModel,
 } from '@/lib/tauri'
+import { useBrandingStore } from '@/stores/brandingStore'
 import { useChatStore } from '@/stores/chatStore'
 import { useUiStore, type Route } from '@/stores/uiStore'
 
@@ -25,6 +26,7 @@ interface AuthState {
   setCloudModels: (models: CloudModel[]) => void
   setSelectedCloudModel: (model: string | null) => void
   setRedirectFrom: (route: Route | null) => void
+  resyncCloudModels: () => Promise<string | null>
   restoreFromStorage: () => Promise<void>
   login: (username: string, password: string) => Promise<void>
   logout: () => Promise<void>
@@ -49,6 +51,12 @@ function mapAuthState(info: CloudAuthInfo, models: CloudModel[]) {
     cloudModels: models,
     selectedCloudModel,
   }
+}
+
+async function applyTenantBranding(info: CloudAuthInfo): Promise<void> {
+  const tenant = info.tenant
+  if (!tenant) return
+  useBrandingStore.getState().applyBranding(tenant)
 }
 
 async function syncCloudModelSelection(models: CloudModel[]): Promise<string | null> {
@@ -91,6 +99,14 @@ export const useAuthStore = create<AuthState>((set) => ({
   setSelectedCloudModel: (selectedCloudModel) => set({ selectedCloudModel }),
   setRedirectFrom: (redirectFrom) => set({ redirectFrom }),
 
+  async resyncCloudModels() {
+    if (!useAuthStore.getState().isLoggedIn) return null
+    const models = await getCloudModels()
+    const selectedCloudModel = await syncCloudModelSelection(models)
+    set({ cloudModels: models, selectedCloudModel })
+    return selectedCloudModel
+  },
+
   async restoreFromStorage() {
     set({ isAuthPending: true })
     try {
@@ -103,6 +119,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       const models = await getCloudModels()
       const selectedCloudModel = await syncCloudModelSelection(models)
       set({ ...mapAuthState(info, models), selectedCloudModel, isAuthPending: false })
+      await applyTenantBranding(info)
     } catch (error) {
       set({ ...EMPTY_AUTH_STATE, isAuthPending: false })
       throw error
@@ -118,6 +135,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       const models = info.models.length > 0 ? info.models : await getCloudModels()
       const selectedCloudModel = await syncCloudModelSelection(models)
       set({ ...mapAuthState(info, models), selectedCloudModel, isAuthPending: false })
+      await applyTenantBranding(info)
       useUiStore.getState().setRoute({ kind: 'home' })
     } catch (error) {
       set({ isAuthPending: false })
@@ -131,6 +149,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       await cloudLogout()
       useChatStore.getState().resetAll()
       useChatStore.getState().resetStreaming()
+      useBrandingStore.getState().reset()
       set({ ...EMPTY_AUTH_STATE, redirectFrom: null, isAuthPending: false })
     } catch (error) {
       set({ isAuthPending: false })

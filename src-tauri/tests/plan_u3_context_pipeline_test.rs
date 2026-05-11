@@ -448,6 +448,8 @@ async fn u3_driver_prompt_too_long_retries_once_with_compacted_messages() {
                 content: "done".to_string(),
                 tokens_in: 1,
                 tokens_out: 1,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
                 stop_reason: Some("end_turn".to_string()),
             }),
         ],

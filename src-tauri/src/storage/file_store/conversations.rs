@@ -331,6 +331,47 @@ fn read_global_index(base_dir: &Path) -> StorageResult<GlobalIndex> {
     Ok(read_json_optional(&index_path(base_dir))?.unwrap_or_default())
 }
 
+/// Bump the `updated_at` field of a conversation's entry in the global index.
+///
+/// Called from `insert_message` so the sidebar's "most-recently-active first"
+/// ordering reflects reality. Without this, the index lags behind the
+/// per-conversation `conv.json` (sometimes by minutes for active sessions),
+/// and the conversation appears to "disappear" — sorted to a stale position
+/// in a long history list.
+///
+/// Best-effort: a missing index entry (e.g. for child conversations created
+/// outside the normal `create_conversation` path) is silently inserted with
+/// a placeholder title; the next `update_conversation_title` will fix it.
+pub fn touch_index_entry(base_dir: &Path, conversation_id: &str) -> StorageResult<()> {
+    let now = Utc::now().to_rfc3339();
+    let mut index = read_global_index(base_dir)?;
+    if let Some(entry) = index
+        .conversations
+        .iter_mut()
+        .find(|e| e.id == conversation_id)
+    {
+        entry.updated_at = now;
+    } else {
+        // Entry missing — create a placeholder so it shows up in the sidebar.
+        // Title is whatever conv.json says, falling back to a placeholder.
+        let title = read_json_safe::<ConversationMeta>(&conv_meta_path(base_dir, conversation_id))
+            .map(|m| m.title)
+            .unwrap_or_else(|_| "新对话".to_string());
+        let created_at = read_json_safe::<ConversationMeta>(&conv_meta_path(base_dir, conversation_id))
+            .map(|m| m.created_at)
+            .unwrap_or_else(|_| now.clone());
+        index.conversations.push(ConversationIndexEntry {
+            id: conversation_id.to_string(),
+            title,
+            created_at,
+            updated_at: now,
+            is_archived: false,
+        });
+    }
+    atomic_write_json(&index_path(base_dir), &index)?;
+    Ok(())
+}
+
 /// Get conversation mode, defaulting to "daily" on error (for index reads).
 pub fn get_conversation(base_dir: &Path, id: &str) -> StorageResult<ConversationMeta> {
     Ok(read_json_safe(&conv_meta_path(base_dir, id))?)

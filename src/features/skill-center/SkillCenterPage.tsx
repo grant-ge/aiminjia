@@ -22,6 +22,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { invoke } from '@tauri-apps/api/core'
 
 import { AppDropdown } from '@/components/common/AppDropdown'
 import { requestConfirm } from '@/components/common/ConfirmDialogHost'
@@ -36,7 +37,9 @@ import { useNotificationStore } from '@/stores/notificationStore'
 import { useSkillStore } from '@/stores/skillStore'
 import { useUiStore } from '@/stores/uiStore'
 
-import { SkillUploadModal } from './SkillUploadModal'
+import { SkillDraftBanner } from './SkillDraftBanner'
+import { open as openDialog } from '@tauri-apps/plugin-dialog'
+import { importSkillPackagesWithUI } from '@/hooks/useDragDropListener'
 
 const ICONS: Record<string, LucideIcon> = {
   'bar-chart-2': BarChart2,
@@ -59,8 +62,6 @@ const ICONS: Record<string, LucideIcon> = {
   users: Users,
 }
 
-const HIDE_SKILL_ACTIONS = true
-
 const CATEGORY_STYLE: Record<string, { bg: string }> = {
   hr:      { bg: 'bg-blue-500' },
   finance: { bg: 'bg-emerald-500' },
@@ -72,7 +73,7 @@ const CATEGORY_STYLE: Record<string, { bg: string }> = {
 
 function getSkillIcon(icon: string) {
   const Icon = ICONS[icon] ?? FileText
-  return <Icon className="h-4 w-4 text-white" />
+  return <Icon className="h-4 w-4 text-primary-foreground" />
 }
 
 function getIconBg(category: string) {
@@ -82,7 +83,6 @@ function getIconBg(category: string) {
 export function SkillCenterPage() {
   const [category, setCategory] = useState<SkillCategoryId>('recommended')
   const [query, setQuery] = useState('')
-  const [uploadOpen, setUploadOpen] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const skills = useSkillStore((s) => s.skills)
   const isLoading = useSkillStore((s) => s.isLoading)
@@ -92,6 +92,18 @@ export function SkillCenterPage() {
   const setRoute = useUiStore((s) => s.setRoute)
   const pushNotification = useNotificationStore((s) => s.push)
   useChat()
+
+  const handleImportPackage = useCallback(async () => {
+    const picked = await openDialog({
+      multiple: true,
+      filters: [{ name: 'AIjia Skill Package', extensions: ['aijia-skill'] }],
+    })
+    if (!picked) return
+    const paths = Array.isArray(picked) ? picked : [picked]
+    if (paths.length === 0) return
+    await importSkillPackagesWithUI(paths)
+    void reload()
+  }, [reload])
 
   const handleDeleteSkill = async (skillId: string, displayName: string) => {
     const confirmed = await requestConfirm({
@@ -119,6 +131,31 @@ export function SkillCenterPage() {
         level: 'error',
         title: '删除技能失败',
         message,
+        actions: [],
+        dismissible: true,
+        autoHide: 6,
+        context: 'toast',
+      })
+    }
+  }
+
+  const handleExportSkill = async (skillId: string, displayName: string) => {
+    try {
+      const dest = await invoke<string>('export_installed_skill', { skillId })
+      pushNotification({
+        level: 'success',
+        title: '技能已导出',
+        message: `「${displayName}」已保存到 ${dest}。把这个 .aijia-skill 文件发给同事，对方双击即可安装。`,
+        actions: [],
+        dismissible: true,
+        autoHide: 10,
+        context: 'toast',
+      })
+    } catch (err) {
+      pushNotification({
+        level: 'error',
+        title: '导出失败',
+        message: String(err),
         actions: [],
         dismissible: true,
         autoHide: 6,
@@ -171,7 +208,9 @@ export function SkillCenterPage() {
   const officeSkills =
     category === 'recommended'
       ? skills.filter(matchesQuery)
-      : listByCategory(category).filter(matchesQuery)
+      : category === 'mine'
+        ? skills.filter((s) => s.source === 'user').filter(matchesQuery)
+        : listByCategory(category).filter(matchesQuery)
 
   function getSkillMeta(source: string, cat: string) {
     const normalizedCategory = cat || 'general'
@@ -186,7 +225,7 @@ export function SkillCenterPage() {
         <header data-tauri-drag-region className="flex h-[45px] items-center justify-between border-b border-border px-6">
           <div className="flex items-center gap-3">
             <span className="text-base font-semibold text-foreground">技能中心</span>
-            <span className="rounded-full bg-secondary px-2 py-0.5 text-[0.6875rem] font-medium text-muted-foreground">
+            <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-muted-foreground">
               已安装 {skills.length} 个技能
             </span>
           </div>
@@ -200,15 +239,18 @@ export function SkillCenterPage() {
                 placeholder="搜索技能名称或场景"
               />
             </div>
-            <Button size="sm" onClick={() => setUploadOpen(true)}>
+            <Button size="sm" onClick={() => void handleImportPackage()}>
               + 导入技能
             </Button>
+            {/* SkillUploadModal (从目录导入) 已隐藏 — 入口待挪到设置 - 开发者选项里。
+                普通用户用 + 导入技能 选 .aijia-skill 文件即可。 */}
           </div>
         </header>
       }
       padding="px-7 pt-6 pb-8"
       gap="gap-5"
     >
+      <SkillDraftBanner />
       <SkillOfficeSection
         categoryBar={
           <SkillCategoryBar
@@ -223,7 +265,22 @@ export function SkillCenterPage() {
         ) : loadError && skills.length === 0 ? (
           <SkillCenterState title="技能加载失败" desc={loadError} actionLabel="重试" onAction={() => void loadSkills()} />
         ) : officeSkills.length === 0 ? (
-          <SkillCenterState title="还没有可用技能" desc="可以上传本地技能目录，或点击创建技能开始制作。" actionLabel="重新加载" onAction={() => void loadSkills()} />
+          category === 'mine' ? (
+            <SkillCenterState
+              title="还没有本地技能"
+              desc='在对话里找数字员工"小程"聊聊，让它帮你把工作流程沉淀成可复用技能；或点右上角"+ 导入技能"装一个同事发来的 .aijia-skill 文件。'
+            />
+          ) : normalizedQuery ? (
+            <SkillCenterState
+              title="没有匹配的技能"
+              desc={`"${normalizedQuery}" 下没找到技能。试试切到"全部"或换个关键词。`}
+            />
+          ) : (
+            <SkillCenterState
+              title="该分类下还没有技能"
+              desc='试试"全部"或"本地"分类；或者点右上角"+ 导入技能"装一个 .aijia-skill 文件。'
+            />
+          )
         ) : (
           officeSkills.map((skill) => (
             <SkillCard
@@ -234,7 +291,7 @@ export function SkillCenterPage() {
               iconNode={getSkillIcon(skill.icon)}
               iconBg={getIconBg(skill.category)}
               onClick={() => setRoute({ kind: 'skill-detail', skillId: skill.id })}
-              actionsSlot={HIDE_SKILL_ACTIONS ? (
+              actionsSlot={skill.source !== 'user' ? (
                 <div aria-hidden="true" className="h-7 w-7" />
               ) : (
                 <AppDropdown
@@ -249,6 +306,11 @@ export function SkillCenterPage() {
                   }
                   items={[
                     {
+                      id: 'export',
+                      label: '导出 .aijia-skill',
+                      onSelect: () => void handleExportSkill(skill.id, skill.displayName),
+                    },
+                    {
                       id: 'delete',
                       label: '删除技能',
                       icon: <Trash2 />,
@@ -262,7 +324,6 @@ export function SkillCenterPage() {
           ))
         )}
       </SkillOfficeSection>
-      <SkillUploadModal open={uploadOpen} onOpenChange={setUploadOpen} />
     </PageSectionShell>
   )
 }
@@ -279,7 +340,7 @@ function SkillCenterState({
   onAction?: () => void
 }) {
   return (
-    <div className="col-span-full rounded-[14px] border border-dashed border-border bg-card/60 p-6 text-sm">
+    <div className="col-span-full rounded-lg border border-dashed border-border bg-card/60 p-6 text-sm">
       <div className="font-semibold text-foreground">{title}</div>
       {desc ? <p className="mt-1 text-muted-foreground">{desc}</p> : null}
       {actionLabel && onAction ? (

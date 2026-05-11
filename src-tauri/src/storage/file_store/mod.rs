@@ -657,9 +657,16 @@ impl AppStorage {
         category: Option<&str>,
         days: i64,
         conversation_id: &str,
+        tag_filter: Option<&str>,
     ) -> Result<Vec<serde_json::Value>> {
         // Phase 1: Search (read-only, no lock needed)
-        let results = cognitive::search_memory_readonly(&self.base_dir, query, category, days)?;
+        let results = cognitive::search_memory_readonly(
+            &self.base_dir,
+            query,
+            category,
+            days,
+            tag_filter,
+        )?;
 
         // Phase 2: Record hit counts (write, needs lock)
         if !results.is_empty() {
@@ -946,6 +953,12 @@ impl RuntimeRepositoryFacade {
 
     pub fn conversation_store(&self) -> &dyn crate::runtime::store::ConversationStore {
         self.conversation_store.as_ref()
+    }
+
+    pub fn conversation_store_arc(
+        &self,
+    ) -> std::sync::Arc<dyn crate::runtime::store::ConversationStore> {
+        self.conversation_store.clone()
     }
 
     pub fn persona_store(&self) -> &dyn crate::runtime::store::PersonaStore {

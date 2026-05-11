@@ -4,11 +4,9 @@
 //! before commit chore/cleanup-deprecated). The current implementation
 //! registers RuntimeTools directly via `register_runtime()` against the
 //! ToolDispatcher path. The legacy registry.execute() / PluginContext path
-//! remains for MCP / python_bridge but is no longer exercised by builtins.
+//! remains for MCP but is no longer exercised by builtins.
 
 #![allow(deprecated)]
-
-pub mod echo_runtime;
 
 use crate::plugin::ToolRegistry;
 use std::sync::Arc;

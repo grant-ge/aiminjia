@@ -34,6 +34,7 @@
 import { useEffect, useRef } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import { useChatStore } from '@/stores/chatStore'
+import { useAuthStore } from '@/stores/authStore'
 import { useDiagnosticsStore } from '@/stores/diagnosticsStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { recordDiagnostic } from '@/lib/diagnostics'
@@ -47,13 +48,10 @@ import {
   onMessageUpdated,
   onToolExecuting,
   onToolCompleted,
-  onAnalysisStepChanged,
   onAgentIdle,
-  onAgentPhase,
   onPermissionAsk,
   onInteractionRequired,
   onInteractionResolved,
-  onStreamingStepReset,
   onFileGenerated,
   onTaskStatusChanged,
   onTurnCompleted,
@@ -67,19 +65,15 @@ import type {
   StreamingErrorPayload,
   StreamingRetryResetPayload,
   AgentIdlePayload,
-  AgentPhasePayload,
   ToolExecutingPayload,
   PermissionAskPayload,
   InteractionRequiredPayload,
   InteractionResolvedPayload,
-  StreamingStepResetPayload,
   FileGeneratedPayload,
   TaskStatusChangedPayload,
   TurnCompletedPayload,
   DiagnosticsEventPayload,
 } from '@/lib/tauri'
-import { useAnalysisStore } from '@/stores/analysisStore'
-import type { StepStatus } from '@/types/analysis'
 import { useStreamingStore } from '@/stores/streamingStore'
 import type { ConversationTaskState } from '@/stores/streamingStore'
 import { useInteractionStore } from '@/stores/interactionStore'
@@ -95,6 +89,58 @@ const STALE_STREAM_TIMEOUT_MS = 200_000
 const WATCHDOG_INTERVAL_MS = 10_000
 
 const autoUploadedFailedToolCalls = new Set<string>()
+
+/** Detect gateway error strings that indicate the currently selected
+ *  cloud model is no longer routable (route disabled, model unknown,
+ *  protocol mismatch, etc). When matched we resync cloud models from the
+ *  server, which falls back to a known-good default in authStore so the
+ *  user can resend instead of being stuck.
+ *
+ *  Substrings are matched case-insensitively against `error || rawError`
+ *  from `streaming:error` payload.
+ */
+const ROUTE_ERROR_HINTS = [
+  'no anthropic-protocol route',
+  'no_route',
+  'no route found',
+  'model_not_found',
+  'not_found_error',
+  'no chat model configured',
+] as const
+
+function looksLikeRouteError(text: string | undefined | null): boolean {
+  if (!text) return false
+  const lower = text.toLowerCase()
+  return ROUTE_ERROR_HINTS.some((h) => lower.includes(h))
+}
+
+/** Cooldown to prevent a thrashing model list reload if the user
+ *  triggers several failing turns in a row. */
+const RESYNC_COOLDOWN_MS = 30_000
+let lastModelResyncAt = 0
+
+async function resyncCloudModelsOnRouteError(): Promise<void> {
+  const now = Date.now()
+  if (now - lastModelResyncAt < RESYNC_COOLDOWN_MS) return
+  lastModelResyncAt = now
+  try {
+    const before = useAuthStore.getState().selectedCloudModel
+    const after = await useAuthStore.getState().resyncCloudModels()
+    if (after && after !== before) {
+      useNotificationStore.getState().push({
+        level: 'info',
+        title: i18n.t('errors.modelRouteUnavailable'),
+        message: i18n.t('errors.modelRouteUnavailableDesc', { model: after }),
+        actions: [],
+        dismissible: true,
+        autoHide: 10,
+        context: 'toast',
+      })
+    }
+  } catch (err) {
+    console.warn('[streaming:error] resync cloud models failed:', err)
+  }
+}
 
 function extractTaskCreateState(message: Message): ConversationTaskState | null {
   const match = message.toolResult?.content.match(/^Task #(\S+) created successfully: (.+)$/)
@@ -311,6 +357,16 @@ export function useStreaming() {
         }
       }
 
+      // Auto-recover from "selected model has no route" errors. The gateway
+      // route catalog can change at any time (ops disables a route, a tenant
+      // fixed-route flips, etc.); when that happens the desktop client's
+      // locally-cached cloud_model goes stale and every send fails until the
+      // user manually picks a new model. Resync silently and surface a toast
+      // telling the user a switch happened.
+      if (looksLikeRouteError(error) || looksLikeRouteError(rawError)) {
+        void resyncCloudModelsOnRouteError()
+      }
+
       // Show longer auto-hide for timeout errors (user needs time to read)
       const autoHideSecs = rawError === 'chunk_timeout' || rawError === 'agent_timeout' ? 15 : 8
 
@@ -495,39 +551,6 @@ export function useStreaming() {
     }),
   )
 
-  // --- analysis:step-changed --------------------------------------------
-  useTauriEvent(() =>
-    onAnalysisStepChanged(({ step, status }) => {
-      console.log('[analysis:step-changed]', step, status)
-      recordDiagnostic({
-        event: 'analysis.step.changed.received',
-        payload: { step, status },
-      })
-      const store = useAnalysisStore.getState()
-      store.setCurrentStep(step)
-      store.setStepStatus(step, status as StepStatus)
-    }),
-  )
-
-  // --- streaming:step-reset -----------------------------------------------
-  // Emitted when the backend auto-advances to a new analysis step.
-  // Clears the previous step's streaming content and tool executions,
-  // but keeps isStreaming=true so StreamingBubble stays visible.
-  useTauriEvent(() =>
-    onStreamingStepReset(({ conversationId, step }: StreamingStepResetPayload) => {
-      console.log('[streaming:step-reset] conversationId:', conversationId, 'step:', step)
-      touchActivity(conversationId)
-      recordDiagnostic({
-        event: 'streaming.step_reset.received',
-        conversationId,
-        payload: { step },
-      })
-      // Discard buffered deltas from the previous step
-      delete deltaBufferRef.current[conversationId]
-      useChatStore.getState().resetConversationStreamContent(conversationId)
-    }),
-  )
-
   useTauriEvent(() =>
     listen<{ conversationId: string; reason?: string }>(
       TAURI_EVENTS.STOP_PREVENTED_CONTINUATION,
@@ -539,14 +562,6 @@ export function useStreaming() {
         useChatStore.getState().removeBusyConversation(conversationId)
       },
     ),
-  )
-
-  // --- agent:phase --------------------------------------------------------
-  useTauriEvent(() =>
-    onAgentPhase(({ conversationId, phase }: AgentPhasePayload) => {
-      recordDiagnostic({ event: 'agent.phase.received', conversationId, payload: { phase } })
-      useChatStore.getState().setConversationAgentPhase(conversationId, phase)
-    }),
   )
 
   // --- agent:idle --------------------------------------------------------
@@ -807,6 +822,18 @@ export function useStreaming() {
           // Initialize the timestamp so the full timeout applies from now.
           // Do NOT clear immediately; the first delta/tool event may still be
           // in transit (LLM cold start, checkpoint extraction, network latency).
+          lastActivityRef.current[convId] = now
+          continue
+        }
+        // A long-running tool (Bash/Write/Playwright/SubAgent) is silent on
+        // the event bus between tool:executing and tool:completed. Per-tool
+        // timeouts (default 120s, max 600s) guarantee tool:completed eventually
+        // fires, so reset the watchdog while any tool is in-flight to avoid
+        // false-positive "stream timeout" toasts during legitimate work.
+        const hasExecutingTool = streamState.toolExecutions.some(
+          (t) => t.status === 'executing',
+        )
+        if (hasExecutingTool) {
           lastActivityRef.current[convId] = now
           continue
         }

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Plus, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -47,10 +48,16 @@ function rowsFromInitial(initial: Record<string, unknown>): Row[] {
 }
 
 export function MonitoringUrlsForm({ initial, onSubmit, onCancel }: MonitoringUrlsFormProps) {
+  const { t } = useTranslation()
   const [rows, setRows] = useState<Row[]>(() => rowsFromInitial(initial))
 
   const valid = useMemo(
-    () => rows.length > 0 && rows.every((r) => r.name.trim() && isValidUrl(r.url.trim())),
+    () =>
+      rows.length > 0 &&
+      rows.every((r) => {
+        const url = r.url.trim()
+        return r.name.trim() && (url === '' || isValidUrl(url))
+      }),
     [rows],
   )
 
@@ -85,19 +92,19 @@ export function MonitoringUrlsForm({ initial, onSubmit, onCancel }: MonitoringUr
         {rows.map((r, i) => (
           <div key={i} className="flex items-start gap-2">
             <Input
-              placeholder="监测对象名称（如 Anthropic）"
+              placeholder={t('employee.config.monitoringUrls.namePlaceholder')}
               value={r.name}
               onChange={(e) => update(i, { name: e.target.value })}
               className="w-40"
             />
             <Input
-              placeholder="https://example.com/news"
+              placeholder={t('employee.config.monitoringUrls.urlPlaceholder')}
               value={r.url}
               onChange={(e) => update(i, { url: e.target.value })}
               className="flex-1 font-mono text-xs"
             />
             <Input
-              placeholder="标签（逗号分隔，可选）"
+              placeholder={t('employee.config.monitoringUrls.tagsPlaceholder')}
               value={r.tagsRaw}
               onChange={(e) => update(i, { tagsRaw: e.target.value })}
               className="w-44"
@@ -119,15 +126,15 @@ export function MonitoringUrlsForm({ initial, onSubmit, onCancel }: MonitoringUr
         onClick={addRow}
         className="flex items-center gap-1 self-start text-xs text-primary hover:underline"
       >
-        <Plus className="h-3 w-3" /> 添加监测对象
+        <Plus className="h-3 w-3" /> {t('employee.config.monitoringUrls.addRow')}
       </button>
 
       <div className="flex items-center justify-end gap-2 pt-2">
         <Button variant="ghost" onClick={onCancel}>
-          取消
+          {t('employee.config.cancel')}
         </Button>
         <Button onClick={handleSave} disabled={!valid}>
-          保存
+          {t('employee.config.save')}
         </Button>
       </div>
     </div>

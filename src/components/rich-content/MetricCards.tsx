@@ -23,7 +23,7 @@ export function MetricCards({ metrics }: MetricCardsProps) {
       {metrics.map((m) => (
         <div
           key={m.id}
-          className="rounded-lg border p-3.5 text-center"
+          className="rounded-lg border p-3.5 text-center border-border"
           style={{
             background: 'var(--color-bg-card)',
             borderColor: 'var(--color-border)',

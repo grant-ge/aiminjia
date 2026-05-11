@@ -1,12 +1,38 @@
-import { useState } from 'react'
-import { employeeCreate } from '@/lib/tauri'
+import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import {
+  employeeCreate,
+  employeeIndexKnowledgeAsync,
+  employeeTemplateCatalog,
+  employeeTemplateRefresh,
+  type EmployeeTemplateSnapshot,
+  type PendingKnowledgeSource,
+} from '@/lib/tauri'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { BUILTIN_TEMPLATES, type EmployeeTemplate } from './templates'
+import { BUILTIN_TEMPLATES, snapshotToTemplate, type EmployeeTemplate } from './templates'
 import { MonitoringUrlsForm } from './forms/MonitoringUrlsForm'
 import { SalesTableConfigForm } from './forms/SalesTableConfigForm'
 import { WeeklyReportConfigForm } from './forms/WeeklyReportConfigForm'
+import { TechSupportConfigForm } from './forms/TechSupportConfigForm'
+import { CustomerSupportConfigForm } from './forms/CustomerSupportConfigForm'
+import { SchemaForm, type JsonSchema } from './forms/SchemaForm'
+
+/**
+ * True when the template ships a non-empty JSON Schema for instance
+ * config. PR6 (2026-05-10): custom org / private templates use a
+ * schema-driven form instead of the closed `ResourceConfigKind` enum.
+ * BUILTIN_TEMPLATES leave the schema empty and keep their hand-tuned forms.
+ */
+function hasSchemaForm(template: EmployeeTemplate): boolean {
+  const schema = template.resourceConfigSchema
+  return (
+    !!schema &&
+    typeof schema === 'object' &&
+    Object.keys((schema as Record<string, unknown>).properties ?? {}).length > 0
+  )
+}
 
 // ─── wizard ───────────────────────────────────────────────────────────────────
 
@@ -17,14 +43,54 @@ interface HireWizardProps {
 }
 
 export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
+  const { t } = useTranslation()
   const [step, setStep] = useState<1 | 2 | 3>(1)
   const [selected, setSelected] = useState<EmployeeTemplate | null>(null)
+  // Catalog: backend (`employee_template_catalog` = bootstrap ∪ cache) when
+  // available, falls back to the legacy hardcoded `BUILTIN_TEMPLATES` if
+  // the IPC call fails (e.g. dev server with mismatched binary). The
+  // wizard renders this list directly; we don't update it after open.
+  const [catalog, setCatalog] = useState<EmployeeTemplate[]>(BUILTIN_TEMPLATES)
   const [name, setName] = useState('')
   const [enableCron, setEnableCron] = useState(true)
   const [cron, setCron] = useState('')
   const [resourceConfig, setResourceConfig] = useState<Record<string, unknown>>({})
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // When the dialog opens: best-effort refresh the local template cache
+  // from lotus ops-portal, then load the merged catalog. Cache refresh
+  // failures don't block the user — they just see whatever's already
+  // local (bootstrap + any previously-downloaded versions).
+  //
+  // Why refresh on open and not on mount: the wizard is mounted with the
+  // parent page and we don't want a network call on every app launch.
+  // Opening the wizard is a deliberate user action where a 1-2s delay is
+  // acceptable for the side effect of getting freshest content.
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    void (async () => {
+      try {
+        // Fire-and-forget refresh; if it fails we just use whatever the
+        // backend already has cached + bootstrap.
+        await employeeTemplateRefresh().catch((e) => {
+          console.warn('[HireWizard] employee_template_refresh failed:', e)
+          return 0
+        })
+        const snapshots: EmployeeTemplateSnapshot[] = await employeeTemplateCatalog()
+        if (cancelled) return
+        if (snapshots.length > 0) {
+          setCatalog(snapshots.map(snapshotToTemplate))
+        }
+      } catch (e) {
+        console.error('[HireWizard] employee_template_catalog failed, using BUILTIN_TEMPLATES:', e)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [open])
 
   function handleClose() {
     setStep(1)
@@ -51,7 +117,7 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
     setBusy(true)
     setError(null)
     try {
-      await employeeCreate({
+      const created = await employeeCreate({
         name: name.trim(),
         role: selected.role,
         description: selected.description,
@@ -66,6 +132,16 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
         defaultSkillId: selected.defaultSkillId ?? undefined,
         resourceConfig: cfg,
       })
+      const rawSources = (cfg.knowledgeSources as Array<Record<string, unknown>> | undefined) ?? []
+      const pending: PendingKnowledgeSource[] = rawSources.flatMap((s) => {
+        if (typeof s.path !== 'string' || typeof s.originalName !== 'string') return []
+        const status = s.status
+        if (status && status !== 'pending' && status !== 'failed') return []
+        return [{ path: s.path, originalName: s.originalName, size: typeof s.size === 'number' ? s.size : 0 }]
+      })
+      if (pending.length > 0) {
+        void employeeIndexKnowledgeAsync(created.id, pending)
+      }
       await onHired()
       handleClose()
     } catch (err) {
@@ -77,7 +153,7 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
 
   function handleStep2Next() {
     if (!selected) return
-    if (selected.resourceConfigKind === 'none') {
+    if (selected.resourceConfigKind === 'none' && !hasSchemaForm(selected)) {
       void hireWithConfig(resourceConfig)
     } else {
       setStep(3)
@@ -95,16 +171,20 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
         <DialogHeader className="border-b border-border px-6 py-4">
           <div className="flex items-center gap-3">
             <DialogTitle className="text-base">
-              {step === 1 ? '选择员工模板' : step === 2 ? '配置员工' : '配置资源'}
+              {step === 1
+                ? t('employee.config.wizard.titleStep1')
+                : step === 2
+                  ? t('employee.config.wizard.titleStep2')
+                  : t('employee.config.wizard.titleStep3')}
             </DialogTitle>
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span className={step === 1 ? 'text-foreground font-medium' : ''}>1 选模板</span>
+              <span className={step === 1 ? 'text-foreground font-medium' : ''}>{t('employee.config.wizard.stepLabel1')}</span>
               <span>→</span>
-              <span className={step === 2 ? 'text-foreground font-medium' : ''}>2 配置</span>
-              {selected?.resourceConfigKind !== 'none' && (
+              <span className={step === 2 ? 'text-foreground font-medium' : ''}>{t('employee.config.wizard.stepLabel2')}</span>
+              {selected && (selected.resourceConfigKind !== 'none' || hasSchemaForm(selected)) && (
                 <>
                   <span>→</span>
-                  <span className={step === 3 ? 'text-foreground font-medium' : ''}>3 资源</span>
+                  <span className={step === 3 ? 'text-foreground font-medium' : ''}>{t('employee.config.wizard.stepLabel3')}</span>
                 </>
               )}
             </div>
@@ -114,7 +194,7 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
         {/* Step 1: template grid */}
         {step === 1 && (
           <div className="grid grid-cols-2 gap-3 p-6 sm:grid-cols-3">
-            {BUILTIN_TEMPLATES.map((t) => (
+            {catalog.map((t) => (
               <button
                 key={t.templateId}
                 type="button"
@@ -123,7 +203,7 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
               >
                 <div className="flex items-center justify-between">
                   <span className="text-2xl">{t.avatar}</span>
-                  <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                  <span className="rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
                     {t.badge}
                   </span>
                 </div>
@@ -153,7 +233,7 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
 
             {/* Name */}
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-muted-foreground">员工名字</label>
+              <label className="text-xs font-medium text-muted-foreground">{t('employee.config.wizard.nameLabel')}</label>
               <Input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -166,7 +246,7 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
             {selected.cron && (
               <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-muted-foreground">定时触发</label>
+                  <label className="text-xs font-medium text-muted-foreground">{t('employee.config.wizard.cronLabel')}</label>
                   <button
                     type="button"
                     onClick={() => setEnableCron((v) => !v)}
@@ -176,14 +256,14 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
                         : 'bg-muted text-muted-foreground'
                     }`}
                   >
-                    {enableCron ? '已启用' : '已关闭'}
+                    {enableCron ? t('employee.config.wizard.cronEnabled') : t('employee.config.wizard.cronDisabled')}
                   </button>
                 </div>
                 {enableCron && (
                   <Input
                     value={cron}
                     onChange={(e) => setCron(e.target.value)}
-                    placeholder="30 9 * * 1  （5 字段 cron）"
+                    placeholder={t('employee.config.wizard.cronPlaceholder')}
                     className="font-mono text-sm"
                   />
                 )}
@@ -197,10 +277,14 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
             {/* Actions */}
             <div className="flex items-center justify-between pt-1">
               <Button variant="ghost" onClick={() => setStep(1)} disabled={busy}>
-                ← 返回
+                {t('employee.config.wizard.back')}
               </Button>
               <Button onClick={handleStep2Next} disabled={busy || !name.trim()}>
-                {busy ? '雇佣中…' : selected.resourceConfigKind === 'none' ? '✅ 确认雇佣' : '下一步 →'}
+                {busy
+                  ? t('employee.config.wizard.hiring')
+                  : selected.resourceConfigKind === 'none' && !hasSchemaForm(selected)
+                    ? t('employee.config.wizard.confirmHire')
+                    : t('employee.config.wizard.next')}
               </Button>
             </div>
           </div>
@@ -225,6 +309,28 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
             )}
             {selected.resourceConfigKind === 'weekly-report' && (
               <WeeklyReportConfigForm
+                initial={resourceConfig}
+                onSubmit={handleResourceSubmit}
+                onCancel={() => setStep(2)}
+              />
+            )}
+            {selected.resourceConfigKind === 'tech-support' && (
+              <TechSupportConfigForm
+                initial={resourceConfig}
+                onSubmit={handleResourceSubmit}
+                onCancel={() => setStep(2)}
+              />
+            )}
+            {selected.resourceConfigKind === 'customer-support' && (
+              <CustomerSupportConfigForm
+                initial={resourceConfig}
+                onSubmit={handleResourceSubmit}
+                onCancel={() => setStep(2)}
+              />
+            )}
+            {selected.resourceConfigKind === 'none' && hasSchemaForm(selected) && (
+              <SchemaForm
+                schema={selected.resourceConfigSchema as JsonSchema}
                 initial={resourceConfig}
                 onSubmit={handleResourceSubmit}
                 onCancel={() => setStep(2)}

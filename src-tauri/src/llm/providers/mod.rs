@@ -1,44 +1,39 @@
 #![allow(dead_code)]
 
 // ============================================================================
-// ⚠ ALL PROVIDERS BELOW ARE DEPRECATED — to be removed in 专项 P-router-model-passthrough
+// Provider inventory
 // ============================================================================
 //
-// 当前 8 个 provider 全部为「死代码或半成品」，等待后续重构删除：
+// **In active use:**
+//   - `lotus.rs`   Lotus gateway via anthropic-native ingress
+//                  (`/anthropic/v1/messages`). Phase C (2026-05-09) shifted
+//                  it from OpenAI ingress to a thin shell over
+//                  `ClaudeProvider::with_url(... is_direct=false)`. The
+//                  body builder, SSE state machine, and tool/thinking
+//                  handling are shared with the direct anthropic.com
+//                  path. Retry policy on `send` is local to lotus.rs.
+//   - `claude.rs`  Anthropic protocol implementation (used by lotus.rs +
+//                  by direct anthropic.com calls via `ClaudeProvider::new`).
+//                  Parameterized by URL + `is_direct` so the same code
+//                  drives both endpoints.
+//   - `custom.rs`  User-supplied OpenAI-compatible endpoint.
+//   - `openai.rs`  OpenAI direct (DEFAULT_MODEL="gpt-4o"). NOTE: the
+//                  `pub(super) send_openai_compat / stream_openai_compat /
+//                  validate_key_openai_compat` functions ARE actively used
+//                  by `custom.rs` — do not delete this file before that.
 //
-//   死代码（产品 UI 不会触发）：
-//   - `claude.rs`        Anthropic Messages API（异类协议，非 OpenAI；产品只暴露 OpenAI）
-//   - `openai.rs`        OpenAI 直连（DEFAULT_MODEL="gpt-4o"，model id 不透传）
-//   - `deepseek_v3.rs`   DeepSeek 直连（DEFAULT_MODEL="deepseek-chat"）
-//   - `deepseek_r1.rs`   DeepSeek R1 直连（DEFAULT_MODEL="deepseek-reasoner"）
-//   - `qwen.rs`          通义千问直连（DEFAULT_MODEL="qwen-plus"）
-//   - `volcano.rs`       火山方舟直连（model_hint 透传，但产品不暴露）
-//
-//   当前在用但仍计划重构（半成品，将被统一接入层取代）：
-//   - `lotus.rs`         远端 lotus 网关（cloud_model 通过 OpenAI 协议透传）
-//   - `custom.rs`        用户自填 OpenAI-兼容端点（custom_model_name 透传）
-//
-// 重构方向（专项 P-router-model-passthrough，不在 Mode B 范围）：
-//   - 收敛为单一 OpenAI-兼容 provider 实现 + endpoint/认证配置
-//   - 删除上述 8 个独立 provider 文件
-//   - 同步清理 `router.rs::get_provider_capabilities`、`gateway.rs::dispatch_*`
-//     的 provider match 分支，以及 `AppSettings.primary_model` /
-//     `primary_api_key` / `auto_model_routing` / `cloud_model_type` 等历史字段
-//   - 修复 sub-agent model_override 在所有路径上的透传
-//
-// **保留** `openai.rs` 中的 `pub(super)` 共享函数（`send_openai_compat` /
-// `stream_openai_compat` / `validate_key_openai_compat`），它们是 OpenAI 协议
-// 的核心实现，被多 provider 复用。重构时这部分会迁入新统一实现。
+// Removed in 2026-05-10 cleanup (Phase C dead code):
+//   - deepseek_v3.rs / deepseek_r1.rs / qwen.rs / volcano.rs — direct
+//     providers superseded by Lotus anthropic ingress. Routing / gateway
+//     / settings / router capabilities references all removed in the
+//     same commit. `AppSettings.cloud_model_type` retained as a no-op
+//     for persisted-setting compat (anthropic ingress has one endpoint).
 // ============================================================================
 
 pub mod claude;
 pub mod custom;
-pub mod deepseek_r1;
-pub mod deepseek_v3;
 pub mod lotus;
 pub mod openai;
-pub mod qwen;
-pub mod volcano;
 
 use anyhow::Result;
 

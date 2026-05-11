@@ -100,7 +100,7 @@ export function DingtalkSection() {
 
       {/* Connection Status Card */}
       <div
-        className="rounded-lg border p-4"
+        className="rounded-lg border p-4 border-border"
         style={{
           borderColor: isConnected ? 'var(--color-accent)' : 'var(--color-border)',
           backgroundColor: 'var(--color-bg-secondary)',

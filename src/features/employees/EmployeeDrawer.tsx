@@ -177,6 +177,9 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
         case 'dingtalk':
           alert('该员工需要钉钉账号授权，请前往 设置 → 钉钉账号 完成授权后再试。')
           return
+        case 'knowledge-indexing':
+          alert('知识库正在后台切片入库，请稍后再试。')
+          return
       }
     } catch (err) {
       console.error('[EmployeeDrawer] trigger error:', err)

@@ -2,7 +2,6 @@ import '@testing-library/jest-dom'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 
-import { useBrandingStore } from '@/stores/brandingStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { GeneralPanel } from '../panels/GeneralPanel'
 
@@ -36,12 +35,10 @@ describe('GeneralPanel', () => {
     expect(screen.queryAllByRole('switch')).toHaveLength(0)
   })
 
-  it('renders 外观 section with accent color swatches', () => {
+  it('does not render the local accent color picker (tenant-driven now)', () => {
     render(<GeneralPanel user={mockUser} onLogout={() => {}} />)
-    expect(screen.getByText('外观')).toBeInTheDocument()
-    expect(screen.getByText('强调色')).toBeInTheDocument()
-    const swatches = screen.getByRole('radiogroup', { name: '强调色' }).querySelectorAll('[role="radio"]')
-    expect(swatches).toHaveLength(7)
+    expect(screen.queryByText('强调色')).not.toBeInTheDocument()
+    expect(screen.queryByRole('radiogroup', { name: '强调色' })).not.toBeInTheDocument()
   })
 
   it('renders font size options and applies the selected scale', () => {
@@ -57,15 +54,6 @@ describe('GeneralPanel', () => {
 
     fireEvent.click(screen.getByRole('radio', { name: '大' }))
     expect(setFontScale).toHaveBeenCalledWith('large')
-  })
-
-  it('selecting an accent color swatch calls applyBranding with new color', () => {
-    const applyBranding = vi.fn()
-    useBrandingStore.setState({ accentColor: '#DBAA22', applyBranding } as never)
-    render(<GeneralPanel user={mockUser} onLogout={() => {}} />)
-    // Click the indigo swatch (#4f46e5)
-    fireEvent.click(screen.getByRole('radio', { name: '#4f46e5' }))
-    expect(applyBranding).toHaveBeenCalledWith({ accentColor: '#4f46e5' })
   })
 
   it('does not render language select while language switching is unavailable', () => {

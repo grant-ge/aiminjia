@@ -133,7 +133,7 @@ impl ToolDispatcher {
         mut input: Value,
         ctx: ToolExecutionContext,
     ) -> Result<ToolDispatchOutcome, ToolError> {
-        let workspace = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let workspace = crate::telemetry::diagnostics_workspace();
         let diag =
             |event: &str, ok: Option<bool>, error: Option<String>, payload: Option<Value>| {
                 let mut event_obj = DiagnosticEvent::new(event, DiagnosticSource::Backend)

@@ -509,6 +509,7 @@ pub mod testsupport {
             runtime_resolver: None,
             dingtalk_bridge: None,
             permission_ctx: None,
+            current_persona_id: None,
         };
 
         // FIXME(S4): sub-agent cancel token 需要从 parent run 派生 child_token()

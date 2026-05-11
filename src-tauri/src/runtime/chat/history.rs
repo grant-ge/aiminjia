@@ -95,6 +95,7 @@ fn stored_to_chat(message: &StoredMessage, config: &HistoryConfig) -> ChatMessag
         }),
         thinking: None,
         thinking_blocks: None,
+        anthropic_multimodal_turn: None,
     }
 }
 

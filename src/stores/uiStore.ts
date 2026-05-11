@@ -8,6 +8,7 @@ export type Route =
   | { kind: 'schedules' }
   | { kind: 'inbox' }
   | { kind: 'chat'; conversationId: string }
+  | { kind: 'channel'; sessionId?: string }
 
 export type SettingsModalKey =
   | 'account'
@@ -57,6 +58,8 @@ function isRoute(value: unknown): value is Route {
       return typeof route.skillId === 'string' && route.skillId.length > 0
     case 'chat':
       return typeof route.conversationId === 'string' && route.conversationId.length > 0
+    case 'channel':
+      return true
     default:
       return false
   }
@@ -104,3 +107,27 @@ export const useUiStore = create<UiState>((set, get) => ({
     return text
   },
 }))
+
+// ---------------------------------------------------------------------------
+// Route-derived selectors
+// getActive* — non-hook form, safe to call outside React (e.g. Rust IPC handlers,
+//              utility functions, tests). Read directly from store state snapshot.
+// useActive* — React hook form, subscribes to the slice so the component re-renders
+//              when the relevant route field changes.
+// ---------------------------------------------------------------------------
+
+export const getActiveConversationId = (): string | null => {
+  const r = useUiStore.getState().route
+  return r.kind === 'chat' ? r.conversationId : null
+}
+
+export const getActiveChannelSessionId = (): string | null => {
+  const r = useUiStore.getState().route
+  return r.kind === 'channel' ? r.sessionId ?? null : null
+}
+
+export const useActiveConversationId = (): string | null =>
+  useUiStore((s) => (s.route.kind === 'chat' ? s.route.conversationId : null))
+
+export const useActiveChannelSessionId = (): string | null =>
+  useUiStore((s) => (s.route.kind === 'channel' ? s.route.sessionId ?? null : null))
