@@ -20,6 +20,59 @@ use crate::runtime::tools::definition::ToolDefinition;
 use crate::runtime::tools::executor::{ToolError, ToolResult};
 use crate::runtime::tools::RuntimeTool;
 
+/// Best-effort task-notification emitter for Team mode (P2.5).  Resolves the
+/// actor name via `AgentNameRegistry::name_for(ctx.agent_id)`; falls back to
+/// `"unknown-actor"` when nothing is registered.  Silently no-ops when LTR
+/// registries are not wired into the ctx (legacy / test paths).  Failures
+/// are logged at debug level — the task operation has already succeeded and
+/// must not be undone by a notification glitch.
+async fn try_notify_lead(
+    ctx: &ToolExecutionContext,
+    task_id: &str,
+    action: crate::runtime::agent::task_notification_lead::TaskAction,
+    subject: &str,
+    status: &str,
+) {
+    use crate::runtime::agent::task_notification_lead::{emit_to_lead, TaskNotificationDeps};
+
+    let (Some(team_reg), Some(name_reg), Some(inbox_reg)) = (
+        ctx.team_registry.clone(),
+        ctx.agent_names.clone(),
+        ctx.inbox_registry.clone(),
+    ) else {
+        return;
+    };
+    let actor_name = if let Some(aid) = ctx.agent_id.as_ref() {
+        name_reg
+            .name_for(&ctx.session_id, aid)
+            .await
+            .unwrap_or_else(|| "unknown-actor".into())
+    } else {
+        "unknown-actor".into()
+    };
+    let deps = TaskNotificationDeps {
+        team_registry: team_reg,
+        agent_names: name_reg,
+        inbox_registry: inbox_reg,
+        lead_idle: ctx.lead_idle.clone(),
+    };
+    let outcome = emit_to_lead(
+        &deps,
+        &ctx.session_id,
+        &actor_name,
+        task_id,
+        action,
+        subject,
+        status,
+    )
+    .await;
+    log::debug!(
+        "[task_tools] notify_lead task={task_id} action={:?} outcome={:?}",
+        action,
+        outcome
+    );
+}
+
 pub struct TaskCreateRuntimeTool;
 pub struct TaskUpdateRuntimeTool;
 pub struct TaskListRuntimeTool;
@@ -162,6 +215,14 @@ impl RuntimeTool for TaskCreateRuntimeTool {
         store
             .create(&list_id, &task)
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+        try_notify_lead(
+            &ctx,
+            &id,
+            crate::runtime::agent::task_notification_lead::TaskAction::Created,
+            &subject,
+            "pending",
+        )
+        .await;
         Ok(ToolResult::new(
             "TaskCreate",
             format!("Task #{} created successfully: {}", id, subject),
@@ -480,6 +541,7 @@ impl RuntimeTool for TaskUpdateRuntimeTool {
             None
         };
 
+        notify_after_update(&ctx, &task_id, &task.subject, task.status.as_str()).await;
         Ok(ToolResult::new(
             "TaskUpdate",
             format!("Updated task #{} {}", task_id, updated_fields.join(", ")),
@@ -492,6 +554,22 @@ impl RuntimeTool for TaskUpdateRuntimeTool {
             })),
         ))
     }
+}
+
+async fn notify_after_update(
+    ctx: &ToolExecutionContext,
+    task_id: &str,
+    subject: &str,
+    status: &str,
+) {
+    try_notify_lead(
+        ctx,
+        task_id,
+        crate::runtime::agent::task_notification_lead::TaskAction::Updated,
+        subject,
+        status,
+    )
+    .await;
 }
 
 #[async_trait]
@@ -616,6 +694,15 @@ impl RuntimeTool for TaskClaimRuntimeTool {
         store
             .update(&list_id, &task)
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+
+        try_notify_lead(
+            &ctx,
+            &task_id,
+            crate::runtime::agent::task_notification_lead::TaskAction::Claimed,
+            &task.subject,
+            task.status.as_str(),
+        )
+        .await;
 
         Ok(ToolResult::new(
             "TaskClaim",

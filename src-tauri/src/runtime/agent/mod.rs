@@ -21,6 +21,7 @@ pub mod resume;
 pub mod subagent_result_envelope;
 pub mod subagent_transcript_store;
 pub mod task_notification;
+pub mod task_notification_lead;
 pub mod team;
 pub mod team_context;
 pub mod teammate_addendum;
