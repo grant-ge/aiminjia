@@ -2860,15 +2860,11 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
             ),
         };
 
-        let prompt = crate::runtime::employee::dispatch_prompt::build_dispatch_prompt(
-            &employee,
-            &trigger_label,
-            catchup_info.as_deref(),
-            prompt_override.as_deref(),
-        );
-
         // Resolve employees_dir for inbox + record_run. If the user is not
         // logged in we cannot persist anything, so bail out before spawning.
+        // Moved above `build_dispatch_prompt` so the prompt builder can use
+        // it for snapshot lookup (`<employees_dir>/<id>/template/template.json`
+        // overrides record fields once the instance has been stamped).
         let employees_dir = {
             let cus = self
                 .services
@@ -2880,6 +2876,14 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
                 .map_err(|e| anyhow::anyhow!("paths unavailable: {e}"))?;
             paths.employees_dir()
         };
+
+        let prompt = crate::runtime::employee::dispatch_prompt::build_dispatch_prompt(
+            &employee,
+            &trigger_label,
+            catchup_info.as_deref(),
+            prompt_override.as_deref(),
+            Some(employees_dir.as_path()),
+        );
 
         // record_run synchronously: last_run_at represents "last dispatched at"
         // for both on-demand and cron paths.
@@ -2949,11 +2953,23 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
                 )
             });
 
+            // Snapshot-first tool whitelist (PR5): the template snapshot at
+            // `<employees_dir>/<id>/template/template.json` is authoritative.
+            // Falls back to `employee_clone.tool_whitelist` for pre-PR3
+            // employees that haven't been stamped yet — those will be
+            // back-filled on the next `EmployeeStore::get/list`.
+            let effective_whitelist =
+                crate::runtime::employee::template_store::effective_tool_whitelist(
+                    employees_dir_async.as_path(),
+                    &employee_clone.id,
+                    &employee_clone.tool_whitelist,
+                );
+
             let _guard = OverrideGuard::install(
                 adapter.services.employee_run_overrides.clone(),
                 conv_id.clone(),
                 EmployeeRunOverrides {
-                    tool_whitelist: employee_clone.tool_whitelist.iter().cloned().collect(),
+                    tool_whitelist: effective_whitelist.into_iter().collect(),
                     max_iterations: 30,
                 },
             );

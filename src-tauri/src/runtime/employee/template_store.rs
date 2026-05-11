@@ -257,6 +257,86 @@ pub fn read_instance_snapshot(instance_dir: &Path) -> Result<Option<TemplateSnap
     Ok(Some(snap))
 }
 
+// ─── Effective-value helpers ─────────────────────────────────────────────
+//
+// The architectural goal of the template-as-a-service refactor is that the
+// snapshot at `<instance>/template/template.json` is authoritative; the
+// legacy fields on `EmployeeRecord` (`tool_whitelist`, `system_prompt_extra`,
+// `default_skill_id`, etc.) are only there as a transitional cache and are
+// scheduled for deletion in PR6.
+//
+// These helpers read the snapshot when available and fall back to the
+// record field otherwise. Runtime code (dispatch_prompt, chat, scheduler)
+// goes through them — so once PR6 physically removes the record fields,
+// the fallback branch goes away and nothing else needs to change.
+//
+// The instance_dir is `<employees_root>/<employee_id>/`. Callers typically
+// have only the `EmployeeRecord` in hand; `effective_*_for` takes the
+// employees root and derives the path. Errors reading the snapshot are
+// swallowed and logged — we return the record-field fallback rather than
+// failing a dispatch just because the snapshot file is missing or corrupt.
+
+fn load_snapshot_silent(instance_dir: &Path) -> Option<TemplateSnapshot> {
+    match read_instance_snapshot(instance_dir) {
+        Ok(Some(s)) => Some(s),
+        Ok(None) => None,
+        Err(e) => {
+            log::warn!(
+                "[template_store] snapshot read failed at {}: {e}",
+                instance_dir.display()
+            );
+            None
+        }
+    }
+}
+
+/// Returns the effective tool whitelist for an employee. Snapshot wins;
+/// falls back to the record field when no snapshot is present (pre-PR3
+/// hired employees that haven't been touched by `stamp_snapshot_for_record`
+/// yet).
+pub fn effective_tool_whitelist(
+    employees_root: &Path,
+    employee_id: &str,
+    record_fallback: &[String],
+) -> Vec<String> {
+    if let Some(s) = load_snapshot_silent(&employees_root.join(employee_id)) {
+        return s.tool_whitelist;
+    }
+    record_fallback.to_vec()
+}
+
+/// Returns the effective system-prompt-extra string for an employee.
+/// Snapshot wins. Empty string in snapshot is treated as "no override"
+/// and falls back to the record (which is `Option<String>`).
+pub fn effective_system_prompt_extra(
+    employees_root: &Path,
+    employee_id: &str,
+    record_fallback: Option<&str>,
+) -> Option<String> {
+    if let Some(s) = load_snapshot_silent(&employees_root.join(employee_id)) {
+        if !s.system_prompt_extra.is_empty() {
+            return Some(s.system_prompt_extra);
+        }
+    }
+    record_fallback.map(|s| s.to_string())
+}
+
+/// Returns the effective default skill id for an employee. Snapshot wins;
+/// empty string in snapshot → treated as `None` (no skill hint injected).
+pub fn effective_default_skill_id(
+    employees_root: &Path,
+    employee_id: &str,
+    record_fallback: Option<&str>,
+) -> Option<String> {
+    if let Some(s) = load_snapshot_silent(&employees_root.join(employee_id)) {
+        if s.default_skill_id.is_empty() {
+            return None;
+        }
+        return Some(s.default_skill_id);
+    }
+    record_fallback.map(|s| s.to_string())
+}
+
 // ─── atomic write helper (small local copy; the existing one in storage::
 // is private to that module). ─────────────────────────────────────────────
 
@@ -703,5 +783,78 @@ mod tests {
         assert_eq!(hex_lower(b""), "");
         assert_eq!(hex_lower(&[0xde, 0xad, 0xbe, 0xef]), "deadbeef");
         assert_eq!(hex_lower(&[0x00, 0x0f, 0xff]), "000fff");
+    }
+
+    #[test]
+    fn effective_helpers_prefer_snapshot_over_record_fallback() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let id = "emp-snapshot-wins";
+        let inst = root.join(id);
+
+        // Stamp a snapshot with values distinct from the record fallback.
+        let snap = TemplateSnapshot {
+            template_id: "builtin:x".into(),
+            version: "1.0.0".into(),
+            name: "X".into(),
+            avatar: "".into(),
+            role: "".into(),
+            description: "".into(),
+            badge: "".into(),
+            system_prompt_extra: "from-snapshot".into(),
+            tool_whitelist: vec!["Snap1".into(), "Snap2".into()],
+            cron: "".into(),
+            default_skill_id: "snap-skill".into(),
+            requires_dingtalk: false,
+            requires_attachment: serde_json::Value::Null,
+            resource_config_schema: serde_json::Value::Null,
+            resource_config_ui: serde_json::Value::Null,
+        };
+        ensure_instance_snapshot(&inst, &snap, "bootstrap").unwrap();
+
+        let record_fallback_tools = vec!["Record1".into()];
+        let tools = effective_tool_whitelist(root, id, &record_fallback_tools);
+        assert_eq!(tools, vec!["Snap1".to_string(), "Snap2".to_string()]);
+
+        let extra = effective_system_prompt_extra(root, id, Some("from-record"));
+        assert_eq!(extra.as_deref(), Some("from-snapshot"));
+
+        let skill = effective_default_skill_id(root, id, Some("record-skill"));
+        assert_eq!(skill.as_deref(), Some("snap-skill"));
+    }
+
+    #[test]
+    fn effective_helpers_fall_back_when_no_snapshot() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let id = "emp-no-snapshot";
+        // No stamping — the instance dir doesn't even exist.
+
+        let record_tools = vec!["Record1".into(), "Record2".into()];
+        let tools = effective_tool_whitelist(root, id, &record_tools);
+        assert_eq!(tools, record_tools);
+
+        let extra = effective_system_prompt_extra(root, id, Some("from-record"));
+        assert_eq!(extra.as_deref(), Some("from-record"));
+
+        let skill = effective_default_skill_id(root, id, Some("record-skill"));
+        assert_eq!(skill.as_deref(), Some("record-skill"));
+    }
+
+    #[test]
+    fn effective_default_skill_id_empty_snapshot_treated_as_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let id = "emp-empty-skill";
+        let inst = root.join(id);
+        let mut snap = make_snap("builtin:test", "1.0.0");
+        snap.default_skill_id = "".into();
+        ensure_instance_snapshot(&inst, &snap, "bootstrap").unwrap();
+
+        // Empty string in snapshot means "no skill hint" — not "use record".
+        // This matches the dispatch_prompt behavior that treats empty string
+        // as no-skill.
+        let skill = effective_default_skill_id(root, id, Some("record-skill"));
+        assert_eq!(skill, None);
     }
 }
