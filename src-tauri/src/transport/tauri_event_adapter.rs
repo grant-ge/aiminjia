@@ -208,6 +208,14 @@ pub fn map_runtime_event(event: &RuntimeEvent) -> Option<LegacyEvent> {
                 },
             }),
         }),
+        RuntimeEventKind::LeadHasPendingMessages { agent_id } => Some(LegacyEvent {
+            name: "lead:has-pending-messages".to_string(),
+            payload: json!({
+                "conversationId": conversation_id,
+                "agentId": agent_id.as_str(),
+                "runId": event.run_id.as_str(),
+            }),
+        }),
         RuntimeEventKind::TaskStatusChanged {
             task_id,
             status,

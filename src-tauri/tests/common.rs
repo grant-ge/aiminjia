@@ -21,6 +21,7 @@ pub fn kind_label(kind: &RuntimeEventKind) -> &'static str {
         RuntimeEventKind::UserInteractionRequired { .. } => "UserInteractionRequired",
         RuntimeEventKind::UserInteractionResolved { .. } => "UserInteractionResolved",
         RuntimeEventKind::AgentIdle { .. } => "AgentIdle",
+        RuntimeEventKind::LeadHasPendingMessages { .. } => "LeadHasPendingMessages",
         RuntimeEventKind::TaskStatusChanged { .. } => "TaskStatusChanged",
         RuntimeEventKind::StopHookPreventedContinuation { .. } => "StopHookPreventedContinuation",
         RuntimeEventKind::OrphanedPermissionDetected { .. } => "OrphanedPermissionDetected",

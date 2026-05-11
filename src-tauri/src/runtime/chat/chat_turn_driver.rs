@@ -1053,6 +1053,13 @@ impl RuntimeChatTurnDriver {
         request: &ChatTurnRequest,
         executor: &dyn RuntimeLlmExecutor,
     ) -> Result<()> {
+        // LTR (B-gap1) Path A entry: marks the Lead as Running and returns
+        // the resolved (session, lead_agent_id) key.  None when the session
+        // is not in Team mode or registries aren't wired.  The exit half of
+        // Path A — mark_idle + maybe-emit `LeadHasPendingMessages` — fires
+        // before the AgentIdle event near the end of this function.
+        let lead_key_for_path_a = self.lead_key_and_mark_running(turn).await;
+
         // ── Step 1: Build TurnConfig ──────────────────────────────────────────
         // Executor loads the turn-scoped LLM settings/tool defs/history from its
         // own services; the driver snapshots those results into immutable config
@@ -1949,6 +1956,16 @@ impl RuntimeChatTurnDriver {
                 ))
                 .await?;
         }
+        // ── LTR (B-gap1) Path A exit: before emitting AgentIdle, ask the
+        // supervisor whether a SendMessage arrived during this turn's
+        // Running window.  If so, emit LeadHasPendingMessages so the
+        // transport / front-end knows it should spawn a continuation turn.
+        // (Path C — in-process auto-spawn from SendMessage — lands later.)
+        if let Some(ref key) = lead_key_for_path_a {
+            self.mark_idle_and_maybe_emit_pending(&session_id, &run_id, key)
+                .await?;
+        }
+
         self.event_bus
             .emit(RuntimeEvent::new(
                 session_id,
@@ -1961,6 +1978,68 @@ impl RuntimeChatTurnDriver {
             .await?;
 
         Ok(())
+    }
+
+    /// LTR (B-gap1) Path A — exit helper.
+    ///
+    /// Calls `mark_idle` on the supervisor and, when it reports `pending ==
+    /// true`, emits a [`RuntimeEventKind::LeadHasPendingMessages`] event so
+    /// downstream consumers (transport / front-end) can decide to spawn a
+    /// continuation turn.  Idempotent and a no-op when the supervisor
+    /// reports no pending — the regular `AgentIdle` event still fires.
+    async fn mark_idle_and_maybe_emit_pending(
+        &self,
+        session_id: &SessionId,
+        run_id: &RunId,
+        key: &crate::runtime::agent::LeadKey,
+    ) -> Result<()> {
+        let Some(sup) = self.query_engine.lead_idle_supervisor() else {
+            return Ok(());
+        };
+        let pending = sup.mark_idle(key).await;
+        if pending {
+            self.event_bus
+                .emit(RuntimeEvent::new(
+                    session_id.clone(),
+                    run_id.clone(),
+                    RuntimeEventKind::LeadHasPendingMessages {
+                        agent_id: key.1.clone(),
+                    },
+                ))
+                .await?;
+        }
+        Ok(())
+    }
+
+    /// LTR (B-gap1) Path A — entry helper.
+    ///
+    /// When the current session is in Team mode (i.e. a Lead has been
+    /// registered via `TeamCreate`), mark the supervisor's state machine as
+    /// `Running` and return the Lead's `LeadKey = (session, agent_id)` so
+    /// the exit half of the turn can `mark_idle` against the same key
+    /// without re-resolving the registry.
+    ///
+    /// Returns `None` in any of these cases (all treated identically: no
+    /// Path A wiring this turn):
+    ///   - no `LeadIdleSupervisor` injected
+    ///   - no `AgentNameRegistry` injected
+    ///   - this session has not registered the `team-lead` name yet
+    async fn lead_key_and_mark_running(
+        &self,
+        turn: &TurnState,
+    ) -> Option<crate::runtime::agent::LeadKey> {
+        let sup = self.query_engine.lead_idle_supervisor()?;
+        let names = self.query_engine.agent_names()?;
+        let session = turn.session_id().clone();
+        let lead_id = names
+            .resolve(
+                &session,
+                crate::runtime::tools::builtin::team_tools::LEAD_NAME,
+            )
+            .await?;
+        let key = (session, lead_id);
+        sup.mark_running(&key).await;
+        Some(key)
     }
 }
 
@@ -2421,5 +2500,166 @@ mod tests {
         assert_eq!(dynamic_contexts.len(), 1);
         assert!(dynamic_contexts[0].contains("可用专项技能"));
         assert!(dynamic_contexts[0].contains("biz-writing"));
+    }
+
+    // ── LTR (B-gap1) Path A wiring tests ─────────────────────────────────────
+
+    use crate::runtime::agent::{AgentNameRegistry, LeadIdleSupervisor};
+    use crate::runtime::event_bus::RuntimeEventSubscriber;
+    use crate::runtime::ids::AgentId;
+    use crate::runtime::tools::builtin::team_tools::LEAD_NAME;
+
+    /// Subscriber that captures every emitted event into a Vec.
+    struct CapturingSubscriber {
+        events: Mutex<Vec<RuntimeEventKind>>,
+    }
+    impl CapturingSubscriber {
+        fn new() -> Arc<Self> {
+            Arc::new(Self {
+                events: Mutex::new(Vec::new()),
+            })
+        }
+        fn snapshot(&self) -> Vec<RuntimeEventKind> {
+            self.events.lock().unwrap().clone()
+        }
+    }
+    #[async_trait]
+    impl RuntimeEventSubscriber for CapturingSubscriber {
+        async fn on_event(&self, event: &RuntimeEvent) -> anyhow::Result<()> {
+            self.events.lock().unwrap().push(event.kind.clone());
+            Ok(())
+        }
+    }
+
+    /// Build a driver wired with a supervisor + name registry, plus a
+    /// CapturingSubscriber on its bus, and pre-register the Lead.
+    /// Returns `(driver, capture, lead_key)`.
+    async fn build_driver_with_lead(
+        session: &str,
+        lead_id: &str,
+    ) -> (
+        RuntimeChatTurnDriver,
+        Arc<CapturingSubscriber>,
+        crate::runtime::agent::LeadKey,
+    ) {
+        let supervisor = LeadIdleSupervisor::new();
+        let names = AgentNameRegistry::new();
+        let session_id = SessionId::new(session);
+        let lead_agent = AgentId::new(lead_id);
+        names
+            .register(&session_id, LEAD_NAME, lead_agent.clone())
+            .await
+            .expect("Lead registration should succeed in a fresh fixture");
+
+        let bus = RuntimeEventBus::new();
+        let capture = CapturingSubscriber::new();
+        bus.subscribe(capture.clone());
+
+        let qe = QueryEngine::new()
+            .with_lead_idle(supervisor)
+            .with_agent_names(names);
+
+        let driver = RuntimeChatTurnDriver::new(qe, bus);
+        let key = (session_id, lead_agent);
+        (driver, capture, key)
+    }
+
+    /// Path A entry resolves the Lead key and flips the supervisor to Running.
+    #[tokio::test]
+    async fn path_a_entry_resolves_lead_key_and_marks_running() {
+        let (driver, _capture, key) = build_driver_with_lead("conv-pa-entry", "lead-1").await;
+        let turn = TurnState::new(
+            IdentityMapping::from_legacy_conversation_id("conv-pa-entry".to_string()),
+            RunId::new("run-pa-entry"),
+            String::new(),
+        );
+        let resolved = driver.lead_key_and_mark_running(&turn).await;
+        assert_eq!(resolved.as_ref(), Some(&key));
+        let sup = driver
+            .query_engine
+            .lead_idle_supervisor()
+            .expect("supervisor wired");
+        assert_eq!(sup.state_of(&key).await, Some("running"));
+    }
+
+    /// When the session is not in Team mode (no `team-lead` registered),
+    /// Path A entry returns None and never touches the supervisor.
+    #[tokio::test]
+    async fn path_a_entry_returns_none_when_no_lead_registered() {
+        let supervisor = LeadIdleSupervisor::new();
+        let names = AgentNameRegistry::new();
+        let bus = RuntimeEventBus::new();
+        let qe = QueryEngine::new()
+            .with_lead_idle(supervisor)
+            .with_agent_names(names);
+        let driver = RuntimeChatTurnDriver::new(qe, bus);
+        let turn = TurnState::new(
+            IdentityMapping::from_legacy_conversation_id("conv-no-team".to_string()),
+            RunId::new("run-no-team"),
+            String::new(),
+        );
+        assert!(driver.lead_key_and_mark_running(&turn).await.is_none());
+    }
+
+    /// Path A exit emits LeadHasPendingMessages when supervisor reports
+    /// pending == true (i.e. SendMessage arrived during the Running window).
+    #[tokio::test]
+    async fn path_a_exit_emits_pending_event_when_send_arrived_during_run() {
+        let (driver, capture, key) =
+            build_driver_with_lead("conv-pa-exit-pending", "lead-2").await;
+        let sup = driver
+            .query_engine
+            .lead_idle_supervisor()
+            .expect("supervisor wired")
+            .clone();
+        // Simulate a turn: mark_running, a Teammate enqueues a message,
+        // then mark_idle reports pending=true.
+        sup.mark_running(&key).await;
+        sup.enqueue(&key).await;
+
+        driver
+            .mark_idle_and_maybe_emit_pending(&key.0, &RunId::new("run-pa-exit-1"), &key)
+            .await
+            .expect("emit must succeed");
+
+        let kinds = capture.snapshot();
+        assert!(
+            matches!(
+                kinds.first(),
+                Some(RuntimeEventKind::LeadHasPendingMessages { agent_id }) if agent_id == &key.1
+            ),
+            "expected LeadHasPendingMessages first, got: {:?}",
+            kinds
+        );
+    }
+
+    /// Path A exit does NOT emit LeadHasPendingMessages when no SendMessage
+    /// arrived during the Running window — the regular AgentIdle path
+    /// proceeds normally.
+    #[tokio::test]
+    async fn path_a_exit_quiet_when_no_send_during_run() {
+        let (driver, capture, key) =
+            build_driver_with_lead("conv-pa-exit-clean", "lead-3").await;
+        let sup = driver
+            .query_engine
+            .lead_idle_supervisor()
+            .expect("supervisor wired")
+            .clone();
+        sup.mark_running(&key).await;
+        // No enqueue.
+
+        driver
+            .mark_idle_and_maybe_emit_pending(&key.0, &RunId::new("run-pa-exit-2"), &key)
+            .await
+            .expect("emit must succeed");
+
+        let kinds = capture.snapshot();
+        assert!(
+            !kinds
+                .iter()
+                .any(|k| matches!(k, RuntimeEventKind::LeadHasPendingMessages { .. })),
+            "should NOT emit pending event, got: {:?}",
+            kinds
+        );
     }
 }

@@ -63,6 +63,16 @@ pub enum RuntimeEventKind {
         agent_id: AgentId,
         scope: AgentIdleScope,
     },
+    /// LTR (B-gap1): emitted by chat_turn_driver Path A when the Lead's turn
+    /// is about to end but the LeadIdleSupervisor reports `pending == true`
+    /// — at least one Teammate sent a message during the just-finished
+    /// Running window.  The transport layer (or front-end) is responsible
+    /// for spawning a continuation turn (typically by re-sending the
+    /// `__resume_from_task_notification__` sentinel).  The Path C (in-process
+    /// auto-spawn) wiring lands in a follow-up commit.
+    LeadHasPendingMessages {
+        agent_id: AgentId,
+    },
     TaskStatusChanged {
         task_id: TaskId,
         status: String,
@@ -122,6 +132,7 @@ impl RuntimeEvent {
         };
         let agent_id = match &kind {
             RuntimeEventKind::AgentIdle { agent_id, .. } => Some(agent_id.clone()),
+            RuntimeEventKind::LeadHasPendingMessages { agent_id } => Some(agent_id.clone()),
             _ => None,
         };
         Self {

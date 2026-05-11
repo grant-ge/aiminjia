@@ -163,6 +163,16 @@ impl QueryEngine {
         self
     }
 
+    /// LTR (B-gap1) test convenience: inject just the AgentNameRegistry, for
+    /// tests that exercise Path A wiring without needing a Team or Inbox.
+    pub fn with_agent_names(
+        mut self,
+        names: Arc<crate::runtime::agent::AgentNameRegistry>,
+    ) -> Self {
+        self.agent_names = Some(names);
+        self
+    }
+
     pub fn with_lead_idle(
         mut self,
         sup: Arc<crate::runtime::agent::LeadIdleSupervisor>,
@@ -183,6 +193,15 @@ impl QueryEngine {
     pub fn with_conv_dir(mut self, dir: PathBuf) -> Self {
         self.conv_dir = Some(dir);
         self
+    }
+
+    /// LTR (B-gap1): accessors for chat_turn_driver to wire Path A
+    /// (mark_running on entry, mark_idle before AgentIdle).
+    pub fn lead_idle_supervisor(&self) -> Option<&Arc<crate::runtime::agent::LeadIdleSupervisor>> {
+        self.lead_idle.as_ref()
+    }
+    pub fn agent_names(&self) -> Option<&Arc<crate::runtime::agent::AgentNameRegistry>> {
+        self.agent_names.as_ref()
     }
 
     /// Attach LTR registries (Team / name / inbox) onto an already-built

@@ -192,12 +192,14 @@ impl RuntimeTool for SendMessageRuntimeTool {
                 ToolError::ExecutionFailed(format!("agent `{to}` inbox closed; message dropped"))
             })?;
 
-        // P2.4: if the recipient is the Lead, ask the supervisor whether we
-        // need to wake it.  Path A (turn-end self-check) handles the case
-        // where the Lead is currently running.  When `enqueue` returns true
-        // here, the Lead was idle — full wake wiring (run_chat_turn_continuation)
-        // arrives in P2.5/P2.6 follow-up; for now we log the wake intent so
-        // the supervisor's CAS still produces correct accounting.
+        // P2.4 / B-gap1: if the recipient is the Lead, ask the supervisor
+        // whether we need to wake it.  Path A (turn-end self-check in
+        // chat_turn_driver::run_chat_turn_s4) handles the case where the
+        // Lead is currently running — pending is recorded here and the
+        // driver emits `LeadHasPendingMessages` at turn end.  Path C
+        // (in-process auto-spawn from this site) lands in a follow-up.
+        // Until then, the `true` branch only logs the wake intent; the
+        // pending mark is what matters and is recorded by `enqueue`.
         if to == LEAD_NAME {
             if let (Some(sup), Some(names_reg)) =
                 (ctx.lead_idle.as_ref(), ctx.agent_names.as_ref())
@@ -206,7 +208,8 @@ impl RuntimeTool for SendMessageRuntimeTool {
                     let key = (session.clone(), lead_id);
                     if sup.enqueue(&key).await {
                         log::info!(
-                            "[SendMessage] Lead idle → wake requested (continuation wiring lands in follow-up)"
+                            "[SendMessage] Lead idle → wake requested; Path A will emit \
+                             LeadHasPendingMessages at turn-end (Path C auto-spawn pending)"
                         );
                     } else {
                         log::debug!(
