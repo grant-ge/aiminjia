@@ -40,6 +40,11 @@ export function ChatBottomArea({ disabled = false }: { disabled?: boolean }) {
   const { isPickingAttachments, pickAttachments } = useChatAttachments()
   const [showSkillPopover, setShowSkillPopover] = useState(false)
   const getSkillById = useSkillStore((s) => s.getById)
+  // Selected skill chip — set by handleSkillPick, cleared after submit so the
+  // skill id flows into the IPC `selectedSkillId` field. Without this the
+  // backend only sees the slash-prefixed text and the prompt builder cannot
+  // inject SKILL.md / mark the turn as a skill-driven flow.
+  const [selectedSkill, setSelectedSkill] = useState<{ id: string; label?: string } | null>(null)
 
   // One-shot prefill text (e.g., from generated suggestion); consumed synchronously
   // via lazy initializer so RichComposer's useEditor receives it on its very first render.
@@ -67,6 +72,7 @@ export function ChatBottomArea({ disabled = false }: { disabled?: boolean }) {
     composerRef.current?.getEditor()?.commands.insertContent(next)
     composerRef.current?.focus()
     setShowSkillPopover(false)
+    setSelectedSkill({ id: skillId, label: skill?.displayName || skill?.id || skillId })
   }, [getSkillById])
 
   const handleSubmit = useCallback(async (payload: RichComposerSubmitPayload) => {
@@ -81,15 +87,24 @@ export function ChatBottomArea({ disabled = false }: { disabled?: boolean }) {
       fileSize: f.fileSize,
       mimeType: f.mimeType,
     }))
+    // Capture and clear the skill chip BEFORE awaiting send. If the user picked
+    // a different skill while the previous send is mid-flight, that selection
+    // belongs to the next turn, not this one.
+    const skillForThisTurn = selectedSkill
+    setSelectedSkill(null)
     try {
-      await sendUserMessage(payload.markdown, fileInfos.length > 0 ? fileInfos : undefined)
+      await sendUserMessage(
+        payload.markdown,
+        fileInfos.length > 0 ? fileInfos : undefined,
+        skillForThisTurn,
+      )
     } catch (err) {
       console.error('[ChatBottomArea] sendUserMessage failed:', err)
       throw err
     } finally {
       setIsSending(false)
     }
-  }, [isSending, sendUserMessage])
+  }, [isSending, sendUserMessage, selectedSkill])
 
   const handlePickAttachments = useCallback(async () => {
     const results = await pickAttachments()

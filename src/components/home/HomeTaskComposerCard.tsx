@@ -46,6 +46,7 @@ export function HomeTaskComposerCard() {
   )
   const [showSkillPopover, setShowSkillPopover] = useState(false)
   const getSkillById = useSkillStore((s) => s.getById)
+  const [selectedSkill, setSelectedSkill] = useState<{ id: string; label?: string } | null>(null)
 
   // One-shot prefill text; consumed synchronously via lazy initializer so
   // RichComposer's useEditor receives it on its very first render.
@@ -62,6 +63,7 @@ export function HomeTaskComposerCard() {
     composerRef.current?.getEditor()?.commands.insertContent(next)
     composerRef.current?.focus()
     setShowSkillPopover(false)
+    setSelectedSkill({ id: skillId, label: skill?.displayName || skill?.id || skillId })
   }, [getSkillById])
 
   // Load default folder if no workspace has been selected yet
@@ -147,11 +149,13 @@ export function HomeTaskComposerCard() {
         fileType: f.fileType,
         mimeType: f.mimeType,
       }))
-      await sendUserMessage(payload.markdown, fileInfos)
+      const skillForThisTurn = selectedSkill
+      setSelectedSkill(null)
+      await sendUserMessage(payload.markdown, fileInfos, skillForThisTurn)
     } finally {
       setIsSubmitting(false)
     }
-  }, [displayWorkspace, isSubmitting, sendUserMessage])
+  }, [displayWorkspace, isSubmitting, sendUserMessage, selectedSkill])
 
   return (
     <div className="relative">

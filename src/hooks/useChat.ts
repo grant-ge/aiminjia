@@ -213,12 +213,17 @@ export function useChat() {
   /**
    * Send a user message in the currently active conversation.
    *
-   * @param text  - The user's plain-text input (slash-prefixed text is sent verbatim).
-   * @param files - Optional list of attached file info objects.
+   * @param text   - The user's plain-text input (slash-prefixed text is sent verbatim).
+   * @param files  - Optional list of attached file info objects.
+   * @param skill  - Optional skill chip selected from the popover. When set,
+   *                 the backend persists `skillCommand` metadata on the user
+   *                 message which the prompt builder uses to inject SKILL.md
+   *                 contents and mark the turn as a skill-driven flow.
    */
   const sendUserMessage = useCallback(async (
     text: string,
     files?: PendingFileInfo[],
+    skill?: { id: string; label?: string } | null,
   ): Promise<boolean> => {
     let store = useChatStore.getState()
     let conversationId = store.activeConversationId
@@ -322,8 +327,16 @@ export function useChat() {
     store.addBusyConversation(conversationId)
 
     try {
-      console.log('[useChat] Calling sendMessage IPC, attachments:', files)
-      await sendMessage(conversationId, text, files, null, messageId, null, null)
+      console.log('[useChat] Calling sendMessage IPC, attachments:', files, 'skill:', skill?.id ?? null)
+      await sendMessage(
+        conversationId,
+        text,
+        files,
+        null,
+        messageId,
+        skill?.id ?? null,
+        skill?.label ?? null,
+      )
       console.log('[useChat] sendMessage IPC returned OK')
       recordDiagnostic({
         event: 'chat.submit.completed',
