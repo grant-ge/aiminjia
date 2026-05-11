@@ -319,6 +319,23 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
         // (already resolved per-source above; model_override holds the result)
         let effective_model = model_override;
 
+        // ── Required-tool validation for Teammate dispatch ─────────────────
+        // A Teammate must have SendMessage / TaskList / TaskGet in its
+        // whitelist; legacy fire-and-forget subagents are exempt.
+        if team_handle.is_some() {
+            let missing = crate::runtime::agent::required_tools::missing_required(&tool_whitelist);
+            if !missing.is_empty() {
+                let who = match &source {
+                    AgentSource::Employee(eid) => format!("employee `{eid}`"),
+                    AgentSource::Registry(t) => format!("agent type `{t}`"),
+                };
+                return Err(ToolError::ExecutionFailed(format!(
+                    "{who} cannot be a teammate — missing required tools: {missing:?}. \
+                     Add these to its tool_whitelist (or fix the employee profile)."
+                )));
+            }
+        }
+
         // ── Name registration for Teammate dispatch ────────────────────────
         // Only Teammate paths (team_handle.is_some()) register in the name
         // registry; legacy async subagents carry name in the request/outcome
