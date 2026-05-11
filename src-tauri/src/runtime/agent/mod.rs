@@ -16,6 +16,7 @@ pub mod resume;
 pub mod subagent_result_envelope;
 pub mod subagent_transcript_store;
 pub mod task_notification;
+pub mod name_registry;
 pub mod team;
 pub mod tool_whitelist;
 pub mod worker_runtime;
@@ -29,4 +30,5 @@ pub use subagent_transcript_store::{
     FileSubagentTranscriptStore, InMemorySubagentTranscriptStore, SubagentTranscriptEntryRecord,
     SubagentTranscriptStore,
 };
+pub use name_registry::{AgentNameRegistry, NameRegistryError};
 pub use team::{Member, MemberRole, Team, TeamError, TeamRegistry, MAX_TEAMMATES};

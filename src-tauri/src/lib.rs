@@ -543,6 +543,7 @@ pub fn run() {
                 crate::runtime::employee::EmployeeActiveRuns::new(),
             ));
             app.manage(runtime::agent::TeamRegistry::new());
+            app.manage(runtime::agent::AgentNameRegistry::new());
 
             runtime::schedule_runner::spawn_schedule_runner(
                 current_user_storage.clone() as Arc<dyn storage::UserScopedPathResolver>,
