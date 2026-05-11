@@ -2,7 +2,9 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 
-use crate::runtime::agent::{AgentNameRegistry, InboxRegistry, LeadIdleSupervisor, TeamRegistry};
+use crate::runtime::agent::{
+    AgentNameRegistry, CancellationRegistry, InboxRegistry, LeadIdleSupervisor, TeamRegistry,
+};
 use crate::runtime_audit::trace_capture::{CapturedEvent, CapturedTrace};
 use crate::transport::runtime_host::RuntimeHost;
 
@@ -45,6 +47,10 @@ impl RuntimeHost for RecordingRuntimeHost {
     fn lead_idle_supervisor(&self) -> Arc<LeadIdleSupervisor> {
         unimplemented!("test mock — call site doesn't exercise lead_idle_supervisor")
     }
+
+    fn cancellation_registry(&self) -> Arc<CancellationRegistry> {
+        unimplemented!("test mock — call site doesn't exercise cancellation_registry")
+    }
 }
 
 #[derive(Default)]
@@ -69,5 +75,9 @@ impl RuntimeHost for NoopRuntimeHost {
 
     fn lead_idle_supervisor(&self) -> Arc<LeadIdleSupervisor> {
         unimplemented!("test mock — call site doesn't exercise lead_idle_supervisor")
+    }
+
+    fn cancellation_registry(&self) -> Arc<CancellationRegistry> {
+        unimplemented!("test mock — call site doesn't exercise cancellation_registry")
     }
 }

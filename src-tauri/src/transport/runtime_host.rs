@@ -1,7 +1,9 @@
 use anyhow::Result;
 use std::sync::Arc;
 
-use crate::runtime::agent::{AgentNameRegistry, InboxRegistry, LeadIdleSupervisor, TeamRegistry};
+use crate::runtime::agent::{
+    AgentNameRegistry, CancellationRegistry, InboxRegistry, LeadIdleSupervisor, TeamRegistry,
+};
 
 pub trait RuntimeHost: Send + Sync {
     fn emit_legacy_event(&self, name: &str, payload: serde_json::Value) -> Result<()>;
@@ -19,4 +21,8 @@ pub trait RuntimeHost: Send + Sync {
     /// Per-process Lead idle supervisor (P2.4).  Used by SendMessage to
     /// enqueue/wake the Lead and by chat_turn_driver for turn-end self-check.
     fn lead_idle_supervisor(&self) -> Arc<LeadIdleSupervisor>;
+
+    /// Per-process cancellation registry (P2.7).  Used by TeammateStop to
+    /// trip a Teammate's cancel token by AgentId.
+    fn cancellation_registry(&self) -> Arc<CancellationRegistry>;
 }

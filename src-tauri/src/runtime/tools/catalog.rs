@@ -612,6 +612,21 @@ fn build_default_catalog() -> ToolCatalog {
 
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
+            "TeammateStop",
+            "强制取消一个 Teammate（Lead 紧急工具）。仅在以下情况使用：1) 已经向 Teammate 发了 shutdown_request 但未收到 shutdown_response（或 approve=false 且重试无果）；2) Teammate 卡死、行为异常；3) TeamDelete 之前的清理。普通收尾应优先用 shutdown_request 让 Teammate 自己 graceful 退出。幂等：取消已经退出/不存在的 agent 静默成功。",
+        )
+        .with_kind(ToolKind::Support),
+        json!({
+            "type": "object",
+            "required": ["agent_name"],
+            "properties": {
+                "agent_name": { "type": "string", "description": "目标 Teammate 的 name（如 'researcher'）。" }
+            }
+        }),
+    ));
+
+    c.insert(CatalogEntry::new(
+        ToolDefinition::new(
             "SendMessage",
             "向同 session 的另一个 Agent 投递结构化消息。使用场景：Lead 给某 Teammate 派任务、Teammate 给 Lead 汇报阶段成果、Teammate 之间交接产出、广播紧急停止信号 (`to:\"*\"`)。不要用来报 task 状态（用 TaskUpdate）或写文件产物（直接写磁盘）。`to` 是 name（如 \"team-lead\" / \"researcher\" / \"*\" 广播）。`message` 是 StructuredMessage 5 个 variant 之一：text / shutdown_request / shutdown_response / plan_approval_request / plan_approval_response。",
         )
@@ -730,6 +745,7 @@ pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
     "TaskStop",
     "TeamCreate",
     "TeamDelete",
+    "TeammateStop",
     "SendMessage",
 ];
 

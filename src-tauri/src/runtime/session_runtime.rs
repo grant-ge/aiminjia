@@ -54,6 +54,8 @@ pub struct SessionRuntime {
     /// LTR (P2.4): per-process Lead idle supervisor.  Propagated to QueryEngine
     /// so SendMessage can enqueue/wake the Lead.
     lead_idle: Option<Arc<crate::runtime::agent::LeadIdleSupervisor>>,
+    /// LTR (P2.7): per-process cancellation registry.
+    cancellation_registry: Option<Arc<crate::runtime::agent::CancellationRegistry>>,
 }
 
 impl SessionRuntime {
@@ -74,6 +76,7 @@ impl SessionRuntime {
             agent_names: None,
             inbox_registry: None,
             lead_idle: None,
+            cancellation_registry: None,
         }
     }
 
@@ -103,6 +106,7 @@ impl SessionRuntime {
             agent_names: None,
             inbox_registry: None,
             lead_idle: None,
+            cancellation_registry: None,
         }
     }
 
@@ -184,6 +188,15 @@ impl SessionRuntime {
         sup: Arc<crate::runtime::agent::LeadIdleSupervisor>,
     ) -> Self {
         self.lead_idle = Some(sup);
+        self
+    }
+
+    /// LTR (P2.7): inject the per-process cancellation registry.
+    pub fn with_cancellation_registry(
+        mut self,
+        reg: Arc<crate::runtime::agent::CancellationRegistry>,
+    ) -> Self {
+        self.cancellation_registry = Some(reg);
         self
     }
 
@@ -461,6 +474,9 @@ impl SessionRuntime {
         }
         if let Some(sup) = self.lead_idle.clone() {
             engine = engine.with_lead_idle(sup);
+        }
+        if let Some(reg) = self.cancellation_registry.clone() {
+            engine = engine.with_cancellation_registry(reg);
         }
         engine
     }

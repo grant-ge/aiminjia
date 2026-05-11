@@ -546,6 +546,7 @@ pub fn run() {
             app.manage(runtime::agent::AgentNameRegistry::new());
             app.manage(runtime::agent::InboxRegistry::new());
             app.manage(runtime::agent::LeadIdleSupervisor::new());
+            app.manage(runtime::agent::CancellationRegistry::new());
 
             runtime::schedule_runner::spawn_schedule_runner(
                 current_user_storage.clone() as Arc<dyn storage::UserScopedPathResolver>,
@@ -725,10 +726,16 @@ pub fn run() {
                     let inbox_reg = app_handle
                         .try_state::<Arc<runtime::agent::InboxRegistry>>()
                         .map(|s| s.inner().clone());
+                    let cancel_reg = app_handle
+                        .try_state::<Arc<runtime::agent::CancellationRegistry>>()
+                        .map(|s| s.inner().clone());
                     tauri::async_runtime::block_on(async move {
                         team_reg.clear_all().await;
                         name_reg.clear_all().await;
                         if let Some(reg) = inbox_reg {
+                            reg.clear_all().await;
+                        }
+                        if let Some(reg) = cancel_reg {
                             reg.clear_all().await;
                         }
                     });

@@ -64,6 +64,7 @@ pub struct QueryEngine {
     agent_names: Option<Arc<crate::runtime::agent::AgentNameRegistry>>,
     inbox_registry: Option<Arc<crate::runtime::agent::InboxRegistry>>,
     lead_idle: Option<Arc<crate::runtime::agent::LeadIdleSupervisor>>,
+    cancellation_registry: Option<Arc<crate::runtime::agent::CancellationRegistry>>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -96,6 +97,7 @@ impl QueryEngine {
             agent_names: None,
             inbox_registry: None,
             lead_idle: None,
+            cancellation_registry: None,
         }
     }
 
@@ -126,6 +128,7 @@ impl QueryEngine {
             agent_names: self.agent_names.clone(),
             inbox_registry: self.inbox_registry.clone(),
             lead_idle: self.lead_idle.clone(),
+            cancellation_registry: self.cancellation_registry.clone(),
         }
     }
 
@@ -160,6 +163,14 @@ impl QueryEngine {
         self
     }
 
+    pub fn with_cancellation_registry(
+        mut self,
+        reg: Arc<crate::runtime::agent::CancellationRegistry>,
+    ) -> Self {
+        self.cancellation_registry = Some(reg);
+        self
+    }
+
     /// Attach LTR registries (Team / name / inbox) onto an already-built
     /// ToolExecutionContext.  Helper to avoid duplicating the wiring in every
     /// tool-call build site.  No-op for whichever registry isn't configured
@@ -179,6 +190,9 @@ impl QueryEngine {
         }
         if let Some(sup) = self.lead_idle.clone() {
             ctx = ctx.with_lead_idle(sup);
+        }
+        if let Some(reg) = self.cancellation_registry.clone() {
+            ctx = ctx.with_cancellation_registry(reg);
         }
         ctx
     }

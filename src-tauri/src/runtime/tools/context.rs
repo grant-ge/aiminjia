@@ -1,6 +1,8 @@
 use std::sync::{Arc, Mutex};
 
-use crate::runtime::agent::{AgentNameRegistry, InboxRegistry, LeadIdleSupervisor, TeamRegistry};
+use crate::runtime::agent::{
+    AgentNameRegistry, CancellationRegistry, InboxRegistry, LeadIdleSupervisor, TeamRegistry,
+};
 use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::hooks::config::HookRegistry;
 use crate::runtime::ids::{AgentId, RunId, SessionId, ToolCallId};
@@ -79,6 +81,9 @@ pub struct ToolExecutionContext {
     /// to enqueue/wake the Lead, and by the chat turn driver to self-check
     /// at turn end.  `None` for legacy paths.
     pub lead_idle: Option<Arc<LeadIdleSupervisor>>,
+    /// LTR (P2.7): per-process cancellation registry — looks up an agent's
+    /// CancellationToken by (SessionId, AgentId).  Required by TeammateStop.
+    pub cancellation_registry: Option<Arc<CancellationRegistry>>,
 }
 
 impl ToolExecutionContext {
@@ -108,6 +113,7 @@ impl ToolExecutionContext {
             agent_names: None,
             inbox_registry: None,
             lead_idle: None,
+            cancellation_registry: None,
         }
     }
 
@@ -170,6 +176,11 @@ impl ToolExecutionContext {
 
     pub fn with_lead_idle(mut self, supervisor: Arc<LeadIdleSupervisor>) -> Self {
         self.lead_idle = Some(supervisor);
+        self
+    }
+
+    pub fn with_cancellation_registry(mut self, registry: Arc<CancellationRegistry>) -> Self {
+        self.cancellation_registry = Some(registry);
         self
     }
 

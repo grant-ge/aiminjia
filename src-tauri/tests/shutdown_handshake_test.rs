@@ -69,6 +69,7 @@ fn build_ctx(
         inbox,
         agent_names: names,
         inbox_registry: None,
+        cancellation_registry: None,
         conv_dir: Some(conv_dir),
         meta,
     };

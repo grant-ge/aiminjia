@@ -981,6 +981,8 @@ pub struct TeammateWorkerCtx {
     /// Optional inbox registry — when present, cleanup will deregister this
     /// Teammate's inbox so SendMessage stops resolving it (P2.2).
     pub inbox_registry: Option<Arc<crate::runtime::agent::InboxRegistry>>,
+    /// Optional cancellation registry — cleanup deregisters here too (P2.7).
+    pub cancellation_registry: Option<Arc<crate::runtime::agent::CancellationRegistry>>,
     /// Conversation root directory for transcript writes.
     /// `None` means "no logging" (test-only or legacy path).
     pub conv_dir: Option<PathBuf>,
@@ -1244,6 +1246,10 @@ async fn cleanup_teammate(
     // 3. Deregister from InboxRegistry so SendMessage stops resolving this
     //    Teammate (P2.2).  Skipped if no registry was injected.
     if let Some(reg) = ctx.inbox_registry.as_ref() {
+        reg.unregister(&ctx.session_id, &ctx.agent_id).await;
+    }
+    // 4. Deregister from CancellationRegistry (P2.7).
+    if let Some(reg) = ctx.cancellation_registry.as_ref() {
         reg.unregister(&ctx.session_id, &ctx.agent_id).await;
     }
 

@@ -2,6 +2,7 @@ pub mod agent_runtime;
 pub mod async_task_store;
 pub mod background;
 pub mod builtin;
+pub mod cancellation_registry;
 pub mod child_run;
 pub mod definition;
 pub mod file_agent_invocation_store;
@@ -30,6 +31,7 @@ pub mod worker_runtime;
 pub mod worktree;
 
 pub use agent_runtime::AgentRuntime;
+pub use cancellation_registry::CancellationRegistry;
 pub use invocation::{
     AgentInvocation, AgentStatus, ChildRunHandle, ResumeChildRunRequest, SpawnChildRunRequest,
 };

@@ -141,6 +141,7 @@ async fn teammate_idle_transcript_path_is_under_teammates() {
         inbox: inbox.clone(),
         agent_names: name_registry.clone(),
         inbox_registry: None,
+        cancellation_registry: None,
         conv_dir: Some(conv_dir.clone()),
         meta,
     };
@@ -243,6 +244,7 @@ async fn subagent_and_teammate_coexist_in_same_conversation() {
         inbox: inbox.clone(),
         agent_names: name_registry.clone(),
         inbox_registry: None,
+        cancellation_registry: None,
         conv_dir: Some(conv_dir.clone()),
         meta: tm_meta,
     };

@@ -2116,6 +2116,12 @@ impl TauriChatCommandAdapter {
         {
             runtime = runtime.with_lead_idle(sup.inner().clone());
         }
+        if let Some(reg) = services
+            .app
+            .try_state::<Arc<crate::runtime::agent::CancellationRegistry>>()
+        {
+            runtime = runtime.with_cancellation_registry(reg.inner().clone());
+        }
         Self { runtime, services }
     }
 

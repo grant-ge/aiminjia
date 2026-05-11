@@ -435,6 +435,19 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
 
             let inbox = AgentInbox::new(64);
 
+            // P2.7: derive the child cancel token NOW (before passing into
+            // TeammateWorkerCtx via .child_token()) so we can register it
+            // for TeammateStop lookup.
+            let teammate_cancel = launch_ctx.cancellation.child_token();
+            if let Some(reg) = ctx.cancellation_registry.clone() {
+                let sid = launch_ctx.session_id.clone();
+                let aid = agent_id.clone();
+                let tok = teammate_cancel.clone();
+                tokio::spawn(async move {
+                    reg.register(&sid, aid, tok).await;
+                });
+            }
+
             // P2.2: register this Teammate's inbox so SendMessage(to: name) can
             // resolve it.  Optional — tests / legacy paths that don't carry an
             // InboxRegistry simply skip this step (their Teammate is unaddressable
@@ -472,10 +485,11 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
                 agent_id: agent_id.clone(),
                 session_id: launch_ctx.session_id.clone(),
                 conv_id: launch_ctx.session_id.as_str().to_string(),
-                cancel: launch_ctx.cancellation.child_token(),
+                cancel: teammate_cancel,
                 inbox: inbox.clone(),
                 agent_names: ctx.agent_names().clone(),
                 inbox_registry: ctx.inbox_registry.clone(),
+                cancellation_registry: ctx.cancellation_registry.clone(),
                 conv_dir: None, // P2: inject from paths resolver
                 meta,
             };
