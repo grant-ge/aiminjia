@@ -1,10 +1,17 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { employeeCreate, employeeIndexKnowledgeAsync, type PendingKnowledgeSource } from '@/lib/tauri'
+import {
+  employeeCreate,
+  employeeIndexKnowledgeAsync,
+  employeeTemplateCatalog,
+  employeeTemplateRefresh,
+  type EmployeeTemplateSnapshot,
+  type PendingKnowledgeSource,
+} from '@/lib/tauri'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { BUILTIN_TEMPLATES, type EmployeeTemplate } from './templates'
+import { BUILTIN_TEMPLATES, snapshotToTemplate, type EmployeeTemplate } from './templates'
 import { MonitoringUrlsForm } from './forms/MonitoringUrlsForm'
 import { SalesTableConfigForm } from './forms/SalesTableConfigForm'
 import { WeeklyReportConfigForm } from './forms/WeeklyReportConfigForm'
@@ -23,12 +30,51 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
   const { t } = useTranslation()
   const [step, setStep] = useState<1 | 2 | 3>(1)
   const [selected, setSelected] = useState<EmployeeTemplate | null>(null)
+  // Catalog: backend (`employee_template_catalog` = bootstrap ∪ cache) when
+  // available, falls back to the legacy hardcoded `BUILTIN_TEMPLATES` if
+  // the IPC call fails (e.g. dev server with mismatched binary). The
+  // wizard renders this list directly; we don't update it after open.
+  const [catalog, setCatalog] = useState<EmployeeTemplate[]>(BUILTIN_TEMPLATES)
   const [name, setName] = useState('')
   const [enableCron, setEnableCron] = useState(true)
   const [cron, setCron] = useState('')
   const [resourceConfig, setResourceConfig] = useState<Record<string, unknown>>({})
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // When the dialog opens: best-effort refresh the local template cache
+  // from lotus ops-portal, then load the merged catalog. Cache refresh
+  // failures don't block the user — they just see whatever's already
+  // local (bootstrap + any previously-downloaded versions).
+  //
+  // Why refresh on open and not on mount: the wizard is mounted with the
+  // parent page and we don't want a network call on every app launch.
+  // Opening the wizard is a deliberate user action where a 1-2s delay is
+  // acceptable for the side effect of getting freshest content.
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    void (async () => {
+      try {
+        // Fire-and-forget refresh; if it fails we just use whatever the
+        // backend already has cached + bootstrap.
+        await employeeTemplateRefresh().catch((e) => {
+          console.warn('[HireWizard] employee_template_refresh failed:', e)
+          return 0
+        })
+        const snapshots: EmployeeTemplateSnapshot[] = await employeeTemplateCatalog()
+        if (cancelled) return
+        if (snapshots.length > 0) {
+          setCatalog(snapshots.map(snapshotToTemplate))
+        }
+      } catch (e) {
+        console.error('[HireWizard] employee_template_catalog failed, using BUILTIN_TEMPLATES:', e)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [open])
 
   function handleClose() {
     setStep(1)
@@ -132,7 +178,7 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
         {/* Step 1: template grid */}
         {step === 1 && (
           <div className="grid grid-cols-2 gap-3 p-6 sm:grid-cols-3">
-            {BUILTIN_TEMPLATES.map((t) => (
+            {catalog.map((t) => (
               <button
                 key={t.templateId}
                 type="button"

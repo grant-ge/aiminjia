@@ -1,5 +1,15 @@
 // Single source of truth for the 5 built-in employee templates.
 // Read both by HireWizard (during 雇佣) and EmployeeDrawer (for trigger prechecks).
+//
+// PR4 update (2026-05-10): HireWizard now sources its catalog from the
+// backend (`employeeTemplateCatalog()` Tauri command — merges embedded
+// bootstrap + downloaded cache). `BUILTIN_TEMPLATES` here remains the
+// fallback for offline use and for callers that look up a record's
+// template by id (`findTemplate`, used by EmployeeCard / EmployeeDrawer /
+// triggerPrechecks). PR6 will fold `resourceConfigKind` into the backend
+// schema (`resourceConfigSchema` JSON Schema) and delete this enum.
+
+import type { EmployeeTemplateSnapshot } from '@/lib/tauri'
 
 export type ResourceConfigKind = 'monitoring-urls' | 'sales-table' | 'weekly-report' | 'tech-support' | 'customer-support' | 'none'
 
@@ -303,4 +313,64 @@ export const BUILTIN_TEMPLATES: EmployeeTemplate[] = [
 export function findTemplate(templateId: string | null | undefined): EmployeeTemplate | null {
   if (!templateId) return null
   return BUILTIN_TEMPLATES.find((t) => t.templateId === templateId) ?? null
+}
+
+/**
+ * Per-template-id `resource_config_kind` lookup. Hardcoded because the
+ * backend `EmployeeTemplateSnapshot` doesn't carry this field today —
+ * the schema-driven form (PR6) will replace it with `resourceConfigSchema`.
+ *
+ * Custom (`org:` / `private:`) templates default to `'none'` until they
+ * ship with their own schema.
+ */
+const RESOURCE_CONFIG_KIND_BY_ID: Record<string, ResourceConfigKind> = {
+  'builtin:xiaoyuan': 'monitoring-urls',
+  'builtin:xiaofa': 'none',
+  'builtin:xiaosuan': 'none',
+  'builtin:xiaoxiao': 'sales-table',
+  'builtin:xiaoding': 'none',
+  'builtin:xiaozhao': 'none',
+  'builtin:xiaozhou': 'weekly-report',
+  'builtin:xiaobiao': 'none',
+  'builtin:xiaogong': 'tech-support',
+  'builtin:xiaoke': 'customer-support',
+  'builtin:xiaocheng': 'none',
+}
+
+/**
+ * Convert a backend `EmployeeTemplateSnapshot` (returned by
+ * `employeeTemplateCatalog()`) to the frontend `EmployeeTemplate` shape
+ * the wizard / cards / drawer expect.
+ *
+ * Field-level mapping notes:
+ *   - `cron`: backend uses `""` for "no default cron"; frontend uses `null`
+ *   - `defaultSkillId`: same — `""` → `null`
+ *   - `systemPromptExtra`: `""` is allowed; we keep empty string as-is
+ *     because the runtime concat logic tolerates it
+ *   - `resourceConfigKind`: looked up by id, defaults to `'none'`
+ *
+ * If the snapshot's id matches a `BUILTIN_TEMPLATES` entry, we prefer the
+ * frontend hardcoded copy verbatim — same id + same v1.0.0 means same
+ * content, and this avoids any subtle differences (e.g. emoji rendering)
+ * during the bootstrap → backend transition. Once PR5 deletes the
+ * fallback constants, this preference goes away.
+ */
+export function snapshotToTemplate(snap: EmployeeTemplateSnapshot): EmployeeTemplate {
+  const builtin = BUILTIN_TEMPLATES.find((t) => t.templateId === snap.templateId)
+  if (builtin) return builtin
+  return {
+    templateId: snap.templateId,
+    avatar: snap.avatar,
+    name: snap.name,
+    role: snap.role,
+    description: snap.description,
+    toolWhitelist: snap.toolWhitelist,
+    cron: snap.cron === '' ? null : snap.cron,
+    systemPromptExtra: snap.systemPromptExtra,
+    badge: snap.badge,
+    defaultSkillId: snap.defaultSkillId === '' ? null : snap.defaultSkillId,
+    requiresAttachment: snap.requiresAttachment,
+    resourceConfigKind: RESOURCE_CONFIG_KIND_BY_ID[snap.templateId] ?? 'none',
+    requiresDingtalk: snap.requiresDingtalk,
+  }
 }
