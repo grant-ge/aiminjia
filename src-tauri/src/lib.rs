@@ -643,6 +643,35 @@ pub fn run() {
                     .clone(),
             );
 
+            // Background diagnostic auto-upload: ships only bytes after the
+            // persisted watermark so each tick stays small. Initial run is
+            // delayed 30s after startup to let auth restore + first-screen
+            // render settle, then 15min cadence afterwards. Failures are
+            // logged at warn-level and do not block the loop.
+            {
+                let auth = app.state::<Arc<auth::AuthManager>>().inner().clone();
+                let home = aijia_home.clone();
+                let fmgr = app.state::<Arc<storage::file_manager::FileManager>>().inner().clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                    match commands::diagnostics::upload_incremental(&auth, &home, &fmgr, "startup").await {
+                        Ok(n) if n > 0 => log::info!("[diag-auto] startup uploaded {n} chunks"),
+                        Ok(_) => log::debug!("[diag-auto] startup: nothing to upload"),
+                        Err(e) => log::warn!("[diag-auto] startup upload failed: {e}"),
+                    }
+                    let mut tick = tokio::time::interval(std::time::Duration::from_secs(15 * 60));
+                    tick.tick().await; // skip the immediate first tick
+                    loop {
+                        tick.tick().await;
+                        match commands::diagnostics::upload_incremental(&auth, &home, &fmgr, "periodic").await {
+                            Ok(n) if n > 0 => log::info!("[diag-auto] periodic uploaded {n} chunks"),
+                            Ok(_) => log::debug!("[diag-auto] periodic: nothing to upload"),
+                            Err(e) => log::warn!("[diag-auto] periodic upload failed: {e}"),
+                        }
+                    }
+                });
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

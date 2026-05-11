@@ -268,9 +268,294 @@ async fn post_chunk(
     Ok(())
 }
 
+// ─── Background incremental upload ────────────────────────────────────────
+//
+// The interactive `upload_diagnostic_logs` Tauri command above always uploads
+// the *entire* current log set (renlijia.log + active metrics shard). For
+// startup / periodic / error-driven auto-upload we instead only ship bytes
+// the server has not seen, tracked via `~/.renlijia/.diag-watermark.json`.
+// Existing tests on `chunk_app_log` / `chunk_events` / `parse_metrics_lines`
+// continue to apply because incremental uploads reuse those helpers.
+
+/// Persistent cursor for the auto-upload pipeline. Written atomically after a
+/// successful upload so partial failures (e.g. mid-batch network drop) leave
+/// the watermark untouched and the next attempt re-sends the same window.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct DiagWatermark {
+    /// Byte offset into the active `renlijia.log` (the tauri-plugin-log file
+    /// uses KeepOne rotation, so a single file is the only source).
+    #[serde(default)]
+    pub renlijia_log_offset: u64,
+    /// Byte offset into the active `metrics.jsonl` shard. Rotated shards
+    /// (`metrics.{N}.jsonl`) are intentionally excluded — see the comment on
+    /// `upload_diagnostic_logs`.
+    #[serde(default)]
+    pub metrics_jsonl_offset: u64,
+    /// Last time an upload attempt completed (success or no-op).
+    #[serde(default)]
+    pub last_upload_at: String,
+}
+
+const WATERMARK_FILENAME: &str = ".diag-watermark.json";
+/// Cap the chunks shipped per auto-upload tick so a backlog (e.g. first run
+/// after a long-lived install) doesn't slam the gateway. Surplus stays in
+/// the file; the next tick picks up where this one left off.
+const MAX_CHUNKS_PER_AUTO_UPLOAD: usize = 50;
+
+fn watermark_path(aijia_home: &AiJiaHome) -> std::path::PathBuf {
+    aijia_home.root().join(WATERMARK_FILENAME)
+}
+
+fn load_watermark(aijia_home: &AiJiaHome) -> DiagWatermark {
+    let path = watermark_path(aijia_home);
+    match std::fs::read_to_string(&path) {
+        Ok(raw) => serde_json::from_str(&raw).unwrap_or_default(),
+        Err(_) => DiagWatermark::default(),
+    }
+}
+
+fn save_watermark(aijia_home: &AiJiaHome, wm: &DiagWatermark) -> Result<(), String> {
+    let path = watermark_path(aijia_home);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("watermark mkdir failed: {e}"))?;
+    }
+    let tmp = path.with_extension("json.tmp");
+    let raw = serde_json::to_string_pretty(wm).map_err(|e| format!("watermark serialize: {e}"))?;
+    std::fs::write(&tmp, raw).map_err(|e| format!("watermark write tmp: {e}"))?;
+    std::fs::rename(&tmp, &path).map_err(|e| format!("watermark rename: {e}"))?;
+    Ok(())
+}
+
+/// Read a UTF-8 file slice starting at `start_byte`. If the file shrank
+/// (rotation, manual delete) we reset the cursor to 0 and return the whole
+/// thing. Returns `(content, new_offset)`.
+fn read_from_offset(path: &std::path::Path, start_byte: u64) -> (String, u64) {
+    let metadata = match std::fs::metadata(path) {
+        Ok(md) => md,
+        Err(_) => return (String::new(), 0),
+    };
+    let file_len = metadata.len();
+    if file_len == 0 {
+        return (String::new(), 0);
+    }
+    // File got smaller — assume rotated; restart from 0.
+    let effective_start = if start_byte > file_len { 0 } else { start_byte };
+    let raw = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(_) => return (String::new(), 0),
+    };
+    let actual_len = raw.len() as u64;
+    let slice = &raw[effective_start as usize..];
+    // Walk back from the slice end to a UTF-8 char boundary, but only if we
+    // are not at the absolute file end (we want to keep mid-line content if
+    // the writer is mid-flush; partial last line gets re-sent next tick).
+    let safe_end = utf8_safe_truncate(slice);
+    let new_offset = effective_start + safe_end as u64;
+    let content = String::from_utf8_lossy(&slice[..safe_end]).into_owned();
+    let _ = actual_len; // suppress unused if the file shrank further mid-read
+    (content, new_offset)
+}
+
+fn utf8_safe_truncate(bytes: &[u8]) -> usize {
+    if bytes.is_empty() {
+        return 0;
+    }
+    // Drop everything after the last newline so we never split a log line.
+    if let Some(last_nl) = bytes.iter().rposition(|b| *b == b'\n') {
+        return last_nl + 1;
+    }
+    // No newline yet — file is mid-write; defer the whole slice to next tick.
+    0
+}
+
+/// Run one incremental upload pass. Reads only bytes after the persisted
+/// watermark, splits + uploads them, and advances the watermark on success.
+/// Designed to be called from a background tokio task (startup + periodic
+/// timer + error-driven nudge). Returns the number of chunks shipped (0 if
+/// nothing new to send).
+pub async fn upload_incremental(
+    auth: &Arc<AuthManager>,
+    aijia_home: &Arc<AiJiaHome>,
+    file_mgr: &Arc<FileManager>,
+    report_reason: &str,
+) -> Result<usize, String> {
+    let session_key = match auth.get_session_key().await {
+        Ok(k) => k,
+        Err(_) => return Ok(0), // not logged in yet — skip silently
+    };
+
+    let wm_before = load_watermark(aijia_home);
+
+    let app_log_path = aijia_home.root().join("logs").join("renlijia.log");
+    let (app_log_slice, new_app_offset) =
+        read_from_offset(&app_log_path, wm_before.renlijia_log_offset);
+
+    let metrics_path = file_mgr.workspace_path().join("logs").join("metrics.jsonl");
+    let (metrics_slice, new_metrics_offset) =
+        read_from_offset(&metrics_path, wm_before.metrics_jsonl_offset);
+
+    if app_log_slice.is_empty() && metrics_slice.is_empty() {
+        return Ok(0);
+    }
+
+    let (parsed_events, bad_metrics_lines) = parse_metrics_lines(&metrics_slice);
+    let combined_app_log = if bad_metrics_lines.is_empty() {
+        app_log_slice
+    } else {
+        let mut combined = app_log_slice;
+        if !combined.is_empty() && !combined.ends_with('\n') {
+            combined.push('\n');
+        }
+        for line in &bad_metrics_lines {
+            combined.push_str(line);
+            combined.push('\n');
+        }
+        combined
+    };
+
+    let mut app_chunks = chunk_app_log(&combined_app_log, MAX_APP_LOG_BYTES_PER_CHUNK);
+    let event_lines_for_chunking: Vec<String> =
+        parsed_events.iter().map(|v| v.to_string()).collect();
+    let mut event_chunks = chunk_events(&event_lines_for_chunking, MAX_EVENTS_PER_CHUNK);
+
+    // Cap per-tick traffic. If we truncate, we DON'T advance the watermark
+    // past the kept slice — the next tick will re-pick the leftovers.
+    let total_planned = app_chunks.len() + event_chunks.len();
+    let truncated = total_planned > MAX_CHUNKS_PER_AUTO_UPLOAD;
+    if truncated {
+        let keep_app = app_chunks.len().min(MAX_CHUNKS_PER_AUTO_UPLOAD);
+        app_chunks.truncate(keep_app);
+        let remaining_budget = MAX_CHUNKS_PER_AUTO_UPLOAD - keep_app;
+        event_chunks.truncate(remaining_budget);
+    }
+
+    let chunks_total = app_chunks.len() + event_chunks.len();
+    if chunks_total == 0 {
+        return Ok(0);
+    }
+
+    let session_id = uuid::Uuid::new_v4().to_string();
+    let client_version = env!("CARGO_PKG_VERSION");
+    let os = std::env::consts::OS;
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("初始化 HTTP 客户端失败: {e}"))?;
+
+    let mut chunk_index = 0usize;
+    for chunk in &app_chunks {
+        let payload = DiagnosticsChunkPayload {
+            client_version,
+            os,
+            report_reason,
+            upload_session_id: &session_id,
+            chunk_index,
+            chunk_total: chunks_total,
+            app_log: chunk,
+            events: &[],
+        };
+        post_chunk(&client, &session_key, &payload).await?;
+        chunk_index += 1;
+    }
+    for events_block in &event_chunks {
+        let parsed: Vec<serde_json::Value> = events_block
+            .iter()
+            .filter_map(|line| serde_json::from_str(line).ok())
+            .collect();
+        let payload = DiagnosticsChunkPayload {
+            client_version,
+            os,
+            report_reason,
+            upload_session_id: &session_id,
+            chunk_index,
+            chunk_total: chunks_total,
+            app_log: "",
+            events: &parsed,
+        };
+        post_chunk(&client, &session_key, &payload).await?;
+        chunk_index += 1;
+    }
+
+    // Only advance the watermark if we shipped the full slice. When
+    // truncated, the surplus tail stays for the next tick.
+    let next_wm = if truncated {
+        wm_before
+    } else {
+        DiagWatermark {
+            renlijia_log_offset: new_app_offset,
+            metrics_jsonl_offset: new_metrics_offset,
+            last_upload_at: chrono::Utc::now().to_rfc3339(),
+        }
+    };
+    save_watermark(aijia_home, &next_wm)?;
+
+    Ok(chunks_total)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn utf8_safe_truncate_keeps_last_complete_line() {
+        // Bytes have two complete lines and a partial third — truncate keeps the two.
+        let bytes = b"line1\nline2\npartial";
+        assert_eq!(utf8_safe_truncate(bytes), 12); // "line1\nline2\n"
+    }
+
+    #[test]
+    fn utf8_safe_truncate_returns_zero_when_no_newline() {
+        assert_eq!(utf8_safe_truncate(b"partial-only"), 0);
+        assert_eq!(utf8_safe_truncate(b""), 0);
+    }
+
+    #[test]
+    fn read_from_offset_resets_on_file_shrink() {
+        // Watermark says we read past byte 100, but the actual file is 10 bytes
+        // (rotated). Behaviour: reset to 0 and return the whole file.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("shard.log");
+        std::fs::write(&path, "fresh\n").unwrap();
+        let (content, new_offset) = read_from_offset(&path, 100);
+        assert_eq!(content, "fresh\n");
+        assert_eq!(new_offset, 6);
+    }
+
+    #[test]
+    fn read_from_offset_only_returns_complete_lines() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("shard.log");
+        std::fs::write(&path, "line1\nline2\nin-progress-no-newline").unwrap();
+        let (content, new_offset) = read_from_offset(&path, 0);
+        assert_eq!(content, "line1\nline2\n");
+        assert_eq!(new_offset, 12);
+    }
+
+    #[test]
+    fn watermark_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = AiJiaHome::from_path(dir.path().to_path_buf());
+        let wm = DiagWatermark {
+            renlijia_log_offset: 4242,
+            metrics_jsonl_offset: 99,
+            last_upload_at: "2026-05-11T01:00:00Z".to_string(),
+        };
+        save_watermark(&home, &wm).expect("save ok");
+        let loaded = load_watermark(&home);
+        assert_eq!(loaded.renlijia_log_offset, 4242);
+        assert_eq!(loaded.metrics_jsonl_offset, 99);
+        assert_eq!(loaded.last_upload_at, "2026-05-11T01:00:00Z");
+    }
+
+    #[test]
+    fn watermark_missing_file_defaults_to_zero() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = AiJiaHome::from_path(dir.path().to_path_buf());
+        let loaded = load_watermark(&home);
+        assert_eq!(loaded.renlijia_log_offset, 0);
+        assert_eq!(loaded.metrics_jsonl_offset, 0);
+    }
 
     #[test]
     fn chunk_app_log_empty_returns_empty() {
