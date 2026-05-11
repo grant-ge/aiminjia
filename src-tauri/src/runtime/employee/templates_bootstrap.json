@@ -1,7 +1,7 @@
 [
   {
     "templateId": "builtin:xiaoyuan",
-    "version": "1.0.0",
+    "version": "1.0",
     "name": "小研",
     "avatar": "🔍",
     "role": "行业/竞品调研员",
@@ -18,7 +18,7 @@
   },
   {
     "templateId": "builtin:xiaofa",
-    "version": "1.0.0",
+    "version": "1.0",
     "name": "小法",
     "avatar": "⚖️",
     "role": "合同审阅员",
@@ -35,7 +35,7 @@
   },
   {
     "templateId": "builtin:xiaosuan",
-    "version": "1.0.0",
+    "version": "1.0",
     "name": "小算",
     "avatar": "📊",
     "role": "数据分析员",
@@ -52,7 +52,7 @@
   },
   {
     "templateId": "builtin:xiaoxiao",
-    "version": "1.0.0",
+    "version": "1.0",
     "name": "小销",
     "avatar": "💼",
     "role": "客户跟进员",
@@ -69,7 +69,7 @@
   },
   {
     "templateId": "builtin:xiaoding",
-    "version": "1.0.0",
+    "version": "1.0",
     "name": "小钉",
     "avatar": "📌",
     "role": "钉办助理",
@@ -86,7 +86,7 @@
   },
   {
     "templateId": "builtin:xiaozhao",
-    "version": "1.0.0",
+    "version": "1.0",
     "name": "小招",
     "avatar": "🎯",
     "role": "招聘助理",
@@ -103,7 +103,7 @@
   },
   {
     "templateId": "builtin:xiaozhou",
-    "version": "1.0.0",
+    "version": "1.0",
     "name": "小周",
     "avatar": "📝",
     "role": "周报撰写员",
@@ -120,7 +120,7 @@
   },
   {
     "templateId": "builtin:xiaobiao",
-    "version": "1.0.0",
+    "version": "1.0",
     "name": "小标",
     "avatar": "📋",
     "role": "标书撰写员",
@@ -137,7 +137,7 @@
   },
   {
     "templateId": "builtin:xiaogong",
-    "version": "1.0.0",
+    "version": "1.0",
     "name": "小工",
     "avatar": "🔧",
     "role": "技术支持",
@@ -154,7 +154,7 @@
   },
   {
     "templateId": "builtin:xiaoke",
-    "version": "1.0.0",
+    "version": "1.0",
     "name": "小客",
     "avatar": "💬",
     "role": "客服支持",
@@ -171,7 +171,7 @@
   },
   {
     "templateId": "builtin:xiaocheng",
-    "version": "1.0.0",
+    "version": "1.0",
     "name": "小程",
     "avatar": "🛠️",
     "role": "流程设计师",
