@@ -51,7 +51,7 @@ describe('ChatArea', () => {
   it('keeps the scroll pinned to bottom when rendered content grows after image preview loads', () => {
     useChatStore.setState({
       activeConversationId: 'conv-images',
-      messages: [{ id: 'm1', role: 'user', content: { text: '![chart](file:///tmp/chart.png)' }, timestamp: 'now' }],
+      messages: [{ id: 'm1', conversationId: 'conv-images', role: 'user', content: { text: '![chart](file:///tmp/chart.png)' }, createdAt: 'now' }],
       isStreaming: false,
     })
 
@@ -76,7 +76,7 @@ describe('ChatArea', () => {
   it('does not auto-scroll resized content when the user has scrolled up', () => {
     useChatStore.setState({
       activeConversationId: 'conv-images',
-      messages: [{ id: 'm1', role: 'user', content: { text: '![chart](file:///tmp/chart.png)' }, timestamp: 'now' }],
+      messages: [{ id: 'm1', conversationId: 'conv-images', role: 'user', content: { text: '![chart](file:///tmp/chart.png)' }, createdAt: 'now' }],
       isStreaming: false,
     })
 
@@ -99,7 +99,7 @@ describe('ChatArea', () => {
   it('shows an icon button while scrolled up and jumps to bottom when clicked', () => {
     useChatStore.setState({
       activeConversationId: 'conv-scroll',
-      messages: [{ id: 'm1', role: 'assistant', content: { text: 'hello' }, timestamp: 'now' }],
+      messages: [{ id: 'm1', conversationId: 'conv-images', role: 'assistant', content: { text: 'hello' }, createdAt: 'now' }],
       isStreaming: false,
     })
 
