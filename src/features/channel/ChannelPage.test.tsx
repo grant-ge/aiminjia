@@ -115,6 +115,24 @@ describe('ChannelPage domain UI', () => {
     expect(screen.queryByRole('switch', { name: /钉钉/ })).not.toBeInTheDocument()
   })
 
+  it('only shows DingTalk platform while other IM integrations are not implemented', () => {
+    useChannelStore.setState({
+      platforms: {
+        dingtalk: unconfigured,
+        feishu,
+        wechat: { ...feishu, platform: 'wechat' },
+        wecom: { ...feishu, platform: 'wecom' },
+      },
+    })
+
+    renderPage()
+
+    expect(screen.getByText('钉钉')).toBeInTheDocument()
+    expect(screen.queryByText('飞书')).not.toBeInTheDocument()
+    expect(screen.queryByText('微信')).not.toBeInTheDocument()
+    expect(screen.queryByText('企业微信')).not.toBeInTheDocument()
+  })
+
   it('configured DingTalk opens read-only config details from menu', async () => {
     useChannelStore.setState({ platforms: { dingtalk: connected, feishu } })
     renderPage()

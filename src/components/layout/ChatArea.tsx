@@ -77,7 +77,6 @@ export function ChatArea() {
       ref={scrollContainerRef}
       data-testid="chat-scroll-region"
       className="flex-1 overflow-y-auto [scrollbar-gutter:stable_both-edges]"
-      style={{ background: 'var(--color-bg-main)' }}
       onScroll={handleScroll}
     >
       <div className="px-6 pt-6 pb-8 [scrollbar-gutter:stable_both-edges]">

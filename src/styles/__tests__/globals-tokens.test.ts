@@ -22,14 +22,14 @@ describe('design.pen token alignment', () => {
   })
 
   it.each([
-    ['--background', '#fafafa'],
+    ['--background', '#FAFAF8'],
     ['--foreground', '#0a0a0a'],
-    ['--card', '#fafafa'],
+    ['--card', '#FAFAF8'],
     ['--border', '#e5e5e5'],
     ['--input', '#e5e5e5'],
     ['--muted', '#f5f5f5'],
     ['--muted-foreground', '#737373'],
-    ['--popover', '#fafafa'],
+    ['--popover', '#FAFAF8'],
     ['--secondary', '#f5f5f5'],
     ['--primary', '#DBAA22'],
     ['--primary-foreground', '#FFFFFF'],
@@ -37,7 +37,7 @@ describe('design.pen token alignment', () => {
     ['--brand-secondary', '#3F3F46'],
     ['--brand-secondary-subtle', '#F3F4F6'],
     ['--ring', '#DBAA22'],
-    ['--sidebar', '#f7f7f7'],
+    ['--sidebar', '#f6f6f2'],
     ['--sidebar-accent', '#ebebeb'],
     ['--sidebar-border', '#ebebeb'],
     ['--sidebar-primary', '#DBAA22'],

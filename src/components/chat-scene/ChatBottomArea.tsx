@@ -102,11 +102,9 @@ export function ChatBottomArea({ disabled = false }: { disabled?: boolean }) {
     <footer
       data-testid="chat-bottom-area"
       className="relative h-[148px] shrink-0"
-      style={{ background: 'var(--color-bg-main)' }}
     >
       <div
         className="absolute right-0 bottom-0 left-0 px-6 pt-4 pb-5 [scrollbar-gutter:stable_both-edges]"
-        style={{ background: 'linear-gradient(transparent, var(--color-bg-main) 30%)' }}
       >
         <div className="relative mx-auto w-full max-w-[736px]">
           <div className="absolute bottom-full left-1/2 z-30 mb-1 -translate-x-1/2">
