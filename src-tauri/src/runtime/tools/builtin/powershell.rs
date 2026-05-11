@@ -19,10 +19,11 @@ use crate::runtime::tools::RuntimeTool;
 use crate::storage::process_ext::NoWindowExt;
 
 use super::powershell_detect::{detect, PowerShellLocation};
+use crate::runtime::cancellation::wait_for_cancellation;
 use super::shell_common::{
     collect_reader, content_from_output, format_cancel_message, format_command_failure,
     interpret_command_result, kill_child_process_tree, read_merged_streams, truncated_to_max_bytes,
-    wait_for_cancellation, ExitKind, MAX_OUTPUT_BYTES,
+    ExitKind, MAX_OUTPUT_BYTES,
 };
 use super::workspace::require_workspace_root;
 

@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use serde_json::Value;
@@ -5,7 +6,7 @@ use async_trait::async_trait;
 
 use app_lib::runtime::cancellation::{CancellationToken, CancellationReason};
 use app_lib::runtime::mcp::{
-    McpConnection, McpError, McpResult, McpRuntimeTool, McpServerConfig, McpToolDefinition,
+    McpConnection, McpResult, McpRuntimeTool, McpServerConfig, McpToolDefinition,
     SharedMcpConnection,
 };
 use app_lib::runtime::tools::{ToolExecutionContext, RuntimeTool};
@@ -14,12 +15,16 @@ use app_lib::runtime::tools::{ToolExecutionContext, RuntimeTool};
 /// finishes — simulates an MCP server that hangs.
 struct HangingConnection {
     config: McpServerConfig,
+    disconnect_called: Arc<AtomicBool>,
 }
 
 #[async_trait]
 impl McpConnection for HangingConnection {
     async fn connect(&self) -> McpResult<()> { Ok(()) }
-    async fn disconnect(&self) -> McpResult<()> { Ok(()) }
+    async fn disconnect(&self) -> McpResult<()> {
+        self.disconnect_called.store(true, Ordering::SeqCst);
+        Ok(())
+    }
     fn is_connected(&self) -> bool { true }
     fn server_name(&self) -> &str { "stub" }
     async fn list_tools(&self) -> McpResult<Vec<McpToolDefinition>> { Ok(vec![]) }
@@ -38,7 +43,11 @@ async fn mcp_runtime_tool_aborts_within_one_second_when_token_cancelled() {
         endpoint: "noop".into(),
         env_vars: None,
     };
-    let conn: SharedMcpConnection = Arc::new(HangingConnection { config });
+    let disconnect_called = Arc::new(AtomicBool::new(false));
+    let conn: SharedMcpConnection = Arc::new(HangingConnection {
+        config,
+        disconnect_called: disconnect_called.clone(),
+    });
     let tool_def = McpToolDefinition {
         server_name: "stub".into(),
         tool_name: "echo".into(),
@@ -69,5 +78,9 @@ async fn mcp_runtime_tool_aborts_within_one_second_when_token_cancelled() {
     assert!(
         err_msg.contains("cancelled"),
         "error message should mention 'cancelled', got: {err_msg}"
+    );
+    assert!(
+        disconnect_called.load(Ordering::SeqCst),
+        "disconnect_on_cancel must invoke disconnect() on the connection"
     );
 }

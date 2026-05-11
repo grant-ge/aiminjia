@@ -1,11 +1,11 @@
 use async_trait::async_trait;
 use serde_json::Value;
 
+use crate::runtime::cancellation::wait_for_cancellation;
 use crate::runtime::mcp::{McpToolDefinition, SharedMcpConnection};
 use crate::runtime::tools::{
     RuntimeTool, ToolDefinition, ToolError, ToolExecutionContext, ToolResult,
 };
-use crate::runtime::tools::builtin::shell_common::wait_for_cancellation;
 
 /// RuntimeTool adapter for one MCP server tool definition.
 pub struct McpRuntimeTool {
@@ -57,7 +57,12 @@ impl RuntimeTool for McpRuntimeTool {
         let result = tokio::select! {
             biased;
             _ = wait_for_cancellation(cancel) => {
-                let _ = self.connection.disconnect_on_cancel().await;
+                if let Err(err) = self.connection.disconnect_on_cancel().await {
+                    log::warn!(
+                        "[mcp] disconnect_on_cancel failed for server '{}': {err}",
+                        self.connection.server_name()
+                    );
+                }
                 return Err(ToolError::ExecutionFailed(format!(
                     "MCP tool '{}' cancelled before completion",
                     self.tool.tool_name

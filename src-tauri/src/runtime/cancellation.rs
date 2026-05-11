@@ -199,6 +199,19 @@ impl Default for CancellationToken {
     }
 }
 
+/// Polls `token` every 50 ms until it is cancelled, then returns the reason.
+/// Used by tool implementations (shell, MCP, etc.) inside `tokio::select!` to
+/// race an in-flight operation against cooperative cancellation.
+pub async fn wait_for_cancellation(token: CancellationToken) -> Option<CancellationReason> {
+    use std::time::Duration;
+    loop {
+        if token.is_cancelled() {
+            return token.reason();
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
