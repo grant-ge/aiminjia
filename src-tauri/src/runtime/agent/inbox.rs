@@ -14,6 +14,8 @@ use std::sync::Arc;
 
 use tokio::sync::{mpsc, Mutex};
 
+use crate::runtime::messaging::StructuredMessage;
+
 // ─── InboxItem ────────────────────────────────────────────────────────────────
 
 /// The source that sent a [`ChatMessage`] to this inbox.
@@ -47,9 +49,11 @@ pub struct TaskNotificationItem {
 #[derive(Debug, Clone)]
 pub enum InboxItem {
     /// A chat message to process — the Teammate should run a LLM turn with
-    /// this as the next user message.
+    /// this as the next user message.  P2.1 upgrades the payload from a bare
+    /// `String` to a typed `StructuredMessage` so the recipient can branch
+    /// on `Text` vs `ShutdownRequest` vs `PlanApprovalRequest` etc.
     ChatMessage {
-        text: String,
+        message: StructuredMessage,
         source: MessageSource,
     },
     /// A graceful-shutdown request (P2 implementation; P1 causes immediate exit).
@@ -125,15 +129,15 @@ mod tests {
         let inbox = AgentInbox::new(8);
         inbox
             .send(InboxItem::ChatMessage {
-                text: "hello".to_string(),
+                message: StructuredMessage::text("hello"),
                 source: MessageSource::Lead,
             })
             .await
             .unwrap();
         let item = inbox.recv().await.unwrap();
         match item {
-            InboxItem::ChatMessage { text, source } => {
-                assert_eq!(text, "hello");
+            InboxItem::ChatMessage { message, source } => {
+                assert_eq!(message.as_text(), Some("hello"));
                 assert_eq!(source, MessageSource::Lead);
             }
             _ => panic!("unexpected item"),
@@ -162,13 +166,13 @@ mod tests {
         let sender = inbox.sender();
         sender
             .try_send(InboxItem::ChatMessage {
-                text: "a".into(),
+                message: StructuredMessage::text("a"),
                 source: MessageSource::Lead,
             })
             .unwrap();
         sender
             .try_send(InboxItem::ChatMessage {
-                text: "b".into(),
+                message: StructuredMessage::text("b"),
                 source: MessageSource::Lead,
             })
             .unwrap();
@@ -185,13 +189,13 @@ mod tests {
         let s1 = inbox.sender();
         let s2 = inbox.sender();
         s1.send(InboxItem::ChatMessage {
-            text: "from-s1".into(),
+            message: StructuredMessage::text("from-s1"),
             source: MessageSource::System,
         })
         .await
         .unwrap();
         s2.send(InboxItem::ChatMessage {
-            text: "from-s2".into(),
+            message: StructuredMessage::text("from-s2"),
             source: MessageSource::System,
         })
         .await
@@ -200,11 +204,11 @@ mod tests {
         let second = inbox.recv().await.unwrap();
         match (&first, &second) {
             (
-                InboxItem::ChatMessage { text: t1, .. },
-                InboxItem::ChatMessage { text: t2, .. },
+                InboxItem::ChatMessage { message: m1, .. },
+                InboxItem::ChatMessage { message: m2, .. },
             ) => {
-                assert_eq!(t1, "from-s1");
-                assert_eq!(t2, "from-s2");
+                assert_eq!(m1.as_text(), Some("from-s1"));
+                assert_eq!(m2.as_text(), Some("from-s2"));
             }
             _ => panic!("unexpected items"),
         }

@@ -1048,7 +1048,7 @@ async fn run_teammate_idle(
         let _ = ctx
             .inbox
             .send(InboxItem::ChatMessage {
-                text: prompt,
+                message: crate::runtime::messaging::StructuredMessage::text(prompt),
                 source: MessageSource::Lead,
             })
             .await;
@@ -1080,17 +1080,18 @@ async fn run_teammate_idle(
             // ── Inbox message ─────────────────────────────────────────────
             item = ctx.inbox.recv() => {
                 match item {
-                    Some(InboxItem::ChatMessage { text, source }) => {
+                    Some(InboxItem::ChatMessage { message, source }) => {
                         log::info!(
-                            "[TeammateIdle] agent={} name={} received ChatMessage from {:?} — running turn (P1 stub)",
+                            "[TeammateIdle] agent={} name={} received {} from {:?} — running turn (P1 stub)",
                             ctx.agent_id.as_str(),
                             agent_name,
+                            message.variant_name(),
                             source
                         );
                         // P1 stub: record the received message in transcript,
                         // then record a placeholder assistant reply.
                         // Full LLM integration is deferred to P2.
-                        teammate_stub_turn(&ctx, &agent_name, &text).await;
+                        teammate_stub_turn(&ctx, &agent_name, &message).await;
                     }
                     Some(InboxItem::Shutdown(req)) => {
                         log::warn!(
@@ -1147,13 +1148,24 @@ async fn run_teammate_idle(
 
 /// P1 stub: record a user message + placeholder assistant reply in the
 /// transcript JSONL.  P2 replaces this with a real LLM call.
-async fn teammate_stub_turn(ctx: &TeammateWorkerCtx, agent_name: &str, user_text: &str) {
+///
+/// Non-`Text` variants (shutdown_request etc.) are serialized as JSON for the
+/// transcript so the structure is preserved until P2 wires the proper
+/// per-variant handlers.
+async fn teammate_stub_turn(
+    ctx: &TeammateWorkerCtx,
+    agent_name: &str,
+    message: &crate::runtime::messaging::StructuredMessage,
+) {
     if let Some(ref conv_dir) = ctx.conv_dir {
         let jl_path =
             transcript_path_for_kind(conv_dir, &TranscriptKind::Teammate, ctx.agent_id.as_str());
+        let user_text = message.as_text().map(str::to_string).unwrap_or_else(|| {
+            serde_json::to_string(message).unwrap_or_else(|_| message.variant_name().to_string())
+        });
         let user_line = TranscriptLine {
             role: "user".to_string(),
-            content: user_text.to_string(),
+            content: user_text.clone(),
             error: None,
         };
         let _ = append_line(&jl_path, &user_line);

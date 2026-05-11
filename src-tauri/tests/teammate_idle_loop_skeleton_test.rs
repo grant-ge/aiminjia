@@ -191,7 +191,7 @@ async fn chat_message_received_writes_transcript_lines() {
     // Send a ChatMessage.
     inbox
         .send(InboxItem::ChatMessage {
-            text: "do some research".to_string(),
+            message: app_lib::runtime::messaging::StructuredMessage::text("do some research"),
             source: MessageSource::Lead,
         })
         .await
