@@ -374,8 +374,17 @@ impl QueryEngine {
             return 0.0;
         };
         let usage = self.get_total_usage();
-        let total_k_tokens = (usage.tokens_in + usage.tokens_out) as f64 / 1000.0;
-        total_k_tokens * rate
+        // Anthropic prompt caching pricing: cache_creation_input_tokens are
+        // *additional* to tokens_in and cost 1.25× the input rate; cache_read
+        // tokens cost 0.1× the input rate. tokens_in itself counts only the
+        // non-cached portion of the prompt. We don't have separate
+        // input/output rates here, so use `rate` as the common unit price and
+        // weight cache tokens accordingly.
+        let weighted_tokens = usage.tokens_in as f64
+            + usage.tokens_out as f64
+            + (usage.cache_creation_input_tokens as f64) * 1.25
+            + (usage.cache_read_input_tokens as f64) * 0.1;
+        weighted_tokens / 1000.0 * rate
     }
 
     pub fn is_budget_exceeded(&self) -> bool {
