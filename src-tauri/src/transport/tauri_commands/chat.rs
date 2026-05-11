@@ -1695,7 +1695,7 @@ mod tests {
 
         assert!(llm_content.contains("[当前消息附件]"));
         assert!(llm_content.contains("/tmp/sales.csv"));
-        assert!(llm_content.contains("显式提供的本地路径"));
+        assert!(llm_content.contains("本轮附件已自动加入授权目录"));
     }
 
     #[test]
