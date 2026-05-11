@@ -20,7 +20,7 @@ pub struct Member {
     pub name: String,
     pub role: MemberRole,
     pub created_at: chrono::DateTime<chrono::Utc>,
-    pub last_active_at: chrono::DateTime<chrono::Utc>,
+    pub last_active_at: chrono::DateTime<chrono::Utc>, // updated by worker_runtime on each LLM turn (P1.6)
 }
 
 #[derive(Debug)]
@@ -34,12 +34,10 @@ pub struct Team {
 
 #[derive(thiserror::Error, Debug)]
 pub enum TeamError {
-    #[error("max teammate limit reached (4)")]
+    #[error("max teammate limit reached ({MAX_TEAMMATES})")]
     MaxTeammateLimitReached,
     #[error("name already taken in this team: {0}")]
     NameAlreadyTaken(String),
-    #[error("team not found for session {0:?}")]
-    TeamNotFound(SessionId),
     #[error("team already exists for session {0:?}")]
     TeamAlreadyExists(SessionId),
 }
@@ -67,6 +65,14 @@ impl Team {
         Ok(())
     }
 
+    /// Removes the named teammate.  Returns `true` if a member was removed.
+    /// Idempotent — calling twice with the same name returns `false` the second time.
+    pub fn remove_teammate(&mut self, name: &str) -> bool {
+        let before = self.teammates.len();
+        self.teammates.retain(|m| m.name != name);
+        self.teammates.len() < before
+    }
+
     pub fn members(&self) -> impl Iterator<Item = &Member> {
         std::iter::once(&self.lead).chain(self.teammates.iter())
     }
@@ -76,6 +82,11 @@ impl Team {
     }
 }
 
+/// Per-session team store.
+///
+/// Locking order: always acquire the outer registry `Mutex` first;
+/// only then lock an individual `Arc<Mutex<Team>>`.  Never hold the
+/// inner lock while calling `create` / `get` / `delete`.
 #[derive(Debug, Default)]
 pub struct TeamRegistry {
     teams: Mutex<HashMap<SessionId, Arc<Mutex<Team>>>>,

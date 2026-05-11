@@ -4,7 +4,7 @@
 //! These are compile+runtime guards for the Team entity introduced in P1.1.
 
 use app_lib::runtime::agent::team::{
-    Member, MemberRole, Team, TeamError, TeamRegistry, MAX_TEAMMATES,
+    Member, MemberRole, TeamError, TeamRegistry, MAX_TEAMMATES,
 };
 use app_lib::runtime::ids::{AgentId, SessionId};
 
