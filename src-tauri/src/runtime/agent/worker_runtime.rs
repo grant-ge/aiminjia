@@ -1120,14 +1120,20 @@ async fn run_teammate_idle(
                         teammate_stub_turn(&ctx, &agent_name, &message).await;
                     }
                     Some(InboxItem::Shutdown(req)) => {
+                        // P2.6 NOTE: SendMessage now packs ShutdownRequest as
+                        // a ChatMessage variant — this raw Inbox::Shutdown
+                        // arm only fires if a future internal caller pushes
+                        // it directly (e.g. supervisory cancellation path).
+                        // Per v4 §5.3 the Teammate must NOT self-terminate;
+                        // it should run a turn and let the LLM produce a
+                        // shutdown_response.  For now we just log and stay
+                        // idle so a misrouted Shutdown doesn't kill us.
                         log::warn!(
-                            "[TeammateIdle] agent={} name={} shutdown_request received reason={} (P1 stub: exit immediately)",
+                            "[TeammateIdle] agent={} name={} legacy InboxItem::Shutdown received (reason={}) — ignored, awaiting Lead cancel",
                             ctx.agent_id.as_str(),
                             agent_name,
                             req.reason
                         );
-                        cleanup_teammate(&ctx, &team_handle, &agent_name).await;
-                        return Ok(());
                     }
                     Some(InboxItem::TaskNotification(notif)) => {
                         // P2: forward notification into the LLM turn as a user
@@ -1183,18 +1189,35 @@ async fn teammate_stub_turn(
     agent_name: &str,
     message: &crate::runtime::messaging::StructuredMessage,
 ) {
+    use crate::runtime::messaging::StructuredMessage as M;
     if let Some(ref conv_dir) = ctx.conv_dir {
         let jl_path =
             transcript_path_for_kind(conv_dir, &TranscriptKind::Teammate, ctx.agent_id.as_str());
-        let user_text = message.as_text().map(str::to_string).unwrap_or_else(|| {
-            serde_json::to_string(message).unwrap_or_else(|_| message.variant_name().to_string())
-        });
+
+        // Render the user-facing line.  P2.6: ShutdownRequest gets a special
+        // human-readable wrapper so future LLM wiring can detect it without
+        // re-parsing the JSON envelope; other variants fall back to JSON.
+        let user_text = match message {
+            M::Text { content } => content.clone(),
+            M::ShutdownRequest { reason } => format!(
+                "<shutdown-request reason=\"{}\">请用 SendMessage shutdown_response 回应（approve=true 表示已收尾，approve=false 并附 reason 表示需保留）。</shutdown-request>",
+                reason.as_deref().unwrap_or("")
+            ),
+            _ => serde_json::to_string(message)
+                .unwrap_or_else(|_| message.variant_name().to_string()),
+        };
+
         let user_line = TranscriptLine {
             role: "user".to_string(),
             content: user_text.clone(),
             error: None,
         };
         let _ = append_line(&jl_path, &user_line);
+
+        // P2.6 stub reply: explicitly NOT a self-shutdown.  Real LLM wiring
+        // (post-P2) will replace this with a SendMessage(shutdown_response)
+        // tool call; until then we record a placeholder so transcript shape
+        // matches expectations.
         let reply = TranscriptLine::assistant(format!(
             "[P1 stub] {} received: {}",
             agent_name, user_text
