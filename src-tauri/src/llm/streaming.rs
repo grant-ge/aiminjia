@@ -204,6 +204,25 @@ pub struct LlmRequest {
     pub stream: bool,
     pub thinking_config: Option<ThinkingConfig>,
     pub anthropic_multimodal_turn: Option<AnthropicMultimodalTurn>,
+    /// Per-block cache_control passthrough for Anthropic-style prompt caching.
+    /// When `Some` and non-empty, providers that support block-level
+    /// `cache_control` (currently `claude.rs`) render the `system` field as
+    /// an array of text blocks where each segment with `cache=true` carries
+    /// `cache_control: {type: "ephemeral"}`. Other providers ignore this and
+    /// fall back to reading the flattened system message from `messages`.
+    pub system_segments: Option<Vec<SystemPromptSegment>>,
+}
+
+/// A single segment of the assembled system prompt with caching intent.
+/// Mirrors `PromptCachePolicy` semantics at the wire-protocol boundary so we
+/// can transport per-block caching decisions to providers that support them
+/// (Anthropic) without leaking renderer types into the llm layer.
+#[derive(Debug, Clone, Default)]
+pub struct SystemPromptSegment {
+    pub text: String,
+    /// If true, the segment is marked as a cache breakpoint
+    /// (`cache_control: {type: "ephemeral"}` for Anthropic).
+    pub cache: bool,
 }
 
 impl Default for LlmRequest {
@@ -216,6 +235,7 @@ impl Default for LlmRequest {
             stream: true,
             thinking_config: None,
             anthropic_multimodal_turn: None,
+            system_segments: None,
         }
     }
 }

@@ -17,12 +17,8 @@ use crate::auth::AuthManager;
 use crate::llm::masking::{MaskingContext, MaskingLevel};
 use crate::llm::providers::claude;
 use crate::llm::providers::custom;
-use crate::llm::providers::deepseek_r1;
-use crate::llm::providers::deepseek_v3;
 use crate::llm::providers::lotus;
 use crate::llm::providers::openai;
-use crate::llm::providers::qwen;
-use crate::llm::providers::volcano;
 use crate::llm::providers::LlmProviderTrait;
 use crate::llm::router::{self, RouteResult};
 use crate::llm::streaming::*;
@@ -205,6 +201,7 @@ impl LlmGateway {
         tool_defs_override: Option<Vec<ToolDefinition>>,
         max_tokens: u32,
         settings: &AppSettings,
+        system_segments: Option<Vec<crate::llm::streaming::SystemPromptSegment>>,
     ) -> LlmRequest {
         // Prepend system prompt if provided (stable prefix for KV cache)
         if let Some(prompt) = system_prompt {
@@ -235,6 +232,7 @@ impl LlmGateway {
             stream,
             thinking_config: thinking_config_for_route(route, settings),
             anthropic_multimodal_turn: None,
+            system_segments,
         }
     }
 
@@ -270,6 +268,81 @@ impl LlmGateway {
         tool_defs_override: Option<Vec<ToolDefinition>>,
         max_tokens: u32,
         conversation_id: Option<&str>,
+        anthropic_multimodal_turn: Option<AnthropicMultimodalTurn>,
+    ) -> Result<(
+        String,
+        StreamBox,
+        MaskingContext,
+        tokio::sync::watch::Receiver<bool>,
+    )> {
+        self.stream_message_inner(
+            settings,
+            messages,
+            masking_level,
+            system_prompt,
+            context_message,
+            tool_defs_override,
+            max_tokens,
+            conversation_id,
+            None,
+            anthropic_multimodal_turn,
+        )
+        .await
+    }
+
+    /// Like [`stream_message`] but accepts structured per-block cache
+    /// segments. Providers that support block-level `cache_control`
+    /// (currently Claude/Anthropic) honor the segments; others fall back
+    /// to the flat `system_prompt`.
+    pub async fn stream_message_with_segments(
+        &self,
+        settings: &AppSettings,
+        messages: Vec<ChatMessage>,
+        masking_level: MaskingLevel,
+        system_prompt: Option<&str>,
+        context_message: Option<&str>,
+        tool_defs_override: Option<Vec<ToolDefinition>>,
+        max_tokens: u32,
+        conversation_id: Option<&str>,
+        anthropic_multimodal_turn: Option<AnthropicMultimodalTurn>,
+        system_segments: Vec<crate::llm::streaming::SystemPromptSegment>,
+    ) -> Result<(
+        String,
+        StreamBox,
+        MaskingContext,
+        tokio::sync::watch::Receiver<bool>,
+    )> {
+        let segments = if system_segments.is_empty() {
+            None
+        } else {
+            Some(system_segments)
+        };
+        self.stream_message_inner(
+            settings,
+            messages,
+            masking_level,
+            system_prompt,
+            context_message,
+            tool_defs_override,
+            max_tokens,
+            conversation_id,
+            segments,
+            anthropic_multimodal_turn,
+        )
+        .await
+    }
+
+    async fn stream_message_inner(
+        &self,
+        settings: &AppSettings,
+        messages: Vec<ChatMessage>,
+        masking_level: MaskingLevel,
+        system_prompt: Option<&str>,
+        context_message: Option<&str>,
+        tool_defs_override: Option<Vec<ToolDefinition>>,
+        max_tokens: u32,
+        conversation_id: Option<&str>,
+        system_segments: Option<Vec<crate::llm::streaming::SystemPromptSegment>>,
         anthropic_multimodal_turn: Option<AnthropicMultimodalTurn>,
     ) -> Result<(
         String,
@@ -325,6 +398,7 @@ impl LlmGateway {
             tool_defs_override,
             max_tokens,
             settings,
+            system_segments,
         );
 
         // Log request summary for debugging LLM quality
@@ -430,6 +504,7 @@ impl LlmGateway {
             tool_defs_override,
             4096,
             settings,
+            None,
         );
 
         // 4. Dispatch to provider with retry on transient errors
@@ -609,28 +684,12 @@ async fn retry_dispatch_send(route: &RouteResult, request: LlmRequest) -> Result
 /// is not object-safe.
 async fn dispatch_stream(route: &RouteResult, request: LlmRequest) -> Result<StreamBox> {
     match route.provider.as_str() {
-        "deepseek-v3" => {
-            let p = deepseek_v3::DeepSeekV3Provider::new(route.api_key.clone());
-            p.stream(request).await
-        }
         "openai" => {
             let p = openai::OpenAiProvider::new(route.api_key.clone());
             p.stream(request).await
         }
         "claude" => {
             let p = claude::ClaudeProvider::new(route.api_key.clone(), None);
-            p.stream(request).await
-        }
-        "deepseek-r1" => {
-            let p = deepseek_r1::DeepSeekR1Provider::new(route.api_key.clone());
-            p.stream(request).await
-        }
-        "volcano" => {
-            let p = volcano::VolcanoProvider::new(route.api_key.clone(), route.model_hint.clone());
-            p.stream(request).await
-        }
-        "qwen-plus" => {
-            let p = qwen::QwenProvider::new(route.api_key.clone());
             p.stream(request).await
         }
         "custom" => {
@@ -650,8 +709,12 @@ async fn dispatch_stream(route: &RouteResult, request: LlmRequest) -> Result<Str
             p.stream(request).await
         }
         other => {
-            log::warn!("Unknown provider '{}', falling back to deepseek-v3", other);
-            let p = deepseek_v3::DeepSeekV3Provider::new(route.api_key.clone());
+            log::warn!("Unknown provider '{}', falling back to lotus", other);
+            let p = lotus::LotusProvider::new(
+                route.api_key.clone(),
+                route.model_hint.clone(),
+                &route.model_type,
+            );
             p.stream(request).await
         }
     }
@@ -660,28 +723,12 @@ async fn dispatch_stream(route: &RouteResult, request: LlmRequest) -> Result<Str
 /// Dispatch a non-streaming request to the correct provider based on route.
 async fn dispatch_send(route: &RouteResult, request: LlmRequest) -> Result<LlmResponse> {
     match route.provider.as_str() {
-        "deepseek-v3" => {
-            let p = deepseek_v3::DeepSeekV3Provider::new(route.api_key.clone());
-            p.send(request).await
-        }
         "openai" => {
             let p = openai::OpenAiProvider::new(route.api_key.clone());
             p.send(request).await
         }
         "claude" => {
             let p = claude::ClaudeProvider::new(route.api_key.clone(), None);
-            p.send(request).await
-        }
-        "deepseek-r1" => {
-            let p = deepseek_r1::DeepSeekR1Provider::new(route.api_key.clone());
-            p.send(request).await
-        }
-        "volcano" => {
-            let p = volcano::VolcanoProvider::new(route.api_key.clone(), route.model_hint.clone());
-            p.send(request).await
-        }
-        "qwen-plus" => {
-            let p = qwen::QwenProvider::new(route.api_key.clone());
             p.send(request).await
         }
         "custom" => {
@@ -701,8 +748,12 @@ async fn dispatch_send(route: &RouteResult, request: LlmRequest) -> Result<LlmRe
             p.send(request).await
         }
         other => {
-            log::warn!("Unknown provider '{}', falling back to deepseek-v3", other);
-            let p = deepseek_v3::DeepSeekV3Provider::new(route.api_key.clone());
+            log::warn!("Unknown provider '{}', falling back to lotus", other);
+            let p = lotus::LotusProvider::new(
+                route.api_key.clone(),
+                route.model_hint.clone(),
+                &route.model_type,
+            );
             p.send(request).await
         }
     }
@@ -842,6 +893,7 @@ mod tests {
             None,
             4096,
             &settings,
+            None,
         );
 
         let roles_and_content: Vec<(&str, &str)> = request

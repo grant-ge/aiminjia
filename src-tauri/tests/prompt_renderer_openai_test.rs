@@ -1,5 +1,5 @@
 use app_lib::runtime::chat::prompt::{
-    OpenAiChatPromptRenderer, PromptAssembly, PromptBlock, PromptCachePolicy, PromptSectionId,
+    ChatPromptRenderer, PromptAssembly, PromptBlock, PromptCachePolicy, PromptSectionId,
 };
 
 #[test]
@@ -14,7 +14,7 @@ fn render_emits_content_array_with_static_block_cache_control() {
         ),
     ]);
 
-    let msg = OpenAiChatPromptRenderer::render_system_message(&assembly)
+    let msg = ChatPromptRenderer::render_system_message(&assembly)
         .expect("render must produce something");
 
     assert_eq!(msg["role"], "system");
@@ -37,6 +37,6 @@ fn render_emits_content_array_with_static_block_cache_control() {
 #[test]
 fn render_returns_none_for_empty_assembly() {
     let assembly = PromptAssembly::new(vec![]);
-    let msg = OpenAiChatPromptRenderer::render_system_message(&assembly);
+    let msg = ChatPromptRenderer::render_system_message(&assembly);
     assert!(msg.is_none());
 }

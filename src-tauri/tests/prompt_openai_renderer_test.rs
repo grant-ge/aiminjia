@@ -1,6 +1,6 @@
 use app_lib::llm::streaming::ChatMessage;
 use app_lib::runtime::chat::prompt::{
-    OpenAiChatPromptRenderer, PromptAssembly, PromptBlock, PromptSectionId,
+    ChatPromptRenderer, PromptAssembly, PromptBlock, PromptSectionId,
 };
 
 fn sample_prompt_assembly() -> PromptAssembly {
@@ -18,7 +18,7 @@ fn sample_prompt_assembly() -> PromptAssembly {
 
 #[test]
 fn renderer_emits_multi_block_content_array_with_cache_control() {
-    let rendered = OpenAiChatPromptRenderer::render_system_message(&sample_prompt_assembly())
+    let rendered = ChatPromptRenderer::render_system_message(&sample_prompt_assembly())
         .expect("non-empty assembly should render");
 
     assert_eq!(rendered["role"], "system");
@@ -50,7 +50,7 @@ fn renderer_emits_multi_block_content_array_with_cache_control() {
 
 #[test]
 fn renderer_does_not_emit_anthropic_private_fields() {
-    let rendered = OpenAiChatPromptRenderer::render_system_message(&sample_prompt_assembly())
+    let rendered = ChatPromptRenderer::render_system_message(&sample_prompt_assembly())
         .expect("non-empty assembly should render");
     let object = rendered.as_object().expect("renderer must emit object");
 
@@ -66,7 +66,7 @@ fn renderer_does_not_emit_anthropic_private_fields() {
 fn flat_renderer_output_round_trips_into_chat_message() {
     // 降级 flat 路径用于不支持 content 数组的 OpenAI 兼容端点；
     // 输出 content 仍是单字符串，可以直接反序列化成 ChatMessage。
-    let rendered = OpenAiChatPromptRenderer::render_system_message_flat(&sample_prompt_assembly())
+    let rendered = ChatPromptRenderer::render_system_message_flat(&sample_prompt_assembly())
         .expect("non-empty assembly should render");
     let message: ChatMessage = serde_json::from_value(rendered).expect("valid ChatMessage");
 

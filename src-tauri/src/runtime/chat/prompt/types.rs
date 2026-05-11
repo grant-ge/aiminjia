@@ -130,16 +130,14 @@ impl TurnPromptSnapshot {
         self.assembly.flatten()
     }
 
-    pub fn openai_system_message(&self) -> Option<serde_json::Value> {
-        crate::runtime::chat::prompt::OpenAiChatPromptRenderer::render_system_message(
-            &self.assembly,
-        )
+    pub fn system_message(&self) -> Option<serde_json::Value> {
+        crate::runtime::chat::prompt::ChatPromptRenderer::render_system_message(&self.assembly)
     }
 
     /// 降级版本：用于不支持 content 数组的 OpenAI 兼容端点。
     /// 调用方判断 provider capability 决定走哪个。
-    pub fn openai_system_message_flat(&self) -> Option<serde_json::Value> {
-        crate::runtime::chat::prompt::OpenAiChatPromptRenderer::render_system_message_flat(
+    pub fn system_message_flat(&self) -> Option<serde_json::Value> {
+        crate::runtime::chat::prompt::ChatPromptRenderer::render_system_message_flat(
             &self.assembly,
         )
     }

@@ -488,7 +488,8 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             );
         }
         let system_prompt_for_gateway =
-            openai_system_prompt_content(input.openai_system_message.clone(), input.system_prompt);
+            system_prompt_content(input.system_message.clone(), input.system_prompt);
+        let system_prompt_segments = system_prompt_segments(&input.system_message);
 
         // --- Resolve masking level (always Strict; field kept for forward compat) ---
         let masking_level = match input.masking_level.to_lowercase().as_str() {
@@ -544,7 +545,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             let stream_result = self
                 .services
                 .gateway
-                .stream_message(
+                .stream_message_with_segments(
                     &settings,
                     chat_messages.clone(),
                     masking_level.clone(),
@@ -554,6 +555,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                     input.token_budget as u32,
                     Some(input.conversation_id),
                     input.anthropic_multimodal_turn.clone(),
+                    system_prompt_segments.clone(),
                 )
                 .await;
 
@@ -1882,20 +1884,13 @@ fn build_gateway_settings(settings: &ResolvedLlmSettings) -> AppSettings {
     }
 }
 
-fn openai_system_prompt_content(
+fn system_prompt_content(
     value: Option<serde_json::Value>,
     fallback: &str,
 ) -> Option<String> {
     value
-        .and_then(|value| serde_json::from_value::<crate::llm::streaming::ChatMessage>(value).ok())
-        .and_then(|message| {
-            let content = message.content.trim();
-            if message.role == "system" && !content.is_empty() {
-                Some(message.content)
-            } else {
-                None
-            }
-        })
+        .as_ref()
+        .and_then(|v| flatten_system_message_value(v))
         .or_else(|| {
             if fallback.trim().is_empty() {
                 None
@@ -1903,6 +1898,65 @@ fn openai_system_prompt_content(
                 Some(fallback.to_string())
             }
         })
+}
+
+/// Extract Anthropic-style structured cache segments from the rendered
+/// system message. Returns an empty Vec when the message is missing or only
+/// holds a single string (no per-block cache breakpoints to forward).
+pub(crate) fn system_prompt_segments(
+    value: &Option<serde_json::Value>,
+) -> Vec<crate::llm::streaming::SystemPromptSegment> {
+    let Some(value) = value.as_ref() else {
+        return Vec::new();
+    };
+    let Some(content) = value.get("content") else {
+        return Vec::new();
+    };
+    let Some(arr) = content.as_array() else {
+        return Vec::new();
+    };
+    arr.iter()
+        .filter_map(|block| {
+            let text = block.get("text")?.as_str()?;
+            if text.trim().is_empty() {
+                return None;
+            }
+            let cache = block.get("cache_control").is_some();
+            Some(crate::llm::streaming::SystemPromptSegment {
+                text: text.to_string(),
+                cache,
+            })
+        })
+        .collect()
+}
+
+fn flatten_system_message_value(value: &serde_json::Value) -> Option<String> {
+    if value.get("role").and_then(|r| r.as_str()) != Some("system") {
+        return None;
+    }
+    let content = value.get("content")?;
+    if let Some(s) = content.as_str() {
+        let trimmed = s.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(s.to_string())
+        }
+    } else if let Some(arr) = content.as_array() {
+        let joined: String = arr
+            .iter()
+            .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
+            .filter(|t| !t.trim().is_empty())
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        if joined.trim().is_empty() {
+            None
+        } else {
+            Some(joined)
+        }
+    } else {
+        None
+    }
 }
 
 /// Check if an LLM / stream error string is transient and worth retrying.
@@ -1935,7 +1989,7 @@ mod openai_system_prompt_tests {
             "content": "华为公司 instructions remain provider-visible",
         });
         let chat_messages = vec![ChatMessage::text("user", "请分析华为公司")];
-        let system_prompt = openai_system_prompt_content(Some(rendered_system), "legacy system")
+        let system_prompt = system_prompt_content(Some(rendered_system), "legacy system")
             .expect("rendered system prompt content");
 
         let mut mask_ctx = MaskingContext::new(MaskingLevel::Strict);

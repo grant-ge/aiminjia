@@ -732,7 +732,7 @@ impl RuntimeChatTurnDriver {
                 ),
                 PendingPermissionResolution::Deny { message, .. } => {
                     record_turn_diagnostic(
-                        &std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+                        &crate::telemetry::diagnostics_workspace(),
                         "permission.resolve.completed",
                         turn.session_id(),
                         turn.run_id(),
@@ -774,7 +774,7 @@ impl RuntimeChatTurnDriver {
                 }
                 PendingPermissionResolution::Cancel { message } => {
                     record_turn_diagnostic(
-                        &std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+                        &crate::telemetry::diagnostics_workspace(),
                         "permission.resolve.completed",
                         turn.session_id(),
                         turn.run_id(),
@@ -903,7 +903,7 @@ impl RuntimeChatTurnDriver {
             let resolved = match resolution {
                 InteractionResolution::Submit { value } => {
                     record_turn_diagnostic(
-                        &std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+                        &crate::telemetry::diagnostics_workspace(),
                         "interaction.resolve.completed",
                         turn.session_id(),
                         turn.run_id(),
@@ -941,7 +941,7 @@ impl RuntimeChatTurnDriver {
                 }
                 InteractionResolution::Cancel { message } => {
                     record_turn_diagnostic(
-                        &std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+                        &crate::telemetry::diagnostics_workspace(),
                         "interaction.resolve.completed",
                         turn.session_id(),
                         turn.run_id(),
@@ -1459,10 +1459,10 @@ impl RuntimeChatTurnDriver {
 
             let input = LlmStepInput {
                 system_prompt: &config.system_prompt,
-                openai_system_message: config
+                system_message: config
                     .prompt_snapshot
                     .as_ref()
-                    .and_then(|snapshot| snapshot.openai_system_message()),
+                    .and_then(|snapshot| snapshot.system_message()),
                 dynamic_context: &iteration_delta_context,
                 // Pass a clone of the current messages slice so executor cannot
                 // mutate driver state.

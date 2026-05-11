@@ -18,6 +18,7 @@ const baseEmployee: EmployeeRecord = {
   resourceConfig: {},
   systemPromptExtra: null,
   defaultSkillId: null,
+  templateRef: null,
   createdAt: '',
   updatedAt: '',
   lastRunAt: null,

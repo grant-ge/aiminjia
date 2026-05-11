@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 // ============================================================================
-// Provider inventory + cleanup status
+// Provider inventory
 // ============================================================================
 //
 // **In active use:**
@@ -17,38 +17,23 @@
 //                  Parameterized by URL + `is_direct` so the same code
 //                  drives both endpoints.
 //   - `custom.rs`  User-supplied OpenAI-compatible endpoint.
+//   - `openai.rs`  OpenAI direct (DEFAULT_MODEL="gpt-4o"). NOTE: the
+//                  `pub(super) send_openai_compat / stream_openai_compat /
+//                  validate_key_openai_compat` functions ARE actively used
+//                  by `custom.rs` — do not delete this file before that.
 //
-// **Dead code, kept for now (planned for P-router-model-passthrough):**
-//   - `openai.rs`        OpenAI direct (DEFAULT_MODEL="gpt-4o"). NOTE:
-//                        the `pub(super) send_openai_compat /
-//                        stream_openai_compat / validate_key_openai_compat`
-//                        functions ARE actively used by `custom.rs` —
-//                        do not delete this file before that.
-//   - `deepseek_v3.rs`   DeepSeek direct.
-//   - `deepseek_r1.rs`   DeepSeek R1 direct.
-//   - `qwen.rs`          通义千问 direct.
-//   - `volcano.rs`       火山方舟 direct.
-//
-// Future P-router-model-passthrough refactor (post-Phase-C cleanup):
-//   - Collapse the 5 dead-code direct providers into a single OpenAI-
-//     compatible provider with endpoint/auth config.
-//   - Clean up the matching `router.rs::get_provider_capabilities` arms,
-//     `gateway.rs::dispatch_*` match branches, and the
-//     `AppSettings.{primary_model, primary_api_key, auto_model_routing,
-//     cloud_model_type}` legacy fields they consume.
-//   - `cloud_model_type` is a no-op since Phase C (anthropic ingress has
-//     one endpoint, not chat/reasoner split) but is still accepted for
-//     compat with persisted settings.
+// Removed in 2026-05-10 cleanup (Phase C dead code):
+//   - deepseek_v3.rs / deepseek_r1.rs / qwen.rs / volcano.rs — direct
+//     providers superseded by Lotus anthropic ingress. Routing / gateway
+//     / settings / router capabilities references all removed in the
+//     same commit. `AppSettings.cloud_model_type` retained as a no-op
+//     for persisted-setting compat (anthropic ingress has one endpoint).
 // ============================================================================
 
 pub mod claude;
 pub mod custom;
-pub mod deepseek_r1;
-pub mod deepseek_v3;
 pub mod lotus;
 pub mod openai;
-pub mod qwen;
-pub mod volcano;
 
 use anyhow::Result;
 
