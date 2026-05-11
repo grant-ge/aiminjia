@@ -1,5 +1,6 @@
 use std::sync::{Arc, Mutex};
 
+use crate::runtime::agent::{AgentNameRegistry, TeamRegistry};
 use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::hooks::config::HookRegistry;
 use crate::runtime::ids::{AgentId, RunId, SessionId, ToolCallId};
@@ -65,6 +66,12 @@ pub struct ToolExecutionContext {
         Option<crate::runtime::chat::tool_round_types::RuntimeToolCallRequest>,
     /// Task V2 persistence root (AiJiaHome), used by task runtime tools.
     pub task_store_root: Option<std::path::PathBuf>,
+    /// Per-process Team registry injected by the orchestration layer.
+    /// `None` for legacy / test paths that do not need team operations.
+    pub team_registry: Option<Arc<TeamRegistry>>,
+    /// Per-process agent-name registry injected by the orchestration layer.
+    /// `None` for legacy / test paths that do not need name resolution.
+    pub agent_names: Option<Arc<AgentNameRegistry>>,
 }
 
 impl ToolExecutionContext {
@@ -90,6 +97,8 @@ impl ToolExecutionContext {
             interaction_resolution: None,
             current_tool_call_request: None,
             task_store_root: None,
+            team_registry: None,
+            agent_names: None,
         }
     }
 
@@ -133,6 +142,40 @@ impl ToolExecutionContext {
     ) -> Self {
         self.current_tool_call_request = Some(request);
         self
+    }
+
+    pub fn with_team_registry(mut self, registry: Arc<TeamRegistry>) -> Self {
+        self.team_registry = Some(registry);
+        self
+    }
+
+    pub fn with_agent_names(mut self, registry: Arc<AgentNameRegistry>) -> Self {
+        self.agent_names = Some(registry);
+        self
+    }
+
+    /// Returns the process-wide [`TeamRegistry`].
+    ///
+    /// # Panics
+    /// Panics if the orchestration layer did not inject a registry via
+    /// [`Self::with_team_registry`].  Tools that call this must only be
+    /// dispatched through the full production path (not legacy / test stubs).
+    pub fn team_registry(&self) -> &Arc<TeamRegistry> {
+        self.team_registry
+            .as_ref()
+            .expect("team_registry not injected into ToolExecutionContext — use with_team_registry()")
+    }
+
+    /// Returns the process-wide [`AgentNameRegistry`].
+    ///
+    /// # Panics
+    /// Panics if the orchestration layer did not inject a registry via
+    /// [`Self::with_agent_names`].  Tools that call this must only be
+    /// dispatched through the full production path (not legacy / test stubs).
+    pub fn agent_names(&self) -> &Arc<AgentNameRegistry> {
+        self.agent_names
+            .as_ref()
+            .expect("agent_names not injected into ToolExecutionContext — use with_agent_names()")
     }
 
     /// Convenience constructor for integration-test code.
