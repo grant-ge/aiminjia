@@ -729,7 +729,7 @@ impl RuntimeChatTurnDriver {
                 ),
                 PendingPermissionResolution::Deny { message, .. } => {
                     record_turn_diagnostic(
-                        &std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+                        &crate::telemetry::diagnostics_workspace(),
                         "permission.resolve.completed",
                         turn.session_id(),
                         turn.run_id(),
@@ -771,7 +771,7 @@ impl RuntimeChatTurnDriver {
                 }
                 PendingPermissionResolution::Cancel { message } => {
                     record_turn_diagnostic(
-                        &std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+                        &crate::telemetry::diagnostics_workspace(),
                         "permission.resolve.completed",
                         turn.session_id(),
                         turn.run_id(),
@@ -900,7 +900,7 @@ impl RuntimeChatTurnDriver {
             let resolved = match resolution {
                 InteractionResolution::Submit { value } => {
                     record_turn_diagnostic(
-                        &std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+                        &crate::telemetry::diagnostics_workspace(),
                         "interaction.resolve.completed",
                         turn.session_id(),
                         turn.run_id(),
@@ -938,7 +938,7 @@ impl RuntimeChatTurnDriver {
                 }
                 InteractionResolution::Cancel { message } => {
                     record_turn_diagnostic(
-                        &std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+                        &crate::telemetry::diagnostics_workspace(),
                         "interaction.resolve.completed",
                         turn.session_id(),
                         turn.run_id(),

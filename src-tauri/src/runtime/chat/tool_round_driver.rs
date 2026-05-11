@@ -45,7 +45,7 @@ fn record_tool_round_diagnostic(
     error: Option<String>,
     payload: Option<serde_json::Value>,
 ) {
-    let workspace = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let workspace = crate::telemetry::diagnostics_workspace();
     let mut diag = DiagnosticEvent::new(event, DiagnosticSource::Backend)
         .conversation_id(turn.session_id().as_str())
         .run_id(turn.run_id().as_str())

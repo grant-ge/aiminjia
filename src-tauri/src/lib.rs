@@ -40,6 +40,7 @@ pub fn run() {
             aijia_home
                 .ensure_global_dirs()
                 .expect("Failed to create global dirs");
+            telemetry::set_diagnostics_workspace(aijia_home.root().to_path_buf());
             commands::file::cleanup_workspace_clipboard_staging(&aijia_home.tmp_clipboard_dir(), 7);
             if let Err(e) = storage::migration::migrate_if_needed(&app_data_dir, aijia_home.root())
             {

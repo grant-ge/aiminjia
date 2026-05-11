@@ -71,7 +71,7 @@ impl PendingInteractionControlPlane for InMemoryInteractionControlPlane {
         );
         let entry = inner.get(&key).unwrap();
         record_diagnostic(
-            &std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+            &crate::telemetry::diagnostics_workspace(),
             DiagnosticEvent::new("interaction.required.received", DiagnosticSource::Backend)
                 .conversation_id(entry.request.session_id.as_str())
                 .run_id(entry.request.run_id.as_str())
@@ -96,7 +96,7 @@ impl PendingInteractionControlPlane for InMemoryInteractionControlPlane {
             .remove(interaction_id.as_str())
             .ok_or_else(|| anyhow!("pending interaction not found: {}", interaction_id))?;
         record_diagnostic(
-            &std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+            &crate::telemetry::diagnostics_workspace(),
             DiagnosticEvent::new("interaction.resolve.completed", DiagnosticSource::Backend)
                 .conversation_id(entry.request.session_id.as_str())
                 .run_id(entry.request.run_id.as_str())

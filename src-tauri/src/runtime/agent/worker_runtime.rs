@@ -176,7 +176,7 @@ impl<'a> SubagentWorkerRuntime<'a> {
         mut request: WorkerTurnRequest,
         config: WorkerRunConfig,
     ) -> std::result::Result<SubAgentResult, LegacyToolError> {
-        let workspace = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let workspace = crate::telemetry::diagnostics_workspace();
         let subagent_diag = |event: &str,
                              ok: Option<bool>,
                              error: Option<String>,
