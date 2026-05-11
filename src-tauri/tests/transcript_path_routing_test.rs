@@ -200,10 +200,13 @@ async fn teammate_idle_transcript_path_is_under_teammates() {
         "transcript should have at least 2 lines after initial prompt, got {}",
         total
     );
+    // The transcript should contain the initial prompt.  P2.4 prepends a
+    // team_context <system-reminder> turn input, so we no longer assert
+    // lines[0] is the user prompt; just that it's present somewhere.
     assert!(
-        lines[0].contains("hello teammate"),
-        "first line should contain the initial prompt; got: {}",
-        lines[0]
+        lines.iter().any(|l| l.contains("hello teammate")),
+        "transcript should contain the initial prompt; got: {:?}",
+        lines
     );
 }
 

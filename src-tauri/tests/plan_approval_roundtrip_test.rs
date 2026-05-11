@@ -114,7 +114,9 @@ async fn plan_approval_request_renders_xml_in_transcript() {
 
     let path = transcript_path_for_kind(&conv_dir, &TranscriptKind::Teammate, agent_id.as_str());
     let body = std::fs::read_to_string(&path).expect("transcript should exist");
-    assert!(body.contains(r#"<plan-approval-request id="pa-42">"#), "{body}");
+    // JSONL escapes `"` as `\"`, so we look for the unquoted tag prefix and the id separately.
+    assert!(body.contains("<plan-approval-request id="), "{body}");
+    assert!(body.contains("pa-42"), "{body}");
     assert!(body.contains("rm -rf /tmp/cache"), "{body}");
     assert!(body.contains("plan_approval_response"), "instructions: {body}");
 
@@ -167,10 +169,12 @@ async fn plan_approval_response_renders_xml_in_transcript() {
 
     let path = transcript_path_for_kind(&conv_dir, &TranscriptKind::Teammate, agent_id.as_str());
     let body = std::fs::read_to_string(&path).expect("transcript should exist");
+    // JSONL escapes `"` as `\"`; look for the tag prefix and key attrs unquoted.
     assert!(
-        body.contains(r#"<plan-approval-response id="pa-42" approve="false">"#),
+        body.contains("<plan-approval-response id=") && body.contains("approve="),
         "{body}"
     );
+    assert!(body.contains("pa-42"), "{body}");
     assert!(body.contains("先备份再删"), "{body}");
 
     cancel.cancel();

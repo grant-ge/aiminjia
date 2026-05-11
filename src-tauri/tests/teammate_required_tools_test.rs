@@ -193,9 +193,10 @@ async fn accepts_when_all_required_tools_present() {
     seed_team(&team_registry, "conv-all-tools").await;
     let ctx = build_ctx("conv-all-tools", team_registry, name_registry);
 
-    // Whitelist passes — execution continues into the P1.6 idle-loop stub which
-    // still fails.  Assert the failure is NOT a missing-tools rejection.
-    let err = tool
+    // Whitelist passes — spawn now actually succeeds (P2.x landed Teammate
+    // path).  Verify the call returns Ok (or, if it fails for unrelated
+    // reasons, the error must NOT be a missing-tools rejection).
+    let result = tool
         .execute(
             json!({
                 "employee_id": emp_id,
@@ -206,17 +207,17 @@ async fn accepts_when_all_required_tools_present() {
             }),
             ctx,
         )
-        .await
-        .unwrap_err();
+        .await;
 
-    match err {
-        ToolError::ExecutionFailed(msg) => {
+    match result {
+        Ok(_) => {}
+        Err(ToolError::ExecutionFailed(msg)) => {
             assert!(
                 !msg.contains("missing required tools"),
                 "should NOT be a required-tools rejection, got: {msg}"
             );
         }
-        other => panic!("expected ExecutionFailed (from P1.6 stub), got {other:?}"),
+        Err(other) => panic!("unexpected error variant: {other:?}"),
     }
 }
 

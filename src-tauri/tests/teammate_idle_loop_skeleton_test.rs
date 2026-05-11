@@ -224,11 +224,13 @@ async fn chat_message_received_writes_transcript_lines() {
         "transcript should have at least 2 lines (user + assistant), got {}",
         total
     );
-    // First line should contain the user message.
+    // The transcript should include the user message somewhere.
+    // P2.4 prepends a team_context <system-reminder> as the first turn input,
+    // so we no longer assert lines[0]; we just assert presence.
     assert!(
-        lines[0].contains("do some research"),
-        "first transcript line should contain user text; got: {}",
-        lines[0]
+        lines.iter().any(|l| l.contains("do some research")),
+        "transcript should contain the user text; got: {:?}",
+        lines
     );
 }
 
