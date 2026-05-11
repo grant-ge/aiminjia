@@ -215,6 +215,8 @@ workspace 目录（用户可自定义，默认也是 `~/.renlijia/`）下存放�
 2. **不接受只改 prompt（base.md/daily.md）来修复能力问题**；能力边界应由 runtime/tool/capability/sandbox 保证
 3. **新工具应实现 `RuntimeTool` trait**，不应新增 `ToolPlugin` 实现
 4. **`CapabilityContext`（`runtime/tools/capability.rs`）是工具获取系统能力的窄接口**，不应扩大它来传入 `LlmGateway`、`AuthManager` 等编排层对象
+5. **LLM 协议：生产路径走 Anthropic**（`lotus.rs` → `claude.rs`，直通 `/anthropic/v1/messages`）。`openai.rs` 仅供 `custom.rs::send_openai_compat` 复用 OpenAI 兼容协议；新增 LLM 能力默认按 Anthropic 协议设计。Prompt renderer 用协议中性命名 `ChatPromptRenderer` / `system_message`，**禁止再加 `openai_` 前缀**。System prompt 多段缓存通过 `SystemPromptSegment` + `stream_message_with_segments` 入口透传；system 侧 `cache_control: ephemeral` 上限 3 块（总额度 4，预留 1 给 tools）。详见 `docs/superpowers/specs/2026-05-10-anthropic-protocol-migration-cleanup.md`
+6. **Token / Cost 统计必须包含 Anthropic cache 字段**：`TokenUsage` / `TotalTokenUsage` 有 `cache_creation_input_tokens` / `cache_read_input_tokens`；`estimated_cost_usd` 按 1.25× / 0.1× 加权。新增涉及 token 的事件 / 日志字段，必须同步透传到 `TurnCompleted` 与前端 TS 类型，并保留 `#[serde(default)]` 兼容老会话
 
 ## 进行中的架构专项
 
