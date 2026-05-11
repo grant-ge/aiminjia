@@ -151,6 +151,17 @@ impl RuntimeTool for TeamDeleteRuntimeTool {
         // the inbox-closed path once their senders are dropped (P1.6 cleanup).
         ctx.agent_names().drop_session(&session).await;
 
+        // LTR (B-gap3): also drop the per-session inbox and cancellation
+        // registry entries.  Without this, dead Teammate AgentIds linger in
+        // the global registries — SendMessage routing could still hit them
+        // and TeammateStop's by-name lookup would still find stale tokens.
+        if let Some(inbox_reg) = ctx.inbox_registry.as_ref() {
+            inbox_reg.drop_session(&session).await;
+        }
+        if let Some(cancel_reg) = ctx.cancellation_registry.as_ref() {
+            cancel_reg.drop_session(&session).await;
+        }
+
         let json = json!({
             "session_id": session.as_str(),
             "team_existed": team_handle.is_some(),

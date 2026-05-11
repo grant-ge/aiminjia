@@ -363,17 +363,33 @@ impl SessionRuntime {
             "Interaction request cancelled because the session was stopped.",
         );
 
-        // LTR (P1.8): cleanup per-session Team / name bindings.  Spawned
-        // because the registries are async; we don't need to block the
-        // synchronous cancel_session contract waiting on the mutex.
-        if let (Some(team_reg), Some(name_reg)) = (
-            self.team_registry.clone(),
-            self.agent_names.clone(),
-        ) {
+        // LTR (P1.8 + B-gap3): cleanup per-session Team / name / inbox /
+        // cancellation bindings.  Spawned because the registries are async; we
+        // don't need to block the synchronous cancel_session contract waiting
+        // on the mutex.
+        let team_reg = self.team_registry.clone();
+        let name_reg = self.agent_names.clone();
+        let inbox_reg = self.inbox_registry.clone();
+        let cancel_reg = self.cancellation_registry.clone();
+        if team_reg.is_some()
+            || name_reg.is_some()
+            || inbox_reg.is_some()
+            || cancel_reg.is_some()
+        {
             let sid = session_id.clone();
             tokio::spawn(async move {
-                team_reg.delete(&sid).await;
-                name_reg.drop_session(&sid).await;
+                if let Some(reg) = team_reg {
+                    reg.delete(&sid).await;
+                }
+                if let Some(reg) = name_reg {
+                    reg.drop_session(&sid).await;
+                }
+                if let Some(reg) = inbox_reg {
+                    reg.drop_session(&sid).await;
+                }
+                if let Some(reg) = cancel_reg {
+                    reg.drop_session(&sid).await;
+                }
             });
         }
     }
