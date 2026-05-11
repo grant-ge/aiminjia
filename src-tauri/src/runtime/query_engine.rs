@@ -68,6 +68,10 @@ pub struct QueryEngine {
 pub struct TotalTokenUsage {
     pub tokens_in: u64,
     pub tokens_out: u64,
+    /// Anthropic-style accumulated prompt-cache write tokens.
+    pub cache_creation_input_tokens: u64,
+    /// Anthropic-style accumulated prompt-cache read tokens.
+    pub cache_read_input_tokens: u64,
 }
 
 impl QueryEngine {
@@ -345,6 +349,24 @@ impl QueryEngine {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         usage.tokens_in += tokens_in;
         usage.tokens_out += tokens_out;
+    }
+
+    /// Accumulate Anthropic-style prompt-cache token counters. Called separately
+    /// from `accumulate_usage` so existing call sites keep compiling.
+    pub fn accumulate_cache_usage(
+        &self,
+        cache_creation_input_tokens: u64,
+        cache_read_input_tokens: u64,
+    ) {
+        if cache_creation_input_tokens == 0 && cache_read_input_tokens == 0 {
+            return;
+        }
+        let mut usage = self
+            .total_usage
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        usage.cache_creation_input_tokens += cache_creation_input_tokens;
+        usage.cache_read_input_tokens += cache_read_input_tokens;
     }
 
     pub fn estimated_cost_usd(&self) -> f64 {

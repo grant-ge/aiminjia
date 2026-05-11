@@ -603,6 +603,8 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             let mut stop_reason = StopReason::EndTurn;
             let mut tokens_in: u64 = 0;
             let mut tokens_out: u64 = 0;
+            let mut cache_creation_input_tokens: u64 = 0;
+            let mut cache_read_input_tokens: u64 = 0;
             let mut stream_needs_retry = false;
 
             loop {
@@ -710,10 +712,15 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                                 stop_reason = reason;
                                 tokens_in = usage.input_tokens as u64;
                                 tokens_out = usage.output_tokens as u64;
+                                cache_creation_input_tokens =
+                                    usage.cache_creation_input_tokens.unwrap_or(0) as u64;
+                                cache_read_input_tokens =
+                                    usage.cache_read_input_tokens.unwrap_or(0) as u64;
                                 log::info!(
                                     "[run_llm_step] Stream done: stop_reason={:?} \
-                                     in={} out={} content_len={} tool_calls={}",
+                                     in={} out={} cache_creation={} cache_read={} content_len={} tool_calls={}",
                                     stop_reason, tokens_in, tokens_out,
+                                    cache_creation_input_tokens, cache_read_input_tokens,
                                     iter_content.len(), tool_calls.len()
                                 );
                                 // TODO(telemetry): record token usage metrics
@@ -809,6 +816,8 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                     content: iter_content,
                     tokens_in,
                     tokens_out,
+                    cache_creation_input_tokens,
+                    cache_read_input_tokens,
                     stop_reason: Some(
                         match stop_reason {
                             StopReason::EndTurn => "end_turn",
@@ -851,6 +860,8 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                 tool_calls: requests,
                 tokens_in,
                 tokens_out,
+                cache_creation_input_tokens,
+                cache_read_input_tokens,
             });
         }
     }
@@ -2970,7 +2981,7 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
                 conv_id.clone(),
                 EmployeeRunOverrides {
                     tool_whitelist: effective_whitelist.into_iter().collect(),
-                    max_iterations: 30,
+                    max_iterations: 60,
                 },
             );
 

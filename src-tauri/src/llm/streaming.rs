@@ -11,6 +11,14 @@ use std::pin::Pin;
 pub struct TokenUsage {
     pub input_tokens: u32,
     pub output_tokens: u32,
+    /// Anthropic-style prompt-cache write tokens (tokens that resulted in new
+    /// cache entries this turn). `None` when the provider does not report it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_creation_input_tokens: Option<u32>,
+    /// Anthropic-style prompt-cache read tokens (tokens served from existing
+    /// cache entries this turn). `None` when the provider does not report it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_read_input_tokens: Option<u32>,
 }
 
 /// Why the model stopped generating.
@@ -272,6 +280,8 @@ mod tests {
             usage: TokenUsage {
                 input_tokens: 100,
                 output_tokens: 50,
+                cache_creation_input_tokens: None,
+                cache_read_input_tokens: None,
             },
         };
         let json = serde_json::to_string(&event).unwrap();

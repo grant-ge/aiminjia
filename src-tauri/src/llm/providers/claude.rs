@@ -61,6 +61,10 @@ struct SseState {
     tool_json_fragments: String,
     /// Input token count (reported in `message_start`).
     input_tokens: u32,
+    /// Cache-creation input tokens (reported in `message_start.usage`).
+    cache_creation_input_tokens: Option<u32>,
+    /// Cache-read input tokens (reported in `message_start.usage`).
+    cache_read_input_tokens: Option<u32>,
     /// Whether the currently open content block is a thinking block.
     in_thinking_block: bool,
     /// Accumulated thinking text for the current thinking block.
@@ -77,6 +81,8 @@ impl SseState {
             current_tool_name: None,
             tool_json_fragments: String::new(),
             input_tokens: 0,
+            cache_creation_input_tokens: None,
+            cache_read_input_tokens: None,
             in_thinking_block: false,
             thinking_text: String::new(),
             thinking_signature: String::new(),
@@ -351,6 +357,12 @@ impl ClaudeProvider {
         let usage = TokenUsage {
             input_tokens: body["usage"]["input_tokens"].as_u64().unwrap_or(0) as u32,
             output_tokens: body["usage"]["output_tokens"].as_u64().unwrap_or(0) as u32,
+            cache_creation_input_tokens: body["usage"]["cache_creation_input_tokens"]
+                .as_u64()
+                .map(|v| v as u32),
+            cache_read_input_tokens: body["usage"]["cache_read_input_tokens"]
+                .as_u64()
+                .map(|v| v as u32),
         };
 
         Ok(LlmResponse {
@@ -557,15 +569,21 @@ fn process_sse_data(data: &str, state: &mut SseState) -> Option<Vec<StreamEvent>
     let event_type = parsed["type"].as_str().unwrap_or("");
 
     match event_type {
-        // message_start: extract input token count
+        // message_start: extract input token count + cache usage
         "message_start" => {
             if let Some(tokens) = parsed["message"]["usage"]["input_tokens"].as_u64() {
                 state.input_tokens = tokens as u32;
             }
+            if let Some(v) = parsed["message"]["usage"]["cache_creation_input_tokens"].as_u64() {
+                state.cache_creation_input_tokens = Some(v as u32);
+            }
+            if let Some(v) = parsed["message"]["usage"]["cache_read_input_tokens"].as_u64() {
+                state.cache_read_input_tokens = Some(v as u32);
+            }
             None
         }
 
-        // content_block_start: may begin a tool_use or thinking block
+        // content_block_start: may begin a tool_use, thinking, or redacted_thinking block
         "content_block_start" => {
             let block = &parsed["content_block"];
             match block["type"].as_str() {
@@ -578,6 +596,22 @@ fn process_sse_data(data: &str, state: &mut SseState) -> Option<Vec<StreamEvent>
                     state.in_thinking_block = true;
                     state.thinking_text.clear();
                     state.thinking_signature.clear();
+                }
+                Some("redacted_thinking") => {
+                    // Pass the encrypted block through verbatim so the caller can
+                    // echo it back on subsequent turns (Anthropic requires it for
+                    // tool-use validation when extended thinking is enabled).
+                    let mut out = serde_json::Map::new();
+                    out.insert(
+                        "type".to_string(),
+                        Value::String("redacted_thinking".to_string()),
+                    );
+                    if let Some(data) = block.get("data").cloned() {
+                        out.insert("data".to_string(), data);
+                    }
+                    return Some(vec![StreamEvent::ThinkingBlock {
+                        block: Value::Object(out),
+                    }]);
                 }
                 _ => {}
             }
@@ -650,12 +684,25 @@ fn process_sse_data(data: &str, state: &mut SseState) -> Option<Vec<StreamEvent>
                 .unwrap_or("end_turn");
             let stop_reason = ClaudeProvider::parse_stop_reason(stop_reason_str);
             let output_tokens = parsed["usage"]["output_tokens"].as_u64().unwrap_or(0) as u32;
+            // Anthropic also re-emits cache_* fields on message_delta when the
+            // final values differ from message_start; prefer the latest.
+            if let Some(v) = parsed["usage"]["cache_creation_input_tokens"].as_u64() {
+                state.cache_creation_input_tokens = Some(v as u32);
+            }
+            if let Some(v) = parsed["usage"]["cache_read_input_tokens"].as_u64() {
+                state.cache_read_input_tokens = Some(v as u32);
+            }
+            if let Some(v) = parsed["usage"]["input_tokens"].as_u64() {
+                state.input_tokens = v as u32;
+            }
 
             Some(vec![StreamEvent::Done {
                 stop_reason,
                 usage: TokenUsage {
                     input_tokens: state.input_tokens,
                     output_tokens,
+                    cache_creation_input_tokens: state.cache_creation_input_tokens,
+                    cache_read_input_tokens: state.cache_read_input_tokens,
                 },
             }])
         }

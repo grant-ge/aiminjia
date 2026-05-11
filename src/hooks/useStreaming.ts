@@ -825,6 +825,18 @@ export function useStreaming() {
           lastActivityRef.current[convId] = now
           continue
         }
+        // A long-running tool (Bash/Write/Playwright/SubAgent) is silent on
+        // the event bus between tool:executing and tool:completed. Per-tool
+        // timeouts (default 120s, max 600s) guarantee tool:completed eventually
+        // fires, so reset the watchdog while any tool is in-flight to avoid
+        // false-positive "stream timeout" toasts during legitimate work.
+        const hasExecutingTool = streamState.toolExecutions.some(
+          (t) => t.status === 'executing',
+        )
+        if (hasExecutingTool) {
+          lastActivityRef.current[convId] = now
+          continue
+        }
         if (now - lastActive > STALE_STREAM_TIMEOUT_MS) {
           console.warn(
             '[watchdog] Force-clearing stale streaming state for conversation %s (last activity: %s ms ago)',

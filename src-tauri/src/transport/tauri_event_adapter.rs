@@ -241,6 +241,8 @@ pub fn map_runtime_event(event: &RuntimeEvent) -> Option<LegacyEvent> {
             outcome,
             total_input_tokens,
             total_output_tokens,
+            total_cache_creation_input_tokens,
+            total_cache_read_input_tokens,
             total_cost_usd,
             permission_denial_count,
         } => {
@@ -249,6 +251,8 @@ pub fn map_runtime_event(event: &RuntimeEvent) -> Option<LegacyEvent> {
                 "runId": event.run_id.as_str(),
                 "totalInputTokens": total_input_tokens,
                 "totalOutputTokens": total_output_tokens,
+                "totalCacheCreationInputTokens": total_cache_creation_input_tokens,
+                "totalCacheReadInputTokens": total_cache_read_input_tokens,
                 "totalCostUsd": total_cost_usd,
                 "permissionDenialCount": permission_denial_count,
             });

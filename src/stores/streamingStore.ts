@@ -30,6 +30,8 @@ export interface TurnSummary {
   outcome: TurnOutcome
   totalInputTokens?: number
   totalOutputTokens?: number
+  totalCacheCreationInputTokens?: number
+  totalCacheReadInputTokens?: number
   totalCostUsd?: number | null
   completedAt: number
 }

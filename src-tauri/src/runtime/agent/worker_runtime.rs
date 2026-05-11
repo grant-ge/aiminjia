@@ -426,6 +426,13 @@ impl<'a> SubagentWorkerRuntime<'a> {
                 .execute_round(&turn, &tool_event_bus, runtime_tool_calls)
                 .await;
 
+            // Anthropic rejects multiple tool_result blocks sharing the same
+            // tool_use_id within one assistant turn. Dedup at push time so a
+            // glitched round (Blocked + Completed for the same id, retry
+            // double-emit, etc.) cannot poison this sub-agent's transcript.
+            let mut pushed_tool_call_ids: std::collections::HashSet<String> =
+                std::collections::HashSet::new();
+
             for round_result in round_results {
                 match round_result {
                     ToolRoundResult::Blocked(blocked) => {
@@ -444,11 +451,19 @@ impl<'a> SubagentWorkerRuntime<'a> {
                             Some(blocked.reason.as_str()),
                             config.parent_tool_use_id.as_deref(),
                         );
-                        request.messages.push(ChatMessage::tool_result(
-                            &blocked.tool_call_id,
-                            &blocked.tool_name,
-                            blocked.reason,
-                        ));
+                        if pushed_tool_call_ids.insert(blocked.tool_call_id.clone()) {
+                            request.messages.push(ChatMessage::tool_result(
+                                &blocked.tool_call_id,
+                                &blocked.tool_name,
+                                blocked.reason,
+                            ));
+                        } else {
+                            log::warn!(
+                                "[SubAgent] dropped duplicate tool_result for id={} tool={} (Blocked)",
+                                blocked.tool_call_id,
+                                blocked.tool_name
+                            );
+                        }
                     }
                     ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
                         tool_call_id,
@@ -485,16 +500,24 @@ impl<'a> SubagentWorkerRuntime<'a> {
                             config.parent_tool_use_id.as_deref(),
                         );
                         files.extend(generated_files);
-                        request.messages.push(ChatMessage::tool_result(
-                            &tool_call_id,
-                            &tool_name,
-                            content_for_message,
-                        ));
-                        if let Some(modifier) = context_modifier_message
-                            .as_ref()
-                            .and_then(context_modifier_to_message)
-                        {
-                            request.messages.push(modifier);
+                        if pushed_tool_call_ids.insert(tool_call_id.clone()) {
+                            request.messages.push(ChatMessage::tool_result(
+                                &tool_call_id,
+                                &tool_name,
+                                content_for_message,
+                            ));
+                            if let Some(modifier) = context_modifier_message
+                                .as_ref()
+                                .and_then(context_modifier_to_message)
+                            {
+                                request.messages.push(modifier);
+                            }
+                        } else {
+                            log::warn!(
+                                "[SubAgent] dropped duplicate tool_result for id={} tool={} (Completed)",
+                                tool_call_id,
+                                tool_name
+                            );
                         }
                     }
                     ToolRoundResult::Ok(RuntimeToolCallOutcome::AskRequired {
@@ -520,11 +543,19 @@ impl<'a> SubagentWorkerRuntime<'a> {
                             Some("Permission Ask required"),
                             config.parent_tool_use_id.as_deref(),
                         );
-                        request.messages.push(ChatMessage::tool_result(
-                            &tool_call_id,
-                            &tool_name,
-                            "Permission Ask required".to_string(),
-                        ));
+                        if pushed_tool_call_ids.insert(tool_call_id.clone()) {
+                            request.messages.push(ChatMessage::tool_result(
+                                &tool_call_id,
+                                &tool_name,
+                                "Permission Ask required".to_string(),
+                            ));
+                        } else {
+                            log::warn!(
+                                "[SubAgent] dropped duplicate tool_result for id={} tool={} (AskRequired)",
+                                tool_call_id,
+                                tool_name
+                            );
+                        }
                         warn!(
                             "[SubAgent] Tool '{}' returned AskRequired; bubbling to parent: {}",
                             tool_name, bubbled
@@ -552,12 +583,20 @@ impl<'a> SubagentWorkerRuntime<'a> {
                             Some("User interaction required"),
                             config.parent_tool_use_id.as_deref(),
                         );
-                        request.messages.push(ChatMessage::tool_result(
-                            &tool_call_id,
-                            &tool_name,
-                            "User interaction required; sub-agents cannot ask the user directly."
-                                .to_string(),
-                        ));
+                        if pushed_tool_call_ids.insert(tool_call_id.clone()) {
+                            request.messages.push(ChatMessage::tool_result(
+                                &tool_call_id,
+                                &tool_name,
+                                "User interaction required; sub-agents cannot ask the user directly."
+                                    .to_string(),
+                            ));
+                        } else {
+                            log::warn!(
+                                "[SubAgent] dropped duplicate tool_result for id={} tool={} (InteractionRequired)",
+                                tool_call_id,
+                                tool_name
+                            );
+                        }
                     }
                 }
             }

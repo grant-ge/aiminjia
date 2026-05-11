@@ -202,6 +202,8 @@ impl RuntimeLlmExecutor for ImmediateContentExecutor {
             content: "done".to_string(),
             tokens_in: 500_000,
             tokens_out: 500_000,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
             stop_reason: Some("end_turn".to_string()),
         })
     }

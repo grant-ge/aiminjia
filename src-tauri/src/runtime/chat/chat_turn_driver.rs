@@ -1095,7 +1095,7 @@ impl RuntimeChatTurnDriver {
             prompt_snapshot: Some(effective_prompt_snapshot),
             tool_defs: overrides.tool_defs.unwrap_or(tool_defs),
             allowed_tools: overrides.allowed_tools,
-            max_iterations: overrides.max_iterations.unwrap_or(30),
+            max_iterations: overrides.max_iterations.unwrap_or(60),
             token_budget: overrides.token_budget.unwrap_or_else(|| {
                 crate::llm::max_tokens::default_max_tokens_for_model(
                     &llm_settings.primary_model,
@@ -1531,11 +1531,15 @@ impl RuntimeChatTurnDriver {
                     content,
                     tokens_in,
                     tokens_out,
+                    cache_creation_input_tokens,
+                    cache_read_input_tokens,
                     stop_reason,
                 } => {
                     state.full_content.push_str(&content);
                     state.step_tokens_in += tokens_in;
                     state.step_tokens_out += tokens_out;
+                    state.step_cache_creation_input_tokens += cache_creation_input_tokens;
+                    state.step_cache_read_input_tokens += cache_read_input_tokens;
                     state.iteration_count = iteration + 1;
 
                     if stop_reason.as_deref() == Some("max_tokens") {
@@ -1620,6 +1624,8 @@ impl RuntimeChatTurnDriver {
                     tool_calls,
                     tokens_in,
                     tokens_out,
+                    cache_creation_input_tokens,
+                    cache_read_input_tokens,
                 } => {
                     if !assistant_content.is_empty() {
                         state.full_content.push_str(&assistant_content);
@@ -1642,6 +1648,8 @@ impl RuntimeChatTurnDriver {
                     });
                     state.step_tokens_in += tokens_in;
                     state.step_tokens_out += tokens_out;
+                    state.step_cache_creation_input_tokens += cache_creation_input_tokens;
+                    state.step_cache_read_input_tokens += cache_read_input_tokens;
                     state.iteration_count = iteration + 1;
 
                     // Execute the tool round.
@@ -1795,6 +1803,10 @@ impl RuntimeChatTurnDriver {
 
         self.query_engine
             .accumulate_usage(state.step_tokens_in, state.step_tokens_out);
+        self.query_engine.accumulate_cache_usage(
+            state.step_cache_creation_input_tokens,
+            state.step_cache_read_input_tokens,
+        );
 
         let final_outcome = if state.stream_cancelled {
             ChatTurnOutcome::Cancelled
@@ -1907,6 +1919,8 @@ impl RuntimeChatTurnDriver {
                     outcome: final_outcome,
                     total_input_tokens: state.step_tokens_in,
                     total_output_tokens: state.step_tokens_out,
+                    total_cache_creation_input_tokens: state.step_cache_creation_input_tokens,
+                    total_cache_read_input_tokens: state.step_cache_read_input_tokens,
                     total_cost_usd: self
                         .query_engine
                         .max_budget_usd()
@@ -2291,6 +2305,8 @@ mod tests {
                 content: "snapshot done".to_string(),
                 tokens_in: 0,
                 tokens_out: 0,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
                 stop_reason: Some("end_turn".to_string()),
             })
         }

@@ -209,6 +209,10 @@ export interface TurnCompletedPayload {
   outcome: TurnOutcome
   totalInputTokens: number
   totalOutputTokens: number
+  /** Anthropic-style prompt-cache write tokens accumulated this turn. */
+  totalCacheCreationInputTokens?: number
+  /** Anthropic-style prompt-cache read tokens accumulated this turn. */
+  totalCacheReadInputTokens?: number
   totalCostUsd?: number | null
   permissionDenialCount: number
   iterations?: number

@@ -175,6 +175,8 @@ fn content_complete() -> LlmStepResult {
         content: "done".to_string(),
         tokens_in: 1,
         tokens_out: 1,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0,
         stop_reason: Some("end_turn".to_string()),
     }
 }
@@ -188,6 +190,8 @@ async fn ask_event_contains_full_permission_information() {
             tool_calls: vec![tool_call("tc-ask-info", "mcp__demo__action")],
             tokens_in: 5,
             tokens_out: 7,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
         },
         content_complete(),
     ]));
@@ -278,6 +282,8 @@ async fn allow_resolution_replays_tool_and_returns_successful_tool_result_to_llm
             tool_calls: vec![tool_call("tc-allow", "mcp__demo__action")],
             tokens_in: 5,
             tokens_out: 7,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
         },
         content_complete(),
     ]));
@@ -345,6 +351,8 @@ async fn deny_resolution_returns_error_tool_result_and_turn_continues() {
             tool_calls: vec![tool_call("tc-deny", "mcp__demo__action")],
             tokens_in: 5,
             tokens_out: 7,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
         },
         content_complete(),
     ]));
@@ -408,6 +416,8 @@ async fn cancel_resolution_is_treated_as_denied_tool_result_without_hanging() {
             tool_calls: vec![tool_call("tc-cancel", "mcp__demo__action")],
             tokens_in: 5,
             tokens_out: 7,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
         },
         content_complete(),
     ]));
@@ -468,6 +478,8 @@ async fn multiple_asks_are_processed_in_order_with_independent_results() {
             ],
             tokens_in: 5,
             tokens_out: 7,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
         },
         content_complete(),
     ]));
@@ -549,6 +561,8 @@ async fn cancelling_turn_while_waiting_for_ask_exits_without_deadlock() {
             tool_calls: vec![tool_call("tc-turn-cancel", "mcp__demo__action")],
             tokens_in: 5,
             tokens_out: 7,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
         },
         content_complete(),
     ]));
