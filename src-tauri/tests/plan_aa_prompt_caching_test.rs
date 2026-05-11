@@ -43,6 +43,7 @@ fn system_prompt_serialized_as_cache_control_block() {
         temperature: 1.0,
         stream: false,
         thinking_config: None,
+            system_segments: None,
     };
 
     let body = build_body(&provider, &request);
@@ -72,6 +73,7 @@ fn system_prompt_absent_when_no_system_message() {
         temperature: 1.0,
         stream: false,
         thinking_config: None,
+            system_segments: None,
     };
 
     let body = build_body(&provider, &request);
@@ -92,6 +94,7 @@ fn last_tool_has_cache_control() {
         temperature: 1.0,
         stream: false,
         thinking_config: None,
+            system_segments: None,
     };
 
     let body = build_body(&provider, &request);
@@ -117,6 +120,7 @@ fn single_tool_has_cache_control() {
         temperature: 1.0,
         stream: false,
         thinking_config: None,
+            system_segments: None,
     };
 
     let body = build_body(&provider, &request);
@@ -135,6 +139,7 @@ fn no_tools_does_not_add_tools_key() {
         temperature: 1.0,
         stream: false,
         thinking_config: None,
+            system_segments: None,
     };
 
     let body = build_body(&provider, &request);
@@ -174,6 +179,7 @@ fn cache_breakpoints_do_not_exceed_api_limit() {
         temperature: 1.0,
         stream: false,
         thinking_config: None,
+            system_segments: None,
     };
 
     let body = build_body(&provider, &request);
@@ -198,6 +204,7 @@ fn cache_breakpoints_count_system_plus_last_tool_equals_two() {
         temperature: 1.0,
         stream: false,
         thinking_config: None,
+            system_segments: None,
     };
 
     let body = build_body(&provider, &request);
@@ -217,6 +224,7 @@ fn cache_breakpoints_count_system_only_when_no_tools() {
         temperature: 1.0,
         stream: false,
         thinking_config: None,
+            system_segments: None,
     };
 
     let body = build_body(&provider, &request);
@@ -233,6 +241,7 @@ fn cache_breakpoints_zero_when_no_system_no_tools() {
         temperature: 1.0,
         stream: false,
         thinking_config: None,
+            system_segments: None,
     };
 
     let body = build_body(&provider, &request);

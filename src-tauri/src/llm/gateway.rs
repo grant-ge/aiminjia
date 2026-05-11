@@ -186,6 +186,7 @@ impl LlmGateway {
         tool_defs_override: Option<Vec<ToolDefinition>>,
         max_tokens: u32,
         settings: &AppSettings,
+        system_segments: Option<Vec<crate::llm::streaming::SystemPromptSegment>>,
     ) -> LlmRequest {
         // Prepend system prompt if provided (stable prefix for KV cache)
         if let Some(prompt) = system_prompt {
@@ -215,6 +216,7 @@ impl LlmGateway {
             temperature: 0.7,
             stream,
             thinking_config: thinking_config_for_route(route, settings),
+            system_segments,
         }
     }
 
@@ -250,6 +252,77 @@ impl LlmGateway {
         tool_defs_override: Option<Vec<ToolDefinition>>,
         max_tokens: u32,
         conversation_id: Option<&str>,
+    ) -> Result<(
+        String,
+        StreamBox,
+        MaskingContext,
+        tokio::sync::watch::Receiver<bool>,
+    )> {
+        self.stream_message_inner(
+            settings,
+            messages,
+            masking_level,
+            system_prompt,
+            context_message,
+            tool_defs_override,
+            max_tokens,
+            conversation_id,
+            None,
+        )
+        .await
+    }
+
+    /// Like [`stream_message`] but accepts structured per-block cache
+    /// segments. Providers that support block-level `cache_control`
+    /// (currently Claude/Anthropic) honor the segments; others fall back
+    /// to the flat `system_prompt`.
+    pub async fn stream_message_with_segments(
+        &self,
+        settings: &AppSettings,
+        messages: Vec<ChatMessage>,
+        masking_level: MaskingLevel,
+        system_prompt: Option<&str>,
+        context_message: Option<&str>,
+        tool_defs_override: Option<Vec<ToolDefinition>>,
+        max_tokens: u32,
+        conversation_id: Option<&str>,
+        system_segments: Vec<crate::llm::streaming::SystemPromptSegment>,
+    ) -> Result<(
+        String,
+        StreamBox,
+        MaskingContext,
+        tokio::sync::watch::Receiver<bool>,
+    )> {
+        let segments = if system_segments.is_empty() {
+            None
+        } else {
+            Some(system_segments)
+        };
+        self.stream_message_inner(
+            settings,
+            messages,
+            masking_level,
+            system_prompt,
+            context_message,
+            tool_defs_override,
+            max_tokens,
+            conversation_id,
+            segments,
+        )
+        .await
+    }
+
+    async fn stream_message_inner(
+        &self,
+        settings: &AppSettings,
+        messages: Vec<ChatMessage>,
+        masking_level: MaskingLevel,
+        system_prompt: Option<&str>,
+        context_message: Option<&str>,
+        tool_defs_override: Option<Vec<ToolDefinition>>,
+        max_tokens: u32,
+        conversation_id: Option<&str>,
+        system_segments: Option<Vec<crate::llm::streaming::SystemPromptSegment>>,
     ) -> Result<(
         String,
         StreamBox,
@@ -301,6 +374,7 @@ impl LlmGateway {
             tool_defs_override,
             max_tokens,
             settings,
+            system_segments,
         );
 
         // Log request summary for debugging LLM quality
@@ -406,6 +480,7 @@ impl LlmGateway {
             tool_defs_override,
             4096,
             settings,
+            None,
         );
 
         // 4. Dispatch to provider with retry on transient errors
@@ -818,6 +893,7 @@ mod tests {
             None,
             4096,
             &settings,
+            None,
         );
 
         let roles_and_content: Vec<(&str, &str)> = request

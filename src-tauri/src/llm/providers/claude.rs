@@ -241,7 +241,58 @@ impl ClaudeProvider {
 
         if let Some(system) = system_content {
             if !system.is_empty() {
-                if self.supports_prompt_caching() {
+                // Prefer structured per-block cache passthrough when the
+                // caller supplied segments; otherwise fall back to the old
+                // single-block wrap-or-string behaviour.
+                let segments_non_empty = request
+                    .system_segments
+                    .as_ref()
+                    .map(|segs| segs.iter().any(|s| !s.text.trim().is_empty()))
+                    .unwrap_or(false);
+
+                if segments_non_empty && self.supports_prompt_caching() {
+                    let segments = request.system_segments.as_ref().expect("checked non-empty");
+                    // Anthropic allows at most 4 cache_control breakpoints
+                    // across the whole request. The tools array may also
+                    // carry one (see below), so keep a conservative cap of
+                    // 3 on the system side and warn if exceeded.
+                    const MAX_SYSTEM_CACHE_BREAKPOINTS: usize = 3;
+                    let mut remaining = MAX_SYSTEM_CACHE_BREAKPOINTS;
+                    let mut blocks: Vec<Value> = Vec::with_capacity(segments.len());
+                    let mut dropped_cache_flags: usize = 0;
+                    for seg in segments {
+                        let trimmed = seg.text.trim();
+                        if trimmed.is_empty() {
+                            continue;
+                        }
+                        let mut block = json!({
+                            "type": "text",
+                            "text": seg.text,
+                        });
+                        if seg.cache {
+                            if remaining > 0 {
+                                block["cache_control"] = json!({ "type": "ephemeral" });
+                                remaining -= 1;
+                            } else {
+                                dropped_cache_flags += 1;
+                            }
+                        }
+                        blocks.push(block);
+                    }
+                    if dropped_cache_flags > 0 {
+                        log::warn!(
+                            "[claude] dropped {} cache_control breakpoints beyond the system-side cap of {}",
+                            dropped_cache_flags,
+                            MAX_SYSTEM_CACHE_BREAKPOINTS
+                        );
+                    }
+                    if blocks.is_empty() {
+                        // all segments empty after trim — fall back to string
+                        body["system"] = json!(system);
+                    } else {
+                        body["system"] = json!(blocks);
+                    }
+                } else if self.supports_prompt_caching() {
                     body["system"] = json!([{
                         "type": "text",
                         "text": system,
@@ -868,6 +919,7 @@ mod tests {
             temperature: 1.0,
             stream: false,
             thinking_config: None,
+            system_segments: None,
         };
 
         let body = provider.build_request_body(&request);
@@ -895,6 +947,7 @@ mod tests {
             temperature: 0.7,
             stream: true,
             thinking_config: None,
+            system_segments: None,
         };
 
         let body = provider.build_request_body(&request);
@@ -1141,5 +1194,108 @@ mod tests {
             }
             _ => panic!("Expected ThinkingBlock"),
         }
+    }
+
+    #[test]
+    fn test_build_request_body_with_system_segments_blocks() {
+        // Anthropic-capable model so supports_prompt_caching() == true
+        let provider = ClaudeProvider::new(
+            "key".to_string(),
+            Some("claude-3-5-sonnet-20241022".to_string()),
+        );
+        let request = LlmRequest {
+            messages: vec![
+                ChatMessage::text("system", "static\n\ndynamic\n\nvolatile"),
+                ChatMessage::text("user", "hello"),
+            ],
+            tools: vec![],
+            max_tokens: 1024,
+            temperature: 1.0,
+            stream: false,
+            thinking_config: None,
+            system_segments: Some(vec![
+                crate::llm::streaming::SystemPromptSegment {
+                    text: "static".to_string(),
+                    cache: true,
+                },
+                crate::llm::streaming::SystemPromptSegment {
+                    text: "dynamic".to_string(),
+                    cache: true,
+                },
+                crate::llm::streaming::SystemPromptSegment {
+                    text: "volatile".to_string(),
+                    cache: false,
+                },
+            ]),
+        };
+
+        let body = provider.build_request_body(&request);
+        let system_arr = body["system"].as_array().expect("system is array");
+        assert_eq!(system_arr.len(), 3);
+        assert_eq!(system_arr[0]["text"], "static");
+        assert!(system_arr[0].get("cache_control").is_some());
+        assert_eq!(system_arr[1]["text"], "dynamic");
+        assert!(system_arr[1].get("cache_control").is_some());
+        assert_eq!(system_arr[2]["text"], "volatile");
+        assert!(system_arr[2].get("cache_control").is_none());
+    }
+
+    #[test]
+    fn test_build_request_body_segments_cap_warns_beyond_three() {
+        let provider = ClaudeProvider::new(
+            "key".to_string(),
+            Some("claude-3-5-sonnet-20241022".to_string()),
+        );
+        let segs: Vec<_> = (0..5)
+            .map(|i| crate::llm::streaming::SystemPromptSegment {
+                text: format!("seg{}", i),
+                cache: true,
+            })
+            .collect();
+        let request = LlmRequest {
+            messages: vec![ChatMessage::text(
+                "system",
+                "seg0\n\nseg1\n\nseg2\n\nseg3\n\nseg4",
+            )],
+            tools: vec![],
+            max_tokens: 1024,
+            temperature: 1.0,
+            stream: false,
+            thinking_config: None,
+            system_segments: Some(segs),
+        };
+
+        let body = provider.build_request_body(&request);
+        let system_arr = body["system"].as_array().expect("system is array");
+        assert_eq!(system_arr.len(), 5);
+        // first 3 keep cache_control; last 2 get dropped flags
+        let kept: usize = system_arr
+            .iter()
+            .filter(|b| b.get("cache_control").is_some())
+            .count();
+        assert_eq!(kept, 3);
+    }
+
+    #[test]
+    fn test_build_request_body_no_segments_falls_back_to_single_block() {
+        let provider = ClaudeProvider::new(
+            "key".to_string(),
+            Some("claude-3-5-sonnet-20241022".to_string()),
+        );
+        let request = LlmRequest {
+            messages: vec![ChatMessage::text("system", "you are helpful")],
+            tools: vec![],
+            max_tokens: 1024,
+            temperature: 1.0,
+            stream: false,
+            thinking_config: None,
+            system_segments: None,
+        };
+
+        let body = provider.build_request_body(&request);
+        let system_arr = body["system"].as_array().expect("system is array");
+        assert_eq!(system_arr.len(), 1);
+        assert_eq!(system_arr[0]["text"], "you are helpful");
+        assert!(system_arr[0].get("cache_control").is_some());
     }
 }

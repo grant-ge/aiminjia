@@ -374,6 +374,7 @@ pub(super) async fn validate_key_openai_compat(
         temperature: 0.0,
         stream: false,
         thinking_config: None,
+        system_segments: None,
     };
 
     let body = build_request_body(&request, model, false, false);
