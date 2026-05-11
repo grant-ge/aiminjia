@@ -37,6 +37,18 @@ describe('attachmentTokenExtension', () => {
     editor.destroy()
   })
 
+  it('insertAttachmentTokens 段首单 token 前会补零宽边界作为可落光标位置', () => {
+    const editor = makeEditor()
+    editor.commands.insertAttachmentTokens([mkToken()])
+
+    const json = editor.getJSON()
+    const para = (json.content as Array<{ content: Array<{ type: string; text?: string }> }>)[0]
+    expect(para.content.map((n) => n.type)).toEqual(['text', 'attachmentToken'])
+    expect(para.content[0].text).toBe('\u200B')
+
+    editor.destroy()
+  })
+
   it('insertAttachmentTokens 多 token → 节点之间用空格 text 分隔', () => {
     const editor = makeEditor()
     editor.commands.insertAttachmentTokens([
@@ -47,10 +59,11 @@ describe('attachmentTokenExtension', () => {
     const json = editor.getJSON()
     const para = (json.content as Array<{ content: Array<{ type: string; attrs?: { id?: string }; text?: string }> }>)[0]
     const types = para.content.map((n) => n.type)
-    // expect alternating: token, text(' '), token, text(' '), token
-    expect(types).toEqual(['attachmentToken', 'text', 'attachmentToken', 'text', 'attachmentToken'])
-    expect(para.content[1].text).toBe(' ')
-    expect(para.content[3].text).toBe(' ')
+    // expect leading caret boundary, then alternating: token, text(' '), token, text(' '), token
+    expect(types).toEqual(['text', 'attachmentToken', 'text', 'attachmentToken', 'text', 'attachmentToken'])
+    expect(para.content[0].text).toBe('\u200B')
+    expect(para.content[2].text).toBe(' ')
+    expect(para.content[4].text).toBe(' ')
     editor.destroy()
   })
 

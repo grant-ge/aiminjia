@@ -277,22 +277,6 @@ export function AppSidebar() {
                   </div>
                 )}
               </div>
-
-              <div>
-                <div className="mb-2 flex items-center gap-2 px-2 text-sm font-semibold text-muted-foreground">
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-50 text-xs text-blue-600">飞</span>
-                  飞书
-                </div>
-                <div className="pl-3 text-sm font-medium text-muted-foreground">暂未接入</div>
-              </div>
-
-              <div>
-                <div className="mb-2 flex items-center gap-2 px-2 text-sm font-semibold text-muted-foreground">
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-50 text-xs text-emerald-500">微</span>
-                  微信
-                </div>
-                <div className="pl-3 text-sm font-medium text-muted-foreground">暂未接入</div>
-              </div>
             </div>
           </div>
         )}

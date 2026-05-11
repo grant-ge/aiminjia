@@ -111,14 +111,12 @@ function AppShell() {
     }
   }
 
-  const isWindows = navigator.userAgent.includes('Windows')
-
   return (
     <div className="flex h-screen w-screen flex-col bg-background text-foreground">
       <TitleBar />
       <div className="flex min-h-0 flex-1">
         <AppSidebar />
-        <main className={`min-w-0 flex-1 overflow-hidden border-l border-border${isWindows ? '' : ' rounded-tl-xl'}`}>
+        <main className="min-w-0 flex-1 overflow-hidden border-l border-border">
           <RouteSwitch />
         </main>
       </div>
