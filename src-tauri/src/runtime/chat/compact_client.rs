@@ -11,9 +11,10 @@ use crate::runtime::chat::turn_config::TurnError;
 /// A compaction backend that can summarise a conversation slice into a
 /// replacement "compact summary" message.
 ///
-/// The default production implementation is `NoopCompactSummaryClient` (warn
-/// log + empty string).  A real LLM-backed implementation can be injected via
-/// `RuntimeChatTurnDriver::with_compact_client`.
+/// When no client is configured (`None`), compaction requests warn-log and
+/// return an empty string, which `prepare_messages_for_llm` treats as "skip
+/// compaction".  Wire a real LLM-backed implementation via
+/// `RuntimeChatTurnDriver::with_compact_client` to enable compaction.
 #[async_trait]
 pub trait CompactSummaryClient: Send + Sync {
     async fn compact_summary(

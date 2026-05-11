@@ -329,6 +329,7 @@ pub trait RuntimeLlmExecutor: Send + Sync {
         Ok(())
     }
 }
+// NOTE: this marker is load-bearing for tests/review_compact_summary_trait_isolation_test.rs — do not remove.
 // END_TRAIT_RuntimeLlmExecutor — sentinel for review_compact_summary_trait_isolation_test
 
 /// Runtime-owned chat turn driver.
@@ -534,6 +535,15 @@ fn record_turn_diagnostic(
         diag = diag.payload(payload);
     }
     record_diagnostic(workspace_path, diag);
+}
+
+#[cold]
+fn warn_no_compact_client() {
+    log::warn!(
+        "[chat_turn_driver] no CompactSummaryClient configured; skipping compaction. \
+         Wire one via RuntimeChatTurnDriver::with_compact_client (typically in \
+         SessionRuntime::build_driver_for_turn) to enable compaction."
+    );
 }
 
 impl RuntimeChatTurnDriver {
@@ -1358,7 +1368,7 @@ impl RuntimeChatTurnDriver {
                         match compact_client.as_ref() {
                             Some(client) => client.compact_summary(conversation_id.as_str(), &messages).await,
                             None => {
-                                log::warn!("[chat_turn_driver] no CompactSummaryClient configured; skipping compaction");
+                                warn_no_compact_client();
                                 Ok(String::new())
                             }
                         }
@@ -1487,7 +1497,7 @@ impl RuntimeChatTurnDriver {
                                 match compact_client.as_ref() {
                                     Some(client) => client.compact_summary(conversation_id.as_str(), &messages).await,
                                     None => {
-                                        log::warn!("[chat_turn_driver] no CompactSummaryClient configured; skipping compaction");
+                                        warn_no_compact_client();
                                         Ok(String::new())
                                     }
                                 }
