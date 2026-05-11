@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use crate::llm::context_decay::{context_window_for_provider, CONTEXT_OVERFLOW_THRESHOLD};
 use crate::runtime::agent::task_notification::{QueuedNotification, TaskNotificationQueue};
+use crate::runtime::chat::compact_client::CompactSummaryClient;
 use crate::runtime::cancellation::{CancellationReason, CancellationToken};
 use crate::runtime::chat::context_builder::build_iteration_context;
 use crate::runtime::chat::post_process;
@@ -320,14 +321,6 @@ pub trait RuntimeLlmExecutor: Send + Sync {
         Ok(String::new())
     }
 
-    async fn compact_summary(
-        &self,
-        _conversation_id: &str,
-        _messages: &[serde_json::Value],
-    ) -> Result<String, TurnError> {
-        Ok(String::new())
-    }
-
     /// Persist a compact boundary record after successful compaction.
     async fn save_compact_boundary(
         &self,
@@ -336,6 +329,7 @@ pub trait RuntimeLlmExecutor: Send + Sync {
         Ok(())
     }
 }
+// END_TRAIT_RuntimeLlmExecutor — sentinel for review_compact_summary_trait_isolation_test
 
 /// Runtime-owned chat turn driver.
 ///
@@ -359,6 +353,8 @@ pub struct RuntimeChatTurnDriver {
     pending_permission_control_plane: Option<Arc<dyn PendingPermissionControlPlane>>,
     pending_interaction_control_plane: Option<Arc<dyn PendingInteractionControlPlane>>,
     task_notification_queue: Option<Arc<TaskNotificationQueue>>,
+    /// Compaction backend, decoupled from llm_executor (P0.2).
+    compact_client: Option<Arc<dyn CompactSummaryClient>>,
 }
 
 fn synthetic_cancelled_tool_result(reason: Option<CancellationReason>) -> &'static str {
@@ -549,6 +545,7 @@ impl RuntimeChatTurnDriver {
             pending_permission_control_plane: None,
             pending_interaction_control_plane: None,
             task_notification_queue: None,
+            compact_client: None,
         }
     }
 
@@ -564,6 +561,7 @@ impl RuntimeChatTurnDriver {
             pending_permission_control_plane: None,
             pending_interaction_control_plane: None,
             task_notification_queue: None,
+            compact_client: None,
         }
     }
 
@@ -580,6 +578,7 @@ impl RuntimeChatTurnDriver {
             pending_permission_control_plane: Some(pending_permission_control_plane),
             pending_interaction_control_plane: None,
             task_notification_queue: None,
+            compact_client: None,
         }
     }
 
@@ -597,6 +596,7 @@ impl RuntimeChatTurnDriver {
             pending_permission_control_plane: Some(pending_permission_control_plane),
             pending_interaction_control_plane: Some(pending_interaction_control_plane),
             task_notification_queue: None,
+            compact_client: None,
         }
     }
 
@@ -605,6 +605,13 @@ impl RuntimeChatTurnDriver {
         queue: Arc<TaskNotificationQueue>,
     ) -> Self {
         self.task_notification_queue = Some(queue);
+        self
+    }
+
+    /// Attach a compaction backend (P0.2).  When `None` (the default),
+    /// compaction requests warn-log and return an empty summary.
+    pub fn with_compact_client(mut self, client: Arc<dyn CompactSummaryClient>) -> Self {
+        self.compact_client = Some(client);
         self
     }
 
@@ -1335,6 +1342,7 @@ impl RuntimeChatTurnDriver {
         'turn: for iteration in 0..config.max_iterations {
             let preprocess_config = PreprocessConfig::default();
             let conversation_id = config.conversation_id.as_str().to_string();
+            let compact_client_ref = self.compact_client.clone();
             let prepared = prepare_messages_for_llm(
                 std::mem::take(&mut state.messages),
                 conversation_id.as_str(),
@@ -1345,10 +1353,15 @@ impl RuntimeChatTurnDriver {
                 state.stop_hook_active,
                 |messages| {
                     let conversation_id = conversation_id.clone();
+                    let compact_client = compact_client_ref.clone();
                     async move {
-                        executor
-                            .compact_summary(conversation_id.as_str(), &messages)
-                            .await
+                        match compact_client.as_ref() {
+                            Some(client) => client.compact_summary(conversation_id.as_str(), &messages).await,
+                            None => {
+                                log::warn!("[chat_turn_driver] no CompactSummaryClient configured; skipping compaction");
+                                Ok(String::new())
+                            }
+                        }
                     }
                 },
             )
@@ -1469,10 +1482,15 @@ impl RuntimeChatTurnDriver {
                         state.stop_hook_active,
                         |messages| {
                             let conversation_id = conversation_id.clone();
+                            let compact_client = compact_client_ref.clone();
                             async move {
-                                executor
-                                    .compact_summary(conversation_id.as_str(), &messages)
-                                    .await
+                                match compact_client.as_ref() {
+                                    Some(client) => client.compact_summary(conversation_id.as_str(), &messages).await,
+                                    None => {
+                                        log::warn!("[chat_turn_driver] no CompactSummaryClient configured; skipping compaction");
+                                        Ok(String::new())
+                                    }
+                                }
                             }
                         },
                     )

@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use app_lib::runtime::cancellation::CancellationToken;
 use app_lib::runtime::chat::chat_turn_driver::inject_synthetic_tool_results_for_missing_calls;
+use app_lib::runtime::chat::compact_client::CompactSummaryClient;
 use app_lib::runtime::chat::compaction::{
     build_compact_boundary_record, CompactBoundaryRecord, CompactTrigger,
 };
@@ -92,6 +93,29 @@ struct CompactingExecutor {
     llm_calls: Mutex<usize>,
 }
 
+/// A CompactSummaryClient that returns a fixed summary string — used by
+/// CompactingExecutor tests that need a real compaction result.
+struct StaticCompactSummaryClient {
+    summary: String,
+}
+
+impl StaticCompactSummaryClient {
+    fn new(summary: impl Into<String>) -> Self {
+        Self { summary: summary.into() }
+    }
+}
+
+#[async_trait]
+impl CompactSummaryClient for StaticCompactSummaryClient {
+    async fn compact_summary(
+        &self,
+        _conversation_id: &str,
+        _messages: &[serde_json::Value],
+    ) -> Result<String, TurnError> {
+        Ok(self.summary.clone())
+    }
+}
+
 impl CompactingExecutor {
     fn new() -> Self {
         Self {
@@ -150,14 +174,6 @@ impl RuntimeLlmExecutor for CompactingExecutor {
         Ok(history)
     }
 
-    async fn compact_summary(
-        &self,
-        _conversation_id: &str,
-        _messages: &[serde_json::Value],
-    ) -> Result<String, TurnError> {
-        Ok("压缩摘要：保留最后一个 user 问题。".to_string())
-    }
-
     async fn save_compact_boundary(&self, record: CompactBoundaryRecord) -> Result<(), TurnError> {
         self.boundaries.lock().unwrap().push(record);
         Ok(())
@@ -209,8 +225,10 @@ fn u2_inject_synthetic_results_repairs_orphan_tool_calls() {
 async fn u3_compact_success_persists_boundary_record_with_anchor() {
     let executor = Arc::new(CompactingExecutor::new());
     let bus = RuntimeEventBus::new();
+    let compact_client = Arc::new(StaticCompactSummaryClient::new("压缩摘要：保留最后一个 user 问题。"));
     let driver =
-        RuntimeChatTurnDriver::with_llm_executor(QueryEngine::default(), bus, executor.clone());
+        RuntimeChatTurnDriver::with_llm_executor(QueryEngine::default(), bus, executor.clone())
+            .with_compact_client(compact_client);
 
     let mut turn = make_test_turn("conv-u3");
     let request = ChatTurnRequest::new("conv-u3", "current question", vec![]);
