@@ -1755,10 +1755,48 @@ export interface EmployeeRecord {
   resourceConfig: Record<string, unknown>
   systemPromptExtra: string | null
   defaultSkillId: string | null
+  /**
+   * Pointer to the template snapshot this instance was hired from. Present
+   * on records hired/refreshed after PR3 (2026-05-10); older records have
+   * `templateRef === null` until the backend stamps them on next read.
+   */
+  templateRef: EmployeeTemplateRef | null
   createdAt: string
   updatedAt: string
   lastRunAt: string | null
   nextRunAt: string | null
+}
+
+/** Identifies which template snapshot an employee instance was hired from. */
+export interface EmployeeTemplateRef {
+  templateId: string
+  version: string
+  sha256: string
+  /** `"bootstrap"` (embedded) or `"ops:<url>"` (downloaded). */
+  source: string
+}
+
+/**
+ * On-disk shape of the template snapshot at
+ * `<instance>/template/template.json`. Mirrors the OPS-side
+ * `employee_templates` row. Returned by `employeeTemplateCatalog()`.
+ */
+export interface EmployeeTemplateSnapshot {
+  templateId: string
+  version: string
+  name: string
+  avatar: string
+  role: string
+  description: string
+  badge: string
+  systemPromptExtra: string
+  toolWhitelist: string[]
+  cron: string
+  defaultSkillId: string
+  requiresDingtalk: boolean
+  requiresAttachment: { accept: string; min: number; max: number } | null
+  resourceConfigSchema: Record<string, unknown> | null
+  resourceConfigUI: Record<string, unknown> | null
 }
 
 export interface CreateEmployeeRequest {
@@ -1857,6 +1895,20 @@ export function employeeStopRun(id: string): Promise<boolean> {
  */
 export function employeeActiveRun(id: string): Promise<EmployeeActiveRunInfo | null> {
   return invoke<EmployeeActiveRunInfo | null>('employee_active_run', { id })
+}
+
+/**
+ * Returns the catalog of templates the new-hire wizard should display.
+ *
+ * First cut (PR3 / 2026-05-10): the embedded bootstrap registry only.
+ * PR4 will merge in any newer versions cached at
+ * `~/.renlijia/employee-templates-cache/` after the lotus public catalog
+ * API is wired up. The `EmployeeTemplateSnapshot` shape matches
+ * `<instance>/template/template.json` so the wizard can render either
+ * source uniformly.
+ */
+export function employeeTemplateCatalog(): Promise<EmployeeTemplateSnapshot[]> {
+  return invoke<EmployeeTemplateSnapshot[]>('employee_template_catalog')
 }
 
 // ---------------------------------------------------------------------------

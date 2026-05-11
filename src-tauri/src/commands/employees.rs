@@ -6,6 +6,7 @@ use crate::runtime::employee::inbox::{InboxEntry, InboxStore};
 use crate::runtime::employee::store::{
     CreateEmployeeRequest, EmployeeLifecycle, EmployeeRecord, EmployeeStore, UpdateEmployeeRequest,
 };
+use crate::runtime::employee::template_store::{bootstrap_templates, TemplateSnapshot};
 use crate::storage::file_store::AppStorage;
 use crate::storage::{CurrentUserStorage, UserScopedPathResolver};
 
@@ -24,6 +25,20 @@ fn inbox_store(app: &AppHandle) -> Result<InboxStore, String> {
 }
 
 // ─── employee CRUD ────────────────────────────────────────────────────────────
+
+/// Returns the catalog of templates the new-hire wizard should display.
+///
+/// First cut (PR3): just the embedded bootstrap registry. PR4 will merge in
+/// any newer versions cached at `~/.renlijia/employee-templates-cache/`
+/// after the lotus public catalog API is wired up.
+///
+/// The return type matches the on-disk `TemplateSnapshot` shape so the
+/// frontend can switch between bootstrap and downloaded sources without
+/// caring which is which.
+#[tauri::command]
+pub async fn employee_template_catalog() -> Result<Vec<TemplateSnapshot>, String> {
+    bootstrap_templates().map_err(|e| e.to_string())
+}
 
 #[tauri::command]
 pub async fn employee_list(app: AppHandle) -> Result<Vec<EmployeeRecord>, String> {

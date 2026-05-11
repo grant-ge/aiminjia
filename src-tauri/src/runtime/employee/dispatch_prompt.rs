@@ -128,6 +128,7 @@ mod tests {
             resource_config: resource,
             system_prompt_extra: Some("聚焦事实".into()),
             default_skill_id: skill.map(|s| s.to_string()),
+            template_ref: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
             last_run_at: None,

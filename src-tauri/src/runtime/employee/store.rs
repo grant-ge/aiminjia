@@ -84,6 +84,16 @@ pub struct EmployeeRecord {
     /// `load_skill` as the first action when the employee is dispatched.
     /// `None` means no skill hint is injected.
     pub default_skill_id: Option<String>,
+    /// Pointer to the template snapshot this instance was hired from. When
+    /// present, the runtime should treat the snapshot at
+    /// `<instance>/template/template.json` as the authoritative source for
+    /// `tool_whitelist / system_prompt_extra / default_skill_id / role / ...`.
+    /// Old records without this field are auto-populated on read by matching
+    /// `template_id` against the embedded bootstrap registry. Records whose
+    /// `template_id` doesn't match any known template stay `None` (custom
+    /// hand-edited records).
+    #[serde(default)]
+    pub template_ref: Option<crate::runtime::employee::template_store::TemplateRef>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub last_run_at: Option<DateTime<Utc>>,
@@ -180,7 +190,7 @@ impl EmployeeStore {
             None
         };
 
-        let record = EmployeeRecord {
+        let mut record = EmployeeRecord {
             id: format!("emp-{}", Uuid::new_v4()),
             name: req.name.trim().to_string(),
             role: req.role.trim().to_string(),
@@ -197,6 +207,7 @@ impl EmployeeStore {
                 .unwrap_or(serde_json::Value::Object(Default::default())),
             system_prompt_extra: req.system_prompt_extra,
             default_skill_id: req.default_skill_id,
+            template_ref: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
             last_run_at: None,
@@ -204,6 +215,14 @@ impl EmployeeStore {
         };
 
         self.write_record(&record)?;
+        // Stamp the per-instance template/ snapshot if we recognise this
+        // template_id. Failures here are non-fatal (snapshot is additive
+        // metadata; PR4 will start *reading* from it).
+        if let Some(ref_) = stamp_snapshot_for_record(&self.root, &record) {
+            record.template_ref = Some(ref_);
+            // Best-effort persist of the new template_ref. Ignore errors.
+            let _ = self.write_record(&record);
+        }
         Ok(record)
     }
 
@@ -212,7 +231,14 @@ impl EmployeeStore {
         let path = self.record_path(id);
         let content =
             fs::read_to_string(&path).with_context(|| format!("employee not found: {id}"))?;
-        Ok(serde_json::from_str(&content)?)
+        let mut record: EmployeeRecord = serde_json::from_str(&content)?;
+        if record.template_ref.is_none() {
+            if let Some(ref_) = stamp_snapshot_for_record(&self.root, &record) {
+                record.template_ref = Some(ref_);
+                let _ = self.write_record(&record);
+            }
+        }
+        Ok(record)
     }
 
     pub fn list(&self) -> Result<Vec<EmployeeRecord>> {
@@ -233,7 +259,15 @@ impl EmployeeStore {
             }
             let content = fs::read_to_string(&path)?;
             match serde_json::from_str::<EmployeeRecord>(&content) {
-                Ok(r) => records.push(r),
+                Ok(mut r) => {
+                    if r.template_ref.is_none() {
+                        if let Some(ref_) = stamp_snapshot_for_record(&self.root, &r) {
+                            r.template_ref = Some(ref_);
+                            let _ = self.write_record(&r);
+                        }
+                    }
+                    records.push(r)
+                }
                 Err(e) => log::warn!("[EmployeeStore] failed to parse {}: {e}", path.display()),
             }
         }
@@ -946,6 +980,43 @@ fn write_atomic(path: &std::path::Path, bytes: &[u8]) -> Result<()> {
     fs::rename(&tmp, path)
         .with_context(|| format!("rename tmp → {}", path.display()))?;
     Ok(())
+}
+
+/// Stamp the per-instance `template/` snapshot dir based on `record.template_id`.
+///
+/// Returns the `TemplateRef` to store on the record, or `None` if the record
+/// has no `template_id` or the id isn't in the bootstrap registry (custom
+/// hand-edited records). All filesystem errors are swallowed (logged via
+/// `tracing::warn`); the snapshot is additive metadata that PR4 will start
+/// reading from — failing the whole hire/list flow over it would be too
+/// aggressive while the feature is still landing.
+fn stamp_snapshot_for_record(
+    root: &std::path::Path,
+    record: &EmployeeRecord,
+) -> Option<crate::runtime::employee::template_store::TemplateRef> {
+    use crate::runtime::employee::template_store as ts;
+    let tid = record.template_id.as_deref()?;
+    let snap = match ts::bootstrap_template(tid) {
+        Ok(Some(s)) => s,
+        Ok(None) => return None,
+        Err(e) => {
+            log::warn!(
+                "[EmployeeStore] bootstrap lookup failed for {tid}: {e}"
+            );
+            return None;
+        }
+    };
+    let instance_dir = root.join(&record.id);
+    match ts::ensure_instance_snapshot(&instance_dir, &snap, "bootstrap") {
+        Ok(r) => Some(r),
+        Err(e) => {
+            log::warn!(
+                "[EmployeeStore] failed to stamp template snapshot for {}: {e}",
+                record.id
+            );
+            None
+        }
+    }
 }
 
 /// `fs::remove_dir_all` with Windows-friendly retry. AV / Indexer / Explorer
