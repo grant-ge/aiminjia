@@ -205,8 +205,14 @@ Write-Host "`n=== Step 4: Upload signed artifacts to OSS ===" -ForegroundColor C
 
 if ($ReleaseType -eq "beta") {
     $FinalPrefix = "$OssPrefix/beta/v$Version"
+    # OSS-side filename gets a -beta suffix so users can tell beta vs.
+    # release apart in Downloads. Local working filename is unchanged.
+    $UploadExeName = "AIjia_${Version}-beta_x64-setup.exe"
+    $UploadSigName = "${UploadExeName}.sig"
 } else {
     $FinalPrefix = "$OssPrefix/v$Version"
+    $UploadExeName = $ExeFilename
+    $UploadSigName = $SigFilename
 }
 
 $uploadScript = @"
@@ -217,8 +223,8 @@ bucket = oss2.Bucket(auth, '$OssEndpoint', '$OssBucket')
 
 exe_local = r'$ExePath'
 sig_local = r'$SigPath'
-exe_key = '$FinalPrefix/$ExeFilename'
-sig_key = '$FinalPrefix/$SigFilename'
+exe_key = '$FinalPrefix/$UploadExeName'
+sig_key = '$FinalPrefix/$UploadSigName'
 
 print(f'Uploading signed exe: {exe_key}')
 oss2.resumable_upload(bucket, exe_key, exe_local,

@@ -286,8 +286,8 @@ def step_2_test(state):
 
     print(bold(f"\n═══ Step 2: Beta Test Verification (v{version}) ═══"))
     print(f"\n  Beta download links:")
-    print(f"    macOS:   https://lotus.renlijia.com/aijia/beta/v{version}/AIjia_{version}_aarch64.dmg")
-    print(f"    Windows: https://lotus.renlijia.com/aijia/beta/v{version}/AIjia_{version}_x64-setup.exe")
+    print(f"    macOS:   https://lotus.renlijia.com/aijia/beta/v{version}/AIjia_{version}-beta_aarch64.dmg")
+    print(f"    Windows: https://lotus.renlijia.com/aijia/beta/v{version}/AIjia_{version}-beta_x64-setup.exe")
     print(f"\n  Test checklist:")
     print(f"    [ ] Windows install - no security warning")
     print(f"    [ ] macOS install - no security warning")

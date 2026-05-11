@@ -85,7 +85,13 @@ def main():
     upload(bucket, sig, tar_key + ".sig")
 
     if dmg.exists():
-        dmg_key = f"{OSS_PREFIX}/v{version}/{dmg.name}"
+        # OSS-side filename gets a -beta suffix so users can tell beta vs.
+        # release apart in Downloads / dock. Local Tauri bundle filename is
+        # unchanged (Tauri owns it); we only retag during upload.
+        beta_dmg_name = dmg.name.replace(
+            f"_{version}_", f"_{version}-beta_"
+        )
+        dmg_key = f"{OSS_PREFIX}/v{version}/{beta_dmg_name}"
         upload(bucket, dmg, dmg_key)
     else:
         print(f"[warn] DMG not found: {dmg}")

@@ -6,7 +6,8 @@ platform bundles + update.json to OSS. This script only patches the
 cask version field and pushes to the tap.
 
 Usage:
-  python3 scripts/bump-homebrew.py <version>
+  python3 scripts/bump-homebrew.py <version>          # release → aijia.rb
+  python3 scripts/bump-homebrew.py <version> --beta   # beta → aijia-beta.rb
 """
 
 import re
@@ -17,9 +18,12 @@ from pathlib import Path
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python3 bump-homebrew.py <version>")
+        print("Usage: python3 bump-homebrew.py <version> [--beta]")
         sys.exit(1)
     version = sys.argv[1].lstrip("v")
+    is_beta = "--beta" in sys.argv[2:]
+    cask_name = "aijia-beta" if is_beta else "aijia"
+    cask_filename = f"{cask_name}.rb"
 
     tap_path = Path("/opt/homebrew/Library/Taps/grant-ge/homebrew-tap")
     if not tap_path.exists():
@@ -29,20 +33,20 @@ def main():
         )
         tap_path = Path(result.stdout.strip()) if result.returncode == 0 else None
 
-    cask_file = tap_path / "Casks" / "aijia.rb" if tap_path else None
+    cask_file = tap_path / "Casks" / cask_filename if tap_path else None
     if not cask_file or not cask_file.exists():
-        print(f"[error] Homebrew tap not found. brew tap grant-ge/tap first.")
+        print(f"[error] Cask file not found: {cask_filename}. Tap installed?")
         sys.exit(1)
 
     content = cask_file.read_text()
     new_content = re.sub(r'version "\d+\.\d+\.\d+"', f'version "{version}"', content)
     if new_content == content:
-        print(f"[ok] Cask already at v{version}")
+        print(f"[ok] Cask {cask_name} already at v{version}")
         return
 
     cask_file.write_text(new_content)
-    subprocess.run(["git", "add", "Casks/aijia.rb"], cwd=tap_path, check=True)
-    subprocess.run(["git", "commit", "-m", f"chore: bump aijia to v{version}"],
+    subprocess.run(["git", "add", f"Casks/{cask_filename}"], cwd=tap_path, check=True)
+    subprocess.run(["git", "commit", "-m", f"chore: bump {cask_name} to v{version}"],
                    cwd=tap_path, check=True)
     subprocess.run(["gh", "auth", "switch", "--user", "grant-ge"], capture_output=True)
     try:
@@ -66,8 +70,8 @@ def main():
                   f"ahead of origin/main — re-push manually: "
                   f"(cd {tap_path} && git push origin main)")
             sys.exit(1)
-        print(f"[ok] Homebrew cask updated to v{version}")
-        print(f"    brew tap grant-ge/tap && brew install --cask aijia")
+        print(f"[ok] Homebrew cask {cask_name} updated to v{version}")
+        print(f"    brew tap grant-ge/tap && brew install --cask {cask_name}")
     else:
         print(f"[error] git push failed: {r.stderr.strip()}")
         sys.exit(1)
