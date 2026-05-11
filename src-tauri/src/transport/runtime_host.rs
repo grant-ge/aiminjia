@@ -1,4 +1,5 @@
 use anyhow::Result;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::runtime::agent::{
@@ -25,4 +26,12 @@ pub trait RuntimeHost: Send + Sync {
     /// Per-process cancellation registry (P2.7).  Used by TeammateStop to
     /// trip a Teammate's cancel token by AgentId.
     fn cancellation_registry(&self) -> Arc<CancellationRegistry>;
+
+    /// LTR (B-gap2): resolve `<aijia_home>/users/{scope}/conversations/{conv_id}`
+    /// for the active user scope so the runtime can inject it into
+    /// `ToolExecutionContext.conv_dir`.  Returns `None` when the scope is not
+    /// resolvable (no user logged in / test host).
+    fn resolve_conv_dir(&self, _conv_id: &str) -> Option<PathBuf> {
+        None
+    }
 }

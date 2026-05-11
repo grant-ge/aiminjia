@@ -65,6 +65,12 @@ pub struct QueryEngine {
     inbox_registry: Option<Arc<crate::runtime::agent::InboxRegistry>>,
     lead_idle: Option<Arc<crate::runtime::agent::LeadIdleSupervisor>>,
     cancellation_registry: Option<Arc<crate::runtime::agent::CancellationRegistry>>,
+    /// LTR (B-gap2): per-conversation directory rooted at
+    /// `<aijia_home>/users/{scope}/conversations/{conv_id}`.  Propagated into
+    /// every ToolExecutionContext this engine builds; spawn_subagent reads it
+    /// and forwards it into the child worker so transcript JSONL +
+    /// `.meta.json` + team_context attachments land on disk.
+    conv_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -98,6 +104,7 @@ impl QueryEngine {
             inbox_registry: None,
             lead_idle: None,
             cancellation_registry: None,
+            conv_dir: None,
         }
     }
 
@@ -129,6 +136,7 @@ impl QueryEngine {
             inbox_registry: self.inbox_registry.clone(),
             lead_idle: self.lead_idle.clone(),
             cancellation_registry: self.cancellation_registry.clone(),
+            conv_dir: self.conv_dir.clone(),
         }
     }
 
@@ -171,6 +179,12 @@ impl QueryEngine {
         self
     }
 
+    /// LTR (B-gap2): attach the per-conversation directory.  See `conv_dir`.
+    pub fn with_conv_dir(mut self, dir: PathBuf) -> Self {
+        self.conv_dir = Some(dir);
+        self
+    }
+
     /// Attach LTR registries (Team / name / inbox) onto an already-built
     /// ToolExecutionContext.  Helper to avoid duplicating the wiring in every
     /// tool-call build site.  No-op for whichever registry isn't configured
@@ -193,6 +207,9 @@ impl QueryEngine {
         }
         if let Some(reg) = self.cancellation_registry.clone() {
             ctx = ctx.with_cancellation_registry(reg);
+        }
+        if let Some(dir) = self.conv_dir.clone() {
+            ctx = ctx.with_conv_dir(dir);
         }
         ctx
     }

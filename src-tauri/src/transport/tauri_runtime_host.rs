@@ -1,10 +1,13 @@
 use anyhow::Result;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
 
 use crate::runtime::agent::{
     AgentNameRegistry, CancellationRegistry, InboxRegistry, LeadIdleSupervisor, TeamRegistry,
 };
+use crate::storage::current_user_storage::CurrentUserStorage;
+use crate::storage::user_scoped_paths::UserScopedPathResolver;
 use crate::transport::runtime_host::RuntimeHost;
 
 pub struct TauriRuntimeHost {
@@ -44,5 +47,11 @@ impl RuntimeHost for TauriRuntimeHost {
             .state::<Arc<CancellationRegistry>>()
             .inner()
             .clone()
+    }
+
+    fn resolve_conv_dir(&self, conv_id: &str) -> Option<PathBuf> {
+        let cus = self.app.try_state::<Arc<CurrentUserStorage>>()?;
+        let paths = cus.inner().require_paths().ok()?;
+        Some(paths.conversations_dir().join(conv_id))
     }
 }

@@ -2041,7 +2041,7 @@ impl TauriChatCommandAdapter {
             employee_run_overrides: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         };
         let host = Arc::new(TauriRuntimeHost::new(services.app.clone()));
-        let adapter = Arc::new(TauriEventAdapter::new(host));
+        let adapter = Arc::new(TauriEventAdapter::new(host.clone()));
         let bus = RuntimeEventBus::new();
         bus.subscribe(adapter);
         let llm_executor: Arc<dyn RuntimeLlmExecutor> = Arc::new(TauriLegacyTurnExecutor {
@@ -2122,6 +2122,7 @@ impl TauriChatCommandAdapter {
         {
             runtime = runtime.with_cancellation_registry(reg.inner().clone());
         }
+        runtime = runtime.with_host(host as Arc<dyn crate::transport::runtime_host::RuntimeHost>);
         Self { runtime, services }
     }
 

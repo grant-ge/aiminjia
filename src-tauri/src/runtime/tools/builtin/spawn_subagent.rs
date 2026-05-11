@@ -490,7 +490,7 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
                 agent_names: ctx.agent_names().clone(),
                 inbox_registry: ctx.inbox_registry.clone(),
                 cancellation_registry: ctx.cancellation_registry.clone(),
-                conv_dir: None, // P2: inject from paths resolver
+                conv_dir: ctx.conv_dir.clone(),
                 meta,
             };
 

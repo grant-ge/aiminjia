@@ -56,6 +56,10 @@ pub struct SessionRuntime {
     lead_idle: Option<Arc<crate::runtime::agent::LeadIdleSupervisor>>,
     /// LTR (P2.7): per-process cancellation registry.
     cancellation_registry: Option<Arc<crate::runtime::agent::CancellationRegistry>>,
+    /// LTR (B-gap2): host clone used to resolve per-conversation directories
+    /// (`<aijia_home>/users/{scope}/conversations/{conv_id}`) when building
+    /// the per-session QueryEngine.  Optional so tests can omit it.
+    host: Option<Arc<dyn RuntimeHost>>,
 }
 
 impl SessionRuntime {
@@ -77,6 +81,7 @@ impl SessionRuntime {
             inbox_registry: None,
             lead_idle: None,
             cancellation_registry: None,
+            host: None,
         }
     }
 
@@ -107,6 +112,7 @@ impl SessionRuntime {
             inbox_registry: None,
             lead_idle: None,
             cancellation_registry: None,
+            host: None,
         }
     }
 
@@ -197,6 +203,13 @@ impl SessionRuntime {
         reg: Arc<crate::runtime::agent::CancellationRegistry>,
     ) -> Self {
         self.cancellation_registry = Some(reg);
+        self
+    }
+
+    /// LTR (B-gap2): attach the runtime host so per-session QueryEngines can
+    /// resolve their conv_dir via `host.resolve_conv_dir(conv_id)`.
+    pub fn with_host(mut self, host: Arc<dyn RuntimeHost>) -> Self {
+        self.host = Some(host);
         self
     }
 
@@ -477,6 +490,11 @@ impl SessionRuntime {
         }
         if let Some(reg) = self.cancellation_registry.clone() {
             engine = engine.with_cancellation_registry(reg);
+        }
+        if let Some(host) = self.host.as_ref() {
+            if let Some(dir) = host.resolve_conv_dir(session_id.as_str()) {
+                engine = engine.with_conv_dir(dir);
+            }
         }
         engine
     }

@@ -89,6 +89,12 @@ pub struct ToolExecutionContext {
     /// surface user-facing prompts to.  Permission decisions of `Ask` are
     /// auto-denied when this is true; default false (Lead / interactive runs).
     pub is_async: bool,
+    /// LTR (B-gap2): per-conversation directory rooted at
+    /// `<aijia_home>/users/{scope}/conversations/{conv_id}`.  Tools that
+    /// spawn Teammates/sub-agents propagate this into worker contexts so
+    /// transcript JSONL, `.meta.json` sidecars, and team_context
+    /// attachments land on disk.  `None` in legacy/test paths.
+    pub conv_dir: Option<std::path::PathBuf>,
 }
 
 impl ToolExecutionContext {
@@ -120,6 +126,7 @@ impl ToolExecutionContext {
             lead_idle: None,
             cancellation_registry: None,
             is_async: false,
+            conv_dir: None,
         }
     }
 
@@ -194,6 +201,12 @@ impl ToolExecutionContext {
     /// See `is_async` field for semantics.
     pub fn with_async(mut self, is_async: bool) -> Self {
         self.is_async = is_async;
+        self
+    }
+
+    /// LTR (B-gap2): attach the per-conversation directory.  See `conv_dir`.
+    pub fn with_conv_dir(mut self, dir: std::path::PathBuf) -> Self {
+        self.conv_dir = Some(dir);
         self
     }
 
