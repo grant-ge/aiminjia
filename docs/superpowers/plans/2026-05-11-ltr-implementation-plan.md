@@ -1128,11 +1128,35 @@ P1 阶段只做"骨架 select! + cancellation + heartbeat + 占位 inbox channel
 
 **文件**:
 - 改 `src-tauri/src/runtime/agent/worker_runtime.rs`
-- 改 `src-tauri/src/runtime/agent/inbox.rs`(已存在,加 channel kind 即可,不新建文件)
+- **新增** `src-tauri/src/runtime/agent/inbox.rs`(进程内 `tokio::mpsc` channel + `InboxItem` enum;与 `runtime/employee/inbox.rs` 是**完全不同**的概念 —— 后者是给 UI 看的持久化通知 JSONL,**不要复用**)
 - 改 `src-tauri/src/runtime/agent/output_writer.rs`(transcript 写路径按 mode 分目录 + 写 `.meta.json` sidecar)
 - 改 `src-tauri/src/storage/user_scoped_paths.rs`(或等价文件,加 `teammates_dir(conv_id)` / `subagents_dir(conv_id)` getter,弃用旧的 `subagent_transcripts_dir`)
 - 新增 `src-tauri/tests/teammate_idle_loop_skeleton_test.rs`
 - 新增 `src-tauri/tests/transcript_path_routing_test.rs`(verify teammates/ vs subagents/ 路径区分)
+
+**`runtime/agent/inbox.rs` 设计要点**:
+
+```rust
+// 进程内、不落盘、Teammate 退出即销毁
+pub enum InboxItem {
+    ChatMessage { text: String, source: MessageSource },
+    Shutdown(ShutdownRequest),       // P2 才实装,P1 占位
+    TaskNotification(TaskNotification), // P2 才实装,P1 占位
+}
+
+pub struct AgentInbox {
+    tx: tokio::sync::mpsc::Sender<InboxItem>,
+    rx: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<InboxItem>>,
+}
+
+impl AgentInbox {
+    pub fn new(capacity: usize) -> Arc<Self> { ... }
+    pub async fn send(&self, item: InboxItem) -> Result<(), SendError>;
+    pub async fn recv(&self) -> Option<InboxItem>;
+}
+```
+
+P1 只暴露 API + skeleton 单测;实际由谁向 inbox push 由 P2 的 SendMessage 工具决定。
 
 **Transcript 路径规范**(对齐 v4 §8.4):
 
@@ -1252,7 +1276,7 @@ async fn cleanup_teammate(ctx: &WorkerCtx, team: &Arc<Mutex<Team>>, name: &str) 
 
 **Step-by-step**:
 
-- [ ] **Step 1**:在 `inbox.rs` 加 `enum InboxItem`,把现在的 `String` 单 channel 升级成 enum(若现有用法是单 String 也补一个 Text variant 保持向后兼容)。
+- [ ] **Step 1**:**新建** `runtime/agent/inbox.rs`,内含 `InboxItem` enum + `AgentInbox` 结构(基于 `tokio::sync::mpsc`,capacity=64);在 `runtime/agent/mod.rs` 暴露。**不要碰** `runtime/employee/inbox.rs`(那是 UI 通知 JSONL,与本 channel 完全无关)。
 - [ ] **Step 1b**:`user_scoped_paths.rs` 加 `teammates_dir(conv_id) -> PathBuf` 与 `subagents_dir(conv_id) -> PathBuf`(返回 `conversations_dir().join(conv).join("teammates")` 等);标记旧的 `subagent_transcripts_dir()` 为 `#[deprecated]` 或直接删除调用方。
 - [ ] **Step 1c**:`output_writer.rs` 改写:接收 `WorkerMode`(或简化为一个 `kind: TranscriptKind { Subagent, Teammate }` 枚举),按 kind 选 `teammates_dir` / `subagents_dir`;同时写一份 `.meta.json` sidecar(spawn 时一次性写,不再 append)。schema 见上面的"`.meta.json` sidecar schema"。
 - [ ] **Step 2**:`worker_runtime.rs` 加 `WorkerMode` 枚举 + `run_teammate_idle` 函数,粘草稿。
