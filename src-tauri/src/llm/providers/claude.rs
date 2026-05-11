@@ -601,16 +601,10 @@ fn process_sse_data(data: &str, state: &mut SseState) -> Option<Vec<StreamEvent>
                     // Pass the encrypted block through verbatim so the caller can
                     // echo it back on subsequent turns (Anthropic requires it for
                     // tool-use validation when extended thinking is enabled).
-                    let mut out = serde_json::Map::new();
-                    out.insert(
-                        "type".to_string(),
-                        Value::String("redacted_thinking".to_string()),
-                    );
-                    if let Some(data) = block.get("data").cloned() {
-                        out.insert("data".to_string(), data);
-                    }
+                    // Clone the whole block to preserve any future fields beyond
+                    // `type` / `data` that the API may add.
                     return Some(vec![StreamEvent::ThinkingBlock {
-                        block: Value::Object(out),
+                        block: block.clone(),
                     }]);
                 }
                 _ => {}
@@ -1033,6 +1027,119 @@ mod tests {
                 assert_eq!(tool_call.arguments, json!({}));
             }
             _ => panic!("Expected ToolCallStart"),
+        }
+    }
+
+    /// message_delta 缺失 cache_* 字段时，必须保留 message_start 已读到的值，
+    /// 不能用 None 覆盖。
+    #[test]
+    fn test_message_delta_does_not_clobber_cache_tokens_from_message_start() {
+        let mut state = SseState::new();
+
+        // message_start: cache_creation=100, cache_read=200
+        let start = json!({
+            "type": "message_start",
+            "message": {
+                "usage": {
+                    "input_tokens": 50,
+                    "cache_creation_input_tokens": 100,
+                    "cache_read_input_tokens": 200,
+                }
+            }
+        });
+        process_sse_data(&start.to_string(), &mut state);
+        assert_eq!(state.cache_creation_input_tokens, Some(100));
+        assert_eq!(state.cache_read_input_tokens, Some(200));
+
+        // message_delta WITHOUT cache_* fields — must keep prior values.
+        let delta = json!({
+            "type": "message_delta",
+            "delta": { "stop_reason": "end_turn" },
+            "usage": { "output_tokens": 17 }
+        });
+        let events = process_sse_data(&delta.to_string(), &mut state).expect("Done event");
+        match &events[0] {
+            StreamEvent::Done { usage, .. } => {
+                assert_eq!(usage.cache_creation_input_tokens, Some(100));
+                assert_eq!(usage.cache_read_input_tokens, Some(200));
+                assert_eq!(usage.output_tokens, 17);
+                assert_eq!(usage.input_tokens, 50);
+            }
+            _ => panic!("Expected Done event"),
+        }
+    }
+
+    /// usage 字段为 null / 字段不是数字时，as_u64() 应返回 None，
+    /// cache token 字段保持 None，不应 panic。
+    #[test]
+    fn test_cache_tokens_robust_to_missing_or_invalid_usage() {
+        // parse_response: usage 字段缺失
+        let body = json!({
+            "content": [{ "type": "text", "text": "hi" }],
+            "stop_reason": "end_turn",
+            // no "usage"
+        });
+        let resp = ClaudeProvider::parse_response(&body).expect("ok");
+        assert_eq!(resp.usage.input_tokens, 0);
+        assert_eq!(resp.usage.cache_creation_input_tokens, None);
+        assert_eq!(resp.usage.cache_read_input_tokens, None);
+
+        // parse_response: usage.cache_* = null / 浮点 / 负数 → None
+        let body2 = json!({
+            "content": [{ "type": "text", "text": "hi" }],
+            "stop_reason": "end_turn",
+            "usage": {
+                "input_tokens": 1,
+                "output_tokens": 2,
+                "cache_creation_input_tokens": null,
+                "cache_read_input_tokens": -1,
+            }
+        });
+        let resp2 = ClaudeProvider::parse_response(&body2).expect("ok");
+        assert_eq!(resp2.usage.cache_creation_input_tokens, None);
+        // -1 is not a valid u64 → as_u64() returns None
+        assert_eq!(resp2.usage.cache_read_input_tokens, None);
+
+        // SSE message_start with non-numeric cache fields
+        let mut state = SseState::new();
+        let start = json!({
+            "type": "message_start",
+            "message": {
+                "usage": {
+                    "input_tokens": 5,
+                    "cache_creation_input_tokens": "oops",
+                    "cache_read_input_tokens": 1.5,
+                }
+            }
+        });
+        process_sse_data(&start.to_string(), &mut state);
+        assert_eq!(state.cache_creation_input_tokens, None);
+        assert_eq!(state.cache_read_input_tokens, None);
+        assert_eq!(state.input_tokens, 5);
+    }
+
+    /// redacted_thinking 块必须原样透传所有字段（不仅是 type/data），
+    /// 防止未来 Anthropic 加新字段时丢失。
+    #[test]
+    fn test_redacted_thinking_block_preserves_all_fields() {
+        let mut state = SseState::new();
+        let evt = json!({
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": {
+                "type": "redacted_thinking",
+                "data": "ENC...payload",
+                "future_field": "should-survive",
+            }
+        });
+        let events = process_sse_data(&evt.to_string(), &mut state).expect("ThinkingBlock");
+        match &events[0] {
+            StreamEvent::ThinkingBlock { block } => {
+                assert_eq!(block["type"], "redacted_thinking");
+                assert_eq!(block["data"], "ENC...payload");
+                assert_eq!(block["future_field"], "should-survive");
+            }
+            _ => panic!("Expected ThinkingBlock"),
         }
     }
 }
