@@ -19,12 +19,12 @@
 //! `{"status":"async_launched","agent_id":"...","name":"..."}` so the
 //! parent LLM knows the launch succeeded.
 //!
-//! ## Teammate dispatch (P1.3)
+//! ## Teammate dispatch (P1.6)
 //! Passing `employee_id` (mutually exclusive with `subagent_type`) sources the
 //! spawned agent from an Employee profile.  `team_name` (non-empty) turns the
 //! dispatch into a Teammate that joins the session's Team.  `name` is required
 //! for Teammate dispatch and is registered in [`AgentNameRegistry`].
-//! The idle-loop body is stubbed here; P1.6 fills it in.
+//! The idle loop is launched via `tokio::spawn(run_worker(WorkerMode::TeammateIdle{...}))`.
 
 use std::sync::Arc;
 
@@ -33,7 +33,12 @@ use async_trait::async_trait;
 use serde_json::Value;
 
 use crate::runtime::agent::definition::AgentModel;
+use crate::runtime::agent::inbox::AgentInbox;
+use crate::runtime::agent::output_writer::{AgentTranscriptMeta, TranscriptKind};
 use crate::runtime::agent::registry::AgentRegistry;
+use crate::runtime::agent::worker_runtime::{
+    run_worker, TeammateWorkerCtx, WorkerMode,
+};
 use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::employee::store::EmployeeStore;
 use crate::runtime::ids::{AgentId, RunId, SessionId, ToolCallId};
@@ -278,7 +283,7 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
         }
 
         // ── Resolve prompt / tool_whitelist / effective_model ─────────────
-        let (sys_prompt_extra, tool_whitelist, model_override) = match &source {
+        let (_sys_prompt_extra, tool_whitelist, model_override) = match &source {
             AgentSource::Registry(agent_type) => {
                 // Legacy path: resolve from AgentRegistry.
                 let definition = self.registry.get(agent_type).ok_or_else(|| {
@@ -388,23 +393,93 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
 
         // ── Dispatch path ──────────────────────────────────────────────────
         if let Some(team) = team_handle {
-            // Teammate idle-loop path: stubbed here; P1.6 fills in the actual
-            // idle loop body.  Side-effects up to this point (AgentNameRegistry
-            // registration) ARE preserved — the Err returned here signals that
-            // the full launch has not completed, so callers should treat this as
-            // a transient failure until P1.6 lands.
-            return spawn_teammate_idle_loop_stub(
-                // SAFETY: teammate_agent_id is always Some when team_handle is Some
-                // (set in the name registration block above)
-                teammate_agent_id.expect("teammate_agent_id must be set when team is Some"),
-                name,
-                team,
-                sys_prompt_extra,
-                tool_whitelist,
-                request,
-                launch_ctx,
-            )
-            .await;
+            // Teammate idle-loop path (P1.6).
+            // Side-effects (AgentNameRegistry registration, Team join) have
+            // already been applied above.  Now spawn the idle loop.
+            let agent_id = teammate_agent_id.expect("teammate_agent_id must be set when team is Some");
+            let agent_name_str = name.clone().unwrap_or_default();
+            let employee_id = if let AgentSource::Employee(ref eid) = source {
+                Some(eid.clone())
+            } else {
+                None
+            };
+            let spawned_by = launch_ctx.parent_agent_id.as_ref().map(|id| id.as_str().to_owned());
+
+            // Join the team as a Teammate before starting the idle loop.
+            {
+                let mut team_guard = team.lock().await;
+                let member = crate::runtime::agent::Member {
+                    agent_id: agent_id.clone(),
+                    name: agent_name_str.clone(),
+                    role: crate::runtime::agent::MemberRole::Teammate {
+                        employee_id: employee_id.clone().unwrap_or_default(),
+                        spawned_by: launch_ctx.parent_agent_id.clone().unwrap_or_else(|| AgentId::new("unknown")),
+                    },
+                    created_at: chrono::Utc::now(),
+                    last_active_at: chrono::Utc::now(),
+                };
+                if let Err(e) = team_guard.add_teammate(member) {
+                    // Unregister name on failure to keep state consistent.
+                    ctx.agent_names()
+                        .unregister(&ctx.session_id, &agent_name_str)
+                        .await;
+                    return Err(ToolError::ExecutionFailed(format!(
+                        "Failed to join team as Teammate: {e}"
+                    )));
+                }
+            }
+
+            let inbox = AgentInbox::new(64);
+
+            let meta = AgentTranscriptMeta {
+                agent_id: agent_id.as_str().to_string(),
+                agent_name: name.clone(),
+                kind: TranscriptKind::Teammate,
+                employee_id: employee_id.clone(),
+                team_id: Some(launch_ctx.session_id.as_str().to_string()),
+                spawned_by,
+                spawned_at: chrono::Utc::now(),
+                model: request.effective_model.clone(),
+                is_async: true,
+                tool_whitelist: tool_whitelist.clone(),
+            };
+
+            let worker_ctx = TeammateWorkerCtx {
+                agent_id: agent_id.clone(),
+                session_id: launch_ctx.session_id.clone(),
+                conv_id: launch_ctx.session_id.as_str().to_string(),
+                cancel: launch_ctx.cancellation.child_token(),
+                inbox: inbox.clone(),
+                agent_names: ctx.agent_names().clone(),
+                conv_dir: None, // P2: inject from paths resolver
+                meta,
+            };
+
+            let initial_prompt = request.prompt.clone();
+            let team_for_spawn = team.clone();
+            let agent_name_for_spawn = agent_name_str.clone();
+            tokio::spawn(async move {
+                if let Err(e) = run_worker(
+                    WorkerMode::TeammateIdle {
+                        team_handle: team_for_spawn,
+                        agent_name: agent_name_for_spawn,
+                    },
+                    worker_ctx,
+                    Some(initial_prompt),
+                )
+                .await
+                {
+                    log::warn!("[spawn_teammate] idle loop exited with error: {e}");
+                }
+            });
+
+            let agent_id_str = agent_id.as_str().to_string();
+            let json = serde_json::json!({
+                "status": "teammate_spawned",
+                "agent_id": agent_id_str,
+                "name": name,
+            });
+            return Ok(ToolResult::new("Agent", json.to_string(), None));
         }
 
         // ── Legacy async path ──────────────────────────────────────────────
@@ -437,34 +512,7 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
     }
 }
 
-// ─── Teammate idle-loop stub (P1.3) ───────────────────────────────────────────
-
-/// Stub for the Teammate idle-loop launch path.
-///
-/// Side-effects (AgentNameRegistry registration) have already been applied when
-/// this function is reached.  The function returns `Err` to signal that the
-/// idle loop body has not been implemented yet; P1.6 will replace this stub
-/// with the real implementation.
-///
-/// The `#[allow(unused_variables)]` attribute is intentional: all arguments are
-/// captured so the signature matches what P1.6 will require, avoiding a
-/// disruptive refactor when the stub is filled in.
-#[allow(unused_variables)]
-async fn spawn_teammate_idle_loop_stub(
-    agent_id: AgentId,
-    name: Option<String>,
-    team_handle: Arc<tokio::sync::Mutex<crate::runtime::agent::team::Team>>,
-    sys_prompt_extra: Option<String>,
-    tool_whitelist: Vec<String>,
-    request: SpawnSubagentRequest,
-    launch_ctx: SpawnSubagentContext,
-) -> Result<ToolResult, ToolError> {
-    Err(ToolError::ExecutionFailed(
-        "Teammate idle loop not yet implemented — will arrive in P1.6".into(),
-    ))
-}
-
-// ─── Tests ────────────────────────────────────────────────────────────────────
+// ─── Tests ──────────────────────────────────────────────────────────��─────────
 
 #[cfg(test)]
 mod tests {

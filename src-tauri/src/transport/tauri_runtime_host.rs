@@ -1,6 +1,6 @@
 use anyhow::Result;
 use std::sync::Arc;
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 
 use crate::runtime::agent::{AgentNameRegistry, TeamRegistry};
 use crate::transport::runtime_host::RuntimeHost;

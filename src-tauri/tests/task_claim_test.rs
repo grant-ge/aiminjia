@@ -58,7 +58,7 @@ fn seed_task(root: &TempDir, task_id: &str, owner: Option<&str>) {
                 blocks: vec![],
                 blocked_by: vec![],
                 metadata: None,
-                session_id: session_id.clone(),
+                session_id: SessionId::new(CONV_ID),
                 parent_run_id: RunId::new("run-seed"),
                 owner_agent_id: None,
             },

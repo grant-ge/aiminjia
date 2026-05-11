@@ -59,6 +59,28 @@ impl UserScopedPaths {
     pub fn agent_invocations_path(&self) -> PathBuf {
         self.base.join("agent_invocations.json")
     }
+    /// Returns the per-conversation sub-agent transcripts directory.
+    ///
+    /// `conv_id` is the conversation id that owns the transcripts.
+    /// Path: `conversations/{conv_id}/subagents/`
+    pub fn subagents_dir(&self, conv_id: &str) -> PathBuf {
+        self.conversations_dir().join(conv_id).join("subagents")
+    }
+
+    /// Returns the per-conversation Teammate transcripts directory.
+    ///
+    /// `conv_id` is the conversation id that owns the transcripts.
+    /// Path: `conversations/{conv_id}/teammates/`
+    pub fn teammates_dir(&self, conv_id: &str) -> PathBuf {
+        self.conversations_dir().join(conv_id).join("teammates")
+    }
+
+    /// Legacy flat transcript dir kept for backward-compat.
+    /// Prefer [`subagents_dir`] / [`teammates_dir`] for new code.
+    #[deprecated(
+        since = "0.1.0",
+        note = "use subagents_dir(conv_id) or teammates_dir(conv_id) instead"
+    )]
     pub fn subagent_transcripts_dir(&self) -> PathBuf {
         self.base.join("subagent_transcripts")
     }
@@ -131,9 +153,23 @@ mod tests {
             paths.agent_invocations_path(),
             root.join("users/t_1__u_2/agent_invocations.json")
         );
+        #[allow(deprecated)]
+        let legacy = paths.subagent_transcripts_dir();
+        assert_eq!(legacy, root.join("users/t_1__u_2/subagent_transcripts"));
+    }
+
+    #[test]
+    fn subagents_and_teammates_dirs_per_conv() {
+        let root = PathBuf::from("/tmp/test-renlijia");
+        let paths = UserScopedPaths::new(&root, "t_1__u_2");
+        let conv = "conv-abc";
         assert_eq!(
-            paths.subagent_transcripts_dir(),
-            root.join("users/t_1__u_2/subagent_transcripts")
+            paths.subagents_dir(conv),
+            root.join("users/t_1__u_2/conversations/conv-abc/subagents")
+        );
+        assert_eq!(
+            paths.teammates_dir(conv),
+            root.join("users/t_1__u_2/conversations/conv-abc/teammates")
         );
     }
 

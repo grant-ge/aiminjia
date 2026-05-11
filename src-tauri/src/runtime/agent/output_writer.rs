@@ -1,9 +1,18 @@
-//! Append-only JSONL writer for async sub-agent transcripts.
+//! Append-only JSONL writer for async sub-agent and Teammate transcripts.
 //!
 //! Each line is `{"role": "...", "content": "..."}` serializable as JSON.
 //! Used by P6.2 launch_async lifecycle (follow-up wiring) to record sub-agent
 //! results so the parent LLM can read them incrementally via the `task_output`
 //! tool.
+//!
+//! ## Path routing (P1.6)
+//!
+//! | WorkerMode      | transcript path                                  |
+//! |-----------------|--------------------------------------------------|
+//! | `AsyncOneShot`  | `conversations/{conv_id}/subagents/{id}.jsonl`   |
+//! | `TeammateIdle`  | `conversations/{conv_id}/teammates/{id}.jsonl`   |
+//!
+//! A `.meta.json` sidecar is written once at spawn time alongside the JSONL.
 
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -11,6 +20,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+
+// ─── TranscriptLine ───────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TranscriptLine {
@@ -44,10 +55,108 @@ impl TranscriptLine {
     }
 }
 
-/// Compute the transcript file path for an agent given the user's scoped subagent dir.
+// ─── TranscriptKind (P1.6) ────────────────────────────────────────────────────
+
+/// Discriminates between the two worker modes for path routing and sidecar
+/// metadata.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TranscriptKind {
+    /// One-shot async sub-agent launched via `run_in_background=true`.
+    Subagent,
+    /// Long-lived Teammate in idle loop.
+    Teammate,
+}
+
+impl TranscriptKind {
+    /// Returns the subdirectory name under the conversation directory.
+    pub fn dir_name(&self) -> &'static str {
+        match self {
+            Self::Subagent => "subagents",
+            Self::Teammate => "teammates",
+        }
+    }
+
+    /// JSON string value stored in `.meta.json`.
+    pub fn kind_str(&self) -> &'static str {
+        match self {
+            Self::Subagent => "subagent",
+            Self::Teammate => "teammate",
+        }
+    }
+}
+
+// ─── AgentTranscriptMeta (P1.6 sidecar) ──────────────────────────────────────
+
+/// Metadata written as a `.meta.json` sidecar alongside the JSONL transcript.
+///
+/// Written once at spawn time; never appended to.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentTranscriptMeta {
+    pub agent_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_name: Option<String>,
+    pub kind: TranscriptKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub employee_id: Option<String>,
+    /// The conversation id — used as the team scope id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub team_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spawned_by: Option<String>,
+    pub spawned_at: chrono::DateTime<chrono::Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    pub is_async: bool,
+    pub tool_whitelist: Vec<String>,
+}
+
+// ─── Path helpers (P1.6) ─────────────────────────────────────────────────────
+
+/// Compute the per-kind transcript directory inside a conversation directory.
+///
+/// `conv_dir` should be `<aijia_home>/users/{scope}/conversations/{conv_id}`.
+pub fn kind_dir(conv_dir: &Path, kind: &TranscriptKind) -> PathBuf {
+    conv_dir.join(kind.dir_name())
+}
+
+/// Compute the JSONL transcript path.
+///
+/// `conv_dir` is the conversation root (NOT a sub-directory).
+/// `agent_id` is the agent's unique ID string.
+pub fn transcript_path_for_kind(conv_dir: &Path, kind: &TranscriptKind, agent_id: &str) -> PathBuf {
+    kind_dir(conv_dir, kind).join(format!("{agent_id}.jsonl"))
+}
+
+/// Compute the `.meta.json` sidecar path.
+pub fn meta_path_for_kind(conv_dir: &Path, kind: &TranscriptKind, agent_id: &str) -> PathBuf {
+    kind_dir(conv_dir, kind).join(format!("{agent_id}.meta.json"))
+}
+
+/// Write the `.meta.json` sidecar once at spawn time.  Creates parent dirs.
+/// Overwrites any existing sidecar (idempotent for retries).
+pub fn write_meta(conv_dir: &Path, meta: &AgentTranscriptMeta) -> Result<()> {
+    let path = meta_path_for_kind(conv_dir, &meta.kind, &meta.agent_id);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let json = serde_json::to_string_pretty(meta)?;
+    std::fs::write(&path, json)?;
+    Ok(())
+}
+
+// ─── Legacy helper (kept for callers not yet migrated) ───────────────────────
+
+/// Compute the transcript file path for an agent given the user's scoped
+/// sub-agent directory.
+///
+/// **Legacy**: prefer [`transcript_path_for_kind`] with an explicit `conv_dir`
+/// for new code.
 pub fn transcript_path(subagent_transcripts_dir: &Path, agent_id: &str) -> PathBuf {
     subagent_transcripts_dir.join(format!("{agent_id}.jsonl"))
 }
+
+// ─── I/O helpers ─────────────────────────────────────────────────────────────
 
 /// Append a single line. Creates parent dir if missing. Atomic per-line.
 pub fn append_line(path: &Path, line: &TranscriptLine) -> Result<()> {
@@ -159,5 +268,76 @@ mod tests {
         let dir = std::path::PathBuf::from("/tmp/sub");
         let p = transcript_path(&dir, "agent-xyz");
         assert_eq!(p, dir.join("agent-xyz.jsonl"));
+    }
+
+    // ── P1.6: kind-routing tests ──────────────────────────────────────────────
+
+    #[test]
+    fn subagent_kind_uses_subagents_dir() {
+        let conv_dir = std::path::PathBuf::from("/tmp/conv-abc");
+        let p = transcript_path_for_kind(&conv_dir, &TranscriptKind::Subagent, "agent-1");
+        assert_eq!(p, conv_dir.join("subagents/agent-1.jsonl"));
+        let mp = meta_path_for_kind(&conv_dir, &TranscriptKind::Subagent, "agent-1");
+        assert_eq!(mp, conv_dir.join("subagents/agent-1.meta.json"));
+    }
+
+    #[test]
+    fn teammate_kind_uses_teammates_dir() {
+        let conv_dir = std::path::PathBuf::from("/tmp/conv-abc");
+        let p = transcript_path_for_kind(&conv_dir, &TranscriptKind::Teammate, "agent-2");
+        assert_eq!(p, conv_dir.join("teammates/agent-2.jsonl"));
+        let mp = meta_path_for_kind(&conv_dir, &TranscriptKind::Teammate, "agent-2");
+        assert_eq!(mp, conv_dir.join("teammates/agent-2.meta.json"));
+    }
+
+    #[test]
+    fn write_meta_creates_sidecar_with_correct_fields() {
+        let tmp = TempDir::new().unwrap();
+        let conv_dir = tmp.path().join("conversations/conv-test");
+        let meta = AgentTranscriptMeta {
+            agent_id: "agent-999".to_string(),
+            agent_name: Some("researcher".to_string()),
+            kind: TranscriptKind::Teammate,
+            employee_id: Some("emp-42".to_string()),
+            team_id: Some("conv-test".to_string()),
+            spawned_by: Some("lead-agent-id".to_string()),
+            spawned_at: chrono::Utc::now(),
+            model: Some("sonnet".to_string()),
+            is_async: true,
+            tool_whitelist: vec!["Read".to_string(), "SendMessage".to_string()],
+        };
+        write_meta(&conv_dir, &meta).unwrap();
+        let path = conv_dir.join("teammates/agent-999.meta.json");
+        assert!(path.exists());
+        let body = std::fs::read_to_string(&path).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(parsed["kind"].as_str(), Some("teammate"));
+        assert_eq!(parsed["agent_name"].as_str(), Some("researcher"));
+        assert_eq!(parsed["employee_id"].as_str(), Some("emp-42"));
+        assert_eq!(parsed["team_id"].as_str(), Some("conv-test"));
+    }
+
+    #[test]
+    fn write_meta_subagent_kind_str() {
+        let tmp = TempDir::new().unwrap();
+        let conv_dir = tmp.path().join("conversations/conv-sub");
+        let meta = AgentTranscriptMeta {
+            agent_id: "agent-sub-1".to_string(),
+            agent_name: None,
+            kind: TranscriptKind::Subagent,
+            employee_id: None,
+            team_id: None,
+            spawned_by: None,
+            spawned_at: chrono::Utc::now(),
+            model: None,
+            is_async: true,
+            tool_whitelist: vec![],
+        };
+        write_meta(&conv_dir, &meta).unwrap();
+        let path = conv_dir.join("subagents/agent-sub-1.meta.json");
+        assert!(path.exists());
+        let body = std::fs::read_to_string(&path).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(parsed["kind"].as_str(), Some("subagent"));
     }
 }

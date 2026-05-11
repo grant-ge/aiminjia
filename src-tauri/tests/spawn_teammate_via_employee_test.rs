@@ -88,7 +88,14 @@ fn create_employee(store: &EmployeeStore) -> String {
             description: "research tasks".to_string(),
             avatar: "🔍".to_string(),
             template_id: None,
-            tool_whitelist: Some(vec!["WebSearch".to_string()]),
+            // Must include SendMessage / TaskList / TaskGet to pass the required-tool
+            // validation gate in spawn_subagent (added P1.3).
+            tool_whitelist: Some(vec![
+                "WebSearch".to_string(),
+                "SendMessage".to_string(),
+                "TaskList".to_string(),
+                "TaskGet".to_string(),
+            ]),
             cron: None,
             timezone: None,
             lifecycle: Some(EmployeeLifecycle::Active),
@@ -144,7 +151,6 @@ async fn rejects_both_subagent_type_and_employee_id() {
 // ─── Test 2: team_name with no existing Team → error ─────────────────────────
 
 #[tokio::test]
-#[ignore = "depends on P1.6 idle loop wiring"]
 async fn rejects_team_name_when_no_team_exists() {
     let dir = TempDir::new().unwrap();
     let employee_store = Arc::new(EmployeeStore::new(dir.path().to_path_buf()));
@@ -184,7 +190,6 @@ async fn rejects_team_name_when_no_team_exists() {
 // ─── Test 3: duplicate name in same session ───────────────────────────────────
 
 #[tokio::test]
-#[ignore = "depends on P1.6 idle loop wiring"]
 async fn rejects_duplicate_name_in_same_session() {
     let dir = TempDir::new().unwrap();
     let employee_store = Arc::new(EmployeeStore::new(dir.path().to_path_buf()));
@@ -261,7 +266,6 @@ async fn rejects_duplicate_name_in_same_session() {
 // ─── Test 4: happy path (Employee + Team + Name) ──────────────────────────────
 
 #[tokio::test]
-#[ignore = "depends on P1.6 idle loop wiring"]
 async fn happy_path_employee_id_creates_teammate_and_registers_name() {
     let dir = TempDir::new().unwrap();
     let employee_store = Arc::new(EmployeeStore::new(dir.path().to_path_buf()));

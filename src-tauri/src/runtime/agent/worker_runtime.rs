@@ -927,6 +927,267 @@ fn safe_truncate(content: &str, max_bytes: usize) -> &str {
     &content[..end]
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// P1.6: WorkerMode + TeammateIdle idle loop
+// ═══════════════════════════════════════════════════════════════════════════════
+
+use crate::runtime::agent::inbox::{AgentInbox, InboxItem, MessageSource};
+use crate::runtime::agent::name_registry::AgentNameRegistry;
+use crate::runtime::agent::output_writer::{
+    append_line, AgentTranscriptMeta, TranscriptKind, TranscriptLine,
+    transcript_path_for_kind, write_meta,
+};
+use crate::runtime::agent::team::Team;
+use crate::runtime::cancellation::wait_for_cancellation;
+use crate::runtime::ids::{AgentId, SessionId};
+use std::path::PathBuf;
+use tokio::sync::Mutex;
+
+/// Discriminates the execution mode for a worker run.
+///
+/// `AsyncOneShot` is the legacy one-shot subagent path.  `TeammateIdle` is the
+/// new long-lived Teammate path introduced in P1.6.
+pub enum WorkerMode {
+    /// Legacy path: async sub-agent, runs to completion and exits.
+    AsyncOneShot,
+    /// New path: Teammate, stays in idle loop until cancelled or inbox closed.
+    TeammateIdle {
+        /// Team membership handle — used to update `last_active_at` on
+        /// heartbeat and to call `remove_teammate` on cleanup.
+        team_handle: Arc<Mutex<Team>>,
+        /// Human-readable name of this Teammate in the team (e.g. "researcher").
+        agent_name: String,
+    },
+}
+
+/// Context required by the Teammate idle loop.
+///
+/// Constructed by the `spawn_subagent` tool and passed into `run_worker`.
+/// All fields are `Clone`-able so the idle loop can be `tokio::spawn`ed.
+#[derive(Clone)]
+pub struct TeammateWorkerCtx {
+    /// Unique identity of this Teammate agent.
+    pub agent_id: AgentId,
+    /// Session owning this Teammate (used to unregister from `AgentNameRegistry`).
+    pub session_id: SessionId,
+    /// Conversation id — used for transcript path derivation.
+    pub conv_id: String,
+    /// Cancellation token; the loop exits when this is triggered.
+    pub cancel: CancellationToken,
+    /// In-process message inbox.
+    pub inbox: Arc<AgentInbox>,
+    /// Name registry — used to unregister the Teammate's name on cleanup.
+    pub agent_names: Arc<AgentNameRegistry>,
+    /// Conversation root directory for transcript writes.
+    /// `None` means "no logging" (test-only or legacy path).
+    pub conv_dir: Option<PathBuf>,
+    /// Metadata written to the `.meta.json` sidecar once at spawn time.
+    pub meta: AgentTranscriptMeta,
+}
+
+/// Error type for `run_worker`.
+#[derive(Debug, thiserror::Error)]
+pub enum WorkerError {
+    #[error("transcript write failed: {0}")]
+    TranscriptWrite(#[from] anyhow::Error),
+}
+
+/// Top-level entry point for worker execution.
+///
+/// `initial_prompt` is the task description/prompt provided by the caller at
+/// spawn time (e.g. the `prompt` field of `spawn_subagent`).  When present, it
+/// is injected into the inbox as an initial `ChatMessage` before the select!
+/// loop starts.
+pub async fn run_worker(
+    mode: WorkerMode,
+    ctx: TeammateWorkerCtx,
+    initial_prompt: Option<String>,
+) -> Result<(), WorkerError> {
+    match mode {
+        WorkerMode::AsyncOneShot => {
+            // Legacy path is handled by SubagentWorkerRuntime; this variant is
+            // here for API completeness and future unification.
+            log::info!("[TeammateIdle] agent={} WorkerMode::AsyncOneShot — delegating to SubagentWorkerRuntime", ctx.agent_id.as_str());
+            Ok(())
+        }
+        WorkerMode::TeammateIdle {
+            team_handle: th,
+            agent_name,
+        } => {
+            run_teammate_idle(ctx, th, agent_name, initial_prompt).await
+        }
+    }
+}
+
+async fn run_teammate_idle(
+    ctx: TeammateWorkerCtx,
+    team_handle: Arc<Mutex<Team>>,
+    agent_name: String,
+    initial_prompt: Option<String>,
+) -> Result<(), WorkerError> {
+    log::info!(
+        "[TeammateIdle] agent={} name={} idle loop started",
+        ctx.agent_id.as_str(),
+        agent_name
+    );
+
+    // Write `.meta.json` sidecar once at entry.
+    if let Some(ref conv_dir) = ctx.conv_dir {
+        if let Err(e) = write_meta(conv_dir, &ctx.meta) {
+            log::warn!(
+                "[TeammateIdle] agent={} failed to write transcript sidecar: {}; continuing without it",
+                ctx.agent_id.as_str(),
+                e
+            );
+        }
+    }
+
+    // If an initial prompt was given, seed the inbox so the first iteration
+    // of the select! loop immediately processes it.
+    if let Some(prompt) = initial_prompt {
+        let _ = ctx
+            .inbox
+            .send(InboxItem::ChatMessage {
+                text: prompt,
+                source: MessageSource::Lead,
+            })
+            .await;
+    }
+
+    // Heartbeat interval — 60s in production; tests can override by controlling
+    // how many ticks they drive before cancelling.
+    let heartbeat_secs = if cfg!(test) { 1 } else { 60 };
+    let mut heartbeat =
+        tokio::time::interval(std::time::Duration::from_secs(heartbeat_secs));
+    // Skip the first tick that fires immediately.
+    heartbeat.tick().await;
+
+    loop {
+        tokio::select! {
+            biased;
+
+            // ── Cancellation (highest priority) ───────────────────────────
+            _ = wait_for_cancellation(ctx.cancel.clone()) => {
+                log::info!(
+                    "[TeammateIdle] agent={} name={} cancelled — running cleanup",
+                    ctx.agent_id.as_str(),
+                    agent_name
+                );
+                cleanup_teammate(&ctx, &team_handle, &agent_name).await;
+                return Ok(());
+            }
+
+            // ── Inbox message ─────────────────────────────────────────────
+            item = ctx.inbox.recv() => {
+                match item {
+                    Some(InboxItem::ChatMessage { text, source }) => {
+                        log::info!(
+                            "[TeammateIdle] agent={} name={} received ChatMessage from {:?} — running turn (P1 stub)",
+                            ctx.agent_id.as_str(),
+                            agent_name,
+                            source
+                        );
+                        // P1 stub: record the received message in transcript,
+                        // then record a placeholder assistant reply.
+                        // Full LLM integration is deferred to P2.
+                        teammate_stub_turn(&ctx, &agent_name, &text).await;
+                    }
+                    Some(InboxItem::Shutdown(req)) => {
+                        log::warn!(
+                            "[TeammateIdle] agent={} name={} shutdown_request received reason={} (P1 stub: exit immediately)",
+                            ctx.agent_id.as_str(),
+                            agent_name,
+                            req.reason
+                        );
+                        cleanup_teammate(&ctx, &team_handle, &agent_name).await;
+                        return Ok(());
+                    }
+                    Some(InboxItem::TaskNotification(notif)) => {
+                        // P2: forward notification into the LLM turn as a user
+                        // message.  For P1 we just log and continue.
+                        log::info!(
+                            "[TeammateIdle] agent={} name={} TaskNotification received (xml_len={}) — ignored in P1",
+                            ctx.agent_id.as_str(),
+                            agent_name,
+                            notif.xml.len()
+                        );
+                    }
+                    None => {
+                        // All senders dropped — inbox closed; exit gracefully.
+                        log::info!(
+                            "[TeammateIdle] agent={} name={} inbox closed — exiting gracefully",
+                            ctx.agent_id.as_str(),
+                            agent_name
+                        );
+                        cleanup_teammate(&ctx, &team_handle, &agent_name).await;
+                        return Ok(());
+                    }
+                }
+            }
+
+            // ── Heartbeat ─────────────────────────────────────────────────
+            _ = heartbeat.tick() => {
+                log::debug!(
+                    "[TeammateIdle] agent={} name={} heartbeat — updating last_active_at",
+                    ctx.agent_id.as_str(),
+                    agent_name
+                );
+                let mut team = team_handle.lock().await;
+                if let Some(m) = team
+                    .teammates
+                    .iter_mut()
+                    .find(|m| m.name == agent_name)
+                {
+                    m.last_active_at = chrono::Utc::now();
+                }
+            }
+        }
+    }
+}
+
+/// P1 stub: record a user message + placeholder assistant reply in the
+/// transcript JSONL.  P2 replaces this with a real LLM call.
+async fn teammate_stub_turn(ctx: &TeammateWorkerCtx, agent_name: &str, user_text: &str) {
+    if let Some(ref conv_dir) = ctx.conv_dir {
+        let jl_path =
+            transcript_path_for_kind(conv_dir, &TranscriptKind::Teammate, ctx.agent_id.as_str());
+        let user_line = TranscriptLine {
+            role: "user".to_string(),
+            content: user_text.to_string(),
+            error: None,
+        };
+        let _ = append_line(&jl_path, &user_line);
+        let reply = TranscriptLine::assistant(format!(
+            "[P1 stub] {} received: {}",
+            agent_name, user_text
+        ));
+        let _ = append_line(&jl_path, &reply);
+    }
+}
+
+/// Cleanup performed when the idle loop exits (cancellation, shutdown, inbox
+/// closed).  Removes the Teammate from `Team` and unregisters its name from
+/// `AgentNameRegistry`.
+async fn cleanup_teammate(
+    ctx: &TeammateWorkerCtx,
+    team_handle: &Arc<Mutex<Team>>,
+    name: &str,
+) {
+    // 1. Remove from Team roster.
+    {
+        let mut team = team_handle.lock().await;
+        team.remove_teammate(name);
+    }
+    // 2. Unregister from AgentNameRegistry so the name can be reused.
+    ctx.agent_names.unregister(&ctx.session_id, name).await;
+
+    log::info!(
+        "[TeammateIdle] agent={} name={} cleanup complete",
+        ctx.agent_id.as_str(),
+        name
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
