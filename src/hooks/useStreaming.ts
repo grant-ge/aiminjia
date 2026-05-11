@@ -34,6 +34,7 @@
 import { useEffect, useRef } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import { useChatStore } from '@/stores/chatStore'
+import { useAuthStore } from '@/stores/authStore'
 import { useDiagnosticsStore } from '@/stores/diagnosticsStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { recordDiagnostic } from '@/lib/diagnostics'
@@ -88,6 +89,58 @@ const STALE_STREAM_TIMEOUT_MS = 200_000
 const WATCHDOG_INTERVAL_MS = 10_000
 
 const autoUploadedFailedToolCalls = new Set<string>()
+
+/** Detect gateway error strings that indicate the currently selected
+ *  cloud model is no longer routable (route disabled, model unknown,
+ *  protocol mismatch, etc). When matched we resync cloud models from the
+ *  server, which falls back to a known-good default in authStore so the
+ *  user can resend instead of being stuck.
+ *
+ *  Substrings are matched case-insensitively against `error || rawError`
+ *  from `streaming:error` payload.
+ */
+const ROUTE_ERROR_HINTS = [
+  'no anthropic-protocol route',
+  'no_route',
+  'no route found',
+  'model_not_found',
+  'not_found_error',
+  'no chat model configured',
+] as const
+
+function looksLikeRouteError(text: string | undefined | null): boolean {
+  if (!text) return false
+  const lower = text.toLowerCase()
+  return ROUTE_ERROR_HINTS.some((h) => lower.includes(h))
+}
+
+/** Cooldown to prevent a thrashing model list reload if the user
+ *  triggers several failing turns in a row. */
+const RESYNC_COOLDOWN_MS = 30_000
+let lastModelResyncAt = 0
+
+async function resyncCloudModelsOnRouteError(): Promise<void> {
+  const now = Date.now()
+  if (now - lastModelResyncAt < RESYNC_COOLDOWN_MS) return
+  lastModelResyncAt = now
+  try {
+    const before = useAuthStore.getState().selectedCloudModel
+    const after = await useAuthStore.getState().resyncCloudModels()
+    if (after && after !== before) {
+      useNotificationStore.getState().push({
+        level: 'info',
+        title: i18n.t('errors.modelRouteUnavailable'),
+        message: i18n.t('errors.modelRouteUnavailableDesc', { model: after }),
+        actions: [],
+        dismissible: true,
+        autoHide: 10,
+        context: 'toast',
+      })
+    }
+  } catch (err) {
+    console.warn('[streaming:error] resync cloud models failed:', err)
+  }
+}
 
 function extractTaskCreateState(message: Message): ConversationTaskState | null {
   const match = message.toolResult?.content.match(/^Task #(\S+) created successfully: (.+)$/)
@@ -302,6 +355,16 @@ export function useStreaming() {
         if (lastUserMsg && !lastUserMsg.id.startsWith('msg-')) {
           store.removeMessage(lastUserMsg.id)
         }
+      }
+
+      // Auto-recover from "selected model has no route" errors. The gateway
+      // route catalog can change at any time (ops disables a route, a tenant
+      // fixed-route flips, etc.); when that happens the desktop client's
+      // locally-cached cloud_model goes stale and every send fails until the
+      // user manually picks a new model. Resync silently and surface a toast
+      // telling the user a switch happened.
+      if (looksLikeRouteError(error) || looksLikeRouteError(rawError)) {
+        void resyncCloudModelsOnRouteError()
       }
 
       // Show longer auto-hide for timeout errors (user needs time to read)

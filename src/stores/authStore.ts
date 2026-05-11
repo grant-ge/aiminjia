@@ -26,6 +26,7 @@ interface AuthState {
   setCloudModels: (models: CloudModel[]) => void
   setSelectedCloudModel: (model: string | null) => void
   setRedirectFrom: (route: Route | null) => void
+  resyncCloudModels: () => Promise<string | null>
   restoreFromStorage: () => Promise<void>
   login: (username: string, password: string) => Promise<void>
   logout: () => Promise<void>
@@ -97,6 +98,14 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   setSelectedCloudModel: (selectedCloudModel) => set({ selectedCloudModel }),
   setRedirectFrom: (redirectFrom) => set({ redirectFrom }),
+
+  async resyncCloudModels() {
+    if (!useAuthStore.getState().isLoggedIn) return null
+    const models = await getCloudModels()
+    const selectedCloudModel = await syncCloudModelSelection(models)
+    set({ cloudModels: models, selectedCloudModel })
+    return selectedCloudModel
+  },
 
   async restoreFromStorage() {
     set({ isAuthPending: true })

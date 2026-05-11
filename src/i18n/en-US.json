@@ -409,7 +409,9 @@
     "chatBusy": "This conversation is being processed. Please wait for it to finish before sending.",
     "maxConcurrent": "Up to {{max}} conversations can be processed simultaneously. Please wait for others to finish.",
     "sendFailed": "Send failed",
-    "sendFailedDesc": "Failed to send message. Please check your network and settings."
+    "sendFailedDesc": "Failed to send message. Please check your network and settings.",
+    "modelRouteUnavailable": "Model switched",
+    "modelRouteUnavailableDesc": "The previous model is unavailable. Auto-switched to {{model}} — please resend your message."
   },
   "format": {
     "justNow": "Just now",
