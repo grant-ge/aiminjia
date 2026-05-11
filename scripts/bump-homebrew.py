@@ -39,7 +39,11 @@ def main():
         sys.exit(1)
 
     content = cask_file.read_text()
-    new_content = re.sub(r'version "\d+\.\d+\.\d+"', f'version "{version}"', content)
+    new_content = re.sub(
+        r'version "\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?"',
+        f'version "{version}"',
+        content,
+    )
     if new_content == content:
         print(f"[ok] Cask {cask_name} already at v{version}")
         return

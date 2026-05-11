@@ -169,15 +169,21 @@ def check_git_clean():
 
 # --- Flow Steps ---
 def step_0_bump(state):
-    """Step 0: Bump version."""
+    """Step 0: Set base version (X.Y.Z, no pre-release suffix).
+
+    Only writes files for plain X.Y.Z. The actual beta builds in Step 1
+    will mutate version into X.Y.Z-beta.N each round.
+    """
     print(bold("\n═══ Step 0: Version Bump ═══"))
 
     current = get_current_version()
+    # If config has a pre-release suffix (mid-beta-cycle), strip it for the prompt
+    base_default = re.match(r'^(\d+\.\d+\.\d+)', current).group(1) if current else "0.0.0"
     print(f"  Current version: {current}")
 
-    version = ask("  New version", current)
+    version = ask("  New base version (X.Y.Z, no -beta suffix)", base_default)
     if not re.match(r'^\d+\.\d+\.\d+$', version):
-        print(red("  Invalid version format. Use X.Y.Z"))
+        print(red("  Invalid version format. Use X.Y.Z (Step 1 will append -beta.N)"))
         return
 
     if version != current:
@@ -207,30 +213,70 @@ def step_0_bump(state):
         run("git push codeup main", check=False)
         run("git push origin main")
 
-    state["version"] = version
+    state["base_version"] = version
+    state["version"] = version  # mirror for legacy step lookups; mutates in step_1
+    state["beta_seq"] = 0
     state["started_at"] = datetime.now().isoformat()
     state["stages_completed"] = []
     complete_stage(state, "version_bumped")
-    print(green(f"\n  ✓ Version {version} ready. Next: Step 1 (Beta build)"))
+    print(green(f"\n  ✓ Base version {version} ready. Next: Step 1 (Beta build)"))
 
 
 def step_1_beta(state):
-    """Step 1: Create beta tag → CI builds."""
-    check_prereq(state, "version_bumped", "create beta tag")
-    version = state["version"]
+    """Step 1: Bump beta seq → rewrite version → commit → tag → push.
 
-    print(bold(f"\n═══ Step 1: Beta Build (v{version}) ═══"))
+    Each invocation produces a fresh tag like beta-v0.5.22-beta.2, with
+    config files mirroring the full pre-release string so the binary's
+    About dialog and Tauri-bundled artifact filenames show the same
+    beta.N suffix as the OSS path and Homebrew cask URL.
+    """
+    check_prereq(state, "version_bumped", "create beta tag")
+    base = state.get("base_version") or state.get("version")
+    if not base or not re.match(r'^\d+\.\d+\.\d+$', base):
+        print(red(f"  Missing base_version in state (got: {base!r}). Run Step 0 first."))
+        return
+
+    seq = state.get("beta_seq", 0) + 1
+    beta_version = f"{base}-beta.{seq}"
+
+    print(bold(f"\n═══ Step 1: Beta Build (v{beta_version}) ═══"))
+    print(f"  base={base}  beta_seq={seq}  →  {beta_version}")
 
     if not check_git_clean():
         if not confirm("  Continue anyway?"):
             return
 
-    tag = f"beta-v{version}"
-    print(f"  Creating tag: {tag}")
+    # Bump version files to X.Y.Z-beta.N
+    if IS_WINDOWS:
+        run(f"python scripts/bump-version.py {beta_version}")
+    else:
+        run(f"bash scripts/bump-version.sh {beta_version}")
+    # Refresh Cargo.lock so its [package] name = "aijia" version matches
+    run("cargo update -p aijia --manifest-path src-tauri/Cargo.toml", check=False)
 
+    if not check_versions_synced():
+        return
+
+    if confirm(f"  Commit version bump → {beta_version}?"):
+        run('git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock')
+        run(f'git commit -m "chore: bump to {beta_version}"', check=False)
+        run("git push codeup main", check=False)
+        run("git push origin main")
+
+    tag = f"beta-v{beta_version}"
+    print(f"  Creating tag: {tag}")
     if confirm(f"  Create and push tag {tag}?"):
-        run(f"git tag {tag}", check=False)  # may already exist
+        run(f"git tag {tag}", check=False)
         run(f"git push origin {tag}")
+        run(f"git push codeup {tag}", check=False)
+
+        state["version"] = beta_version  # active version
+        state["beta_seq"] = seq
+        # Reset downstream stages — every new beta round restarts signing & test
+        for s in ("beta_win_signed", "beta_tested"):
+            if s in state.get("stages_completed", []):
+                state["stages_completed"].remove(s)
+        save_state(state)
         complete_stage(state, "beta_tagged")
         print(green(f"\n  ✓ Beta tag pushed. CI is building."))
         print(f"\n  Monitor: https://github.com/{GH_REPO}/actions")
@@ -239,7 +285,7 @@ def step_1_beta(state):
         if IS_WINDOWS:
             print(f"    python scripts/release.py sign-beta")
         else:
-            print(f"    On Windows: .\\scripts\\sign-windows.ps1 -Version {version} -ReleaseType beta")
+            print(f"    On Windows: .\\scripts\\sign-windows.ps1 -Version {beta_version} -ReleaseType beta")
             print(f"    Then come back and run: python scripts/release.py mark-beta-signed")
 
 
@@ -286,8 +332,8 @@ def step_2_test(state):
 
     print(bold(f"\n═══ Step 2: Beta Test Verification (v{version}) ═══"))
     print(f"\n  Beta download links:")
-    print(f"    macOS:   https://lotus.renlijia.com/aijia/beta/v{version}/AIjia_{version}-beta_aarch64.dmg")
-    print(f"    Windows: https://lotus.renlijia.com/aijia/beta/v{version}/AIjia_{version}-beta_x64-setup.exe")
+    print(f"    macOS:   https://lotus.renlijia.com/aijia/beta/v{version}/AIjia_{version}_aarch64.dmg")
+    print(f"    Windows: https://lotus.renlijia.com/aijia/beta/v{version}/AIjia_{version}_x64-setup.exe")
     print(f"\n  Test checklist:")
     print(f"    [ ] Windows install - no security warning")
     print(f"    [ ] macOS install - no security warning")
@@ -305,13 +351,30 @@ def step_2_test(state):
 
 
 def step_3_release(state):
-    """Step 3: Create release tag → CI builds."""
+    """Step 3: Bump version to plain X.Y.Z (drop -beta.N) → tag → CI builds."""
     check_prereq(state, "beta_tested", "create release tag")
-    version = state["version"]
+    base = state.get("base_version") or re.match(r'^(\d+\.\d+\.\d+)', state["version"]).group(1)
 
-    print(bold(f"\n═══ Step 3: Release Build (v{version}) ═══"))
+    print(bold(f"\n═══ Step 3: Release Build (v{base}) ═══"))
+    print(f"  Beta cycle ended at: {state.get('version')}")
+    print(f"  Releasing as:         {base}  (pre-release suffix dropped)")
 
-    tag = f"v{version}"
+    if get_current_version() != base:
+        print(f"  Bumping config files back to plain {base}")
+        if IS_WINDOWS:
+            run(f"python scripts/bump-version.py {base}")
+        else:
+            run(f"bash scripts/bump-version.sh {base}")
+        run("cargo update -p aijia --manifest-path src-tauri/Cargo.toml", check=False)
+        if not check_versions_synced():
+            return
+        if confirm(f"  Commit version bump → {base}?"):
+            run('git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock')
+            run(f'git commit -m "chore: bump to {base}"', check=False)
+            run("git push codeup main", check=False)
+            run("git push origin main")
+
+    tag = f"v{base}"
     print(f"\n  {red('WARNING: This will create a PRODUCTION release tag!')}")
     print(f"  Tag: {tag}")
     print(f"  Users will receive this update after finalize.")
@@ -322,6 +385,9 @@ def step_3_release(state):
 
     run(f"git tag {tag}", check=False)
     run(f"git push origin {tag}")
+    run(f"git push codeup {tag}", check=False)
+    state["version"] = base
+    save_state(state)
     complete_stage(state, "release_tagged")
     print(green(f"\n  ✓ Release tag pushed. CI is building."))
     print(f"\n  Monitor: https://github.com/{GH_REPO}/actions")
@@ -330,7 +396,7 @@ def step_3_release(state):
     if IS_WINDOWS:
         print(f"    python scripts/release.py sign-release")
     else:
-        print(f"    On Windows: .\\scripts\\sign-windows.ps1 -Version {version} -ReleaseType release")
+        print(f"    On Windows: .\\scripts\\sign-windows.ps1 -Version {base} -ReleaseType release")
         print(f"    Then: python scripts/release.py mark-release-signed")
 
 

@@ -1,8 +1,15 @@
 #!/usr/bin/env python3
 """Bump version across all config files (package.json, Cargo.toml, tauri.conf.json).
 
+Accepts plain semver (0.5.22) or pre-release (0.5.22-beta.1). Pre-release
+strings flow into the binary's About dialog and into Tauri/Cargo crates,
+which both accept full SemVer. The OSS upload scripts and Homebrew cask
+read the same version string verbatim, so file naming stays consistent
+end-to-end.
+
 Usage:
     python scripts/bump-version.py 0.5.22
+    python scripts/bump-version.py 0.5.22-beta.1
 """
 
 import json
@@ -17,11 +24,13 @@ def main():
     if len(sys.argv) < 2:
         print("Usage: python scripts/bump-version.py <version>")
         print("Example: python scripts/bump-version.py 0.5.22")
+        print("         python scripts/bump-version.py 0.5.22-beta.1")
         sys.exit(1)
 
     version = sys.argv[1].lstrip("v")
-    if not re.match(r'^\d+\.\d+\.\d+$', version):
-        print(f"Error: invalid version format '{version}'. Use X.Y.Z")
+    # Accept plain X.Y.Z plus optional pre-release suffix (-beta.N, -rc.1, etc.)
+    if not re.match(r'^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$', version):
+        print(f"Error: invalid version format '{version}'. Use X.Y.Z[-prerelease]")
         sys.exit(1)
 
     print(f"Bumping version to {version}")
