@@ -109,6 +109,13 @@ pub struct AgentTranscriptMeta {
     pub model: Option<String>,
     pub is_async: bool,
     pub tool_whitelist: Vec<String>,
+    /// LTR (P2.3): the fully-composed boot system prompt the Teammate's LLM
+    /// will see on its first turn (= Employee.system_prompt_extra +
+    /// TEAMMATE_ADDENDUM with team_name / teammate_name substituted in).
+    /// `None` for AsyncOneShot / legacy paths.  Recorded in the sidecar so
+    /// it is auditable without rerunning the boot machinery.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub boot_system_prompt: Option<String>,
 }
 
 // ─── Path helpers (P1.6) ─────────────────────────────────────────────────────
@@ -304,6 +311,7 @@ mod tests {
             spawned_at: chrono::Utc::now(),
             model: Some("sonnet".to_string()),
             is_async: true,
+            boot_system_prompt: None,
             tool_whitelist: vec!["Read".to_string(), "SendMessage".to_string()],
         };
         write_meta(&conv_dir, &meta).unwrap();
@@ -331,6 +339,7 @@ mod tests {
             spawned_at: chrono::Utc::now(),
             model: None,
             is_async: true,
+            boot_system_prompt: None,
             tool_whitelist: vec![],
         };
         write_meta(&conv_dir, &meta).unwrap();

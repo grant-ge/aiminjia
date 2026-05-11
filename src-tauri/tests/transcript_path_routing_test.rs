@@ -58,7 +58,8 @@ fn subagent_meta(conv_dir_path: &std::path::Path, agent_id: &str) -> AgentTransc
         spawned_at: chrono::Utc::now(),
         model: Some("sonnet".to_string()),
         is_async: true,
-        tool_whitelist: vec!["Read".to_string()],
+        boot_system_prompt: None,
+            tool_whitelist: vec!["Read".to_string()],
     }
 }
 
@@ -73,7 +74,8 @@ fn teammate_meta(conv_id: &str, agent_id: &str) -> AgentTranscriptMeta {
         spawned_at: chrono::Utc::now(),
         model: None,
         is_async: true,
-        tool_whitelist: vec!["Read".to_string(), "SendMessage".to_string()],
+        boot_system_prompt: None,
+            tool_whitelist: vec!["Read".to_string(), "SendMessage".to_string()],
     }
 }
 

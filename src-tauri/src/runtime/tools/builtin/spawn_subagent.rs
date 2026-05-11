@@ -283,7 +283,7 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
         }
 
         // ── Resolve prompt / tool_whitelist / effective_model ─────────────
-        let (_sys_prompt_extra, tool_whitelist, model_override) = match &source {
+        let (sys_prompt_extra, tool_whitelist, model_override) = match &source {
             AgentSource::Registry(agent_type) => {
                 // Legacy path: resolve from AgentRegistry.
                 let definition = self.registry.get(agent_type).ok_or_else(|| {
@@ -406,6 +406,9 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
             let spawned_by = launch_ctx.parent_agent_id.as_ref().map(|id| id.as_str().to_owned());
 
             // Join the team as a Teammate before starting the idle loop.
+            // Capture team_name while we hold the lock so the boot prompt
+            // composition below doesn't need to re-lock.
+            let team_name_str: String;
             {
                 let mut team_guard = team.lock().await;
                 let member = crate::runtime::agent::Member {
@@ -427,6 +430,7 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
                         "Failed to join team as Teammate: {e}"
                     )));
                 }
+                team_name_str = team_guard.team_name.clone();
             }
 
             let inbox = AgentInbox::new(64);
@@ -455,6 +459,13 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
                 model: request.effective_model.clone(),
                 is_async: true,
                 tool_whitelist: tool_whitelist.clone(),
+                boot_system_prompt: Some(
+                    crate::runtime::agent::teammate_addendum::compose_boot_prompt(
+                        sys_prompt_extra.as_deref().unwrap_or(""),
+                        &team_name_str,
+                        &agent_name_str,
+                    ),
+                ),
             };
 
             let worker_ctx = TeammateWorkerCtx {

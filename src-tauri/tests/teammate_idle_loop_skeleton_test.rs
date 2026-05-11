@@ -60,7 +60,8 @@ fn make_meta(agent_id: &str, agent_name: &str) -> AgentTranscriptMeta {
         spawned_at: chrono::Utc::now(),
         model: None,
         is_async: true,
-        tool_whitelist: vec![],
+        boot_system_prompt: None,
+            tool_whitelist: vec![],
     }
 }
 
