@@ -251,7 +251,9 @@ workspace 目录（用户可自定义，默认也是 `~/.renlijia/`）下存放�
 
 ## 发布流程（权威 · 自 v0.5.22 起）
 
-三阶段：**Beta 测试（已签名）→ 测试验证 → 正式发布（已签名）**。Windows 代码签名必须在本地签名机完成（证书绑定物理机），macOS 签名在 CI 自动完成。
+三阶段：**Beta 测试 → 测试验证 → 正式发布**。Windows 代码签名必须在本地签名机完成（Authenticode 证书绑定物理机）。**macOS 不做 Apple 公证**——dmg 在 CI 直接出未签名版上传 OSS。Homebrew cask 的 postflight 自动 `xattr -cr` 清理 quarantine 属性，开箱即用；直接下载 dmg 的用户首次打开如遇 "damaged"，需自己跑 `xattr -cr /Applications/AIjia.app` 或在系统设置中允许。
+
+**Beta 通道独立分发**：beta 包文件名带 `-beta` 后缀（`AIjia_<ver>-beta_aarch64.dmg` / `AIjia_<ver>-beta_x64-setup.exe`）。对应独立 Homebrew cask `aijia-beta`（与正式版 `aijia` 互斥，因 .app 文件名相同）。内测人员推荐 `brew install --cask grant-ge/tap/aijia-beta`，避免手动 xattr。
 
 ### 流程总览
 
@@ -294,7 +296,7 @@ git push codeup main && git push origin main
 - `src-tauri/Cargo.toml` → `version`
 - `src-tauri/Cargo.lock` → `[package] name = "aijia"` 下的 `version`
 
-### Step 1: Beta 构建（已签名，用于测试）
+### Step 1: Beta 构建（用于测试）
 
 ```bash
 python scripts/release.py beta        # 交互式，自动创建 tag 并 push
@@ -304,7 +306,7 @@ python scripts/release.py beta        # 交互式，自动创建 tag 并 push
 **CI 自动做**：
 | 平台 | 产出 | 去向 |
 |------|------|------|
-| macOS arm64 | `.dmg` + `.app.tar.gz` + `.sig`（Apple 签名） | `aijia/beta/v0.5.22/` |
+| macOS arm64 | `.dmg`（未签名） + `.app.tar.gz` + `.sig`（Tauri updater Ed25519） | `aijia/beta/v0.5.22/AIjia_0.5.22-beta_aarch64.dmg` |
 | Windows x64 | `.exe`（未签名） | `aijia/staging/beta/v0.5.22/` |
 
 **Windows 本地签名**（CI 完成后，在签名机执行）：
@@ -317,22 +319,29 @@ python scripts/release.py sign-beta
 .\scripts\sign-windows.ps1 -Version 0.5.22 -ReleaseType beta
 ```
 
-脚本自动：下载未签名 exe → Authenticode 签名 → 重新生成 Tauri updater `.sig` → 上传到 `aijia/beta/v0.5.22/`
+脚本自动：下载未签名 exe → Authenticode 签名 → 重新生成 Tauri updater `.sig` → 上传到 `aijia/beta/v0.5.22/AIjia_0.5.22-beta_x64-setup.exe`
 
 ### Step 2: 测试验证
 
+**Homebrew 安装（推荐内测人员）**：
+```bash
+brew install --cask grant-ge/tap/aijia-beta
+# 升级 beta：brew upgrade --cask aijia-beta
+```
+cask 内置 `xattr -cr` postflight，自动处理 macOS quarantine，开箱即用。**Beta 通道发版后需手动同步 cask**：`python3 scripts/bump-homebrew.py 0.5.22 --beta`。
+
+**直接下载**（首次需 `xattr -cr /Applications/AIjia.app`）：
+- macOS: `https://lotus.renlijia.com/aijia/beta/v0.5.22/AIjia_0.5.22-beta_aarch64.dmg`
+- Windows: `https://lotus.renlijia.com/aijia/beta/v0.5.22/AIjia_0.5.22-beta_x64-setup.exe`
+
 测试清单：
-- [ ] Windows 安装无安全警告（签名验证通过）
-- [ ] macOS 安装无安全警告
+- [ ] Windows 安装无安全警告（Authenticode 签名验证通过）
+- [ ] macOS 首次打开（Homebrew 或手动 xattr 后）正常启动
 - [ ] 核心功能冒烟测试
-- [ ] 版本号显示正确
+- [ ] 版本��显示正确
 - [ ] 新功能 / 修复验证
 
-Beta 下载地址：
-- macOS: `https://lotus.renlijia.com/aijia/beta/v0.5.22/AIjia_0.5.22_aarch64.dmg`
-- Windows: `https://lotus.renlijia.com/aijia/beta/v0.5.22/AIjia_0.5.22_x64-setup.exe`
-
-### Step 3: 正式发布（已签名）
+### Step 3: 正式发布
 
 测试通过后：
 
@@ -344,7 +353,7 @@ python scripts/release.py release      # 交互式，有确认提示
 **CI 自动做**：
 | 平台 | 产出 | 去向 |
 |------|------|------|
-| macOS arm64 | `.dmg` + `.app.tar.gz` + `.sig`（Apple 签名） | `aijia/v0.5.22/` + `latest/` |
+| macOS arm64 | `.dmg`（未签名） + `.app.tar.gz` + `.sig`（Tauri updater Ed25519） | `aijia/v0.5.22/` + `latest/` |
 | Windows x64 | `.exe`（未签名） | `aijia/staging/release/v0.5.22/` |
 
 **Windows 本地签名**：
