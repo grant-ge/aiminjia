@@ -6,6 +6,7 @@ pub mod child_run;
 pub mod definition;
 pub mod file_agent_invocation_store;
 pub mod inbox;
+pub mod inbox_registry;
 pub mod invocation;
 pub mod markdown_loader;
 pub mod message_bridge;
@@ -33,5 +34,6 @@ pub use subagent_transcript_store::{
     SubagentTranscriptStore,
 };
 pub use inbox::{AgentInbox, InboxItem, MessageSource, ShutdownRequest, TaskNotificationItem};
+pub use inbox_registry::InboxRegistry;
 pub use name_registry::{AgentNameRegistry, NameRegistryError};
 pub use team::{Member, MemberRole, MemberSnapshot, Team, TeamError, TeamPersistError, TeamRegistry, TeamSnapshot, MAX_TEAMMATES};

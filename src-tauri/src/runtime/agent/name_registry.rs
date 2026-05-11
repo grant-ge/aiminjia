@@ -77,4 +77,21 @@ impl AgentNameRegistry {
             .map(|m| m.keys().cloned().collect())
             .unwrap_or_default()
     }
+
+    /// Reverse lookup: find the registered name for an `AgentId` in a session.
+    /// Returns `None` if the agent has no name binding (e.g. the Lead before
+    /// it called TeamCreate, or a one-shot async sub-agent).
+    ///
+    /// Used by SendMessage (P2.2) to derive the `from` field of an outgoing
+    /// message envelope.
+    pub async fn name_for(&self, session: &SessionId, id: &AgentId) -> Option<String> {
+        self.by_session
+            .lock()
+            .await
+            .get(session)
+            .and_then(|m| {
+                m.iter()
+                    .find_map(|(name, aid)| (aid == id).then(|| name.clone()))
+            })
+    }
 }

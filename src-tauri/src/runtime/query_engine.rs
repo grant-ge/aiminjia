@@ -58,6 +58,11 @@ pub struct QueryEngine {
     /// Wrapped in `Arc<Mutex<...>>` so the field survives the value-clone performed
     /// by `with_authorized_workspace` / `with_permission_ctx` builder calls.
     session_attachment_dirs: Arc<Mutex<HashMap<PathBuf, RuleSource>>>,
+    /// LTR registries injected by SessionRuntime — propagated into every
+    /// ToolExecutionContext this engine builds.  `None` in legacy/test paths.
+    team_registry: Option<Arc<crate::runtime::agent::TeamRegistry>>,
+    agent_names: Option<Arc<crate::runtime::agent::AgentNameRegistry>>,
+    inbox_registry: Option<Arc<crate::runtime::agent::InboxRegistry>>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -86,6 +91,9 @@ impl QueryEngine {
             base_permission_ctx: None,
             permission_store: None,
             session_attachment_dirs: Arc::new(Mutex::new(HashMap::new())),
+            team_registry: None,
+            agent_names: None,
+            inbox_registry: None,
         }
     }
 
@@ -112,6 +120,9 @@ impl QueryEngine {
             base_permission_ctx: self.base_permission_ctx.clone(),
             permission_store: self.permission_store.clone(),
             session_attachment_dirs: Arc::new(Mutex::new(HashMap::new())),
+            team_registry: self.team_registry.clone(),
+            agent_names: self.agent_names.clone(),
+            inbox_registry: self.inbox_registry.clone(),
         }
     }
 
@@ -120,6 +131,42 @@ impl QueryEngine {
     pub fn with_workspace_path(mut self, workspace_path: PathBuf) -> Self {
         self.workspace_path = Some(workspace_path);
         self
+    }
+
+    /// LTR (P1.7/P2.2): inject the per-process Team / name / inbox registries
+    /// so that every ToolExecutionContext built by this engine carries them.
+    /// Without these, TeamCreate / SendMessage panic with the
+    /// "registry not injected" message.
+    pub fn with_ltr_registries(
+        mut self,
+        team: Arc<crate::runtime::agent::TeamRegistry>,
+        names: Arc<crate::runtime::agent::AgentNameRegistry>,
+        inboxes: Arc<crate::runtime::agent::InboxRegistry>,
+    ) -> Self {
+        self.team_registry = Some(team);
+        self.agent_names = Some(names);
+        self.inbox_registry = Some(inboxes);
+        self
+    }
+
+    /// Attach LTR registries (Team / name / inbox) onto an already-built
+    /// ToolExecutionContext.  Helper to avoid duplicating the wiring in every
+    /// tool-call build site.  No-op for whichever registry isn't configured
+    /// — tools defensively check for `None` and error out themselves.
+    fn attach_ltr_registries(
+        &self,
+        mut ctx: crate::runtime::tools::context::ToolExecutionContext,
+    ) -> crate::runtime::tools::context::ToolExecutionContext {
+        if let Some(team) = self.team_registry.clone() {
+            ctx = ctx.with_team_registry(team);
+        }
+        if let Some(names) = self.agent_names.clone() {
+            ctx = ctx.with_agent_names(names);
+        }
+        if let Some(inbox) = self.inbox_registry.clone() {
+            ctx = ctx.with_inbox_registry(inbox);
+        }
+        ctx
     }
 
     /// Attach the session-authorized workspace so runtime tools can access it
@@ -537,6 +584,7 @@ impl QueryEngine {
         // TurnState centralizes tool-call scoped cancellation so each call gets
         // a child token of the turn token.
         let ctx = turn.build_execution_context(call.tool_call_id.clone());
+        let ctx = self.attach_ltr_registries(ctx);
 
         // Inject capability context (Workspace-First guarantee) — same logic as
         // `run_tool_with_bus` so workspace-scoped tools receive the correct root.
@@ -714,6 +762,7 @@ impl QueryEngine {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("tool dispatcher not configured"))?;
         let ctx = turn.build_execution_context(format!("tool-call-{tool_name}"));
+        let ctx = self.attach_ltr_registries(ctx);
         // Inject capability context when workspace_path is available so that
         // workspace-scoped runtime tools (read_workspace_file, etc.)
         // can resolve their root path correctly.  When no workspace_path is set

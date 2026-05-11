@@ -2104,6 +2104,12 @@ impl TauriChatCommandAdapter {
         {
             runtime = runtime.with_agent_names(name_reg.inner().clone());
         }
+        if let Some(inbox_reg) = services
+            .app
+            .try_state::<Arc<crate::runtime::agent::InboxRegistry>>()
+        {
+            runtime = runtime.with_inbox_registry(inbox_reg.inner().clone());
+        }
         Self { runtime, services }
     }
 

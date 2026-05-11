@@ -2,7 +2,7 @@ use anyhow::Result;
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
 
-use crate::runtime::agent::{AgentNameRegistry, TeamRegistry};
+use crate::runtime::agent::{AgentNameRegistry, InboxRegistry, TeamRegistry};
 use crate::transport::runtime_host::RuntimeHost;
 
 pub struct TauriRuntimeHost {
@@ -27,5 +27,9 @@ impl RuntimeHost for TauriRuntimeHost {
 
     fn agent_names(&self) -> Arc<AgentNameRegistry> {
         self.app.state::<Arc<AgentNameRegistry>>().inner().clone()
+    }
+
+    fn inbox_registry(&self) -> Arc<InboxRegistry> {
+        self.app.state::<Arc<InboxRegistry>>().inner().clone()
     }
 }

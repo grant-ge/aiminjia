@@ -81,6 +81,7 @@ fn make_ctx(
         cancel,
         inbox,
         agent_names,
+        inbox_registry: None,
         conv_dir: Some(conv_dir),
         meta,
     }

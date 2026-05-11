@@ -21,6 +21,7 @@ pub async fn register_builtin_tools(registry: &ToolRegistry) {
     use crate::runtime::tools::builtin::grep::GrepContentTool;
     #[cfg(windows)]
     use crate::runtime::tools::builtin::powershell::PowerShellTool;
+    use crate::runtime::tools::builtin::send_message::SendMessageRuntimeTool;
     use crate::runtime::tools::builtin::task_tools::{
         TaskClaimRuntimeTool, TaskCreateRuntimeTool, TaskGetRuntimeTool, TaskListRuntimeTool,
         TaskUpdateRuntimeTool,
@@ -72,6 +73,9 @@ pub async fn register_builtin_tools(registry: &ToolRegistry) {
         .await;
     registry
         .register_runtime(Arc::new(TeamDeleteRuntimeTool))
+        .await;
+    registry
+        .register_runtime(Arc::new(SendMessageRuntimeTool))
         .await;
     registry.validate_catalog_consistency().await;
 }

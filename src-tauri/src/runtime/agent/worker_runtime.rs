@@ -978,6 +978,9 @@ pub struct TeammateWorkerCtx {
     pub inbox: Arc<AgentInbox>,
     /// Name registry — used to unregister the Teammate's name on cleanup.
     pub agent_names: Arc<AgentNameRegistry>,
+    /// Optional inbox registry — when present, cleanup will deregister this
+    /// Teammate's inbox so SendMessage stops resolving it (P2.2).
+    pub inbox_registry: Option<Arc<crate::runtime::agent::InboxRegistry>>,
     /// Conversation root directory for transcript writes.
     /// `None` means "no logging" (test-only or legacy path).
     pub conv_dir: Option<PathBuf>,
@@ -1192,6 +1195,11 @@ async fn cleanup_teammate(
     }
     // 2. Unregister from AgentNameRegistry so the name can be reused.
     ctx.agent_names.unregister(&ctx.session_id, name).await;
+    // 3. Deregister from InboxRegistry so SendMessage stops resolving this
+    //    Teammate (P2.2).  Skipped if no registry was injected.
+    if let Some(reg) = ctx.inbox_registry.as_ref() {
+        reg.unregister(&ctx.session_id, &ctx.agent_id).await;
+    }
 
     log::info!(
         "[TeammateIdle] agent={} name={} cleanup complete",

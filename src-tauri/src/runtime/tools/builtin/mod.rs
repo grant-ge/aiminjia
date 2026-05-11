@@ -8,6 +8,7 @@ pub mod grep;
 pub mod load_skill;
 pub mod memory;
 pub mod network;
+pub mod send_message;
 #[cfg(windows)]
 pub mod powershell;
 #[cfg(windows)]

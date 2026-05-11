@@ -47,6 +47,10 @@ pub struct SessionRuntime {
     team_registry: Option<Arc<crate::runtime::agent::TeamRegistry>>,
     /// LTR (P1.8): per-session AgentName registry; cleared on cancel_session.
     agent_names: Option<Arc<crate::runtime::agent::AgentNameRegistry>>,
+    /// LTR (P2.2): per-process InboxRegistry; carried so the per-call
+    /// ToolExecutionContext can route SendMessage.  Not cleared on
+    /// cancel_session — Teammate cleanup handles deregister.
+    inbox_registry: Option<Arc<crate::runtime::agent::InboxRegistry>>,
 }
 
 impl SessionRuntime {
@@ -65,6 +69,7 @@ impl SessionRuntime {
             task_notification_queue: None,
             team_registry: None,
             agent_names: None,
+            inbox_registry: None,
         }
     }
 
@@ -92,6 +97,7 @@ impl SessionRuntime {
             task_notification_queue: None,
             team_registry: None,
             agent_names: None,
+            inbox_registry: None,
         }
     }
 
@@ -154,6 +160,16 @@ impl SessionRuntime {
         registry: Arc<crate::runtime::agent::AgentNameRegistry>,
     ) -> Self {
         self.agent_names = Some(registry);
+        self
+    }
+
+    /// LTR (P2.2): inject the per-process InboxRegistry so per-call
+    /// ToolExecutionContexts can route SendMessage.
+    pub fn with_inbox_registry(
+        mut self,
+        registry: Arc<crate::runtime::agent::InboxRegistry>,
+    ) -> Self {
+        self.inbox_registry = Some(registry);
         self
     }
 
@@ -419,6 +435,15 @@ impl SessionRuntime {
             .with_permission_ctx(base_ctx);
         if let Some(store) = self.permission_store.as_ref() {
             engine = engine.with_permission_store(store.clone());
+        }
+        // LTR (P1.7/P2.2): propagate registries so per-call
+        // ToolExecutionContexts can dispatch SendMessage / TeamCreate / etc.
+        if let (Some(team), Some(names), Some(inboxes)) = (
+            self.team_registry.clone(),
+            self.agent_names.clone(),
+            self.inbox_registry.clone(),
+        ) {
+            engine = engine.with_ltr_registries(team, names, inboxes);
         }
         engine
     }

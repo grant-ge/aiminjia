@@ -612,6 +612,45 @@ fn build_default_catalog() -> ToolCatalog {
 
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
+            "SendMessage",
+            "向同 session 的另一个 Agent 投递结构化消息。使用场景：Lead 给某 Teammate 派任务、Teammate 给 Lead 汇报阶段成果、Teammate 之间交接产出、广播紧急停止信号 (`to:\"*\"`)。不要用来报 task 状态（用 TaskUpdate）或写文件产物（直接写磁盘）。`to` 是 name（如 \"team-lead\" / \"researcher\" / \"*\" 广播）。`message` 是 StructuredMessage 5 个 variant 之一：text / shutdown_request / shutdown_response / plan_approval_request / plan_approval_response。",
+        )
+        .with_kind(ToolKind::Support),
+        json!({
+            "type": "object",
+            "required": ["to", "message"],
+            "properties": {
+                "to": {
+                    "type": "string",
+                    "description": "目标 agent 的 name，或 \"*\" 表示广播到所有 Teammate（不含发送者自己）。"
+                },
+                "message": {
+                    "type": "object",
+                    "description": "StructuredMessage：{type:'text', content:'...'} 等 5 种 variant。",
+                    "required": ["type"],
+                    "properties": {
+                        "type": {
+                            "type": "string",
+                            "enum": [
+                                "text",
+                                "shutdown_request",
+                                "shutdown_response",
+                                "plan_approval_request",
+                                "plan_approval_response"
+                            ]
+                        }
+                    }
+                },
+                "summary": {
+                    "type": "string",
+                    "description": "5-10 字 UI 预览文案（可选）。"
+                }
+            }
+        }),
+    ));
+
+    c.insert(CatalogEntry::new(
+        ToolDefinition::new(
             "WriteMemory",
             "保存一条项目记忆到本地记忆库。记忆按 workspace 分桶存储，跨对话持久化。\n\n类型说明：\n- user_preference：用户偏好\n- project_constraint：项目约束\n- reference_info：外部系统指针\n- feedback：AI 行为纠正或确认",
         )
@@ -691,6 +730,7 @@ pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
     "TaskStop",
     "TeamCreate",
     "TeamDelete",
+    "SendMessage",
 ];
 
 /// 全局默认 catalog（延迟初始化）。

@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use crate::runtime::agent::{AgentNameRegistry, TeamRegistry};
+use crate::runtime::agent::{AgentNameRegistry, InboxRegistry, TeamRegistry};
 use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::hooks::config::HookRegistry;
 use crate::runtime::ids::{AgentId, RunId, SessionId, ToolCallId};
@@ -72,6 +72,9 @@ pub struct ToolExecutionContext {
     /// Per-process agent-name registry injected by the orchestration layer.
     /// `None` for legacy / test paths that do not need name resolution.
     pub agent_names: Option<Arc<AgentNameRegistry>>,
+    /// Per-process inbox registry — looks up an agent's mpsc inbox from its
+    /// AgentId.  Required by SendMessage (P2.2); `None` elsewhere.
+    pub inbox_registry: Option<Arc<InboxRegistry>>,
 }
 
 impl ToolExecutionContext {
@@ -99,6 +102,7 @@ impl ToolExecutionContext {
             task_store_root: None,
             team_registry: None,
             agent_names: None,
+            inbox_registry: None,
         }
     }
 
@@ -152,6 +156,22 @@ impl ToolExecutionContext {
     pub fn with_agent_names(mut self, registry: Arc<AgentNameRegistry>) -> Self {
         self.agent_names = Some(registry);
         self
+    }
+
+    pub fn with_inbox_registry(mut self, registry: Arc<InboxRegistry>) -> Self {
+        self.inbox_registry = Some(registry);
+        self
+    }
+
+    /// Returns the process-wide [`InboxRegistry`].
+    ///
+    /// # Panics
+    /// Panics if the orchestration layer did not inject a registry via
+    /// [`Self::with_inbox_registry`].  SendMessage requires this.
+    pub fn inbox_registry(&self) -> &Arc<InboxRegistry> {
+        self.inbox_registry
+            .as_ref()
+            .expect("inbox_registry not injected into ToolExecutionContext — use with_inbox_registry()")
     }
 
     /// Returns the process-wide [`TeamRegistry`].

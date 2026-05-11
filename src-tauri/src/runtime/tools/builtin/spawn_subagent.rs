@@ -431,6 +431,19 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
 
             let inbox = AgentInbox::new(64);
 
+            // P2.2: register this Teammate's inbox so SendMessage(to: name) can
+            // resolve it.  Optional — tests / legacy paths that don't carry an
+            // InboxRegistry simply skip this step (their Teammate is unaddressable
+            // via SendMessage but still runs).
+            if let Some(reg) = ctx.inbox_registry.clone() {
+                let sid = launch_ctx.session_id.clone();
+                let aid = agent_id.clone();
+                let ibx = inbox.clone();
+                tokio::spawn(async move {
+                    reg.register(&sid, aid, ibx).await;
+                });
+            }
+
             let meta = AgentTranscriptMeta {
                 agent_id: agent_id.as_str().to_string(),
                 agent_name: name.clone(),
@@ -451,6 +464,7 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
                 cancel: launch_ctx.cancellation.child_token(),
                 inbox: inbox.clone(),
                 agent_names: ctx.agent_names().clone(),
+                inbox_registry: ctx.inbox_registry.clone(),
                 conv_dir: None, // P2: inject from paths resolver
                 meta,
             };

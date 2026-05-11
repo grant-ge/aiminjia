@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 
-use crate::runtime::agent::{AgentNameRegistry, TeamRegistry};
+use crate::runtime::agent::{AgentNameRegistry, InboxRegistry, TeamRegistry};
 use crate::runtime_audit::trace_capture::{CapturedEvent, CapturedTrace};
 use crate::transport::runtime_host::RuntimeHost;
 
@@ -37,6 +37,10 @@ impl RuntimeHost for RecordingRuntimeHost {
     fn agent_names(&self) -> Arc<AgentNameRegistry> {
         unimplemented!("test mock — call site doesn't exercise agent_names")
     }
+
+    fn inbox_registry(&self) -> Arc<InboxRegistry> {
+        unimplemented!("test mock — call site doesn't exercise inbox_registry")
+    }
 }
 
 #[derive(Default)]
@@ -53,5 +57,9 @@ impl RuntimeHost for NoopRuntimeHost {
 
     fn agent_names(&self) -> Arc<AgentNameRegistry> {
         unimplemented!("test mock — call site doesn't exercise agent_names")
+    }
+
+    fn inbox_registry(&self) -> Arc<InboxRegistry> {
+        unimplemented!("test mock — call site doesn't exercise inbox_registry")
     }
 }
