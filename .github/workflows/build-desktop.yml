@@ -2,9 +2,18 @@ name: Build Desktop Apps
 
 on:
   workflow_dispatch:
+    inputs:
+      release_type:
+        description: 'Release type'
+        type: choice
+        options:
+          - beta
+          - release
+        default: beta
   push:
     tags:
       - 'v*'
+      - 'beta-v*'
 
 permissions:
   contents: write
@@ -37,6 +46,31 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Determine release type
+        id: release-type
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "type=${{ inputs.release_type }}" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.ref }}" == refs/tags/beta-v* ]]; then
+            echo "type=beta" >> "$GITHUB_OUTPUT"
+          else
+            echo "type=release" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Extract version
+        id: version
+        shell: bash
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+            version="${version#beta-v}"
+          else
+            version=$(grep '"version"' src-tauri/tauri.conf.json | head -1 | sed 's/.*: *"\(.*\)".*/\1/')
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Version: $version"
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -57,7 +91,6 @@ jobs:
 
       - name: Install frontend dependencies
         run: pnpm install
-
 
       - name: Cache Playwright runtime
         id: playwright-cache
@@ -117,8 +150,34 @@ jobs:
           path: ${{ matrix.artifact-path }}
           retention-days: 30
 
-      - name: Upload Windows installer to Aliyun OSS
-        if: runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/v')
+      # --- macOS: upload to OSS immediately (already Apple-signed in CI) ---
+      - name: Upload macOS to OSS (release)
+        if: runner.os == 'macOS' && steps.release-type.outputs.type == 'release'
+        env:
+          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+        run: |
+          set -e
+          version="${{ steps.version.outputs.version }}"
+          echo "=== Uploading macOS ${{ matrix.arch }} v${version} to OSS ==="
+          python3 -m pip install --disable-pip-version-check --user --break-system-packages oss2
+          python3 scripts/ci-upload-macos.py "$version" "${{ matrix.arch }}"
+
+      - name: Upload macOS to OSS (beta)
+        if: runner.os == 'macOS' && steps.release-type.outputs.type == 'beta'
+        env:
+          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+        run: |
+          set -e
+          version="${{ steps.version.outputs.version }}"
+          echo "=== Uploading macOS beta ${{ matrix.arch }} v${version} to OSS ==="
+          python3 -m pip install --disable-pip-version-check --user --break-system-packages oss2
+          python3 scripts/ci-upload-macos-beta.py "$version" "${{ matrix.arch }}"
+
+      # --- Windows: upload unsigned exe to OSS staging for local signing ---
+      - name: Upload Windows unsigned to OSS staging
+        if: runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/')
         env:
           OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
           OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
@@ -126,42 +185,42 @@ jobs:
           PYTHONIOENCODING: "utf-8"
         shell: pwsh
         run: |
-          $version = "${{ github.ref_name }}" -replace '^v',''
-          Write-Host "=== Uploading Windows v$version to OSS ==="
+          $version = "${{ steps.version.outputs.version }}"
+          $releaseType = "${{ steps.release-type.outputs.type }}"
+          Write-Host "=== Uploading Windows v$version (unsigned, $releaseType) to OSS staging ==="
           python --version
           if ($LASTEXITCODE) { throw "python not available" }
           python -m pip install --disable-pip-version-check oss2
           if ($LASTEXITCODE) { throw "pip install oss2 failed" }
-          python scripts/ci-upload-windows.py $version
-          if ($LASTEXITCODE) { throw "ci-upload-windows.py failed (exit $LASTEXITCODE)" }
+          python scripts/ci-upload-windows-unsigned.py $version $releaseType
+          if ($LASTEXITCODE) { throw "ci-upload-windows-unsigned.py failed (exit $LASTEXITCODE)" }
 
-      - name: Upload macOS bundles to Aliyun OSS
-        if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/v')
-        env:
-          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
-          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
-        run: |
-          set -e
-          version="${GITHUB_REF_NAME#v}"
-          echo "=== Uploading macOS ${{ matrix.arch }} v${version} to OSS ==="
-          python3 --version
-          python3 -m pip install --disable-pip-version-check --user --break-system-packages oss2
-          python3 scripts/ci-upload-macos.py "$version" "${{ matrix.arch }}"
-
-  finalize:
+  notify:
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Generate and upload update.json
+      - name: Summary
         env:
-          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
-          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+          RELEASE_TYPE: ${{ needs.build.outputs.release-type || 'unknown' }}
         run: |
-          set -e
-          version="${GITHUB_REF_NAME#v}"
-          python3 -m pip install --disable-pip-version-check --user --break-system-packages oss2
-          python3 scripts/ci-finalize.py "$version"
+          echo "## Build Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Windows unsigned exe has been uploaded to OSS staging." >> $GITHUB_STEP_SUMMARY
+          echo "macOS signed bundle has been uploaded to OSS." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "1. Download Windows exe from OSS staging" >> $GITHUB_STEP_SUMMARY
+          echo "2. Sign on local Windows machine" >> $GITHUB_STEP_SUMMARY
+          echo "3. Run \`scripts/sign-windows.ps1\` to sign + re-generate .sig + upload" >> $GITHUB_STEP_SUMMARY
+
+  # Finalize only for release builds — generates update.json after Windows signing
+  finalize:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v') && !startsWith(github.ref, 'refs/tags/beta-v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notice
+        run: |
+          echo "## ⚠️ DO NOT run finalize automatically" >> $GITHUB_STEP_SUMMARY
+          echo "Windows signing must complete first." >> $GITHUB_STEP_SUMMARY
+          echo "Use the 'Finalize Release' workflow after signing." >> $GITHUB_STEP_SUMMARY

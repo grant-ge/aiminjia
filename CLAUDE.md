@@ -19,12 +19,17 @@
 │   ├── src/                   # Rust 源码
 │   └── tests/                 # 集成测试
 ├── scripts/
+│   ├── release.py               # 发布入口（交互式，跨平台，强制顺序）
+│   ├── bump-version.py          # 同步版本号到 3 个配置文件（跨平台）
+│   ├── bump-version.sh          # 同步版本号（macOS 快捷方式）
+│   ├── sign-windows.ps1         # Windows 本地签名（签名机用）
+│   ├── ci-upload-windows-unsigned.py  # CI: 未签名 exe → staging
+│   ├── ci-upload-macos.py       # CI: macOS release → OSS
+│   ├── ci-upload-macos-beta.py  # CI: macOS beta → OSS
+│   ├── ci-finalize.py           # CI: 生成 update.json
 │   ├── setup-playwright.sh/.ps1
-│   ├── ci-upload-windows.py
-│   ├── ci-upload-macos.py
-│   ├── ci-finalize.py
 │   ├── bump-homebrew.py
-│   └── upload-x64.py
+│   └── upload-x64.py            # 本地 Intel 构建上传
 └── .github/workflows/
     └── build-desktop.yml      # tag push → CI 构建 + 直传 OSS + update.json
 ```
@@ -242,88 +247,216 @@ workspace 目录（用户可自定义，默认也是 `~/.renlijia/`）下存放�
 **继续做某个功能的意图测试：先读对应 `rules.md` + `test-progress.md`，再看 `context/` 四文件，然后按 `how-to-test.md` 规范执行。**
 **新建一个功能的 rules.md：先读 `context/how-to-write-rules.md`，再按产品视角逐条写，写完用快速自查清单过一遍。**
 
-## 发布流程（权威 · 自 v0.4.14 起）
+## 发布流程（权威 · 自 v0.5.22 起）
 
-推 tag → CI 自动跑 Win + macOS arm64 → 本地补 Homebrew bump + macOS Intel 双传。
+三阶段：**Beta 测试（已签名）→ 测试验证 → 正式发布（已签名）**。Windows 代码签名必须在本地签名机完成（证书绑定物理机），macOS 签名在 CI 自动完成。
 
-### 改版本号（4 处）
+### 流程总览
 
+```
+bump 版本号 → beta tag → CI 构建 → Windows 本地签名 → 测试
+                                                        ↓
+                                            release tag → CI 构建 → Windows 本地签名 → finalize → 自动更新生效
+```
+
+### 快速发布（推荐）
+
+使用交互式发布管理器，自动引导并阻止跳步：
+
+```bash
+python scripts/release.py             # 交互式菜单（macOS / Windows 均可）
+python scripts/release.py status      # 查看当前发布进度
+python scripts/release.py start       # 开始新版本
+python scripts/release.py beta        # 触发 beta 构建
+python scripts/release.py sign-beta   # Windows 签名机执行
+python scripts/release.py test-passed # 确认测试通过
+python scripts/release.py release     # 触发正式构建
+python scripts/release.py sign-release # Windows 签名机执行
+python scripts/release.py finalize    # 生成 update.json
+```
+
+发布状态存储在 `.release-state.json`（已 gitignore），任何人 clone 后从头开始。
+
+### Step 0: 改版本号
+
+```bash
+python scripts/bump-version.py 0.5.22   # 跨平台，同步 package.json + Cargo.toml + tauri.conf.json
+# 手动更新 src-tauri/Cargo.lock（cargo build 自动更新，或 cargo update -p aijia）
+git commit -am "chore: bump to 0.5.22"
+git push codeup main && git push origin main
+```
+
+版本号 4 处必须一致：
 - `package.json` → `version`
 - `src-tauri/tauri.conf.json` → `version`
 - `src-tauri/Cargo.toml` → `version`
 - `src-tauri/Cargo.lock` → `[package] name = "aijia"` 下的 `version`
 
-### Commit + tag + push
+### Step 1: Beta 构建（已签名，用于测试）
 
 ```bash
-git commit -am "release: vX.Y.Z"
-git tag vX.Y.Z
-git push codeup main && git push codeup vX.Y.Z
-git push origin main && git push origin vX.Y.Z   # 这步触发 CI
+python scripts/release.py beta        # 交互式，自动创建 tag 并 push
+# 或手动：git tag beta-v0.5.22 && git push origin beta-v0.5.22
 ```
 
-### CI 自动做（`.github/workflows/build-desktop.yml`）
+**CI 自动做**：
+| 平台 | 产出 | 去向 |
+|------|------|------|
+| macOS arm64 | `.dmg` + `.app.tar.gz` + `.sig`（Apple 签名） | `aijia/beta/v0.5.22/` |
+| Windows x64 | `.exe`（未签名） | `aijia/staging/beta/v0.5.22/` |
 
-| Job | Runner | 脚本 | 产出 |
-|-----|--------|------|------|
-| `build (windows-latest)` | Windows | `ci-upload-windows.py` | `.exe` + `.sig` → OSS |
-| `build (macos-14)` | macOS arm64 | `ci-upload-macos.py` | `.dmg` + `.app.tar.gz` + `.sig` → OSS |
-| `finalize` | Ubuntu | `ci-finalize.py` | `update.json` → OSS |
+**Windows 本地签名**（CI 完成后，在签名机执行）：
 
-`build` 阶段并行；`finalize` 依赖两个 `build` 都成功。全程约 22-25 分钟。
+```powershell
+# 方式 1：交互式（推荐，有步骤检查）
+python scripts/release.py sign-beta
 
-### Homebrew bump（本地唯一手动步骤）
+# 方式 2：直接调用
+.\scripts\sign-windows.ps1 -Version 0.5.22 -ReleaseType beta
+```
+
+脚本自动：下载未签名 exe → Authenticode 签名 → 重新生成 Tauri updater `.sig` → 上传到 `aijia/beta/v0.5.22/`
+
+### Step 2: 测试验证
+
+测试清单：
+- [ ] Windows 安装无安全警告（签名验证通过）
+- [ ] macOS 安装无安全警告
+- [ ] 核心功能冒烟测试
+- [ ] 版本号显示正确
+- [ ] 新功能 / 修复验证
+
+Beta 下载地址：
+- macOS: `https://lotus.renlijia.com/aijia/beta/v0.5.22/AIjia_0.5.22_aarch64.dmg`
+- Windows: `https://lotus.renlijia.com/aijia/beta/v0.5.22/AIjia_0.5.22_x64-setup.exe`
+
+### Step 3: 正式发布（已签名）
+
+测试通过后：
 
 ```bash
-python3 scripts/bump-homebrew.py X.Y.Z
+python scripts/release.py release      # 交互式，有确认提示
+# 或手动：git tag v0.5.22 && git push origin v0.5.22
 ```
 
-### macOS Intel（x86_64）— 本地构建 + 双传
+**CI 自动做**：
+| 平台 | 产出 | 去向 |
+|------|------|------|
+| macOS arm64 | `.dmg` + `.app.tar.gz` + `.sig`（Apple 签名） | `aijia/v0.5.22/` + `latest/` |
+| Windows x64 | `.exe`（未签名） | `aijia/staging/release/v0.5.22/` |
 
-CI matrix 只覆盖 Windows + macOS arm64。**Intel 包必须本地补打**（不补就会停留在旧版本，老用户拿不到新版）。在 macOS 机器（arm64 或 Intel 皆可）上跑：
+**Windows 本地签名**：
+
+```powershell
+python scripts/release.py sign-release
+# 或直接：.\scripts\sign-windows.ps1 -Version 0.5.22 -ReleaseType release
+```
+
+### Step 4: Finalize（生成 update.json，用户收到自动更新）
+
+```bash
+python scripts/release.py finalize
+# → 触发 GitHub Actions "Finalize Release" workflow
+# → 生成 update.json → 已安装用户收到更新推送
+```
+
+### Step 5: 收尾
+
+```bash
+# macOS Intel（x86_64）补打（可选，视用户群体决定）
+# 详见下方 "macOS Intel 补充构建" 章节
+
+# Homebrew 更新
+python3 scripts/bump-homebrew.py 0.5.22
+
+# Changelog 更新（lotus 仓库）
+cd ../lotus && ./scripts/update-changelog.sh desktop 0.5.22
+
+# 推到国内镜像
+git push codeup main && git push codeup v0.5.22
+```
+
+### Windows 签名机环境要求
+
+| 项目 | 说明 |
+|------|------|
+| Windows SDK | 含 `signtool.exe` |
+| 代码签名证书 | 已导入本地证书存储 |
+| Python + oss2 | `pip install oss2` |
+| Node.js + pnpm | 用于 `npx tauri signer sign`（重新生成 .sig） |
+
+**环境变量**（建议写入系统环境变量，持久化）：
+
+```
+SIGN_CERT_THUMBPRINT=<证书指纹>
+TAURI_SIGNING_PRIVATE_KEY=<Tauri updater 私钥 base64>
+TAURI_SIGNING_PRIVATE_KEY_PASSWORD=<私钥密码>
+OSS_ACCESS_KEY_ID=<阿里云 OSS AK>
+OSS_ACCESS_KEY_SECRET=<阿里云 OSS SK>
+```
+
+### OSS 路径规范
+
+```
+aijia/
+├── staging/                     # CI 上传的未签名 Windows exe（临时）
+│   ├── beta/v0.5.22/
+│   └── release/v0.5.22/
+├── beta/                        # Beta 测试版（已签名，不触发自动更新）
+│   └── v0.5.22/
+│       ├── AIjia_0.5.22_x64-setup.exe      # Windows（已签名）
+│       ├── AIjia_0.5.22_x64-setup.exe.sig  # Tauri updater sig
+│       ├── AIjia_0.5.22_aarch64.dmg        # macOS
+│       └── AIjia.app.tar.gz + .sig         # macOS updater
+├── v0.5.22/                     # 正式版（已签名）
+│   ├── AIjia_0.5.22_x64-setup.exe
+│   ├── AIjia_0.5.22_x64-setup.exe.sig
+│   ├── AIjia_0.5.22_aarch64.dmg
+│   └── AIjia.app.tar.gz + .sig
+├── latest/                      # 正式版最新下载入口
+│   ├── windows-x64
+│   └── macos-arm64
+└── update.json                  # Tauri 自动更新清单（仅正式版）
+```
+
+### CI Workflows
+
+| Workflow | 触发 | 作用 |
+|----------|------|------|
+| `build-desktop.yml` | `beta-v*` tag / `v*` tag / manual | 构建 + macOS 上传 + Windows 未签名上传到 staging |
+| `finalize-release.yml` | manual（输入 version） | Windows 签名完成后，生成 update.json |
+| `ci.yml` | push main / PR | Rust + TS 类型检查 + lint |
+
+### macOS Intel（x86_64）— 补充构建
+
+CI matrix 只覆盖 Windows + macOS arm64。**Intel 包需本地补打**：
 
 ```bash
 rustup target add x86_64-apple-darwin             # 首次
 
-# 🚨 关键：跨架构准备 sidecar 资源（详见下节）
+# 跨架构准备 sidecar 资源
 rm -rf src-tauri/playwright-runtime src-tauri/resources/dws
 TARGET_ARCH=x86_64 bash scripts/setup-playwright.sh
 TARGET_ARCH=x86_64 bash scripts/setup-dws.sh
 
-# 签名密钥（rsign 加密格式，密码在 Keychain "aijia-tauri-signer"）
+# 签名密钥
 export TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/aijia.key)"
 export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$(security find-generic-password -s aijia-tauri-signer -a password -w)"
 
 pnpm tauri build --target x86_64-apple-darwin     # 5–10 分钟
-python3 scripts/upload-x64.py X.Y.Z               # 双传 OSS + GitHub Release
+python3 scripts/upload-x64.py 0.5.22              # 双传 OSS + GitHub Release
 ```
 
-**跨架构 sidecar（2026-05-10 修复，v0.5.21 起生效）**：`pnpm tauri build --target` 只重编 Rust 主二进制，**sidecar 资源直接从 `src-tauri/playwright-runtime/` 和 `src-tauri/resources/dws` 原样拷贝进 bundle**。历史上在 arm64 Mac 上跑 `setup-*.sh` 会把 arm64 的 node / chromium / dws 写进去，然后 Intel bundle 里就塞了 arm64 sidecar —— Intel 用户一旦触发 playwright 或钉钉工具就崩。
+**顺序约束**：必须等 `finalize-release.yml` 跑完再跑 `upload-x64.py`，否则 update.json 会丢失 `darwin-x86_64` 条目。
 
-两个 setup 脚本都接受 `TARGET_ARCH` 覆盖 `uname -m`：
-- `setup-playwright.sh`：下载目标架构的 Node.js + 在 Rosetta 2 (`arch -x86_64`) 下跑 npm install + `playwright install chromium`；同时设 `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=mac15` 绕过 playwright 的 Apple Silicon 自动识别（`os.cpus()[].model.includes("Apple")` 在 Rosetta 下仍是 true），强制拉 Intel Chromium。
-- `setup-dws.sh`：从 `npmmirror` 拉 `dingtalk-workspace-cli` npm 包（`assets/` 下自带所有平台 tarball），选 `dws-darwin-amd64.tar.gz` 解压 —— 因为 CN 网络直连 GitHub release 超时常见。
+**跨架构 sidecar 注意**：`pnpm tauri build --target` 只重编 Rust 主二进制，sidecar 资源原样拷贝。必须用 `TARGET_ARCH=x86_64` 重新运行 setup 脚本。验证：
 
-**验证 Intel bundle 纯净**：
 ```bash
 APP=src-tauri/target/x86_64-apple-darwin/release/bundle/macos/AIjia.app
 file "$APP/Contents/MacOS/aijia"                                   # x86_64 ✅
 file "$APP/Contents/Resources/dws"                                 # x86_64 ✅
 file "$APP/Contents/Resources/playwright-runtime/node/bin/node"    # x86_64 ✅
-find "$APP/Contents/Resources/playwright-runtime/browsers" -name 'chrome-headless-shell' | head -1 | xargs file  # x86_64 ✅
 ```
-任何一条是 arm64 就是跨架构污染，必须 `rm -rf` + 重跑 setup-*.sh。
-
-**顺序约束**：必须等 GitHub CI（`finalize` job）跑完再跑 `upload-x64.py`。否则 CI 的 `ci-finalize.py` 会**覆盖** update.json，丢失 `darwin-x86_64` 平台条目（preserve 逻辑只在版本号一致时生效，但 CI 写入是覆盖性的，最后写的赢）。
-
-`upload-x64.py` 会：
-1. 上传 dmg / tar.gz / sig 到 OSS（`aijia/v{V}/AIjia_{V}_x64.dmg` 等）
-2. 复制到 OSS `latest/macos-x64`，patch `update.json` 加 `darwin-x86_64` 平台
-3. 通过 `gh` CLI 把同样三个文件附加到 GitHub Release `vX.Y.Z`（release 不存在则自动建）
-
-前置：`gh auth status` 已登录有 `repo` scope 的账号；OSS 凭证在 Keychain `aijia-oss`（或 env `OSS_ACCESS_KEY_ID/SECRET`）。两者其一缺失：脚本会跳过对应步骤并打 warning，不会中断。
-
-如果忘记设置 `TAURI_SIGNING_PRIVATE_KEY`：build 会成功产出 `.dmg` + `.app.tar.gz`，但**不生成 `.sig`**，并在末尾报 `A public key has been found, but no private key`。补好 env 后 re-run `pnpm tauri build --target x86_64-apple-darwin` 即可（增量编译，~3-4 分钟）。
 
 ## Git Remotes
 

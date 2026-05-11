@@ -56,3 +56,7 @@ __pycache__/
 tmp/ui-capture/
 
 dist-skills/
+
+# Release
+.release-state.json
+signing-workspace/
