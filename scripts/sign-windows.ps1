@@ -129,7 +129,7 @@ Write-Host "Using signtool: $SignTool"
 Write-Host "Signing: $ExePath"
 Write-Host "Certificate: $CertThumbprint"
 
-& $SignTool sign /sha1 $CertThumbprint /tr http://timestamp.digicert.com /td sha256 /fd sha256 "$ExePath"
+& $SignTool sign /sha1 $CertThumbprint /tr http://time.certum.pl /td sha256 /fd sha256 "$ExePath"
 if ($LASTEXITCODE -ne 0) { throw "Code signing failed" }
 
 # Verify signature
