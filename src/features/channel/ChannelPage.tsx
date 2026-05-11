@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/dialog'
 import { Switch } from '@/components/common/Switch'
 import { getMessages, getTasks, openGeneratedFile } from '@/lib/tauri'
-import type { ChannelPlatform, ChannelPlatformState } from '@/lib/tauri'
+import type { ChannelPlatformState } from '@/lib/tauri'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { ChannelConfig } from './ChannelConfig'
 import { ChannelConfigDetails } from './ChannelConfigDetails'
@@ -28,7 +28,7 @@ interface ChannelPageProps {
   sessionId?: string
 }
 
-type PlatformKey = ChannelPlatform
+type PlatformKey = 'dingtalk'
 
 interface PlatformCardModel {
   key: PlatformKey
@@ -56,19 +56,6 @@ function statusMeta(state: ChannelPlatformState) {
       return { statusLabel: '配置有误', statusTone: 'error' as const }
     default:
       return { statusLabel: '未配置', statusTone: 'muted' as const }
-  }
-}
-
-function comingSoon(platform: ChannelPlatform): ChannelPlatformState {
-  return {
-    platform,
-    capability: 'comingSoon',
-    configured: false,
-    enabled: false,
-    connection: 'unconfigured',
-    config: null,
-    lastConnectedAt: null,
-    lastError: null,
   }
 }
 
@@ -164,7 +151,7 @@ function ChannelHero() {
     <div className="flex flex-col items-center text-center">
       <h1 className="text-4xl font-extrabold tracking-tight text-foreground">IM 频道</h1>
       <p className="mt-5 max-w-2xl text-lg font-semibold leading-8 text-muted-foreground">
-        配置 IM 频道，让 AI 小家 接收来自钉钉、飞书等平台的消息。
+        配置钉钉 IM 频道，让 AI 小家 接收并回复来自钉钉的消息。
         <br />频道配置信息仅存储在本地，不会上传到云端。
       </p>
     </div>
@@ -187,7 +174,7 @@ function ChannelOverview({
   return (
     <div className="flex min-h-full flex-col">
       <div data-tauri-drag-region className="h-10 shrink-0" />
-      <div className="mx-auto flex w-full max-w-4xl flex-col gap-8 px-6 pb-16 pt-6">
+      <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col justify-center gap-8 px-6 pb-24 pt-6">
         <ChannelHero />
 
         <div className="flex flex-col gap-4">
@@ -328,9 +315,6 @@ export function ChannelPage({ sessionId }: ChannelPageProps) {
   const platforms = useMemo<PlatformCardModel[]>(() => {
     const states: Record<PlatformKey, ChannelPlatformState> = {
       dingtalk: dingtalkState,
-      feishu: platformsByKey.feishu ?? comingSoon('feishu'),
-      wechat: platformsByKey.wechat ?? comingSoon('wechat'),
-      wecom: platformsByKey.wecom ?? comingSoon('wecom'),
     }
 
     return [
@@ -344,36 +328,8 @@ export function ChannelPage({ sessionId }: ChannelPageProps) {
         state: states.dingtalk,
         ...statusMeta(states.dingtalk),
       },
-      {
-        key: 'feishu',
-        name: '飞书',
-        description: '通过飞书机器人接收并回复用户消息',
-        icon: '飞',
-        iconClassName: 'bg-blue-50 text-blue-600',
-        state: states.feishu,
-        ...statusMeta(states.feishu),
-      },
-      {
-        key: 'wechat',
-        name: '微信',
-        description: '通过微信机器人接收并回复用户消息',
-        icon: '微',
-        iconClassName: 'bg-emerald-50 text-emerald-500',
-        state: states.wechat,
-        ...statusMeta(states.wechat),
-      },
-      {
-        key: 'wecom',
-        name: '企业微信',
-        description: '通过企业微信机器人接收并回复用户消息',
-        icon: '企',
-        // 企业微信复用钉钉蓝 #0b8cff（设计稿决定）
-        iconClassName: 'bg-slate-50 text-[var(--color-semantic-blue)]',
-        state: states.wecom,
-        ...statusMeta(states.wecom),
-      },
     ]
-  }, [dingtalkState, platformsByKey.feishu, platformsByKey.wechat, platformsByKey.wecom])
+  }, [dingtalkState])
 
   return (
     <div className={sessionId ? 'h-full overflow-hidden bg-white' : 'h-full overflow-y-auto bg-white'}>

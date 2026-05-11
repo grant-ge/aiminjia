@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use serde_json::Value as JsonValue;
 
+use crate::llm::streaming::AnthropicMultimodalTurn;
 use crate::runtime::chat::compaction::AutoCompactState;
 use crate::runtime::chat::preprocess::PreprocessRuntimeState;
 use crate::runtime::chat::tool_round_types::RuntimeToolCallRequest;
@@ -156,6 +157,7 @@ pub struct LlmStepInput<'a> {
     pub conversation_id: &'a str,
     pub run_id: &'a str,
     pub estimated_tokens: usize,
+    pub anthropic_multimodal_turn: Option<AnthropicMultimodalTurn>,
 }
 
 /// Executor 的结构化返回。Executor 只产出数据，不修改外部状态。

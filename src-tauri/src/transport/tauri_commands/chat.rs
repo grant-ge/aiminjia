@@ -249,11 +249,22 @@ pub fn deserialize_chat_messages_for_gateway(
             Ok(message) => messages.push(message),
             Err(error) => {
                 dropped_count += 1;
+                let role = value
+                    .get("role")
+                    .and_then(|role| role.as_str())
+                    .unwrap_or("-");
+                let content_chars = value
+                    .get("content")
+                    .and_then(|content| content.as_str())
+                    .map(|content| content.chars().count())
+                    .unwrap_or(0);
+                let fields = value
+                    .as_object()
+                    .map(|object| object.keys().cloned().collect::<Vec<_>>().join(","))
+                    .unwrap_or_default();
                 log::warn!(
-                    "[run_llm_step] Failed to deserialize message for conv={}: {} — value: {}",
-                    conversation_id,
-                    error,
-                    serde_json::to_string(value).unwrap_or_default()
+                    "[run_llm_step] Failed to deserialize message for conv={}: {} — role={} content_chars={} fields=[{}]",
+                    conversation_id, error, role, content_chars, fields
                 );
             }
         }
@@ -543,6 +554,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                     effective_tools.clone(),
                     input.token_budget as u32,
                     Some(input.conversation_id),
+                    input.anthropic_multimodal_turn.clone(),
                     system_prompt_segments.clone(),
                 )
                 .await;

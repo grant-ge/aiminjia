@@ -55,6 +55,25 @@ pub fn thinking_config_for_route(
     }
 }
 
+fn attach_anthropic_multimodal_turn(
+    messages: &mut [ChatMessage],
+    anthropic_multimodal_turn: Option<AnthropicMultimodalTurn>,
+) {
+    let Some(turn) = anthropic_multimodal_turn else {
+        return;
+    };
+    if turn.image_blocks.is_empty() {
+        return;
+    }
+    if let Some(message) = messages
+        .iter_mut()
+        .rev()
+        .find(|message| message.role == "user")
+    {
+        message.anthropic_multimodal_turn = Some(turn);
+    }
+}
+
 /// Check if an error is retryable (rate limit, server error, or network timeout).
 ///
 /// Parses the error message for HTTP status codes and known error patterns.
@@ -212,6 +231,7 @@ impl LlmGateway {
             temperature: 0.7,
             stream,
             thinking_config: thinking_config_for_route(route, settings),
+            anthropic_multimodal_turn: None,
             system_segments,
         }
     }
@@ -248,6 +268,7 @@ impl LlmGateway {
         tool_defs_override: Option<Vec<ToolDefinition>>,
         max_tokens: u32,
         conversation_id: Option<&str>,
+        anthropic_multimodal_turn: Option<AnthropicMultimodalTurn>,
     ) -> Result<(
         String,
         StreamBox,
@@ -264,6 +285,7 @@ impl LlmGateway {
             max_tokens,
             conversation_id,
             None,
+            anthropic_multimodal_turn,
         )
         .await
     }
@@ -282,6 +304,7 @@ impl LlmGateway {
         tool_defs_override: Option<Vec<ToolDefinition>>,
         max_tokens: u32,
         conversation_id: Option<&str>,
+        anthropic_multimodal_turn: Option<AnthropicMultimodalTurn>,
         system_segments: Vec<crate::llm::streaming::SystemPromptSegment>,
     ) -> Result<(
         String,
@@ -304,6 +327,7 @@ impl LlmGateway {
             max_tokens,
             conversation_id,
             segments,
+            anthropic_multimodal_turn,
         )
         .await
     }
@@ -319,6 +343,7 @@ impl LlmGateway {
         max_tokens: u32,
         conversation_id: Option<&str>,
         system_segments: Option<Vec<crate::llm::streaming::SystemPromptSegment>>,
+        anthropic_multimodal_turn: Option<AnthropicMultimodalTurn>,
     ) -> Result<(
         String,
         StreamBox,
@@ -358,7 +383,10 @@ impl LlmGateway {
 
         // 2. Apply data masking
         let mut mask_ctx = MaskingContext::new(masking_level);
-        let masked_messages = mask_ctx.mask_messages(&messages);
+        let mut masked_messages = mask_ctx.mask_messages(&messages);
+        if route.provider == "lotus" {
+            attach_anthropic_multimodal_turn(&mut masked_messages, anthropic_multimodal_turn);
+        }
 
         // 3. Build request
         let request = Self::build_request(

@@ -18,8 +18,8 @@ use serde_json::{json, Value};
 use std::pin::Pin;
 
 use crate::llm::streaming::{
-    parse_sse_line, LlmRequest, LlmResponse, StopReason, StreamBox, StreamEvent, TokenUsage,
-    ToolCall,
+    parse_sse_line, AnthropicContentBlock, AnthropicMultimodalTurn, LlmRequest, LlmResponse,
+    StopReason, StreamBox, StreamEvent, TokenUsage, ToolCall,
 };
 
 use super::LlmProviderTrait;
@@ -148,10 +148,15 @@ impl ClaudeProvider {
     /// structured content block arrays, as required by the Anthropic API.
     /// Tool result messages use `tool_result` content blocks.
     fn build_request_body(&self, request: &LlmRequest) -> Value {
+        let last_user_index = request
+            .messages
+            .iter()
+            .rposition(|message| message.role == "user");
         let messages: Vec<Value> = request
             .messages
             .iter()
-            .filter_map(|msg| {
+            .enumerate()
+            .filter_map(|(index, msg)| {
                 // System messages handled via top-level "system" field
                 if msg.role == "system" {
                     return None;
@@ -214,6 +219,22 @@ impl ClaudeProvider {
                                 "tool_use_id": tc_id,
                                 "content": msg.content,
                             }],
+                        }));
+                    }
+                }
+
+                if msg.role == "user" {
+                    let request_turn = if Some(index) == last_user_index
+                        && msg.anthropic_multimodal_turn.is_none()
+                    {
+                        request.anthropic_multimodal_turn.as_ref()
+                    } else {
+                        None
+                    };
+                    if let Some(content) = anthropic_user_content_blocks(msg, request_turn) {
+                        return Some(json!({
+                            "role": "user",
+                            "content": content,
                         }));
                     }
                 }
@@ -436,6 +457,39 @@ impl ClaudeProvider {
                 StopReason::EndTurn
             }
         }
+    }
+}
+
+fn anthropic_user_content_blocks(
+    msg: &crate::llm::streaming::ChatMessage,
+    request_turn: Option<&AnthropicMultimodalTurn>,
+) -> Option<Vec<Value>> {
+    let turn = msg.anthropic_multimodal_turn.as_ref().or(request_turn)?;
+    if turn.image_blocks.is_empty() {
+        return None;
+    }
+
+    let mut blocks = Vec::with_capacity(1 + turn.image_blocks.len());
+    if !msg.content.is_empty() {
+        blocks.push(json!({
+            "type": "text",
+            "text": msg.content,
+        }));
+    }
+    blocks.extend(turn.image_blocks.iter().map(anthropic_block_to_json));
+    Some(blocks)
+}
+
+fn anthropic_block_to_json(block: &AnthropicContentBlock) -> Value {
+    match block {
+        AnthropicContentBlock::Text { text } => json!({
+            "type": "text",
+            "text": text,
+        }),
+        AnthropicContentBlock::Image { source } => json!({
+            "type": "image",
+            "source": source,
+        }),
     }
 }
 
@@ -919,6 +973,7 @@ mod tests {
             temperature: 1.0,
             stream: false,
             thinking_config: None,
+            anthropic_multimodal_turn: None,
             system_segments: None,
         };
 
@@ -947,6 +1002,7 @@ mod tests {
             temperature: 0.7,
             stream: true,
             thinking_config: None,
+            anthropic_multimodal_turn: None,
             system_segments: None,
         };
 
@@ -962,6 +1018,54 @@ mod tests {
         assert!(tools[0].get("input_schema").is_some());
         assert!(tools[0].get("parameters").is_none());
         assert_eq!(tools[0]["name"], "WebSearch");
+    }
+
+    #[test]
+    fn test_build_request_body_with_anthropic_image_blocks() {
+        use crate::llm::streaming::{
+            AnthropicContentBlock, AnthropicImageSource, AnthropicMultimodalTurn,
+        };
+
+        let provider = ClaudeProvider::new("test-key".to_string(), None);
+        let request = LlmRequest {
+            messages: vec![
+                ChatMessage::text("user", "Context message"),
+                ChatMessage::text("user", "Describe this image"),
+            ],
+            tools: vec![],
+            max_tokens: 1024,
+            temperature: 1.0,
+            stream: false,
+            thinking_config: None,
+            anthropic_multimodal_turn: Some(AnthropicMultimodalTurn {
+                image_blocks: vec![AnthropicContentBlock::Image {
+                    source: AnthropicImageSource::Base64 {
+                        media_type: "image/png".to_string(),
+                        data: "iVBORw0KGgo=".to_string(),
+                    },
+                }],
+                image_count: 1,
+                image_bytes_total: 8,
+                degraded_count: 0,
+            }),
+            system_segments: None,
+        };
+
+        let body = provider.build_request_body(&request);
+        let messages = body["messages"].as_array().unwrap();
+        assert_eq!(messages[0]["content"], "Context message");
+        let content = messages[1]["content"].as_array().unwrap();
+
+        assert_eq!(
+            content[0],
+            json!({"type": "text", "text": "Describe this image"})
+        );
+        assert_eq!(content[1]["type"], "image");
+        assert_eq!(content[1]["source"]["type"], "base64");
+        assert_eq!(content[1]["source"]["media_type"], "image/png");
+        assert_eq!(content[1]["source"]["data"], "iVBORw0KGgo=");
+        assert!(!body.to_string().contains("image_url"));
+        assert!(!body.to_string().contains("data:image/png;base64"));
     }
 
     #[test]
@@ -1227,6 +1331,7 @@ mod tests {
                     cache: false,
                 },
             ]),
+            anthropic_multimodal_turn: None,
         };
 
         let body = provider.build_request_body(&request);
@@ -1263,6 +1368,7 @@ mod tests {
             stream: false,
             thinking_config: None,
             system_segments: Some(segs),
+            anthropic_multimodal_turn: None,
         };
 
         let body = provider.build_request_body(&request);
@@ -1290,6 +1396,7 @@ mod tests {
             stream: false,
             thinking_config: None,
             system_segments: None,
+            anthropic_multimodal_turn: None,
         };
 
         let body = provider.build_request_body(&request);

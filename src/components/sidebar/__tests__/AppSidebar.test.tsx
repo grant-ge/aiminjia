@@ -178,8 +178,9 @@ describe('AppSidebar', () => {
     expect(uiState.setRoute).not.toHaveBeenCalled()
     expect(screen.getByText('钉钉')).toBeInTheDocument()
     expect(screen.getByText('姚斌权')).toBeInTheDocument()
-    expect(screen.getByText('飞书')).toBeInTheDocument()
-    expect(screen.getByText('微信')).toBeInTheDocument()
+    expect(screen.queryByText('飞书')).not.toBeInTheDocument()
+    expect(screen.queryByText('微信')).not.toBeInTheDocument()
+    expect(screen.queryByText('企业微信')).not.toBeInTheDocument()
   })
 
 })

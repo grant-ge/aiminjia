@@ -88,7 +88,7 @@ function normalizeHex(input: string | undefined, fallback: string): string {
  * 同时下发 design.pen 新命名（--primary 等）和 legacy --color-accent-*。
  */
 function deriveAccentPalette(accent: string) {
-  const onAccent = isDarkColor(accent) ? '#FFFFFF' : '#1A1A1A'
+  const onAccent = '#FFFFFF'
 
   // === design.pen / shadcn 命名空间 ===
   setVar('--primary', accent)

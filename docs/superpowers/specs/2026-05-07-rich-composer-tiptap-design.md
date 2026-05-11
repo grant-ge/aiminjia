@@ -1,7 +1,7 @@
 # RichComposer + Tiptap 输入框重设计
 
-日期：2026-05-07（2026-05-09 修订：富文本 schema + markdown 序列化 + user bubble markdown 渲染 + multimodal 图片通道）
-范围：前端首页 / Chat 页输入框；Tiptap 编辑器底座；附件粘贴-拖放-选择管线；提交 payload 升级为 markdown；user message bubble 渲染改造；LLM gateway 图片 multimodal 通道。
+日期：2026-05-07（2026-05-09 修订：富文本 schema + markdown 序列化 + user bubble markdown 渲染；2026-05-11 修订：Lotus Cloud Anthropic 图片通道收敛）
+范围：前端首页 / Chat 页输入框；Tiptap 编辑器底座；附件粘贴-拖放-选择管线；提交 payload 升级为 markdown；user message bubble 渲染改造；Lotus Cloud Anthropic 图片理解通道。
 
 ## 背景与目标
 
@@ -20,7 +20,7 @@
 3. 全量粘贴能力进入 Tiptap：文件/文件夹、本地 URI、Finder/Explorer 文件引用、截图/复制图片二进制、普通文本、HTML 富文本，以及混合粘贴。
 4. 提交 payload 从 `text: string` 升级到 `markdown: string`；附件 token 以 `[附件: name](file://path)` / `![name](file://path)` 形式穿插在正文中。
 5. user message bubble 改为 markdown 渲染，图片/附件以自定义 renderer 与正文穿插显示。
-6. LLM gateway 扩出结构化 multimodal 通道；当前轮次的图片附件直接以 base64 进视觉模型，不支持视觉的模型静默降级为原有"path + 类型"文本提示。
+6. Lotus Cloud LLM 通道扩出 Anthropic Messages 多模态 content block；当前轮次的图片附件直接以 base64 进入 `/anthropic/v1/messages`。缺 Anthropic 路由、非云端、本地/custom/OpenAI-compatible 路径不在本期范围内。
 7. slash 能力仍只预留扩展接口，本期不实现 `/` 菜单。
 
 ## 已确认决策
@@ -34,10 +34,10 @@
 - 只附件提交时，markdown 就是一个或多个附件占位符本身，不再额外补"请分析附件"默认文案。
 - user bubble 渲染只读 markdown 字符串，不再读 `StoredMessage.content.files` 数组；`files` 数组退给后端链路（build_llm_content / workspace 授权）用。
 - user bubble 中附件 chip 的"视觉语义"放在 react-markdown 自定义 link renderer 里（`href.startsWith('file://')` → chip；否则普通链接）。
-- 图片传给 AI 走真 multimodal：支持视觉的模型 base64 进结构化 content；不支持视觉的模型静默降级回原有 `[当前消息附件]` 路径提示。
+- 图片传给 AI 走真 multimodal：仅 Lotus Cloud 新桌面端路径生效，按 Anthropic `content[]` 的 `image.source.base64` 结构发送；缺 Anthropic 路由的模型对新桌面端不可用，不在客户端做 OpenAI 协议回退。
 - 历史消息不重新塞 multimodal：仅当前轮的图进视觉通道；历史回放继续走文本提示。
 - base64 不持久化：一次性进当轮 LLM 请求，结束即丢。
-- 单图上限 5MB，单条消息上限 10 张，格式白名单 `png/jpeg/webp/gif`；超限该图静默降级回 path + toast，不阻断整条消息。
+- 服务端请求体全局上限 10MB；客户端图片 guard 收敛为单图原始 bytes ≤ 3MB、单请求图片原始总量 ≤ 6MB、最多 4 张，格式白名单 `png/jpeg/webp/gif`；超限该图降级回 path + toast，不阻断整条消息。
 - 输入框富文本 schema 采用"中档"：允许 bold / italic / inline code / strike / link / bulletList / orderedList / blockquote / codeBlock；不允许标题、表格、图片粘贴直贴（统一走附件 token）、颜色、行内 style。
 - 不做工具栏 UI，富文本靠快捷键和跨 app 粘贴获得。
 - lightbox / 全屏图片预览本期不做；点击图片沿用现有 `openLocalFile`。
@@ -81,9 +81,9 @@ Bubble 与 markdown：
 
 后端 LLM 链路（multimodal 改造点）：
 
-- `src-tauri/src/llm/streaming.rs`（ChatMessage 扩展）
-- `src-tauri/src/llm/providers/`（Anthropic / OpenAI-compatible / Gemini 适配）
-- `src-tauri/src/llm/max_tokens.rs` 旁边新增 `vision_support.rs`
+- `src-tauri/src/llm/streaming.rs`（ChatMessage 当前仍是文本，P7 只做 Lotus/Claude 发送前的 Anthropic 多模态扩展；不做 provider-wide content enum）
+- `src-tauri/src/llm/providers/claude.rs` / `src-tauri/src/llm/providers/lotus.rs`（Lotus 复用 ClaudeProvider，序列化 Anthropic content blocks）
+- `src-tauri/src/llm/max_tokens.rs` 旁边新增 `vision_support.rs`（只描述 Lotus Cloud + Anthropic 路由可用模型的视觉 allowlist）
 - `src-tauri/src/runtime/chat/chat_turn_driver.rs`（构造 user message）
 - `src-tauri/src/runtime/chat/history.rs`
 - `src-tauri/src/transport/tauri_commands/chat/chat_runtime_impl.rs::build_llm_content`
@@ -439,81 +439,107 @@ bubble 左上角的 skill chip（`skillCommand` / `tokenLabel`）渲染逻辑保
 
 历史消息的 `content.text` 可能是纯文本（含未 escape 的 `*` `_` 等）。react-markdown 对孤立特殊字符多数场景无害，直接用同一渲染器。不做数据迁移。
 
-## LLM Multimodal 图片通道
+## Lotus Cloud Anthropic 图片理解通道
 
 ### 目标
 
-让支持视觉的模型直接看到当前轮次发送的图片像素；不支持视觉的模型走原有 `[当前消息附件] - foo.png (path: "...", 类型: image)` 路径文本提示，用户无感降级。
+让新桌面端在 Lotus Cloud 路径下把**当前轮次**发送的图片像素交给支持视觉的云端模型。服务端已经明确：新桌面端走 `/anthropic/v1/messages`，只匹配 `provider.protocol = "anthropic"` 的活动路由；缺 Anthropic 路由的模型对新桌面端不可用。因此本期不再做 OpenAI/Qwen/custom/非云端多协议适配。
 
-### ChatMessage 结构升级
+### 已验证事实
 
-`src-tauri/src/llm/streaming.rs::ChatMessage`：
+- `LotusProvider` 固定调用 `https://ai-tenant.renlijia.com/anthropic/v1/messages`，复用 `ClaudeProvider` 的 Anthropic Messages 请求构造。
+- 服务端 `/anthropic/v1/messages` 是 Anthropic 原生透传：只筛 `provider.protocol = "anthropic"`，只重写 `model` 为 `upstream_model_name`，不做 OpenAI ↔ Anthropic 请求体转换。
+- 已用真实 session key + `claude-sonnet-4-5` 向 `/anthropic/v1/messages` 发送 1x1 红色 PNG 的 Anthropic base64 image block，返回 200 且模型能识别红色图片。
+- OPS 协议覆盖矩阵是模型可用性的准线：`qwen-plus` 这类 openai-only 模型不属于新桌面端当前路径；`glm5.1` 已确认有 Anthropic 路由且可接收 image block；实际识别质量由上游模型决定。
 
-```rust
-pub enum ChatMessageContent {
-    Text(String),
-    Parts(Vec<ChatMessagePart>),
-}
+### Wire Format
 
-pub enum ChatMessagePart {
-    Text { text: String },
-    Image { source: ImageSource },
-}
+当前 App 只发送 Anthropic Messages content blocks：
 
-pub enum ImageSource {
-    Base64 { media_type: String, data: String },
-    Url { url: String },
+```json
+{
+  "model": "claude-sonnet-4-5",
+  "max_tokens": 4096,
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        { "type": "text", "text": "请描述这张图片" },
+        {
+          "type": "image",
+          "source": {
+            "type": "base64",
+            "media_type": "image/png",
+            "data": "纯 base64，不带 data:image/png;base64, 前缀"
+          }
+        }
+      ]
+    }
+  ]
 }
 ```
 
-兼容做法：`ChatMessageContent::Text("...")` 是默认序列化形态；仅当本轮 user message 含图且路由模型支持视觉时才出现 `Parts(...)`。history / tool messages / assistant messages 全部保持 `Text` 形态，不受影响。
+明确不发送 OpenAI `image_url` data URL：
 
-### Provider 适配
+```json
+{ "type": "image_url", "image_url": { "url": "data:image/png;base64,..." } }
+```
 
-每个 provider 实现 `supports_vision(model_name) -> bool`，并在序列化 `ChatMessage` → 自家协议时翻译 parts：
+### 实现边界
 
-| Provider | 翻译 |
-|---|---|
-| Anthropic | `content: [{"type":"text","text":...}, {"type":"image","source":{"type":"base64","media_type":...,"data":...}}]` |
-| OpenAI / OpenAI-compatible（含 GLM-4V / Qwen-VL） | `content: [{"type":"text","text":...}, {"type":"image_url","image_url":{"url":"data:<mime>;base64,..."}}]` |
-| Gemini | `parts: [{"text":...}, {"inline_data":{"mime_type":...,"data":...}}]` |
-| 其它（DeepSeek / Qwen3 非 VL / 旧 Haiku 等） | `supports_vision=false`，走降级 |
-
-新模块 `src-tauri/src/llm/vision_support.rs`：模型名 → 三态（`Supported` / `Unsupported` / `Unknown`）。`Unknown` 保守按 `Unsupported` 走并 log warn，方便补表。
+- 只做 Lotus Cloud 路径；非云端配置、本地 provider、自定义 endpoint 不改。
+- 只做 Anthropic Messages 协议；不改 `openai.rs`、`qwen.rs`、`deepseek_*`、`volcano.rs`、`custom.rs`。
+- 不引入 provider-wide `ChatMessageContent::Parts` 大改；优先在 Lotus/Claude 请求体构造前，用当前 turn 的附件 sidecar/enrichment 生成 Anthropic content blocks。
+- 历史消息不重放图片 base64；base64 不持久化，只在当前 LLM 请求内存中存在。
+- 非图片附件继续保留现有 `[当前消息附件]` path 文本提示。
+- 图片成功进入 Anthropic image block 后，不再重复出现在 `[当前消息附件]` path 文本列表里，避免模型同时看到像素和路径造成混淆。
 
 ### 构造 user message 决策
 
-`chat_turn_driver` 构造 user message 的分支：
-
 ```text
 当前 turn 的 attachments 里有 image 吗？
-  否 → ChatMessageContent::Text(build_llm_content(markdown, attachments, ...))
-  是 → 当前 routed model supports_vision?
-        是 → 读盘 + base64 编码每张符合约束的 image；
-             ChatMessageContent::Parts([Text(build_llm_content(markdown, non_image_attachments, ...)),
-                                         Image(base64_1), Image(base64_2), ...])
-        否 → ChatMessageContent::Text(build_llm_content(markdown, attachments, ...))（完整列 image path）
+  否 → 沿用 Text(build_llm_content(markdown, attachments, ...))
+  是 → 当前 cloud model 在 Lotus Anthropic vision allowlist 内吗？
+        是 → 读取符合约束的 image bytes；
+             构造 Anthropic content = [Text(build_llm_content(markdown, non_image + degraded_image_attachments, ...)),
+                                      Image(base64_1), Image(base64_2), ...]
+        否 → 沿用 Text(build_llm_content(markdown, attachments, ...))（完整列 image path）
 ```
 
-`build_llm_content` 仍保留现有"`[当前消息附件]` - 列表 + 提示语"行为；参数签名扩展为接收"要列出哪些附件"，在走 multimodal 时把 image 附件从列表中剔除，避免模型同时看到像素和路径列表造成困惑。
+allowlist 第一版保守：
+
+- 已实测支持：`claude-sonnet-4-5`。
+- 可列入支持：`claude-ops`、其它明确走 Anthropic 路由且上游为 Claude 3/4/Opus/Sonnet 视觉能力的模型。
+- 尝试启用：`glm5.1`（已测可接收 Anthropic image block；识别质量不稳定，先按“能理解就理解”传图）。
+- 明确不期望：`deepseek-*`、openai-only `qwen-plus`。
 
 ### 约束与降级
 
-- 单图上限 5MB；单条消息最多 10 张图；格式白名单 `image/png` / `jpeg` / `webp` / `gif`。
-- 超限 / 格式不白 / 读盘失败 → 该图降级回原路径提示，toast 单独通知（例如"foo.png 超过 5MB，已按路径方式发送"），不阻断整条消息。
-- Provider 端 image decoding 错误 → 整轮失败，错误按现有错误路径展示。
-- 路由模型不支持视觉 → 不 toast、不报错，静默降级。
+服务端有 10MB 全局 body limit；base64 约放大 33%，还要容纳 system prompt、历史消息和工具 schema。因此客户端 guard 必须保守：
+
+- 单图原始 bytes ≤ 3MB。
+- 单请求图片原始 bytes 总量 ≤ 6MB。
+- 单轮最多 4 张图片。
+- 格式白名单：`image/png`、`image/jpeg`、`image/webp`、`image/gif`。
+- 超限 / 格式不白 / 读盘失败 / 模型不在 vision allowlist → 该图降级回原路径提示，不阻断整条消息；用户可见 toast 留到后续体验增强。
+- Provider 端 image decoding 错误 → 整轮按现有 LLM 错误路径展示。
 
 ### 历史消息
 
 - `StoredMessage.content` schema 不动：仍存 markdown `text` 和 `files[]`。
-- `build_chat_history` / `build_chat_message_content` 对**历史轮次**的 user message 一律走 text 路径，不重新读盘 + base64。
-- 仅**当前提交中的 turn** 走 multimodal 通道。用户在历史里指着早先发的图追问时，模型靠对话上下文 + path 提示理解。
-- base64 不持久化，仅 in-memory 一次性塞进当轮 LLM 请求。
+- `build_chat_history` / 历史 user message 一律走 text 路径，不重新读盘 + base64。
+- 用户追问历史图片时，模型只能依赖上一轮视觉上下文和 path 文本；本期不做历史图片重发策略。
 
-### Telemetry
+### Telemetry 与日志
 
-`chat_turn_driver` 记录 `image_part_count`、`image_part_bytes_total`、`image_degraded_count` 三维度；帮助观察视觉通道实际用量与降级比例。
+结构体保留以下安全元数据；日志/telemetry 接入可后续补充，但不得打印 base64：
+
+- `image_part_count`
+- `image_part_bytes_total`
+- `image_degraded_count`
+- `vision_model` / `vision_enabled`
+
+日志 preview 严禁包含 base64；只允许文件名、mime、原始 bytes、降级原因。
 
 ## 兼容行为
 
@@ -604,23 +630,23 @@ editor commands：
 
 `vision_support`：
 
-- 查表：Opus/Sonnet vision、GPT-5、Gemini-2 返回 Supported。
-- DeepSeek / Qwen3 / 旧 Haiku 返回 Unsupported。
-- 未知模型返回 Unsupported 并 log warn。
+- `claude-sonnet-4-5` 返回 Supported（已实测）。
+- `claude-ops` 和明确 Anthropic Claude Sonnet/Opus 路由返回 Supported。
+- `deepseek-*`、openai-only `qwen-plus` 返回 Unsupported。
+- `glm5.1` 返回 Supported（已测可接收 Anthropic image block；识别质量不稳定，先允许传图）。
 
 `chat_turn_driver` multimodal 构造：
 
-- 无 image 附件 → Text。
-- 有 image 附件 + supports_vision → Parts，包含正确数量 Image；text 里不含 image path 列表。
-- 有 image 附件 + !supports_vision → Text，含完整 image path 列表（原行为）。
-- 超 5MB / 非白名单格式 / 读盘失败 → 该图降级，其它图正常；telemetry `image_degraded_count++`。
-- 超 10 张 → 前 10 进 parts，其余降级 + toast。
+- 无 image 附件 → 沿用普通 Text 请求。
+- Lotus Cloud + allowlist 支持 + 有 image 附件 → 请求 sidecar 包含 Anthropic `Text + Image` blocks；text 里不含已转 image 的 path 列表。
+- 非 Lotus Cloud / 不在 allowlist / Unknown → 沿用 Text 请求，含完整 image path 列表（原行为）。
+- 超 3MB 单图 / 超 6MB 图片总量 / 非白名单格式 / 读盘失败 → 该图降级，其它图正常；telemetry `image_degraded_count++`。
+- 超 4 张 → 前 4 张尝试进 Anthropic image blocks，其余降级 + toast。
 
 Provider 序列化：
 
-- Anthropic：Parts → `content` 数组含 `image` type base64。
-- OpenAI：Parts → `content` 数组含 `image_url` data URL。
-- Gemini：Parts → `parts` 含 `inline_data`。
+- Claude/Lotus：sidecar → Anthropic `content` 数组含 `image.source.base64`。
+- 明确不测 OpenAI/Qwen/DeepSeek/Volcano/custom provider；这些路径不属于本期范围。
 
 `history`：
 
@@ -642,7 +668,7 @@ Provider 序列化：
 5. **P4 全量 paste pipeline**：HTML / 文件 / URI / 图片 blob / 混合顺序 / fallback toast；实测主流来源（飞书 / 钉钉 / Notion / 微信网页 / VS Code / 网页）。
 6. **P5 页面接入**：`ChatBottomArea` + `HomeTaskComposerCard` 本地状态退场，测试迁移。
 7. **P6 User bubble markdown 渲染**：新建 `UserBubbleMarkdown`，自定义 link / img renderer，删 `UserMessageBubble.tsx` 的手写 thumbnail / chip / files.map。
-8. **P7 LLM gateway multimodal**（独立 PR）：扩 `ChatMessageContent`、provider parts 翻译、`vision_support` 表、`chat_turn_driver` 分支、约束与降级、telemetry。可与 P0–P6 并行。
+8. **P7 Lotus Cloud Anthropic multimodal**（独立 PR）：当前 turn 图片附件转 Anthropic `image.source.base64` blocks；只改 Lotus/Claude 云端发送路径、附件降级与 telemetry；不做 OpenAI/Qwen/custom/非云端 provider-wide 改造。可与 P0–P6 并行。
 9. **P8 收敛**：删 `ChatComposerCompact`、旧 `useComposerPaste`、不再使用的 `PendingAttachmentChips`。
 
 ## 风险与应对
@@ -654,8 +680,8 @@ Provider 序列化：
 - **跨 app 粘贴 HTML 兼容性**：飞书 / 钉钉 / Notion 可能用自定义标签（如 `<pre class="code-block">`），Tiptap 默认解析不到。P4 里按主流来源实测并补 paste rule；覆盖不到的格式降级为纯文本。
 - **Tiptap 官方 `prosemirror-markdown` 桥接**：与 attachmentToken custom node 不兼容，**自写 serializer** 保留可控性。
 - **react-markdown 深底主题**：不直接复用 assistant 的浅底主题；独立样式组合，只用主题变量。
-- **base64 读盘阻塞 send 路径**：10 张 50MB 量级可能阻塞数百 ms，本期可接受；不上后台预编码，保持实现线性。
-- **Provider 视觉能力表漂移**：`vision_support.rs` 三态设计 + Unknown 保守降级 + log warn，漂移可观察。
+- **base64 读盘阻塞 send 路径**：本期最多 4 张、原始总量 6MB，阻塞风险可控；不上后台预编码，保持实现线性。
+- **服务端协议覆盖漂移**：新桌面端只走 Anthropic 入口；以 `/anthropic/v1/models` 和 OPS 协议覆盖矩阵为准。客户端 allowlist 只作为图片发送 guard，缺 Anthropic 路由时不做 OpenAI 回退。
 - **页面业务逻辑被共享组件吞掉**：`RichComposer` 只输出 payload，不创建会话、不授权工作区、不访问 chat store。
 
 ## 验收标准
@@ -669,10 +695,10 @@ Provider 序列化：
 - 从飞书 / 钉钉 / 网页粘贴富文本，常见格式（粗体、链接、列表、代码块）能保留。
 - 提交 payload 的 `markdown` 字段是合法 markdown；附件 token 以 `[附件: name](file://...)` / `![name](file://...)` 形式与正文穿插。
 - user bubble 用 markdown 渲染：粗体 / 链接 / 列表 / 引用 / 代码块正确显示；`file://` 链接渲染为附件 chip；`file://` 图片渲染为缩略图；旧纯文本消息兼容渲染。
-- 当前轮次发送图片给支持视觉的模型时，模型能"看见"图（视觉测试 prompt 有视觉感知输出）。
-- 不支持视觉的模型上发送图片：用户无感，模型按 path 提示工作，不报错。
+- 当前轮次发送图片给 `claude-sonnet-4-5` 等已配置 Anthropic 路由且支持视觉的 Lotus Cloud 模型时，模型能"看见"图（视觉测试 prompt 有视觉感知输出）。
+- 模型未在客户端视觉 allowlist、图片超限、读盘失败或格式不支持时：用户可见 toast，模型按 path 提示工作，不报错；缺 Anthropic 路由的模型由云端模型列表/服务端 404 处理，不在本功能内做协议回退。
 - 历史轮次的图不重新塞 multimodal 给 LLM。
-- 超 5MB / 非白名单格式 / 读盘失败 / 超 10 张 → 该图静默降级 + toast；整条消息照常发送。
+- 超 3MB 单图 / 超 6MB 图片总量 / 非白名单格式 / 读盘失败 / 超 4 张 → 该图降级 + toast；整条消息照常发送。
 - Enter、Shift+Enter、IME、流式停止、首页创建会话和工作区授权行为保持正确。
 - 本期没有实现 slash 菜单，但代码中有明确扩展点。
 - 本期没有实现图片 lightbox / 全屏预览。

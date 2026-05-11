@@ -50,6 +50,16 @@ describe('brandingStore', () => {
     expect(state.sidebarBgColor).toBe(DEFAULTS.sidebarBgColor)
   })
 
+  it('浅色品牌金也保持 primary foreground 为白色', () => {
+    useBrandingStore.getState().applyBranding({ accentColor: '#D4A843' })
+
+    const style = document.documentElement.style
+    expect(style.getPropertyValue('--primary')).toBe('#D4A843')
+    expect(style.getPropertyValue('--primary-foreground')).toBe('#FFFFFF')
+    expect(style.getPropertyValue('--sidebar-primary-foreground')).toBe('#FFFFFF')
+    expect(style.getPropertyValue('--color-text-on-accent')).toBe('#FFFFFF')
+  })
+
   it('暗夜模式（深色 bg）时 muted/border 仍按 fg 反向派生', () => {
     useBrandingStore.getState().applyBranding({
       accentColor: '#818CF8',
