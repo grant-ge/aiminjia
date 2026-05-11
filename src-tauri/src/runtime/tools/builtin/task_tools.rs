@@ -5,6 +5,7 @@
 //! See P1.5 path-migration for rationale.
 
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 use anyhow::Result;
@@ -206,6 +207,104 @@ impl RuntimeTool for TaskListRuntimeTool {
     }
 }
 
+// ── Cycle detection for addBlocks / addBlockedBy ──────────────────────────────
+
+/// Check whether adding `new_edges` (each `(blocker, blocked)` in the `blocks`
+/// direction, i.e. `blocker → blocked`) would introduce a cycle.
+///
+/// Returns `Err(String)` with the cycle path if a cycle is detected, `Ok(())`
+/// otherwise.
+///
+/// `existing_tasks` is the full task list for the conversation (before the
+/// proposed edges are applied).
+fn check_no_cycle(
+    existing_tasks: &[TaskRecord],
+    new_edges: &[(&str, &str)], // (blocker_id, blocked_id) — "A blocks B" = A→B
+) -> Result<(), String> {
+    // Build adjacency map: node → set of nodes it blocks (A → {B, C, ...})
+    let mut adj: HashMap<&str, HashSet<&str>> = HashMap::new();
+    for task in existing_tasks {
+        let entry = adj.entry(task.id.as_str()).or_default();
+        for blocked in &task.blocks {
+            entry.insert(blocked.as_str());
+        }
+        // Also reconstruct forward edges from blocked_by (B.blocked_by contains A → A→B)
+        for blocker in &task.blocked_by {
+            adj.entry(blocker.as_str())
+                .or_default()
+                .insert(task.id.as_str());
+        }
+    }
+
+    // Apply proposed edges to the temporary graph.
+    for (blocker, blocked) in new_edges {
+        adj.entry(blocker).or_default().insert(blocked);
+    }
+
+    // For each new edge (A→B): check whether B can reach A (which would form A→B→...→A).
+    // Also handle self-loop: A→A is immediately a cycle.
+    for (blocker, blocked) in new_edges {
+        if blocker == blocked {
+            return Err(format!(
+                "cyclic blocking dependency: {} → {} (self-block)",
+                blocker, blocked
+            ));
+        }
+        // DFS from `blocked` looking for `blocker`.  The returned path starts at
+        // `blocked` and ends at `blocker`, so prepending `blocker →` gives the
+        // full cycle: blocker → blocked → ... → blocker.
+        if let Some(cycle_path) = dfs_find_cycle_path(&adj, blocked, blocker) {
+            let full_path = format!("{} → {}", blocker, cycle_path);
+            return Err(format!("cyclic blocking dependency: {}", full_path));
+        }
+    }
+
+    Ok(())
+}
+
+/// DFS from `start` looking for `target`.  Returns the path from `start` to
+/// `target` (inclusive of both endpoints) as a `" → "` separated string, or
+/// `None` if no path exists.
+fn dfs_find_cycle_path<'a>(
+    adj: &HashMap<&'a str, HashSet<&'a str>>,
+    start: &'a str,
+    target: &'a str,
+) -> Option<String> {
+    let mut visited: HashSet<&str> = HashSet::new();
+    let mut path: Vec<&str> = Vec::new();
+    if dfs_inner(adj, start, target, &mut visited, &mut path) {
+        Some(path.iter().copied().collect::<Vec<_>>().join(" → "))
+    } else {
+        None
+    }
+}
+
+fn dfs_inner<'a>(
+    adj: &HashMap<&'a str, HashSet<&'a str>>,
+    current: &'a str,
+    target: &'a str,
+    visited: &mut HashSet<&'a str>,
+    path: &mut Vec<&'a str>,
+) -> bool {
+    if current == target {
+        path.push(current);
+        return true;
+    }
+    if visited.contains(current) {
+        return false;
+    }
+    visited.insert(current);
+    if let Some(neighbors) = adj.get(current) {
+        for &next in neighbors {
+            if dfs_inner(adj, next, target, visited, path) {
+                path.insert(0, current);
+                return true;
+            }
+        }
+    }
+    false
+}
+
 #[async_trait]
 impl RuntimeTool for TaskUpdateRuntimeTool {
     fn definition(&self) -> ToolDefinition {
@@ -299,19 +398,58 @@ impl RuntimeTool for TaskUpdateRuntimeTool {
             }
         }
         if let Some(add_blocks) = input.get("addBlocks").and_then(|v| v.as_array()) {
-            for block_id in add_blocks.iter().filter_map(|v| v.as_str()) {
-                if !task.blocks.iter().any(|id| id == block_id) {
-                    task.blocks.push(block_id.to_string());
-                    updated_fields.push("blocks".into());
-                }
+            // Collect proposed new edges (skip duplicates already in task.blocks).
+            let proposed_blocks: Vec<&str> = add_blocks
+                .iter()
+                .filter_map(|v| v.as_str())
+                .filter(|&block_id| !task.blocks.iter().any(|id| id == block_id))
+                .collect();
+
+            // Cycle detection: A (task_id) blocks B → edge (task_id → B).
+            // Load full task list for graph construction.
+            if !proposed_blocks.is_empty() {
+                let all_tasks = store
+                    .list(&list_id)
+                    .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+                let new_edges: Vec<(&str, &str)> = proposed_blocks
+                    .iter()
+                    .map(|&b| (task_id, b))
+                    .collect();
+                check_no_cycle(&all_tasks, &new_edges)
+                    .map_err(|msg| ToolError::ExecutionFailed(msg))?;
+            }
+
+            for block_id in proposed_blocks {
+                task.blocks.push(block_id.to_string());
+                updated_fields.push("blocks".into());
             }
         }
         if let Some(add_blocked_by) = input.get("addBlockedBy").and_then(|v| v.as_array()) {
-            for blocker_id in add_blocked_by.iter().filter_map(|v| v.as_str()) {
-                if !task.blocked_by.iter().any(|id| id == blocker_id) {
-                    task.blocked_by.push(blocker_id.to_string());
-                    updated_fields.push("blockedBy".into());
-                }
+            // Collect proposed new edges (skip duplicates already in task.blocked_by).
+            let proposed_blockers: Vec<&str> = add_blocked_by
+                .iter()
+                .filter_map(|v| v.as_str())
+                .filter(|&blocker_id| !task.blocked_by.iter().any(|id| id == blocker_id))
+                .collect();
+
+            // Cycle detection: B (blocker_id) blocks A (task_id) → edge (B → task_id).
+            // Load full task list for graph construction (may already be loaded above; load
+            // again if not — store reads are cheap in tests and rare in production).
+            if !proposed_blockers.is_empty() {
+                let all_tasks = store
+                    .list(&list_id)
+                    .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+                let new_edges: Vec<(&str, &str)> = proposed_blockers
+                    .iter()
+                    .map(|&b| (b, task_id))
+                    .collect();
+                check_no_cycle(&all_tasks, &new_edges)
+                    .map_err(|msg| ToolError::ExecutionFailed(msg))?;
+            }
+
+            for blocker_id in proposed_blockers {
+                task.blocked_by.push(blocker_id.to_string());
+                updated_fields.push("blockedBy".into());
             }
         }
         if let Some(metadata) = input.get("metadata").and_then(|v| v.as_object()) {
@@ -438,27 +576,34 @@ impl RuntimeTool for TaskClaimRuntimeTool {
             .map(|id| id.as_str().to_string())
             .unwrap_or_else(|| "unknown-agent".to_string());
 
-        match &task.owner {
-            None => {
-                // Unclaimed — claim it.
+        // Check ownership without holding a borrow into task.owner across the mutation.
+        enum ClaimDecision {
+            Claim,
+            AlreadyOwned,
+            Taken(String),
+        }
+        let decision = match &task.owner {
+            None => ClaimDecision::Claim,
+            Some(owner) if owner == "*" => ClaimDecision::Claim,
+            Some(owner) if *owner == caller => ClaimDecision::AlreadyOwned,
+            Some(owner) => ClaimDecision::Taken(owner.clone()),
+        };
+
+        match decision {
+            ClaimDecision::Claim => {
                 task.owner = Some(caller.clone());
             }
-            Some(owner) if owner == "*" => {
-                // Open-claim slot — any agent may take it.
-                task.owner = Some(caller.clone());
-            }
-            Some(owner) if *owner == caller => {
-                // Already owned by this agent — idempotent success.
+            ClaimDecision::AlreadyOwned => {
                 return Ok(ToolResult::new(
                     "TaskClaim",
                     format!("Task #{} already owned by you ({})", task_id, caller),
                     Some(json!({ "success": true, "taskId": task_id, "task": task_to_json(&task) })),
                 ));
             }
-            Some(owner) => {
+            ClaimDecision::Taken(existing_owner) => {
                 return Err(ToolError::ExecutionFailed(format!(
                     "task already claimed by '{}'",
-                    owner
+                    existing_owner
                 )));
             }
         }
