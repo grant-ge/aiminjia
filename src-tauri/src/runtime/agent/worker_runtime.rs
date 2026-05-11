@@ -1045,6 +1045,29 @@ async fn run_teammate_idle(
         }
     }
 
+    // P2.3b: inject the team_context <system-reminder> as the FIRST item in
+    // the inbox so the LLM sees it before the dispatch prompt.  Only fires
+    // when we know where on disk the team / tasks data lives (conv_dir set);
+    // without that we can't render absolute paths and skip the attachment.
+    if let Some(ref conv_dir) = ctx.conv_dir {
+        let team_name_snapshot = {
+            let team = team_handle.lock().await;
+            team.team_name.clone()
+        };
+        let attachment = crate::runtime::agent::team_context::render_for_conv_dir(
+            &team_name_snapshot,
+            &agent_name,
+            conv_dir,
+        );
+        let _ = ctx
+            .inbox
+            .send(InboxItem::ChatMessage {
+                message: crate::runtime::messaging::StructuredMessage::text(attachment),
+                source: MessageSource::System,
+            })
+            .await;
+    }
+
     // If an initial prompt was given, seed the inbox so the first iteration
     // of the select! loop immediately processes it.
     if let Some(prompt) = initial_prompt {
