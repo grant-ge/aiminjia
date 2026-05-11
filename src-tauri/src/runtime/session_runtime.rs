@@ -43,6 +43,10 @@ pub struct SessionRuntime {
     permission_store: Option<Arc<PermissionStore>>,
     default_folder: Option<PathBuf>,
     task_notification_queue: Option<Arc<TaskNotificationQueue>>,
+    /// LTR (P1.8): per-session Team registry; cleared on cancel_session.
+    team_registry: Option<Arc<crate::runtime::agent::TeamRegistry>>,
+    /// LTR (P1.8): per-session AgentName registry; cleared on cancel_session.
+    agent_names: Option<Arc<crate::runtime::agent::AgentNameRegistry>>,
 }
 
 impl SessionRuntime {
@@ -59,6 +63,8 @@ impl SessionRuntime {
             permission_store: None,
             default_folder: None,
             task_notification_queue: None,
+            team_registry: None,
+            agent_names: None,
         }
     }
 
@@ -84,6 +90,8 @@ impl SessionRuntime {
             permission_store: None,
             default_folder: None,
             task_notification_queue: None,
+            team_registry: None,
+            agent_names: None,
         }
     }
 
@@ -126,6 +134,26 @@ impl SessionRuntime {
         queue: Arc<TaskNotificationQueue>,
     ) -> Self {
         self.task_notification_queue = Some(queue);
+        self
+    }
+
+    /// LTR (P1.8): inject the per-process TeamRegistry so `cancel_session`
+    /// can drop the session's team on shutdown.
+    pub fn with_team_registry(
+        mut self,
+        registry: Arc<crate::runtime::agent::TeamRegistry>,
+    ) -> Self {
+        self.team_registry = Some(registry);
+        self
+    }
+
+    /// LTR (P1.8): inject the per-process AgentNameRegistry so `cancel_session`
+    /// can drop name bindings on shutdown.
+    pub fn with_agent_names(
+        mut self,
+        registry: Arc<crate::runtime::agent::AgentNameRegistry>,
+    ) -> Self {
+        self.agent_names = Some(registry);
         self
     }
 
@@ -278,6 +306,20 @@ impl SessionRuntime {
             session_id,
             "Interaction request cancelled because the session was stopped.",
         );
+
+        // LTR (P1.8): cleanup per-session Team / name bindings.  Spawned
+        // because the registries are async; we don't need to block the
+        // synchronous cancel_session contract waiting on the mutex.
+        if let (Some(team_reg), Some(name_reg)) = (
+            self.team_registry.clone(),
+            self.agent_names.clone(),
+        ) {
+            let sid = session_id.clone();
+            tokio::spawn(async move {
+                team_reg.delete(&sid).await;
+                name_reg.drop_session(&sid).await;
+            });
+        }
     }
 
     pub fn clear_session_state(&self, session_id: &SessionId) {

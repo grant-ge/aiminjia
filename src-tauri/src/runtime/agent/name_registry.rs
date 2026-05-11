@@ -60,6 +60,15 @@ impl AgentNameRegistry {
         self.by_session.lock().await.remove(session);
     }
 
+    /// LTR (P1.8): drop **all** sessions.  Used by the app-close hook so a
+    /// relaunch starts with an empty registry.
+    pub async fn clear_all(&self) -> usize {
+        let mut g = self.by_session.lock().await;
+        let n = g.len();
+        g.clear();
+        n
+    }
+
     pub async fn names_in_session(&self, session: &SessionId) -> Vec<String> {
         self.by_session
             .lock()

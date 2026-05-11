@@ -707,7 +707,25 @@ pub fn run() {
                             "Failed to flush pending assistant message writes on exit: {err}"
                         );
                     }
-                }            }
+                }
+                // LTR (P1.8): drop all per-session Team / name bindings on
+                // app close.  Teammate idle loops self-clean as their inbox
+                // senders are dropped; we just need to clear the registry
+                // tables so a relaunch starts with a fresh slate.
+                if let (Some(team_reg), Some(name_reg)) = (
+                    app_handle
+                        .try_state::<Arc<runtime::agent::TeamRegistry>>()
+                        .map(|s| s.inner().clone()),
+                    app_handle
+                        .try_state::<Arc<runtime::agent::AgentNameRegistry>>()
+                        .map(|s| s.inner().clone()),
+                ) {
+                    tauri::async_runtime::block_on(async move {
+                        team_reg.clear_all().await;
+                        name_reg.clear_all().await;
+                    });
+                }
+            }
         });
 }
 

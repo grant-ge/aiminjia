@@ -2091,6 +2091,19 @@ impl TauriChatCommandAdapter {
                  which should also be disabled"
             );
         }
+        // LTR (P1.8): wire per-process Team / AgentName registries so
+        // cancel_session can drop their per-session entries.
+        if let Some(team_reg) =
+            services.app.try_state::<Arc<crate::runtime::agent::TeamRegistry>>()
+        {
+            runtime = runtime.with_team_registry(team_reg.inner().clone());
+        }
+        if let Some(name_reg) = services
+            .app
+            .try_state::<Arc<crate::runtime::agent::AgentNameRegistry>>()
+        {
+            runtime = runtime.with_agent_names(name_reg.inner().clone());
+        }
         Self { runtime, services }
     }
 

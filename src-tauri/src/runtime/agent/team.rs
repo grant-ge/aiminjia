@@ -122,6 +122,16 @@ impl TeamRegistry {
         self.teams.lock().await.remove(session_id)
     }
 
+    /// LTR (P1.8): drop **all** teams.  Used by the app-close hook so a
+    /// relaunch starts with a fresh registry.  Returns the number of teams
+    /// that were dropped (handy for logging / tests).
+    pub async fn clear_all(&self) -> usize {
+        let mut g = self.teams.lock().await;
+        let n = g.len();
+        g.clear();
+        n
+    }
+
     /// Write the current Team state to `<conv_dir>/team.json`.
     ///
     /// `conv_dir` should be `<aijia_home>/users/{scope}/conversations/{conv_id}`.
