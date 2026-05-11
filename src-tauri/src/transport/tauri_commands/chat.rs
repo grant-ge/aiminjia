@@ -1462,11 +1462,11 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         Ok(env_info)
     }
 
-    async fn get_skill_catalog(&self, agent_id: Option<&str>) -> String {
+    async fn get_skill_catalog(&self, _agent_id: Option<&str>) -> String {
         self.services
             .skill_registry
             .lock()
-            .map(|mut reg| reg.catalog_delta_for_agent(agent_id, 200_000))
+            .map(|reg| reg.format_full_catalog(200_000))
             .unwrap_or_default()
     }
 
