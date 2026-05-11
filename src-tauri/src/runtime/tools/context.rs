@@ -84,6 +84,11 @@ pub struct ToolExecutionContext {
     /// LTR (P2.7): per-process cancellation registry — looks up an agent's
     /// CancellationToken by (SessionId, AgentId).  Required by TeammateStop.
     pub cancellation_registry: Option<Arc<CancellationRegistry>>,
+    /// LTR (P2.8): true when this tool call runs inside an async runner
+    /// (Teammate idle loop or async sub-agent) that has no UI thread to
+    /// surface user-facing prompts to.  Permission decisions of `Ask` are
+    /// auto-denied when this is true; default false (Lead / interactive runs).
+    pub is_async: bool,
 }
 
 impl ToolExecutionContext {
@@ -114,6 +119,7 @@ impl ToolExecutionContext {
             inbox_registry: None,
             lead_idle: None,
             cancellation_registry: None,
+            is_async: false,
         }
     }
 
@@ -181,6 +187,13 @@ impl ToolExecutionContext {
 
     pub fn with_cancellation_registry(mut self, registry: Arc<CancellationRegistry>) -> Self {
         self.cancellation_registry = Some(registry);
+        self
+    }
+
+    /// LTR (P2.8): mark this context as belonging to an async runner.
+    /// See `is_async` field for semantics.
+    pub fn with_async(mut self, is_async: bool) -> Self {
+        self.is_async = is_async;
         self
     }
 

@@ -111,6 +111,31 @@ pub fn apply_permission_mode(
     }
 }
 
+/// LTR (P2.8): if the calling context is `is_async` (Teammate / async sub-agent)
+/// and the decision is `Ask`, convert it to `Deny` with an explanatory reason.
+/// Async runners have no UI thread to surface a permission prompt to — asking
+/// would block forever, so we deny up-front and let the LLM decide how to
+/// recover (typically `SendMessage(to: "team-lead", ...)` requesting help).
+pub fn apply_async_auto_deny(
+    decision: PermissionDecision,
+    tool_name: &str,
+    is_async: bool,
+) -> PermissionDecision {
+    if !is_async {
+        return decision;
+    }
+    if matches!(decision, PermissionDecision::Ask { .. }) {
+        return PermissionDecision::Deny {
+            message: format!(
+                "Tool '{}' requires user permission, but this runner is async (Teammate / sub-agent) and cannot surface a prompt — auto-denied.",
+                tool_name
+            ),
+            reason: PermissionReason::Mode("async".into()),
+        };
+    }
+    decision
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ScopeCapabilityFailure {
     MissingWorkspace,

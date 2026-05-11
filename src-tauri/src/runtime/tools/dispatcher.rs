@@ -13,7 +13,7 @@ use crate::runtime::tools::executor::{ToolError, ToolResult};
 #[cfg(test)]
 use crate::runtime::tools::permission::AllowAllPermissionPipeline;
 use crate::runtime::tools::permission::{
-    apply_permission_mode, PermissionDecision, PermissionPipeline,
+    apply_async_auto_deny, apply_permission_mode, PermissionDecision, PermissionPipeline,
 };
 use crate::telemetry::{record_diagnostic, DiagnosticEvent, DiagnosticSource};
 
@@ -204,6 +204,8 @@ impl ToolDispatcher {
         };
         let permission_decision =
             apply_permission_mode(permission_decision, &definition.id, ctx.permission_mode);
+        let permission_decision =
+            apply_async_auto_deny(permission_decision, &definition.id, ctx.is_async);
 
         // Map PermissionDecision to ToolError / AskRequired.
         // Deny → Err(PermissionDenied)
@@ -241,6 +243,7 @@ impl ToolDispatcher {
         let result = tool.execute(input, ctx.clone()).await;
         if let Err(ToolError::AskRequired(decision)) = result {
             let decision = apply_permission_mode(decision, &definition.id, ctx.permission_mode);
+            let decision = apply_async_auto_deny(decision, &definition.id, ctx.is_async);
             return match decision {
                 PermissionDecision::Allow { .. } => Err(ToolError::ExecutionFailed(
                     "tool returned AskRequired transformed into Allow unexpectedly".into(),
