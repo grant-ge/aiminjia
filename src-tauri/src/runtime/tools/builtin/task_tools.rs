@@ -23,6 +23,7 @@ pub struct TaskCreateRuntimeTool;
 pub struct TaskUpdateRuntimeTool;
 pub struct TaskListRuntimeTool;
 pub struct TaskGetRuntimeTool;
+pub struct TaskClaimRuntimeTool;
 
 fn task_list_id(ctx: &ToolExecutionContext) -> String {
     ctx.session_id.as_str().to_string()
@@ -389,5 +390,87 @@ impl RuntimeTool for TaskGetRuntimeTool {
                 Some(json!({ "task": null, "error": "Task not found" })),
             )),
         }
+    }
+}
+
+// ── TaskClaim ──────────────────────────────────────────────────────────────────
+
+#[async_trait]
+impl RuntimeTool for TaskClaimRuntimeTool {
+    fn definition(&self) -> ToolDefinition {
+        TOOL_CATALOG.get("TaskClaim").unwrap_or_else(|| {
+            ToolDefinition::new(
+                "TaskClaim",
+                "Claim a task whose owner is None or \"*\". Sets owner to your agent name. \
+                 Idempotent if you already own it. Fails if someone else owns it.",
+            )
+        })
+    }
+
+    fn is_concurrency_safe(&self, _input: &Value) -> bool {
+        true
+    }
+
+    async fn execute(
+        &self,
+        input: Value,
+        ctx: ToolExecutionContext,
+    ) -> Result<ToolResult, ToolError> {
+        let task_id = required_str(&input, "taskId", "TaskClaim")?.to_string();
+        let store = store_for(&ctx)?;
+        let list_id = task_list_id(&ctx);
+
+        let existing = store
+            .get(&list_id, &task_id)
+            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+
+        let Some(mut task) = existing else {
+            return Err(ToolError::ExecutionFailed(format!(
+                "Task #{} not found",
+                task_id
+            )));
+        };
+
+        // Resolve caller identity: prefer agent_id string representation.
+        let caller = ctx
+            .agent_id
+            .as_ref()
+            .map(|id| id.as_str().to_string())
+            .unwrap_or_else(|| "unknown-agent".to_string());
+
+        match &task.owner {
+            None => {
+                // Unclaimed — claim it.
+                task.owner = Some(caller.clone());
+            }
+            Some(owner) if owner == "*" => {
+                // Open-claim slot — any agent may take it.
+                task.owner = Some(caller.clone());
+            }
+            Some(owner) if *owner == caller => {
+                // Already owned by this agent — idempotent success.
+                return Ok(ToolResult::new(
+                    "TaskClaim",
+                    format!("Task #{} already owned by you ({})", task_id, caller),
+                    Some(json!({ "success": true, "taskId": task_id, "task": task_to_json(&task) })),
+                ));
+            }
+            Some(owner) => {
+                return Err(ToolError::ExecutionFailed(format!(
+                    "task already claimed by '{}'",
+                    owner
+                )));
+            }
+        }
+
+        store
+            .update(&list_id, &task)
+            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+
+        Ok(ToolResult::new(
+            "TaskClaim",
+            format!("Task #{} claimed by {}", task_id, caller),
+            Some(json!({ "success": true, "taskId": task_id, "task": task_to_json(&task) })),
+        ))
     }
 }

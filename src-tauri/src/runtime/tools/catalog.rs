@@ -540,6 +540,21 @@ fn build_default_catalog() -> ToolCatalog {
 
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
+            "TaskClaim",
+            "认领 owner 为 None 或 \"*\" 的任务，将 owner 设置为当前 agent。已被他人认领时拒绝。",
+        )
+        .with_kind(ToolKind::Support),
+        json!({
+            "type": "object",
+            "required": ["taskId"],
+            "properties": {
+                "taskId": { "type": "string", "description": "要认领的任务 ID" }
+            }
+        }),
+    ));
+
+    c.insert(CatalogEntry::new(
+        ToolDefinition::new(
             "TaskStop",
             "终止一个正在后台运行的 Agent 任务（按 task_id，即 Agent(run_in_background=true) 返回的 agent_id 同值）。",
         )
@@ -630,6 +645,7 @@ pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
     "TaskUpdate",
     "TaskList",
     "TaskGet",
+    "TaskClaim",
     "TaskStop",
 ];
 
