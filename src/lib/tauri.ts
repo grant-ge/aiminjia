@@ -1900,15 +1900,33 @@ export function employeeActiveRun(id: string): Promise<EmployeeActiveRunInfo | n
 /**
  * Returns the catalog of templates the new-hire wizard should display.
  *
- * First cut (PR3 / 2026-05-10): the embedded bootstrap registry only.
- * PR4 will merge in any newer versions cached at
- * `~/.renlijia/employee-templates-cache/` after the lotus public catalog
- * API is wired up. The `EmployeeTemplateSnapshot` shape matches
- * `<instance>/template/template.json` so the wizard can render either
- * source uniformly.
+ * Sources merged in the backend (last write wins on `template_id`, by
+ * version string):
+ *   1. Embedded bootstrap registry (always available)
+ *   2. `~/.renlijia/employee-templates-cache/` (downloaded via
+ *      `employeeTemplateRefresh()`)
+ *
+ * Never hits the network. Call `employeeTemplateRefresh()` to update the
+ * cache from lotus ops-portal.
  */
 export function employeeTemplateCatalog(): Promise<EmployeeTemplateSnapshot[]> {
   return invoke<EmployeeTemplateSnapshot[]>('employee_template_catalog')
+}
+
+/**
+ * Sync the local template cache from lotus ops-portal.
+ *
+ * Fetches `/api/public/employee-templates` (latest published per
+ * `template_id`, `tenant_scope=global`), then for each entry whose version
+ * is newer than the cache (or missing) downloads the snapshot, verifies
+ * sha256 against the manifest, and writes it to disk.
+ *
+ * Returns the number of templates downloaded this call. Failures on
+ * individual templates are logged and skipped — a partial refresh is
+ * better than a hard failure.
+ */
+export function employeeTemplateRefresh(): Promise<number> {
+  return invoke<number>('employee_template_refresh')
 }
 
 // ---------------------------------------------------------------------------

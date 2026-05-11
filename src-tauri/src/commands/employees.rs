@@ -6,9 +6,11 @@ use crate::runtime::employee::inbox::{InboxEntry, InboxStore};
 use crate::runtime::employee::store::{
     CreateEmployeeRequest, EmployeeLifecycle, EmployeeRecord, EmployeeStore, UpdateEmployeeRequest,
 };
-use crate::runtime::employee::template_store::{bootstrap_templates, TemplateSnapshot};
+use crate::runtime::employee::template_store::{
+    bootstrap_templates, ensure_cached, fetch_catalog, merge_catalog, TemplateSnapshot,
+};
 use crate::storage::file_store::AppStorage;
-use crate::storage::{CurrentUserStorage, UserScopedPathResolver};
+use crate::storage::{AiJiaHome, CurrentUserStorage, UserScopedPathResolver};
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -28,16 +30,66 @@ fn inbox_store(app: &AppHandle) -> Result<InboxStore, String> {
 
 /// Returns the catalog of templates the new-hire wizard should display.
 ///
-/// First cut (PR3): just the embedded bootstrap registry. PR4 will merge in
-/// any newer versions cached at `~/.renlijia/employee-templates-cache/`
-/// after the lotus public catalog API is wired up.
+/// Sources merged (last write wins on `template_id`, by version string):
+///   1. Embedded bootstrap (always available, ~11 entries at v1.0.0)
+///   2. `~/.renlijia/employee-templates-cache/` — versions previously
+///      downloaded from lotus OPS via `employee_template_refresh` or
+///      `ensure_cached`.
 ///
-/// The return type matches the on-disk `TemplateSnapshot` shape so the
-/// frontend can switch between bootstrap and downloaded sources without
-/// caring which is which.
+/// This command never hits the network. Call `employee_template_refresh`
+/// to update the cache.
 #[tauri::command]
 pub async fn employee_template_catalog() -> Result<Vec<TemplateSnapshot>, String> {
-    bootstrap_templates().map_err(|e| e.to_string())
+    let bootstrap = bootstrap_templates().map_err(|e| e.to_string())?;
+    let cache_dir = AiJiaHome::from_home().employee_templates_cache_dir();
+    Ok(merge_catalog(bootstrap, &cache_dir))
+}
+
+/// Sync the local template cache from lotus ops-portal.
+///
+/// 1. `GET {OPS}/api/public/employee-templates` — list of currently-published
+///    templates (latest version per `template_id`, `tenant_scope=global`).
+/// 2. For each entry whose version is newer than the cache (or missing),
+///    fetch its manifest, download the snapshot, verify sha256, and write
+///    to `~/.renlijia/employee-templates-cache/{tid}/{version}.json`.
+///
+/// Returns the count of templates downloaded this call.
+///
+/// Failures on individual templates are logged and skipped — a partial
+/// refresh is better than a hard failure that leaves the user without any
+/// catalog at all (bootstrap stays available regardless).
+#[tauri::command]
+pub async fn employee_template_refresh() -> Result<u32, String> {
+    let cache_dir = AiJiaHome::from_home().employee_templates_cache_dir();
+    let client = reqwest::Client::builder()
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let catalog = fetch_catalog(&client).await.map_err(|e| e.to_string())?;
+    let mut downloaded = 0u32;
+
+    for entry in catalog {
+        let template_id = entry
+            .get("template_id")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let version = entry
+            .get("version")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let (Some(template_id), Some(version)) = (template_id, version) else {
+            continue;
+        };
+
+        match ensure_cached(&cache_dir, &client, &template_id, &version).await {
+            Ok(_) => downloaded += 1,
+            Err(e) => log::warn!(
+                "[employee_template_refresh] {template_id}@{version}: {e}"
+            ),
+        }
+    }
+
+    Ok(downloaded)
 }
 
 #[tauri::command]

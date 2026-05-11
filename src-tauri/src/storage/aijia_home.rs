@@ -73,6 +73,14 @@ impl AiJiaHome {
         self.root.join("users")
     }
 
+    /// `~/.renlijia/employee-templates-cache/` — global, content-addressed
+    /// cache for digital-employee templates downloaded from lotus OPS. Not
+    /// scoped to user — all users on this machine share the same immutable
+    /// template versions (cf. `lotus/docs/superpowers/specs/2026-05-10-employee-templates-as-a-service.md` §5).
+    pub fn employee_templates_cache_dir(&self) -> PathBuf {
+        self.root.join("employee-templates-cache")
+    }
+
     pub fn user_dir(&self, scope: &UserScope) -> PathBuf {
         self.users_dir().join(scope.key())
     }

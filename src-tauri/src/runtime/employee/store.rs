@@ -984,30 +984,67 @@ fn write_atomic(path: &std::path::Path, bytes: &[u8]) -> Result<()> {
 
 /// Stamp the per-instance `template/` snapshot dir based on `record.template_id`.
 ///
-/// Returns the `TemplateRef` to store on the record, or `None` if the record
-/// has no `template_id` or the id isn't in the bootstrap registry (custom
-/// hand-edited records). All filesystem errors are swallowed (logged via
-/// `tracing::warn`); the snapshot is additive metadata that PR4 will start
-/// reading from — failing the whole hire/list flow over it would be too
-/// aggressive while the feature is still landing.
+/// Lookup order:
+///   1. Embedded bootstrap registry (covers the 11 v1.0.0 built-ins, always
+///      available, used during first-run + offline hire).
+///   2. Global cache `~/.renlijia/employee-templates-cache/{tid}/*.json`
+///      (highest version wins; populated by `employee_template_refresh`).
+///
+/// Returns the `TemplateRef` to store on the record, or `None` if neither
+/// source has the template (e.g. custom hand-edited records, or a record
+/// whose template was deleted from OPS and isn't cached locally).
+///
+/// All filesystem errors are swallowed and logged via `log::warn`; the
+/// snapshot is additive metadata that PR5 will start *reading* from —
+/// failing the whole hire/list flow over it would be too aggressive while
+/// the feature is still landing.
 fn stamp_snapshot_for_record(
     root: &std::path::Path,
     record: &EmployeeRecord,
 ) -> Option<crate::runtime::employee::template_store::TemplateRef> {
     use crate::runtime::employee::template_store as ts;
     let tid = record.template_id.as_deref()?;
-    let snap = match ts::bootstrap_template(tid) {
-        Ok(Some(s)) => s,
-        Ok(None) => return None,
-        Err(e) => {
-            log::warn!(
-                "[EmployeeStore] bootstrap lookup failed for {tid}: {e}"
-            );
-            return None;
+
+    // 1) Try bootstrap.
+    let snap_and_source: Option<(ts::TemplateSnapshot, &'static str)> =
+        match ts::bootstrap_template(tid) {
+            Ok(Some(s)) => Some((s, "bootstrap")),
+            Ok(None) => None,
+            Err(e) => {
+                log::warn!("[EmployeeStore] bootstrap lookup failed for {tid}: {e}");
+                None
+            }
+        };
+
+    // 2) Try cache (highest version) if bootstrap missed.
+    let snap_and_source = snap_and_source.or_else(|| {
+        let cache_dir =
+            crate::storage::AiJiaHome::from_home().employee_templates_cache_dir();
+        let tid_dir = cache_dir.join(tid);
+        let mut best: Option<ts::TemplateSnapshot> = None;
+        if let Ok(rd) = std::fs::read_dir(&tid_dir) {
+            for entry in rd.flatten() {
+                let p = entry.path();
+                if p.extension().and_then(|e| e.to_str()) != Some("json") {
+                    continue;
+                }
+                if let Ok(content) = std::fs::read_to_string(&p) {
+                    if let Ok(s) = serde_json::from_str::<ts::TemplateSnapshot>(&content) {
+                        match best.as_ref() {
+                            None => best = Some(s),
+                            Some(prev) if s.version > prev.version => best = Some(s),
+                            _ => {}
+                        }
+                    }
+                }
+            }
         }
-    };
+        best.map(|s| (s, "cache"))
+    });
+
+    let (snap, source) = snap_and_source?;
     let instance_dir = root.join(&record.id);
-    match ts::ensure_instance_snapshot(&instance_dir, &snap, "bootstrap") {
+    match ts::ensure_instance_snapshot(&instance_dir, &snap, source) {
         Ok(r) => Some(r),
         Err(e) => {
             log::warn!(

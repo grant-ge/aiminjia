@@ -14,6 +14,8 @@ pub use store::{
     CreateEmployeeRequest, DueEmployee, EmployeeRecord, EmployeeStore, UpdateEmployeeRequest,
 };
 pub use template_store::{
-    bootstrap_template, bootstrap_templates, ensure_instance_snapshot, read_instance_snapshot,
-    TemplateManifest, TemplateRef, TemplateSnapshot,
+    bootstrap_template, bootstrap_templates, download_snapshot, ensure_cached,
+    ensure_instance_snapshot, fetch_catalog, fetch_manifest, merge_catalog, read_cache,
+    read_instance_snapshot, write_cache, RemoteManifest, TemplateManifest, TemplateRef,
+    TemplateSnapshot,
 };

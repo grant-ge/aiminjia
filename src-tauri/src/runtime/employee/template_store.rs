@@ -272,6 +272,265 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
+// ─── HTTP loader ─────────────────────────────────────────────────────────
+//
+// Fetch published template versions from lotus ops-portal's public catalog
+// and cache them on disk. Layout at `~/.renlijia/employee-templates-cache/`:
+//
+//   {template_id}/{version}.json       — the canonical snapshot JSON
+//
+// The cache is content-addressed (the sha256 from the OPS manifest must
+// match) and immutable per `(template_id, version)`. Callers always go
+// through `fetch_or_cache()`; hitting the cache is free, missing entries
+// trigger one HTTP GET. The cache is shared across users on the same
+// machine — templates are not user data.
+
+/// Default lotus ops-portal base URL. Can be overridden via the
+/// `LOTUS_OPS_BASE_URL` env var (useful for local dev pointing at
+/// `http://localhost:8082`).
+const DEFAULT_OPS_BASE_URL: &str = "https://ai-ops.renlijia.com";
+
+fn ops_base_url() -> String {
+    std::env::var("LOTUS_OPS_BASE_URL")
+        .unwrap_or_else(|_| DEFAULT_OPS_BASE_URL.to_string())
+        .trim_end_matches('/')
+        .to_string()
+}
+
+/// Shape of `GET /api/public/employee-templates/:tid/manifest`. Only the
+/// fields we actually use are declared — extra fields are ignored by serde.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct RemoteManifest {
+    pub template_id: String,
+    pub latest_version: String,
+    pub package_url: String,
+    pub package_sha256: String,
+    #[serde(default)]
+    pub package_size: i64,
+}
+
+/// Unified OPS API response envelope: `{ code: 0, message: "ok", data: ... }`.
+#[derive(Deserialize)]
+struct OpsEnvelope<T> {
+    #[serde(default)]
+    code: i32,
+    #[serde(default)]
+    message: String,
+    data: Option<T>,
+}
+
+fn cache_path_for(cache_dir: &Path, template_id: &str, version: &str) -> PathBuf {
+    cache_dir.join(template_id).join(format!("{version}.json"))
+}
+
+/// Read a cached template snapshot if present + valid. Any parse/IO error
+/// is swallowed (returns `None`) so a corrupted cache file is just
+/// re-fetched, not a hard failure.
+pub fn read_cache(
+    cache_dir: &Path,
+    template_id: &str,
+    version: &str,
+) -> Option<TemplateSnapshot> {
+    let p = cache_path_for(cache_dir, template_id, version);
+    let content = fs::read_to_string(&p).ok()?;
+    serde_json::from_str(&content).ok()
+}
+
+/// Persist `snapshot` to the cache directory. Atomic (tmp + rename).
+pub fn write_cache(
+    cache_dir: &Path,
+    snapshot: &TemplateSnapshot,
+) -> Result<PathBuf> {
+    let dir = cache_dir.join(&snapshot.template_id);
+    fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
+    let p = dir.join(format!("{}.json", snapshot.version));
+    let json = serde_json::to_string_pretty(snapshot)?;
+    write_atomic(&p, json.as_bytes())?;
+    Ok(p)
+}
+
+/// Fetch the manifest for a template from lotus ops-portal.
+///
+/// `GET {base}/api/public/employee-templates/{template_id}/manifest`
+pub async fn fetch_manifest(
+    client: &reqwest::Client,
+    template_id: &str,
+) -> Result<RemoteManifest> {
+    let url = format!(
+        "{}/api/public/employee-templates/{}/manifest",
+        ops_base_url(),
+        template_id
+    );
+    let resp = client
+        .get(&url)
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+        .with_context(|| format!("GET {url}"))?;
+    if !resp.status().is_success() {
+        anyhow::bail!("manifest HTTP {} from {url}", resp.status());
+    }
+    let env: OpsEnvelope<RemoteManifest> = resp
+        .json()
+        .await
+        .with_context(|| format!("decoding manifest envelope for {template_id}"))?;
+    if env.code != 0 {
+        anyhow::bail!(
+            "ops returned code={} message={} for {template_id}",
+            env.code,
+            env.message
+        );
+    }
+    env.data
+        .ok_or_else(|| anyhow::anyhow!("empty data in manifest envelope for {template_id}"))
+}
+
+/// Fetch the full published catalog `GET {base}/api/public/employee-templates`.
+/// Returns the latest published version per `template_id`, `tenant_scope=global`.
+pub async fn fetch_catalog(client: &reqwest::Client) -> Result<Vec<serde_json::Value>> {
+    let url = format!("{}/api/public/employee-templates", ops_base_url());
+    let resp = client
+        .get(&url)
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+        .with_context(|| format!("GET {url}"))?;
+    if !resp.status().is_success() {
+        anyhow::bail!("catalog HTTP {} from {url}", resp.status());
+    }
+    let env: OpsEnvelope<Vec<serde_json::Value>> = resp
+        .json()
+        .await
+        .context("decoding catalog envelope")?;
+    if env.code != 0 {
+        anyhow::bail!("ops returned code={} message={}", env.code, env.message);
+    }
+    Ok(env.data.unwrap_or_default())
+}
+
+/// Download the snapshot JSON at `package_url` and verify its sha256 matches
+/// the expected value. The URL comes from the manifest; the OPS publish
+/// handler uploaded exactly this bytes to OSS.
+pub async fn download_snapshot(
+    client: &reqwest::Client,
+    package_url: &str,
+    expected_sha256: &str,
+) -> Result<TemplateSnapshot> {
+    let resp = client
+        .get(package_url)
+        .timeout(std::time::Duration::from_secs(20))
+        .send()
+        .await
+        .with_context(|| format!("GET {package_url}"))?;
+    if !resp.status().is_success() {
+        anyhow::bail!("package HTTP {} from {package_url}", resp.status());
+    }
+    let bytes = resp
+        .bytes()
+        .await
+        .with_context(|| format!("reading body from {package_url}"))?;
+
+    if !expected_sha256.is_empty() {
+        let mut h = Sha256::new();
+        h.update(&bytes);
+        let got = hex_lower(&h.finalize());
+        if !expected_sha256.eq_ignore_ascii_case(&got) {
+            anyhow::bail!(
+                "sha256 mismatch for {package_url}: expected {expected_sha256}, got {got}"
+            );
+        }
+    }
+
+    let snap: TemplateSnapshot = serde_json::from_slice(&bytes)
+        .with_context(|| format!("parsing snapshot from {package_url}"))?;
+    Ok(snap)
+}
+
+/// Ensure a specific `(template_id, version)` is present in the cache. If
+/// missing, fetch the manifest, verify `manifest.latest_version == version`
+/// (callers that want a specific older version should use lower-level
+/// helpers), download + verify sha256, write to cache.
+///
+/// Returns the snapshot ready to stamp into an employee instance dir.
+pub async fn ensure_cached(
+    cache_dir: &Path,
+    client: &reqwest::Client,
+    template_id: &str,
+    version: &str,
+) -> Result<TemplateSnapshot> {
+    if let Some(s) = read_cache(cache_dir, template_id, version) {
+        return Ok(s);
+    }
+    let manifest = fetch_manifest(client, template_id).await?;
+    if manifest.latest_version != version {
+        anyhow::bail!(
+            "cache miss for {template_id}@{version}, but OPS latest is {}; \
+             fetching historical versions is not supported yet",
+            manifest.latest_version
+        );
+    }
+    let snap =
+        download_snapshot(client, &manifest.package_url, &manifest.package_sha256).await?;
+    write_cache(cache_dir, &snap)?;
+    Ok(snap)
+}
+
+/// Merge the bootstrap list with any cached (downloaded) versions. When
+/// both sources have a `template_id`, the cached one wins iff its version
+/// string sorts higher. This is the catalog the new-hire wizard should see.
+pub fn merge_catalog(
+    bootstrap: Vec<TemplateSnapshot>,
+    cache_dir: &Path,
+) -> Vec<TemplateSnapshot> {
+    let mut by_id: std::collections::BTreeMap<String, TemplateSnapshot> = bootstrap
+        .into_iter()
+        .map(|t| (t.template_id.clone(), t))
+        .collect();
+
+    // Walk the cache dir: each subdirectory is a template_id, each `.json`
+    // file inside it is a version. Pick the highest-sorting version per id.
+    if let Ok(rd) = fs::read_dir(cache_dir) {
+        for entry in rd.flatten() {
+            let sub = entry.path();
+            if !sub.is_dir() {
+                continue;
+            }
+            let mut best: Option<TemplateSnapshot> = None;
+            if let Ok(versions) = fs::read_dir(&sub) {
+                for v in versions.flatten() {
+                    let p = v.path();
+                    if p.extension().and_then(|e| e.to_str()) != Some("json") {
+                        continue;
+                    }
+                    if let Ok(content) = fs::read_to_string(&p) {
+                        if let Ok(s) = serde_json::from_str::<TemplateSnapshot>(&content) {
+                            match best.as_ref() {
+                                None => best = Some(s),
+                                Some(prev) if s.version > prev.version => best = Some(s),
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+            }
+            if let Some(cached) = best {
+                match by_id.get(&cached.template_id) {
+                    Some(b) if cached.version > b.version => {
+                        by_id.insert(cached.template_id.clone(), cached);
+                    }
+                    None => {
+                        by_id.insert(cached.template_id.clone(), cached);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    by_id.into_values().collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -359,5 +618,90 @@ mod tests {
         ensure_instance_snapshot(&inst, &snap, "bootstrap").unwrap();
         let read = read_instance_snapshot(&inst).unwrap().unwrap();
         assert_eq!(read.template_id, "builtin:rt");
+    }
+
+    fn make_snap(tid: &str, version: &str) -> TemplateSnapshot {
+        TemplateSnapshot {
+            template_id: tid.into(),
+            version: version.into(),
+            name: "X".into(),
+            avatar: "".into(),
+            role: "".into(),
+            description: "".into(),
+            badge: "".into(),
+            system_prompt_extra: "".into(),
+            tool_whitelist: vec![],
+            cron: "".into(),
+            default_skill_id: "".into(),
+            requires_dingtalk: false,
+            requires_attachment: serde_json::Value::Null,
+            resource_config_schema: serde_json::Value::Null,
+            resource_config_ui: serde_json::Value::Null,
+        }
+    }
+
+    #[test]
+    fn cache_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = dir.path();
+        let snap = make_snap("builtin:cache-rt", "1.2.3");
+
+        assert!(read_cache(cache, "builtin:cache-rt", "1.2.3").is_none());
+        write_cache(cache, &snap).unwrap();
+        let back = read_cache(cache, "builtin:cache-rt", "1.2.3").unwrap();
+        assert_eq!(back.template_id, "builtin:cache-rt");
+        assert_eq!(back.version, "1.2.3");
+    }
+
+    #[test]
+    fn merge_catalog_cache_wins_when_newer() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = dir.path();
+
+        // Bootstrap has tid at v1.0.0
+        let boot = vec![make_snap("builtin:x", "1.0.0")];
+        // Cache has same tid at v1.1.0 — should win
+        write_cache(cache, &make_snap("builtin:x", "1.1.0")).unwrap();
+        // Plus a brand-new template only in cache
+        write_cache(cache, &make_snap("org:custom", "0.1.0")).unwrap();
+
+        let merged = merge_catalog(boot, cache);
+        let x = merged.iter().find(|t| t.template_id == "builtin:x").unwrap();
+        assert_eq!(x.version, "1.1.0", "cache should override bootstrap");
+        let custom = merged
+            .iter()
+            .find(|t| t.template_id == "org:custom")
+            .unwrap();
+        assert_eq!(custom.version, "0.1.0");
+    }
+
+    #[test]
+    fn merge_catalog_bootstrap_wins_when_newer() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = dir.path();
+        // Bootstrap newer than cache → bootstrap wins.
+        let boot = vec![make_snap("builtin:y", "2.0.0")];
+        write_cache(cache, &make_snap("builtin:y", "1.0.0")).unwrap();
+        let merged = merge_catalog(boot, cache);
+        let y = merged.iter().find(|t| t.template_id == "builtin:y").unwrap();
+        assert_eq!(y.version, "2.0.0");
+    }
+
+    #[test]
+    fn merge_catalog_handles_missing_cache_dir() {
+        // Non-existent cache dir should still return bootstrap.
+        let merged = merge_catalog(
+            vec![make_snap("builtin:z", "1.0.0")],
+            std::path::Path::new("/nonexistent/path/that/does/not/exist"),
+        );
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].template_id, "builtin:z");
+    }
+
+    #[test]
+    fn hex_lower_matches_known_vectors() {
+        assert_eq!(hex_lower(b""), "");
+        assert_eq!(hex_lower(&[0xde, 0xad, 0xbe, 0xef]), "deadbeef");
+        assert_eq!(hex_lower(&[0x00, 0x0f, 0xff]), "000fff");
     }
 }
