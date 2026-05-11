@@ -14,6 +14,7 @@ declare module '@tiptap/core' {
 }
 
 const DATA_ATTR = 'data-rich-composer-attachment-token'
+const CARET_BOUNDARY = '\u200B'
 
 function readNumber(value: unknown): number | null {
   if (typeof value === 'number') return Number.isFinite(value) ? value : null
@@ -163,9 +164,12 @@ export const AttachmentTokenExtension = Node.create({
     return {
       insertAttachmentTokens:
         (tokens: ComposerAttachmentToken[]) =>
-        ({ chain }) => {
+        ({ chain, state }) => {
           if (!tokens.length) return false
           let c = chain()
+          if (state.selection.$from.parentOffset === 0) {
+            c = c.insertContent({ type: 'text', text: CARET_BOUNDARY })
+          }
           tokens.forEach((token, idx) => {
             c = c.insertContent({ type: 'attachmentToken', attrs: token })
             if (idx < tokens.length - 1) {
