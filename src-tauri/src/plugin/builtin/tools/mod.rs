@@ -25,6 +25,9 @@ pub async fn register_builtin_tools(registry: &ToolRegistry) {
         TaskClaimRuntimeTool, TaskCreateRuntimeTool, TaskGetRuntimeTool, TaskListRuntimeTool,
         TaskUpdateRuntimeTool,
     };
+    use crate::runtime::tools::builtin::team_tools::{
+        TeamCreateRuntimeTool, TeamDeleteRuntimeTool,
+    };
     use crate::runtime::tools::builtin::workspace::{
         EditFileRuntimeTool,
         ReadWorkspaceFileRuntimeTool, SearchFilesRuntimeTool, WriteFileRuntimeTool,
@@ -63,6 +66,12 @@ pub async fn register_builtin_tools(registry: &ToolRegistry) {
         .await;
     registry
         .register_runtime(Arc::new(TaskClaimRuntimeTool))
+        .await;
+    registry
+        .register_runtime(Arc::new(TeamCreateRuntimeTool))
+        .await;
+    registry
+        .register_runtime(Arc::new(TeamDeleteRuntimeTool))
         .await;
     registry.validate_catalog_consistency().await;
 }

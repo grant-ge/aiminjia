@@ -579,6 +579,39 @@ fn build_default_catalog() -> ToolCatalog {
 
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
+            "TeamCreate",
+            "把当前 session 升级为多 Agent Team 模式。何时调用：任务需要 ≥2 个独立 Worker 并行，或者跨 domain 协作。不该调用：纯聊天、1 步可完成、可以串行的工作。Team 最多 4 个 Teammate；当前 session 已经是 Team 时返回错误。调用后会注册 team-lead 名字，Teammate 可用 SendMessage(to: \"team-lead\") 寻址。",
+        )
+        .with_kind(ToolKind::Support),
+        json!({
+            "type": "object",
+            "properties": {
+                "team_name": {
+                    "type": "string",
+                    "description": "Team 显示名，省略则用 team-{session8} 自动生成。"
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Team 目标的一句话描述，便于审计。"
+                }
+            }
+        }),
+    ));
+
+    c.insert(CatalogEntry::new(
+        ToolDefinition::new(
+            "TeamDelete",
+            "退出 Team 模式：把当前 session 的 Team 从注册表移除，所有 Teammate 收到收件箱关闭信号会自行清理退出，session 内的 name 注册全部清空。Team 不存在时静默 noop。",
+        )
+        .with_kind(ToolKind::Support),
+        json!({
+            "type": "object",
+            "properties": {}
+        }),
+    ));
+
+    c.insert(CatalogEntry::new(
+        ToolDefinition::new(
             "WriteMemory",
             "保存一条项目记忆到本地记忆库。记忆按 workspace 分桶存储，跨对话持久化。\n\n类型说明：\n- user_preference：用户偏好\n- project_constraint：项目约束\n- reference_info：外部系统指针\n- feedback：AI 行为纠正或确认",
         )
@@ -656,6 +689,8 @@ pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
     "TaskGet",
     "TaskClaim",
     "TaskStop",
+    "TeamCreate",
+    "TeamDelete",
 ];
 
 /// 全局默认 catalog（延迟初始化）。
