@@ -17,6 +17,22 @@ import { SalesTableConfigForm } from './forms/SalesTableConfigForm'
 import { WeeklyReportConfigForm } from './forms/WeeklyReportConfigForm'
 import { TechSupportConfigForm } from './forms/TechSupportConfigForm'
 import { CustomerSupportConfigForm } from './forms/CustomerSupportConfigForm'
+import { SchemaForm, type JsonSchema } from './forms/SchemaForm'
+
+/**
+ * True when the template ships a non-empty JSON Schema for instance
+ * config. PR6 (2026-05-10): custom org / private templates use a
+ * schema-driven form instead of the closed `ResourceConfigKind` enum.
+ * BUILTIN_TEMPLATES leave the schema empty and keep their hand-tuned forms.
+ */
+function hasSchemaForm(template: EmployeeTemplate): boolean {
+  const schema = template.resourceConfigSchema
+  return (
+    !!schema &&
+    typeof schema === 'object' &&
+    Object.keys((schema as Record<string, unknown>).properties ?? {}).length > 0
+  )
+}
 
 // ─── wizard ───────────────────────────────────────────────────────────────────
 
@@ -137,7 +153,7 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
 
   function handleStep2Next() {
     if (!selected) return
-    if (selected.resourceConfigKind === 'none') {
+    if (selected.resourceConfigKind === 'none' && !hasSchemaForm(selected)) {
       void hireWithConfig(resourceConfig)
     } else {
       setStep(3)
@@ -165,7 +181,7 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
               <span className={step === 1 ? 'text-foreground font-medium' : ''}>{t('employee.config.wizard.stepLabel1')}</span>
               <span>→</span>
               <span className={step === 2 ? 'text-foreground font-medium' : ''}>{t('employee.config.wizard.stepLabel2')}</span>
-              {selected?.resourceConfigKind !== 'none' && (
+              {selected && (selected.resourceConfigKind !== 'none' || hasSchemaForm(selected)) && (
                 <>
                   <span>→</span>
                   <span className={step === 3 ? 'text-foreground font-medium' : ''}>{t('employee.config.wizard.stepLabel3')}</span>
@@ -266,7 +282,7 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
               <Button onClick={handleStep2Next} disabled={busy || !name.trim()}>
                 {busy
                   ? t('employee.config.wizard.hiring')
-                  : selected.resourceConfigKind === 'none'
+                  : selected.resourceConfigKind === 'none' && !hasSchemaForm(selected)
                     ? t('employee.config.wizard.confirmHire')
                     : t('employee.config.wizard.next')}
               </Button>
@@ -307,6 +323,14 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
             )}
             {selected.resourceConfigKind === 'customer-support' && (
               <CustomerSupportConfigForm
+                initial={resourceConfig}
+                onSubmit={handleResourceSubmit}
+                onCancel={() => setStep(2)}
+              />
+            )}
+            {selected.resourceConfigKind === 'none' && hasSchemaForm(selected) && (
+              <SchemaForm
+                schema={selected.resourceConfigSchema as JsonSchema}
                 initial={resourceConfig}
                 onSubmit={handleResourceSubmit}
                 onCancel={() => setStep(2)}

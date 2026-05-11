@@ -38,6 +38,15 @@ export interface EmployeeTemplate {
   resourceConfigKind: ResourceConfigKind
   /** True when an employee with this templateId requires `dingtalk_status().connected === true` before dispatch. */
   requiresDingtalk: boolean
+  /**
+   * JSON Schema for instance config (PR6, 2026-05-10). When present and
+   * non-empty, HireWizard step 3 renders a SchemaForm against this schema
+   * instead of the legacy hardcoded `resourceConfigKind`-driven form.
+   * BUILTIN_TEMPLATES leave this empty — they keep their hand-tuned forms.
+   * Custom (`org:` / `private:`) templates published via OPS portal can
+   * supply a schema and skip the hardcoded form path entirely.
+   */
+  resourceConfigSchema?: Record<string, unknown> | null
 }
 
 export const BUILTIN_TEMPLATES: EmployeeTemplate[] = [
@@ -372,5 +381,6 @@ export function snapshotToTemplate(snap: EmployeeTemplateSnapshot): EmployeeTemp
     requiresAttachment: snap.requiresAttachment,
     resourceConfigKind: RESOURCE_CONFIG_KIND_BY_ID[snap.templateId] ?? 'none',
     requiresDingtalk: snap.requiresDingtalk,
+    resourceConfigSchema: snap.resourceConfigSchema,
   }
 }
