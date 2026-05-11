@@ -585,6 +585,7 @@ fn build_default_catalog() -> ToolCatalog {
         .with_kind(ToolKind::Support),
         json!({
             "type": "object",
+            "required": [],
             "properties": {
                 "team_name": {
                     "type": "string",
@@ -606,6 +607,7 @@ fn build_default_catalog() -> ToolCatalog {
         .with_kind(ToolKind::Support),
         json!({
             "type": "object",
+            "required": [],
             "properties": {}
         }),
     ));
