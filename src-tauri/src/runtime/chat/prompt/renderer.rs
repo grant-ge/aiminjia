@@ -1,11 +1,13 @@
 use super::{PromptAssembly, PromptCachePolicy};
 
-pub struct OpenAiChatPromptRenderer;
+pub struct ChatPromptRenderer;
 
-impl OpenAiChatPromptRenderer {
-    /// 输出 OpenAI 兼容的 system message：
+impl ChatPromptRenderer {
+    /// 输出协议中性的 system message：
     /// content 是一个数组，每个元素一个 PromptBlock，
     /// StaticPrefix / SessionDynamic 段带 cache_control，Volatile 不带。
+    /// 该结构同时适用于 Anthropic Messages API（top-level system 数组）和
+    /// 支持 content 数组的 OpenAI 兼容端点。
     pub fn render_system_message(assembly: &PromptAssembly) -> Option<serde_json::Value> {
         let blocks: Vec<serde_json::Value> = assembly
             .blocks()

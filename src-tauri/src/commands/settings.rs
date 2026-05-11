@@ -1,7 +1,6 @@
 use crate::llm::providers::LlmProviderTrait;
 use crate::llm::providers::{
-    claude::ClaudeProvider, custom::CustomProvider, deepseek_v3::DeepSeekV3Provider,
-    openai::OpenAiProvider, qwen::QwenProvider, volcano::VolcanoProvider,
+    claude::ClaudeProvider, custom::CustomProvider, openai::OpenAiProvider,
 };
 use crate::models::settings::AppSettings;
 use crate::storage::crypto::SecureStorage;
@@ -309,24 +308,12 @@ pub async fn validate_api_key(
     }
 
     let result = match provider.as_str() {
-        "deepseek-v3" => {
-            let p = DeepSeekV3Provider::new(api_key);
-            p.validate_key().await
-        }
-        "qwen-plus" => {
-            let p = QwenProvider::new(api_key);
-            p.validate_key().await
-        }
         "openai" => {
             let p = OpenAiProvider::new(api_key);
             p.validate_key().await
         }
         "claude" => {
             let p = ClaudeProvider::new(api_key, None);
-            p.validate_key().await
-        }
-        "volcano" => {
-            let p = VolcanoProvider::new(api_key, String::new());
             p.validate_key().await
         }
         "custom" => {

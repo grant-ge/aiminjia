@@ -477,8 +477,8 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             );
         }
         let system_prompt_for_gateway =
-            openai_system_prompt_content(input.openai_system_message.clone(), input.system_prompt);
-        let system_prompt_segments = openai_system_prompt_segments(&input.openai_system_message);
+            system_prompt_content(input.system_message.clone(), input.system_prompt);
+        let system_prompt_segments = system_prompt_segments(&input.system_message);
 
         // --- Resolve masking level (always Strict; field kept for forward compat) ---
         let masking_level = match input.masking_level.to_lowercase().as_str() {
@@ -1872,7 +1872,7 @@ fn build_gateway_settings(settings: &ResolvedLlmSettings) -> AppSettings {
     }
 }
 
-fn openai_system_prompt_content(
+fn system_prompt_content(
     value: Option<serde_json::Value>,
     fallback: &str,
 ) -> Option<String> {
@@ -1891,7 +1891,7 @@ fn openai_system_prompt_content(
 /// Extract Anthropic-style structured cache segments from the rendered
 /// system message. Returns an empty Vec when the message is missing or only
 /// holds a single string (no per-block cache breakpoints to forward).
-pub(crate) fn openai_system_prompt_segments(
+pub(crate) fn system_prompt_segments(
     value: &Option<serde_json::Value>,
 ) -> Vec<crate::llm::streaming::SystemPromptSegment> {
     let Some(value) = value.as_ref() else {
@@ -1977,7 +1977,7 @@ mod openai_system_prompt_tests {
             "content": "华为公司 instructions remain provider-visible",
         });
         let chat_messages = vec![ChatMessage::text("user", "请分析华为公司")];
-        let system_prompt = openai_system_prompt_content(Some(rendered_system), "legacy system")
+        let system_prompt = system_prompt_content(Some(rendered_system), "legacy system")
             .expect("rendered system prompt content");
 
         let mut mask_ctx = MaskingContext::new(MaskingLevel::Strict);

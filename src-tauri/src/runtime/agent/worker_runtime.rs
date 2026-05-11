@@ -58,7 +58,7 @@ pub struct WorkerTurnRequest {
     pub messages: Vec<ChatMessage>,
     pub tool_defs: Vec<ToolDefinition>,
     pub system_prompt: String,
-    pub openai_system_message: Option<ChatMessage>,
+    pub system_message: Option<ChatMessage>,
     pub dynamic_context: Option<String>,
     pub max_iterations: usize,
 }
@@ -164,7 +164,7 @@ impl<'a> SubagentWorkerRuntime<'a> {
             messages: vec![ChatMessage::text("user", &config.task)],
             tool_defs,
             system_prompt: config.system_prompt.clone(),
-            openai_system_message: Some(ChatMessage::text("system", config.system_prompt.clone())),
+            system_message: Some(ChatMessage::text("system", config.system_prompt.clone())),
             dynamic_context: (!config.dynamic_context.is_empty())
                 .then(|| config.dynamic_context.clone()),
             max_iterations: config.max_iterations,
@@ -857,7 +857,7 @@ fn context_modifier_to_message(value: &serde_json::Value) -> Option<ChatMessage>
 
 fn worker_system_prompt_for_gateway(request: &WorkerTurnRequest) -> Option<&str> {
     request
-        .openai_system_message
+        .system_message
         .as_ref()
         .filter(|message| message.role == "system" && !message.content.trim().is_empty())
         .map(|message| message.content.as_str())
@@ -1068,13 +1068,13 @@ mod tests {
     }
 
     #[test]
-    fn worker_system_prompt_for_gateway_prefers_openai_system_message_without_mutating_messages() {
+    fn worker_system_prompt_for_gateway_prefers_system_message_without_mutating_messages() {
         let request = WorkerTurnRequest {
             subagent_conversation_id: "sub-conv".to_string(),
             messages: vec![ChatMessage::text("user", "task")],
             tool_defs: Vec::new(),
             system_prompt: "fallback prompt".to_string(),
-            openai_system_message: Some(ChatMessage::text("system", "openai prompt")),
+            system_message: Some(ChatMessage::text("system", "openai prompt")),
             dynamic_context: None,
             max_iterations: 1,
         };
@@ -1096,7 +1096,7 @@ mod tests {
             messages: vec![ChatMessage::text("user", "task")],
             tool_defs: Vec::new(),
             system_prompt: "fallback prompt".to_string(),
-            openai_system_message: None,
+            system_message: None,
             dynamic_context: None,
             max_iterations: 1,
         };
