@@ -1,5 +1,7 @@
 use crate::runtime::ids::{AgentId, SessionId};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -119,4 +121,128 @@ impl TeamRegistry {
     pub async fn delete(&self, session_id: &SessionId) -> Option<Arc<Mutex<Team>>> {
         self.teams.lock().await.remove(session_id)
     }
+
+    /// Write the current Team state to `<conv_dir>/team.json`.
+    ///
+    /// `conv_dir` should be `<aijia_home>/users/{scope}/conversations/{conv_id}`.
+    /// No-op (returns `Ok(())`) if no team exists for `session_id`.
+    /// The file is a write-through mirror; memory (this registry) stays
+    /// source-of-truth.
+    pub async fn persist(
+        &self,
+        session_id: &SessionId,
+        conv_dir: &Path,
+    ) -> Result<(), TeamPersistError> {
+        let Some(team_handle) = self.get(session_id).await else {
+            return Ok(()); // already deleted
+        };
+        let snapshot = {
+            let team = team_handle.lock().await;
+            TeamSnapshot::from(&*team)
+        };
+        let path = conv_dir.join("team.json");
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(TeamPersistError::Io)?;
+        }
+        let bytes = serde_json::to_vec_pretty(&snapshot).map_err(TeamPersistError::Serde)?;
+        write_atomic_team(&path, &bytes).map_err(TeamPersistError::Io)?;
+        Ok(())
+    }
+
+    /// Remove `team.json` from disk.  Best-effort and idempotent: a
+    /// `NotFound` error is silently ignored.  Used by TeamDelete (P1.7).
+    pub fn delete_persisted(conv_dir: &Path) -> std::io::Result<()> {
+        let path = conv_dir.join("team.json");
+        match std::fs::remove_file(&path) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(e),
+        }
+    }
+}
+
+/// Atomic write used by `TeamRegistry::persist`.
+///
+/// Writes to a `.json.tmp` sibling first, then renames atomically.
+/// On crash mid-write the original file is left intact rather than
+/// becoming a zero-byte stub.
+fn write_atomic_team(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, bytes)?;
+    std::fs::rename(&tmp, path)?;
+    Ok(())
+}
+
+// ── Serialisable snapshot DTOs ────────────────────────────────────────────────
+
+/// On-disk representation of a [`Team`], written to
+/// `<conv_dir>/team.json` by [`TeamRegistry::persist`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TeamSnapshot {
+    pub team_name: String,
+    pub session_id: SessionId,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub lead: MemberSnapshot,
+    pub teammates: Vec<MemberSnapshot>,
+}
+
+/// On-disk representation of a single [`Member`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemberSnapshot {
+    pub agent_id: AgentId,
+    pub name: String,
+    /// `"lead"` or `"teammate"`.
+    pub role: String,
+    /// `None` for the team lead.
+    pub employee_id: Option<String>,
+    /// `None` for the team lead.
+    pub spawned_by: Option<AgentId>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub last_active_at: chrono::DateTime<chrono::Utc>,
+}
+
+impl From<&Member> for MemberSnapshot {
+    fn from(m: &Member) -> Self {
+        let (role, employee_id, spawned_by) = match &m.role {
+            MemberRole::Lead => ("lead".to_string(), None, None),
+            MemberRole::Teammate {
+                employee_id,
+                spawned_by,
+            } => (
+                "teammate".to_string(),
+                Some(employee_id.clone()),
+                Some(spawned_by.clone()),
+            ),
+        };
+        Self {
+            agent_id: m.agent_id.clone(),
+            name: m.name.clone(),
+            role,
+            employee_id,
+            spawned_by,
+            created_at: m.created_at,
+            last_active_at: m.last_active_at,
+        }
+    }
+}
+
+impl From<&Team> for TeamSnapshot {
+    fn from(t: &Team) -> Self {
+        Self {
+            team_name: t.team_name.clone(),
+            session_id: t.session_id.clone(),
+            created_at: t.created_at,
+            lead: (&t.lead).into(),
+            teammates: t.teammates.iter().map(Into::into).collect(),
+        }
+    }
+}
+
+/// Errors returned by [`TeamRegistry::persist`].
+#[derive(thiserror::Error, Debug)]
+pub enum TeamPersistError {
+    #[error("io: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("serde: {0}")]
+    Serde(#[from] serde_json::Error),
 }

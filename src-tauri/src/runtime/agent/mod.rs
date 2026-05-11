@@ -31,4 +31,4 @@ pub use subagent_transcript_store::{
     SubagentTranscriptStore,
 };
 pub use name_registry::{AgentNameRegistry, NameRegistryError};
-pub use team::{Member, MemberRole, Team, TeamError, TeamRegistry, MAX_TEAMMATES};
+pub use team::{Member, MemberRole, MemberSnapshot, Team, TeamError, TeamPersistError, TeamRegistry, TeamSnapshot, MAX_TEAMMATES};
