@@ -2151,6 +2151,7 @@ mod tests {
             pending_permission_control_plane: Some(control_plane.clone()),
             pending_interaction_control_plane: None,
             task_notification_queue: None,
+            compact_client: None,
         };
         let turn = TurnState::new(
             IdentityMapping::from_legacy_conversation_id("conv-ask-mode".to_string()),
