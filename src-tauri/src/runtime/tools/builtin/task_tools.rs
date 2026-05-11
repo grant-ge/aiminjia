@@ -102,8 +102,8 @@ fn store_for(ctx: &ToolExecutionContext) -> Result<FileTaskV2Store, ToolError> {
         .ok_or_else(|| ToolError::ExecutionFailed("Task tools require a storage root".into()))?;
     // P1.5: scope task storage to the current conversation directory so that
     // tasks are session-local artifacts rather than global state.
-    let conv_id = task_list_id(ctx);
-    let tasks_root = home.join("conversations").join(&conv_id).join("tasks");
+    let conv_id = ctx.session_id.as_str();
+    let tasks_root = home.join("conversations").join(conv_id).join("tasks");
     Ok(FileTaskV2Store::new(tasks_root))
 }
 

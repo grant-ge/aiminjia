@@ -58,7 +58,7 @@ fn insert_task(root: &TempDir, id: &str, subject: &str) -> TaskRecord {
         parent_run_id: RunId::new("run-get-test"),
         owner_agent_id: None,
     };
-    store.create(session_id.as_str(), &task).unwrap();
+    store.create("", &task).unwrap();
     task
 }
 
