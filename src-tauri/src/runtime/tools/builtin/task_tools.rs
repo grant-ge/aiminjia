@@ -1,6 +1,8 @@
-//! Task V2 RuntimeTools — TaskCreate, TaskUpdate, TaskList.
+//! Task V2 RuntimeTools — TaskCreate, TaskUpdate, TaskList, TaskGet, TaskClaim.
 //!
-//! Mirrors claude-code-best Task V2 tools, backed by ~/.renlijia/tasks/<taskListId>/.
+//! Tasks are stored per-conversation under
+//! `<home>/conversations/<conv_id>/tasks/<task_list_id>/`.
+//! See P1.5 path-migration for rationale.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -27,7 +29,7 @@ fn task_list_id(ctx: &ToolExecutionContext) -> String {
 }
 
 fn store_for(ctx: &ToolExecutionContext) -> Result<FileTaskV2Store, ToolError> {
-    let root = ctx
+    let home = ctx
         .task_store_root
         .clone()
         .or_else(|| {
@@ -38,7 +40,11 @@ fn store_for(ctx: &ToolExecutionContext) -> Result<FileTaskV2Store, ToolError> {
         })
         .or_else(default_aijia_home)
         .ok_or_else(|| ToolError::ExecutionFailed("Task tools require a storage root".into()))?;
-    Ok(FileTaskV2Store::new(root))
+    // P1.5: scope task storage to the current conversation directory so that
+    // tasks are session-local artifacts rather than global state.
+    let conv_id = task_list_id(ctx);
+    let tasks_root = home.join("conversations").join(&conv_id).join("tasks");
+    Ok(FileTaskV2Store::new(tasks_root))
 }
 
 fn default_aijia_home() -> Option<PathBuf> {

@@ -139,7 +139,10 @@ async fn task_update_delete_removes_task() {
 #[test]
 fn task_frontend_records_are_loaded_from_file_task_v2_store() {
     let root = TempDir::new().unwrap();
-    let store = FileTaskV2Store::new(root.path().to_path_buf());
+    // Use deprecated constructor to write into the legacy global tasks/ root,
+    // which is what list_from_task_v2_store reads via its from_aijia_home path.
+    #[allow(deprecated)]
+    let store = FileTaskV2Store::from_aijia_home(root.path().to_path_buf());
     let session_id = SessionId::new("sess-file-task-ui");
 
     store
@@ -180,7 +183,9 @@ fn task_frontend_records_fall_back_to_legacy_root_tasks() {
     let user_root = legacy_root.path().join("users").join("t_28__u_54");
     std::fs::create_dir_all(&user_root).unwrap();
 
-    let store = FileTaskV2Store::new(legacy_root.path().to_path_buf());
+    // Use deprecated constructor to write into the legacy global tasks/ root.
+    #[allow(deprecated)]
+    let store = FileTaskV2Store::from_aijia_home(legacy_root.path().to_path_buf());
     let session_id = SessionId::new("sess-legacy-task-ui");
     store
         .create(

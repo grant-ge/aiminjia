@@ -1,9 +1,17 @@
 //! File-backed Task V2 store.
 //!
 //! Mirrors claude-code-best src/tasks.ts:
-//! - task files live under <aijia_home>/tasks/<taskListId>/<id>.json
+//! - task files live under <tasks_root>/<taskListId>/<id>.json
 //! - .highwatermark tracks max assigned id
 //! - writes use temp file + rename to avoid partial writes
+//!
+//! # Path convention (P1.5)
+//!
+//! Production callers must pass a per-conversation tasks directory:
+//! `<aijia_home>/conversations/<conv_id>/tasks`.
+//! The old global `<aijia_home>/tasks` root is available via the
+//! deprecated [`FileTaskV2Store::from_aijia_home`] constructor for
+//! legacy read paths only (see `models/message.rs` fallback).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -22,11 +30,26 @@ pub struct FileTaskV2Store {
 }
 
 impl FileTaskV2Store {
-    pub fn new(aijia_home: PathBuf) -> Self {
+    /// Create a store rooted at `tasks_root`.
+    ///
+    /// The caller is responsible for passing the correct per-conversation
+    /// tasks directory.  Production callers should pass
+    /// `<aijia_home>/conversations/<conv_id>/tasks` (see P1.5 path convention).
+    pub fn new(tasks_root: PathBuf) -> Self {
         Self {
-            root: aijia_home.join("tasks"),
+            root: tasks_root,
             lock: Mutex::new(()),
         }
+    }
+
+    /// Create a store rooted at the global legacy path `<aijia_home>/tasks`.
+    ///
+    /// # Deprecated
+    /// Use per-conversation tasks dir instead; see P1.5.  This constructor
+    /// remains only for the legacy-read fallback in `models/message.rs`.
+    #[deprecated(note = "use per-conversation tasks dir; see P1.5")]
+    pub fn from_aijia_home(aijia_home: PathBuf) -> Self {
+        Self::new(aijia_home.join("tasks"))
     }
 
     fn sanitize(input: &str) -> String {

@@ -34,9 +34,16 @@ fn ctx(root: &TempDir) -> ToolExecutionContext {
 
 /// Insert a task record into the store for the session "sess-get-test"
 /// (which task_list_id() derives from ctx.session_id.as_str()).
+/// Must write to the per-conversation tasks dir that store_for() will read.
 fn insert_task(root: &TempDir, id: &str, subject: &str) -> TaskRecord {
-    let store = FileTaskV2Store::new(root.path().to_path_buf());
+    // store_for() builds: root/conversations/<session_id>/tasks
     let session_id = SessionId::new("sess-get-test");
+    let tasks_root = root
+        .path()
+        .join("conversations")
+        .join(session_id.as_str())
+        .join("tasks");
+    let store = FileTaskV2Store::new(tasks_root);
     let task = TaskRecord {
         id: id.to_string(),
         subject: subject.to_string(),
