@@ -33,7 +33,7 @@ export function Modal({ open, onClose, title, children, footer, size = 'md' }: M
       }}
     >
       <div
-        className="flex flex-col rounded-lg border animate-[modalIn_0.2s_ease-out]"
+        className="flex flex-col rounded-lg border animate-[modalIn_0.2s_ease-out] border-border"
         style={{
           width: WIDTH_MAP[size],
           height: '70vh',
@@ -45,7 +45,7 @@ export function Modal({ open, onClose, title, children, footer, size = 'md' }: M
       >
         {/* Header */}
         <div
-          className="flex shrink-0 items-center justify-between border-b px-5 py-3.5"
+          className="flex shrink-0 items-center justify-between border-b px-5 py-3.5 border-border"
           style={{ borderColor: 'var(--color-border)' }}
         >
           <h3 className="text-lg font-semibold">{title}</h3>
@@ -70,7 +70,7 @@ export function Modal({ open, onClose, title, children, footer, size = 'md' }: M
         {/* Footer */}
         {footer && (
           <div
-            className="flex shrink-0 items-center justify-end gap-2 border-t px-5 py-3"
+            className="flex shrink-0 items-center justify-end gap-2 border-t px-5 py-3 border-border"
             style={{ borderColor: 'var(--color-border)' }}
           >
             {footer}

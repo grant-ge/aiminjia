@@ -28,6 +28,26 @@ impl Default for EmployeeLifecycle {
     }
 }
 
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum KnowledgeSourceStatus {
+    Pending,
+    Indexing,
+    Done,
+    Failed,
+}
+
+impl KnowledgeSourceStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Indexing => "indexing",
+            Self::Done => "done",
+            Self::Failed => "failed",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EmployeeRecord {
@@ -64,6 +84,16 @@ pub struct EmployeeRecord {
     /// `load_skill` as the first action when the employee is dispatched.
     /// `None` means no skill hint is injected.
     pub default_skill_id: Option<String>,
+    /// Pointer to the template snapshot this instance was hired from. When
+    /// present, the runtime should treat the snapshot at
+    /// `<instance>/template/template.json` as the authoritative source for
+    /// `tool_whitelist / system_prompt_extra / default_skill_id / role / ...`.
+    /// Old records without this field are auto-populated on read by matching
+    /// `template_id` against the embedded bootstrap registry. Records whose
+    /// `template_id` doesn't match any known template stay `None` (custom
+    /// hand-edited records).
+    #[serde(default)]
+    pub template_ref: Option<crate::runtime::employee::template_store::TemplateRef>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub last_run_at: Option<DateTime<Utc>>,
@@ -160,7 +190,7 @@ impl EmployeeStore {
             None
         };
 
-        let record = EmployeeRecord {
+        let mut record = EmployeeRecord {
             id: format!("emp-{}", Uuid::new_v4()),
             name: req.name.trim().to_string(),
             role: req.role.trim().to_string(),
@@ -177,6 +207,7 @@ impl EmployeeStore {
                 .unwrap_or(serde_json::Value::Object(Default::default())),
             system_prompt_extra: req.system_prompt_extra,
             default_skill_id: req.default_skill_id,
+            template_ref: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
             last_run_at: None,
@@ -184,6 +215,14 @@ impl EmployeeStore {
         };
 
         self.write_record(&record)?;
+        // Stamp the per-instance template/ snapshot if we recognise this
+        // template_id. Failures here are non-fatal (snapshot is additive
+        // metadata; PR4 will start *reading* from it).
+        if let Some(ref_) = stamp_snapshot_for_record(&self.root, &record) {
+            record.template_ref = Some(ref_);
+            // Best-effort persist of the new template_ref. Ignore errors.
+            let _ = self.write_record(&record);
+        }
         Ok(record)
     }
 
@@ -192,7 +231,14 @@ impl EmployeeStore {
         let path = self.record_path(id);
         let content =
             fs::read_to_string(&path).with_context(|| format!("employee not found: {id}"))?;
-        Ok(serde_json::from_str(&content)?)
+        let mut record: EmployeeRecord = serde_json::from_str(&content)?;
+        if record.template_ref.is_none() {
+            if let Some(ref_) = stamp_snapshot_for_record(&self.root, &record) {
+                record.template_ref = Some(ref_);
+                let _ = self.write_record(&record);
+            }
+        }
+        Ok(record)
     }
 
     pub fn list(&self) -> Result<Vec<EmployeeRecord>> {
@@ -213,7 +259,15 @@ impl EmployeeStore {
             }
             let content = fs::read_to_string(&path)?;
             match serde_json::from_str::<EmployeeRecord>(&content) {
-                Ok(r) => records.push(r),
+                Ok(mut r) => {
+                    if r.template_ref.is_none() {
+                        if let Some(ref_) = stamp_snapshot_for_record(&self.root, &r) {
+                            r.template_ref = Some(ref_);
+                            let _ = self.write_record(&r);
+                        }
+                    }
+                    records.push(r)
+                }
                 Err(e) => log::warn!("[EmployeeStore] failed to parse {}: {e}", path.display()),
             }
         }
@@ -283,6 +337,62 @@ impl EmployeeStore {
         record.updated_at = Utc::now();
         self.write_record(&record)?;
         Ok(record)
+    }
+
+    pub fn update_knowledge_source_status(
+        &self,
+        id: &str,
+        path: &str,
+        status: KnowledgeSourceStatus,
+        sliced_count: u64,
+        error: Option<String>,
+    ) -> anyhow::Result<()> {
+        let _guard = self.lock.lock().unwrap();
+        let path_buf = self.record_path(id);
+        let content = std::fs::read_to_string(&path_buf)?;
+        let mut record: EmployeeRecord = serde_json::from_str(&content)?;
+
+        let now = chrono::Utc::now().to_rfc3339();
+        let sources = record
+            .resource_config
+            .get_mut("knowledgeSources")
+            .and_then(|v| v.as_array_mut())
+            .ok_or_else(|| anyhow::anyhow!("knowledgeSources field missing"))?;
+
+        let entry = sources
+            .iter_mut()
+            .find(|s| s.get("path").and_then(|p| p.as_str()) == Some(path))
+            .ok_or_else(|| anyhow::anyhow!("knowledge source path not found: {}", path))?;
+
+        let obj = entry
+            .as_object_mut()
+            .ok_or_else(|| anyhow::anyhow!("knowledge source is not an object"))?;
+
+        obj.insert("status".into(), serde_json::Value::String(status.as_str().into()));
+        obj.insert("slicedCount".into(), serde_json::Value::from(sliced_count));
+        match status {
+            KnowledgeSourceStatus::Indexing => {
+                obj.insert("startedAt".into(), serde_json::Value::String(now));
+                obj.remove("error");
+            }
+            KnowledgeSourceStatus::Done => {
+                obj.insert("completedAt".into(), serde_json::Value::String(now));
+                obj.remove("error");
+            }
+            KnowledgeSourceStatus::Failed => {
+                if let Some(err) = error {
+                    obj.insert("error".into(), serde_json::Value::String(err));
+                }
+                obj.insert("completedAt".into(), serde_json::Value::String(now));
+            }
+            KnowledgeSourceStatus::Pending => {
+                obj.remove("error");
+                obj.remove("startedAt");
+                obj.remove("completedAt");
+            }
+        }
+
+        self.write_record(&record)
     }
 
     /// Hard-delete an employee directory. The escape hatch behind the soft-delete
@@ -870,6 +980,80 @@ fn write_atomic(path: &std::path::Path, bytes: &[u8]) -> Result<()> {
     fs::rename(&tmp, path)
         .with_context(|| format!("rename tmp → {}", path.display()))?;
     Ok(())
+}
+
+/// Stamp the per-instance `template/` snapshot dir based on `record.template_id`.
+///
+/// Lookup order:
+///   1. Embedded bootstrap registry (covers the 11 v1.0.0 built-ins, always
+///      available, used during first-run + offline hire).
+///   2. Global cache `~/.renlijia/employee-templates-cache/{tid}/*.json`
+///      (highest version wins; populated by `employee_template_refresh`).
+///
+/// Returns the `TemplateRef` to store on the record, or `None` if neither
+/// source has the template (e.g. custom hand-edited records, or a record
+/// whose template was deleted from OPS and isn't cached locally).
+///
+/// All filesystem errors are swallowed and logged via `log::warn`; the
+/// snapshot is additive metadata that PR5 will start *reading* from —
+/// failing the whole hire/list flow over it would be too aggressive while
+/// the feature is still landing.
+fn stamp_snapshot_for_record(
+    root: &std::path::Path,
+    record: &EmployeeRecord,
+) -> Option<crate::runtime::employee::template_store::TemplateRef> {
+    use crate::runtime::employee::template_store as ts;
+    let tid = record.template_id.as_deref()?;
+
+    // 1) Try bootstrap.
+    let snap_and_source: Option<(ts::TemplateSnapshot, &'static str)> =
+        match ts::bootstrap_template(tid) {
+            Ok(Some(s)) => Some((s, "bootstrap")),
+            Ok(None) => None,
+            Err(e) => {
+                log::warn!("[EmployeeStore] bootstrap lookup failed for {tid}: {e}");
+                None
+            }
+        };
+
+    // 2) Try cache (highest version) if bootstrap missed.
+    let snap_and_source = snap_and_source.or_else(|| {
+        let cache_dir =
+            crate::storage::AiJiaHome::from_home().employee_templates_cache_dir();
+        let tid_dir = cache_dir.join(tid);
+        let mut best: Option<ts::TemplateSnapshot> = None;
+        if let Ok(rd) = std::fs::read_dir(&tid_dir) {
+            for entry in rd.flatten() {
+                let p = entry.path();
+                if p.extension().and_then(|e| e.to_str()) != Some("json") {
+                    continue;
+                }
+                if let Ok(content) = std::fs::read_to_string(&p) {
+                    if let Ok(s) = serde_json::from_str::<ts::TemplateSnapshot>(&content) {
+                        match best.as_ref() {
+                            None => best = Some(s),
+                            Some(prev) if s.version > prev.version => best = Some(s),
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+        best.map(|s| (s, "cache"))
+    });
+
+    let (snap, source) = snap_and_source?;
+    let instance_dir = root.join(&record.id);
+    match ts::ensure_instance_snapshot(&instance_dir, &snap, source) {
+        Ok(r) => Some(r),
+        Err(e) => {
+            log::warn!(
+                "[EmployeeStore] failed to stamp template snapshot for {}: {e}",
+                record.id
+            );
+            None
+        }
+    }
 }
 
 /// `fs::remove_dir_all` with Windows-friendly retry. AV / Indexer / Explorer

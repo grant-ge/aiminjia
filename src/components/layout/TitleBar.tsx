@@ -15,9 +15,9 @@ function handleDragStart(e: React.MouseEvent) {
 
 function WindowControls() {
   const btnClass =
-    'flex h-7 w-11 items-center justify-center text-sidebar-foreground/40 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground/80'
+    'flex h-7 w-11 items-center justify-center text-primary-foreground/70 transition-colors hover:bg-black/15 hover:text-primary-foreground'
   return (
-    <div className="flex shrink-0" onMouseDown={e => e.stopPropagation()}>
+    <div className="flex shrink-0 items-center" onMouseDown={(e) => e.stopPropagation()}>
       <button className={btnClass} onClick={() => getCurrentWindow().minimize()} aria-label="Minimize">
         <svg width="10" height="1" viewBox="0 0 10 1"><rect fill="currentColor" width="10" height="1"/></svg>
       </button>
@@ -36,21 +36,25 @@ function WindowControls() {
 }
 
 /**
- * Windows: full title bar with drag region + window controls.
- * macOS: thin overlay strip (transparent, no border) carrying only the
- * UpdateAvailableLink — visible only when an update is ready, otherwise null.
+ * Both macOS (Overlay titleBarStyle) and Windows render a 28px accent strip
+ * at the top so tenant-branded accent color is visible at the most prominent
+ * area of the window. macOS draws native traffic lights over this strip.
  */
 export function TitleBar() {
   const updateReady = useUpdaterStore((s) => s.phase === 'ready')
   const isWindows = navigator.userAgent.includes('Windows')
 
   if (!isWindows) {
-    if (!updateReady) return null
     return (
-      <div className="pointer-events-none fixed right-3 top-2 z-40 flex items-center">
-        <div className="pointer-events-auto" onMouseDown={(e) => e.stopPropagation()}>
-          <UpdateAvailableLink />
-        </div>
+      <div
+        data-tauri-drag-region
+        className="flex h-7 w-full shrink-0 items-center justify-end bg-primary text-primary-foreground"
+      >
+        {updateReady ? (
+          <div className="pr-3" onMouseDown={(e) => e.stopPropagation()}>
+            <UpdateAvailableLink />
+          </div>
+        ) : null}
       </div>
     )
   }
@@ -58,11 +62,13 @@ export function TitleBar() {
   return (
     <div
       data-tauri-drag-region
-      className="flex h-7 w-full shrink-0 items-center border-b border-border bg-sidebar"
+      className="flex h-7 w-full shrink-0 items-center border-b border-primary-foreground/15 bg-primary text-primary-foreground"
       onMouseDown={handleDragStart}
     >
       <div className="flex-1" data-tauri-drag-region />
-      <UpdateAvailableLink />
+      <div onMouseDown={(e) => e.stopPropagation()}>
+        <UpdateAvailableLink />
+      </div>
       <WindowControls />
     </div>
   )

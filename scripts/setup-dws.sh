@@ -29,53 +29,93 @@ if [ -f "$RESOURCES_DIR/dws" ]; then
     fi
 fi
 
-# Detect platform
+# Detect platform. TARGET_ARCH env overrides for cross-arch bundling
+# (e.g. building x86_64 dmg on an arm64 Mac).
 OS="$(uname -s)"
-ARCH="$(uname -m)"
+ARCH="${TARGET_ARCH:-$(uname -m)}"
 
 echo "Platform: $OS $ARCH"
 
-# Method 1: Install via official install script (preferred)
-echo "Installing dws via official installer..."
-INSTALL_SCRIPT_URL="https://raw.githubusercontent.com/DingTalk-Real-AI/dingtalk-workspace-cli/main/scripts/install.sh"
+# Map to dws GitHub release asset naming
+case "$OS" in
+    Darwin)
+        case "$ARCH" in
+            arm64)   DWS_ASSET="dws-darwin-arm64.tar.gz" ;;
+            x86_64)  DWS_ASSET="dws-darwin-amd64.tar.gz" ;;
+            *) echo "[error] unsupported arch: $ARCH"; exit 1 ;;
+        esac
+        ;;
+    Linux)
+        case "$ARCH" in
+            x86_64)  DWS_ASSET="dws-linux-amd64.tar.gz" ;;
+            aarch64) DWS_ASSET="dws-linux-arm64.tar.gz" ;;
+            *) echo "[error] unsupported arch: $ARCH"; exit 1 ;;
+        esac
+        ;;
+    *) echo "[error] unsupported OS: $OS"; exit 1 ;;
+esac
 
-# Download to temp and install
+# Method 1: pull dingtalk-workspace-cli npm package — bundles all arch binaries
+# in assets/ (dws-darwin-amd64.tar.gz / dws-darwin-arm64.tar.gz / etc), so we
+# can pick the target arch without needing direct GitHub access (which times
+# out from CN networks). npmmirror is a cached mirror of the npm registry.
+DWS_NPM_REGISTRY="${DWS_NPM_REGISTRY:-https://registry.npmmirror.com}"
+echo "Pulling dingtalk-workspace-cli from $DWS_NPM_REGISTRY..."
 TEMP_DIR=$(mktemp -d)
 trap "rm -rf $TEMP_DIR" EXIT
-
-if curl -fsSL "$INSTALL_SCRIPT_URL" -o "$TEMP_DIR/install.sh" 2>/dev/null; then
-    # Run installer (installs to ~/.dws/bin/dws by default)
-    bash "$TEMP_DIR/install.sh"
-
-    # Find the installed binary
-    DWS_BIN=""
-    for candidate in "$HOME/.dws/bin/dws" "$HOME/.local/bin/dws" "/usr/local/bin/dws"; do
-        if [ -f "$candidate" ]; then
-            DWS_BIN="$candidate"
-            break
+if (cd "$TEMP_DIR" && npm pack dingtalk-workspace-cli --registry="$DWS_NPM_REGISTRY" >/dev/null 2>&1); then
+    NPM_TGZ=$(ls "$TEMP_DIR"/dingtalk-workspace-cli-*.tgz 2>/dev/null | head -1)
+    if [ -n "$NPM_TGZ" ]; then
+        tar xzf "$NPM_TGZ" -C "$TEMP_DIR"
+        ASSET_PATH="$TEMP_DIR/package/assets/$DWS_ASSET"
+        if [ -f "$ASSET_PATH" ]; then
+            mkdir -p "$TEMP_DIR/extract"
+            tar xzf "$ASSET_PATH" -C "$TEMP_DIR/extract"
+            DWS_BIN=$(find "$TEMP_DIR/extract" -type f -name 'dws' | head -1)
+            if [ -n "$DWS_BIN" ]; then
+                cp "$DWS_BIN" "$RESOURCES_DIR/dws"
+                chmod +x "$RESOURCES_DIR/dws"
+                echo "✅ dws ($ARCH) copied to $RESOURCES_DIR/dws"
+                file "$RESOURCES_DIR/dws"
+                exit 0
+            fi
+        else
+            echo "[warn] asset $DWS_ASSET not found in npm package; falling back"
         fi
-    done
+    fi
+fi
 
+# Method 2: Direct GitHub release download (fallback; can be slow from CN)
+DWS_RELEASE_URL="https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli/releases/latest/download/$DWS_ASSET"
+echo "Downloading $DWS_ASSET from GitHub..."
+if curl -fL --connect-timeout 30 -o "$TEMP_DIR/dws.tar.gz" "$DWS_RELEASE_URL"; then
+    tar xzf "$TEMP_DIR/dws.tar.gz" -C "$TEMP_DIR"
+    DWS_BIN=$(find "$TEMP_DIR" -type f -name 'dws' | head -1)
     if [ -n "$DWS_BIN" ]; then
         cp "$DWS_BIN" "$RESOURCES_DIR/dws"
         chmod +x "$RESOURCES_DIR/dws"
         echo "✅ dws copied to $RESOURCES_DIR/dws"
-        "$RESOURCES_DIR/dws" --version
+        file "$RESOURCES_DIR/dws"
         exit 0
     fi
 fi
 
-# Method 2: Try npm global install
-echo "Trying npm install..."
-if command -v npm &>/dev/null; then
-    npm install -g dingtalk-workspace-cli 2>/dev/null || true
-    DWS_NPM=$(command -v dws 2>/dev/null || true)
-    if [ -n "$DWS_NPM" ]; then
-        cp "$DWS_NPM" "$RESOURCES_DIR/dws"
-        chmod +x "$RESOURCES_DIR/dws"
-        echo "✅ dws (npm) copied to $RESOURCES_DIR/dws"
-        "$RESOURCES_DIR/dws" --version
-        exit 0
+# Method 3 (fallback): official install script — ONLY for native-arch builds
+# (script uses `uname -m` unconditionally and may get the wrong arch on cross-builds)
+if [ "$ARCH" = "$(uname -m)" ]; then
+    echo "Installing dws via official installer (fallback)..."
+    INSTALL_SCRIPT_URL="https://raw.githubusercontent.com/DingTalk-Real-AI/dingtalk-workspace-cli/main/scripts/install.sh"
+    if curl -fsSL "$INSTALL_SCRIPT_URL" -o "$TEMP_DIR/install.sh"; then
+        bash "$TEMP_DIR/install.sh"
+        for candidate in "$HOME/.dws/bin/dws" "$HOME/.local/bin/dws" "/usr/local/bin/dws"; do
+            if [ -f "$candidate" ]; then
+                cp "$candidate" "$RESOURCES_DIR/dws"
+                chmod +x "$RESOURCES_DIR/dws"
+                echo "✅ dws copied to $RESOURCES_DIR/dws"
+                "$RESOURCES_DIR/dws" --version
+                exit 0
+            fi
+        done
     fi
 fi
 

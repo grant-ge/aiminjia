@@ -64,7 +64,7 @@ export function LoginPage() {
       <LoginCard>
         <div className="flex flex-col gap-1.5">
           <div className="text-xl font-semibold text-foreground">登录到 {productName}</div>
-          <div className="text-[0.8125rem] text-muted-foreground">使用企业账号继续</div>
+          <div className="text-sm text-muted-foreground">使用企业账号继续</div>
         </div>
         <form className="flex flex-col gap-5" onSubmit={handleSubmit}>
           <div className="flex flex-col gap-1.5">
@@ -101,12 +101,12 @@ export function LoginPage() {
           </div>
           <LoginOptionsRow
             rememberSlot={
-              <label className="flex items-center gap-2 text-[0.8125rem] text-foreground">
+              <label className="flex items-center gap-2 text-sm text-foreground">
                 <input
                   type="checkbox"
                   checked={remember}
                   onChange={(e) => setRemember(e.target.checked)}
-                  className="h-4 w-4 shrink-0 cursor-pointer appearance-none rounded border border-border bg-white transition-colors checked:border-primary checked:bg-primary"
+                  className="h-4 w-4 shrink-0 cursor-pointer appearance-none rounded border border-border bg-background transition-colors checked:border-primary checked:bg-primary"
                   ref={(el) => {
                     if (!el) return
                     const update = () => {
@@ -124,12 +124,12 @@ export function LoginPage() {
             onForget={() => {}}
           />
           {error ? (
-            <div className="text-[0.8125rem] text-destructive">{error}</div>
+            <div className="text-sm text-destructive">{error}</div>
           ) : null}
           <Button
             type="submit"
             disabled={isAuthPending}
-            className="w-full rounded-full py-3 text-[0.9375rem] font-semibold"
+            className="w-full rounded-full py-3 text-md font-semibold"
           >
             {isAuthPending ? (
               <span className="flex items-center justify-center gap-2">

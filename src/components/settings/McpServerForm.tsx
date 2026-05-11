@@ -71,7 +71,7 @@ function McpServerFormContent({
 
   return (
     <div
-      className="mb-4 rounded-lg border p-4"
+      className="mb-4 rounded-lg border p-4 border-border"
       style={{
         borderColor: 'var(--color-border)',
         background: 'var(--color-bg-main)',
@@ -86,7 +86,7 @@ function McpServerFormContent({
             value={name}
             onChange={(event) => setName(event.target.value)}
             placeholder={t('settings.mcp.form.namePlaceholder')}
-            className="h-9 w-full rounded-md border px-3 text-sm outline-none"
+            className="h-9 w-full rounded-md border px-3 text-sm outline-none border-border"
             style={{
               background: 'var(--color-bg-card)',
               borderColor: 'var(--color-border)',
@@ -107,7 +107,7 @@ function McpServerFormContent({
           <select
             value={transportType}
             onChange={(event) => setTransportType(event.target.value)}
-            className="h-9 w-full rounded-md border px-3 text-sm outline-none"
+            className="h-9 w-full rounded-md border px-3 text-sm outline-none border-border"
             style={{
               background: 'var(--color-bg-card)',
               borderColor: 'var(--color-border)',
@@ -130,7 +130,7 @@ function McpServerFormContent({
           value={endpoint}
           onChange={(event) => setEndpoint(event.target.value)}
           placeholder={t('settings.mcp.form.endpointPlaceholder')}
-          className="h-9 w-full rounded-md border px-3 text-sm outline-none"
+          className="h-9 w-full rounded-md border px-3 text-sm outline-none border-border"
           style={{
             background: 'var(--color-bg-card)',
             borderColor: 'var(--color-border)',
@@ -148,7 +148,7 @@ function McpServerFormContent({
           value={envVarsText}
           onChange={(event) => setEnvVarsText(event.target.value)}
           placeholder={t('settings.mcp.form.envVarsPlaceholder')}
-          className="min-h-28 w-full rounded-md border px-3 py-2 text-sm outline-none"
+          className="min-h-28 w-full rounded-md border px-3 py-2 text-sm outline-none border-border"
           style={{
             background: 'var(--color-bg-card)',
             borderColor: 'var(--color-border)',

@@ -30,7 +30,6 @@ export const TAURI_EVENTS = {
   STREAMING_ERROR: 'streaming:error',
   STREAMING_RETRY_RESET: 'streaming:retry-reset',
   MESSAGE_UPDATED: 'message:updated',
-  ANALYSIS_STEP_CHANGED: 'analysis:step-changed',
   STOP_PREVENTED_CONTINUATION: 'stop:prevented-continuation',
   /** @deprecated 后端不发送此事件 */
   FILE_PARSED: 'file:parsed',
@@ -40,9 +39,7 @@ export const TAURI_EVENTS = {
   TOOL_COMPLETED: 'tool:completed',
   CONVERSATION_TITLE_UPDATED: 'conversation:title-updated',
   AGENT_IDLE: 'agent:idle',
-  AGENT_PHASE: 'agent:phase',
   TASK_STATUS_CHANGED: 'task:status-changed',
-  STREAMING_STEP_RESET: 'streaming:step-reset',
   AUTH_EXPIRED: 'auth:expired',
   SKILL_FILE_CHANGED: 'skill-file-changed',
   PERMISSION_ASK: 'permission:ask',
@@ -51,6 +48,8 @@ export const TAURI_EVENTS = {
   TURN_COMPLETED: 'turn:completed',
   DIAGNOSTICS_EVENT: 'diagnostics:event',
   CONVERSATION_CREATED: 'conversation:created',
+  CHANNEL_PLATFORM_STATE: 'channel:platform-state',
+  CHANNEL_MESSAGE: 'channel:message',
 } as const
 
 // ---------------------------------------------------------------------------
@@ -82,20 +81,6 @@ export interface AgentIdlePayload {
   runId?: string
   agentId?: string
   scope?: 'primary' | 'child'
-}
-
-export interface AgentPhasePayload {
-  conversationId: string
-  iteration: number
-  phase: 'think' | 'act' | 'observe'
-  prevPhaseDurationMs: number
-  toolNames: string[]
-  maxIterations: number
-}
-
-export interface StreamingStepResetPayload {
-  conversationId: string
-  step: number
 }
 
 export interface ToolExecutingPayload {
@@ -225,6 +210,10 @@ export interface TurnCompletedPayload {
   outcome: TurnOutcome
   totalInputTokens: number
   totalOutputTokens: number
+  /** Anthropic-style prompt-cache write tokens accumulated this turn. */
+  totalCacheCreationInputTokens?: number
+  /** Anthropic-style prompt-cache read tokens accumulated this turn. */
+  totalCacheReadInputTokens?: number
   totalCostUsd?: number | null
   permissionDenialCount: number
   iterations?: number
@@ -306,10 +295,6 @@ export function saveClipboardImageToWorkspaceStaging(
     bytes,
     mimeType,
   })
-}
-
-export function readLocalImageAsDataUrl(path: string): Promise<string> {
-  return invoke<string>('read_local_image_as_data_url', { path })
 }
 
 export function listAgents(): Promise<AgentInfo[]> {
@@ -580,6 +565,148 @@ export function renameConversation(conversationId: string, newTitle: string): Pr
 
 export function archiveConversation(conversationId: string): Promise<void> {
   return invoke<void>('archive_conversation', { conversationId })
+}
+
+// ---------------------------------------------------------------------------
+// Channel types
+// ---------------------------------------------------------------------------
+
+export type ChannelPlatform = 'dingtalk' | 'feishu' | 'wechat' | 'wecom'
+
+export type ChannelCapability = 'available' | 'comingSoon'
+
+export type ChannelConnectionState =
+  | 'unconfigured'
+  | 'disconnected'
+  | 'connecting'
+  | 'connected'
+  | 'reconnecting'
+  | 'configError'
+
+export type RobotCodeSource = 'registration' | 'appKeyFallback'
+
+export interface ChannelConfigView {
+  platform: ChannelPlatform
+  appKey: string
+  appSecretMasked: string
+  robotCode: string
+  robotCodeSource: RobotCodeSource
+  source: 'OPEN_CLAW'
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ChannelPlatformState {
+  platform: ChannelPlatform
+  capability: ChannelCapability
+  configured: boolean
+  enabled: boolean
+  connection: ChannelConnectionState
+  config?: ChannelConfigView | null
+  lastConnectedAt?: string | null
+  lastError?: string | null
+}
+
+export interface ChannelPlatformStatePayload {
+  state: ChannelPlatformState
+}
+
+export interface ChannelMessagePayload {
+  platform: ChannelPlatform
+  sessionId: string
+  senderNick: string
+  textPreview: string
+}
+
+export interface ChannelConversation {
+  sessionId: string
+  platform: ChannelPlatform
+  conversationType: 'group' | 'private'
+  externalId: string
+  displayName: string
+  unreadCount: number
+  robotCode: string
+  isActiveRobot: boolean
+}
+
+export interface ChannelRegistrationBeginResult {
+  deviceCode: string
+  userCode: string
+  verificationUriComplete: string
+  verificationUri: string
+  intervalSeconds: number
+  expiresInSeconds: number
+  source: string
+}
+
+export interface ChannelRegistrationPollResult {
+  state: 'waiting' | 'success' | 'fail' | 'expired' | 'unknown'
+  clientId?: string | null
+  robotCode?: string | null
+  config?: ChannelConfigView | null
+  platformState?: ChannelPlatformState | null
+  failReason?: string | null
+}
+
+// ---------------------------------------------------------------------------
+// Channel IPC
+// ---------------------------------------------------------------------------
+
+export function channelGetPlatforms(): Promise<ChannelPlatformState[]> {
+  return invoke<ChannelPlatformState[]>('channel_get_platforms')
+}
+
+export function channelGetPlatform(platform: ChannelPlatform): Promise<ChannelPlatformState> {
+  return invoke<ChannelPlatformState>('channel_get_platform', { platform })
+}
+
+export function channelGetConversations(
+  platform?: ChannelPlatform,
+): Promise<ChannelConversation[]> {
+  return invoke<ChannelConversation[]>('channel_get_conversations', { platform })
+}
+
+export function channelBeginRegistration(
+  platform: ChannelPlatform,
+): Promise<ChannelRegistrationBeginResult> {
+  return invoke<ChannelRegistrationBeginResult>('channel_begin_registration', { platform })
+}
+
+export function channelPollRegistration(
+  platform: ChannelPlatform,
+  deviceCode: string,
+): Promise<ChannelRegistrationPollResult> {
+  return invoke<ChannelRegistrationPollResult>('channel_poll_registration', { platform, deviceCode })
+}
+
+export function channelSetEnabled(
+  platform: ChannelPlatform,
+  enabled: boolean,
+): Promise<ChannelPlatformState> {
+  return invoke<ChannelPlatformState>('channel_set_enabled', { platform, enabled })
+}
+
+export function channelRemovePlatform(platform: ChannelPlatform): Promise<ChannelPlatformState> {
+  return invoke<ChannelPlatformState>('channel_remove_platform', { platform })
+}
+
+export function channelRevealSecret(platform: ChannelPlatform): Promise<string> {
+  return invoke<string>('channel_reveal_secret', { platform })
+}
+
+export function onChannelPlatformState(
+  handler: (payload: ChannelPlatformStatePayload) => void,
+): Promise<() => void> {
+  return listen<ChannelPlatformStatePayload>(
+    TAURI_EVENTS.CHANNEL_PLATFORM_STATE,
+    (e) => handler(e.payload),
+  )
+}
+
+export function onChannelMessage(
+  handler: (payload: ChannelMessagePayload) => void,
+): Promise<() => void> {
+  return listen<ChannelMessagePayload>(TAURI_EVENTS.CHANNEL_MESSAGE, (e) => handler(e.payload))
 }
 
 export function restoreConversation(conversationId: string): Promise<void> {
@@ -999,17 +1126,6 @@ export interface CloudAuthInfo {
   models: CloudModel[]
 }
 
-/** Branding info from persisted auth (no network, instant). */
-export interface BrandingInfo {
-  productName?: string
-  logoUrl?: string
-  accentColor?: string
-  primaryColor?: string
-  bgColor?: string
-  sidebarBgColor?: string
-  fontFamily?: string
-}
-
 /** Cloud model info from /v1/models. */
 export interface CloudModel {
   id: string
@@ -1067,11 +1183,6 @@ export function cloudLogout(): Promise<void> {
 /** Get current cloud auth state (for app init / restore). */
 export function getCloudAuth(): Promise<CloudAuthInfo> {
   return invoke<CloudAuthInfo>('get_cloud_auth')
-}
-
-/** Get branding from persisted auth state (no network, instant). */
-export function getBranding(): Promise<BrandingInfo> {
-  return invoke<BrandingInfo>('get_branding')
 }
 
 /** Fetch available cloud models. */
@@ -1270,20 +1381,6 @@ export function onMessageUpdated(
 }
 
 /**
- * Listen for analysis pipeline step transitions.
- *
- * @param handler - Callback receiving the current step index and its status
- * @returns A function to unlisten (unsubscribe) from the event
- */
-export function onAnalysisStepChanged(
-  handler: (payload: { step: number; status: string }) => void,
-): Promise<() => void> {
-  return listen<{ step: number; status: string }>(TAURI_EVENTS.ANALYSIS_STEP_CHANGED, createInstrumentedEventHandler(TAURI_EVENTS.ANALYSIS_STEP_CHANGED, (event) => {
-    handler(event.payload)
-  }))
-}
-
-/**
  * Listen for application-level notification events (toast messages).
  *
  * @param handler - Callback receiving the notification level, title, and message
@@ -1377,34 +1474,7 @@ export function onAgentIdle(
   }))
 }
 
-/**
- * Listen for agent TAOR phase transitions (Think → Act → Observe).
- *
- * @param handler - Callback receiving the phase event payload
- * @returns A function to unlisten (unsubscribe) from the event
- */
-export function onAgentPhase(
-  handler: (payload: AgentPhasePayload) => void,
-): Promise<() => void> {
-  return listen<AgentPhasePayload>(TAURI_EVENTS.AGENT_PHASE, createInstrumentedEventHandler(TAURI_EVENTS.AGENT_PHASE, (event) => {
-    handler(event.payload)
-  }))
-}
 
-/**
- * Listen for streaming step-reset events during auto-advance between analysis steps.
- *
- * When the backend auto-advances from step N to step N+1, it emits this event
- * so the frontend clears the previous step's streaming content and tool executions
- * while keeping isStreaming=true (the next step's deltas are about to start).
- */
-export function onStreamingStepReset(
-  handler: (payload: StreamingStepResetPayload) => void,
-): Promise<() => void> {
-  return listen<StreamingStepResetPayload>(TAURI_EVENTS.STREAMING_STEP_RESET, createInstrumentedEventHandler(TAURI_EVENTS.STREAMING_STEP_RESET, (event) => {
-    handler(event.payload)
-  }))
-}
 
 /**
  * Listen for file:generated events (emitted directly by the tool execution layer,
@@ -1809,10 +1879,48 @@ export interface EmployeeRecord {
   resourceConfig: Record<string, unknown>
   systemPromptExtra: string | null
   defaultSkillId: string | null
+  /**
+   * Pointer to the template snapshot this instance was hired from. Present
+   * on records hired/refreshed after PR3 (2026-05-10); older records have
+   * `templateRef === null` until the backend stamps them on next read.
+   */
+  templateRef: EmployeeTemplateRef | null
   createdAt: string
   updatedAt: string
   lastRunAt: string | null
   nextRunAt: string | null
+}
+
+/** Identifies which template snapshot an employee instance was hired from. */
+export interface EmployeeTemplateRef {
+  templateId: string
+  version: string
+  sha256: string
+  /** `"bootstrap"` (embedded) or `"ops:<url>"` (downloaded). */
+  source: string
+}
+
+/**
+ * On-disk shape of the template snapshot at
+ * `<instance>/template/template.json`. Mirrors the OPS-side
+ * `employee_templates` row. Returned by `employeeTemplateCatalog()`.
+ */
+export interface EmployeeTemplateSnapshot {
+  templateId: string
+  version: string
+  name: string
+  avatar: string
+  role: string
+  description: string
+  badge: string
+  systemPromptExtra: string
+  toolWhitelist: string[]
+  cron: string
+  defaultSkillId: string
+  requiresDingtalk: boolean
+  requiresAttachment: { accept: string; min: number; max: number } | null
+  resourceConfigSchema: Record<string, unknown> | null
+  resourceConfigUI: Record<string, unknown> | null
 }
 
 export interface CreateEmployeeRequest {
@@ -1911,6 +2019,60 @@ export function employeeStopRun(id: string): Promise<boolean> {
  */
 export function employeeActiveRun(id: string): Promise<EmployeeActiveRunInfo | null> {
   return invoke<EmployeeActiveRunInfo | null>('employee_active_run', { id })
+}
+
+/**
+ * Returns the catalog of templates the new-hire wizard should display.
+ *
+ * Sources merged in the backend (last write wins on `template_id`, by
+ * version string):
+ *   1. Embedded bootstrap registry (always available)
+ *   2. `~/.renlijia/employee-templates-cache/` (downloaded via
+ *      `employeeTemplateRefresh()`)
+ *
+ * Never hits the network. Call `employeeTemplateRefresh()` to update the
+ * cache from lotus ops-portal.
+ */
+export function employeeTemplateCatalog(): Promise<EmployeeTemplateSnapshot[]> {
+  return invoke<EmployeeTemplateSnapshot[]>('employee_template_catalog')
+}
+
+/**
+ * Sync the local template cache from lotus ops-portal.
+ *
+ * Fetches `/api/public/employee-templates` (latest published per
+ * `template_id`, `tenant_scope=global`), then for each entry whose version
+ * is newer than the cache (or missing) downloads the snapshot, verifies
+ * sha256 against the manifest, and writes it to disk.
+ *
+ * Returns the number of templates downloaded this call. Failures on
+ * individual templates are logged and skipped — a partial refresh is
+ * better than a hard failure.
+ */
+export function employeeTemplateRefresh(): Promise<number> {
+  return invoke<number>('employee_template_refresh')
+}
+
+// ---------------------------------------------------------------------------
+// Knowledge Indexing Commands
+// ---------------------------------------------------------------------------
+
+export interface PendingKnowledgeSource {
+  path: string
+  originalName: string
+  size: number
+}
+
+export async function employeeIndexKnowledgeAsync(
+  employeeId: string,
+  sources: PendingKnowledgeSource[],
+): Promise<void> {
+  await invoke('employee_index_knowledge_async', {
+    args: {
+      employee_id: employeeId,
+      sources: sources.map((s) => [s.path, s.originalName] as [string, string]),
+    },
+  })
 }
 
 // ---------------------------------------------------------------------------

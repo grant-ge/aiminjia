@@ -26,7 +26,7 @@ export function Select({
         disabled={disabled}
         onChange={(event) => onValueChange?.(event.target.value)}
         className={cn(
-          'h-10 w-full appearance-none rounded-[12px] border border-border bg-muted py-0 pl-4 pr-9 text-sm font-semibold text-foreground outline-none transition-colors',
+          'h-9 w-full appearance-none rounded-lg border border-border bg-muted py-0 pl-4 pr-9 text-sm font-semibold text-foreground outline-none transition-colors',
           'hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
           disabled && 'cursor-not-allowed hover:bg-muted',
           className,

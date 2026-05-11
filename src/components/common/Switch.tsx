@@ -36,6 +36,7 @@ export function Switch({
     >
       <span
         className={cn(
+          // Switch thumb 固定白色：在主题色 / 灰底轨道上保证对比度，跨 light/dark 都成立
           'absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform',
           checked ? 'translate-x-5' : 'translate-x-0',
           disabled && 'bg-card',

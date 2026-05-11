@@ -158,7 +158,7 @@ export function EmployeeCard({ employee: emp, inboxEntries, activeRun = null, on
       type="button"
       onClick={onClick}
       className={cn(
-        'group relative flex w-full flex-col gap-3 rounded-2xl border bg-card p-4 text-left transition-all hover:border-border/80 hover:shadow-sm',
+        'group relative flex w-full flex-col gap-3 rounded-xl border bg-card p-4 text-left transition-all hover:border-border/80 hover:shadow-sm border-border',
         status === 'has-report' && 'border-green-200 bg-green-50/30',
         status === 'running' && 'border-blue-200 bg-blue-50/20',
         status === 'needs-setup' && 'border-orange-200',
@@ -239,7 +239,7 @@ export function AddEmployeeCard({ onClick }: AddEmployeeCardProps) {
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-border bg-card/50 p-4 text-center transition-colors hover:border-border/80 hover:bg-card"
+      className="flex w-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-card/50 p-4 text-center transition-colors hover:border-border/80 hover:bg-card"
       style={{ minHeight: 152 }}
     >
       <span className="text-2xl text-muted-foreground/50">＋</span>

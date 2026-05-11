@@ -86,12 +86,16 @@ async fn w2_max_tokens_injects_resume_message_and_completes() {
             content: "part-1".to_string(),
             tokens_in: 5,
             tokens_out: 7,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
             stop_reason: Some("max_tokens".to_string()),
         },
         LlmStepResult::ContentComplete {
             content: "part-2".to_string(),
             tokens_in: 3,
             tokens_out: 4,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
             stop_reason: Some("end_turn".to_string()),
         },
     ]));
@@ -156,6 +160,8 @@ async fn w2_max_tokens_recovery_stops_after_limit_and_keeps_partial_content() {
                 content: format!("part-{idx}"),
                 tokens_in: 1,
                 tokens_out: 1,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
                 stop_reason: Some("max_tokens".to_string()),
             })
             .collect(),
@@ -206,12 +212,16 @@ async fn w3_stop_hook_blocking_errors_drive_new_llm_turn_once() {
             content: "draft".to_string(),
             tokens_in: 1,
             tokens_out: 1,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
             stop_reason: Some("end_turn".to_string()),
         },
         LlmStepResult::ContentComplete {
             content: "final".to_string(),
             tokens_in: 1,
             tokens_out: 1,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
             stop_reason: Some("end_turn".to_string()),
         },
     ]));
@@ -262,6 +272,8 @@ async fn w4_orphaned_permission_is_cancelled_and_event_emitted() {
             content: "done".to_string(),
             tokens_in: 1,
             tokens_out: 1,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
             stop_reason: Some("end_turn".to_string()),
         },
     ]));

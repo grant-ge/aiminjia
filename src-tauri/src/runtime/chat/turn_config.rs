@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use serde_json::Value as JsonValue;
 
+use crate::llm::streaming::AnthropicMultimodalTurn;
 use crate::runtime::chat::compaction::AutoCompactState;
 use crate::runtime::chat::preprocess::PreprocessRuntimeState;
 use crate::runtime::chat::tool_round_types::RuntimeToolCallRequest;
@@ -94,6 +95,8 @@ pub struct TurnIterationState {
     pub stream_cancelled: bool,
     pub step_tokens_in: u64,
     pub step_tokens_out: u64,
+    pub step_cache_creation_input_tokens: u64,
+    pub step_cache_read_input_tokens: u64,
     pub force_no_tools: bool,
     pub compact_state: AutoCompactState,
     pub stop_hook_prevent_continuation: bool,
@@ -116,6 +119,8 @@ impl TurnIterationState {
             stream_cancelled: false,
             step_tokens_in: 0,
             step_tokens_out: 0,
+            step_cache_creation_input_tokens: 0,
+            step_cache_read_input_tokens: 0,
             force_no_tools: false,
             compact_state: AutoCompactState::new(),
             stop_hook_prevent_continuation: false,
@@ -140,7 +145,7 @@ impl TurnIterationState {
 #[derive(Debug)]
 pub struct LlmStepInput<'a> {
     pub system_prompt: &'a str,
-    pub openai_system_message: Option<serde_json::Value>,
+    pub system_message: Option<serde_json::Value>,
     pub dynamic_context: &'a str,
     pub messages: Vec<JsonValue>, // decayed 副本，非原始 messages 引用
     pub tool_defs: &'a [JsonValue],
@@ -152,6 +157,7 @@ pub struct LlmStepInput<'a> {
     pub conversation_id: &'a str,
     pub run_id: &'a str,
     pub estimated_tokens: usize,
+    pub anthropic_multimodal_turn: Option<AnthropicMultimodalTurn>,
 }
 
 /// Executor 的结构化返回。Executor 只产出数据，不修改外部状态。
@@ -163,12 +169,16 @@ pub enum LlmStepResult {
         tool_calls: Vec<RuntimeToolCallRequest>,
         tokens_in: u64,
         tokens_out: u64,
+        cache_creation_input_tokens: u64,
+        cache_read_input_tokens: u64,
     },
     /// LLM 返回纯文本，无工具调用
     ContentComplete {
         content: String,
         tokens_in: u64,
         tokens_out: u64,
+        cache_creation_input_tokens: u64,
+        cache_read_input_tokens: u64,
         stop_reason: Option<String>,
     },
     /// 用户取消

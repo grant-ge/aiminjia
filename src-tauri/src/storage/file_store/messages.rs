@@ -160,6 +160,10 @@ pub fn insert_message(
             let _ = super::io::atomic_write_json(&conv_meta_path, &conv);
         }
     }
+    // Also bump the global index entry — without this the sidebar's
+    // "most-recent-first" sort uses stale data and the conversation can
+    // appear to vanish in long histories.
+    let _ = super::conversations::touch_index_entry(base_dir, conversation_id);
 
     Ok(())
 }
@@ -180,6 +184,7 @@ pub fn insert_message_v2(base_dir: &Path, msg: &StoredMessage) -> StorageResult<
             let _ = super::io::atomic_write_json(&conv_meta_path, &conv);
         }
     }
+    let _ = super::conversations::touch_index_entry(base_dir, &msg.conversation_id);
 
     Ok(())
 }

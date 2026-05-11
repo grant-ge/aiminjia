@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { useChatStore } from './chatStore'
 import type { Message, Conversation } from '@/types/message'
 import { useDiagnosticsStore } from './diagnosticsStore'
+import { useUiStore } from '@/stores/uiStore'
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn().mockResolvedValue(undefined),
@@ -359,5 +360,38 @@ describe('chatStore — tool executions', () => {
     })
     useChatStore.getState().updateToolExecution('nonexistent', { status: 'error' })
     expect(useChatStore.getState().toolExecutions[0].status).toBe('executing')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Route subscription: activeConversationId auto-sync
+// ---------------------------------------------------------------------------
+
+describe('chatStore syncs activeConversationId from route', () => {
+  beforeEach(() => {
+    useUiStore.setState({ route: { kind: 'home' } })
+    useChatStore.setState({ activeConversationId: null, messages: [] })
+  })
+
+  it('updates activeConversationId when route changes to chat', () => {
+    useUiStore.getState().setRoute({ kind: 'chat', conversationId: 'r-c1' })
+    expect(useChatStore.getState().activeConversationId).toBe('r-c1')
+  })
+
+  it('updates activeConversationId when route changes to channel with sessionId', () => {
+    useUiStore.getState().setRoute({ kind: 'channel', sessionId: 'r-s1' })
+    expect(useChatStore.getState().activeConversationId).toBe('r-s1')
+  })
+
+  it('clears activeConversationId when route is home', () => {
+    useUiStore.getState().setRoute({ kind: 'chat', conversationId: 'r-c1' })
+    useUiStore.getState().setRoute({ kind: 'home' })
+    expect(useChatStore.getState().activeConversationId).toBeNull()
+  })
+
+  it('clears activeConversationId when route is channel without sessionId', () => {
+    useUiStore.getState().setRoute({ kind: 'chat', conversationId: 'r-c1' })
+    useUiStore.getState().setRoute({ kind: 'channel' })
+    expect(useChatStore.getState().activeConversationId).toBeNull()
   })
 })

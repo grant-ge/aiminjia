@@ -40,6 +40,7 @@ function Toast({ notification }: { notification: Notification }) {
       }}
     >
       {/* Icon */}
+      {/* level 图标 chip：背景是 style.accent（success/error/info 的实色），白字保持对比度 */}
       <div
         className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
         style={{ background: style.accent }}

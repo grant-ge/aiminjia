@@ -198,6 +198,8 @@ async fn normal_turn_emits_complete_lifecycle_events_in_order() {
             content: "你好！".to_string(),
             tokens_in: 3,
             tokens_out: 5,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
             stop_reason: Some("end_turn".to_string()),
         },
     ]));
@@ -236,6 +238,8 @@ async fn all_events_in_one_turn_share_the_same_run_id() {
             content: "OK".to_string(),
             tokens_in: 1,
             tokens_out: 1,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
             stop_reason: Some("end_turn".to_string()),
         },
     ]));
@@ -265,6 +269,8 @@ async fn run_chat_request_uses_request_run_id_as_authoritative_identity() {
             content: "OK".to_string(),
             tokens_in: 1,
             tokens_out: 1,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
             stop_reason: Some("end_turn".to_string()),
         },
     ]));
@@ -288,11 +294,15 @@ async fn tool_call_result_is_sent_to_next_llm_step_and_turn_completes() {
             tool_calls: vec![dummy_tool_call("tc-dummy")],
             tokens_in: 2,
             tokens_out: 3,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
         },
         LlmStepResult::ContentComplete {
             content: "分析完成".to_string(),
             tokens_in: 4,
             tokens_out: 5,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
             stop_reason: Some("end_turn".to_string()),
         },
     ]));
@@ -398,12 +408,16 @@ async fn max_iterations_reached_ends_turn_after_configured_limit() {
                 tool_calls: vec![dummy_tool_call("tc-max-1")],
                 tokens_in: 1,
                 tokens_out: 1,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
             },
             LlmStepResult::ToolCalls {
                 assistant_content: "".to_string(),
                 tool_calls: vec![dummy_tool_call("tc-max-2")],
                 tokens_in: 1,
                 tokens_out: 1,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
             },
         ])
         .with_overrides(TurnConfigOverrides {

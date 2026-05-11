@@ -139,6 +139,21 @@ impl SessionRuntime {
         self
     }
 
+    /// 向内部 event_bus 注册一个外部订阅者。
+    pub fn subscribe_event_listener(&self, subscriber: Arc<dyn crate::runtime::event_bus::RuntimeEventSubscriber>) {
+        self.event_bus.subscribe(subscriber);
+    }
+
+    /// 暴露权限控制平面，供 IM 协调器等外部组件使用。
+    pub fn permission_control_plane(&self) -> Arc<dyn crate::runtime::store::PendingPermissionControlPlane> {
+        self.pending_permission_store.clone()
+    }
+
+    /// 暴露交互控制平面，供 IM 协调器等外部组件使用。
+    pub fn interaction_control_plane(&self) -> Arc<dyn crate::runtime::interaction::PendingInteractionControlPlane> {
+        self.pending_interaction_store.clone()
+    }
+
     pub fn for_test(host: Arc<dyn RuntimeHost>) -> Self {
         let adapter = Arc::new(TauriEventAdapter::new(host));
         let bus = RuntimeEventBus::new();
@@ -612,11 +627,15 @@ mod tests {
                     ],
                     tokens_in: 0,
                     tokens_out: 0,
+                    cache_creation_input_tokens: 0,
+                    cache_read_input_tokens: 0,
                 }),
                 _ => Ok(LlmStepResult::ContentComplete {
                     content: "done".to_string(),
                     tokens_in: 0,
                     tokens_out: 0,
+                    cache_creation_input_tokens: 0,
+                    cache_read_input_tokens: 0,
                     stop_reason: Some("end_turn".to_string()),
                 }),
             }
@@ -1138,6 +1157,40 @@ mod tests {
             Some(crate::runtime::cancellation::CancellationReason::Interrupt)
         );
         assert!(!new_root.is_cancelled());
+    }
+
+    #[test]
+    fn subscribe_event_listener_adds_subscriber() {
+        use std::sync::Arc;
+        use tokio::sync::Mutex;
+        use crate::runtime::events::{RuntimeEvent, RuntimeEventKind};
+        use crate::runtime::ids::{RunId, SessionId};
+
+        struct CounterSubscriber {
+            count: Arc<Mutex<usize>>,
+        }
+
+        #[async_trait::async_trait]
+        impl crate::runtime::event_bus::RuntimeEventSubscriber for CounterSubscriber {
+            async fn on_event(&self, _event: &RuntimeEvent) -> anyhow::Result<()> {
+                *self.count.lock().await += 1;
+                Ok(())
+            }
+        }
+
+        let count = Arc::new(Mutex::new(0usize));
+        let runtime = SessionRuntime::new(QueryEngine::new(), RuntimeEventBus::new());
+        runtime.subscribe_event_listener(Arc::new(CounterSubscriber { count: count.clone() }));
+
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let event = RuntimeEvent::new(
+                SessionId::new("s"),
+                RunId::new("r"),
+                RuntimeEventKind::StreamDone,
+            );
+            runtime.event_bus.emit(event).await.unwrap();
+            assert_eq!(*count.lock().await, 1);
+        });
     }
 
     #[test]

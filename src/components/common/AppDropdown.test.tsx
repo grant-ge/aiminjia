@@ -46,7 +46,7 @@ describe('AppDropdown', () => {
     const menu = screen.getByRole('menu')
 
     expect(menu).toHaveClass('rounded-[13px]')
-    expect(menu).toHaveClass('bg-[#fbfbfa]')
+    expect(menu).toHaveClass('bg-popover')
     expect(menu).not.toHaveClass('bg-sidebar')
   })
 

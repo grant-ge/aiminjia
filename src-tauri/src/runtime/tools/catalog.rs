@@ -553,6 +553,11 @@ fn build_default_catalog() -> ToolCatalog {
         }),
     ));
 
+    // ── Power: skill-smith (小程) tools ────────────────────────────────
+    for (def, schema) in crate::runtime::tools::builtin::skill_smith::catalog_entries() {
+        c.insert(CatalogEntry::new(def, schema));
+    }
+
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
             "WriteMemory",
@@ -764,6 +769,13 @@ pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
     "cancel_agenda_item",
     "skip_occurrence",
     "list_agenda_occurrences",
+    "skill_create_draft",
+    "skill_write_md",
+    "skill_add_file",
+    "skill_validate",
+    "skill_dry_run",
+    "skill_install",
+    "skill_export",
 ];
 
 /// 全局默认 catalog（延迟初始化）。

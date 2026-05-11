@@ -3,19 +3,6 @@ use std::sync::Arc;
 use crate::auth::state::{CloudAuthInfo, CloudModelInfo};
 use crate::auth::AuthManager;
 
-/// Branding info returned to frontend for instant (no-network) brand application.
-#[derive(serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BrandingInfo {
-    pub product_name: Option<String>,
-    pub logo_url: Option<String>,
-    pub accent_color: Option<String>,
-    pub primary_color: Option<String>,
-    pub bg_color: Option<String>,
-    pub sidebar_bg_color: Option<String>,
-    pub font_family: Option<String>,
-}
-
 #[derive(Clone)]
 pub struct TauriAuthCommandAdapter {
     auth: Arc<AuthManager>,
@@ -71,29 +58,5 @@ impl TauriAuthCommandAdapter {
             .change_password(old_password, new_password)
             .await
             .map_err(|e| e.to_string())
-    }
-
-    pub async fn get_branding(&self) -> BrandingInfo {
-        let info = self.auth.get_auth_info().await;
-        match info.tenant {
-            Some(t) => BrandingInfo {
-                product_name: t.product_name,
-                logo_url: t.logo_url,
-                accent_color: t.accent_color,
-                primary_color: t.primary_color,
-                bg_color: t.bg_color,
-                sidebar_bg_color: t.sidebar_bg_color,
-                font_family: t.font_family,
-            },
-            None => BrandingInfo {
-                product_name: None,
-                logo_url: None,
-                accent_color: None,
-                primary_color: None,
-                bg_color: None,
-                sidebar_bg_color: None,
-                font_family: None,
-            },
-        }
     }
 }

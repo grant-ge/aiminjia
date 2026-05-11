@@ -18,6 +18,7 @@ const baseEmployee: EmployeeRecord = {
   resourceConfig: {},
   systemPromptExtra: null,
   defaultSkillId: null,
+  templateRef: null,
   createdAt: '',
   updatedAt: '',
   lastRunAt: null,
@@ -164,6 +165,61 @@ describe('runTriggerPrechecks', () => {
         employee: {
           ...baseEmployee,
           resourceConfig: { baseId: 'b1', tableId: 't1' },
+        },
+        dingtalkConnected: true,
+      }),
+    ).toEqual({ kind: 'ready' })
+  })
+
+  it('blocks dispatch when knowledgeSources are still indexing', () => {
+    expect(
+      runTriggerPrechecks({
+        template: { ...baseTemplate, resourceConfigKind: 'customer-support' },
+        employee: {
+          ...baseEmployee,
+          resourceConfig: {
+            groupMatch: { keywords: ['x'] },
+            knowledgeSources: [
+              { path: '/tmp/a.md', originalName: 'a.md', status: 'indexing', slicedCount: 0 },
+            ],
+          },
+        },
+        dingtalkConnected: true,
+      }),
+    ).toEqual({ kind: 'knowledge-indexing' })
+  })
+
+  it('blocks dispatch when knowledgeSources are still pending', () => {
+    expect(
+      runTriggerPrechecks({
+        template: { ...baseTemplate, resourceConfigKind: 'customer-support' },
+        employee: {
+          ...baseEmployee,
+          resourceConfig: {
+            groupMatch: { keywords: ['x'] },
+            knowledgeSources: [
+              { path: '/tmp/a.md', originalName: 'a.md', status: 'pending', slicedCount: 0 },
+            ],
+          },
+        },
+        dingtalkConnected: true,
+      }),
+    ).toEqual({ kind: 'knowledge-indexing' })
+  })
+
+  it('allows dispatch when knowledgeSources are done or failed', () => {
+    expect(
+      runTriggerPrechecks({
+        template: { ...baseTemplate, resourceConfigKind: 'customer-support' },
+        employee: {
+          ...baseEmployee,
+          resourceConfig: {
+            groupMatch: { keywords: ['x'] },
+            knowledgeSources: [
+              { path: '/tmp/a.md', originalName: 'a.md', status: 'done', slicedCount: 12 },
+              { path: '/tmp/b.md', originalName: 'b.md', status: 'failed', slicedCount: 0 },
+            ],
+          },
         },
         dingtalkConnected: true,
       }),

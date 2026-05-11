@@ -52,8 +52,8 @@ export function ConversationRow({
   ];
 
   const wrapperCls = active
-    ? "flex items-center rounded-md pl-[32px] pr-2 bg-sidebar-accent text-sidebar-foreground"
-    : "flex items-center rounded-md pl-[32px] pr-2 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/40";
+    ? "flex items-center rounded-md pl-8 pr-2 bg-sidebar-accent text-sidebar-foreground"
+    : "flex items-center rounded-md pl-8 pr-2 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/40";
 
   return (
     <div
@@ -65,7 +65,7 @@ export function ConversationRow({
         <button
           type="button"
           onClick={onClick}
-          className="group flex flex-1 min-w-0 items-center py-1.5 pr-2 text-left text-[0.8125rem]"
+          className="group flex flex-1 min-w-0 items-center py-1.5 pr-2 text-left text-sm"
         >
           {loading ? (
             <Loader2

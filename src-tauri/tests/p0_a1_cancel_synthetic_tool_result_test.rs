@@ -57,6 +57,8 @@ impl RuntimeLlmExecutor for RecordingExecutor {
                 content: "done".to_string(),
                 tokens_in: 0,
                 tokens_out: 0,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
                 stop_reason: Some("end_turn".to_string()),
             })
         } else {
@@ -99,11 +101,15 @@ async fn driver_carries_assistant_tool_calls_into_next_llm_input() {
                 }],
                 tokens_in: 12,
                 tokens_out: 7,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
             },
             LlmStepResult::ContentComplete {
                 content: "ok".to_string(),
                 tokens_in: 3,
                 tokens_out: 2,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
                 stop_reason: Some("end_turn".to_string()),
             },
         ],

@@ -18,7 +18,6 @@
 
 pub mod builtin;
 pub mod context;
-pub mod python_bridge;
 pub mod registry;
 pub mod skill;
 pub mod skill_trait;

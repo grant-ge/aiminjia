@@ -59,7 +59,7 @@ export function RightPanel({ conversationId, onOpenExternal }: RightPanelProps) 
         {SHOW_TASK_MONITOR ? (
           <div className="flex h-full w-[260px] shrink-0 flex-col overflow-y-auto border-l border-border bg-background">
             <div className="px-4 py-2">
-              <h2 className="text-[15px] font-semibold text-foreground">任务监控</h2>
+              <h2 className="text-md font-semibold text-foreground">任务监控</h2>
             </div>
             <TaskSection conversationId={conversationId} />
             <ArtifactSection conversationId={conversationId} onOpenExternal={onOpenExternal} />
@@ -79,7 +79,7 @@ export function RightPanel({ conversationId, onOpenExternal }: RightPanelProps) 
       className="flex h-full w-[260px] shrink-0 flex-col overflow-y-auto border-l border-border bg-background"
     >
       <div className="px-4 py-2">
-        <h2 className="text-[0.9375rem] font-semibold text-foreground">任务监控</h2>
+        <h2 className="text-md font-semibold text-foreground">任务监控</h2>
       </div>
       <TaskSection conversationId={conversationId} />
       <ArtifactSection conversationId={conversationId} onOpenExternal={onOpenExternal} />
@@ -102,7 +102,7 @@ function TaskSection({ conversationId }: { conversationId: string }) {
         onClick={() => !hasRunning && setUserCollapsed((v) => !v)}
         className="flex w-full items-center justify-between px-4 py-3 text-left"
       >
-        <span className="text-[0.8125rem] font-semibold text-foreground">待办</span>
+        <span className="text-sm font-semibold text-foreground">待办</span>
         <ChevronDown
           className={cn(
             'h-4 w-4 text-muted-foreground transition-transform duration-150',
@@ -143,7 +143,7 @@ function TaskItem({ task }: { task: ConversationTaskState }) {
           {task.subject}
         </span>
         {isRunningTaskStatus(task.status) && task.activeForm && (
-          <span className="text-[0.6875rem] text-primary">{task.activeForm}</span>
+          <span className="text-xs text-primary">{task.activeForm}</span>
         )}
       </div>
     </div>
@@ -210,7 +210,7 @@ function ArtifactSection({
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center justify-between px-4 py-3 text-left"
       >
-        <span className="text-[0.8125rem] font-semibold text-foreground">产物</span>
+        <span className="text-sm font-semibold text-foreground">产物</span>
         <ChevronDown
           className={cn(
             'h-4 w-4 text-muted-foreground transition-transform duration-150',

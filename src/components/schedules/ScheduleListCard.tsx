@@ -13,7 +13,7 @@ interface ScheduleListCardProps {
 
 export function ScheduleListCard({ header, table, empty, children }: ScheduleListCardProps) {
   return (
-    <div className="flex w-full flex-col rounded-[14px] border border-border bg-card">
+    <div className="flex w-full flex-col rounded-lg border border-border bg-card">
       <div className="px-5 py-4">{header}</div>
       <div className="border-t border-border">{table}</div>
       {children}

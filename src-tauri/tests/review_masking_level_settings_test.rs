@@ -162,6 +162,8 @@ fn content_complete() -> LlmStepResult {
         content: "done".to_string(),
         tokens_in: 1,
         tokens_out: 1,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0,
         stop_reason: Some("end_turn".to_string()),
     }
 }
@@ -381,18 +383,24 @@ async fn masking_level_snapshot_is_reused_across_multi_step_turn() {
                 tool_calls: vec![],
                 tokens_in: 1,
                 tokens_out: 1,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
             },
             LlmStepResult::ToolCalls {
                 assistant_content: "thinking-2".to_string(),
                 tool_calls: vec![],
                 tokens_in: 1,
                 tokens_out: 1,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
             },
             LlmStepResult::ToolCalls {
                 assistant_content: "thinking-3".to_string(),
                 tool_calls: vec![],
                 tokens_in: 1,
                 tokens_out: 1,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
             },
             content_complete(),
         ],

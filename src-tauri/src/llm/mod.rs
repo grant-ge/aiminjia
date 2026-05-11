@@ -9,6 +9,6 @@ pub mod providers;
 pub mod router;
 pub mod streaming;
 pub mod sub_agent;
-pub mod taor;
 pub mod tool_executor;
 pub mod tools;
+pub mod vision_support;

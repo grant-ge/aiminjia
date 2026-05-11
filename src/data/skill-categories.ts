@@ -1,5 +1,6 @@
 export type SkillCategoryId =
   | 'recommended'
+  | 'mine'
   | 'hr'
   | 'finance'
   | 'legal'
@@ -14,6 +15,7 @@ export interface SkillCategory {
 }
 
 export const SKILL_CATEGORIES: SkillCategory[] = [
+  { id: 'mine',    name: '本地',  icon: 'user' },
   { id: 'hr',      name: 'HR',   icon: 'users' },
   { id: 'finance', name: '财务', icon: 'bar-chart-2' },
   { id: 'legal',   name: '法务', icon: 'scale' },

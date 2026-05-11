@@ -23,7 +23,7 @@ const PRIORITY_TEXT_COLOR: Record<AnomalyItem['priority'], string> = {
 export function AnomalyList({ anomalies }: AnomalyListProps) {
   return (
     <div
-      className="my-3 overflow-hidden rounded-lg border"
+      className="my-3 overflow-hidden rounded-lg border border-border"
       style={{
         background: 'var(--color-bg-card)',
         borderColor: 'var(--color-border)',

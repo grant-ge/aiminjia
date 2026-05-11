@@ -223,12 +223,11 @@ pub(super) fn parse_response(data: &Value) -> Result<LlmResponse> {
         TokenUsage {
             input_tokens: u["prompt_tokens"].as_u64().unwrap_or(0) as u32,
             output_tokens: u["completion_tokens"].as_u64().unwrap_or(0) as u32,
+            cache_creation_input_tokens: None,
+            cache_read_input_tokens: None,
         }
     } else {
-        TokenUsage {
-            input_tokens: 0,
-            output_tokens: 0,
-        }
+        TokenUsage::default()
     };
 
     let tool_calls = parse_tool_calls_from_message(&choice["message"]);
@@ -375,6 +374,8 @@ pub(super) async fn validate_key_openai_compat(
         temperature: 0.0,
         stream: false,
         thinking_config: None,
+        anthropic_multimodal_turn: None,
+        system_segments: None,
     };
 
     let body = build_request_body(&request, model, false, false);

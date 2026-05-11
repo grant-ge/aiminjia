@@ -25,7 +25,7 @@ export function SuggestChipGroup({ caption = '建议回复', items }: SuggestChi
             key={i}
             type="button"
             onClick={it.onClick}
-            className="flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5 text-[0.8125rem] text-foreground transition-colors hover:bg-muted"
+            className="flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5 text-sm text-foreground transition-colors hover:bg-muted"
           >
             {it.icon}
             <span>{it.label}</span>

@@ -21,7 +21,7 @@ export function ScheduleTemplateCard({ template, onPick }: ScheduleTemplateCardP
   return (
     <div
       data-testid="schedule-template-card"
-      className="flex w-full flex-col gap-2.5 rounded-[14px] border border-border bg-card p-[18px]"
+      className="flex w-full flex-col gap-2.5 rounded-lg border border-border bg-card p-5"
     >
       <div className="text-[0.9375rem] font-semibold text-foreground">{template.title}</div>
       <p className="flex-1 text-[0.8125rem] text-muted-foreground">{template.desc}</p>

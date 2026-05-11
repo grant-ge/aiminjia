@@ -1,443 +1,116 @@
 import '@testing-library/jest-dom'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { render, waitFor, fireEvent, act } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { ChatBottomArea } from '../ChatBottomArea'
+import { useChatStore } from '@/stores/chatStore'
 
-const chatState = vi.hoisted(() => ({
-  isStreaming: false,
-}))
+vi.mock('@tiptap/react', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('@tiptap/react')>()
+  return { ...mod, ReactNodeViewRenderer: () => () => ({}) }
+})
 
-const sendUserMessageMock = vi.hoisted(() => vi.fn(async () => true))
-const stopCurrentStreamMock = vi.hoisted(() => vi.fn())
-const selectAndPickAttachmentsMock = vi.hoisted(() => vi.fn(async (): Promise<PendingAttachment[]> => []))
-const resolvePastedPathsMock = vi.hoisted(() => vi.fn(async (paths: string[]) => paths.map((path) => ({
-  id: path,
-  fileName: path.split('/').pop() ?? path,
-  path,
-  kind: 'file' as const,
-  fileType: 'csv' as const,
-  fileSize: 0,
-  source: 'paste' as const,
-}))))
-const readClipboardFilePathsMock = vi.hoisted(() => vi.fn(async () => [] as string[]))
-const saveClipboardImageMock = vi.hoisted(() => vi.fn(async () => ({
-  id: '/tmp/clipboard-1.png',
-  fileName: 'clipboard-1.png',
-  path: '/tmp/clipboard-1.png',
-  kind: 'image',
-  fileType: 'image',
-  fileSize: 12,
-  mimeType: 'image/png',
-  source: 'clipboard-image',
-})))
+const mockSendUserMessage = vi.fn()
+const mockStopCurrentStream = vi.fn()
+let mockIsStreaming = false
+const mockPickAttachments = vi.fn()
 
 vi.mock('@/hooks/useChat', () => ({
   useChat: () => ({
-    sendUserMessage: sendUserMessageMock,
-    isStreaming: chatState.isStreaming,
-    stopCurrentStream: stopCurrentStreamMock,
+    sendUserMessage: mockSendUserMessage,
+    isStreaming: mockIsStreaming,
+    stopCurrentStream: mockStopCurrentStream,
   }),
 }))
 
-vi.mock('@/hooks/useChatAttachments', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/hooks/useChatAttachments')>()
-  return {
-    ...actual,
-    useChatAttachments: () => ({
-      isPickingAttachments: false,
-      pickAttachments: selectAndPickAttachmentsMock,
-      resolvePastedPaths: resolvePastedPathsMock,
-      saveClipboardImage: saveClipboardImageMock,
-    }),
-  }
-})
-
-vi.mock('@/lib/tauri', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/lib/tauri')>()
-  return {
-    ...actual,
-    readClipboardFilePaths: readClipboardFilePathsMock,
-  }
-})
+vi.mock('@/hooks/useChatAttachments', () => ({
+  useChatAttachments: () => ({
+    isPickingAttachments: false,
+    pickAttachments: mockPickAttachments,
+    saveClipboardImage: vi.fn(),
+    resolvePastedPaths: vi.fn(),
+  }),
+}))
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string) => {
-      const map: Record<string, string> = {
-        'inputBar.placeholder': '描述你的任务',
-        'inputBar.placeholderWithFile': '结合附件继续输入',
-        'inputBar.analyzeFile': '请分析附件',
-        'inputBar.attachData': '添加附件',
-        'inputBar.uploadFile': '上传文件',
-      }
-      return map[key] ?? key
-    },
+    t: (key: string) => key,
   }),
-  initReactI18next: { type: '3rdParty', init: () => {} },
 }))
 
-import { useChatStore } from '@/stores/chatStore'
-import { useSkillStore } from '@/stores/skillStore'
-import type { PendingAttachment } from '@/hooks/useChatAttachments'
-import { ChatBottomArea } from '../ChatBottomArea'
-
-/**
- * jsdom dispatches paste events such that the document-level capture listener
- * installed by useComposerPaste reads `clipboardData.types`. Wrap the
- * clipboardData with `types: ['Files']` so the snapshotter records
- * `lastPasteHasFile = true`, otherwise the React handler short-circuits.
- */
-function fireFilePaste(target: HTMLElement, init: { clipboardData: any }) {
-  fireEvent.paste(target, {
-    clipboardData: { types: ['Files'], ...init.clipboardData },
-  })
-}
+beforeEach(() => {
+  mockSendUserMessage.mockReset().mockResolvedValue(undefined)
+  mockStopCurrentStream.mockReset()
+  mockPickAttachments.mockReset().mockResolvedValue([])
+  mockIsStreaming = false
+  useChatStore.setState({ activeConversationId: 'conv-1' })
+})
 
 describe('ChatBottomArea', () => {
-  beforeEach(() => {
-    vi.useRealTimers()
-    chatState.isStreaming = false
-    vi.clearAllMocks()
-    readClipboardFilePathsMock.mockResolvedValue([])
-    resolvePastedPathsMock.mockImplementation(async (paths: string[]) => paths.map((path) => ({
-      id: path,
-      fileName: path.split('/').pop() ?? path,
-      path,
-      kind: 'file',
-      fileType: 'csv',
-      fileSize: 0,
-      source: 'paste',
-    })))
-    useChatStore.setState({
-      activeConversationId: 'conv-chat-bottom',
-      conversations: [],
-      messages: [],
-    })
-    useSkillStore.setState({
-      skills: [
-        { id: 'salary-query', displayName: '薪酬查询', description: '', source: 'local', hasWorkflow: true, icon: '', category: 'general', triggerText: '/salary-query', shortDescription: '', displayNameEn: 'Salary Query', shortDescriptionEn: '' },
-      ],
-      recommendedIds: [],
-      isLoading: false,
-    })
-  })
-
-  it('keeps the composer absolutely pinned inside a normal footer slot', () => {
+  it('renders RichComposer', async () => {
     render(<ChatBottomArea />)
-
-    const footer = screen.getByTestId('chat-bottom-area')
-    expect(footer).toHaveClass('relative')
-    expect(footer).toHaveClass('h-[148px]')
-    expect(footer).toHaveClass('shrink-0')
-    expect(footer.firstElementChild).toHaveClass('absolute')
-    expect(footer.firstElementChild).toHaveClass('bottom-0')
-    expect(footer.firstElementChild).toHaveClass('[scrollbar-gutter:stable_both-edges]')
-    expect(footer.firstElementChild?.firstElementChild).toHaveClass('w-full')
-    expect(footer.firstElementChild?.firstElementChild).toHaveClass('max-w-[736px]')
+    await waitFor(() => expect(document.querySelector('.ProseMirror')).toBeTruthy())
   })
 
-  it('hides project button but keeps tips', () => {
+  it('typing + Enter calls sendUserMessage with markdown text and no attachments', async () => {
+    const user = userEvent.setup()
     render(<ChatBottomArea />)
-
-    expect(screen.queryByText('Desktop')).not.toBeInTheDocument()
-    // 权限、模型选择、语音输入暂未实现
-    expect(screen.queryByText('完全访问权限')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '打开模型设置' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '语音输入' })).not.toBeInTheDocument()
-    expect(screen.getByText('Enter 发送')).toBeInTheDocument()
-    expect(screen.getByText('Shift+Enter 换行')).toBeInTheDocument()
+    await waitFor(() => expect(document.querySelector('.ProseMirror')).toBeTruthy())
+    const editor = document.querySelector('.ProseMirror') as HTMLElement
+    await user.click(editor)
+    await user.type(editor, 'hello')
+    fireEvent.keyDown(editor, { key: 'Enter', code: 'Enter' })
+    await waitFor(() => expect(mockSendUserMessage).toHaveBeenCalledTimes(1))
+    expect(mockSendUserMessage.mock.calls[0][0]).toBe('hello')
+    expect(mockSendUserMessage.mock.calls[0][1]).toBeUndefined()
   })
 
-  it('does not render workspace authorization status copy in the composer', () => {
-    render(<ChatBottomArea />)
-
-    expect(screen.queryByText(/已连接本地目录：/)).not.toBeInTheDocument()
-    expect(screen.queryByText('AI 当前可直接读取该目录，无需先上传文件')).not.toBeInTheDocument()
-    expect(screen.queryByText(/workspace on/i)).not.toBeInTheDocument()
-  })
-
-  it('pastes absolute file and folder paths into attachment chips instead of raw text', async () => {
-    readClipboardFilePathsMock.mockResolvedValueOnce(['/tmp/report.csv', '/tmp/reports'])
-    resolvePastedPathsMock.mockResolvedValueOnce([
+  it('attachment-only Enter sends markdown with file:// link and attachment array', async () => {
+    mockPickAttachments.mockResolvedValueOnce([
       {
-        id: '/tmp/report.csv',
-        fileName: 'report.csv',
-        path: '/tmp/report.csv',
+        id: 'a',
+        fileName: 'a.pdf',
+        path: '/p/a.pdf',
         kind: 'file',
-        fileType: 'csv',
+        fileType: 'pdf',
         fileSize: 0,
-        source: 'paste',
-      },
-      {
-        id: '/tmp/reports',
-        fileName: 'reports',
-        path: '/tmp/reports',
-        kind: 'folder',
-        fileType: 'folder',
-        fileSize: 0,
-        source: 'paste',
-      },
-    ] as Awaited<ReturnType<typeof resolvePastedPathsMock>>)
-
-    render(<ChatBottomArea />)
-
-    fireFilePaste(screen.getByRole('textbox'), {
-      clipboardData: {
-        getData: () => '',
-      },
-    })
-
-    expect(await screen.findByText('report.csv')).toBeInTheDocument()
-    expect(await screen.findByText('reports')).toBeInTheDocument()
-    expect(screen.getByRole('textbox')).toHaveValue('')
-  })
-
-  it('falls back to native clipboard file paths when pasted text has no absolute path', async () => {
-    readClipboardFilePathsMock.mockResolvedValueOnce(['/tmp/Finder Copy/report.csv'])
-    resolvePastedPathsMock.mockResolvedValueOnce([
-      {
-        id: '/tmp/Finder Copy/report.csv',
-        fileName: 'report.csv',
-        path: '/tmp/Finder Copy/report.csv',
-        kind: 'file',
-        fileType: 'csv',
-        fileSize: 21,
-        source: 'paste',
-      },
-    ] as Awaited<ReturnType<typeof resolvePastedPathsMock>>)
-
-    render(<ChatBottomArea />)
-
-    const textbox = screen.getByRole('textbox') as HTMLTextAreaElement
-    fireEvent.change(textbox, {
-      target: { value: '已有输入' },
-    })
-
-    fireFilePaste(textbox, {
-      clipboardData: {
-        items: [],
-        getData: () => '',
-      },
-    })
-
-    await waitFor(() => {
-      expect(readClipboardFilePathsMock).toHaveBeenCalled()
-    })
-    await waitFor(() => {
-      expect(resolvePastedPathsMock).toHaveBeenCalledWith(['/tmp/Finder Copy/report.csv'])
-    })
-
-    expect(await screen.findByText('report.csv')).toBeInTheDocument()
-    expect(textbox).toHaveValue('已有输入')
-  })
-
-  it('resolves pasted paths with real path metadata instead of guessing from file names', async () => {
-    readClipboardFilePathsMock.mockResolvedValueOnce(['/tmp/README', '/tmp/archive.v1'])
-    resolvePastedPathsMock.mockResolvedValueOnce(([
-      {
-        id: '/tmp/README',
-        fileName: 'README',
-        path: '/tmp/README',
-        kind: 'file',
-        fileType: 'csv',
-        fileSize: 12,
-        source: 'paste',
-      },
-      {
-        id: '/tmp/archive.v1',
-        fileName: 'archive.v1',
-        path: '/tmp/archive.v1',
-        kind: 'folder',
-        fileType: 'folder',
-        fileSize: 0,
-        source: 'paste',
-      },
-    ] as Awaited<ReturnType<typeof resolvePastedPathsMock>>))
-
-    render(<ChatBottomArea />)
-
-    fireFilePaste(screen.getByRole('textbox'), {
-      clipboardData: {
-        getData: () => '',
-      },
-    })
-
-    await waitFor(() => {
-      expect(resolvePastedPathsMock).toHaveBeenCalledWith(['/tmp/README', '/tmp/archive.v1'])
-    })
-
-    const readmeChip = await screen.findByText('README')
-    const archiveChip = await screen.findByText('archive.v1')
-
-    // ChatBottomArea uses a compact chip without explicit type labels — assert
-    // the file-name labels survived through the resolved-paths metadata path
-    // (folder vs file kind) by checking each chip rendered at all.
-    expect(readmeChip).toBeInTheDocument()
-    expect(archiveChip).toBeInTheDocument()
-  })
-
-  it('saves clipboard image blobs into attachment chips when no local path exists', async () => {
-    render(<ChatBottomArea />)
-
-    const imageFile = new File([new Uint8Array([1, 2, 3])], 'screenshot.png', { type: 'image/png' })
-
-    fireFilePaste(screen.getByRole('textbox'), {
-      clipboardData: {
-        items: [
-          {
-            kind: 'file',
-            type: 'image/png',
-            getAsFile: () => imageFile,
-          },
-        ],
-        getData: () => '',
-      },
-    })
-
-    await waitFor(() => {
-      expect(saveClipboardImageMock).toHaveBeenCalledWith(
-        expect.any(Uint8Array),
-        'image/png',
-      )
-    })
-
-    expect(await screen.findByText('clipboard-1.png')).toBeInTheDocument()
-  })
-
-  it('clicking the plus button directly triggers file picking instead of opening a two-option menu', async () => {
-    selectAndPickAttachmentsMock.mockResolvedValueOnce([])
-    render(<ChatBottomArea />)
-
-    fireEvent.click(screen.getByRole('button', { name: '添加附件' }))
-
-    await waitFor(() => {
-      expect(selectAndPickAttachmentsMock).toHaveBeenCalled()
-    })
-
-    expect(screen.queryByText('连接本地目录（不复制）')).not.toBeInTheDocument()
-    expect(screen.queryByText('继续使用复制上传模式')).not.toBeInTheDocument()
-  })
-
-  it('sends picker attachments as local file paths without text', async () => {
-    selectAndPickAttachmentsMock.mockResolvedValueOnce([
-      {
-        id: '/tmp/chat-report.csv',
-        fileName: 'chat-report.csv',
-        path: '/tmp/chat-report.csv',
-        kind: 'file',
-        fileType: 'csv',
-        fileSize: 0,
+        mimeType: undefined,
         source: 'picker',
       },
     ])
-
-    render(<ChatBottomArea />)
-
-    fireEvent.click(screen.getByRole('button', { name: '添加附件' }))
-    expect(await screen.findByText('chat-report.csv')).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: '发送' }))
-
-    await waitFor(() => {
-      expect(sendUserMessageMock).toHaveBeenCalledWith('请分析附件', [
-        {
-          id: '/tmp/chat-report.csv',
-          fileName: 'chat-report.csv',
-          filePath: '/tmp/chat-report.csv',
-          kind: 'file',
-          fileType: 'csv',
-          fileSize: 0,
-          mimeType: undefined,
-        },
-      ])
-    })
-  })
-
-  it('sends message on Enter', async () => {
-    render(<ChatBottomArea />)
-
-    fireEvent.change(screen.getByRole('textbox'), {
-      target: { value: 'hello' },
-    })
-    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' })
-
-    await waitFor(() => {
-      expect(sendUserMessageMock).toHaveBeenCalledWith('hello', undefined)
-    })
-  })
-
-  it('shows stop while streaming', () => {
-    chatState.isStreaming = true
-    render(<ChatBottomArea />)
-
-    fireEvent.click(screen.getByRole('button', { name: '停止' }))
-    expect(stopCurrentStreamMock).toHaveBeenCalled()
-  })
-
-  it('sends slash-prefixed text verbatim (skill id not in IPC)', async () => {
-    render(<ChatBottomArea />)
-
-    // Type a slash command that is NOT in the skill store (unknown skill)
-    fireEvent.change(screen.getByRole('textbox'), {
-      target: { value: '/not-a-skill hello' },
-    })
-    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' })
-
-    await waitFor(() => {
-      expect(sendUserMessageMock).toHaveBeenCalledWith('/not-a-skill hello', undefined)
-    })
-  })
-
-  it('clears input after successful send, no skill state involved', async () => {
-    sendUserMessageMock.mockResolvedValueOnce(true)
-
-    render(<ChatBottomArea />)
-
-    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'hello' } })
-    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' })
-
-    await waitFor(() => {
-      expect(screen.getByRole('textbox')).toHaveValue('')
-    })
-
-    expect(sendUserMessageMock).toHaveBeenCalledWith('hello', undefined)
-  })
-
-  it('clears input immediately while send is still in flight', async () => {
-    let resolveSend: (value: boolean) => void = () => {}
-    sendUserMessageMock.mockImplementationOnce(() => new Promise<boolean>((resolve) => {
-      resolveSend = resolve
-    }))
-
-    render(<ChatBottomArea />)
-
-    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'hello' } })
-    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' })
-
-    expect(screen.getByRole('textbox')).toHaveValue('')
-
-    resolveSend(true)
-
-    await waitFor(() => {
-      expect(sendUserMessageMock).toHaveBeenCalledWith('hello', undefined)
-    })
-  })
-
-  it('does not restore input just because the backend turn takes longer than 15 seconds', async () => {
-    vi.useFakeTimers()
-    sendUserMessageMock.mockImplementationOnce(() => new Promise<boolean>(() => {}))
-
-    render(<ChatBottomArea />)
-
-    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'hello' } })
-    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' })
-
-    expect(screen.getByRole('textbox')).toHaveValue('')
-
+    const { container } = render(<ChatBottomArea />)
+    await waitFor(() => expect(document.querySelector('.ProseMirror')).toBeTruthy())
+    const attachBtn = container.querySelector('[aria-label="添加附件"]') as HTMLElement
     await act(async () => {
-      vi.advanceTimersByTime(15_001)
+      attachBtn.click()
     })
-
-    expect(screen.getByRole('textbox')).toHaveValue('')
+    await waitFor(() => {
+      const html = document.querySelector('.ProseMirror')?.innerHTML ?? ''
+      expect(html).toContain('a.pdf')
+    })
+    const editor = document.querySelector('.ProseMirror') as HTMLElement
+    fireEvent.keyDown(editor, { key: 'Enter', code: 'Enter' })
+    await waitFor(() => expect(mockSendUserMessage).toHaveBeenCalled())
+    const [text, files] = mockSendUserMessage.mock.calls[0]
+    expect(text).toContain('[附件: a.pdf](<file:///p/a.pdf>)')
+    expect(files).toHaveLength(1)
+    expect(files[0].id).toBe('a')
   })
 
+  it('isStreaming → shows stop button, click calls stopCurrentStream', async () => {
+    mockIsStreaming = true
+    const { container } = render(<ChatBottomArea />)
+    const stopBtn = await waitFor(() => container.querySelector('[aria-label="停止"]') as HTMLElement)
+    fireEvent.click(stopBtn)
+    expect(mockStopCurrentStream).toHaveBeenCalledTimes(1)
+    expect(mockSendUserMessage).not.toHaveBeenCalled()
+  })
+
+  it('empty Enter does not call sendUserMessage', async () => {
+    render(<ChatBottomArea />)
+    await waitFor(() => expect(document.querySelector('.ProseMirror')).toBeTruthy())
+    const editor = document.querySelector('.ProseMirror') as HTMLElement
+    fireEvent.keyDown(editor, { key: 'Enter', code: 'Enter' })
+    expect(mockSendUserMessage).not.toHaveBeenCalled()
+  })
 })

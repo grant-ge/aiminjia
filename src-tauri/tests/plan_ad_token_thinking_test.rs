@@ -215,7 +215,7 @@ fn ad3_llm_step_input_exposes_estimated_tokens() {
     let llm_settings = ResolvedLlmSettings::default();
     let input = LlmStepInput {
         system_prompt: "sys",
-        openai_system_message: None,
+        system_message: None,
         dynamic_context: "",
         messages: vec![],
         tool_defs: &[],
@@ -227,6 +227,7 @@ fn ad3_llm_step_input_exposes_estimated_tokens() {
         conversation_id: "conv",
         run_id: "run",
         estimated_tokens: 123,
+        anthropic_multimodal_turn: None,
     };
 
     assert_eq!(input.estimated_tokens, 123);

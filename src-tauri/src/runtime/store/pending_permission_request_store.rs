@@ -66,6 +66,8 @@ pub trait PendingPermissionControlPlane: Send + Sync {
     fn cancel_for_session(&self, session_id: &SessionId, message: &str) -> usize;
 
     fn pending_count_for_session(&self, session_id: &SessionId) -> usize;
+
+    fn is_pending(&self, tool_call_id: &ToolCallId) -> bool;
 }
 
 #[derive(Default)]
@@ -193,5 +195,9 @@ impl PendingPermissionControlPlane for PendingPermissionRequestStore {
 
     fn pending_count_for_session(&self, session_id: &SessionId) -> usize {
         PendingPermissionRequestStore::pending_count_for_session(self, session_id)
+    }
+
+    fn is_pending(&self, tool_call_id: &ToolCallId) -> bool {
+        self.get(tool_call_id).is_some()
     }
 }

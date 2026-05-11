@@ -10,6 +10,9 @@ use crate::llm::context_decay::{context_window_for_provider, CONTEXT_OVERFLOW_TH
 use crate::runtime::agent::task_notification::{QueuedNotification, TaskNotificationQueue};
 use crate::runtime::cancellation::{CancellationReason, CancellationToken};
 use crate::runtime::chat::context_builder::build_iteration_context;
+use crate::runtime::chat::multimodal::{
+    build_anthropic_image_blocks, retain_text_fallback_attachments,
+};
 use crate::runtime::chat::post_process;
 use crate::runtime::chat::preprocess::{
     prepare_messages_for_llm, PreprocessConfig, PreprocessRetryAction, PreprocessTrigger,
@@ -693,6 +696,7 @@ impl RuntimeChatTurnDriver {
                         mode,
                         remember_options: remember_options.clone(),
                         default_destination: *default_destination,
+                        primary_model: turn.primary_model().to_string(),
                     },
                 ))
                 .await?;
@@ -717,7 +721,7 @@ impl RuntimeChatTurnDriver {
                 ),
                 PendingPermissionResolution::Deny { message, .. } => {
                     record_turn_diagnostic(
-                        &std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+                        &crate::telemetry::diagnostics_workspace(),
                         "permission.resolve.completed",
                         turn.session_id(),
                         turn.run_id(),
@@ -759,7 +763,7 @@ impl RuntimeChatTurnDriver {
                 }
                 PendingPermissionResolution::Cancel { message } => {
                     record_turn_diagnostic(
-                        &std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+                        &crate::telemetry::diagnostics_workspace(),
                         "permission.resolve.completed",
                         turn.session_id(),
                         turn.run_id(),
@@ -872,6 +876,7 @@ impl RuntimeChatTurnDriver {
                         tool_name: interaction_request.tool_name.clone(),
                         kind: interaction_request.kind.clone(),
                         payload: interaction_request.payload.clone(),
+                        primary_model: turn.primary_model().to_string(),
                     },
                 ))
                 .await?;
@@ -887,7 +892,7 @@ impl RuntimeChatTurnDriver {
             let resolved = match resolution {
                 InteractionResolution::Submit { value } => {
                     record_turn_diagnostic(
-                        &std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+                        &crate::telemetry::diagnostics_workspace(),
                         "interaction.resolve.completed",
                         turn.session_id(),
                         turn.run_id(),
@@ -925,7 +930,7 @@ impl RuntimeChatTurnDriver {
                 }
                 InteractionResolution::Cancel { message } => {
                     record_turn_diagnostic(
-                        &std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+                        &crate::telemetry::diagnostics_workspace(),
                         "interaction.resolve.completed",
                         turn.session_id(),
                         turn.run_id(),
@@ -1074,7 +1079,7 @@ impl RuntimeChatTurnDriver {
             prompt_snapshot: Some(effective_prompt_snapshot),
             tool_defs: overrides.tool_defs.unwrap_or(tool_defs),
             allowed_tools: overrides.allowed_tools,
-            max_iterations: overrides.max_iterations.unwrap_or(30),
+            max_iterations: overrides.max_iterations.unwrap_or(60),
             token_budget: overrides.token_budget.unwrap_or_else(|| {
                 crate::llm::max_tokens::default_max_tokens_for_model(
                     &llm_settings.primary_model,
@@ -1089,6 +1094,9 @@ impl RuntimeChatTurnDriver {
             run_id: request.run_id.clone(),
             hook_registry: request.hook_registry.clone(),
         };
+        // Make primary_model available on TurnState so downstream emit sites
+        // (resolve_permission_asks / resolve_interaction_requests) can forward it.
+        turn.set_primary_model(config.llm_settings.primary_model.clone());
         if let Some(snapshot) = &config.prompt_snapshot {
             let diagnostics =
                 crate::runtime::chat::prompt::PromptDiagnostics::from_assembly(snapshot.assembly());
@@ -1141,9 +1149,34 @@ impl RuntimeChatTurnDriver {
         // task-notifications, but we must NOT persist or surface a fake user
         // turn. The drain step below will inject the actual notification XML
         // as the user-role message that the LLM responds to.
-        let is_resume_for_task_notification =
-            request.content == "__resume_from_task_notification__"
-                && request.attachments.is_empty();
+        let is_resume_for_task_notification = request.content
+            == "__resume_from_task_notification__"
+            && request.attachments.is_empty();
+
+        let should_try_anthropic_images = config.llm_settings.use_cloud
+            && crate::llm::vision_support::supports_lotus_anthropic_vision(
+                &config.llm_settings.cloud_model,
+            );
+        let anthropic_image_result =
+            if !is_resume_for_task_notification && should_try_anthropic_images {
+                build_anthropic_image_blocks(&request.attachments)
+            } else {
+                crate::runtime::chat::multimodal::AnthropicImageBuildResult::empty()
+            };
+        let attachments_for_text = retain_text_fallback_attachments(
+            &request.attachments,
+            &anthropic_image_result.converted_attachment_ids,
+        );
+        let anthropic_multimodal_turn = if anthropic_image_result.image_blocks.is_empty() {
+            None
+        } else {
+            Some(crate::llm::streaming::AnthropicMultimodalTurn {
+                image_count: anthropic_image_result.image_blocks.len(),
+                image_bytes_total: anthropic_image_result.image_bytes_total,
+                degraded_count: anthropic_image_result.degraded_attachment_ids.len(),
+                image_blocks: anthropic_image_result.image_blocks.clone(),
+            })
+        };
 
         let llm_user_content = if is_resume_for_task_notification {
             String::new()
@@ -1152,7 +1185,7 @@ impl RuntimeChatTurnDriver {
                 .build_user_message_content(
                     request.conversation_id.as_str(),
                     &request.content,
-                    &request.attachments,
+                    &attachments_for_text,
                 )
                 .await
                 .map_err(|e| anyhow::anyhow!("{}", e))?
@@ -1405,10 +1438,10 @@ impl RuntimeChatTurnDriver {
 
             let input = LlmStepInput {
                 system_prompt: &config.system_prompt,
-                openai_system_message: config
+                system_message: config
                     .prompt_snapshot
                     .as_ref()
-                    .and_then(|snapshot| snapshot.openai_system_message()),
+                    .and_then(|snapshot| snapshot.system_message()),
                 dynamic_context: &iteration_delta_context,
                 // Pass a clone of the current messages slice so executor cannot
                 // mutate driver state.
@@ -1422,6 +1455,7 @@ impl RuntimeChatTurnDriver {
                 conversation_id: config.conversation_id.as_str(),
                 run_id: config.run_id.as_str(),
                 estimated_tokens,
+                anthropic_multimodal_turn: anthropic_multimodal_turn.clone(),
             };
 
             // CP-1: check cancellation before invoking provider.
@@ -1505,11 +1539,15 @@ impl RuntimeChatTurnDriver {
                     content,
                     tokens_in,
                     tokens_out,
+                    cache_creation_input_tokens,
+                    cache_read_input_tokens,
                     stop_reason,
                 } => {
                     state.full_content.push_str(&content);
                     state.step_tokens_in += tokens_in;
                     state.step_tokens_out += tokens_out;
+                    state.step_cache_creation_input_tokens += cache_creation_input_tokens;
+                    state.step_cache_read_input_tokens += cache_read_input_tokens;
                     state.iteration_count = iteration + 1;
 
                     if stop_reason.as_deref() == Some("max_tokens") {
@@ -1594,6 +1632,8 @@ impl RuntimeChatTurnDriver {
                     tool_calls,
                     tokens_in,
                     tokens_out,
+                    cache_creation_input_tokens,
+                    cache_read_input_tokens,
                 } => {
                     if !assistant_content.is_empty() {
                         state.full_content.push_str(&assistant_content);
@@ -1616,6 +1656,8 @@ impl RuntimeChatTurnDriver {
                     });
                     state.step_tokens_in += tokens_in;
                     state.step_tokens_out += tokens_out;
+                    state.step_cache_creation_input_tokens += cache_creation_input_tokens;
+                    state.step_cache_read_input_tokens += cache_read_input_tokens;
                     state.iteration_count = iteration + 1;
 
                     // Execute the tool round.
@@ -1769,6 +1811,10 @@ impl RuntimeChatTurnDriver {
 
         self.query_engine
             .accumulate_usage(state.step_tokens_in, state.step_tokens_out);
+        self.query_engine.accumulate_cache_usage(
+            state.step_cache_creation_input_tokens,
+            state.step_cache_read_input_tokens,
+        );
 
         let final_outcome = if state.stream_cancelled {
             ChatTurnOutcome::Cancelled
@@ -1881,6 +1927,8 @@ impl RuntimeChatTurnDriver {
                     outcome: final_outcome,
                     total_input_tokens: state.step_tokens_in,
                     total_output_tokens: state.step_tokens_out,
+                    total_cache_creation_input_tokens: state.step_cache_creation_input_tokens,
+                    total_cache_read_input_tokens: state.step_cache_read_input_tokens,
                     total_cost_usd: self
                         .query_engine
                         .max_budget_usd()
@@ -2004,6 +2052,10 @@ mod tests {
 
         fn pending_count_for_session(&self, _session_id: &crate::runtime::ids::SessionId) -> usize {
             0
+        }
+
+        fn is_pending(&self, _tool_call_id: &ToolCallId) -> bool {
+            false
         }
     }
 
@@ -2233,6 +2285,8 @@ mod tests {
                 content: "snapshot done".to_string(),
                 tokens_in: 0,
                 tokens_out: 0,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
                 stop_reason: Some("end_turn".to_string()),
             })
         }

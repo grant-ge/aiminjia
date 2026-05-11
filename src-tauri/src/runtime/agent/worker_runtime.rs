@@ -58,7 +58,7 @@ pub struct WorkerTurnRequest {
     pub messages: Vec<ChatMessage>,
     pub tool_defs: Vec<ToolDefinition>,
     pub system_prompt: String,
-    pub openai_system_message: Option<ChatMessage>,
+    pub system_message: Option<ChatMessage>,
     pub dynamic_context: Option<String>,
     pub max_iterations: usize,
 }
@@ -164,7 +164,7 @@ impl<'a> SubagentWorkerRuntime<'a> {
             messages: vec![ChatMessage::text("user", &config.task)],
             tool_defs,
             system_prompt: config.system_prompt.clone(),
-            openai_system_message: Some(ChatMessage::text("system", config.system_prompt.clone())),
+            system_message: Some(ChatMessage::text("system", config.system_prompt.clone())),
             dynamic_context: (!config.dynamic_context.is_empty())
                 .then(|| config.dynamic_context.clone()),
             max_iterations: config.max_iterations,
@@ -176,7 +176,7 @@ impl<'a> SubagentWorkerRuntime<'a> {
         mut request: WorkerTurnRequest,
         config: WorkerRunConfig,
     ) -> std::result::Result<SubAgentResult, LegacyToolError> {
-        let workspace = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let workspace = crate::telemetry::diagnostics_workspace();
         let subagent_diag = |event: &str,
                              ok: Option<bool>,
                              error: Option<String>,
@@ -311,6 +311,7 @@ impl<'a> SubagentWorkerRuntime<'a> {
                     Some(request.tool_defs.clone()),
                     max_tokens,
                     Some(&sub_conv_id),
+                    None,
                 )
                 .await;
 
@@ -426,6 +427,13 @@ impl<'a> SubagentWorkerRuntime<'a> {
                 .execute_round(&turn, &tool_event_bus, runtime_tool_calls)
                 .await;
 
+            // Anthropic rejects multiple tool_result blocks sharing the same
+            // tool_use_id within one assistant turn. Dedup at push time so a
+            // glitched round (Blocked + Completed for the same id, retry
+            // double-emit, etc.) cannot poison this sub-agent's transcript.
+            let mut pushed_tool_call_ids: std::collections::HashSet<String> =
+                std::collections::HashSet::new();
+
             for round_result in round_results {
                 match round_result {
                     ToolRoundResult::Blocked(blocked) => {
@@ -444,11 +452,19 @@ impl<'a> SubagentWorkerRuntime<'a> {
                             Some(blocked.reason.as_str()),
                             config.parent_tool_use_id.as_deref(),
                         );
-                        request.messages.push(ChatMessage::tool_result(
-                            &blocked.tool_call_id,
-                            &blocked.tool_name,
-                            blocked.reason,
-                        ));
+                        if pushed_tool_call_ids.insert(blocked.tool_call_id.clone()) {
+                            request.messages.push(ChatMessage::tool_result(
+                                &blocked.tool_call_id,
+                                &blocked.tool_name,
+                                blocked.reason,
+                            ));
+                        } else {
+                            log::warn!(
+                                "[SubAgent] dropped duplicate tool_result for id={} tool={} (Blocked)",
+                                blocked.tool_call_id,
+                                blocked.tool_name
+                            );
+                        }
                     }
                     ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
                         tool_call_id,
@@ -485,16 +501,24 @@ impl<'a> SubagentWorkerRuntime<'a> {
                             config.parent_tool_use_id.as_deref(),
                         );
                         files.extend(generated_files);
-                        request.messages.push(ChatMessage::tool_result(
-                            &tool_call_id,
-                            &tool_name,
-                            content_for_message,
-                        ));
-                        if let Some(modifier) = context_modifier_message
-                            .as_ref()
-                            .and_then(context_modifier_to_message)
-                        {
-                            request.messages.push(modifier);
+                        if pushed_tool_call_ids.insert(tool_call_id.clone()) {
+                            request.messages.push(ChatMessage::tool_result(
+                                &tool_call_id,
+                                &tool_name,
+                                content_for_message,
+                            ));
+                            if let Some(modifier) = context_modifier_message
+                                .as_ref()
+                                .and_then(context_modifier_to_message)
+                            {
+                                request.messages.push(modifier);
+                            }
+                        } else {
+                            log::warn!(
+                                "[SubAgent] dropped duplicate tool_result for id={} tool={} (Completed)",
+                                tool_call_id,
+                                tool_name
+                            );
                         }
                     }
                     ToolRoundResult::Ok(RuntimeToolCallOutcome::AskRequired {
@@ -520,11 +544,19 @@ impl<'a> SubagentWorkerRuntime<'a> {
                             Some("Permission Ask required"),
                             config.parent_tool_use_id.as_deref(),
                         );
-                        request.messages.push(ChatMessage::tool_result(
-                            &tool_call_id,
-                            &tool_name,
-                            "Permission Ask required".to_string(),
-                        ));
+                        if pushed_tool_call_ids.insert(tool_call_id.clone()) {
+                            request.messages.push(ChatMessage::tool_result(
+                                &tool_call_id,
+                                &tool_name,
+                                "Permission Ask required".to_string(),
+                            ));
+                        } else {
+                            log::warn!(
+                                "[SubAgent] dropped duplicate tool_result for id={} tool={} (AskRequired)",
+                                tool_call_id,
+                                tool_name
+                            );
+                        }
                         warn!(
                             "[SubAgent] Tool '{}' returned AskRequired; bubbling to parent: {}",
                             tool_name, bubbled
@@ -552,12 +584,20 @@ impl<'a> SubagentWorkerRuntime<'a> {
                             Some("User interaction required"),
                             config.parent_tool_use_id.as_deref(),
                         );
-                        request.messages.push(ChatMessage::tool_result(
-                            &tool_call_id,
-                            &tool_name,
-                            "User interaction required; sub-agents cannot ask the user directly."
-                                .to_string(),
-                        ));
+                        if pushed_tool_call_ids.insert(tool_call_id.clone()) {
+                            request.messages.push(ChatMessage::tool_result(
+                                &tool_call_id,
+                                &tool_name,
+                                "User interaction required; sub-agents cannot ask the user directly."
+                                    .to_string(),
+                            ));
+                        } else {
+                            log::warn!(
+                                "[SubAgent] dropped duplicate tool_result for id={} tool={} (InteractionRequired)",
+                                tool_call_id,
+                                tool_name
+                            );
+                        }
                     }
                 }
             }
@@ -817,7 +857,7 @@ fn context_modifier_to_message(value: &serde_json::Value) -> Option<ChatMessage>
 
 fn worker_system_prompt_for_gateway(request: &WorkerTurnRequest) -> Option<&str> {
     request
-        .openai_system_message
+        .system_message
         .as_ref()
         .filter(|message| message.role == "system" && !message.content.trim().is_empty())
         .map(|message| message.content.as_str())
@@ -1028,13 +1068,13 @@ mod tests {
     }
 
     #[test]
-    fn worker_system_prompt_for_gateway_prefers_openai_system_message_without_mutating_messages() {
+    fn worker_system_prompt_for_gateway_prefers_system_message_without_mutating_messages() {
         let request = WorkerTurnRequest {
             subagent_conversation_id: "sub-conv".to_string(),
             messages: vec![ChatMessage::text("user", "task")],
             tool_defs: Vec::new(),
             system_prompt: "fallback prompt".to_string(),
-            openai_system_message: Some(ChatMessage::text("system", "openai prompt")),
+            system_message: Some(ChatMessage::text("system", "openai prompt")),
             dynamic_context: None,
             max_iterations: 1,
         };
@@ -1056,7 +1096,7 @@ mod tests {
             messages: vec![ChatMessage::text("user", "task")],
             tool_defs: Vec::new(),
             system_prompt: "fallback prompt".to_string(),
-            openai_system_message: None,
+            system_message: None,
             dynamic_context: None,
             max_iterations: 1,
         };

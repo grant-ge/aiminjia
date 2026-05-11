@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -44,14 +45,15 @@ function stateFromInitial(initial: Record<string, unknown>): FormState {
   }
 }
 
-const TEMPLATE_OPTIONS: { value: ReportTemplate; label: string; desc: string }[] = [
-  { value: 'standard', label: '标准', desc: '日程 + 待办 + 群聊，分日归类' },
-  { value: 'brief', label: '简洁', desc: '要点列表，一页纸' },
-  { value: 'okr', label: 'OKR 对齐', desc: '按 O/KR 归类本周进展' },
-]
-
 export function WeeklyReportConfigForm({ initial, onSubmit, onCancel }: WeeklyReportConfigFormProps) {
+  const { t } = useTranslation()
   const [state, setState] = useState<FormState>(() => stateFromInitial(initial))
+
+  const templateOptions = [
+    { value: 'standard' as ReportTemplate, label: t('employee.config.weeklyReport.templateStandard'), desc: t('employee.config.weeklyReport.templateStandardDesc') },
+    { value: 'brief' as ReportTemplate, label: t('employee.config.weeklyReport.templateBrief'), desc: t('employee.config.weeklyReport.templateBriefDesc') },
+    { value: 'okr' as ReportTemplate, label: t('employee.config.weeklyReport.templateOkr'), desc: t('employee.config.weeklyReport.templateOkrDesc') },
+  ]
 
   function update(patch: Partial<FormState>) {
     setState((s) => ({ ...s, ...patch }))
@@ -71,14 +73,16 @@ export function WeeklyReportConfigForm({ initial, onSubmit, onCancel }: WeeklyRe
   return (
     <div className="flex flex-col gap-4">
       <p className="text-xs leading-relaxed text-muted-foreground">
-        配置周报偏好。小周会在每周五自动汇总钉钉日程、待办和群聊，生成结构化周报，呈现在对话中供你查看与编辑。
+        {t('employee.config.weeklyReport.intro')}
       </p>
 
       {/* Template style */}
       <div className="flex flex-col gap-1.5">
-        <label className="text-xs font-medium text-muted-foreground">周报风格</label>
+        <label className="text-xs font-medium text-muted-foreground">
+          {t('employee.config.weeklyReport.styleLabel')}
+        </label>
         <div className="flex flex-col gap-2">
-          {TEMPLATE_OPTIONS.map((opt) => (
+          {templateOptions.map((opt) => (
             <label key={opt.value} className="flex items-start gap-2 text-sm">
               <input
                 type="radio"
@@ -99,7 +103,9 @@ export function WeeklyReportConfigForm({ initial, onSubmit, onCancel }: WeeklyRe
 
       {/* Scope */}
       <div className="flex flex-col gap-1.5">
-        <label className="text-xs font-medium text-muted-foreground">范围</label>
+        <label className="text-xs font-medium text-muted-foreground">
+          {t('employee.config.weeklyReport.scopeLabel')}
+        </label>
         <div className="flex items-center gap-3 text-sm">
           <label className="flex items-center gap-1.5">
             <input
@@ -109,7 +115,7 @@ export function WeeklyReportConfigForm({ initial, onSubmit, onCancel }: WeeklyRe
               checked={state.scope === 'self'}
               onChange={() => update({ scope: 'self' })}
             />
-            个人周报
+            {t('employee.config.weeklyReport.scopeSelf')}
           </label>
           <label className="flex items-center gap-1.5">
             <input
@@ -119,34 +125,36 @@ export function WeeklyReportConfigForm({ initial, onSubmit, onCancel }: WeeklyRe
               checked={state.scope === 'team'}
               onChange={() => update({ scope: 'team' })}
             />
-            团队周报（汇总下属）
+            {t('employee.config.weeklyReport.scopeTeam')}
           </label>
         </div>
       </div>
 
       {/* Watch groups — comma-separated text input */}
       <div className="flex flex-col gap-1.5">
-        <label className="text-xs font-medium text-muted-foreground">监听群聊（可选）</label>
+        <label className="text-xs font-medium text-muted-foreground">
+          {t('employee.config.weeklyReport.watchGroupsLabel')}
+        </label>
         <Input
           value={state.watchGroupsInput}
           onChange={(e) => update({ watchGroupsInput: e.target.value })}
-          placeholder="例如：产品周会，研发日常，客户支持"
+          placeholder={t('employee.config.weeklyReport.watchGroupsPlaceholder')}
           className="text-xs"
         />
         <p className="text-xs text-muted-foreground/70">
-          填写钉钉群名，多个群用 <span className="font-mono">逗号</span>（中英文均可）或换行分隔。小周会按群名搜索并提取本周关键讨论；留空则跳过群聊摘要。
+          {t('employee.config.weeklyReport.watchGroupsHintSimple')}
         </p>
         {parsedGroups.length > 0 && (
           <p className="text-xs text-muted-foreground">
-            将监听 {parsedGroups.length} 个群：
+            {t('employee.config.weeklyReport.watchGroupsSummary', { count: parsedGroups.length })}
             <span className="ml-1 text-foreground">{parsedGroups.join('、')}</span>
           </p>
         )}
       </div>
 
       <div className="flex items-center justify-end gap-2 pt-2">
-        <Button variant="ghost" onClick={onCancel}>取消</Button>
-        <Button onClick={handleSave}>保存</Button>
+        <Button variant="ghost" onClick={onCancel}>{t('employee.config.cancel')}</Button>
+        <Button onClick={handleSave}>{t('employee.config.save')}</Button>
       </div>
     </div>
   )

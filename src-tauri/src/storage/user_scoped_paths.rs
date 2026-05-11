@@ -86,6 +86,18 @@ impl UserScopedPaths {
     pub fn downloads_dir(&self) -> PathBuf {
         self.base.join("downloads")
     }
+    pub fn channels_dir(&self) -> PathBuf {
+        self.base.join("channels")
+    }
+    pub fn channel_platform_dir(&self, platform: &str) -> PathBuf {
+        self.channels_dir().join(platform)
+    }
+    pub fn channel_platform_config_path(&self, platform: &str) -> PathBuf {
+        self.channel_platform_dir(platform).join("config.json")
+    }
+    pub fn channel_platform_sessions_path(&self, platform: &str) -> PathBuf {
+        self.channel_platform_dir(platform).join("sessions.json")
+    }
     pub fn employees_dir(&self) -> PathBuf {
         self.base.join("employees")
     }
@@ -170,4 +182,20 @@ mod tests {
         assert_eq!(paths.agenda_dir(), dir.path().join("users/t_1__u_2/agenda"));
     }
 
+    #[test]
+    fn channel_platform_paths_are_nested_under_user_scope() {
+        let root = PathBuf::from("/tmp/test-renlijia");
+        let paths = UserScopedPaths::new(&root, "t_1__u_2");
+        let base = root.join("users/t_1__u_2/channels/dingtalk");
+
+        assert_eq!(paths.channel_platform_dir("dingtalk"), base);
+        assert_eq!(
+            paths.channel_platform_config_path("dingtalk"),
+            base.join("config.json")
+        );
+        assert_eq!(
+            paths.channel_platform_sessions_path("dingtalk"),
+            base.join("sessions.json")
+        );
+    }
 }

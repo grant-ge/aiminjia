@@ -133,6 +133,7 @@ fn runtime_event_new_copies_tool_call_id_for_permission_ask_required() {
             mode: PermissionMode::Plan,
             remember_options: vec![PermissionDestination::Session],
             default_destination: Some(PermissionDestination::Session),
+            primary_model: "deepseek-v3".into(),
         },
     );
 
@@ -155,11 +156,15 @@ async fn driver_emits_permission_ask_runtime_event_and_waits_for_resolution() {
             }],
             tokens_in: 5,
             tokens_out: 7,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
         },
         LlmStepResult::ContentComplete {
             content: "done".to_string(),
             tokens_in: 1,
             tokens_out: 1,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
             stop_reason: Some("end_turn".to_string()),
         },
     ]));

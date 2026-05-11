@@ -117,7 +117,7 @@ export function EmployeesPage() {
         {empLoading ? (
           <div className="grid grid-cols-3 gap-3">
             {[...Array(3)].map((_, i) => (
-              <div key={i} className="h-[152px] animate-pulse rounded-2xl bg-muted/60" />
+              <div key={i} className="h-[152px] animate-pulse rounded-xl bg-muted/60" />
             ))}
           </div>
         ) : (
@@ -166,11 +166,11 @@ export function EmployeesPage() {
         </div>
 
         {todayEntries.length === 0 ? (
-          <div className="flex h-[120px] items-center justify-center rounded-2xl border border-dashed border-border">
+          <div className="flex h-[120px] items-center justify-center rounded-xl border border-dashed border-border">
             <p className="text-sm text-muted-foreground">今天还没有任何动态</p>
           </div>
         ) : (
-          <div className="flex flex-col divide-y divide-border overflow-hidden rounded-2xl border border-border">
+          <div className="flex flex-col divide-y divide-border overflow-hidden rounded-xl border border-border">
             {todayEntries.slice(0, 8).map((entry) => {
               const emp = employees.find((e) => e.id === entry.employeeId)
               const clickable = !!entry.conversationId

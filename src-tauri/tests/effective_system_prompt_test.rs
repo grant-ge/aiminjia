@@ -33,6 +33,8 @@ impl RuntimeLlmExecutor for CapturingExecutor {
             content: "ok".into(),
             tokens_in: 0,
             tokens_out: 0,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
             stop_reason: Some("end_turn".into()),
         })
     }
@@ -47,7 +49,10 @@ impl RuntimeLlmExecutor for CapturingExecutor {
 
     /// 关键 mock：返回一个 sentinel 字符串，用于断言其确实进入 LLM 请求。
     /// P0 修复前 driver 会把这个值替换成 DAILY_BASE_PROMPT；修复后保留。
-    async fn build_system_prompt(&self, _conversation_id: &str) -> Result<String, TurnError> {
+    async fn build_system_prompt(
+        &self,
+        _request: &ChatTurnRequest,
+    ) -> Result<String, TurnError> {
         Ok(SENTINEL.to_string())
     }
 

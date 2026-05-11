@@ -55,6 +55,8 @@ vi.mock('@/stores/uiStore', () => ({
       setRoute: vi.fn(),
       openSettings: vi.fn(),
     }),
+  useActiveConversationId: () => null,
+  useActiveChannelSessionId: () => null,
 }))
 
 import { Sidebar } from './Sidebar'

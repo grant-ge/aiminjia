@@ -119,6 +119,7 @@ fn permission_ask_required_maps_to_permission_ask_with_full_confirmation_payload
             PermissionDestination::Workspace,
         ],
         default_destination: Some(PermissionDestination::Session),
+        primary_model: "deepseek-v3".into(),
     });
 
     assert_eq!(legacy.name, "permission:ask");
@@ -151,6 +152,7 @@ fn permission_ask_required_dont_ask_mode_maps_mode_as_dont_ask() {
             PermissionDestination::Workspace,
         ],
         default_destination: Some(PermissionDestination::Session),
+        primary_model: "deepseek-v3".into(),
     });
 
     assert_eq!(legacy.name, "permission:ask");
@@ -222,6 +224,8 @@ fn turn_completed_maps_to_turn_completed_with_outcome_tokens_cost_and_denial_cou
         outcome: ChatTurnOutcome::Success,
         total_input_tokens: 100,
         total_output_tokens: 50,
+        total_cache_creation_input_tokens: 0,
+        total_cache_read_input_tokens: 0,
         total_cost_usd: Some(0.002),
         permission_denial_count: 3,
     });

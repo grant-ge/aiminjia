@@ -249,11 +249,22 @@ pub fn deserialize_chat_messages_for_gateway(
             Ok(message) => messages.push(message),
             Err(error) => {
                 dropped_count += 1;
+                let role = value
+                    .get("role")
+                    .and_then(|role| role.as_str())
+                    .unwrap_or("-");
+                let content_chars = value
+                    .get("content")
+                    .and_then(|content| content.as_str())
+                    .map(|content| content.chars().count())
+                    .unwrap_or(0);
+                let fields = value
+                    .as_object()
+                    .map(|object| object.keys().cloned().collect::<Vec<_>>().join(","))
+                    .unwrap_or_default();
                 log::warn!(
-                    "[run_llm_step] Failed to deserialize message for conv={}: {} — value: {}",
-                    conversation_id,
-                    error,
-                    serde_json::to_string(value).unwrap_or_default()
+                    "[run_llm_step] Failed to deserialize message for conv={}: {} — role={} content_chars={} fields=[{}]",
+                    conversation_id, error, role, content_chars, fields
                 );
             }
         }
@@ -477,7 +488,8 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             );
         }
         let system_prompt_for_gateway =
-            openai_system_prompt_content(input.openai_system_message.clone(), input.system_prompt);
+            system_prompt_content(input.system_message.clone(), input.system_prompt);
+        let system_prompt_segments = system_prompt_segments(&input.system_message);
 
         // --- Resolve masking level (always Strict; field kept for forward compat) ---
         let masking_level = match input.masking_level.to_lowercase().as_str() {
@@ -533,7 +545,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             let stream_result = self
                 .services
                 .gateway
-                .stream_message(
+                .stream_message_with_segments(
                     &settings,
                     chat_messages.clone(),
                     masking_level.clone(),
@@ -542,6 +554,8 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                     effective_tools.clone(),
                     input.token_budget as u32,
                     Some(input.conversation_id),
+                    input.anthropic_multimodal_turn.clone(),
+                    system_prompt_segments.clone(),
                 )
                 .await;
 
@@ -603,6 +617,8 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             let mut stop_reason = StopReason::EndTurn;
             let mut tokens_in: u64 = 0;
             let mut tokens_out: u64 = 0;
+            let mut cache_creation_input_tokens: u64 = 0;
+            let mut cache_read_input_tokens: u64 = 0;
             let mut stream_needs_retry = false;
 
             loop {
@@ -710,10 +726,15 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                                 stop_reason = reason;
                                 tokens_in = usage.input_tokens as u64;
                                 tokens_out = usage.output_tokens as u64;
+                                cache_creation_input_tokens =
+                                    usage.cache_creation_input_tokens.unwrap_or(0) as u64;
+                                cache_read_input_tokens =
+                                    usage.cache_read_input_tokens.unwrap_or(0) as u64;
                                 log::info!(
                                     "[run_llm_step] Stream done: stop_reason={:?} \
-                                     in={} out={} content_len={} tool_calls={}",
+                                     in={} out={} cache_creation={} cache_read={} content_len={} tool_calls={}",
                                     stop_reason, tokens_in, tokens_out,
+                                    cache_creation_input_tokens, cache_read_input_tokens,
                                     iter_content.len(), tool_calls.len()
                                 );
                                 // TODO(telemetry): record token usage metrics
@@ -809,6 +830,8 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                     content: iter_content,
                     tokens_in,
                     tokens_out,
+                    cache_creation_input_tokens,
+                    cache_read_input_tokens,
                     stop_reason: Some(
                         match stop_reason {
                             StopReason::EndTurn => "end_turn",
@@ -851,6 +874,8 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                 tool_calls: requests,
                 tokens_in,
                 tokens_out,
+                cache_creation_input_tokens,
+                cache_read_input_tokens,
             });
         }
     }
@@ -1873,20 +1898,13 @@ fn build_gateway_settings(settings: &ResolvedLlmSettings) -> AppSettings {
     }
 }
 
-fn openai_system_prompt_content(
+fn system_prompt_content(
     value: Option<serde_json::Value>,
     fallback: &str,
 ) -> Option<String> {
     value
-        .and_then(|value| serde_json::from_value::<crate::llm::streaming::ChatMessage>(value).ok())
-        .and_then(|message| {
-            let content = message.content.trim();
-            if message.role == "system" && !content.is_empty() {
-                Some(message.content)
-            } else {
-                None
-            }
-        })
+        .as_ref()
+        .and_then(|v| flatten_system_message_value(v))
         .or_else(|| {
             if fallback.trim().is_empty() {
                 None
@@ -1894,6 +1912,65 @@ fn openai_system_prompt_content(
                 Some(fallback.to_string())
             }
         })
+}
+
+/// Extract Anthropic-style structured cache segments from the rendered
+/// system message. Returns an empty Vec when the message is missing or only
+/// holds a single string (no per-block cache breakpoints to forward).
+pub(crate) fn system_prompt_segments(
+    value: &Option<serde_json::Value>,
+) -> Vec<crate::llm::streaming::SystemPromptSegment> {
+    let Some(value) = value.as_ref() else {
+        return Vec::new();
+    };
+    let Some(content) = value.get("content") else {
+        return Vec::new();
+    };
+    let Some(arr) = content.as_array() else {
+        return Vec::new();
+    };
+    arr.iter()
+        .filter_map(|block| {
+            let text = block.get("text")?.as_str()?;
+            if text.trim().is_empty() {
+                return None;
+            }
+            let cache = block.get("cache_control").is_some();
+            Some(crate::llm::streaming::SystemPromptSegment {
+                text: text.to_string(),
+                cache,
+            })
+        })
+        .collect()
+}
+
+fn flatten_system_message_value(value: &serde_json::Value) -> Option<String> {
+    if value.get("role").and_then(|r| r.as_str()) != Some("system") {
+        return None;
+    }
+    let content = value.get("content")?;
+    if let Some(s) = content.as_str() {
+        let trimmed = s.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(s.to_string())
+        }
+    } else if let Some(arr) = content.as_array() {
+        let joined: String = arr
+            .iter()
+            .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
+            .filter(|t| !t.trim().is_empty())
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        if joined.trim().is_empty() {
+            None
+        } else {
+            Some(joined)
+        }
+    } else {
+        None
+    }
 }
 
 /// Check if an LLM / stream error string is transient and worth retrying.
@@ -1926,7 +2003,7 @@ mod openai_system_prompt_tests {
             "content": "华为公司 instructions remain provider-visible",
         });
         let chat_messages = vec![ChatMessage::text("user", "请分析华为公司")];
-        let system_prompt = openai_system_prompt_content(Some(rendered_system), "legacy system")
+        let system_prompt = system_prompt_content(Some(rendered_system), "legacy system")
             .expect("rendered system prompt content");
 
         let mut mask_ctx = MaskingContext::new(MaskingLevel::Strict);
@@ -2033,6 +2110,35 @@ impl TauriChatCommandAdapter {
         permission_store: Arc<crate::runtime::store::PermissionStore>,
         app: tauri::AppHandle,
     ) -> Self {
+        Self::new_with_channel_sessions(
+            cus,
+            root_db,
+            gateway,
+            file_mgr,
+            crypto,
+            tool_registry,
+            skill_registry,
+            auth_manager,
+            permission_store,
+            app,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_channel_sessions(
+        cus: Arc<CurrentUserStorage>,
+        root_db: Arc<AppStorage>,
+        gateway: Arc<LlmGateway>,
+        file_mgr: Arc<FileManager>,
+        crypto: Option<Arc<SecureStorage>>,
+        tool_registry: Arc<ToolRegistry>,
+        skill_registry: Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>,
+        auth_manager: Arc<AuthManager>,
+        permission_store: Arc<crate::runtime::store::PermissionStore>,
+        app: tauri::AppHandle,
+        channel_sessions: Option<Arc<dyn crate::connector::channel::ask_coordinator::ChannelSessionRegistry>>,
+    ) -> Self {
         let runtime_resolver = app
             .try_state::<crate::runtime::dependencies::ManagedRuntimeResolver>()
             .map(|resolver| resolver.inner().clone());
@@ -2055,7 +2161,10 @@ impl TauriChatCommandAdapter {
             employee_run_overrides: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         };
         let host = Arc::new(TauriRuntimeHost::new(services.app.clone()));
-        let adapter = Arc::new(TauriEventAdapter::new(host));
+        let adapter = Arc::new(match channel_sessions {
+            Some(registry) => TauriEventAdapter::with_channel_sessions(host, registry),
+            None => TauriEventAdapter::new(host),
+        });
         let bus = RuntimeEventBus::new();
         bus.subscribe(adapter);
         let llm_executor: Arc<dyn RuntimeLlmExecutor> = Arc::new(TauriLegacyTurnExecutor {
@@ -2132,6 +2241,126 @@ impl TauriChatCommandAdapter {
             .ok_or_else(|| anyhow::anyhow!("CurrentUserStorage not registered"))?;
         let paths = resolver.require_paths()?;
         Ok(crate::runtime::agenda::AgendaStore::new(paths.base_dir()))
+    }
+
+    /// 返回当前 workspace 根目录，供 ChannelManager 等调用方构造下载目录。
+    pub fn workspace_path(&self) -> std::path::PathBuf {
+        self.services.file_mgr.workspace_path().to_path_buf()
+    }
+
+    /// 向内部 runtime event bus 注册外部订阅者。
+    pub fn subscribe_event_listener(&self, subscriber: std::sync::Arc<dyn crate::runtime::event_bus::RuntimeEventSubscriber>) {
+        self.runtime.subscribe_event_listener(subscriber);
+    }
+
+    /// 暴露权限控制平面，供 IM 协调器等外部组件使用。
+    pub fn permission_control_plane(&self) -> std::sync::Arc<dyn crate::runtime::store::PendingPermissionControlPlane> {
+        self.runtime.permission_control_plane()
+    }
+
+    /// 暴露交互控制平面，供 IM 协调器等外部组件使用。
+    pub fn interaction_control_plane(&self) -> std::sync::Arc<dyn crate::runtime::interaction::PendingInteractionControlPlane> {
+        self.runtime.interaction_control_plane()
+    }
+
+    /// 与 `send_message` 相同，但接受调用方已预构造的 `ChatTurnRequest`，
+    /// 保留其中的 `run_id`，用于外部需要在发送前注册 run_id 的场景（如 DingtalkReplyManager）。
+    pub async fn send_chat_request(&self, request: ChatTurnRequest) -> Result<(), String> {
+        let conversation_id = request.conversation_id.as_str().to_string();
+        let run_id = request.run_id.clone();
+        self.services
+            .gateway
+            .set_busy_for_run(&conversation_id, run_id.clone())?;
+
+        let session_id = request.conversation_id.clone();
+        let agent_runtime = self
+            .services
+            .app
+            .try_state::<Arc<crate::runtime::agent::AgentRuntime>>()
+            .map(|v| v.inner().clone());
+        let (tavily_api_key, bocha_api_key, use_cloud) = {
+            let map = self.services.db().get_all_settings().unwrap_or_default();
+            let mut s = if map.is_empty() {
+                AppSettings::default()
+            } else {
+                AppSettings::from_string_map(&map)
+            };
+            if let Some(ss) = self.services.crypto.as_ref() {
+                s.tavily_api_key = decrypt_api_key(ss, &s.tavily_api_key);
+                s.bocha_api_key = decrypt_api_key(ss, &s.bocha_api_key);
+            }
+            let tavily = if s.tavily_api_key.is_empty() { None } else { Some(s.tavily_api_key) };
+            let bocha = if s.bocha_api_key.is_empty() { None } else { Some(s.bocha_api_key) };
+            (tavily, bocha, s.use_cloud)
+        };
+        let workspace_path = self.services.file_mgr.workspace_path();
+        let request_scoped_runtime_deps = crate::plugin::registry::RequestScopedRuntimeDeps {
+            storage: self.services.db().clone(),
+            file_manager: self.services.file_mgr.clone(),
+            workspace_path: workspace_path.clone(),
+            conversation_id: session_id.as_str().to_string(),
+            session_id: session_id.clone(),
+            run_id: Some(run_id.clone()),
+            agent_id: None,
+            tavily_api_key,
+            bocha_api_key,
+            app_handle: Some(self.services.app.clone()),
+            auth_manager: Some(self.services.auth_manager.clone()),
+            use_cloud,
+            model: String::new(),
+            gateway: Some(self.services.gateway.clone()),
+            tool_registry: Some(self.services.tool_registry.clone()),
+            app_settings: Some(Arc::new(AppSettings::default())),
+            agent_runtime,
+            event_bus: None,
+            skill_registry: Some(self.services.skill_registry.clone()),
+            authorized_workspace: None,
+            read_file_state: None,
+            cancellation: None,
+            permission_mode: request.permission_mode,
+            runtime_resolver: self.services.runtime_resolver.clone(),
+            permission_ctx: None,
+            current_persona_id: None,
+        };
+        let runtime_dispatcher = self
+            .services
+            .tool_registry
+            .to_runtime_dispatcher(request_scoped_runtime_deps)
+            .await;
+        let runtime = self.runtime.clone().with_query_engine(
+            QueryEngine::with_dispatcher(runtime_dispatcher)
+                .with_workspace_path(self.services.file_mgr.workspace_path().to_path_buf())
+                .with_runtime_resolver(self.services.runtime_resolver.clone()),
+        );
+        let result = runtime.run_chat_request(request).await;
+        self.services
+            .gateway
+            .clear_task_for_run(&conversation_id, &run_id);
+
+        if result.is_ok() {
+            let needs_title =
+                conversation_service::should_auto_title(&*self.services.db(), &conversation_id)
+                    .unwrap_or(false);
+            if needs_title {
+                let dummy_request =
+                    ChatTurnRequest::new(conversation_id.clone(), String::new(), vec![]);
+                if let Ok(resolved) = self.load_llm_settings_for_turn(&dummy_request).await {
+                    let db = self.services.db().clone() as Arc<dyn ConversationStore>;
+                    let gateway = self.services.gateway.clone();
+                    let host: Arc<dyn crate::transport::runtime_host::RuntimeHost> =
+                        Arc::new(TauriRuntimeHost::new(self.services.app.clone()));
+                    let conv_id = conversation_id.clone();
+                    let settings = build_gateway_settings(&resolved);
+                    tauri::async_runtime::spawn(async move {
+                        conversation_service::generate_and_set_title(
+                            db, gateway, host, conv_id, settings,
+                        )
+                        .await;
+                    });
+                }
+            }
+        }
+        result
     }
 
     pub async fn send_message(
@@ -2805,12 +3034,21 @@ impl crate::runtime::agenda::AgendaRunDispatcher for TauriChatCommandAdapter {
         // 没有匹配的员工（比如老 agenda 写的是 persona id "default"）就用 agenda 自己的 prompt 兜底，
         // 不阻塞触发。
         let trigger_label = format!("[日程触发] {}\n计划触发时间：{planned_fire_at}", item.title);
+        let employees_dir = {
+            use crate::storage::{CurrentUserStorage, UserScopedPathResolver};
+            self.services
+                .app
+                .try_state::<Arc<CurrentUserStorage>>()
+                .and_then(|cus| cus.require_paths().ok())
+                .map(|paths| paths.employees_dir())
+        };
         let prompt = if let Some(emp) = employee.as_ref() {
             crate::runtime::employee::dispatch_prompt::build_dispatch_prompt(
                 emp,
                 &trigger_label,
                 None,
                 Some(&item.prompt),
+                employees_dir.as_deref(),
             )
         } else {
             format!("{trigger_label}\n\n{}", item.prompt)
@@ -2922,15 +3160,11 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
             ),
         };
 
-        let prompt = crate::runtime::employee::dispatch_prompt::build_dispatch_prompt(
-            &employee,
-            &trigger_label,
-            catchup_info.as_deref(),
-            prompt_override.as_deref(),
-        );
-
         // Resolve employees_dir for inbox + record_run. If the user is not
         // logged in we cannot persist anything, so bail out before spawning.
+        // Moved above `build_dispatch_prompt` so the prompt builder can use
+        // it for snapshot lookup (`<employees_dir>/<id>/template/template.json`
+        // overrides record fields once the instance has been stamped).
         let employees_dir = {
             let cus = self
                 .services
@@ -2942,6 +3176,14 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
                 .map_err(|e| anyhow::anyhow!("paths unavailable: {e}"))?;
             paths.employees_dir()
         };
+
+        let prompt = crate::runtime::employee::dispatch_prompt::build_dispatch_prompt(
+            &employee,
+            &trigger_label,
+            catchup_info.as_deref(),
+            prompt_override.as_deref(),
+            Some(employees_dir.as_path()),
+        );
 
         // record_run synchronously: last_run_at represents "last dispatched at"
         // for both on-demand and cron paths.
@@ -3011,12 +3253,24 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
                 )
             });
 
+            // Snapshot-first tool whitelist (PR5): the template snapshot at
+            // `<employees_dir>/<id>/template/template.json` is authoritative.
+            // Falls back to `employee_clone.tool_whitelist` for pre-PR3
+            // employees that haven't been stamped yet — those will be
+            // back-filled on the next `EmployeeStore::get/list`.
+            let effective_whitelist =
+                crate::runtime::employee::template_store::effective_tool_whitelist(
+                    employees_dir_async.as_path(),
+                    &employee_clone.id,
+                    &employee_clone.tool_whitelist,
+                );
+
             let _guard = OverrideGuard::install(
                 adapter.services.employee_run_overrides.clone(),
                 conv_id.clone(),
                 EmployeeRunOverrides {
-                    tool_whitelist: employee_clone.tool_whitelist.iter().cloned().collect(),
-                    max_iterations: 30,
+                    tool_whitelist: effective_whitelist.into_iter().collect(),
+                    max_iterations: 60,
                 },
             );
 

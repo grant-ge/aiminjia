@@ -67,7 +67,7 @@ export function AskUserQuestionDialog({ interactionId, questions, onClose }: Pro
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/35 px-4 backdrop-blur-sm">
-      <div className="w-full max-w-xl rounded-2xl border border-border bg-background p-6 shadow-2xl">
+      <div className="w-full max-w-xl rounded-lg border border-border bg-background p-6 shadow-[var(--shadow-modal)]">
         <div className="mb-5">
           <div className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">AI needs your input</div>
           <h2 className="mt-1 text-lg font-semibold text-foreground">AI 向你提问</h2>
@@ -102,7 +102,7 @@ export function AskUserQuestionDialog({ interactionId, questions, onClose }: Pro
                         <div className="font-medium">{option.label}</div>
                         <div className="mt-1 text-xs text-muted-foreground">{option.description}</div>
                         {option.preview ? (
-                          <pre className="mt-2 max-h-24 overflow-auto rounded-md bg-muted p-2 text-[0.6875rem] text-muted-foreground">{option.preview}</pre>
+                          <pre className="mt-2 max-h-24 overflow-auto rounded-md bg-muted p-2 text-xs text-muted-foreground">{option.preview}</pre>
                         ) : null}
                       </button>
                     )

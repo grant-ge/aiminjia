@@ -197,6 +197,8 @@ fn content_complete() -> LlmStepResult {
         content: "ok".to_string(),
         tokens_in: 1,
         tokens_out: 1,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0,
         stop_reason: Some("end_turn".to_string()),
     }
 }
@@ -212,6 +214,8 @@ fn tool_call_step(id: &str) -> LlmStepResult {
         }],
         tokens_in: 1,
         tokens_out: 1,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0,
     }
 }
 

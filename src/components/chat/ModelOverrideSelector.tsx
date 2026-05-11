@@ -51,7 +51,7 @@ export function ModelOverrideSelector({
     <label className="flex items-center gap-2 text-sm" style={{ color: 'var(--color-text-muted)' }}>
       <span>Model</span>
       <select
-        className="rounded-md border px-2 py-1 text-sm"
+        className="rounded-md border px-2 py-1 text-sm border-border"
         style={{
           background: 'var(--color-bg-card)',
           borderColor: 'var(--color-border)',
