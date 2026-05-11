@@ -453,6 +453,16 @@ impl EmployeeStore {
         write_atomic(&path, json.as_bytes())
     }
 
+    /// Read-only clone of an Employee record by id.  Does not lock writes.
+    /// Used by spawn_subagent (P1.3) to source a Teammate's profile without
+    /// blocking on the write lock.
+    ///
+    /// Returns `None` if the employee does not exist or cannot be parsed.
+    /// Use `get()` instead if you need an error on missing records.
+    pub fn get_readonly(&self, id: &str) -> Option<EmployeeRecord> {
+        self.get(id).ok()
+    }
+
     /// Returns the directory for an employee's reports.
     pub fn reports_dir(&self, id: &str) -> PathBuf {
         self.record_dir(id).join("reports")

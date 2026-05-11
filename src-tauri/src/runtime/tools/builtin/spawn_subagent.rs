@@ -18,6 +18,13 @@
 //! `TaskNotificationQueue` when it finishes. The tool returns a JSON
 //! `{"status":"async_launched","agent_id":"...","name":"..."}` so the
 //! parent LLM knows the launch succeeded.
+//!
+//! ## Teammate dispatch (P1.3)
+//! Passing `employee_id` (mutually exclusive with `subagent_type`) sources the
+//! spawned agent from an Employee profile.  `team_name` (non-empty) turns the
+//! dispatch into a Teammate that joins the session's Team.  `name` is required
+//! for Teammate dispatch and is registered in [`AgentNameRegistry`].
+//! The idle-loop body is stubbed here; P1.6 fills it in.
 
 use std::sync::Arc;
 
@@ -28,6 +35,7 @@ use serde_json::Value;
 use crate::runtime::agent::definition::AgentModel;
 use crate::runtime::agent::registry::AgentRegistry;
 use crate::runtime::cancellation::CancellationToken;
+use crate::runtime::employee::store::EmployeeStore;
 use crate::runtime::ids::{AgentId, RunId, SessionId, ToolCallId};
 use crate::runtime::path_auth::ToolPermissionContext;
 use crate::runtime::tools::catalog::TOOL_CATALOG;
@@ -99,16 +107,47 @@ pub trait SpawnSubagentLauncher: Send + Sync {
     ) -> Result<SpawnAsyncOutcome>;
 }
 
+// ─── Source discrimination ────────────────────────────────────────────────────
+
+/// Discriminates the source of the spawned agent's definition.
+enum AgentSource {
+    /// Legacy path: look up agent definition by type name in AgentRegistry.
+    Registry(String),
+    /// New path (P1.3): load Employee profile by id from EmployeeStore.
+    Employee(String),
+}
+
 // ─── RuntimeTool implementation ───────────────────────────────────────────────
 
 pub struct SpawnSubagentRuntimeTool {
     launcher: Arc<dyn SpawnSubagentLauncher>,
     registry: Arc<AgentRegistry>,
+    /// Optional EmployeeStore injected at construction time.  Required when
+    /// the LLM calls Agent(employee_id=...).  `None` for legacy paths and tests
+    /// that only use subagent_type.
+    employee_store: Option<Arc<EmployeeStore>>,
 }
 
 impl SpawnSubagentRuntimeTool {
     pub fn new(launcher: Arc<dyn SpawnSubagentLauncher>, registry: Arc<AgentRegistry>) -> Self {
-        Self { launcher, registry }
+        Self {
+            launcher,
+            registry,
+            employee_store: None,
+        }
+    }
+
+    /// Constructor for production paths that need Employee-sourced Teammates.
+    pub fn new_with_employees(
+        launcher: Arc<dyn SpawnSubagentLauncher>,
+        registry: Arc<AgentRegistry>,
+        employee_store: Arc<EmployeeStore>,
+    ) -> Self {
+        Self {
+            launcher,
+            registry,
+            employee_store: Some(employee_store),
+        }
     }
 }
 
@@ -131,12 +170,6 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
         ctx: ToolExecutionContext,
     ) -> Result<ToolResult, ToolError> {
         // ── Parse required fields ──────────────────────────────────────────
-        let subagent_type = input
-            .get("subagent_type")
-            .and_then(Value::as_str)
-            .ok_or_else(|| {
-                ToolError::ExecutionFailed("missing required field: subagent_type".into())
-            })?;
         let prompt = input
             .get("prompt")
             .and_then(Value::as_str)
@@ -148,7 +181,39 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
                 ToolError::ExecutionFailed("missing required field: description".into())
             })?;
 
-        // ── Parse optional fields ──────────────────────────────────────────
+        // ── Parse optional source fields ───────────────────────────────────
+        let subagent_type = input
+            .get("subagent_type")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+        let employee_id = input
+            .get("employee_id")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+
+        // ── Source discrimination (mutually exclusive) ─────────────────────
+        // This check fires BEFORE any state mutation so a bad call never
+        // pollutes AgentNameRegistry or TeamRegistry.
+        let source = match (&subagent_type, &employee_id) {
+            (Some(_), Some(_)) => {
+                return Err(ToolError::ExecutionFailed(
+                    "subagent_type and employee_id are mutually exclusive; \
+                     use subagent_type for registry agents or employee_id for Employee-sourced Teammates"
+                        .into(),
+                ))
+            }
+            (None, None) => {
+                return Err(ToolError::ExecutionFailed(
+                    "either subagent_type or employee_id is required".into(),
+                ))
+            }
+            (Some(t), None) => AgentSource::Registry(t.clone()),
+            (None, Some(eid)) => AgentSource::Employee(eid.clone()),
+        };
+
+        // ── Parse optional routing/dispatch fields ─────────────────────────
         let caller_model = input
             .get("model")
             .and_then(Value::as_str)
@@ -161,29 +226,133 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
         let name = input
             .get("name")
             .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+        let team_name = input
+            .get("team_name")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
             .map(str::to_string);
 
-        // ── Resolve agent definition ───────────────────────────────────────
-        let definition = self.registry.get(subagent_type).ok_or_else(|| {
-            ToolError::ExecutionFailed(format!(
-                "unknown subagent_type '{subagent_type}'; \
-                 check ~/.renlijia/users/<scope>/agents/ or builtin agents"
-            ))
-        })?;
+        // ── Team handle resolution ─────────────────────────────────────────
+        // Must happen before name registration so a failed team lookup doesn't
+        // leave a stale entry in AgentNameRegistry.
+        let team_handle = if team_name.is_some() {
+            let session_id = ctx.session_id.clone();
+            let team = ctx
+                .team_registry()
+                .get(&session_id)
+                .await
+                .ok_or_else(|| {
+                    ToolError::ExecutionFailed(
+                        "no team in this session — call TeamCreate first".into(),
+                    )
+                })?;
+            // Note: we don't reject on team_name mismatch because session_id
+            // uniqueness is the authoritative lookup key.  A caller who uses
+            // a different name string is probably just out of sync with the
+            // UI label; warn but proceed.
+            {
+                let guard = team.lock().await;
+                if let Some(tn) = &team_name {
+                    if guard.team_name != *tn {
+                        log::warn!(
+                            "[spawn_subagent] team_name mismatch: caller said {:?} \
+                             but session has team {:?}; proceeding with session team",
+                            tn,
+                            guard.team_name
+                        );
+                    }
+                }
+            }
+            Some(team)
+        } else {
+            None
+        };
 
-        // ── Three-tier model resolution: caller > definition.model > Inherit ──
-        let effective_model = caller_model.or_else(|| match &definition.model {
-            AgentModel::Fixed(m) => Some(m.clone()),
-            AgentModel::Inherit => None,
-        });
+        // ── name is required for Teammate dispatch ─────────────────────────
+        if team_handle.is_some() && name.is_none() {
+            return Err(ToolError::ExecutionFailed(
+                "name is required for Teammate dispatch (team_name was set)".into(),
+            ));
+        }
 
+        // ── Resolve prompt / tool_whitelist / effective_model ─────────────
+        let (sys_prompt_extra, tool_whitelist, model_override) = match &source {
+            AgentSource::Registry(agent_type) => {
+                // Legacy path: resolve from AgentRegistry.
+                let definition = self.registry.get(agent_type).ok_or_else(|| {
+                    ToolError::ExecutionFailed(format!(
+                        "unknown subagent_type '{agent_type}'; \
+                         check ~/.renlijia/users/<scope>/agents/ or builtin agents"
+                    ))
+                })?;
+                let model = caller_model.clone().or_else(|| match &definition.model {
+                    AgentModel::Fixed(m) => Some(m.clone()),
+                    AgentModel::Inherit => None,
+                });
+                (None, Vec::<String>::new(), model)
+            }
+            AgentSource::Employee(eid) => {
+                // New path: load Employee profile from EmployeeStore.
+                let store = self.employee_store.as_ref().ok_or_else(|| {
+                    ToolError::ExecutionFailed(
+                        "EmployeeStore not configured; \
+                         use SpawnSubagentRuntimeTool::new_with_employees() in production"
+                            .into(),
+                    )
+                })?;
+                let employee = store.get_readonly(eid).ok_or_else(|| {
+                    ToolError::ExecutionFailed(format!("employee not found: {eid}"))
+                })?;
+                // EmployeeRecord has no model field; inherit from parent.
+                let model = caller_model.clone();
+                (
+                    employee.system_prompt_extra.clone(),
+                    employee.tool_whitelist.clone(),
+                    model,
+                )
+            }
+        };
+
+        // ── Effective model after three-tier resolution ────────────────────
+        // (already resolved per-source above; model_override holds the result)
+        let effective_model = model_override;
+
+        // ── Name registration for Teammate dispatch ────────────────────────
+        // Only Teammate paths (team_handle.is_some()) register in the name
+        // registry; legacy async subagents carry name in the request/outcome
+        // without registry registration.
+        //
+        // The agent_id is generated here so that the registry entry and the
+        // actual agent share the same identity when P1.6 fills in the idle loop.
+        let teammate_agent_id: Option<AgentId> = if team_handle.is_some() {
+            let agent_id = AgentId::new(format!("agent-{}", uuid::Uuid::new_v4()));
+            // name is guaranteed Some here (checked above after team_handle check)
+            if let Some(ref agent_name) = name {
+                ctx.agent_names()
+                    .register(&ctx.session_id, agent_name, agent_id.clone())
+                    .await
+                    .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+            }
+            Some(agent_id)
+        } else {
+            None
+        };
+
+        // ── Build request ──────────────────────────────────────────────────
         let request = SpawnSubagentRequest {
-            subagent_type: subagent_type.to_string(),
+            subagent_type: match &source {
+                AgentSource::Registry(t) => t.clone(),
+                // Use a sentinel value for Employee-sourced agents; the launcher
+                // stub will reject this anyway until P1.6 fills in the idle loop.
+                AgentSource::Employee(eid) => format!("employee:{eid}"),
+            },
             prompt: prompt.to_string(),
             description: description.to_string(),
             effective_model,
             run_in_background,
-            name,
+            name: name.clone(),
         };
 
         let launch_ctx = SpawnSubagentContext {
@@ -193,8 +362,6 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
             cancellation: ctx.cancellation.clone(),
             permission_mode: ctx.permission_mode,
             parent_tool_use_id: ctx.tool_call_id.clone(),
-            // Phase 5: snapshot the parent turn's merged permission_ctx so the
-            // launcher can seed the child's QueryEngine with it.
             permission_ctx: ctx
                 .capability
                 .as_ref()
@@ -202,7 +369,28 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
                 .map(|storage| storage.permission_ctx.clone()),
         };
 
-        // ── Async path: launch detached sub-agent ─────────────────────────
+        // ── Dispatch path ──────────────────────────────────────────────────
+        if let Some(team) = team_handle {
+            // Teammate idle-loop path: stubbed here; P1.6 fills in the actual
+            // idle loop body.  Side-effects up to this point (AgentNameRegistry
+            // registration) ARE preserved — the Err returned here signals that
+            // the full launch has not completed, so callers should treat this as
+            // a transient failure until P1.6 lands.
+            return spawn_teammate_idle_loop_stub(
+                // SAFETY: teammate_agent_id is always Some when team_handle is Some
+                // (set in the name registration block above)
+                teammate_agent_id.expect("teammate_agent_id must be set when team is Some"),
+                name,
+                team,
+                sys_prompt_extra,
+                tool_whitelist,
+                request,
+                launch_ctx,
+            )
+            .await;
+        }
+
+        // ── Legacy async path ──────────────────────────────────────────────
         if request.run_in_background {
             let outcome = self
                 .launcher
@@ -218,14 +406,10 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
                 "task_id": agent_id_str,
                 "name": outcome.name,
             });
-            return Ok(ToolResult::new(
-                "Agent",
-                json.to_string(),
-                None,
-            ));
+            return Ok(ToolResult::new("Agent", json.to_string(), None));
         }
 
-        // ── Sync path: await launcher ──────────────────────────────────────
+        // ── Legacy sync path ───────────────────────────────────────────────
         let output = self
             .launcher
             .launch_sync(request, launch_ctx)
@@ -234,6 +418,33 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
 
         Ok(ToolResult::new("Agent", output, None))
     }
+}
+
+// ─── Teammate idle-loop stub (P1.3) ───────────────────────────────────────────
+
+/// Stub for the Teammate idle-loop launch path.
+///
+/// Side-effects (AgentNameRegistry registration) have already been applied when
+/// this function is reached.  The function returns `Err` to signal that the
+/// idle loop body has not been implemented yet; P1.6 will replace this stub
+/// with the real implementation.
+///
+/// The `#[allow(unused_variables)]` attribute is intentional: all arguments are
+/// captured so the signature matches what P1.6 will require, avoiding a
+/// disruptive refactor when the stub is filled in.
+#[allow(unused_variables)]
+async fn spawn_teammate_idle_loop_stub(
+    agent_id: AgentId,
+    name: Option<String>,
+    team_handle: Arc<tokio::sync::Mutex<crate::runtime::agent::team::Team>>,
+    sys_prompt_extra: Option<String>,
+    tool_whitelist: Vec<String>,
+    request: SpawnSubagentRequest,
+    launch_ctx: SpawnSubagentContext,
+) -> Result<ToolResult, ToolError> {
+    Err(ToolError::ExecutionFailed(
+        "Teammate idle loop not yet implemented — will arrive in P1.6".into(),
+    ))
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -309,6 +520,7 @@ mod tests {
         let tool = build_tool_with_recorder(Arc::new(Mutex::new(Vec::new())));
         let ctx = ToolExecutionContext::for_test("conv-1", "run-1", "tc-1")
             .with_permission_mode(PermissionMode::Default);
+        // Neither subagent_type nor employee_id — should fail with "required" message.
         let err = tool
             .execute(
                 json!({ "prompt": "do something", "description": "test" }),
@@ -319,8 +531,8 @@ mod tests {
         match err {
             ToolError::ExecutionFailed(msg) => {
                 assert!(
-                    msg.contains("subagent_type"),
-                    "error should mention subagent_type, got: {msg}"
+                    msg.contains("subagent_type") || msg.contains("required"),
+                    "error should mention subagent_type or required, got: {msg}"
                 );
             }
             other => panic!("expected ExecutionFailed, got: {:?}", other),
@@ -457,5 +669,34 @@ mod tests {
                 .unwrap_or(true),
             "empty caller model should not override to empty string"
         );
+    }
+
+    // ── P1.3: mutual exclusion test ──────────────────────────────────────────
+
+    #[tokio::test]
+    async fn rejects_both_subagent_type_and_employee_id() {
+        let tool = build_tool_with_recorder(Arc::new(Mutex::new(Vec::new())));
+        let ctx = ToolExecutionContext::for_test("conv-mutex", "run-mutex", "tc-mutex");
+        let err = tool
+            .execute(
+                json!({
+                    "subagent_type": "explore",
+                    "employee_id": "emp-123",
+                    "prompt": "do it",
+                    "description": "mutex test"
+                }),
+                ctx,
+            )
+            .await
+            .unwrap_err();
+        match err {
+            ToolError::ExecutionFailed(msg) => {
+                assert!(
+                    msg.contains("mutually exclusive"),
+                    "error should say 'mutually exclusive', got: {msg}"
+                );
+            }
+            other => panic!("expected ExecutionFailed, got: {:?}", other),
+        }
     }
 }

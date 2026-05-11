@@ -333,17 +333,22 @@ fn build_default_catalog() -> ToolCatalog {
             "【Composite 工具】启动一个子 Agent 执行聚焦任务。\
             \n\n适用场景：任务需要干净上下文、专属 Agent 类型（如 'explore'、'general-purpose'）或不同模型。\
             \n\n同步路径（run_in_background=false 或省略）：阻塞等待子 Agent 完成并返回最终输出文本。\
-            \n\n异步路径（run_in_background=true）：立即返回 agent_id；子 Agent 在后台运行；用 TaskOutput(task_id=agent_id, offset=N) 增量读取 transcript；子 Agent 完成时父的下一轮会收到 <task-notification> XML。",
+            \n\n异步路径（run_in_background=true）：立即返回 agent_id；子 Agent 在后台运行；用 TaskOutput(task_id=agent_id, offset=N) 增量读取 transcript；子 Agent 完成时父的下一轮会收到 <task-notification> XML。\
+            \n\nTeammate 派活路径（employee_id + team_name + name）：从 Employee Profile 加载系统提示和工具白名单，加入当前 Session 的 Team 作为 Teammate 运行。employee_id 与 subagent_type 互斥，team_name 非空时 name 为必填。",
         )
         .with_kind(ToolKind::Composite)
         .with_capability_scope(["workspace:write"]),
         json!({
             "type": "object",
-            "required": ["subagent_type", "prompt", "description"],
+            "required": ["prompt", "description"],
             "properties": {
                 "subagent_type": {
                     "type": "string",
-                    "description": "Agent 类型名称，来自注册表（如 'general-purpose'、'explore'）。"
+                    "description": "Agent 类型名称，来自注册表（如 'general-purpose'、'explore'）。与 employee_id 互斥，二者必须提供其一。"
+                },
+                "employee_id": {
+                    "type": "string",
+                    "description": "Employee Profile ID（如 'emp-abc123'）。设置后从该 Employee 的系统提示和工具白名单创建 Teammate。与 subagent_type 互斥，二者必须提供其一。"
                 },
                 "prompt": {
                     "type": "string",
@@ -364,7 +369,11 @@ fn build_default_catalog() -> ToolCatalog {
                 },
                 "name": {
                     "type": "string",
-                    "description": "可选的实例名，用于 SendMessage 路由到异步子 Agent（仅异步模式使用）。"
+                    "description": "Agent 实例名。team_name 非空时必填（Teammate 派活）；异步子 Agent 也可选填以便 SendMessage 路由。"
+                },
+                "team_name": {
+                    "type": "string",
+                    "description": "目标 Team 名称。非空时将此 Agent 作为 Teammate 加入当前 Session 的 Team（Team 必须已通过 TeamCreate 创建）。此时 name 为必填。"
                 }
             }
         }),
