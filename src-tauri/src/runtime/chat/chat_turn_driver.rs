@@ -10,6 +10,9 @@ use crate::llm::context_decay::{context_window_for_provider, CONTEXT_OVERFLOW_TH
 use crate::runtime::agent::task_notification::{QueuedNotification, TaskNotificationQueue};
 use crate::runtime::cancellation::{CancellationReason, CancellationToken};
 use crate::runtime::chat::context_builder::build_iteration_context;
+use crate::runtime::chat::multimodal::{
+    build_anthropic_image_blocks, retain_text_fallback_attachments,
+};
 use crate::runtime::chat::post_process;
 use crate::runtime::chat::preprocess::{
     prepare_messages_for_llm, PreprocessConfig, PreprocessRetryAction, PreprocessTrigger,
@@ -1165,9 +1168,34 @@ impl RuntimeChatTurnDriver {
         // task-notifications, but we must NOT persist or surface a fake user
         // turn. The drain step below will inject the actual notification XML
         // as the user-role message that the LLM responds to.
-        let is_resume_for_task_notification =
-            request.content == "__resume_from_task_notification__"
-                && request.attachments.is_empty();
+        let is_resume_for_task_notification = request.content
+            == "__resume_from_task_notification__"
+            && request.attachments.is_empty();
+
+        let should_try_anthropic_images = config.llm_settings.use_cloud
+            && crate::llm::vision_support::supports_lotus_anthropic_vision(
+                &config.llm_settings.cloud_model,
+            );
+        let anthropic_image_result =
+            if !is_resume_for_task_notification && should_try_anthropic_images {
+                build_anthropic_image_blocks(&request.attachments)
+            } else {
+                crate::runtime::chat::multimodal::AnthropicImageBuildResult::empty()
+            };
+        let attachments_for_text = retain_text_fallback_attachments(
+            &request.attachments,
+            &anthropic_image_result.converted_attachment_ids,
+        );
+        let anthropic_multimodal_turn = if anthropic_image_result.image_blocks.is_empty() {
+            None
+        } else {
+            Some(crate::llm::streaming::AnthropicMultimodalTurn {
+                image_count: anthropic_image_result.image_blocks.len(),
+                image_bytes_total: anthropic_image_result.image_bytes_total,
+                degraded_count: anthropic_image_result.degraded_attachment_ids.len(),
+                image_blocks: anthropic_image_result.image_blocks.clone(),
+            })
+        };
 
         let llm_user_content = if is_resume_for_task_notification {
             String::new()
@@ -1176,7 +1204,7 @@ impl RuntimeChatTurnDriver {
                 .build_user_message_content(
                     request.conversation_id.as_str(),
                     &request.content,
-                    &request.attachments,
+                    &attachments_for_text,
                 )
                 .await
                 .map_err(|e| anyhow::anyhow!("{}", e))?
@@ -1448,6 +1476,7 @@ impl RuntimeChatTurnDriver {
                 conversation_id: config.conversation_id.as_str(),
                 run_id: config.run_id.as_str(),
                 estimated_tokens,
+                anthropic_multimodal_turn: anthropic_multimodal_turn.clone(),
             };
 
             // CP-1: check cancellation before invoking provider.

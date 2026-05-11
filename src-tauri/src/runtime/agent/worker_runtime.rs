@@ -311,6 +311,7 @@ impl<'a> SubagentWorkerRuntime<'a> {
                     Some(request.tool_defs.clone()),
                     max_tokens,
                     Some(&sub_conv_id),
+                    None,
                 )
                 .await;
 

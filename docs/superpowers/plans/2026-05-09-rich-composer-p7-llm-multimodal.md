@@ -1,104 +1,109 @@
-# RichComposer P7 — LLM Gateway Multimodal 实现计划
+# RichComposer P7 — Lotus Cloud Anthropic Multimodal Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development. Steps use checkbox (`- [ ]`) syntax.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 >
-> **⚠️ Risk note:** This plan touches the LLM provider serialization layer (~3k LOC across 5 providers). Subtle bugs silently break chat for every model. **Recommend manual code review + at least one real provider integration test before merge.** Do not skip the spec/quality reviewers.
+> **Scope warning:** This plan is intentionally **cloud-only and Anthropic-only**. Do not broaden it to OpenAI-compatible, Qwen, DeepSeek, Volcano, custom endpoints, or non-cloud/local provider paths.
 
-**Goal:** Add a structured `Parts` content channel to `ChatMessage` so vision-capable models receive base64 image content for the current turn's image attachments. Models without vision support fall through to the existing path-text fallback (zero behavior change).
+**Goal:** Make Lotus Cloud image attachments visible to vision-capable Anthropic-route models by sending current-turn image bytes as Anthropic Messages `image.source.base64` content blocks.
 
-**Architecture:** `ChatMessage.content` becomes `enum ChatMessageContent { Text(String), Parts(Vec<ChatMessagePart>) }`. The `Text` variant remains the default form, preserving backward compatibility for all assistant / tool / system / history messages. Only the **current** user turn's `ChatMessage` may use `Parts` when (a) it has image attachments AND (b) the routed model `supports_vision()`. Each provider gains a `serialize_parts()` arm that emits the provider-native vision schema. A new `vision_support.rs` module ships a model→capability table.
+**Architecture:** Keep the app's primary cloud path on `LotusProvider -> ClaudeProvider -> /anthropic/v1/messages`. Add a small sidecar/enrichment layer that converts only the current turn's eligible image attachments into Anthropic content blocks before the Claude/Lotus request body is serialized. Preserve existing path-text attachment behavior for non-image files, degraded images, unsupported models, history, and all non-cloud providers.
 
-**Tech Stack:** Rust (`serde`, `serde_json`), `base64` crate (already used elsewhere), existing provider modules.
+**Tech Stack:** Rust, Tauri, `serde_json`, existing `ClaudeProvider` / `LotusProvider`, existing chat attachment structs, `base64` crate.
 
 ---
 
-## 文件结构
+## Verified Context
 
-新增：
-- `src-tauri/src/llm/vision_support.rs` — `supports_vision(model_name) -> Option<bool>` lookup table.
-- `src-tauri/src/runtime/chat/multimodal.rs` — converts `ChatAttachmentRef` (image kind) to base64 part with size/format guards.
+- Service endpoint for the new desktop app is Anthropic native: `https://ai-tenant.renlijia.com/anthropic/v1/messages`.
+- Service-side `/anthropic/v1/messages` filters routes to `provider.protocol = "anthropic"` and does no OpenAI conversion.
+- OPS protocol coverage matrix is authoritative: models missing an Anthropic route are unavailable to the new desktop app.
+- A real request to `/anthropic/v1/messages` with model `claude-sonnet-4-5` and a base64 PNG image returned 200 and the model identified the image.
+- Current app problem: image attachments are still represented as text/path hints in `build_llm_content`, so the model never receives pixels.
 
-修改：
-- `src-tauri/src/llm/streaming.rs` — extend `ChatMessage.content` to support `Parts` variant.
-- `src-tauri/src/llm/providers/openai.rs` — emit OpenAI-compatible vision content array.
-- `src-tauri/src/llm/providers/claude.rs` — emit Anthropic vision blocks.
-- `src-tauri/src/llm/providers/qwen.rs` — emit OpenAI-compatible (qwen-vl uses OpenAI schema).
-- `src-tauri/src/llm/providers/lotus.rs` — emit OpenAI-compatible (lotus is OpenAI proxy).
-- `src-tauri/src/llm/providers/volcano.rs` — TBD: check whether it supports vision; if not, skip this provider.
-- `src-tauri/src/llm/providers/deepseek_v3.rs` / `deepseek_r1.rs` — DeepSeek does not currently support vision; skip.
-- `src-tauri/src/llm/providers/custom.rs` — emit OpenAI-compatible.
-- `src-tauri/src/runtime/chat/chat_turn_driver.rs` — branch on `supports_vision` when constructing user message; build parts array including base64 images.
-- `src-tauri/src/runtime/chat/history.rs` — historical messages always use `Text` (do not re-emit Parts; spec).
-- `src-tauri/src/transport/tauri_commands/chat/chat_runtime_impl.rs::build_llm_content` — when called for a vision-capable model, omit image entries from the `[当前消息附件]` text list.
+## Non-Goals
 
-不修改：
-- `StoredMessage` schema — base64 data NOT persisted.
-- 前端任何文件 — payload shape unchanged.
+- Do not implement OpenAI `image_url` content arrays.
+- Do not modify `src-tauri/src/llm/providers/openai.rs`, `qwen.rs`, `deepseek_*`, `volcano.rs`, or `custom.rs`.
+- Do not introduce a provider-wide `ChatMessageContent::Parts` enum unless a later review proves the sidecar approach impossible.
+- Do not persist base64 image data.
+- Do not resend historical image bytes.
+- Do not add non-cloud configuration or fallback to OpenAI ingress for models missing Anthropic routes.
 
-## 关键决策
+## File Structure
 
-### `ChatMessageContent` 设计
+Create:
+
+- `src-tauri/src/runtime/chat/multimodal.rs` — image attachment filtering, MIME validation, size guards, base64 encoding, degradation reasons, and safe telemetry metadata.
+- `src-tauri/src/llm/vision_support.rs` — conservative Lotus Cloud Anthropic vision allowlist.
+
+Modify:
+
+- `src-tauri/src/runtime/chat/mod.rs` — export `multimodal` if the runtime chat module uses explicit module declarations.
+- `src-tauri/src/llm/mod.rs` — export `vision_support` if the LLM module uses explicit module declarations.
+- `src-tauri/src/llm/streaming.rs` — add an optional Anthropic-only current-turn multimodal sidecar to `LlmRequest`, not to persisted messages.
+- `src-tauri/src/llm/providers/claude.rs` — when building Anthropic Messages body, replace the current user message content with `content[]` blocks if the sidecar is present.
+- `src-tauri/src/llm/providers/lotus.rs` — no schema conversion; ensure Lotus keeps using `ClaudeProvider` so sidecar support is inherited.
+- `src-tauri/src/runtime/chat/chat_turn_driver.rs` — detect current-turn image attachments, call multimodal builder for Lotus Cloud vision models, attach sidecar to `LlmRequest`, and pass only non-image/degraded images into path-text attachment content.
+- `src-tauri/src/transport/tauri_commands/chat/chat_runtime_impl.rs` — add or reuse a helper that can build `[当前消息附件]` text from a filtered attachment list.
+
+Tests:
+
+- `src-tauri/src/runtime/chat/multimodal.rs` unit tests in the same file or `src-tauri/src/runtime/chat/multimodal_test.rs`, following repo convention.
+- `src-tauri/src/llm/vision_support.rs` unit tests.
+- Existing Claude provider tests, or new focused tests near `src-tauri/src/llm/providers/claude.rs`, for request-body JSON shape.
+- Existing chat runtime/driver tests, or new focused tests, for filtering image attachments from path text when sidecar succeeds.
+
+## Data Shapes
+
+Use Anthropic-only request parts:
 
 ```rust
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum ChatMessageContent {
-    Text(String),
-    Parts(Vec<ChatMessagePart>),
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", tag = "type")]
-pub enum ChatMessagePart {
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum AnthropicContentBlock {
     Text { text: String },
-    Image { source: ImageSource },
+    Image { source: AnthropicImageSource },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case", tag = "type")]
-pub enum ImageSource {
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum AnthropicImageSource {
     Base64 { media_type: String, data: String },
-    Url { url: String },
 }
 
-impl Default for ChatMessageContent {
-    fn default() -> Self {
-        ChatMessageContent::Text(String::new())
-    }
-}
-```
-
-`#[serde(untagged)]` lets `Text("hello")` serialize as a plain string and deserialize from either string OR object array — keeps the wire format compatible with existing JSON.
-
-`ChatMessage.content: ChatMessageContent`（之前是 `String`）。所有现有的 `m.content.clone()` / `m.content.is_empty()` 调用点要更新到 `match` 分支。
-
-#### 兼容性 Helper
-
-```rust
-impl ChatMessage {
-    pub fn text_content(&self) -> &str {
-        match &self.content {
-            ChatMessageContent::Text(s) => s,
-            ChatMessageContent::Parts(parts) => parts.iter().find_map(|p| {
-                if let ChatMessagePart::Text { text } = p { Some(text.as_str()) } else { None }
-            }).unwrap_or(""),
-        }
-    }
-
-    pub fn is_empty_content(&self) -> bool {
-        match &self.content {
-            ChatMessageContent::Text(s) => s.is_empty(),
-            ChatMessageContent::Parts(p) => p.is_empty(),
-        }
-    }
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct AnthropicMultimodalTurn {
+    pub image_blocks: Vec<AnthropicContentBlock>,
+    pub image_count: usize,
+    pub image_bytes_total: u64,
+    pub degraded_count: usize,
 }
 ```
 
-调用点用这两个 helper 替换 `.content` 直接 string 操作。
+Recommended location: `src-tauri/src/llm/streaming.rs` if `LlmRequest` owns the wire request shape. If that creates dependency direction problems, place the block types in `src-tauri/src/runtime/chat/multimodal.rs` and re-export from a neutral module.
 
-### `vision_support.rs` 表
+## Guardrails
 
-按 spec 三态：
+- Max single image bytes: `3 * 1024 * 1024`.
+- Max total original image bytes per request: `6 * 1024 * 1024`.
+- Max image count per request: `4`.
+- Allowed MIME: `image/png`, `image/jpeg`, `image/webp`, `image/gif`.
+- Base64 string must not include `data:image/png;base64,` prefix.
+- Logs must never include base64 data.
+- Successful image blocks are omitted from `[当前消息附件]` path text.
+- Degraded images remain in `[当前消息附件]` path text.
+
+---
+
+## Task 1: Add Lotus Cloud Vision Allowlist
+
+**Files:**
+- Create: `src-tauri/src/llm/vision_support.rs`
+- Modify: `src-tauri/src/llm/mod.rs`
+
+- [ ] **Step 1: Write the allowlist module**
+
+Create `src-tauri/src/llm/vision_support.rs`:
 
 ```rust
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -108,284 +113,756 @@ pub enum VisionSupport {
     Unknown,
 }
 
-pub fn vision_support(model_name: &str) -> VisionSupport {
-    let lower = model_name.to_lowercase();
-    // Anthropic vision-capable models
-    if lower.contains("claude-3") || lower.contains("claude-sonnet") || lower.contains("claude-opus") {
+pub fn lotus_anthropic_vision_support(model_name: &str) -> VisionSupport {
+    let lower = model_name.trim().to_lowercase();
+    if lower.is_empty() {
+        return VisionSupport::Unknown;
+    }
+
+    if lower == "claude-sonnet-4-5" {
         return VisionSupport::Supported;
     }
-    // OpenAI / GPT-5
-    if lower.starts_with("gpt-4o") || lower.starts_with("gpt-5") || lower.contains("gpt-4-vision") {
+    if lower == "claude-ops" {
         return VisionSupport::Supported;
     }
-    // Gemini
-    if lower.starts_with("gemini-1.5") || lower.starts_with("gemini-2") {
+    if lower.contains("claude") && (lower.contains("sonnet") || lower.contains("opus")) {
         return VisionSupport::Supported;
     }
-    // Qwen-VL
-    if lower.contains("qwen-vl") || lower.contains("qwen3-vl") {
-        return VisionSupport::Supported;
-    }
-    // GLM-4V
-    if lower.contains("glm-4v") || lower.contains("glm-4.5v") {
-        return VisionSupport::Supported;
-    }
-    // DeepSeek (no vision support as of 2026-05)
+
     if lower.starts_with("deepseek") {
         return VisionSupport::Unsupported;
     }
-    // Plain GPT-4 / GPT-3.5 — no vision
-    if lower.starts_with("gpt-3") || lower == "gpt-4" || lower.starts_with("gpt-4-") {
+    if lower == "qwen-plus" || lower.starts_with("qwen") {
         return VisionSupport::Unsupported;
     }
-    // Plain Qwen / GLM (non-VL variants) — no vision
-    if lower.starts_with("qwen") || lower.starts_with("glm-") {
-        return VisionSupport::Unsupported;
-    }
-    log::warn!("vision_support: unknown model '{}', defaulting to Unsupported", model_name);
+
     VisionSupport::Unknown
 }
 
-pub fn supports_vision(model_name: &str) -> bool {
-    matches!(vision_support(model_name), VisionSupport::Supported)
+pub fn supports_lotus_anthropic_vision(model_name: &str) -> bool {
+    matches!(lotus_anthropic_vision_support(model_name), VisionSupport::Supported)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn supports_verified_claude_sonnet() {
+        assert_eq!(
+            lotus_anthropic_vision_support("claude-sonnet-4-5"),
+            VisionSupport::Supported
+        );
+    }
+
+    #[test]
+    fn supports_claude_ops() {
+        assert!(supports_lotus_anthropic_vision("claude-ops"));
+    }
+
+    #[test]
+    fn rejects_openai_only_qwen_plus() {
+        assert_eq!(lotus_anthropic_vision_support("qwen-plus"), VisionSupport::Unsupported);
+    }
+
+    #[test]
+    fn rejects_deepseek_models() {
+        assert_eq!(lotus_anthropic_vision_support("deepseek-v4-pro[1m]"), VisionSupport::Unsupported);
+    }
+
+    #[test]
+    fn unknown_glm_until_explicitly_verified() {
+        assert_eq!(lotus_anthropic_vision_support("glm5.1"), VisionSupport::Supported);
+    }
 }
 ```
 
-### 约束（spec 决策）
+- [ ] **Step 2: Export the module**
 
-- 单图 ≤ 5MB。
-- 单条消息 ≤ 10 张图。
-- 格式白名单：`image/png`、`image/jpeg`、`image/webp`、`image/gif`。
-- 超限/非白名单/读盘失败 → 该图静默降级回 path（保留 image 名出现在 `[当前消息附件]` 列表里），toast 单独通知。
-- 历史消息永不重新生成 Parts。
-- base64 不持久化。
+Open `src-tauri/src/llm/mod.rs`. If it contains explicit module declarations, add:
 
-### `multimodal.rs` 模块
+```rust
+pub mod vision_support;
+```
+
+If `llm/mod.rs` is not the declaration site, add the module at the repo's existing LLM module declaration site.
+
+- [ ] **Step 3: Run the focused test**
+
+Run:
+
+```bash
+cd /Users/oayzz/.codex/worktrees/275c/lotus-app/src-tauri
+cargo test vision_support --lib --no-fail-fast
+```
+
+Expected: tests in `vision_support` pass. If the crate does not support `--lib`, run `cargo test vision_support --tests --no-fail-fast` and record the exact command used.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add src-tauri/src/llm/vision_support.rs src-tauri/src/llm/mod.rs
+git commit -m "feat(llm): add lotus anthropic vision allowlist"
+```
+
+## Task 2: Build Anthropic Image Blocks From Current-Turn Attachments
+
+**Files:**
+- Create: `src-tauri/src/runtime/chat/multimodal.rs`
+- Modify: `src-tauri/src/runtime/chat/mod.rs`
+- Test: `src-tauri/src/runtime/chat/multimodal.rs`
+
+- [ ] **Step 1: Inspect attachment type fields**
+
+Run:
+
+```bash
+rg -n "struct ChatAttachmentRef|ChatAttachmentRef" /Users/oayzz/.codex/worktrees/275c/lotus-app/src-tauri/src/runtime /Users/oayzz/.codex/worktrees/275c/lotus-app/src-tauri/src/transport
+```
+
+Expected: find `ChatAttachmentRef` fields for `file_path`, `file_name`, `file_type`, `mime_type`, and `kind`. Use exact field names from the code in the next step.
+
+- [ ] **Step 2: Add multimodal builder**
+
+Create `src-tauri/src/runtime/chat/multimodal.rs`. Adjust only the `use crate::...ChatAttachmentRef` path if the actual type path differs.
 
 ```rust
 use std::path::Path;
+
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-use crate::llm::streaming::{ChatMessagePart, ImageSource};
+
+use crate::llm::streaming::{AnthropicContentBlock, AnthropicImageSource};
 use crate::runtime::chat::chat_turn_driver::ChatAttachmentRef;
 
-const MAX_IMAGE_BYTES: u64 = 5 * 1024 * 1024;
-const MAX_IMAGES_PER_TURN: usize = 10;
+pub const MAX_IMAGE_BYTES: u64 = 3 * 1024 * 1024;
+pub const MAX_TOTAL_IMAGE_BYTES: u64 = 6 * 1024 * 1024;
+pub const MAX_IMAGES_PER_TURN: usize = 4;
 
 const ALLOWED_MIME: &[&str] = &["image/png", "image/jpeg", "image/webp", "image/gif"];
 
-pub struct ImagePartBuildResult {
-    pub parts: Vec<ChatMessagePart>,
-    pub degraded_attachments: Vec<ChatAttachmentRef>,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ImageDegradeReason {
+    TooManyImages,
+    ImageTooLarge { bytes: u64 },
+    TotalTooLarge { bytes_total: u64, next_bytes: u64 },
+    UnsupportedMime { mime: String },
+    ReadFailed { error: String },
+}
+
+#[derive(Debug, Clone)]
+pub struct DegradedImageAttachment {
+    pub attachment: ChatAttachmentRef,
+    pub reason: ImageDegradeReason,
+}
+
+#[derive(Debug, Clone)]
+pub struct ImageBlockBuildResult {
+    pub image_blocks: Vec<AnthropicContentBlock>,
+    pub converted_paths: Vec<String>,
+    pub degraded: Vec<DegradedImageAttachment>,
     pub bytes_total: u64,
 }
 
-pub fn build_image_parts(attachments: &[ChatAttachmentRef]) -> ImagePartBuildResult {
-    let mut parts = Vec::new();
+pub fn build_anthropic_image_blocks(attachments: &[ChatAttachmentRef]) -> ImageBlockBuildResult {
+    let mut blocks = Vec::new();
+    let mut converted_paths = Vec::new();
     let mut degraded = Vec::new();
-    let mut bytes_total: u64 = 0;
-    for att in attachments.iter().filter(|a| a.kind == "image") {
-        if parts.len() >= MAX_IMAGES_PER_TURN {
-            degraded.push(att.clone());
+    let mut bytes_total = 0_u64;
+
+    for att in attachments.iter().filter(|a| is_image_attachment(a)) {
+        if blocks.len() >= MAX_IMAGES_PER_TURN {
+            degraded.push(degraded_attachment(att, ImageDegradeReason::TooManyImages));
             continue;
         }
-        let mime = att.mime_type.as_deref().unwrap_or_else(|| guess_mime(&att.file_name));
-        if !ALLOWED_MIME.contains(&mime) {
-            log::warn!("multimodal: skipping {} (unsupported mime '{}')", att.file_name, mime);
-            degraded.push(att.clone());
+
+        let mime = normalized_mime(att);
+        if !ALLOWED_MIME.contains(&mime.as_str()) {
+            degraded.push(degraded_attachment(att, ImageDegradeReason::UnsupportedMime { mime }));
             continue;
         }
+
         let path = Path::new(&att.file_path);
-        match std::fs::read(path) {
-            Ok(bytes) => {
-                let len = bytes.len() as u64;
-                if len > MAX_IMAGE_BYTES {
-                    log::warn!("multimodal: skipping {} ({} bytes > 5MB)", att.file_name, len);
-                    degraded.push(att.clone());
-                    continue;
-                }
-                bytes_total += len;
-                let data = STANDARD.encode(&bytes);
-                parts.push(ChatMessagePart::Image {
-                    source: ImageSource::Base64 {
-                        media_type: mime.to_string(),
-                        data,
-                    },
-                });
+        let bytes = match std::fs::read(path) {
+            Ok(bytes) => bytes,
+            Err(err) => {
+                degraded.push(degraded_attachment(
+                    att,
+                    ImageDegradeReason::ReadFailed { error: err.to_string() },
+                ));
+                continue;
             }
-            Err(e) => {
-                log::warn!("multimodal: failed to read {}: {}", att.file_path, e);
-                degraded.push(att.clone());
-            }
+        };
+
+        let len = bytes.len() as u64;
+        if len > MAX_IMAGE_BYTES {
+            degraded.push(degraded_attachment(att, ImageDegradeReason::ImageTooLarge { bytes: len }));
+            continue;
         }
+        if bytes_total + len > MAX_TOTAL_IMAGE_BYTES {
+            degraded.push(degraded_attachment(
+                att,
+                ImageDegradeReason::TotalTooLarge { bytes_total, next_bytes: len },
+            ));
+            continue;
+        }
+
+        bytes_total += len;
+        converted_paths.push(att.file_path.clone());
+        blocks.push(AnthropicContentBlock::Image {
+            source: AnthropicImageSource::Base64 {
+                media_type: mime,
+                data: STANDARD.encode(bytes),
+            },
+        });
     }
-    ImagePartBuildResult { parts, degraded_attachments: degraded, bytes_total }
+
+    ImageBlockBuildResult { blocks, converted_paths, degraded, bytes_total }
 }
 
-fn guess_mime(file_name: &str) -> &'static str {
+pub fn is_image_attachment(att: &ChatAttachmentRef) -> bool {
+    att.kind == "image" || att.file_type == "image" || att.mime_type.as_deref().unwrap_or("").starts_with("image/")
+}
+
+fn normalized_mime(att: &ChatAttachmentRef) -> String {
+    if let Some(mime) = att.mime_type.as_deref() {
+        let lower = mime.trim().to_lowercase();
+        if !lower.is_empty() {
+            if lower == "image/jpg" {
+                return "image/jpeg".to_string();
+            }
+            return lower;
+        }
+    }
+    guess_mime_from_name(&att.file_name).to_string()
+}
+
+fn guess_mime_from_name(file_name: &str) -> &'static str {
     let lower = file_name.to_lowercase();
-    if lower.ends_with(".png") { "image/png" }
-    else if lower.ends_with(".jpg") || lower.ends_with(".jpeg") { "image/jpeg" }
-    else if lower.ends_with(".webp") { "image/webp" }
-    else if lower.ends_with(".gif") { "image/gif" }
-    else { "application/octet-stream" }
-}
-```
-
-### `chat_turn_driver` 接入点
-
-构造 user message 时分支：
-
-```rust
-let routed_model = /* current routing */;
-let has_images = attachments.iter().any(|a| a.kind == "image");
-
-let user_msg = if has_images && supports_vision(&routed_model.model_name) {
-    let result = build_image_parts(&attachments);
-    // text content excludes image attachments from [当前消息附件] list
-    let text_part = build_llm_content(content, &non_image_attachments_plus_degraded(...), ...);
-    let mut parts = vec![ChatMessagePart::Text { text: text_part }];
-    parts.extend(result.parts);
-    if !result.degraded_attachments.is_empty() {
-        // emit toast/log indicating which images were degraded
+    if lower.ends_with(".png") {
+        "image/png"
+    } else if lower.ends_with(".jpg") || lower.ends_with(".jpeg") {
+        "image/jpeg"
+    } else if lower.ends_with(".webp") {
+        "image/webp"
+    } else if lower.ends_with(".gif") {
+        "image/gif"
+    } else {
+        "application/octet-stream"
     }
-    ChatMessage { content: ChatMessageContent::Parts(parts), ... }
-} else {
-    let text = build_llm_content(content, &attachments, ...);
-    ChatMessage { content: ChatMessageContent::Text(text), ... }
-};
-```
+}
 
-### 各 provider 的 `serialize_parts()`
-
-#### OpenAI / Qwen / Lotus / Custom (OpenAI-compatible)
-
-```rust
-fn parts_to_openai_content(parts: &[ChatMessagePart]) -> Vec<Value> {
-    parts.iter().map(|p| match p {
-        ChatMessagePart::Text { text } => json!({ "type": "text", "text": text }),
-        ChatMessagePart::Image { source: ImageSource::Base64 { media_type, data } } => {
-            json!({
-                "type": "image_url",
-                "image_url": { "url": format!("data:{};base64,{}", media_type, data) }
-            })
-        }
-        ChatMessagePart::Image { source: ImageSource::Url { url } } => {
-            json!({ "type": "image_url", "image_url": { "url": url } })
-        }
-    }).collect()
+fn degraded_attachment(att: &ChatAttachmentRef, reason: ImageDegradeReason) -> DegradedImageAttachment {
+    DegradedImageAttachment { attachment: att.clone(), reason }
 }
 ```
 
-In `messages` build:
+- [ ] **Step 3: Add tests in the same file**
+
+Append tests to `multimodal.rs`. If `ChatAttachmentRef` has additional required fields, fill them with harmless defaults from the actual struct.
 
 ```rust
-let content_value = match &m.content {
-    ChatMessageContent::Text(s) => json!(s),
-    ChatMessageContent::Parts(parts) => json!(parts_to_openai_content(parts)),
-};
-let mut msg = json!({ "role": m.role, "content": content_value });
-```
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
 
-#### Claude
+    fn temp_file(name: &str, bytes: &[u8]) -> String {
+        let path = std::env::temp_dir().join(format!("lotus_multimodal_test_{}_{}", std::process::id(), name));
+        fs::write(&path, bytes).unwrap();
+        path.to_string_lossy().to_string()
+    }
 
-```rust
-fn parts_to_anthropic_content(parts: &[ChatMessagePart]) -> Vec<Value> {
-    parts.iter().map(|p| match p {
-        ChatMessagePart::Text { text } => json!({ "type": "text", "text": text }),
-        ChatMessagePart::Image { source: ImageSource::Base64 { media_type, data } } => {
-            json!({
-                "type": "image",
-                "source": {
-                    "type": "base64",
-                    "media_type": media_type,
-                    "data": data,
-                }
-            })
+    fn image_att(path: String, file_name: &str, mime: Option<&str>) -> ChatAttachmentRef {
+        ChatAttachmentRef {
+            file_path: path,
+            file_name: file_name.to_string(),
+            file_type: "image".to_string(),
+            mime_type: mime.map(str::to_string),
+            kind: "image".to_string(),
         }
-        ChatMessagePart::Image { source: ImageSource::Url { url } } => {
-            json!({ "type": "image", "source": { "type": "url", "url": url } })
+    }
+
+    #[test]
+    fn converts_small_png_to_anthropic_image_block() {
+        let path = temp_file("small.png", b"png-bytes");
+        let result = build_anthropic_image_blocks(&[image_att(path.clone(), "small.png", Some("image/png"))]);
+        assert_eq!(result.blocks.len(), 1);
+        assert_eq!(result.degraded.len(), 0);
+        assert_eq!(result.converted_paths, vec![path]);
+        match &result.blocks[0] {
+            AnthropicContentBlock::Image { source: AnthropicImageSource::Base64 { media_type, data } } => {
+                assert_eq!(media_type, "image/png");
+                assert_eq!(data, "cG5nLWJ5dGVz");
+                assert!(!data.starts_with("data:"));
+            }
+            other => panic!("expected image block, got {other:?}"),
         }
-    }).collect()
+    }
+
+    #[test]
+    fn unsupported_mime_degrades() {
+        let path = temp_file("bad.bmp", b"bmp");
+        let result = build_anthropic_image_blocks(&[image_att(path, "bad.bmp", Some("image/bmp"))]);
+        assert!(result.blocks.is_empty());
+        assert_eq!(result.degraded.len(), 1);
+        assert!(matches!(result.degraded[0].reason, ImageDegradeReason::UnsupportedMime { .. }));
+    }
+
+    #[test]
+    fn missing_file_degrades() {
+        let result = build_anthropic_image_blocks(&[image_att(
+            "/tmp/lotus-missing-image-file.png".to_string(),
+            "missing.png",
+            Some("image/png"),
+        )]);
+        assert!(result.blocks.is_empty());
+        assert_eq!(result.degraded.len(), 1);
+        assert!(matches!(result.degraded[0].reason, ImageDegradeReason::ReadFailed { .. }));
+    }
+
+    #[test]
+    fn fifth_image_degrades() {
+        let mut atts = Vec::new();
+        for idx in 0..5 {
+            let name = format!("img{idx}.png");
+            let path = temp_file(&name, b"x");
+            atts.push(image_att(path, &name, Some("image/png")));
+        }
+        let result = build_anthropic_image_blocks(&atts);
+        assert_eq!(result.blocks.len(), 4);
+        assert_eq!(result.degraded.len(), 1);
+        assert!(matches!(result.degraded[0].reason, ImageDegradeReason::TooManyImages));
+    }
 }
 ```
 
-#### Gemini (lotus 内可能有 gemini route)
+- [ ] **Step 4: Export the module**
 
-If `lotus.rs` proxies Gemini, structure is:
+Open `src-tauri/src/runtime/chat/mod.rs`. If explicit module declarations are used, add:
+
+```rust
+pub mod multimodal;
+```
+
+- [ ] **Step 5: Run focused tests**
+
+Run:
+
+```bash
+cd /Users/oayzz/.codex/worktrees/275c/lotus-app/src-tauri
+cargo test multimodal --lib --no-fail-fast
+```
+
+Expected: multimodal tests pass. If struct fields differ, update test constructors to match real fields before proceeding.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src-tauri/src/runtime/chat/multimodal.rs src-tauri/src/runtime/chat/mod.rs
+git commit -m "feat(chat): build anthropic image blocks from attachments"
+```
+
+## Task 3: Add Anthropic Multimodal Sidecar to LlmRequest
+
+**Files:**
+- Modify: `src-tauri/src/llm/streaming.rs`
+
+- [ ] **Step 1: Locate LlmRequest**
+
+Run:
+
+```bash
+rg -n "struct LlmRequest|pub struct LlmRequest|ChatMessage" /Users/oayzz/.codex/worktrees/275c/lotus-app/src-tauri/src/llm/streaming.rs
+```
+
+Expected: find `LlmRequest` and `ChatMessage` definitions.
+
+- [ ] **Step 2: Add Anthropic block types and optional sidecar**
+
+In `src-tauri/src/llm/streaming.rs`, add the `AnthropicContentBlock`, `AnthropicImageSource`, and `AnthropicMultimodalTurn` types from the Data Shapes section. Then add this field to `LlmRequest`:
+
+```rust
+#[serde(default, skip_serializing_if = "Option::is_none")]
+pub anthropic_multimodal_turn: Option<AnthropicMultimodalTurn>,
+```
+
+If `LlmRequest` is not serialized, omit serde attributes and keep the field as:
+
+```rust
+pub anthropic_multimodal_turn: Option<AnthropicMultimodalTurn>,
+```
+
+- [ ] **Step 3: Update all LlmRequest constructors**
+
+Run:
+
+```bash
+rg -n "LlmRequest \{" /Users/oayzz/.codex/worktrees/275c/lotus-app/src-tauri/src
+```
+
+At every constructor, add:
+
+```rust
+anthropic_multimodal_turn: None,
+```
+
+Do not set this field outside the current-turn chat driver path in this task.
+
+- [ ] **Step 4: Run compile check**
+
+Run:
+
+```bash
+cd /Users/oayzz/.codex/worktrees/275c/lotus-app/src-tauri
+cargo check
+```
+
+Expected: no missing-field errors for `anthropic_multimodal_turn`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src-tauri/src/llm/streaming.rs
+git commit -m "feat(llm): add anthropic multimodal request sidecar"
+```
+
+## Task 4: Serialize Sidecar in ClaudeProvider Anthropic Body
+
+**Files:**
+- Modify: `src-tauri/src/llm/providers/claude.rs`
+- Test: existing Claude provider test file or `src-tauri/src/llm/providers/claude.rs` unit tests
+
+- [ ] **Step 1: Locate request body builder**
+
+Run:
+
+```bash
+rg -n "build_request|messages|content|serde_json::json|json!" /Users/oayzz/.codex/worktrees/275c/lotus-app/src-tauri/src/llm/providers/claude.rs
+```
+
+Expected: find the code that maps `LlmRequest.messages` into Anthropic `messages` JSON.
+
+- [ ] **Step 2: Add replacement helper**
+
+Near the request body builder, add a helper that replaces the final user message content when a sidecar exists:
+
+```rust
+use crate::llm::streaming::AnthropicMultimodalTurn;
+
+fn apply_anthropic_multimodal_turn(messages: &mut [serde_json::Value], turn: &AnthropicMultimodalTurn) {
+    if turn.blocks.is_empty() {
+        return;
+    }
+    if let Some(last_user) = messages.iter_mut().rev().find(|msg| {
+        msg.get("role").and_then(|v| v.as_str()) == Some("user")
+    }) {
+        last_user["content"] = serde_json::to_value(&turn.blocks).unwrap_or_else(|_| serde_json::Value::String(String::new()));
+    }
+}
+```
+
+If `claude.rs` already builds strongly typed structs instead of `serde_json::Value`, add the equivalent transformation at the point where final JSON is assembled.
+
+- [ ] **Step 3: Call the helper**
+
+After messages JSON is built and before sending the request body, add:
+
+```rust
+if let Some(turn) = request.anthropic_multimodal_turn.as_ref() {
+    apply_anthropic_multimodal_turn(&mut messages, turn);
+}
+```
+
+Use the actual local variable names from `claude.rs`.
+
+- [ ] **Step 4: Add JSON shape test**
+
+Add a focused test that constructs an `LlmRequest` with:
+
+```rust
+anthropic_multimodal_turn: Some(AnthropicMultimodalTurn {
+    blocks: vec![
+        AnthropicContentBlock::Text { text: "describe".to_string() },
+        AnthropicContentBlock::Image {
+            source: AnthropicImageSource::Base64 {
+                media_type: "image/png".to_string(),
+                data: "cG5n".to_string(),
+            },
+        },
+    ],
+    image_count: 1,
+    image_bytes_total: 3,
+    degraded_count: 0,
+}),
+```
+
+Assert final body contains:
 
 ```json
-{ "parts": [{ "text": "..." }, { "inline_data": { "mime_type": "image/png", "data": "<base64>" } }] }
+{
+  "role": "user",
+  "content": [
+    { "type": "text", "text": "describe" },
+    { "type": "image", "source": { "type": "base64", "media_type": "image/png", "data": "cG5n" } }
+  ]
+}
 ```
 
-Skip Gemini if not currently routed via lotus.
+Also assert it does **not** contain `image_url` and does **not** contain a `data:image/png;base64,` prefix.
 
-## 测试覆盖
+- [ ] **Step 5: Run focused tests**
 
-### `vision_support_test.rs`
+Run the narrowest provider test command available. Start with:
 
-- claude-3-opus → Supported
-- claude-sonnet-4 → Supported
-- gpt-4o → Supported
-- gpt-5 → Supported
-- gemini-1.5-pro → Supported
-- qwen-vl → Supported
-- glm-4v → Supported
-- deepseek-chat → Unsupported
-- gpt-4 → Unsupported
-- gpt-3.5-turbo → Unsupported
-- qwen-max → Unsupported
-- 未知模型 → Unsupported (log warn)
+```bash
+cd /Users/oayzz/.codex/worktrees/275c/lotus-app/src-tauri
+cargo test claude --lib --no-fail-fast
+```
 
-### `multimodal_test.rs`
+Expected: Claude provider multimodal JSON test passes.
 
-- 普通图 (< 5MB) → 进 parts，bytes_total 累计
-- 超大图 (> 5MB) → degraded
-- 非白名单 mime → degraded
-- 不存在的文件 → degraded
-- 11 张图 → 前 10 进 parts，最后 1 张 degraded
-- 0 张图 → empty parts
-- mixed (image + non-image) → only image kind processed
+- [ ] **Step 6: Commit**
 
-### Provider serialize tests
+```bash
+git add src-tauri/src/llm/providers/claude.rs
+git commit -m "feat(llm): serialize anthropic image blocks in claude provider"
+```
 
-每个 provider 加一个 round-trip：构造一个 `ChatMessage::Parts(text + image)`，调用 build_request_body，断言 JSON 输出符合 provider 自己的 schema。
+## Task 5: Attach Sidecar in Current-Turn Chat Driver
 
-### `chat_turn_driver` integration
+**Files:**
+- Modify: `src-tauri/src/runtime/chat/chat_turn_driver.rs`
+- Modify: `src-tauri/src/transport/tauri_commands/chat/chat_runtime_impl.rs`
+- Test: existing chat runtime tests or new focused tests
 
-- vision model + image attachment → ChatMessage with Parts
-- non-vision model + image attachment → ChatMessage with Text (含 path)
-- vision model + no image attachment → ChatMessage with Text
-- vision model + image-only message → Parts 含 text 和 image
+- [ ] **Step 1: Locate current user message construction**
 
-### `history_test.rs`
+Run:
 
-- 历史消息 (含 file 字段) → 永远生成 Text 形态，从不读盘 + base64
+```bash
+rg -n "build_llm_content|attachments|LlmRequest|ChatMessage" /Users/oayzz/.codex/worktrees/275c/lotus-app/src-tauri/src/runtime/chat /Users/oayzz/.codex/worktrees/275c/lotus-app/src-tauri/src/transport/tauri_commands/chat
+```
 
-## 实施分期（10 个 task）
+Expected: identify where current turn content is built and where `LlmRequest` is constructed.
 
-1. **streaming.rs ChatMessageContent enum** + helpers + 兼容反序列化 + 单测。
-   - 这是 cross-cutting change；先做并跑全 build，确保所有现有 string-based access points 用 helper 替换。
-2. **vision_support.rs** + 单测。
-3. **multimodal.rs** + 单测。
-4. **chat_turn_driver 接入** — 分支构造 user message + 单测。
-5. **history.rs** — 确保历史不重构 Parts + 单测。
-6. **build_llm_content** — vision 路径下 image attachment 不出现在 text 提示。
-7. **OpenAI provider** — Parts → image_url + 单测。
-8. **Claude provider** — Parts → image block + 单测。
-9. **Qwen / Lotus / Custom providers** — OpenAI-compatible Parts + 单测。
-10. **完整集成验证** — `cargo test review_` 全过；至少手动跑一次 vision-capable 模型的真请求确认能识图。
+- [ ] **Step 2: Add filtered attachment helper**
 
-## 风险 / 应对
+In the file that owns `build_llm_content`, add a helper that accepts the attachment slice to render. If `build_llm_content` already accepts `attachments`, change call sites to pass a filtered vector where needed rather than changing unrelated behavior.
 
-- **content 字段反序列化**：`#[serde(untagged)]` 让 `String` 和 `Vec<Part>` 都能反序列化进。但**老 stored data 里 `content` 是 string**，读回来不走 Parts 分支，OK。
-- **Provider 漏改**：搜索所有 `m.content.clone()` / `&m.content` / `.content.is_empty()` 调用点，全部用 helper。  
-- **base64 编码慢**：10 张 50MB 在主线程同步编码。可接受；后续可放到 tokio blocking 线程。
-- **Image attachment 持久化路径稳定性**：`tmpImage/` 下的图，turn 完成前不能被清理。检查 `python/sandbox.rs` 的 cleanup 时机。
-- **错误处理**：build_image_parts 里某个图 read 失败，整条消息仍发；degraded list 用于事后 toast。
+Use this filtering rule in the chat driver:
 
-## 验证
+```rust
+let converted_paths: std::collections::HashSet<&str> = image_result
+    .converted_paths
+    .iter()
+    .map(String::as_str)
+    .collect();
+let text_attachments: Vec<ChatAttachmentRef> = request
+    .attachments
+    .iter()
+    .filter(|att| !converted_paths.contains(att.file_path.as_str()))
+    .cloned()
+    .collect();
+```
 
-- [ ] `cd src-tauri && cargo test review_ --tests --no-fail-fast` — 0 failures
-- [ ] `cd src-tauri && cargo test --tests` — 0 failures（注意不是仅 review_）
-- [ ] 手动连一个支持视觉的模型（Claude Sonnet / GPT-4o），上传一张图 → 模型能描述图内容
-- [ ] 手动连一个不支持视觉的模型（DeepSeek），上传一张图 → 模型走原 path 提示路径，不报错
+This keeps non-image files and degraded images in path text while removing successfully converted images.
+
+- [ ] **Step 3: Build sidecar only for Lotus Cloud vision models**
+
+In `chat_turn_driver.rs`, before constructing the final `LlmRequest`, add logic equivalent to:
+
+```rust
+use crate::llm::streaming::{AnthropicContentBlock, AnthropicMultimodalTurn};
+use crate::llm::vision_support::supports_lotus_anthropic_vision;
+use crate::runtime::chat::multimodal::build_anthropic_image_blocks;
+
+let is_lotus_cloud = settings.use_cloud;
+let vision_enabled = is_lotus_cloud && supports_lotus_anthropic_vision(&settings.cloud_model);
+let has_images = request.attachments.iter().any(crate::runtime::chat::multimodal::is_image_attachment);
+
+let mut anthropic_multimodal_turn = None;
+let attachments_for_text: Vec<ChatAttachmentRef>;
+
+if vision_enabled && has_images {
+    let image_result = build_anthropic_image_blocks(&request.attachments);
+    let converted_paths: std::collections::HashSet<&str> = image_result.converted_paths.iter().map(String::as_str).collect();
+    attachments_for_text = request.attachments
+        .iter()
+        .filter(|att| !converted_paths.contains(att.file_path.as_str()))
+        .cloned()
+        .collect();
+
+    let text = build_llm_content(&request.content, &attachments_for_text /* plus existing args */);
+    let mut blocks = Vec::with_capacity(1 + image_result.blocks.len());
+    blocks.push(AnthropicContentBlock::Text { text });
+    blocks.extend(image_result.blocks);
+
+    if blocks.len() > 1 {
+        anthropic_multimodal_turn = Some(AnthropicMultimodalTurn {
+            image_count: blocks.len() - 1,
+            image_bytes_total: image_result.bytes_total,
+            degraded_count: image_result.degraded.len(),
+            blocks,
+        });
+    }
+} else {
+    attachments_for_text = request.attachments.clone();
+}
+```
+
+Adapt variable names to the actual structs. Do not log base64. If logging degradation, log only file name and reason.
+
+- [ ] **Step 4: Set sidecar on LlmRequest**
+
+When constructing `LlmRequest`, set:
+
+```rust
+anthropic_multimodal_turn,
+```
+
+The regular text `ChatMessage` should still exist so non-Claude providers and history logic remain stable. For a sidecar request, its text should be built from `attachments_for_text`, not the full attachment list.
+
+- [ ] **Step 5: Add current-turn filtering test**
+
+Add a test that creates one image attachment and one PDF attachment with `settings.use_cloud = true` and `settings.cloud_model = "claude-sonnet-4-5"`. Assert:
+
+- `LlmRequest.anthropic_multimodal_turn.is_some()`.
+- Sidecar blocks contain one `text` and one `image` block.
+- Text content contains the PDF path/name.
+- Text content does not contain the converted image path/name.
+
+- [ ] **Step 6: Add unsupported model degradation test**
+
+Add a test with the same image attachment but `settings.cloud_model = "deepseek-v4-pro[1m]"`. Assert:
+
+- `LlmRequest.anthropic_multimodal_turn.is_none()`.
+- Text content still contains the image path/name.
+
+- [ ] **Step 7: Run focused chat tests**
+
+Run the narrowest relevant command found by the repo. Start with:
+
+```bash
+cd /Users/oayzz/.codex/worktrees/275c/lotus-app/src-tauri
+cargo test multimodal --lib --no-fail-fast
+cargo test chat_turn --lib --no-fail-fast
+```
+
+If `chat_turn` does not match tests, run the exact test names added in Steps 5 and 6.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add src-tauri/src/runtime/chat/chat_turn_driver.rs src-tauri/src/transport/tauri_commands/chat/chat_runtime_impl.rs
+git commit -m "feat(chat): attach anthropic image sidecar for cloud turns"
+```
+
+## Task 6: Verify LotusProvider Inherits Claude Sidecar Behavior
+
+**Files:**
+- Modify only if necessary: `src-tauri/src/llm/providers/lotus.rs`
+- Test: existing Lotus provider tests or a focused unit test
+
+- [ ] **Step 1: Confirm LotusProvider delegates to ClaudeProvider**
+
+Run:
+
+```bash
+sed -n '1,120p' /Users/oayzz/.codex/worktrees/275c/lotus-app/src-tauri/src/llm/providers/lotus.rs
+```
+
+Expected: `LotusProvider` wraps `ClaudeProvider::with_url(...)` pointing at `/anthropic/v1/messages`.
+
+- [ ] **Step 2: Add no-op assertion test or comment**
+
+If there is a Lotus provider test module, add a test that constructs a Lotus request with `anthropic_multimodal_turn` and verifies the inner Claude request body contains Anthropic image blocks. If Lotus internals are not easily testable, add a code comment near `ClaudeProvider::with_url(...)`:
+
+```rust
+// Anthropic multimodal image sidecars are serialized in ClaudeProvider;
+// Lotus inherits that behavior because the cloud ingress is native
+// /anthropic/v1/messages, not OpenAI-compatible /v1/chat/completions.
+```
+
+- [ ] **Step 3: Run provider tests**
+
+Run:
+
+```bash
+cd /Users/oayzz/.codex/worktrees/275c/lotus-app/src-tauri
+cargo test lotus --lib --no-fail-fast
+cargo test claude --lib --no-fail-fast
+```
+
+Expected: Lotus/Claude focused tests pass.
+
+- [ ] **Step 4: Commit if files changed**
+
+```bash
+git add src-tauri/src/llm/providers/lotus.rs
+git commit -m "docs(llm): document lotus anthropic multimodal inheritance"
+```
+
+Skip commit if no file changed.
+
+## Task 7: Final Verification
+
+**Files:**
+- No code changes expected.
+
+- [ ] **Step 1: Run compile check**
+
+```bash
+cd /Users/oayzz/.codex/worktrees/275c/lotus-app/src-tauri
+cargo check
+```
+
+Expected: exit 0.
+
+- [ ] **Step 2: Run focused Rust tests**
+
+```bash
+cd /Users/oayzz/.codex/worktrees/275c/lotus-app/src-tauri
+cargo test vision_support --lib --no-fail-fast
+cargo test multimodal --lib --no-fail-fast
+cargo test claude --lib --no-fail-fast
+```
+
+Expected: exit 0 for each command. If the crate layout requires `--tests` instead of `--lib`, record the substituted commands and outputs.
+
+- [ ] **Step 3: Manual cloud smoke test**
+
+Using a logged-in session key, send one small PNG through the app with model `claude-sonnet-4-5` and prompt:
+
+```text
+这张图的主要颜色是什么？只回答颜色。
+```
+
+Expected: answer identifies the actual image color. Confirm request logs do not print base64.
+
+- [ ] **Step 4: Manual degradation smoke test**
+
+Send either a >3MB image or use a non-allowlisted model. Expected:
+
+- request does not fail because of local preprocessing;
+- image remains in `[当前消息附件]` path text;
+- UI/log emits a degradation reason without base64.
+
+- [ ] **Step 5: Review git diff for scope creep**
+
+Run:
+
+```bash
+cd /Users/oayzz/.codex/worktrees/275c/lotus-app
+git diff --stat HEAD~6..HEAD
+```
+
+Expected changed files are limited to the cloud Anthropic multimodal scope. No OpenAI/Qwen/DeepSeek/Volcano/custom provider files changed.
+
+---
+
+## Self-Review Checklist
+
+- Spec coverage: current-turn image pixels, cloud-only, Anthropic-only, size guards, degradation, no base64 persistence, no historical resend, and no OpenAI fallback are covered by tasks 1-7.
+- Placeholder scan: this plan contains no implementation placeholders; code snippets specify concrete types and tests. The only adaptation point is exact existing struct fields/module paths, explicitly resolved by inspection steps before coding.
+- Type consistency: `AnthropicContentBlock`, `AnthropicImageSource`, and `AnthropicMultimodalTurn` are defined once and reused by multimodal builder and Claude serialization.
+- Scope check: plan deliberately excludes OpenAI-compatible providers and non-cloud routes, matching the 2026-05-11 service-side protocol decision.

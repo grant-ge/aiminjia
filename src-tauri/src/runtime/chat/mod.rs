@@ -4,6 +4,7 @@ pub mod compaction;
 pub mod context_builder;
 pub mod history;
 pub mod metrics;
+pub mod multimodal;
 pub mod post_process;
 pub mod preprocess;
 pub mod prompt;
