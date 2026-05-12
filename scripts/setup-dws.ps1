@@ -23,7 +23,9 @@ $Version = $env:DWS_VERSION
 if (-not $Version -or $Version -eq "latest") {
     $headers = @{ "User-Agent" = "aijia-setup" }
     if ($env:GITHUB_TOKEN) { $headers["Authorization"] = "Bearer $env:GITHUB_TOKEN" }
-    $api = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest" -Headers $headers
+    $restArgs = @{ Uri = "https://api.github.com/repos/$Repo/releases/latest"; Headers = $headers }
+    if ($env:HTTPS_PROXY) { $restArgs["Proxy"] = $env:HTTPS_PROXY; $restArgs["ProxyUseDefaultCredentials"] = $true }
+    $api = Invoke-RestMethod @restArgs
     $Version = $api.tag_name
 }
 if (-not $Version) { throw "Failed to resolve dws version" }
@@ -40,7 +42,12 @@ New-Item -ItemType Directory -Force -Path $TempDir | Out-Null
 
 try {
     $ArchivePath = Join-Path $TempDir $ArchiveName
-    Invoke-WebRequest -Uri $DownloadUrl -OutFile $ArchivePath -UseBasicParsing
+    $ProxyUrl = $env:HTTPS_PROXY
+    if ($ProxyUrl) {
+        Invoke-WebRequest -Uri $DownloadUrl -OutFile $ArchivePath -UseBasicParsing -Proxy $ProxyUrl -ProxyUseDefaultCredentials
+    } else {
+        Invoke-WebRequest -Uri $DownloadUrl -OutFile $ArchivePath -UseBasicParsing
+    }
 
     Expand-Archive -Path $ArchivePath -DestinationPath $TempDir -Force
 
