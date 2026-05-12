@@ -441,27 +441,27 @@ jobs:
 
       - name: Determine release type
         id: release-type
-        shell: bash
+        shell: pwsh
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "type=${{ inputs.release_type }}" >> "$GITHUB_OUTPUT"
-          elif [[ "${{ github.ref }}" == refs/tags/beta-v* ]]; then
-            echo "type=beta" >> "$GITHUB_OUTPUT"
-          else
-            echo "type=release" >> "$GITHUB_OUTPUT"
-          fi
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            echo "type=${{ inputs.release_type }}" >> $env:GITHUB_OUTPUT
+          } elseif ("${{ github.ref }}" -like "refs/tags/beta-v*") {
+            echo "type=beta" >> $env:GITHUB_OUTPUT
+          } else {
+            echo "type=release" >> $env:GITHUB_OUTPUT
+          }
 
       - name: Extract version
         id: version
-        shell: bash
+        shell: pwsh
         run: |
-          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            version="${GITHUB_REF_NAME#v}"
-            version="${version#beta-v}"
-          else
-            version=$(grep '"version"' src-tauri/tauri.conf.json | head -1 | sed 's/.*: *"\(.*\)".*/\1/')
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if ("${{ github.ref }}" -like "refs/tags/*") {
+            $version = "$env:GITHUB_REF_NAME" -replace '^v','' -replace '^beta-v',''
+          } else {
+            $raw = (Get-Content src-tauri/tauri.conf.json | Select-String '"version"' | Select-Object -First 1).ToString()
+            $version = ($raw -replace '.*"version"\s*:\s*"([^"]+)".*','$1').Trim()
+          }
+          echo "version=$version" >> $env:GITHUB_OUTPUT
           echo "Version: $version"
 
       - name: Setup Node.js
@@ -512,10 +512,13 @@ jobs:
         run: .\scripts\setup-dws.ps1
 
       - name: Download changelog.json from production
-        shell: bash
+        shell: pwsh
         run: |
-          curl -fsSL "https://ai.renlijia.com/changelog.json" -o src-tauri/changelog.json \
-            || echo '{"versions":[]}' > src-tauri/changelog.json
+          try {
+            Invoke-WebRequest -Uri "https://ai.renlijia.com/changelog.json" -OutFile src-tauri/changelog.json -UseBasicParsing
+          } catch {
+            '{"versions":[]}' | Set-Content src-tauri/changelog.json
+          }
 
       - name: Build Tauri app
         env:
