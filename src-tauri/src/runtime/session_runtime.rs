@@ -13,7 +13,7 @@ use crate::runtime::chat::{RuntimeChatTurnDriver, RuntimeLlmExecutor};
 use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::events::{RuntimeEvent, RuntimeEventKind};
 use crate::runtime::identity::IdentityMapping;
-use crate::runtime::ids::{RunId, SessionId, ToolCallId};
+use crate::runtime::ids::{AgentId, RunId, SessionId, ToolCallId};
 use crate::runtime::interaction::{
     InMemoryInteractionControlPlane, InteractionId, InteractionResolution,
 };
@@ -197,6 +197,31 @@ impl SessionRuntime {
         self
     }
 
+    /// LTR (B-gap1 Path C): wire the supervisor's `wake_fn` back into this
+    /// runtime so that `LeadIdleSupervisor::enqueue` can spawn a Lead
+    /// continuation turn directly when the Idle→Running CAS fires.
+    ///
+    /// Must be called *after* `with_lead_idle` and after the rest of the
+    /// runtime is fully built (registries, host, llm_executor) — the wake
+    /// callback uses the cloned runtime to drive a real `run_chat_request`.
+    /// No-op when no supervisor is wired or when `set_wake_fn` was already
+    /// called once (the supervisor is itself idempotent).
+    ///
+    /// Callers must be aware this introduces a soft cycle: supervisor holds
+    /// an `Arc<dyn Fn>` capturing a `SessionRuntime` clone, which itself
+    /// holds the supervisor.  In production both live for the process
+    /// lifetime; in tests, drop the SessionRuntime first and the supervisor
+    /// will be cleaned up when its outer `Arc` count hits zero on app exit.
+    pub fn wire_lead_idle_wake_path(&self) -> bool {
+        let Some(sup) = self.lead_idle.as_ref() else {
+            return false;
+        };
+        let runtime = self.clone();
+        sup.set_wake_fn(Arc::new(move |key: crate::runtime::agent::LeadKey| {
+            runtime.spawn_continuation(key.0, key.1);
+        }))
+    }
+
     /// LTR (P2.7): inject the per-process cancellation registry.
     pub fn with_cancellation_registry(
         mut self,
@@ -211,6 +236,41 @@ impl SessionRuntime {
     pub fn with_host(mut self, host: Arc<dyn RuntimeHost>) -> Self {
         self.host = Some(host);
         self
+    }
+
+    /// LTR (B-gap1 Path C): spawn a Lead continuation turn for `session_id`.
+    ///
+    /// Called by `LeadIdleSupervisor`'s wake_fn when a Teammate's
+    /// SendMessage flipped the Lead from Idle to Running.  Builds a turn
+    /// with the sentinel content `__resume_from_task_notification__` which
+    /// the chat turn driver recognises and treats as "drain pending stuff
+    /// from the inbox/queue instead of persisting a user message".
+    ///
+    /// Fire-and-forget: spawns a tokio task and returns immediately.  Errors
+    /// inside the spawned turn are logged but never propagated to the
+    /// caller (which is on a `SendMessage` tool path that has its own
+    /// success contract).
+    pub fn spawn_continuation(&self, session_id: SessionId, _lead_agent_id: AgentId) {
+        let runtime = self.clone();
+        let session_str = session_id.as_str().to_string();
+        tokio::spawn(async move {
+            log::info!(
+                "[session_runtime] spawn_continuation conv={} (Path C wake)",
+                session_str
+            );
+            let req = ChatTurnRequest::new(
+                session_id.clone(),
+                "__resume_from_task_notification__".to_string(),
+                Vec::new(),
+            );
+            if let Err(e) = runtime.run_chat_request(req).await {
+                log::warn!(
+                    "[session_runtime] continuation turn failed conv={} err={}",
+                    session_str,
+                    e
+                );
+            }
+        });
     }
 
     /// Replace the base `QueryEngine` (and clear any cached per-session engines).

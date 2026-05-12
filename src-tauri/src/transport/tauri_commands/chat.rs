@@ -2246,6 +2246,12 @@ impl TauriChatCommandAdapter {
             runtime = runtime.with_cancellation_registry(reg.inner().clone());
         }
         runtime = runtime.with_host(host as Arc<dyn crate::transport::runtime_host::RuntimeHost>);
+        // LTR (B-gap1 Path C): wire the supervisor's wake_fn so that
+        // SendMessage's enqueue(key) will auto-spawn a Lead continuation turn
+        // the moment the supervisor CAS flips a Lead from Idle to Running.
+        // Must run after every other `with_*` call so the cloned runtime
+        // captured inside the wake closure is fully built.
+        runtime.wire_lead_idle_wake_path();
         Self { runtime, services }
     }
 

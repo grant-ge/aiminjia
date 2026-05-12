@@ -193,13 +193,14 @@ impl RuntimeTool for SendMessageRuntimeTool {
             })?;
 
         // P2.4 / B-gap1: if the recipient is the Lead, ask the supervisor
-        // whether we need to wake it.  Path A (turn-end self-check in
-        // chat_turn_driver::run_chat_turn_s4) handles the case where the
-        // Lead is currently running — pending is recorded here and the
-        // driver emits `LeadHasPendingMessages` at turn end.  Path C
-        // (in-process auto-spawn from this site) lands in a follow-up.
-        // Until then, the `true` branch only logs the wake intent; the
-        // pending mark is what matters and is recorded by `enqueue`.
+        // whether the Idle→Running CAS should fire.  Path A (turn-end
+        // self-check in chat_turn_driver::run_chat_turn_s4) handles the
+        // case where the Lead is currently running — pending is recorded
+        // here and the driver emits `LeadHasPendingMessages` at turn end.
+        // Path C: when `enqueue` returns true the supervisor itself invokes
+        // the wake_fn previously installed by SessionRuntime, which
+        // tokio::spawns a continuation turn.  This tool just logs the
+        // outcome — no further work needed here.
         if to == LEAD_NAME {
             if let (Some(sup), Some(names_reg)) =
                 (ctx.lead_idle.as_ref(), ctx.agent_names.as_ref())
@@ -208,8 +209,8 @@ impl RuntimeTool for SendMessageRuntimeTool {
                     let key = (session.clone(), lead_id);
                     if sup.enqueue(&key).await {
                         log::info!(
-                            "[SendMessage] Lead idle → wake requested; Path A will emit \
-                             LeadHasPendingMessages at turn-end (Path C auto-spawn pending)"
+                            "[SendMessage] Lead idle → Path C wake triggered \
+                             (continuation turn spawned by supervisor)"
                         );
                     } else {
                         log::debug!(

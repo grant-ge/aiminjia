@@ -11,18 +11,19 @@
 //!
 //! - **Path C** (SendMessage kick):  when a Teammate's SendMessage delivers
 //!   to the Lead's inbox, the SendMessage tool calls `enqueue(key)`.  If the
-//!   supervisor reports `true` (Lead was Idle), the tool is responsible for
-//!   actually spawning the next turn — only one concurrent caller will see
-//!   `true` thanks to the atomic CAS in the supervisor.  `false` means the
-//!   Lead is currently running; Path A will pick up the pending mark.
+//!   Lead was Idle the supervisor's atomic CAS flips it to Running and —
+//!   when a `wake_fn` has been injected — synchronously invokes it so the
+//!   continuation turn gets spawned without the caller having to know how
+//!   to do that.  Only one concurrent caller per Idle->Running transition
+//!   wins the CAS, so `wake_fn` runs at most once per wake window.
 //!
-//! This module ships the state machine + tests.  Wiring into
-//! `chat_turn_driver` and `SendMessage` arrives in follow-up work — for now
-//! the supervisor is exposed via `app.manage()` so future wiring sites can
-//! `try_state::<Arc<LeadIdleSupervisor>>()` it.
+//! `wake_fn` is *fire-and-forget*: it is called inline on the `enqueue`
+//! caller's task and must do its own `tokio::spawn` (or equivalent) if the
+//! actual continuation work is async.  Keeping `enqueue` non-blocking is
+//! what lets SendMessage stay a fast tool.
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use tokio::sync::Mutex;
 
 use crate::runtime::ids::{AgentId, SessionId};
@@ -32,24 +33,52 @@ use crate::runtime::ids::{AgentId, SessionId};
 /// `AgentId` portion identifies which agent is the Lead.
 pub type LeadKey = (SessionId, AgentId);
 
+/// Fire-and-forget callback type for Path C.  Receives the `LeadKey` that
+/// just transitioned Idle → Running and is expected to spawn (typically via
+/// `tokio::spawn`) the continuation work without blocking the caller.
+pub type WakeFn = Arc<dyn Fn(LeadKey) + Send + Sync + 'static>;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LeadState {
     Running,
     Idle { pending: bool },
 }
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct LeadIdleSupervisor {
     state: Mutex<HashMap<LeadKey, LeadState>>,
     /// Sidecar: tracks whether at least one SendMessage arrived while the
     /// Lead was in the Running state.  Reset when a new Running window
     /// begins and consumed at `mark_idle`.
     pending_during_run: Mutex<HashMap<LeadKey, bool>>,
+    /// LTR (B-gap1 Path C): callback invoked inline by `enqueue` whenever
+    /// the supervisor's atomic CAS flips a Lead from Idle to Running, so the
+    /// session runtime can spawn a continuation turn without SendMessage
+    /// needing a SessionRuntime handle.  Set once at SessionRuntime startup
+    /// via `set_wake_fn`; subsequent attempts are silently ignored.
+    wake_fn: OnceLock<WakeFn>,
 }
 
 impl LeadIdleSupervisor {
     pub fn new() -> Arc<Self> {
         Arc::new(Self::default())
+    }
+
+    /// Inject the Path C wake callback.  Idempotent: only the first call
+    /// wins, later attempts are ignored (and logged at debug level) so a
+    /// stray re-wire cannot redirect existing wake traffic.  Returns `true`
+    /// if this call installed the callback, `false` if one was already
+    /// present.
+    pub fn set_wake_fn(&self, wake_fn: WakeFn) -> bool {
+        match self.wake_fn.set(wake_fn) {
+            Ok(()) => true,
+            Err(_) => {
+                log::debug!(
+                    "[LeadIdleSupervisor] set_wake_fn called twice; second call ignored"
+                );
+                false
+            }
+        }
     }
 
     /// Mark the Lead as currently running a turn.  Resets the pending counter
@@ -80,11 +109,16 @@ impl LeadIdleSupervisor {
 
     /// Record that a new message arrived for the Lead.
     ///
-    /// Returns `true` if the caller (SendMessage / Path C) should wake the
-    /// Lead.  Only one caller per Idle->Running transition sees `true`.
+    /// When the Lead was Idle, atomically flips it to Running and — if a
+    /// `wake_fn` is wired — invokes it inline so the caller doesn't need to
+    /// know how to spawn a continuation.  `wake_fn` is fire-and-forget; it
+    /// must internally `tokio::spawn` any async work.
     ///
-    /// Returns `false` if the Lead was already Running — the pending mark
-    /// is recorded and Path A will catch it at turn end.
+    /// Returns `true` when this caller won the Idle→Running CAS (and the
+    /// wake callback was invoked, if any).  Returns `false` if the Lead was
+    /// already Running — the pending mark is recorded and Path A will catch
+    /// it at turn end, so the wake callback is intentionally NOT invoked
+    /// here (the running turn will pick up the work itself).
     pub async fn enqueue(&self, k: &LeadKey) -> bool {
         let mut s = self.state.lock().await;
         match s.get(k).copied() {
@@ -92,6 +126,9 @@ impl LeadIdleSupervisor {
                 s.insert(k.clone(), LeadState::Running);
                 drop(s);
                 self.pending_during_run.lock().await.insert(k.clone(), false);
+                if let Some(wake) = self.wake_fn.get() {
+                    wake(k.clone());
+                }
                 true
             }
             Some(LeadState::Running) => {
