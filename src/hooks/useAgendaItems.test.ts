@@ -28,7 +28,7 @@ function makeItem(id: string): AgendaItem {
     title: `Agenda ${id}`,
     prompt: 'Do work',
     organizerEmployeeId: 'emp-1',
-    participants: [{ personaId: 'p1', joinedAt: now }],
+    participants: [{ employeeId: 'p1', joinedAt: now }],
     startAt: now,
     timezone: 'Asia/Shanghai',
     rule: null,
