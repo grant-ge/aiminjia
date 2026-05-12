@@ -432,12 +432,12 @@ async fn drain_and_inject_lead_inbox_messages(
     query_engine: &QueryEngine,
     session_id: &SessionId,
     messages: &mut Vec<serde_json::Value>,
-) -> usize {
+) -> (usize, Option<String>) {
     let Some(names) = query_engine.agent_names() else {
-        return 0;
+        return (0, None);
     };
     let Some(inbox_reg) = query_engine.inbox_registry() else {
-        return 0;
+        return (0, None);
     };
     let Some(lead_id) = names
         .resolve(
@@ -446,20 +446,20 @@ async fn drain_and_inject_lead_inbox_messages(
         )
         .await
     else {
-        return 0;
+        return (0, None);
     };
     let Some(lead_inbox) = inbox_reg.get(session_id, &lead_id).await else {
-        return 0;
+        return (0, None);
     };
     let drained = lead_inbox.drain_pending().await;
     if drained.is_empty() {
-        return 0;
+        return (0, None);
     }
 
     let xml = render_peer_messages_xml(&drained);
     messages.push(serde_json::json!({
         "role": "user",
-        "content": xml,
+        "content": xml.clone(),
     }));
 
     let count = drained.len();
@@ -475,7 +475,7 @@ async fn drain_and_inject_lead_inbox_messages(
             .ok(true)
             .payload(serde_json::json!({ "count": count })),
     );
-    count
+    (count, Some(xml))
 }
 
 /// Render drained inbox items as a `<peer-messages>` XML attachment, in
@@ -1405,16 +1405,50 @@ impl RuntimeChatTurnDriver {
             &mut initial_messages,
         );
 
+        // persist each task-notification XML as user message (best-effort)
+        for notification in &pending_task_notifications {
+            if let Err(e) = executor
+                .persist_user_message(
+                    request.conversation_id.as_str(),
+                    &notification.xml,
+                    &[],
+                    None,
+                )
+                .await
+            {
+                log::warn!(
+                    "[chat_turn_driver] persist task-notification failed (best-effort): {e}"
+                );
+            }
+        }
+
         // LTR P2: drain the Lead's inbox so any messages peers delivered via
         // SendMessage(to: "team-lead", ...) while the Lead was busy / idle
         // are folded into this turn as the latest user-role attachment.
         // Mirrors cc-best's `getTeammateMailboxAttachments()`.
-        let drained_peer_messages = drain_and_inject_lead_inbox_messages(
+        let (drained_peer_messages, peer_xml) = drain_and_inject_lead_inbox_messages(
             &self.query_engine,
             turn.session_id(),
             &mut initial_messages,
         )
         .await;
+
+        // persist peer messages XML as user message (best-effort)
+        if let Some(xml) = peer_xml {
+            if let Err(e) = executor
+                .persist_user_message(
+                    request.conversation_id.as_str(),
+                    &xml,
+                    &[],
+                    None,
+                )
+                .await
+            {
+                log::warn!(
+                    "[chat_turn_driver] persist peer-messages failed (best-effort): {e}"
+                );
+            }
+        }
 
         // Guard: if this turn was triggered purely to resume from a task
         // notification or a Path-C inbox wake but BOTH queues are empty
