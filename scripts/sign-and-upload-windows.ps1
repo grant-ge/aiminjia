@@ -76,8 +76,14 @@ if (-not $env:TAURI_SIGNING_PRIVATE_KEY) {
 }
 if (Test-Path $SigPath) { Remove-Item $SigPath }
 
-# Use npx to run tauri signer without needing the full repo
-npx --yes @tauri-apps/cli@latest signer sign "$ExePath"
+# Prefer globally installed tauri-cli, fallback to npx
+if (Get-Command tauri -ErrorAction SilentlyContinue) {
+    Write-Host "  Using global tauri-cli"
+    tauri signer sign "$ExePath"
+} else {
+    Write-Host "  Using npx @tauri-apps/cli (tip: npm install -g @tauri-apps/cli for faster runs)"
+    npx --yes @tauri-apps/cli@latest signer sign "$ExePath"
+}
 if ($LASTEXITCODE -ne 0) { throw "Tauri signer failed" }
 if (-not (Test-Path $SigPath)) { throw ".sig not created at $SigPath" }
 Write-Host "  Updater signature created: $SigPath" -ForegroundColor Green

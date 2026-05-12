@@ -1,129 +1,74 @@
-# Setup Windows self-hosted GitHub Actions runner for AIjia
-# Run this script once on a new Windows build machine (as Administrator).
+# Setup Windows signing machine for AIjia
 #
-# Prerequisites:
-#   - Windows 10/11 x64
-#   - Code signing certificate imported into local cert store
-#   - Internet access (direct or system-level proxy configured)
+# This machine only does: Authenticode signing + Tauri updater signing + OSS upload.
+# Building is done on GitHub-hosted runners.
 #
-# Usage: powershell -ExecutionPolicy Bypass -File scripts/setup-runner-windows.ps1
+# Usage: powershell -ExecutionPolicy Bypass -File scripts\setup-runner-windows.ps1
 
 $ErrorActionPreference = "Stop"
 
-Write-Host "=== AIjia Windows Runner Setup ===" -ForegroundColor Cyan
+Write-Host "=== AIjia Windows Signing Machine Setup ===" -ForegroundColor Cyan
 Write-Host ""
 
-# No admin required — runs under the same user that will run the GitHub Actions runner.
-
-# ── 2. Node.js ──
-Write-Host "[1/6] Checking Node.js..." -ForegroundColor Green
+# ── 1. Node.js (for tauri signer) ──
+Write-Host "[1/4] Checking Node.js..." -ForegroundColor Green
 if (Get-Command node -ErrorAction SilentlyContinue) {
     $nodeVer = node --version
     Write-Host "  Node.js $nodeVer found"
 } else {
-    Write-Host "  Node.js not found. Install from https://nodejs.org/ (v20 LTS recommended)" -ForegroundColor Yellow
+    Write-Host "  Node.js not found. Install from https://nodejs.org/ (v20 LTS)" -ForegroundColor Yellow
 }
 
-# ── 3. pnpm ──
-Write-Host "[2/6] Checking pnpm..." -ForegroundColor Green
-if (Get-Command pnpm -ErrorAction SilentlyContinue) {
-    $pnpmVer = pnpm --version
-    Write-Host "  pnpm $pnpmVer found"
+# ── 2. Tauri CLI (for updater signature) ──
+Write-Host "[2/4] Checking Tauri CLI..." -ForegroundColor Green
+if (Get-Command tauri -ErrorAction SilentlyContinue) {
+    $tauriVer = tauri --version 2>$null
+    Write-Host "  tauri-cli $tauriVer found"
 } else {
-    Write-Host "  Installing pnpm..."
-    npm install -g pnpm@9
-}
-
-# ── 4. Rust ──
-Write-Host "[3/6] Checking Rust..." -ForegroundColor Green
-if (Get-Command cargo -ErrorAction SilentlyContinue) {
-    $rustVer = rustc --version
-    Write-Host "  $rustVer found"
-} else {
-    Write-Host "  Rust not found. Installing..."
-    Invoke-WebRequest -Uri "https://win.rustup.rs/x86_64" -OutFile "$env:TEMP\rustup-init.exe" -UseBasicParsing
-    & "$env:TEMP\rustup-init.exe" -y --default-toolchain stable
-    $env:Path += ";$env:USERPROFILE\.cargo\bin"
-    Write-Host "  Rust installed: $(rustc --version)"
-}
-
-# ── 5. MSVC Build Tools (link.exe) ──
-Write-Host "[4/7] Checking MSVC Build Tools (link.exe)..." -ForegroundColor Green
-$vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-if (Test-Path $vsWhere) {
-    $vsInstall = & $vsWhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null
-    if ($vsInstall) {
-        Write-Host "  MSVC Build Tools found: $vsInstall" -ForegroundColor Green
+    Write-Host "  Tauri CLI not found. Installing globally..."
+    if (Get-Command npm -ErrorAction SilentlyContinue) {
+        npm install -g @tauri-apps/cli
+        Write-Host "  Installed. Fallback: npx @tauri-apps/cli@latest also works." -ForegroundColor Green
     } else {
-        Write-Host "  MSVC C++ tools NOT installed." -ForegroundColor Red
-        Write-Host "  Install: Visual Studio Build Tools -> C++ build tools workload"
-        Write-Host '  Quick install: Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vs_BuildTools.exe" -OutFile "$env:TEMP\vs_BuildTools.exe"; & "$env:TEMP\vs_BuildTools.exe" --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended'
+        Write-Host "  Cannot install — Node.js/npm not available. Install Node.js first." -ForegroundColor Yellow
     }
-} else {
-    Write-Host "  Visual Studio Installer not found — MSVC Build Tools likely not installed." -ForegroundColor Red
-    Write-Host '  Install: Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vs_BuildTools.exe" -OutFile "$env:TEMP\vs_BuildTools.exe"; & "$env:TEMP\vs_BuildTools.exe" --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended'
 }
 
-# ── 6. Python + oss2 ──
-Write-Host "[5/7] Checking Python..." -ForegroundColor Green
+# ── 3. Python + oss2 (for OSS upload) ──
+Write-Host "[3/4] Checking Python + oss2..." -ForegroundColor Green
 if (Get-Command python -ErrorAction SilentlyContinue) {
     $pyVer = python --version
     Write-Host "  $pyVer found"
-    Write-Host "  Installing oss2..."
-    python -m pip install --disable-pip-version-check oss2
+    Write-Host "  Installing/upgrading oss2..."
+    python -m pip install --disable-pip-version-check --upgrade oss2
 } else {
-    Write-Host "  Python not found. Install from https://www.python.org/ (v3.10+ recommended)" -ForegroundColor Yellow
+    Write-Host "  Python not found. Install from https://www.python.org/ (v3.10+)" -ForegroundColor Yellow
 }
 
-# ── 7. Windows SDK (signtool) ──
-Write-Host "[6/7] Checking Windows SDK (signtool)..." -ForegroundColor Green
-$signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter "signtool.exe" -ErrorAction SilentlyContinue |
-    Sort-Object { $_.Directory.Name } -Descending |
-    Select-Object -First 1
-if ($signtool) {
-    Write-Host "  signtool found: $($signtool.FullName)"
-} else {
-    Write-Host "  signtool.exe not found. Install Windows SDK from Visual Studio Installer." -ForegroundColor Yellow
-}
-
-# ── 8. Code signing certificate ──
-Write-Host "[7/7] Checking code signing certificate..." -ForegroundColor Green
-$certs = Get-ChildItem -Path Cert:\CurrentUser\My -CodeSigningCert -ErrorAction SilentlyContinue
-if ($certs) {
-    foreach ($cert in $certs) {
-        Write-Host "  Found (CurrentUser): $($cert.Subject)" -ForegroundColor Green
-        Write-Host "  Thumbprint: $($cert.Thumbprint)"
-        Write-Host "  Expires: $($cert.NotAfter)"
-    }
-} else {
-    Write-Host "  No code signing certificate in Cert:\CurrentUser\My" -ForegroundColor Yellow
-    Write-Host "  Certificate MUST be in CurrentUser store (not LocalMachine) for non-admin runner." -ForegroundColor Yellow
-}
+# ── 4. Code signing certificate ──
+Write-Host "[4/4] Checking code signing setup..." -ForegroundColor Green
+Write-Host "  EV certificate signing is done via SimpleSign app."
+Write-Host "  Ensure SimpleSign is installed and the hardware token (USB) is connected."
 
 # ── Summary ──
 Write-Host ""
-Write-Host "=== Environment Variables to Set ===" -ForegroundColor Cyan
-Write-Host "Set these as user environment variables (no admin required, persistent across reboots):"
+Write-Host "=== Environment Variables Required ===" -ForegroundColor Cyan
+Write-Host "Set these as user env vars (persistent across reboots):"
 Write-Host ""
-Write-Host '  [System.Environment]::SetEnvironmentVariable("SIGN_CERT_THUMBPRINT", "<cert-thumbprint>", "User")'
 Write-Host '  [System.Environment]::SetEnvironmentVariable("TAURI_SIGNING_PRIVATE_KEY", "<base64-key>", "User")'
 Write-Host '  [System.Environment]::SetEnvironmentVariable("TAURI_SIGNING_PRIVATE_KEY_PASSWORD", "<password>", "User")'
 Write-Host '  [System.Environment]::SetEnvironmentVariable("OSS_ACCESS_KEY_ID", "<ak>", "User")'
 Write-Host '  [System.Environment]::SetEnvironmentVariable("OSS_ACCESS_KEY_SECRET", "<sk>", "User")'
 Write-Host ""
-Write-Host "=== GitHub Actions Runner ===" -ForegroundColor Cyan
-Write-Host "Register at: GitHub repo -> Settings -> Actions -> Runners -> New self-hosted runner"
-Write-Host "Labels: Windows, X64"
-Write-Host "Install as service: .\svc.cmd install && .\svc.cmd start"
+Write-Host "=== Usage ===" -ForegroundColor Cyan
+Write-Host "After CI build completes on GitHub:"
+Write-Host "  1. Download 'windows-installers' artifact from GitHub Actions"
+Write-Host "  2. Sign the exe with SimpleSign"
+Write-Host "  3. Run: .\scripts\sign-and-upload-windows.ps1 <version> <release|beta>"
 Write-Host ""
 Write-Host "=== Network ===" -ForegroundColor Cyan
-Write-Host "If behind a firewall, configure system-level proxy (e.g., Clash/V2Ray)."
-Write-Host "CI workflow does NOT set proxy — the machine must be able to reach:"
-Write-Host "  - github.com (git clone)"
-Write-Host "  - registry.npmjs.org (pnpm install)"
-Write-Host "  - nodejs.org (Playwright Node.js runtime)"
-Write-Host "  - cdn.playwright.dev / storage.googleapis.com (Playwright Chromium)"
-Write-Host "  - static.rust-lang.org (rustup)"
-Write-Host "  - ai.renlijia.com (changelog)"
+Write-Host "Machine needs access to:"
+Write-Host "  - registry.npmjs.org (npx tauri-cli fallback)"
+Write-Host "  - oss-cn-beijing.aliyuncs.com (OSS upload)"
 Write-Host ""
 Write-Host "Setup complete!" -ForegroundColor Green
