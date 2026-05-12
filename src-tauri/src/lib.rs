@@ -515,6 +515,18 @@ pub fn run() {
             ));
             app.manage(facade);
 
+            // LTR: managed BEFORE TauriChatCommandAdapter::new() (line ~525)
+            // because the adapter's `try_state::<Arc<TeamRegistry>>()` runs
+            // inline during construction and must see these registries.
+            // Without this ordering, LTR tools (TeamCreate / SendMessage /
+            // TaskClaim / TeammateStop) all panic with
+            // "team_registry not injected into ToolExecutionContext".
+            app.manage(runtime::agent::TeamRegistry::new());
+            app.manage(runtime::agent::AgentNameRegistry::new());
+            app.manage(runtime::agent::InboxRegistry::new());
+            app.manage(runtime::agent::LeadIdleSupervisor::new());
+            app.manage(runtime::agent::CancellationRegistry::new());
+
             // Shared registry: ChannelManager worker inserts new session ids here;
             // IMAskCoordinator reads from it to decide if an event belongs to an IM session.
             // Created unconditionally before TauriChatCommandAdapter so the event adapter
@@ -562,11 +574,6 @@ pub fn run() {
             app.manage(std::sync::Arc::new(
                 crate::runtime::employee::EmployeeActiveRuns::new(),
             ));
-            app.manage(runtime::agent::TeamRegistry::new());
-            app.manage(runtime::agent::AgentNameRegistry::new());
-            app.manage(runtime::agent::InboxRegistry::new());
-            app.manage(runtime::agent::LeadIdleSupervisor::new());
-            app.manage(runtime::agent::CancellationRegistry::new());
 
             // Initialize ChannelManager for IM channel integration
             if let Some(paths) = current_user_storage.resolve_paths() {
