@@ -57,6 +57,10 @@ if ($exitCode -ne 0) { throw "npm install failed (exit $exitCode)" }
 # Install Playwright Chromium browser
 Write-Host "Installing Playwright Chromium..."
 $env:PLAYWRIGHT_BROWSERS_PATH = Join-Path $RuntimeDir "browsers"
+if ($env:HTTPS_PROXY) {
+    $env:npm_config_proxy = $env:HTTPS_PROXY
+    $env:npm_config_https_proxy = $env:HTTPS_PROXY
+}
 $ErrorActionPreference = "Continue"
 & (Join-Path $NodeDir "npx.cmd") playwright install chromium 2>&1 | ForEach-Object { Write-Host $_ }
 $exitCode = $LASTEXITCODE
