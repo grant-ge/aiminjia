@@ -434,6 +434,12 @@ jobs:
     runs-on: [self-hosted, Windows, X64]
     timeout-minutes: 60
     steps:
+      - name: Configure git proxy
+        shell: pwsh
+        run: |
+          git config --global http.proxy http://127.0.0.1:7897
+          git config --global https.proxy http://127.0.0.1:7897
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
