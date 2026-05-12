@@ -3253,8 +3253,6 @@ impl crate::runtime::pending::ChatTurnDispatcher for TauriChatCommandAdapter {
                         crate::runtime::chat::chat_turn_driver::build_user_content_json(
                             &text,
                             &attachments,
-                            None,
-                            None,
                         );
                     let content_json = content_value.to_string();
                     if let Err(e) =
