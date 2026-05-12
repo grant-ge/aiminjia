@@ -43,17 +43,21 @@ $NpmCmd = Join-Path $NodeDir "npm.cmd"
 # Install npm dependencies
 Write-Host "Installing npm dependencies..."
 Push-Location $RuntimeDir
-$npmResult = & $NpmCmd install --production 2>&1
-$npmResult | Select-Object -Last 5
-if ($LASTEXITCODE -ne 0) { Pop-Location; throw "npm install failed (exit $LASTEXITCODE)" }
+$ErrorActionPreference = "Continue"
+& $NpmCmd install --omit=dev 2>&1 | ForEach-Object { Write-Host $_ }
+$exitCode = $LASTEXITCODE
+$ErrorActionPreference = "Stop"
 Pop-Location
+if ($exitCode -ne 0) { throw "npm install failed (exit $exitCode)" }
 
 # Install Playwright Chromium browser
 Write-Host "Installing Playwright Chromium..."
 $env:PLAYWRIGHT_BROWSERS_PATH = Join-Path $RuntimeDir "browsers"
-$pwResult = & (Join-Path $NodeDir "npx.cmd") playwright install chromium 2>&1
-$pwResult | Select-Object -Last 5
-if ($LASTEXITCODE -ne 0) { throw "playwright install failed (exit $LASTEXITCODE)" }
+$ErrorActionPreference = "Continue"
+& (Join-Path $NodeDir "npx.cmd") playwright install chromium 2>&1 | ForEach-Object { Write-Host $_ }
+$exitCode = $LASTEXITCODE
+$ErrorActionPreference = "Stop"
+if ($exitCode -ne 0) { throw "playwright install failed (exit $exitCode)" }
 
 Write-Host ""
 Write-Host "=== Playwright runtime ready ==="

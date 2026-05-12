@@ -439,6 +439,7 @@ jobs:
         run: |
           git config --global http.proxy http://127.0.0.1:7897
           git config --global https.proxy http://127.0.0.1:7897
+          git config --global core.longpaths true
           echo "HTTPS_PROXY=http://127.0.0.1:7897" >> $env:GITHUB_ENV
           echo "HTTP_PROXY=http://127.0.0.1:7897" >> $env:GITHUB_ENV
           echo "NO_PROXY=localhost,127.0.0.1" >> $env:GITHUB_ENV
