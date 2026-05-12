@@ -484,12 +484,18 @@ jobs:
           version: 9
 
       - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Rust cache
-        uses: swatinem/rust-cache@v2.7.3
-        with:
-          workspaces: src-tauri
+        shell: powershell
+        run: |
+          if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
+            Write-Host "Rust not found, installing..."
+            Invoke-WebRequest -Uri "https://win.rustup.rs/x86_64" -OutFile "$env:TEMP\rustup-init.exe" -UseBasicParsing
+            & "$env:TEMP\rustup-init.exe" -y --default-toolchain stable --no-modify-path
+            $env:Path += ";$env:USERPROFILE\.cargo\bin"
+            echo "$env:USERPROFILE\.cargo\bin" >> $env:GITHUB_PATH
+          } else {
+            Write-Host "Rust already installed: $(rustc --version)"
+            rustup update stable
+          }
 
       - name: Install frontend dependencies
         run: pnpm install
