@@ -434,11 +434,14 @@ jobs:
     runs-on: [self-hosted, Windows, X64]
     timeout-minutes: 60
     steps:
-      - name: Configure git proxy
+      - name: Configure proxy
         shell: powershell
         run: |
           git config --global http.proxy http://127.0.0.1:7897
           git config --global https.proxy http://127.0.0.1:7897
+          echo "HTTPS_PROXY=http://127.0.0.1:7897" >> $env:GITHUB_ENV
+          echo "HTTP_PROXY=http://127.0.0.1:7897" >> $env:GITHUB_ENV
+          echo "NO_PROXY=localhost,127.0.0.1" >> $env:GITHUB_ENV
 
       - name: Checkout
         uses: actions/checkout@v4
