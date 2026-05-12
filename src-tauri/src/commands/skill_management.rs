@@ -557,7 +557,18 @@ pub async fn install_marketplace_skill(
             return Err("Package too large (exceeds 50MB extraction limit)".to_string());
         }
 
-        let out_path = dest.join(file.mangled_name());
+        // Use enclosed_name() to prevent path traversal attacks — it returns
+        // None for entries whose resolved path would escape the destination.
+        let relative = file
+            .enclosed_name()
+            .ok_or_else(|| format!("Unsafe zip entry path: {:?}", file.name()))?
+            .to_path_buf();
+        let out_path = dest.join(&relative);
+
+        // Belt-and-suspenders: verify the resolved path is still under dest
+        if !out_path.starts_with(&dest) {
+            return Err(format!("Path traversal detected: {:?}", relative));
+        }
 
         if file.is_dir() {
             std::fs::create_dir_all(&out_path).map_err(|e| e.to_string())?;
