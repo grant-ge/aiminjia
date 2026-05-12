@@ -13,11 +13,7 @@ $ErrorActionPreference = "Stop"
 Write-Host "=== AIjia Windows Runner Setup ===" -ForegroundColor Cyan
 Write-Host ""
 
-# ── 1. Check admin ──
-$isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-if (-not $isAdmin) {
-    Write-Host "WARNING: Not running as Administrator. Some steps may fail." -ForegroundColor Yellow
-}
+# No admin required — runs under the same user that will run the GitHub Actions runner.
 
 # ── 2. Node.js ──
 Write-Host "[1/6] Checking Node.js..." -ForegroundColor Green
@@ -78,32 +74,25 @@ Write-Host "[6/6] Checking code signing certificate..." -ForegroundColor Green
 $certs = Get-ChildItem -Path Cert:\CurrentUser\My -CodeSigningCert -ErrorAction SilentlyContinue
 if ($certs) {
     foreach ($cert in $certs) {
-        Write-Host "  Found: $($cert.Subject)" -ForegroundColor Green
+        Write-Host "  Found (CurrentUser): $($cert.Subject)" -ForegroundColor Green
         Write-Host "  Thumbprint: $($cert.Thumbprint)"
         Write-Host "  Expires: $($cert.NotAfter)"
     }
 } else {
-    $certs = Get-ChildItem -Path Cert:\LocalMachine\My -CodeSigningCert -ErrorAction SilentlyContinue
-    if ($certs) {
-        foreach ($cert in $certs) {
-            Write-Host "  Found (LocalMachine): $($cert.Subject)" -ForegroundColor Green
-            Write-Host "  Thumbprint: $($cert.Thumbprint)"
-        }
-    } else {
-        Write-Host "  No code signing certificate found in cert store." -ForegroundColor Yellow
-    }
+    Write-Host "  No code signing certificate in Cert:\CurrentUser\My" -ForegroundColor Yellow
+    Write-Host "  Certificate MUST be in CurrentUser store (not LocalMachine) for non-admin runner." -ForegroundColor Yellow
 }
 
 # ── Summary ──
 Write-Host ""
 Write-Host "=== Environment Variables to Set ===" -ForegroundColor Cyan
-Write-Host "Set these as system environment variables (persistent across reboots):"
+Write-Host "Set these as user environment variables (no admin required, persistent across reboots):"
 Write-Host ""
-Write-Host '  [System.Environment]::SetEnvironmentVariable("SIGN_CERT_THUMBPRINT", "<cert-thumbprint>", "Machine")'
-Write-Host '  [System.Environment]::SetEnvironmentVariable("TAURI_SIGNING_PRIVATE_KEY", "<base64-key>", "Machine")'
-Write-Host '  [System.Environment]::SetEnvironmentVariable("TAURI_SIGNING_PRIVATE_KEY_PASSWORD", "<password>", "Machine")'
-Write-Host '  [System.Environment]::SetEnvironmentVariable("OSS_ACCESS_KEY_ID", "<ak>", "Machine")'
-Write-Host '  [System.Environment]::SetEnvironmentVariable("OSS_ACCESS_KEY_SECRET", "<sk>", "Machine")'
+Write-Host '  [System.Environment]::SetEnvironmentVariable("SIGN_CERT_THUMBPRINT", "<cert-thumbprint>", "User")'
+Write-Host '  [System.Environment]::SetEnvironmentVariable("TAURI_SIGNING_PRIVATE_KEY", "<base64-key>", "User")'
+Write-Host '  [System.Environment]::SetEnvironmentVariable("TAURI_SIGNING_PRIVATE_KEY_PASSWORD", "<password>", "User")'
+Write-Host '  [System.Environment]::SetEnvironmentVariable("OSS_ACCESS_KEY_ID", "<ak>", "User")'
+Write-Host '  [System.Environment]::SetEnvironmentVariable("OSS_ACCESS_KEY_SECRET", "<sk>", "User")'
 Write-Host ""
 Write-Host "=== GitHub Actions Runner ===" -ForegroundColor Cyan
 Write-Host "Register at: GitHub repo -> Settings -> Actions -> Runners -> New self-hosted runner"
