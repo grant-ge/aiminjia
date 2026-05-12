@@ -18,11 +18,7 @@ if (-not (Test-Path (Join-Path $NodeDir "node.exe"))) {
     Write-Host "Downloading Node.js v${NodeVersion} for Windows x64..."
     New-Item -ItemType Directory -Force -Path $NodeDir | Out-Null
     $ZipPath = Join-Path $env:TEMP "node-win-x64.zip"
-    if ($env:HTTPS_PROXY) {
-        Invoke-WebRequest -Uri $NodeUrl -OutFile $ZipPath -Proxy $env:HTTPS_PROXY -ProxyUseDefaultCredentials
-    } else {
-        Invoke-WebRequest -Uri $NodeUrl -OutFile $ZipPath
-    }
+    Invoke-WebRequest -Uri $NodeUrl -OutFile $ZipPath -UseBasicParsing
 
     # Extract
     $ExtractDir = Join-Path $env:TEMP "node-extract"
@@ -57,12 +53,6 @@ if ($exitCode -ne 0) { throw "npm install failed (exit $exitCode)" }
 # Install Playwright Chromium browser
 Write-Host "Installing Playwright Chromium..."
 $env:PLAYWRIGHT_BROWSERS_PATH = Join-Path $RuntimeDir "browsers"
-if ($env:HTTPS_PROXY) {
-    $env:npm_config_proxy = $env:HTTPS_PROXY
-    $env:npm_config_https_proxy = $env:HTTPS_PROXY
-    $env:HTTPS_PROXY = $env:HTTPS_PROXY
-    $env:HTTP_PROXY = $env:HTTPS_PROXY
-}
 $ErrorActionPreference = "Continue"
 & (Join-Path $NodeDir "npx.cmd") --yes playwright install chromium 2>&1 | ForEach-Object { Write-Host $_ }
 $exitCode = $LASTEXITCODE
