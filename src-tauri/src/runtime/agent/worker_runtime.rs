@@ -1375,12 +1375,13 @@ async fn teammate_real_turn(
     // freshly each turn so newly-loaded tools (e.g. MCP servers connected
     // after spawn) are picked up.
     let all_schemas = engine.tool_registry.get_all_schemas().await;
-    let final_allowed = crate::runtime::agent::tool_whitelist::resolve_agent_tools(
+    let final_allowed = crate::runtime::agent::tool_whitelist::resolve_agent_tools_ex(
         &ctx.meta.tool_whitelist,
         &[],          // no per-Teammate disallow list yet
         &all_schemas.iter().map(|s| s.name.clone()).collect::<Vec<_>>(),
-        true,         // background = true for Teammate
-        false,
+        true,         // is_async = true (Teammate runs in background)
+        false,        // allow_recursive_spawn = false
+        true,         // is_teammate = true → injects TEAMMATE_TOOLS (SendMessage / TaskList / ...)
     );
     let tool_defs: Vec<crate::llm::streaming::ToolDefinition> = all_schemas
         .into_iter()

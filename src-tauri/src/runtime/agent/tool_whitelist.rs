@@ -42,7 +42,13 @@ pub const ASYNC_AGENT_ALLOWED: &[&str] = &[
 /// 设计参考：claude-code-best `IN_PROCESS_TEAMMATE_ALLOWED_TOOLS`
 /// （src/constants/tools.ts:77）。我们暂时只注入 LTR P1/P2 核心三件套；
 /// 未来若引入 TaskCreate/TaskUpdate/Cron* 等可再扩。
-pub const TEAMMATE_TOOLS: &[&str] = &["SendMessage", "TaskList", "TaskGet"];
+pub const TEAMMATE_TOOLS: &[&str] = &[
+    "SendMessage",
+    "TaskList",
+    "TaskGet",
+    "TaskUpdate",
+    "TaskClaim",
+];
 
 /// 解析 subagent 最终可用工具集
 ///
