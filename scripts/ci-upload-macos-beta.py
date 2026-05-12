@@ -65,7 +65,12 @@ def main():
         sys.exit(1)
 
     project_root = Path(__file__).resolve().parent.parent
-    bundle = project_root / "src-tauri" / "target" / "release" / "bundle"
+    # BUNDLE_DIR env var allows cross-compile targets (e.g. x86_64-apple-darwin)
+    bundle_override = os.environ.get("BUNDLE_DIR", "")
+    if bundle_override:
+        bundle = Path(bundle_override)
+    else:
+        bundle = project_root / "src-tauri" / "target" / "release" / "bundle"
     dmg = bundle / "dmg" / cfg["dmg_filename_tpl"].format(version=version)
     tar = bundle / "macos" / "AIjia.app.tar.gz"
     sig = bundle / "macos" / "AIjia.app.tar.gz.sig"

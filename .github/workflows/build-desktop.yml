@@ -20,31 +20,24 @@ permissions:
   pull-requests: write
   issues: write
 
+# ============================================================
+# macOS:   self-hosted runner (developer's Mac) — build + sign + notarize
+# Windows: self-hosted runner (signing machine)  — build + Authenticode sign
+# Both upload signed artifacts directly to OSS.
+# ============================================================
+
 jobs:
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: windows-latest
-            artifact-name: windows-installers
-            arch: x86_64
-            artifact-path: |
-              src-tauri/target/release/bundle/nsis/*.exe
-              src-tauri/target/release/bundle/nsis/*.exe.sig
-          - platform: macos-14
-            artifact-name: macos-arm-installers
-            arch: aarch64
-            artifact-path: |
-              src-tauri/target/release/bundle/dmg/*.dmg
-              src-tauri/target/release/bundle/macos/*.tar.gz
-              src-tauri/target/release/bundle/macos/*.tar.gz.sig
-
-    runs-on: ${{ matrix.platform }}
-
+  # ────────────────────────────────────────────────────────────
+  # macOS (self-hosted Apple Silicon)
+  # ────────────────────────────────────────────────────────────
+  build-macos:
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          clean: true  # self-hosted runner: ensure no stale files
 
       - name: Determine release type
         id: release-type
@@ -97,14 +90,410 @@ jobs:
         uses: actions/cache@v4
         with:
           path: src-tauri/playwright-runtime
-          key: playwright-runtime-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/setup-playwright.sh', 'scripts/setup-playwright.ps1', 'src-tauri/playwright-runtime/package.json') }}
+          key: playwright-runtime-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/setup-playwright.sh', 'src-tauri/playwright-runtime/package.json') }}
 
-      - name: Setup Playwright runtime (macOS/Linux)
-        if: steps.playwright-cache.outputs.cache-hit != 'true' && runner.os != 'Windows'
+      - name: Setup Playwright runtime
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: bash scripts/setup-playwright.sh
 
-      - name: Setup Playwright runtime (Windows)
-        if: steps.playwright-cache.outputs.cache-hit != 'true' && runner.os == 'Windows'
+      - name: Cache dws CLI
+        id: dws-cache
+        uses: actions/cache@v4
+        with:
+          path: src-tauri/resources/dws
+          key: dws-cli-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/setup-dws.sh') }}
+
+      - name: Setup dws CLI
+        if: steps.dws-cache.outputs.cache-hit != 'true'
+        env:
+          DWS_NONINTERACTIVE: "1"
+        run: bash scripts/setup-dws.sh
+
+      - name: Download changelog.json from production
+        run: |
+          curl -fsSL "https://ai.renlijia.com/changelog.json" -o src-tauri/changelog.json \
+            || echo '{"versions":[]}' > src-tauri/changelog.json
+
+      # --- Apple code signing: unlock keychain so codesign can find the cert ---
+      # One-time setup on the runner machine:
+      #   1. Import your Developer ID Application cert into login keychain
+      #      (or a dedicated keychain — update the path below accordingly)
+      #   2. Store the keychain password in GitHub Secrets: MACOS_KEYCHAIN_PASSWORD
+      - name: Unlock keychain for code signing
+        env:
+          KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+        run: |
+          if [ -z "$KEYCHAIN_PASSWORD" ]; then
+            echo "::warning::MACOS_KEYCHAIN_PASSWORD not set — build will be UNSIGNED"
+            exit 0
+          fi
+          KC="$HOME/Library/Keychains/login.keychain-db"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KC"
+          # Ensure our keychain is in the search list
+          security list-keychain -d user -s "$KC" $(security list-keychains -d user | sed 's/"//g')
+          echo "Available signing identities:"
+          security find-identity -v -p codesigning "$KC"
+
+      # --- Build (Tauri auto-signs if a valid identity is in the keychain) ---
+      - name: Build Tauri app
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: pnpm tauri build
+
+      # --- Apple notarization + stapling ---
+      # Requires: APPLE_ID, APPLE_PASSWORD (app-specific), APPLE_TEAM_ID
+      # If not set, the app is signed but not notarized (users see
+      # "identified developer" dialog instead of silent open).
+      - name: Notarize and staple macOS app
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "$APPLE_ID" ]; then
+            echo "::warning::APPLE_ID not set — skipping notarization"
+            exit 0
+          fi
+
+          version="${{ steps.version.outputs.version }}"
+          BUNDLE="src-tauri/target/release/bundle"
+          DMG="$BUNDLE/dmg/AIjia_${version}_aarch64.dmg"
+          APP="$BUNDLE/macos/AIjia.app"
+          TAR="$BUNDLE/macos/AIjia.app.tar.gz"
+          SIG="$TAR.sig"
+
+          # 1. Notarize the DMG (for direct-download users)
+          echo "=== Notarizing DMG ==="
+          xcrun notarytool submit "$DMG" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait --timeout 30m
+          xcrun stapler staple "$DMG"
+          echo "DMG notarized + stapled ✓"
+
+          # 2. Notarize the .app (for Tauri auto-updater)
+          #    notarytool only accepts .zip/.dmg/.pkg, so zip the .app first
+          echo "=== Notarizing .app for updater ==="
+          APP_ZIP="$RUNNER_TEMP/AIjia-notarize.zip"
+          ditto -c -k --keepParent "$APP" "$APP_ZIP"
+          xcrun notarytool submit "$APP_ZIP" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait --timeout 30m
+          xcrun stapler staple "$APP"
+          rm -f "$APP_ZIP"
+          echo ".app notarized + stapled ✓"
+
+          # 3. Re-package updater artifacts (stapling modified the .app)
+          echo "=== Re-packaging updater tar.gz + sig ==="
+          rm -f "$TAR" "$SIG"
+          tar czf "$TAR" -C "$BUNDLE/macos" "AIjia.app"
+          pnpm exec tauri signer sign "$TAR"
+          echo "Updater artifacts re-packaged ✓"
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm-installers
+          path: |
+            src-tauri/target/release/bundle/dmg/*.dmg
+            src-tauri/target/release/bundle/macos/*.tar.gz
+            src-tauri/target/release/bundle/macos/*.tar.gz.sig
+          retention-days: 30
+
+      # --- Upload to OSS ---
+      - name: Upload macOS to OSS (release)
+        if: steps.release-type.outputs.type == 'release'
+        env:
+          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+        run: |
+          set -e
+          version="${{ steps.version.outputs.version }}"
+          echo "=== Uploading macOS aarch64 v${version} to OSS ==="
+          python3 -m pip install --disable-pip-version-check --user --break-system-packages oss2 2>/dev/null || true
+          python3 scripts/ci-upload-macos.py "$version" "aarch64"
+
+      - name: Upload macOS to OSS (beta)
+        if: steps.release-type.outputs.type == 'beta'
+        env:
+          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+        run: |
+          set -e
+          version="${{ steps.version.outputs.version }}"
+          echo "=== Uploading macOS beta aarch64 v${version} to OSS ==="
+          python3 -m pip install --disable-pip-version-check --user --break-system-packages oss2 2>/dev/null || true
+          python3 scripts/ci-upload-macos-beta.py "$version" "aarch64"
+
+  # ────────────────────────────────────────────────────────────
+  # macOS Intel (cross-compile on same Apple Silicon runner)
+  # ────────────────────────────────────────────────────────────
+  build-macos-intel:
+    runs-on: [self-hosted, macOS, ARM64]
+    needs: build-macos  # same runner — wait for ARM64 to finish first
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          clean: true
+
+      - name: Determine release type
+        id: release-type
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "type=${{ inputs.release_type }}" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.ref }}" == refs/tags/beta-v* ]]; then
+            echo "type=beta" >> "$GITHUB_OUTPUT"
+          else
+            echo "type=release" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Extract version
+        id: version
+        shell: bash
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+            version="${version#beta-v}"
+          else
+            version=$(grep '"version"' src-tauri/tauri.conf.json | head -1 | sed 's/.*: *"\(.*\)".*/\1/')
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Version: $version"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: x86_64  # separate cache from ARM64 build
+
+      - name: Install frontend dependencies
+        run: pnpm install
+
+      # Sidecars must be x86_64 — clean any ARM64 leftovers and reinstall
+      - name: Setup x86_64 Playwright runtime
+        run: |
+          rm -rf src-tauri/playwright-runtime
+          TARGET_ARCH=x86_64 bash scripts/setup-playwright.sh
+
+      - name: Setup x86_64 dws CLI
+        env:
+          DWS_NONINTERACTIVE: "1"
+        run: |
+          rm -f src-tauri/resources/dws
+          TARGET_ARCH=x86_64 bash scripts/setup-dws.sh
+
+      - name: Download changelog.json from production
+        run: |
+          curl -fsSL "https://ai.renlijia.com/changelog.json" -o src-tauri/changelog.json \
+            || echo '{"versions":[]}' > src-tauri/changelog.json
+
+      - name: Unlock keychain for code signing
+        env:
+          KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+        run: |
+          if [ -z "$KEYCHAIN_PASSWORD" ]; then
+            echo "::warning::MACOS_KEYCHAIN_PASSWORD not set — build will be UNSIGNED"
+            exit 0
+          fi
+          KC="$HOME/Library/Keychains/login.keychain-db"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KC"
+          security list-keychain -d user -s "$KC" $(security list-keychains -d user | sed 's/"//g')
+
+      - name: Build Tauri app (x86_64 cross-compile)
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: pnpm tauri build --target x86_64-apple-darwin
+
+      - name: Notarize and staple macOS app (x86_64)
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "$APPLE_ID" ]; then
+            echo "::warning::APPLE_ID not set — skipping notarization"
+            exit 0
+          fi
+
+          version="${{ steps.version.outputs.version }}"
+          BUNDLE="src-tauri/target/x86_64-apple-darwin/release/bundle"
+          DMG="$BUNDLE/dmg/AIjia_${version}_x64.dmg"
+          APP="$BUNDLE/macos/AIjia.app"
+          TAR="$BUNDLE/macos/AIjia.app.tar.gz"
+          SIG="$TAR.sig"
+
+          echo "=== Notarizing DMG (x64) ==="
+          xcrun notarytool submit "$DMG" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait --timeout 30m
+          xcrun stapler staple "$DMG"
+          echo "DMG notarized + stapled ✓"
+
+          echo "=== Notarizing .app for updater (x64) ==="
+          APP_ZIP="$RUNNER_TEMP/AIjia-x64-notarize.zip"
+          ditto -c -k --keepParent "$APP" "$APP_ZIP"
+          xcrun notarytool submit "$APP_ZIP" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait --timeout 30m
+          xcrun stapler staple "$APP"
+          rm -f "$APP_ZIP"
+          echo ".app notarized + stapled ✓"
+
+          echo "=== Re-packaging updater tar.gz + sig ==="
+          rm -f "$TAR" "$SIG"
+          tar czf "$TAR" -C "$BUNDLE/macos" "AIjia.app"
+          pnpm exec tauri signer sign "$TAR"
+          echo "Updater artifacts re-packaged ✓"
+
+      # Verify architecture of built binary
+      - name: Verify x86_64 architecture
+        run: |
+          APP="src-tauri/target/x86_64-apple-darwin/release/bundle/macos/AIjia.app"
+          echo "Main binary:"
+          file "$APP/Contents/MacOS/AIjia"
+          echo "dws sidecar:"
+          file "$APP/Contents/Resources/dws" 2>/dev/null || echo "(not found)"
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-x64-installers
+          path: |
+            src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
+            src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*.tar.gz
+            src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*.tar.gz.sig
+          retention-days: 30
+
+      - name: Upload macOS x64 to OSS (release)
+        if: steps.release-type.outputs.type == 'release'
+        env:
+          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+          BUNDLE_DIR: src-tauri/target/x86_64-apple-darwin/release/bundle
+        run: |
+          set -e
+          version="${{ steps.version.outputs.version }}"
+          echo "=== Uploading macOS x86_64 v${version} to OSS ==="
+          python3 -m pip install --disable-pip-version-check --user --break-system-packages oss2 2>/dev/null || true
+          python3 scripts/ci-upload-macos.py "$version" "x86_64"
+
+      - name: Upload macOS x64 to OSS (beta)
+        if: steps.release-type.outputs.type == 'beta'
+        env:
+          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+          BUNDLE_DIR: src-tauri/target/x86_64-apple-darwin/release/bundle
+        run: |
+          set -e
+          version="${{ steps.version.outputs.version }}"
+          echo "=== Uploading macOS beta x86_64 v${version} to OSS ==="
+          python3 -m pip install --disable-pip-version-check --user --break-system-packages oss2 2>/dev/null || true
+          python3 scripts/ci-upload-macos-beta.py "$version" "x86_64"
+
+  # ────────────────────────────────────────────────────────────
+  # Windows (self-hosted signing machine)
+  # Builds, signs with Authenticode (cert in local cert store),
+  # regenerates Tauri updater .sig, uploads signed exe to OSS.
+  # ────────────────────────────────────────────────────────────
+  build-windows:
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          clean: true
+
+      - name: Determine release type
+        id: release-type
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "type=${{ inputs.release_type }}" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.ref }}" == refs/tags/beta-v* ]]; then
+            echo "type=beta" >> "$GITHUB_OUTPUT"
+          else
+            echo "type=release" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Extract version
+        id: version
+        shell: bash
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+            version="${version#beta-v}"
+          else
+            version=$(grep '"version"' src-tauri/tauri.conf.json | head -1 | sed 's/.*: *"\(.*\)".*/\1/')
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Version: $version"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
+        run: pnpm install
+
+      - name: Cache Playwright runtime
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: src-tauri/playwright-runtime
+          key: playwright-runtime-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/setup-playwright.ps1', 'src-tauri/playwright-runtime/package.json') }}
+
+      - name: Setup Playwright runtime
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: .\scripts\setup-playwright.ps1
 
@@ -112,19 +501,11 @@ jobs:
         id: dws-cache
         uses: actions/cache@v4
         with:
-          path: |
-            src-tauri/resources/dws
-            src-tauri/resources/dws.exe
-          key: dws-cli-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/setup-dws.sh', 'scripts/setup-dws.ps1') }}
+          path: src-tauri/resources/dws.exe
+          key: dws-cli-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/setup-dws.ps1') }}
 
-      - name: Setup dws CLI (macOS/Linux)
-        if: steps.dws-cache.outputs.cache-hit != 'true' && runner.os != 'Windows'
-        env:
-          DWS_NONINTERACTIVE: "1"
-        run: bash scripts/setup-dws.sh
-
-      - name: Setup dws CLI (Windows)
-        if: steps.dws-cache.outputs.cache-hit != 'true' && runner.os == 'Windows'
+      - name: Setup dws CLI
+        if: steps.dws-cache.outputs.cache-hit != 'true'
         shell: pwsh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -142,42 +523,68 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: pnpm tauri build
 
+      # --- Windows Authenticode code signing ---
+      # The signing certificate must be pre-imported into the local cert store.
+      # SIGN_CERT_THUMBPRINT should be set as a system env var on the signing
+      # machine, or as a GitHub Secret (WINDOWS_CERT_THUMBPRINT).
+      - name: Sign Windows exe (Authenticode)
+        shell: pwsh
+        env:
+          CERT_THUMBPRINT: ${{ secrets.WINDOWS_CERT_THUMBPRINT }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $ExePath = "src-tauri\target\release\bundle\nsis\AIjia_${version}_x64-setup.exe"
+
+          # Prefer secret, fall back to machine env var
+          $thumbprint = $env:CERT_THUMBPRINT
+          if (-not $thumbprint) { $thumbprint = $env:SIGN_CERT_THUMBPRINT }
+          if (-not $thumbprint) {
+            Write-Host "::warning::No cert thumbprint — skipping code signing"
+            exit 0
+          }
+
+          # Find signtool
+          $SignTool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter "signtool.exe" |
+            Sort-Object { $_.Directory.Name } -Descending |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $SignTool) {
+            $SignTool = (Get-Command signtool.exe -ErrorAction SilentlyContinue).Source
+          }
+          if (-not $SignTool) { throw "signtool.exe not found — install Windows SDK" }
+
+          Write-Host "Signing: $ExePath"
+          Write-Host "Certificate: $thumbprint"
+          & $SignTool sign /sha1 $thumbprint /tr http://time.certum.pl /td sha256 /fd sha256 "$ExePath"
+          if ($LASTEXITCODE -ne 0) { throw "Code signing failed" }
+
+          & $SignTool verify /pa "$ExePath"
+          if ($LASTEXITCODE -ne 0) { throw "Signature verification failed" }
+          Write-Host "Code signing successful!"
+
+          # Regenerate Tauri updater .sig (the exe changed after signing)
+          Write-Host "Regenerating Tauri updater signature..."
+          $SigPath = "${ExePath}.sig"
+          if (Test-Path $SigPath) { Remove-Item $SigPath }
+          pnpm exec tauri signer sign "$ExePath"
+          if ($LASTEXITCODE -ne 0) { throw "Tauri signer failed" }
+          if (-not (Test-Path $SigPath)) { throw ".sig not created at $SigPath" }
+          Write-Host "Updater signature regenerated!"
+
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact-name }}
-          path: ${{ matrix.artifact-path }}
+          name: windows-installers
+          path: |
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/nsis/*.exe.sig
           retention-days: 30
 
-      # --- macOS: upload to OSS immediately (already Apple-signed in CI) ---
-      - name: Upload macOS to OSS (release)
-        if: runner.os == 'macOS' && steps.release-type.outputs.type == 'release'
-        env:
-          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
-          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
-        run: |
-          set -e
-          version="${{ steps.version.outputs.version }}"
-          echo "=== Uploading macOS ${{ matrix.arch }} v${version} to OSS ==="
-          python3 -m pip install --disable-pip-version-check --user --break-system-packages oss2
-          python3 scripts/ci-upload-macos.py "$version" "${{ matrix.arch }}"
-
-      - name: Upload macOS to OSS (beta)
-        if: runner.os == 'macOS' && steps.release-type.outputs.type == 'beta'
-        env:
-          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
-          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
-        run: |
-          set -e
-          version="${{ steps.version.outputs.version }}"
-          echo "=== Uploading macOS beta ${{ matrix.arch }} v${version} to OSS ==="
-          python3 -m pip install --disable-pip-version-check --user --break-system-packages oss2
-          python3 scripts/ci-upload-macos-beta.py "$version" "${{ matrix.arch }}"
-
-      # --- Windows: upload unsigned exe to OSS staging for local signing ---
-      - name: Upload Windows unsigned to OSS staging
-        if: runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/')
+      # Upload signed exe directly to final OSS path (no staging needed)
+      - name: Upload signed Windows to OSS
+        if: startsWith(github.ref, 'refs/tags/')
         env:
           OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
           OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
@@ -187,40 +594,30 @@ jobs:
         run: |
           $version = "${{ steps.version.outputs.version }}"
           $releaseType = "${{ steps.release-type.outputs.type }}"
-          Write-Host "=== Uploading Windows v$version (unsigned, $releaseType) to OSS staging ==="
+          Write-Host "=== Uploading Windows v$version (signed, $releaseType) to OSS ==="
           python --version
           if ($LASTEXITCODE) { throw "python not available" }
           python -m pip install --disable-pip-version-check oss2
           if ($LASTEXITCODE) { throw "pip install oss2 failed" }
-          python scripts/ci-upload-windows-unsigned.py $version $releaseType
-          if ($LASTEXITCODE) { throw "ci-upload-windows-unsigned.py failed (exit $LASTEXITCODE)" }
+          python scripts/ci-upload-windows.py $version $releaseType
+          if ($LASTEXITCODE) { throw "ci-upload-windows.py failed (exit $LASTEXITCODE)" }
 
+  # ────────────────────────────────────────────────────────────
+  # Summary
+  # ────────────────────────────────────────────────────────────
   notify:
-    needs: build
+    needs: [build-macos, build-macos-intel, build-windows]
     runs-on: ubuntu-latest
+    if: always()
     steps:
       - name: Summary
-        env:
-          RELEASE_TYPE: ${{ needs.build.outputs.release-type || 'unknown' }}
         run: |
           echo "## Build Complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Windows unsigned exe has been uploaded to OSS staging." >> $GITHUB_STEP_SUMMARY
-          echo "macOS signed bundle has been uploaded to OSS." >> $GITHUB_STEP_SUMMARY
+          echo "### macOS (self-hosted)" >> $GITHUB_STEP_SUMMARY
+          echo "- Code-signed + notarized (if Apple credentials configured)" >> $GITHUB_STEP_SUMMARY
+          echo "- Uploaded to OSS" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
-          echo "1. Download Windows exe from OSS staging" >> $GITHUB_STEP_SUMMARY
-          echo "2. Sign on local Windows machine" >> $GITHUB_STEP_SUMMARY
-          echo "3. Run \`scripts/sign-windows.ps1\` to sign + re-generate .sig + upload" >> $GITHUB_STEP_SUMMARY
-
-  # Finalize only for release builds — generates update.json after Windows signing
-  finalize:
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v') && !startsWith(github.ref, 'refs/tags/beta-v')
-    runs-on: ubuntu-latest
-    steps:
-      - name: Notice
-        run: |
-          echo "## ⚠️ DO NOT run finalize automatically" >> $GITHUB_STEP_SUMMARY
-          echo "Windows signing must complete first." >> $GITHUB_STEP_SUMMARY
-          echo "Use the 'Finalize Release' workflow after signing." >> $GITHUB_STEP_SUMMARY
+          echo "### Windows (self-hosted)" >> $GITHUB_STEP_SUMMARY
+          echo "- Authenticode signed (if cert configured)" >> $GITHUB_STEP_SUMMARY
+          echo "- Signed exe + .sig uploaded to OSS" >> $GITHUB_STEP_SUMMARY

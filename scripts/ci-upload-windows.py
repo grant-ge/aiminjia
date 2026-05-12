@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
-"""Upload Windows build artifacts from GitHub Actions runner to Aliyun OSS.
+"""Upload signed Windows build artifacts from CI to Aliyun OSS.
+
+Supports both release and beta uploads. For release builds, also updates
+the latest/ symlink.
 
 Env vars required:
   OSS_ACCESS_KEY_ID
   OSS_ACCESS_KEY_SECRET
 
 Usage:
-  python scripts/ci-upload-windows.py <version>
+  python scripts/ci-upload-windows.py <version> [release_type]
+    release_type: release (default) | beta
 """
 
 import os
@@ -33,9 +37,11 @@ def upload(bucket, local, key):
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python ci-upload-windows.py <version>")
+        print("Usage: python ci-upload-windows.py <version> [release_type]")
+        print("  release_type: release (default) | beta")
         sys.exit(1)
     version = sys.argv[1].lstrip("v")
+    release_type = sys.argv[2] if len(sys.argv) > 2 else "release"
 
     key_id = os.environ.get("OSS_ACCESS_KEY_ID", "")
     key_secret = os.environ.get("OSS_ACCESS_KEY_SECRET", "")
@@ -56,19 +62,27 @@ def main():
     auth = oss2.Auth(key_id, key_secret)
     bucket = oss2.Bucket(auth, ENDPOINT, BUCKET_NAME)
 
-    exe_key = f"{OSS_PREFIX}/v{version}/AIjia_{version}_x64-setup.exe"
+    # Beta: aijia/beta/v{version}/  Release: aijia/v{version}/
+    if release_type == "beta":
+        prefix = f"{OSS_PREFIX}/beta/v{version}"
+    else:
+        prefix = f"{OSS_PREFIX}/v{version}"
+
+    exe_key = f"{prefix}/AIjia_{version}_x64-setup.exe"
     upload(bucket, exe, exe_key)
 
-    latest_key = f"{OSS_PREFIX}/latest/windows-x64"
-    bucket.copy_object(
-        BUCKET_NAME, exe_key, latest_key,
-        headers={
-            "x-oss-metadata-directive": "REPLACE",
-            "Content-Type": "application/octet-stream",
-            "Content-Disposition": f'attachment; filename="AIjia_{version}_x64-setup.exe"',
-        },
-    )
-    print(f"  -> latest: {latest_key}")
+    # Only update latest symlink for release builds
+    if release_type == "release":
+        latest_key = f"{OSS_PREFIX}/latest/windows-x64"
+        bucket.copy_object(
+            BUCKET_NAME, exe_key, latest_key,
+            headers={
+                "x-oss-metadata-directive": "REPLACE",
+                "Content-Type": "application/octet-stream",
+                "Content-Disposition": f'attachment; filename="AIjia_{version}_x64-setup.exe"',
+            },
+        )
+        print(f"  -> latest: {latest_key}")
 
     if sig.exists():
         sig_key = exe_key + ".sig"
@@ -78,7 +92,7 @@ def main():
         print(f"[warn] Signature not found: {sig} -- updater will not work without it")
         sys.exit(1)
 
-    print(f"\n[ok] Windows v{version} uploaded to OSS")
+    print(f"\n[ok] Windows v{version} ({release_type}) uploaded to OSS")
 
 
 if __name__ == "__main__":
