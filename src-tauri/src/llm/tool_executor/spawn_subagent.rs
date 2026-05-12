@@ -468,6 +468,37 @@ impl SpawnSubagentLauncher for DefaultSpawnSubagentLauncher {
             current_persona_id: self.deps.current_persona_id.clone(),
         };
 
+        // LTR registries — pull from tauri AppHandle state (managed by lib.rs
+        // at app boot).  Without these the Teammate's tools (SendMessage /
+        // TaskList / TaskClaim / etc.) will be silently scoped to local
+        // state only and never reach the Lead idle supervisor.
+        use tauri::Manager as _;
+        let (team_reg, names_reg, inbox_reg, lead_sup, cancel_reg) =
+            if let Some(app) = self.deps.app_handle.as_ref() {
+                (
+                    app.try_state::<Arc<crate::runtime::agent::TeamRegistry>>()
+                        .map(|s| s.inner().clone()),
+                    app.try_state::<Arc<crate::runtime::agent::AgentNameRegistry>>()
+                        .map(|s| s.inner().clone()),
+                    app.try_state::<Arc<crate::runtime::agent::InboxRegistry>>()
+                        .map(|s| s.inner().clone()),
+                    app.try_state::<Arc<crate::runtime::agent::LeadIdleSupervisor>>()
+                        .map(|s| s.inner().clone()),
+                    app.try_state::<Arc<crate::runtime::agent::CancellationRegistry>>()
+                        .map(|s| s.inner().clone()),
+                )
+            } else {
+                (None, None, None, None, None)
+            };
+        log::info!(
+            "[spawn_teammate][engine-build] team_reg={} names_reg={} inbox_reg={} lead_sup={} cancel_reg={}",
+            team_reg.is_some(),
+            names_reg.is_some(),
+            inbox_reg.is_some(),
+            lead_sup.is_some(),
+            cancel_reg.is_some(),
+        );
+
         Some(crate::runtime::agent::worker_runtime::TeammateLlmEngine {
             gateway,
             tool_registry,
@@ -477,6 +508,11 @@ impl SpawnSubagentLauncher for DefaultSpawnSubagentLauncher {
             // message. 25 mirrors SubAgentConfig's default max_iterations
             // for production sub-agents.
             max_iterations_per_turn: 25,
+            team_registry: team_reg,
+            agent_names: names_reg,
+            inbox_registry: inbox_reg,
+            lead_idle: lead_sup,
+            cancellation_registry: cancel_reg,
         })
     }
 }

@@ -1064,6 +1064,15 @@ pub struct TeammateLlmEngine {
     /// Maximum iterations per inbox-driven turn.  Bounds runaway tool loops
     /// per message; not the lifetime of the Teammate.
     pub max_iterations_per_turn: usize,
+    /// LTR registries — required so tools like SendMessage / TaskList /
+    /// TaskClaim can resolve teammate names, write to peer inboxes, and
+    /// kick the Lead idle supervisor.  Without these, those tools see
+    /// `ctx.lead_idle = None` etc. and skip the cross-agent side effects.
+    pub team_registry: Option<Arc<crate::runtime::agent::TeamRegistry>>,
+    pub agent_names: Option<Arc<crate::runtime::agent::AgentNameRegistry>>,
+    pub inbox_registry: Option<Arc<crate::runtime::agent::InboxRegistry>>,
+    pub lead_idle: Option<Arc<crate::runtime::agent::LeadIdleSupervisor>>,
+    pub cancellation_registry: Option<Arc<crate::runtime::agent::CancellationRegistry>>,
 }
 
 /// Error type for `run_worker`.
@@ -1462,6 +1471,35 @@ async fn teammate_real_turn(
         .with_file_ops(file_ops)
         .with_runtime_resolver(engine.runtime_deps.runtime_resolver.clone())
         .with_read_file_state(child_read_file_state.clone());
+    // LTR: attach Team / AgentName / Inbox / LeadIdle / Cancellation registries
+    // so cross-agent tools (SendMessage, TaskList, TaskClaim, ...) can:
+    //   - resolve teammate names to AgentId (agent_names)
+    //   - write to peer inboxes (inbox_registry)
+    //   - kick the Lead idle supervisor (lead_idle) so SendMessage(to="team-lead")
+    //     actually wakes the Lead instead of silently dropping
+    //   - register their own cancellation token so TaskStop can find them
+    if let (Some(team), Some(names), Some(inboxes)) = (
+        engine.team_registry.clone(),
+        engine.agent_names.clone(),
+        engine.inbox_registry.clone(),
+    ) {
+        query_engine = query_engine.with_ltr_registries(team, names, inboxes);
+    } else {
+        log::warn!(
+            "[TeammateIdle] agent={} name={} LTR registries missing (team={} names={} inboxes={}); cross-agent tools will be no-ops",
+            ctx.agent_id.as_str(),
+            agent_name,
+            engine.team_registry.is_some(),
+            engine.agent_names.is_some(),
+            engine.inbox_registry.is_some(),
+        );
+    }
+    if let Some(sup) = engine.lead_idle.clone() {
+        query_engine = query_engine.with_lead_idle(sup);
+    }
+    if let Some(creg) = engine.cancellation_registry.clone() {
+        query_engine = query_engine.with_cancellation_registry(creg);
+    }
     // LTR: build the Teammate's effective permission ctx by merging parent's
     // permission_ctx (if any) with the teammate-specific working dirs (its
     // conversation dir for team.json / tasks/, plus skill dirs).  Without
