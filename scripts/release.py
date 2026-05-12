@@ -282,10 +282,8 @@ def step_1_beta(state):
         print(f"\n  {yellow('Next actions (do BOTH):')}")
         print(f"  1. macOS — build + sign + upload locally (serial arm64 → x86_64):")
         print(f"       bash scripts/build-and-sign-macos.sh {beta_version} beta")
-        print(f"  2. Windows — after CI finishes, download + sign + upload:")
-        print(f"       gh run download <run-id> -n windows-unsigned -D build/")
-        print(f"       # sign with SimpleSign, then:")
-        print(f"       .\\scripts\\sign-and-upload-windows.ps1 -Version {beta_version} -Type beta")
+        print(f"  2. Windows — one-shot end-to-end (downloads CI artifact, signs, uploads):")
+        print(f"       .\\scripts\\release-windows.ps1 -Version {beta_version} -Type beta")
         print(f"  3. Then test:")
         print(f"       python scripts/release.py test-passed")
 
@@ -360,11 +358,11 @@ def step_3_release(state):
     print(f"\n  {yellow('Next actions (do BOTH):')}")
     print(f"  1. macOS — build + sign + upload locally (serial arm64 → x86_64):")
     print(f"       bash scripts/build-and-sign-macos.sh {base} release")
-    print(f"  2. Windows — after CI finishes, download + sign + upload:")
-    print(f"       gh run download <run-id> -n windows-unsigned -D build/")
-    print(f"       # sign with SimpleSign, then:")
-    print(f"       .\\scripts\\sign-and-upload-windows.ps1 -Version {base} -Type release")
-    print(f"  3. Then finalize:")
+    print(f"  2. Windows — one-shot end-to-end (downloads CI artifact, signs, uploads):")
+    print(f"       .\\scripts\\release-windows.ps1 -Version {base} -Type release")
+    print(f"  3. Verify all artifacts on OSS:")
+    print(f"       bash scripts/verify-release.sh {base} release")
+    print(f"  4. Then finalize:")
     print(f"       python scripts/release.py finalize")
 
 
@@ -534,23 +532,38 @@ def show_setup_guide():
     print("""
     Windows builds run on GitHub-hosted runner, signing is local.
 
-    7. SimpleSign tool + EV hardware token for Authenticode signing
-    8. Run:
-       gh run download <run-id> -n windows-unsigned -D build/
-       # sign .exe with SimpleSign
-       .\\scripts\\sign-and-upload-windows.ps1 -Version <ver> -Type <beta|release>
+    7. Install Node.js (npm) — already required for the project.
+
+    8. Install SimpleSign + EV hardware token (Authenticode signing).
+       Note your cert's SHA1 thumbprint:
+         Get-AuthenticodeSignature <any-already-signed-exe> | Select -Expand SignerCertificate | Select Thumbprint
+
+    9. Place the Tauri Ed25519 key file at $HOME\\.tauri\\aijia.key
+       (copy contents from the macOS machine's ~/.tauri/aijia.key)
+
+    10. Run the one-shot pipeline:
+        .\\scripts\\release-windows.ps1 -Version <ver> -Type <beta|release>
+
+        First run prompts for and stores in Credential Manager:
+          - Authenticode cert SHA1 thumbprint
+          - OSS_ACCESS_KEY_ID / OSS_ACCESS_KEY_SECRET
+          - TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+
+        Subsequent runs reuse the stored credentials. Re-prompt with -Reconfigure.
 """)
 
     print(bold("  === Workflow Overview ==="))
     print("""
     python scripts/release.py start              # bump version
-    python scripts/release.py beta               # push beta tag (Windows CI; mac local)
-    bash scripts/build-and-sign-macos.sh X.Y.Z-beta.N beta    # mac arm64 + x86_64
-    # download windows-unsigned artifact, sign, upload via sign-and-upload-windows.ps1
+    python scripts/release.py beta               # push beta tag (triggers Windows CI)
+    bash scripts/build-and-sign-macos.sh X.Y.Z-beta.N beta    # mac arm64 + x86_64 (~35 min)
+    .\\scripts\\release-windows.ps1 -Version X.Y.Z-beta.N -Type beta   # one-shot windows
+    bash scripts/verify-release.sh X.Y.Z-beta.N beta          # sanity check OSS
     python scripts/release.py test-passed        # confirm beta works
     python scripts/release.py release            # push release tag
     bash scripts/build-and-sign-macos.sh X.Y.Z release
-    # sign windows release
+    .\\scripts\\release-windows.ps1 -Version X.Y.Z -Type release
+    bash scripts/verify-release.sh X.Y.Z release
     python scripts/release.py finalize           # generate update.json → auto-update live
 """)
 
@@ -567,9 +580,9 @@ def show_menu(state):
 
     print("  Commands:")
     print(f"    {cyan('start')}          Start new release (bump version)")
-    print(f"    {cyan('beta')}           Push beta tag (Windows CI; build mac locally via build-and-sign-macos.sh)")
+    print(f"    {cyan('beta')}           Push beta tag (Windows CI; build mac/win locally)")
     print(f"    {cyan('test-passed')}    Confirm beta testing passed")
-    print(f"    {cyan('release')}        Push release tag (Windows CI; build mac locally via build-and-sign-macos.sh)")
+    print(f"    {cyan('release')}        Push release tag (Windows CI; build mac/win locally)")
     print(f"    {cyan('finalize')}       Generate update.json (go live)")
     print(f"    {cyan('status')}         Show current state")
     print(f"    {cyan('setup')}          First-time setup guide + environment check")
