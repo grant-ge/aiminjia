@@ -22,14 +22,20 @@
 │   ├── release.py               # 发布入口（交互式，跨平台，强制顺序）
 │   ├── bump-version.py          # 同步版本号到 3 个配置文件（跨平台）
 │   ├── bump-version.sh          # 同步版本号（macOS 快捷方式）
-│   ├── ci-upload-macos.py       # CI: macOS release → OSS
-│   ├── ci-upload-macos-beta.py  # CI: macOS beta → OSS
-│   ├── ci-upload-windows.py     # CI: Windows release/beta → OSS（已签名，直传）
-│   ├── ci-finalize.py           # CI: 生成 update.json
+│   ├── ci-upload-dev.py         # CI: 每次构建上传未签名 dev 包到 OSS
+│   ├── ci-generate-download-page.py  # CI: 生成 downloads.html 下载页
+│   ├── ci-upload-macos.py       # 本地签名后: macOS release → OSS
+│   ├── ci-upload-macos-beta.py  # 本地签名后: macOS beta → OSS
+│   ├── ci-upload-windows.py     # 本地签名后: Windows release/beta → OSS
+│   ├── ci-finalize.py           # 生成 update.json
+│   ├── sign-and-upload-macos.sh    # 本地 macOS 签名+公证+上传全流程
+│   ├── sign-and-upload-windows.ps1 # 本地 Windows 签名验证+tauri signer+上传
+│   ├── setup-runner-macos.sh    # macOS 签名机环境检查
+│   ├── setup-runner-windows.ps1 # Windows 签名机环境检查
 │   ├── setup-playwright.sh/.ps1
 │   └── bump-homebrew.py
 └── .github/workflows/
-    └── build-desktop.yml      # tag push → CI 构建 + 直传 OSS + update.json
+    └── build-desktop.yml      # GitHub-hosted 构建 + dev 包上传 OSS + 下载页生成
 ```
 
 ## 常用命令
@@ -247,170 +253,160 @@ workspace 目录（用户可自定义，默认也是 `~/.renlijia/`）下存放�
 **继续做某个功能的意图测试：先读对应 `rules.md` + `test-progress.md`，再看 `context/` 四文件，然后按 `how-to-test.md` 规范执行。**
 **新建一个功能的 rules.md：先读 `context/how-to-write-rules.md`，再按产品视角逐条写，写完用快速自查清单过一遍。**
 
-## 发布流程（权威 · 自 v0.5.22 起）
+## 发布流程（权威 · 自 v0.5.22 起，GitHub-hosted 架构）
 
-三阶段：**Beta 测试 → 测试验证 → 正式发布**。
+**架构：GitHub-hosted runners 构建未签名包 → 本地下载 → 本地签名 → 上传 OSS**。
 
-- **macOS**：在开发者 Mac 上通过 self-hosted GitHub Actions runner 构建，自动 Apple 签名 + 公证（Developer ID Application 证书），DMG 开箱即用无需 `xattr -cr`
-- **Windows**：在签名机上通过 self-hosted GitHub Actions runner 构建，自动 Authenticode 签名（证书在本地 cert store，不可导出）
+所有构建在 GitHub-hosted runners 上完成（`macos-14`、`windows-latest`），不再使用 self-hosted runners。签名在本地手动执行：macOS 需 Developer ID 证书 + Apple 公证，Windows 需 SimpleSign (EV 硬件 token)。
 
-**Beta 通道独立分发**：beta 包文件名带 `-beta` 后缀（`AIjia_<ver>-beta_aarch64.dmg` / `AIjia_<ver>-beta_x64-setup.exe`）。对应独立 Homebrew cask `aijia-beta`（与正式版 `aijia` 互斥，因 .app 文件名相同）。内测人员推荐 `brew install --cask grant-ge/tap/aijia-beta`。
+### 三种包
+
+| 类型 | 签名 | 来源 | 用途 |
+|------|------|------|------|
+| **Dev** | 未签名 | CI 每次构建自动上传到 `aijia/dev/` | 开发者快速验证，macOS 需 `xattr -cr`，Windows 有 SmartScreen 警告 |
+| **Beta** | 已签名 | 本地签名后上传到 `aijia/beta/v{x}/` | 内测验证，不触发自动更新 |
+| **Release** | 已签名 | 本地签名后上传到 `aijia/v{x}/` + `latest/` | 正式版，触发自动更新 |
+
+**下载页**：https://lotus.renlijia.com/aijia/downloads.html（CI 构建后自动生成）
 
 ### 流程总览
 
 ```
-bump 版本号 → beta tag → CI 构建+签名（macOS+Windows 各自 self-hosted runner） → 测试
-                                                                                   ↓
-                                            release tag → CI 构建+签名（macOS+Windows） → finalize → 自动更新生效
+bump 版本号 → push / tag → GitHub-hosted CI 构建（3 平台）→ 自动上传 dev 包到 OSS
+                                                              ↓
+                              下载 unsigned artifacts → 本地签名（macOS + Windows）→ 上传 beta/release 到 OSS
+                                                                                       ↓
+                                                                               finalize → update.json → 自动更新
 ```
 
 ### 快速发布（推荐）
-
-使用交互式发布管理器，自动引导并阻止跳步：
 
 ```bash
 python scripts/release.py             # 交互式菜单
 python scripts/release.py status      # 查看当前发布进度
 python scripts/release.py start       # 开始新版本
-python scripts/release.py beta        # 触发 beta 构建（CI 自动签名 macOS+Windows）
+python scripts/release.py beta        # 触发 beta 构建
 python scripts/release.py test-passed # 确认测试通过
-python scripts/release.py release     # 触发正式构建（CI 自动签名 macOS+Windows）
+python scripts/release.py release     # 触发正式构建
 python scripts/release.py finalize    # 生成 update.json
 ```
-
-发布状态存储在 `.release-state.json`（已 gitignore），任何人 clone 后从头开始。
 
 ### Step 0: 改版本号
 
 ```bash
 python scripts/bump-version.py 0.5.22   # 跨平台，同步 package.json + Cargo.toml + tauri.conf.json
-# 手动更新 src-tauri/Cargo.lock（cargo build 自动更新，或 cargo update -p aijia）
 git commit -am "chore: bump to 0.5.22"
-git push codeup main && git push origin main
+git push origin main
 ```
 
-版本号 4 处必须一致：
-- `package.json` → `version`
-- `src-tauri/tauri.conf.json` → `version`
-- `src-tauri/Cargo.toml` → `version`
-- `src-tauri/Cargo.lock` → `[package] name = "aijia"` 下的 `version`
+版本号 4 处必须一致：`package.json` / `tauri.conf.json` / `Cargo.toml` / `Cargo.lock`
 
-### Step 1: Beta 构建（用于测试）
+### Step 1: CI 构建（GitHub-hosted）
 
+Push tag 触发 CI，3 个 job 并行：
+
+| 平台 | Runner | 产出 |
+|------|--------|------|
+| macOS ARM64 | `macos-14` | unsigned `.dmg` + `.app.tar.gz` + `.sig` |
+| macOS Intel | `macos-14` (cross-compile x86_64) | unsigned `.dmg` + `.app.tar.gz` + `.sig` |
+| Windows x64 | `windows-latest` | unsigned `.exe` + `.sig` |
+
+CI 自动：
+1. 构建 → 上传 GitHub Artifacts（30 天保留）
+2. 上传 dev 包到 OSS `aijia/dev/`（latest + versioned）
+3. 生成 downloads.html 上传到 OSS
+
+### Step 2: 本地签名 + 上传
+
+**下载 CI artifacts**：
 ```bash
-python scripts/release.py beta        # 交互式，自动创建 tag 并 push
-# 或手动：git tag beta-v0.5.22 && git push origin beta-v0.5.22
+gh run download <run-id> -n macos-arm64-unsigned -D build/
+gh run download <run-id> -n macos-x64-unsigned -D build/
+gh run download <run-id> -n windows-unsigned -D build/
 ```
 
-**CI 自动做**：
-| 平台 | Runner | 产出 | 去向 |
-|------|--------|------|------|
-| macOS arm64 | self-hosted (开发者 Mac) | `.dmg`（已签名+公证） + `.app.tar.gz` + `.sig` | `aijia/beta/v0.5.22/` |
-| Windows x64 | self-hosted (签名机) | `.exe`（已签名） + `.sig` | `aijia/beta/v0.5.22/` |
-
-macOS 和 Windows 签名均在 CI 中自动完成，无需手动操作。
-
-### Step 2: 测试验证
-
-**Homebrew 安装（推荐内测人员）**：
+**macOS 签名**（codesign → notarize → staple → tauri signer → upload）：
 ```bash
-brew install --cask grant-ge/tap/aijia-beta
-# 升级 beta：brew upgrade --cask aijia-beta
+bash scripts/sign-and-upload-macos.sh 0.5.22 beta            # ARM64
+bash scripts/sign-and-upload-macos.sh 0.5.22 beta x86_64     # Intel
+bash scripts/sign-and-upload-macos.sh 0.5.22 release          # 正式版
 ```
-**Beta 通道发版后需手动同步 cask**：`python3 scripts/bump-homebrew.py 0.5.22 --beta`。
+
+**Windows 签名**（SimpleSign 签名 → tauri signer → upload）：
+1. 用 SimpleSign 对 `.exe` 进行 Authenticode 签名
+2. 运行上传脚本：
+```powershell
+.\scripts\sign-and-upload-windows.ps1 -Version 0.5.22 -Type beta
+.\scripts\sign-and-upload-windows.ps1 -Version 0.5.22 -Type release
+```
+
+### Step 3: 测试验证（Beta）
 
 **直接下载**（macOS 已签名公证，双击即可打开）：
 - macOS: `https://lotus.renlijia.com/aijia/beta/v0.5.22/AIjia_0.5.22-beta_aarch64.dmg`
 - Windows: `https://lotus.renlijia.com/aijia/beta/v0.5.22/AIjia_0.5.22-beta_x64-setup.exe`
+- 或从下载页：https://lotus.renlijia.com/aijia/downloads.html
+
+**Homebrew**：`brew install --cask grant-ge/tap/aijia-beta`
 
 测试清单：
-- [ ] Windows 安装无安全警告（Authenticode 签名验证通过）
-- [ ] macOS 双击 DMG 直接打开，无安全警告（Apple 公证通过）
-- [ ] 核心功能冒烟测试
-- [ ] 版本号显示正确
-- [ ] 新功能 / 修复验证
+- [ ] macOS 双击 DMG 直接打开，无安全警告
+- [ ] Windows 安装无安全警告
+- [ ] 核心功能冒烟测试 + 版本号正确 + 新功能验证
 
-### Step 3: 正式发布
-
-测试通过后：
-
-```bash
-python scripts/release.py release      # 交互式，有确认提示
-# 或手动：git tag v0.5.22 && git push origin v0.5.22
-```
-
-**CI 自动做**：
-| 平台 | Runner | 产出 | 去向 |
-|------|--------|------|------|
-| macOS arm64 | self-hosted (开发者 Mac) | `.dmg`（已签名+公证） + `.app.tar.gz` + `.sig` | `aijia/v0.5.22/` + `latest/` |
-| Windows x64 | self-hosted (签名机) | `.exe`（已签名） + `.sig` | `aijia/v0.5.22/` + `latest/` |
-
-macOS 和 Windows 签名均在 CI 中自动完成，无需手动操作。
-
-### Step 4: Finalize（生成 update.json，用户收到自动更新）
+### Step 4: Finalize（生成 update.json）
 
 ```bash
 python scripts/release.py finalize
-# → 触发 GitHub Actions "Finalize Release" workflow
-# → 生成 update.json → 已安装用户收到更新推送
 ```
 
-### Step 5: 收尾
+### 签名机环境要求
 
-```bash
-# macOS Intel（x86_64）补打（可选，视用户群体决定）
-# 详见下方 "macOS Intel 补充构建" 章节
+**macOS**（检查：`bash scripts/setup-runner-macos.sh`）：
+- Developer ID Application 证书已导入 login keychain
+- 环境变量：`APPLE_ID`, `APPLE_PASSWORD`（App-Specific）, `APPLE_TEAM_ID`
+- 环境变量：`TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+- 环境变量：`OSS_ACCESS_KEY_ID`, `OSS_ACCESS_KEY_SECRET`
+- Python + oss2
 
-# Homebrew 更新
-python3 scripts/bump-homebrew.py 0.5.22
+**Windows**（检查：`.\scripts\setup-runner-windows.ps1`）：
+- SimpleSign 签名工具 + EV 硬件 token
+- Node.js（用于 `npx @tauri-apps/cli signer sign` 或全局 `tauri` CLI）
+- Python + oss2
+- 环境变量：`TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+- 环境变量：`OSS_ACCESS_KEY_ID`, `OSS_ACCESS_KEY_SECRET`
 
-# Changelog 更新（lotus 仓库）
-cd ../lotus && ./scripts/update-changelog.sh desktop 0.5.22
+### GitHub Secrets（CI 构建用）
 
-# 推到国内镜像
-git push codeup main && git push codeup v0.5.22
-```
+| Secret | 用途 |
+|--------|------|
+| `TAURI_SIGNING_PRIVATE_KEY` | Tauri updater Ed25519 密钥 |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Ed25519 密钥密码 |
+| `OSS_ACCESS_KEY_ID` | 阿里云 OSS（dev 包上传 + 下载页生成） |
+| `OSS_ACCESS_KEY_SECRET` | 阿里云 OSS |
 
-### Windows 签名机环境要求
-
-| 项目 | 说明 |
-|------|------|
-| Windows SDK | 含 `signtool.exe` |
-| 代码签名证书 | 已导入本地证书存储 |
-| Python + oss2 | `pip install oss2` |
-| Node.js + pnpm | 用于 `npx tauri signer sign`（重新生成 .sig） |
-
-**环境变量**（建议写入系统环境变量，持久化）：
-
-```
-SIGN_CERT_THUMBPRINT=<证书指纹>
-TAURI_SIGNING_PRIVATE_KEY=<Tauri updater 私钥 base64>
-TAURI_SIGNING_PRIVATE_KEY_PASSWORD=<私钥密码>
-OSS_ACCESS_KEY_ID=<阿里云 OSS AK>
-OSS_ACCESS_KEY_SECRET=<阿里云 OSS SK>
-```
+注：Apple 签名 / Windows 签名相关 secrets 不再需要（签名在本地做）。
 
 ### OSS 路径规范
 
 ```
 aijia/
-├── staging/                     # CI 上传的未签名 Windows exe（临时）
-│   ├── beta/v0.5.22/
-│   └── release/v0.5.22/
-├── beta/                        # Beta 测试版（已签名，不触发自动更新）
+├── dev/                         # CI 自动上传的未签名 dev 包
+│   ├── AIjia_latest_aarch64.dmg    # 最新 macOS ARM64（每次构建覆盖）
+│   ├── AIjia_latest_x64.dmg       # 最新 macOS Intel
+│   ├── AIjia_latest_x64-setup.exe # 最新 Windows
+│   └── v0.5.22/                   # 按版本归档
+├── beta/                        # Beta 测试版（已签名）
 │   └── v0.5.22/
-│       ├── AIjia_0.5.22_x64-setup.exe      # Windows（已签名）
-│       ├── AIjia_0.5.22_x64-setup.exe.sig  # Tauri updater sig
-│       ├── AIjia_0.5.22_aarch64.dmg        # macOS
-│       └── AIjia.app.tar.gz + .sig         # macOS updater
+│       ├── AIjia_0.5.22_x64-setup.exe + .sig
+│       ├── AIjia_0.5.22_aarch64.dmg
+│       └── AIjia.app.tar.gz + .sig
 ├── v0.5.22/                     # 正式版（已签名）
-│   ├── AIjia_0.5.22_x64-setup.exe
-│   ├── AIjia_0.5.22_x64-setup.exe.sig
+│   ├── AIjia_0.5.22_x64-setup.exe + .sig
 │   ├── AIjia_0.5.22_aarch64.dmg
 │   └── AIjia.app.tar.gz + .sig
 ├── latest/                      # 正式版最新下载入口
-│   ├── windows-x64
-│   └── macos-arm64
+├── downloads.html               # 下载页（CI 自动生成）
 └── update.json                  # Tauri 自动更新清单（仅正式版）
 ```
 
@@ -418,67 +414,9 @@ aijia/
 
 | Workflow | 触发 | 作用 |
 |----------|------|------|
-| `build-desktop.yml` | `beta-v*` tag / `v*` tag / manual | macOS (self-hosted): 构建+签名+公证+上传 OSS; Windows (self-hosted): 构建+签名+上传 OSS |
-| `finalize-release.yml` | manual（输入 version） | Windows 签名完成后，生成 update.json |
+| `build-desktop.yml` | `beta-v*` / `v*` tag / manual | GitHub-hosted 构建 3 平台 + dev 包上传 OSS + 下载页生成 |
+| `finalize-release.yml` | manual（输入 version） | 生成 update.json |
 | `ci.yml` | push main / PR | Rust + TS 类型检查 + lint |
-
-### macOS Self-Hosted Runner 配置
-
-构建机是开发者本地 Mac（Apple Silicon），通过 GitHub Actions self-hosted runner 远程触发构建。
-
-**一次性配置（在 Mac 上执行）**：
-
-1. **注册 GitHub Actions Runner**：
-   - GitHub → `grant-ge/aiminjia` → Settings → Actions → Runners → New self-hosted runner
-   - 按提示下载、解压、配置 runner（选 labels: `macOS`, `ARM64`）
-   - `./run.sh` 前台运行，或 `./svc.sh install && ./svc.sh start` 作为服务运行
-
-2. **Apple 签名证书**：
-   - 确保 Developer ID Application 证书已导入 login keychain
-   - 验证：`security find-identity -v -p codesigning` 应显示 `Developer ID Application: ...`
-
-3. **配置 GitHub Secrets**（在 repo Settings → Secrets and variables → Actions）：
-
-| Secret | 用途 | 来源 |
-|--------|------|------|
-| `MACOS_KEYCHAIN_PASSWORD` | 解锁 login keychain | Mac 登录密码 |
-| `APPLE_ID` | 公证用 Apple ID 邮箱 | Apple Developer 账号 |
-| `APPLE_PASSWORD` | 公证用 App-Specific Password | appleid.apple.com → App-Specific Passwords |
-| `APPLE_TEAM_ID` | Apple Developer Team ID | developer.apple.com → Membership |
-| `TAURI_SIGNING_PRIVATE_KEY` | Tauri updater Ed25519 密钥 | 已有（`~/.tauri/aijia.key`） |
-| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Ed25519 密钥密码 | 已有 |
-| `OSS_ACCESS_KEY_ID` | 阿里云 OSS | 已有 |
-| `OSS_ACCESS_KEY_SECRET` | 阿里云 OSS | 已有 |
-
-**注意**：如果 Mac 重启后无人登录，login keychain 处于锁定状态。runner 作为 LaunchAgent（当前用户登录后自动启动）可正常访问。建议在 push tag 前确保 Mac 已登录。
-
-### Windows Self-Hosted Runner 配置
-
-构建+签名机是一台 Windows PC（Authenticode 证书在本地 cert store，不可导出），通过 GitHub Actions self-hosted runner 远程触发构建+签名。
-
-**一次性配置（在 Windows 签名机上执行，管理员 PowerShell）**：
-
-1. **注册 GitHub Actions Runner**：
-   - GitHub → `grant-ge/aiminjia` → Settings → Actions → Runners → New self-hosted runner → Windows x64
-   - 按提示下载、解压、配置（选 labels: `Windows`, `X64`）
-   - `.\svc.cmd install` + `.\svc.cmd start` 作为 Windows 服务运行
-
-2. **确认环境**：
-   - Windows SDK 已安装（含 `signtool.exe`）
-   - 代码签名证书已导入本地证书存储
-   - Node.js 20+、Python 3、Rust stable、pnpm 9 已安装
-
-3. **配置 GitHub Secret**：
-
-| Secret | 用途 |
-|--------|------|
-| `WINDOWS_CERT_THUMBPRINT` | 证书 SHA1 指纹（`certutil -store My` 可查看） |
-
-或者在签名机系统环境变量中设置 `SIGN_CERT_THUMBPRINT`（CI 优先读 Secret，回退读环境变量）。
-
-### macOS Intel（x86_64）
-
-CI 自动在同一台 Apple Silicon Mac runner 上交叉编译 x86_64 版本（`build-macos-intel` job，依赖 `build-macos` 完成后顺序执行）。自动处理 x86_64 sidecar 资源、签名、公证、上传。`ci-finalize.py` 已包含 `darwin-x86_64` 平台，finalize 会自动生成三平台 update.json。
 
 ## Git Remotes
 
@@ -494,7 +432,7 @@ CI 自动在同一台 Apple Silicon Mac runner 上交叉编译 x86_64 版本（`
 - i18n：react-i18next，`src/i18n/{zh-CN,en-US}.json`，默认 zh-CN
 - OSS：阿里云 `lotus-releases` bucket，前缀 `aijia/`，CDN `https://lotus.renlijia.com`
 - Homebrew：`grant-ge/homebrew-tap` 下 `Casks/aijia.rb`，`on_arm` / `on_intel` 分架构 URL
-- GitHub Secrets（9 个）：`TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, `OSS_ACCESS_KEY_ID`, `OSS_ACCESS_KEY_SECRET`, `MACOS_KEYCHAIN_PASSWORD`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`, `WINDOWS_CERT_THUMBPRINT`
+- GitHub Secrets（4 个，签名在本地做不需要更多）：`TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, `OSS_ACCESS_KEY_ID`, `OSS_ACCESS_KEY_SECRET`
 - 签名密钥（本地）：`~/.tauri/aijia.key` + Keychain `aijia-tauri-signer`
 - OSS 凭证（本地）：Keychain `aijia-oss`，或环境变量 `OSS_ACCESS_KEY_ID` / `OSS_ACCESS_KEY_SECRET`
 - **数字员工 SKILL bundle + ResourceConfig + 派活前置补全（2026-05）**：5 个内置员工各带 `defaultSkillId / requiresAttachment / resourceConfigKind / requiresDingtalk` 元数据（`src/features/employees/templates.ts`）。派活前 `runTriggerPrechecks` 决定是否弹文件 picker / 资源 form / 钉钉 alert，因此**派活的唯一入口是 EmployeeDrawer 底部按钮**（卡片点击只打开 Drawer，不再有 inline 派活按钮）。SKILL 内容（`competitive-intelligence`, `sales-followup-rules`）以 managed global skills bundle 分发到 `~/.renlijia/skills/`。dispatch prompt 强制末尾"请立即开始按职责执行"以避免 LLM 等用户指示。详见 `../docs/plans/2026-05-05-employee-skills-and-resources-design.md`。
