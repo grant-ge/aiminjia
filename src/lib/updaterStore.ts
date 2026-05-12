@@ -34,6 +34,10 @@ interface UpdaterState {
   online: boolean
   /** Internal: live Update handle. Not persisted. */
   _update: Update | null
+  /** Internal: true only after this session's Update.download() has resolved. */
+  _downloaded: boolean
+  /** Internal: de-dupes React StrictMode/settings-triggered bootstraps. */
+  _bootstrapPromise: Promise<void> | null
 
   bootstrap(): Promise<void>
   openPanel(): void
@@ -96,89 +100,109 @@ export const useUpdaterStore = create<UpdaterState>()((set, get) => ({
   panelOpen: false,
   online: typeof navigator !== 'undefined' ? navigator.onLine : true,
   _update: null,
+  _downloaded: false,
+  _bootstrapPromise: null,
 
   async bootstrap() {
-    if (typeof navigator !== 'undefined') {
-      window.addEventListener('online', () => set({ online: true }))
-      window.addEventListener('offline', () => set({ online: false }))
+    const inFlight = get()._bootstrapPromise
+    if (inFlight) {
+      return inFlight
     }
 
-    // pending.json from a prior session is unreliable: the Tauri Update handle
-    // can't be persisted across launches, so even a "ready" status would mean
-    // we'd have to re-download anyway. Worse, surfacing an old version (e.g.
-    // 0.5.18 cached while the server is now on 0.5.20) confuses users and the
-    // install button silently no-ops without an Update handle. Always start
-    // from a clean slate and trust this session's check() result.
-    await clearPending()
+    const run = (async () => {
+      if (typeof navigator !== 'undefined') {
+        window.addEventListener('online', () => set({ online: true }))
+        window.addEventListener('offline', () => set({ online: false }))
+      }
 
-    let update: Update | null = null
-    try {
-      update = await check()
-    } catch (e) {
-      console.warn('[updater] check failed:', e)
-      return
-    }
+      // pending.json from a prior session is unreliable: the Tauri Update handle
+      // can't be persisted across launches, so even a "ready" status would mean
+      // we'd have to re-download anyway. Worse, surfacing an old version (e.g.
+      // 0.5.18 cached while the server is now on 0.5.20) confuses users and the
+      // install button silently no-ops without an Update handle. Always start
+      // from a clean slate and trust this session's check() result.
+      await clearPending()
 
-    if (!update) {
-      set({ phase: 'idle', version: null, notes: '', progress: null, _update: null })
-      return
-    }
+      let update: Update | null = null
+      try {
+        update = await check()
+      } catch (e) {
+        console.warn('[updater] check failed:', e)
+        return
+      }
 
-    const currentVersion = await getVersion()
-    if (update.version === currentVersion) {
-      set({ phase: 'idle', version: null, notes: '', progress: null, _update: null })
-      return
-    }
+      if (!update) {
+        set({ phase: 'idle', version: null, notes: '', progress: null, _update: null, _downloaded: false })
+        return
+      }
 
-    set({
-      _update: update,
-      version: update.version,
-      notes: update.body ?? '',
-      phase: 'downloading',
-      progress: { downloaded: 0, total: 0 },
-    })
-    await writePending({
-      version: update.version,
-      totalBytes: 0,
-      downloadedBytes: 0,
-      status: 'downloading',
-      checkedAt: new Date().toISOString(),
-    })
+      const currentVersion = await getVersion()
+      if (update.version === currentVersion) {
+        set({ phase: 'idle', version: null, notes: '', progress: null, _update: null, _downloaded: false })
+        return
+      }
 
-    let total = 0
-    let downloaded = 0
-    try {
-      await update.download((event) => {
-        if (event.event === 'Started') {
-          total = event.data.contentLength ?? 0
-        } else if (event.event === 'Progress') {
-          downloaded += event.data.chunkLength
-          set({ progress: { downloaded, total } })
-        }
-      })
-      const readyAt = new Date().toISOString()
-      await writePending({
-        version: update.version,
-        totalBytes: total,
-        downloadedBytes: downloaded,
-        status: 'ready',
-        checkedAt: new Date().toISOString(),
-        readyAt,
-      })
       set({
-        phase: 'ready',
-        progress: { downloaded, total },
+        _update: update,
+        version: update.version,
+        notes: update.body ?? '',
+        phase: 'downloading',
+        progress: { downloaded: 0, total: 0 },
+        _downloaded: false,
       })
-    } catch (e) {
-      console.warn('[updater] download failed:', e)
       await writePending({
         version: update.version,
-        totalBytes: total,
-        downloadedBytes: downloaded,
-        status: 'failed',
+        totalBytes: 0,
+        downloadedBytes: 0,
+        status: 'downloading',
         checkedAt: new Date().toISOString(),
       })
-      set({ phase: 'failed' })
+
+      let total = 0
+      let downloaded = 0
+      try {
+        await update.download((event) => {
+          if (event.event === 'Started') {
+            total = event.data.contentLength ?? 0
+          } else if (event.event === 'Progress') {
+            downloaded += event.data.chunkLength
+            set({ progress: { downloaded, total } })
+          }
+        })
+        const readyAt = new Date().toISOString()
+        await writePending({
+          version: update.version,
+          totalBytes: total,
+          downloadedBytes: downloaded,
+          status: 'ready',
+          checkedAt: new Date().toISOString(),
+          readyAt,
+        })
+        set({
+          phase: 'ready',
+          progress: { downloaded, total },
+          _downloaded: true,
+        })
+      } catch (e) {
+        console.warn('[updater] download failed:', e)
+        await writePending({
+          version: update.version,
+          totalBytes: total,
+          downloadedBytes: downloaded,
+          status: 'failed',
+          checkedAt: new Date().toISOString(),
+        })
+        set({ phase: 'failed', _downloaded: false })
+      }
+    })()
+
+    set({ _bootstrapPromise: run })
+    try {
+      await run
+    } finally {
+      if (get()._bootstrapPromise === run) {
+        set({ _bootstrapPromise: null })
+      }
     }
   },
 
@@ -191,8 +215,8 @@ export const useUpdaterStore = create<UpdaterState>()((set, get) => ({
   },
 
   async installNow() {
-    const { _update } = get()
-    if (!_update) {
+    const { _update, _downloaded, phase } = get()
+    if (!_update || !_downloaded || phase !== 'ready') {
       // Should not happen with the simplified bootstrap flow, but guard anyway
       // so the user gets a visible error instead of a silent no-op.
       useNotificationStore.getState().push({
@@ -207,9 +231,12 @@ export const useUpdaterStore = create<UpdaterState>()((set, get) => ({
       return
     }
     set({ phase: 'installing' })
+    let installed = false
     try {
       await _update.install()
+      installed = true
       await clearPending()
+      set({ phase: 'idle', version: null, notes: '', progress: null, _update: null, _downloaded: false })
       await relaunch()
     } catch (e) {
       console.error('[updater] install failed:', e)
@@ -222,7 +249,9 @@ export const useUpdaterStore = create<UpdaterState>()((set, get) => ({
         dismissible: true,
         autoHide: 8,
       })
-      set({ phase: 'ready' })
+      set(installed
+        ? { phase: 'idle', version: null, notes: '', progress: null, _update: null, _downloaded: false }
+        : { phase: 'ready' })
     }
   },
 }))

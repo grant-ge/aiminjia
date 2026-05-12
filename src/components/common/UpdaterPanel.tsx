@@ -46,9 +46,11 @@ export function UpdaterPanel() {
     .map((line) => line.replace(/^[-•·]\s*/, '').trim())
     .filter(Boolean)
 
-  const installDisabled = !hasHandle || phase === 'installing'
+  const installDisabled = !hasHandle || phase !== 'ready'
   const disabledReason = !hasHandle
     ? t('updater.offlineHint')
+    : phase === 'downloading'
+      ? t('updater.downloading')
     : phase === 'installing'
       ? t('updater.installing')
       : ''
@@ -142,7 +144,11 @@ export function UpdaterPanel() {
               color: 'var(--color-primary-contrast, #fff)',
             }}
           >
-            {phase === 'installing' ? t('updater.installing') : t('updater.installAndRestart')}
+            {phase === 'downloading'
+              ? t('updater.downloading')
+              : phase === 'installing'
+                ? t('updater.installing')
+                : t('updater.installAndRestart')}
           </button>
         </div>
       </div>

@@ -20,11 +20,10 @@ export function UpdateAvailableLink() {
       onClick={openPanel}
       onMouseDown={(e) => e.stopPropagation()}
       title={t('updater.linkTooltip')}
-      className="mr-2 flex h-6 shrink-0 items-center gap-1.5 rounded px-2 text-xs transition-colors hover:bg-sidebar-accent"
-      style={{ color: 'var(--color-accent, var(--color-text-secondary))' }}
+      className="mr-2 flex h-6 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-primary-foreground/95 transition-colors hover:bg-white/10"
     >
       <span
-        className="inline-block h-1.5 w-1.5 rounded-full"
+        className="inline-block h-1.5 w-1.5 rounded-full ring-1 ring-white/75"
         style={{ background: '#ef4444' }}
         aria-hidden
       />
