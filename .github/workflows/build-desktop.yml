@@ -435,7 +435,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Configure git proxy
-        shell: pwsh
+        shell: powershell
         run: |
           git config --global http.proxy http://127.0.0.1:7897
           git config --global https.proxy http://127.0.0.1:7897
@@ -447,7 +447,7 @@ jobs:
 
       - name: Determine release type
         id: release-type
-        shell: pwsh
+        shell: powershell
         run: |
           if ("${{ github.event_name }}" -eq "workflow_dispatch") {
             echo "type=${{ inputs.release_type }}" >> $env:GITHUB_OUTPUT
@@ -459,7 +459,7 @@ jobs:
 
       - name: Extract version
         id: version
-        shell: pwsh
+        shell: powershell
         run: |
           if ("${{ github.ref }}" -like "refs/tags/*") {
             $version = "$env:GITHUB_REF_NAME" -replace '^v','' -replace '^beta-v',''
@@ -500,7 +500,7 @@ jobs:
 
       - name: Setup Playwright runtime
         if: steps.playwright-cache.outputs.cache-hit != 'true'
-        shell: pwsh
+        shell: powershell
         run: .\scripts\setup-playwright.ps1
 
       - name: Cache dws CLI
@@ -512,13 +512,13 @@ jobs:
 
       - name: Setup dws CLI
         if: steps.dws-cache.outputs.cache-hit != 'true'
-        shell: pwsh
+        shell: powershell
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: .\scripts\setup-dws.ps1
 
       - name: Download changelog.json from production
-        shell: pwsh
+        shell: powershell
         run: |
           try {
             Invoke-WebRequest -Uri "https://ai.renlijia.com/changelog.json" -OutFile src-tauri/changelog.json -UseBasicParsing
@@ -537,7 +537,7 @@ jobs:
       # SIGN_CERT_THUMBPRINT should be set as a system env var on the signing
       # machine, or as a GitHub Secret (WINDOWS_CERT_THUMBPRINT).
       - name: Sign Windows exe (Authenticode)
-        shell: pwsh
+        shell: powershell
         env:
           CERT_THUMBPRINT: ${{ secrets.WINDOWS_CERT_THUMBPRINT }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -599,7 +599,7 @@ jobs:
           OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
           PYTHONUTF8: "1"
           PYTHONIOENCODING: "utf-8"
-        shell: pwsh
+        shell: powershell
         run: |
           $version = "${{ steps.version.outputs.version }}"
           $releaseType = "${{ steps.release-type.outputs.type }}"
