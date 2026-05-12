@@ -18,7 +18,11 @@ if (-not (Test-Path (Join-Path $NodeDir "node.exe"))) {
     Write-Host "Downloading Node.js v${NodeVersion} for Windows x64..."
     New-Item -ItemType Directory -Force -Path $NodeDir | Out-Null
     $ZipPath = Join-Path $env:TEMP "node-win-x64.zip"
-    Invoke-WebRequest -Uri $NodeUrl -OutFile $ZipPath
+    if ($env:HTTPS_PROXY) {
+        Invoke-WebRequest -Uri $NodeUrl -OutFile $ZipPath -Proxy $env:HTTPS_PROXY -ProxyUseDefaultCredentials
+    } else {
+        Invoke-WebRequest -Uri $NodeUrl -OutFile $ZipPath
+    }
 
     # Extract
     $ExtractDir = Join-Path $env:TEMP "node-extract"

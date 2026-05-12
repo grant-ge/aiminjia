@@ -489,7 +489,9 @@ jobs:
         run: |
           if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
             Write-Host "Rust not found, installing..."
-            Invoke-WebRequest -Uri "https://win.rustup.rs/x86_64" -OutFile "$env:TEMP\rustup-init.exe" -UseBasicParsing
+            $rustupArgs = @("-Uri", "https://win.rustup.rs/x86_64", "-OutFile", "$env:TEMP\rustup-init.exe", "-UseBasicParsing")
+            if ($env:HTTPS_PROXY) { $rustupArgs += @("-Proxy", $env:HTTPS_PROXY, "-ProxyUseDefaultCredentials") }
+            Invoke-WebRequest @rustupArgs
             & "$env:TEMP\rustup-init.exe" -y --default-toolchain stable --no-modify-path
             $env:Path += ";$env:USERPROFILE\.cargo\bin"
             echo "$env:USERPROFILE\.cargo\bin" >> $env:GITHUB_PATH
@@ -531,7 +533,9 @@ jobs:
         shell: powershell
         run: |
           try {
-            Invoke-WebRequest -Uri "https://ai.renlijia.com/changelog.json" -OutFile src-tauri/changelog.json -UseBasicParsing
+            $args = @("-Uri", "https://ai.renlijia.com/changelog.json", "-OutFile", "src-tauri/changelog.json", "-UseBasicParsing")
+            if ($env:HTTPS_PROXY) { $args += @("-Proxy", $env:HTTPS_PROXY, "-ProxyUseDefaultCredentials") }
+            Invoke-WebRequest @args
           } catch {
             '{"versions":[]}' | Set-Content src-tauri/changelog.json
           }
