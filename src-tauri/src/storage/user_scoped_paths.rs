@@ -44,6 +44,9 @@ impl UserScopedPaths {
     pub fn schedules_dir(&self) -> PathBuf {
         self.base.join("schedules")
     }
+    pub fn agenda_dir(&self) -> PathBuf {
+        self.base.join("agenda")
+    }
     pub fn permissions_path(&self) -> PathBuf {
         self.base.join("permissions.json")
     }
@@ -64,9 +67,6 @@ impl UserScopedPaths {
     }
     pub fn project_memories_dir(&self) -> PathBuf {
         self.base.join("project_memories")
-    }
-    pub fn playwright_profile_dir(&self) -> PathBuf {
-        self.base.join("playwright-profile")
     }
     pub fn api_data_dir(&self) -> PathBuf {
         self.base.join("api-data")
@@ -150,10 +150,6 @@ mod tests {
             paths.subagent_transcripts_dir(),
             root.join("users/t_1__u_2/subagent_transcripts")
         );
-        assert_eq!(
-            paths.playwright_profile_dir(),
-            root.join("users/t_1__u_2/playwright-profile")
-        );
     }
 
     #[test]
@@ -176,6 +172,14 @@ mod tests {
         assert_eq!(paths.audit_dir(), base.join("audit"));
         assert_eq!(paths.logs_dir(), base.join("logs"));
         assert_eq!(paths.downloads_dir(), base.join("downloads"));
+    }
+
+    #[test]
+    fn agenda_dir_under_base() {
+        use tempfile::TempDir;
+        let dir = TempDir::new().unwrap();
+        let paths = UserScopedPaths::new(dir.path(), "t_1__u_2");
+        assert_eq!(paths.agenda_dir(), dir.path().join("users/t_1__u_2/agenda"));
     }
 
     #[test]

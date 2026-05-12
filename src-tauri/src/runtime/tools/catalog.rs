@@ -608,6 +608,132 @@ fn build_default_catalog() -> ToolCatalog {
         }),
     ));
 
+    // ── Primitive: agenda tools (spec §7) ──────────────────────────
+    // organizer 强制为当前 persona——runtime 在 RequestScopedRuntimeDeps 注入 persona id，
+    // 工具构造期绑死到 AgendaToolDeps，LLM 不传 organizer 字段。详见 spec §4.5。
+    c.insert(CatalogEntry::new(
+        ToolDefinition::new(
+            "create_agenda_item",
+            "【自用】为你（当前数字员工）自己创建一条到点自动触发的日程：一次性或循环（每天/每周/每月/每年），到点会以你（同一个 persona）的身份自动执行内置 prompt。",
+        )
+            .with_kind(ToolKind::Primitive)
+            .with_read_only(false),
+        json!({
+            "type": "object",
+            "required": ["title", "prompt", "start_at"],
+            "properties": {
+                "title": { "type": "string" },
+                "prompt": { "type": "string", "description": "到点要执行的内容" },
+                "start_at": { "type": "string", "format": "date-time" },
+                "timezone": { "type": "string", "default": "Asia/Shanghai" },
+                "rule": {
+                    "type": "object",
+                    "required": ["freq", "interval", "endCondition"],
+                    "properties": {
+                        "freq": { "type": "string", "enum": ["daily", "weekly", "monthly", "yearly"] },
+                        "interval": { "type": "integer", "minimum": 1 },
+                        "endCondition": {
+                            "oneOf": [
+                                { "type": "object", "required": ["kind"], "properties": { "kind": { "const": "never" } } },
+                                { "type": "object", "required": ["kind", "n"], "properties": { "kind": { "const": "count" }, "n": { "type": "integer" } } },
+                                { "type": "object", "required": ["kind", "at"], "properties": { "kind": { "const": "until" }, "at": { "type": "string", "format": "date-time" } } }
+                            ]
+                        }
+                    }
+                }
+            }
+        }),
+    ));
+
+    c.insert(CatalogEntry::new(
+        ToolDefinition::new(
+            "list_agenda_items",
+            "【自用】列出你（当前数字员工）自己的日程清单——你给自己设的循环任务、定时提醒。",
+        )
+            .with_kind(ToolKind::Primitive)
+            .with_read_only(true),
+        json!({
+            "type": "object",
+            "required": [],
+            "properties": {
+                "status_in": {
+                    "type": "array",
+                    "items": { "type": "string", "enum": ["active", "paused", "completed", "orphaned", "cancelled"] }
+                },
+                "limit": { "type": "integer", "default": 50 }
+            }
+        }),
+    ));
+
+    c.insert(CatalogEntry::new(
+        ToolDefinition::new(
+            "update_agenda_item",
+            "【自用】修改你自己创建的日程（标题/触发内容/频率/启用状态）。",
+        )
+            .with_kind(ToolKind::Primitive)
+            .with_read_only(false),
+        json!({
+            "type": "object",
+            "required": ["id"],
+            "properties": {
+                "id": { "type": "string" },
+                "title": { "type": "string" },
+                "prompt": { "type": "string" },
+                "rule": {},
+                "status": { "type": "string", "enum": ["active", "paused"] }
+            }
+        }),
+    ));
+
+    c.insert(CatalogEntry::new(
+        ToolDefinition::new(
+            "cancel_agenda_item",
+            "【自用】取消你自己创建的日程（软删除，可在 UI 恢复）。",
+        )
+            .with_kind(ToolKind::Primitive)
+            .with_read_only(false)
+            .with_destructive(true),
+        json!({
+            "type": "object",
+            "required": ["id"],
+            "properties": { "id": { "type": "string" } }
+        }),
+    ));
+
+    c.insert(CatalogEntry::new(
+        ToolDefinition::new(
+            "skip_occurrence",
+            "【自用】跳过你自己循环日程的某一次触发。",
+        )
+            .with_kind(ToolKind::Primitive)
+            .with_read_only(false),
+        json!({
+            "type": "object",
+            "required": ["id", "at"],
+            "properties": {
+                "id": { "type": "string" },
+                "at": { "type": "string", "format": "date-time" }
+            }
+        }),
+    ));
+
+    c.insert(CatalogEntry::new(
+        ToolDefinition::new(
+            "list_agenda_occurrences",
+            "【自用】查看你自己日程过往的执行历史（成功/失败记录）。",
+        )
+            .with_kind(ToolKind::Primitive)
+            .with_read_only(true),
+        json!({
+            "type": "object",
+            "required": ["agenda_item_id"],
+            "properties": {
+                "agenda_item_id": { "type": "string" },
+                "limit": { "type": "integer", "default": 20 }
+            }
+        }),
+    ));
+
     c
 }
 
@@ -636,6 +762,13 @@ pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
     "TaskList",
     "TaskGet",
     "TaskStop",
+    // Agenda tools (spec §7) — request-scoped, organizer 由 runtime 注入
+    "create_agenda_item",
+    "list_agenda_items",
+    "update_agenda_item",
+    "cancel_agenda_item",
+    "skip_occurrence",
+    "list_agenda_occurrences",
     "skill_create_draft",
     "skill_write_md",
     "skill_add_file",

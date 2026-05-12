@@ -17,7 +17,6 @@ const LEGACY_ITEMS: &[(&str, &str)] = &[
     ("subagent_transcripts", "subagent_transcripts"),
     ("schedules", "schedules"),
     ("project_memories", "project_memories"),
-    ("playwright-profile", "playwright-profile"),
     ("api-data", "api-data"),
     ("screenshots", "screenshots"),
     ("site-profiles", "site-profiles"),

@@ -42,7 +42,6 @@ fn request_scoped_deps(workspace: &std::path::Path) -> RequestScopedRuntimeDeps 
         bocha_api_key: None,
         app_handle: None,
         auth_manager: None,
-        connector_engine: None,
         use_cloud: false,
         model: "test-model".to_string(),
         gateway: None,
@@ -57,6 +56,7 @@ fn request_scoped_deps(workspace: &std::path::Path) -> RequestScopedRuntimeDeps 
         permission_mode: PermissionMode::Default,
         runtime_resolver: Some(managed_runtime_resolver()),
         permission_ctx: None,
+        current_persona_id: None,
     }
 }
 
@@ -74,7 +74,6 @@ fn plugin_context(workspace: &std::path::Path) -> PluginContext {
         bocha_api_key: request.bocha_api_key,
         app_handle: request.app_handle,
         auth_manager: request.auth_manager,
-        connector_engine: request.connector_engine,
         dingtalk_bridge: None,
         use_cloud: request.use_cloud,
         model: request.model,
@@ -90,6 +89,7 @@ fn plugin_context(workspace: &std::path::Path) -> PluginContext {
         permission_mode: request.permission_mode,
         runtime_resolver: request.runtime_resolver,
         permission_ctx: None,
+        current_persona_id: None,
     }
 }
 
@@ -106,7 +106,6 @@ fn subagent_runtime_deps_preserve_managed_runtime_resolver() {
         session_id: parent.session_id.clone(),
         run_id: parent.run_id.clone(),
         agent_id: parent.agent_id.clone(),
-        connector_engine: parent.connector_engine.clone(),
         agent_runtime: parent.agent_runtime.clone(),
         event_bus: parent.event_bus.clone(),
         authorized_workspace: parent.authorized_workspace.clone(),
@@ -115,6 +114,7 @@ fn subagent_runtime_deps_preserve_managed_runtime_resolver() {
         runtime_resolver: parent.runtime_resolver.clone(),
         skill_registry: None,
         permission_ctx: None,
+        current_persona_id: None,
     };
 
     let child = subagent_deps.request_scoped_tool_deps(RunId::new("child-run"), None, None, None);

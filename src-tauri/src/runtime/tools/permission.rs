@@ -114,7 +114,6 @@ pub fn apply_permission_mode(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ScopeCapabilityFailure {
     MissingWorkspace,
-    MissingBrowser,
     UnknownScope,
 }
 
@@ -133,18 +132,6 @@ fn check_scope_capability(
                 Some(ScopeCapabilityFailure::MissingWorkspace)
             } else {
                 None
-            }
-        }
-        "browser" => {
-            let has_browser = ctx
-                .capability
-                .as_ref()
-                .map(|c| c.has_browser_capability())
-                .unwrap_or(false);
-            if has_browser {
-                None
-            } else {
-                Some(ScopeCapabilityFailure::MissingBrowser)
             }
         }
         "network" => None,
@@ -174,7 +161,6 @@ impl PermissionPipeline for AllowAllPermissionPipeline {
 /// 规则：
 /// - 工具 `capability_scope` 为空 → 始终允许
 /// - 含 `workspace:read` 或 `workspace:write` → 需要 `ctx.capability.storage` 存在
-/// - 含 `browser` → 需要 `ctx.capability.has_browser_capability()` = true（目前默认 false）
 /// - 含 `python:exec` → 需要 `ctx.capability.storage` 存在
 /// - 含 `network` → 始终允许（网络访问不在本地 capability 层校验）
 /// - 含 `mcp` → 视作 unknown scope（由上层 store / ask 流程决定）
@@ -213,16 +199,6 @@ impl PermissionPipeline for CapabilityPermissionPipeline {
                     return PermissionDecision::Deny {
                         message: format!(
                             "Tool '{}' requires a workspace context for Python execution.",
-                            definition.id
-                        ),
-                        reason: PermissionReason::Capability,
-                    };
-                }
-                Some(ScopeCapabilityFailure::MissingBrowser) => {
-                    return PermissionDecision::Deny {
-                        message: format!(
-                            "Tool '{}' requires browser capability. \
-                            A browser connector must be active.",
                             definition.id
                         ),
                         reason: PermissionReason::Capability,
@@ -311,12 +287,6 @@ impl PermissionPipeline for StorePolicyPipeline {
                             "Tool '{}' requires workspace capability (scope: {}).",
                             definition.id, scope
                         ),
-                        reason: PermissionReason::Capability,
-                    };
-                }
-                Some(ScopeCapabilityFailure::MissingBrowser) => {
-                    return PermissionDecision::Deny {
-                        message: format!("Tool '{}' requires browser capability.", definition.id),
                         reason: PermissionReason::Capability,
                     };
                 }
@@ -428,23 +398,5 @@ mod tests {
 
         let satisfied = check_scope_capability("workspace:write", &ctx_with_workspace());
         assert!(satisfied.is_none());
-    }
-
-    #[test]
-    fn review_check_scope_capability_detects_browser_and_unknown_scopes() {
-        let missing_browser = check_scope_capability("browser", &ctx_without_capability());
-        assert!(matches!(
-            missing_browser,
-            Some(ScopeCapabilityFailure::MissingBrowser)
-        ));
-
-        let unknown = check_scope_capability("custom:unknown", &ctx_without_capability());
-        assert!(matches!(
-            unknown,
-            Some(ScopeCapabilityFailure::UnknownScope)
-        ));
-
-        let network = check_scope_capability("network", &ctx_without_capability());
-        assert!(network.is_none());
     }
 }

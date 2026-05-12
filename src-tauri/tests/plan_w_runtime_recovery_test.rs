@@ -140,8 +140,13 @@ async fn w2_max_tokens_injects_resume_message_and_completes() {
     let events = bus.recorded();
     let persisted = events
         .iter()
-        .find(|event| matches!(event.kind, RuntimeEventKind::MessagePersisted { .. }))
-        .expect("message persisted event");
+        .find(|event| {
+            matches!(
+                &event.kind,
+                RuntimeEventKind::MessagePersisted { role, .. } if role == "assistant"
+            )
+        })
+        .expect("assistant message persisted event");
     if let RuntimeEventKind::MessagePersisted { content, .. } = &persisted.kind {
         assert_eq!(content["text"], "part-1part-2");
     }
@@ -183,8 +188,13 @@ async fn w2_max_tokens_recovery_stops_after_limit_and_keeps_partial_content() {
     let events = bus.recorded();
     let persisted = events
         .iter()
-        .find(|event| matches!(event.kind, RuntimeEventKind::MessagePersisted { .. }))
-        .expect("message persisted event");
+        .find(|event| {
+            matches!(
+                &event.kind,
+                RuntimeEventKind::MessagePersisted { role, .. } if role == "assistant"
+            )
+        })
+        .expect("assistant message persisted event");
     if let RuntimeEventKind::MessagePersisted { content, .. } = &persisted.kind {
         let text = content["text"].as_str().unwrap_or("");
         assert!(text.contains("part-0part-1part-2part-3"));

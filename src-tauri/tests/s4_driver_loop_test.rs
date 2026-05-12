@@ -848,7 +848,7 @@ impl RuntimeLlmExecutor for CapturingMockExecutor {
         }
     }
 
-    async fn build_system_prompt(&self, _conversation_id: &str) -> Result<String, TurnError> {
+    async fn build_system_prompt(&self, _request: &ChatTurnRequest) -> Result<String, TurnError> {
         Ok("[UNIFIED-SYSTEM-PROMPT]".to_string())
     }
 
@@ -1104,7 +1104,7 @@ impl RuntimeLlmExecutor for TurnConfigOverrideExecutor {
         }
     }
 
-    async fn build_system_prompt(&self, _conversation_id: &str) -> Result<String, TurnError> {
+    async fn build_system_prompt(&self, _request: &ChatTurnRequest) -> Result<String, TurnError> {
         Ok("[BASE-SYSTEM-PROMPT]".to_string())
     }
 
@@ -1783,7 +1783,7 @@ impl RuntimeLlmExecutor for SkillCatalogCapturingExecutor {
 
 #[tokio::test]
 async fn driver_injects_skill_catalog_into_dynamic_context() {
-    let catalog = "The following skills are available for use with the load_skill tool:\n\n- `salary-query` — 薪酬查询";
+    let catalog = "The following skills are available for use with the Skill tool:\n\n- `salary-query` — 薪酬查询";
     let executor = Arc::new(SkillCatalogCapturingExecutor::new(catalog));
     let bus = RuntimeEventBus::new();
     let qe = QueryEngine::default();
@@ -1797,7 +1797,7 @@ async fn driver_injects_skill_catalog_into_dynamic_context() {
     assert!(!captured.is_empty(), "must capture dynamic_context");
     let ctx = &captured[0];
     assert!(
-        ctx.contains("The following skills are available for use with the load_skill tool"),
+        ctx.contains("The following skills are available for use with the Skill tool"),
         "dynamic context must contain skill catalog header, got: {}",
         ctx
     );

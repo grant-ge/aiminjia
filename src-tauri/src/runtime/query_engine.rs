@@ -28,10 +28,6 @@ pub struct QueryEngine {
     /// Session-scoped authorized workspace injected before a turn runs.
     /// When present, runtime tools resolve against this path first.
     authorized_workspace: Option<AuthorizedWorkspaceRef>,
-    /// Whether a browser connector is available for this session.
-    /// Injected from `connector_engine.is_some()` on the production path so that
-    /// browser-scope tools pass `CapabilityPermissionPipeline` checks.
-    browser_available: bool,
     /// File operations accessor injected from the transport layer (stub, retained for compatibility).
     file_ops: Option<Arc<dyn FileOperations>>,
     /// Session-scoped cache shared by all read-file tool calls in this engine.
@@ -84,7 +80,6 @@ impl QueryEngine {
             tool_dispatcher: Some(tool_dispatcher),
             workspace_path: None,
             authorized_workspace: None,
-            browser_available: false,
             file_ops: None,
             read_file_state: Arc::new(FileStateCache::new()),
             total_usage: Arc::new(Mutex::new(TotalTokenUsage::default())),
@@ -103,7 +98,7 @@ impl QueryEngine {
     /// Session-scoped fields (`authorized_workspace`, `read_file_state`,
     /// `total_usage`, `session_attachment_dirs`) are reset and must be injected
     /// by SessionRuntime.  Static configuration fields (`tool_dispatcher`,
-    /// `workspace_path`, `browser_available`, `file_ops`, `max_budget_usd`,
+    /// `workspace_path`, `file_ops`, `max_budget_usd`,
     /// `cost_per_1k_tokens`, `runtime_resolver`, `base_permission_ctx`) are
     /// preserved from the base engine.
     pub fn clone_with_fresh_session_state(&self) -> Self {
@@ -111,7 +106,6 @@ impl QueryEngine {
             tool_dispatcher: self.tool_dispatcher.clone(),
             workspace_path: self.workspace_path.clone(),
             authorized_workspace: None,
-            browser_available: self.browser_available,
             file_ops: self.file_ops.clone(),
             read_file_state: Arc::new(FileStateCache::new()),
             total_usage: Arc::new(Mutex::new(TotalTokenUsage::default())),
@@ -139,15 +133,6 @@ impl QueryEngine {
         authorized_workspace: Option<AuthorizedWorkspaceRef>,
     ) -> Self {
         self.authorized_workspace = authorized_workspace;
-        self
-    }
-
-    /// Set whether a browser connector is available for this session.
-    ///
-    /// When `true`, browser-scope tools pass the `CapabilityPermissionPipeline`
-    /// check.  On the production path, pass `connector_engine.is_some()`.
-    pub fn with_browser_available(mut self, browser_available: bool) -> Self {
-        self.browser_available = browser_available;
         self
     }
 
@@ -600,7 +585,6 @@ impl QueryEngine {
                     permission_ctx,
                 }),
                 workspace_id: Some(turn.session_id().as_str().to_string()),
-                browser_available: self.browser_available,
                 file_ops: self.file_ops.clone(),
                 read_file_state: Some(self.read_file_state.clone()),
                 file_reading_limits: None,
@@ -780,7 +764,6 @@ impl QueryEngine {
                     permission_ctx,
                 }),
                 workspace_id: Some(turn.session_id().as_str().to_string()),
-                browser_available: self.browser_available,
                 file_ops: self.file_ops.clone(),
                 read_file_state: Some(self.read_file_state.clone()),
                 file_reading_limits: None,

@@ -671,7 +671,7 @@ mod tests {
 
         async fn build_system_prompt(
             &self,
-            _conversation_id: &str,
+            _request: &crate::runtime::chat::chat_turn_driver::ChatTurnRequest,
         ) -> anyhow::Result<String, TurnError> {
             Ok("system".to_string())
         }

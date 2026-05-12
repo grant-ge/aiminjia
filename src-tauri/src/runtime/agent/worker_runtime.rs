@@ -768,7 +768,6 @@ impl<'a> SubagentWorkerRuntime<'a> {
         let engine = QueryEngine::with_dispatcher(dispatcher)
             .with_workspace_path(self.runtime_deps.workspace_path.clone())
             .with_authorized_workspace(self.runtime_deps.authorized_workspace.clone())
-            .with_browser_available(self.runtime_deps.connector_engine.is_some())
             .with_file_ops(file_ops)
             .with_runtime_resolver(self.runtime_deps.runtime_resolver.clone())
             .with_read_file_state(child_read_file_state);

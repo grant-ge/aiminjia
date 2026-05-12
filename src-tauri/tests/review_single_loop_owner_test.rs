@@ -17,7 +17,7 @@ fn review_send_message_clears_gateway_busy_after_runtime_returns() {
         .or_else(|| source.find(".run_chat_request(request).await"))
         .expect("send_message should call SessionRuntime::run_chat_request");
     let clear_call = source[runtime_call..]
-        .find("self.services.gateway.clear_task(&conversation_id)")
+        .find(".clear_task_for_run(&conversation_id, &run_id)")
         .expect("send_message should clear gateway busy state after runtime returns");
 
     assert!(

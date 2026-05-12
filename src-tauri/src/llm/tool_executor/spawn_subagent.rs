@@ -170,7 +170,6 @@ impl DefaultSpawnSubagentLauncher {
             session_id: scoped_deps.session_id.clone(),
             run_id: scoped_deps.run_id.clone(),
             agent_id: scoped_deps.agent_id.clone(),
-            connector_engine: scoped_deps.connector_engine.clone(),
             agent_runtime: scoped_deps.agent_runtime.clone(),
             event_bus: scoped_deps.event_bus.clone(),
             skill_registry: scoped_deps.skill_registry.clone(),
@@ -186,6 +185,10 @@ impl DefaultSpawnSubagentLauncher {
             // the parent (UserSettings working dirs + session attachment dirs
             // already merged in at the time of spawning).
             permission_ctx: context.permission_ctx.clone(),
+            // Propagate parent turn's active persona id so request-scoped tools
+            // (e.g. agenda) inside the sub-agent still bind organizer to the
+            // same persona as the parent.
+            current_persona_id: scoped_deps.current_persona_id.clone(),
         };
 
         Ok((config, runtime_deps))

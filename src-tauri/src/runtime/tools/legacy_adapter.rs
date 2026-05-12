@@ -179,7 +179,6 @@ mod tests {
             app_handle: None,
             auth_manager: None,
             dingtalk_bridge: None,
-            connector_engine: None,
             use_cloud: false,
             model: String::new(),
             gateway: None,
@@ -194,6 +193,7 @@ mod tests {
             permission_mode: PermissionMode::Default,
             runtime_resolver: None,
             permission_ctx: None,
+            current_persona_id: None,
         };
         let adapter = LegacyToolAdapter::from_plugin(plugin, plugin_ctx);
         let runtime_ctx =

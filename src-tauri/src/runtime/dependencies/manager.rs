@@ -91,14 +91,25 @@ impl From<RuntimeArtifactFetchError> for RuntimeManagerError {
 
 impl RuntimeResolver for RuntimeManager {
     fn workspace_dependencies(&self) -> RuntimeDependencyResult<WorkspaceDependencies> {
-        // Never trigger lazy install on the chat hot path. If the runtime is
-        // not ready, return the resolver error as-is and let the caller decide
-        // (e.g. show "runtime not ready" to the user). Background ensure runs
-        // at app startup; a failed install must not silently retry inside chat
-        // because that would (a) block the tokio worker for tens of seconds,
-        // (b) loop forever if the install keeps failing, and (c) leave the user
-        // staring at a stuck UI with no feedback.
-        self.resolver.workspace_dependencies()
+        // Lazy ensure only when a manifest source is configured: in that case
+        // the user has explicitly opted into managed runtime, so a missing
+        // install is a recoverable "first run on this machine" state rather
+        // than a hard error. Without a manifest we keep the original resolver
+        // error to avoid the historical pitfalls of unconditional lazy install
+        // on the chat hot path: blocking the tokio worker for tens of seconds,
+        // retrying a permanently failing install on every call, and freezing
+        // the UI without feedback. ensure() failures here are wrapped as
+        // ResolverUnavailable so callers terminate instead of looping.
+        match self.resolver.workspace_dependencies() {
+            Ok(dependencies) => Ok(dependencies),
+            Err(_) if self.has_manifest_source() => {
+                self.ensure().map_err(|ensure_error| {
+                    super::RuntimeDependencyError::ResolverUnavailable(ensure_error.to_string())
+                })?;
+                self.resolver.workspace_dependencies()
+            }
+            Err(error) => Err(error),
+        }
     }
 }
 

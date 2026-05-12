@@ -139,7 +139,6 @@ pub(crate) mod tests {
             bocha_api_key: None,
             app_handle: None,
             auth_manager: None,
-            connector_engine: None,
             dingtalk_bridge: None,
             use_cloud: false,
             model: "test-model".to_string(),
@@ -155,6 +154,7 @@ pub(crate) mod tests {
             permission_mode: crate::runtime::tools::permission::PermissionMode::Default,
             runtime_resolver: None,
             permission_ctx: None,
+            current_persona_id: None,
         }
     }
 

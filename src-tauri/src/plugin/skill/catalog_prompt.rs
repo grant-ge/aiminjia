@@ -30,8 +30,8 @@ pub fn format_skill_catalog_with_budget(skills: &[DiskSkill], context_window_tok
         lines.push(format!("- `{}` — {}", skill.id, desc));
     }
 
-    let header = "The following skills are available for use with the load_skill tool:\n\n";
-    let footer = "\nUse load_skill({ skill_id: \"<id>\" }) to load detailed instructions when a skill matches the user request.";
+    let header = "The following skills are available for use with the Skill tool:\n\n";
+    let footer = "\nUse Skill({ skill_id: \"<id>\" }) to load detailed instructions when a skill matches the user request.";
     let mut content = format!("{}{}{}", header, lines.join("\n"), footer);
     if content.len() > budget {
         content = format!(

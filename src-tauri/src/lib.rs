@@ -294,19 +294,6 @@ pub fn run() {
                 }
             }
 
-            // Initialize Playwright browser — primary browser automation
-            let playwright_browser = Arc::new(
-                connector::playwright_browser::PlaywrightBrowser::new(app.handle().clone()),
-            );
-
-            // Initialize connector engine (browser automation only)
-            let connector_engine = Arc::new(connector::ConnectorEngine::new());
-            tauri::async_runtime::block_on(async {
-                connector_engine
-                    .set_playwright_browser(playwright_browser.clone())
-                    .await;
-            });
-
             // Initialize DingTalk bridge (dws CLI sidecar)
             let dingtalk_bridge = Arc::new(connector::dingtalk::DingtalkBridge::new(
                 app.handle().clone(),
@@ -563,7 +550,6 @@ pub fn run() {
             app.manage(current_user_storage.clone());
             app.manage(current_user_storage.clone() as Arc<dyn storage::UserScopedPathResolver>);
             app.manage(auth_manager);
-            app.manage(connector_engine);
             app.manage(dingtalk_bridge);
             app.manage(tool_registry);
             app.manage(mcp_server_manager);
@@ -708,11 +694,11 @@ pub fn run() {
                 app.manage(channel_manager);
             }
 
-            runtime::schedule_runner::spawn_schedule_runner(
+            runtime::agenda::spawn_agenda_runner(
                 current_user_storage.clone() as Arc<dyn storage::UserScopedPathResolver>,
                 app.state::<Arc<transport::tauri_commands::chat::TauriChatCommandAdapter>>()
                     .inner()
-                    .clone(),
+                    .clone() as Arc<dyn runtime::agenda::AgendaRunDispatcher>,
             );
 
             runtime::employee::runner::spawn_employee_scheduler(
@@ -841,10 +827,18 @@ pub fn run() {
             // Project memory commands
             commands::project_memory::save_project_memory,
             commands::project_memory::distill_project_memory,
-            // Schedule commands
-            commands::schedules::list_schedules,
-            commands::schedules::create_schedule,
-            commands::schedules::delete_schedule,
+            // Agenda commands
+            transport::tauri_commands::agenda::list_agenda_items,
+            transport::tauri_commands::agenda::create_agenda_item,
+            transport::tauri_commands::agenda::get_agenda_item,
+            transport::tauri_commands::agenda::update_agenda_item,
+            transport::tauri_commands::agenda::delete_agenda_item,
+            transport::tauri_commands::agenda::cancel_agenda_item,
+            transport::tauri_commands::agenda::restore_agenda_item,
+            transport::tauri_commands::agenda::run_agenda_item_now,
+            transport::tauri_commands::agenda::list_agenda_occurrences,
+            transport::tauri_commands::agenda::skip_occurrence,
+            transport::tauri_commands::agenda::unskip_occurrence,
             // Employee commands
             commands::employees::employee_list,
             commands::employees::employee_get,
@@ -918,12 +912,7 @@ pub fn run() {
                             "Failed to flush pending assistant message writes on exit: {err}"
                         );
                     }
-                }
-
-                // Shutdown CDP browser (kill Chromium process) via connector engine
-                let engine = app_handle.state::<Arc<connector::ConnectorEngine>>();
-                tauri::async_runtime::block_on(engine.shutdown_cdp());
-            }
+                }            }
         });
 }
 

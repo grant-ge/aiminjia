@@ -27,7 +27,6 @@
 │   ├── ci-upload-macos.py       # CI: macOS release → OSS
 │   ├── ci-upload-macos-beta.py  # CI: macOS beta → OSS
 │   ├── ci-finalize.py           # CI: 生成 update.json
-│   ├── setup-playwright.sh/.ps1
 │   ├── bump-homebrew.py
 │   └── upload-x64.py            # 本地 Intel 构建上传
 └── .github/workflows/

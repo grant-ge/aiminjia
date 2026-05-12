@@ -291,7 +291,6 @@ async fn registry_execute_unknown_scope_not_silently_allowed() {
         bocha_api_key: None,
         app_handle: None,
         auth_manager: None,
-        connector_engine: None,
         dingtalk_bridge: None,
         use_cloud: false,
         model: String::new(),
@@ -307,6 +306,7 @@ async fn registry_execute_unknown_scope_not_silently_allowed() {
         permission_mode: app_lib::runtime::tools::permission::PermissionMode::Default,
             runtime_resolver: None,
         permission_ctx: None,
+        current_persona_id: None,
     };
 
     let result = registry

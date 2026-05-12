@@ -52,10 +52,9 @@ export function ChatBottomArea({
   const { isPickingAttachments, pickAttachments } = useChatAttachments()
   const [showSkillPopover, setShowSkillPopover] = useState(false)
   const getSkillById = useSkillStore((s) => s.getById)
-  // Selected skill chip — set by handleSkillPick, cleared after submit so the
-  // skill id flows into the IPC `selectedSkillId` field. Without this the
-  // backend only sees the slash-prefixed text and the prompt builder cannot
-  // inject SKILL.md / mark the turn as a skill-driven flow.
+  // Selected skill chip — UI state only (after the local IPC plumbing was
+  // dropped, see commit `drop selected_skill ipc plumbing`). The id no longer
+  // flows to the backend; skills are discovered via the `Skill` runtime tool.
   const [selectedSkill, setSelectedSkill] = useState<{ id: string; label?: string } | null>(null)
 
   // One-shot prefill text (e.g., from generated suggestion); consumed synchronously

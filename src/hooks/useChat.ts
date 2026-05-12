@@ -223,7 +223,7 @@ export function useChat() {
   const sendUserMessage = useCallback(async (
     text: string,
     files?: PendingFileInfo[],
-    skill?: { id: string; label?: string } | null,
+    _skill?: { id: string; label?: string } | null,
   ): Promise<boolean> => {
     let store = useChatStore.getState()
     let conversationId = store.activeConversationId
@@ -330,16 +330,8 @@ export function useChat() {
     }
 
     try {
-      console.log('[useChat] Calling sendMessage IPC, attachments:', files, 'skill:', skill?.id ?? null, 'willBeQueued:', willBeQueued)
-      await sendMessage(
-        conversationId,
-        text,
-        files,
-        null,
-        messageId,
-        skill?.id ?? null,
-        skill?.label ?? null,
-      )
+      console.log('[useChat] Calling sendMessage IPC, attachments:', files, 'willBeQueued:', willBeQueued)
+      await sendMessage(conversationId, text, files, null, messageId)
       console.log('[useChat] sendMessage IPC returned OK')
       recordDiagnostic({
         event: 'chat.submit.completed',

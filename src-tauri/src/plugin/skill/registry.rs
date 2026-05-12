@@ -48,6 +48,19 @@ impl SkillRegistry {
         ids
     }
 
+    /// Render the full skill catalog every call. Stateless and safe to invoke
+    /// from any conversation / turn without coordinating with other callers.
+    ///
+    /// `catalog_delta_for_agent` exists for per-subagent delta optimization but
+    /// requires a real session-scoped key + reset hook to be correct; until that
+    /// wiring lands, the main chat path must use this full-catalog variant so
+    /// that every new conversation sees the skill listing.
+    pub fn format_full_catalog(&self, context_window_tokens: usize) -> String {
+        let mut skills = self.skills.values().cloned().collect::<Vec<_>>();
+        skills.sort_by(|a, b| a.id.cmp(&b.id));
+        format_skill_catalog_with_budget(&skills, context_window_tokens)
+    }
+
     pub fn catalog_delta_for_agent(&mut self, agent_id: Option<&str>, context_window_tokens: usize) -> String {
         let key = agent_id.unwrap_or("").to_string();
         let sent = self.sent_skill_names.entry(key).or_default();
@@ -134,5 +147,29 @@ mod replace_all_tests {
         let post_replace_delta = reg.catalog_delta_for_agent(Some("agent-1"), 100_000);
         assert!(post_replace_delta.contains("`a`"));
         assert!(post_replace_delta.contains("`b`"));
+    }
+
+    #[test]
+    fn format_full_catalog_returns_all_skills_on_every_call() {
+        let reg = SkillRegistry::from_skills(vec![skill("a"), skill("b")]);
+
+        let first = reg.format_full_catalog(100_000);
+        let second = reg.format_full_catalog(100_000);
+
+        assert!(first.contains("`a`"));
+        assert!(first.contains("`b`"));
+        assert_eq!(first, second, "full catalog must be stable across calls");
+    }
+
+    #[test]
+    fn format_full_catalog_unaffected_by_prior_delta_calls() {
+        let mut reg = SkillRegistry::from_skills(vec![skill("a"), skill("b")]);
+
+        let _ = reg.catalog_delta_for_agent(Some("agent-1"), 100_000);
+        let _ = reg.catalog_delta_for_agent(None, 100_000);
+
+        let full = reg.format_full_catalog(100_000);
+        assert!(full.contains("`a`"));
+        assert!(full.contains("`b`"));
     }
 }

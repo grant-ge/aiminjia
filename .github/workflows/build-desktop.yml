@@ -92,22 +92,6 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install
 
-      - name: Cache Playwright runtime
-        id: playwright-cache
-        uses: actions/cache@v4
-        with:
-          path: src-tauri/playwright-runtime
-          key: playwright-runtime-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/setup-playwright.sh', 'scripts/setup-playwright.ps1', 'src-tauri/playwright-runtime/package.json') }}
-
-      - name: Setup Playwright runtime (macOS/Linux)
-        if: steps.playwright-cache.outputs.cache-hit != 'true' && runner.os != 'Windows'
-        run: bash scripts/setup-playwright.sh
-
-      - name: Setup Playwright runtime (Windows)
-        if: steps.playwright-cache.outputs.cache-hit != 'true' && runner.os == 'Windows'
-        shell: pwsh
-        run: .\scripts\setup-playwright.ps1
-
       - name: Cache dws CLI
         id: dws-cache
         uses: actions/cache@v4

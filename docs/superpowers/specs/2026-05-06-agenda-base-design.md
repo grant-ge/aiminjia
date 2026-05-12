@@ -4,6 +4,8 @@
 - 作者：pzc
 - 状态：待评审
 
+> **PR-5 迁移说明（2026-05-10）**：本文档中的 `organizer_persona_id` / `Participant.persona_id` / `primary_persona_id` / `ItemFilter.persona_id` / `current_persona_id` 字段已全部更名为 `organizer_employee_id` / `Participant.employee_id` / `primary_employee_id` / `ItemFilter.employee_id` / `current_employee_id`。老 JSON 通过 `#[serde(alias)]` 透明迁移，写入使用新名。详见 `docs/superpowers/plans/2026-05-10-agenda-organizer-employee.md`。Persona 系统已进入退役流程，PR-6 会彻底切除 active persona 兜底。
+
 ## 1. 领域建模
 
 ### 1.1 实体清单
@@ -40,7 +42,7 @@ pub struct AgendaItem {
     pub prompt: String,
 
     // —— 归属
-    pub organizer_persona_id: String,            // 必填，创建后不可改
+    pub organizer_employee_id: String,            // 必填，创建后不可改
     pub participants: Vec<Participant>,          // 至少含 organizer；本期长度恒为 1
 
     // —— 时间
@@ -59,6 +61,14 @@ pub struct AgendaItem {
     // —— 二期留口子
     pub override_of: Option<OverrideRef>,        // 本期恒为 None
 
+    // —— 工作目录绑定（PR-3 后期补充，跨 spec/plan）
+    /// 触发时绑定给新 conversation 的工作目录。
+    /// None 表示触发时跟随应用全局当前 workspace；Some(path) 表示
+    /// dispatcher 在创建 conversation 后会调
+    /// `authorized_workspace_store.replace_for_session(conv_id, path)`，
+    /// 跟首页 HomeTaskComposerCard 提交时一致。
+    pub workspace_path: Option<String>,
+
     // —— 元信息
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -71,6 +81,9 @@ pub enum ItemStatus {
     Paused,
     Completed,
     Orphaned,
+    /// 软删除：item 仍保留在磁盘（含 occurrences），列表默认隐藏；
+    /// runner 的 take_due 只接 Active，不会再触发；可由 restore 改回 Active。
+    Cancelled,
 }
 ```
 
@@ -80,12 +93,12 @@ pub enum ItemStatus {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Participant {
-    pub persona_id: String,
+    pub employee_id: String,
     pub joined_at: DateTime<Utc>,
 }
 ```
 
-约束：`participants[0].persona_id == organizer_persona_id`，本期 `participants.len() == 1`。
+约束：`participants[0].employee_id == organizer_employee_id`，本期 `participants.len() == 1`。
 
 ### 1.5 `RecurrenceRule`
 
@@ -116,6 +129,8 @@ pub enum EndCondition {
 #[serde(rename_all = "snake_case")]
 pub enum Weekday { Mon, Tue, Wed, Thu, Fri, Sat, Sun }
 ```
+
+`Count { n }` 按实际成功触发次数计数，对应 `AgendaItem.occurrence_count`。休眠/重启期间错过的计划时刻不补跑，也不消耗 Count 额度；runner 只在真正触发后递增 `occurrence_count`。
 
 ### 1.6 `OverrideRef`（二期留口子）
 
@@ -148,7 +163,7 @@ pub struct Occurrence {
     pub finished_at: Option<DateTime<Utc>>,
 
     // —— 执行链路
-    pub primary_persona_id: String,
+    pub primary_employee_id: String,
     pub conversation_id: String,
     pub session_id: SessionId,
     pub run_id: RunId,
@@ -182,17 +197,25 @@ Active ─用户暂停─→ Paused
 Paused ─用户恢复─→ Active
 Active ─organizer删除─→ Orphaned
 Orphaned ─用户重指organizer─→ Active
+Active/Paused ─用户取消（软删除）─→ Cancelled
+Cancelled ─用户恢复─→ Active（重算 next_fire_at）
+Cancelled ─用户永久删除─→ 磁盘清除（含 .bak 与 occurrences）
 ```
+
+约束：
+- `Cancelled` 状态下 `next_fire_at = None`，runner 不触发
+- 列表默认过滤掉 `Cancelled`，需勾选「显示已取消」才看见
+- 永久删除（hard delete）只保留给 UI 入口，agent 工具 `cancel_agenda_item` 仅做软删除
 
 ### 1.9 本期严格约束（store 层校验）
 
 写入时拒绝违反以下规则的 item：
 
 1. `participants.len() == 1`
-2. `participants[0].persona_id == organizer_persona_id`
+2. `participants[0].employee_id == organizer_employee_id`
 3. `override_of.is_none()`
 4. 若 `rule.is_some()`：`rule.by_day.is_empty() && rule.by_month_day.is_empty()`
-5. `organizer_persona_id` 在 update 时不可改（除 Orphaned 复活流程外）
+5. `organizer_employee_id` 在 update 时不可改（除 Orphaned 复活流程外）
 
 校验失败返回错误。runner 也在 due 检查时跳过违反约束的 item（防御性）。
 
@@ -246,20 +269,20 @@ rule = Some { freq: Weekly, interval: 2, end_condition: Count { n: 10 }, by_day:
 - 列表行只有"删除"一个操作，enabled/disabled 视觉无差异
 - runner 在 scope 切换后不会切换 store 路径
 
-### 1.2 产品诉求
+### 2.2 产品诉求
 
 - 把现有"定时任务"作为基座能力，未来在其上叠加"日程"
 - 日程是给数字员工（persona）的，每条日程归属某个员工
 - 员工本人也能在对话中创建/管理自己的日程
 
-### 1.3 本期目标
+### 2.3 本期目标
 
 1. **后端**：把"定时任务"重做成 `agenda` 基座（`AgendaItem + Occurrence`），为日程铺路
 2. **前端**：UI 形态保持现状（仍是"定时任务"页面），但补齐功能缺陷
 3. **工具**：新增一组工具让 agent 在对话中管理自己的日程
 4. **顺便**：修 runner 在 scope 切换时不切 store 路径的 bug
 
-### 1.4 非目标
+### 2.4 非目标
 
 - 日历视图、日程视图、时间轴视图——二期再做
 - 多 persona 同时参会的"多人对话协同"——本期约束 `participants` 长度恒为 1，字段已建好
@@ -269,7 +292,6 @@ rule = Some { freq: Weekly, interval: 2, end_condition: Count { n: 10 }, by_day:
 - 完整 CalDAV 协议兼容——领域字段向 iCalendar 形状靠拢，但不实现 CalDAV 同步
 
 ---
-
 
 ## 3. 持久化
 
@@ -334,6 +356,28 @@ src-tauri/src/runtime/agenda/
 - Occurrence 记录 session_id / run_id，链路可溯源
 - 加 `tests/review_agenda_session_id.rs` 锁住此约束
 
+### 4.5 当前 persona id 注入路径（agenda 工具的安全基础）
+
+§7 的 6 个 agent 工具要求 organizer 强制等于"当前 persona"。该约束是**安全边界**——LLM 不能传 organizer，工具内部从 runtime 注入获取。注入路径如下：
+
+```
+chat.rs::send_message_with_overrides
+  ↓ 解析 active employee id（已有：request.persona_id_override.or_else(db.get_active_persona)）
+  ↓
+RequestScopedRuntimeDeps.current_employee_id: Option<String>     ← ★ 新增字段
+  ↓ ToolRegistry::try_build_request_scoped_tool 时直读
+  ↓
+AgendaToolDeps.current_employee_id: String                       ← 工具构造时绑死
+  ↓
+RuntimeTool::execute() 直接读 self.deps.current_employee_id      ← LLM 改不了
+```
+
+**不走 `CapabilityContext`**——后者是工具运行时的窄能力袋（storage / browser_available / file_ops），仅承载所有工具共用的"系统能力"。persona id 是**业务身份**，不是系统能力，且只 agenda 工具需要，应在工具构造期绑死，避免污染窄接口（参考 capability.rs 文件 doc）。
+
+**不暴露给 LLM**——system prompt 现有 persona 段（identity / expertise / memory_hints）已足以让 LLM 按角色行事；persona id 是 runtime 内部标识，让 LLM 看见反而可能被复制到工具参数里制造幻觉空间。
+
+**未来扩展**：当需要"同事感�� + 跨 persona 派单"时（PR-5 候选），同事名册在 system prompt 注入、`dispatch_to_colleague` 工具校验目标 persona 关系——但 organizer 仍由 runtime 注入，安全模型不变。
+
 ---
 
 ## 5. 触发与执行
@@ -370,6 +414,8 @@ pub fn spawn_agenda_runner(
    - 调 `AgendaRunDispatcher::dispatch(item, occurrence)`
 3. Dispatcher：
    - 新建 conversation
+   - **如果 `item.workspace_path.is_some()`**：调 `authorized_workspace_store.replace_for_session(conv_id, path)` 把目录授权给这条新对话（跟首页 HomeTaskComposerCard 提交时等价）。失败 log warn，不阻塞触发
+   - **emit `conversation:created` 事件**：payload `{ conversationId, source: "agenda", title }`，让前端 sidebar reload 列表（不切路由）。所有后端绕开前端 `createNewConversation` 路径都要 emit（agenda / employee / schedule_runner 共用 `emit_conversation_created` helper）
    - 切到 organizer persona
    - 发送 `item.prompt` 作为 user message
    - 走完整 agent 主链路
@@ -419,26 +465,33 @@ fn compute_next_fire_at(item: &AgendaItem, now: DateTime<Utc>) -> Option<DateTim
 | `get_agenda_item` | `(id: String)` | `AgendaItem` |
 | `create_agenda_item` | `CreateAgendaItemRequest` | `AgendaItem` |
 | `update_agenda_item` | `(id, UpdateAgendaItemRequest)` | `AgendaItem` |
-| `delete_agenda_item` | `(id: String)` | `bool` |
-| `run_agenda_item_now` | `(id: String)` | `Occurrence` |
+| `delete_agenda_item` | `(id: String)` | `bool`（永久删除：清磁盘 + .bak + occurrences） |
+| `cancel_agenda_item` | `(id: String)` | `AgendaItem`（软删除：status=Cancelled, next_fire_at=None） |
+| `restore_agenda_item` | `(id: String)` | `AgendaItem`（仅 Cancelled 可恢复，重算 next_fire_at） |
+| `run_agenda_item_now` | `(id: String)` | `String`（occurrence_id，见下注） |
 | `skip_occurrence` | `(id: String, at: DateTime<Utc>)` | `AgendaItem` |
 | `unskip_occurrence` | `(id: String, at: DateTime<Utc>)` | `AgendaItem` |
-| `list_agenda_occurrences` | `(item_id, limit, before)` | `Vec<Occurrence>` |
+| `list_agenda_occurrences` | `(item_id, limit)`（见下注） | `Vec<Occurrence>` |
 
-`ItemFilter` 含 `status_in / persona_id / search`，本期前端默认全部传 None。
+`ItemFilter` 含 `status_in / employee_id / search`，本期前端默认全部传 None。
+
+**本期签名收窄说明：**
+
+- `run_agenda_item_now` 出参为 `String`（occurrence_id），前端需要完整 `Occurrence` 时再调 `list_agenda_occurrences` 取最新一行。延后到二期再考虑直接返回 `Occurrence`。
+- `list_agenda_occurrences` 暂不实现 `before` 游标分页参数，本期仅按 `limit` 取最近 N 条。二期接入分页时再加 `before: Option<DateTime<Utc>>`。
 
 ---
 
 ## 7. Agent 工具（agent 在对话中可调用）
 
-新增 6 个 RuntimeTool（在 `runtime/tools/builtin/agenda/`）。**所有工具的 owner 范围强制限定为当前 persona**——runtime 注入 `current_persona_id`，工具实现里查询/修改时强制按此过滤。
+新增 6 个 RuntimeTool（在 `runtime/tools/builtin/agenda/`）。**所有工具的 owner 范围强制限定为当前 employee**——runtime 注入 `current_employee_id`，工具实现里查询/修改时强制按此过滤。
 
 | 工具 | 用途 |
 |---|---|
 | `create_agenda_item` | 创建日程，organizer 强制为当前 persona |
 | `list_agenda_items` | 查询当前 persona 的日程 |
 | `update_agenda_item` | 修改 title / prompt / rule / status |
-| `cancel_agenda_item` | 删除（实际调 store delete） |
+| `cancel_agenda_item` | 软删除（status=Cancelled，保留磁盘数据；不触发） |
 | `skip_occurrence` | 跳过循环里的某次 |
 | `list_agenda_occurrences` | 查执行历史 |
 
@@ -462,7 +515,7 @@ fn compute_next_fire_at(item: &AgendaItem, now: DateTime<Utc>) -> Option<DateTim
 }
 ```
 
-`rule` 可省略 = 一次性日程。runtime 强制注入 `organizer_persona_id = current` 和 `participants = [{persona_id: current, joined_at: now}]`，agent 不能传。
+`rule` 可省略 = 一次性日程。runtime 强制注入 `organizer_employee_id = current` 和 `participants = [{employee_id: current, joined_at: now}]`，agent 不能传。
 
 ---
 
@@ -539,10 +592,10 @@ UI 形态保持现状（"定时任务"页面），补功能缺陷。**列表布�
 订阅 persona 删除事件（或在 persona 删除命令里直接调用）：
 
 ```rust
-self.agenda_store.mark_orphaned_by_organizer(&persona_id)?;
+self.agenda_store.mark_orphaned_by_organizer(&employee_id)?;
 ```
 
-实现：扫描 items，将 `organizer_persona_id == deleted_persona_id` 的置为 `Orphaned`。Orphaned item runner 不触发。
+实现：扫描 items，将 `organizer_employee_id == deleted_employee_id` 的置为 `Orphaned`。Orphaned item runner 不触发。
 
 UI 上 Orphaned 项显示警示色 + 可改 organizer（重指）—— 这是 organizer "不可转移"约束的唯一例外（仅复活流程）。
 
@@ -552,7 +605,7 @@ UI 上 Orphaned 项显示警示色 + 可改 organizer（重指）—— 这是 o
 
 ### 10.1 单元测试
 
-- `agenda::store`：CRUD、并发安全、Orphaned 标记、所有约束（10 条）的拒绝路径
+- `agenda::store`：CRUD、并发安全、Orphaned 标记、所有约束（5 条）的拒绝路径
 - `agenda::trigger_eval`：
   - 一次性 next_fire_at 计算
   - 循环 Daily/Weekly/Monthly/Yearly + 各 interval
@@ -607,7 +660,7 @@ UI 上 Orphaned 项显示警示色 + 可改 organizer（重指）—— 这是 o
 | `cron` 字段 | `start_at + Option<RecurrenceRule>` |
 | `next_run_at` | `next_fire_at` |
 | `human_schedule` | 不持久化，前端按 `rule + start_at` 渲染 |
-| 无 | `organizer_persona_id` + `participants: Vec<Participant>` |
+| 无 | `organizer_employee_id` + `participants: Vec<Participant>` |
 | 无 | `Occurrence` 执行历史 |
 | 无 | `skip_dates`（本期开放） |
 | 无 | `override_of`（二期留口子） |
@@ -636,7 +689,7 @@ UI 上 Orphaned 项显示警示色 + 可改 organizer（重指）—— 这是 o
 | `rule.by_month_day` | `RRULE BYMONTHDAY` | ⏸ 字段建好，本期约束为空 |
 | `skip_dates` | `EXDATE` | ✅ 本期开放 |
 | `override_of` | `RECURRENCE-ID` | ⏸ 字段建好，本期约束为 None |
-| `organizer_persona_id` | `ORGANIZER` | ✅ 本期 |
+| `organizer_employee_id` | `ORGANIZER` | ✅ 本期 |
 | `participants` | `ATTENDEE` | ⏸ 字段建好，本期长度为 1 |
 | 无 | `DTEND / DURATION` | ❌ 不要（数字员工瞬时执行） |
 | 无 | `VALARM` | ❌ 不要（员工不需要被提醒） |

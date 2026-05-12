@@ -667,7 +667,7 @@ mod tests {
         store.record_to(
             PermissionDestination::User,
             PermissionRule::simple(
-                "browser",
+                "Bash",
                 PermissionScope::Scope("network".to_string()),
                 PolicyDecision::AlwaysAllow,
                 PermissionSource::User,
@@ -676,7 +676,7 @@ mod tests {
         store.record_to(
             PermissionDestination::Workspace,
             PermissionRule::simple(
-                "browser",
+                "Bash",
                 PermissionScope::Scope("network".to_string()),
                 PolicyDecision::AlwaysDeny,
                 PermissionSource::Workspace,
@@ -684,7 +684,7 @@ mod tests {
         );
 
         assert_eq!(
-            store.get_for_scope("browser", "network"),
+            store.get_for_scope("Bash", "network"),
             Some(PolicyDecision::AlwaysDeny)
         );
     }
@@ -695,7 +695,7 @@ mod tests {
         store.record_to(
             PermissionDestination::User,
             PermissionRule::simple(
-                "browser",
+                "Bash",
                 PermissionScope::Scope("network".to_string()),
                 PolicyDecision::AlwaysDeny,
                 PermissionSource::User,
@@ -704,7 +704,7 @@ mod tests {
         store.record_to(
             PermissionDestination::Workspace,
             PermissionRule::simple(
-                "browser",
+                "Bash",
                 PermissionScope::Scope("network".to_string()),
                 PolicyDecision::AlwaysDeny,
                 PermissionSource::Workspace,
@@ -713,7 +713,7 @@ mod tests {
         store.record_to(
             PermissionDestination::Session,
             PermissionRule::simple(
-                "browser",
+                "Bash",
                 PermissionScope::Scope("network".to_string()),
                 PolicyDecision::Allow,
                 PermissionSource::Session,
@@ -721,7 +721,7 @@ mod tests {
         );
 
         assert_eq!(
-            store.get_for_scope("browser", "network"),
+            store.get_for_scope("Bash", "network"),
             Some(PolicyDecision::Allow)
         );
     }

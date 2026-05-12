@@ -145,7 +145,6 @@ pub trait FileOperations: Send + Sync + std::fmt::Debug {
 /// |---------------------|--------------------------------------------------|
 /// | `storage`           | Workspace path and scoped file-I/O helpers       |
 /// | `workspace_id`      | Logical workspace identifier for key-scoping     |
-/// | `browser_available` | Whether a browser connector is active            |
 /// | `file_ops`          | File operations stub (retained for compile compat) |
 ///
 /// Fields that are *not* present here (e.g. `gateway`, `auth_manager`,
@@ -157,17 +156,13 @@ pub struct CapabilityContext {
     pub storage: Option<StorageCapability>,
     /// Logical workspace / conversation scope identifier.
     pub workspace_id: Option<String>,
-    /// Whether a browser connector is available for this session.
-    /// Set to true when a ConnectorEngine is active and ready.
-    /// Kept as a plain bool to avoid importing ConnectorEngine into runtime/.
-    pub browser_available: bool,
     /// Runtime dependency resolver exposed as a narrow interface for tools.
     pub runtime_resolver: Option<Arc<dyn RuntimeResolver>>,
     /// File loading operations accessor.
     ///
     /// When present, `LoadFileRuntimeTool` uses this instead of rebuilding a
     /// `PluginContext`.  `None` for paths that don't require file loading
-    /// (workspace tools, browser tools, tests).
+    /// (workspace tools, tests).
     pub file_ops: Option<Arc<dyn FileOperations>>,
     /// Optional cache of recent file-read state keyed by absolute path.
     pub read_file_state: Option<Arc<FileStateCache>>,
@@ -184,7 +179,6 @@ impl std::fmt::Debug for CapabilityContext {
         f.debug_struct("CapabilityContext")
             .field("storage", &self.storage)
             .field("workspace_id", &self.workspace_id)
-            .field("browser_available", &self.browser_available)
             .field(
                 "runtime_resolver",
                 &self.runtime_resolver.as_ref().map(|_| "<RuntimeResolver>"),
@@ -220,7 +214,6 @@ impl CapabilityContext {
                 permission_ctx: Arc::new(ToolPermissionContext::empty()),
             }),
             workspace_id: Some(workspace_id.into()),
-            browser_available: false,
             runtime_resolver: None,
             file_ops: None,
             read_file_state: None,
@@ -228,12 +221,6 @@ impl CapabilityContext {
             notification_sink: None,
             is_subagent: false,
         }
-    }
-
-    /// Mark this context as having an active browser connector.
-    pub fn with_browser(mut self) -> Self {
-        self.browser_available = true;
-        self
     }
 
     pub fn with_runtime_resolver(mut self, runtime_resolver: Arc<dyn RuntimeResolver>) -> Self {
@@ -259,11 +246,6 @@ impl CapabilityContext {
     pub fn with_subagent(mut self, is_subagent: bool) -> Self {
         self.is_subagent = is_subagent;
         self
-    }
-
-    /// Returns true if a browser connector capability is active.
-    pub fn has_browser_capability(&self) -> bool {
-        self.browser_available
     }
 
     pub fn workspace_dependencies(&self) -> RuntimeDependencyResult<WorkspaceDependencies> {
