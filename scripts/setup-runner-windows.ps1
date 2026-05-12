@@ -47,8 +47,25 @@ if (Get-Command cargo -ErrorAction SilentlyContinue) {
     Write-Host "  Rust installed: $(rustc --version)"
 }
 
-# ── 5. Python + oss2 ──
-Write-Host "[4/6] Checking Python..." -ForegroundColor Green
+# ── 5. MSVC Build Tools (link.exe) ──
+Write-Host "[4/7] Checking MSVC Build Tools (link.exe)..." -ForegroundColor Green
+$vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+if (Test-Path $vsWhere) {
+    $vsInstall = & $vsWhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null
+    if ($vsInstall) {
+        Write-Host "  MSVC Build Tools found: $vsInstall" -ForegroundColor Green
+    } else {
+        Write-Host "  MSVC C++ tools NOT installed." -ForegroundColor Red
+        Write-Host "  Install: Visual Studio Build Tools -> C++ build tools workload"
+        Write-Host '  Quick install: Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vs_BuildTools.exe" -OutFile "$env:TEMP\vs_BuildTools.exe"; & "$env:TEMP\vs_BuildTools.exe" --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended'
+    }
+} else {
+    Write-Host "  Visual Studio Installer not found — MSVC Build Tools likely not installed." -ForegroundColor Red
+    Write-Host '  Install: Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vs_BuildTools.exe" -OutFile "$env:TEMP\vs_BuildTools.exe"; & "$env:TEMP\vs_BuildTools.exe" --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended'
+}
+
+# ── 6. Python + oss2 ──
+Write-Host "[5/7] Checking Python..." -ForegroundColor Green
 if (Get-Command python -ErrorAction SilentlyContinue) {
     $pyVer = python --version
     Write-Host "  $pyVer found"
@@ -58,8 +75,8 @@ if (Get-Command python -ErrorAction SilentlyContinue) {
     Write-Host "  Python not found. Install from https://www.python.org/ (v3.10+ recommended)" -ForegroundColor Yellow
 }
 
-# ── 6. Windows SDK (signtool) ──
-Write-Host "[5/6] Checking Windows SDK (signtool)..." -ForegroundColor Green
+# ── 7. Windows SDK (signtool) ──
+Write-Host "[6/7] Checking Windows SDK (signtool)..." -ForegroundColor Green
 $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter "signtool.exe" -ErrorAction SilentlyContinue |
     Sort-Object { $_.Directory.Name } -Descending |
     Select-Object -First 1
@@ -69,8 +86,8 @@ if ($signtool) {
     Write-Host "  signtool.exe not found. Install Windows SDK from Visual Studio Installer." -ForegroundColor Yellow
 }
 
-# ── 7. Code signing certificate ──
-Write-Host "[6/6] Checking code signing certificate..." -ForegroundColor Green
+# ── 8. Code signing certificate ──
+Write-Host "[7/7] Checking code signing certificate..." -ForegroundColor Green
 $certs = Get-ChildItem -Path Cert:\CurrentUser\My -CodeSigningCert -ErrorAction SilentlyContinue
 if ($certs) {
     foreach ($cert in $certs) {
