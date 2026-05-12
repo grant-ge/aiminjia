@@ -53,6 +53,10 @@ pub struct ClaudeProvider {
 struct SseState {
     /// Leftover bytes not yet split into lines.
     buffer: String,
+    /// Incomplete UTF-8 bytes from the previous chunk. Multi-byte characters
+    /// (e.g. Chinese) can be split across HTTP chunks; we hold the trailing
+    /// incomplete sequence here and prepend it to the next chunk.
+    incomplete_utf8: Vec<u8>,
     /// Tool-use block currently being accumulated (id).
     current_tool_id: Option<String>,
     /// Tool-use block currently being accumulated (name).
@@ -77,6 +81,7 @@ impl SseState {
     fn new() -> Self {
         Self {
             buffer: String::new(),
+            incomplete_utf8: Vec::new(),
             current_tool_id: None,
             current_tool_name: None,
             tool_json_fragments: String::new(),
@@ -591,8 +596,32 @@ impl LlmProviderTrait for ClaudeProvider {
                     // Need more data from the byte stream
                     match byte_stream.next().await {
                         Some(Ok(bytes)) => {
-                            let chunk = String::from_utf8_lossy(&bytes);
-                            state.buffer.push_str(&chunk);
+                            // Prepend any incomplete UTF-8 bytes from the
+                            // previous chunk so multi-byte characters that
+                            // span HTTP chunk boundaries decode correctly.
+                            let to_decode = if state.incomplete_utf8.is_empty() {
+                                bytes.to_vec()
+                            } else {
+                                let mut combined = std::mem::take(&mut state.incomplete_utf8);
+                                combined.extend_from_slice(&bytes);
+                                combined
+                            };
+                            match String::from_utf8(to_decode) {
+                                Ok(text) => {
+                                    state.buffer.push_str(&text);
+                                }
+                                Err(e) => {
+                                    let valid_up_to = e.utf8_error().valid_up_to();
+                                    let raw = e.into_bytes();
+                                    // Append the valid prefix to the buffer
+                                    // SAFETY: raw[..valid_up_to] is guaranteed valid UTF-8
+                                    state.buffer.push_str(
+                                        unsafe { std::str::from_utf8_unchecked(&raw[..valid_up_to]) }
+                                    );
+                                    // Stash trailing incomplete bytes for the next chunk
+                                    state.incomplete_utf8 = raw[valid_up_to..].to_vec();
+                                }
+                            }
                         }
                         Some(Err(e)) => {
                             error!("Stream read error: {}", e);

@@ -63,6 +63,9 @@ pub struct PlaywrightBrowser {
     state: Mutex<BrowserState>,
     /// Separate mutex for stdin/stdout I/O — prevents deadlock with state lock.
     io: Mutex<Option<PlaywrightIO>>,
+    /// Serializes concurrent launch attempts so only one browser instance is
+    /// spawned even when multiple tool calls trigger `ensure_running` at once.
+    launch_lock: Mutex<()>,
     site_maps: Mutex<HashMap<String, SiteMap>>,
 }
 
@@ -72,6 +75,7 @@ impl PlaywrightBrowser {
             app_handle,
             state: Mutex::new(BrowserState::new()),
             io: Mutex::new(None),
+            launch_lock: Mutex::new(()),
             site_maps: Mutex::new(HashMap::new()),
         }
     }
@@ -562,12 +566,32 @@ impl PlaywrightBrowser {
 
     /// Ensure Node.js sidecar is running, launch if needed.
     /// On first launch failure due to corrupted profile, wipes the profile and retries once.
+    ///
+    /// Uses a dedicated launch mutex to prevent concurrent callers from
+    /// spawning multiple browser instances when the state lock is released
+    /// during the (potentially slow) launch_sidecar call.
     async fn ensure_running(&self) -> Result<(), String> {
-        let state = self.state.lock().await;
-        if state.process.is_some() {
-            return Ok(());
+        // Fast path: already running
+        {
+            let state = self.state.lock().await;
+            if state.process.is_some() {
+                return Ok(());
+            }
         }
-        drop(state); // Release lock during launch
+
+        // Serialize concurrent launches through the launch lock.
+        // Only one caller proceeds to launch; others wait and then
+        // re-check state.process (which the first caller will have set).
+        let _launch_guard = self.launch_lock.lock().await;
+
+        // Re-check after acquiring launch lock — another task may have
+        // completed the launch while we were waiting.
+        {
+            let state = self.state.lock().await;
+            if state.process.is_some() {
+                return Ok(());
+            }
+        }
 
         match self.launch_sidecar(false).await {
             Ok(()) => Ok(()),
