@@ -12,6 +12,7 @@ pub mod ids;
 pub mod interaction;
 pub mod mcp;
 pub mod path_auth;
+pub mod pending;
 pub mod project_memory;
 pub mod query_engine;
 pub mod agents_md;

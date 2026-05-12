@@ -229,7 +229,7 @@ function ChannelChatView({ sessionId }: { sessionId: string }) {
               </div>
             </div>
           )}
-          <ChatBottomArea disabled={isInactiveSession} />
+          <ChatBottomArea disabled={isInactiveSession} sessionIdOverride={sessionId} />
         </div>
         <RightPanel conversationId={sessionId} onOpenExternal={(target) => void handleOpenPreviewTarget(target)} />
       </div>

@@ -95,8 +95,11 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
 
   const trySubmit = useCallback(async () => {
     if (!editor) return
-    if (disabled || isStreaming) return
+    if (disabled) return
     if (submittingRef.current) return
+    // Note: isStreaming does NOT block submission. When a turn is in flight,
+    // the backend PendingQueueManager will buffer the message and merge it
+    // into the next turn after the current one ends + debounce window.
     const json = editor.getJSON() as unknown as ComposerJsonNode
     const payload = serializeComposerDoc(json)
     if (payload.isEmpty) return
@@ -106,17 +109,24 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
     // content (markdown round-trip via parseMarkdownToComposerJson keeps text /
     // attachment tokens but loses richer marks — acceptable for a failure path).
     if (clearOnSubmit) editor.commands.clearContent()
+    // Release submittingRef on the next microtask. The earlier "await onSubmit
+    // then release in finally" approach deadlocked the composer for the entire
+    // streaming turn: the SentDirectly IPC only resolves after stream:done, so
+    // every subsequent Enter during streaming was silently swallowed by the
+    // ref. submittingRef is a thin double-fire guard only — the PendingQueue
+    // backend is the real serialization point.
+    queueMicrotask(() => {
+      submittingRef.current = false
+      forceTick((n) => n + 1)
+    })
     try {
       await onSubmit(payload)
     } catch {
       if (clearOnSubmit) {
         editor.commands.setContent(parseMarkdownToComposerJson(payload.markdown))
       }
-    } finally {
-      submittingRef.current = false
-      forceTick((n) => n + 1)
     }
-  }, [editor, disabled, isStreaming, onSubmit, clearOnSubmit])
+  }, [editor, disabled, onSubmit, clearOnSubmit])
 
   useEffect(() => {
     if (!editor) return
@@ -132,16 +142,20 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Enter' || e.shiftKey) return
       if (isComposingRef.current || e.isComposing) return
+      // Capture phase + stopImmediatePropagation: beat ProseMirror's own
+      // keydown handler so Enter never reaches the default newline insertion.
       e.preventDefault()
+      e.stopImmediatePropagation()
       void trySubmit()
     }
     dom.addEventListener('compositionstart', onCompositionStart)
     dom.addEventListener('compositionend', onCompositionEnd)
-    dom.addEventListener('keydown', onKeyDown)
+    // useCapture=true → fires before ProseMirror's bubble-phase listener.
+    dom.addEventListener('keydown', onKeyDown, true)
     return () => {
       dom.removeEventListener('compositionstart', onCompositionStart)
       dom.removeEventListener('compositionend', onCompositionEnd)
-      dom.removeEventListener('keydown', onKeyDown)
+      dom.removeEventListener('keydown', onKeyDown, true)
     }
   }, [editor, trySubmit])
 
@@ -163,7 +177,9 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
   )
 
   const isEmpty = !editor || editor.isEmpty
-  const sendDisabled = !isStreaming && (disabled || isEmpty || submittingRef.current)
+  // Send button is disabled when there's nothing to send. During streaming
+  // we still allow send (it queues via PendingQueueManager).
+  const sendDisabled = disabled || isEmpty || submittingRef.current
 
   return (
     <div className="flex w-full flex-col gap-2">
@@ -268,30 +284,39 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
             ) : null}
           </div>
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              aria-label={isStreaming ? '停止' : '发送'}
-              onClick={() => {
-                if (isStreaming) {
-                  onStop?.()
-                  return
+            {/*
+              Streaming state: show ONLY the stop button.
+              The user can still queue a new message by pressing Enter — the
+              backend PendingQueueManager buffers it for the next turn. We
+              intentionally hide the send button during streaming to keep the
+              "current turn" UX focused on the stop action.
+            */}
+            {isStreaming ? (
+              <button
+                type="button"
+                aria-label="停止"
+                onClick={() => onStop?.()}
+                className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:opacity-90"
+              >
+                <span className="block h-3 w-3 rounded-[2px] bg-current" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                aria-label="发送"
+                onClick={() => {
+                  void trySubmit()
+                }}
+                disabled={sendDisabled}
+                className={
+                  sendDisabled
+                    ? 'flex h-7 w-7 items-center justify-center rounded-full bg-muted text-muted-foreground'
+                    : 'flex h-7 w-7 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:opacity-90'
                 }
-                void trySubmit()
-              }}
-              disabled={isStreaming ? false : sendDisabled}
-              className={
-                sendDisabled
-                  ? 'flex h-7 w-7 items-center justify-center rounded-full bg-muted text-muted-foreground'
-                  : 'flex h-7 w-7 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:opacity-90'
-              }
-            >
-              {isStreaming ? (
-                // stop icon: square by design
-                <span className="block h-3.5 w-3.5 rounded-[2px] bg-current" />
-              ) : (
+              >
                 <ArrowUp className="h-4 w-4" />
-              )}
-            </button>
+              </button>
+            )}
           </div>
         </div>
       </div>

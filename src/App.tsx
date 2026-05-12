@@ -22,6 +22,7 @@ import { SkillDetailPage } from '@/features/skill-detail/SkillDetailPage'
 import { useStreaming } from '@/hooks/useStreaming'
 import { useUpdater } from '@/hooks/useUpdater'
 import { useDragDropListener } from '@/hooks/useDragDropListener'
+import { usePendingEventListener } from '@/hooks/usePendingEventListener'
 import {
   approvePermissionRequest,
   cancelPermissionRequest,
@@ -145,6 +146,7 @@ function AppShell() {
 function App() {
   useStreaming()
   useDragDropListener()
+  usePendingEventListener()
   const { t } = useTranslation()
 
   useEffect(() => {

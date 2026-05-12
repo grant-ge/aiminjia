@@ -53,6 +53,8 @@ pub struct ChannelManager {
     /// 已建立的 IM 频道 session id 集合，与 ask_coordinator 的 registry 共享同一 Arc。
     /// 消息 worker 每创建一个新 session 时向此集合写入，确保 coordinator 能识别频道会话。
     channel_session_ids: Arc<std::sync::RwLock<HashSet<String>>>,
+    /// PendingQueueManager — IM 消息进入后先走 enqueue_or_send，闲时直发、忙时入队。
+    pending_manager: Arc<crate::runtime::pending::PendingQueueManager>,
 }
 
 impl ChannelManager {
@@ -65,6 +67,7 @@ impl ChannelManager {
         ask_coordinator: Option<Arc<super::ask_coordinator::IMAskCoordinator>>,
         reply_manager: Arc<DingtalkReplyManager>,
         channel_session_ids: Arc<std::sync::RwLock<HashSet<String>>>,
+        pending_manager: Arc<crate::runtime::pending::PendingQueueManager>,
     ) -> Self {
         let config_store = Arc::new(ChannelConfigStore::new(channels_dir, secure_storage));
         let sessions_path = config_store.dingtalk_sessions_path();
@@ -86,6 +89,7 @@ impl ChannelManager {
             ask_coordinator,
             ask_subscribed: Arc::new(AtomicBool::new(false)),
             channel_session_ids,
+            pending_manager,
         }
     }
 
@@ -490,6 +494,7 @@ impl ChannelManager {
         let downloader_ref = Arc::clone(&downloader);
         let ask_coordinator_ref = self.ask_coordinator.as_ref().map(Arc::clone);
         let channel_session_ids_ref = Arc::clone(&self.channel_session_ids);
+        let pending_manager_ref = Arc::clone(&self.pending_manager);
 
         let message_handle = tokio::spawn(async move {
             let mut router = match ChannelSessionRouter::migrate_or_load(&sessions_path, conv_store.as_ref()) {
@@ -722,10 +727,22 @@ impl ChannelManager {
                     &conv_type,
                     &sender_nick,
                     &text,
-                    chat_attachments,
+                    chat_attachments.clone(),
                     &download_failures,
                 );
                 let run_id = request.run_id.as_str().to_string();
+
+                // Build a PendingItem in parallel — used only if the manager queues
+                // this message (busy session). On idle, the request above is sent
+                // directly to preserve the legacy IM `[sender]: text` formatting.
+                let pending_item = super::pending_adapter::build_pending_item_from_dingtalk(
+                    &msg.msg_id,
+                    &conv_type,
+                    &sender_nick,
+                    &text,
+                    chat_attachments,
+                    &download_failures,
+                );
 
                 let card_target = match &conv_type {
                     ConversationType::Group => CardTarget::Group {
@@ -739,33 +756,110 @@ impl ChannelManager {
                 if !is_current_stream(&message_stream_generation, generation, &message_cancel) {
                     break;
                 }
-                let register_reply = reply_manager_ref.register(
-                    session_id.clone(),
-                    run_id,
-                    reply_app_key.clone(),
-                    reply_app_secret.clone(),
-                    reply_robot_code.clone(),
-                    card_target,
-                );
-                tokio::select! {
-                    biased;
-                    _ = message_cancel.cancelled() => break,
-                    _ = register_reply => {}
-                }
+                // 记住本 session 的钉钉凭证（不管这条消息直发还是入队都记）。
+                // drain 触发的 LLM turn 没有 worker context，必须靠 reply_manager
+                // 在 StreamDelta 到达时懒建 card —— lazy register 依赖这份缓存。
+                reply_manager_ref
+                    .remember_credentials(
+                        session_id.clone(),
+                        reply_app_key.clone(),
+                        reply_app_secret.clone(),
+                        reply_robot_code.clone(),
+                        card_target.clone(),
+                    )
+                    .await;
 
-                if !is_current_stream(&message_stream_generation, generation, &message_cancel) {
-                    break;
-                }
-                // 不能 await send_chat_request — turn 内部可能触发 AskUserQuestion / 权限 ask
-                // 等待用户在 IM 端回复，而用户的回复需要本 worker 继续 recv 才能 resolve。
-                // 同步 await 会形成死锁：worker 卡在 send_chat_request → 永远收不到用户回复
-                // → ask 永远不会 resolve → send_chat_request 永远不返回。
-                // 把 turn 跑到独立 task 里，worker 立即返回继续 recv 下一条消息。
+                // 路由到 PendingQueueManager:
+                //   - 闲时（队列空 + 非 busy）→ SentDirectly，直接 send_chat_request
+                //   - 忙时 → Queued，等下次 turn 结束防抖 drain
+                //   - 队列满 → 回钉钉端提示
+                // 不能 await send_chat_request — turn 内部可能触发 AskUserQuestion，
+                // 用户的回复需要本 worker 继续 recv 才能 resolve（死锁）。
+                //
+                // register（建钉钉 AI 卡片）只在 SentDirectly 分支后做；
+                // Queued 分支完全不建卡（否则会有"处理中..."占位卡永远转圈，
+                // 因为 drain 路径触发的是新 run_id、和这张卡的 run_id 对不上）。
+                // drain 的 LLM turn 由 reply_manager 在 StreamDelta 到达时
+                // 用上面缓存的凭证懒建 card。
                 let adapter_for_turn = Arc::clone(&adapter);
                 let session_for_log = session_id.clone();
+                let pending_manager_for_send = Arc::clone(&pending_manager_ref);
+                let session_for_enqueue = crate::runtime::ids::SessionId::new(session_id.clone());
+                let webhook_for_reject = msg.session_webhook.clone();
+                let request_for_send = request;
+                let reply_manager_for_send = Arc::clone(&reply_manager_ref);
+                let reply_app_key_for_send = reply_app_key.clone();
+                let reply_app_secret_for_send = reply_app_secret.clone();
+                let reply_robot_code_for_send = reply_robot_code.clone();
+                let card_target_for_send = card_target;
+                let session_id_for_register = session_id.clone();
+                let run_id_for_register = run_id;
                 tokio::spawn(async move {
-                    if let Err(e) = adapter_for_turn.send_chat_request(request).await {
-                        log::error!("[channel] send_chat_request failed session={}: {}", session_for_log, e);
+                    match pending_manager_for_send
+                        .enqueue_or_send(session_for_enqueue, pending_item)
+                        .await
+                    {
+                        Ok(crate::runtime::pending::EnqueueOutcome::SentDirectly { .. }) => {
+                            // 闲时：先 register 钉钉 card，再发起 LLM。
+                            // 用我们预构造的 request（含 IM 专属 [sender]: 前缀和附件格式化），
+                            // 不用 manager rebuild 的版本。
+                            reply_manager_for_send
+                                .register(
+                                    session_id_for_register,
+                                    run_id_for_register,
+                                    reply_app_key_for_send,
+                                    reply_app_secret_for_send,
+                                    reply_robot_code_for_send,
+                                    card_target_for_send,
+                                )
+                                .await;
+                            if let Err(e) = adapter_for_turn
+                                .send_chat_request(request_for_send)
+                                .await
+                            {
+                                log::error!(
+                                    "[channel] send_chat_request failed session={}: {}",
+                                    session_for_log, e
+                                );
+                            }
+                        }
+                        Ok(crate::runtime::pending::EnqueueOutcome::Queued { snapshot }) => {
+                            // 忙时：不 register card；等 drain 时由 PendingQueueManager
+                            // 触发 LLM。drain 路径不绑定钉钉卡（IM 场景下用户语义就是
+                            // "只回第一条"），后续合并 user message 仍然落 messages.jsonl
+                            // 供 history 用。
+                            log::info!(
+                                "[channel] message queued session={} queue_size={} (no card)",
+                                session_for_log,
+                                snapshot.len()
+                            );
+                        }
+                        Ok(crate::runtime::pending::EnqueueOutcome::Rejected { reason }) => {
+                            log::warn!(
+                                "[channel] enqueue rejected session={} reason={:?}",
+                                session_for_log, reason
+                            );
+                            if let crate::runtime::pending::EnqueueRejection::QueueFull { limit } =
+                                reason
+                            {
+                                if let Some(webhook) = webhook_for_reject {
+                                    let text = format!(
+                                        "消息堆积过多（已达 {limit} 条），请稍后再发。"
+                                    );
+                                    tokio::spawn(
+                                        super::dingtalk_stream::send_session_webhook_text(
+                                            webhook, text,
+                                        ),
+                                    );
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            log::error!(
+                                "[channel] enqueue_or_send error session={}: {:#}",
+                                session_for_log, e
+                            );
+                        }
                     }
                 });
             }

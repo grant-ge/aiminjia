@@ -571,5 +571,13 @@
         "next": "Next →"
       }
     }
+  },
+  "chat": {
+    "pending": {
+      "singleHint": "1 message pending",
+      "batchHint": "{{count}} messages pending",
+      "removeAria": "Remove this pending message",
+      "attachmentsCount": "{{count}} attachment(s)"
+    }
   }
 }

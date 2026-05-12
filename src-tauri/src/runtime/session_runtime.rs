@@ -144,6 +144,13 @@ impl SessionRuntime {
         self.event_bus.subscribe(subscriber);
     }
 
+    /// 暴露 event_bus 句柄，供需要主动 emit 事件的外部组件使用
+    /// （如 PendingQueueManager dispatcher 在 drain 时为 N-1 条已落库
+    /// user message 补发 MessagePersisted）。
+    pub fn event_bus(&self) -> &RuntimeEventBus {
+        &self.event_bus
+    }
+
     /// 暴露权限控制平面，供 IM 协调器等外部组件使用。
     pub fn permission_control_plane(&self) -> Arc<dyn crate::runtime::store::PendingPermissionControlPlane> {
         self.pending_permission_store.clone()

@@ -118,6 +118,10 @@ pub struct ChatTurnRequest {
     /// `RuleSource::Session` before tool execution.  Empty when there are no
     /// attachments or all attachment paths failed validation.
     pub session_attachment_dirs: Vec<std::path::PathBuf>,
+    /// When set, this turn originated from a drained PendingQueue batch.
+    /// The dispatcher could use this metadata to e.g. persist each item as an
+    /// independent user message before invoking the LLM. Default: None.
+    pub pending_batch: Option<Vec<crate::runtime::pending::PendingItem>>,
 }
 
 impl ChatTurnRequest {
@@ -138,6 +142,7 @@ impl ChatTurnRequest {
             selected_skill_id: None,
             selected_skill_label: None,
             session_attachment_dirs: Vec::new(),
+            pending_batch: None,
         }
     }
 }

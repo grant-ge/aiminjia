@@ -8,6 +8,7 @@ pub mod auth;
 pub mod chat;
 pub mod file;
 pub mod mcp;
+pub mod pending;
 pub mod persona;
 pub mod runtime;
 pub mod settings;

@@ -2345,6 +2345,22 @@ impl TauriChatCommandAdapter {
                 }
             }
         }
+
+        // After this turn ends (success or otherwise), let the PendingQueueManager
+        // schedule a debounced drain so any items buffered while we were busy
+        // get merged into the next turn.
+        if let Some(mgr) = self
+            .services
+            .app
+            .try_state::<Arc<crate::runtime::pending::PendingQueueManager>>()
+        {
+            let mgr_clone = mgr.inner().clone();
+            let session_id = crate::runtime::ids::SessionId::new(conversation_id.clone());
+            tauri::async_runtime::spawn(async move {
+                mgr_clone.schedule_drain(session_id).await;
+            });
+        }
+
         result
     }
 
@@ -2370,6 +2386,63 @@ impl TauriChatCommandAdapter {
                 att.file_name, att.file_path, att.kind, att.file_type
             );
         }
+
+        // Pending queue gate: if the session is busy, enqueue this message
+        // instead of returning "already processing". Chips will appear in the
+        // UI; drain will merge it into the next turn.
+        if let Some(mgr_state) = self
+            .services
+            .app
+            .try_state::<Arc<crate::runtime::pending::PendingQueueManager>>()
+        {
+            let pending_mgr = mgr_state.inner().clone();
+            let pending_item = crate::runtime::pending::PendingItem {
+                id: format!("pend-{}", uuid::Uuid::new_v4()),
+                source: crate::runtime::pending::PendingSource::App,
+                text: content.clone(),
+                sender_nick: None,
+                attachments: attachments
+                    .iter()
+                    .map(|a| crate::runtime::pending::PendingAttachment {
+                        id: a.id.clone(),
+                        file_path: a.file_path.clone(),
+                        mime: a.mime_type.clone(),
+                        size_bytes: Some(a.file_size),
+                    })
+                    .collect(),
+                received_at: chrono::Utc::now().to_rfc3339(),
+            };
+            let session_id = crate::runtime::ids::SessionId::new(conversation_id.clone());
+            let outcome = pending_mgr
+                .enqueue_or_send(session_id, pending_item)
+                .await
+                .map_err(|e| format!("enqueue_or_send error: {e:#}"))?;
+            match outcome {
+                crate::runtime::pending::EnqueueOutcome::SentDirectly { .. } => {
+                    // Fall through to the existing send path (which preserves
+                    // skill_id / agent_name / permission_mode / client_message_id).
+                }
+                crate::runtime::pending::EnqueueOutcome::Queued { snapshot } => {
+                    log::info!(
+                        "[pending] app composer message queued conv={} queue_size={}",
+                        conversation_id,
+                        snapshot.len()
+                    );
+                    return Ok(());
+                }
+                crate::runtime::pending::EnqueueOutcome::Rejected { reason } => {
+                    return Err(match reason {
+                        crate::runtime::pending::EnqueueRejection::QueueFull { limit } => {
+                            format!("消息堆积过多（已达 {limit} 条），请稍后再发")
+                        }
+                        crate::runtime::pending::EnqueueRejection::SessionArchived => {
+                            "会话已归档，无法发送消息".to_string()
+                        }
+                    });
+                }
+            }
+        }
+
         let mut request = ChatTurnRequest::new(conversation_id.clone(), content, attachments);
         // Derive per-turn attachment dirs on the backend (frontend paths are untrusted).
         // The derived dirs will be merged into the per-turn ToolPermissionContext as
@@ -2565,6 +2638,23 @@ impl TauriChatCommandAdapter {
                     });
                 }
             }
+        }
+
+        // After this turn ends (success or otherwise), let the PendingQueueManager
+        // schedule a debounced drain so items buffered during this turn get
+        // merged into the next one. Mirrors the same hook at the tail of
+        // `send_chat_request` (IM path) — without this, app-side pending items
+        // sit in the queue forever after the SentDirectly turn finishes.
+        if let Some(mgr) = self
+            .services
+            .app
+            .try_state::<Arc<crate::runtime::pending::PendingQueueManager>>()
+        {
+            let mgr_clone = mgr.inner().clone();
+            let session_id = crate::runtime::ids::SessionId::new(conversation_id.clone());
+            tauri::async_runtime::spawn(async move {
+                mgr_clone.schedule_drain(session_id).await;
+            });
         }
 
         result
@@ -2898,6 +2988,101 @@ impl Drop for OverrideGuard {
         if let Ok(mut map) = self.overrides.lock() {
             map.remove(&self.conversation_id);
         }
+    }
+}
+
+#[async_trait]
+impl crate::runtime::pending::ChatTurnDispatcher for TauriChatCommandAdapter {
+    async fn dispatch(&self, mut request: ChatTurnRequest) -> anyhow::Result<()> {
+        // Spec §6.1: N drained pending items must land in messages.jsonl as N
+        // independent user messages. The last item rides on `request` (will be
+        // persisted by run_chat_request's standard flow). The first N-1 items
+        // we persist here, BEFORE handing the request to the turn driver, so
+        // the next history-load includes them.
+        if let Some(batch) = request.pending_batch.take() {
+            let conv_id = request.conversation_id.as_str().to_string();
+            let run_id = request.run_id.clone();
+            let n = batch.len();
+            if n > 1 {
+                for item in batch.iter().take(n - 1) {
+                    let text = match &item.sender_nick {
+                        Some(nick) if !nick.is_empty() => {
+                            format!("[{}]: {}", nick, item.text)
+                        }
+                        _ => item.text.clone(),
+                    };
+                    let attachments: Vec<crate::runtime::chat::chat_turn_driver::ChatAttachmentRef> =
+                        item.attachments
+                            .iter()
+                            .map(|a| crate::runtime::chat::chat_turn_driver::ChatAttachmentRef {
+                                id: a.id.clone(),
+                                file_name: std::path::Path::new(&a.file_path)
+                                    .file_name()
+                                    .and_then(|s| s.to_str())
+                                    .map(String::from)
+                                    .unwrap_or_else(|| a.file_path.clone()),
+                                file_path: a.file_path.clone(),
+                                kind: "file".to_string(),
+                                file_size: a.size_bytes.unwrap_or(0),
+                                file_type: a
+                                    .mime
+                                    .clone()
+                                    .unwrap_or_else(|| "application/octet-stream".into()),
+                                mime_type: a.mime.clone(),
+                            })
+                            .collect();
+                    let msg_id = format!("msg-{}", uuid::Uuid::new_v4());
+                    let content_value =
+                        crate::runtime::chat::chat_turn_driver::build_user_content_json(
+                            &text,
+                            &attachments,
+                            None,
+                            None,
+                        );
+                    let content_json = content_value.to_string();
+                    if let Err(e) =
+                        self.services
+                            .db()
+                            .insert_message(&msg_id, &conv_id, "user", &content_json)
+                    {
+                        log::warn!(
+                            "[pending-dispatch] failed to persist drained item {} as user msg: {:#}",
+                            item.id,
+                            e
+                        );
+                    } else {
+                        log::info!(
+                            "[pending-dispatch] persisted drained item {} as user msg id={}",
+                            item.id,
+                            msg_id
+                        );
+                        // Emit MessagePersisted so frontend chatStore appends a
+                        // user bubble for each drained item (mirrors what
+                        // chat_turn_driver does for the ride-on-request item).
+                        let event = crate::runtime::events::RuntimeEvent::new(
+                            request.conversation_id.clone(),
+                            run_id.clone(),
+                            crate::runtime::events::RuntimeEventKind::MessagePersisted {
+                                message_id: msg_id,
+                                role: "user".to_string(),
+                                content: content_value,
+                                client_message_id: None,
+                                tool_calls: None,
+                            },
+                        );
+                        if let Err(e) = self.runtime.event_bus().emit(event).await {
+                            log::warn!(
+                                "[pending-dispatch] emit MessagePersisted for drained item failed: {:#}",
+                                e
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        self.send_chat_request(request)
+            .await
+            .map_err(|e| anyhow::anyhow!("dispatch via TauriChatCommandAdapter failed: {e}"))
     }
 }
 
