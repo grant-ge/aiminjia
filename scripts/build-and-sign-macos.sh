@@ -59,10 +59,6 @@ build_one_arch() {
     echo "############################################################"
 
     echo ""
-    echo "--- Setup Playwright runtime ($arch) ---"
-    TARGET_ARCH="$target_arch" bash "$SCRIPT_DIR/setup-playwright.sh"
-
-    echo ""
     echo "--- Setup dws CLI ($arch) ---"
     DWS_NONINTERACTIVE=1 TARGET_ARCH="$target_arch" bash "$SCRIPT_DIR/setup-dws.sh"
 

@@ -106,13 +106,59 @@ fi
 echo "  Identity: $IDENTITY"
 
 if [ -n "$APP" ]; then
-    echo "  Signing .app..."
-    codesign --force --deep --options runtime --sign "$IDENTITY" "$APP"
+    echo "  Signing nested binaries (inside-out)..."
+    # Sign every Mach-O / executable under Contents/ first so the outer
+    # .app signature can authenticate them. --deep is unreliable on macOS
+    # 11+; sign explicitly with --timestamp + --options runtime.
+    while IFS= read -r -d '' bin; do
+        # Skip anything inside an already-signed framework; we re-sign frameworks separately below.
+        case "$bin" in
+            *".framework/"*) continue ;;
+        esac
+        # Only operate on Mach-O binaries to avoid signing plain text/scripts.
+        if file -b "$bin" | grep -qE "Mach-O|universal binary"; then
+            echo "    sign $bin"
+            codesign --force --timestamp --options runtime --sign "$IDENTITY" "$bin"
+        fi
+    done < <(find "$APP/Contents" -type f -print0)
+
+    # Frameworks (sign at framework level, not file level).
+    if find "$APP/Contents/Frameworks" -mindepth 1 -maxdepth 1 -name "*.framework" -print 2>/dev/null | grep -q .; then
+        while IFS= read -r fw; do
+            echo "    sign framework $fw"
+            codesign --force --timestamp --options runtime --sign "$IDENTITY" "$fw"
+        done < <(find "$APP/Contents/Frameworks" -mindepth 1 -maxdepth 1 -name "*.framework")
+    fi
+
+    echo "  Signing .app bundle..."
+    codesign --force --timestamp --options runtime --sign "$IDENTITY" "$APP"
     echo "  .app signed"
+
+    echo "  Verifying signature..."
+    codesign --verify --deep --strict --verbose=2 "$APP"
+fi
+
+# ── 1b. Rebuild DMG from signed .app ──
+# `tauri build` packages the UNSIGNED .app into the DMG before our codesign
+# runs. Re-running codesign on the standalone .app does NOT update the
+# .app inside the DMG. Solution: rebuild the DMG using the freshly-signed
+# .app, then sign that.
+if [ -n "$APP" ]; then
+    echo "  Rebuilding DMG from signed .app..."
+    DMG_STAGING=$(mktemp -d /tmp/aijia-dmg-staging-XXXX)
+    cp -R "$APP" "$DMG_STAGING/"
+    rm -f "$DMG"
+    hdiutil create -volname "AIjia" \
+        -srcfolder "$DMG_STAGING" \
+        -ov -format UDZO \
+        -fs HFS+ \
+        "$DMG"
+    rm -rf "$DMG_STAGING"
+    echo "  DMG rebuilt: $DMG"
 fi
 
 echo "  Signing .dmg..."
-codesign --force --sign "$IDENTITY" "$DMG"
+codesign --force --timestamp --sign "$IDENTITY" "$DMG"
 echo "  .dmg signed"
 
 # ── 2. Notarize ──
