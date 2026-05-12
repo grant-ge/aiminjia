@@ -86,6 +86,7 @@ fn make_ctx(
         cancellation_registry: None,
         conv_dir: Some(conv_dir),
         meta,
+        llm_engine: None,
     }
 }
 

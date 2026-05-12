@@ -434,5 +434,50 @@ impl SpawnSubagentLauncher for DefaultSpawnSubagentLauncher {
             name: request.name.clone(),
         })
     }
+
+    async fn build_teammate_llm_engine(
+        &self,
+        context: &SpawnSubagentContext,
+    ) -> Option<crate::runtime::agent::worker_runtime::TeammateLlmEngine> {
+        let (gateway, tool_registry, app_settings) = match self.build_run_components() {
+            Ok(parts) => parts,
+            Err(e) => {
+                log::warn!(
+                    "[spawn_subagent] build_teammate_llm_engine: missing run components ({e}); Teammate will fall back to stub mode"
+                );
+                return None;
+            }
+        };
+
+        let runtime_deps = crate::llm::sub_agent::SubAgentRuntimeDeps {
+            storage: self.deps.storage.clone(),
+            file_manager: self.deps.file_manager.clone(),
+            workspace_path: self.deps.workspace_path.clone(),
+            conversation_id: self.deps.conversation_id.clone(),
+            session_id: self.deps.session_id.clone(),
+            run_id: self.deps.run_id.clone(),
+            agent_id: self.deps.agent_id.clone(),
+            agent_runtime: self.deps.agent_runtime.clone(),
+            event_bus: self.deps.event_bus.clone(),
+            skill_registry: self.deps.skill_registry.clone(),
+            authorized_workspace: self.deps.authorized_workspace.clone(),
+            read_file_state: self.deps.read_file_state.clone(),
+            app_handle: self.deps.app_handle.clone(),
+            runtime_resolver: self.deps.runtime_resolver.clone(),
+            permission_ctx: context.permission_ctx.clone(),
+            current_persona_id: self.deps.current_persona_id.clone(),
+        };
+
+        Some(crate::runtime::agent::worker_runtime::TeammateLlmEngine {
+            gateway,
+            tool_registry,
+            runtime_deps,
+            settings: (*app_settings).clone(),
+            // Per-turn iteration cap — bounds runaway tool loops per inbox
+            // message. 25 mirrors SubAgentConfig's default max_iterations
+            // for production sub-agents.
+            max_iterations_per_turn: 25,
+        })
+    }
 }
 

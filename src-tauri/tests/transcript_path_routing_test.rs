@@ -144,6 +144,7 @@ async fn teammate_idle_transcript_path_is_under_teammates() {
         cancellation_registry: None,
         conv_dir: Some(conv_dir.clone()),
         meta,
+        llm_engine: None,
     };
 
     // Spawn idle loop with an initial prompt so it writes a transcript line.
@@ -250,6 +251,7 @@ async fn subagent_and_teammate_coexist_in_same_conversation() {
         cancellation_registry: None,
         conv_dir: Some(conv_dir.clone()),
         meta: tm_meta,
+        llm_engine: None,
     };
 
     let team_clone = team.clone();

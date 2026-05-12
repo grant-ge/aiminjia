@@ -110,6 +110,22 @@ pub trait SpawnSubagentLauncher: Send + Sync {
         request: SpawnSubagentRequest,
         context: SpawnSubagentContext,
     ) -> Result<SpawnAsyncOutcome>;
+
+    /// Build a `TeammateLlmEngine` for a Teammate idle loop.
+    ///
+    /// Production launchers return `Some(engine)` so the Teammate runs real
+    /// LLM turns.  Test / stub launchers may return `None`, in which case
+    /// the idle loop falls back to stub-mode (transcript-only placeholder
+    /// replies — see `teammate_stub_turn`).
+    ///
+    /// The default impl returns `None` so test launchers don't need to
+    /// override it (they continue exercising the stub path).
+    async fn build_teammate_llm_engine(
+        &self,
+        _context: &SpawnSubagentContext,
+    ) -> Option<crate::runtime::agent::worker_runtime::TeammateLlmEngine> {
+        None
+    }
 }
 
 // ─── RuntimeTool implementation ───────────────────────────────────────────────
@@ -507,9 +523,10 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
                 cancellation_registry: ctx.cancellation_registry.clone(),
                 conv_dir: ctx.conv_dir.clone(),
                 meta,
-                // Filled below via launcher.build_teammate_llm_engine().
-                // None means the idle loop falls back to stub mode (no LLM).
-                llm_engine: None,
+                // Production launchers return Some(engine) so the idle loop
+                // runs real LLM turns; test launchers fall through to the
+                // default `None` impl and exercise the stub path.
+                llm_engine: self.launcher.build_teammate_llm_engine(&launch_ctx).await,
             };
 
             let ws = crate::telemetry::diagnostics_workspace();
