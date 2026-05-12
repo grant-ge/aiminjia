@@ -94,6 +94,60 @@ echo "DMG: $DMG"
 echo "App: ${APP:-not found}"
 echo ""
 
+# ── helpers: idempotency checks ──────────────────────────────────────────
+# Returns 0 if `.app` is already fully signed with Developer ID + hardened
+# runtime, including nested dws. Saves rework on a re-run.
+is_app_fully_signed() {
+    local app="$1"
+    local main_exe="$app/Contents/MacOS/aijia"
+    local dws="$app/Contents/Resources/dws"
+
+    [ -f "$main_exe" ] || return 1
+    local info
+    info=$(codesign -dv --verbose=4 "$main_exe" 2>&1)
+    echo "$info" | grep -q "flags=.*runtime" || return 1
+    echo "$info" | grep -q "Authority=Developer ID Application" || return 1
+
+    if [ -f "$dws" ]; then
+        info=$(codesign -dv --verbose=4 "$dws" 2>&1)
+        echo "$info" | grep -q "flags=.*runtime" || return 1
+        echo "$info" | grep -q "Authority=Developer ID Application" || return 1
+    fi
+    codesign --verify --deep --strict "$app" >/dev/null 2>&1 || return 1
+    return 0
+}
+
+# Returns 0 if DMG was rebuilt from the signed .app (inner binary signed
+# with Developer ID + hardened runtime, not adhoc).
+is_dmg_built_from_signed_app() {
+    local dmg="$1"
+    local mount_dir
+    mount_dir=$(mktemp -d /tmp/aijia-check-dmg-XXXX)
+    if ! hdiutil attach "$dmg" -mountpoint "$mount_dir" -nobrowse -readonly -quiet 2>/dev/null; then
+        rmdir "$mount_dir" 2>/dev/null
+        return 1
+    fi
+    local inner="$mount_dir/AIjia.app/Contents/MacOS/aijia"
+    local ok=1
+    if [ -f "$inner" ]; then
+        local info
+        info=$(codesign -dv --verbose=4 "$inner" 2>&1)
+        if echo "$info" | grep -q "Authority=Developer ID Application" && \
+           echo "$info" | grep -q "flags=.*runtime"; then
+            ok=0
+        fi
+    fi
+    hdiutil detach "$mount_dir" -quiet 2>/dev/null || true
+    rmdir "$mount_dir" 2>/dev/null || true
+    return $ok
+}
+
+# Returns 0 if stapler ticket is already embedded (notarization complete).
+is_stapled() {
+    xcrun stapler validate "$1" >/dev/null 2>&1
+}
+
+
 # ── 1. Code sign ──
 echo "=== Step 1: Code sign ==="
 # Check for signing identity
@@ -105,7 +159,15 @@ if [ -z "$IDENTITY" ]; then
 fi
 echo "  Identity: $IDENTITY"
 
-if [ -n "$APP" ]; then
+# Idempotency: if the .app is already fully signed, skip the codesign loop.
+SKIP_APP_SIGN=0
+if [ -n "$APP" ] && is_app_fully_signed "$APP"; then
+    echo "  ✓ .app already fully signed (hardened runtime + timestamp + nested dws)"
+    echo "    Skipping codesign loop."
+    SKIP_APP_SIGN=1
+fi
+
+if [ -n "$APP" ] && [ "$SKIP_APP_SIGN" = "0" ]; then
     echo "  Signing nested binaries (inside-out)..."
     # Sign every Mach-O / executable under Contents/ first so the outer
     # .app signature can authenticate them. --deep is unreliable on macOS
@@ -144,22 +206,27 @@ fi
 # .app inside the DMG. Solution: rebuild the DMG using the freshly-signed
 # .app, then sign that.
 if [ -n "$APP" ]; then
-    echo "  Rebuilding DMG from signed .app..."
-    DMG_STAGING=$(mktemp -d /tmp/aijia-dmg-staging-XXXX)
-    cp -R "$APP" "$DMG_STAGING/"
-    rm -f "$DMG"
-    hdiutil create -volname "AIjia" \
-        -srcfolder "$DMG_STAGING" \
-        -ov -format UDZO \
-        -fs HFS+ \
-        "$DMG"
-    rm -rf "$DMG_STAGING"
-    echo "  DMG rebuilt: $DMG"
-fi
+    if is_dmg_built_from_signed_app "$DMG"; then
+        echo "  ✓ DMG already contains signed .app — skipping rebuild"
+    else
+        echo "  Rebuilding DMG from signed .app..."
+        DMG_STAGING=$(mktemp -d /tmp/aijia-dmg-staging-XXXX)
+        cp -R "$APP" "$DMG_STAGING/"
+        rm -f "$DMG"
+        hdiutil create -volname "AIjia" \
+            -srcfolder "$DMG_STAGING" \
+            -ov -format UDZO \
+            -fs HFS+ \
+            "$DMG"
+        rm -rf "$DMG_STAGING"
+        echo "  DMG rebuilt: $DMG"
 
-echo "  Signing .dmg..."
-codesign --force --timestamp --sign "$IDENTITY" "$DMG"
-echo "  .dmg signed"
+        # If we rebuilt the DMG, the outer signature is gone — re-sign it.
+        echo "  Signing .dmg..."
+        codesign --force --timestamp --sign "$IDENTITY" "$DMG"
+        echo "  .dmg signed"
+    fi
+fi
 
 # ── 2. Notarize ──
 echo ""
@@ -169,27 +236,35 @@ if [ -z "${APPLE_ID:-}" ]; then
     exit 1
 fi
 
-echo "  Notarizing DMG..."
-xcrun notarytool submit "$DMG" \
-    --apple-id "$APPLE_ID" \
-    --password "$APPLE_PASSWORD" \
-    --team-id "$APPLE_TEAM_ID" \
-    --wait --timeout 30m
-xcrun stapler staple "$DMG"
-echo "  DMG notarized + stapled"
-
-if [ -n "$APP" ]; then
-    echo "  Notarizing .app..."
-    APP_ZIP=$(mktemp /tmp/AIjia-notarize-XXXX.zip)
-    ditto -c -k --keepParent "$APP" "$APP_ZIP"
-    xcrun notarytool submit "$APP_ZIP" \
+if is_stapled "$DMG"; then
+    echo "  ✓ DMG already stapled — skipping notarization"
+else
+    echo "  Notarizing DMG..."
+    xcrun notarytool submit "$DMG" \
         --apple-id "$APPLE_ID" \
         --password "$APPLE_PASSWORD" \
         --team-id "$APPLE_TEAM_ID" \
         --wait --timeout 30m
-    xcrun stapler staple "$APP"
-    rm -f "$APP_ZIP"
-    echo "  .app notarized + stapled"
+    xcrun stapler staple "$DMG"
+    echo "  DMG notarized + stapled"
+fi
+
+if [ -n "$APP" ]; then
+    if is_stapled "$APP"; then
+        echo "  ✓ .app already stapled — skipping notarization"
+    else
+        echo "  Notarizing .app..."
+        APP_ZIP=$(mktemp /tmp/AIjia-notarize-XXXX.zip)
+        ditto -c -k --keepParent "$APP" "$APP_ZIP"
+        xcrun notarytool submit "$APP_ZIP" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait --timeout 30m
+        xcrun stapler staple "$APP"
+        rm -f "$APP_ZIP"
+        echo "  .app notarized + stapled"
+    fi
 fi
 
 # ── 3. Re-package updater artifacts + Tauri signer ──
