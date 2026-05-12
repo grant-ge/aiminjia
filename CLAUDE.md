@@ -19,23 +19,25 @@
 │   ├── src/                   # Rust 源码
 │   └── tests/                 # 集成测试
 ├── scripts/
-│   ├── release.py               # 发布入口（交互式，跨平台，强制顺序）
-│   ├── bump-version.py          # 同步版本号到 3 个配置文件（跨平台）
-│   ├── bump-version.sh          # 同步版本号（macOS 快捷方式）
-│   ├── bump-version.sh          # 同步版本号（macOS 快捷方式）
-│   ├── build-and-sign-macos.sh     # 本地: macOS arm64 + x86_64 串行 build+sign+upload
-│   ├── sign-and-upload-macos.sh    # 本地 macOS 签名+公证+上传单架构（被上面脚本调用）
-│   ├── sign-and-upload-windows.ps1 # 本地 Windows 签名验证+tauri signer+上传
-│   ├── ci-upload-macos.py       # macOS release → OSS
-│   ├── ci-upload-macos-beta.py  # macOS beta → OSS
-│   ├── ci-upload-windows.py     # Windows release/beta → OSS
+│   ├── release.py                  # 发布入口（交互式，跨平台，强制顺序）
+│   ├── bump-version.py             # 同步版本号到 3 个配置文件（跨平台）
+│   ├── bump-version.sh             # 同步版本号（macOS 快捷方式）
+│   ├── build-and-sign-macos.sh     # mac: arm64 + x86_64 串行 build+sign+notarize+upload
+│   ├── sign-and-upload-macos.sh    # mac: 单架构 sign+notarize+upload（被上面调用，幂等可重跑）
+│   ├── release-windows.ps1         # win: 一键 staging下载→signtool→tauri sig→OSS 上传→清理
+│   ├── ci-upload-windows.mjs       # win: Node + ali-oss 上传（被 release-windows.ps1 调用）
+│   ├── ci-cleanup-staging.mjs      # win: 发布后清理 OSS staging
+│   ├── verify-release.sh           # mac: 发版后全量验证（OSS + 签名 + 公证 + spctl）
+│   ├── sign-and-upload-windows.ps1 # 旧版 Windows 流程（保留兼容，新流程用 release-windows.ps1）
+│   ├── ci-upload-macos.py          # macOS release → OSS
+│   ├── ci-upload-macos-beta.py     # macOS beta → OSS
 │   ├── ci-generate-download-page.py  # CI: 生成 downloads.html 下载页
-│   ├── ci-finalize.py           # 生成 update.json
-│   ├── setup-runner-macos.sh    # macOS 签名机环境检查
-│   ├── setup-runner-windows.ps1 # Windows 签名机环境检查
+│   ├── ci-finalize.py              # 生成 update.json
+│   ├── setup-runner-macos.sh       # macOS 签名机环境检查
+│   ├── setup-runner-windows.ps1    # Windows 签名机环境检查
 │   └── bump-homebrew.py
 └── .github/workflows/
-    └── build-desktop.yml      # Windows GitHub-hosted 构建 + 下载页生成（macOS 本地构建）
+    └── build-desktop.yml      # Windows-only CI：构建未签名 exe → 上传 OSS staging + 下载页生成
 ```
 
 ## 常用命令
@@ -253,158 +255,112 @@ workspace 目录（用户可自定义，默认也是 `~/.renlijia/`）下存放�
 **继续做某个功能的意图测试：先读对应 `rules.md` + `test-progress.md`，再看 `context/` 四文件，然后按 `how-to-test.md` 规范执行。**
 **新建一个功能的 rules.md：先读 `context/how-to-write-rules.md`，再按产品视角逐条写，写完用快速自查清单过一遍。**
 
-## 发布流程（权威 · 自 v0.5.22 起，GitHub-hosted 架构）
+## 发布流程（权威 · 自 v0.5.23 起，本地构建 + 一键 Windows）
 
-**架构：GitHub-hosted runners 构建未签名包 → 本地下载 → 本地签名 → 上传 OSS**。
+**架构：macOS 本地全流程 + Windows GitHub-hosted 构建未签名包 + 本地一键签名上传**。
 
-所有构建在 GitHub-hosted runners 上完成（`macos-14`、`windows-latest`），不再使用 self-hosted runners。签名在本地手动执行：macOS 需 Developer ID 证书 + Apple 公证，Windows 需 SimpleSign (EV 硬件 token)。
+- **macOS arm64 + x86_64**：在你的 Mac 上 `build-and-sign-macos.sh` 串行 build → codesign → notarize → staple → tauri signer → 上传 OSS。串行的原因是 `setup-dws.sh` 切换 runtime symlink，并发会冲突。
+- **Windows x64**：tag 触发 `windows-latest` runner 跑 unsigned 构建 → 产物上传到 OSS staging（`aijia/staging/unsigned/v{ver}/`，公开 CDN URL）→ 在你的 Windows 机器上跑 `release-windows.ps1` 一键完成：拉 staging exe → signtool 签名（带 timestamp）→ tauri signer 生成 `.sig` → Node + `ali-oss` 上传 → 清理 staging。
 
 ### 三种包
 
 | 类型 | 签名 | 来源 | 用途 |
 |------|------|------|------|
-| **Dev** | 未签名 | CI 每次构建自动上传到 `aijia/dev/` | 开发者快速验证，macOS 需 `xattr -cr`，Windows 有 SmartScreen 警告 |
 | **Beta** | 已签名 | 本地签名后上传到 `aijia/beta/v{x}/` | 内测验证，不触发自动更新 |
 | **Release** | 已签名 | 本地签名后上传到 `aijia/v{x}/` + `latest/` | 正式版，触发自动更新 |
+| ~~Dev~~ | ~~未签名~~ | ~~已弃用~~ | ~~CI 已不再产出 dev 包~~ |
 
-**下载页**：https://lotus.renlijia.com/aijia/downloads.html（CI 构建后自动生成）
+**下载页**：https://lotus.renlijia.com/aijia/downloads.html
 
-### 流程总览
-
-```
-bump 版本号 → push / tag → GitHub-hosted CI 构建（3 平台）→ 自动上传 dev 包到 OSS
-                                                              ↓
-                              下载 unsigned artifacts → 本地签名（macOS + Windows）→ 上传 beta/release 到 OSS
-                                                                                       ↓
-                                                                               finalize → update.json → 自动更新
-```
-
-### 快速发布（推荐）
+### 工作流（一次性命令）
 
 ```bash
-python scripts/release.py             # 交互式菜单
-python scripts/release.py status      # 查看当前发布进度
-python scripts/release.py start       # 开始新版本
-python scripts/release.py beta        # 触发 beta 构建
-python scripts/release.py test-passed # 确认测试通过
-python scripts/release.py release     # 触发正式构建
-python scripts/release.py finalize    # 生成 update.json
+# 1. 启动版本（在 mac 上）
+python3 scripts/release.py start              # bump base 版本号（X.Y.Z）
+python3 scripts/release.py beta               # bump 到 X.Y.Z-beta.N + 推 tag → 触发 Windows CI
+
+# 2. macOS（本地，串行 arm64 → x86_64，~35min）
+bash scripts/build-and-sign-macos.sh X.Y.Z-beta.N beta
+
+# 3. Windows（在 Windows 机器上，一条命令，首次问 4 个值之后全自动）
+.\scripts\release-windows.ps1 -Version X.Y.Z-beta.N -Type beta
+
+# 4. 验证（mac 上跑，~30s）
+bash scripts/verify-release.sh X.Y.Z-beta.N beta
+
+# 5. 测试通过后正式发布（同上，beta 改为 release）
+python3 scripts/release.py test-passed
+python3 scripts/release.py release            # bump 回 X.Y.Z + 推 release tag
+bash scripts/build-and-sign-macos.sh X.Y.Z release
+.\scripts\release-windows.ps1 -Version X.Y.Z -Type release
+bash scripts/verify-release.sh X.Y.Z release
+python3 scripts/release.py finalize           # 生成 update.json → 自动更新生效
 ```
 
-### Step 0: 改版本号
+### 关键脚本
 
-```bash
-python scripts/bump-version.py 0.5.22   # 跨平台，同步 package.json + Cargo.toml + tauri.conf.json
-git commit -am "chore: bump to 0.5.22"
-git push origin main
-```
+| 脚本 | 平台 | 职责 |
+|------|------|------|
+| `scripts/release.py` | mac | 交互式流程守卫：bump 版本 / 推 tag / 强制顺序 / finalize |
+| `scripts/build-and-sign-macos.sh` | mac | macOS 串行 arm64 → x86_64：build + sign + notarize + upload，幂等可重跑 |
+| `scripts/sign-and-upload-macos.sh` | mac | 单架构 sign + notarize + upload（被上面脚本调用，也可单独跑） |
+| `scripts/release-windows.ps1` | win | Windows 一键流程：staging 下载 → signtool 签 → tauri sig → ali-oss 上传 → 清理 |
+| `scripts/ci-upload-windows.mjs` | win | Node + ali-oss 上传（替代旧 Python 版） |
+| `scripts/ci-cleanup-staging.mjs` | win | 发布后删除 OSS staging 文件 |
+| `scripts/verify-release.sh` | mac | 发版后全量验证（OSS 可达性 + 签名 + 公证 + spctl） |
 
-版本号 4 处必须一致：`package.json` / `tauri.conf.json` / `Cargo.toml` / `Cargo.lock`
+### macOS 签名脚本的关键点
 
-### Step 1: CI 构建（GitHub-hosted）
+1. **inside-out 逐文件 codesign**：`--deep` 在 macOS 11+ 不可靠，会漏签 `Contents/Resources/dws` 等嵌套二进制。脚本对每个 Mach-O 二进制独立签，每个都带 `--timestamp --options runtime`。
+2. **DMG 必须重建**：`pnpm tauri build` 把**未签名**的 .app 打进 DMG。外部 codesign 改的是独立的 .app，不会影响 DMG 内的副本。脚本用 `hdiutil create` 用签好的 .app 重建 DMG 后再签 DMG。
+3. **幂等检测**：每步前先 probe（`codesign -dv` 看 `flags=runtime` + `Authority=Developer ID Application`；`xcrun stapler validate` 看是否已 stapled）。重跑只跑没完成的步骤。
 
-Push tag 触发 CI，3 个 job 并行：
+### Windows 一键脚本的关键点
 
-| 平台 | Runner | 产出 |
-|------|--------|------|
-| macOS ARM64 | `macos-14` | unsigned `.dmg` + `.app.tar.gz` + `.sig` |
-| macOS Intel | `macos-14` (cross-compile x86_64) | unsigned `.dmg` + `.app.tar.gz` + `.sig` |
-| Windows x64 | `windows-latest` | unsigned `.exe` + `.sig` |
-
-CI 自动：
-1. 构建 → 上传 GitHub Artifacts（30 天保留）
-2. 上传 dev 包到 OSS `aijia/dev/`（latest + versioned）
-3. 生成 downloads.html 上传到 OSS
-
-### Step 2: 本地签名 + 上传
-
-**下载 CI artifacts**：
-```bash
-gh run download <run-id> -n macos-arm64-unsigned -D build/
-gh run download <run-id> -n macos-x64-unsigned -D build/
-gh run download <run-id> -n windows-unsigned -D build/
-```
-
-**macOS 签名**（codesign → notarize → staple → tauri signer → upload）：
-```bash
-bash scripts/sign-and-upload-macos.sh 0.5.22 beta            # ARM64
-bash scripts/sign-and-upload-macos.sh 0.5.22 beta x86_64     # Intel
-bash scripts/sign-and-upload-macos.sh 0.5.22 release          # 正式版
-```
-
-**Windows 签名**（SimpleSign 签名 → tauri signer → upload）：
-1. 用 SimpleSign 对 `.exe` 进行 Authenticode 签名
-2. 运行上传脚本：
-```powershell
-.\scripts\sign-and-upload-windows.ps1 -Version 0.5.22 -Type beta
-.\scripts\sign-and-upload-windows.ps1 -Version 0.5.22 -Type release
-```
-
-### Step 3: 测试验证（Beta）
-
-**直接下载**（macOS 已签名公证，双击即可打开）：
-- macOS: `https://lotus.renlijia.com/aijia/beta/v0.5.22/AIjia_0.5.22-beta_aarch64.dmg`
-- Windows: `https://lotus.renlijia.com/aijia/beta/v0.5.22/AIjia_0.5.22-beta_x64-setup.exe`
-- 或从下载页：https://lotus.renlijia.com/aijia/downloads.html
-
-**Homebrew**：`brew install --cask grant-ge/tap/aijia-beta`
-
-测试清单：
-- [ ] macOS 双击 DMG 直接打开，无安全警告
-- [ ] Windows 安装无安全警告
-- [ ] 核心功能冒烟测试 + 版本号正确 + 新功能验证
-
-### Step 4: Finalize（生成 update.json）
-
-```bash
-python scripts/release.py finalize
-```
+1. **零 Python 依赖**：用 Node + `ali-oss` SDK 上传 OSS。避开了 Windows 上 Microsoft Store python.exe stub 的常见坑（exit 9009）。
+2. **凭据持久化**：4 个值（cert thumbprint / OSS key id / OSS secret / tauri key 密码）首次输入后存进 Windows Credential Manager（cmdkey + Win32 CredRead），之后只需要传 `-Version` + `-Type`。`-Reconfigure` 重新输入。
+3. **signtool 自动化**：脚本自动拼对的命令 `signtool sign /v /fd sha256 /sha1 <thumbprint> /tr <timestamp-url> /td sha256 <exe>`。不会再漏 `/tr` 导致无 timestamp 签名。
+4. **Tauri key 走文件路径**：`tauri signer sign -k <file>`，不走环境变量（避免 PowerShell 传 base64 给子进程时引入空白字符）。
+5. **公开 staging URL**：CI 上传到 `aijia/staging/unsigned/v{ver}/`，CDN 公开可下载（不需要 GitHub token / gh CLI），任何 Windows 机器只要 `git pull` 就能跑发版。
 
 ### 签名机环境要求
 
 **macOS**（检查：`bash scripts/setup-runner-macos.sh`）：
 - Developer ID Application 证书已导入 login keychain
-- 环境变量：`APPLE_ID`, `APPLE_PASSWORD`（App-Specific）, `APPLE_TEAM_ID`
+- 环境变量：`APPLE_ID`, `APPLE_PASSWORD`（App-Specific Password）, `APPLE_TEAM_ID`
 - 环境变量：`TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
 - 环境变量：`OSS_ACCESS_KEY_ID`, `OSS_ACCESS_KEY_SECRET`
-- Python + oss2
+- 推荐：把上面 7 个变量集中写到 `.env.local.aijia`（已加 .gitignore，chmod 600），构建脚本 `source` 一下
 
 **Windows**（检查：`.\scripts\setup-runner-windows.ps1`）：
-- SimpleSign 签名工具 + EV 硬件 token
-- Node.js（用于 `npx @tauri-apps/cli signer sign` 或全局 `tauri` CLI）
-- Python + oss2
-- 环境变量：`TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
-- 环境变量：`OSS_ACCESS_KEY_ID`, `OSS_ACCESS_KEY_SECRET`
+- SimpleSign + EV 硬件 token（GUI 签名工具）或 signtool.exe（Windows SDK）
+- Node.js（项目本来就要）
+- `$HOME\.tauri\aijia.key`（从 macOS 机器拷过来）
+- 首次跑 `release-windows.ps1` 时交互式存入 Credential Manager
 
-### GitHub Secrets（CI 构建用）
+### GitHub Secrets（CI 构建用，仅 Windows CI 需要）
 
 | Secret | 用途 |
 |--------|------|
 | `TAURI_SIGNING_PRIVATE_KEY` | Tauri updater Ed25519 密钥 |
 | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Ed25519 密钥密码 |
-| `OSS_ACCESS_KEY_ID` | 阿里云 OSS（dev 包上传 + 下载页生成） |
+| `OSS_ACCESS_KEY_ID` | 阿里云 OSS（staging 上传 + 下载页生成） |
 | `OSS_ACCESS_KEY_SECRET` | 阿里云 OSS |
 
-注：Apple 签名 / Windows 签名相关 secrets 不再需要（签名在本地做）。
+注：Apple 签名 / Windows 签名相关 secrets 不再需要（签名都在本地做）。
 
 ### OSS 路径规范
 
 ```
 aijia/
-├── dev/                         # CI 自动上传的未签名 dev 包
-│   ├── AIjia_latest_aarch64.dmg    # 最新 macOS ARM64（每次构建覆盖）
-│   ├── AIjia_latest_x64.dmg       # 最新 macOS Intel
-│   ├── AIjia_latest_x64-setup.exe # 最新 Windows
-│   └── v0.5.22/                   # 按版本归档
-├── beta/                        # Beta 测试版（已签名）
-│   └── v0.5.22/
-│       ├── AIjia_0.5.22_x64-setup.exe + .sig
-│       ├── AIjia_0.5.22_aarch64.dmg
-│       └── AIjia.app.tar.gz + .sig
-├── v0.5.22/                     # 正式版（已签名）
-│   ├── AIjia_0.5.22_x64-setup.exe + .sig
-│   ├── AIjia_0.5.22_aarch64.dmg
-│   └── AIjia.app.tar.gz + .sig
+├── staging/unsigned/v{ver}/     # CI 上传的 Windows 未签名包（CDN 公开，签完会被清理）
+├── beta/v{ver}/                 # Beta 测试版（已签名）
+│   ├── AIjia_{ver}_aarch64.dmg
+│   ├── AIjia_{ver}_x64.dmg
+│   ├── AIjia.app.tar.gz + .sig          # ARM64 updater
+│   ├── AIjia_x64.app.tar.gz + .sig      # Intel updater
+│   ├── AIjia_{ver}_x64-setup.exe + .sig # Windows
+├── v{ver}/                      # 正式版（已签名）
 ├── latest/                      # 正式版最新下载入口
 ├── downloads.html               # 下载页（CI 自动生成）
 └── update.json                  # Tauri 自动更新清单（仅正式版）
@@ -414,7 +370,7 @@ aijia/
 
 | Workflow | 触发 | 作用 |
 |----------|------|------|
-| `build-desktop.yml` | `beta-v*` / `v*` tag / manual | GitHub-hosted 构建 3 平台 + dev 包上传 OSS + 下载页生成 |
+| `build-desktop.yml` | `beta-v*` / `v*` tag / manual | **仅 Windows**：GitHub-hosted 构建未签名 exe → 上传到 OSS staging + 生成下载页 |
 | `finalize-release.yml` | manual（输入 version） | 生成 update.json |
 | `ci.yml` | push main / PR | Rust + TS 类型检查 + lint |
 
