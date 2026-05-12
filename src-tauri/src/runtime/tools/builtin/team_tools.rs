@@ -150,9 +150,18 @@ impl RuntimeTool for TeamCreateRuntimeTool {
         // (mark_idle at user-turn end) will pick up the pending flag and
         // start the continuation turn at the natural boundary.
         let lead_supervisor_marked_running = if let Some(sup) = ctx.lead_idle.as_ref() {
+            log::info!(
+                "[TeamCreate][diag] mark_running invoked session={} lead_id={}",
+                session.as_str(),
+                lead_id.as_str()
+            );
             sup.mark_running(&(session.clone(), lead_id.clone())).await;
             true
         } else {
+            log::warn!(
+                "[TeamCreate][diag] ctx.lead_idle is None — supervisor will not be \
+                 marked Running; teammate SendMessage will likely fail to wake Lead"
+            );
             false
         };
 
@@ -229,21 +238,12 @@ impl RuntimeTool for TeamDeleteRuntimeTool {
             (String::new(), 0)
         };
 
-        // Drop all name bindings for this session so the Lead can re-create a
-        // Team later without collisions.  Teammate worker loops will exit via
-        // the inbox-closed path once their senders are dropped (P1.6 cleanup).
-        ctx.agent_names().drop_session(&session).await;
-
-        // LTR (B-gap3): also drop the per-session inbox and cancellation
-        // registry entries.  Without this, dead Teammate AgentIds linger in
-        // the global registries — SendMessage routing could still hit them
-        // and TeammateStop's by-name lookup would still find stale tokens.
-        if let Some(inbox_reg) = ctx.inbox_registry.as_ref() {
-            inbox_reg.drop_session(&session).await;
-        }
-        if let Some(cancel_reg) = ctx.cancellation_registry.as_ref() {
-            cancel_reg.drop_session(&session).await;
-        }
+        // TeamDelete only dissolves the team logical grouping; per-session
+        // registries (agent_names / inbox_registry / cancellation_registry /
+        // lead_idle) are session-scoped resources and are cleaned up by the
+        // session-close hook, not here. Clearing them mid-session breaks the
+        // Lead's continuing identity and causes mark_idle to lose track of
+        // the supervisor state.
 
         record_diagnostic(
             &ws,

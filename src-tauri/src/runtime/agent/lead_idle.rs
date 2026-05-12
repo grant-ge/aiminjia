@@ -99,7 +99,7 @@ impl LeadIdleSupervisor {
         s.insert(k.clone(), LeadState::Running);
         drop(s);
         self.pending_during_run.lock().await.insert(k.clone(), false);
-        log::debug!(
+        log::info!(
             "[LeadIdleSupervisor] mark_running session={} agent={}",
             k.0.as_str(),
             k.1.as_str()
@@ -129,7 +129,7 @@ impl LeadIdleSupervisor {
             .unwrap_or(false);
         let mut s = self.state.lock().await;
         s.insert(k.clone(), LeadState::Idle { pending });
-        log::debug!(
+        log::info!(
             "[LeadIdleSupervisor] mark_idle session={} agent={} pending={}",
             k.0.as_str(),
             k.1.as_str(),
@@ -166,7 +166,7 @@ impl LeadIdleSupervisor {
                 s.insert(k.clone(), LeadState::Running);
                 drop(s);
                 self.pending_during_run.lock().await.insert(k.clone(), false);
-                log::debug!(
+                log::info!(
                     "[LeadIdleSupervisor] enqueue idle->running session={} agent={}",
                     k.0.as_str(),
                     k.1.as_str()
@@ -188,7 +188,7 @@ impl LeadIdleSupervisor {
             Some(LeadState::Running) => {
                 drop(s);
                 self.pending_during_run.lock().await.insert(k.clone(), true);
-                log::debug!(
+                log::info!(
                     "[LeadIdleSupervisor] enqueue already-running session={} agent={} pending=true",
                     k.0.as_str(),
                     k.1.as_str()

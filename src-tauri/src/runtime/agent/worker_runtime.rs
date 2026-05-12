@@ -1420,6 +1420,11 @@ async fn teammate_real_turn(
         .as_ref()
         .map(|cache| cache.clone_for_child())
         .unwrap_or_else(|| Arc::new(FileStateCache::new()));
+    log::info!(
+        "[teammate_real_turn][diag] entering turn: ctx.agent_id={} session={} (will be passed to request_scoped_tool_deps)",
+        ctx.agent_id.as_str(),
+        ctx.session_id.as_str()
+    );
     let request_scoped = engine.runtime_deps.request_scoped_tool_deps(
         crate::runtime::ids::RunId::new(format!("teammate-turn-{}", uuid::Uuid::new_v4())),
         Some(ctx.agent_id.clone()),
@@ -1522,7 +1527,7 @@ async fn teammate_real_turn(
     query_engine = query_engine.with_permission_ctx(Arc::new(teammate_pctx));
     let tool_event_bus = RuntimeEventBus::new();
 
-    let turn = TurnState::new(
+    let mut turn = TurnState::new(
         IdentityMapping::from_legacy_conversation_id(ctx.conv_id.clone()),
         crate::runtime::ids::RunId::new(format!("teammate-{}", ctx.agent_id.as_str())),
         user_text_for_turn_state(messages),
@@ -1532,6 +1537,12 @@ async fn teammate_real_turn(
     // LTR P2.8: mark this turn as async so every tool's permission Ask
     // gets auto-denied instead of blocking the idle loop forever.
     .with_async(true);
+    // CRITICAL: stamp the teammate's agent_id onto the turn so every
+    // ToolExecutionContext built from it carries the caller identity.
+    // Without this, SendMessage can't reverse-lookup the caller name via
+    // AgentNameRegistry::name_for, and `<peer-message from="...">` falls
+    // back to `from="system"` — losing who actually sent the message.
+    turn.set_agent_id(ctx.agent_id.clone());
 
     log::info!(
         "[TeammateIdle][permission-trace] agent={} name={} turn.is_async=true tool_count={} allowed={:?}",

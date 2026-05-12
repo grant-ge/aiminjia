@@ -101,8 +101,22 @@ impl RuntimeTool for SendMessageRuntimeTool {
         let caller_name = if let Some(aid) = ctx.agent_id.as_ref() {
             names.name_for(&session, aid).await
         } else {
-            None
+            // FALLBACK: when ctx.agent_id is None (e.g. Lead's user turn never
+            // stamped its own agent_id onto the TurnState), assume Lead is the
+            // caller IF a Lead is registered for this session.  Without this,
+            // every Lead-originated SendMessage renders as `from="system"`.
+            if names.resolve(&session, LEAD_NAME).await.is_some() {
+                Some(LEAD_NAME.to_string())
+            } else {
+                None
+            }
         };
+        log::info!(
+            "[SendMessage][diag] caller resolution: ctx.agent_id={:?} caller_name={:?} session={}",
+            ctx.agent_id.as_ref().map(|a| a.as_str().to_string()),
+            caller_name,
+            session.as_str()
+        );
         let source = match caller_name.as_deref() {
             Some(LEAD_NAME) => MessageSource::Lead,
             Some(other) => MessageSource::Teammate(other.to_string()),
@@ -267,8 +281,10 @@ impl RuntimeTool for SendMessageRuntimeTool {
                                 .payload(serde_json::json!({ "transition": "idle_to_running", "wake_fired": true })),
                         );
                     } else {
-                        log::debug!(
-                            "[SendMessage] Lead running → pending mark recorded for Path A"
+                        log::info!(
+                            "[SendMessage] Lead running → pending mark recorded for Path A session={} lead={}",
+                            session.as_str(),
+                            lead_id.as_str()
                         );
                         record_diagnostic(
                             &ws,
@@ -281,7 +297,17 @@ impl RuntimeTool for SendMessageRuntimeTool {
                                 .payload(serde_json::json!({ "transition": "already_running_pending_recorded", "wake_fired": false })),
                         );
                     }
+                } else {
+                    log::warn!(
+                        "[SendMessage][diag] to=team-lead but agent_names.resolve(team-lead) returned None — Lead won't be woken"
+                    );
                 }
+            } else {
+                log::warn!(
+                    "[SendMessage][diag] to=team-lead but ctx.lead_idle={} ctx.agent_names={} — Lead won't be woken",
+                    ctx.lead_idle.is_some(),
+                    ctx.agent_names.is_some()
+                );
             }
         }
 

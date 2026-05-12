@@ -2186,7 +2186,45 @@ impl RuntimeChatTurnDriver {
         // Running window.  If so, emit LeadHasPendingMessages so the
         // transport / front-end knows it should spawn a continuation turn.
         // (Path C — in-process auto-spawn from SendMessage — lands later.)
-        if let Some(ref key) = lead_key_for_path_a {
+        //
+        // FALLBACK: even if `lead_key_for_path_a` was None at turn entry
+        // (because TeamCreate hadn't yet registered the Lead in agent_names),
+        // re-resolve here at exit so the very-first turn that *creates* the
+        // team also gets a balanced mark_idle.  Without this, supervisor
+        // stays Running forever and pending teammate messages never trigger
+        // Path A continuation.
+        log::info!(
+            "[chat_turn_driver][diag] reached exit-block session={} lead_key_for_path_a_is_some={}",
+            session_id.as_str(),
+            lead_key_for_path_a.is_some()
+        );
+        let exit_lead_key = if lead_key_for_path_a.is_some() {
+            lead_key_for_path_a
+        } else if let (Some(sup), Some(names)) = (
+            self.query_engine.lead_idle_supervisor(),
+            self.query_engine.agent_names(),
+        ) {
+            if let Some(lead_id) = names
+                .resolve(
+                    &session_id,
+                    crate::runtime::tools::builtin::team_tools::LEAD_NAME,
+                )
+                .await
+            {
+                log::info!(
+                    "[chat_turn_driver][diag] exit-time lead_key resolved (turn-entry was None) session={} lead={}",
+                    session_id.as_str(),
+                    lead_id.as_str()
+                );
+                let _ = sup;
+                Some((session_id.clone(), lead_id))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        if let Some(ref key) = exit_lead_key {
             self.mark_idle_and_maybe_emit_pending(&session_id, &run_id, key)
                 .await?;
         }

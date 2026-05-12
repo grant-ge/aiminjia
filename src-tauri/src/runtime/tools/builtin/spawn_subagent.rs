@@ -389,6 +389,12 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
                     .register(&ctx.session_id, agent_name, agent_id.clone())
                     .await
                     .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+                log::info!(
+                    "[spawn_subagent][diag] teammate name registered: session={} agent_id={} agent_name={}",
+                    ctx.session_id.as_str(),
+                    agent_id.as_str(),
+                    agent_name
+                );
             }
             Some(agent_id)
         } else {
