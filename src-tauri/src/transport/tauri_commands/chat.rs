@@ -2310,12 +2310,13 @@ impl TauriChatCommandAdapter {
             runtime = runtime.with_cancellation_registry(reg.inner().clone());
         }
         runtime = runtime.with_host(host as Arc<dyn crate::transport::runtime_host::RuntimeHost>);
-        // LTR (B-gap1 Path C): wire the supervisor's wake_fn so that
-        // SendMessage's enqueue(key) will auto-spawn a Lead continuation turn
-        // the moment the supervisor CAS flips a Lead from Idle to Running.
-        // Must run after every other `with_*` call so the cloned runtime
-        // captured inside the wake closure is fully built.
-        runtime.wire_lead_idle_wake_path();
+        // Path C wake (LTR B-gap1) is now wired by `wire_path_c_wake_to_self`
+        // after the adapter is wrapped in `Arc<Self>` (see lib.rs).  We can't
+        // wire it here because the wake closure needs to call
+        // `Arc<Self>::send_chat_request` to reuse the user-send code path
+        // (which constructs a per-request ToolDispatcher with all services);
+        // we don't have an `Arc<Self>` until the caller wraps us.  See
+        // `wire_path_c_wake_to_self` for details and rationale.
         Self { runtime, services }
     }
 
@@ -2353,6 +2354,101 @@ impl TauriChatCommandAdapter {
     /// 向内部 runtime event bus 注册外部订阅者。
     pub fn subscribe_event_listener(&self, subscriber: std::sync::Arc<dyn crate::runtime::event_bus::RuntimeEventSubscriber>) {
         self.runtime.subscribe_event_listener(subscriber);
+    }
+
+    /// LTR P2 (B-gap1 Path C) — wire the LeadIdleSupervisor's wake_fn to
+    /// reuse `send_chat_request` (the same code path user-driven
+    /// `send_message` takes) instead of `SessionRuntime::spawn_continuation`.
+    ///
+    /// # Why this is on the transport layer (not in `SessionRuntime`)
+    ///
+    /// A Path-C continuation turn needs a per-request `ToolDispatcher`
+    /// (`tool_registry.to_runtime_dispatcher(deps)`), and constructing one
+    /// requires services that live on the transport layer:
+    /// `tool_registry` / `gateway` / `auth_manager` / `skill_registry` / etc.
+    /// `SessionRuntime` is intentionally transport-neutral; making it carry
+    /// these services would invert the dependency.  By driving wake from the
+    /// transport layer we keep both the user-send path and the wake path
+    /// going through the *exact* same `send_chat_request` code, so they
+    /// can't drift (which is precisely how the
+    /// "tool dispatcher not configured" bug appeared in the first place:
+    /// `spawn_continuation` was clone-ing the base `SessionRuntime` whose
+    /// `QueryEngine` had no dispatcher).
+    ///
+    /// # Lifetime / cycle
+    ///
+    /// We hold a `Weak<Self>` inside the wake closure to avoid keeping the
+    /// adapter alive forever via the supervisor.  At wake time we `upgrade`
+    /// — if the adapter has been dropped (app shutdown), the wake is a no-op.
+    pub fn wire_path_c_wake_to_self(self: &Arc<Self>) {
+        let Some(sup) = self.runtime.lead_idle_supervisor() else {
+            log::debug!(
+                "[wire_path_c_wake_to_self] no LeadIdleSupervisor — skipping; \
+                 LTR is not enabled in this build"
+            );
+            return;
+        };
+        let weak_self: std::sync::Weak<Self> = Arc::downgrade(self);
+        let installed = sup.set_wake_fn(std::sync::Arc::new(
+            move |key: crate::runtime::agent::LeadKey| {
+                let Some(adapter) = weak_self.upgrade() else {
+                    log::warn!(
+                        "[path_c_wake] adapter has been dropped — skipping continuation \
+                         turn for session={} agent={}",
+                        key.0.as_str(),
+                        key.1.as_str()
+                    );
+                    return;
+                };
+                let session_str = key.0.as_str().to_string();
+                let agent_str = key.1.as_str().to_string();
+                tokio::spawn(async move {
+                    log::info!(
+                        "[path_c_wake] spawning continuation turn via send_chat_request \
+                         conv={} lead={}",
+                        session_str,
+                        agent_str
+                    );
+                    let req = ChatTurnRequest::new(
+                        key.0.clone(),
+                        "__resume_from_task_notification__".to_string(),
+                        Vec::new(),
+                    );
+                    match adapter.send_chat_request(req).await {
+                        Ok(()) => {
+                            log::info!(
+                                "[path_c_wake] continuation turn completed conv={}",
+                                session_str
+                            );
+                        }
+                        Err(e) => {
+                            // Expected error: another turn is already busy on this
+                            // conversation (user-driven send_message landed first or
+                            // a prior wake is still running).  Log and let the
+                            // pending state stay set — the running turn will pick
+                            // up the inbox at its own next opportunity.
+                            log::warn!(
+                                "[path_c_wake] continuation turn rejected (likely a \
+                                 concurrent turn already busy) conv={}: {}",
+                                session_str,
+                                e
+                            );
+                        }
+                    }
+                });
+            },
+        ));
+        if !installed {
+            log::warn!(
+                "[wire_path_c_wake_to_self] supervisor already had a wake_fn installed; \
+                 keeping the previous one. This usually indicates the wire was called twice."
+            );
+        } else {
+            log::info!(
+                "[wire_path_c_wake_to_self] wake_fn installed — Path C continuation \
+                 turns will reuse send_chat_request"
+            );
+        }
     }
 
     /// 暴露权限控制平面，供 IM 协调器等外部组件使用。

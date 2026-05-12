@@ -587,6 +587,18 @@ pub fn run() {
                         as Arc<dyn connector::channel::ask_coordinator::ChannelSessionRegistry>),
                 ),
             );
+            // LTR P2 follow-up: wire Path C wake (continuation turn triggered by
+            // teammate SendMessage) AFTER the adapter is in an Arc, so the wake
+            // closure can upgrade a Weak<Self> and reuse `send_chat_request` —
+            // the same code path user-driven `send_message` uses, which
+            // constructs a per-request ToolDispatcher with all services.
+            //
+            // This replaces the previous `runtime.wire_lead_idle_wake_path()`
+            // call: that route ran continuation turns through the base
+            // SessionRuntime whose QueryEngine had no ToolDispatcher, so every
+            // tool call inside a continuation turn errored with
+            // "tool dispatcher not configured" and polluted messages.jsonl.
+            chat_adapter.wire_path_c_wake_to_self();
 
             // Register managed state
             app.manage(db);

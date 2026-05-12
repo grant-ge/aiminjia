@@ -114,6 +114,48 @@ impl RuntimeTool for TeamCreateRuntimeTool {
                 ))
             })?;
 
+        // LTR: register an inbox for the Lead so teammates can deliver via
+        // `SendMessage(to: "team-lead")`.  Without this, send_message.rs
+        // resolves the Lead's name but errors with "registered but has no
+        // inbox".  We use soft-injection here: production paths (lib.rs)
+        // always wire `inbox_registry`, but legacy/test paths that build a
+        // `ToolExecutionContext` without LTR registries still work — they
+        // just lose the inbox routing (which they don't exercise anyway).
+        let lead_inbox_registered = if let Some(inbox_reg) = ctx.inbox_registry.as_ref() {
+            let lead_inbox = crate::runtime::agent::AgentInbox::new(64);
+            inbox_reg
+                .register(&session, lead_id.clone(), lead_inbox)
+                .await;
+            true
+        } else {
+            log::warn!(
+                "[TeamCreate] inbox_registry not injected — Lead inbox will not be \
+                 reachable via SendMessage(to: \"team-lead\"). This is expected for \
+                 unit tests; production paths must wire with_ltr_registries()."
+            );
+            false
+        };
+
+        // LTR P2 follow-up: align the LeadIdleSupervisor's view with reality.
+        // The supervisor's state machine starts uninitialized; without this
+        // mark_running, a teammate that calls SendMessage during the same
+        // user turn that built the Team would hit the supervisor in its
+        // default Idle state, fire wake_fn, and try to start a duplicate
+        // continuation turn — which RunRegistry correctly rejects with
+        // "This conversation is already processing", leaving the inbox
+        // message sitting unread until the next external trigger.
+        //
+        // By marking running here we route the SendMessage through the
+        // `already_running_pending_recorded` branch instead, so Path A
+        // (mark_idle at user-turn end) will pick up the pending flag and
+        // start the continuation turn at the natural boundary.
+        let lead_supervisor_marked_running = if let Some(sup) = ctx.lead_idle.as_ref() {
+            sup.mark_running(&(session.clone(), lead_id.clone())).await;
+            true
+        } else {
+            false
+        };
+
         record_diagnostic(
             &ws,
             DiagnosticEvent::new("tool.team_create.completed", DiagnosticSource::Backend)
@@ -125,6 +167,8 @@ impl RuntimeTool for TeamCreateRuntimeTool {
                 .payload(serde_json::json!({
                     "team_name": team_name,
                     "lead_name": LEAD_NAME,
+                    "lead_inbox_registered": lead_inbox_registered,
+                    "lead_supervisor_marked_running": lead_supervisor_marked_running,
                 })),
         );
 

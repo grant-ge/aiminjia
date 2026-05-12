@@ -412,6 +412,121 @@ fn re_enqueue_task_notifications(
     queue.re_enqueue(notifications);
 }
 
+/// Drain the Lead's `AgentInbox` and append any pending peer messages
+/// (delivered by teammates via `SendMessage(to: "team-lead", ...)`) to the
+/// next user-role message of the current turn.
+///
+/// Returns the number of peer messages folded in.  Returns `0` (a no-op)
+/// when:
+/// - the engine wasn't wired with `agent_names` / `inbox_registry`
+///   (test/legacy paths), or
+/// - this session has no `team-lead` registration (no `TeamCreate` was
+///   called), or
+/// - the Lead's inbox exists but is empty.
+///
+/// Mirrors `claude-code-best`'s `getTeammateMailboxAttachments()` — the
+/// content shape is a single `<peer-messages>` XML block listing all
+/// drained items.  Crucially we drain only the currently-buffered items
+/// (no `recv().await`) so the turn can run even if no peer is talking.
+async fn drain_and_inject_lead_inbox_messages(
+    query_engine: &QueryEngine,
+    session_id: &SessionId,
+    messages: &mut Vec<serde_json::Value>,
+) -> usize {
+    let Some(names) = query_engine.agent_names() else {
+        return 0;
+    };
+    let Some(inbox_reg) = query_engine.inbox_registry() else {
+        return 0;
+    };
+    let Some(lead_id) = names
+        .resolve(
+            session_id,
+            crate::runtime::tools::builtin::team_tools::LEAD_NAME,
+        )
+        .await
+    else {
+        return 0;
+    };
+    let Some(lead_inbox) = inbox_reg.get(session_id, &lead_id).await else {
+        return 0;
+    };
+    let drained = lead_inbox.drain_pending().await;
+    if drained.is_empty() {
+        return 0;
+    }
+
+    let xml = render_peer_messages_xml(&drained);
+    messages.push(serde_json::json!({
+        "role": "user",
+        "content": xml,
+    }));
+
+    let count = drained.len();
+    log::info!(
+        "[chat_turn_driver] drained {} peer message(s) into Lead's next user message",
+        count
+    );
+    let ws = crate::telemetry::diagnostics_workspace();
+    record_diagnostic(
+        &ws,
+        DiagnosticEvent::new("turn.lead_inbox.drained", DiagnosticSource::Backend)
+            .conversation_id(session_id.as_str())
+            .ok(true)
+            .payload(serde_json::json!({ "count": count })),
+    );
+    count
+}
+
+/// Render drained inbox items as a `<peer-messages>` XML attachment, in
+/// the shape the Lead's prompt instructions teach it to read.  Skips
+/// non-chat items (Shutdown / TaskNotification) because the chat-turn
+/// driver does not own their semantics.
+fn render_peer_messages_xml(items: &[crate::runtime::agent::inbox::InboxItem]) -> String {
+    use crate::runtime::agent::inbox::{InboxItem, MessageSource};
+
+    let mut s = String::new();
+    s.push_str("<peer-messages>\n");
+    for item in items {
+        let InboxItem::ChatMessage { message, source } = item else {
+            // Shutdown / TaskNotification are routed elsewhere; ignore here.
+            continue;
+        };
+        let from = match source {
+            MessageSource::Lead => "team-lead".to_string(),
+            MessageSource::Teammate(name) => name.clone(),
+            MessageSource::System => "system".to_string(),
+        };
+        let variant = message.variant_name();
+        let body = message
+            .as_text()
+            .map(|t| escape_xml(t))
+            .unwrap_or_else(|| match serde_json::to_string(message) {
+                Ok(j) => escape_xml(&j),
+                Err(_) => String::new(),
+            });
+        s.push_str(&format!(
+            "  <peer-message from=\"{}\" variant=\"{}\">{}</peer-message>\n",
+            escape_xml_attr(&from),
+            escape_xml_attr(variant),
+            body
+        ));
+    }
+    s.push_str("</peer-messages>");
+    s
+}
+
+fn escape_xml(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+fn escape_xml_attr(s: &str) -> String {
+    escape_xml(s).replace('"', "&quot;")
+}
+
+
 /// Inject synthetic tool results for assistant tool calls that have no matching
 /// tool response yet. Returns the number of injected messages.
 pub fn inject_synthetic_tool_results_for_missing_calls(
@@ -1290,13 +1405,28 @@ impl RuntimeChatTurnDriver {
             &mut initial_messages,
         );
 
+        // LTR P2: drain the Lead's inbox so any messages peers delivered via
+        // SendMessage(to: "team-lead", ...) while the Lead was busy / idle
+        // are folded into this turn as the latest user-role attachment.
+        // Mirrors cc-best's `getTeammateMailboxAttachments()`.
+        let drained_peer_messages = drain_and_inject_lead_inbox_messages(
+            &self.query_engine,
+            turn.session_id(),
+            &mut initial_messages,
+        )
+        .await;
+
         // Guard: if this turn was triggered purely to resume from a task
-        // notification but the queue is now empty (race: another turn drained
-        // it first), there is no useful work to do — exit cleanly without
-        // calling the LLM, which would otherwise see no user message and fail.
-        if is_resume_for_task_notification && pending_task_notifications.is_empty() {
+        // notification or a Path-C inbox wake but BOTH queues are empty
+        // (race: another turn drained them first), there is no useful work
+        // to do — exit cleanly without calling the LLM, which would
+        // otherwise see no user message and fail.
+        if is_resume_for_task_notification
+            && pending_task_notifications.is_empty()
+            && drained_peer_messages == 0
+        {
             log::info!(
-                "[chat_turn_driver] resume-from-task-notification turn skipped: queue empty session={}",
+                "[chat_turn_driver] resume turn skipped: both task-notification queue and lead inbox empty session={}",
                 turn.session_id().as_str()
             );
             return Ok(());
@@ -2185,6 +2315,45 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Mutex;
     use tokio::sync::oneshot;
+
+    #[test]
+    fn render_peer_messages_xml_includes_from_and_variant_and_escapes_body() {
+        use crate::runtime::agent::inbox::{InboxItem, MessageSource};
+        use crate::runtime::messaging::StructuredMessage;
+
+        let items = vec![
+            InboxItem::ChatMessage {
+                message: StructuredMessage::text("调研完成 <see report>"),
+                source: MessageSource::Teammate("小研".into()),
+            },
+            InboxItem::ChatMessage {
+                message: StructuredMessage::text("ok"),
+                source: MessageSource::Lead,
+            },
+        ];
+        let xml = render_peer_messages_xml(&items);
+        assert!(xml.starts_with("<peer-messages>"));
+        assert!(xml.ends_with("</peer-messages>"));
+        assert!(xml.contains("from=\"小研\""));
+        assert!(xml.contains("from=\"team-lead\""));
+        assert!(xml.contains("variant=\"text\""));
+        // Body must be XML-escaped so the LLM doesn't think `<see report>`
+        // is another tag and so the document stays well-formed.
+        assert!(xml.contains("调研完成 &lt;see report&gt;"));
+    }
+
+    #[test]
+    fn render_peer_messages_xml_skips_non_chat_items() {
+        use crate::runtime::agent::inbox::{InboxItem, ShutdownRequest};
+
+        let items = vec![InboxItem::Shutdown(ShutdownRequest {
+            reason: "test".into(),
+        })];
+        let xml = render_peer_messages_xml(&items);
+        // The wrapper is still there but the body is empty (no peer-message).
+        assert!(xml.contains("<peer-messages>"));
+        assert!(!xml.contains("<peer-message "));
+    }
 
     struct RecordingPermissionControlPlane {
         inserted: Mutex<Vec<PendingPermissionRequest>>,

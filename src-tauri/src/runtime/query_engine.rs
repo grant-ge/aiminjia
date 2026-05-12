@@ -207,6 +207,9 @@ impl QueryEngine {
     pub fn agent_names(&self) -> Option<&Arc<crate::runtime::agent::AgentNameRegistry>> {
         self.agent_names.as_ref()
     }
+    pub fn inbox_registry(&self) -> Option<&Arc<crate::runtime::agent::InboxRegistry>> {
+        self.inbox_registry.as_ref()
+    }
 
     /// Attach LTR registries (Team / name / inbox) onto an already-built
     /// ToolExecutionContext.  Helper to avoid duplicating the wiring in every

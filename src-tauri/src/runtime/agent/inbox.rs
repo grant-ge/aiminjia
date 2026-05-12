@@ -103,6 +103,27 @@ impl AgentInbox {
         self.rx.lock().await.recv().await
     }
 
+    /// Drain every item that is currently buffered in the inbox without
+    /// awaiting new messages.  Returns immediately once the channel reports
+    /// `Empty` or `Disconnected`.  Items dequeued before the drain stops are
+    /// returned in FIFO order.
+    ///
+    /// Use this from the Lead's chat-turn driver to fold any peer messages
+    /// that arrived while the Lead was busy into the next user message,
+    /// without blocking the turn on `recv().await`.
+    pub async fn drain_pending(&self) -> Vec<InboxItem> {
+        use tokio::sync::mpsc::error::TryRecvError;
+        let mut rx = self.rx.lock().await;
+        let mut out = Vec::new();
+        loop {
+            match rx.try_recv() {
+                Ok(item) => out.push(item),
+                Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => break,
+            }
+        }
+        out
+    }
+
     /// Returns a clone of the sender half, usable to push items from external
     /// code (e.g. a `SendMessage` tool implementation in P2).
     pub fn sender(&self) -> mpsc::Sender<InboxItem> {

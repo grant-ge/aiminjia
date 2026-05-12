@@ -164,3 +164,76 @@ async fn team_delete_without_team_is_idempotent_noop() {
     assert_eq!(payload["team_existed"], false);
     assert_eq!(payload["teammates_dismissed"], 0);
 }
+
+/// LTR P2 收尾：TeamCreate 必须为 Lead 注册 inbox，否则 teammate 调
+/// `SendMessage(to: "team-lead")` 会因为查不到 inbox 而被拒。
+#[tokio::test]
+async fn team_create_registers_lead_inbox_when_registry_is_present() {
+    use app_lib::runtime::agent::inbox::{InboxItem, MessageSource};
+    use app_lib::runtime::agent::InboxRegistry;
+    use app_lib::runtime::messaging::StructuredMessage;
+
+    let team_registry = TeamRegistry::new();
+    let name_registry = AgentNameRegistry::new();
+    let inbox_registry = InboxRegistry::new();
+    let session = "conv-lead-inbox";
+    let lead_agent = "lead-with-inbox";
+
+    let mut ctx = ToolExecutionContext::for_test(session, "run-1", "tc-inbox-1")
+        .with_team_registry(team_registry.clone())
+        .with_agent_names(name_registry.clone())
+        .with_inbox_registry(inbox_registry.clone());
+    ctx.agent_id = Some(AgentId::new(lead_agent));
+
+    TeamCreateRuntimeTool
+        .execute(json!({"team_name": "with-inbox"}), ctx)
+        .await
+        .expect("TeamCreate should succeed");
+
+    // Lead inbox is now resolvable through the registry by the agent_id we
+    // provided as the calling Lead.
+    let sid = SessionId::new(session);
+    let inbox = inbox_registry
+        .get(&sid, &AgentId::new(lead_agent))
+        .await
+        .expect("Lead inbox should be registered after TeamCreate");
+
+    // Round-trip a message through the inbox so we know it's wired and not
+    // a dummy registration.
+    inbox
+        .send(InboxItem::ChatMessage {
+            message: StructuredMessage::text("hi-lead"),
+            source: MessageSource::Teammate("researcher".into()),
+        })
+        .await
+        .expect("send into Lead inbox should succeed");
+
+    match inbox.drain_pending().await.into_iter().next().unwrap() {
+        InboxItem::ChatMessage { message, source } => {
+            assert_eq!(message.as_text(), Some("hi-lead"));
+            assert_eq!(source, MessageSource::Teammate("researcher".into()));
+        }
+        other => panic!("unexpected inbox item: {other:?}"),
+    }
+}
+
+/// Legacy / unit-test paths build a `ToolExecutionContext` without the
+/// inbox registry — `TeamCreate` must remain a successful no-op in that
+/// case (it just logs a warning), not error out.
+#[tokio::test]
+async fn team_create_succeeds_without_inbox_registry_for_legacy_paths() {
+    let team_registry = TeamRegistry::new();
+    let name_registry = AgentNameRegistry::new();
+    let session = "conv-no-inbox-reg";
+    let ctx = build_ctx(session, Some("lead-legacy"), team_registry, name_registry.clone());
+
+    TeamCreateRuntimeTool
+        .execute(json!({"team_name": "legacy-team"}), ctx)
+        .await
+        .expect("TeamCreate should succeed even without inbox_registry wired");
+
+    // The Lead name is still registered — that part is independent of
+    // the inbox path.
+    let sid = SessionId::new(session);
+    assert!(name_registry.resolve(&sid, LEAD_NAME).await.is_some());
+}
