@@ -19,6 +19,7 @@ use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::ToolDefinition;
 use crate::runtime::tools::executor::{ToolError, ToolResult};
 use crate::runtime::tools::RuntimeTool;
+use crate::telemetry::{record_diagnostic, DiagnosticEvent, DiagnosticSource};
 
 /// Best-effort task-notification emitter for Team mode (P2.5).  Resolves the
 /// actor name via `AgentNameRegistry::name_for(ctx.agent_id)`; falls back to
@@ -641,6 +642,16 @@ impl RuntimeTool for TaskClaimRuntimeTool {
         let store = store_for(&ctx)?;
         let list_id = task_list_id(&ctx);
 
+        let ws = crate::telemetry::diagnostics_workspace();
+        record_diagnostic(
+            &ws,
+            DiagnosticEvent::new("tool.task_claim.entry", DiagnosticSource::Backend)
+                .conversation_id(ctx.session_id.as_str())
+                .run_id(ctx.run_id.as_str())
+                .tool_call_id(ctx.tool_call_id.as_str())
+                .payload(serde_json::json!({ "task_id": task_id })),
+        );
+
         let existing = store
             .get(&list_id, &task_id)
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
@@ -677,6 +688,15 @@ impl RuntimeTool for TaskClaimRuntimeTool {
                 task.owner = Some(caller.clone());
             }
             ClaimDecision::AlreadyOwned => {
+                record_diagnostic(
+                    &ws,
+                    DiagnosticEvent::new("tool.task_claim.already_owned", DiagnosticSource::Backend)
+                        .conversation_id(ctx.session_id.as_str())
+                        .run_id(ctx.run_id.as_str())
+                        .tool_call_id(ctx.tool_call_id.as_str())
+                        .ok(true)
+                        .payload(serde_json::json!({ "task_id": task_id, "caller": caller })),
+                );
                 return Ok(ToolResult::new(
                     "TaskClaim",
                     format!("Task #{} already owned by you ({})", task_id, caller),
@@ -684,6 +704,15 @@ impl RuntimeTool for TaskClaimRuntimeTool {
                 ));
             }
             ClaimDecision::Taken(existing_owner) => {
+                record_diagnostic(
+                    &ws,
+                    DiagnosticEvent::new("tool.task_claim.already_claimed", DiagnosticSource::Backend)
+                        .conversation_id(ctx.session_id.as_str())
+                        .run_id(ctx.run_id.as_str())
+                        .tool_call_id(ctx.tool_call_id.as_str())
+                        .ok(false)
+                        .payload(serde_json::json!({ "task_id": task_id, "existing_owner": existing_owner })),
+                );
                 return Err(ToolError::ExecutionFailed(format!(
                     "task already claimed by '{}'",
                     existing_owner
@@ -703,6 +732,16 @@ impl RuntimeTool for TaskClaimRuntimeTool {
             task.status.as_str(),
         )
         .await;
+
+        record_diagnostic(
+            &ws,
+            DiagnosticEvent::new("tool.task_claim.completed", DiagnosticSource::Backend)
+                .conversation_id(ctx.session_id.as_str())
+                .run_id(ctx.run_id.as_str())
+                .tool_call_id(ctx.tool_call_id.as_str())
+                .ok(true)
+                .payload(serde_json::json!({ "task_id": task_id, "caller": caller })),
+        );
 
         Ok(ToolResult::new(
             "TaskClaim",

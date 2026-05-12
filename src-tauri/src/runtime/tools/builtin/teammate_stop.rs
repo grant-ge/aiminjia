@@ -21,6 +21,7 @@ use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::ToolDefinition;
 use crate::runtime::tools::executor::{ToolError, ToolResult};
 use crate::runtime::tools::RuntimeTool;
+use crate::telemetry::{record_diagnostic, DiagnosticEvent, DiagnosticSource};
 
 pub struct TeammateStopRuntimeTool;
 
@@ -55,6 +56,16 @@ impl RuntimeTool for TeammateStopRuntimeTool {
             })?
             .to_string();
 
+        let ws = crate::telemetry::diagnostics_workspace();
+        record_diagnostic(
+            &ws,
+            DiagnosticEvent::new("tool.teammate_stop.entry", DiagnosticSource::Backend)
+                .conversation_id(ctx.session_id.as_str())
+                .run_id(ctx.run_id.as_str())
+                .tool_call_id(ctx.tool_call_id.as_str())
+                .payload(serde_json::json!({ "agent_name": name })),
+        );
+
         let names = ctx.agent_names.clone().ok_or_else(|| {
             ToolError::ExecutionFailed(
                 "agent_names registry not configured — TeammateStop requires LTR wiring".into(),
@@ -72,6 +83,15 @@ impl RuntimeTool for TeammateStopRuntimeTool {
         let agent_id = match names.resolve(&ctx.session_id, &name).await {
             Some(id) => id,
             None => {
+                record_diagnostic(
+                    &ws,
+                    DiagnosticEvent::new("tool.teammate_stop.not_found", DiagnosticSource::Backend)
+                        .conversation_id(ctx.session_id.as_str())
+                        .run_id(ctx.run_id.as_str())
+                        .tool_call_id(ctx.tool_call_id.as_str())
+                        .ok(true)
+                        .payload(serde_json::json!({ "agent_name": name, "reason": "not_found" })),
+                );
                 return Ok(ToolResult::new(
                     "TeammateStop",
                     format!(
@@ -85,6 +105,16 @@ impl RuntimeTool for TeammateStopRuntimeTool {
         match cancels.get(&ctx.session_id, &agent_id).await {
             Some(token) => {
                 token.cancel_with_reason(CancellationReason::UserCancel);
+                record_diagnostic(
+                    &ws,
+                    DiagnosticEvent::new("tool.teammate_stop.cancelled", DiagnosticSource::Backend)
+                        .conversation_id(ctx.session_id.as_str())
+                        .run_id(ctx.run_id.as_str())
+                        .tool_call_id(ctx.tool_call_id.as_str())
+                        .agent_id(agent_id.as_str())
+                        .ok(true)
+                        .payload(serde_json::json!({ "agent_name": name })),
+                );
                 Ok(ToolResult::new(
                     "TeammateStop",
                     format!("Teammate `{name}` cancelled"),
@@ -95,17 +125,29 @@ impl RuntimeTool for TeammateStopRuntimeTool {
                     })),
                 ))
             }
-            None => Ok(ToolResult::new(
-                "TeammateStop",
-                format!(
-                    "agent `{name}` resolved but has no cancellation token registered — noop"
-                ),
-                Some(json!({
-                    "stopped": false,
-                    "agent_name": name,
-                    "reason": "no_cancel_token",
-                })),
-            )),
+            None => {
+                record_diagnostic(
+                    &ws,
+                    DiagnosticEvent::new("tool.teammate_stop.no_cancel_token", DiagnosticSource::Backend)
+                        .conversation_id(ctx.session_id.as_str())
+                        .run_id(ctx.run_id.as_str())
+                        .tool_call_id(ctx.tool_call_id.as_str())
+                        .agent_id(agent_id.as_str())
+                        .ok(true)
+                        .payload(serde_json::json!({ "agent_name": name, "reason": "no_cancel_token" })),
+                );
+                Ok(ToolResult::new(
+                    "TeammateStop",
+                    format!(
+                        "agent `{name}` resolved but has no cancellation token registered — noop"
+                    ),
+                    Some(json!({
+                        "stopped": false,
+                        "agent_name": name,
+                        "reason": "no_cancel_token",
+                    })),
+                ))
+            }
         }
     }
 }

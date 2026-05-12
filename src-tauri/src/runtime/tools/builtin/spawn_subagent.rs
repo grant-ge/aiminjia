@@ -49,6 +49,7 @@ use crate::runtime::tools::definition::ToolDefinition;
 use crate::runtime::tools::executor::{ToolError, ToolResult};
 use crate::runtime::tools::permission::PermissionMode;
 use crate::runtime::tools::RuntimeTool;
+use crate::telemetry::{record_diagnostic, DiagnosticEvent, DiagnosticSource};
 
 // ─── Request / Context / Result types ────────────────────────────────────────
 
@@ -352,6 +353,16 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
             let agent_id = AgentId::new(format!("agent-{}", uuid::Uuid::new_v4()));
             // name is guaranteed Some here (checked above after team_handle check)
             if let Some(ref agent_name) = name {
+                let ws = crate::telemetry::diagnostics_workspace();
+                record_diagnostic(
+                    &ws,
+                    DiagnosticEvent::new("tool.spawn_subagent.teammate.name_registered", DiagnosticSource::Backend)
+                        .conversation_id(ctx.session_id.as_str())
+                        .run_id(ctx.run_id.as_str())
+                        .tool_call_id(ctx.tool_call_id.as_str())
+                        .agent_id(agent_id.as_str())
+                        .payload(serde_json::json!({ "agent_name": agent_name })),
+                );
                 ctx.agent_names()
                     .register(&ctx.session_id, agent_name, agent_id.clone())
                     .await
@@ -494,9 +505,38 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
                 meta,
             };
 
+            let ws = crate::telemetry::diagnostics_workspace();
+            record_diagnostic(
+                &ws,
+                DiagnosticEvent::new("tool.spawn_subagent.teammate.worker_ctx_built", DiagnosticSource::Backend)
+                    .conversation_id(ctx.session_id.as_str())
+                    .run_id(ctx.run_id.as_str())
+                    .tool_call_id(ctx.tool_call_id.as_str())
+                    .agent_id(agent_id.as_str())
+                    .payload(serde_json::json!({
+                        "agent_name": agent_name_str,
+                        "team_name": team_name_str,
+                        "employee_id": employee_id,
+                    })),
+            );
+
             let initial_prompt = request.prompt.clone();
             let team_for_spawn = team.clone();
             let agent_name_for_spawn = agent_name_str.clone();
+            let agent_id_for_diag = agent_id.as_str().to_string();
+            let conv_id_for_diag = ctx.session_id.as_str().to_string();
+            let run_id_for_diag = ctx.run_id.as_str().to_string();
+            let tool_call_id_for_diag = ctx.tool_call_id.as_str().to_string();
+            record_diagnostic(
+                &ws,
+                DiagnosticEvent::new("tool.spawn_subagent.teammate.spawning", DiagnosticSource::Backend)
+                    .conversation_id(&conv_id_for_diag)
+                    .run_id(&run_id_for_diag)
+                    .tool_call_id(&tool_call_id_for_diag)
+                    .agent_id(&agent_id_for_diag)
+                    .ok(true)
+                    .payload(serde_json::json!({ "agent_name": agent_name_for_spawn })),
+            );
             tokio::spawn(async move {
                 if let Err(e) = run_worker(
                     WorkerMode::TeammateIdle {
@@ -509,6 +549,14 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
                 .await
                 {
                     log::warn!("[spawn_teammate] idle loop exited with error: {e}");
+                    let ws_inner = crate::telemetry::diagnostics_workspace();
+                    record_diagnostic(
+                        &ws_inner,
+                        DiagnosticEvent::new("tool.spawn_subagent.teammate.worker_exited_error", DiagnosticSource::Backend)
+                            .conversation_id(&conv_id_for_diag)
+                            .agent_id(&agent_id_for_diag)
+                            .error(e.to_string()),
+                    );
                 }
             });
 

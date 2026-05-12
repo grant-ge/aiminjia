@@ -25,6 +25,7 @@ use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::ToolDefinition;
 use crate::runtime::tools::executor::{ToolError, ToolResult};
 use crate::runtime::tools::RuntimeTool;
+use crate::telemetry::{record_diagnostic, DiagnosticEvent, DiagnosticSource};
 
 pub const BROADCAST_TOKEN: &str = "*";
 
@@ -47,6 +48,7 @@ impl RuntimeTool for SendMessageRuntimeTool {
         input: Value,
         ctx: ToolExecutionContext,
     ) -> Result<ToolResult, ToolError> {
+        let ws = crate::telemetry::diagnostics_workspace();
         let to = input
             .get("to")
             .and_then(Value::as_str)
@@ -65,6 +67,19 @@ impl RuntimeTool for SendMessageRuntimeTool {
                  ({{type:'text'|'shutdown_request'|...}})"
             ))
         })?;
+
+        record_diagnostic(
+            &ws,
+            DiagnosticEvent::new("tool.send_message.entry", DiagnosticSource::Backend)
+                .conversation_id(ctx.session_id.as_str())
+                .run_id(ctx.run_id.as_str())
+                .tool_call_id(ctx.tool_call_id.as_str())
+                .payload(serde_json::json!({
+                    "to": to,
+                    "variant": message.variant_name(),
+                    "broadcast": to == BROADCAST_TOKEN,
+                })),
+        );
 
         let session = ctx.session_id.clone();
         let inbox_reg = ctx.inbox_registry.clone().ok_or_else(|| {
@@ -144,6 +159,19 @@ impl RuntimeTool for SendMessageRuntimeTool {
                 }
             }
 
+            record_diagnostic(
+                &ws,
+                DiagnosticEvent::new("tool.send_message.broadcast.completed", DiagnosticSource::Backend)
+                    .conversation_id(ctx.session_id.as_str())
+                    .run_id(ctx.run_id.as_str())
+                    .tool_call_id(ctx.tool_call_id.as_str())
+                    .ok(missing.is_empty())
+                    .payload(serde_json::json!({
+                        "delivered": delivered,
+                        "skipped_count": missing.len(),
+                        "variant": message.variant_name(),
+                    })),
+            );
             return Ok(ToolResult::new(
                 "SendMessage",
                 format!(
@@ -192,6 +220,19 @@ impl RuntimeTool for SendMessageRuntimeTool {
                 ToolError::ExecutionFailed(format!("agent `{to}` inbox closed; message dropped"))
             })?;
 
+        record_diagnostic(
+            &ws,
+            DiagnosticEvent::new("tool.send_message.inbox_sent", DiagnosticSource::Backend)
+                .conversation_id(ctx.session_id.as_str())
+                .run_id(ctx.run_id.as_str())
+                .tool_call_id(ctx.tool_call_id.as_str())
+                .ok(true)
+                .payload(serde_json::json!({
+                    "to_name": to,
+                    "variant": message.variant_name(),
+                })),
+        );
+
         // P2.4 / B-gap1: if the recipient is the Lead, ask the supervisor
         // whether the Idle→Running CAS should fire.  Path A (turn-end
         // self-check in chat_turn_driver::run_chat_turn_s4) handles the
@@ -206,15 +247,36 @@ impl RuntimeTool for SendMessageRuntimeTool {
                 (ctx.lead_idle.as_ref(), ctx.agent_names.as_ref())
             {
                 if let Some(lead_id) = names_reg.resolve(&session, LEAD_NAME).await {
-                    let key = (session.clone(), lead_id);
-                    if sup.enqueue(&key).await {
+                    let key = (session.clone(), lead_id.clone());
+                    let woke = sup.enqueue(&key).await;
+                    if woke {
                         log::info!(
                             "[SendMessage] Lead idle → Path C wake triggered \
                              (continuation turn spawned by supervisor)"
                         );
+                        record_diagnostic(
+                            &ws,
+                            DiagnosticEvent::new("tool.send_message.path_c_enqueue", DiagnosticSource::Backend)
+                                .conversation_id(ctx.session_id.as_str())
+                                .run_id(ctx.run_id.as_str())
+                                .tool_call_id(ctx.tool_call_id.as_str())
+                                .agent_id(lead_id.as_str())
+                                .ok(true)
+                                .payload(serde_json::json!({ "transition": "idle_to_running", "wake_fired": true })),
+                        );
                     } else {
                         log::debug!(
                             "[SendMessage] Lead running → pending mark recorded for Path A"
+                        );
+                        record_diagnostic(
+                            &ws,
+                            DiagnosticEvent::new("tool.send_message.path_c_enqueue", DiagnosticSource::Backend)
+                                .conversation_id(ctx.session_id.as_str())
+                                .run_id(ctx.run_id.as_str())
+                                .tool_call_id(ctx.tool_call_id.as_str())
+                                .agent_id(lead_id.as_str())
+                                .ok(true)
+                                .payload(serde_json::json!({ "transition": "already_running_pending_recorded", "wake_fired": false })),
                         );
                     }
                 }

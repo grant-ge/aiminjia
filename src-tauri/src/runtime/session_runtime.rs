@@ -25,6 +25,7 @@ use crate::runtime::store::{
 };
 use crate::runtime::path_auth::{load_path_auth_entries, RuleSource, ToolPermissionContext};
 use crate::runtime::tools::permission::{persist_permission_decision, PermissionDestination};
+use crate::telemetry::{record_diagnostic, DiagnosticEvent, DiagnosticSource};
 use crate::transport::runtime_host::RuntimeHost;
 use crate::transport::tauri_event_adapter::TauriEventAdapter;
 
@@ -253,22 +254,54 @@ impl SessionRuntime {
     pub fn spawn_continuation(&self, session_id: SessionId, _lead_agent_id: AgentId) {
         let runtime = self.clone();
         let session_str = session_id.as_str().to_string();
+        let ws = crate::telemetry::diagnostics_workspace();
+        record_diagnostic(
+            &ws,
+            DiagnosticEvent::new("turn.continuation.spawning", DiagnosticSource::Backend)
+                .conversation_id(&session_str)
+                .ok(true)
+                .payload(serde_json::json!({ "trigger": "path_c_wake" })),
+        );
         tokio::spawn(async move {
             log::info!(
                 "[session_runtime] spawn_continuation conv={} (Path C wake)",
                 session_str
+            );
+            let ws_inner = crate::telemetry::diagnostics_workspace();
+            record_diagnostic(
+                &ws_inner,
+                DiagnosticEvent::new("turn.continuation.started", DiagnosticSource::Backend)
+                    .conversation_id(&session_str)
+                    .ok(true)
+                    .payload(serde_json::json!({ "trigger": "path_c_wake" })),
             );
             let req = ChatTurnRequest::new(
                 session_id.clone(),
                 "__resume_from_task_notification__".to_string(),
                 Vec::new(),
             );
-            if let Err(e) = runtime.run_chat_request(req).await {
-                log::warn!(
-                    "[session_runtime] continuation turn failed conv={} err={}",
-                    session_str,
-                    e
-                );
+            match runtime.run_chat_request(req).await {
+                Ok(()) => {
+                    record_diagnostic(
+                        &ws_inner,
+                        DiagnosticEvent::new("turn.continuation.completed", DiagnosticSource::Backend)
+                            .conversation_id(&session_str)
+                            .ok(true),
+                    );
+                }
+                Err(e) => {
+                    log::warn!(
+                        "[session_runtime] continuation turn failed conv={} err={}",
+                        session_str,
+                        e
+                    );
+                    record_diagnostic(
+                        &ws_inner,
+                        DiagnosticEvent::new("turn.continuation.failed", DiagnosticSource::Backend)
+                            .conversation_id(&session_str)
+                            .error(e.to_string()),
+                    );
+                }
             }
         });
     }

@@ -27,6 +27,7 @@ use std::sync::{Arc, OnceLock};
 use tokio::sync::Mutex;
 
 use crate::runtime::ids::{AgentId, SessionId};
+use crate::telemetry::{record_diagnostic, DiagnosticEvent, DiagnosticSource};
 
 /// Key used to scope supervisor state.  Distinct sessions can run their own
 /// Leads concurrently; within one session there is at most one Lead so the
@@ -71,7 +72,17 @@ impl LeadIdleSupervisor {
     /// present.
     pub fn set_wake_fn(&self, wake_fn: WakeFn) -> bool {
         match self.wake_fn.set(wake_fn) {
-            Ok(()) => true,
+            Ok(()) => {
+                log::debug!("[LeadIdleSupervisor] set_wake_fn installed");
+                let ws = crate::telemetry::diagnostics_workspace();
+                record_diagnostic(
+                    &ws,
+                    DiagnosticEvent::new("agent.lead_idle.set_wake_fn", DiagnosticSource::Backend)
+                        .ok(true)
+                        .payload(serde_json::json!({ "installed": true })),
+                );
+                true
+            }
             Err(_) => {
                 log::debug!(
                     "[LeadIdleSupervisor] set_wake_fn called twice; second call ignored"
@@ -88,6 +99,20 @@ impl LeadIdleSupervisor {
         s.insert(k.clone(), LeadState::Running);
         drop(s);
         self.pending_during_run.lock().await.insert(k.clone(), false);
+        log::debug!(
+            "[LeadIdleSupervisor] mark_running session={} agent={}",
+            k.0.as_str(),
+            k.1.as_str()
+        );
+        let ws = crate::telemetry::diagnostics_workspace();
+        record_diagnostic(
+            &ws,
+            DiagnosticEvent::new("agent.lead_idle.mark_running", DiagnosticSource::Backend)
+                .conversation_id(k.0.as_str())
+                .agent_id(k.1.as_str())
+                .ok(true)
+                .payload(serde_json::json!({ "state": "running" })),
+        );
     }
 
     /// Mark the Lead as idle and return whether work is queued.
@@ -104,6 +129,21 @@ impl LeadIdleSupervisor {
             .unwrap_or(false);
         let mut s = self.state.lock().await;
         s.insert(k.clone(), LeadState::Idle { pending });
+        log::debug!(
+            "[LeadIdleSupervisor] mark_idle session={} agent={} pending={}",
+            k.0.as_str(),
+            k.1.as_str(),
+            pending
+        );
+        let ws = crate::telemetry::diagnostics_workspace();
+        record_diagnostic(
+            &ws,
+            DiagnosticEvent::new("agent.lead_idle.mark_idle", DiagnosticSource::Backend)
+                .conversation_id(k.0.as_str())
+                .agent_id(k.1.as_str())
+                .ok(true)
+                .payload(serde_json::json!({ "state": "idle", "pending": pending })),
+        );
         pending
     }
 
@@ -126,6 +166,20 @@ impl LeadIdleSupervisor {
                 s.insert(k.clone(), LeadState::Running);
                 drop(s);
                 self.pending_during_run.lock().await.insert(k.clone(), false);
+                log::debug!(
+                    "[LeadIdleSupervisor] enqueue idle->running session={} agent={}",
+                    k.0.as_str(),
+                    k.1.as_str()
+                );
+                let ws = crate::telemetry::diagnostics_workspace();
+                record_diagnostic(
+                    &ws,
+                    DiagnosticEvent::new("agent.lead_idle.enqueue", DiagnosticSource::Backend)
+                        .conversation_id(k.0.as_str())
+                        .agent_id(k.1.as_str())
+                        .ok(true)
+                        .payload(serde_json::json!({ "transition": "idle_to_running", "wake_fn_fired": self.wake_fn.get().is_some() })),
+                );
                 if let Some(wake) = self.wake_fn.get() {
                     wake(k.clone());
                 }
@@ -134,6 +188,20 @@ impl LeadIdleSupervisor {
             Some(LeadState::Running) => {
                 drop(s);
                 self.pending_during_run.lock().await.insert(k.clone(), true);
+                log::debug!(
+                    "[LeadIdleSupervisor] enqueue already-running session={} agent={} pending=true",
+                    k.0.as_str(),
+                    k.1.as_str()
+                );
+                let ws = crate::telemetry::diagnostics_workspace();
+                record_diagnostic(
+                    &ws,
+                    DiagnosticEvent::new("agent.lead_idle.enqueue", DiagnosticSource::Backend)
+                        .conversation_id(k.0.as_str())
+                        .agent_id(k.1.as_str())
+                        .ok(true)
+                        .payload(serde_json::json!({ "transition": "already_running_pending_recorded" })),
+                );
                 false
             }
         }

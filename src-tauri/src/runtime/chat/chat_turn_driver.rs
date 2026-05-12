@@ -2023,8 +2023,25 @@ impl RuntimeChatTurnDriver {
         let Some(sup) = self.query_engine.lead_idle_supervisor() else {
             return Ok(());
         };
+        let ws = crate::telemetry::diagnostics_workspace();
+        record_diagnostic(
+            &ws,
+            DiagnosticEvent::new("turn.path_a.mark_idle.entry", DiagnosticSource::Backend)
+                .conversation_id(session_id.as_str())
+                .run_id(run_id.as_str())
+                .agent_id(key.1.as_str()),
+        );
         let pending = sup.mark_idle(key).await;
         if pending {
+            record_diagnostic(
+                &ws,
+                DiagnosticEvent::new("turn.path_a.mark_idle.pending_true", DiagnosticSource::Backend)
+                    .conversation_id(session_id.as_str())
+                    .run_id(run_id.as_str())
+                    .agent_id(key.1.as_str())
+                    .ok(true)
+                    .payload(serde_json::json!({ "action": "emitting_lead_has_pending_messages" })),
+            );
             self.event_bus
                 .emit(RuntimeEvent::new(
                     session_id.clone(),
@@ -2034,6 +2051,15 @@ impl RuntimeChatTurnDriver {
                     },
                 ))
                 .await?;
+        } else {
+            record_diagnostic(
+                &ws,
+                DiagnosticEvent::new("turn.path_a.mark_idle.no_pending", DiagnosticSource::Backend)
+                    .conversation_id(session_id.as_str())
+                    .run_id(run_id.as_str())
+                    .agent_id(key.1.as_str())
+                    .ok(true),
+            );
         }
         Ok(())
     }
@@ -2058,14 +2084,28 @@ impl RuntimeChatTurnDriver {
         let sup = self.query_engine.lead_idle_supervisor()?;
         let names = self.query_engine.agent_names()?;
         let session = turn.session_id().clone();
+        let ws = crate::telemetry::diagnostics_workspace();
+        record_diagnostic(
+            &ws,
+            DiagnosticEvent::new("turn.path_a.mark_running.entry", DiagnosticSource::Backend)
+                .conversation_id(session.as_str()),
+        );
         let lead_id = names
             .resolve(
                 &session,
                 crate::runtime::tools::builtin::team_tools::LEAD_NAME,
             )
             .await?;
-        let key = (session, lead_id);
+        let key = (session.clone(), lead_id.clone());
         sup.mark_running(&key).await;
+        record_diagnostic(
+            &ws,
+            DiagnosticEvent::new("turn.path_a.mark_running.resolved", DiagnosticSource::Backend)
+                .conversation_id(session.as_str())
+                .agent_id(lead_id.as_str())
+                .ok(true)
+                .payload(serde_json::json!({ "state": "running" })),
+        );
         Some(key)
     }
 }

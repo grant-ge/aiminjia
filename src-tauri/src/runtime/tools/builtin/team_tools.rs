@@ -24,6 +24,7 @@ use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::ToolDefinition;
 use crate::runtime::tools::executor::{ToolError, ToolResult};
 use crate::runtime::tools::RuntimeTool;
+use crate::telemetry::{record_diagnostic, DiagnosticEvent, DiagnosticSource};
 
 /// Canonical name registered for the Lead member; teammates address it as
 /// `SendMessage(to: "team-lead")`.
@@ -69,6 +70,17 @@ impl RuntimeTool for TeamCreateRuntimeTool {
 
         let team_name = team_name_input.unwrap_or_else(|| default_team_name(session.as_str()));
 
+        let ws = crate::telemetry::diagnostics_workspace();
+        record_diagnostic(
+            &ws,
+            DiagnosticEvent::new("tool.team_create.entry", DiagnosticSource::Backend)
+                .conversation_id(session.as_str())
+                .run_id(ctx.run_id.as_str())
+                .tool_call_id(ctx.tool_call_id.as_str())
+                .agent_id(lead_id.as_str())
+                .payload(serde_json::json!({ "team_name": team_name })),
+        );
+
         let lead = Member {
             agent_id: lead_id.clone(),
             name: LEAD_NAME.to_string(),
@@ -99,6 +111,20 @@ impl RuntimeTool for TeamCreateRuntimeTool {
                     "Failed to register Lead name `{LEAD_NAME}`: {e}"
                 ))
             })?;
+
+        record_diagnostic(
+            &ws,
+            DiagnosticEvent::new("tool.team_create.completed", DiagnosticSource::Backend)
+                .conversation_id(session.as_str())
+                .run_id(ctx.run_id.as_str())
+                .tool_call_id(ctx.tool_call_id.as_str())
+                .agent_id(lead_id.as_str())
+                .ok(true)
+                .payload(serde_json::json!({
+                    "team_name": team_name,
+                    "lead_name": LEAD_NAME,
+                })),
+        );
 
         Ok(ToolResult::new(
             "TeamCreate",
@@ -137,6 +163,15 @@ impl RuntimeTool for TeamDeleteRuntimeTool {
         ctx: ToolExecutionContext,
     ) -> Result<ToolResult, ToolError> {
         let session = ctx.session_id.clone();
+        let ws = crate::telemetry::diagnostics_workspace();
+
+        record_diagnostic(
+            &ws,
+            DiagnosticEvent::new("tool.team_delete.entry", DiagnosticSource::Backend)
+                .conversation_id(session.as_str())
+                .run_id(ctx.run_id.as_str())
+                .tool_call_id(ctx.tool_call_id.as_str()),
+        );
 
         let team_handle = ctx.team_registry().delete(&session).await;
         let (team_name, teammate_count) = if let Some(handle) = team_handle.as_ref() {
@@ -161,6 +196,20 @@ impl RuntimeTool for TeamDeleteRuntimeTool {
         if let Some(cancel_reg) = ctx.cancellation_registry.as_ref() {
             cancel_reg.drop_session(&session).await;
         }
+
+        record_diagnostic(
+            &ws,
+            DiagnosticEvent::new("tool.team_delete.completed", DiagnosticSource::Backend)
+                .conversation_id(session.as_str())
+                .run_id(ctx.run_id.as_str())
+                .tool_call_id(ctx.tool_call_id.as_str())
+                .ok(true)
+                .payload(serde_json::json!({
+                    "team_existed": team_handle.is_some(),
+                    "team_name": team_name,
+                    "teammates_dismissed": teammate_count,
+                })),
+        );
 
         let json = json!({
             "session_id": session.as_str(),
