@@ -68,7 +68,7 @@ export function AppDropdown({
             disabled={item.disabled}
             onSelect={item.onSelect}
             className={cn(
-              'gap-2.5 rounded-md px-2.5 py-2 text-base leading-5 text-foreground',
+              'gap-2.5 rounded-md px-2.5 py-2 text-sm leading-5 text-foreground',
               '[&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0',
               item.disabled && 'cursor-not-allowed text-muted-foreground opacity-75',
               itemClassName,

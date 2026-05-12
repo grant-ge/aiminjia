@@ -7,8 +7,16 @@
  * 3. On submit: create conversation → authorize workspace → send message.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { BriefcaseBusiness, ChevronDown, Folder, FolderPlus } from 'lucide-react'
 
 import { SkillPopover } from '@/components/chat/SkillPopover'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import {
   RichComposer,
   pendingAttachmentsToTokens,
@@ -40,7 +48,7 @@ export function HomeTaskComposerCard() {
   useComposerDropInbox(composerRef)
   useComposerAttachmentPaste(composerRef)
 
-  const { selectedWorkspace, setSelectedWorkspace } = useHomeStore()
+  const { selectedWorkspace, recentWorkspaces, setSelectedWorkspace } = useHomeStore()
   const [displayWorkspace, setDisplayWorkspace] = useState<AuthorizedWorkspaceRef | null>(
     selectedWorkspace,
   )
@@ -79,6 +87,11 @@ export function HomeTaskComposerCard() {
       })
   }, [selectedWorkspace])
 
+  const selectWorkspace = useCallback((ws: AuthorizedWorkspaceRef) => {
+    setSelectedWorkspace(ws)
+    setDisplayWorkspace(ws)
+  }, [setSelectedWorkspace])
+
   const handlePickProject = async () => {
     const path = await pickLocalDirectory({
       defaultPath: displayWorkspace?.rootPath,
@@ -87,9 +100,7 @@ export function HomeTaskComposerCard() {
     if (!path) return
     const parts = path.split(/[/\\]/).filter(Boolean)
     const name = parts[parts.length - 1] ?? path
-    const ws: AuthorizedWorkspaceRef = { id: name, rootPath: path, displayName: name }
-    setSelectedWorkspace(ws)
-    setDisplayWorkspace(ws)
+    selectWorkspace({ id: name, rootPath: path, displayName: name })
   }
 
   const handlePickAttachments = useCallback(async () => {
@@ -157,8 +168,14 @@ export function HomeTaskComposerCard() {
     }
   }, [displayWorkspace, isSubmitting, sendUserMessage, selectedSkill])
 
+  const workspaceLabel = displayWorkspace?.displayName ?? '默认项目'
+  const workspacePath = displayWorkspace?.rootPath
+
   return (
-    <div className="relative">
+    <div
+      data-testid="home-composer-shell"
+      className="home-composer-large relative isolate overflow-visible rounded-[28px] shadow-[0_18px_52px_rgba(40,35,25,0.08)] [&_[data-testid=composer-root]]:relative [&_[data-testid=composer-root]]:z-10 [&_[data-testid=composer-root]]:rounded-[28px] [&_[data-testid=composer-root]]:border-border [&_[data-testid=composer-root]]:px-6 [&_[data-testid=composer-root]]:pb-4 [&_[data-testid=composer-root]]:pt-6 [&_[data-testid=composer-root]]:shadow-none [&_[data-testid=composer-root]>div:has(.ProseMirror)]:min-h-[60px] [&_[data-testid=composer-root]_.ProseMirror]:min-h-[60px]"
+    >
       <div className="absolute bottom-full left-1/2 z-30 mb-1 -translate-x-1/2">
         <SkillPopover
           open={showSkillPopover}
@@ -176,10 +193,62 @@ export function HomeTaskComposerCard() {
         autoFocus
         initialMarkdown={initialMarkdown}
         onOpenSkill={() => setShowSkillPopover((prev) => !prev)}
-        onPickProject={() => void handlePickProject()}
-        projectLabel={displayWorkspace?.displayName ?? '默认项目'}
+        showProjectButton={false}
         onOpenAttachment={isPickingAttachments ? undefined : () => void handlePickAttachments()}
       />
+
+      <div
+        data-testid="home-workspace-bar"
+        className="absolute inset-x-0 top-full z-0 flex min-h-[78px] -translate-y-[28px] items-center justify-between rounded-b-[28px] border-x border-b border-border bg-sidebar px-6 pt-[28px]"
+      >
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              disabled={isSubmitting}
+              aria-label={`选择工作目录，当前在 ${workspaceLabel} 中工作`}
+              title={workspacePath}
+              className="inline-flex max-w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-base text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+            >
+              <BriefcaseBusiness className="h-5 w-5 shrink-0" />
+              <span className="truncate">在 {workspaceLabel} 中工作</span>
+              <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="start"
+            side="bottom"
+            sideOffset={8}
+            className="w-[300px] max-w-[calc(100vw-32px)] rounded-2xl border-border bg-card p-1 shadow-[0_18px_44px_rgba(40,35,25,0.16)]"
+          >
+            {recentWorkspaces.length > 0 ? (
+              <div className="max-h-[280px] overflow-y-auto">
+                {recentWorkspaces.map((ws) => (
+                  <DropdownMenuItem
+                    key={ws.rootPath}
+                    onSelect={() => selectWorkspace(ws)}
+                    className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 outline-none focus:bg-muted"
+                  >
+                    <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <span className="flex min-w-0 flex-col">
+                      <span className="truncate text-sm font-medium leading-5 text-foreground">{ws.displayName}</span>
+                      <span className="truncate text-xs leading-4 text-muted-foreground">{ws.rootPath}</span>
+                    </span>
+                  </DropdownMenuItem>
+                ))}
+              </div>
+            ) : null}
+            {recentWorkspaces.length > 0 ? <DropdownMenuSeparator className="mx-2 bg-border" /> : null}
+            <DropdownMenuItem
+              onSelect={() => void handlePickProject()}
+              className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium outline-none focus:bg-muted"
+            >
+              <FolderPlus className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <span>选择其他目录…</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
     </div>
   )
 }

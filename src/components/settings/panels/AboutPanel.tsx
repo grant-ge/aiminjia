@@ -61,6 +61,7 @@ export function AboutPanel({
   logoUrl,
   onCheckUpdate,
   onUploadLogs,
+  links,
 }: AboutPanelProps) {
   const [uploadingLogs, setUploadingLogs] = useState(false)
 
@@ -114,6 +115,17 @@ export function AboutPanel({
 
       <div className="h-px bg-border mb-2" />
       */}
+
+      <section className="flex flex-col gap-3">
+        <div className="text-xl font-bold tracking-tight text-foreground">协议与政策</div>
+
+        <div className="flex flex-wrap gap-2">
+          <PillButton onClick={links.terms}>服务条款</PillButton>
+          <PillButton onClick={links.privacyPolicy}>隐私政策</PillButton>
+        </div>
+      </section>
+
+      <div className="mb-2 h-px bg-border" />
 
       <section className="flex flex-col gap-3 pb-2">
         <div className="text-xl font-bold tracking-tight text-foreground">开发者模式</div>

@@ -3,34 +3,69 @@ import { create } from 'zustand'
 import type { AuthorizedWorkspaceRef } from '@/lib/tauri'
 
 const STORAGE_KEY = 'aijia-home-workspace'
+const RECENT_STORAGE_KEY = 'aijia-home-recent-workspaces'
+const MAX_RECENT_WORKSPACES = 5
 
 interface HomeState {
   selectedWorkspace: AuthorizedWorkspaceRef | null
+  recentWorkspaces: AuthorizedWorkspaceRef[]
   setSelectedWorkspace: (ws: AuthorizedWorkspaceRef | null) => void
 }
 
-function loadFromStorage(): AuthorizedWorkspaceRef | null {
+function readJson<T>(key: string, fallback: T): T {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return null
-    return JSON.parse(raw) as AuthorizedWorkspaceRef
+    const raw = localStorage.getItem(key)
+    if (!raw) return fallback
+    return JSON.parse(raw) as T
   } catch {
-    return null
+    return fallback
   }
 }
 
-export const useHomeStore = create<HomeState>((set) => ({
-  selectedWorkspace: loadFromStorage(),
-  setSelectedWorkspace: (ws) => {
-    try {
-      if (ws) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(ws))
-      } else {
-        localStorage.removeItem(STORAGE_KEY)
-      }
-    } catch {
-      // ignore storage errors
+function writeJson<T>(key: string, value: T | null) {
+  try {
+    if (value == null) {
+      localStorage.removeItem(key)
+    } else {
+      localStorage.setItem(key, JSON.stringify(value))
     }
-    set({ selectedWorkspace: ws })
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function loadFromStorage(): AuthorizedWorkspaceRef | null {
+  return readJson<AuthorizedWorkspaceRef | null>(STORAGE_KEY, null)
+}
+
+function loadRecentFromStorage(): AuthorizedWorkspaceRef[] {
+  const recent = readJson<AuthorizedWorkspaceRef[]>(RECENT_STORAGE_KEY, [])
+  return Array.isArray(recent) ? recent : []
+}
+
+function withWorkspaceFirst(
+  recent: AuthorizedWorkspaceRef[],
+  workspace: AuthorizedWorkspaceRef,
+): AuthorizedWorkspaceRef[] {
+  return [
+    workspace,
+    ...recent.filter((item) => item.rootPath !== workspace.rootPath),
+  ].slice(0, MAX_RECENT_WORKSPACES)
+}
+
+export const useHomeStore = create<HomeState>((set, get) => ({
+  selectedWorkspace: loadFromStorage(),
+  recentWorkspaces: loadRecentFromStorage(),
+  setSelectedWorkspace: (ws) => {
+    writeJson(STORAGE_KEY, ws)
+
+    if (!ws) {
+      set({ selectedWorkspace: null })
+      return
+    }
+
+    const recentWorkspaces = withWorkspaceFirst(get().recentWorkspaces, ws)
+    writeJson(RECENT_STORAGE_KEY, recentWorkspaces)
+    set({ selectedWorkspace: ws, recentWorkspaces })
   },
 }))

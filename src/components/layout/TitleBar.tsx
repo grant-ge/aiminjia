@@ -48,7 +48,7 @@ export function TitleBar() {
     return (
       <div
         data-tauri-drag-region
-        className="flex h-7 w-full shrink-0 items-center justify-end bg-primary text-primary-foreground"
+        className="flex h-8 w-full shrink-0 items-center justify-end bg-primary text-primary-foreground"
       >
         {updateReady ? (
           <div className="pr-3" onMouseDown={(e) => e.stopPropagation()}>
@@ -62,7 +62,7 @@ export function TitleBar() {
   return (
     <div
       data-tauri-drag-region
-      className="flex h-7 w-full shrink-0 items-center border-b border-primary-foreground/15 bg-primary text-primary-foreground"
+      className="flex h-8 w-full shrink-0 items-center border-b border-primary-foreground/15 bg-primary text-primary-foreground"
       onMouseDown={handleDragStart}
     >
       <div className="flex-1" data-tauri-drag-region />
