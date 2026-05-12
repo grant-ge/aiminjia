@@ -33,7 +33,6 @@ fn build_test_plugin_ctx(workspace_path: std::path::PathBuf) -> PluginContext {
         bocha_api_key: None,
         app_handle: None,
         auth_manager: None,
-        connector_engine: None,
         dingtalk_bridge: None,
         use_cloud: false,
         model: String::new(),
@@ -49,38 +48,8 @@ fn build_test_plugin_ctx(workspace_path: std::path::PathBuf) -> PluginContext {
         permission_mode: app_lib::runtime::tools::permission::PermissionMode::Default,
             runtime_resolver: None,
         permission_ctx: None,
+        current_persona_id: None,
     }
-}
-
-#[tokio::test]
-async fn runtime_dispatcher_should_reject_browser_tool_without_browser_capability() {
-    let registry = ToolRegistry::new();
-    register_builtin_tools(&registry).await;
-
-    let tmp = TempDir::new().unwrap();
-    let plugin_ctx = build_test_plugin_ctx(tmp.path().to_path_buf());
-    let dispatcher = registry
-        .to_runtime_dispatcher(RequestScopedRuntimeDeps::from_plugin_context(&plugin_ctx))
-        .await;
-
-    let exec_ctx = ToolExecutionContext::for_test("review-conv", "run-1", "tc-1");
-    let err = match dispatcher
-        .dispatch(
-            "playwright_navigate",
-            json!({"url": "https://example.com"}),
-            exec_ctx,
-        )
-        .await
-    {
-        Ok(_) => panic!("playwright_navigate without browser capability should be rejected"),
-        Err(err) => err,
-    };
-
-    let msg = err.to_string();
-    assert!(
-        msg.contains("browser capability"),
-        "dispatcher should fail in permission layer, got: {msg}"
-    );
 }
 
 #[tokio::test]

@@ -4,6 +4,8 @@ import { LoginCard } from '@/components/auth/LoginCard'
 import { LoginFooter } from '@/components/auth/LoginFooter'
 import { LoginLogoStack } from '@/components/auth/LoginLogoStack'
 import { LoginOptionsRow } from '@/components/auth/LoginOptionsRow'
+import { LegalDocumentDialog } from '@/components/legal/LegalDocumentDialog'
+import { LEGAL_DOCUMENTS, type LegalDocumentKey } from '@/components/legal/legalDocuments'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -33,6 +35,7 @@ export function LoginPage() {
   const [password, setPassword] = useState('')
   const [remember, setRemember] = useState(() => !!localStorage.getItem(REMEMBER_KEY))
   const [error, setError] = useState('')
+  const [activeLegalDocument, setActiveLegalDocument] = useState<LegalDocumentKey | null>(null)
 
   async function handleSubmit(event: { preventDefault: () => void }) {
     event.preventDefault()
@@ -51,14 +54,22 @@ export function LoginPage() {
     }
   }
 
+  const legalDocument = activeLegalDocument ? LEGAL_DOCUMENTS[activeLegalDocument] : null
+
   return (
-    <div className="relative flex min-h-screen w-full flex-col items-center justify-center gap-6 px-6 overflow-hidden" style={{ background: 'linear-gradient(135deg, #fdf8ee 0%, #faf5f0 40%, #f0f4ff 100%)' }}>
+    <div
+      className="relative flex min-h-screen w-full flex-col items-center justify-center gap-6 overflow-hidden px-6"
+      style={{
+        background:
+          'linear-gradient(135deg, var(--background) 0%, var(--brand-primary-subtle) 46%, color-mix(in srgb, var(--primary) 10%, var(--background)) 100%)',
+      }}
+    >
       <div data-tauri-drag-region className="absolute inset-x-0 top-0 h-8 z-10" />
       {/* 背景光晕 */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -top-32 -left-32 h-[500px] w-[500px] rounded-full opacity-30" style={{ background: 'radial-gradient(circle, #DBAA22 0%, transparent 70%)', filter: 'blur(80px)' }} />
-        <div className="absolute -bottom-40 -right-40 h-[600px] w-[600px] rounded-full opacity-20" style={{ background: 'radial-gradient(circle, #f59e0b 0%, transparent 70%)', filter: 'blur(100px)' }} />
-        <div className="absolute top-1/2 left-1/3 h-[400px] w-[400px] -translate-y-1/2 rounded-full opacity-15" style={{ background: 'radial-gradient(circle, #818cf8 0%, transparent 70%)', filter: 'blur(90px)' }} />
+        <div className="absolute -left-32 -top-32 h-[500px] w-[500px] rounded-full opacity-30" style={{ background: 'radial-gradient(circle, var(--primary) 0%, transparent 70%)', filter: 'blur(80px)' }} />
+        <div className="absolute -bottom-40 -right-40 h-[600px] w-[600px] rounded-full opacity-20" style={{ background: 'radial-gradient(circle, color-mix(in srgb, var(--primary) 72%, var(--background)) 0%, transparent 70%)', filter: 'blur(100px)' }} />
+        <div className="absolute left-1/3 top-1/2 h-[400px] w-[400px] -translate-y-1/2 rounded-full opacity-15" style={{ background: 'radial-gradient(circle, color-mix(in srgb, var(--primary) 24%, var(--background)) 0%, transparent 70%)', filter: 'blur(90px)' }} />
       </div>
       <LoginLogoStack logoUrl={logoUrl} brandName={productName} />
       <LoginCard>
@@ -142,11 +153,33 @@ export function LoginPage() {
             ) : '登录'}
           </Button>
           <div className="text-center text-xs text-muted-foreground">
-            登录即代表同意《服务条款》与《隐私政策》
+            登录即代表同意
+            <button
+              type="button"
+              className="mx-0.5 font-medium text-primary underline-offset-4 hover:underline"
+              onClick={() => setActiveLegalDocument('terms')}
+            >
+              服务条款
+            </button>
+            与
+            <button
+              type="button"
+              className="mx-0.5 font-medium text-primary underline-offset-4 hover:underline"
+              onClick={() => setActiveLegalDocument('privacy')}
+            >
+              隐私政策
+            </button>
           </div>
         </form>
       </LoginCard>
       <LoginFooter text="AI 小家 v0.9.30 · © 仁励家网络科技(杭州)有限公司" />
+      <LegalDocumentDialog
+        document={legalDocument}
+        open={legalDocument !== null}
+        onOpenChange={(open) => {
+          if (!open) setActiveLegalDocument(null)
+        }}
+      />
     </div>
   )
 }

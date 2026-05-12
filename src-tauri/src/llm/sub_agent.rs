@@ -32,7 +32,6 @@ pub struct SubAgentRuntimeDeps {
     pub session_id: crate::runtime::ids::SessionId,
     pub run_id: Option<RunId>,
     pub agent_id: Option<crate::runtime::ids::AgentId>,
-    pub connector_engine: Option<Arc<crate::connector::ConnectorEngine>>,
     pub agent_runtime: Option<Arc<AgentRuntime>>,
     pub event_bus: Option<crate::runtime::event_bus::RuntimeEventBus>,
     pub skill_registry:
@@ -48,6 +47,11 @@ pub struct SubAgentRuntimeDeps {
     /// run by the sub-agent respect the parent's authorized paths.  `None` for test
     /// and legacy paths that haven't yet been wired.
     pub permission_ctx: Option<Arc<ToolPermissionContext>>,
+    /// Snapshot of the parent turn's active persona id, propagated into
+    /// `RequestScopedRuntimeDeps.current_persona_id` so that request-scoped
+    /// tools (e.g. agenda) running inside the sub-agent still see the parent's
+    /// persona identity. `None` for legacy / test paths.
+    pub current_persona_id: Option<String>,
 }
 
 impl SubAgentRuntimeDeps {
@@ -70,7 +74,6 @@ impl SubAgentRuntimeDeps {
             bocha_api_key: None,
             app_handle: self.app_handle.clone(),
             auth_manager: None,
-            connector_engine: self.connector_engine.clone(),
             use_cloud: false,
             model: String::new(),
             gateway: None,
@@ -85,6 +88,7 @@ impl SubAgentRuntimeDeps {
             permission_mode: PermissionMode::Default,
             runtime_resolver: self.runtime_resolver.clone(),
             permission_ctx: self.permission_ctx.clone(),
+            current_persona_id: self.current_persona_id.clone(),
         }
     }
 }
@@ -164,7 +168,7 @@ mod tests {
             dynamic_context: String::new(),
             conversation_id: "c1".into(),
             parent_run_id: None,
-            background: false,
+            background: Default::default(),
             app_handle: None,
             cancel_token: None,
             permission_mode: PermissionMode::Default,
@@ -190,7 +194,7 @@ mod tests {
             dynamic_context: String::new(),
             conversation_id: "c1".into(),
             parent_run_id: None,
-            background: false,
+            background: Default::default(),
             app_handle: None,
             cancel_token: None,
             permission_mode: PermissionMode::Default,

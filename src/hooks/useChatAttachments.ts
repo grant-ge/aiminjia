@@ -48,18 +48,36 @@ export function detectAttachmentFileType(path: string): FileAttachment['fileType
   }
 }
 
+export function detectImageMimeType(path: string): string | undefined {
+  const ext = path.split('.').pop()?.toLowerCase() ?? ''
+  switch (ext) {
+    case 'png':
+      return 'image/png'
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg'
+    case 'gif':
+      return 'image/gif'
+    case 'webp':
+      return 'image/webp'
+    default:
+      return undefined
+  }
+}
+
 export function makePendingAttachment(filePath: string, fileType?: FileAttachment['fileType']): PendingAttachment {
   // Split on both POSIX and Windows separators so `C:\Users\…\file.xlsx`
   // surfaces as `file.xlsx` instead of the whole path.
   const fileName = filePath.split(/[\\/]/).pop() ?? filePath
+  const resolvedFileType = fileType ?? detectAttachmentFileType(filePath)
   return {
     id: filePath,
     fileName,
     path: filePath,
-    kind: fileType === 'folder' ? 'folder' : fileType === 'image' ? 'image' : 'file',
+    kind: resolvedFileType === 'folder' ? 'folder' : resolvedFileType === 'image' ? 'image' : 'file',
     fileSize: 0,
-    fileType: fileType ?? detectAttachmentFileType(filePath),
-    mimeType: undefined,
+    fileType: resolvedFileType,
+    mimeType: resolvedFileType === 'image' ? detectImageMimeType(filePath) : undefined,
     source: 'picker',
   }
 }

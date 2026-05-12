@@ -22,20 +22,20 @@
 │   ├── release.py               # 发布入口（交互式，跨平台，强制顺序）
 │   ├── bump-version.py          # 同步版本号到 3 个配置文件（跨平台）
 │   ├── bump-version.sh          # 同步版本号（macOS 快捷方式）
-│   ├── ci-upload-dev.py         # CI: 每次构建上传未签名 dev 包到 OSS
-│   ├── ci-generate-download-page.py  # CI: 生成 downloads.html 下载页
-│   ├── ci-upload-macos.py       # 本地签名后: macOS release → OSS
-│   ├── ci-upload-macos-beta.py  # 本地签名后: macOS beta → OSS
-│   ├── ci-upload-windows.py     # 本地签名后: Windows release/beta → OSS
-│   ├── ci-finalize.py           # 生成 update.json
-│   ├── sign-and-upload-macos.sh    # 本地 macOS 签名+公证+上传全流程
+│   ├── bump-version.sh          # 同步版本号（macOS 快捷方式）
+│   ├── build-and-sign-macos.sh     # 本地: macOS arm64 + x86_64 串行 build+sign+upload
+│   ├── sign-and-upload-macos.sh    # 本地 macOS 签名+公证+上传单架构（被上面脚本调用）
 │   ├── sign-and-upload-windows.ps1 # 本地 Windows 签名验证+tauri signer+上传
+│   ├── ci-upload-macos.py       # macOS release → OSS
+│   ├── ci-upload-macos-beta.py  # macOS beta → OSS
+│   ├── ci-upload-windows.py     # Windows release/beta → OSS
+│   ├── ci-generate-download-page.py  # CI: 生成 downloads.html 下载页
+│   ├── ci-finalize.py           # 生成 update.json
 │   ├── setup-runner-macos.sh    # macOS 签名机环境检查
 │   ├── setup-runner-windows.ps1 # Windows 签名机环境检查
-│   ├── setup-playwright.sh/.ps1
 │   └── bump-homebrew.py
 └── .github/workflows/
-    └── build-desktop.yml      # GitHub-hosted 构建 + dev 包上传 OSS + 下载页生成
+    └── build-desktop.yml      # Windows GitHub-hosted 构建 + 下载页生成（macOS 本地构建）
 ```
 
 ## 常用命令

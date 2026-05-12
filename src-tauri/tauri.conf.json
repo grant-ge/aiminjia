@@ -52,7 +52,6 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "playwright-runtime": "playwright-runtime",
       "prompts": "prompts",
       "resources/dws*": ""
     },

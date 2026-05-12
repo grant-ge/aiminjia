@@ -133,7 +133,7 @@ export const BUILTIN_TEMPLATES: EmployeeTemplate[] = [
     description: '批量筛选简历并按匹配度排序，撰写岗位 JD，搜索候选人公开信息，生成针对性面试问题。',
     toolWhitelist: [
       'load_file', 'read_file', 'grep_content',
-      'web_search', 'browse_and_extract', 'read_page_content',
+      'web_search',
       'execute_python', 'memory_save', 'memory_search',
       'load_skill', 'generate_report',
     ],

@@ -48,18 +48,18 @@ async fn make_test_registry_with_tools(names: &[&'static str]) -> ToolRegistry {
 
 #[tokio::test]
 async fn daily_filter_excludes_tools_not_in_whitelist() {
-    // "search_memory" is in DAILY_ALLOWED_TOOLS; "obscure_tool_not_in_daily" is not.
+    // "SearchMemory" is in DAILY_ALLOWED_TOOLS; "obscure_tool_not_in_daily" is not.
     let registry = make_test_registry_with_tools(&[
-        "search_memory",
-        "read_workspace_file",
+        "SearchMemory",
+        "Read",
         "obscure_tool_not_in_daily",
     ])
     .await;
     let defs = build_visible_tool_defs(&registry, true, ToolSchemaFilter::DailyWhitelist).await;
     let names: HashSet<_> = defs.iter().map(|d| d.name.as_str()).collect();
     assert!(
-        names.contains("search_memory"),
-        "search_memory is in DAILY_ALLOWED_TOOLS and should be included"
+        names.contains("SearchMemory"),
+        "SearchMemory is in DAILY_ALLOWED_TOOLS and should be included"
     );
     assert!(
         !names.contains("obscure_tool_not_in_daily"),
@@ -70,14 +70,14 @@ async fn daily_filter_excludes_tools_not_in_whitelist() {
 #[tokio::test]
 async fn employee_filter_uses_employee_whitelist_only() {
     let registry = make_test_registry_with_tools(&[
-        "search_memory",
-        "browse_navigate",
-        "extract_table_data",
+        "Bash",
+        "Read",
+        "Grep",
     ])
     .await;
     let mut employee_set = HashSet::new();
-    employee_set.insert("browse_navigate".to_string());
-    employee_set.insert("extract_table_data".to_string());
+    employee_set.insert("Read".to_string());
+    employee_set.insert("Grep".to_string());
     let defs = build_visible_tool_defs(
         &registry,
         true,
@@ -86,16 +86,16 @@ async fn employee_filter_uses_employee_whitelist_only() {
     .await;
     let names: HashSet<_> = defs.iter().map(|d| d.name.as_str()).collect();
     assert!(
-        !names.contains("search_memory"),
-        "employee path must NOT leak daily-only tools"
+        !names.contains("Bash"),
+        "employee path must NOT leak tools outside the whitelist"
     );
     assert!(
-        names.contains("browse_navigate"),
-        "browse_navigate was in employee whitelist and should be included"
+        names.contains("Read"),
+        "Read was in employee whitelist and should be included"
     );
     assert!(
-        names.contains("extract_table_data"),
-        "extract_table_data was in employee whitelist and should be included"
+        names.contains("Grep"),
+        "Grep was in employee whitelist and should be included"
     );
 }
 

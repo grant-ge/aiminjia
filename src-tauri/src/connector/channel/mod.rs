@@ -6,6 +6,7 @@ pub mod dingtalk_registration;
 pub mod dingtalk_stream;
 pub mod dingtalk_token;
 pub mod manager;
+pub mod pending_adapter;
 pub mod reply_manager;
 pub mod router;
 pub mod types;

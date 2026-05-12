@@ -116,11 +116,12 @@ export const useAuthStore = create<AuthState>((set) => ({
         return
       }
 
+      await applyTenantBranding(info)
       const models = await getCloudModels()
       const selectedCloudModel = await syncCloudModelSelection(models)
       set({ ...mapAuthState(info, models), selectedCloudModel, isAuthPending: false })
-      await applyTenantBranding(info)
     } catch (error) {
+      useBrandingStore.getState().reset()
       set({ ...EMPTY_AUTH_STATE, isAuthPending: false })
       throw error
     }
@@ -132,12 +133,15 @@ export const useAuthStore = create<AuthState>((set) => ({
     useChatStore.getState().resetStreaming()
     try {
       const info = await cloudLogin(username.trim(), password)
+      await applyTenantBranding(info)
       const models = info.models.length > 0 ? info.models : await getCloudModels()
       const selectedCloudModel = await syncCloudModelSelection(models)
       set({ ...mapAuthState(info, models), selectedCloudModel, isAuthPending: false })
-      await applyTenantBranding(info)
-      useUiStore.getState().setRoute({ kind: 'home' })
+      if (!useAuthStore.getState().redirectFrom) {
+        useUiStore.getState().setRoute({ kind: 'home' })
+      }
     } catch (error) {
+      useBrandingStore.getState().reset()
       set({ isAuthPending: false })
       throw error
     }

@@ -40,6 +40,7 @@ pub fn build_chat_history(
     messages = filter_invalid_tool_pairs(messages);
     messages = reorder_tool_results_after_assistant(messages);
     messages = trim_to_budget(messages, config);
+    messages = collapse_trailing_consecutive_user(messages);
 
     if let Some(boundary) = boundary {
         if !boundary.summary_text.is_empty() {
@@ -382,3 +383,125 @@ fn split_into_rounds(messages: &[ChatMessage]) -> Vec<Vec<ChatMessage>> {
 
     rounds
 }
+
+/// Defensive: collapse trailing consecutive `user` messages into a single one.
+///
+/// Why: when a turn fails (LLM 4xx/5xx) the user message has already been
+/// persisted to messages.jsonl but no assistant reply ever lands. The next
+/// send appends another user message, and the request now has 2+ consecutive
+/// user turns at the tail. Anthropic's `/v1/messages` endpoint is documented
+/// to merge consecutive same-role turns server-side, but in practice some
+/// gateways / model versions return 400 "Improperly formed request" when the
+/// tail has stacked user messages.
+///
+/// The fix is to merge them ourselves before sending. This is loss-less for
+/// the model (it sees the same content); it just collapses N tail messages
+/// into one separated by "\n\n". Only TRAILING consecutive users are merged
+/// — earlier stretches are left intact.
+fn collapse_trailing_consecutive_user(mut messages: Vec<ChatMessage>) -> Vec<ChatMessage> {
+    if messages.len() < 2 {
+        return messages;
+    }
+    // Find the index where the trailing user run begins.
+    let mut start = messages.len();
+    for (i, m) in messages.iter().enumerate().rev() {
+        if m.role == "user" {
+            start = i;
+        } else {
+            break;
+        }
+    }
+    let run_len = messages.len() - start;
+    if run_len < 2 {
+        return messages;
+    }
+    // Drain the tail run and stitch its content together.
+    let tail = messages.split_off(start);
+    let mut combined = String::new();
+    for (idx, m) in tail.iter().enumerate() {
+        if idx > 0 {
+            combined.push_str("\n\n");
+        }
+        combined.push_str(&m.content);
+    }
+    messages.push(ChatMessage::text("user", combined));
+    messages
+}
+
+#[cfg(test)]
+mod collapse_trailing_tests {
+    use super::*;
+
+    fn msg(role: &str, text: &str) -> ChatMessage {
+        ChatMessage::text(role, text)
+    }
+
+    #[test]
+    fn empty_unchanged() {
+        let out = collapse_trailing_consecutive_user(vec![]);
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn single_unchanged() {
+        let out = collapse_trailing_consecutive_user(vec![msg("user", "hi")]);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].content, "hi");
+    }
+
+    #[test]
+    fn no_trailing_run_unchanged() {
+        let input = vec![msg("user", "a"), msg("assistant", "b")];
+        let out = collapse_trailing_consecutive_user(input);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].role, "user");
+        assert_eq!(out[0].content, "a");
+        assert_eq!(out[1].role, "assistant");
+        assert_eq!(out[1].content, "b");
+    }
+
+    #[test]
+    fn merges_two_trailing_users() {
+        let input = vec![msg("assistant", "ok"), msg("user", "first"), msg("user", "second")];
+        let out = collapse_trailing_consecutive_user(input);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].role, "assistant");
+        assert_eq!(out[1].role, "user");
+        assert_eq!(out[1].content, "first\n\nsecond");
+    }
+
+    #[test]
+    fn merges_three_trailing_users() {
+        let input = vec![
+            msg("assistant", "ok"),
+            msg("user", "a"),
+            msg("user", "b"),
+            msg("user", "c"),
+        ];
+        let out = collapse_trailing_consecutive_user(input);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[1].content, "a\n\nb\n\nc");
+    }
+
+    #[test]
+    fn earlier_user_runs_left_intact() {
+        // Only the trailing run is collapsed. An earlier user/user pair is
+        // left as-is (Anthropic auto-merges those; trimming earlier turns
+        // could remove tool-use/result pairs by accident).
+        let input = vec![
+            msg("user", "a"),
+            msg("user", "b"),
+            msg("assistant", "mid"),
+            msg("user", "c"),
+            msg("user", "d"),
+        ];
+        let out = collapse_trailing_consecutive_user(input);
+        assert_eq!(out.len(), 4);
+        assert_eq!(out[0].content, "a");
+        assert_eq!(out[1].content, "b");
+        assert_eq!(out[2].content, "mid");
+        assert_eq!(out[3].content, "c\n\nd");
+    }
+}
+
+

@@ -12,15 +12,15 @@ use app_lib::runtime::agent::tool_whitelist::resolve_agent_tools;
 fn resolve_agent_tools_removes_recursive_spawn_by_default_for_subagents() {
     // P4.2 hardcodes allow_recursive_spawn=false in worker_runtime.
     // Verify resolve_agent_tools applied with that flag drops spawn_subagent.
-    let available = vec!["Agent".to_string(), "read_file".to_string()];
+    let available = vec!["Agent".to_string(), "read_workspace_file".to_string()];
     let allowed = resolve_agent_tools(
-        &["Agent".to_string(), "read_file".to_string()], // def_allowed
+        &["Agent".to_string(), "read_workspace_file".to_string()], // def_allowed
         &[],                                                        // def_disallowed
         &available,
         false, // not async
         false, // allow_recursive_spawn (matches worker_runtime default)
     );
-    assert!(allowed.contains(&"read_file".to_string()));
+    assert!(allowed.contains(&"read_workspace_file".to_string()));
     assert!(
         !allowed.contains(&"Agent".to_string()),
         "subagent must not be able to spawn sub-sub-agent by default"
@@ -29,7 +29,10 @@ fn resolve_agent_tools_removes_recursive_spawn_by_default_for_subagents() {
 
 #[test]
 fn resolve_agent_tools_blocks_ask_user_question_for_subagents() {
-    let available = vec!["ask_user_question".to_string(), "read_file".to_string()];
+    let available = vec![
+        "ask_user_question".to_string(),
+        "read_workspace_file".to_string(),
+    ];
     let allowed = resolve_agent_tools(
         &[],
         &[],
@@ -39,13 +42,13 @@ fn resolve_agent_tools_blocks_ask_user_question_for_subagents() {
     );
     // ALL_AGENT_DISALLOWED contains ask_user_question
     assert!(!allowed.contains(&"ask_user_question".to_string()));
-    assert!(allowed.contains(&"read_file".to_string()));
+    assert!(allowed.contains(&"read_workspace_file".to_string()));
 }
 
 #[test]
 fn resolve_agent_tools_async_mode_restricts_to_safe_subset() {
     let available = vec![
-        "read_file".to_string(),
+        "read_workspace_file".to_string(),
         "ask_user_question".to_string(),
         "custom_tool_x".to_string(), // not in ASYNC_AGENT_ALLOWED
     ];
@@ -56,7 +59,7 @@ fn resolve_agent_tools_async_mode_restricts_to_safe_subset() {
         true,  // is_async
         false,
     );
-    assert!(allowed.contains(&"read_file".to_string()));
+    assert!(allowed.contains(&"read_workspace_file".to_string()));
     assert!(!allowed.contains(&"ask_user_question".to_string()));
     // custom_tool_x is NOT in ASYNC_AGENT_ALLOWED list
     assert!(!allowed.contains(&"custom_tool_x".to_string()));
@@ -64,13 +67,13 @@ fn resolve_agent_tools_async_mode_restricts_to_safe_subset() {
 
 #[test]
 fn resolve_agent_tools_def_disallowed_overrides_def_allowed() {
-    let available = vec!["read_file".to_string(), "Write".to_string()];
+    let available = vec!["read_workspace_file".to_string(), "Write".to_string()];
     let allowed = resolve_agent_tools(
-        &["read_file".to_string(), "Write".to_string()],
+        &["read_workspace_file".to_string(), "Write".to_string()],
         &["Write".to_string()],
         &available,
         false,
         false,
     );
-    assert_eq!(allowed, vec!["read_file".to_string()]);
+    assert_eq!(allowed, vec!["read_workspace_file".to_string()]);
 }

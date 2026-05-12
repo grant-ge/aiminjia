@@ -294,19 +294,6 @@ pub fn run() {
                 }
             }
 
-            // Initialize Playwright browser — primary browser automation
-            let playwright_browser = Arc::new(
-                connector::playwright_browser::PlaywrightBrowser::new(app.handle().clone()),
-            );
-
-            // Initialize connector engine (browser automation only)
-            let connector_engine = Arc::new(connector::ConnectorEngine::new());
-            tauri::async_runtime::block_on(async {
-                connector_engine
-                    .set_playwright_browser(playwright_browser.clone())
-                    .await;
-            });
-
             // Initialize DingTalk bridge (dws CLI sidecar)
             let dingtalk_bridge = Arc::new(connector::dingtalk::DingtalkBridge::new(
                 app.handle().clone(),
@@ -563,7 +550,6 @@ pub fn run() {
             app.manage(current_user_storage.clone());
             app.manage(current_user_storage.clone() as Arc<dyn storage::UserScopedPathResolver>);
             app.manage(auth_manager);
-            app.manage(connector_engine);
             app.manage(dingtalk_bridge);
             app.manage(tool_registry);
             app.manage(mcp_server_manager);
@@ -576,6 +562,82 @@ pub fn run() {
             app.manage(std::sync::Arc::new(
                 crate::runtime::employee::EmployeeActiveRuns::new(),
             ));
+
+            // PendingQueueManager: per-session queue with debounced drain.
+            // Must be created after RuntimeRunRegistry, RuntimeRepositoryFacade, and
+            // TauriRuntimeHost (via app handle). Requires an active user scope; if the
+            // user is not logged in at startup, the manager is still registered but
+            // uses the legacy root conversations dir as a best-effort fallback.
+            {
+                let pending_event_bus = crate::runtime::RuntimeEventBus::new();
+                let pending_host = std::sync::Arc::new(
+                    crate::transport::tauri_runtime_host::TauriRuntimeHost::new(app.handle().clone()),
+                );
+                let pending_adapter = std::sync::Arc::new(
+                    crate::transport::tauri_event_adapter::TauriEventAdapter::new(pending_host),
+                );
+                pending_event_bus.subscribe(pending_adapter);
+
+                let run_registry_ref = app
+                    .state::<std::sync::Arc<crate::runtime::RuntimeRunRegistry>>()
+                    .inner()
+                    .clone();
+
+                // Build the resolver from the active user scope, or fall back to a
+                // guest-mode scope if the user is not yet authenticated. The resolver
+                // only needs a valid path — PendingQueueManager is safe to manage even
+                // when the scope is absent (enqueue_or_send handles missing dirs).
+                let pending_resolver: std::sync::Arc<dyn crate::runtime::pending::ConvDirResolver> =
+                    if let Some(ref scope) = user_scope {
+                        std::sync::Arc::new(crate::runtime::pending::AiJiaPendingResolver::new(
+                            (*aijia_home).clone(),
+                            scope.clone(),
+                        ))
+                    } else {
+                        // No active user — create a resolver over the root conversations dir.
+                        // This path is unusual (app startup with no prior login) but must not
+                        // panic. We use a synthetic "guest" scope so AiJiaHome resolves the
+                        // right directory layout.
+                        let guest_scope = crate::storage::UserScope::new(0, 0);
+                        std::sync::Arc::new(crate::runtime::pending::AiJiaPendingResolver::new(
+                            (*aijia_home).clone(),
+                            guest_scope,
+                        ))
+                    };
+
+                let pending_manager = crate::runtime::pending::PendingQueueManager::new(
+                    run_registry_ref,
+                    std::sync::Arc::new(pending_event_bus),
+                    pending_resolver,
+                    crate::runtime::pending::PendingConfig::default(),
+                );
+                {
+                    let mgr_for_restore = pending_manager.clone();
+                    tauri::async_runtime::spawn(async move {
+                        if let Err(e) = mgr_for_restore.restore_from_disk().await {
+                            log::warn!("[pending] restore_from_disk failed: {:#}", e);
+                        }
+                    });
+                }
+                // Wire the chat adapter as the drain dispatcher: when the
+                // debounce timer fires, the manager calls TauriChatCommandAdapter
+                // ::dispatch which delegates to send_chat_request.
+                {
+                    let chat_adapter_for_pending: Arc<
+                        dyn crate::runtime::pending::ChatTurnDispatcher,
+                    > = app
+                        .state::<Arc<transport::tauri_commands::chat::TauriChatCommandAdapter>>()
+                        .inner()
+                        .clone();
+                    let mgr_for_dispatcher = pending_manager.clone();
+                    tauri::async_runtime::spawn(async move {
+                        mgr_for_dispatcher
+                            .set_dispatcher(chat_adapter_for_pending)
+                            .await;
+                    });
+                }
+                app.manage(pending_manager);
+            }
 
             // Initialize ChannelManager for IM channel integration
             if let Some(paths) = current_user_storage.resolve_paths() {
@@ -620,6 +682,9 @@ pub fn run() {
                     Some(ask_coordinator),
                     reply_manager,
                     channel_session_ids,
+                    app.state::<Arc<crate::runtime::pending::PendingQueueManager>>()
+                        .inner()
+                        .clone(),
                 ));
                 let cm = channel_manager.clone();
                 tauri::async_runtime::spawn(async move {
@@ -629,11 +694,11 @@ pub fn run() {
                 app.manage(channel_manager);
             }
 
-            runtime::schedule_runner::spawn_schedule_runner(
+            runtime::agenda::spawn_agenda_runner(
                 current_user_storage.clone() as Arc<dyn storage::UserScopedPathResolver>,
                 app.state::<Arc<transport::tauri_commands::chat::TauriChatCommandAdapter>>()
                     .inner()
-                    .clone(),
+                    .clone() as Arc<dyn runtime::agenda::AgendaRunDispatcher>,
             );
 
             runtime::employee::runner::spawn_employee_scheduler(
@@ -762,10 +827,18 @@ pub fn run() {
             // Project memory commands
             commands::project_memory::save_project_memory,
             commands::project_memory::distill_project_memory,
-            // Schedule commands
-            commands::schedules::list_schedules,
-            commands::schedules::create_schedule,
-            commands::schedules::delete_schedule,
+            // Agenda commands
+            transport::tauri_commands::agenda::list_agenda_items,
+            transport::tauri_commands::agenda::create_agenda_item,
+            transport::tauri_commands::agenda::get_agenda_item,
+            transport::tauri_commands::agenda::update_agenda_item,
+            transport::tauri_commands::agenda::delete_agenda_item,
+            transport::tauri_commands::agenda::cancel_agenda_item,
+            transport::tauri_commands::agenda::restore_agenda_item,
+            transport::tauri_commands::agenda::run_agenda_item_now,
+            transport::tauri_commands::agenda::list_agenda_occurrences,
+            transport::tauri_commands::agenda::skip_occurrence,
+            transport::tauri_commands::agenda::unskip_occurrence,
             // Employee commands
             commands::employees::employee_list,
             commands::employees::employee_get,
@@ -823,6 +896,9 @@ pub fn run() {
             commands::channel::channel_set_enabled,
             commands::channel::channel_remove_platform,
             commands::channel::channel_reveal_secret,
+            // Pending queue commands
+            crate::transport::tauri_commands::pending::pending_snapshot_for_session,
+            crate::transport::tauri_commands::pending::pending_remove_item,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -836,12 +912,7 @@ pub fn run() {
                             "Failed to flush pending assistant message writes on exit: {err}"
                         );
                     }
-                }
-
-                // Shutdown CDP browser (kill Chromium process) via connector engine
-                let engine = app_handle.state::<Arc<connector::ConnectorEngine>>();
-                tauri::async_runtime::block_on(engine.shutdown_cdp());
-            }
+                }            }
         });
 }
 

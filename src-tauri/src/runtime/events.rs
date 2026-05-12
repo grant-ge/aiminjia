@@ -89,6 +89,18 @@ pub enum RuntimeEventKind {
         /// for the conversation history to be reloaded.
         tool_calls: Option<Vec<serde_json::Value>>,
     },
+    PendingSnapshot {
+        items: Vec<crate::runtime::pending::PendingItem>,
+    },
+    PendingQueued {
+        item: crate::runtime::pending::PendingItem,
+    },
+    PendingDrained {
+        drained_ids: Vec<String>,
+    },
+    PendingRemoved {
+        item_id: String,
+    },
     TurnCompleted {
         outcome: ChatTurnOutcome,
         total_input_tokens: u64,

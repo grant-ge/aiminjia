@@ -571,5 +571,13 @@
         "next": "下一步 →"
       }
     }
+  },
+  "chat": {
+    "pending": {
+      "singleHint": "1 条待处理消息",
+      "batchHint": "{{count}} 条待处理消息",
+      "removeAria": "移除这条待处理消息",
+      "attachmentsCount": "{{count}} 个附件"
+    }
   }
 }

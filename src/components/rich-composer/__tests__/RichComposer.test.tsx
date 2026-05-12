@@ -103,6 +103,25 @@ describe('RichComposer — disabled / streaming / clearOnSubmit', () => {
     expect(onSubmit).not.toHaveBeenCalled()
   })
 
+  it('isStreaming=true → send button hidden, Enter still submits (queued via backend)', async () => {
+    // Pending message queue: while a turn is streaming the visible button is
+    // the stop button only. The user can still submit via Enter; the backend
+    // PendingQueueManager buffers it for the next turn.
+    const onSubmit = vi.fn().mockResolvedValue(undefined)
+    const user = userEvent.setup()
+    render(<RichComposer isStreaming onStop={vi.fn()} onSubmit={onSubmit} />)
+    await waitFor(() => expect(document.querySelector('.ProseMirror')).toBeTruthy())
+    // Stop button is the only one visible
+    expect(screen.getByLabelText('停止')).toBeInTheDocument()
+    expect(screen.queryByLabelText('发送')).not.toBeInTheDocument()
+    // Enter key still works for submission
+    const editor = document.querySelector('.ProseMirror') as HTMLElement
+    await user.click(editor)
+    await user.keyboard('queued message')
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1))
+  })
+
   it('clearOnSubmit=true → editor cleared after successful submit', async () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined)
     const user = userEvent.setup()

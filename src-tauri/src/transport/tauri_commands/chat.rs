@@ -959,8 +959,6 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         let content_json = crate::runtime::chat::chat_turn_driver::build_user_content_json(
             content,
             attachments,
-            None,
-            None,
         )
         .to_string();
 
@@ -1246,8 +1244,16 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
     /// 精确移植 agent_loop Block 4 的逻辑：
     ///   - 从 DB 读取 active persona
     ///   - 从 auth_manager 获取 product_name（租户品牌名）
-    async fn build_system_prompt(&self, _conversation_id: &str) -> Result<String, TurnError> {
-        let persona = self.services.db().get_active_persona().ok();
+    async fn build_system_prompt(&self, request: &ChatTurnRequest) -> Result<String, TurnError> {
+        let persona = match request.persona_id_override.as_deref() {
+            Some(id) => self
+                .services
+                .db()
+                .get_persona(id)
+                .ok()
+                .or_else(|| self.services.db().get_active_persona().ok()),
+            None => self.services.db().get_active_persona().ok(),
+        };
 
         let product_name: Option<String> = self
             .services
@@ -1283,9 +1289,17 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
 
     async fn build_prompt_snapshot(
         &self,
-        _conversation_id: &str,
+        request: &ChatTurnRequest,
     ) -> Result<Option<TurnPromptSnapshot>, TurnError> {
-        let persona = self.services.db().get_active_persona().ok();
+        let persona = match request.persona_id_override.as_deref() {
+            Some(id) => self
+                .services
+                .db()
+                .get_persona(id)
+                .ok()
+                .or_else(|| self.services.db().get_active_persona().ok()),
+            None => self.services.db().get_active_persona().ok(),
+        };
 
         let product_name: Option<String> = self
             .services
@@ -1473,11 +1487,11 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         Ok(env_info)
     }
 
-    async fn get_skill_catalog(&self, agent_id: Option<&str>) -> String {
+    async fn get_skill_catalog(&self, _agent_id: Option<&str>) -> String {
         self.services
             .skill_registry
             .lock()
-            .map(|mut reg| reg.catalog_delta_for_agent(agent_id, 200_000))
+            .map(|reg| reg.format_full_catalog(200_000))
             .unwrap_or_default()
     }
 
@@ -1681,7 +1695,7 @@ mod tests {
 
         assert!(llm_content.contains("[当前消息附件]"));
         assert!(llm_content.contains("/tmp/sales.csv"));
-        assert!(llm_content.contains("显式提供的本地路径"));
+        assert!(llm_content.contains("本轮附件已自动加入授权目录"));
     }
 
     #[test]
@@ -2217,6 +2231,18 @@ impl TauriChatCommandAdapter {
         .await
     }
 
+    fn agenda_store_for_current_user(&self) -> anyhow::Result<crate::runtime::agenda::AgendaStore> {
+        use crate::storage::{CurrentUserStorage, UserScopedPathResolver};
+
+        let resolver = self
+            .services
+            .app
+            .try_state::<Arc<CurrentUserStorage>>()
+            .ok_or_else(|| anyhow::anyhow!("CurrentUserStorage not registered"))?;
+        let paths = resolver.require_paths()?;
+        Ok(crate::runtime::agenda::AgendaStore::new(paths.base_dir()))
+    }
+
     /// 返回当前 workspace 根目录，供 ChannelManager 等调用方构造下载目录。
     pub fn workspace_path(&self) -> std::path::PathBuf {
         self.services.file_mgr.workspace_path().to_path_buf()
@@ -2247,11 +2273,6 @@ impl TauriChatCommandAdapter {
             .set_busy_for_run(&conversation_id, run_id.clone())?;
 
         let session_id = request.conversation_id.clone();
-        let connector_engine = self
-            .services
-            .app
-            .try_state::<Arc<crate::connector::ConnectorEngine>>()
-            .map(|v| v.inner().clone());
         let agent_runtime = self
             .services
             .app
@@ -2285,7 +2306,6 @@ impl TauriChatCommandAdapter {
             bocha_api_key,
             app_handle: Some(self.services.app.clone()),
             auth_manager: Some(self.services.auth_manager.clone()),
-            connector_engine,
             use_cloud,
             model: String::new(),
             gateway: Some(self.services.gateway.clone()),
@@ -2300,22 +2320,17 @@ impl TauriChatCommandAdapter {
             permission_mode: request.permission_mode,
             runtime_resolver: self.services.runtime_resolver.clone(),
             permission_ctx: None,
+            current_persona_id: None,
         };
         let runtime_dispatcher = self
             .services
             .tool_registry
             .to_runtime_dispatcher(request_scoped_runtime_deps)
             .await;
-        let browser_available = self
-            .services
-            .app
-            .try_state::<Arc<crate::connector::ConnectorEngine>>()
-            .is_some();
         let runtime = self.runtime.clone().with_query_engine(
             QueryEngine::with_dispatcher(runtime_dispatcher)
                 .with_workspace_path(self.services.file_mgr.workspace_path().to_path_buf())
-                .with_runtime_resolver(self.services.runtime_resolver.clone())
-                .with_browser_available(browser_available),
+                .with_runtime_resolver(self.services.runtime_resolver.clone()),
         );
         let result = runtime.run_chat_request(request).await;
         self.services
@@ -2345,6 +2360,22 @@ impl TauriChatCommandAdapter {
                 }
             }
         }
+
+        // After this turn ends (success or otherwise), let the PendingQueueManager
+        // schedule a debounced drain so any items buffered while we were busy
+        // get merged into the next turn.
+        if let Some(mgr) = self
+            .services
+            .app
+            .try_state::<Arc<crate::runtime::pending::PendingQueueManager>>()
+        {
+            let mgr_clone = mgr.inner().clone();
+            let session_id = crate::runtime::ids::SessionId::new(conversation_id.clone());
+            tauri::async_runtime::spawn(async move {
+                mgr_clone.schedule_drain(session_id).await;
+            });
+        }
+
         result
     }
 
@@ -2370,6 +2401,63 @@ impl TauriChatCommandAdapter {
                 att.file_name, att.file_path, att.kind, att.file_type
             );
         }
+
+        // Pending queue gate: if the session is busy, enqueue this message
+        // instead of returning "already processing". Chips will appear in the
+        // UI; drain will merge it into the next turn.
+        if let Some(mgr_state) = self
+            .services
+            .app
+            .try_state::<Arc<crate::runtime::pending::PendingQueueManager>>()
+        {
+            let pending_mgr = mgr_state.inner().clone();
+            let pending_item = crate::runtime::pending::PendingItem {
+                id: format!("pend-{}", uuid::Uuid::new_v4()),
+                source: crate::runtime::pending::PendingSource::App,
+                text: content.clone(),
+                sender_nick: None,
+                attachments: attachments
+                    .iter()
+                    .map(|a| crate::runtime::pending::PendingAttachment {
+                        id: a.id.clone(),
+                        file_path: a.file_path.clone(),
+                        mime: a.mime_type.clone(),
+                        size_bytes: Some(a.file_size),
+                    })
+                    .collect(),
+                received_at: chrono::Utc::now().to_rfc3339(),
+            };
+            let session_id = crate::runtime::ids::SessionId::new(conversation_id.clone());
+            let outcome = pending_mgr
+                .enqueue_or_send(session_id, pending_item)
+                .await
+                .map_err(|e| format!("enqueue_or_send error: {e:#}"))?;
+            match outcome {
+                crate::runtime::pending::EnqueueOutcome::SentDirectly { .. } => {
+                    // Fall through to the existing send path (which preserves
+                    // skill_id / agent_name / permission_mode / client_message_id).
+                }
+                crate::runtime::pending::EnqueueOutcome::Queued { snapshot } => {
+                    log::info!(
+                        "[pending] app composer message queued conv={} queue_size={}",
+                        conversation_id,
+                        snapshot.len()
+                    );
+                    return Ok(());
+                }
+                crate::runtime::pending::EnqueueOutcome::Rejected { reason } => {
+                    return Err(match reason {
+                        crate::runtime::pending::EnqueueRejection::QueueFull { limit } => {
+                            format!("消息堆积过多（已达 {limit} 条），请稍后再发")
+                        }
+                        crate::runtime::pending::EnqueueRejection::SessionArchived => {
+                            "会话已归档，无法发送消息".to_string()
+                        }
+                    });
+                }
+            }
+        }
+
         let mut request = ChatTurnRequest::new(conversation_id.clone(), content, attachments);
         // Derive per-turn attachment dirs on the backend (frontend paths are untrusted).
         // The derived dirs will be merged into the per-turn ToolPermissionContext as
@@ -2392,6 +2480,42 @@ impl TauriChatCommandAdapter {
         if let Some(permission_mode) = permission_mode {
             request.permission_mode = permission_mode;
         }
+        self.run_chat_request_internal(request).await
+    }
+
+    pub async fn send_message_with_overrides(
+        &self,
+        conversation_id: String,
+        content: String,
+        attachments: Vec<crate::runtime::chat::chat_turn_driver::ChatAttachmentRef>,
+        permission_mode: Option<crate::runtime::tools::permission::PermissionMode>,
+        agent_name: Option<String>,
+        client_message_id: Option<String>,
+        persona_id_override: Option<String>,
+        run_id: Option<crate::runtime::ids::RunId>,
+    ) -> Result<crate::runtime::ids::RunId, String> {
+        let mut request = crate::runtime::chat::chat_turn_driver::ChatTurnRequest::new(
+            conversation_id.clone(),
+            content,
+            attachments,
+        );
+        if let Some(id) = run_id {
+            request.run_id = id;
+        }
+        request.agent_name = agent_name;
+        request.persona_id_override = persona_id_override;
+        request.permission_mode = permission_mode.unwrap_or_default();
+        request.client_message_id = client_message_id;
+
+        let captured_run_id = request.run_id.clone();
+
+        self.run_chat_request_internal(request).await?;
+
+        Ok(captured_run_id)
+    }
+
+    async fn run_chat_request_internal(&self, request: ChatTurnRequest) -> Result<(), String> {
+        let conversation_id = request.conversation_id.as_str().to_string();
         let run_id = request.run_id.clone();
         log::info!(
             "[send_message] calling set_busy_for_run conv={} run={}",
@@ -2404,22 +2528,16 @@ impl TauriChatCommandAdapter {
 
         let session_id = request.conversation_id.clone();
         log::info!(
-            "[send_message] resolving connector_engine and agent_runtime states conv={}",
+            "[send_message] resolving agent_runtime state conv={}",
             conversation_id
         );
-        let connector_engine = self
-            .services
-            .app
-            .try_state::<Arc<crate::connector::ConnectorEngine>>()
-            .map(|v| v.inner().clone());
         let agent_runtime = self
             .services
             .app
             .try_state::<Arc<crate::runtime::agent::AgentRuntime>>()
             .map(|v| v.inner().clone());
         log::info!(
-            "[send_message] connector_engine={} agent_runtime={}",
-            connector_engine.is_some(),
+            "[send_message] agent_runtime={}",
             agent_runtime.is_some()
         );
         // 读 tavily/bocha key 和 use_cloud 给 web_search 工具用。之前这里写死成
@@ -2467,6 +2585,10 @@ impl TauriChatCommandAdapter {
             workspace_path.exists(),
             conversation_id
         );
+        let active_persona_id: Option<String> = match request.persona_id_override.as_deref() {
+            Some(id) => Some(id.to_string()),
+            None => self.services.db().get_active_persona_id().ok(),
+        };
         let request_scoped_runtime_deps = crate::plugin::registry::RequestScopedRuntimeDeps {
             storage: self.services.db().clone(),
             file_manager: self.services.file_mgr.clone(),
@@ -2479,7 +2601,6 @@ impl TauriChatCommandAdapter {
             bocha_api_key,
             app_handle: Some(self.services.app.clone()),
             auth_manager: Some(self.services.auth_manager.clone()),
-            connector_engine,
             use_cloud,
             model: String::new(),
             gateway: Some(self.services.gateway.clone()),
@@ -2497,6 +2618,7 @@ impl TauriChatCommandAdapter {
             permission_mode: request.permission_mode,
             runtime_resolver: self.services.runtime_resolver.clone(),
             permission_ctx: None,
+            current_persona_id: active_persona_id,
         };
         log::info!(
             "[send_message] building runtime_dispatcher conv={}",
@@ -2511,21 +2633,10 @@ impl TauriChatCommandAdapter {
             "[send_message] runtime_dispatcher built conv={}",
             conversation_id
         );
-        let browser_available = self
-            .services
-            .app
-            .try_state::<Arc<crate::connector::ConnectorEngine>>()
-            .is_some();
-        log::info!(
-            "[send_message] browser_available={} conv={}",
-            browser_available,
-            conversation_id
-        );
         let runtime = self.runtime.clone().with_query_engine(
             QueryEngine::with_dispatcher(runtime_dispatcher)
                 .with_workspace_path(self.services.file_mgr.workspace_path().to_path_buf())
-                .with_runtime_resolver(self.services.runtime_resolver.clone())
-                .with_browser_available(browser_available),
+                .with_runtime_resolver(self.services.runtime_resolver.clone()),
         );
         log::info!(
             "[send_message] calling runtime.run_chat_request conv={}",
@@ -2565,6 +2676,23 @@ impl TauriChatCommandAdapter {
                     });
                 }
             }
+        }
+
+        // After this turn ends (success or otherwise), let the PendingQueueManager
+        // schedule a debounced drain so items buffered during this turn get
+        // merged into the next one. Mirrors the same hook at the tail of
+        // `send_chat_request` (IM path) — without this, app-side pending items
+        // sit in the queue forever after the SentDirectly turn finishes.
+        if let Some(mgr) = self
+            .services
+            .app
+            .try_state::<Arc<crate::runtime::pending::PendingQueueManager>>()
+        {
+            let mgr_clone = mgr.inner().clone();
+            let session_id = crate::runtime::ids::SessionId::new(conversation_id.clone());
+            tauri::async_runtime::spawn(async move {
+                mgr_clone.schedule_drain(session_id).await;
+            });
         }
 
         result
@@ -2712,6 +2840,9 @@ impl TauriChatCommandAdapter {
     }
 
     pub async fn create_conversation(&self) -> Result<String, String> {
+        // 不在这里 emit conversation:created：前端 createNewConversation 已经做了
+        // 乐观更新（optimisticId → backendId 替换），重复事件会触发不必要的 reload。
+        // 只有后端绕开前端入口的 dispatcher（agenda / employee / schedule）需要 emit。
         conversation_service::create_conversation(
             self.services.db().clone() as Arc<dyn ConversationStore>
         )
@@ -2847,25 +2978,201 @@ impl TauriChatCommandAdapter {
     }
 }
 
-#[async_trait]
-impl crate::runtime::schedule_runner::ScheduleRunDispatcher for TauriChatCommandAdapter {
-    async fn dispatch_schedule_run(
+#[async_trait::async_trait]
+impl crate::runtime::agenda::AgendaRunDispatcher for TauriChatCommandAdapter {
+    async fn dispatch(
         &self,
-        schedule: crate::runtime::schedule::ScheduleRecord,
-        fire_at: DateTime<Utc>,
-    ) -> anyhow::Result<()> {
+        item: crate::runtime::agenda::AgendaItem,
+        planned_fire_at: chrono::DateTime<chrono::Utc>,
+        trigger_source: crate::runtime::agenda::TriggerSource,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> anyhow::Result<String> {
+        use crate::runtime::agenda::{Occurrence, OccurrenceStatus};
+        use crate::runtime::ids::{RunId, SessionId};
+
+        let store = self.agenda_store_for_current_user()?;
+
+        // 1. 创建 conversation
         let conversation_id = conversation_service::create_conversation(
-            self.services.db().clone() as Arc<dyn ConversationStore>
+            self.services.db().clone() as Arc<dyn ConversationStore>,
         )
         .await
         .map_err(anyhow::Error::msg)?;
-        let prompt = format!(
-            "[定时任务触发] {}\n计划触发时间：{}\n\n{}",
-            schedule.title, fire_at, schedule.prompt
+
+        // 1.4. 通知前端有新 conversation：sidebar 监听后刷新列表。
+        //      所有后端直接走 conversation_service::create_conversation 的路径
+        //      （agenda / employee / schedule_runner）都要 emit 这个事件，
+        //      因为前端 chatStore 的乐观更新只发生在前端 createNewConversation 路径。
+        emit_conversation_created(
+            &self.services.app,
+            &conversation_id,
+            "agenda",
+            Some(&item.title),
         );
-        self.send_message(conversation_id, prompt, Vec::new(), None, None, None)
-            .await
-            .map_err(anyhow::Error::msg)
+
+        // 1.5. 如果 item 绑定了 workspace_path，把它 authorize 给这条新 conversation。
+        //      这跟 HomeTaskComposerCard 提交时的 authorize_local_directory 等价：
+        //      session_id == conversation_id，让后续 send_message 通过
+        //      load_authorized_workspace 拿到正确目录而不是漂移到全局 workspace。
+        if let Some(workspace_path) = item.workspace_path.as_deref() {
+            let trimmed = workspace_path.trim();
+            if !trimmed.is_empty() {
+                if let Some(facade) = self
+                    .services
+                    .app
+                    .try_state::<Arc<crate::storage::file_store::RuntimeRepositoryFacade>>()
+                {
+                    let root_path = std::path::PathBuf::from(trimmed);
+                    let canonical = root_path.canonicalize().unwrap_or(root_path);
+                    let display_name = canonical
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or_else(|| canonical.to_string_lossy().to_string());
+                    let ws = crate::runtime::store::AuthorizedWorkspace {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        session_id: crate::runtime::ids::SessionId::new(conversation_id.clone()),
+                        root_path: canonical.clone(),
+                        display_name,
+                        authorized_at: chrono::Utc::now().to_rfc3339(),
+                    };
+                    if let Err(e) = facade.authorized_workspace_store().replace_for_session(&ws) {
+                        log::warn!(
+                            "[agenda-dispatch] authorize workspace failed conv={} path={} err={}",
+                            conversation_id,
+                            canonical.display(),
+                            e
+                        );
+                    } else {
+                        log::info!(
+                            "[agenda-dispatch] authorized workspace conv={} root={}",
+                            conversation_id,
+                            canonical.display()
+                        );
+                    }
+                } else {
+                    log::warn!(
+                        "[agenda-dispatch] RuntimeRepositoryFacade not in app state, \
+                         agenda item workspace_path will be ignored conv={} path={}",
+                        conversation_id,
+                        trimmed
+                    );
+                }
+            }
+        }
+
+        // 2. 预生成 RunId 并写 Running occurrence
+        let run_id = RunId::new(uuid::Uuid::new_v4().to_string());
+        let session_id = SessionId::new(conversation_id.clone());
+        let occ = Occurrence {
+            id: Occurrence::new_id(),
+            agenda_item_id: item.id.clone(),
+            fired_at: now,
+            planned_fire_at,
+            started_at: now,
+            finished_at: None,
+            primary_employee_id: item.organizer_employee_id.clone(),
+            conversation_id: conversation_id.clone(),
+            session_id: session_id.clone(),
+            run_id: run_id.clone(),
+            status: OccurrenceStatus::Running,
+            error_summary: None,
+            trigger_source: trigger_source.clone(),
+        };
+        store.append_occurrence(&occ)?;
+        let occurrence_id = occ.id.clone();
+
+        // 3. 推进 item next_fire_at + occurrence_count
+        if matches!(
+            trigger_source,
+            crate::runtime::agenda::TriggerSource::Scheduled
+        ) {
+            if let Err(e) = store.advance_after_fire(&item.id, now) {
+                let mut final_occ = occ.clone();
+                final_occ.finished_at = Some(chrono::Utc::now());
+                final_occ.status = OccurrenceStatus::Failed;
+                final_occ.error_summary = Some(e.to_string());
+                let _ = store.append_occurrence(&final_occ);
+                return Err(e);
+            }
+        }
+
+        // 4. 读 employee 拿 system_prompt_extra / default_skill_id 拼 prompt。
+        //    任何步骤失败都退化为兜底 prompt（fallback），不阻塞 agenda 触发；occurrence
+        //    已写盘为 Running，绝不能因为加载 employee 失败而留孤儿。
+        let employee = (|| -> Option<crate::runtime::employee::store::EmployeeRecord> {
+            use crate::runtime::employee::store::EmployeeStore;
+            use crate::storage::{CurrentUserStorage, UserScopedPathResolver};
+            let cus = self
+                .services
+                .app
+                .try_state::<Arc<CurrentUserStorage>>()?;
+            let paths = cus.require_paths().ok()?;
+            let store = EmployeeStore::new(paths.employees_dir());
+            match store.get(&item.organizer_employee_id) {
+                Ok(emp) => Some(emp),
+                Err(e) => {
+                    log::warn!(
+                        "[agenda-dispatch] failed to load employee {}: {e}",
+                        item.organizer_employee_id
+                    );
+                    None
+                }
+            }
+        })();
+
+        // 没有匹配的员工（比如老 agenda 写的是 persona id "default"）就用 agenda 自己的 prompt 兜底，
+        // 不阻塞触发。
+        let trigger_label = format!("[日程触发] {}\n计划触发时间：{planned_fire_at}", item.title);
+        let employees_dir = {
+            use crate::storage::{CurrentUserStorage, UserScopedPathResolver};
+            self.services
+                .app
+                .try_state::<Arc<CurrentUserStorage>>()
+                .and_then(|cus| cus.require_paths().ok())
+                .map(|paths| paths.employees_dir())
+        };
+        let prompt = if let Some(emp) = employee.as_ref() {
+            crate::runtime::employee::dispatch_prompt::build_dispatch_prompt(
+                emp,
+                &trigger_label,
+                None,
+                Some(&item.prompt),
+                employees_dir.as_deref(),
+            )
+        } else {
+            format!("{trigger_label}\n\n{}", item.prompt)
+        };
+
+        // persona_id_override = None：让 chat 层走 active persona 兜底（PR-6 彻底切掉 persona）
+        let result = self
+            .send_message_with_overrides(
+                conversation_id.clone(),
+                prompt,
+                Vec::new(),
+                None,
+                None,
+                None,
+                None,
+                Some(run_id.clone()),
+            )
+            .await;
+
+        // 5. 追加最终 occurrence
+        let mut final_occ = occ.clone();
+        final_occ.finished_at = Some(chrono::Utc::now());
+        match result {
+            Ok(_) => {
+                final_occ.status = OccurrenceStatus::Succeeded;
+            }
+            Err(e) => {
+                final_occ.status = OccurrenceStatus::Failed;
+                final_occ.error_summary = Some(e);
+            }
+        }
+        store.append_occurrence(&final_occ)?;
+
+        Ok(occurrence_id)
     }
 }
 
@@ -2902,6 +3209,99 @@ impl Drop for OverrideGuard {
 }
 
 #[async_trait]
+impl crate::runtime::pending::ChatTurnDispatcher for TauriChatCommandAdapter {
+    async fn dispatch(&self, mut request: ChatTurnRequest) -> anyhow::Result<()> {
+        // Spec §6.1: N drained pending items must land in messages.jsonl as N
+        // independent user messages. The last item rides on `request` (will be
+        // persisted by run_chat_request's standard flow). The first N-1 items
+        // we persist here, BEFORE handing the request to the turn driver, so
+        // the next history-load includes them.
+        if let Some(batch) = request.pending_batch.take() {
+            let conv_id = request.conversation_id.as_str().to_string();
+            let run_id = request.run_id.clone();
+            let n = batch.len();
+            if n > 1 {
+                for item in batch.iter().take(n - 1) {
+                    let text = match &item.sender_nick {
+                        Some(nick) if !nick.is_empty() => {
+                            format!("[{}]: {}", nick, item.text)
+                        }
+                        _ => item.text.clone(),
+                    };
+                    let attachments: Vec<crate::runtime::chat::chat_turn_driver::ChatAttachmentRef> =
+                        item.attachments
+                            .iter()
+                            .map(|a| crate::runtime::chat::chat_turn_driver::ChatAttachmentRef {
+                                id: a.id.clone(),
+                                file_name: std::path::Path::new(&a.file_path)
+                                    .file_name()
+                                    .and_then(|s| s.to_str())
+                                    .map(String::from)
+                                    .unwrap_or_else(|| a.file_path.clone()),
+                                file_path: a.file_path.clone(),
+                                kind: "file".to_string(),
+                                file_size: a.size_bytes.unwrap_or(0),
+                                file_type: a
+                                    .mime
+                                    .clone()
+                                    .unwrap_or_else(|| "application/octet-stream".into()),
+                                mime_type: a.mime.clone(),
+                            })
+                            .collect();
+                    let msg_id = format!("msg-{}", uuid::Uuid::new_v4());
+                    let content_value =
+                        crate::runtime::chat::chat_turn_driver::build_user_content_json(
+                            &text,
+                            &attachments,
+                        );
+                    let content_json = content_value.to_string();
+                    if let Err(e) =
+                        self.services
+                            .db()
+                            .insert_message(&msg_id, &conv_id, "user", &content_json)
+                    {
+                        log::warn!(
+                            "[pending-dispatch] failed to persist drained item {} as user msg: {:#}",
+                            item.id,
+                            e
+                        );
+                    } else {
+                        log::info!(
+                            "[pending-dispatch] persisted drained item {} as user msg id={}",
+                            item.id,
+                            msg_id
+                        );
+                        // Emit MessagePersisted so frontend chatStore appends a
+                        // user bubble for each drained item (mirrors what
+                        // chat_turn_driver does for the ride-on-request item).
+                        let event = crate::runtime::events::RuntimeEvent::new(
+                            request.conversation_id.clone(),
+                            run_id.clone(),
+                            crate::runtime::events::RuntimeEventKind::MessagePersisted {
+                                message_id: msg_id,
+                                role: "user".to_string(),
+                                content: content_value,
+                                client_message_id: None,
+                                tool_calls: None,
+                            },
+                        );
+                        if let Err(e) = self.runtime.event_bus().emit(event).await {
+                            log::warn!(
+                                "[pending-dispatch] emit MessagePersisted for drained item failed: {:#}",
+                                e
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        self.send_chat_request(request)
+            .await
+            .map_err(|e| anyhow::anyhow!("dispatch via TauriChatCommandAdapter failed: {e}"))
+    }
+}
+
+#[async_trait]
 impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatCommandAdapter {
     async fn dispatch_employee_run(
         &self,
@@ -2925,6 +3325,12 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
         )
         .await
         .map_err(anyhow::Error::msg)?;
+        emit_conversation_created(
+            &self.services.app,
+            &conversation_id,
+            "employee",
+            Some(&employee.name),
+        );
 
         // Compute the trigger label here (it depends on `trigger_kind` which is
         // a transport-layer enum — keeping the match local keeps the prompt
@@ -3202,4 +3608,31 @@ impl TauriChatCommandAdapter {
             }
         });
     }
+}
+
+/// 通知前端后端直接创建了新 conversation，让 sidebar reload 对话列表。
+///
+/// 所有后端绕开前端 `createNewConversation`（走 `conversation_service::create_conversation`）
+/// 的路径都要 emit 一次，否则 sidebar 不会感知：
+/// - agenda dispatcher（定时日程 / 立即运行）
+/// - employee dispatcher（数字员工派活）
+/// - schedule_runner（老 schedule 模块，PR-4 会删）
+/// - 前端 `create_conversation` Tauri 命令（走 TauriChatCommandAdapter）
+///
+/// `source` 是调用方标识（"agenda" / "employee" / "schedule" / "user"），
+/// 前端可以据此决定 UX 差异（比如是否自动切到该对话），但目前只做 reload。
+fn emit_conversation_created(
+    app: &tauri::AppHandle,
+    conversation_id: &str,
+    source: &str,
+    title: Option<&str>,
+) {
+    let _ = app.emit(
+        "conversation:created",
+        serde_json::json!({
+            "conversationId": conversation_id,
+            "source": source,
+            "title": title,
+        }),
+    );
 }

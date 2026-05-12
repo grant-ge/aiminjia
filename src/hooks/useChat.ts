@@ -223,7 +223,7 @@ export function useChat() {
   const sendUserMessage = useCallback(async (
     text: string,
     files?: PendingFileInfo[],
-    skill?: { id: string; label?: string } | null,
+    _skill?: { id: string; label?: string } | null,
   ): Promise<boolean> => {
     let store = useChatStore.getState()
     let conversationId = store.activeConversationId
@@ -238,22 +238,16 @@ export function useChat() {
       conversationId = store.activeConversationId
     }
 
-    // Block if THIS conversation is already busy
-    if (conversationId && store.busyConversations.has(conversationId)) {
-      useNotificationStore.getState().push({
-        level: 'warning',
-        title: i18n.t('errors.pleaseWait'),
-        message: i18n.t('errors.chatBusy'),
-        actions: [],
-        dismissible: true,
-        autoHide: 5,
-        context: 'toast',
-      })
-      return false
-    }
-
-    // Block if max concurrent conversations reached
-    if (store.busyConversations.size >= MAX_CONCURRENT_AGENTS) {
+    // Note: when THIS conversation is already busy, we used to block here with
+    // a "请稍候" toast. Now the backend PendingQueueManager buffers the
+    // message and merges it into the next turn after debounce, so we let it
+    // through. The UI surfaces the pending state via PendingChips above the
+    // composer.
+    //
+    // Still block if the GLOBAL max concurrent conversations cap is hit, since
+    // the queue is per-session and other sessions are already saturated.
+    if (store.busyConversations.size >= MAX_CONCURRENT_AGENTS
+        && !(conversationId && store.busyConversations.has(conversationId))) {
       useNotificationStore.getState().push({
         level: 'warning',
         title: i18n.t('errors.pleaseWait'),
@@ -322,21 +316,22 @@ export function useChat() {
     }
 
     store = useChatStore.getState()
-    store.addMessage(userMessage)
-    store.setConversationStreaming(conversationId, true)
-    store.addBusyConversation(conversationId)
+    // Will the backend queue this message instead of sending it directly?
+    // If THIS conversation is currently busy (a turn is in flight), the
+    // backend's PendingQueueManager will return Queued and the message will
+    // only land in messages.jsonl + UI when drain dispatches the merged turn.
+    // Skipping optimistic addMessage here prevents the user from seeing the
+    // queued message duplicated as both a chat bubble AND a pending chip.
+    const willBeQueued = store.busyConversations.has(conversationId)
+    if (!willBeQueued) {
+      store.addMessage(userMessage)
+      store.setConversationStreaming(conversationId, true)
+      store.addBusyConversation(conversationId)
+    }
 
     try {
-      console.log('[useChat] Calling sendMessage IPC, attachments:', files, 'skill:', skill?.id ?? null)
-      await sendMessage(
-        conversationId,
-        text,
-        files,
-        null,
-        messageId,
-        skill?.id ?? null,
-        skill?.label ?? null,
-      )
+      console.log('[useChat] Calling sendMessage IPC, attachments:', files, 'willBeQueued:', willBeQueued)
+      await sendMessage(conversationId, text, files, null, messageId)
       console.log('[useChat] sendMessage IPC returned OK')
       recordDiagnostic({
         event: 'chat.submit.completed',
@@ -349,9 +344,11 @@ export function useChat() {
       console.error('[useChat] sendMessage IPC failed:', err)
       recordDiagnosticError('chat.submit.failed', err, { conversationId, clientMessageId: messageId })
       const s = useChatStore.getState()
-      s.removeMessage(messageId)
-      s.clearConversationStreamState(conversationId)
-      s.removeBusyConversation(conversationId)
+      if (!willBeQueued) {
+        s.removeMessage(messageId)
+        s.clearConversationStreamState(conversationId)
+        s.removeBusyConversation(conversationId)
+      }
       // Show error toast so user knows the message failed
       useNotificationStore.getState().push({
         level: 'error',

@@ -85,12 +85,18 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install
 
-      - name: Setup Playwright runtime
-        shell: powershell
-        run: .\scripts\setup-playwright.ps1
+      - name: Cache dws CLI
+        id: dws-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            src-tauri/resources/dws
+            src-tauri/resources/dws.exe
+          key: dws-cli-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/setup-dws.sh', 'scripts/setup-dws.ps1') }}
 
-      - name: Setup dws CLI
-        shell: powershell
+      - name: Setup dws CLI (Windows)
+        if: steps.dws-cache.outputs.cache-hit != 'true'
+        shell: pwsh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: .\scripts\setup-dws.ps1

@@ -39,7 +39,6 @@ fn build_test_plugin_ctx(
         bocha_api_key: None,
         app_handle: None,
         auth_manager: None,
-        connector_engine: None,
         dingtalk_bridge: None,
         use_cloud: false,
         model: String::new(),
@@ -64,6 +63,7 @@ fn build_test_plugin_ctx(
             PathBuf::from("/tmp/renlijia-managed-python/site-packages"),
         ))),
         permission_ctx: None,
+        current_persona_id: None,
     }
 }
 

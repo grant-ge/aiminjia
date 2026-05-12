@@ -18,6 +18,13 @@ export type { DiagnosticLevel, FrontendDiagnosticPayload } from './tauriDiagnost
 export { recordFrontendDiagnostic } from './tauriDiagnostics'
 
 import type { Message, SubAgentTranscriptEntry } from '@/types/message'
+import type {
+  PendingItem,
+  PendingSnapshotPayload,
+  PendingQueuedPayload,
+  PendingDrainedPayload,
+  PendingRemovedPayload,
+} from '@/types/pending'
 import type { Settings } from '@/types/settings'
 
 // ---------------------------------------------------------------------------
@@ -47,8 +54,13 @@ export const TAURI_EVENTS = {
   INTERACTION_RESOLVED: 'interaction:resolved',
   TURN_COMPLETED: 'turn:completed',
   DIAGNOSTICS_EVENT: 'diagnostics:event',
+  CONVERSATION_CREATED: 'conversation:created',
   CHANNEL_PLATFORM_STATE: 'channel:platform-state',
   CHANNEL_MESSAGE: 'channel:message',
+  PENDING_SNAPSHOT: 'pending:snapshot',
+  PENDING_QUEUED: 'pending:queued',
+  PENDING_DRAINED: 'pending:drained',
+  PENDING_REMOVED: 'pending:removed',
 } as const
 
 // ---------------------------------------------------------------------------
@@ -266,8 +278,6 @@ export function sendMessage(
   attachments?: ChatAttachmentPayload[],
   agentName?: string | null,
   clientMessageId?: string,
-  selectedSkillId?: string | null,
-  selectedSkillLabel?: string | null,
 ): Promise<void> {
   return invoke<void>('send_message', {
     conversationId,
@@ -275,8 +285,6 @@ export function sendMessage(
     attachments: attachments ?? [],
     agentName: agentName ?? null,
     clientMessageId: clientMessageId ?? null,
-    selectedSkillId: selectedSkillId ?? null,
-    selectedSkillLabel: selectedSkillLabel ?? null,
   })
 }
 
@@ -380,39 +388,127 @@ export function getTasks(
   return invoke('get_tasks', { conversationId })
 }
 
-export type ScheduleStatus = 'enabled' | 'disabled'
+export type ItemStatus = 'active' | 'paused' | 'completed' | 'orphaned' | 'cancelled'
+export type OccurrenceStatus = 'running' | 'succeeded' | 'failed'
+export type Freq = 'daily' | 'weekly' | 'monthly' | 'yearly'
 
-export interface ScheduleRecord {
+export interface Participant {
+  employeeId: string
+  joinedAt: string
+}
+
+export interface RecurrenceRule {
+  freq: Freq
+  interval: number
+  endCondition:
+    | { kind: 'never' }
+    | { kind: 'count'; n: number }
+    | { kind: 'until'; at: string }
+  byDay?: string[]
+  byMonthDay?: number[]
+}
+
+export interface OverrideRef {
+  seriesItemId: string
+  originalAt: string
+}
+
+export interface AgendaItem {
   id: string
   title: string
   prompt: string
-  cron: string
-  humanSchedule: string
-  status: ScheduleStatus
-  nextRunAt?: string | null
+  organizerEmployeeId: string
+  participants: Participant[]
+  startAt: string
   timezone: string
+  rule: RecurrenceRule | null
+  skipDates: string[]
+  nextFireAt: string | null
+  occurrenceCount: number
+  status: ItemStatus
+  overrideOf: OverrideRef | null
+  workspacePath: string | null
   createdAt: string
   updatedAt: string
 }
 
-export interface CreateScheduleRequest {
+export interface Occurrence {
+  id: string
+  agendaItemId: string
+  firedAt: string
+  plannedFireAt: string
+  startedAt: string
+  finishedAt: string | null
+  primaryEmployeeId: string
+  conversationId: string
+  sessionId: string
+  runId: string
+  status: OccurrenceStatus
+  errorSummary: string | null
+  triggerSource: 'scheduled' | 'manual_run_now'
+}
+
+export interface ItemFilter {
+  statusIn?: ItemStatus[]
+  employeeId?: string
+  search?: string
+}
+
+export interface CreateAgendaItemRequest {
   title: string
   prompt: string
-  cron: string
+  organizerEmployeeId: string
+  startAt: string
   timezone?: string
-  enabled?: boolean
+  rule?: RecurrenceRule | null
+  workspacePath?: string | null
 }
 
-export function listSchedules(): Promise<ScheduleRecord[]> {
-  return invoke<ScheduleRecord[]>('list_schedules')
+export interface UpdateAgendaItemRequest {
+  title?: string
+  prompt?: string
+  startAt?: string
+  timezone?: string
+  rule?: RecurrenceRule | null
+  status?: ItemStatus
+  workspacePath?: string | null
 }
 
-export function createSchedule(request: CreateScheduleRequest): Promise<ScheduleRecord> {
-  return invoke<ScheduleRecord>('create_schedule', { request })
+export function listAgendaItems(filter?: ItemFilter): Promise<AgendaItem[]> {
+  return invoke<AgendaItem[]>('list_agenda_items', { filter })
 }
-
-export function deleteSchedule(id: string): Promise<boolean> {
-  return invoke<boolean>('delete_schedule', { id })
+export function getAgendaItem(id: string): Promise<AgendaItem> {
+  return invoke<AgendaItem>('get_agenda_item', { id })
+}
+export function createAgendaItem(request: CreateAgendaItemRequest): Promise<AgendaItem> {
+  return invoke<AgendaItem>('create_agenda_item', { request })
+}
+export function updateAgendaItem(
+  id: string,
+  request: UpdateAgendaItemRequest,
+): Promise<AgendaItem> {
+  return invoke<AgendaItem>('update_agenda_item', { id, request })
+}
+export function deleteAgendaItem(id: string): Promise<boolean> {
+  return invoke<boolean>('delete_agenda_item', { id })
+}
+export function cancelAgendaItem(id: string): Promise<AgendaItem> {
+  return invoke<AgendaItem>('cancel_agenda_item', { id })
+}
+export function restoreAgendaItem(id: string): Promise<AgendaItem> {
+  return invoke<AgendaItem>('restore_agenda_item', { id })
+}
+export function runAgendaItemNow(id: string): Promise<string> {
+  return invoke<string>('run_agenda_item_now', { id })
+}
+export function listAgendaOccurrences(itemId: string, limit?: number): Promise<Occurrence[]> {
+  return invoke<Occurrence[]>('list_agenda_occurrences', { itemId, limit })
+}
+export function skipOccurrence(id: string, at: string): Promise<AgendaItem> {
+  return invoke<AgendaItem>('skip_occurrence', { id, at })
+}
+export function unskipOccurrence(id: string, at: string): Promise<AgendaItem> {
+  return invoke<AgendaItem>('unskip_occurrence', { id, at })
 }
 
 export function getSubagentTranscript(
@@ -1048,7 +1144,10 @@ export interface CloudModel {
   modelType: string
 }
 
-/** Persona summary for list API */
+/**
+ * Persona summary for list API
+ * @deprecated Persona 系统将在 PR-5 退役，由 Employee 替代。
+ */
 export interface PersonaSummary {
   id: string
   name: string
@@ -1059,7 +1158,10 @@ export interface PersonaSummary {
   builtin: boolean
 }
 
-/** Full persona definition */
+/**
+ * Full persona definition
+ * @deprecated Persona 系统将在 PR-5 退役，由 Employee 替代。
+ */
 export interface Persona {
   id: string
   version: number
@@ -1109,44 +1211,49 @@ export function cloudChangePassword(oldPassword: string, newPassword: string): P
 
 // ---------------------------------------------------------------------------
 // Persona Commands
+//
+// @deprecated Persona 系统已进入退役流程（2026-05-10 决定）。
+// 新方向是数字员工（Employee, `employee_*` commands）一统，PR-5 会把
+// `AgendaItem.organizer_persona_id` 迁到 `organizer_employee_id`。
+// 保留这些导出仅是为了 agenda runtime 切换前的兼容窗口；新代码不要再引用。
 // ---------------------------------------------------------------------------
 
-/** @deprecated 前端 Skill-First 改版后不再引用，仅为后端兼容保留。 */
+/** @deprecated Persona 系统将在 PR-5 退役，由 Employee 替代。 */
 export function listPersonas(): Promise<PersonaSummary[]> {
   return invoke<PersonaSummary[]>('list_personas')
 }
 
-/** @deprecated 前端 Skill-First 改版后不再引用，仅为后端兼容保留。 */
+/** @deprecated Persona 系统将在 PR-5 退役，由 Employee 替代。 */
 export function getPersona(id: string): Promise<Persona> {
   return invoke<Persona>('get_persona', { id })
 }
 
-/** @deprecated 前端 Skill-First 改版后不再引用，仅为后端兼容保留。 */
+/** @deprecated Persona 系统将在 PR-5 退役，由 Employee 替代。 */
 export function savePersona(persona: Persona): Promise<void> {
   return invoke<void>('save_persona', { persona })
 }
 
-/** @deprecated 前端 Skill-First 改版后不再引用，仅为后端兼容保留。 */
+/** @deprecated Persona 系统将在 PR-5 退役，由 Employee 替代。 */
 export function deletePersona(id: string): Promise<void> {
   return invoke<void>('delete_persona', { id })
 }
 
-/** @deprecated 前端 Skill-First 改版后不再引用，仅为后端兼容保留。 */
+/** @deprecated Persona 系统将在 PR-5 退役，由 Employee 替代。 */
 export function setActivePersona(id: string): Promise<void> {
   return invoke<void>('set_active_persona', { id })
 }
 
-/** @deprecated 前端 Skill-First 改版后不再引用，仅为后端兼容保留。 */
+/** @deprecated Persona 系统将在 PR-5 退役，由 Employee 替代。 */
 export function getActivePersona(): Promise<Persona> {
   return invoke<Persona>('get_active_persona')
 }
 
-/** Export a persona to JSON. */
+/** @deprecated Persona 系统将在 PR-5 退役，由 Employee 替代。 */
 export function exportPersonas(id: string): Promise<string> {
   return invoke<string>('export_personas', { id })
 }
 
-/** Import a persona from JSON. Returns the new persona ID. */
+/** @deprecated Persona 系统将在 PR-5 退役，由 Employee 替代。 */
 export function importPersonas(json: string): Promise<string> {
   return invoke<string>('import_personas', { json })
 }
@@ -1338,6 +1445,30 @@ export function onConversationTitleUpdated(
   return listen<{ conversationId: string; title: string }>(TAURI_EVENTS.CONVERSATION_TITLE_UPDATED, createInstrumentedEventHandler(TAURI_EVENTS.CONVERSATION_TITLE_UPDATED, (event) => {
     handler(event.payload)
   }))
+}
+
+export interface ConversationCreatedPayload {
+  conversationId: string
+  source: 'user' | 'agenda' | 'employee' | 'schedule' | string
+  title: string | null
+}
+
+/**
+ * 监听后端创建新 conversation 事件。所有直接走后端 create_conversation
+ * 的路径（agenda / employee / schedule_runner / user IPC）都会 emit。
+ *
+ * sidebar 收到后应当 reload 对话列表。**不应当切路由或换 activeConversationId**：
+ * 用户可能正在其它对话里操作，sidebar 只是多出一行而已。
+ */
+export function onConversationCreated(
+  handler: (payload: ConversationCreatedPayload) => void,
+): Promise<() => void> {
+  return listen<ConversationCreatedPayload>(
+    TAURI_EVENTS.CONVERSATION_CREATED,
+    createInstrumentedEventHandler(TAURI_EVENTS.CONVERSATION_CREATED, (event) => {
+      handler(event.payload)
+    }),
+  )
 }
 
 /**
@@ -1991,4 +2122,48 @@ export function inboxMarkAllRead(employeeId: string): Promise<number> {
 
 export function inboxUnreadCount(employeeId?: string): Promise<number> {
   return invoke<number>('inbox_unread_count', { employeeId: employeeId ?? null })
+}
+
+// ---------------------------------------------------------------------------
+// Pending Queue IPC + Listeners
+// ---------------------------------------------------------------------------
+
+export async function pendingSnapshotForSession(sessionId: string): Promise<PendingItem[]> {
+  return invoke<PendingItem[]>('pending_snapshot_for_session', { sessionId })
+}
+
+export async function pendingRemoveItem(sessionId: string, itemId: string): Promise<boolean> {
+  return invoke<boolean>('pending_remove_item', { sessionId, itemId })
+}
+
+export function listenPendingSnapshot(
+  handler: (payload: PendingSnapshotPayload) => void,
+): Promise<() => void> {
+  return listen<PendingSnapshotPayload>(TAURI_EVENTS.PENDING_SNAPSHOT, (event) =>
+    handler(event.payload),
+  )
+}
+
+export function listenPendingQueued(
+  handler: (payload: PendingQueuedPayload) => void,
+): Promise<() => void> {
+  return listen<PendingQueuedPayload>(TAURI_EVENTS.PENDING_QUEUED, (event) =>
+    handler(event.payload),
+  )
+}
+
+export function listenPendingDrained(
+  handler: (payload: PendingDrainedPayload) => void,
+): Promise<() => void> {
+  return listen<PendingDrainedPayload>(TAURI_EVENTS.PENDING_DRAINED, (event) =>
+    handler(event.payload),
+  )
+}
+
+export function listenPendingRemoved(
+  handler: (payload: PendingRemovedPayload) => void,
+): Promise<() => void> {
+  return listen<PendingRemovedPayload>(TAURI_EVENTS.PENDING_REMOVED, (event) =>
+    handler(event.payload),
+  )
 }

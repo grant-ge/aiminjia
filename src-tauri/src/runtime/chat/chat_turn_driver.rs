@@ -57,8 +57,6 @@ pub struct ChatAttachmentRef {
 pub fn build_user_content_json(
     content: &str,
     attachments: &[ChatAttachmentRef],
-    selected_skill_id: Option<&str>,
-    selected_skill_label: Option<&str>,
 ) -> serde_json::Value {
     let mut value = serde_json::json!({ "text": content });
     if !attachments.is_empty() {
@@ -80,18 +78,6 @@ pub fn build_user_content_json(
                 .collect(),
         );
     }
-    if let Some(skill_id) = selected_skill_id.map(str::trim).filter(|id| !id.is_empty()) {
-        let command = format!("/{skill_id}");
-        value["commandText"] = serde_json::json!(format!("{} {}", command, content).trim());
-        value["skillCommand"] = serde_json::json!({
-            "id": skill_id,
-            "label": selected_skill_label
-                .map(str::trim)
-                .filter(|label| !label.is_empty())
-                .unwrap_or(skill_id),
-            "command": command,
-        });
-    }
     value
 }
 
@@ -110,14 +96,17 @@ pub struct ChatTurnRequest {
     pub run_id: RunId,
     pub hook_registry: Option<Arc<HookRegistry>>,
     pub client_message_id: Option<String>,
-    pub selected_skill_id: Option<String>,
-    pub selected_skill_label: Option<String>,
+    pub persona_id_override: Option<String>,
     /// Working directories derived from this turn's attachments at the transport
     /// layer (backend side only — frontend paths are untrusted).  These are merged
     /// into the per-turn `ToolPermissionContext.additional_working_dirs` with
     /// `RuleSource::Session` before tool execution.  Empty when there are no
     /// attachments or all attachment paths failed validation.
     pub session_attachment_dirs: Vec<std::path::PathBuf>,
+    /// When set, this turn originated from a drained PendingQueue batch.
+    /// The dispatcher could use this metadata to e.g. persist each item as an
+    /// independent user message before invoking the LLM. Default: None.
+    pub pending_batch: Option<Vec<crate::runtime::pending::PendingItem>>,
 }
 
 impl ChatTurnRequest {
@@ -135,10 +124,15 @@ impl ChatTurnRequest {
             run_id: RunId::new(uuid::Uuid::new_v4().to_string()),
             hook_registry: None,
             client_message_id: None,
-            selected_skill_id: None,
-            selected_skill_label: None,
+            persona_id_override: None,
             session_attachment_dirs: Vec::new(),
+            pending_batch: None,
         }
+    }
+
+    pub fn with_persona_id_override(mut self, persona_id: String) -> Self {
+        self.persona_id_override = Some(persona_id);
+        self
     }
 }
 
@@ -225,13 +219,13 @@ pub trait RuntimeLlmExecutor: Send + Sync {
     /// 构建 Turn 级的 system prompt。
     /// 由 executor 从 DB / settings / persona / product_name 合成。
     /// 默认 no-op（返回空字符串），生产 executor 必须 override。
-    async fn build_system_prompt(&self, _conversation_id: &str) -> Result<String, TurnError> {
+    async fn build_system_prompt(&self, _request: &ChatTurnRequest) -> Result<String, TurnError> {
         Ok(String::new())
     }
 
     async fn build_prompt_snapshot(
         &self,
-        _conversation_id: &str,
+        _request: &ChatTurnRequest,
     ) -> Result<Option<crate::runtime::chat::prompt::TurnPromptSnapshot>, TurnError> {
         Ok(None)
     }
@@ -1066,32 +1060,24 @@ impl RuntimeChatTurnDriver {
             .map_err(|e| anyhow::anyhow!("{}", e))?;
 
         let prompt_snapshot = match executor
-            .build_prompt_snapshot(request.conversation_id.as_str())
+            .build_prompt_snapshot(request)
             .await
             .map_err(|e| anyhow::anyhow!("{}", e))?
         {
             Some(snapshot) => snapshot,
             None => {
-                let system_prompt = executor
-                    .build_system_prompt(request.conversation_id.as_str())
-                    .await
-                    .map_err(|e| anyhow::anyhow!("{}", e))?;
+                let system_prompt = match overrides.system_prompt.clone() {
+                    Some(prompt) => prompt,
+                    None => executor
+                        .build_system_prompt(request)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("{}", e))?,
+                };
                 single_dynamic_prompt_snapshot("legacy_system_prompt", system_prompt)
             }
         };
-        let system_prompt = prompt_snapshot.compat_system_prompt();
-        let effective_system_prompt = overrides
-            .system_prompt
-            .clone()
-            .unwrap_or_else(|| system_prompt.clone());
-        let effective_prompt_snapshot = if overrides.system_prompt.is_some() {
-            single_dynamic_prompt_snapshot(
-                "override_system_prompt",
-                effective_system_prompt.clone(),
-            )
-        } else {
-            prompt_snapshot
-        };
+        let effective_system_prompt = prompt_snapshot.compat_system_prompt();
+        let effective_prompt_snapshot = prompt_snapshot;
 
         let config = TurnConfig {
             system_prompt: effective_system_prompt,
@@ -1311,8 +1297,6 @@ impl RuntimeChatTurnDriver {
         let pending_user_content = build_user_content_json(
             &request.content,
             &request.attachments,
-            request.selected_skill_id.as_deref(),
-            request.selected_skill_label.as_deref(),
         );
         self.event_bus
             .emit(RuntimeEvent::new(
@@ -2085,8 +2069,6 @@ mod tests {
         let request = ChatTurnRequest::new("conv-chat-mode", "hello", vec![]);
 
         assert_eq!(request.permission_mode, PermissionMode::Default);
-        assert_eq!(request.selected_skill_id, None);
-        assert_eq!(request.selected_skill_label, None);
     }
 
     #[test]
@@ -2102,8 +2084,6 @@ mod tests {
                 file_type: "csv".to_string(),
                 mime_type: Some("text/csv".to_string()),
             }],
-            None,
-            None,
         );
 
         assert_eq!(
@@ -2123,38 +2103,6 @@ mod tests {
                 .and_then(|value| value.get("filePath"))
                 .and_then(|value| value.as_str()),
             Some("/tmp/report.csv")
-        );
-    }
-
-    #[test]
-    fn build_user_content_json_includes_selected_skill_metadata() {
-        let content =
-            build_user_content_json("用这个技能吧", &[], Some("salary-query"), Some("薪资查询"));
-
-        assert_eq!(
-            content.get("text").and_then(|value| value.as_str()),
-            Some("用这个技能吧")
-        );
-        assert_eq!(
-            content
-                .get("skillCommand")
-                .and_then(|value| value.get("id"))
-                .and_then(|value| value.as_str()),
-            Some("salary-query")
-        );
-        assert_eq!(
-            content
-                .get("skillCommand")
-                .and_then(|value| value.get("command"))
-                .and_then(|value| value.as_str()),
-            Some("/salary-query")
-        );
-        assert_eq!(
-            content
-                .get("skillCommand")
-                .and_then(|value| value.get("label"))
-                .and_then(|value| value.as_str()),
-            Some("薪资查询")
         );
     }
 
@@ -2292,6 +2240,7 @@ mod tests {
         seen_system_prompts: Mutex<Vec<String>>,
         seen_dynamic_contexts: Mutex<Vec<String>>,
         skill_catalog: Option<String>,
+        override_system_prompt: Option<String>,
     }
 
     impl SnapshotPromptExecutor {
@@ -2301,6 +2250,7 @@ mod tests {
                 seen_system_prompts: Mutex::new(Vec::new()),
                 seen_dynamic_contexts: Mutex::new(Vec::new()),
                 skill_catalog: None,
+                override_system_prompt: None,
             }
         }
 
@@ -2310,7 +2260,13 @@ mod tests {
                 seen_system_prompts: Mutex::new(Vec::new()),
                 seen_dynamic_contexts: Mutex::new(Vec::new()),
                 skill_catalog: Some(skill_catalog.into()),
+                override_system_prompt: None,
             }
+        }
+
+        fn with_override_system_prompt(mut self, system_prompt: impl Into<String>) -> Self {
+            self.override_system_prompt = Some(system_prompt.into());
+            self
         }
     }
 
@@ -2363,7 +2319,7 @@ mod tests {
 
         async fn build_prompt_snapshot(
             &self,
-            _conversation_id: &str,
+            _request: &ChatTurnRequest,
         ) -> Result<Option<crate::runtime::chat::prompt::TurnPromptSnapshot>, TurnError> {
             Ok(Some(crate::runtime::chat::prompt::TurnPromptSnapshot::new(
                 crate::runtime::chat::prompt::PromptAssembly::new(vec![
@@ -2380,7 +2336,7 @@ mod tests {
             )))
         }
 
-        async fn build_system_prompt(&self, _conversation_id: &str) -> Result<String, TurnError> {
+        async fn build_system_prompt(&self, _request: &ChatTurnRequest) -> Result<String, TurnError> {
             self.legacy_calls.fetch_add(1, Ordering::SeqCst);
             Ok("legacy prompt should not be used".to_string())
         }
@@ -2391,6 +2347,16 @@ mod tests {
 
         async fn get_skill_catalog(&self, _agent_id: Option<&str>) -> String {
             self.skill_catalog.clone().unwrap_or_default()
+        }
+
+        async fn load_turn_config_overrides(
+            &self,
+            _request: &ChatTurnRequest,
+        ) -> Result<TurnConfigOverrides, TurnError> {
+            Ok(TurnConfigOverrides {
+                system_prompt: self.override_system_prompt.clone(),
+                ..TurnConfigOverrides::default()
+            })
         }
 
         async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
@@ -2423,6 +2389,36 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn driver_keeps_prompt_snapshot_when_system_prompt_override_is_set() {
+        let executor = Arc::new(
+            SnapshotPromptExecutor::new().with_override_system_prompt("override prompt"),
+        );
+        let bus = RuntimeEventBus::new();
+        let driver =
+            RuntimeChatTurnDriver::with_llm_executor(QueryEngine::new(), bus, executor.clone());
+        let mut turn = TurnState::new(
+            IdentityMapping::from_legacy_conversation_id(
+                "conv-driver-snapshot-override".to_string(),
+            ),
+            RunId::new("run-driver-snapshot-override"),
+            "use snapshot".to_string(),
+        );
+        let request =
+            ChatTurnRequest::new("conv-driver-snapshot-override", "use snapshot", vec![]);
+
+        driver
+            .run_chat_turn(&mut turn, &request)
+            .await
+            .expect("driver should run with prompt snapshot");
+
+        let prompts = executor.seen_system_prompts.lock().unwrap().clone();
+        assert_eq!(
+            prompts,
+            vec!["snapshot static\n\nsnapshot dynamic".to_string()]
+        );
+    }
+
+    #[tokio::test]
     async fn driver_injects_skill_catalog_into_dynamic_context() {
         let executor = Arc::new(SnapshotPromptExecutor::with_skill_catalog(
             "## 可用专项技能\n- `biz-writing` — 商务写作",
@@ -2446,5 +2442,18 @@ mod tests {
         assert_eq!(dynamic_contexts.len(), 1);
         assert!(dynamic_contexts[0].contains("可用专项技能"));
         assert!(dynamic_contexts[0].contains("biz-writing"));
+    }
+
+    #[test]
+    fn chat_turn_request_default_has_no_persona_override() {
+        let req = ChatTurnRequest::new("conv-1".to_string(), "hello".to_string(), vec![]);
+        assert!(req.persona_id_override.is_none());
+    }
+
+    #[test]
+    fn chat_turn_request_with_persona_override() {
+        let req = ChatTurnRequest::new("conv-1".to_string(), "hello".to_string(), vec![])
+            .with_persona_id_override("persona-x".into());
+        assert_eq!(req.persona_id_override.as_deref(), Some("persona-x"));
     }
 }
