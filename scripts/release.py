@@ -34,8 +34,9 @@ GH_REPO = "grant-ge/aiminjia"
 IS_WINDOWS = platform.system() == "Windows"
 
 # Release stages (must complete in order)
-# Since v0.5.23: both macOS and Windows signing happen in CI
-# (self-hosted runners), so manual signing stages are removed.
+# Windows builds run on GitHub-hosted CI then sign locally.
+# macOS arm64 + x86_64 are built locally on the maintainer's Mac via
+# scripts/build-and-sign-macos.sh (build + sign + notarize + upload in one).
 STAGES = [
     "version_bumped",      # Step 0: version synced and committed
     "beta_tagged",         # Step 1: beta tag pushed, CI builds + signs both platforms
@@ -276,11 +277,17 @@ def step_1_beta(state):
                 state["stages_completed"].remove(s)
         save_state(state)
         complete_stage(state, "beta_tagged")
-        print(green(f"\n  ✓ Beta tag pushed. CI is building + signing (macOS + Windows)."))
+        print(green(f"\n  ✓ Beta tag pushed. CI is building Windows (unsigned artifact)."))
         print(f"\n  Monitor: https://github.com/{GH_REPO}/actions")
-        print(f"\n  {yellow('Next action:')}")
-        print(f"  After CI completes, test the beta build:")
-        print(f"    python scripts/release.py test-passed")
+        print(f"\n  {yellow('Next actions (do BOTH):')}")
+        print(f"  1. macOS — build + sign + upload locally (serial arm64 → x86_64):")
+        print(f"       bash scripts/build-and-sign-macos.sh {beta_version} beta")
+        print(f"  2. Windows — after CI finishes, download + sign + upload:")
+        print(f"       gh run download <run-id> -n windows-unsigned -D build/")
+        print(f"       # sign with SimpleSign, then:")
+        print(f"       .\\scripts\\sign-and-upload-windows.ps1 -Version {beta_version} -Type beta")
+        print(f"  3. Then test:")
+        print(f"       python scripts/release.py test-passed")
 
 
 
@@ -348,11 +355,17 @@ def step_3_release(state):
     state["version"] = base
     save_state(state)
     complete_stage(state, "release_tagged")
-    print(green(f"\n  ✓ Release tag pushed. CI is building + signing (macOS + Windows)."))
+    print(green(f"\n  ✓ Release tag pushed. CI is building Windows (unsigned artifact)."))
     print(f"\n  Monitor: https://github.com/{GH_REPO}/actions")
-    print(f"\n  {yellow('Next action:')}")
-    print(f"  After CI completes, finalize the release:")
-    print(f"    python scripts/release.py finalize")
+    print(f"\n  {yellow('Next actions (do BOTH):')}")
+    print(f"  1. macOS — build + sign + upload locally (serial arm64 → x86_64):")
+    print(f"       bash scripts/build-and-sign-macos.sh {base} release")
+    print(f"  2. Windows — after CI finishes, download + sign + upload:")
+    print(f"       gh run download <run-id> -n windows-unsigned -D build/")
+    print(f"       # sign with SimpleSign, then:")
+    print(f"       .\\scripts\\sign-and-upload-windows.ps1 -Version {base} -Type release")
+    print(f"  3. Then finalize:")
+    print(f"       python scripts/release.py finalize")
 
 
 
@@ -403,9 +416,9 @@ def show_status(state):
 
     stage_labels = {
         "version_bumped": "Version bumped & pushed",
-        "beta_tagged": "Beta tag pushed (CI building + signing)",
+        "beta_tagged": "Beta tag pushed (Windows CI building; macOS built locally)",
         "beta_tested": "Beta testing passed",
-        "release_tagged": "Release tag pushed (CI building + signing)",
+        "release_tagged": "Release tag pushed (Windows CI building; macOS built locally)",
         "finalized": "Finalized (auto-update live)",
     }
 
@@ -499,32 +512,46 @@ def show_setup_guide():
        OSS_ACCESS_KEY_SECRET=<from team admin>
 """)
 
-    print(bold("  === Self-Hosted Runners ==="))
+    print(bold("  === macOS signing machine (this Mac) ==="))
     print("""
-    Both macOS and Windows builds run on self-hosted GitHub Actions
-    runners. Signing happens automatically in CI.
+    macOS arm64 + x86_64 are built locally — no self-hosted runner.
 
-    4. Register self-hosted runners:
-       GitHub → grant-ge/aiminjia → Settings → Actions → Runners
-       - macOS:   labels [macOS, ARM64]
-       - Windows: labels [Windows, X64]
+    4. Apple Developer ID Application certificate in login keychain
+       Verify: security find-identity -v -p codesigning
 
-    5. macOS runner: Apple Developer ID cert in login keychain
-       Set GitHub Secrets: MACOS_KEYCHAIN_PASSWORD, APPLE_ID,
-       APPLE_PASSWORD (app-specific), APPLE_TEAM_ID
+    5. Environment variables for notarization + Tauri updater:
+       APPLE_ID=<apple id email>
+       APPLE_PASSWORD=<app-specific password>
+       APPLE_TEAM_ID=<10-char team id>
+       TAURI_SIGNING_PRIVATE_KEY=<contents of ~/.tauri/aijia.key>
+       TAURI_SIGNING_PRIVATE_KEY_PASSWORD=<key password>
 
-    6. Windows runner: Authenticode cert in local cert store
-       Set GitHub Secret: WINDOWS_CERT_THUMBPRINT
-       (or system env var SIGN_CERT_THUMBPRINT)
+    6. Run:
+       bash scripts/build-and-sign-macos.sh <version> <beta|release>
+""")
+
+    print(bold("  === Windows signing machine ==="))
+    print("""
+    Windows builds run on GitHub-hosted runner, signing is local.
+
+    7. SimpleSign tool + EV hardware token for Authenticode signing
+    8. Run:
+       gh run download <run-id> -n windows-unsigned -D build/
+       # sign .exe with SimpleSign
+       .\\scripts\\sign-and-upload-windows.ps1 -Version <ver> -Type <beta|release>
 """)
 
     print(bold("  === Workflow Overview ==="))
     print("""
-    python scripts/release.py start       # bump version
-    python scripts/release.py beta        # push beta tag → CI builds + signs
-    python scripts/release.py test-passed # confirm beta works
-    python scripts/release.py release     # push release tag → CI builds + signs
-    python scripts/release.py finalize    # generate update.json → auto-update live
+    python scripts/release.py start              # bump version
+    python scripts/release.py beta               # push beta tag (Windows CI; mac local)
+    bash scripts/build-and-sign-macos.sh X.Y.Z-beta.N beta    # mac arm64 + x86_64
+    # download windows-unsigned artifact, sign, upload via sign-and-upload-windows.ps1
+    python scripts/release.py test-passed        # confirm beta works
+    python scripts/release.py release            # push release tag
+    bash scripts/build-and-sign-macos.sh X.Y.Z release
+    # sign windows release
+    python scripts/release.py finalize           # generate update.json → auto-update live
 """)
 
 
@@ -540,9 +567,9 @@ def show_menu(state):
 
     print("  Commands:")
     print(f"    {cyan('start')}          Start new release (bump version)")
-    print(f"    {cyan('beta')}           Create beta build (CI auto-signs macOS+Windows)")
+    print(f"    {cyan('beta')}           Push beta tag (Windows CI; build mac locally via build-and-sign-macos.sh)")
     print(f"    {cyan('test-passed')}    Confirm beta testing passed")
-    print(f"    {cyan('release')}        Create release build (CI auto-signs macOS+Windows)")
+    print(f"    {cyan('release')}        Push release tag (Windows CI; build mac locally via build-and-sign-macos.sh)")
     print(f"    {cyan('finalize')}       Generate update.json (go live)")
     print(f"    {cyan('status')}         Show current state")
     print(f"    {cyan('setup')}          First-time setup guide + environment check")

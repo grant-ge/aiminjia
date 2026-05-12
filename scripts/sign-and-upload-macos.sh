@@ -1,10 +1,13 @@
 #!/bin/bash
 # macOS post-build: codesign, notarize, staple, Tauri updater sig, upload to OSS.
 #
-# Workflow:
-#   1. CI builds unsigned artifacts on GitHub-hosted runner
-#   2. Download artifacts: gh run download <run-id> -n macos-arm64-unsigned -D build/
-#   3. Run this script
+# Workflow A (local build):
+#   1. bash scripts/build-and-sign-macos.sh <version> <beta|release>
+#      → builds + calls this script internally for each arch
+#
+# Workflow B (CI artifact download — deprecated for mac, kept for emergency):
+#   1. Download artifacts: gh run download <run-id> -n macos-arm64-unsigned -D build/
+#   2. Run this script
 #
 # Usage:
 #   bash scripts/sign-and-upload-macos.sh <version> <release|beta> [arch]
@@ -37,20 +40,35 @@ ARCH="${3:-aarch64}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
-# Determine artifact directory — look in build/ (downloaded) or src-tauri/target/
+# Determine artifact directory — prefer downloaded CI artifact, fall back to
+# local `pnpm tauri build` output under src-tauri/target/.
 if [ "$ARCH" = "x86_64" ]; then
     ARTIFACT_SUFFIX="x64"
-    # Try downloaded artifact first
-    BUILD_DIR="$PROJECT_DIR/build/macos-x64-unsigned"
-    if [ ! -d "$BUILD_DIR" ]; then
-        BUILD_DIR="$PROJECT_DIR/build"
-    fi
+    CANDIDATES=(
+        "$PROJECT_DIR/build/macos-x64-unsigned"
+        "$PROJECT_DIR/src-tauri/target/x86_64-apple-darwin/release/bundle"
+        "$PROJECT_DIR/build"
+    )
 else
     ARTIFACT_SUFFIX="aarch64"
-    BUILD_DIR="$PROJECT_DIR/build/macos-arm64-unsigned"
-    if [ ! -d "$BUILD_DIR" ]; then
-        BUILD_DIR="$PROJECT_DIR/build"
+    CANDIDATES=(
+        "$PROJECT_DIR/build/macos-arm64-unsigned"
+        "$PROJECT_DIR/src-tauri/target/release/bundle"
+        "$PROJECT_DIR/build"
+    )
+fi
+
+BUILD_DIR=""
+for dir in "${CANDIDATES[@]}"; do
+    if [ -d "$dir" ]; then
+        BUILD_DIR="$dir"
+        break
     fi
+done
+if [ -z "$BUILD_DIR" ]; then
+    echo "ERROR: No artifact directory found. Tried:"
+    for dir in "${CANDIDATES[@]}"; do echo "  - $dir"; done
+    exit 1
 fi
 
 DMG_NAME="AIjia_${VERSION}_${ARTIFACT_SUFFIX}.dmg"
@@ -60,7 +78,8 @@ DMG=$(find "$BUILD_DIR" -name "$DMG_NAME" -type f 2>/dev/null | head -1)
 if [ -z "$DMG" ]; then
     echo "ERROR: Cannot find $DMG_NAME in $BUILD_DIR"
     echo ""
-    echo "Download artifacts first:"
+    echo "Either build locally (bash scripts/build-and-sign-macos.sh) or"
+    echo "download CI artifacts:"
     echo "  gh run download <run-id> -n macos-${ARCH/aarch64/arm64}-unsigned -D build/"
     exit 1
 fi
