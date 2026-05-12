@@ -450,48 +450,41 @@ jobs:
           python3 scripts/ci-upload-macos-beta.py "$version" "x86_64"
 
   # ────────────────────────────────────────────────────────────
-  # Windows (self-hosted signing machine)
-  # Builds, signs with Authenticode (cert in local cert store),
-  # regenerates Tauri updater .sig, uploads signed exe to OSS.
+  # Windows (GitHub-hosted runner)
+  # Builds unsigned exe + Tauri updater .sig on GitHub infra.
+  # Signing is done manually on local machine after downloading
+  # the artifact. See scripts/sign-and-upload-windows.ps1.
   # ────────────────────────────────────────────────────────────
   build-windows:
-    runs-on: [self-hosted, Windows, X64]
+    runs-on: windows-latest
     timeout-minutes: 60
     steps:
-      - name: Configure environment
-        shell: powershell
-        run: |
-          git config --global core.longpaths true
-          echo "$env:USERPROFILE\.cargo\bin" >> $env:GITHUB_PATH
-
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          clean: true
 
       - name: Determine release type
         id: release-type
-        shell: powershell
+        shell: bash
         run: |
-          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
-            echo "type=${{ inputs.release_type }}" >> $env:GITHUB_OUTPUT
-          } elseif ("${{ github.ref }}" -like "refs/tags/beta-v*") {
-            echo "type=beta" >> $env:GITHUB_OUTPUT
-          } else {
-            echo "type=release" >> $env:GITHUB_OUTPUT
-          }
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "type=${{ inputs.release_type }}" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.ref }}" == refs/tags/beta-v* ]]; then
+            echo "type=beta" >> "$GITHUB_OUTPUT"
+          else
+            echo "type=release" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Extract version
         id: version
-        shell: powershell
+        shell: bash
         run: |
-          if ("${{ github.ref }}" -like "refs/tags/*") {
-            $version = "$env:GITHUB_REF_NAME" -replace '^v','' -replace '^beta-v',''
-          } else {
-            $raw = (Get-Content src-tauri/tauri.conf.json | Select-String '"version"' | Select-Object -First 1).ToString()
-            $version = ($raw -replace '.*"version"\s*:\s*"([^"]+)".*','$1').Trim()
-          }
-          echo "version=$version" >> $env:GITHUB_OUTPUT
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+            version="${version#beta-v}"
+          else
+            version=$(grep '"version"' src-tauri/tauri.conf.json | head -1 | sed 's/.*: *"\(.*\)".*/\1/')
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Version: $version"
 
       - name: Setup Node.js
@@ -517,56 +510,25 @@ jobs:
           restore-keys: pnpm-store-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Install Rust stable
-        shell: powershell
-        run: |
-          if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
-            Write-Host "Rust not found, installing..."
-            Invoke-WebRequest -Uri "https://win.rustup.rs/x86_64" -OutFile "$env:TEMP\rustup-init.exe" -UseBasicParsing
-            & "$env:TEMP\rustup-init.exe" -y --default-toolchain stable --no-modify-path
-            $env:Path += ";$env:USERPROFILE\.cargo\bin"
-            echo "$env:USERPROFILE\.cargo\bin" >> $env:GITHUB_PATH
-          } else {
-            Write-Host "Rust already installed: $(rustc --version)"
-            rustup update stable
-          }
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2.7.3
+        with:
+          workspaces: src-tauri
 
       - name: Install frontend dependencies
         run: pnpm install
 
-      - name: Cache Playwright runtime
-        id: playwright-cache
-        uses: actions/cache@v4
-        with:
-          path: src-tauri/playwright-runtime
-          key: playwright-runtime-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/setup-playwright.ps1', 'src-tauri/playwright-runtime/package.json') }}
-
       - name: Setup Playwright runtime
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
         shell: powershell
         run: .\scripts\setup-playwright.ps1
 
-      - name: Cache dws CLI
-        id: dws-cache
-        uses: actions/cache@v4
-        with:
-          path: src-tauri/resources/dws.exe
-          key: dws-cli-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/setup-dws.ps1') }}
-
       - name: Setup dws CLI
-        if: steps.dws-cache.outputs.cache-hit != 'true'
         shell: powershell
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: .\scripts\setup-dws.ps1
-
-      - name: Download changelog.json from production
-        shell: powershell
-        run: |
-          try {
-            Invoke-WebRequest -Uri "https://ai.renlijia.com/changelog.json" -OutFile "src-tauri/changelog.json" -UseBasicParsing
-          } catch {
-            '{"versions":[]}' | Set-Content src-tauri/changelog.json
-          }
 
       - name: Build Tauri app
         env:
@@ -574,11 +536,12 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: pnpm tauri build
 
-      # --- Windows code signing is done MANUALLY after CI build ---
+      # --- Windows code signing is done MANUALLY after downloading artifact ---
       # EV certificate uses SimpleSign app (hardware token), cannot be automated.
-      # After CI build completes, on the build machine:
-      #   1. Open SimpleSign, sign the exe
-      #   2. Run: .\scripts\sign-and-upload-windows.ps1 <version> <release|beta>
+      # After CI build completes:
+      #   1. Download windows-installers artifact from GitHub Actions
+      #   2. Sign the exe with SimpleSign
+      #   3. Run: .\scripts\sign-and-upload-windows.ps1 <version> <release|beta>
 
       - name: Upload unsigned artifacts
         if: always()
@@ -589,24 +552,6 @@ jobs:
             src-tauri/target/release/bundle/nsis/*.exe
             src-tauri/target/release/bundle/nsis/*.exe.sig
           retention-days: 30
-
-      - name: Print post-build instructions
-        shell: powershell
-        run: |
-          $version = "${{ steps.version.outputs.version }}"
-          $releaseType = "${{ steps.release-type.outputs.type }}"
-          $ExePath = "src-tauri\target\release\bundle\nsis\AIjia_${version}_x64-setup.exe"
-          Write-Host ""
-          Write-Host "============================================" -ForegroundColor Cyan
-          Write-Host " BUILD COMPLETE — Manual signing required"   -ForegroundColor Cyan
-          Write-Host "============================================" -ForegroundColor Cyan
-          Write-Host ""
-          Write-Host "Unsigned exe: $ExePath"
-          Write-Host ""
-          Write-Host "Next steps:"
-          Write-Host "  1. Sign the exe using your EV certificate signing tool"
-          Write-Host "  2. Run: .\scripts\sign-and-upload-windows.ps1 $version $releaseType"
-          Write-Host ""
 
   # ────────────────────────────────────────────────────────────
   # Summary
@@ -624,6 +569,6 @@ jobs:
           echo "- Code-signed + notarized (if Apple credentials configured)" >> $GITHUB_STEP_SUMMARY
           echo "- Uploaded to OSS" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Windows (self-hosted)" >> $GITHUB_STEP_SUMMARY
-          echo "- Build complete (unsigned)" >> $GITHUB_STEP_SUMMARY
-          echo "- **Manual signing required**: use SimpleSign app, then run sign-and-upload-windows.ps1" >> $GITHUB_STEP_SUMMARY
+          echo "### Windows (GitHub-hosted)" >> $GITHUB_STEP_SUMMARY
+          echo "- Build complete (unsigned), download artifact from Actions page" >> $GITHUB_STEP_SUMMARY
+          echo "- **Manual signing required**: SimpleSign → sign-and-upload-windows.ps1" >> $GITHUB_STEP_SUMMARY
