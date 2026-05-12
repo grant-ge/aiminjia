@@ -42,14 +42,22 @@ pub async fn build_visible_tool_defs(
     registry: &ToolRegistry,
     has_authorized_workspace: bool,
     schema_filter: ToolSchemaFilter,
+    ctx: &crate::runtime::tools::ToolDescriptionContext,
+    request_scoped_overrides: &std::collections::HashMap<String, crate::llm::streaming::ToolDefinition>,
 ) -> Vec<crate::llm::streaming::ToolDefinition> {
     let defs = if has_authorized_workspace {
-        registry.get_schemas_filtered(&ToolFilter::All).await
+        registry
+            .get_schemas_filtered(&ToolFilter::All, ctx, request_scoped_overrides)
+            .await
     } else {
         registry
-            .get_schemas_filtered(&ToolFilter::Exclude(
-                WORKSPACE_TOOL_NAMES.iter().map(|s| s.to_string()).collect(),
-            ))
+            .get_schemas_filtered(
+                &ToolFilter::Exclude(
+                    WORKSPACE_TOOL_NAMES.iter().map(|s| s.to_string()).collect(),
+                ),
+                ctx,
+                request_scoped_overrides,
+            )
             .await
     };
 
@@ -69,6 +77,159 @@ pub async fn build_visible_tool_defs(
             .filter(|d| allowed.contains(d.name.as_str()))
             .collect(),
         ToolSchemaFilter::None => defs,
+    }
+}
+
+/// Build a [`ToolDescriptionContext`] from app state.
+///
+/// Reads:
+/// - [`AgentRegistry`] — for `<available_subagent_types>` listing
+/// - [`CurrentUserStorage`] → `EmployeeStore` — for
+///   `<available_subagent_types>` listing (Active employees混排进单段，由 source=Employee 区分)
+///
+/// Returns an empty context when state is unavailable (logged out, very
+/// early boot) — tools then fall back to their static base description.
+pub async fn build_tool_description_context(
+    app: &AppHandle,
+) -> crate::runtime::tools::ToolDescriptionContext {
+    use crate::runtime::tools::{AgentDefSummary, ToolDescriptionContext};
+
+    let agents: Vec<AgentDefSummary> = app
+        .try_state::<Arc<crate::runtime::agent::registry::AgentRegistry>>()
+        .map(|s| s.inner().clone())
+        .map(|reg| {
+            reg.list()
+                .into_iter()
+                .map(|def| AgentDefSummary {
+                    name: def.name.clone(),
+                    description: first_sentence(&def.description, 120),
+                    source: def.source.clone(),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    ToolDescriptionContext {
+        agents,
+        mcp_servers: Vec::new(), // MCP listing is future work
+    }
+}
+
+/// Build per-turn description overrides for request-scoped tools.
+///
+/// Currently handles `Agent` only — its description must list available
+/// subagent types and hired employees, so we instantiate the tool here
+/// (chat layer has both AgentRegistry and EmployeeStore via app state)
+/// and call `definition(ctx).await`.  The resulting `ToolDefinition` is
+/// converted into the `llm::streaming::ToolDefinition` shape used by
+/// the LLM gateway.  Returns an empty map when required state is missing.
+pub async fn build_request_scoped_tool_overrides(
+    app: &AppHandle,
+    ctx: &crate::runtime::tools::ToolDescriptionContext,
+) -> std::collections::HashMap<String, crate::llm::streaming::ToolDefinition> {
+    use crate::runtime::tools::RuntimeTool;
+
+    let employee_count = ctx
+        .agents
+        .iter()
+        .filter(|a| matches!(a.source, crate::runtime::agent::definition::AgentSource::Employee))
+        .count();
+    log::info!(
+        "[tool-desc-trace] enter: ctx agents={} (employees within={})",
+        ctx.agents.len(),
+        employee_count
+    );
+    let mut out = std::collections::HashMap::new();
+
+    // Resolve dependencies needed to construct SpawnSubagentRuntimeTool.
+    // Note: the tool's launcher is irrelevant for description rendering
+    // (we never call execute() on this throwaway instance), but the
+    // constructor demands one — use a stub that errors if invoked.
+    let agent_registry = match app
+        .try_state::<Arc<crate::runtime::agent::registry::AgentRegistry>>()
+    {
+        Some(s) => s.inner().clone(),
+        None => return out,
+    };
+
+    let stub_launcher = Arc::new(StubLauncher);
+    let tool: Arc<dyn RuntimeTool> = Arc::new(
+        crate::runtime::tools::builtin::spawn_subagent::SpawnSubagentRuntimeTool::new(
+            stub_launcher,
+            agent_registry,
+        ),
+    );
+
+    let rendered = tool.definition(ctx).await;
+    let first_emp_id = ctx
+        .agents
+        .iter()
+        .find(|a| matches!(a.source, crate::runtime::agent::definition::AgentSource::Employee))
+        .map(|a| a.name.clone());
+    log::info!(
+        "[tool-desc-trace] Agent rendered: desc_len={} contains_emp_section={} contains_emp_id={}",
+        rendered.description.len(),
+        rendered.description.contains("<available_subagent_types>"),
+        first_emp_id
+            .as_ref()
+            .map(|id| rendered.description.contains(id))
+            .unwrap_or(false),
+    );
+    let parameters = crate::runtime::tools::TOOL_CATALOG
+        .get_entry("Agent")
+        .map(|e| e.json_schema.clone())
+        .unwrap_or_else(|| serde_json::json!({"type": "object"}));
+    out.insert(
+        "Agent".to_string(),
+        crate::llm::streaming::ToolDefinition {
+            name: rendered.id,
+            description: rendered.description,
+            parameters,
+        },
+    );
+
+    log::info!("[tool-desc-trace] returning {} overrides", out.len());
+    out
+}
+
+/// Stub launcher: never actually invoked (the description-rendering tool
+/// instance is thrown away after `definition()`).
+struct StubLauncher;
+
+#[async_trait::async_trait]
+impl crate::runtime::tools::builtin::spawn_subagent::SpawnSubagentLauncher for StubLauncher {
+    async fn launch_sync(
+        &self,
+        _request: crate::runtime::tools::builtin::spawn_subagent::SpawnSubagentRequest,
+        _context: crate::runtime::tools::builtin::spawn_subagent::SpawnSubagentContext,
+    ) -> anyhow::Result<String> {
+        anyhow::bail!("StubLauncher should never be invoked")
+    }
+
+    async fn launch_async(
+        &self,
+        _request: crate::runtime::tools::builtin::spawn_subagent::SpawnSubagentRequest,
+        _context: crate::runtime::tools::builtin::spawn_subagent::SpawnSubagentContext,
+    ) -> anyhow::Result<crate::runtime::tools::builtin::spawn_subagent::SpawnAsyncOutcome> {
+        anyhow::bail!("StubLauncher should never be invoked")
+    }
+}
+
+/// Trim a description to its first sentence (or `max_chars` whichever is
+/// shorter), without breaking at a UTF-8 char boundary.
+fn first_sentence(s: &str, max_chars: usize) -> String {
+    let s = s.trim();
+    if s.is_empty() {
+        return String::new();
+    }
+    let stop_chars = ['。', '\n', '!', '?', '!', '?'];
+    let head: String = s.chars().take(max_chars).collect();
+    if let Some(idx) = head.find(|c| stop_chars.contains(&c)) {
+        head[..idx].trim_end().to_string()
+    } else if let Some(idx) = head.find(". ") {
+        head[..idx].trim_end().to_string()
+    } else {
+        head
     }
 }
 
@@ -182,7 +343,7 @@ mod tests {
         let registry = ToolRegistry::new();
         register_builtin_tools(&registry).await;
 
-        let defs = build_visible_tool_defs(&registry, true, ToolSchemaFilter::None).await;
+        let defs = build_visible_tool_defs(&registry, true, ToolSchemaFilter::None, &crate::runtime::tools::ToolDescriptionContext::empty(), &std::collections::HashMap::new()).await;
         let names: Vec<&str> = defs.iter().map(|def| def.name.as_str()).collect();
 
         // Bash / PowerShell are mutually exclusive (registered per-platform):
@@ -206,7 +367,7 @@ mod tests {
         let registry = ToolRegistry::new();
         register_builtin_tools(&registry).await;
 
-        let defs = build_visible_tool_defs(&registry, false, ToolSchemaFilter::None).await;
+        let defs = build_visible_tool_defs(&registry, false, ToolSchemaFilter::None, &crate::runtime::tools::ToolDescriptionContext::empty(), &std::collections::HashMap::new()).await;
         let names: Vec<&str> = defs.iter().map(|def| def.name.as_str()).collect();
 
         for tool_name in WORKSPACE_TOOL_NAMES {
@@ -244,6 +405,8 @@ mod tests {
             &registry,
             false,
             ToolSchemaFilter::EmployeeWhitelist(allowed),
+            &crate::runtime::tools::ToolDescriptionContext::empty(),
+            &std::collections::HashMap::new(),
         )
         .await;
         let names: Vec<&str> = defs.iter().map(|def| def.name.as_str()).collect();

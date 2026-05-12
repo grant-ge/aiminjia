@@ -1,14 +1,13 @@
-//! P1.3 integration tests for spawn_subagent Teammate dispatch.
+//! Integration tests for spawn_subagent Teammate dispatch.
 //!
-//! Tests the source-resolution and validation logic added in P1.3:
-//! - `subagent_type` and `employee_id` are mutually exclusive
+//! Tests the source-resolution and validation logic:
 //! - `team_name` requires an existing Team (TeamCreate must be called first)
 //! - duplicate `name` in same session is rejected by AgentNameRegistry
-//! - happy-path: Employee-sourced Teammate registers name + joins Team
+//! - happy-path: Employee-sourced Teammate (subagent_type=emp-…) registers name + joins Team
 //!
-//! Three of the four tests are `#[ignore]`'d because the Teammate idle-loop
-//! body is stubbed (returns ExecutionFailed) until P1.6 fills it in.
-//! Remove the `#[ignore]` attributes when P1.6 lands.
+//! After the协议合并 (2026-05-12)：spawn_subagent 只有单一 `subagent_type`
+//! 字段；emp-id 通过 `register_dynamic` 投影进 AgentRegistry，跟 builtin
+//! 共用同一查询入口。互斥参数 `employee_id` 已删除。
 
 use std::sync::Arc;
 
@@ -17,6 +16,7 @@ use async_trait::async_trait;
 use serde_json::json;
 use tempfile::TempDir;
 
+use app_lib::runtime::agent::employee_projection::project_employee_to_agent;
 use app_lib::runtime::agent::registry::AgentRegistry;
 use app_lib::runtime::agent::{AgentNameRegistry, Member, MemberRole, TeamRegistry};
 use app_lib::runtime::employee::store::{
@@ -57,17 +57,22 @@ impl SpawnSubagentLauncher for NopLauncher {
     }
 }
 
-// ─── Helper: build tool with employee store ───────────────────────────────────
+// ─── Helper: build tool with employee store seeded into registry ─────────────
 
 fn build_tool_with_employee_store(
     employee_store: Arc<EmployeeStore>,
 ) -> SpawnSubagentRuntimeTool {
     let registry = Arc::new(AgentRegistry::with_builtins());
-    SpawnSubagentRuntimeTool::new_with_employees(Arc::new(NopLauncher), registry, employee_store)
-}
-
-fn build_ctx(session_id: &str) -> ToolExecutionContext {
-    ToolExecutionContext::for_test(session_id, "run-1", "tc-1")
+    // Seed all Active employees as dynamic AgentDefinitions so spawn_subagent
+    // can resolve `subagent_type=emp-…` via the single registry query path.
+    if let Ok(records) = employee_store.list() {
+        for rec in records {
+            if matches!(rec.lifecycle, EmployeeLifecycle::Active) {
+                registry.register_dynamic(project_employee_to_agent(&rec));
+            }
+        }
+    }
+    SpawnSubagentRuntimeTool::new(Arc::new(NopLauncher), registry)
 }
 
 fn build_ctx_with_registries(
@@ -108,47 +113,7 @@ fn create_employee(store: &EmployeeStore) -> String {
     record.id
 }
 
-// ─── Test 1: mutual exclusion (NOT ignored — fires before any stub) ───────────
-
-#[tokio::test]
-async fn rejects_both_subagent_type_and_employee_id() {
-    let dir = TempDir::new().unwrap();
-    let employee_store = Arc::new(EmployeeStore::new(dir.path().to_path_buf()));
-    let tool = build_tool_with_employee_store(employee_store);
-
-    // We need team_registry and agent_names for the context since we'll hit
-    // the source check before any registry calls are made.  But because the
-    // mutual-exclusion check fires FIRST (before any registry access), it's
-    // safe to inject real registries here.
-    let team_registry = TeamRegistry::new();
-    let name_registry = AgentNameRegistry::new();
-    let ctx = build_ctx_with_registries("conv-mutex-1", team_registry, name_registry);
-
-    let err = tool
-        .execute(
-            json!({
-                "subagent_type": "explore",
-                "employee_id": "emp-abc",
-                "prompt": "run tasks",
-                "description": "mutex test"
-            }),
-            ctx,
-        )
-        .await
-        .unwrap_err();
-
-    match err {
-        ToolError::ExecutionFailed(msg) => {
-            assert!(
-                msg.contains("mutually exclusive"),
-                "error should say 'mutually exclusive', got: {msg}"
-            );
-        }
-        other => panic!("expected ExecutionFailed for mutex violation, got: {:?}", other),
-    }
-}
-
-// ─── Test 2: team_name with no existing Team → error ─────────────────────────
+// ─── Test 1: team_name with no existing Team → error ─────────────────────────
 
 #[tokio::test]
 async fn rejects_team_name_when_no_team_exists() {
@@ -165,7 +130,7 @@ async fn rejects_team_name_when_no_team_exists() {
     let err = tool
         .execute(
             json!({
-                "employee_id": emp_id,
+                "subagent_type": emp_id,
                 "team_name": "research-team",
                 "name": "researcher",
                 "prompt": "do research",
@@ -187,7 +152,7 @@ async fn rejects_team_name_when_no_team_exists() {
     }
 }
 
-// ─── Test 3: duplicate name in same session ───────────────────────────────────
+// ─── Test 2: duplicate name in same session ───────────────────────────────────
 
 #[tokio::test]
 async fn rejects_duplicate_name_in_same_session() {
@@ -222,7 +187,7 @@ async fn rejects_duplicate_name_in_same_session() {
     let _ = tool
         .execute(
             json!({
-                "employee_id": emp_id,
+                "subagent_type": emp_id,
                 "team_name": "research-team",
                 "name": "researcher",
                 "prompt": "do research",
@@ -241,7 +206,7 @@ async fn rejects_duplicate_name_in_same_session() {
     let err = tool
         .execute(
             json!({
-                "employee_id": emp_id,
+                "subagent_type": emp_id,
                 "team_name": "research-team",
                 "name": "researcher",
                 "prompt": "do research again",
@@ -263,10 +228,10 @@ async fn rejects_duplicate_name_in_same_session() {
     }
 }
 
-// ─── Test 4: happy path (Employee + Team + Name) ──────────────────────────────
+// ─── Test 3: happy path (subagent_type=emp-… + Team + Name) ───────────────────
 
 #[tokio::test]
-async fn happy_path_employee_id_creates_teammate_and_registers_name() {
+async fn happy_path_employee_subagent_type_creates_teammate_and_registers_name() {
     let dir = TempDir::new().unwrap();
     let employee_store = Arc::new(EmployeeStore::new(dir.path().to_path_buf()));
     let emp_id = create_employee(&employee_store);
@@ -304,7 +269,7 @@ async fn happy_path_employee_id_creates_teammate_and_registers_name() {
     let _ = tool
         .execute(
             json!({
-                "employee_id": emp_id,
+                "subagent_type": emp_id,
                 "team_name": "research-team",
                 "name": "researcher",
                 "prompt": "do research",

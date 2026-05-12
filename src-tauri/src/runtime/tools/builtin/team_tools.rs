@@ -41,7 +41,9 @@ pub struct TeamCreateRuntimeTool;
 
 #[async_trait]
 impl RuntimeTool for TeamCreateRuntimeTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str { "TeamCreate" }
+    
+    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
         TOOL_CATALOG.get("TeamCreate").unwrap_or_else(|| {
             ToolDefinition::new("TeamCreate", "Mark this session as a multi-agent Team.")
         })
@@ -147,7 +149,9 @@ pub struct TeamDeleteRuntimeTool;
 
 #[async_trait]
 impl RuntimeTool for TeamDeleteRuntimeTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str { "TeamDelete" }
+    
+    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
         TOOL_CATALOG.get("TeamDelete").unwrap_or_else(|| {
             ToolDefinition::new("TeamDelete", "Exit Team mode and dismiss all teammates.")
         })

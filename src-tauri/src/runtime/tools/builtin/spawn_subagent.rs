@@ -40,7 +40,6 @@ use crate::runtime::agent::worker_runtime::{
     run_worker, TeammateWorkerCtx, WorkerMode,
 };
 use crate::runtime::cancellation::CancellationToken;
-use crate::runtime::employee::store::EmployeeStore;
 use crate::runtime::ids::{AgentId, RunId, SessionId, ToolCallId};
 use crate::runtime::path_auth::ToolPermissionContext;
 use crate::runtime::tools::catalog::TOOL_CATALOG;
@@ -113,56 +112,115 @@ pub trait SpawnSubagentLauncher: Send + Sync {
     ) -> Result<SpawnAsyncOutcome>;
 }
 
-// ─── Source discrimination ────────────────────────────────────────────────────
-
-/// Discriminates the source of the spawned agent's definition.
-enum AgentSource {
-    /// Legacy path: look up agent definition by type name in AgentRegistry.
-    Registry(String),
-    /// New path (P1.3): load Employee profile by id from EmployeeStore.
-    Employee(String),
-}
-
 // ─── RuntimeTool implementation ───────────────────────────────────────────────
 
 pub struct SpawnSubagentRuntimeTool {
     launcher: Arc<dyn SpawnSubagentLauncher>,
     registry: Arc<AgentRegistry>,
-    /// Optional EmployeeStore injected at construction time.  Required when
-    /// the LLM calls Agent(employee_id=...).  `None` for legacy paths and tests
-    /// that only use subagent_type.
-    employee_store: Option<Arc<EmployeeStore>>,
 }
 
 impl SpawnSubagentRuntimeTool {
     pub fn new(launcher: Arc<dyn SpawnSubagentLauncher>, registry: Arc<AgentRegistry>) -> Self {
-        Self {
-            launcher,
-            registry,
-            employee_store: None,
+        Self { launcher, registry }
+    }
+}
+
+/// Render the dispatchable-agent catalog as a markdown chunk to append
+/// to the Agent tool's description. The output is bounded (~tens of
+/// lines) and strictly informational — no secrets / paths.
+///
+/// When both lists are empty the function returns an empty string so the
+/// caller can skip appending. Public + free-standing so unit tests can
+/// hit it directly without constructing a tool.
+///
+/// Aligns with claude-code-best `getPrompt(agentDefinitions, ...)` in
+/// `src/tools/AgentTool/prompt.ts` — that file builds the same kind of
+/// "Available agent types" listing which is then returned from
+/// `tool.prompt()` and fed verbatim as the Anthropic API `description`
+/// field (see `src/utils/api.ts::buildToolBlock`).
+pub fn render_dispatch_catalog(ctx: &crate::runtime::tools::ToolDescriptionContext) -> String {
+    use crate::runtime::agent::definition::AgentSource;
+    use std::fmt::Write as _;
+
+    let mut emp_lines: Vec<String> = Vec::new();
+    let mut other_lines: Vec<String> = Vec::new();
+    for a in &ctx.agents {
+        let line = format!("- `{}` — {}", a.name, a.description);
+        if matches!(a.source, AgentSource::Employee) {
+            emp_lines.push(line);
+        } else {
+            other_lines.push(line);
         }
     }
+    if emp_lines.is_empty() && other_lines.is_empty() {
+        return String::new();
+    }
 
-    /// Constructor for production paths that need Employee-sourced Teammates.
-    pub fn new_with_employees(
-        launcher: Arc<dyn SpawnSubagentLauncher>,
-        registry: Arc<AgentRegistry>,
-        employee_store: Arc<EmployeeStore>,
-    ) -> Self {
-        Self {
-            launcher,
-            registry,
-            employee_store: Some(employee_store),
-        }
+    let mut out = String::new();
+    out.push_str(
+        "**重要**：`subagent_type` 必须从下面清单中精确选择，禁止编造未列出的名字。\
+         有匹配的数字员工（`emp-...`）时请优先选择它们——它们带有专属人设和工具白名单。",
+    );
+    let _ = write!(out, "\n\n<available_subagent_types>\n");
+    for line in emp_lines.iter().chain(other_lines.iter()) {
+        let _ = writeln!(out, "{line}");
+    }
+    let _ = write!(out, "</available_subagent_types>");
+    out
+}
+
+/// 当 LLM 传入未知 `subagent_type` 时构造错误信息，把当前可选清单回灌给它。
+/// 对齐 claude-code-best `AgentTool.tsx:532-536` 的 `Available agents: ...` 模式。
+pub fn build_unknown_subagent_type_error(bad_name: &str, registry: &AgentRegistry) -> String {
+    let available: Vec<String> = registry.list().iter().map(|d| d.name.clone()).collect();
+    if available.is_empty() {
+        format!("unknown subagent_type '{}'; no agents configured", bad_name)
+    } else {
+        format!(
+            "unknown subagent_type '{}'. Available subagent_type values: {}",
+            bad_name,
+            available.join(", ")
+        )
     }
 }
 
 #[async_trait]
 impl RuntimeTool for SpawnSubagentRuntimeTool {
-    fn definition(&self) -> ToolDefinition {
-        TOOL_CATALOG
+    fn id(&self) -> &str { "Agent" }
+
+    async fn definition(&self, ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
+        let mut def = TOOL_CATALOG
             .get("Agent")
-            .unwrap_or_else(|| ToolDefinition::new("Agent", "Spawn sub-agent"))
+            .unwrap_or_else(|| ToolDefinition::new("Agent", "Spawn sub-agent"));
+        let dynamic = render_dispatch_catalog(ctx);
+
+        // Diagnostic event so we can verify the catalog actually rendered
+        // and reached the LLM. Payload is bounded (preview at 4KB).
+        let ws = crate::telemetry::diagnostics_workspace();
+        let preview: String = dynamic.chars().take(4096).collect();
+        record_diagnostic(
+            &ws,
+            DiagnosticEvent::new(
+                "tool.spawn_subagent.definition.rendered",
+                DiagnosticSource::Backend,
+            )
+            .payload(serde_json::json!({
+                "dynamic_len": dynamic.len(),
+                "ctx_agent_count": ctx.agents.len(),
+                "has_subagent_section": dynamic.contains("<available_subagent_types>"),
+                "agent_names": ctx.agents.iter().map(|a| a.name.clone()).collect::<Vec<_>>(),
+                "employee_count": ctx.agents.iter()
+                    .filter(|a| matches!(a.source, crate::runtime::agent::definition::AgentSource::Employee))
+                    .count(),
+                "preview": preview,
+            })),
+        );
+
+        if !dynamic.is_empty() {
+            def.description.push_str("\n\n");
+            def.description.push_str(&dynamic);
+        }
+        def
     }
 
     /// Parallel spawn_subagent calls are independent — safe to run concurrently.
@@ -187,37 +245,15 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
                 ToolError::ExecutionFailed("missing required field: description".into())
             })?;
 
-        // ── Parse optional source fields ───────────────────────────────────
+        // ── Parse the single dispatch source field ────────────────────────
         let subagent_type = input
             .get("subagent_type")
             .and_then(Value::as_str)
             .filter(|s| !s.is_empty())
-            .map(str::to_string);
-        let employee_id = input
-            .get("employee_id")
-            .and_then(Value::as_str)
-            .filter(|s| !s.is_empty())
-            .map(str::to_string);
-
-        // ── Source discrimination (mutually exclusive) ─────────────────────
-        // This check fires BEFORE any state mutation so a bad call never
-        // pollutes AgentNameRegistry or TeamRegistry.
-        let source = match (&subagent_type, &employee_id) {
-            (Some(_), Some(_)) => {
-                return Err(ToolError::ExecutionFailed(
-                    "subagent_type and employee_id are mutually exclusive; \
-                     use subagent_type for registry agents or employee_id for Employee-sourced Teammates"
-                        .into(),
-                ))
-            }
-            (None, None) => {
-                return Err(ToolError::ExecutionFailed(
-                    "either subagent_type or employee_id is required".into(),
-                ))
-            }
-            (Some(t), None) => AgentSource::Registry(t.clone()),
-            (None, Some(eid)) => AgentSource::Employee(eid.clone()),
-        };
+            .map(str::to_string)
+            .ok_or_else(|| {
+                ToolError::ExecutionFailed("missing required field: subagent_type".into())
+            })?;
 
         // ── Parse optional routing/dispatch fields ─────────────────────────
         let caller_model = input
@@ -283,64 +319,34 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
             ));
         }
 
-        // ── Resolve prompt / tool_whitelist / effective_model ─────────────
-        let (sys_prompt_extra, tool_whitelist, model_override) = match &source {
-            AgentSource::Registry(agent_type) => {
-                // Legacy path: resolve from AgentRegistry.
-                let definition = self.registry.get(agent_type).ok_or_else(|| {
-                    ToolError::ExecutionFailed(format!(
-                        "unknown subagent_type '{agent_type}'; \
-                         check ~/.renlijia/users/<scope>/agents/ or builtin agents"
-                    ))
-                })?;
-                let model = caller_model.clone().or_else(|| match &definition.model {
-                    AgentModel::Fixed(m) => Some(m.clone()),
-                    AgentModel::Inherit => None,
-                });
-                (None, Vec::<String>::new(), model)
+        // ── Resolve agent definition from registry (employees已在 boot 时投影进去) ──
+        let definition = self.registry.get(&subagent_type).ok_or_else(|| {
+            ToolError::ExecutionFailed(build_unknown_subagent_type_error(
+                &subagent_type,
+                &self.registry,
+            ))
+        })?;
+        let sys_prompt_extra = match &definition.system_prompt {
+            crate::runtime::agent::definition::AgentPrompt::Inline(s) if !s.is_empty() => {
+                Some(s.clone())
             }
-            AgentSource::Employee(eid) => {
-                // New path: load Employee profile from EmployeeStore.
-                let store = self.employee_store.as_ref().ok_or_else(|| {
-                    ToolError::ExecutionFailed(
-                        "EmployeeStore not configured; \
-                         use SpawnSubagentRuntimeTool::new_with_employees() in production"
-                            .into(),
-                    )
-                })?;
-                let employee = store.get_readonly(eid).ok_or_else(|| {
-                    ToolError::ExecutionFailed(format!("employee not found: {eid}"))
-                })?;
-                // EmployeeRecord has no model field; inherit from parent.
-                let model = caller_model.clone();
-                (
-                    employee.system_prompt_extra.clone(),
-                    employee.tool_whitelist.clone(),
-                    model,
-                )
-            }
+            _ => None,
         };
+        let tool_whitelist = definition.allowed_tools.clone();
+        let effective_model = caller_model.clone().or_else(|| match &definition.model {
+            AgentModel::Fixed(m) => Some(m.clone()),
+            AgentModel::Inherit => None,
+        });
 
-        // ── Effective model after three-tier resolution ────────────────────
-        // (already resolved per-source above; model_override holds the result)
-        let effective_model = model_override;
-
-        // ── Required-tool validation for Teammate dispatch ─────────────────
-        // A Teammate must have SendMessage / TaskList / TaskGet in its
-        // whitelist; legacy fire-and-forget subagents are exempt.
-        if team_handle.is_some() {
-            let missing = crate::runtime::agent::required_tools::missing_required(&tool_whitelist);
-            if !missing.is_empty() {
-                let who = match &source {
-                    AgentSource::Employee(eid) => format!("employee `{eid}`"),
-                    AgentSource::Registry(t) => format!("agent type `{t}`"),
-                };
-                return Err(ToolError::ExecutionFailed(format!(
-                    "{who} cannot be a teammate — missing required tools: {missing:?}. \
-                     Add these to its tool_whitelist (or fix the employee profile)."
-                )));
-            }
-        }
+        // ── Teammate dispatch: collaboration tools are injected at runtime ─
+        // `SendMessage / TaskList / TaskGet` are infrastructure that the
+        // runtime injects when a Teammate is spawned (see
+        // `runtime::agent::tool_whitelist::TEAMMATE_TOOLS`). Employee /
+        // agent definitions should NOT have to list these in their
+        // whitelist — that would be a leaky abstraction (business config
+        // owns runtime orchestration capabilities). Aligns with
+        // claude-code-best `IN_PROCESS_TEAMMATE_ALLOWED_TOOLS`
+        // (src/constants/tools.ts:77). No pre-spawn gate here anymore.
 
         // ── Name registration for Teammate dispatch ────────────────────────
         // Only Teammate paths (team_handle.is_some()) register in the name
@@ -375,12 +381,7 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
 
         // ── Build request ──────────────────────────────────────────────────
         let request = SpawnSubagentRequest {
-            subagent_type: match &source {
-                AgentSource::Registry(t) => t.clone(),
-                // Use a sentinel value for Employee-sourced agents; the launcher
-                // stub will reject this anyway until P1.6 fills in the idle loop.
-                AgentSource::Employee(eid) => format!("employee:{eid}"),
-            },
+            subagent_type: subagent_type.clone(),
             prompt: prompt.to_string(),
             description: description.to_string(),
             effective_model,
@@ -409,8 +410,11 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
             // already been applied above.  Now spawn the idle loop.
             let agent_id = teammate_agent_id.expect("teammate_agent_id must be set when team is Some");
             let agent_name_str = name.clone().unwrap_or_default();
-            let employee_id = if let AgentSource::Employee(ref eid) = source {
-                Some(eid.clone())
+            let employee_id = if matches!(
+                definition.source,
+                crate::runtime::agent::definition::AgentSource::Employee
+            ) {
+                Some(definition.name.clone())
             } else {
                 None
             };
@@ -503,6 +507,9 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
                 cancellation_registry: ctx.cancellation_registry.clone(),
                 conv_dir: ctx.conv_dir.clone(),
                 meta,
+                // Filled below via launcher.build_teammate_llm_engine().
+                // None means the idle loop falls back to stub mode (no LLM).
+                llm_engine: None,
             };
 
             let ws = crate::telemetry::diagnostics_workspace();
@@ -604,9 +611,173 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runtime::agent::definition::AgentSource;
+    use crate::runtime::tools::description_context::{AgentDefSummary, ToolDescriptionContext};
     use crate::runtime::tools::permission::PermissionMode;
     use serde_json::json;
     use std::sync::Mutex;
+
+    // ── render_dispatch_catalog ────────────────────────────────────────────
+
+    #[test]
+    fn render_catalog_empty_ctx_returns_empty() {
+        let ctx = ToolDescriptionContext::empty();
+        assert_eq!(render_dispatch_catalog(&ctx), "");
+    }
+
+    #[test]
+    fn render_catalog_lists_employees_with_id() {
+        // The bug we hit: LLM picked subagent_type=general-purpose because
+        // it never saw emp-* IDs. With a populated ctx the rendered chunk
+        // must contain both IDs verbatim so they reach Anthropic via
+        // tools[i].description.
+        let ctx = ToolDescriptionContext {
+            agents: vec![
+                AgentDefSummary {
+                    name: "emp-aaa-xiaoyan".into(),
+                    description: "小研（调研员，数字员工）".into(),
+                    source: AgentSource::Employee,
+                },
+                AgentDefSummary {
+                    name: "emp-bbb-xiaosuan".into(),
+                    description: "小算（数据分析师，数字员工）".into(),
+                    source: AgentSource::Employee,
+                },
+            ],
+            mcp_servers: vec![],
+        };
+        let out = render_dispatch_catalog(&ctx);
+        assert!(out.contains("emp-aaa-xiaoyan"), "missing emp id 1: {out}");
+        assert!(out.contains("emp-bbb-xiaosuan"), "missing emp id 2: {out}");
+        assert!(out.contains("小研"), "missing 小研 name");
+        assert!(out.contains("小算"), "missing 小算 name");
+        assert!(
+            out.contains("<available_subagent_types>"),
+            "missing subagent_types section header"
+        );
+        assert!(
+            !out.contains("<available_employee_ids>"),
+            "old employee section header should be gone"
+        );
+        assert!(
+            out.contains("禁止编造未列出的名字"),
+            "missing anti-hallucination guidance"
+        );
+    }
+
+    #[test]
+    fn render_catalog_lists_agents_with_summary() {
+        let ctx = ToolDescriptionContext {
+            agents: vec![
+                AgentDefSummary {
+                    name: "explore".into(),
+                    description: "Read-only investigation".into(),
+                    source: AgentSource::Builtin,
+                },
+                AgentDefSummary {
+                    name: "general-purpose".into(),
+                    description: "All tools available".into(),
+                    source: AgentSource::Builtin,
+                },
+            ],
+            mcp_servers: vec![],
+        };
+        let out = render_dispatch_catalog(&ctx);
+        assert!(out.contains("`explore`"));
+        assert!(out.contains("`general-purpose`"));
+        assert!(out.contains("<available_subagent_types>"));
+        assert!(!out.contains("<available_employee_ids>"));
+    }
+
+    #[test]
+    fn render_catalog_employees_appear_before_builtins() {
+        // Design choice: employees should come FIRST in the unified catalog
+        // so the LLM is prompted to consider them before falling back to
+        // builtins like general-purpose.
+        let ctx = ToolDescriptionContext {
+            agents: vec![
+                AgentDefSummary {
+                    name: "general-purpose".into(),
+                    description: "fallback".into(),
+                    source: AgentSource::Builtin,
+                },
+                AgentDefSummary {
+                    name: "emp-x".into(),
+                    description: "n（r，数字员工）".into(),
+                    source: AgentSource::Employee,
+                },
+            ],
+            mcp_servers: vec![],
+        };
+        let out = render_dispatch_catalog(&ctx);
+        let emp_idx = out.find("emp-x").expect("emp line missing");
+        let bi_idx = out.find("general-purpose").expect("builtin line missing");
+        assert!(
+            emp_idx < bi_idx,
+            "employee should be listed before builtin: {out}"
+        );
+    }
+
+    // ── definition() integration with ctx ──────────────────────────────────
+
+    #[tokio::test]
+    async fn definition_appends_dynamic_catalog_to_base() {
+        // The actual entry point used by `get_schemas_filtered`: when a
+        // populated ctx is passed, the description must end with the
+        // rendered catalog (base then \n\n then catalog).
+        let registry = Arc::new(crate::runtime::agent::registry::AgentRegistry::with_builtins());
+        let tool = SpawnSubagentRuntimeTool::new(
+            Arc::new(RecordingLauncher {
+                seen_requests: Arc::new(Mutex::new(Vec::new())),
+                async_seen: Arc::new(Mutex::new(Vec::new())),
+            }),
+            registry,
+        );
+        let ctx = ToolDescriptionContext {
+            agents: vec![AgentDefSummary {
+                name: "emp-test-001".into(),
+                description: "测试员（QA，数字员工）".into(),
+                source: AgentSource::Employee,
+            }],
+            mcp_servers: vec![],
+        };
+        let def = tool.definition(&ctx).await;
+        assert!(
+            def.description.contains("emp-test-001"),
+            "tool description must include emp id; got:\n{}",
+            def.description
+        );
+        // Static base description (from TOOL_CATALOG) is preserved.
+        assert!(
+            def.description.contains("启动一个子 Agent")
+                || def.description.contains("Spawn sub-agent"),
+            "static base description should be retained"
+        );
+    }
+
+    #[tokio::test]
+    async fn definition_with_empty_ctx_matches_static_catalog() {
+        // Backwards-compat: tools registered with empty ctx (e.g. boot
+        // path that builds TOOL_CATALOG) get the static description
+        // unchanged — no dynamic appendix.
+        let registry = Arc::new(crate::runtime::agent::registry::AgentRegistry::with_builtins());
+        let tool = SpawnSubagentRuntimeTool::new(
+            Arc::new(RecordingLauncher {
+                seen_requests: Arc::new(Mutex::new(Vec::new())),
+                async_seen: Arc::new(Mutex::new(Vec::new())),
+            }),
+            registry,
+        );
+        let def = tool.definition(&ToolDescriptionContext::empty()).await;
+        assert!(
+            !def.description.contains("<available_employee_ids>"),
+            "empty ctx must not produce employee section"
+        );
+        assert!(
+            !def.description.contains("<available_subagent_types>"),
+            "empty ctx must not produce subagent section"
+        );
+    }
 
     struct RecordingLauncher {
         seen_requests: Arc<Mutex<Vec<SpawnSubagentRequest>>>,
@@ -662,9 +833,8 @@ mod tests {
     #[test]
     fn definition_id_is_spawn_subagent() {
         let tool = build_tool_with_recorder(Arc::new(Mutex::new(Vec::new())));
-        // Definition returned even without catalog pre-init in unit tests.
-        let def = tool.definition();
-        assert_eq!(def.id, "Agent");
+        // id() is sync; no need to await definition().
+        assert_eq!(tool.id(), "Agent");
     }
 
     #[tokio::test]
@@ -732,9 +902,10 @@ mod tests {
             ToolError::ExecutionFailed(msg) => {
                 assert!(msg.contains("nonexistent_type_xyz"));
                 assert!(
-                    msg.contains("~/.renlijia")
-                        || msg.contains("agents/")
-                        || msg.contains("builtin")
+                    msg.contains("Available")
+                        || msg.contains("general-purpose")
+                        || msg.contains("explore"),
+                    "error should list available agents, got: {msg}"
                 );
             }
             other => panic!("expected ExecutionFailed, got: {:?}", other),
@@ -823,19 +994,25 @@ mod tests {
         );
     }
 
-    // ── P1.3: mutual exclusion test ──────────────────────────────────────────
+    // ── unknown subagent_type 错误回灌可选清单 ────────────────────────────────
 
     #[tokio::test]
-    async fn rejects_both_subagent_type_and_employee_id() {
-        let tool = build_tool_with_recorder(Arc::new(Mutex::new(Vec::new())));
-        let ctx = ToolExecutionContext::for_test("conv-mutex", "run-mutex", "tc-mutex");
+    async fn unknown_subagent_type_error_lists_registry_options() {
+        let registry = Arc::new(AgentRegistry::with_builtins());
+        let tool = SpawnSubagentRuntimeTool::new(
+            Arc::new(RecordingLauncher {
+                seen_requests: Arc::new(Mutex::new(Vec::new())),
+                async_seen: Arc::new(Mutex::new(Vec::new())),
+            }),
+            registry,
+        );
+        let ctx = ToolExecutionContext::for_test("conv-1", "run-1", "tc-1");
         let err = tool
             .execute(
                 json!({
-                    "subagent_type": "explore",
-                    "employee_id": "emp-123",
-                    "prompt": "do it",
-                    "description": "mutex test"
+                    "subagent_type": "nonexistent-xyz",
+                    "prompt": "x",
+                    "description": "y"
                 }),
                 ctx,
             )
@@ -843,12 +1020,13 @@ mod tests {
             .unwrap_err();
         match err {
             ToolError::ExecutionFailed(msg) => {
+                assert!(msg.contains("nonexistent-xyz"), "error: {msg}");
                 assert!(
-                    msg.contains("mutually exclusive"),
-                    "error should say 'mutually exclusive', got: {msg}"
+                    msg.contains("general-purpose") || msg.contains("explore"),
+                    "should list builtins: {msg}"
                 );
             }
-            other => panic!("expected ExecutionFailed, got: {:?}", other),
+            other => panic!("expected ExecutionFailed, got {:?}", other),
         }
     }
 }

@@ -1069,6 +1069,18 @@ impl RuntimeChatTurnDriver {
             .get_tool_defs()
             .await
             .map_err(|e| anyhow::anyhow!("{}", e))?;
+        {
+            let agent_has_emp = tool_defs.iter().find(|v| {
+                v.get("name").and_then(|n| n.as_str()) == Some("Agent")
+            }).and_then(|v| v.get("description").and_then(|d| d.as_str()))
+              .map(|d| d.contains("<available_subagent_types>"))
+              .unwrap_or(false);
+            log::info!(
+                "[tool-desc-trace] get_tool_defs returned: count={} agent_desc_has_emp_section={}",
+                tool_defs.len(),
+                agent_has_emp,
+            );
+        }
         let workspace_path = executor
             .load_workspace_path()
             .await
@@ -1098,10 +1110,32 @@ impl RuntimeChatTurnDriver {
         let effective_system_prompt = prompt_snapshot.compat_system_prompt();
         let effective_prompt_snapshot = prompt_snapshot;
 
+        {
+            let default_count = tool_defs.len();
+            let overrides_has = overrides.tool_defs.is_some();
+            log::info!(
+                "[tool-desc-trace] merge: overrides.tool_defs.is_some={} default_count={}",
+                overrides_has,
+                default_count,
+            );
+        }
+        let final_tool_defs = overrides.tool_defs.unwrap_or(tool_defs);
+        {
+            let agent_has_emp = final_tool_defs.iter().find(|v| {
+                v.get("name").and_then(|n| n.as_str()) == Some("Agent")
+            }).and_then(|v| v.get("description").and_then(|d| d.as_str()))
+              .map(|d| d.contains("<available_subagent_types>"))
+              .unwrap_or(false);
+            log::info!(
+                "[tool-desc-trace] final tool_defs: count={} agent_desc_has_emp_section={}",
+                final_tool_defs.len(),
+                agent_has_emp,
+            );
+        }
         let config = TurnConfig {
             system_prompt: effective_system_prompt,
             prompt_snapshot: Some(effective_prompt_snapshot),
-            tool_defs: overrides.tool_defs.unwrap_or(tool_defs),
+            tool_defs: final_tool_defs,
             allowed_tools: overrides.allowed_tools,
             max_iterations: overrides.max_iterations.unwrap_or(60),
             token_budget: overrides.token_budget.unwrap_or_else(|| {

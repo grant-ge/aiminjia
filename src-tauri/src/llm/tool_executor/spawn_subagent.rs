@@ -87,16 +87,19 @@ impl DefaultSpawnSubagentLauncher {
         crate::llm::sub_agent::SubAgentRuntimeDeps,
     )> {
         // Resolve agent definition from registry for system_prompt + tool lists.
-        let definition = self
-            .registry
-            .get(&request.subagent_type)
-            .ok_or_else(|| {
-                anyhow!(
-                    "unknown subagent_type '{}' in DefaultSpawnSubagentLauncher",
-                    request.subagent_type
-                )
-            })?
-            .clone();
+        let definition = self.registry.get(&request.subagent_type).ok_or_else(|| {
+            anyhow!(
+                "DefaultSpawnSubagentLauncher: subagent_type '{}' not in AgentRegistry. \
+                 Available: {}",
+                request.subagent_type,
+                self.registry
+                    .list()
+                    .iter()
+                    .map(|d| d.name.clone())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        })?;
 
         // Build system prompt string from definition.
         let mut system_prompt = match &definition.system_prompt {

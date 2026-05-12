@@ -1352,6 +1352,11 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             .lock()
             .ok()
             .and_then(|map| map.get(request.conversation_id.as_str()).cloned());
+        log::info!(
+            "[tool-desc-trace] entered load_turn_config_overrides: conv={} employee_overrides_is_some={}",
+            request.conversation_id,
+            employee_overrides.is_some()
+        );
 
         // 第一步：决定 schema 过滤策略
         let schema_filter = match &employee_overrides {
@@ -1384,12 +1389,70 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             &self.services.app,
             request.conversation_id.as_str(),
         );
+
+        // ── Build ToolDescriptionContext for this turn ──────────────────
+        // Tools whose description depends on session state (notably
+        // `Agent`, which must list dispatchable subagent types and hired
+        // employees) read from this.  Mirrors claude-code-best's
+        // `tool.prompt({ agents, tools, ... })` pipeline.
+        let tool_desc_ctx = chat_runtime_impl::build_tool_description_context(
+            &self.services.app,
+        )
+        .await;
+        let employee_count_in_ctx = tool_desc_ctx
+            .agents
+            .iter()
+            .filter(|a| {
+                matches!(
+                    a.source,
+                    crate::runtime::agent::definition::AgentSource::Employee
+                )
+            })
+            .count();
+        log::info!(
+            "[tool-desc-trace] built ctx: employees={} agents={}",
+            employee_count_in_ctx,
+            tool_desc_ctx.agents.len()
+        );
+
+        // ── Request-scoped tool description overrides ───────────────────
+        // `Agent` is request-scoped — no instance lives in the global
+        // runtime_tools map, so `get_schemas_filtered` falls back to
+        // TOOL_CATALOG (static).  Construct the tool here (we have
+        // AgentRegistry + EmployeeStore handles via app state) and
+        // render its description once so the emp-id catalog actually
+        // reaches the LLM.
+        let request_scoped_overrides =
+            chat_runtime_impl::build_request_scoped_tool_overrides(
+                &self.services.app,
+                &tool_desc_ctx,
+            )
+            .await;
+        {
+            let keys: Vec<&str> = request_scoped_overrides.keys().map(|k| k.as_str()).collect();
+            log::info!("[tool-desc-trace] built overrides: keys={:?}", keys);
+        }
+
         let visible_tool_defs = chat_runtime_impl::build_visible_tool_defs(
             self.services.tool_registry.as_ref(),
             authorized_workspace.is_some(),
             schema_filter,
+            &tool_desc_ctx,
+            &request_scoped_overrides,
         )
         .await;
+        {
+            let agent_has_emp = visible_tool_defs
+                .iter()
+                .find(|d| d.name == "Agent")
+                .map(|d| d.description.contains("<available_subagent_types>"))
+                .unwrap_or(false);
+            log::info!(
+                "[tool-desc-trace] built visible_tool_defs: count={} agent_desc_has_emp_section={}",
+                visible_tool_defs.len(),
+                agent_has_emp,
+            );
+        }
         let json_defs = visible_tool_defs
             .into_iter()
             .filter_map(|td| serde_json::to_value(&td).ok())
@@ -1527,6 +1590,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         // (returns Some(json_defs)), so the driver overrides this empty default.
         // This impl exists only to satisfy the trait — it should never be the value
         // actually used in a turn.
+        log::info!("[tool-desc-trace] entered get_tool_defs (fallback path — should be overridden by load_turn_config_overrides)");
         Ok(vec![])
     }
 
@@ -3050,13 +3114,11 @@ impl crate::runtime::agenda::AgendaRunDispatcher for TauriChatCommandAdapter {
         //    已写盘为 Running，绝不能因为加载 employee 失败而留孤儿。
         let employee = (|| -> Option<crate::runtime::employee::store::EmployeeRecord> {
             use crate::runtime::employee::store::EmployeeStore;
-            use crate::storage::{CurrentUserStorage, UserScopedPathResolver};
-            let cus = self
+            let store = self
                 .services
                 .app
-                .try_state::<Arc<CurrentUserStorage>>()?;
-            let paths = cus.require_paths().ok()?;
-            let store = EmployeeStore::new(paths.employees_dir());
+                .try_state::<Arc<EmployeeStore>>()
+                .map(|s| s.inner().clone())?;
             match store.get(&item.organizer_employee_id) {
                 Ok(emp) => Some(emp),
                 Err(e) => {
@@ -3226,10 +3288,21 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
         // record_run synchronously: last_run_at represents "last dispatched at"
         // for both on-demand and cron paths.
         {
-            let store = EmployeeStore::new(employees_dir.clone());
-            if let Err(e) = store.record_run(&employee.id, fire_at) {
+            let store = self
+                .services
+                .app
+                .try_state::<Arc<EmployeeStore>>()
+                .map(|s| s.inner().clone());
+            if let Some(store) = store {
+                if let Err(e) = store.record_run(&employee.id, fire_at) {
+                    log::warn!(
+                        "[dispatch_employee_run] record_run failed for {}: {e}",
+                        employee.id
+                    );
+                }
+            } else {
                 log::warn!(
-                    "[dispatch_employee_run] record_run failed for {}: {e}",
+                    "[dispatch_employee_run] EmployeeStore singleton missing; skipping record_run for {}",
                     employee.id
                 );
             }

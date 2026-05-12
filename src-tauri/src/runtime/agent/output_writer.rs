@@ -23,19 +23,71 @@ use serde::{Deserialize, Serialize};
 
 // ─── TranscriptLine ───────────────────────────────────────────────────────────
 
+/// Lightweight tool-call record for transcript serialization.
+///
+/// Mirrors `crate::llm::streaming::ToolCall` but with `arguments` typed as
+/// `serde_json::Value` for transport simplicity.  Stored on `TranscriptLine`
+/// for assistant rows so future transcript-replay can reconstruct
+/// Anthropic-compliant `tool_use` blocks.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TranscriptToolCall {
+    pub id: String,
+    pub name: String,
+    pub arguments: serde_json::Value,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TranscriptLine {
     pub role: String,
     pub content: String,
+    /// Tool calls issued by an assistant message.  Populated when the LLM
+    /// requested tool use on this turn; `None` for plain assistant text or
+    /// for user/tool rows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<TranscriptToolCall>>,
+    /// `tool_use_id` this row is responding to.  Populated only for tool
+    /// result rows (`role == "tool"`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+    /// Tool name this row is responding to.  Populated only for tool result
+    /// rows (`role == "tool"`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
 
 impl TranscriptLine {
+    pub fn user(content: impl Into<String>) -> Self {
+        Self {
+            role: "user".to_string(),
+            content: content.into(),
+            tool_calls: None,
+            tool_call_id: None,
+            tool_name: None,
+            error: None,
+        }
+    }
     pub fn assistant(content: impl Into<String>) -> Self {
         Self {
             role: "assistant".to_string(),
             content: content.into(),
+            tool_calls: None,
+            tool_call_id: None,
+            tool_name: None,
+            error: None,
+        }
+    }
+    pub fn assistant_with_tool_calls(
+        content: impl Into<String>,
+        tool_calls: Vec<TranscriptToolCall>,
+    ) -> Self {
+        Self {
+            role: "assistant".to_string(),
+            content: content.into(),
+            tool_calls: if tool_calls.is_empty() { None } else { Some(tool_calls) },
+            tool_call_id: None,
+            tool_name: None,
             error: None,
         }
     }
@@ -43,6 +95,23 @@ impl TranscriptLine {
         Self {
             role: "tool".to_string(),
             content: content.into(),
+            tool_calls: None,
+            tool_call_id: None,
+            tool_name: None,
+            error: None,
+        }
+    }
+    pub fn tool_result(
+        tool_call_id: impl Into<String>,
+        tool_name: impl Into<String>,
+        content: impl Into<String>,
+    ) -> Self {
+        Self {
+            role: "tool".to_string(),
+            content: content.into(),
+            tool_calls: None,
+            tool_call_id: Some(tool_call_id.into()),
+            tool_name: Some(tool_name.into()),
             error: None,
         }
     }
@@ -50,7 +119,35 @@ impl TranscriptLine {
         Self {
             role: "tool".to_string(),
             content: String::new(),
+            tool_calls: None,
+            tool_call_id: None,
+            tool_name: None,
             error: Some(error.into()),
+        }
+    }
+
+    /// Build a transcript line from a `ChatMessage`.  Used by Teammate idle
+    /// loop's `on_message_appended` callback to mirror in-memory messages to
+    /// the JSONL transcript so future transcript-replay can reconstruct
+    /// Anthropic-compliant messages.
+    pub fn from_chat_message(message: &crate::llm::streaming::ChatMessage) -> Self {
+        let tool_calls = message.tool_calls.as_ref().map(|calls| {
+            calls
+                .iter()
+                .map(|tc| TranscriptToolCall {
+                    id: tc.id.clone(),
+                    name: tc.name.clone(),
+                    arguments: tc.arguments.clone(),
+                })
+                .collect::<Vec<_>>()
+        });
+        Self {
+            role: message.role.clone(),
+            content: message.content.clone(),
+            tool_calls: tool_calls.filter(|v| !v.is_empty()),
+            tool_call_id: message.tool_call_id.clone(),
+            tool_name: message.name.clone(),
+            error: None,
         }
     }
 }

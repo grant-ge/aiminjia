@@ -300,6 +300,19 @@ impl<'a> SubagentWorkerRuntime<'a> {
 
             let max_tokens =
                 crate::llm::max_tokens::default_max_tokens_for_model(&effective_settings.primary_model);
+            {
+                let agent_found = request.tool_defs.iter().any(|d| d.name == "Agent");
+                let agent_has_emp = request.tool_defs.iter()
+                    .find(|d| d.name == "Agent")
+                    .map(|d| d.description.contains("<available_subagent_types>"))
+                    .unwrap_or(false);
+                log::info!(
+                    "[tool-desc-trace] Teammate LLM request built: tools={} agent_found_in_tools={} agent_has_emp_section={}",
+                    request.tool_defs.len(),
+                    agent_found,
+                    agent_has_emp,
+                );
+            }
             let stream_result = self
                 .gateway
                 .stream_message(
@@ -1028,6 +1041,29 @@ pub struct TeammateWorkerCtx {
     pub conv_dir: Option<PathBuf>,
     /// Metadata written to the `.meta.json` sidecar once at spawn time.
     pub meta: AgentTranscriptMeta,
+    /// Runtime engine dependencies for running LLM iterations on inbox
+    /// messages.  `None` for legacy / test paths where the idle loop should
+    /// stay in stub mode (no real LLM call).  When `Some`, the idle loop
+    /// uses the gateway + tool registry + settings to run a real turn per
+    /// inbox message.
+    pub llm_engine: Option<TeammateLlmEngine>,
+}
+
+/// Bundle of runtime engine dependencies needed to run a Teammate LLM turn.
+///
+/// Constructed by the infrastructure layer (`llm/tool_executor/spawn_subagent.rs::
+/// SpawnSubagentLauncherImpl`) and injected into `TeammateWorkerCtx` at spawn
+/// time.  Holding it as `Option<>` lets test paths construct a Teammate
+/// without booting the full gateway.
+#[derive(Clone)]
+pub struct TeammateLlmEngine {
+    pub gateway: Arc<LlmGateway>,
+    pub tool_registry: Arc<ToolRegistry>,
+    pub runtime_deps: SubAgentRuntimeDeps,
+    pub settings: AppSettings,
+    /// Maximum iterations per inbox-driven turn.  Bounds runaway tool loops
+    /// per message; not the lifetime of the Teammate.
+    pub max_iterations_per_turn: usize,
 }
 
 /// Error type for `run_worker`.
@@ -1130,6 +1166,14 @@ async fn run_teammate_idle(
     // Skip the first tick that fires immediately.
     heartbeat.tick().await;
 
+    // ── Per-Teammate persistent state ─────────────────────────────────────
+    // `messages` accumulates across every inbox-driven turn so the LLM sees
+    // the full conversation history each call (cf. claude-code-best's
+    // `allMessages` accumulator in inProcessRunner.ts).  It's a local
+    // variable — when the idle loop exits, it dies with the worker; future
+    // resume-from-transcript paths would rebuild this from JSONL.
+    let mut messages: Vec<crate::llm::streaming::ChatMessage> = Vec::new();
+
     loop {
         tokio::select! {
             biased;
@@ -1149,17 +1193,22 @@ async fn run_teammate_idle(
             item = ctx.inbox.recv() => {
                 match item {
                     Some(InboxItem::ChatMessage { message, source }) => {
+                        let mode = if ctx.llm_engine.is_some() { "LLM" } else { "stub" };
                         log::info!(
-                            "[TeammateIdle] agent={} name={} received {} from {:?} — running turn (P1 stub)",
+                            "[TeammateIdle] agent={} name={} received {} from {:?} — running turn ({})",
                             ctx.agent_id.as_str(),
                             agent_name,
                             message.variant_name(),
-                            source
+                            source,
+                            mode,
                         );
-                        // P1 stub: record the received message in transcript,
-                        // then record a placeholder assistant reply.
-                        // Full LLM integration is deferred to P2.
-                        teammate_stub_turn(&ctx, &agent_name, &message).await;
+                        if ctx.llm_engine.is_some() {
+                            teammate_real_turn(&ctx, &agent_name, &message, &mut messages).await;
+                        } else {
+                            // Legacy / test path: no engine wired, fall back
+                            // to the placeholder stub (transcript only).
+                            teammate_stub_turn(&ctx, &agent_name, &message).await;
+                        }
                     }
                     Some(InboxItem::Shutdown(req)) => {
                         // P2.6 NOTE: SendMessage now packs ShutdownRequest as
@@ -1220,62 +1269,464 @@ async fn run_teammate_idle(
     }
 }
 
+/// Render a `StructuredMessage` into a plain-text user-message body suitable
+/// for either transcript or LLM consumption.  Shared by stub and real turn.
+fn render_inbox_message_as_user_text(
+    message: &crate::runtime::messaging::StructuredMessage,
+) -> String {
+    use crate::runtime::messaging::StructuredMessage as M;
+    match message {
+        M::Text { content } => content.clone(),
+        M::ShutdownRequest { reason } => format!(
+            "<shutdown-request reason=\"{}\">请用 SendMessage shutdown_response 回应（approve=true 表示已收尾，approve=false 并附 reason 表示需保留）。</shutdown-request>",
+            reason.as_deref().unwrap_or("")
+        ),
+        M::PlanApprovalRequest { request_id, plan } => format!(
+            "<plan-approval-request id=\"{}\">\n  <plan>{}</plan>\n  <instructions>请用 SendMessage plan_approval_response (相同 request_id) 表态：approve=true 通过，approve=false 并附 feedback 拒绝。</instructions>\n</plan-approval-request>",
+            request_id, plan
+        ),
+        M::PlanApprovalResponse { request_id, approve, feedback } => format!(
+            "<plan-approval-response id=\"{}\" approve=\"{}\">\n  <feedback>{}</feedback>\n</plan-approval-response>",
+            request_id,
+            approve,
+            feedback.as_deref().unwrap_or("")
+        ),
+        _ => serde_json::to_string(message)
+            .unwrap_or_else(|_| message.variant_name().to_string()),
+    }
+}
+
 /// P1 stub: record a user message + placeholder assistant reply in the
-/// transcript JSONL.  P2 replaces this with a real LLM call.
+/// transcript JSONL.  Real LLM call is in [`teammate_real_turn`]; this stub
+/// is kept as a fallback for legacy / test paths where `TeammateLlmEngine`
+/// is not wired into `TeammateWorkerCtx`.
 ///
 /// Non-`Text` variants (shutdown_request etc.) are serialized as JSON for the
-/// transcript so the structure is preserved until P2 wires the proper
-/// per-variant handlers.
+/// transcript so the structure is preserved.
 async fn teammate_stub_turn(
     ctx: &TeammateWorkerCtx,
     agent_name: &str,
     message: &crate::runtime::messaging::StructuredMessage,
 ) {
-    use crate::runtime::messaging::StructuredMessage as M;
     if let Some(ref conv_dir) = ctx.conv_dir {
         let jl_path =
             transcript_path_for_kind(conv_dir, &TranscriptKind::Teammate, ctx.agent_id.as_str());
 
-        // Render the user-facing line.  P2.6: ShutdownRequest gets a special
-        // human-readable wrapper so future LLM wiring can detect it without
-        // re-parsing the JSON envelope; other variants fall back to JSON.
-        let user_text = match message {
-            M::Text { content } => content.clone(),
-            M::ShutdownRequest { reason } => format!(
-                "<shutdown-request reason=\"{}\">请用 SendMessage shutdown_response 回应（approve=true 表示已收尾，approve=false 并附 reason 表示需保留）。</shutdown-request>",
-                reason.as_deref().unwrap_or("")
-            ),
-            M::PlanApprovalRequest { request_id, plan } => format!(
-                "<plan-approval-request id=\"{}\">\n  <plan>{}</plan>\n  <instructions>请用 SendMessage plan_approval_response (相同 request_id) 表态：approve=true 通过，approve=false 并附 feedback 拒绝。</instructions>\n</plan-approval-request>",
-                request_id, plan
-            ),
-            M::PlanApprovalResponse { request_id, approve, feedback } => format!(
-                "<plan-approval-response id=\"{}\" approve=\"{}\">\n  <feedback>{}</feedback>\n</plan-approval-response>",
-                request_id,
-                approve,
-                feedback.as_deref().unwrap_or("")
-            ),
-            _ => serde_json::to_string(message)
-                .unwrap_or_else(|_| message.variant_name().to_string()),
-        };
+        let user_text = render_inbox_message_as_user_text(message);
 
-        let user_line = TranscriptLine {
-            role: "user".to_string(),
-            content: user_text.clone(),
-            error: None,
-        };
+        let user_line = TranscriptLine::user(user_text.clone());
         let _ = append_line(&jl_path, &user_line);
 
         // P2.6 stub reply: explicitly NOT a self-shutdown.  Real LLM wiring
-        // (post-P2) will replace this with a SendMessage(shutdown_response)
-        // tool call; until then we record a placeholder so transcript shape
-        // matches expectations.
+        // (in `teammate_real_turn`) replaces this with actual model output
+        // + tool calls; this fallback only fires when the engine isn't
+        // injected (tests / legacy paths).
         let reply = TranscriptLine::assistant(format!(
-            "[P1 stub] {} received: {}",
+            "[stub fallback] {} received: {}",
             agent_name, user_text
         ));
         let _ = append_line(&jl_path, &reply);
     }
+}
+
+/// LTR-P2 real Teammate turn: runs a full agentic iteration loop against the
+/// injected `TeammateLlmEngine`.  Mirrors `SubagentWorkerRuntime::run_worker_turn`
+/// in shape but trimmed for Teammate semantics:
+///   - no front-end `tool_executing` / `tool_completed` event emission (a
+///     Teammate is async and invisible to the chat UI; the Lead sees results
+///     via SendMessage)
+///   - no `terminal_tool_results` / `generated_files` collection (Teammate
+///     never returns a result envelope to a parent — it reports via
+///     SendMessage to the Lead)
+///   - `messages` is borrowed from the caller (the idle loop) so history
+///     persists across inbox-driven turns
+///   - each appended message is mirrored to the transcript JSONL as it
+///     happens, so a crashed / cancelled Teammate never loses partial work
+async fn teammate_real_turn(
+    ctx: &TeammateWorkerCtx,
+    agent_name: &str,
+    message: &crate::runtime::messaging::StructuredMessage,
+    messages: &mut Vec<crate::llm::streaming::ChatMessage>,
+) {
+    use crate::llm::masking::MaskingLevel;
+    use crate::llm::streaming::{ChatMessage, StopReason, StreamEvent};
+
+    let Some(engine) = ctx.llm_engine.as_ref() else {
+        // Should be unreachable — caller (run_teammate_idle) already
+        // checked ctx.llm_engine.is_some().  Defensive fall-through.
+        teammate_stub_turn(ctx, agent_name, message).await;
+        return;
+    };
+
+    let jl_path = ctx.conv_dir.as_ref().map(|conv_dir| {
+        transcript_path_for_kind(conv_dir, &TranscriptKind::Teammate, ctx.agent_id.as_str())
+    });
+
+    // System prompt for this Teammate.  Constructed once at spawn time
+    // (Employee prompt + TEAMMATE_ADDENDUM) and frozen on `meta` so every
+    // turn sees the same persona.
+    let system_prompt = ctx
+        .meta
+        .boot_system_prompt
+        .clone()
+        .unwrap_or_default();
+
+    // Tool definitions filtered by the per-Teammate whitelist.  Resolved
+    // freshly each turn so newly-loaded tools (e.g. MCP servers connected
+    // after spawn) are picked up.
+    let all_schemas = engine.tool_registry.get_all_schemas().await;
+    let final_allowed = crate::runtime::agent::tool_whitelist::resolve_agent_tools(
+        &ctx.meta.tool_whitelist,
+        &[],          // no per-Teammate disallow list yet
+        &all_schemas.iter().map(|s| s.name.clone()).collect::<Vec<_>>(),
+        true,         // background = true for Teammate
+        false,
+    );
+    let tool_defs: Vec<crate::llm::streaming::ToolDefinition> = all_schemas
+        .into_iter()
+        .filter(|schema| final_allowed.contains(&schema.name))
+        .collect();
+
+    // 1. Render inbox message → user ChatMessage, append to in-memory
+    //    history AND mirror to transcript.
+    let user_text = render_inbox_message_as_user_text(message);
+    let user_msg = ChatMessage::text("user", user_text.clone());
+    messages.push(user_msg.clone());
+    if let Some(ref path) = jl_path {
+        let _ = append_line(path, &TranscriptLine::user(user_text));
+    }
+
+    // 2. Per-turn cancellation token (child of the worker's lifecycle
+    //    token so a TeammateStop kills the in-flight LLM call too).
+    let turn_cancel = ctx.cancel.child_token();
+    let sub_conv_id = format!("teammate-{}-{}", ctx.agent_id.as_str(), uuid::Uuid::new_v4());
+
+    // 3. Build a per-turn TurnState + tool_event_bus + QueryEngine so
+    //    ToolRoundDriver has everything it needs.  Reuses the
+    //    SubagentWorkerRuntime pattern verbatim.
+    let child_read_file_state = engine
+        .runtime_deps
+        .read_file_state
+        .as_ref()
+        .map(|cache| cache.clone_for_child())
+        .unwrap_or_else(|| Arc::new(FileStateCache::new()));
+    let request_scoped = engine.runtime_deps.request_scoped_tool_deps(
+        crate::runtime::ids::RunId::new(format!("teammate-turn-{}", uuid::Uuid::new_v4())),
+        Some(ctx.agent_id.clone()),
+        Some(turn_cancel.clone()),
+        Some(child_read_file_state.clone()),
+    );
+    let dispatcher = engine
+        .tool_registry
+        .to_runtime_dispatcher(request_scoped)
+        .await;
+
+    let permission_ask = crate::runtime::tools::permission::default_permission_ask();
+    let _ = permission_ask; // reserved for future explicit injection; QueryEngine uses default ask internally
+    // Build QueryEngine mirroring SubagentWorkerRuntime::build_query_engine
+    // but inlined here since this is a free function (not a method).
+    let (python_binary, python_home) = engine
+        .runtime_deps
+        .runtime_resolver
+        .as_ref()
+        .and_then(|resolver| {
+            resolver
+                .workspace_dependencies()
+                .ok()
+                .map(|deps| (deps.python, None))
+        })
+        .unwrap_or_else(|| {
+            log::warn!(
+                "[TeammateIdle] agent={} managed runtime resolver unavailable; using inert Python path",
+                ctx.agent_id.as_str()
+            );
+            (std::path::PathBuf::from("__managed_runtime_resolver_missing__"), None)
+        });
+    let file_ops = Arc::new(DefaultFileOperations {
+        storage: engine.runtime_deps.storage.clone(),
+        file_manager: engine.runtime_deps.file_manager.clone(),
+        workspace_path: engine.runtime_deps.workspace_path.clone(),
+        conversation_id: engine.runtime_deps.conversation_id.clone(),
+        run_id: Some(crate::runtime::ids::RunId::new(format!(
+            "teammate-{}",
+            ctx.agent_id.as_str()
+        ))),
+        python_binary: Some(python_binary),
+        python_home,
+    });
+    let dispatcher_arc: Arc<crate::runtime::tools::ToolDispatcher> = dispatcher;
+    let mut query_engine = QueryEngine::with_dispatcher(dispatcher_arc)
+        .with_workspace_path(engine.runtime_deps.workspace_path.clone())
+        .with_authorized_workspace(engine.runtime_deps.authorized_workspace.clone())
+        .with_file_ops(file_ops)
+        .with_runtime_resolver(engine.runtime_deps.runtime_resolver.clone())
+        .with_read_file_state(child_read_file_state.clone());
+    if let Some(pctx) = engine.runtime_deps.permission_ctx.clone() {
+        query_engine = query_engine.with_permission_ctx(pctx);
+    }
+    let tool_event_bus = RuntimeEventBus::new();
+
+    let turn = TurnState::new(
+        IdentityMapping::from_legacy_conversation_id(ctx.conv_id.clone()),
+        crate::runtime::ids::RunId::new(format!("teammate-{}", ctx.agent_id.as_str())),
+        user_text_for_turn_state(messages),
+    )
+    .with_cancellation(turn_cancel.clone())
+    .with_permission_mode(crate::runtime::tools::permission::PermissionMode::Default);
+
+    // 4. Iteration loop — mirrors SubagentWorkerRuntime::run_worker_turn
+    //    287-617 but trimmed for Teammate.
+    let max_iterations = engine.max_iterations_per_turn;
+    let mut cancelled = false;
+    for iteration in 0..max_iterations {
+        if turn_cancel.is_cancelled() {
+            cancelled = true;
+            break;
+        }
+
+        log::info!(
+            "[TeammateIdle] agent={} name={} iter={}/{} messages={}",
+            ctx.agent_id.as_str(),
+            agent_name,
+            iteration,
+            max_iterations,
+            messages.len()
+        );
+
+        let max_tokens =
+            crate::llm::max_tokens::default_max_tokens_for_model(&engine.settings.primary_model);
+        let system_msg_opt = if system_prompt.is_empty() {
+            None
+        } else {
+            Some(system_prompt.as_str())
+        };
+
+        let stream_result = engine
+            .gateway
+            .stream_message(
+                &engine.settings,
+                messages.clone(),
+                MaskingLevel::Relaxed,
+                system_msg_opt,
+                None,
+                Some(tool_defs.clone()),
+                max_tokens,
+                Some(&sub_conv_id),
+                None,
+            )
+            .await;
+
+        let (_task_id, mut stream, _mask_ctx, _cancel_rx) = match stream_result {
+            Ok(result) => result,
+            Err(err) => {
+                warn!(
+                    "[TeammateIdle] agent={} LLM call failed at iter {}: {}",
+                    ctx.agent_id.as_str(),
+                    iteration,
+                    err
+                );
+                if let Some(ref path) = jl_path {
+                    let _ = append_line(path, &TranscriptLine::failed(format!("LLM error: {err}")));
+                }
+                break;
+            }
+        };
+
+        let mut iter_content = String::new();
+        let mut tool_calls: Vec<crate::llm::streaming::ToolCall> = Vec::new();
+        let mut stop_reason = StopReason::EndTurn;
+
+        while let Some(event) = stream.next().await {
+            if turn_cancel.is_cancelled() {
+                engine.gateway.cancel_conversation(&sub_conv_id).ok();
+                cancelled = true;
+                break;
+            }
+            match event {
+                StreamEvent::ContentDelta { delta } => iter_content.push_str(&delta),
+                StreamEvent::ToolCallStart { tool_call } => tool_calls.push(tool_call),
+                StreamEvent::Done {
+                    stop_reason: sr, ..
+                } => {
+                    stop_reason = sr;
+                    break;
+                }
+                StreamEvent::Error { error } => {
+                    warn!(
+                        "[TeammateIdle] agent={} stream error: {}",
+                        ctx.agent_id.as_str(),
+                        error
+                    );
+                    if let Some(ref path) = jl_path {
+                        let _ = append_line(
+                            path,
+                            &TranscriptLine::failed(format!("Stream error: {error}")),
+                        );
+                    }
+                    break;
+                }
+                _ => {}
+            }
+        }
+
+        if cancelled {
+            break;
+        }
+
+        // EndTurn (no more tool calls) — push final assistant text and exit
+        if stop_reason != StopReason::ToolUse || tool_calls.is_empty() {
+            if !iter_content.is_empty() {
+                let assistant = ChatMessage::text("assistant", iter_content.clone());
+                messages.push(assistant.clone());
+                if let Some(ref path) = jl_path {
+                    let _ = append_line(
+                        path,
+                        &TranscriptLine::from_chat_message(&assistant),
+                    );
+                }
+            }
+            break;
+        }
+
+        // ToolUse — push assistant w/ tool_calls, execute round, push tool_results
+        let assistant_with_calls = ChatMessage::assistant_with_tool_calls(
+            iter_content.clone(),
+            tool_calls
+                .iter()
+                .map(|tc| crate::llm::streaming::ToolCall {
+                    id: tc.id.clone(),
+                    name: tc.name.clone(),
+                    arguments: tc.arguments.clone(),
+                })
+                .collect(),
+            None,
+            None,
+        );
+        messages.push(assistant_with_calls.clone());
+        if let Some(ref path) = jl_path {
+            let _ = append_line(
+                path,
+                &TranscriptLine::from_chat_message(&assistant_with_calls),
+            );
+        }
+
+        let runtime_tool_calls: Vec<RuntimeToolCallRequest> = tool_calls
+            .into_iter()
+            .map(|tc| RuntimeToolCallRequest {
+                tool_call_id: tc.id,
+                tool_name: tc.name.clone(),
+                args: tc.arguments,
+                purpose: Some(format!("[Teammate {}] {}", agent_name, tc.name)),
+            })
+            .collect();
+
+        let round_driver = ToolRoundDriver::new(query_engine.clone())
+            .with_allowed_tools(final_allowed.clone());
+        let round_results = round_driver
+            .execute_round(&turn, &tool_event_bus, runtime_tool_calls)
+            .await;
+
+        // Dedup tool_results by tool_call_id (Anthropic rejects duplicates).
+        let mut pushed_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for round_result in round_results {
+            let (tcid, tname, content_str, ask_required) = match round_result {
+                ToolRoundResult::Blocked(blocked) => (
+                    blocked.tool_call_id,
+                    blocked.tool_name,
+                    blocked.reason,
+                    false,
+                ),
+                ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
+                    tool_call_id,
+                    tool_name,
+                    content,
+                    max_result_size_chars,
+                    ..
+                }) => (
+                    tool_call_id,
+                    tool_name,
+                    truncate_tool_content(&content, max_result_size_chars),
+                    false,
+                ),
+                ToolRoundResult::Ok(RuntimeToolCallOutcome::AskRequired {
+                    tool_call_id,
+                    tool_name,
+                    ..
+                }) => (
+                    tool_call_id,
+                    tool_name,
+                    "Permission Ask required (Teammate is async — request auto-denied)"
+                        .to_string(),
+                    true,
+                ),
+                ToolRoundResult::Ok(RuntimeToolCallOutcome::InteractionRequired {
+                    tool_call_id,
+                    tool_name,
+                    ..
+                }) => (
+                    tool_call_id,
+                    tool_name,
+                    "User interaction required; Teammate cannot ask the user directly.".to_string(),
+                    false,
+                ),
+            };
+
+            if !pushed_ids.insert(tcid.clone()) {
+                log::warn!(
+                    "[TeammateIdle] agent={} dropped duplicate tool_result id={} name={}",
+                    ctx.agent_id.as_str(),
+                    tcid,
+                    tname
+                );
+                continue;
+            }
+
+            let tool_result_msg = ChatMessage::tool_result(&tcid, &tname, content_str.clone());
+            messages.push(tool_result_msg.clone());
+            if let Some(ref path) = jl_path {
+                let _ = append_line(path, &TranscriptLine::from_chat_message(&tool_result_msg));
+            }
+
+            if ask_required {
+                // P2.8: Teammate is async, Ask auto-denies and we bubble the
+                // result back to the model so it can react.  We don't break
+                // the turn (model may pivot to a different tool).
+                log::warn!(
+                    "[TeammateIdle] agent={} tool {} bubbled AskRequired -> auto-denied to LLM",
+                    ctx.agent_id.as_str(),
+                    tname
+                );
+            }
+        }
+
+        // Loop continues to next iteration so LLM sees tool_results.
+        let _ = iteration;
+    }
+
+    if cancelled {
+        log::info!(
+            "[TeammateIdle] agent={} name={} turn cancelled mid-stream",
+            ctx.agent_id.as_str(),
+            agent_name
+        );
+        if let Some(ref path) = jl_path {
+            let _ = append_line(path, &TranscriptLine::failed("turn cancelled".to_string()));
+        }
+    }
+
+    engine.gateway.clear_task(&sub_conv_id);
+}
+
+/// Helper: extract a representative user-input string for `TurnState`
+/// initialization.  Uses the most recent user message in the history, or
+/// empty when none exists yet.
+fn user_text_for_turn_state(messages: &[crate::llm::streaming::ChatMessage]) -> String {
+    messages
+        .iter()
+        .rev()
+        .find(|m| m.role == "user")
+        .map(|m| m.content.clone())
+        .unwrap_or_default()
 }
 
 /// Cleanup performed when the idle loop exits (cancellation, shutdown, inbox

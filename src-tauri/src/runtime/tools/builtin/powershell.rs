@@ -105,7 +105,9 @@ fn tool_result_powershell(content: String, data: Value) -> ToolResult {
 
 #[async_trait]
 impl RuntimeTool for PowerShellTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str { "PowerShell" }
+    
+    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
         TOOL_CATALOG
             .get("PowerShell")
             .unwrap_or_else(|| ToolDefinition::new("PowerShell", "Execute PowerShell command"))

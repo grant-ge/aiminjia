@@ -44,7 +44,9 @@ fn validate_task_id(s: &str) -> Result<&str, ToolError> {
 
 #[async_trait]
 impl RuntimeTool for TaskOutputRuntimeTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str { "TaskOutput" }
+    
+    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
         TOOL_CATALOG.get("TaskOutput").unwrap_or_else(|| {
             ToolDefinition::new("TaskOutput", "Read async sub-agent transcript")
                 .with_kind(ToolKind::Support)
@@ -129,7 +131,7 @@ mod tests {
     fn definition_id_is_task_output() {
         let tmp = TempDir::new().unwrap();
         let tool = build_tool(&tmp);
-        assert_eq!(tool.definition().id, "TaskOutput");
+        assert_eq!(tool.id(), "TaskOutput");
     }
 
     #[test]

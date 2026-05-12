@@ -9,6 +9,7 @@ use crate::runtime::hooks::config::HookEvent;
 use crate::runtime::hooks::{HookDecision, HookRunner};
 use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::ToolDefinition;
+use crate::runtime::tools::description_context::ToolDescriptionContext;
 use crate::runtime::tools::executor::{ToolError, ToolResult};
 #[cfg(test)]
 use crate::runtime::tools::permission::AllowAllPermissionPipeline;
@@ -25,15 +26,45 @@ pub enum InterruptBehavior {
 
 #[async_trait]
 pub trait RuntimeTool: Send + Sync {
-    fn definition(&self) -> ToolDefinition;
+    /// Stable identifier — must match the name registered with the
+    /// runtime and the static `TOOL_CATALOG` key. Sync because callers
+    /// at registration / dispatch time need it without context.
+    fn id(&self) -> &str;
+
+    /// Default read-only flag — used by permission policies that key off
+    /// the tool's nature rather than its input.  Implementations that
+    /// vary per-input should override `is_read_only`.
+    fn default_read_only(&self) -> bool {
+        false
+    }
+
+    /// Default destructive flag — symmetric with `default_read_only`.
+    fn default_destructive(&self) -> bool {
+        false
+    }
+
+    /// Render the LLM-facing tool definition for this turn.
+    ///
+    /// `ctx` carries session-scoped context (available subagent types,
+    /// hired employees, connected MCP servers) so a tool whose
+    /// description depends on session state — notably the `Agent` tool
+    /// listing dispatchable subagents / employees — can render a fresh
+    /// description per turn.  Tools whose description is truly static
+    /// can ignore `ctx`.
+    ///
+    /// Aligns with claude-code-best `tool.prompt({ agents, tools, ... })`
+    /// (see `src/utils/api.ts::buildToolBlock` — the result is passed
+    /// directly as `description` to the Anthropic Messages API).
+    async fn definition(&self, ctx: &ToolDescriptionContext) -> ToolDefinition;
+
     fn is_concurrency_safe(&self, _input: &Value) -> bool {
         false
     }
     fn is_read_only(&self, _input: &Value) -> bool {
-        self.definition().default_read_only
+        self.default_read_only()
     }
     fn is_destructive(&self, _input: &Value) -> bool {
-        self.definition().default_destructive
+        self.default_destructive()
     }
     fn interrupt_behavior(&self) -> InterruptBehavior {
         InterruptBehavior::Block
@@ -98,7 +129,7 @@ impl ToolDispatcher {
         self.tools
             .write()
             .unwrap()
-            .insert(tool.definition().id.clone(), tool);
+            .insert(tool.id().to_string(), tool);
     }
 
     pub fn tool_interrupt_behavior(&self, tool_name: &str) -> Option<InterruptBehavior> {
@@ -119,12 +150,9 @@ impl ToolDispatcher {
             .map(|tool| tool.is_concurrency_safe(input))
     }
 
-    pub fn tool_definition(&self, tool_name: &str) -> Option<ToolDefinition> {
-        self.tools
-            .read()
-            .unwrap()
-            .get(tool_name)
-            .map(|tool| tool.definition())
+    pub async fn tool_definition(&self, tool_name: &str) -> Option<ToolDefinition> {
+        let tool = self.tools.read().unwrap().get(tool_name).cloned()?;
+        Some(tool.definition(&ToolDescriptionContext::empty()).await)
     }
 
     pub async fn dispatch(
@@ -158,7 +186,10 @@ impl ToolDispatcher {
                 .cloned()
                 .ok_or_else(|| ToolError::ExecutionFailed(format!("unknown tool: {tool_name}")))?
         };
-        let definition = tool.definition();
+        // dispatch-time only needs static fields (default_max_result_size_chars,
+        // default_read_only/destructive, id). Use empty description ctx —
+        // rendering happens upstream when building the LLM tools array.
+        let definition = tool.definition(&ToolDescriptionContext::empty()).await;
         diag(
             "tool.execute.started",
             Some(true),

@@ -168,7 +168,9 @@ fn format_task_line(task: &TaskRecord) -> String {
 
 #[async_trait]
 impl RuntimeTool for TaskCreateRuntimeTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str { "TaskCreate" }
+    
+    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
         TOOL_CATALOG
             .get("TaskCreate")
             .unwrap_or_else(|| ToolDefinition::new("TaskCreate", "创建任务"))
@@ -234,7 +236,9 @@ impl RuntimeTool for TaskCreateRuntimeTool {
 
 #[async_trait]
 impl RuntimeTool for TaskListRuntimeTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str { "TaskList" }
+    
+    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
         TOOL_CATALOG
             .get("TaskList")
             .unwrap_or_else(|| ToolDefinition::new("TaskList", "列出任务"))
@@ -374,7 +378,9 @@ fn dfs_inner<'a>(
 
 #[async_trait]
 impl RuntimeTool for TaskUpdateRuntimeTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str { "TaskUpdate" }
+    
+    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
         TOOL_CATALOG
             .get("TaskUpdate")
             .unwrap_or_else(|| ToolDefinition::new("TaskUpdate", "更新任务"))
@@ -575,7 +581,9 @@ async fn notify_after_update(
 
 #[async_trait]
 impl RuntimeTool for TaskGetRuntimeTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str { "TaskGet" }
+    
+    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
         TOOL_CATALOG
             .get("TaskGet")
             .unwrap_or_else(|| ToolDefinition::new("TaskGet", "获取单条任务"))
@@ -619,7 +627,9 @@ impl RuntimeTool for TaskGetRuntimeTool {
 
 #[async_trait]
 impl RuntimeTool for TaskClaimRuntimeTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str { "TaskClaim" }
+    
+    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
         TOOL_CATALOG.get("TaskClaim").unwrap_or_else(|| {
             ToolDefinition::new(
                 "TaskClaim",

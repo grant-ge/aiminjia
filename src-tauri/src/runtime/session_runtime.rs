@@ -814,7 +814,9 @@ mod tests {
 
     #[async_trait]
     impl RuntimeTool for CapturePermissionModeTool {
-        fn definition(&self) -> ToolDefinition {
+        fn id(&self) -> &str { "capture_permission_mode" }
+        
+        async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
             ToolDefinition::new("capture_permission_mode", "Capture permission mode")
         }
 
@@ -939,7 +941,9 @@ mod tests {
 
     #[async_trait]
     impl RuntimeTool for CaptureAuthorizedWorkspaceTool {
-        fn definition(&self) -> ToolDefinition {
+        fn id(&self) -> &str { "capture_authorized_workspace" }
+
+        async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
             ToolDefinition::new(
                 "capture_authorized_workspace",
                 "Capture authorized workspace",

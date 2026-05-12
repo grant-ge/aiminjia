@@ -27,7 +27,9 @@ pub struct TeammateStopRuntimeTool;
 
 #[async_trait]
 impl RuntimeTool for TeammateStopRuntimeTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str { "TeammateStop" }
+    
+    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
         TOOL_CATALOG.get("TeammateStop").unwrap_or_else(|| {
             ToolDefinition::new(
                 "TeammateStop",

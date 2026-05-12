@@ -24,17 +24,17 @@ pub fn load_registry_with_user_dir(
     user_dir: Option<&Path>,
     project_dir: Option<&Path>,
 ) -> AgentRegistry {
-    let mut reg = AgentRegistry::with_builtins();
+    let reg = AgentRegistry::with_builtins();
     if let Some(dir) = user_dir {
-        merge_dir(&mut reg, dir, "user");
+        merge_dir(&reg, dir, "user");
     }
     if let Some(dir) = project_dir {
-        merge_dir(&mut reg, dir, "project");
+        merge_dir(&reg, dir, "project");
     }
     reg
 }
 
-fn merge_dir(reg: &mut AgentRegistry, dir: &Path, source_label: &str) {
+fn merge_dir(reg: &AgentRegistry, dir: &Path, source_label: &str) {
     if !dir.is_dir() {
         return;
     }

@@ -346,7 +346,8 @@ pub fn run() {
                 );
             app.manage(global_skill_sync_config);
 
-            // Build agent registry: builtins + user-scope agents/*.md (if logged in).
+            // Build agent registry: builtins + user-scope agents/*.md (if logged in)
+            // + dynamic projection of Active Employees.
             let user_agents_dir = current_user_storage
                 .resolve_paths()
                 .map(|paths| paths.agents_dir());
@@ -356,7 +357,43 @@ pub fn run() {
                     None,
                 ),
             );
+
+            // EmployeeStore as app singleton: lib.rs creates one Arc, seeds AgentRegistry,
+            // wires the sync hook; all Tauri commands pull this same Arc from app state.
+            // Without singletization, set_sync below would only affect this transient
+            // boot instance — every Tauri command that does EmployeeStore::new(...) would
+            // miss the hook and AgentRegistry would drift.
+            let employee_store_arc: Option<Arc<runtime::employee::store::EmployeeStore>> =
+                current_user_storage.resolve_paths().map(|paths| {
+                    Arc::new(runtime::employee::store::EmployeeStore::new(
+                        paths.employees_dir(),
+                    ))
+                });
+
+            if let Some(emp_store) = employee_store_arc.as_ref() {
+                match emp_store.list() {
+                    Ok(records) => {
+                        let n = runtime::agent::employee_projection::seed_registry_from_employees(
+                            &agent_registry,
+                            &records,
+                        );
+                        log::info!(
+                            "[agent-registry] seeded {} active employees into AgentRegistry",
+                            n
+                        );
+                    }
+                    Err(e) => log::warn!("[agent-registry] employee seed failed: {e}"),
+                }
+                let sync = Arc::new(runtime::agent::employee_projection::AgentRegistrySync {
+                    registry: agent_registry.clone(),
+                });
+                emp_store.set_sync(sync);
+            }
+
             app.manage(agent_registry.clone());
+            if let Some(store) = employee_store_arc {
+                app.manage(store);
+            }
             let async_agent_task_store = Arc::new(runtime::agent::async_task_store::AsyncAgentTaskStore::new());
             let task_notification_queue = Arc::new(runtime::agent::task_notification::TaskNotificationQueue::new());
             // Managed before TauriChatCommandAdapter::new() so the SessionRuntime can
@@ -635,6 +672,8 @@ pub fn run() {
             );
 
             runtime::employee::runner::spawn_employee_scheduler(
+                app.try_state::<Arc<runtime::employee::store::EmployeeStore>>()
+                    .map(|s| s.inner().clone()),
                 current_user_storage.clone() as Arc<dyn storage::UserScopedPathResolver>,
                 app.state::<Arc<transport::tauri_commands::chat::TauriChatCommandAdapter>>()
                     .inner()

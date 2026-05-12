@@ -4,37 +4,42 @@ use serde_json::Value;
 use crate::runtime::cancellation::wait_for_cancellation;
 use crate::runtime::mcp::{McpToolDefinition, SharedMcpConnection};
 use crate::runtime::tools::{
-    RuntimeTool, ToolDefinition, ToolError, ToolExecutionContext, ToolResult,
+    RuntimeTool, ToolDefinition, ToolDescriptionContext, ToolError, ToolExecutionContext,
+    ToolResult,
 };
 
 /// RuntimeTool adapter for one MCP server tool definition.
 pub struct McpRuntimeTool {
     tool: McpToolDefinition,
     connection: SharedMcpConnection,
+    /// Cached fully-qualified id (`mcp__<server>__<tool>`) so `RuntimeTool::id()`
+    /// can return `&str` without per-call allocation.
+    qualified_id: String,
 }
 
 impl McpRuntimeTool {
     pub fn new(tool: McpToolDefinition, connection: SharedMcpConnection) -> Self {
-        Self { tool, connection }
+        let qualified_id = tool.qualified_name();
+        Self {
+            tool,
+            connection,
+            qualified_id,
+        }
     }
 }
 
 #[async_trait]
 impl RuntimeTool for McpRuntimeTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str {
+        &self.qualified_id
+    }
+
+    async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
         self.tool.to_tool_definition()
     }
 
     fn is_concurrency_safe(&self, _input: &Value) -> bool {
         false
-    }
-
-    fn is_read_only(&self, _input: &Value) -> bool {
-        self.definition().default_read_only
-    }
-
-    fn is_destructive(&self, _input: &Value) -> bool {
-        self.definition().default_destructive
     }
 
     async fn execute(
@@ -77,6 +82,10 @@ impl RuntimeTool for McpRuntimeTool {
             serde_json::to_string_pretty(&value).unwrap_or_else(|_| value.to_string())
         });
 
-        Ok(ToolResult::new(self.definition().id, content, Some(value)))
+        Ok(ToolResult::new(
+            self.qualified_id.clone(),
+            content,
+            Some(value),
+        ))
     }
 }

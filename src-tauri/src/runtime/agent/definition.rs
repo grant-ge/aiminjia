@@ -12,8 +12,17 @@ pub enum AgentPrompt {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AgentSource {
+    /// 编译时注入的 builtin agent（general-purpose / explore / daily_assistant_agent）。
     Builtin,
+    /// 从 `~/.renlijia/users/{scope}/agents/*.md` 加载的用户自定义 agent。
     User,
+    /// 由 `EmployeeStore` 投影注册进 `AgentRegistry` 的数字员工。
+    ///
+    /// 用途：spawn_subagent 派 Teammate 时根据这个判定是否在 transcript meta
+    /// 中带上 `employee_id` 字段，下游 agenda runner / Team 视图 / inbox 仍按
+    /// employee_id 反查 EmployeeStore。**这是"是不是 employee"的唯一真值**，
+    /// 取代之前用 emp- 前缀启发式或 employee_id 互斥参数的方案。
+    Employee,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -65,5 +74,12 @@ mod tests {
     fn agent_permission_mode_default_is_bubble_via_helper() {
         // sanity: AutoDeny != Bubble
         assert_ne!(AgentPermissionMode::AutoDeny, AgentPermissionMode::Bubble);
+    }
+
+    #[test]
+    fn agent_source_distinguishes_three_sources() {
+        assert_ne!(AgentSource::Builtin, AgentSource::User);
+        assert_ne!(AgentSource::Builtin, AgentSource::Employee);
+        assert_ne!(AgentSource::User, AgentSource::Employee);
     }
 }

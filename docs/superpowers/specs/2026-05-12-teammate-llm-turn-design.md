@@ -68,7 +68,19 @@ LTR MVP 在最关键的"teammate 真的会干活"那一步停在了 stub 上：
 
 ### 3.1 一句话
 
-**把 SubagentWorkerRuntime 里已经写好的 LLM iteration 循环抽成共享函数，subagent 和 teammate 共用。teammate 自己持有 `Vec<ChatMessage>`，inbox 收到消息就 append 后调共享函数，跑完不退出，回 select! 等下一条。**
+**Teammate idle loop 持有 `Vec<ChatMessage>` 跨 turn 累积，inbox 收消息时直接调 `LlmGateway` + `ToolRoundDriver` 跑一段精简的 LLM iteration 循环，跑完不退出回 select! 等下一条。**
+
+### 3.1.1 设计偏差说明（vs 初稿）
+
+初稿（§3.2 老版）打算抽一个 `run_llm_iterations` 共享函数让 subagent / teammate 共用。**实施时退回**：
+
+- SubagentWorkerRuntime 的循环里掺杂了大量 subagent 特有副作用（前端 emit tool_executing/completed、generated_files 收集、terminal_tool_results 收集、pending_ask 上浮给父级、SubAgentResult envelope 打包）
+- 强行抽离会让共享函数签名肿胀成 5+ 个可选回调
+- Teammate 完全不需要这些 —— 它通过 SendMessage 给 Lead 回报，没"父级在等返回值"语义
+
+**最终决定**：共享层下沉到 `LlmGateway` + `ToolRoundDriver` 这两个底层引擎（本来就独立可复用）。Teammate 自己写一段精简循环（~120 行），不复用 SubagentWorkerRuntime 的循环骨架。两边代码主结构相似但各自管副作用，避免"伪复用"。
+
+升级路径不受影响 —— teammate 的 messages 仍归调用方持有，cancel 走 CancellationToken，未来重启续命 / 中途打断的扩展点完全一样。
 
 ### 3.2 层级图
 
@@ -113,7 +125,111 @@ LTR MVP 在最关键的"teammate 真的会干活"那一步停在了 stub 上：
 
 ## 4. 模块设计
 
-### 4.1 共享函数：`run_llm_iterations`
+### 4.1 Teammate LLM 循环（直接在 `worker_runtime.rs::run_teammate_idle` 内）
+
+**职责**：跑一段完整的 agentic turn —— LLM stream + tool round + messages 累积，直到 EndTurn 或 max_iterations 或 cancel。
+
+**核心算法**（精简版，对照 SubagentWorkerRuntime:287-617 但去掉 subagent 专属副作用）：
+
+```
+loop {
+    if cancelled → break;
+    if iter ≥ max_iterations → break;
+    
+    stream = gateway.stream_message(messages.clone(), tool_defs.clone(), ...).await;
+    (text, tool_calls, stop_reason) = drain_stream(stream).await;
+    
+    if stop_reason != ToolUse || tool_calls.is_empty() {
+        if !text.empty() {
+            messages.push(assistant(text));
+            transcript.append(...);
+        }
+        break;
+    }
+    
+    messages.push(assistant_with_tool_calls(text, tool_calls));
+    transcript.append(...);
+    
+    round_results = tool_round.execute_round(turn, bus, tool_calls).await;
+    for r in round_results {
+        match r {
+            Completed { tool_call_id, tool_name, content, .. } => {
+                messages.push(tool_result(tool_call_id, tool_name, content));
+                transcript.append(...);
+            }
+            Blocked { tool_call_id, tool_name, reason } => {
+                messages.push(tool_result(tool_call_id, tool_name, reason));
+                transcript.append(...);
+            }
+            AskRequired { tool_call_id, tool_name, .. } => {
+                // P2.8: is_async = true, permission Ask 已 auto-deny
+                // 走到这里说明 deny 反馈以 tool_result 形式回到 LLM
+                messages.push(tool_result(tool_call_id, tool_name, "User interaction required..."));
+                transcript.append(...);
+            }
+            InteractionRequired { ... } => 同 AskRequired
+        }
+    }
+}
+```
+
+**关键性质**：
+- messages 跨 turn 留在 idle loop 局部变量
+- 实时 append transcript JSONL（每条 message 落一行）
+- cancel 在 stream drain + tool round 内自动响应
+- 不 emit tool_executing/completed 到前端（teammate 不出现在前端 UI）
+- 不收集 generated_files / terminal_tool_results（teammate 通过 SendMessage 给 Lead 汇报）
+
+### 4.2 SubagentWorkerRuntime 不动
+
+行为完全保持现状 —— 仍跑自己的 `'agent_loop`，仍一次性 store_transcript，仍打包 SubAgentResultEnvelope。
+
+未来若要进一步合并代码，可单独立项；本期不动以降低风险。
+
+### 4.3 Teammate idle loop 接 LLM
+
+**架构修正（实施时发现的设计层错位）**：
+
+P1.6 把 teammate 的 idle loop 启动放在了 `runtime/tools/builtin/spawn_subagent.rs`。这是 **runtime 层**，跟 `CapabilityContext` 一样故意不持有 `LlmGateway`（runtime 层的纯度约束）。因此 idle loop 拿不到 gateway，只能写 stub。
+
+对照 subagent 路径：subagent 的真正执行**走 launcher trait**（`SpawnSubagentLauncher::launch_sync` / `launch_async`），实现在 `llm/tool_executor/spawn_subagent.rs`（**infra 层**，持有 gateway）。runtime 层只调 launcher trait，不知道 gateway 存在。
+
+→ 修正：**teammate 启动也必须走 launcher trait**。
+
+**改动**：
+
+1. `SpawnSubagentLauncher` trait 加一个方法：
+
+```
+async fn launch_teammate(
+    &self,
+    request: SpawnSubagentRequest,
+    context: SpawnSubagentContext,
+    teammate_extras: TeammateLaunchExtras {
+        agent_id, agent_name, employee_id, team, tool_whitelist,
+        sys_prompt_extra, inbox, conv_dir,
+        agent_names, inbox_registry, cancellation_registry,
+        teammate_cancel,
+    },
+) -> Result<(), anyhow::Error>;
+```
+
+2. `llm/tool_executor/spawn_subagent.rs::SpawnSubagentLauncherImpl::launch_teammate` 实现：
+   - 调 `build_run_components()` 拿到 `Arc<LlmGateway>` / `Arc<ToolRegistry>` / `AppSettings`
+   - 构造完整 `TeammateWorkerCtx`（含 gateway / tool_registry / runtime_deps / settings 字段）
+   - `tokio::spawn(run_worker(WorkerMode::TeammateIdle { ... }, ctx, Some(initial_prompt)))`
+
+3. `runtime/tools/builtin/spawn_subagent.rs` 的 teammate 分支改成调 `launcher.launch_teammate(...)`，删除原来直接 spawn 的代码
+
+4. `TeammateWorkerCtx` 扩字段（在 `worker_runtime.rs`）：
+   - `gateway: Arc<LlmGateway>`
+   - `tool_registry: Arc<ToolRegistry>`
+   - `runtime_deps: SubAgentRuntimeDeps`（复用 subagent 现有的 deps 类型）
+   - `settings: AppSettings`
+
+5. `run_teammate_idle` 用 ctx 的这些字段构造循环依赖，跑 §4.1 精简循环
+
+**删除**：`teammate_stub_turn` 函数整段删（1242-1292 行）。
 
 **文件**：`src-tauri/src/runtime/agent/llm_turn.rs`（新建）
 

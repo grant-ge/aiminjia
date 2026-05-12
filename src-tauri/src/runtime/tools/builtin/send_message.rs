@@ -33,7 +33,9 @@ pub struct SendMessageRuntimeTool;
 
 #[async_trait]
 impl RuntimeTool for SendMessageRuntimeTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str { "SendMessage" }
+    
+    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
         TOOL_CATALOG.get("SendMessage").unwrap_or_else(|| {
             ToolDefinition::new("SendMessage", "Send a structured message to another agent.")
         })

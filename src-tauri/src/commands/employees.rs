@@ -14,10 +14,16 @@ use crate::storage::{AiJiaHome, CurrentUserStorage, UserScopedPathResolver};
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
-fn employee_store(app: &AppHandle) -> Result<EmployeeStore, String> {
+fn employee_store(app: &AppHandle) -> Result<Arc<EmployeeStore>, String> {
+    if let Some(state) = app.try_state::<Arc<EmployeeStore>>() {
+        return Ok(state.inner().clone());
+    }
+    // Fallback for early-boot paths or tests where lib.rs hasn't yet
+    // installed the singleton. Bypasses the AgentRegistry sync hook —
+    // production logged-in flow always sees the singleton.
     let cus = app.state::<Arc<CurrentUserStorage>>();
     let paths = cus.require_paths().map_err(|e| e.to_string())?;
-    Ok(EmployeeStore::new(paths.employees_dir()))
+    Ok(Arc::new(EmployeeStore::new(paths.employees_dir())))
 }
 
 fn inbox_store(app: &AppHandle) -> Result<InboxStore, String> {
@@ -427,7 +433,7 @@ pub async fn employee_index_knowledge_async(
     use crate::runtime::employee::knowledge::spawn_index_all;
     use std::path::PathBuf;
 
-    let store = Arc::new(employee_store(&app)?);
+    let store = employee_store(&app)?;
     let app_storage = root_db.inner().clone();
 
     let sources: Vec<(PathBuf, String)> = args

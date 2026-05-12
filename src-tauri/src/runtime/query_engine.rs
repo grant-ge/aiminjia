@@ -672,6 +672,7 @@ impl QueryEngine {
             .ok_or_else(|| anyhow::anyhow!("tool dispatcher not configured"))?;
         let capability_scopes = dispatcher
             .tool_definition(&call.tool_name)
+            .await
             .map(|definition| definition.capability_scope)
             .unwrap_or_default();
 

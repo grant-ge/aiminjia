@@ -125,7 +125,9 @@ fn configure_child_process_group(_command: &mut Command) {}
 
 #[async_trait]
 impl RuntimeTool for BashTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str { "Bash" }
+    
+    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
         TOOL_CATALOG
             .get("Bash")
             .unwrap_or_else(|| ToolDefinition::new("Bash", "Execute shell command"))

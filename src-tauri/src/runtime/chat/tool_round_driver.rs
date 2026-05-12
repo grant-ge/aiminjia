@@ -298,7 +298,11 @@ mod tests {
 
     #[async_trait]
     impl RuntimeTool for RecordingTool {
-        fn definition(&self) -> ToolDefinition {
+        fn id(&self) -> &str {
+            &self.name
+        }
+
+        async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
             ToolDefinition::new(&self.name, "Recording test tool")
         }
 

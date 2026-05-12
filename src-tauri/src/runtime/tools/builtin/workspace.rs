@@ -320,7 +320,9 @@ pub struct ReadWorkspaceFileRuntimeTool;
 
 #[async_trait]
 impl RuntimeTool for ReadWorkspaceFileRuntimeTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str { "Read" }
+    
+    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
         TOOL_CATALOG
             .get("Read")
             .unwrap_or_else(|| ToolDefinition::new("Read", "Read workspace file"))
@@ -506,7 +508,9 @@ fn walk_dir_collect(
 
 #[async_trait]
 impl RuntimeTool for SearchFilesRuntimeTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str { "Glob" }
+    
+    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
         TOOL_CATALOG
             .get("Glob")
             .unwrap_or_else(|| ToolDefinition::new("Glob", "Search files"))
@@ -561,7 +565,9 @@ pub struct WriteFileRuntimeTool;
 
 #[async_trait]
 impl RuntimeTool for WriteFileRuntimeTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str { "Write" }
+    
+    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
         TOOL_CATALOG
             .get("Write")
             .unwrap_or_else(|| ToolDefinition::new("Write", "Write workspace file"))
@@ -621,7 +627,9 @@ pub struct EditFileRuntimeTool;
 
 #[async_trait]
 impl RuntimeTool for EditFileRuntimeTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str { "Edit" }
+    
+    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
         TOOL_CATALOG
             .get("Edit")
             .unwrap_or_else(|| ToolDefinition::new("Edit", "Edit workspace file"))

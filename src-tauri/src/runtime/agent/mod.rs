@@ -5,6 +5,7 @@ pub mod builtin;
 pub mod cancellation_registry;
 pub mod child_run;
 pub mod definition;
+pub mod employee_projection;
 pub mod file_agent_invocation_store;
 pub mod inbox;
 pub mod inbox_registry;
@@ -17,7 +18,11 @@ pub mod output_writer;
 pub mod python_recovery;
 pub mod registry;
 pub mod registry_loader;
-pub mod required_tools;
+// required_tools removed: Teammate-required tools are now injected at
+// runtime via `tool_whitelist::TEAMMATE_TOOLS` (see src/runtime/agent/
+// tool_whitelist.rs and spawn_subagent.rs Teammate dispatch path) rather
+// than enforced as a hard pre-spawn gate on employee/agent definitions.
+// Aligns with claude-code-best `IN_PROCESS_TEAMMATE_ALLOWED_TOOLS`.
 pub mod resume;
 pub mod subagent_result_envelope;
 pub mod subagent_transcript_store;
