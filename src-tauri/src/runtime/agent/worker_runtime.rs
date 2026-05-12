@@ -1461,9 +1461,26 @@ async fn teammate_real_turn(
         .with_file_ops(file_ops)
         .with_runtime_resolver(engine.runtime_deps.runtime_resolver.clone())
         .with_read_file_state(child_read_file_state.clone());
-    if let Some(pctx) = engine.runtime_deps.permission_ctx.clone() {
-        query_engine = query_engine.with_permission_ctx(pctx);
-    }
+    // LTR: build the Teammate's effective permission ctx by merging parent's
+    // permission_ctx (if any) with the teammate-specific working dirs (its
+    // conversation dir for team.json / tasks/, plus skill dirs).  Without
+    // this the LLM gets a `Decision::Ask` for paths inside its own working
+    // area; combined with `is_async = true` that becomes Deny (no UI to
+    // prompt), and the model can't read team.json.
+    let teammate_pctx = build_teammate_permission_ctx(
+        engine.runtime_deps.permission_ctx.as_deref(),
+        ctx.conv_dir.as_deref(),
+        engine.runtime_deps.workspace_path.as_path(),
+    );
+    log::info!(
+        "[TeammateIdle][permission-trace] agent={} name={} pctx.dirs={:?} pctx.allow={} pctx.deny={}",
+        ctx.agent_id.as_str(),
+        agent_name,
+        teammate_pctx.additional_working_dirs.keys().collect::<Vec<_>>(),
+        teammate_pctx.allow_rules.len(),
+        teammate_pctx.deny_rules.len(),
+    );
+    query_engine = query_engine.with_permission_ctx(Arc::new(teammate_pctx));
     let tool_event_bus = RuntimeEventBus::new();
 
     let turn = TurnState::new(
@@ -1472,7 +1489,18 @@ async fn teammate_real_turn(
         user_text_for_turn_state(messages),
     )
     .with_cancellation(turn_cancel.clone())
-    .with_permission_mode(crate::runtime::tools::permission::PermissionMode::Default);
+    .with_permission_mode(crate::runtime::tools::permission::PermissionMode::Default)
+    // LTR P2.8: mark this turn as async so every tool's permission Ask
+    // gets auto-denied instead of blocking the idle loop forever.
+    .with_async(true);
+
+    log::info!(
+        "[TeammateIdle][permission-trace] agent={} name={} turn.is_async=true tool_count={} allowed={:?}",
+        ctx.agent_id.as_str(),
+        agent_name,
+        tool_defs.len(),
+        final_allowed,
+    );
 
     // 4. Iteration loop — mirrors SubagentWorkerRuntime::run_worker_turn
     //    287-617 but trimmed for Teammate.
@@ -1727,6 +1755,55 @@ fn user_text_for_turn_state(messages: &[crate::llm::streaming::ChatMessage]) -> 
         .find(|m| m.role == "user")
         .map(|m| m.content.clone())
         .unwrap_or_default()
+}
+
+/// Build the effective `ToolPermissionContext` for a Teammate turn.
+///
+/// Starts from the parent's `permission_ctx` (or empty) and adds a set of
+/// "Teammate-default" working dirs so the LLM can read its own team config,
+/// task list, transcript, and skill directories without triggering a
+/// permission `Ask` (which would auto-deny under `is_async = true`).
+///
+/// The dirs we add:
+///   1. `conv_dir` — the conversation directory (`team.json`, `tasks/`,
+///      `teammates/{agent_id}.jsonl`, `subagents/...` all live here).
+///   2. `workspace_path` — the parent workspace, in case the Teammate
+///      needs to consult shared files.
+///   3. `~/.renlijia/skills/` — global skill bundle (managed by the app).
+///
+/// Each path is added with `RuleSource::Session` (transient, scoped to this
+/// Teammate's lifetime) so persistent UserSettings entries (if any) take
+/// precedence on duplicate paths.
+fn build_teammate_permission_ctx(
+    parent: Option<&crate::runtime::path_auth::ToolPermissionContext>,
+    conv_dir: Option<&std::path::Path>,
+    workspace_path: &std::path::Path,
+) -> crate::runtime::path_auth::ToolPermissionContext {
+    use crate::runtime::path_auth::{RuleSource, ToolPermissionContext};
+
+    let mut ctx = parent.cloned().unwrap_or_else(ToolPermissionContext::empty);
+
+    // 1. Conversation dir — covers team.json, tasks/, teammates/*.jsonl, etc.
+    if let Some(dir) = conv_dir {
+        ctx.additional_working_dirs
+            .entry(dir.to_path_buf())
+            .or_insert(RuleSource::Session);
+    }
+
+    // 2. Parent workspace.
+    ctx.additional_working_dirs
+        .entry(workspace_path.to_path_buf())
+        .or_insert(RuleSource::Session);
+
+    // 3. Global skill directory (managed skills + user-installed skills).
+    if let Some(home) = dirs::home_dir() {
+        let global_skills = home.join(".renlijia").join("skills");
+        ctx.additional_working_dirs
+            .entry(global_skills)
+            .or_insert(RuleSource::Session);
+    }
+
+    ctx
 }
 
 /// Cleanup performed when the idle loop exits (cancellation, shutdown, inbox

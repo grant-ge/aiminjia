@@ -16,6 +16,11 @@ pub struct TurnState {
     /// The primary LLM model name used for this turn (e.g. "deepseek-v3").
     /// Populated by the driver after TurnConfig is built; empty string until set.
     primary_model: String,
+    /// LTR P2.8: when `true` this turn is an async runner (Teammate / async
+    /// sub-agent) with no UI thread.  Propagated into every ToolExecutionContext
+    /// built from this turn so `apply_async_auto_deny` can convert any
+    /// `Ask` permission decision to `Deny` instead of blocking forever.
+    is_async: bool,
 }
 
 impl TurnState {
@@ -31,7 +36,21 @@ impl TurnState {
             cancellation: CancellationToken::new(),
             permission_mode: PermissionMode::Default,
             primary_model: String::new(),
+            is_async: false,
         }
+    }
+
+    /// LTR P2.8: mark this turn as running inside an async runner (Teammate /
+    /// async sub-agent).  Causes every ToolExecutionContext built from this
+    /// turn to carry `is_async = true`, which triggers `apply_async_auto_deny`
+    /// on any permission `Ask` decision.
+    pub fn with_async(mut self, is_async: bool) -> Self {
+        self.is_async = is_async;
+        self
+    }
+
+    pub fn is_async(&self) -> bool {
+        self.is_async
     }
 
     /// Attach a cancellation token to this turn, replacing the default one created in `new`.
@@ -69,6 +88,7 @@ impl TurnState {
             self.cancellation.child_token(),
         )
         .with_permission_mode(self.permission_mode)
+        .with_async(self.is_async)
     }
 
     pub fn session_id(&self) -> &SessionId {

@@ -238,6 +238,18 @@ impl ToolDispatcher {
         let permission_decision =
             apply_async_auto_deny(permission_decision, &definition.id, ctx.is_async);
 
+        log::info!(
+            "[dispatcher][permission-trace] tool='{}' is_async={} mode={:?} decision={}",
+            definition.id,
+            ctx.is_async,
+            ctx.permission_mode,
+            match &permission_decision {
+                PermissionDecision::Allow { .. } => "Allow".to_string(),
+                PermissionDecision::Deny { message, .. } => format!("Deny({})", message),
+                PermissionDecision::Ask { message, .. } => format!("Ask({})", message),
+            }
+        );
+
         // Map PermissionDecision to ToolError / AskRequired.
         // Deny → Err(PermissionDenied)
         // Ask  → Ok(AskRequired) so the TurnDriver can handle user confirmation
