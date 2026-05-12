@@ -443,6 +443,7 @@ jobs:
           echo "HTTPS_PROXY=http://127.0.0.1:7897" >> $env:GITHUB_ENV
           echo "HTTP_PROXY=http://127.0.0.1:7897" >> $env:GITHUB_ENV
           echo "NO_PROXY=localhost,127.0.0.1" >> $env:GITHUB_ENV
+          echo "$env:USERPROFILE\.cargo\bin" >> $env:GITHUB_PATH
 
       - name: Checkout
         uses: actions/checkout@v4
