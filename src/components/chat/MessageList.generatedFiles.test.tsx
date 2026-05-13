@@ -7,6 +7,11 @@ const openPreviewMock = vi.hoisted(() => vi.fn())
 
 vi.mock('@/lib/tauri', () => ({
   openGeneratedFile: openGeneratedFileMock,
+  revealFileInFolder: vi.fn().mockResolvedValue(undefined),
+  getTeamOverview: vi.fn().mockResolvedValue({ conversationId: '', teams: [] }),
+  getTeammateTranscript: vi.fn().mockResolvedValue([]),
+  onMessageUpdated: vi.fn().mockResolvedValue(() => {}),
+  onToolCompleted: vi.fn().mockResolvedValue(() => {}),
 }))
 
 vi.mock('@/stores/generatedFilePreviewStore', () => ({
