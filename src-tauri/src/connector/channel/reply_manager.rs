@@ -13,6 +13,16 @@ use crate::runtime::events::{RuntimeEvent, RuntimeEventKind};
 use super::dingtalk_card::{self, CardInstance, CardTarget};
 use super::dingtalk_token::TokenCache;
 
+const ASK_CARD_FALLBACK_TEXT: &str = "需要你补充信息后我才能继续。";
+
+fn non_empty_ask_content(markdown: String) -> String {
+    if markdown.trim().is_empty() {
+        ASK_CARD_FALLBACK_TEXT.to_string()
+    } else {
+        markdown
+    }
+}
+
 /// 卡片的生命周期状态
 #[derive(Debug)]
 enum CardLifecycle {
@@ -32,9 +42,22 @@ struct ReplyContext {
     run_id: String,
 }
 
+/// 已知的 session 凭证缓存。每次该 session 来 IM 消息都会刷新一次，
+/// 用于 drain 触发的 LLM turn 在 StreamDelta 到达时懒建 card（drain 路径
+/// 无 worker context，没法预先 register）。
+#[derive(Debug, Clone)]
+struct ReplyCredentials {
+    app_key: String,
+    app_secret: String,
+    robot_code: String,
+    target: CardTarget,
+}
+
 pub struct DingtalkReplyManager {
     /// session_id → ReplyContext
     contexts: Arc<Mutex<HashMap<String, ReplyContext>>>,
+    /// session_id → 凭证（活的钉钉会话）。clear 时一并清空。
+    session_credentials: Arc<Mutex<HashMap<String, ReplyCredentials>>>,
     token_cache: TokenCache,
 }
 
@@ -42,12 +65,35 @@ impl DingtalkReplyManager {
     pub fn new() -> Self {
         Self {
             contexts: Arc::new(Mutex::new(HashMap::new())),
+            session_credentials: Arc::new(Mutex::new(HashMap::new())),
             token_cache: TokenCache::new(),
         }
     }
 
     pub async fn clear(&self) {
         self.contexts.lock().await.clear();
+        self.session_credentials.lock().await.clear();
+    }
+
+    /// 记住一个 IM session 的钉钉凭证。worker 收到任何一条消息都该调一次，
+    /// 这样后续 drain 触发的 LLM turn 也能懒建 card 把 AI 回复发回钉钉。
+    pub async fn remember_credentials(
+        &self,
+        session_id: String,
+        app_key: String,
+        app_secret: String,
+        robot_code: String,
+        target: CardTarget,
+    ) {
+        self.session_credentials.lock().await.insert(
+            session_id,
+            ReplyCredentials {
+                app_key,
+                app_secret,
+                robot_code,
+                target,
+            },
+        );
     }
 
     /// 在 AI 处理开始前调用，创建 AI Card 并注册回复上下文。
@@ -102,6 +148,53 @@ impl RuntimeEventSubscriber for DingtalkReplyManager {
 
         match &event.kind {
             RuntimeEventKind::StreamDelta { content } => {
+                // Lazy-register: drain 触发的 LLM turn 没经过 ChannelManager.register，
+                // 第一个 StreamDelta 到达时若没有 active context 但有缓存凭证，
+                // 就用凭证懒建一张新 card 绑定当前 run_id。
+                let needs_lazy_register = {
+                    let contexts = self.contexts.lock().await;
+                    !contexts.contains_key(&session_id)
+                };
+                if needs_lazy_register {
+                    let creds = self
+                        .session_credentials
+                        .lock()
+                        .await
+                        .get(&session_id)
+                        .cloned();
+                    if let Some(creds) = creds {
+                        if let Some(card) = dingtalk_card::create_and_deliver_card(
+                            &self.token_cache,
+                            &creds.app_key,
+                            &creds.app_secret,
+                            &creds.robot_code,
+                            &creds.target,
+                        )
+                        .await
+                        {
+                            let mut contexts = self.contexts.lock().await;
+                            contexts.entry(session_id.clone()).or_insert(ReplyContext {
+                                card_lifecycle: CardLifecycle::Streaming(card),
+                                accumulated_text: String::new(),
+                                app_key: creds.app_key,
+                                app_secret: creds.app_secret,
+                                robot_code: creds.robot_code,
+                                target: creds.target,
+                                run_id: run_id.clone(),
+                            });
+                            log::info!(
+                                "[reply-manager] lazy-registered context for session {} run {} (drain path)",
+                                session_id, run_id
+                            );
+                        } else {
+                            log::warn!(
+                                "[reply-manager] lazy card creation failed for session {}",
+                                session_id
+                            );
+                        }
+                    }
+                }
+
                 let mut contexts = self.contexts.lock().await;
                 if let Some(ctx) = contexts.get_mut(&session_id) {
                     if ctx.run_id != run_id {
@@ -209,6 +302,23 @@ impl super::ask_coordinator::AskOutputSink for DingtalkReplyManager {
         let Some(ctx) = contexts.get_mut(session_id.as_str()) else {
             return Ok(());
         };
+        let ask_content = non_empty_ask_content(markdown);
+        if ctx.accumulated_text.trim().is_empty()
+            && matches!(ctx.card_lifecycle, CardLifecycle::Streaming(_))
+        {
+            if let CardLifecycle::Streaming(card) = &mut ctx.card_lifecycle {
+                let _ = dingtalk_card::finish_card(
+                    &self.token_cache,
+                    &ctx.app_key,
+                    &ctx.app_secret,
+                    card,
+                    &ask_content,
+                )
+                .await;
+            }
+            ctx.card_lifecycle = CardLifecycle::Finished;
+            return Ok(());
+        }
         // Finish the current streaming card (if any) before delivering the ask card
         if let CardLifecycle::Streaming(card) = &mut ctx.card_lifecycle {
             let text = ctx.accumulated_text.clone();
@@ -236,7 +346,7 @@ impl super::ask_coordinator::AskOutputSink for DingtalkReplyManager {
                 &ctx.app_key,
                 &ctx.app_secret,
                 &mut ask_card,
-                &markdown,
+                &ask_content,
             )
             .await;
         }
@@ -459,5 +569,95 @@ mod tests {
             .force_finish_current_card(&SessionId::new("nonexistent"), "reason")
             .await;
         assert!(result.is_ok());
+    }
+
+    /// AskOutputSink: 空 streaming 卡片收到 AskUserQuestion 时应复用原卡，
+    /// 但不能把提问内容污染到后续回答缓冲里。
+    #[tokio::test]
+    async fn deliver_ask_card_reuses_empty_streaming_card_without_polluting_followup() {
+        use super::super::ask_coordinator::AskOutputSink;
+
+        let mgr = DingtalkReplyManager::new();
+        {
+            let mut ctx = mgr.contexts.lock().await;
+            ctx.insert(
+                "sess-empty-ask".into(),
+                ReplyContext {
+                    card_lifecycle: CardLifecycle::Streaming(CardInstance {
+                        card_instance_id: "card-empty-ask".into(),
+                        inputing_started: true,
+                    }),
+                    accumulated_text: String::new(),
+                    app_key: "key".into(),
+                    app_secret: "secret".into(),
+                    robot_code: "robot".into(),
+                    target: CardTarget::Private { user_id: "user".into() },
+                    run_id: "run1".into(),
+                },
+            );
+        }
+
+        let _ = mgr
+            .deliver_ask_card(&SessionId::new("sess-empty-ask"), "question markdown".into())
+            .await;
+
+        {
+            let ctx = mgr.contexts.lock().await;
+            assert_eq!(ctx["sess-empty-ask"].accumulated_text, "");
+            assert!(matches!(ctx["sess-empty-ask"].card_lifecycle, CardLifecycle::Finished));
+        }
+
+        let _ = mgr
+            .on_event(&make_event(
+                "sess-empty-ask",
+                "run1",
+                RuntimeEventKind::StreamDelta {
+                    content: "follow-up answer".into(),
+                },
+            ))
+            .await;
+
+        let ctx = mgr.contexts.lock().await;
+        assert_eq!(ctx["sess-empty-ask"].accumulated_text, "follow-up answer");
+    }
+
+    /// AskOutputSink: 即使 AskUserQuestion markdown 为空，也不能完成一张空白卡片。
+    #[tokio::test]
+    async fn deliver_ask_card_uses_fallback_when_markdown_is_empty() {
+        use super::super::ask_coordinator::AskOutputSink;
+
+        let mgr = DingtalkReplyManager::new();
+        {
+            let mut ctx = mgr.contexts.lock().await;
+            ctx.insert(
+                "sess-empty-markdown".into(),
+                ReplyContext {
+                    card_lifecycle: CardLifecycle::Streaming(CardInstance {
+                        card_instance_id: "card-empty-markdown".into(),
+                        inputing_started: true,
+                    }),
+                    accumulated_text: String::new(),
+                    app_key: "key".into(),
+                    app_secret: "secret".into(),
+                    robot_code: "robot".into(),
+                    target: CardTarget::Private { user_id: "user".into() },
+                    run_id: "run1".into(),
+                },
+            );
+        }
+
+        let _ = mgr
+            .deliver_ask_card(&SessionId::new("sess-empty-markdown"), "   ".into())
+            .await;
+
+        let ctx = mgr.contexts.lock().await;
+        assert_eq!(ctx["sess-empty-markdown"].accumulated_text, "");
+        assert!(matches!(ctx["sess-empty-markdown"].card_lifecycle, CardLifecycle::Finished));
+    }
+
+    #[test]
+    fn non_empty_ask_content_falls_back_for_blank_markdown() {
+        assert_eq!(non_empty_ask_content("   ".into()), ASK_CARD_FALLBACK_TEXT);
+        assert_eq!(non_empty_ask_content("question".into()), "question");
     }
 }

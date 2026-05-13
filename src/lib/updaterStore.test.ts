@@ -92,9 +92,75 @@ describe('updaterStore.bootstrap', () => {
     expect(s.version).toBe('0.5.21')
     expect(s.phase).toBe('ready')
   })
+
+  it('reuses an in-flight bootstrap so a slower duplicate check cannot expose an undownloaded handle as ready', async () => {
+    let finishFirstDownload!: () => void
+    let firstDownloaded = false
+    const firstUpdate = {
+      version: '0.5.21',
+      body: 'first',
+      download: vi.fn(async () => {
+        await new Promise<void>((resolve) => {
+          finishFirstDownload = resolve
+        })
+        firstDownloaded = true
+      }),
+      install: vi.fn(async () => {
+        if (!firstDownloaded) throw new Error('Update.install called before Update.download')
+      }),
+    }
+    checkMock.mockResolvedValue(firstUpdate)
+    getVersionMock.mockResolvedValue('0.5.18')
+
+    const { useUpdaterStore: useStore, useNotificationStore } = await loadModules()
+    useNotificationStore.getState().dismissAll()
+    const firstBootstrap = useStore.getState().bootstrap()
+    await vi.waitFor(() => expect(firstUpdate.download).toHaveBeenCalled())
+    const secondBootstrap = useStore.getState().bootstrap()
+
+    finishFirstDownload()
+    await firstBootstrap
+    await secondBootstrap
+    expect(checkMock).toHaveBeenCalledTimes(1)
+    expect(useStore.getState().phase).toBe('ready')
+    await useStore.getState().installNow()
+
+    expect(firstUpdate.install).toHaveBeenCalled()
+    expect(useNotificationStore.getState().notifications).toHaveLength(0)
+  })
 })
 
 describe('updaterStore.installNow', () => {
+  it('does not call install while the update download is still in progress', async () => {
+    let finishDownload!: () => void
+    const fakeUpdate = {
+      version: '0.5.21',
+      body: '',
+      download: vi.fn(async () => {
+        await new Promise<void>((resolve) => {
+          finishDownload = resolve
+        })
+      }),
+      install: vi.fn().mockRejectedValue(new Error('Update.install called before Update.download')),
+    }
+    checkMock.mockResolvedValue(fakeUpdate)
+    getVersionMock.mockResolvedValue('0.5.18')
+
+    const { useUpdaterStore: useStore, useNotificationStore } = await loadModules()
+    useNotificationStore.getState().dismissAll()
+    const bootstrap = useStore.getState().bootstrap()
+    await vi.waitFor(() => expect(fakeUpdate.download).toHaveBeenCalled())
+
+    await useStore.getState().installNow()
+
+    expect(fakeUpdate.install).not.toHaveBeenCalled()
+    expect(useStore.getState().phase).toBe('downloading')
+    expect(useNotificationStore.getState().notifications).toHaveLength(1)
+
+    finishDownload()
+    await bootstrap
+  })
+
   it('pushes a user-visible toast when no Update handle is present', async () => {
     const { useUpdaterStore: useStore, useNotificationStore } = await loadModules()
     useNotificationStore.getState().dismissAll()
@@ -129,5 +195,30 @@ describe('updaterStore.installNow', () => {
     expect(notes.length).toBeGreaterThanOrEqual(1)
     expect(notes[notes.length - 1].level).toBe('error')
     expect(useStore.getState().phase).toBe('ready')
+  })
+
+  it('does not return to ready when install succeeds but relaunch fails', async () => {
+    const fakeUpdate = {
+      version: '0.5.21',
+      body: '',
+      download: vi.fn(async (cb: (e: { event: string; data: { contentLength?: number; chunkLength?: number } }) => void) => {
+        cb({ event: 'Started', data: { contentLength: 1 } })
+        cb({ event: 'Progress', data: { chunkLength: 1 } })
+      }),
+      install: vi.fn().mockResolvedValue(undefined),
+    }
+    checkMock.mockResolvedValue(fakeUpdate)
+    getVersionMock.mockResolvedValue('0.5.18')
+    relaunchMock.mockRejectedValue(new Error('relaunch failed'))
+
+    const { useUpdaterStore: useStore, useNotificationStore } = await loadModules()
+    useNotificationStore.getState().dismissAll()
+    await useStore.getState().bootstrap()
+    await useStore.getState().installNow()
+
+    expect(fakeUpdate.install).toHaveBeenCalled()
+    expect(useStore.getState().phase).toBe('idle')
+    expect(useStore.getState()._update).toBeNull()
+    expect(useStore.getState()._downloaded).toBe(false)
   })
 })

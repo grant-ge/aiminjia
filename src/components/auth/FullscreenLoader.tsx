@@ -1,13 +1,31 @@
 export function FullscreenLoader() {
   return (
     <div
-      className="fixed inset-0 flex items-center justify-center bg-background text-foreground"
-      style={{ animation: 'fadeInDelayed 0.2s ease forwards', animationDelay: '300ms', opacity: 0 }}
+      data-testid="fullscreen-loader"
+      className="fixed inset-0 flex items-center justify-center"
+      style={{
+        animation: 'fadeInDelayed 0.2s ease forwards',
+        animationDelay: '300ms',
+        background: 'var(--color-bg-main)',
+        color: 'var(--color-text-primary)',
+        opacity: 0,
+      }}
     >
       <style>{`@keyframes fadeInDelayed { to { opacity: 1; } }`}</style>
       <div className="flex flex-col items-center gap-3">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
-        <p className="text-sm text-muted-foreground">正在恢复登录状态...</p>
+        <div
+          aria-label="正在恢复登录状态"
+          className="h-8 w-8 animate-spin rounded-full"
+          style={{
+            borderStyle: 'solid',
+            borderWidth: 2,
+            borderRightColor: 'var(--color-border)',
+            borderBottomColor: 'var(--color-border)',
+            borderLeftColor: 'var(--color-border)',
+            borderTopColor: 'var(--primary)',
+          }}
+        />
+        <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>正在恢复登录状态...</p>
       </div>
     </div>
   )

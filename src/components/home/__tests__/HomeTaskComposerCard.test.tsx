@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { render, waitFor, fireEvent, act } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { HomeTaskComposerCard } from '../HomeTaskComposerCard'
 import { useChatStore } from '@/stores/chatStore'
@@ -50,7 +50,7 @@ beforeEach(() => {
   mockPickAttachments.mockReset().mockResolvedValue([])
   useChatStore.setState({ activeConversationId: null, conversations: [], messages: [] })
   useUiStore.setState({ route: { kind: 'home' }, prefillText: undefined })
-  useHomeStore.setState({ selectedWorkspace: null })
+  useHomeStore.setState({ selectedWorkspace: null, recentWorkspaces: [] })
 })
 
 describe('HomeTaskComposerCard', () => {
@@ -104,6 +104,83 @@ describe('HomeTaskComposerCard', () => {
     expect(text).toContain('[附件: plan.pdf](<file:///p/plan.pdf>)')
     expect(files).toHaveLength(1)
     expect(files[0].filePath).toBe('/p/plan.pdf')
+  })
+
+  it('renders home-only workspace bar below a larger composer without using RichComposer project button', async () => {
+    render(<HomeTaskComposerCard />)
+    const homeShell = await screen.findByTestId('home-composer-shell')
+    const workspaceBar = await screen.findByTestId('home-workspace-bar')
+    const workspaceButton = await screen.findByRole('button', { name: /选择工作目录/ })
+
+    expect(homeShell).toHaveClass('home-composer-large')
+    expect(workspaceBar).toHaveClass('absolute')
+    expect(workspaceBar).toHaveClass('border-x')
+    expect(workspaceBar).toHaveClass('border-b')
+    expect(workspaceBar).toHaveClass('bg-sidebar')
+    expect(workspaceButton).toHaveTextContent('在 默认 中工作')
+    expect(workspaceButton).toHaveAttribute('title', '/home')
+    expect(screen.queryByRole('button', { name: /^默认$/ })).not.toBeInTheDocument()
+  })
+
+  it('opens a workspace dropdown with recent folders and choose-different action', async () => {
+    useHomeStore.setState({
+      selectedWorkspace: { id: 'txl', rootPath: '/Users/me/txl', displayName: 'txl' },
+      recentWorkspaces: [
+        { id: '账单核对', rootPath: '/Users/me/Desktop/账单核对', displayName: '账单核对' },
+        { id: 'lotus-app', rootPath: '/Users/me/lotus-app', displayName: 'lotus-app' },
+      ],
+    })
+    render(<HomeTaskComposerCard />)
+
+    fireEvent.pointerDown(await screen.findByRole('button', { name: /选择工作目录/ }))
+
+    expect(await screen.findByRole('menuitem', { name: /账单核对/ })).toBeInTheDocument()
+    expect(screen.getByText('/Users/me/Desktop/账单核对')).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: /lotus-app/ })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: /选择其他目录/ })).toBeInTheDocument()
+  })
+
+  it('selects a recent workspace from the dropdown without opening the system picker', async () => {
+    useHomeStore.setState({
+      selectedWorkspace: { id: 'txl', rootPath: '/Users/me/txl', displayName: 'txl' },
+      recentWorkspaces: [
+        { id: '账单核对', rootPath: '/Users/me/Desktop/账单核对', displayName: '账单核对' },
+      ],
+    })
+    render(<HomeTaskComposerCard />)
+
+    fireEvent.pointerDown(await screen.findByRole('button', { name: /选择工作目录/ }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: /账单核对/ }))
+
+    expect(mockPickLocalDirectory).not.toHaveBeenCalled()
+    expect(await screen.findByText('在 账单核对 中工作')).toBeInTheDocument()
+    expect(useHomeStore.getState().selectedWorkspace?.rootPath).toBe('/Users/me/Desktop/账单核对')
+  })
+
+  it('choose different folder from dropdown opens picker and stores it as most recent', async () => {
+    mockPickLocalDirectory.mockResolvedValueOnce('/Users/me/lotus-app')
+    useHomeStore.setState({
+      selectedWorkspace: { id: 'txl', rootPath: '/Users/me/txl', displayName: 'txl' },
+      recentWorkspaces: [
+        { id: '账单核对', rootPath: '/Users/me/Desktop/账单核对', displayName: '账单核对' },
+      ],
+    })
+    render(<HomeTaskComposerCard />)
+
+    fireEvent.pointerDown(await screen.findByRole('button', { name: /选择工作目录/ }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: /选择其他目录/ }))
+
+    await waitFor(() => {
+      expect(mockPickLocalDirectory).toHaveBeenCalledWith({
+        defaultPath: '/Users/me/txl',
+        title: '选择工作目录',
+      })
+    })
+    expect(await screen.findByText('在 lotus-app 中工作')).toBeInTheDocument()
+    expect(useHomeStore.getState().recentWorkspaces.map((ws) => ws.displayName)).toEqual([
+      'lotus-app',
+      '账单核对',
+    ])
   })
 
   it('non-default workspace → authorizeLocalDirectory called before send', async () => {

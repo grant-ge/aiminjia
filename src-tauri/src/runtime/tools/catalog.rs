@@ -862,6 +862,7 @@ pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
     "Grep",
     "WriteMemory",
     "SearchMemory",
+    "WebSearch",
     "Agent",
     "TaskOutput",
     "Skill",

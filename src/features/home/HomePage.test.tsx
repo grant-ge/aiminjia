@@ -49,7 +49,7 @@ describe('HomePage', () => {
 
   it('renders mascot title and composer without secondary CTA or suggestions', () => {
     render(<HomePage />)
-    expect(screen.getAllByText('创建你的下一条任务').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('千头万绪在前，先理一端').length).toBeGreaterThanOrEqual(1)
     expect(screen.queryByRole('button', { name: /前往技能中心/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /为你推荐/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /实施计划/ })).not.toBeInTheDocument()

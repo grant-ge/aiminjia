@@ -293,6 +293,34 @@ pub fn map_runtime_event(event: &RuntimeEvent) -> Option<LegacyEvent> {
                 payload,
             })
         }
+        RuntimeEventKind::PendingSnapshot { items } => Some(LegacyEvent {
+            name: "pending:snapshot".to_string(),
+            payload: json!({
+                "sessionId": conversation_id,
+                "items": items,
+            }),
+        }),
+        RuntimeEventKind::PendingQueued { item } => Some(LegacyEvent {
+            name: "pending:queued".to_string(),
+            payload: json!({
+                "sessionId": conversation_id,
+                "item": item,
+            }),
+        }),
+        RuntimeEventKind::PendingDrained { drained_ids } => Some(LegacyEvent {
+            name: "pending:drained".to_string(),
+            payload: json!({
+                "sessionId": conversation_id,
+                "drainedIds": drained_ids,
+            }),
+        }),
+        RuntimeEventKind::PendingRemoved { item_id } => Some(LegacyEvent {
+            name: "pending:removed".to_string(),
+            payload: json!({
+                "sessionId": conversation_id,
+                "itemId": item_id,
+            }),
+        }),
         _ => None,
     };
     payload
@@ -347,5 +375,61 @@ impl RuntimeEventSubscriber for TauriEventAdapter {
             self.host.emit_legacy_event(&mapped.name, mapped.payload)?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod pending_event_tests {
+    use super::*;
+    use crate::runtime::ids::{RunId, SessionId};
+    use crate::runtime::pending::{PendingItem, PendingSource};
+
+    fn evt(kind: RuntimeEventKind) -> RuntimeEvent {
+        RuntimeEvent::new(SessionId::new("conv-1"), RunId::new("run-1"), kind)
+    }
+
+    #[test]
+    fn pending_snapshot_maps_to_legacy_event() {
+        let e = evt(RuntimeEventKind::PendingSnapshot { items: vec![] });
+        let m = map_runtime_event(&e).expect("mapped");
+        assert_eq!(m.name, "pending:snapshot");
+        assert_eq!(m.payload["sessionId"], "conv-1");
+        assert!(m.payload["items"].is_array());
+    }
+
+    #[test]
+    fn pending_queued_carries_item() {
+        let item = PendingItem {
+            id: "p-1".into(),
+            source: PendingSource::App,
+            text: "hi".into(),
+            sender_nick: None,
+            attachments: vec![],
+            received_at: "2026-05-11T03:21:00Z".into(),
+        };
+        let e = evt(RuntimeEventKind::PendingQueued { item });
+        let m = map_runtime_event(&e).unwrap();
+        assert_eq!(m.name, "pending:queued");
+        assert_eq!(m.payload["item"]["id"], "p-1");
+    }
+
+    #[test]
+    fn pending_drained_carries_ids() {
+        let e = evt(RuntimeEventKind::PendingDrained {
+            drained_ids: vec!["a".into(), "b".into()],
+        });
+        let m = map_runtime_event(&e).unwrap();
+        assert_eq!(m.name, "pending:drained");
+        assert_eq!(m.payload["drainedIds"][0], "a");
+    }
+
+    #[test]
+    fn pending_removed_carries_item_id() {
+        let e = evt(RuntimeEventKind::PendingRemoved {
+            item_id: "p-1".into(),
+        });
+        let m = map_runtime_event(&e).unwrap();
+        assert_eq!(m.name, "pending:removed");
+        assert_eq!(m.payload["itemId"], "p-1");
     }
 }

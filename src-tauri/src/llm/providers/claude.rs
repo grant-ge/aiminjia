@@ -43,6 +43,11 @@ pub struct ClaudeProvider {
     model: String,
     api_url: String,
     is_direct: bool,
+    /// When true, the request body OMITS the `model` field entirely so the
+    /// upstream (e.g. lotus gateway) decides routing on its own (protocol +
+    /// priority). Used by the Lotus path so the desktop client no longer
+    /// pins users to whichever model they happened to start with.
+    omit_model: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -109,12 +114,25 @@ impl ClaudeProvider {
         api_url: String,
         is_direct: bool,
     ) -> Self {
+        Self::with_url_opts(api_key, model, api_url, is_direct, false)
+    }
+
+    /// Like `with_url` but lets the caller request the `model` field be
+    /// omitted from outgoing request bodies (gateway-decides-model mode).
+    pub fn with_url_opts(
+        api_key: String,
+        model: Option<String>,
+        api_url: String,
+        is_direct: bool,
+        omit_model: bool,
+    ) -> Self {
         Self {
             client: super::build_http_client(),
             api_key,
             model: model.unwrap_or_else(|| DEFAULT_MODEL.to_string()),
             api_url,
             is_direct,
+            omit_model,
         }
     }
 
@@ -262,10 +280,12 @@ impl ClaudeProvider {
         let messages = merge_consecutive_user_messages(messages);
 
         let mut body = json!({
-            "model": self.model,
             "max_tokens": request.max_tokens,
             "messages": messages,
         });
+        if !self.omit_model {
+            body["model"] = json!(self.model);
+        }
 
         if let Some(system) = system_content {
             if !system.is_empty() {
@@ -1227,6 +1247,37 @@ mod tests {
         assert!(body.get("tools").is_none());
         assert!(body.get("stream").is_none());
         assert!(body.get("temperature").is_none());
+    }
+
+    #[test]
+    fn test_build_request_body_omit_model() {
+        // Lotus gateway path: the desktop client sends no `model` field so
+        // the gateway decides routing on its own (protocol + priority).
+        let provider = ClaudeProvider::with_url_opts(
+            "test-key".to_string(),
+            None,
+            "https://example.com/v1/messages".to_string(),
+            false,
+            true, // omit_model
+        );
+        let request = LlmRequest {
+            messages: vec![ChatMessage::text("user", "Hello")],
+            tools: vec![],
+            max_tokens: 1024,
+            temperature: 1.0,
+            stream: false,
+            thinking_config: None,
+            anthropic_multimodal_turn: None,
+            system_segments: None,
+        };
+
+        let body = provider.build_request_body(&request);
+        assert!(
+            body.get("model").is_none(),
+            "expected no `model` field when omit_model=true, got {:?}",
+            body
+        );
+        assert_eq!(body["max_tokens"], 1024);
     }
 
     #[test]

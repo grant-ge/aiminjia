@@ -5,19 +5,21 @@ import { useEffect, useState } from 'react'
 import { message } from '@tauri-apps/plugin-dialog'
 
 import { requestConfirm } from '@/components/common/ConfirmDialogHost'
+import { LegalDocumentDialog } from '@/components/legal/LegalDocumentDialog'
+import { LEGAL_DOCUMENTS, type LegalDocumentKey } from '@/components/legal/legalDocuments'
 import { getSettings, updateSettings } from '@/lib/tauri'
+import { useUpdaterStore } from '@/lib/updaterStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useBrandingStore } from '@/stores/brandingStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useUiStore } from '@/stores/uiStore'
-import { useUpdaterStore } from '@/lib/updaterStore'
 
 import { SettingsContentBody } from './SettingsContentBody'
 import { SettingsMenu } from './SettingsMenu'
 import { SettingsShell } from './SettingsShell'
 import { AboutPanel } from './panels/AboutPanel'
-import { GeneralPanel } from './panels/GeneralPanel'
 import { ArchivedPanel } from './panels/ArchivedPanel'
+import { GeneralPanel } from './panels/GeneralPanel'
 
 export function SettingsModal() {
   const settingsModal = useUiStore((s) => s.settingsModal)
@@ -32,6 +34,7 @@ export function SettingsModal() {
   const setDataMaskingLevel = useSettingsStore((s) => s.setDataMaskingLevel)
   const [pendingLogout, setPendingLogout] = useState(false)
   const [appVersion, setAppVersion] = useState('读取中')
+  const [activeLegalDocument, setActiveLegalDocument] = useState<LegalDocumentKey | null>(null)
 
   useEffect(() => {
     if (settingsModal !== 'about') return
@@ -52,6 +55,8 @@ export function SettingsModal() {
   }, [settingsModal])
 
   if (!settingsModal) return null
+
+  const legalDocument = activeLegalDocument ? LEGAL_DOCUMENTS[activeLegalDocument] : null
 
   const onLogout = async () => {
     if (pendingLogout) return
@@ -133,60 +138,69 @@ export function SettingsModal() {
   }
 
   return (
-    <SettingsShell
-      open
-      onClose={closeSettings}
-      height={720}
-      menu={
-        <SettingsMenu
-          activeKey={settingsModal}
-          onSelect={(k) => openSettings(k)}
-        />
-      }
-      content={
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <SettingsContentBody>
-            {settingsModal === 'account' ? (
-              <GeneralPanel
-                user={{
-                  name: user?.name ?? user?.username ?? '未登录',
-                  tenantName: tenant?.name ?? '',
-                  avatarUrl: '',
-                }}
-                onLogout={() => void onLogout()}
-              />
-            ) : null}
-            {settingsModal === 'about' ? (
-              <AboutPanel
-                appName={productName}
-                version={appVersion}
-                copyright="仁励家网络科技(杭州)有限公司 版权所有"
-                logoUrl={logoUrl}
-                onCheckUpdate={() => void onCheckUpdate()}
-                onUploadLogs={() => void onUploadLogs()}
-                onResetData={() => void onResetData()}
-                dataMaskingLevel={dataMaskingLevel}
-                onDataMaskingChange={async (level) => {
-                  setDataMaskingLevel(level)
-                  try {
-                    const current = await getSettings()
-                    await updateSettings({ ...current, dataMaskingLevel: level })
-                  } catch (err) {
-                    console.error('Failed to persist dataMaskingLevel:', err)
-                  }
-                }}
-                links={{
-                  customerService: () => void openExternalLink('https://www.renlijia.com/support'),
-                  productSuggestion: () => void openExternalLink('https://www.renlijia.com/feedback'),
-                  privacyPolicy: () => void openExternalLink('https://www.renlijia.com/privacy'),
-                  terms: () => void openExternalLink('https://www.renlijia.com/terms'),
-                }}
-              />
-            ) : null}
-            {settingsModal === 'archived' ? <ArchivedPanel /> : null}
-          </SettingsContentBody>
-        </div>
-      }
-    />
+    <>
+      <SettingsShell
+        open
+        onClose={closeSettings}
+        height={720}
+        menu={
+          <SettingsMenu
+            activeKey={settingsModal}
+            onSelect={(k) => openSettings(k)}
+          />
+        }
+        content={
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <SettingsContentBody>
+              {settingsModal === 'account' ? (
+                <GeneralPanel
+                  user={{
+                    name: user?.name ?? user?.username ?? '未登录',
+                    tenantName: tenant?.name ?? '',
+                    avatarUrl: '',
+                  }}
+                  onLogout={() => void onLogout()}
+                />
+              ) : null}
+              {settingsModal === 'about' ? (
+                <AboutPanel
+                  appName={productName}
+                  version={appVersion}
+                  copyright="仁励家网络科技(杭州)有限公司 版权所有"
+                  logoUrl={logoUrl}
+                  onCheckUpdate={() => void onCheckUpdate()}
+                  onUploadLogs={() => void onUploadLogs()}
+                  onResetData={() => void onResetData()}
+                  dataMaskingLevel={dataMaskingLevel}
+                  onDataMaskingChange={async (level) => {
+                    setDataMaskingLevel(level)
+                    try {
+                      const current = await getSettings()
+                      await updateSettings({ ...current, dataMaskingLevel: level })
+                    } catch (err) {
+                      console.error('Failed to persist dataMaskingLevel:', err)
+                    }
+                  }}
+                  links={{
+                    customerService: () => void openExternalLink('https://www.renlijia.com/support'),
+                    productSuggestion: () => void openExternalLink('https://www.renlijia.com/feedback'),
+                    privacyPolicy: () => setActiveLegalDocument('privacy'),
+                    terms: () => setActiveLegalDocument('terms'),
+                  }}
+                />
+              ) : null}
+              {settingsModal === 'archived' ? <ArchivedPanel /> : null}
+            </SettingsContentBody>
+          </div>
+        }
+      />
+      <LegalDocumentDialog
+        document={legalDocument}
+        open={legalDocument !== null}
+        onOpenChange={(open) => {
+          if (!open) setActiveLegalDocument(null)
+        }}
+      />
+    </>
   )
 }

@@ -624,6 +624,82 @@ pub fn run() {
                 crate::runtime::employee::EmployeeActiveRuns::new(),
             ));
 
+            // PendingQueueManager: per-session queue with debounced drain.
+            // Must be created after RuntimeRunRegistry, RuntimeRepositoryFacade, and
+            // TauriRuntimeHost (via app handle). Requires an active user scope; if the
+            // user is not logged in at startup, the manager is still registered but
+            // uses the legacy root conversations dir as a best-effort fallback.
+            {
+                let pending_event_bus = crate::runtime::RuntimeEventBus::new();
+                let pending_host = std::sync::Arc::new(
+                    crate::transport::tauri_runtime_host::TauriRuntimeHost::new(app.handle().clone()),
+                );
+                let pending_adapter = std::sync::Arc::new(
+                    crate::transport::tauri_event_adapter::TauriEventAdapter::new(pending_host),
+                );
+                pending_event_bus.subscribe(pending_adapter);
+
+                let run_registry_ref = app
+                    .state::<std::sync::Arc<crate::runtime::RuntimeRunRegistry>>()
+                    .inner()
+                    .clone();
+
+                // Build the resolver from the active user scope, or fall back to a
+                // guest-mode scope if the user is not yet authenticated. The resolver
+                // only needs a valid path — PendingQueueManager is safe to manage even
+                // when the scope is absent (enqueue_or_send handles missing dirs).
+                let pending_resolver: std::sync::Arc<dyn crate::runtime::pending::ConvDirResolver> =
+                    if let Some(ref scope) = user_scope {
+                        std::sync::Arc::new(crate::runtime::pending::AiJiaPendingResolver::new(
+                            (*aijia_home).clone(),
+                            scope.clone(),
+                        ))
+                    } else {
+                        // No active user — create a resolver over the root conversations dir.
+                        // This path is unusual (app startup with no prior login) but must not
+                        // panic. We use a synthetic "guest" scope so AiJiaHome resolves the
+                        // right directory layout.
+                        let guest_scope = crate::storage::UserScope::new(0, 0);
+                        std::sync::Arc::new(crate::runtime::pending::AiJiaPendingResolver::new(
+                            (*aijia_home).clone(),
+                            guest_scope,
+                        ))
+                    };
+
+                let pending_manager = crate::runtime::pending::PendingQueueManager::new(
+                    run_registry_ref,
+                    std::sync::Arc::new(pending_event_bus),
+                    pending_resolver,
+                    crate::runtime::pending::PendingConfig::default(),
+                );
+                {
+                    let mgr_for_restore = pending_manager.clone();
+                    tauri::async_runtime::spawn(async move {
+                        if let Err(e) = mgr_for_restore.restore_from_disk().await {
+                            log::warn!("[pending] restore_from_disk failed: {:#}", e);
+                        }
+                    });
+                }
+                // Wire the chat adapter as the drain dispatcher: when the
+                // debounce timer fires, the manager calls TauriChatCommandAdapter
+                // ::dispatch which delegates to send_chat_request.
+                {
+                    let chat_adapter_for_pending: Arc<
+                        dyn crate::runtime::pending::ChatTurnDispatcher,
+                    > = app
+                        .state::<Arc<transport::tauri_commands::chat::TauriChatCommandAdapter>>()
+                        .inner()
+                        .clone();
+                    let mgr_for_dispatcher = pending_manager.clone();
+                    tauri::async_runtime::spawn(async move {
+                        mgr_for_dispatcher
+                            .set_dispatcher(chat_adapter_for_pending)
+                            .await;
+                    });
+                }
+                app.manage(pending_manager);
+            }
+
             // Initialize ChannelManager for IM channel integration
             if let Some(paths) = current_user_storage.resolve_paths() {
                 let chat_adapter_ref = app
@@ -667,6 +743,9 @@ pub fn run() {
                     Some(ask_coordinator),
                     reply_manager,
                     channel_session_ids,
+                    app.state::<Arc<crate::runtime::pending::PendingQueueManager>>()
+                        .inner()
+                        .clone(),
                 ));
                 let cm = channel_manager.clone();
                 tauri::async_runtime::spawn(async move {
@@ -880,6 +959,9 @@ pub fn run() {
             commands::channel::channel_set_enabled,
             commands::channel::channel_remove_platform,
             commands::channel::channel_reveal_secret,
+            // Pending queue commands
+            crate::transport::tauri_commands::pending::pending_snapshot_for_session,
+            crate::transport::tauri_commands::pending::pending_remove_item,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

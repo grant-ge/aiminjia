@@ -38,6 +38,7 @@ const tauriMock = vi.hoisted(() => ({
   getConversations: vi.fn().mockResolvedValue([]),
   isAgentBusy: vi.fn().mockResolvedValue([]),
   cloudLogout: vi.fn().mockResolvedValue(undefined),
+  syncBuiltinSkills: vi.fn().mockResolvedValue({ installed: [], skipped: [] }),
 }))
 
 vi.mock('@/lib/tauri', () => tauriMock)

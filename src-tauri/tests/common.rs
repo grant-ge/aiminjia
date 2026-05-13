@@ -28,6 +28,10 @@ pub fn kind_label(kind: &RuntimeEventKind) -> &'static str {
         RuntimeEventKind::TurnCompleted { .. } => "TurnCompleted",
         RuntimeEventKind::RunCancelled => "RunCancelled",
         RuntimeEventKind::RunCompleted => "RunCompleted",
+        RuntimeEventKind::PendingSnapshot { .. } => "PendingSnapshot",
+        RuntimeEventKind::PendingQueued { .. } => "PendingQueued",
+        RuntimeEventKind::PendingDrained { .. } => "PendingDrained",
+        RuntimeEventKind::PendingRemoved { .. } => "PendingRemoved",
     }
 }
 

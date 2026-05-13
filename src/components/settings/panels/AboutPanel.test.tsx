@@ -46,7 +46,7 @@ describe('AboutPanel', () => {
     expect(screen.queryByText('帮助与反馈')).not.toBeInTheDocument()
     expect(screen.queryByText('用户体验改进计划')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '隐私权政策' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /隐私政策/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '隐私政策' })).toBeInTheDocument()
     expect(screen.getByText('开发者模式')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '上传日志' })).toBeInTheDocument()
   })
@@ -73,7 +73,7 @@ describe('AboutPanel', () => {
     expect(screen.queryByRole('switch', { name: '用户体验改进计划' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /在线客服/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /产品建议/ })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /服务条款/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '服务条款' })).toBeInTheDocument()
   })
 
   it('does not render reset while reset is unavailable', () => {

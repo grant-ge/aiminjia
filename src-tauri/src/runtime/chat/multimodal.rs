@@ -96,10 +96,34 @@ fn is_image_attachment(attachment: &ChatAttachmentRef) -> bool {
 }
 
 fn normalized_image_mime(attachment: &ChatAttachmentRef) -> Option<String> {
-    let mime = attachment.mime_type.as_deref()?.trim().to_ascii_lowercase();
+    if let Some(mime) = attachment.mime_type.as_deref() {
+        if let Some(mapped) = map_mime(mime) {
+            return Some(mapped);
+        }
+    }
+    // Fallback: infer from file extension when frontend omitted mime_type.
+    infer_mime_from_path(&attachment.file_path)
+}
+
+fn map_mime(mime: &str) -> Option<String> {
+    let mime = mime.trim().to_ascii_lowercase();
     match mime.as_str() {
         "image/png" | "image/jpeg" | "image/webp" | "image/gif" => Some(mime),
         "image/jpg" => Some("image/jpeg".to_string()),
+        _ => None,
+    }
+}
+
+fn infer_mime_from_path(path: &str) -> Option<String> {
+    let ext = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())?
+        .to_ascii_lowercase();
+    match ext.as_str() {
+        "png" => Some("image/png".to_string()),
+        "jpg" | "jpeg" => Some("image/jpeg".to_string()),
+        "gif" => Some("image/gif".to_string()),
+        "webp" => Some("image/webp".to_string()),
         _ => None,
     }
 }
@@ -182,5 +206,27 @@ mod tests {
 
         assert_eq!(result.image_blocks.len(), MAX_ANTHROPIC_IMAGE_COUNT);
         assert_eq!(result.degraded_attachment_ids.len(), 1);
+    }
+
+    #[test]
+    fn falls_back_to_path_extension_when_mime_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("screenshot.png");
+        std::fs::write(&path, b"\x89PNG\r\n\x1a\n").unwrap();
+        let attachment = attachment(&path, None);
+
+        let result = build_anthropic_image_blocks(&[attachment.clone()]);
+
+        assert_eq!(result.image_blocks.len(), 1);
+        assert!(result.converted_attachment_ids.contains(&attachment.id));
+        assert!(result.degraded_attachment_ids.is_empty());
+        match &result.image_blocks[0] {
+            AnthropicContentBlock::Image { source } => match source {
+                AnthropicImageSource::Base64 { media_type, .. } => {
+                    assert_eq!(media_type, "image/png");
+                }
+            },
+            other => panic!("expected image block, got {other:?}"),
+        }
     }
 }

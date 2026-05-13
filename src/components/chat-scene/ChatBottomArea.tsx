@@ -16,8 +16,11 @@ import {
 import { useChat, type PendingFileInfo } from '@/hooks/useChat'
 import { useChatAttachments } from '@/hooks/useChatAttachments'
 import { useChatStore } from '@/stores/chatStore'
+import { usePendingStore } from '@/stores/pendingStore'
 import { useSkillStore } from '@/stores/skillStore'
 import { useUiStore } from '@/stores/uiStore'
+import { pendingSnapshotForSession } from '@/lib/tauri'
+import { PendingChips } from '@/features/chat/PendingChips'
 
 function BottomTips() {
   return (
@@ -31,11 +34,20 @@ function BottomTips() {
   )
 }
 
-export function ChatBottomArea({ disabled = false }: { disabled?: boolean }) {
+export function ChatBottomArea({
+  disabled = false,
+  sessionIdOverride,
+}: {
+  disabled?: boolean
+  /** When the bottom area is rendered inside a channel session view (DingTalk
+   * etc.), the active session id does NOT live in chatStore — pass it
+   * explicitly so pending chips / snapshot can target the right queue. */
+  sessionIdOverride?: string
+}) {
   const { t } = useTranslation()
   const composerRef = useRef<RichComposerHandle>(null)
-  const [isSending, setIsSending] = useState(false)
   const activeConversationId = useChatStore((s) => s.activeConversationId)
+  const pendingSessionId = sessionIdOverride ?? activeConversationId ?? null
   const { sendUserMessage, isStreaming, stopCurrentStream } = useChat()
   const { isPickingAttachments, pickAttachments } = useChatAttachments()
   const [showSkillPopover, setShowSkillPopover] = useState(false)
@@ -75,8 +87,12 @@ export function ChatBottomArea({ disabled = false }: { disabled?: boolean }) {
   }, [getSkillById])
 
   const handleSubmit = useCallback(async (payload: RichComposerSubmitPayload) => {
-    if (isSending) return
-    setIsSending(true)
+    // Note: RichComposer.trySubmit already has a `submittingRef` guard against
+    // duplicate concurrent calls for the same submission. We don't need a
+    // separate `isSending` gate here, and adding one breaks the PendingQueue
+    // UX: when the first message is in flight (sendUserMessage returns when
+    // the IPC enqueues, but isSending was tied to LLM stream completion in
+    // older code), a second Enter would silently drop.
     const fileInfos: PendingFileInfo[] = payload.attachments.map((f) => ({
       id: f.id,
       fileName: f.fileName,
@@ -100,10 +116,8 @@ export function ChatBottomArea({ disabled = false }: { disabled?: boolean }) {
     } catch (err) {
       console.error('[ChatBottomArea] sendUserMessage failed:', err)
       throw err
-    } finally {
-      setIsSending(false)
     }
-  }, [isSending, sendUserMessage, selectedSkill])
+  }, [selectedSkill, sendUserMessage])
 
   const handlePickAttachments = useCallback(async () => {
     const results = await pickAttachments()
@@ -112,13 +126,27 @@ export function ChatBottomArea({ disabled = false }: { disabled?: boolean }) {
     }
   }, [pickAttachments])
 
+  // Fetch pending queue snapshot when conversation switches.
+  // Backend pushes incremental updates via pending:queued/drained/removed events.
+  useEffect(() => {
+    if (!pendingSessionId) return
+    pendingSnapshotForSession(pendingSessionId)
+      .then((items) =>
+        usePendingStore.getState().applySnapshot(pendingSessionId, items),
+      )
+      .catch((e) => {
+        // eslint-disable-next-line no-console
+        console.warn('[pending] snapshot fetch failed', e)
+      })
+  }, [pendingSessionId])
+
   return (
     <footer
       data-testid="chat-bottom-area"
       className="relative h-[148px] shrink-0"
     >
       <div
-        className="absolute right-0 bottom-0 left-0 px-6 pt-4 pb-5 [scrollbar-gutter:stable_both-edges]"
+        className="absolute right-0 bottom-0 left-0 px-6 pt-4 pb-5"
       >
         <div className="relative mx-auto w-full max-w-[736px]">
           <div className="absolute bottom-full left-1/2 z-30 mb-1 -translate-x-1/2">
@@ -130,6 +158,7 @@ export function ChatBottomArea({ disabled = false }: { disabled?: boolean }) {
           </div>
 
           <div className="relative">
+            {pendingSessionId && <PendingChips sessionId={pendingSessionId} />}
             <RichComposer
               ref={composerRef}
               placeholder={t('inputBar.placeholder')}

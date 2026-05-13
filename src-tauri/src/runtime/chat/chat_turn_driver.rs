@@ -104,6 +104,10 @@ pub struct ChatTurnRequest {
     /// `RuleSource::Session` before tool execution.  Empty when there are no
     /// attachments or all attachment paths failed validation.
     pub session_attachment_dirs: Vec<std::path::PathBuf>,
+    /// When set, this turn originated from a drained PendingQueue batch.
+    /// The dispatcher could use this metadata to e.g. persist each item as an
+    /// independent user message before invoking the LLM. Default: None.
+    pub pending_batch: Option<Vec<crate::runtime::pending::PendingItem>>,
 }
 
 impl ChatTurnRequest {
@@ -123,6 +127,7 @@ impl ChatTurnRequest {
             client_message_id: None,
             persona_id_override: None,
             session_attachment_dirs: Vec::new(),
+            pending_batch: None,
         }
     }
 
@@ -1254,9 +1259,17 @@ impl RuntimeChatTurnDriver {
             allowed_tools: overrides.allowed_tools,
             max_iterations: overrides.max_iterations.unwrap_or(60),
             token_budget: overrides.token_budget.unwrap_or_else(|| {
-                crate::llm::max_tokens::default_max_tokens_for_model(
-                    &llm_settings.primary_model,
-                ) as usize
+                // Cloud mode: ask for an aspirational ceiling and let the lotus
+                // gateway clamp to the real per-upstream-model cap (Step 1).
+                // Local mode: use the model-name heuristic since there's no
+                // gateway in the loop.
+                if llm_settings.use_cloud {
+                    1_000_000
+                } else {
+                    crate::llm::max_tokens::default_max_tokens_for_model(
+                        &llm_settings.primary_model,
+                    ) as usize
+                }
             }),
             chunk_timeout_secs: 90,
             masking_level: llm_settings.masking_level.clone(),

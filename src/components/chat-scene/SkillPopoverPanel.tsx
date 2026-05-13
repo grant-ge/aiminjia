@@ -23,7 +23,7 @@ export function SkillPopoverPanel({ items, onPick, onClose }: SkillPopoverPanelP
       className="w-[560px] overflow-hidden rounded-lg border border-border bg-popover"
       style={{ boxShadow: '0 4px 12px -4px rgba(0,0,0,0.08)' }}
     >
-      <header className="flex items-center justify-between border-b border-border px-4 py-3 text-xs font-semibold text-muted-foreground">
+      <header className="flex items-center justify-between border-b border-border px-4 py-3 text-sm font-medium text-foreground">
         <span>管理已安装的技能</span>
         <button
           type="button"
@@ -31,7 +31,7 @@ export function SkillPopoverPanel({ items, onPick, onClose }: SkillPopoverPanelP
           onClick={onClose}
           className="text-muted-foreground transition-colors hover:text-foreground"
         >
-          <X className="h-3.5 w-3.5" />
+          <X className="h-4 w-4" />
         </button>
       </header>
       {items.length === 0 ? (
@@ -48,7 +48,7 @@ export function SkillPopoverPanel({ items, onPick, onClose }: SkillPopoverPanelP
       ) : (
         <ul
           data-testid="skill-popover-list"
-          className="flex max-h-[320px] flex-col overflow-auto"
+          className="flex max-h-[280px] flex-col overflow-auto"
         >
           {items.map((it) => (
             <li key={it.id}>
@@ -58,10 +58,10 @@ export function SkillPopoverPanel({ items, onPick, onClose }: SkillPopoverPanelP
                 className="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left transition-colors hover:bg-muted"
               >
                 <div className="flex min-w-0 flex-col">
-                  <span className="truncate text-sm font-semibold text-foreground">{it.title}</span>
+                  <span className="truncate text-sm font-medium text-foreground">{it.title}</span>
                   <span className="truncate text-xs text-muted-foreground">{it.subtitle}</span>
                 </div>
-                <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                <span className="shrink-0 text-xs text-muted-foreground">
                   {it.source}
                 </span>
               </button>

@@ -34,13 +34,14 @@ GH_REPO = "grant-ge/aiminjia"
 IS_WINDOWS = platform.system() == "Windows"
 
 # Release stages (must complete in order)
+# Windows builds run on GitHub-hosted CI then sign locally.
+# macOS arm64 + x86_64 are built locally on the maintainer's Mac via
+# scripts/build-and-sign-macos.sh (build + sign + notarize + upload in one).
 STAGES = [
     "version_bumped",      # Step 0: version synced and committed
-    "beta_tagged",         # Step 1: beta tag pushed, CI building
-    "beta_win_signed",     # Step 1b: Windows beta signed locally
+    "beta_tagged",         # Step 1: beta tag pushed, CI builds + signs both platforms
     "beta_tested",         # Step 2: tester confirms beta is good
-    "release_tagged",      # Step 3: release tag pushed, CI building
-    "release_win_signed",  # Step 3b: Windows release signed locally
+    "release_tagged",      # Step 3: release tag pushed, CI builds + signs both platforms
     "finalized",           # Step 4: update.json generated
 ]
 
@@ -119,10 +120,8 @@ def check_prereq(state, required_stage, action_name):
         stage_names = {
             "version_bumped": "Version bump (Step 0)",
             "beta_tagged": "Beta build (Step 1)",
-            "beta_win_signed": "Beta Windows signing (Step 1b)",
             "beta_tested": "Beta testing (Step 2)",
             "release_tagged": "Release build (Step 3)",
-            "release_win_signed": "Release Windows signing (Step 3b)",
         }
         print(red(f"\n  BLOCKED: Cannot {action_name}."))
         print(red(f"  Required: {stage_names.get(required_stage, required_stage)} must complete first."))
@@ -272,62 +271,27 @@ def step_1_beta(state):
 
         state["version"] = beta_version  # active version
         state["beta_seq"] = seq
-        # Reset downstream stages — every new beta round restarts signing & test
-        for s in ("beta_win_signed", "beta_tested"):
+        # Reset downstream stages — every new beta round restarts testing
+        for s in ("beta_tested",):
             if s in state.get("stages_completed", []):
                 state["stages_completed"].remove(s)
         save_state(state)
         complete_stage(state, "beta_tagged")
-        print(green(f"\n  ✓ Beta tag pushed. CI is building."))
+        print(green(f"\n  ✓ Beta tag pushed. CI is building Windows (unsigned artifact)."))
         print(f"\n  Monitor: https://github.com/{GH_REPO}/actions")
-        print(f"\n  {yellow('Next action:')}")
-        print(f"  After CI completes (~25 min), sign Windows on the signing machine:")
-        if IS_WINDOWS:
-            print(f"    python scripts/release.py sign-beta")
-        else:
-            print(f"    On Windows: .\\scripts\\sign-windows.ps1 -Version {beta_version} -ReleaseType beta")
-            print(f"    Then come back and run: python scripts/release.py mark-beta-signed")
+        print(f"\n  {yellow('Next actions (do BOTH):')}")
+        print(f"  1. macOS — build + sign + upload locally (serial arm64 → x86_64):")
+        print(f"       bash scripts/build-and-sign-macos.sh {beta_version} beta")
+        print(f"  2. Windows — one-shot end-to-end (downloads CI artifact, signs, uploads):")
+        print(f"       .\\scripts\\release-windows.ps1 -Version {beta_version} -Type beta")
+        print(f"  3. Then test:")
+        print(f"       python scripts/release.py test-passed")
 
-
-def step_1b_sign_beta_windows(state):
-    """Step 1b: Sign Windows beta (runs on Windows signing machine)."""
-    version = state.get("version")
-
-    # On a different machine (signing machine), state file may not exist.
-    # Allow signing if version is provided or can be detected.
-    if not version:
-        version = get_current_version()
-        print(yellow(f"  No release state found. Using version from config: {version}"))
-        if not confirm(f"  Sign beta for v{version}?"):
-            return
-        state["version"] = version
-    elif not is_stage_done(state, "beta_tagged"):
-        print(yellow("  Warning: beta_tagged not marked in local state."))
-        print("  (This is normal if you're on the signing machine, not the machine that pushed the tag)")
-        if not confirm("  Continue with signing anyway?"):
-            return
-
-    print(bold(f"\n═══ Step 1b: Sign Windows Beta (v{version}) ═══"))
-
-    if IS_WINDOWS:
-        print("  Running sign-windows.ps1 ...")
-        run(f'powershell -ExecutionPolicy Bypass -File scripts/sign-windows.ps1 -Version {version} -ReleaseType beta')
-        complete_stage(state, "beta_win_signed")
-        print(green(f"\n  ✓ Windows beta signed and uploaded."))
-    else:
-        print(f"  This step runs on the Windows signing machine.")
-        print(f"  Command: .\\scripts\\sign-windows.ps1 -Version {version} -ReleaseType beta")
-        if confirm("\n  Has Windows signing been completed?"):
-            complete_stage(state, "beta_win_signed")
-            print(green("  ✓ Marked as signed."))
-
-    print(f"\n  {yellow('Next action:')} Test the beta build, then run:")
-    print(f"    python scripts/release.py test-passed")
 
 
 def step_2_test(state):
     """Step 2: Mark beta as tested."""
-    check_prereq(state, "beta_win_signed", "mark beta as tested")
+    check_prereq(state, "beta_tagged", "mark beta as tested")
     version = state["version"]
 
     print(bold(f"\n═══ Step 2: Beta Test Verification (v{version}) ═══"))
@@ -389,54 +353,23 @@ def step_3_release(state):
     state["version"] = base
     save_state(state)
     complete_stage(state, "release_tagged")
-    print(green(f"\n  ✓ Release tag pushed. CI is building."))
+    print(green(f"\n  ✓ Release tag pushed. CI is building Windows (unsigned artifact)."))
     print(f"\n  Monitor: https://github.com/{GH_REPO}/actions")
-    print(f"\n  {yellow('Next action:')}")
-    print(f"  After CI completes, sign Windows:")
-    if IS_WINDOWS:
-        print(f"    python scripts/release.py sign-release")
-    else:
-        print(f"    On Windows: .\\scripts\\sign-windows.ps1 -Version {base} -ReleaseType release")
-        print(f"    Then: python scripts/release.py mark-release-signed")
+    print(f"\n  {yellow('Next actions (do BOTH):')}")
+    print(f"  1. macOS — build + sign + upload locally (serial arm64 → x86_64):")
+    print(f"       bash scripts/build-and-sign-macos.sh {base} release")
+    print(f"  2. Windows — one-shot end-to-end (downloads CI artifact, signs, uploads):")
+    print(f"       .\\scripts\\release-windows.ps1 -Version {base} -Type release")
+    print(f"  3. Verify all artifacts on OSS:")
+    print(f"       bash scripts/verify-release.sh {base} release")
+    print(f"  4. Then finalize:")
+    print(f"       python scripts/release.py finalize")
 
-
-def step_3b_sign_release_windows(state):
-    """Step 3b: Sign Windows release."""
-    version = state.get("version")
-
-    if not version:
-        version = get_current_version()
-        print(yellow(f"  No release state found. Using version from config: {version}"))
-        if not confirm(f"  Sign release for v{version}?"):
-            return
-        state["version"] = version
-    elif not is_stage_done(state, "release_tagged"):
-        print(yellow("  Warning: release_tagged not marked in local state."))
-        print("  (This is normal if you're on the signing machine)")
-        if not confirm("  Continue with signing anyway?"):
-            return
-
-    print(bold(f"\n═══ Step 3b: Sign Windows Release (v{version}) ═══"))
-
-    if IS_WINDOWS:
-        print("  Running sign-windows.ps1 ...")
-        run(f'powershell -ExecutionPolicy Bypass -File scripts/sign-windows.ps1 -Version {version} -ReleaseType release')
-        complete_stage(state, "release_win_signed")
-        print(green(f"\n  ✓ Windows release signed and uploaded."))
-    else:
-        print(f"  This step runs on the Windows signing machine.")
-        print(f"  Command: .\\scripts\\sign-windows.ps1 -Version {version} -ReleaseType release")
-        if confirm("\n  Has Windows signing been completed?"):
-            complete_stage(state, "release_win_signed")
-            print(green("  ✓ Marked as signed."))
-
-    print(f"\n  {yellow('Next action:')} Finalize release:")
-    print(f"    python scripts/release.py finalize")
 
 
 def step_4_finalize(state):
     """Step 4: Generate update.json → users get auto-update."""
-    check_prereq(state, "release_win_signed", "finalize release")
+    check_prereq(state, "release_tagged", "finalize release")
     version = state["version"]
 
     print(bold(f"\n═══ Step 4: Finalize Release (v{version}) ═══"))
@@ -459,9 +392,8 @@ def step_4_finalize(state):
     complete_stage(state, "finalized")
     print(green(f"\n  ✓ Release v{version} finalized! Auto-updates are live."))
     print(f"\n  Remaining tasks:")
-    print(f"    1. macOS Intel build (optional): python3 scripts/upload-x64.py {version}")
-    print(f"    2. Homebrew: python3 scripts/bump-homebrew.py {version}")
-    print(f"    3. Changelog: cd ../lotus && ./scripts/update-changelog.sh desktop {version}")
+    print(f"    1. Homebrew: python3 scripts/bump-homebrew.py {version}")
+    print(f"    2. Changelog: cd ../lotus && ./scripts/update-changelog.sh desktop {version}")
     print(f"\n  Push codeup:")
     print(f"    git push codeup main && git push codeup v{version}")
 
@@ -482,11 +414,9 @@ def show_status(state):
 
     stage_labels = {
         "version_bumped": "Version bumped & pushed",
-        "beta_tagged": "Beta tag pushed (CI building)",
-        "beta_win_signed": "Beta Windows signed",
+        "beta_tagged": "Beta tag pushed (Windows CI building; macOS built locally)",
         "beta_tested": "Beta testing passed",
-        "release_tagged": "Release tag pushed (CI building)",
-        "release_win_signed": "Release Windows signed",
+        "release_tagged": "Release tag pushed (Windows CI building; macOS built locally)",
         "finalized": "Finalized (auto-update live)",
     }
 
@@ -542,13 +472,6 @@ def check_environment():
     if not os.environ.get("OSS_ACCESS_KEY_SECRET"):
         issues.append("OSS_ACCESS_KEY_SECRET not set")
 
-    # Windows-specific checks
-    if IS_WINDOWS:
-        if not os.environ.get("SIGN_CERT_THUMBPRINT"):
-            issues.append("SIGN_CERT_THUMBPRINT not set (Windows code signing)")
-        if not os.environ.get("TAURI_SIGNING_PRIVATE_KEY"):
-            issues.append("TAURI_SIGNING_PRIVATE_KEY not set (Tauri updater signing)")
-
     return issues, info
 
 
@@ -587,49 +510,61 @@ def show_setup_guide():
        OSS_ACCESS_KEY_SECRET=<from team admin>
 """)
 
-    print(bold("  === Windows Signing Machine Only ==="))
+    print(bold("  === macOS signing machine (this Mac) ==="))
     print("""
-    4. Install Windows SDK (for signtool.exe):
-       https://developer.microsoft.com/windows/downloads/windows-sdk/
+    macOS arm64 + x86_64 are built locally — no self-hosted runner.
 
-    5. Import code signing certificate to local cert store
+    4. Apple Developer ID Application certificate in login keychain
+       Verify: security find-identity -v -p codesigning
 
-    6. Set additional environment variables:
-       SIGN_CERT_THUMBPRINT=<certificate SHA1 thumbprint>
-       TAURI_SIGNING_PRIVATE_KEY=<base64 key, get from team admin>
+    5. Environment variables for notarization + Tauri updater:
+       APPLE_ID=<apple id email>
+       APPLE_PASSWORD=<app-specific password>
+       APPLE_TEAM_ID=<10-char team id>
+       TAURI_SIGNING_PRIVATE_KEY=<contents of ~/.tauri/aijia.key>
        TAURI_SIGNING_PRIVATE_KEY_PASSWORD=<key password>
 
-    7. Install Node.js (for npx @tauri-apps/cli signer):
-       https://nodejs.org/
+    6. Run:
+       bash scripts/build-and-sign-macos.sh <version> <beta|release>
 """)
 
-    print(bold("  === macOS Developer Machine ==="))
+    print(bold("  === Windows signing machine ==="))
     print("""
-    8. Authenticate gh CLI:
-       gh auth login
+    Windows builds run on GitHub-hosted runner, signing is local.
 
-    9. Tauri updater key (for Intel builds):
-       - Get ~/.tauri/aijia.key from team admin
-       - Store password in Keychain: aijia-tauri-signer
+    7. Install Node.js (npm) — already required for the project.
 
-   10. OSS credentials in Keychain (optional, env vars also work):
-       security add-generic-password -s aijia-oss -a access_key_id -w <KEY_ID>
-       security add-generic-password -s aijia-oss -a access_key_secret -w <SECRET>
+    8. Install SimpleSign + EV hardware token (Authenticode signing).
+       Note your cert's SHA1 thumbprint:
+         Get-AuthenticodeSignature <any-already-signed-exe> | Select -Expand SignerCertificate | Select Thumbprint
+
+    9. Place the Tauri Ed25519 key file at $HOME\\.tauri\\aijia.key
+       (copy contents from the macOS machine's ~/.tauri/aijia.key)
+
+    10. Run the one-shot pipeline:
+        .\\scripts\\release-windows.ps1 -Version <ver> -Type <beta|release>
+
+        First run prompts for and stores in Credential Manager:
+          - Authenticode cert SHA1 thumbprint
+          - OSS_ACCESS_KEY_ID / OSS_ACCESS_KEY_SECRET
+          - TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+
+        Subsequent runs reuse the stored credentials. Re-prompt with -Reconfigure.
 """)
 
     print(bold("  === Workflow Overview ==="))
     print("""
-    The release flow has 3 roles that may be the same person:
-
-    [Developer] (macOS/Windows) — triggers builds:
-      python scripts/release.py start → beta → test-passed → release → finalize
-
-    [Signer] (Windows machine with cert) — signs Windows builds:
-      python scripts/release.py sign-beta
-      python scripts/release.py sign-release
-
-    [Tester] (any machine) — validates beta:
-      Downloads from beta link → tests → reports pass/fail
+    python scripts/release.py start              # bump version
+    python scripts/release.py beta               # push beta tag (triggers Windows CI)
+    bash scripts/build-and-sign-macos.sh X.Y.Z-beta.N beta    # mac arm64 + x86_64 (~35 min)
+    .\\scripts\\release-windows.ps1 -Version X.Y.Z-beta.N -Type beta   # one-shot windows
+    bash scripts/verify-release.sh X.Y.Z-beta.N beta          # sanity check OSS
+    python scripts/release.py test-passed        # confirm beta works
+    python scripts/release.py release            # push release tag
+    bash scripts/build-and-sign-macos.sh X.Y.Z release
+    .\\scripts\\release-windows.ps1 -Version X.Y.Z -Type release
+    bash scripts/verify-release.sh X.Y.Z release
+    python scripts/release.py finalize           # generate update.json → auto-update live
 """)
 
 
@@ -645,13 +580,9 @@ def show_menu(state):
 
     print("  Commands:")
     print(f"    {cyan('start')}          Start new release (bump version)")
-    print(f"    {cyan('beta')}           Create beta build")
-    print(f"    {cyan('sign-beta')}      Sign Windows beta (on signing machine)")
-    print(f"    {cyan('mark-beta-signed')}  Mark beta as signed (from non-Windows)")
+    print(f"    {cyan('beta')}           Push beta tag (Windows CI; build mac/win locally)")
     print(f"    {cyan('test-passed')}    Confirm beta testing passed")
-    print(f"    {cyan('release')}        Create release build")
-    print(f"    {cyan('sign-release')}   Sign Windows release (on signing machine)")
-    print(f"    {cyan('mark-release-signed')}  Mark release as signed")
+    print(f"    {cyan('release')}        Push release tag (Windows CI; build mac/win locally)")
     print(f"    {cyan('finalize')}       Generate update.json (go live)")
     print(f"    {cyan('status')}         Show current state")
     print(f"    {cyan('setup')}          First-time setup guide + environment check")
@@ -669,26 +600,10 @@ def handle_command(cmd, state):
         step_0_bump(state)
     elif cmd in ("beta", "1"):
         step_1_beta(state)
-    elif cmd in ("sign-beta", "1b"):
-        step_1b_sign_beta_windows(state)
-    elif cmd in ("mark-beta-signed",):
-        if not is_stage_done(state, "beta_tagged"):
-            print(yellow("  Note: beta_tagged not in local state (OK if on a different machine)."))
-        if confirm("  Confirm Windows beta has been signed and uploaded?"):
-            complete_stage(state, "beta_win_signed")
-            print(green("  ✓ Marked."))
     elif cmd in ("test-passed", "tested", "2"):
         step_2_test(state)
     elif cmd in ("release", "3"):
         step_3_release(state)
-    elif cmd in ("sign-release", "3b"):
-        step_3b_sign_release_windows(state)
-    elif cmd in ("mark-release-signed",):
-        if not is_stage_done(state, "release_tagged"):
-            print(yellow("  Note: release_tagged not in local state (OK if on a different machine)."))
-        if confirm("  Confirm Windows release has been signed and uploaded?"):
-            complete_stage(state, "release_win_signed")
-            print(green("  ✓ Marked."))
     elif cmd in ("finalize", "4"):
         step_4_finalize(state)
     elif cmd == "status":

@@ -3,8 +3,7 @@
 
 Runs in the CI finalize job after all platform uploads complete. Reads each
 platform's signature from OSS, writes update.json, uploads to OSS. Preserves
-any platforms already present with the same version (e.g. darwin-x86_64 from
-the local upload-x64.py path).
+any platforms already present with the same version.
 
 Env vars required:
   OSS_ACCESS_KEY_ID
@@ -39,6 +38,10 @@ PLATFORMS = {
     "darwin-aarch64": (
         f"{OSS_PREFIX}/v{{version}}/AIjia.app.tar.gz",
         f"{OSS_PREFIX}/v{{version}}/AIjia.app.tar.gz.sig",
+    ),
+    "darwin-x86_64": (
+        f"{OSS_PREFIX}/v{{version}}/AIjia_x64.app.tar.gz",
+        f"{OSS_PREFIX}/v{{version}}/AIjia_x64.app.tar.gz.sig",
     ),
     "windows-x86_64": (
         f"{OSS_PREFIX}/v{{version}}/AIjia_{{version}}_x64-setup.exe",

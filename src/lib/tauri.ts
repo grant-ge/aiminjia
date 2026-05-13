@@ -18,6 +18,13 @@ export type { DiagnosticLevel, FrontendDiagnosticPayload } from './tauriDiagnost
 export { recordFrontendDiagnostic } from './tauriDiagnostics'
 
 import type { Message, SubAgentTranscriptEntry } from '@/types/message'
+import type {
+  PendingItem,
+  PendingSnapshotPayload,
+  PendingQueuedPayload,
+  PendingDrainedPayload,
+  PendingRemovedPayload,
+} from '@/types/pending'
 import type { Settings } from '@/types/settings'
 
 // ---------------------------------------------------------------------------
@@ -52,6 +59,10 @@ export const TAURI_EVENTS = {
   CHANNEL_MESSAGE: 'channel:message',
   /** LTR Path A: Lead finished a turn and has pending Teammate messages queued. */
   LEAD_HAS_PENDING_MESSAGES: 'lead:has-pending-messages',
+  PENDING_SNAPSHOT: 'pending:snapshot',
+  PENDING_QUEUED: 'pending:queued',
+  PENDING_DRAINED: 'pending:drained',
+  PENDING_REMOVED: 'pending:removed',
 } as const
 
 // ---------------------------------------------------------------------------
@@ -2144,4 +2155,48 @@ export function inboxMarkAllRead(employeeId: string): Promise<number> {
 
 export function inboxUnreadCount(employeeId?: string): Promise<number> {
   return invoke<number>('inbox_unread_count', { employeeId: employeeId ?? null })
+}
+
+// ---------------------------------------------------------------------------
+// Pending Queue IPC + Listeners
+// ---------------------------------------------------------------------------
+
+export async function pendingSnapshotForSession(sessionId: string): Promise<PendingItem[]> {
+  return invoke<PendingItem[]>('pending_snapshot_for_session', { sessionId })
+}
+
+export async function pendingRemoveItem(sessionId: string, itemId: string): Promise<boolean> {
+  return invoke<boolean>('pending_remove_item', { sessionId, itemId })
+}
+
+export function listenPendingSnapshot(
+  handler: (payload: PendingSnapshotPayload) => void,
+): Promise<() => void> {
+  return listen<PendingSnapshotPayload>(TAURI_EVENTS.PENDING_SNAPSHOT, (event) =>
+    handler(event.payload),
+  )
+}
+
+export function listenPendingQueued(
+  handler: (payload: PendingQueuedPayload) => void,
+): Promise<() => void> {
+  return listen<PendingQueuedPayload>(TAURI_EVENTS.PENDING_QUEUED, (event) =>
+    handler(event.payload),
+  )
+}
+
+export function listenPendingDrained(
+  handler: (payload: PendingDrainedPayload) => void,
+): Promise<() => void> {
+  return listen<PendingDrainedPayload>(TAURI_EVENTS.PENDING_DRAINED, (event) =>
+    handler(event.payload),
+  )
+}
+
+export function listenPendingRemoved(
+  handler: (payload: PendingRemovedPayload) => void,
+): Promise<() => void> {
+  return listen<PendingRemovedPayload>(TAURI_EVENTS.PENDING_REMOVED, (event) =>
+    handler(event.payload),
+  )
 }

@@ -21,11 +21,6 @@ import { SidebarFooterSettings } from './SidebarFooterSettings'
 import { SidebarNav, type SidebarNavKey } from './SidebarNav'
 import { TenantHeader } from './TenantHeader'
 
-// userAgentData is the modern API but isn't in Tauri's WebView yet; userAgent
-// is the only safe substring probe and is not deprecated.
-const isMac =
-  typeof navigator !== 'undefined' && /Mac/i.test(navigator.userAgent || '')
-
 const SIDEBAR_TAB_STORAGE_KEY = 'aijia-sidebar-tab'
 
 function loadPersistedSidebarTab(): 'project' | 'channel' {
@@ -143,14 +138,7 @@ export function AppSidebar() {
 
   return (
     <>
-    <aside className="flex h-full w-[256px] shrink-0 flex-col overflow-hidden bg-sidebar px-2 text-sidebar-foreground">
-      {isMac ? (
-        <div
-          data-tauri-drag-region
-          aria-hidden="true"
-          className="h-8 w-full shrink-0"
-        />
-      ) : null}
+    <aside className="flex h-full w-[256px] shrink-0 flex-col overflow-hidden bg-sidebar px-2 pt-2 text-sidebar-foreground">
       <TenantHeader name={tenantDisplay} logoUrl={logoUrl} />
 
       <SidebarNav

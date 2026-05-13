@@ -1,11 +1,11 @@
 {
   "name": "aijia",
   "private": true,
-  "version": "0.5.22",
+  "version": "0.5.23-beta.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "prebuild": "curl -fsSL https://ai.renlijia.com/changelog.json -o src-tauri/changelog.json 2>/dev/null || true",
+    "prebuild": "node -e \"fetch('https://ai.renlijia.com/changelog.json').then(r=>r.ok?r.text():'{\\\"versions\\\":[]}').catch(()=>'{\\\"versions\\\":[]}').then(t=>require('fs').writeFileSync('src-tauri/changelog.json',t))\"",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "capture:ui": "node scripts/capture-ui.mjs",
