@@ -479,6 +479,8 @@ pub mod testsupport {
             &tool_registry,
             authorized_workspace.is_some(),
             crate::transport::tauri_commands::chat::chat_runtime_impl::ToolSchemaFilter::None,
+            &crate::runtime::tools::ToolDescriptionContext::empty(),
+            &std::collections::HashMap::new(),
         )
         .await;
 

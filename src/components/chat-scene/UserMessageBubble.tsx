@@ -7,6 +7,9 @@ import { useState } from 'react'
 import { UserBubbleMarkdown } from './markdown/UserBubbleMarkdown'
 import type { FileAttachment, SkillCommandBreadcrumb } from '@/types/message'
 
+// Team event XML patterns — rendered by PeerMessageBanner instead
+const TEAM_EVENT_RE = /^(?:<peer-messages>[\s\S]*<\/peer-messages>|<task-notification[\s\S]*<\/task-notification>)$/
+
 interface UserMessageBubbleProps {
   text: string
   commandText?: string
@@ -23,6 +26,10 @@ export function UserMessageBubble({
   conversationId,
 }: UserMessageBubbleProps) {
   const [expanded, setExpanded] = useState(false)
+
+  // If this is a team event XML message, skip rendering (PeerMessageBanner handles it)
+  if (TEAM_EVENT_RE.test((text ?? '').trim())) return null
+
   const command = skillCommand?.command ?? commandText?.split(/\s+/)[0]
   const tokenLabel = skillCommand?.label ?? skillCommand?.id ?? command?.replace(/^\//, '')
   const shouldCollapse = text.length > 320 || text.split(/\n/).length > 8

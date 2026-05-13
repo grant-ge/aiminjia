@@ -26,6 +26,7 @@ pub async fn list_agents(
             source: match def.source {
                 AgentSource::Builtin => "builtin".to_string(),
                 AgentSource::User => "user".to_string(),
+                AgentSource::Employee => "employee".to_string(),
             },
         })
         .collect())

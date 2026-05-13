@@ -1352,6 +1352,11 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             .lock()
             .ok()
             .and_then(|map| map.get(request.conversation_id.as_str()).cloned());
+        log::info!(
+            "[tool-desc-trace] entered load_turn_config_overrides: conv={} employee_overrides_is_some={}",
+            request.conversation_id,
+            employee_overrides.is_some()
+        );
 
         // 第一步：决定 schema 过滤策略
         let schema_filter = match &employee_overrides {
@@ -1384,12 +1389,70 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             &self.services.app,
             request.conversation_id.as_str(),
         );
+
+        // ── Build ToolDescriptionContext for this turn ──────────────────
+        // Tools whose description depends on session state (notably
+        // `Agent`, which must list dispatchable subagent types and hired
+        // employees) read from this.  Mirrors claude-code-best's
+        // `tool.prompt({ agents, tools, ... })` pipeline.
+        let tool_desc_ctx = chat_runtime_impl::build_tool_description_context(
+            &self.services.app,
+        )
+        .await;
+        let employee_count_in_ctx = tool_desc_ctx
+            .agents
+            .iter()
+            .filter(|a| {
+                matches!(
+                    a.source,
+                    crate::runtime::agent::definition::AgentSource::Employee
+                )
+            })
+            .count();
+        log::info!(
+            "[tool-desc-trace] built ctx: employees={} agents={}",
+            employee_count_in_ctx,
+            tool_desc_ctx.agents.len()
+        );
+
+        // ── Request-scoped tool description overrides ───────────────────
+        // `Agent` is request-scoped — no instance lives in the global
+        // runtime_tools map, so `get_schemas_filtered` falls back to
+        // TOOL_CATALOG (static).  Construct the tool here (we have
+        // AgentRegistry + EmployeeStore handles via app state) and
+        // render its description once so the emp-id catalog actually
+        // reaches the LLM.
+        let request_scoped_overrides =
+            chat_runtime_impl::build_request_scoped_tool_overrides(
+                &self.services.app,
+                &tool_desc_ctx,
+            )
+            .await;
+        {
+            let keys: Vec<&str> = request_scoped_overrides.keys().map(|k| k.as_str()).collect();
+            log::info!("[tool-desc-trace] built overrides: keys={:?}", keys);
+        }
+
         let visible_tool_defs = chat_runtime_impl::build_visible_tool_defs(
             self.services.tool_registry.as_ref(),
             authorized_workspace.is_some(),
             schema_filter,
+            &tool_desc_ctx,
+            &request_scoped_overrides,
         )
         .await;
+        {
+            let agent_has_emp = visible_tool_defs
+                .iter()
+                .find(|d| d.name == "Agent")
+                .map(|d| d.description.contains("<available_subagent_types>"))
+                .unwrap_or(false);
+            log::info!(
+                "[tool-desc-trace] built visible_tool_defs: count={} agent_desc_has_emp_section={}",
+                visible_tool_defs.len(),
+                agent_has_emp,
+            );
+        }
         let json_defs = visible_tool_defs
             .into_iter()
             .filter_map(|td| serde_json::to_value(&td).ok())
@@ -1527,6 +1590,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         // (returns Some(json_defs)), so the driver overrides this empty default.
         // This impl exists only to satisfy the trait — it should never be the value
         // actually used in a turn.
+        log::info!("[tool-desc-trace] entered get_tool_defs (fallback path — should be overridden by load_turn_config_overrides)");
         Ok(vec![])
     }
 
@@ -2162,8 +2226,8 @@ impl TauriChatCommandAdapter {
         };
         let host = Arc::new(TauriRuntimeHost::new(services.app.clone()));
         let adapter = Arc::new(match channel_sessions {
-            Some(registry) => TauriEventAdapter::with_channel_sessions(host, registry),
-            None => TauriEventAdapter::new(host),
+            Some(registry) => TauriEventAdapter::with_channel_sessions(host.clone(), registry),
+            None => TauriEventAdapter::new(host.clone()),
         });
         let bus = RuntimeEventBus::new();
         bus.subscribe(adapter);
@@ -2214,6 +2278,45 @@ impl TauriChatCommandAdapter {
                  which should also be disabled"
             );
         }
+        // LTR (P1.8): wire per-process Team / AgentName registries so
+        // cancel_session can drop their per-session entries.
+        if let Some(team_reg) =
+            services.app.try_state::<Arc<crate::runtime::agent::TeamRegistry>>()
+        {
+            runtime = runtime.with_team_registry(team_reg.inner().clone());
+        }
+        if let Some(name_reg) = services
+            .app
+            .try_state::<Arc<crate::runtime::agent::AgentNameRegistry>>()
+        {
+            runtime = runtime.with_agent_names(name_reg.inner().clone());
+        }
+        if let Some(inbox_reg) = services
+            .app
+            .try_state::<Arc<crate::runtime::agent::InboxRegistry>>()
+        {
+            runtime = runtime.with_inbox_registry(inbox_reg.inner().clone());
+        }
+        if let Some(sup) = services
+            .app
+            .try_state::<Arc<crate::runtime::agent::LeadIdleSupervisor>>()
+        {
+            runtime = runtime.with_lead_idle(sup.inner().clone());
+        }
+        if let Some(reg) = services
+            .app
+            .try_state::<Arc<crate::runtime::agent::CancellationRegistry>>()
+        {
+            runtime = runtime.with_cancellation_registry(reg.inner().clone());
+        }
+        runtime = runtime.with_host(host as Arc<dyn crate::transport::runtime_host::RuntimeHost>);
+        // Path C wake (LTR B-gap1) is now wired by `wire_path_c_wake_to_self`
+        // after the adapter is wrapped in `Arc<Self>` (see lib.rs).  We can't
+        // wire it here because the wake closure needs to call
+        // `Arc<Self>::send_chat_request` to reuse the user-send code path
+        // (which constructs a per-request ToolDispatcher with all services);
+        // we don't have an `Arc<Self>` until the caller wraps us.  See
+        // `wire_path_c_wake_to_self` for details and rationale.
         Self { runtime, services }
     }
 
@@ -2251,6 +2354,101 @@ impl TauriChatCommandAdapter {
     /// 向内部 runtime event bus 注册外部订阅者。
     pub fn subscribe_event_listener(&self, subscriber: std::sync::Arc<dyn crate::runtime::event_bus::RuntimeEventSubscriber>) {
         self.runtime.subscribe_event_listener(subscriber);
+    }
+
+    /// LTR P2 (B-gap1 Path C) — wire the LeadIdleSupervisor's wake_fn to
+    /// reuse `send_chat_request` (the same code path user-driven
+    /// `send_message` takes) instead of `SessionRuntime::spawn_continuation`.
+    ///
+    /// # Why this is on the transport layer (not in `SessionRuntime`)
+    ///
+    /// A Path-C continuation turn needs a per-request `ToolDispatcher`
+    /// (`tool_registry.to_runtime_dispatcher(deps)`), and constructing one
+    /// requires services that live on the transport layer:
+    /// `tool_registry` / `gateway` / `auth_manager` / `skill_registry` / etc.
+    /// `SessionRuntime` is intentionally transport-neutral; making it carry
+    /// these services would invert the dependency.  By driving wake from the
+    /// transport layer we keep both the user-send path and the wake path
+    /// going through the *exact* same `send_chat_request` code, so they
+    /// can't drift (which is precisely how the
+    /// "tool dispatcher not configured" bug appeared in the first place:
+    /// `spawn_continuation` was clone-ing the base `SessionRuntime` whose
+    /// `QueryEngine` had no dispatcher).
+    ///
+    /// # Lifetime / cycle
+    ///
+    /// We hold a `Weak<Self>` inside the wake closure to avoid keeping the
+    /// adapter alive forever via the supervisor.  At wake time we `upgrade`
+    /// — if the adapter has been dropped (app shutdown), the wake is a no-op.
+    pub fn wire_path_c_wake_to_self(self: &Arc<Self>) {
+        let Some(sup) = self.runtime.lead_idle_supervisor() else {
+            log::debug!(
+                "[wire_path_c_wake_to_self] no LeadIdleSupervisor — skipping; \
+                 LTR is not enabled in this build"
+            );
+            return;
+        };
+        let weak_self: std::sync::Weak<Self> = Arc::downgrade(self);
+        let installed = sup.set_wake_fn(std::sync::Arc::new(
+            move |key: crate::runtime::agent::LeadKey| {
+                let Some(adapter) = weak_self.upgrade() else {
+                    log::warn!(
+                        "[path_c_wake] adapter has been dropped — skipping continuation \
+                         turn for session={} agent={}",
+                        key.0.as_str(),
+                        key.1.as_str()
+                    );
+                    return;
+                };
+                let session_str = key.0.as_str().to_string();
+                let agent_str = key.1.as_str().to_string();
+                tokio::spawn(async move {
+                    log::info!(
+                        "[path_c_wake] spawning continuation turn via send_chat_request \
+                         conv={} lead={}",
+                        session_str,
+                        agent_str
+                    );
+                    let req = ChatTurnRequest::new(
+                        key.0.clone(),
+                        "__resume_from_task_notification__".to_string(),
+                        Vec::new(),
+                    );
+                    match adapter.send_chat_request(req).await {
+                        Ok(()) => {
+                            log::info!(
+                                "[path_c_wake] continuation turn completed conv={}",
+                                session_str
+                            );
+                        }
+                        Err(e) => {
+                            // Expected error: another turn is already busy on this
+                            // conversation (user-driven send_message landed first or
+                            // a prior wake is still running).  Log and let the
+                            // pending state stay set — the running turn will pick
+                            // up the inbox at its own next opportunity.
+                            log::warn!(
+                                "[path_c_wake] continuation turn rejected (likely a \
+                                 concurrent turn already busy) conv={}: {}",
+                                session_str,
+                                e
+                            );
+                        }
+                    }
+                });
+            },
+        ));
+        if !installed {
+            log::warn!(
+                "[wire_path_c_wake_to_self] supervisor already had a wake_fn installed; \
+                 keeping the previous one. This usually indicates the wire was called twice."
+            );
+        } else {
+            log::info!(
+                "[wire_path_c_wake_to_self] wake_fn installed — Path C continuation \
+                 turns will reuse send_chat_request"
+            );
+        }
     }
 
     /// 暴露权限控制平面，供 IM 协调器等外部组件使用。
@@ -3102,13 +3300,11 @@ impl crate::runtime::agenda::AgendaRunDispatcher for TauriChatCommandAdapter {
         //    已写盘为 Running，绝不能因为加载 employee 失败而留孤儿。
         let employee = (|| -> Option<crate::runtime::employee::store::EmployeeRecord> {
             use crate::runtime::employee::store::EmployeeStore;
-            use crate::storage::{CurrentUserStorage, UserScopedPathResolver};
-            let cus = self
+            let store = self
                 .services
                 .app
-                .try_state::<Arc<CurrentUserStorage>>()?;
-            let paths = cus.require_paths().ok()?;
-            let store = EmployeeStore::new(paths.employees_dir());
+                .try_state::<Arc<EmployeeStore>>()
+                .map(|s| s.inner().clone())?;
             match store.get(&item.organizer_employee_id) {
                 Ok(emp) => Some(emp),
                 Err(e) => {
@@ -3371,10 +3567,21 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
         // record_run synchronously: last_run_at represents "last dispatched at"
         // for both on-demand and cron paths.
         {
-            let store = EmployeeStore::new(employees_dir.clone());
-            if let Err(e) = store.record_run(&employee.id, fire_at) {
+            let store = self
+                .services
+                .app
+                .try_state::<Arc<EmployeeStore>>()
+                .map(|s| s.inner().clone());
+            if let Some(store) = store {
+                if let Err(e) = store.record_run(&employee.id, fire_at) {
+                    log::warn!(
+                        "[dispatch_employee_run] record_run failed for {}: {e}",
+                        employee.id
+                    );
+                }
+            } else {
                 log::warn!(
-                    "[dispatch_employee_run] record_run failed for {}: {e}",
+                    "[dispatch_employee_run] EmployeeStore singleton missing; skipping record_run for {}",
                     employee.id
                 );
             }

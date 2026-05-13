@@ -19,7 +19,9 @@ pub struct CreateAgendaItemRuntimeTool {
 
 #[async_trait]
 impl RuntimeTool for CreateAgendaItemRuntimeTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str { "create_agenda_item" }
+    
+    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new(
             "create_agenda_item",
             "【自用】为你（当前数字员工）自己创建一条到点自动触发的日程：一次性或循环（每天/每周/每月/每年），到点会以你（同一个 persona）的身份自动执行内置 prompt。",

@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use crate::llm::context_decay::{context_window_for_provider, CONTEXT_OVERFLOW_THRESHOLD};
 use crate::runtime::agent::task_notification::{QueuedNotification, TaskNotificationQueue};
+use crate::runtime::chat::compact_client::CompactSummaryClient;
 use crate::runtime::cancellation::{CancellationReason, CancellationToken};
 use crate::runtime::chat::context_builder::build_iteration_context;
 use crate::runtime::chat::multimodal::{
@@ -317,14 +318,6 @@ pub trait RuntimeLlmExecutor: Send + Sync {
         Ok(String::new())
     }
 
-    async fn compact_summary(
-        &self,
-        _conversation_id: &str,
-        _messages: &[serde_json::Value],
-    ) -> Result<String, TurnError> {
-        Ok(String::new())
-    }
-
     /// Persist a compact boundary record after successful compaction.
     async fn save_compact_boundary(
         &self,
@@ -333,6 +326,8 @@ pub trait RuntimeLlmExecutor: Send + Sync {
         Ok(())
     }
 }
+// NOTE: this marker is load-bearing for tests/review_compact_summary_trait_isolation_test.rs — do not remove.
+// END_TRAIT_RuntimeLlmExecutor — sentinel for review_compact_summary_trait_isolation_test
 
 /// Runtime-owned chat turn driver.
 ///
@@ -356,6 +351,8 @@ pub struct RuntimeChatTurnDriver {
     pending_permission_control_plane: Option<Arc<dyn PendingPermissionControlPlane>>,
     pending_interaction_control_plane: Option<Arc<dyn PendingInteractionControlPlane>>,
     task_notification_queue: Option<Arc<TaskNotificationQueue>>,
+    /// Compaction backend, decoupled from llm_executor (P0.2).
+    compact_client: Option<Arc<dyn CompactSummaryClient>>,
 }
 
 fn synthetic_cancelled_tool_result(reason: Option<CancellationReason>) -> &'static str {
@@ -419,6 +416,121 @@ fn re_enqueue_task_notifications(
     );
     queue.re_enqueue(notifications);
 }
+
+/// Drain the Lead's `AgentInbox` and append any pending peer messages
+/// (delivered by teammates via `SendMessage(to: "team-lead", ...)`) to the
+/// next user-role message of the current turn.
+///
+/// Returns the number of peer messages folded in.  Returns `0` (a no-op)
+/// when:
+/// - the engine wasn't wired with `agent_names` / `inbox_registry`
+///   (test/legacy paths), or
+/// - this session has no `team-lead` registration (no `TeamCreate` was
+///   called), or
+/// - the Lead's inbox exists but is empty.
+///
+/// Mirrors `claude-code-best`'s `getTeammateMailboxAttachments()` — the
+/// content shape is a single `<peer-messages>` XML block listing all
+/// drained items.  Crucially we drain only the currently-buffered items
+/// (no `recv().await`) so the turn can run even if no peer is talking.
+async fn drain_and_inject_lead_inbox_messages(
+    query_engine: &QueryEngine,
+    session_id: &SessionId,
+    messages: &mut Vec<serde_json::Value>,
+) -> (usize, Option<String>) {
+    let Some(names) = query_engine.agent_names() else {
+        return (0, None);
+    };
+    let Some(inbox_reg) = query_engine.inbox_registry() else {
+        return (0, None);
+    };
+    let Some(lead_id) = names
+        .resolve(
+            session_id,
+            crate::runtime::tools::builtin::team_tools::LEAD_NAME,
+        )
+        .await
+    else {
+        return (0, None);
+    };
+    let Some(lead_inbox) = inbox_reg.get(session_id, &lead_id).await else {
+        return (0, None);
+    };
+    let drained = lead_inbox.drain_pending().await;
+    if drained.is_empty() {
+        return (0, None);
+    }
+
+    let xml = render_peer_messages_xml(&drained);
+    messages.push(serde_json::json!({
+        "role": "user",
+        "content": xml.clone(),
+    }));
+
+    let count = drained.len();
+    log::info!(
+        "[chat_turn_driver] drained {} peer message(s) into Lead's next user message",
+        count
+    );
+    let ws = crate::telemetry::diagnostics_workspace();
+    record_diagnostic(
+        &ws,
+        DiagnosticEvent::new("turn.lead_inbox.drained", DiagnosticSource::Backend)
+            .conversation_id(session_id.as_str())
+            .ok(true)
+            .payload(serde_json::json!({ "count": count })),
+    );
+    (count, Some(xml))
+}
+
+/// Render drained inbox items as a `<peer-messages>` XML attachment, in
+/// the shape the Lead's prompt instructions teach it to read.  Skips
+/// non-chat items (Shutdown / TaskNotification) because the chat-turn
+/// driver does not own their semantics.
+fn render_peer_messages_xml(items: &[crate::runtime::agent::inbox::InboxItem]) -> String {
+    use crate::runtime::agent::inbox::{InboxItem, MessageSource};
+
+    let mut s = String::new();
+    s.push_str("<peer-messages>\n");
+    for item in items {
+        let InboxItem::ChatMessage { message, source } = item else {
+            // Shutdown / TaskNotification are routed elsewhere; ignore here.
+            continue;
+        };
+        let from = match source {
+            MessageSource::Lead => "team-lead".to_string(),
+            MessageSource::Teammate(name) => name.clone(),
+            MessageSource::System => "system".to_string(),
+        };
+        let variant = message.variant_name();
+        let body = message
+            .as_text()
+            .map(|t| escape_xml(t))
+            .unwrap_or_else(|| match serde_json::to_string(message) {
+                Ok(j) => escape_xml(&j),
+                Err(_) => String::new(),
+            });
+        s.push_str(&format!(
+            "  <peer-message from=\"{}\" variant=\"{}\">{}</peer-message>\n",
+            escape_xml_attr(&from),
+            escape_xml_attr(variant),
+            body
+        ));
+    }
+    s.push_str("</peer-messages>");
+    s
+}
+
+fn escape_xml(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+fn escape_xml_attr(s: &str) -> String {
+    escape_xml(s).replace('"', "&quot;")
+}
+
 
 /// Inject synthetic tool results for assistant tool calls that have no matching
 /// tool response yet. Returns the number of injected messages.
@@ -537,6 +649,15 @@ fn record_turn_diagnostic(
     record_diagnostic(workspace_path, diag);
 }
 
+#[cold]
+fn warn_no_compact_client() {
+    log::warn!(
+        "[chat_turn_driver] no CompactSummaryClient configured; skipping compaction. \
+         Wire one via RuntimeChatTurnDriver::with_compact_client (typically in \
+         SessionRuntime::build_driver_for_turn) to enable compaction."
+    );
+}
+
 impl RuntimeChatTurnDriver {
     pub fn new(query_engine: QueryEngine, event_bus: RuntimeEventBus) -> Self {
         Self {
@@ -546,6 +667,7 @@ impl RuntimeChatTurnDriver {
             pending_permission_control_plane: None,
             pending_interaction_control_plane: None,
             task_notification_queue: None,
+            compact_client: None,
         }
     }
 
@@ -561,6 +683,7 @@ impl RuntimeChatTurnDriver {
             pending_permission_control_plane: None,
             pending_interaction_control_plane: None,
             task_notification_queue: None,
+            compact_client: None,
         }
     }
 
@@ -577,6 +700,7 @@ impl RuntimeChatTurnDriver {
             pending_permission_control_plane: Some(pending_permission_control_plane),
             pending_interaction_control_plane: None,
             task_notification_queue: None,
+            compact_client: None,
         }
     }
 
@@ -594,6 +718,7 @@ impl RuntimeChatTurnDriver {
             pending_permission_control_plane: Some(pending_permission_control_plane),
             pending_interaction_control_plane: Some(pending_interaction_control_plane),
             task_notification_queue: None,
+            compact_client: None,
         }
     }
 
@@ -602,6 +727,13 @@ impl RuntimeChatTurnDriver {
         queue: Arc<TaskNotificationQueue>,
     ) -> Self {
         self.task_notification_queue = Some(queue);
+        self
+    }
+
+    /// Attach a compaction backend (P0.2).  When `None` (the default),
+    /// compaction requests warn-log and return an empty summary.
+    pub fn with_compact_client(mut self, client: Arc<dyn CompactSummaryClient>) -> Self {
+        self.compact_client = Some(client);
         self
     }
 
@@ -1035,6 +1167,13 @@ impl RuntimeChatTurnDriver {
         request: &ChatTurnRequest,
         executor: &dyn RuntimeLlmExecutor,
     ) -> Result<()> {
+        // LTR (B-gap1) Path A entry: marks the Lead as Running and returns
+        // the resolved (session, lead_agent_id) key.  None when the session
+        // is not in Team mode or registries aren't wired.  The exit half of
+        // Path A — mark_idle + maybe-emit `LeadHasPendingMessages` — fires
+        // before the AgentIdle event near the end of this function.
+        let lead_key_for_path_a = self.lead_key_and_mark_running(turn).await;
+
         // ── Step 1: Build TurnConfig ──────────────────────────────────────────
         // Executor loads the turn-scoped LLM settings/tool defs/history from its
         // own services; the driver snapshots those results into immutable config
@@ -1050,6 +1189,18 @@ impl RuntimeChatTurnDriver {
             .get_tool_defs()
             .await
             .map_err(|e| anyhow::anyhow!("{}", e))?;
+        {
+            let agent_has_emp = tool_defs.iter().find(|v| {
+                v.get("name").and_then(|n| n.as_str()) == Some("Agent")
+            }).and_then(|v| v.get("description").and_then(|d| d.as_str()))
+              .map(|d| d.contains("<available_subagent_types>"))
+              .unwrap_or(false);
+            log::info!(
+                "[tool-desc-trace] get_tool_defs returned: count={} agent_desc_has_emp_section={}",
+                tool_defs.len(),
+                agent_has_emp,
+            );
+        }
         let workspace_path = executor
             .load_workspace_path()
             .await
@@ -1079,10 +1230,32 @@ impl RuntimeChatTurnDriver {
         let effective_system_prompt = prompt_snapshot.compat_system_prompt();
         let effective_prompt_snapshot = prompt_snapshot;
 
+        {
+            let default_count = tool_defs.len();
+            let overrides_has = overrides.tool_defs.is_some();
+            log::info!(
+                "[tool-desc-trace] merge: overrides.tool_defs.is_some={} default_count={}",
+                overrides_has,
+                default_count,
+            );
+        }
+        let final_tool_defs = overrides.tool_defs.unwrap_or(tool_defs);
+        {
+            let agent_has_emp = final_tool_defs.iter().find(|v| {
+                v.get("name").and_then(|n| n.as_str()) == Some("Agent")
+            }).and_then(|v| v.get("description").and_then(|d| d.as_str()))
+              .map(|d| d.contains("<available_subagent_types>"))
+              .unwrap_or(false);
+            log::info!(
+                "[tool-desc-trace] final tool_defs: count={} agent_desc_has_emp_section={}",
+                final_tool_defs.len(),
+                agent_has_emp,
+            );
+        }
         let config = TurnConfig {
             system_prompt: effective_system_prompt,
             prompt_snapshot: Some(effective_prompt_snapshot),
-            tool_defs: overrides.tool_defs.unwrap_or(tool_defs),
+            tool_defs: final_tool_defs,
             allowed_tools: overrides.allowed_tools,
             max_iterations: overrides.max_iterations.unwrap_or(60),
             token_budget: overrides.token_budget.unwrap_or_else(|| {
@@ -1245,13 +1418,62 @@ impl RuntimeChatTurnDriver {
             &mut initial_messages,
         );
 
+        // persist each task-notification XML as user message (best-effort)
+        for notification in &pending_task_notifications {
+            if let Err(e) = executor
+                .persist_user_message(
+                    request.conversation_id.as_str(),
+                    &notification.xml,
+                    &[],
+                    None,
+                )
+                .await
+            {
+                log::warn!(
+                    "[chat_turn_driver] persist task-notification failed (best-effort): {e}"
+                );
+            }
+        }
+
+        // LTR P2: drain the Lead's inbox so any messages peers delivered via
+        // SendMessage(to: "team-lead", ...) while the Lead was busy / idle
+        // are folded into this turn as the latest user-role attachment.
+        // Mirrors cc-best's `getTeammateMailboxAttachments()`.
+        let (drained_peer_messages, peer_xml) = drain_and_inject_lead_inbox_messages(
+            &self.query_engine,
+            turn.session_id(),
+            &mut initial_messages,
+        )
+        .await;
+
+        // persist peer messages XML as user message (best-effort)
+        if let Some(xml) = peer_xml {
+            if let Err(e) = executor
+                .persist_user_message(
+                    request.conversation_id.as_str(),
+                    &xml,
+                    &[],
+                    None,
+                )
+                .await
+            {
+                log::warn!(
+                    "[chat_turn_driver] persist peer-messages failed (best-effort): {e}"
+                );
+            }
+        }
+
         // Guard: if this turn was triggered purely to resume from a task
-        // notification but the queue is now empty (race: another turn drained
-        // it first), there is no useful work to do — exit cleanly without
-        // calling the LLM, which would otherwise see no user message and fail.
-        if is_resume_for_task_notification && pending_task_notifications.is_empty() {
+        // notification or a Path-C inbox wake but BOTH queues are empty
+        // (race: another turn drained them first), there is no useful work
+        // to do — exit cleanly without calling the LLM, which would
+        // otherwise see no user message and fail.
+        if is_resume_for_task_notification
+            && pending_task_notifications.is_empty()
+            && drained_peer_messages == 0
+        {
             log::info!(
-                "[chat_turn_driver] resume-from-task-notification turn skipped: queue empty session={}",
+                "[chat_turn_driver] resume turn skipped: both task-notification queue and lead inbox empty session={}",
                 turn.session_id().as_str()
             );
             return Ok(());
@@ -1360,6 +1582,7 @@ impl RuntimeChatTurnDriver {
         'turn: for iteration in 0..config.max_iterations {
             let preprocess_config = PreprocessConfig::default();
             let conversation_id = config.conversation_id.as_str().to_string();
+            let compact_client_ref = self.compact_client.clone();
             let prepared = prepare_messages_for_llm(
                 std::mem::take(&mut state.messages),
                 conversation_id.as_str(),
@@ -1370,10 +1593,15 @@ impl RuntimeChatTurnDriver {
                 state.stop_hook_active,
                 |messages| {
                     let conversation_id = conversation_id.clone();
+                    let compact_client = compact_client_ref.clone();
                     async move {
-                        executor
-                            .compact_summary(conversation_id.as_str(), &messages)
-                            .await
+                        match compact_client.as_ref() {
+                            Some(client) => client.compact_summary(conversation_id.as_str(), &messages).await,
+                            None => {
+                                warn_no_compact_client();
+                                Ok(String::new())
+                            }
+                        }
                     }
                 },
             )
@@ -1495,10 +1723,15 @@ impl RuntimeChatTurnDriver {
                         state.stop_hook_active,
                         |messages| {
                             let conversation_id = conversation_id.clone();
+                            let compact_client = compact_client_ref.clone();
                             async move {
-                                executor
-                                    .compact_summary(conversation_id.as_str(), &messages)
-                                    .await
+                                match compact_client.as_ref() {
+                                    Some(client) => client.compact_summary(conversation_id.as_str(), &messages).await,
+                                    None => {
+                                        warn_no_compact_client();
+                                        Ok(String::new())
+                                    }
+                                }
                             }
                         },
                     )
@@ -1961,6 +2194,54 @@ impl RuntimeChatTurnDriver {
                 ))
                 .await?;
         }
+        // ── LTR (B-gap1) Path A exit: before emitting AgentIdle, ask the
+        // supervisor whether a SendMessage arrived during this turn's
+        // Running window.  If so, emit LeadHasPendingMessages so the
+        // transport / front-end knows it should spawn a continuation turn.
+        // (Path C — in-process auto-spawn from SendMessage — lands later.)
+        //
+        // FALLBACK: even if `lead_key_for_path_a` was None at turn entry
+        // (because TeamCreate hadn't yet registered the Lead in agent_names),
+        // re-resolve here at exit so the very-first turn that *creates* the
+        // team also gets a balanced mark_idle.  Without this, supervisor
+        // stays Running forever and pending teammate messages never trigger
+        // Path A continuation.
+        log::info!(
+            "[chat_turn_driver][diag] reached exit-block session={} lead_key_for_path_a_is_some={}",
+            session_id.as_str(),
+            lead_key_for_path_a.is_some()
+        );
+        let exit_lead_key = if lead_key_for_path_a.is_some() {
+            lead_key_for_path_a
+        } else if let (Some(sup), Some(names)) = (
+            self.query_engine.lead_idle_supervisor(),
+            self.query_engine.agent_names(),
+        ) {
+            if let Some(lead_id) = names
+                .resolve(
+                    &session_id,
+                    crate::runtime::tools::builtin::team_tools::LEAD_NAME,
+                )
+                .await
+            {
+                log::info!(
+                    "[chat_turn_driver][diag] exit-time lead_key resolved (turn-entry was None) session={} lead={}",
+                    session_id.as_str(),
+                    lead_id.as_str()
+                );
+                let _ = sup;
+                Some((session_id.clone(), lead_id))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        if let Some(ref key) = exit_lead_key {
+            self.mark_idle_and_maybe_emit_pending(&session_id, &run_id, key)
+                .await?;
+        }
+
         self.event_bus
             .emit(RuntimeEvent::new(
                 session_id,
@@ -1973,6 +2254,108 @@ impl RuntimeChatTurnDriver {
             .await?;
 
         Ok(())
+    }
+
+    /// LTR (B-gap1) Path A — exit helper.
+    ///
+    /// Calls `mark_idle` on the supervisor and, when it reports `pending ==
+    /// true`, emits a [`RuntimeEventKind::LeadHasPendingMessages`] event so
+    /// downstream consumers (transport / front-end) can decide to spawn a
+    /// continuation turn.  Idempotent and a no-op when the supervisor
+    /// reports no pending — the regular `AgentIdle` event still fires.
+    async fn mark_idle_and_maybe_emit_pending(
+        &self,
+        session_id: &SessionId,
+        run_id: &RunId,
+        key: &crate::runtime::agent::LeadKey,
+    ) -> Result<()> {
+        let Some(sup) = self.query_engine.lead_idle_supervisor() else {
+            return Ok(());
+        };
+        let ws = crate::telemetry::diagnostics_workspace();
+        record_diagnostic(
+            &ws,
+            DiagnosticEvent::new("turn.path_a.mark_idle.entry", DiagnosticSource::Backend)
+                .conversation_id(session_id.as_str())
+                .run_id(run_id.as_str())
+                .agent_id(key.1.as_str()),
+        );
+        let pending = sup.mark_idle(key).await;
+        if pending {
+            record_diagnostic(
+                &ws,
+                DiagnosticEvent::new("turn.path_a.mark_idle.pending_true", DiagnosticSource::Backend)
+                    .conversation_id(session_id.as_str())
+                    .run_id(run_id.as_str())
+                    .agent_id(key.1.as_str())
+                    .ok(true)
+                    .payload(serde_json::json!({ "action": "emitting_lead_has_pending_messages" })),
+            );
+            self.event_bus
+                .emit(RuntimeEvent::new(
+                    session_id.clone(),
+                    run_id.clone(),
+                    RuntimeEventKind::LeadHasPendingMessages {
+                        agent_id: key.1.clone(),
+                    },
+                ))
+                .await?;
+        } else {
+            record_diagnostic(
+                &ws,
+                DiagnosticEvent::new("turn.path_a.mark_idle.no_pending", DiagnosticSource::Backend)
+                    .conversation_id(session_id.as_str())
+                    .run_id(run_id.as_str())
+                    .agent_id(key.1.as_str())
+                    .ok(true),
+            );
+        }
+        Ok(())
+    }
+
+    /// LTR (B-gap1) Path A — entry helper.
+    ///
+    /// When the current session is in Team mode (i.e. a Lead has been
+    /// registered via `TeamCreate`), mark the supervisor's state machine as
+    /// `Running` and return the Lead's `LeadKey = (session, agent_id)` so
+    /// the exit half of the turn can `mark_idle` against the same key
+    /// without re-resolving the registry.
+    ///
+    /// Returns `None` in any of these cases (all treated identically: no
+    /// Path A wiring this turn):
+    ///   - no `LeadIdleSupervisor` injected
+    ///   - no `AgentNameRegistry` injected
+    ///   - this session has not registered the `team-lead` name yet
+    async fn lead_key_and_mark_running(
+        &self,
+        turn: &TurnState,
+    ) -> Option<crate::runtime::agent::LeadKey> {
+        let sup = self.query_engine.lead_idle_supervisor()?;
+        let names = self.query_engine.agent_names()?;
+        let session = turn.session_id().clone();
+        let ws = crate::telemetry::diagnostics_workspace();
+        record_diagnostic(
+            &ws,
+            DiagnosticEvent::new("turn.path_a.mark_running.entry", DiagnosticSource::Backend)
+                .conversation_id(session.as_str()),
+        );
+        let lead_id = names
+            .resolve(
+                &session,
+                crate::runtime::tools::builtin::team_tools::LEAD_NAME,
+            )
+            .await?;
+        let key = (session.clone(), lead_id.clone());
+        sup.mark_running(&key).await;
+        record_diagnostic(
+            &ws,
+            DiagnosticEvent::new("turn.path_a.mark_running.resolved", DiagnosticSource::Backend)
+                .conversation_id(session.as_str())
+                .agent_id(lead_id.as_str())
+                .ok(true)
+                .payload(serde_json::json!({ "state": "running" })),
+        );
+        Some(key)
     }
 }
 
@@ -2017,6 +2400,45 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Mutex;
     use tokio::sync::oneshot;
+
+    #[test]
+    fn render_peer_messages_xml_includes_from_and_variant_and_escapes_body() {
+        use crate::runtime::agent::inbox::{InboxItem, MessageSource};
+        use crate::runtime::messaging::StructuredMessage;
+
+        let items = vec![
+            InboxItem::ChatMessage {
+                message: StructuredMessage::text("调研完成 <see report>"),
+                source: MessageSource::Teammate("小研".into()),
+            },
+            InboxItem::ChatMessage {
+                message: StructuredMessage::text("ok"),
+                source: MessageSource::Lead,
+            },
+        ];
+        let xml = render_peer_messages_xml(&items);
+        assert!(xml.starts_with("<peer-messages>"));
+        assert!(xml.ends_with("</peer-messages>"));
+        assert!(xml.contains("from=\"小研\""));
+        assert!(xml.contains("from=\"team-lead\""));
+        assert!(xml.contains("variant=\"text\""));
+        // Body must be XML-escaped so the LLM doesn't think `<see report>`
+        // is another tag and so the document stays well-formed.
+        assert!(xml.contains("调研完成 &lt;see report&gt;"));
+    }
+
+    #[test]
+    fn render_peer_messages_xml_skips_non_chat_items() {
+        use crate::runtime::agent::inbox::{InboxItem, ShutdownRequest};
+
+        let items = vec![InboxItem::Shutdown(ShutdownRequest {
+            reason: "test".into(),
+        })];
+        let xml = render_peer_messages_xml(&items);
+        // The wrapper is still there but the body is empty (no peer-message).
+        assert!(xml.contains("<peer-messages>"));
+        assert!(!xml.contains("<peer-message "));
+    }
 
     struct RecordingPermissionControlPlane {
         inserted: Mutex<Vec<PendingPermissionRequest>>,
@@ -2131,6 +2553,7 @@ mod tests {
             pending_permission_control_plane: Some(control_plane.clone()),
             pending_interaction_control_plane: None,
             task_notification_queue: None,
+            compact_client: None,
         };
         let turn = TurnState::new(
             IdentityMapping::from_legacy_conversation_id("conv-ask-mode".to_string()),
@@ -2450,6 +2873,167 @@ mod tests {
         assert_eq!(dynamic_contexts.len(), 1);
         assert!(dynamic_contexts[0].contains("可用专项技能"));
         assert!(dynamic_contexts[0].contains("biz-writing"));
+    }
+
+    // ── LTR (B-gap1) Path A wiring tests ─────────────────────────────────────
+
+    use crate::runtime::agent::{AgentNameRegistry, LeadIdleSupervisor};
+    use crate::runtime::event_bus::RuntimeEventSubscriber;
+    use crate::runtime::ids::AgentId;
+    use crate::runtime::tools::builtin::team_tools::LEAD_NAME;
+
+    /// Subscriber that captures every emitted event into a Vec.
+    struct CapturingSubscriber {
+        events: Mutex<Vec<RuntimeEventKind>>,
+    }
+    impl CapturingSubscriber {
+        fn new() -> Arc<Self> {
+            Arc::new(Self {
+                events: Mutex::new(Vec::new()),
+            })
+        }
+        fn snapshot(&self) -> Vec<RuntimeEventKind> {
+            self.events.lock().unwrap().clone()
+        }
+    }
+    #[async_trait]
+    impl RuntimeEventSubscriber for CapturingSubscriber {
+        async fn on_event(&self, event: &RuntimeEvent) -> anyhow::Result<()> {
+            self.events.lock().unwrap().push(event.kind.clone());
+            Ok(())
+        }
+    }
+
+    /// Build a driver wired with a supervisor + name registry, plus a
+    /// CapturingSubscriber on its bus, and pre-register the Lead.
+    /// Returns `(driver, capture, lead_key)`.
+    async fn build_driver_with_lead(
+        session: &str,
+        lead_id: &str,
+    ) -> (
+        RuntimeChatTurnDriver,
+        Arc<CapturingSubscriber>,
+        crate::runtime::agent::LeadKey,
+    ) {
+        let supervisor = LeadIdleSupervisor::new();
+        let names = AgentNameRegistry::new();
+        let session_id = SessionId::new(session);
+        let lead_agent = AgentId::new(lead_id);
+        names
+            .register(&session_id, LEAD_NAME, lead_agent.clone())
+            .await
+            .expect("Lead registration should succeed in a fresh fixture");
+
+        let bus = RuntimeEventBus::new();
+        let capture = CapturingSubscriber::new();
+        bus.subscribe(capture.clone());
+
+        let qe = QueryEngine::new()
+            .with_lead_idle(supervisor)
+            .with_agent_names(names);
+
+        let driver = RuntimeChatTurnDriver::new(qe, bus);
+        let key = (session_id, lead_agent);
+        (driver, capture, key)
+    }
+
+    /// Path A entry resolves the Lead key and flips the supervisor to Running.
+    #[tokio::test]
+    async fn path_a_entry_resolves_lead_key_and_marks_running() {
+        let (driver, _capture, key) = build_driver_with_lead("conv-pa-entry", "lead-1").await;
+        let turn = TurnState::new(
+            IdentityMapping::from_legacy_conversation_id("conv-pa-entry".to_string()),
+            RunId::new("run-pa-entry"),
+            String::new(),
+        );
+        let resolved = driver.lead_key_and_mark_running(&turn).await;
+        assert_eq!(resolved.as_ref(), Some(&key));
+        let sup = driver
+            .query_engine
+            .lead_idle_supervisor()
+            .expect("supervisor wired");
+        assert_eq!(sup.state_of(&key).await, Some("running"));
+    }
+
+    /// When the session is not in Team mode (no `team-lead` registered),
+    /// Path A entry returns None and never touches the supervisor.
+    #[tokio::test]
+    async fn path_a_entry_returns_none_when_no_lead_registered() {
+        let supervisor = LeadIdleSupervisor::new();
+        let names = AgentNameRegistry::new();
+        let bus = RuntimeEventBus::new();
+        let qe = QueryEngine::new()
+            .with_lead_idle(supervisor)
+            .with_agent_names(names);
+        let driver = RuntimeChatTurnDriver::new(qe, bus);
+        let turn = TurnState::new(
+            IdentityMapping::from_legacy_conversation_id("conv-no-team".to_string()),
+            RunId::new("run-no-team"),
+            String::new(),
+        );
+        assert!(driver.lead_key_and_mark_running(&turn).await.is_none());
+    }
+
+    /// Path A exit emits LeadHasPendingMessages when supervisor reports
+    /// pending == true (i.e. SendMessage arrived during the Running window).
+    #[tokio::test]
+    async fn path_a_exit_emits_pending_event_when_send_arrived_during_run() {
+        let (driver, capture, key) =
+            build_driver_with_lead("conv-pa-exit-pending", "lead-2").await;
+        let sup = driver
+            .query_engine
+            .lead_idle_supervisor()
+            .expect("supervisor wired")
+            .clone();
+        // Simulate a turn: mark_running, a Teammate enqueues a message,
+        // then mark_idle reports pending=true.
+        sup.mark_running(&key).await;
+        sup.enqueue(&key).await;
+
+        driver
+            .mark_idle_and_maybe_emit_pending(&key.0, &RunId::new("run-pa-exit-1"), &key)
+            .await
+            .expect("emit must succeed");
+
+        let kinds = capture.snapshot();
+        assert!(
+            matches!(
+                kinds.first(),
+                Some(RuntimeEventKind::LeadHasPendingMessages { agent_id }) if agent_id == &key.1
+            ),
+            "expected LeadHasPendingMessages first, got: {:?}",
+            kinds
+        );
+    }
+
+    /// Path A exit does NOT emit LeadHasPendingMessages when no SendMessage
+    /// arrived during the Running window — the regular AgentIdle path
+    /// proceeds normally.
+    #[tokio::test]
+    async fn path_a_exit_quiet_when_no_send_during_run() {
+        let (driver, capture, key) =
+            build_driver_with_lead("conv-pa-exit-clean", "lead-3").await;
+        let sup = driver
+            .query_engine
+            .lead_idle_supervisor()
+            .expect("supervisor wired")
+            .clone();
+        sup.mark_running(&key).await;
+        // No enqueue.
+
+        driver
+            .mark_idle_and_maybe_emit_pending(&key.0, &RunId::new("run-pa-exit-2"), &key)
+            .await
+            .expect("emit must succeed");
+
+        let kinds = capture.snapshot();
+        assert!(
+            !kinds
+                .iter()
+                .any(|k| matches!(k, RuntimeEventKind::LeadHasPendingMessages { .. })),
+            "should NOT emit pending event, got: {:?}",
+            kinds
+        );
     }
 
     #[test]

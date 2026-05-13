@@ -23,7 +23,7 @@ use crate::runtime::store::{
     AuthorizedWorkspaceRef, AuthorizedWorkspaceStore, PendingPermissionRequest,
     PendingPermissionRequestStore, PendingPermissionResolution, PermissionStore, PolicyDecision,
 };
-use crate::runtime::path_auth::{load_path_auth_entries, RuleSource, ToolPermissionContext};
+use crate::runtime::path_auth::{load_path_auth_entries, ToolPermissionContext};
 use crate::runtime::tools::permission::{persist_permission_decision, PermissionDestination};
 use crate::transport::runtime_host::RuntimeHost;
 use crate::transport::tauri_event_adapter::TauriEventAdapter;
@@ -43,6 +43,23 @@ pub struct SessionRuntime {
     permission_store: Option<Arc<PermissionStore>>,
     default_folder: Option<PathBuf>,
     task_notification_queue: Option<Arc<TaskNotificationQueue>>,
+    /// LTR (P1.8): per-session Team registry; cleared on cancel_session.
+    team_registry: Option<Arc<crate::runtime::agent::TeamRegistry>>,
+    /// LTR (P1.8): per-session AgentName registry; cleared on cancel_session.
+    agent_names: Option<Arc<crate::runtime::agent::AgentNameRegistry>>,
+    /// LTR (P2.2): per-process InboxRegistry; carried so the per-call
+    /// ToolExecutionContext can route SendMessage.  Not cleared on
+    /// cancel_session — Teammate cleanup handles deregister.
+    inbox_registry: Option<Arc<crate::runtime::agent::InboxRegistry>>,
+    /// LTR (P2.4): per-process Lead idle supervisor.  Propagated to QueryEngine
+    /// so SendMessage can enqueue/wake the Lead.
+    lead_idle: Option<Arc<crate::runtime::agent::LeadIdleSupervisor>>,
+    /// LTR (P2.7): per-process cancellation registry.
+    cancellation_registry: Option<Arc<crate::runtime::agent::CancellationRegistry>>,
+    /// LTR (B-gap2): host clone used to resolve per-conversation directories
+    /// (`<aijia_home>/users/{scope}/conversations/{conv_id}`) when building
+    /// the per-session QueryEngine.  Optional so tests can omit it.
+    host: Option<Arc<dyn RuntimeHost>>,
 }
 
 impl SessionRuntime {
@@ -59,6 +76,12 @@ impl SessionRuntime {
             permission_store: None,
             default_folder: None,
             task_notification_queue: None,
+            team_registry: None,
+            agent_names: None,
+            inbox_registry: None,
+            lead_idle: None,
+            cancellation_registry: None,
+            host: None,
         }
     }
 
@@ -84,6 +107,12 @@ impl SessionRuntime {
             permission_store: None,
             default_folder: None,
             task_notification_queue: None,
+            team_registry: None,
+            agent_names: None,
+            inbox_registry: None,
+            lead_idle: None,
+            cancellation_registry: None,
+            host: None,
         }
     }
 
@@ -126,6 +155,79 @@ impl SessionRuntime {
         queue: Arc<TaskNotificationQueue>,
     ) -> Self {
         self.task_notification_queue = Some(queue);
+        self
+    }
+
+    /// LTR (P1.8): inject the per-process TeamRegistry so `cancel_session`
+    /// can drop the session's team on shutdown.
+    pub fn with_team_registry(
+        mut self,
+        registry: Arc<crate::runtime::agent::TeamRegistry>,
+    ) -> Self {
+        self.team_registry = Some(registry);
+        self
+    }
+
+    /// LTR (P1.8): inject the per-process AgentNameRegistry so `cancel_session`
+    /// can drop name bindings on shutdown.
+    pub fn with_agent_names(
+        mut self,
+        registry: Arc<crate::runtime::agent::AgentNameRegistry>,
+    ) -> Self {
+        self.agent_names = Some(registry);
+        self
+    }
+
+    /// LTR (P2.2): inject the per-process InboxRegistry so per-call
+    /// ToolExecutionContexts can route SendMessage.
+    pub fn with_inbox_registry(
+        mut self,
+        registry: Arc<crate::runtime::agent::InboxRegistry>,
+    ) -> Self {
+        self.inbox_registry = Some(registry);
+        self
+    }
+
+    /// LTR (P2.4): inject the per-process Lead idle supervisor.
+    pub fn with_lead_idle(
+        mut self,
+        sup: Arc<crate::runtime::agent::LeadIdleSupervisor>,
+    ) -> Self {
+        self.lead_idle = Some(sup);
+        self
+    }
+
+    /// LTR P2 follow-up — read accessor used by transport layers to install
+    /// their own wake_fn (`TauriChatCommandAdapter::wire_path_c_wake_to_self`).
+    /// We no longer expose a `wire_lead_idle_wake_path` here because the
+    /// previous design (continuation turns spawned from `SessionRuntime` itself)
+    /// could not construct the per-request `ToolDispatcher` and produced
+    /// "tool dispatcher not configured" errors.
+    pub fn lead_idle_supervisor(
+        &self,
+    ) -> Option<&Arc<crate::runtime::agent::LeadIdleSupervisor>> {
+        self.lead_idle.as_ref()
+    }
+
+    // `wire_lead_idle_wake_path` and `spawn_continuation` were removed:
+    // continuation turns must reuse the user-send code path so they pick up a
+    // per-request `ToolDispatcher`.  See
+    // `transport::tauri_commands::chat::TauriChatCommandAdapter::wire_path_c_wake_to_self`
+    // for the replacement.
+
+    /// LTR (P2.7): inject the per-process cancellation registry.
+    pub fn with_cancellation_registry(
+        mut self,
+        reg: Arc<crate::runtime::agent::CancellationRegistry>,
+    ) -> Self {
+        self.cancellation_registry = Some(reg);
+        self
+    }
+
+    /// LTR (B-gap2): attach the runtime host so per-session QueryEngines can
+    /// resolve their conv_dir via `host.resolve_conv_dir(conv_id)`.
+    pub fn with_host(mut self, host: Arc<dyn RuntimeHost>) -> Self {
+        self.host = Some(host);
         self
     }
 
@@ -300,6 +402,36 @@ impl SessionRuntime {
             session_id,
             "Interaction request cancelled because the session was stopped.",
         );
+
+        // LTR (P1.8 + B-gap3): cleanup per-session Team / name / inbox /
+        // cancellation bindings.  Spawned because the registries are async; we
+        // don't need to block the synchronous cancel_session contract waiting
+        // on the mutex.
+        let team_reg = self.team_registry.clone();
+        let name_reg = self.agent_names.clone();
+        let inbox_reg = self.inbox_registry.clone();
+        let cancel_reg = self.cancellation_registry.clone();
+        if team_reg.is_some()
+            || name_reg.is_some()
+            || inbox_reg.is_some()
+            || cancel_reg.is_some()
+        {
+            let sid = session_id.clone();
+            tokio::spawn(async move {
+                if let Some(reg) = team_reg {
+                    reg.delete(&sid).await;
+                }
+                if let Some(reg) = name_reg {
+                    reg.drop_session(&sid).await;
+                }
+                if let Some(reg) = inbox_reg {
+                    reg.drop_session(&sid).await;
+                }
+                if let Some(reg) = cancel_reg {
+                    reg.drop_session(&sid).await;
+                }
+            });
+        }
     }
 
     pub fn clear_session_state(&self, session_id: &SessionId) {
@@ -399,6 +531,26 @@ impl SessionRuntime {
             .with_permission_ctx(base_ctx);
         if let Some(store) = self.permission_store.as_ref() {
             engine = engine.with_permission_store(store.clone());
+        }
+        // LTR (P1.7/P2.2): propagate registries so per-call
+        // ToolExecutionContexts can dispatch SendMessage / TeamCreate / etc.
+        if let (Some(team), Some(names), Some(inboxes)) = (
+            self.team_registry.clone(),
+            self.agent_names.clone(),
+            self.inbox_registry.clone(),
+        ) {
+            engine = engine.with_ltr_registries(team, names, inboxes);
+        }
+        if let Some(sup) = self.lead_idle.clone() {
+            engine = engine.with_lead_idle(sup);
+        }
+        if let Some(reg) = self.cancellation_registry.clone() {
+            engine = engine.with_cancellation_registry(reg);
+        }
+        if let Some(host) = self.host.as_ref() {
+            if let Some(dir) = host.resolve_conv_dir(session_id.as_str()) {
+                engine = engine.with_conv_dir(dir);
+            }
         }
         engine
     }
@@ -594,7 +746,9 @@ mod tests {
 
     #[async_trait]
     impl RuntimeTool for CapturePermissionModeTool {
-        fn definition(&self) -> ToolDefinition {
+        fn id(&self) -> &str { "capture_permission_mode" }
+        
+        async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
             ToolDefinition::new("capture_permission_mode", "Capture permission mode")
         }
 
@@ -719,7 +873,9 @@ mod tests {
 
     #[async_trait]
     impl RuntimeTool for CaptureAuthorizedWorkspaceTool {
-        fn definition(&self) -> ToolDefinition {
+        fn id(&self) -> &str { "capture_authorized_workspace" }
+
+        async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
             ToolDefinition::new(
                 "capture_authorized_workspace",
                 "Capture authorized workspace",

@@ -57,6 +57,8 @@ export const TAURI_EVENTS = {
   CONVERSATION_CREATED: 'conversation:created',
   CHANNEL_PLATFORM_STATE: 'channel:platform-state',
   CHANNEL_MESSAGE: 'channel:message',
+  /** LTR Path A: Lead finished a turn and has pending Teammate messages queued. */
+  LEAD_HAS_PENDING_MESSAGES: 'lead:has-pending-messages',
   PENDING_SNAPSHOT: 'pending:snapshot',
   PENDING_QUEUED: 'pending:queued',
   PENDING_DRAINED: 'pending:drained',
@@ -1546,6 +1548,37 @@ export function onTurnCompleted(
   return listen<TurnCompletedPayload>(TAURI_EVENTS.TURN_COMPLETED, createInstrumentedEventHandler(TAURI_EVENTS.TURN_COMPLETED, (event) => {
     handler(event.payload)
   }))
+}
+
+// ── LTR: lead:has-pending-messages ──────────────────────────────────────────
+
+export interface LeadHasPendingMessagesPayload {
+  conversationId: string
+  agentId?: string
+}
+
+/**
+ * Listen for `lead:has-pending-messages` events emitted by the backend when
+ * the Lead finishes a turn but has pending Teammate messages in its inbox
+ * (LTR Path A).  The frontend currently does not act on this event — the
+ * backend's SessionRuntime handles the continuation automatically via Path C
+ * wake.  This listener exists solely to record a diagnostic point so the
+ * event can be correlated in metrics.jsonl.
+ */
+export function onLeadHasPendingMessages(
+  handler?: (payload: LeadHasPendingMessagesPayload) => void,
+): Promise<() => void> {
+  return listen<LeadHasPendingMessagesPayload>(
+    TAURI_EVENTS.LEAD_HAS_PENDING_MESSAGES,
+    createInstrumentedEventHandler(TAURI_EVENTS.LEAD_HAS_PENDING_MESSAGES, (event) => {
+      recordDiagnostic({
+        event: 'event.received',
+        conversationId: event.payload.conversationId,
+        payload: { eventName: TAURI_EVENTS.LEAD_HAS_PENDING_MESSAGES, agentId: event.payload.agentId },
+      })
+      if (handler) handler(event.payload)
+    }),
+  )
 }
 
 export function onDiagnosticsEvent(

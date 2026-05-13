@@ -16,10 +16,11 @@ use crate::runtime::tools::executor::{ToolError, ToolResult};
 use crate::runtime::tools::permission::{PermissionDecision, PermissionReason};
 use crate::runtime::tools::RuntimeTool;
 
+use crate::runtime::cancellation::wait_for_cancellation;
 use super::shell_common::{
     collect_reader, content_from_output, format_cancel_message, format_command_failure,
     interpret_command_result, kill_child_process_tree, read_merged_streams,
-    truncated_to_max_bytes, wait_for_cancellation, ExitKind, MAX_OUTPUT_BYTES,
+    truncated_to_max_bytes, ExitKind, MAX_OUTPUT_BYTES,
 };
 use super::workspace::require_workspace_root;
 
@@ -124,7 +125,9 @@ fn configure_child_process_group(_command: &mut Command) {}
 
 #[async_trait]
 impl RuntimeTool for BashTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str { "Bash" }
+    
+    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
         TOOL_CATALOG
             .get("Bash")
             .unwrap_or_else(|| ToolDefinition::new("Bash", "Execute shell command"))

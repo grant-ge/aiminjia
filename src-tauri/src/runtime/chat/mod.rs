@@ -1,5 +1,6 @@
 pub mod base_prompt;
 pub mod chat_turn_driver;
+pub mod compact_client;
 pub mod compaction;
 pub mod context_builder;
 pub mod history;
@@ -17,6 +18,7 @@ pub mod turn_config;
 pub mod turn_outcome;
 
 pub use chat_turn_driver::{ChatTurnRequest, RuntimeChatTurnDriver, RuntimeLlmExecutor};
+pub use compact_client::CompactSummaryClient;
 pub use tool_round_driver::{ToolRoundDriver, ToolRoundResult};
 pub use tool_round_types::{BlockedToolOutcome, RuntimeToolCallOutcome, RuntimeToolCallRequest};
 pub use turn_config::{

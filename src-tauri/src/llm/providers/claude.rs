@@ -277,6 +277,8 @@ impl ClaudeProvider {
             .find(|m| m.role == "system")
             .map(|m| m.content.clone());
 
+        let messages = merge_consecutive_user_messages(messages);
+
         let mut body = json!({
             "max_tokens": request.max_tokens,
             "messages": messages,
@@ -400,6 +402,42 @@ impl ClaudeProvider {
             Some(crate::llm::streaming::ThinkingConfig::Disabled) | None => {}
         }
 
+        // [tool-desc-trace] Dump the FULL Agent tool description right before
+        // the body is sent to Anthropic. This is the ground truth — what the
+        // LLM actually sees. Earlier `[tool-desc-trace]` logs only checked
+        // for `<available_subagent_types>` substring; this prints the whole
+        // string so you can verify the catalog reached the wire.
+        if let Some(tools) = body.get("tools").and_then(|t| t.as_array()) {
+            log::info!(
+                "[tool-desc-trace] LLM request tools.len()={} model={}",
+                tools.len(),
+                self.model
+            );
+            for tool in tools {
+                let name = tool.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+                let desc = tool
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                if name == "Agent" {
+                    log::info!(
+                        "[tool-desc-trace] LLM request tool[Agent] description ({} chars):\n{}",
+                        desc.len(),
+                        desc
+                    );
+                } else {
+                    log::info!(
+                        "[tool-desc-trace] LLM request tool[{}] desc_len={} has_emp_section={}",
+                        name,
+                        desc.len(),
+                        desc.contains("<available_subagent_types>")
+                    );
+                }
+            }
+        } else {
+            log::info!("[tool-desc-trace] LLM request: no tools in body");
+        }
+
         body
     }
 
@@ -515,6 +553,73 @@ fn anthropic_block_to_json(block: &AnthropicContentBlock) -> Value {
             "type": "image",
             "source": source,
         }),
+    }
+}
+
+/// Merge consecutive `role: "user"` messages into a single one whose
+/// `content` is a flattened block array. Anthropic's Messages API requires
+/// strict alternation user→assistant→user→… and rejects two consecutive
+/// user messages even if both are valid individually. This is also the
+/// official guidance for parallel tool_use: emit ONE user message whose
+/// content array carries N tool_result blocks, not N user messages.
+///
+/// Strategy:
+/// - Walk messages left-to-right; when the current and previous are both
+///   `role: "user"`, normalise both contents to a block array and concat.
+/// - String content is wrapped as `[{"type":"text","text":...}]` first.
+/// - Within the merged array, hoist tool_result blocks to the front so
+///   they directly follow the preceding assistant's tool_use blocks
+///   (server-side validator: "tool result must follow tool use").
+fn merge_consecutive_user_messages(messages: Vec<Value>) -> Vec<Value> {
+    let mut out: Vec<Value> = Vec::with_capacity(messages.len());
+    for msg in messages {
+        let is_user = msg.get("role").and_then(|v| v.as_str()) == Some("user");
+        let prev_is_user = out
+            .last()
+            .and_then(|m| m.get("role"))
+            .and_then(|v| v.as_str())
+            == Some("user");
+        if is_user && prev_is_user {
+            let prev = out.pop().expect("prev_is_user implies non-empty out");
+            let merged_content = concat_user_content(
+                prev.get("content").cloned().unwrap_or(Value::Null),
+                msg.get("content").cloned().unwrap_or(Value::Null),
+            );
+            out.push(json!({
+                "role": "user",
+                "content": merged_content,
+            }));
+        } else {
+            out.push(msg);
+        }
+    }
+    out
+}
+
+/// Normalise a user message's `content` field (which may be a string or an
+/// array of content blocks) into a flat array, then concatenate two such
+/// arrays and hoist all tool_result blocks to the front.
+fn concat_user_content(a: Value, b: Value) -> Value {
+    let mut blocks: Vec<Value> = Vec::new();
+    blocks.extend(user_content_to_blocks(a));
+    blocks.extend(user_content_to_blocks(b));
+
+    let (tool_results, others): (Vec<_>, Vec<_>) = blocks.into_iter().partition(|block| {
+        block.get("type").and_then(|v| v.as_str()) == Some("tool_result")
+    });
+    let mut hoisted: Vec<Value> = Vec::with_capacity(tool_results.len() + others.len());
+    hoisted.extend(tool_results);
+    hoisted.extend(others);
+    Value::Array(hoisted)
+}
+
+fn user_content_to_blocks(content: Value) -> Vec<Value> {
+    match content {
+        Value::String(s) if !s.is_empty() => vec![json!({ "type": "text", "text": s })],
+        Value::String(_) => Vec::new(),
+        Value::Array(arr) => arr,
+        Value::Null => Vec::new(),
+        other => vec![other],
     }
 }
 
@@ -923,6 +1028,116 @@ mod tests {
     use super::*;
     use crate::llm::streaming::{ChatMessage, ToolDefinition};
 
+    // ── merge_consecutive_user_messages ──────────────────────────────────────
+
+    #[test]
+    fn merge_two_user_tool_results_collapses_into_one_message() {
+        // The bug we hit: 1 assistant with 2 tool_use + 2 separate user messages
+        // each carrying 1 tool_result. Anthropic rejected the request because it
+        // saw "multiple tool_result blocks with id X" after its own merge.
+        // Pre-merging on our side guarantees there is exactly one user message
+        // with a single content array carrying both tool_result blocks.
+        let input = vec![
+            json!({
+                "role": "assistant",
+                "content": [
+                    { "type": "tool_use", "id": "tu_A", "name": "Agent", "input": {} },
+                    { "type": "tool_use", "id": "tu_B", "name": "Agent", "input": {} }
+                ]
+            }),
+            json!({
+                "role": "user",
+                "content": [
+                    { "type": "tool_result", "tool_use_id": "tu_A", "content": "result A" }
+                ]
+            }),
+            json!({
+                "role": "user",
+                "content": [
+                    { "type": "tool_result", "tool_use_id": "tu_B", "content": "result B" }
+                ]
+            }),
+        ];
+
+        let merged = merge_consecutive_user_messages(input);
+        assert_eq!(merged.len(), 2, "the two user messages must collapse into one");
+        assert_eq!(merged[1]["role"], "user");
+        let blocks = merged[1]["content"].as_array().expect("content is array");
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[0]["tool_use_id"], "tu_A");
+        assert_eq!(blocks[1]["tool_use_id"], "tu_B");
+    }
+
+    #[test]
+    fn merge_hoists_tool_results_before_text_blocks() {
+        // After a tool_result user message, the driver may append a
+        // synthetic text user message (task notification, env injection).
+        // Anthropic requires tool_result blocks to come first inside a
+        // merged user content array (otherwise "tool result must follow
+        // tool use" error).
+        let input = vec![
+            json!({
+                "role": "user",
+                "content": [
+                    { "type": "tool_result", "tool_use_id": "tu_X", "content": "x" }
+                ]
+            }),
+            json!({
+                "role": "user",
+                "content": "follow-up text from driver"
+            }),
+        ];
+        let merged = merge_consecutive_user_messages(input);
+        assert_eq!(merged.len(), 1);
+        let blocks = merged[0]["content"].as_array().unwrap();
+        assert_eq!(blocks[0]["type"], "tool_result");
+        assert_eq!(blocks[1]["type"], "text");
+        assert_eq!(blocks[1]["text"], "follow-up text from driver");
+    }
+
+    #[test]
+    fn merge_leaves_non_user_runs_untouched() {
+        // assistant ⇄ user alternation must be preserved.
+        let input = vec![
+            json!({ "role": "user", "content": "q1" }),
+            json!({ "role": "assistant", "content": "a1" }),
+            json!({ "role": "user", "content": "q2" }),
+            json!({ "role": "assistant", "content": "a2" }),
+        ];
+        let merged = merge_consecutive_user_messages(input.clone());
+        assert_eq!(merged, input, "no consecutive users — output equals input");
+    }
+
+    #[test]
+    fn merge_three_consecutive_users_collapse() {
+        let input = vec![
+            json!({ "role": "user", "content": "a" }),
+            json!({ "role": "user", "content": [{ "type": "text", "text": "b" }] }),
+            json!({ "role": "user", "content": "c" }),
+        ];
+        let merged = merge_consecutive_user_messages(input);
+        assert_eq!(merged.len(), 1);
+        let blocks = merged[0]["content"].as_array().unwrap();
+        // All three text blocks; no tool_result to hoist so order preserved.
+        assert_eq!(blocks.len(), 3);
+        assert_eq!(blocks[0]["text"], "a");
+        assert_eq!(blocks[1]["text"], "b");
+        assert_eq!(blocks[2]["text"], "c");
+    }
+
+    #[test]
+    fn merge_drops_empty_string_blocks_but_preserves_array_blocks() {
+        let input = vec![
+            json!({ "role": "user", "content": "" }),
+            json!({ "role": "user", "content": [{ "type": "tool_result", "tool_use_id": "tu_Y", "content": "y" }] }),
+        ];
+        let merged = merge_consecutive_user_messages(input);
+        assert_eq!(merged.len(), 1);
+        let blocks = merged[0]["content"].as_array().unwrap();
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0]["tool_use_id"], "tu_Y");
+    }
+
     #[test]
     fn test_parse_stop_reason() {
         assert_eq!(
@@ -1133,17 +1348,23 @@ mod tests {
 
         let body = provider.build_request_body(&request);
         let messages = body["messages"].as_array().unwrap();
-        assert_eq!(messages[0]["content"], "Context message");
-        let content = messages[1]["content"].as_array().unwrap();
-
+        // After merge_consecutive_user_messages: the two `role: "user"` entries
+        // collapse into a single user message whose content is a flat block
+        // array — Context text first, then the image-carrying user's text +
+        // image blocks. (Anthropic merges these server-side anyway; doing it
+        // client-side avoids "multiple tool_result" 400s in tool-calling turns
+        // and matches the official claude-code reference implementation.)
+        assert_eq!(messages.len(), 1);
+        let content = messages[0]["content"].as_array().unwrap();
+        assert_eq!(content[0], json!({"type": "text", "text": "Context message"}));
         assert_eq!(
-            content[0],
+            content[1],
             json!({"type": "text", "text": "Describe this image"})
         );
-        assert_eq!(content[1]["type"], "image");
-        assert_eq!(content[1]["source"]["type"], "base64");
-        assert_eq!(content[1]["source"]["media_type"], "image/png");
-        assert_eq!(content[1]["source"]["data"], "iVBORw0KGgo=");
+        assert_eq!(content[2]["type"], "image");
+        assert_eq!(content[2]["source"]["type"], "base64");
+        assert_eq!(content[2]["source"]["media_type"], "image/png");
+        assert_eq!(content[2]["source"]["data"], "iVBORw0KGgo=");
         assert!(!body.to_string().contains("image_url"));
         assert!(!body.to_string().contains("data:image/png;base64"));
     }

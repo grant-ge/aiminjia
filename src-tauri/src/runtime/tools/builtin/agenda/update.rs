@@ -16,7 +16,9 @@ pub struct UpdateAgendaItemRuntimeTool {
 
 #[async_trait]
 impl RuntimeTool for UpdateAgendaItemRuntimeTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str { "update_agenda_item" }
+    
+    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new(
             "update_agenda_item",
             "【自用】修改你自己创建的日程（标题/触发内容/频率/启用状态）。",

@@ -216,7 +216,12 @@ impl ToolRegistry {
     pub async fn register_runtime(&self, tool: Arc<dyn crate::runtime::tools::RuntimeTool>) {
         use crate::runtime::tools::catalog::{CatalogEntry, TOOL_CATALOG};
 
-        let def = tool.definition();
+        // Registration uses an empty description context — the tool's
+        // base definition (no session-derived catalog) is what goes into
+        // TOOL_CATALOG as the static fallback. Per-turn LLM tools assembly
+        // re-renders with a populated context, see `get_schemas_filtered`.
+        let empty_ctx = crate::runtime::tools::ToolDescriptionContext::empty();
+        let def = tool.definition(&empty_ctx).await;
         let id = def.id.clone();
         log::info!("Registering runtime tool: {}", id);
         self.runtime_tools.write().await.insert(id, tool);
@@ -388,27 +393,72 @@ impl ToolRegistry {
 
     /// Get tool definitions filtered by a ToolFilter.
     /// Runtime tools take precedence over legacy tools with the same name.
-    pub async fn get_schemas_filtered(&self, filter: &ToolFilter) -> Vec<ToolDefinition> {
+    ///
+    /// `ctx` carries session-scoped context (available subagent / employee
+    /// names, MCP servers) so RuntimeTools can render dynamic descriptions
+    /// per turn. Pass [`ToolDescriptionContext::empty()`] when no session
+    /// info is available (catalog dump, list endpoints).
+    ///
+    /// `request_scoped_overrides` lets the caller supply pre-rendered
+    /// `ToolDefinition`s for request-scoped tools (notably `Agent`) that
+    /// have no live registered instance in `runtime_tools`.  The
+    /// `ToolDispatcher::try_build_request_scoped_tool` path must be
+    /// driven by the caller (chat layer has the AgentRegistry +
+    /// EmployeeStore handles). Override id matches the tool's `id()`.
+    pub async fn get_schemas_filtered(
+        &self,
+        filter: &ToolFilter,
+        ctx: &crate::runtime::tools::ToolDescriptionContext,
+        request_scoped_overrides: &std::collections::HashMap<String, ToolDefinition>,
+    ) -> Vec<ToolDefinition> {
         use crate::runtime::tools::catalog::TOOL_CATALOG;
         let runtime_tools = self.runtime_tools.read().await;
         let legacy_tools = self.tools.read().await;
         let mut schemas = Vec::new();
 
-        // Runtime tools: filter and get schema from catalog
-        for (id, _) in runtime_tools.iter() {
+        let override_keys: Vec<&str> = request_scoped_overrides.keys().map(|k| k.as_str()).collect();
+        let employee_count = ctx
+            .agents
+            .iter()
+            .filter(|a| matches!(a.source, crate::runtime::agent::definition::AgentSource::Employee))
+            .count();
+        log::info!(
+            "[tool-desc-trace] entered get_schemas_filtered ctx_employees={} ctx_agents={} overrides_keys={:?}",
+            employee_count,
+            ctx.agents.len(),
+            override_keys,
+        );
+
+        // Runtime tools: render description per-turn so tools whose
+        // catalog depends on session state (Agent → employee/agent list)
+        // are correct each turn. Map runtime ToolDefinition → llm
+        // streaming ToolDefinition (name/description/parameters).  The
+        // input_schema lives in TOOL_CATALOG (registered alongside the
+        // tool at boot) — runtime ToolDefinition itself doesn't carry it.
+        for (id, tool) in runtime_tools.iter() {
             let matches = match filter {
                 ToolFilter::All => true,
                 ToolFilter::Only(names) => names.iter().any(|n| n == id),
                 ToolFilter::Exclude(names) => names.iter().all(|n| n != id),
             };
             if matches {
-                if let Some(entry) = TOOL_CATALOG.get_entry(id) {
-                    schemas.push(ToolDefinition {
-                        name: entry.definition.id.clone(),
-                        description: entry.definition.description.clone(),
-                        parameters: entry.json_schema.clone(),
-                    });
-                }
+                let rendered = tool.definition(ctx).await;
+                let parameters = TOOL_CATALOG
+                    .get_entry(id)
+                    .map(|e| e.json_schema.clone())
+                    .unwrap_or_else(|| serde_json::json!({"type": "object"}));
+                let has_emp = rendered.description.contains("<available_subagent_types>");
+                log::info!(
+                    "[tool-desc-trace] pushed runtime tool: id={} desc_len={} has_emp_section={}",
+                    rendered.id,
+                    rendered.description.len(),
+                    has_emp,
+                );
+                schemas.push(ToolDefinition {
+                    name: rendered.id,
+                    description: rendered.description,
+                    parameters,
+                });
             }
         }
         for id in REQUEST_SCOPED_RUNTIME_TOOL_NAMES {
@@ -421,7 +471,25 @@ impl ToolRegistry {
                 ToolFilter::Exclude(names) => names.iter().all(|n| n != id),
             };
             if matches {
-                if let Some(entry) = TOOL_CATALOG.get_entry(id) {
+                if let Some(override_def) = request_scoped_overrides.get(*id) {
+                    // Caller supplied a freshly-rendered description (e.g.
+                    // Agent with employee_id catalog) — use it verbatim.
+                    let has_emp = override_def.description.contains("<available_subagent_types>");
+                    log::info!(
+                        "[tool-desc-trace] used override for tool: id={} desc_len={} has_emp_section={}",
+                        id,
+                        override_def.description.len(),
+                        has_emp,
+                    );
+                    schemas.push(override_def.clone());
+                } else if let Some(entry) = TOOL_CATALOG.get_entry(id) {
+                    // Fallback: static catalog entry. Used for tools whose
+                    // description doesn't depend on session state, or
+                    // when the caller couldn't construct an override.
+                    log::info!(
+                        "[tool-desc-trace] fell back to static catalog for tool: id={} reason=no_override",
+                        id,
+                    );
                     schemas.push(ToolDefinition {
                         name: entry.definition.id.clone(),
                         description: entry.definition.description.clone(),
@@ -451,7 +519,19 @@ impl ToolRegistry {
             }
         }
 
-        partition_sort_tool_schemas(schemas)
+        let result = partition_sort_tool_schemas(schemas);
+        let agent_found = result.iter().any(|d| d.name == "Agent");
+        let agent_has_emp = result.iter()
+            .find(|d| d.name == "Agent")
+            .map(|d| d.description.contains("<available_subagent_types>"))
+            .unwrap_or(false);
+        log::info!(
+            "[tool-desc-trace] get_schemas_filtered done: total={} agent_found={} agent_has_emp_section={}",
+            result.len(),
+            agent_found,
+            agent_has_emp,
+        );
+        result
     }
 
     /// DEPRECATED: PluginContext 桥接入口，不与 claude-code-best 架构对齐。
@@ -537,7 +617,9 @@ impl ToolRegistry {
                     Some(store) => Box::new(StorePolicyPipeline::new(store.clone())),
                     None => Box::new(CapabilityPermissionPipeline),
                 };
-            let def = tool.definition();
+            let def = tool
+                .definition(&crate::runtime::tools::ToolDescriptionContext::empty())
+                .await;
             let permission_decision =
                 if let Some(decision) = tool.check_permissions(&input, &exec_ctx).await {
                     decision

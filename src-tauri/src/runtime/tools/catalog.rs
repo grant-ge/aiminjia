@@ -331,19 +331,20 @@ fn build_default_catalog() -> ToolCatalog {
         ToolDefinition::new(
             "Agent",
             "【Composite 工具】启动一个子 Agent 执行聚焦任务。\
-            \n\n适用场景：任务需要干净上下文、专属 Agent 类型（如 'explore'、'general-purpose'）或不同模型。\
+            \n\n适用场景：任务需要干净上下文、专属 Agent 类型或不同模型。`subagent_type` 取值范围在每轮 turn 的工具描述动态列表中给出，包含 builtin 类型、用户自定义 agent、以及当前用户已雇佣的数字员工 ID（`emp-...`）。\
             \n\n同步路径（run_in_background=false 或省略）：阻塞等待子 Agent 完成并返回最终输出文本。\
-            \n\n异步路径（run_in_background=true）：立即返回 agent_id；子 Agent 在后台运行；用 TaskOutput(task_id=agent_id, offset=N) 增量读取 transcript；子 Agent 完成时父的下一轮会收到 <task-notification> XML。",
+            \n\n异步路径（run_in_background=true）：立即返回 agent_id；子 Agent 在后台运行；用 TaskOutput(task_id=agent_id, offset=N) 增量读取 transcript；子 Agent 完成时父的下一轮会收到 <task-notification> XML。\
+            \n\nTeammate 派活路径（subagent_type 选数字员工 + team_name + name）：从该 Employee 加载系统提示和工具白名单，加入当前 Session 的 Team 作为 Teammate 运行。`team_name` 非空时 `name` 为必填。",
         )
         .with_kind(ToolKind::Composite)
         .with_capability_scope(["workspace:write"]),
         json!({
             "type": "object",
-            "required": ["subagent_type", "prompt", "description"],
+            "required": ["prompt", "description", "subagent_type"],
             "properties": {
                 "subagent_type": {
                     "type": "string",
-                    "description": "Agent 类型名称，来自注册表（如 'general-purpose'、'explore'）。"
+                    "description": "Agent 类型名称。必须从工具描述中 `<available_subagent_types>` 段列出的清单中精确选择（builtin 如 `general-purpose`、`explore`，或已雇佣的数字员�� ID `emp-…`）。"
                 },
                 "prompt": {
                     "type": "string",
@@ -364,7 +365,11 @@ fn build_default_catalog() -> ToolCatalog {
                 },
                 "name": {
                     "type": "string",
-                    "description": "可选的实例名，用于 SendMessage 路由到异步子 Agent（仅异步模式使用）。"
+                    "description": "Agent 实例名。team_name 非空时必填（Teammate 派活）；异步子 Agent 也可选填以便 SendMessage 路由。"
+                },
+                "team_name": {
+                    "type": "string",
+                    "description": "目标 Team 名称。非空时将此 Agent 作为 Teammate 加入当前 Session 的 Team（Team 必须已通过 TeamCreate 创建）。此时 name 为必填。"
                 }
             }
         }),
@@ -540,6 +545,21 @@ fn build_default_catalog() -> ToolCatalog {
 
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
+            "TaskClaim",
+            "认领 owner 为 None 或 \"*\" 的任务，将 owner 设置为当前 agent。已被他人认领时拒绝。",
+        )
+        .with_kind(ToolKind::Support),
+        json!({
+            "type": "object",
+            "required": ["taskId"],
+            "properties": {
+                "taskId": { "type": "string", "description": "要认领的任务 ID" }
+            }
+        }),
+    ));
+
+    c.insert(CatalogEntry::new(
+        ToolDefinition::new(
             "TaskStop",
             "终止一个正在后台运行的 Agent 任务（按 task_id，即 Agent(run_in_background=true) 返回的 agent_id 同值）。",
         )
@@ -557,6 +577,95 @@ fn build_default_catalog() -> ToolCatalog {
     for (def, schema) in crate::runtime::tools::builtin::skill_smith::catalog_entries() {
         c.insert(CatalogEntry::new(def, schema));
     }
+
+    c.insert(CatalogEntry::new(
+        ToolDefinition::new(
+            "TeamCreate",
+            "把当前 session 升级为多 Agent Team 模式。何时调用：任务需要 ≥2 个独立 Worker 并行，或者跨 domain 协作。不该调用：纯聊天、1 步可完成、可以串行的工作。Team 最多 4 个 Teammate；当前 session 已经是 Team 时返回错误。调用后会注册 team-lead 名字，Teammate 可用 SendMessage(to: \"team-lead\") 寻址。",
+        )
+        .with_kind(ToolKind::Support),
+        json!({
+            "type": "object",
+            "required": [],
+            "properties": {
+                "team_name": {
+                    "type": "string",
+                    "description": "Team 显示名，省略则用 team-{session8} 自动生成。"
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Team 目标的一句话描述，便于审计。"
+                }
+            }
+        }),
+    ));
+
+    c.insert(CatalogEntry::new(
+        ToolDefinition::new(
+            "TeamDelete",
+            "退出 Team 模式：把当前 session 的 Team 从注册表移除，所有 Teammate 收到收件箱关闭信号会自行清理退出，session 内的 name 注册全部清空。Team 不存在时静默 noop。",
+        )
+        .with_kind(ToolKind::Support),
+        json!({
+            "type": "object",
+            "required": [],
+            "properties": {}
+        }),
+    ));
+
+    c.insert(CatalogEntry::new(
+        ToolDefinition::new(
+            "TeammateStop",
+            "强制取消一个 Teammate（Lead 紧急工具）。仅在以下情况使用：1) 已经向 Teammate 发了 shutdown_request 但未收到 shutdown_response（或 approve=false 且重试无果）；2) Teammate 卡死、行为异常；3) TeamDelete 之前的清理。普通收尾应优先用 shutdown_request 让 Teammate 自己 graceful 退出。幂等：取消已经退出/不存在的 agent 静默成功。",
+        )
+        .with_kind(ToolKind::Support),
+        json!({
+            "type": "object",
+            "required": ["agent_name"],
+            "properties": {
+                "agent_name": { "type": "string", "description": "目标 Teammate 的 name（如 'researcher'）。" }
+            }
+        }),
+    ));
+
+    c.insert(CatalogEntry::new(
+        ToolDefinition::new(
+            "SendMessage",
+            "向同 session 的另一个 Agent 投递结构化消息。使用场景：Lead 给某 Teammate 派任务、Teammate 给 Lead 汇报阶段成果、Teammate 之间交接产出、广播紧急停止信号 (`to:\"*\"`)。不要用来报 task 状态（用 TaskUpdate）或写文件产物（直接写磁盘）。`to` 是 name（如 \"team-lead\" / \"researcher\" / \"*\" 广播）。`message` 是 StructuredMessage 5 个 variant 之一：text / shutdown_request / shutdown_response / plan_approval_request / plan_approval_response。",
+        )
+        .with_kind(ToolKind::Support),
+        json!({
+            "type": "object",
+            "required": ["to", "message"],
+            "properties": {
+                "to": {
+                    "type": "string",
+                    "description": "目标 agent 的 name，或 \"*\" 表示广播到所有 Teammate（不含发送者自己）。"
+                },
+                "message": {
+                    "type": "object",
+                    "description": "StructuredMessage：{type:'text', content:'...'} 等 5 种 variant。",
+                    "required": ["type"],
+                    "properties": {
+                        "type": {
+                            "type": "string",
+                            "enum": [
+                                "text",
+                                "shutdown_request",
+                                "shutdown_response",
+                                "plan_approval_request",
+                                "plan_approval_response"
+                            ]
+                        }
+                    }
+                },
+                "summary": {
+                    "type": "string",
+                    "description": "5-10 字 UI 预览文案（可选）。"
+                }
+            }
+        }),
+    ));
 
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
@@ -762,7 +871,12 @@ pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
     "TaskUpdate",
     "TaskList",
     "TaskGet",
+    "TaskClaim",
     "TaskStop",
+    "TeamCreate",
+    "TeamDelete",
+    "TeammateStop",
+    "SendMessage",
     // Agenda tools (spec §7) — request-scoped, organizer 由 runtime 注入
     "create_agenda_item",
     "list_agenda_items",

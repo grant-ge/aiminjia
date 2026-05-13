@@ -1,6 +1,7 @@
 pub mod capability;
 pub mod context;
 pub mod definition;
+pub mod description_context;
 pub mod dispatcher;
 pub mod executor;
 pub mod legacy_adapter;
@@ -13,6 +14,7 @@ pub use capability::{
 };
 pub use context::{EventCollectingSink, ToolExecutionContext};
 pub use definition::ToolDefinition;
+pub use description_context::{AgentDefSummary, ToolDescriptionContext};
 pub use dispatcher::{InterruptBehavior, RuntimeTool, ToolDispatchOutcome, ToolDispatcher};
 pub use executor::{ToolError, ToolResult};
 pub use legacy_adapter::LegacyToolAdapter;

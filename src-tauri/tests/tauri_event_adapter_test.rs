@@ -34,6 +34,35 @@ fn maps_agent_idle_with_scope_metadata() {
 }
 
 #[test]
+fn maps_lead_has_pending_messages_to_legacy_event() {
+    let event = RuntimeEvent::new(
+        SessionId::new("conv-1"),
+        RunId::new("run-42"),
+        RuntimeEventKind::LeadHasPendingMessages {
+            agent_id: AgentId::new("lead-conv-1"),
+        },
+    );
+    let mapped =
+        map_runtime_event(&event).expect("legacy adapter should expose pending-messages event");
+    assert_eq!(mapped.name, "lead:has-pending-messages");
+    assert_eq!(
+        mapped
+            .payload
+            .get("conversationId")
+            .and_then(|v| v.as_str()),
+        Some("conv-1")
+    );
+    assert_eq!(
+        mapped.payload.get("agentId").and_then(|v| v.as_str()),
+        Some("lead-conv-1")
+    );
+    assert_eq!(
+        mapped.payload.get("runId").and_then(|v| v.as_str()),
+        Some("run-42")
+    );
+}
+
+#[test]
 fn maps_permission_ask_runtime_event_to_legacy_permission_ask() {
     let event = RuntimeEvent::new(
         SessionId::new("conv-1"),
