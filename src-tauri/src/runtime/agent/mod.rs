@@ -6,6 +6,7 @@ pub mod cancellation_registry;
 pub mod child_run;
 pub mod definition;
 pub mod employee_projection;
+pub mod empty_response_recovery;
 pub mod file_agent_invocation_store;
 pub mod inbox;
 pub mod inbox_registry;

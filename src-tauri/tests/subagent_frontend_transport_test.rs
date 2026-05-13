@@ -22,6 +22,8 @@ fn sample_envelope() -> SubAgentResultEnvelope {
         terminal_tool_results: Vec::new(),
         transcript_snapshot: Vec::new(),
         transcript_ref: Some(build_subagent_transcript_ref("child-run-42")),
+        terminal_stop_reason: None,
+        max_tokens_recovery_attempts: 0,
     }
 }
 

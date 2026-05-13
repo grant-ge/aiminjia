@@ -36,6 +36,8 @@ fn envelope_roundtrip_keeps_core_sidechain_fields() {
             },
         ],
         transcript_ref: Some(build_subagent_transcript_ref("run-child-1")),
+        terminal_stop_reason: None,
+        max_tokens_recovery_attempts: 0,
     };
 
     let summary = envelope.to_storage_summary();
@@ -76,6 +78,8 @@ fn message_bridge_formats_envelope_summary_payload() {
             tool_name: None,
         }],
         transcript_ref: Some(build_subagent_transcript_ref("run-child-2")),
+        terminal_stop_reason: None,
+        max_tokens_recovery_attempts: 0,
     };
 
     let summary = message_bridge::format_sub_agent_envelope_summary(&envelope);
@@ -123,6 +127,8 @@ async fn background_run_persists_decodable_envelope_summary() {
         transcript_ref: Some(build_subagent_transcript_ref(
             handle.child_run_id().as_str(),
         )),
+        terminal_stop_reason: None,
+        max_tokens_recovery_attempts: 0,
     };
 
     let summary = message_bridge::format_sub_agent_envelope_summary(&envelope);

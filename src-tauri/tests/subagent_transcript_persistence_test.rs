@@ -52,6 +52,8 @@ async fn background_completion_persists_summary_and_transcript_ref_together() {
         terminal_tool_results: Vec::new(),
         transcript_snapshot: Vec::new(),
         transcript_ref: Some(transcript_ref.clone()),
+        terminal_stop_reason: None,
+        max_tokens_recovery_attempts: 0,
     };
     let summary = envelope.to_storage_summary();
 

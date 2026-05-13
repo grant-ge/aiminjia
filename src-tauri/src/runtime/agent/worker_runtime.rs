@@ -17,6 +17,9 @@ use crate::models::settings::AppSettings;
 use crate::plugin::registry::ToolRegistry;
 use crate::plugin::tool_trait::ToolError as LegacyToolError;
 use crate::runtime::agent::message_bridge;
+use crate::runtime::agent::empty_response_recovery::{
+    EmptyResponseRecoveryConfig, EmptyResponseRecoveryState, RecoveryDecision,
+};
 use crate::runtime::agent::subagent_result_envelope::{
     build_subagent_transcript_ref, SubAgentResultEnvelope, SubAgentTerminalToolResult,
     SubAgentTranscriptEntry,
@@ -283,6 +286,13 @@ impl<'a> SubagentWorkerRuntime<'a> {
         let mut pending_ask: Option<PermissionDecision> = None;
         let mut terminal_tool_results: Vec<SubAgentTerminalToolResult> = Vec::new();
         let mut cancelled = false;
+        let mut last_stop_reason: Option<StopReason> = None;
+        let mut recovery = EmptyResponseRecoveryState::new(
+            EmptyResponseRecoveryConfig::default(),
+        );
+        let max_tokens = crate::llm::max_tokens::default_max_tokens_for_model(
+            &effective_settings.primary_model,
+        );
 
         'agent_loop: for iteration in 0..request.max_iterations {
             if child_cancel.is_cancelled() {
@@ -298,8 +308,6 @@ impl<'a> SubagentWorkerRuntime<'a> {
                 request.messages.len()
             );
 
-            let max_tokens =
-                crate::llm::max_tokens::default_max_tokens_for_model(&effective_settings.primary_model);
             {
                 let agent_found = request.tool_defs.iter().any(|d| d.name == "Agent");
                 let agent_has_emp = request.tool_defs.iter()
@@ -365,7 +373,11 @@ impl<'a> SubagentWorkerRuntime<'a> {
                         if output.is_empty() {
                             output = format!("Sub-agent stream error: {}", error);
                         }
-                        break;
+                        // Break the outer agent_loop directly. Breaking only the
+                        // inner `while` would fall through to the empty-content
+                        // branch below, which used to overwrite `output` with the
+                        // empty `iter_content`, losing the stream error message.
+                        break 'agent_loop;
                     }
                     _ => {}
                 }
@@ -384,13 +396,52 @@ impl<'a> SubagentWorkerRuntime<'a> {
             );
 
             if stop_reason != StopReason::ToolUse || tool_calls.is_empty() {
-                output = iter_content.clone();
-                if !iter_content.is_empty() {
-                    request
-                        .messages
-                        .push(ChatMessage::text("assistant", iter_content));
+                last_stop_reason = Some(stop_reason.clone());
+                let had_content = !iter_content.is_empty();
+                let had_tools = !tool_calls.is_empty();
+
+                // Always push an assistant turn so the transcript reflects that
+                // the LLM call actually happened. When content is empty we use
+                // a placeholder rather than an empty string, so future retry /
+                // compaction paths feeding these messages back to Anthropic
+                // don't trip the "text block cannot be empty" reject.
+                let assistant_text = if had_content {
+                    iter_content.clone()
+                } else {
+                    format!("[empty turn: stop_reason={:?}]", stop_reason)
+                };
+                request
+                    .messages
+                    .push(ChatMessage::text("assistant", assistant_text));
+
+                match recovery.decide(
+                    stop_reason.clone(),
+                    had_content,
+                    had_tools,
+                    max_tokens,
+                    iterations_used as u32,
+                ) {
+                    RecoveryDecision::Retry { hint_message } => {
+                        info!(
+                            "[SubAgent] empty-response recovery attempt {} (stop={:?})",
+                            recovery.attempts_used(),
+                            stop_reason
+                        );
+                        request
+                            .messages
+                            .push(ChatMessage::text("user", hint_message.to_string()));
+                        continue 'agent_loop;
+                    }
+                    RecoveryDecision::Surface { fallback_output } => {
+                        output = fallback_output;
+                        break;
+                    }
+                    RecoveryDecision::NoRecovery => {
+                        // had_content == true && stop_reason != ToolUse
+                        output = iter_content;
+                        break;
+                    }
                 }
-                break;
             }
 
             request
@@ -667,6 +718,15 @@ impl<'a> SubagentWorkerRuntime<'a> {
             terminal_tool_results,
             transcript_snapshot,
             transcript_ref: Some(transcript_ref.clone()),
+            // Use serde's snake_case rename instead of Debug derive so the
+            // string format stays stable and matches Anthropic protocol field
+            // names ("max_tokens" / "end_turn" / "tool_use" / "stop_sequence").
+            terminal_stop_reason: last_stop_reason.as_ref().and_then(|r| {
+                serde_json::to_value(r)
+                    .ok()
+                    .and_then(|v| v.as_str().map(String::from))
+            }),
+            max_tokens_recovery_attempts: recovery.attempts_used(),
         };
 
         self.gateway.clear_task(&sub_conv_id);

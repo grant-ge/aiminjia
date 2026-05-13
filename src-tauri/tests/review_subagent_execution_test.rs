@@ -149,6 +149,8 @@ fn result_envelope_contains_output_iterations_files_and_transcript_snapshot() {
             tool_name: None,
         }],
         transcript_ref: Some(build_subagent_transcript_ref("child-run-1")),
+        terminal_stop_reason: None,
+        max_tokens_recovery_attempts: 0,
     };
 
     assert_eq!(envelope.schema_version, 1);
@@ -173,6 +175,8 @@ fn envelope_storage_summary_roundtrips_core_fields() {
         terminal_tool_results: Vec::new(),
         transcript_snapshot: Vec::new(),
         transcript_ref: None,
+        terminal_stop_reason: None,
+        max_tokens_recovery_attempts: 0,
     };
 
     let summary = envelope.to_storage_summary();
