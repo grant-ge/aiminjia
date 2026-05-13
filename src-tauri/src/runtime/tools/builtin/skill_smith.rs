@@ -91,7 +91,9 @@ impl SkillCreateDraftTool {
 
 #[async_trait]
 impl RuntimeTool for SkillCreateDraftTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str { "skill_create_draft" }
+    
+    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new(
             "skill_create_draft",
             "创建一个新的技能草稿目录。draft_id 自动绑定当前会话。后续 skill_write_md / skill_add_file / skill_install 都用返回的 draft_id 操作。",
@@ -177,7 +179,9 @@ impl SkillWriteMdTool {
 
 #[async_trait]
 impl RuntimeTool for SkillWriteMdTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str { "skill_write_md" }
+    
+    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new(
             "skill_write_md",
             "把完整的 SKILL.md 内容（YAML frontmatter + Markdown body）整体写入草稿。\n要求 content 必须以 '---' 开头并包含 frontmatter（至少 name + description 字段）。",
@@ -235,7 +239,9 @@ impl SkillAddFileTool {
 
 #[async_trait]
 impl RuntimeTool for SkillAddFileTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str { "skill_add_file" }
+    
+    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new(
             "skill_add_file",
             "在草稿目录下写入额外文件（scripts/ 或 references/ 子目录），用于附加 Python 脚本或参考资料。\npath 格式必须是 'scripts/<filename>' 或 'references/<filename>'，仅一级子目录。",
@@ -292,7 +298,9 @@ impl SkillValidateTool {
 
 #[async_trait]
 impl RuntimeTool for SkillValidateTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str { "skill_validate" }
+    
+    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new(
             "skill_validate",
             "对草稿做 6 项校验：① frontmatter 必填字段（name/description）② name kebab-case ③ frontmatter YAML 合法 ④ body 非空 ⑤ scripts/references 引用存在 ⑥ allowed_tools 引用工具存在。\n返回 errors[].fix_hint 中文提示，便于 LLM 自动修复。",
@@ -391,7 +399,9 @@ impl SkillInstallTool {
 
 #[async_trait]
 impl RuntimeTool for SkillInstallTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str { "skill_install" }
+    
+    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new(
             "skill_install",
             "把草稿复制到 ~/.renlijia/users/{scope}/skills/<name>/，使其在新对话中可用。\n同名冲突时返回 status='conflict'，除非传 force=true 强制覆盖。",
@@ -766,7 +776,9 @@ impl SkillDryRunTool {
 
 #[async_trait]
 impl RuntimeTool for SkillDryRunTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str { "skill_dry_run" }
+    
+    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new(
             "skill_dry_run",
             "对草稿做一次干跑：① 用真正的 skill loader 解析（跟 install 后一样的代码路径）；② 校验 scripts/references 文件全部存在；③ 对 scripts/*.py 做静态危险模式扫描；④ 渲染 LLM 加载这条 skill 时会看到的 system prompt 预览。\n\n不真正跑 LLM——这是为了在 install 之前最后一道把关。\n如果有 sample_input，预览会附上一段 'when user says ...' 的演示文本。",
@@ -1034,7 +1046,9 @@ impl SkillExportTool {
 
 #[async_trait]
 impl RuntimeTool for SkillExportTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str { "skill_export" }
+    
+    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new(
             "skill_export",
             "把草稿或已安装技能打包成 .aijia-skill zip 包，方便发给同事。\n\n参数：\n- draft_id 或 installed_id 二选一（优先 draft_id）\n- dest：可选目标路径，默认 ~/Desktop/<name>-<version>.aijia-skill\n- version：版本号，默认 \"0.1.0\"\n- author：作者，可选\n\n包格式：zip 含 manifest.json + skill/ 目录（SKILL.md + scripts/ + references/），带 SHA-256 校验。",
@@ -1148,9 +1162,18 @@ fn default_export_dest(skill_id: &str, version: &str) -> std::path::PathBuf {
 
 /// 注册到 ToolCatalog 的 7 条 (id, schema) 元组。
 pub fn catalog_entries() -> Vec<(ToolDefinition, Value)> {
+    // `RuntimeTool::definition()` is async to allow per-session catalog
+    // injection (Agent tool). Skill-smith tools don't need session ctx,
+    // but we still go through the trait so the catalog is the same source
+    // of truth as live dispatch. Use futures::executor::block_on so this
+    // works from the LazyLock initializer (no tokio runtime).
+    let empty = crate::runtime::tools::ToolDescriptionContext::empty();
+    let def_of = |t: &dyn RuntimeTool| -> ToolDefinition {
+        futures::executor::block_on(t.definition(&empty))
+    };
     vec![
         (
-            SkillCreateDraftTool::dummy().definition(),
+            def_of(&SkillCreateDraftTool::dummy()),
             json!({
                 "type": "object",
                 "required": ["name", "description"],
@@ -1167,7 +1190,7 @@ pub fn catalog_entries() -> Vec<(ToolDefinition, Value)> {
             }),
         ),
         (
-            SkillWriteMdTool::dummy().definition(),
+            def_of(&SkillWriteMdTool::dummy()),
             json!({
                 "type": "object",
                 "required": ["draft_id", "content"],
@@ -1181,7 +1204,7 @@ pub fn catalog_entries() -> Vec<(ToolDefinition, Value)> {
             }),
         ),
         (
-            SkillAddFileTool::dummy().definition(),
+            def_of(&SkillAddFileTool::dummy()),
             json!({
                 "type": "object",
                 "required": ["draft_id", "path", "content"],
@@ -1196,7 +1219,7 @@ pub fn catalog_entries() -> Vec<(ToolDefinition, Value)> {
             }),
         ),
         (
-            SkillValidateTool::dummy().definition(),
+            def_of(&SkillValidateTool::dummy()),
             json!({
                 "type": "object",
                 "required": ["draft_id"],
@@ -1206,7 +1229,7 @@ pub fn catalog_entries() -> Vec<(ToolDefinition, Value)> {
             }),
         ),
         (
-            SkillDryRunTool::dummy().definition(),
+            def_of(&SkillDryRunTool::dummy()),
             json!({
                 "type": "object",
                 "required": ["draft_id"],
@@ -1220,7 +1243,7 @@ pub fn catalog_entries() -> Vec<(ToolDefinition, Value)> {
             }),
         ),
         (
-            SkillInstallTool::dummy().definition(),
+            def_of(&SkillInstallTool::dummy()),
             json!({
                 "type": "object",
                 "required": ["draft_id"],
@@ -1235,7 +1258,7 @@ pub fn catalog_entries() -> Vec<(ToolDefinition, Value)> {
             }),
         ),
         (
-            SkillExportTool::dummy().definition(),
+            def_of(&SkillExportTool::dummy()),
             json!({
                 "type": "object",
                 "required": [],

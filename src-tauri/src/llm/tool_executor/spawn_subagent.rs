@@ -87,16 +87,19 @@ impl DefaultSpawnSubagentLauncher {
         crate::llm::sub_agent::SubAgentRuntimeDeps,
     )> {
         // Resolve agent definition from registry for system_prompt + tool lists.
-        let definition = self
-            .registry
-            .get(&request.subagent_type)
-            .ok_or_else(|| {
-                anyhow!(
-                    "unknown subagent_type '{}' in DefaultSpawnSubagentLauncher",
-                    request.subagent_type
-                )
-            })?
-            .clone();
+        let definition = self.registry.get(&request.subagent_type).ok_or_else(|| {
+            anyhow!(
+                "DefaultSpawnSubagentLauncher: subagent_type '{}' not in AgentRegistry. \
+                 Available: {}",
+                request.subagent_type,
+                self.registry
+                    .list()
+                    .iter()
+                    .map(|d| d.name.clone())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        })?;
 
         // Build system prompt string from definition.
         let mut system_prompt = match &definition.system_prompt {
@@ -429,6 +432,87 @@ impl SpawnSubagentLauncher for DefaultSpawnSubagentLauncher {
         Ok(SpawnAsyncOutcome {
             agent_id,
             name: request.name.clone(),
+        })
+    }
+
+    async fn build_teammate_llm_engine(
+        &self,
+        context: &SpawnSubagentContext,
+    ) -> Option<crate::runtime::agent::worker_runtime::TeammateLlmEngine> {
+        let (gateway, tool_registry, app_settings) = match self.build_run_components() {
+            Ok(parts) => parts,
+            Err(e) => {
+                log::warn!(
+                    "[spawn_subagent] build_teammate_llm_engine: missing run components ({e}); Teammate will fall back to stub mode"
+                );
+                return None;
+            }
+        };
+
+        let runtime_deps = crate::llm::sub_agent::SubAgentRuntimeDeps {
+            storage: self.deps.storage.clone(),
+            file_manager: self.deps.file_manager.clone(),
+            workspace_path: self.deps.workspace_path.clone(),
+            conversation_id: self.deps.conversation_id.clone(),
+            session_id: self.deps.session_id.clone(),
+            run_id: self.deps.run_id.clone(),
+            agent_id: self.deps.agent_id.clone(),
+            agent_runtime: self.deps.agent_runtime.clone(),
+            event_bus: self.deps.event_bus.clone(),
+            skill_registry: self.deps.skill_registry.clone(),
+            authorized_workspace: self.deps.authorized_workspace.clone(),
+            read_file_state: self.deps.read_file_state.clone(),
+            app_handle: self.deps.app_handle.clone(),
+            runtime_resolver: self.deps.runtime_resolver.clone(),
+            permission_ctx: context.permission_ctx.clone(),
+            current_persona_id: self.deps.current_persona_id.clone(),
+        };
+
+        // LTR registries — pull from tauri AppHandle state (managed by lib.rs
+        // at app boot).  Without these the Teammate's tools (SendMessage /
+        // TaskList / TaskClaim / etc.) will be silently scoped to local
+        // state only and never reach the Lead idle supervisor.
+        use tauri::Manager as _;
+        let (team_reg, names_reg, inbox_reg, lead_sup, cancel_reg) =
+            if let Some(app) = self.deps.app_handle.as_ref() {
+                (
+                    app.try_state::<Arc<crate::runtime::agent::TeamRegistry>>()
+                        .map(|s| s.inner().clone()),
+                    app.try_state::<Arc<crate::runtime::agent::AgentNameRegistry>>()
+                        .map(|s| s.inner().clone()),
+                    app.try_state::<Arc<crate::runtime::agent::InboxRegistry>>()
+                        .map(|s| s.inner().clone()),
+                    app.try_state::<Arc<crate::runtime::agent::LeadIdleSupervisor>>()
+                        .map(|s| s.inner().clone()),
+                    app.try_state::<Arc<crate::runtime::agent::CancellationRegistry>>()
+                        .map(|s| s.inner().clone()),
+                )
+            } else {
+                (None, None, None, None, None)
+            };
+        log::info!(
+            "[spawn_teammate][engine-build] team_reg={} names_reg={} inbox_reg={} lead_sup={} cancel_reg={}",
+            team_reg.is_some(),
+            names_reg.is_some(),
+            inbox_reg.is_some(),
+            lead_sup.is_some(),
+            cancel_reg.is_some(),
+        );
+
+        Some(crate::runtime::agent::worker_runtime::TeammateLlmEngine {
+            gateway,
+            tool_registry,
+            runtime_deps,
+            settings: (*app_settings).clone(),
+            // Per-turn iteration cap — bounds runaway tool loops per inbox
+            // message. 25 mirrors SubAgentConfig's default max_iterations
+            // for production sub-agents.
+            max_iterations_per_turn: 25,
+            team_registry: team_reg,
+            agent_names: names_reg,
+            inbox_registry: inbox_reg,
+            lead_idle: lead_sup,
+            cancellation_registry: cancel_reg,
         })
     }
 }

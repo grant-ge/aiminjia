@@ -1,8 +1,11 @@
-//! Task V2 RuntimeTools — TaskCreate, TaskUpdate, TaskList.
+//! Task V2 RuntimeTools — TaskCreate, TaskUpdate, TaskList, TaskGet, TaskClaim.
 //!
-//! Mirrors claude-code-best Task V2 tools, backed by ~/.renlijia/tasks/<taskListId>/.
+//! Tasks are stored per-conversation under
+//! `<home>/conversations/<conv_id>/tasks/<task_list_id>/`.
+//! See P1.5 path-migration for rationale.
 
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 use anyhow::Result;
@@ -16,18 +19,78 @@ use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::ToolDefinition;
 use crate::runtime::tools::executor::{ToolError, ToolResult};
 use crate::runtime::tools::RuntimeTool;
+use crate::telemetry::{record_diagnostic, DiagnosticEvent, DiagnosticSource};
+
+/// Best-effort task-notification emitter for Team mode (P2.5).  Resolves the
+/// actor name via `AgentNameRegistry::name_for(ctx.agent_id)`; falls back to
+/// `"unknown-actor"` when nothing is registered.  Silently no-ops when LTR
+/// registries are not wired into the ctx (legacy / test paths).  Failures
+/// are logged at debug level — the task operation has already succeeded and
+/// must not be undone by a notification glitch.
+async fn try_notify_lead(
+    ctx: &ToolExecutionContext,
+    task_id: &str,
+    action: crate::runtime::agent::task_notification_lead::TaskAction,
+    subject: &str,
+    status: &str,
+) {
+    use crate::runtime::agent::task_notification_lead::{emit_to_lead, TaskNotificationDeps};
+
+    let (Some(team_reg), Some(name_reg), Some(inbox_reg)) = (
+        ctx.team_registry.clone(),
+        ctx.agent_names.clone(),
+        ctx.inbox_registry.clone(),
+    ) else {
+        return;
+    };
+    let actor_name = if let Some(aid) = ctx.agent_id.as_ref() {
+        name_reg
+            .name_for(&ctx.session_id, aid)
+            .await
+            .unwrap_or_else(|| "unknown-actor".into())
+    } else {
+        "unknown-actor".into()
+    };
+    let deps = TaskNotificationDeps {
+        team_registry: team_reg,
+        agent_names: name_reg,
+        inbox_registry: inbox_reg,
+        lead_idle: ctx.lead_idle.clone(),
+    };
+    let outcome = emit_to_lead(
+        &deps,
+        &ctx.session_id,
+        &actor_name,
+        task_id,
+        action,
+        subject,
+        status,
+    )
+    .await;
+    log::debug!(
+        "[task_tools] notify_lead task={task_id} action={:?} outcome={:?}",
+        action,
+        outcome
+    );
+}
 
 pub struct TaskCreateRuntimeTool;
 pub struct TaskUpdateRuntimeTool;
 pub struct TaskListRuntimeTool;
 pub struct TaskGetRuntimeTool;
+pub struct TaskClaimRuntimeTool;
 
-fn task_list_id(ctx: &ToolExecutionContext) -> String {
-    ctx.session_id.as_str().to_string()
+fn task_list_id(_ctx: &ToolExecutionContext) -> String {
+    // P1.5 follow-up: store is already rooted at the per-conversation
+    // `tasks/` directory, so we pass an empty list id and let the store
+    // keep task files flat at `<root>/<id>.json`.  Previously this
+    // returned the session id, producing a redundant
+    // `<root>/<conv_id>/<id>.json` second level.
+    String::new()
 }
 
 fn store_for(ctx: &ToolExecutionContext) -> Result<FileTaskV2Store, ToolError> {
-    let root = ctx
+    let home = ctx
         .task_store_root
         .clone()
         .or_else(|| {
@@ -38,7 +101,11 @@ fn store_for(ctx: &ToolExecutionContext) -> Result<FileTaskV2Store, ToolError> {
         })
         .or_else(default_aijia_home)
         .ok_or_else(|| ToolError::ExecutionFailed("Task tools require a storage root".into()))?;
-    Ok(FileTaskV2Store::new(root))
+    // P1.5: scope task storage to the current conversation directory so that
+    // tasks are session-local artifacts rather than global state.
+    let conv_id = ctx.session_id.as_str();
+    let tasks_root = home.join("conversations").join(conv_id).join("tasks");
+    Ok(FileTaskV2Store::new(tasks_root))
 }
 
 fn default_aijia_home() -> Option<PathBuf> {
@@ -101,7 +168,9 @@ fn format_task_line(task: &TaskRecord) -> String {
 
 #[async_trait]
 impl RuntimeTool for TaskCreateRuntimeTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str { "TaskCreate" }
+    
+    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
         TOOL_CATALOG
             .get("TaskCreate")
             .unwrap_or_else(|| ToolDefinition::new("TaskCreate", "创建任务"))
@@ -149,6 +218,14 @@ impl RuntimeTool for TaskCreateRuntimeTool {
         store
             .create(&list_id, &task)
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+        try_notify_lead(
+            &ctx,
+            &id,
+            crate::runtime::agent::task_notification_lead::TaskAction::Created,
+            &subject,
+            "pending",
+        )
+        .await;
         Ok(ToolResult::new(
             "TaskCreate",
             format!("Task #{} created successfully: {}", id, subject),
@@ -159,7 +236,9 @@ impl RuntimeTool for TaskCreateRuntimeTool {
 
 #[async_trait]
 impl RuntimeTool for TaskListRuntimeTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str { "TaskList" }
+    
+    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
         TOOL_CATALOG
             .get("TaskList")
             .unwrap_or_else(|| ToolDefinition::new("TaskList", "列出任务"))
@@ -199,9 +278,109 @@ impl RuntimeTool for TaskListRuntimeTool {
     }
 }
 
+// ── Cycle detection for addBlocks / addBlockedBy ──────────────────────────────
+
+/// Check whether adding `new_edges` (each `(blocker, blocked)` in the `blocks`
+/// direction, i.e. `blocker → blocked`) would introduce a cycle.
+///
+/// Returns `Err(String)` with the cycle path if a cycle is detected, `Ok(())`
+/// otherwise.
+///
+/// `existing_tasks` is the full task list for the conversation (before the
+/// proposed edges are applied).
+fn check_no_cycle(
+    existing_tasks: &[TaskRecord],
+    new_edges: &[(&str, &str)], // (blocker_id, blocked_id) — "A blocks B" = A→B
+) -> Result<(), String> {
+    // Build adjacency map: node → set of nodes it blocks (A → {B, C, ...})
+    let mut adj: HashMap<&str, HashSet<&str>> = HashMap::new();
+    for task in existing_tasks {
+        let entry = adj.entry(task.id.as_str()).or_default();
+        for blocked in &task.blocks {
+            entry.insert(blocked.as_str());
+        }
+        // Also reconstruct forward edges from blocked_by (B.blocked_by contains A → A→B)
+        for blocker in &task.blocked_by {
+            adj.entry(blocker.as_str())
+                .or_default()
+                .insert(task.id.as_str());
+        }
+    }
+
+    // Apply proposed edges to the temporary graph.
+    for (blocker, blocked) in new_edges {
+        adj.entry(blocker).or_default().insert(blocked);
+    }
+
+    // For each new edge (A→B): check whether B can reach A (which would form A→B→...→A).
+    // Also handle self-loop: A→A is immediately a cycle.
+    for (blocker, blocked) in new_edges {
+        if blocker == blocked {
+            return Err(format!(
+                "cyclic blocking dependency: {} → {} (self-block)",
+                blocker, blocked
+            ));
+        }
+        // DFS from `blocked` looking for `blocker`.  The returned path starts at
+        // `blocked` and ends at `blocker`, so prepending `blocker →` gives the
+        // full cycle: blocker → blocked → ... → blocker.
+        if let Some(cycle_path) = dfs_find_cycle_path(&adj, blocked, blocker) {
+            let full_path = format!("{} → {}", blocker, cycle_path);
+            return Err(format!("cyclic blocking dependency: {}", full_path));
+        }
+    }
+
+    Ok(())
+}
+
+/// DFS from `start` looking for `target`.  Returns the path from `start` to
+/// `target` (inclusive of both endpoints) as a `" → "` separated string, or
+/// `None` if no path exists.
+fn dfs_find_cycle_path<'a>(
+    adj: &HashMap<&'a str, HashSet<&'a str>>,
+    start: &'a str,
+    target: &'a str,
+) -> Option<String> {
+    let mut visited: HashSet<&str> = HashSet::new();
+    let mut path: Vec<&str> = Vec::new();
+    if dfs_inner(adj, start, target, &mut visited, &mut path) {
+        Some(path.iter().copied().collect::<Vec<_>>().join(" → "))
+    } else {
+        None
+    }
+}
+
+fn dfs_inner<'a>(
+    adj: &HashMap<&'a str, HashSet<&'a str>>,
+    current: &'a str,
+    target: &'a str,
+    visited: &mut HashSet<&'a str>,
+    path: &mut Vec<&'a str>,
+) -> bool {
+    if current == target {
+        path.push(current);
+        return true;
+    }
+    if visited.contains(current) {
+        return false;
+    }
+    visited.insert(current);
+    if let Some(neighbors) = adj.get(current) {
+        for &next in neighbors {
+            if dfs_inner(adj, next, target, visited, path) {
+                path.insert(0, current);
+                return true;
+            }
+        }
+    }
+    false
+}
+
 #[async_trait]
 impl RuntimeTool for TaskUpdateRuntimeTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str { "TaskUpdate" }
+    
+    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
         TOOL_CATALOG
             .get("TaskUpdate")
             .unwrap_or_else(|| ToolDefinition::new("TaskUpdate", "更新任务"))
@@ -292,19 +471,58 @@ impl RuntimeTool for TaskUpdateRuntimeTool {
             }
         }
         if let Some(add_blocks) = input.get("addBlocks").and_then(|v| v.as_array()) {
-            for block_id in add_blocks.iter().filter_map(|v| v.as_str()) {
-                if !task.blocks.iter().any(|id| id == block_id) {
-                    task.blocks.push(block_id.to_string());
-                    updated_fields.push("blocks".into());
-                }
+            // Collect proposed new edges (skip duplicates already in task.blocks).
+            let proposed_blocks: Vec<&str> = add_blocks
+                .iter()
+                .filter_map(|v| v.as_str())
+                .filter(|&block_id| !task.blocks.iter().any(|id| id == block_id))
+                .collect();
+
+            // Cycle detection: A (task_id) blocks B → edge (task_id → B).
+            // Load full task list for graph construction.
+            if !proposed_blocks.is_empty() {
+                let all_tasks = store
+                    .list(&list_id)
+                    .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+                let new_edges: Vec<(&str, &str)> = proposed_blocks
+                    .iter()
+                    .map(|&b| (task_id, b))
+                    .collect();
+                check_no_cycle(&all_tasks, &new_edges)
+                    .map_err(|msg| ToolError::ExecutionFailed(msg))?;
+            }
+
+            for block_id in proposed_blocks {
+                task.blocks.push(block_id.to_string());
+                updated_fields.push("blocks".into());
             }
         }
         if let Some(add_blocked_by) = input.get("addBlockedBy").and_then(|v| v.as_array()) {
-            for blocker_id in add_blocked_by.iter().filter_map(|v| v.as_str()) {
-                if !task.blocked_by.iter().any(|id| id == blocker_id) {
-                    task.blocked_by.push(blocker_id.to_string());
-                    updated_fields.push("blockedBy".into());
-                }
+            // Collect proposed new edges (skip duplicates already in task.blocked_by).
+            let proposed_blockers: Vec<&str> = add_blocked_by
+                .iter()
+                .filter_map(|v| v.as_str())
+                .filter(|&blocker_id| !task.blocked_by.iter().any(|id| id == blocker_id))
+                .collect();
+
+            // Cycle detection: B (blocker_id) blocks A (task_id) → edge (B → task_id).
+            // Load full task list for graph construction (may already be loaded above; load
+            // again if not — store reads are cheap in tests and rare in production).
+            if !proposed_blockers.is_empty() {
+                let all_tasks = store
+                    .list(&list_id)
+                    .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+                let new_edges: Vec<(&str, &str)> = proposed_blockers
+                    .iter()
+                    .map(|&b| (b, task_id))
+                    .collect();
+                check_no_cycle(&all_tasks, &new_edges)
+                    .map_err(|msg| ToolError::ExecutionFailed(msg))?;
+            }
+
+            for blocker_id in proposed_blockers {
+                task.blocked_by.push(blocker_id.to_string());
+                updated_fields.push("blockedBy".into());
             }
         }
         if let Some(metadata) = input.get("metadata").and_then(|v| v.as_object()) {
@@ -330,6 +548,7 @@ impl RuntimeTool for TaskUpdateRuntimeTool {
             None
         };
 
+        notify_after_update(&ctx, &task_id, &task.subject, task.status.as_str()).await;
         Ok(ToolResult::new(
             "TaskUpdate",
             format!("Updated task #{} {}", task_id, updated_fields.join(", ")),
@@ -344,9 +563,27 @@ impl RuntimeTool for TaskUpdateRuntimeTool {
     }
 }
 
+async fn notify_after_update(
+    ctx: &ToolExecutionContext,
+    task_id: &str,
+    subject: &str,
+    status: &str,
+) {
+    try_notify_lead(
+        ctx,
+        task_id,
+        crate::runtime::agent::task_notification_lead::TaskAction::Updated,
+        subject,
+        status,
+    )
+    .await;
+}
+
 #[async_trait]
 impl RuntimeTool for TaskGetRuntimeTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str { "TaskGet" }
+    
+    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
         TOOL_CATALOG
             .get("TaskGet")
             .unwrap_or_else(|| ToolDefinition::new("TaskGet", "获取单条任务"))
@@ -383,5 +620,143 @@ impl RuntimeTool for TaskGetRuntimeTool {
                 Some(json!({ "task": null, "error": "Task not found" })),
             )),
         }
+    }
+}
+
+// ── TaskClaim ──────────────────────────────────────────────────────────────────
+
+#[async_trait]
+impl RuntimeTool for TaskClaimRuntimeTool {
+    fn id(&self) -> &str { "TaskClaim" }
+    
+    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
+        TOOL_CATALOG.get("TaskClaim").unwrap_or_else(|| {
+            ToolDefinition::new(
+                "TaskClaim",
+                "Claim a task whose owner is None or \"*\". Sets owner to your agent name. \
+                 Idempotent if you already own it. Fails if someone else owns it.",
+            )
+        })
+    }
+
+    fn is_concurrency_safe(&self, _input: &Value) -> bool {
+        true
+    }
+
+    async fn execute(
+        &self,
+        input: Value,
+        ctx: ToolExecutionContext,
+    ) -> Result<ToolResult, ToolError> {
+        let task_id = required_str(&input, "taskId", "TaskClaim")?.to_string();
+        let store = store_for(&ctx)?;
+        let list_id = task_list_id(&ctx);
+
+        let ws = crate::telemetry::diagnostics_workspace();
+        record_diagnostic(
+            &ws,
+            DiagnosticEvent::new("tool.task_claim.entry", DiagnosticSource::Backend)
+                .conversation_id(ctx.session_id.as_str())
+                .run_id(ctx.run_id.as_str())
+                .tool_call_id(ctx.tool_call_id.as_str())
+                .payload(serde_json::json!({ "task_id": task_id })),
+        );
+
+        let existing = store
+            .get(&list_id, &task_id)
+            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+
+        let Some(mut task) = existing else {
+            return Err(ToolError::ExecutionFailed(format!(
+                "Task #{} not found",
+                task_id
+            )));
+        };
+
+        // Resolve caller identity: prefer agent_id string representation.
+        let caller = ctx
+            .agent_id
+            .as_ref()
+            .map(|id| id.as_str().to_string())
+            .unwrap_or_else(|| "unknown-agent".to_string());
+
+        // Check ownership without holding a borrow into task.owner across the mutation.
+        enum ClaimDecision {
+            Claim,
+            AlreadyOwned,
+            Taken(String),
+        }
+        let decision = match &task.owner {
+            None => ClaimDecision::Claim,
+            Some(owner) if owner == "*" => ClaimDecision::Claim,
+            Some(owner) if *owner == caller => ClaimDecision::AlreadyOwned,
+            Some(owner) => ClaimDecision::Taken(owner.clone()),
+        };
+
+        match decision {
+            ClaimDecision::Claim => {
+                task.owner = Some(caller.clone());
+            }
+            ClaimDecision::AlreadyOwned => {
+                record_diagnostic(
+                    &ws,
+                    DiagnosticEvent::new("tool.task_claim.already_owned", DiagnosticSource::Backend)
+                        .conversation_id(ctx.session_id.as_str())
+                        .run_id(ctx.run_id.as_str())
+                        .tool_call_id(ctx.tool_call_id.as_str())
+                        .ok(true)
+                        .payload(serde_json::json!({ "task_id": task_id, "caller": caller })),
+                );
+                return Ok(ToolResult::new(
+                    "TaskClaim",
+                    format!("Task #{} already owned by you ({})", task_id, caller),
+                    Some(json!({ "success": true, "taskId": task_id, "task": task_to_json(&task) })),
+                ));
+            }
+            ClaimDecision::Taken(existing_owner) => {
+                record_diagnostic(
+                    &ws,
+                    DiagnosticEvent::new("tool.task_claim.already_claimed", DiagnosticSource::Backend)
+                        .conversation_id(ctx.session_id.as_str())
+                        .run_id(ctx.run_id.as_str())
+                        .tool_call_id(ctx.tool_call_id.as_str())
+                        .ok(false)
+                        .payload(serde_json::json!({ "task_id": task_id, "existing_owner": existing_owner })),
+                );
+                return Err(ToolError::ExecutionFailed(format!(
+                    "task already claimed by '{}'",
+                    existing_owner
+                )));
+            }
+        }
+
+        store
+            .update(&list_id, &task)
+            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+
+        try_notify_lead(
+            &ctx,
+            &task_id,
+            crate::runtime::agent::task_notification_lead::TaskAction::Claimed,
+            &task.subject,
+            task.status.as_str(),
+        )
+        .await;
+
+        record_diagnostic(
+            &ws,
+            DiagnosticEvent::new("tool.task_claim.completed", DiagnosticSource::Backend)
+                .conversation_id(ctx.session_id.as_str())
+                .run_id(ctx.run_id.as_str())
+                .tool_call_id(ctx.tool_call_id.as_str())
+                .ok(true)
+                .payload(serde_json::json!({ "task_id": task_id, "caller": caller })),
+        );
+
+        Ok(ToolResult::new(
+            "TaskClaim",
+            format!("Task #{} claimed by {}", task_id, caller),
+            Some(json!({ "success": true, "taskId": task_id, "task": task_to_json(&task) })),
+        ))
     }
 }

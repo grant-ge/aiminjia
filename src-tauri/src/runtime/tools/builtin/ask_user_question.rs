@@ -16,7 +16,9 @@ pub struct AskUserQuestionRuntimeTool;
 
 #[async_trait]
 impl RuntimeTool for AskUserQuestionRuntimeTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str { "AskUserQuestion" }
+    
+    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
         TOOL_CATALOG
             .get("AskUserQuestion")
             .unwrap_or_else(|| ToolDefinition::new("AskUserQuestion", "向用户提问"))

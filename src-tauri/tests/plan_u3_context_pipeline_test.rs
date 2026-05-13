@@ -9,6 +9,7 @@ use app_lib::runtime::chat::preprocess::{
     ToolResultBudgetConfig,
 };
 use app_lib::runtime::chat::turn_config::{LlmStepInput, LlmStepResult, TurnError};
+use app_lib::runtime::chat::compact_client::CompactSummaryClient;
 use app_lib::runtime::chat::{ChatTurnRequest, RuntimeChatTurnDriver, RuntimeLlmExecutor};
 use app_lib::runtime::event_bus::RuntimeEventBus;
 use app_lib::runtime::identity::IdentityMapping;
@@ -353,7 +354,6 @@ struct PromptTooLongRecoveryExecutor {
     history: Vec<Value>,
     results: Mutex<Vec<Result<LlmStepResult, TurnError>>>,
     received_messages: Mutex<Vec<Vec<Value>>>,
-    compact_summary_calls: Mutex<usize>,
 }
 
 impl PromptTooLongRecoveryExecutor {
@@ -362,16 +362,40 @@ impl PromptTooLongRecoveryExecutor {
             history,
             results: Mutex::new(results),
             received_messages: Mutex::new(Vec::new()),
-            compact_summary_calls: Mutex::new(0),
         }
     }
 
     fn all_messages(&self) -> Vec<Vec<Value>> {
         self.received_messages.lock().unwrap().clone()
     }
+}
 
-    fn compact_summary_calls(&self) -> usize {
-        *self.compact_summary_calls.lock().unwrap()
+/// A CompactSummaryClient that counts invocations and returns a fixed reactive
+/// summary — used by PromptTooLongRecovery tests to assert compaction was
+/// triggered exactly once.
+struct CountingCompactSummaryClient {
+    calls: Mutex<usize>,
+}
+
+impl CountingCompactSummaryClient {
+    fn new() -> Self {
+        Self { calls: Mutex::new(0) }
+    }
+
+    fn call_count(&self) -> usize {
+        *self.calls.lock().unwrap()
+    }
+}
+
+#[async_trait]
+impl CompactSummaryClient for CountingCompactSummaryClient {
+    async fn compact_summary(
+        &self,
+        _conversation_id: &str,
+        _messages: &[serde_json::Value],
+    ) -> Result<String, TurnError> {
+        *self.calls.lock().unwrap() += 1;
+        Ok("reactive compact summary".to_string())
     }
 }
 
@@ -392,15 +416,6 @@ impl RuntimeLlmExecutor for PromptTooLongRecoveryExecutor {
 
     async fn load_history(&self, _conversation_id: &str) -> Result<Vec<Value>, TurnError> {
         Ok(self.history.clone())
-    }
-
-    async fn compact_summary(
-        &self,
-        _conversation_id: &str,
-        _messages: &[Value],
-    ) -> Result<String, TurnError> {
-        *self.compact_summary_calls.lock().unwrap() += 1;
-        Ok("reactive compact summary".to_string())
     }
 
     async fn persist_assistant_message(
@@ -439,9 +454,11 @@ async fn u3_driver_prompt_too_long_retries_once_with_compacted_messages() {
             }),
         ],
     ));
+    let compact_client = Arc::new(CountingCompactSummaryClient::new());
     let bus = RuntimeEventBus::new();
     let driver =
-        RuntimeChatTurnDriver::with_llm_executor(QueryEngine::default(), bus, executor.clone());
+        RuntimeChatTurnDriver::with_llm_executor(QueryEngine::default(), bus, executor.clone())
+            .with_compact_client(compact_client.clone());
     let mut turn = make_test_turn("conv-u3-recovery");
     let request = ChatTurnRequest::new("conv-u3-recovery", "latest question", vec![]);
 
@@ -449,7 +466,7 @@ async fn u3_driver_prompt_too_long_retries_once_with_compacted_messages() {
 
     let calls = executor.all_messages();
     assert_eq!(calls.len(), 2, "prompt_too_long should trigger one retry");
-    assert_eq!(executor.compact_summary_calls(), 1);
+    assert_eq!(compact_client.call_count(), 1);
     assert!(
         calls[1]
             .iter()
@@ -473,9 +490,11 @@ async fn u3_driver_prompt_too_long_surfaces_after_single_compacted_retry() {
             )),
         ],
     ));
+    let compact_client = Arc::new(CountingCompactSummaryClient::new());
     let bus = RuntimeEventBus::new();
     let driver =
-        RuntimeChatTurnDriver::with_llm_executor(QueryEngine::default(), bus, executor.clone());
+        RuntimeChatTurnDriver::with_llm_executor(QueryEngine::default(), bus, executor.clone())
+            .with_compact_client(compact_client.clone());
     let mut turn = make_test_turn("conv-u3-no-loop");
     let request = ChatTurnRequest::new("conv-u3-no-loop", "latest question", vec![]);
 
@@ -488,5 +507,5 @@ async fn u3_driver_prompt_too_long_surfaces_after_single_compacted_retry() {
         2,
         "driver must not enter an infinite retry loop"
     );
-    assert_eq!(executor.compact_summary_calls(), 1);
+    assert_eq!(compact_client.call_count(), 1);
 }

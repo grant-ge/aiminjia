@@ -52,6 +52,14 @@ pub trait McpConnection: Send + Sync {
     async fn list_tools(&self) -> McpResult<Vec<McpToolDefinition>>;
     async fn call_tool(&self, tool_name: &str, arguments: Value) -> McpResult<Value>;
     fn config(&self) -> &McpServerConfig;
+
+    /// Best-effort cleanup called when the in-flight tool call was cancelled.
+    /// Default impl just calls `disconnect()`. Concrete connections may
+    /// override to e.g. cancel a pending request id without tearing the
+    /// whole subprocess down.
+    async fn disconnect_on_cancel(&self) -> McpResult<()> {
+        self.disconnect().await
+    }
 }
 
 pub type SharedMcpConnection = Arc<dyn McpConnection>;

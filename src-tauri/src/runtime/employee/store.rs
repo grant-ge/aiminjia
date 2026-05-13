@@ -143,10 +143,27 @@ pub struct DueEmployee {
     pub missed_count: u32,
 }
 
-#[derive(Debug)]
 pub struct EmployeeStore {
     root: PathBuf,
     lock: Mutex<()>,
+    /// AgentRegistry 同步钩子：employee lifecycle 变化时通知。
+    /// `None` = 不通知（测试 / 早期 boot），生产路径在 lib.rs 中 wire 进去。
+    /// 用 RwLock interior mutability 让 `set_sync(&self)` 不要求 mut，方便 Arc 共享。
+    sync: std::sync::RwLock<
+        Option<std::sync::Arc<dyn crate::runtime::agent::employee_projection::EmployeeAgentSync>>,
+    >,
+}
+
+impl std::fmt::Debug for EmployeeStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EmployeeStore")
+            .field("root", &self.root)
+            .field(
+                "has_sync",
+                &self.sync.read().map(|g| g.is_some()).unwrap_or(false),
+            )
+            .finish()
+    }
 }
 
 impl EmployeeStore {
@@ -154,6 +171,29 @@ impl EmployeeStore {
         Self {
             root: employees_dir,
             lock: Mutex::new(()),
+            sync: std::sync::RwLock::new(None),
+        }
+    }
+
+    /// 设置 lifecycle 变化时的同步钩子。lib.rs 启动后调用一次注入
+    /// `AgentRegistrySync`；之后 hire / update / archive / purge 自动通知。
+    pub fn set_sync(
+        &self,
+        sync: std::sync::Arc<dyn crate::runtime::agent::employee_projection::EmployeeAgentSync>,
+    ) {
+        let mut g = self.sync.write().expect("sync write poisoned");
+        *g = Some(sync);
+    }
+
+    fn notify_active(&self, rec: &EmployeeRecord) {
+        if let Some(sync) = self.sync.read().expect("sync read poisoned").as_ref() {
+            sync.on_active(rec);
+        }
+    }
+
+    fn notify_inactive(&self, id: &str) {
+        if let Some(sync) = self.sync.read().expect("sync read poisoned").as_ref() {
+            sync.on_inactive(id);
         }
     }
 
@@ -222,6 +262,9 @@ impl EmployeeStore {
             record.template_ref = Some(ref_);
             // Best-effort persist of the new template_ref. Ignore errors.
             let _ = self.write_record(&record);
+        }
+        if matches!(record.lifecycle, EmployeeLifecycle::Active) {
+            self.notify_active(&record);
         }
         Ok(record)
     }
@@ -336,6 +379,12 @@ impl EmployeeStore {
 
         record.updated_at = Utc::now();
         self.write_record(&record)?;
+        match record.lifecycle {
+            EmployeeLifecycle::Active => self.notify_active(&record),
+            EmployeeLifecycle::Paused | EmployeeLifecycle::Archived => {
+                self.notify_inactive(&record.id);
+            }
+        }
         Ok(record)
     }
 
@@ -406,6 +455,7 @@ impl EmployeeStore {
             return Ok(false);
         }
         remove_dir_all_retry(&dir)?;
+        self.notify_inactive(id);
         Ok(true)
     }
 
@@ -440,6 +490,7 @@ impl EmployeeStore {
 
         let dir = self.record_dir(id);
         remove_dir_all_retry(&dir)?;
+        self.notify_inactive(id);
         Ok(true)
     }
 
@@ -561,6 +612,16 @@ impl EmployeeStore {
         record.updated_at = Utc::now();
         let json = serde_json::to_string_pretty(&record)?;
         write_atomic(&path, json.as_bytes())
+    }
+
+    /// Read-only clone of an Employee record by id.  Does not lock writes.
+    /// Used by spawn_subagent (P1.3) to source a Teammate's profile without
+    /// blocking on the write lock.
+    ///
+    /// Returns `None` if the employee does not exist or cannot be parsed.
+    /// Use `get()` instead if you need an error on missing records.
+    pub fn get_readonly(&self, id: &str) -> Option<EmployeeRecord> {
+        self.get(id).ok()
     }
 
     /// Returns the directory for an employee's reports.
@@ -1075,4 +1136,97 @@ fn remove_dir_all_retry(dir: &std::path::Path) -> Result<()> {
         }
     }
     Err(last_err.unwrap().into())
+}
+
+#[cfg(test)]
+mod sync_hook_tests {
+    use super::*;
+    use crate::runtime::agent::employee_projection::EmployeeAgentSync;
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Default)]
+    struct CountingSync {
+        active: Mutex<Vec<String>>,
+        inactive: Mutex<Vec<String>>,
+    }
+    impl EmployeeAgentSync for CountingSync {
+        fn on_active(&self, rec: &EmployeeRecord) {
+            self.active.lock().unwrap().push(rec.id.clone());
+        }
+        fn on_inactive(&self, name: &str) {
+            self.inactive.lock().unwrap().push(name.to_string());
+        }
+    }
+
+    fn mk(req_name: &str) -> CreateEmployeeRequest {
+        CreateEmployeeRequest {
+            name: req_name.into(),
+            role: "r".into(),
+            description: "".into(),
+            avatar: "".into(),
+            template_id: None,
+            tool_whitelist: None,
+            cron: None,
+            timezone: None,
+            lifecycle: None,
+            cron_enabled: None,
+            resource_config: None,
+            system_prompt_extra: None,
+            default_skill_id: None,
+        }
+    }
+
+    #[test]
+    fn create_calls_on_active_when_active() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = EmployeeStore::new(tmp.path().to_path_buf());
+        let sync = Arc::new(CountingSync::default());
+        store.set_sync(sync.clone());
+        let rec = store.create(mk("n1")).unwrap();
+        let active = sync.active.lock().unwrap();
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0], rec.id);
+    }
+
+    #[test]
+    fn update_to_paused_calls_on_inactive() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = EmployeeStore::new(tmp.path().to_path_buf());
+        let rec = store.create(mk("n3")).unwrap();
+        let sync = Arc::new(CountingSync::default());
+        store.set_sync(sync.clone());
+        store
+            .update(
+                &rec.id,
+                UpdateEmployeeRequest {
+                    lifecycle: Some(EmployeeLifecycle::Paused),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let inactive = sync.inactive.lock().unwrap();
+        assert_eq!(inactive[0], rec.id);
+    }
+
+    #[test]
+    fn purge_calls_on_inactive() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = EmployeeStore::new(tmp.path().to_path_buf());
+        let rec = store.create(mk("n2")).unwrap();
+        // archive first (legitimate path)
+        store
+            .update(
+                &rec.id,
+                UpdateEmployeeRequest {
+                    lifecycle: Some(EmployeeLifecycle::Archived),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let sync = Arc::new(CountingSync::default());
+        store.set_sync(sync.clone());
+        store.purge(&rec.id).unwrap();
+        let inactive = sync.inactive.lock().unwrap();
+        assert!(inactive.iter().any(|n| n == &rec.id));
+    }
 }

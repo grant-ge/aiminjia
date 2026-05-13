@@ -170,7 +170,9 @@ fn walk_path(path: &Path, root: &Path, regex: &Regex, glob: &str, results: &mut 
 
 #[async_trait]
 impl RuntimeTool for GrepContentTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str { "Grep" }
+    
+    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
         TOOL_CATALOG
             .get("Grep")
             .unwrap_or_else(|| ToolDefinition::new("Grep", "Search file content"))

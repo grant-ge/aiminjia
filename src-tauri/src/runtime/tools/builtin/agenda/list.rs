@@ -16,7 +16,9 @@ pub struct ListAgendaItemsRuntimeTool {
 
 #[async_trait]
 impl RuntimeTool for ListAgendaItemsRuntimeTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str { "list_agenda_items" }
+    
+    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new(
             "list_agenda_items",
             "【自用】列出你（当前数字员工）自己的日程清单——你给自己设的循环任务、定时提醒。",

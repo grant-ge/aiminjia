@@ -1,5 +1,8 @@
 use std::sync::{Arc, Mutex};
 
+use crate::runtime::agent::{
+    AgentNameRegistry, CancellationRegistry, InboxRegistry, LeadIdleSupervisor, TeamRegistry,
+};
 use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::hooks::config::HookRegistry;
 use crate::runtime::ids::{AgentId, RunId, SessionId, ToolCallId};
@@ -65,6 +68,33 @@ pub struct ToolExecutionContext {
         Option<crate::runtime::chat::tool_round_types::RuntimeToolCallRequest>,
     /// Task V2 persistence root (AiJiaHome), used by task runtime tools.
     pub task_store_root: Option<std::path::PathBuf>,
+    /// Per-process Team registry injected by the orchestration layer.
+    /// `None` for legacy / test paths that do not need team operations.
+    pub team_registry: Option<Arc<TeamRegistry>>,
+    /// Per-process agent-name registry injected by the orchestration layer.
+    /// `None` for legacy / test paths that do not need name resolution.
+    pub agent_names: Option<Arc<AgentNameRegistry>>,
+    /// Per-process inbox registry — looks up an agent's mpsc inbox from its
+    /// AgentId.  Required by SendMessage (P2.2); `None` elsewhere.
+    pub inbox_registry: Option<Arc<InboxRegistry>>,
+    /// LTR (P2.4): per-process Lead idle-state supervisor.  Used by SendMessage
+    /// to enqueue/wake the Lead, and by the chat turn driver to self-check
+    /// at turn end.  `None` for legacy paths.
+    pub lead_idle: Option<Arc<LeadIdleSupervisor>>,
+    /// LTR (P2.7): per-process cancellation registry — looks up an agent's
+    /// CancellationToken by (SessionId, AgentId).  Required by TeammateStop.
+    pub cancellation_registry: Option<Arc<CancellationRegistry>>,
+    /// LTR (P2.8): true when this tool call runs inside an async runner
+    /// (Teammate idle loop or async sub-agent) that has no UI thread to
+    /// surface user-facing prompts to.  Permission decisions of `Ask` are
+    /// auto-denied when this is true; default false (Lead / interactive runs).
+    pub is_async: bool,
+    /// LTR (B-gap2): per-conversation directory rooted at
+    /// `<aijia_home>/users/{scope}/conversations/{conv_id}`.  Tools that
+    /// spawn Teammates/sub-agents propagate this into worker contexts so
+    /// transcript JSONL, `.meta.json` sidecars, and team_context
+    /// attachments land on disk.  `None` in legacy/test paths.
+    pub conv_dir: Option<std::path::PathBuf>,
 }
 
 impl ToolExecutionContext {
@@ -90,6 +120,13 @@ impl ToolExecutionContext {
             interaction_resolution: None,
             current_tool_call_request: None,
             task_store_root: None,
+            team_registry: None,
+            agent_names: None,
+            inbox_registry: None,
+            lead_idle: None,
+            cancellation_registry: None,
+            is_async: false,
+            conv_dir: None,
         }
     }
 
@@ -133,6 +170,79 @@ impl ToolExecutionContext {
     ) -> Self {
         self.current_tool_call_request = Some(request);
         self
+    }
+
+    pub fn with_team_registry(mut self, registry: Arc<TeamRegistry>) -> Self {
+        self.team_registry = Some(registry);
+        self
+    }
+
+    pub fn with_agent_names(mut self, registry: Arc<AgentNameRegistry>) -> Self {
+        self.agent_names = Some(registry);
+        self
+    }
+
+    pub fn with_inbox_registry(mut self, registry: Arc<InboxRegistry>) -> Self {
+        self.inbox_registry = Some(registry);
+        self
+    }
+
+    pub fn with_lead_idle(mut self, supervisor: Arc<LeadIdleSupervisor>) -> Self {
+        self.lead_idle = Some(supervisor);
+        self
+    }
+
+    pub fn with_cancellation_registry(mut self, registry: Arc<CancellationRegistry>) -> Self {
+        self.cancellation_registry = Some(registry);
+        self
+    }
+
+    /// LTR (P2.8): mark this context as belonging to an async runner.
+    /// See `is_async` field for semantics.
+    pub fn with_async(mut self, is_async: bool) -> Self {
+        self.is_async = is_async;
+        self
+    }
+
+    /// LTR (B-gap2): attach the per-conversation directory.  See `conv_dir`.
+    pub fn with_conv_dir(mut self, dir: std::path::PathBuf) -> Self {
+        self.conv_dir = Some(dir);
+        self
+    }
+
+    /// Returns the process-wide [`InboxRegistry`].
+    ///
+    /// # Panics
+    /// Panics if the orchestration layer did not inject a registry via
+    /// [`Self::with_inbox_registry`].  SendMessage requires this.
+    pub fn inbox_registry(&self) -> &Arc<InboxRegistry> {
+        self.inbox_registry
+            .as_ref()
+            .expect("inbox_registry not injected into ToolExecutionContext — use with_inbox_registry()")
+    }
+
+    /// Returns the process-wide [`TeamRegistry`].
+    ///
+    /// # Panics
+    /// Panics if the orchestration layer did not inject a registry via
+    /// [`Self::with_team_registry`].  Tools that call this must only be
+    /// dispatched through the full production path (not legacy / test stubs).
+    pub fn team_registry(&self) -> &Arc<TeamRegistry> {
+        self.team_registry
+            .as_ref()
+            .expect("team_registry not injected into ToolExecutionContext — use with_team_registry()")
+    }
+
+    /// Returns the process-wide [`AgentNameRegistry`].
+    ///
+    /// # Panics
+    /// Panics if the orchestration layer did not inject a registry via
+    /// [`Self::with_agent_names`].  Tools that call this must only be
+    /// dispatched through the full production path (not legacy / test stubs).
+    pub fn agent_names(&self) -> &Arc<AgentNameRegistry> {
+        self.agent_names
+            .as_ref()
+            .expect("agent_names not injected into ToolExecutionContext — use with_agent_names()")
     }
 
     /// Convenience constructor for integration-test code.

@@ -346,7 +346,8 @@ pub fn run() {
                 );
             app.manage(global_skill_sync_config);
 
-            // Build agent registry: builtins + user-scope agents/*.md (if logged in).
+            // Build agent registry: builtins + user-scope agents/*.md (if logged in)
+            // + dynamic projection of Active Employees.
             let user_agents_dir = current_user_storage
                 .resolve_paths()
                 .map(|paths| paths.agents_dir());
@@ -356,7 +357,43 @@ pub fn run() {
                     None,
                 ),
             );
+
+            // EmployeeStore as app singleton: lib.rs creates one Arc, seeds AgentRegistry,
+            // wires the sync hook; all Tauri commands pull this same Arc from app state.
+            // Without singletization, set_sync below would only affect this transient
+            // boot instance — every Tauri command that does EmployeeStore::new(...) would
+            // miss the hook and AgentRegistry would drift.
+            let employee_store_arc: Option<Arc<runtime::employee::store::EmployeeStore>> =
+                current_user_storage.resolve_paths().map(|paths| {
+                    Arc::new(runtime::employee::store::EmployeeStore::new(
+                        paths.employees_dir(),
+                    ))
+                });
+
+            if let Some(emp_store) = employee_store_arc.as_ref() {
+                match emp_store.list() {
+                    Ok(records) => {
+                        let n = runtime::agent::employee_projection::seed_registry_from_employees(
+                            &agent_registry,
+                            &records,
+                        );
+                        log::info!(
+                            "[agent-registry] seeded {} active employees into AgentRegistry",
+                            n
+                        );
+                    }
+                    Err(e) => log::warn!("[agent-registry] employee seed failed: {e}"),
+                }
+                let sync = Arc::new(runtime::agent::employee_projection::AgentRegistrySync {
+                    registry: agent_registry.clone(),
+                });
+                emp_store.set_sync(sync);
+            }
+
             app.manage(agent_registry.clone());
+            if let Some(store) = employee_store_arc {
+                app.manage(store);
+            }
             let async_agent_task_store = Arc::new(runtime::agent::async_task_store::AsyncAgentTaskStore::new());
             let task_notification_queue = Arc::new(runtime::agent::task_notification::TaskNotificationQueue::new());
             // Managed before TauriChatCommandAdapter::new() so the SessionRuntime can
@@ -515,6 +552,18 @@ pub fn run() {
             ));
             app.manage(facade);
 
+            // LTR: managed BEFORE TauriChatCommandAdapter::new() (line ~525)
+            // because the adapter's `try_state::<Arc<TeamRegistry>>()` runs
+            // inline during construction and must see these registries.
+            // Without this ordering, LTR tools (TeamCreate / SendMessage /
+            // TaskClaim / TeammateStop) all panic with
+            // "team_registry not injected into ToolExecutionContext".
+            app.manage(runtime::agent::TeamRegistry::new());
+            app.manage(runtime::agent::AgentNameRegistry::new());
+            app.manage(runtime::agent::InboxRegistry::new());
+            app.manage(runtime::agent::LeadIdleSupervisor::new());
+            app.manage(runtime::agent::CancellationRegistry::new());
+
             // Shared registry: ChannelManager worker inserts new session ids here;
             // IMAskCoordinator reads from it to decide if an event belongs to an IM session.
             // Created unconditionally before TauriChatCommandAdapter so the event adapter
@@ -538,6 +587,18 @@ pub fn run() {
                         as Arc<dyn connector::channel::ask_coordinator::ChannelSessionRegistry>),
                 ),
             );
+            // LTR P2 follow-up: wire Path C wake (continuation turn triggered by
+            // teammate SendMessage) AFTER the adapter is in an Arc, so the wake
+            // closure can upgrade a Weak<Self> and reuse `send_chat_request` —
+            // the same code path user-driven `send_message` uses, which
+            // constructs a per-request ToolDispatcher with all services.
+            //
+            // This replaces the previous `runtime.wire_lead_idle_wake_path()`
+            // call: that route ran continuation turns through the base
+            // SessionRuntime whose QueryEngine had no ToolDispatcher, so every
+            // tool call inside a continuation turn errored with
+            // "tool dispatcher not configured" and polluted messages.jsonl.
+            chat_adapter.wire_path_c_wake_to_self();
 
             // Register managed state
             app.manage(db);
@@ -623,6 +684,8 @@ pub fn run() {
             );
 
             runtime::employee::runner::spawn_employee_scheduler(
+                app.try_state::<Arc<runtime::employee::store::EmployeeStore>>()
+                    .map(|s| s.inner().clone()),
                 current_user_storage.clone() as Arc<dyn storage::UserScopedPathResolver>,
                 app.state::<Arc<transport::tauri_commands::chat::TauriChatCommandAdapter>>()
                     .inner()
@@ -830,7 +893,37 @@ pub fn run() {
                             "Failed to flush pending assistant message writes on exit: {err}"
                         );
                     }
-                }            }
+                }
+                // LTR (P1.8): drop all per-session Team / name bindings on
+                // app close.  Teammate idle loops self-clean as their inbox
+                // senders are dropped; we just need to clear the registry
+                // tables so a relaunch starts with a fresh slate.
+                if let (Some(team_reg), Some(name_reg)) = (
+                    app_handle
+                        .try_state::<Arc<runtime::agent::TeamRegistry>>()
+                        .map(|s| s.inner().clone()),
+                    app_handle
+                        .try_state::<Arc<runtime::agent::AgentNameRegistry>>()
+                        .map(|s| s.inner().clone()),
+                ) {
+                    let inbox_reg = app_handle
+                        .try_state::<Arc<runtime::agent::InboxRegistry>>()
+                        .map(|s| s.inner().clone());
+                    let cancel_reg = app_handle
+                        .try_state::<Arc<runtime::agent::CancellationRegistry>>()
+                        .map(|s| s.inner().clone());
+                    tauri::async_runtime::block_on(async move {
+                        team_reg.clear_all().await;
+                        name_reg.clear_all().await;
+                        if let Some(reg) = inbox_reg {
+                            reg.clear_all().await;
+                        }
+                        if let Some(reg) = cancel_reg {
+                            reg.clear_all().await;
+                        }
+                    });
+                }
+            }
         });
 }
 

@@ -51,12 +51,23 @@ export interface RenderGeneratedFile {
   primaryAction: 'preview' | 'open'
 }
 
+export interface RenderPeerBanner {
+  kind: 'peer' | 'task'
+  from: string
+  to?: string
+  body: string
+  summary?: string
+  agent?: string
+  status?: string
+}
+
 export interface RenderTurn {
   userMessage?: { id: string; text: string; commandText?: string; skillCommand?: SkillCommandBreadcrumb; files?: FileAttachment[] }
   aiSegments: RenderAiSegment[]
   toolGroup?: RenderToolGroup
   generatedFiles: RenderGeneratedFile[]
   suggestions: string[]
+  peerBanners: RenderPeerBanner[]
 }
 
 function toolExecStatusToStep(s: ToolExecution['status']): RenderToolStep['status'] {
@@ -198,6 +209,44 @@ function normalizeUserMessageForRender(message: Message): NonNullable<RenderTurn
   }
 }
 
+const PEER_MESSAGES_RE = /^<peer-messages>([\s\S]*?)<\/peer-messages>$/
+const PEER_MESSAGE_ITEM_RE = /<peer-message\s+from="([^"]*)"(?:\s+variant="[^"]*")?>([\s\S]*?)<\/peer-message>/g
+const TASK_NOTIFICATION_RE = /^<task-notification\s+agent="([^"]*)"\s+status="([^"]*)">([\s\S]*?)<\/task-notification>$/
+
+function classifyTeamEventMessage(text: string): RenderPeerBanner[] | null {
+  const trimmed = text.trim()
+
+  const peerMatch = trimmed.match(PEER_MESSAGES_RE)
+  if (peerMatch) {
+    const banners: RenderPeerBanner[] = []
+    const inner = peerMatch[1]
+    PEER_MESSAGE_ITEM_RE.lastIndex = 0
+    let m: RegExpExecArray | null
+    while ((m = PEER_MESSAGE_ITEM_RE.exec(inner)) !== null) {
+      banners.push({
+        kind: 'peer',
+        from: m[1],
+        to: 'team-lead',
+        body: m[2].trim(),
+      })
+    }
+    return banners.length > 0 ? banners : null
+  }
+
+  const taskMatch = trimmed.match(TASK_NOTIFICATION_RE)
+  if (taskMatch) {
+    return [{
+      kind: 'task',
+      from: 'system',
+      agent: taskMatch[1],
+      status: taskMatch[2],
+      body: taskMatch[3].trim(),
+    }]
+  }
+
+  return null
+}
+
 export function buildTurnsFromMessages(
   messages: Message[],
   toolExecutions: ToolExecution[],
@@ -207,12 +256,28 @@ export function buildTurnsFromMessages(
 
   for (const m of messages) {
     if (m.role === 'user') {
+      const classified = classifyTeamEventMessage(m.content.text ?? '')
+      if (classified) {
+        // team event XML — 不渲染用户气泡，只放 peerBanners
+        current = {
+          userMessage: undefined,
+          aiSegments: [],
+          toolGroup: undefined,
+          generatedFiles: [],
+          suggestions: [],
+          peerBanners: classified,
+        }
+        turns.push(current)
+        continue
+      }
+      // 普通 user message — 走原有逻辑
       current = {
         userMessage: normalizeUserMessageForRender(m),
         aiSegments: [],
         toolGroup: undefined,
         generatedFiles: [],
         suggestions: [],
+        peerBanners: [],
       }
       turns.push(current)
       continue
@@ -225,6 +290,7 @@ export function buildTurnsFromMessages(
         toolGroup: undefined,
         generatedFiles: [],
         suggestions: [],
+        peerBanners: [],
       }
       turns.push(current)
     }
@@ -233,6 +299,20 @@ export function buildTurnsFromMessages(
       if (m.toolCalls?.length) {
         const group = ensureToolGroup(current)
         for (const tc of m.toolCalls) {
+          if (tc.name === 'SendMessage') {
+            const args = tc.arguments as { to?: string; message?: unknown; summary?: string }
+            const body = typeof args.message === 'string'
+              ? args.message
+              : JSON.stringify(args.message ?? '')
+            current.peerBanners.push({
+              kind: 'peer',
+              from: 'team-lead',
+              to: args.to ?? '?',
+              body,
+              summary: args.summary,
+            })
+            continue  // 不进 toolGroup
+          }
           const existing = group.steps.find((s) => s.toolCallId === tc.id)
           if (!existing) {
             group.steps.push({

@@ -221,6 +221,15 @@ impl ToolRoundDriver {
         idx: usize,
         call: RuntimeToolCallRequest,
     ) -> (usize, ToolRoundResult) {
+        // Capture identifiers BEFORE moving `call` into the engine so the
+        // infrastructure-error path below can preserve the real LLM
+        // tool_use_id and tool name.  Anthropic rejects tool_result blocks
+        // whose tool_use_id is empty (must match `^[a-zA-Z0-9_-]+$`); if we
+        // wrote `String::new()` here, the failed turn would persist to
+        // messages.jsonl and poison every subsequent turn that reloaded
+        // history.
+        let fallback_tool_call_id = call.tool_call_id.clone();
+        let fallback_tool_name = call.tool_name.clone();
         let outcome = self
             .query_engine
             .run_tool_call_with_bus(turn, bus, call)
@@ -233,8 +242,8 @@ impl ToolRoundDriver {
                 (
                     idx,
                     ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
-                        tool_call_id: String::new(),
-                        tool_name: String::new(),
+                        tool_call_id: fallback_tool_call_id,
+                        tool_name: fallback_tool_name,
                         content: format!("Error: {}", e),
                         is_error: true,
                         msg_id: format!("tool-{}", uuid::Uuid::new_v4()),
@@ -298,7 +307,11 @@ mod tests {
 
     #[async_trait]
     impl RuntimeTool for RecordingTool {
-        fn definition(&self) -> ToolDefinition {
+        fn id(&self) -> &str {
+            &self.name
+        }
+
+        async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
             ToolDefinition::new(&self.name, "Recording test tool")
         }
 
@@ -319,6 +332,53 @@ mod tests {
     fn make_turn() -> TurnState {
         let mapping = IdentityMapping::from_legacy_conversation_id("test-conv");
         TurnState::new(mapping, RunId::new("test-run"), "test".to_string())
+    }
+
+    /// Regression: serial dispatch path used to overwrite the tool_call_id
+    /// with `String::new()` whenever `run_tool_call_with_bus` returned an
+    /// infrastructure error (e.g. missing dispatcher).  The empty id was
+    /// persisted to messages.jsonl and later poisoned every Anthropic turn
+    /// with `tool_use_id: String should match pattern '^[a-zA-Z0-9_-]+$'`.
+    /// The fix preserves the original LLM-issued id so the failure surfaces
+    /// as a normal tool_result instead of corrupting history.
+    #[tokio::test]
+    async fn infrastructure_error_preserves_tool_call_id_and_name() {
+        // QueryEngine::new() has no dispatcher configured, so any tool call
+        // takes the `Err("tool dispatcher not configured")` branch.
+        let engine = QueryEngine::new();
+        let driver = ToolRoundDriver::new(engine);
+        let bus = RuntimeEventBus::new();
+        let turn = make_turn();
+
+        let results = driver
+            .execute_round(
+                &turn,
+                &bus,
+                vec![RuntimeToolCallRequest {
+                    tool_call_id: "toolu_01abcXYZ".into(),
+                    tool_name: "my_tool".into(),
+                    args: json!({}),
+                    purpose: None,
+                }],
+            )
+            .await;
+
+        assert_eq!(results.len(), 1);
+        match &results[0] {
+            ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
+                tool_call_id,
+                tool_name,
+                is_error,
+                content,
+                ..
+            }) => {
+                assert_eq!(tool_call_id, "toolu_01abcXYZ");
+                assert_eq!(tool_name, "my_tool");
+                assert!(is_error);
+                assert!(content.starts_with("Error:"));
+            }
+            other => panic!("expected Completed-with-error outcome, got {:?}", other),
+        }
     }
 
     #[tokio::test]

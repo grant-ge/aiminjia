@@ -44,7 +44,9 @@ fn validate_task_id(s: &str) -> Result<&str, ToolError> {
 
 #[async_trait]
 impl RuntimeTool for TaskOutputRuntimeTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str { "TaskOutput" }
+    
+    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
         TOOL_CATALOG.get("TaskOutput").unwrap_or_else(|| {
             ToolDefinition::new("TaskOutput", "Read async sub-agent transcript")
                 .with_kind(ToolKind::Support)
@@ -59,7 +61,7 @@ impl RuntimeTool for TaskOutputRuntimeTool {
     async fn execute(
         &self,
         input: Value,
-        _ctx: ToolExecutionContext,
+        ctx: ToolExecutionContext,
     ) -> Result<ToolResult, ToolError> {
         let task_id_raw = input
             .get("task_id")
@@ -76,7 +78,28 @@ impl RuntimeTool for TaskOutputRuntimeTool {
             .require_paths()
             .map_err(|e| ToolError::ExecutionFailed(format!("user scope unavailable: {e}")))?;
 
-        let path = output_writer::transcript_path(&paths.subagent_transcripts_dir(), task_id);
+        // Look up the transcript in 3 known locations (priority order):
+        //   1. conv_dir/teammates/{task_id}.jsonl    — new Teammate writes here
+        //   2. conv_dir/subagents/{task_id}.jsonl    — new AsyncOneShot writes here
+        //   3. subagent_transcripts/{task_id}.jsonl  — legacy spawn_subagent (global)
+        // Falling back to the legacy global path keeps existing async sub-agents
+        // working with no behavior change.
+        let mut candidates: Vec<std::path::PathBuf> = Vec::with_capacity(3);
+        if let Some(conv_dir) = ctx.conv_dir.as_ref() {
+            candidates.push(conv_dir.join("teammates").join(format!("{task_id}.jsonl")));
+            candidates.push(conv_dir.join("subagents").join(format!("{task_id}.jsonl")));
+        }
+        candidates.push(output_writer::transcript_path(
+            &paths.subagent_transcripts_dir(),
+            task_id,
+        ));
+
+        let path = candidates
+            .iter()
+            .find(|p| p.exists())
+            .cloned()
+            .unwrap_or_else(|| candidates.last().cloned().expect("non-empty candidates"));
+
         let (lines, new_offset) = output_writer::read_from(&path, offset)
             .map_err(|e| ToolError::ExecutionFailed(format!("read transcript failed: {e}")))?;
 
@@ -129,7 +152,7 @@ mod tests {
     fn definition_id_is_task_output() {
         let tmp = TempDir::new().unwrap();
         let tool = build_tool(&tmp);
-        assert_eq!(tool.definition().id, "TaskOutput");
+        assert_eq!(tool.id(), "TaskOutput");
     }
 
     #[test]

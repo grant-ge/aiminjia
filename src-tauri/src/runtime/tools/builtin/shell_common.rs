@@ -2,7 +2,6 @@
 //! BashTool（Unix）和 PowerShellTool（Windows）都使用这些函数，确保两种 shell
 //! 在输出截断、cancellation、stderr 合并、grep/find 等命令的语义豁免上行为一致。
 
-use std::time::Duration;
 use tokio::io::AsyncReadExt;
 use tokio::process::Child;
 use tokio::task::JoinHandle;
@@ -176,15 +175,6 @@ pub async fn collect_reader(
         crate::storage::console_decode::decode_console_bytes(&bytes),
         truncated,
     ))
-}
-
-pub async fn wait_for_cancellation(token: CancellationToken) -> Option<CancellationReason> {
-    loop {
-        if token.is_cancelled() {
-            return token.reason();
-        }
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
 }
 
 pub async fn kill_child_process_tree(child: &mut Child) {

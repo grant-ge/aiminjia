@@ -40,19 +40,23 @@ pub trait EmployeeRunDispatcher: Send + Sync {
 }
 
 /// Spawns a background task that checks for due employees every 60 seconds.
+///
+/// Takes `Option<Arc<EmployeeStore>>` because the scheduler is started in
+/// `lib.rs` boot even when no user is logged in yet (store wasn't built);
+/// the loop short-circuits to a no-op tick when `None`.
 pub fn spawn_employee_scheduler(
-    path_resolver: Arc<dyn UserScopedPathResolver>,
+    store: Option<Arc<EmployeeStore>>,
+    _path_resolver: Arc<dyn UserScopedPathResolver>,
     dispatcher: Arc<dyn EmployeeRunDispatcher>,
 ) {
     tauri::async_runtime::spawn(async move {
         let mut interval = time::interval(Duration::from_secs(60));
         loop {
             interval.tick().await;
-            let Some(paths) = path_resolver.resolve_paths() else {
+            let Some(ref store) = store else {
                 continue;
             };
-            let store = EmployeeStore::new(paths.employees_dir());
-            match run_due_employees_once(&store, dispatcher.as_ref(), Utc::now()).await {
+            match run_due_employees_once(store.as_ref(), dispatcher.as_ref(), Utc::now()).await {
                 Ok(()) => {}
                 Err(err) => log::warn!("[EmployeeScheduler] scan failed: {err}"),
             }

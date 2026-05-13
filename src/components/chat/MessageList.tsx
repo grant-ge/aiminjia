@@ -7,6 +7,7 @@ import { useEffect } from 'react'
 import { AiBubble } from '@/components/chat/AiBubble'
 import { StreamingBubble } from '@/components/chat/StreamingBubble'
 import { GeneratedFileCard } from '@/components/chat-scene/GeneratedFileCard'
+import { PeerMessageBanner } from '@/components/chat-scene/PeerMessageBanner'
 import { SuggestChipGroup } from '@/components/chat-scene/SuggestChipGroup'
 import { ToolGroupCard } from '@/components/chat-scene/ToolGroupCard'
 import { UserMessageBubble } from '@/components/chat-scene/UserMessageBubble'
@@ -91,6 +92,9 @@ export function MessageList() {
       {turns.map((t, i) => {
         return (
           <div key={i} className="flex flex-col gap-4">
+            {t.peerBanners.length > 0 ? (
+              <PeerMessageBanner banners={t.peerBanners} />
+            ) : null}
             {t.userMessage ? (
               <UserMessageBubble
                 text={t.userMessage.text}
