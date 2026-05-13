@@ -16,7 +16,11 @@ pub struct ConversationMeta {
     pub created_at: String,
     pub updated_at: String,
     pub is_archived: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Reserved for backwards compatibility — older conv.json files may carry
+    /// `modelOverride` (legacy per-conversation model selector, removed
+    /// 2026-05). Skipped on serialize so we don't keep rewriting it; kept on
+    /// deserialize so we don't reject legacy files.
+    #[serde(default, skip_serializing)]
     pub model_override: Option<String>,
 }
 

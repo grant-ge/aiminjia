@@ -211,6 +211,12 @@ pub struct LlmRequest {
     /// `cache_control: {type: "ephemeral"}`. Other providers ignore this and
     /// fall back to reading the flattened system message from `messages`.
     pub system_segments: Option<Vec<SystemPromptSegment>>,
+    /// Conversation id, when known. Used by the lotus gateway to do
+    /// soft conversation-level sticky routing (decision: keep the same
+    /// upstream provider within one turn-loop to avoid model jitter).
+    /// Sent as the `X-Lotus-Conversation-ID` HTTP header by providers that
+    /// route via lotus. `None` / empty disables sticky for this call.
+    pub conversation_id: Option<String>,
 }
 
 /// A single segment of the assembled system prompt with caching intent.
@@ -236,6 +242,7 @@ impl Default for LlmRequest {
             thinking_config: None,
             anthropic_multimodal_turn: None,
             system_segments: None,
+            conversation_id: None,
         }
     }
 }

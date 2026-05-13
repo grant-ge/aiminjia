@@ -816,8 +816,6 @@ pub fn run() {
             chat::get_team_overview,
             chat::get_teammate_transcript,
             chat::create_conversation,
-            chat::get_conversation_model_override,
-            chat::set_conversation_model_override,
             chat::delete_conversation,
             chat::rename_conversation,
             chat::archive_conversation,

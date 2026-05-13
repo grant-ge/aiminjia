@@ -314,27 +314,6 @@ pub async fn create_conversation(
 }
 
 #[tauri::command]
-pub async fn get_conversation_model_override(
-    adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
-    conversation_id: String,
-) -> Result<Option<String>, String> {
-    adapter
-        .get_conversation_model_override(conversation_id)
-        .await
-}
-
-#[tauri::command]
-pub async fn set_conversation_model_override(
-    adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
-    conversation_id: String,
-    model: Option<String>,
-) -> Result<(), String> {
-    adapter
-        .set_conversation_model_override(conversation_id, model)
-        .await
-}
-
-#[tauri::command]
 pub async fn delete_conversation(
     adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
     conversation_id: String,

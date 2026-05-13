@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { X, MessageSquare, Square, Clock } from 'lucide-react'
 import { open as openFileDialog } from '@tauri-apps/plugin-dialog'
 import {
-  dingtalkStatus,
   employeeDelete,
   employeeStopRun,
   employeeTrigger,
@@ -137,11 +136,9 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
 
     setBusy(true)
     try {
-      const dt = template.requiresDingtalk ? await dingtalkStatus() : { connected: false }
       const result = runTriggerPrechecks({
         template,
         employee: emp,
-        dingtalkConnected: !!dt.connected,
       })
 
       switch (result.kind) {
@@ -173,9 +170,6 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
         }
         case 'resource':
           setResourceModalOpen(true)
-          return
-        case 'dingtalk':
-          alert('该员工需要钉钉账号授权，请前往 设置 → 钉钉账号 完成授权后再试。')
           return
         case 'knowledge-indexing':
           alert('知识库正在后台切片入库，请稍后再试。')

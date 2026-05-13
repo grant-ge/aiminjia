@@ -162,6 +162,22 @@ impl ClaudeProvider {
                 _ => {}
             }
         }
+        // Conversation-level soft sticky for the lotus gateway path. The
+        // gateway uses this header to keep the same upstream provider within
+        // one conversation (TTL ~30min), avoiding mid-conversation model
+        // jitter when a model is fan-out to multiple providers. Direct
+        // anthropic.com ignores unknown headers; safe to send unconditionally
+        // but kept gateway-only for clarity.
+        if !self.is_direct {
+            if let Some(conv_id) = request.conversation_id.as_deref() {
+                if !conv_id.is_empty() {
+                    headers.insert(
+                        "X-Lotus-Conversation-ID".to_string(),
+                        conv_id.to_string(),
+                    );
+                }
+            }
+        }
         headers
     }
 
@@ -1239,6 +1255,7 @@ mod tests {
             thinking_config: None,
             anthropic_multimodal_turn: None,
             system_segments: None,
+            conversation_id: None,
         };
 
         let body = provider.build_request_body(&request);
@@ -1269,6 +1286,7 @@ mod tests {
             thinking_config: None,
             anthropic_multimodal_turn: None,
             system_segments: None,
+            conversation_id: None,
         };
 
         let body = provider.build_request_body(&request);
@@ -1278,6 +1296,52 @@ mod tests {
             body
         );
         assert_eq!(body["max_tokens"], 1024);
+    }
+
+    #[test]
+    fn test_build_request_headers_includes_conversation_id_when_gateway() {
+        // Gateway path (is_direct=false): X-Lotus-Conversation-ID flows through.
+        let provider = ClaudeProvider::with_url_opts(
+            "test-key".to_string(),
+            None,
+            "https://example.com/v1/messages".to_string(),
+            false,
+            true,
+        );
+        let mut req = LlmRequest::default();
+        req.conversation_id = Some("conv-abc".to_string());
+        let headers = provider.build_request_headers_for_test(&req);
+        assert_eq!(
+            headers.get("X-Lotus-Conversation-ID").map(String::as_str),
+            Some("conv-abc")
+        );
+    }
+
+    #[test]
+    fn test_build_request_headers_omits_conversation_id_when_direct_anthropic() {
+        // Direct anthropic.com (is_direct=true): never leak the sticky header,
+        // anthropic.com has no use for it and there's no reason to fingerprint
+        // the desktop client there.
+        let provider = ClaudeProvider::new("test-key".to_string(), None);
+        let mut req = LlmRequest::default();
+        req.conversation_id = Some("conv-abc".to_string());
+        let headers = provider.build_request_headers_for_test(&req);
+        assert!(headers.get("X-Lotus-Conversation-ID").is_none());
+    }
+
+    #[test]
+    fn test_build_request_headers_omits_conversation_id_when_empty() {
+        let provider = ClaudeProvider::with_url_opts(
+            "test-key".to_string(),
+            None,
+            "https://example.com/v1/messages".to_string(),
+            false,
+            true,
+        );
+        let mut req = LlmRequest::default();
+        req.conversation_id = Some(String::new());
+        let headers = provider.build_request_headers_for_test(&req);
+        assert!(headers.get("X-Lotus-Conversation-ID").is_none());
     }
 
     #[test]
@@ -1299,6 +1363,7 @@ mod tests {
             thinking_config: None,
             anthropic_multimodal_turn: None,
             system_segments: None,
+            conversation_id: None,
         };
 
         let body = provider.build_request_body(&request);
@@ -1344,6 +1409,7 @@ mod tests {
                 degraded_count: 0,
             }),
             system_segments: None,
+            conversation_id: None,
         };
 
         let body = provider.build_request_body(&request);
@@ -1633,6 +1699,7 @@ mod tests {
                 },
             ]),
             anthropic_multimodal_turn: None,
+            conversation_id: None,
         };
 
         let body = provider.build_request_body(&request);
@@ -1670,6 +1737,7 @@ mod tests {
             thinking_config: None,
             system_segments: Some(segs),
             anthropic_multimodal_turn: None,
+            conversation_id: None,
         };
 
         let body = provider.build_request_body(&request);
@@ -1698,6 +1766,7 @@ mod tests {
             thinking_config: None,
             system_segments: None,
             anthropic_multimodal_turn: None,
+            conversation_id: None,
         };
 
         let body = provider.build_request_body(&request);

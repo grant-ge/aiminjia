@@ -916,18 +916,6 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             settings.primary_api_key = decrypt_api_key(ss, &settings.primary_api_key);
         }
 
-        let model_override = if request.conversation_id.as_str().is_empty() {
-            None
-        } else {
-            self.services
-                .db()
-                .get_conversation_model_override(request.conversation_id.as_str())
-                .unwrap_or(None)
-        };
-        if let Some(override_model) = model_override {
-            settings.primary_model = override_model;
-        }
-
         Ok(ResolvedLlmSettings {
             primary_model: settings.primary_model,
             primary_api_key: settings.primary_api_key,
@@ -3077,30 +3065,6 @@ impl TauriChatCommandAdapter {
         // 只有后端绕开前端入口的 dispatcher（agenda / employee / schedule）需要 emit。
         conversation_service::create_conversation(
             self.services.db().clone() as Arc<dyn ConversationStore>
-        )
-        .await
-    }
-
-    pub async fn get_conversation_model_override(
-        &self,
-        conversation_id: String,
-    ) -> Result<Option<String>, String> {
-        conversation_service::get_conversation_model_override(
-            self.services.db().clone() as Arc<dyn ConversationStore>,
-            conversation_id,
-        )
-        .await
-    }
-
-    pub async fn set_conversation_model_override(
-        &self,
-        conversation_id: String,
-        model: Option<String>,
-    ) -> Result<(), String> {
-        conversation_service::set_conversation_model_override(
-            self.services.db().clone() as Arc<dyn ConversationStore>,
-            conversation_id,
-            model,
         )
         .await
     }

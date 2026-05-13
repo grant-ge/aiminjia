@@ -108,7 +108,7 @@ export const BUILTIN_TEMPLATES: EmployeeTemplate[] = [
     defaultSkillId: 'sales-followup-rules',
     requiresAttachment: null,
     resourceConfigKind: 'sales-table',
-    requiresDingtalk: true,
+    requiresDingtalk: false,
   },
   {
     templateId: 'builtin:xiaoding',
@@ -123,7 +123,7 @@ export const BUILTIN_TEMPLATES: EmployeeTemplate[] = [
     defaultSkillId: 'dingtalk-workspace',
     requiresAttachment: null,
     resourceConfigKind: 'none',
-    requiresDingtalk: true,
+    requiresDingtalk: false,
   },
   {
     templateId: 'builtin:xiaozhao',
@@ -158,7 +158,7 @@ export const BUILTIN_TEMPLATES: EmployeeTemplate[] = [
     defaultSkillId: 'dingtalk-workspace',
     requiresAttachment: null,
     resourceConfigKind: 'weekly-report',
-    requiresDingtalk: true,
+    requiresDingtalk: false,
   },
   {
     templateId: 'builtin:xiaobiao',
@@ -198,7 +198,7 @@ export const BUILTIN_TEMPLATES: EmployeeTemplate[] = [
     defaultSkillId: 'dingtalk-workspace',
     requiresAttachment: null,
     resourceConfigKind: 'tech-support',
-    requiresDingtalk: true,
+    requiresDingtalk: false,
   },
   {
     templateId: 'builtin:xiaoke',
@@ -218,7 +218,7 @@ export const BUILTIN_TEMPLATES: EmployeeTemplate[] = [
     defaultSkillId: 'dingtalk-workspace',
     requiresAttachment: null,
     resourceConfigKind: 'customer-support',
-    requiresDingtalk: true,
+    requiresDingtalk: false,
   },
   {
     templateId: 'builtin:xiaocheng',

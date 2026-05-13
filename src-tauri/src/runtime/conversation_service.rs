@@ -100,23 +100,6 @@ pub async fn create_conversation(db: Arc<dyn ConversationStore>) -> Result<Strin
     Ok(id)
 }
 
-pub async fn get_conversation_model_override(
-    db: Arc<dyn ConversationStore>,
-    conversation_id: String,
-) -> Result<Option<String>, String> {
-    db.get_conversation_model_override(&conversation_id)
-        .map_err(|e| e.to_string())
-}
-
-pub async fn set_conversation_model_override(
-    db: Arc<dyn ConversationStore>,
-    conversation_id: String,
-    model_override: Option<String>,
-) -> Result<(), String> {
-    db.set_conversation_model_override(&conversation_id, model_override)
-        .map_err(|e| e.to_string())
-}
-
 pub async fn delete_conversation(
     db: Arc<AppStorage>,
     gateway: Arc<LlmGateway>,
@@ -506,16 +489,6 @@ mod title_tests {
             id: &str,
         ) -> anyhow::Result<Vec<crate::runtime::chat::compaction::CompactBoundaryRecord>> {
             self.inner.list_compact_boundaries(id)
-        }
-        fn get_conversation_model_override(&self, id: &str) -> anyhow::Result<Option<String>> {
-            self.inner.get_conversation_model_override(id)
-        }
-        fn set_conversation_model_override(
-            &self,
-            id: &str,
-            v: Option<String>,
-        ) -> anyhow::Result<()> {
-            self.inner.set_conversation_model_override(id, v)
         }
         fn archive_conversation(&self, id: &str) -> anyhow::Result<()> {
             self.inner.archive_conversation(id)
