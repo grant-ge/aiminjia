@@ -60,3 +60,4 @@ dist-skills/
 # Release
 .release-state.json
 signing-workspace/
+.env.local.aijia
