@@ -1257,7 +1257,7 @@ impl RuntimeChatTurnDriver {
             prompt_snapshot: Some(effective_prompt_snapshot),
             tool_defs: final_tool_defs,
             allowed_tools: overrides.allowed_tools,
-            max_iterations: overrides.max_iterations.unwrap_or(60),
+            max_iterations: overrides.max_iterations.unwrap_or(120),
             token_budget: overrides.token_budget.unwrap_or_else(|| {
                 // Cloud mode: ask for an aspirational ceiling and let the lotus
                 // gateway clamp to the real per-upstream-model cap (Step 1).

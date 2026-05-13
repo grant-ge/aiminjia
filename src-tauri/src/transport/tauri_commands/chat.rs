@@ -3660,7 +3660,7 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
                 conv_id.clone(),
                 EmployeeRunOverrides {
                     tool_whitelist: effective_whitelist.into_iter().collect(),
-                    max_iterations: 60,
+                    max_iterations: 120,
                 },
             );
 
