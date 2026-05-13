@@ -18,6 +18,7 @@ export type { DiagnosticLevel, FrontendDiagnosticPayload } from './tauriDiagnost
 export { recordFrontendDiagnostic } from './tauriDiagnostics'
 
 import type { Message, SubAgentTranscriptEntry } from '@/types/message'
+import type { TeamOverview } from '@/types/team'
 import type {
   PendingItem,
   PendingSnapshotPayload,
@@ -518,6 +519,29 @@ export function getSubagentTranscript(
 ): Promise<SubAgentTranscriptEntry[]> {
   return invoke<SubAgentTranscriptEntry[]>('get_subagent_transcript', {
     transcriptRef,
+  })
+}
+
+/**
+ * Read-only snapshot of a conversation's team activity (TeamCreate → TeamDelete
+ * windows, member roster, chronological event stream). Returns `{ teams: [] }`
+ * for conversations that never had a team.
+ */
+export function getTeamOverview(conversationId: string): Promise<TeamOverview> {
+  return invoke<TeamOverview>('get_team_overview', { conversationId })
+}
+
+/**
+ * Read one teammate's complete on-disk transcript. Returns parsed jsonl
+ * entries (each entry is `{role, content, tool_calls?, tool_call_id?, tool_name?}`).
+ */
+export function getTeammateTranscript(
+  conversationId: string,
+  agentId: string,
+): Promise<unknown[]> {
+  return invoke<unknown[]>('get_teammate_transcript', {
+    conversationId,
+    agentId,
   })
 }
 
