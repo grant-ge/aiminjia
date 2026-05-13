@@ -701,20 +701,12 @@ async fn dispatch_stream(route: &RouteResult, request: LlmRequest) -> Result<Str
             p.stream(request).await
         }
         "lotus" => {
-            let p = lotus::LotusProvider::new(
-                route.api_key.clone(),
-                route.model_hint.clone(),
-                &route.model_type,
-            );
+            let p = lotus::LotusProvider::new(route.api_key.clone());
             p.stream(request).await
         }
         other => {
             log::warn!("Unknown provider '{}', falling back to lotus", other);
-            let p = lotus::LotusProvider::new(
-                route.api_key.clone(),
-                route.model_hint.clone(),
-                &route.model_type,
-            );
+            let p = lotus::LotusProvider::new(route.api_key.clone());
             p.stream(request).await
         }
     }
@@ -740,20 +732,12 @@ async fn dispatch_send(route: &RouteResult, request: LlmRequest) -> Result<LlmRe
             p.send(request).await
         }
         "lotus" => {
-            let p = lotus::LotusProvider::new(
-                route.api_key.clone(),
-                route.model_hint.clone(),
-                &route.model_type,
-            );
+            let p = lotus::LotusProvider::new(route.api_key.clone());
             p.send(request).await
         }
         other => {
             log::warn!("Unknown provider '{}', falling back to lotus", other);
-            let p = lotus::LotusProvider::new(
-                route.api_key.clone(),
-                route.model_hint.clone(),
-                &route.model_type,
-            );
+            let p = lotus::LotusProvider::new(route.api_key.clone());
             p.send(request).await
         }
     }

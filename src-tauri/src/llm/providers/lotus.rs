@@ -33,10 +33,6 @@ use crate::llm::streaming::{LlmRequest, LlmResponse, StreamBox};
 
 const LOTUS_ANTHROPIC_URL: &str = "https://ai-tenant.renlijia.com/anthropic/v1/messages";
 
-/// Backstop default — used only when callers pass an empty model string.
-/// In normal flow the model name comes from `AppSettings.cloud_model`.
-const DEFAULT_MODEL: &str = "claude-sonnet-4-5";
-
 /// Maximum extra attempts on `send` for network-class errors. The first
 /// attempt counts as 0; with `MAX_RETRY_ATTEMPTS = 1` the worst case is
 /// 2 total HTTP requests.
@@ -48,32 +44,22 @@ pub struct LotusProvider {
 }
 
 impl LotusProvider {
-    /// Construct a provider tied to the configured session_key + model.
+    /// Construct a provider tied to the configured session_key.
     ///
-    /// `_model_type` is retained for caller-signature compatibility with
-    /// the OpenAI-ingress era (`"chat"` vs `"reasoner"`). The anthropic
-    /// ingress has only one endpoint; reasoner-vs-chat is now expressed
-    /// through the model name + `LlmRequest.tools` (empty tools = reasoner-
-    /// equivalent). The argument is unused but preserved to avoid
-    /// rippling a signature change through `gateway.rs` callers.
-    pub fn new(session_key: String, model: String, _model_type: &str) -> Self {
-        // Strip BOM (\u{FEFF}) and surrounding whitespace/control chars before
-        // sending to the gateway. Observed in the wild on Windows when the model
-        // id round-trips through clipboard / config files — the gateway's
-        // model-name regex rejects `\r`, leading spaces, BOM etc. and the user
-        // sees a confusing "model name contains invalid characters" 400.
-        let trimmed = model.trim_matches(|c: char| c.is_whitespace() || c == '\u{FEFF}');
-        let model = if trimmed.is_empty() {
-            DEFAULT_MODEL.to_string()
-        } else {
-            trimmed.to_string()
-        };
+    /// **Model is NOT a parameter.** The lotus gateway (Step 1, 2026-05) decides
+    /// the upstream model from `(ingress protocol, route priority)`. The
+    /// desktop client deliberately omits the `model` field so a single user
+    /// no longer gets pinned to whichever model they happened to start with.
+    /// Backstop: if the gateway is older / has no anthropic chat route, it
+    /// returns 404 — see lotus/docs/gateway-behavior.md §3.2.
+    pub fn new(session_key: String) -> Self {
         Self {
-            inner: ClaudeProvider::with_url(
+            inner: ClaudeProvider::with_url_opts(
                 session_key,
-                Some(model),
+                None,                              // model unused (gateway decides)
                 LOTUS_ANTHROPIC_URL.to_string(),
-                false, // is_direct=false → suppress anthropic-beta headers
+                false,                             // is_direct=false → no beta headers
+                true,                              // omit_model in request body
             ),
         }
     }

@@ -1086,9 +1086,17 @@ impl RuntimeChatTurnDriver {
             allowed_tools: overrides.allowed_tools,
             max_iterations: overrides.max_iterations.unwrap_or(60),
             token_budget: overrides.token_budget.unwrap_or_else(|| {
-                crate::llm::max_tokens::default_max_tokens_for_model(
-                    &llm_settings.primary_model,
-                ) as usize
+                // Cloud mode: ask for an aspirational ceiling and let the lotus
+                // gateway clamp to the real per-upstream-model cap (Step 1).
+                // Local mode: use the model-name heuristic since there's no
+                // gateway in the loop.
+                if llm_settings.use_cloud {
+                    1_000_000
+                } else {
+                    crate::llm::max_tokens::default_max_tokens_for_model(
+                        &llm_settings.primary_model,
+                    ) as usize
+                }
             }),
             chunk_timeout_secs: 90,
             masking_level: llm_settings.masking_level.clone(),
