@@ -5,8 +5,6 @@ import {
   cloudLogout,
   getCloudAuth,
   getCloudModels,
-  getSettings,
-  updateSettings,
   type CloudAuthInfo,
   type CloudModel,
 } from '@/lib/tauri'
@@ -59,22 +57,12 @@ async function applyTenantBranding(info: CloudAuthInfo): Promise<void> {
   useBrandingStore.getState().applyBranding(tenant)
 }
 
-async function syncCloudModelSelection(models: CloudModel[]): Promise<string | null> {
-  if (models.length === 0) return null
-
-  const settings = await getSettings()
-  const currentIsAvailable = models.some((model) => model.id === settings.cloudModel)
-  const nextModel = currentIsAvailable
-    ? models.find((model) => model.id === settings.cloudModel)!
-    : models[0]
-  await updateSettings({
-    ...settings,
-    useCloud: true,
-    cloudModel: nextModel.id,
-    cloudModelType: nextModel.modelType || 'chat',
-  })
-  return nextModel.id
-}
+// Note: there used to be a `syncCloudModelSelection` here that wrote
+// `models[0].id` back to settings.cloudModel. That was the source of the
+// "user pinned to whichever model they happened to start with" bug —
+// removed 2026-05 along with Step 2 (gateway decides routing). cloudModels
+// are now informational only; selectedCloudModel state stays in memory for
+// any UI angle still keyed on it but is never persisted.
 
 export const useAuthStore = create<AuthState>((set) => ({
   ...EMPTY_AUTH_STATE,
@@ -102,7 +90,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   async resyncCloudModels() {
     if (!useAuthStore.getState().isLoggedIn) return null
     const models = await getCloudModels()
-    const selectedCloudModel = await syncCloudModelSelection(models)
+    const selectedCloudModel = models[0]?.id ?? null
     set({ cloudModels: models, selectedCloudModel })
     return selectedCloudModel
   },
@@ -118,8 +106,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
       await applyTenantBranding(info)
       const models = await getCloudModels()
-      const selectedCloudModel = await syncCloudModelSelection(models)
-      set({ ...mapAuthState(info, models), selectedCloudModel, isAuthPending: false })
+      set({ ...mapAuthState(info, models), isAuthPending: false })
     } catch (error) {
       useBrandingStore.getState().reset()
       set({ ...EMPTY_AUTH_STATE, isAuthPending: false })
@@ -135,8 +122,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       const info = await cloudLogin(username.trim(), password)
       await applyTenantBranding(info)
       const models = info.models.length > 0 ? info.models : await getCloudModels()
-      const selectedCloudModel = await syncCloudModelSelection(models)
-      set({ ...mapAuthState(info, models), selectedCloudModel, isAuthPending: false })
+      set({ ...mapAuthState(info, models), isAuthPending: false })
       if (!useAuthStore.getState().redirectFrom) {
         useUiStore.getState().setRoute({ kind: 'home' })
       }

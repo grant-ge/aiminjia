@@ -29,14 +29,6 @@ pub trait ConversationStore: Send + Sync {
     fn append_compact_boundary(&self, record: CompactBoundaryRecord) -> Result<()>;
     /// List compact boundary records in insertion order for a conversation.
     fn list_compact_boundaries(&self, conversation_id: &str) -> Result<Vec<CompactBoundaryRecord>>;
-    /// Read the persisted model override for a conversation.
-    fn get_conversation_model_override(&self, conversation_id: &str) -> Result<Option<String>>;
-    /// Persist the model override for a conversation.
-    fn set_conversation_model_override(
-        &self,
-        conversation_id: &str,
-        model_override: Option<String>,
-    ) -> Result<()>;
     /// Mark a conversation as archived (soft delete).
     fn archive_conversation(&self, id: &str) -> Result<()>;
     /// Restore an archived conversation to the active conversation list.
@@ -152,18 +144,6 @@ impl ConversationStore for InMemoryConversationStore {
             .get(conversation_id)
             .cloned()
             .unwrap_or_default())
-    }
-
-    fn get_conversation_model_override(&self, _conversation_id: &str) -> Result<Option<String>> {
-        Ok(None)
-    }
-
-    fn set_conversation_model_override(
-        &self,
-        _conversation_id: &str,
-        _model_override: Option<String>,
-    ) -> Result<()> {
-        Ok(())
     }
 
     fn archive_conversation(&self, id: &str) -> Result<()> {

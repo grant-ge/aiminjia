@@ -135,7 +135,7 @@ describe('AuthGate', () => {
     expect(useAuthStore.getState().redirectFrom).toBeNull()
   })
 
-  it('恢复登录时自动把过期云端模型切到最新可用模型并持久化', async () => {
+  it('恢复登录时刷新 cloudModels 列表但不再回写 settings.cloudModel（Step 2 后由网关决定路由）', async () => {
     tauriMock.getCloudAuth.mockResolvedValue({
       loggedIn: true,
       user: { id: 1, name: 'Test', username: 'test' },
@@ -173,13 +173,13 @@ describe('AuthGate', () => {
 
     await screen.findByText('APP SHELL')
 
+    // cloudModels 列表刷新，selectedCloudModel 取首条（仅 in-memory，
+    // 给依赖该字段的 UI 留兜底值；不再持久化到 settings）。
+    expect(useAuthStore.getState().cloudModels).toHaveLength(2)
     expect(useAuthStore.getState().selectedCloudModel).toBe('claude-sonnet-4-5')
-    expect(tauriMock.updateSettings).toHaveBeenCalledWith(
-      expect.objectContaining({
-        useCloud: true,
-        cloudModel: 'claude-sonnet-4-5',
-        cloudModelType: 'chat',
-      }),
-    )
+
+    // 关键回归点：不再把 cloudModel 写回 settings —— 网关按协议+优先级
+    // 路由，桌面端不该再固化用户的"第一次选择"。
+    expect(tauriMock.updateSettings).not.toHaveBeenCalled()
   })
 })

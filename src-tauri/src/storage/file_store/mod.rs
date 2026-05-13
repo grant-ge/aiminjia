@@ -357,23 +357,6 @@ impl AppStorage {
         Ok(settings)
     }
 
-    pub fn get_conversation_model_override(&self, id: &str) -> Result<Option<String>> {
-        Ok(conversations::get_conversation_model_override(
-            &self.base_dir,
-            id,
-        )?)
-    }
-
-    pub fn set_conversation_model_override(
-        &self,
-        id: &str,
-        model_override: Option<String>,
-    ) -> Result<()> {
-        let _lock = self.write_lock.lock().unwrap();
-        conversations::set_conversation_model_override(&self.base_dir, id, model_override)?;
-        Ok(())
-    }
-
     pub fn get_settings_by_prefix(&self, prefix: &str) -> Result<HashMap<String, String>> {
         Ok(config::get_settings_by_prefix(&self.base_dir, prefix)?)
     }
@@ -1135,20 +1118,6 @@ impl crate::runtime::store::ConversationStore for FileConversationStore {
         self.storage.list_compact_boundaries(conversation_id)
     }
 
-    fn get_conversation_model_override(&self, conversation_id: &str) -> Result<Option<String>> {
-        self.storage
-            .get_conversation_model_override(conversation_id)
-    }
-
-    fn set_conversation_model_override(
-        &self,
-        conversation_id: &str,
-        model_override: Option<String>,
-    ) -> Result<()> {
-        self.storage
-            .set_conversation_model_override(conversation_id, model_override)
-    }
-
     fn archive_conversation(&self, id: &str) -> Result<()> {
         self.storage.archive_conversation(id)
     }
@@ -1211,18 +1180,6 @@ impl crate::runtime::store::ConversationStore for AppStorage {
         conversation_id: &str,
     ) -> Result<Vec<crate::runtime::chat::compaction::CompactBoundaryRecord>> {
         self.list_compact_boundaries(conversation_id)
-    }
-
-    fn get_conversation_model_override(&self, conversation_id: &str) -> Result<Option<String>> {
-        self.get_conversation_model_override(conversation_id)
-    }
-
-    fn set_conversation_model_override(
-        &self,
-        conversation_id: &str,
-        model_override: Option<String>,
-    ) -> Result<()> {
-        self.set_conversation_model_override(conversation_id, model_override)
     }
 
     fn archive_conversation(&self, id: &str) -> Result<()> {

@@ -109,42 +109,6 @@ pub fn archive_conversation(base_dir: &Path, id: &str) -> StorageResult<()> {
     Ok(())
 }
 
-/// Get the configured model override for a conversation.
-pub fn get_conversation_model_override(base_dir: &Path, id: &str) -> StorageResult<Option<String>> {
-    let meta_path = conv_meta_path(base_dir, id);
-    let meta: ConversationMeta = read_json_safe(&meta_path)?;
-    Ok(meta.model_override.and_then(|value| {
-        let trimmed = value.trim();
-        if trimmed.is_empty() {
-            None
-        } else {
-            Some(trimmed.to_string())
-        }
-    }))
-}
-
-/// Persist the optional model override for a conversation.
-pub fn set_conversation_model_override(
-    base_dir: &Path,
-    id: &str,
-    model_override: Option<String>,
-) -> StorageResult<()> {
-    let meta_path = conv_meta_path(base_dir, id);
-    let mut meta: ConversationMeta = read_json_safe(&meta_path)?;
-    let now = Utc::now().to_rfc3339();
-    meta.model_override = model_override.and_then(|value| {
-        let trimmed = value.trim();
-        if trimmed.is_empty() {
-            None
-        } else {
-            Some(trimmed.to_string())
-        }
-    });
-    meta.updated_at = now;
-    atomic_write_json(&meta_path, &meta)?;
-    Ok(())
-}
-
 /// Retrieve all non-archived conversations, most recent first.
 ///
 /// Returns `serde_json::Value` for backward compatibility with the existing
@@ -457,25 +421,6 @@ mod tests {
 
         let convs = get_conversations(&base).unwrap();
         assert_eq!(convs[0]["title"], "Updated");
-    }
-
-    #[test]
-    fn test_conversation_model_override_roundtrip() {
-        let (base, _dir) = setup();
-
-        create_conversation(&base, "c1", "Conv").unwrap();
-        assert_eq!(get_conversation_model_override(&base, "c1").unwrap(), None);
-
-        set_conversation_model_override(&base, "c1", Some("claude".to_string())).unwrap();
-        assert_eq!(
-            get_conversation_model_override(&base, "c1")
-                .unwrap()
-                .as_deref(),
-            Some("claude")
-        );
-
-        set_conversation_model_override(&base, "c1", None).unwrap();
-        assert_eq!(get_conversation_model_override(&base, "c1").unwrap(), None);
     }
 
     #[test]
