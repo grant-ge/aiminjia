@@ -222,27 +222,15 @@ Write-Ok "signed by $subjectCn"
 
 # -- 4. Generate Tauri updater .sig ---------------------------------------
 Write-Section "Step 4/5: Generate Tauri updater signature"
-# Read the key file content and pass via env var (the modern tauri-cli
-# reads from env, not from -k <file>). Pre-validate the key looks like
-# rsign base64 to avoid the confusing "Invalid symbol 58" parser error
-# (that one means the cli got a path string '\C:...' instead of key bytes).
-$keyBytes = [System.IO.File]::ReadAllBytes($TauriKey)
-# Strip BOM if present
-if ($keyBytes.Length -ge 3 -and $keyBytes[0] -eq 0xEF -and $keyBytes[1] -eq 0xBB -and $keyBytes[2] -eq 0xBF) {
-    $keyContent = [System.Text.Encoding]::UTF8.GetString($keyBytes, 3, $keyBytes.Length - 3)
-} else {
-    $keyContent = [System.Text.Encoding]::UTF8.GetString($keyBytes)
-}
-$keyContent = $keyContent.Trim()
-if ($keyContent.Length -lt 100 -or ($keyContent -match '[\\/:]')) {
-    throw "Tauri key at $TauriKey does not look like rsign base64 content (got length=$($keyContent.Length))"
-}
-$env:TAURI_SIGNING_PRIVATE_KEY = $keyContent
+# tauri-cli signer sign supports -f <path> to read key from a file.
+# This avoids passing the long base64 key through PowerShell -> npx ->
+# child env, which previously got truncated/whitespace-injected.
+# (The wrong flag '-k' takes a key STRING and tries to parse a path
+# as base64, hence the "Invalid symbol" errors we hit before.)
 $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = $TauriKeyPwd
 $tauriCliPkg = '@tauri-apps/cli@latest'
-& npx --yes $tauriCliPkg signer sign $ExePath
+& npx --yes $tauriCliPkg signer sign -f $TauriKey $ExePath
 $signerExit = $LASTEXITCODE
-Remove-Item Env:\TAURI_SIGNING_PRIVATE_KEY -ErrorAction SilentlyContinue
 Remove-Item Env:\TAURI_SIGNING_PRIVATE_KEY_PASSWORD -ErrorAction SilentlyContinue
 if ($signerExit -ne 0) { throw "tauri signer failed (exit $signerExit)" }
 if (-not (Test-Path $SigPath)) { throw ".sig not created at $SigPath" }
