@@ -85,32 +85,52 @@ function Save-Credential {
     param([string]$Name, [string]$Value)
     cmdkey /generic:"AIjia.$Name" /user:aijia /pass:"$Value" | Out-Null
 }
+
+# Win32 CredRead wrapper. Use Add-Type once at script load with a full
+# TypeDefinition (more compatible with Windows PowerShell 5.1 than
+# -MemberDefinition + here-string).
+$credSource = @"
+using System;
+using System.Runtime.InteropServices;
+public static class AIjiaCred {
+    [DllImport("Advapi32.dll", SetLastError=true, CharSet=CharSet.Unicode)]
+    public static extern bool CredRead(string target, int type, int reservedFlag, out IntPtr CredentialPtr);
+    [DllImport("Advapi32.dll", SetLastError=true)]
+    public static extern void CredFree([In] IntPtr cred);
+    [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]
+    public struct CREDENTIAL {
+        public uint Flags;
+        public uint Type;
+        public string TargetName;
+        public string Comment;
+        public System.Runtime.InteropServices.ComTypes.FILETIME LastWritten;
+        public uint CredentialBlobSize;
+        public IntPtr CredentialBlob;
+        public uint Persist;
+        public uint AttributeCount;
+        public IntPtr Attributes;
+        public string TargetAlias;
+        public string UserName;
+    }
+    public static string Read(string target) {
+        IntPtr ptr;
+        if (!CredRead(target, 1, 0, out ptr)) return null;
+        try {
+            CREDENTIAL cred = (CREDENTIAL)Marshal.PtrToStructure(ptr, typeof(CREDENTIAL));
+            return Marshal.PtrToStringUni(cred.CredentialBlob, (int)(cred.CredentialBlobSize / 2));
+        } finally {
+            CredFree(ptr);
+        }
+    }
+}
+"@
+if (-not ('AIjiaCred' -as [type])) {
+    Add-Type -TypeDefinition $credSource -ErrorAction Stop
+}
+
 function Load-Credential {
     param([string]$Name)
-    # cmdkey doesn't expose the password — use Win32 CredRead via .NET instead.
-    Add-Type -Namespace AIjiaCred -Name Native -MemberDefinition @'
-[DllImport("Advapi32.dll", SetLastError=true, CharSet=CharSet.Unicode)]
-public static extern bool CredRead(string target, int type, int reservedFlag, out IntPtr CredentialPtr);
-[DllImport("Advapi32.dll", SetLastError=true)]
-public static extern void CredFree([In] IntPtr cred);
-[StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]
-public struct CREDENTIAL {
-    public uint Flags; public uint Type; public string TargetName; public string Comment;
-    public System.Runtime.InteropServices.ComTypes.FILETIME LastWritten;
-    public uint CredentialBlobSize; public IntPtr CredentialBlob;
-    public uint Persist; public uint AttributeCount; public IntPtr Attributes;
-    public string TargetAlias; public string UserName;
-}
-'@ -ErrorAction SilentlyContinue
-
-    $ptr = [IntPtr]::Zero
-    if (-not [AIjiaCred.Native]::CredRead("AIjia.$Name", 1, 0, [ref]$ptr)) { return $null }
-    try {
-        $cred = [System.Runtime.InteropServices.Marshal]::PtrToStructure($ptr, [type][AIjiaCred.Native+CREDENTIAL])
-        return [System.Runtime.InteropServices.Marshal]::PtrToStringUni($cred.CredentialBlob, $cred.CredentialBlobSize / 2)
-    } finally {
-        [AIjiaCred.Native]::CredFree($ptr)
-    }
+    return [AIjiaCred]::Read("AIjia.$Name")
 }
 
 function Get-OrPrompt {
