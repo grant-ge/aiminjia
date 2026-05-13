@@ -44,7 +44,7 @@ const baseTemplate: EmployeeTemplate = {
 describe('runTriggerPrechecks', () => {
   it('returns ready when nothing is required', () => {
     expect(
-      runTriggerPrechecks({ template: baseTemplate, employee: baseEmployee, dingtalkConnected: false }),
+      runTriggerPrechecks({ template: baseTemplate, employee: baseEmployee }),
     ).toEqual({ kind: 'ready' })
   })
 
@@ -53,7 +53,6 @@ describe('runTriggerPrechecks', () => {
       runTriggerPrechecks({
         template: { ...baseTemplate, requiresAttachment: { accept: '.pdf', min: 1, max: 5 } },
         employee: baseEmployee,
-        dingtalkConnected: false,
       }),
     ).toEqual({
       kind: 'attachments',
@@ -66,7 +65,6 @@ describe('runTriggerPrechecks', () => {
       runTriggerPrechecks({
         template: { ...baseTemplate, resourceConfigKind: 'monitoring-urls' },
         employee: baseEmployee,
-        dingtalkConnected: false,
       }),
     ).toEqual({ kind: 'resource', resourceConfigKind: 'monitoring-urls' })
   })
@@ -79,79 +77,49 @@ describe('runTriggerPrechecks', () => {
           ...baseEmployee,
           resourceConfig: { monitoringTargets: [{ name: 'A', url: 'https://a' }] },
         },
-        dingtalkConnected: false,
       }),
     ).toEqual({ kind: 'ready' })
   })
 
-  it('asks for dingtalk when template requires it and not connected', () => {
+  it('never gates on dingtalk auth — the skill handles QR-code login in-chat', () => {
+    // dingtalk auth used to be a hard precheck. It's now fully delegated to
+    // the `dingtalk-workspace` skill which runs `dws auth status` at the
+    // start of every turn and walks the user through scanning a QR code
+    // inside the conversation.
     expect(
       runTriggerPrechecks({
         template: { ...baseTemplate, requiresDingtalk: true },
         employee: baseEmployee,
-        dingtalkConnected: false,
-      }),
-    ).toEqual({ kind: 'dingtalk' })
-  })
-
-  it('skips dingtalk precheck when connected', () => {
-    expect(
-      runTriggerPrechecks({
-        template: { ...baseTemplate, requiresDingtalk: true },
-        employee: baseEmployee,
-        dingtalkConnected: true,
       }),
     ).toEqual({ kind: 'ready' })
   })
 
-  it('precedence: attachments > (hard) resource > dingtalk', () => {
-    // monitoring-urls is a hard requirement; with no targets and no dingtalk
-    // connection, resource still wins.
+  it('precedence: attachments > (hard) resource', () => {
     expect(
       runTriggerPrechecks({
         template: {
           ...baseTemplate,
           resourceConfigKind: 'monitoring-urls',
-          requiresDingtalk: true,
           requiresAttachment: null,
         },
         employee: baseEmployee,
-        dingtalkConnected: false,
       }),
     ).toEqual({ kind: 'resource', resourceConfigKind: 'monitoring-urls' })
   })
 
   it('sales-table is a soft requirement: unconfigured does NOT block dispatch', () => {
-    // 小销-shaped: needs dingtalk + sales-table. With sales-table empty AND
-    // dingtalk OK, prechecks should return 'ready' — the SKILL handles the
-    // missing config inside the chat (path A).
+    // 小销-shaped: with sales-table empty, prechecks should return 'ready' —
+    // the SKILL handles the missing config inside the chat (path A).
     expect(
       runTriggerPrechecks({
         template: {
           ...baseTemplate,
           resourceConfigKind: 'sales-table',
-          requiresDingtalk: true,
           requiresAttachment: null,
         },
         employee: baseEmployee,
-        dingtalkConnected: true,
       }),
     ).toEqual({ kind: 'ready' })
-  })
-
-  it('sales-table soft requirement still defers to dingtalk gate', () => {
-    expect(
-      runTriggerPrechecks({
-        template: {
-          ...baseTemplate,
-          resourceConfigKind: 'sales-table',
-          requiresDingtalk: true,
-          requiresAttachment: null,
-        },
-        employee: baseEmployee,
-        dingtalkConnected: false,
-      }),
-    ).toEqual({ kind: 'dingtalk' })
   })
 
   it('sales-table is treated as configured when baseId+tableId present', () => {
@@ -160,13 +128,11 @@ describe('runTriggerPrechecks', () => {
         template: {
           ...baseTemplate,
           resourceConfigKind: 'sales-table',
-          requiresDingtalk: true,
         },
         employee: {
           ...baseEmployee,
           resourceConfig: { baseId: 'b1', tableId: 't1' },
         },
-        dingtalkConnected: true,
       }),
     ).toEqual({ kind: 'ready' })
   })
@@ -184,7 +150,6 @@ describe('runTriggerPrechecks', () => {
             ],
           },
         },
-        dingtalkConnected: true,
       }),
     ).toEqual({ kind: 'knowledge-indexing' })
   })
@@ -202,7 +167,6 @@ describe('runTriggerPrechecks', () => {
             ],
           },
         },
-        dingtalkConnected: true,
       }),
     ).toEqual({ kind: 'knowledge-indexing' })
   })
@@ -221,7 +185,6 @@ describe('runTriggerPrechecks', () => {
             ],
           },
         },
-        dingtalkConnected: true,
       }),
     ).toEqual({ kind: 'ready' })
   })

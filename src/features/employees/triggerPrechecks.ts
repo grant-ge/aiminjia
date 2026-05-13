@@ -5,14 +5,11 @@ export type TriggerPrecheckResult =
   | { kind: 'ready' }
   | { kind: 'attachments'; spec: RequiresAttachmentSpec }
   | { kind: 'resource'; resourceConfigKind: ResourceConfigKind }
-  | { kind: 'dingtalk' }
   | { kind: 'knowledge-indexing' }
 
 export interface RunTriggerPrechecksParams {
   template: EmployeeTemplate
   employee: EmployeeRecord
-  /** Result of `dingtalkStatus().connected`. Caller fetches before invoking. */
-  dingtalkConnected: boolean
 }
 
 /**
@@ -20,7 +17,7 @@ export interface RunTriggerPrechecksParams {
  * employee_trigger.
  *
  * Order:
- *   attachments (per-trigger) → resource_config (only when REQUIRED) → dingtalk auth
+ *   attachments (per-trigger) → resource_config (only when REQUIRED) → knowledge indexing
  *
  * Note on resource_config: only `monitoring-urls` is a HARD requirement (小研
  * needs at least one URL to do anything). `sales-table` is a SOFT requirement
@@ -28,10 +25,15 @@ export interface RunTriggerPrechecksParams {
  * persisting the answers to memory; the ResourceConfigForm at ⚙️ is a faster
  * path B that pre-fills the same shape.
  *
+ * Dingtalk auth is NOT a precheck: the `dingtalk-workspace` skill checks
+ * `dws auth status` at the start of every turn and walks the user through
+ * scanning a QR code inside the conversation when not authenticated. Hard
+ * gating here would short-circuit the skill's own lazy-auth flow.
+ *
  * Returns `{ kind: 'ready' }` when no precheck is required.
  */
 export function runTriggerPrechecks(params: RunTriggerPrechecksParams): TriggerPrecheckResult {
-  const { template, employee, dingtalkConnected } = params
+  const { template, employee } = params
 
   if (template.requiresAttachment) {
     return { kind: 'attachments', spec: template.requiresAttachment }
@@ -43,10 +45,6 @@ export function runTriggerPrechecks(params: RunTriggerPrechecksParams): TriggerP
     !isResourceConfigured(template, employee)
   ) {
     return { kind: 'resource', resourceConfigKind: template.resourceConfigKind }
-  }
-
-  if (template.requiresDingtalk && !dingtalkConnected) {
-    return { kind: 'dingtalk' }
   }
 
   if (hasPendingKnowledgeSources(employee)) {
