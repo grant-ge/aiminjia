@@ -141,7 +141,7 @@ function Get-OrPrompt {
     param([string]$Name, [string]$Prompt, [switch]$Secret)
     if (-not $Reconfigure) {
         $existing = Load-Credential -Name $Name
-        if ($existing) { return $existing }
+        if ($existing) { return (Sanitize-Input $existing) }
     }
     if ($Secret) {
         $sec = Read-Host -Prompt $Prompt -AsSecureString
@@ -151,8 +151,24 @@ function Get-OrPrompt {
     } else {
         $value = Read-Host -Prompt $Prompt
     }
+    $value = Sanitize-Input $value
     Save-Credential -Name $Name -Value $value
     return $value
+}
+
+# Drop all whitespace + control + non-printable chars. Clipboard pastes
+# often add zero-width / BOM / trailing CR which break consumers like
+# signtool (Invalid SHA1 hash format).
+function Sanitize-Input {
+    param([string]$s)
+    if ($null -eq $s) { return '' }
+    $sb = New-Object System.Text.StringBuilder
+    foreach ($ch in $s.ToCharArray()) {
+        $code = [int]$ch
+        # Keep only printable ASCII (0x21-0x7E).
+        if ($code -ge 0x21 -and $code -le 0x7E) { [void]$sb.Append($ch) }
+    }
+    return $sb.ToString()
 }
 
 # -- 0. Sanity: tauri key file present ------------------------------------
