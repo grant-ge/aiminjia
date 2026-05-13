@@ -143,14 +143,11 @@ function Get-OrPrompt {
         $existing = Load-Credential -Name $Name
         if ($existing) { return (Sanitize-Input $existing) }
     }
-    if ($Secret) {
-        $sec = Read-Host -Prompt $Prompt -AsSecureString
-        $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)
-        try { $value = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
-        finally { [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
-    } else {
-        $value = Read-Host -Prompt $Prompt
-    }
+    # NOTE: -AsSecureString hangs on long pasted values (the host stops
+    # echoing after the first '*'). The value ends up in Credential Manager
+    # via cmdkey (plain-text on disk anyway) so SecureString brings no real
+    # security here. Use plain Read-Host and mask the echo by hand if needed.
+    $value = Read-Host -Prompt $Prompt
     $value = Sanitize-Input $value
     Save-Credential -Name $Name -Value $value
     return $value
