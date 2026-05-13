@@ -11,6 +11,8 @@ import { SkillUsageBlock } from '@/components/skills/SkillUsageBlock'
 import { useSkillStore } from '@/stores/skillStore'
 import { useUiStore } from '@/stores/uiStore'
 
+import { formatSkillUpdatedAt } from './formatSkillUpdatedAt'
+
 interface SkillDetailPageProps {
   skillId: string
 }
@@ -96,7 +98,9 @@ export function SkillDetailPage({ skillId }: SkillDetailPageProps) {
       <SkillMetaRow
         items={[
           { label: '来源', value: skill.source === 'builtin' ? 'AI 小家内置' : '已安装' },
-          { label: '更新时间', value: '2026-04-20' },
+          ...(formatSkillUpdatedAt(skill.updatedAt)
+            ? [{ label: '更新时间', value: formatSkillUpdatedAt(skill.updatedAt) as string }]
+            : []),
         ]}
       />
       <SkillTryGrid>

@@ -70,6 +70,7 @@ function normalizeSkill(skill: SkillInfo): SkillInfo {
     shortDescriptionEn: skill.shortDescriptionEn || skill.displayNameEn || skill.displayName || '',
     triggerText: skill.triggerText || `/${skill.id}`,
     category: skill.category || 'general',
+    updatedAt: skill.updatedAt ?? null,
   }
 }
 

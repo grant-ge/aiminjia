@@ -105,10 +105,24 @@ pub struct SkillInfo {
     /// "global" — managed bundle in ~/.renlijia/skills/
     /// 用于前端区分"本地技能"分类。
     pub source: String,
+    /// 技能"更新时间"。RFC 3339 UTC 字符串；读不到时为 None。
+    /// 来源由 `plugin::skill::updated_at::SkillUpdatedAtResolver` 决定，
+    /// 当前默认走 `DirMtimeResolver`（技能根目录 mtime）。
+    pub updated_at: Option<String>,
 }
 
 /// Pure function for testability: list all skills in the new disk-backed registry.
 pub fn list_skills_from_registry(registry: &Arc<Mutex<SkillRegistry>>) -> Vec<SkillInfo> {
+    use crate::plugin::skill::updated_at::DirMtimeResolver;
+    list_skills_from_registry_with_resolver(registry, &DirMtimeResolver)
+}
+
+/// 同上，但允许调用方注入自定义的 `SkillUpdatedAtResolver`，用于单测或
+/// 后续切换更新时间来源。
+pub fn list_skills_from_registry_with_resolver(
+    registry: &Arc<Mutex<SkillRegistry>>,
+    resolver: &dyn crate::plugin::skill::updated_at::SkillUpdatedAtResolver,
+) -> Vec<SkillInfo> {
     let guard = registry.lock().unwrap();
     guard
         .skill_ids()
@@ -129,6 +143,7 @@ pub fn list_skills_from_registry(registry: &Arc<Mutex<SkillRegistry>>) -> Vec<Sk
                     crate::plugin::skill::types::SkillSource::User => "user".to_string(),
                     crate::plugin::skill::types::SkillSource::Global => "global".to_string(),
                 },
+                updated_at: resolver.resolve(skill),
             })
         })
         .collect()

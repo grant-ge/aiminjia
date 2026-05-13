@@ -1115,6 +1115,11 @@ export interface SkillInfo {
   shortDescriptionEn: string
   triggerText: string
   category: string
+  /**
+   * 技能"更新时间"。后端返回 RFC 3339 UTC 字符串；读不到时为 null。
+   * 当前实现：技能根目录 mtime（见 src-tauri/src/plugin/skill/updated_at.rs）。
+   */
+  updatedAt: string | null
 }
 
 /** Combined plugin info (tools + skills) */
