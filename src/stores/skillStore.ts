@@ -1,8 +1,29 @@
 import { create } from 'zustand'
 
 import type { SkillCategoryId } from '@/data/skill-categories'
-import { ALREADY_EXISTS_PREFIX } from '@/data/skill-constants'
 import { installCustomSkill, listSkills, uninstallCustomSkill, type SkillInfo } from '@/lib/tauri'
+
+export type SkillValidationKind =
+  | 'missingSkillMd'
+  | 'parseFailed'
+  | 'invalidName'
+  | 'io'
+
+export interface SkillValidationFailure {
+  kind: SkillValidationKind
+  detail?: string
+}
+
+export class SkillValidationError extends Error {
+  readonly kind: SkillValidationKind
+  readonly detail?: string
+  constructor(failure: SkillValidationFailure) {
+    super(`SKILL_VALIDATION:${failure.kind}`)
+    this.name = 'SkillValidationError'
+    this.kind = failure.kind
+    this.detail = failure.detail
+  }
+}
 
 export class SkillAlreadyExistsError extends Error {
   readonly skillId: string
@@ -11,6 +32,29 @@ export class SkillAlreadyExistsError extends Error {
     this.skillId = skillId
     this.name = 'SkillAlreadyExistsError'
   }
+}
+
+const VALIDATION_KINDS: ReadonlySet<SkillValidationKind> = new Set([
+  'missingSkillMd',
+  'parseFailed',
+  'invalidName',
+  'io',
+])
+
+function toInstallError(err: unknown): Error {
+  if (err && typeof err === 'object' && 'kind' in err) {
+    const payload = err as { kind: string; detail?: string }
+    if (payload.kind === 'alreadyExists') {
+      return new SkillAlreadyExistsError(payload.detail ?? '')
+    }
+    if (VALIDATION_KINDS.has(payload.kind as SkillValidationKind)) {
+      return new SkillValidationError({
+        kind: payload.kind as SkillValidationKind,
+        detail: payload.detail,
+      })
+    }
+  }
+  return err instanceof Error ? err : new Error(String(err))
 }
 
 const RECOMMENDED_SKILL_IDS = ['salary-benchmarking', 'biz-writing', 'contract-review', 'org-diagnosis']
@@ -77,13 +121,7 @@ export const useSkillStore = create<SkillState>((set, get) => ({
       await installCustomSkill(sourcePath, force)
       await get().reload()
     } catch (err) {
-      const msg = String(err)
-      if (msg.includes(ALREADY_EXISTS_PREFIX)) {
-        const idx = msg.indexOf(ALREADY_EXISTS_PREFIX)
-        const skillId = msg.slice(idx + ALREADY_EXISTS_PREFIX.length).trim()
-        throw new SkillAlreadyExistsError(skillId)
-      }
-      throw err
+      throw toInstallError(err)
     }
   },
 }))

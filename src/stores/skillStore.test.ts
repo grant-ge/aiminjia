@@ -11,7 +11,6 @@ const tauriMock = vi.hoisted(() => ({
 vi.mock('@/lib/tauri', () => tauriMock)
 
 import { useSkillStore } from '@/stores/skillStore'
-import { ALREADY_EXISTS_PREFIX } from '@/data/skill-constants'
 
 describe('skillStore', () => {
   beforeEach(() => {
@@ -38,8 +37,8 @@ describe('skillStore', () => {
     expect(tauriMock.listSkills).toHaveBeenCalled()
   })
 
-  it('upload 将重复技能错误转换为结构化错误', async () => {
-    tauriMock.installCustomSkill.mockRejectedValueOnce(`${ALREADY_EXISTS_PREFIX}dup-skill`)
+  it('upload 将结构化 alreadyExists 错误转换为 SkillAlreadyExistsError', async () => {
+    tauriMock.installCustomSkill.mockRejectedValueOnce({ kind: 'alreadyExists', detail: 'dup-skill' })
 
     await expect(useSkillStore.getState().upload('/tmp/dup-skill')).rejects.toMatchObject({
       name: 'SkillAlreadyExistsError',
@@ -47,12 +46,22 @@ describe('skillStore', () => {
     })
   })
 
-  it('upload 将 Tauri 包装的重复技能错误转换为结构化错误', async () => {
-    tauriMock.installCustomSkill.mockRejectedValueOnce(`Error invoking command: ${ALREADY_EXISTS_PREFIX}wrapped-dup-skill`)
+  it('upload 将结构化校验错误转换为 SkillValidationError', async () => {
+    tauriMock.installCustomSkill.mockRejectedValueOnce({ kind: 'missingSkillMd' })
 
-    await expect(useSkillStore.getState().upload('/tmp/wrapped-dup-skill')).rejects.toMatchObject({
-      name: 'SkillAlreadyExistsError',
-      skillId: 'wrapped-dup-skill',
+    await expect(useSkillStore.getState().upload('/tmp/bad-skill')).rejects.toMatchObject({
+      name: 'SkillValidationError',
+      kind: 'missingSkillMd',
+    })
+  })
+
+  it('upload 透传 parseFailed 的 detail', async () => {
+    tauriMock.installCustomSkill.mockRejectedValueOnce({ kind: 'parseFailed', detail: 'yaml 错误' })
+
+    await expect(useSkillStore.getState().upload('/tmp/bad-skill')).rejects.toMatchObject({
+      name: 'SkillValidationError',
+      kind: 'parseFailed',
+      detail: 'yaml 错误',
     })
   })
 

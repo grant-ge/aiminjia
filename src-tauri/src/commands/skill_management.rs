@@ -7,9 +7,9 @@ use tauri::AppHandle;
 use tauri::Emitter;
 use tauri::Manager;
 
-/// Structured error returned by `validate_skill_directory`. The Tauri command
-/// surface stringifies this via `to_user_message()` so the frontend can show
-/// a precise reason without parsing free-form strings.
+/// Structured validation outcome for a skill directory. Surfaced to the
+/// frontend as JSON via `InstallSkillError` so the UI can render a per-rule
+/// checklist instead of parsing free-form strings.
 #[derive(Debug)]
 pub enum SkillValidationError {
     MissingSkillMd,
@@ -17,35 +17,27 @@ pub enum SkillValidationError {
     InvalidName(String),
 }
 
-impl SkillValidationError {
-    pub fn to_user_message(&self) -> String {
-        match self {
-            Self::MissingSkillMd => "目录中缺少 SKILL.md".to_string(),
-            Self::ParseFailed(detail) => format!("SKILL.md 解析失败：{}", detail),
-            Self::InvalidName(name) => format!(
-                "目录名 '{}' 不合法（必须以小写字母或数字开头，仅允许 a-z 0-9 - _，长度 ≤ 64）",
-                name
-            ),
-        }
-    }
-}
-
 /// Install-time error returned by the `install_custom_skill` command.
-/// Validation errors are flattened with `to_user_message()`; AlreadyExists is
-/// kept structured so the frontend can render an "overwrite / cancel" dialog.
-#[derive(Debug)]
+/// Serialized as `{ "kind": "...", "detail": "..." }` so the frontend can
+/// match on `kind` directly. `AlreadyExists.detail` carries the conflicting
+/// skill id; validation variants carry the underlying detail (path / parse
+/// error / invalid name).
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase", tag = "kind", content = "detail")]
 pub enum InstallSkillError {
-    Validation(SkillValidationError),
+    MissingSkillMd,
+    ParseFailed(String),
+    InvalidName(String),
     AlreadyExists(String),
     Io(String),
 }
 
 impl InstallSkillError {
-    pub fn to_user_message(&self) -> String {
-        match self {
-            Self::Validation(v) => v.to_user_message(),
-            Self::AlreadyExists(id) => format!("ALREADY_EXISTS:{}", id),
-            Self::Io(detail) => format!("IO 错误：{}", detail),
+    fn from_validation(err: SkillValidationError) -> Self {
+        match err {
+            SkillValidationError::MissingSkillMd => Self::MissingSkillMd,
+            SkillValidationError::ParseFailed(detail) => Self::ParseFailed(detail),
+            SkillValidationError::InvalidName(name) => Self::InvalidName(name),
         }
     }
 }
@@ -225,7 +217,7 @@ pub async fn list_custom_skills(app: AppHandle) -> Result<Vec<CustomSkillInfo>, 
 }
 
 /// Install a skill from a directory path into the current user's skills dir.
-/// `force=false`: returns error `ALREADY_EXISTS:<id>` if same-name skill exists.
+/// `force=false`: returns `AlreadyExists` if same-name skill exists.
 /// `force=true`: overwrites existing skill.
 /// On success: re-scans both user + global roots and refreshes in-memory registry.
 #[tauri::command]
@@ -233,22 +225,23 @@ pub async fn install_custom_skill(
     app: AppHandle,
     source_path: String,
     force: Option<bool>,
-) -> Result<String, String> {
+) -> Result<String, InstallSkillError> {
     let source = PathBuf::from(&source_path);
     if !source.is_dir() {
-        return Err(format!("Source path '{}' is not a directory", source_path));
+        return Err(InstallSkillError::Io(format!(
+            "Source path '{}' is not a directory",
+            source_path
+        )));
     }
 
-    validate_skill_directory(&source)
-        .map_err(|e| e.to_user_message())?;
+    validate_skill_directory(&source).map_err(InstallSkillError::from_validation)?;
 
-    let custom_dir = user_skills_dir(&app)?;
-    std::fs::create_dir_all(&custom_dir).map_err(|e| e.to_string())?;
+    let custom_dir = user_skills_dir(&app).map_err(InstallSkillError::Io)?;
+    std::fs::create_dir_all(&custom_dir).map_err(|e| InstallSkillError::Io(e.to_string()))?;
 
-    let dest = install_custom_skill_to_dir_with_force(&source, &custom_dir, force.unwrap_or(false))
-        .map_err(|e| e.to_user_message())?;
+    let dest = install_custom_skill_to_dir_with_force(&source, &custom_dir, force.unwrap_or(false))?;
 
-    refresh_skill_registry(&app)?;
+    refresh_skill_registry(&app).map_err(InstallSkillError::Io)?;
     Ok(dest)
 }
 
