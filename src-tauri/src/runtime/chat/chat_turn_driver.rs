@@ -2126,6 +2126,21 @@ impl RuntimeChatTurnDriver {
             .await
             .map_err(|e| anyhow::anyhow!("{}", e))?;
 
+        // Batch B: persist Lead's turn into team-chat.jsonl (only when team.json exists).
+        if let Some(conv_dir) = self.query_engine.conv_dir() {
+            let _ = crate::runtime::agent::team_chat::record_turn_json(
+                conv_dir,
+                crate::runtime::tools::builtin::team_tools::LEAD_NAME,
+                /* is_lead */ true,
+                &state.full_content,
+                &state.all_tool_calls,
+                Some(&self.event_bus),
+                &session_id,
+                &run_id,
+            )
+            .await;
+        }
+
         if let Some(control_plane) = self.pending_permission_control_plane.as_ref() {
             let orphaned_count = control_plane.pending_count_for_session(&session_id);
             if orphaned_count > 0 {

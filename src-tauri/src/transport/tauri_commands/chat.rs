@@ -2219,6 +2219,7 @@ impl TauriChatCommandAdapter {
         });
         let bus = RuntimeEventBus::new();
         bus.subscribe(adapter);
+        let bus_for_engine = Arc::new(bus.clone());
         let llm_executor: Arc<dyn RuntimeLlmExecutor> = Arc::new(TauriLegacyTurnExecutor {
             services: services.clone(),
             agents_md_loader: Arc::new(tokio::sync::Mutex::new(
@@ -2231,7 +2232,8 @@ impl TauriChatCommandAdapter {
         let mut runtime = SessionRuntime::with_llm_executor(
             QueryEngine::new()
                 .with_workspace_path(services.file_mgr.workspace_path().to_path_buf())
-                .with_runtime_resolver(services.runtime_resolver.clone()),
+                .with_runtime_resolver(services.runtime_resolver.clone())
+                .with_runtime_event_bus(bus_for_engine),
             bus,
             llm_executor,
         )
@@ -2498,7 +2500,7 @@ impl TauriChatCommandAdapter {
             tool_registry: Some(self.services.tool_registry.clone()),
             app_settings: Some(Arc::new(AppSettings::default())),
             agent_runtime,
-            event_bus: None,
+            event_bus: Some(self.runtime.event_bus().clone()),
             skill_registry: Some(self.services.skill_registry.clone()),
             authorized_workspace: None,
             read_file_state: None,
@@ -2793,7 +2795,7 @@ impl TauriChatCommandAdapter {
             tool_registry: Some(self.services.tool_registry.clone()),
             app_settings: Some(app_settings_arc),
             agent_runtime,
-            event_bus: None,
+            event_bus: Some(self.runtime.event_bus().clone()),
             skill_registry: Some(self.services.skill_registry.clone()),
             authorized_workspace: chat_runtime_impl::load_authorized_workspace(
                 &self.services.app,
@@ -2893,6 +2895,13 @@ impl TauriChatCommandAdapter {
 
     pub fn is_agent_busy(&self) -> Vec<String> {
         self.services.gateway.get_busy_conversations()
+    }
+
+    /// 暴露当前活动的 AppStorage，供群聊视图等只读派生功能使用。
+    /// 故意命名为 `_for_team_view` 而非通用名，避免被误用作普通存储入口
+    /// （普通路径仍走 self.services 内部封装的方法）。
+    pub fn services_db_for_team_view(&self) -> Arc<crate::storage::file_store::AppStorage> {
+        self.services.db()
     }
 
     pub async fn stop_streaming(&self, conversation_id: String) -> Result<(), String> {

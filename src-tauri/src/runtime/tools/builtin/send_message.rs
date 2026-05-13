@@ -18,6 +18,9 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 
 use crate::runtime::agent::inbox::{InboxItem, MessageSource};
+use crate::runtime::event_bus::RuntimeEventBus;
+use crate::runtime::events::{RuntimeEvent, RuntimeEventKind};
+use crate::runtime::ids::{RunId, SessionId};
 use crate::runtime::messaging::StructuredMessage;
 use crate::runtime::tools::builtin::team_tools::LEAD_NAME;
 use crate::runtime::tools::catalog::TOOL_CATALOG;
@@ -26,8 +29,57 @@ use crate::runtime::tools::definition::ToolDefinition;
 use crate::runtime::tools::executor::{ToolError, ToolResult};
 use crate::runtime::tools::RuntimeTool;
 use crate::telemetry::{record_diagnostic, DiagnosticEvent, DiagnosticSource};
+use std::sync::Arc;
 
 pub const BROADCAST_TOKEN: &str = "*";
+
+/// Emit a `RuntimeEvent::TeamMessage` so the group-chat UI mirrors the
+/// just-delivered message live. Best-effort: missing event bus / emit
+/// failure is logged but never surfaced — the in-memory inbox channel is
+/// the authoritative delivery path.
+async fn emit_team_message_event(
+    bus: Option<&Arc<RuntimeEventBus>>,
+    session: &SessionId,
+    run_id: &RunId,
+    from: &str,
+    to: &str,
+    body: &str,
+) {
+    let Some(bus) = bus else {
+        log::warn!(
+            "[SendMessage] event_bus not injected into ctx — UI will not see this message live (session={})",
+            session.as_str()
+        );
+        return;
+    };
+    let event = RuntimeEvent::new(
+        session.clone(),
+        run_id.clone(),
+        RuntimeEventKind::TeamMessage {
+            ts: chrono::Utc::now(),
+            from: from.to_string(),
+            to: to.to_string(),
+            body: body.to_string(),
+        },
+    );
+    if let Err(e) = bus.emit(event).await {
+        log::warn!(
+            "[SendMessage] failed to emit TeamMessage event session={} err={}",
+            session.as_str(),
+            e
+        );
+    }
+}
+
+fn body_for_envelope(msg: &StructuredMessage) -> String {
+    match msg {
+        StructuredMessage::Text { content } => content.clone(),
+        // Non-text variants are control-plane signals; render their JSON so
+        // the UI can still show *something* without growing a kind enum on
+        // the wire. These are rare in normal group-chat use.
+        other => serde_json::to_string(other).unwrap_or_default(),
+    }
+}
 
 pub struct SendMessageRuntimeTool;
 
@@ -164,6 +216,15 @@ impl RuntimeTool for SendMessageRuntimeTool {
                             .is_ok()
                         {
                             delivered += 1;
+                            emit_team_message_event(
+                                ctx.event_bus.as_ref(),
+                                &session,
+                                &ctx.run_id,
+                                caller_name.as_deref().unwrap_or("system"),
+                                name,
+                                &body_for_envelope(&message),
+                            )
+                            .await;
                         } else {
                             missing.push(format!("{name} (inbox closed)"));
                         }
@@ -235,6 +296,16 @@ impl RuntimeTool for SendMessageRuntimeTool {
             .map_err(|_| {
                 ToolError::ExecutionFailed(format!("agent `{to}` inbox closed; message dropped"))
             })?;
+
+        emit_team_message_event(
+            ctx.event_bus.as_ref(),
+            &session,
+            &ctx.run_id,
+            caller_name.as_deref().unwrap_or("system"),
+            &to,
+            &body_for_envelope(&message),
+        )
+        .await;
 
         record_diagnostic(
             &ws,

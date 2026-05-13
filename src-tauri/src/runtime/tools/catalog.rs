@@ -333,7 +333,7 @@ fn build_default_catalog() -> ToolCatalog {
             "【Composite 工具】启动一个子 Agent 执行聚焦任务。\
             \n\n适用场景：任务需要干净上下文、专属 Agent 类型或不同模型。`subagent_type` 取值范围在每轮 turn 的工具描述动态列表中给出，包含 builtin 类型、用户自定义 agent、以及当前用户已雇佣的数字员工 ID（`emp-...`）。\
             \n\n同步路径（run_in_background=false 或省略）：阻塞等待子 Agent 完成并返回最终输出文本。\
-            \n\n异步路径（run_in_background=true）：立即返回 agent_id；子 Agent 在后台运行；用 TaskOutput(task_id=agent_id, offset=N) 增量读取 transcript；子 Agent 完成时父的下一轮会收到 <task-notification> XML。\
+            \n\n异步路径（run_in_background=true）：立即返回 agent_id；子 Agent 在后台独立运行；完成时父的下一轮自动收到 <task-notification> XML（含最终输出路径），无需主动轮询。\
             \n\nTeammate 派活路径（subagent_type 选数字员工 + team_name + name）：从该 Employee 加载系统提示和工具白名单，加入当前 Session 的 Team 作为 Teammate 运行。`team_name` 非空时 `name` 为必填。",
         )
         .with_kind(ToolKind::Composite)
@@ -360,7 +360,7 @@ fn build_default_catalog() -> ToolCatalog {
                 },
                 "run_in_background": {
                     "type": "boolean",
-                    "description": "若为 true，异步运行并立即返回 agent_id；后续用 TaskOutput 增量读 transcript，完成时父的下一轮收到 <task-notification>。",
+                    "description": "若为 true，异步运行并立即返回 agent_id；子 Agent 完成时父的下一轮自动收到 <task-notification>，无需主动轮询。",
                     "default": false
                 },
                 "name": {
@@ -850,6 +850,17 @@ fn build_default_catalog() -> ToolCatalog {
 ///
 /// 对齐原子工具模型；register_runtime 注册的工具默认走 ToolDispatcher。
 /// `Skill` 是例外：它需要 request-scoped SkillRegistry，但必须在 daily 模式可见。
+///
+/// **架构约束（A0 / 2026-05-13）**：Lead 视野收窄 —— 不暴露 `TaskOutput` 与
+/// `TeammateStop`。原因：
+/// - `TaskOutput` 让 Lead 主动轮询子 Agent transcript，污染上下文 + 诱导
+///   "等子 Agent 完成"的反模式。子 Agent 完成时下一轮自动注入
+///   `<task-notification>`，结果会主动送达，Lead 不需要主动拉。
+/// - `TeammateStop` 让 Lead 看见"停掉 teammate"这把锤子，实际观察到 Lead
+///   会过早停掉还在工作的 teammate。结构隔离比 prompt 教育更稳定。
+///   紧急停团队走 `TeamDelete`；TeammateStop 工具本体保留供未来运行时
+///   内部用，但不进 Lead 工具集。
+/// 参考 claude-code-best Fork 模式：父根本看不见子 Agent 中间产物。
 pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
     // 以下 10 个工具均在 register_builtin_tools() 中 register_runtime 注册，走 ToolDispatcher
     // Shell：每平台只注册其中一个（Unix=bash, Windows=powershell），过滤层会自动隐藏不可达的那个
@@ -864,7 +875,6 @@ pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
     "SearchMemory",
     "WebSearch",
     "Agent",
-    "TaskOutput",
     "Skill",
     "AskUserQuestion",
     "TaskCreate",
@@ -875,7 +885,6 @@ pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
     "TaskStop",
     "TeamCreate",
     "TeamDelete",
-    "TeammateStop",
     "SendMessage",
     // Agenda tools (spec §7) — request-scoped, organizer 由 runtime 注入
     "create_agenda_item",

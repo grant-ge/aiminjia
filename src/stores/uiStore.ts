@@ -34,11 +34,17 @@ interface UiState {
   route: Route
   settingsModal: SettingsModalState
   prefillText: string | null
+  teamDrawerOpen: boolean
+  teamDrawerExpanded: boolean
   setRoute: (route: Route) => void
   openSettings: (settingsModal: SettingsModalKey) => void
   closeSettings: () => void
   setPrefillText: (text: string) => void
   consumePrefillText: () => string | null
+  openTeamDrawer: () => void
+  closeTeamDrawer: () => void
+  toggleTeamDrawer: () => void
+  setTeamDrawerExpanded: (expanded: boolean) => void
 }
 
 const ROUTE_STORAGE_KEY = 'aijia-ui-route'
@@ -90,9 +96,22 @@ export const useUiStore = create<UiState>((set, get) => ({
   route: loadPersistedRoute(),
   settingsModal: null,
   prefillText: null,
+  teamDrawerOpen: false,
+  teamDrawerExpanded: false,
   setRoute: (route) => {
+    // 切对话时关掉群聊抽屉——保持每个 conversation 的视图独立。
+    const prevRoute = get().route
+    const switchingConversation =
+      route.kind === 'chat' &&
+      prevRoute.kind === 'chat' &&
+      prevRoute.conversationId !== route.conversationId
     persistRoute(route)
-    set({ route })
+    set({
+      route,
+      ...(switchingConversation || route.kind !== 'chat'
+        ? { teamDrawerOpen: false, teamDrawerExpanded: false }
+        : {}),
+    })
   },
   openSettings: (key) => {
     const normalized: SettingsModalKey =
@@ -106,6 +125,13 @@ export const useUiStore = create<UiState>((set, get) => ({
     if (text !== null) set({ prefillText: null })
     return text
   },
+  openTeamDrawer: () => set({ teamDrawerOpen: true }),
+  closeTeamDrawer: () => set({ teamDrawerOpen: false, teamDrawerExpanded: false }),
+  toggleTeamDrawer: () => {
+    const open = !get().teamDrawerOpen
+    set({ teamDrawerOpen: open, teamDrawerExpanded: open ? get().teamDrawerExpanded : false })
+  },
+  setTeamDrawerExpanded: (expanded) => set({ teamDrawerExpanded: expanded }),
 }))
 
 // ---------------------------------------------------------------------------

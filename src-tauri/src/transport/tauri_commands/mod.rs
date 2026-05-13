@@ -13,4 +13,5 @@ pub mod pending;
 pub mod persona;
 pub mod runtime;
 pub mod settings;
+pub mod team;
 pub mod workspace;

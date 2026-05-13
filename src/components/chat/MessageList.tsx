@@ -6,6 +6,7 @@ import { useEffect } from 'react'
 
 import { AiBubble } from '@/components/chat/AiBubble'
 import { StreamingBubble } from '@/components/chat/StreamingBubble'
+import { TeamCard } from '@/components/chat/TeamCard'
 import { GeneratedFileCard } from '@/components/chat-scene/GeneratedFileCard'
 import { PeerMessageBanner } from '@/components/chat-scene/PeerMessageBanner'
 import { SuggestChipGroup } from '@/components/chat-scene/SuggestChipGroup'
@@ -16,6 +17,7 @@ import { useChatStore } from '@/stores/chatStore'
 import { useGeneratedFilePreviewStore } from '@/stores/generatedFilePreviewStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { useChat } from '@/hooks/useChat'
+import { useTeamView } from '@/hooks/useTeamView'
 import { useTurnRenderModel, type RenderGeneratedFile } from '@/hooks/useTurnRenderModel'
 import { openGeneratedFile, revealFileInFolder } from '@/lib/tauri'
 
@@ -31,6 +33,10 @@ export function MessageList() {
   const turns = useTurnRenderModel()
   useChat()
   const activeConversationId = useChatStore((s) => s.activeConversationId)
+  // 当前对话的群聊视图（roster 用于 inline TeamCard 的实时计数 / 成员名册）。
+  // useTeamView 自带 turn:completed / tool:completed 事件订阅，因此 TeamCard
+  // 显示的进度和实际状态始终一致。没群时 view.roster.team_name === null。
+  const { view: teamView } = useTeamView(activeConversationId)
   const isStreaming = useChatStore((s) => s.isStreaming)
   const streamingContent = useChatStore((s) => {
     const activeId = s.activeConversationId
@@ -89,8 +95,15 @@ export function MessageList() {
 
   return (
     <div className="flex flex-col gap-5 px-2 py-3">
-      {turns.map((t, i) => {
-        return (
+      {(() => {
+        // 一次会话最多渲染一张 TeamCard（v1 决策 #1：1 conversation 同一时间
+        // 1 个活跃 team）。即使 transcript 里有多次 TeamCreate（重试 / 误删后
+        // 重建），UI 只在最新一次创建的 turn 上挂卡片——避免重复推送。
+        const lastTeamCreatedIdx = turns.reduce<number>(
+          (acc, t, i) => (t.teamCreated ? i : acc),
+          -1,
+        )
+        return turns.map((t, i) => (
           <div key={i} className="flex flex-col gap-4">
             {t.peerBanners.length > 0 ? (
               <PeerMessageBanner banners={t.peerBanners} />
@@ -113,6 +126,9 @@ export function MessageList() {
             {t.aiSegments.map((s) => (
               <AiBubble key={s.id} message={s.message} />
             ))}
+            {i === lastTeamCreatedIdx && teamView?.roster.team_name ? (
+              <TeamCard roster={teamView.roster} />
+            ) : null}
             {t.generatedFiles.map((f) => (
               <GeneratedFileCard
                 key={f.id}
@@ -134,8 +150,8 @@ export function MessageList() {
               />
             ) : null}
           </div>
-        )
-      })}
+        ))
+      })()}
       {isStreaming ? <StreamingBubble content={streamingContent} /> : null}
     </div>
   )

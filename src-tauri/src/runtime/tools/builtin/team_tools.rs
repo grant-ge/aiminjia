@@ -63,6 +63,11 @@ impl RuntimeTool for TeamCreateRuntimeTool {
             .and_then(Value::as_str)
             .filter(|s| !s.is_empty())
             .map(|s| s.to_string());
+        let description_input = input
+            .get("description")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
 
         let session = ctx.session_id.clone();
         let lead_id = ctx
@@ -72,6 +77,16 @@ impl RuntimeTool for TeamCreateRuntimeTool {
 
         let team_name = team_name_input.unwrap_or_else(|| default_team_name(session.as_str()));
 
+        // v0.3 decision #2: same conversation cannot hold two active teams.
+        // Reject explicitly with a fixable error message (lead should TeamDelete
+        // first if it wants a new team).
+        if ctx.team_registry().get(&session).await.is_some() {
+            return Err(ToolError::ExecutionFailed(
+                "an active team already exists for this conversation — call TeamDelete first"
+                    .to_string(),
+            ));
+        }
+
         let ws = crate::telemetry::diagnostics_workspace();
         record_diagnostic(
             &ws,
@@ -80,7 +95,7 @@ impl RuntimeTool for TeamCreateRuntimeTool {
                 .run_id(ctx.run_id.as_str())
                 .tool_call_id(ctx.tool_call_id.as_str())
                 .agent_id(lead_id.as_str())
-                .payload(serde_json::json!({ "team_name": team_name })),
+                .payload(serde_json::json!({ "team_name": team_name, "description": description_input })),
         );
 
         let lead = Member {
@@ -89,12 +104,23 @@ impl RuntimeTool for TeamCreateRuntimeTool {
             role: MemberRole::Lead,
             created_at: chrono::Utc::now(),
             last_active_at: chrono::Utc::now(),
+            // Lead is always Active by construction (it ran TeamCreate to get here).
+            status: crate::runtime::agent::MemberStatus::Active,
+            stopped_at: None,
+            stopped_reason: None,
         };
 
-        ctx.team_registry()
+        let team_handle = ctx.team_registry()
             .create(session.clone(), lead, team_name.clone())
             .await
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+
+        // Stamp description (the Team::new path doesn't take it; this stays
+        // optional and only touches when the LLM supplied a non-empty value).
+        if let Some(desc) = description_input.clone() {
+            let mut t = team_handle.lock().await;
+            t.description = Some(desc);
+        }
 
         // Register the Lead's name so teammates can SendMessage(to: "team-lead").
         // Duplicates here mean the Lead has already entered Team mode under a
@@ -181,6 +207,21 @@ impl RuntimeTool for TeamCreateRuntimeTool {
                 })),
         );
 
+        // v0.3: persist team.json so UI can read team state from disk as a
+        // single source of truth (file::exists("team.json") = "this conv has
+        // a team"). Best-effort: failure logs a warning but doesn't fail the
+        // tool — the team still exists in memory and downstream actions work;
+        // only the UI mirror is stale.
+        if let Some(conv_dir) = ctx.conv_dir.as_ref() {
+            if let Err(e) = ctx.team_registry().persist(&session, conv_dir).await {
+                log::warn!(
+                    "[TeamCreate] failed to persist team.json session={} err={}",
+                    session.as_str(),
+                    e
+                );
+            }
+        }
+
         Ok(ToolResult::new(
             "TeamCreate",
             format!(
@@ -230,20 +271,60 @@ impl RuntimeTool for TeamDeleteRuntimeTool {
                 .tool_call_id(ctx.tool_call_id.as_str()),
         );
 
-        let team_handle = ctx.team_registry().delete(&session).await;
-        let (team_name, teammate_count) = if let Some(handle) = team_handle.as_ref() {
-            let t = handle.lock().await;
-            (t.team_name.clone(), t.teammates.len())
+        // v0.3 soft delete sequence (decision #3 + bug fix for "Lead name already
+        // registered" in b21ebe36):
+        //
+        // 1. Snapshot team in-memory, mark members Cancelled
+        // 2. Archive snapshot to teams/history/{ts}.json
+        // 3. Remove team.json from disk (UI sees "no active team")
+        // 4. Drop team from registry
+        // 5. **Unregister LEAD_NAME** — without this, next TeamCreate fails
+        //    with "Lead name already registered"
+
+        let team_handle = ctx.team_registry().get(&session).await;
+        let (team_name, teammate_count, snapshot) = if let Some(handle) = team_handle.as_ref() {
+            let mut t = handle.lock().await;
+            t.disband("tool_call");
+            let snap = crate::runtime::agent::TeamSnapshot::from(&*t);
+            (t.team_name.clone(), t.teammates.len(), Some(snap))
         } else {
-            (String::new(), 0)
+            (String::new(), 0, None)
         };
 
-        // TeamDelete only dissolves the team logical grouping; per-session
-        // registries (agent_names / inbox_registry / cancellation_registry /
-        // lead_idle) are session-scoped resources and are cleaned up by the
-        // session-close hook, not here. Clearing them mid-session breaks the
-        // Lead's continuing identity and causes mark_idle to lose track of
-        // the supervisor state.
+        // Archive history before dropping from memory + disk.
+        let mut archive_ok = true;
+        if let (Some(conv_dir), Some(snap)) = (ctx.conv_dir.as_ref(), snapshot.as_ref()) {
+            if let Err(e) = crate::runtime::agent::TeamRegistry::archive_to_history(conv_dir, snap) {
+                archive_ok = false;
+                log::warn!(
+                    "[TeamDelete] archive_to_history failed session={} err={}",
+                    session.as_str(),
+                    e
+                );
+            }
+        }
+
+        // Delete team.json from disk so UI sees "no active team".
+        if let Some(conv_dir) = ctx.conv_dir.as_ref() {
+            if let Err(e) = crate::runtime::agent::TeamRegistry::delete_persisted(conv_dir) {
+                log::warn!(
+                    "[TeamDelete] delete_persisted failed session={} err={}",
+                    session.as_str(),
+                    e
+                );
+            }
+        }
+
+        // Drop team from registry (we already snapshotted above).
+        let _ = ctx.team_registry().delete(&session).await;
+
+        // CRITICAL bug fix (b21ebe36): unregister LEAD_NAME so a subsequent
+        // TeamCreate doesn't hit "Lead name already registered". v0.2 left
+        // this dangling, causing the second TeamCreate in the same conv to
+        // fail and break the entire group flow.
+        ctx.agent_names()
+            .unregister(&session, LEAD_NAME)
+            .await;
 
         record_diagnostic(
             &ws,
@@ -256,6 +337,7 @@ impl RuntimeTool for TeamDeleteRuntimeTool {
                     "team_existed": team_handle.is_some(),
                     "team_name": team_name,
                     "teammates_dismissed": teammate_count,
+                    "archived": archive_ok && snapshot.is_some(),
                 })),
         );
 

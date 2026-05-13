@@ -71,6 +71,12 @@ pub struct QueryEngine {
     /// and forwards it into the child worker so transcript JSONL +
     /// `.meta.json` + team_context attachments land on disk.
     conv_dir: Option<PathBuf>,
+    /// Batch B: the runtime event bus this engine should expose to tools via
+    /// `ToolExecutionContext.event_bus`. For Lead-path engines this is the
+    /// transport-subscribed bus (events reach the front-end); for teammate
+    /// engines this is the parent's bus, propagated through
+    /// `SubAgentRuntimeDeps.event_bus`. `None` in legacy/test paths.
+    runtime_event_bus: Option<Arc<crate::runtime::event_bus::RuntimeEventBus>>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -109,6 +115,7 @@ impl QueryEngine {
             lead_idle: None,
             cancellation_registry: None,
             conv_dir: None,
+            runtime_event_bus: None,
         }
     }
 
@@ -141,6 +148,7 @@ impl QueryEngine {
             lead_idle: self.lead_idle.clone(),
             cancellation_registry: self.cancellation_registry.clone(),
             conv_dir: self.conv_dir.clone(),
+            runtime_event_bus: self.runtime_event_bus.clone(),
         }
     }
 
@@ -199,6 +207,17 @@ impl QueryEngine {
         self
     }
 
+    /// Batch B: attach the transport-subscribed (or parent) RuntimeEventBus so
+    /// tools — notably SendMessage — can emit `TeamMessage` events that reach
+    /// the front-end.
+    pub fn with_runtime_event_bus(
+        mut self,
+        bus: Arc<crate::runtime::event_bus::RuntimeEventBus>,
+    ) -> Self {
+        self.runtime_event_bus = Some(bus);
+        self
+    }
+
     /// LTR (B-gap1): accessors for chat_turn_driver to wire Path A
     /// (mark_running on entry, mark_idle before AgentIdle).
     pub fn lead_idle_supervisor(&self) -> Option<&Arc<crate::runtime::agent::LeadIdleSupervisor>> {
@@ -209,6 +228,11 @@ impl QueryEngine {
     }
     pub fn inbox_registry(&self) -> Option<&Arc<crate::runtime::agent::InboxRegistry>> {
         self.inbox_registry.as_ref()
+    }
+    /// Batch B: read-only access to the per-conversation directory so
+    /// chat_turn_driver can persist team-chat entries at turn end.
+    pub fn conv_dir(&self) -> Option<&PathBuf> {
+        self.conv_dir.as_ref()
     }
 
     /// Attach LTR registries (Team / name / inbox) onto an already-built
@@ -236,6 +260,9 @@ impl QueryEngine {
         }
         if let Some(dir) = self.conv_dir.clone() {
             ctx = ctx.with_conv_dir(dir);
+        }
+        if let Some(bus) = self.runtime_event_bus.clone() {
+            ctx = ctx.with_event_bus(bus);
         }
         ctx
     }

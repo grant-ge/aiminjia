@@ -821,6 +821,7 @@ pub fn run() {
             chat::get_archived_conversations,
             chat::get_conversations,
             chat::get_tasks,
+            crate::transport::tauri_commands::team::team_view_for_conversation,
             chat::is_agent_busy,
             // File commands
             file::upload_file,

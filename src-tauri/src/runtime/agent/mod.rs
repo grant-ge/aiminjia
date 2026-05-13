@@ -29,6 +29,7 @@ pub mod subagent_transcript_store;
 pub mod task_notification;
 pub mod task_notification_lead;
 pub mod team;
+pub mod team_chat;
 pub mod team_context;
 pub mod teammate_addendum;
 pub mod tool_whitelist;
@@ -48,4 +49,4 @@ pub use inbox::{AgentInbox, InboxItem, MessageSource, ShutdownRequest, TaskNotif
 pub use inbox_registry::InboxRegistry;
 pub use lead_idle::{LeadIdleSupervisor, LeadKey};
 pub use name_registry::{AgentNameRegistry, NameRegistryError};
-pub use team::{Member, MemberRole, MemberSnapshot, Team, TeamError, TeamPersistError, TeamRegistry, TeamSnapshot, MAX_TEAMMATES};
+pub use team::{Member, MemberRole, MemberSnapshot, MemberStatus, Team, TeamError, TeamPersistError, TeamRegistry, TeamSnapshot, TeamStatus, MAX_TEAMMATES};
