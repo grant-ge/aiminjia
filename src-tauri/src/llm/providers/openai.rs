@@ -376,6 +376,7 @@ pub(super) async fn validate_key_openai_compat(
         thinking_config: None,
         anthropic_multimodal_turn: None,
         system_segments: None,
+        conversation_id: None,
     };
 
     let body = build_request_body(&request, model, false, false);

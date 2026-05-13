@@ -202,6 +202,7 @@ impl LlmGateway {
         max_tokens: u32,
         settings: &AppSettings,
         system_segments: Option<Vec<crate::llm::streaming::SystemPromptSegment>>,
+        conversation_id: Option<&str>,
     ) -> LlmRequest {
         // Prepend system prompt if provided (stable prefix for KV cache)
         if let Some(prompt) = system_prompt {
@@ -233,6 +234,9 @@ impl LlmGateway {
             thinking_config: thinking_config_for_route(route, settings),
             anthropic_multimodal_turn: None,
             system_segments,
+            conversation_id: conversation_id
+                .filter(|id| !id.is_empty())
+                .map(|id| id.to_string()),
         }
     }
 
@@ -399,6 +403,7 @@ impl LlmGateway {
             max_tokens,
             settings,
             system_segments,
+            Some(conv_id.as_str()),
         );
 
         // Log request summary for debugging LLM quality
@@ -505,6 +510,7 @@ impl LlmGateway {
             4096,
             settings,
             None,
+            None, // send_message is non-streaming, conversation-less by signature
         );
 
         // 4. Dispatch to provider with retry on transient errors
@@ -877,6 +883,7 @@ mod tests {
             None,
             4096,
             &settings,
+            None,
             None,
         );
 
