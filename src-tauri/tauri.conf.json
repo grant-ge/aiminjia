@@ -40,7 +40,6 @@
     "active": true,
     "targets": [
       "nsis",
-      "dmg",
       "app"
     ],
     "createUpdaterArtifacts": true,

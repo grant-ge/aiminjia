@@ -73,10 +73,10 @@ fi
 
 DMG_NAME="AIjia_${VERSION}_${ARTIFACT_SUFFIX}.dmg"
 
-# Find DMG
-DMG=$(find "$BUILD_DIR" -name "$DMG_NAME" -type f 2>/dev/null | head -1)
-if [ -z "$DMG" ]; then
-    echo "ERROR: Cannot find $DMG_NAME in $BUILD_DIR"
+# Find .app — required.
+APP=$(find "$BUILD_DIR" -name "AIjia.app" -type d 2>/dev/null | head -1)
+if [ -z "$APP" ]; then
+    echo "ERROR: Cannot find AIjia.app in $BUILD_DIR"
     echo ""
     echo "Either build locally (bash scripts/build-and-sign-macos.sh) or"
     echo "download CI artifacts:"
@@ -84,8 +84,37 @@ if [ -z "$DMG" ]; then
     exit 1
 fi
 
-# Find .app
-APP=$(find "$BUILD_DIR" -name "AIjia.app" -type d 2>/dev/null | head -1)
+# DMG is now optional. tauri.conf.json bundles only "app" (+nsis for Windows);
+# bundle_dmg.sh has been unreliable for months. Step 1b will build the DMG
+# from the signed .app via hdiutil. If a prior DMG exists (placeholder, old
+# build, or CI-produced), we still find it and let Step 1b decide whether
+# to rebuild via `is_dmg_built_from_signed_app`.
+DMG=$(find "$BUILD_DIR" -name "$DMG_NAME" -type f 2>/dev/null | head -1)
+if [ -z "$DMG" ]; then
+    # Auto-create empty placeholder so downstream `rm -f $DMG; hdiutil create`
+    # has a known path. Step 1b will overwrite it.
+    DMG_DIR="$BUILD_DIR/dmg"
+    mkdir -p "$DMG_DIR"
+    DMG="$DMG_DIR/$DMG_NAME"
+    PH_STAGE=$(mktemp -d /tmp/aijia-ph-XXXX)
+    echo "x" > "$PH_STAGE/x.txt"
+    hdiutil create -volname "stub" -srcfolder "$PH_STAGE" -ov -format UDZO "$DMG" >/dev/null 2>&1
+    rm -rf "$PH_STAGE"
+    echo "  Note: no DMG produced by tauri build — auto-created placeholder at $DMG (Step 1b will rebuild from signed .app)"
+fi
+
+# Auto-detach any leftover /Volumes/AIjia* mounts and aijia-related attached
+# images. hdiutil create silently fails ("Operation not permitted") if a
+# stale image is still attached with the same volname.
+ls /Volumes/ 2>/dev/null | grep -i "^aijia" | while IFS= read -r v; do
+    hdiutil detach "/Volumes/$v" -force >/dev/null 2>&1 || true
+done
+hdiutil info 2>/dev/null | awk '
+    /^image-path/ { is_aijia = (tolower($0) ~ /aijia/) }
+    is_aijia && /^\/dev\/disk[0-9]+\t/ { print $1 }
+' | while IFS= read -r disk; do
+    hdiutil detach "$disk" -force >/dev/null 2>&1 || true
+done
 
 echo "=== AIjia macOS Sign & Upload ==="
 echo "Version: $VERSION ($RELEASE_TYPE)"
@@ -300,10 +329,9 @@ if [ -n "$APP" ]; then
         # Without this, the dmg only shows the .app icon and users don't know where to drop it.
         ln -s /Applications "$DMG_STAGING/Applications"
         rm -f "$DMG"
-        hdiutil create -volname "AIjia" \
+        hdiutil create -volname "AIjia $VERSION" \
             -srcfolder "$DMG_STAGING" \
             -ov -format UDZO \
-            -fs HFS+ \
             "$DMG"
         rm -rf "$DMG_STAGING"
         echo "  DMG rebuilt: $DMG"
@@ -315,7 +343,7 @@ if [ -n "$APP" ]; then
     fi
 fi
 
-# ── 2. Notarize ──
+# ── 2. Notarize (DMG + .app concurrently) ──
 echo ""
 echo "=== Step 2: Notarize ==="
 if [ -z "${APPLE_ID:-}" ]; then
@@ -323,36 +351,95 @@ if [ -z "${APPLE_ID:-}" ]; then
     exit 1
 fi
 
-if is_stapled "$DMG"; then
-    echo "  ✓ DMG already stapled — skipping notarization"
-else
-    echo "  Notarizing DMG..."
-    xcrun notarytool submit "$DMG" \
-        --apple-id "$APPLE_ID" \
-        --password "$APPLE_PASSWORD" \
-        --team-id "$APPLE_TEAM_ID" \
-        --wait --timeout 30m
-    xcrun stapler staple "$DMG"
-    echo "  DMG notarized + stapled"
-fi
+# Submit DMG and .app to Apple notary in parallel, wait for both, then staple.
+# Cuts wall time by ~50% since each submission spends most of its time
+# queued/processing on Apple's side, not in our network upload.
+NOTARIZE_TMP=$(mktemp -d /tmp/aijia-notarize-XXXX)
+DMG_LOG="$NOTARIZE_TMP/dmg.log"
+APP_LOG="$NOTARIZE_TMP/app.log"
+DMG_RC_FILE="$NOTARIZE_TMP/dmg.rc"
+APP_RC_FILE="$NOTARIZE_TMP/app.rc"
+APP_ZIP=""
 
-if [ -n "$APP" ]; then
+notarize_dmg() {
+    if is_stapled "$DMG"; then
+        echo "0" > "$DMG_RC_FILE"
+        echo "  ✓ DMG already stapled — skipping" > "$DMG_LOG"
+        return
+    fi
+    {
+        xcrun notarytool submit "$DMG" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait --timeout 60m \
+            && xcrun stapler staple "$DMG"
+        echo "$?" > "$DMG_RC_FILE"
+    } > "$DMG_LOG" 2>&1
+}
+
+notarize_app() {
+    if [ -z "$APP" ]; then
+        echo "0" > "$APP_RC_FILE"
+        echo "  (no .app to notarize)" > "$APP_LOG"
+        return
+    fi
     if is_stapled "$APP"; then
-        echo "  ✓ .app already stapled — skipping notarization"
-    else
-        echo "  Notarizing .app..."
-        APP_ZIP=$(mktemp /tmp/AIjia-notarize-XXXX.zip)
-        ditto -c -k --keepParent "$APP" "$APP_ZIP"
+        echo "0" > "$APP_RC_FILE"
+        echo "  ✓ .app already stapled — skipping" > "$APP_LOG"
+        return
+    fi
+    APP_ZIP=$(mktemp "$NOTARIZE_TMP/AIjia-app-XXXX.zip")
+    ditto -c -k --keepParent "$APP" "$APP_ZIP"
+    {
         xcrun notarytool submit "$APP_ZIP" \
             --apple-id "$APPLE_ID" \
             --password "$APPLE_PASSWORD" \
             --team-id "$APPLE_TEAM_ID" \
-            --wait --timeout 30m
-        xcrun stapler staple "$APP"
-        rm -f "$APP_ZIP"
-        echo "  .app notarized + stapled"
-    fi
+            --wait --timeout 60m \
+            && xcrun stapler staple "$APP"
+        echo "$?" > "$APP_RC_FILE"
+    } > "$APP_LOG" 2>&1
+    rm -f "$APP_ZIP"
+}
+
+echo "  Submitting DMG and .app to Apple notary in parallel..."
+notarize_dmg & DMG_PID=$!
+notarize_app & APP_PID=$!
+
+# Tail both logs while waiting so the user sees progress.
+(
+    while kill -0 $DMG_PID 2>/dev/null || kill -0 $APP_PID 2>/dev/null; do
+        sleep 30
+        last_dmg=$(tail -1 "$DMG_LOG" 2>/dev/null | tr -d '\r' | head -c 100)
+        last_app=$(tail -1 "$APP_LOG" 2>/dev/null | tr -d '\r' | head -c 100)
+        echo "  [$(date +%H:%M:%S)] DMG: $last_dmg | APP: $last_app"
+    done
+) &
+TAIL_PID=$!
+
+wait $DMG_PID || true
+wait $APP_PID || true
+kill $TAIL_PID 2>/dev/null || true
+wait $TAIL_PID 2>/dev/null || true
+
+DMG_RC=$(cat "$DMG_RC_FILE" 2>/dev/null || echo 99)
+APP_RC=$(cat "$APP_RC_FILE" 2>/dev/null || echo 99)
+
+echo ""
+echo "  --- DMG notarize log ---"
+cat "$DMG_LOG"
+echo "  --- .app notarize log ---"
+cat "$APP_LOG"
+
+if [ "$DMG_RC" != "0" ] || [ "$APP_RC" != "0" ]; then
+    echo "ERROR: notarization failed (DMG rc=$DMG_RC, .app rc=$APP_RC)" >&2
+    echo "  notarize tmp dir kept for debugging: $NOTARIZE_TMP" >&2
+    exit 1
 fi
+
+rm -rf "$NOTARIZE_TMP"
+echo "  DMG + .app notarized + stapled"
 
 # ── 3. Re-package updater artifacts + Tauri signer ──
 echo ""
