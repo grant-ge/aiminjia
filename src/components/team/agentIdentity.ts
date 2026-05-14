@@ -39,39 +39,39 @@ function hashStr(str: string): number {
  */
 const PALETTE: Array<Omit<AgentIdentityStyle, 'initials'>> = [
   {
-    avatarClass: 'bg-blue-500/15 text-blue-700 dark:text-blue-300 ring-1 ring-blue-500/30',
+    avatarClass: 'bg-blue-500 text-white',
     bubbleClass: 'bg-blue-500/8 border border-blue-500/20',
     accentClass: 'bg-blue-500',
   },
   {
-    avatarClass: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-500/30',
+    avatarClass: 'bg-emerald-500 text-white',
     bubbleClass: 'bg-emerald-500/8 border border-emerald-500/20',
     accentClass: 'bg-emerald-500',
   },
   {
-    avatarClass: 'bg-rose-500/15 text-rose-700 dark:text-rose-300 ring-1 ring-rose-500/30',
+    avatarClass: 'bg-rose-500 text-white',
     bubbleClass: 'bg-rose-500/8 border border-rose-500/20',
     accentClass: 'bg-rose-500',
   },
   {
-    avatarClass: 'bg-amber-500/15 text-amber-700 dark:text-amber-300 ring-1 ring-amber-500/30',
+    avatarClass: 'bg-amber-500 text-white',
     bubbleClass: 'bg-amber-500/8 border border-amber-500/20',
     accentClass: 'bg-amber-500',
   },
   {
-    avatarClass: 'bg-violet-500/15 text-violet-700 dark:text-violet-300 ring-1 ring-violet-500/30',
+    avatarClass: 'bg-violet-500 text-white',
     bubbleClass: 'bg-violet-500/8 border border-violet-500/20',
     accentClass: 'bg-violet-500',
   },
   {
-    avatarClass: 'bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 ring-1 ring-cyan-500/30',
+    avatarClass: 'bg-cyan-500 text-white',
     bubbleClass: 'bg-cyan-500/8 border border-cyan-500/20',
     accentClass: 'bg-cyan-500',
   },
 ]
 
 const LEAD_STYLE: Omit<AgentIdentityStyle, 'initials'> = {
-  avatarClass: 'bg-primary text-primary-foreground ring-1 ring-primary/40',
+  avatarClass: 'bg-primary text-primary-foreground',
   bubbleClass: 'bg-primary/10 border border-primary/25',
   accentClass: 'bg-primary',
 }

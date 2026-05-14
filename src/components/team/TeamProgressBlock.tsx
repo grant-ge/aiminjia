@@ -32,8 +32,8 @@ export function TeamProgressBlock({ session, onOpen }: TeamProgressBlockProps) {
       type="button"
       onClick={onOpen}
       className={cn(
-        'group flex w-full items-center gap-3 rounded-lg border border-border bg-muted/40 px-4 py-3 text-left transition-colors',
-        'hover:border-primary/40 hover:bg-muted',
+        'group flex w-full items-center gap-3 rounded-lg border border-border bg-sidebar px-4 py-3 text-left transition-colors',
+        'hover:border-primary/40 hover:bg-sidebar-accent',
       )}
     >
       <div className="flex -space-x-2">
@@ -42,11 +42,10 @@ export function TeamProgressBlock({ session, onOpen }: TeamProgressBlockProps) {
             key={member.agentId}
             name={member.agentName}
             size="md"
-            className="ring-2 ring-background"
           />
         ))}
         {memberCount > 5 && (
-          <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-muted text-xs text-muted-foreground ring-2 ring-background">
+          <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-muted text-xs text-muted-foreground">
             +{memberCount - 5}
           </span>
         )}
