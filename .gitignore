@@ -65,3 +65,7 @@ signing-workspace/
 # Bundled runtime artifacts (built by scripts/prepare-bundled-runtime.{sh,ps1})
 src-tauri/resources/runtime/
 .runtime-cache/
+
+# Build outputs / artifacts
+build/
+build-logs/
