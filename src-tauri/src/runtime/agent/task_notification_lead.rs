@@ -110,7 +110,9 @@ pub async fn emit_to_lead(
 ) -> EmitOutcome {
     use crate::runtime::tools::builtin::team_tools::LEAD_NAME;
 
-    if deps.team_registry.get(session).await.is_none() {
+    // PR2 compat: check if any team exists for this session.
+    // PR4 will add team_name parameter for precise team lookup.
+    if deps.team_registry.list(session).await.is_empty() {
         return EmitOutcome::NoTeam;
     }
     if actor_name == LEAD_NAME {

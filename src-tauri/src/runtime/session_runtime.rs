@@ -419,7 +419,7 @@ impl SessionRuntime {
             let sid = session_id.clone();
             tokio::spawn(async move {
                 if let Some(reg) = team_reg {
-                    reg.delete(&sid).await;
+                    reg.drop_session(&sid).await;
                 }
                 if let Some(reg) = name_reg {
                     reg.drop_session(&sid).await;

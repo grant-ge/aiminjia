@@ -297,15 +297,14 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
         // leave a stale entry in AgentNameRegistry.
         let team_handle = if team_name.is_some() {
             let session_id = ctx.session_id.clone();
-            let team = ctx
-                .team_registry()
-                .get(&session_id)
-                .await
-                .ok_or_else(|| {
+            // PR2 compat: use active_team_name if available, else first team in session.
+            // PR3 will inject active_team_name properly.
+            let teams = ctx.team_registry().list(&session_id).await;
+            let team = teams.into_iter().next().ok_or_else(|| {
                     ToolError::ExecutionFailed(
                         "no team in this session — call TeamCreate first".into(),
                     )
-                })?;
+                })?.1;
             // Note: we don't reject on team_name mismatch because session_id
             // uniqueness is the authoritative lookup key.  A caller who uses
             // a different name string is probably just out of sync with the
@@ -477,10 +476,11 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
                 let reg = ctx.team_registry().clone();
                 let sid = ctx.session_id.clone();
                 let dir = conv_dir.clone();
+                let tname_persist = team_name_str.clone();
                 tokio::spawn(async move {
-                    if let Err(e) = reg.persist(&sid, &dir).await {
+                    if let Err(e) = reg.persist(&sid, &tname_persist, &dir).await {
                         log::warn!(
-                            "[SpawnTeammate] persist team.json failed: {e}"
+                            "[SpawnTeammate] persist config.json failed: {e}"
                         );
                     }
                 });

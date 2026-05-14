@@ -173,11 +173,17 @@ impl RuntimeTool for SendMessageRuntimeTool {
                     "team_registry not available — broadcast requires Team mode".into(),
                 )
             })?;
-            let team_handle = team_reg.get(&session).await.ok_or_else(|| {
-                ToolError::ExecutionFailed(
-                    "no team in this session — TeamCreate must be called first".into(),
-                )
-            })?;
+            let team_handle = {
+                // PR2 compat: use active_team_name if available, else fall back to first team.
+                // PR3 will inject active_team_name properly.
+                let teams = team_reg.list(&session).await;
+                let first = teams.into_iter().next().ok_or_else(|| {
+                    ToolError::ExecutionFailed(
+                        "no team in this session — TeamCreate must be called first".into(),
+                    )
+                })?;
+                first.1
+            };
 
             // Snapshot recipient list under the Team lock then drop it before
             // doing async sends, to avoid holding the lock across awaits that

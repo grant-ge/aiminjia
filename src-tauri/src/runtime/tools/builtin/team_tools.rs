@@ -104,10 +104,14 @@ impl RuntimeTool for TeamCreateRuntimeTool {
             .await
             .map_err(|e| {
                 // Roll back the team to keep state consistent.
+                // Rollback: no team_name param needed for backward compat.
+                // PR2 note: if team was already registered, try drop_session as fallback.
+                // TODO(PR5): pass team_name explicitly once TeamCreate uses validate_team_name.
                 let registry = ctx.team_registry().clone();
                 let session_for_rollback = session.clone();
+                let tname_rb = team_name.clone();
                 tokio::spawn(async move {
-                    let _ = registry.delete(&session_for_rollback).await;
+                    let _ = registry.delete_team(&session_for_rollback, &tname_rb).await;
                 });
                 ToolError::ExecutionFailed(format!(
                     "Failed to register Lead name `{LEAD_NAME}`: {e}"
@@ -190,12 +194,12 @@ impl RuntimeTool for TeamCreateRuntimeTool {
             session.as_str()
         );
         if let Some(ref conv_dir) = ctx.conv_dir {
-            match ctx.team_registry().persist(&session, conv_dir).await {
+            match ctx.team_registry().persist(&session, &team_name, conv_dir).await {
                 Ok(()) => log::info!(
-                    "[TeamCreate] persisted team.json at {}",
-                    conv_dir.join("team.json").display()
+                    "[TeamCreate] persisted config.json at {}",
+                    conv_dir.join("teams").join(&team_name).join("config.json").display()
                 ),
-                Err(e) => log::warn!("[TeamCreate] persist team.json failed: {e}"),
+                Err(e) => log::warn!("[TeamCreate] persist config.json failed: {e}"),
             }
         } else {
             log::warn!(
@@ -252,13 +256,16 @@ impl RuntimeTool for TeamDeleteRuntimeTool {
                 .tool_call_id(ctx.tool_call_id.as_str()),
         );
 
-        let team_handle = ctx.team_registry().delete(&session).await;
-        let (team_name, teammate_count) = if let Some(handle) = team_handle.as_ref() {
+        // TODO(PR5): accept team_name param from input; for now drop_session removes all
+        // teams for this session (backward-compatible for single-team scenario).
+        let dropped = ctx.team_registry().drop_session(&session).await;
+        let (team_name, teammate_count) = if let Some((name, handle)) = dropped.first() {
             let t = handle.lock().await;
-            (t.team_name.clone(), t.teammates.len())
+            (name.clone(), t.teammates.len())
         } else {
             (String::new(), 0)
         };
+        let team_existed = !dropped.is_empty();
 
         // TeamDelete only dissolves the team logical grouping; per-session
         // registries (agent_names / inbox_registry / cancellation_registry /
@@ -275,7 +282,7 @@ impl RuntimeTool for TeamDeleteRuntimeTool {
                 .tool_call_id(ctx.tool_call_id.as_str())
                 .ok(true)
                 .payload(serde_json::json!({
-                    "team_existed": team_handle.is_some(),
+                    "team_existed": team_existed,
                     "team_name": team_name,
                     "teammates_dismissed": teammate_count,
                 })),
@@ -283,12 +290,12 @@ impl RuntimeTool for TeamDeleteRuntimeTool {
 
         let json = json!({
             "session_id": session.as_str(),
-            "team_existed": team_handle.is_some(),
+            "team_existed": team_existed,
             "team_name": team_name,
             "teammates_dismissed": teammate_count,
         });
 
-        let msg = if team_handle.is_some() {
+        let msg = if team_existed {
             format!(
                 "Team `{team_name}` deleted; {teammate_count} teammate(s) dismissed."
             )
@@ -299,12 +306,14 @@ impl RuntimeTool for TeamDeleteRuntimeTool {
             )
         };
 
-        // 同步删除磁盘上的 team.json。best-effort：内存 registry 已经在
-        // 上面 delete() 了，磁盘清理失败不影响 tool 返回。
+        // TODO(PR5): delete only the named team directory instead of all teams.
+        // For now, best-effort cleanup of teams/ root if it exists.
         if let Some(ref conv_dir) = ctx.conv_dir {
-            if let Err(e) = crate::runtime::agent::TeamRegistry::delete_persisted(conv_dir) {
-                if e.kind() != std::io::ErrorKind::NotFound {
-                    log::warn!("[TeamDelete] delete team.json failed: {e}");
+            if !team_name.is_empty() {
+                if let Err(e) = crate::runtime::agent::TeamRegistry::delete_persisted_team(conv_dir, &team_name) {
+                    if e.kind() != std::io::ErrorKind::NotFound {
+                        log::warn!("[TeamDelete] delete teams/{team_name} failed: {e}");
+                    }
                 }
             }
         }
