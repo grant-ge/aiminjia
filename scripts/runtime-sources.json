@@ -1,0 +1,55 @@
+{
+  "bundleVersion": "2026.05.13-runtime.1",
+  "node": {
+    "version": "20.18.0",
+    "platforms": {
+      "darwin-arm64": {
+        "url": "https://nodejs.org/dist/v20.18.0/node-v20.18.0-darwin-arm64.tar.gz",
+        "sha256": "AUTO-FILL-AT-FIRST-RUN-AND-COMMIT"
+      },
+      "darwin-x64": {
+        "url": "https://nodejs.org/dist/v20.18.0/node-v20.18.0-darwin-x64.tar.gz",
+        "sha256": "AUTO-FILL-AT-FIRST-RUN-AND-COMMIT"
+      },
+      "win32-x64": {
+        "url": "https://nodejs.org/dist/v20.18.0/node-v20.18.0-win-x64.zip",
+        "sha256": "AUTO-FILL-AT-FIRST-RUN-AND-COMMIT"
+      }
+    }
+  },
+  "python": {
+    "version": "3.12.7",
+    "release": "20241016",
+    "platforms": {
+      "darwin-arm64": {
+        "url": "https://github.com/indygreg/python-build-standalone/releases/download/20241016/cpython-3.12.7+20241016-aarch64-apple-darwin-install_only.tar.gz",
+        "sha256": "AUTO-FILL-AT-FIRST-RUN-AND-COMMIT"
+      },
+      "darwin-x64": {
+        "url": "https://github.com/indygreg/python-build-standalone/releases/download/20241016/cpython-3.12.7+20241016-x86_64-apple-darwin-install_only.tar.gz",
+        "sha256": "AUTO-FILL-AT-FIRST-RUN-AND-COMMIT"
+      },
+      "win32-x64": {
+        "url": "https://www.python.org/ftp/python/3.12.7/python-3.12.7-embed-amd64.zip",
+        "sha256": "AUTO-FILL-AT-FIRST-RUN-AND-COMMIT"
+      }
+    }
+  },
+  "uv": {
+    "version": "0.4.27",
+    "platforms": {
+      "darwin-arm64": {
+        "url": "https://github.com/astral-sh/uv/releases/download/0.4.27/uv-aarch64-apple-darwin.tar.gz",
+        "sha256": "AUTO-FILL-AT-FIRST-RUN-AND-COMMIT"
+      },
+      "darwin-x64": {
+        "url": "https://github.com/astral-sh/uv/releases/download/0.4.27/uv-x86_64-apple-darwin.tar.gz",
+        "sha256": "AUTO-FILL-AT-FIRST-RUN-AND-COMMIT"
+      },
+      "win32-x64": {
+        "url": "https://github.com/astral-sh/uv/releases/download/0.4.27/uv-x86_64-pc-windows-msvc.zip",
+        "sha256": "AUTO-FILL-AT-FIRST-RUN-AND-COMMIT"
+      }
+    }
+  }
+}
