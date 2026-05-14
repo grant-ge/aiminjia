@@ -51,6 +51,22 @@ def format_time(ts):
     return dt.strftime("%Y-%m-%d %H:%M UTC")
 
 
+def _semver_key(v):
+    # "0.5.24-beta.3" -> (0, 5, 24, 0, beta, 3) ; release outranks any -tag.
+    base = v.lstrip("v")
+    if "-" in base:
+        core, tag = base.split("-", 1)
+    else:
+        core, tag = base, ""
+    parts = [int(x) if x.isdigit() else 0 for x in core.split(".")]
+    while len(parts) < 3: parts.append(0)
+    # release (no tag) should sort after any pre-release of same core,
+    # so put empty tag at the END alphabetically by using a sentinel.
+    tag_key = (1, "") if tag == "" else (0, tag)
+    return tuple(parts[:3]) + tag_key
+
+
+
 def generate_html(dev_files, beta_versions, release_versions):
     sections = []
 
@@ -66,8 +82,8 @@ def generate_html(dev_files, beta_versions, release_versions):
             <table>{rows}</table>
         </div>""")
 
-    # Beta section
-    for ver, files in sorted(beta_versions.items(), reverse=True)[:5]:
+    # Beta section — sort by semver, not lexicographic ("0.5.9" > "0.5.10" lex).
+    for ver, files in sorted(beta_versions.items(), key=lambda kv: _semver_key(kv[0]), reverse=True)[:5]:
         rows = ""
         for f in sorted(files, key=lambda x: x["name"]):
             rows += f'<tr><td><a href="{f["url"]}">{f["name"]}</a></td><td>{format_size(f["size"])}</td></tr>\n'
@@ -77,8 +93,8 @@ def generate_html(dev_files, beta_versions, release_versions):
             <table>{rows}</table>
         </div>""")
 
-    # Release section
-    for ver, files in sorted(release_versions.items(), reverse=True)[:5]:
+    # Release section — sort by semver, not lexicographic.
+    for ver, files in sorted(release_versions.items(), key=lambda kv: _semver_key(kv[0]), reverse=True)[:5]:
         rows = ""
         for f in sorted(files, key=lambda x: x["name"]):
             rows += f'<tr><td><a href="{f["url"]}">{f["name"]}</a></td><td>{format_size(f["size"])}</td></tr>\n'
