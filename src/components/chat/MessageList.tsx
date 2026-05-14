@@ -11,7 +11,6 @@ import { PeerMessageBanner } from '@/components/chat-scene/PeerMessageBanner'
 import { SuggestChipGroup } from '@/components/chat-scene/SuggestChipGroup'
 import { ToolGroupCard } from '@/components/chat-scene/ToolGroupCard'
 import { UserMessageBubble } from '@/components/chat-scene/UserMessageBubble'
-import { TeamChatDrawer } from '@/components/team/TeamChatDrawer'
 import { TeamProgressBlock } from '@/components/team/TeamProgressBlock'
 import { toPreviewTarget } from '@/components/chat/generatedFileActions'
 import { useChatStore } from '@/stores/chatStore'
@@ -201,9 +200,6 @@ export function MessageList() {
         )
       })}
       {isStreaming ? <StreamingBubble content={streamingContent} /> : null}
-      {activeConversationId ? (
-        <TeamChatDrawer conversationId={activeConversationId} overview={overview} />
-      ) : null}
     </div>
   )
 }

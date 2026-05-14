@@ -1,8 +1,7 @@
 import { useMemo } from 'react'
+import { X } from 'lucide-react'
 
-import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
 import type { TeamOverview, TeamSession } from '@/types/team'
 import { useConversationTeamState, useTeamStore } from '@/stores/teamStore'
 
@@ -18,12 +17,12 @@ interface TeamChatDrawerProps {
 }
 
 /**
- * The drawer-level container. Wraps every team session in this conversation
- * into a single scrollable column (per the design contract: "整场对话一个区").
+ * Inline right-side panel rendering the team session timeline. Mounted as a
+ * sibling of the chat column in ChatPage / ChannelPage so the panel spans
+ * full chat height (input row + scroll region together).
  *
- * Drill-down: when a user clicks a teammate avatar in the chat view, we
- * switch the body to `TeammateDetailPanel` for that agent. The chat view
- * stays mounted via a hidden render so scroll position is preserved on back.
+ * Drill-down: click a teammate avatar to swap the body to TeammateDetailPanel
+ * for that agent.
  */
 export function TeamChatDrawer({ conversationId, overview }: TeamChatDrawerProps) {
   const state = useConversationTeamState(conversationId)
@@ -39,32 +38,34 @@ export function TeamChatDrawer({ conversationId, overview }: TeamChatDrawerProps
     return null
   }, [state.drillAgentId, overview])
 
-  const onOpenChange = (open: boolean) => {
-    if (!open) {
-      closeDrawer(conversationId, true)
-    }
-  }
+  if (!state.drawerOpen) return null
 
   return (
-    <Sheet open={state.drawerOpen} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="right"
-        className={cn(
-          'flex w-full max-w-md flex-col gap-0 p-0 sm:max-w-md md:max-w-lg lg:max-w-xl',
-        )}
+    <aside
+      data-testid="team-split-panel"
+      className="relative flex h-full w-[500px] shrink-0 flex-col border-l border-border bg-background"
+    >
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        aria-label="关闭团队面板"
+        onClick={() => closeDrawer(conversationId, true)}
+        className="absolute right-2 top-2 z-10 h-7 w-7"
       >
-        {drillAgent ? (
-          <TeammateDetailPanel
-            conversationId={conversationId}
-            agentId={drillAgent.agentId}
-            agentName={drillAgent.agentName}
-            onBack={() => setDrillAgent(conversationId, null)}
-          />
-        ) : (
-          <DrawerOverview overview={overview} onDrill={(agentId) => setDrillAgent(conversationId, agentId)} />
-        )}
-      </SheetContent>
-    </Sheet>
+        <X className="h-4 w-4" />
+      </Button>
+      {drillAgent ? (
+        <TeammateDetailPanel
+          conversationId={conversationId}
+          agentId={drillAgent.agentId}
+          agentName={drillAgent.agentName}
+          onBack={() => setDrillAgent(conversationId, null)}
+        />
+      ) : (
+        <DrawerOverview overview={overview} onDrill={(agentId) => setDrillAgent(conversationId, agentId)} />
+      )}
+    </aside>
   )
 }
 
@@ -116,12 +117,12 @@ interface DrawerHeaderProps {
 
 function DrawerHeader({ title, subtitle, memberCount }: DrawerHeaderProps) {
   return (
-    <div className="border-b border-border bg-muted/30 px-4 py-3">
+    <div className="border-b border-border bg-muted/30 px-4 py-3 pr-12">
       <div className="flex items-baseline justify-between gap-2">
-        <SheetTitle className="text-base">{title}</SheetTitle>
+        <h2 className="text-base font-medium text-foreground">{title}</h2>
         <span className="text-xs text-muted-foreground">{memberCount} 位成员</span>
       </div>
-      <SheetDescription className="mt-0.5 text-xs">{subtitle}</SheetDescription>
+      <p className="mt-0.5 text-xs text-muted-foreground">{subtitle}</p>
     </div>
   )
 }
