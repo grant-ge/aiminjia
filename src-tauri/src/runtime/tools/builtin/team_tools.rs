@@ -100,13 +100,10 @@ impl RuntimeTool for TeamCreateRuntimeTool {
         // Duplicates here mean the Lead has already entered Team mode under a
         // stale registration — surface that as a real error.
         ctx.agent_names()
-            .register(&session, LEAD_NAME, lead_id.clone())
+            .register(&session, &team_name, LEAD_NAME, lead_id.clone())
             .await
             .map_err(|e| {
                 // Roll back the team to keep state consistent.
-                // Rollback: no team_name param needed for backward compat.
-                // PR2 note: if team was already registered, try drop_session as fallback.
-                // TODO(PR5): pass team_name explicitly once TeamCreate uses validate_team_name.
                 let registry = ctx.team_registry().clone();
                 let session_for_rollback = session.clone();
                 let tname_rb = team_name.clone();
@@ -128,7 +125,7 @@ impl RuntimeTool for TeamCreateRuntimeTool {
         let lead_inbox_registered = if let Some(inbox_reg) = ctx.inbox_registry.as_ref() {
             let lead_inbox = crate::runtime::agent::AgentInbox::new(64);
             inbox_reg
-                .register(&session, lead_id.clone(), lead_inbox)
+                .register(&session, &team_name, lead_id.clone(), lead_inbox)
                 .await;
             true
         } else {

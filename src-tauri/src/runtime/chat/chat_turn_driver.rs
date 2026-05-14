@@ -447,13 +447,14 @@ async fn drain_and_inject_lead_inbox_messages(
     let Some(lead_id) = names
         .resolve(
             session_id,
+            query_engine.active_team_name().unwrap_or(""),
             crate::runtime::tools::builtin::team_tools::LEAD_NAME,
         )
         .await
     else {
         return (0, None);
     };
-    let Some(lead_inbox) = inbox_reg.get(session_id, &lead_id).await else {
+    let Some(lead_inbox) = inbox_reg.get(session_id, query_engine.active_team_name().unwrap_or(""), &lead_id).await else {
         return (0, None);
     };
     let drained = lead_inbox.drain_pending().await;
@@ -2276,6 +2277,7 @@ impl RuntimeChatTurnDriver {
             if let Some(lead_id) = names
                 .resolve(
                     &session_id,
+                    self.query_engine.active_team_name().unwrap_or(""),
                     crate::runtime::tools::builtin::team_tools::LEAD_NAME,
                 )
                 .await
@@ -2414,6 +2416,7 @@ impl RuntimeChatTurnDriver {
         let lead_id = names
             .resolve(
                 &session,
+                self.query_engine.active_team_name().unwrap_or(""),
                 crate::runtime::tools::builtin::team_tools::LEAD_NAME,
             )
             .await?;
@@ -2992,7 +2995,7 @@ mod tests {
         let session_id = SessionId::new(session);
         let lead_agent = AgentId::new(lead_id);
         names
-            .register(&session_id, LEAD_NAME, lead_agent.clone())
+            .register(&session_id, "", LEAD_NAME, lead_agent.clone())
             .await
             .expect("Lead registration should succeed in a fresh fixture");
 

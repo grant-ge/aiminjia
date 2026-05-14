@@ -1083,6 +1083,9 @@ pub struct TeammateWorkerCtx {
     pub agent_id: AgentId,
     /// Session owning this Teammate (used to unregister from `AgentNameRegistry`).
     pub session_id: SessionId,
+    /// Team this Teammate belongs to — used as the second key in all three
+    /// per-team registries (PR4).  Set at spawn time and never changes.
+    pub team_name: String,
     /// Conversation id — used for transcript path derivation.
     pub conv_id: String,
     /// Cancellation token; the loop exits when this is triggered.
@@ -1937,15 +1940,15 @@ async fn cleanup_teammate(
         team.remove_teammate(name);
     }
     // 2. Unregister from AgentNameRegistry so the name can be reused.
-    ctx.agent_names.unregister(&ctx.session_id, name).await;
+    ctx.agent_names.unregister(&ctx.session_id, &ctx.team_name, name).await;
     // 3. Deregister from InboxRegistry so SendMessage stops resolving this
     //    Teammate (P2.2).  Skipped if no registry was injected.
     if let Some(reg) = ctx.inbox_registry.as_ref() {
-        reg.unregister(&ctx.session_id, &ctx.agent_id).await;
+        reg.unregister(&ctx.session_id, &ctx.team_name, &ctx.agent_id).await;
     }
     // 4. Deregister from CancellationRegistry (P2.7).
     if let Some(reg) = ctx.cancellation_registry.as_ref() {
-        reg.unregister(&ctx.session_id, &ctx.agent_id).await;
+        reg.unregister(&ctx.session_id, &ctx.team_name, &ctx.agent_id).await;
     }
 
     log::info!(

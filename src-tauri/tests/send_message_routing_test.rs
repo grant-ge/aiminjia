@@ -16,6 +16,8 @@ use app_lib::runtime::tools::context::ToolExecutionContext;
 use app_lib::runtime::tools::executor::ToolError;
 use app_lib::runtime::tools::RuntimeTool;
 
+const TEAM_NAME: &str = "test-team";
+
 struct Fixture {
     team_registry: Arc<TeamRegistry>,
     name_registry: Arc<AgentNameRegistry>,
@@ -38,11 +40,11 @@ impl Fixture {
             last_active_at: chrono::Utc::now(),
         };
         team_registry
-            .create(session.clone(), lead, "test-team".to_string())
+            .create(session.clone(), lead, TEAM_NAME.to_string())
             .await
             .unwrap();
         name_registry
-            .register(&session, LEAD_NAME, AgentId::new("lead-id"))
+            .register(&session, TEAM_NAME, LEAD_NAME, AgentId::new("lead-id"))
             .await
             .unwrap();
 
@@ -58,13 +60,13 @@ impl Fixture {
         let id = AgentId::new(agent_id);
         let inbox = AgentInbox::new(8);
         self.name_registry
-            .register(&self.session, name, id.clone())
+            .register(&self.session, TEAM_NAME, name, id.clone())
             .await
             .unwrap();
         self.inbox_registry
-            .register(&self.session, id.clone(), inbox.clone())
+            .register(&self.session, TEAM_NAME, id.clone(), inbox.clone())
             .await;
-        let team = self.team_registry.get(&self.session).await.unwrap();
+        let team = self.team_registry.get(&self.session, TEAM_NAME).await.unwrap();
         let mut t = team.lock().await;
         t.add_teammate(Member {
             agent_id: id,
@@ -84,7 +86,8 @@ impl Fixture {
         let mut ctx = ToolExecutionContext::for_test(self.session.as_str(), "run-1", "tc-1")
             .with_team_registry(self.team_registry.clone())
             .with_agent_names(self.name_registry.clone())
-            .with_inbox_registry(self.inbox_registry.clone());
+            .with_inbox_registry(self.inbox_registry.clone())
+            .with_active_team(TEAM_NAME.to_string());
         ctx.agent_id = Some(AgentId::new(caller_agent_id));
         ctx
     }

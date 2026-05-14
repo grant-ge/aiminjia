@@ -13,6 +13,8 @@ use app_lib::runtime::tools::builtin::teammate_stop::TeammateStopRuntimeTool;
 use app_lib::runtime::tools::context::ToolExecutionContext;
 use app_lib::runtime::tools::RuntimeTool;
 
+const TEAM: &str = "test-team";
+
 fn build_ctx(
     session: &str,
     names: Arc<AgentNameRegistry>,
@@ -21,6 +23,7 @@ fn build_ctx(
     ToolExecutionContext::for_test(session, "run-1", "tc-1")
         .with_agent_names(names)
         .with_cancellation_registry(cancels)
+        .with_active_team(TEAM.to_string())
 }
 
 #[tokio::test]
@@ -32,11 +35,11 @@ async fn stop_resolves_name_and_trips_cancellation_token() {
     let token = CancellationToken::new();
     let agent_id = AgentId::new("agent-r");
     names
-        .register(&session, "researcher", agent_id.clone())
+        .register(&session, TEAM, "researcher", agent_id.clone())
         .await
         .unwrap();
     cancels
-        .register(&session, agent_id.clone(), token.clone())
+        .register(&session, TEAM, agent_id.clone(), token.clone())
         .await;
 
     let ctx = build_ctx("conv-stop", names, cancels);
@@ -73,7 +76,7 @@ async fn stop_resolves_but_no_token_returns_no_cancel_token_noop() {
     let cancels = CancellationRegistry::new();
     let session = SessionId::new("conv-stop-detached");
     names
-        .register(&session, "ghost-wired", AgentId::new("g-1"))
+        .register(&session, TEAM, "ghost-wired", AgentId::new("g-1"))
         .await
         .unwrap();
     // cancellation registry NOT populated for this agent — simulates a

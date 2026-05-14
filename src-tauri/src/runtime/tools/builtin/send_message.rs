@@ -149,14 +149,15 @@ impl RuntimeTool for SendMessageRuntimeTool {
         // Derive caller name (for source label + self-send guard) by reverse-
         // looking up the agent_id.  Unnamed callers (no entry in registry) get
         // MessageSource::System and bypass the self-send check.
+        let team_name = ctx.active_team_name.as_deref().unwrap_or("");
         let caller_name = if let Some(aid) = ctx.agent_id.as_ref() {
-            names.name_for(&session, aid).await
+            names.name_for(&session, team_name, aid).await
         } else {
             // FALLBACK: when ctx.agent_id is None (e.g. Lead's user turn never
             // stamped its own agent_id onto the TurnState), assume Lead is the
             // caller IF a Lead is registered for this session.  Without this,
             // every Lead-originated SendMessage renders as `from="system"`.
-            if names.resolve(&session, LEAD_NAME).await.is_some() {
+            if names.resolve(&session, team_name, LEAD_NAME).await.is_some() {
                 Some(LEAD_NAME.to_string())
             } else {
                 None
@@ -208,8 +209,8 @@ impl RuntimeTool for SendMessageRuntimeTool {
             let mut delivered = 0usize;
             let mut missing: Vec<String> = Vec::new();
             for name in &recipients {
-                if let Some(target_id) = names.resolve(&session, name).await {
-                    if let Some(inbox) = inbox_reg.get(&session, &target_id).await {
+                if let Some(target_id) = names.resolve(&session, team_name, name).await {
+                    if let Some(inbox) = inbox_reg.get(&session, team_name, &target_id).await {
                         // mpsc full → record but keep going; this is best-effort
                         // broadcast, not transactional.
                         if inbox
@@ -279,12 +280,12 @@ impl RuntimeTool for SendMessageRuntimeTool {
             )));
         }
 
-        let target_id = names.resolve(&session, &to).await.ok_or_else(|| {
+        let target_id = names.resolve(&session, team_name, &to).await.ok_or_else(|| {
             ToolError::ExecutionFailed(format!(
                 "no agent named `{to}` in this session — call TeamCreate first or check the spelling"
             ))
         })?;
-        let inbox = inbox_reg.get(&session, &target_id).await.ok_or_else(|| {
+        let inbox = inbox_reg.get(&session, team_name, &target_id).await.ok_or_else(|| {
             ToolError::ExecutionFailed(format!(
                 "agent `{to}` is registered but has no inbox — likely already exited or not a Teammate"
             ))
@@ -334,7 +335,7 @@ impl RuntimeTool for SendMessageRuntimeTool {
             if let (Some(sup), Some(names_reg)) =
                 (ctx.lead_idle.as_ref(), ctx.agent_names.as_ref())
             {
-                if let Some(lead_id) = names_reg.resolve(&session, LEAD_NAME).await {
+                if let Some(lead_id) = names_reg.resolve(&session, team_name, LEAD_NAME).await {
                     let key = (session.clone(), lead_id.clone());
                     let woke = sup.enqueue(&key).await;
                     if woke {

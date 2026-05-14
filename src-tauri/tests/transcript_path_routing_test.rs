@@ -136,6 +136,7 @@ async fn teammate_idle_transcript_path_is_under_teammates() {
     let ctx = TeammateWorkerCtx {
         agent_id: agent_id.clone(),
         session_id: SessionId::new(session_id),
+        team_name: "test-team".to_string(),
         conv_id: session_id.to_string(),
         cancel: cancel.clone(),
         inbox: inbox.clone(),

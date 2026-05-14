@@ -211,6 +211,12 @@ impl QueryEngine {
         self
     }
 
+    /// Return the active team name, if any.  Used by chat_turn_driver and
+    /// other callers that need the PR4 `team_name` key for registry lookups.
+    pub fn active_team_name(&self) -> Option<&str> {
+        self.active_team_name.as_deref()
+    }
+
     /// LTR (B-gap1): accessors for chat_turn_driver to wire Path A
     /// (mark_running on entry, mark_idle before AgentIdle).
     pub fn lead_idle_supervisor(&self) -> Option<&Arc<crate::runtime::agent::LeadIdleSupervisor>> {

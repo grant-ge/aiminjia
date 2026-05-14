@@ -44,8 +44,9 @@ async fn try_notify_lead(
         return;
     };
     let actor_name = if let Some(aid) = ctx.agent_id.as_ref() {
+        let team_name = ctx.active_team_name.as_deref().unwrap_or("");
         name_reg
-            .name_for(&ctx.session_id, aid)
+            .name_for(&ctx.session_id, team_name, aid)
             .await
             .unwrap_or_else(|| "unknown-actor".into())
     } else {
@@ -60,6 +61,7 @@ async fn try_notify_lead(
     let outcome = emit_to_lead(
         &deps,
         &ctx.session_id,
+        ctx.active_team_name.as_deref().unwrap_or(""),
         &actor_name,
         task_id,
         action,
