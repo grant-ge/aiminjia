@@ -857,6 +857,8 @@ pub fn run() {
             chat::cancel_user_interaction,
             chat::get_messages,
             chat::get_subagent_transcript,
+            chat::get_team_overview,
+            chat::get_teammate_transcript,
             chat::create_conversation,
             chat::delete_conversation,
             chat::rename_conversation,
