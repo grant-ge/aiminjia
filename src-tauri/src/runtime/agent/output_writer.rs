@@ -53,6 +53,14 @@ pub struct TranscriptLine {
     /// rows (`role == "tool"`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_name: Option<String>,
+    /// Originating sender name for `role == "user"` rows on Teammate
+    /// transcripts.  `"team-lead"` when the message came from the Lead, the
+    /// teammate name (e.g. `"con-debater"`) when it came from another peer,
+    /// `"system"` for system-injected rows (initial role brief, scheduler
+    /// pings).  `None` for assistant / tool rows or for legacy entries written
+    /// before this field existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
@@ -65,6 +73,20 @@ impl TranscriptLine {
             tool_calls: None,
             tool_call_id: None,
             tool_name: None,
+            from: None,
+            error: None,
+        }
+    }
+    /// Same as [`Self::user`] but tags the row with an explicit sender name
+    /// (e.g. `"team-lead"` / `"con-debater"` / `"system"`).
+    pub fn user_from(content: impl Into<String>, from: impl Into<String>) -> Self {
+        Self {
+            role: "user".to_string(),
+            content: content.into(),
+            tool_calls: None,
+            tool_call_id: None,
+            tool_name: None,
+            from: Some(from.into()),
             error: None,
         }
     }
@@ -75,6 +97,7 @@ impl TranscriptLine {
             tool_calls: None,
             tool_call_id: None,
             tool_name: None,
+            from: None,
             error: None,
         }
     }
@@ -88,6 +111,7 @@ impl TranscriptLine {
             tool_calls: if tool_calls.is_empty() { None } else { Some(tool_calls) },
             tool_call_id: None,
             tool_name: None,
+            from: None,
             error: None,
         }
     }
@@ -98,6 +122,7 @@ impl TranscriptLine {
             tool_calls: None,
             tool_call_id: None,
             tool_name: None,
+            from: None,
             error: None,
         }
     }
@@ -112,6 +137,7 @@ impl TranscriptLine {
             tool_calls: None,
             tool_call_id: Some(tool_call_id.into()),
             tool_name: Some(tool_name.into()),
+            from: None,
             error: None,
         }
     }
@@ -122,6 +148,7 @@ impl TranscriptLine {
             tool_calls: None,
             tool_call_id: None,
             tool_name: None,
+            from: None,
             error: Some(error.into()),
         }
     }
@@ -147,6 +174,7 @@ impl TranscriptLine {
             tool_calls: tool_calls.filter(|v| !v.is_empty()),
             tool_call_id: message.tool_call_id.clone(),
             tool_name: message.name.clone(),
+            from: None,
             error: None,
         }
     }

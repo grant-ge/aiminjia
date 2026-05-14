@@ -43,7 +43,7 @@ export function TeamChatDrawer({ conversationId, overview }: TeamChatDrawerProps
   return (
     <aside
       data-testid="team-split-panel"
-      className="flex h-full w-[500px] shrink-0 flex-col border-l border-border bg-background"
+      className="flex h-full min-w-0 flex-1 flex-col border-l border-border bg-background"
     >
       {drillAgent ? (
         <TeammateDetailPanel
@@ -250,7 +250,9 @@ function TeamSessionSection({ session, onDrill }: TeamSessionSectionProps) {
         )}
       </div>
 
-      <TeamChatEvents events={session.events} onDrillAgent={onDrill} />
+      <div className="mx-auto w-full max-w-[736px]">
+        <TeamChatEvents events={session.events} onDrillAgent={onDrill} />
+      </div>
     </section>
   )
 }
