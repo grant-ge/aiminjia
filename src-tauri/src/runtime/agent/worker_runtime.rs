@@ -1272,11 +1272,11 @@ async fn run_teammate_idle(
                             mode,
                         );
                         if ctx.llm_engine.is_some() {
-                            teammate_real_turn(&ctx, &agent_name, &message, &mut messages).await;
+                            teammate_real_turn(&ctx, &agent_name, &message, &source, &mut messages).await;
                         } else {
                             // Legacy / test path: no engine wired, fall back
                             // to the placeholder stub (transcript only).
-                            teammate_stub_turn(&ctx, &agent_name, &message).await;
+                            teammate_stub_turn(&ctx, &agent_name, &message, &source).await;
                         }
                     }
                     Some(InboxItem::Shutdown(req)) => {
@@ -1365,6 +1365,19 @@ fn render_inbox_message_as_user_text(
     }
 }
 
+/// Map a [`MessageSource`] to a stable `from` string suitable for
+/// teammate transcript user rows.  `team-lead` is the canonical Lead name
+/// (matches `LEAD_NAME` in `team_tools.rs` and the values written to
+/// `team-chat.jsonl`), so the frontend can identify Lead-vs-peer messages
+/// without parsing free-form text.
+fn from_label_for_source(source: &MessageSource) -> String {
+    match source {
+        MessageSource::Lead => "team-lead".to_string(),
+        MessageSource::Teammate(name) => name.clone(),
+        MessageSource::System => "system".to_string(),
+    }
+}
+
 /// P1 stub: record a user message + placeholder assistant reply in the
 /// transcript JSONL.  Real LLM call is in [`teammate_real_turn`]; this stub
 /// is kept as a fallback for legacy / test paths where `TeammateLlmEngine`
@@ -1376,6 +1389,7 @@ async fn teammate_stub_turn(
     ctx: &TeammateWorkerCtx,
     agent_name: &str,
     message: &crate::runtime::messaging::StructuredMessage,
+    source: &MessageSource,
 ) {
     if let Some(ref conv_dir) = ctx.conv_dir {
         let jl_path =
@@ -1383,7 +1397,8 @@ async fn teammate_stub_turn(
 
         let user_text = render_inbox_message_as_user_text(message);
 
-        let user_line = TranscriptLine::user(user_text.clone());
+        let user_line =
+            TranscriptLine::user_from(user_text.clone(), from_label_for_source(source));
         let _ = append_line(&jl_path, &user_line);
 
         // P2.6 stub reply: explicitly NOT a self-shutdown.  Real LLM wiring
@@ -1415,6 +1430,7 @@ async fn teammate_real_turn(
     ctx: &TeammateWorkerCtx,
     agent_name: &str,
     message: &crate::runtime::messaging::StructuredMessage,
+    source: &MessageSource,
     messages: &mut Vec<crate::llm::streaming::ChatMessage>,
 ) {
     use crate::llm::masking::MaskingLevel;
@@ -1423,7 +1439,7 @@ async fn teammate_real_turn(
     let Some(engine) = ctx.llm_engine.as_ref() else {
         // Should be unreachable — caller (run_teammate_idle) already
         // checked ctx.llm_engine.is_some().  Defensive fall-through.
-        teammate_stub_turn(ctx, agent_name, message).await;
+        teammate_stub_turn(ctx, agent_name, message, source).await;
         return;
     };
 
@@ -1463,7 +1479,10 @@ async fn teammate_real_turn(
     let user_msg = ChatMessage::text("user", user_text.clone());
     messages.push(user_msg.clone());
     if let Some(ref path) = jl_path {
-        let _ = append_line(path, &TranscriptLine::user(user_text));
+        let _ = append_line(
+            path,
+            &TranscriptLine::user_from(user_text, from_label_for_source(source)),
+        );
     }
 
     // 2. Per-turn cancellation token (child of the worker's lifecycle

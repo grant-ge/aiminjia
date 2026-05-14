@@ -83,17 +83,17 @@ interface TeamEventRowProps {
 function TeamEventRow({ event, onDrillAgent }: TeamEventRowProps) {
   switch (event.kind) {
     case 'team_create':
-      return <SystemDivider icon="●" label={`团队已创建${event.teamName ? ` · ${event.teamName}` : ''}`} ts={event.ts} />
+      return <SystemDivider label={`团队已创建${event.teamName ? ` · ${event.teamName}` : ''}`} ts={event.ts} />
     case 'team_delete':
-      return <SystemDivider icon="○" label="团队已解散" ts={event.ts} />
+      return <SystemDivider label="团队已解散" ts={event.ts} />
     case 'agent_spawn':
-      return <SystemDivider icon="＋" label={`${event.agentName} 加入团队`} ts={event.ts} />
+      return <SystemDivider label={`${event.agentName} 加入团队`} ts={event.ts} />
     case 'agent_stop':
-      return <SystemDivider icon="－" label={`${event.agentName} 已退出`} ts={event.ts} />
+      return <SystemDivider label={`${event.agentName} 已退出`} ts={event.ts} />
     case 'send_message':
-      return <MessageBubble side="right" from={event.from} text={event.text} ts={event.ts} isError={event.isError} to={event.to} onDrillAgent={onDrillAgent} />
+      return <MessageBubble side={isLeadName(event.from) ? 'right' : 'left'} from={event.from} text={event.text} ts={event.ts} isError={event.isError} to={event.to} onDrillAgent={onDrillAgent} />
     case 'peer_message':
-      return <MessageBubble side="left" from={event.from} text={event.text} ts={event.ts} isError={false} to={event.to} onDrillAgent={onDrillAgent} />
+      return <MessageBubble side={isLeadName(event.from) ? 'right' : 'left'} from={event.from} text={event.text} ts={event.ts} isError={false} to={event.to} onDrillAgent={onDrillAgent} />
     default: {
       // Compile-time exhaustiveness check.
       const _exhaustive: never = event
@@ -103,21 +103,17 @@ function TeamEventRow({ event, onDrillAgent }: TeamEventRowProps) {
 }
 
 interface SystemDividerProps {
-  icon: string
   label: string
   ts: string
 }
 
-function SystemDivider({ icon, label, ts }: SystemDividerProps) {
+function SystemDivider({ label, ts }: SystemDividerProps) {
   return (
     <div className="flex items-center justify-center gap-2 text-[11px] text-muted-foreground">
-      <span className="h-px flex-1 bg-border" />
       <span className="inline-flex items-center gap-1.5">
-        <span aria-hidden>{icon}</span>
         <span>{label}</span>
         <span className="opacity-60">{formatClock(ts)}</span>
       </span>
-      <span className="h-px flex-1 bg-border" />
     </div>
   )
 }
@@ -154,7 +150,7 @@ function MessageBubble({ side, from, to, text, ts, isError, onDrillAgent }: Mess
   )
 
   return (
-    <div className="flex flex-col gap-1">
+    <div className={cn('flex flex-col gap-1', side === 'right' ? 'items-end' : 'items-start')}>
       <div
         className={cn(
           'flex items-center gap-2 text-[11px] text-muted-foreground',
@@ -172,7 +168,7 @@ function MessageBubble({ side, from, to, text, ts, isError, onDrillAgent }: Mess
       </div>
       <div
         className={cn(
-          'break-words rounded-lg px-3 py-2 text-sm',
+          'w-fit max-w-[85%] break-words rounded-lg px-3 py-2 text-sm',
           isError
             ? 'border border-destructive/40 bg-destructive/10 text-destructive'
             : fromIdentity.bubbleClass,
