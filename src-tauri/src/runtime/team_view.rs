@@ -56,6 +56,7 @@ pub struct TeamAgent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TeamEvent {
+    #[serde(rename_all = "camelCase")]
     TeamCreate {
         ts: String,
         team_name: Option<String>,
@@ -63,15 +64,18 @@ pub enum TeamEvent {
     TeamDelete {
         ts: String,
     },
+    #[serde(rename_all = "camelCase")]
     AgentSpawn {
         ts: String,
         agent_id: String,
         agent_name: String,
     },
+    #[serde(rename_all = "camelCase")]
     AgentStop {
         ts: String,
         agent_name: String,
     },
+    #[serde(rename_all = "camelCase")]
     SendMessage {
         ts: String,
         from: String,
