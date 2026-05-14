@@ -186,6 +186,7 @@ pub fn run() {
             let auth_manager = Arc::new(auth::AuthManager::new(
                 global_store.clone(),
                 secure_storage.clone(),
+                aijia_home.as_ref(),
             ));
             // Restore persisted auth state
             tauri::async_runtime::block_on(auth_manager.restore());
