@@ -210,7 +210,7 @@ if [ -n "$APP" ] && [ "$SKIP_APP_SIGN" = "0" ]; then
         unsigned_count=0
         while IFS= read -r -d '' bin; do
             if file -b "$bin" | grep -qE "Mach-O|universal binary"; then
-                flags=$(codesign -dv --verbose=4 "$bin" 2>&1 | grep -E "^flags=" || echo "")
+                flags=$(codesign -dv --verbose=4 "$bin" 2>&1 | grep -oE "flags=[^[:space:]]*" || echo "")
                 if ! echo "$flags" | grep -q "runtime"; then
                     echo "    ✗ NOT hardened: $bin"
                     unsigned_count=$((unsigned_count + 1))
