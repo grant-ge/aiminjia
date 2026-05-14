@@ -30,6 +30,7 @@ describe('SkillDetailPage', () => {
           shortDescriptionEn: 'Business proposal writing',
           triggerText: '/biz-proposal',
           category: 'general',
+          updatedAt: null,
         },
       ],
     })

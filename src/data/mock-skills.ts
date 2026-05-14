@@ -13,6 +13,7 @@ export const MOCK_SKILLS: SkillInfo[] = [
     shortDescriptionEn: 'Organization health assessment',
     triggerText: '帮我诊断这个组织的核心问题',
     category: 'hr',
+    updatedAt: null,
   },
   {
     id: 'okr-coaching',
@@ -26,6 +27,7 @@ export const MOCK_SKILLS: SkillInfo[] = [
     shortDescriptionEn: 'Help you create high-quality OKR',
     triggerText: '帮我制定这个季度的 OKR',
     category: 'hr',
+    updatedAt: null,
   },
   {
     id: 'business-proposal',
@@ -39,6 +41,7 @@ export const MOCK_SKILLS: SkillInfo[] = [
     shortDescriptionEn: 'Professional business proposal',
     triggerText: '帮我写一份商业合作方案',
     category: 'sales',
+    updatedAt: null,
   },
   {
     id: 'hr-data-maturity',
@@ -52,6 +55,7 @@ export const MOCK_SKILLS: SkillInfo[] = [
     shortDescriptionEn: 'HR data capability assessment',
     triggerText: '评估我们的 HR 数据分析能力水平',
     category: 'hr',
+    updatedAt: null,
   },
   {
     id: 'sales-data-analysis',
@@ -65,6 +69,7 @@ export const MOCK_SKILLS: SkillInfo[] = [
     shortDescriptionEn: 'Sales data insights',
     triggerText: '分析我们的销售数据',
     category: 'sales',
+    updatedAt: null,
   },
   {
     id: 'labor-compliance-check',
@@ -78,6 +83,7 @@ export const MOCK_SKILLS: SkillInfo[] = [
     shortDescriptionEn: 'Labor law compliance check',
     triggerText: '检查我们是否存在劳动法风险',
     category: 'legal',
+    updatedAt: null,
   },
   {
     id: 'compensation-benchmark',
@@ -91,6 +97,7 @@ export const MOCK_SKILLS: SkillInfo[] = [
     shortDescriptionEn: 'Compensation benchmarking',
     triggerText: '做一份薪酬市场对标分析',
     category: 'hr',
+    updatedAt: null,
   },
   {
     id: 'ops-data-analysis',
@@ -104,6 +111,7 @@ export const MOCK_SKILLS: SkillInfo[] = [
     shortDescriptionEn: 'Operations efficiency analysis',
     triggerText: '分析我们的运营数据',
     category: 'ops',
+    updatedAt: null,
   },
   {
     id: 'financial-data-analysis',
@@ -117,6 +125,7 @@ export const MOCK_SKILLS: SkillInfo[] = [
     shortDescriptionEn: 'Financial data analysis',
     triggerText: '分析我们的财务数据',
     category: 'finance',
+    updatedAt: null,
   },
   {
     id: 'recruitment-funnel',
@@ -130,6 +139,7 @@ export const MOCK_SKILLS: SkillInfo[] = [
     shortDescriptionEn: 'Recruitment efficiency analysis',
     triggerText: '分析我们的招聘漏斗',
     category: 'hr',
+    updatedAt: null,
   },
   {
     id: 'customer-segmentation',
@@ -143,6 +153,7 @@ export const MOCK_SKILLS: SkillInfo[] = [
     shortDescriptionEn: 'Customer segment insights',
     triggerText: '帮我做一份客户细分分析',
     category: 'sales',
+    updatedAt: null,
   },
   {
     id: 'multi-file-processing',
@@ -156,6 +167,7 @@ export const MOCK_SKILLS: SkillInfo[] = [
     shortDescriptionEn: 'Batch file processing',
     triggerText: '帮我处理这些文件',
     category: 'general',
+    updatedAt: null,
   },
   {
     id: 'employee-engagement',
@@ -169,6 +181,7 @@ export const MOCK_SKILLS: SkillInfo[] = [
     shortDescriptionEn: 'Employee engagement survey',
     triggerText: '分析我们的员工敬业度',
     category: 'hr',
+    updatedAt: null,
   },
   {
     id: 'performance-system-design',
@@ -182,6 +195,7 @@ export const MOCK_SKILLS: SkillInfo[] = [
     shortDescriptionEn: 'Performance system guidance',
     triggerText: '帮我设计公司的绩效体系',
     category: 'hr',
+    updatedAt: null,
   },
   {
     id: 'compensation-fairness',
@@ -195,6 +209,7 @@ export const MOCK_SKILLS: SkillInfo[] = [
     shortDescriptionEn: 'Compensation fairness check',
     triggerText: '检查我们的薪酬公平性',
     category: 'finance',
+    updatedAt: null,
   },
   {
     id: 'contract-risk-review',
@@ -208,6 +223,7 @@ export const MOCK_SKILLS: SkillInfo[] = [
     shortDescriptionEn: 'Contract risk review',
     triggerText: '帮我审查这份合同',
     category: 'legal',
+    updatedAt: null,
   },
   {
     id: 'regulation-compliance',
@@ -221,6 +237,7 @@ export const MOCK_SKILLS: SkillInfo[] = [
     shortDescriptionEn: 'Policy compliance review',
     triggerText: '检查我们的规章制度是否合规',
     category: 'legal',
+    updatedAt: null,
   },
   {
     id: 'user-behavior-analysis',
@@ -234,6 +251,7 @@ export const MOCK_SKILLS: SkillInfo[] = [
     shortDescriptionEn: 'User behavior insights',
     triggerText: '分析用户的行为数据',
     category: 'ops',
+    updatedAt: null,
   },
   {
     id: 'survey-analysis',
@@ -247,6 +265,7 @@ export const MOCK_SKILLS: SkillInfo[] = [
     shortDescriptionEn: 'Survey data analysis',
     triggerText: '帮我分析这份问卷',
     category: 'general',
+    updatedAt: null,
   },
   {
     id: 'budget-execution-analysis',
@@ -260,6 +279,7 @@ export const MOCK_SKILLS: SkillInfo[] = [
     shortDescriptionEn: 'Budget execution status',
     triggerText: '分析我们的预算执行情况',
     category: 'finance',
+    updatedAt: null,
   },
   {
     id: 'talent-mapping',
@@ -273,6 +293,7 @@ export const MOCK_SKILLS: SkillInfo[] = [
     shortDescriptionEn: 'Talent 9-box mapping',
     triggerText: '帮我做人才盘点',
     category: 'hr',
+    updatedAt: null,
   },
   {
     id: 'business-document-writing',
@@ -286,5 +307,6 @@ export const MOCK_SKILLS: SkillInfo[] = [
     shortDescriptionEn: 'Professional document writing',
     triggerText: '帮我撰写商务文档',
     category: 'general',
+    updatedAt: null,
   },
 ]
