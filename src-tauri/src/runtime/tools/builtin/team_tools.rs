@@ -181,6 +181,15 @@ impl RuntimeTool for TeamCreateRuntimeTool {
                 })),
         );
 
+        // 持久化 team.json 到会话目录，供 teammate boot prompt 引用的
+        // `团队配置: <conv_dir>/team.json` 路径生效。best-effort：内存
+        // registry 是 source-of-truth，落盘失败只 warn。
+        if let Some(ref conv_dir) = ctx.conv_dir {
+            if let Err(e) = ctx.team_registry().persist(&session, conv_dir).await {
+                log::warn!("[TeamCreate] persist team.json failed: {e}");
+            }
+        }
+
         Ok(ToolResult::new(
             "TeamCreate",
             format!(
@@ -276,6 +285,16 @@ impl RuntimeTool for TeamDeleteRuntimeTool {
                 session.as_str()
             )
         };
+
+        // 同步删除磁盘上的 team.json。best-effort：内存 registry 已经在
+        // 上面 delete() 了，磁盘清理失败不影响 tool 返回。
+        if let Some(ref conv_dir) = ctx.conv_dir {
+            if let Err(e) = crate::runtime::agent::TeamRegistry::delete_persisted(conv_dir) {
+                if e.kind() != std::io::ErrorKind::NotFound {
+                    log::warn!("[TeamDelete] delete team.json failed: {e}");
+                }
+            }
+        }
 
         Ok(ToolResult::new("TeamDelete", msg, Some(json)))
     }

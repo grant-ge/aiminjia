@@ -470,6 +470,22 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
                 team_name_str = team_guard.team_name.clone();
             }
 
+            // 持久化 team.json（teammate 加入后名册更新）。fire-and-forget
+            // tokio::spawn 避免阻塞 spawn 流程；teammate 第一轮 Read 之前
+            // 大概率已落盘。
+            if let Some(ref conv_dir) = ctx.conv_dir {
+                let reg = ctx.team_registry().clone();
+                let sid = ctx.session_id.clone();
+                let dir = conv_dir.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = reg.persist(&sid, &dir).await {
+                        log::warn!(
+                            "[SpawnTeammate] persist team.json failed: {e}"
+                        );
+                    }
+                });
+            }
+
             let inbox = AgentInbox::new(64);
 
             // P2.7: derive the child cancel token NOW (before passing into
