@@ -90,6 +90,18 @@ fn task_list_id(_ctx: &ToolExecutionContext) -> String {
 }
 
 fn store_for(ctx: &ToolExecutionContext) -> Result<FileTaskV2Store, ToolError> {
+    // 生产路径：直接用 SessionRuntime 注入的 conv_dir，已经是完整的 user-scoped
+    // 会话目录（`~/.renlijia/users/{scope}/conversations/{conv_id}/`），与
+    // team_view / team-chat.jsonl / messages.jsonl 同源。
+    //
+    // 之前的 home.join("conversations") 链路会把 tasks 写到非 user-scoped 的
+    // `~/.renlijia/conversations/`，跟 teammate boot prompt 告诉它的 user-scoped
+    // 路径不交叉，导致 Lead 和 teammate 实际操作两个不同目录，task 无法共享。
+    if let Some(conv_dir) = ctx.conv_dir.as_ref() {
+        return Ok(FileTaskV2Store::new(conv_dir.join("tasks")));
+    }
+
+    // Fallback：单测或老代码路径未注入 conv_dir 时，沿用原始拼接逻辑。
     let home = ctx
         .task_store_root
         .clone()
