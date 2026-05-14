@@ -3025,6 +3025,40 @@ impl TauriChatCommandAdapter {
         conversation_service::get_subagent_transcript(agent_runtime, transcript_ref).await
     }
 
+    /// Build a read-only overview of a conversation's team activity. Returns
+    /// `{ teams: [] }` for conversations that never had a team.
+    pub async fn get_team_overview(
+        &self,
+        conversation_id: String,
+    ) -> Result<crate::runtime::team_view::TeamOverview, String> {
+        let storage = self.services.db().clone();
+        tokio::task::spawn_blocking(move || {
+            crate::runtime::team_view::build_team_overview(&storage, &conversation_id)
+                .map_err(|e| e.to_string())
+        })
+        .await
+        .map_err(|e| format!("join error: {e}"))?
+    }
+
+    /// Read one teammate's complete on-disk transcript jsonl.
+    pub async fn get_teammate_transcript(
+        &self,
+        conversation_id: String,
+        agent_id: String,
+    ) -> Result<Vec<serde_json::Value>, String> {
+        let storage = self.services.db().clone();
+        tokio::task::spawn_blocking(move || {
+            crate::runtime::team_view::read_teammate_transcript(
+                &storage,
+                &conversation_id,
+                &agent_id,
+            )
+            .map_err(|e| e.to_string())
+        })
+        .await
+        .map_err(|e| format!("join error: {e}"))?
+    }
+
     pub async fn create_conversation(&self) -> Result<String, String> {
         // 不在这里 emit conversation:created：前端 createNewConversation 已经做了
         // 乐观更新（optimisticId → backendId 替换），重复事件会触发不必要的 reload。
@@ -3624,7 +3658,7 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
                 conv_id.clone(),
                 EmployeeRunOverrides {
                     tool_whitelist: effective_whitelist.into_iter().collect(),
-                    max_iterations: 60,
+                    max_iterations: 120,
                 },
             );
 

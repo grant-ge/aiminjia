@@ -3,7 +3,9 @@ import { RightPanel } from '@/components/chat/RightPanel'
 import type { PreviewTarget } from '@/components/chat/generatedFileActions'
 import { ChatArea } from '@/components/layout/ChatArea'
 import { ChatTopBar } from '@/components/shell/ChatTopBar'
+import { TeamChatDrawer } from '@/components/team/TeamChatDrawer'
 import { useChat } from '@/hooks/useChat'
+import { useTeamOverview } from '@/hooks/useTeamOverview'
 import { useChatStore } from '@/stores/chatStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { useGeneratedFilePreviewStore } from '@/stores/generatedFilePreviewStore'
@@ -23,6 +25,7 @@ export function ChatPage({ conversationId }: ChatPageProps) {
   const previewTarget = useGeneratedFilePreviewStore((s) => s.target)
   const previewOpen = previewTarget?.conversationId === conversationId
   const title = conversations.find((c) => c.id === conversationId)?.title ?? ''
+  const { overview: teamOverview } = useTeamOverview(activeConversationId)
 
   const handleOpenPreviewTarget = async (target: PreviewTarget) => {
     try {
@@ -53,10 +56,13 @@ export function ChatPage({ conversationId }: ChatPageProps) {
     <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
       {title ? <ChatTopBar title={title} /> : null}
       <div className="relative flex flex-1 overflow-hidden">
-        <div data-testid="chat-layout-column" className="relative flex flex-1 flex-col overflow-hidden">
+        <div data-testid="chat-layout-column" className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
           <ChatArea />
           <ChatBottomArea />
         </div>
+        {activeConversationId ? (
+          <TeamChatDrawer conversationId={activeConversationId} overview={teamOverview} />
+        ) : null}
         {previewOpen ? (
           <RightPanel
             conversationId={conversationId}

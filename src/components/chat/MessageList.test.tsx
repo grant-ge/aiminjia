@@ -12,6 +12,10 @@ import type { GeneratedFile, Message } from '@/types/message'
 vi.mock('@/lib/tauri', () => ({
   openGeneratedFile: vi.fn().mockResolvedValue(undefined),
   revealFileInFolder: vi.fn().mockResolvedValue(undefined),
+  getTeamOverview: vi.fn().mockResolvedValue({ conversationId: '', teams: [] }),
+  getTeammateTranscript: vi.fn().mockResolvedValue([]),
+  onMessageUpdated: vi.fn().mockResolvedValue(() => {}),
+  onToolCompleted: vi.fn().mockResolvedValue(() => {}),
 }))
 
 const openGeneratedFileMock = vi.mocked(openGeneratedFile)
