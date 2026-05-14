@@ -18,6 +18,7 @@ export type SettingsModalKey =
   | 'sso'
   | 'shortcuts'
   | 'archived'
+  | 'runtime'
   | 'about'
 
 export type SettingsModalState = null | SettingsModalKey

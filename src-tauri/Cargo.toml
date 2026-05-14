@@ -1,6 +1,6 @@
 [package]
 name = "aijia"
-version = "0.5.23-beta.6"
+version = "0.5.23-beta.7"
 description = "AIjia — 组织专家，工作助手"
 authors = ["AIjia Team"]
 license = "MIT"
@@ -107,6 +107,15 @@ tempfile = "3"
 wiremock = "0.6"
 tokio = { version = "1", features = ["test-util"] }
 mockito = "1"
+
+[profile.dev]
+incremental = false
+debug = "line-tables-only"
+split-debuginfo = "unpacked"
+
+[profile.dev.package."*"]
+debug = false
+opt-level = 1
 
 [profile.release]
 strip = true

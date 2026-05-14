@@ -69,11 +69,31 @@ pub fn run() {
             let platform = runtime::dependencies::RuntimePlatform::current()
                 .expect("Failed to identify managed runtime platform");
             let manifest_url = runtime::dependencies::configured_runtime_manifest_url();
+
+            // Bundled runtime: shipped inside the installer at
+            // `<resource_dir>/runtime/<platform>/{node,python,uv}/...`.
+            // Populated at build time by `scripts/prepare-bundled-runtime.{sh,ps1}`.
+            // When available, this avoids the OSS download on first launch entirely.
+            let resource_dir = app
+                .path()
+                .resource_dir()
+                .unwrap_or_else(|_| aijia_home.root().to_path_buf());
+            let bundled_resolver = std::sync::Arc::new(
+                runtime::dependencies::BundledRuntimeResolver::new(resource_dir.clone()),
+            );
+            let bundled_version = bundled_resolver.bundled_version();
+            log::info!(
+                "[runtime] bundled resolver mounted at {} (version={:?})",
+                resource_dir.display(),
+                bundled_version
+            );
+
             let runtime_manager: runtime::dependencies::ManagedRuntimeManager = Arc::new(
                 runtime::dependencies::RuntimeManager::new(
                     runtime_paths.clone(),
                     env!("CARGO_PKG_VERSION"),
                 )
+                .with_primary_resolver(bundled_resolver.clone())
                 .with_manifest_source(
                     runtime::dependencies::RuntimeManifestSource::Url(manifest_url),
                     "primary",
@@ -82,22 +102,28 @@ pub fn run() {
             );
             let runtime_resolver: runtime::dependencies::ManagedRuntimeResolver =
                 runtime_manager.clone();
-            {
-                let runtime_manager = runtime_manager.clone();
+
+            // Probe the bundled resolver synchronously: if it satisfies, we skip
+            // the OSS background ensure entirely. Only when bundled is missing or
+            // corrupted do we fall back to the network path.
+            use runtime::dependencies::RuntimeResolver as _;
+            let bundled_ok = bundled_resolver.workspace_dependencies().is_ok();
+            if bundled_ok {
+                log::info!("[runtime] bundled runtime ready; OSS ensure skipped on this launch");
+            } else {
+                log::warn!("[runtime] bundled runtime unavailable; falling back to OSS ensure");
+                let runtime_manager_bg = runtime_manager.clone();
                 tauri::async_runtime::spawn(async move {
-                    if let Err(error) = runtime_manager.ensure_managed().await {
+                    if let Err(error) = runtime_manager_bg.ensure_managed().await {
                         log::warn!("[runtime] background ensure failed: {}", error);
                     }
                 });
             }
+
             app.manage(runtime_manager.clone());
             app.manage(runtime_resolver.clone());
 
             // Initialize prompt store from external .md files
-            let resource_dir = app
-                .path()
-                .resource_dir()
-                .unwrap_or_else(|_| aijia_home.root().to_path_buf());
             llm::prompts::init_prompts(&resource_dir, aijia_home.root());
 
             // Initialize fallback root storage; user-scoped storage replaces it after auth restore.
@@ -896,6 +922,7 @@ pub fn run() {
             transport::tauri_commands::runtime::runtime_reinstall,
             transport::tauri_commands::runtime::runtime_cleanup_old_versions,
             transport::tauri_commands::runtime::runtime_cancel_operation,
+            transport::tauri_commands::runtime::runtime_diagnostics,
             // Persona commands
             commands::persona::list_personas,
             commands::persona::get_persona,

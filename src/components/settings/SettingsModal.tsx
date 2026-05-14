@@ -20,6 +20,7 @@ import { SettingsShell } from './SettingsShell'
 import { AboutPanel } from './panels/AboutPanel'
 import { ArchivedPanel } from './panels/ArchivedPanel'
 import { GeneralPanel } from './panels/GeneralPanel'
+import { RuntimePanel } from './panels/RuntimePanel'
 
 export function SettingsModal() {
   const settingsModal = useUiStore((s) => s.settingsModal)
@@ -189,6 +190,7 @@ export function SettingsModal() {
                   }}
                 />
               ) : null}
+              {settingsModal === 'runtime' ? <RuntimePanel /> : null}
               {settingsModal === 'archived' ? <ArchivedPanel /> : null}
             </SettingsContentBody>
           </div>
