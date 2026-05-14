@@ -63,6 +63,14 @@ build_one_arch() {
     DWS_NONINTERACTIVE=1 TARGET_ARCH="$target_arch" bash "$SCRIPT_DIR/setup-dws.sh"
 
     echo ""
+    echo "--- Prepare bundled runtime ($arch) ---"
+    if [ "$arch" = "x86_64" ]; then
+        PLATFORM=darwin-x64 bash "$SCRIPT_DIR/prepare-bundled-runtime.sh"
+    else
+        PLATFORM=darwin-arm64 bash "$SCRIPT_DIR/prepare-bundled-runtime.sh"
+    fi
+
+    echo ""
     echo "--- pnpm tauri build $tauri_target ---"
     # shellcheck disable=SC2086
     pnpm tauri build $tauri_target
