@@ -40,7 +40,7 @@ export function UserMessageBubble({
     <div className="flex w-full flex-col items-end gap-1.5">
       <div
         data-testid="user-bubble"
-        className="max-w-[80%] rounded-xl bg-primary p-2 text-sm leading-relaxed text-primary-foreground"
+        className="max-w-[80%] overflow-hidden rounded-xl bg-primary p-2 text-sm leading-relaxed text-primary-foreground"
       >
         <div
           data-testid="user-bubble-content"
