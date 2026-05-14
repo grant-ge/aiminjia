@@ -788,13 +788,30 @@ pub fn run() {
                         Err(e) => log::warn!("[diag-auto] startup upload failed: {e}"),
                     }
                     let mut tick = tokio::time::interval(std::time::Duration::from_secs(15 * 60));
+                    // After laptop sleep / suspend, default `Burst` mode fires
+                    // every missed tick back-to-back — that's how a single
+                    // expired-key event turns into 80+ retries in one second.
+                    // Skip missed ticks instead so we resume on the next
+                    // natural cadence.
+                    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
                     tick.tick().await; // skip the immediate first tick
                     loop {
                         tick.tick().await;
                         match commands::diagnostics::upload_incremental(&auth, &home, &fmgr, "periodic").await {
                             Ok(n) if n > 0 => log::info!("[diag-auto] periodic uploaded {n} chunks"),
                             Ok(_) => log::debug!("[diag-auto] periodic: nothing to upload"),
-                            Err(e) => log::warn!("[diag-auto] periodic upload failed: {e}"),
+                            Err(e) => {
+                                log::warn!("[diag-auto] periodic upload failed: {e}");
+                                // Auth / 401 errors should not be hammered each
+                                // tick — back off 1 hour to give the user time
+                                // to relogin or for the gateway to recover.
+                                if e.contains("401") || e.contains("auth_error") {
+                                    log::warn!(
+                                        "[diag-auto] auth error detected — backing off 1h before next attempt"
+                                    );
+                                    tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
+                                }
+                            }
                         }
                     }
                 });

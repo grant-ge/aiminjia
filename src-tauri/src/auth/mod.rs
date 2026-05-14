@@ -434,6 +434,23 @@ impl AuthManager {
         self.client.list_models(&session_key).await
     }
 
+    /// Force-invalidate the cached session key so the next `get_session_key`
+    /// call goes through the renewal path. Called by gateway when a 401
+    /// "Session key revoked" comes back — at that point the local
+    /// `session_key_expires_at` cannot be trusted (clock skew / server-side
+    /// revoke / tz bugs), so we drop it and let the renewal chain rebuild.
+    /// Idempotent; no-op when no auth state.
+    pub async fn invalidate_session_key(&self) {
+        let mut state = self.state.write().await;
+        let Some(auth) = state.as_mut() else { return };
+        // Set expires_at to the past so fast-path miss triggers renewal.
+        auth.session_key_expires_at = Utc::now() - chrono::Duration::seconds(1);
+        log::info!(
+            "[invalidate_session_key] session_key marked expired; next get_session_key will refresh"
+        );
+        self.persist_auth(auth);
+    }
+
     // --- Persistence ---
 
     fn persist_auth(&self, auth: &CloudAuth) {

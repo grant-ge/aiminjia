@@ -78,6 +78,28 @@ fn attach_anthropic_multimodal_turn(
 ///
 /// Parses the error message for HTTP status codes and known error patterns.
 /// Non-retryable errors (401 auth, 400 bad request, etc.) return false.
+/// Whether the error indicates the lotus session key was revoked / rejected
+/// by the server, regardless of what the local `expires_at` says. Used by
+/// `stream_message` to trigger a one-shot session refresh + retry instead of
+/// surfacing "API key invalid" to the user.
+fn is_auth_revoked_error(err: &anyhow::Error) -> bool {
+    let msg = err.to_string();
+    let lower = msg.to_lowercase();
+    let is_401 = extract_status_code(&msg) == Some(401)
+        || lower.contains("401 unauthorized")
+        || lower.contains("(401)")
+        || lower.contains("authentication_error");
+    if !is_401 {
+        return false;
+    }
+    // Avoid retrying when the error is some other 401 reason that a refresh
+    // wouldn't fix (e.g. tenant disabled). Match server's documented codes.
+    lower.contains("session key revoked")
+        || lower.contains("session_key_revoked")
+        || lower.contains("session expired")
+        || lower.contains("invalid session")
+}
+
 fn is_retryable_error(err: &anyhow::Error) -> bool {
     let msg = err.to_string();
 
@@ -386,10 +408,10 @@ impl LlmGateway {
         );
 
         // 2. Apply data masking
-        let mut mask_ctx = MaskingContext::new(masking_level);
+        let mut mask_ctx = MaskingContext::new(masking_level.clone());
         let mut masked_messages = mask_ctx.mask_messages(&messages);
         if route.provider == "lotus" {
-            attach_anthropic_multimodal_turn(&mut masked_messages, anthropic_multimodal_turn);
+            attach_anthropic_multimodal_turn(&mut masked_messages, anthropic_multimodal_turn.clone());
         }
 
         // 3. Build request
@@ -399,10 +421,10 @@ impl LlmGateway {
             true,
             system_prompt,
             context_message,
-            tool_defs_override,
+            tool_defs_override.clone(),
             max_tokens,
             settings,
-            system_segments,
+            system_segments.clone(),
             Some(conv_id.as_str()),
         );
 
@@ -439,7 +461,66 @@ impl LlmGateway {
             route.api_key.len(),
             route.model_hint
         );
-        let stream = retry_dispatch_stream(&route, request).await?;
+        let stream = match retry_dispatch_stream(&route, request.clone()).await {
+            Ok(s) => s,
+            Err(e) if route.provider == "lotus" && is_auth_revoked_error(&e) => {
+                // 401 + "Session key revoked" from lotus → the local cache
+                // wallclock can't be trusted (clock skew, server-side revoke,
+                // tz mismatch — see auth/mod.rs invalidate_session_key).
+                // Force a renewal and retry once. If still 401, surface to UI.
+                if let Some(auth) = &self.auth_manager {
+                    log::warn!(
+                        "[stream_message] lotus returned 401 Session key revoked — forcing session refresh"
+                    );
+                    auth.invalidate_session_key().await;
+                    match auth.get_session_key().await {
+                        Ok(sk) => {
+                            route.api_key = sk;
+                            // Rebuild request so the new api_key reaches the
+                            // provider (claude.rs reads route.api_key only at
+                            // build time → the cached `request` carries the
+                            // stale key in Authorization header).
+                            let mut mask_ctx_retry = MaskingContext::new(masking_level);
+                            let mut masked_retry = mask_ctx_retry.mask_messages(&messages);
+                            if route.provider == "lotus" {
+                                attach_anthropic_multimodal_turn(
+                                    &mut masked_retry,
+                                    anthropic_multimodal_turn,
+                                );
+                            }
+                            let request_retry = Self::build_request(
+                                masked_retry,
+                                &route,
+                                true,
+                                system_prompt,
+                                context_message,
+                                tool_defs_override,
+                                max_tokens,
+                                settings,
+                                system_segments,
+                                Some(conv_id.as_str()),
+                            );
+                            log::info!(
+                                "[stream_message] retrying with refreshed session_key (len={})",
+                                route.api_key.len()
+                            );
+                            mask_ctx = mask_ctx_retry;
+                            retry_dispatch_stream(&route, request_retry).await?
+                        }
+                        Err(refresh_err) => {
+                            log::warn!(
+                                "[stream_message] session refresh failed after 401: {}",
+                                refresh_err
+                            );
+                            return Err(e);
+                        }
+                    }
+                } else {
+                    return Err(e);
+                }
+            }
+            Err(e) => return Err(e),
+        };
 
         // 6. Return raw stream + cancel_rx — caller uses tokio::select! for cancellation
         Ok((task_id, stream, mask_ctx, cancel_rx))
