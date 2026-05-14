@@ -43,6 +43,19 @@ echo "Version: $VERSION ($RELEASE_TYPE)"
 echo "Project: $PROJECT_DIR"
 echo ""
 
+# Optional cleanup: nuke target/ before build to defeat stale-artifact bugs
+# where a previous failed build leaves an old-version .app in
+# src-tauri/target/release/bundle/macos/. sign-and-upload-macos.sh has a
+# version pre-flight that fails closed if this happens, but it's quicker to
+# clean up front when you know the prior run was bad.
+#
+#   CLEAN_BUILD=1 bash scripts/build-and-sign-macos.sh 0.5.24 release
+if [ "${CLEAN_BUILD:-0}" = "1" ]; then
+    echo "--- CLEAN_BUILD=1 → cargo clean ---"
+    (cd "$PROJECT_DIR/src-tauri" && cargo clean)
+    echo ""
+fi
+
 build_one_arch() {
     local arch="$1"        # aarch64 | x86_64
     local tauri_target=""  # extra --target flag for tauri build

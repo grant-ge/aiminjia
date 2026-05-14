@@ -94,6 +94,65 @@ echo "DMG: $DMG"
 echo "App: ${APP:-not found}"
 echo ""
 
+# ── Pre-flight: verify .app version matches expected (#7) ────────────────
+# Guards against stale src-tauri/target/ from a prior failed build silently
+# shipping the previous version. CFBundleShortVersionString is set by
+# bump-version → tauri.conf.json → Info.plist.
+if [ -n "$APP" ]; then
+    PLIST="$APP/Contents/Info.plist"
+    if [ ! -f "$PLIST" ]; then
+        echo "ERROR: Info.plist missing at $PLIST"
+        exit 1
+    fi
+    APP_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$PLIST" 2>/dev/null || true)
+    if [ -z "$APP_VERSION" ]; then
+        echo "ERROR: cannot read CFBundleShortVersionString from $PLIST"
+        exit 1
+    fi
+    # Tauri may strip -beta.N suffix when writing Info.plist, accept both forms.
+    EXPECTED_BASE="${VERSION%%-*}"
+    if [ "$APP_VERSION" != "$VERSION" ] && [ "$APP_VERSION" != "$EXPECTED_BASE" ]; then
+        echo "ERROR: .app version mismatch — refusing to sign stale build"
+        echo "  expected: $VERSION (or $EXPECTED_BASE)"
+        echo "  actual  : $APP_VERSION"
+        echo "  at      : $APP"
+        echo ""
+        echo "This usually means src-tauri/target/ has a stale build."
+        echo "Clean and rebuild:"
+        echo "  CLEAN_BUILD=1 bash scripts/build-and-sign-macos.sh $VERSION $RELEASE_TYPE"
+        exit 1
+    fi
+    echo "  .app version verified: $APP_VERSION"
+    echo ""
+fi
+
+# Also peek at DMG inner .app version (defends against a stale DMG produced
+# by pnpm tauri build before bump-version ran). Non-fatal — Step 2 rebuilds
+# the DMG from the signed external .app — but warn loudly.
+if [ -n "$DMG" ] && command -v hdiutil &>/dev/null; then
+    DMG_CHECK_DIR=$(mktemp -d /tmp/aijia-dmg-version-XXXX)
+    if hdiutil attach "$DMG" -mountpoint "$DMG_CHECK_DIR" -nobrowse -readonly -quiet 2>/dev/null; then
+        INNER_PLIST="$DMG_CHECK_DIR/AIjia.app/Contents/Info.plist"
+        if [ -f "$INNER_PLIST" ]; then
+            DMG_APP_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$INNER_PLIST" 2>/dev/null || true)
+        fi
+        hdiutil detach "$DMG_CHECK_DIR" -quiet 2>/dev/null || true
+        rmdir "$DMG_CHECK_DIR" 2>/dev/null || true
+        EXPECTED_BASE="${VERSION%%-*}"
+        if [ -n "${DMG_APP_VERSION:-}" ] && \
+           [ "$DMG_APP_VERSION" != "$VERSION" ] && \
+           [ "$DMG_APP_VERSION" != "$EXPECTED_BASE" ]; then
+            echo "WARN: DMG inner .app version ($DMG_APP_VERSION) != expected ($VERSION)."
+            echo "      Step 2 will rebuild the DMG from the signed external .app,"
+            echo "      so this is non-fatal — but ensure pnpm tauri build ran"
+            echo "      AFTER bump-version next time."
+            echo ""
+        fi
+    else
+        rmdir "$DMG_CHECK_DIR" 2>/dev/null || true
+    fi
+fi
+
 # ── helpers: idempotency checks ──────────────────────────────────────────
 # Returns 0 if `.app` is already fully signed with Developer ID + hardened
 # runtime, including nested dws. Saves rework on a re-run.
