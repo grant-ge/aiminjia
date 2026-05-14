@@ -32,7 +32,7 @@ import {
 import type { Conversation, Message } from '@/types/message'
 
 /** Maximum concurrent conversations allowed (must match backend). */
-const MAX_CONCURRENT_AGENTS = 3
+const MAX_CONCURRENT_AGENTS = 99
 
 /** Generate a unique ID without requiring the `uuid` package. */
 function generateId(): string {

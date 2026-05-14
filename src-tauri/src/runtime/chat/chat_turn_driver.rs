@@ -1257,7 +1257,7 @@ impl RuntimeChatTurnDriver {
             prompt_snapshot: Some(effective_prompt_snapshot),
             tool_defs: final_tool_defs,
             allowed_tools: overrides.allowed_tools,
-            max_iterations: overrides.max_iterations.unwrap_or(60),
+            max_iterations: overrides.max_iterations.unwrap_or(120),
             token_budget: overrides.token_budget.unwrap_or_else(|| {
                 // Cloud mode: ask for an aspirational ceiling and let the lotus
                 // gateway clamp to the real per-upstream-model cap (Step 1).
@@ -1420,7 +1420,7 @@ impl RuntimeChatTurnDriver {
 
         // persist each task-notification XML as user message (best-effort)
         for notification in &pending_task_notifications {
-            if let Err(e) = executor
+            match executor
                 .persist_user_message(
                     request.conversation_id.as_str(),
                     &notification.xml,
@@ -1429,9 +1429,33 @@ impl RuntimeChatTurnDriver {
                 )
                 .await
             {
-                log::warn!(
+                Ok(msg_id) => {
+                    // Emit MessagePersisted so the frontend sees the
+                    // <task-notification> XML in real time, not only after
+                    // a conversation reload. Best-effort: never fail the turn.
+                    if let Err(e) = self
+                        .event_bus
+                        .emit(RuntimeEvent::new(
+                            turn.session_id().clone(),
+                            turn.run_id().clone(),
+                            RuntimeEventKind::MessagePersisted {
+                                message_id: msg_id,
+                                role: "user".to_string(),
+                                content: build_user_content_json(&notification.xml, &[]),
+                                client_message_id: None,
+                                tool_calls: None,
+                            },
+                        ))
+                        .await
+                    {
+                        log::warn!(
+                            "[chat_turn_driver] emit MessagePersisted for task-notification failed: {e}"
+                        );
+                    }
+                }
+                Err(e) => log::warn!(
                     "[chat_turn_driver] persist task-notification failed (best-effort): {e}"
-                );
+                ),
             }
         }
 
@@ -1448,7 +1472,7 @@ impl RuntimeChatTurnDriver {
 
         // persist peer messages XML as user message (best-effort)
         if let Some(xml) = peer_xml {
-            if let Err(e) = executor
+            match executor
                 .persist_user_message(
                     request.conversation_id.as_str(),
                     &xml,
@@ -1457,9 +1481,34 @@ impl RuntimeChatTurnDriver {
                 )
                 .await
             {
-                log::warn!(
+                Ok(msg_id) => {
+                    // Emit MessagePersisted so the frontend can render the
+                    // <peer-messages> XML during streaming. Without this,
+                    // the team-message banners would only appear after a
+                    // conversation reload.
+                    if let Err(e) = self
+                        .event_bus
+                        .emit(RuntimeEvent::new(
+                            turn.session_id().clone(),
+                            turn.run_id().clone(),
+                            RuntimeEventKind::MessagePersisted {
+                                message_id: msg_id,
+                                role: "user".to_string(),
+                                content: build_user_content_json(&xml, &[]),
+                                client_message_id: None,
+                                tool_calls: None,
+                            },
+                        ))
+                        .await
+                    {
+                        log::warn!(
+                            "[chat_turn_driver] emit MessagePersisted for peer-messages failed: {e}"
+                        );
+                    }
+                }
+                Err(e) => log::warn!(
                     "[chat_turn_driver] persist peer-messages failed (best-effort): {e}"
-                );
+                ),
             }
         }
 
@@ -1528,19 +1577,26 @@ impl RuntimeChatTurnDriver {
             &request.content,
             &request.attachments,
         );
-        self.event_bus
-            .emit(RuntimeEvent::new(
-                session_id.clone(),
-                run_id.clone(),
-                RuntimeEventKind::MessagePersisted {
-                    message_id: pending_user_msg_id.clone(),
-                    role: "user".to_string(),
-                    content: pending_user_content,
-                    client_message_id: pending_client_msg_id.clone(),
-                    tool_calls: None,
-                },
-            ))
-            .await?;
+        // Skip emitting MessagePersisted for the resume-sentinel: it's an
+        // internal wake signal, not a user-visible turn. Emitting it would
+        // surface a fake "__resume_from_task_notification__" bubble in the
+        // chat UI (and worse, with an empty message_id since the persistence
+        // step above was also skipped).
+        if !is_resume_for_task_notification {
+            self.event_bus
+                .emit(RuntimeEvent::new(
+                    session_id.clone(),
+                    run_id.clone(),
+                    RuntimeEventKind::MessagePersisted {
+                        message_id: pending_user_msg_id.clone(),
+                        role: "user".to_string(),
+                        content: pending_user_content,
+                        client_message_id: pending_client_msg_id.clone(),
+                        tool_calls: None,
+                    },
+                ))
+                .await?;
+        }
 
         // Build the cancel token for this turn.
         let cancel = turn.cancellation();
