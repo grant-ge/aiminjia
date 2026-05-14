@@ -162,7 +162,7 @@ function MessageBubble({ side, from, to, text, ts, isError, onDrillAgent }: Mess
         )}
       >
         {wrappedAvatar}
-        <div className={cn('flex flex-col gap-0.5', side === 'right' && 'items-end')}>
+        <div className={cn('flex flex-col', side === 'right' && 'items-end')}>
           <div className="flex items-center gap-1.5">
             <span className="font-medium text-foreground">{displayFromName}</span>
             <span>→ {displayToName}</span>
