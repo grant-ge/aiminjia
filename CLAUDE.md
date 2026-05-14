@@ -262,6 +262,18 @@ workspace 目录（用户可自定义，默认也是 `~/.renlijia/`）下存放�
 - **macOS arm64 + x86_64**：在你的 Mac 上 `build-and-sign-macos.sh` 串行 build → codesign → notarize → staple → tauri signer → 上传 OSS。串行的原因是 `setup-dws.sh` 切换 runtime symlink，并发会冲突。
 - **Windows x64**：tag 触发 `windows-latest` runner 跑 unsigned 构建 → 产物上传到 OSS staging（`aijia/staging/unsigned/v{ver}/`，公开 CDN URL）→ 在你的 Windows 机器上跑 `release-windows.ps1` 一键完成：拉 staging exe → signtool 签名（带 timestamp）→ tauri signer 生成 `.sig` → Node + `ali-oss` 上传 → 清理 staging。
 
+### 内置运行时（自 0.5.24 起）
+
+发版前**必须**先跑 `scripts/prepare-bundled-runtime.{sh,ps1}`，把 Node 20.18 / Python 3.12.7 / uv 0.4.27 打入 `src-tauri/resources/runtime/<platform>/`。Tauri build 把目录复制进安装包（~85MB 增量），用户首启完全离线可用。
+
+- **入口脚本**：mac 走 `scripts/build-and-sign-macos.sh` 内部自动按 arch 调 `prepare-bundled-runtime.sh PLATFORM=darwin-{arm64,x64}`；Windows CI `.github/workflows/build-desktop.yml` 的 build job 自动跑 `prepare-bundled-runtime.ps1`。
+- **上游源**：`scripts/runtime-sources.json` pin 了 Node（nodejs.org）、Python（mac 用 python-build-standalone install_only，win 用官方 embeddable zip）、uv（astral-sh release）的 URL + sha256。升级运行时改 `bundleVersion` + 各组件 version + 9 个 sha256。
+- **缓存**：`.runtime-cache/`（已 gitignore）按文件名缓存下载产物，CI 也 cache 这个目录（`actions/cache@v4` key on `hashFiles('scripts/runtime-sources.json')`）。
+- **解析链**：启动期 `BundledRuntimeResolver`（reads `app.path().resource_dir()/runtime/<platform>/`）→ `InstalledRuntimeResolver`（`~/.renlijia/runtimes/renlijia-primary-runtime/current`，OSS 升级路径）→ on-demand OSS download（兜底）。前两个任一成功即跳过 OSS。详见 `src-tauri/src/runtime/dependencies/{bundled_resolver,chain_resolver,manager}.rs`。
+- **mac 签名**：现有 inside-out `find -type f` + `file ... Mach-O` 自动覆盖 `Contents/Resources/runtime/` 下所有二进制（node/python3/uv/uvx/libpython3.12.dylib + lib-dynload `.so`）。`sign-and-upload-macos.sh` 在签名后**审计** runtime/ 下每个 Mach-O 是否带 `flags=...runtime`（hardened），漏一个则 fail，防止 notarization 拒签。
+- **诊断**：Settings → 运行时 显示 `activeResolver`、内置版本号、`node/python/uv --version` 实时输出 + 一键重检（`runtime_diagnostics` Tauri 命令 → `src/components/settings/panels/RuntimePanel.tsx`）。
+- **Spec/Plan**：`docs/superpowers/plans/2026-05-13-bundle-runtime-into-installer.md`。
+
 ### 三种包
 
 | 类型 | 签名 | 来源 | 用途 |
