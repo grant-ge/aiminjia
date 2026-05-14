@@ -111,6 +111,30 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: .\scripts\setup-dws.ps1
 
+      - name: Cache bundled runtime sources
+        uses: actions/cache@v4
+        with:
+          path: .runtime-cache
+          key: runtime-sources-v1-${{ hashFiles('scripts/runtime-sources.json') }}
+          restore-keys: runtime-sources-v1-
+
+      - name: Prepare bundled runtime (Node/Python/uv)
+        shell: pwsh
+        run: .\scripts\prepare-bundled-runtime.ps1
+
+      - name: Verify bundled runtime layout
+        shell: pwsh
+        run: |
+          $base = "src-tauri\resources\runtime\win32-x64"
+          if (-not (Test-Path "$base\node\node.exe"))    { throw "node.exe missing" }
+          if (-not (Test-Path "$base\python\python.exe")) { throw "python.exe missing" }
+          if (-not (Test-Path "$base\uv\uv.exe"))         { throw "uv.exe missing" }
+          if (-not (Test-Path "$base\node\node_modules")) { throw "node_modules dir missing" }
+          if (-not (Test-Path "$base\python\Lib\site-packages")) { throw "site-packages dir missing" }
+          & "$base\node\node.exe" --version
+          & "$base\python\python.exe" --version
+          & "$base\uv\uv.exe" --version
+
       - name: Build Tauri app
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
