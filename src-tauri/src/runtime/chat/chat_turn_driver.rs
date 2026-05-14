@@ -2356,6 +2356,22 @@ impl RuntimeChatTurnDriver {
                     },
                 ))
                 .await?;
+            // Path A wake: enqueue 一次让 supervisor 走 Idle→Running CAS，触发已
+            // 注册的 wake_fn（与 Path C 同一条续接 turn 链路）。否则 pending
+            // 信号仅以事件形式 emit，无消费者，Lead 永远不会续接 turn。
+            let woke = sup.enqueue(key).await;
+            record_diagnostic(
+                &ws,
+                DiagnosticEvent::new(
+                    "turn.path_a.wake_fn_fired",
+                    DiagnosticSource::Backend,
+                )
+                .conversation_id(session_id.as_str())
+                .run_id(run_id.as_str())
+                .agent_id(key.1.as_str())
+                .ok(woke)
+                .payload(serde_json::json!({ "transition_won": woke })),
+            );
         } else {
             record_diagnostic(
                 &ws,

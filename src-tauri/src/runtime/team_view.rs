@@ -125,7 +125,7 @@ pub fn build_team_overview(
         .join(conversation_id);
 
     let members = load_teammates(&conv_dir.join("teammates"));
-    let events = extract_events(&messages, &members);
+    let events = extract_events(&messages, &members, &conv_dir);
     let teams = group_events_into_teams(events, members, conversation_id);
 
     Ok(TeamOverview {
@@ -232,12 +232,24 @@ fn load_teammates(teammates_dir: &Path) -> Vec<TeamAgent> {
     out
 }
 
-/// Scan the lead's main message timeline and extract every team-relevant
-/// event. Returns events in the order they appear in the conversation
-/// (which is already chronological — see file_store::messages sort).
-fn extract_events(messages: &[Value], members: &[TeamAgent]) -> Vec<TeamEvent> {
+/// Build team events purely from `team-chat.jsonl` (the UI mirror written
+/// by the `SendMessage` tool at delivery time) plus the lifecycle events
+/// (TeamCreate / TeamDelete / Agent spawn / TeammateStop) that only exist
+/// on the Lead's main `messages.jsonl`.
+///
+/// Why split the sources:
+/// - SendMessage events: only `team-chat.jsonl`. Avoids double-counting
+///   Lead messages, and captures teammate-originated messages that the
+///   old reverse-scan path missed (peer-messages XML only appears after
+///   the Lead runs a continuation turn — which may not happen at all).
+/// - Lifecycle events: only `messages.jsonl`. They're tool calls / results
+///   on the Lead's timeline; team-chat.jsonl never carries them.
+fn extract_events(messages: &[Value], members: &[TeamAgent], conv_dir: &Path) -> Vec<TeamEvent> {
     let mut events: Vec<TeamEvent> = Vec::new();
 
+    // 1) Lifecycle events from messages.jsonl (TeamCreate / TeamDelete /
+    //    Agent spawn / TeammateStop). SendMessage tool calls are *not*
+    //    pushed here — see team-chat.jsonl below for those.
     for msg in messages {
         let role = msg.get("role").and_then(|v| v.as_str()).unwrap_or("");
         let ts = msg
@@ -250,30 +262,73 @@ fn extract_events(messages: &[Value], members: &[TeamAgent]) -> Vec<TeamEvent> {
             "assistant" => {
                 if let Some(tool_calls) = msg.get("toolCalls").and_then(|v| v.as_array()) {
                     for tc in tool_calls {
+                        let name = tc.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                        // Skip SendMessage — covered by team-chat.jsonl below.
+                        if name == "SendMessage" {
+                            continue;
+                        }
                         push_event_for_assistant_tool_call(&mut events, tc, &ts);
                     }
                 }
             }
             "tool" => {
                 if let Some(tr) = msg.get("toolResult") {
+                    let name = tr.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    // Skip SendMessage — covered by team-chat.jsonl below.
+                    if name == "SendMessage" {
+                        continue;
+                    }
                     push_event_for_tool_result(&mut events, tr, &ts, members);
                 }
             }
-            "user" => {
-                // <peer-messages> XML payload — teammate replies funneled to lead.
-                if let Some(text) = msg
-                    .get("content")
-                    .and_then(|c| c.get("text"))
-                    .and_then(|v| v.as_str())
-                {
-                    push_events_from_peer_xml(&mut events, text, &ts);
-                }
-            }
+            // user: peer-messages XML payload skipped on purpose; team-chat.jsonl
+            // is now the single source of truth for inter-agent messages.
             _ => {}
         }
     }
 
+    // 2) All inter-agent messages from team-chat.jsonl (Lead → teammate,
+    //    teammate → Lead, teammate ↔ teammate).
+    append_events_from_team_chat_jsonl(&mut events, conv_dir);
+
+    // Stable sort by ts so events interleave correctly chronologically.
+    events.sort_by(|a, b| a.ts().cmp(b.ts()));
+
     events
+}
+
+/// Read `<conv_dir>/team-chat.jsonl` (if present) and push every entry as a
+/// `SendMessage` event. This is the sole source of inter-agent messages
+/// for the team view.
+///
+/// Best-effort: any parse / IO error is silently skipped — this file is
+/// not the source of truth for delivery (the in-memory inbox is); it
+/// exists purely for UI replay.
+fn append_events_from_team_chat_jsonl(out: &mut Vec<TeamEvent>, conv_dir: &Path) {
+    let path = conv_dir.join("team-chat.jsonl");
+    let Ok(raw) = fs::read_to_string(&path) else { return };
+    for line in raw.lines() {
+        let trimmed = strip_trailing_marker(line.trim());
+        if trimmed.is_empty() {
+            continue;
+        }
+        let Ok(v) = serde_json::from_str::<Value>(trimmed) else { continue };
+        let ts = v.get("ts").and_then(|x| x.as_str()).unwrap_or("").to_string();
+        let from = v.get("from").and_then(|x| x.as_str()).unwrap_or("system").to_string();
+        let to = v.get("to").and_then(|x| x.as_str()).unwrap_or("?").to_string();
+        let text = v.get("text").and_then(|x| x.as_str()).unwrap_or("").to_string();
+        if ts.is_empty() {
+            continue;
+        }
+        out.push(TeamEvent::SendMessage {
+            ts,
+            from,
+            to,
+            text,
+            is_error: false,
+            tool_call_id: String::new(),
+        });
+    }
 }
 
 fn push_event_for_assistant_tool_call(out: &mut Vec<TeamEvent>, tc: &Value, ts: &str) {

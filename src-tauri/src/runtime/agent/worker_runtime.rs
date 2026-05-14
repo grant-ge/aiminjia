@@ -1536,6 +1536,13 @@ async fn teammate_real_turn(
         .with_file_ops(file_ops)
         .with_runtime_resolver(engine.runtime_deps.runtime_resolver.clone())
         .with_read_file_state(child_read_file_state.clone());
+    // Inject the conv_dir so teammate-originated tool calls (notably
+    // SendMessage) carry it via ToolExecutionContext.conv_dir. Without
+    // this, team-chat.jsonl never records teammate → Lead / teammate →
+    // teammate messages and the team view stays one-sided.
+    if let Some(dir) = ctx.conv_dir.clone() {
+        query_engine = query_engine.with_conv_dir(dir);
+    }
     // LTR: attach Team / AgentName / Inbox / LeadIdle / Cancellation registries
     // so cross-agent tools (SendMessage, TaskList, TaskClaim, ...) can:
     //   - resolve teammate names to AgentId (agent_names)

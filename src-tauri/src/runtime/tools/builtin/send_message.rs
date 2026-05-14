@@ -29,6 +29,49 @@ use crate::telemetry::{record_diagnostic, DiagnosticEvent, DiagnosticSource};
 
 pub const BROADCAST_TOKEN: &str = "*";
 
+/// Append one SendMessage delivery to `<conv_dir>/team-chat.jsonl`. Best-effort:
+/// any IO error is logged at warn but never surfaced — inbox delivery is the
+/// authoritative path; this file is a UI-only mirror for the team chat drawer.
+fn append_team_chat_entry(
+    conv_dir: Option<&std::path::Path>,
+    from: &str,
+    to: &str,
+    message: &StructuredMessage,
+) {
+    let Some(dir) = conv_dir else { return };
+    let body = message.as_text().unwrap_or("").to_string();
+    let entry = serde_json::json!({
+        "ts": chrono::Utc::now().to_rfc3339(),
+        "from": from,
+        "to": to,
+        "text": body,
+        "variant": message.variant_name(),
+    });
+    let path = dir.join("team-chat.jsonl");
+    let line = match serde_json::to_string(&entry) {
+        Ok(s) => s,
+        Err(e) => {
+            log::warn!("[team_chat.jsonl] serialize failed: {e}");
+            return;
+        }
+    };
+    use std::io::Write;
+    match std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+    {
+        Ok(mut f) => {
+            if let Err(e) = writeln!(f, "{line}") {
+                log::warn!("[team_chat.jsonl] write failed path={}: {e}", path.display());
+            }
+        }
+        Err(e) => {
+            log::warn!("[team_chat.jsonl] open failed path={}: {e}", path.display());
+        }
+    }
+}
+
 pub struct SendMessageRuntimeTool;
 
 #[async_trait]
@@ -164,6 +207,12 @@ impl RuntimeTool for SendMessageRuntimeTool {
                             .is_ok()
                         {
                             delivered += 1;
+                            append_team_chat_entry(
+                                ctx.conv_dir.as_deref(),
+                                caller_name.as_deref().unwrap_or("system"),
+                                name,
+                                &message,
+                            );
                         } else {
                             missing.push(format!("{name} (inbox closed)"));
                         }
@@ -235,6 +284,13 @@ impl RuntimeTool for SendMessageRuntimeTool {
             .map_err(|_| {
                 ToolError::ExecutionFailed(format!("agent `{to}` inbox closed; message dropped"))
             })?;
+
+        append_team_chat_entry(
+            ctx.conv_dir.as_deref(),
+            caller_name.as_deref().unwrap_or("system"),
+            &to,
+            &message,
+        );
 
         record_diagnostic(
             &ws,
