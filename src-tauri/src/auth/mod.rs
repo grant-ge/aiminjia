@@ -9,6 +9,7 @@
 //! Thread-safe via `RwLock<Option<CloudAuth>>`.
 
 pub mod client;
+pub mod device_id;
 pub mod state;
 
 use anyhow::{anyhow, Result};
@@ -17,7 +18,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::storage::crypto::SecureStorage;
-use crate::storage::GlobalConfigStore;
+use crate::storage::{AiJiaHome, GlobalConfigStore};
 
 use client::AuthClient;
 use state::{CloudAuth, CloudAuthInfo, CloudModelInfo};
@@ -30,18 +31,34 @@ pub struct AuthManager {
     state: RwLock<Option<CloudAuth>>,
     global_store: Arc<GlobalConfigStore>,
     secure_storage: Option<Arc<SecureStorage>>,
+    /// Stable per-install identifier sent to the server when creating
+    /// session keys; lets the server collapse repeat creations from the
+    /// same desktop install into one slot.  Computed lazily on first
+    /// construction via `device_id::load_or_create`.
+    device_id: String,
+    /// Best-effort throttle to prevent the 401 auto-retry path from
+    /// rebuilding the session key faster than every 60s. Stores the last
+    /// successful `create_session_key` timestamp.
+    last_session_create_at: RwLock<Option<chrono::DateTime<Utc>>>,
 }
 
 impl AuthManager {
     /// Create a new AuthManager and restore persisted auth state (if any).
-    pub fn new(global_store: Arc<GlobalConfigStore>, secure_storage: Option<Arc<SecureStorage>>) -> Self {
-        let mgr = Self {
+    pub fn new(
+        global_store: Arc<GlobalConfigStore>,
+        secure_storage: Option<Arc<SecureStorage>>,
+        home: &AiJiaHome,
+    ) -> Self {
+        let device_id = device_id::load_or_create(home);
+        log::info!("[AuthManager] device_id={}", device_id);
+        Self {
             client: AuthClient::new(),
             state: RwLock::new(None),
             global_store,
             secure_storage,
-        };
-        mgr
+            device_id,
+            last_session_create_at: RwLock::new(None),
+        }
     }
 
     /// Restore persisted auth state from storage. Call during app init.
@@ -90,11 +107,13 @@ impl AuthManager {
         // Create session key
         let sk_resp = self
             .client
-            .create_session_key(&auth_resp.access_token)
+            .create_session_key(&auth_resp.access_token, Some(&self.device_id))
             .await?;
-        if sk_resp.expires_at <= now {
+        let sk_expires_at = sk_resp.effective_expires_at();
+        if sk_expires_at <= now {
             return Err(anyhow!("服务器返回了无效的会话密钥有效期"));
         }
+        *self.last_session_create_at.write().await = Some(Utc::now());
 
         // Fetch available models
         let models = self
@@ -112,7 +131,7 @@ impl AuthManager {
             refresh_token: auth_resp.refresh_token,
             refresh_expires_at: auth_resp.refresh_expires_at,
             session_key: sk_resp.key,
-            session_key_expires_at: sk_resp.expires_at,
+            session_key_expires_at: sk_expires_at,
             user: user.clone(),
             tenant: tenant.clone(),
         };
@@ -251,22 +270,38 @@ impl AuthManager {
                         }
                     }
 
-                    // Try to create a fresh session key (best-effort)
-                    match self
-                        .client
-                        .create_session_key(&cloud_auth.access_token)
-                        .await
-                    {
-                        Ok(sk) if sk.expires_at > now => {
-                            cloud_auth.session_key = sk.key;
-                            cloud_auth.session_key_expires_at = sk.expires_at;
+                    // C-fix: only spin up a fresh session_key when the
+                    // currently-cached one is missing or already expired.
+                    // Repeatedly calling create_session_key on every app
+                    // launch was consuming a 10-active-key slot per device
+                    // per startup (see decision in spec).
+                    let needs_new_session = cloud_auth.session_key.is_empty()
+                        || cloud_auth.session_key_expires_at <= now;
+                    if needs_new_session {
+                        match self
+                            .client
+                            .create_session_key(&cloud_auth.access_token, Some(&self.device_id))
+                            .await
+                        {
+                            Ok(sk) => {
+                                let sk_expires = sk.effective_expires_at();
+                                if sk_expires > now {
+                                    cloud_auth.session_key = sk.key;
+                                    cloud_auth.session_key_expires_at = sk_expires;
+                                    *self.last_session_create_at.write().await = Some(Utc::now());
+                                } else {
+                                    log::warn!("refresh_auth_info: server returned expired session key, keeping existing");
+                                }
+                            }
+                            Err(e) => {
+                                log::warn!("refresh_auth_info: create_session_key failed: {}, keeping existing", e);
+                            }
                         }
-                        Ok(_) => {
-                            log::warn!("refresh_auth_info: server returned expired session key, keeping existing");
-                        }
-                        Err(e) => {
-                            log::warn!("refresh_auth_info: create_session_key failed: {}, keeping existing", e);
-                        }
+                    } else {
+                        log::info!(
+                            "[refresh_auth_info] keeping existing session_key (expires_at={}); skipping create",
+                            cloud_auth.session_key_expires_at
+                        );
                     }
 
                     self.persist_auth(&cloud_auth);
@@ -360,25 +395,45 @@ impl AuthManager {
 
         log::info!("Session key expired, attempting renewal...");
 
+        // B-fix: throttle session_key creation to avoid retry loops where a
+        // 401 retry triggers a fresh key, which in turn revokes another
+        // device's key, which 401-retries, etc. Only allow one create per
+        // 60s; below that, surface the cached key (the caller's 401 path
+        // is the next gate — it will give up if still 401).
+        let throttle_window = chrono::Duration::seconds(60);
+        if let Some(last) = *self.last_session_create_at.read().await {
+            if Utc::now() - last < throttle_window {
+                log::warn!(
+                    "[get_session_key] suppressing create_session_key — last create was {}s ago (throttle={}s)",
+                    (Utc::now() - last).num_seconds(),
+                    throttle_window.num_seconds()
+                );
+                return Ok(auth.session_key.clone());
+            }
+        }
+
         // Try to create new session key with current access_token
         if auth.access_expires_at > now + buffer {
-            match self.client.create_session_key(&auth.access_token).await {
-                Ok(sk_resp) if sk_resp.expires_at > now => {
-                    auth.session_key = sk_resp.key.clone();
-                    auth.session_key_expires_at = sk_resp.expires_at;
-                    self.persist_auth(auth);
-                    log::info!(
-                        "[get_session_key] renewed via access_token (len={}, expires_at={})",
-                        sk_resp.key.len(),
-                        sk_resp.expires_at
-                    );
-                    return Ok(sk_resp.key);
+            match self.client.create_session_key(&auth.access_token, Some(&self.device_id)).await {
+                Ok(sk_resp) => {
+                    let sk_expires = sk_resp.effective_expires_at();
+                    if sk_expires > now {
+                        auth.session_key = sk_resp.key.clone();
+                        auth.session_key_expires_at = sk_expires;
+                        self.persist_auth(auth);
+                        *self.last_session_create_at.write().await = Some(Utc::now());
+                        log::info!(
+                            "[get_session_key] renewed via access_token (len={}, expires_at={})",
+                            sk_resp.key.len(),
+                            sk_expires
+                        );
+                        return Ok(sk_resp.key);
+                    } else {
+                        log::warn!("Session key response has invalid expires_at, skipping");
+                    }
                 }
                 Err(e) => {
                     log::warn!("Failed to create session key: {}", e);
-                }
-                Ok(_) => {
-                    log::warn!("Session key response has invalid expires_at, skipping");
                 }
             }
         }
@@ -403,12 +458,14 @@ impl AuthManager {
                     self.persist_auth(auth);
 
                     // Create new session key
-                    let sk_resp = self.client.create_session_key(&new_access_token).await?;
-                    if sk_resp.expires_at <= now {
+                    let sk_resp = self.client.create_session_key(&new_access_token, Some(&self.device_id)).await?;
+                    let sk_expires = sk_resp.effective_expires_at();
+                    if sk_expires <= now {
                         return Err(anyhow!("服务器返回了无效的会话密钥有效期"));
                     }
+                    *self.last_session_create_at.write().await = Some(Utc::now());
                     auth.session_key = sk_resp.key.clone();
-                    auth.session_key_expires_at = sk_resp.expires_at;
+                    auth.session_key_expires_at = sk_expires;
                     self.persist_auth(auth);
                     log::info!("Token refreshed and session key renewed");
                     return Ok(sk_resp.key);
@@ -432,6 +489,23 @@ impl AuthManager {
     pub async fn get_available_models(&self) -> Result<Vec<CloudModelInfo>> {
         let session_key = self.get_session_key().await?;
         self.client.list_models(&session_key).await
+    }
+
+    /// Force-invalidate the cached session key so the next `get_session_key`
+    /// call goes through the renewal path. Called by gateway when a 401
+    /// "Session key revoked" comes back — at that point the local
+    /// `session_key_expires_at` cannot be trusted (clock skew / server-side
+    /// revoke / tz bugs), so we drop it and let the renewal chain rebuild.
+    /// Idempotent; no-op when no auth state.
+    pub async fn invalidate_session_key(&self) {
+        let mut state = self.state.write().await;
+        let Some(auth) = state.as_mut() else { return };
+        // Set expires_at to the past so fast-path miss triggers renewal.
+        auth.session_key_expires_at = Utc::now() - chrono::Duration::seconds(1);
+        log::info!(
+            "[invalidate_session_key] session_key marked expired; next get_session_key will refresh"
+        );
+        self.persist_auth(auth);
     }
 
     // --- Persistence ---

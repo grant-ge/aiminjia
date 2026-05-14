@@ -81,9 +81,19 @@ jobs:
         uses: swatinem/rust-cache@v2.7.3
         with:
           workspaces: src-tauri
+          cache-on-failure: true
+          cache-all-crates: true
+          save-if: ${{ github.event_name == 'push' }}
 
       - name: Install frontend dependencies
         run: pnpm install
+
+      - name: Pre-install ali-oss for staging upload
+        # ci-upload-staging.mjs falls back to `npm install ali-oss` on demand,
+        # but `npm install` is flaky on windows-latest runners (intermittent
+        # "Cannot read properties of null" failures). Install via pnpm so the
+        # script's `await import('ali-oss')` resolves without needing npm.
+        run: pnpm add -D ali-oss@6 --ignore-workspace-root-check
 
       - name: Cache dws CLI
         id: dws-cache
