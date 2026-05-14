@@ -64,10 +64,28 @@ build_one_arch() {
 
     echo ""
     echo "--- Prepare bundled runtime ($arch) ---"
+    # Stash the OTHER platform's runtime out of resources/ so tauri bundle
+    # only ships the runtime that matches this build's CPU. Without this
+    # the .app for arm64 would carry darwin-x64/ too (and vice versa),
+    # nearly doubling installer size. Stash dir is restored by trap.
+    local plat_keep plat_stash
     if [ "$arch" = "x86_64" ]; then
-        PLATFORM=darwin-x64 bash "$SCRIPT_DIR/prepare-bundled-runtime.sh"
+        plat_keep="darwin-x64"
+        plat_stash="darwin-arm64"
     else
-        PLATFORM=darwin-arm64 bash "$SCRIPT_DIR/prepare-bundled-runtime.sh"
+        plat_keep="darwin-arm64"
+        plat_stash="darwin-x64"
+    fi
+    PLATFORM="$plat_keep" bash "$SCRIPT_DIR/prepare-bundled-runtime.sh"
+
+    local stash_src="$PROJECT_DIR/src-tauri/resources/runtime/$plat_stash"
+    local stash_tmp=""
+    if [ -d "$stash_src" ]; then
+        stash_tmp="$(mktemp -d "/tmp/aijia-runtime-stash-XXXX")"
+        echo "  stashing $plat_stash -> $stash_tmp"
+        mv "$stash_src" "$stash_tmp/"
+        # Restore on any exit path so a failed build doesn't lose the stash
+        trap "[ -n '$stash_tmp' ] && [ -d '$stash_tmp/$plat_stash' ] && mv '$stash_tmp/$plat_stash' '$stash_src' && rmdir '$stash_tmp' 2>/dev/null; true" RETURN
     fi
 
     echo ""
