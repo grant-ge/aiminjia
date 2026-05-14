@@ -316,3 +316,115 @@ pub fn runtime_health_payload_from_dependencies(
         }),
     }
 }
+
+// ─── Bundled runtime diagnostics ─────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeDiagnosticsPayload {
+    /// "bundled" | "installed" | "none"
+    pub active_resolver: String,
+    pub bundled_version: Option<String>,
+    pub installed_version: Option<String>,
+    pub node: String,
+    pub python: String,
+    pub uv: String,
+}
+
+#[tauri::command]
+pub async fn runtime_diagnostics(
+    app: tauri::AppHandle,
+) -> Result<RuntimeDiagnosticsPayload, String> {
+    use crate::runtime::dependencies::{BundledRuntimeResolver, RuntimeResolver};
+    use tauri::Manager;
+
+    let resource_dir = app
+        .path()
+        .resource_dir()
+        .map_err(|e| format!("resource_dir: {e}"))?;
+    let bundled = BundledRuntimeResolver::new(resource_dir);
+    let bundled_version = bundled.bundled_version();
+
+    let mgr_state = app
+        .try_state::<ManagedRuntimeManager>()
+        .ok_or_else(|| "RuntimeManager not registered".to_string())?;
+    let mgr: ManagedRuntimeManager = mgr_state.inner().clone();
+
+    let deps = mgr
+        .workspace_dependencies()
+        .map_err(|e| format!("resolve failed: {e}"))?;
+
+    let active = if bundled.workspace_dependencies().is_ok() {
+        "bundled"
+    } else if mgr.resolver().workspace_dependencies().is_ok() {
+        "installed"
+    } else {
+        "none"
+    };
+
+    let node_v = diag_run_version(&deps.node).await.unwrap_or_else(|| "unknown".into());
+    let py_v = diag_run_version(&deps.python).await.unwrap_or_else(|| "unknown".into());
+    let uv_v = diag_run_version(&deps.uv).await.unwrap_or_else(|| "unknown".into());
+
+    let installed_version = diag_read_installed_version(&app);
+
+    Ok(RuntimeDiagnosticsPayload {
+        active_resolver: active.to_string(),
+        bundled_version,
+        installed_version,
+        node: node_v,
+        python: py_v,
+        uv: uv_v,
+    })
+}
+
+async fn diag_run_version(path: &std::path::Path) -> Option<String> {
+    use crate::storage::process_ext::NoWindowExt;
+    let out = tokio::process::Command::new(path)
+        .arg("--version")
+        .no_window()
+        .output()
+        .await
+        .ok()?;
+    let merged = if out.stdout.is_empty() { out.stderr } else { out.stdout };
+    Some(String::from_utf8_lossy(&merged).trim().to_string())
+}
+
+fn diag_read_installed_version(app: &tauri::AppHandle) -> Option<String> {
+    use tauri::Manager;
+    let home = app.try_state::<crate::storage::aijia_home::AiJiaHome>()?;
+    let pointer = home.root().join("runtimes/renlijia-primary-runtime/current");
+    let content = std::fs::read_to_string(&pointer).ok()?;
+    let trimmed = content.trim().trim_start_matches("versions/");
+    Some(trimmed.to_string())
+}
+
+#[cfg(test)]
+mod diagnostics_tests {
+    use super::*;
+
+    #[test]
+    fn diagnostics_payload_serializes_active_resolver_and_versions_in_camelcase() {
+        let payload = RuntimeDiagnosticsPayload {
+            active_resolver: "bundled".to_string(),
+            bundled_version: Some("2026.05.13-runtime.1".to_string()),
+            installed_version: None,
+            node: "v20.18.0".to_string(),
+            python: "Python 3.12.7".to_string(),
+            uv: "uv 0.4.27".to_string(),
+        };
+        let json = serde_json::to_string(&payload).unwrap();
+        assert!(
+            json.contains("\"activeResolver\":\"bundled\""),
+            "missing activeResolver in {json}"
+        );
+        assert!(
+            json.contains("\"bundledVersion\":\"2026.05.13-runtime.1\""),
+            "missing bundledVersion in {json}"
+        );
+        assert!(
+            json.contains("\"installedVersion\":null"),
+            "expected null installedVersion in {json}"
+        );
+    }
+}

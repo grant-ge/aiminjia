@@ -903,6 +903,7 @@ pub fn run() {
             transport::tauri_commands::runtime::runtime_reinstall,
             transport::tauri_commands::runtime::runtime_cleanup_old_versions,
             transport::tauri_commands::runtime::runtime_cancel_operation,
+            transport::tauri_commands::runtime::runtime_diagnostics,
             // Persona commands
             commands::persona::list_personas,
             commands::persona::get_persona,
