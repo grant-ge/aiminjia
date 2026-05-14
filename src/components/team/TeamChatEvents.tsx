@@ -161,19 +161,13 @@ function MessageBubble({ side, from, to, text, ts, isError, onDrillAgent }: Mess
           side === 'right' && 'items-end',
         )}
       >
-        <div
-          className={cn(
-            'flex items-center gap-1.5',
-            side === 'right' && 'flex-row-reverse',
-          )}
-        >
-          {wrappedAvatar}
-          <span className="font-medium text-foreground">{displayFromName}</span>
-        </div>
         <div className="flex items-center gap-1.5">
+          {side === 'left' && wrappedAvatar}
+          <span className="font-medium text-foreground">{displayFromName}</span>
           <span>→ {displayToName}</span>
-          <span className="opacity-60">{formatClock(ts)}</span>
+          {side === 'right' && wrappedAvatar}
         </div>
+        <span className="opacity-60">{formatClock(ts)}</span>
       </div>
       <div
         className={cn(
