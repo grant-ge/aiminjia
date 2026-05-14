@@ -117,12 +117,10 @@ interface DrawerHeaderProps {
 
 function DrawerHeader({ title, subtitle, memberCount }: DrawerHeaderProps) {
   return (
-    <div className="border-b border-border bg-muted/30 px-4 py-3 pr-12">
-      <div className="flex items-baseline justify-between gap-2">
-        <h2 className="text-base font-medium text-foreground">{title}</h2>
-        <span className="text-xs text-muted-foreground">{memberCount} 位成员</span>
-      </div>
-      <p className="mt-0.5 text-xs text-muted-foreground">{subtitle}</p>
+    <div className="flex items-baseline gap-3 border-b border-border bg-muted/30 px-4 py-3 pr-12">
+      <h2 className="text-base font-medium text-foreground">{title}</h2>
+      <span className="text-xs text-muted-foreground">{subtitle}</span>
+      <span className="ml-auto shrink-0 text-xs text-muted-foreground">{memberCount} 位成员</span>
     </div>
   )
 }
