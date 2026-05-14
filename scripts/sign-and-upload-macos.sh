@@ -237,6 +237,9 @@ if [ -n "$APP" ]; then
         echo "  Rebuilding DMG from signed .app..."
         DMG_STAGING=$(mktemp -d /tmp/aijia-dmg-staging-XXXX)
         cp -R "$APP" "$DMG_STAGING/"
+        # Add /Applications symlink so user sees the standard "drag to install" target.
+        # Without this, the dmg only shows the .app icon and users don't know where to drop it.
+        ln -s /Applications "$DMG_STAGING/Applications"
         rm -f "$DMG"
         hdiutil create -volname "AIjia" \
             -srcfolder "$DMG_STAGING" \
