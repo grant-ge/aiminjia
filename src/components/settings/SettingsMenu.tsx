@@ -20,6 +20,7 @@ export const SETTINGS_MENU_ITEMS: SettingsMenuItem[] = [
   { key: 'sso', label: 'SSO 集成', disabled: true },
   { key: 'shortcuts', label: '快捷键', disabled: true },
   { key: 'archived', label: '归档记录' },
+  { key: 'runtime', label: '运行时' },
   { key: 'about', label: '关于 AI 小家' },
 ]
 
