@@ -29,7 +29,7 @@ use crate::runtime::run_registry::RuntimeRunRegistry;
 use crate::storage::file_store::AppStorage;
 
 /// Maximum number of concurrent agent loops.
-pub const MAX_CONCURRENT_AGENTS: usize = 99;
+pub const MAX_CONCURRENT_AGENTS: usize = 3;
 
 /// Maximum number of retry attempts for retryable errors (429, 5xx, timeout).
 const MAX_RETRIES: u32 = 3;

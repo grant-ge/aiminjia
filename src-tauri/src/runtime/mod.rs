@@ -23,7 +23,6 @@ pub mod session_runtime;
 pub mod state;
 pub mod store;
 pub mod task;
-pub mod team_view;
 pub mod tools;
 
 pub use chat::{ToolRoundDriver, ToolRoundResult};

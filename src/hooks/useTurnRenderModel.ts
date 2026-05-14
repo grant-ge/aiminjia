@@ -68,12 +68,6 @@ export interface RenderTurn {
   generatedFiles: RenderGeneratedFile[]
   suggestions: string[]
   peerBanners: RenderPeerBanner[]
-  /**
-   * Set when this turn contains a TeamCreate. Tells MessageList to render
-   * an in-line TeamProgressBlock (anchor to the team chat drawer) here
-   * instead of the raw TeamCreate tool call card.
-   */
-  teamMarker?: { kind: 'create' | 'delete'; toolCallId: string }
 }
 
 function toolExecStatusToStep(s: ToolExecution['status']): RenderToolStep['status'] {
@@ -215,13 +209,30 @@ function normalizeUserMessageForRender(message: Message): NonNullable<RenderTurn
   }
 }
 
-// peer-messages XML is filtered earlier in buildTurnsFromMessages (those
-// messages are not rendered in the main conversation at all). Only the
-// task-notification regex is still in use here.
+const PEER_MESSAGES_RE = /^<peer-messages>([\s\S]*?)<\/peer-messages>$/
+const PEER_MESSAGE_ITEM_RE = /<peer-message\s+from="([^"]*)"(?:\s+variant="[^"]*")?>([\s\S]*?)<\/peer-message>/g
 const TASK_NOTIFICATION_RE = /^<task-notification\s+agent="([^"]*)"\s+status="([^"]*)">([\s\S]*?)<\/task-notification>$/
 
 function classifyTeamEventMessage(text: string): RenderPeerBanner[] | null {
   const trimmed = text.trim()
+
+  const peerMatch = trimmed.match(PEER_MESSAGES_RE)
+  if (peerMatch) {
+    const banners: RenderPeerBanner[] = []
+    const inner = peerMatch[1]
+    PEER_MESSAGE_ITEM_RE.lastIndex = 0
+    let m: RegExpExecArray | null
+    while ((m = PEER_MESSAGE_ITEM_RE.exec(inner)) !== null) {
+      banners.push({
+        kind: 'peer',
+        from: m[1],
+        to: 'team-lead',
+        body: m[2].trim(),
+      })
+    }
+    return banners.length > 0 ? banners : null
+  }
+
   const taskMatch = trimmed.match(TASK_NOTIFICATION_RE)
   if (taskMatch) {
     return [{
@@ -232,21 +243,9 @@ function classifyTeamEventMessage(text: string): RenderPeerBanner[] | null {
       body: taskMatch[3].trim(),
     }]
   }
+
   return null
 }
-
-/**
- * Tool names that are part of the team-chat substrate and should NOT appear
- * in the main conversation's tool-execution panel. They are visible inside
- * the TeamChatDrawer instead. TeamCreate produces an inline anchor block
- * via `teamMarker`; the others are silently hidden.
- */
-const TEAM_HIDDEN_TOOLS = new Set([
-  'SendMessage',
-  'TeamCreate',
-  'TeamDelete',
-  'TeammateStop',
-])
 
 export function buildTurnsFromMessages(
   messages: Message[],
@@ -257,17 +256,9 @@ export function buildTurnsFromMessages(
 
   for (const m of messages) {
     if (m.role === 'user') {
-      const text = m.content.text ?? ''
-      // <peer-messages> user XML is an internal artifact of how the runtime
-      // delivers teammate replies to the lead. It must NEVER appear in the
-      // main conversation — the TeamChatDrawer is the canonical view.
-      if (text.trim().startsWith('<peer-messages>')) {
-        continue
-      }
-      // <task-notification> still surfaces as a per-turn banner because it
-      // represents a sub-agent (TaskCreate) completion, not a team message.
-      const classified = classifyTeamEventMessage(text)
+      const classified = classifyTeamEventMessage(m.content.text ?? '')
       if (classified) {
+        // team event XML — 不渲染用户气泡，只放 peerBanners
         current = {
           userMessage: undefined,
           aiSegments: [],
@@ -279,7 +270,7 @@ export function buildTurnsFromMessages(
         turns.push(current)
         continue
       }
-      // Normal user message — original logic.
+      // 普通 user message — 走原有逻辑
       current = {
         userMessage: normalizeUserMessageForRender(m),
         aiSegments: [],
@@ -306,20 +297,22 @@ export function buildTurnsFromMessages(
 
     if (m.role === 'assistant') {
       if (m.toolCalls?.length) {
+        const group = ensureToolGroup(current)
         for (const tc of m.toolCalls) {
-          // TeamCreate produces an inline anchor block instead of a tool card.
-          if (tc.name === 'TeamCreate') {
-            if (!current.teamMarker) {
-              current.teamMarker = { kind: 'create', toolCallId: tc.id }
-            }
-            continue
+          if (tc.name === 'SendMessage') {
+            const args = tc.arguments as { to?: string; message?: unknown; summary?: string }
+            const body = typeof args.message === 'string'
+              ? args.message
+              : JSON.stringify(args.message ?? '')
+            current.peerBanners.push({
+              kind: 'peer',
+              from: 'team-lead',
+              to: args.to ?? '?',
+              body,
+              summary: args.summary,
+            })
+            continue  // 不进 toolGroup
           }
-          // TeamDelete / SendMessage / TeammateStop are hidden from the main
-          // conversation — they're visible inside the team chat drawer.
-          if (TEAM_HIDDEN_TOOLS.has(tc.name)) {
-            continue
-          }
-          const group = ensureToolGroup(current)
           const existing = group.steps.find((s) => s.toolCallId === tc.id)
           if (!existing) {
             group.steps.push({
@@ -346,12 +339,8 @@ export function buildTurnsFromMessages(
     }
 
     if (m.role === 'tool' && m.toolResult) {
-      const result = m.toolResult
-      // Hide tool results for team-substrate tools — they're visible in drawer.
-      if (TEAM_HIDDEN_TOOLS.has(result.name)) {
-        continue
-      }
       const group = ensureToolGroup(current)
+      const result = m.toolResult
       const existing = group.steps.find((s) => s.toolCallId === result.toolCallId)
       const output = result.content ? truncateOutput(result.content, result.isError) : undefined
       if (existing) {

@@ -30,37 +30,11 @@ export function ChatArea() {
   // The flag stays set until we observe messages for the new conversation, since
   // setActiveConversationId and setMessages can land in separate renders.
   const pendingHardJumpRef = useRef(true)
-  // Tracks whether the most recent scroll motion came from a real user input
-  // (wheel / touch / keypress) instead of a programmatic scrollTo. Without this
-  // gate, smooth scroll animations and ResizeObserver-triggered scrolls would
-  // fire the scroll event mid-motion and flip userScrolledUp to true, stranding
-  // the view above the actual bottom while ResizeObserver bails out.
-  const userIntentRef = useRef(false)
-  const userIntentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const markUserIntent = useCallback(() => {
-    userIntentRef.current = true
-    if (userIntentTimerRef.current) clearTimeout(userIntentTimerRef.current)
-    userIntentTimerRef.current = setTimeout(() => {
-      userIntentRef.current = false
-    }, 800)
-  }, [])
-
-  useEffect(() => {
-    return () => {
-      if (userIntentTimerRef.current) clearTimeout(userIntentTimerRef.current)
-    }
-  }, [])
 
   /** Detect when the user scrolls up (away from bottom). */
   const handleScroll = useCallback(() => {
     const el = scrollContainerRef.current
     if (!el) return
-    // Only treat the position as "user pulled up" when the motion was driven by
-    // real input. Programmatic scrolls (smooth scrollTo, ResizeObserver auto-
-    // scroll, conversation switch) also fire scroll events and would otherwise
-    // strand the auto-scroll mid-content.
-    if (!userIntentRef.current) return
     const nextScrolledUp = el.scrollHeight - el.scrollTop - el.clientHeight > 100
     userScrolledUp.current = nextScrolledUp
     setShowJumpToBottom(nextScrolledUp)
@@ -130,9 +104,6 @@ export function ChatArea() {
         data-testid="chat-scroll-region"
         className="flex-1 overflow-y-auto"
         onScroll={handleScroll}
-        onWheel={markUserIntent}
-        onTouchMove={markUserIntent}
-        onKeyDown={markUserIntent}
       >
         <div className="px-6 pt-6 pb-12">
           <div ref={contentRef} className="mx-auto w-full max-w-[736px]">

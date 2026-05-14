@@ -2,7 +2,7 @@
  * @designSource design.pen#F8ixG flow
  * @sizing padding [24,40] gap 18
  */
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect } from 'react'
 
 import { AiBubble } from '@/components/chat/AiBubble'
 import { StreamingBubble } from '@/components/chat/StreamingBubble'
@@ -11,16 +11,13 @@ import { PeerMessageBanner } from '@/components/chat-scene/PeerMessageBanner'
 import { SuggestChipGroup } from '@/components/chat-scene/SuggestChipGroup'
 import { ToolGroupCard } from '@/components/chat-scene/ToolGroupCard'
 import { UserMessageBubble } from '@/components/chat-scene/UserMessageBubble'
-import { TeamProgressBlock } from '@/components/team/TeamProgressBlock'
 import { toPreviewTarget } from '@/components/chat/generatedFileActions'
 import { useChatStore } from '@/stores/chatStore'
 import { useGeneratedFilePreviewStore } from '@/stores/generatedFilePreviewStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { useChat } from '@/hooks/useChat'
-import { useTeamOverview } from '@/hooks/useTeamOverview'
 import { useTurnRenderModel, type RenderGeneratedFile } from '@/hooks/useTurnRenderModel'
 import { openGeneratedFile, revealFileInFolder } from '@/lib/tauri'
-import { useConversationTeamState, useTeamStore } from '@/stores/teamStore'
 
 type FileActionKind = 'preview' | 'open' | 'reveal'
 
@@ -42,58 +39,6 @@ export function MessageList() {
   const openPreview = useGeneratedFilePreviewStore((s) => s.openPreview)
   const clearIfConversationChanged = useGeneratedFilePreviewStore((s) => s.clearIfConversationChanged)
   const pushNotification = useNotificationStore((s) => s.push)
-
-  // Team chat drawer wiring.
-  const { overview } = useTeamOverview(activeConversationId)
-  const teamState = useConversationTeamState(activeConversationId)
-  const openDrawer = useTeamStore((s) => s.openDrawer)
-  const autoOpenedForConvRef = useRef<string | null>(null)
-
-  // Auto-open the drawer the first time a team appears in the active
-  // conversation, but only if the user hasn't manually closed it yet.
-  // Re-armed when the active conversation changes.
-  useEffect(() => {
-    if (!activeConversationId) return
-    if (!overview || overview.teams.length === 0) return
-    if (autoOpenedForConvRef.current === activeConversationId) return
-    if (teamState.userClosedDrawer) {
-      autoOpenedForConvRef.current = activeConversationId
-      return
-    }
-    // Only auto-open while streaming — on conversation reload we leave it closed.
-    if (!isStreaming) {
-      autoOpenedForConvRef.current = activeConversationId
-      return
-    }
-    openDrawer(activeConversationId)
-    autoOpenedForConvRef.current = activeConversationId
-  }, [activeConversationId, overview, teamState.userClosedDrawer, isStreaming, openDrawer])
-
-  // Reset the auto-open guard when switching conversations.
-  useEffect(() => {
-    autoOpenedForConvRef.current = null
-  }, [activeConversationId])
-
-  // Walk turns in order; assign each TeamCreate marker to the next unused team session.
-  // Team sessions on disk are ordered by createdAt; turns are ordered by message
-  // chronology — so an ordinal pairing is correct (and is the same logic the
-  // backend uses when grouping events into sessions).
-  const teamSessionForTurnIdx = useMemo(() => {
-    const result: Array<NonNullable<typeof overview>['teams'][number] | null> = []
-    if (!overview || overview.teams.length === 0) {
-      return turns.map(() => null)
-    }
-    let teamCursor = 0
-    for (const t of turns) {
-      if (t.teamMarker?.kind === 'create' && teamCursor < overview.teams.length) {
-        result.push(overview.teams[teamCursor])
-        teamCursor += 1
-      } else {
-        result.push(null)
-      }
-    }
-    return result
-  }, [turns, overview])
 
   useEffect(() => {
     if (activeConversationId) clearIfConversationChanged(activeConversationId)
@@ -142,14 +87,9 @@ export function MessageList() {
     }
   }
 
-  const handleOpenTeamDrawer = () => {
-    if (activeConversationId) openDrawer(activeConversationId)
-  }
-
   return (
     <div className="flex flex-col gap-5 px-2 py-3">
       {turns.map((t, i) => {
-        const teamSession = teamSessionForTurnIdx[i]
         return (
           <div key={i} className="flex flex-col gap-4">
             {t.peerBanners.length > 0 ? (
@@ -169,9 +109,6 @@ export function MessageList() {
                 status={t.toolGroup.status}
                 steps={t.toolGroup.steps}
               />
-            ) : null}
-            {teamSession ? (
-              <TeamProgressBlock session={teamSession} onOpen={handleOpenTeamDrawer} />
             ) : null}
             {t.aiSegments.map((s) => (
               <AiBubble key={s.id} message={s.message} />

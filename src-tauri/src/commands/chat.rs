@@ -288,25 +288,6 @@ pub async fn get_subagent_transcript(
 }
 
 #[tauri::command]
-pub async fn get_team_overview(
-    adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
-    conversation_id: String,
-) -> Result<crate::runtime::team_view::TeamOverview, String> {
-    adapter.get_team_overview(conversation_id).await
-}
-
-#[tauri::command]
-pub async fn get_teammate_transcript(
-    adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
-    conversation_id: String,
-    agent_id: String,
-) -> Result<Vec<serde_json::Value>, String> {
-    adapter
-        .get_teammate_transcript(conversation_id, agent_id)
-        .await
-}
-
-#[tauri::command]
 pub async fn create_conversation(
     adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
 ) -> Result<String, String> {

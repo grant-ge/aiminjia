@@ -9,7 +9,6 @@ import { RightPanel } from '@/components/chat/RightPanel'
 import type { PreviewTarget } from '@/components/chat/generatedFileActions'
 import { ChatArea } from '@/components/layout/ChatArea'
 import { ChatTopBar } from '@/components/shell/ChatTopBar'
-import { TeamChatDrawer } from '@/components/team/TeamChatDrawer'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -22,7 +21,6 @@ import { Switch } from '@/components/common/Switch'
 import { getMessages, getTasks, openGeneratedFile } from '@/lib/tauri'
 import type { ChannelPlatformState } from '@/lib/tauri'
 import { useNotificationStore } from '@/stores/notificationStore'
-import { useTeamOverview } from '@/hooks/useTeamOverview'
 import { ChannelConfig } from './ChannelConfig'
 import { ChannelConfigDetails } from './ChannelConfigDetails'
 
@@ -202,7 +200,6 @@ function ChannelChatView({ sessionId }: { sessionId: string }) {
   const activeConv = conversations.find((c) => c.sessionId === sessionId)
   const title = activeConv?.displayName ?? ''
   const isInactiveSession = !!activeConv && !activeConv.isActiveRobot
-  const { overview: teamOverview } = useTeamOverview(sessionId)
 
   const handleOpenPreviewTarget = async (target: PreviewTarget) => {
     try {
@@ -234,7 +231,6 @@ function ChannelChatView({ sessionId }: { sessionId: string }) {
           )}
           <ChatBottomArea disabled={isInactiveSession} sessionIdOverride={sessionId} />
         </div>
-        <TeamChatDrawer conversationId={sessionId} overview={teamOverview} />
         <RightPanel conversationId={sessionId} onOpenExternal={(target) => void handleOpenPreviewTarget(target)} />
       </div>
     </div>
