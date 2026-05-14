@@ -380,11 +380,15 @@ pub async fn runtime_diagnostics(
 
 async fn diag_run_version(path: &std::path::Path) -> Option<String> {
     use crate::storage::process_ext::NoWindowExt;
-    let out = tokio::process::Command::new(path)
+    let fut = tokio::process::Command::new(path)
         .arg("--version")
         .no_window()
-        .output()
+        .output();
+    // Defensive timeout: a corrupted binary that hangs on --version would
+    // otherwise block the entire diagnostics command until Tauri's IPC timeout.
+    let out = tokio::time::timeout(std::time::Duration::from_secs(5), fut)
         .await
+        .ok()?
         .ok()?;
     let merged = if out.stdout.is_empty() { out.stderr } else { out.stdout };
     Some(String::from_utf8_lossy(&merged).trim().to_string())

@@ -271,6 +271,7 @@ workspace 目录（用户可自定义，默认也是 `~/.renlijia/`）下存放�
 - **缓存**：`.runtime-cache/`（已 gitignore）按文件名缓存下载产物，CI 也 cache 这个目录（`actions/cache@v4` key on `hashFiles('scripts/runtime-sources.json')`）。
 - **解析链**：启动期 `BundledRuntimeResolver`（reads `app.path().resource_dir()/runtime/<platform>/`）→ `InstalledRuntimeResolver`（`~/.renlijia/runtimes/renlijia-primary-runtime/current`，OSS 升级路径）→ on-demand OSS download（兜底）。前两个任一成功即跳过 OSS。详见 `src-tauri/src/runtime/dependencies/{bundled_resolver,chain_resolver,manager}.rs`。
 - **mac 签名**：现有 inside-out `find -type f` + `file ... Mach-O` 自动覆盖 `Contents/Resources/runtime/` 下所有二进制（node/python3/uv/uvx/libpython3.12.dylib + lib-dynload `.so`）。`sign-and-upload-macos.sh` 在签名后**审计** runtime/ 下每个 Mach-O 是否带 `flags=...runtime`（hardened），漏一个则 fail，防止 notarization 拒签。
+- **Windows 签名**：`release-windows.ps1` 只签外层 NSIS 安装包，**不**单独签 `resources\runtime\` 内嵌的 `node.exe / python.exe / uv.exe / uvx.exe`。SmartScreen 只校验外层签名，nested PE 不展示在用户首次启动的警告里——因此当前是有意 trade-off（每个 nested exe 单独走 signtool + timestamp 会增加 ~30s 发版时间）。如果将来用户报告 "Unknown publisher" 提示在 PowerShell 直接执行内嵌 exe 时出现，再补 signtool 遍历。
 - **诊断**：Settings → 运行时 显示 `activeResolver`、内置版本号、`node/python/uv --version` 实时输出 + 一键重检（`runtime_diagnostics` Tauri 命令 → `src/components/settings/panels/RuntimePanel.tsx`）。
 - **Spec/Plan**：`docs/superpowers/plans/2026-05-13-bundle-runtime-into-installer.md`。
 
