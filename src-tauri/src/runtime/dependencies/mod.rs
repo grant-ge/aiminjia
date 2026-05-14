@@ -1,6 +1,7 @@
 mod archive;
 mod artifact_fetcher;
 mod bundled_resolver;
+mod chain_resolver;
 mod checksum;
 mod command_env;
 mod config;
@@ -44,5 +45,6 @@ pub use resolver::{
     InstalledRuntimeResolver, ManagedRuntimeResolver, RuntimeResolver, StaticRuntimeResolver,
 };
 pub use bundled_resolver::BundledRuntimeResolver;
+pub use chain_resolver::ChainResolver;
 pub use types::{RuntimeDependencyError, RuntimeDependencyResult, WorkspaceDependencies};
 pub use command_env::{prepend_bundle_bin_to_path, prepend_bundle_bin_to_path_tokio};
