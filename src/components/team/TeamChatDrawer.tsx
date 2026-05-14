@@ -1,8 +1,7 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import { ArrowDown, X } from 'lucide-react'
 
-import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
 import type { TeamOverview, TeamSession } from '@/types/team'
 import { useConversationTeamState, useTeamStore } from '@/stores/teamStore'
 
@@ -18,12 +17,12 @@ interface TeamChatDrawerProps {
 }
 
 /**
- * The drawer-level container. Wraps every team session in this conversation
- * into a single scrollable column (per the design contract: "整场对话一个区").
+ * Inline right-side panel rendering the team session timeline. Mounted as a
+ * sibling of the chat column in ChatPage / ChannelPage so the panel spans
+ * full chat height (input row + scroll region together).
  *
- * Drill-down: when a user clicks a teammate avatar in the chat view, we
- * switch the body to `TeammateDetailPanel` for that agent. The chat view
- * stays mounted via a hidden render so scroll position is preserved on back.
+ * Drill-down: click a teammate avatar to swap the body to TeammateDetailPanel
+ * for that agent.
  */
 export function TeamChatDrawer({ conversationId, overview }: TeamChatDrawerProps) {
   const state = useConversationTeamState(conversationId)
@@ -39,45 +38,94 @@ export function TeamChatDrawer({ conversationId, overview }: TeamChatDrawerProps
     return null
   }, [state.drillAgentId, overview])
 
-  const onOpenChange = (open: boolean) => {
-    if (!open) {
-      closeDrawer(conversationId, true)
-    }
-  }
+  if (!state.drawerOpen) return null
 
   return (
-    <Sheet open={state.drawerOpen} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="right"
-        className={cn(
-          'flex w-full max-w-md flex-col gap-0 p-0 sm:max-w-md md:max-w-lg lg:max-w-xl',
-        )}
-      >
-        {drillAgent ? (
-          <TeammateDetailPanel
-            conversationId={conversationId}
-            agentId={drillAgent.agentId}
-            agentName={drillAgent.agentName}
-            onBack={() => setDrillAgent(conversationId, null)}
-          />
-        ) : (
-          <DrawerOverview overview={overview} onDrill={(agentId) => setDrillAgent(conversationId, agentId)} />
-        )}
-      </SheetContent>
-    </Sheet>
+    <aside
+      data-testid="team-split-panel"
+      className="flex h-full w-[500px] shrink-0 flex-col border-l border-border bg-background"
+    >
+      {drillAgent ? (
+        <TeammateDetailPanel
+          conversationId={conversationId}
+          agentId={drillAgent.agentId}
+          agentName={drillAgent.agentName}
+          onBack={() => setDrillAgent(conversationId, null)}
+        />
+      ) : (
+        <DrawerOverview
+          overview={overview}
+          onDrill={(agentId) => setDrillAgent(conversationId, agentId)}
+          onClose={() => closeDrawer(conversationId, true)}
+        />
+      )}
+    </aside>
   )
 }
 
 interface DrawerOverviewProps {
   overview: TeamOverview | null
   onDrill: (agentId: string) => void
+  onClose: () => void
 }
 
-function DrawerOverview({ overview, onDrill }: DrawerOverviewProps) {
+function DrawerOverview({ overview, onDrill, onClose }: DrawerOverviewProps) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
+  const userScrolledUp = useRef(false)
+  const userIntentRef = useRef(false)
+  const userIntentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [showJumpToBottom, setShowJumpToBottom] = useState(false)
+
+  const markUserIntent = useCallback(() => {
+    userIntentRef.current = true
+    if (userIntentTimerRef.current) clearTimeout(userIntentTimerRef.current)
+    userIntentTimerRef.current = setTimeout(() => {
+      userIntentRef.current = false
+    }, 800)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (userIntentTimerRef.current) clearTimeout(userIntentTimerRef.current)
+    }
+  }, [])
+
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current
+    if (!el) return
+    if (!userIntentRef.current) return
+    const nextScrolledUp = el.scrollHeight - el.scrollTop - el.clientHeight > 100
+    userScrolledUp.current = nextScrolledUp
+    setShowJumpToBottom(nextScrolledUp)
+  }, [])
+
+  const jumpToBottom = useCallback(() => {
+    userScrolledUp.current = false
+    setShowJumpToBottom(false)
+    const el = scrollRef.current
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+  }, [])
+
+  // Auto-scroll the panel to the bottom whenever new events land, unless the
+  // user has pulled up. ResizeObserver fires when markdown finishes laying out
+  // (delayed code highlighting, image load, etc) so the bottom keeps tracking.
+  useEffect(() => {
+    const content = contentRef.current
+    if (!content || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => {
+      if (userScrolledUp.current) return
+      const el = scrollRef.current
+      if (el) el.scrollTop = el.scrollHeight
+    })
+    observer.observe(content)
+    return () => observer.disconnect()
+  }, [])
+
   if (!overview || overview.teams.length === 0) {
     return (
       <div className="flex h-full flex-col">
-        <DrawerHeader title="团队过程" subtitle="没有团队记录" memberCount={0} />
+        <DrawerHeader title="团队过程" subtitle="没有团队记录" memberCount={0} onClose={onClose} />
         <div className="flex flex-1 items-center justify-center px-6 text-sm text-muted-foreground">
           这个会话还没有创建团队。
         </div>
@@ -86,24 +134,44 @@ function DrawerOverview({ overview, onDrill }: DrawerOverviewProps) {
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="relative flex h-full flex-col">
       <DrawerHeader
         title="团队过程"
         subtitle={`${overview.teams.length} 个团队会话`}
         memberCount={overview.teams.reduce((sum, t) => sum + t.members.filter((m) => !isLeadName(m.agentName)).length, 0)}
+        onClose={onClose}
       />
-      <div className="flex-1 overflow-y-auto px-4">
-        {overview.teams.map((team) => (
-          <TeamSessionSection
-            key={team.teamId}
-            session={team}
-            onDrill={(agentName) => {
-              const agent = team.members.find((m) => m.agentName === agentName)
-              if (agent) onDrill(agent.agentId)
-            }}
-          />
-        ))}
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto px-4"
+        onScroll={handleScroll}
+        onWheel={markUserIntent}
+        onTouchMove={markUserIntent}
+        onKeyDown={markUserIntent}
+      >
+        <div ref={contentRef}>
+          {overview.teams.map((team) => (
+            <TeamSessionSection
+              key={team.teamId}
+              session={team}
+              onDrill={(agentName) => {
+                const agent = team.members.find((m) => m.agentName === agentName)
+                if (agent) onDrill(agent.agentId)
+              }}
+            />
+          ))}
+        </div>
       </div>
+      {showJumpToBottom ? (
+        <button
+          type="button"
+          aria-label="回到底部"
+          onClick={jumpToBottom}
+          className="absolute bottom-4 left-1/2 z-20 flex h-9 w-9 -translate-x-1/2 items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-[var(--shadow-card)] transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <ArrowDown className="h-4 w-4" />
+        </button>
+      ) : null}
     </div>
   )
 }
@@ -112,16 +180,25 @@ interface DrawerHeaderProps {
   title: string
   subtitle: string
   memberCount: number
+  onClose: () => void
 }
 
-function DrawerHeader({ title, subtitle, memberCount }: DrawerHeaderProps) {
+function DrawerHeader({ title, subtitle, memberCount, onClose }: DrawerHeaderProps) {
   return (
-    <div className="border-b border-border bg-muted/30 px-4 py-3">
-      <div className="flex items-baseline justify-between gap-2">
-        <SheetTitle className="text-base">{title}</SheetTitle>
-        <span className="text-xs text-muted-foreground">{memberCount} 位成员</span>
-      </div>
-      <SheetDescription className="mt-0.5 text-xs">{subtitle}</SheetDescription>
+    <div className="flex items-center gap-3 border-b border-border bg-muted/30 px-4 py-3">
+      <h2 className="text-base font-medium text-foreground">{title}</h2>
+      <span className="text-xs text-muted-foreground">{subtitle}</span>
+      <span className="ml-auto shrink-0 text-xs text-muted-foreground">{memberCount} 位成员</span>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        aria-label="关闭团队面板"
+        onClick={onClose}
+        className="h-7 w-7"
+      >
+        <X className="h-4 w-4" />
+      </Button>
     </div>
   )
 }

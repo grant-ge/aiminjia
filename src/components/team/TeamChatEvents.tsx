@@ -1,5 +1,6 @@
 import type { TeamEvent } from '@/types/team'
 import { cn } from '@/lib/utils'
+import { AssistantMarkdown } from '@/components/chat-scene/AssistantMarkdown'
 import { AgentAvatar } from './AgentAvatar'
 import { getAgentIdentity, formatLeadDisplayName, isLeadName } from './agentIdentity'
 import { formatClock, formatTimestampForGroup } from './formatters'
@@ -31,16 +32,26 @@ export function TeamChatEvents({ events, onDrillAgent }: TeamChatEventsProps) {
   }
 
   let lastTsForGroup: string | null = null
+  let lastSpeaker: string | null = null
 
   return (
-    <div className="flex flex-col gap-3 py-4">
+    <div className="flex flex-col py-4">
       {events.map((event, idx) => {
         const groupLabel = formatTimestampForGroup(event.ts, lastTsForGroup)
         if (groupLabel) {
           lastTsForGroup = event.ts
         }
+        const currentSpeaker = speakerKey(event)
+        const speakerChanged = currentSpeaker !== null && lastSpeaker !== null && currentSpeaker !== lastSpeaker
+        if (currentSpeaker !== null) lastSpeaker = currentSpeaker
         return (
-          <div key={idx} className="flex flex-col gap-1.5">
+          <div
+            key={idx}
+            className={cn(
+              'flex flex-col gap-1.5',
+              idx === 0 ? '' : speakerChanged ? 'mt-5' : 'mt-3',
+            )}
+          >
             {groupLabel && (
               <div className="flex justify-center">
                 <span className="rounded-full bg-muted px-2.5 py-0.5 text-[11px] text-muted-foreground">
@@ -54,6 +65,14 @@ export function TeamChatEvents({ events, onDrillAgent }: TeamChatEventsProps) {
       })}
     </div>
   )
+}
+
+/** 区分发言人，用于决定相邻消息之间是否加大间隔。系统事件返回 null（不影响发言人切换判断）。 */
+function speakerKey(event: TeamEvent): string | null {
+  if (event.kind === 'send_message' || event.kind === 'peer_message') {
+    return event.from
+  }
+  return null
 }
 
 interface TeamEventRowProps {
@@ -135,27 +154,38 @@ function MessageBubble({ side, from, to, text, ts, isError, onDrillAgent }: Mess
   )
 
   return (
-    <div className={cn('flex gap-2', side === 'right' && 'flex-row-reverse')}>
-      {wrappedAvatar}
-      <div className={cn('flex max-w-[78%] min-w-0 flex-col gap-0.5', side === 'right' && 'items-end')}>
-        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-          <span className="font-medium text-foreground">{displayFromName}</span>
-          <span>→ {displayToName}</span>
+    <div className="flex flex-col gap-1">
+      <div
+        className={cn(
+          'flex items-center gap-2 text-[11px] text-muted-foreground',
+          side === 'right' && 'flex-row-reverse',
+        )}
+      >
+        {wrappedAvatar}
+        <div className={cn('flex flex-col', side === 'right' && 'items-end')}>
+          <div className="flex items-center gap-1.5">
+            <span className="font-medium text-foreground">{displayFromName}</span>
+            <span>→ {displayToName}</span>
+          </div>
           <span className="opacity-60">{formatClock(ts)}</span>
         </div>
-        <div
-          className={cn(
-            'whitespace-pre-wrap break-words rounded-lg px-3 py-2 text-sm',
-            isError
-              ? 'border border-destructive/40 bg-destructive/10 text-destructive'
-              : fromIdentity.bubbleClass,
-          )}
-        >
-          {text || <span className="italic text-muted-foreground">（空消息）</span>}
-          {isError && (
-            <div className="mt-1 text-xs font-medium opacity-80">⚠ 发送失败</div>
-          )}
-        </div>
+      </div>
+      <div
+        className={cn(
+          'break-words rounded-lg px-3 py-2 text-sm',
+          isError
+            ? 'border border-destructive/40 bg-destructive/10 text-destructive'
+            : fromIdentity.bubbleClass,
+        )}
+      >
+        {text ? (
+          <AssistantMarkdown text={text} />
+        ) : (
+          <span className="italic text-muted-foreground">（空消息）</span>
+        )}
+        {isError && (
+          <div className="mt-1 text-xs font-medium opacity-80">⚠ 发送失败</div>
+        )}
       </div>
     </div>
   )
