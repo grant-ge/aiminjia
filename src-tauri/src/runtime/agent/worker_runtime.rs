@@ -1584,6 +1584,7 @@ async fn teammate_real_turn(
     let teammate_pctx = build_teammate_permission_ctx(
         engine.runtime_deps.permission_ctx.as_deref(),
         ctx.conv_dir.as_deref(),
+        &ctx.team_name,
         engine.runtime_deps.workspace_path.as_path(),
     );
     log::info!(
@@ -1885,28 +1886,33 @@ fn user_text_for_turn_state(messages: &[crate::llm::streaming::ChatMessage]) -> 
 /// permission `Ask` (which would auto-deny under `is_async = true`).
 ///
 /// The dirs we add:
-///   1. `conv_dir` — the conversation directory (`team.json`, `tasks/`,
-///      `teammates/{agent_id}.jsonl`, `subagents/...` all live here).
-///   2. `workspace_path` — the parent workspace, in case the Teammate
-///      needs to consult shared files.
-///   3. `~/.renlijia/skills/` — global skill bundle (managed by the app).
+///   1. `teams/{team_name}/` — **PR5 收窄**：以前是整个 conv_dir，现在只放行该 team 自己
+///      的目录（含 config.json / team-chat.jsonl / tasks/ / teammates/）。team-A 的
+///      Teammate 无法读写 team-B 的数据。conv 根目录（messages.jsonl 等）也不再放行。
+///   2. `workspace_path` — 父工作区，跨 team 共享读写。
+///   3. `~/.renlijia/skills/` — 全局 skill bundle（managed + user-installed）。
 ///
-/// Each path is added with `RuleSource::Session` (transient, scoped to this
-/// Teammate's lifetime) so persistent UserSettings entries (if any) take
-/// precedence on duplicate paths.
+/// 当 `team_name` 为空字符串（Lead 单飞场景兜底），仍按旧行为放行整个 conv_dir。
+/// 实际上 PR5 之后 Teammate 必然有 team_name；空 fallback 仅保留给历史调用方。
 fn build_teammate_permission_ctx(
     parent: Option<&crate::runtime::path_auth::ToolPermissionContext>,
     conv_dir: Option<&std::path::Path>,
+    team_name: &str,
     workspace_path: &std::path::Path,
 ) -> crate::runtime::path_auth::ToolPermissionContext {
     use crate::runtime::path_auth::{RuleSource, ToolPermissionContext};
 
     let mut ctx = parent.cloned().unwrap_or_else(ToolPermissionContext::empty);
 
-    // 1. Conversation dir — covers team.json, tasks/, teammates/*.jsonl, etc.
+    // 1. team 子目录（或 conv_dir 兜底）
     if let Some(dir) = conv_dir {
+        let team_root = if !team_name.is_empty() {
+            dir.join("teams").join(team_name)
+        } else {
+            dir.to_path_buf()
+        };
         ctx.additional_working_dirs
-            .entry(dir.to_path_buf())
+            .entry(team_root)
             .or_insert(RuleSource::Session);
     }
 

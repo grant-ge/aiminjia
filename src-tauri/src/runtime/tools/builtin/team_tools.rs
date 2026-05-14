@@ -17,6 +17,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
+use crate::runtime::agent::team_paths::{validate_team_name, TeamPaths};
 use crate::runtime::agent::{Member, MemberRole};
 use crate::runtime::ids::AgentId;
 use crate::runtime::tools::catalog::TOOL_CATALOG;
@@ -24,6 +25,7 @@ use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::ToolDefinition;
 use crate::runtime::tools::executor::{ToolError, ToolResult};
 use crate::runtime::tools::RuntimeTool;
+use crate::storage::file_store::types::ConversationMeta;
 use crate::telemetry::{record_diagnostic, DiagnosticEvent, DiagnosticSource};
 
 /// Canonical name registered for the Lead member; teammates address it as
@@ -33,6 +35,37 @@ pub const LEAD_NAME: &str = "team-lead";
 fn default_team_name(session_id: &str) -> String {
     let short: String = session_id.chars().take(8).collect();
     format!("team-{short}")
+}
+
+/// Update `<conv_dir>/conv.json::active_team_name` atomically. Best-effort:
+/// callers log warnings on failure but do not fail the tool. 文件不存在或无法解析
+/// 时静默跳过——`conv.json` 由 SessionRuntime 在 conv 创建时写入，正常路径下必然存在。
+fn update_conv_meta_active_team(
+    conv_dir: &std::path::Path,
+    name: Option<&str>,
+) -> std::io::Result<()> {
+    let path = conv_dir.join("conv.json");
+    if !path.exists() {
+        // 没有 meta 文件就不写——避免无中生有创造一个不完整的 ConversationMeta。
+        return Ok(());
+    }
+    let bytes = std::fs::read(&path)?;
+    let mut value: serde_json::Value = serde_json::from_slice(&bytes)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    if let Some(obj) = value.as_object_mut() {
+        match name {
+            Some(n) => {
+                obj.insert("active_team_name".to_string(), serde_json::json!(n));
+            }
+            None => {
+                obj.insert("active_team_name".to_string(), serde_json::Value::Null);
+            }
+        }
+    }
+    let bytes = serde_json::to_vec_pretty(&value)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    crate::storage::fs_atomic::write_atomic(&path, &bytes)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
 }
 
 // ─── TeamCreate ───────────────────────────────────────────────────────────────
@@ -71,6 +104,10 @@ impl RuntimeTool for TeamCreateRuntimeTool {
             .unwrap_or_else(|| AgentId::new(format!("lead-{}", session.as_str())));
 
         let team_name = team_name_input.unwrap_or_else(|| default_team_name(session.as_str()));
+
+        // PR5: 强制 ASCII 校验。LLM 起的中文/特殊字符名直接拒绝。
+        validate_team_name(&team_name)
+            .map_err(|e| ToolError::ExecutionFailed(format!("invalid team_name: {e}")))?;
 
         let ws = crate::telemetry::diagnostics_workspace();
         record_diagnostic(
@@ -198,6 +235,10 @@ impl RuntimeTool for TeamCreateRuntimeTool {
                 ),
                 Err(e) => log::warn!("[TeamCreate] persist config.json failed: {e}"),
             }
+            // PR5: 写 conv.json::active_team_name，让重启 hydration 后能恢复 active team。
+            if let Err(e) = update_conv_meta_active_team(conv_dir, Some(&team_name)) {
+                log::warn!("[TeamCreate] update conv.json active_team_name failed: {e}");
+            }
         } else {
             log::warn!(
                 "[TeamCreate] ctx.conv_dir is None — team.json NOT persisted (this means SessionRuntime didn't inject conv_dir into the QueryEngine used by this tool call)"
@@ -239,37 +280,89 @@ impl RuntimeTool for TeamDeleteRuntimeTool {
 
     async fn execute(
         &self,
-        _input: Value,
+        input: Value,
         ctx: ToolExecutionContext,
     ) -> Result<ToolResult, ToolError> {
         let session = ctx.session_id.clone();
         let ws = crate::telemetry::diagnostics_workspace();
+
+        // PR5: TeamDelete 现在按 team_name 精确删除。如果未提供，从 ctx.active_team_name 取。
+        let team_name = input
+            .get("team_name")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .or_else(|| ctx.active_team_name.clone())
+            .ok_or_else(|| {
+                ToolError::ExecutionFailed(
+                    "TeamDelete requires team_name (no active team in this conversation)".into(),
+                )
+            })?;
 
         record_diagnostic(
             &ws,
             DiagnosticEvent::new("tool.team_delete.entry", DiagnosticSource::Backend)
                 .conversation_id(session.as_str())
                 .run_id(ctx.run_id.as_str())
-                .tool_call_id(ctx.tool_call_id.as_str()),
+                .tool_call_id(ctx.tool_call_id.as_str())
+                .payload(json!({ "team_name": team_name })),
         );
 
-        // TODO(PR5): accept team_name param from input; for now drop_session removes all
-        // teams for this session (backward-compatible for single-team scenario).
-        let dropped = ctx.team_registry().drop_session(&session).await;
-        let (team_name, teammate_count) = if let Some((name, handle)) = dropped.first() {
-            let t = handle.lock().await;
-            (name.clone(), t.teammates.len())
-        } else {
-            (String::new(), 0)
-        };
-        let team_existed = !dropped.is_empty();
+        // 严格 cancel → 等待 → delete_team → rm -rf → idempotent sweep → active_team 重置
+        // 顺序不可调换：先 cancel 让 worker 自我清理，再 delete 防止 race。
 
-        // TeamDelete only dissolves the team logical grouping; per-session
-        // registries (agent_names / inbox_registry / cancellation_registry /
-        // lead_idle) are session-scoped resources and are cleaned up by the
-        // session-close hook, not here. Clearing them mid-session breaks the
-        // Lead's continuing identity and causes mark_idle to lose track of
-        // the supervisor state.
+        // step a: 取消该 team 内所有 Teammate 的 cancel token
+        let cancelled = if let Some(reg) = ctx.cancellation_registry.as_ref() {
+            reg.cancel_team(&session, &team_name).await
+        } else {
+            0
+        };
+
+        // step b: 等 worker idle loop 在下一次 tokio::select! 检查到取消，自然退出 + 自清理
+        if cancelled > 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        }
+
+        // step c: 从 in-memory registry 移除该 team
+        let team_handle = ctx.team_registry().delete_team(&session, &team_name).await;
+        let teammate_count = if let Some(handle) = team_handle.as_ref() {
+            let t = handle.lock().await;
+            t.teammates.len()
+        } else {
+            0
+        };
+        let team_existed = team_handle.is_some();
+
+        // step d: rm -rf teams/{name}/
+        if let Some(ref conv_dir) = ctx.conv_dir {
+            if let Err(e) = crate::runtime::agent::TeamRegistry::delete_persisted_team(conv_dir, &team_name) {
+                if e.kind() != std::io::ErrorKind::NotFound {
+                    log::warn!("[TeamDelete] delete teams/{team_name} failed: {e}");
+                }
+            }
+        }
+
+        // step e: idempotent sweep — cleanup_teammate 已经清过单条，这里兜底
+        if let Some(reg) = ctx.agent_names.as_ref() {
+            reg.unregister_team(&session, &team_name).await;
+        }
+        if let Some(reg) = ctx.inbox_registry.as_ref() {
+            reg.unregister_team(&session, &team_name).await;
+        }
+
+        // step f: 若 conv.json::active_team_name == 此 team，重置为 None
+        if let Some(ref conv_dir) = ctx.conv_dir {
+            let path = conv_dir.join("conv.json");
+            if let Ok(bytes) = std::fs::read(&path) {
+                if let Ok(meta) = serde_json::from_slice::<ConversationMeta>(&bytes) {
+                    if meta.active_team_name.as_deref() == Some(&team_name) {
+                        if let Err(e) = update_conv_meta_active_team(conv_dir, None) {
+                            log::warn!("[TeamDelete] reset conv.json active_team_name failed: {e}");
+                        }
+                    }
+                }
+            }
+        }
 
         record_diagnostic(
             &ws,
@@ -278,14 +371,15 @@ impl RuntimeTool for TeamDeleteRuntimeTool {
                 .run_id(ctx.run_id.as_str())
                 .tool_call_id(ctx.tool_call_id.as_str())
                 .ok(true)
-                .payload(serde_json::json!({
+                .payload(json!({
                     "team_existed": team_existed,
                     "team_name": team_name,
                     "teammates_dismissed": teammate_count,
+                    "tokens_cancelled": cancelled,
                 })),
         );
 
-        let json = json!({
+        let result_json = json!({
             "session_id": session.as_str(),
             "team_existed": team_existed,
             "team_name": team_name,
@@ -293,29 +387,92 @@ impl RuntimeTool for TeamDeleteRuntimeTool {
         });
 
         let msg = if team_existed {
-            format!(
-                "Team `{team_name}` deleted; {teammate_count} teammate(s) dismissed."
-            )
+            format!("Team `{team_name}` deleted; {teammate_count} teammate(s) dismissed.")
         } else {
-            format!(
-                "No team existed for session `{}` — TeamDelete is a noop.",
-                session.as_str()
-            )
+            format!("Team `{team_name}` did not exist — TeamDelete is a noop.")
         };
 
-        // TODO(PR5): delete only the named team directory instead of all teams.
-        // For now, best-effort cleanup of teams/ root if it exists.
-        if let Some(ref conv_dir) = ctx.conv_dir {
-            if !team_name.is_empty() {
-                if let Err(e) = crate::runtime::agent::TeamRegistry::delete_persisted_team(conv_dir, &team_name) {
-                    if e.kind() != std::io::ErrorKind::NotFound {
-                        log::warn!("[TeamDelete] delete teams/{team_name} failed: {e}");
-                    }
-                }
-            }
+        Ok(ToolResult::new("TeamDelete", msg, Some(result_json)))
+    }
+}
+
+// ─── TeamSwitch ───────────────────────────────────────────────────────────────
+
+/// Switch the conversation's active team. The Lead's subsequent tool calls
+/// will route through this team's directories. Idempotent — switching to the
+/// already-active team is a noop.
+pub struct TeamSwitchRuntimeTool;
+
+#[async_trait]
+impl RuntimeTool for TeamSwitchRuntimeTool {
+    fn id(&self) -> &str { "TeamSwitch" }
+
+    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
+        TOOL_CATALOG.get("TeamSwitch").unwrap_or_else(|| {
+            ToolDefinition::new(
+                "TeamSwitch",
+                "Switch the conversation's active team. Subsequent tool calls route to the new team.",
+            )
+        })
+    }
+
+    fn is_concurrency_safe(&self, _input: &Value) -> bool {
+        false
+    }
+
+    async fn execute(
+        &self,
+        input: Value,
+        ctx: ToolExecutionContext,
+    ) -> Result<ToolResult, ToolError> {
+        let team_name = input
+            .get("team_name")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| ToolError::ExecutionFailed("missing team_name".into()))?
+            .to_string();
+
+        validate_team_name(&team_name)
+            .map_err(|e| ToolError::ExecutionFailed(format!("invalid team_name: {e}")))?;
+
+        let session = ctx.session_id.clone();
+
+        // 校验 team 存在
+        if ctx.team_registry().get(&session, &team_name).await.is_none() {
+            return Err(ToolError::ExecutionFailed(format!(
+                "team `{team_name}` not found in this conversation"
+            )));
         }
 
-        Ok(ToolResult::new("TeamDelete", msg, Some(json)))
+        // 写 conv.json::active_team_name
+        let prev = ctx.active_team_name.clone();
+        if let Some(ref conv_dir) = ctx.conv_dir {
+            update_conv_meta_active_team(conv_dir, Some(&team_name))
+                .map_err(|e| ToolError::ExecutionFailed(format!("write conv.json failed: {e}")))?;
+        }
+
+        let ws = crate::telemetry::diagnostics_workspace();
+        record_diagnostic(
+            &ws,
+            DiagnosticEvent::new("tool.team_switch.completed", DiagnosticSource::Backend)
+                .conversation_id(session.as_str())
+                .run_id(ctx.run_id.as_str())
+                .tool_call_id(ctx.tool_call_id.as_str())
+                .ok(true)
+                .payload(json!({
+                    "old_team_name": prev,
+                    "new_team_name": team_name,
+                })),
+        );
+
+        Ok(ToolResult::new(
+            "TeamSwitch",
+            format!("Switched active team to `{team_name}`"),
+            Some(json!({
+                "team_name": team_name,
+                "previous_team_name": prev,
+            })),
+        ))
     }
 }
 
