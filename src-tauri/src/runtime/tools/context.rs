@@ -95,11 +95,6 @@ pub struct ToolExecutionContext {
     /// transcript JSONL, `.meta.json` sidecars, and team_context
     /// attachments land on disk.  `None` in legacy/test paths.
     pub conv_dir: Option<std::path::PathBuf>,
-    /// Batch B: per-run RuntimeEventBus reference, used by SendMessage / team
-    /// tools to emit `TeamMessage` events so the UI can mirror the group-chat
-    /// timeline live.  `None` in legacy/test paths — tools fall back to
-    /// "log-only" mode and the UI sees the change only on next refresh.
-    pub event_bus: Option<Arc<crate::runtime::event_bus::RuntimeEventBus>>,
 }
 
 impl ToolExecutionContext {
@@ -132,7 +127,6 @@ impl ToolExecutionContext {
             cancellation_registry: None,
             is_async: false,
             conv_dir: None,
-            event_bus: None,
         }
     }
 
@@ -213,15 +207,6 @@ impl ToolExecutionContext {
     /// LTR (B-gap2): attach the per-conversation directory.  See `conv_dir`.
     pub fn with_conv_dir(mut self, dir: std::path::PathBuf) -> Self {
         self.conv_dir = Some(dir);
-        self
-    }
-
-    /// Batch B: attach the per-run RuntimeEventBus for live UI mirroring.
-    pub fn with_event_bus(
-        mut self,
-        bus: Arc<crate::runtime::event_bus::RuntimeEventBus>,
-    ) -> Self {
-        self.event_bus = Some(bus);
         self
     }
 

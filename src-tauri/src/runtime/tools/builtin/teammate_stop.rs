@@ -107,29 +107,6 @@ impl RuntimeTool for TeammateStopRuntimeTool {
         match cancels.get(&ctx.session_id, &agent_id).await {
             Some(token) => {
                 token.cancel_with_reason(CancellationReason::UserCancel);
-
-                // v0.3: mark member as Stopped in team.json (decision #4:
-                // keep in roster, just transition lifecycle state). UI greys
-                // out the row but doesn't hide it. Best-effort — if team
-                // can't be found (already disbanded?) we still cancel the
-                // worker, which is what matters.
-                if let Some(team) = ctx.team_registry().get(&ctx.session_id).await {
-                    let mut t = team.lock().await;
-                    let _ = t.mark_teammate_stopped(&name, "tool_call");
-                    drop(t);
-                    if let Some(conv_dir) = ctx.conv_dir.as_ref() {
-                        if let Err(e) = ctx.team_registry().persist(&ctx.session_id, conv_dir).await {
-                            log::warn!(
-                                "[TeammateStop] failed to persist team.json after mark_teammate_stopped \
-                                 session={} name={} err={}",
-                                ctx.session_id.as_str(),
-                                name,
-                                e
-                            );
-                        }
-                    }
-                }
-
                 record_diagnostic(
                     &ws,
                     DiagnosticEvent::new("tool.teammate_stop.cancelled", DiagnosticSource::Backend)
