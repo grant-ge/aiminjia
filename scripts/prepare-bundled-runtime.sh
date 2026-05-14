@@ -102,15 +102,18 @@ extract_uv() {
   mkdir -p "$out_dir/uv/bin"
   local tmp
   tmp="$(mktemp -d)"
-  trap 'rm -rf "$tmp"' EXIT
-  tar -xzf "$tarball" -C "$tmp"
-  # uv tarball top-level dir is uv-aarch64-apple-darwin/
-  find "$tmp" -maxdepth 2 -name uv -type f -exec cp {} "$out_dir/uv/bin/uv" \;
-  find "$tmp" -maxdepth 2 -name uvx -type f -exec cp {} "$out_dir/uv/bin/uvx" \;
-  chmod +x "$out_dir/uv/bin/uv" "$out_dir/uv/bin/uvx"
-  test -x "$out_dir/uv/bin/uv"  || { echo "ERROR: uv binary missing after extract" >&2; exit 1; }
-  test -x "$out_dir/uv/bin/uvx" || { echo "ERROR: uvx binary missing after extract" >&2; exit 1; }
-  rm -rf "$tmp"
+  # Subshell scopes the EXIT trap so it fires when the function returns,
+  # not at script exit (where $tmp would be unbound under `set -u`).
+  (
+    trap 'rm -rf "$tmp"' EXIT
+    tar -xzf "$tarball" -C "$tmp"
+    # uv tarball top-level dir is uv-aarch64-apple-darwin/
+    find "$tmp" -maxdepth 2 -name uv -type f -exec cp {} "$out_dir/uv/bin/uv" \;
+    find "$tmp" -maxdepth 2 -name uvx -type f -exec cp {} "$out_dir/uv/bin/uvx" \;
+    chmod +x "$out_dir/uv/bin/uv" "$out_dir/uv/bin/uvx"
+    test -x "$out_dir/uv/bin/uv"  || { echo "ERROR: uv binary missing after extract" >&2; exit 1; }
+    test -x "$out_dir/uv/bin/uvx" || { echo "ERROR: uvx binary missing after extract" >&2; exit 1; }
+  )
 }
 
 node_url="$(jq -r ".node.platforms[\"$plat\"].url" "$SOURCES")"
