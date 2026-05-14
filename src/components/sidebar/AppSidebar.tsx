@@ -6,7 +6,6 @@ import { useState } from 'react'
 import { CheckSquare, ChevronRight, MessageSquare } from 'lucide-react'
 
 import { useChat } from '@/hooks/useChat'
-import { useAuthStore } from '@/stores/authStore'
 import { useBrandingStore } from '@/stores/brandingStore'
 import { useUiStore, type Route, useActiveConversationId, useActiveChannelSessionId } from '@/stores/uiStore'
 import { useChannelStore } from '@/stores/channelStore'
@@ -45,7 +44,6 @@ function persistSidebarTab(tab: 'project' | 'channel') {
 export function AppSidebar() {
   const productName = useBrandingStore((s) => s.productName)
   const logoUrl = useBrandingStore((s) => s.logoUrl)
-  const tenant = useAuthStore((s) => s.tenant)
   const route = useUiStore((s) => s.route)
   const setRoute = useUiStore((s) => s.setRoute)
   const openSettings = useUiStore((s) => s.openSettings)
@@ -113,7 +111,7 @@ export function AppSidebar() {
       : route.kind === 'home' ? 'home'
       : null
 
-  const tenantDisplay = tenant?.name ?? productName
+  const tenantDisplay = productName
   const dingtalkChannelLabel = !dingtalkState?.configured
     ? '未配置'
     : !dingtalkState.enabled
