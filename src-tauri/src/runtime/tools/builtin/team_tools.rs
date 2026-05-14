@@ -184,10 +184,23 @@ impl RuntimeTool for TeamCreateRuntimeTool {
         // 持久化 team.json 到会话目录，供 teammate boot prompt 引用的
         // `团队配置: <conv_dir>/team.json` 路径生效。best-effort：内存
         // registry 是 source-of-truth，落盘失败只 warn。
+        log::info!(
+            "[TeamCreate][diag] persist check: conv_dir={:?} session={}",
+            ctx.conv_dir.as_ref().map(|p| p.display().to_string()),
+            session.as_str()
+        );
         if let Some(ref conv_dir) = ctx.conv_dir {
-            if let Err(e) = ctx.team_registry().persist(&session, conv_dir).await {
-                log::warn!("[TeamCreate] persist team.json failed: {e}");
+            match ctx.team_registry().persist(&session, conv_dir).await {
+                Ok(()) => log::info!(
+                    "[TeamCreate] persisted team.json at {}",
+                    conv_dir.join("team.json").display()
+                ),
+                Err(e) => log::warn!("[TeamCreate] persist team.json failed: {e}"),
             }
+        } else {
+            log::warn!(
+                "[TeamCreate] ctx.conv_dir is None — team.json NOT persisted (this means SessionRuntime didn't inject conv_dir into the QueryEngine used by this tool call)"
+            );
         }
 
         Ok(ToolResult::new(

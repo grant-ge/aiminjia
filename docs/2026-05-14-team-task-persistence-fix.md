@@ -169,10 +169,35 @@ test ! -d ~/.renlijia/conversations/<新会话>/tasks && echo "✓ no leak to no
 grep -L "Not a file.*team.json" $CONV/teammates/*.jsonl && echo "✓ no team.json NotFound"
 ```
 
+## 验证结果（2026-05-14）
+
+会话 `202a1af7-e862-4a67-a555-9054a1370cc6` 实测，全部修复点位生效：
+
+| 验证点 | 结果 | 证据 |
+|---|---|---|
+| Bug #1 — `team.json` 写入 user-scoped 路径 | ✅ | `<conv_dir>/team.json` 1626 bytes，包含完整 Lead + 3 个 teammate（正方辩手 / 反方辩手 / 辩论主持）名册，对齐 claude-code-best `TeamFile` 结构 |
+| Bug #2 — `tasks/` 写入 user-scoped 路径 | ✅ | `<conv_dir>/tasks/1.json` 422 bytes，task 内容正常（subject/description/status/sessionId/parentRunId） |
+| Bug #2 — 不再泄漏到非 user-scoped | ✅ | `~/.renlijia/conversations/<新>/` 不存在（之前会写到这里）|
+| 之前修复仍生效 | ✅ | `team-chat.jsonl` 5510 bytes 持续记录所有 SendMessage |
+
+整体团队协作链路：
+```
+TeamCreate（assistant tool） → 内存 register + 持久化 team.json ✓
+  ↓
+spawn_subagent（add_teammate） → 名册更新 + 异步 persist team.json ✓
+  ↓
+TaskCreate（Lead/teammate） → 写到 user-scoped <conv_dir>/tasks/<id>.json ✓
+  ↓
+TaskList（teammate） → 读 user-scoped 路径，能看到 Lead ���建的 task ✓
+```
+
+teammate boot prompt 里给的 `团队配置: <conv_dir>/team.json` 和 `任务列表: <conv_dir>/tasks/` 这两个路径，**现在都是真实存在的**——teammate `Read` / `TaskList` 工具不再报 NotFound。
+
 ## 与之前修复的关系
 
 本文档涉及的两个 bug **跟之前 `team-chat.jsonl` / Path A wake / teammate addendum** 三处修复**正交**，那三处针对的是"消息通信链路"，本文档针对的是"配置/任务持久化"。
 
 提交建议拆分：
-- `fix(team): persist team.json on TeamCreate / spawn / cleanup / TeamDelete`
-- `fix(task): use ctx.conv_dir for user-scoped tasks/ path`
+- `fix(task): use ctx.conv_dir for user-scoped tasks/ path` — `177a7f11`
+- `fix(team): persist team.json on TeamCreate / spawn / TeamDelete` — `82f241d4`
+- 后续可补：`cleanup_teammate` 退出时 persist（更新名册移除已退出成员）+ TeamDelete 时 fire-and-forget delete_persisted
