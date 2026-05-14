@@ -389,8 +389,12 @@
     "installAndRestart": "立即安装并重启",
     "installing": "正在安装...",
     "installFailedTitle": "更新安装失败",
+    "installSuccessTitle": "更新安装成功",
+    "relaunchFailedHint": "安装已完成，但自动重启失败。请手动关闭并重新打开应用以使用新版本。",
     "notReadyMessage": "更新尚未就绪，请稍候再试或重启应用",
-    "offlineHint": "网络不可用，无法安装更新，请稍后重试"
+    "offlineHint": "网络不可用，无法安装更新，请稍后重试",
+    "retryLinkText": "更新下载失败，点击重试",
+    "retryTooltip": "下载更新时出错，点击重新尝试"
   },
   "auth": {
     "expired": "登录已失效",

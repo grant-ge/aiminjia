@@ -92,6 +92,9 @@ async function clearPending(): Promise<void> {
   }
 }
 
+// Module-level flag: register online/offline listeners only once (#7).
+let networkListenersInstalled = false
+
 export const useUpdaterStore = create<UpdaterState>()((set, get) => ({
   phase: 'idle',
   version: null,
@@ -104,13 +107,23 @@ export const useUpdaterStore = create<UpdaterState>()((set, get) => ({
   _bootstrapPromise: null,
 
   async bootstrap() {
+    // Synchronous dedup check — must happen before the async IIFE starts (#2).
     const inFlight = get()._bootstrapPromise
     if (inFlight) {
       return inFlight
     }
 
+    // Allocate the promise placeholder synchronously so concurrent callers
+    // that arrive before the first `await` inside the IIFE see a non-null
+    // `_bootstrapPromise` and de-dup.  We assign the actual promise to it
+    // right after the IIFE expression (still in the same synchronous frame).
+    let resolveHolder!: () => void
+    const holder = new Promise<void>((r) => { resolveHolder = r })
+    set({ _bootstrapPromise: holder })
+
     const run = (async () => {
-      if (typeof navigator !== 'undefined') {
+      if (typeof navigator !== 'undefined' && !networkListenersInstalled) {
+        networkListenersInstalled = true
         window.addEventListener('online', () => set({ online: true }))
         window.addEventListener('offline', () => set({ online: false }))
       }
@@ -193,14 +206,23 @@ export const useUpdaterStore = create<UpdaterState>()((set, get) => ({
           checkedAt: new Date().toISOString(),
         })
         set({ phase: 'failed', _downloaded: false })
+        useNotificationStore.getState().push({
+          context: 'toast',
+          level: 'error',
+          title: i18n.t('updater.downloadFailed'),
+          message: i18n.t('updater.downloadFailedDesc'),
+          actions: [],
+          dismissible: true,
+          autoHide: 8,
+        })
       }
     })()
 
-    set({ _bootstrapPromise: run })
     try {
       await run
     } finally {
-      if (get()._bootstrapPromise === run) {
+      resolveHolder()
+      if (get()._bootstrapPromise === holder) {
         set({ _bootstrapPromise: null })
       }
     }
@@ -215,15 +237,26 @@ export const useUpdaterStore = create<UpdaterState>()((set, get) => ({
   },
 
   async installNow() {
-    const { _update, _downloaded, phase } = get()
+    const { _update, _downloaded, phase, online } = get()
     if (!_update || !_downloaded || phase !== 'ready') {
-      // Should not happen with the simplified bootstrap flow, but guard anyway
-      // so the user gets a visible error instead of a silent no-op.
       useNotificationStore.getState().push({
         context: 'toast',
         level: 'error',
         title: i18n.t('updater.installFailedTitle'),
         message: i18n.t('updater.notReadyMessage'),
+        actions: [],
+        dismissible: true,
+        autoHide: 6,
+      })
+      return
+    }
+    // Guard: network may be required for signature verification (#5).
+    if (!online) {
+      useNotificationStore.getState().push({
+        context: 'toast',
+        level: 'error',
+        title: i18n.t('updater.installFailedTitle'),
+        message: i18n.t('updater.offlineHint'),
         actions: [],
         dismissible: true,
         autoHide: 6,
@@ -240,18 +273,30 @@ export const useUpdaterStore = create<UpdaterState>()((set, get) => ({
       await relaunch()
     } catch (e) {
       console.error('[updater] install failed:', e)
-      useNotificationStore.getState().push({
-        context: 'toast',
-        level: 'error',
-        title: i18n.t('updater.installFailedTitle'),
-        message: String((e as Error)?.message ?? e),
-        actions: [],
-        dismissible: true,
-        autoHide: 8,
-      })
-      set(installed
-        ? { phase: 'idle', version: null, notes: '', progress: null, _update: null, _downloaded: false }
-        : { phase: 'ready' })
+      if (installed) {
+        // Install succeeded but relaunch failed — tell user to restart manually (#6).
+        useNotificationStore.getState().push({
+          context: 'toast',
+          level: 'info',
+          title: i18n.t('updater.installSuccessTitle'),
+          message: i18n.t('updater.relaunchFailedHint'),
+          actions: [],
+          dismissible: true,
+          autoHide: 10,
+        })
+        set({ phase: 'idle', version: null, notes: '', progress: null, _update: null, _downloaded: false })
+      } else {
+        useNotificationStore.getState().push({
+          context: 'toast',
+          level: 'error',
+          title: i18n.t('updater.installFailedTitle'),
+          message: String((e as Error)?.message ?? e),
+          actions: [],
+          dismissible: true,
+          autoHide: 8,
+        })
+        set({ phase: 'ready' })
+      }
     }
   },
 }))

@@ -29,6 +29,7 @@ export function UpdaterPanel() {
   const notes = useUpdaterStore((s) => s.notes)
   const progress = useUpdaterStore((s) => s.progress)
   const hasHandle = useUpdaterStore((s) => s._update !== null)
+  const online = useUpdaterStore((s) => s.online)
   const closePanel = useUpdaterStore((s) => s.closePanel)
   const installNow = useUpdaterStore((s) => s.installNow)
 
@@ -46,8 +47,8 @@ export function UpdaterPanel() {
     .map((line) => line.replace(/^[-•·]\s*/, '').trim())
     .filter(Boolean)
 
-  const installDisabled = !hasHandle || phase !== 'ready'
-  const disabledReason = !hasHandle
+  const installDisabled = !hasHandle || !online || phase !== 'ready'
+  const disabledReason = !hasHandle || !online
     ? t('updater.offlineHint')
     : phase === 'downloading'
       ? t('updater.downloading')

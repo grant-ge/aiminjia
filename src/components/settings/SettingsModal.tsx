@@ -81,28 +81,18 @@ export function SettingsModal() {
 
   const onCheckUpdate = async () => {
     try {
-      const { check } = await import('@tauri-apps/plugin-updater')
-      const { getVersion } = await import('@tauri-apps/api/app')
-      const update = await check()
-      if (!update) {
-        await message('当前已是最新版本。', { title: productName, kind: 'info' })
-        return
-      }
-
-      const currentVersion = await getVersion()
-      if (update.version === currentVersion) {
-        await message('当前已是最新版本。', { title: productName, kind: 'info' })
-        return
-      }
-
-      // Reuse the global updater pipeline so the user sees a real progress UI.
-      // bootstrap() handles cached pending downloads + progress events; the
-      // panel surfaces release notes and the install/relaunch button.
       const store = useUpdaterStore.getState()
-      store.openPanel()
-      if (store.phase === 'idle' || store.phase === 'failed') {
-        void store.bootstrap()
+      // Always re-check via bootstrap() — it deduplicates concurrent calls
+      // and handles the full check → download → ready pipeline (#1).
+      await store.bootstrap()
+      const phase = useUpdaterStore.getState().phase
+      if (phase === 'idle') {
+        await message('当前已是最新版本。', { title: productName, kind: 'info' })
+      } else if (phase !== 'failed') {
+        // downloading / ready / installing → show the panel
+        store.openPanel()
       }
+      // 'failed' → download-failure toast already shown by bootstrap()
     } catch (e) {
       await message(e instanceof Error ? e.message : String(e), { title: productName, kind: 'error' })
     }

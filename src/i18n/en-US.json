@@ -389,8 +389,12 @@
     "installAndRestart": "Install & Restart",
     "installing": "Installing...",
     "installFailedTitle": "Update install failed",
+    "installSuccessTitle": "Update installed",
+    "relaunchFailedHint": "Installation complete, but automatic restart failed. Please close and reopen the app to use the new version.",
     "notReadyMessage": "Update not ready yet. Please wait or restart the app.",
-    "offlineHint": "Network unavailable, cannot install update. Please try again later."
+    "offlineHint": "Network unavailable, cannot install update. Please try again later.",
+    "retryLinkText": "Update failed — tap to retry",
+    "retryTooltip": "Download failed — click to retry"
   },
   "auth": {
     "expired": "Session expired",

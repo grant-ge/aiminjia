@@ -128,6 +128,26 @@ describe('updaterStore.bootstrap', () => {
     expect(firstUpdate.install).toHaveBeenCalled()
     expect(useNotificationStore.getState().notifications).toHaveLength(0)
   })
+
+  it('pushes an error toast when download fails', async () => {
+    const fakeUpdate = {
+      version: '0.5.21',
+      body: '',
+      download: vi.fn().mockRejectedValue(new Error('network timeout')),
+      install: vi.fn(),
+    }
+    checkMock.mockResolvedValue(fakeUpdate)
+    getVersionMock.mockResolvedValue('0.5.18')
+
+    const { useUpdaterStore: useStore, useNotificationStore } = await loadModules()
+    useNotificationStore.getState().dismissAll()
+    await useStore.getState().bootstrap()
+
+    expect(useStore.getState().phase).toBe('failed')
+    const notes = useNotificationStore.getState().notifications
+    expect(notes.length).toBeGreaterThanOrEqual(1)
+    expect(notes[notes.length - 1].level).toBe('error')
+  })
 })
 
 describe('updaterStore.installNow', () => {
@@ -197,7 +217,7 @@ describe('updaterStore.installNow', () => {
     expect(useStore.getState().phase).toBe('ready')
   })
 
-  it('does not return to ready when install succeeds but relaunch fails', async () => {
+  it('shows info toast and goes idle when install succeeds but relaunch fails', async () => {
     const fakeUpdate = {
       version: '0.5.21',
       body: '',
@@ -220,5 +240,38 @@ describe('updaterStore.installNow', () => {
     expect(useStore.getState().phase).toBe('idle')
     expect(useStore.getState()._update).toBeNull()
     expect(useStore.getState()._downloaded).toBe(false)
+    // Should push an info toast telling user to restart manually
+    const notes = useNotificationStore.getState().notifications
+    expect(notes.length).toBeGreaterThanOrEqual(1)
+    expect(notes[notes.length - 1].level).toBe('info')
+  })
+
+  it('blocks install and shows offline toast when network is unavailable', async () => {
+    const fakeUpdate = {
+      version: '0.5.21',
+      body: '',
+      download: vi.fn(async (cb: (e: { event: string; data: { contentLength?: number; chunkLength?: number } }) => void) => {
+        cb({ event: 'Started', data: { contentLength: 1 } })
+        cb({ event: 'Progress', data: { chunkLength: 1 } })
+      }),
+      install: vi.fn().mockResolvedValue(undefined),
+    }
+    checkMock.mockResolvedValue(fakeUpdate)
+    getVersionMock.mockResolvedValue('0.5.18')
+
+    const { useUpdaterStore: useStore, useNotificationStore } = await loadModules()
+    useNotificationStore.getState().dismissAll()
+    await useStore.getState().bootstrap()
+    expect(useStore.getState().phase).toBe('ready')
+
+    // Simulate going offline
+    useStore.setState({ online: false })
+    await useStore.getState().installNow()
+
+    expect(fakeUpdate.install).not.toHaveBeenCalled()
+    expect(useStore.getState().phase).toBe('ready')
+    const notes = useNotificationStore.getState().notifications
+    expect(notes.length).toBe(1)
+    expect(notes[0].level).toBe('error')
   })
 })
