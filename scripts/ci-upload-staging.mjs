@@ -27,8 +27,11 @@ let OSS
 try {
   ({ default: OSS } = await import('ali-oss'))
 } catch {
-  console.log('[setup] installing ali-oss...')
-  const r = spawnSync('npm', ['install', '--no-save', '--no-audit', '--no-fund', 'ali-oss@6'], {
+  console.log('[setup] installing ali-oss via pnpm...')
+  // Use pnpm not npm: npm on windows-latest runners has an intermittent
+  // "Cannot read properties of null (reading 'matches')" bug that fails the
+  // installer mid-flight. pnpm is already on PATH (workflow installs it).
+  const r = spawnSync('pnpm', ['add', '-D', '--ignore-workspace-root-check', 'ali-oss@6'], {
     stdio: 'inherit', shell: process.platform === 'win32',
   })
   if (r.status !== 0) {
