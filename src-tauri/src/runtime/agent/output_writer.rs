@@ -224,23 +224,34 @@ pub fn kind_dir(conv_dir: &Path, kind: &TranscriptKind) -> PathBuf {
     conv_dir.join(kind.dir_name())
 }
 
-/// Compute the JSONL transcript path.
+/// Compute the JSONL transcript path, routing Teammate kind through TeamPaths.
 ///
 /// `conv_dir` is the conversation root (NOT a sub-directory).
+/// `team_name` is required for `TranscriptKind::Teammate`; ignored for Subagent.
 /// `agent_id` is the agent's unique ID string.
-pub fn transcript_path_for_kind(conv_dir: &Path, kind: &TranscriptKind, agent_id: &str) -> PathBuf {
-    kind_dir(conv_dir, kind).join(format!("{agent_id}.jsonl"))
+pub fn transcript_path_for_kind(conv_dir: &Path, kind: &TranscriptKind, team_name: Option<&str>, agent_id: &str) -> PathBuf {
+    use crate::runtime::agent::team_paths::TeamPaths;
+    match (kind, team_name) {
+        (TranscriptKind::Teammate, Some(name)) => TeamPaths::for_team(conv_dir, name).teammate_transcript(agent_id),
+        (TranscriptKind::Teammate, None) => conv_dir.join("teammates").join(format!("{agent_id}.jsonl")),
+        (TranscriptKind::Subagent, _) => conv_dir.join("subagents").join(format!("{agent_id}.jsonl")),
+    }
 }
 
-/// Compute the `.meta.json` sidecar path.
-pub fn meta_path_for_kind(conv_dir: &Path, kind: &TranscriptKind, agent_id: &str) -> PathBuf {
-    kind_dir(conv_dir, kind).join(format!("{agent_id}.meta.json"))
+/// Compute the `.meta.json` sidecar path, routing Teammate kind through TeamPaths.
+pub fn meta_path_for_kind(conv_dir: &Path, kind: &TranscriptKind, team_name: Option<&str>, agent_id: &str) -> PathBuf {
+    use crate::runtime::agent::team_paths::TeamPaths;
+    match (kind, team_name) {
+        (TranscriptKind::Teammate, Some(name)) => TeamPaths::for_team(conv_dir, name).teammate_meta(agent_id),
+        (TranscriptKind::Teammate, None) => conv_dir.join("teammates").join(format!("{agent_id}.meta.json")),
+        (TranscriptKind::Subagent, _) => conv_dir.join("subagents").join(format!("{agent_id}.meta.json")),
+    }
 }
 
 /// Write the `.meta.json` sidecar once at spawn time.  Creates parent dirs.
 /// Overwrites any existing sidecar (idempotent for retries).
 pub fn write_meta(conv_dir: &Path, meta: &AgentTranscriptMeta) -> Result<()> {
-    let path = meta_path_for_kind(conv_dir, &meta.kind, &meta.agent_id);
+    let path = meta_path_for_kind(conv_dir, &meta.kind, meta.team_id.as_deref(), &meta.agent_id);
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -379,18 +390,18 @@ mod tests {
     #[test]
     fn subagent_kind_uses_subagents_dir() {
         let conv_dir = std::path::PathBuf::from("/tmp/conv-abc");
-        let p = transcript_path_for_kind(&conv_dir, &TranscriptKind::Subagent, "agent-1");
+        let p = transcript_path_for_kind(&conv_dir, &TranscriptKind::Subagent, None, "agent-1");
         assert_eq!(p, conv_dir.join("subagents/agent-1.jsonl"));
-        let mp = meta_path_for_kind(&conv_dir, &TranscriptKind::Subagent, "agent-1");
+        let mp = meta_path_for_kind(&conv_dir, &TranscriptKind::Subagent, None, "agent-1");
         assert_eq!(mp, conv_dir.join("subagents/agent-1.meta.json"));
     }
 
     #[test]
     fn teammate_kind_uses_teammates_dir() {
         let conv_dir = std::path::PathBuf::from("/tmp/conv-abc");
-        let p = transcript_path_for_kind(&conv_dir, &TranscriptKind::Teammate, "agent-2");
+        let p = transcript_path_for_kind(&conv_dir, &TranscriptKind::Teammate, None, "agent-2");
         assert_eq!(p, conv_dir.join("teammates/agent-2.jsonl"));
-        let mp = meta_path_for_kind(&conv_dir, &TranscriptKind::Teammate, "agent-2");
+        let mp = meta_path_for_kind(&conv_dir, &TranscriptKind::Teammate, None, "agent-2");
         assert_eq!(mp, conv_dir.join("teammates/agent-2.meta.json"));
     }
 
@@ -403,7 +414,7 @@ mod tests {
             agent_name: Some("researcher".to_string()),
             kind: TranscriptKind::Teammate,
             employee_id: Some("emp-42".to_string()),
-            team_id: Some("conv-test".to_string()),
+            team_id: Some("alpha".to_string()),
             spawned_by: Some("lead-agent-id".to_string()),
             spawned_at: chrono::Utc::now(),
             model: Some("sonnet".to_string()),
@@ -412,14 +423,14 @@ mod tests {
             tool_whitelist: vec!["Read".to_string(), "SendMessage".to_string()],
         };
         write_meta(&conv_dir, &meta).unwrap();
-        let path = conv_dir.join("teammates/agent-999.meta.json");
+        let path = conv_dir.join("teams/alpha/teammates/agent-999.meta.json");
         assert!(path.exists());
         let body = std::fs::read_to_string(&path).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&body).unwrap();
         assert_eq!(parsed["kind"].as_str(), Some("teammate"));
         assert_eq!(parsed["agent_name"].as_str(), Some("researcher"));
         assert_eq!(parsed["employee_id"].as_str(), Some("emp-42"));
-        assert_eq!(parsed["team_id"].as_str(), Some("conv-test"));
+        assert_eq!(parsed["team_id"].as_str(), Some("alpha"));
     }
 
     #[test]

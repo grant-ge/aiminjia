@@ -51,6 +51,7 @@ pub fn create_conversation(base_dir: &Path, id: &str, title: &str) -> StorageRes
         updated_at: now.clone(),
         is_archived: false,
         model_override: None,
+        active_team_name: None,
     };
     atomic_write_json(&conv_meta_path(base_dir, id), &meta)?;
 
@@ -440,6 +441,7 @@ mod tests {
             updated_at: Utc::now().to_rfc3339(),
             is_archived: false,
             model_override: None,
+            active_team_name: None,
         };
         atomic_write_json(&orphan_dir.join("conv.json"), &meta).unwrap();
 

@@ -549,7 +549,10 @@ impl SessionRuntime {
         }
         if let Some(host) = self.host.as_ref() {
             if let Some(dir) = host.resolve_conv_dir(session_id.as_str()) {
+                // Read active_team_name from conv.json before moving dir.
+                let active_team_name = read_active_team_name_from_conv_dir(&dir);
                 engine = engine.with_conv_dir(dir);
+                engine = engine.with_active_team_name(active_team_name);
             }
         }
         engine
@@ -723,6 +726,17 @@ impl SessionRuntime {
             .get(session_id.as_str())
             .cloned()
     }
+}
+
+/// Read `conv.json` from the conversation directory and return the
+/// `active_team_name` field if present.  Best-effort — any IO / parse
+/// error silently returns `None` so it doesn't block the turn.
+fn read_active_team_name_from_conv_dir(conv_dir: &std::path::Path) -> Option<String> {
+    let path = conv_dir.join("conv.json");
+    let bytes = std::fs::read(&path).ok()?;
+    let meta: crate::storage::file_store::types::ConversationMeta =
+        serde_json::from_slice(&bytes).ok()?;
+    meta.active_team_name
 }
 
 #[cfg(test)]

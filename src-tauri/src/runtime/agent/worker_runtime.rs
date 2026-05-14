@@ -1379,7 +1379,7 @@ async fn teammate_stub_turn(
 ) {
     if let Some(ref conv_dir) = ctx.conv_dir {
         let jl_path =
-            transcript_path_for_kind(conv_dir, &TranscriptKind::Teammate, ctx.agent_id.as_str());
+            transcript_path_for_kind(conv_dir, &TranscriptKind::Teammate, None, ctx.agent_id.as_str());
 
         let user_text = render_inbox_message_as_user_text(message);
 
@@ -1428,7 +1428,7 @@ async fn teammate_real_turn(
     };
 
     let jl_path = ctx.conv_dir.as_ref().map(|conv_dir| {
-        transcript_path_for_kind(conv_dir, &TranscriptKind::Teammate, ctx.agent_id.as_str())
+        transcript_path_for_kind(conv_dir, &TranscriptKind::Teammate, None, ctx.agent_id.as_str())
     });
 
     // System prompt for this Teammate.  Constructed once at spawn time

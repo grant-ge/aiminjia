@@ -71,6 +71,10 @@ pub struct QueryEngine {
     /// and forwards it into the child worker so transcript JSONL +
     /// `.meta.json` + team_context attachments land on disk.
     conv_dir: Option<PathBuf>,
+    /// The currently-active team name in this conversation.  `None` for
+    /// single-agent scenarios.  Propagated into every ToolExecutionContext
+    /// via `active_team_name` field.
+    active_team_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -109,6 +113,7 @@ impl QueryEngine {
             lead_idle: None,
             cancellation_registry: None,
             conv_dir: None,
+            active_team_name: None,
         }
     }
 
@@ -141,6 +146,7 @@ impl QueryEngine {
             lead_idle: self.lead_idle.clone(),
             cancellation_registry: self.cancellation_registry.clone(),
             conv_dir: self.conv_dir.clone(),
+            active_team_name: None,
         }
     }
 
@@ -199,6 +205,12 @@ impl QueryEngine {
         self
     }
 
+    /// Attach the currently-active team name.  See `active_team_name`.
+    pub fn with_active_team_name(mut self, name: Option<String>) -> Self {
+        self.active_team_name = name;
+        self
+    }
+
     /// LTR (B-gap1): accessors for chat_turn_driver to wire Path A
     /// (mark_running on entry, mark_idle before AgentIdle).
     pub fn lead_idle_supervisor(&self) -> Option<&Arc<crate::runtime::agent::LeadIdleSupervisor>> {
@@ -236,6 +248,9 @@ impl QueryEngine {
         }
         if let Some(dir) = self.conv_dir.clone() {
             ctx = ctx.with_conv_dir(dir);
+        }
+        if let Some(team_name) = self.active_team_name.clone() {
+            ctx = ctx.with_active_team(team_name);
         }
         ctx
     }

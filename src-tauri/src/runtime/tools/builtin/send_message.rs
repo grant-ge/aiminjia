@@ -29,11 +29,12 @@ use crate::telemetry::{record_diagnostic, DiagnosticEvent, DiagnosticSource};
 
 pub const BROADCAST_TOKEN: &str = "*";
 
-/// Append one SendMessage delivery to `<conv_dir>/team-chat.jsonl`. Best-effort:
-/// any IO error is logged at warn but never surfaced — inbox delivery is the
-/// authoritative path; this file is a UI-only mirror for the team chat drawer.
+/// Append one SendMessage delivery to `<conv_dir>/teams/{name}/team-chat.jsonl`.
+/// Best-effort: any IO error is logged at warn but never surfaced — inbox
+/// delivery is the authoritative path; this file is a UI-only mirror.
 fn append_team_chat_entry(
     conv_dir: Option<&std::path::Path>,
+    team_name: Option<&str>,
     from: &str,
     to: &str,
     message: &StructuredMessage,
@@ -47,7 +48,11 @@ fn append_team_chat_entry(
         "text": body,
         "variant": message.variant_name(),
     });
-    let path = dir.join("team-chat.jsonl");
+    use crate::runtime::agent::team_paths::TeamPaths;
+    let path = match team_name {
+        Some(name) => TeamPaths::for_team(dir, name).team_chat_jsonl(),
+        None => return, // No active team → skip (should not happen in practice)
+    };
     let line = match serde_json::to_string(&entry) {
         Ok(s) => s,
         Err(e) => {
@@ -55,6 +60,9 @@ fn append_team_chat_entry(
             return;
         }
     };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
     use std::io::Write;
     match std::fs::OpenOptions::new()
         .create(true)
@@ -215,6 +223,7 @@ impl RuntimeTool for SendMessageRuntimeTool {
                             delivered += 1;
                             append_team_chat_entry(
                                 ctx.conv_dir.as_deref(),
+                                ctx.active_team_name.as_deref(),
                                 caller_name.as_deref().unwrap_or("system"),
                                 name,
                                 &message,
@@ -293,6 +302,7 @@ impl RuntimeTool for SendMessageRuntimeTool {
 
         append_team_chat_entry(
             ctx.conv_dir.as_deref(),
+            ctx.active_team_name.as_deref(),
             caller_name.as_deref().unwrap_or("system"),
             &to,
             &message,

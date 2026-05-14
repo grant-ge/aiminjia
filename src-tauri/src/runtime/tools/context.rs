@@ -95,6 +95,12 @@ pub struct ToolExecutionContext {
     /// transcript JSONL, `.meta.json` sidecars, and team_context
     /// attachments land on disk.  `None` in legacy/test paths.
     pub conv_dir: Option<std::path::PathBuf>,
+    /// The name of the currently-active team in this conversation, derived
+    /// from `ConversationMeta.active_team_name` (Lead turn) or from the
+    /// Teammate's spawn-time lock (Teammate turn).  `None` for single-agent
+    /// (no-team) scenarios.  ASCII-validated by `validate_team_name` before
+    /// storage.
+    pub active_team_name: Option<String>,
 }
 
 impl ToolExecutionContext {
@@ -127,6 +133,7 @@ impl ToolExecutionContext {
             cancellation_registry: None,
             is_async: false,
             conv_dir: None,
+            active_team_name: None,
         }
     }
 
@@ -207,6 +214,12 @@ impl ToolExecutionContext {
     /// LTR (B-gap2): attach the per-conversation directory.  See `conv_dir`.
     pub fn with_conv_dir(mut self, dir: std::path::PathBuf) -> Self {
         self.conv_dir = Some(dir);
+        self
+    }
+
+    /// Attach the active team name (ASCII-validated).  See `active_team_name`.
+    pub fn with_active_team(mut self, team_name: String) -> Self {
+        self.active_team_name = Some(team_name);
         self
     }
 

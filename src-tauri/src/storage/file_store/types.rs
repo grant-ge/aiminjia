@@ -22,6 +22,12 @@ pub struct ConversationMeta {
     /// deserialize so we don't reject legacy files.
     #[serde(default, skip_serializing)]
     pub model_override: Option<String>,
+    /// The name of the currently-active team for the Lead in this conversation.
+    /// Written by TeamCreate / TeamSwitch tools; read during ctx construction
+    /// to populate `ToolExecutionContext::active_team_name`.  `None` for
+    /// single-agent (no-team) conversations or old conv.json files.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_team_name: Option<String>,
 }
 
 /// Lightweight entry in the global `index.json`.
