@@ -147,7 +147,10 @@ pub(crate) fn check_path_permission(
     op: PathOp,
     tool_name: &str,
 ) -> Option<PermissionDecision> {
-    let path_str = input.get("path").and_then(Value::as_str)?;
+    let path_str = input
+        .get("file_path")
+        .or_else(|| input.get("path"))
+        .and_then(Value::as_str)?;
 
     let cap = ctx.capability.as_ref().and_then(|c| c.storage.as_ref())?;
     let perm_ctx = cap.permission_ctx.as_ref();
@@ -408,20 +411,46 @@ impl RuntimeTool for ReadWorkspaceFileRuntimeTool {
         let bytes =
             std::fs::read(&resolved).map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
         let full_content = String::from_utf8_lossy(&bytes).to_string();
+        if offset.is_some() || limit.is_some() {
+            let start_line = offset.unwrap_or(1).max(1);
+            let take_lines = limit.unwrap_or(2000);
+            let total_lines = full_content.split_inclusive('\n').count();
+            let mut sliced = String::new();
+            let mut lines_returned = 0usize;
+            for line in full_content
+                .split_inclusive('\n')
+                .skip(start_line - 1)
+                .take(take_lines)
+            {
+                sliced.push_str(line);
+                lines_returned += 1;
+            }
+            let (content, limit_truncated) = limit_text_content(&sliced, max_bytes);
+            let mut result = json!({
+                "file_path": rel,
+                "content": content,
+                "size": bytes.len(),
+                "start_line": start_line,
+                "lines_returned": lines_returned,
+                "total_lines": total_lines,
+            });
+            if limit_truncated {
+                result["truncated"] = json!(true);
+            }
+            return Ok(tool_result("Read", result));
+        }
         let (content, limit_truncated) = limit_text_content(&full_content, max_bytes);
         let truncated = limit_truncated || bytes.len() > content.len();
-        if offset.is_none() && limit.is_none() {
-            if let Some(cache) = cache {
-                cache.set(
-                    resolved.clone(),
-                    FileState {
-                        content: content.clone(),
-                        mtime_secs,
-                        offset: None,
-                        limit: None,
-                    },
-                );
-            }
+        if let Some(cache) = cache {
+            cache.set(
+                resolved.clone(),
+                FileState {
+                    content: content.clone(),
+                    mtime_secs,
+                    offset: None,
+                    limit: None,
+                },
+            );
         }
         let mut result = json!({ "file_path": rel, "content": content, "size": bytes.len() });
         if truncated {
