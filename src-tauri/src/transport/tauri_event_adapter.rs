@@ -321,21 +321,6 @@ pub fn map_runtime_event(event: &RuntimeEvent) -> Option<LegacyEvent> {
                 "itemId": item_id,
             }),
         }),
-        RuntimeEventKind::TeamMessage {
-            ts,
-            from,
-            to,
-            body,
-        } => Some(LegacyEvent {
-            name: "team:message".to_string(),
-            payload: json!({
-                "conversationId": conversation_id,
-                "ts": ts.to_rfc3339(),
-                "from": from,
-                "to": to,
-                "body": body,
-            }),
-        }),
         _ => None,
     };
     payload

@@ -26,7 +26,6 @@ import type {
   PendingRemovedPayload,
 } from '@/types/pending'
 import type { Settings } from '@/types/settings'
-import type { TeamMessage, TeamView } from '@/types/team'
 
 // ---------------------------------------------------------------------------
 // Tauri Event Constants
@@ -64,8 +63,6 @@ export const TAURI_EVENTS = {
   PENDING_QUEUED: 'pending:queued',
   PENDING_DRAINED: 'pending:drained',
   PENDING_REMOVED: 'pending:removed',
-  /** Batch B: SendMessage / system inbox envelope appended; UI mirrors group-chat live. */
-  TEAM_MESSAGE: 'team:message',
 } as const
 
 // ---------------------------------------------------------------------------
@@ -540,21 +537,6 @@ export function createConversation(): Promise<string> {
  */
 export function getConversations(): Promise<Record<string, unknown>[]> {
   return invoke<Record<string, unknown>[]>('get_conversations')
-}
-
-/**
- * 拉取一个 conversation 的群聊视图——含事件流 + 名册。
- * 没创建过群时 `roster.team_name === null`，前端用此判断是否渲染 inline TeamCard。
- */
-export function teamViewForConversation(conversationId: string): Promise<TeamView> {
-  return invoke<TeamView>('team_view_for_conversation', { conversationId })
-}
-
-/** Subscribe to live `team:message` increments from the backend. */
-export function listenTeamMessage(
-  handler: (msg: TeamMessage) => void,
-): Promise<() => void> {
-  return listen<TeamMessage>(TAURI_EVENTS.TEAM_MESSAGE, (e) => handler(e.payload))
 }
 
 /**

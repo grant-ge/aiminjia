@@ -457,15 +457,6 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
                     },
                     created_at: chrono::Utc::now(),
                     last_active_at: chrono::Utc::now(),
-                    // Spawning vs Active: v0.3 simplification — the worker
-                    // runtime doesn't have a hook to transition this on the
-                    // first LLM turn, and from UX perspective both are "green
-                    // running" indistinguishable. Start directly at Active.
-                    // (Reserved Spawning state in the enum for future use, e.g.
-                    // member dependencies on managed runtime download.)
-                    status: crate::runtime::agent::MemberStatus::Active,
-                    stopped_at: None,
-                    stopped_reason: None,
                 };
                 if let Err(e) = team_guard.add_teammate(member) {
                     // Unregister name on failure to keep state consistent.
@@ -477,25 +468,6 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
                     )));
                 }
                 team_name_str = team_guard.team_name.clone();
-            }
-
-            // v0.3: persist updated team.json so UI sees the new member
-            // immediately (without this, useTeamView reads stale roster).
-            // Best-effort — failure logs warn, doesn't fail the spawn.
-            if let Some(conv_dir) = ctx.conv_dir.as_ref() {
-                if let Err(e) = ctx
-                    .team_registry()
-                    .persist(&ctx.session_id, conv_dir)
-                    .await
-                {
-                    log::warn!(
-                        "[Agent] failed to persist team.json after add_teammate \
-                         session={} name={} err={}",
-                        ctx.session_id.as_str(),
-                        agent_name_str,
-                        e
-                    );
-                }
             }
 
             let inbox = AgentInbox::new(64);

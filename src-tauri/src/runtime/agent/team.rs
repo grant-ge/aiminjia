@@ -7,50 +7,6 @@ use tokio::sync::Mutex;
 
 pub const MAX_TEAMMATES: usize = 4;
 
-/// Member lifecycle states.  Persisted to `team.json` for the UI to render the
-/// roster (grey-out stopped/cancelled members rather than hiding them).
-///
-/// Transitions:
-///   Spawning ─(first SSE chunk / first tool call)─▶ Active
-///   Active   ─(TeammateStop)──────────────────────▶ Stopped
-///   Active   ─(cascade on TeamDelete)─────────────▶ Cancelled
-///
-/// We **deliberately omit a `Failed` state** (decision #5): without a
-/// hard timeout, "the LLM call hangs" is indistinguishable from "the LLM is
-/// taking 60 seconds to think". Dead teammates show as `Active` forever and
-/// are surfaced via lead prompt education + user-driven cleanup.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum MemberStatus {
-    Spawning,
-    Active,
-    Stopped,
-    Cancelled,
-}
-
-impl Default for MemberStatus {
-    fn default() -> Self {
-        MemberStatus::Spawning
-    }
-}
-
-/// Team lifecycle status. Active teams have `team.json` on disk; Disbanded teams
-/// have been moved to `teams/history/{disbanded_at}.json` and `team.json` is
-/// removed (so `file::exists("team.json")` is the single source of truth for
-/// "does this conversation have an active team").
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TeamStatus {
-    Active,
-    Disbanded,
-}
-
-impl Default for TeamStatus {
-    fn default() -> Self {
-        TeamStatus::Active
-    }
-}
-
 #[derive(Debug, Clone)]
 pub enum MemberRole {
     Lead,
@@ -67,29 +23,15 @@ pub struct Member {
     pub role: MemberRole,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub last_active_at: chrono::DateTime<chrono::Utc>, // updated by worker_runtime on each LLM turn (P1.6)
-    /// Lifecycle state. Defaults to Spawning at construction; the worker
-    /// runtime / TeammateStop tool / TeamDelete cascade transition this.
-    pub status: MemberStatus,
-    /// Set when `status` transitions to Stopped or Cancelled.
-    pub stopped_at: Option<chrono::DateTime<chrono::Utc>>,
-    /// Human-readable reason for the stop (`tool_call` / `cascade` / etc).
-    pub stopped_reason: Option<String>,
 }
 
 #[derive(Debug)]
 pub struct Team {
     pub session_id: SessionId,
     pub team_name: String,
-    /// `None` after the LLM didn't supply a description. UI shows it as the
-    /// sub-line under the team name; falsy → omit.
-    pub description: Option<String>,
     pub lead: Member,
     pub teammates: Vec<Member>,
     pub created_at: chrono::DateTime<chrono::Utc>,
-    pub status: TeamStatus,
-    /// Set when `status` transitions to Disbanded.
-    pub disbanded_at: Option<chrono::DateTime<chrono::Utc>>,
-    pub disbanded_reason: Option<String>,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -108,30 +50,9 @@ impl Team {
         Self {
             session_id,
             team_name,
-            description: None,
             lead,
             teammates: Vec::new(),
             created_at: now,
-            status: TeamStatus::Active,
-            disbanded_at: None,
-            disbanded_reason: None,
-        }
-    }
-
-    /// Mark the team as Disbanded. Caller is responsible for archiving
-    /// team.json to history/ + removing team.json from disk. Members that
-    /// were still Active/Spawning are marked Cancelled (cascade).
-    pub fn disband(&mut self, reason: &str) {
-        let now = chrono::Utc::now();
-        self.status = TeamStatus::Disbanded;
-        self.disbanded_at = Some(now);
-        self.disbanded_reason = Some(reason.to_string());
-        for m in &mut self.teammates {
-            if matches!(m.status, MemberStatus::Spawning | MemberStatus::Active) {
-                m.status = MemberStatus::Cancelled;
-                m.stopped_at = Some(now);
-                m.stopped_reason = Some(reason.to_string());
-            }
         }
     }
 
@@ -152,41 +73,6 @@ impl Team {
         let before = self.teammates.len();
         self.teammates.retain(|m| m.name != name);
         self.teammates.len() < before
-    }
-
-    /// Mark a named teammate as `Stopped` (decision #4: keep in roster, don't
-    /// remove). Idempotent. Returns `true` if a member was found + transitioned;
-    /// `false` if the name was unknown or the member was already terminal.
-    ///
-    /// Use this from `TeammateStop` (reason="tool_call") rather than
-    /// `remove_teammate` to preserve UI history.
-    pub fn mark_teammate_stopped(&mut self, name: &str, reason: &str) -> bool {
-        let Some(m) = self.teammates.iter_mut().find(|m| m.name == name) else {
-            return false;
-        };
-        if matches!(m.status, MemberStatus::Stopped | MemberStatus::Cancelled) {
-            return false;
-        }
-        m.status = MemberStatus::Stopped;
-        m.stopped_at = Some(chrono::Utc::now());
-        m.stopped_reason = Some(reason.to_string());
-        true
-    }
-
-    /// Transition a teammate from Spawning → Active. Called from worker_runtime
-    /// on the teammate's first LLM turn. Idempotent for already-Active members;
-    /// noop for terminal (Stopped/Cancelled) members.
-    pub fn mark_teammate_active(&mut self, name: &str) -> bool {
-        let Some(m) = self.teammates.iter_mut().find(|m| m.name == name) else {
-            return false;
-        };
-        if matches!(m.status, MemberStatus::Spawning) {
-            m.status = MemberStatus::Active;
-            m.last_active_at = chrono::Utc::now();
-            true
-        } else {
-            false
-        }
     }
 
     pub fn members(&self) -> impl Iterator<Item = &Member> {
@@ -283,31 +169,6 @@ impl TeamRegistry {
             Err(e) => Err(e),
         }
     }
-
-    /// Archive a [`TeamSnapshot`] to `<conv_dir>/teams/history/{ts}.json`.
-    /// Used by TeamDelete (v0.3 decision #3 "soft delete"): the team is
-    /// marked Disbanded before this call, the snapshot is dumped to history,
-    /// then `team.json` is removed from disk.
-    ///
-    /// Best-effort: serialization or IO failure logs a warning but does not
-    /// propagate — losing archived history is preferable to leaving a half-
-    /// disbanded team blocking the next TeamCreate.
-    pub fn archive_to_history(
-        conv_dir: &Path,
-        snapshot: &TeamSnapshot,
-    ) -> Result<(), TeamPersistError> {
-        let history_dir = conv_dir.join("teams").join("history");
-        std::fs::create_dir_all(&history_dir).map_err(TeamPersistError::Io)?;
-        let ts = snapshot
-            .disbanded_at
-            .unwrap_or_else(chrono::Utc::now)
-            .format("%Y%m%dT%H%M%S%.3fZ")
-            .to_string();
-        let path = history_dir.join(format!("{}.json", ts));
-        let bytes = serde_json::to_vec_pretty(snapshot).map_err(TeamPersistError::Serde)?;
-        write_atomic_team(&path, &bytes).map_err(TeamPersistError::Io)?;
-        Ok(())
-    }
 }
 
 /// Atomic write used by `TeamRegistry::persist`.
@@ -326,11 +187,6 @@ fn write_atomic_team(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 
 /// On-disk representation of a [`Team`], written to
 /// `<conv_dir>/team.json` by [`TeamRegistry::persist`].
-///
-/// v0.3 (2026-05-13): added `status` + `description` + `disbanded_at` +
-/// `disbanded_reason` + per-member `MemberStatus`. All defaulted with
-/// `#[serde(default)]` so older snapshots written by v0.2 still deserialize
-/// (legacy files surface as `status=Active`, members as `Active`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TeamSnapshot {
     pub team_name: String,
@@ -338,14 +194,6 @@ pub struct TeamSnapshot {
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub lead: MemberSnapshot,
     pub teammates: Vec<MemberSnapshot>,
-    #[serde(default)]
-    pub description: Option<String>,
-    #[serde(default)]
-    pub status: TeamStatus,
-    #[serde(default)]
-    pub disbanded_at: Option<chrono::DateTime<chrono::Utc>>,
-    #[serde(default)]
-    pub disbanded_reason: Option<String>,
 }
 
 /// On-disk representation of a single [`Member`].
@@ -361,18 +209,6 @@ pub struct MemberSnapshot {
     pub spawned_by: Option<AgentId>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub last_active_at: chrono::DateTime<chrono::Utc>,
-    /// v0.3+. Lead is always `Active`. Defaults to `Active` for back-compat
-    /// with older snapshots that didn't include this field.
-    #[serde(default = "default_active_status")]
-    pub status: MemberStatus,
-    #[serde(default)]
-    pub stopped_at: Option<chrono::DateTime<chrono::Utc>>,
-    #[serde(default)]
-    pub stopped_reason: Option<String>,
-}
-
-fn default_active_status() -> MemberStatus {
-    MemberStatus::Active
 }
 
 impl From<&Member> for MemberSnapshot {
@@ -396,9 +232,6 @@ impl From<&Member> for MemberSnapshot {
             spawned_by,
             created_at: m.created_at,
             last_active_at: m.last_active_at,
-            status: m.status,
-            stopped_at: m.stopped_at,
-            stopped_reason: m.stopped_reason.clone(),
         }
     }
 }
@@ -411,10 +244,6 @@ impl From<&Team> for TeamSnapshot {
             created_at: t.created_at,
             lead: (&t.lead).into(),
             teammates: t.teammates.iter().map(Into::into).collect(),
-            description: t.description.clone(),
-            status: t.status,
-            disbanded_at: t.disbanded_at,
-            disbanded_reason: t.disbanded_reason.clone(),
         }
     }
 }

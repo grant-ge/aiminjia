@@ -126,16 +126,6 @@ pub enum RuntimeEventKind {
     },
     RunCancelled,
     RunCompleted,
-    /// Batch B: emitted after a successful in-memory SendMessage delivery so
-    /// the group-chat UI can mirror the timeline live without polling.
-    /// History reconstruction stays the responsibility of
-    /// `team_view_for_conversation` (transcript-derived).
-    TeamMessage {
-        ts: chrono::DateTime<chrono::Utc>,
-        from: String,
-        to: String,
-        body: String,
-    },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -1,11 +1,9 @@
 import { ChatBottomArea } from '@/components/chat-scene/ChatBottomArea'
 import { RightPanel } from '@/components/chat/RightPanel'
-import { TeamDrawer } from '@/components/chat/TeamDrawer'
 import type { PreviewTarget } from '@/components/chat/generatedFileActions'
 import { ChatArea } from '@/components/layout/ChatArea'
 import { ChatTopBar } from '@/components/shell/ChatTopBar'
 import { useChat } from '@/hooks/useChat'
-import { useTeamView } from '@/hooks/useTeamView'
 import { useChatStore } from '@/stores/chatStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { useGeneratedFilePreviewStore } from '@/stores/generatedFilePreviewStore'
@@ -25,9 +23,6 @@ export function ChatPage({ conversationId }: ChatPageProps) {
   const previewTarget = useGeneratedFilePreviewStore((s) => s.target)
   const previewOpen = previewTarget?.conversationId === conversationId
   const title = conversations.find((c) => c.id === conversationId)?.title ?? ''
-  // 当前对话的群聊视图——若没调过 TeamCreate 则 view.roster.team_name == null。
-  // 抽屉、TeamCard、对话标题角标都从这里派生。
-  const { view: teamView } = useTeamView(conversationId)
 
   const handleOpenPreviewTarget = async (target: PreviewTarget) => {
     try {
@@ -68,7 +63,6 @@ export function ChatPage({ conversationId }: ChatPageProps) {
             onOpenExternal={(target) => void handleOpenPreviewTarget(target)}
           />
         ) : null}
-        {teamView ? <TeamDrawer view={teamView} /> : null}
       </div>
     </div>
   )

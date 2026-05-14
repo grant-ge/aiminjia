@@ -1505,16 +1505,6 @@ async fn teammate_real_turn(
     if let Some(creg) = engine.cancellation_registry.clone() {
         query_engine = query_engine.with_cancellation_registry(creg);
     }
-    // Batch B: propagate the parent's transport-subscribed bus so SendMessage
-    // emitted from this teammate reaches the front-end (and the TeamDrawer
-    // updates live). conv_dir comes through the same routing for any tool
-    // that wants to land artifacts in the conv directory.
-    if let Some(parent_bus) = engine.runtime_deps.event_bus.clone() {
-        query_engine = query_engine.with_runtime_event_bus(Arc::new(parent_bus));
-    }
-    if let Some(dir) = ctx.conv_dir.clone() {
-        query_engine = query_engine.with_conv_dir(dir);
-    }
     // LTR: build the Teammate's effective permission ctx by merging parent's
     // permission_ctx (if any) with the teammate-specific working dirs (its
     // conversation dir for team.json / tasks/, plus skill dirs).  Without
@@ -1673,24 +1663,6 @@ async fn teammate_real_turn(
                     );
                 }
             }
-            // Persist into team chat (assistant text only; no tool_calls).
-            if let Some(ref dir) = ctx.conv_dir {
-                let run_id = crate::runtime::ids::RunId::new(format!(
-                    "teammate-{}",
-                    ctx.agent_id.as_str()
-                ));
-                let _ = crate::runtime::agent::team_chat::record_turn(
-                    dir,
-                    &agent_name,
-                    /* is_lead */ false,
-                    &iter_content,
-                    &[],
-                    engine.runtime_deps.event_bus.as_ref(),
-                    &ctx.session_id,
-                    &run_id,
-                )
-                .await;
-            }
             break;
         }
 
@@ -1714,25 +1686,6 @@ async fn teammate_real_turn(
                 path,
                 &TranscriptLine::from_chat_message(&assistant_with_calls),
             );
-        }
-
-        // Persist into team chat (assistant text + any SendMessage tool calls).
-        if let Some(ref dir) = ctx.conv_dir {
-            let run_id = crate::runtime::ids::RunId::new(format!(
-                "teammate-{}",
-                ctx.agent_id.as_str()
-            ));
-            let _ = crate::runtime::agent::team_chat::record_turn(
-                dir,
-                &agent_name,
-                /* is_lead */ false,
-                &iter_content,
-                &tool_calls,
-                engine.runtime_deps.event_bus.as_ref(),
-                &ctx.session_id,
-                &run_id,
-            )
-            .await;
         }
 
         let runtime_tool_calls: Vec<RuntimeToolCallRequest> = tool_calls

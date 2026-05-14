@@ -93,11 +93,30 @@ impl From<AuthTenantInfo> for TenantInfo {
 }
 
 /// Raw session key response from the API.
-/// Server returns: { "key": "sk-sess...", "expires_at": "2026-03-05T..." }
+/// Server returns: { "key": "sk-sess...", "expires_at": "2026-03-05T...", "ttl_seconds": 86400 }
 #[derive(Debug, Deserialize)]
 pub struct SessionKeyResponse {
     pub key: String,
     pub expires_at: DateTime<Utc>,
+    /// Server-computed seconds-until-expiry. Preferred over `expires_at`
+    /// because it avoids any clock-skew / timezone interpretation issues
+    /// between server and client. `None` for legacy servers that don't
+    /// emit this field yet — caller falls back to `expires_at`.
+    #[serde(default)]
+    pub ttl_seconds: Option<i64>,
+}
+
+impl SessionKeyResponse {
+    /// Compute the effective expiry instant the client should cache.
+    /// Prefers `ttl_seconds + now` (zero ambiguity) over the wallclock
+    /// `expires_at` (subject to server/client time skew).
+    pub fn effective_expires_at(&self) -> DateTime<Utc> {
+        if let Some(ttl) = self.ttl_seconds.filter(|t| *t > 0) {
+            chrono::Utc::now() + chrono::Duration::seconds(ttl)
+        } else {
+            self.expires_at
+        }
+    }
 }
 
 /// HTTP client for Lotus tenant portal.
@@ -158,15 +177,24 @@ impl AuthClient {
             .map_err(|e| anyhow!("服务器响应格式异常: {}", e))
     }
 
-    /// Create a session key for API access.
-    pub async fn create_session_key(&self, access_token: &str) -> Result<SessionKeyResponse> {
+    /// Create a session key for API access. `device_id` is a stable
+    /// per-installation identifier; server-side it dedupes active session
+    /// keys by `(user_id, device_id)` so the same desktop install opening
+    /// the app N times only contributes one slot to the 10-active-key cap.
+    pub async fn create_session_key(
+        &self,
+        access_token: &str,
+        device_id: Option<&str>,
+    ) -> Result<SessionKeyResponse> {
         let url = format!("{}/auth/session-keys", BASE_URL);
-        let resp = self
+        let mut req = self
             .client
             .post(&url)
-            .header("Authorization", format!("Bearer {}", access_token))
-            .send()
-            .await?;
+            .header("Authorization", format!("Bearer {}", access_token));
+        if let Some(did) = device_id.filter(|s| !s.is_empty()) {
+            req = req.json(&serde_json::json!({ "device_id": did }));
+        }
+        let resp = req.send().await?;
 
         let status = resp.status();
         if !status.is_success() {

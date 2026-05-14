@@ -68,11 +68,6 @@ export interface RenderTurn {
   generatedFiles: RenderGeneratedFile[]
   suggestions: string[]
   peerBanners: RenderPeerBanner[]
-  /**
-   * 该 turn 调用过 TeamCreate。MessageList 在此 turn 末尾插入 inline TeamCard。
-   * 由 useTurnRenderModel 识别 toolCalls[].name === 'TeamCreate' 时设置。
-   */
-  teamCreated?: boolean
 }
 
 function toolExecStatusToStep(s: ToolExecution['status']): RenderToolStep['status'] {
@@ -304,10 +299,6 @@ export function buildTurnsFromMessages(
       if (m.toolCalls?.length) {
         const group = ensureToolGroup(current)
         for (const tc of m.toolCalls) {
-          if (tc.name === 'TeamCreate') {
-            current.teamCreated = true
-            continue // 不进 toolGroup；TeamCard 在 MessageList 单独渲染
-          }
           if (tc.name === 'SendMessage') {
             const args = tc.arguments as { to?: string; message?: unknown; summary?: string }
             const body = typeof args.message === 'string'
