@@ -1852,6 +1852,19 @@ export function cleanupOldRuntimeVersions(keepVersions: number): Promise<Runtime
   return invoke<RuntimeCleanupResult>('runtime_cleanup_old_versions', { keepVersions })
 }
 
+export interface RuntimeDiagnostics {
+  activeResolver: 'bundled' | 'installed' | 'none'
+  bundledVersion: string | null
+  installedVersion: string | null
+  node: string
+  python: string
+  uv: string
+}
+
+export function runtimeDiagnostics(): Promise<RuntimeDiagnostics> {
+  return invoke<RuntimeDiagnostics>('runtime_diagnostics')
+}
+
 // ---------------------------------------------------------------------------
 // DingTalk Commands
 // ---------------------------------------------------------------------------

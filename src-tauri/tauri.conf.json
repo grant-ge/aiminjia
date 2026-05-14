@@ -53,7 +53,8 @@
     ],
     "resources": {
       "prompts": "prompts",
-      "resources/dws*": ""
+      "resources/dws*": "",
+      "resources/runtime": "runtime"
     },
     "fileAssociations": [
       {
