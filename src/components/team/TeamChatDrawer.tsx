@@ -1,8 +1,9 @@
-import { useMemo } from 'react'
-import { X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import { ArrowDown, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import type { TeamOverview, TeamSession } from '@/types/team'
+import { cn } from '@/lib/utils'
 import { useConversationTeamState, useTeamStore } from '@/stores/teamStore'
 
 import { AgentAvatar } from './AgentAvatar'
@@ -70,6 +71,58 @@ interface DrawerOverviewProps {
 }
 
 function DrawerOverview({ overview, onDrill, onClose }: DrawerOverviewProps) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
+  const userScrolledUp = useRef(false)
+  const userIntentRef = useRef(false)
+  const userIntentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [showJumpToBottom, setShowJumpToBottom] = useState(false)
+
+  const markUserIntent = useCallback(() => {
+    userIntentRef.current = true
+    if (userIntentTimerRef.current) clearTimeout(userIntentTimerRef.current)
+    userIntentTimerRef.current = setTimeout(() => {
+      userIntentRef.current = false
+    }, 800)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (userIntentTimerRef.current) clearTimeout(userIntentTimerRef.current)
+    }
+  }, [])
+
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current
+    if (!el) return
+    if (!userIntentRef.current) return
+    const nextScrolledUp = el.scrollHeight - el.scrollTop - el.clientHeight > 100
+    userScrolledUp.current = nextScrolledUp
+    setShowJumpToBottom(nextScrolledUp)
+  }, [])
+
+  const jumpToBottom = useCallback(() => {
+    userScrolledUp.current = false
+    setShowJumpToBottom(false)
+    const el = scrollRef.current
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+  }, [])
+
+  // Auto-scroll the panel to the bottom whenever new events land, unless the
+  // user has pulled up. ResizeObserver fires when markdown finishes laying out
+  // (delayed code highlighting, image load, etc) so the bottom keeps tracking.
+  useEffect(() => {
+    const content = contentRef.current
+    if (!content || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => {
+      if (userScrolledUp.current) return
+      const el = scrollRef.current
+      if (el) el.scrollTop = el.scrollHeight
+    })
+    observer.observe(content)
+    return () => observer.disconnect()
+  }, [])
+
   if (!overview || overview.teams.length === 0) {
     return (
       <div className="flex h-full flex-col">
@@ -82,25 +135,44 @@ function DrawerOverview({ overview, onDrill, onClose }: DrawerOverviewProps) {
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="relative flex h-full flex-col">
       <DrawerHeader
         title="团队过程"
         subtitle={`${overview.teams.length} 个团队会话`}
         memberCount={overview.teams.reduce((sum, t) => sum + t.members.filter((m) => !isLeadName(m.agentName)).length, 0)}
         onClose={onClose}
       />
-      <div className="flex-1 overflow-y-auto px-4">
-        {overview.teams.map((team) => (
-          <TeamSessionSection
-            key={team.teamId}
-            session={team}
-            onDrill={(agentName) => {
-              const agent = team.members.find((m) => m.agentName === agentName)
-              if (agent) onDrill(agent.agentId)
-            }}
-          />
-        ))}
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto px-4"
+        onScroll={handleScroll}
+        onWheel={markUserIntent}
+        onTouchMove={markUserIntent}
+        onKeyDown={markUserIntent}
+      >
+        <div ref={contentRef}>
+          {overview.teams.map((team) => (
+            <TeamSessionSection
+              key={team.teamId}
+              session={team}
+              onDrill={(agentName) => {
+                const agent = team.members.find((m) => m.agentName === agentName)
+                if (agent) onDrill(agent.agentId)
+              }}
+            />
+          ))}
+        </div>
       </div>
+      {showJumpToBottom ? (
+        <button
+          type="button"
+          aria-label="回到底部"
+          onClick={jumpToBottom}
+          className="absolute bottom-4 left-1/2 z-20 flex h-9 w-9 -translate-x-1/2 items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-[var(--shadow-card)] transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <ArrowDown className="h-4 w-4" />
+        </button>
+      ) : null}
     </div>
   )
 }
