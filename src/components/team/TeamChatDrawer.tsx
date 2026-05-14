@@ -3,7 +3,6 @@ import { ArrowDown, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import type { TeamOverview, TeamSession } from '@/types/team'
-import { cn } from '@/lib/utils'
 import { useConversationTeamState, useTeamStore } from '@/stores/teamStore'
 
 import { AgentAvatar } from './AgentAvatar'
