@@ -329,6 +329,7 @@ python3 scripts/release.py finalize           # 生成 update.json → 自动更
 1. **inside-out 逐文件 codesign**：`--deep` 在 macOS 11+ 不可靠，会漏签 `Contents/Resources/dws` 等嵌套二进制。脚本对每个 Mach-O 二进制独立签，每个都带 `--timestamp --options runtime`。
 2. **DMG 必须重建**：`pnpm tauri build` 把**未签名**的 .app 打进 DMG。外部 codesign 改的是独立的 .app，不会影响 DMG 内的副本。脚本用 `hdiutil create` 用签好的 .app 重建 DMG 后再签 DMG。
 3. **幂等检测**：每步前先 probe（`codesign -dv` 看 `flags=runtime` + `Authority=Developer ID Application`；`xcrun stapler validate` 看是否已 stapled）。重跑只跑没完成的步骤。
+4. **签名前 .app 版本预检（v0.5.24+）**：codesign 前用 `PlistBuddy` 读 `CFBundleShortVersionString` 和传入 `$VERSION` 比对（兼容 `-beta.N` 后缀去除），不一致 fail 并提示 `CLEAN_BUILD=1 bash scripts/build-and-sign-macos.sh ...`。同时挂载 DMG 抽查内副本版本，不一致只 warn（Step 2 会重建 DMG，非致命）。防止上一次失败的 build 在 `target/` 留下旧 .app + 幂等 probe 跳过签名 → 把上版本当新版本签上去发出去。`build-and-sign-macos.sh` 提供 `CLEAN_BUILD=1` 环境变量入口跑 `cargo clean`。
 
 ### Windows 一键脚本的关键点
 
