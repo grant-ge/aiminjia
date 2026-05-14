@@ -1,5 +1,6 @@
 import type { TeamEvent } from '@/types/team'
 import { cn } from '@/lib/utils'
+import { AssistantMarkdown } from '@/components/chat-scene/AssistantMarkdown'
 import { AgentAvatar } from './AgentAvatar'
 import { getAgentIdentity, formatLeadDisplayName, isLeadName } from './agentIdentity'
 import { formatClock, formatTimestampForGroup } from './formatters'
@@ -167,13 +168,17 @@ function MessageBubble({ side, from, to, text, ts, isError, onDrillAgent }: Mess
       </div>
       <div
         className={cn(
-          'whitespace-pre-wrap break-words rounded-lg px-3 py-2 text-sm',
+          'break-words rounded-lg px-3 py-2 text-sm',
           isError
             ? 'border border-destructive/40 bg-destructive/10 text-destructive'
             : fromIdentity.bubbleClass,
         )}
       >
-        {text || <span className="italic text-muted-foreground">（空消息）</span>}
+        {text ? (
+          <AssistantMarkdown text={text} />
+        ) : (
+          <span className="italic text-muted-foreground">（空消息）</span>
+        )}
         {isError && (
           <div className="mt-1 text-xs font-medium opacity-80">⚠ 发送失败</div>
         )}
