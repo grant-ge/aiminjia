@@ -43,18 +43,8 @@ export function TeamChatDrawer({ conversationId, overview }: TeamChatDrawerProps
   return (
     <aside
       data-testid="team-split-panel"
-      className="relative flex h-full w-[500px] shrink-0 flex-col border-l border-border bg-background"
+      className="flex h-full w-[500px] shrink-0 flex-col border-l border-border bg-background"
     >
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        aria-label="关闭团队面板"
-        onClick={() => closeDrawer(conversationId, true)}
-        className="absolute right-2 top-2 z-10 h-7 w-7"
-      >
-        <X className="h-4 w-4" />
-      </Button>
       {drillAgent ? (
         <TeammateDetailPanel
           conversationId={conversationId}
@@ -63,7 +53,11 @@ export function TeamChatDrawer({ conversationId, overview }: TeamChatDrawerProps
           onBack={() => setDrillAgent(conversationId, null)}
         />
       ) : (
-        <DrawerOverview overview={overview} onDrill={(agentId) => setDrillAgent(conversationId, agentId)} />
+        <DrawerOverview
+          overview={overview}
+          onDrill={(agentId) => setDrillAgent(conversationId, agentId)}
+          onClose={() => closeDrawer(conversationId, true)}
+        />
       )}
     </aside>
   )
@@ -72,13 +66,14 @@ export function TeamChatDrawer({ conversationId, overview }: TeamChatDrawerProps
 interface DrawerOverviewProps {
   overview: TeamOverview | null
   onDrill: (agentId: string) => void
+  onClose: () => void
 }
 
-function DrawerOverview({ overview, onDrill }: DrawerOverviewProps) {
+function DrawerOverview({ overview, onDrill, onClose }: DrawerOverviewProps) {
   if (!overview || overview.teams.length === 0) {
     return (
       <div className="flex h-full flex-col">
-        <DrawerHeader title="团队过程" subtitle="没有团队记录" memberCount={0} />
+        <DrawerHeader title="团队过程" subtitle="没有团队记录" memberCount={0} onClose={onClose} />
         <div className="flex flex-1 items-center justify-center px-6 text-sm text-muted-foreground">
           这个会话还没有创建团队。
         </div>
@@ -92,6 +87,7 @@ function DrawerOverview({ overview, onDrill }: DrawerOverviewProps) {
         title="团队过程"
         subtitle={`${overview.teams.length} 个团队会话`}
         memberCount={overview.teams.reduce((sum, t) => sum + t.members.filter((m) => !isLeadName(m.agentName)).length, 0)}
+        onClose={onClose}
       />
       <div className="flex-1 overflow-y-auto px-4">
         {overview.teams.map((team) => (
@@ -113,14 +109,25 @@ interface DrawerHeaderProps {
   title: string
   subtitle: string
   memberCount: number
+  onClose: () => void
 }
 
-function DrawerHeader({ title, subtitle, memberCount }: DrawerHeaderProps) {
+function DrawerHeader({ title, subtitle, memberCount, onClose }: DrawerHeaderProps) {
   return (
-    <div className="flex items-baseline gap-3 border-b border-border bg-muted/30 px-4 py-3 pr-12">
+    <div className="flex items-center gap-3 border-b border-border bg-muted/30 px-4 py-3">
       <h2 className="text-base font-medium text-foreground">{title}</h2>
       <span className="text-xs text-muted-foreground">{subtitle}</span>
       <span className="ml-auto shrink-0 text-xs text-muted-foreground">{memberCount} 位成员</span>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        aria-label="关闭团队面板"
+        onClick={onClose}
+        className="h-7 w-7"
+      >
+        <X className="h-4 w-4" />
+      </Button>
     </div>
   )
 }
