@@ -36,7 +36,8 @@ const DEFAULT_FIELD_MAPPING_TEMPLATE = `{
 /**
  * Parse a DingTalk AI Table share URL like:
  *   https://docs.dingtalk.com/i/nodes/<baseId>?iframeQuery=entrance%3Ddata%26sheetId%3D<sheetId>...
- * Returns null if either id can't be located.
+ * Returns null only if baseId can't be located. Missing sheetId yields tableId === ''
+ * so the user can save anyway and let the employee resolve the sheet via dialog.
  */
 function parseDingtalkAitableUrl(input: string): { baseId: string; tableId: string } | null {
   const trimmed = input.trim()
@@ -52,13 +53,12 @@ function parseDingtalkAitableUrl(input: string): { baseId: string; tableId: stri
   const iframeQuery = u.searchParams.get('iframeQuery') ?? ''
   let tableId = ''
   try {
-    // iframeQuery is itself a URL-encoded query string
     const inner = new URLSearchParams(iframeQuery)
     tableId = inner.get('sheetId') ?? ''
   } catch {
     /* fall through */
   }
-  if (!baseId || !tableId) return null
+  if (!baseId) return null
   return { baseId, tableId }
 }
 
@@ -127,21 +127,18 @@ export function SalesTableConfigForm({ initial, onSubmit, onCancel }: SalesTable
     [state.fieldMappingRaw],
   )
 
-  const valid =
-    effectiveBaseId.length > 0
-    && effectiveTableId.length > 0
-    && fieldMappingResult.ok
+  const valid = fieldMappingResult.ok
 
   function update(patch: Partial<FormState>) {
     setState((s) => ({ ...s, ...patch }))
   }
 
   function handleSave() {
-    if (!fieldMappingResult.ok || !valid) return
+    if (!fieldMappingResult.ok) return
     onSubmit({
       shareUrl: state.shareUrl.trim() || undefined,
-      baseId: effectiveBaseId,
-      tableId: effectiveTableId,
+      baseId: effectiveBaseId || undefined,
+      tableId: effectiveTableId || undefined,
       fieldMapping: fieldMappingResult.value,
       scope: state.scope,
     })
@@ -178,7 +175,9 @@ export function SalesTableConfigForm({ initial, onSubmit, onCancel }: SalesTable
           <p className="text-xs text-emerald-600">
             {t('employee.config.salesTable.parseOk', {
               baseId: `${parsed.baseId.slice(0, 12)}…`,
-              tableId: parsed.tableId,
+              tableSuffix: parsed.tableId
+                ? ` / table ${parsed.tableId}`
+                : t('employee.config.salesTable.parseOkNoSheet'),
             })}
           </p>
         )}

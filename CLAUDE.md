@@ -217,6 +217,8 @@ workspace 目录（用户可自定义，默认也是 `~/.renlijia/`）下存放�
 
 ## 重要架构决策与约束
 
+- **数字员工配置表单 = 软校验（2026-05-14）**：所有内置员工的 hand-tuned 配置表单（`SalesTableConfigForm` / `CustomerSupportConfigForm` / `TechSupportConfigForm` / `MonitoringUrlsForm`）保存按钮**不再因必填项空缺而禁用**。设计原则：配置表单是"hint"而不是"gate"——空值或部分值都允许保存，员工在派活后的第一次对话中通过 dws 列字段、问用户子表名、列群关键字等方式补全。`SalesTableConfigForm.parseDingtalkAitableUrl` 现在 baseId 解析到就接受（sheetId 缺失时 tableId 留空），UI 提示"未包含 sheetId，小销会在对话中确认"。仅保留**格式错误**校验（如 fieldMapping JSON 解析失败），不再阻断保存空值。`MonitoringUrlsForm` 删除 URL 格式校验和"至少一行非空 name"校验；保存时过滤掉完全空的行。`SchemaForm` 的 schema-driven 校验**保留**，因为它是给未来自定义模板用的，校验由模板作者通过 JSON Schema 控制，不是产品默认行为。
+
 1. **Tauri command 层只做参数接收 → 转发 Runtime**，不含业务逻辑（见 `docs/architecture-blueprint.md`）
 2. **不接受只改 prompt（base.md/daily.md）来修复能力问题**；能力边界应由 runtime/tool/capability/sandbox 保证
 3. **新工具应实现 `RuntimeTool` trait**，不应新增 `ToolPlugin` 实现

@@ -26,9 +26,13 @@ describe('MonitoringUrlsForm', () => {
     expect(screen.getAllByPlaceholderText('employee.config.monitoringUrls.namePlaceholder')).toHaveLength(2)
   })
 
-  it('save button is disabled when any row is empty or invalid', () => {
-    render(<MonitoringUrlsForm initial={{}} onSubmit={vi.fn()} onCancel={vi.fn()} />)
-    expect(screen.getByRole('button', { name: 'employee.config.save' })).toBeDisabled()
+  it('allows save with all rows empty (employee will guide user later)', () => {
+    const onSubmit = vi.fn()
+    render(<MonitoringUrlsForm initial={{}} onSubmit={onSubmit} onCancel={vi.fn()} />)
+    const saveBtn = screen.getByRole('button', { name: 'employee.config.save' })
+    expect(saveBtn).not.toBeDisabled()
+    fireEvent.click(saveBtn)
+    expect(onSubmit).toHaveBeenCalledWith({ monitoringTargets: [] })
   })
 
   it('calls onSubmit with normalized monitoringTargets on save', () => {
@@ -53,17 +57,15 @@ describe('MonitoringUrlsForm', () => {
       { target: { value: 'OpenAI' } },
     )
 
-    const saveBtn = screen.getByRole('button', { name: 'employee.config.save' })
-    expect(saveBtn).not.toBeDisabled()
-
-    fireEvent.click(saveBtn)
+    fireEvent.click(screen.getByRole('button', { name: 'employee.config.save' }))
     expect(onSubmit).toHaveBeenCalledWith({
       monitoringTargets: [{ name: 'OpenAI', url: '', tags: [] }],
     })
   })
 
-  it('rejects save when url is non-empty but malformed', () => {
-    render(<MonitoringUrlsForm initial={{}} onSubmit={vi.fn()} onCancel={vi.fn()} />)
+  it('accepts malformed URL — employee resolves intent in dialog later', () => {
+    const onSubmit = vi.fn()
+    render(<MonitoringUrlsForm initial={{}} onSubmit={onSubmit} onCancel={vi.fn()} />)
 
     fireEvent.change(
       screen.getAllByPlaceholderText('employee.config.monitoringUrls.namePlaceholder')[0],
@@ -74,6 +76,11 @@ describe('MonitoringUrlsForm', () => {
       { target: { value: 'not-a-url' } },
     )
 
-    expect(screen.getByRole('button', { name: 'employee.config.save' })).toBeDisabled()
+    const saveBtn = screen.getByRole('button', { name: 'employee.config.save' })
+    expect(saveBtn).not.toBeDisabled()
+    fireEvent.click(saveBtn)
+    expect(onSubmit).toHaveBeenCalledWith({
+      monitoringTargets: [{ name: 'X', url: 'not-a-url', tags: [] }],
+    })
   })
 })

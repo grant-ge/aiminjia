@@ -109,7 +109,6 @@ export function CustomerSupportConfigForm({ initial, onSubmit, onCancel }: Props
     })
   }
 
-  const valid = state.groupMatch.keywords.length > 0
   const styles: ResponseStyle[] = ['professional', 'friendly', 'concise']
   const summaries: SummaryCron[] = ['daily', 'weekly', 'off']
 
@@ -179,7 +178,7 @@ export function CustomerSupportConfigForm({ initial, onSubmit, onCancel }: Props
 
       <div className="flex items-center justify-end gap-2 pt-2">
         <Button variant="ghost" onClick={onCancel}>{t('employee.config.cancel')}</Button>
-        <Button onClick={handleSave} disabled={!valid}>{t('employee.config.save')}</Button>
+        <Button onClick={handleSave}>{t('employee.config.save')}</Button>
       </div>
     </div>
   )

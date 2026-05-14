@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Plus, Trash2 } from 'lucide-react'
 
@@ -23,15 +23,6 @@ interface MonitoringUrlsFormProps {
   onCancel: () => void
 }
 
-function isValidUrl(s: string): boolean {
-  try {
-    const u = new URL(s)
-    return u.protocol === 'http:' || u.protocol === 'https:'
-  } catch {
-    return false
-  }
-}
-
 function rowsFromInitial(initial: Record<string, unknown>): Row[] {
   const arr = initial.monitoringTargets
   if (!Array.isArray(arr) || arr.length === 0) {
@@ -51,16 +42,6 @@ export function MonitoringUrlsForm({ initial, onSubmit, onCancel }: MonitoringUr
   const { t } = useTranslation()
   const [rows, setRows] = useState<Row[]>(() => rowsFromInitial(initial))
 
-  const valid = useMemo(
-    () =>
-      rows.length > 0 &&
-      rows.every((r) => {
-        const url = r.url.trim()
-        return r.name.trim() && (url === '' || isValidUrl(url))
-      }),
-    [rows],
-  )
-
   function update(i: number, patch: Partial<Row>) {
     setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, ...patch } : r)))
   }
@@ -74,15 +55,16 @@ export function MonitoringUrlsForm({ initial, onSubmit, onCancel }: MonitoringUr
   }
 
   function handleSave() {
-    if (!valid) return
-    const monitoringTargets: MonitoringTarget[] = rows.map((r) => ({
-      name: r.name.trim(),
-      url: r.url.trim(),
-      tags: r.tagsRaw
-        .split(',')
-        .map((t) => t.trim())
-        .filter(Boolean),
-    }))
+    const monitoringTargets: MonitoringTarget[] = rows
+      .map((r) => ({
+        name: r.name.trim(),
+        url: r.url.trim(),
+        tags: r.tagsRaw
+          .split(',')
+          .map((t) => t.trim())
+          .filter(Boolean),
+      }))
+      .filter((r) => r.name || r.url || r.tags.length > 0)
     onSubmit({ monitoringTargets })
   }
 
@@ -133,7 +115,7 @@ export function MonitoringUrlsForm({ initial, onSubmit, onCancel }: MonitoringUr
         <Button variant="ghost" onClick={onCancel}>
           {t('employee.config.cancel')}
         </Button>
-        <Button onClick={handleSave} disabled={!valid}>
+        <Button onClick={handleSave}>
           {t('employee.config.save')}
         </Button>
       </div>
