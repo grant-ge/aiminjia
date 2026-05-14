@@ -2,7 +2,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use super::{
-    InstalledRuntimeResolver, RuntimeArtifactFetchError, RuntimeArtifactFetcher,
+    ChainResolver, InstalledRuntimeResolver, RuntimeArtifactFetchError, RuntimeArtifactFetcher,
     RuntimeDependencyResult, RuntimeDownloadCancellation, RuntimeDownloadOptions,
     RuntimeHealthChecker, RuntimeHealthError, RuntimeHealthReport, RuntimeInstallError,
     RuntimeInstallPlan, RuntimeInstallResult, RuntimeInstaller, RuntimeManifestSource,
@@ -11,15 +11,31 @@ use super::{
 
 pub type ManagedRuntimeManager = Arc<RuntimeManager>;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct RuntimeManager {
     paths: RuntimePaths,
     bundle_version: String,
     installer: RuntimeInstaller,
-    resolver: InstalledRuntimeResolver,
+    /// Effective resolver: starts as `installed_resolver`; `with_primary_resolver`
+    /// wraps it in a `ChainResolver(primary, installed_resolver)`.
+    resolver: Arc<dyn RuntimeResolver>,
+    /// Kept around so the OSS install path keeps a stable handle to the
+    /// on-disk-installed runtime even after a primary resolver is chained on top.
+    installed_resolver: InstalledRuntimeResolver,
     health_checker: RuntimeHealthChecker,
     manifest_install: Option<RuntimeManifestInstallConfig>,
     active_operation: Arc<Mutex<Option<RuntimeActiveOperation>>>,
+}
+
+impl std::fmt::Debug for RuntimeManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RuntimeManager")
+            .field("paths", &self.paths)
+            .field("bundle_version", &self.bundle_version)
+            .field("installed_resolver", &self.installed_resolver)
+            .field("has_primary_chain", &true)
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -116,9 +132,11 @@ impl RuntimeResolver for RuntimeManager {
 impl RuntimeManager {
     pub fn new(paths: RuntimePaths, bundle_version: impl Into<String>) -> Self {
         let bundle_root = paths.bundle_root();
+        let installed = InstalledRuntimeResolver::new(bundle_root);
         Self {
             installer: RuntimeInstaller::new(paths.clone()),
-            resolver: InstalledRuntimeResolver::new(bundle_root),
+            resolver: Arc::new(installed.clone()),
+            installed_resolver: installed,
             paths,
             bundle_version: bundle_version.into(),
             health_checker: RuntimeHealthChecker::default(),
@@ -144,6 +162,17 @@ impl RuntimeManager {
             runtime_name: runtime_name.into(),
             platform,
         });
+        self
+    }
+
+    /// Chain a primary resolver in front of the default installed resolver.
+    /// The chain tries `primary` first; only on miss does it fall back to the
+    /// on-disk installed runtime. Useful for installer-bundled runtimes where
+    /// `primary` reads from the app's resource_dir and the installed path
+    /// is just an upgrade channel.
+    pub fn with_primary_resolver(mut self, primary: Arc<dyn RuntimeResolver>) -> Self {
+        let chain = ChainResolver::new(vec![primary, Arc::new(self.installed_resolver.clone())]);
+        self.resolver = Arc::new(chain);
         self
     }
 
@@ -201,7 +230,7 @@ impl RuntimeManager {
     }
 
     pub fn resolver(&self) -> InstalledRuntimeResolver {
-        self.resolver.clone()
+        self.installed_resolver.clone()
     }
 
     pub fn bundle_version(&self) -> &str {
