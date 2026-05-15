@@ -311,7 +311,7 @@ impl SessionRuntime {
             "[session_runtime] build_driver_for_turn conv={}",
             turn.session_id().as_str()
         );
-        let driver = self.build_driver_for_turn(&turn, request.active_team_name_override.clone());
+        let driver = self.build_driver_for_turn(&turn, request.active_team_name_override.clone()).await;
         log::info!(
             "[session_runtime] run_chat_turn starting conv={}",
             turn.session_id().as_str()
@@ -549,10 +549,7 @@ impl SessionRuntime {
         }
         if let Some(host) = self.host.as_ref() {
             if let Some(dir) = host.resolve_conv_dir(session_id.as_str()) {
-                // Read active_team_name from conv.json before moving dir.
-                let active_team_name = read_active_team_name_from_conv_dir(&dir);
                 engine = engine.with_conv_dir(dir);
-                engine = engine.with_active_team_name(active_team_name);
             }
         }
         engine
@@ -568,14 +565,32 @@ impl SessionRuntime {
     ///   payload and may race ahead of the conv.json write.
     /// - `None`:        the QueryEngine's normal `conv.json` read decides
     ///   the active team (or `None` for non-team conversations).
-    fn build_driver_for_turn(
+    ///
+    /// Async because we may need to `set_active` on the shared
+    /// `TeamRegistry` (either from the override or from a fresh
+    /// `conv.json` read at hydration time).
+    async fn build_driver_for_turn(
         &self,
         turn: &TurnState,
         active_team_name_override: Option<String>,
     ) -> RuntimeChatTurnDriver {
-        let mut query_engine = self.query_engine_for_session(turn.session_id());
-        if let Some(team) = active_team_name_override {
-            query_engine = query_engine.with_active_team_name(Some(team));
+        let query_engine = self.query_engine_for_session(turn.session_id());
+        // Determine which team the turn should run against and write it into
+        // the registry so attach_ltr_registries can derive ctx.active_team_name.
+        // Priority: override > conv.json (if no value already present).
+        if let Some(ref reg) = self.team_registry {
+            let session_id = turn.session_id();
+            if let Some(team) = active_team_name_override {
+                reg.set_active(session_id, team).await;
+            } else if reg.active(session_id).await.is_none() {
+                if let Some(host) = self.host.as_ref() {
+                    if let Some(dir) = host.resolve_conv_dir(session_id.as_str()) {
+                        if let Some(name) = read_active_team_name_from_conv_dir(&dir) {
+                            reg.set_active(session_id, name).await;
+                        }
+                    }
+                }
+            }
         }
         let mut driver = if let Some(ref executor) = self.llm_executor {
             // Compatibility marker for review tests: with_llm_executor_and_permission_control_plane(

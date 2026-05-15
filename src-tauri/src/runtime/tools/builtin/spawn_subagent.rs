@@ -295,31 +295,34 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
         // ── Team handle resolution ─────────────────────────────────────────
         // Must happen before name registration so a failed team lookup doesn't
         // leave a stale entry in AgentNameRegistry.
-        let team_handle = if team_name.is_some() {
+        //
+        // Resolution rule: caller-supplied `team_name` takes precedence; if
+        // absent or empty we fall back to ctx.active_team_name (single owner
+        // via TeamRegistry). We no longer silently pick "the first team in
+        // the session" — that historical fallback masked bugs where the
+        // active team was not propagated to the tool context and the caller
+        // dispatched to the wrong team when multiple were present.
+        let team_handle = if let Some(caller_team) = team_name.as_deref().or(ctx.active_team_name.as_deref()) {
             let session_id = ctx.session_id.clone();
-            // PR2 compat: use active_team_name if available, else first team in session.
-            // PR3 will inject active_team_name properly.
-            let teams = ctx.team_registry().list(&session_id).await;
-            let team = teams.into_iter().next().ok_or_else(|| {
-                    ToolError::ExecutionFailed(
-                        "no team in this session — call TeamCreate first".into(),
-                    )
-                })?.1;
-            // Note: we don't reject on team_name mismatch because session_id
-            // uniqueness is the authoritative lookup key.  A caller who uses
-            // a different name string is probably just out of sync with the
-            // UI label; warn but proceed.
-            {
-                let guard = team.lock().await;
-                if let Some(tn) = &team_name {
-                    if guard.team_name != *tn {
-                        log::warn!(
-                            "[spawn_subagent] team_name mismatch: caller said {:?} \
-                             but session has team {:?}; proceeding with session team",
-                            tn,
-                            guard.team_name
-                        );
-                    }
+            let team = ctx
+                .team_registry()
+                .get(&session_id, caller_team)
+                .await
+                .ok_or_else(|| {
+                    ToolError::ExecutionFailed(format!(
+                        "team `{caller_team}` not found in this session — call TeamCreate first or check the spelling"
+                    ))
+                })?;
+            // Surface unexpected mismatches between the caller-supplied name
+            // and the active team to help diagnose stale UI labels, but the
+            // caller-supplied name is authoritative for routing.
+            if let (Some(caller), Some(active)) = (&team_name, &ctx.active_team_name) {
+                if caller != active {
+                    log::warn!(
+                        "[spawn_subagent] caller-supplied team_name {:?} differs from active team {:?}; using caller's",
+                        caller,
+                        active
+                    );
                 }
             }
             Some(team)

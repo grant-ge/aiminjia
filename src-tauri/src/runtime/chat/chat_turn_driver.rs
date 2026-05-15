@@ -469,17 +469,18 @@ async fn drain_and_inject_lead_inbox_messages(
     let Some(inbox_reg) = query_engine.inbox_registry() else {
         return (0, None);
     };
+    let active_team = query_engine.active_team_name(session_id).await.unwrap_or_default();
     let Some(lead_id) = names
         .resolve(
             session_id,
-            query_engine.active_team_name().unwrap_or(""),
+            active_team.as_str(),
             crate::runtime::tools::builtin::team_tools::LEAD_NAME,
         )
         .await
     else {
         return (0, None);
     };
-    let Some(lead_inbox) = inbox_reg.get(session_id, query_engine.active_team_name().unwrap_or(""), &lead_id).await else {
+    let Some(lead_inbox) = inbox_reg.get(session_id, active_team.as_str(), &lead_id).await else {
         return (0, None);
     };
     let drained = lead_inbox.drain_pending().await;
@@ -2302,7 +2303,7 @@ impl RuntimeChatTurnDriver {
             if let Some(lead_id) = names
                 .resolve(
                     &session_id,
-                    self.query_engine.active_team_name().unwrap_or(""),
+                    self.query_engine.active_team_name(&session_id).await.unwrap_or_default().as_str(),
                     crate::runtime::tools::builtin::team_tools::LEAD_NAME,
                 )
                 .await
@@ -2358,9 +2359,9 @@ impl RuntimeChatTurnDriver {
         let ws = crate::telemetry::diagnostics_workspace();
         let active_team = self
             .query_engine
-            .active_team_name()
-            .unwrap_or("")
-            .to_string();
+            .active_team_name(session_id)
+            .await
+            .unwrap_or_default();
         record_diagnostic(
             &ws,
             DiagnosticEvent::new("turn.path_a.mark_idle.entry", DiagnosticSource::Backend)
@@ -2445,9 +2446,9 @@ impl RuntimeChatTurnDriver {
         let session = turn.session_id().clone();
         let active_team = self
             .query_engine
-            .active_team_name()
-            .unwrap_or("")
-            .to_string();
+            .active_team_name(&session)
+            .await
+            .unwrap_or_default();
         let ws = crate::telemetry::diagnostics_workspace();
         record_diagnostic(
             &ws,

@@ -247,6 +247,15 @@ impl RuntimeTool for TeamCreateRuntimeTool {
             );
         }
 
+        // Mark this team as the session's active team in the registry — the
+        // single owner of active state. attach_ltr_registries on the NEXT
+        // tool call in this turn will derive ctx.active_team_name from this
+        // value (replaces the old QueryEngine.active_team_name cache that
+        // could not be updated mid-turn).
+        ctx.team_registry()
+            .set_active(&session, team_name.clone())
+            .await;
+
         Ok(ToolResult::new(
             "TeamCreate",
             format!(
@@ -353,7 +362,18 @@ impl RuntimeTool for TeamDeleteRuntimeTool {
             reg.unregister_team(&session, &team_name).await;
         }
 
-        // step f: 若 conv.json::active_team_name == 此 team，重置为 None
+        // step f: 若此 team 是 active，清掉。两层：① TeamRegistry 内存
+        // 单一 owner（同 turn 后续 tool 立刻看到）；② conv.json 持久化镜
+        // 像（重启 hydration 用）。
+        if ctx
+            .team_registry()
+            .active(&session)
+            .await
+            .as_deref()
+            == Some(team_name.as_str())
+        {
+            ctx.team_registry().clear_active(&session).await;
+        }
         if let Some(ref conv_dir) = ctx.conv_dir {
             let path = conv_dir.join("conv.json");
             if let Ok(bytes) = std::fs::read(&path) {
@@ -455,6 +475,11 @@ impl RuntimeTool for TeamSwitchRuntimeTool {
                 .map_err(|e| ToolError::ExecutionFailed(format!("write conv.json failed: {e}")))?;
         }
 
+        // 同步刷新 in-memory 单一 owner 让同 turn 后续 tool 看到新值。
+        ctx.team_registry()
+            .set_active(&session, team_name.clone())
+            .await;
+
         let ws = crate::telemetry::diagnostics_workspace();
         record_diagnostic(
             &ws,
@@ -484,10 +509,89 @@ impl RuntimeTool for TeamSwitchRuntimeTool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runtime::agent::{AgentNameRegistry, InboxRegistry, TeamRegistry};
 
     #[test]
     fn default_team_name_uses_short_session_id() {
         assert_eq!(default_team_name("abcdef1234567"), "team-abcdef12");
         assert_eq!(default_team_name("short"), "team-short");
+    }
+
+    /// Regression for the bug observed in conversation 0a31f41a (2026-05-15):
+    /// after the Lead calls TeamCreate, the same turn's subsequent tool calls
+    /// must see the new active team. We previously cached active_team_name in
+    /// QueryEngine and never refreshed it mid-turn — so SendMessage looked up
+    /// the name registry under team_name="" and missed every teammate that
+    /// was registered under the real team name, the Lead then gave up and
+    /// called TeamDelete. The fix is to make TeamRegistry the single owner
+    /// of "which team is active" and have tools mutate it directly.
+    #[tokio::test]
+    async fn team_create_publishes_active_to_registry_immediately() {
+        let team_registry = TeamRegistry::new();
+        let names = AgentNameRegistry::new();
+        let inboxes = InboxRegistry::new();
+        let ctx = ToolExecutionContext::for_test("conv-regression", "run-1", "call-tc")
+            .with_team_registry(team_registry.clone())
+            .with_agent_names(names.clone())
+            .with_inbox_registry(inboxes.clone());
+
+        let session = ctx.session_id.clone();
+        // Sanity: registry starts with no active team.
+        assert_eq!(team_registry.active(&session).await, None);
+
+        TeamCreateRuntimeTool
+            .execute(
+                serde_json::json!({ "team_name": "regression-team" }),
+                ctx,
+            )
+            .await
+            .expect("TeamCreate should succeed");
+
+        // The whole point of the fix: active is set in the same turn.
+        assert_eq!(
+            team_registry.active(&session).await,
+            Some("regression-team".to_string()),
+            "TeamCreate must publish active_team_name to TeamRegistry so the \
+             next tool call in the same turn sees it"
+        );
+    }
+
+    #[tokio::test]
+    async fn team_delete_clears_active_when_deleted_team_was_active() {
+        let team_registry = TeamRegistry::new();
+        let names = AgentNameRegistry::new();
+        let inboxes = InboxRegistry::new();
+        let session_str = "conv-delete";
+        let ctx_create = ToolExecutionContext::for_test(session_str, "run-1", "call-tc")
+            .with_team_registry(team_registry.clone())
+            .with_agent_names(names.clone())
+            .with_inbox_registry(inboxes.clone());
+        let session = ctx_create.session_id.clone();
+        TeamCreateRuntimeTool
+            .execute(
+                serde_json::json!({ "team_name": "to-delete" }),
+                ctx_create,
+            )
+            .await
+            .unwrap();
+        assert_eq!(team_registry.active(&session).await, Some("to-delete".into()));
+
+        let ctx_delete = ToolExecutionContext::for_test(session_str, "run-2", "call-td")
+            .with_team_registry(team_registry.clone())
+            .with_agent_names(names.clone())
+            .with_inbox_registry(inboxes.clone());
+        TeamDeleteRuntimeTool
+            .execute(
+                serde_json::json!({ "team_name": "to-delete" }),
+                ctx_delete,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            team_registry.active(&session).await,
+            None,
+            "TeamDelete on the active team must clear active in the registry"
+        );
     }
 }

@@ -95,6 +95,14 @@ impl Team {
 #[derive(Debug, Default)]
 pub struct TeamRegistry {
     teams: Mutex<HashMap<SessionId, HashMap<String, Arc<Mutex<Team>>>>>,
+    /// Per-session active team name. Single owner of "which team is the
+    /// session currently focused on" — replaces the duplicated cache that
+    /// used to live in `QueryEngine.active_team_name`. Tools call
+    /// `set_active` after `TeamCreate` / `TeamSwitch` and `clear_active`
+    /// after `TeamDelete`; `ToolExecutionContext.active_team_name` is
+    /// derived from `active(&session)` at ctx-build time, so the next tool
+    /// call in the same turn sees the new value.
+    active: Mutex<HashMap<SessionId, String>>,
 }
 
 impl TeamRegistry {
@@ -146,9 +154,11 @@ impl TeamRegistry {
     /// Strictly different from `delete_team`—this removes every team at once.
     pub async fn drop_session(&self, session_id: &SessionId) -> Vec<(String, Arc<Mutex<Team>>)> {
         let mut g = self.teams.lock().await;
-        g.remove(session_id)
+        let dropped = g.remove(session_id)
             .map(|m| m.into_iter().collect())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        self.active.lock().await.remove(session_id);
+        dropped
     }
 
     /// LTR (P1.8): drop **all** teams.  Used by the app-close hook so a
@@ -158,7 +168,40 @@ impl TeamRegistry {
         let mut g = self.teams.lock().await;
         let n: usize = g.values().map(|m| m.len()).sum();
         g.clear();
+        self.active.lock().await.clear();
         n
+    }
+
+    // ── Active team accessors (replaces QueryEngine.active_team_name) ────
+    //
+    // Single owner of "the team currently driving this session". Tools
+    // mutate via `set_active` / `clear_active`; readers (tool execution
+    // context builders, chat_turn_driver) call `active`. There is no on-disk
+    // mirror of this state at this layer — `conv.json::active_team_name` is
+    // the persistence shim used to restore this value on resume, but the
+    // in-memory copy is authoritative at runtime.
+
+    /// Set the active team for the given session, replacing any previous
+    /// value. Called by `TeamCreate` (right after the team is created) and
+    /// by `TeamSwitch`.
+    pub async fn set_active(&self, session_id: &SessionId, team_name: String) {
+        self.active
+            .lock()
+            .await
+            .insert(session_id.clone(), team_name);
+    }
+
+    /// Clear the active team for the given session. Called by `TeamDelete`
+    /// **only** when the deleted team is the currently-active one (the
+    /// caller decides — registry has no opinion).
+    pub async fn clear_active(&self, session_id: &SessionId) {
+        self.active.lock().await.remove(session_id);
+    }
+
+    /// Read the active team name for the given session, if any.  Used by
+    /// the QueryEngine when building a `ToolExecutionContext`.
+    pub async fn active(&self, session_id: &SessionId) -> Option<String> {
+        self.active.lock().await.get(session_id).cloned()
     }
 
     /// Write the current Team state to `<conv_dir>/teams/{team_name}/config.json`.
@@ -436,5 +479,51 @@ mod registry_v2_tests {
         let n = reg.hydrate_from_disk(&s, dir.path()).await.unwrap();
         assert_eq!(n, 1);
         assert!(reg.get(&s, "alpha").await.is_some());
+    }
+
+    #[tokio::test]
+    async fn active_set_get_clear() {
+        let reg = TeamRegistry::new();
+        let s = SessionId::new("s-active");
+        assert_eq!(reg.active(&s).await, None);
+        reg.set_active(&s, "alpha".to_string()).await;
+        assert_eq!(reg.active(&s).await, Some("alpha".to_string()));
+        reg.set_active(&s, "beta".to_string()).await;
+        assert_eq!(reg.active(&s).await, Some("beta".to_string()));
+        reg.clear_active(&s).await;
+        assert_eq!(reg.active(&s).await, None);
+    }
+
+    #[tokio::test]
+    async fn active_is_isolated_per_session() {
+        let reg = TeamRegistry::new();
+        let s1 = SessionId::new("s-1");
+        let s2 = SessionId::new("s-2");
+        reg.set_active(&s1, "alpha".to_string()).await;
+        reg.set_active(&s2, "beta".to_string()).await;
+        assert_eq!(reg.active(&s1).await, Some("alpha".to_string()));
+        assert_eq!(reg.active(&s2).await, Some("beta".to_string()));
+        reg.clear_active(&s1).await;
+        assert_eq!(reg.active(&s1).await, None);
+        assert_eq!(reg.active(&s2).await, Some("beta".to_string()));
+    }
+
+    #[tokio::test]
+    async fn drop_session_clears_active() {
+        let reg = TeamRegistry::new();
+        let s = SessionId::new("s-drop");
+        reg.create(s.clone(), dummy_lead("a"), "alpha".to_string()).await.unwrap();
+        reg.set_active(&s, "alpha".to_string()).await;
+        reg.drop_session(&s).await;
+        assert_eq!(reg.active(&s).await, None);
+    }
+
+    #[tokio::test]
+    async fn clear_all_clears_active() {
+        let reg = TeamRegistry::new();
+        let s = SessionId::new("s-clear");
+        reg.set_active(&s, "alpha".to_string()).await;
+        reg.clear_all().await;
+        assert_eq!(reg.active(&s).await, None);
     }
 }

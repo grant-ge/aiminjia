@@ -71,10 +71,6 @@ pub struct QueryEngine {
     /// and forwards it into the child worker so transcript JSONL +
     /// `.meta.json` + team_context attachments land on disk.
     conv_dir: Option<PathBuf>,
-    /// The currently-active team name in this conversation.  `None` for
-    /// single-agent scenarios.  Propagated into every ToolExecutionContext
-    /// via `active_team_name` field.
-    active_team_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -113,7 +109,6 @@ impl QueryEngine {
             lead_idle: None,
             cancellation_registry: None,
             conv_dir: None,
-            active_team_name: None,
         }
     }
 
@@ -146,7 +141,6 @@ impl QueryEngine {
             lead_idle: self.lead_idle.clone(),
             cancellation_registry: self.cancellation_registry.clone(),
             conv_dir: self.conv_dir.clone(),
-            active_team_name: None,
         }
     }
 
@@ -205,16 +199,16 @@ impl QueryEngine {
         self
     }
 
-    /// Attach the currently-active team name.  See `active_team_name`.
-    pub fn with_active_team_name(mut self, name: Option<String>) -> Self {
-        self.active_team_name = name;
-        self
-    }
-
-    /// Return the active team name, if any.  Used by chat_turn_driver and
-    /// other callers that need the PR4 `team_name` key for registry lookups.
-    pub fn active_team_name(&self) -> Option<&str> {
-        self.active_team_name.as_deref()
+    /// Read the active team name for this engine's session.  Derives from
+    /// `TeamRegistry.active(&session)` — the single owner. `session_id`
+    /// is required because the registry is shared across sessions; callers
+    /// typically have it in scope already (turn / driver / event payloads).
+    ///
+    /// Returns `None` when no TeamRegistry was injected (legacy/test paths)
+    /// or when the session has no active team.
+    pub async fn active_team_name(&self, session_id: &crate::runtime::ids::SessionId) -> Option<String> {
+        let reg = self.team_registry.as_ref()?;
+        reg.active(session_id).await
     }
 
     /// LTR (B-gap1): accessors for chat_turn_driver to wire Path A
@@ -233,11 +227,17 @@ impl QueryEngine {
     /// ToolExecutionContext.  Helper to avoid duplicating the wiring in every
     /// tool-call build site.  No-op for whichever registry isn't configured
     /// — tools defensively check for `None` and error out themselves.
-    fn attach_ltr_registries(
+    async fn attach_ltr_registries(
         &self,
         mut ctx: crate::runtime::tools::context::ToolExecutionContext,
     ) -> crate::runtime::tools::context::ToolExecutionContext {
         if let Some(team) = self.team_registry.clone() {
+            // Derive ctx.active_team_name from the registry **now** so that
+            // the snapshot the tool sees reflects any prior set_active call
+            // in this turn (e.g. TeamCreate → next tool call).
+            if let Some(name) = team.active(&ctx.session_id).await {
+                ctx = ctx.with_active_team(name);
+            }
             ctx = ctx.with_team_registry(team);
         }
         if let Some(names) = self.agent_names.clone() {
@@ -254,9 +254,6 @@ impl QueryEngine {
         }
         if let Some(dir) = self.conv_dir.clone() {
             ctx = ctx.with_conv_dir(dir);
-        }
-        if let Some(team_name) = self.active_team_name.clone() {
-            ctx = ctx.with_active_team(team_name);
         }
         ctx
     }
@@ -704,7 +701,7 @@ impl QueryEngine {
         // TurnState centralizes tool-call scoped cancellation so each call gets
         // a child token of the turn token.
         let ctx = turn.build_execution_context(call.tool_call_id.clone());
-        let ctx = self.attach_ltr_registries(ctx);
+        let ctx = self.attach_ltr_registries(ctx).await;
 
         // Inject capability context (Workspace-First guarantee) — same logic as
         // `run_tool_with_bus` so workspace-scoped tools receive the correct root.
@@ -882,7 +879,7 @@ impl QueryEngine {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("tool dispatcher not configured"))?;
         let ctx = turn.build_execution_context(format!("tool-call-{tool_name}"));
-        let ctx = self.attach_ltr_registries(ctx);
+        let ctx = self.attach_ltr_registries(ctx).await;
         // Inject capability context when workspace_path is available so that
         // workspace-scoped runtime tools (read_workspace_file, etc.)
         // can resolve their root path correctly.  When no workspace_path is set
