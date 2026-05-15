@@ -169,6 +169,23 @@ pub struct ManagedRuntimeEnvInfo {
 
 impl ManagedRuntimeEnvInfo {
     pub fn format_for_env_info(&self) -> String {
+        // Shell 语法因平台而异：Windows 走 powershell，需要 `& "exe"` call operator；
+        // macOS / Linux 走 /bin/sh，必须裸命令（路径用引号包住即可）。
+        // 给 LLM 的模板写错平台 → 工具执行直接 syntax error。
+        let install_template = if cfg!(target_os = "windows") {
+            format!(
+                r#"& "{uv}" pip install <包名> --python "{python}" --quiet"#,
+                uv = self.uv_path.display(),
+                python = self.python_path.display(),
+            )
+        } else {
+            format!(
+                r#""{uv}" pip install <包名> --python "{python}" --quiet"#,
+                uv = self.uv_path.display(),
+                python = self.python_path.display(),
+            )
+        };
+
         format!(
             r#"Runtime: 已安装
 Runtime 当前目录: {runtime_root}
@@ -183,7 +200,7 @@ uvx: {uvx}
 1. 运行 Python / Node / npm / npx / uv 命令时，默认使用上面列出的绝对路径；只有用户明确要求系统环境时，才使用系统 PATH 中的命令。
 2. 安装第三方 Python 包必须使用以下模板（替换包名即可），禁止任何变体：
 
-   & "{uv}" pip install <包名> --python "{python}" --quiet
+   {install_template}
 
 3. 禁止使用 --system / 裸 pip / python -m pip / pip install 后省略 --python。
 4. uv 装包是幂等的：已安装的包会秒过（< 1s），不会重复下载，所以可以放心在每次需要时直接调用上述模板。"#,
@@ -194,6 +211,7 @@ uvx: {uvx}
             npx = self.npx_path.display(),
             uv = self.uv_path.display(),
             uvx = self.uvx_path.display(),
+            install_template = install_template,
         )
     }
 }
@@ -414,10 +432,13 @@ mod tests {
         assert!(result.contains("uvx: /cache/renlijia/uv/bin/uvx"));
         assert!(result.contains("默认使用上面列出的绝对路径"));
         assert!(result.contains("只有用户明确要求系统环境时"));
+        let expected_template = if cfg!(target_os = "windows") {
+            r#"& "/cache/renlijia/uv/bin/uv" pip install <包名> --python "/cache/renlijia/python/bin/python3" --quiet"#
+        } else {
+            r#""/cache/renlijia/uv/bin/uv" pip install <包名> --python "/cache/renlijia/python/bin/python3" --quiet"#
+        };
         assert!(
-            result.contains(
-                r#"& "/cache/renlijia/uv/bin/uv" pip install <包名> --python "/cache/renlijia/python/bin/python3" --quiet"#
-            ),
+            result.contains(expected_template),
             "must include uv pip install template with concrete absolute paths, got:\n{result}"
         );
         assert!(result.contains("禁止使用 --system"));
