@@ -135,7 +135,7 @@ describe('HomeTaskComposerCard', () => {
     fireEvent.pointerDown(await screen.findByRole('button', { name: /选择工作目录/ }))
 
     expect(await screen.findByRole('menuitem', { name: /账单核对/ })).toBeInTheDocument()
-    expect(screen.getByText('/Users/me/Desktop/账单核对')).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: /账单核对/ })).toHaveAttribute('title', '/Users/me/Desktop/账单核对')
     expect(screen.getByRole('menuitem', { name: /lotus-app/ })).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: /选择其他目录/ })).toBeInTheDocument()
   })

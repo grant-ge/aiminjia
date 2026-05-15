@@ -61,10 +61,10 @@ describe('HomePage', () => {
     expect(pageWrapper?.className).toMatch(/justify-center/)
   })
 
-  it('uses the dedicated home mascot svg', () => {
+  it('uses tenant logoUrl from branding store as mascot', () => {
     const { container } = render(<HomePage />)
     const mascotImg = container.querySelector('[data-testid="home-mascot"] img')
-    expect(mascotImg).toHaveAttribute('src', '/home-mascot-fill-13.svg')
+    expect(mascotImg).toHaveAttribute('src', '/app-icon.png')
   })
 
 
