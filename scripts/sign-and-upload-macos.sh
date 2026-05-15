@@ -332,6 +332,7 @@ if [ -n "$APP" ]; then
         hdiutil create -volname "AIjia $VERSION" \
             -srcfolder "$DMG_STAGING" \
             -ov -format UDZO \
+            -fs HFS+ \
             "$DMG"
         rm -rf "$DMG_STAGING"
         echo "  DMG rebuilt: $DMG"
