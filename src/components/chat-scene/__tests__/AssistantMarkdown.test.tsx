@@ -20,4 +20,22 @@ describe('AssistantMarkdown', () => {
 
     expect(container.firstChild).toBeNull()
   })
+
+  it('disableCodeHighlight=true → 不注入 hljs-* className', () => {
+    const { container } = render(
+      <AssistantMarkdown text={'```ts\nconst x = 1\n```'} disableCodeHighlight />,
+    )
+    const code = container.querySelector('pre code')
+    expect(code).not.toBeNull()
+    expect(code?.className ?? '').not.toMatch(/hljs/)
+  })
+
+  it('默认开启高亮（注入 hljs-* 或 language-* className）', () => {
+    const { container } = render(
+      <AssistantMarkdown text={'```ts\nconst x = 1\n```'} />,
+    )
+    const code = container.querySelector('pre code')
+    expect(code).not.toBeNull()
+    expect(code?.className ?? '').toMatch(/hljs|language-ts/)
+  })
 })
