@@ -309,15 +309,6 @@ pub async fn team_chat_messages(
 }
 
 #[tauri::command]
-pub async fn team_switch_active(
-    adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
-    conversation_id: String,
-    team_name: String,
-) -> Result<(), String> {
-    adapter.team_switch_active(conversation_id, team_name).await
-}
-
-#[tauri::command]
 pub async fn get_teammate_transcript(
     adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
     conversation_id: String,

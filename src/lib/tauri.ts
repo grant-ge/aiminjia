@@ -64,14 +64,6 @@ export const TAURI_EVENTS = {
   PENDING_QUEUED: 'pending:queued',
   PENDING_DRAINED: 'pending:drained',
   PENDING_REMOVED: 'pending:removed',
-  /** PR9 (per-team layout v2): a team was just created via TeamCreate. */
-  TEAM_CREATED: 'team:created',
-  /** PR9: a team was just deleted via TeamDelete. */
-  TEAM_DELETED: 'team:deleted',
-  /** PR9: active_team_name flipped to a different team via team_switch_active. */
-  TEAM_ACTIVE_CHANGED: 'team:active-changed',
-  /** PR9: a new line was appended to a team's team-chat.jsonl. */
-  TEAM_CHAT_APPENDED: 'team-chat:appended',
 } as const
 
 // ---------------------------------------------------------------------------
@@ -583,15 +575,6 @@ export function teamChatMessages(
     sinceTs,
     limit,
   })
-}
-
-/**
- * PR9: switch the conversation's `active_team_name` and broadcast
- * `team:active-changed`. Validates team name client-side via the
- * backend (ASCII-only, ≤ 64 chars).
- */
-export function teamSwitchActive(conversationId: string, teamName: string): Promise<void> {
-  return invoke<void>('team_switch_active', { conversationId, teamName })
 }
 
 /**

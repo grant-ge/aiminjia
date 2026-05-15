@@ -321,39 +321,6 @@ pub fn map_runtime_event(event: &RuntimeEvent) -> Option<LegacyEvent> {
                 "itemId": item_id,
             }),
         }),
-        RuntimeEventKind::TeamCreated { team_name } => Some(LegacyEvent {
-            name: "team:created".to_string(),
-            payload: json!({
-                "conversationId": conversation_id,
-                "teamName": team_name,
-            }),
-        }),
-        RuntimeEventKind::TeamDeleted { team_name } => Some(LegacyEvent {
-            name: "team:deleted".to_string(),
-            payload: json!({
-                "conversationId": conversation_id,
-                "teamName": team_name,
-            }),
-        }),
-        RuntimeEventKind::TeamChatAppended {
-            team_name,
-            ts,
-            from,
-            to,
-            text,
-            variant,
-        } => Some(LegacyEvent {
-            name: "team-chat:appended".to_string(),
-            payload: json!({
-                "conversationId": conversation_id,
-                "teamName": team_name,
-                "ts": ts,
-                "from": from,
-                "to": to,
-                "text": text,
-                "variant": variant,
-            }),
-        }),
         _ => None,
     };
     payload

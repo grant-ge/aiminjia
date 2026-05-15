@@ -860,7 +860,6 @@ pub fn run() {
             chat::get_team_overview,
             chat::get_teammate_transcript,
             chat::team_chat_messages,
-            chat::team_switch_active,
             chat::create_conversation,
             chat::delete_conversation,
             chat::rename_conversation,

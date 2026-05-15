@@ -3127,50 +3127,6 @@ impl TauriChatCommandAdapter {
         Ok(out)
     }
 
-    /// PR9: Switch the conversation's `active_team_name` and emit
-    /// `team:active-changed` so the front-end can refresh its TeamSwitch UI.
-    pub async fn team_switch_active(
-        &self,
-        conversation_id: String,
-        team_name: String,
-    ) -> Result<(), String> {
-        use crate::storage::{CurrentUserStorage, UserScopedPathResolver};
-        crate::runtime::agent::team_paths::validate_team_name(&team_name)
-            .map_err(|e| e.to_string())?;
-        let conv_dir = self
-            .services
-            .app
-            .try_state::<Arc<CurrentUserStorage>>()
-            .and_then(|cus| cus.require_paths().ok())
-            .map(|paths| paths.conversations_dir().join(&conversation_id))
-            .ok_or_else(|| "user scope not active".to_string())?;
-        // Read the previous value before mutating, so the event payload can
-        // carry both old/new names.  Best-effort: missing/malformed conv.json
-        // means previous = None.
-        let prev = std::fs::read(conv_dir.join("conv.json"))
-            .ok()
-            .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
-            .and_then(|v| {
-                v.get("active_team_name")
-                    .and_then(|t| t.as_str())
-                    .map(|s| s.to_string())
-            });
-        crate::runtime::tools::builtin::team_tools::update_conv_meta_active_team(
-            &conv_dir,
-            Some(&team_name),
-        )
-        .map_err(|e| e.to_string())?;
-        let _ = self.services.app.emit(
-            "team:active-changed",
-            serde_json::json!({
-                "conversationId": conversation_id,
-                "oldTeamName": prev,
-                "newTeamName": team_name,
-            }),
-        );
-        Ok(())
-    }
-
     pub async fn create_conversation(&self) -> Result<String, String> {
         // 不在这里 emit conversation:created：前端 createNewConversation 已经做了
         // 乐观更新（optimisticId → backendId 替换），重复事件会触发不必要的 reload。

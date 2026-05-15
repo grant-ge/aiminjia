@@ -126,24 +126,6 @@ pub enum RuntimeEventKind {
     },
     RunCancelled,
     RunCompleted,
-    /// PR9: a team was just created via the `TeamCreate` tool.
-    TeamCreated {
-        team_name: String,
-    },
-    /// PR9: a team was just deleted via the `TeamDelete` tool.
-    TeamDeleted {
-        team_name: String,
-    },
-    /// PR9: a teammate just delivered a `team-chat.jsonl` line; the
-    /// front-end appends it to whichever team-chat panel is currently open.
-    TeamChatAppended {
-        team_name: String,
-        ts: String,
-        from: String,
-        to: String,
-        text: String,
-        variant: String,
-    },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

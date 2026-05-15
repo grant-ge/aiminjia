@@ -704,7 +704,7 @@ impl QueryEngine {
         // TurnState centralizes tool-call scoped cancellation so each call gets
         // a child token of the turn token.
         let ctx = turn.build_execution_context(call.tool_call_id.clone());
-        let ctx = self.attach_ltr_registries(ctx).with_runtime_event_bus(bus.clone());
+        let ctx = self.attach_ltr_registries(ctx);
 
         // Inject capability context (Workspace-First guarantee) — same logic as
         // `run_tool_with_bus` so workspace-scoped tools receive the correct root.
@@ -882,7 +882,7 @@ impl QueryEngine {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("tool dispatcher not configured"))?;
         let ctx = turn.build_execution_context(format!("tool-call-{tool_name}"));
-        let ctx = self.attach_ltr_registries(ctx).with_runtime_event_bus(bus.clone());
+        let ctx = self.attach_ltr_registries(ctx);
         // Inject capability context when workspace_path is available so that
         // workspace-scoped runtime tools (read_workspace_file, etc.)
         // can resolve their root path correctly.  When no workspace_path is set

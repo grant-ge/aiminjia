@@ -17,9 +17,8 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { getTeamOverview, getTeammateTranscript, TAURI_EVENTS } from '@/lib/tauri'
+import { getTeamOverview, getTeammateTranscript } from '@/lib/tauri'
 import { onMessageUpdated, onToolCompleted } from '@/lib/tauri'
-import { listen } from '@tauri-apps/api/event'
 import type { TeamOverview } from '@/types/team'
 
 import { useTauriEvent } from './useTauriEvent'
@@ -101,7 +100,11 @@ export function useTeamOverview(conversationId: string | null): UseTeamOverviewR
     }),
   )
 
-  // Refetch on team-mutating tool completions.
+  // Refetch on team-mutating tool completions.  This is the single
+  // backend-bound subscription for team state changes: TeamCreate /
+  // TeamDelete / SendMessage / Agent spawn / TeammateStop all surface
+  // through PostToolUse-style `tool:completed` events, which is enough
+  // to keep the overview in sync without adding bespoke team:* events.
   useTauriEvent(() =>
     onToolCompleted((message) => {
       if (!conversationId) return
@@ -110,40 +113,6 @@ export function useTeamOverview(conversationId: string | null): UseTeamOverviewR
       if (!toolName) return
       if (!TEAM_MUTATING_TOOLS.has(toolName)) return
       scheduleRefetch(conversationId)
-    }),
-  )
-
-  // PR10: also subscribe to PR9's narrower team:* / team-chat:* events so the
-  // overview refreshes the moment the backend writes (not just when the tool
-  // round completes).  Wrapped in `useTauriEvent` so test environments without
-  // a real Tauri runtime swallow the registration error gracefully (matches
-  // how the peer-messages / tool-completed listeners above are wired).
-  useTauriEvent(() =>
-    listen<{ conversationId?: string }>(TAURI_EVENTS.TEAM_CREATED, (e) => {
-      if (conversationId && e.payload?.conversationId === conversationId) {
-        scheduleRefetch(conversationId)
-      }
-    }),
-  )
-  useTauriEvent(() =>
-    listen<{ conversationId?: string }>(TAURI_EVENTS.TEAM_DELETED, (e) => {
-      if (conversationId && e.payload?.conversationId === conversationId) {
-        scheduleRefetch(conversationId)
-      }
-    }),
-  )
-  useTauriEvent(() =>
-    listen<{ conversationId?: string }>(TAURI_EVENTS.TEAM_ACTIVE_CHANGED, (e) => {
-      if (conversationId && e.payload?.conversationId === conversationId) {
-        scheduleRefetch(conversationId)
-      }
-    }),
-  )
-  useTauriEvent(() =>
-    listen<{ conversationId?: string }>(TAURI_EVENTS.TEAM_CHAT_APPENDED, (e) => {
-      if (conversationId && e.payload?.conversationId === conversationId) {
-        scheduleRefetch(conversationId)
-      }
     }),
   )
 

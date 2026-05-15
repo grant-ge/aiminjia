@@ -101,11 +101,6 @@ pub struct ToolExecutionContext {
     /// (no-team) scenarios.  ASCII-validated by `validate_team_name` before
     /// storage.
     pub active_team_name: Option<String>,
-    /// PR9: optional reference to the per-turn `RuntimeEventBus` so tools
-    /// can emit lifecycle events that fan out to the front-end through
-    /// `TauriEventAdapter`.  `None` in tests / legacy paths that don't wire
-    /// the bus down to the tool layer.
-    pub runtime_event_bus: Option<crate::runtime::event_bus::RuntimeEventBus>,
 }
 
 impl ToolExecutionContext {
@@ -139,7 +134,6 @@ impl ToolExecutionContext {
             is_async: false,
             conv_dir: None,
             active_team_name: None,
-            runtime_event_bus: None,
         }
     }
 
@@ -226,13 +220,6 @@ impl ToolExecutionContext {
     /// Attach the active team name (ASCII-validated).  See `active_team_name`.
     pub fn with_active_team(mut self, team_name: String) -> Self {
         self.active_team_name = Some(team_name);
-        self
-    }
-
-    /// PR9: attach the per-turn `RuntimeEventBus` so tools can emit
-    /// transport-bound lifecycle events.  See `runtime_event_bus`.
-    pub fn with_runtime_event_bus(mut self, bus: crate::runtime::event_bus::RuntimeEventBus) -> Self {
-        self.runtime_event_bus = Some(bus);
         self
     }
 

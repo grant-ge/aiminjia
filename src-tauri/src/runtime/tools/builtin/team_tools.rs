@@ -40,9 +40,7 @@ fn default_team_name(session_id: &str) -> String {
 /// Update `<conv_dir>/conv.json::active_team_name` atomically. Best-effort:
 /// callers log warnings on failure but do not fail the tool. 文件不存在或无法解析
 /// 时静默跳过——`conv.json` 由 SessionRuntime 在 conv 创建时写入，正常路径下必然存在。
-///
-/// PR9: 由 transport 层 `team_switch_active` Tauri 命令复用，故升级为 `pub(crate)`。
-pub(crate) fn update_conv_meta_active_team(
+fn update_conv_meta_active_team(
     conv_dir: &std::path::Path,
     name: Option<&str>,
 ) -> std::io::Result<()> {
@@ -249,19 +247,6 @@ impl RuntimeTool for TeamCreateRuntimeTool {
             );
         }
 
-        // PR9: notify the front-end so it can refresh its team list.
-        if let Some(bus) = ctx.runtime_event_bus.as_ref() {
-            let _ = bus
-                .emit(crate::runtime::events::RuntimeEvent::new(
-                    ctx.session_id.clone(),
-                    ctx.run_id.clone(),
-                    crate::runtime::events::RuntimeEventKind::TeamCreated {
-                        team_name: team_name.clone(),
-                    },
-                ))
-                .await;
-        }
-
         Ok(ToolResult::new(
             "TeamCreate",
             format!(
@@ -410,21 +395,6 @@ impl RuntimeTool for TeamDeleteRuntimeTool {
         } else {
             format!("Team `{team_name}` did not exist — TeamDelete is a noop.")
         };
-
-        // PR9: notify the front-end so it can drop the team from its list.
-        if team_existed {
-            if let Some(bus) = ctx.runtime_event_bus.as_ref() {
-                let _ = bus
-                    .emit(crate::runtime::events::RuntimeEvent::new(
-                        ctx.session_id.clone(),
-                        ctx.run_id.clone(),
-                        crate::runtime::events::RuntimeEventKind::TeamDeleted {
-                            team_name: team_name.clone(),
-                        },
-                    ))
-                    .await;
-            }
-        }
 
         Ok(ToolResult::new("TeamDelete", msg, Some(result_json)))
     }
