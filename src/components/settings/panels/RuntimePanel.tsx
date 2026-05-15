@@ -10,16 +10,30 @@ const RESOLVER_LABEL: Record<RuntimeDiagnostics['activeResolver'], string> = {
   none: '不可用',
 }
 
+function formatRelative(from: number, now: number): string {
+  const diffSec = Math.max(0, Math.round((now - from) / 1000))
+  if (diffSec < 5) return '刚刚'
+  if (diffSec < 60) return `${diffSec} 秒前`
+  const diffMin = Math.floor(diffSec / 60)
+  if (diffMin < 60) return `${diffMin} 分钟前`
+  const diffHr = Math.floor(diffMin / 60)
+  if (diffHr < 24) return `${diffHr} 小时前`
+  return new Date(from).toLocaleString()
+}
+
 export function RuntimePanel() {
   const [data, setData] = useState<RuntimeDiagnostics | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [lastCheckedAt, setLastCheckedAt] = useState<number | null>(null)
+  const [now, setNow] = useState(() => Date.now())
 
   const load = async () => {
     setLoading(true)
     setError(null)
     try {
       setData(await runtimeDiagnostics())
+      setLastCheckedAt(Date.now())
     } catch (e) {
       setError(String(e))
     } finally {
@@ -30,6 +44,12 @@ export function RuntimePanel() {
   useEffect(() => {
     void load()
   }, [])
+
+  useEffect(() => {
+    if (lastCheckedAt == null) return
+    const id = window.setInterval(() => setNow(Date.now()), 15_000)
+    return () => window.clearInterval(id)
+  }, [lastCheckedAt])
 
   return (
     <section className="flex flex-col gap-4">
@@ -68,9 +88,16 @@ export function RuntimePanel() {
         </dl>
       )}
 
-      <Button variant="outline" onClick={() => void load()} disabled={loading} className="self-start">
-        {loading ? '检查中…' : '重新检查'}
-      </Button>
+      <div className="flex items-center gap-3">
+        <Button variant="outline" onClick={() => void load()} disabled={loading}>
+          {loading ? '检查中…' : '重新检查'}
+        </Button>
+        {lastCheckedAt != null && (
+          <span className="text-xs text-muted-foreground">
+            上次检查：{formatRelative(lastCheckedAt, now)}
+          </span>
+        )}
+      </div>
     </section>
   )
 }
