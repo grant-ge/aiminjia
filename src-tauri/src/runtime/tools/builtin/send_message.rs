@@ -32,32 +32,37 @@ pub const BROADCAST_TOKEN: &str = "*";
 /// Append one SendMessage delivery to `<conv_dir>/teams/{name}/team-chat.jsonl`.
 /// Best-effort: any IO error is logged at warn but never surfaced — inbox
 /// delivery is the authoritative path; this file is a UI-only mirror.
+///
+/// Returns the rendered entry (ts/from/to/text/variant) so the caller can
+/// fan it out as a `team-chat:appended` `RuntimeEvent` (PR9).  Returns
+/// `None` when the entry was not appended (no team_name / serialize fail /
+/// IO error) so the caller can skip the emit.
 fn append_team_chat_entry(
     conv_dir: Option<&std::path::Path>,
     team_name: Option<&str>,
     from: &str,
     to: &str,
     message: &StructuredMessage,
-) {
-    let Some(dir) = conv_dir else { return };
+) -> Option<TeamChatAppended> {
+    let dir = conv_dir?;
     let body = message.as_text().unwrap_or("").to_string();
+    let ts = chrono::Utc::now().to_rfc3339();
+    let variant = message.variant_name().to_string();
     let entry = serde_json::json!({
-        "ts": chrono::Utc::now().to_rfc3339(),
+        "ts": ts,
         "from": from,
         "to": to,
         "text": body,
-        "variant": message.variant_name(),
+        "variant": variant,
     });
     use crate::runtime::agent::team_paths::TeamPaths;
-    let path = match team_name {
-        Some(name) => TeamPaths::for_team(dir, name).team_chat_jsonl(),
-        None => return, // No active team → skip (should not happen in practice)
-    };
+    let team_name = team_name?;
+    let path = TeamPaths::for_team(dir, team_name).team_chat_jsonl();
     let line = match serde_json::to_string(&entry) {
         Ok(s) => s,
         Err(e) => {
             log::warn!("[team_chat.jsonl] serialize failed: {e}");
-            return;
+            return None;
         }
     };
     if let Some(parent) = path.parent() {
@@ -72,12 +77,57 @@ fn append_team_chat_entry(
         Ok(mut f) => {
             if let Err(e) = writeln!(f, "{line}") {
                 log::warn!("[team_chat.jsonl] write failed path={}: {e}", path.display());
+                return None;
             }
         }
         Err(e) => {
             log::warn!("[team_chat.jsonl] open failed path={}: {e}", path.display());
+            return None;
         }
     }
+    Some(TeamChatAppended {
+        team_name: team_name.to_string(),
+        ts,
+        from: from.to_string(),
+        to: to.to_string(),
+        text: body,
+        variant,
+    })
+}
+
+/// Captured result of a successful `team-chat.jsonl` append.  Used by
+/// callers (PR9) to fan the entry out as a `team-chat:appended` event.
+struct TeamChatAppended {
+    team_name: String,
+    ts: String,
+    from: String,
+    to: String,
+    text: String,
+    variant: String,
+}
+
+/// PR9: fan a successful `team-chat.jsonl` append out as a
+/// `RuntimeEventKind::TeamChatAppended` so the front-end's TeamChatPanel
+/// (PR10) can append it live.  No-op when the tool execution context
+/// didn't carry a runtime event bus (legacy/test paths).
+async fn emit_team_chat_appended(
+    ctx: &crate::runtime::tools::context::ToolExecutionContext,
+    entry: TeamChatAppended,
+) {
+    let Some(bus) = ctx.runtime_event_bus.as_ref() else { return };
+    let event = crate::runtime::events::RuntimeEvent::new(
+        ctx.session_id.clone(),
+        ctx.run_id.clone(),
+        crate::runtime::events::RuntimeEventKind::TeamChatAppended {
+            team_name: entry.team_name,
+            ts: entry.ts,
+            from: entry.from,
+            to: entry.to,
+            text: entry.text,
+            variant: entry.variant,
+        },
+    );
+    let _ = bus.emit(event).await;
 }
 
 pub struct SendMessageRuntimeTool;
@@ -223,13 +273,15 @@ impl RuntimeTool for SendMessageRuntimeTool {
                             .is_ok()
                         {
                             delivered += 1;
-                            append_team_chat_entry(
+                            if let Some(entry) = append_team_chat_entry(
                                 ctx.conv_dir.as_deref(),
                                 ctx.active_team_name.as_deref(),
                                 caller_name.as_deref().unwrap_or("system"),
                                 name,
                                 &message,
-                            );
+                            ) {
+                                emit_team_chat_appended(&ctx, entry).await;
+                            }
                         } else {
                             missing.push(format!("{name} (inbox closed)"));
                         }
@@ -303,13 +355,15 @@ impl RuntimeTool for SendMessageRuntimeTool {
                 ToolError::ExecutionFailed(format!("agent `{to}` inbox closed; message dropped"))
             })?;
 
-        append_team_chat_entry(
+        if let Some(entry) = append_team_chat_entry(
             ctx.conv_dir.as_deref(),
             ctx.active_team_name.as_deref(),
             caller_name.as_deref().unwrap_or("system"),
             &to,
             &message,
-        );
+        ) {
+            emit_team_chat_appended(&ctx, entry).await;
+        }
 
         record_diagnostic(
             &ws,

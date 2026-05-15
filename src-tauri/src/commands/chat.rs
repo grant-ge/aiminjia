@@ -296,6 +296,28 @@ pub async fn get_team_overview(
 }
 
 #[tauri::command]
+pub async fn team_chat_messages(
+    adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
+    conversation_id: String,
+    team_name: String,
+    since_ts: Option<String>,
+    limit: Option<usize>,
+) -> Result<Vec<serde_json::Value>, String> {
+    adapter
+        .team_chat_messages(conversation_id, team_name, since_ts, limit)
+        .await
+}
+
+#[tauri::command]
+pub async fn team_switch_active(
+    adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
+    conversation_id: String,
+    team_name: String,
+) -> Result<(), String> {
+    adapter.team_switch_active(conversation_id, team_name).await
+}
+
+#[tauri::command]
 pub async fn get_teammate_transcript(
     adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
     conversation_id: String,
