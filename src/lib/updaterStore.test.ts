@@ -246,6 +246,73 @@ describe('updaterStore.installNow', () => {
     expect(notes[notes.length - 1].level).toBe('info')
   })
 
+  it('recovers by re-downloading when install() throws "called before Update.download"', async () => {
+    let downloadCallCount = 0
+    let installCallCount = 0
+    const fakeUpdate = {
+      version: '0.5.21',
+      body: '',
+      download: vi.fn(async (cb: (e: { event: string; data: { contentLength?: number; chunkLength?: number } }) => void) => {
+        downloadCallCount++
+        cb({ event: 'Started', data: { contentLength: 100 } })
+        cb({ event: 'Progress', data: { chunkLength: 100 } })
+      }),
+      install: vi.fn(async () => {
+        installCallCount++
+        // First install attempt fails with the plugin-level error; second succeeds
+        if (installCallCount === 1) {
+          throw new Error('Update.install called before Update.download')
+        }
+      }),
+    }
+    checkMock.mockResolvedValue(fakeUpdate)
+    getVersionMock.mockResolvedValue('0.5.18')
+    relaunchMock.mockResolvedValue(undefined)
+
+    const { useUpdaterStore: useStore, useNotificationStore } = await loadModules()
+    useNotificationStore.getState().dismissAll()
+    await useStore.getState().bootstrap()
+    expect(useStore.getState().phase).toBe('ready')
+    expect(downloadCallCount).toBe(1)
+
+    await useStore.getState().installNow()
+
+    // Should have re-downloaded once and called install twice (fail, then succeed)
+    expect(downloadCallCount).toBe(2)
+    expect(installCallCount).toBe(2)
+    expect(relaunchMock).toHaveBeenCalled()
+    expect(useStore.getState().phase).toBe('idle')
+    // No error toast — recovery was transparent
+    const errorNotes = useNotificationStore.getState().notifications.filter((n) => n.level === 'error')
+    expect(errorNotes).toHaveLength(0)
+  })
+
+  it('still surfaces non-download errors from install() as error toast', async () => {
+    const fakeUpdate = {
+      version: '0.5.21',
+      body: '',
+      download: vi.fn(async (cb: (e: { event: string; data: { contentLength?: number; chunkLength?: number } }) => void) => {
+        cb({ event: 'Started', data: { contentLength: 1 } })
+        cb({ event: 'Progress', data: { chunkLength: 1 } })
+      }),
+      install: vi.fn().mockRejectedValue(new Error('signature verification failed')),
+    }
+    checkMock.mockResolvedValue(fakeUpdate)
+    getVersionMock.mockResolvedValue('0.5.18')
+
+    const { useUpdaterStore: useStore, useNotificationStore } = await loadModules()
+    useNotificationStore.getState().dismissAll()
+    await useStore.getState().bootstrap()
+    await useStore.getState().installNow()
+
+    // download() called once during bootstrap, NOT a second time (error not the recoverable one)
+    expect(fakeUpdate.download).toHaveBeenCalledTimes(1)
+    expect(fakeUpdate.install).toHaveBeenCalledTimes(1)
+    expect(useStore.getState().phase).toBe('ready')
+    const notes = useNotificationStore.getState().notifications
+    expect(notes[notes.length - 1].level).toBe('error')
+  })
+
   it('blocks install and shows offline toast when network is unavailable', async () => {
     const fakeUpdate = {
       version: '0.5.21',

@@ -266,7 +266,22 @@ export const useUpdaterStore = create<UpdaterState>()((set, get) => ({
     set({ phase: 'installing' })
     let installed = false
     try {
-      await _update.install()
+      try {
+        await _update.install()
+      } catch (e) {
+        const msg = String((e as Error)?.message ?? e)
+        if (msg.includes('called before Update.download')) {
+          await _update.download((event) => {
+            if (event.event === 'Progress') {
+              const p = get().progress ?? { downloaded: 0, total: 0 }
+              set({ progress: { downloaded: p.downloaded + event.data.chunkLength, total: p.total } })
+            }
+          })
+          await _update.install()
+        } else {
+          throw e
+        }
+      }
       installed = true
       await clearPending()
       set({ phase: 'idle', version: null, notes: '', progress: null, _update: null, _downloaded: false })
