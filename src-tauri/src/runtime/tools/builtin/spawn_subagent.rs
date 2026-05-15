@@ -530,7 +530,7 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
                 agent_name: name.clone(),
                 kind: TranscriptKind::Teammate,
                 employee_id: employee_id.clone(),
-                team_id: Some(launch_ctx.session_id.as_str().to_string()),
+                team_id: Some(team_name_str.clone()),
                 spawned_by,
                 spawned_at: chrono::Utc::now(),
                 model: request.effective_model.clone(),
