@@ -560,10 +560,14 @@ impl SessionRuntime {
 
     /// Build a `RuntimeChatTurnDriver` scoped to the given turn's session.
     ///
-    /// `active_team_name_override` (PR6) lets the caller force a specific team
-    /// name into the QueryEngine, bypassing the `conv.json` read.  Used by
-    /// the Path C wake closure where the wake-source team_name is the
-    /// authoritative value, not whatever happens to be persisted.
+    /// `active_team_name_override` is the binary force-override flag from
+    /// `ChatTurnRequest::active_team_name_override`:
+    /// - `Some(name)`: this turn runs against team `name`, bypassing the
+    ///   `conv.json::active_team_name` read.  Today only Path C wake uses
+    ///   this, because it knows the team from the supervisor enqueue
+    ///   payload and may race ahead of the conv.json write.
+    /// - `None`:        the QueryEngine's normal `conv.json` read decides
+    ///   the active team (or `None` for non-team conversations).
     fn build_driver_for_turn(
         &self,
         turn: &TurnState,

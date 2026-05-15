@@ -108,12 +108,21 @@ pub struct ChatTurnRequest {
     /// The dispatcher could use this metadata to e.g. persist each item as an
     /// independent user message before invoking the LLM. Default: None.
     pub pending_batch: Option<Vec<crate::runtime::pending::PendingItem>>,
-    /// PR6 (per-team disk layout §6): when set, overrides the
-    /// `active_team_name` resolved from `conv.json` for this turn.  Used by
-    /// the Path C wake closure to forward the originating team name verbatim
-    /// from `LeadIdleSupervisor::enqueue` into the continuation turn,
-    /// avoiding a re-read of `conv.json` (which may not yet reflect the
-    /// triggering team).  `None` means "use whatever `conv.json` says".
+    /// Force-override the active team for this turn.
+    ///
+    /// Semantics (do not confuse with "value source" — this is binary):
+    /// - `Some(name)`: this turn MUST run with `active_team_name = name`,
+    ///   regardless of what `conv.json::active_team_name` says.
+    /// - `None`:        this turn uses whatever `conv.json::active_team_name`
+    ///   currently holds (or `None` for non-team conversations).
+    ///
+    /// The `_override` suffix is load-bearing: every call site that doesn't
+    /// already know the team should leave this `None` and let
+    /// `SessionRuntime::query_engine_for_session` resolve from `conv.json`.
+    /// The only legitimate `Some` setter today is the Path C wake closure
+    /// (`wire_path_c_wake_to_self`), which knows the originating team
+    /// directly from the `LeadIdleSupervisor::enqueue` payload — and may
+    /// race ahead of `conv.json` writes.  Per-team disk layout v2 §6.
     pub active_team_name_override: Option<String>,
 }
 
@@ -144,8 +153,9 @@ impl ChatTurnRequest {
         self
     }
 
-    /// PR6: set the team name that wins over `conv.json::active_team_name`
-    /// for this single turn.  See `active_team_name_override` field doc.
+    /// Force-override the active team for this single turn.  See
+    /// `active_team_name_override` field doc for when (and only when) this
+    /// is the right thing to call — most call sites should NOT use it.
     pub fn with_active_team_name_override(mut self, team_name: String) -> Self {
         self.active_team_name_override = Some(team_name);
         self

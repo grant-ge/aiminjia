@@ -1,10 +1,11 @@
-//! P1.6 integration tests for transcript path routing.
+//! P1.6 / per-team layout v2 integration tests for transcript path routing.
 //!
 //! Verifies:
-//! 1. AsyncOneShot spawn → transcript written to `subagents/agent-{id}.jsonl`
+//! 1. AsyncOneShot spawn → transcript written to `subagents/{agent_id}.jsonl`
 //!    + `.meta.json` contains `"kind": "subagent"`.
-//! 2. TeammateIdle spawn → transcript written to `teammates/agent-{id}.jsonl`
-//!    + `.meta.json` contains `"kind": "teammate"`, `"team_id"`, `"employee_id"`.
+//! 2. TeammateIdle spawn → transcript written to
+//!    `teams/{team_name}/teammates/{agent_id}.jsonl` + sidecar with
+//!    `"kind": "teammate"`, `"team_id": "<team_name>"`, `"employee_id"`.
 //! 3. Both paths coexist in the same conversation directory without collision.
 
 use std::sync::Arc;
@@ -22,6 +23,8 @@ use app_lib::runtime::agent::AgentNameRegistry;
 use app_lib::runtime::cancellation::CancellationToken;
 use app_lib::runtime::ids::{AgentId, SessionId};
 
+const TEAM_NAME: &str = "test-team";
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 fn make_team(session_id: &str, agent_id: AgentId, agent_name: &str) -> Arc<Mutex<Team>> {
@@ -32,7 +35,7 @@ fn make_team(session_id: &str, agent_id: AgentId, agent_name: &str) -> Arc<Mutex
         created_at: chrono::Utc::now(),
         last_active_at: chrono::Utc::now(),
     };
-    let mut team = Team::new(SessionId::new(session_id), lead, "test-team".to_string());
+    let mut team = Team::new(SessionId::new(session_id), lead, TEAM_NAME.to_string());
     let teammate = Member {
         agent_id,
         name: agent_name.to_string(),
@@ -47,7 +50,7 @@ fn make_team(session_id: &str, agent_id: AgentId, agent_name: &str) -> Arc<Mutex
     Arc::new(Mutex::new(team))
 }
 
-fn subagent_meta(conv_dir_path: &std::path::Path, agent_id: &str) -> AgentTranscriptMeta {
+fn subagent_meta(agent_id: &str) -> AgentTranscriptMeta {
     AgentTranscriptMeta {
         agent_id: agent_id.to_string(),
         agent_name: None,
@@ -59,23 +62,24 @@ fn subagent_meta(conv_dir_path: &std::path::Path, agent_id: &str) -> AgentTransc
         model: Some("sonnet".to_string()),
         is_async: true,
         boot_system_prompt: None,
-            tool_whitelist: vec!["Read".to_string()],
+        tool_whitelist: vec!["Read".to_string()],
     }
 }
 
-fn teammate_meta(conv_id: &str, agent_id: &str) -> AgentTranscriptMeta {
+fn teammate_meta(agent_id: &str) -> AgentTranscriptMeta {
     AgentTranscriptMeta {
         agent_id: agent_id.to_string(),
         agent_name: Some("researcher".to_string()),
         kind: TranscriptKind::Teammate,
         employee_id: Some("emp-routing-1".to_string()),
-        team_id: Some(conv_id.to_string()),
+        // Per-team disk layout v2 §3: team_id holds the team_name.
+        team_id: Some(TEAM_NAME.to_string()),
         spawned_by: Some("lead-agent".to_string()),
         spawned_at: chrono::Utc::now(),
         model: None,
         is_async: true,
         boot_system_prompt: None,
-            tool_whitelist: vec!["Read".to_string(), "SendMessage".to_string()],
+        tool_whitelist: vec!["Read".to_string(), "SendMessage".to_string()],
     }
 }
 
@@ -88,11 +92,11 @@ fn async_oneshot_transcript_path_is_under_subagents() {
     let agent_id = "agent-sub-route-1";
 
     // Write sidecar for subagent.
-    let meta = subagent_meta(&conv_dir, agent_id);
+    let meta = subagent_meta(agent_id);
     write_meta(&conv_dir, &meta).unwrap();
 
-    // Verify sidecar is at subagents/ directory.
-    let meta_path = meta_path_for_kind(&conv_dir, &TranscriptKind::Subagent, agent_id);
+    // Verify sidecar is at subagents/ directory (Subagent ignores team_name).
+    let meta_path = meta_path_for_kind(&conv_dir, &TranscriptKind::Subagent, "", agent_id);
     assert!(
         meta_path.exists(),
         "subagent meta should exist at {meta_path:?}"
@@ -103,25 +107,24 @@ fn async_oneshot_transcript_path_is_under_subagents() {
     assert!(meta_body.get("team_id").is_none() || meta_body["team_id"].is_null());
 
     // Write a transcript line.
-    let transcript = transcript_path_for_kind(&conv_dir, &TranscriptKind::Subagent, agent_id);
+    let transcript = transcript_path_for_kind(&conv_dir, &TranscriptKind::Subagent, "", agent_id);
     append_line(&transcript, &TranscriptLine::assistant("subagent output")).unwrap();
 
-    // Verify it's in subagents/ not teammates/.
+    // Verify it's in subagents/ not under any teams/ subtree.
     assert!(
         transcript.to_string_lossy().contains("subagents"),
-        "transcript should be in subagents/, got: {:?}",
-        transcript
+        "transcript should be in subagents/, got: {transcript:?}"
     );
     assert!(
-        !transcript.to_string_lossy().contains("teammates"),
-        "transcript should NOT be in teammates/"
+        !transcript.to_string_lossy().contains("teams/"),
+        "Subagent transcript should NOT be under teams/"
     );
 }
 
-// ─── Test 2: TeammateIdle transcript uses teammates/ directory ���───────────────
+// ─── Test 2: TeammateIdle transcript uses teams/{name}/teammates/ ─────────────
 
 #[tokio::test]
-async fn teammate_idle_transcript_path_is_under_teammates() {
+async fn teammate_idle_transcript_path_is_under_teams_teammates() {
     let tmp = TempDir::new().unwrap();
     let session_id = "conv-routing-tm";
     let conv_dir = tmp.path().join("conversations").join(session_id);
@@ -131,12 +134,12 @@ async fn teammate_idle_transcript_path_is_under_teammates() {
     let name_registry = AgentNameRegistry::new();
     let cancel = CancellationToken::new();
     let inbox = AgentInbox::new(4);
-    let meta = teammate_meta(session_id, agent_id.as_str());
+    let meta = teammate_meta(agent_id.as_str());
 
     let ctx = TeammateWorkerCtx {
         agent_id: agent_id.clone(),
         session_id: SessionId::new(session_id),
-        team_name: "test-team".to_string(),
+        team_name: TEAM_NAME.to_string(),
         conv_id: session_id.to_string(),
         cancel: cancel.clone(),
         inbox: inbox.clone(),
@@ -169,26 +172,29 @@ async fn teammate_idle_transcript_path_is_under_teammates() {
         .await
         .expect("loop should exit");
 
-    // Verify sidecar is in teammates/ directory.
+    // Verify sidecar is in teams/{name}/teammates/.
     let meta_path =
-        meta_path_for_kind(&conv_dir, &TranscriptKind::Teammate, agent_id.as_str());
+        meta_path_for_kind(&conv_dir, &TranscriptKind::Teammate, TEAM_NAME, agent_id.as_str());
     assert!(
         meta_path.exists(),
         "teammate meta should exist at {meta_path:?}"
     );
+    assert!(
+        meta_path.to_string_lossy().contains(&format!("teams/{TEAM_NAME}/teammates")),
+        "meta path must live under teams/{TEAM_NAME}/teammates/, got {meta_path:?}"
+    );
     let meta_body: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&meta_path).unwrap()).unwrap();
     assert_eq!(meta_body["kind"].as_str(), Some("teammate"));
-    assert_eq!(meta_body["team_id"].as_str(), Some(session_id));
+    assert_eq!(meta_body["team_id"].as_str(), Some(TEAM_NAME));
     assert_eq!(meta_body["employee_id"].as_str(), Some("emp-routing-1"));
 
-    // Verify transcript is in teammates/ directory.
+    // Verify transcript is in teams/{name}/teammates/.
     let transcript =
-        transcript_path_for_kind(&conv_dir, &TranscriptKind::Teammate, agent_id.as_str());
+        transcript_path_for_kind(&conv_dir, &TranscriptKind::Teammate, TEAM_NAME, agent_id.as_str());
     assert!(
-        transcript.to_string_lossy().contains("teammates"),
-        "transcript should be in teammates/, got: {:?}",
-        transcript
+        transcript.to_string_lossy().contains(&format!("teams/{TEAM_NAME}/teammates")),
+        "transcript path must live under teams/{TEAM_NAME}/teammates/, got {transcript:?}"
     );
     assert!(
         !transcript.to_string_lossy().contains("subagents"),
@@ -199,16 +205,14 @@ async fn teammate_idle_transcript_path_is_under_teammates() {
     let (lines, total) = read_from(&transcript, 0).unwrap();
     assert!(
         total >= 2,
-        "transcript should have at least 2 lines after initial prompt, got {}",
-        total
+        "transcript should have at least 2 lines after initial prompt, got {total}"
     );
     // The transcript should contain the initial prompt.  P2.4 prepends a
     // team_context <system-reminder> turn input, so we no longer assert
     // lines[0] is the user prompt; just that it's present somewhere.
     assert!(
         lines.iter().any(|l| l.contains("hello teammate")),
-        "transcript should contain the initial prompt; got: {:?}",
-        lines
+        "transcript should contain the initial prompt; got: {lines:?}"
     );
 }
 
@@ -224,10 +228,10 @@ async fn subagent_and_teammate_coexist_in_same_conversation() {
     let teammate_id = AgentId::new("agent-tm-coexist");
 
     // ── Write subagent transcript ──────────────────────────────────────────
-    let sub_meta = subagent_meta(&conv_dir, subagent_id);
+    let sub_meta = subagent_meta(subagent_id);
     write_meta(&conv_dir, &sub_meta).unwrap();
     let sub_transcript =
-        transcript_path_for_kind(&conv_dir, &TranscriptKind::Subagent, subagent_id);
+        transcript_path_for_kind(&conv_dir, &TranscriptKind::Subagent, "", subagent_id);
     append_line(
         &sub_transcript,
         &TranscriptLine::assistant("subagent answer"),
@@ -239,11 +243,12 @@ async fn subagent_and_teammate_coexist_in_same_conversation() {
     let name_registry = AgentNameRegistry::new();
     let cancel = CancellationToken::new();
     let inbox = AgentInbox::new(4);
-    let tm_meta = teammate_meta(conv_id, teammate_id.as_str());
+    let tm_meta = teammate_meta(teammate_id.as_str());
 
     let ctx = TeammateWorkerCtx {
         agent_id: teammate_id.clone(),
         session_id: SessionId::new(conv_id),
+        team_name: TEAM_NAME.to_string(),
         conv_id: conv_id.to_string(),
         cancel: cancel.clone(),
         inbox: inbox.clone(),
@@ -282,8 +287,12 @@ async fn subagent_and_teammate_coexist_in_same_conversation() {
     assert!(sub_lines[0].contains("subagent answer"));
 
     // Teammate transcript is separate.
-    let tm_transcript =
-        transcript_path_for_kind(&conv_dir, &TranscriptKind::Teammate, teammate_id.as_str());
+    let tm_transcript = transcript_path_for_kind(
+        &conv_dir,
+        &TranscriptKind::Teammate,
+        TEAM_NAME,
+        teammate_id.as_str(),
+    );
     assert!(tm_transcript.exists(), "teammate transcript should exist");
 
     // Paths do not overlap.
@@ -293,13 +302,17 @@ async fn subagent_and_teammate_coexist_in_same_conversation() {
         "subagent and teammate transcripts must be different files"
     );
 
-    // Subagent transcript does NOT appear in teammates/ dir.
-    let teammates_dir = conv_dir.join("teammates");
-    let sub_in_teammates = teammates_dir.join(format!("{subagent_id}.jsonl"));
-    assert!(
-        !sub_in_teammates.exists(),
-        "subagent transcript must NOT be in teammates/"
-    );
+    // Subagent transcript does NOT appear under any teams/ subtree.
+    let teams_dir = conv_dir.join("teams");
+    if teams_dir.exists() {
+        for entry in std::fs::read_dir(&teams_dir).unwrap().flatten() {
+            let path = entry.path().join("teammates").join(format!("{subagent_id}.jsonl"));
+            assert!(
+                !path.exists(),
+                "subagent transcript must NOT be under teams/*/teammates/, found: {path:?}"
+            );
+        }
+    }
 
     // Teammate transcript does NOT appear in subagents/ dir.
     let subagents_dir = conv_dir.join("subagents");

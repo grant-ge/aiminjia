@@ -192,20 +192,40 @@ fn strip_trailing_marker(line: &str) -> &str {
 
 #[derive(Debug, Default, Clone)]
 struct LifecycleByTeam {
-    /// `team_name → Vec<TeamEvent>` for spawn / stop / delete events that
-    /// only appear on the Lead's `messages.jsonl`.  Keyed by team_name when
-    /// we can derive it from tool args; falls back to bucket `""` when not
-    /// (older single-team behaviour).
+    /// `team_name → Vec<TeamEvent>` for events we *can* attribute to a
+    /// specific team from `messages.jsonl` alone (TeamCreate / TeamDelete /
+    /// AgentSpawn — all carry `team_name` in their tool args or result).
     by_team: std::collections::HashMap<String, Vec<TeamEvent>>,
+    /// Pending stop events keyed by `agent_name`.  Stop events come from
+    /// `TeammateStop` tool results whose textual `content` only carries the
+    /// agent name, not the team_name — so we can't bucket them upfront.
+    /// `scan_teams_dir` resolves the owning team at render time using each
+    /// team's member roster (a teammate name is unique within a team, and
+    /// a teammate's whole life happens inside one team — so first-match by
+    /// member roster is enough).
+    stops_by_agent_name: std::collections::HashMap<String, Vec<TeamEvent>>,
 }
 
 impl LifecycleByTeam {
-    fn drain_for(&mut self, team_name: &str) -> Vec<TeamEvent> {
+    /// Drain the team-attributed events plus any stop events whose
+    /// `agent_name` is in the given member set.  `member_names` should be
+    /// the names of teammates registered to this team (from the on-disk
+    /// `config.json` snapshot).
+    fn drain_for(&mut self, team_name: &str, member_names: &std::collections::HashSet<String>) -> Vec<TeamEvent> {
         let mut events = self.by_team.remove(team_name).unwrap_or_default();
-        // Also fold any team_name-less events (fallback bucket) so single-team
-        // conversations still see spawn/stop events.
-        if let Some(fallback) = self.by_team.remove("") {
-            events.extend(fallback);
+        // Reattach stop events whose agent_name belongs to this team.
+        // We mutate stops_by_agent_name in-place: each matching key is
+        // drained so a subsequent team doesn't see the same stop twice.
+        let matching_names: Vec<String> = self
+            .stops_by_agent_name
+            .keys()
+            .filter(|n| member_names.contains(*n))
+            .cloned()
+            .collect();
+        for n in matching_names {
+            if let Some(mut stops) = self.stops_by_agent_name.remove(&n) {
+                events.append(&mut stops);
+            }
         }
         events
     }
@@ -317,16 +337,18 @@ fn extract_lifecycle_events(messages: &[Value]) -> LifecycleByTeam {
                         }
                         "TeammateStop" => {
                             if let Some(name) = parse_teammate_name_from_stop_text(&content_str) {
-                                // Stop events can't easily be attributed to a
-                                // team_name from the textual content alone; put
-                                // them in the fallback bucket so they show up
-                                // on whichever team is being rendered.
-                                out.by_team.entry(String::new()).or_default().push(
-                                    TeamEvent::AgentStop {
+                                // Stop events can't be attributed to a
+                                // team_name from the textual content alone.
+                                // Stash them under agent_name; scan_teams_dir
+                                // resolves the owning team via the team's
+                                // on-disk member roster.
+                                out.stops_by_agent_name
+                                    .entry(name.clone())
+                                    .or_default()
+                                    .push(TeamEvent::AgentStop {
                                         ts: ts.clone(),
                                         agent_name: name,
-                                    },
-                                );
+                                    });
                             }
                         }
                         _ => {}
@@ -378,11 +400,12 @@ fn scan_teams_dir(
         };
 
         let mut lc = lifecycle.clone();
-        let mut events = lc.drain_for(&team_name);
+        let members = load_teammates_from_snapshot(&snapshot, &paths);
+        let member_names: std::collections::HashSet<String> =
+            members.iter().map(|m| m.agent_name.clone()).collect();
+        let mut events = lc.drain_for(&team_name, &member_names);
         append_events_from_team_chat_jsonl(&mut events, &paths.team_chat_jsonl(), &team_name);
         events.sort_by(|a, b| a.ts().cmp(b.ts()));
-
-        let members = load_teammates_from_snapshot(&snapshot, &paths);
 
         sessions.push(TeamSession {
             team_id: format!("{conversation_id}#{team_name}"),
@@ -596,5 +619,88 @@ mod tests {
             }
             _ => panic!("expected SendMessage"),
         }
+    }
+
+    #[test]
+    fn drain_for_attributes_stop_events_by_agent_name() {
+        let mut lc = LifecycleByTeam::default();
+        // Two teams have spawn events; AgentStop events come without team
+        // context (parsed from textual TeammateStop result).
+        lc.by_team.insert(
+            "alpha".to_string(),
+            vec![TeamEvent::AgentSpawn {
+                ts: "2026-05-15T00:00:00Z".into(),
+                agent_id: "id-a".into(),
+                agent_name: "researcher".into(),
+            }],
+        );
+        lc.by_team.insert(
+            "beta".to_string(),
+            vec![TeamEvent::AgentSpawn {
+                ts: "2026-05-15T00:00:01Z".into(),
+                agent_id: "id-b".into(),
+                agent_name: "analyst".into(),
+            }],
+        );
+        lc.stops_by_agent_name.insert(
+            "researcher".to_string(),
+            vec![TeamEvent::AgentStop {
+                ts: "2026-05-15T00:01:00Z".into(),
+                agent_name: "researcher".into(),
+            }],
+        );
+        lc.stops_by_agent_name.insert(
+            "analyst".to_string(),
+            vec![TeamEvent::AgentStop {
+                ts: "2026-05-15T00:01:01Z".into(),
+                agent_name: "analyst".into(),
+            }],
+        );
+
+        // alpha owns "researcher", beta owns "analyst".
+        let alpha_members: std::collections::HashSet<String> =
+            ["researcher".to_string()].into_iter().collect();
+        let beta_members: std::collections::HashSet<String> =
+            ["analyst".to_string()].into_iter().collect();
+
+        let alpha_events = lc.drain_for("alpha", &alpha_members);
+        assert_eq!(alpha_events.len(), 2, "alpha gets spawn + researcher's stop");
+        assert!(matches!(alpha_events[0], TeamEvent::AgentSpawn { .. }));
+        assert!(matches!(
+            alpha_events[1],
+            TeamEvent::AgentStop { ref agent_name, .. } if agent_name == "researcher"
+        ));
+
+        let beta_events = lc.drain_for("beta", &beta_members);
+        assert_eq!(beta_events.len(), 2, "beta gets spawn + analyst's stop");
+        assert!(matches!(
+            beta_events[1],
+            TeamEvent::AgentStop { ref agent_name, .. } if agent_name == "analyst"
+        ));
+
+        // Stops bucket is fully drained — no leftover.
+        assert!(lc.stops_by_agent_name.is_empty(), "stops bucket fully consumed");
+    }
+
+    #[test]
+    fn drain_for_drops_stop_events_with_no_owning_team() {
+        let mut lc = LifecycleByTeam::default();
+        // Stop event whose agent_name doesn't belong to any team's roster
+        // is silently dropped (the alternative — leaking it to a random
+        // team — would be worse than losing it).
+        lc.stops_by_agent_name.insert(
+            "ghost".to_string(),
+            vec![TeamEvent::AgentStop {
+                ts: "2026-05-15T00:01:00Z".into(),
+                agent_name: "ghost".into(),
+            }],
+        );
+        let empty: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let events = lc.drain_for("alpha", &empty);
+        assert!(events.is_empty());
+        // The stop still sits in the bucket waiting for an owner — but
+        // because no later drain_for call will match, it's effectively dropped
+        // from output (correct behaviour: better silent drop than misattribute).
+        assert_eq!(lc.stops_by_agent_name.len(), 1);
     }
 }

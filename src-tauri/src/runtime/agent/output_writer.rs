@@ -224,34 +224,66 @@ pub fn kind_dir(conv_dir: &Path, kind: &TranscriptKind) -> PathBuf {
     conv_dir.join(kind.dir_name())
 }
 
-/// Compute the JSONL transcript path, routing Teammate kind through TeamPaths.
+/// Compute the JSONL transcript path.
 ///
 /// `conv_dir` is the conversation root (NOT a sub-directory).
-/// `team_name` is required for `TranscriptKind::Teammate`; ignored for Subagent.
+/// `team_name` is required for `TranscriptKind::Teammate` (per-team disk
+/// layout v2 §3 — Teammates always live under a team).  Pass `""` for
+/// `TranscriptKind::Subagent` callers; the value is ignored.
 /// `agent_id` is the agent's unique ID string.
-pub fn transcript_path_for_kind(conv_dir: &Path, kind: &TranscriptKind, team_name: Option<&str>, agent_id: &str) -> PathBuf {
+pub fn transcript_path_for_kind(
+    conv_dir: &Path,
+    kind: &TranscriptKind,
+    team_name: &str,
+    agent_id: &str,
+) -> PathBuf {
     use crate::runtime::agent::team_paths::TeamPaths;
-    match (kind, team_name) {
-        (TranscriptKind::Teammate, Some(name)) => TeamPaths::for_team(conv_dir, name).teammate_transcript(agent_id),
-        (TranscriptKind::Teammate, None) => conv_dir.join("teammates").join(format!("{agent_id}.jsonl")),
-        (TranscriptKind::Subagent, _) => conv_dir.join("subagents").join(format!("{agent_id}.jsonl")),
+    match kind {
+        TranscriptKind::Teammate => {
+            TeamPaths::for_team(conv_dir, team_name).teammate_transcript(agent_id)
+        }
+        TranscriptKind::Subagent => conv_dir.join("subagents").join(format!("{agent_id}.jsonl")),
     }
 }
 
-/// Compute the `.meta.json` sidecar path, routing Teammate kind through TeamPaths.
-pub fn meta_path_for_kind(conv_dir: &Path, kind: &TranscriptKind, team_name: Option<&str>, agent_id: &str) -> PathBuf {
+/// Compute the `.meta.json` sidecar path.  See `transcript_path_for_kind`
+/// for the `team_name` contract.
+pub fn meta_path_for_kind(
+    conv_dir: &Path,
+    kind: &TranscriptKind,
+    team_name: &str,
+    agent_id: &str,
+) -> PathBuf {
     use crate::runtime::agent::team_paths::TeamPaths;
-    match (kind, team_name) {
-        (TranscriptKind::Teammate, Some(name)) => TeamPaths::for_team(conv_dir, name).teammate_meta(agent_id),
-        (TranscriptKind::Teammate, None) => conv_dir.join("teammates").join(format!("{agent_id}.meta.json")),
-        (TranscriptKind::Subagent, _) => conv_dir.join("subagents").join(format!("{agent_id}.meta.json")),
+    match kind {
+        TranscriptKind::Teammate => TeamPaths::for_team(conv_dir, team_name).teammate_meta(agent_id),
+        TranscriptKind::Subagent => conv_dir
+            .join("subagents")
+            .join(format!("{agent_id}.meta.json")),
     }
 }
 
 /// Write the `.meta.json` sidecar once at spawn time.  Creates parent dirs.
 /// Overwrites any existing sidecar (idempotent for retries).
+///
+/// For Teammate kind, `meta.team_id` must hold the team_name (per-team disk
+/// layout v2 §3); empty/missing returns an error.  `Subagent` kind ignores
+/// `team_id`.
 pub fn write_meta(conv_dir: &Path, meta: &AgentTranscriptMeta) -> Result<()> {
-    let path = meta_path_for_kind(conv_dir, &meta.kind, meta.team_id.as_deref(), &meta.agent_id);
+    let team_name = match meta.kind {
+        TranscriptKind::Teammate => meta
+            .team_id
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Teammate AgentTranscriptMeta.team_id must hold the team_name (agent_id={})",
+                    meta.agent_id
+                )
+            })?,
+        TranscriptKind::Subagent => "",
+    };
+    let path = meta_path_for_kind(conv_dir, &meta.kind, team_name, &meta.agent_id);
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -390,19 +422,29 @@ mod tests {
     #[test]
     fn subagent_kind_uses_subagents_dir() {
         let conv_dir = std::path::PathBuf::from("/tmp/conv-abc");
-        let p = transcript_path_for_kind(&conv_dir, &TranscriptKind::Subagent, None, "agent-1");
+        let p = transcript_path_for_kind(&conv_dir, &TranscriptKind::Subagent, "", "agent-1");
         assert_eq!(p, conv_dir.join("subagents/agent-1.jsonl"));
-        let mp = meta_path_for_kind(&conv_dir, &TranscriptKind::Subagent, None, "agent-1");
+        let mp = meta_path_for_kind(&conv_dir, &TranscriptKind::Subagent, "", "agent-1");
         assert_eq!(mp, conv_dir.join("subagents/agent-1.meta.json"));
     }
 
     #[test]
-    fn teammate_kind_uses_teammates_dir() {
+    fn teammate_kind_uses_team_scoped_teammates_dir() {
         let conv_dir = std::path::PathBuf::from("/tmp/conv-abc");
-        let p = transcript_path_for_kind(&conv_dir, &TranscriptKind::Teammate, None, "agent-2");
-        assert_eq!(p, conv_dir.join("teammates/agent-2.jsonl"));
-        let mp = meta_path_for_kind(&conv_dir, &TranscriptKind::Teammate, None, "agent-2");
-        assert_eq!(mp, conv_dir.join("teammates/agent-2.meta.json"));
+        let p = transcript_path_for_kind(
+            &conv_dir,
+            &TranscriptKind::Teammate,
+            "alpha",
+            "agent-2",
+        );
+        assert_eq!(p, conv_dir.join("teams/alpha/teammates/agent-2.jsonl"));
+        let mp = meta_path_for_kind(
+            &conv_dir,
+            &TranscriptKind::Teammate,
+            "alpha",
+            "agent-2",
+        );
+        assert_eq!(mp, conv_dir.join("teams/alpha/teammates/agent-2.meta.json"));
     }
 
     #[test]

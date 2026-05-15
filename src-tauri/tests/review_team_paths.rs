@@ -111,27 +111,20 @@ fn no_team_chat_jsonl_literal_outside_team_paths() {
 }
 
 #[test]
-fn no_join_teammates_literal_outside_team_paths_or_output_writer() {
+fn no_join_teammates_literal_outside_team_paths() {
     // We forbid `.join("teammates")` style usages — any code wanting the
     // teammates dir must go through `TeamPaths::for_team(...).teammates_dir()`.
     //
-    // Two exceptions:
-    //   * runtime/agent/team_paths.rs:        defines the layout
-    //   * runtime/agent/output_writer.rs:     keeps a literal in the
-    //     `(TranscriptKind::Teammate, None)` legacy fallback used by
-    //     `transcript_path_for_kind` / `meta_path_for_kind`.  The fallback
-    //     only fires when no team_name is supplied (legacy callers); the
-    //     production callsites in worker_runtime now pass `Some(team_name)`.
-    //   * runtime/team_view.rs:               PR7 read-only path resolution
-    //     uses `TeamPaths::for_team(...)`; no literal "teammates" remains.
-    let allow = &[
-        "runtime/agent/team_paths.rs",
-        "runtime/agent/output_writer.rs",
-    ];
+    // Only `runtime/agent/team_paths.rs` may mention the literal, since it
+    // defines the on-disk layout.  Earlier revisions also exempted
+    // `runtime/agent/output_writer.rs` for a `(Teammate, None)` legacy
+    // fallback; that fallback was removed in PR12 (per-team disk layout v2
+    // §3 — Teammates always live under a team), so the exemption is gone.
+    let allow = &["runtime/agent/team_paths.rs"];
     let hits = scan(&src_root(), &[r#"join("teammates")"#], allow);
     assert!(
         hits.is_empty(),
-        "Found `.join(\"teammates\")` literal outside team_paths.rs / output_writer.rs:\n{}",
+        "Found `.join(\"teammates\")` literal outside team_paths.rs:\n{}",
         hits.iter()
             .map(|h| format!("  {}:{}  {}", h.path, h.line_no, h.line.trim()))
             .collect::<Vec<_>>()

@@ -23,6 +23,8 @@ use app_lib::runtime::agent::AgentNameRegistry;
 use app_lib::runtime::cancellation::CancellationToken;
 use app_lib::runtime::ids::{AgentId, SessionId};
 
+const TEAM_NAME: &str = "test-team";
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 fn make_team(session_id: &str, agent_id: AgentId, agent_name: &str) -> Arc<Mutex<Team>> {
@@ -55,7 +57,7 @@ fn make_meta(agent_id: &str, agent_name: &str) -> AgentTranscriptMeta {
         agent_name: Some(agent_name.to_string()),
         kind: TranscriptKind::Teammate,
         employee_id: Some("emp-1".to_string()),
-        team_id: Some("conv-test".to_string()),
+        team_id: Some(TEAM_NAME.to_string()),
         spawned_by: Some("lead-agent".to_string()),
         spawned_at: chrono::Utc::now(),
         model: None,
@@ -79,6 +81,7 @@ fn make_ctx(
         agent_id: agent_id.clone(),
         session_id: SessionId::new(session_id),
         conv_id: session_id.to_string(),
+        team_name: TEAM_NAME.to_string(),
         cancel,
         inbox,
         agent_names,
@@ -103,7 +106,7 @@ async fn cancel_triggers_cleanup_removes_teammate_and_unregisters_name() {
     let name_registry = AgentNameRegistry::new();
     // Pre-register the name so we can verify it gets unregistered.
     name_registry
-        .register(&SessionId::new(session_id), agent_name, agent_id.clone())
+        .register(&SessionId::new(session_id), TEAM_NAME, agent_name, agent_id.clone())
         .await
         .unwrap();
 
@@ -148,7 +151,7 @@ async fn cancel_triggers_cleanup_removes_teammate_and_unregisters_name() {
 
     // Verify: name was unregistered.
     let resolved = name_registry
-        .resolve(&SessionId::new(session_id), agent_name)
+        .resolve(&SessionId::new(session_id), TEAM_NAME, agent_name)
         .await;
     assert!(
         resolved.is_none(),
@@ -213,7 +216,7 @@ async fn chat_message_received_writes_transcript_lines() {
 
     // Verify transcript JSONL exists and has content.
     let transcript_path =
-        transcript_path_for_kind(&conv_dir, &TranscriptKind::Teammate, &agent_id_str);
+        transcript_path_for_kind(&conv_dir, &TranscriptKind::Teammate, TEAM_NAME, &agent_id_str);
     assert!(
         transcript_path.exists(),
         "transcript JSONL should have been written at {:?}",
@@ -247,7 +250,7 @@ async fn inbox_close_causes_graceful_exit() {
     let team = make_team(session_id, agent_id.clone(), agent_name);
     let name_registry = AgentNameRegistry::new();
     name_registry
-        .register(&SessionId::new(session_id), agent_name, agent_id.clone())
+        .register(&SessionId::new(session_id), TEAM_NAME, agent_name, agent_id.clone())
         .await
         .unwrap();
 
