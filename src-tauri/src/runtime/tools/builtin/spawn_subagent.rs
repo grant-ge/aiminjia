@@ -388,6 +388,7 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
                         .run_id(ctx.run_id.as_str())
                         .tool_call_id(ctx.tool_call_id.as_str())
                         .agent_id(agent_id.as_str())
+                        .team_name(team_name_for_reg.as_str())
                         .payload(serde_json::json!({ "agent_name": agent_name })),
                 );
                 ctx.agent_names()
@@ -571,6 +572,7 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
                     .run_id(ctx.run_id.as_str())
                     .tool_call_id(ctx.tool_call_id.as_str())
                     .agent_id(agent_id.as_str())
+                    .team_name(team_name_str.as_str())
                     .payload(serde_json::json!({
                         "agent_name": agent_name_str,
                         "team_name": team_name_str,
@@ -585,6 +587,7 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
             let conv_id_for_diag = ctx.session_id.as_str().to_string();
             let run_id_for_diag = ctx.run_id.as_str().to_string();
             let tool_call_id_for_diag = ctx.tool_call_id.as_str().to_string();
+            let team_name_for_diag = team_name_str.clone();
             record_diagnostic(
                 &ws,
                 DiagnosticEvent::new("tool.spawn_subagent.teammate.spawning", DiagnosticSource::Backend)
@@ -592,6 +595,7 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
                     .run_id(&run_id_for_diag)
                     .tool_call_id(&tool_call_id_for_diag)
                     .agent_id(&agent_id_for_diag)
+                    .team_name(team_name_for_diag.as_str())
                     .ok(true)
                     .payload(serde_json::json!({ "agent_name": agent_name_for_spawn })),
             );
@@ -613,6 +617,7 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
                         DiagnosticEvent::new("tool.spawn_subagent.teammate.worker_exited_error", DiagnosticSource::Backend)
                             .conversation_id(&conv_id_for_diag)
                             .agent_id(&agent_id_for_diag)
+                            .team_name(team_name_for_diag.as_str())
                             .error(e.to_string()),
                     );
                 }

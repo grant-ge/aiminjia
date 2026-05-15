@@ -127,6 +127,7 @@ impl RuntimeTool for SendMessageRuntimeTool {
                 .conversation_id(ctx.session_id.as_str())
                 .run_id(ctx.run_id.as_str())
                 .tool_call_id(ctx.tool_call_id.as_str())
+                .team_name(ctx.active_team_name.as_deref().unwrap_or(""))
                 .payload(serde_json::json!({
                     "to": to,
                     "variant": message.variant_name(),
@@ -246,6 +247,7 @@ impl RuntimeTool for SendMessageRuntimeTool {
                     .conversation_id(ctx.session_id.as_str())
                     .run_id(ctx.run_id.as_str())
                     .tool_call_id(ctx.tool_call_id.as_str())
+                    .team_name(team_name)
                     .ok(missing.is_empty())
                     .payload(serde_json::json!({
                         "delivered": delivered,
@@ -315,6 +317,7 @@ impl RuntimeTool for SendMessageRuntimeTool {
                 .conversation_id(ctx.session_id.as_str())
                 .run_id(ctx.run_id.as_str())
                 .tool_call_id(ctx.tool_call_id.as_str())
+                .team_name(team_name)
                 .ok(true)
                 .payload(serde_json::json!({
                     "to_name": to,
@@ -350,6 +353,7 @@ impl RuntimeTool for SendMessageRuntimeTool {
                                 .run_id(ctx.run_id.as_str())
                                 .tool_call_id(ctx.tool_call_id.as_str())
                                 .agent_id(lead_id.as_str())
+                                .team_name(team_name)
                                 .ok(true)
                                 .payload(serde_json::json!({ "transition": "idle_to_running", "wake_fired": true })),
                         );
@@ -366,6 +370,7 @@ impl RuntimeTool for SendMessageRuntimeTool {
                                 .run_id(ctx.run_id.as_str())
                                 .tool_call_id(ctx.tool_call_id.as_str())
                                 .agent_id(lead_id.as_str())
+                                .team_name(team_name)
                                 .ok(true)
                                 .payload(serde_json::json!({ "transition": "already_running_pending_recorded", "wake_fired": false })),
                         );

@@ -117,6 +117,7 @@ impl RuntimeTool for TeamCreateRuntimeTool {
                 .run_id(ctx.run_id.as_str())
                 .tool_call_id(ctx.tool_call_id.as_str())
                 .agent_id(lead_id.as_str())
+                .team_name(team_name.as_str())
                 .payload(serde_json::json!({ "team_name": team_name })),
         );
 
@@ -210,6 +211,7 @@ impl RuntimeTool for TeamCreateRuntimeTool {
                 .run_id(ctx.run_id.as_str())
                 .tool_call_id(ctx.tool_call_id.as_str())
                 .agent_id(lead_id.as_str())
+                .team_name(team_name.as_str())
                 .ok(true)
                 .payload(serde_json::json!({
                     "team_name": team_name,
@@ -305,6 +307,7 @@ impl RuntimeTool for TeamDeleteRuntimeTool {
                 .conversation_id(session.as_str())
                 .run_id(ctx.run_id.as_str())
                 .tool_call_id(ctx.tool_call_id.as_str())
+                .team_name(team_name.as_str())
                 .payload(json!({ "team_name": team_name })),
         );
 
@@ -370,6 +373,7 @@ impl RuntimeTool for TeamDeleteRuntimeTool {
                 .conversation_id(session.as_str())
                 .run_id(ctx.run_id.as_str())
                 .tool_call_id(ctx.tool_call_id.as_str())
+                .team_name(team_name.as_str())
                 .ok(true)
                 .payload(json!({
                     "team_existed": team_existed,
@@ -458,6 +462,7 @@ impl RuntimeTool for TeamSwitchRuntimeTool {
                 .conversation_id(session.as_str())
                 .run_id(ctx.run_id.as_str())
                 .tool_call_id(ctx.tool_call_id.as_str())
+                .team_name(team_name.as_str())
                 .ok(true)
                 .payload(json!({
                     "old_team_name": prev,
