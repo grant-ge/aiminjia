@@ -579,5 +579,18 @@
       "removeAria": "Remove this pending message",
       "attachmentsCount": "{{count}} attachment(s)"
     }
+  },
+  "team": {
+    "button": {
+      "label": "Teams",
+      "tooltip": "View teams in this conversation"
+    },
+    "drawer": {
+      "title": "Teams",
+      "empty": "No teams yet in this conversation"
+    },
+    "chat": {
+      "empty": "No team chat yet"
+    }
   }
 }

@@ -64,6 +64,14 @@ export const TAURI_EVENTS = {
   PENDING_QUEUED: 'pending:queued',
   PENDING_DRAINED: 'pending:drained',
   PENDING_REMOVED: 'pending:removed',
+  /** PR9 (per-team layout v2): a team was just created via TeamCreate. */
+  TEAM_CREATED: 'team:created',
+  /** PR9: a team was just deleted via TeamDelete. */
+  TEAM_DELETED: 'team:deleted',
+  /** PR9: active_team_name flipped to a different team via team_switch_active. */
+  TEAM_ACTIVE_CHANGED: 'team:active-changed',
+  /** PR9: a new line was appended to a team's team-chat.jsonl. */
+  TEAM_CHAT_APPENDED: 'team-chat:appended',
 } as const
 
 // ---------------------------------------------------------------------------
@@ -543,6 +551,47 @@ export function getTeammateTranscript(
     conversationId,
     agentId,
   })
+}
+
+/**
+ * PR9: one line out of `<conv>/teams/{team}/team-chat.jsonl`.  The shape
+ * matches what the writer (SendMessage tool) puts on disk.
+ */
+export interface TeamChatMessage {
+  ts: string
+  from: string
+  to: string
+  text: string
+  variant?: string
+}
+
+/**
+ * PR9: read the (optionally filtered/limited) tail of a team's team-chat.jsonl.
+ *
+ * - `sinceTs` filters out lines with `ts <= sinceTs` (string comparison, RFC3339-safe).
+ * - `limit` caps the result length.
+ */
+export function teamChatMessages(
+  conversationId: string,
+  teamName: string,
+  sinceTs?: string,
+  limit?: number,
+): Promise<TeamChatMessage[]> {
+  return invoke<TeamChatMessage[]>('team_chat_messages', {
+    conversationId,
+    teamName,
+    sinceTs,
+    limit,
+  })
+}
+
+/**
+ * PR9: switch the conversation's `active_team_name` and broadcast
+ * `team:active-changed`. Validates team name client-side via the
+ * backend (ASCII-only, ≤ 64 chars).
+ */
+export function teamSwitchActive(conversationId: string, teamName: string): Promise<void> {
+  return invoke<void>('team_switch_active', { conversationId, teamName })
 }
 
 /**

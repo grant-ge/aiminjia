@@ -579,5 +579,18 @@
       "removeAria": "移除这条待处理消息",
       "attachmentsCount": "{{count}} 个附件"
     }
+  },
+  "team": {
+    "button": {
+      "label": "团队",
+      "tooltip": "查看当前对话内的团队"
+    },
+    "drawer": {
+      "title": "团队列表",
+      "empty": "当前对话还没有团队"
+    },
+    "chat": {
+      "empty": "该团队还没有内部消息"
+    }
   }
 }
