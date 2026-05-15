@@ -108,6 +108,13 @@ pub struct ChatTurnRequest {
     /// The dispatcher could use this metadata to e.g. persist each item as an
     /// independent user message before invoking the LLM. Default: None.
     pub pending_batch: Option<Vec<crate::runtime::pending::PendingItem>>,
+    /// PR6 (per-team disk layout §6): when set, overrides the
+    /// `active_team_name` resolved from `conv.json` for this turn.  Used by
+    /// the Path C wake closure to forward the originating team name verbatim
+    /// from `LeadIdleSupervisor::enqueue` into the continuation turn,
+    /// avoiding a re-read of `conv.json` (which may not yet reflect the
+    /// triggering team).  `None` means "use whatever `conv.json` says".
+    pub active_team_name_override: Option<String>,
 }
 
 impl ChatTurnRequest {
@@ -128,11 +135,19 @@ impl ChatTurnRequest {
             persona_id_override: None,
             session_attachment_dirs: Vec::new(),
             pending_batch: None,
+            active_team_name_override: None,
         }
     }
 
     pub fn with_persona_id_override(mut self, persona_id: String) -> Self {
         self.persona_id_override = Some(persona_id);
+        self
+    }
+
+    /// PR6: set the team name that wins over `conv.json::active_team_name`
+    /// for this single turn.  See `active_team_name_override` field doc.
+    pub fn with_active_team_name_override(mut self, team_name: String) -> Self {
+        self.active_team_name_override = Some(team_name);
         self
     }
 }
@@ -2361,7 +2376,14 @@ impl RuntimeChatTurnDriver {
             // Path A wake: enqueue 一次让 supervisor 走 Idle→Running CAS，触发已
             // 注册的 wake_fn（与 Path C 同一条续接 turn 链路）。否则 pending
             // 信号仅以事件形式 emit，无消费者，Lead 永远不会续接 turn。
-            let woke = sup.enqueue(key).await;
+            // PR6: team_name 透传给 wake_fn，让 continuation turn 用 wake 来源
+            // team_name 而非 conv.json 持久化值（避免读 conv.json 时序问题）。
+            let team_for_wake = self
+                .query_engine
+                .active_team_name()
+                .unwrap_or("")
+                .to_string();
+            let woke = sup.enqueue(key, team_for_wake).await;
             record_diagnostic(
                 &ws,
                 DiagnosticEvent::new(
@@ -3063,7 +3085,7 @@ mod tests {
         // Simulate a turn: mark_running, a Teammate enqueues a message,
         // then mark_idle reports pending=true.
         sup.mark_running(&key).await;
-        sup.enqueue(&key).await;
+        sup.enqueue(&key, "default".to_string()).await;
 
         driver
             .mark_idle_and_maybe_emit_pending(&key.0, &RunId::new("run-pa-exit-1"), &key)

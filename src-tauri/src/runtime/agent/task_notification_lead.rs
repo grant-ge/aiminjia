@@ -142,7 +142,7 @@ pub async fn emit_to_lead(
 
     if let Some(sup) = deps.lead_idle.as_ref() {
         let key = (session.clone(), lead_id);
-        let _wake = sup.enqueue(&key).await;
+        let _wake = sup.enqueue(&key, team_name.to_string()).await;
         // Wake-spawn wiring lands with the chat_turn_driver follow-up; here
         // we only need the supervisor to record the pending bit.
     }

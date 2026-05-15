@@ -311,7 +311,7 @@ impl SessionRuntime {
             "[session_runtime] build_driver_for_turn conv={}",
             turn.session_id().as_str()
         );
-        let driver = self.build_driver_for_turn(&turn);
+        let driver = self.build_driver_for_turn(&turn, request.active_team_name_override.clone());
         log::info!(
             "[session_runtime] run_chat_turn starting conv={}",
             turn.session_id().as_str()
@@ -559,8 +559,20 @@ impl SessionRuntime {
     }
 
     /// Build a `RuntimeChatTurnDriver` scoped to the given turn's session.
-    fn build_driver_for_turn(&self, turn: &TurnState) -> RuntimeChatTurnDriver {
-        let query_engine = self.query_engine_for_session(turn.session_id());
+    ///
+    /// `active_team_name_override` (PR6) lets the caller force a specific team
+    /// name into the QueryEngine, bypassing the `conv.json` read.  Used by
+    /// the Path C wake closure where the wake-source team_name is the
+    /// authoritative value, not whatever happens to be persisted.
+    fn build_driver_for_turn(
+        &self,
+        turn: &TurnState,
+        active_team_name_override: Option<String>,
+    ) -> RuntimeChatTurnDriver {
+        let mut query_engine = self.query_engine_for_session(turn.session_id());
+        if let Some(team) = active_team_name_override {
+            query_engine = query_engine.with_active_team_name(Some(team));
+        }
         let mut driver = if let Some(ref executor) = self.llm_executor {
             // Compatibility marker for review tests: with_llm_executor_and_permission_control_plane(
             RuntimeChatTurnDriver::with_llm_executor_and_control_planes(

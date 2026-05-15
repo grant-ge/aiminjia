@@ -2378,30 +2378,41 @@ impl TauriChatCommandAdapter {
         };
         let weak_self: std::sync::Weak<Self> = Arc::downgrade(self);
         let installed = sup.set_wake_fn(std::sync::Arc::new(
-            move |key: crate::runtime::agent::LeadKey| {
+            move |key: crate::runtime::agent::LeadKey, team_name: String| {
                 let Some(adapter) = weak_self.upgrade() else {
                     log::warn!(
                         "[path_c_wake] adapter has been dropped — skipping continuation \
-                         turn for session={} agent={}",
+                         turn for session={} agent={} team={}",
                         key.0.as_str(),
-                        key.1.as_str()
+                        key.1.as_str(),
+                        team_name
                     );
                     return;
                 };
                 let session_str = key.0.as_str().to_string();
                 let agent_str = key.1.as_str().to_string();
+                let team_str = team_name.clone();
                 tokio::spawn(async move {
                     log::info!(
                         "[path_c_wake] spawning continuation turn via send_chat_request \
-                         conv={} lead={}",
+                         conv={} lead={} team={}",
                         session_str,
-                        agent_str
+                        agent_str,
+                        team_str
                     );
-                    let req = ChatTurnRequest::new(
+                    // PR6: forward wake-source team_name verbatim so the
+                    // continuation turn uses it as active_team_name without
+                    // re-reading conv.json (which may not yet reflect this
+                    // team — e.g. when active_team is "alpha" but the wake
+                    // came from "beta").
+                    let mut req = ChatTurnRequest::new(
                         key.0.clone(),
                         "__resume_from_task_notification__".to_string(),
                         Vec::new(),
                     );
+                    if !team_name.is_empty() {
+                        req = req.with_active_team_name_override(team_name);
+                    }
                     match adapter.send_chat_request(req).await {
                         Ok(()) => {
                             log::info!(

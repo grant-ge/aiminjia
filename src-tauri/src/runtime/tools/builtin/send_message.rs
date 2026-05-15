@@ -337,7 +337,7 @@ impl RuntimeTool for SendMessageRuntimeTool {
             {
                 if let Some(lead_id) = names_reg.resolve(&session, team_name, LEAD_NAME).await {
                     let key = (session.clone(), lead_id.clone());
-                    let woke = sup.enqueue(&key).await;
+                    let woke = sup.enqueue(&key, team_name.to_string()).await;
                     if woke {
                         log::info!(
                             "[SendMessage] Lead idle → Path C wake triggered \
