@@ -69,12 +69,11 @@ pub async fn run_due_employees_once(
     dispatcher: &dyn EmployeeRunDispatcher,
     now: DateTime<Utc>,
 ) -> anyhow::Result<()> {
-    // Sweep archived employees whose retention window has expired.
-    // Runs once per tick — cheap (just a list + comparison).
-    const ARCHIVE_RETENTION_DAYS: i64 = 7;
-    if let Err(err) = store.purge_old_archived(chrono::Duration::days(ARCHIVE_RETENTION_DAYS)) {
-        log::warn!("[EmployeeScheduler] purge_old_archived failed: {err}");
-    }
+    // PR-7: the 7-day recycle-bin model was retired. `employee_delete`
+    // now hard-deletes immediately, so there's no archived-and-aging
+    // population to sweep here. The store still exposes
+    // `purge_old_archived` for legacy on-disk records and tests, but the
+    // scheduler tick no longer calls it.
 
     let due_list = store.take_due(now)?;
     for due in due_list {
@@ -157,6 +156,7 @@ mod runner_tests {
             resource_config: serde_json::json!({}),
             system_prompt_extra: None,
             default_skill_id: None,
+            skill_ids: vec![],
             template_ref: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),

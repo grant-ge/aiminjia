@@ -162,90 +162,27 @@ pub async fn employee_update(
     Ok(record)
 }
 
-/// Soft-delete: set lifecycle = Archived. The employee is hidden from the
-/// main grid but recoverable via `employee_restore` for 7 days. After 7
-/// days, the scheduler's purge sweep hard-deletes the directory.
+/// Hard-delete an employee. PR-7: the soft-delete / 7-day recycle bin /
+/// scheduler purge sweep model was retired — it added complexity (three
+/// IPC commands + a tick + race-safe `purge_if_archived_older_than`) for a
+/// scenario users almost never hit (mis-deleting). Re-hiring takes ~30
+/// seconds via the wizard, so we replaced it with an immediate hard
+/// delete + a frontend confirmation dialog.
 ///
-/// Errors when the record is already Archived so the caller can surface a
-/// clear "员工已处于解雇状态" message instead of silently no-op'ing.
+/// Errors only when the record is missing.
 #[tauri::command]
 pub async fn employee_delete(app: AppHandle, id: String) -> Result<bool, String> {
     let store = employee_store(&app)?;
-    let current = store.get(&id).map_err(|e| e.to_string())?;
-    if current.lifecycle == EmployeeLifecycle::Archived {
-        return Err("员工已处于解雇状态".to_string());
-    }
-    store
-        .update(
-            &id,
-            UpdateEmployeeRequest {
-                lifecycle: Some(EmployeeLifecycle::Archived),
-                ..Default::default()
-            },
-        )
-        .map_err(|e| e.to_string())?;
+    // Probe existence so the caller gets a clear error instead of a no-op.
+    let _current = store.get(&id).map_err(|e| e.to_string())?;
+    store.purge(&id).map_err(|e| e.to_string())?;
 
     // 联动：把这个 employee 作 organizer 的 agenda items 转 Orphaned。
-    // 失败仅 log，不阻塞软删除——孤儿 item 调度器不会再 dispatch（runner 只接 Active）。
+    // 失败仅 log，不阻塞删除——孤儿 item 调度器不会再 dispatch。
     if let Some(agenda_store) = agenda_store_for(&app) {
         if let Err(e) = agenda_store.mark_orphaned_by_organizer(&id) {
             log::warn!(
                 "[employee_delete] mark_orphaned_by_organizer({}) failed: {}",
-                id,
-                e
-            );
-        }
-    }
-
-    Ok(true)
-}
-
-/// Restore an archived employee: lifecycle Archived -> Active.
-///
-/// Errors when the record is not Archived so the caller doesn't silently
-/// no-op (e.g. a stale UI button click).
-#[tauri::command]
-pub async fn employee_restore(app: AppHandle, id: String) -> Result<bool, String> {
-    let store = employee_store(&app)?;
-    let current = store.get(&id).map_err(|e| e.to_string())?;
-    if current.lifecycle != EmployeeLifecycle::Archived {
-        return Err("员工未处于解雇状态，无需恢复".to_string());
-    }
-    store
-        .update(
-            &id,
-            UpdateEmployeeRequest {
-                lifecycle: Some(EmployeeLifecycle::Active),
-                ..Default::default()
-            },
-        )
-        .map(|_| true)
-        .map_err(|e| e.to_string())
-}
-
-/// Hard-delete an employee directory. Skips the 7-day recovery window —
-/// used for the "永久删除" UI action and by the scheduler's auto-purge.
-///
-/// Refuses to purge a non-Archived employee — the only legitimate path to
-/// permanent deletion is via the recycle bin (or the scheduler's age sweep,
-/// which uses `purge_if_archived_older_than` directly on the store).
-#[tauri::command]
-pub async fn employee_purge(app: AppHandle, id: String) -> Result<bool, String> {
-    let store = employee_store(&app)?;
-    let current = store.get(&id).map_err(|e| e.to_string())?;
-    if current.lifecycle != EmployeeLifecycle::Archived {
-        return Err("只能永久删除已解雇的员工".to_string());
-    }
-    store.purge(&id).map_err(|e| e.to_string())?;
-
-    // 幂等地 mark_orphaned：archive 时已触发过；purge 后再确保一次，避免
-    // 用户手动恢复 agenda 后再走 purge 路径造成残留 Active 孤儿。
-    // purge 后 employee 目录已删除，AgendaStore 操作的是独立的 agenda/ 目录，
-    // 所以此时调用仍然有效。
-    if let Some(agenda_store) = agenda_store_for(&app) {
-        if let Err(e) = agenda_store.mark_orphaned_by_organizer(&id) {
-            log::warn!(
-                "[employee_purge] mark_orphaned_by_organizer({}) failed: {}",
                 id,
                 e
             );
@@ -276,16 +213,16 @@ pub async fn employee_trigger(
     let record = store.get(&id).map_err(|e| e.to_string())?;
 
     // Authoritative lifecycle gate. The drawer disables this button for
-    // paused / archived, but the command must enforce it independently —
+    // archived employees, but the command must enforce it independently —
     // skills, scripts, and stale UI clicks can all reach this entry point.
+    // PR-6: `Paused` was retired; legacy records are canonicalized to Active
+    // when `EmployeeStore::get` returns them, so we only need to gate on
+    // Archived here.
     match record.lifecycle {
         EmployeeLifecycle::Archived => {
             return Err("员工已解雇，恢复后才能派活".to_string());
         }
-        EmployeeLifecycle::Paused => {
-            return Err("员工已暂停，恢复员工后才能派活".to_string());
-        }
-        EmployeeLifecycle::Active => {}
+        EmployeeLifecycle::Active | EmployeeLifecycle::Paused => {}
     }
 
     let adapter = app

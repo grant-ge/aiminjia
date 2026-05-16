@@ -953,8 +953,6 @@ pub fn run() {
             commands::employees::employee_create,
             commands::employees::employee_update,
             commands::employees::employee_delete,
-            commands::employees::employee_restore,
-            commands::employees::employee_purge,
             commands::employees::employee_trigger,
             commands::employees::employee_stop_run,
             commands::employees::employee_active_run,

@@ -5,7 +5,6 @@ import { useUiStore } from '@/stores/uiStore'
 import { useEmployees } from '@/features/employees/useEmployees'
 import { useInbox } from '@/features/employees/useInbox'
 import { EmployeeCard, AddEmployeeCard } from '@/features/employees/EmployeeCard'
-import { ArchivedEmployeeCard } from '@/features/employees/ArchivedEmployeeCard'
 import { EmployeeDrawer } from '@/features/employees/EmployeeDrawer'
 import { HireWizard } from '@/features/employees/HireWizard'
 import type { EmployeeRecord } from '@/lib/tauri'
@@ -71,9 +70,15 @@ export function EmployeesPage() {
     )
   })
 
+  // PR-7: `archived` is a legacy lifecycle from when delete was a 7-day
+  // soft-delete with restore. The recycle bin UI was removed; any
+  // remaining `archived` records (from upgrades) are simply hidden — they
+  // can't be restored (no UI affordance) and the backend hard-deletes
+  // from the next `employee_delete` call onwards.
   const activeEmployees = employees.filter((e) => e.lifecycle !== 'archived')
-  const archivedEmployees = employees.filter((e) => e.lifecycle === 'archived')
-  const archivedIds = new Set(archivedEmployees.map((e) => e.id))
+  const archivedIds = new Set(
+    employees.filter((e) => e.lifecycle === 'archived').map((e) => e.id),
+  )
 
   // Count distinct *active* employees that the backend says are mid-dispatch.
   // Previous logic counted "running" inbox entries which (a) double-counted on
@@ -134,19 +139,6 @@ export function EmployeesPage() {
             ))}
             <AddEmployeeCard onClick={() => setHireOpen(true)} />
           </div>
-        )}
-
-        {archivedEmployees.length > 0 && (
-          <details className="mt-6">
-            <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
-              已解雇（{archivedEmployees.length}） — 7 天内可恢复
-            </summary>
-            <div className="mt-3 grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5">
-              {archivedEmployees.map((emp) => (
-                <ArchivedEmployeeCard key={emp.id} emp={emp} onChanged={refreshEmp} />
-              ))}
-            </div>
-          </details>
         )}
       </section>
 

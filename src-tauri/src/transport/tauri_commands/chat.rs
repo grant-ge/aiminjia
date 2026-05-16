@@ -3519,6 +3519,21 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
         )
         .await
         .map_err(anyhow::Error::msg)?;
+        // Stamp employee_id onto conv.json + index entry so the chat top bar
+        // and any future "dispatched conversations" filter can identify this
+        // session as a dispatch run. Failure here is non-fatal: the UI just
+        // won't render the employee identity card.
+        if let Err(e) = self
+            .services
+            .db()
+            .set_conversation_employee_id(&conversation_id, Some(&employee.id))
+        {
+            log::warn!(
+                "[dispatch_employee_run] failed to stamp employee_id for {} on conv {}: {e:#}",
+                employee.id,
+                conversation_id
+            );
+        }
         emit_conversation_created(
             &self.services.app,
             &conversation_id,
@@ -3585,24 +3600,55 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
             }
         }
 
-        // Persist the Running entry. Failure here is non-fatal — we still want
-        // the chat view to open.
-        let running_entry = match inbox_writer::push_running(
-            employees_dir.clone(),
-            &employee.id,
-            &employee.name,
+        // PR-8: the `Running` inbox entry was retired. Users had two
+        // signals for "运行中" (the streaming chat bubble + the employee
+        // card's running badge); the inbox row was a third copy that
+        // got marked-read seconds later, cluttering 汇报中心 without
+        // adding information. We jump straight to `push_report` /
+        // `push_error` when the run finishes.
+
+        // ─── Sync persist of the dispatch prompt as a user message ─────────
+        // The agent loop below runs detached in a spawned task; if that task
+        // panics or returns before persist_user_message lands, the conv.json
+        // exists on disk but messages.jsonl is empty — the user sees a blank
+        // chat with no recoverable trace. Persist here synchronously, then
+        // mark `pre_persisted=true` on the request so the driver does NOT
+        // re-persist or re-emit MessagePersisted for the same content.
+        let dispatch_msg_id = format!("msg-{}", uuid::Uuid::new_v4());
+        let dispatch_content_json =
+            crate::runtime::chat::chat_turn_driver::build_user_content_json(&prompt, &attachments)
+                .to_string();
+        if let Err(e) = self.services.db().insert_message(
+            &dispatch_msg_id,
             &conversation_id,
-            catchup_info.clone(),
+            "user",
+            &dispatch_content_json,
         ) {
-            Ok(entry) => Some(entry),
-            Err(e) => {
-                log::warn!(
-                    "[dispatch_employee_run] failed to write Running inbox for {}: {e}",
-                    employee.id
-                );
-                None
-            }
-        };
+            log::error!(
+                "[dispatch_employee_run] persist dispatch prompt failed for {}: {e:#}",
+                employee.id
+            );
+            return Err(anyhow::anyhow!("persist dispatch prompt failed: {e}"));
+        }
+        // Emit the legacy `message:updated` so the chat view renders the
+        // dispatch bubble immediately, without waiting for the spawned agent
+        // loop to call get_history → build initial_messages → emit.
+        let _ = self.services.app.emit(
+            "message:updated",
+            serde_json::json!({
+                "conversationId": conversation_id,
+                "messageId": dispatch_msg_id,
+                "id": dispatch_msg_id,
+                "role": "user",
+                "content": crate::runtime::conversation_service::transform_message_json_for_frontend(
+                    serde_json::json!({
+                        "content": serde_json::from_str::<serde_json::Value>(&dispatch_content_json)
+                            .unwrap_or(serde_json::Value::Null),
+                    })
+                )["content"].clone(),
+                "createdAt": chrono::Utc::now().to_rfc3339(),
+            }),
+        );
 
         // ─── Async phase: run the agent loop in a detached task ────────────
 
@@ -3618,7 +3664,6 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
         let employee_clone = employee.clone();
         let conv_id = conversation_id.clone();
         let employees_dir_async = employees_dir.clone();
-        let running_entry_id = running_entry.as_ref().map(|e| e.id.clone());
         let attachments_for_run = attachments;
 
         tauri::async_runtime::spawn(async move {
@@ -3662,16 +3707,27 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
                 },
             );
 
-            let result = adapter
-                .send_message(
+            let result = {
+                let mut req = ChatTurnRequest::new(
                     conv_id.clone(),
-                    prompt,
-                    attachments_for_run,
-                    None,
-                    None,
-                    None,
-                )
-                .await;
+                    prompt.clone(),
+                    attachments_for_run.clone(),
+                );
+                // The dispatch prompt was already persisted + emitted in the
+                // sync phase above; the driver must skip its own persist step
+                // so the user bubble is not duplicated.
+                req.pre_persisted = true;
+                req.session_attachment_dirs =
+                    crate::runtime::path_auth::derive_working_dirs_from_attachments(
+                        &req.attachments
+                            .iter()
+                            .map(|a| std::path::PathBuf::from(&a.file_path))
+                            .collect::<Vec<_>>(),
+                    );
+                adapter.send_chat_request(req).await.map_err(|e| {
+                    anyhow::anyhow!("send_chat_request failed in dispatch: {e}")
+                })
+            };
 
             match &result {
                 Ok(()) => {
@@ -3689,7 +3745,7 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
                         &conv_id,
                         title,
                         summary,
-                        running_entry_id.as_deref(),
+                        None,
                     ) {
                         log::warn!(
                             "[dispatch_employee_run] push_report failed for {}: {e}",
@@ -3698,13 +3754,14 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
                     }
                 }
                 Err(err) => {
+                    let err_str = format!("{err:#}");
                     if let Err(e) = inbox_writer::push_error(
                         employees_dir_async.clone(),
                         &employee_clone.id,
                         &employee_clone.name,
                         &conv_id,
-                        err,
-                        running_entry_id.as_deref(),
+                        &err_str,
+                        None,
                     ) {
                         log::warn!(
                             "[dispatch_employee_run] push_error failed for {}: {e}",
