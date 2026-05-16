@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/common/Button'
 import { requestConfirm } from '@/components/common/ConfirmDialogHost'
 import {
-  listCustomSkills, uninstallCustomSkill, initSkillTemplate, packSkill,
+  listCustomSkills, initSkillTemplate, packSkill,
   reloadSkill, startSkillWatch, stopSkillWatch, syncBuiltinSkills, TAURI_EVENTS,
 } from '@/lib/tauri'
 import { listen } from '@tauri-apps/api/event'
@@ -202,7 +202,13 @@ export function SkillsTab(_props: SkillsTabProps = {}) {
     })
     if (!confirmed) return
     try {
-      await uninstallCustomSkill(id)
+      // Go through the store so its in-memory skills cache (consumed by
+      // SkillPopoverPanel etc) drops the entry too. The raw
+      // `uninstallCustomSkill` IPC removes the on-disk dir + refreshes
+      // the backend SkillRegistry, but the frontend store still held
+      // the stale row — causing the "deleted skill still searchable"
+      // bug reported 2026-05-15.
+      await useSkillStore.getState().uninstall(id)
       await loadSkills()
     } catch (e) {
       await message(String(e), { title: 'AI小家', kind: 'error' })
