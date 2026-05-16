@@ -369,13 +369,33 @@ notarize_dmg() {
         return
     fi
     {
-        xcrun notarytool submit "$DMG" \
-            --apple-id "$APPLE_ID" \
-            --password "$APPLE_PASSWORD" \
-            --team-id "$APPLE_TEAM_ID" \
-            --wait --timeout 60m \
-            && xcrun stapler staple "$DMG"
-        echo "$?" > "$DMG_RC_FILE"
+        set +e  # we need to inspect xcrun's exit code; set -e would abort
+        local attempt=1 max=3 rc=0
+        while :; do
+            echo "  attempt $attempt/$max"
+            xcrun notarytool submit "$DMG" \
+                --apple-id "$APPLE_ID" \
+                --password "$APPLE_PASSWORD" \
+                --team-id "$APPLE_TEAM_ID" \
+                --wait --timeout 60m
+            rc=$?
+            if [ $rc -eq 0 ]; then
+                xcrun stapler staple "$DMG"
+                echo "$?" > "$DMG_RC_FILE"
+                return
+            fi
+            # Retry only on transient network errors. Apple business
+            # rejections (Invalid/Rejected) should fail fast.
+            if [ $attempt -ge $max ] \
+               || ! tail -50 "$DMG_LOG" 2>/dev/null | \
+                  grep -qE 'abortedUpload|connectTimeout|HTTPClient|connection.*reset|EOF' ; then
+                echo "$rc" > "$DMG_RC_FILE"
+                return
+            fi
+            echo "  transient network error, retrying in 30s..."
+            sleep 30
+            attempt=$((attempt + 1))
+        done
     } > "$DMG_LOG" 2>&1
 }
 
@@ -393,15 +413,34 @@ notarize_app() {
     APP_ZIP=$(mktemp "$NOTARIZE_TMP/AIjia-app-XXXX.zip")
     ditto -c -k --keepParent "$APP" "$APP_ZIP"
     {
-        xcrun notarytool submit "$APP_ZIP" \
-            --apple-id "$APPLE_ID" \
-            --password "$APPLE_PASSWORD" \
-            --team-id "$APPLE_TEAM_ID" \
-            --wait --timeout 60m \
-            && xcrun stapler staple "$APP"
-        echo "$?" > "$APP_RC_FILE"
+        set +e
+        local attempt=1 max=3 rc=0
+        while :; do
+            echo "  attempt $attempt/$max"
+            xcrun notarytool submit "$APP_ZIP" \
+                --apple-id "$APPLE_ID" \
+                --password "$APPLE_PASSWORD" \
+                --team-id "$APPLE_TEAM_ID" \
+                --wait --timeout 60m
+            rc=$?
+            if [ $rc -eq 0 ]; then
+                xcrun stapler staple "$APP"
+                echo "$?" > "$APP_RC_FILE"
+                rm -f "$APP_ZIP"
+                return
+            fi
+            if [ $attempt -ge $max ] \
+               || ! tail -50 "$APP_LOG" 2>/dev/null | \
+                  grep -qE 'abortedUpload|connectTimeout|HTTPClient|connection.*reset|EOF' ; then
+                echo "$rc" > "$APP_RC_FILE"
+                rm -f "$APP_ZIP"
+                return
+            fi
+            echo "  transient network error, retrying in 30s..."
+            sleep 30
+            attempt=$((attempt + 1))
+        done
     } > "$APP_LOG" 2>&1
-    rm -f "$APP_ZIP"
 }
 
 echo "  Submitting DMG and .app to Apple notary in parallel..."

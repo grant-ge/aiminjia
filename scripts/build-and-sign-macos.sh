@@ -43,6 +43,30 @@ echo "Version: $VERSION ($RELEASE_TYPE)"
 echo "Project: $PROJECT_DIR"
 echo ""
 
+# Auto-source local env file if present. Avoids "TAURI_SIGNING_PRIVATE_KEY
+# not set" failures when the caller forgot to `source .env.local.aijia`.
+# Variables already in the environment are NOT overridden.
+ENV_FILE="$PROJECT_DIR/.env.local.aijia"
+if [ -f "$ENV_FILE" ]; then
+    echo "--- Sourcing $ENV_FILE (missing vars only) ---"
+    set -a
+    # shellcheck disable=SC1090
+    . "$ENV_FILE"
+    set +a
+    echo ""
+fi
+
+# Fail fast if any required var is still unset, so we don't burn 30 min of
+# build time only to fail at the sign step.
+for v in TAURI_SIGNING_PRIVATE_KEY APPLE_ID APPLE_TEAM_ID APPLE_PASSWORD \
+         OSS_ACCESS_KEY_ID OSS_ACCESS_KEY_SECRET; do
+    if [ -z "${!v:-}" ]; then
+        echo "ERROR: required env var $v is not set."
+        echo "  Add it to $ENV_FILE or export it before running this script."
+        exit 1
+    fi
+done
+
 # Optional cleanup: nuke target/ before build to defeat stale-artifact bugs
 # where a previous failed build leaves an old-version .app in
 # src-tauri/target/release/bundle/macos/. sign-and-upload-macos.sh has a
@@ -113,8 +137,25 @@ build_one_arch() {
 
 # Run arm64 first (default tauri target on Apple Silicon), then x86_64.
 # Serial only — DO NOT parallelize (Playwright/dws symlinks).
-build_one_arch aarch64
-build_one_arch x86_64
+#
+# Set ARCH=aarch64 or ARCH=x86_64 to only build one arch (useful when the
+# other arch already succeeded and you need to retry the failed half).
+case "${ARCH:-both}" in
+    both)
+        build_one_arch aarch64
+        build_one_arch x86_64
+        ;;
+    aarch64|arm64)
+        build_one_arch aarch64
+        ;;
+    x86_64|x64|intel)
+        build_one_arch x86_64
+        ;;
+    *)
+        echo "ERROR: ARCH must be 'aarch64', 'x86_64', or unset (both). Got: $ARCH"
+        exit 1
+        ;;
+esac
 
 echo ""
 echo "=== All done ==="
