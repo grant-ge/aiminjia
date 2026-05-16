@@ -171,7 +171,15 @@
       "general": "General",
       "persona": "Persona",
       "skills": "Skills",
-      "mcp": "MCP"
+      "mcp": "MCP",
+      "usage": "Usage",
+      "permissions": "Permissions",
+      "sso": "SSO",
+      "shortcuts": "Shortcuts",
+      "archived": "Archived",
+      "runtime": "Runtime",
+      "about": "About",
+      "title": "Settings"
     },
     "mcp": {
       "title": "MCP Servers",
@@ -273,7 +281,8 @@
       "checkUpdate": "Check update",
       "updateAvailable": "Update available",
       "upToDate": "Up to date",
-      "updating": "Updating..."
+      "updating": "Updating...",
+      "installedToast": "Skill installed"
     },
     "saving": "Saving...",
     "saveSettings": "Save Settings",
@@ -339,7 +348,13 @@
       "cleanup": "Clear",
       "appearance": "Appearance",
       "languageZh": "中文",
-      "languageEn": "English"
+      "languageEn": "English",
+      "logout": "Sign out",
+      "fontSize": "Font size",
+      "fontSizeDesc": "Scale interface text and spacing",
+      "fontSmall": "Small",
+      "fontMedium": "Medium",
+      "fontLarge": "Large"
     }
   },
   "login": {

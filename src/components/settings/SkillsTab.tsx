@@ -145,7 +145,7 @@ export function SkillsTab(_props: SkillsTabProps = {}) {
         await loadSkills()
         pushNotification({
           level: 'success',
-          title: '技能已安装',
+          title: t('settings.skills.installedToast'),
           message: '',
           actions: [],
           dismissible: true,

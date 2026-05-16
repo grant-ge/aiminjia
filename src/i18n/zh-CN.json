@@ -171,7 +171,15 @@
       "general": "通用设置",
       "persona": "角色",
       "skills": "技能管理",
-      "mcp": "MCP"
+      "mcp": "MCP",
+      "usage": "用量",
+      "permissions": "系统权限",
+      "sso": "SSO 集成",
+      "shortcuts": "快捷键",
+      "archived": "归档记录",
+      "runtime": "运行时",
+      "about": "关于",
+      "title": "设置"
     },
     "mcp": {
       "title": "MCP 服务器",
@@ -273,7 +281,8 @@
       "checkUpdate": "检查更新",
       "updateAvailable": "有新版本",
       "upToDate": "已是最新",
-      "updating": "更新中..."
+      "updating": "更新中...",
+      "installedToast": "技能已安装"
     },
     "saving": "保存中...",
     "saveSettings": "保存设置",
@@ -339,7 +348,13 @@
       "cleanup": "清理",
       "appearance": "外观",
       "languageZh": "中文",
-      "languageEn": "English"
+      "languageEn": "English",
+      "logout": "退出登录",
+      "fontSize": "字体大小",
+      "fontSizeDesc": "调整界面文字和间距的整体缩放",
+      "fontSmall": "小",
+      "fontMedium": "中",
+      "fontLarge": "大"
     }
   },
   "login": {

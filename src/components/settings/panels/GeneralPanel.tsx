@@ -5,12 +5,6 @@ import { useSettingsStore } from '@/stores/settingsStore'
 import type { FontScale } from '@/types/settings'
 import type { AppLanguage } from '@/i18n'
 
-const FONT_SCALE_OPTIONS: Array<{ value: FontScale; label: string; description: string }> = [
-  { value: 'small', label: '小', description: '14px' },
-  { value: 'medium', label: '中', description: '16px' },
-  { value: 'large', label: '大', description: '18px' },
-]
-
 interface GeneralPanelProps {
   user: { name: string; tenantName: string; avatarUrl: string }
   onLogout: () => void
@@ -42,6 +36,12 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
     void persistToBackend({ appLanguage: value })
   }
 
+  const FONT_SCALE_OPTIONS: Array<{ value: FontScale; description: string; labelKey: string }> = [
+    { value: 'small', description: '14px', labelKey: 'settings.general.fontSmall' },
+    { value: 'medium', description: '16px', labelKey: 'settings.general.fontMedium' },
+    { value: 'large', description: '18px', labelKey: 'settings.general.fontLarge' },
+  ]
+
   const LANGUAGE_OPTIONS: Array<{ value: AppLanguage; label: string }> = [
     { value: 'zh-CN', label: t('settings.general.languageZh') },
     { value: 'en-US', label: t('settings.general.languageEn') },
@@ -66,7 +66,7 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
           </div>
         </div>
         <Button variant="outline" className="h-9 rounded-lg px-5 text-sm font-semibold" onClick={onLogout}>
-          退出登录
+          {t('settings.general.logout')}
         </Button>
       </section>
 
@@ -77,19 +77,24 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
 
         <div className="flex items-center justify-between gap-8">
           <div className="flex min-w-0 flex-col gap-1">
-            <div className="text-base font-semibold text-foreground">字体大小</div>
-            <div className="text-sm text-muted-foreground">调整界面文字和间距的整体缩放</div>
+            <div className="text-base font-semibold text-foreground">{t('settings.general.fontSize')}</div>
+            <div className="text-sm text-muted-foreground">{t('settings.general.fontSizeDesc')}</div>
           </div>
-          <div className="inline-flex rounded-lg bg-muted p-1" role="radiogroup" aria-label="字体大小">
+          <div
+            className="inline-flex rounded-lg bg-muted p-1"
+            role="radiogroup"
+            aria-label={t('settings.general.fontSize')}
+          >
             {FONT_SCALE_OPTIONS.map((option) => {
               const selected = fontScale === option.value
+              const label = t(option.labelKey)
               return (
                 <button
                   key={option.value}
                   type="button"
                   role="radio"
                   aria-checked={selected}
-                  aria-label={option.label}
+                  aria-label={label}
                   title={option.description}
                   onClick={() => handleFontScaleChange(option.value)}
                   className={
@@ -98,7 +103,7 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
                       : 'rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground'
                   }
                 >
-                  {option.label}
+                  {label}
                 </button>
               )
             })}
