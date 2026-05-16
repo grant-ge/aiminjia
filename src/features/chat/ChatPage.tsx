@@ -52,14 +52,15 @@ export function ChatPage({ conversationId }: ChatPageProps) {
   }
 
   useEffect(() => {
-    // On a full reload, activeConversationId is derived synchronously from the
-    // persisted route before messages are loaded, so matching ids alone do not
-    // prove the message cache is hydrated.
-    if (activeConversationId !== conversationId || messageCount === 0) {
-      void switchConversation(conversationId)
-    }
+    // Always load messages when conversationId changes — this covers:
+    //   1. Full reload (persisted route, messages not yet loaded)
+    //   2. Navigation from non-chat pages (expert-teams / employees) where
+    //      old messages remain in chatStore from a previous conversation
+    // switchConversation internally clears messages then fetches the correct
+    // ones; switchVersionRef deduplicates rapid successive calls.
+    void switchConversation(conversationId)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversationId, activeConversationId, messageCount])
+  }, [conversationId])
 
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
