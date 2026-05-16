@@ -14,10 +14,22 @@ describe('ExpertTeamCard', () => {
     expect(screen.getByText(team.emoji)).toBeInTheDocument()
   })
 
-  it('shows expert count for staffed teams', () => {
+  it('shows expert roster avatars for staffed teams', () => {
     const team = EXPERT_TEAMS.find((t) => t.id === 'strategy')!
     render(<ExpertTeamCard team={team} onStart={() => {}} />)
-    expect(screen.getByText(/4 位专家/)).toBeInTheDocument()
+    // The roster container exists and has one entry per expert.
+    const roster = screen.getByTestId('expert-team-roster')
+    // Each expert name appears as the label under its avatar.
+    for (const expert of team.experts) {
+      expect(roster).toHaveTextContent(expert.name)
+    }
+  })
+
+  it('falls back to dynamic-roster hint when experts is empty', () => {
+    const team = EXPERT_TEAMS.find((t) => t.id === 'roundtable')!
+    render(<ExpertTeamCard team={team} onStart={() => {}} />)
+    expect(screen.queryByTestId('expert-team-roster')).toBeNull()
+    expect(screen.getByText(/主持人按议题召集/)).toBeInTheDocument()
   })
 
   it('shows example chips', () => {

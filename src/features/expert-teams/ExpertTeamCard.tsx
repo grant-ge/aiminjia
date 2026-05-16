@@ -1,5 +1,6 @@
 // code/src/features/expert-teams/ExpertTeamCard.tsx
 import type { ExpertTeam, ExpertTeamId } from './teams'
+import { getExpertAvatarUrl } from './expertAvatar'
 
 interface ExpertTeamCardProps {
   team: ExpertTeam
@@ -7,8 +8,6 @@ interface ExpertTeamCardProps {
 }
 
 export function ExpertTeamCard({ team, onStart }: ExpertTeamCardProps) {
-  const expertCountLabel =
-    team.experts.length > 0 ? `${team.experts.length} 位专家` : '主持人按议题召集'
   return (
     <button
       type="button"
@@ -23,7 +22,44 @@ export function ExpertTeamCard({ team, onStart }: ExpertTeamCardProps) {
         <span className="text-base font-medium">{team.name}</span>
       </div>
       <p className="text-sm text-muted-foreground">{team.tagline}</p>
-      <p className="text-xs text-muted-foreground">{expertCountLabel}</p>
+
+      {/* Member roster — pre-generated DiceBear "personas" avatars,
+          stored under public/expert-avatars/<teamId>/. Open-table teams
+          have empty experts[] (主持人按议题召集); we show a hint instead. */}
+      {team.experts.length > 0 ? (
+        <div className="flex flex-wrap gap-2.5" data-testid="expert-team-roster">
+          {team.experts.map((expert) => {
+            const avatarUrl = getExpertAvatarUrl(team.id, expert.name)
+            return (
+              <div
+                key={expert.name}
+                title={`${expert.name} — ${expert.persona}`}
+                className="flex flex-col items-center gap-0.5"
+              >
+                <span className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-border bg-muted/40">
+                  {avatarUrl ? (
+                    <img
+                      src={avatarUrl}
+                      alt=""
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <span aria-hidden className="text-lg">
+                      {expert.emoji}
+                    </span>
+                  )}
+                </span>
+                <span className="max-w-[64px] truncate text-[10px] leading-tight text-muted-foreground">
+                  {expert.name}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">主持人按议题召集</p>
+      )}
+
       <div className="mt-auto flex flex-wrap gap-1.5">
         {team.examples.map((ex) => (
           <span

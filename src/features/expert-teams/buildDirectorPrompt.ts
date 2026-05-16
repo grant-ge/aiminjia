@@ -2,7 +2,7 @@ import type { ExpertTeam } from './teams'
 
 function renderRoster(team: ExpertTeam): string {
   if (team.experts.length === 0) return '（待主持人按议题召集）'
-  return team.experts.map((e) => `- ${e.name}：${e.persona}`).join('\n')
+  return team.experts.map((e) => `- ${e.emoji} ${e.name}：${e.persona}`).join('\n')
 }
 
 function rounds(team: ExpertTeam, topic: string): string {
