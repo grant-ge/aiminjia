@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Neutral user avatar — head + shoulders, no gender / facial features.
+  Stroke + fill both reference CSS custom properties so it picks up the
+  tenant brand accent automatically:
+
+    color: hsl/var(--primary)            ← used by `currentColor`
+
+  Usage: <img src="/user-avatar-neutral.svg" /> inherits the surrounding
+  text color via `currentColor`, OR explicitly set
+  `style={{ color: 'var(--primary)' }}` on the wrapping span.
+-->
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 64 64"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="3"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <!-- subtle background disc -->
+  <circle cx="32" cy="32" r="30" fill="currentColor" fill-opacity="0.12" stroke="none" />
+  <!-- head -->
+  <circle cx="32" cy="24" r="9" fill="currentColor" fill-opacity="0.85" stroke="none" />
+  <!-- shoulders -->
+  <path
+    d="M14 50c2.8-7.9 10-12 18-12s15.2 4.1 18 12"
+    fill="currentColor"
+    fill-opacity="0.85"
+    stroke="none"
+  />
+</svg>

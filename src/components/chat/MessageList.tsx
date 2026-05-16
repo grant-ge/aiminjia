@@ -186,7 +186,7 @@ export function MessageList() {
                   conversationId={activeConversationId ?? undefined}
                 />
               ) : (
-                <ChatRow role="user" name={userName} avatarUrl={userAvatarUrl}>
+                <ChatRow role="user" name={userName} avatarUrl={userAvatarUrl} avatarVariant="neutral">
                   <UserMessageBubble
                     text={t.userMessage.text}
                     commandText={t.userMessage.commandText}

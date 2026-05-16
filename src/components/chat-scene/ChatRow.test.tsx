@@ -36,6 +36,25 @@ describe('ChatAvatar', () => {
     expect(av.getAttribute('aria-label')).toBe('小研')
     expect(av.getAttribute('title')).toBe('小研')
   })
+
+  it('variant="neutral" renders the brand silhouette + sets color: var(--primary)', () => {
+    render(<ChatAvatar name="我" variant="neutral" />)
+    const av = screen.getByTestId('chat-avatar')
+    expect(av.getAttribute('data-variant')).toBe('neutral')
+    const img = av.querySelector('img')
+    expect(img?.getAttribute('src')).toBe('/user-avatar-neutral.svg')
+    // CSS color is set on the wrapper so the SVG (currentColor) picks it up.
+    expect((av as HTMLElement).style.color).toBe('var(--primary)')
+    // No initial glyph is rendered when the neutral SVG is in use.
+    expect(av.textContent?.trim()).toBe('')
+  })
+
+  it('explicit src wins over variant="neutral"', () => {
+    render(<ChatAvatar name="x" src="/brand-avatar-gold.svg" variant="neutral" />)
+    const av = screen.getByTestId('chat-avatar')
+    expect(av.getAttribute('data-variant')).toBe('image')
+    expect(av.querySelector('img')?.getAttribute('src')).toBe('/brand-avatar-gold.svg')
+  })
 })
 
 describe('ChatRow', () => {

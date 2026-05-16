@@ -22,12 +22,18 @@ interface ChatRowProps {
   role: 'user' | 'assistant'
   name: string
   avatarUrl?: string | null
+  /**
+   * Fallback variant when `avatarUrl` is null. `'neutral'` paints the
+   * gender-free brand-tinted silhouette (default for the current user),
+   * `'initial'` paints the first character on a hashed palette color.
+   */
+  avatarVariant?: 'initial' | 'neutral'
   /** Background color seed for the avatar fallback. Defaults to `name`. */
   colorSeed?: string
   children: ReactNode
 }
 
-export function ChatRow({ role, name, avatarUrl, colorSeed, children }: ChatRowProps) {
+export function ChatRow({ role, name, avatarUrl, avatarVariant, colorSeed, children }: ChatRowProps) {
   const isUser = role === 'user'
   // We anchor the header (avatar+name) at the top so multi-line bubbles
   // don't drift the avatar to the middle. `items-start` does that.
@@ -40,7 +46,12 @@ export function ChatRow({ role, name, avatarUrl, colorSeed, children }: ChatRowP
       className={`flex w-full items-start gap-2 ${rowDir}`}
     >
       <div className="flex shrink-0 flex-col items-center gap-1 pt-1">
-        <ChatAvatar name={name} src={avatarUrl ?? null} colorSeed={colorSeed} />
+        <ChatAvatar
+          name={name}
+          src={avatarUrl ?? null}
+          variant={avatarVariant}
+          colorSeed={colorSeed}
+        />
       </div>
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div
