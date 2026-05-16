@@ -10,7 +10,8 @@ use std::path::Path;
 
 use crate::runtime::employee::store::EmployeeRecord;
 use crate::runtime::employee::template_store::{
-    effective_default_skill_id, effective_skill_ids, effective_system_prompt_extra,
+    effective_default_skill_id, effective_requires_attachment, effective_skill_ids,
+    effective_system_prompt_extra,
 };
 
 /// Build the user-facing prompt sent on employee dispatch.
@@ -89,9 +90,12 @@ pub fn build_dispatch_prompt(
     }
 
     if all_skills.len() == 1 {
-        // Single skill — keep the original concise format.
+        // Single skill — keep the original concise format. Use imperative
+        // tool-call phrasing ("使用 X 工具") rather than function-call
+        // syntax ("Skill(skill_id='...')") so the LLM doesn't mistake the
+        // hint for a reasoning step it can satisfy with prose.
         config_lines.push(format!(
-            "- 默认技能：{} —— 请第一步调用 Skill(skill_id='{}') 加载工作流",
+            "- 默认技能：{} —— 第一步请使用 Skill 工具（参数 skill_id=\"{}\"）加载工作流",
             all_skills[0], all_skills[0]
         ));
     } else if all_skills.len() > 1 {
@@ -99,13 +103,13 @@ pub fn build_dispatch_prompt(
         config_lines.push("- 可用技能：".to_string());
         for (i, sid) in all_skills.iter().enumerate() {
             if i == 0 {
-                config_lines.push(format!("  · {sid}（默认，请第一步加载）"));
+                config_lines.push(format!("  · {sid}（默认，第一步请加载）"));
             } else {
                 config_lines.push(format!("  · {sid}"));
             }
         }
         config_lines.push(format!(
-            "  请用 Skill(skill_id='<id>') 按需加载，首先加载 {}。",
+            "  请用 Skill 工具按需加载（参数 skill_id），首先加载 {}。",
             all_skills[0]
         ));
     }
@@ -136,6 +140,15 @@ pub fn build_dispatch_prompt(
         format!("\n\n【本次工作配置】\n{}", config_lines.join("\n"))
     };
 
+    // PR-10: when the template declares `requires_attachment`, we used to
+    // pop a native file picker before dispatch. The picker felt jarring
+    // (came out of nowhere when clicking 派活). Now we open the chat
+    // first and let the LLM ask for the files in its first turn. This
+    // hint goes outside the 【本次工作配置】 block because it's an
+    // instruction to the agent about what to do first, not a fact about
+    // the workspace.
+    let attachment_hint = build_attachment_hint(employees_root, &employee.id);
+
     let user_request = prompt_override.unwrap_or("").trim();
     let user_block = if user_request.is_empty() {
         String::new()
@@ -144,7 +157,42 @@ pub fn build_dispatch_prompt(
     };
 
     format!(
-        "{identity_block}{extra}\n{trigger_label}{catchup}{user_block}{config_block}\n\n请立即开始按职责执行，不要等待用户额外指示。"
+        "{identity_block}{extra}\n{trigger_label}{catchup}{user_block}{config_block}{attachment_hint}\n\n请立即开始按职责执行，不要等待用户额外指示。"
+    )
+}
+
+/// Build the in-chat "please ask the user to attach files" hint for templates
+/// with `requires_attachment`. Returns an empty string when the snapshot has
+/// no attachment requirement (most templates).
+///
+/// Format produced (when active):
+///   \n\n【附件】用户尚未在派活时上传文件。请第一步用友好的语气引导用户
+///   把所需的 PDF/DOCX 等文件拖入对话框或粘贴附件后，再开始正式工作。
+fn build_attachment_hint(employees_root: Option<&Path>, employee_id: &str) -> String {
+    let Some(root) = employees_root else {
+        return String::new();
+    };
+    let Some(spec) = effective_requires_attachment(root, employee_id) else {
+        return String::new();
+    };
+    // Best-effort extraction of accept / min / max for a friendlier hint.
+    let accept = spec.get("accept").and_then(|v| v.as_str()).unwrap_or("");
+    let min = spec.get("min").and_then(|v| v.as_i64()).unwrap_or(1);
+    let max = spec.get("max").and_then(|v| v.as_i64()).unwrap_or(1);
+    let count_phrase = if min == max {
+        format!("{min} 份")
+    } else {
+        format!("{min}–{max} 份")
+    };
+    let file_phrase = if accept.is_empty() {
+        "所需文件".to_string()
+    } else {
+        format!("{accept} 格式的文件")
+    };
+    format!(
+        "\n\n【附件】本次派活没有附带文件。\
+请第一步用友好的语气引导用户把 {count_phrase} {file_phrase} 拖入对话框（或粘贴附件、点击 + 按钮），\
+看到附件成功显示后再开始正式工作。引导时不要让用户感到突兀，先简短问候并说明你将做什么。"
     )
 }
 
@@ -455,7 +503,7 @@ mod tests {
         let e = employee(Some("competitive-intelligence"), serde_json::json!({}));
         let p = build_dispatch_prompt(&e, "[按需派活]", None, None, None);
         assert!(
-            p.contains("Skill(skill_id='competitive-intelligence')"),
+            p.contains("skill_id=\"competitive-intelligence\""),
             "missing skill hint: {p}"
         );
     }
@@ -470,7 +518,7 @@ mod tests {
         let p = build_dispatch_prompt(&e, "[按需派活]", None, None, None);
         assert!(p.contains("可用技能"), "should use multi-skill format: {p}");
         assert!(
-            p.contains("dingtalk-workspace（默认，请第一步加载）"),
+            p.contains("dingtalk-workspace（默认，第一步请加载）"),
             "default should be marked: {p}"
         );
         assert!(
@@ -516,7 +564,7 @@ mod tests {
         let p = build_dispatch_prompt(&e, "[按需派活]", None, None, None);
         assert!(p.contains("可用技能"), "should use multi-skill format: {p}");
         assert!(
-            p.contains("sales-followup-rules（默认，请第一步加载）"),
+            p.contains("sales-followup-rules（默认，第一步请加载）"),
             "first skill should be marked as default: {p}"
         );
     }
@@ -818,6 +866,83 @@ mod tests {
         assert!(
             p.contains("资源配置") && p.contains("custom_field"),
             "fallback to raw JSON broken: {p}"
+        );
+    }
+
+    // ── PR-10: attachment hint ─────────────────────────────────────────────
+
+    #[test]
+    fn attachment_hint_injected_when_snapshot_requires_attachment() {
+        use crate::runtime::employee::template_store::{
+            ensure_instance_snapshot, TemplateSnapshot,
+        };
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let mut e = employee(None, serde_json::json!({}));
+        e.id = "emp-xiaofa".into();
+        e.template_id = Some("builtin:xiaofa".into());
+        let snap = TemplateSnapshot {
+            template_id: "builtin:xiaofa".into(),
+            version: "1.0.0".into(),
+            name: e.name.clone(),
+            avatar: e.avatar.clone(),
+            role: e.role.clone(),
+            description: e.description.clone(),
+            badge: "".into(),
+            system_prompt_extra: "".into(),
+            tool_whitelist: vec![],
+            cron: "".into(),
+            default_skill_id: "".into(),
+            skill_ids: vec![],
+            requires_dingtalk: false,
+            requires_attachment: serde_json::json!({
+                "accept": ".pdf,.docx",
+                "min": 1,
+                "max": 5,
+            }),
+            resource_config_schema: serde_json::Value::Null,
+            resource_config_ui: serde_json::Value::Null,
+        };
+        ensure_instance_snapshot(&root.join(&e.id), &snap, "bootstrap").unwrap();
+        let p = build_dispatch_prompt(&e, "[按需派活]", None, None, Some(root));
+        assert!(p.contains("【附件】"), "missing attachment block: {p}");
+        assert!(p.contains(".pdf,.docx"), "accept missing: {p}");
+        assert!(p.contains("1–5 份") || p.contains("1-5 份"), "count phrase missing: {p}");
+        assert!(p.contains("拖入对话框"), "guide phrasing missing: {p}");
+    }
+
+    #[test]
+    fn attachment_hint_absent_when_snapshot_has_no_requirement() {
+        use crate::runtime::employee::template_store::{
+            ensure_instance_snapshot, TemplateSnapshot,
+        };
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let mut e = employee(None, serde_json::json!({}));
+        e.id = "emp-no-attach".into();
+        let snap = TemplateSnapshot {
+            template_id: "builtin:xiaoyuan".into(),
+            version: "1.0.0".into(),
+            name: e.name.clone(),
+            avatar: e.avatar.clone(),
+            role: e.role.clone(),
+            description: e.description.clone(),
+            badge: "".into(),
+            system_prompt_extra: "".into(),
+            tool_whitelist: vec![],
+            cron: "".into(),
+            default_skill_id: "".into(),
+            skill_ids: vec![],
+            requires_dingtalk: false,
+            requires_attachment: serde_json::Value::Null,
+            resource_config_schema: serde_json::Value::Null,
+            resource_config_ui: serde_json::Value::Null,
+        };
+        ensure_instance_snapshot(&root.join(&e.id), &snap, "bootstrap").unwrap();
+        let p = build_dispatch_prompt(&e, "[按需派活]", None, None, Some(root));
+        assert!(
+            !p.contains("【附件】"),
+            "attachment block should NOT appear when no requirement: {p}"
         );
     }
 }

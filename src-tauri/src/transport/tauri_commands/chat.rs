@@ -3686,23 +3686,24 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
                 )
             });
 
-            // Snapshot-first tool whitelist (PR5): the template snapshot at
-            // `<employees_dir>/<id>/template/template.json` is authoritative.
-            // Falls back to `employee_clone.tool_whitelist` for pre-PR3
-            // employees that haven't been stamped yet — those will be
-            // back-filled on the next `EmployeeStore::get/list`.
-            let effective_whitelist =
-                crate::runtime::employee::template_store::effective_tool_whitelist(
-                    employees_dir_async.as_path(),
-                    &employee_clone.id,
-                    &employee_clone.tool_whitelist,
-                );
-
+            // PR-11 (2026-05-15): tool whitelisting per employee is retired.
+            // Rationale documented in docs/plans/2026-05-15-employee-deep-fix.md:
+            // - the snapshot/record tool_whitelist drifted from runtime tool
+            //   names (e.g. "load_skill" → "Skill", "bash" → "Bash") whenever
+            //   tools got refactored, leaving employees silently unable to
+            //   call the very tools the prompt asked them to use
+            // - permission/sandbox already gate sensitive actions; the
+            //   whitelist was a redundant second gate with no per-employee
+            //   user value
+            // We pass an empty whitelist; `load_turn_config_overrides`
+            // treats empty as "no schema filter" and the agent loop sees
+            // the full tool catalog. `max_iterations: 120` (longer than the
+            // default user-driven cap) is preserved.
             let _guard = OverrideGuard::install(
                 adapter.services.employee_run_overrides.clone(),
                 conv_id.clone(),
                 EmployeeRunOverrides {
-                    tool_whitelist: effective_whitelist.into_iter().collect(),
+                    tool_whitelist: std::collections::HashSet::new(),
                     max_iterations: 120,
                 },
             );
