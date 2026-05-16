@@ -1120,6 +1120,11 @@ export interface SkillInfo {
    * 当前实现：技能根目录 mtime（见 src-tauri/src/plugin/skill/updated_at.rs）。
    */
   updatedAt: string | null
+  /**
+   * SKILL.md frontmatter `version:` 字段。前端把它作为 chip 显示在
+   * 技能卡片标题旁；技能没声明 version 时为 null。
+   */
+  version?: string | null
 }
 
 /** Combined plugin info (tools + skills) */

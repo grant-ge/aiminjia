@@ -109,6 +109,9 @@ pub struct SkillInfo {
     /// 来源由 `plugin::skill::updated_at::SkillUpdatedAtResolver` 决定，
     /// 当前默认走 `DirMtimeResolver`（技能根目录 mtime）。
     pub updated_at: Option<String>,
+    /// 来自 SKILL.md frontmatter 的 `version:` 字段。前端把它作为
+    /// chip 显示在卡片标题旁。读不到时为 None。
+    pub version: Option<String>,
 }
 
 /// Pure function for testability: list all skills in the new disk-backed registry.
@@ -144,6 +147,7 @@ pub fn list_skills_from_registry_with_resolver(
                     crate::plugin::skill::types::SkillSource::Global => "global".to_string(),
                 },
                 updated_at: resolver.resolve(skill),
+                version: skill.frontmatter.version.clone(),
             })
         })
         .collect()

@@ -9,9 +9,15 @@ interface SkillCardProps {
   onClick?: () => void
   size?: 'hot' | 'office'
   actionsSlot?: ReactNode
+  /**
+   * Optional version chip shown next to the title (e.g. "v1.2"). Rendered
+   * only when non-empty. Source: `SkillInfo.version`, pulled from the
+   * SKILL.md frontmatter `version:` field by the backend.
+   */
+  version?: string | null
 }
 
-export function SkillCard({ title, meta, desc, iconNode, iconBg = 'bg-brand-primary-subtle', onClick, size = 'office', actionsSlot }: SkillCardProps) {
+export function SkillCard({ title, meta, desc, iconNode, iconBg = 'bg-brand-primary-subtle', onClick, size = 'office', actionsSlot, version }: SkillCardProps) {
   const isHot = size === 'hot'
   const height = isHot ? 'h-[140px]' : 'h-[120px]'
   const iconSize = isHot ? 'h-9 w-9' : 'h-[34px] w-[34px]'
@@ -41,7 +47,18 @@ export function SkillCard({ title, meta, desc, iconNode, iconBg = 'bg-brand-prim
           {iconNode}
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="truncate text-sm font-semibold text-foreground">{title}</span>
+          <div className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate text-sm font-semibold text-foreground">{title}</span>
+            {version ? (
+              <span
+                data-testid="skill-card-version"
+                title={version}
+                className="shrink-0 rounded-full border border-border bg-muted px-1.5 py-0 font-mono text-[10px] leading-relaxed text-muted-foreground"
+              >
+                v{version}
+              </span>
+            ) : null}
+          </div>
           <span className="text-xs font-medium text-brand-secondary">{meta}</span>
         </div>
       </div>

@@ -33,6 +33,8 @@ import { SkillOfficeSection } from '@/components/skills/SkillOfficeSection'
 import { Button } from '@/components/ui/button'
 import { SKILL_CATEGORIES, type SkillCategoryId } from '@/data/skill-categories'
 import { useChat } from '@/hooks/useChat'
+import { syncBuiltinSkills } from '@/lib/tauri'
+import { useAuthStore } from '@/stores/authStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { useSkillStore } from '@/stores/skillStore'
 import { useUiStore } from '@/stores/uiStore'
@@ -89,6 +91,8 @@ export function SkillCenterPage() {
   const [validationFailure, setValidationFailure] = useState<
     { kind: SkillValidationKind; detail?: string } | null
   >(null)
+  const [syncing, setSyncing] = useState(false)
+  const [checkingId, setCheckingId] = useState<string | null>(null)
   const skills = useSkillStore((s) => s.skills)
   const isLoading = useSkillStore((s) => s.isLoading)
   const reload = useSkillStore((s) => s.reload)
@@ -97,6 +101,7 @@ export function SkillCenterPage() {
   const listByCategory = useSkillStore((s) => s.listByCategory)
   const setRoute = useUiStore((s) => s.setRoute)
   const pushNotification = useNotificationStore((s) => s.push)
+  const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
   useChat()
 
   const handleImportDirectory = useCallback(async () => {
@@ -168,6 +173,76 @@ export function SkillCenterPage() {
         autoHide: 6,
         context: 'toast',
       })
+    }
+  }
+
+  const handleSyncBuiltin = async () => {
+    if (syncing) return
+    setSyncing(true)
+    try {
+      const result = await syncBuiltinSkills()
+      await reload()
+      pushNotification({
+        level: 'success',
+        title:
+          result.installed.length > 0
+            ? `同步完成，更新 ${result.installed.length} 个技能`
+            : '已是最新',
+        message: '',
+        actions: [],
+        dismissible: true,
+        autoHide: 4,
+        context: 'toast',
+      })
+    } catch (err) {
+      pushNotification({
+        level: 'error',
+        title: '同步失败',
+        message: err instanceof Error ? err.message : String(err),
+        actions: [],
+        dismissible: true,
+        autoHide: 6,
+        context: 'toast',
+      })
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  /**
+   * Per-card check-update: reuses the global sync IPC and inspects the
+   * `installed` array to surface a card-targeted toast. Avoids a separate
+   * per-skill backend command — the OPS list API has no per-skill query
+   * so a dedicated command would still fetch the whole list.
+   */
+  const handleCheckSkillUpdate = async (skillId: string, displayName: string) => {
+    if (checkingId || syncing) return
+    setCheckingId(skillId)
+    try {
+      const result = await syncBuiltinSkills()
+      await reload()
+      const updated = result.installed.includes(skillId)
+      pushNotification({
+        level: 'success',
+        title: updated ? '有新版本' : '已是最新',
+        message: displayName,
+        actions: [],
+        dismissible: true,
+        autoHide: 4,
+        context: 'toast',
+      })
+    } catch (err) {
+      pushNotification({
+        level: 'error',
+        title: '检查更新失败',
+        message: err instanceof Error ? err.message : String(err),
+        actions: [],
+        dismissible: true,
+        autoHide: 6,
+        context: 'toast',
+      })
+    } finally {
+      setCheckingId(null)
     }
   }
 
@@ -272,6 +347,17 @@ export function SkillCenterPage() {
                 placeholder="搜索技能名称或场景"
               />
             </div>
+            {isLoggedIn && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void handleSyncBuiltin()}
+                disabled={syncing}
+                data-testid="skills-sync-builtin"
+              >
+                {syncing ? '同步中...' : '同步内置技能'}
+              </Button>
+            )}
             <Button size="sm" onClick={() => void handleImportDirectory()}>
               + 导入技能
             </Button>
@@ -313,46 +399,70 @@ export function SkillCenterPage() {
             />
           )
         ) : (
-          officeSkills.map((skill) => (
-            <SkillCard
-              key={skill.id}
-              title={skill.displayName}
-              meta={getSkillMeta(skill.source, skill.category)}
-              desc={skill.shortDescription || skill.description}
-              iconNode={getSkillIcon(skill.icon)}
-              iconBg={getIconBg(skill.category)}
-              onClick={() => setRoute({ kind: 'skill-detail', skillId: skill.id })}
-              actionsSlot={skill.source !== 'user' ? (
-                <div aria-hidden="true" className="h-7 w-7" />
-              ) : (
-                <AppDropdown
-                  ariaLabel={`${skill.displayName} 更多操作`}
-                  trigger={
-                    <button
-                      type="button"
-                      className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-                    >
-                      <MoreHorizontal className="h-4 w-4" />
-                    </button>
-                  }
-                  items={[
-                    {
-                      id: 'export',
-                      label: '导出',
-                      onSelect: () => void handleExportSkill(skill.id, skill.displayName),
-                    },
-                    {
-                      id: 'delete',
-                      label: '删除技能',
-                      icon: <Trash2 />,
-                      className: 'text-destructive [&_svg]:text-destructive',
-                      onSelect: () => void handleDeleteSkill(skill.id, skill.displayName),
-                    },
-                  ]}
-                />
-              )}
-            />
-          ))
+          officeSkills.map((skill) => {
+            const isUserSkill = skill.source === 'user'
+            const menuItems: Array<{
+              id: string
+              label: string
+              icon?: React.ReactNode
+              className?: string
+              disabled?: boolean
+              onSelect: () => void
+            }> = []
+            if (isUserSkill) {
+              menuItems.push({
+                id: 'export',
+                label: '导出',
+                onSelect: () => void handleExportSkill(skill.id, skill.displayName),
+              })
+              menuItems.push({
+                id: 'delete',
+                label: '删除技能',
+                icon: <Trash2 />,
+                className: 'text-destructive [&_svg]:text-destructive',
+                onSelect: () => void handleDeleteSkill(skill.id, skill.displayName),
+              })
+            } else if (isLoggedIn) {
+              // Non-user skills (builtin / global) can be re-synced from OPS.
+              menuItems.push({
+                id: 'check-update',
+                label: checkingId === skill.id ? '检查中...' : '检查更新',
+                disabled: checkingId === skill.id || syncing,
+                onSelect: () =>
+                  void handleCheckSkillUpdate(skill.id, skill.displayName),
+              })
+            }
+            return (
+              <SkillCard
+                key={skill.id}
+                title={skill.displayName}
+                meta={getSkillMeta(skill.source, skill.category)}
+                desc={skill.shortDescription || skill.description}
+                iconNode={getSkillIcon(skill.icon)}
+                iconBg={getIconBg(skill.category)}
+                version={skill.version}
+                onClick={() => setRoute({ kind: 'skill-detail', skillId: skill.id })}
+                actionsSlot={
+                  menuItems.length === 0 ? (
+                    <div aria-hidden="true" className="h-7 w-7" />
+                  ) : (
+                    <AppDropdown
+                      ariaLabel={`${skill.displayName} 更多操作`}
+                      trigger={
+                        <button
+                          type="button"
+                          className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                        >
+                          <MoreHorizontal className="h-4 w-4" />
+                        </button>
+                      }
+                      items={menuItems}
+                    />
+                  )
+                }
+              />
+            )
+          })
         )}
       </SkillOfficeSection>
     </PageSectionShell>
