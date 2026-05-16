@@ -14,6 +14,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { deriveStatus, type EmployeeStatus } from './EmployeeCard'
+import { useChatStore } from '@/stores/chatStore'
 import { useSkillStore } from '@/stores/skillStore'
 import { useUiStore } from '@/stores/uiStore'
 import { findTemplate } from './templates'
@@ -21,6 +22,7 @@ import { ResourceConfigForm } from './ResourceConfigForm'
 import { runTriggerPrechecks } from './triggerPrechecks'
 import { CronEditDialog } from './CronEditDialog'
 import { formatRelativeNextRun } from './timeFormat'
+import { seedDispatchConversation } from './seedDispatchConversation'
 
 function detectFileType(path: string): ChatAttachmentPayload['fileType'] {
   const ext = path.split('.').pop()?.toLowerCase() ?? ''
@@ -41,10 +43,7 @@ function statusBadgeClass(status: EmployeeStatus): string {
   switch (status) {
     case 'running': return 'bg-blue-100 text-blue-700 animate-pulse'
     case 'has-report': return 'bg-green-100 text-green-700'
-    case 'paused': return 'bg-slate-200 text-slate-600'
     case 'needs-setup': return 'bg-orange-100 text-orange-700'
-    case 'scheduled': return 'bg-amber-100 text-amber-800'
-    case 'archived': return 'bg-slate-200 text-slate-400'
     case 'idle':
     default:
       return 'bg-muted text-muted-foreground'
@@ -55,10 +54,7 @@ function statusText(status: EmployeeStatus): string {
   switch (status) {
     case 'running': return '🔵 运行中'
     case 'has-report': return '🟢 有汇报'
-    case 'paused': return '⏸ 已暂停'
     case 'needs-setup': return '🟠 需要配置'
-    case 'scheduled': return '🟡 定时待发'
-    case 'archived': return '🗑 已解雇'
     case 'idle':
     default:
       return '⚪ 空闲'
@@ -115,6 +111,23 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
 
   const triggerNow = async (attachments: ChatAttachmentPayload[]) => {
     const convId = await employeeTrigger(emp.id, undefined, attachments)
+    // Synchronously seed chatStore so the sidebar + MessageList have a stable
+    // anchor before the backend's async `conversation:created` event arrives.
+    // Without this, `setRoute({chat, convId})` below can race ahead of the
+    // App.tsx reload listener — the new chat page mounts, calls getMessages,
+    // gets [] (the spawned agent hasn't yet persisted the dispatch prompt),
+    // and the user sees a blank chat with no way to find this conversation
+    // in the sidebar until the reload eventually lands.
+    const chatStore = useChatStore.getState()
+    const nextConversations = seedDispatchConversation(
+      chatStore.conversations,
+      convId,
+      emp.name,
+    )
+    if (nextConversations !== chatStore.conversations) {
+      chatStore.setConversations(nextConversations)
+    }
+    chatStore.setMessages([])
     await onRefresh()
     onClose()
     setRoute({ kind: 'chat', conversationId: convId })
@@ -236,22 +249,12 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
     }
   }
 
-  const handlePauseEmployee = async () => {
-    const next: 'active' | 'paused' = emp.lifecycle === 'paused' ? 'active' : 'paused'
-    setBusy(true)
-    try {
-      await employeeUpdate(emp.id, { lifecycle: next })
-      await onRefresh()
-    } catch (err) {
-      console.error('[EmployeeDrawer] pause error:', err)
-      alert(`操作失败：${String(err)}`)
-    } finally {
-      setBusy(false)
-    }
-  }
-
   const handleDismiss = async () => {
-    if (!confirm(`确定解雇「${emp.name}」吗？\n\n该员工将在 7 天后从系统中清除，期间可在首页"已解雇"区一键恢复。`)) {
+    if (
+      !confirm(
+        `确定删除「${emp.name}」吗？\n\n此操作不可恢复。该员工的配置将被永久清除，相关的会话记录会保留。`,
+      )
+    ) {
       return
     }
     setBusy(true)
@@ -261,7 +264,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
       onClose()
     } catch (err) {
       console.error('[EmployeeDrawer] dismiss error:', err)
-      alert(`解雇失败：${String(err)}`)
+      alert(`删除失败：${String(err)}`)
     } finally {
       setBusy(false)
     }
@@ -449,15 +452,11 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
               <Button
                 className="w-full gap-1.5"
                 size="lg"
-                disabled={busy || emp.lifecycle === 'paused' || emp.lifecycle === 'archived'}
+                disabled={busy || emp.lifecycle === 'archived'}
                 onClick={handleTrigger}
               >
                 <MessageSquare className="h-4 w-4" />
-                {emp.lifecycle === 'paused'
-                  ? '员工已暂停 — 先恢复才能派活'
-                  : emp.lifecycle === 'archived'
-                    ? '员工已解雇'
-                    : '现在派活'}
+                {emp.lifecycle === 'archived' ? '员工已删除' : '现在派活'}
               </Button>
 
               {/* Cron management row */}
@@ -506,34 +505,24 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
               )}
 
               {/* Tertiary actions */}
-              <div className="flex items-center justify-between border-t border-border/50 pt-2 text-xs">
-                <button
-                  type="button"
-                  onClick={handlePauseEmployee}
-                  disabled={busy}
-                  className="text-muted-foreground hover:text-foreground"
-                >
-                  {emp.lifecycle === 'paused' ? '▶ 恢复员工' : '⏸ 暂停员工'}
-                </button>
-                <div className="flex items-center gap-3">
-                  {template && template.resourceConfigKind !== 'none' && (
-                    <button
-                      type="button"
-                      onClick={() => setResourceModalOpen(true)}
-                      className="text-muted-foreground hover:text-foreground"
-                    >
-                      ⚙️ 配置资源
-                    </button>
-                  )}
+              <div className="flex items-center justify-end gap-3 border-t border-border/50 pt-2 text-xs">
+                {template && template.resourceConfigKind !== 'none' && (
                   <button
                     type="button"
-                    onClick={handleDismiss}
-                    disabled={busy}
-                    className="text-muted-foreground hover:text-destructive"
+                    onClick={() => setResourceModalOpen(true)}
+                    className="text-muted-foreground hover:text-foreground"
                   >
-                    🗑 解雇
+                    ⚙️ 配置资源
                   </button>
-                </div>
+                )}
+                <button
+                  type="button"
+                  onClick={handleDismiss}
+                  disabled={busy}
+                  className="text-muted-foreground hover:text-destructive"
+                >
+                  🗑 删除
+                </button>
               </div>
             </div>
           )}

@@ -16,48 +16,40 @@ import { formatRelativeNextRun } from './timeFormat'
 export type EmployeeStatus =
   | 'running'
   | 'has-report'
-  | 'paused'
   | 'needs-setup'
-  | 'scheduled'
   | 'idle'
-  | 'archived'
 
 /**
- * Drive the card's primary visual state from a 2-dimensional state machine:
- * - Lifecycle (Active / Paused / Archived): persistent, user-controlled
- * - Activity (running / idle): real-time, derived from activeRun
+ * Drive the card's primary visual state from a small, mutually-exclusive
+ * state machine. PR-8 narrowed this from 7 states (archived / paused /
+ * scheduled / idle / needs-setup / running / has-report) to 4 because
+ * users could not reliably tell `scheduled` from `idle` (cron info is
+ * surfaced inline on the card anyway), and `archived` employees are
+ * filtered out of the grid by `EmployeesPage` so they never reach this
+ * function in normal flow.
  *
  * Priority (top wins):
- *   1. archived  — overrides everything for hidden display
- *   2. running   — backend truth, not inbox heuristic
- *   3. has-report — unread Report or Signal (informational badge)
- *   4. paused    — explicit lifecycle pause
- *   5. needs-setup — template requires resource_config that's missing
- *   6. scheduled — has cron + lifecycle=active + cron_enabled + nextRunAt
- *   7. idle      — default
+ *   1. running   — backend truth (`activeRun` is set)
+ *   2. has-report — unread Report or Signal (informational badge)
+ *   3. needs-setup — template requires resource_config that's missing
+ *   4. idle       — default (covers "scheduled" / "ready to dispatch")
  */
 export function deriveStatus(
   emp: EmployeeRecord,
   inboxEntries: InboxEntry[],
   activeRun: EmployeeActiveRunInfo | null = null,
 ): EmployeeStatus {
-  // 1. Archived — hidden in main grid (Task 6); show 🗑 marker if rendered
-  if (emp.lifecycle === 'archived') return 'archived'
-
-  // 2. Running — backend truth (replaces 10-min inbox heuristic)
+  // 1. Running — backend truth (replaces 10-min inbox heuristic)
   if (activeRun) return 'running'
 
-  // 3. Has unread report/signal
+  // 2. Has unread report/signal
   const empEntries = inboxEntries.filter((e) => e.employeeId === emp.id)
   const hasUnread = empEntries.some(
     (e) => !e.read && (e.kind === 'report' || e.kind === 'signal'),
   )
   if (hasUnread) return 'has-report'
 
-  // 4. Paused — explicit lifecycle state
-  if (emp.lifecycle === 'paused') return 'paused'
-
-  // 5. Needs setup — template-aware resource check
+  // 3. Needs setup — template-aware resource check
   const template = findTemplate(emp.templateId)
   if (template) {
     if (template.resourceConfigKind === 'sales-table') {
@@ -83,12 +75,8 @@ export function deriveStatus(
     }
   }
 
-  // 6. Scheduled — cron and all gates align
-  if (emp.cron && emp.lifecycle === 'active' && emp.cronEnabled && emp.nextRunAt) {
-    return 'scheduled'
-  }
-
-  // 7. Idle — default
+  // 4. Idle — default (includes "scheduled / cron-armed", which is shown
+  //    via the cron chip inline on the card)
   return 'idle'
 }
 
@@ -101,14 +89,8 @@ function StatusDot({ status }: { status: EmployeeStatus }) {
       return <span className={cn(base, 'bg-blue-500 animate-pulse')} />
     case 'has-report':
       return <span className={cn(base, 'bg-green-500')} />
-    case 'paused':
-      return <span className={cn(base, 'bg-slate-400')} />
     case 'needs-setup':
       return <span className={cn(base, 'bg-orange-400')} />
-    case 'scheduled':
-      return <span className={cn(base, 'bg-amber-400')} />
-    case 'archived':
-      return <span className={cn(base, 'bg-slate-300')} />
     default:
       return <span className={cn(base, 'bg-muted-foreground/30')} />
   }
@@ -118,10 +100,7 @@ function statusLabel(status: EmployeeStatus): string {
   switch (status) {
     case 'running': return '运行中'
     case 'has-report': return '有新汇报'
-    case 'paused': return '已暂停'
     case 'needs-setup': return '需要配置'
-    case 'scheduled': return '定时驻场'
-    case 'archived': return '已解雇'
     default: return '空闲'
   }
 }
@@ -162,7 +141,6 @@ export function EmployeeCard({ employee: emp, inboxEntries, activeRun = null, on
         status === 'has-report' && 'border-green-200 bg-green-50/30',
         status === 'running' && 'border-blue-200 bg-blue-50/20',
         status === 'needs-setup' && 'border-orange-200',
-        status === 'archived' && 'opacity-60',
       )}
     >
       {/* Header */}
@@ -193,14 +171,15 @@ export function EmployeeCard({ employee: emp, inboxEntries, activeRun = null, on
             status === 'has-report' && 'font-medium text-green-600',
             status === 'running' && 'font-medium text-blue-500',
             status === 'needs-setup' && 'font-medium text-orange-500',
-            status === 'paused' && 'text-slate-500',
-            status === 'scheduled' && 'text-amber-700',
-            !['has-report', 'running', 'needs-setup', 'paused', 'scheduled'].includes(status) && 'text-muted-foreground',
+            !['has-report', 'running', 'needs-setup'].includes(status) && 'text-muted-foreground',
           )}>
             {statusLabel(status)}
           </span>
-          {status === 'scheduled' && emp.nextRunAt && (
-            <span className="text-xs text-amber-700/80">
+          {/* Cron next-run hint is shown for any idle employee with an
+              armed cron — replaces the dedicated `scheduled` status
+              dropped in PR-8. */}
+          {status === 'idle' && emp.cron && emp.cronEnabled && emp.nextRunAt && (
+            <span className="text-xs text-muted-foreground/80">
               下次：{formatRelativeNextRun(emp.nextRunAt) || '即将'}
             </span>
           )}

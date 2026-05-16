@@ -15,7 +15,9 @@ const KIND_TABS: { key: KindFilter; label: string }[] = [
   { key: 'all', label: '全部' },
   { key: 'report', label: '汇报' },
   { key: 'signal', label: '提示' },
-  { key: 'running', label: '运行中' },
+  // PR-8: 'running' tab dropped — Running entries are no longer written
+  // (see backend `dispatch_employee_run`). Legacy entries still
+  // deserialize and will appear under "全部" if any remain on disk.
   { key: 'error', label: '异常' },
 ]
 
