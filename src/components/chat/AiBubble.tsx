@@ -3,6 +3,7 @@
  * in the fixed MESSAGE_CONTENT_RENDER_ORDER.
  * Based on visual-prototype-zh.html .msg-body styles.
  */
+import { memo } from 'react'
 import type {
   Message,
   MessageContent,
@@ -27,7 +28,7 @@ const AI_BUBBLE_RENDER_FIELDS = MESSAGE_CONTENT_RENDER_ORDER.filter((field) =>
   ['text', 'tables', 'subagentEnvelope'].includes(field),
 )
 
-export function AiBubble({ message, isStreaming }: AiBubbleProps) {
+function AiBubbleImpl({ message, isStreaming }: AiBubbleProps) {
   const { content } = message
 
   // Skip rendering if no meaningful content (prevents blank bubbles from
@@ -61,6 +62,8 @@ export function AiBubble({ message, isStreaming }: AiBubbleProps) {
     </div>
   )
 }
+
+export const AiBubble = memo(AiBubbleImpl)
 
 /**
  * ContentRenderer dispatches each MessageContent field to
