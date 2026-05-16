@@ -14,8 +14,13 @@ use crate::runtime::employee::cron::{compute_next_cron_run, parse_cron_expressio
 pub enum EmployeeLifecycle {
     /// Default after hiring; can be dispatched on-demand and via cron.
     Active,
-    /// User explicitly paused this employee. on-demand dispatch blocked,
-    /// cron is automatically blocked too. UI shows ⏸ with "恢复" action.
+    /// LEGACY (pre PR-6): user explicitly paused this employee.
+    /// **The feature was removed 2026-05-15**: it duplicated `cron_enabled`
+    /// for the cron-blocking case, and the "block on-demand dispatch" use
+    /// case has no real-world scenario (users delete the employee instead).
+    /// We keep the variant so older on-disk records still deserialize;
+    /// all read paths treat `Paused` as `Active` via
+    /// `EmployeeLifecycle::canonical()` (see below).
     Paused,
     /// Soft-deleted; hidden from main grid but recoverable for 7 days.
     /// scheduler ignores; on-demand dispatch returns error.
@@ -25,6 +30,18 @@ pub enum EmployeeLifecycle {
 impl Default for EmployeeLifecycle {
     fn default() -> Self {
         Self::Active
+    }
+}
+
+impl EmployeeLifecycle {
+    /// Returns the lifecycle value to act on. Legacy `Paused` records collapse
+    /// into `Active` so the rest of the runtime never has to branch on a
+    /// retired state. Use this in any read path that selects behavior.
+    pub fn canonical(self) -> Self {
+        match self {
+            Self::Paused => Self::Active,
+            other => other,
+        }
     }
 }
 
@@ -84,6 +101,11 @@ pub struct EmployeeRecord {
     /// `load_skill` as the first action when the employee is dispatched.
     /// `None` means no skill hint is injected.
     pub default_skill_id: Option<String>,
+    /// Additional skill ids available to this employee beyond the default.
+    /// Listed in the dispatch prompt so the LLM knows it can load them.
+    /// Empty = only the default skill (if any) is hinted.
+    #[serde(default)]
+    pub skill_ids: Vec<String>,
     /// Pointer to the template snapshot this instance was hired from. When
     /// present, the runtime should treat the snapshot at
     /// `<instance>/template/template.json` as the authoritative source for
@@ -116,6 +138,7 @@ pub struct CreateEmployeeRequest {
     pub resource_config: Option<serde_json::Value>,
     pub system_prompt_extra: Option<String>,
     pub default_skill_id: Option<String>,
+    pub skill_ids: Option<Vec<String>>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -133,6 +156,7 @@ pub struct UpdateEmployeeRequest {
     pub resource_config: Option<serde_json::Value>,
     pub system_prompt_extra: Option<Option<String>>,
     pub default_skill_id: Option<Option<String>>,
+    pub skill_ids: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone)]
@@ -247,6 +271,7 @@ impl EmployeeStore {
                 .unwrap_or(serde_json::Value::Object(Default::default())),
             system_prompt_extra: req.system_prompt_extra,
             default_skill_id: req.default_skill_id,
+            skill_ids: req.skill_ids.unwrap_or_default(),
             template_ref: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
@@ -275,11 +300,20 @@ impl EmployeeStore {
         let content =
             fs::read_to_string(&path).with_context(|| format!("employee not found: {id}"))?;
         let mut record: EmployeeRecord = serde_json::from_str(&content)?;
+        // PR-6: collapse legacy `Paused` lifecycle into `Active`. The pause
+        // feature was removed; on-disk records may still carry the value.
+        let pre_canonical = record.lifecycle;
+        record.lifecycle = record.lifecycle.canonical();
+        let canonicalized = pre_canonical != record.lifecycle;
+        let mut needs_write = canonicalized;
         if record.template_ref.is_none() {
             if let Some(ref_) = stamp_snapshot_for_record(&self.root, &record) {
                 record.template_ref = Some(ref_);
-                let _ = self.write_record(&record);
+                needs_write = true;
             }
+        }
+        if needs_write {
+            let _ = self.write_record(&record);
         }
         Ok(record)
     }
@@ -303,11 +337,20 @@ impl EmployeeStore {
             let content = fs::read_to_string(&path)?;
             match serde_json::from_str::<EmployeeRecord>(&content) {
                 Ok(mut r) => {
+                    // PR-6: collapse legacy `Paused` lifecycle into `Active`
+                    // and persist so subsequent reads don't keep converting.
+                    let pre_canonical = r.lifecycle;
+                    r.lifecycle = r.lifecycle.canonical();
+                    let canonicalized = pre_canonical != r.lifecycle;
+                    let mut needs_write = canonicalized;
                     if r.template_ref.is_none() {
                         if let Some(ref_) = stamp_snapshot_for_record(&self.root, &r) {
                             r.template_ref = Some(ref_);
-                            let _ = self.write_record(&r);
+                            needs_write = true;
                         }
+                    }
+                    if needs_write {
+                        let _ = self.write_record(&r);
                     }
                     records.push(r)
                 }
@@ -365,6 +408,9 @@ impl EmployeeStore {
         if let Some(v) = req.default_skill_id {
             record.default_skill_id = v;
         }
+        if let Some(v) = req.skill_ids {
+            record.skill_ids = v;
+        }
 
         // Recompute next_run_at based on updated cron/lifecycle/cron_enabled
         record.next_run_at = if record.lifecycle == EmployeeLifecycle::Active && record.cron_enabled
@@ -379,11 +425,15 @@ impl EmployeeStore {
 
         record.updated_at = Utc::now();
         self.write_record(&record)?;
-        match record.lifecycle {
+        match record.lifecycle.canonical() {
             EmployeeLifecycle::Active => self.notify_active(&record),
-            EmployeeLifecycle::Paused | EmployeeLifecycle::Archived => {
+            EmployeeLifecycle::Archived => {
                 self.notify_inactive(&record.id);
             }
+            // `Paused` is collapsed to `Active` by `canonical()`; the match
+            // arm above handles it. This explicit branch keeps the compiler
+            // happy with an exhaustive match without a wildcard hiding bugs.
+            EmployeeLifecycle::Paused => unreachable!("canonical() collapsed Paused → Active"),
         }
         Ok(record)
     }
@@ -654,6 +704,7 @@ mod tests {
             resource_config: None,
             system_prompt_extra: None,
             default_skill_id: None,
+            skill_ids: None,
         };
         let created = store.create(req).unwrap();
         assert!(created.id.starts_with("emp-"));
@@ -682,6 +733,7 @@ mod tests {
             resource_config: None,
             system_prompt_extra: None,
             default_skill_id: Some("competitive-intelligence".to_string()),
+            skill_ids: None,
         };
         let created = store.create(req).unwrap();
         assert_eq!(
@@ -717,6 +769,7 @@ mod tests {
                     resource_config: None,
                     system_prompt_extra: None,
                     default_skill_id: None,
+                    skill_ids: None,
                 })
                 .unwrap();
         }
@@ -743,6 +796,7 @@ mod tests {
                 resource_config: None,
                 system_prompt_extra: None,
                 default_skill_id: None,
+                skill_ids: None,
             })
             .unwrap();
         assert!(created.next_run_at.is_some());
@@ -779,6 +833,7 @@ mod tests {
                 resource_config: None,
                 system_prompt_extra: None,
                 default_skill_id: None,
+                skill_ids: None,
             })
             .unwrap();
 
@@ -807,6 +862,7 @@ mod tests {
                 resource_config: None,
                 system_prompt_extra: None,
                 default_skill_id: None,
+                skill_ids: None,
             })
             .unwrap();
 
@@ -825,6 +881,7 @@ mod tests {
                 resource_config: None,
                 system_prompt_extra: None,
                 default_skill_id: None,
+                skill_ids: None,
             })
             .unwrap();
 
@@ -843,6 +900,7 @@ mod tests {
                 resource_config: None,
                 system_prompt_extra: None,
                 default_skill_id: None,
+                skill_ids: None,
             })
             .unwrap();
 
@@ -877,7 +935,7 @@ mod tests {
             cron: None, timezone: None,
             lifecycle: Some(EmployeeLifecycle::Active),
             cron_enabled: Some(true), resource_config: None,
-            system_prompt_extra: None, default_skill_id: None,
+            system_prompt_extra: None, default_skill_id: None, skill_ids: None,
         }).unwrap();
 
         // Even if we lie about it being old, the lifecycle check should reject
@@ -908,7 +966,7 @@ mod tests {
             cron: None, timezone: None,
             lifecycle: Some(EmployeeLifecycle::Archived),
             cron_enabled: Some(true), resource_config: None,
-            system_prompt_extra: None, default_skill_id: None,
+            system_prompt_extra: None, default_skill_id: None, skill_ids: None,
         }).unwrap();
 
         let purged = store
@@ -938,6 +996,7 @@ mod tests {
                 resource_config: None,
                 system_prompt_extra: None,
                 default_skill_id: None,
+                skill_ids: None,
             })
             .unwrap();
 
@@ -1173,6 +1232,7 @@ mod sync_hook_tests {
             resource_config: None,
             system_prompt_extra: None,
             default_skill_id: None,
+            skill_ids: None,
         }
     }
 
@@ -1189,13 +1249,43 @@ mod sync_hook_tests {
     }
 
     #[test]
-    fn update_to_paused_calls_on_inactive() {
+    fn legacy_paused_record_is_canonicalized_to_active_on_get() {
+        // PR-6: a record on disk with lifecycle: "paused" must come back as
+        // Active when read via `get` — the pause feature is retired.
+        let tmp = tempfile::tempdir().unwrap();
+        let store = EmployeeStore::new(tmp.path().to_path_buf());
+        let rec = store.create(mk("legacy-paused")).unwrap();
+        // Hand-mutate the on-disk record to simulate a pre-PR-6 paused state.
+        let path = store.record_path(&rec.id);
+        let raw = std::fs::read_to_string(&path).unwrap();
+        let patched = raw.replace("\"lifecycle\": \"active\"", "\"lifecycle\": \"paused\"");
+        std::fs::write(&path, patched).unwrap();
+
+        let loaded = store.get(&rec.id).unwrap();
+        assert_eq!(
+            loaded.lifecycle,
+            EmployeeLifecycle::Active,
+            "legacy paused record must canonicalize to active"
+        );
+        // Subsequent read should see the file with Active baked in (persisted).
+        let raw2 = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            raw2.contains("\"lifecycle\": \"active\""),
+            "canonical lifecycle must be persisted: {raw2}"
+        );
+    }
+
+    #[test]
+    fn update_to_paused_canonicalizes_to_active_and_fires_active_hook() {
+        // PR-6: the `Paused` lifecycle was retired; canonical() collapses it
+        // into Active. Submitting `Paused` via update must keep the employee
+        // active (cron toggle is the real "pause" knob).
         let tmp = tempfile::tempdir().unwrap();
         let store = EmployeeStore::new(tmp.path().to_path_buf());
         let rec = store.create(mk("n3")).unwrap();
         let sync = Arc::new(CountingSync::default());
         store.set_sync(sync.clone());
-        store
+        let updated = store
             .update(
                 &rec.id,
                 UpdateEmployeeRequest {
@@ -1204,8 +1294,18 @@ mod sync_hook_tests {
                 },
             )
             .unwrap();
+        // Stored lifecycle stays as submitted (Paused) — but `update` calls
+        // notify_active because the match arm uses `.canonical()`. The store
+        // reader (`get` / `list_unlocked`) will collapse Paused → Active on
+        // the next read.
+        assert_eq!(updated.lifecycle, EmployeeLifecycle::Paused);
+        let active = sync.active.lock().unwrap();
+        assert_eq!(active[0], rec.id);
         let inactive = sync.inactive.lock().unwrap();
-        assert_eq!(inactive[0], rec.id);
+        assert!(
+            inactive.is_empty(),
+            "Paused must NOT trigger the inactive hook anymore"
+        );
     }
 
     #[test]
