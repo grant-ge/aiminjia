@@ -23,7 +23,20 @@
  * anything beyond UI rendering. Old messages without `【本次工作配置】`
  * blocks still parse (configLines = []); the banner just renders without a
  * config section.
+ *
+ * PR-9: the dispatch prompt mixes user-facing facts ("群关键词：技术")
+ * with LLM-only instructions ("默认技能：x —— 请第一步调用 Skill(...)").
+ * To keep the LLM behavior unchanged while showing users only the facts,
+ * we lift two known structured fields out of the bullet list:
+ *   - `skillId`           — from "- 默认技能：<id> ——"
+ *   - `monitoringTargets` — from "- 监听目标（N 个）：name（url）；..."
+ * The remaining bullets land in `configLines` and render as-is.
  */
+export interface DispatchMonitoringTarget {
+  name: string
+  url: string | null
+}
+
 export interface DispatchHeader {
   /** Employee display name as configured (e.g. "小工"). */
   employee: string
@@ -33,12 +46,40 @@ export interface DispatchHeader {
   trigger: 'on-demand' | 'cron'
   /** Raw trigger-time string for cron dispatches; null for on-demand. */
   triggerTime: string | null
-  /** Bullet lines under 【本次工作配置】, with the leading "- " stripped. */
+  /** Default skill id extracted from "- 默认技能：xxx" line; null if absent. */
+  skillId: string | null
+  /** Monitoring targets extracted from "- 监听目标（N 个）：..." line. */
+  monitoringTargets: DispatchMonitoringTarget[]
+  /**
+   * Remaining bullet lines under 【本次工作配置】, with the leading "- "
+   * stripped. Lines that have been lifted into `skillId` /
+   * `monitoringTargets` are NOT present here.
+   */
   configLines: string[]
 }
 
 const IDENTITY_RE = /^你现在是「(.+?)」（(.+?)）。/
 const TRIGGER_RE = /\[(按需派活|定时触发)\](?:\s*触发时间：([^\n]+))?/
+const SKILL_LINE_RE = /^默认技能：([^\s—]+)/
+const MONITORING_LINE_RE = /^监听目标[^：]*：(.+)$/
+// Each target is "name（url）" separated by "；" (or just "name" without url).
+// Inner parens may be Chinese 「（…）」 or ascii "(…)".
+const MONITORING_TARGET_RE = /^(.+?)(?:[（(]([^）)]+)[）)])?$/
+
+function parseMonitoringLine(line: string): DispatchMonitoringTarget[] {
+  const m = MONITORING_LINE_RE.exec(line)
+  if (!m) return []
+  // Backend joins with "；"; tolerate ";" too.
+  return m[1]
+    .split(/；|;/)
+    .map((seg) => seg.trim())
+    .filter((seg) => seg.length > 0)
+    .map((seg) => {
+      const tm = MONITORING_TARGET_RE.exec(seg)
+      if (!tm) return { name: seg, url: null }
+      return { name: tm[1].trim(), url: tm[2]?.trim() || null }
+    })
+}
 
 export function parseDispatchHeader(text: string | null | undefined): DispatchHeader | null {
   if (!text) return null
@@ -52,7 +93,7 @@ export function parseDispatchHeader(text: string | null | undefined): DispatchHe
 
   // Pull the 【本次工作配置】 block; lines after it until a blank line or
   // the trailing "请立即..." suffix are config bullets.
-  const configLines: string[] = []
+  const rawLines: string[] = []
   const blockIdx = text.indexOf('【本次工作配置】')
   if (blockIdx >= 0) {
     const tail = text.slice(blockIdx + '【本次工作配置】'.length)
@@ -60,14 +101,14 @@ export function parseDispatchHeader(text: string | null | undefined): DispatchHe
     for (const raw of lines) {
       const line = raw.trim()
       if (!line) {
-        if (configLines.length > 0) break
+        if (rawLines.length > 0) break
         continue
       }
       if (line.startsWith('请立即')) break
       if (line.startsWith('- ')) {
-        configLines.push(line.slice(2).trim())
+        rawLines.push(line.slice(2).trim())
       } else if (line.startsWith('-')) {
-        configLines.push(line.slice(1).trim())
+        rawLines.push(line.slice(1).trim())
       } else {
         // Unrecognized non-bullet line — stop parsing; this is likely the
         // trailing user_block or suffix.
@@ -76,11 +117,34 @@ export function parseDispatchHeader(text: string | null | undefined): DispatchHe
     }
   }
 
+  // Lift skill / monitoring lines out of the bullet list. The remaining
+  // bullets render as plain text in the banner.
+  let skillId: string | null = null
+  let monitoringTargets: DispatchMonitoringTarget[] = []
+  const configLines: string[] = []
+  for (const line of rawLines) {
+    const skillM = SKILL_LINE_RE.exec(line)
+    if (skillM) {
+      skillId = skillM[1].trim()
+      continue
+    }
+    if (line.startsWith('监听目标')) {
+      const parsed = parseMonitoringLine(line)
+      if (parsed.length > 0) {
+        monitoringTargets = parsed
+        continue
+      }
+    }
+    configLines.push(line)
+  }
+
   return {
     employee: idMatch[1].trim(),
     role: idMatch[2].trim(),
     trigger,
     triggerTime,
+    skillId,
+    monitoringTargets,
     configLines,
   }
 }
