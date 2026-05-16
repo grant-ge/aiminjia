@@ -78,12 +78,17 @@ export function ChatAvatar({
   size = 28,
   ringColor,
 }: ChatAvatarProps) {
-  const effectiveSrc = src ?? (variant === 'neutral' ? NEUTRAL_AVATAR_SRC : null)
+  // Treat empty string the same as null/undefined. brandingStore.logoUrl
+  // is `''` when a tenant explicitly cleared its logo, and we still want
+  // to fall through to the variant fallback (neutral SVG / initial) in
+  // that case — not render an <img src="">.
+  const normalizedSrc = src && src.length > 0 ? src : null
+  const effectiveSrc = normalizedSrc ?? (variant === 'neutral' ? NEUTRAL_AVATAR_SRC : null)
   const initial = firstInitial(name)
   // `neutral` variant: container is transparent, the SVG inside paints
   // itself with `currentColor` → we set `color: var(--primary)` on the
   // wrapper so the avatar tracks the brand accent.
-  const usingNeutralFallback = !src && variant === 'neutral'
+  const usingNeutralFallback = !normalizedSrc && variant === 'neutral'
   const bg = effectiveSrc
     ? 'transparent'
     : pickColor(colorSeed ?? name)
@@ -97,7 +102,7 @@ export function ChatAvatar({
   return (
     <span
       data-testid="chat-avatar"
-      data-variant={effectiveSrc ? (src ? 'image' : 'neutral') : 'initial'}
+      data-variant={effectiveSrc ? (normalizedSrc ? 'image' : 'neutral') : 'initial'}
       aria-label={name}
       title={name}
       style={style}
