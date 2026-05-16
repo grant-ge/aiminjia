@@ -1,7 +1,7 @@
 // code/src/features/expert-teams/ExpertTeamsPage.tsx
 import { useState } from 'react'
 import { PageTopBar } from '@/components/shell/PageTopBar'
-import { createConversation } from '@/lib/tauri'
+import { createConversation, renameConversation } from '@/lib/tauri'
 import { useChatStore } from '@/stores/chatStore'
 import { useUiStore } from '@/stores/uiStore'
 import { useNotificationStore } from '@/stores/notificationStore'
@@ -21,6 +21,14 @@ export function ExpertTeamsPage() {
     setStarting(id)
     try {
       const conversationId = await createConversation()
+      const title = `专家团: ${team.name}`
+      // Persist the title on the backend so reloads / sidebar reloads keep it.
+      // Best-effort: if rename fails the optimistic local title still shows.
+      try {
+        await renameConversation(conversationId, title)
+      } catch (err) {
+        console.warn('[ExpertTeamsPage] renameConversation failed', err)
+      }
       setExpertTeam(conversationId, id)
       // Optimistically inject into chatStore so the sidebar shows the new
       // conversation immediately. The backend `conversation:created` event
@@ -31,7 +39,7 @@ export function ExpertTeamsPage() {
       store.setConversations([
         {
           id: conversationId,
-          title: `${team.emoji} ${team.name}`,
+          title,
           createdAt: now,
           updatedAt: now,
           isArchived: false,
