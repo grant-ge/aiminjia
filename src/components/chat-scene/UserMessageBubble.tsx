@@ -5,6 +5,8 @@
 import { Blocks } from 'lucide-react'
 import { useState } from 'react'
 import { UserBubbleMarkdown } from './markdown/UserBubbleMarkdown'
+import { DispatchBanner } from './DispatchBanner'
+import { parseDispatchHeader } from './parseDispatchHeader'
 import type { FileAttachment, SkillCommandBreadcrumb } from '@/types/message'
 
 // Team event XML patterns — rendered by PeerMessageBanner instead
@@ -29,6 +31,15 @@ export function UserMessageBubble({
 
   // If this is a team event XML message, skip rendering (PeerMessageBanner handles it)
   if (TEAM_EVENT_RE.test((text ?? '').trim())) return null
+
+  // If this user message is actually a dispatch prompt synthesized by
+  // `build_dispatch_prompt` (employee派活 path), render the centered banner
+  // instead of the right-aligned bubble. Parser returns null for normal user
+  // messages, so old conversations + non-dispatch turns are unaffected.
+  const dispatchHeader = parseDispatchHeader(text)
+  if (dispatchHeader) {
+    return <DispatchBanner header={dispatchHeader} />
+  }
 
   const command = skillCommand?.command ?? commandText?.split(/\s+/)[0]
   const tokenLabel = skillCommand?.label ?? skillCommand?.id ?? command?.replace(/^\//, '')
