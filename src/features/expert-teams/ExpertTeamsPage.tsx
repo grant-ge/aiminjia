@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { PageTopBar } from '@/components/shell/PageTopBar'
 import { createConversation } from '@/lib/tauri'
+import { useChatStore } from '@/stores/chatStore'
 import { useUiStore } from '@/stores/uiStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { ExpertTeamCard } from './ExpertTeamCard'
@@ -21,6 +22,22 @@ export function ExpertTeamsPage() {
     try {
       const conversationId = await createConversation()
       setExpertTeam(conversationId, id)
+      // Optimistically inject into chatStore so the sidebar shows the new
+      // conversation immediately. The backend `conversation:created` event
+      // will refresh the list anyway, but it can land after the user has
+      // already navigated away, leaving them unable to find the chat.
+      const store = useChatStore.getState()
+      const now = new Date().toISOString()
+      store.setConversations([
+        {
+          id: conversationId,
+          title: `${team.emoji} ${team.name}`,
+          createdAt: now,
+          updatedAt: now,
+          isArchived: false,
+        },
+        ...store.conversations.filter((c) => c.id !== conversationId),
+      ])
       setRoute({ kind: 'chat', conversationId })
     } catch (err) {
       pushNotification({
