@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import type { RefObject } from 'react'
+import { useTranslation } from 'react-i18next'
 import { readClipboardFilePaths } from '@/lib/tauri'
 import { useChatAttachments } from '@/hooks/useChatAttachments'
 import { useNotificationStore } from '@/stores/notificationStore'
@@ -84,6 +85,7 @@ export function useComposerAttachmentPaste(
   composerRef: RefObject<RichComposerHandle | null>,
 ): void {
   ensureSnapshotterInstalled()
+  const { t } = useTranslation()
   const { resolvePastedPaths, saveClipboardImage } = useChatAttachments()
 
   useEffect(() => {
@@ -114,16 +116,16 @@ export function useComposerAttachmentPaste(
             if (resolved.length === 0) {
               pushToast(
                 'info',
-                '无法粘贴',
-                '选中的项目（如磁盘根目录、系统目录或别名）不支持作为附件粘贴。',
+                t('composer.paste.cannotPaste'),
+                t('composer.paste.selectedItemsUnsupported'),
               )
               return
             }
             if (resolved.length < capped.length) {
               pushToast(
                 'info',
-                '部分项目已忽略',
-                `已忽略 ${capped.length - resolved.length} 个不支持的项目（如磁盘根目录、系统目录或别名）。`,
+                t('composer.paste.someItemsIgnored'),
+                t('composer.paste.ignoredCount', { count: capped.length - resolved.length }),
               )
             }
             handle?.insertAttachmentTokens(pendingAttachmentsToTokens(resolved))
@@ -136,15 +138,15 @@ export function useComposerAttachmentPaste(
               const attachment = await saveClipboardImage(new Uint8Array(buffer), imageFile.type)
               handle?.insertAttachmentTokens(pendingAttachmentsToTokens([attachment]))
             } catch {
-              pushToast('info', '无法粘贴', '剪贴板图片保存失败，请重试。')
+              pushToast('info', t('composer.paste.cannotPaste'), t('composer.paste.clipboardImageFailed'))
             }
             return
           }
 
           pushToast(
             'info',
-            '无法粘贴',
-            '剪贴板中的文件类型暂不支持作为附件粘贴，请改用左下角"+"按钮选择文件。',
+            t('composer.paste.cannotPaste'),
+            t('composer.paste.fileTypeUnsupported'),
           )
         })()
       }
@@ -168,5 +170,5 @@ export function useComposerAttachmentPaste(
       if (intervalId !== null) window.clearInterval(intervalId)
       cleanupFn?.()
     }
-  }, [composerRef, resolvePastedPaths, saveClipboardImage])
+  }, [composerRef, resolvePastedPaths, saveClipboardImage, t])
 }

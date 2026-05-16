@@ -14,6 +14,7 @@
  * Skill ids are translated to displayName via `useSkillStore.getById`;
  * monitoring targets render as chips with the URL on title hover.
  */
+import { useTranslation } from 'react-i18next'
 import { useSkillStore } from '@/stores/skillStore'
 import type { DispatchHeader, DispatchMonitoringTarget } from './parseDispatchHeader'
 
@@ -21,10 +22,13 @@ interface DispatchBannerProps {
   header: DispatchHeader
 }
 
-function formatTriggerLabel(header: DispatchHeader): string {
-  if (header.trigger === 'on-demand') return '按需派活'
-  if (header.triggerTime) return `定时 ${header.triggerTime}`
-  return '定时触发'
+function useFormatTriggerLabel() {
+  const { t } = useTranslation()
+  return (header: DispatchHeader): string => {
+    if (header.trigger === 'on-demand') return t('dispatch.onDemand')
+    if (header.triggerTime) return t('dispatch.cronWithTime', { time: header.triggerTime })
+    return t('dispatch.cronTrigger')
+  }
 }
 
 function SkillChip({ id }: { id: string }) {
@@ -79,6 +83,8 @@ function splitLabel(line: string): [string, string] | null {
 }
 
 export function DispatchBanner({ header }: DispatchBannerProps) {
+  const { t } = useTranslation()
+  const formatTriggerLabel = useFormatTriggerLabel()
   const triggerLabel = formatTriggerLabel(header)
   const hasAnyConfig =
     header.configLines.length > 0 ||
@@ -92,7 +98,7 @@ export function DispatchBanner({ header }: DispatchBannerProps) {
         <span className="h-px flex-1 bg-border" aria-hidden />
         <span className="flex items-center gap-1.5 whitespace-nowrap font-medium text-foreground">
           <span aria-hidden>🛠</span>
-          <span>派活给 {header.employee}</span>
+          <span>{t('dispatch.dispatchTo', { name: header.employee })}</span>
           {header.role ? (
             <>
               <span aria-hidden className="text-muted-foreground">·</span>
@@ -125,14 +131,14 @@ export function DispatchBanner({ header }: DispatchBannerProps) {
             )
           })}
           {header.skillId ? (
-            <ConfigRow label="默认技能">
+            <ConfigRow label={t('dispatch.defaultSkill')}>
               <SkillChip id={header.skillId} />
             </ConfigRow>
           ) : null}
           {header.monitoringTargets.length > 0 ? (
-            <ConfigRow label="监听目标">
-              {header.monitoringTargets.map((t, i) => (
-                <MonitoringTargetChip key={`m-${i}`} target={t} />
+            <ConfigRow label={t('dispatch.monitoringTargets')}>
+              {header.monitoringTargets.map((mt, i) => (
+                <MonitoringTargetChip key={`m-${i}`} target={mt} />
               ))}
             </ConfigRow>
           ) : null}

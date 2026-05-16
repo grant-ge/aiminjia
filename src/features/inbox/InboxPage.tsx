@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { CheckCheck } from 'lucide-react'
 
 import { PageSectionShell } from '@/components/shell/PageSectionShell'
@@ -11,14 +12,11 @@ import type { InboxKind } from '@/lib/tauri'
 
 type KindFilter = 'all' | InboxKind
 
-const KIND_TABS: { key: KindFilter; label: string }[] = [
-  { key: 'all', label: '全部' },
-  { key: 'report', label: '汇报' },
-  { key: 'signal', label: '提示' },
-  // PR-8: 'running' tab dropped — Running entries are no longer written
-  // (see backend `dispatch_employee_run`). Legacy entries still
-  // deserialize and will appear under "全部" if any remain on disk.
-  { key: 'error', label: '异常' },
+const KIND_TAB_KEYS: { key: KindFilter; i18nKey: string }[] = [
+  { key: 'all', i18nKey: 'inbox.filterAll' },
+  { key: 'report', i18nKey: 'inbox.filterReport' },
+  { key: 'signal', i18nKey: 'inbox.filterSignal' },
+  { key: 'error', i18nKey: 'inbox.filterError' },
 ]
 
 function kindIcon(kind: InboxKind): string {
@@ -30,20 +28,26 @@ function kindIcon(kind: InboxKind): string {
   }
 }
 
-function timeLabel(iso: string): string {
-  const d = new Date(iso)
-  const now = new Date()
-  const diffMs = now.getTime() - d.getTime()
-  const diffMin = Math.floor(diffMs / 60_000)
-  if (diffMin < 1) return '刚刚'
-  if (diffMin < 60) return `${diffMin} 分钟前`
-  const diffH = Math.floor(diffMin / 60)
-  if (diffH < 24) return `今天 ${d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`
-  if (diffH < 48) return `昨天 ${d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`
-  return d.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+function useInboxTimeLabel() {
+  const { t, i18n } = useTranslation()
+  return (iso: string): string => {
+    const d = new Date(iso)
+    const now = new Date()
+    const diffMs = now.getTime() - d.getTime()
+    const diffMin = Math.floor(diffMs / 60_000)
+    if (diffMin < 1) return t('employeesPage.timeLabel.justNow')
+    if (diffMin < 60) return t('employeesPage.timeLabel.minutesAgo', { count: diffMin })
+    const diffH = Math.floor(diffMin / 60)
+    const timeStr = d.toLocaleTimeString(i18n.language, { hour: '2-digit', minute: '2-digit' })
+    if (diffH < 24) return t('inbox.timeToday', { time: timeStr })
+    if (diffH < 48) return t('inbox.timeYesterday', { time: timeStr })
+    return d.toLocaleDateString(i18n.language, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  }
 }
 
 export function InboxPage() {
+  const { t } = useTranslation()
+  const timeLabel = useInboxTimeLabel()
   const { employees } = useEmployees()
   const { entries, markAllRead, markRead } = useInbox()
   const setRoute = useUiStore((s) => s.setRoute)
@@ -79,7 +83,7 @@ export function InboxPage() {
       topBar={
         <PageTopBar
           variant="title"
-          title="汇报中心"
+          title={t('inbox.title')}
           trailing={
             <Button
               variant="ghost"
@@ -89,7 +93,7 @@ export function InboxPage() {
               onClick={handleMarkAll}
             >
               <CheckCheck className="h-3.5 w-3.5" />
-              全部已读
+              {t('inbox.markAllRead')}
             </Button>
           }
         />
@@ -101,7 +105,7 @@ export function InboxPage() {
       <div className="flex items-center gap-3">
         {/* Kind tabs */}
         <div className="flex items-center gap-0.5 rounded-lg bg-muted/50 p-0.5">
-          {KIND_TABS.map((tab) => (
+          {KIND_TAB_KEYS.map((tab) => (
             <button
               key={tab.key}
               type="button"
@@ -112,7 +116,7 @@ export function InboxPage() {
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              {tab.label}
+              {t(tab.i18nKey)}
             </button>
           ))}
         </div>
@@ -123,7 +127,7 @@ export function InboxPage() {
           onChange={(e) => setEmpFilter(e.target.value)}
           className="rounded-lg border border-border bg-background px-2.5 py-1 text-xs text-foreground"
         >
-          <option value="all">所有员工</option>
+          <option value="all">{t('inbox.allEmployees')}</option>
           {employees
             .filter((emp) => emp.lifecycle !== 'archived')
             .map((emp) => (
@@ -135,7 +139,7 @@ export function InboxPage() {
 
         {unread > 0 && (
           <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-            {unread} 条未读
+            {t('inbox.unreadCount', { count: unread })}
           </span>
         )}
       </div>
@@ -143,7 +147,7 @@ export function InboxPage() {
       {/* Entry list */}
       {filtered.length === 0 ? (
         <div className="flex h-[240px] items-center justify-center rounded-xl border border-dashed border-border">
-          <p className="text-sm text-muted-foreground">暂无记录</p>
+          <p className="text-sm text-muted-foreground">{t('inbox.noRecords')}</p>
         </div>
       ) : (
         <div className="flex flex-col divide-y divide-border overflow-hidden rounded-xl border border-border">

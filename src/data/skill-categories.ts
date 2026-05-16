@@ -1,3 +1,5 @@
+import i18n from '@/i18n'
+
 export type SkillCategoryId =
   | 'recommended'
   | 'mine'
@@ -15,11 +17,11 @@ export interface SkillCategory {
 }
 
 export const SKILL_CATEGORIES: SkillCategory[] = [
-  { id: 'mine',    name: '本地',  icon: 'user' },
+  { id: 'mine',    get name() { return i18n.t('skillCategories.mine') },  icon: 'user' },
   { id: 'hr',      name: 'HR',   icon: 'users' },
-  { id: 'finance', name: '财务', icon: 'bar-chart-2' },
-  { id: 'legal',   name: '法务', icon: 'scale' },
-  { id: 'sales',   name: '销售', icon: 'trending-up' },
-  { id: 'ops',     name: '运营', icon: 'settings' },
-  { id: 'general', name: '通用', icon: 'wrench' },
+  { id: 'finance', get name() { return i18n.t('skillCategories.finance') }, icon: 'bar-chart-2' },
+  { id: 'legal',   get name() { return i18n.t('skillCategories.legal') }, icon: 'scale' },
+  { id: 'sales',   get name() { return i18n.t('skillCategories.sales') }, icon: 'trending-up' },
+  { id: 'ops',     get name() { return i18n.t('skillCategories.ops') }, icon: 'settings' },
+  { id: 'general', get name() { return i18n.t('skillCategories.general') }, icon: 'wrench' },
 ]

@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 
 interface ToolTraceIOProps {
   inputJson?: string
@@ -7,6 +8,7 @@ interface ToolTraceIOProps {
 }
 
 export function ToolTraceIO({ inputJson, output, isError = false }: ToolTraceIOProps) {
+  const { t } = useTranslation()
   if (!inputJson && !output) return null
 
   return (
@@ -17,7 +19,7 @@ export function ToolTraceIO({ inputJson, output, isError = false }: ToolTraceIOP
       {inputJson ? (
         <div className="flex flex-col gap-1.5">
           <div className="text-xs font-semibold" style={{ color: 'var(--color-text-muted)' }}>
-            输入
+            {t('toolTrace.input')}
           </div>
           <pre
             className="whitespace-pre-wrap rounded-md p-3 font-mono text-xs leading-relaxed"
@@ -33,7 +35,7 @@ export function ToolTraceIO({ inputJson, output, isError = false }: ToolTraceIOP
       {output ? (
         <div className="flex flex-col gap-1.5">
           <div className="text-xs font-semibold" style={{ color: 'var(--color-text-muted)' }}>
-            输出
+            {t('toolTrace.output')}
           </div>
           <div
             className="rounded-md p-3 text-xs leading-relaxed"

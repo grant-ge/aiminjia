@@ -1,27 +1,37 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { runtimeDiagnostics, type RuntimeDiagnostics } from '@/lib/tauri'
 
 import { Button } from '@/components/ui/button'
 
-const RESOLVER_LABEL: Record<RuntimeDiagnostics['activeResolver'], string> = {
-  bundled: '内置（随安装包）',
-  installed: '已升级（OSS 下载）',
-  none: '不可用',
+function useResolverLabel(): Record<RuntimeDiagnostics['activeResolver'], string> {
+  const { t } = useTranslation()
+  return {
+    bundled: t('settings.runtime.bundled'),
+    installed: t('settings.runtime.upgraded'),
+    none: t('settings.runtime.unavailable'),
+  }
 }
 
-function formatRelative(from: number, now: number): string {
-  const diffSec = Math.max(0, Math.round((now - from) / 1000))
-  if (diffSec < 5) return '刚刚'
-  if (diffSec < 60) return `${diffSec} 秒前`
-  const diffMin = Math.floor(diffSec / 60)
-  if (diffMin < 60) return `${diffMin} 分钟前`
-  const diffHr = Math.floor(diffMin / 60)
-  if (diffHr < 24) return `${diffHr} 小时前`
-  return new Date(from).toLocaleString()
+function useFormatRelative() {
+  const { t } = useTranslation()
+  return (from: number, now: number): string => {
+    const diffSec = Math.max(0, Math.round((now - from) / 1000))
+    if (diffSec < 5) return t('settings.runtime.justNow')
+    if (diffSec < 60) return t('settings.runtime.secondsAgo', { count: diffSec })
+    const diffMin = Math.floor(diffSec / 60)
+    if (diffMin < 60) return t('settings.runtime.minutesAgo', { count: diffMin })
+    const diffHr = Math.floor(diffMin / 60)
+    if (diffHr < 24) return t('settings.runtime.hoursAgo', { count: diffHr })
+    return new Date(from).toLocaleString()
+  }
 }
 
 export function RuntimePanel() {
+  const { t } = useTranslation()
+  const RESOLVER_LABEL = useResolverLabel()
+  const formatRelative = useFormatRelative()
   const [data, setData] = useState<RuntimeDiagnostics | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -54,7 +64,7 @@ export function RuntimePanel() {
   return (
     <section className="flex flex-col gap-4">
       <header>
-        <h2 className="text-base font-semibold text-foreground">运行时</h2>
+        <h2 className="text-base font-semibold text-foreground">{t('settings.runtime.title')}</h2>
         <p className="mt-0.5 text-xs text-muted-foreground">
           AIjia 内置 Node、Python、uv 运行时。安装包内置一份，可通过 OSS 升级。
         </p>
@@ -68,13 +78,13 @@ export function RuntimePanel() {
 
       {data && (
         <dl className="grid grid-cols-[120px_1fr] gap-x-4 gap-y-2 rounded-md border border-border bg-muted/30 p-4 text-sm">
-          <dt className="text-muted-foreground">来源</dt>
+          <dt className="text-muted-foreground">{t('settings.runtime.source')}</dt>
           <dd className="font-mono text-foreground">{RESOLVER_LABEL[data.activeResolver]}</dd>
 
-          <dt className="text-muted-foreground">内置版本</dt>
+          <dt className="text-muted-foreground">{t('settings.runtime.bundledVersion')}</dt>
           <dd className="font-mono text-foreground">{data.bundledVersion ?? '—'}</dd>
 
-          <dt className="text-muted-foreground">升级版本</dt>
+          <dt className="text-muted-foreground">{t('settings.runtime.upgradedVersion')}</dt>
           <dd className="font-mono text-foreground">{data.installedVersion ?? '—'}</dd>
 
           <dt className="text-muted-foreground">Node</dt>
@@ -90,11 +100,11 @@ export function RuntimePanel() {
 
       <div className="flex items-center gap-3">
         <Button variant="outline" onClick={() => void load()} disabled={loading}>
-          {loading ? '检查中…' : '重新检查'}
+          {loading ? t('settings.runtime.checking') : t('settings.runtime.recheck')}
         </Button>
         {lastCheckedAt != null && (
           <span className="text-xs text-muted-foreground">
-            上次检查：{formatRelative(lastCheckedAt, now)}
+            {t('settings.runtime.lastChecked')}{formatRelative(lastCheckedAt, now)}
           </span>
         )}
       </div>

@@ -4,6 +4,7 @@
  * 按 project 分组渲染会话；项目折叠状态由本组件内部 state 管理。
  */
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { ConversationRow } from './ConversationRow'
 import { ProjectAccordion } from './ProjectAccordion'
@@ -34,11 +35,12 @@ export function ConversationTree({
   onRenameConversation,
   onArchiveConversation,
 }: ConversationTreeProps) {
+  const { t } = useTranslation()
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
 
   if (projects.length === 0) {
     return (
-      <div className="px-2 py-4 text-sm text-muted-foreground">还没有历史任务</div>
+      <div className="px-2 py-4 text-sm text-muted-foreground">{t('sidebar.noHistory')}</div>
     )
   }
 

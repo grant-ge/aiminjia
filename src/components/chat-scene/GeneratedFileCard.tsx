@@ -3,6 +3,7 @@
  * @sizing height 64 r-14 border 1 bg card padding x16; clipped tilted monochrome file icon
  */
 import type { ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 import { ChevronDown, ExternalLink, Eye, FolderOpen } from 'lucide-react'
 
 import type { GeneratedFilePrimaryAction } from '@/components/chat/generatedFileActions'
@@ -37,14 +38,17 @@ function fileLabelFromTitle(title: string, sub: string): string {
   return normalizeFileLabel(ext) ?? normalizeFileLabel(subMatch?.[1]) ?? 'FILE'
 }
 
-const ACTION_LABELS = {
-  open: '打开',
-  preview: '预览',
-  more: '更多操作',
-  previewInside: '在侧边栏预览',
-  previewUnavailable: '暂不支持预览',
-  openExternal: '用默认应用打开',
-  reveal: '在文件夹中显示',
+function useActionLabels() {
+  const { t } = useTranslation()
+  return {
+    open: t('fileCard.open'),
+    preview: t('fileCard.preview'),
+    more: t('fileCard.more'),
+    previewInside: t('fileCard.previewInside'),
+    previewUnavailable: t('fileCard.previewUnavailable'),
+    openExternal: t('fileCard.openExternal'),
+    reveal: t('fileCard.reveal'),
+  }
 }
 
 function TiltedFileIcon({ title, sub }: { title: string; sub: string }) {
@@ -95,6 +99,7 @@ export function GeneratedFileCard({
   onOpenExternal,
   onReveal,
 }: GeneratedFileCardProps) {
+  const ACTION_LABELS = useActionLabels()
   const openExternalAction = onOpenExternal ?? onOpen
   const previewAction = canPreview ? onPreview : undefined
   const enabledOpenExternalAction = canOpenExternal !== false ? openExternalAction : undefined

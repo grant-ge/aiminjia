@@ -22,6 +22,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { invoke } from '@tauri-apps/api/core'
 
 import { AppDropdown } from '@/components/common/AppDropdown'
@@ -85,6 +86,7 @@ function getIconBg(category: string) {
 }
 
 export function SkillCenterPage() {
+  const { t } = useTranslation()
   const [category, setCategory] = useState<SkillCategoryId>('recommended')
   const [query, setQuery] = useState('')
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -108,7 +110,7 @@ export function SkillCenterPage() {
     const picked = await openDialog({
       directory: true,
       multiple: false,
-      title: '选择技能目录',
+      title: t('skillCenter.selectDir'),
     })
     if (!picked || Array.isArray(picked)) return
 
@@ -117,8 +119,8 @@ export function SkillCenterPage() {
       if (outcome === 'installed') {
         pushNotification({
           level: 'success',
-          title: '技能上传成功',
-          message: '技能已安装到本地并刷新到技能中心。',
+          title: t('skillCenter.uploadSuccess'),
+          message: t('skillCenter.uploadSuccessDesc'),
           actions: [],
           dismissible: true,
           autoHide: 4,
@@ -132,7 +134,7 @@ export function SkillCenterPage() {
       }
       pushNotification({
         level: 'error',
-        title: '技能上传失败',
+        title: t('skillCenter.uploadFailed'),
         message: err instanceof Error ? err.message : String(err),
         actions: [],
         dismissible: true,
@@ -144,10 +146,10 @@ export function SkillCenterPage() {
 
   const handleDeleteSkill = async (skillId: string, displayName: string) => {
     const confirmed = await requestConfirm({
-      title: '删除技能',
-      description: `确定要删除「${displayName}」吗？此操作不可撤销。`,
-      confirmLabel: '删除',
-      cancelLabel: '取消',
+      title: t('skillCenter.deleteSkill'),
+      description: t('skillCenter.deleteConfirm', { name: displayName }),
+      confirmLabel: t('skillCenter.deleteLabel'),
+      cancelLabel: t('skillCenter.cancelLabel'),
       variant: 'destructive',
     })
     if (!confirmed) return
@@ -155,8 +157,8 @@ export function SkillCenterPage() {
       await uninstall(skillId)
       pushNotification({
         level: 'success',
-        title: '技能已删除',
-        message: `「${displayName}」已从技能中心移除。`,
+        title: t('skillCenter.skillDeleted'),
+        message: t('skillCenter.skillDeletedDesc', { name: displayName }),
         actions: [],
         dismissible: true,
         autoHide: 4,
@@ -166,7 +168,7 @@ export function SkillCenterPage() {
       const message = err instanceof Error ? err.message : String(err)
       pushNotification({
         level: 'error',
-        title: '删除技能失败',
+        title: t('skillCenter.deleteFailed'),
         message,
         actions: [],
         dismissible: true,
@@ -186,8 +188,8 @@ export function SkillCenterPage() {
         level: 'success',
         title:
           result.installed.length > 0
-            ? `同步完成，更新 ${result.installed.length} 个技能`
-            : '已是最新',
+            ? t('skillCenter.syncDone', { count: result.installed.length })
+            : t('skillCenter.syncUpToDate'),
         message: '',
         actions: [],
         dismissible: true,
@@ -197,7 +199,7 @@ export function SkillCenterPage() {
     } catch (err) {
       pushNotification({
         level: 'error',
-        title: '同步失败',
+        title: t('skillCenter.syncFailed'),
         message: err instanceof Error ? err.message : String(err),
         actions: [],
         dismissible: true,
@@ -224,7 +226,7 @@ export function SkillCenterPage() {
       const updated = result.installed.includes(skillId)
       pushNotification({
         level: 'success',
-        title: updated ? '有新版本' : '已是最新',
+        title: updated ? t('skillCenter.hasUpdate') : t('skillCenter.upToDate'),
         message: displayName,
         actions: [],
         dismissible: true,
@@ -234,7 +236,7 @@ export function SkillCenterPage() {
     } catch (err) {
       pushNotification({
         level: 'error',
-        title: '检查更新失败',
+        title: t('skillCenter.checkUpdateFailed'),
         message: err instanceof Error ? err.message : String(err),
         actions: [],
         dismissible: true,
@@ -251,8 +253,8 @@ export function SkillCenterPage() {
       const dest = await invoke<string>('export_installed_skill', { skillId })
       pushNotification({
         level: 'success',
-        title: '技能已导出',
-        message: `「${displayName}」已保存到 ${dest}。把这个压缩包发给同事，对方在「技能中心」导入即可。`,
+        title: t('skillCenter.exported'),
+        message: t('skillCenter.exportedDesc', { name: displayName, dest }),
         actions: [],
         dismissible: true,
         autoHide: 10,
@@ -261,7 +263,7 @@ export function SkillCenterPage() {
     } catch (err) {
       pushNotification({
         level: 'error',
-        title: '导出失败',
+        title: t('skillCenter.exportFailed'),
         message: String(err),
         actions: [],
         dismissible: true,
@@ -292,10 +294,10 @@ export function SkillCenterPage() {
 
   const categoryItems = useMemo(
     () => [
-      { key: 'recommended', label: '全部' },
+      { key: 'recommended', label: t('skillCenter.allCategory') },
       ...SKILL_CATEGORIES.map((c) => ({ key: c.id, label: c.name })),
     ],
-    [],
+    [t],
   )
 
   const normalizedQuery = query.trim().toLowerCase()
@@ -321,8 +323,8 @@ export function SkillCenterPage() {
 
   function getSkillMeta(source: string, cat: string) {
     const normalizedCategory = cat || 'general'
-    const label = SKILL_CATEGORIES.find((c) => c.id === normalizedCategory)?.name ?? '通用'
-    const sourceLabel = source === 'builtin' ? '内置' : '自定义'
+    const label = SKILL_CATEGORIES.find((c) => c.id === normalizedCategory)?.name ?? t('skillCenter.defaultCategory')
+    const sourceLabel = source === 'builtin' ? t('skillCenter.builtin') : t('skillCenter.custom')
     return `${sourceLabel} · ${label}`
   }
 
@@ -332,9 +334,9 @@ export function SkillCenterPage() {
       topBar={
         <header data-tauri-drag-region className="flex h-[45px] items-center justify-between border-b border-border px-6">
           <div className="flex items-center gap-3">
-            <span className="text-base font-semibold text-foreground">技能中心</span>
+            <span className="text-base font-semibold text-foreground">{t('skillCenter.title')}</span>
             <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-muted-foreground">
-              已安装 {skills.length} 个技能
+              {t('skillCenter.installedCount', { count: skills.length })}
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -344,7 +346,7 @@ export function SkillCenterPage() {
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 className="flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground"
-                placeholder="搜索技能名称或场景"
+                placeholder={t('skillCenter.searchPlaceholder')}
               />
             </div>
             {isLoggedIn && (
@@ -355,11 +357,11 @@ export function SkillCenterPage() {
                 disabled={syncing}
                 data-testid="skills-sync-builtin"
               >
-                {syncing ? '同步中...' : '同步内置技能'}
+                {syncing ? t('skillCenter.syncing') : t('skillCenter.syncBuiltin')}
               </Button>
             )}
             <Button size="sm" onClick={() => void handleImportDirectory()}>
-              + 导入技能
+              {t('skillCenter.importSkill')}
             </Button>
           </div>
         </header>
@@ -378,24 +380,24 @@ export function SkillCenterPage() {
         }
       >
         {isLoading && skills.length === 0 ? (
-          <SkillCenterState title="正在加载技能..." />
+          <SkillCenterState title={t('skillCenter.loading')} />
         ) : loadError && skills.length === 0 ? (
-          <SkillCenterState title="技能加载失败" desc={loadError} actionLabel="重试" onAction={() => void loadSkills()} />
+          <SkillCenterState title={t('skillCenter.loadFailed')} desc={loadError} actionLabel={t('skillCenter.retry')} onAction={() => void loadSkills()} />
         ) : officeSkills.length === 0 ? (
           category === 'mine' ? (
             <SkillCenterState
-              title="还没有本地技能"
-              desc='在对话里找数字员工"小程"聊聊，让它帮你把工作流程沉淀成可复用技能；或点右上角"+ 导入技能"选一个本地技能目录上传。'
+              title={t('skillCenter.noLocalSkills')}
+              desc={t('skillCenter.noLocalSkillsDesc')}
             />
           ) : normalizedQuery ? (
             <SkillCenterState
-              title="没有匹配的技能"
-              desc={`"${normalizedQuery}" 下没找到技能。试试切到"全部"或换个关键词。`}
+              title={t('skillCenter.noMatch')}
+              desc={t('skillCenter.noMatchDesc', { query: normalizedQuery })}
             />
           ) : (
             <SkillCenterState
-              title="该分类下还没有技能"
-              desc='试试"全部"或"本地"分类；或者点右上角"+ 导入技能"选一个本地技能目录上传。'
+              title={t('skillCenter.noSkillsInCategory')}
+              desc={t('skillCenter.noSkillsInCategoryDesc')}
             />
           )
         ) : (
@@ -412,12 +414,12 @@ export function SkillCenterPage() {
             if (isUserSkill) {
               menuItems.push({
                 id: 'export',
-                label: '导出',
+                label: t('skillCenter.exportLabel'),
                 onSelect: () => void handleExportSkill(skill.id, skill.displayName),
               })
               menuItems.push({
                 id: 'delete',
-                label: '删除技能',
+                label: t('skillCenter.deleteSkill'),
                 icon: <Trash2 />,
                 className: 'text-destructive [&_svg]:text-destructive',
                 onSelect: () => void handleDeleteSkill(skill.id, skill.displayName),
@@ -426,7 +428,7 @@ export function SkillCenterPage() {
               // Non-user skills (builtin / global) can be re-synced from OPS.
               menuItems.push({
                 id: 'check-update',
-                label: checkingId === skill.id ? '检查中...' : '检查更新',
+                label: checkingId === skill.id ? t('skillCenter.checking') : t('skillCenter.checkUpdate'),
                 disabled: checkingId === skill.id || syncing,
                 onSelect: () =>
                   void handleCheckSkillUpdate(skill.id, skill.displayName),
@@ -447,7 +449,7 @@ export function SkillCenterPage() {
                     <div aria-hidden="true" className="h-7 w-7" />
                   ) : (
                     <AppDropdown
-                      ariaLabel={`${skill.displayName} 更多操作`}
+                      ariaLabel={`${skill.displayName} ${t('skillCenter.moreActions')}`}
                       trigger={
                         <button
                           type="button"

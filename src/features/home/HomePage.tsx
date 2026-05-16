@@ -1,9 +1,11 @@
+import { useTranslation } from 'react-i18next'
 import { HomeMascotHero } from '@/components/home/HomeMascotHero'
 import { HomeTaskComposerCard } from '@/components/home/HomeTaskComposerCard'
 import { PageSectionShell } from '@/components/shell/PageSectionShell'
 import { useBrandingStore } from '@/stores/brandingStore'
 
 export function HomePage() {
+  const { t } = useTranslation()
   const logoUrl = useBrandingStore((s) => s.logoUrl)
   return (
     <PageSectionShell
@@ -14,7 +16,7 @@ export function HomePage() {
       <div className="mx-auto flex w-[820px] flex-col items-center gap-10 -mt-6">
         <HomeMascotHero
           mascotUrl={logoUrl}
-          title="千头万绪在前，先理一端"
+          title={t('homePage.heroTitle')}
         />
         <div className="w-full">
           <HomeTaskComposerCard />

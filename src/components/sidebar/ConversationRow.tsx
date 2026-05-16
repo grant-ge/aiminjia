@@ -4,6 +4,7 @@
  */
 import { Archive, Copy, Ellipsis, Loader2, Pencil } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { AppDropdown, type AppDropdownItem } from "@/components/common/AppDropdown";
 
@@ -26,6 +27,7 @@ export function ConversationRow({
   onArchive,
   onRename,
 }: ConversationRowProps) {
+  const { t } = useTranslation();
   const [hovered, setHovered] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -33,19 +35,19 @@ export function ConversationRow({
   const menuItems: AppDropdownItem[] = [
     {
       id: 'archive',
-      label: '归档聊天',
+      label: t('sidebar.archiveChat'),
       icon: <Archive className="h-3.5 w-3.5 shrink-0" />,
       onSelect: () => onArchive?.(),
     },
     {
       id: 'rename',
-      label: '重命名聊天',
+      label: t('sidebar.renameChat'),
       icon: <Pencil className="h-3.5 w-3.5 shrink-0" />,
       onSelect: () => onRename?.(),
     },
     {
       id: 'copy-id',
-      label: '复制会话 ID',
+      label: t('sidebar.copyConversationId'),
       icon: <Copy className="h-3.5 w-3.5 shrink-0" />,
       onSelect: () => void navigator.clipboard.writeText(id),
     },
@@ -80,7 +82,7 @@ export function ConversationRow({
           <AppDropdown
             open={menuOpen}
             onOpenChange={setMenuOpen}
-            ariaLabel="聊天更多操作"
+            ariaLabel={t('sidebar.chatMoreActions')}
             contentClassName="w-40"
             trigger={
               <button

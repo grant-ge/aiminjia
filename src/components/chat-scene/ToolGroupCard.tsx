@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { ExecutionTraceCard } from '@/components/rich-content/ExecutionTraceCard'
 
 import { ToolTraceDetails } from './ToolTraceDetails'
@@ -8,16 +9,16 @@ interface ToolGroupCardProps {
   steps: ToolStep[]
 }
 
-function buildBadge(status: ToolGroupCardProps['status'], steps: ToolStep[]): string {
-  const done = steps.filter((s) => s.status !== 'running').length
-  return status === 'running' ? `执行中 ${done} / ${steps.length}` : `已完成 ${done} 步`
-}
-
 export function ToolGroupCard({ status, steps }: ToolGroupCardProps) {
+  const { t } = useTranslation()
+  const done = steps.filter((s) => s.status !== 'running').length
+  const badge = status === 'running'
+    ? t('toolGroup.running', { done, total: steps.length })
+    : t('toolGroup.done', { done })
   return (
     <ExecutionTraceCard
-      title="工具执行轨迹"
-      badge={buildBadge(status, steps)}
+      title={t('toolGroup.title')}
+      badge={badge}
       headerCollapsible
       defaultHeaderExpanded={false}
     >

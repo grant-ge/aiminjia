@@ -3,6 +3,7 @@
  * @sizing padding [24,40] gap 18
  */
 import { useEffect, useMemo, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { AiBubble } from '@/components/chat/AiBubble'
 import { StreamingBubble } from '@/components/chat/StreamingBubble'
@@ -28,13 +29,15 @@ import { useConversationTeamState, useTeamStore } from '@/stores/teamStore'
 
 type FileActionKind = 'preview' | 'open' | 'reveal'
 
-const FILE_ACTION_ERROR_TITLES: Record<FileActionKind, string> = {
-  preview: '无法预览文件',
-  open: '无法打开文件',
-  reveal: '无法定位文件',
-}
-
 export function MessageList() {
+  const { t } = useTranslation()
+
+  const FILE_ACTION_ERROR_TITLES: Record<FileActionKind, string> = {
+    preview: t('messageList.cannotPreview'),
+    open: t('messageList.cannotOpen'),
+    reveal: t('messageList.cannotReveal'),
+  }
+
   const turns = useTurnRenderModel()
   useChat()
   const activeConversationId = useChatStore((s) => s.activeConversationId)

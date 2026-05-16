@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { PageSectionShell } from '@/components/shell/PageSectionShell'
 import { useUiStore } from '@/stores/uiStore'
@@ -21,34 +22,41 @@ function kindIcon(kind: string): string {
   }
 }
 
-function timeLabel(iso: string): string {
-  const d = new Date(iso)
-  const now = new Date()
-  const diffMs = now.getTime() - d.getTime()
-  const diffMin = Math.floor(diffMs / 60_000)
-  if (diffMin < 1) return '刚刚'
-  if (diffMin < 60) return `${diffMin} 分钟前`
-  const diffH = Math.floor(diffMin / 60)
-  if (diffH < 24) return `${diffH} 小时前`
-  const diffD = Math.floor(diffH / 24)
-  if (diffD === 1) return '昨天'
-  return d.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })
+function useTimeLabel() {
+  const { t, i18n } = useTranslation()
+  return (iso: string): string => {
+    const d = new Date(iso)
+    const now = new Date()
+    const diffMs = now.getTime() - d.getTime()
+    const diffMin = Math.floor(diffMs / 60_000)
+    if (diffMin < 1) return t('employeesPage.timeLabel.justNow')
+    if (diffMin < 60) return t('employeesPage.timeLabel.minutesAgo', { count: diffMin })
+    const diffH = Math.floor(diffMin / 60)
+    if (diffH < 24) return t('employeesPage.timeLabel.hoursAgo', { count: diffH })
+    const diffD = Math.floor(diffH / 24)
+    if (diffD === 1) return t('employeesPage.timeLabel.yesterday')
+    return d.toLocaleDateString(i18n.language, { month: 'numeric', day: 'numeric' })
+  }
 }
 
 // ─── greeting ─────────────────────────────────────────────────────────────────
 
-function greeting(): string {
+function useGreeting(): string {
+  const { t } = useTranslation()
   const h = new Date().getHours()
-  if (h < 6) return '夜深了'
-  if (h < 12) return '早上好'
-  if (h < 14) return '中午好'
-  if (h < 18) return '下午好'
-  return '晚上好'
+  if (h < 6) return t('employeesPage.greeting.lateNight')
+  if (h < 12) return t('employeesPage.greeting.morning')
+  if (h < 14) return t('employeesPage.greeting.noon')
+  if (h < 18) return t('employeesPage.greeting.afternoon')
+  return t('employeesPage.greeting.evening')
 }
 
 // ─── HomePage ─────────────────────────────────────────────────────────────────
 
 export function EmployeesPage() {
+  const { t } = useTranslation()
+  const greetingText = useGreeting()
+  const timeLabel = useTimeLabel()
   const setRoute = useUiStore((s) => s.setRoute)
   const { employees, activeRuns, loading: empLoading, refresh: refreshEmp } = useEmployees()
   const { entries, refresh: refreshInbox, markRead } = useInbox()
@@ -99,23 +107,23 @@ export function EmployeesPage() {
     >
       {/* ── 顶部 greeting ── */}
       <div>
-        <h1 className="text-xl font-bold text-foreground">{greeting()}，今天</h1>
+        <h1 className="text-xl font-bold text-foreground">{greetingText}{t('employeesPage.greetingToday')}</h1>
         <p className="mt-0.5 text-sm text-muted-foreground">
-          {runningCount > 0 ? `${runningCount} 位员工工作中 · ` : ''}
-          {reportCount > 0 ? `${reportCount} 份汇报` : '所有员工空闲'}
+          {runningCount > 0 ? `${t('employeesPage.workingCount', { count: runningCount })} · ` : ''}
+          {reportCount > 0 ? t('employeesPage.reportCount', { count: reportCount }) : t('employeesPage.allIdle')}
         </p>
       </div>
 
       {/* ── 员工卡片栏 ── */}
       <section>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-foreground">我的数字员工</h2>
+          <h2 className="text-sm font-semibold text-foreground">{t('employeesPage.myEmployees')}</h2>
           <button
             type="button"
             className="text-xs text-muted-foreground hover:text-foreground"
             onClick={() => setHireOpen(true)}
           >
-            模板市场
+            {t('employeesPage.templateMarket')}
           </button>
         </div>
 
@@ -145,21 +153,21 @@ export function EmployeesPage() {
       {/* ── 今日动态 ── */}
       <section>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-foreground">今日动态</h2>
+          <h2 className="text-sm font-semibold text-foreground">{t('employeesPage.todayFeed')}</h2>
           {entries.length > todayEntries.length && (
             <button
               type="button"
               className="text-xs text-muted-foreground hover:text-foreground"
               onClick={() => setRoute({ kind: 'inbox' })}
             >
-              查看全部
+              {t('employeesPage.viewAll')}
             </button>
           )}
         </div>
 
         {todayEntries.length === 0 ? (
           <div className="flex h-[120px] items-center justify-center rounded-xl border border-dashed border-border">
-            <p className="text-sm text-muted-foreground">今天还没有任何动态</p>
+            <p className="text-sm text-muted-foreground">{t('employeesPage.noFeedToday')}</p>
           </div>
         ) : (
           <div className="flex flex-col divide-y divide-border overflow-hidden rounded-xl border border-border">

@@ -2,6 +2,7 @@
  * @designSource design.pen#47U5w (nv1/nv2/nv3)
  * @sizing each row padding [6,8], gap 2
  */
+import { useTranslation } from 'react-i18next'
 import { Blocks, Clock3, MessageSquare, Sparkles, SquarePen, Users, type LucideIcon } from 'lucide-react'
 
 export type SidebarNavKey = 'home' | 'employees' | 'skill-center' | 'schedules' | 'expert-teams' | 'channel'
@@ -11,19 +12,20 @@ interface SidebarNavProps {
   onSelect?: (key: SidebarNavKey) => void
 }
 
-const NAV: Array<{ key: SidebarNavKey; label: string; icon: LucideIcon }> = [
-  { key: 'home', label: '新任务', icon: SquarePen },
-  { key: 'employees', label: '数字员工', icon: Users },
-  { key: 'expert-teams', label: '专家团', icon: Sparkles },
-  { key: 'skill-center', label: '技能中心', icon: Blocks },
-  { key: 'schedules', label: '定时任务', icon: Clock3 },
-  { key: 'channel', label: 'IM 频道', icon: MessageSquare },
+const NAV: Array<{ key: SidebarNavKey; i18nKey: string; icon: LucideIcon }> = [
+  { key: 'home', i18nKey: 'nav.home', icon: SquarePen },
+  { key: 'employees', i18nKey: 'nav.employees', icon: Users },
+  { key: 'expert-teams', i18nKey: 'nav.expertTeams', icon: Sparkles },
+  { key: 'skill-center', i18nKey: 'nav.skillCenter', icon: Blocks },
+  { key: 'schedules', i18nKey: 'nav.schedules', icon: Clock3 },
+  { key: 'channel', i18nKey: 'nav.channel', icon: MessageSquare },
 ]
 
 export function SidebarNav({ activeKey = null, onSelect = () => {} }: SidebarNavProps) {
+  const { t } = useTranslation()
   return (
     <nav className="flex flex-col gap-0.5 mt-3 mb-4">
-      {NAV.map(({ key, label, icon: Icon }) => {
+      {NAV.map(({ key, i18nKey, icon: Icon }) => {
         const active = key === activeKey
         return (
           <button
@@ -37,7 +39,7 @@ export function SidebarNav({ activeKey = null, onSelect = () => {} }: SidebarNav
             }
           >
             <Icon className="h-4 w-4 shrink-0" />
-            <span className="flex-1 truncate">{label}</span>
+            <span className="flex-1 truncate">{t(i18nKey)}</span>
           </button>
         )
       })}

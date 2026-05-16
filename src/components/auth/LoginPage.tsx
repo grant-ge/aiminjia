@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { LoginCard } from '@/components/auth/LoginCard'
 import { LoginFooter } from '@/components/auth/LoginFooter'
@@ -25,6 +26,7 @@ function splitUsername(full: string): [string, string] {
 }
 
 export function LoginPage() {
+  const { t } = useTranslation()
   const login = useAuthStore((s) => s.login)
   const isAuthPending = useAuthStore((s) => s.isAuthPending)
   const productName = useBrandingStore((s) => s.productName)
@@ -50,7 +52,7 @@ export function LoginPage() {
       }
     } catch (err) {
       setPassword('')
-      setError(err instanceof Error ? err.message : '登录失败，请重试')
+      setError(err instanceof Error ? err.message : t('login.loginFailed'))
     }
   }
 
@@ -65,7 +67,7 @@ export function LoginPage() {
       }}
     >
       <div data-tauri-drag-region className="absolute inset-x-0 top-0 h-8 z-10" />
-      {/* 背景光晕 */}
+      {/* Background glow */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute -left-32 -top-32 h-[500px] w-[500px] rounded-full opacity-30" style={{ background: 'radial-gradient(circle, var(--primary) 0%, transparent 70%)', filter: 'blur(80px)' }} />
         <div className="absolute -bottom-40 -right-40 h-[600px] w-[600px] rounded-full opacity-20" style={{ background: 'radial-gradient(circle, color-mix(in srgb, var(--primary) 72%, var(--background)) 0%, transparent 70%)', filter: 'blur(100px)' }} />
@@ -74,17 +76,17 @@ export function LoginPage() {
       <LoginLogoStack logoUrl={logoUrl} brandName={productName} />
       <LoginCard>
         <div className="flex flex-col gap-1.5">
-          <div className="text-xl font-semibold text-foreground">登录到 {productName}</div>
-          <div className="text-sm text-muted-foreground">使用企业账号继续</div>
+          <div className="text-xl font-semibold text-foreground">{t('login.loginTo', { name: productName })}</div>
+          <div className="text-sm text-muted-foreground">{t('login.continueWithEnterprise')}</div>
         </div>
         <form className="flex flex-col gap-5" onSubmit={handleSubmit}>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="username-prefix">账号</Label>
+            <Label htmlFor="username-prefix">{t('login.account')}</Label>
             <div className="flex items-center gap-1.5">
               <Input
                 id="username-prefix"
-                aria-label="账号"
-                placeholder="用户名"
+                aria-label={t('login.account')}
+                placeholder={t('login.username')}
                 value={usernamePrefix}
                 onChange={(e) => setUsernamePrefix(e.target.value)}
                 autoComplete="username"
@@ -92,8 +94,8 @@ export function LoginPage() {
               <span className="shrink-0 text-sm font-medium text-muted-foreground">@</span>
               <Input
                 id="username-suffix"
-                aria-label="企业编号"
-                placeholder="企业编号"
+                aria-label={t('login.orgCode')}
+                placeholder={t('login.orgCode')}
                 value={usernameSuffix}
                 onChange={(e) => setUsernameSuffix(e.target.value)}
                 autoComplete="off"
@@ -101,11 +103,11 @@ export function LoginPage() {
             </div>
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="password">密码</Label>
+            <Label htmlFor="password">{t('login.password')}</Label>
             <Input
               id="password"
               type="password"
-              placeholder="请输入密码"
+              placeholder={t('login.enterPassword')}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
@@ -129,7 +131,7 @@ export function LoginPage() {
                     el.addEventListener('change', update)
                   }}
                 />
-                记住我
+                {t('login.rememberMe')}
               </label>
             }
             onForget={() => {}}
@@ -148,26 +150,26 @@ export function LoginPage() {
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                 </svg>
-                登录中…
+                {t('login.loggingIn')}
               </span>
-            ) : '登录'}
+            ) : t('login.loginButtonLabel')}
           </Button>
           <div className="text-center text-xs text-muted-foreground">
-            登录即代表同意
+            {t('login.agreeByLogin')}
             <button
               type="button"
               className="mx-0.5 font-medium text-primary underline-offset-4 hover:underline"
               onClick={() => setActiveLegalDocument('terms')}
             >
-              服务条款
+              {t('login.termsOfService')}
             </button>
-            与
+            {t('login.and')}
             <button
               type="button"
               className="mx-0.5 font-medium text-primary underline-offset-4 hover:underline"
               onClick={() => setActiveLegalDocument('privacy')}
             >
-              隐私政策
+              {t('login.privacyPolicy')}
             </button>
           </div>
         </form>

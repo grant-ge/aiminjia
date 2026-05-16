@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,11 +33,13 @@ export function ConfirmDialog({
   title,
   description,
   confirmLabel,
-  cancelLabel = '取消',
+  cancelLabel,
   variant = 'default',
   onOpenChange,
   onConfirm,
 }: ConfirmDialogProps) {
+  const { t } = useTranslation()
+  const resolvedCancelLabel = cancelLabel ?? t('common.cancel')
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
@@ -44,7 +48,7 @@ export function ConfirmDialog({
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel className="border-input">{cancelLabel}</AlertDialogCancel>
+          <AlertDialogCancel className="border-input">{resolvedCancelLabel}</AlertDialogCancel>
           <AlertDialogAction
             className={cn(
               variant === 'destructive' &&

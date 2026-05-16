@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Play, Pause, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
@@ -96,13 +97,11 @@ function StatusDot({ status }: { status: EmployeeStatus }) {
   }
 }
 
-function statusLabel(status: EmployeeStatus): string {
-  switch (status) {
-    case 'running': return '运行中'
-    case 'has-report': return '有新汇报'
-    case 'needs-setup': return '需要配置'
-    default: return '空闲'
-  }
+const STATUS_I18N_KEY: Record<EmployeeStatus, string> = {
+  running: 'employeeCard.running',
+  'has-report': 'employeeCard.hasReport',
+  'needs-setup': 'employeeCard.needsSetup',
+  idle: 'employeeCard.idle',
 }
 
 // ─── card ─────────────────────────────────────────────────────────────────────
@@ -116,6 +115,7 @@ interface EmployeeCardProps {
 }
 
 export function EmployeeCard({ employee: emp, inboxEntries, activeRun = null, onClick, onRefresh }: EmployeeCardProps) {
+  const { t } = useTranslation()
   const [busy, setBusy] = useState(false)
   const status = deriveStatus(emp, inboxEntries, activeRun)
 
@@ -173,14 +173,16 @@ export function EmployeeCard({ employee: emp, inboxEntries, activeRun = null, on
             status === 'needs-setup' && 'font-medium text-orange-500',
             !['has-report', 'running', 'needs-setup'].includes(status) && 'text-muted-foreground',
           )}>
-            {statusLabel(status)}
+            {t(STATUS_I18N_KEY[status])}
           </span>
           {/* Cron next-run hint is shown for any idle employee with an
               armed cron — replaces the dedicated `scheduled` status
               dropped in PR-8. */}
           {status === 'idle' && emp.cron && emp.cronEnabled && emp.nextRunAt && (
             <span className="text-xs text-muted-foreground/80">
-              下次：{formatRelativeNextRun(emp.nextRunAt) || '即将'}
+              {formatRelativeNextRun(emp.nextRunAt)
+                ? t('employeeCard.nextRun', { time: formatRelativeNextRun(emp.nextRunAt) })
+                : t('employeeCard.nextRunSoon')}
             </span>
           )}
         </div>
@@ -193,7 +195,7 @@ export function EmployeeCard({ employee: emp, inboxEntries, activeRun = null, on
               className="h-6 w-6"
               disabled={busy}
               onClick={handleTogglePause}
-              title={emp.cronEnabled ? '暂停' : '恢复'}
+              title={emp.cronEnabled ? t('employeeCard.pause') : t('employeeCard.resume')}
             >
               {emp.cronEnabled
                 ? <Pause className="h-3 w-3" />
@@ -214,6 +216,7 @@ interface AddEmployeeCardProps {
 }
 
 export function AddEmployeeCard({ onClick }: AddEmployeeCardProps) {
+  const { t } = useTranslation()
   return (
     <button
       type="button"
@@ -222,7 +225,7 @@ export function AddEmployeeCard({ onClick }: AddEmployeeCardProps) {
       style={{ minHeight: 152 }}
     >
       <span className="text-2xl text-muted-foreground/50">＋</span>
-      <span className="text-xs text-muted-foreground">雇佣新员工</span>
+      <span className="text-xs text-muted-foreground">{t('employeeCard.hireNew')}</span>
     </button>
   )
 }

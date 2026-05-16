@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { X, MessageSquare, Square, Clock, RefreshCw } from 'lucide-react'
 import {
   employeeDelete,
@@ -37,34 +38,34 @@ function statusBadgeClass(status: EmployeeStatus): string {
   }
 }
 
-function statusText(status: EmployeeStatus): string {
-  switch (status) {
-    case 'running': return '🔵 运行中'
-    case 'has-report': return '🟢 有汇报'
-    case 'needs-setup': return '🟠 需要配置'
-    case 'idle':
-    default:
-      return '⚪ 空闲'
-  }
+const STATUS_TEXT_KEY: Record<EmployeeStatus, string> = {
+  running: 'employeeDrawer.statusRunning',
+  'has-report': 'employeeDrawer.statusHasReport',
+  'needs-setup': 'employeeDrawer.statusNeedsSetup',
+  idle: 'employeeDrawer.statusIdle',
 }
 
-function cronToHuman(cron: string): string {
-  const parts = cron.trim().split(/\s+/)
-  if (parts.length !== 5) return cron
-  const [minute, hour, , , dow] = parts
-  const m = parseInt(minute, 10)
-  const h = parseInt(hour, 10)
-  if (!isNaN(m) && !isNaN(h)) {
-    const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
-    if (dow === '*') return `每天 ${timeStr}`
-    if (dow === '1-5') return `工作日 ${timeStr}`
-    const dayNames = ['日', '一', '二', '三', '四', '五', '六']
-    const dayNums = dow.split(',').map(Number).filter((n) => !isNaN(n))
-    if (dayNums.length > 0) {
-      return `每周${dayNums.map((n) => dayNames[n] ?? '?').join('/')} ${timeStr}`
+function useCronToHuman() {
+  const { t } = useTranslation()
+  return (cron: string): string => {
+    const parts = cron.trim().split(/\s+/)
+    if (parts.length !== 5) return cron
+    const [minute, hour, , , dow] = parts
+    const m = parseInt(minute, 10)
+    const h = parseInt(hour, 10)
+    if (!isNaN(m) && !isNaN(h)) {
+      const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+      if (dow === '*') return t('employeeDrawer.cronEveryDay', { time: timeStr })
+      if (dow === '1-5') return t('employeeDrawer.cronWeekdays', { time: timeStr })
+      const dayNames = t('employeeDrawer.dayNames', { returnObjects: true }) as string[]
+      const dayNums = dow.split(',').map(Number).filter((n) => !isNaN(n))
+      if (dayNums.length > 0) {
+        const days = dayNums.map((n) => dayNames[n] ?? '?').join('/')
+        return t('employeeDrawer.cronWeekly', { days, time: timeStr })
+      }
     }
+    return cron
   }
-  return cron
 }
 
 interface EmployeeDrawerProps {
@@ -85,6 +86,8 @@ function formatElapsed(iso: string): string {
 }
 
 export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, onClose, onRefresh }: EmployeeDrawerProps) {
+  const { t, i18n } = useTranslation()
+  const cronToHuman = useCronToHuman()
   const [busy, setBusy] = useState(false)
   const [resourceModalOpen, setResourceModalOpen] = useState(false)
   const [cronModalOpen, setCronModalOpen] = useState(false)
@@ -174,7 +177,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
           setResourceModalOpen(true)
           return
         case 'knowledge-indexing':
-          alert('知识库正在后台切片入库，请稍后再试。')
+          alert(t('employeeDrawer.knowledgeIndexing'))
           return
       }
     } catch (err) {
@@ -191,7 +194,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
       await onRefresh()
     } catch (err) {
       console.error('[EmployeeDrawer] resource submit error:', err)
-      alert(`保存配置失败：${String(err)}`)
+      alert(t('employeeDrawer.saveConfigFailed', { error: String(err) }))
     }
     // Do NOT auto re-trigger — user clicks 现在派活 again to dispatch.
     // This prevents an infinite save→retrigger loop if a future
@@ -218,7 +221,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
       await onRefresh()
     } catch (err) {
       console.error('[EmployeeDrawer] stop error:', err)
-      alert(`停止失败：${String(err)}`)
+      alert(t('employeeDrawer.stopFailed', { error: String(err) }))
     } finally {
       setBusy(false)
     }
@@ -232,7 +235,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
       await onRefresh()
     } catch (err) {
       console.error('[EmployeeDrawer] cron edit error:', err)
-      alert(`修改失败：${String(err)}`)
+      alert(t('employeeDrawer.cronEditFailed', { error: String(err) }))
     } finally {
       setBusy(false)
     }
@@ -240,35 +243,31 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
 
   const handleUpgradeTemplate = async () => {
     if (!upgradeCheck?.hasUpgrade) return
-    const fields = upgradeCheck.changedFields.join('、') || '（仅版本号变化）'
+    const fields = upgradeCheck.changedFields.join('、') || t('employeeDrawer.upgradeFieldsDefault')
     const ok = confirm(
-      `升级模板 v${upgradeCheck.currentVersion ?? '?'} → v${upgradeCheck.latestVersion}？\n\n` +
-        `将更新：${fields}\n` +
-        `保留：员工名称、定时计划、资源配置、知识库\n\n` +
-        `此操作不影响进行中的会话记录。`,
+      t('employeeDrawer.upgradeConfirm', {
+        from: upgradeCheck.currentVersion ?? '?',
+        to: upgradeCheck.latestVersion,
+        fields,
+      }),
     )
     if (!ok) return
     setBusy(true)
     try {
       await employeeTemplateUpgrade(emp.id)
-      // Re-probe so the badge disappears
       const next = await employeeTemplateCheckUpgrade(emp.id).catch(() => null)
       setUpgradeCheck(next)
       await onRefresh()
     } catch (err) {
       console.error('[EmployeeDrawer] upgrade error:', err)
-      alert(`升级失败：${String(err)}`)
+      alert(t('employeeDrawer.upgradeFailed', { error: String(err) }))
     } finally {
       setBusy(false)
     }
   }
 
   const handleDismiss = async () => {
-    if (
-      !confirm(
-        `确定删除「${emp.name}」吗？\n\n此操作不可恢复。该员工的配置将被永久清除，相关的会话记录会保留。`,
-      )
-    ) {
+    if (!confirm(t('employeeDrawer.deleteConfirm', { name: emp.name }))) {
       return
     }
     setBusy(true)
@@ -278,7 +277,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
       onClose()
     } catch (err) {
       console.error('[EmployeeDrawer] dismiss error:', err)
-      alert(`删除失败：${String(err)}`)
+      alert(t('employeeDrawer.deleteFailed', { error: String(err) }))
     } finally {
       setBusy(false)
     }
@@ -300,7 +299,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
           </div>
           <div className="flex items-center gap-2">
             <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${statusBadgeClass(status)}`}>
-              {statusText(status)}
+              {t(STATUS_TEXT_KEY[status])}
             </span>
             <button type="button" onClick={onClose} className="rounded-md p-1 hover:bg-accent">
               <X className="h-4 w-4 text-muted-foreground" />
@@ -321,11 +320,11 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
                 <RefreshCw className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" aria-hidden />
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-medium text-blue-900 dark:text-blue-100">
-                    有新版本模板（v{upgradeCheck.currentVersion ?? '?'} → v{upgradeCheck.latestVersion}）
+                    {t('employeeDrawer.templateUpgradeBanner', { from: upgradeCheck.currentVersion ?? '?', to: upgradeCheck.latestVersion })}
                   </p>
                   {upgradeCheck.changedFields.length > 0 ? (
                     <p className="mt-0.5 text-xs text-blue-800/80 dark:text-blue-100/70">
-                      将更新：{upgradeCheck.changedFields.join('、')}
+                      {t('employeeDrawer.templateUpgradeFields', { fields: upgradeCheck.changedFields.join('、') })}
                     </p>
                   ) : null}
                 </div>
@@ -336,29 +335,29 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
                   disabled={busy}
                   onClick={handleUpgradeTemplate}
                 >
-                  升级
+                  {t('employeeDrawer.upgrade')}
                 </Button>
               </section>
             ) : null}
 
             {/* 职责 */}
             <section>
-              <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">职责</h3>
+              <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('employeeDrawer.responsibility')}</h3>
               <p className="text-sm leading-relaxed text-foreground">{emp.description}</p>
             </section>
 
             {/* 触发器 */}
             <section>
-              <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">触发方式</h3>
+              <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('employeeDrawer.triggerMethod')}</h3>
               <div className="flex flex-col gap-1.5 text-sm">
                 <div className="flex items-center gap-2">
-                  <span className="text-muted-foreground">按需派活</span>
-                  <span className="text-foreground">✓ 始终支持</span>
+                  <span className="text-muted-foreground">{t('employeeDrawer.onDemand')}</span>
+                  <span className="text-foreground">{t('employeeDrawer.alwaysSupported')}</span>
                 </div>
                 {emp.cron ? (
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <span className="text-muted-foreground">定时触发</span>
+                      <span className="text-muted-foreground">{t('employeeDrawer.cronTrigger')}</span>
                       <span className="font-mono text-xs text-foreground">{cronToHuman(emp.cron)}</span>
                     </div>
                     <button
@@ -371,13 +370,13 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
                           : 'bg-muted text-muted-foreground hover:bg-accent'
                       }`}
                     >
-                      {emp.cronEnabled ? '已启用' : '已暂停'}
+                      {emp.cronEnabled ? t('employeeDrawer.cronEnabled') : t('employeeDrawer.cronPaused')}
                     </button>
                   </div>
                 ) : (
                   <div className="flex items-center gap-2">
-                    <span className="text-muted-foreground">定时触发</span>
-                    <span className="text-muted-foreground/60">未配置</span>
+                    <span className="text-muted-foreground">{t('employeeDrawer.cronTrigger')}</span>
+                    <span className="text-muted-foreground/60">{t('employeeDrawer.cronNotConfigured')}</span>
                   </div>
                 )}
               </div>
@@ -393,7 +392,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
               return (
                 <section>
                   <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    绑定技能
+                    {t('employeeDrawer.boundSkill')}
                   </h3>
                   <div className="rounded-md border border-border bg-card px-3 py-2">
                     <div className="text-sm font-medium text-foreground">
@@ -412,7 +411,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
             {/* 近期汇报 */}
             {empInbox.length > 0 && (
               <section>
-                <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">近期动态</h3>
+                <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('employeeDrawer.recentActivity')}</h3>
                 <div className="flex flex-col gap-1.5">
                   {empInbox.map((entry) => (
                     <div
@@ -428,7 +427,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
                           <p className="mt-0.5 truncate text-xs text-muted-foreground">{entry.summary}</p>
                         )}
                         <p className="mt-0.5 text-xs text-muted-foreground/60">
-                          {new Date(entry.createdAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          {new Date(entry.createdAt).toLocaleString(i18n.language, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                         </p>
                       </div>
                       {!entry.read && (
@@ -442,19 +441,19 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
 
             {/* 本月统计 */}
             <section>
-              <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">本月运行</h3>
+              <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('employeeDrawer.monthlyRuns')}</h3>
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-lg bg-accent/50 px-3 py-2.5">
                   <p className="text-xl font-bold text-foreground">
                     {inboxEntries.filter((e) => e.employeeId === emp.id && e.kind === 'report').length}
                   </p>
-                  <p className="text-xs text-muted-foreground">次汇报</p>
+                  <p className="text-xs text-muted-foreground">{t('employeeDrawer.reportCountLabel')}</p>
                 </div>
                 <div className="rounded-lg bg-accent/50 px-3 py-2.5">
                   <p className="text-xl font-bold text-foreground">
-                    {emp.lastRunAt ? new Date(emp.lastRunAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }) : '—'}
+                    {emp.lastRunAt ? new Date(emp.lastRunAt).toLocaleDateString(i18n.language, { month: 'numeric', day: 'numeric' }) : '—'}
                   </p>
-                  <p className="text-xs text-muted-foreground">上次运行</p>
+                  <p className="text-xs text-muted-foreground">{t('employeeDrawer.lastRun')}</p>
                 </div>
               </div>
             </section>
@@ -467,7 +466,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
             /* Running state — replaces all idle controls */
             <div className="flex flex-col gap-2">
               <div className="rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-900 dark:bg-blue-950 dark:text-blue-100">
-                ⚡ 运行中 · 已跑 {formatElapsed(activeRun.startedAt)}
+                {t('employeeDrawer.runningElapsed', { time: formatElapsed(activeRun.startedAt) })}
               </div>
               <div className="flex items-center gap-2">
                 <Button
@@ -478,7 +477,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
                     setRoute({ kind: 'chat', conversationId: activeRun.conversationId })
                   }}
                 >
-                  <MessageSquare className="h-4 w-4" /> 跳到对话
+                  <MessageSquare className="h-4 w-4" /> {t('employeeDrawer.jumpToChat')}
                 </Button>
                 <Button
                   variant="outline"
@@ -486,7 +485,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
                   disabled={busy}
                   onClick={handleStop}
                 >
-                  <Square className="h-4 w-4 fill-current" /> 停止
+                  <Square className="h-4 w-4 fill-current" /> {t('employeeDrawer.stop')}
                 </Button>
               </div>
             </div>
@@ -500,7 +499,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
                 onClick={handleTrigger}
               >
                 <MessageSquare className="h-4 w-4" />
-                {emp.lifecycle === 'archived' ? '员工已删除' : '现在派活'}
+                {emp.lifecycle === 'archived' ? t('employeeDrawer.employeeDeleted') : t('employeeDrawer.dispatchNow')}
               </Button>
 
               {/* Cron management row */}
@@ -508,7 +507,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
                 <div className="flex items-center justify-between rounded-md bg-accent/40 px-3 py-2 text-xs">
                   <div className="flex min-w-0 flex-1 items-center gap-1.5 text-muted-foreground">
                     <Clock className="h-3 w-3 shrink-0" />
-                    <span className="truncate">定时 {cronToHuman(emp.cron)}</span>
+                    <span className="truncate">{t('employeeDrawer.cronSchedule', { schedule: cronToHuman(emp.cron) })}</span>
                     {emp.nextRunAt && emp.cronEnabled && emp.lifecycle === 'active' && (
                       <span className="shrink-0 text-muted-foreground/60">
                         · {formatRelativeNextRun(emp.nextRunAt)}
@@ -521,7 +520,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
                       onClick={() => setCronModalOpen(true)}
                       className="text-muted-foreground hover:text-foreground"
                     >
-                      修改
+                      {t('employeeDrawer.editCron')}
                     </button>
                     <span className="text-muted-foreground/40">·</span>
                     <button
@@ -534,7 +533,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
                       }
                       disabled={busy}
                     >
-                      {emp.cronEnabled ? '关闭' : '开启'}
+                      {emp.cronEnabled ? t('employeeDrawer.toggleCronOff') : t('employeeDrawer.toggleCronOn')}
                     </button>
                   </div>
                 </div>
@@ -544,7 +543,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
                   onClick={() => setCronModalOpen(true)}
                   className="flex items-center gap-1.5 self-start text-xs text-muted-foreground hover:text-foreground"
                 >
-                  <Clock className="h-3 w-3" /> 添加定时触发
+                  <Clock className="h-3 w-3" /> {t('employeeDrawer.addCronTrigger')}
                 </button>
               )}
 
@@ -556,7 +555,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
                     onClick={() => setResourceModalOpen(true)}
                     className="text-muted-foreground hover:text-foreground"
                   >
-                    ⚙️ 配置资源
+                    {t('employeeDrawer.configResource')}
                   </button>
                 )}
                 <button
@@ -565,7 +564,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
                   disabled={busy}
                   className="text-muted-foreground hover:text-destructive"
                 >
-                  🗑 删除
+                  {t('employeeDrawer.deleteEmployee')}
                 </button>
               </div>
             </div>

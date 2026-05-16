@@ -7,6 +7,7 @@
  * 3. On submit: create conversation → authorize workspace → send message.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { BriefcaseBusiness, ChevronDown, Folder, FolderPlus, X } from 'lucide-react'
 
 import { SkillPopover } from '@/components/chat/SkillPopover'
@@ -40,6 +41,7 @@ import { useSkillStore } from '@/stores/skillStore'
 import { useUiStore } from '@/stores/uiStore'
 
 export function HomeTaskComposerCard() {
+  const { t } = useTranslation()
   const composerRef = useRef<RichComposerHandle>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const { sendUserMessage } = useChat()
@@ -95,7 +97,7 @@ export function HomeTaskComposerCard() {
   const handlePickProject = async () => {
     const path = await pickLocalDirectory({
       defaultPath: displayWorkspace?.rootPath,
-      title: '选择工作目录',
+      title: t('homeComposer.selectWorkDir'),
     })
     if (!path) return
     const parts = path.split(/[/\\]/).filter(Boolean)
@@ -119,7 +121,7 @@ export function HomeTaskComposerCard() {
       const now = new Date().toISOString()
       const store = useChatStore.getState()
       store.setConversations([
-        { id: backendId, title: '新对话', createdAt: now, updatedAt: now, isArchived: false },
+        { id: backendId, title: t('homeComposer.newConversation'), createdAt: now, updatedAt: now, isArchived: false },
         ...store.conversations,
       ])
       store.setMessages([])
@@ -168,7 +170,7 @@ export function HomeTaskComposerCard() {
     }
   }, [displayWorkspace, isSubmitting, sendUserMessage, selectedSkill])
 
-  const workspaceLabel = displayWorkspace?.displayName ?? '默认项目'
+  const workspaceLabel = displayWorkspace?.displayName ?? t('homeComposer.defaultProject')
   const workspacePath = displayWorkspace?.rootPath
 
   return (
@@ -186,7 +188,7 @@ export function HomeTaskComposerCard() {
 
       <RichComposer
         ref={composerRef}
-        placeholder="描述你的任务，或点击「技能」按钮选择技能..."
+        placeholder={t('homeComposer.placeholder')}
         onSubmit={handleSubmit}
         disabled={isSubmitting}
         clearOnSubmit
@@ -206,12 +208,12 @@ export function HomeTaskComposerCard() {
             <button
               type="button"
               disabled={isSubmitting}
-              aria-label={`选择工作目录，当前在 ${workspaceLabel} 中工作`}
+              aria-label={t('homeComposer.selectWorkDirAria', { name: workspaceLabel })}
               title={workspacePath}
               className="inline-flex max-w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-[15px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
             >
               <BriefcaseBusiness className="h-5 w-5 shrink-0" />
-              <span className="truncate">在 {workspaceLabel} 中工作</span>
+              <span className="truncate">{t('homeComposer.workingIn', { name: workspaceLabel })}</span>
               <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
             </button>
           </DropdownMenuTrigger>
@@ -255,7 +257,7 @@ export function HomeTaskComposerCard() {
               className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium outline-none focus:bg-muted"
             >
               <FolderPlus className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <span>选择其他目录…</span>
+              <span>{t('homeComposer.selectOtherDir')}</span>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

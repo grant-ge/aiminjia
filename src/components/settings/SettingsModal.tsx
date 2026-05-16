@@ -2,6 +2,7 @@
  * @designSource design.pen#S3D6p / 1MCFZ / az6ZY
  */
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { message } from '@tauri-apps/plugin-dialog'
 
 import { requestConfirm } from '@/components/common/ConfirmDialogHost'
@@ -23,6 +24,7 @@ import { GeneralPanel } from './panels/GeneralPanel'
 import { RuntimePanel } from './panels/RuntimePanel'
 
 export function SettingsModal() {
+  const { t } = useTranslation()
   const settingsModal = useUiStore((s) => s.settingsModal)
   const closeSettings = useUiStore((s) => s.closeSettings)
   const openSettings = useUiStore((s) => s.openSettings)
@@ -34,7 +36,7 @@ export function SettingsModal() {
   const dataMaskingLevel = useSettingsStore((s) => s.dataMaskingLevel ?? 'relaxed')
   const setDataMaskingLevel = useSettingsStore((s) => s.setDataMaskingLevel)
   const [pendingLogout, setPendingLogout] = useState(false)
-  const [appVersion, setAppVersion] = useState('读取中')
+  const [appVersion, setAppVersion] = useState(t('settings.loadingVersion'))
   const [activeLegalDocument, setActiveLegalDocument] = useState<LegalDocumentKey | null>(null)
 
   useEffect(() => {
@@ -47,7 +49,7 @@ export function SettingsModal() {
         if (!cancelled) setAppVersion(version)
       })
       .catch(() => {
-        if (!cancelled) setAppVersion('未知')
+        if (!cancelled) setAppVersion(t('settings.unknown'))
       })
 
     return () => {
@@ -87,7 +89,7 @@ export function SettingsModal() {
       await store.bootstrap()
       const phase = useUpdaterStore.getState().phase
       if (phase === 'idle') {
-        await message('当前已是最新版本。', { title: productName, kind: 'info' })
+        await message(t('settings.alreadyLatestVersion'), { title: productName, kind: 'info' })
       } else if (phase !== 'failed') {
         // downloading / ready / installing → show the panel
         store.openPanel()
@@ -103,10 +105,10 @@ export function SettingsModal() {
       const { uploadDiagnosticLogs } = await import('@/lib/tauri')
       const result = await uploadDiagnosticLogs()
       const badNote = result.bad_metrics_lines > 0
-        ? `\n损坏行数: ${result.bad_metrics_lines}（已作为文本上传）`
+        ? `\n${t('settings.badMetricsLines')}: ${result.bad_metrics_lines}`
         : ''
       await message(
-        `日志已上传\n上传 ID: ${result.session_id}\n分块: ${result.chunks_uploaded}/${result.chunks_total}\n应用日志行数: ${result.app_log_lines_uploaded}\n诊断事件数: ${result.events_uploaded}${badNote}`,
+        `${t('settings.logsUploaded')}\n${t('settings.uploadId')}: ${result.session_id}\n${t('settings.chunks')}: ${result.chunks_uploaded}/${result.chunks_total}\n${t('settings.appLogLines')}: ${result.app_log_lines_uploaded}\n${t('settings.diagnosticEvents')}: ${result.events_uploaded}${badNote}`,
         { title: productName, kind: 'info' },
       )
     } catch (e) {
@@ -117,15 +119,15 @@ export function SettingsModal() {
   const onResetData = async () => {
     const confirmed = await requestConfirm({
       title: productName,
-      description: '将清除本地缓存并恢复默认设置，是否继续？',
-      confirmLabel: '重置',
+      description: t('settings.resetDescription'),
+      confirmLabel: t('settings.reset'),
       variant: 'destructive',
     })
     if (!confirmed) return
 
     localStorage.clear()
     useBrandingStore.getState().reset()
-    await message('本地缓存已清除，部分设置会在重启后恢复默认。', { title: productName, kind: 'info' })
+    await message(t('settings.localCacheCleared'), { title: productName, kind: 'info' })
   }
 
   return (
@@ -146,7 +148,7 @@ export function SettingsModal() {
               {settingsModal === 'account' ? (
                 <GeneralPanel
                   user={{
-                    name: user?.name ?? user?.username ?? '未登录',
+                    name: user?.name ?? user?.username ?? t('settings.notLoggedIn'),
                     tenantName: tenant?.name ?? '',
                     avatarUrl: '',
                   }}
@@ -157,7 +159,7 @@ export function SettingsModal() {
                 <AboutPanel
                   appName={productName}
                   version={appVersion}
-                  copyright="仁励家网络科技(杭州)有限公司 版权所有"
+                  copyright={t('settings.copyrightText')}
                   logoUrl={logoUrl}
                   onCheckUpdate={() => void onCheckUpdate()}
                   onUploadLogs={() => void onUploadLogs()}

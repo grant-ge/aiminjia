@@ -26,12 +26,13 @@ import { getExpertTeam as findTeam } from '@/features/expert-teams/teams'
 import { buildDirectorPrompt } from '@/features/expert-teams/buildDirectorPrompt'
 
 function BottomTips() {
+  const { t } = useTranslation()
   return (
     <>
-      <span>内容由 AI 生成，请仔细核实回答内容</span>
+      <span>{t('bottomTips.aiDisclaimer')}</span>
       <div className="flex items-center gap-3">
-        <span>Enter 发送</span>
-        <span>Shift+Enter 换行</span>
+        <span>{t('bottomTips.enterToSend')}</span>
+        <span>{t('bottomTips.shiftEnterNewline')}</span>
       </div>
     </>
   )

@@ -4,6 +4,8 @@
  * 分组依据：conversation.workspaceName（后端从 authorized_workspace_store 注入）。
  * 未绑定工作目录的对话归到"默认文件夹"。
  */
+import i18n from '@/i18n'
+
 import type { ConversationTreeProject } from './ConversationTree'
 
 export interface RawConversation {
@@ -14,7 +16,7 @@ export interface RawConversation {
 }
 
 const DEFAULT_PROJECT_ID = 'default'
-const DEFAULT_PROJECT_NAME = '默认文件夹'
+function getDefaultProjectName() { return i18n.t('sidebar.defaultFolder') }
 
 export function groupConversationsByProject(
   conversations: RawConversation[],
@@ -23,7 +25,7 @@ export function groupConversationsByProject(
   const map = new Map<string, ConversationTreeProject>()
   for (const c of conversations) {
     const projectId = c.workspaceName ?? DEFAULT_PROJECT_ID
-    const projectName = c.workspaceName ?? DEFAULT_PROJECT_NAME
+    const projectName = c.workspaceName ?? getDefaultProjectName()
     let project = map.get(projectId)
     if (!project) {
       project = { id: projectId, name: projectName, conversations: [] }

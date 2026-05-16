@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { create } from 'zustand'
 
 import { ConfirmDialog, type ConfirmDialogOptions } from './ConfirmDialog'
@@ -31,6 +32,7 @@ export function requestConfirm(options: ConfirmDialogOptions): Promise<boolean> 
 }
 
 export function ConfirmDialogHost() {
+  const { t } = useTranslation()
   const request = useConfirmDialogStore((state) => state.request)
   const resolve = useConfirmDialogStore((state) => state.resolve)
 
@@ -39,7 +41,7 @@ export function ConfirmDialogHost() {
       open={!!request}
       title={request?.title ?? ''}
       description={request?.description ?? ''}
-      confirmLabel={request?.confirmLabel ?? '确认'}
+      confirmLabel={request?.confirmLabel ?? t('common.confirm')}
       cancelLabel={request?.cancelLabel}
       variant={request?.variant}
       onOpenChange={(open) => {

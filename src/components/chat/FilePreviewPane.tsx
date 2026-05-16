@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { ExternalLink, FileText, Loader2, X } from 'lucide-react'
 
 import { AssistantMarkdown } from '@/components/chat-scene/AssistantMarkdown'
@@ -18,6 +19,7 @@ type PreviewState =
   | null
 
 export function FilePreviewPane({ target, onOpenExternal, onClosePreview }: FilePreviewPaneProps) {
+  const { t } = useTranslation()
   const [previewState, setPreviewState] = useState<PreviewState>(null)
   const [retryToken, setRetryToken] = useState(0)
   const requestIdRef = useRef(0)
@@ -59,7 +61,7 @@ export function FilePreviewPane({ target, onOpenExternal, onClosePreview }: File
           setPreviewState({
             status: 'error',
             key: previewKey,
-            error: err instanceof Error ? err.message : '无法预览文件',
+            error: err instanceof Error ? err.message : t('filePreview.cannotPreview'),
           })
         }
       })
@@ -83,7 +85,7 @@ export function FilePreviewPane({ target, onOpenExternal, onClosePreview }: File
   if (!target) {
     return (
       <div className="flex h-full flex-1 items-center justify-center bg-muted/20 px-6 text-center">
-        <p className="text-sm text-muted-foreground">选择一个产物进行预览</p>
+        <p className="text-sm text-muted-foreground">{t('filePreview.selectArtifact')}</p>
       </div>
     )
   }
@@ -106,7 +108,7 @@ export function FilePreviewPane({ target, onOpenExternal, onClosePreview }: File
             onClick={handleOpenExternal}
           >
             <ExternalLink className="h-3.5 w-3.5" />
-            用默认应用打开
+            {t('filePreview.openWithDefault')}
           </Button>
           {onClosePreview && (
             <Button
@@ -129,13 +131,13 @@ export function FilePreviewPane({ target, onOpenExternal, onClosePreview }: File
         {!isCurrentPreviewState ? (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            正在加载预览
+            {t('filePreview.loadingPreview')}
           </div>
         ) : previewState.status === 'error' ? (
           <div className="space-y-3 rounded-xl border border-destructive/20 bg-destructive/5 p-4 text-sm text-destructive">
             <p>{previewState.error}</p>
             <Button type="button" variant="outline" size="sm" onClick={retryPreview}>
-              重试
+              {t('filePreview.retry')}
             </Button>
           </div>
         ) : (

@@ -1,6 +1,8 @@
 /**
  * @designSource design.pen#mbeKY planCard + BtLe0 quotaSec + SAOik detailSec
  */
+import { useTranslation } from 'react-i18next'
+
 interface QuotaItem { label: string; used: number; total: number }
 interface DetailRow { label: string; value: string }
 
@@ -12,6 +14,7 @@ interface UsagePanelProps {
 }
 
 export function UsagePanel({ planName, planRenewLabel, quota, detail }: UsagePanelProps) {
+  const { t } = useTranslation()
   return (
     <>
       <div className="flex items-center justify-between border-b border-border py-4">
@@ -37,7 +40,7 @@ export function UsagePanel({ planName, planRenewLabel, quota, detail }: UsagePan
         })}
       </section>
       <section className="flex flex-col gap-4">
-        <div className="text-sm font-semibold text-foreground">用量明细</div>
+        <div className="text-sm font-semibold text-foreground">{t('settings.usage.details')}</div>
         <dl className="grid grid-cols-2 gap-y-2 text-sm">
           {detail.map((d) => (
             <div key={d.label} className="contents">

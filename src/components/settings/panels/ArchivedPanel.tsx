@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   deleteConversation,
   getArchivedConversations,
@@ -20,10 +21,10 @@ interface ArchivedConversation {
 
 type PendingAction = { kind: 'restore' | 'delete'; item: ArchivedConversation } | null
 
-function toConversation(raw: Record<string, unknown>): Conversation {
+function toConversation(raw: Record<string, unknown>, newChatLabel: string): Conversation {
   return {
     id: (raw.id as string) ?? '',
-    title: (raw.title as string) ?? '新对话',
+    title: (raw.title as string) ?? newChatLabel,
     createdAt: (raw.createdAt as string) ?? new Date().toISOString(),
     updatedAt: (raw.updatedAt as string) ?? new Date().toISOString(),
     isArchived: (raw.isArchived as boolean) ?? false,
@@ -36,6 +37,7 @@ function getErrorMessage(error: unknown): string {
 }
 
 export function ArchivedPanel() {
+  const { t } = useTranslation()
   const [items, setItems] = useState<ArchivedConversation[]>([])
   const [loading, setLoading] = useState(true)
   const [operatingId, setOperatingId] = useState<string | null>(null)
@@ -56,7 +58,7 @@ export function ArchivedPanel() {
 
   const reloadConversations = async () => {
     const raw = await getConversations()
-    useChatStore.getState().setConversations(raw.map(toConversation))
+    useChatStore.getState().setConversations(raw.map((r) => toConversation(r, t('settings.archived.newChat'))))
   }
 
   const handleRestore = async (item: ArchivedConversation) => {
@@ -66,8 +68,8 @@ export function ArchivedPanel() {
       await Promise.all([load(), reloadConversations()])
       pushNotification({
         level: 'success',
-        title: '恢复成功',
-        message: `「${item.title}」已恢复到聊天列表。`,
+        title: t('settings.archived.restoreSuccess'),
+        message: t('settings.archived.restoredToList', { title: item.title }),
         actions: [],
         dismissible: true,
         autoHide: 4,
@@ -76,7 +78,7 @@ export function ArchivedPanel() {
     } catch (error) {
       pushNotification({
         level: 'error',
-        title: '恢复失败',
+        title: t('settings.archived.restoreFailed'),
         message: getErrorMessage(error),
         actions: [],
         dismissible: true,
@@ -96,8 +98,8 @@ export function ArchivedPanel() {
       await load()
       pushNotification({
         level: 'success',
-        title: '已彻底删除',
-        message: `「${item.title}」及其消息和文件已删除。`,
+        title: t('settings.archived.permanentlyDeleted'),
+        message: t('settings.archived.deletedWithFiles', { title: item.title }),
         actions: [],
         dismissible: true,
         autoHide: 4,
@@ -106,7 +108,7 @@ export function ArchivedPanel() {
     } catch (error) {
       pushNotification({
         level: 'error',
-        title: '删除失败',
+        title: t('settings.archived.deleteFailed'),
         message: getErrorMessage(error),
         actions: [],
         dismissible: true,
@@ -129,11 +131,11 @@ export function ArchivedPanel() {
   }
 
   if (loading) {
-    return <div className="text-sm text-muted-foreground p-4">加载中...</div>
+    return <div className="text-sm text-muted-foreground p-4">{t('common.loading')}</div>
   }
 
   if (items.length === 0) {
-    return <div className="text-sm text-muted-foreground p-4">暂无归档记录</div>
+    return <div className="text-sm text-muted-foreground p-4">{t('settings.archived.noRecords')}</div>
   }
 
   return (
@@ -153,7 +155,7 @@ export function ArchivedPanel() {
               disabled={operatingId === item.id}
               onClick={() => setPendingAction({ kind: 'restore', item })}
             >
-              恢复
+              {t('settings.archived.restore')}
             </Button>
             <Button
               size="sm"
@@ -161,20 +163,20 @@ export function ArchivedPanel() {
               disabled={operatingId === item.id}
               onClick={() => setPendingAction({ kind: 'delete', item })}
             >
-              彻底删除
+              {t('settings.archived.permanentDelete')}
             </Button>
           </div>
         </div>
       ))}
       <ConfirmDialog
         open={!!pendingAction}
-        title={pendingAction?.kind === 'restore' ? '恢复此聊天？' : '彻底删除此聊天？'}
+        title={pendingAction?.kind === 'restore' ? t('settings.archived.restoreThisChat') : t('settings.archived.deleteThisChat')}
         description={
           pendingAction?.kind === 'restore'
-            ? '恢复后聊天会重新出现在左侧聊天列表中。'
-            : '此操作会永久删除聊天、消息和关联文件，无法撤销。'
+            ? t('settings.archived.restoreDescription')
+            : t('settings.archived.deleteDescription')
         }
-        confirmLabel={pendingAction?.kind === 'restore' ? '确认恢复' : '确认删除'}
+        confirmLabel={pendingAction?.kind === 'restore' ? t('settings.archived.confirmRestore') : t('common.confirm')}
         variant={pendingAction?.kind === 'delete' ? 'destructive' : 'default'}
         onOpenChange={(open) => !open && setPendingAction(null)}
         onConfirm={confirmPendingAction}

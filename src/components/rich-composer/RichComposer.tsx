@@ -7,6 +7,7 @@ import {
   useState,
 } from 'react'
 import type { ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 import { ArrowUp, Blocks, Folder, Plus, Sparkles, X } from 'lucide-react'
 import { EditorContent, useEditor } from '@tiptap/react'
 import type { Editor } from '@tiptap/react'
@@ -75,6 +76,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
   },
   ref,
 ) {
+  const { t } = useTranslation()
   const isComposingRef = useRef(false)
   const submittingRef = useRef(false)
   // Force a re-render when content/submit state changes so the send button's disabled state stays accurate.
@@ -221,7 +223,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
               {onClearSkillCommand ? (
                 <button
                   type="button"
-                  aria-label={`移除技能 ${skillCommand.label}`}
+                  aria-label={t('composer.removeSkill', { name: skillCommand.label })}
                   onClick={onClearSkillCommand}
                   className="ml-0.5 flex h-5 w-5 items-center justify-center rounded-full transition-colors hover:bg-[var(--color-accent-muted)]"
                   style={{ color: 'var(--color-accent-700)' }}
@@ -240,7 +242,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
           <div className="flex items-center gap-0">
             <button
               type="button"
-              aria-label="添加附件"
+              aria-label={t('composer.addAttachment')}
               onClick={onOpenAttachment}
               disabled={disabled}
               className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted disabled:opacity-40"
@@ -253,8 +255,8 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
               disabled={disabled}
               aria-label={
                 skillCommand
-                  ? `打开技能选择，当前已加载技能 ${skillCommand.label}`
-                  : '打开技能选择'
+                  ? t('composer.openSkillPickerWithSkill', { name: skillCommand.label })
+                  : t('composer.openSkillPicker')
               }
               aria-pressed={Boolean(skillCommand)}
               className={
@@ -269,7 +271,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
               }
             >
               <Blocks className="h-3.5 w-3.5" />
-              <span>{skillCommand ? '技能已加载' : '技能'}</span>
+              <span>{skillCommand ? t('composer.skillLoaded') : t('composer.skill')}</span>
             </button>
             {showProjectButton ? (
               <button
@@ -294,7 +296,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
             {isStreaming ? (
               <button
                 type="button"
-                aria-label="停止"
+                aria-label={t('composer.stop')}
                 onClick={() => onStop?.()}
                 className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:opacity-90"
               >
@@ -303,7 +305,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
             ) : (
               <button
                 type="button"
-                aria-label="发送"
+                aria-label={t('composer.send')}
                 onClick={() => {
                   void trySubmit()
                 }}
