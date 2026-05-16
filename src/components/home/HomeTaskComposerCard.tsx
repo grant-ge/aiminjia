@@ -7,7 +7,7 @@
  * 3. On submit: create conversation → authorize workspace → send message.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { BriefcaseBusiness, ChevronDown, Folder, FolderPlus } from 'lucide-react'
+import { BriefcaseBusiness, ChevronDown, Folder, FolderPlus, X } from 'lucide-react'
 
 import { SkillPopover } from '@/components/chat/SkillPopover'
 import {
@@ -48,7 +48,7 @@ export function HomeTaskComposerCard() {
   useComposerDropInbox(composerRef)
   useComposerAttachmentPaste(composerRef)
 
-  const { selectedWorkspace, recentWorkspaces, setSelectedWorkspace } = useHomeStore()
+  const { selectedWorkspace, recentWorkspaces, setSelectedWorkspace, removeRecentWorkspace } = useHomeStore()
   const [displayWorkspace, setDisplayWorkspace] = useState<AuthorizedWorkspaceRef | null>(
     selectedWorkspace,
   )
@@ -208,7 +208,7 @@ export function HomeTaskComposerCard() {
               disabled={isSubmitting}
               aria-label={`选择工作目录，当前在 ${workspaceLabel} 中工作`}
               title={workspacePath}
-              className="inline-flex max-w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-base text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+              className="inline-flex max-w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-[15px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
             >
               <BriefcaseBusiness className="h-5 w-5 shrink-0" />
               <span className="truncate">在 {workspaceLabel} 中工作</span>
@@ -222,18 +222,29 @@ export function HomeTaskComposerCard() {
             className="w-[300px] max-w-[calc(100vw-32px)] rounded-2xl border-border bg-card p-1 shadow-[0_18px_44px_rgba(40,35,25,0.16)]"
           >
             {recentWorkspaces.length > 0 ? (
-              <div className="max-h-[280px] overflow-y-auto">
+              <div className="max-h-[200px] overflow-y-auto">
                 {recentWorkspaces.map((ws) => (
                   <DropdownMenuItem
                     key={ws.rootPath}
                     onSelect={() => selectWorkspace(ws)}
-                    className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 outline-none focus:bg-muted"
+                    title={ws.rootPath}
+                    className="group flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium outline-none focus:bg-muted"
                   >
                     <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    <span className="flex min-w-0 flex-col">
-                      <span className="truncate text-sm font-medium leading-5 text-foreground">{ws.displayName}</span>
-                      <span className="truncate text-xs leading-4 text-muted-foreground">{ws.rootPath}</span>
-                    </span>
+                    <span className="flex-1 truncate text-foreground">{ws.displayName}</span>
+                    <button
+                      type="button"
+                      aria-label={`从最近列表中移除 ${ws.displayName}`}
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        removeRecentWorkspace(ws.rootPath)
+                      }}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      className="hidden h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted-foreground/10 hover:text-foreground group-hover:flex group-data-[highlighted]:flex"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
                   </DropdownMenuItem>
                 ))}
               </div>

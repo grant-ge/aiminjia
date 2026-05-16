@@ -36,6 +36,28 @@ function WindowControls() {
 }
 
 /**
+ * dev 模式下：底色 --primary，斜纹另一档用 --primary 派生的"淡 60%"实色
+ * （color-mix 朝白色混 60%），两条都是实色（不透明），不论租户 accent
+ * 是什么颜色都自动协调。45° 斜纹 + 中央 DEV 标签。
+ */
+const DEV_STRIPE_STYLE: React.CSSProperties = {
+  backgroundColor: 'var(--primary)',
+  backgroundImage:
+    'repeating-linear-gradient(45deg, var(--primary) 0 10px, color-mix(in srgb, var(--primary), #000 10%) 10px 20px)',
+}
+
+function DevBadge() {
+  return (
+    <span
+      className="pointer-events-none mr-2 rounded-sm px-1.5 py-0.5 text-[11px] font-semibold tracking-widest text-white shadow-sm"
+      style={{ backgroundColor: '#4338ca' }}
+    >
+      DEV
+    </span>
+  )
+}
+
+/**
  * Both macOS (Overlay titleBarStyle) and Windows render a 28px accent strip
  * at the top so tenant-branded accent color is visible at the most prominent
  * area of the window. macOS draws native traffic lights over this strip.
@@ -43,18 +65,26 @@ function WindowControls() {
 export function TitleBar() {
   const updateReady = useUpdaterStore((s) => s.phase === 'ready')
   const isWindows = navigator.userAgent.includes('Windows')
+  const isDev = import.meta.env.DEV
+
+  const barClass = isDev
+    ? 'flex h-8 w-full shrink-0 items-center'
+    : 'flex h-8 w-full shrink-0 items-center bg-primary text-primary-foreground'
+  const barStyle = isDev ? DEV_STRIPE_STYLE : undefined
 
   if (!isWindows) {
     return (
       <div
         data-tauri-drag-region
-        className="flex h-8 w-full shrink-0 items-center justify-end bg-primary text-primary-foreground"
+        className={`${barClass} justify-end`}
+        style={barStyle}
       >
         {updateReady ? (
           <div className="pr-3" onMouseDown={(e) => e.stopPropagation()}>
             <UpdateAvailableLink />
           </div>
         ) : null}
+        {isDev ? <DevBadge /> : null}
       </div>
     )
   }
@@ -62,13 +92,15 @@ export function TitleBar() {
   return (
     <div
       data-tauri-drag-region
-      className="flex h-8 w-full shrink-0 items-center border-b border-primary-foreground/15 bg-primary text-primary-foreground"
+      className={`${barClass} ${isDev ? '' : 'border-b border-primary-foreground/15'}`}
+      style={barStyle}
       onMouseDown={handleDragStart}
     >
       <div className="flex-1" data-tauri-drag-region />
       <div onMouseDown={(e) => e.stopPropagation()}>
         <UpdateAvailableLink />
       </div>
+      {isDev ? <DevBadge /> : null}
       <WindowControls />
     </div>
   )
