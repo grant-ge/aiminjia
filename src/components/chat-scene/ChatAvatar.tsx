@@ -86,8 +86,12 @@ export function ChatAvatar({
   const effectiveSrc = normalizedSrc ?? (variant === 'neutral' ? NEUTRAL_AVATAR_SRC : null)
   const initial = firstInitial(name)
   // `neutral` variant: container is transparent, the SVG inside paints
-  // itself with `currentColor` → we set `color: var(--primary)` on the
-  // wrapper so the avatar tracks the brand accent.
+  // itself with `currentColor` → we set `color: var(--ring)` on the
+  // wrapper. `--ring` is the design.pen brand-accent token (gold
+  // #D4A843 by default, tenant-overridable), distinct from `--primary`
+  // which the visual-standard refactor pointed at the foreground text
+  // color (near-black). Using `--ring` keeps the avatar visibly tinted
+  // with the brand accent across light/dark/custom skins.
   const usingNeutralFallback = !normalizedSrc && variant === 'neutral'
   const bg = effectiveSrc
     ? 'transparent'
@@ -96,7 +100,7 @@ export function ChatAvatar({
     width: size,
     height: size,
     background: bg,
-    color: usingNeutralFallback ? 'var(--primary)' : undefined,
+    color: usingNeutralFallback ? 'var(--ring)' : undefined,
     boxShadow: ringColor ? `0 0 0 2px ${ringColor}` : undefined,
   }
   return (

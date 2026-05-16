@@ -37,14 +37,16 @@ describe('ChatAvatar', () => {
     expect(av.getAttribute('title')).toBe('小研')
   })
 
-  it('variant="neutral" renders the brand silhouette + sets color: var(--primary)', () => {
+  it('variant="neutral" renders the brand silhouette + sets color: var(--ring)', () => {
     render(<ChatAvatar name="我" variant="neutral" />)
     const av = screen.getByTestId('chat-avatar')
     expect(av.getAttribute('data-variant')).toBe('neutral')
     const img = av.querySelector('img')
     expect(img?.getAttribute('src')).toBe('/user-avatar-neutral.svg')
     // CSS color is set on the wrapper so the SVG (currentColor) picks it up.
-    expect((av as HTMLElement).style.color).toBe('var(--primary)')
+    // `--ring` is the brand-accent token (gold by default), distinct from
+    // `--primary` which the design pen points at the foreground text color.
+    expect((av as HTMLElement).style.color).toBe('var(--ring)')
     // No initial glyph is rendered when the neutral SVG is in use.
     expect(av.textContent?.trim()).toBe('')
   })
