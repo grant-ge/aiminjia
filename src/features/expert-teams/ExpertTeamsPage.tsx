@@ -1,5 +1,5 @@
 // code/src/features/expert-teams/ExpertTeamsPage.tsx
-import { useRef, useState } from 'react'
+import { useRef } from 'react'
 import { PageTopBar } from '@/components/shell/PageTopBar'
 import { createConversation, renameConversation } from '@/lib/tauri'
 import { useChatStore } from '@/stores/chatStore'
@@ -12,9 +12,8 @@ import { setExpertTeam } from './expertTeamRegistry'
 export function ExpertTeamsPage() {
   const setRoute = useUiStore((s) => s.setRoute)
   const pushNotification = useNotificationStore((s) => s.push)
-  const [starting, setStarting] = useState<ExpertTeamId | null>(null)
   // Synchronous guard: React state updates are batched, so two rapid clicks
-  // can both read `starting` as null before the re-render. A ref flips
+  // can both pass a useState-based check before re-render. A ref flips
   // immediately and blocks the second call.
   const busyRef = useRef(false)
 
@@ -23,7 +22,6 @@ export function ExpertTeamsPage() {
     busyRef.current = true
     const team = getExpertTeam(id)
     if (!team) return
-    setStarting(id)
     try {
       const conversationId = await createConversation()
       const title = `专家团: ${team.name}`
@@ -63,7 +61,6 @@ export function ExpertTeamsPage() {
       })
     } finally {
       busyRef.current = false
-      setStarting(null)
     }
   }
 
