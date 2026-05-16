@@ -48,6 +48,7 @@ export function SkillsTab(_props: SkillsTabProps = {}) {
   const [loading, setLoading] = useState(true)
   const [devWatchPath, setDevWatchPath] = useState<string | null>(null)
   const [syncing, setSyncing] = useState(false)
+  const [checkingId, setCheckingId] = useState<string | null>(null)
   const pushNotification = useNotificationStore((s) => s.push)
 
   // Debounce timer for file change events
@@ -190,6 +191,46 @@ export function SkillsTab(_props: SkillsTabProps = {}) {
       })
     } finally {
       setSyncing(false)
+    }
+  }
+
+  /**
+   * Per-row check-update: invoke the same global sync, but inspect the
+   * `installed` list afterward to surface a row-targeted toast ("有新版本"
+   * vs "已是最新"). Avoids a separate backend command — the global sync is
+   * cheap (one HTTP list call + per-skill version diff) and already
+   * authoritative.
+   */
+  const handleCheckRowUpdate = async (skill: CustomSkillInfo) => {
+    if (checkingId || syncing) return
+    setCheckingId(skill.id)
+    try {
+      const result = await syncBuiltinSkills()
+      await loadSkills()
+      const updated = result.installed.includes(skill.id)
+      pushNotification({
+        level: 'success',
+        title: updated
+          ? t('settings.skills.updateAvailable')
+          : t('settings.skills.upToDate'),
+        message: skill.name || skill.id,
+        actions: [],
+        dismissible: true,
+        autoHide: 4,
+        context: 'toast',
+      })
+    } catch (e) {
+      pushNotification({
+        level: 'error',
+        title: t('settings.skills.syncFailed'),
+        message: String(e),
+        actions: [],
+        dismissible: true,
+        autoHide: 6,
+        context: 'toast',
+      })
+    } finally {
+      setCheckingId(null)
     }
   }
 
@@ -431,6 +472,19 @@ export function SkillsTab(_props: SkillsTabProps = {}) {
                     )}
                   </div>
                   <div className="flex items-center gap-2">
+                    {isLoggedIn && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        disabled={checkingId === skill.id || syncing}
+                        onClick={() => handleCheckRowUpdate(skill)}
+                        data-testid={`skill-check-update-${skill.id}`}
+                      >
+                        {checkingId === skill.id
+                          ? t('settings.skills.updating')
+                          : t('settings.skills.checkUpdate')}
+                      </Button>
+                    )}
                     <Button
                       variant="secondary"
                       size="sm"
