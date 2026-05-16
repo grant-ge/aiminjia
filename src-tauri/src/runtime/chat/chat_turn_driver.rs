@@ -108,6 +108,14 @@ pub struct ChatTurnRequest {
     /// The dispatcher could use this metadata to e.g. persist each item as an
     /// independent user message before invoking the LLM. Default: None.
     pub pending_batch: Option<Vec<crate::runtime::pending::PendingItem>>,
+    /// When `true`, the caller already persisted the user message + emitted
+    /// `MessagePersisted` before constructing the request. The driver must
+    /// skip step 2b (persist) and the matching event emit, but must still
+    /// include the message in `initial_messages` (the caller is responsible
+    /// for that via DB load). Used by `dispatch_employee_run` so that an
+    /// agent-spawn failure cannot leave a conversation with no user message
+    /// on disk.
+    pub pre_persisted: bool,
 }
 
 impl ChatTurnRequest {
@@ -128,6 +136,7 @@ impl ChatTurnRequest {
             persona_id_override: None,
             session_attachment_dirs: Vec::new(),
             pending_batch: None,
+            pre_persisted: false,
         }
     }
 
@@ -1405,7 +1414,10 @@ impl RuntimeChatTurnDriver {
             initial_messages.push(agents_md_context_message);
         }
         initial_messages.extend(history);
-        if !is_resume_for_task_notification {
+        // When pre_persisted, the caller already wrote the user message to DB,
+        // so `load_history` above already returned it — pushing user_message
+        // again would duplicate the bubble for the LLM (and waste tokens).
+        if !is_resume_for_task_notification && !request.pre_persisted {
             initial_messages.push(user_message);
         }
         // Inject pending <task-notification> messages AFTER the current user
@@ -1547,7 +1559,12 @@ impl RuntimeChatTurnDriver {
         // The driver must do the same so the frontend message list is durable.
         // Skip when this turn was triggered by a task-notification resume:
         // there is no real user input to persist.
-        let _user_msg_id = if is_resume_for_task_notification {
+        // Also skip when the caller (e.g. `dispatch_employee_run`) already
+        // pre-persisted the user message + emitted MessagePersisted, so that
+        // an agent-spawn failure cannot leave a conversation with no user
+        // message on disk.
+        let skip_user_persist = is_resume_for_task_notification || request.pre_persisted;
+        let _user_msg_id = if skip_user_persist {
             String::new()
         } else {
             executor
@@ -1582,7 +1599,9 @@ impl RuntimeChatTurnDriver {
         // surface a fake "__resume_from_task_notification__" bubble in the
         // chat UI (and worse, with an empty message_id since the persistence
         // step above was also skipped).
-        if !is_resume_for_task_notification {
+        // Also skip when caller pre-persisted (and already emitted the
+        // event) to avoid a duplicate user bubble in the chat list.
+        if !skip_user_persist {
             self.event_bus
                 .emit(RuntimeEvent::new(
                     session_id.clone(),
@@ -2462,6 +2481,27 @@ mod tests {
     use crate::runtime::events::RuntimeEventKind;
     use crate::runtime::identity::IdentityMapping;
     use crate::runtime::ids::{RunId, ToolCallId};
+
+    #[test]
+    fn chat_turn_request_pre_persisted_defaults_false() {
+        let req = ChatTurnRequest::new("conv-x", "hello", vec![]);
+        assert!(
+            !req.pre_persisted,
+            "ChatTurnRequest::new must default pre_persisted to false; dispatch path opts in explicitly"
+        );
+    }
+
+    #[test]
+    fn chat_turn_request_pre_persisted_round_trips() {
+        let mut req = ChatTurnRequest::new("conv-y", "dispatch prompt body", vec![]);
+        req.pre_persisted = true;
+        assert!(req.pre_persisted);
+        let cloned = req.clone();
+        assert!(
+            cloned.pre_persisted,
+            "Clone must preserve pre_persisted so spawn body sees the flag"
+        );
+    }
     use crate::runtime::store::{
         PendingPermissionControlPlane, PendingPermissionRequest, PendingPermissionResolution,
     };
