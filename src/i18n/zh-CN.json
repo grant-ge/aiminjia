@@ -584,5 +584,9 @@
       "removeAria": "移除这条待处理消息",
       "attachmentsCount": "{{count}} 个附件"
     }
+  },
+  "ExpertTeams": {
+    "pageTitle": "专家团",
+    "closeBanner": "关闭专家团"
   }
 }

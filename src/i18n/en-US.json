@@ -584,5 +584,9 @@
       "removeAria": "Remove this pending message",
       "attachmentsCount": "{{count}} attachment(s)"
     }
+  },
+  "ExpertTeams": {
+    "pageTitle": "Expert Teams",
+    "closeBanner": "Close expert team"
   }
 }
