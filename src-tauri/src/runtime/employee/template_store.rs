@@ -355,6 +355,23 @@ pub fn effective_skill_ids(
     record_fallback.to_vec()
 }
 
+/// Returns the snapshot's `requires_attachment` spec (a JSON object describing
+/// the kinds of files this employee expects on dispatch). `None` when the
+/// snapshot is missing, has no requires_attachment field, or the field is
+/// JSON null. Used by `build_dispatch_prompt` to emit an in-chat hint asking
+/// the user to drag-drop the files instead of opening a native file picker
+/// (PR-10 UX change, 2026-05-15).
+pub fn effective_requires_attachment(
+    employees_root: &Path,
+    employee_id: &str,
+) -> Option<serde_json::Value> {
+    let s = load_snapshot_silent(&employees_root.join(employee_id))?;
+    if s.requires_attachment.is_null() {
+        return None;
+    }
+    Some(s.requires_attachment)
+}
+
 // ─── atomic write helper (small local copy; the existing one in storage::
 // is private to that module). ─────────────────────────────────────────────
 

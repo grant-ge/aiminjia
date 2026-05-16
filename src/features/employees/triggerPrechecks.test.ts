@@ -48,16 +48,16 @@ describe('runTriggerPrechecks', () => {
     ).toEqual({ kind: 'ready' })
   })
 
-  it('asks for attachments when template.requiresAttachment is set', () => {
+  it('PR-10: requiresAttachment no longer triggers a file picker — opens chat immediately', () => {
+    // The legacy precheck returned `{ kind: 'attachments', spec }`. PR-10
+    // moved attachment collection into the chat (the LLM prompts the user
+    // to drag-drop) so prechecks always falls through to `ready` here.
     expect(
       runTriggerPrechecks({
         template: { ...baseTemplate, requiresAttachment: { accept: '.pdf', min: 1, max: 5 } },
         employee: baseEmployee,
       }),
-    ).toEqual({
-      kind: 'attachments',
-      spec: { accept: '.pdf', min: 1, max: 5 },
-    })
+    ).toEqual({ kind: 'ready' })
   })
 
   it('asks for resource_config when kind is monitoring-urls and config is empty', () => {

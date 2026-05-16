@@ -1,9 +1,8 @@
 import type { EmployeeRecord } from '@/lib/tauri'
-import type { EmployeeTemplate, RequiresAttachmentSpec, ResourceConfigKind } from './templates'
+import type { EmployeeTemplate, ResourceConfigKind } from './templates'
 
 export type TriggerPrecheckResult =
   | { kind: 'ready' }
-  | { kind: 'attachments'; spec: RequiresAttachmentSpec }
   | { kind: 'resource'; resourceConfigKind: ResourceConfigKind }
   | { kind: 'knowledge-indexing' }
 
@@ -17,7 +16,16 @@ export interface RunTriggerPrechecksParams {
  * employee_trigger.
  *
  * Order:
- *   attachments (per-trigger) → resource_config (only when REQUIRED) → knowledge indexing
+ *   resource_config (only when REQUIRED) → knowledge indexing
+ *
+ * **PR-10 (2026-05-15)**: the `attachments` precheck was removed. Previously
+ * clicking 派活 on an employee like 小法 (合同审阅) immediately popped a
+ * native file picker, which felt jarring and disconnected from the chat
+ * flow. The new design opens the chat first; the LLM's first turn (driven
+ * by a prompt hint we add when the template requires attachments but
+ * none were supplied) asks the user to drag-drop or paste the files
+ * into the conversation. Attachments may still be passed programmatically
+ * (e.g. by future skills that pre-fetch documents).
  *
  * Note on resource_config: only `monitoring-urls` is a HARD requirement (小研
  * needs at least one URL to do anything). `sales-table` is a SOFT requirement
@@ -34,10 +42,6 @@ export interface RunTriggerPrechecksParams {
  */
 export function runTriggerPrechecks(params: RunTriggerPrechecksParams): TriggerPrecheckResult {
   const { template, employee } = params
-
-  if (template.requiresAttachment) {
-    return { kind: 'attachments', spec: template.requiresAttachment }
-  }
 
   if (
     template.resourceConfigKind !== 'none' &&

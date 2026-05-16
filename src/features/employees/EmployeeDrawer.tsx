@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { X, MessageSquare, Square, Clock } from 'lucide-react'
-import { open as openFileDialog } from '@tauri-apps/plugin-dialog'
 import {
   employeeDelete,
   employeeStopRun,
@@ -23,21 +22,6 @@ import { runTriggerPrechecks } from './triggerPrechecks'
 import { CronEditDialog } from './CronEditDialog'
 import { formatRelativeNextRun } from './timeFormat'
 import { seedDispatchConversation } from './seedDispatchConversation'
-
-function detectFileType(path: string): ChatAttachmentPayload['fileType'] {
-  const ext = path.split('.').pop()?.toLowerCase() ?? ''
-  if (['xlsx', 'xls'].includes(ext)) return 'excel'
-  if (ext === 'csv') return 'csv'
-  if (['docx', 'doc'].includes(ext)) return 'word'
-  if (ext === 'pdf') return 'pdf'
-  if (ext === 'json') return 'json'
-  // Should never reach here — picker filters constrain extensions.
-  // Log for diagnostics; default to 'pdf' as a reasonable best effort
-  // for arbitrary bytes (the LLM will see the file content via load_file
-  // regardless of fileType hint).
-  console.warn('[EmployeeDrawer] detectFileType: unknown extension', { path, ext })
-  return 'pdf'
-}
 
 function statusBadgeClass(status: EmployeeStatus): string {
   switch (status) {
@@ -158,29 +142,6 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
         case 'ready':
           await triggerNow([])
           return
-        case 'attachments': {
-          const exts = result.spec.accept.split(',').map((s) => s.trim().replace(/^\./, ''))
-          const picked = await openFileDialog({
-            multiple: result.spec.max > 1,
-            filters: [{ name: '允许的文件', extensions: exts }],
-          })
-          if (!picked) return  // user cancelled
-          const paths = Array.isArray(picked) ? picked : [picked]
-          if (paths.length < result.spec.min || paths.length > result.spec.max) {
-            alert(`请选择 ${result.spec.min}-${result.spec.max} 个文件`)
-            return
-          }
-          const attachments: ChatAttachmentPayload[] = paths.map((p, i) => ({
-            id: `picker-${Date.now()}-${i}`,
-            fileName: p.split(/[\\/]/).pop() ?? p,
-            filePath: p,
-            kind: 'file',
-            fileSize: 0,  // unknown without an extra stat call; backend re-reads from disk
-            fileType: detectFileType(p),
-          }))
-          await triggerNow(attachments)
-          return
-        }
         case 'resource':
           setResourceModalOpen(true)
           return
