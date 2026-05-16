@@ -112,6 +112,8 @@ export function ChatAvatar({
         <img
           src={effectiveSrc}
           alt=""
+          width={size}
+          height={size}
           className="h-full w-full object-cover"
           // Hide broken images — the wrapper falls back to its colored bg.
           onError={(e) => {
