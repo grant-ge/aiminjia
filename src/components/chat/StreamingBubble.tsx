@@ -174,7 +174,7 @@ export function StreamingBubble({ content }: StreamingBubbleProps) {
   return (
     <div className="mb-7">
       <div>
-        {hasContent ? <AssistantMarkdown text={cleanContent} /> : null}
+        {hasContent ? <AssistantMarkdown text={cleanContent} disableCodeHighlight /> : null}
         {status.icon === 'spin' ? (
           <div
             className="mt-2 flex items-center gap-2 text-xs"

@@ -55,4 +55,24 @@ describe('StreamingBubble', () => {
 
     expect(container.querySelector('.pl-9')).toBeNull()
   })
+
+  it('streaming 内容的代码块不含 hljs 高亮 className', () => {
+    useChatStore.setState({
+      activeConversationId: 'conv-1',
+      streamStates: {
+        'conv-1': {
+          isStreaming: true,
+          streamingContent: '```ts\nlet a = 1\n```',
+          toolExecutions: [],
+        },
+      },
+    })
+
+    const { container } = render(
+      <StreamingBubble content={'```ts\nlet a = 1\n```'} />,
+    )
+    const code = container.querySelector('pre code')
+    expect(code).not.toBeNull()
+    expect(code?.className ?? '').not.toMatch(/hljs/)
+  })
 })
