@@ -269,7 +269,11 @@
       "syncNoChange": "Up to date",
       "syncFailed": "Sync failed",
       "version": "Version",
-      "savePackTitle": "Export skill package"
+      "savePackTitle": "Export skill package",
+      "checkUpdate": "Check update",
+      "updateAvailable": "Update available",
+      "upToDate": "Up to date",
+      "updating": "Updating..."
     },
     "saving": "Saving...",
     "saveSettings": "Save Settings",
@@ -332,7 +336,10 @@
       "cleanupDone": "Cleanup complete",
       "metricsCleared": "Metrics data cleared",
       "cleanupFailed": "Cleanup failed",
-      "cleanup": "Clear"
+      "cleanup": "Clear",
+      "appearance": "Appearance",
+      "languageZh": "中文",
+      "languageEn": "English"
     }
   },
   "login": {

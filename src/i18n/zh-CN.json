@@ -269,7 +269,11 @@
       "syncNoChange": "已是最新",
       "syncFailed": "同步失败",
       "version": "版本",
-      "savePackTitle": "导出技能包"
+      "savePackTitle": "导出技能包",
+      "checkUpdate": "检查更新",
+      "updateAvailable": "有新版本",
+      "upToDate": "已是最新",
+      "updating": "更新中..."
     },
     "saving": "保存中...",
     "saveSettings": "保存设置",
@@ -332,7 +336,10 @@
       "cleanupDone": "清理完成",
       "metricsCleared": "度量数据已清理",
       "cleanupFailed": "清理失败",
-      "cleanup": "清理"
+      "cleanup": "清理",
+      "appearance": "外观",
+      "languageZh": "中文",
+      "languageEn": "English"
     }
   },
   "login": {

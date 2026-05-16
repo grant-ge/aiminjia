@@ -1,7 +1,9 @@
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { getSettings, updateSettings } from '@/lib/tauri'
 import { useSettingsStore } from '@/stores/settingsStore'
 import type { FontScale } from '@/types/settings'
+import type { AppLanguage } from '@/i18n'
 
 const FONT_SCALE_OPTIONS: Array<{ value: FontScale; label: string; description: string }> = [
   { value: 'small', label: '小', description: '14px' },
@@ -15,10 +17,13 @@ interface GeneralPanelProps {
 }
 
 export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
+  const { t } = useTranslation()
   const fontScale = useSettingsStore((s) => s.fontScale ?? 'medium')
   const setFontScale = useSettingsStore((s) => s.setFontScale)
+  const appLanguage = useSettingsStore((s) => s.appLanguage ?? 'zh-CN')
+  const setAppLanguage = useSettingsStore((s) => s.setAppLanguage)
 
-  const persistToBackend = async (patch: { fontScale?: FontScale }) => {
+  const persistToBackend = async (patch: { fontScale?: FontScale; appLanguage?: AppLanguage }) => {
     try {
       const current = await getSettings()
       await updateSettings({ ...current, ...patch })
@@ -31,6 +36,16 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
     setFontScale(value)
     void persistToBackend({ fontScale: value })
   }
+
+  const handleLanguageChange = (value: AppLanguage) => {
+    setAppLanguage(value)
+    void persistToBackend({ appLanguage: value })
+  }
+
+  const LANGUAGE_OPTIONS: Array<{ value: AppLanguage; label: string }> = [
+    { value: 'zh-CN', label: t('settings.general.languageZh') },
+    { value: 'en-US', label: t('settings.general.languageEn') },
+  ]
 
   return (
     <div className="flex flex-col gap-5 text-foreground">
@@ -58,7 +73,7 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
       <div className="h-px bg-border mb-2" />
 
       <section className="flex flex-col gap-4 pb-2">
-        <div className="text-xl font-bold tracking-tight text-foreground">外观</div>
+        <div className="text-xl font-bold tracking-tight text-foreground">{t('settings.general.appearance')}</div>
 
         <div className="flex items-center justify-between gap-8">
           <div className="flex min-w-0 flex-col gap-1">
@@ -77,6 +92,44 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
                   aria-label={option.label}
                   title={option.description}
                   onClick={() => handleFontScaleChange(option.value)}
+                  className={
+                    selected
+                      ? 'rounded-md bg-card px-3 py-1.5 text-sm font-semibold text-foreground shadow-sm'
+                      : 'rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground'
+                  }
+                >
+                  {option.label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-8">
+          <div className="flex min-w-0 flex-col gap-1">
+            <div className="text-base font-semibold text-foreground">
+              {t('settings.general.language')}
+            </div>
+            <div className="text-sm text-muted-foreground">
+              {t('settings.general.languageDesc')}
+            </div>
+          </div>
+          <div
+            className="inline-flex rounded-lg bg-muted p-1"
+            role="radiogroup"
+            aria-label={t('settings.general.language')}
+            data-testid="settings-language-switch"
+          >
+            {LANGUAGE_OPTIONS.map((option) => {
+              const selected = appLanguage === option.value
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  aria-label={option.label}
+                  onClick={() => handleLanguageChange(option.value)}
                   className={
                     selected
                       ? 'rounded-md bg-card px-3 py-1.5 text-sm font-semibold text-foreground shadow-sm'

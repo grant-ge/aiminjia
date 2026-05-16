@@ -361,15 +361,36 @@ fn install_skill_md_file(
 }
 
 /// Uninstall a custom skill by ID.
+///
+/// Looks in both the per-user `user_skills_dir` and the legacy global
+/// `~/.renlijia/skills/` root. The dual-root design (PR-2026-05-15
+/// reaffirmed) keeps OPS-synced skills in the global root so multiple
+/// accounts on the same machine share them; user-imported packages go
+/// to the user root. The delete UI should be able to clear stale items
+/// from either side — without this fallback users hit
+/// "Custom skill 'daily-work-plan' not found" toasts whenever they
+/// tried to remove an OPS-orphaned skill that only lived in the global
+/// root.
+///
+/// Caveat: if the deleted skill is still published in OPS, the next
+/// `sync_builtin_skills` call will re-create it. To prevent that, ask
+/// the OPS admin to unpublish the corresponding package.
 #[tauri::command]
 pub async fn uninstall_custom_skill(app: AppHandle, skill_id: String) -> Result<String, String> {
-    let skill_dir = user_skills_dir(&app)?.join(&skill_id);
+    let user_dir = user_skills_dir(&app)?.join(&skill_id);
+    let global_dir = crate::storage::AiJiaHome::from_home()
+        .skills_dir()
+        .join(&skill_id);
 
-    if !skill_dir.exists() {
+    let target = if user_dir.exists() {
+        user_dir
+    } else if global_dir.exists() {
+        global_dir
+    } else {
         return Err(format!("Custom skill '{}' not found", skill_id));
-    }
+    };
 
-    std::fs::remove_dir_all(&skill_dir).map_err(|e| e.to_string())?;
+    std::fs::remove_dir_all(&target).map_err(|e| e.to_string())?;
     refresh_skill_registry(&app)?;
     Ok(format!("Uninstalled skill '{}'", skill_id))
 }

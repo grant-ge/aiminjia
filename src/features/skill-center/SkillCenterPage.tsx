@@ -177,7 +177,7 @@ export function SkillCenterPage() {
       pushNotification({
         level: 'success',
         title: '技能已导出',
-        message: `「${displayName}」已保存到 ${dest}。把这个 .aijia-skill 文件发给同事，对方双击即可安装。`,
+        message: `「${displayName}」已保存到 ${dest}。把这个压缩包发给同事，对方在「技能中心」导入即可。`,
         actions: [],
         dismissible: true,
         autoHide: 10,
@@ -338,7 +338,7 @@ export function SkillCenterPage() {
                   items={[
                     {
                       id: 'export',
-                      label: '导出 .aijia-skill',
+                      label: '导出',
                       onSelect: () => void handleExportSkill(skill.id, skill.displayName),
                     },
                     {

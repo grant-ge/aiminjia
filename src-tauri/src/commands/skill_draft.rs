@@ -216,5 +216,9 @@ fn default_export_dest(skill_id: &str, version: &str) -> PathBuf {
     let desktop = dirs::desktop_dir()
         .or_else(dirs::home_dir)
         .unwrap_or_else(|| PathBuf::from("."));
-    desktop.join(format!("{}-v{}.aijia-skill", skill_id, version))
+    // PR-2026-05-15: use .zip so macOS Finder / Windows Explorer render
+    // the file as a recognizable compressed archive. The underlying format
+    // is unchanged (zip via skill_package::pack_skill_dir) — only the
+    // user-visible extension differs.
+    desktop.join(format!("{}-v{}.zip", skill_id, version))
 }
