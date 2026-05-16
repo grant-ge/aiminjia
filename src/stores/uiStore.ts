@@ -7,6 +7,7 @@ export type Route =
   | { kind: 'skill-detail'; skillId: string }
   | { kind: 'schedules' }
   | { kind: 'inbox' }
+  | { kind: 'expert-teams' }
   | { kind: 'chat'; conversationId: string }
   | { kind: 'channel'; sessionId?: string }
 
@@ -54,6 +55,7 @@ function isRoute(value: unknown): value is Route {
     case 'skill-center':
     case 'schedules':
     case 'inbox':
+    case 'expert-teams':
       return true
     case 'skill-detail':
       return typeof route.skillId === 'string' && route.skillId.length > 0

@@ -16,6 +16,7 @@ import { ChannelPage } from '@/features/channel/ChannelPage'
 import { EmployeesPage } from '@/features/home/EmployeesPage'
 import { HomePage } from '@/features/home/HomePage'
 import { InboxPage } from '@/features/inbox/InboxPage'
+import { ExpertTeamsPage } from '@/features/expert-teams/ExpertTeamsPage'
 import { SchedulesPage } from '@/features/schedules/SchedulesPage'
 import { SkillCenterPage } from '@/features/skill-center/SkillCenterPage'
 import { SkillDetailPage } from '@/features/skill-detail/SkillDetailPage'
@@ -65,6 +66,8 @@ function RouteSwitch() {
       return <SchedulesPage />
     case 'inbox':
       return <InboxPage />
+    case 'expert-teams':
+      return <ExpertTeamsPage />
     case 'chat':
       return <ChatPage conversationId={route.conversationId} />
     case 'channel':
