@@ -6,13 +6,17 @@ import { useEffect, useMemo, useRef } from 'react'
 
 import { AiBubble } from '@/components/chat/AiBubble'
 import { StreamingBubble } from '@/components/chat/StreamingBubble'
+import { ChatRow } from '@/components/chat-scene/ChatRow'
 import { GeneratedFileCard } from '@/components/chat-scene/GeneratedFileCard'
 import { PeerMessageBanner } from '@/components/chat-scene/PeerMessageBanner'
+import { parseDispatchHeader } from '@/components/chat-scene/parseDispatchHeader'
 import { SuggestChipGroup } from '@/components/chat-scene/SuggestChipGroup'
 import { ToolGroupCard } from '@/components/chat-scene/ToolGroupCard'
 import { UserMessageBubble } from '@/components/chat-scene/UserMessageBubble'
 import { TeamProgressBlock } from '@/components/team/TeamProgressBlock'
 import { toPreviewTarget } from '@/components/chat/generatedFileActions'
+import { useAuthStore } from '@/stores/authStore'
+import { useBrandingStore } from '@/stores/brandingStore'
 import { useChatStore } from '@/stores/chatStore'
 import { useGeneratedFilePreviewStore } from '@/stores/generatedFilePreviewStore'
 import { useNotificationStore } from '@/stores/notificationStore'
@@ -42,6 +46,19 @@ export function MessageList() {
   const openPreview = useGeneratedFilePreviewStore((s) => s.openPreview)
   const clearIfConversationChanged = useGeneratedFilePreviewStore((s) => s.clearIfConversationChanged)
   const pushNotification = useNotificationStore((s) => s.push)
+
+  // Sender identity for the chat row headers (avatar + name).
+  // AI side follows the tenant brand (logoUrl + productName), so a custom
+  // tenant logo / name automatically propagates into every chat. User side
+  // falls back to the colored-initial ChatAvatar when no profile image is
+  // configured (none of the current users have one).
+  const assistantName = useBrandingStore((s) => s.productName)
+  const assistantLogo = useBrandingStore((s) => s.logoUrl)
+  const userName = useAuthStore((s) => s.user?.name ?? s.user?.username ?? '我')
+  // User profile photos are not yet stored anywhere — colored-initial
+  // avatar from `ChatAvatar` is the default. When a profile-image field
+  // lands on the auth user, plug it in here.
+  const userAvatarUrl: string | null = null
 
   // Team chat drawer wiring.
   const { overview } = useTeamOverview(activeConversationId)
@@ -150,19 +167,35 @@ export function MessageList() {
     <div className="flex flex-col gap-5 px-2 py-3">
       {turns.map((t, i) => {
         const teamSession = teamSessionForTurnIdx[i]
+        // Dispatch-prompt user turns render as a centered system banner
+        // (handled inside UserMessageBubble). For those, skip the chat-row
+        // avatar wrapper — the banner already announces the dispatch.
+        const isDispatchTurn = !!(t.userMessage && parseDispatchHeader(t.userMessage.text))
         return (
           <div key={i} className="flex flex-col gap-4">
             {t.peerBanners.length > 0 ? (
               <PeerMessageBanner banners={t.peerBanners} />
             ) : null}
             {t.userMessage ? (
-              <UserMessageBubble
-                text={t.userMessage.text}
-                commandText={t.userMessage.commandText}
-                skillCommand={t.userMessage.skillCommand}
-                files={t.userMessage.files}
-                conversationId={activeConversationId ?? undefined}
-              />
+              isDispatchTurn ? (
+                <UserMessageBubble
+                  text={t.userMessage.text}
+                  commandText={t.userMessage.commandText}
+                  skillCommand={t.userMessage.skillCommand}
+                  files={t.userMessage.files}
+                  conversationId={activeConversationId ?? undefined}
+                />
+              ) : (
+                <ChatRow role="user" name={userName} avatarUrl={userAvatarUrl}>
+                  <UserMessageBubble
+                    text={t.userMessage.text}
+                    commandText={t.userMessage.commandText}
+                    skillCommand={t.userMessage.skillCommand}
+                    files={t.userMessage.files}
+                    conversationId={activeConversationId ?? undefined}
+                  />
+                </ChatRow>
+              )
             ) : null}
             {t.toolGroup ? (
               <ToolGroupCard
@@ -174,7 +207,14 @@ export function MessageList() {
               <TeamProgressBlock session={teamSession} onOpen={handleOpenTeamDrawer} />
             ) : null}
             {t.aiSegments.map((s) => (
-              <AiBubble key={s.id} message={s.message} />
+              <ChatRow
+                key={s.id}
+                role="assistant"
+                name={assistantName}
+                avatarUrl={assistantLogo}
+              >
+                <AiBubble message={s.message} />
+              </ChatRow>
             ))}
             {t.generatedFiles.map((f) => (
               <GeneratedFileCard
@@ -199,7 +239,11 @@ export function MessageList() {
           </div>
         )
       })}
-      {isStreaming ? <StreamingBubble content={streamingContent} /> : null}
+      {isStreaming ? (
+        <ChatRow role="assistant" name={assistantName} avatarUrl={assistantLogo}>
+          <StreamingBubble content={streamingContent} />
+        </ChatRow>
+      ) : null}
     </div>
   )
 }
