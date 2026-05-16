@@ -51,6 +51,7 @@ pub fn create_conversation(base_dir: &Path, id: &str, title: &str) -> StorageRes
         updated_at: now.clone(),
         is_archived: false,
         model_override: None,
+        employee_id: None,
     };
     atomic_write_json(&conv_meta_path(base_dir, id), &meta)?;
 
@@ -62,6 +63,7 @@ pub fn create_conversation(base_dir: &Path, id: &str, title: &str) -> StorageRes
         created_at: now.clone(),
         updated_at: now,
         is_archived: false,
+        employee_id: None,
     });
     atomic_write_json(&index_path(base_dir), &index)?;
 
@@ -86,6 +88,29 @@ pub fn update_conversation_title(base_dir: &Path, id: &str, title: &str) -> Stor
     }
     atomic_write_json(&index_path(base_dir), &index)?;
 
+    Ok(())
+}
+
+/// Set the conversation's `employee_id` to indicate it was created via
+/// employee dispatch. Pass `None` to clear (e.g. on rollback). Both
+/// `conv.json` and the global index entry are updated so the sidebar /
+/// top bar don't have to fan-out and read every conv.json.
+pub fn set_conversation_employee_id(
+    base_dir: &Path,
+    id: &str,
+    employee_id: Option<&str>,
+) -> StorageResult<()> {
+    let meta_path = conv_meta_path(base_dir, id);
+    let mut meta: ConversationMeta = read_json_safe(&meta_path)?;
+    meta.employee_id = employee_id.map(|s| s.to_string());
+    meta.updated_at = Utc::now().to_rfc3339();
+    atomic_write_json(&meta_path, &meta)?;
+
+    let mut index = read_global_index(base_dir)?;
+    if let Some(entry) = index.conversations.iter_mut().find(|e| e.id == id) {
+        entry.employee_id = employee_id.map(|s| s.to_string());
+        atomic_write_json(&index_path(base_dir), &index)?;
+    }
     Ok(())
 }
 
@@ -121,13 +146,17 @@ pub fn get_conversations(base_dir: &Path) -> StorageResult<Vec<serde_json::Value
         .filter(|e| !e.is_archived)
         .map(|e| {
             let clean_title = strip_hallucinated_xml(&e.title);
-            serde_json::json!({
+            let mut obj = serde_json::json!({
                 "id": e.id,
                 "title": clean_title,
                 "createdAt": e.created_at,
                 "updatedAt": e.updated_at,
                 "isArchived": e.is_archived,
-            })
+            });
+            if let Some(eid) = &e.employee_id {
+                obj["employeeId"] = serde_json::Value::String(eid.clone());
+            }
+            obj
         })
         .collect();
 
@@ -258,6 +287,7 @@ pub fn reconcile_index(base_dir: &Path) -> StorageResult<()> {
                     created_at: meta.created_at,
                     updated_at: meta.updated_at,
                     is_archived: meta.is_archived,
+                    employee_id: meta.employee_id,
                 });
                 info!("Reconciled: added missing index entry for {}", dir_id);
                 changed = true;
@@ -330,6 +360,7 @@ pub fn touch_index_entry(base_dir: &Path, conversation_id: &str) -> StorageResul
             created_at,
             updated_at: now,
             is_archived: false,
+            employee_id: None,
         });
     }
     atomic_write_json(&index_path(base_dir), &index)?;
@@ -440,6 +471,7 @@ mod tests {
             updated_at: Utc::now().to_rfc3339(),
             is_archived: false,
             model_override: None,
+            employee_id: None,
         };
         atomic_write_json(&orphan_dir.join("conv.json"), &meta).unwrap();
 
@@ -478,5 +510,54 @@ mod tests {
         // Most recent first
         assert_eq!(convs[0]["title"], "Third");
         assert_eq!(convs[2]["title"], "First");
+    }
+
+    #[test]
+    fn employee_id_round_trips_through_conv_meta_and_index() {
+        let dir = TempDir::new().unwrap();
+        let base = dir.path();
+
+        create_conversation(base, "conv-disp", "派活: 小工").unwrap();
+
+        // Before stamp: get_conversations omits employeeId
+        let before = get_conversations(base).unwrap();
+        assert_eq!(before.len(), 1);
+        assert!(before[0].get("employeeId").is_none());
+
+        // Stamp employee_id
+        set_conversation_employee_id(base, "conv-disp", Some("emp-xiaogong-1")).unwrap();
+
+        // After: both conv.json and index entry carry it
+        let meta = get_conversation(base, "conv-disp").unwrap();
+        assert_eq!(meta.employee_id.as_deref(), Some("emp-xiaogong-1"));
+
+        let after = get_conversations(base).unwrap();
+        assert_eq!(after[0]["employeeId"], "emp-xiaogong-1");
+
+        // Clear: passing None removes the field from both layers
+        set_conversation_employee_id(base, "conv-disp", None).unwrap();
+        let meta2 = get_conversation(base, "conv-disp").unwrap();
+        assert!(meta2.employee_id.is_none());
+        let after_clear = get_conversations(base).unwrap();
+        assert!(after_clear[0].get("employeeId").is_none());
+    }
+
+    #[test]
+    fn legacy_conv_json_without_employee_id_field_deserializes() {
+        let dir = TempDir::new().unwrap();
+        let base = dir.path();
+        // Hand-craft a pre-PR5 conv.json without the employeeId field.
+        let cdir = conv_dir(base, "legacy");
+        std::fs::create_dir_all(&cdir).unwrap();
+        std::fs::write(
+            cdir.join("conv.json"),
+            r#"{"id":"legacy","title":"Legacy","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z","isArchived":false}"#,
+        )
+        .unwrap();
+        // get_conversation must not reject the file just because employeeId
+        // is missing — `#[serde(default)]` keeps backward compatibility.
+        let meta = get_conversation(base, "legacy").unwrap();
+        assert_eq!(meta.id, "legacy");
+        assert!(meta.employee_id.is_none());
     }
 }

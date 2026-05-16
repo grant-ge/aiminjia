@@ -183,6 +183,15 @@ impl AppStorage {
         Ok(())
     }
 
+    /// Stamp the conversation's `employee_id` so the UI top bar can render
+    /// the employee identity card. Called by `dispatch_employee_run` right
+    /// after create_conversation. Pass `None` to clear.
+    pub fn set_conversation_employee_id(&self, id: &str, employee_id: Option<&str>) -> Result<()> {
+        let _lock = self.write_lock.lock().unwrap();
+        conversations::set_conversation_employee_id(&self.base_dir, id, employee_id)?;
+        Ok(())
+    }
+
     pub fn get_conversations(&self) -> Result<Vec<serde_json::Value>> {
         Ok(conversations::get_conversations(&self.base_dir)?)
     }

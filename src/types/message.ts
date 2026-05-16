@@ -38,6 +38,12 @@ export interface Conversation {
   updatedAt: string
   isArchived: boolean
   workspaceName?: string
+  /**
+   * Set on conversations created by employee dispatch (`employee_trigger`).
+   * Used by `ChatTopBar` to render the employee identity card. Undefined
+   * on user-initiated conversations.
+   */
+  employeeId?: string
 }
 
 /**

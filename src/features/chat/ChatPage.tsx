@@ -11,6 +11,7 @@ import { useNotificationStore } from '@/stores/notificationStore'
 import { useGeneratedFilePreviewStore } from '@/stores/generatedFilePreviewStore'
 import { openGeneratedFile } from '@/lib/tauri'
 import { useEffect } from 'react'
+import { useEmployeeById } from '@/features/employees/useEmployeeById'
 
 interface ChatPageProps {
   conversationId: string
@@ -24,7 +25,9 @@ export function ChatPage({ conversationId }: ChatPageProps) {
   const pushNotification = useNotificationStore((s) => s.push)
   const previewTarget = useGeneratedFilePreviewStore((s) => s.target)
   const previewOpen = previewTarget?.conversationId === conversationId
-  const title = conversations.find((c) => c.id === conversationId)?.title ?? ''
+  const conv = conversations.find((c) => c.id === conversationId)
+  const title = conv?.title ?? ''
+  const employee = useEmployeeById(conv?.employeeId ?? null)
   const { overview: teamOverview } = useTeamOverview(activeConversationId)
 
   const handleOpenPreviewTarget = async (target: PreviewTarget) => {
@@ -54,7 +57,20 @@ export function ChatPage({ conversationId }: ChatPageProps) {
 
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
-      {title ? <ChatTopBar title={title} /> : null}
+      {title ? (
+        <ChatTopBar
+          title={title}
+          employee={
+            employee
+              ? {
+                  avatar: employee.avatar,
+                  name: employee.name,
+                  role: employee.role,
+                }
+              : undefined
+          }
+        />
+      ) : null}
       <div className="relative flex flex-1 overflow-hidden">
         <div data-testid="chat-layout-column" className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
           <ChatArea />

@@ -164,6 +164,7 @@ export function useChat() {
           createdAt: (c.createdAt as string) ?? new Date().toISOString(),
           updatedAt: (c.updatedAt as string) ?? new Date().toISOString(),
           isArchived: (c.isArchived as boolean) ?? false,
+          employeeId: (c.employeeId as string | undefined) ?? undefined,
         }))
         useChatStore.getState().setConversations(convs)
       } catch {
@@ -394,6 +395,7 @@ export function useChat() {
         updatedAt: (c.updatedAt as string) ?? new Date().toISOString(),
         isArchived: (c.isArchived as boolean) ?? false,
         workspaceName: (c.workspaceName as string | undefined) ?? undefined,
+        employeeId: (c.employeeId as string | undefined) ?? undefined,
       }))
       console.log('[useChat] loadConversations OK, count:', convs.length)
       useChatStore.getState().setConversations(convs)

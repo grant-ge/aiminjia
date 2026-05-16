@@ -22,6 +22,12 @@ pub struct ConversationMeta {
     /// deserialize so we don't reject legacy files.
     #[serde(default, skip_serializing)]
     pub model_override: Option<String>,
+    /// Set by `dispatch_employee_run` when a conversation is created by
+    /// dispatching a digital employee. UI uses this to render the employee
+    /// identity card in the chat top bar. Empty / None for user-initiated
+    /// conversations.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub employee_id: Option<String>,
 }
 
 /// Lightweight entry in the global `index.json`.
@@ -36,6 +42,11 @@ pub struct ConversationIndexEntry {
     pub created_at: String,
     pub updated_at: String,
     pub is_archived: bool,
+    /// Mirror of `ConversationMeta.employee_id`. Stored in the index so the
+    /// sidebar / top bar don't have to fan-out and read every `conv.json` to
+    /// know whether a conversation is a dispatch session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub employee_id: Option<String>,
 }
 
 /// Global conversation index stored in `index.json`.

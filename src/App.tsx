@@ -221,6 +221,7 @@ function App() {
           updatedAt: (c.updatedAt as string) ?? new Date().toISOString(),
           isArchived: (c.isArchived as boolean) ?? false,
           workspaceName: (c.workspaceName as string | undefined) ?? undefined,
+          employeeId: (c.employeeId as string | undefined) ?? undefined,
         }))
         useChatStore.getState().setConversations(convs)
       } catch (err) {

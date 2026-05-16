@@ -5,9 +5,22 @@
 import { Ellipsis, PanelLeft, Share2 } from 'lucide-react'
 import type { ReactNode } from 'react'
 
+export interface ChatTopBarEmployee {
+  avatar: string
+  name: string
+  role: string
+  onClick?: () => void
+}
+
 interface ChatTopBarProps {
   title: string
   workspace?: string
+  /**
+   * When set, replaces the plain title with an employee identity card
+   * (avatar · name · role). Used for conversations created by employee
+   * dispatch. Click handler typically opens the employee drawer.
+   */
+  employee?: ChatTopBarEmployee
   onShare?: () => void
   onMore?: () => void
   onToggleSidebar?: () => void
@@ -18,6 +31,7 @@ interface ChatTopBarProps {
 export function ChatTopBar({
   title,
   workspace,
+  employee,
   onShare,
   onMore,
   onToggleSidebar,
@@ -26,9 +40,32 @@ export function ChatTopBar({
   return (
     <header data-tauri-drag-region className="flex h-10 shrink-0 items-center justify-between border-b border-border bg-background px-6">
       <div className="flex min-w-0 items-center gap-3">
-        <div className="truncate text-md font-semibold text-foreground">
-          {title}
-        </div>
+        {employee ? (
+          <button
+            type="button"
+            data-testid="chat-topbar-employee"
+            onClick={employee.onClick}
+            disabled={!employee.onClick}
+            className="flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-0.5 text-md font-semibold text-foreground transition-colors hover:bg-accent/40 disabled:cursor-default disabled:hover:bg-transparent"
+          >
+            <span aria-hidden className="text-base leading-none">
+              {employee.avatar}
+            </span>
+            <span className="truncate">{employee.name}</span>
+            {employee.role ? (
+              <>
+                <span aria-hidden className="text-sm text-muted-foreground">·</span>
+                <span className="truncate text-sm font-normal text-muted-foreground">
+                  {employee.role}
+                </span>
+              </>
+            ) : null}
+          </button>
+        ) : (
+          <div className="truncate text-md font-semibold text-foreground">
+            {title}
+          </div>
+        )}
         {workspace ? (
           <>
             <span className="text-sm text-muted-foreground">/</span>
