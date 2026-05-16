@@ -1,9 +1,12 @@
 import { ChatBottomArea } from '@/components/chat-scene/ChatBottomArea'
+import { ExpertTeamBanner } from '@/components/chat-scene/ExpertTeamBanner'
 import { RightPanel } from '@/components/chat/RightPanel'
 import type { PreviewTarget } from '@/components/chat/generatedFileActions'
 import { ChatArea } from '@/components/layout/ChatArea'
 import { ChatTopBar } from '@/components/shell/ChatTopBar'
 import { TeamChatDrawer } from '@/components/team/TeamChatDrawer'
+import { useExpertTeamForConversation } from '@/features/expert-teams/expertTeamRegistry'
+import { getExpertTeam } from '@/features/expert-teams/teams'
 import { useChat } from '@/hooks/useChat'
 import { useTeamOverview } from '@/hooks/useTeamOverview'
 import { useChatStore } from '@/stores/chatStore'
@@ -29,6 +32,8 @@ export function ChatPage({ conversationId }: ChatPageProps) {
   const title = conv?.title ?? ''
   const employee = useEmployeeById(conv?.employeeId ?? null)
   const { overview: teamOverview } = useTeamOverview(activeConversationId)
+  const expertTeamId = useExpertTeamForConversation(conversationId)
+  const expertTeam = expertTeamId ? getExpertTeam(expertTeamId) : undefined
 
   const handleOpenPreviewTarget = async (target: PreviewTarget) => {
     try {
@@ -73,8 +78,11 @@ export function ChatPage({ conversationId }: ChatPageProps) {
       ) : null}
       <div className="relative flex flex-1 overflow-hidden">
         <div data-testid="chat-layout-column" className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+          {expertTeamId ? (
+            <ExpertTeamBanner conversationId={conversationId} teamId={expertTeamId} />
+          ) : null}
           <ChatArea />
-          <ChatBottomArea />
+          <ChatBottomArea placeholderOverride={expertTeam?.composerPlaceholder} />
         </div>
         {activeConversationId ? (
           <TeamChatDrawer conversationId={activeConversationId} overview={teamOverview} />

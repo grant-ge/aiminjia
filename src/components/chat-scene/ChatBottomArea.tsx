@@ -21,6 +21,9 @@ import { useSkillStore } from '@/stores/skillStore'
 import { useUiStore } from '@/stores/uiStore'
 import { pendingSnapshotForSession } from '@/lib/tauri'
 import { PendingChips } from '@/features/chat/PendingChips'
+import { getExpertTeam as getExpertTeamForConversation } from '@/features/expert-teams/expertTeamRegistry'
+import { getExpertTeam as findTeam } from '@/features/expert-teams/teams'
+import { buildDirectorPrompt } from '@/features/expert-teams/buildDirectorPrompt'
 
 function BottomTips() {
   return (
@@ -37,16 +40,20 @@ function BottomTips() {
 export function ChatBottomArea({
   disabled = false,
   sessionIdOverride,
+  placeholderOverride,
 }: {
   disabled?: boolean
   /** When the bottom area is rendered inside a channel session view (DingTalk
    * etc.), the active session id does NOT live in chatStore — pass it
    * explicitly so pending chips / snapshot can target the right queue. */
   sessionIdOverride?: string
+  /** When set, overrides the default i18n placeholder. Used by expert-teams. */
+  placeholderOverride?: string
 }) {
   const { t } = useTranslation()
   const composerRef = useRef<RichComposerHandle>(null)
   const activeConversationId = useChatStore((s) => s.activeConversationId)
+  const messageCount = useChatStore((s) => s.messages.length)
   const pendingSessionId = sessionIdOverride ?? activeConversationId ?? null
   const { sendUserMessage, isStreaming, stopCurrentStream } = useChat()
   const { isPickingAttachments, pickAttachments } = useChatAttachments()
@@ -107,9 +114,17 @@ export function ChatBottomArea({
     // belongs to the next turn, not this one.
     const skillForThisTurn = selectedSkill
     setSelectedSkill(null)
+    let markdownToSend = payload.markdown
+    if (activeConversationId && messageCount === 0) {
+      const teamId = getExpertTeamForConversation(activeConversationId)
+      const team = teamId ? findTeam(teamId) : undefined
+      if (team) {
+        markdownToSend = buildDirectorPrompt(team, payload.markdown)
+      }
+    }
     try {
       await sendUserMessage(
-        payload.markdown,
+        markdownToSend,
         fileInfos.length > 0 ? fileInfos : undefined,
         skillForThisTurn,
       )
@@ -117,7 +132,7 @@ export function ChatBottomArea({
       console.error('[ChatBottomArea] sendUserMessage failed:', err)
       throw err
     }
-  }, [selectedSkill, sendUserMessage])
+  }, [selectedSkill, sendUserMessage, activeConversationId, messageCount])
 
   const handlePickAttachments = useCallback(async () => {
     const results = await pickAttachments()
@@ -161,7 +176,7 @@ export function ChatBottomArea({
             {pendingSessionId && <PendingChips sessionId={pendingSessionId} />}
             <RichComposer
               ref={composerRef}
-              placeholder={t('inputBar.placeholder')}
+              placeholder={placeholderOverride ?? t('inputBar.placeholder')}
               onSubmit={handleSubmit}
               disabled={disabled}
               isStreaming={isStreaming}
