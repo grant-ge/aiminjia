@@ -108,13 +108,13 @@ fi
 # stale image is still attached with the same volname.
 ls /Volumes/ 2>/dev/null | grep -i "^aijia" | while IFS= read -r v; do
     hdiutil detach "/Volumes/$v" -force >/dev/null 2>&1 || true
-done
+done || true
 hdiutil info 2>/dev/null | awk '
     /^image-path/ { is_aijia = (tolower($0) ~ /aijia/) }
     is_aijia && /^\/dev\/disk[0-9]+\t/ { print $1 }
 ' | while IFS= read -r disk; do
     hdiutil detach "$disk" -force >/dev/null 2>&1 || true
-done
+done || true
 
 echo "=== AIjia macOS Sign & Upload ==="
 echo "Version: $VERSION ($RELEASE_TYPE)"
