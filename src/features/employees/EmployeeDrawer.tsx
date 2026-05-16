@@ -1,14 +1,17 @@
-import { useState } from 'react'
-import { X, MessageSquare, Square, Clock } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { X, MessageSquare, Square, Clock, RefreshCw } from 'lucide-react'
 import {
   employeeDelete,
   employeeStopRun,
+  employeeTemplateCheckUpgrade,
+  employeeTemplateUpgrade,
   employeeTrigger,
   employeeUpdate,
   type ChatAttachmentPayload,
   type EmployeeActiveRunInfo,
   type EmployeeRecord,
   type InboxEntry,
+  type TemplateUpgradeCheck,
 } from '@/lib/tauri'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
@@ -85,8 +88,33 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
   const [busy, setBusy] = useState(false)
   const [resourceModalOpen, setResourceModalOpen] = useState(false)
   const [cronModalOpen, setCronModalOpen] = useState(false)
+  const [upgradeCheck, setUpgradeCheck] = useState<TemplateUpgradeCheck | null>(null)
   const setRoute = useUiStore((s) => s.setRoute)
   const getSkillById = useSkillStore((s) => s.getById)
+
+  // PR-12: probe whether a newer template version is available for this
+  // employee. Runs once per opened drawer instance; cleared between
+  // employees so we don't render a stale "升级" badge from the previous
+  // selection.
+  const empIdForProbe = emp?.id ?? null
+  useEffect(() => {
+    if (!empIdForProbe) {
+      setUpgradeCheck(null)
+      return
+    }
+    let cancelled = false
+    setUpgradeCheck(null)
+    employeeTemplateCheckUpgrade(empIdForProbe)
+      .then((c) => {
+        if (!cancelled) setUpgradeCheck(c)
+      })
+      .catch((err) => {
+        console.warn('[EmployeeDrawer] check upgrade failed:', err)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [empIdForProbe])
 
   if (!emp) return null
 
@@ -210,6 +238,31 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
     }
   }
 
+  const handleUpgradeTemplate = async () => {
+    if (!upgradeCheck?.hasUpgrade) return
+    const fields = upgradeCheck.changedFields.join('、') || '（仅版本号变化）'
+    const ok = confirm(
+      `升级模板 v${upgradeCheck.currentVersion ?? '?'} → v${upgradeCheck.latestVersion}？\n\n` +
+        `将更新：${fields}\n` +
+        `保留：员工名称、定时计划、资源配置、知识库\n\n` +
+        `此操作不影响进行中的会话记录。`,
+    )
+    if (!ok) return
+    setBusy(true)
+    try {
+      await employeeTemplateUpgrade(emp.id)
+      // Re-probe so the badge disappears
+      const next = await employeeTemplateCheckUpgrade(emp.id).catch(() => null)
+      setUpgradeCheck(next)
+      await onRefresh()
+    } catch (err) {
+      console.error('[EmployeeDrawer] upgrade error:', err)
+      alert(`升级失败：${String(err)}`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const handleDismiss = async () => {
     if (
       !confirm(
@@ -258,6 +311,36 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
         {/* Scrollable body */}
         <div className="flex-1 overflow-y-auto">
           <div className="flex flex-col gap-5 p-5">
+            {/* 模板升级提示 — only shown when a newer cached / bootstrap
+                template version exists for this employee. PR-12. */}
+            {upgradeCheck?.hasUpgrade ? (
+              <section
+                data-testid="template-upgrade-banner"
+                className="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50/40 px-3 py-2.5 text-sm dark:border-blue-900 dark:bg-blue-950/40"
+              >
+                <RefreshCw className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" aria-hidden />
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-medium text-blue-900 dark:text-blue-100">
+                    有新版本模板（v{upgradeCheck.currentVersion ?? '?'} → v{upgradeCheck.latestVersion}）
+                  </p>
+                  {upgradeCheck.changedFields.length > 0 ? (
+                    <p className="mt-0.5 text-xs text-blue-800/80 dark:text-blue-100/70">
+                      将更新：{upgradeCheck.changedFields.join('、')}
+                    </p>
+                  ) : null}
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="shrink-0"
+                  disabled={busy}
+                  onClick={handleUpgradeTemplate}
+                >
+                  升级
+                </Button>
+              </section>
+            ) : null}
+
             {/* 职责 */}
             <section>
               <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">职责</h3>

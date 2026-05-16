@@ -372,6 +372,42 @@ pub fn effective_requires_attachment(
     Some(s.requires_attachment)
 }
 
+/// PR-12: find the highest-version snapshot for `template_id` across
+/// (a) the embedded bootstrap registry and (b) the global cache dir.
+/// Returns `None` when neither source has the template.
+///
+/// Used by `employee_template_check_upgrade` / `employee_upgrade_template`
+/// to surface the "升级模板" affordance in the drawer when a newer
+/// version has landed than the one frozen into the employee's snapshot.
+pub fn find_latest_for_template(
+    cache_dir: &Path,
+    template_id: &str,
+) -> Option<TemplateSnapshot> {
+    let mut best: Option<TemplateSnapshot> = None;
+    if let Ok(Some(boot)) = bootstrap_template(template_id) {
+        best = Some(boot);
+    }
+    let tid_dir = cache_dir.join(template_id);
+    if let Ok(rd) = fs::read_dir(&tid_dir) {
+        for entry in rd.flatten() {
+            let p = entry.path();
+            if p.extension().and_then(|e| e.to_str()) != Some("json") {
+                continue;
+            }
+            if let Ok(content) = fs::read_to_string(&p) {
+                if let Ok(s) = serde_json::from_str::<TemplateSnapshot>(&content) {
+                    match best.as_ref() {
+                        None => best = Some(s),
+                        Some(prev) if s.version > prev.version => best = Some(s),
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+    best
+}
+
 // ─── atomic write helper (small local copy; the existing one in storage::
 // is private to that module). ─────────────────────────────────────────────
 
@@ -895,5 +931,56 @@ mod tests {
         // as no-skill.
         let skill = effective_default_skill_id(root, id, Some("record-skill"));
         assert_eq!(skill, None);
+    }
+
+    // ── PR-12: find_latest_for_template ─────────────────────────────────────
+
+    #[test]
+    fn find_latest_returns_bootstrap_when_cache_empty() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Use a builtin we know is in bootstrap.
+        let s = find_latest_for_template(tmp.path(), "builtin:xiaoyuan");
+        assert!(s.is_some(), "bootstrap should provide a snapshot");
+        assert_eq!(s.unwrap().template_id, "builtin:xiaoyuan");
+    }
+
+    #[test]
+    fn find_latest_picks_higher_version_from_cache_over_bootstrap() {
+        use std::fs;
+        let tmp = tempfile::tempdir().unwrap();
+        // Drop a v9.9 cache entry for xiaoyuan
+        let cache_dir = tmp.path();
+        let tid_dir = cache_dir.join("builtin:xiaoyuan");
+        fs::create_dir_all(&tid_dir).unwrap();
+        let cached = TemplateSnapshot {
+            template_id: "builtin:xiaoyuan".into(),
+            version: "9.9".into(),
+            name: "x".into(),
+            avatar: "".into(),
+            role: "from-cache".into(),
+            description: "".into(),
+            badge: "".into(),
+            system_prompt_extra: "".into(),
+            tool_whitelist: vec![],
+            cron: "".into(),
+            default_skill_id: "".into(),
+            skill_ids: vec![],
+            requires_dingtalk: false,
+            requires_attachment: serde_json::Value::Null,
+            resource_config_schema: serde_json::Value::Null,
+            resource_config_ui: serde_json::Value::Null,
+        };
+        let path = tid_dir.join("9.9.json");
+        fs::write(&path, serde_json::to_string_pretty(&cached).unwrap()).unwrap();
+        let s = find_latest_for_template(cache_dir, "builtin:xiaoyuan").unwrap();
+        assert_eq!(s.version, "9.9");
+        assert_eq!(s.role, "from-cache");
+    }
+
+    #[test]
+    fn find_latest_returns_none_for_unknown_template() {
+        let tmp = tempfile::tempdir().unwrap();
+        let s = find_latest_for_template(tmp.path(), "builtin:nope-not-real");
+        assert!(s.is_none());
     }
 }

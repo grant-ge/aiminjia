@@ -1658,9 +1658,9 @@ export async function initSkillTemplate(targetDir: string, skillId: string, skil
   return invoke<string>('init_skill_template', { targetDir, skillId, skillName })
 }
 
-/** Pack a skill directory into a .aijia-skill zip file. */
-export async function packSkill(skillDir: string): Promise<string> {
-  return invoke<string>('pack_skill', { skillDir })
+/** Export a skill's SKILL.md to a destination file path. */
+export async function packSkill(skillDir: string, destPath: string): Promise<string> {
+  return invoke<string>('pack_skill', { skillDir, destPath })
 }
 
 /** Reload a custom skill from disk (dev mode hot-reload). */
@@ -2046,6 +2046,34 @@ export function employeeUpdate(id: string, request: UpdateEmployeeRequest): Prom
 
 export function employeeDelete(id: string): Promise<boolean> {
   return invoke<boolean>('employee_delete', { id })
+}
+
+// ─── PR-12: manual template upgrade ──────────────────────────────────────────
+
+export interface TemplateUpgradeCheck {
+  currentVersion: string | null
+  latestVersion: string | null
+  hasUpgrade: boolean
+  changedFields: string[]
+}
+
+/**
+ * Check whether the employee's frozen template snapshot has a newer
+ * version available locally (in bootstrap or the global cache).
+ * Returns metadata for the drawer to surface the "升级模板" button.
+ */
+export function employeeTemplateCheckUpgrade(id: string): Promise<TemplateUpgradeCheck> {
+  return invoke<TemplateUpgradeCheck>('employee_template_check_upgrade', { id })
+}
+
+/**
+ * Rewrite the employee's snapshot to the latest available version and
+ * rebuild derived record fields (role / description / avatar /
+ * systemPromptExtra / defaultSkillId / skillIds). Preserves user-tuned
+ * fields (name / cron / cronEnabled / resourceConfig / lifecycle).
+ */
+export function employeeTemplateUpgrade(id: string): Promise<EmployeeRecord> {
+  return invoke<EmployeeRecord>('employee_template_upgrade', { id })
 }
 
 export function employeeTrigger(

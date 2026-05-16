@@ -954,6 +954,8 @@ pub fn run() {
             commands::employees::employee_update,
             commands::employees::employee_delete,
             commands::employees::employee_trigger,
+            commands::employees::employee_template_check_upgrade,
+            commands::employees::employee_template_upgrade,
             commands::employees::employee_stop_run,
             commands::employees::employee_active_run,
             commands::employees::employee_index_knowledge_async,

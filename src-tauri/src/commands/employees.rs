@@ -7,7 +7,8 @@ use crate::runtime::employee::store::{
     CreateEmployeeRequest, EmployeeLifecycle, EmployeeRecord, EmployeeStore, UpdateEmployeeRequest,
 };
 use crate::runtime::employee::template_store::{
-    bootstrap_templates, ensure_cached, fetch_catalog, merge_catalog, TemplateSnapshot,
+    bootstrap_templates, ensure_cached, ensure_instance_snapshot, fetch_catalog,
+    find_latest_for_template, merge_catalog, read_instance_snapshot, TemplateSnapshot,
 };
 use crate::storage::file_store::AppStorage;
 use crate::storage::{AiJiaHome, CurrentUserStorage, UserScopedPathResolver};
@@ -381,4 +382,209 @@ pub async fn employee_index_knowledge_async(
 
     spawn_index_all(store, app_storage, args.employee_id, sources);
     Ok(())
+}
+
+// ─── PR-12: manual template upgrade ──────────────────────────────────────────
+
+#[derive(serde::Serialize)]
+pub struct TemplateUpgradeCheck {
+    pub current_version: Option<String>,
+    pub latest_version: Option<String>,
+    pub has_upgrade: bool,
+    /// Human-readable field names that will change if the upgrade proceeds.
+    /// Empty when has_upgrade is false. Frontend uses this to render the
+    /// confirmation dialog body.
+    pub changed_fields: Vec<&'static str>,
+}
+
+/// Diff the employee's current snapshot against the latest available
+/// (bootstrap ∪ cache) version. Returns metadata for the frontend to
+/// decide whether to surface the 升级模板 button.
+///
+/// "Latest" follows the same lexicographic version comparison as
+/// `merge_catalog` (works for `1.0` < `1.1` < `1.2` patterns; `1.10`
+/// vs `1.2` is a known weakness but not in current play).
+#[tauri::command]
+pub async fn employee_template_check_upgrade(
+    app: AppHandle,
+    id: String,
+) -> Result<TemplateUpgradeCheck, String> {
+    let store = employee_store(&app)?;
+    let record = store.get(&id).map_err(|e| e.to_string())?;
+
+    let employees_dir = current_employees_dir(&app)?;
+    let instance_dir = employees_dir.join(&record.id);
+    let current = read_instance_snapshot(&instance_dir)
+        .ok()
+        .flatten();
+
+    let template_id = match record.template_id.as_deref() {
+        Some(t) => t,
+        None => {
+            return Ok(TemplateUpgradeCheck {
+                current_version: current.as_ref().map(|s| s.version.clone()),
+                latest_version: None,
+                has_upgrade: false,
+                changed_fields: vec![],
+            });
+        }
+    };
+
+    let cache_dir = AiJiaHome::from_home().employee_templates_cache_dir();
+    let latest = find_latest_for_template(&cache_dir, template_id);
+
+    let (Some(cur), Some(lat)) = (current.as_ref(), latest.as_ref()) else {
+        return Ok(TemplateUpgradeCheck {
+            current_version: current.as_ref().map(|s| s.version.clone()),
+            latest_version: latest.as_ref().map(|s| s.version.clone()),
+            has_upgrade: false,
+            changed_fields: vec![],
+        });
+    };
+
+    if lat.version <= cur.version {
+        return Ok(TemplateUpgradeCheck {
+            current_version: Some(cur.version.clone()),
+            latest_version: Some(lat.version.clone()),
+            has_upgrade: false,
+            changed_fields: vec![],
+        });
+    }
+
+    let mut changed: Vec<&'static str> = Vec::new();
+    if cur.system_prompt_extra != lat.system_prompt_extra {
+        changed.push("职责说明");
+    }
+    if cur.role != lat.role {
+        changed.push("角色名");
+    }
+    if cur.description != lat.description {
+        changed.push("简介");
+    }
+    if cur.avatar != lat.avatar {
+        changed.push("头像");
+    }
+    if cur.default_skill_id != lat.default_skill_id {
+        changed.push("默认技能");
+    }
+    if cur.requires_attachment != lat.requires_attachment {
+        changed.push("附件需求");
+    }
+    if cur.requires_dingtalk != lat.requires_dingtalk {
+        changed.push("钉钉授权");
+    }
+
+    Ok(TemplateUpgradeCheck {
+        current_version: Some(cur.version.clone()),
+        latest_version: Some(lat.version.clone()),
+        has_upgrade: true,
+        changed_fields: changed,
+    })
+}
+
+/// Rewrite the employee's snapshot to the latest available version and
+/// rebuild the derived fields on the record.
+///
+/// **Overwrites** (template-owned facts):
+///   role, description, avatar, system_prompt_extra, default_skill_id,
+///   skill_ids
+///
+/// **Preserves** (user-tuned state):
+///   name, cron, cron_enabled, timezone, resource_config, lifecycle,
+///   tool_whitelist (vestigial post-PR-11), last_run_at, next_run_at
+///
+/// Errors when: employee not found, no template_id, no upgrade
+/// available, or snapshot write fails.
+#[tauri::command]
+pub async fn employee_template_upgrade(
+    app: AppHandle,
+    id: String,
+) -> Result<EmployeeRecord, String> {
+    let store = employee_store(&app)?;
+    let record = store.get(&id).map_err(|e| e.to_string())?;
+
+    let template_id = record
+        .template_id
+        .as_deref()
+        .ok_or_else(|| "员工没有模板关联，无法升级".to_string())?;
+
+    let employees_dir = current_employees_dir(&app)?;
+    let instance_dir = employees_dir.join(&record.id);
+    let current = read_instance_snapshot(&instance_dir)
+        .map_err(|e| e.to_string())?;
+
+    let cache_dir = AiJiaHome::from_home().employee_templates_cache_dir();
+    let latest = find_latest_for_template(&cache_dir, template_id)
+        .ok_or_else(|| "未找到任何可用模板版本，请先刷新模板".to_string())?;
+
+    if let Some(ref cur) = current {
+        if latest.version <= cur.version {
+            return Err(format!(
+                "当前已是最新版本 (v{})，无需升级",
+                cur.version
+            ));
+        }
+    }
+
+    // Rewrite the per-instance snapshot dir.
+    let source = format!(
+        "upgrade:{}→{}",
+        current.as_ref().map(|s| s.version.as_str()).unwrap_or(""),
+        latest.version
+    );
+    ensure_instance_snapshot(&instance_dir, &latest, &source)
+        .map_err(|e| format!("写入新 snapshot 失败: {e}"))?;
+
+    // Derive record fields from the new snapshot. `name` is intentionally
+    // preserved — users may have renamed the employee in the wizard or
+    // drawer. Same for resource_config / cron / lifecycle.
+    let updated = store
+        .update(
+            &id,
+            UpdateEmployeeRequest {
+                role: Some(latest.role.clone()),
+                description: Some(latest.description.clone()),
+                avatar: Some(latest.avatar.clone()),
+                system_prompt_extra: Some(
+                    if latest.system_prompt_extra.is_empty() {
+                        None
+                    } else {
+                        Some(latest.system_prompt_extra.clone())
+                    },
+                ),
+                default_skill_id: Some(
+                    if latest.default_skill_id.is_empty() {
+                        None
+                    } else {
+                        Some(latest.default_skill_id.clone())
+                    },
+                ),
+                skill_ids: Some(latest.skill_ids.clone()),
+                // PR-11: tool_whitelist is vestigial. Pass an empty vec so
+                // a record that still carries a stale legacy whitelist gets
+                // cleared on upgrade.
+                tool_whitelist: Some(Vec::new()),
+                // Preserve everything else (None = don't touch).
+                ..Default::default()
+            },
+        )
+        .map_err(|e| e.to_string())?;
+
+    log::info!(
+        "[employee_template_upgrade] {} : v{} -> v{} (source={})",
+        id,
+        current.as_ref().map(|s| s.version.as_str()).unwrap_or("?"),
+        latest.version,
+        source
+    );
+
+    Ok(updated)
+}
+
+fn current_employees_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    let cus = app
+        .try_state::<Arc<CurrentUserStorage>>()
+        .ok_or_else(|| "CurrentUserStorage not registered".to_string())?;
+    let paths = cus.require_paths().map_err(|e| e.to_string())?;
+    Ok(paths.employees_dir())
 }
