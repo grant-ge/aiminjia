@@ -105,70 +105,8 @@ fn write_workspace_settings(workspace: &Path, value: serde_json::Value) {
     .expect("write workspace settings");
 }
 
-#[test]
-fn ae1_model_override_persisted() {
-    let (storage, _dir) = setup_storage();
-    storage
-        .create_conversation("conv-ae1", "Plan AE")
-        .expect("create conversation");
-
-    storage
-        .set_conversation_model_override("conv-ae1", Some("claude".to_string()))
-        .expect("set override");
-
-    let model = storage
-        .get_conversation_model_override("conv-ae1")
-        .expect("get override");
-    assert_eq!(model.as_deref(), Some("claude"));
-}
-
-#[test]
-fn ae1_model_override_default_none() {
-    let (storage, dir) = setup_storage();
-    let conv_dir = dir.path().join("conversations").join("conv-legacy");
-    fs::create_dir_all(&conv_dir).expect("create conversation dir");
-    fs::write(
-        conv_dir.join("conv.json"),
-        serde_json::to_vec_pretty(&json!({
-            "id": "conv-legacy",
-            "title": "Legacy",
-            "mode": "daily",
-            "createdAt": "2026-04-19T00:00:00Z",
-            "updatedAt": "2026-04-19T00:00:00Z",
-            "isArchived": false
-        }))
-        .expect("serialize legacy meta"),
-    )
-    .expect("write legacy conv.json");
-
-    let model = storage
-        .get_conversation_model_override("conv-legacy")
-        .expect("load legacy override");
-    assert_eq!(model, None);
-}
-
-#[test]
-fn ae1_model_override_clear() {
-    let (storage, dir) = setup_storage();
-    storage
-        .create_conversation("conv-clear", "Clear")
-        .expect("create conversation");
-    storage
-        .set_conversation_model_override("conv-clear", Some("claude".to_string()))
-        .expect("set override");
-    storage
-        .set_conversation_model_override("conv-clear", None)
-        .expect("clear override");
-
-    let raw = fs::read_to_string(
-        dir.path()
-            .join("conversations")
-            .join("conv-clear")
-            .join("conv.json"),
-    )
-    .expect("read conv.json");
-    assert!(!raw.contains("modelOverride"));
-}
+// ae1_model_override tests removed: set/get_conversation_model_override
+// methods were removed from AppStorage in the deep-fix refactor.
 
 #[test]
 fn ae4_workspace_settings_loaded() {

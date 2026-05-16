@@ -38,13 +38,18 @@ mod l2_validate_input_trait {
 
     use app_lib::runtime::tools::definition::ToolDefinition;
     use app_lib::runtime::tools::executor::{ToolError, ToolResult};
-    use app_lib::runtime::tools::{RuntimeTool, ToolExecutionContext};
+    use app_lib::runtime::tools::description_context::ToolDescriptionContext;
+use app_lib::runtime::tools::{RuntimeTool, ToolExecutionContext};
 
     struct StrictTool;
 
     #[async_trait]
     impl RuntimeTool for StrictTool {
-        fn definition(&self) -> ToolDefinition {
+        fn id(&self) -> &str {
+            "strict_tool"
+        }
+
+        async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
             ToolDefinition::new("strict_tool", "test tool with validation")
         }
 
@@ -71,7 +76,11 @@ mod l2_validate_input_trait {
 
     #[async_trait]
     impl RuntimeTool for PermissiveTool {
-        fn definition(&self) -> ToolDefinition {
+        fn id(&self) -> &str {
+            "permissive_tool"
+        }
+
+        async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
             ToolDefinition::new("permissive_tool", "test tool without validation")
         }
 
@@ -120,6 +129,7 @@ mod l3_dispatcher_validation_gate {
     use serde_json::{json, Value};
 
     use app_lib::runtime::tools::definition::ToolDefinition;
+    use app_lib::runtime::tools::description_context::ToolDescriptionContext;
     use app_lib::runtime::tools::executor::{ToolError, ToolResult};
     use app_lib::runtime::tools::{
         AllowAllPermissionPipeline, RuntimeTool, ToolDispatcher, ToolExecutionContext,
@@ -131,7 +141,11 @@ mod l3_dispatcher_validation_gate {
 
     #[async_trait]
     impl RuntimeTool for ValidatingTool {
-        fn definition(&self) -> ToolDefinition {
+        fn id(&self) -> &str {
+            "validating_tool"
+        }
+
+        async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
             ToolDefinition::new("validating_tool", "requires 'path' field")
         }
 
@@ -213,6 +227,7 @@ mod l4_query_engine_validation_error_encoding {
     use app_lib::runtime::query_engine::QueryEngine;
     use app_lib::runtime::state::TurnState;
     use app_lib::runtime::tools::definition::ToolDefinition;
+    use app_lib::runtime::tools::description_context::ToolDescriptionContext;
     use app_lib::runtime::tools::executor::{ToolError, ToolResult};
     use app_lib::runtime::tools::{
         AllowAllPermissionPipeline, RuntimeTool, ToolDispatcher, ToolExecutionContext,
@@ -222,7 +237,11 @@ mod l4_query_engine_validation_error_encoding {
 
     #[async_trait]
     impl RuntimeTool for AlwaysFailsValidation {
-        fn definition(&self) -> ToolDefinition {
+        fn id(&self) -> &str {
+            "always_invalid"
+        }
+
+        async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
             ToolDefinition::new("always_invalid", "always fails validation")
         }
 

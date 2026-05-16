@@ -108,6 +108,7 @@ fn create_employee(store: &EmployeeStore) -> String {
             resource_config: None,
             system_prompt_extra: Some("You are a research assistant.".to_string()),
             default_skill_id: None,
+            skill_ids: None,
         })
         .unwrap();
     record.id

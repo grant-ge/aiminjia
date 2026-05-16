@@ -81,6 +81,9 @@ pub struct TemplateSnapshot {
     pub cron: String,
     #[serde(default)]
     pub default_skill_id: String,
+    /// Additional skill ids beyond the default. Listed in the dispatch prompt.
+    #[serde(default)]
+    pub skill_ids: Vec<String>,
     #[serde(default)]
     pub requires_dingtalk: bool,
     /// Free-form attachment spec passed straight through to the frontend
@@ -335,6 +338,21 @@ pub fn effective_default_skill_id(
         return Some(s.default_skill_id);
     }
     record_fallback.map(|s| s.to_string())
+}
+
+/// Returns the effective additional skill ids for an employee. Snapshot wins;
+/// empty vec in snapshot → falls back to record field.
+pub fn effective_skill_ids(
+    employees_root: &Path,
+    employee_id: &str,
+    record_fallback: &[String],
+) -> Vec<String> {
+    if let Some(s) = load_snapshot_silent(&employees_root.join(employee_id)) {
+        if !s.skill_ids.is_empty() {
+            return s.skill_ids;
+        }
+    }
+    record_fallback.to_vec()
 }
 
 // ─── atomic write helper (small local copy; the existing one in storage::
@@ -658,6 +676,7 @@ mod tests {
             tool_whitelist: vec!["Read".into()],
             cron: "".into(),
             default_skill_id: "".into(),
+            skill_ids: vec![],
             requires_dingtalk: false,
             requires_attachment: serde_json::Value::Null,
             resource_config_schema: serde_json::json!({}),
@@ -690,6 +709,7 @@ mod tests {
             tool_whitelist: vec![],
             cron: "".into(),
             default_skill_id: "".into(),
+            skill_ids: vec![],
             requires_dingtalk: false,
             requires_attachment: serde_json::Value::Null,
             resource_config_schema: serde_json::Value::Null,
@@ -713,6 +733,7 @@ mod tests {
             tool_whitelist: vec![],
             cron: "".into(),
             default_skill_id: "".into(),
+            skill_ids: vec![],
             requires_dingtalk: false,
             requires_attachment: serde_json::Value::Null,
             resource_config_schema: serde_json::Value::Null,
@@ -805,6 +826,7 @@ mod tests {
             tool_whitelist: vec!["Snap1".into(), "Snap2".into()],
             cron: "".into(),
             default_skill_id: "snap-skill".into(),
+            skill_ids: vec![],
             requires_dingtalk: false,
             requires_attachment: serde_json::Value::Null,
             resource_config_schema: serde_json::Value::Null,

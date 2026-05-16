@@ -19,6 +19,7 @@ mod common;
 use std::sync::{Arc, Mutex};
 
 use app_lib::runtime::chat::tool_round_types::RuntimeToolCallRequest;
+use app_lib::runtime::tools::description_context::ToolDescriptionContext;
 use app_lib::runtime::tools::{
     AllowAllPermissionPipeline, RuntimeTool, ToolDefinition, ToolDispatcher, ToolError,
     ToolExecutionContext, ToolResult,
@@ -42,7 +43,14 @@ struct SpyTool {
 
 #[async_trait]
 impl RuntimeTool for SpyTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str {
+
+        self.name
+
+    }
+
+
+    async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new(
             self.name,
             "Spy tool — detects whether dispatcher was reached",

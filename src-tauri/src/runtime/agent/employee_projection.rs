@@ -116,6 +116,7 @@ mod tests {
             resource_config: None,
             system_prompt_extra: None,
             default_skill_id: None,
+            skill_ids: None,
         }
     }
 
@@ -137,6 +138,7 @@ mod tests {
                 resource_config: None,
                 system_prompt_extra: Some("你是小研".into()),
                 default_skill_id: None,
+                skill_ids: None,
             })
             .unwrap();
         let def = project_employee_to_agent(&rec);

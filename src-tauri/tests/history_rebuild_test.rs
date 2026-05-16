@@ -145,7 +145,7 @@ fn user_history_with_uploaded_files_preserves_file_hints() {
     assert_eq!(history.len(), 1);
     assert!(history[0].content.contains("[当前消息附件]"));
     assert!(history[0].content.contains("/tmp/sales.csv"));
-    assert!(history[0].content.contains("显式提供的本地路径"));
+    assert!(history[0].content.contains("本轮附件已自动加入授权目录"));
 }
 
 #[test]

@@ -6,6 +6,7 @@ use app_lib::runtime::identity::IdentityMapping;
 use app_lib::runtime::ids::RunId;
 use app_lib::runtime::query_engine::QueryEngine;
 use app_lib::runtime::state::TurnState;
+use app_lib::runtime::tools::description_context::ToolDescriptionContext;
 use app_lib::runtime::tools::{
     AllowAllPermissionPipeline, RuntimeTool, ToolDefinition, ToolDispatcher, ToolError,
     ToolExecutionContext, ToolResult,
@@ -19,7 +20,11 @@ struct FailingRuntimeTool;
 
 #[async_trait]
 impl RuntimeTool for FailingRuntimeTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "failing_runtime_tool"
+    }
+
+    async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new("failing_runtime_tool", "always fails for review")
     }
 

@@ -35,7 +35,8 @@ async fn query_engine_injects_capability_context_for_workspace_tool() {
     use app_lib::runtime::ids::RunId;
     use app_lib::runtime::state::TurnState;
     use app_lib::runtime::tools::builtin::workspace::SearchFilesRuntimeTool;
-    use app_lib::runtime::tools::{AllowAllPermissionPipeline, ToolDispatcher};
+    use app_lib::runtime::tools::description_context::ToolDescriptionContext;
+use app_lib::runtime::tools::{AllowAllPermissionPipeline, ToolDispatcher};
     use std::sync::Arc;
     use tempfile::TempDir;
 
@@ -122,6 +123,7 @@ async fn query_engine_injects_authorized_workspace_into_capability_context() {
         AllowAllPermissionPipeline, RuntimeTool, ToolDefinition, ToolDispatcher, ToolError,
         ToolExecutionContext, ToolResult,
     };
+    use app_lib::runtime::tools::description_context::ToolDescriptionContext;
     use async_trait::async_trait;
     use serde_json::Value;
     use std::path::PathBuf;
@@ -134,7 +136,11 @@ async fn query_engine_injects_authorized_workspace_into_capability_context() {
 
     #[async_trait]
     impl RuntimeTool for CaptureAuthorizedWorkspaceTool {
-        fn definition(&self) -> ToolDefinition {
+        fn id(&self) -> &str {
+            "capture_authorized_workspace"
+        }
+
+        async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
             ToolDefinition::new("capture_authorized_workspace", "Capture capability context")
         }
 

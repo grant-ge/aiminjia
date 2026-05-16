@@ -16,6 +16,7 @@ use app_lib::runtime::tools::permission::{
     default_permission_ask, PermissionDecision, PermissionDestination, PermissionMode,
     PermissionReason,
 };
+use app_lib::runtime::tools::description_context::ToolDescriptionContext;
 use app_lib::runtime::tools::{
     PermissionPipeline, RuntimeTool, ToolDefinition, ToolDispatcher, ToolError,
     ToolExecutionContext, ToolResult,
@@ -56,7 +57,11 @@ struct EchoTool;
 
 #[async_trait]
 impl RuntimeTool for EchoTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "echo_tool"
+    }
+
+    async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new("echo_tool", "simple echo tool for testing")
             .with_capability_scope(["custom:test"])
     }

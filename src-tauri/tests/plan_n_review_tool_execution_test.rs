@@ -1,5 +1,6 @@
 use app_lib::runtime::cancellation::{CancellationReason, CancellationToken};
 use app_lib::runtime::chat::tool_round_driver::ToolRoundDriver;
+use app_lib::runtime::tools::description_context::ToolDescriptionContext;
 use app_lib::runtime::tools::dispatcher::{InterruptBehavior, RuntimeTool};
 use app_lib::runtime::tools::{ToolDefinition, ToolError, ToolExecutionContext, ToolResult};
 
@@ -9,7 +10,11 @@ fn review_default_interrupt_behavior_is_block() {
 
     #[async_trait::async_trait]
     impl RuntimeTool for MinimalTool {
-        fn definition(&self) -> ToolDefinition {
+        fn id(&self) -> &str {
+            "minimal"
+        }
+
+        async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
             ToolDefinition::new("minimal", "minimal tool")
         }
 
@@ -35,7 +40,11 @@ fn review_default_context_modifier_is_none() {
 
     #[async_trait::async_trait]
     impl RuntimeTool for MinimalTool {
-        fn definition(&self) -> ToolDefinition {
+        fn id(&self) -> &str {
+            "minimal2"
+        }
+
+        async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
             ToolDefinition::new("minimal2", "minimal tool 2")
         }
 

@@ -13,6 +13,7 @@ use app_lib::runtime::ids::RunId;
 use app_lib::runtime::query_engine::QueryEngine;
 use app_lib::runtime::state::TurnState;
 use app_lib::runtime::tools::dispatcher::{RuntimeTool, ToolDispatchOutcome};
+use app_lib::runtime::tools::description_context::ToolDescriptionContext;
 use app_lib::runtime::tools::{
     AllowAllPermissionPipeline, ToolDefinition, ToolDispatcher, ToolError, ToolExecutionContext,
     ToolResult,
@@ -22,7 +23,11 @@ struct ModifyingTool;
 
 #[async_trait]
 impl RuntimeTool for ModifyingTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "modifying_tool"
+    }
+
+    async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new("modifying_tool", "modifies context")
     }
 
@@ -46,7 +51,11 @@ struct PlainTool;
 
 #[async_trait]
 impl RuntimeTool for PlainTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "plain_tool"
+    }
+
+    async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new("plain_tool", "no modifier")
     }
 
@@ -101,7 +110,11 @@ async fn concurrent_safe_tool_modifier_ignored() {
 
     #[async_trait]
     impl RuntimeTool for ConcurrentModifyingTool {
-        fn definition(&self) -> ToolDefinition {
+        fn id(&self) -> &str {
+            "conc_mod"
+        }
+
+        async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
             ToolDefinition::new("conc_mod", "concurrent")
         }
 

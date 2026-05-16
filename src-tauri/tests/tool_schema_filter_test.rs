@@ -1,6 +1,7 @@
 //! Tests for ToolSchemaFilter enum and build_visible_tool_defs filtering logic.
 
 use app_lib::plugin::registry::ToolRegistry;
+use app_lib::runtime::tools::description_context::ToolDescriptionContext;
 use app_lib::runtime::tools::{
     RuntimeTool, ToolDefinition, ToolError, ToolExecutionContext, ToolResult,
 };
@@ -20,7 +21,14 @@ struct FakeRuntimeTool {
 
 #[async_trait]
 impl RuntimeTool for FakeRuntimeTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str {
+
+        self.id
+
+    }
+
+
+    async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new(self.id, "fake tool for schema filter tests")
     }
     async fn execute(
@@ -55,7 +63,7 @@ async fn daily_filter_excludes_tools_not_in_whitelist() {
         "obscure_tool_not_in_daily",
     ])
     .await;
-    let defs = build_visible_tool_defs(&registry, true, ToolSchemaFilter::DailyWhitelist).await;
+    let defs = build_visible_tool_defs(&registry, true, ToolSchemaFilter::DailyWhitelist, &app_lib::runtime::tools::ToolDescriptionContext::default(), &std::collections::HashMap::new()).await;
     let names: HashSet<_> = defs.iter().map(|d| d.name.as_str()).collect();
     assert!(
         names.contains("SearchMemory"),
@@ -82,6 +90,8 @@ async fn employee_filter_uses_employee_whitelist_only() {
         &registry,
         true,
         ToolSchemaFilter::EmployeeWhitelist(employee_set),
+        &app_lib::runtime::tools::ToolDescriptionContext::default(),
+        &std::collections::HashMap::new(),
     )
     .await;
     let names: HashSet<_> = defs.iter().map(|d| d.name.as_str()).collect();
@@ -106,7 +116,7 @@ async fn no_filter_returns_full_set() {
     // request-scoped tools globally, so we only assert presence of our names,
     // not exact length.)
     let registry = make_test_registry_with_tools(&["fake_no_filter_a", "fake_no_filter_b", "fake_no_filter_c"]).await;
-    let defs = build_visible_tool_defs(&registry, true, ToolSchemaFilter::None).await;
+    let defs = build_visible_tool_defs(&registry, true, ToolSchemaFilter::None, &app_lib::runtime::tools::ToolDescriptionContext::default(), &std::collections::HashMap::new()).await;
     let names: HashSet<_> = defs.iter().map(|d| d.name.as_str()).collect();
     for expected in ["fake_no_filter_a", "fake_no_filter_b", "fake_no_filter_c"] {
         assert!(

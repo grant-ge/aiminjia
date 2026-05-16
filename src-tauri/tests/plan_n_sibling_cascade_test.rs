@@ -13,6 +13,7 @@ use app_lib::runtime::ids::RunId;
 use app_lib::runtime::query_engine::QueryEngine;
 use app_lib::runtime::state::TurnState;
 use app_lib::runtime::tools::dispatcher::RuntimeTool;
+use app_lib::runtime::tools::description_context::ToolDescriptionContext;
 use app_lib::runtime::tools::{
     AllowAllPermissionPipeline, ToolDefinition, ToolDispatcher, ToolError, ToolExecutionContext,
     ToolResult,
@@ -29,7 +30,14 @@ struct FailTool {
 
 #[async_trait]
 impl RuntimeTool for FailTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str {
+
+        &self.name
+
+    }
+
+
+    async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new(&self.name, "always fails")
     }
 
@@ -56,7 +64,14 @@ struct SlowTool {
 
 #[async_trait]
 impl RuntimeTool for SlowTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str {
+
+        &self.name
+
+    }
+
+
+    async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new(&self.name, "slow tool")
     }
 
@@ -187,7 +202,14 @@ async fn concurrent_success_no_spurious_cancels() {
 
     #[async_trait]
     impl RuntimeTool for OkTool {
-        fn definition(&self) -> ToolDefinition {
+        fn id(&self) -> &str {
+
+            &self.name
+
+        }
+
+
+        async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
             ToolDefinition::new(&self.name, "ok")
         }
 

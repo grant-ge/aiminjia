@@ -13,6 +13,7 @@ use app_lib::runtime::ids::{RunId, SessionId};
 use app_lib::runtime::query_engine::QueryEngine;
 use app_lib::runtime::chat::chat_turn_driver::ChatAttachmentRef;
 use app_lib::runtime::session_runtime::{ChatTurnRequest, SessionRuntime};
+use app_lib::runtime::tools::description_context::ToolDescriptionContext;
 use app_lib::runtime::tools::{
     RuntimeTool, ToolDefinition, ToolError, ToolExecutionContext, ToolResult,
 };
@@ -133,7 +134,11 @@ struct DummyTool;
 
 #[async_trait]
 impl RuntimeTool for DummyTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "dummy_tool"
+    }
+
+    async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new("dummy_tool", "dummy tool")
     }
 

@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use serde_json::Value;
 
 use app_lib::runtime::tools::dispatcher::{InterruptBehavior, RuntimeTool};
+use app_lib::runtime::tools::description_context::ToolDescriptionContext;
 use app_lib::runtime::tools::{ToolDefinition, ToolError, ToolExecutionContext, ToolResult};
 
 struct CancelTool;
@@ -9,7 +10,11 @@ struct BlockTool;
 
 #[async_trait]
 impl RuntimeTool for CancelTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "cancel_tool"
+    }
+
+    async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new("cancel_tool", "cancellable")
     }
 
@@ -24,7 +29,11 @@ impl RuntimeTool for CancelTool {
 
 #[async_trait]
 impl RuntimeTool for BlockTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "block_tool"
+    }
+
+    async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new("block_tool", "blocking")
     }
 
@@ -81,7 +90,11 @@ async fn interrupt_only_cancels_cancel_behavior_tools() {
 
     #[async_trait]
     impl RuntimeTool for CancelAwareTool {
-        fn definition(&self) -> ToolDefinition {
+        fn id(&self) -> &str {
+            "cancel_aware"
+        }
+
+        async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
             ToolDefinition::new("cancel_aware", "cancel")
         }
 
@@ -115,7 +128,11 @@ async fn interrupt_only_cancels_cancel_behavior_tools() {
 
     #[async_trait]
     impl RuntimeTool for BlockAwareTool {
-        fn definition(&self) -> ToolDefinition {
+        fn id(&self) -> &str {
+            "block_aware"
+        }
+
+        async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
             ToolDefinition::new("block_aware", "block")
         }
 

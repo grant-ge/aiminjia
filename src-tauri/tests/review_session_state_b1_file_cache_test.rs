@@ -7,6 +7,7 @@ use app_lib::runtime::ids::RunId;
 use app_lib::runtime::query_engine::QueryEngine;
 use app_lib::runtime::state::TurnState;
 use app_lib::runtime::tools::capability::FileStateCache;
+use app_lib::runtime::tools::description_context::ToolDescriptionContext;
 use app_lib::runtime::tools::{
     AllowAllPermissionPipeline, RuntimeTool, ToolDefinition, ToolDispatcher, ToolError,
     ToolExecutionContext, ToolResult,
@@ -21,7 +22,14 @@ struct ReadFileStateCaptureTool {
 
 #[async_trait]
 impl RuntimeTool for ReadFileStateCaptureTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str {
+
+        "capture_read_file_state"
+
+    }
+
+
+    async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new(
             "capture_read_file_state",
             "capture read_file_state capability",

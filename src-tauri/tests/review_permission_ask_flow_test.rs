@@ -16,6 +16,7 @@ use app_lib::runtime::tools::permission::{
     default_permission_ask, PermissionDecision, PermissionDestination, PermissionMode,
     PermissionReason,
 };
+use app_lib::runtime::tools::description_context::ToolDescriptionContext;
 use app_lib::runtime::tools::{
     PermissionPipeline, RuntimeTool, ToolDefinition, ToolDispatcher, ToolError,
     ToolExecutionContext, ToolResult,
@@ -79,7 +80,14 @@ struct DemoActionTool {
 
 #[async_trait]
 impl RuntimeTool for DemoActionTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str {
+
+        self.name
+
+    }
+
+
+    async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new(self.name, "demo mcp action").with_capability_scope(["mcp"])
     }
 

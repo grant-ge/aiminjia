@@ -83,7 +83,8 @@ fn mcp_tool_denied_without_store_policy() {
 #[tokio::test]
 async fn tool_check_permissions_overrides_pipeline_when_some() {
     use app_lib::runtime::tools::permission::PermissionReason;
-    use app_lib::runtime::tools::{
+    use app_lib::runtime::tools::description_context::ToolDescriptionContext;
+use app_lib::runtime::tools::{
         AllowAllPermissionPipeline, RuntimeTool, ToolDispatcher, ToolError, ToolResult,
     };
     use async_trait::async_trait;
@@ -93,7 +94,11 @@ async fn tool_check_permissions_overrides_pipeline_when_some() {
 
     #[async_trait]
     impl RuntimeTool for AlwaysDenyTool {
-        fn definition(&self) -> ToolDefinition {
+        fn id(&self) -> &str {
+            "always_deny"
+        }
+
+        async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
             ToolDefinition::new("always_deny", "always deny")
         }
 
@@ -131,6 +136,7 @@ async fn tool_check_permissions_overrides_pipeline_when_some() {
 
 #[tokio::test]
 async fn tool_check_permissions_falls_through_to_pipeline_when_none() {
+    use app_lib::runtime::tools::description_context::ToolDescriptionContext;
     use app_lib::runtime::tools::{
         AllowAllPermissionPipeline, RuntimeTool, ToolDispatchOutcome, ToolDispatcher, ToolError,
         ToolResult,
@@ -142,7 +148,11 @@ async fn tool_check_permissions_falls_through_to_pipeline_when_none() {
 
     #[async_trait]
     impl RuntimeTool for PassthroughTool {
-        fn definition(&self) -> ToolDefinition {
+        fn id(&self) -> &str {
+            "passthrough"
+        }
+
+        async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
             ToolDefinition::new("passthrough", "passthrough")
         }
 

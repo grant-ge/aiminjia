@@ -103,10 +103,11 @@ fn is_concurrency_safe_returns_true() {
     );
 }
 
-#[test]
-fn definition_id_is_spawn_subagent() {
+#[tokio::test]
+async fn definition_id_is_spawn_subagent() {
     let tool = build_tool();
-    let def = tool.definition();
+    let ctx = app_lib::runtime::tools::ToolDescriptionContext::default();
+    let def = tool.definition(&ctx).await;
     assert_eq!(def.id, "Agent");
 }
 

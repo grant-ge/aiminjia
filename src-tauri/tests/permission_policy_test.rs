@@ -39,11 +39,11 @@ fn is_ask(d: &PermissionDecision) -> bool {
 fn test_always_allow_bypasses_capability_check() {
     let store = Arc::new(PermissionStore::in_memory());
     store.record(
-        "bash:workspace:write".to_string(),
+        "Bash:workspace:write".to_string(),
         PolicyDecision::AlwaysAllow,
     );
     store.record(
-        "bash:workspace:write".to_string(),
+        "Bash:workspace:write".to_string(),
         PolicyDecision::AlwaysAllow,
     );
 
@@ -60,7 +60,7 @@ fn test_always_allow_bypasses_capability_check() {
 #[test]
 fn test_always_deny_blocks_tool() {
     let store = Arc::new(PermissionStore::in_memory());
-    store.record("web_search:network".to_string(), PolicyDecision::AlwaysDeny);
+    store.record("WebSearch:network".to_string(), PolicyDecision::AlwaysDeny);
 
     let pipeline = StorePolicyPipeline::new(store);
     let def = TOOL_CATALOG.get("WebSearch").unwrap();

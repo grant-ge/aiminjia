@@ -44,6 +44,7 @@ async fn end_to_end_index_completes() {
             cron_enabled: None,
             system_prompt_extra: Some("".into()),
             default_skill_id: None,
+            skill_ids: None,
             resource_config: Some(json!({
                 "knowledgeSources": [
                     {
@@ -129,6 +130,7 @@ async fn reindexing_same_file_same_day_still_marks_done() {
         cron_enabled: None,
         system_prompt_extra: Some("".into()),
         default_skill_id: None,
+        skill_ids: None,
         resource_config: Some(json!({
             "knowledgeSources": [
                 { "path": faq.to_string_lossy(), "originalName": "faq.md", "size": 100,

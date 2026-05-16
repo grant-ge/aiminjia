@@ -1,3 +1,4 @@
+use app_lib::runtime::tools::description_context::ToolDescriptionContext;
 use app_lib::runtime::tools::{LegacyToolAdapter, RuntimeTool, ToolExecutionContext};
 use serde_json::json;
 
@@ -55,7 +56,11 @@ async fn dispatch_batch_returns_results_for_all_calls() {
 
     #[async_trait]
     impl RuntimeTool for EchoTool {
-        fn definition(&self) -> ToolDefinition {
+        fn id(&self) -> &str {
+            "echo"
+        }
+
+        async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
             ToolDefinition::new("echo", "echo")
         }
 
@@ -120,7 +125,14 @@ async fn dispatch_batch_serial_tool_runs_after_concurrent_batch() {
 
     #[async_trait]
     impl RuntimeTool for OrderedTool {
-        fn definition(&self) -> ToolDefinition {
+        fn id(&self) -> &str {
+
+            self.name
+
+        }
+
+
+        async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
             ToolDefinition::new(self.name, "ordered")
         }
 
@@ -185,7 +197,11 @@ async fn dispatch_completed_outcome_carries_declared_max_result_size_chars() {
 
     #[async_trait]
     impl RuntimeTool for EchoTool {
-        fn definition(&self) -> ToolDefinition {
+        fn id(&self) -> &str {
+            "echo"
+        }
+
+        async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
             ToolDefinition::new("echo", "echo").with_max_result_size_chars(12_345)
         }
 

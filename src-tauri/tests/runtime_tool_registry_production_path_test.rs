@@ -4,6 +4,7 @@
 #![allow(deprecated)]
 
 use app_lib::plugin::registry::{RequestScopedRuntimeDeps, ToolRegistry};
+use app_lib::runtime::tools::description_context::ToolDescriptionContext;
 use app_lib::runtime::tools::{
     RuntimeTool, ToolDefinition, ToolError, ToolExecutionContext, ToolResult,
 };
@@ -19,7 +20,11 @@ struct FakeRuntimeTool {
 
 #[async_trait]
 impl RuntimeTool for FakeRuntimeTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str {
+        self.id
+    }
+
+    async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new(self.id, "fake runtime tool for testing")
     }
     async fn execute(

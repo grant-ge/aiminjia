@@ -9,6 +9,7 @@ use app_lib::runtime::tools::executor::{ToolError, ToolResult};
 use app_lib::runtime::tools::permission::{
     PermissionDecision, PermissionPipeline, PermissionReason,
 };
+use app_lib::runtime::tools::description_context::ToolDescriptionContext;
 use app_lib::runtime::tools::{RuntimeTool, ToolDispatcher};
 use async_trait::async_trait;
 use serde_json::{json, Value};
@@ -33,7 +34,11 @@ struct PanickingMcpTool;
 
 #[async_trait]
 impl RuntimeTool for PanickingMcpTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "mcp__srv__panic_tool"
+    }
+
+    async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new("mcp__srv__panic_tool", "should not be called")
             .with_capability_scope(["mcp"])
     }

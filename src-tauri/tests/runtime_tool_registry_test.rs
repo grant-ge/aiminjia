@@ -48,8 +48,9 @@ async fn workspace_runtime_tools_have_correct_kind() {
         Box::new(ReadWorkspaceFileRuntimeTool),
         Box::new(SearchFilesRuntimeTool),
     ];
+    let ctx = app_lib::runtime::tools::ToolDescriptionContext::default();
     for tool in &tools {
-        let def = tool.definition();
+        let def = tool.definition(&ctx).await;
         assert!(
             matches!(def.kind, ToolKind::Primitive),
             "Tool '{}' should be Primitive kind",

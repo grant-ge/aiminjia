@@ -228,7 +228,6 @@ fn ad3_llm_step_input_exposes_estimated_tokens() {
         run_id: "run",
         estimated_tokens: 123,
         anthropic_multimodal_turn: None,
-        conversation_id: None,
     };
 
     assert_eq!(input.estimated_tokens, 123);

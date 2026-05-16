@@ -44,6 +44,7 @@ fn synthetic_snap(template_id: &str, version: &str, name: &str) -> TemplateSnaps
         tool_whitelist: vec![],
         cron: "".into(),
         default_skill_id: "".into(),
+        skill_ids: vec![],
         requires_dingtalk: false,
         requires_attachment: serde_json::Value::Null,
         resource_config_schema: serde_json::Value::Null,
@@ -74,6 +75,7 @@ fn first_load_hire_stamps_bootstrap_snapshot() {
             cron_enabled: None,
             system_prompt_extra: None,
             default_skill_id: None,
+            skill_ids: None,
             resource_config: Some(json!({})),
         })
         .expect("create succeeds");
@@ -120,6 +122,7 @@ fn first_load_hire_with_unknown_template_id_skips_stamping() {
             cron_enabled: None,
             system_prompt_extra: None,
             default_skill_id: None,
+            skill_ids: None,
             resource_config: None,
         })
         .unwrap();

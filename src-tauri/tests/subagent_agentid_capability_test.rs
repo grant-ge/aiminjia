@@ -13,6 +13,7 @@ use app_lib::runtime::ids::{AgentId, RunId};
 use app_lib::runtime::query_engine::QueryEngine;
 use app_lib::runtime::state::TurnState;
 use app_lib::runtime::tools::capability::CapabilityContext;
+use app_lib::runtime::tools::description_context::ToolDescriptionContext;
 use app_lib::runtime::tools::{
     AllowAllPermissionPipeline, RuntimeTool, ToolDefinition, ToolDispatcher, ToolError,
     ToolExecutionContext, ToolResult,
@@ -35,7 +36,11 @@ struct CaptureSubagentContextTool {
 
 #[async_trait]
 impl RuntimeTool for CaptureSubagentContextTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "capture_subagent_context"
+    }
+
+    async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new("capture_subagent_context", "capture subagent context")
     }
 

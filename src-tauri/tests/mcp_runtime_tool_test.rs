@@ -131,8 +131,8 @@ async fn mcp_runtime_tool_fails_when_server_not_connected() {
     );
 }
 
-#[test]
-fn mcp_runtime_tool_definition_uses_fully_qualified_id() {
+#[tokio::test]
+async fn mcp_runtime_tool_definition_uses_fully_qualified_id() {
     let connection = Arc::new(MockMcpConn {
         config: McpServerConfig {
             name: "test-server".to_string(),
@@ -146,7 +146,8 @@ fn mcp_runtime_tool_definition_uses_fully_qualified_id() {
     });
 
     let tool = McpRuntimeTool::new(sample_tool_definition(), connection);
-    let definition = tool.definition();
+    let ctx = app_lib::runtime::tools::ToolDescriptionContext::default();
+    let definition = tool.definition(&ctx).await;
 
     assert_eq!(definition.id, "mcp__test-server__example_tool");
     assert_eq!(definition.description, "Example tool");

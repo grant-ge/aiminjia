@@ -2,6 +2,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use app_lib::runtime::tools::permission::{PermissionDecision, PermissionReason};
+use app_lib::runtime::tools::description_context::ToolDescriptionContext;
 use app_lib::runtime::tools::{
     PermissionPipeline, RuntimeTool, ToolDefinition, ToolDispatcher, ToolError,
     ToolExecutionContext, ToolResult,
@@ -31,7 +32,11 @@ struct RecordingTool {
 
 #[async_trait]
 impl RuntimeTool for RecordingTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "permission_probe_tool"
+    }
+
+    async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new("permission_probe_tool", "records whether execute ran")
     }
 

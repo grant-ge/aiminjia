@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use app_lib::plugin::registry::ToolRegistry;
 use app_lib::runtime::tools::catalog::TOOL_CATALOG;
+use app_lib::runtime::tools::description_context::ToolDescriptionContext;
 use app_lib::runtime::tools::{
     RuntimeTool, ToolDefinition, ToolError, ToolExecutionContext, ToolResult,
 };
@@ -14,7 +15,12 @@ struct MockRuntimeTool {
 
 #[async_trait]
 impl RuntimeTool for MockRuntimeTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str {
+        &self.def.id
+    }
+
+
+    async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
         self.def.clone()
     }
 

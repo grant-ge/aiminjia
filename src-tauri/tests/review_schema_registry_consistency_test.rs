@@ -3,6 +3,7 @@ use std::sync::Arc;
 use app_lib::plugin::builtin::tools::register_builtin_tools;
 use app_lib::plugin::registry::ToolRegistry;
 use app_lib::runtime::tools::catalog::TOOL_CATALOG;
+use app_lib::runtime::tools::description_context::ToolDescriptionContext;
 use app_lib::runtime::tools::{
     RuntimeTool, ToolDefinition, ToolError, ToolExecutionContext, ToolResult,
 };
@@ -13,7 +14,14 @@ struct MissingCatalogRuntimeTool;
 
 #[async_trait]
 impl RuntimeTool for MissingCatalogRuntimeTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str {
+
+        "missing_catalog_runtime_tool"
+
+    }
+
+
+    async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new(
             "missing_catalog_runtime_tool",
             "Runtime tool intentionally missing from TOOL_CATALOG",

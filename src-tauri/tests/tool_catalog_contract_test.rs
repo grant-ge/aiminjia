@@ -60,11 +60,16 @@ async fn get_schemas_filtered_returns_sorted_by_name() {
     use app_lib::plugin::registry::ToolRegistry;
     use app_lib::plugin::skill_trait::ToolFilter;
     let registry = ToolRegistry::new();
+    let ctx = app_lib::runtime::tools::ToolDescriptionContext::default();
     let schemas = registry
-        .get_schemas_filtered(&ToolFilter::Only(vec![
-            "WebSearch".to_string(),
-            "WriteMemory".to_string(),
-        ]))
+        .get_schemas_filtered(
+            &ToolFilter::Only(vec![
+                "WebSearch".to_string(),
+                "WriteMemory".to_string(),
+            ]),
+            &ctx,
+            &std::collections::HashMap::new(),
+        )
         .await;
     let names: Vec<_> = schemas.iter().map(|s| s.name.clone()).collect();
     // Both are in REQUEST_SCOPED_RUNTIME_TOOL_NAMES so should appear when filtered
@@ -112,7 +117,8 @@ fn tool_definition_with_destructive_flag() {
 
 #[test]
 fn runtime_tool_default_predicates_follow_definition_flags() {
-    use app_lib::runtime::tools::{RuntimeTool, ToolError, ToolExecutionContext, ToolResult};
+    use app_lib::runtime::tools::description_context::ToolDescriptionContext;
+use app_lib::runtime::tools::{RuntimeTool, ToolError, ToolExecutionContext, ToolResult};
     use async_trait::async_trait;
     use serde_json::{json, Value};
 
@@ -120,7 +126,12 @@ fn runtime_tool_default_predicates_follow_definition_flags() {
 
     #[async_trait]
     impl RuntimeTool for PredicateTool {
-        fn definition(&self) -> ToolDefinition {
+        fn id(&self) -> &str {
+            &self.0.id
+        }
+
+
+        async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
             self.0.clone()
         }
 

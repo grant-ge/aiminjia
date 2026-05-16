@@ -401,7 +401,8 @@ async fn web_search_routes_to_runtime_tool_via_factory() {
 #[tokio::test]
 async fn registry_execute_uses_runtime_tool_check_permissions() {
     use app_lib::runtime::tools::permission::{PermissionDecision, PermissionReason};
-    use app_lib::runtime::tools::{RuntimeTool, ToolDefinition, ToolError, ToolResult};
+    use app_lib::runtime::tools::description_context::ToolDescriptionContext;
+use app_lib::runtime::tools::{RuntimeTool, ToolDefinition, ToolError, ToolResult};
     use async_trait::async_trait;
     use serde_json::Value;
 
@@ -409,7 +410,11 @@ async fn registry_execute_uses_runtime_tool_check_permissions() {
 
     #[async_trait]
     impl RuntimeTool for DenyRuntimeTool {
-        fn definition(&self) -> ToolDefinition {
+        fn id(&self) -> &str {
+            "deny_runtime_tool"
+        }
+
+        async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
             ToolDefinition::new("deny_runtime_tool", "deny runtime tool")
         }
 
@@ -510,7 +515,7 @@ async fn load_skill_routes_through_request_scoped_runtime_factory() {
             .map(|tool| tool.to_string())
             .collect(),
     );
-    let daily_schemas = registry.get_schemas_filtered(&daily_filter).await;
+    let daily_schemas = registry.get_schemas_filtered(&daily_filter, &app_lib::runtime::tools::ToolDescriptionContext::default(), &std::collections::HashMap::new()).await;
     assert!(
         daily_schemas
             .iter()

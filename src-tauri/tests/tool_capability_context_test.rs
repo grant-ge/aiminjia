@@ -10,6 +10,7 @@ use app_lib::runtime::dependencies::{
     RuntimeDependencyError, StaticRuntimeResolver, WorkspaceDependencies,
 };
 use app_lib::runtime::tools::capability::{CapabilityContext, StorageCapability};
+use app_lib::runtime::tools::description_context::ToolDescriptionContext;
 use app_lib::runtime::tools::{
     RuntimeTool, ToolDefinition, ToolError, ToolExecutionContext, ToolResult,
 };
@@ -24,7 +25,14 @@ struct WorkspacePrinterTool;
 
 #[async_trait]
 impl RuntimeTool for WorkspacePrinterTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str {
+
+        "workspace_printer"
+
+    }
+
+
+    async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new(
             "workspace_printer",
             "Print workspace path from capability ctx",

@@ -8,8 +8,8 @@ fn agenda_dispatch_reads_employee_system_prompt_extra() {
     let chat_rs = std::fs::read_to_string("src/transport/tauri_commands/chat.rs")
         .expect("chat.rs must exist");
     assert!(
-        chat_rs.contains("EmployeeStore::new") && chat_rs.contains("organizer_employee_id"),
-        "AgendaRunDispatcher::dispatch must instantiate EmployeeStore using organizer_employee_id"
+        chat_rs.contains("organizer_employee_id"),
+        "AgendaRunDispatcher::dispatch must use organizer_employee_id to look up employee"
     );
     assert!(
         chat_rs.contains("build_dispatch_prompt"),

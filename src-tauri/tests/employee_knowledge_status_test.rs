@@ -26,6 +26,7 @@ fn update_knowledge_source_status_round_trip() {
             cron_enabled: None,
             system_prompt_extra: Some("".into()),
             default_skill_id: None,
+            skill_ids: None,
             resource_config: Some(json!({
                 "knowledgeSources": [
                     { "path": "/tmp/faq.md", "originalName": "faq.md", "size": 1024,
@@ -87,6 +88,7 @@ fn update_knowledge_source_status_records_error() {
             cron_enabled: None,
             system_prompt_extra: Some("".into()),
             default_skill_id: None,
+            skill_ids: None,
             resource_config: Some(json!({
                 "knowledgeSources": [
                     { "path": "/tmp/x.md", "originalName": "x.md", "size": 10,

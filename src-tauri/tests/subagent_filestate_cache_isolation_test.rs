@@ -7,6 +7,7 @@ use app_lib::plugin::context::PluginContext;
 use app_lib::plugin::registry::{RequestScopedRuntimeDeps, ToolRegistry};
 use app_lib::runtime::cancellation::CancellationToken;
 use app_lib::runtime::tools::capability::{FileState, FileStateCache};
+use app_lib::runtime::tools::description_context::ToolDescriptionContext;
 use app_lib::runtime::tools::{
     RuntimeTool, ToolDefinition, ToolError, ToolExecutionContext, ToolResult,
 };
@@ -20,7 +21,11 @@ struct CaptureFileStateTool;
 
 #[async_trait]
 impl RuntimeTool for CaptureFileStateTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "capture_file_state"
+    }
+
+    async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new("capture_file_state", "capture subagent file state cache")
     }
 

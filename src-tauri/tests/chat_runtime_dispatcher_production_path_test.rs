@@ -25,6 +25,7 @@ use app_lib::runtime::ids::RunId;
 use app_lib::runtime::query_engine::QueryEngine;
 use app_lib::runtime::state::TurnState;
 use app_lib::runtime::store::AuthorizedWorkspaceRef;
+use app_lib::runtime::tools::description_context::ToolDescriptionContext;
 use app_lib::runtime::tools::{
     AllowAllPermissionPipeline, RuntimeTool, ToolDefinition,
     ToolDispatcher, ToolError, ToolExecutionContext, ToolResult,
@@ -47,7 +48,14 @@ struct CapturingRuntimeTool {
 
 #[async_trait]
 impl RuntimeTool for CapturingRuntimeTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str {
+
+        self.name
+
+    }
+
+
+    async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new(self.name, "Test tool that captures capability context")
     }
 

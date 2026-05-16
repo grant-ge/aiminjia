@@ -4,6 +4,7 @@ use app_lib::runtime::tools::permission::{
     default_permission_ask, AllowAllPermissionPipeline, PermissionDecision, PermissionMode,
     PermissionPipeline,
 };
+use app_lib::runtime::tools::description_context::ToolDescriptionContext;
 use app_lib::runtime::tools::{
     RuntimeTool, ToolDefinition, ToolDispatcher, ToolError, ToolExecutionContext, ToolResult,
 };
@@ -38,7 +39,11 @@ struct EchoTool;
 
 #[async_trait]
 impl RuntimeTool for EchoTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "echo_tool"
+    }
+
+    async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new("echo_tool", "echo tool")
     }
 
@@ -55,7 +60,11 @@ struct ExecuteAskTool;
 
 #[async_trait]
 impl RuntimeTool for ExecuteAskTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "execute_ask_tool"
+    }
+
+    async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new("execute_ask_tool", "execute ask tool")
     }
 

@@ -913,7 +913,13 @@ impl ToolDefsCapturingExecutor {
         let registry = ToolRegistry::new();
         register_builtin_tools(&registry).await;
         let visible =
-            build_visible_tool_defs(&registry, true, ToolSchemaFilter::DailyWhitelist).await;
+            build_visible_tool_defs(
+                &registry,
+                true,
+                ToolSchemaFilter::DailyWhitelist,
+                &app_lib::runtime::tools::ToolDescriptionContext::default(),
+                &std::collections::HashMap::new(),
+            ).await;
         let precomputed_tool_defs: Vec<serde_json::Value> = visible
             .into_iter()
             .filter_map(|td| serde_json::to_value(&td).ok())

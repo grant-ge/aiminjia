@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use app_lib::runtime::hooks::{HookConfig, HookEvent, HookRegistry, HookRunner};
 use app_lib::runtime::tools::capability::CapabilityContext;
+use app_lib::runtime::tools::description_context::ToolDescriptionContext;
 use app_lib::runtime::tools::{
     AllowAllPermissionPipeline, RuntimeTool, ToolDefinition, ToolDispatcher, ToolError,
     ToolExecutionContext, ToolResult,
@@ -18,7 +19,14 @@ struct RecordingTool {
 
 #[async_trait]
 impl RuntimeTool for RecordingTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str {
+
+        &self.name
+
+    }
+
+
+    async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new(&self.name, "recording tool")
     }
 

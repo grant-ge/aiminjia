@@ -21,6 +21,7 @@ use app_lib::runtime::tools::executor::{ToolError, ToolResult};
 use app_lib::runtime::tools::permission::{
     AllowAllPermissionPipeline, PermissionDecision, PermissionReason,
 };
+use app_lib::runtime::tools::description_context::ToolDescriptionContext;
 use app_lib::runtime::tools::{RuntimeTool, ToolDispatcher};
 
 #[test]
@@ -77,7 +78,11 @@ struct AlwaysDeniedTool;
 
 #[async_trait]
 impl RuntimeTool for AlwaysDeniedTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "always_denied"
+    }
+
+    async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new("always_denied", "always permission denied")
     }
 

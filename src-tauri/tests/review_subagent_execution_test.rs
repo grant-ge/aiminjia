@@ -9,6 +9,7 @@ use app_lib::runtime::agent::subagent_transcript_store::SubagentTranscriptEntryR
 use app_lib::runtime::agent::AgentRuntime;
 use app_lib::runtime::cancellation::CancellationToken;
 use app_lib::runtime::tools::capability::{CapabilityContext, FileState, FileStateCache};
+use app_lib::runtime::tools::description_context::ToolDescriptionContext;
 use app_lib::runtime::tools::{
     RuntimeTool, ToolDefinition, ToolError, ToolExecutionContext, ToolResult,
 };
@@ -68,7 +69,11 @@ struct CaptureSubagentContextTool {
 
 #[async_trait]
 impl RuntimeTool for CaptureSubagentContextTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "capture_subagent_context"
+    }
+
+    async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new("capture_subagent_context", "capture subagent context")
     }
 

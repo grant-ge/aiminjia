@@ -13,6 +13,7 @@ use app_lib::runtime::store::permission_store::PermissionStore;
 use app_lib::runtime::tools::permission::{
     default_permission_ask, PermissionReason, StorePolicyPipeline,
 };
+use app_lib::runtime::tools::description_context::ToolDescriptionContext;
 use app_lib::runtime::tools::{
     PermissionDecision, PermissionPipeline, RuntimeTool, ToolDefinition, ToolDispatchOutcome,
     ToolDispatcher, ToolError, ToolExecutionContext, ToolResult,
@@ -58,7 +59,14 @@ struct EchoTool;
 
 #[async_trait]
 impl RuntimeTool for EchoTool {
-    fn definition(&self) -> ToolDefinition {
+    fn id(&self) -> &str {
+
+        "echo_tool"
+
+    }
+
+
+    async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
         // 使用 unknown scope 以触发 Ask
         ToolDefinition::new("echo_tool", "simple echo tool for testing")
             .with_capability_scope(["custom:test"])
@@ -238,7 +246,14 @@ async fn registry_execute_unknown_scope_not_silently_allowed() {
 
     #[async_trait]
     impl RuntimeTool for RuntimeUnknownScopeTool {
-        fn definition(&self) -> ToolDefinition {
+        fn id(&self) -> &str {
+
+            "legacy_unknown_scope_tool"
+
+        }
+
+
+        async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
             ToolDefinition::new(
                 "legacy_unknown_scope_tool",
                 "runtime version with unknown scope",
