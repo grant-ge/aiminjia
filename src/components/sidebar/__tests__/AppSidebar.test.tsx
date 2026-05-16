@@ -97,7 +97,7 @@ describe('AppSidebar', () => {
     render(<AppSidebar />)
     expect(screen.getByRole('button', { name: '新任务' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '数字员工' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '汇报中心' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '专家团' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '技能中心' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '定时任务' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'IM 频道' })).toBeInTheDocument()

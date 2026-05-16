@@ -107,7 +107,7 @@ export function AppSidebar() {
       : route.kind === 'employees' ? 'employees'
       : route.kind === 'skill-center' || route.kind === 'skill-detail' ? 'skill-center'
       : route.kind === 'schedules' ? 'schedules'
-      : route.kind === 'inbox' ? 'inbox'
+      : route.kind === 'expert-teams' ? 'expert-teams'
       : route.kind === 'home' ? 'home'
       : null
 
