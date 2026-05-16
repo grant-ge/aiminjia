@@ -1,5 +1,6 @@
 import { ChatBottomArea } from '@/components/chat-scene/ChatBottomArea'
 import { ExpertTeamBanner } from '@/components/chat-scene/ExpertTeamBanner'
+import { ExpertTeamWelcome } from '@/components/chat-scene/ExpertTeamWelcome'
 import { RightPanel } from '@/components/chat/RightPanel'
 import type { PreviewTarget } from '@/components/chat/generatedFileActions'
 import { ChatArea } from '@/components/layout/ChatArea'
@@ -81,7 +82,13 @@ export function ChatPage({ conversationId }: ChatPageProps) {
           {expertTeamId ? (
             <ExpertTeamBanner conversationId={conversationId} teamId={expertTeamId} />
           ) : null}
-          <ChatArea />
+          {expertTeam && messageCount === 0 ? (
+            <div className="flex-1 overflow-y-auto">
+              <ExpertTeamWelcome team={expertTeam} />
+            </div>
+          ) : (
+            <ChatArea />
+          )}
           <ChatBottomArea placeholderOverride={expertTeam?.composerPlaceholder} />
         </div>
         {activeConversationId ? (
