@@ -262,7 +262,14 @@
       "cat_legal": "法务",
       "cat_sales": "销售",
       "cat_ops": "运营",
-      "cat_general": "通用"
+      "cat_general": "通用",
+      "sync": "同步内置技能",
+      "syncing": "同步中...",
+      "syncSuccess": "同步完成（新增 {{count}} 个）",
+      "syncNoChange": "已是最新",
+      "syncFailed": "同步失败",
+      "version": "版本",
+      "savePackTitle": "导出技能包"
     },
     "saving": "保存中...",
     "saveSettings": "保存设置",

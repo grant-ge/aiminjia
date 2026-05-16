@@ -1633,6 +1633,7 @@ export interface CustomSkillInfo {
   description: string
   path: string
   enabled: boolean
+  version?: string | null
 }
 
 /** List all custom skills installed by the user. */

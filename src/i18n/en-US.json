@@ -262,7 +262,14 @@
       "cat_legal": "Legal",
       "cat_sales": "Sales",
       "cat_ops": "Ops",
-      "cat_general": "General"
+      "cat_general": "General",
+      "sync": "Sync built-in skills",
+      "syncing": "Syncing...",
+      "syncSuccess": "Sync complete ({{count}} added)",
+      "syncNoChange": "Up to date",
+      "syncFailed": "Sync failed",
+      "version": "Version",
+      "savePackTitle": "Export skill package"
     },
     "saving": "Saving...",
     "saveSettings": "Save Settings",

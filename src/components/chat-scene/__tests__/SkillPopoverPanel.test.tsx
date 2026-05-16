@@ -10,9 +10,9 @@ const ITEMS = [
 ]
 
 describe('SkillPopoverPanel', () => {
-  it('renders head title and all items', () => {
+  it('renders search input and all items', () => {
     render(<SkillPopoverPanel items={ITEMS} onPick={() => {}} onClose={() => {}} />)
-    expect(screen.getByText('管理已安装的技能')).toBeInTheDocument()
+    expect(screen.getByTestId('skill-popover-search')).toBeInTheDocument()
     expect(screen.getByText('数据分析')).toBeInTheDocument()
     expect(screen.getByText('文案助手')).toBeInTheDocument()
   })
@@ -22,6 +22,45 @@ describe('SkillPopoverPanel', () => {
     render(<SkillPopoverPanel items={ITEMS} onPick={onPick} onClose={() => {}} />)
     fireEvent.click(screen.getByRole('button', { name: /文案助手/ }))
     expect(onPick).toHaveBeenCalledWith('b')
+  })
+
+  it('filters items by query', () => {
+    render(<SkillPopoverPanel items={ITEMS} onPick={() => {}} onClose={() => {}} />)
+    const input = screen.getByTestId('skill-popover-search') as HTMLInputElement
+    fireEvent.change(input, { target: { value: '文案' } })
+    expect(screen.queryByText('数据分析')).not.toBeInTheDocument()
+    expect(screen.getByText('文案助手')).toBeInTheDocument()
+  })
+
+  it('ranks title matches above subtitle matches', () => {
+    const items = [
+      { id: 'a', title: '数据分析', subtitle: '报告生成', source: '内置' },
+      { id: 'b', title: '报告助手', subtitle: '其它', source: '内置' },
+    ]
+    render(<SkillPopoverPanel items={items} onPick={() => {}} onClose={() => {}} />)
+    fireEvent.change(screen.getByTestId('skill-popover-search'), { target: { value: '报告' } })
+    const rendered = screen.getAllByRole('button').filter((b) => b.textContent?.includes('助手') || b.textContent?.includes('分析'))
+    expect(rendered[0].textContent).toContain('报告助手')
+    expect(rendered[1].textContent).toContain('数据分析')
+  })
+
+  it('ranks title prefix above title contains', () => {
+    const items = [
+      { id: 'a', title: '高级报告', subtitle: '...', source: '内置' },
+      { id: 'b', title: '报告助手', subtitle: '...', source: '内置' },
+    ]
+    render(<SkillPopoverPanel items={items} onPick={() => {}} onClose={() => {}} />)
+    fireEvent.change(screen.getByTestId('skill-popover-search'), { target: { value: '报告' } })
+    const buttons = screen.getAllByRole('button').filter((b) => b.textContent?.includes('报告'))
+    expect(buttons[0].textContent).toContain('报告助手')
+    expect(buttons[1].textContent).toContain('高级报告')
+  })
+
+  it('shows empty state with no-match hint when query has no matches', () => {
+    render(<SkillPopoverPanel items={ITEMS} onPick={() => {}} onClose={() => {}} />)
+    fireEvent.change(screen.getByTestId('skill-popover-search'), { target: { value: 'zzz-nope' } })
+    expect(screen.getByTestId('skill-popover-empty')).toBeInTheDocument()
+    expect(screen.getByText('没有匹配的技能')).toBeInTheDocument()
   })
 
   it('becomes scrollable when items > 6', () => {
