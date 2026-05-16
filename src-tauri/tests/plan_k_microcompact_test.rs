@@ -122,12 +122,12 @@ fn x2_microcompact_skips_preserved_tool_results() {
         json!({
             "role": "assistant",
             "content": "iter1",
-            "toolCalls": [{ "id": "tc-non-preserved", "name": "WebSearch", "arguments": {} }]
+            "toolCalls": [{ "id": "tc-non-preserved", "name": "Read", "arguments": {} }]
         }),
         json!({
             "role": "tool",
             "toolCallId": "tc-non-preserved",
-            "name": "WebSearch",
+            "name": "Read",
             "content": big_content,
         }),
         make_assistant_with_tools("iter2", &["tc-new"]),
