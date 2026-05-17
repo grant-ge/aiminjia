@@ -38,9 +38,6 @@ tokio = { version = "1", features = ["full"] }
 # HTTP client (for LLM API calls)
 reqwest = { version = "0.12", features = ["json", "stream"] }
 
-# Database
-rusqlite = { version = "0.32", features = ["bundled"] }
-
 # Encryption
 aes-gcm = "0.10"
 
@@ -72,13 +69,10 @@ sha2 = "0.10"
 shell-words = "1.1"
 globset = "0.4"
 
-# Browser automation (Playwright via Node.js sidecar, replaces chromiumoxide)
-url = "2"
 urlencoding = "2"
 
 # Plugin system
 async-trait = "0.1"
-toml = "0.8"
 zip = "2"
 tar = "0.4"
 flate2 = "1"

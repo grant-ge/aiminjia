@@ -16,7 +16,6 @@ pub mod markdown_loader;
 pub mod message_bridge;
 pub mod name_registry;
 pub mod output_writer;
-pub mod python_recovery;
 pub mod registry;
 pub mod registry_loader;
 // required_tools removed: Teammate-required tools are now injected at

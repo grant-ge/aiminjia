@@ -161,21 +161,6 @@ pub struct FileIndex {
     pub files: Vec<FileEntry>,
 }
 
-// ─── Analysis ────────────────────────────────────────────────────────────────
-
-/// Analysis state stored in `analysis.json`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct StoredAnalysisState {
-    pub conversation_id: String,
-    pub current_step: i32,
-    pub step_status: serde_json::Value,
-    pub state_data: serde_json::Value,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub final_status: Option<String>,
-    pub updated_at: String,
-}
-
 // ─── Enterprise Memory ───────────────────────────────────────────────────────
 
 /// A memory entry stored in `shared/memory/memory.jsonl`.

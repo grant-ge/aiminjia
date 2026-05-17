@@ -399,7 +399,7 @@ aijia/
 ## 关键设计决策
 
 - Tauri 2.x：Ed25519 signed auto-updater（密钥 `~/.tauri/aijia.key`，GitHub Secrets `TAURI_SIGNING_PRIVATE_KEY(_PASSWORD)`）
-- 数据存储：SQLite + AES-256-GCM（敏感字段）
+- 数据存储：文件持久化（JSON/JSONL）+ AES-256-GCM（敏感字段）
 - i18n：react-i18next，`src/i18n/{zh-CN,en-US}.json`，默认 zh-CN
 - OSS：阿里云 `lotus-releases` bucket，前缀 `aijia/`，CDN `https://lotus.renlijia.com`
 - Homebrew：`grant-ge/homebrew-tap` 下 `Casks/aijia.rb`，`on_arm` / `on_intel` 分架构 URL

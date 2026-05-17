@@ -71,8 +71,6 @@ pub(crate) use dingtalk::handle_dingtalk_list_events;
 pub(crate) use dingtalk::handle_dingtalk_complete_todo;
 pub(crate) use dingtalk::handle_dingtalk_create_todo;
 pub(crate) use dingtalk::handle_dingtalk_list_todos;
-pub(crate) use util::py_escape;
-pub(crate) use util::slugify;
 
 // ─────────────────────────────────────────────────
 // Argument extraction helpers (shared by submodules)
@@ -214,32 +212,4 @@ pub(crate) mod tests {
         assert!((optional_f64(&args, "alpha", 0.05) - 0.05).abs() < f64::EPSILON);
     }
 
-    // ── util tests ──────────────────────────────
-
-    #[test]
-    fn test_slugify() {
-        assert_eq!(util::slugify("Hello World"), "hello_world");
-        assert_eq!(util::slugify("Report #1 (Final)"), "report__1__final");
-    }
-
-    #[test]
-    fn test_indent_python_basic() {
-        let code = "line1\nline2\nline3";
-        let indented = util::indent_python(code, 4);
-        assert_eq!(indented, "    line1\n    line2\n    line3");
-    }
-
-    #[test]
-    fn test_indent_python_preserves_relative() {
-        let code = "if True:\n    print('hi')";
-        let indented = util::indent_python(code, 4);
-        assert_eq!(indented, "    if True:\n        print('hi')");
-    }
-
-    #[test]
-    fn test_indent_python_skips_empty_lines() {
-        let code = "a\n\nb";
-        let indented = util::indent_python(code, 4);
-        assert_eq!(indented, "    a\n\n    b");
-    }
 }

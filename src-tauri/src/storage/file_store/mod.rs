@@ -26,7 +26,6 @@
 //!     └── {id}/
 //!         ├── conv.json        # Metadata (title, timestamps)
 //!         ├── file_index.json  # File records (uploads + generated)
-//!         ├── analysis.json    # Analysis state
 //!         ├── compact_boundaries.jsonl # Compact boundary records
 //!         ├── _current         # Shard metadata "{shard}:{seq}"
 //!         ├── messages.N.jsonl # Message shards (100 msgs each)
@@ -36,7 +35,6 @@
 //!         └── run.lock         # Session-based agent lock (SESSION_ID:TIMESTAMP)
 //! ```
 
-pub mod analysis;
 pub mod audit;
 pub mod cache;
 pub mod cognitive;
@@ -524,47 +522,6 @@ impl AppStorage {
             &self.base_dir,
             conversation_id,
         )?)
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════
-    // Analysis States
-    // ═══════════════════════════════════════════════════════════════════════
-
-    pub fn upsert_analysis_state(
-        &self,
-        conversation_id: &str,
-        current_step: i32,
-        step_status: &str,
-        state_data: &str,
-    ) -> Result<()> {
-        let _lock = self.write_lock.lock().unwrap();
-        analysis::upsert_analysis_state(
-            &self.base_dir,
-            conversation_id,
-            current_step,
-            step_status,
-            state_data,
-        )?;
-        Ok(())
-    }
-
-    pub fn get_analysis_state(&self, conversation_id: &str) -> Result<Option<serde_json::Value>> {
-        Ok(analysis::get_analysis_state(
-            &self.base_dir,
-            conversation_id,
-        )?)
-    }
-
-    pub fn finalize_analysis(&self, conversation_id: &str, final_status: &str) -> Result<()> {
-        let _lock = self.write_lock.lock().unwrap();
-        analysis::finalize_analysis(&self.base_dir, conversation_id, final_status)?;
-        Ok(())
-    }
-
-    pub fn reset_stuck_analysis_state(&self, conversation_id: &str) -> Result<()> {
-        let _lock = self.write_lock.lock().unwrap();
-        analysis::reset_stuck_analysis_state(&self.base_dir, conversation_id)?;
-        Ok(())
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -1695,26 +1652,6 @@ mod tests {
             storage.get_memory("company").unwrap(),
             Some("Acme Inc".to_string())
         );
-    }
-
-    #[test]
-    fn test_analysis_lifecycle() {
-        let (storage, _dir) = test_storage();
-
-        storage.create_conversation("c1", "Conv").unwrap();
-
-        assert!(storage.get_analysis_state("c1").unwrap().is_none());
-
-        storage
-            .upsert_analysis_state("c1", 2, r#"{"step1":"done"}"#, r#"{"key":"val"}"#)
-            .unwrap();
-
-        let state = storage.get_analysis_state("c1").unwrap().unwrap();
-        assert_eq!(state["currentStep"], 2);
-
-        storage.finalize_analysis("c1", "completed").unwrap();
-        let state = storage.get_analysis_state("c1").unwrap().unwrap();
-        assert_eq!(state["finalStatus"], "completed");
     }
 
     #[test]
