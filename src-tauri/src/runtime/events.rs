@@ -10,6 +10,55 @@ pub enum AgentIdleScope {
     Child,
 }
 
+/// One tool that the agent is currently executing as part of a `TurnStage::Tools`
+/// batch.  `started_at_ms` lets the frontend display elapsed time per tool.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RunningTool {
+    pub tool_name: String,
+    pub tool_call_id: String,
+    pub started_at_ms: u64,
+}
+
+/// The agent's current macro state inside a single turn.  Emitted via
+/// `TurnStageChanged` on every transition so the UI never has to derive
+/// "what is the agent doing right now" from disparate events.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum TurnStage {
+    /// Turn just started; building prompt / loading history.
+    Submitted,
+    /// LLM request in flight, no first token yet.
+    #[serde(rename_all = "camelCase")]
+    WaitingLlm { iteration: u32 },
+    /// LLM is streaming tokens.
+    #[serde(rename_all = "camelCase")]
+    Streaming { iteration: u32 },
+    /// A batch of tool calls is being dispatched / executed.
+    #[serde(rename_all = "camelCase")]
+    Tools {
+        iteration: u32,
+        running: Vec<RunningTool>,
+        completed_in_batch: u32,
+    },
+    /// Blocked waiting on a user permission decision.
+    #[serde(rename_all = "camelCase")]
+    WaitingPermission {
+        tool_name: String,
+        tool_call_id: String,
+    },
+    /// Blocked waiting on a user interaction (AskUserQuestion, etc).
+    #[serde(rename_all = "camelCase")]
+    WaitingInteraction {
+        interaction_kind: String,
+        interaction_id: String,
+    },
+    /// Context compaction is running.
+    Compacting,
+    /// Final persistence + post-processing before TurnCompleted.
+    Completing,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum RuntimeEventKind {
     RunStarted,
@@ -126,6 +175,20 @@ pub enum RuntimeEventKind {
     },
     RunCancelled,
     RunCompleted,
+    /// Macro-state of the current turn changed.  Always emitted alongside the
+    /// existing fine-grained events; UI uses this as the single source of truth
+    /// for the "what is the agent doing right now" indicator (see
+    /// `docs/superpowers/specs/2026-05-17-turn-stages.md`).
+    TurnStageChanged {
+        stage: TurnStage,
+        stage_started_at_ms: u64,
+    },
+    /// Keep-alive while a turn is in progress.  Emitted every ~2s by the driver
+    /// so the frontend can distinguish "silent but alive" from "stuck".
+    TurnHeartbeat {
+        stage_elapsed_ms: u64,
+        turn_elapsed_ms: u64,
+    },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -194,5 +257,37 @@ impl RuntimeEvent {
 
     pub fn stream_done(session_id: SessionId, run_id: RunId) -> Self {
         Self::new(session_id, run_id, RuntimeEventKind::StreamDone)
+    }
+
+    pub fn turn_stage_changed(
+        session_id: SessionId,
+        run_id: RunId,
+        stage: TurnStage,
+        stage_started_at_ms: u64,
+    ) -> Self {
+        Self::new(
+            session_id,
+            run_id,
+            RuntimeEventKind::TurnStageChanged {
+                stage,
+                stage_started_at_ms,
+            },
+        )
+    }
+
+    pub fn turn_heartbeat(
+        session_id: SessionId,
+        run_id: RunId,
+        stage_elapsed_ms: u64,
+        turn_elapsed_ms: u64,
+    ) -> Self {
+        Self::new(
+            session_id,
+            run_id,
+            RuntimeEventKind::TurnHeartbeat {
+                stage_elapsed_ms,
+                turn_elapsed_ms,
+            },
+        )
     }
 }

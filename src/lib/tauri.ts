@@ -64,6 +64,10 @@ export const TAURI_EVENTS = {
   PENDING_QUEUED: 'pending:queued',
   PENDING_DRAINED: 'pending:drained',
   PENDING_REMOVED: 'pending:removed',
+  /** Spec 2026-05-17 §4.1 — TurnStage transitions. */
+  TURN_STAGE: 'turn:stage',
+  /** Spec 2026-05-17 §4.1 — ~2s keep-alive while a turn is in progress. */
+  TURN_HEARTBEAT: 'turn:heartbeat',
 } as const
 
 // ---------------------------------------------------------------------------
@@ -233,6 +237,49 @@ export interface TurnCompletedPayload {
   iterations?: number
   reason?: string
   message?: string
+}
+
+// ---------------------------------------------------------------------------
+// Turn-stage events (spec docs/superpowers/specs/2026-05-17-turn-stages.md)
+// ---------------------------------------------------------------------------
+
+export interface TurnRunningTool {
+  toolName: string
+  toolCallId: string
+  startedAtMs: number
+}
+
+export type TurnStageKind =
+  | { kind: 'submitted' }
+  | { kind: 'waitingLlm';         iteration: number }
+  | { kind: 'streaming';          iteration: number }
+  | {
+      kind: 'tools'
+      iteration: number
+      running: TurnRunningTool[]
+      completedInBatch: number
+    }
+  | { kind: 'waitingPermission';  toolName: string; toolCallId: string }
+  | {
+      kind: 'waitingInteraction'
+      interactionKind: string
+      interactionId: string
+    }
+  | { kind: 'compacting' }
+  | { kind: 'completing' }
+
+export interface TurnStagePayload {
+  conversationId: string
+  runId: string
+  stage: TurnStageKind
+  stageStartedAtMs: number
+}
+
+export interface TurnHeartbeatPayload {
+  conversationId: string
+  runId: string
+  stageElapsedMs: number
+  turnElapsedMs: number
 }
 
 export interface DiagnosticsEventPayload {
@@ -1567,6 +1614,22 @@ export function onTurnCompleted(
   handler: (payload: TurnCompletedPayload) => void,
 ): Promise<() => void> {
   return listen<TurnCompletedPayload>(TAURI_EVENTS.TURN_COMPLETED, createInstrumentedEventHandler(TAURI_EVENTS.TURN_COMPLETED, (event) => {
+    handler(event.payload)
+  }))
+}
+
+export function onTurnStage(
+  handler: (payload: TurnStagePayload) => void,
+): Promise<() => void> {
+  return listen<TurnStagePayload>(TAURI_EVENTS.TURN_STAGE, createInstrumentedEventHandler(TAURI_EVENTS.TURN_STAGE, (event) => {
+    handler(event.payload)
+  }))
+}
+
+export function onTurnHeartbeat(
+  handler: (payload: TurnHeartbeatPayload) => void,
+): Promise<() => void> {
+  return listen<TurnHeartbeatPayload>(TAURI_EVENTS.TURN_HEARTBEAT, createInstrumentedEventHandler(TAURI_EVENTS.TURN_HEARTBEAT, (event) => {
     handler(event.payload)
   }))
 }

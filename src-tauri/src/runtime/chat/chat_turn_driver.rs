@@ -27,8 +27,9 @@ use crate::runtime::chat::turn_config::{
     TurnIterationState, MAX_OUTPUT_TOKENS_RECOVERY_LIMIT,
 };
 use crate::runtime::chat::turn_outcome::ChatTurnOutcome;
+use crate::runtime::chat::turn_stage::TurnStageEmitter;
 use crate::runtime::event_bus::RuntimeEventBus;
-use crate::runtime::events::{AgentIdleScope, RuntimeEvent, RuntimeEventKind};
+use crate::runtime::events::{AgentIdleScope, RunningTool, RuntimeEvent, RuntimeEventKind};
 use crate::runtime::hooks::config::{HookEvent, HookRegistry};
 use crate::runtime::hooks::HookRunner;
 use crate::runtime::ids::{AgentId, RunId, SessionId};
@@ -775,6 +776,34 @@ impl RuntimeChatTurnDriver {
         }
     }
 
+    /// Emit a one-shot stage transition without going through the per-turn
+    /// `TurnStageEmitter`.  Used from helpers that don't own the emitter
+    /// (resolve_permission_asks / resolve_interaction_requests).  Respects
+    /// the `AIJIA_TURN_STAGES` feature flag.
+    async fn emit_stage_oneshot(
+        &self,
+        session_id: SessionId,
+        run_id: RunId,
+        stage: crate::runtime::events::TurnStage,
+    ) {
+        if !crate::runtime::chat::turn_stage::turn_stages_enabled() {
+            return;
+        }
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        if let Err(e) = self
+            .event_bus
+            .emit(RuntimeEvent::turn_stage_changed(
+                session_id, run_id, stage, now_ms,
+            ))
+            .await
+        {
+            log::warn!("[turn-stage] emit_stage_oneshot failed: {e}");
+        }
+    }
+
     async fn resolve_permission_asks(
         &self,
         turn: &TurnState,
@@ -846,6 +875,19 @@ impl RuntimeChatTurnDriver {
                     },
                 ))
                 .await?;
+
+            // Stage: WaitingPermission — UI shows "等待你审批：<tool>" until the
+            // user resolves the ask.  The next stage transition (Tools resume
+            // or WaitingLlm continuation) is emitted by the main loop.
+            self.emit_stage_oneshot(
+                turn.session_id().clone(),
+                turn.run_id().clone(),
+                crate::runtime::events::TurnStage::WaitingPermission {
+                    tool_name: tool_name.clone(),
+                    tool_call_id: tool_call_id.clone(),
+                },
+            )
+            .await;
 
             let resolution = self
                 .await_permission_resolution(cancel, tool_call_id, resolution_rx)
@@ -1027,6 +1069,17 @@ impl RuntimeChatTurnDriver {
                 ))
                 .await?;
 
+            // Stage: WaitingInteraction — UI shows "等待你回答…" until resolved.
+            self.emit_stage_oneshot(
+                turn.session_id().clone(),
+                turn.run_id().clone(),
+                crate::runtime::events::TurnStage::WaitingInteraction {
+                    interaction_kind: format!("{:?}", interaction_request.kind),
+                    interaction_id: interaction_request.interaction_id.as_str().to_string(),
+                },
+            )
+            .await;
+
             let resolution = self
                 .await_interaction_resolution(
                     cancel,
@@ -1176,6 +1229,15 @@ impl RuntimeChatTurnDriver {
         request: &ChatTurnRequest,
         executor: &dyn RuntimeLlmExecutor,
     ) -> Result<()> {
+        // Turn-stage emitter (spec §3 + §8).  When the env flag is off this is
+        // a zero-cost no-op for every emit call.
+        let stage_emitter = TurnStageEmitter::new(
+            self.event_bus.clone(),
+            turn.session_id().clone(),
+            turn.run_id().clone(),
+        );
+        stage_emitter.submitted().await;
+
         // LTR (B-gap1) Path A entry: marks the Lead as Running and returns
         // the resolved (session, lead_agent_id) key.  None when the session
         // is not in Team mode or registries aren't wired.  The exit half of
@@ -1782,6 +1844,7 @@ impl RuntimeChatTurnDriver {
             }
 
             // ── Step 5b: single LLM step ─────────────────────────────────────
+            stage_emitter.waiting_llm(iteration as u32).await;
             let step_result = match executor
                 .run_llm_step(&input, &self.event_bus, &cancel)
                 .await
@@ -1981,6 +2044,29 @@ impl RuntimeChatTurnDriver {
                     state.step_cache_read_input_tokens += cache_read_input_tokens;
                     state.iteration_count = iteration + 1;
 
+                    // Stage: Tools — emit the planned batch so the UI immediately
+                    // shows "正在执行 X / 正在并行运行 N 个工具".  Per-tool
+                    // start/completion granularity is handled by the existing
+                    // tool:executing / tool:completed events that the
+                    // round_driver fires below.
+                    {
+                        let now_ms = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_millis() as u64)
+                            .unwrap_or(0);
+                        let running: Vec<RunningTool> = tool_calls
+                            .iter()
+                            .map(|call| RunningTool {
+                                tool_name: call.tool_name.clone(),
+                                tool_call_id: call.tool_call_id.clone(),
+                                started_at_ms: now_ms,
+                            })
+                            .collect();
+                        stage_emitter
+                            .tools_started(iteration as u32, running)
+                            .await;
+                    }
+
                     // Execute the tool round.
                     let round_results = round_driver
                         .execute_round(turn, &self.event_bus, tool_calls)
@@ -2123,6 +2209,7 @@ impl RuntimeChatTurnDriver {
         }
 
         // ── Step 6: Post-process content ──────────────────────────────────────
+        stage_emitter.completing().await;
         post_process::finalize_content(
             &mut state.full_content,
             state.iteration_count,

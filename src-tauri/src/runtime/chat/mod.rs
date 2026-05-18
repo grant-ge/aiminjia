@@ -16,6 +16,7 @@ pub mod tool_round_driver;
 pub mod tool_round_types;
 pub mod turn_config;
 pub mod turn_outcome;
+pub mod turn_stage;
 
 pub use chat_turn_driver::{ChatTurnRequest, RuntimeChatTurnDriver, RuntimeLlmExecutor};
 pub use compact_client::CompactSummaryClient;

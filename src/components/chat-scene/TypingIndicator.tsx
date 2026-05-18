@@ -8,11 +8,15 @@ export type TypingVariant = 'default' | 'analyze' | 'retrieve' | 'generate' | 'o
 
 interface TypingIndicatorProps {
   variant: TypingVariant
+  /** When provided, overrides the variant-derived label.  Used by
+   *  StreamingBubble to render the turn-stage label (e.g. "等待模型响应 · 已 5s")
+   *  while keeping the breathing-asterisk visual identical. */
+  label?: string
 }
 
-export function TypingIndicator({ variant }: TypingIndicatorProps) {
+export function TypingIndicator({ variant, label }: TypingIndicatorProps) {
   const { t } = useTranslation()
-  const label = t(`typing.${variant}`)
+  const text = label ?? t(`typing.${variant}`)
   return (
     <div className="flex items-center gap-1 text-primary">
       <Asterisk
@@ -20,7 +24,7 @@ export function TypingIndicator({ variant }: TypingIndicatorProps) {
         strokeWidth={1.75}
         style={{ animation: 'typingIndicatorBreath 1.2s ease-in-out infinite' }}
       />
-      <span className="text-sm leading-none">{label}</span>
+      <span className="text-sm leading-none">{text}</span>
     </div>
   )
 }

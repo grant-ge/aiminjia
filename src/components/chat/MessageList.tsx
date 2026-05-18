@@ -42,6 +42,15 @@ export function MessageList() {
   useChat()
   const activeConversationId = useChatStore((s) => s.activeConversationId)
   const isStreaming = useChatStore((s) => s.isStreaming)
+  // Show the streaming bubble whenever this conversation is "busy" — that
+  // window is wider than `isStreaming` alone (covers sentinel resume + the
+  // moment between `addBusyConversation` and the first stream event), which
+  // closes the visual gap users see today (spec §6.4).
+  const showStreamingBubble = useChatStore((s) => {
+    const id = s.activeConversationId
+    if (!id) return false
+    return s.busyConversations.has(id) || (s.streamStates[id]?.isStreaming ?? false)
+  })
   const streamingContent = useChatStore((s) => {
     const activeId = s.activeConversationId
     return activeId ? (s.streamStates[activeId]?.streamingContent ?? '') : ''
@@ -242,7 +251,7 @@ export function MessageList() {
           </div>
         )
       })}
-      {isStreaming ? (
+      {showStreamingBubble ? (
         <ChatRow role="assistant" name={assistantName} avatarUrl={assistantLogo}>
           <StreamingBubble content={streamingContent} />
         </ChatRow>

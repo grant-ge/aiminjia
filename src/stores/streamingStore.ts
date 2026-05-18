@@ -1,5 +1,5 @@
 import type { StoreApi, UseBoundStore } from 'zustand'
-import type { TurnOutcome } from '@/lib/tauri'
+import type { TurnOutcome, TurnStageKind } from '@/lib/tauri'
 
 export interface ToolExecution {
   toolName: string
@@ -53,6 +53,19 @@ export interface ConversationStreamState {
   streamingContent: string
   toolExecutions: ToolExecution[]
   lastTurnSummary?: TurnSummary
+  /**
+   * Backend-driven macro-state of the current turn (spec
+   * 2026-05-17-turn-stages §3).  null when no stage has arrived yet
+   * (feature flag off, pre-PR1 conversations, or before the first
+   * `turn:stage` event lands).
+   */
+  turnStage?: TurnStageKind | null
+  /** Unix ms when the current stage was entered (from `turn:stage`). */
+  stageStartedAt?: number | null
+  /** Wall-clock ms (Date.now) of the last received `turn:heartbeat`. */
+  lastHeartbeatAt?: number | null
+  /** Wall-clock ms (Date.now) of the first stage event for this turn. */
+  turnStartedAt?: number | null
 }
 
 export interface StreamingState {
@@ -78,6 +91,12 @@ export interface StreamingState {
   removePendingAsk: (toolCallId: string) => void
   clearConversationPendingAsks: (conversationId: string) => void
   setLastTurnSummary: (convId: string, summary: TurnSummary) => void
+  setConversationTurnStage: (
+    convId: string,
+    stage: TurnStageKind,
+    stageStartedAtMs: number,
+  ) => void
+  touchConversationHeartbeat: (convId: string, atMs: number) => void
   setStreaming: (isStreaming: boolean) => void
   setStreamingContent: (content: string) => void
   appendStreamingContent: (delta: string) => void
@@ -220,7 +239,8 @@ export function createStreamingSlice<T extends StreamingState & StreamingSliceBr
         if (
           !previous.isStreaming &&
           previous.streamingContent === '' &&
-          previous.toolExecutions.length === 0
+          previous.toolExecutions.length === 0 &&
+          !previous.turnStage
         ) {
           return {} as Partial<T>
         }
@@ -231,6 +251,10 @@ export function createStreamingSlice<T extends StreamingState & StreamingSliceBr
             streamingContent: '',
             toolExecutions: [],
             lastTurnSummary: previous.lastTurnSummary,
+            turnStage: null,
+            stageStartedAt: null,
+            lastHeartbeatAt: null,
+            turnStartedAt: null,
           },
         }
         const legacy = deriveLegacy(state.activeConversationId, streamStates)
@@ -333,6 +357,36 @@ export function createStreamingSlice<T extends StreamingState & StreamingSliceBr
         const streamStates = {
           ...state.streamStates,
           [convId]: { ...previous, lastTurnSummary: summary },
+        }
+        const legacy = deriveLegacy(state.activeConversationId, streamStates)
+        return { streamStates, ...legacy } as Partial<T>
+      }),
+
+    setConversationTurnStage: (convId, stage, stageStartedAtMs) =>
+      apply((state) => {
+        const previous = getStreamState(state.streamStates, convId)
+        const turnStartedAt = previous.turnStartedAt ?? Date.now()
+        const streamStates = {
+          ...state.streamStates,
+          [convId]: {
+            ...previous,
+            turnStage: stage,
+            stageStartedAt: stageStartedAtMs,
+            lastHeartbeatAt: Date.now(),
+            turnStartedAt,
+          },
+        }
+        const legacy = deriveLegacy(state.activeConversationId, streamStates)
+        return { streamStates, ...legacy } as Partial<T>
+      }),
+
+    touchConversationHeartbeat: (convId, atMs) =>
+      apply((state) => {
+        const previous = state.streamStates[convId]
+        if (!previous) return {} as Partial<T>
+        const streamStates = {
+          ...state.streamStates,
+          [convId]: { ...previous, lastHeartbeatAt: atMs },
         }
         const legacy = deriveLegacy(state.activeConversationId, streamStates)
         return { streamStates, ...legacy } as Partial<T>

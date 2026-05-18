@@ -55,6 +55,8 @@ import {
   onFileGenerated,
   onTaskStatusChanged,
   onTurnCompleted,
+  onTurnStage,
+  onTurnHeartbeat,
   onDiagnosticsEvent,
   uploadDiagnosticLogs,
   TAURI_EVENTS,
@@ -72,6 +74,8 @@ import type {
   FileGeneratedPayload,
   TaskStatusChangedPayload,
   TurnCompletedPayload,
+  TurnStagePayload,
+  TurnHeartbeatPayload,
   DiagnosticsEventPayload,
 } from '@/lib/tauri'
 import { useStreamingStore } from '@/stores/streamingStore'
@@ -760,6 +764,38 @@ export function useStreaming() {
         totalCostUsd,
         completedAt: Date.now(),
       })
+    }),
+  )
+
+  // --- turn:stage --------------------------------------------------------
+  // Spec docs/superpowers/specs/2026-05-17-turn-stages.md §6.2.
+  // Backend emits on every stage transition (Submitted / WaitingLlm / Tools /
+  // WaitingPermission / WaitingInteraction / Completing).  Frontend stores the
+  // raw stage; StreamingBubble derives a label from it.
+  useTauriEvent(() =>
+    onTurnStage(({ conversationId, stage, stageStartedAtMs }: TurnStagePayload) => {
+      touchActivity(conversationId)
+      recordDiagnostic({
+        event: 'turn.stage.received',
+        conversationId,
+        payload: { kind: stage.kind, stageStartedAtMs },
+      })
+      useChatStore.getState().setConversationTurnStage(
+        conversationId,
+        stage,
+        stageStartedAtMs,
+      )
+    }),
+  )
+
+  // --- turn:heartbeat ----------------------------------------------------
+  // Spec §4.1.  ~2s keep-alive while a turn is active.  Refreshes the watchdog
+  // timestamp so we don't false-positive a stuck turn during long silent
+  // sub-stages (tool execution between events, model cold start, etc).
+  useTauriEvent(() =>
+    onTurnHeartbeat(({ conversationId }: TurnHeartbeatPayload) => {
+      touchActivity(conversationId)
+      useChatStore.getState().touchConversationHeartbeat(conversationId, Date.now())
     }),
   )
 

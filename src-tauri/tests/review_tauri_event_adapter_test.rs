@@ -1,5 +1,7 @@
 use app_lib::runtime::chat::ChatTurnOutcome;
-use app_lib::runtime::events::{AgentIdleScope, RuntimeEvent, RuntimeEventKind};
+use app_lib::runtime::events::{
+    AgentIdleScope, RunningTool, RuntimeEvent, RuntimeEventKind, TurnStage,
+};
 use app_lib::runtime::ids::{AgentId, RunId, SessionId, TaskId, ToolCallId};
 use app_lib::runtime::tools::permission::{PermissionDestination, PermissionMode};
 use app_lib::transport::tauri_event_adapter::map_runtime_event;
@@ -258,4 +260,79 @@ fn task_status_changed_maps_to_task_status_changed_with_task_status_and_context(
     assert_eq!(legacy.payload["owner"], "agent-run-001");
     assert_eq!(legacy.payload["conversationId"], "conv-123");
     assert_eq!(legacy.payload["runId"], "run-456");
+}
+
+#[test]
+fn turn_stage_changed_waiting_llm_maps_with_iteration_and_started_at() {
+    let legacy = mapped(RuntimeEventKind::TurnStageChanged {
+        stage: TurnStage::WaitingLlm { iteration: 3 },
+        stage_started_at_ms: 1_700_000_000_000,
+    });
+
+    assert_eq!(legacy.name, "turn:stage");
+    assert_eq!(legacy.payload["conversationId"], "conv-123");
+    assert_eq!(legacy.payload["runId"], "run-456");
+    assert_eq!(legacy.payload["stageStartedAtMs"], 1_700_000_000_000_u64);
+    assert_eq!(legacy.payload["stage"]["kind"], "waitingLlm");
+    assert_eq!(legacy.payload["stage"]["iteration"], 3);
+}
+
+#[test]
+fn turn_stage_changed_tools_serializes_running_list_and_completed_count() {
+    let legacy = mapped(RuntimeEventKind::TurnStageChanged {
+        stage: TurnStage::Tools {
+            iteration: 1,
+            running: vec![
+                RunningTool {
+                    tool_name: "Bash".to_string(),
+                    tool_call_id: "tc-1".to_string(),
+                    started_at_ms: 1_700_000_001_000,
+                },
+                RunningTool {
+                    tool_name: "Read".to_string(),
+                    tool_call_id: "tc-2".to_string(),
+                    started_at_ms: 1_700_000_001_500,
+                },
+            ],
+            completed_in_batch: 1,
+        },
+        stage_started_at_ms: 1_700_000_000_000,
+    });
+
+    assert_eq!(legacy.name, "turn:stage");
+    assert_eq!(legacy.payload["stage"]["kind"], "tools");
+    assert_eq!(legacy.payload["stage"]["iteration"], 1);
+    assert_eq!(legacy.payload["stage"]["completedInBatch"], 1);
+    assert_eq!(legacy.payload["stage"]["running"][0]["toolName"], "Bash");
+    assert_eq!(legacy.payload["stage"]["running"][0]["toolCallId"], "tc-1");
+    assert_eq!(legacy.payload["stage"]["running"][1]["toolName"], "Read");
+}
+
+#[test]
+fn turn_stage_changed_waiting_permission_uses_camelcase_fields() {
+    let legacy = mapped(RuntimeEventKind::TurnStageChanged {
+        stage: TurnStage::WaitingPermission {
+            tool_name: "Write".to_string(),
+            tool_call_id: "tc-9".to_string(),
+        },
+        stage_started_at_ms: 1_700_000_000_000,
+    });
+
+    assert_eq!(legacy.payload["stage"]["kind"], "waitingPermission");
+    assert_eq!(legacy.payload["stage"]["toolName"], "Write");
+    assert_eq!(legacy.payload["stage"]["toolCallId"], "tc-9");
+}
+
+#[test]
+fn turn_heartbeat_maps_with_elapsed_ms_fields() {
+    let legacy = mapped(RuntimeEventKind::TurnHeartbeat {
+        stage_elapsed_ms: 2400,
+        turn_elapsed_ms: 18_500,
+    });
+
+    assert_eq!(legacy.name, "turn:heartbeat");
+    assert_eq!(legacy.payload["conversationId"], "conv-123");
+    assert_eq!(legacy.payload["runId"], "run-456");
+    assert_eq!(legacy.payload["stageElapsedMs"], 2400);
+    assert_eq!(legacy.payload["turnElapsedMs"], 18_500);
 }

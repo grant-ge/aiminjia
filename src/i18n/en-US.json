@@ -146,6 +146,21 @@
       "observe": "Summarizing..."
     }
   },
+  "turnStage": {
+    "fallback": "Thinking…",
+    "submitted": "Preparing…",
+    "waitingLlm": "Waiting for model",
+    "streaming": "Thinking…",
+    "toolsPreparing": "Preparing tools…",
+    "toolSingle": "Running {{name}}",
+    "toolsMulti": "Running {{count}} tools in parallel",
+    "waitingPermission": "Waiting for your approval: {{name}}",
+    "waitingInteraction": "Waiting for your reply…",
+    "compacting": "Compacting context…",
+    "completing": "Finishing…",
+    "elapsed": " · {{sec}}s",
+    "stalled": "Network is slow, still waiting…"
+  },
   "messageList": {
     "steps": {
       "1": "Data Cleaning & Understanding",

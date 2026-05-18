@@ -32,6 +32,8 @@ pub fn kind_label(kind: &RuntimeEventKind) -> &'static str {
         RuntimeEventKind::PendingQueued { .. } => "PendingQueued",
         RuntimeEventKind::PendingDrained { .. } => "PendingDrained",
         RuntimeEventKind::PendingRemoved { .. } => "PendingRemoved",
+        RuntimeEventKind::TurnStageChanged { .. } => "TurnStageChanged",
+        RuntimeEventKind::TurnHeartbeat { .. } => "TurnHeartbeat",
     }
 }
 

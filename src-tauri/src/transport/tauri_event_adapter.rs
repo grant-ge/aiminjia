@@ -321,6 +321,30 @@ pub fn map_runtime_event(event: &RuntimeEvent) -> Option<LegacyEvent> {
                 "itemId": item_id,
             }),
         }),
+        RuntimeEventKind::TurnStageChanged {
+            stage,
+            stage_started_at_ms,
+        } => Some(LegacyEvent {
+            name: "turn:stage".to_string(),
+            payload: json!({
+                "conversationId": conversation_id,
+                "runId": event.run_id.as_str(),
+                "stage": stage,
+                "stageStartedAtMs": stage_started_at_ms,
+            }),
+        }),
+        RuntimeEventKind::TurnHeartbeat {
+            stage_elapsed_ms,
+            turn_elapsed_ms,
+        } => Some(LegacyEvent {
+            name: "turn:heartbeat".to_string(),
+            payload: json!({
+                "conversationId": conversation_id,
+                "runId": event.run_id.as_str(),
+                "stageElapsedMs": stage_elapsed_ms,
+                "turnElapsedMs": turn_elapsed_ms,
+            }),
+        }),
         _ => None,
     };
     payload
