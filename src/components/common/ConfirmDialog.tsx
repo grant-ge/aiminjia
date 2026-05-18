@@ -42,19 +42,25 @@ export function ConfirmDialog({
   const resolvedCancelLabel = cancelLabel ?? t('common.cancel')
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent>
+      <AlertDialogContent data-aijia-confirm-dialog>
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel className="border-input">{resolvedCancelLabel}</AlertDialogCancel>
+          <AlertDialogCancel
+            className="border-input"
+            data-aijia-confirm-action="cancel"
+          >
+            {resolvedCancelLabel}
+          </AlertDialogCancel>
           <AlertDialogAction
             className={cn(
               variant === 'destructive' &&
                 'bg-destructive text-destructive-foreground hover:brightness-110 active:brightness-95',
             )}
             onClick={onConfirm}
+            data-aijia-confirm-action="confirm"
           >
             {confirmLabel}
           </AlertDialogAction>

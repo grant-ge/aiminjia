@@ -176,7 +176,11 @@ export function MessageList() {
   }
 
   return (
-    <div className="flex flex-col gap-5 px-2 py-3">
+    <div
+      className="flex flex-col gap-5 px-2 py-3"
+      data-aijia-message-list
+      data-aijia-streaming={isStreaming ? 'true' : 'false'}
+    >
       {turns.map((t, i) => {
         const teamSession = teamSessionForTurnIdx[i]
         // Dispatch-prompt user turns render as a centered system banner

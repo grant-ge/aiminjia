@@ -17,7 +17,8 @@
     "pretauri:dev": "pnpm ensure:runtime",
     "tauri:dev": "tauri dev",
     "pretauri:build": "pnpm ensure:runtime",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "dev:with-pilot": "tauri dev --features e2e"
   },
   "dependencies": {
     "@radix-ui/react-alert-dialog": "^1.1.15",

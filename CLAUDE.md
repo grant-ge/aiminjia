@@ -224,12 +224,16 @@ Skill 系统采用无状态架构，仅加载 `~/.renlijia/users/{scope}/skills/
 
 ```
 ~/.renlijia/
-├── conversations/{id}/
-│   ├── conv.json                  # 对话元数据
-│   ├── messages.N.jsonl           # 消息分片（100 条/片）
-│   ├── _current                   # 分片指针 "shard_num:next_seq"
+├── users/{scope}/conversations/{id}/  # per-team 布局（scope = t_{tenantId}__u_{userId}）
+│   ├── conv.json                  # 对话元数据（含 isArchived / title / messageCount）
+│   ├── conv.json.bak              # 原子写时的备份
+│   ├── messages.jsonl             # 消息流水（单文件 ndjson，每行末尾带 `\t✓` 校验位）
 │   ├── compact_boundaries.jsonl   # 压缩边界记录
-│   └── file_index.json            # 文件索引
+│   ├── file_index.json            # 文件索引
+│   ├── generated/                 # LLM 生成产物（报告、图表等）
+│   ├── notes/                     # 长文笔记
+│   └── uploads/                   # 上传文件副本
+├── conversations/{id}/            # 老布局（迁移前会话；新会话不再落到这里）
 ├── subagent_transcripts/          # 子代理完整转录（JSON 数组）
 ├── skills/                        # 本地 skill 文件
 ├── crypto/                        # 加密主密钥

@@ -172,7 +172,7 @@ export function StreamingBubble({ content }: StreamingBubbleProps) {
   )
 
   return (
-    <div className="mb-7">
+    <div className="mb-7" data-aijia-streaming-bubble>
       <div>
         {hasContent ? <AssistantMarkdown text={cleanContent} disableCodeHighlight /> : null}
         {status.icon === 'spin' ? (

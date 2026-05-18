@@ -25,6 +25,21 @@ tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 tauri-plugin-notification = "2"
 
+# E2E UI automation — gated behind the `e2e` cargo feature (see [features] below).
+#
+# Default `pnpm tauri:dev` / `cargo build` does NOT pull this dep, so contributors
+# without a sibling `tauri-pilot/` clone are unaffected. To run e2e:
+#
+#   pnpm dev:with-pilot                # uses `--features e2e` under the hood
+#   cargo build --features e2e         # or directly
+#
+# Path is relative to src-tauri/ and expects sibling layout:
+#   <parent>/lotus-app/
+#   <parent>/tauri-pilot/              (clone manually before enabling)
+#
+# See docs/onboarding-e2e.md for setup.
+tauri-plugin-pilot = { path = "../../tauri-pilot/crates/tauri-plugin-pilot", optional = true }
+
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -101,6 +116,13 @@ tempfile = "3"
 wiremock = "0.6"
 tokio = { version = "1", features = ["test-util"] }
 mockito = "1"
+
+[features]
+default = []
+# Enable E2E UI automation via tauri-plugin-pilot. Pulls in the optional
+# tauri-plugin-pilot dependency and registers it in lib.rs. Off by default
+# so contributors without a sibling `tauri-pilot/` clone can build normally.
+e2e = ["dep:tauri-plugin-pilot"]
 
 [profile.dev]
 incremental = false
