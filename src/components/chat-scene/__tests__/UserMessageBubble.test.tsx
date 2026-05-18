@@ -10,11 +10,14 @@ describe('UserMessageBubble', () => {
     expect(screen.getByText('Hello')).toBeInTheDocument()
   })
 
-  it('bubble uses bg-primary and uniform rounded-xl corners', () => {
+  it('bubble uses bg-primary; right-top corner is squared to point at the avatar', () => {
     const { container } = render(<UserMessageBubble text="X" />)
     const bubble = container.querySelector('[data-testid="user-bubble"]')
     expect(bubble?.className).toMatch(/bg-primary/)
     expect(bubble?.className).toMatch(/rounded-xl/)
+    // 头像在 bubble 右上角外侧，bubble 右上角应为直角 (rounded-tr-none)
+    expect(bubble?.className).toMatch(/rounded-tr-none/)
+    // 仍保持下角对称，未引入 rounded-bl / rounded-br 这类形变
     expect(bubble?.className).not.toMatch(/rounded-b[lr]-/)
   })
 
@@ -24,10 +27,13 @@ describe('UserMessageBubble', () => {
     expect(bubble?.className).toMatch(/max-w-\[80%\]/)
   })
 
-  it('bubble uses 8px padding on all sides', () => {
+  it('bubble uses 8px vertical padding + horizontal padding from --user-bubble-padding-x', () => {
     const { container } = render(<UserMessageBubble text="X" />)
     const bubble = container.querySelector('[data-testid="user-bubble"]')
-    expect(bubble?.className).toMatch(/\bp-2\b/)
+    expect(bubble?.className).toMatch(/\bpy-2\b/)
+    // Horizontal padding consumes the global token so design-system tweaks
+    // ripple through every user bubble at once.
+    expect(bubble?.className).toMatch(/px-\[var\(--user-bubble-padding-x\)\]/)
   })
 
   it('renders selected skill as a visible token inside the user bubble', () => {

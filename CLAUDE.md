@@ -185,7 +185,18 @@ Skill 系统采用无状态架构，仅加载 `~/.renlijia/users/{scope}/skills/
 - 确认弹窗 → `requestConfirm`（`@/components/common/ConfirmDialogHost`）
 - Toast → `useNotificationStore.push({ context: 'toast' })`
 
-**3. 阴影必须使用全局变量，禁止硬编码 `boxShadow` 字面量**
+**3. 图标统一走图标库 `lucide-react`，禁止往 `public/` 新增 SVG 资产**
+
+仓库已经依赖 `lucide-react`，覆盖 90% 以上常见图标场景。**新做图标不要画 SVG**——理由有三：① 自造 SVG 的 stroke / fill / opacity 不跟主题变量，dark mode 切换、租户换肤、状态色都得手 patch；② Tauri webview 对 SVG 比 Chrome 严格（XML 注释 `--` 会被拒、缺 `width`/`height` intrinsic size 不渲染），每加一个 svg 资产就是一个潜在踩坑点；③ 静态资源会进 bundle，安装包/启动时间持续膨胀。
+
+- ✅ 用 lucide：`import { User, Search, X } from 'lucide-react'`，外层包圆 `bg-primary/12 rounded-full text-primary p-[15%]` 就能达到"中性头像 + 跟主题色"的视觉，跟着 `--primary` 自动换肤
+- ✅ lucide 没有的图标 → 先在 lucide 全集 (https://lucide.dev/icons) 搜近似语义；再不行用 `@radix-ui/react-icons` 的字符 / 系统图标作为补充
+- ❌ 禁止往 `public/` 加新的 SVG / PNG / 图标资产仅为了"做一个图"
+- ❌ 禁止自己写 `<svg viewBox=... ><path .../></svg>` inline 图形（除非是项目主 logo / 启动闪屏这种**唯一身份性**资产）
+- 例外：纯结构性图形（QR code pattern、charts / diagrams、严格指定的品牌 logo）保留 svg/图形代码即可，但要写注释说明为何不能用图标库
+- **图标颜色必须由 `currentColor` + 父级 `text-*` 变量驱动**，禁止给 lucide 图标传 `color="#xxx"` 或 `stroke="#xxx"`。常见错误：图标变全黑（默认 `text-foreground`）——99% 是缺一层 `text-primary` / `text-muted-foreground` / `text-destructive` 父容器，**不是**要给图标加硬编码 fill
+
+**4. 阴影必须使用全局变量，禁止硬编码 `boxShadow` 字面量**
 
 - ✅ 用 `src/styles/globals.css` 中定义的语义变量：`--shadow-input` / `--shadow-md` / `--shadow-popover` / `--shadow-modal` / `--shadow-card`
 - ✅ Tailwind 任意值语法：`shadow-[var(--shadow-popover)]`；内联 style：`boxShadow: 'var(--shadow-popover)'`
@@ -193,7 +204,7 @@ Skill 系统采用无状态架构，仅加载 `~/.renlijia/users/{scope}/skills/
 - 选择依据：input 边框光晕 → `input`；卡片/Toast → `card` / `md`；下拉/popover/气泡/浮层 → `popover`；Modal/Dialog → `modal`
 - 新增一类浮层需要新阴影 → 先在 `globals.css` 里加 `--shadow-*` 变量再用，**不要先硬编码再"以后改"**
 
-**4. Store / 消息更新必须 immutable，禁止原地 mutate（保持 React.memo 命中）**
+**5. Store / 消息更新必须 immutable，禁止原地 mutate（保持 React.memo 命中）**
 
 `AiBubble` 套了 `React.memo` 避免长对话历史消息重渲（`src/components/chat/AiBubble.tsx`），memo 默认浅比较 props。**只要任何代码原地 mutate `message` 或 `message.content`，UI 就会停止刷新**（memo 拦下重渲）。
 
@@ -205,7 +216,7 @@ Skill 系统采用无状态架构，仅加载 `~/.renlijia/users/{scope}/skills/
 - 出现"bubble 不刷新"现象时，第一反应去查 store 路径是否有人开始原地改 content，而不是怀疑 memo
 - 测试契约：`src/components/chat/__tests__/AiBubble.memo.test.tsx` 钉死 4 条不变式（同引用跳、新引用渲、isStreaming 变化渲、原地 mutate 跳），添加新的 message mutate 路径时同步加测试
 
-**Code review 自查清单**：diff 里看到 `bg-black` / `text-white` / `text-[#` / `bg-[#` / `border-white` / 没带颜色的裸 `border-b`、看到自己手写顶栏 / 按钮样式而不是用组件、看到 `boxShadow: '0 ... rgba(...)'` 硬编码字面量、看到对 store 中的 message / content 原地赋值或 push / Object.assign / `msg.foo = ...`——立刻换成变量 / 公共组件 / immutable 写法。
+**Code review 自查清单**：diff 里看到 `bg-black` / `text-white` / `text-[#` / `bg-[#` / `border-white` / 没带颜色的裸 `border-b`、看到自己手写顶栏 / 按钮样式而不是用组件、看到 `public/*.svg` 新增图标资产或 inline 自写 `<svg>` 图形（除主 logo / 结构性图形外）、看到给 lucide 图标硬编码 `color="#"` / `stroke="#"` 或图标视觉全黑没绑 `text-*` 变量、看到 `boxShadow: '0 ... rgba(...)'` 硬编码字面量、看到对 store 中的 message / content 原地赋值或 push / Object.assign / `msg.foo = ...`——立刻换成变量 / 公共组件 / 图标库 / immutable 写法。
 
 ## 存储结构
 

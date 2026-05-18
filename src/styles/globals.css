@@ -135,6 +135,13 @@
   --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.15);
   --shadow-card: var(--shadow-md);
 
+  /* User message bubble horizontal padding. Scoped to user-side because
+     AssistantMarkdown is a flow-layout container and adding x-padding would
+     collide with its inner block elements (tables / code / lists). If a
+     future "ai bubble" surface needs its own token, add --ai-bubble-* next
+     to this one rather than overloading a single name. */
+  --user-bubble-padding-x: 16px;
+
   /* ────────────── Table ────────────── */
   /* Font family is intentionally not declared — tables inherit from parent */
   --table-font-size: 0.875rem;

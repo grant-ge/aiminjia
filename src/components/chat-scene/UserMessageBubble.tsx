@@ -53,7 +53,10 @@ export function UserMessageBubble({
     <div className="flex w-full flex-col items-end gap-1.5">
       <div
         data-testid="user-bubble"
-        className="max-w-[80%] overflow-hidden rounded-xl bg-primary p-2 text-sm leading-relaxed text-primary-foreground"
+        // 头像在右上方紧挨着 bubble，bubble 右上角去尖（rounded-tr-none）能形
+        // 成一个"指向头像"的小切角，让 user / avatar 是一组的视觉关系更明确。
+        // 水平 padding 走 --user-bubble-padding-x 变量，全局调一处生效。
+        className="max-w-[80%] overflow-hidden rounded-xl rounded-tr-none bg-primary py-2 px-[var(--user-bubble-padding-x)] text-sm leading-relaxed text-primary-foreground"
       >
         <div
           data-testid="user-bubble-content"
