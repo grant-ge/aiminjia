@@ -418,7 +418,18 @@ export function useChat() {
         workspaceName: (c.workspaceName as string | undefined) ?? undefined,
         employeeId: (c.employeeId as string | undefined) ?? undefined,
       }))
-      console.log('[useChat] loadConversations OK, count:', convs.length)
+      // dev-only diagnostic：侧边栏首次只看到"默认文件夹"或分组数明显偏少时，
+      // 看 workspace tally：若 <none> 占比异常高，多半是后端注入前 race（auth scope 未激活）。
+      if (import.meta.env.DEV) {
+        const wsTally: Record<string, number> = {}
+        for (const c of convs) {
+          const k = c.workspaceName ?? '<none>'
+          wsTally[k] = (wsTally[k] ?? 0) + 1
+        }
+        console.log('[diag-sidebar] loadConversations count:', convs.length, 'tally:', wsTally)
+      } else {
+        console.log('[useChat] loadConversations OK, count:', convs.length)
+      }
       useChatStore.getState().setConversations(convs)
     } catch (err) {
       console.error('[useChat] getConversations IPC failed:', err)
