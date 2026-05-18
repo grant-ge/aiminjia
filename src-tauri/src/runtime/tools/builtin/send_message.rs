@@ -42,13 +42,35 @@ fn append_team_chat_entry(
     let Some(dir) = conv_dir else { return };
     let Some(team_name) = team_name else { return };
     let body = message.as_text().unwrap_or("").to_string();
-    let entry = serde_json::json!({
+    let mut entry = serde_json::json!({
         "ts": chrono::Utc::now().to_rfc3339(),
         "from": from,
         "to": to,
         "text": body,
         "variant": message.variant_name(),
     });
+    // X 方案：协议握手变体把 approve / reason / feedback 透传进 jsonl。
+    // 这样前端可以区分"同意退出"vs"拒绝退出"。omit 缺失字段以保持 jsonl 行紧凑。
+    match message {
+        StructuredMessage::ShutdownRequest { reason } => {
+            if let Some(r) = reason {
+                entry["reason"] = Value::String(r.clone());
+            }
+        }
+        StructuredMessage::ShutdownResponse { approve, reason, .. } => {
+            entry["approve"] = Value::Bool(*approve);
+            if let Some(r) = reason {
+                entry["reason"] = Value::String(r.clone());
+            }
+        }
+        StructuredMessage::PlanApprovalResponse { approve, feedback, .. } => {
+            entry["approve"] = Value::Bool(*approve);
+            if let Some(f) = feedback {
+                entry["feedback"] = Value::String(f.clone());
+            }
+        }
+        _ => {}
+    }
     use crate::runtime::agent::team_paths::TeamPaths;
     let path = TeamPaths::for_team(dir, team_name).team_chat_jsonl();
     let line = match serde_json::to_string(&entry) {
@@ -395,5 +417,115 @@ impl RuntimeTool for SendMessageRuntimeTool {
                 "variant": message.variant_name(),
             })),
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runtime::agent::team_paths::TeamPaths;
+    use tempfile::tempdir;
+
+    /// 读出 jsonl 的所有行，按 `\n` 拆分并 parse 成 Value。
+    fn read_jsonl(path: &std::path::Path) -> Vec<Value> {
+        let raw = std::fs::read_to_string(path).unwrap();
+        raw.lines()
+            .filter(|l| !l.trim().is_empty())
+            .map(|l| serde_json::from_str::<Value>(l).unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn append_team_chat_entry_writes_protocol_fields() {
+        let dir = tempdir().unwrap();
+        let conv_dir = dir.path();
+        let paths = TeamPaths::for_team(conv_dir, "alpha");
+        let jsonl = paths.team_chat_jsonl();
+
+        // 4 个 variant 各一条，覆盖 X 方案三个字段全部分支。
+        let cases = vec![
+            (
+                "team-lead",
+                "pro",
+                StructuredMessage::ShutdownRequest {
+                    reason: Some("task done".into()),
+                },
+            ),
+            (
+                "pro",
+                "team-lead",
+                StructuredMessage::ShutdownResponse {
+                    request_id: "rid-1".into(),
+                    approve: true,
+                    reason: None,
+                },
+            ),
+            (
+                "con",
+                "team-lead",
+                StructuredMessage::ShutdownResponse {
+                    request_id: "rid-2".into(),
+                    approve: false,
+                    reason: Some("still working".into()),
+                },
+            ),
+            (
+                "team-lead",
+                "con",
+                StructuredMessage::PlanApprovalResponse {
+                    request_id: "rid-3".into(),
+                    approve: false,
+                    feedback: Some("missed edge".into()),
+                },
+            ),
+        ];
+        for (from, to, msg) in &cases {
+            append_team_chat_entry(Some(conv_dir), Some("alpha"), from, to, msg);
+        }
+
+        let entries = read_jsonl(&jsonl);
+        assert_eq!(entries.len(), 4);
+
+        assert_eq!(entries[0]["variant"], "shutdown_request");
+        assert_eq!(entries[0]["reason"], "task done");
+        assert!(entries[0].get("approve").is_none());
+        assert!(entries[0].get("feedback").is_none());
+
+        assert_eq!(entries[1]["variant"], "shutdown_response");
+        assert_eq!(entries[1]["approve"], true);
+        assert!(entries[1].get("reason").is_none());
+
+        assert_eq!(entries[2]["variant"], "shutdown_response");
+        assert_eq!(entries[2]["approve"], false);
+        assert_eq!(entries[2]["reason"], "still working");
+
+        assert_eq!(entries[3]["variant"], "plan_approval_response");
+        assert_eq!(entries[3]["approve"], false);
+        assert_eq!(entries[3]["feedback"], "missed edge");
+    }
+
+    #[test]
+    fn append_team_chat_entry_omits_extra_fields_for_text() {
+        let dir = tempdir().unwrap();
+        let conv_dir = dir.path();
+        let paths = TeamPaths::for_team(conv_dir, "alpha");
+        let jsonl = paths.team_chat_jsonl();
+
+        append_team_chat_entry(
+            Some(conv_dir),
+            Some("alpha"),
+            "team-lead",
+            "pro",
+            &StructuredMessage::text("hi"),
+        );
+
+        let entries = read_jsonl(&jsonl);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0]["variant"], "text");
+        assert_eq!(entries[0]["text"], "hi");
+        // text variant 不应该泄漏协议字段。
+        assert!(entries[0].get("approve").is_none());
+        assert!(entries[0].get("reason").is_none());
+        assert!(entries[0].get("feedback").is_none());
     }
 }

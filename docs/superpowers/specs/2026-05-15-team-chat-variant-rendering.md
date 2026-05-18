@@ -3,7 +3,17 @@
 **日期**：2026-05-15
 **作者**：claude (post-mortem of 95eec8dc session)
 **目标读者**：前端专家
-**状态**：✅ 决策已敲定（2026-05-17）
+**状态**：✅ 已实施完毕（2026-05-18）
+
+## 2026-05-18 实施后补充
+
+主体决策按下面"决策汇总（2026-05-17）"6 项执行完毕。实施过程中追加 2 项与本 spec 强耦合的修复（细节见 `2026-05-14-per-team-disk-layout-design.md` 文末"2026-05-18 TeamDelete 软删除补丁"）：
+
+1. **TeamDelete 软删除**：原 PR5 设计是 `TeamDelete → rm -rf teams/{name}/`，会把本 spec 想保留的 team-chat.jsonl 历史一起清掉。改为 `mark_deleted_on_disk` 写 `config.json.deleted_at` 时间戳，目录留盘。前端 `TeamSessionSection` 多了"○ 已解散"标签（i18n `team.session.dismissed`）
+2. **overview 排序改 asc**：原后端 `b.cmp(&a)`（desc）。导致主聊天里 `TeamProgressBlock` 卡片（按 turn ordinal 配 `overview.teams[i]`）和真正的 team 顺序反了：第一个 TeamCreate turn 被配到 `teams[0] = 最新 team`，用户点旧卡片跳出新 team 内容。改为 asc 让 turn ↔ team 按时间正序对齐，同时抽屉默认 auto-scroll-to-bottom 配 asc = 看最新 team（IM 风格）
+3. **点卡片跳对应 team section**：新增 `teamStore.focusedTeamId` 单次焦点状态。`TeamProgressBlock.onOpen(teamId)` 透传 → `openDrawer(convId, teamId)` 设焦点 → `DrawerOverview` useEffect `scrollIntoView` 后立刻 `clearFocusedTeam`
+
+---
 
 ## 决策汇总（2026-05-17）
 

@@ -235,6 +235,10 @@ impl TeamRegistry {
 
     /// Remove `teams/{team_name}/` from disk.  Best-effort and idempotent: a
     /// `NotFound` error is silently ignored.  Used by TeamDelete (PR5).
+    ///
+    /// **Note**: TeamDelete uses [`mark_deleted_on_disk`] (soft delete) instead
+    /// of this hard delete so the team-chat history remains visible in the
+    /// drawer after dismissal.  Keeping this fn around for purge tooling.
     pub fn delete_persisted_team(conv_dir: &Path, team_name: &str) -> std::io::Result<()> {
         let root = crate::runtime::agent::team_paths::TeamPaths::for_team(conv_dir, team_name)
             .team_root()
@@ -244,6 +248,35 @@ impl TeamRegistry {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
             Err(e) => Err(e),
         }
+    }
+
+    /// 软删除：把 `teams/{team_name}/config.json` 里的 `deleted_at` 设为
+    /// `Utc::now()`，team-chat.jsonl / teammates/ / tasks/ 一律保留。
+    ///
+    /// 用于 TeamDelete 工具 step d：让 LLM "解散团队"在 UI 上等价于
+    /// "封存"，用户仍能回看抽屉里的握手时间线。
+    ///
+    /// 行为：
+    /// - config.json 不存在 → `Ok(())`（idempotent）
+    /// - parse 失败 → `Err(TeamPersistError::Serde)`
+    /// - 已被 mark 过（deleted_at = Some）→ 覆盖为新时间，保证幂等且不出现
+    ///   时间倒流；但通常 TeamDelete 在 in-memory registry 删除后才落盘，
+    ///   不会被反复 mark。
+    pub fn mark_deleted_on_disk(conv_dir: &Path, team_name: &str) -> Result<(), TeamPersistError> {
+        let path = crate::runtime::agent::team_paths::TeamPaths::for_team(conv_dir, team_name)
+            .config_json();
+        let bytes = match std::fs::read(&path) {
+            Ok(b) => b,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => return Err(TeamPersistError::Io(e)),
+        };
+        let mut snapshot: TeamSnapshot =
+            serde_json::from_slice(&bytes).map_err(TeamPersistError::Serde)?;
+        snapshot.deleted_at = Some(chrono::Utc::now());
+        let out = serde_json::to_vec_pretty(&snapshot).map_err(TeamPersistError::Serde)?;
+        crate::storage::fs_atomic::write_atomic(&path, &out)
+            .map_err(|e| TeamPersistError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        Ok(())
     }
 }
 
@@ -334,6 +367,11 @@ pub struct TeamSnapshot {
     pub team_name: String,
     pub session_id: SessionId,
     pub created_at: chrono::DateTime<chrono::Utc>,
+    /// 软删除标记：TeamDelete 之后写入 `Utc::now()`。Some 表示该 team 已解散
+    /// 但磁盘文件仍保留供历史回看；None 表示 team 活跃中。老 snapshot 反序列化
+    /// 时为 None。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deleted_at: Option<chrono::DateTime<chrono::Utc>>,
     pub lead: MemberSnapshot,
     pub teammates: Vec<MemberSnapshot>,
 }
@@ -384,6 +422,8 @@ impl From<&Team> for TeamSnapshot {
             team_name: t.team_name.clone(),
             session_id: t.session_id.clone(),
             created_at: t.created_at,
+            // Live team 永远 None；TeamDelete 时由 mark_deleted_on_disk 写入。
+            deleted_at: None,
             lead: (&t.lead).into(),
             teammates: t.teammates.iter().map(Into::into).collect(),
         }
@@ -525,5 +565,41 @@ mod registry_v2_tests {
         reg.set_active(&s, "alpha".to_string()).await;
         reg.clear_all().await;
         assert_eq!(reg.active(&s).await, None);
+    }
+
+    #[tokio::test]
+    async fn mark_deleted_writes_timestamp_into_config_json() {
+        let dir = tempdir().unwrap();
+        let conv_dir = dir.path().join("conversations").join("conv-soft-delete");
+        std::fs::create_dir_all(&conv_dir).unwrap();
+        let reg = TeamRegistry::new();
+        let s = SessionId::new("conv-soft-delete");
+        reg.create(s.clone(), dummy_lead("a"), "alpha".to_string()).await.unwrap();
+        reg.persist(&s, "alpha", &conv_dir).await.unwrap();
+
+        // 软删除：标记 deleted_at，文件仍在。
+        TeamRegistry::mark_deleted_on_disk(&conv_dir, "alpha").unwrap();
+
+        // 1. 目录仍存在（关键不回归点：team-chat.jsonl 等同级文件不会被波及）。
+        let team_root = crate::runtime::agent::team_paths::TeamPaths::for_team(&conv_dir, "alpha")
+            .team_root()
+            .unwrap();
+        assert!(team_root.exists(), "soft-delete must leave teams/{{name}}/ on disk");
+
+        // 2. config.json 反序列化后 deleted_at 是 Some(...)
+        let cfg_path = team_root.join("config.json");
+        let bytes = std::fs::read(&cfg_path).unwrap();
+        let snapshot: TeamSnapshot = serde_json::from_slice(&bytes).unwrap();
+        assert!(snapshot.deleted_at.is_some(), "deleted_at must be set after mark");
+    }
+
+    #[tokio::test]
+    async fn mark_deleted_is_idempotent_for_missing_team() {
+        let dir = tempdir().unwrap();
+        let conv_dir = dir.path().join("conv-missing");
+        // 故意不创建 conversations/{id}/teams/ ——配合幂等性语义：
+        // TeamDelete 在 disk 不存在时也不应失败。
+        std::fs::create_dir_all(&conv_dir).unwrap();
+        TeamRegistry::mark_deleted_on_disk(&conv_dir, "no-such-team").unwrap();
     }
 }

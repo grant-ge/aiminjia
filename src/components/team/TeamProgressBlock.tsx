@@ -6,7 +6,7 @@ import { isLeadName } from './agentIdentity'
 
 interface TeamProgressBlockProps {
   session: TeamSession
-  onOpen: () => void
+  onOpen: (teamId: string) => void
 }
 
 /**
@@ -30,7 +30,7 @@ export function TeamProgressBlock({ session, onOpen }: TeamProgressBlockProps) {
   return (
     <button
       type="button"
-      onClick={onOpen}
+      onClick={() => onOpen(session.teamId)}
       className={cn(
         'group flex w-full items-center gap-3 rounded-lg border border-border bg-sidebar px-4 py-3 text-left transition-colors',
         'hover:border-primary/40 hover:bg-sidebar-accent',

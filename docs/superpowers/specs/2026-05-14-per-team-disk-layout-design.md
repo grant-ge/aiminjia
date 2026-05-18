@@ -20,7 +20,7 @@
 ### 目标语义（用户已确认）
 
 1. 一个 conversation 可以同时存在 **多个 team**
-2. 每个 team **生于 conv，死于 conv**——TeamDelete 一次性清干净
+2. 每个 team **生于 conv**；TeamDelete 解散后磁盘**软删除**（写 `deleted_at` 时间戳保留目录，供抽屉历史回看）。详见 [2026-05-18 软删除补丁](#2026-05-18-teamdelete-软删除补丁)
 3. **team_name 仅在当前 conv 内唯一**（不同 conv 可以重名）
 4. 每个 team 的 tasks / inter-agent 消息 / teammate transcript 互不交叉
 
@@ -93,7 +93,7 @@
 ### 关键边界原则
 
 - **conv 根目录**只放"Lead 自己的、与 team 无关的"数据
-- **`teams/{name}/`** 是 team 的全部数据，TeamDelete 时 `rm -rf` 该目录
+- **`teams/{name}/`** 是 team 的全部数据，TeamDelete 时**软删除**（写 `config.json.deleted_at` 时间戳，目录留盘；详见文末补丁）
 - 任何持久化路径都从一个**单一 dispatcher** 派生（避免分散的 `conv_dir.join("...")`，详见 §3）
 
 ---
@@ -188,6 +188,10 @@ impl TeamRegistry {
 
     pub fn delete_persisted_team(conv_dir: &Path, team_name: &str) -> std::io::Result<()>;
 
+    /// 软删除：写 `teams/{name}/config.json.deleted_at = Utc::now()`，目录保留。
+    /// **TeamDelete 工具改用这个**；`delete_persisted_team` 仅供未来的 purge 工具。
+    pub fn mark_deleted_on_disk(conv_dir: &Path, team_name: &str) -> Result<(), TeamPersistError>;
+
     /// 冷启动 / resume 时从磁盘扫描 `teams/*/config.json` 重建 in-memory map。
     /// **幂等**：已存在的 team 跳过；损坏的 config.json 只 log warn 不阻塞。
     /// 详见 §6.6。
@@ -281,7 +285,7 @@ async fn cleanup_teammate(ctx: &TeammateWorkerCtx, name: &str) {
 | 5-4 | `runtime/agent/output_writer.rs` | `transcript_path_for_kind` / `meta_path_for_kind` 增加 `team_name: &str` 参数（Teammate kind 必传，Subagent kind 仍走 `conv_dir/subagents/`）；`AgentTranscriptMeta::team_id` 字段语义改为 team_name（不再 = session_id）；调用点 `worker_runtime.rs:1185 / 1380 / 1430` 同步 |
 | 5-5 | `runtime/tools/context.rs` | 加 `active_team_name: Option<String>` 字段 + `with_active_team` builder |
 | 5-6 | `runtime/tools/builtin/team_tools.rs::TeamCreate` | 唯一性校验（`validate_team_name` + `inner_map.contains_key`）；建 `teams/{name}/` 目录；写 `config.json`；`agent_names` / `inbox_registry` 用三元 key `(session, team_name, *)` 注册；conv.json 写入 `active_team_name` |
-| 5-7 | `runtime/tools/builtin/team_tools.rs::TeamDelete` | 改用 `TeamRegistry::delete_team(session, team_name)`；磁盘上 `rm -rf teams/{name}/`；从 `agent_names` / `inbox_registry` / `cancellation_registry` 按三元 key 批清；cancel 顺序见 §7.4 |
+| 5-7 | `runtime/tools/builtin/team_tools.rs::TeamDelete` | 改用 `TeamRegistry::delete_team(session, team_name)`；磁盘上**软删除**：调 `mark_deleted_on_disk` 写 `config.json.deleted_at`（2026-05-18 补丁，原方案是 `rm -rf`）；从 `agent_names` / `inbox_registry` / `cancellation_registry` 按三元 key 批清；cancel 顺序见 §7.4 |
 | 5-8 | `runtime/tools/builtin/team_tools.rs::TeamSwitch` | **新建工具**：单参数 `team_name`，把 `conv.json::active_team_name` 改为目标值；推 RuntimeEvent `TeamActiveChanged`；目标不存在返回错误 |
 | 5-9 | `runtime/tools/builtin/send_message.rs::append_team_chat_entry` | 走 `TeamPaths::team_chat_jsonl()`；sender 必有 active team 才能 SendMessage，无则 `ExecutionFailed("SendMessage requires active team")`；`peer-messages` 路由按三元 key resolve |
 | 5-10 | `runtime/tools/builtin/task_tools.rs::store_for` | `ctx.active_team_name = Some(name)` 走 `teams/{name}/tasks/`；为 None 走 `conv_dir/tasks/`（Lead 单飞）；`task_notification_lead::emit_to_lead` 签名加 `team_name: &str`，本文件三处调用点从 `ctx.active_team_name` 取 |
@@ -459,7 +463,10 @@ async fn hydrate_from_disk(
       → loop 退出时调 cleanup_teammate（自我清理 agent_names / inbox / cancel entry）
    b. 等待所有 Teammate worker 退出（通过 JoinSet 或带 timeout 的等待）；超时后强制进入 c
    c. ctx.team_registry().delete_team(session, "alpha") → 从内层 HashMap 移除
-   d. fs::remove_dir_all(TeamPaths::for_team(conv_dir, "alpha").team_root())
+   d. TeamRegistry::mark_deleted_on_disk(conv_dir, "alpha")
+      → 读 teams/alpha/config.json → 写 deleted_at = Utc::now() → 原子写回
+      → teams/alpha/ 目录保留（含 team-chat.jsonl / teammates/ / tasks/），供抽屉历史回看
+      → 2026-05-18 补丁，原方案是 fs::remove_dir_all
    e. agent_names.unregister_team(session, "alpha") + inbox_registry.unregister_team(session, "alpha")
       （冗余兜底——cleanup_teammate 已经清掉单条，这里是 idempotent 的 sweep）
    f. 若 conv.json::active_team_name == "alpha" 改为 None
@@ -635,3 +642,32 @@ async fn hydrate_from_disk(
 - [ ] §6.6 hydration 仅重建 TeamRegistry、不 resume Teammate 是否可接受（替代方案：把 Teammate 也按 `teams/{name}/teammates/*.meta.json` 恢复，复杂度高很多）
 - [ ] §8 不迁移、老 team 不可见的破坏性是否可接受
 - [ ] §13 各项 out-of-scope 是否都同意推后
+
+---
+
+## 2026-05-18 TeamDelete 软删除补丁
+
+**触发**：spec `2026-05-15-team-chat-variant-rendering.md` 要求"团队解散后历史抽屉仍可查看协议握手记录"。原方案 `TeamDelete → rm -rf teams/{name}/` 把 config.json + team-chat.jsonl + teammates/ 全部清掉，跟新需求冲突。
+
+**改动**（合并到本 spec）：
+
+1. **`TeamSnapshot`** 加 `deleted_at: Option<DateTime<Utc>>`（`#[serde(default, skip_serializing_if = "Option::is_none")]`，老 config.json 兼容；`From<&Team>` 永远填 None）
+2. **新增 `TeamRegistry::mark_deleted_on_disk(conv_dir, team_name)`**：读 config.json → set `deleted_at = Utc::now()` → 原子写回。文件不存在视为 noop（idempotent）
+3. **TeamDelete step d**：原 `delete_persisted_team`（rm -rf）改为 `mark_deleted_on_disk`。`delete_persisted_team` 函数本身保留，仅供未来"过期 team 自动清理"工具调用——不要在 TeamDelete 工具里直接删
+4. **`team_view.rs::TeamSession.deleted_at`**：之前永远 None，现在透传 `snapshot.deleted_at.map(|t| t.to_rfc3339())`
+5. **`team_view.rs::build_team_overview` 排序**：从 `b.cmp(&a)`（desc）改为 `a.cmp(&b)`（**asc**）。原因：`MessageList.tsx::teamSessionForTurnIdx` 按 turn ordinal 配 `overview.teams[i]`——turns 是时间正序，`teams` 也必须正序才能让"第 N 个 TeamCreate turn ↔ 第 N 个 team session"对齐。同时 IM 风格抽屉默认 auto-scroll-to-bottom 配 asc = 看最新 team
+
+**前端联动**：
+- `TeamProgressBlock.onOpen(teamId)` 透传 → `MessageList::handleOpenTeamDrawer(teamId)` → `openDrawer(convId, teamId)` 设 `focusedTeamId` → `DrawerOverview` useEffect 内 `requestAnimationFrame` + `querySelector([data-team-id=...]).scrollIntoView({block:'start'})` + `userScrolledUp=true`（阻止 ResizeObserver 又拉回底部）+ `clearFocusedTeam` 立即清零
+- `TeamChatDrawer::TeamSessionSection` header 解散态显示 "○ 已解散" 标签 + hover 显示具体解散时间，i18n key 在 `team.session.{live, dismissed, dismissedAt, untitled}`
+
+**后端测试**（已加 unit test）：
+- `team.rs::mark_deleted_writes_timestamp_into_config_json` — 软删后 teams/{name}/ 仍在 + config.json.deleted_at = Some
+- `team.rs::mark_deleted_is_idempotent_for_missing_team` — 目录不存在时 Ok 不 panic
+- `team_view.rs::scan_teams_dir_propagates_deleted_at_after_soft_delete` — overview 列表里软删后的 team 仍出现 + deleted_at 透传
+- `team_view.rs::scan_teams_dir_finds_two_teams` — live team 的 deleted_at 仍是 None
+- `team_view.rs::append_team_chat_jsonl_passes_through_protocol_fields` — variant + approve + reason + feedback 4 字段透传（spec 2026-05-15 配套）
+- `send_message.rs::append_team_chat_entry_writes_protocol_fields` — X 方案 4 个 variant 各落盘对应字段
+- `send_message.rs::append_team_chat_entry_omits_extra_fields_for_text` — text variant 不泄漏协议字段
+
+**前端测试**（5 个新 vitest in `TeamChatEvents.test.tsx`）：text / shutdown_request / shutdown_response approve=true / approve=false / 空 text 兜底分流路径。

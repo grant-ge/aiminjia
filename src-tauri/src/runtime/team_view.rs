@@ -18,13 +18,18 @@ use crate::runtime::agent::team_paths::TeamPaths;
 use crate::runtime::agent::TeamSnapshot;
 use crate::storage::file_store::AppStorage;
 
+fn default_variant() -> String {
+    "text".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TeamOverview {
     pub conversation_id: String,
     /// One entry per `teams/{name}/` directory on disk.  Sorted by
-    /// `created_at` descending so the most recently created team appears
-    /// first.
+    /// `created_at` ascending (oldest first, newest last) so the drawer
+    /// timeline reads top-down chronologically and `MessageList` can pair
+    /// TeamCreate turns with `teams[i]` by ordinal.
     pub teams: Vec<TeamSession>,
 }
 
@@ -84,6 +89,19 @@ pub enum TeamEvent {
         text: String,
         is_error: bool,
         tool_call_id: String,
+        /// StructuredMessage 的 type 字段（snake_case）。老 jsonl 行没有
+        /// 该字段时回退到 "text"，保证历史会话不出现"未知 variant"。
+        #[serde(default = "default_variant")]
+        variant: String,
+        /// 仅 ShutdownResponse / PlanApprovalResponse 出现。
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        approve: Option<bool>,
+        /// ShutdownRequest 或 ShutdownResponse 可选携带的说明。
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+        /// 仅 PlanApprovalResponse 可选携带的反馈。
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        feedback: Option<String>,
     },
     PeerMessage {
         ts: String,
@@ -125,7 +143,13 @@ pub fn build_team_overview(
     let lifecycle = extract_lifecycle_events(&messages);
 
     let mut teams = scan_teams_dir(&conv_dir, conversation_id, &lifecycle);
-    teams.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    // 按 created_at 升序：旧 team 在前、新 team 在后。这个顺序服务两条消费者：
+    // ① 抽屉时间线（IM 风格：旧在上、新在下，默认滚到底就看到最新 team）；
+    // ② 主聊天里 TeamProgressBlock 卡片按 turn ordinal 配 overview.teams[i]
+    //    （MessageList::teamSessionForTurnIdx），turns 是时间正序，
+    //    overview.teams 也得是正序才能让"第 N 个 TeamCreate turn ↔ 第 N 个
+    //    team session"匹配上。
+    teams.sort_by(|a, b| a.created_at.cmp(&b.created_at));
 
     Ok(TeamOverview {
         conversation_id: conversation_id.to_string(),
@@ -411,7 +435,8 @@ fn scan_teams_dir(
             team_id: format!("{conversation_id}#{team_name}"),
             team_name: Some(team_name),
             created_at: snapshot.created_at.to_rfc3339(),
-            deleted_at: None,
+            // 软删除：TeamDelete 时由 mark_deleted_on_disk 写入；live team 为 None。
+            deleted_at: snapshot.deleted_at.map(|t| t.to_rfc3339()),
             members,
             events,
         });
@@ -481,6 +506,20 @@ fn append_events_from_team_chat_jsonl(out: &mut Vec<TeamEvent>, path: &Path, _te
             .and_then(|x| x.as_str())
             .unwrap_or("")
             .to_string();
+        let variant = v
+            .get("variant")
+            .and_then(|x| x.as_str())
+            .unwrap_or("text")
+            .to_string();
+        let approve = v.get("approve").and_then(|x| x.as_bool());
+        let reason = v
+            .get("reason")
+            .and_then(|x| x.as_str())
+            .map(|s| s.to_string());
+        let feedback = v
+            .get("feedback")
+            .and_then(|x| x.as_str())
+            .map(|s| s.to_string());
         if ts.is_empty() {
             continue;
         }
@@ -491,6 +530,10 @@ fn append_events_from_team_chat_jsonl(out: &mut Vec<TeamEvent>, path: &Path, _te
             text,
             is_error: false,
             tool_call_id: String::new(),
+            variant,
+            approve,
+            reason,
+            feedback,
         });
     }
 }
@@ -582,7 +625,30 @@ mod tests {
             assert_eq!(s.members.len(), 1);
             assert!(matches!(s.members[0].agent_name.as_str(), "a" | "b"));
             assert_eq!(s.team_id, format!("conv-1#{}", s.team_name.as_deref().unwrap()));
+            // live team：deleted_at 仍是 None。
+            assert!(s.deleted_at.is_none());
         }
+    }
+
+    #[tokio::test]
+    async fn scan_teams_dir_propagates_deleted_at_after_soft_delete() {
+        let dir = tempdir().unwrap();
+        let conv_dir = dir.path().join("conversations").join("conv-deleted");
+        std::fs::create_dir_all(&conv_dir).unwrap();
+        let session_id = SessionId::new("conv-deleted");
+
+        let reg = TeamRegistry::new();
+        reg.create(session_id.clone(), dummy_lead("a"), "alpha".to_string())
+            .await
+            .unwrap();
+        reg.persist(&session_id, "alpha", &conv_dir).await.unwrap();
+        TeamRegistry::mark_deleted_on_disk(&conv_dir, "alpha").unwrap();
+
+        let sessions = scan_teams_dir(&conv_dir, "conv-deleted", &LifecycleByTeam::default());
+        assert_eq!(sessions.len(), 1, "soft-deleted team must still appear in overview");
+        // RFC3339 字符串带 Z 时区，含 "T" 分隔——格式校验粗一点即可。
+        let ts = sessions[0].deleted_at.as_deref().expect("deleted_at透传");
+        assert!(ts.contains('T'), "deleted_at should be RFC3339 string, got {ts}");
     }
 
     #[test]
@@ -612,12 +678,71 @@ mod tests {
         append_events_from_team_chat_jsonl(&mut out, &path, "alpha");
         assert_eq!(out.len(), 2);
         match &out[0] {
-            TeamEvent::SendMessage { from, to, text, .. } => {
+            TeamEvent::SendMessage { from, to, text, variant, .. } => {
                 assert_eq!(from, "team-lead");
                 assert_eq!(to, "pro");
                 assert_eq!(text, "go");
+                // 老 jsonl 行没有 variant 字段时回退到 "text"，保证历史会话兼容。
+                assert_eq!(variant, "text");
             }
             _ => panic!("expected SendMessage"),
+        }
+    }
+
+    #[test]
+    fn append_team_chat_jsonl_passes_through_protocol_fields() {
+        let dir = tempdir().unwrap();
+        let conv_dir = dir.path();
+        let paths = crate::runtime::agent::team_paths::TeamPaths::for_team(conv_dir, "alpha");
+        let path = paths.team_chat_jsonl();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        // 三行：shutdown_request (带 reason) / shutdown_response approve=true / approve=false 带 reason
+        std::fs::write(
+            &path,
+            r#"{"ts":"2026-05-15T00:00:00Z","from":"team-lead","to":"pro","text":"","variant":"shutdown_request","reason":"task done"}
+{"ts":"2026-05-15T00:00:01Z","from":"pro","to":"team-lead","text":"","variant":"shutdown_response","approve":true}
+{"ts":"2026-05-15T00:00:02Z","from":"con","to":"team-lead","text":"","variant":"shutdown_response","approve":false,"reason":"still working"}
+{"ts":"2026-05-15T00:00:03Z","from":"team-lead","to":"con","text":"","variant":"plan_approval_response","approve":false,"feedback":"missed edge"}
+"#,
+        )
+        .unwrap();
+        let mut out = Vec::new();
+        append_events_from_team_chat_jsonl(&mut out, &path, "alpha");
+        assert_eq!(out.len(), 4);
+
+        match &out[0] {
+            TeamEvent::SendMessage { variant, reason, approve, feedback, .. } => {
+                assert_eq!(variant, "shutdown_request");
+                assert_eq!(reason.as_deref(), Some("task done"));
+                assert!(approve.is_none());
+                assert!(feedback.is_none());
+            }
+            _ => panic!("expected SendMessage[0]"),
+        }
+        match &out[1] {
+            TeamEvent::SendMessage { variant, approve, reason, feedback, .. } => {
+                assert_eq!(variant, "shutdown_response");
+                assert_eq!(*approve, Some(true));
+                assert!(reason.is_none());
+                assert!(feedback.is_none());
+            }
+            _ => panic!("expected SendMessage[1]"),
+        }
+        match &out[2] {
+            TeamEvent::SendMessage { variant, approve, reason, .. } => {
+                assert_eq!(variant, "shutdown_response");
+                assert_eq!(*approve, Some(false));
+                assert_eq!(reason.as_deref(), Some("still working"));
+            }
+            _ => panic!("expected SendMessage[2]"),
+        }
+        match &out[3] {
+            TeamEvent::SendMessage { variant, approve, feedback, .. } => {
+                assert_eq!(variant, "plan_approval_response");
+                assert_eq!(*approve, Some(false));
+                assert_eq!(feedback.as_deref(), Some("missed edge"));
+            }
+            _ => panic!("expected SendMessage[3]"),
         }
     }
 

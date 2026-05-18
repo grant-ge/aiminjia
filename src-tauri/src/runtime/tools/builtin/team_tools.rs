@@ -345,12 +345,14 @@ impl RuntimeTool for TeamDeleteRuntimeTool {
         };
         let team_existed = team_handle.is_some();
 
-        // step d: rm -rf teams/{name}/
+        // step d: 软删除 — 写 `deleted_at = Utc::now()` 到 config.json，
+        // teams/{name}/ 目录保留供历史回看（spec §6.A：抽屉时间线包括协议
+        // 握手消息；解散后用户仍要能看完整对话）。如果以后要做"过期 team
+        // 自动清理"，可以扫 deleted_at 早于 N 天的目录调用
+        // `delete_persisted_team` 兜底回收。
         if let Some(ref conv_dir) = ctx.conv_dir {
-            if let Err(e) = crate::runtime::agent::TeamRegistry::delete_persisted_team(conv_dir, &team_name) {
-                if e.kind() != std::io::ErrorKind::NotFound {
-                    log::warn!("[TeamDelete] delete teams/{team_name} failed: {e}");
-                }
+            if let Err(e) = crate::runtime::agent::TeamRegistry::mark_deleted_on_disk(conv_dir, &team_name) {
+                log::warn!("[TeamDelete] mark teams/{team_name}/config.json deleted failed: {e}");
             }
         }
 

@@ -1,3 +1,7 @@
+import type { JSX } from 'react'
+import type { TFunction } from 'i18next'
+import { useTranslation } from 'react-i18next'
+
 import type { TeamEvent } from '@/types/team'
 import { cn } from '@/lib/utils'
 import { AssistantMarkdown } from '@/components/chat-scene/AssistantMarkdown'
@@ -23,10 +27,11 @@ interface TeamChatEventsProps {
  * events to avoid timestamp pollution in tight bursts.
  */
 export function TeamChatEvents({ events, onDrillAgent }: TeamChatEventsProps) {
+  const { t } = useTranslation()
   if (events.length === 0) {
     return (
       <div className="flex h-full items-center justify-center px-6 py-12 text-sm text-muted-foreground">
-        暂无消息
+        {t('team.chat.empty')}
       </div>
     )
   }
@@ -81,24 +86,158 @@ interface TeamEventRowProps {
 }
 
 function TeamEventRow({ event, onDrillAgent }: TeamEventRowProps) {
+  const { t } = useTranslation()
   switch (event.kind) {
     case 'team_create':
-      return <SystemDivider icon="●" label={`团队已创建${event.teamName ? ` · ${event.teamName}` : ''}`} ts={event.ts} />
+      return (
+        <SystemDivider
+          icon="●"
+          label={
+            event.teamName
+              ? t('team.chat.lifecycle.teamCreatedWithName', { teamName: event.teamName })
+              : t('team.chat.lifecycle.teamCreated')
+          }
+          ts={event.ts}
+        />
+      )
     case 'team_delete':
-      return <SystemDivider icon="○" label="团队已解散" ts={event.ts} />
+      return <SystemDivider icon="○" label={t('team.chat.lifecycle.teamDeleted')} ts={event.ts} />
     case 'agent_spawn':
-      return <SystemDivider icon="＋" label={`${event.agentName} 加入团队`} ts={event.ts} />
+      return (
+        <SystemDivider
+          icon="＋"
+          label={t('team.chat.lifecycle.agentJoined', { agentName: formatLeadDisplayName(event.agentName) })}
+          ts={event.ts}
+        />
+      )
     case 'agent_stop':
-      return <SystemDivider icon="－" label={`${event.agentName} 已退出`} ts={event.ts} />
-    case 'send_message':
-      return <MessageBubble side="right" from={event.from} text={event.text} ts={event.ts} isError={event.isError} to={event.to} onDrillAgent={onDrillAgent} />
+      return (
+        <SystemDivider
+          icon="－"
+          label={t('team.chat.lifecycle.agentLeft', { agentName: formatLeadDisplayName(event.agentName) })}
+          ts={event.ts}
+        />
+      )
+    case 'send_message': {
+      // X 方案：variant !== 'text' 时按协议握手类型走 SystemDivider；
+      // text variant 才渲染对话气泡。这避免空 text + 协议字段的握手消息撞
+      // 兜底"（空消息）"分支，跟 team_create/agent_spawn 视觉对称。
+      if (event.variant !== 'text') {
+        const divider = renderProtocolDivider(t, {
+          variant: event.variant,
+          from: event.from,
+          to: event.to,
+          ts: event.ts,
+          approve: event.approve,
+          reason: event.reason,
+          feedback: event.feedback,
+        })
+        if (divider) return divider
+      }
+      return (
+        <MessageBubble
+          side="right"
+          from={event.from}
+          text={event.text}
+          ts={event.ts}
+          isError={event.isError}
+          to={event.to}
+          onDrillAgent={onDrillAgent}
+        />
+      )
+    }
     case 'peer_message':
-      return <MessageBubble side="left" from={event.from} text={event.text} ts={event.ts} isError={false} to={event.to} onDrillAgent={onDrillAgent} />
+      return (
+        <MessageBubble
+          side="left"
+          from={event.from}
+          text={event.text}
+          ts={event.ts}
+          isError={false}
+          to={event.to}
+          onDrillAgent={onDrillAgent}
+        />
+      )
     default: {
       // Compile-time exhaustiveness check.
       const _exhaustive: never = event
       return _exhaustive
     }
+  }
+}
+
+interface ProtocolDividerInput {
+  variant: string
+  from: string
+  to: string
+  ts: string
+  approve?: boolean
+  reason?: string
+  feedback?: string
+}
+
+/**
+ * 把 4 个协议握手 variant 映射到 SystemDivider 输入。返回 null 表示遇到
+ * 未识别 variant —— 调用方会回退到 MessageBubble。
+ */
+function renderProtocolDivider(t: TFunction, input: ProtocolDividerInput): JSX.Element | null {
+  const fromDisplay = formatLeadDisplayName(input.from)
+  const toDisplay = formatLeadDisplayName(input.to)
+  switch (input.variant) {
+    case 'shutdown_request': {
+      const label = input.reason
+        ? t('team.chat.protocol.shutdownRequestWithReason', {
+            from: fromDisplay,
+            to: toDisplay,
+            reason: input.reason,
+          })
+        : t('team.chat.protocol.shutdownRequest', { from: fromDisplay, to: toDisplay })
+      return <SystemDivider icon="⊙" label={label} ts={input.ts} />
+    }
+    case 'shutdown_response': {
+      if (input.approve === false) {
+        const label = input.reason
+          ? t('team.chat.protocol.shutdownRejectWithReason', {
+              from: fromDisplay,
+              reason: input.reason,
+            })
+          : t('team.chat.protocol.shutdownReject', { from: fromDisplay })
+        return <SystemDivider icon="✗" label={label} ts={input.ts} />
+      }
+      // approve === true 或 approve 缺失，按"同意"渲染（spec §5）。
+      return (
+        <SystemDivider
+          icon="✓"
+          label={t('team.chat.protocol.shutdownApprove', { from: fromDisplay })}
+          ts={input.ts}
+        />
+      )
+    }
+    case 'plan_approval_request':
+      return (
+        <SystemDivider
+          icon="≪"
+          label={t('team.chat.protocol.planApprovalRequest', { from: fromDisplay, to: toDisplay })}
+          ts={input.ts}
+        />
+      )
+    case 'plan_approval_response': {
+      if (input.approve === false) {
+        const label = input.feedback
+          ? t('team.chat.protocol.planReject', { from: fromDisplay, feedback: input.feedback })
+          : t('team.chat.protocol.planRejectNoFeedback', { from: fromDisplay })
+        return <SystemDivider icon="✗" label={label} ts={input.ts} />
+      }
+      return (
+        <SystemDivider
+          icon="✓"
+          label={t('team.chat.protocol.planApprove', { from: fromDisplay })}
+          ts={input.ts}
+        />
+      )
+    }
+    default:
+      return null
   }
 }
 
@@ -133,6 +272,7 @@ interface MessageBubbleProps {
 }
 
 function MessageBubble({ side, from, to, text, ts, isError, onDrillAgent }: MessageBubbleProps) {
+  const { t } = useTranslation()
   const fromIdentity = getAgentIdentity(from)
   const displayFromName = formatLeadDisplayName(from)
   const displayToName = formatLeadDisplayName(to)
@@ -181,10 +321,10 @@ function MessageBubble({ side, from, to, text, ts, isError, onDrillAgent }: Mess
         {text ? (
           <AssistantMarkdown text={text} />
         ) : (
-          <span className="italic text-muted-foreground">（空消息）</span>
+          <span className="italic text-muted-foreground">{t('team.chat.emptyText')}</span>
         )}
         {isError && (
-          <div className="mt-1 text-xs font-medium opacity-80">⚠ 发送失败</div>
+          <div className="mt-1 text-xs font-medium opacity-80">{t('team.chat.sendFailed')}</div>
         )}
       </div>
     </div>

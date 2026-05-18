@@ -589,8 +589,34 @@
       "title": "团队列表",
       "empty": "当前对话还没有团队"
     },
+    "session": {
+      "untitled": "团队对话",
+      "live": "进行中",
+      "dismissed": "已解散",
+      "dismissedAt": "{{time}} 解散"
+    },
     "chat": {
-      "empty": "该团队还没有内部消息"
+      "empty": "该团队还没有内部消息",
+      "emptyText": "（空消息）",
+      "sendFailed": "⚠ 发送失败",
+      "lifecycle": {
+        "teamCreated": "团队已创建",
+        "teamCreatedWithName": "团队已创建 · {{teamName}}",
+        "teamDeleted": "团队已解散",
+        "agentJoined": "{{agentName}} 加入团队",
+        "agentLeft": "{{agentName}} 已退出"
+      },
+      "protocol": {
+        "shutdownRequest": "{{from}} 请求 {{to}} 退出团队",
+        "shutdownRequestWithReason": "{{from}} 请求 {{to}} 退出团队 · {{reason}}",
+        "shutdownApprove": "{{from}} 同意退出",
+        "shutdownReject": "{{from}} 拒绝退出",
+        "shutdownRejectWithReason": "{{from}} 拒绝退出 · {{reason}}",
+        "planApprovalRequest": "{{from}} 请 {{to}} 审批方案",
+        "planApprove": "{{from}} 同意方案",
+        "planReject": "{{from}} 修改建议：{{feedback}}",
+        "planRejectNoFeedback": "{{from}} 不同意方案"
+      }
     }
   }
 }
