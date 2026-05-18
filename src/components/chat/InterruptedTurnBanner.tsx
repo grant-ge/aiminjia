@@ -23,7 +23,7 @@ interface InterruptedTurnBannerProps {
   conversationId: string
 }
 
-function stageLabel(stage: TurnStageKind, t: (key: string, opts?: object) => string): string {
+function stageLabel(stage: TurnStageKind, t: (key: string, opts?: Record<string, unknown>) => string): string {
   switch (stage.kind) {
     case 'submitted':           return t('turnStage.submitted')
     case 'waitingLlm':          return t('turnStage.waitingLlm')
