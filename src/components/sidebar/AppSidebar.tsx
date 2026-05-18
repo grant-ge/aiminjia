@@ -98,8 +98,14 @@ export function AppSidebar() {
     setArchivingId(null)
   }
 
+  // IM 频道（钉钉私聊/群）的 session id 复用 conv_store 的 conversation id，
+  // 所以会同时出现在 useChat().conversations 里。"项目" tab 是给用户主动发起
+  // 的对话准备的，不应该再列一遍这些频道会话（"频道" tab 已经渲染它们）。
+  const channelSessionIdSet = new Set(channelConversations.map((c) => c.sessionId))
+  const projectConversations = conversations.filter((c) => !channelSessionIdSet.has(c.id))
+
   const projects = groupConversationsByProject(
-    conversations,
+    projectConversations,
     activeConversationId,
   )
 
