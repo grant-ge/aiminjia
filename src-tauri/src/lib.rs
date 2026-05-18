@@ -219,6 +219,16 @@ pub fn run() {
 
             // Initialize cloud auth manager
             let global_store = Arc::new(storage::GlobalConfigStore::new(aijia_home.global_dir()));
+            // Data-layout compatibility gate: if the on-disk layout predates a
+            // breaking storage / encryption change, the legacy `cloud_auth`
+            // blob is purged so the user is forced to re-login cleanly.  Must
+            // run BEFORE `bootstrap_cloud_auth_if_needed`, otherwise that
+            // function would copy the stale ciphertext from
+            // `~/.renlijia/config.json` back into the new location.
+            storage::data_version::ensure_compatible(
+                aijia_home.as_ref(),
+                secure_storage.as_deref(),
+            );
             if let Err(e) = storage::migration_user_scope::bootstrap_cloud_auth_if_needed(
                 aijia_home.root(),
                 &aijia_home.global_dir(),

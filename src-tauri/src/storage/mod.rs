@@ -2,6 +2,7 @@ pub mod aijia_home;
 pub mod console_decode;
 pub mod crypto;
 pub mod current_user_storage;
+pub mod data_version;
 pub mod file_manager;
 pub mod file_store;
 pub mod fs_atomic;
