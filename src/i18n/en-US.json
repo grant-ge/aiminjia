@@ -560,7 +560,10 @@
   "toolGroup": {
     "title": "Tool execution trace",
     "running": "Running {{done}} / {{total}}",
-    "done": "Completed {{done}} step(s)"
+    "done": "Completed {{done}} step(s)",
+    "doneCompact": "Done in {{duration}}",
+    "durationMinSec": "{{min}}m {{sec}}s",
+    "durationSec": "{{sec}}s"
   },
   "homeComposer": {
     "placeholder": "Describe your task, or click the Skill button to pick a skill...",

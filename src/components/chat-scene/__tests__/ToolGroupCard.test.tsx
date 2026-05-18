@@ -24,28 +24,58 @@ const STEPS = [
   { index: 3, name: 'preview_file', status: 'error' as const, durationMs: 50, output: 'preview failed' },
 ]
 
-describe('ToolGroupCard', () => {
-  it('renders collapsed by default and expands tool steps from the header', () => {
+describe('ToolGroupCard — compact chip', () => {
+  it('starts collapsed: trigger chip only, no step rows visible', () => {
     render(<ToolGroupCard status="done" steps={STEPS} />)
-
-    expect(screen.getByText('工具执行轨迹')).toBeInTheDocument()
-    expect(screen.getByText('已完成 3 步')).toBeInTheDocument()
-    expect(screen.queryByText('工具步骤')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /查看执行详情/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /已完成/ })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Read/ })).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: /工具执行轨迹/ }))
-
-    expect(screen.getAllByRole('button', { name: /Read/ })).toHaveLength(2)
-    expect(screen.getByRole('button', { name: /preview_file/ })).toBeInTheDocument()
-    expect(screen.queryByText('输入')).not.toBeInTheDocument()
-    expect(document.querySelector('.lucide-circle-check')).not.toBeInTheDocument()
-    expect(document.querySelector('.lucide-x-circle')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /preview_file/ })).not.toBeInTheDocument()
   })
 
-  it('allows multiple tool items to be expanded at the same time', () => {
+  it('toggling the chip reveals the step list and hides it again', () => {
     render(<ToolGroupCard status="done" steps={STEPS} />)
-    fireEvent.click(screen.getByRole('button', { name: /工具执行轨迹/ }))
+    const chip = screen.getByRole('button', { name: /已完成/ })
+    expect(chip).toHaveAttribute('aria-expanded', 'false')
+
+    fireEvent.click(chip)
+    expect(chip).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getAllByRole('button', { name: /Read/ })).toHaveLength(2)
+    expect(screen.getByRole('button', { name: /preview_file/ })).toBeInTheDocument()
+
+    fireEvent.click(chip)
+    expect(chip).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByRole('button', { name: /Read/ })).not.toBeInTheDocument()
+  })
+
+  it('renders compact "已完成 X分Y秒" when durationMs ≥ 1min', () => {
+    render(<ToolGroupCard status="done" steps={STEPS} durationMs={111_000} />)
+    expect(screen.getByText('已完成 1分51秒')).toBeInTheDocument()
+  })
+
+  it('renders compact "已完成 N秒" when durationMs < 1min', () => {
+    render(<ToolGroupCard status="done" steps={STEPS} durationMs={4_000} />)
+    expect(screen.getByText('已完成 4秒')).toBeInTheDocument()
+  })
+
+  it('falls back to step-count label when durationMs is missing or 0', () => {
+    render(<ToolGroupCard status="done" steps={STEPS} />)
+    expect(screen.getByText('已完成 3 步')).toBeInTheDocument()
+  })
+
+  it('shows running progress in the chip (no duration label while running)', () => {
+    const runningSteps = [
+      { ...STEPS[0], status: 'done' as const },
+      { ...STEPS[1], status: 'running' as const },
+      { ...STEPS[2], status: 'running' as const },
+    ]
+    render(<ToolGroupCard status="running" steps={runningSteps} durationMs={5_000} />)
+    expect(screen.getByText('执行中 1 / 3')).toBeInTheDocument()
+    expect(screen.queryByText(/已完成/)).not.toBeInTheDocument()
+  })
+
+  it('allows multiple tool items to be expanded at the same time once chip is open', () => {
+    render(<ToolGroupCard status="done" steps={STEPS} />)
+    fireEvent.click(screen.getByRole('button', { name: /已完成/ }))
 
     const readButtons = screen.getAllByRole('button', { name: /Read/ })
     fireEvent.click(readButtons[0])
@@ -56,24 +86,10 @@ describe('ToolGroupCard', () => {
     expect(screen.getAllByText('输入')).toHaveLength(2)
   })
 
-  it('shows running progress in the badge', () => {
-    const runningSteps = [
-      { ...STEPS[0], status: 'done' as const },
-      { ...STEPS[1], status: 'running' as const },
-      { ...STEPS[2], status: 'running' as const },
-    ]
-
-    render(<ToolGroupCard status="running" steps={runningSteps} />)
-
-    expect(screen.getByText('执行中 1 / 3')).toBeInTheDocument()
-  })
-
   it('presents failed tool steps as completed with neutral output styling', () => {
     render(<ToolGroupCard status="done" steps={STEPS} />)
 
-    expect(screen.getByText('已完成 3 步')).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: /工具执行轨迹/ }))
+    fireEvent.click(screen.getByRole('button', { name: /已完成/ }))
     fireEvent.click(screen.getByRole('button', { name: /preview_file/ }))
 
     expect(screen.queryByText('失败')).not.toBeInTheDocument()
@@ -82,20 +98,4 @@ describe('ToolGroupCard', () => {
       color: 'var(--color-text-secondary)',
     })
   })
-
-  it('collapses and expands the whole tool trace block from the header', () => {
-    render(<ToolGroupCard status="done" steps={STEPS} />)
-
-    expect(screen.queryByRole('button', { name: /Read/ })).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: /工具执行轨迹/ }))
-
-    expect(screen.getAllByRole('button', { name: /Read/ })).toHaveLength(2)
-    expect(screen.getByText('已完成 2 步')).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: /工具执行轨迹/ }))
-
-    expect(screen.queryByRole('button', { name: /Read/ })).not.toBeInTheDocument()
-  })
-
 })

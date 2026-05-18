@@ -560,7 +560,10 @@
   "toolGroup": {
     "title": "工具执行轨迹",
     "running": "执行中 {{done}} / {{total}}",
-    "done": "已完成 {{done}} 步"
+    "done": "已完成 {{done}} 步",
+    "doneCompact": "已完成 {{duration}}",
+    "durationMinSec": "{{min}}分{{sec}}秒",
+    "durationSec": "{{sec}}秒"
   },
   "homeComposer": {
     "placeholder": "描述你的任务，或点击「技能」按钮选择技能...",
