@@ -185,7 +185,27 @@ Skill 系统采用无状态架构，仅加载 `~/.renlijia/users/{scope}/skills/
 - 确认弹窗 → `requestConfirm`（`@/components/common/ConfirmDialogHost`）
 - Toast → `useNotificationStore.push({ context: 'toast' })`
 
-**Code review 自查清单**：diff 里看到 `bg-black` / `text-white` / `text-[#` / `bg-[#` / `border-white` / 没带颜色的裸 `border-b`、看到自己手写顶栏 / 按钮样式而不是用组件——立刻换成变量 / 公共组件。
+**3. 阴影必须使用全局变量，禁止硬编码 `boxShadow` 字面量**
+
+- ✅ 用 `src/styles/globals.css` 中定义的语义变量：`--shadow-input` / `--shadow-md` / `--shadow-popover` / `--shadow-modal` / `--shadow-card`
+- ✅ Tailwind 任意值语法：`shadow-[var(--shadow-popover)]`；内联 style：`boxShadow: 'var(--shadow-popover)'`
+- ❌ 禁止 `style={{ boxShadow: '0 4px 12px -4px rgba(0,0,0,0.08)' }}` 之类硬编码字面量
+- 选择依据：input 边框光晕 → `input`；卡片/Toast → `card` / `md`；下拉/popover/气泡/浮层 → `popover`；Modal/Dialog → `modal`
+- 新增一类浮层需要新阴影 → 先在 `globals.css` 里加 `--shadow-*` 变量再用，**不要先硬编码再"以后改"**
+
+**4. Store / 消息更新必须 immutable，禁止原地 mutate（保持 React.memo 命中）**
+
+`AiBubble` 套了 `React.memo` 避免长对话历史消息重渲（`src/components/chat/AiBubble.tsx`），memo 默认浅比较 props。**只要任何代码原地 mutate `message` 或 `message.content`，UI 就会停止刷新**（memo 拦下重渲）。
+
+- ✅ 走 `chatStore` / `sessionStore` 的 mutate 方法：`updateMessage` / `upsertMessage` / `setMessages`，它们用 `{...m, ...updates}` 和 `[...arr]` 生成新引用
+- ✅ 自己组装新对象：`store.upsertMessage({ ...oldMsg, content: { ...oldMsg.content, text: newText } })`
+- ❌ 禁止 `msg.content.text += delta`、`msg.content.tables.push(...)`、`messages[i] = ...`、`Object.assign(msg, ...)` 之类原地写
+- ❌ 禁止把 store state 中的 message 对象传出去再 mutate（即便后续 `setMessages([...])` 也已经被 memo 跳过）
+- 流式增量内容**不要**写进 `messages` 数组的 message 对象——专门走独立的 `streamingContent` state（由 `StreamingBubble` 渲染，未套 memo），stream 完成时再 `upsertMessage` 一次落到 messages
+- 出现"bubble 不刷新"现象时，第一反应去查 store 路径是否有人开始原地改 content，而不是怀疑 memo
+- 测试契约：`src/components/chat/__tests__/AiBubble.memo.test.tsx` 钉死 4 条不变式（同引用跳、新引用渲、isStreaming 变化渲、原地 mutate 跳），添加新的 message mutate 路径时同步加测试
+
+**Code review 自查清单**：diff 里看到 `bg-black` / `text-white` / `text-[#` / `bg-[#` / `border-white` / 没带颜色的裸 `border-b`、看到自己手写顶栏 / 按钮样式而不是用组件、看到 `boxShadow: '0 ... rgba(...)'` 硬编码字面量、看到对 store 中的 message / content 原地赋值或 push / Object.assign / `msg.foo = ...`——立刻换成变量 / 公共组件 / immutable 写法。
 
 ## 存储结构
 

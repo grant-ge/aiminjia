@@ -24,11 +24,10 @@ describe('UserMessageBubble', () => {
     expect(bubble?.className).toMatch(/max-w-\[80%\]/)
   })
 
-  it('bubble uses compact 12px horizontal and 8px vertical padding', () => {
+  it('bubble uses 8px padding on all sides', () => {
     const { container } = render(<UserMessageBubble text="X" />)
     const bubble = container.querySelector('[data-testid="user-bubble"]')
-    expect(bubble?.className).toMatch(/px-3/)
-    expect(bubble?.className).toMatch(/py-2/)
+    expect(bubble?.className).toMatch(/\bp-2\b/)
   })
 
   it('renders selected skill as a visible token inside the user bubble', () => {
@@ -69,4 +68,16 @@ describe('UserMessageBubble', () => {
     expect(screen.getByRole('button', { name: '展开全部' })).toBeInTheDocument()
   })
 
+  // 长 URL 单段（无换行）不能触发折叠，否则 overflow-hidden + clip 会把正文遮住——
+  // 这是用户截图里"气泡看不见了"的真实场景。
+  it('does NOT collapse a single long URL with no newlines', () => {
+    const longUrl =
+      'https://docs.dingtalk.com/uni-preview?' +
+      Array.from({ length: 30 }, (_, i) => `param${i}=value${i}`).join('&') +
+      ' 总结一下这个文档'
+    // sanity check：超过 320 chars，旧策略下会触发折叠
+    expect(longUrl.length).toBeGreaterThan(320)
+    render(<UserMessageBubble text={longUrl} />)
+    expect(screen.queryByRole('button', { name: '展开全部' })).not.toBeInTheDocument()
+  })
 })

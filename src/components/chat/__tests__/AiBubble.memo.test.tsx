@@ -91,4 +91,20 @@ describe('AiBubble — React.memo', () => {
     rerender(<AiBubble message={msg} isStreaming={true} />)
     expect(renderSpy).toHaveBeenCalledTimes(2)
   })
+
+  // Contract：同一 message 对象被原地 mutate（store 之外）→ memo 浅比较跳过
+  // 这是为了把"store 必须 immutable"的契约钉死：如果有人开始原地改 content，
+  // 这条测试会暴露——bubble 不刷新，提醒看到 stale 内容的开发者去查 store 路径，
+  // 而不是怀疑 memo 出了问题。
+  it('同 message 引用被原地 mutate → 不重渲（强制 store 走 immutable）', () => {
+    renderSpy.mockClear()
+    const msg = makeMsg('m1', 'hello')
+
+    const { rerender } = render(<AiBubble message={msg} />)
+    expect(renderSpy).toHaveBeenCalledTimes(1)
+
+    msg.content.text = 'mutated in place'
+    rerender(<AiBubble message={msg} />)
+    expect(renderSpy).toHaveBeenCalledTimes(1)
+  })
 })

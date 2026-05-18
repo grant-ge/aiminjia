@@ -43,7 +43,9 @@ export function UserMessageBubble({
 
   const command = skillCommand?.command ?? commandText?.split(/\s+/)[0]
   const tokenLabel = skillCommand?.label ?? skillCommand?.id ?? command?.replace(/^\//, '')
-  const shouldCollapse = text.length > 320 || text.split(/\n/).length > 8
+  // 折叠阈值用换行数衡量，不再用字符数：中文短文本 320 字 ≠ 视觉上很长，
+  // 但贴一条长 URL（~250 chars）+ 几句话就误触发折叠 + clip，把正文遮住。
+  const shouldCollapse = text.split(/\n/).length > 8
 
   if (!text && !tokenLabel) return null
 
