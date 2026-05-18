@@ -39,7 +39,7 @@ export function StreamingBubble({ content }: StreamingBubbleProps) {
     : (cleanContent ? '' : t('streaming.phases.think'))
 
   return (
-    <div className="mb-7">
+    <div className="mb-7" data-aijia-streaming-bubble>
       <div>
         {cleanContent ? (
           <AssistantMarkdown text={cleanContent} />

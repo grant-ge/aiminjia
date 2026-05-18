@@ -42,7 +42,7 @@ export function AiBubble({ message, isStreaming }: AiBubbleProps) {
   if (!hasContent && !isStreaming) return null
 
   return (
-    <div>
+    <div data-aijia-ai-bubble data-aijia-message-id={message.id}>
       <div className="group relative">
         {AI_BUBBLE_RENDER_FIELDS.map((field) => {
           const value = content[field]

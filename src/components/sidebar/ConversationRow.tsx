@@ -66,6 +66,8 @@ export function ConversationRow({
           type="button"
           onClick={onClick}
           className="group flex flex-1 min-w-0 items-center py-1.5 pr-2 text-left text-sm"
+          data-aijia-conversation-row
+          data-aijia-conversation-id={id}
         >
           {loading ? (
             <Loader2
