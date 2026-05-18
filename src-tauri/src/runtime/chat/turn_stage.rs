@@ -7,13 +7,12 @@
 //! in spec §8. The emitter also owns the current stage in an `Arc<Mutex>` so
 //! a future heartbeat task (PR2) can read it without racing the driver.
 //!
-//! ## Feature flag (PR1 → PR5)
+//! ## Feature flag (post-PR5)
 //!
-//! Controlled by env var `AIJIA_TURN_STAGES` (`"1"` / `"true"` → on; default
-//! off). Settings.json plumbing is deferred to PR4; PR5 flips the default to
-//! always-on and removes the env-var branch.
-//!
-//! When disabled, every emit is a no-op — zero events on the bus, zero cost.
+//! On by default.  Env var `AIJIA_TURN_STAGES=0` (or `false`) is an escape
+//! hatch for forcing the legacy behaviour without rebuilding; any other value
+//! (or unset) means "on".  When disabled, every emit is a no-op — zero events
+//! on the bus, zero cost.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -53,11 +52,14 @@ pub struct PersistedTurnStage {
     pub last_heartbeat_at_ms: u64,
 }
 
-/// Read the dogfood feature flag.  See module docs.
+/// Read the feature flag.  On by default; `AIJIA_TURN_STAGES=0` (or `false`)
+/// forces it off — escape hatch for unblocking edge cases without a rebuild.
+/// See module docs.
 pub fn turn_stages_enabled() -> bool {
-    std::env::var("AIJIA_TURN_STAGES")
-        .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes"))
-        .unwrap_or(false)
+    match std::env::var("AIJIA_TURN_STAGES") {
+        Ok(v) if matches!(v.as_str(), "0" | "false" | "FALSE" | "no" | "off") => false,
+        _ => true,
+    }
 }
 
 /// Freestanding emit helper for stage transitions fired from contexts that
@@ -565,15 +567,18 @@ mod tests {
     use crate::runtime::events::RuntimeEventKind;
     use crate::runtime::ids::{RunId, SessionId};
 
-    fn fixture() -> TurnStageEmitter {
+    /// Post-PR5 the flag defaults ON; tests that want hermetic enabled/disabled
+    /// state should use `with_enabled(...)` explicitly so they aren't sensitive
+    /// to the ambient env var.
+    fn disabled_fixture() -> TurnStageEmitter {
         let bus = RuntimeEventBus::new();
         TurnStageEmitter::new(bus, SessionId::new("s-1"), RunId::new("r-1"))
+            .with_enabled(false)
     }
 
     #[tokio::test]
     async fn disabled_emitter_is_silent() {
-        // env var is not set in tests by default → disabled
-        let emitter = fixture();
+        let emitter = disabled_fixture();
         emitter.submitted().await;
         emitter.waiting_llm(0).await;
         let recorded = emitter.event_bus.recorded();
@@ -606,7 +611,7 @@ mod tests {
 
     #[tokio::test]
     async fn heartbeat_task_disabled_when_flag_off() {
-        let emitter = fixture();
+        let emitter = disabled_fixture();
         let guard = emitter.spawn_heartbeat();
         assert!(!guard.is_active(), "guard should be inert when flag is off");
         // Run longer than one heartbeat interval to be sure nothing was emitted.

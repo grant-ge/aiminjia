@@ -35,16 +35,22 @@ fn recorded_stages(bus: &RuntimeEventBus) -> Vec<TurnStage> {
         .collect()
 }
 
-fn make_emitter() -> (TurnStageEmitter, RuntimeEventBus) {
+/// Post-PR5 the flag defaults ON, so review tests construct the emitter with
+/// explicit `with_enabled(...)` to stay hermetic against the ambient env var.
+fn make_disabled_emitter() -> (TurnStageEmitter, RuntimeEventBus) {
     let bus = RuntimeEventBus::new();
-    let emitter = TurnStageEmitter::new(bus.clone(), SessionId::new("conv-X"), RunId::new("run-Y"));
+    let emitter = TurnStageEmitter::new(
+        bus.clone(),
+        SessionId::new("conv-X"),
+        RunId::new("run-Y"),
+    )
+    .with_enabled(false);
     (emitter, bus)
 }
 
 #[tokio::test]
 async fn flag_off_emitter_drops_every_transition_silently() {
-    // env not set in tests by default → flag is off
-    let (emitter, bus) = make_emitter();
+    let (emitter, bus) = make_disabled_emitter();
 
     emitter.submitted().await;
     emitter.waiting_llm(0).await;
@@ -214,9 +220,13 @@ async fn every_stage_variant_maps_to_camelcase_legacy_event() {
 }
 
 #[tokio::test]
-async fn emit_oneshot_helper_honours_feature_flag() {
+async fn emit_oneshot_helper_emits_when_default_on() {
+    // Post-PR5: default is on, so a bare emit_oneshot should land on the bus.
+    // The flag-off path is covered by the per-variant lib tests that use
+    // `with_enabled(false)`; emit_oneshot itself is a thin wrapper around the
+    // same gate so we don't separately test its disabled branch (would
+    // require mutating process env, which races against parallel tests).
     let bus = RuntimeEventBus::new();
-    // env not set → off; the helper must be silent regardless of caller.
     emit_oneshot(
         &bus,
         SessionId::new("conv-X"),
@@ -224,10 +234,7 @@ async fn emit_oneshot_helper_honours_feature_flag() {
         TurnStage::Compacting,
     )
     .await;
-    assert!(
-        recorded_stages(&bus).is_empty(),
-        "emit_oneshot must respect the feature flag (off)"
-    );
+    assert_eq!(recorded_stages(&bus).len(), 1);
 }
 
 #[tokio::test]
