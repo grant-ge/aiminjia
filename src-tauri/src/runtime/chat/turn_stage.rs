@@ -15,20 +15,43 @@
 //!
 //! When disabled, every emit is a no-op — zero events on the bus, zero cost.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
 use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::events::{RunningTool, RuntimeEvent, TurnStage};
 use crate::runtime::ids::{RunId, SessionId};
+use crate::storage::fs_atomic;
 
 /// Cadence of `TurnHeartbeat` emissions while a turn is in progress.
 /// Spec §4.1: 2s — large enough to amortize bus cost, small enough to stay
 /// inside the "is it stuck?" user-perception window.
 pub const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(2);
+
+/// Schema version for the persisted `turn_stage.json` file.  Bump when the
+/// file shape changes; readers ignore files with newer versions.
+pub const TURN_STAGE_PERSIST_SCHEMA: u32 = 1;
+
+/// On-disk snapshot of an active turn's stage.  Written through every
+/// transition + heartbeat tick; deleted by `mark_turn_complete()` at the
+/// terminal exit of `run_chat_turn_s4`.  Any file left at process startup
+/// is treated as a crash sentinel by the recovery sweep.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PersistedTurnStage {
+    pub schema_version: u32,
+    pub conversation_id: String,
+    pub run_id: String,
+    pub stage: TurnStage,
+    pub stage_started_at_ms: u64,
+    pub turn_started_at_ms: u64,
+    pub last_heartbeat_at_ms: u64,
+}
 
 /// Read the dogfood feature flag.  See module docs.
 pub fn turn_stages_enabled() -> bool {
@@ -62,6 +85,123 @@ pub async fn emit_oneshot(
     }
 }
 
+/// On-disk shape produced by the recovery sweep.  Mirrors
+/// `transport::tauri_commands::turn_stage::InterruptedTurnRecord` (kept in
+/// the transport layer so the runtime stays IPC-free).  Defined here as the
+/// JSON-serializable payload the sweep writes.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InterruptedTurnDisk {
+    pub conversation_id: String,
+    pub run_id: String,
+    pub last_stage: TurnStage,
+    pub interrupted_at_ms: u64,
+}
+
+/// Sweep result for diagnostics / tests.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RecoverySweepResult {
+    pub orphans_found: usize,
+    pub interrupted_written: usize,
+    pub deleted: usize,
+    pub errors: usize,
+}
+
+/// Spec §5.5: at process startup, every file under `turn_stages_dir` means
+/// the previous process died mid-turn.  Convert each into an
+/// `interrupted_turn.json` record and delete the orphan stage file.
+///
+/// Safe to call when the directory doesn't exist (returns zeroed result).
+/// Errors on individual files are logged + counted; the sweep never returns
+/// Err — startup must not fail because of stale telemetry files.
+pub fn run_recovery_sweep(
+    turn_stages_dir: &std::path::Path,
+    interrupted_turns_dir: &std::path::Path,
+) -> RecoverySweepResult {
+    let mut result = RecoverySweepResult::default();
+    let read_dir = match std::fs::read_dir(turn_stages_dir) {
+        Ok(rd) => rd,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return result,
+        Err(e) => {
+            log::warn!(
+                "[turn-stage] recovery sweep: read_dir {:?} failed: {e}",
+                turn_stages_dir
+            );
+            result.errors += 1;
+            return result;
+        }
+    };
+    if let Err(e) = std::fs::create_dir_all(interrupted_turns_dir) {
+        log::warn!(
+            "[turn-stage] recovery sweep: mkdir {:?} failed: {e}",
+            interrupted_turns_dir
+        );
+        result.errors += 1;
+        return result;
+    }
+    let now_ms = now_unix_ms();
+    for entry in read_dir.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("json") {
+            continue;
+        }
+        result.orphans_found += 1;
+        let bytes = match std::fs::read(&path) {
+            Ok(b) => b,
+            Err(e) => {
+                log::warn!("[turn-stage] recovery sweep: read {:?} failed: {e}", path);
+                result.errors += 1;
+                continue;
+            }
+        };
+        let snapshot: PersistedTurnStage = match serde_json::from_slice(&bytes) {
+            Ok(s) => s,
+            Err(e) => {
+                log::warn!(
+                    "[turn-stage] recovery sweep: parse {:?} failed: {e}",
+                    path
+                );
+                // Still delete the unparseable file so it doesn't sit forever.
+                let _ = std::fs::remove_file(&path);
+                result.errors += 1;
+                continue;
+            }
+        };
+        let record = InterruptedTurnDisk {
+            conversation_id: snapshot.conversation_id.clone(),
+            run_id: snapshot.run_id,
+            last_stage: snapshot.stage,
+            interrupted_at_ms: now_ms,
+        };
+        let dest = interrupted_turns_dir.join(format!("{}.json", snapshot.conversation_id));
+        match serde_json::to_vec_pretty(&record) {
+            Ok(record_bytes) => match fs_atomic::write_atomic(&dest, &record_bytes) {
+                Ok(_) => result.interrupted_written += 1,
+                Err(e) => {
+                    log::warn!(
+                        "[turn-stage] recovery sweep: write {:?} failed: {e}",
+                        dest
+                    );
+                    result.errors += 1;
+                    continue;
+                }
+            },
+            Err(e) => {
+                log::warn!("[turn-stage] recovery sweep: serialize failed: {e}");
+                result.errors += 1;
+                continue;
+            }
+        }
+        if let Err(e) = std::fs::remove_file(&path) {
+            log::warn!("[turn-stage] recovery sweep: remove {:?} failed: {e}", path);
+            result.errors += 1;
+            continue;
+        }
+        result.deleted += 1;
+    }
+    result
+}
+
 /// Wall-clock milliseconds since the unix epoch.  We use this instead of
 /// `Instant` for stage_started_at_ms because the frontend needs a comparable
 /// timestamp to compute "已 12s" elapsed labels relative to its own clock.
@@ -90,11 +230,18 @@ pub struct TurnStageEmitter {
     enabled: bool,
     current: Arc<Mutex<CurrentStage>>,
     turn_started_at_mono: Instant,
+    turn_started_at_ms: u64,
+    /// Spec §5: when set, every transition / heartbeat is written through to
+    /// this path.  `mark_turn_complete()` deletes it at terminal exit.  When
+    /// None (tests, or PR1/PR2 callers that hadn't wired persistence yet) the
+    /// emitter is pure in-memory.
+    persist_path: Option<PathBuf>,
 }
 
 impl TurnStageEmitter {
     pub fn new(event_bus: RuntimeEventBus, session_id: SessionId, run_id: RunId) -> Self {
         let now = Instant::now();
+        let now_ms = now_unix_ms();
         Self {
             event_bus,
             session_id,
@@ -102,11 +249,20 @@ impl TurnStageEmitter {
             enabled: turn_stages_enabled(),
             current: Arc::new(Mutex::new(CurrentStage {
                 stage: TurnStage::Submitted,
-                stage_started_at_ms: now_unix_ms(),
+                stage_started_at_ms: now_ms,
                 stage_started_at_mono: now,
             })),
             turn_started_at_mono: now,
+            turn_started_at_ms: now_ms,
+            persist_path: None,
         }
+    }
+
+    /// Spec §5: enable write-through persistence to `path`.  Builder method
+    /// so callers (chat_turn_driver) opt in; tests can leave it off.
+    pub fn with_persist_path(mut self, path: PathBuf) -> Self {
+        self.persist_path = Some(path);
+        self
     }
 
     /// Returns a clone of the shared current-stage cell.  PR2's heartbeat task
@@ -143,6 +299,7 @@ impl TurnStageEmitter {
             current.stage_started_at_ms = now_ms;
             current.stage_started_at_mono = now_mono;
         }
+        self.persist_snapshot(&next, now_ms, now_ms);
         if let Err(e) = self
             .event_bus
             .emit(RuntimeEvent::turn_stage_changed(
@@ -154,6 +311,68 @@ impl TurnStageEmitter {
             .await
         {
             log::warn!("[turn-stage] emit TurnStageChanged failed: {e}");
+        }
+    }
+
+    /// Best-effort write of the current snapshot.  Failures are logged but
+    /// never propagated — persistence is a recovery convenience, not a
+    /// correctness invariant.
+    fn persist_snapshot(
+        &self,
+        stage: &TurnStage,
+        stage_started_at_ms: u64,
+        last_heartbeat_at_ms: u64,
+    ) {
+        let Some(path) = self.persist_path.as_ref() else {
+            return;
+        };
+        let snapshot = PersistedTurnStage {
+            schema_version: TURN_STAGE_PERSIST_SCHEMA,
+            conversation_id: self.session_id.as_str().to_string(),
+            run_id: self.run_id.as_str().to_string(),
+            stage: stage.clone(),
+            stage_started_at_ms,
+            turn_started_at_ms: self.turn_started_at_ms,
+            last_heartbeat_at_ms,
+        };
+        match serde_json::to_vec_pretty(&snapshot) {
+            Ok(bytes) => {
+                if let Some(parent) = path.parent() {
+                    if let Err(e) = std::fs::create_dir_all(parent) {
+                        log::warn!("[turn-stage] mkdir {:?} failed: {e}", parent);
+                        return;
+                    }
+                }
+                if let Err(e) = fs_atomic::write_atomic(path, &bytes) {
+                    log::warn!("[turn-stage] persist write failed: {e}");
+                }
+            }
+            Err(e) => log::warn!("[turn-stage] persist serialize failed: {e}"),
+        }
+    }
+
+    /// Terminal-exit cleanup: remove the persisted snapshot so the next
+    /// process startup does NOT treat this turn as crashed.  Must be called
+    /// at every exit path of `run_chat_turn_s4` that represents a normal
+    /// turn termination (success, expected error, cancel).  No-op when
+    /// persistence wasn't enabled.
+    pub fn mark_turn_complete(&self) {
+        let Some(path) = self.persist_path.as_ref() else {
+            return;
+        };
+        match std::fs::remove_file(path) {
+            Ok(_) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => log::warn!("[turn-stage] persist cleanup failed: {e}"),
+        }
+    }
+
+    /// Return an RAII guard that calls `mark_turn_complete()` on Drop — so
+    /// every ?/panic/cancel exit from the turn driver atomically removes
+    /// the on-disk crash sentinel.
+    pub fn cleanup_guard(&self) -> CleanupGuard {
+        CleanupGuard {
+            persist_path: self.persist_path.clone(),
         }
     }
 
@@ -215,6 +434,8 @@ impl TurnStageEmitter {
         let run_id = self.run_id.clone();
         let current = Arc::clone(&self.current);
         let turn_started = self.turn_started_at_mono;
+        let persist_path = self.persist_path.clone();
+        let turn_started_at_ms = self.turn_started_at_ms;
         let handle = tokio::spawn(async move {
             let mut ticker = tokio::time::interval(HEARTBEAT_INTERVAL);
             // Skip the immediate first tick — first heartbeat fires HEARTBEAT_INTERVAL
@@ -227,6 +448,17 @@ impl TurnStageEmitter {
                 let now = Instant::now();
                 let stage_elapsed = now.saturating_duration_since(snapshot.stage_started_at_mono);
                 let turn_elapsed = now.saturating_duration_since(turn_started);
+                // Refresh persisted last_heartbeat_at_ms (best-effort).  Done
+                // before emit so the file is fresh even if the bus is slow.
+                if let Some(path) = persist_path.as_ref() {
+                    persist_heartbeat_to(
+                        path,
+                        &session_id,
+                        &run_id,
+                        &snapshot,
+                        turn_started_at_ms,
+                    );
+                }
                 if let Err(e) = event_bus
                     .emit(RuntimeEvent::turn_heartbeat(
                         session_id.clone(),
@@ -242,6 +474,56 @@ impl TurnStageEmitter {
         });
         HeartbeatGuard {
             handle: Some(handle),
+        }
+    }
+}
+
+/// Standalone heartbeat-writer used by the spawned task (which can't hold
+/// `&self`).  Identical schema to `TurnStageEmitter::persist_snapshot`.
+fn persist_heartbeat_to(
+    path: &std::path::Path,
+    session_id: &SessionId,
+    run_id: &RunId,
+    snapshot: &CurrentStage,
+    turn_started_at_ms: u64,
+) {
+    let payload = PersistedTurnStage {
+        schema_version: TURN_STAGE_PERSIST_SCHEMA,
+        conversation_id: session_id.as_str().to_string(),
+        run_id: run_id.as_str().to_string(),
+        stage: snapshot.stage.clone(),
+        stage_started_at_ms: snapshot.stage_started_at_ms,
+        turn_started_at_ms,
+        last_heartbeat_at_ms: now_unix_ms(),
+    };
+    let bytes = match serde_json::to_vec_pretty(&payload) {
+        Ok(b) => b,
+        Err(e) => {
+            log::warn!("[turn-stage] heartbeat persist serialize failed: {e}");
+            return;
+        }
+    };
+    if let Err(e) = fs_atomic::write_atomic(path, &bytes) {
+        log::warn!("[turn-stage] heartbeat persist write failed: {e}");
+    }
+}
+
+/// RAII handle that deletes the persisted `turn_stage.json` on Drop.
+/// Independent of the emitter so the emitter itself can be safely cloned /
+/// passed around without triggering cleanup at every drop.  Spec §5.
+pub struct CleanupGuard {
+    persist_path: Option<PathBuf>,
+}
+
+impl Drop for CleanupGuard {
+    fn drop(&mut self) {
+        let Some(path) = self.persist_path.as_ref() else {
+            return;
+        };
+        match std::fs::remove_file(path) {
+            Ok(_) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => log::warn!("[turn-stage] CleanupGuard drop: remove failed: {e}"),
         }
     }
 }
@@ -391,5 +673,127 @@ mod tests {
         tokio::time::sleep(HEARTBEAT_INTERVAL + Duration::from_millis(200)).await;
         let after = emitter.event_bus.recorded().len();
         assert_eq!(before, after, "heartbeat task must stop after guard drop");
+    }
+
+    // ── PR4 persistence + recovery ────────────────────────────────────────
+
+    #[tokio::test]
+    async fn transition_writes_turn_stage_json_atomically() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("turn_stages").join("conv-1.json");
+        let bus = RuntimeEventBus::new();
+        let emitter =
+            TurnStageEmitter::new(bus, SessionId::new("conv-1"), RunId::new("run-1"))
+                .with_enabled(true)
+                .with_persist_path(path.clone());
+
+        emitter.submitted().await;
+        emitter
+            .tools_started(0, vec![running_helper("Bash", "tc-1")])
+            .await;
+
+        let raw = std::fs::read(&path).expect("turn_stage.json should exist after transitions");
+        let parsed: PersistedTurnStage = serde_json::from_slice(&raw).expect("parse");
+        assert_eq!(parsed.schema_version, TURN_STAGE_PERSIST_SCHEMA);
+        assert_eq!(parsed.conversation_id, "conv-1");
+        assert_eq!(parsed.run_id, "run-1");
+        match parsed.stage {
+            TurnStage::Tools { iteration, running, .. } => {
+                assert_eq!(iteration, 0);
+                assert_eq!(running[0].tool_name, "Bash");
+            }
+            other => panic!("expected Tools, got {other:?}"),
+        }
+        assert!(parsed.stage_started_at_ms >= parsed.turn_started_at_ms);
+    }
+
+    #[tokio::test]
+    async fn cleanup_guard_removes_turn_stage_json_on_drop() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("turn_stages").join("conv-x.json");
+        let bus = RuntimeEventBus::new();
+        let emitter =
+            TurnStageEmitter::new(bus, SessionId::new("conv-x"), RunId::new("run-x"))
+                .with_enabled(true)
+                .with_persist_path(path.clone());
+        emitter.submitted().await;
+        assert!(path.exists(), "transition should produce file");
+        {
+            let _guard = emitter.cleanup_guard();
+        } // guard drops → file removed
+        assert!(!path.exists(), "CleanupGuard drop should remove file");
+    }
+
+    #[test]
+    fn recovery_sweep_converts_orphan_to_interrupted_record() {
+        let dir = tempfile::tempdir().unwrap();
+        let stages_dir = dir.path().join("turn_stages");
+        let interrupted_dir = dir.path().join("interrupted_turns");
+        std::fs::create_dir_all(&stages_dir).unwrap();
+
+        let orphan = PersistedTurnStage {
+            schema_version: TURN_STAGE_PERSIST_SCHEMA,
+            conversation_id: "conv-crash".into(),
+            run_id: "run-crash".into(),
+            stage: TurnStage::WaitingPermission {
+                tool_name: "Write".into(),
+                tool_call_id: "tc-9".into(),
+            },
+            stage_started_at_ms: 1_700_000_000_000,
+            turn_started_at_ms: 1_700_000_000_000,
+            last_heartbeat_at_ms: 1_700_000_002_000,
+        };
+        let orphan_path = stages_dir.join("conv-crash.json");
+        std::fs::write(&orphan_path, serde_json::to_vec_pretty(&orphan).unwrap()).unwrap();
+
+        let result = run_recovery_sweep(&stages_dir, &interrupted_dir);
+        assert_eq!(result.orphans_found, 1);
+        assert_eq!(result.interrupted_written, 1);
+        assert_eq!(result.deleted, 1);
+        assert_eq!(result.errors, 0);
+
+        assert!(!orphan_path.exists(), "orphan stage file should be removed");
+        let interrupted_path = interrupted_dir.join("conv-crash.json");
+        let raw = std::fs::read(&interrupted_path).expect("interrupted record should exist");
+        let record: InterruptedTurnDisk = serde_json::from_slice(&raw).expect("parse");
+        assert_eq!(record.conversation_id, "conv-crash");
+        assert_eq!(record.run_id, "run-crash");
+        match record.last_stage {
+            TurnStage::WaitingPermission { tool_name, .. } => assert_eq!(tool_name, "Write"),
+            other => panic!("expected WaitingPermission, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn recovery_sweep_is_noop_when_dir_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let stages_dir = dir.path().join("never-created");
+        let interrupted_dir = dir.path().join("interrupted_turns");
+        let result = run_recovery_sweep(&stages_dir, &interrupted_dir);
+        assert_eq!(result, RecoverySweepResult::default());
+    }
+
+    #[test]
+    fn recovery_sweep_removes_unparseable_orphan_and_counts_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let stages_dir = dir.path().join("turn_stages");
+        let interrupted_dir = dir.path().join("interrupted_turns");
+        std::fs::create_dir_all(&stages_dir).unwrap();
+        let garbage_path = stages_dir.join("garbage.json");
+        std::fs::write(&garbage_path, b"not json {{").unwrap();
+
+        let result = run_recovery_sweep(&stages_dir, &interrupted_dir);
+        assert_eq!(result.orphans_found, 1);
+        assert_eq!(result.interrupted_written, 0);
+        assert_eq!(result.errors, 1);
+        assert!(!garbage_path.exists(), "unparseable orphan should still be removed");
+    }
+
+    fn running_helper(name: &str, id: &str) -> RunningTool {
+        RunningTool {
+            tool_name: name.to_string(),
+            tool_call_id: id.to_string(),
+            started_at_ms: 0,
+        }
     }
 }

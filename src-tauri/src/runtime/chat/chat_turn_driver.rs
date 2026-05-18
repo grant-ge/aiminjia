@@ -1229,19 +1229,26 @@ impl RuntimeChatTurnDriver {
         request: &ChatTurnRequest,
         executor: &dyn RuntimeLlmExecutor,
     ) -> Result<()> {
-        // Turn-stage emitter (spec §3 + §8).  When the env flag is off this is
-        // a zero-cost no-op for every emit call.
+        // Turn-stage emitter (spec §3 + §8 + §5).  When the env flag is off
+        // this is a zero-cost no-op for every emit / persist call.
+        let stage_persist_path = crate::storage::AiJiaHome::from_home()
+            .turn_stage_path(turn.session_id().as_str());
         let stage_emitter = TurnStageEmitter::new(
             self.event_bus.clone(),
             turn.session_id().clone(),
             turn.run_id().clone(),
-        );
+        )
+        .with_persist_path(stage_persist_path);
         stage_emitter.submitted().await;
         // RAII guard — spec §8.  Spawning here ensures every ? / early return
         // / panic / cancel path inside this function drops the guard and the
         // 2s heartbeat task stops cleanly.  No spawn when the feature flag
         // is off (inert guard).
         let _heartbeat_guard = stage_emitter.spawn_heartbeat();
+        // RAII guard — spec §5: delete the on-disk snapshot at every exit
+        // path so the recovery sweep at next startup doesn't mistake this
+        // turn for a crash.
+        let _persist_cleanup_guard = stage_emitter.cleanup_guard();
 
         // LTR (B-gap1) Path A entry: marks the Lead as Running and returns
         // the resolved (session, lead_agent_id) key.  None when the session

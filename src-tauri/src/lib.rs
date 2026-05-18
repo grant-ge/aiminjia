@@ -60,6 +60,22 @@ pub fn run() {
             ) {
                 log::warn!("[setup] message shard migration warning (non-fatal): {}", e);
             }
+            // Spec 2026-05-17-turn-stages §5.5: any turn_stage.json present at
+            // startup means the previous process died mid-turn — convert each
+            // into an interrupted_turn.json sentinel and clear the orphan.
+            let sweep = runtime::chat::turn_stage::run_recovery_sweep(
+                &aijia_home.turn_stages_dir(),
+                &aijia_home.interrupted_turns_dir(),
+            );
+            if sweep.orphans_found > 0 {
+                log::info!(
+                    "[setup] turn-stage recovery sweep: orphans={} written={} deleted={} errors={}",
+                    sweep.orphans_found,
+                    sweep.interrupted_written,
+                    sweep.deleted,
+                    sweep.errors,
+                );
+            }
             app.manage(aijia_home.clone());
             let runtime_paths = runtime::dependencies::RuntimePaths::new(
                 aijia_home.runtimes_dir(),
@@ -1020,6 +1036,10 @@ pub fn run() {
             // Pending queue commands
             crate::transport::tauri_commands::pending::pending_snapshot_for_session,
             crate::transport::tauri_commands::pending::pending_remove_item,
+            // Turn-stage persistence (spec 2026-05-17-turn-stages §5)
+            crate::transport::tauri_commands::turn_stage::get_active_turn_stage,
+            crate::transport::tauri_commands::turn_stage::get_interrupted_turn,
+            crate::transport::tauri_commands::turn_stage::dismiss_interrupted_turn,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

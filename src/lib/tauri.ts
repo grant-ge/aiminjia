@@ -282,6 +282,25 @@ export interface TurnHeartbeatPayload {
   turnElapsedMs: number
 }
 
+/** Mirror of backend `PersistedTurnStage` (turn_stage.json on disk). */
+export interface PersistedTurnStage {
+  schemaVersion: number
+  conversationId: string
+  runId: string
+  stage: TurnStageKind
+  stageStartedAtMs: number
+  turnStartedAtMs: number
+  lastHeartbeatAtMs: number
+}
+
+/** Mirror of backend `InterruptedTurnRecord` (interrupted_turn.json on disk). */
+export interface InterruptedTurnRecord {
+  conversationId: string
+  runId: string
+  lastStage: TurnStageKind
+  interruptedAtMs: number
+}
+
 export interface DiagnosticsEventPayload {
   ts: string
   seq: number
@@ -2283,6 +2302,36 @@ export async function pendingSnapshotForSession(sessionId: string): Promise<Pend
 
 export async function pendingRemoveItem(sessionId: string, itemId: string): Promise<boolean> {
   return invoke<boolean>('pending_remove_item', { sessionId, itemId })
+}
+
+// ── Turn-stage persistence (spec docs/superpowers/specs/2026-05-17-turn-stages.md §5) ─
+
+/** Read the active turn-stage snapshot for a conversation.  Returns null
+ *  when no turn is mid-flight (file does not exist). */
+export async function getActiveTurnStage(
+  conversationId: string,
+): Promise<PersistedTurnStage | null> {
+  const result = await invoke<PersistedTurnStage | null>('get_active_turn_stage', {
+    conversationId,
+  })
+  return result
+}
+
+/** Read the crash-recovery sentinel for a conversation.  Returns null when
+ *  the previous process didn't die mid-turn for this conversation. */
+export async function getInterruptedTurn(
+  conversationId: string,
+): Promise<InterruptedTurnRecord | null> {
+  const result = await invoke<InterruptedTurnRecord | null>('get_interrupted_turn', {
+    conversationId,
+  })
+  return result
+}
+
+/** Delete the interrupted-turn sentinel after the user dismisses (or
+ *  resends) — so the banner doesn't keep showing on subsequent opens. */
+export async function dismissInterruptedTurn(conversationId: string): Promise<void> {
+  await invoke<void>('dismiss_interrupted_turn', { conversationId })
 }
 
 export function listenPendingSnapshot(

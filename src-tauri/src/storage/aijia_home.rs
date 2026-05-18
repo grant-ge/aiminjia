@@ -215,6 +215,34 @@ impl AiJiaHome {
         self.root.join("tmp")
     }
 
+    /// `~/.renlijia/turn_stages/` — ephemeral per-turn stage snapshots written
+    /// by `TurnStageEmitter` (spec 2026-05-17-turn-stages §5).  Files here are
+    /// crash-detection sentinels: any file present at process startup means
+    /// the previous run died mid-turn for that conversation, and the recovery
+    /// sweep converts it into `interrupted_turns/{conv_id}.json`.
+    pub fn turn_stages_dir(&self) -> PathBuf {
+        self.root.join("turn_stages")
+    }
+
+    /// Per-conversation active-turn-stage file.  Flat layout (no user scope
+    /// in the path) lets the emitter write without resolving the user scope
+    /// at every transition.
+    pub fn turn_stage_path(&self, conversation_id: &str) -> PathBuf {
+        self.turn_stages_dir().join(format!("{conversation_id}.json"))
+    }
+
+    /// `~/.renlijia/interrupted_turns/` — set of "the last process died while
+    /// this conversation was mid-turn" markers.  Frontend reads on open and
+    /// shows a banner so the user can resend or dismiss.
+    pub fn interrupted_turns_dir(&self) -> PathBuf {
+        self.root.join("interrupted_turns")
+    }
+
+    pub fn interrupted_turn_path(&self, conversation_id: &str) -> PathBuf {
+        self.interrupted_turns_dir()
+            .join(format!("{conversation_id}.json"))
+    }
+
     /// 剪贴板贴图保存目录 `~/.renlijia/tmp/clipboard/`。
     pub fn tmp_clipboard_dir(&self) -> PathBuf {
         self.tmp_dir().join("clipboard")

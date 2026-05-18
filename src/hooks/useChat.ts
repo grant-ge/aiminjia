@@ -27,6 +27,7 @@ import {
   isAgentBusy as isAgentBusyIpc,
   renameConversation as tauriRenameConversation,
   archiveConversation as tauriArchiveConversation,
+  getActiveTurnStage,
   type ChatAttachmentPayload,
 } from '@/lib/tauri'
 import type { Conversation, Message } from '@/types/message'
@@ -209,6 +210,26 @@ export function useChat() {
       console.error('[useChat] getMessages IPC failed:', err)
       recordDiagnosticError('conversation.switch.failed', err, { conversationId: id })
     }
+
+    // Spec §5.4: hydrate the persisted turn-stage snapshot so the bubble
+    // immediately reflects the in-flight turn's state without waiting for
+    // the next 2s heartbeat.  Returns null when no turn is active.
+    void getActiveTurnStage(id)
+      .then((snapshot) => {
+        if (!snapshot) return
+        if (switchVersionRef.current !== loadVersion) return
+        const store = useChatStore.getState()
+        store.setConversationTurnStage(id, snapshot.stage, snapshot.stageStartedAtMs)
+        store.addBusyConversation(id)
+        recordDiagnostic({
+          event: 'turn.stage.hydrated',
+          conversationId: id,
+          payload: { kind: snapshot.stage.kind, ageMs: Date.now() - snapshot.lastHeartbeatAtMs },
+        })
+      })
+      .catch((err) => {
+        console.warn('[useChat] getActiveTurnStage failed:', err)
+      })
   }, [syncBusyConversations])
 
   /**
