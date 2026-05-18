@@ -1237,6 +1237,11 @@ impl RuntimeChatTurnDriver {
             turn.run_id().clone(),
         );
         stage_emitter.submitted().await;
+        // RAII guard — spec §8.  Spawning here ensures every ? / early return
+        // / panic / cancel path inside this function drops the guard and the
+        // 2s heartbeat task stops cleanly.  No spawn when the feature flag
+        // is off (inert guard).
+        let _heartbeat_guard = stage_emitter.spawn_heartbeat();
 
         // LTR (B-gap1) Path A entry: marks the Lead as Running and returns
         // the resolved (session, lead_agent_id) key.  None when the session

@@ -625,4 +625,104 @@ describe('useStreaming integration review', () => {
     })
     expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === 'upload_diagnostic_logs')).toHaveLength(1)
   })
+
+  // ── Turn-stage events (spec docs/superpowers/specs/2026-05-17-turn-stages.md) ──
+
+  it('hydrates turnStage on turn:stage event', async () => {
+    render(<HookHarness />)
+    await waitForListeners()
+
+    const handler = tauriEventMock.listeners.get('turn:stage')
+    expect(handler).toBeTypeOf('function')
+
+    act(() => {
+      handler?.({
+        payload: {
+          conversationId: 'conv-stage',
+          runId: 'run-1',
+          stage: {
+            kind: 'tools',
+            iteration: 1,
+            running: [
+              { toolName: 'Bash', toolCallId: 'tc-1', startedAtMs: 1_700_000_000_000 },
+            ],
+            completedInBatch: 0,
+          },
+          stageStartedAtMs: 1_700_000_000_000,
+        },
+      })
+    })
+
+    const state = useChatStore.getState().streamStates['conv-stage']
+    expect(state?.turnStage?.kind).toBe('tools')
+    expect(state?.stageStartedAt).toBe(1_700_000_000_000)
+    expect(state?.turnStartedAt).toBeGreaterThan(0)
+    expect(useDiagnosticsStore.getState().events.some((e) => e.event === 'turn.stage.received')).toBe(true)
+  })
+
+  it('refreshes lastHeartbeatAt on turn:heartbeat event', async () => {
+    useChatStore.setState({
+      streamStates: {
+        'conv-hb': {
+          isStreaming: true,
+          streamingContent: '',
+          toolExecutions: [],
+          turnStage: { kind: 'waitingLlm', iteration: 0 },
+          stageStartedAt: 1_000,
+          lastHeartbeatAt: 1_000,
+          turnStartedAt: 1_000,
+        },
+      },
+    })
+    render(<HookHarness />)
+    await waitForListeners()
+
+    const handler = tauriEventMock.listeners.get('turn:heartbeat')
+    expect(handler).toBeTypeOf('function')
+
+    const before = useChatStore.getState().streamStates['conv-hb'].lastHeartbeatAt!
+    act(() => {
+      handler?.({
+        payload: {
+          conversationId: 'conv-hb',
+          runId: 'run-hb',
+          stageElapsedMs: 2400,
+          turnElapsedMs: 5000,
+        },
+      })
+    })
+    const after = useChatStore.getState().streamStates['conv-hb'].lastHeartbeatAt!
+    expect(after).toBeGreaterThan(before)
+  })
+
+  it('clears turnStage fields on streaming:done', async () => {
+    useChatStore.setState({
+      activeConversationId: 'conv-clear',
+      streamStates: {
+        'conv-clear': {
+          isStreaming: true,
+          streamingContent: 'partial text',
+          toolExecutions: [],
+          turnStage: { kind: 'streaming', iteration: 0 },
+          stageStartedAt: 1_000,
+          lastHeartbeatAt: 1_000,
+          turnStartedAt: 1_000,
+        },
+      },
+    })
+    render(<HookHarness />)
+    await waitForListeners()
+
+    const handler = tauriEventMock.listeners.get('streaming:done')
+    act(() => {
+      handler?.({ payload: { conversationId: 'conv-clear' } })
+    })
+
+    const state = useChatStore.getState().streamStates['conv-clear']
+    expect(state.turnStage).toBeNull()
+    expect(state.stageStartedAt).toBeNull()
+    expect(state.lastHeartbeatAt).toBeNull()
+    expect(state.turnStartedAt).toBeNull()
+    expect(state.isStreaming).toBe(false)
+  })
 })

@@ -83,14 +83,18 @@ import type { ConversationTaskState } from '@/stores/streamingStore'
 import { useInteractionStore } from '@/stores/interactionStore'
 import { useTauriEvent } from './useTauriEvent'
 
-/** How long (ms) before a streaming conversation with no activity is force-cleared.
- *  Set to 200s to accommodate analysis mode step transitions which involve
- *  checkpoint extraction (up to 30s) + LLM cold start + first tool execution.
- *  Must exceed backend's analysis chunk timeout (180s in chat.rs). */
-const STALE_STREAM_TIMEOUT_MS = 200_000
+/** How long (ms) since the last activity (delta / tool event / turn:heartbeat)
+ *  before the watchdog force-clears the streaming state.  Spec §7.
+ *
+ *  The 30s "stalled" label is rendered inside StreamingBubble itself based on
+ *  `lastHeartbeatAt`; the watchdog only handles the hard "give up" path at 90s.
+ *  Pre-heartbeat (turn_stages flag off) the watchdog still works against
+ *  delta/tool activity timestamps, so this is also the legacy cap. */
+const STALE_STREAM_TIMEOUT_MS = 90_000
 
-/** How often (ms) the watchdog checks for stale streams. */
-const WATCHDOG_INTERVAL_MS = 10_000
+/** How often (ms) the watchdog checks for stale streams.  Tightened from 10s
+ *  to 5s now that the watchdog wakes within 90s of true silence (vs 200s). */
+const WATCHDOG_INTERVAL_MS = 5_000
 
 const autoUploadedFailedToolCalls = new Set<string>()
 
@@ -185,6 +189,18 @@ export function useStreaming() {
   // --- Streaming activity tracker (for watchdog) ---
   // Records the last time any streaming event was received per conversation.
   const lastActivityRef = useRef<Record<string, number>>({})
+
+  // --- Stalled-state tracker ---
+  // Tracks conversations that are currently in the "30s without heartbeat"
+  // warning window so we record the diagnostic exactly once per stalled spell
+  // (not every 5s watchdog tick).  Cleared when the next heartbeat lands or
+  // when the watchdog force-clears at 90s.
+  const stalledConversationsRef = useRef<Set<string>>(new Set())
+
+  /** Warn threshold (spec §7): after this many ms without a heartbeat we
+   *  switch the StreamingBubble label to "网络较慢…" (yellow) and record a
+   *  diagnostic.  Pure UI signal; we don't clear anything until 90s. */
+  const STALLED_WARN_MS = 30_000
 
   // --- Delta throttle buffer ---
   // Accumulates streaming deltas per conversation and flushes them to the
@@ -795,6 +811,9 @@ export function useStreaming() {
   useTauriEvent(() =>
     onTurnHeartbeat(({ conversationId }: TurnHeartbeatPayload) => {
       touchActivity(conversationId)
+      // Heartbeat arrived — leave the stalled set so the next 30s-silent spell
+      // is recorded as a fresh stalled event (not coalesced with old one).
+      stalledConversationsRef.current.delete(conversationId)
       useChatStore.getState().touchConversationHeartbeat(conversationId, Date.now())
     }),
   )
@@ -871,13 +890,30 @@ export function useStreaming() {
         )
         if (hasExecutingTool) {
           lastActivityRef.current[convId] = now
+          stalledConversationsRef.current.delete(convId)
           continue
         }
-        if (now - lastActive > STALE_STREAM_TIMEOUT_MS) {
+        // Spec §7: between STALLED_WARN_MS (30s) and STALE_STREAM_TIMEOUT_MS
+        // (90s) we surface "stalled" via diagnostic + the bubble's yellow
+        // label.  Record the diagnostic exactly once per stalled spell.
+        const silentMs = now - lastActive
+        if (silentMs > STALLED_WARN_MS && silentMs <= STALE_STREAM_TIMEOUT_MS) {
+          if (!stalledConversationsRef.current.has(convId)) {
+            stalledConversationsRef.current.add(convId)
+            recordDiagnostic({
+              event: 'turn.heartbeat.stalled',
+              conversationId: convId,
+              payload: { silentMs },
+            })
+          }
+        } else if (silentMs <= STALLED_WARN_MS) {
+          stalledConversationsRef.current.delete(convId)
+        }
+        if (silentMs > STALE_STREAM_TIMEOUT_MS) {
           console.warn(
             '[watchdog] Force-clearing stale streaming state for conversation %s (last activity: %s ms ago)',
             convId,
-            now - lastActive,
+            silentMs,
           )
           recordDiagnostic({
             event: 'streaming.watchdog.stale_detected',
@@ -886,6 +922,7 @@ export function useStreaming() {
           })
           delete deltaBufferRef.current[convId]
           delete lastActivityRef.current[convId]
+          stalledConversationsRef.current.delete(convId)
           store.clearConversationStreamState(convId)
           store.removeBusyConversation(convId)
 
