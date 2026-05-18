@@ -131,6 +131,7 @@
 
   --shadow-input: 0 0 0 1px var(--color-border-subtle), 0 2px 8px rgba(0, 0, 0, 0.04);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-popover: 0 6px 16px 0 rgba(0, 0, 0, 0.08), 0 3px 6px -4px rgba(0, 0, 0, 0.12), 0 9px 28px 8px rgba(0, 0, 0, 0.05);
   --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.15);
   --shadow-card: var(--shadow-md);
 
@@ -263,6 +264,14 @@ button:not(:disabled) {
 /* ===== Assistant Markdown ===== */
 .assistant-markdown {
   color: var(--color-text-primary);
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+/* ===== User Bubble Markdown ===== */
+/* 长 URL / 无空格字符串必须强制断行：用户 bubble 外层 overflow-hidden +
+   max-h 折叠，不强制断行会导致溢出被裁、正文不可见。 */
+.user-bubble-markdown {
   word-break: break-word;
   overflow-wrap: anywhere;
 }

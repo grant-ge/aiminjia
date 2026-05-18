@@ -44,10 +44,7 @@ export function SkillPopoverPanel({ items, onPick, onClose }: SkillPopoverPanelP
   }, [items, query])
 
   return (
-    <div
-      className="w-[560px] overflow-hidden rounded-lg border border-border bg-popover"
-      style={{ boxShadow: '0 4px 12px -4px rgba(0,0,0,0.08)' }}
-    >
+    <div className="w-[560px] overflow-hidden rounded-lg border border-border bg-popover shadow-[var(--shadow-popover)]">
       <header className="flex items-center gap-2 border-b border-border px-3 py-2.5">
         <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
         <input
