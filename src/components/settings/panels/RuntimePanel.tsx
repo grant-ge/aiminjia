@@ -66,7 +66,7 @@ export function RuntimePanel() {
       <header>
         <h2 className="text-base font-semibold text-foreground">{t('settings.runtime.title')}</h2>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          AIjia 内置 Node、Python、uv 运行时。安装包内置一份，可通过 OSS 升级。
+          {t('settings.runtime.description')}
         </p>
       </header>
 

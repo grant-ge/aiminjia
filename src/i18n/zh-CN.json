@@ -71,7 +71,9 @@
     "copyConversationId": "复制会话 ID",
     "chatMoreActions": "聊天更多操作",
     "noHistory": "还没有历史任务",
-    "defaultFolder": "默认文件夹"
+    "defaultFolder": "默认项目",
+    "project": "项目",
+    "channel": "频道"
   },
   "inputBar": {
     "attachData": "添加文件或本地目录",
@@ -376,7 +378,73 @@
       "fontSmall": "小",
       "fontMedium": "中",
       "fontLarge": "大"
+    },
+    "copyrightText": "2026 任理家 · 保留所有权利",
+    "archived": {
+      "newChat": "新对话",
+      "noRecords": "暂无归档记录",
+      "restore": "恢复",
+      "permanentDelete": "彻底删除",
+      "restoreThisChat": "恢复此对话？",
+      "deleteThisChat": "彻底删除此对话？",
+      "restoreDescription": "对话将恢复到列表中，可继续使用。",
+      "deleteDescription": "对话及关联文件将被永久删除，无法恢复。",
+      "confirmRestore": "恢复",
+      "restoreSuccess": "恢复成功",
+      "restoredToList": "「{{title}}」已恢复到对话列表",
+      "restoreFailed": "恢复失败",
+      "permanentlyDeleted": "已彻底删除",
+      "deletedWithFiles": "「{{title}}」及其关联文件已删除",
+      "deleteFailed": "删除失败"
+    },
+    "runtime": {
+      "title": "运行时",
+      "description": "AIjia 内置 Node、Python、uv 运行时。安装包内置一份，可通过 OSS 升级。",
+      "bundled": "内置",
+      "upgraded": "已升级",
+      "unavailable": "不可用",
+      "source": "来源",
+      "bundledVersion": "内置版本",
+      "upgradedVersion": "升级版本",
+      "checking": "检测中...",
+      "recheck": "重新检测",
+      "lastChecked": "上次检测：",
+      "justNow": "刚刚",
+      "secondsAgo": "{{count}} 秒前",
+      "minutesAgo": "{{count}} 分钟前",
+      "hoursAgo": "{{count}} 小时前"
+    },
+    "about": {
+      "icon": "图标",
+      "version": "版本",
+      "copyright": "© ",
+      "checkUpdate": "检查更新",
+      "policiesTitle": "条款与隐私",
+      "terms": "用户协议",
+      "privacyPolicy": "隐私政策",
+      "devMode": "开发者",
+      "logUpload": "上传日志",
+      "logUploadDesc": "出现问题时，将本地日志上传给开发团队协助排查。",
+      "uploadLogs": "上传日志",
+      "uploading": "上传中..."
     }
+  },
+  "composer": {
+    "addAttachment": "添加附件",
+    "stop": "停止",
+    "send": "发送",
+    "skill": "技能",
+    "skillLoaded": "已加载技能",
+    "openSkillPicker": "选择技能",
+    "openSkillPickerWithSkill": "当前技能：{{name}}",
+    "removeSkill": "移除技能 {{name}}"
+  },
+  "skillPopover": {
+    "searchPlaceholder": "搜索技能（名称 / 说明）",
+    "emptyNoSkills": "还没有可用的技能",
+    "emptyNoMatch": "没有匹配的技能",
+    "emptyInstallHint": "安装技能后会显示在这里",
+    "emptyTryOther": "试试别的关键词"
   },
   "login": {
     "loginSuccess": "登录成功",

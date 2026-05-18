@@ -3,6 +3,7 @@
  * @sizing width 256, padding 8, gap 16
  */
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { CheckSquare, ChevronRight, MessageSquare } from 'lucide-react'
 
 import { useChat } from '@/hooks/useChat'
@@ -42,6 +43,7 @@ function persistSidebarTab(tab: 'project' | 'channel') {
 }
 
 export function AppSidebar() {
+  const { t } = useTranslation()
   const productName = useBrandingStore((s) => s.productName)
   const logoUrl = useBrandingStore((s) => s.logoUrl)
   const route = useUiStore((s) => s.route)
@@ -156,7 +158,7 @@ export function AppSidebar() {
             }
           >
             <CheckSquare className="h-3.5 w-3.5" />
-            项目
+            {t('sidebar.project')}
           </button>
           <button
             type="button"
@@ -168,7 +170,7 @@ export function AppSidebar() {
             }
           >
             <MessageSquare className="h-3.5 w-3.5" />
-            频道
+            {t('sidebar.channel')}
           </button>
         </div>
 

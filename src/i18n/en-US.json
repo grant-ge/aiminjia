@@ -71,7 +71,9 @@
     "copyConversationId": "Copy conversation ID",
     "chatMoreActions": "More chat actions",
     "noHistory": "No tasks yet",
-    "defaultFolder": "Default folder"
+    "defaultFolder": "Default project",
+    "project": "Projects",
+    "channel": "Channels"
   },
   "inputBar": {
     "attachData": "Add file or local directory",
@@ -376,7 +378,73 @@
       "fontSmall": "Small",
       "fontMedium": "Medium",
       "fontLarge": "Large"
+    },
+    "copyrightText": "2026 Renlijia · All rights reserved",
+    "archived": {
+      "newChat": "New chat",
+      "noRecords": "No archived records",
+      "restore": "Restore",
+      "permanentDelete": "Delete permanently",
+      "restoreThisChat": "Restore this chat?",
+      "deleteThisChat": "Permanently delete this chat?",
+      "restoreDescription": "The chat will be restored to your list.",
+      "deleteDescription": "The chat and its associated files will be permanently deleted and cannot be recovered.",
+      "confirmRestore": "Restore",
+      "restoreSuccess": "Restored",
+      "restoredToList": "\"{{title}}\" was restored to your chat list",
+      "restoreFailed": "Restore failed",
+      "permanentlyDeleted": "Permanently deleted",
+      "deletedWithFiles": "\"{{title}}\" and its files were deleted",
+      "deleteFailed": "Delete failed"
+    },
+    "runtime": {
+      "title": "Runtime",
+      "description": "AIjia bundles Node, Python, and uv runtimes. A copy ships in the installer, and can be upgraded via OSS.",
+      "bundled": "Bundled",
+      "upgraded": "Upgraded",
+      "unavailable": "Unavailable",
+      "source": "Source",
+      "bundledVersion": "Bundled version",
+      "upgradedVersion": "Upgraded version",
+      "checking": "Checking...",
+      "recheck": "Re-check",
+      "lastChecked": "Last checked: ",
+      "justNow": "just now",
+      "secondsAgo": "{{count}}s ago",
+      "minutesAgo": "{{count}}m ago",
+      "hoursAgo": "{{count}}h ago"
+    },
+    "about": {
+      "icon": "icon",
+      "version": "Version",
+      "copyright": "© ",
+      "checkUpdate": "Check for updates",
+      "policiesTitle": "Terms & Privacy",
+      "terms": "Terms of Service",
+      "privacyPolicy": "Privacy Policy",
+      "devMode": "Developer",
+      "logUpload": "Upload logs",
+      "logUploadDesc": "When something goes wrong, send local logs to the team for diagnostics.",
+      "uploadLogs": "Upload logs",
+      "uploading": "Uploading..."
     }
+  },
+  "composer": {
+    "addAttachment": "Add attachment",
+    "stop": "Stop",
+    "send": "Send",
+    "skill": "Skill",
+    "skillLoaded": "Skill loaded",
+    "openSkillPicker": "Pick a skill",
+    "openSkillPickerWithSkill": "Current skill: {{name}}",
+    "removeSkill": "Remove skill {{name}}"
+  },
+  "skillPopover": {
+    "searchPlaceholder": "Search skills (name / description)",
+    "emptyNoSkills": "No skills available",
+    "emptyNoMatch": "No matching skills",
+    "emptyInstallHint": "Install a skill to see it here",
+    "emptyTryOther": "Try different keywords"
   },
   "login": {
     "loginSuccess": "Login successful",

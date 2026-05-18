@@ -3,6 +3,7 @@
  * @sizing w 560 r-14 bg popover border 1; head padding [12,16] bottom-border 1; row padding [10,16]
  */
 import { useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Blocks, Search, X } from 'lucide-react'
 
 export interface SkillPopoverItem {
@@ -19,6 +20,7 @@ interface SkillPopoverPanelProps {
 }
 
 export function SkillPopoverPanel({ items, onPick, onClose }: SkillPopoverPanelProps) {
+  const { t } = useTranslation()
   const [query, setQuery] = useState('')
 
   const filtered = useMemo(() => {
@@ -53,13 +55,13 @@ export function SkillPopoverPanel({ items, onPick, onClose }: SkillPopoverPanelP
           autoFocus
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="搜索技能（名称 / 说明）"
+          placeholder={t('skillPopover.searchPlaceholder')}
           className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
           data-testid="skill-popover-search"
         />
         <button
           type="button"
-          aria-label="关闭"
+          aria-label={t('common.close')}
           onClick={onClose}
           className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
         >
@@ -76,10 +78,10 @@ export function SkillPopoverPanel({ items, onPick, onClose }: SkillPopoverPanelP
               <Blocks className="h-5 w-5" />
             </div>
             <span className="text-sm font-medium text-foreground">
-              {items.length === 0 ? '还没有可用的技能' : '没有匹配的技能'}
+              {items.length === 0 ? t('skillPopover.emptyNoSkills') : t('skillPopover.emptyNoMatch')}
             </span>
             <span className="text-xs text-muted-foreground">
-              {items.length === 0 ? '安装技能后会显示在这里' : '试试别的关键词'}
+              {items.length === 0 ? t('skillPopover.emptyInstallHint') : t('skillPopover.emptyTryOther')}
             </span>
           </div>
         ) : (
