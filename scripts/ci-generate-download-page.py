@@ -51,6 +51,45 @@ def format_time(ts):
     return dt.strftime("%Y-%m-%d %H:%M UTC")
 
 
+def detect_platform(name):
+    """Return a human-readable platform label for a release artifact filename."""
+    n = name.lower()
+    if n.endswith(".exe.sig"):
+        return "Windows updater sig"
+    if n.endswith(".exe"):
+        return "Windows x64"
+    if n.endswith(".dmg"):
+        if "aarch64" in n or "arm64" in n:
+            return "macOS Apple Silicon"
+        if "x64" in n or "x86_64" in n:
+            return "macOS Intel"
+        return "macOS"
+    if n.endswith(".tar.gz.sig"):
+        return "macOS Intel updater sig" if "x64" in n or "x86_64" in n else "macOS Apple Silicon updater sig"
+    if n.endswith(".tar.gz"):
+        return "macOS Intel updater" if "x64" in n or "x86_64" in n else "macOS Apple Silicon updater"
+    if n.endswith(".sig"):
+        return "signature"
+    return "—"
+
+
+def _platform_sort_key(name):
+    # Sort: macOS arm64 dmg → macOS x64 dmg → Windows exe → updaters/sigs
+    order = [
+        (lambda n: n.endswith(".dmg") and ("aarch64" in n or "arm64" in n), 0),
+        (lambda n: n.endswith(".dmg") and ("x64" in n or "x86_64" in n), 1),
+        (lambda n: n.endswith(".dmg"), 2),
+        (lambda n: n.endswith(".exe"), 3),
+        (lambda n: n.endswith(".tar.gz"), 4),
+        (lambda n: True, 5),
+    ]
+    nl = name.lower()
+    for pred, rank in order:
+        if pred(nl):
+            return (rank, nl)
+    return (99, nl)
+
+
 def _semver_key(v):
     # "0.5.24-beta.3" -> (0, 5, 24, 0, beta, 3) ; release outranks any -tag.
     base = v.lstrip("v")
@@ -73,35 +112,39 @@ def generate_html(dev_files, beta_versions, release_versions):
     # Dev section
     if dev_files:
         rows = ""
-        for f in sorted(dev_files, key=lambda x: x["name"]):
-            rows += f'<tr><td><a href="{f["url"]}">{f["name"]}</a></td><td>{format_size(f["size"])}</td><td>{format_time(f["modified"])}</td></tr>\n'
+        for f in sorted(dev_files, key=lambda x: _platform_sort_key(x["name"])):
+            rows += f'<tr><td>{detect_platform(f["name"])}</td><td><a href="{f["url"]}">{f["name"]}</a></td><td>{format_size(f["size"])}</td><td>{format_time(f["modified"])}</td></tr>\n'
         sections.append(f"""
         <div class="section">
             <h2>Dev Builds <span class="badge dev">unsigned</span></h2>
             <p>Latest CI builds. Not signed — macOS users need <code>xattr -cr</code>, Windows may show SmartScreen warning.</p>
-            <table>{rows}</table>
+            <table><thead><tr><th>Platform</th><th>File</th><th>Size</th><th>Built</th></tr></thead><tbody>{rows}</tbody></table>
         </div>""")
 
     # Beta section — sort by semver, not lexicographic ("0.5.9" > "0.5.10" lex).
     for ver, files in sorted(beta_versions.items(), key=lambda kv: _semver_key(kv[0]), reverse=True)[:5]:
         rows = ""
-        for f in sorted(files, key=lambda x: x["name"]):
-            rows += f'<tr><td><a href="{f["url"]}">{f["name"]}</a></td><td>{format_size(f["size"])}</td></tr>\n'
+        for f in sorted(files, key=lambda x: _platform_sort_key(x["name"])):
+            rows += f'<tr><td>{detect_platform(f["name"])}</td><td><a href="{f["url"]}">{f["name"]}</a></td><td>{format_size(f["size"])}</td></tr>\n'
+        released = max((f["modified"] for f in files), default=None)
+        released_html = f' <span class="released">released {format_time(released)}</span>' if released else ""
         sections.append(f"""
         <div class="section">
-            <h2>Beta {ver} <span class="badge beta">beta</span></h2>
-            <table>{rows}</table>
+            <h2>Beta {ver} <span class="badge beta">beta</span>{released_html}</h2>
+            <table><thead><tr><th>Platform</th><th>File</th><th>Size</th></tr></thead><tbody>{rows}</tbody></table>
         </div>""")
 
     # Release section — sort by semver, not lexicographic.
     for ver, files in sorted(release_versions.items(), key=lambda kv: _semver_key(kv[0]), reverse=True)[:5]:
         rows = ""
-        for f in sorted(files, key=lambda x: x["name"]):
-            rows += f'<tr><td><a href="{f["url"]}">{f["name"]}</a></td><td>{format_size(f["size"])}</td></tr>\n'
+        for f in sorted(files, key=lambda x: _platform_sort_key(x["name"])):
+            rows += f'<tr><td>{detect_platform(f["name"])}</td><td><a href="{f["url"]}">{f["name"]}</a></td><td>{format_size(f["size"])}</td></tr>\n'
+        released = max((f["modified"] for f in files), default=None)
+        released_html = f' <span class="released">released {format_time(released)}</span>' if released else ""
         sections.append(f"""
         <div class="section">
-            <h2>Release {ver} <span class="badge release">release</span></h2>
-            <table>{rows}</table>
+            <h2>Release {ver} <span class="badge release">release</span>{released_html}</h2>
+            <table><thead><tr><th>Platform</th><th>File</th><th>Size</th></tr></thead><tbody>{rows}</tbody></table>
         </div>""")
 
     return f"""<!DOCTYPE html>
@@ -124,8 +167,11 @@ def generate_html(dev_files, beta_versions, release_versions):
   .badge.beta {{ background: #cce5ff; color: #004085; }}
   .badge.release {{ background: #d4edda; color: #155724; }}
   table {{ width: 100%; border-collapse: collapse; }}
-  td {{ padding: 6px 0; border-bottom: 1px solid #eee; }}
-  td:last-child {{ text-align: right; white-space: nowrap; }}
+  th {{ text-align: left; padding: 6px 8px; font-size: 12px; color: #666; font-weight: 600; border-bottom: 1px solid #ddd; }}
+  th:last-child, td:last-child {{ text-align: right; white-space: nowrap; }}
+  td {{ padding: 6px 8px; border-bottom: 1px solid #eee; }}
+  td:first-child {{ color: #555; font-size: 13px; white-space: nowrap; }}
+  .released {{ font-size: 12px; color: #888; font-weight: normal; margin-left: 6px; }}
   a {{ color: #0066cc; text-decoration: none; }}
   a:hover {{ text-decoration: underline; }}
   p {{ color: #666; font-size: 14px; margin-bottom: 12px; }}
