@@ -333,10 +333,10 @@ Manager 持有 `CancellationToken`，stop 时 cancel → connector 的 stream �
 
 ## §7. 后续 spec 预告（不在本期）
 
-- `2026-MM-DD-im-feishu-design.md` — 飞书 lark-rust SDK 接入
-- `2026-MM-DD-im-wecom-design.md` — 企微 HTTP webhook + 内置 HTTP server 设计
-- `2026-MM-DD-im-telegram-design.md` — Telegram Bot API（webhook 或 long-polling 二选一）
-- `2026-MM-DD-im-whatsapp-design.md` — WhatsApp Cloud API
-- `2026-MM-DD-im-wechat-design.md` — 个微（依赖外部 daemon，最复杂、最后做）
+- `2026-05-18-im-feishu-phase1-design.md` — 飞书（WebSocket + Device Authorization Grant + CardKit 增量更新）
+- `2026-05-18-im-wecom-phase2-design.md` — 企微（HTTP webhook + 加密签名 + 内置 webhook_server 通用方案）
+- `2026-05-18-im-telegram-phase3-design.md` — Telegram（long-poll 与 webhook 二选一 + editMessageText 流式）
+- `2026-05-18-im-whatsapp-phase4-design.md` — WhatsApp Cloud API（24h 会话窗口强约束 + 不支持 edit）
+- `2026-05-18-im-wechat-phase5-design.md` — 个微（腾讯 iLink HTTP API + 扫码登录 + AES-128-ECB 媒体）
 
-每个新平台的 spec 都遵循同一模板：列 connector 实现细节、capabilities 表、auth flow、附件处理、reply 降级测试覆盖。Manager / shared 层在那些 spec 里**只读不改**。
+每个新平台的 spec 都遵循同一模板：列 connector 实现细节、capabilities 表、auth flow、附件处理、reply 降级测试覆盖。Manager / shared 层在那些 spec 里**只读不改**（Phase 2 例外：它新增 `im/shared/webhook_server.rs`）。
