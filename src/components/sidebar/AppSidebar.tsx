@@ -210,7 +210,15 @@ export function AppSidebar() {
                       onClick={openChannelOverview}
                       className="w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
                     >
-                      未配置，点击右侧设置
+                      {!dingtalkState?.configured
+                        ? '未配置，点击右侧设置'
+                        : !dingtalkState.enabled
+                          ? '已暂停，点击右侧启用'
+                          : dingtalkState.connection === 'connected'
+                            ? '暂无会话，等待消息…'
+                            : dingtalkState.connection === 'connecting'
+                              ? '连接中…'
+                              : '未连接，点击右侧重试'}
                     </button>
                   ) : (
                     activeConversations.map((conversation) => (
