@@ -572,6 +572,7 @@
     "workingIn": "在 {{name}} 中工作",
     "selectWorkDirAria": "选择工作目录，当前在 {{name}} 中工作",
     "selectOtherDir": "选择其他目录…",
+    "useDefaultFolder": "使用默认文件夹",
     "newConversation": "新对话"
   },
   "errors": {

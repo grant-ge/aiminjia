@@ -8,7 +8,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { BriefcaseBusiness, ChevronDown, Folder, FolderPlus, X } from 'lucide-react'
+import { BriefcaseBusiness, ChevronDown, Folder, FolderPlus, House, X } from 'lucide-react'
 
 import { SkillPopover } from '@/components/chat/SkillPopover'
 import {
@@ -93,6 +93,21 @@ export function HomeTaskComposerCard() {
     setSelectedWorkspace(ws)
     setDisplayWorkspace(ws)
   }, [setSelectedWorkspace])
+
+  // Switch back to the implicit default folder. Because its id is 'default',
+  // handleSubmit's `isDefaultFolder` branch (line ~135) skips workspace
+  // authorize — restoring the fast home→chat path without the IPC await that
+  // can race ChatPage's switchConversation effect.
+  const handleSelectDefaultFolder = useCallback(async () => {
+    try {
+      const ws = await getDefaultFolder()
+      selectWorkspace(ws)
+    } catch {
+      // fall back to clearing the selection — UI will show "默认项目"
+      setSelectedWorkspace(null)
+      setDisplayWorkspace(null)
+    }
+  }, [selectWorkspace, setSelectedWorkspace])
 
   const handlePickProject = async () => {
     const path = await pickLocalDirectory({
@@ -223,9 +238,9 @@ export function HomeTaskComposerCard() {
             sideOffset={8}
             className="w-[300px] max-w-[calc(100vw-32px)] rounded-2xl border-border bg-card p-1 shadow-[0_18px_44px_rgba(40,35,25,0.16)]"
           >
-            {recentWorkspaces.length > 0 ? (
+            {recentWorkspaces.filter((ws) => ws.id !== 'default').length > 0 ? (
               <div className="max-h-[200px] overflow-y-auto">
-                {recentWorkspaces.map((ws) => (
+                {recentWorkspaces.filter((ws) => ws.id !== 'default').map((ws) => (
                   <DropdownMenuItem
                     key={ws.rootPath}
                     onSelect={() => selectWorkspace(ws)}
@@ -251,7 +266,14 @@ export function HomeTaskComposerCard() {
                 ))}
               </div>
             ) : null}
-            {recentWorkspaces.length > 0 ? <DropdownMenuSeparator className="mx-2 bg-border" /> : null}
+            {recentWorkspaces.filter((ws) => ws.id !== 'default').length > 0 ? <DropdownMenuSeparator className="mx-2 bg-border" /> : null}
+            <DropdownMenuItem
+              onSelect={() => void handleSelectDefaultFolder()}
+              className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium outline-none focus:bg-muted"
+            >
+              <House className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <span>{t('homeComposer.useDefaultFolder')}</span>
+            </DropdownMenuItem>
             <DropdownMenuItem
               onSelect={() => void handlePickProject()}
               className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium outline-none focus:bg-muted"

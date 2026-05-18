@@ -572,6 +572,7 @@
     "workingIn": "Working in {{name}}",
     "selectWorkDirAria": "Select working directory, currently in {{name}}",
     "selectOtherDir": "Choose another directory…",
+    "useDefaultFolder": "Use default folder",
     "newConversation": "New conversation"
   },
   "errors": {
