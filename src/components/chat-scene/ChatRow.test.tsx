@@ -37,17 +37,17 @@ describe('ChatAvatar', () => {
     expect(av.getAttribute('title')).toBe('小研')
   })
 
-  it('variant="neutral" renders the brand silhouette + sets color: var(--ring)', () => {
+  it('variant="neutral" renders a lucide User icon tinted with brand --primary', () => {
     render(<ChatAvatar name="我" variant="neutral" />)
     const av = screen.getByTestId('chat-avatar')
     expect(av.getAttribute('data-variant')).toBe('neutral')
-    const img = av.querySelector('img')
-    expect(img?.getAttribute('src')).toBe('/user-avatar-neutral.svg')
-    // CSS color is set on the wrapper so the SVG (currentColor) picks it up.
-    // `--ring` is the brand-accent token (gold by default), distinct from
-    // `--primary` which the design pen points at the foreground text color.
-    expect((av as HTMLElement).style.color).toBe('var(--ring)')
-    // No initial glyph is rendered when the neutral SVG is in use.
+    // Lucide ships <svg class="lucide lucide-user …" …> — no <img> involved.
+    expect(av.querySelector('img')).toBeNull()
+    const svg = av.querySelector('svg')
+    expect(svg).toBeInTheDocument()
+    // The icon picks up --primary via Tailwind's text-primary → currentColor.
+    expect(svg?.getAttribute('class') ?? '').toMatch(/text-primary/)
+    // No initial glyph is rendered when the neutral icon is in use.
     expect(av.textContent?.trim()).toBe('')
   })
 

@@ -4,9 +4,10 @@
  * Renders a 28×28 circular avatar with three fallback layers:
  *   1. `src` (preferred — assistant uses `brandingStore.logoUrl`,
  *      user can supply a saved profile image)
- *   2. `variant='neutral'` (gender-free user silhouette in brand
- *      `var(--primary)` accent — colored by CSS `color:` so it
- *      automatically tracks tenant brand changes)
+ *   2. `variant='neutral'` (gender-free user silhouette using lucide
+ *      `User` icon in brand `var(--primary)` accent — colored via the
+ *      Tailwind `text-primary` class so it automatically tracks tenant
+ *      brand changes through `currentColor`)
  *   3. `initial` (first non-whitespace character of `name`) painted on a
  *      deterministic color derived from the `colorSeed` (hashes the name
  *      by default)
@@ -15,12 +16,14 @@
  * feel — AI assistant on the left with product logo, user on the right
  * with the neutral brand-tinted silhouette.
  */
+import { User } from 'lucide-react'
+
 interface ChatAvatarProps {
   name: string
   src?: string | null
   /**
    * Override the default fallback. `'neutral'` paints a gender-free
-   * head+shoulders silhouette in `var(--primary)` (good default for the
+   * `User` icon (lucide) in `var(--primary)` (good default for the
    * current user, since we don't store profile photos yet).
    * `'initial'` paints the first character on a palette color hashed
    * from `colorSeed` / `name` — kept for non-user contexts (e.g. a chat
@@ -47,8 +50,6 @@ const PALETTE = [
   '#A78BFA', // violet
   '#F472B6', // pink
 ] as const
-
-const NEUTRAL_AVATAR_SRC = '/user-avatar-neutral.svg'
 
 function hashString(s: string): number {
   let h = 0
@@ -80,41 +81,40 @@ export function ChatAvatar({
 }: ChatAvatarProps) {
   // Treat empty string the same as null/undefined. brandingStore.logoUrl
   // is `''` when a tenant explicitly cleared its logo, and we still want
-  // to fall through to the variant fallback (neutral SVG / initial) in
+  // to fall through to the variant fallback (neutral icon / initial) in
   // that case — not render an <img src="">.
   const normalizedSrc = src && src.length > 0 ? src : null
-  const effectiveSrc = normalizedSrc ?? (variant === 'neutral' ? NEUTRAL_AVATAR_SRC : null)
+  const usingImage = normalizedSrc !== null
+  const usingNeutralFallback = !usingImage && variant === 'neutral'
   const initial = firstInitial(name)
-  // `neutral` variant: container is transparent, the SVG inside paints
-  // itself with `currentColor` → we set `color: var(--ring)` on the
-  // wrapper. `--ring` is the design.pen brand-accent token (gold
-  // #D4A843 by default, tenant-overridable), distinct from `--primary`
-  // which the visual-standard refactor pointed at the foreground text
-  // color (near-black). Using `--ring` keeps the avatar visibly tinted
-  // with the brand accent across light/dark/custom skins.
-  const usingNeutralFallback = !normalizedSrc && variant === 'neutral'
-  const bg = effectiveSrc
+  // Neutral variant: container fills with `--primary` at ~12% alpha (subtle
+  // accent halo) and the lucide `User` icon paints itself with the full
+  // `--primary` via `text-primary` (currentColor). Tenant accent swaps
+  // automatically through the CSS variable — no JS wiring needed.
+  const dataVariant = usingImage ? 'image' : usingNeutralFallback ? 'neutral' : 'initial'
+  const bg = usingImage
     ? 'transparent'
-    : pickColor(colorSeed ?? name)
+    : usingNeutralFallback
+      ? 'color-mix(in srgb, var(--primary) 12%, transparent)'
+      : pickColor(colorSeed ?? name)
   const style: React.CSSProperties = {
     width: size,
     height: size,
     background: bg,
-    color: usingNeutralFallback ? 'var(--ring)' : undefined,
     boxShadow: ringColor ? `0 0 0 2px ${ringColor}` : undefined,
   }
   return (
     <span
       data-testid="chat-avatar"
-      data-variant={effectiveSrc ? (normalizedSrc ? 'image' : 'neutral') : 'initial'}
+      data-variant={dataVariant}
       aria-label={name}
       title={name}
       style={style}
       className="inline-flex shrink-0 select-none items-center justify-center overflow-hidden rounded-full text-xs font-semibold text-white"
     >
-      {effectiveSrc ? (
+      {usingImage ? (
         <img
-          src={effectiveSrc}
+          src={normalizedSrc}
           alt=""
           width={size}
           height={size}
@@ -123,6 +123,14 @@ export function ChatAvatar({
           onError={(e) => {
             ;(e.currentTarget as HTMLImageElement).style.display = 'none'
           }}
+        />
+      ) : usingNeutralFallback ? (
+        <User
+          aria-hidden
+          className="text-primary"
+          // Icon occupies ~60% of the avatar so the bg halo reads as a ring
+          style={{ width: size * 0.6, height: size * 0.6 }}
+          strokeWidth={2.25}
         />
       ) : (
         <span aria-hidden>{initial}</span>

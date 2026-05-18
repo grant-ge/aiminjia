@@ -209,44 +209,66 @@ export function MessageList() {
                 </ChatRow>
               )
             ) : null}
-            {t.toolGroup ? (
-              <ToolGroupCard
-                status={t.toolGroup.status}
-                steps={t.toolGroup.steps}
-              />
-            ) : null}
             {teamSession ? (
               <TeamProgressBlock session={teamSession} onOpen={handleOpenTeamDrawer} />
             ) : null}
-            {t.aiSegments.map((s) => (
+            {/*
+             * Tool execution trace + AI segments share one ChatRow so the
+             * avatar/name groups the whole assistant turn visually. When the
+             * turn has no AI text yet (tools still running with no reply),
+             * we still render an empty ChatRow so the trace card lives under
+             * the assistant avatar instead of floating naked at turn top.
+             */}
+            {/*
+             * One ChatRow groups everything the assistant produced in this
+             * turn: tool trace → text segments → generated-file cards →
+             * follow-up suggestion chips. Keeping them under one avatar
+             * matches the "AI 猫 is talking to you" mental model and prevents
+             * the file/chip cards from floating without an owner.
+             *
+             * Skipped when the turn produced nothing on the assistant side
+             * (e.g. a bare peer banner / task-notification turn).
+             */}
+            {t.toolGroup ||
+            t.aiSegments.length > 0 ||
+            t.generatedFiles.length > 0 ||
+            t.suggestions.length > 0 ? (
               <ChatRow
-                key={s.id}
                 role="assistant"
                 name={assistantName}
                 avatarUrl={assistantLogo}
               >
-                <AiBubble message={s.message} />
+                {t.toolGroup ? (
+                  <ToolGroupCard
+                    status={t.toolGroup.status}
+                    steps={t.toolGroup.steps}
+                    durationMs={t.toolGroup.durationMs}
+                  />
+                ) : null}
+                {t.aiSegments.map((s) => (
+                  <AiBubble key={s.id} message={s.message} />
+                ))}
+                {t.generatedFiles.map((f) => (
+                  <GeneratedFileCard
+                    key={f.id}
+                    title={f.title}
+                    sub={f.sub}
+                    appName={f.primaryAction === 'preview' ? '预览' : f.appName}
+                    primaryAction={f.primaryAction}
+                    canPreview={f.canPreview}
+                    canOpenExternal={f.canOpenExternal}
+                    canReveal={f.canReveal}
+                    onPreview={() => handlePreview(f)}
+                    onOpenExternal={() => void handleOpenExternal(f)}
+                    onReveal={() => void handleReveal(f)}
+                  />
+                ))}
+                {t.suggestions.length > 0 ? (
+                  <SuggestChipGroup
+                    items={t.suggestions.map((s) => ({ label: s, onClick: () => {} }))}
+                  />
+                ) : null}
               </ChatRow>
-            ))}
-            {t.generatedFiles.map((f) => (
-              <GeneratedFileCard
-                key={f.id}
-                title={f.title}
-                sub={f.sub}
-                appName={f.primaryAction === 'preview' ? '预览' : f.appName}
-                primaryAction={f.primaryAction}
-                canPreview={f.canPreview}
-                canOpenExternal={f.canOpenExternal}
-                canReveal={f.canReveal}
-                onPreview={() => handlePreview(f)}
-                onOpenExternal={() => void handleOpenExternal(f)}
-                onReveal={() => void handleReveal(f)}
-              />
-            ))}
-            {t.suggestions.length > 0 ? (
-              <SuggestChipGroup
-                items={t.suggestions.map((s) => ({ label: s, onClick: () => {} }))}
-              />
             ) : null}
           </div>
         )
