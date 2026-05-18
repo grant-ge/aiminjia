@@ -3,7 +3,24 @@
 **日期**：2026-05-15
 **作者**：claude (post-mortem of 95eec8dc session)
 **目标读者**：前端专家
-**状态**：待审核
+**状态**：✅ 决策已敲定（2026-05-17）
+
+## 决策汇总（2026-05-17）
+
+经前端 review，6 项决策全部敲定：
+
+| 决策点 | 选项 | 含义 |
+|---|---|---|
+| §6.A 协议消息位置 | **A1 平铺时间线** | 跟 team_create / agent_spawn 同样的 SystemDivider 风格，按 ts 顺序插在对话气泡之间 |
+| §6.B 复用 vs 新组件 | **B1 复用 SystemDivider** | icon 字符差异化区分类型，~30 行新逻辑 |
+| §6.C i18n | **C3 整个 TeamChatEvents 接 i18next** | 新协议文案 + 老 lifecycle 文案统一走 `t('teamChat.*')`，~30 行改 + 加 zh-CN/en-US 两份翻译 |
+| §6.D 协议字段落盘 | **X 加 approve / reason / feedback** | 后端 `append_team_chat_entry` 加 3 个可选字段 ~15 行 |
+| variant TS 类型 | **D2 union literal** | `'text' \| 'shutdown_request' \| 'shutdown_response' \| 'plan_approval_request' \| 'plan_approval_response'` |
+| 其他遗漏 | 无 | 暗色 / 错误态 / 历史回看 / plan_approval 增强 / 点击下钻 / 空 team 状态——本期不做 |
+
+下面文档保留原结构（背景、根因、可选项分析），但**实施层只走上面这一列**。
+
+---
 
 ## 0. 场景与术语（不熟悉 team 功能请先读这里）
 
