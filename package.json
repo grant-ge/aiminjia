@@ -13,7 +13,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "tauri": "tauri",
+    "ensure:runtime": "node scripts/ensure-bundled-runtime.mjs",
+    "pretauri:dev": "pnpm ensure:runtime",
     "tauri:dev": "tauri dev",
+    "pretauri:build": "pnpm ensure:runtime",
     "tauri:build": "tauri build"
   },
   "dependencies": {
