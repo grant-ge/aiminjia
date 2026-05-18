@@ -2378,30 +2378,41 @@ impl TauriChatCommandAdapter {
         };
         let weak_self: std::sync::Weak<Self> = Arc::downgrade(self);
         let installed = sup.set_wake_fn(std::sync::Arc::new(
-            move |key: crate::runtime::agent::LeadKey| {
+            move |key: crate::runtime::agent::LeadKey, team_name: String| {
                 let Some(adapter) = weak_self.upgrade() else {
                     log::warn!(
                         "[path_c_wake] adapter has been dropped — skipping continuation \
-                         turn for session={} agent={}",
+                         turn for session={} agent={} team={}",
                         key.0.as_str(),
-                        key.1.as_str()
+                        key.1.as_str(),
+                        team_name
                     );
                     return;
                 };
                 let session_str = key.0.as_str().to_string();
                 let agent_str = key.1.as_str().to_string();
+                let team_str = team_name.clone();
                 tokio::spawn(async move {
                     log::info!(
                         "[path_c_wake] spawning continuation turn via send_chat_request \
-                         conv={} lead={}",
+                         conv={} lead={} team={}",
                         session_str,
-                        agent_str
+                        agent_str,
+                        team_str
                     );
-                    let req = ChatTurnRequest::new(
+                    // PR6: forward wake-source team_name verbatim so the
+                    // continuation turn uses it as active_team_name without
+                    // re-reading conv.json (which may not yet reflect this
+                    // team — e.g. when active_team is "alpha" but the wake
+                    // came from "beta").
+                    let mut req = ChatTurnRequest::new(
                         key.0.clone(),
                         "__resume_from_task_notification__".to_string(),
                         Vec::new(),
                     );
+                    if !team_name.is_empty() {
+                        req = req.with_active_team_name_override(team_name);
+                    }
                     match adapter.send_chat_request(req).await {
                         Ok(()) => {
                             log::info!(
@@ -3057,6 +3068,63 @@ impl TauriChatCommandAdapter {
         })
         .await
         .map_err(|e| format!("join error: {e}"))?
+    }
+
+    /// PR9: Read a slice of `<conv>/teams/{team_name}/team-chat.jsonl`.
+    /// Returns raw JSON lines (the writer's shape — `{ts, from, to, text, ...}`).
+    /// `since_ts` filters out lines whose `ts <= since_ts` (string compare,
+    /// fine for RFC3339).  `limit` caps the returned slice to that many lines.
+    pub async fn team_chat_messages(
+        &self,
+        conversation_id: String,
+        team_name: String,
+        since_ts: Option<String>,
+        limit: Option<usize>,
+    ) -> Result<Vec<serde_json::Value>, String> {
+        use crate::storage::{CurrentUserStorage, UserScopedPathResolver};
+        let conv_dir = self
+            .services
+            .app
+            .try_state::<Arc<CurrentUserStorage>>()
+            .and_then(|cus| cus.require_paths().ok())
+            .map(|paths| paths.conversations_dir().join(&conversation_id))
+            .ok_or_else(|| "user scope not active".to_string())?;
+        crate::runtime::agent::team_paths::validate_team_name(&team_name)
+            .map_err(|e| e.to_string())?;
+        let path = crate::runtime::agent::team_paths::TeamPaths::for_team(&conv_dir, &team_name)
+            .team_chat_jsonl();
+        if !path.exists() {
+            return Ok(Vec::new());
+        }
+        let content = tokio::fs::read_to_string(&path)
+            .await
+            .map_err(|e| e.to_string())?;
+        let mut out = Vec::new();
+        for line in content.lines() {
+            let trimmed = match line.find('\t') {
+                Some(idx) => &line[..idx],
+                None => line,
+            }
+            .trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed) else {
+                continue;
+            };
+            if let Some(ref since) = since_ts {
+                if v.get("ts").and_then(|t| t.as_str()).map_or(true, |t| t <= since.as_str()) {
+                    continue;
+                }
+            }
+            out.push(v);
+            if let Some(lim) = limit {
+                if out.len() >= lim {
+                    break;
+                }
+            }
+        }
+        Ok(out)
     }
 
     pub async fn create_conversation(&self) -> Result<String, String> {

@@ -612,6 +612,38 @@ export function getTeammateTranscript(
 }
 
 /**
+ * PR9: one line out of `<conv>/teams/{team}/team-chat.jsonl`.  The shape
+ * matches what the writer (SendMessage tool) puts on disk.
+ */
+export interface TeamChatMessage {
+  ts: string
+  from: string
+  to: string
+  text: string
+  variant?: string
+}
+
+/**
+ * PR9: read the (optionally filtered/limited) tail of a team's team-chat.jsonl.
+ *
+ * - `sinceTs` filters out lines with `ts <= sinceTs` (string comparison, RFC3339-safe).
+ * - `limit` caps the result length.
+ */
+export function teamChatMessages(
+  conversationId: string,
+  teamName: string,
+  sinceTs?: string,
+  limit?: number,
+): Promise<TeamChatMessage[]> {
+  return invoke<TeamChatMessage[]>('team_chat_messages', {
+    conversationId,
+    teamName,
+    sinceTs,
+    limit,
+  })
+}
+
+/**
  * Create a new empty conversation.
  *
  * @returns The ID of the newly created conversation

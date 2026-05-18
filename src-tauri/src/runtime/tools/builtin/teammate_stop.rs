@@ -80,9 +80,10 @@ impl RuntimeTool for TeammateStopRuntimeTool {
             )
         })?;
 
+        let team_name = ctx.active_team_name.as_deref().unwrap_or("");
         // Resolve name -> AgentId; absence is treated as a soft success
         // (idempotent — the Teammate has already exited or never existed).
-        let agent_id = match names.resolve(&ctx.session_id, &name).await {
+        let agent_id = match names.resolve(&ctx.session_id, team_name, &name).await {
             Some(id) => id,
             None => {
                 record_diagnostic(
@@ -104,7 +105,7 @@ impl RuntimeTool for TeammateStopRuntimeTool {
             }
         };
 
-        match cancels.get(&ctx.session_id, &agent_id).await {
+        match cancels.get(&ctx.session_id, team_name, &agent_id).await {
             Some(token) => {
                 token.cancel_with_reason(CancellationReason::UserCancel);
                 record_diagnostic(

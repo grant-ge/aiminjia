@@ -4,12 +4,16 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { Message, MessageContent } from '@/types/message'
 
-vi.mock('@/lib/tauri', () => ({
-  sendMessage: vi.fn(),
-  openGeneratedFile: vi.fn(),
-  revealFileInFolder: vi.fn(),
-  getSubagentTranscript: vi.fn(),
-}))
+vi.mock('@/lib/tauri', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/tauri')>('@/lib/tauri')
+  return {
+    ...actual,
+    sendMessage: vi.fn(),
+    openGeneratedFile: vi.fn(),
+    revealFileInFolder: vi.fn(),
+    getSubagentTranscript: vi.fn(),
+  }
+})
 
 vi.mock('@/stores/chatStore', () => ({
   useChatStore: vi.fn(

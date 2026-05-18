@@ -13,6 +13,18 @@ export interface TeamAgent {
   hasTranscript: boolean
 }
 
+/**
+ * StructuredMessage 的 type discriminator（snake_case）。后端定义在
+ * `src-tauri/src/runtime/messaging/structured.rs`，落盘到 team-chat.jsonl
+ * 的 `variant` 字段。
+ */
+export type SendMessageVariant =
+  | 'text'
+  | 'shutdown_request'
+  | 'shutdown_response'
+  | 'plan_approval_request'
+  | 'plan_approval_response'
+
 export type TeamEvent =
   | { kind: 'team_create'; ts: string; teamName: string | null }
   | { kind: 'team_delete'; ts: string }
@@ -26,6 +38,13 @@ export type TeamEvent =
       text: string
       isError: boolean
       toolCallId: string
+      variant: SendMessageVariant
+      /** ShutdownResponse / PlanApprovalResponse 才有。 */
+      approve?: boolean
+      /** ShutdownRequest / ShutdownResponse 可选 reason。 */
+      reason?: string
+      /** PlanApprovalResponse 可选 feedback。 */
+      feedback?: string
     }
   | {
       kind: 'peer_message'

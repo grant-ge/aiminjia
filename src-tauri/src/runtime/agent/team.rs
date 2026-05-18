@@ -40,8 +40,8 @@ pub enum TeamError {
     MaxTeammateLimitReached,
     #[error("name already taken in this team: {0}")]
     NameAlreadyTaken(String),
-    #[error("team already exists for session {0:?}")]
-    TeamAlreadyExists(SessionId),
+    #[error("team `{0}` already exists in this conversation")]
+    TeamAlreadyExists(String),
 }
 
 impl Team {
@@ -84,14 +84,25 @@ impl Team {
     }
 }
 
-/// Per-session team store.
+/// Per-session, per-team registry.
+///
+/// Outer key: `SessionId` (conversation)
+/// Inner key: `team_name` (ASCII, validated before insertion)
 ///
 /// Locking order: always acquire the outer registry `Mutex` first;
 /// only then lock an individual `Arc<Mutex<Team>>`.  Never hold the
-/// inner lock while calling `create` / `get` / `delete`.
+/// inner lock while calling `create` / `get` / `delete_team`.
 #[derive(Debug, Default)]
 pub struct TeamRegistry {
-    teams: Mutex<HashMap<SessionId, Arc<Mutex<Team>>>>,
+    teams: Mutex<HashMap<SessionId, HashMap<String, Arc<Mutex<Team>>>>>,
+    /// Per-session active team name. Single owner of "which team is the
+    /// session currently focused on" — replaces the duplicated cache that
+    /// used to live in `QueryEngine.active_team_name`. Tools call
+    /// `set_active` after `TeamCreate` / `TeamSwitch` and `clear_active`
+    /// after `TeamDelete`; `ToolExecutionContext.active_team_name` is
+    /// derived from `active(&session)` at ctx-build time, so the next tool
+    /// call in the same turn sees the new value.
+    active: Mutex<HashMap<SessionId, String>>,
 }
 
 impl TeamRegistry {
@@ -99,6 +110,8 @@ impl TeamRegistry {
         Arc::new(Self::default())
     }
 
+    /// Create a new team for the session.  `team_name` must have been
+    /// validated by `validate_team_name` before calling this.
     pub async fn create(
         &self,
         session_id: SessionId,
@@ -106,20 +119,46 @@ impl TeamRegistry {
         team_name: String,
     ) -> Result<Arc<Mutex<Team>>, TeamError> {
         let mut g = self.teams.lock().await;
-        if g.contains_key(&session_id) {
-            return Err(TeamError::TeamAlreadyExists(session_id));
+        let inner = g.entry(session_id.clone()).or_insert_with(HashMap::new);
+        if inner.contains_key(&team_name) {
+            return Err(TeamError::TeamAlreadyExists(team_name));
         }
-        let team = Arc::new(Mutex::new(Team::new(session_id.clone(), lead, team_name)));
-        g.insert(session_id, team.clone());
+        let team = Arc::new(Mutex::new(Team::new(session_id.clone(), lead, team_name.clone())));
+        inner.insert(team_name, team.clone());
         Ok(team)
     }
 
-    pub async fn get(&self, session_id: &SessionId) -> Option<Arc<Mutex<Team>>> {
-        self.teams.lock().await.get(session_id).cloned()
+    pub async fn get(&self, session_id: &SessionId, team_name: &str) -> Option<Arc<Mutex<Team>>> {
+        self.teams.lock().await.get(session_id)?.get(team_name).cloned()
     }
 
-    pub async fn delete(&self, session_id: &SessionId) -> Option<Arc<Mutex<Team>>> {
-        self.teams.lock().await.remove(session_id)
+    pub async fn list(&self, session_id: &SessionId) -> Vec<(String, Arc<Mutex<Team>>)> {
+        self.teams.lock().await.get(session_id)
+            .map(|m| m.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+            .unwrap_or_default()
+    }
+
+    /// Delete one specific team within a session. Used by TeamDelete tool.
+    /// If the inner map becomes empty, the session entry is also removed.
+    pub async fn delete_team(&self, session_id: &SessionId, team_name: &str) -> Option<Arc<Mutex<Team>>> {
+        let mut g = self.teams.lock().await;
+        let inner = g.get_mut(session_id)?;
+        let removed = inner.remove(team_name);
+        if inner.is_empty() {
+            g.remove(session_id);
+        }
+        removed
+    }
+
+    /// Drop the entire session (all teams). Used by cancel_session / conv close.
+    /// Strictly different from `delete_team`—this removes every team at once.
+    pub async fn drop_session(&self, session_id: &SessionId) -> Vec<(String, Arc<Mutex<Team>>)> {
+        let mut g = self.teams.lock().await;
+        let dropped = g.remove(session_id)
+            .map(|m| m.into_iter().collect())
+            .unwrap_or_default();
+        self.active.lock().await.remove(session_id);
+        dropped
     }
 
     /// LTR (P1.8): drop **all** teams.  Used by the app-close hook so a
@@ -127,71 +166,212 @@ impl TeamRegistry {
     /// that were dropped (handy for logging / tests).
     pub async fn clear_all(&self) -> usize {
         let mut g = self.teams.lock().await;
-        let n = g.len();
+        let n: usize = g.values().map(|m| m.len()).sum();
         g.clear();
+        self.active.lock().await.clear();
         n
     }
 
-    /// Write the current Team state to `<conv_dir>/team.json`.
+    // ── Active team accessors (replaces QueryEngine.active_team_name) ────
+    //
+    // Single owner of "the team currently driving this session". Tools
+    // mutate via `set_active` / `clear_active`; readers (tool execution
+    // context builders, chat_turn_driver) call `active`. There is no on-disk
+    // mirror of this state at this layer — `conv.json::active_team_name` is
+    // the persistence shim used to restore this value on resume, but the
+    // in-memory copy is authoritative at runtime.
+
+    /// Set the active team for the given session, replacing any previous
+    /// value. Called by `TeamCreate` (right after the team is created) and
+    /// by `TeamSwitch`.
+    pub async fn set_active(&self, session_id: &SessionId, team_name: String) {
+        self.active
+            .lock()
+            .await
+            .insert(session_id.clone(), team_name);
+    }
+
+    /// Clear the active team for the given session. Called by `TeamDelete`
+    /// **only** when the deleted team is the currently-active one (the
+    /// caller decides — registry has no opinion).
+    pub async fn clear_active(&self, session_id: &SessionId) {
+        self.active.lock().await.remove(session_id);
+    }
+
+    /// Read the active team name for the given session, if any.  Used by
+    /// the QueryEngine when building a `ToolExecutionContext`.
+    pub async fn active(&self, session_id: &SessionId) -> Option<String> {
+        self.active.lock().await.get(session_id).cloned()
+    }
+
+    /// Write the current Team state to `<conv_dir>/teams/{team_name}/config.json`.
     ///
     /// `conv_dir` should be `<aijia_home>/users/{scope}/conversations/{conv_id}`.
-    /// No-op (returns `Ok(())`) if no team exists for `session_id`.
+    /// No-op (returns `Ok(())`) if no matching team exists for `session_id`.
     /// The file is a write-through mirror; memory (this registry) stays
     /// source-of-truth.
     pub async fn persist(
         &self,
         session_id: &SessionId,
+        team_name: &str,
         conv_dir: &Path,
     ) -> Result<(), TeamPersistError> {
-        let Some(team_handle) = self.get(session_id).await else {
-            return Ok(()); // already deleted
+        let Some(team_handle) = self.get(session_id, team_name).await else {
+            return Ok(());
         };
         let snapshot = {
             let team = team_handle.lock().await;
             TeamSnapshot::from(&*team)
         };
-        let path = conv_dir.join("team.json");
+        let path = crate::runtime::agent::team_paths::TeamPaths::for_team(conv_dir, team_name).config_json();
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(TeamPersistError::Io)?;
         }
         let bytes = serde_json::to_vec_pretty(&snapshot).map_err(TeamPersistError::Serde)?;
-        write_atomic_team(&path, &bytes).map_err(TeamPersistError::Io)?;
+        crate::storage::fs_atomic::write_atomic(&path, &bytes)
+            .map_err(|e| TeamPersistError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
         Ok(())
     }
 
-    /// Remove `team.json` from disk.  Best-effort and idempotent: a
-    /// `NotFound` error is silently ignored.  Used by TeamDelete (P1.7).
-    pub fn delete_persisted(conv_dir: &Path) -> std::io::Result<()> {
-        let path = conv_dir.join("team.json");
-        match std::fs::remove_file(&path) {
+    /// Remove `teams/{team_name}/` from disk.  Best-effort and idempotent: a
+    /// `NotFound` error is silently ignored.  Used by TeamDelete (PR5).
+    ///
+    /// **Note**: TeamDelete uses [`mark_deleted_on_disk`] (soft delete) instead
+    /// of this hard delete so the team-chat history remains visible in the
+    /// drawer after dismissal.  Keeping this fn around for purge tooling.
+    pub fn delete_persisted_team(conv_dir: &Path, team_name: &str) -> std::io::Result<()> {
+        let root = crate::runtime::agent::team_paths::TeamPaths::for_team(conv_dir, team_name)
+            .team_root()
+            .expect("for_team always has team_root");
+        match std::fs::remove_dir_all(&root) {
             Ok(()) => Ok(()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
             Err(e) => Err(e),
         }
     }
+
+    /// 软删除：把 `teams/{team_name}/config.json` 里的 `deleted_at` 设为
+    /// `Utc::now()`，team-chat.jsonl / teammates/ / tasks/ 一律保留。
+    ///
+    /// 用于 TeamDelete 工具 step d：让 LLM "解散团队"在 UI 上等价于
+    /// "封存"，用户仍能回看抽屉里的握手时间线。
+    ///
+    /// 行为：
+    /// - config.json 不存在 → `Ok(())`（idempotent）
+    /// - parse 失败 → `Err(TeamPersistError::Serde)`
+    /// - 已被 mark 过（deleted_at = Some）→ 覆盖为新时间，保证幂等且不出现
+    ///   时间倒流；但通常 TeamDelete 在 in-memory registry 删除后才落盘，
+    ///   不会被反复 mark。
+    pub fn mark_deleted_on_disk(conv_dir: &Path, team_name: &str) -> Result<(), TeamPersistError> {
+        let path = crate::runtime::agent::team_paths::TeamPaths::for_team(conv_dir, team_name)
+            .config_json();
+        let bytes = match std::fs::read(&path) {
+            Ok(b) => b,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => return Err(TeamPersistError::Io(e)),
+        };
+        let mut snapshot: TeamSnapshot =
+            serde_json::from_slice(&bytes).map_err(TeamPersistError::Serde)?;
+        snapshot.deleted_at = Some(chrono::Utc::now());
+        let out = serde_json::to_vec_pretty(&snapshot).map_err(TeamPersistError::Serde)?;
+        crate::storage::fs_atomic::write_atomic(&path, &out)
+            .map_err(|e| TeamPersistError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        Ok(())
+    }
 }
 
-/// Atomic write used by `TeamRegistry::persist`.
-///
-/// Writes to a `.json.tmp` sibling first, then renames atomically.
-/// On crash mid-write the original file is left intact rather than
-/// becoming a zero-byte stub.
-fn write_atomic_team(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, bytes)?;
-    std::fs::rename(&tmp, path)?;
-    Ok(())
+// ── hydrate_from_disk ─────────────────────────────────────────────────────────
+
+#[derive(thiserror::Error, Debug)]
+pub enum TeamHydrateError {
+    #[error("io: {0}")]
+    Io(#[from] std::io::Error),
+}
+
+impl TeamRegistry {
+    /// Cold-start / resume: scan `<conv_dir>/teams/*/config.json` and rebuild
+    /// the in-memory map.  **Idempotent**: already-present team_names are
+    /// skipped.  Corrupted config.json files only emit a warning.
+    ///
+    /// Returns the number of teams successfully loaded.
+    pub async fn hydrate_from_disk(
+        &self,
+        session_id: &SessionId,
+        conv_dir: &Path,
+    ) -> Result<usize, TeamHydrateError> {
+        let teams_root = conv_dir.join("teams");
+        if !teams_root.exists() { return Ok(0); }
+        let mut count = 0;
+        for entry in std::fs::read_dir(&teams_root)? {
+            let entry = match entry { Ok(e) => e, Err(_) => continue };
+            let team_dir = entry.path();
+            if !team_dir.is_dir() { continue; }
+            let dir_name = match entry.file_name().into_string() {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+            let config = team_dir.join("config.json");
+            if !config.exists() { continue; }
+            let bytes = match std::fs::read(&config) {
+                Ok(b) => b,
+                Err(e) => { log::warn!("hydrate skip {:?}: {e}", config); continue; }
+            };
+            let snapshot: TeamSnapshot = match serde_json::from_slice(&bytes) {
+                Ok(s) => s,
+                Err(e) => { log::warn!("hydrate skip {:?}: {e}", config); continue; }
+            };
+            if snapshot.team_name != dir_name {
+                log::warn!("hydrate skip: team_name `{}` != dir `{}`", snapshot.team_name, dir_name);
+                continue;
+            }
+            let mut g = self.teams.lock().await;
+            let inner = g.entry(session_id.clone()).or_insert_with(HashMap::new);
+            if inner.contains_key(&snapshot.team_name) {
+                continue; // idempotent: already hydrated, skip
+            }
+            let lead_member = Member {
+                agent_id: snapshot.lead.agent_id.clone(),
+                name: snapshot.lead.name.clone(),
+                role: MemberRole::Lead,
+                created_at: snapshot.lead.created_at,
+                last_active_at: snapshot.lead.last_active_at,
+            };
+            let mut team = Team::new(session_id.clone(), lead_member, snapshot.team_name.clone());
+            team.created_at = snapshot.created_at;
+            for tm in &snapshot.teammates {
+                let mate = Member {
+                    agent_id: tm.agent_id.clone(),
+                    name: tm.name.clone(),
+                    role: MemberRole::Teammate {
+                        employee_id: tm.employee_id.clone().unwrap_or_default(),
+                        spawned_by: tm.spawned_by.clone().unwrap_or_else(|| snapshot.lead.agent_id.clone()),
+                    },
+                    created_at: tm.created_at,
+                    last_active_at: tm.last_active_at,
+                };
+                let _ = team.add_teammate(mate);
+            }
+            inner.insert(snapshot.team_name.clone(), Arc::new(Mutex::new(team)));
+            count += 1;
+        }
+        Ok(count)
+    }
 }
 
 // ── Serialisable snapshot DTOs ────────────────────────────────────────────────
 
 /// On-disk representation of a [`Team`], written to
-/// `<conv_dir>/team.json` by [`TeamRegistry::persist`].
+/// `<conv_dir>/teams/{team_name}/config.json` by [`TeamRegistry::persist`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TeamSnapshot {
     pub team_name: String,
     pub session_id: SessionId,
     pub created_at: chrono::DateTime<chrono::Utc>,
+    /// 软删除标记：TeamDelete 之后写入 `Utc::now()`。Some 表示该 team 已解散
+    /// 但磁盘文件仍保留供历史回看；None 表示 team 活跃中。老 snapshot 反序列化
+    /// 时为 None。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deleted_at: Option<chrono::DateTime<chrono::Utc>>,
     pub lead: MemberSnapshot,
     pub teammates: Vec<MemberSnapshot>,
 }
@@ -242,6 +422,8 @@ impl From<&Team> for TeamSnapshot {
             team_name: t.team_name.clone(),
             session_id: t.session_id.clone(),
             created_at: t.created_at,
+            // Live team 永远 None；TeamDelete 时由 mark_deleted_on_disk 写入。
+            deleted_at: None,
             lead: (&t.lead).into(),
             teammates: t.teammates.iter().map(Into::into).collect(),
         }
@@ -255,4 +437,169 @@ pub enum TeamPersistError {
     Io(#[from] std::io::Error),
     #[error("serde: {0}")]
     Serde(#[from] serde_json::Error),
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod registry_v2_tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    fn dummy_lead(name: &str) -> Member {
+        Member {
+            agent_id: AgentId::new(format!("lead-{name}")),
+            name: name.to_string(),
+            role: MemberRole::Lead,
+            created_at: chrono::Utc::now(),
+            last_active_at: chrono::Utc::now(),
+        }
+    }
+
+    #[tokio::test]
+    async fn create_two_teams_in_same_session() {
+        let reg = TeamRegistry::new();
+        let s = SessionId::new("s1");
+        reg.create(s.clone(), dummy_lead("a"), "alpha".to_string()).await.unwrap();
+        reg.create(s.clone(), dummy_lead("b"), "beta".to_string()).await.unwrap();
+        let listed = reg.list(&s).await;
+        assert_eq!(listed.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn duplicate_team_name_rejected() {
+        let reg = TeamRegistry::new();
+        let s = SessionId::new("s1");
+        reg.create(s.clone(), dummy_lead("a"), "alpha".to_string()).await.unwrap();
+        let err = reg.create(s, dummy_lead("a2"), "alpha".to_string()).await.unwrap_err();
+        assert!(matches!(err, TeamError::TeamAlreadyExists(_)));
+    }
+
+    #[tokio::test]
+    async fn delete_team_keeps_other_teams() {
+        let reg = TeamRegistry::new();
+        let s = SessionId::new("s1");
+        reg.create(s.clone(), dummy_lead("a"), "alpha".to_string()).await.unwrap();
+        reg.create(s.clone(), dummy_lead("b"), "beta".to_string()).await.unwrap();
+        reg.delete_team(&s, "alpha").await.unwrap();
+        assert!(reg.get(&s, "alpha").await.is_none());
+        assert!(reg.get(&s, "beta").await.is_some());
+    }
+
+    #[tokio::test]
+    async fn drop_session_clears_all() {
+        let reg = TeamRegistry::new();
+        let s = SessionId::new("s1");
+        reg.create(s.clone(), dummy_lead("a"), "alpha".to_string()).await.unwrap();
+        reg.create(s.clone(), dummy_lead("b"), "beta".to_string()).await.unwrap();
+        let dropped = reg.drop_session(&s).await;
+        assert_eq!(dropped.len(), 2);
+        assert_eq!(reg.list(&s).await.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn hydrate_from_empty_conv() {
+        let dir = tempdir().unwrap();
+        let reg = TeamRegistry::new();
+        let s = SessionId::new("s1");
+        let n = reg.hydrate_from_disk(&s, dir.path()).await.unwrap();
+        assert_eq!(n, 0);
+    }
+
+    #[tokio::test]
+    async fn persist_then_hydrate_roundtrip() {
+        let dir = tempdir().unwrap();
+        let reg = TeamRegistry::new();
+        let s = SessionId::new("s1");
+        reg.create(s.clone(), dummy_lead("a"), "alpha".to_string()).await.unwrap();
+        reg.persist(&s, "alpha", dir.path()).await.unwrap();
+        // drop in-memory state, re-hydrate
+        reg.drop_session(&s).await;
+        assert_eq!(reg.list(&s).await.len(), 0);
+        let n = reg.hydrate_from_disk(&s, dir.path()).await.unwrap();
+        assert_eq!(n, 1);
+        assert!(reg.get(&s, "alpha").await.is_some());
+    }
+
+    #[tokio::test]
+    async fn active_set_get_clear() {
+        let reg = TeamRegistry::new();
+        let s = SessionId::new("s-active");
+        assert_eq!(reg.active(&s).await, None);
+        reg.set_active(&s, "alpha".to_string()).await;
+        assert_eq!(reg.active(&s).await, Some("alpha".to_string()));
+        reg.set_active(&s, "beta".to_string()).await;
+        assert_eq!(reg.active(&s).await, Some("beta".to_string()));
+        reg.clear_active(&s).await;
+        assert_eq!(reg.active(&s).await, None);
+    }
+
+    #[tokio::test]
+    async fn active_is_isolated_per_session() {
+        let reg = TeamRegistry::new();
+        let s1 = SessionId::new("s-1");
+        let s2 = SessionId::new("s-2");
+        reg.set_active(&s1, "alpha".to_string()).await;
+        reg.set_active(&s2, "beta".to_string()).await;
+        assert_eq!(reg.active(&s1).await, Some("alpha".to_string()));
+        assert_eq!(reg.active(&s2).await, Some("beta".to_string()));
+        reg.clear_active(&s1).await;
+        assert_eq!(reg.active(&s1).await, None);
+        assert_eq!(reg.active(&s2).await, Some("beta".to_string()));
+    }
+
+    #[tokio::test]
+    async fn drop_session_clears_active() {
+        let reg = TeamRegistry::new();
+        let s = SessionId::new("s-drop");
+        reg.create(s.clone(), dummy_lead("a"), "alpha".to_string()).await.unwrap();
+        reg.set_active(&s, "alpha".to_string()).await;
+        reg.drop_session(&s).await;
+        assert_eq!(reg.active(&s).await, None);
+    }
+
+    #[tokio::test]
+    async fn clear_all_clears_active() {
+        let reg = TeamRegistry::new();
+        let s = SessionId::new("s-clear");
+        reg.set_active(&s, "alpha".to_string()).await;
+        reg.clear_all().await;
+        assert_eq!(reg.active(&s).await, None);
+    }
+
+    #[tokio::test]
+    async fn mark_deleted_writes_timestamp_into_config_json() {
+        let dir = tempdir().unwrap();
+        let conv_dir = dir.path().join("conversations").join("conv-soft-delete");
+        std::fs::create_dir_all(&conv_dir).unwrap();
+        let reg = TeamRegistry::new();
+        let s = SessionId::new("conv-soft-delete");
+        reg.create(s.clone(), dummy_lead("a"), "alpha".to_string()).await.unwrap();
+        reg.persist(&s, "alpha", &conv_dir).await.unwrap();
+
+        // 软删除：标记 deleted_at，文件仍在。
+        TeamRegistry::mark_deleted_on_disk(&conv_dir, "alpha").unwrap();
+
+        // 1. 目录仍存在（关键不回归点：team-chat.jsonl 等同级文件不会被波及）。
+        let team_root = crate::runtime::agent::team_paths::TeamPaths::for_team(&conv_dir, "alpha")
+            .team_root()
+            .unwrap();
+        assert!(team_root.exists(), "soft-delete must leave teams/{{name}}/ on disk");
+
+        // 2. config.json 反序列化后 deleted_at 是 Some(...)
+        let cfg_path = team_root.join("config.json");
+        let bytes = std::fs::read(&cfg_path).unwrap();
+        let snapshot: TeamSnapshot = serde_json::from_slice(&bytes).unwrap();
+        assert!(snapshot.deleted_at.is_some(), "deleted_at must be set after mark");
+    }
+
+    #[tokio::test]
+    async fn mark_deleted_is_idempotent_for_missing_team() {
+        let dir = tempdir().unwrap();
+        let conv_dir = dir.path().join("conv-missing");
+        // 故意不创建 conversations/{id}/teams/ ——配合幂等性语义：
+        // TeamDelete 在 disk 不存在时也不应失败。
+        std::fs::create_dir_all(&conv_dir).unwrap();
+        TeamRegistry::mark_deleted_on_disk(&conv_dir, "no-such-team").unwrap();
+    }
 }

@@ -57,11 +57,13 @@ pub fn render(
 }
 
 /// Convenience derivation: given the conversation root directory, build
-/// `team.json` and `tasks/` paths in the same place P1.1b / P1.5 write them.
+/// the per-team `config.json` and `tasks/` paths via `TeamPaths` so callers
+/// don't hardcode the layout (see per-team disk layout spec §3).
 /// `conv_dir` is `<aijia_home>/users/{scope}/conversations/{conv_id}`.
 pub fn render_for_conv_dir(team_name: &str, agent_name: &str, conv_dir: &Path) -> String {
-    let team_json = conv_dir.join("team.json");
-    let tasks = conv_dir.join("tasks");
+    let paths = crate::runtime::agent::team_paths::TeamPaths::for_team(conv_dir, team_name);
+    let team_json = paths.config_json();
+    let tasks = paths.tasks_dir();
     render(team_name, agent_name, &team_json, &tasks)
 }
 
@@ -96,8 +98,8 @@ mod tests {
     fn render_for_conv_dir_derives_canonical_subpaths() {
         let conv_dir = PathBuf::from("/data/users/scope/conversations/conv-7");
         let out = render_for_conv_dir("t", "n", &conv_dir);
-        assert!(out.contains("/data/users/scope/conversations/conv-7/team.json"));
-        assert!(out.contains("/data/users/scope/conversations/conv-7/tasks"));
+        assert!(out.contains("/data/users/scope/conversations/conv-7/teams/t/config.json"));
+        assert!(out.contains("/data/users/scope/conversations/conv-7/teams/t/tasks"));
     }
 
     #[test]

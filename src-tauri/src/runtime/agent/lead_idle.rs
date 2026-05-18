@@ -35,9 +35,12 @@ use crate::telemetry::{record_diagnostic, DiagnosticEvent, DiagnosticSource};
 pub type LeadKey = (SessionId, AgentId);
 
 /// Fire-and-forget callback type for Path C.  Receives the `LeadKey` that
-/// just transitioned Idle → Running and is expected to spawn (typically via
-/// `tokio::spawn`) the continuation work without blocking the caller.
-pub type WakeFn = Arc<dyn Fn(LeadKey) + Send + Sync + 'static>;
+/// just transitioned Idle → Running together with the `team_name` that the
+/// triggering message originated from (per-team disk layout v2 §6); it is
+/// expected to spawn (typically via `tokio::spawn`) the continuation work
+/// without blocking the caller.  The `team_name` lets the continuation turn
+/// pick up the right team context without re-reading `conv.json`.
+pub type WakeFn = Arc<dyn Fn(LeadKey, String) + Send + Sync + 'static>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LeadState {
@@ -154,12 +157,17 @@ impl LeadIdleSupervisor {
     /// know how to spawn a continuation.  `wake_fn` is fire-and-forget; it
     /// must internally `tokio::spawn` any async work.
     ///
+    /// `team_name` is the team the triggering message originated from
+    /// (per-team disk layout §6).  It is forwarded verbatim to `wake_fn` so
+    /// the continuation turn can use it as the authoritative team context
+    /// instead of re-reading `conv.json`.
+    ///
     /// Returns `true` when this caller won the Idle→Running CAS (and the
     /// wake callback was invoked, if any).  Returns `false` if the Lead was
     /// already Running — the pending mark is recorded and Path A will catch
     /// it at turn end, so the wake callback is intentionally NOT invoked
     /// here (the running turn will pick up the work itself).
-    pub async fn enqueue(&self, k: &LeadKey) -> bool {
+    pub async fn enqueue(&self, k: &LeadKey, team_name: String) -> bool {
         let mut s = self.state.lock().await;
         match s.get(k).copied() {
             None | Some(LeadState::Idle { .. }) => {
@@ -167,9 +175,10 @@ impl LeadIdleSupervisor {
                 drop(s);
                 self.pending_during_run.lock().await.insert(k.clone(), false);
                 log::info!(
-                    "[LeadIdleSupervisor] enqueue idle->running session={} agent={}",
+                    "[LeadIdleSupervisor] enqueue idle->running session={} agent={} team={}",
                     k.0.as_str(),
-                    k.1.as_str()
+                    k.1.as_str(),
+                    team_name
                 );
                 let ws = crate::telemetry::diagnostics_workspace();
                 record_diagnostic(
@@ -178,10 +187,10 @@ impl LeadIdleSupervisor {
                         .conversation_id(k.0.as_str())
                         .agent_id(k.1.as_str())
                         .ok(true)
-                        .payload(serde_json::json!({ "transition": "idle_to_running", "wake_fn_fired": self.wake_fn.get().is_some() })),
+                        .payload(serde_json::json!({ "transition": "idle_to_running", "team": team_name.clone(), "wake_fn_fired": self.wake_fn.get().is_some() })),
                 );
                 if let Some(wake) = self.wake_fn.get() {
-                    wake(k.clone());
+                    wake(k.clone(), team_name);
                 }
                 true
             }
@@ -189,9 +198,10 @@ impl LeadIdleSupervisor {
                 drop(s);
                 self.pending_during_run.lock().await.insert(k.clone(), true);
                 log::info!(
-                    "[LeadIdleSupervisor] enqueue already-running session={} agent={} pending=true",
+                    "[LeadIdleSupervisor] enqueue already-running session={} agent={} team={} pending=true",
                     k.0.as_str(),
-                    k.1.as_str()
+                    k.1.as_str(),
+                    team_name
                 );
                 let ws = crate::telemetry::diagnostics_workspace();
                 record_diagnostic(
@@ -200,7 +210,7 @@ impl LeadIdleSupervisor {
                         .conversation_id(k.0.as_str())
                         .agent_id(k.1.as_str())
                         .ok(true)
-                        .payload(serde_json::json!({ "transition": "already_running_pending_recorded" })),
+                        .payload(serde_json::json!({ "transition": "already_running_pending_recorded", "team": team_name })),
                 );
                 false
             }
@@ -241,8 +251,8 @@ mod tests {
         let sup = LeadIdleSupervisor::new();
         let k = key("s1", "lead-1");
         sup.mark_running(&k).await;
-        assert!(!sup.enqueue(&k).await);
-        assert!(!sup.enqueue(&k).await);
+        assert!(!sup.enqueue(&k, "default".to_string()).await);
+        assert!(!sup.enqueue(&k, "default".to_string()).await);
         assert!(sup.mark_idle(&k).await);
     }
 
@@ -253,8 +263,8 @@ mod tests {
         sup.mark_running(&k).await;
         sup.mark_idle(&k).await;
 
-        let a = sup.enqueue(&k).await;
-        let b = sup.enqueue(&k).await;
+        let a = sup.enqueue(&k, "default".to_string()).await;
+        let b = sup.enqueue(&k, "default".to_string()).await;
         assert!(a, "first caller wins CAS, told to wake");
         assert!(!b, "second caller sees Running, returns false");
         assert_eq!(sup.state_of(&k).await, Some("running"));
@@ -266,7 +276,7 @@ mod tests {
         let k = key("s1", "lead-1");
         sup.mark_running(&k).await;
         for _ in 0..10 {
-            assert!(!sup.enqueue(&k).await);
+            assert!(!sup.enqueue(&k, "default".to_string()).await);
         }
         assert!(sup.mark_idle(&k).await);
         // Path A loops back: new Running window resets pending.
@@ -278,7 +288,7 @@ mod tests {
     async fn never_observed_lead_treats_first_enqueue_as_wake() {
         let sup = LeadIdleSupervisor::new();
         let k = key("s1", "lead-fresh");
-        assert!(sup.enqueue(&k).await);
+        assert!(sup.enqueue(&k, "default".to_string()).await);
         assert_eq!(sup.state_of(&k).await, Some("running"));
     }
 
@@ -288,10 +298,37 @@ mod tests {
         let a = key("s1", "lead-a");
         let b = key("s2", "lead-b");
         sup.mark_running(&a).await;
-        sup.enqueue(&a).await;
+        sup.enqueue(&a, "default".to_string()).await;
         assert_eq!(sup.state_of(&a).await, Some("running"));
         assert_eq!(sup.state_of(&b).await, None);
-        assert!(sup.enqueue(&b).await);
+        assert!(sup.enqueue(&b, "default".to_string()).await);
         assert!(sup.mark_idle(&a).await, "a still has pending");
+    }
+
+    #[tokio::test]
+    async fn wake_fn_receives_team_name_from_enqueue() {
+        use std::sync::Mutex as StdMutex;
+        let sup = LeadIdleSupervisor::new();
+        let k = key("s1", "lead-x");
+        let captured: Arc<StdMutex<Vec<(String, String, String)>>> =
+            Arc::new(StdMutex::new(Vec::new()));
+        let captured_for_fn = captured.clone();
+        sup.set_wake_fn(Arc::new(move |key: LeadKey, team: String| {
+            captured_for_fn
+                .lock()
+                .unwrap()
+                .push((key.0.as_str().to_string(), key.1.as_str().to_string(), team));
+        }));
+        // Lead is fresh → first enqueue treated as Idle→Running and fires wake_fn.
+        assert!(sup.enqueue(&k, "team-alpha".to_string()).await);
+        let snapshot = captured.lock().unwrap().clone();
+        assert_eq!(snapshot.len(), 1, "wake_fn fires exactly once on Idle→Running");
+        assert_eq!(snapshot[0].0, "s1");
+        assert_eq!(snapshot[0].1, "lead-x");
+        assert_eq!(snapshot[0].2, "team-alpha", "team_name forwarded verbatim");
+
+        // Subsequent enqueue while Running does NOT fire wake_fn (Path A picks it up).
+        assert!(!sup.enqueue(&k, "team-beta".to_string()).await);
+        assert_eq!(captured.lock().unwrap().len(), 1);
     }
 }

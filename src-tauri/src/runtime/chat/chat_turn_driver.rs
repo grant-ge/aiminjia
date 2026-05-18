@@ -117,6 +117,22 @@ pub struct ChatTurnRequest {
     /// agent-spawn failure cannot leave a conversation with no user message
     /// on disk.
     pub pre_persisted: bool,
+    /// Force-override the active team for this turn.
+    ///
+    /// Semantics (do not confuse with "value source" — this is binary):
+    /// - `Some(name)`: this turn MUST run with `active_team_name = name`,
+    ///   regardless of what `conv.json::active_team_name` says.
+    /// - `None`:        this turn uses whatever `conv.json::active_team_name`
+    ///   currently holds (or `None` for non-team conversations).
+    ///
+    /// The `_override` suffix is load-bearing: every call site that doesn't
+    /// already know the team should leave this `None` and let
+    /// `SessionRuntime::query_engine_for_session` resolve from `conv.json`.
+    /// The only legitimate `Some` setter today is the Path C wake closure
+    /// (`wire_path_c_wake_to_self`), which knows the originating team
+    /// directly from the `LeadIdleSupervisor::enqueue` payload — and may
+    /// race ahead of `conv.json` writes.  Per-team disk layout v2 §6.
+    pub active_team_name_override: Option<String>,
 }
 
 impl ChatTurnRequest {
@@ -138,11 +154,20 @@ impl ChatTurnRequest {
             session_attachment_dirs: Vec::new(),
             pending_batch: None,
             pre_persisted: false,
+            active_team_name_override: None,
         }
     }
 
     pub fn with_persona_id_override(mut self, persona_id: String) -> Self {
         self.persona_id_override = Some(persona_id);
+        self
+    }
+
+    /// Force-override the active team for this single turn.  See
+    /// `active_team_name_override` field doc for when (and only when) this
+    /// is the right thing to call — most call sites should NOT use it.
+    pub fn with_active_team_name_override(mut self, team_name: String) -> Self {
+        self.active_team_name_override = Some(team_name);
         self
     }
 }
@@ -454,16 +479,18 @@ async fn drain_and_inject_lead_inbox_messages(
     let Some(inbox_reg) = query_engine.inbox_registry() else {
         return (0, None);
     };
+    let active_team = query_engine.active_team_name(session_id).await.unwrap_or_default();
     let Some(lead_id) = names
         .resolve(
             session_id,
+            active_team.as_str(),
             crate::runtime::tools::builtin::team_tools::LEAD_NAME,
         )
         .await
     else {
         return (0, None);
     };
-    let Some(lead_inbox) = inbox_reg.get(session_id, &lead_id).await else {
+    let Some(lead_inbox) = inbox_reg.get(session_id, active_team.as_str(), &lead_id).await else {
         return (0, None);
     };
     let drained = lead_inbox.drain_pending().await;
@@ -2423,6 +2450,7 @@ impl RuntimeChatTurnDriver {
             if let Some(lead_id) = names
                 .resolve(
                     &session_id,
+                    self.query_engine.active_team_name(&session_id).await.unwrap_or_default().as_str(),
                     crate::runtime::tools::builtin::team_tools::LEAD_NAME,
                 )
                 .await
@@ -2476,12 +2504,18 @@ impl RuntimeChatTurnDriver {
             return Ok(());
         };
         let ws = crate::telemetry::diagnostics_workspace();
+        let active_team = self
+            .query_engine
+            .active_team_name(session_id)
+            .await
+            .unwrap_or_default();
         record_diagnostic(
             &ws,
             DiagnosticEvent::new("turn.path_a.mark_idle.entry", DiagnosticSource::Backend)
                 .conversation_id(session_id.as_str())
                 .run_id(run_id.as_str())
-                .agent_id(key.1.as_str()),
+                .agent_id(key.1.as_str())
+                .team_name(active_team.as_str()),
         );
         let pending = sup.mark_idle(key).await;
         if pending {
@@ -2491,6 +2525,7 @@ impl RuntimeChatTurnDriver {
                     .conversation_id(session_id.as_str())
                     .run_id(run_id.as_str())
                     .agent_id(key.1.as_str())
+                    .team_name(active_team.as_str())
                     .ok(true)
                     .payload(serde_json::json!({ "action": "emitting_lead_has_pending_messages" })),
             );
@@ -2506,7 +2541,9 @@ impl RuntimeChatTurnDriver {
             // Path A wake: enqueue 一次让 supervisor 走 Idle→Running CAS，触发已
             // 注册的 wake_fn（与 Path C 同一条续接 turn 链路）。否则 pending
             // 信号仅以事件形式 emit，无消费者，Lead 永远不会续接 turn。
-            let woke = sup.enqueue(key).await;
+            // PR6: team_name 透传给 wake_fn，让 continuation turn 用 wake 来源
+            // team_name 而非 conv.json 持久化值（避免读 conv.json 时序问题）。
+            let woke = sup.enqueue(key, active_team.clone()).await;
             record_diagnostic(
                 &ws,
                 DiagnosticEvent::new(
@@ -2516,6 +2553,7 @@ impl RuntimeChatTurnDriver {
                 .conversation_id(session_id.as_str())
                 .run_id(run_id.as_str())
                 .agent_id(key.1.as_str())
+                .team_name(active_team.as_str())
                 .ok(woke)
                 .payload(serde_json::json!({ "transition_won": woke })),
             );
@@ -2526,6 +2564,7 @@ impl RuntimeChatTurnDriver {
                     .conversation_id(session_id.as_str())
                     .run_id(run_id.as_str())
                     .agent_id(key.1.as_str())
+                    .team_name(active_team.as_str())
                     .ok(true),
             );
         }
@@ -2552,15 +2591,22 @@ impl RuntimeChatTurnDriver {
         let sup = self.query_engine.lead_idle_supervisor()?;
         let names = self.query_engine.agent_names()?;
         let session = turn.session_id().clone();
+        let active_team = self
+            .query_engine
+            .active_team_name(&session)
+            .await
+            .unwrap_or_default();
         let ws = crate::telemetry::diagnostics_workspace();
         record_diagnostic(
             &ws,
             DiagnosticEvent::new("turn.path_a.mark_running.entry", DiagnosticSource::Backend)
-                .conversation_id(session.as_str()),
+                .conversation_id(session.as_str())
+                .team_name(active_team.as_str()),
         );
         let lead_id = names
             .resolve(
                 &session,
+                active_team.as_str(),
                 crate::runtime::tools::builtin::team_tools::LEAD_NAME,
             )
             .await?;
@@ -2571,6 +2617,7 @@ impl RuntimeChatTurnDriver {
             DiagnosticEvent::new("turn.path_a.mark_running.resolved", DiagnosticSource::Backend)
                 .conversation_id(session.as_str())
                 .agent_id(lead_id.as_str())
+                .team_name(active_team.as_str())
                 .ok(true)
                 .payload(serde_json::json!({ "state": "running" })),
         );
@@ -3160,7 +3207,7 @@ mod tests {
         let session_id = SessionId::new(session);
         let lead_agent = AgentId::new(lead_id);
         names
-            .register(&session_id, LEAD_NAME, lead_agent.clone())
+            .register(&session_id, "", LEAD_NAME, lead_agent.clone())
             .await
             .expect("Lead registration should succeed in a fresh fixture");
 
@@ -3228,7 +3275,7 @@ mod tests {
         // Simulate a turn: mark_running, a Teammate enqueues a message,
         // then mark_idle reports pending=true.
         sup.mark_running(&key).await;
-        sup.enqueue(&key).await;
+        sup.enqueue(&key, "default".to_string()).await;
 
         driver
             .mark_idle_and_maybe_emit_pending(&key.0, &RunId::new("run-pa-exit-1"), &key)

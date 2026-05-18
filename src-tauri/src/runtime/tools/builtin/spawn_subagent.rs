@@ -295,32 +295,34 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
         // ── Team handle resolution ─────────────────────────────────────────
         // Must happen before name registration so a failed team lookup doesn't
         // leave a stale entry in AgentNameRegistry.
-        let team_handle = if team_name.is_some() {
+        //
+        // Resolution rule: caller-supplied `team_name` takes precedence; if
+        // absent or empty we fall back to ctx.active_team_name (single owner
+        // via TeamRegistry). We no longer silently pick "the first team in
+        // the session" — that historical fallback masked bugs where the
+        // active team was not propagated to the tool context and the caller
+        // dispatched to the wrong team when multiple were present.
+        let team_handle = if let Some(caller_team) = team_name.as_deref().or(ctx.active_team_name.as_deref()) {
             let session_id = ctx.session_id.clone();
             let team = ctx
                 .team_registry()
-                .get(&session_id)
+                .get(&session_id, caller_team)
                 .await
                 .ok_or_else(|| {
-                    ToolError::ExecutionFailed(
-                        "no team in this session — call TeamCreate first".into(),
-                    )
+                    ToolError::ExecutionFailed(format!(
+                        "team `{caller_team}` not found in this session — call TeamCreate first or check the spelling"
+                    ))
                 })?;
-            // Note: we don't reject on team_name mismatch because session_id
-            // uniqueness is the authoritative lookup key.  A caller who uses
-            // a different name string is probably just out of sync with the
-            // UI label; warn but proceed.
-            {
-                let guard = team.lock().await;
-                if let Some(tn) = &team_name {
-                    if guard.team_name != *tn {
-                        log::warn!(
-                            "[spawn_subagent] team_name mismatch: caller said {:?} \
-                             but session has team {:?}; proceeding with session team",
-                            tn,
-                            guard.team_name
-                        );
-                    }
+            // Surface unexpected mismatches between the caller-supplied name
+            // and the active team to help diagnose stale UI labels, but the
+            // caller-supplied name is authoritative for routing.
+            if let (Some(caller), Some(active)) = (&team_name, &ctx.active_team_name) {
+                if caller != active {
+                    log::warn!(
+                        "[spawn_subagent] caller-supplied team_name {:?} differs from active team {:?}; using caller's",
+                        caller,
+                        active
+                    );
                 }
             }
             Some(team)
@@ -375,6 +377,12 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
             let agent_id = AgentId::new(format!("agent-{}", uuid::Uuid::new_v4()));
             // name is guaranteed Some here (checked above after team_handle check)
             if let Some(ref agent_name) = name {
+                // Resolve team_name from the active team handle so the registry
+                // key matches what cleanup_teammate will use (PR4).
+                let team_name_for_reg: String = {
+                    let guard = team_handle.as_ref().unwrap().lock().await;
+                    guard.team_name.clone()
+                };
                 let ws = crate::telemetry::diagnostics_workspace();
                 record_diagnostic(
                     &ws,
@@ -383,15 +391,17 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
                         .run_id(ctx.run_id.as_str())
                         .tool_call_id(ctx.tool_call_id.as_str())
                         .agent_id(agent_id.as_str())
+                        .team_name(team_name_for_reg.as_str())
                         .payload(serde_json::json!({ "agent_name": agent_name })),
                 );
                 ctx.agent_names()
-                    .register(&ctx.session_id, agent_name, agent_id.clone())
+                    .register(&ctx.session_id, &team_name_for_reg, agent_name, agent_id.clone())
                     .await
                     .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
                 log::info!(
-                    "[spawn_subagent][diag] teammate name registered: session={} agent_id={} agent_name={}",
+                    "[spawn_subagent][diag] teammate name registered: session={} team={} agent_id={} agent_name={}",
                     ctx.session_id.as_str(),
+                    team_name_for_reg,
                     agent_id.as_str(),
                     agent_name
                 );
@@ -448,6 +458,8 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
             let team_name_str: String;
             {
                 let mut team_guard = team.lock().await;
+                // Capture team_name first so rollback unregister uses the same key.
+                let tname_now = team_guard.team_name.clone();
                 let member = crate::runtime::agent::Member {
                     agent_id: agent_id.clone(),
                     name: agent_name_str.clone(),
@@ -461,13 +473,30 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
                 if let Err(e) = team_guard.add_teammate(member) {
                     // Unregister name on failure to keep state consistent.
                     ctx.agent_names()
-                        .unregister(&ctx.session_id, &agent_name_str)
+                        .unregister(&ctx.session_id, &tname_now, &agent_name_str)
                         .await;
                     return Err(ToolError::ExecutionFailed(format!(
                         "Failed to join team as Teammate: {e}"
                     )));
                 }
-                team_name_str = team_guard.team_name.clone();
+                team_name_str = tname_now;
+            }
+
+            // 持久化 team.json（teammate 加入后名册更新）。fire-and-forget
+            // tokio::spawn 避免阻塞 spawn 流程；teammate 第一轮 Read 之前
+            // 大概率已落盘。
+            if let Some(ref conv_dir) = ctx.conv_dir {
+                let reg = ctx.team_registry().clone();
+                let sid = ctx.session_id.clone();
+                let dir = conv_dir.clone();
+                let tname_persist = team_name_str.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = reg.persist(&sid, &tname_persist, &dir).await {
+                        log::warn!(
+                            "[SpawnTeammate] persist config.json failed: {e}"
+                        );
+                    }
+                });
             }
 
             let inbox = AgentInbox::new(64);
@@ -478,10 +507,11 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
             let teammate_cancel = launch_ctx.cancellation.child_token();
             if let Some(reg) = ctx.cancellation_registry.clone() {
                 let sid = launch_ctx.session_id.clone();
+                let tname = team_name_str.clone();
                 let aid = agent_id.clone();
                 let tok = teammate_cancel.clone();
                 tokio::spawn(async move {
-                    reg.register(&sid, aid, tok).await;
+                    reg.register(&sid, &tname, aid, tok).await;
                 });
             }
 
@@ -491,10 +521,11 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
             // via SendMessage but still runs).
             if let Some(reg) = ctx.inbox_registry.clone() {
                 let sid = launch_ctx.session_id.clone();
+                let tname = team_name_str.clone();
                 let aid = agent_id.clone();
                 let ibx = inbox.clone();
                 tokio::spawn(async move {
-                    reg.register(&sid, aid, ibx).await;
+                    reg.register(&sid, &tname, aid, ibx).await;
                 });
             }
 
@@ -503,7 +534,7 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
                 agent_name: name.clone(),
                 kind: TranscriptKind::Teammate,
                 employee_id: employee_id.clone(),
-                team_id: Some(launch_ctx.session_id.as_str().to_string()),
+                team_id: Some(team_name_str.clone()),
                 spawned_by,
                 spawned_at: chrono::Utc::now(),
                 model: request.effective_model.clone(),
@@ -521,6 +552,7 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
             let worker_ctx = TeammateWorkerCtx {
                 agent_id: agent_id.clone(),
                 session_id: launch_ctx.session_id.clone(),
+                team_name: team_name_str.clone(),
                 conv_id: launch_ctx.session_id.as_str().to_string(),
                 cancel: teammate_cancel,
                 inbox: inbox.clone(),
@@ -543,6 +575,7 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
                     .run_id(ctx.run_id.as_str())
                     .tool_call_id(ctx.tool_call_id.as_str())
                     .agent_id(agent_id.as_str())
+                    .team_name(team_name_str.as_str())
                     .payload(serde_json::json!({
                         "agent_name": agent_name_str,
                         "team_name": team_name_str,
@@ -557,6 +590,7 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
             let conv_id_for_diag = ctx.session_id.as_str().to_string();
             let run_id_for_diag = ctx.run_id.as_str().to_string();
             let tool_call_id_for_diag = ctx.tool_call_id.as_str().to_string();
+            let team_name_for_diag = team_name_str.clone();
             record_diagnostic(
                 &ws,
                 DiagnosticEvent::new("tool.spawn_subagent.teammate.spawning", DiagnosticSource::Backend)
@@ -564,6 +598,7 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
                     .run_id(&run_id_for_diag)
                     .tool_call_id(&tool_call_id_for_diag)
                     .agent_id(&agent_id_for_diag)
+                    .team_name(team_name_for_diag.as_str())
                     .ok(true)
                     .payload(serde_json::json!({ "agent_name": agent_name_for_spawn })),
             );
@@ -585,6 +620,7 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
                         DiagnosticEvent::new("tool.spawn_subagent.teammate.worker_exited_error", DiagnosticSource::Backend)
                             .conversation_id(&conv_id_for_diag)
                             .agent_id(&agent_id_for_diag)
+                            .team_name(team_name_for_diag.as_str())
                             .error(e.to_string()),
                     );
                 }

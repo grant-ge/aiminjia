@@ -603,13 +603,36 @@ fn build_default_catalog() -> ToolCatalog {
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
             "TeamDelete",
-            "退出 Team 模式：把当前 session 的 Team 从注册表移除，所有 Teammate 收到收件箱关闭信号会自行清理退出，session 内的 name 注册全部清空。Team 不存在时静默 noop。",
+            "解散一个具名 team：取消该 team 内所有 Teammate 的 cancel token、移除 in-memory entry、删除 teams/{team_name}/ 目录、清理三元 key 注册表。team_name 省略时使用当前 active team；team 不存在静默 noop。一个 conversation 可能有多个 team，删除一个不影响其他。",
         )
         .with_kind(ToolKind::Support),
         json!({
             "type": "object",
             "required": [],
-            "properties": {}
+            "properties": {
+                "team_name": {
+                    "type": "string",
+                    "description": "要删除的 team 名称。省略则取当前 active team。"
+                }
+            }
+        }),
+    ));
+
+    c.insert(CatalogEntry::new(
+        ToolDefinition::new(
+            "TeamSwitch",
+            "切换当前 conversation 的 active team。Lead 之后的 tool 调用（task / send_message 等）会路由到新 team 的目录。team 必须已存在（先通过 TeamCreate 创建）。一个 conversation 内同一时刻只有一个 active team，切换不删除老 team。",
+        )
+        .with_kind(ToolKind::Support),
+        json!({
+            "type": "object",
+            "required": ["team_name"],
+            "properties": {
+                "team_name": {
+                    "type": "string",
+                    "description": "目标 team 名称（必须已通过 TeamCreate 创建）。"
+                }
+            }
         }),
     ));
 
@@ -875,6 +898,7 @@ pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
     "TaskStop",
     "TeamCreate",
     "TeamDelete",
+    "TeamSwitch",
     "TeammateStop",
     "SendMessage",
     // Agenda tools (spec §7) — request-scoped, organizer 由 runtime 注入

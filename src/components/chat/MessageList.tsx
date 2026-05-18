@@ -171,8 +171,8 @@ export function MessageList() {
     }
   }
 
-  const handleOpenTeamDrawer = () => {
-    if (activeConversationId) openDrawer(activeConversationId)
+  const handleOpenTeamDrawer = (teamId: string) => {
+    if (activeConversationId) openDrawer(activeConversationId, teamId)
   }
 
   return (

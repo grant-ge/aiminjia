@@ -100,7 +100,11 @@ export function useTeamOverview(conversationId: string | null): UseTeamOverviewR
     }),
   )
 
-  // Refetch on team-mutating tool completions.
+  // Refetch on team-mutating tool completions.  This is the single
+  // backend-bound subscription for team state changes: TeamCreate /
+  // TeamDelete / SendMessage / Agent spawn / TeammateStop all surface
+  // through PostToolUse-style `tool:completed` events, which is enough
+  // to keep the overview in sync without adding bespoke team:* events.
   useTauriEvent(() =>
     onToolCompleted((message) => {
       if (!conversationId) return

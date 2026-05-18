@@ -96,12 +96,14 @@ pub enum EmitOutcome {
 
 /// Push a `<task-notification>` user-message into the Lead's inbox.
 ///
-/// `actor_name` should be the AgentNameRegistry name of the agent that
-/// triggered the change (typically the Teammate that owns the calling tool
-/// call).  When the actor IS the Lead, the function is a no-op.
+/// `team_name` is the team to look up the Lead in.  `actor_name` should be
+/// the AgentNameRegistry name of the agent that triggered the change
+/// (typically the Teammate that owns the calling tool call).  When the actor
+/// IS the Lead, the function is a no-op.
 pub async fn emit_to_lead(
     deps: &TaskNotificationDeps,
     session: &SessionId,
+    team_name: &str,
     actor_name: &str,
     task_id: &str,
     action: TaskAction,
@@ -110,18 +112,19 @@ pub async fn emit_to_lead(
 ) -> EmitOutcome {
     use crate::runtime::tools::builtin::team_tools::LEAD_NAME;
 
-    if deps.team_registry.get(session).await.is_none() {
+    // PR2 compat: check if any team exists for this session.
+    if deps.team_registry.list(session).await.is_empty() {
         return EmitOutcome::NoTeam;
     }
     if actor_name == LEAD_NAME {
         return EmitOutcome::SkippedSelfActor;
     }
 
-    let lead_id = match deps.agent_names.resolve(session, LEAD_NAME).await {
+    let lead_id = match deps.agent_names.resolve(session, team_name, LEAD_NAME).await {
         Some(id) => id,
         None => return EmitOutcome::LeadNotResolved,
     };
-    let inbox = match deps.inbox_registry.get(session, &lead_id).await {
+    let inbox = match deps.inbox_registry.get(session, team_name, &lead_id).await {
         Some(i) => i,
         None => return EmitOutcome::LeadNoInbox,
     };
@@ -139,7 +142,7 @@ pub async fn emit_to_lead(
 
     if let Some(sup) = deps.lead_idle.as_ref() {
         let key = (session.clone(), lead_id);
-        let _wake = sup.enqueue(&key).await;
+        let _wake = sup.enqueue(&key, team_name.to_string()).await;
         // Wake-spawn wiring lands with the chat_turn_driver follow-up; here
         // we only need the supervisor to record the pending bit.
     }

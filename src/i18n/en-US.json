@@ -933,5 +933,44 @@
     "custom": "Custom",
     "allCategory": "All",
     "defaultCategory": "General"
+  },
+  "team": {
+    "button": {
+      "label": "Teams",
+      "tooltip": "View teams in this conversation"
+    },
+    "drawer": {
+      "title": "Teams",
+      "empty": "No teams yet in this conversation"
+    },
+    "session": {
+      "untitled": "Team chat",
+      "live": "Live",
+      "dismissed": "Dismissed",
+      "dismissedAt": "Dismissed at {{time}}"
+    },
+    "chat": {
+      "empty": "No team chat yet",
+      "emptyText": "(empty message)",
+      "sendFailed": "⚠ Send failed",
+      "lifecycle": {
+        "teamCreated": "Team created",
+        "teamCreatedWithName": "Team created · {{teamName}}",
+        "teamDeleted": "Team dismissed",
+        "agentJoined": "{{agentName}} joined the team",
+        "agentLeft": "{{agentName}} left the team"
+      },
+      "protocol": {
+        "shutdownRequest": "{{from}} asks {{to}} to leave the team",
+        "shutdownRequestWithReason": "{{from}} asks {{to}} to leave the team · {{reason}}",
+        "shutdownApprove": "{{from}} agreed to leave",
+        "shutdownReject": "{{from}} declined to leave",
+        "shutdownRejectWithReason": "{{from}} declined to leave · {{reason}}",
+        "planApprovalRequest": "{{from}} asks {{to}} to approve the plan",
+        "planApprove": "{{from}} approved the plan",
+        "planReject": "{{from}} suggested changes: {{feedback}}",
+        "planRejectNoFeedback": "{{from}} rejected the plan"
+      }
+    }
   }
 }

@@ -311,7 +311,7 @@ impl SessionRuntime {
             "[session_runtime] build_driver_for_turn conv={}",
             turn.session_id().as_str()
         );
-        let driver = self.build_driver_for_turn(&turn);
+        let driver = self.build_driver_for_turn(&turn, request.active_team_name_override.clone()).await;
         log::info!(
             "[session_runtime] run_chat_turn starting conv={}",
             turn.session_id().as_str()
@@ -419,7 +419,7 @@ impl SessionRuntime {
             let sid = session_id.clone();
             tokio::spawn(async move {
                 if let Some(reg) = team_reg {
-                    reg.delete(&sid).await;
+                    reg.drop_session(&sid).await;
                 }
                 if let Some(reg) = name_reg {
                     reg.drop_session(&sid).await;
@@ -556,8 +556,42 @@ impl SessionRuntime {
     }
 
     /// Build a `RuntimeChatTurnDriver` scoped to the given turn's session.
-    fn build_driver_for_turn(&self, turn: &TurnState) -> RuntimeChatTurnDriver {
+    ///
+    /// `active_team_name_override` is the binary force-override flag from
+    /// `ChatTurnRequest::active_team_name_override`:
+    /// - `Some(name)`: this turn runs against team `name`, bypassing the
+    ///   `conv.json::active_team_name` read.  Today only Path C wake uses
+    ///   this, because it knows the team from the supervisor enqueue
+    ///   payload and may race ahead of the conv.json write.
+    /// - `None`:        the QueryEngine's normal `conv.json` read decides
+    ///   the active team (or `None` for non-team conversations).
+    ///
+    /// Async because we may need to `set_active` on the shared
+    /// `TeamRegistry` (either from the override or from a fresh
+    /// `conv.json` read at hydration time).
+    async fn build_driver_for_turn(
+        &self,
+        turn: &TurnState,
+        active_team_name_override: Option<String>,
+    ) -> RuntimeChatTurnDriver {
         let query_engine = self.query_engine_for_session(turn.session_id());
+        // Determine which team the turn should run against and write it into
+        // the registry so attach_ltr_registries can derive ctx.active_team_name.
+        // Priority: override > conv.json (if no value already present).
+        if let Some(ref reg) = self.team_registry {
+            let session_id = turn.session_id();
+            if let Some(team) = active_team_name_override {
+                reg.set_active(session_id, team).await;
+            } else if reg.active(session_id).await.is_none() {
+                if let Some(host) = self.host.as_ref() {
+                    if let Some(dir) = host.resolve_conv_dir(session_id.as_str()) {
+                        if let Some(name) = read_active_team_name_from_conv_dir(&dir) {
+                            reg.set_active(session_id, name).await;
+                        }
+                    }
+                }
+            }
+        }
         let mut driver = if let Some(ref executor) = self.llm_executor {
             // Compatibility marker for review tests: with_llm_executor_and_permission_control_plane(
             RuntimeChatTurnDriver::with_llm_executor_and_control_planes(
@@ -723,6 +757,17 @@ impl SessionRuntime {
             .get(session_id.as_str())
             .cloned()
     }
+}
+
+/// Read `conv.json` from the conversation directory and return the
+/// `active_team_name` field if present.  Best-effort — any IO / parse
+/// error silently returns `None` so it doesn't block the turn.
+fn read_active_team_name_from_conv_dir(conv_dir: &std::path::Path) -> Option<String> {
+    let path = conv_dir.join("conv.json");
+    let bytes = std::fs::read(&path).ok()?;
+    let meta: crate::storage::file_store::types::ConversationMeta =
+        serde_json::from_slice(&bytes).ok()?;
+    meta.active_team_name
 }
 
 #[cfg(test)]

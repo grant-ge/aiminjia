@@ -64,6 +64,11 @@ pub struct DiagnosticEvent {
     pub tool_call_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_id: Option<String>,
+    /// PR8 (per-team disk layout §6.4): team this event belongs to.
+    /// Optional because not all events are team-scoped (e.g. global tool
+    /// invocations, persona dispatch).  Set via `.team_name(...)` builder.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub team_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub interaction_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -96,6 +101,7 @@ impl DiagnosticEvent {
             client_message_id: None,
             tool_call_id: None,
             agent_id: None,
+            team_name: None,
             interaction_id: None,
             task_id: None,
             command: None,
@@ -143,6 +149,17 @@ impl DiagnosticEvent {
 
     pub fn agent_id(mut self, value: impl Into<String>) -> Self {
         self.agent_id = Some(value.into());
+        self
+    }
+
+    /// PR8 (per-team disk layout §6.4): tag this event with the team it
+    /// belongs to.  Empty strings are dropped to keep the field meaningful
+    /// (Lead-only / pre-team events leave it `None`).
+    pub fn team_name(mut self, value: impl Into<String>) -> Self {
+        let v = value.into();
+        if !v.is_empty() {
+            self.team_name = Some(v);
+        }
         self
     }
 

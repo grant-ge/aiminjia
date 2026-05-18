@@ -25,7 +25,7 @@ pub async fn register_builtin_tools(registry: &ToolRegistry) {
         TaskUpdateRuntimeTool,
     };
     use crate::runtime::tools::builtin::team_tools::{
-        TeamCreateRuntimeTool, TeamDeleteRuntimeTool,
+        TeamCreateRuntimeTool, TeamDeleteRuntimeTool, TeamSwitchRuntimeTool,
     };
     use crate::runtime::tools::builtin::teammate_stop::TeammateStopRuntimeTool;
     use crate::runtime::tools::builtin::workspace::{
@@ -72,6 +72,9 @@ pub async fn register_builtin_tools(registry: &ToolRegistry) {
         .await;
     registry
         .register_runtime(Arc::new(TeamDeleteRuntimeTool))
+        .await;
+    registry
+        .register_runtime(Arc::new(TeamSwitchRuntimeTool))
         .await;
     registry
         .register_runtime(Arc::new(TeammateStopRuntimeTool))

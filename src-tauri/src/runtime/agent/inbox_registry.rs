@@ -1,10 +1,9 @@
 //! Per-process registry mapping `AgentId → Arc<AgentInbox>` for SendMessage
 //! routing.
 //!
-//! Populated when a Teammate idle loop boots (P1.6 -> P2.2 wiring), released
-//! when the Teammate exits cleanup or its session is dropped.  Lookups are
-//! by `AgentId` because the session-scoped name → id resolution happens
-//! upstream in `AgentNameRegistry`.
+//! Keyed by `(SessionId, TeamName, AgentId)` so that multiple teams in the
+//! same session remain isolated and the same agent_id in different teams
+//! doesn't cross-contaminate.  The team dimension was added in PR4.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -13,12 +12,10 @@ use tokio::sync::Mutex;
 use crate::runtime::agent::inbox::AgentInbox;
 use crate::runtime::ids::{AgentId, SessionId};
 
-/// Tracks `(session_id, agent_id)` → inbox so SendMessage can deliver across
-/// the worker boundary.  We key by `(session, agent)` so that re-using an
-/// agent_id across two sessions (in tests, mostly) doesn't cross-contaminate.
+/// Three-level nested map: `session → team_name → agent_id → inbox`.
 #[derive(Debug, Default)]
 pub struct InboxRegistry {
-    by_session: Mutex<HashMap<SessionId, HashMap<AgentId, Arc<AgentInbox>>>>,
+    by_session: Mutex<HashMap<SessionId, HashMap<String, HashMap<AgentId, Arc<AgentInbox>>>>>,
 }
 
 impl InboxRegistry {
@@ -29,26 +26,49 @@ impl InboxRegistry {
     pub async fn register(
         &self,
         session: &SessionId,
+        team_name: &str,
         agent_id: AgentId,
         inbox: Arc<AgentInbox>,
     ) {
         let mut g = self.by_session.lock().await;
         g.entry(session.clone())
             .or_default()
+            .entry(team_name.to_string())
+            .or_default()
             .insert(agent_id, inbox);
     }
 
-    pub async fn get(&self, session: &SessionId, agent_id: &AgentId) -> Option<Arc<AgentInbox>> {
+    pub async fn get(
+        &self,
+        session: &SessionId,
+        team_name: &str,
+        agent_id: &AgentId,
+    ) -> Option<Arc<AgentInbox>> {
         self.by_session
             .lock()
             .await
             .get(session)
+            .and_then(|m| m.get(team_name))
             .and_then(|m| m.get(agent_id).cloned())
     }
 
-    pub async fn unregister(&self, session: &SessionId, agent_id: &AgentId) {
-        if let Some(m) = self.by_session.lock().await.get_mut(session) {
-            m.remove(agent_id);
+    pub async fn unregister(&self, session: &SessionId, team_name: &str, agent_id: &AgentId) {
+        if let Some(by_team) = self.by_session.lock().await.get_mut(session) {
+            if let Some(m) = by_team.get_mut(team_name) {
+                m.remove(agent_id);
+            }
+        }
+    }
+
+    /// Remove all inboxes for a single team within a session (idempotent sweep).
+    /// Returns the number of inboxes removed.
+    pub async fn unregister_team(&self, session: &SessionId, team_name: &str) -> usize {
+        let mut g = self.by_session.lock().await;
+        if let Some(by_team) = g.get_mut(session) {
+            let removed = by_team.remove(team_name).map(|m| m.len()).unwrap_or(0);
+            removed
+        } else {
+            0
         }
     }
 
@@ -57,8 +77,8 @@ impl InboxRegistry {
         self.by_session.lock().await.remove(session);
     }
 
-    /// Drop everything.  Used by the app-close hook (P1.8) for symmetry with
-    /// the other LTR registries.
+    /// Drop everything.  Used by the app-close hook for symmetry with the
+    /// other LTR registries.
     pub async fn clear_all(&self) -> usize {
         let mut g = self.by_session.lock().await;
         let n = g.len();
@@ -77,13 +97,15 @@ mod tests {
     async fn register_and_get_roundtrip() {
         let reg = InboxRegistry::new();
         let session = SessionId::new("s1");
+        let team = "alpha";
         let id = AgentId::new("a1");
         let inbox = AgentInbox::new(4);
-        reg.register(&session, id.clone(), inbox.clone()).await;
+        reg.register(&session, team, id.clone(), inbox.clone()).await;
 
-        let resolved = reg.get(&session, &id).await.expect("inbox should resolve");
-        // Push via the resolved handle, drain via the original — they're the
-        // same inbox.
+        let resolved = reg
+            .get(&session, team, &id)
+            .await
+            .expect("inbox should resolve");
         resolved
             .send(InboxItem::ChatMessage {
                 message: StructuredMessage::text("ping"),
@@ -102,18 +124,40 @@ mod tests {
         let reg = InboxRegistry::new();
         let s1 = SessionId::new("s1");
         let s2 = SessionId::new("s2");
+        let team = "alpha";
         let id = AgentId::new("shared-id");
         let inbox1 = AgentInbox::new(4);
         let inbox2 = AgentInbox::new(4);
-        reg.register(&s1, id.clone(), inbox1.clone()).await;
-        reg.register(&s2, id.clone(), inbox2.clone()).await;
+        reg.register(&s1, team, id.clone(), inbox1.clone()).await;
+        reg.register(&s2, team, id.clone(), inbox2.clone()).await;
 
-        assert!(reg.get(&s1, &id).await.is_some());
-        assert!(reg.get(&s2, &id).await.is_some());
+        assert!(reg.get(&s1, team, &id).await.is_some());
+        assert!(reg.get(&s2, team, &id).await.is_some());
 
         reg.drop_session(&s1).await;
-        assert!(reg.get(&s1, &id).await.is_none());
+        assert!(reg.get(&s1, team, &id).await.is_none());
         // s2 untouched.
-        assert!(reg.get(&s2, &id).await.is_some());
+        assert!(reg.get(&s2, team, &id).await.is_some());
+    }
+
+    #[tokio::test]
+    async fn cross_team_isolation() {
+        let reg = InboxRegistry::new();
+        let s = SessionId::new("s1");
+        let id = AgentId::new("a1");
+        let inbox_a = AgentInbox::new(4);
+        let inbox_b = AgentInbox::new(4);
+        reg.register(&s, "team-alpha", id.clone(), inbox_a.clone())
+            .await;
+        reg.register(&s, "team-beta", id.clone(), inbox_b.clone())
+            .await;
+
+        assert!(reg.get(&s, "team-alpha", &id).await.is_some());
+        assert!(reg.get(&s, "team-beta", &id).await.is_some());
+
+        // Unregister alpha — beta untouched.
+        reg.unregister_team(&s, "team-alpha").await;
+        assert!(reg.get(&s, "team-alpha", &id).await.is_none());
+        assert!(reg.get(&s, "team-beta", &id).await.is_some());
     }
 }

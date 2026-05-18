@@ -19,6 +19,8 @@ use app_lib::runtime::ids::{AgentId, SessionId};
 use app_lib::runtime::messaging::StructuredMessage;
 use app_lib::runtime::tools::builtin::team_tools::LEAD_NAME;
 
+const TEAM_NAME: &str = "test-team";
+
 #[test]
 fn envelope_has_required_attributes_and_escapes() {
     let xml = build_envelope("t-1", "alice", TaskAction::Updated, "Investigate <bug>", "completed");
@@ -44,16 +46,16 @@ async fn setup_team_with_lead(
         last_active_at: chrono::Utc::now(),
     };
     team_reg
-        .create(session.clone(), lead, "test-team".to_string())
+        .create(session.clone(), lead, TEAM_NAME.to_string())
         .await
         .unwrap();
     name_reg
-        .register(session, LEAD_NAME, AgentId::new("lead-id"))
+        .register(session, TEAM_NAME, LEAD_NAME, AgentId::new("lead-id"))
         .await
         .unwrap();
     let lead_inbox = AgentInbox::new(8);
     inbox_reg
-        .register(session, AgentId::new("lead-id"), lead_inbox.clone())
+        .register(session, TEAM_NAME, AgentId::new("lead-id"), lead_inbox.clone())
         .await;
     (team_reg, name_reg, inbox_reg, lead_inbox)
 }
@@ -73,6 +75,7 @@ async fn delivered_when_actor_is_teammate_and_team_exists() {
     let outcome = emit_to_lead(
         &deps,
         &session,
+        TEAM_NAME,
         "researcher",
         "task-42",
         TaskAction::Claimed,
@@ -114,6 +117,7 @@ async fn no_team_path_skipped() {
     let outcome = emit_to_lead(
         &deps,
         &session,
+        TEAM_NAME,
         "researcher",
         "t-1",
         TaskAction::Created,
@@ -137,6 +141,7 @@ async fn lead_actor_does_not_notify_itself() {
     let outcome = emit_to_lead(
         &deps,
         &session,
+        TEAM_NAME,
         LEAD_NAME,
         "t-1",
         TaskAction::Created,
