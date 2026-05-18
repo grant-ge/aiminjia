@@ -37,6 +37,31 @@ pub fn turn_stages_enabled() -> bool {
         .unwrap_or(false)
 }
 
+/// Freestanding emit helper for stage transitions fired from contexts that
+/// can't easily hold a `&TurnStageEmitter` — e.g. the closure passed to
+/// `prepare_messages_for_llm` that runs `compact_summary` and needs to emit
+/// `Compacting` without capturing `&self` from the driver.  Respects the
+/// feature flag (no-op when off).
+pub async fn emit_oneshot(
+    bus: &RuntimeEventBus,
+    session_id: SessionId,
+    run_id: RunId,
+    stage: TurnStage,
+) {
+    if !turn_stages_enabled() {
+        return;
+    }
+    let now_ms = now_unix_ms();
+    if let Err(e) = bus
+        .emit(RuntimeEvent::turn_stage_changed(
+            session_id, run_id, stage, now_ms,
+        ))
+        .await
+    {
+        log::warn!("[turn-stage] emit_oneshot failed: {e}");
+    }
+}
+
 /// Wall-clock milliseconds since the unix epoch.  We use this instead of
 /// `Instant` for stage_started_at_ms because the frontend needs a comparable
 /// timestamp to compute "已 12s" elapsed labels relative to its own clock.
@@ -96,6 +121,14 @@ impl TurnStageEmitter {
 
     pub fn is_enabled(&self) -> bool {
         self.enabled
+    }
+
+    /// Builder-style override for the feature flag.  Production code never
+    /// calls this — it relies on env-var detection — but tests and
+    /// PR4 settings plumbing override the value explicitly.
+    pub fn with_enabled(mut self, enabled: bool) -> Self {
+        self.enabled = enabled;
+        self
     }
 
     async fn transition(&self, next: TurnStage) {

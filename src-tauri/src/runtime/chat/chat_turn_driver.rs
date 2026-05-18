@@ -1725,6 +1725,12 @@ impl RuntimeChatTurnDriver {
             let preprocess_config = PreprocessConfig::default();
             let conversation_id = config.conversation_id.as_str().to_string();
             let compact_client_ref = self.compact_client.clone();
+            // Captures for the Compacting stage emit inside the summary closure.
+            // The closure runs `async move` so it can't reach `&self`; we hand
+            // it a bus clone + ids.
+            let stage_bus = self.event_bus.clone();
+            let stage_session = turn.session_id().clone();
+            let stage_run = turn.run_id().clone();
             let prepared = prepare_messages_for_llm(
                 std::mem::take(&mut state.messages),
                 conversation_id.as_str(),
@@ -1736,7 +1742,17 @@ impl RuntimeChatTurnDriver {
                 |messages| {
                     let conversation_id = conversation_id.clone();
                     let compact_client = compact_client_ref.clone();
+                    let bus = stage_bus.clone();
+                    let session_id = stage_session.clone();
+                    let run_id = stage_run.clone();
                     async move {
+                        crate::runtime::chat::turn_stage::emit_oneshot(
+                            &bus,
+                            session_id,
+                            run_id,
+                            crate::runtime::events::TurnStage::Compacting,
+                        )
+                        .await;
                         match compact_client.as_ref() {
                             Some(client) => client.compact_summary(conversation_id.as_str(), &messages).await,
                             None => {
@@ -1856,6 +1872,9 @@ impl RuntimeChatTurnDriver {
             {
                 Ok(result) => result,
                 Err(TurnError::PromptTooLong(message)) => {
+                    let recovery_stage_bus = self.event_bus.clone();
+                    let recovery_stage_session = turn.session_id().clone();
+                    let recovery_stage_run = turn.run_id().clone();
                     let prepared = prepare_messages_for_llm(
                         std::mem::take(&mut state.messages),
                         conversation_id.as_str(),
@@ -1867,7 +1886,17 @@ impl RuntimeChatTurnDriver {
                         |messages| {
                             let conversation_id = conversation_id.clone();
                             let compact_client = compact_client_ref.clone();
+                            let bus = recovery_stage_bus.clone();
+                            let session_id = recovery_stage_session.clone();
+                            let run_id = recovery_stage_run.clone();
                             async move {
+                                crate::runtime::chat::turn_stage::emit_oneshot(
+                                    &bus,
+                                    session_id,
+                                    run_id,
+                                    crate::runtime::events::TurnStage::Compacting,
+                                )
+                                .await;
                                 match compact_client.as_ref() {
                                     Some(client) => client.compact_summary(conversation_id.as_str(), &messages).await,
                                     None => {

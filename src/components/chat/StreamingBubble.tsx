@@ -80,21 +80,32 @@ function deriveStageStatus(
     case 'submitted':
       return { icon: 'breath', label: t('turnStage.submitted') }
     case 'waitingLlm':
-      return { icon: 'breath', label: t('turnStage.waitingLlm') + elapsedSuffix }
+      // Once any content has streamed, the markdown bubble itself is the
+      // "we're alive" signal — hide the label so we don't double-render
+      // "等待模型响应 · 已 12s" alongside fresh text.  Same UX as Streaming.
+      return {
+        icon: 'breath',
+        label: hasContent ? '' : t('turnStage.waitingLlm') + elapsedSuffix,
+      }
     case 'streaming':
       return {
         icon: 'breath',
         label: hasContent ? '' : t('turnStage.streaming'),
       }
     case 'tools': {
-      const n = stage.running.length
+      // Prefer the live executing-tool count from toolExecutions[] over the
+      // batch-snapshot in stage.running.  As individual tools complete, the
+      // live count shrinks naturally without needing per-tool stage updates.
+      const liveRunning = toolExecutions.filter((tool) => tool.status === 'executing')
+      const n = liveRunning.length > 0 ? liveRunning.length : stage.running.length
+      const firstName = liveRunning[0]?.toolName ?? stage.running[0]?.toolName
       if (n === 0) {
         return { icon: 'breath', label: t('turnStage.toolsPreparing') }
       }
-      if (n === 1) {
+      if (n === 1 && firstName) {
         return {
           icon: 'spin',
-          label: t('turnStage.toolSingle', { name: stage.running[0].toolName }) + elapsedSuffix,
+          label: t('turnStage.toolSingle', { name: firstName }) + elapsedSuffix,
         }
       }
       return {
