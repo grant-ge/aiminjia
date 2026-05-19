@@ -976,6 +976,9 @@
     "noSkillsInCategoryDesc": "试试\"全部\"或\"本地\"分类；或者点右上角\"+ 导入技能\"选一个本地技能目录上传。",
     "builtin": "内置",
     "custom": "自定义",
+    "sourceUser": "自定义",
+    "sourceTenant": "企业推送",
+    "sourcePlatform": "平台",
     "allCategory": "全部",
     "defaultCategory": "通用"
   },

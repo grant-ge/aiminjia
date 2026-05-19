@@ -344,7 +344,25 @@ export function SkillCenterPage() {
   function getSkillMeta(source: string, cat: string) {
     const normalizedCategory = cat || 'general'
     const label = SKILL_CATEGORIES.find((c) => c.id === normalizedCategory)?.name ?? t('skillCenter.defaultCategory')
-    const sourceLabel = source === 'builtin' ? t('skillCenter.builtin') : t('skillCenter.custom')
+    // Backend emits: 'user' (local upload/own scope), 'tenant' (pushed by
+    // tenant admin via lotus tenant-portal), 'global' (platform/OPS public),
+    // 'builtin' (legacy fixture in tests). Surface each so users can tell
+    // why a skill exists and who can update it.
+    let sourceLabel: string
+    switch (source) {
+      case 'user':
+      case 'builtin':
+        sourceLabel = t('skillCenter.sourceUser')
+        break
+      case 'tenant':
+        sourceLabel = t('skillCenter.sourceTenant')
+        break
+      case 'global':
+        sourceLabel = t('skillCenter.sourcePlatform')
+        break
+      default:
+        sourceLabel = t('skillCenter.custom')
+    }
     return `${sourceLabel} · ${label}`
   }
 

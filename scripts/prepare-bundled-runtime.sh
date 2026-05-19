@@ -145,6 +145,7 @@ if [ "${TRIM_RUNTIME:-1}" = "1" ]; then
   rm -rf "$out_dir/node/include"
   rm -rf "$out_dir/node/share"
   rm -rf "$out_dir/node/lib/node_modules/corepack"
+  rm -f  "$out_dir/node/bin/corepack"
   rm -f  "$out_dir/node/CHANGELOG.md" "$out_dir/node/README.md" "$out_dir/node/LICENSE"
   # Trim npm payload (tests/docs/man/changelogs inside npm itself)
   find "$out_dir/node/lib/node_modules/npm" -type d \( \
