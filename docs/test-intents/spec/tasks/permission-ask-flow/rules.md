@@ -1,149 +1,155 @@
 # rules.md — 权限 Ask 全链路交互测试意图
 
-工具触发 Ask 后的完整用户交互链路：事件发出 → 前端展示 → 用户选择 → 工具重试或拒绝。
+工具触发 Ask 后的完整用户交互链路：权限弹窗出现 → 用户选择 → 工具重试或拒绝。
 
 ---
 
-## 意图 1：工具触发 Ask 时前端收到 permission:ask 事件，事件携带完整信息
+## 意图 1：工具触发 Ask 时前端展示权限确认弹窗，弹窗携带完整信息
 
 **场景**
-LLM 调用了一个需要用户确认的工具，前端需要收到通知来展示确认对话框。
+LLM 调用了一个需要用户确认的工具，前端需要弹出权限确认对话框并展示完整信息。
 
 **前提**
-- 工具名 `mcp__demo__action`，scope `mcp`，PermissionStore 中无记录
-- RuntimeChatTurnDriver 配置了 permission control plane
-- 当前 PermissionMode 为 Default
+- 应用已启动，当前有一个进行中的对话
+- 工具 `mcp__demo__action` 的权限配置为「每次询问」
+- 该工具尚未在本会话或 Workspace/User 级别被记住
 
 **操作**
-- driver 处理一轮包含该工具的调用，LLM 返回 ToolUse
+- 在对话输入框中发送一条会触发 `mcp__demo__action` 工具调用的消息，发送后等待 AI 响应
 
-**断言**
-- EventBus 中包含 PermissionAskRequired 事件
-- 事件中 `tool_name == "mcp__demo__action"`
-- 事件中 `message` 不为空字符串
-- 事件中 `suggestions` 长度 >= 2，包含 `"Allow once"` 和 `"Deny"`
-- 事件中 `remember_options` 包含 `Session`、`Workspace`、`User` 三项
-- 事件中 `mode` 等于 `Default`
-- 事件中 `default_destination` 为 `Session`
+**验收标准**
+- 页面上出现权限确认弹窗
+- 弹窗中工具名称显示为 `mcp__demo__action`
+- 弹窗中包含一段非空的说明文字
+- 弹窗中至少包含「允许一次」和「拒绝」两个操作按钮
+- 弹窗中包含「记住」下拉选项，选项包含「本次会话」「本工作区」「所有项目」三项
+- 弹窗中「记住」的默认选中项为「本次会话」
 
 ---
 
-## 意图 2：用户选择 Allow 后工具被重新执行，结果正常返回给 LLM
+## 意图 2：用户在弹窗中点击「允许」后工具被执行，结果正常返回
 
 **场景**
-用户确认允许，工具应该被重新执行，结果正常返回给 LLM，不是错误。
+用户确认允许，工具应被执行，执行结果正常出现在 AI 回复中，不显示为错误。
 
 **前提**
-- 工具名 `mcp__demo__action` 触发 AskRequired
-- Mock 工具在重新执行时返回成功内容 `"执行完成"`
-- control plane 模拟用户响应 Allow
+- 应用已启动，当前有一个进行中的对话
+- 工具 `mcp__demo__action` 的权限配置为「每次询问」
+- 对话中 AI 已触发该工具，权限确认弹窗已出现
 
 **操作**
-- driver 等待 control plane 响应，收到 Allow
+- 在权限弹窗中点击「允许一次」
 
-**断言**
-- EventBus 中包含 `ToolCallCompleted` 事件，`is_error == false`
-- EventBus 中只有 1 个 `PermissionAskRequired` 事件（Allow 后不再 Ask）
-- turn 继续执行，LLM 收到 `tool_result` 内容包含 `"执行完成"`
+**验收标准**
+- 弹窗关���
+- 对话界面显示工具调用状态为「已完成」（非错误状态）
+- AI 后续回复中包含工具执行的结果内容，不出现「工具被拒绝」或错误提示
+- 对话中该工具只弹过一次权限确认弹窗（允许后不再弹）
+- `~/.renlijia/conversations/{id}/messages.N.jsonl` 中对应的 tool_result 消息 `is_error` 字段为 `false`
 
 ---
 
-## 意图 3：用户选择 Deny 后工具返回错误 tool_result，turn 继续
+## 意图 3：用户在弹窗中点击「拒绝」后工具返回错误，对话继续
 
 **场景**
-用户拒绝，LLM 需要知道这个工具被拒绝了，以便调整后续行为。
+用户拒绝，LLM 需要知道该工具被拒绝，以便调整后续行为；对话不应终止。
 
 **前提**
-- 工具名 `mcp__demo__action` 触发 AskRequired
-- control plane 模拟用户响应 Deny，消息为 `"用户拒绝"`
+- 应用已启动，当前有一个进行中的对话
+- 工具 `mcp__demo__action` 的权限配置为「每次询问」
+- 对话中 AI 已触发该工具，权限确认弹窗已出现
 
 **操作**
-- driver 等待 control plane 响应，收到 Deny
+- 在权限弹窗中点击「拒绝」
 
-**断言**
-- EventBus 中包含 `ToolCallCompleted` 事件，`is_error == true`
-- LLM 消息历史中包含 role 为 `tool` 的消息
-- 该 tool_result 消息内容包含 `"用户拒绝"` 或拒绝相关字符串
-- turn 继续执行，LLM 后续可以响应（不终止 turn）
+**验收标准**
+- 弹窗关闭
+- 对话界面显示工具调用状态为错误或被拒绝
+- AI 后续回复出现（对话未终止），内容体现工具未能执行
+- `~/.renlijia/conversations/{id}/messages.N.jsonl` 中对应的 tool_result 消息 `is_error` 字段为 `true`，内容包含拒绝相关文字
 
 ---
 
-## 意图 4：用户直接关闭确认框（Cancel）等同于 Deny
+## 意图 4：用户直接关闭权限弹窗（Cancel）等同于拒绝，对话继续
 
 **场景**
-用户不做选择直接关闭对话框，系统不能永久等待，应视为拒绝。
+用户不做选择直接关闭对话框，系统不能永久等待，应视为拒绝处理。
 
 **前提**
-- 工具触发 AskRequired
-- control plane 模拟 Cancel 响应
+- 应用已启动，当前有一个进行中的对话
+- 工具 `mcp__demo__action` 的权限配置为「每次询问」
+- 对话中 AI 已触发该工具，权限确认弹窗已出现
 
 **操作**
-- driver 收到 Cancel 响应
+- 点击权限弹窗右上角的关闭按钮（或按 Esc 键）关闭弹窗，不点击任何确认/拒绝按钮
 
-**断言**
-- EventBus 中包含 `ToolCallCompleted` 事件，`is_error == true`
-- tool_result 内容不为空（有说明文字）
-- turn 继续执行，不挂起
+**验收标准**
+- 弹窗关闭
+- 对话界面显示工具调用状态为错误或被拒绝（与点击「拒绝」行为一致）
+- AI 后续回复出现（对话未终止）
+- `~/.renlijia/conversations/{id}/messages.N.jsonl` 中对应的 tool_result 消息 `is_error` 字段为 `true`，且内容不为空
 
 ---
 
-## 意图 5：一轮内多个工具触发 Ask，按顺序逐个处理
+## 意图 5：一轮内多个工具触发 Ask，按顺序逐个弹窗处理
 
 **场景**
-LLM 一次调用了两个工具，都需要确认，系统需要按顺序逐个处理。
+LLM 一次调用了两个工具，都需要确认，系统需要按顺序逐个展示弹窗。
 
 **前提**
-- 工具 A（`mcp__demo__action1`）和工具 B（`mcp__demo__action2`）都触发 AskRequired
-- control plane 按顺序：先对工具 A 响应 Allow，再对工具 B 响应 Deny
+- 应用已启动，当前有一个进行中的对话
+- 工具 `mcp__demo__action1` 和 `mcp__demo__action2` 的权限均配置为「每次询问」
+- 发送了一条触发这两个工具同时调用的消息
 
 **操作**
-- driver 处理该轮结果
+- 第一个弹窗出现时（工具名为 `mcp__demo__action1`），点击「允许一次」
+- 第一个弹窗关闭后，第二个弹窗出现时（工具名为 `mcp__demo__action2`），点击「拒绝」
 
-**断言**
-- EventBus 中有 2 个 `PermissionAskRequired` 事件
-- 两个事件的 `tool_name` 分别为 `"mcp__demo__action1"` 和 `"mcp__demo__action2"`
-- 工具 A 对应的 `ToolCallCompleted` 事件 `is_error == false`
-- 工具 B 对应的 `ToolCallCompleted` 事件 `is_error == true`
+**验收标准**
+- 弹窗共出现两次，第一次工具名为 `mcp__demo__action1`，第二次为 `mcp__demo__action2`
+- 两次弹窗按顺序出现，不同时显示
+- `mcp__demo__action1` 对应的工具调用在对话中显示为「已完成」（非错误）
+- `mcp__demo__action2` 对应的工具调用在对话中显示为错误或被拒绝
 
 ---
 
-## 意图 6：Ask 等待中 turn 被取消，driver 正常退出不死锁
+## 意图 6：用户在等待权限确认期间取消对话，对话正常终止
 
 **场景**
-用户在等待权限确认的过程中直接取消了整个对话，系统不能死锁。
+用户在等待权限确认的过程中直接取消了整个对话，系统应能正常结束，界面不应卡死或持续转圈。
 
 **前提**
-- 工具触发 AskRequired，control plane 不响应（模拟挂起）
-- 在 driver 等待期间，CancellationToken 被触发
+- 应用已启动，当前有一个进行中的对话
+- 工具 `mcp__demo__action` 的权限配置为「每次询问」
+- 对话中 AI 已触发该工具，权限确认弹窗正在显示，用户尚未响应
 
 **操作**
-- driver 进入等待，随后取消 token
+- 在权限确认弹窗显示期间，点击对话界面的「停止」按钮取消当前对话
 
-**断言**
-- driver 退出等待，函数正常返回
-- 不 panic，不死锁
-- turn 最终结束（可以是 cancelled 状态）
+**验收标准**
+- 弹窗消失
+- 对话界面的「停止」按钮变回「发送」按钮，加载动画停止
+- 对话结束，AI 不再输出新内容
+- 应用界面仍然响应，可以继续发送新消息
 
 ---
 
-## 意图 7：PermissionAskRequired 事件映射为前端 permission:ask 事件，payload 完整
+## 意图 7：权限确认弹窗展示的事件字段完整
 
 **场景**
-前端订阅的是字符串事件名 `"permission:ask"`，后端 RuntimeEvent 必须被正确翻译，payload 字段完整。
+前端收到权限请求后，弹窗渲染所需的全部字段必须完整，确保弹窗能正确展示所有信息。
 
 **前提**
-- 构造 PermissionAskRequired RuntimeEvent，携带：
-  - `tool_name = "mcp__demo__action"`
-  - `message = "需要确认"`
-  - `suggestions = ["Allow once", "Deny"]`
-  - `mode = Default`
+- 应用已启动，当前有一个进行中的对话
+- 工具 `mcp__demo__action` 的权限配置为「每次询问」
 
 **操作**
-- 将该事件传入 TauriEventAdapter 处理
+- 在对话输入框发送一条会触发 `mcp__demo__action` 工具调用的消息，等待权限弹窗出现
+- 打开浏览器开发者工具（或 Tauri webview 调试工具），在 Console 中查看 `permission:ask` 事件的 payload
 
-**断言**
-- 前端收到的事件名为 `"permission:ask"`
-- payload 中 `tool_name == "mcp__demo__action"`
-- payload 中 `message == "需要确认"`
-- payload 中 `suggestions` 长度为 2
-- payload 中 `mode` 字段存在
+**验收标准**
+- 收到的事件名为 `permission:ask`
+- 事件 payload 中 `tool_name` 值为 `mcp__demo__action`
+- 事件 payload 中 `message` 字段为非空字符串
+- 事件 payload 中 `suggestions` 数组长度为 2
+- 事件 payload 中存在 `mode` 字段
