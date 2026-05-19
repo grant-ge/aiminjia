@@ -54,16 +54,6 @@
       "prompts": "prompts",
       "resources/dws*": "",
       "resources/runtime": "runtime"
-    },
-    "fileAssociations": [
-      {
-        "ext": [
-          "aijia-skill"
-        ],
-        "name": "AIjia Skill Package",
-        "description": "AIjia 技能包",
-        "role": "Editor"
-      }
-    ]
+    }
   }
 }

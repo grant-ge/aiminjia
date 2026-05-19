@@ -938,7 +938,7 @@
     "syncing": "同步中...",
     "importSkill": "+ 导入技能",
     "importDirectory": "导入技能目录",
-    "importArchive": "导入压缩包 (.zip / .aijia-skill)",
+    "importArchive": "导入压缩包 (.zip)",
     "selectDir": "选择技能目录",
     "selectArchive": "选择技能压缩包",
     "archiveFilter": "技能压缩包",

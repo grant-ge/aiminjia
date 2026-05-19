@@ -254,7 +254,7 @@ pub async fn list_custom_skills(app: AppHandle) -> Result<Vec<CustomSkillInfo>, 
 /// Accepts:
 /// - **MD file** (single-file SKILL.md): parses YAML frontmatter `name:` →
 ///   writes to `{custom_dir}/{name}/SKILL.md`.
-/// - **Archive** (`.aijia-skill` / `.zip`): unpacked via
+/// - **Archive** (`.zip` / `.zip`): unpacked via
 ///   `skill_package::unpack_skill_archive` (50MB / 256 files / zip-slip
 ///   guarded) into a temp dir, then moved into `{custom_dir}/{skill_id}`.
 /// - **Directory** (legacy): recursively copied as-is.
@@ -307,7 +307,7 @@ fn archive_tmp_root(app: &AppHandle) -> PathBuf {
         .join(format!("skill-import-{}", uuid::Uuid::new_v4()))
 }
 
-/// Install a packaged skill archive (.aijia-skill / .zip). Caller cleans up
+/// Install a packaged skill archive (.zip). Caller cleans up
 /// the temp dir regardless of outcome.
 fn install_skill_archive(
     source: &Path,
@@ -447,7 +447,7 @@ description: 描述这个技能何时应该被使用。
 ///
 /// Output format depends on `dest_path` extension:
 /// - `.md`  → only SKILL.md is copied (degenerate single-file export).
-/// - other (recommended `.aijia-skill` / `.zip`) → full directory packed as
+/// - other (recommended `.zip` / `.zip`) → full directory packed as
 ///   OPS-standard zip via `skill_package::pack_skill_dir`, preserving
 ///   `scripts/` / `references/` / `migration-notes.md` siblings.
 #[tauri::command]
@@ -830,7 +830,7 @@ mod tests {
         .unwrap();
         std::fs::write(skill_dir.join("references").join("a.md"), "ref").unwrap();
 
-        let dest = tmp.path().join("out").join("demo.aijia-skill");
+        let dest = tmp.path().join("out").join("demo.zip");
         let written = tokio::runtime::Runtime::new()
             .unwrap()
             .block_on(pack_skill(
@@ -940,7 +940,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let staging = tmp.path().join("src");
         let skill = make_skill_dir(&staging, "demo");
-        let archive = tmp.path().join("demo.aijia-skill");
+        let archive = tmp.path().join("demo.zip");
         crate::storage::skill_package::pack_skill_dir(&skill, &archive, "demo").unwrap();
 
         let custom_dir = tmp.path().join("user-skills");
@@ -957,7 +957,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let staging = tmp.path().join("src");
         let skill = make_skill_dir(&staging, "dup");
-        let archive = tmp.path().join("dup.aijia-skill");
+        let archive = tmp.path().join("dup.zip");
         crate::storage::skill_package::pack_skill_dir(&skill, &archive, "dup").unwrap();
         let custom_dir = tmp.path().join("user-skills");
 
@@ -973,7 +973,7 @@ mod tests {
     fn install_archive_rejects_corrupt_zip() {
         // Zip with no SKILL.md anywhere — unpack_skill_archive must reject.
         let tmp = tempfile::tempdir().unwrap();
-        let archive = tmp.path().join("bad.aijia-skill");
+        let archive = tmp.path().join("bad.zip");
         let file = std::fs::File::create(&archive).unwrap();
         let mut zip = zip::ZipWriter::new(file);
         let opts: zip::write::FileOptions<'_, ()> =

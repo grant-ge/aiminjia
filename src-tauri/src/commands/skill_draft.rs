@@ -4,7 +4,7 @@
 //! - List unfinished drafts (DraftBanner in SkillsTab)
 //! - Discard a draft when user gives up
 //! - Inspect a single draft's metadata before resuming a conversation
-//! - Import .aijia-skill packages from disk (drag-drop / file association / button)
+//! - Import .zip packages from disk (drag-drop / file association / button)
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -95,7 +95,7 @@ pub enum ImportSkillOutcome {
     },
 }
 
-/// 导入 `.aijia-skill` zip 包到当前用户的技能库。
+/// 导入 `.zip` zip 包到当前用户的技能库。
 ///
 /// - `force=false`：同名冲突时返回 `{status: "conflict", ...}`，由前端弹窗给用户选择。
 /// - `force=true`：覆盖已有目录。
@@ -167,10 +167,10 @@ pub async fn import_skill_package(
     })
 }
 
-/// 把已安装技能打包成 .aijia-skill 文件。前端 SkillCard 的"导出"按钮调用此命令。
+/// 把已安装技能打包成 .zip 文件。前端 SkillCard 的"导出"按钮调用此命令。
 ///
 /// - `skill_id`：已安装技能 id（= ~/.renlijia/users/{scope}/skills/<id>/）
-/// - `dest_path`：可选目标路径，默认 ~/Desktop/<id>-v<version>.aijia-skill
+/// - `dest_path`：可选目标路径，默认 ~/Desktop/<id>-v<version>.zip
 /// - `version` / `author`：写入 manifest，默认 "0.1.0"
 ///
 /// 返回最终落盘的绝对路径，前端可以用 `revealItemInDir` 高亮给用户看。

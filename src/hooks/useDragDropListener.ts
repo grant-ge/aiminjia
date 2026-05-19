@@ -40,33 +40,6 @@ export function useDragDropListener() {
           const paths = event.payload.paths
           if (!paths || paths.length === 0) return
 
-          // 拦截 .aijia-skill 文件 → 走导入流程，不进 attachment 链路
-          const skillPackages = paths.filter((p) => /\.aijia-skill$/i.test(p))
-          if (skillPackages.length > 0) {
-            void importSkillPackagesWithUI(skillPackages)
-            // 如果全是 .aijia-skill，直接 return；否则继续处理剩下的当作普通附件
-            const remaining = paths.filter((p) => !/\.aijia-skill$/i.test(p))
-            if (remaining.length === 0) return
-            // fallthrough: 处理其它附件路径（用 remaining 替代 paths）
-            const accepted: PendingAttachment[] = []
-            for (const path of remaining) {
-              if (!isAcceptableDropPath(path)) continue
-              const basename = path.split(/[\\/]/).pop() ?? ''
-              const hasExtension = /\.[A-Za-z0-9]+$/.test(basename)
-              const fileType = hasExtension
-                ? detectAttachmentFileType(path)
-                : 'folder'
-              const attachment = makePendingAttachment(path, fileType)
-              accepted.push({
-                ...attachment,
-                kind: !hasExtension ? 'folder' : fileType === 'image' ? 'image' : 'file',
-                source: 'drop',
-              })
-            }
-            if (accepted.length > 0) useDropInbox.getState().push(accepted)
-            return
-          }
-
           const accepted: PendingAttachment[] = []
           for (const path of paths) {
             if (!isAcceptableDropPath(path)) continue

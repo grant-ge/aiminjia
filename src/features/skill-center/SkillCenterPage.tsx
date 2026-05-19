@@ -158,7 +158,7 @@ export function SkillCenterPage() {
       multiple: false,
       title: t('skillCenter.selectArchive'),
       filters: [
-        { name: t('skillCenter.archiveFilter'), extensions: ['zip', 'aijia-skill'] },
+        { name: t('skillCenter.archiveFilter'), extensions: ['zip'] },
       ],
     })
     if (!picked || Array.isArray(picked)) return

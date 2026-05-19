@@ -938,7 +938,7 @@
     "syncing": "Syncing...",
     "importSkill": "+ Import Skill",
     "importDirectory": "Import skill directory",
-    "importArchive": "Import archive (.zip / .aijia-skill)",
+    "importArchive": "Import archive (.zip)",
     "selectDir": "Select skill directory",
     "selectArchive": "Select skill archive",
     "archiveFilter": "Skill archive",
