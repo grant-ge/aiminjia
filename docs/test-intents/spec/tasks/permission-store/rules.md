@@ -10,18 +10,17 @@
 用户选择"本次会话允许"，同一会话内再次调用同工具不应重复弹窗；但该规则不应跨重启保留。
 
 **前提**
-- 工具名 `mcp__demo__tool`
-- scope `mcp`
-- PermissionStore 初始为空
+- 应用已启动，当前有一个进行中的对话
+- 工具 `mcp__demo__tool` 的权限配置为「每次询问」
+- 该工具尚未在本会话或 Workspace/User 级别被记住
 
 **操作**
-- 持久化 Allow 决策到 Session destination
-- 再次对 `mcp__demo__tool + mcp` 调用权限管线
-- 检查磁盘上的 workspace/user 权限文件
+- 在权限弹窗中将「记住」选项选为「本次会话」，然后点击「允许」
+- 在同一对话中再次发送一条会触发 `mcp__demo__tool` 的消息
 
-**断言**
-- 第二次结果为 Allow，不是 Ask
-- workspace/user 权限文件中不存在该 session 规则
+**验收标准**
+- 第二次触发时不再弹出权限确认弹窗，工具直接执行
+- `~/.renlijia/users/{scope}/permissions.json` 文件中不存在该工具的会话级规则条目
 
 ---
 
@@ -31,37 +30,37 @@
 用户希望当前项目里以后都允许该工具。
 
 **前提**
-- 工具名 `mcp__demo__tool`
-- scope `mcp`
+- 应用已启动，当前有一个进行中的对话
+- 工具 `mcp__demo__tool` 的权限配置为「每次询问」，权限确认弹窗已出现
 
 **操作**
-- 持久化 Allow 决策到 Workspace destination
-- 读取 PermissionStore 中 `mcp__demo__tool + mcp` 的规则
+- 在权限弹窗中将「记住」选项选为「本工作区」，然后点击「允许」
 
-**断言**
-- store 中存在该工具该 scope 的规则
-- 规则 decision 为 Allow / AlwaysAllow
-- 规则 source 为 Workspace
+**验收标准**
+- 弹窗关闭，工具执行成功
+- `~/.renlijia/users/{scope}/permissions.json` 中存在该工具 `mcp__demo__tool`、scope `mcp` 的规则条目
+- 该条目的 decision 字段值为 Allow 或 AlwaysAllow
+- 该条目的 source 字段值为 Workspace
 
 ---
 
 ## 意图 3：用户选择 User 记住后，user 级 Allow 规则被记录
 
 **场景**
-用户希望所有项目里以后都允许该工具。
+用户希望所有项目里��后都允许该工具。
 
 **前提**
-- 工具名 `mcp__demo__tool`
-- scope `mcp`
+- 应用已启动，当前有一个进行中的对话
+- 工具 `mcp__demo__tool` 的权限配置为「每次询问」，权限确认弹窗已出现
 
 **操作**
-- 持久化 Allow 决策到 User destination
-- 读取 PermissionStore 中 `mcp__demo__tool + mcp` 的规则
+- 在权限弹窗中将「记住」选项选为「所有项目」，然后点击「允许」
 
-**断言**
-- store 中存在该工具该 scope 的规则
-- 规则 decision 为 Allow / AlwaysAllow
-- 规则 source 为 User
+**验收标准**
+- 弹窗关闭，工具执行成功
+- `~/.renlijia/users/{scope}/permissions.json` 中存在该工具 `mcp__demo__tool`、scope `mcp` 的规则条目
+- 该条目的 decision 字段值为 Allow 或 AlwaysAllow
+- 该条目的 source 字段值为 User
 
 ---
 
@@ -71,17 +70,18 @@
 用户明确拒绝并记住，后续不应再弹窗。
 
 **前提**
-- 工具名 `mcp__demo__tool`
-- scope `mcp`
+- 应用已启动，当前有一个进行中的对话
+- 工具 `mcp__demo__tool` 的权限配置为「每次询问」，权限确认弹窗已出现
 
 **操作**
-- 持久化 Deny 决策到 Workspace destination
-- 再次对同工具同 scope 调用权限管线
+- 在权限弹窗中将「记住」选项选为「本工作区」，然后点击「拒绝」
+- 在同一对话或新对话中再次发送一条会触发 `mcp__demo__tool` 的消息
 
-**断言**
-- 结果为 Deny，不是 Ask
-- store 中对应规则 decision 为 Deny / AlwaysDeny
-- 规则 source 为 Workspace
+**验收标准**
+- 第二次触发时不再弹出权限确认弹窗
+- 对话界面中该工具调用直接显示为被拒绝或错误状态
+- `~/.renlijia/users/{scope}/permissions.json` 中对应规则条目的 decision 字段值为 Deny 或 AlwaysDeny
+- 该条目的 source 字段值为 Workspace
 
 ---
 
@@ -91,19 +91,20 @@
 用户只授权了某个工具的某个 scope，不应错误放行其他工具或其他 scope。
 
 **前提**
-- 为工具 A：`mcp__demo__tool_a` 的 scope X：`mcp` 记录 Allow
-- 工具 B 为 `mcp__demo__tool_b`
-- scope Y 为 `custom:other`
+- 应用已启动，工具 `mcp__demo__tool_a` 的权限已在「本工作区」级别被记住为允许（scope `mcp`）
+- 工具 `mcp__demo__tool_b` 尚无任何已记住的规则
+- 存在另一个 scope `custom:other` 未被授权
 
 **操作**
-- 检查工具 A + scope X
-- 检查工具 A + scope Y
-- 检查工具 B + scope X
+- 发送消息依次触发以下三种工具调用并观察是否出现弹窗：
+  1. `mcp__demo__tool_a`（scope `mcp`）
+  2. `mcp__demo__tool_a`（scope `custom:other`）
+  3. `mcp__demo__tool_b`（scope `mcp`）
 
-**断言**
-- 工具 A + scope X 结果为 Allow
-- 工具 A + scope Y 不因该规则直接 Allow（应为 Ask 或 Deny，取决于 pipeline）
-- 工具 B + scope X 不因该规则直接 Allow（应为 Ask 或 Deny，取决于 pipeline）
+**验收标准**
+- `mcp__demo__tool_a` + scope `mcp`：不弹窗，工具直接执行
+- `mcp__demo__tool_a` + scope `custom:other`：弹出权限确认弹窗
+- `mcp__demo__tool_b` + scope `mcp`：弹出权限确认弹窗
 
 ---
 
@@ -113,55 +114,54 @@
 一个工具声明多个 capability_scope，用户选择记住后应覆盖全部 scope。
 
 **前提**
-- 工具名 `mcp__demo__tool`
-- scopes 为 `mcp` 和 `custom:data`
+- 应用已启动，工具 `mcp__demo__tool` 声明了 `mcp` 和 `custom:data` 两个 scope
+- 权限确认弹窗已出现，「记住」选项为「本工作区」
 
 **操作**
-- 调用 persist_permission_decision() 记录 Allow 到 Workspace
-- 分别读取 `mcp` 和 `custom:data` 的规则
+- 在权限弹窗中将「记住」选项选为「本工作区」，然后点击「允许」
 
-**断言**
-- scope `mcp` 有 allow 规则
-- scope `custom:data` 有 allow 规则
-- 两条规则 source 都是 Workspace
+**验收标准**
+- `~/.renlijia/users/{scope}/permissions.json` 中存在 `mcp__demo__tool` + scope `mcp` 的规则条目，decision 为 Allow 或 AlwaysAllow
+- `~/.renlijia/users/{scope}/permissions.json` 中存在 `mcp__demo__tool` + scope `custom:data` 的规则条目，decision 为 Allow 或 AlwaysAllow
+- 两条规则的 source 字段均为 Workspace
 
 ---
 
-## 意图 7：Ask 事件携带默认记住目标 Session
+## 意图 7：权限弹窗默认「记住」选项为「本次会话」
 
 **场景**
 权限弹窗默认应该建议"本次会话"，避免用户误把授权扩大到 workspace 或 user。
 
 **前提**
-- 权限管线对 `mcp__demo__tool + mcp` 产生 Ask
+- 应用已启动，工具 `mcp__demo__tool` 的权限配置为「每次询问」
+- 权限确认弹窗刚刚出现，用户尚未操作任何选项
 
 **操作**
-- 读取 Ask 决策中的 default_destination 和 remember_options
+- 观察权限弹窗中「记住」下拉选项的默认选中值
 
-**断言**
-- default_destination 为 Session
-- remember_options 包含 Session、Workspace、User 三项
+**验收标准**
+- 「记住」下拉选项的默认选中值显示为「本次会话」
+- 下拉列表展开后包含「本次会话」「本工作区」「所有项目」三项
 
 ---
 
-## 意图 8：Workspace/User 权限规则持久化后可跨 PermissionStore 实例读取
+## 意图 8：Workspace/User 权限规则持久化后重启应用仍然生效
 
 **场景**
 用户重启 app 后，之前 workspace/user 级别的授权应该仍然生效。
 
 **前提**
-- 使用文件型 PermissionStore，根目录为 TempDir
-- 记录一条 Workspace 级 Allow 规则：`mcp__demo__tool + mcp`
+- 应用已启动，工具 `mcp__demo__tool` 的权限已在「本工作区」级别被记住为允许
+- `~/.renlijia/users/{scope}/permissions.json` 中已存在对应规则条目
 
 **操作**
-- 丢弃旧 store 实例
-- 用同一个 TempDir 重新构造 PermissionStore
-- 查询 `mcp__demo__tool + mcp`
+- 完全退出并重新启动应用
+- 发送一条会触发 `mcp__demo__tool` 的消息
 
-**断言**
-- 重新构造后的 store 能读到该规则
-- 规则 decision 为 Allow / AlwaysAllow
-- 权限管线结果为 Allow，不再 Ask
+**验收标准**
+- 重启后不再弹出该工具的权限确认弹窗
+- 工具直接执行并在对话中显示为「已完成」（非错误状态）
+- `~/.renlijia/users/{scope}/permissions.json` 中对应规则条目仍然存在，decision 字段值为 Allow 或 AlwaysAllow
 
 ---
 
@@ -171,17 +171,18 @@
 用户先允许后又拒绝同一个工具，后一次选择应该生效。
 
 **前提**
-- 工具名 `mcp__demo__tool`
-- scope `mcp`
+- 应用已启动，工具 `mcp__demo__tool` 的权限已在「本工作区」级别被记住为允许
+- `~/.renlijia/users/{scope}/permissions.json` 中已存在 Allow 规则条目
 
 **操作**
-- 先记录 Workspace Allow
-- 再记录 Workspace Deny
-- 查询同工具同 scope
+- 在设置中将该工具权限改回「每次询问」，再次触发该工具调用
+- 在弹出的权限弹窗中将「记住」选项选为「本工作区」，然后点击「拒绝」
+- 再次发送消息触发同一工具
 
-**断言**
-- 最终规则 decision 为 Deny / AlwaysDeny
-- 权限管线结果为 Deny，不是 Allow
+**验收标准**
+- 第二次拒绝后，后续触发该工具时不再弹窗
+- 对话界面中该工具调用直接显示为被拒绝或错误状态
+- `~/.renlijia/users/{scope}/permissions.json` 中对应规则条目的 decision 字段值为 Deny 或 AlwaysDeny
 
 ---
 
@@ -191,14 +192,14 @@
 用户级规则和工作区规则可能冲突，系统必须有确定优先级，避免行为漂移。
 
 **前提**
-- User 级记录：`mcp__demo__tool + mcp` 为 Allow
-- Workspace 级记录：同工具同 scope 为 Deny
+- 应用已启动
+- `~/.renlijia/users/{scope}/permissions.json` 中存在两条规则：User 级 Allow 和 Workspace 级 Deny，均针对 `mcp__demo__tool` + scope `mcp`
 
 **操作**
-- 查询最终生效规则
+- 发送一条会触发 `mcp__demo__tool` 的消息，观察是否弹窗及工具执行结果
 
-**断言**
-- 最终结果必须确定（不能随机）
-- 若当前产品规则是 workspace 覆盖 user，则结果为 Deny
-- 若当前产品规则是 user 覆盖 workspace，则结果为 Allow
-- 测试执行前必须在 test-progress.md 中记录当前实现采用哪种优先级
+**验收标准**
+- 工具不弹窗直接得到确定结果（要么直接执行，要么直接被拒绝）
+- 若产品规则是 Workspace 覆盖 User：工具被拒绝，对话界面显示错误或被拒绝状态
+- 若产品规则是 User 覆盖 Workspace：工具执行成功，对话界面显示「已完成」
+- 执行测试前须在 test-progress.md 中记录当前实现采用哪种优先级
