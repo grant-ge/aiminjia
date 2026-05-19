@@ -19,7 +19,7 @@ LLM 一直返回工具调用不给最终回复，达到上限后 turn 主动终�
 **操作**
 - driver 执行对话，LLM 持续返回工具调用直到 max_iterations 触达
 
-**断言**
+**验收标准**
 - EventBus 中 `TurnCompleted` 的 `outcome` 字段值为 `{"MaxIterationsReached":{"iterations":2}}`
 - EventBus 中 `ToolCallExecuting` 事件恰好出现 2 次
 - EventBus 中最后一个事件的类型为 `AgentIdle`，`scope` 字段值为 `"primary"`
@@ -42,7 +42,7 @@ LLM 一直返回工具调用不给最终回复，达到上限后 turn 主动终�
 **操作**
 - driver 执行对话，20ms 后触发取消
 
-**断言**
+**验收标准**
 - EventBus 中 `TurnCompleted` 的 `outcome` 字段值为 `"Cancelled"`
 - EventBus 中 `StreamDone` 不出现
 - EventBus 中最后一个事件类型为 `AgentIdle`
@@ -66,7 +66,7 @@ LLM 一直返回工具调用不给最终回复，达到上限后 turn 主动终�
 **操作**
 - driver 执行一轮正常对话
 
-**断言**
+**验收标准**
 - EventBus 中 `TurnCompleted` 的 `outcome` 字段值为 `"Success"`
 - `StreamDone` 出现在 `TurnCompleted` 之前
 - `TurnCompleted` 出现在 `AgentIdle` 之前
@@ -90,7 +90,7 @@ LLM 一直返回工具调用不给最终回复，达到上限后 turn 主动终�
 **操作**
 - driver 执行对话，触发 PromptTooLong 后自动 compaction 并重试
 
-**断言**
+**验收标准**
 - EventBus 中出现 `TurnStageChanged` 事件，`stage.kind` 字段值为 `"compacting"`
 - EventBus 中 `TurnCompleted` 的 `outcome` 字段值为 `"Success"`
 - `messages.jsonl` 存在，文件共 2 行，每行均为合法 JSON
@@ -112,7 +112,7 @@ LLM 一直返回工具调用不给最终回复，达到上限后 turn 主动终�
 - 先执行 turn 1（预期出错）
 - 再执行 turn 2
 
-**断言**
+**验收标准**
 - turn 2 的 `TurnCompleted` 的 `outcome` 字段值为 `"Success"`
 - `messages.jsonl` 存在，文件共 3 行，每行均为合法 JSON
 - 第 1 行 `role` 字段值为 `"user"`，`content.text` 字段值为 `"第一条"`

@@ -17,7 +17,7 @@
 **操作**
 - driver 执行一轮对话，LLM 返回 401 错误
 
-**断言**
+**验收标准**
 - EventBus 中出现 `StreamError` 事件，`error` 字段包含 `"401"` 或 `"unauthorized"`
 - EventBus 中 `StreamError` 出现在 `AgentIdle` 之前
 - `messages.jsonl` 存在，文件共 1 行，该行为合法 JSON，`role` 字段值为 `"user"`（无 assistant 消息写入）
@@ -37,7 +37,7 @@ provider 配额耗尽返回 429，用户收到错误提示，不无限等待，�
 **操作**
 - driver 执行一轮对话，LLM 返回 429 错误
 
-**断言**
+**验收标准**
 - EventBus 中出现 `StreamError` 事件，`error` 字段包含 `"429"` 或 `"rate limit"`
 - `messages.jsonl` 存在，文件共 1 行，`role` 字段值为 `"user"`
 
@@ -56,7 +56,7 @@ provider 配额耗尽返回 429，用户收到错误提示，不无限等待，�
 **操作**
 - driver 执行一轮对话，触发 PromptTooLong 后自动 compaction 并重试
 
-**断言**
+**验收标准**
 - EventBus 中出现 `TurnStageChanged` 事件，`stage.kind` 字段值为 `"compacting"`
 - EventBus 中 `TurnCompleted` 的 `outcome` 字段值为 `"Success"`
 - `messages.jsonl` 存在，文件共 2 行，每行均为合法 JSON
@@ -77,7 +77,7 @@ provider 配额耗尽返回 429，用户收到错误提示，不无限等待，�
 **操作**
 - driver 执行一轮正常对话
 
-**断言**
+**验收标准**
 - EventBus 中所有 `StreamDelta` 事件的 `content` 字段按出现顺序拼接后等于 `"你好，我是 AI 助手"`
 - `StreamDone` 出现在最后一个 `StreamDelta` 之后
 - `messages.jsonl` 存在，文件共 2 行，每行均为合法 JSON
