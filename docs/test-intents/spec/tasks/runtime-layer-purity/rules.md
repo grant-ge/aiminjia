@@ -21,7 +21,7 @@ Runtime 层必须保持纯净。当前仓库允许 `src/runtime/agent/worker_run
 **操作**
 - 递归扫描整个 runtime 层源码
 
-**断言**
+**验收标准**
 - 只有 `src/runtime/agent/worker_runtime.rs` 可以作为明确的遗留例外
 - 任何其他 runtime 文件只要出现上述字符串之一，测试就必须失败
 - 失败信息必须包含具体文件路径
