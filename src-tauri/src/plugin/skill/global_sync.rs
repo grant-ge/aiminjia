@@ -248,6 +248,23 @@ fn copy_dir_without_symlinks(source: &Path, destination: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Find a single-level subdirectory that contains SKILL.md directly.
+/// Mirrors lotus tenant-portal `zipContainsSkillMd`: matches any first-level
+/// folder, not just one named exactly after plugin_id. Returns `None` if no
+/// such subdir exists (caller treats that as a missing-SKILL.md error).
+fn find_single_level_skill_root(prepared: &Path) -> Result<Option<std::path::PathBuf>> {
+    let entries = fs::read_dir(prepared)
+        .with_context(|| format!("read prepared dir '{}'", prepared.display()))?;
+    for entry in entries {
+        let entry = entry.with_context(|| format!("iterate '{}'", prepared.display()))?;
+        let path = entry.path();
+        if path.is_dir() && path.join("SKILL.md").is_file() {
+            return Ok(Some(path));
+        }
+    }
+    Ok(None)
+}
+
 pub fn extract_global_skills_zip(zip_path: &Path, output_dir: &Path) -> Result<()> {
     if output_dir.exists() {
         fs::remove_dir_all(output_dir)
@@ -255,7 +272,6 @@ pub fn extract_global_skills_zip(zip_path: &Path, output_dir: &Path) -> Result<(
     }
     fs::create_dir_all(output_dir)
         .with_context(|| format!("create output dir '{}'", output_dir.display()))?;
-
     let file =
         fs::File::open(zip_path).with_context(|| format!("open zip '{}'", zip_path.display()))?;
     let mut archive = zip::ZipArchive::new(file).context("open global skills zip")?;
@@ -387,11 +403,16 @@ async fn install_one_skill_package(
     let prepared = config.prepared_dir.join(&item.plugin_id);
     extract_global_skills_zip(&archive, &prepared)?;
 
-    // 4. Locate SKILL.md (compatible with both layouts)
+    // 4. Locate SKILL.md (compatible with both layouts: flat or one-level subdir).
+    //    Server-side validation (lotus tenant-portal zipContainsSkillMd) accepts
+    //    SKILL.md at archive root OR under ANY single subdir; mirror that here.
+    //    The previous logic only matched `{plugin_id}/SKILL.md` exactly, which
+    //    failed when the zip's inner folder name didn't match plugin_id (e.g.
+    //    user zipped as "skill/SKILL.md" but registered plugin_id="rehcm").
     let source = if prepared.join("SKILL.md").exists() {
         prepared.clone()
-    } else if prepared.join(&item.plugin_id).join("SKILL.md").exists() {
-        prepared.join(&item.plugin_id)
+    } else if let Some(sub) = find_single_level_skill_root(&prepared)? {
+        sub
     } else {
         bail!(
             "skill package '{}' v{} missing SKILL.md after extraction",
