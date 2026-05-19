@@ -1032,6 +1032,9 @@ pub fn run() {
             commands::auth::cloud_send_email_code,
             commands::auth::cloud_register,
             commands::auth::get_last_brand,
+            // Billing commands (personal tenant)
+            crate::transport::tauri_commands::billing::billing_summary,
+            crate::transport::tauri_commands::billing::billing_usage_records,
             commands::auth::save_last_brand,
             // Skill management commands
             commands::skill_management::list_custom_skills,
