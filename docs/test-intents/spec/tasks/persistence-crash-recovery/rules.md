@@ -35,7 +35,7 @@ scope 格式为 `t_{tenantId}__u_{userId}`，可从 `~/.renlijia/users/` 目录�
 2. 重启应用，等待启动完成
 3. 读取 `~/.renlijia/users/{scope}/conversations/{conv_id}/messages.jsonl`，对每行执行 `python3 -c "import json,sys; [json.loads(l) for l in sys.stdin if l.strip()]"`
 
-**断言**
+**验收标准**
 - `messages.jsonl` 存在
 - 文件共 2 行（1 条 user + 1 条 assistant），每行均为合�� JSON，无解析错误
 - 第 1 行 `role` 字段值为 `"user"`，`content.text` 字段值为 `"帮我写一首关于春天的五言绝句"`
@@ -54,7 +54,7 @@ turn 正常完成时 `mark_turn_complete()` 会删除 `turn_stages/{conv_id}.jso
 **操作**
 1. 重启后检查 `~/.renlijia/turn_stages/` 目录
 
-**断言**
+**验收标准**
 - `~/.renlijia/turn_stages/{conv_id}.json` 不存在
 
 ---
@@ -72,7 +72,7 @@ AI 正在流式输出时进程被 kill -9，`run_recovery_sweep` 应在下次启
 1. 重启应用，等待启动完成
 2. 读取 `~/.renlijia/interrupted_turns/{conv_id}.json`，执行 `python3 -m json.tool` 解析
 
-**断言**
+**验收标准**
 - `~/.renlijia/interrupted_turns/{conv_id}.json` 存在
 - 文件内容为合法 JSON
 - JSON 中 `conversationId` 字段值等于该对话的 conv_id
@@ -93,7 +93,7 @@ AI 正在流式输出时进程被 kill -9，`run_recovery_sweep` 应在下次启
 **操作**
 1. 重启应用，打开该对话
 
-**断言**
+**验收标准**
 - 对话顶部出现 banner，包含文字（中文描述中断状态）
 - banner 中有「重试」按钮
 - banner 中有「关闭」按钮
@@ -112,7 +112,7 @@ AI 正在流式输出时进程被 kill -9，`run_recovery_sweep` 应在下次启
 1. 点击 banner 上的「关闭」按钮
 2. 检查 `~/.renlijia/interrupted_turns/{conv_id}.json`
 
-**断言**
+**验收标准**
 - `~/.renlijia/interrupted_turns/{conv_id}.json` 不存在（文件被删除）
 - banner 从 UI 消失
 
@@ -131,7 +131,7 @@ AI 正在流式输出时进程被 kill -9，`run_recovery_sweep` 应在下次启
 2. 等待回复完成
 3. 读取 `messages.jsonl` 末尾两行
 
-**断言**
+**验收标准**
 - 收到 AI 回复（无错误提示）
 - `messages.jsonl` 末尾新增 2 行，分别为 `role == "user"` 和 `role == "assistant"`
 - 新增的 user 消息 `content.text == "你好"`
@@ -151,7 +151,7 @@ AI 正在流式输出时进程被 kill -9，`run_recovery_sweep` 应在下次启
 1. 在该对话发送消息 `"测试权限错误"`
 2. 执行 `chmod 755 ~/.renlijia/users/{scope}/conversations/`（测试完毕立刻恢复）
 
-**断言**
+**验收标准**
 - 步骤 1 触发后 UI 出现错误提示（toast 或提示文字，内容包含「失败」「错误」或等价词）
 - 应用进程仍在运行（`pgrep -f "aijia"` 有返回）
 - `messages.jsonl` 的 mtime 未更新（新消息未被写入文件）
@@ -171,7 +171,7 @@ AI 正在流式输出时进程被 kill -9，`run_recovery_sweep` 应在下次启
 1. 在该对话发送消息 `"权限已恢复"`，等待回复
 2. 对 `messages.jsonl` 每行执行 `python3 -c "import json,sys; [json.loads(l) for l in sys.stdin if l.strip()]"`
 
-**断言**
+**验收标准**
 - 收到 AI 回复，无错误提示
 - `messages.jsonl` 行数为 N + 2（新增 user + assistant 各一行）
 - 所有行均为合法 JSON（无解析错误）
@@ -190,7 +190,7 @@ AI 正在流式输出时进程被 kill -9，`run_recovery_sweep` 应在下次启
 **操作**
 1. 重启应用，打开该对话
 
-**断言**
+**验收标准**
 - 发送按钮可点击（无常驻 loading spinner）
 - 无「当前对话正在处理中，请稍候」类阻塞提示
 
@@ -207,7 +207,7 @@ AI 正在流式输出时进程被 kill -9，`run_recovery_sweep` 应在下次启
 **操作**
 1. 在该对话发送消息 `"你好"`，等待回复
 
-**断言**
+**验收标准**
 - 收到 AI 回复（无错误提示、无超时）
 - 回复出现在对话历史中，`content.text` 不为空
 
@@ -226,7 +226,7 @@ AI 正在流式输出时进程被 kill -9，`run_recovery_sweep` 应在下次启
 2. 等待所有回复完成
 3. 对 `messages.jsonl` 逐行执行 `python3 -c "import json,sys; lines=[l.strip() for l in sys.stdin if l.strip()]; [json.loads(l) for l in lines]; print(len(lines))"`
 
-**断言**
+**验收标准**
 - 无错误提示
 - 步骤 3 输出行数 ≥ 10（5 条 user + 5 条 assistant）
 - 所有行均为合法 JSON（无解析错误）
@@ -250,7 +250,7 @@ AI 正在流式输出时进程被 kill -9，`run_recovery_sweep` 应在下次启
 3. 打开对话 A，观察展示内容
 4. 恢复：`cp /tmp/messages_bak.jsonl ~/.renlijia/users/{scope}/conversations/{conv_A_id}/messages.jsonl`
 
-**断言**
+**验收标准**
 - 步骤 1：应用正常启动，无崩溃弹窗（进程存活）
 - 步骤 2：对话 B 正常收到回复
 - 步骤 3：对话 A 要么展示部分可读消息，要么展示错误提示；不展示乱码；不导致应用整体不可用
@@ -275,7 +275,7 @@ AI 正在流式输出时进程被 kill -9，`run_recovery_sweep` 应在下次启
 2. 检查 `~/.renlijia/turn_stages/` 目录
 3. 检查 `~/.renlijia/interrupted_turns/` 目录
 
-**断言**
+**验收标准**
 - 步骤 1：应用正常启动，无崩溃弹窗
 - 步骤 2：`fake-conv-damage.json` 不存在（已被 sweep 删除）；`test-conv-valid.json` 不存在（已被 sweep 处理并删除）
 - 步骤 3：`test-conv-valid.json` 存在，内容为合法 JSON，`conversationId` 字段值为 `"test-conv-valid"`
