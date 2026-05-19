@@ -56,7 +56,11 @@ export function HomeTaskComposerCard() {
   )
   const [showSkillPopover, setShowSkillPopover] = useState(false)
   const getSkillById = useSkillStore((s) => s.getById)
-  const [selectedSkill, setSelectedSkill] = useState<{ id: string; label?: string } | null>(null)
+  const [selectedSkill, setSelectedSkill] = useState<{
+    id: string
+    label?: string
+    trigger: string
+  } | null>(null)
 
   // One-shot prefill text; consumed synchronously via lazy initializer so
   // RichComposer's useEditor receives it on its very first render.
@@ -68,12 +72,13 @@ export function HomeTaskComposerCard() {
   const handleSkillPick = useCallback((skillId: string) => {
     const skill = getSkillById(skillId)
     const trigger = skill?.triggerText || `/${skillId}`
-    const next = trigger.endsWith(' ') ? trigger : `${trigger} `
-    composerRef.current?.clear()
-    composerRef.current?.getEditor()?.commands.insertContent(next)
-    composerRef.current?.focus()
+    setSelectedSkill({
+      id: skillId,
+      label: skill?.displayName || skill?.id || skillId,
+      trigger,
+    })
     setShowSkillPopover(false)
-    setSelectedSkill({ id: skillId, label: skill?.displayName || skill?.id || skillId })
+    composerRef.current?.focus()
   }, [getSkillById])
 
   // Load default folder if no workspace has been selected yet
@@ -179,7 +184,13 @@ export function HomeTaskComposerCard() {
       }))
       const skillForThisTurn = selectedSkill
       setSelectedSkill(null)
-      await sendUserMessage(payload.markdown, fileInfos, skillForThisTurn)
+      let markdownToSend = payload.markdown
+      if (skillForThisTurn) {
+        const trigger = skillForThisTurn.trigger
+        const sep = trigger.endsWith(' ') ? '' : ' '
+        markdownToSend = `${trigger}${sep}${markdownToSend}`
+      }
+      await sendUserMessage(markdownToSend, fileInfos, skillForThisTurn)
     } finally {
       setIsSubmitting(false)
     }
@@ -210,6 +221,16 @@ export function HomeTaskComposerCard() {
         autoFocus
         initialMarkdown={initialMarkdown}
         onOpenSkill={() => setShowSkillPopover((prev) => !prev)}
+        skillCommand={
+          selectedSkill
+            ? {
+                id: selectedSkill.id,
+                label: selectedSkill.label ?? selectedSkill.id,
+                command: selectedSkill.trigger.trim(),
+              }
+            : null
+        }
+        onClearSkillCommand={() => setSelectedSkill(null)}
         showProjectButton={false}
         onOpenAttachment={isPickingAttachments ? undefined : () => void handlePickAttachments()}
       />

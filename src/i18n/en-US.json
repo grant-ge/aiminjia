@@ -599,7 +599,7 @@
     "output": "Output"
   },
   "toolGroup": {
-    "title": "Tool execution trace",
+    "title": "Tool calls",
     "running": "Running {{done}} / {{total}}",
     "done": "Completed {{done}} step(s)",
     "doneCompact": "Done in {{duration}}",

@@ -209,28 +209,27 @@ export function MessageList() {
                 </ChatRow>
               )
             ) : null}
+            {t.toolGroup ? (
+              <ToolGroupCard
+                status={t.toolGroup.status}
+                steps={t.toolGroup.steps}
+                durationMs={t.toolGroup.durationMs}
+              />
+            ) : null}
             {teamSession ? (
               <TeamProgressBlock session={teamSession} onOpen={handleOpenTeamDrawer} />
             ) : null}
             {/*
-             * Tool execution trace + AI segments share one ChatRow so the
-             * avatar/name groups the whole assistant turn visually. When the
-             * turn has no AI text yet (tools still running with no reply),
-             * we still render an empty ChatRow so the trace card lives under
-             * the assistant avatar instead of floating naked at turn top.
-             */}
-            {/*
-             * One ChatRow groups everything the assistant produced in this
-             * turn: tool trace → text segments → generated-file cards →
-             * follow-up suggestion chips. Keeping them under one avatar
-             * matches the "AI 猫 is talking to you" mental model and prevents
-             * the file/chip cards from floating without an owner.
+             * One ChatRow groups what the assistant actually produced:
+             * text segments → generated-file cards → follow-up suggestion
+             * chips. Tool execution trace is rendered above as a sibling
+             * (no avatar) because it's process metadata, not output.
              *
              * Skipped when the turn produced nothing on the assistant side
-             * (e.g. a bare peer banner / task-notification turn).
+             * (e.g. a bare peer banner / task-notification / tools-only
+             * mid-stream turn — the StreamingBubble below owns that case).
              */}
-            {t.toolGroup ||
-            t.aiSegments.length > 0 ||
+            {t.aiSegments.length > 0 ||
             t.generatedFiles.length > 0 ||
             t.suggestions.length > 0 ? (
               <ChatRow
@@ -238,13 +237,6 @@ export function MessageList() {
                 name={assistantName}
                 avatarUrl={assistantLogo}
               >
-                {t.toolGroup ? (
-                  <ToolGroupCard
-                    status={t.toolGroup.status}
-                    steps={t.toolGroup.steps}
-                    durationMs={t.toolGroup.durationMs}
-                  />
-                ) : null}
                 {t.aiSegments.map((s) => (
                   <AiBubble key={s.id} message={s.message} />
                 ))}

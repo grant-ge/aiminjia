@@ -191,28 +191,22 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
       >
         {topSlot}
         {skillCommand ? (
-          <div className="mb-2 flex items-center gap-2">
+          <div className="-mt-2 mb-1 flex items-center">
             <div
-              // TODO: 注册为 --shadow-accent-glow token
-              className="group inline-flex max-w-full items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-semibold shadow-[0_8px_24px_rgba(212,168,67,0.12)]"
+              className="inline-flex max-w-full items-center gap-1.5 rounded-full border px-2 py-1 text-xs"
               style={{
                 borderColor: 'var(--color-accent-border)',
                 background: 'var(--color-accent-subtle)',
                 color: 'var(--color-accent-700)',
               }}
             >
+              <Sparkles
+                className="h-3 w-3 shrink-0"
+                style={{ color: 'var(--color-accent)' }}
+              />
+              <span className="truncate font-medium">{skillCommand.label}</span>
               <span
-                className="flex h-5 w-5 items-center justify-center rounded-full"
-                style={{
-                  background: 'var(--color-accent)',
-                  color: 'var(--color-accent-foreground)',
-                }}
-              >
-                <Sparkles className="h-3.5 w-3.5" />
-              </span>
-              <span className="truncate">{skillCommand.label}</span>
-              <span
-                className="rounded-md px-1.5 py-0.5 text-xs font-medium"
+                className="shrink-0 rounded px-1 text-[11px]"
                 style={{
                   background: 'var(--color-accent-muted)',
                   color: 'var(--color-accent-600)',
@@ -225,7 +219,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
                   type="button"
                   aria-label={t('composer.removeSkill', { name: skillCommand.label })}
                   onClick={onClearSkillCommand}
-                  className="ml-0.5 flex h-5 w-5 items-center justify-center rounded-full transition-colors hover:bg-[var(--color-accent-muted)]"
+                  className="ml-0.5 shrink-0 rounded p-0.5 transition-colors hover:bg-[var(--color-accent-muted)]"
                   style={{ color: 'var(--color-accent-700)' }}
                 >
                   <X className="h-3 w-3" />

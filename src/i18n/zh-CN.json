@@ -599,7 +599,7 @@
     "output": "输出"
   },
   "toolGroup": {
-    "title": "工具执行轨迹",
+    "title": "工具调用",
     "running": "执行中 {{done}} / {{total}}",
     "done": "已完成 {{done}} 步",
     "doneCompact": "已完成 {{duration}}",
