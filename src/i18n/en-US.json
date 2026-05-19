@@ -73,6 +73,7 @@
     "noHistory": "No tasks yet",
     "defaultFolder": "Default project",
     "project": "Projects",
+    "expertTeam": "Expert Teams",
     "channel": "Channels"
   },
   "inputBar": {
@@ -377,7 +378,11 @@
       "fontSizeDesc": "Scale interface text and spacing",
       "fontSmall": "Small",
       "fontMedium": "Medium",
-      "fontLarge": "Large"
+      "fontLarge": "Large",
+      "chatWidth": "Chat width",
+      "chatWidthDesc": "Control whether chat content is centered or spans the available width",
+      "chatWidthCentered": "Centered",
+      "chatWidthFull": "Full width"
     },
     "copyrightText": "2026 Renlijia · All rights reserved",
     "archived": {
@@ -758,8 +763,7 @@
     }
   },
   "ExpertTeams": {
-    "pageTitle": "Expert Teams",
-    "closeBanner": "Close expert team"
+    "pageTitle": "Expert Teams"
   },
   "nav": {
     "home": "New Task",

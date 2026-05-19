@@ -134,6 +134,12 @@ export interface ChatAttachmentPayload {
   mimeType?: string
 }
 
+export interface SkillCommandPayload {
+  id: string
+  label?: string
+  command?: string
+}
+
 export interface SavedClipboardAttachmentPayload {
   fileName: string
   path: string
@@ -347,6 +353,7 @@ export function sendMessage(
   attachments?: ChatAttachmentPayload[],
   agentName?: string | null,
   clientMessageId?: string,
+  skillCommand?: SkillCommandPayload | null,
 ): Promise<void> {
   return invoke<void>('send_message', {
     conversationId,
@@ -354,6 +361,7 @@ export function sendMessage(
     attachments: attachments ?? [],
     agentName: agentName ?? null,
     clientMessageId: clientMessageId ?? null,
+    skillCommand: skillCommand ?? null,
   })
 }
 

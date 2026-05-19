@@ -12,6 +12,7 @@ interface ConversationRowProps {
   id: string;
   title: string;
   active?: boolean;
+  indent?: boolean;
   loading?: boolean;
   onClick: () => void;
   onArchive?: () => void;
@@ -22,6 +23,7 @@ export function ConversationRow({
   id,
   title,
   active = false,
+  indent = true,
   loading = false,
   onClick,
   onArchive,
@@ -53,9 +55,10 @@ export function ConversationRow({
     },
   ];
 
+  const paddingCls = indent ? "pl-[32px] pr-2" : "pl-2 pr-2";
   const wrapperCls = active
-    ? "flex items-center rounded-md pl-8 pr-2 bg-sidebar-accent text-sidebar-foreground"
-    : "flex items-center rounded-md pl-8 pr-2 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/40";
+    ? `flex items-center rounded-md ${paddingCls} bg-sidebar-accent text-sidebar-foreground`
+    : `flex items-center rounded-md ${paddingCls} text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/40`;
 
   return (
     <div

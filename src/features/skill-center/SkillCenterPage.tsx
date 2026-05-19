@@ -28,6 +28,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { AppDropdown } from '@/components/common/AppDropdown'
 import { requestConfirm } from '@/components/common/ConfirmDialogHost'
 import { PageSectionShell } from '@/components/shell/PageSectionShell'
+import { PageTopBar } from '@/components/shell/PageTopBar'
 import { SkillCard } from '@/components/skills/SkillCard'
 import { SkillCategoryBar } from '@/components/skills/SkillCategoryBar'
 import { SkillOfficeSection } from '@/components/skills/SkillOfficeSection'
@@ -332,39 +333,44 @@ export function SkillCenterPage() {
     <>
     <PageSectionShell
       topBar={
-        <header data-tauri-drag-region className="flex h-[45px] items-center justify-between border-b border-border px-6">
-          <div className="flex items-center gap-3">
-            <span className="text-base font-semibold text-foreground">{t('skillCenter.title')}</span>
-            <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-muted-foreground">
-              {t('skillCenter.installedCount', { count: skills.length })}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="flex h-7 w-[180px] items-center gap-1.5 rounded-full bg-secondary px-2.5">
-              <Search className="h-3 w-3 shrink-0 text-muted-foreground" />
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                className="flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground"
-                placeholder={t('skillCenter.searchPlaceholder')}
-              />
-            </div>
-            {isLoggedIn && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => void handleSyncBuiltin()}
-                disabled={syncing}
-                data-testid="skills-sync-builtin"
-              >
-                {syncing ? t('skillCenter.syncing') : t('skillCenter.syncBuiltin')}
+        <PageTopBar
+          variant="title"
+          title={
+            <>
+              <span className="truncate text-base font-semibold text-foreground">{t('skillCenter.title')}</span>
+              <span className="shrink-0 rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                {t('skillCenter.installedCount', { count: skills.length })}
+              </span>
+            </>
+          }
+          trailing={
+            <>
+              <div className="flex h-7 w-[180px] items-center gap-1.5 rounded-full bg-secondary px-2.5">
+                <Search className="h-3 w-3 shrink-0 text-muted-foreground" />
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  className="flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground"
+                  placeholder={t('skillCenter.searchPlaceholder')}
+                />
+              </div>
+              {isLoggedIn && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void handleSyncBuiltin()}
+                  disabled={syncing}
+                  data-testid="skills-sync-builtin"
+                >
+                  {syncing ? t('skillCenter.syncing') : t('skillCenter.syncBuiltin')}
+                </Button>
+              )}
+              <Button size="sm" onClick={() => void handleImportDirectory()}>
+                {t('skillCenter.importSkill')}
               </Button>
-            )}
-            <Button size="sm" onClick={() => void handleImportDirectory()}>
-              {t('skillCenter.importSkill')}
-            </Button>
-          </div>
-        </header>
+            </>
+          }
+        />
       }
       padding="px-7 pt-6 pb-8"
       gap="gap-5"

@@ -429,6 +429,7 @@ mod pending_event_tests {
             text: "hi".into(),
             sender_nick: None,
             attachments: vec![],
+            skill_command: None,
             received_at: "2026-05-11T03:21:00Z".into(),
         };
         let e = evt(RuntimeEventKind::PendingQueued { item });

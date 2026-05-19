@@ -4,6 +4,7 @@ import { ArrowDown, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { TeamOverview, TeamSession } from '@/types/team'
 import { useConversationTeamState, useTeamStore } from '@/stores/teamStore'
+import { useSettingsStore } from '@/stores/settingsStore'
 
 import { AgentAvatar } from './AgentAvatar'
 import { TeamChatEvents } from './TeamChatEvents'
@@ -210,6 +211,7 @@ interface TeamSessionSectionProps {
 
 function TeamSessionSection({ session, onDrill }: TeamSessionSectionProps) {
   const visibleMembers = session.members.filter((m) => !isLeadName(m.agentName))
+  const chatWidthMode = useSettingsStore((s) => s.chatWidthMode ?? 'full')
   return (
     <section className="border-b border-border last:border-b-0">
       <div className="sticky top-0 z-10 -mx-4 border-b border-border bg-background/95 px-4 py-2 backdrop-blur">
@@ -250,7 +252,7 @@ function TeamSessionSection({ session, onDrill }: TeamSessionSectionProps) {
         )}
       </div>
 
-      <div className="mx-auto w-full max-w-[736px]">
+      <div className={chatWidthMode === 'centered' ? 'mx-auto w-full max-w-[736px]' : 'w-full'}>
         <TeamChatEvents events={session.events} onDrillAgent={onDrill} />
       </div>
     </section>

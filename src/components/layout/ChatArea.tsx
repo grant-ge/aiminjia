@@ -5,7 +5,13 @@
 import { ArrowDown } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useChatStore } from '@/stores/chatStore'
+import { useSettingsStore } from '@/stores/settingsStore'
 import { MessageList } from '@/components/chat/MessageList'
+import type { ExpertTeamId } from '@/features/expert-teams/teams'
+
+interface ChatAreaProps {
+  expertTeamId?: ExpertTeamId
+}
 
 /** Scroll a container to the very bottom using scrollTop (avoids scrollIntoView rendering issues). */
 function scrollToBottom(el: HTMLElement | null, smooth = false) {
@@ -17,10 +23,11 @@ function scrollToBottom(el: HTMLElement | null, smooth = false) {
   }
 }
 
-export function ChatArea() {
+export function ChatArea({ expertTeamId }: ChatAreaProps = {}) {
   const messages = useChatStore((s) => s.messages)
   const isStreaming = useChatStore((s) => s.isStreaming)
   const activeConversationId = useChatStore((s) => s.activeConversationId)
+  const chatWidthMode = useSettingsStore((s) => s.chatWidthMode ?? 'full')
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const userScrolledUp = useRef(false)
@@ -135,8 +142,11 @@ export function ChatArea() {
         onKeyDown={markUserIntent}
       >
         <div className="px-6 pt-6 pb-12">
-          <div ref={contentRef} className="mx-auto w-full max-w-[736px]">
-            <MessageList />
+          <div
+            ref={contentRef}
+            className={chatWidthMode === 'full' ? 'w-full' : 'mx-auto w-full max-w-[736px]'}
+          >
+            <MessageList expertTeamId={expertTeamId} />
           </div>
         </div>
       </div>

@@ -7,6 +7,10 @@ fn default_thinking_budget_tokens() -> u32 {
     8000
 }
 
+fn default_chat_width_mode() -> String {
+    "full".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LlmProvider {
@@ -67,6 +71,9 @@ pub struct AppSettings {
     /// UI accent color hex string, e.g. "#DBAA22". Empty = use default.
     #[serde(default)]
     pub accent_color: String,
+    /// Chat content width mode: centered | full.
+    #[serde(default = "default_chat_width_mode")]
+    pub chat_width_mode: String,
 }
 
 fn default_font_scale() -> String {
@@ -101,6 +108,7 @@ impl Default for AppSettings {
             thinking_budget_tokens: default_thinking_budget_tokens(),
             font_scale: default_font_scale(),
             accent_color: String::new(),
+            chat_width_mode: default_chat_width_mode(),
         }
     }
 }
@@ -162,6 +170,28 @@ impl AppSettings {
             ),
             font_scale: get_str("fontScale", &defaults.font_scale),
             accent_color: get_str("accentColor", &defaults.accent_color),
+            chat_width_mode: get_str("chatWidthMode", &defaults.chat_width_mode),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AppSettings;
+    use std::collections::HashMap;
+
+    #[test]
+    fn defaults_chat_width_mode_to_full() {
+        assert_eq!(AppSettings::default().chat_width_mode, "full");
+    }
+
+    #[test]
+    fn reads_chat_width_mode_from_string_map() {
+        let mut map = HashMap::new();
+        map.insert("chatWidthMode".to_string(), "full".to_string());
+
+        let settings = AppSettings::from_string_map(&map);
+
+        assert_eq!(settings.chat_width_mode, "full");
     }
 }

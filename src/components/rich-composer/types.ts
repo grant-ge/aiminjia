@@ -11,6 +11,12 @@ export type ComposerAttachmentTokenFileType =
   | 'csv'
   | 'folder'
 
+export interface ComposerSkillToken {
+  id: string
+  label: string
+  command: string
+}
+
 export interface ComposerAttachmentToken {
   id: string
   fileName: string
@@ -25,6 +31,7 @@ export interface ComposerAttachmentToken {
 export interface RichComposerSubmitPayload {
   markdown: string
   attachments: ComposerAttachmentToken[]
+  skills: ComposerSkillToken[]
   isEmpty: boolean
 }
 
@@ -46,6 +53,7 @@ export type ComposerJsonNodeType =
   | 'orderedList'
   | 'listItem'
   | 'attachmentToken'
+  | 'skillToken'
 
 export interface ComposerJsonNode {
   type: ComposerJsonNodeType

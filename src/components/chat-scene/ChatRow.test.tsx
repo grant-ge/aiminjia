@@ -37,18 +37,13 @@ describe('ChatAvatar', () => {
     expect(av.getAttribute('title')).toBe('小研')
   })
 
-  it('variant="neutral" renders a lucide User icon tinted with brand --primary', () => {
-    render(<ChatAvatar name="我" variant="neutral" />)
+  it('variant="neutral" renders the first character in brand tint', () => {
+    render(<ChatAvatar name="ybq" variant="neutral" />)
     const av = screen.getByTestId('chat-avatar')
     expect(av.getAttribute('data-variant')).toBe('neutral')
-    // Lucide ships <svg class="lucide lucide-user …" …> — no <img> involved.
     expect(av.querySelector('img')).toBeNull()
-    const svg = av.querySelector('svg')
-    expect(svg).toBeInTheDocument()
-    // The icon picks up --primary via Tailwind's text-primary → currentColor.
-    expect(svg?.getAttribute('class') ?? '').toMatch(/text-primary/)
-    // No initial glyph is rendered when the neutral icon is in use.
-    expect(av.textContent?.trim()).toBe('')
+    expect(av.querySelector('svg')).toBeNull()
+    expect(av).toHaveTextContent('Y')
   })
 
   it('explicit src wins over variant="neutral"', () => {
@@ -80,6 +75,16 @@ describe('ChatRow', () => {
     const row = screen.getByTestId('chat-row')
     expect(row).toHaveAttribute('data-role', 'assistant')
     expect(row.className).toMatch(/flex-row(?!-reverse)/)
+  })
+
+  it('reserves user avatar width on assistant rows so AI content aligns before the user avatar column', () => {
+    render(
+      <ChatRow role="assistant" name="AI小家">
+        <div>bubble</div>
+      </ChatRow>,
+    )
+    const row = screen.getByTestId('chat-row')
+    expect(row.className).toContain('pr-9')
   })
 
   it('shows the sender name as a separate header row', () => {

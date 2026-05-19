@@ -29,6 +29,7 @@ import {
   archiveConversation as tauriArchiveConversation,
   getActiveTurnStage,
   type ChatAttachmentPayload,
+  type SkillCommandPayload,
 } from '@/lib/tauri'
 import type { Conversation, Message } from '@/types/message'
 
@@ -42,6 +43,10 @@ function generateId(): string {
 
 /** File info passed from chat input UI to sendUserMessage. */
 export interface PendingFileInfo extends ChatAttachmentPayload {}
+
+export interface PendingSkillCommand extends SkillCommandPayload {
+  id: string
+}
 
 /**
  * Hook that exposes every chat-related action the UI needs.
@@ -245,7 +250,7 @@ export function useChat() {
   const sendUserMessage = useCallback(async (
     text: string,
     files?: PendingFileInfo[],
-    _skill?: { id: string; label?: string } | null,
+    skill?: PendingSkillCommand | null,
   ): Promise<boolean> => {
     let store = useChatStore.getState()
     let conversationId = store.activeConversationId
@@ -304,6 +309,13 @@ export function useChat() {
 
     const messageId = generateId()
     const now = new Date().toISOString()
+    const skillCommand = skill
+      ? {
+        id: skill.id,
+        label: skill.label ?? skill.id,
+        command: skill.command ?? `/${skill.id}`,
+      }
+      : null
     recordDiagnostic({
       event: 'chat.submit.started',
       conversationId,
@@ -320,6 +332,8 @@ export function useChat() {
       createdAt: now,
       content: {
         text,
+        commandText: skillCommand?.command,
+        skillCommand: skillCommand ?? undefined,
         files: files?.map((f) => ({
           id: f.id,
           fileName: f.fileName,
@@ -353,7 +367,7 @@ export function useChat() {
 
     try {
       console.log('[useChat] Calling sendMessage IPC, attachments:', files, 'willBeQueued:', willBeQueued)
-      await sendMessage(conversationId, text, files, null, messageId)
+      await sendMessage(conversationId, text, files, null, messageId, skillCommand)
       console.log('[useChat] sendMessage IPC returned OK')
       recordDiagnostic({
         event: 'chat.submit.completed',

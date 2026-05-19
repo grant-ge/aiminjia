@@ -17,6 +17,8 @@ export type FacilitationStyle = 'rounds' | 'debate' | 'open'
 export interface ExpertPersona {
   /** 角色名，会被注入 sub-agent system prompt */
   name: string
+  /** Runtime teammate name emitted by Team events. UI keeps this name visible but can use it for avatar lookup. */
+  agentName?: string
   /** 简短 persona，描述风格 / 关注点 */
   persona: string
   /**
@@ -49,10 +51,10 @@ export const EXPERT_TEAMS: ExpertTeam[] = [
     emoji: '📣',
     tagline: '发布会 / 营销活动 / 市场策略',
     experts: [
-      { name: '品牌负责人', persona: '关注定位、调性、长期心智占领', emoji: '🎨' },
-      { name: '内容主理人', persona: '善用故事和情绪共鸣，关注转化文案', emoji: '✍️' },
-      { name: '增长黑客', persona: '数据驱动，关注漏斗与 ROI 实验', emoji: '📈' },
-      { name: '渠道经理', persona: '熟悉主流投放渠道与媒介组合', emoji: '📡' },
+      { name: '品牌负责人', agentName: 'brand-lead', persona: '关注定位、调性、长期心智占领', emoji: '🎨' },
+      { name: '内容主理人', agentName: 'content-lead', persona: '善用故事和情绪共鸣，关注转化文案', emoji: '✍️' },
+      { name: '增长黑客', agentName: 'growth-hacker', persona: '数据驱动，关注漏斗与 ROI 实验', emoji: '📈' },
+      { name: '渠道经理', agentName: 'channel-manager', persona: '熟悉主流投放渠道与媒介组合', emoji: '📡' },
     ],
     examples: ['策划一场新品发布会', '618 大促营销节奏怎么排'],
     composerPlaceholder: '告诉他们你想策划什么活动…',

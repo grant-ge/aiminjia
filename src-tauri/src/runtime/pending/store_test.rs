@@ -10,6 +10,7 @@ fn sample_item(id: &str) -> PendingItem {
         text: "hi".into(),
         sender_nick: None,
         attachments: vec![],
+        skill_command: None,
         received_at: "2026-05-11T03:21:00Z".into(),
     }
 }

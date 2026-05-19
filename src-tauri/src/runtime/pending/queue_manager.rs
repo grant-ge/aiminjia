@@ -377,7 +377,9 @@ fn build_request_from_single(session_id: &SessionId, item: PendingItem) -> ChatT
             mime_type: a.mime.clone(),
         })
         .collect();
-    ChatTurnRequest::new(session_id.clone(), item.text, attachments)
+    let mut req = ChatTurnRequest::new(session_id.clone(), item.text, attachments);
+    req.skill_command = item.skill_command;
+    req
 }
 
 /// Build a ChatTurnRequest from a drained batch.
@@ -411,6 +413,7 @@ fn build_request_from_batch(session_id: &SessionId, items: Vec<PendingItem>) -> 
         })
         .collect();
     let mut req = ChatTurnRequest::new(session_id.clone(), last_text, last_attachments);
+    req.skill_command = last.skill_command.clone();
     req.pending_batch = Some(items);
     req
 }

@@ -15,7 +15,10 @@ import { SuggestChipGroup } from '@/components/chat-scene/SuggestChipGroup'
 import { ToolGroupCard } from '@/components/chat-scene/ToolGroupCard'
 import { UserMessageBubble } from '@/components/chat-scene/UserMessageBubble'
 import { TeamProgressBlock } from '@/components/team/TeamProgressBlock'
+import { TeamVisualProvider } from '@/components/team/TeamVisualContext'
 import { toPreviewTarget } from '@/components/chat/generatedFileActions'
+import type { ExpertTeamId } from '@/features/expert-teams/teams'
+import { getExpertTeam } from '@/features/expert-teams/teams'
 import { useAuthStore } from '@/stores/authStore'
 import { useBrandingStore } from '@/stores/brandingStore'
 import { useChatStore } from '@/stores/chatStore'
@@ -29,8 +32,13 @@ import { useConversationTeamState, useTeamStore } from '@/stores/teamStore'
 
 type FileActionKind = 'preview' | 'open' | 'reveal'
 
-export function MessageList() {
+interface MessageListProps {
+  expertTeamId?: ExpertTeamId
+}
+
+export function MessageList({ expertTeamId }: MessageListProps = {}) {
   const { t } = useTranslation()
+  const expertTeam = expertTeamId ? getExpertTeam(expertTeamId) : undefined
 
   const FILE_ACTION_ERROR_TITLES: Record<FileActionKind, string> = {
     preview: t('messageList.cannotPreview'),
@@ -210,7 +218,9 @@ export function MessageList() {
               )
             ) : null}
             {teamSession ? (
-              <TeamProgressBlock session={teamSession} onOpen={handleOpenTeamDrawer} />
+              <TeamVisualProvider value={expertTeam ?? null}>
+                <TeamProgressBlock session={teamSession} onOpen={handleOpenTeamDrawer} />
+              </TeamVisualProvider>
             ) : null}
             {/*
              * Tool execution trace + AI segments share one ChatRow so the

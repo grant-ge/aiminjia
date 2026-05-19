@@ -6,12 +6,14 @@ import { ExpertTeamCard } from '../ExpertTeamCard'
 import { EXPERT_TEAMS } from '../teams'
 
 describe('ExpertTeamCard', () => {
-  it('renders team emoji, name and tagline', () => {
+  it('renders team logo badge, name and tagline', () => {
     const team = EXPERT_TEAMS[0]
-    render(<ExpertTeamCard team={team} onStart={() => {}} />)
+    const { container } = render(<ExpertTeamCard team={team} onStart={() => {}} />)
     expect(screen.getByText(team.name)).toBeInTheDocument()
     expect(screen.getByText(team.tagline)).toBeInTheDocument()
-    expect(screen.getByText(team.emoji)).toBeInTheDocument()
+    expect(screen.getByTestId(`expert-team-logo-${team.id}`)).toBeInTheDocument()
+    expect(container.querySelector('[data-testid^="expert-team-logo-"] svg')).toBeInTheDocument()
+    expect(screen.queryByText(team.emoji)).toBeNull()
   })
 
   it('shows expert roster avatars for staffed teams', () => {

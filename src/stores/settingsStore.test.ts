@@ -24,6 +24,7 @@ describe('settingsStore — defaults', () => {
     expect(state.keepOldVersions).toBe(1)
     expect(state.cloudModel).toBe('')
     expect(state.cloudModelType).toBe('')
+    expect(state.chatWidthMode).toBe('full')
     expect(state.isLoaded).toBe(false)
   })
 })
@@ -62,6 +63,14 @@ describe('settingsStore — setters', () => {
     expect(document.documentElement.style.fontSize).toBe('14px')
   })
 
+  it('sets chat width mode', () => {
+    useSettingsStore.getState().setChatWidthMode('full')
+    expect(useSettingsStore.getState().chatWidthMode).toBe('full')
+
+    useSettingsStore.getState().setChatWidthMode('centered')
+    expect(useSettingsStore.getState().chatWidthMode).toBe('centered')
+  })
+
   it('sets Tavily API key', () => {
     useSettingsStore.getState().setTavilyApiKey('tvly-xxx')
     expect(useSettingsStore.getState().tavilyApiKey).toBe('tvly-xxx')
@@ -82,11 +91,13 @@ describe('settingsStore — setSettings (bulk)', () => {
     useSettingsStore.getState().setSettings({
       primaryModel: 'claude',
       autoModelRouting: false,
+      chatWidthMode: 'full',
     })
 
     const state = useSettingsStore.getState()
     expect(state.primaryModel).toBe('claude')
     expect(state.autoModelRouting).toBe(false)
+    expect(state.chatWidthMode).toBe('full')
     // Other settings remain at defaults
     expect(state.autoCleanupEnabled).toBe(true)
   })

@@ -73,6 +73,7 @@
     "noHistory": "还没有历史任务",
     "defaultFolder": "默认项目",
     "project": "项目",
+    "expertTeam": "专家团",
     "channel": "频道"
   },
   "inputBar": {
@@ -377,7 +378,11 @@
       "fontSizeDesc": "调整界面文字和间距的整体缩放",
       "fontSmall": "小",
       "fontMedium": "中",
-      "fontLarge": "大"
+      "fontLarge": "大",
+      "chatWidth": "聊天区域宽度",
+      "chatWidthDesc": "控制对话内容居中显示或铺满可用宽度",
+      "chatWidthCentered": "居中",
+      "chatWidthFull": "全宽"
     },
     "copyrightText": "2026 任理家 · 保留所有权利",
     "archived": {
@@ -758,8 +763,7 @@
     }
   },
   "ExpertTeams": {
-    "pageTitle": "专家团",
-    "closeBanner": "关闭专家团"
+    "pageTitle": "专家团"
   },
   "nav": {
     "home": "新任务",

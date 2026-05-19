@@ -3,6 +3,8 @@ import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useChatStore } from '@/stores/chatStore'
+import { useSettingsStore } from '@/stores/settingsStore'
+import { DEFAULT_SETTINGS } from '@/types/settings'
 import { ChatArea } from './ChatArea'
 
 describe('ChatArea', () => {
@@ -25,6 +27,7 @@ describe('ChatArea', () => {
     }
     vi.stubGlobal('ResizeObserver', MockResizeObserver)
     useChatStore.setState({ activeConversationId: null, messages: [], isStreaming: false })
+    useSettingsStore.setState({ ...DEFAULT_SETTINGS, chatWidthMode: 'centered' })
   })
 
   afterEach(() => {
@@ -37,15 +40,26 @@ describe('ChatArea', () => {
     const scrollRegion = screen.getByTestId('chat-scroll-region')
     expect(scrollRegion).toHaveClass('flex-1')
     expect(scrollRegion).toHaveClass('overflow-y-auto')
-    expect(scrollRegion).toHaveClass('[scrollbar-gutter:stable_both-edges]')
     expect(scrollRegion).not.toHaveClass('absolute')
     expect(scrollRegion).not.toHaveStyle({ bottom: '144px' })
 
     const gutter = scrollRegion.firstElementChild
     expect(gutter).toHaveClass('px-6')
-    expect(gutter).toHaveClass('[scrollbar-gutter:stable_both-edges]')
     expect(gutter?.firstElementChild).toHaveClass('w-full')
+    expect(gutter?.firstElementChild).toHaveClass('mx-auto')
     expect(gutter?.firstElementChild).toHaveClass('max-w-[736px]')
+  })
+
+  it('removes the center max width when chat width mode is full', () => {
+    useSettingsStore.setState({ chatWidthMode: 'full' })
+
+    render(<ChatArea />)
+
+    const scrollRegion = screen.getByTestId('chat-scroll-region')
+    const content = scrollRegion.firstElementChild?.firstElementChild
+    expect(content).toHaveClass('w-full')
+    expect(content).not.toHaveClass('mx-auto')
+    expect(content).not.toHaveClass('max-w-[736px]')
   })
 
   it('keeps the scroll pinned to bottom when rendered content grows after image preview loads', () => {
@@ -86,6 +100,7 @@ describe('ChatArea', () => {
     Object.defineProperty(scrollRegion, 'scrollHeight', { configurable: true, value: 1200 })
     Object.defineProperty(scrollRegion, 'clientHeight', { configurable: true, value: 400 })
     scrollRegion.scrollTop = 500
+    fireEvent.wheel(scrollRegion)
     fireEvent.scroll(scrollRegion)
 
     Object.defineProperty(scrollRegion, 'scrollHeight', { configurable: true, value: 1500 })
@@ -109,6 +124,7 @@ describe('ChatArea', () => {
     Object.defineProperty(scrollRegion, 'scrollHeight', { configurable: true, value: 1200 })
     Object.defineProperty(scrollRegion, 'clientHeight', { configurable: true, value: 400 })
     scrollRegion.scrollTop = 500
+    fireEvent.wheel(scrollRegion)
     fireEvent.scroll(scrollRegion)
 
     const jumpButton = screen.getByRole('button', { name: '回到底部' })

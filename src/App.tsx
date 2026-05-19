@@ -46,7 +46,7 @@ import { useStreamingStore } from '@/stores/streamingStore'
 import { useInteractionStore } from '@/stores/interactionStore'
 import { useUiStore } from '@/stores/uiStore'
 import { initChannelListeners } from '@/stores/channelStore'
-import { applyFontScale, loadPersistedFontScale, normalizeFontScale, persistFontScale } from '@/styles/fontScale'
+import { applyFontScale, loadPersistedFontScale } from '@/styles/fontScale'
 
 applyFontScale(loadPersistedFontScale())
 
@@ -166,12 +166,7 @@ function App() {
   useEffect(() => {
     getSettings()
       .then((settings) => {
-        if (settings.fontScale) {
-          const fontScale = normalizeFontScale(settings.fontScale)
-          persistFontScale(fontScale)
-          applyFontScale(fontScale)
-          useSettingsStore.setState({ fontScale })
-        }
+        useSettingsStore.getState().setSettings(settings)
       })
       .catch((err) => console.error('Failed to load settings:', err))
   }, [])

@@ -4,6 +4,7 @@ import { ChevronDown, ChevronRight } from 'lucide-react'
 import { AssistantMarkdown } from '@/components/chat-scene/AssistantMarkdown'
 import { Button } from '@/components/ui/button'
 import { useTeammateTranscript } from '@/hooks/useTeamOverview'
+import { useSettingsStore } from '@/stores/settingsStore'
 
 import { AgentAvatar } from './AgentAvatar'
 
@@ -88,6 +89,7 @@ export function TeammateDetailPanel({
 }: TeammateDetailPanelProps) {
   const { entries, loading } = useTeammateTranscript(conversationId, agentId)
   const groups = useMemo(() => groupEntries(entries ?? []), [entries])
+  const chatWidthMode = useSettingsStore((s) => s.chatWidthMode ?? 'full')
 
   return (
     <div className="flex h-full flex-col">
@@ -103,7 +105,7 @@ export function TeammateDetailPanel({
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-4">
-        <div className="mx-auto w-full max-w-[736px]">
+        <div className={chatWidthMode === 'centered' ? 'mx-auto w-full max-w-[736px]' : 'w-full'}>
           {loading && (
             <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
               加载中…

@@ -6,7 +6,7 @@
  * 2. On project button click: open folder picker, update homeStore.
  * 3. On submit: create conversation → authorize workspace → send message.
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { BriefcaseBusiness, ChevronDown, Folder, FolderPlus, House, X } from 'lucide-react'
 
@@ -55,8 +55,13 @@ export function HomeTaskComposerCard() {
     selectedWorkspace,
   )
   const [showSkillPopover, setShowSkillPopover] = useState(false)
+  const skills = useSkillStore((s) => s.skills)
   const getSkillById = useSkillStore((s) => s.getById)
-  const [selectedSkill, setSelectedSkill] = useState<{ id: string; label?: string } | null>(null)
+  const skillTokens = useMemo(() => skills.map((skill) => ({
+    id: skill.id,
+    label: skill.displayName || skill.id,
+    command: skill.triggerText || `/${skill.id}`,
+  })), [skills])
 
   // One-shot prefill text; consumed synchronously via lazy initializer so
   // RichComposer's useEditor receives it on its very first render.
@@ -67,13 +72,13 @@ export function HomeTaskComposerCard() {
 
   const handleSkillPick = useCallback((skillId: string) => {
     const skill = getSkillById(skillId)
-    const trigger = skill?.triggerText || `/${skillId}`
-    const next = trigger.endsWith(' ') ? trigger : `${trigger} `
-    composerRef.current?.clear()
-    composerRef.current?.getEditor()?.commands.insertContent(next)
+    composerRef.current?.insertSkillToken({
+      id: skillId,
+      label: skill?.displayName || skill?.id || skillId,
+      command: skill?.triggerText || `/${skillId}`,
+    })
     composerRef.current?.focus()
     setShowSkillPopover(false)
-    setSelectedSkill({ id: skillId, label: skill?.displayName || skill?.id || skillId })
   }, [getSkillById])
 
   // Load default folder if no workspace has been selected yet
@@ -177,13 +182,12 @@ export function HomeTaskComposerCard() {
         fileType: f.fileType,
         mimeType: f.mimeType,
       }))
-      const skillForThisTurn = selectedSkill
-      setSelectedSkill(null)
+      const skillForThisTurn = payload.skills[0] ?? null
       await sendUserMessage(payload.markdown, fileInfos, skillForThisTurn)
     } finally {
       setIsSubmitting(false)
     }
-  }, [displayWorkspace, isSubmitting, sendUserMessage, selectedSkill])
+  }, [displayWorkspace, isSubmitting, sendUserMessage])
 
   const workspaceLabel = displayWorkspace?.displayName ?? t('homeComposer.defaultProject')
   const workspacePath = displayWorkspace?.rootPath
@@ -209,6 +213,7 @@ export function HomeTaskComposerCard() {
         clearOnSubmit
         autoFocus
         initialMarkdown={initialMarkdown}
+        skillTokens={skillTokens}
         onOpenSkill={() => setShowSkillPopover((prev) => !prev)}
         showProjectButton={false}
         onOpenAttachment={isPickingAttachments ? undefined : () => void handlePickAttachments()}

@@ -3,7 +3,7 @@
  * @sizing each row padding [6,8], gap 2
  */
 import { useTranslation } from 'react-i18next'
-import { Blocks, Clock3, MessageSquare, Sparkles, SquarePen, Users, type LucideIcon } from 'lucide-react'
+import { Blocks, Clock3, GraduationCap, MessageSquare, SquarePen, Users, type LucideIcon } from 'lucide-react'
 
 export type SidebarNavKey = 'home' | 'employees' | 'skill-center' | 'schedules' | 'expert-teams' | 'channel'
 
@@ -15,7 +15,7 @@ interface SidebarNavProps {
 const NAV: Array<{ key: SidebarNavKey; i18nKey: string; icon: LucideIcon }> = [
   { key: 'home', i18nKey: 'nav.home', icon: SquarePen },
   { key: 'employees', i18nKey: 'nav.employees', icon: Users },
-  { key: 'expert-teams', i18nKey: 'nav.expertTeams', icon: Sparkles },
+  { key: 'expert-teams', i18nKey: 'nav.expertTeams', icon: GraduationCap },
   { key: 'skill-center', i18nKey: 'nav.skillCenter', icon: Blocks },
   { key: 'schedules', i18nKey: 'nav.schedules', icon: Clock3 },
   { key: 'channel', i18nKey: 'nav.channel', icon: MessageSquare },

@@ -71,6 +71,7 @@ vi.mock('@/stores/brandingStore', () => ({
     sel({ productName: '仁励家网络科技(杭州)', logoUrl: '/app-icon.png' }),
 }))
 
+import { clearExpertTeam, setExpertTeam } from '@/features/expert-teams/expertTeamRegistry'
 import { AppSidebar } from '../AppSidebar'
 
 describe('AppSidebar', () => {
@@ -79,6 +80,8 @@ describe('AppSidebar', () => {
     uiState.setRoute.mockClear()
     chatState.activeConversationId = null
     chatState.conversations = []
+    clearExpertTeam('normal-conv')
+    clearExpertTeam('expert-conv')
   })
 
   it('has sidebar background and 256 px width', () => {
@@ -97,7 +100,7 @@ describe('AppSidebar', () => {
     render(<AppSidebar />)
     expect(screen.getByRole('button', { name: '新任务' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '数字员工' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '专家团' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: '专家团' }).length).toBeGreaterThan(1)
     expect(screen.getByRole('button', { name: '技能中心' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '定时任务' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'IM 频道' })).toBeInTheDocument()
@@ -168,6 +171,28 @@ describe('AppSidebar', () => {
     )
   })
 
+
+
+  it('separates expert team conversations from the project tab into an expert team tab', async () => {
+    chatState.conversations = [
+      { id: 'normal-conv', title: '普通项目对话', workspaceName: '默认项目' },
+      { id: 'expert-conv', title: '市场方案专家讨论', workspaceName: '默认项目' },
+    ]
+    setExpertTeam('expert-conv', 'marketing')
+
+    render(<AppSidebar />)
+
+    expect(screen.getAllByRole('button', { name: '专家团' }).length).toBeGreaterThan(1)
+    expect(screen.getByText('普通项目对话')).toBeInTheDocument()
+    expect(screen.queryByText('市场方案专家讨论')).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getAllByRole('button', { name: '专家团' }).at(-1)!)
+
+    expect(screen.getByText('市场方案专家讨论')).toBeInTheDocument()
+    expect(screen.queryByText('普通项目对话')).not.toBeInTheDocument()
+    expect(screen.queryByText('默认项目')).not.toBeInTheDocument()
+  })
+
   it('switches the sidebar body between 项目 and 频道 tabs without changing route', async () => {
     render(<AppSidebar />)
 
@@ -195,6 +220,8 @@ describe('AppSidebar route-derived sidebarTab', () => {
     uiState.route = { kind: 'channel', sessionId: 'dt-session-1' }
     chatState.activeConversationId = null
     chatState.conversations = []
+    clearExpertTeam('normal-conv')
+    clearExpertTeam('expert-conv')
     render(<AppSidebar />)
     // 钉钉会话 should be highlighted (the mock has displayName: '姚斌权')
     expect(screen.getByText('姚斌权')).toBeInTheDocument()
@@ -204,6 +231,8 @@ describe('AppSidebar route-derived sidebarTab', () => {
     uiState.route = { kind: 'channel', sessionId: 'dt-session-1' }
     chatState.activeConversationId = null
     chatState.conversations = []
+    clearExpertTeam('normal-conv')
+    clearExpertTeam('expert-conv')
     render(<AppSidebar />)
     await userEvent.click(screen.getByRole('button', { name: 'IM 频道' }))
     expect(uiState.setRoute).toHaveBeenCalledWith({ kind: 'channel' })
@@ -213,6 +242,8 @@ describe('AppSidebar route-derived sidebarTab', () => {
     uiState.route = { kind: 'skill-detail', skillId: 'sk-1' }
     chatState.activeConversationId = null
     chatState.conversations = []
+    clearExpertTeam('normal-conv')
+    clearExpertTeam('expert-conv')
     render(<AppSidebar />)
     expect(screen.getByRole('button', { name: '技能中心' }).className).toMatch(
       /(^|\s)bg-sidebar-accent(\s|$)/,
@@ -223,6 +254,8 @@ describe('AppSidebar route-derived sidebarTab', () => {
     uiState.route = { kind: 'channel', sessionId: 'dt-session-1' }
     chatState.activeConversationId = null
     chatState.conversations = []
+    clearExpertTeam('normal-conv')
+    clearExpertTeam('expert-conv')
     render(<AppSidebar />)
     expect(screen.getByRole('button', { name: 'IM 频道' }).className).not.toMatch(
       /(^|\s)bg-sidebar-accent(\s|$)/,

@@ -940,13 +940,15 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         conversation_id: &str,
         content: &str,
         attachments: &[crate::runtime::chat::chat_turn_driver::ChatAttachmentRef],
+        skill_command: Option<&crate::runtime::chat::chat_turn_driver::SkillCommandRef>,
         _client_message_id: Option<&str>,
     ) -> Result<String, TurnError> {
         let msg_id = format!("msg-{}", uuid::Uuid::new_v4());
 
-        let content_json = crate::runtime::chat::chat_turn_driver::build_user_content_json(
+        let content_json = crate::runtime::chat::chat_turn_driver::build_user_content_json_with_skill(
             content,
             attachments,
+            skill_command,
         )
         .to_string();
 
@@ -2573,6 +2575,7 @@ impl TauriChatCommandAdapter {
         permission_mode: Option<crate::runtime::tools::permission::PermissionMode>,
         agent_name: Option<String>,
         client_message_id: Option<String>,
+        skill_command: Option<crate::runtime::chat::chat_turn_driver::SkillCommandRef>,
     ) -> Result<(), String> {
         log::info!(
             "[send_message] trace_id={:?} conversation_id={} content_len={} attachments_count={}",
@@ -2611,6 +2614,7 @@ impl TauriChatCommandAdapter {
                         size_bytes: Some(a.file_size),
                     })
                     .collect(),
+                skill_command: skill_command.clone(),
                 received_at: chrono::Utc::now().to_rfc3339(),
             };
             let session_id = crate::runtime::ids::SessionId::new(conversation_id.clone());
@@ -2645,6 +2649,7 @@ impl TauriChatCommandAdapter {
         }
 
         let mut request = ChatTurnRequest::new(conversation_id.clone(), content, attachments);
+        request.skill_command = skill_command;
         // Derive per-turn attachment dirs on the backend (frontend paths are untrusted).
         // The derived dirs will be merged into the per-turn ToolPermissionContext as
         // RuleSource::Session in QueryEngine::build_turn_permission_ctx.
@@ -3456,9 +3461,10 @@ impl crate::runtime::pending::ChatTurnDispatcher for TauriChatCommandAdapter {
                             .collect();
                     let msg_id = format!("msg-{}", uuid::Uuid::new_v4());
                     let content_value =
-                        crate::runtime::chat::chat_turn_driver::build_user_content_json(
+                        crate::runtime::chat::chat_turn_driver::build_user_content_json_with_skill(
                             &text,
                             &attachments,
+                            item.skill_command.as_ref(),
                         );
                     let content_json = content_value.to_string();
                     if let Err(e) =

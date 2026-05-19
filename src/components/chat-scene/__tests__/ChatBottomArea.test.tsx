@@ -1,9 +1,10 @@
 import '@testing-library/jest-dom'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { render, waitFor, fireEvent, act } from '@testing-library/react'
+import { render, waitFor, fireEvent, act, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ChatBottomArea } from '../ChatBottomArea'
 import { useChatStore } from '@/stores/chatStore'
+import { useSkillStore } from '@/stores/skillStore'
 
 vi.mock('@tiptap/react', async (importOriginal) => {
   const mod = await importOriginal<typeof import('@tiptap/react')>()
@@ -44,6 +45,22 @@ beforeEach(() => {
   mockPickAttachments.mockReset().mockResolvedValue([])
   mockIsStreaming = false
   useChatStore.setState({ activeConversationId: 'conv-1' })
+  useSkillStore.setState({
+    skills: [{
+      id: 'dingtalk-workspace',
+      displayName: '玩转钉钉',
+      displayNameEn: 'DingTalk Workspace',
+      description: 'desc',
+      source: 'global',
+      hasWorkflow: false,
+      icon: '',
+      shortDescription: 'desc',
+      shortDescriptionEn: 'desc',
+      triggerText: '/dingtalk-workspace',
+      category: 'general',
+      updatedAt: null,
+    }],
+  })
 })
 
 describe('ChatBottomArea', () => {
@@ -80,7 +97,7 @@ describe('ChatBottomArea', () => {
     ])
     const { container } = render(<ChatBottomArea />)
     await waitFor(() => expect(document.querySelector('.ProseMirror')).toBeTruthy())
-    const attachBtn = container.querySelector('[aria-label="添加附件"]') as HTMLElement
+    const attachBtn = container.querySelector('[aria-label="composer.addAttachment"]') as HTMLElement
     await act(async () => {
       attachBtn.click()
     })
@@ -100,10 +117,31 @@ describe('ChatBottomArea', () => {
   it('isStreaming → shows stop button, click calls stopCurrentStream', async () => {
     mockIsStreaming = true
     const { container } = render(<ChatBottomArea />)
-    const stopBtn = await waitFor(() => container.querySelector('[aria-label="停止"]') as HTMLElement)
+    const stopBtn = await waitFor(() => container.querySelector('[aria-label="composer.stop"]') as HTMLElement)
     fireEvent.click(stopBtn)
     expect(mockStopCurrentStream).toHaveBeenCalledTimes(1)
     expect(mockSendUserMessage).not.toHaveBeenCalled()
+  })
+  it('picking a skill inserts inline token and submit passes skill metadata', async () => {
+    const user = userEvent.setup()
+    const { container } = render(<ChatBottomArea />)
+    await waitFor(() => expect(document.querySelector('.ProseMirror')).toBeTruthy())
+    const skillButton = container.querySelector('[aria-label="composer.openSkillPicker"]') as HTMLElement
+    await user.click(skillButton)
+    await user.click(await screen.findByText('玩转钉钉'))
+    const editor = document.querySelector('.ProseMirror') as HTMLElement
+    expect(editor.textContent).toContain('玩转钉钉')
+    expect(editor.textContent).not.toContain('/dingtalk-workspace')
+    await user.click(editor)
+    await user.type(editor, ' 查今天日程')
+    fireEvent.keyDown(editor, { key: 'Enter', code: 'Enter' })
+    await waitFor(() => expect(mockSendUserMessage).toHaveBeenCalledTimes(1))
+    expect(mockSendUserMessage.mock.calls[0][0]).toBe(' 查今天日程')
+    expect(mockSendUserMessage.mock.calls[0][2]).toEqual({
+      id: 'dingtalk-workspace',
+      label: '玩转钉钉',
+      command: '/dingtalk-workspace',
+    })
   })
 
   it('empty Enter does not call sendUserMessage', async () => {

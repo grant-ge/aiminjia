@@ -3,6 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useChatStore } from '@/stores/chatStore'
+import { setExpertTeam, clearExpertTeam } from '@/features/expert-teams/expertTeamRegistry'
 import { ChatPage } from './ChatPage'
 
 const switchConversationMock = vi.hoisted(() => vi.fn())
@@ -30,6 +31,8 @@ vi.mock('@/components/chat/RightPanel', () => ({
 describe('ChatPage layout', () => {
   beforeEach(() => {
     switchConversationMock.mockClear()
+    clearExpertTeam('conv-layout')
+    clearExpertTeam('conv-team')
     useChatStore.setState({ activeConversationId: null, conversations: [], messages: [] })
   })
 
@@ -46,6 +49,22 @@ describe('ChatPage layout', () => {
     await waitFor(() => {
       expect(switchConversationMock).toHaveBeenCalledWith('conv-reload')
     })
+  })
+
+
+
+  it('does not render a redundant expert team banner above the chat content', () => {
+    setExpertTeam('conv-team', 'marketing')
+    useChatStore.setState({
+      activeConversationId: 'conv-team',
+      conversations: [{ id: 'conv-team', title: '专家团会话', createdAt: '', updatedAt: '', isArchived: false }],
+      messages: [{ id: 'm1', role: 'assistant', content: '已有消息', createdAt: '' }],
+    })
+
+    render(<ChatPage conversationId="conv-team" />)
+
+    expect(screen.queryByLabelText('关闭专家团')).not.toBeInTheDocument()
+    expect(screen.queryByText('市场营销策划团')).not.toBeInTheDocument()
   })
 
   it('composes the chat column as header, content, and footer using flex layout', () => {

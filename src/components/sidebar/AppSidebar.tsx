@@ -4,17 +4,19 @@
  */
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { CheckSquare, ChevronRight, MessageSquare } from 'lucide-react'
+import { CheckSquare, ChevronRight, GraduationCap, MessageSquare } from 'lucide-react'
 
 import { useChat } from '@/hooks/useChat'
 import { useBrandingStore } from '@/stores/brandingStore'
 import { useUiStore, type Route, useActiveConversationId, useActiveChannelSessionId } from '@/stores/uiStore'
 import { useChannelStore } from '@/stores/channelStore'
+import { getExpertTeam } from '@/features/expert-teams/expertTeamRegistry'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
+import { ConversationRow } from './ConversationRow'
 import { ConversationTree } from './ConversationTree'
 import { groupConversationsByProject } from './conversationProjects'
 import { SidebarFooterSettings } from './SidebarFooterSettings'
@@ -23,17 +25,19 @@ import { TenantHeader } from './TenantHeader'
 
 const SIDEBAR_TAB_STORAGE_KEY = 'aijia-sidebar-tab'
 
-function loadPersistedSidebarTab(): 'project' | 'channel' {
+type SidebarBodyTab = 'project' | 'expert-team' | 'channel'
+
+function loadPersistedSidebarTab(): SidebarBodyTab {
   if (typeof localStorage === 'undefined') return 'project'
   try {
     const raw = localStorage.getItem(SIDEBAR_TAB_STORAGE_KEY)
-    return raw === 'channel' ? 'channel' : 'project'
+    return raw === 'channel' || raw === 'expert-team' ? raw : 'project'
   } catch {
     return 'project'
   }
 }
 
-function persistSidebarTab(tab: 'project' | 'channel') {
+function persistSidebarTab(tab: SidebarBodyTab) {
   if (typeof localStorage === 'undefined') return
   try {
     localStorage.setItem(SIDEBAR_TAB_STORAGE_KEY, tab)
@@ -59,10 +63,10 @@ export function AppSidebar() {
   const [renameValue, setRenameValue] = useState('')
   const [archivingId, setArchivingId] = useState<string | null>(null)
 
-  const [sidebarTab, setSidebarTab] = useState<'project' | 'channel'>(loadPersistedSidebarTab)
+  const [sidebarTab, setSidebarTab] = useState<SidebarBodyTab>(loadPersistedSidebarTab)
   const [legacyExpanded, setLegacyExpanded] = useState(false)
 
-  const switchTab = (next: 'project' | 'channel') => {
+  const switchTab = (next: SidebarBodyTab) => {
     setSidebarTab(next)
     persistSidebarTab(next)
   }
@@ -102,7 +106,10 @@ export function AppSidebar() {
   // 所以会同时出现在 useChat().conversations 里。"项目" tab 是给用户主动发起
   // 的对话准备的，不应该再列一遍这些频道会话（"频道" tab 已经渲染它们）。
   const channelSessionIdSet = new Set(channelConversations.map((c) => c.sessionId))
-  const projectConversations = conversations.filter((c) => !channelSessionIdSet.has(c.id))
+  const nonChannelConversations = conversations.filter((c) => !channelSessionIdSet.has(c.id))
+  const expertTeamConversations = nonChannelConversations.filter((c) => getExpertTeam(c.id))
+  const expertTeamConversationIdSet = new Set(expertTeamConversations.map((c) => c.id))
+  const projectConversations = nonChannelConversations.filter((c) => !expertTeamConversationIdSet.has(c.id))
 
   const projects = groupConversationsByProject(
     projectConversations,
@@ -153,7 +160,7 @@ export function AppSidebar() {
       />
 
       <div className="flex min-h-0 flex-1 flex-col gap-2">
-        <div className="grid grid-cols-2 rounded-lg bg-sidebar-accent p-0.5 text-xs font-medium text-muted-foreground">
+        <div className="grid grid-cols-3 rounded-lg bg-sidebar-accent p-0.5 text-xs font-medium text-muted-foreground">
           <button
             type="button"
             onClick={() => switchTab('project')}
@@ -165,6 +172,18 @@ export function AppSidebar() {
           >
             <CheckSquare className="h-3.5 w-3.5" />
             {t('sidebar.project')}
+          </button>
+          <button
+            type="button"
+            onClick={() => switchTab('expert-team')}
+            className={
+              sidebarTab === 'expert-team'
+                ? 'flex items-center justify-center gap-1.5 rounded-md bg-background px-2 py-1.5 text-foreground shadow-sm'
+                : 'flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5'
+            }
+          >
+            <GraduationCap className="h-3.5 w-3.5" />
+            {t('sidebar.expertTeam')}
           </button>
           <button
             type="button"
@@ -181,16 +200,35 @@ export function AppSidebar() {
         </div>
 
         {sidebarTab === 'project' ? (
-          <>
-            <div className="-mr-2 flex-1 overflow-auto">
-              <ConversationTree
-                projects={projects}
-                onSelectConversation={(id) => void switchConversation(id)}
-                onRenameConversation={handleRenameOpen}
-                onArchiveConversation={setArchivingId}
-              />
-            </div>
-          </>
+          <div className="-mr-2 flex-1 overflow-auto">
+            <ConversationTree
+              projects={projects}
+              onSelectConversation={(id) => void switchConversation(id)}
+              onRenameConversation={handleRenameOpen}
+              onArchiveConversation={setArchivingId}
+            />
+          </div>
+        ) : sidebarTab === 'expert-team' ? (
+          <div className="-mr-2 flex-1 overflow-auto py-1">
+            {expertTeamConversations.length === 0 ? (
+              <div className="px-2 py-4 text-sm text-muted-foreground">{t('sidebar.noHistory')}</div>
+            ) : (
+              <div className="flex flex-col gap-1">
+                {expertTeamConversations.map((conversation) => (
+                  <ConversationRow
+                    key={conversation.id}
+                    id={conversation.id}
+                    title={conversation.title}
+                    active={activeConversationId === conversation.id}
+                    indent={false}
+                    onClick={() => void switchConversation(conversation.id)}
+                    onRename={() => handleRenameOpen(conversation.id)}
+                    onArchive={() => setArchivingId(conversation.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
         ) : (
           <div className="-mr-2 flex-1 overflow-auto pr-2">
             <div className="mt-2 flex flex-col gap-3">

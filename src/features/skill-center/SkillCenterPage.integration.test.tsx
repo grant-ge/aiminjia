@@ -61,7 +61,10 @@ describe('SkillCenterPage', () => {
   })
 
   it('顶栏渲染标题、技能数量徽章和搜索框', () => {
-    render(<SkillCenterPage />)
+    const { container } = render(<SkillCenterPage />)
+    const topBar = container.querySelector('header[data-tauri-drag-region]')
+    expect(topBar).toHaveClass('h-10')
+    expect(topBar).not.toHaveClass('h-[45px]')
     expect(screen.getByText('技能中心')).toBeInTheDocument()
     expect(screen.getByText(/5 个技能/)).toBeInTheDocument()
     expect(screen.getByPlaceholderText('搜索技能名称或场景')).toBeInTheDocument()

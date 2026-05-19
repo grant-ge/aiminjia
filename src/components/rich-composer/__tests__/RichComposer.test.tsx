@@ -200,6 +200,47 @@ describe('RichComposer — ref handle + attachment-only submit', () => {
     expect(payload.markdown).toContain('[附件: a.pdf](<file:///p/a.pdf>)')
   })
 
+
+
+  it('ref.insertSkillToken inserts inline skill and submit includes skills without markdown command', async () => {
+    const onSubmit = vi.fn()
+    const handleRef = createRef<RichComposerHandle>()
+    render(<RichComposer ref={handleRef} onSubmit={onSubmit} />)
+    await waitFor(() => expect(document.querySelector('.ProseMirror')).toBeTruthy())
+    act(() => {
+      handleRef.current?.insertSkillToken({
+        id: 'dingtalk-workspace',
+        label: '玩转钉钉',
+        command: '/dingtalk-workspace',
+      })
+    })
+    const editor = document.querySelector('.ProseMirror') as HTMLElement
+    expect(editor.textContent).toContain('玩转钉钉')
+    fireEvent.keyDown(editor, { key: 'Enter', code: 'Enter' })
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1))
+    const payload = onSubmit.mock.calls[0][0]
+    expect(payload.skills).toEqual([
+      { id: 'dingtalk-workspace', label: '玩转钉钉', command: '/dingtalk-workspace' },
+    ])
+    expect(payload.markdown).not.toContain('/dingtalk-workspace')
+  })
+
+  it('typing slash command converts to inline skill token', async () => {
+    const user = userEvent.setup()
+    render(
+      <RichComposer
+        onSubmit={() => {}}
+        skillTokens={[{ id: 'dingtalk-workspace', label: '玩转钉钉', command: '/dingtalk-workspace' }]}
+      />,
+    )
+    await waitFor(() => expect(document.querySelector('.ProseMirror')).toBeTruthy())
+    const editor = document.querySelector('.ProseMirror') as HTMLElement
+    await user.click(editor)
+    await user.type(editor, '/dingtalk-workspace ')
+    await waitFor(() => expect(editor.textContent).toContain('玩转钉钉'))
+    expect(editor.textContent).not.toContain('/dingtalk-workspace')
+  })
+
   it('ref.clear empties editor', async () => {
     const handleRef = createRef<RichComposerHandle>()
     const user = userEvent.setup()

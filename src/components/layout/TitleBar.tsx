@@ -46,13 +46,17 @@ const DEV_STRIPE_STYLE: React.CSSProperties = {
     'repeating-linear-gradient(45deg, var(--primary) 0 10px, color-mix(in srgb, var(--primary), #000 10%) 10px 20px)',
 }
 
+export function getDevBadgeLabel(port = window.location.port) {
+  return port ? `DEV ${port}` : 'DEV'
+}
+
 function DevBadge() {
   return (
     <span
       className="pointer-events-none mr-2 rounded-sm px-1.5 py-0.5 text-[11px] font-semibold tracking-widest text-white shadow-sm"
       style={{ backgroundColor: '#4338ca' }}
     >
-      DEV
+      {getDevBadgeLabel()}
     </span>
   )
 }

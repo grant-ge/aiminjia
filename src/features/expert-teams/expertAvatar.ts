@@ -4,6 +4,8 @@
 // `public/expert-avatars/<teamId>/<safeName>.svg` — committed to git so
 // runtime never needs network or @dicebear at all.
 
+import type { ExpertTeam } from './teams'
+
 const SAFE_RE = /[\\/<>:"|?*\s]/g
 
 /** Mirrors the `safe()` helper in scripts/generate-expert-avatars.mjs. */
@@ -71,4 +73,11 @@ export function getExpertAvatarUrl(teamId: string, expertName: string): string |
   const key = `${teamId}:${expertName}`
   if (!expertHasAvatar.has(key)) return null
   return `/expert-avatars/${teamId}/${safeName(expertName)}.svg`
+}
+
+export function getExpertAvatarUrlForAgent(team: ExpertTeam | null | undefined, agentName: string): string | null {
+  if (!team) return null
+  const expert = team.experts.find((e) => e.agentName === agentName || e.name === agentName)
+  if (!expert) return null
+  return getExpertAvatarUrl(team.id, expert.name)
 }
