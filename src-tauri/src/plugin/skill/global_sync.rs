@@ -26,6 +26,12 @@ pub struct SkillPackageItem {
     pub package_url: String,
     #[serde(default)]
     pub package_size: i64,
+    /// `"tenant"` for caller's tenant-private skills, `"public"` for platform.
+    /// Gateway always returns this field (model.SkillPackage.Scope, default
+    /// `"tenant"`). Used only for telemetry today — future change can store
+    /// this per-skill so loader can tag SkillSource::Tenant vs Global.
+    #[serde(default)]
+    pub scope: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -327,8 +333,13 @@ async fn fetch_skill_list(
     server_base_url: &str,
     session_key: &str,
 ) -> Result<SkillListResponse> {
+    // No scope filter: gateway returns BOTH the caller's tenant private
+    // skills AND scope=public platform skills in one response (see lotus
+    // api-gateway handler.SkillPackageEmployeeHandler.List). Keeping
+    // scope=public would silently drop tenant-pushed skills, which was the
+    // pre-2026-05-19 bug.
     let url = format!(
-        "{}/v1/skill-packages?scope=public&page=1&size=100",
+        "{}/v1/skill-packages?page=1&size=100",
         server_base_url.trim_end_matches('/')
     );
     let response = client
@@ -437,12 +448,17 @@ pub async fn sync_skill_packages_from_server(
 
     // 1. Fetch the published skill list from lotus-server
     let list = fetch_skill_list(&client, &server_base_url, &session_key).await?;
+    let (n_tenant, n_public) = list.data.iter().fold((0usize, 0usize), |(t, p), it| {
+        if it.scope == "tenant" { (t + 1, p) } else { (t, p + 1) }
+    });
     log::info!(
-        "[skill-sync] fetched {} skills from server: {:?}",
+        "[skill-sync] fetched {} skills from server ({} tenant + {} public): {:?}",
         list.data.len(),
+        n_tenant,
+        n_public,
         list.data
             .iter()
-            .map(|i| format!("{}@{}", i.plugin_id, i.version))
+            .map(|i| format!("{}@{}({})", i.plugin_id, i.version, i.scope))
             .collect::<Vec<_>>()
     );
 

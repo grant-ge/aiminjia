@@ -71,6 +71,15 @@ pub struct DiskSkill {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SkillSource {
+    /// 本地用户上传 / 派活产物。路径 `~/.renlijia/users/{scope}/skills/<id>`。
+    /// 重名时优先级最高(覆盖 Tenant + Global)。
     User,
+    /// 租户管理员通过 lotus tenant-portal 上传到自己租户的 scope=tenant 技能。
+    /// 桌面端登录后从 gateway `/v1/skill-packages` 同步,装到 `~/.renlijia/skills/<id>`
+    /// 与 Global 同目录(handler 已在一次请求里返回 tenant+public 两类)。
+    /// 重名优先级:User > Tenant > Global。注:Tenant 与 Global 当前装到同一目录,
+    /// 区分仅由 `SkillPackageItem.scope` 字段决定加载时打的 source 标签。
+    Tenant,
+    /// 平台/OPS 上传的 scope=public 技能。
     Global,
 }

@@ -388,11 +388,23 @@ pub fn run() {
             let user_skills_dir = current_user_storage
                 .resolve_paths()
                 .map(|paths| paths.skills_dir());
-            let skill_roots: Vec<std::path::PathBuf> = match user_skills_dir {
-                Some(user) => vec![user, global_skills_dir],
-                None => vec![global_skills_dir],
-            };
-            let loaded_skills = plugin::skill::loader::load_skill_roots(&skill_roots)
+            // (root, source) pairs — explicit so we don't rely on positional
+            // index-0=User convention. Tenant-pushed skills land in the same
+            // global dir as platform ones (handler returns both classes in one
+            // response), but at load time the registry currently tags them
+            // Global. A future change can split the global dir into
+            // managed/{public,tenant}/ and emit Tenant labels here.
+            let skill_roots_tagged: Vec<(std::path::PathBuf, plugin::skill::types::SkillSource)> =
+                match user_skills_dir {
+                    Some(user) => vec![
+                        (user, plugin::skill::types::SkillSource::User),
+                        (global_skills_dir.clone(), plugin::skill::types::SkillSource::Global),
+                    ],
+                    None => vec![(global_skills_dir.clone(), plugin::skill::types::SkillSource::Global)],
+                };
+            let skill_roots: Vec<std::path::PathBuf> =
+                skill_roots_tagged.iter().map(|(p, _)| p.clone()).collect();
+            let loaded_skills = plugin::skill::loader::load_skill_roots_tagged(&skill_roots_tagged)
                 .unwrap_or_else(|e| {
                     log::warn!("[setup] Failed to load skills from roots: {}", e);
                     Default::default()

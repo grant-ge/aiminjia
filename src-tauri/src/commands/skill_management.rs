@@ -144,6 +144,7 @@ pub fn list_skills_from_registry_with_resolver(
                 category: skill.frontmatter.category.clone(),
                 source: match skill.source {
                     crate::plugin::skill::types::SkillSource::User => "user".to_string(),
+                    crate::plugin::skill::types::SkillSource::Tenant => "tenant".to_string(),
                     crate::plugin::skill::types::SkillSource::Global => "global".to_string(),
                 },
                 updated_at: resolver.resolve(skill),
@@ -576,8 +577,11 @@ pub async fn list_marketplace_skills(
     let session_key = auth.get_session_key().await.map_err(|e| e.to_string())?;
 
     let client = reqwest::Client::new();
+    // Gateway returns BOTH the caller's tenant skills AND scope=public in one
+    // page; do not pass scope=public or tenant private skills are filtered out
+    // server-side (see plugin/skill/global_sync.rs note).
     let mut url = format!(
-        "https://ai-tenant.renlijia.com/v1/skill-packages?page={}&size={}&scope=public",
+        "https://ai-tenant.renlijia.com/v1/skill-packages?page={}&size={}",
         page, size
     );
     if let Some(cat) = &category {
