@@ -425,6 +425,23 @@
       "logUploadDesc": "出现问题时，将本地日志上传给开发团队协助排查。",
       "uploadLogs": "上传日志",
       "uploading": "上传中..."
+    },
+    "billing": {
+      "title": "我的账户",
+      "balance": "当前余额",
+      "monthCost": "本月已消耗",
+      "monthRequests": "本月调用",
+      "bonusHint": "含 10 元赠送",
+      "records": "消耗记录",
+      "empty": "还没有消耗记录",
+      "retry": "重试",
+      "cols": {
+        "time": "时间",
+        "model": "模型",
+        "type": "类型",
+        "tokens": "Tokens",
+        "cost": "费用"
+      }
     }
   },
   "composer": {
