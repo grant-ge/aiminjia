@@ -17,7 +17,7 @@
 **操作**
 - driver 执行一轮正常对话
 
-**断言**
+**验收标准**
 - EventBus 中 `StreamStarted` 出现在所有 `StreamDelta` 之前
 - EventBus 中所有 `StreamDelta` 事件的 `content` 字段按出现顺序拼接后等于 `"你好，我是助手"`
 - `StreamDone` 出现在最后一个 `StreamDelta` 之后，在 `TurnCompleted` 之前
@@ -43,7 +43,7 @@
 **操作**
 - driver 执行对话，50ms 后触发取消
 
-**断言**
+**验收标准**
 - EventBus 中 `TurnCompleted` 的 `outcome` 字段值为 `"Cancelled"`
 - EventBus 中 `StreamDone` 不出现
 - EventBus 中最后一个事件类型为 `AgentIdle`
@@ -66,7 +66,7 @@
 **操作**
 - driver 执行一轮正常对话
 
-**断言**
+**验收标准**
 - EventBus 中所有 `StreamStarted`、`StreamDelta`、`StreamDone`、`TurnCompleted` 事件的 `run_id` 字段均等于 `"run-stream-001"`
 - 不存在上述类型中 `run_id` 不等于 `"run-stream-001"` 的事件
 - `messages.jsonl` 存在，文件共 2 行，每行均为合法 JSON

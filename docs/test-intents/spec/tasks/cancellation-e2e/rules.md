@@ -18,7 +18,7 @@
 **操作**
 - driver 执行对话，20ms 后触发取消
 
-**断言**
+**验收标准**
 - EventBus 中 `TurnCompleted` 的 `outcome` 字段值为 `"Cancelled"`
 - EventBus 中 `StreamDone` 不出现
 - EventBus 中最后一个事件类型为 `AgentIdle`，`scope` 字段值为 `"primary"`
@@ -43,7 +43,7 @@
 **操作**
 - driver 执行对话，工具执行中途触发取消
 
-**断言**
+**验收标准**
 - EventBus 中 `TurnCompleted` 的 `outcome` 字段值为 `"Cancelled"`
 - EventBus 中 `ToolCallCompleted` 事件出现 1 次，`is_error` 字段值为 `true`
 - `messages.jsonl` 存在，每行均为合法 JSON
@@ -65,7 +65,7 @@
 **操作**
 - driver 执行对话，连续触发两次取消
 
-**断言**
+**验收标准**
 - EventBus 中 `TurnCompleted` 事件恰好出现 1 次，`outcome` 字段值为 `"Cancelled"`
 - EventBus 中 `AgentIdle` 事件恰好出现 1 次
 - `messages.jsonl` 存在，文件共 2 行，每行均为合法 JSON
