@@ -1330,6 +1330,56 @@ export function cloudChangePassword(oldPassword: string, newPassword: string): P
   return invoke<void>('cloud_change_password', { oldPassword, newPassword })
 }
 
+/**
+ * Cached brand snapshot persisted at `~/.renlijia/users/{scope}/brand.json`.
+ * Used to re-apply the last tenant's branding on the login page after logout.
+ */
+export interface BrandSnapshot {
+  productName?: string
+  logoUrl?: string
+  accentColor?: string
+  primaryColor?: string
+  bgColor?: string
+  sidebarBgColor?: string
+  fontFamily?: string
+}
+
+/** Read the cached brand snapshot for the last-active account on this machine. */
+export function getLastBrand(): Promise<BrandSnapshot | null> {
+  return invoke<BrandSnapshot | null>('get_last_brand')
+}
+
+/** Persist the brand snapshot for the currently-active account. */
+export function saveLastBrand(brand: BrandSnapshot): Promise<void> {
+  return invoke<void>('save_last_brand', { brand })
+}
+
+/** Send an SMS verification code for personal registration. */
+export function cloudSendSmsCode(phone: string): Promise<void> {
+  return invoke<void>('cloud_send_sms_code', { phone })
+}
+
+/** Send an email verification code for personal registration. */
+export function cloudSendEmailCode(email: string): Promise<void> {
+  return invoke<void>('cloud_send_email_code', { email })
+}
+
+/**
+ * Register a personal account via phone or email.
+ * On success the caller should immediately call `cloudLogin(identifier, password)`
+ * — registration does not auto-establish a session.
+ */
+export function cloudRegister(args: {
+  method: 'phone' | 'email'
+  phone?: string
+  email?: string
+  code: string
+  password: string
+  name?: string
+}): Promise<void> {
+  return invoke<void>('cloud_register', args)
+}
+
 // ---------------------------------------------------------------------------
 // Persona Commands
 //

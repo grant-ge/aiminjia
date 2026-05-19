@@ -330,6 +330,79 @@ impl AuthClient {
         Ok(())
     }
 
+    /// Request a verification code via SMS for registration.
+    /// Hits tenant-portal `/api/auth/send-code`.
+    pub async fn send_sms_code(&self, phone: &str) -> Result<()> {
+        let url = format!("{}/api/auth/send-code", BASE_URL);
+        let resp = self
+            .client
+            .post(&url)
+            .json(&json!({ "phone": phone }))
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(parse_api_error(status.as_u16(), &body));
+        }
+        Ok(())
+    }
+
+    /// Request a verification code via email for registration.
+    /// Hits tenant-portal `/api/auth/send-email-code`.
+    pub async fn send_email_code(&self, email: &str) -> Result<()> {
+        let url = format!("{}/api/auth/send-email-code", BASE_URL);
+        let resp = self
+            .client
+            .post(&url)
+            .json(&json!({ "email": email }))
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(parse_api_error(status.as_u16(), &body));
+        }
+        Ok(())
+    }
+
+    /// Register a new personal account via phone or email.
+    /// Hits tenant-portal `/api/auth/register`.
+    ///
+    /// `method` must be `"phone"` or `"email"`. The matching identifier
+    /// (phone or email) must be supplied; the other can be empty.
+    /// `name` is the optional display name shown to the user post-login.
+    pub async fn register(
+        &self,
+        method: &str,
+        phone: &str,
+        email: &str,
+        code: &str,
+        password: &str,
+        name: &str,
+    ) -> Result<()> {
+        let url = format!("{}/api/auth/register", BASE_URL);
+        let resp = self
+            .client
+            .post(&url)
+            .json(&json!({
+                "method": method,
+                "phone": phone,
+                "email": email,
+                "code": code,
+                "password": password,
+                "name": name,
+            }))
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(parse_api_error(status.as_u16(), &body));
+        }
+        Ok(())
+    }
+
     /// Get current user + tenant profile (including latest branding).
     /// Uses session_key auth (Bearer), no token rotation.
     pub async fn get_profile(&self, session_key: &str) -> Result<(AuthUserInfo, AuthTenantInfo)> {

@@ -1,6 +1,7 @@
 import { type PropsWithChildren, useEffect, useRef } from 'react'
 
 import { useAuthStore } from '@/stores/authStore'
+import { useBrandingStore } from '@/stores/brandingStore'
 import { useChat } from '@/hooks/useChat'
 import { useUiStore } from '@/stores/uiStore'
 import { useSkillStore } from '@/stores/skillStore'
@@ -23,6 +24,11 @@ export function AuthGate({ children }: PropsWithChildren) {
       return
     }
     hasRestored.current = true
+    // Apply cached brand first so the login page shows the previous tenant's
+    // logo / colors / product name even when auth restore turns up empty
+    // (logged out). authStore.restoreFromStorage will override with fresh
+    // tenant info if a session is still valid.
+    void useBrandingStore.getState().restoreFromDisk()
     void restoreFromStorage()
   }, [restoreFromStorage])
 

@@ -153,6 +153,35 @@ impl AuthManager {
         })
     }
 
+    /// Send an SMS verification code for registration. No auth required.
+    pub async fn send_sms_code(&self, phone: &str) -> Result<()> {
+        self.client.send_sms_code(phone).await
+    }
+
+    /// Send an email verification code for registration. No auth required.
+    pub async fn send_email_code(&self, email: &str) -> Result<()> {
+        self.client.send_email_code(email).await
+    }
+
+    /// Register a personal account. After success the caller is expected to
+    /// call `login(...)` separately (we don't auto-login here because the
+    /// post-register handshake currently requires the same username/password
+    /// path as a regular login so session_key + scope activation happen via
+    /// the existing `cloud_login` flow).
+    pub async fn register(
+        &self,
+        method: &str,
+        phone: &str,
+        email: &str,
+        code: &str,
+        password: &str,
+        name: &str,
+    ) -> Result<()> {
+        self.client
+            .register(method, phone, email, code, password, name)
+            .await
+    }
+
     /// Logout — call server API then clear local state and persisted data.
     pub async fn logout(&self) {
         // Best-effort server-side logout
