@@ -31,7 +31,7 @@ Agenda 基座是把"定时任务"重做为日程模型：用户创建一个 agen
 **操作**
 - `store.create(item.clone())`
 
-**断言**
+**验收标准**
 - `create` 返回的 `AgendaItem` 与传入的 `item` 字段全等（`PartialEq`）
 - `dir/agenda/items/{item.id}.json` 文件存在
 - 反序列化文件内容得到的 `AgendaItem` 与传入的 `item` 字段全等
@@ -49,7 +49,7 @@ Agenda 基座是把"定时任务"重做为日程模型：用户创建一个 agen
 **操作**
 - `store.create(item)`
 
-**断言**
+**验收标准**
 - 返回 `Err`
 - 错误信息包含字符串 `"participants"`
 - `dir/agenda/items/` 下无任何文件
@@ -64,7 +64,7 @@ Agenda 基座是把"定时任务"重做为日程模型：用户创建一个 agen
 **操作**
 - `store.create(item)`
 
-**断言**
+**验收标准**
 - 返回 `Err`
 - 错误信息包含字符串 `"organizer"`
 
@@ -81,7 +81,7 @@ override_of 是二期"循环单次例外"留的口子，本期必须为 None。
 **操作**
 - `store.create(item)`
 
-**断言**
+**验收标准**
 - 返回 `Err`
 - 错误信息包含字符串 `"override_of"`
 
@@ -95,7 +95,7 @@ override_of 是二期"循环单次例外"留的口子，本期必须为 None。
 **操作**
 - `store.create(item)`
 
-**断言**
+**验收标准**
 - 返回 `Err`
 - 错误信息包含字符串 `"by_day"`
 
@@ -109,7 +109,7 @@ override_of 是二期"循环单次例外"留的口子，本期必须为 None。
 **操作**
 - `store.create(item)`
 
-**断言**
+**验收标准**
 - 返回 `Err`
 - 错误信息包含字符串 `"by_month_day"`
 
@@ -126,7 +126,7 @@ skip_dates 仅对循环有意义，一次性日程不能跳过自己。
 **操作**
 - `store.create(item)`
 
-**断言**
+**验收标准**
 - 返回 `Err`
 - 错误信息包含字符串 `"skip_dates"`
 
@@ -144,7 +144,7 @@ skip_dates 仅对循环有意义，一次性日程不能跳过自己。
 **操作**
 - `store.update(modified)`
 
-**断言**
+**验收标准**
 - 返回 `Err`
 - 错误信息包含字符串 `"organizer"`
 - 磁盘上文件仍是原 organizer `"p1"`
@@ -161,7 +161,7 @@ skip_dates 仅对循环有意义，一次性日程不能跳过自己。
 **操作**
 - `store.update(revived)`
 
-**断言**
+**验收标准**
 - 返回 `Ok(updated)`
 - `updated.organizer_employee_id == "p2"`
 - `updated.status == Active`
@@ -177,7 +177,7 @@ item id 直接拼进文件路径，必须挡住 `..`、`/`、`\` 等字符，避
 - 在 `store.root` 下事先放一个 `outside.json`（用于检验 traversal 触达后会不会被改）
 - `unsafe_id = AgendaItemId("../outside")`
 
-**操作 + 断言**（每个动作一条独立断言）
+**操作 + 验收标准**（每个动作一条独立验收标准）
 - `store.get(&unsafe_id)`：返回 `Err`，错误信息包含 `"invalid agenda item id"`，`outside.json` 仍存在
 - `store.create(item with id = unsafe_id)`：返回 `Err`，错误信息包含 `"invalid agenda item id"`，`store.root/outside.json` 不被改写
 - `store.delete(&unsafe_id)`：返回 `Err`，错误信息包含 `"invalid agenda item id"`，`outside.json` 仍存在
@@ -206,7 +206,7 @@ item id 直接拼进文件路径，必须挡住 `..`、`/`、`\` 等字符，避
 - `store.append_occurrence(&running)`
 - 拷贝 running，`status = Succeeded`、`finished_at = Some(now)`，`store.append_occurrence(&completed)`
 
-**断言**
+**验收标准**
 - `dir/agenda/occurrences/{item.id}/2026-05.jsonl` 文件存在
 - `store.list_occurrences(&item.id, 10)` 返回长度 1 的 Vec
 - 该 Occurrence 的 `id == "occ-fixed-1"`、`status == Succeeded`、`finished_at.is_some()`
@@ -226,7 +226,7 @@ item id 直接拼进文件路径，必须挡住 `..`、`/`、`\` 等字符，避
 **操作**
 - `store.mark_orphaned_by_organizer("alice")`
 
-**断言**
+**验收标准**
 - 返回 `Ok(1)`（只有 A 被翻）
 - `store.get(&A.id).unwrap().status == Orphaned`
 - `store.get(&B.id).unwrap().status == Active`
@@ -242,7 +242,7 @@ item id 直接拼进文件路径，必须挡住 `..`、`/`、`\` 等字符，避
 - `now = 2026-05-07T08:00:00Z`
 - `item.start_at = 2026-05-07T09:00:00Z`、`rule = None`、`occurrence_count = 0`
 
-**断言**
+**验收标准**
 - `compute_next_fire_at(&item, now) == Some(2026-05-07T09:00:00Z)`
 
 ---
@@ -255,7 +255,7 @@ spec §5.3 写 `>`，但本期实现裁剪为 `>=`，等值仍允许触发以避
 **前提**
 - `now = item.start_at = 2026-05-07T09:00:00Z`，`rule = None`、`occurrence_count = 0`
 
-**断言**
+**验收标准**
 - `compute_next_fire_at(&item, now) == Some(2026-05-07T09:00:00Z)`
 
 ---
@@ -265,7 +265,7 @@ spec §5.3 写 `>`，但本期实现裁剪为 `>=`，等值仍允许触发以避
 **前提**
 - `now = 2026-05-07T10:00:00Z`、`item.start_at = 2026-05-07T09:00:00Z`、`rule = None`、`occurrence_count = 0`
 
-**断言**
+**验收标准**
 - `compute_next_fire_at(&item, now) == None`
 
 ---
@@ -275,7 +275,7 @@ spec §5.3 写 `>`，但本期实现裁剪为 `>=`，等值仍允许触发以避
 **前提**
 - `now = 2026-05-07T08:00:00Z`、`start_at = 2026-05-07T09:00:00Z`、`rule = None`、`occurrence_count = 1`
 
-**断言**
+**验收标准**
 - `compute_next_fire_at(&item, now) == None`
 
 ---
@@ -286,7 +286,7 @@ spec §5.3 写 `>`，但本期实现裁剪为 `>=`，等值仍允许触发以避
 - `start = 2026-05-07T09:00:00Z`、`now = 2026-05-08T12:00:00Z`
 - `rule = Daily, interval=1, end_condition=Never, by_day=[], by_month_day=[]`、`occurrence_count = 1`
 
-**断言**
+**验收标准**
 - `compute_next_fire_at(&item, now) == Some(2026-05-09T09:00:00Z)`
 
 ---
@@ -297,7 +297,7 @@ spec §5.3 写 `>`，但本期实现裁剪为 `>=`，等值仍允许触发以避
 - `start = 2026-05-07T09:00:00Z`、`now = 2026-05-08T00:00:00Z`
 - `rule = Daily, interval=2, end_condition=Never, by_day=[], by_month_day=[]`、`occurrence_count = 1`
 
-**断言**
+**验收标准**
 - `compute_next_fire_at(&item, now) == Some(2026-05-09T09:00:00Z)`
 
 ---
@@ -308,7 +308,7 @@ spec §5.3 写 `>`，但本期实现裁剪为 `>=`，等值仍允许触发以避
 - `start = 2026-05-07T09:00:00Z`、`now = 2026-05-08T00:00:00Z`
 - `rule = Weekly, interval=1, end_condition=Never, by_day=[], by_month_day=[]`、`occurrence_count = 1`
 
-**断言**
+**验收标准**
 - `compute_next_fire_at(&item, now) == Some(2026-05-14T09:00:00Z)`
 
 ---
@@ -319,7 +319,7 @@ spec §5.3 写 `>`，但本期实现裁剪为 `>=`，等值仍允许触发以避
 - `start = 2026-05-07T09:00:00Z`、`now = 2026-05-08T00:00:00Z`
 - `rule = Monthly, interval=1, end_condition=Never, by_day=[], by_month_day=[]`、`occurrence_count = 1`
 
-**断言**
+**验收标准**
 - `compute_next_fire_at(&item, now) == Some(2026-06-07T09:00:00Z)`
 
 ---
@@ -330,7 +330,7 @@ spec §5.3 写 `>`，但本期实现裁剪为 `>=`，等值仍允许触发以避
 - `start = 2026-05-07T09:00:00Z`、`now = 2026-05-08T00:00:00Z`
 - `rule = Yearly, interval=1, end_condition=Never, by_day=[], by_month_day=[]`、`occurrence_count = 1`
 
-**断言**
+**验收标准**
 - `compute_next_fire_at(&item, now) == Some(2027-05-07T09:00:00Z)`
 
 ---
@@ -344,7 +344,7 @@ spec §5.3 写 `>`，但本期实现裁剪为 `>=`，等值仍允许触发以避
 - `start = 2024-02-29T09:00:00Z`、`now = 2024-03-01T00:00:00Z`
 - `rule = Yearly, interval=1, end_condition=Never, by_day=[], by_month_day=[]`、`occurrence_count = 1`
 
-**断言**
+**验收标准**
 - `compute_next_fire_at(&item, now) == Some(2028-02-29T09:00:00Z)`
 
 ---
@@ -358,7 +358,7 @@ spec §5.3 写 `>`，但本期实现裁剪为 `>=`，等值仍允许触发以避
 - `start = 1990-01-01T09:00:00Z`、`now = 2026-05-07T12:00:00Z`
 - `rule = Daily, interval=1, end_condition=Never, by_day=[], by_month_day=[]`、`occurrence_count = 1`
 
-**断言**
+**验收标准**
 - `compute_next_fire_at(&item, now) == Some(2026-05-08T09:00:00Z)`
 - 计算应在毫秒级返回（不是逐天循环）
 
@@ -370,7 +370,7 @@ spec §5.3 写 `>`，但本期实现裁剪为 `>=`，等值仍允许触发以避
 - `start = 2026-05-07T09:00:00Z`、`now = 2026-05-09T00:00:00Z`
 - `rule = Daily, interval=1, end_condition=Count { n: 3 }`、`occurrence_count = 3`
 
-**断言**
+**验收标准**
 - `compute_next_fire_at(&item, now) == None`
 
 ---
@@ -381,7 +381,7 @@ spec §5.3 写 `>`，但本期实现裁剪为 `>=`，等值仍允许触发以避
 - `start = 2026-05-07T09:00:00Z`、`now = 2026-05-08T00:00:00Z`
 - `rule = Daily, interval=1, end_condition=Count { n: 3 }`、`occurrence_count = 1`
 
-**断言**
+**验收标准**
 - `compute_next_fire_at(&item, now) == Some(2026-05-08T09:00:00Z)`
 
 ---
@@ -395,7 +395,7 @@ spec §5.3 写 `>`，但本期实现裁剪为 `>=`，等值仍允许触发以避
 - `start = 2026-05-07T09:00:00Z`、`now = 2026-05-10T12:00:00Z`
 - `rule = Daily, interval=1, end_condition=Count { n: 3 }`、`occurrence_count = 1`（只有 5/7 真触发过）
 
-**断言**
+**验收标准**
 - `compute_next_fire_at(&item, now) == Some(2026-05-11T09:00:00Z)`（不是 None；count 按 actual fires 计）
 
 ---
@@ -406,7 +406,7 @@ spec §5.3 写 `>`，但本期实现裁剪为 `>=`，等值仍允许触发以避
 - `start = 2026-05-07T09:00:00Z`、`until = 2026-05-09T00:00:00Z`、`now = 2026-05-09T12:00:00Z`
 - `rule = Daily, interval=1, end_condition=Until { at: until }`、`occurrence_count = 2`
 
-**断言**
+**验收标准**
 - `compute_next_fire_at(&item, now) == None`
 
 ---
@@ -418,7 +418,7 @@ spec §5.3 写 `>`，但本期实现裁剪为 `>=`，等值仍允许触发以避
 - `rule = Daily, interval=1, end_condition=Never, by_day=[], by_month_day=[]`、`occurrence_count = 1`
 - `skip_dates = vec![2026-05-08T09:00:00Z]`
 
-**断言**
+**验收标准**
 - `compute_next_fire_at(&item, now) == Some(2026-05-09T09:00:00Z)`（5/8 跳过）
 
 ---
@@ -436,7 +436,7 @@ spec §5.3 写 `>`，但本期实现裁剪为 `>=`，等值仍允许触发以避
 **操作**
 - `store.take_due(now)`
 
-**断言**
+**验收标准**
 - 返回长度 1 的 Vec，元素 id 与 itemA.id 相等
 
 ---
@@ -450,7 +450,7 @@ spec §5.3 写 `>`，但本期实现裁剪为 `>=`，等值仍允许触发以避
 **操作**
 - `store.take_due(now)`
 
-**断言**
+**验收标准**
 - 返回长度 0 的 Vec
 
 ---
@@ -466,7 +466,7 @@ spec §5.3 写 `>`，但本期实现裁剪为 `>=`，等值仍允许触发以避
 **操作**
 - `store.advance_after_fire(&item.id, now)`
 
-**断言**
+**验收标准**
 - 返回 `Ok(updated)`
 - `updated.occurrence_count == 1`
 - `updated.next_fire_at == Some(2026-05-08T09:00:00Z)`
@@ -483,7 +483,7 @@ spec §5.3 写 `>`，但本期实现裁剪为 `>=`，等值仍允许触发以避
 **操作**
 - `store.advance_after_fire(&item.id, now)`
 
-**断言**
+**验收标准**
 - `updated.occurrence_count == 1`
 - `updated.next_fire_at == None`
 - `updated.status == Completed`
@@ -502,7 +502,7 @@ runner 拿到 due 后 advance 之前如果 status 已经被外部改成 Paused�
 **操作**
 - `store.advance_after_fire(&item.id, now)`
 
-**断言**
+**验收标准**
 - 返回 `Err`，错误信息包含字符串 `"not active"`
 - `store.get(&item.id).unwrap()`：`occurrence_count == 0`、`next_fire_at == Some(start)`、`status == Paused`
 
@@ -517,7 +517,7 @@ runner 拿到 due 后 advance 之前如果 status 已经被外部改成 Paused�
 **操作**
 - `store.set_skip(&item.id, at)`
 
-**断言**
+**验收标准**
 - 返回 `Err`，错误信息包含字符串 `"rule"`
 
 ---
@@ -531,7 +531,7 @@ runner 拿到 due 后 advance 之前如果 status 已经被外部改成 Paused�
 **操作**
 - `store.set_skip(&item.id, target)`
 
-**断言**
+**验收标准**
 - `updated.skip_dates.contains(&target) == true`
 - `unset_skip(&item.id, target)` 后 `skip_dates.contains(&target) == false`
 
@@ -547,7 +547,7 @@ runner 拿到 due 后 advance 之前如果 status 已经被外部改成 Paused�
 **前提**
 - 阅读 `src-tauri/src/runtime/agenda/runner.rs` 源文件
 
-**断言**（源码结构断言，不跑代码）
+**验收标准**（源码结构约束）
 - 文件包含字符串 `"path_resolver.resolve_paths()"`
 - 调用 `resolve_paths()` 的行号 > `loop {` 行号
 - 调用 `AgendaStore::new(paths.base_dir())` 的行号 > `loop {` 行号
@@ -565,7 +565,7 @@ runner 拿到 due 后 advance 之前如果 status 已经被外部改成 Paused�
 **操作**
 - `run_due_once(&store, &dispatcher, now).await`
 
-**断言**
+**验收标准**
 - 返回 `Ok(())`
 - `dispatcher.calls.len() == 1`
 - 第一条记录的 item id 等于 created item 的 id
@@ -582,7 +582,7 @@ runner 拿到 due 后 advance 之前如果 status 已经被外部改成 Paused�
 **操作**
 - `run_due_once(&store, &dispatcher, Utc::now()).await`
 
-**断言**
+**验收标准**
 - 返回 `Ok(())`
 - `dispatcher.calls.len() == 0`
 
@@ -598,7 +598,7 @@ CLAUDE.md 要求 transport 层只做参数接收 → 转发 runtime。本意图�
 **前提**
 - 阅读 `src-tauri/src/transport/tauri_commands/agenda.rs` 源文件
 
-**断言**（源码结构断言，不跑代码）
+**验收标准**（源码结构约束）
 - 文件中每个 `#[tauri::command]` 标记的 `pub async fn` 函数体（从函数签名行后到下一个起始 `}` 之间，不算签名行和闭合行）行数 < 30
 
 ---
@@ -612,7 +612,7 @@ CLAUDE.md 要求 transport 层只做参数接收 → 转发 runtime。本意图�
 **操作**
 - `build_agenda_item_from_create_request(request, now)`
 
-**断言**
+**验收标准**
 - 返回 `Err`
 - 错误信息字面值等于字符串 `"title is required"`
 
@@ -627,7 +627,7 @@ CLAUDE.md 要求 transport 层只做参数接收 → 转发 runtime。本意图�
 **操作**
 - `build_agenda_item_from_create_request(request, now)`
 
-**断言**
+**验收标准**
 - 错误信息字面值等于字符串 `"prompt is required"`
 
 ---
@@ -641,7 +641,7 @@ CLAUDE.md 要求 transport 层只做参数接收 → 转发 runtime。本意图�
 **操作**
 - `build_agenda_item_from_create_request(request, now)`
 
-**断言**
+**验收标准**
 - 错误信息字面值等于字符串 `"organizer_employee_id is required"`
 
 ---
@@ -655,7 +655,7 @@ CLAUDE.md 要求 transport 层只做参数接收 → 转发 runtime。本意图�
 **操作**
 - `build_agenda_item_from_create_request(request, now)`
 
-**断言**
+**验收标准**
 - 错误信息字面值等于字符串 `"timezone must be a valid IANA timezone"`
 
 ---
@@ -669,7 +669,7 @@ CLAUDE.md 要求 transport 层只做参数接收 → 转发 runtime。本意图�
 **操作**
 - `build_agenda_item_from_create_request(request, now)`
 
-**断言**
+**验收标准**
 - 返回 `Ok(item)`
 - `item.title == "Standup"`（trim）
 - `item.prompt == "Discuss blockers"`（trim）
@@ -685,7 +685,7 @@ CLAUDE.md 要求 transport 层只做参数接收 → 转发 runtime。本意图�
 - 已存在 base item（`title = "Old"`、`prompt = "Old prompt"`、`organizer = "p1"`、`status = Active`、`rule = None`）
 - `now = 2026-05-07T08:00:00Z`
 
-**操作 + 断言**（每个动作一条独立断言）
+**操作 + 验收标准**（每个动作一条独立验收标准）
 - `apply_update(item, UpdateAgendaItemRequest { title: Some("  New title  "), prompt: Some("  New prompt  "), start_at: Some(2026-05-07T10:00:00Z), timezone: Some("  UTC  "), rule: Some(None), status: Some(Paused) }, now)`：返回 `Ok(updated)`，`updated.title == "New title"`、`updated.prompt == "New prompt"`、`updated.timezone == "UTC"`、`updated.status == Paused`、`updated.organizer_employee_id == "p1"`（不变）、`updated.participants[0].employee_id == "p1"`（不变）、`updated.updated_at == now`、`updated.next_fire_at == Some(updated.start_at)`
 - `apply_update(item, UpdateAgendaItemRequest { title: Some("   "), ..Default::default() }, now)`：错误信息字面值 `"title is required"`
 - `apply_update(item, UpdateAgendaItemRequest { prompt: Some("   "), ..Default::default() }, now)`：错误信息字面值 `"prompt is required"`
@@ -707,7 +707,7 @@ CLAUDE.md 要求 transport 层只做参数接收 → 转发 runtime。本意图�
 **操作**
 - `serde_json::from_value::<UpdateAgendaItemRequest>(json)`
 
-**断言**
+**验收标准**
 - `{"rule": null}` 反序列化得到的 `request.rule` 字面匹配 `Some(None)`（外层 Some 表示"用户传了"，内层 None 表示"清空"）
 - `{"title": "T"}` 反序列化得到的 `request.rule` 字面匹配 `None`（不传等于不动）
 
@@ -724,7 +724,7 @@ spec §6 原写出参 `Occurrence`，本期裁剪为 `String`。前端类型与�
 - 阅读 `src/lib/tauri.ts` 中的 `runAgendaItemNow` 类型签名
 - 阅读 `src-tauri/src/transport/tauri_commands/agenda.rs` 中 `run_agenda_item_now` 的返回类型
 
-**断言**（源码结构断言）
+**验收标准**（源码结构约束）
 - TS 端 `runAgendaItemNow` 的返回类型字面包含 `Promise<string>`
 - Rust 端 `run_agenda_item_now` 的函数签名包含 `-> Result<String, String>`
 
@@ -736,7 +736,7 @@ spec §6 原写出参 `Occurrence`，本期裁剪为 `String`。前端类型与�
 - 阅读 `src/lib/tauri.ts` 中的 `listAgendaOccurrences` 函数签名
 - 阅读 `src-tauri/src/transport/tauri_commands/agenda.rs` 中 `list_agenda_occurrences` 的参数列表
 
-**断言**
+**验收标准**
 - TS 端签名字面匹配 `listAgendaOccurrences(itemId: string, limit?: number)`，参数列表中没有 `before`
 - Rust 端 `#[tauri::command] pub async fn list_agenda_occurrences` 的参数只有 `item_id: String, limit: Option<usize>, resolver: State<...>`，没有 `before`
 
