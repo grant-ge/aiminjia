@@ -20,7 +20,7 @@
 **操作**
 - 读取 `spawn_subagent` 的工具说明文本和参数说明文本
 
-**断言**
+**验收标准**
 - 工具说明中包含 `"async"` 或 `"run_in_background"`
 - 工具说明中包含 `"agent_id"` 或 `"立即返回"`
 - 工具说明中不包含 `"not_implemented_yet"`
@@ -52,14 +52,14 @@
 **操作**
 1. 让 async launcher 完成这一条任务
 2. 观察 task store 的 state
-3. 立即调用 `task_output(task_id="agent-7c1d", offset=0)`
+3. 立即查询 task_id 为 agent-7c1d 的任务输出，起始偏移量为 0
 4. 检查 notification queue
 
-**断言**
+**验收标准**
 - `AsyncTaskState` 的序列化值是 `"completed"`
-- `task_output(task_id="agent-7c1d", offset=0)` 返回的 `lines` 正好是 1 条
+- 查询 task_id 为 agent-7c1d、起始偏移量为 0 的任务输出，返回的 `lines` 正好是 1 条
 - 这 1 条 `lines[0]` 正好等于 `{"role":"assistant","content":"完成内容"}`
-- `task_output` 返回的 `new_offset == 1`
+- 任务输出返回的 `new_offset` 字段值为 1
 - notification queue 中已经有 1 条与 `agent-7c1d` 对应的通知
 
 ---
@@ -79,7 +79,7 @@
 1. 让 async launcher 走到 transcript append 失败
 2. 捕获日志输出
 
-**断言**
+**验收标准**
 - 日志中出现 warning 级别记录
 - 该 warning 中包含字符串 `"agent-9f9f"`
 - 该 warning 中包含 transcript 文件路径或 `output_file`
