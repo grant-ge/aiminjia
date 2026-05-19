@@ -12,5 +12,130 @@
 - 场景 6：多账号切换时当前 scope 正确切换，前一账号数据不串到新账号
 - 场景 7：登录成功后租户 brand.json（productName / logoUrl / 4 色 / fontFamily 等）写入本地并被 brandingStore 应用，CSS 变量按租户生效
 
-## 待补充
-> 具体意图待补全。
+---
+
+## 意图 1：用有效账号登录后，active_account.json 落盘，前端跳转到主界面
+
+**场景**
+用户打开应用看到登录页，输入正确的用户名和密码点击登录，应用记住当前活跃账号并把界面切到主页（不再停留在登录卡片）。
+
+**前提**
+- 应用已启动，当前未登录（登录页可见，输入框为空或仅有 remember 缓存的用户名）
+- 网络可达租户后台 (`auth.renlijia.com` / 配置的 tenant API)
+- 有一个已知的有效账号 `acct@example.com` + 密码 `Pwd-Valid-001`，可在租户后台手动确认其状态为正常
+- `~/.renlijia/global/auth/active_account.json` 在测试前不存在（或先手动删除以确保从 0 开始）
+
+**操作**
+1. 在登录卡片「账号」输入框输入 `acct@example.com`
+2. 在「密码」输入框输入 `Pwd-Valid-001`
+3. 点击「登录」按钮
+4. 等待按钮上的 spinner 消失（最长 10 秒）
+
+**验收标准**
+- 登录卡片消失，主界面渲染（左侧侧边栏可见，顶部标题栏出现）
+- 文件 `~/.renlijia/global/auth/active_account.json` 存在
+- 该文件为合法 JSON，包含 `scopeKey`、`tenantId`、`userId` 三个字段，且三个字段值非空
+- 目录 `~/.renlijia/users/t_{tenantId}__u_{userId}/` 存在
+- 该目录下 `scope.json` 存在，`username` 字段值为 `"acct@example.com"`
+- 登录页上方原本显示的「错误提示」区域为空（无 `text-destructive` 文本）
+
+---
+
+## 意图 2：用错误密码登录，UI 显示错误提示，停留在登录页
+
+**场景**
+用户输入了一个存在的账号但密码不对，应用不能误认为登录成功，也不能写入任何凭据文件，必须在登录页上给出可读的错误提示让用户重试。
+
+**前提**
+- 应用已启动，当前未登录
+- 网络可达租户后台
+- 已知账号 `acct@example.com` 存在且密码 **不是** `Pwd-Wrong-XXX`
+- `~/.renlijia/global/auth/active_account.json` 在测试前不存在
+
+**操作**
+1. 在登录卡片「账号」输入框输入 `acct@example.com`
+2. 在「密码」输入框输入 `Pwd-Wrong-XXX`
+3. 点击「登录」按钮
+4. 等待按钮上的 spinner 消失
+
+**验收标准**
+- 登录卡片仍然可见（未跳到主界面），登录按钮文案恢复为「登录」
+- 登录卡片中出现红色错误提示文案（`text-destructive`），文案非空，包含「密码」「凭据」「失败」或「认证」之一
+- 「密码」输入框被清空（value 为空字符串）
+- 「账号」输入框仍然显示 `acct@example.com`（未被清空）
+- 文件 `~/.renlijia/global/auth/active_account.json` **不存在**
+- 目录 `~/.renlijia/users/` 下没有为本次失败账号新建的 `t_*__u_*` 子目录
+
+---
+
+## 意图 3：用户点击登出后，active_account.json 被清除，前端跳转回登录页
+
+**场景**
+已登录用户在设置或头像菜单里点击「退出登录」，应用应立即把本地的活跃账号标记清掉，回到登录页，不再让任何主界面功能可访问。
+
+**前提**
+- 应用已启动且当前用户已登录（主界面可见，侧边栏头像显示当前用户名）
+- 文件 `~/.renlijia/global/auth/active_account.json` 存在，内容为当前登录用户的 scopeKey / tenantId / userId
+
+**操作**
+1. 在主界面打开当前账号下拉菜单（点头像或顶栏账号按钮）
+2. 点击「退出登录」菜单项
+3. 若出现二次确认弹窗，点击「确认退出」
+
+**验收标准**
+- 主界面消失，登录卡片重新出现（`<LoginCard>` 可见，「账号」输入框可被聚焦）
+- 文件 `~/.renlijia/global/auth/active_account.json` 不存在（已被删除或者其内容已被清空到不含 `scopeKey` 字段）
+- 前端 `useAuthStore` 状态对应的 `isLoggedIn` 在 DevTools / 调试输出中为 `false`
+- 登出后立即在登录页输入相同账号 + 正确密码 → 能再次走完意图 1 的验收（即登出未损坏后续登录路径）
+
+---
+
+## 意图 4：登录后凭据落盘，重启应用后自动恢复登录态，无需重新输入账号
+
+**场景**
+用户在桌面端登录一次后，关闭应用再重新打开，应用应通过本地凭据自动登录，不让用户再看到登录卡片，也不要求重新输入密码。
+
+**前提**
+- 应用已启动并已登录（按意图 1 完成登录）
+- `~/.renlijia/global/auth/active_account.json` 存在
+- `~/.renlijia/global/auth/` 目录下存在 `cloud_auth` 文件（AES-256-GCM 加密的 token 容器，`auth_dir().join("cloud_auth")`）
+- 已知用户名为 `acct@example.com`
+
+**操作**
+1. 通过菜单「文件 → 退出 AIjia」或系统快捷键完全关闭应用进程（不是登出，是退出应用）
+2. 重新从 Dock / 启动器打开应用
+3. 等待启动闪屏消失（最长 15 秒）
+
+**验收标准**
+- 应用重新打开后**直接进入主界面**，不显示登录卡片（无「账号」输入框、无「登录」按钮）
+- 顶栏 / 侧边栏头像区域显示的用户名为 `acct@example.com`（或租户后台对应的展示名）
+- `~/.renlijia/global/auth/active_account.json` 与 `~/.renlijia/global/auth/cloud_auth` 两个文件均存在，重启前后 sha256 不变（仅 `lastSeenAt` 字段可能变化）
+- 前端 `useAuthStore.isLoggedIn` 为 `true`，`user.username` 字段值为 `acct@example.com`
+- 整个启动过程未触发对登录页 `cloudLogin` 命令（可用日志 `[cloud_login]` 缺席间接验证；同等条件下重启前的成功登录会打印一行 `[cloud_login] user=...`，重启自动恢复不打印）
+
+---
+
+## 意图 5：登录成功后租户品牌信息落盘，前端主题色与租户配置一致
+
+**场景**
+租户在 lotus 后台配置了自定义产品名 / logo / 4 色调色板。用户用属于该租户的账号登录后，应用窗口的主题色、登录页 logo、顶栏 productName 必须立刻切到租户品牌，并把品牌快照写盘以便下次冷启动时登录页能预先呈现。
+
+**前提**
+- 应用已启动，当前未登录
+- 在租户后台为目标租户配置了非默认品牌：`productName = "DemoCorp 智办"`，`accentColor = "#2F6FEB"`，`primaryColor = "#101828"`，`bgColor = "#F3F6FB"`，`sidebarBgColor = "#E6ECF5"`，`logoUrl` 指向一张可访问的 png
+- 已知有效账号 `acct-democorp@example.com` + 密码 `Pwd-Valid-002` 属于该租户
+- `~/.renlijia/users/{scope}/brand.json` 在测试前不存在（首次登录场景）
+
+**操作**
+1. 在登录卡片输入 `acct-democorp@example.com` / `Pwd-Valid-002`
+2. 点击「登录」按钮
+3. 等待主界面渲染完成（侧边栏出现）
+
+**验收标准**
+- 文件 `~/.renlijia/users/t_{tenantId}__u_{userId}/brand.json` 存在
+- 该文件为合法 JSON，至少包含 `productName`、`accentColor`、`primaryColor`、`bgColor`、`sidebarBgColor` 五个字段
+- `productName` 字段值为 `"DemoCorp 智办"`；`accentColor` 字段值为 `"#2F6FEB"`（大小写不敏感比较）
+- 在浏览器/Webview DevTools 中检查 `:root` 元素，`--primary` CSS 变量解析值为 `#2F6FEB` 或等价 `rgb(47, 111, 235)`
+- 顶栏（Tauri overlay 区或 Windows 标题栏）背景色经截图取色 = `#2F6FEB`（容差 ±2/255）
+- 顶栏 productName 文本节点显示 `"DemoCorp 智办"`，不显示默认的 `"AI小家"`
+- 登出（按意图 3 操作）后再回到登录页，`<LoginLogoStack>` 显示的 brandName 仍为 `"DemoCorp 智办"`，logo 渲染使用 `brand.json` 中保存的 `logoUrl`（即不闪回默认 logo）
