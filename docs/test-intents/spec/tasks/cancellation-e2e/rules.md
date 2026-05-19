@@ -2,196 +2,87 @@
 
 来源：[LUT-6](mention://issue/61eb2d45-0626-4b6a-840e-0209133260d6)
 
-涉及核心模块：`runtime/cancellation.rs`（`CancellationToken` / `CancellationReason`）、`runtime/agent/cancellation_registry.rs`（`CancellationRegistry`）
-
-`CancellationReason` 变体：`UserCancel`、`Interrupt`、`SiblingError`、`BackgroundStop`
+验证方式：cargo test（使用 MockLlmExecutor + CancellationToken，不调真实 provider）
 
 ---
 
-## 意图 1：parent cancel 传播到 child，child cancel 不传播到 parent
+## 意图 1：用户点击停止后 TurnCompleted 的 outcome 为 Cancelled，AgentIdle 在 5s 内发出
 
 **场景**
-`child_token()` 建立的父子关系：父取消后子应立即被取消；子取消不影响父。这是级联取消的基础契约。
+用户在 turn 执行中点击「停止」，系统应在合理时间内停止，发出 `TurnCompleted(Cancelled)` 告知前端解除 loading，发出 `AgentIdle` 告知系统空闲。
 
 **前提**
-- 构造 `parent = CancellationToken::new()`
-- 调用 `child = parent.child_token()`
+- MockLlmExecutor：`run_llm_step` 在检测到 cancel 后返回 `Ok(LlmStepResult::Cancelled)`
+- 构造独立 `CancellationToken`，注入 turn
 
 **操作**
-1. 调用 `parent.cancel_with_reason(CancellationReason::UserCancel)`
-2. 检查 `parent.is_cancelled()` 和 `child.is_cancelled()`
-3. 检查 `parent.reason()` 和 `child.reason()`
+1. 启动 `run_chat_turn`，同时 20ms 后调用 `cancel_token.cancel_with_reason(CancellationReason::UserCancel)`
+2. 等待 `run_chat_turn` 返回，设 5s 超时
 
 **断言**
-- `parent.is_cancelled() == true`
-- `child.is_cancelled() == true`
-- `parent.reason() == Some(CancellationReason::UserCancel)`
-- `child.reason() == Some(CancellationReason::UserCancel)`
+- `run_chat_turn` 在 5s 内返回（不挂起）
+- EventBus 中 `TurnCompleted` 的 `outcome` 序列化值等于 `"Cancelled"`
+- EventBus 中 `AgentIdle` 事件存在
+- `TurnCompleted` 在 `AgentIdle` 之前出现
 
 ---
 
-## 意图 2：child cancel 不传播到 parent，parent reason 保持 None
+## 意图 2：工具执行中途取消，turn 以 Cancelled 结束，不产生孤儿工具调用
 
 **场景**
-子代理失败不应向上污染父代理的取消状态。
+工具正在执行时用户停止，已开始的工具调用不应残留在消息历史中（不允许有没有对应 tool_result 的 ToolUse 记录）。
 
 **前提**
-- 构造 `parent = CancellationToken::new()`
-- `child = parent.child_token()`
+- 注册 `"long_tool"`，执行时等待 cancel 信号再返回
+- MockLlmExecutor：第 1 轮返回 `ToolCalls { tool_calls: [{ name: "long_tool" }], .. }`
+- 工具开始执行后 30ms 触发取消
 
 **操作**
-1. 调用 `child.cancel_with_reason(CancellationReason::SiblingError)`
+1. 启动 `run_chat_turn`，同时 30ms 后触发取消
+2. 等待 `run_chat_turn` 返回
 
 **断言**
-- `child.is_cancelled() == true`
-- `child.reason() == Some(CancellationReason::SiblingError)`
-- `parent.is_cancelled() == false`
-- `parent.reason() == None`
+- EventBus 中 `TurnCompleted` 的 `outcome` 序列化值等于 `"Cancelled"`
+- EventBus 中 `ToolCallCompleted` 事件存在（合成的取消结果被注入）
+- `ToolCallCompleted` 事件的 `is_error` 字段为 `true`（工具被取消视为错误结果）
 
 ---
 
-## 意图 3：三层嵌套 parent cancel 传播到 grandchild
+## 意图 3：取消后立刻发新消息，新 turn 正常执行不受阻塞
 
 **场景**
-多层子代理嵌套时，顶层取消应级联到所有子孙代理。
+取消后 `RuntimeRunRegistry` 清空，下一条消息能正常发起新 turn，不被残留状态阻塞。
 
 **前提**
-- 构造 `parent = CancellationToken::new()`
-- `child = parent.child_token()`
-- `grandchild = child.child_token()`
+- turn 1：取消场景（同意图 1）
+- turn 2：MockLlmExecutor 返回 `ContentComplete { content: "好的", .. }`，使用新的 run_id
 
 **操作**
-1. 调用 `parent.cancel_with_reason(CancellationReason::Interrupt)`
+1. 执行 turn 1 并等待取消完成
+2. 立即执行 turn 2，等待完成
 
 **断言**
-- `child.is_cancelled() == true`
-- `grandchild.is_cancelled() == true`
-- `child.reason() == Some(CancellationReason::Interrupt)`
-- `grandchild.reason() == Some(CancellationReason::Interrupt)`
+- turn 2 的 `run_chat_turn` 返回 `Ok`
+- EventBus 中 turn 2 的 `TurnCompleted` 的 `outcome` 序列化值等于 `"Success"`
 
 ---
 
-## 意图 4：从已取消的 parent 创建 child，child 立即处于 cancelled 状态
+## 意图 4：连续两次触发取消，第二次取消幂等不产生额外错误
 
 **场景**
-在 parent 已取消后才创建的子代理，应立即继承取消状态，不进入执行。
+用户快速多次点击停止，系统不应报错或 panic，第一次取消生效，第二次被幂等忽略。
 
 **前提**
-- 构造 `parent = CancellationToken::new()`
-- 调用 `parent.cancel_with_reason(CancellationReason::Interrupt)`
+- 同意图 1 构造，turn 执行中
+- 准备两次取消调用
 
 **操作**
-1. 调用 `child = parent.child_token()`
+1. 启动 `run_chat_turn`
+2. 20ms 后调用 `cancel_token.cancel_with_reason(CancellationReason::UserCancel)`（第一次）
+3. 立即再调用一次 `cancel_token.cancel_with_reason(CancellationReason::Interrupt)`（第二次）
+4. 等待 `run_chat_turn` 返回
 
 **断言**
-- `child.is_cancelled() == true`
-- `child.reason() == Some(CancellationReason::Interrupt)`
-
----
-
-## 意图 5：child_token_ignoring_reason 忽略指定 reason，不传播该 reason 给 child
-
-**场景**
-某些子代理需要忽略特定的取消原因（如 SiblingError），继续执行，不被兄弟错误波及。
-
-**前提**
-- 构造 `parent = CancellationToken::new()`
-- `child = parent.child_token_ignoring_reason(CancellationReason::SiblingError)`
-
-**操作**
-1. 调用 `parent.cancel_with_reason(CancellationReason::SiblingError)`
-
-**断言**
-- `parent.is_cancelled() == true`
-- `child.is_cancelled() == false`（SiblingError 被忽略，child 未被取消）
-
----
-
-## 意图 6：cancel 幂等，多次调用只有第一次生效
-
-**场景**
-用户多次点击停止，不应改变已设定的取消原因，也不应 panic。
-
-**前提**
-- 构造 `token = CancellationToken::new()`
-
-**操作**
-1. 调用 `token.cancel_with_reason(CancellationReason::UserCancel)`
-2. 调用 `token.cancel_with_reason(CancellationReason::Interrupt)`（第二次，不同 reason）
-
-**断言**
-- `token.is_cancelled() == true`
-- `token.reason() == Some(CancellationReason::UserCancel)`（第一次设定的 reason 保持不变）
-
----
-
-## 意图 7：CancellationRegistry register 后 get 返回相同 token
-
-**场景**
-`CancellationRegistry` 按 `(session, team_name, agent_id)` 三维键存取 token，注册后能通过同样的键取回。
-
-**前提**
-- 构造 `registry = CancellationRegistry::new()`
-- `session = SessionId::new("sess-1")`，`agent = AgentId::new("agent-1")`，`token = CancellationToken::new()`
-
-**操作**
-1. 调用 `registry.register(&session, "team-a", agent.clone(), token.clone()).await`
-2. 调用 `registry.get(&session, "team-a", &agent).await`
-
-**断言**
-- 步骤 2 返回 `Some(retrieved_token)`
-- 取消 `token` 后（`token.cancel()`），`retrieved_token.is_cancelled() == true`（两者指向同一 Arc）
-
----
-
-## 意图 8：CancellationRegistry unregister 后 get 返回 None
-
-**场景**
-子代理退出后应从 registry 移除，避免泄漏和误操作。
-
-**前提**
-- 同意图 7 完成 register
-
-**操作**
-1. 调用 `registry.unregister(&session, "team-a", &agent).await`
-2. 调用 `registry.get(&session, "team-a", &agent).await`
-
-**断言**
-- 步骤 2 返回 `None`
-
----
-
-## 意图 9：cancel_team 取消 team 内所有 token 并清除注册
-
-**场景**
-取消整个 team 的所有子代理，registry 中该 team 的记录全部清除。
-
-**前提**
-- 构造 registry，同一 session 下同一 team-a 注册 2 个 token：`agent-x` 和 `agent-y`
-
-**操作**
-1. 调用 `registry.cancel_team(&session, "team-a").await`
-2. 分别调用 `registry.get(&session, "team-a", &agent_x).await` 和 `get(&session, "team-a", &agent_y).await`
-
-**断言**
-- `cancel_team` 返回值等于 `2`（取消了 2 个 token）
-- 两个 token 的 `is_cancelled() == true`
-- 步骤 2 两次 get 均返回 `None`（已被移除）
-
----
-
-## 意图 10：不同 team_name 的 token 互相隔离，cancel_team 只影响目标 team
-
-**场景**
-team 维度的隔离：取消 team-a 不应影响 team-b 的 token。
-
-**前提**
-- 同一 session，team-a 注册 `agent-1`，team-b 注册 `agent-2`
-
-**操作**
-1. 调用 `registry.cancel_team(&session, "team-a").await`
-2. 调用 `registry.get(&session, "team-b", &agent_2).await`
-
-**断言**
-- `agent_1` 对应 token `is_cancelled() == true`
-- 步骤 2 返回 `Some(token_b)`，且 `token_b.is_cancelled() == false`
+- `run_chat_turn` 正常返回，不 panic
+- EventBus 中 `TurnCompleted` 的 `outcome` 序列化值等于 `"Cancelled"`
+- EventBus 中 `TurnCompleted` 事件恰好出现 1 次（幂等，不重复）
