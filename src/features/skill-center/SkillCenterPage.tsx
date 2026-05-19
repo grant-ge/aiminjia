@@ -45,7 +45,6 @@ import { SkillValidationResultDialog } from './SkillValidationResultDialog'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { SkillValidationError, type SkillValidationKind } from '@/stores/skillStore'
 import { uploadWithOverwriteConfirm } from './uploadWithOverwriteConfirm'
-import { AppDropdown } from '@/components/common/AppDropdown'
 import { ChevronDown, FolderOpen, Package } from 'lucide-react'
 
 const ICONS: Record<string, LucideIcon> = {
