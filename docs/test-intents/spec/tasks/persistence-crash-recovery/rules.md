@@ -2,352 +2,331 @@
 
 来源：[LUT-8](mention://issue/8cb3deac-6e6a-478e-96f2-cdaa609f0f53)
 
+**验证方式：agent 跑（端到端产品验收）**
+
+启动真实应用进程，用真实用户操作触发持久化，通过 kill -9 / 文件破坏等手段制造异常，重启后读取真实存储文件验证结果。不 mock 存储层，不 mock LLM（可使用沙盒 API key），agent 直接读 `~/.renlijia/` 目录下的文件作为判定依据。
+
 涉及核心模块：
-- `storage/fs_atomic.rs` — tmp+rename 原子写
-- `storage/message_write_queue.rs` — 异步写队列（channel 容量 128，`try_send` 满时返回 Full 错误）
-- `storage/file_store/messages.rs` — 分片 JSONL（v1，`_current` 跟踪活跃分片，支持 `.tmp` 回退）+ 单文件（v2，`messages.jsonl`，id-based last-writer-wins）
-- `storage/aijia_home.rs` — 存储根目录 `~/.renlijia/`，`turn_stages_dir()` / `interrupted_turns_dir()` 路径管理
-- `runtime/run_registry.rs` — 纯内存 `Mutex<HashMap<String, ActiveRun>>`，重启后自动清空
-- `runtime/chat/turn_stage.rs` — `TurnStageEmitter` 每次状态转换原子写 `turn_stages/{conv_id}.json`；`run_recovery_sweep()` 启动时扫描孤儿文件转换为 `interrupted_turns/{conv_id}.json`
+- `storage/fs_atomic.rs` — tmp+rename 原子写，写失败不破坏已有文件
+- `storage/message_write_queue.rs` — 异步写队列（channel 容量 128）
+- `storage/file_store/messages.rs` — 分片 JSONL（v1，`_current` 跟踪分片）+ 单文件（v2，`messages.jsonl`）
+- `storage/aijia_home.rs` — 存储根目录 `~/.renlijia/`，`turn_stages/` + `interrupted_turns/` 路径
+- `runtime/run_registry.rs` — 纯内存 HashMap，重启后自动清空
+- `runtime/chat/turn_stage.rs` — `TurnStageEmitter` 每次状态转换原子写 `turn_stages/{conv_id}.json`；`run_recovery_sweep()` 启动时扫描孤儿文件
 
-推荐验证方式：模块 1～5 的核心路径均可用 `cargo test` 集成测试覆盖（`TempDir` 隔离真实文件系统），无需调 LLM。
-
----
-
-## 模块 1：崩溃后对话历史完整性 + 恢复 Banner 触发
-
-### 意图 1.1：进程正常完成写入后被强制终止，重启后对话历史完整且 interrupted_turns 哨兵存在
-
-**场景**
-对话完成一轮正常响应后，进程被 `kill -9`。`run_recovery_sweep` 应在下次启动时把 `turn_stages/{conv_id}.json` 孤儿文件转换为 `interrupted_turns/{conv_id}.json`，历史消息完整可读。
-
-**前提**
-- 用 `TempDir::new()` 创建隔离根目录 `root`
-- 在 `root/turn_stages/` 目录下写入一个合法的 `PersistedTurnStage` 文件，文件名 `conv-abc123.json`，内容：
-  ```json
-  {
-    "schemaVersion": 1,
-    "conversationId": "conv-abc123",
-    "runId": "run-xyz",
-    "stage": { "kind": "completing" },
-    "stageStartedAtMs": 1700000000000,
-    "turnStartedAtMs": 1700000000000,
-    "lastHeartbeatAtMs": 1700000000000
-  }
-  ```
-- `root/interrupted_turns/` 目录不存在（模拟全新启动）
-- 在 `root/users/t_1__u_1/conversations/conv-abc123/messages.jsonl` 写入两行合法 JSON（user + assistant 各一条）
-
-**操作**
-1. 调用 `run_recovery_sweep(&root.join("turn_stages"), &root.join("interrupted_turns"))`
-2. 读取 `root/interrupted_turns/conv-abc123.json`
-3. 调用 `AppStorage::new(&root.join("users/t_1__u_1"))` 后调用 `storage.get_messages("conv-abc123")`
-
-**断言**
-- `run_recovery_sweep` 返回的 `RecoverySweepResult` 满足：`orphans_found == 1`、`interrupted_written == 1`、`deleted == 1`、`errors == 0`
-- `root/turn_stages/conv-abc123.json` 不存在（已被 sweep 删除）
-- `root/interrupted_turns/conv-abc123.json` 存在且可被 `serde_json::from_slice::<InterruptedTurnDisk>` 解析
-- 解析后 `record.conversation_id == "conv-abc123"`、`record.run_id == "run-xyz"`
-- `record.last_stage` 序列化后值为 `{"kind":"completing"}`
-- `get_messages("conv-abc123")` 返回长度为 2 的列表，第 0 条 `role == "user"`，第 1 条 `role == "assistant"`
+**存储路径速查：**
+```
+~/.renlijia/
+├── users/{scope}/conversations/{conv_id}/
+│   ├── conv.json              # 对话元数据
+│   ├── messages.jsonl         # v2 单文件（新对话）
+│   ├── messages.1.jsonl       # v1 分片（老对话）
+│   └── _current               # v1 分片指针，内容格式 "shard:next_seq"
+├── turn_stages/{conv_id}.json      # 活跃 turn 的阶段快照（turn 结束时删除��
+└── interrupted_turns/{conv_id}.json # 崩溃哨兵（startup sweep 生成）
+```
 
 ---
 
-### 意图 1.2：流式输出中途崩溃，已 append 的消息行可独立解析，_current 无损
+## 模块 1：崩溃后对话历史完整性 + 恢复 Banner
+
+### 意图 1.1：完整响应后 kill -9，重启后消息内容完整、interrupted_turns 哨兵存在、前端显示恢复 banner
 
 **场景**
-流式写入时 `append_jsonl` 只完成了部分行写入，进程崩溃。恢复后，已完成写入的行必须可独立解析为合法 JSON，不能因未完成的行影响其他行。
-
-**前提**
-- 用 `TempDir::new()` 创建隔离根目录
-- 用 `AppStorage::new(root.path())` + `storage.create_conversation("conv-stream", "流式测试")` 创建对话
-- 通过 `storage.insert_message("m1", "conv-stream", "user", r#"{"text":"你好"}"#)` 写入一条完整消息
-- 直接在 `messages.jsonl`（或 `messages.1.jsonl`）文件末尾 append 一段**不完整的 JSON**（模拟写入中途崩溃）：`b"{\"id\":\"m2\",\"role\":\"assistant\",\"content\":{\"text\":\"未完"`（不含换行和闭括号）
+用户发一条消息，等 AI 完整回复后，进程被 kill -9。重启应用，打开同一对话，应看到历史消息完整，前端顶部出现「上次对话未完成」banner（含「重试」「关闭」按钮）。
 
 **操作**
-1. 调用 `storage.get_messages("conv-stream")`
+1. 启动 lotus-app，完成登录，记录当前用户的 scope（格式 `t_{tenantId}__u_{userId}`，可从 `~/.renlijia/users/` 目录名获取）
+2. 新建对话，发送消息：`"帮我写一首关于春天的五言绝句"`，等待 AI 完整回复
+3. 记录 conv_id（从 `~/.renlijia/users/{scope}/conversations/` 目录中找最新目录）
+4. 执行 `kill -9 $(pgrep -f "aijia\|lotus")` 强制终止进程
+5. 重新启动 lotus-app，打开步骤 3 记录的对话
 
-**断言**
-- 返回结果不是 `Err`（`get_messages_v2` 的 `read_jsonl` 对损坏行应跳过或忽略，不整体 panic）
-- 返回列表中包含 `id == "m1"` 的消息，`content["text"] == "你好"`
-- 列表中不包含 `id == "m2"`（未完成行不应出现，或若出现也不影响 m1 的完整性）
+**判定（全部满足才算 PASS）**
+- `~/.renlijia/users/{scope}/conversations/{conv_id}/messages.jsonl`（或 `messages.1.jsonl`）存在，且包含 2 条记录（user + assistant）
+- assistant 消息 content 中包含汉字，无乱码，无 JSON 解析错误
+- `~/.renlijia/turn_stages/{conv_id}.json` 不存在（kill 前 turn 已正常完成，无孤儿文件）OR 存在并被 sweep 处理后 `interrupted_turns/{conv_id}.json` 出现
+- 前端对话顶部出现 banner，包含「重试」和「关闭」两个按钮（如有 banner 触发条件则验证；如 turn 正常完成后无 banner 则验证发送按钮可用即可）
 
 ---
 
-### 意图 1.3：run_recovery_sweep 对 turn_stages 目录下格式损坏的 .json 文件只 log 不 panic，损坏文件被删除
+### 意图 1.2：流式输出中途 kill -9，interrupted_turns 哨兵被正确生成，已写入消息无乱码
 
 **场景**
-`turn_stages/` 下有一个 `.json` 文件但内容是随机字节，`run_recovery_sweep` 不应因此 panic，应跳过并删除该文件，继续处理其他文件。
-
-**前提**
-- 用 `TempDir::new()` 创建根目录
-- 在 `root/turn_stages/` 写两个文件：
-  - `corrupt.json`：内容 `b"{invalid json"`
-  - `conv-valid.json`：内容为合法 `PersistedTurnStage`（同意图 1.1）
+AI 正在流式输出回复时进程被 kill -9。重启后，`run_recovery_sweep` 应将 `turn_stages/{conv_id}.json` 转换为 `interrupted_turns/{conv_id}.json`，前端打开对话时显示中断 banner。
 
 **操作**
-1. 调用 `run_recovery_sweep(&root.join("turn_stages"), &root.join("interrupted_turns"))`
+1. 发送一条能触发较长回复的消息：`"请详细解释量子纠缠的原理，用500字以上"`
+2. 在 AI **开始流式输出但尚未完成时**（观察到前端有内容在逐字出现），执行 `kill -9`
+3. 在 kill 前先确认 `turn_stages/` 目录下有对应的 `{conv_id}.json` 文件（可在步骤 2 触发后立即检查）
+4. 重启应用，打开该对话
 
-**断言**
-- 函数返回（不 panic）
-- 返回值 `errors == 1`（corrupt.json 导致一次错误）
-- 返回值 `interrupted_written == 1`（valid 文件被正常处理）
-- `root/turn_stages/corrupt.json` 不存在（被删除）
-- `root/turn_stages/conv-valid.json` 不存在（被正常 sweep 后删除）
-- `root/interrupted_turns/conv-valid.json` 存在且可解析
+**判定（全部满足才算 PASS）**
+- 重启后 `~/.renlijia/turn_stages/{conv_id}.json` 不存在（已被 sweep 移除）
+- `~/.renlijia/interrupted_turns/{conv_id}.json` 存在，且可被 `cat | python3 -m json.tool` 解析为合法 JSON
+- `interrupted_turns/{conv_id}.json` 中 `conversationId` 字段与步骤 1 的对话 ID 一致
+- 前端对话顶部出现「上次对话未完成」banner
+- 已写入的部分消息（如有）内容为合法 UTF-8 中文，无乱码字符（用 `cat messages.jsonl | python3 -c "import sys,json; [json.loads(l) for l in sys.stdin if l.strip()]"` 验证每行合法 JSON）
 
 ---
 
-### 意图 1.4：进程正常完成 turn 时 turn_stage 文件被删除，重启后无 interrupted_turns 哨兵
+### 意图 1.3：点击 banner「关闭」后哨兵文件被删除，对话可正常发消息
 
 **场景**
-正常完成的 turn 在 `mark_turn_complete()` 时删除 `turn_stages/{conv_id}.json`。重启后 `turn_stages/` 为空，`run_recovery_sweep` 不产生任何哨兵。
+存在 `interrupted_turns/{conv_id}.json` 哨兵的前提下，用户点击 banner「关闭」按钮，哨兵应被删除，对话恢复正常可用状态。
 
-**前提**
-- 用 `TempDir::new()` 创建根目录
-- `root/turn_stages/` 目录存在但为空（无任何 `.json` 文件）
+**前提**：意图 1.2 执行后对话处于中断状态，banner 可见
 
 **操作**
-1. 调用 `run_recovery_sweep(&root.join("turn_stages"), &root.join("interrupted_turns"))`
+1. 在有 banner 的对话中点击「关闭」按钮
+2. 检查文件系统：`ls ~/.renlijia/interrupted_turns/{conv_id}.json`
+3. 在该对话发送一条新消息：`"你好"`
 
-**断言**
-- 返回值：`orphans_found == 0`、`interrupted_written == 0`、`deleted == 0`、`errors == 0`
-- `root/interrupted_turns/` 目录不存在或存在但为空
+**判定**
+- 步骤 2：文件不存在（已被 `dismiss_interrupted_turn` 删除）
+- banner 从 UI 消失
+- 步骤 3 的消息正常发出并收到回复，消息被追加到 `messages.jsonl`
 
 ---
 
-## 模块 2：写操作失败时数据保护
-
-### 意图 2.1：write_atomic 写入 .tmp 成功但 rename 前崩溃，原有文件保持不变
+### 意图 1.4：点击 banner「重试」后原消息重新发出，历史消息不受影响
 
 **场景**
-`write_atomic` 先写 `.tmp` 再 rename。如果 rename 未执行，下一次 `write_atomic` 覆盖 `.tmp` 后完成 rename，原有文件保持 v1 内容，不出现半写状态。
+中断 banner 的「重试」按钮应取最后一条用户消息重新发送，不污染历史记录。
 
-**前提**
-- 用 `TempDir::new()` 创建目录
-- 先调用 `write_atomic(&path, b"v1")` 写入初始值
-- 手动写入 `.tmp` 文件：`fs::write(path.with_extension("tmp"), b"v2-partial")`（模拟崩溃留下孤儿 .tmp）
+**前提**：意图 1.2 执行后 banner 可见，记录中断前最后一条用户消息内容
 
 **操作**
-1. 调用 `write_atomic(&path, b"v3")` 完成正常写入
+1. 在有 banner 的对话中点击「重试」
+2. 等待新回复完成
+3. 检查 `messages.jsonl` 中的消息数量和内容
 
-**断言**
-- `fs::read(&path).unwrap() == b"v3"`（rename 覆盖了 v1，写入 v3 成功）
-- `.tmp` 文件不存在（被本次 write_atomic 的 rename 清理）
+**判定**
+- banner 消失
+- 能收到新的 AI 回复
+- `messages.jsonl` 中原有消息仍存在（历史不被清除）
+- `interrupted_turns/{conv_id}.json` 不存在（dismiss 已清理）
 
 ---
 
-### 意图 2.2：_current 文件的 .tmp 回退：_current 本体不存在时从 .tmp 恢复分片元数据
+## 模块 2：写操作失败时的用户感知与数据保护
+
+### 意图 2.1：存储目录改为只读后发消息，UI 出现错误提示，进程不退出
 
 **场景**
-`write_shard_meta` 写 `.tmp` 后 rename 前崩溃，下次 `read_shard_meta` 能从 `.tmp` 回退读取元数据并 promote 为 `_current`，不丢失分片进度。
-
-**前提**
-- 用 `TempDir::new()` 创建根目录
-- 调用 `storage.create_conversation("conv-meta", "元数据回退测试")` 初始化对话
-- 插入 3 条消息（写入 `_current` 记录 `shard=1:next_seq=4`）
-- **删除 `_current` 文件**，**手动写入 `_current.tmp`** 内容为 `"1:4"`（模拟 rename 前崩溃留下孤儿 .tmp）
+`chmod 555` 锁定存储目录后，新消息无法写入，应用应给出可理解的错误提示而非静默失败或崩溃。
 
 **操作**
-1. 调用 `storage.get_messages("conv-meta")`
+1. 记录当前 scope，确保有一个已有历史消息的对话
+2. 执行 `chmod 555 ~/.renlijia/users/{scope}/conversations/`
+3. 在该对话发送消息：`"测试消息"`
+4. 观察 UI 反应
+5. 执行 `chmod 755 ~/.renlijia/users/{scope}/conversations/`（恢复权限，避免影响后续测试）
 
-**断言**
-- 返回列表长度为 3（三条消息全部可读）
-- `_current` 文件存在（被 `read_shard_meta` promote 后写回）
-- `_current.tmp` 文件不存在（promote 后删除）
+**判定**
+- 步骤 3 触发后，UI 出现错误提示（toast/错误文字/红色提示，内容包含「失败」「错误」或等价信息）；不是白屏、不是 panic 弹窗
+- 应用进程仍在运行（`pgrep -f "aijia\|lotus"` 有返回）
+- 新消息**未**被写入 `messages.jsonl`（文件 mtime 未更新）
 
 ---
 
-## 模块 3：重启后 RuntimeRunRegistry 不锁死会话
-
-### 意图 3.1：RuntimeRunRegistry 重建后对任意 session_id 的 is_session_busy 返回 false
+### 意图 2.2：恢复权限后发消息正常，历史消息完整未损坏
 
 **场景**
-`RuntimeRunRegistry` 是纯内存结构，每次构造都是空 HashMap。模拟重启（重新 `new()`）后，任何 session_id 不应被标记为 busy，不阻塞新的 `reserve` 调用。
+权限恢复后，应用应能正常写入新消息，之前的历史消息不因权限操作而损坏。
 
-**前提**
-- 构造 `registry1 = RuntimeRunRegistry::new()`
-- 调用 `registry1.reserve("session-a", RunId::new("run-old"))` 使其 busy
-- **丢弃 registry1**，构造 `registry2 = RuntimeRunRegistry::new()`（模拟重启）
+**前提**：意图 2.1 已完成，权限已恢复为 755
 
 **操作**
-1. 检查 `registry2.is_session_busy("session-a")`
-2. 调用 `registry2.reserve("session-a", RunId::new("run-new"))`
+1. 在同一对话发送消息：`"权限恢复后的消息"`
+2. 等待回复完成
+3. 执行 `cat ~/.renlijia/users/{scope}/conversations/{conv_id}/messages.jsonl | python3 -c "import sys,json; msgs=[json.loads(l) for l in sys.stdin if l.strip()]; print(len(msgs), 'messages')"`
 
-**断言**
-- `registry2.is_session_busy("session-a") == false`
-- `registry2.reserve("session-a", RunId::new("run-new"))` 返回 `Ok(())`（不报 "already processing"）
-- `registry2.is_session_busy("session-a") == true`（新 reserve 成功）
+**判定**
+- 步骤 2 收到正常回复（无报错）
+- 步骤 3 输出的消息数量 = 意图 2.1 前的消息数 + 2（新的 user + assistant）
+- 每行 JSON 均可解析（无损坏行）
 
 ---
 
-### 意图 3.2：进行中的 run 被 cancel 后，同一 session 可以立即 reserve 新 run
+## 模块 3：重启后会话不被锁定（run_registry 纯内存自清空）
+
+### 意图 3.1：运行中 kill -9 后重启，发送按钮可用，可立即发新消息
 
 **场景**
-当一个 run 被取消（`cancel_tx` 发出 true），`reserve` 检测到已有 run 处于 cancelled 状态时应移除旧 run 并允许新 run 占位，不返回 "already processing" 错误。
-
-**前提**
-- 构造 `RuntimeRunRegistry::new()`
-- 调用 `registry.reserve("session-b", RunId::new("run-old"))` 成功
-- 调用 `registry.cancel("session-b")` 标记为已取消
+`RuntimeRunRegistry` 是纯内存结构，重启后天然为空。进行中的 run 被 kill 后重启，前端不应残留「处理中」状态。
 
 **操作**
-1. 调用 `registry.reserve("session-b", RunId::new("run-new"))`
+1. 发送需要较长时间的消息：`"请逐步分析：1+1=? 请用10步来解释"`，在 AI **开始回复但尚未完成时** kill -9
+2. 重启应用，打开该对话
+3. 观察发送按钮状态
+4. 发送新消息：`"你好"`
 
-**断言**
-- 返回 `Ok(())`
-- `registry.is_session_busy("session-b") == true`
-- `registry.run_id_for_session("session-b").unwrap().as_str() == "run-new"`（旧 run 已被替换）
+**判定**
+- 步骤 3：发送按钮可点击（无常驻 loading spinner）
+- 步骤 4：消息正常发出并收到回复
+- 没有「当前对话正在处理中」的阻塞提示
 
 ---
 
-## 模块 4：并发写入时消息完整性
-
-### 意图 4.1：同一对话 5 条消息串行快速写入，全部消息可读且无内容混叠
+### 意图 3.2：两个对话同时 kill -9 后重启，两个对话均可发消息
 
 **场景**
-`MessageWriteQueue` 的 channel 容量 128，5 条消息串行写入不会触发 Full 错误。每条消息应独立存为一行合法 JSON，id 不重复，内容与写入时一致。
-
-**前提**
-- 用 `TempDir::new()` + `AppStorage::new` 创建存储
-- 调用 `storage.create_conversation("conv-bulk", "并发写入测试")`
+多个 session 同时中断，重启后 registry 清空，所有对话均不被锁定。
 
 **操作**
-1. 循环 5 次，依次调用 `storage.insert_message(&format!("msg-{i}"), "conv-bulk", "user", &format!(r#"{{"text":"消息{i}"}}"#))` for i in 0..5
-2. 调用 `storage.get_messages("conv-bulk")`
-3. 读取底层文件（`messages.jsonl` 或 `messages.1.jsonl`）逐行解析
+1. 打开对话 A，发送长消息（不等完成）
+2. 立刻打开对话 B，发送长消息（不等完成）
+3. 在两个对话都在流式输出时 kill -9
+4. 重启，分别打开对话 A 和对话 B
 
-**断言**
-- `get_messages` 返回长度为 5 的列表
-- 列表中 `content["text"]` 依次为 `"消息0"`、`"消息1"`、`"消息2"`、`"消息3"`、`"消息4"`
-- 底层文件每行均为合法 JSON（`serde_json::from_str::<serde_json::Value>(line)` 成功）
-- 底层文件中不存在两条消息内容交织在同一行的情况（每行只包含一个 `id` 字段）
+**判定**
+- 对话 A 和对话 B 的发送按钮均可点击
+- 分别向两个对话各发一条新消息，均正常收到回复
 
 ---
 
-### 意图 4.2：append_jsonl 追加内容后文件每行独立可解析，追加不破坏已有行
+## 模块 4：并发写入时的消息完整性
+
+### 意图 4.1：快速连续发送 5 条消息，全部消息可读，文件每行为合法 JSON
 
 **场景**
-`append_jsonl` 使用 `OpenOptions::append(true)` + 换行分隔。追加新行后，已有行不受影响，每行仍可独立解析。
-
-**前提**
-- 用 `TempDir::new()` 创建目录
-- 在 `path/messages.jsonl` 写入合法 JSONL 两行：
-  ```
-  {"id":"m1","role":"user"}
-  {"id":"m2","role":"assistant"}
-  ```
+`MessageWriteQueue` 的 channel 容量 128，快速发送不应触发 Full 错误。每条消息应独立完整写入。
 
 **操作**
-1. 调用 `append_jsonl(&path, &serde_json::json!({"id":"m3","role":"user"}))` 追加第三行
-2. 逐行读取文件，对每行调用 `serde_json::from_str::<serde_json::Value>`
+1. 新建一个对话，记录 conv_id
+2. 快速连续发送 5 条消息（每条发出后不等回复，直接发下一条）：
+   - `"第一条消息"`
+   - `"第二条消息"`
+   - `"第三条消息"`
+   - `"第四条消息"`
+   - `"第五条消息"`
+3. 等待所有回复完成（约 30 秒）
+4. 执行：`cat ~/.renlijia/users/{scope}/conversations/{conv_id}/messages.jsonl | python3 -c "import sys,json; lines=[l for l in sys.stdin if l.strip()]; print(len(lines),'lines'); [json.loads(l) for l in lines]"`
 
-**断言**
-- 文件共 3 行
-- 第 1 行解析后 `id == "m1"`
-- 第 2 行解析后 `id == "m2"`
-- 第 3 行解析后 `id == "m3"`
-- 不存在内容跨行（不存在解析失败的行）
+**判定**
+- 步骤 3 全部收到回复，UI 无错误提示
+- 步骤 4 输出的行数 ≥ 10（5 条 user + 5 条 assistant）
+- 所有行均为合法 JSON（python3 无异常）
+- `messages.jsonl` 中无内容交织行（每行只有一个 `id` 字段）
 
 ---
 
-### 意图 4.3：MessageWriteQueue channel 满时 try_send 返回 Full 错误，不阻塞调用方
+### 意图 4.2：并发写入中途 kill -9，已完成的消息行可独立解析，未完成行不破坏文件
 
 **场景**
-当 `MessageWriteQueue` 的 channel（容量 128）已满，`enqueue_insert` 应立即返回 `Err`（Full），不阻塞调用线程，错误信息包含 "full"。
-
-**前提**
-- 构造一个 `MessageWriteTarget` 的测试 stub，`insert_message` 永不返回（阻塞在 `std::thread::sleep(Duration::MAX)` 或等待一个 Condvar）
-- 构造 `MessageWriteQueue::new(Arc::new(stub))`
+`append_jsonl` 使用换行分隔追加，原子性由文件系统保证单行 write。kill 后已完成的行应仍可解析。
 
 **操作**
-1. 循环 129 次调用 `queue.enqueue_insert(format!("id-{i}"), "conv-x".to_string(), "user".to_string(), r#"{"text":"x"}"#.to_string())` for i in 0..129
-2. 记录第 129 次（index 128）的返回值
+1. 连续快速发送 3 条消息后，在 AI 回复流式输出过程中 kill -9
+2. 重启后执行：
+   ```bash
+   python3 -c "
+   import json, sys
+   ok, bad = 0, 0
+   for line in open('~/.renlijia/users/{scope}/conversations/{conv_id}/messages.jsonl'):
+       line = line.strip()
+       if not line: continue
+       try: json.loads(line); ok+=1
+       except: bad+=1; print('BAD LINE:', repr(line[:80]))
+   print(f'{ok} ok, {bad} bad')
+   "
+   ```
 
-**断言**
-- 前 128 次返回 `Ok(())`（channel 容量刚好容纳）
-- 第 129 次返回 `Err`，错误字符串包含 `"full"` 或 `"message write queue is full"`
+**判定**
+- `bad == 0`（无损坏行）
+- `ok >= 1`（至少有一条完整消息）
 
 ---
 
 ## 模块 5：存储文件损坏后的启动容错
 
-### 意图 5.1：messages.jsonl 被截断后 get_messages_v2 不 panic，返回可解析的部分消息
+### 意图 5.1：截断 messages.jsonl 后启动，应用不 panic，其他对话正常
 
 **场景**
-`messages.jsonl` 最后一行被截断（模拟写入中途崩溃）。`get_messages_v2` 使用 `read_jsonl` 读取时，损坏行应被跳过，已完成的行正常返回。
-
-**前提**
-- 用 `TempDir::new()` + `AppStorage::new` 创建存储
-- 创建对话并插入 2 条完整消息（id `"m1"`, `"m2"`）
-- 读取 `messages.jsonl`，在文件末尾 append 一段截断 JSON：`b"\n{\"id\":\"m3\",\"truncated"`
+单个对话的消息文件被截断，不应影响整体应用启动和其他对话的使用。
 
 **操作**
-1. 调用 `storage.get_messages_v2("conv-damaged")`
+1. 确保有至少 2 个对话（对话 A 有历史消息，对话 B 正常可用）
+2. 备份：`cp ~/.renlijia/users/{scope}/conversations/{conv_A_id}/messages.jsonl /tmp/messages.jsonl.bak`
+3. 截断：`truncate -s $(( $(wc -c < ~/.renlijia/users/{scope}/conversations/{conv_A_id}/messages.jsonl) / 2 )) ~/.renlijia/users/{scope}/conversations/{conv_A_id}/messages.jsonl`
+4. 重启应用
+5. 打开对话 B，发送消息：`"你好"`
+6. 打开对话 A，观察展示
 
-**断言**
-- 调用不 panic
-- 返回 `Ok(messages)`
-- `messages` 中包含 `id == "m1"` 和 `id == "m2"` 的消息
-- `messages` 中不包含 `id == "m3"`（截断行被跳过）
+**判定**
+- 步骤 4：应用正常启动，无崩溃弹窗（进程存活）
+- 步骤 5：对话 B 正常收到回复
+- 步骤 6：对话 A 要么显示部分可读消息，要么显示「加载失败」提示；不显示乱码；不导致整个应用不可用
+- 恢复：`cp /tmp/messages.jsonl.bak ~/.renlijia/users/{scope}/conversations/{conv_A_id}/messages.jsonl`
 
 ---
 
-### 意图 5.2：_current 文件不存在时 read_shard_meta 返回默认值 shard=1:next_seq=1，读取已有 shard 文件成功
+### 意图 5.2：损坏 conv.json 后启动，该对话不出现或提示错误，其他对话正常
 
 **场景**
-`_current` 文件被删除后，`read_shard_meta` 返回默认值 `ShardMeta { shard: 1, next_seq: 1 }`，`get_legacy_shard_messages` 仍能读取 `messages.1.jsonl`。
-
-**前提**
-- 用 `TempDir::new()` 创建根目录
-- 在 `root/conversations/conv-no-current/messages.1.jsonl` 写入 2 行合法 JSONL（id `"m1"`, `"m2"`）
-- **不创建** `_current` 文件
+单个对话的元数据文件损坏，应被隔离处理，不影响其他对话和整体运行。
 
 **操作**
-1. 调用 `AppStorage::new(&root)` 后 `storage.get_messages("conv-no-current")`
+1. 确保有至少 2 个对话
+2. 备份：`cp ~/.renlijia/users/{scope}/conversations/{conv_A_id}/conv.json /tmp/conv.json.bak`
+3. 损坏：`echo "notjson" > ~/.renlijia/users/{scope}/conversations/{conv_A_id}/conv.json`
+4. 重启应用，观察对话列表和对话 B 可用性
+5. 恢复：`cp /tmp/conv.json.bak ~/.renlijia/users/{scope}/conversations/{conv_A_id}/conv.json`
 
-**断言**
-- 调用不 panic
-- 返回 `Ok(messages)`，`messages.len() == 2`
-- `messages[0]["id"].as_str() == Some("m1")`
-- `messages[1]["id"].as_str() == Some("m2")`
+**判定**
+- 应用正常启动，无崩溃弹窗
+- 对话 B 仍然出现在列表，可正常使用
+- 对话 A 要么不出现在列表，要么点击时显示错误提示；不引发整体崩溃
 
 ---
 
-### 意图 5.3：run_recovery_sweep 在 turn_stages 目录不存在时返回零结果，不 panic
+### 意图 5.3：turn_stages 目录下存在损坏的 .json 文件，启动不 panic，正常对话可用
 
 **场景**
-全新设备或首次启动时 `turn_stages/` 目录不存在，`run_recovery_sweep` 应安全返回零结果，不因 `read_dir` 失败而 panic。
-
-**前提**
-- 用 `TempDir::new()` 创建根目录
-- `root/turn_stages/` **不创建**（目录不存在）
+`run_recovery_sweep` 对单个损坏文件只 log+删除，不 panic，不阻塞启动。
 
 **操作**
-1. 调用 `run_recovery_sweep(&root.join("turn_stages"), &root.join("interrupted_turns"))`
+1. 确保应用已关闭
+2. 写入损坏文件：`echo "{bad json" > ~/.renlijia/turn_stages/fake-conv-id.json`
+3. 同时写入一个合法的 turn_stage 文件（格式参考 `turn_stages/{real_conv_id}.json`，可从运行中的 app 复制）：
+   ```bash
+   cat > ~/.renlijia/turn_stages/valid-conv-123.json << 'EOF'
+   {"schemaVersion":1,"conversationId":"valid-conv-123","runId":"run-test","stage":{"kind":"completing"},"stageStartedAtMs":1700000000000,"turnStartedAtMs":1700000000000,"lastHeartbeatAtMs":1700000000000}
+   EOF
+   ```
+4. 启动应用
 
-**断言**
-- 函数返回（不 panic）
-- 返回值等于 `RecoverySweepResult::default()`（`orphans_found == 0`，`interrupted_written == 0`，`deleted == 0`，`errors == 0`）
-- `root/interrupted_turns/` 目录不存在（没有任何写操作）
+**判定**
+- 应用正常启动，无崩溃弹窗
+- 启动后 `~/.renlijia/turn_stages/fake-conv-id.json` 不存在（被 sweep 删除）
+- 启动后 `~/.renlijia/interrupted_turns/valid-conv-123.json` 存在（合法文件被正常处理）
+- 现有对话正常可用
 
 ---
 
-### 意图 5.4：v2 messages.jsonl 为空时自动 fallback 读取 v1 shard 文件
+### 意图 5.4：删除 _current 文件（保留 messages.1.jsonl），历史消息仍可读
 
 **场景**
-`get_messages_v2` 先读 `messages.jsonl`，若为空则 fallback 到 `get_legacy_shard_messages` 读取 `messages.N.jsonl`。保证从 v1 迁移 v2 的对话在 v2 文件为空时不丢失历史。
+`read_shard_meta` 在 `_current` 缺失时 fallback 到 `shard=1:next_seq=1`，历史消息仍可通过 `messages.1.jsonl` 读取。仅影响 v1 分片格式的老对话。
 
-**前提**
-- 用 `TempDir::new()` + `AppStorage::new` 创建存储
-- 调用 `storage.create_conversation("conv-fallback", "fallback 测试")`
-- 通过底层 `insert_message` 函数（v1 路径）写入 2 条消息到 `messages.1.jsonl`
-- 创建空的 `messages.jsonl` 文件（`fs::write(&messages_v2_path, b"")`，长度为 0）
+**操作**（仅在确认对话使用 v1 分片格式时执行，即目录下有 `messages.1.jsonl` 而无 `messages.jsonl`）
+1. 找到一个 v1 格式对话（有 `messages.1.jsonl` 和 `_current`，无 `messages.jsonl`）
+2. 备份并删除：`cp ~/.renlijia/users/{scope}/conversations/{conv_id}/_current /tmp/_current.bak && rm ~/.renlijia/users/{scope}/conversations/{conv_id}/_current`
+3. 重启应用，打开该对话
 
-**操作**
-1. 调用 `storage.get_messages_v2("conv-fallback")`
+**判定**
+- 历史消息正常展示（不为空，无乱码）
+- 应用不崩溃
+- 恢复：`cp /tmp/_current.bak ~/.renlijia/users/{scope}/conversations/{conv_id}/_current`
 
-**断言**
-- 返回 `Ok(messages)`
-- `messages.len() == 2`（通过 fallback 从 v1 shard 读取）
-- `messages[0].id == "m1"`（与 v1 写入的 id 一致）
+---
+
+## 执行说明
+
+所有意图的判定证据均来自：
+1. **文件系统**：直接 `cat` / `ls` / `python3` 检查 `~/.renlijia/` 目录下的真实文件
+2. **前端 UI**：观察 banner、发送按钮状态、错误提示
+3. **进程状态**：`pgrep` 确认进程存活
+
+每条意图至少跑两次以确认稳定复现。BLOCKED 条件：环境无法满足前置操作（如无法写入 `turn_stages/`），记录阻塞原因，不计入失败率。
