@@ -4,33 +4,46 @@
 
 ---
 
-## 意图 1：用户触发取消后 TurnCompleted 的 outcome 为 Cancelled，AgentIdle 在 5s 内发出
+## 意图 1：用户触发取消后，turn 正常结束，流式内容不丢失，对话后续可用
 
 **场景**
-用户点击「停止」，系统应在合理时间内停止，发出 `TurnCompleted(Cancelled)` 告知前端解除 loading，发出 `AgentIdle` 告知系统空闲。
+用户点击「停止」，系统停止流式输出，已到达的内容被持久化，对话状态干净，下一条消息可以正常发送。
 
 **前提**
-- MockLlmExecutor 预设：检测到 cancel 信号后返回 `Cancelled`
+- MockLlmExecutor 预设：先发出 delta `"你好"`，检测到 cancel 后返回 `Cancelled`
+- 使用 TempDir + AppStorage，conversation_id 为 `"conv-cancel-test"`
+- 用户消息内容为 `"请介绍一下自己"`
 - turn 开始后 20ms 触发取消
 
 **操作**
-- driver 开始执行对话，20ms 后触发取消
+- driver 执行对话，20ms 后触发取消，等待 turn 返回
 
 **断言**
-- turn 在 5s 内结束，不挂起
+
+事件序列：
 - EventBus 中 `TurnCompleted` 的 `outcome` 序列化值为 `"Cancelled"`
-- EventBus 中 `AgentIdle` 事件存在
-- `TurnCompleted` 出现在 `AgentIdle` 之前
+- EventBus 中 `StreamDone` **不出现**（流未正常完成）
+- EventBus 中最后一个事件为 `AgentIdle`，`scope` 序列化值为 `"primary"`
+- `TurnCompleted` 出现在 `AgentIdle` 之前，两者之间无其他 `TurnCompleted`
+
+存储状态：
+- `storage.get_messages("conv-cancel-test")` 返回列表长度为 2（user + assistant 各 1 条）
+- assistant 消息的 `role` 等于 `"assistant"`
+- assistant 消息的 `content["text"]` 等于 `"你好"`（已流出的内容被保存，不丢失）
+- user 消息的 `content["text"]` 等于 `"请介绍一下自己"`
+
+后续可用性：
+- 取消后用同一 conversation_id 再发一条消息 `"你好"`，新 turn 的 `TurnCompleted` 的 `outcome` 序列化值为 `"Success"`（不被取消状态阻塞）
 
 ---
 
-## 意图 2：工具执行中途取消，EventBus 中 ToolCallCompleted 存在且 is_error 为 true
+## 意图 2：工具执行中途取消，工具调用有合成结果，不产生孤儿 ToolUse 记录
 
 **场景**
-工具正在执行时用户停止，已开始的工具调用不应残留为没有结果的孤儿——系统注入合成的取消结果，标记为错误。
+工具正在执行时用户停止，已开始的工具调用必须有对应的 tool_result（合成取消结果），消息历史中不允许出现没有 tool_result 的 ToolUse 记录。
 
 **前提**
-- 注册 `"long_tool"`，执行时等待 cancel 信号再返回
+- 注册 `"long_tool"`，执行时等待 cancel 信号
 - MockLlmExecutor 预设：第 1 轮返回包含 `"long_tool"` 的 `ToolCalls`
 - 工具开始执行后 30ms 触发取消
 
@@ -38,45 +51,36 @@
 - driver 执行对话，工具执行中途触发取消
 
 **断言**
+
+事件序列：
 - EventBus 中 `TurnCompleted` 的 `outcome` 序列化值为 `"Cancelled"`
-- EventBus 中 `ToolCallCompleted` 事件存在
-- `ToolCallCompleted` 事件的 `is_error` 字段为 `true`
+- EventBus 中 `ToolCallExecuting` 事件出现 1 次
+- EventBus 中 `ToolCallCompleted` 事件出现 1 次，`is_error` 字段为 `true`
+- `ToolCallCompleted` 出现在 `TurnCompleted` 之前
+
+存储状态：
+- `storage.get_messages` 返回的消息列表中，不存在没有对应 tool_result 的 assistant ToolUse 记录（消息历史闭合）
 
 ---
 
-## 意图 3：取消后立刻执行新 turn，新 turn 正常完成不受阻塞
+## 意图 3：连续两次触发取消，TurnCompleted 只出现一次，reason 为第一次的 UserCancel
 
 **场景**
-取消后系统状态干净，下一条消息能正常发起新 turn，不被残留状态阻塞。
+用户快速多次点击停止，系统不应 panic，第一次取消的 reason 应被保留，后续幂等忽略。
 
 **前提**
-- turn 1：取消场景，同意图 1
-- turn 2：MockLlmExecutor 预设返回 `ContentComplete { content: "好的" }`，使用新的 run_id
+- MockLlmExecutor 预设：检测到 cancel 后返回 `Cancelled`
+- 20ms 后触发第一次取消（reason: `UserCancel`），立即再触发第二次（reason: `Interrupt`）
 
 **操作**
-- 执行 turn 1 并等待取消完成
-- 立即执行 turn 2
+- driver 执行对话，连续触发两次取消
 
 **断言**
-- turn 2 的 `TurnCompleted` 的 `outcome` 序列化值为 `"Success"`
-- EventBus 中 turn 2 的 `MessagePersisted` 的 `content.text` 等于 `"好的"`
 
----
-
-## 意图 4：连续两次触发取消，turn 正常结束，TurnCompleted 只出现一次
-
-**场景**
-用户快速多次点击停止，系统不应 panic 或重复结束，第一次取消生效，后续幂等忽略。
-
-**前提**
-- MockLlmExecutor 预设：检测到 cancel 信号后返回 `Cancelled`
-- 准备连续两次取消：第 1 次原因为 `UserCancel`，第 2 次原因为 `Interrupt`，间隔 ≤ 10ms
-
-**操作**
-- driver 开始执行对话
-- 20ms 后连续触发两次取消
-
-**断言**
-- turn 正常返回，不 panic
+事件序列：
 - EventBus 中 `TurnCompleted` 事件恰好出现 1 次
 - `TurnCompleted` 的 `outcome` 序列化值为 `"Cancelled"`
+- EventBus 中 `AgentIdle` 恰好出现 1 次
+
+存储状态：
+- `storage.get_messages` 返回列表长度为 2（user + assistant），数据完整不重复
