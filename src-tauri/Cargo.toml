@@ -28,17 +28,19 @@ tauri-plugin-notification = "2"
 # E2E UI automation — gated behind the `e2e` cargo feature (see [features] below).
 #
 # Default `pnpm tauri:dev` / `cargo build` does NOT pull this dep, so contributors
-# without a sibling `tauri-pilot/` clone are unaffected. To run e2e:
+# without codeup access are unaffected. To run e2e:
 #
 #   pnpm dev:with-pilot                # uses `--features e2e` under the hood
 #   cargo build --features e2e         # or directly
 #
-# Path is relative to src-tauri/ and expects sibling layout:
-#   <parent>/lotus-app/
-#   <parent>/tauri-pilot/              (clone manually before enabling)
+# Source: 仁励家私有云效仓，需要 ssh key 配好 + 仓权限。
+# Branch=main 不锁 commit，所以每次 e2e 编译会拉 main 最新代码（构建不严格可
+# 复现，但 e2e 工具改进可立即下发）。要锁 commit 加 `rev = "..."` 参数。
+# 没权限的人 `cargo fetch --features e2e` 会被 SSH 拒鉴权挡下，但默认 build
+# 不会触发依赖解析 → 业务开发无感。
 #
 # See docs/onboarding-e2e.md for setup.
-tauri-plugin-pilot = { path = "../../tauri-pilot/crates/tauri-plugin-pilot", optional = true }
+tauri-plugin-pilot = { git = "ssh://git@codeup.aliyun.com/renlijia/lotus/tauri-pilot.git", branch = "main", optional = true }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }

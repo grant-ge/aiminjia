@@ -5445,6 +5445,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-pilot"
 version = "0.5.2"
+source = "git+ssh://git@codeup.aliyun.com/renlijia/lotus/tauri-pilot.git?branch=main#0c86fe9d361009917d7f24f941662a9f21816e62"
 dependencies = [
  "enigo",
  "libc",
