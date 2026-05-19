@@ -379,7 +379,6 @@
       "fontMedium": "中",
       "fontLarge": "大"
     },
-    "copyrightText": "2026 任理家 · 保留所有权利",
     "archived": {
       "newChat": "新对话",
       "noRecords": "暂无归档记录",
@@ -417,7 +416,6 @@
     "about": {
       "icon": "图标",
       "version": "版本",
-      "copyright": "© ",
       "checkUpdate": "检查更新",
       "policiesTitle": "条款与隐私",
       "terms": "用户协议",

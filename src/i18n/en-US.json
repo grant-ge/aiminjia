@@ -379,7 +379,6 @@
       "fontMedium": "Medium",
       "fontLarge": "Large"
     },
-    "copyrightText": "2026 Renlijia · All rights reserved",
     "archived": {
       "newChat": "New chat",
       "noRecords": "No archived records",
@@ -417,7 +416,6 @@
     "about": {
       "icon": "icon",
       "version": "Version",
-      "copyright": "© ",
       "checkUpdate": "Check for updates",
       "policiesTitle": "Terms & Privacy",
       "terms": "Terms of Service",

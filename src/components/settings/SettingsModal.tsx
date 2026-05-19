@@ -159,7 +159,6 @@ export function SettingsModal() {
                 <AboutPanel
                   appName={productName}
                   version={appVersion}
-                  copyright={t('settings.copyrightText')}
                   logoUrl={logoUrl}
                   onCheckUpdate={() => void onCheckUpdate()}
                   onUploadLogs={() => void onUploadLogs()}

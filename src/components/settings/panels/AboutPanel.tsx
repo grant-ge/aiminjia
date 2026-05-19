@@ -18,7 +18,6 @@ interface AboutPanelLinks {
 interface AboutPanelProps {
   appName: string
   version: string
-  copyright: string
   logoUrl: string
   onCheckUpdate: () => void
   onUploadLogs: () => void | Promise<void>
@@ -58,7 +57,6 @@ function PillButton({
 export function AboutPanel({
   appName,
   version,
-  copyright,
   logoUrl,
   onCheckUpdate,
   onUploadLogs,
@@ -89,7 +87,6 @@ export function AboutPanel({
           <div className="flex min-w-0 flex-col gap-1.5 pt-1">
             <div className="text-base font-bold leading-none text-foreground">{appName}</div>
             <div className="text-sm leading-none text-muted-foreground">{t('settings.about.version')} {version}</div>
-            <div className="text-sm leading-none text-muted-foreground">{t('settings.about.copyright')}{copyright}</div>
           </div>
         </div>
         <PillButton onClick={onCheckUpdate}>{t('settings.about.checkUpdate')}</PillButton>
