@@ -4,44 +4,44 @@
 
 ---
 
-## 意图 1：用户触发取消后已流出内容落盘，StreamDone 不出现，后续可发新消息
+## 意图 1：用户点击停止后已流出内容落盘，对话后续可继续使用
 
 **场景**
-用户点击停止，已到达的内容被持久化，StreamDone 不出现，对话状态干净，下一条消息可正常发送。
+用户在 AI 流式输出过程中点击停止，已到达的内容被保存，对话状态干净，可以继续发新消息。
 
 **前提**
-- MockLlmExecutor 预设：先发出 delta `"你好"`，检测到 cancel 后返回 `Cancelled`
-- 使用隔离存储，conversation_id 为 `"conv-cancel-test"`
-- 用户消息为 `"请介绍一下自己"`
-- turn 开始后 20ms 触发取消
+- 使用有效 API key，新建对话
+- 用户消息为 `"请详细介绍一下自己，至少写300字"`
+- 确认 AI 已开始流式输出内容
 
 **操作**
-- driver 执行对话，20ms 后触发取消
+- 用户发送消息
+- 在 AI 流式输出过程中点击「停止」按钮
 
 **验收标准**
 - EventBus 中 `TurnCompleted` 的 `outcome` 字段值为 `"Cancelled"`
 - EventBus 中 `StreamDone` 不出现
 - EventBus 中最后一个事件类型为 `AgentIdle`，`scope` 字段值为 `"primary"`
 - `messages.jsonl` 存在，文件共 2 行，每行均为合法 JSON
-- 第 1 行 `role` 字段值为 `"user"`，`content.text` 字段值为 `"请介绍一下自己"`
-- 第 2 行 `role` 字段值为 `"assistant"`，`content.text` 字段值为 `"你好"`（已流出内容被保存，不丢失）
-- 取消后用同一 conversation_id 再执行一轮，新 turn 的 `TurnCompleted` 的 `outcome` 字段值为 `"Success"`
+- 第 1 行 `role` 字段值为 `"user"`，`content.text` 字段值为 `"请详细介绍一下自己，至少写300字"`
+- 第 2 行 `role` 字段值为 `"assistant"`，`content.text` 不为空（已流出内容被保存）
+- 停止后在同一对话发送 `"你好"`，新 turn 的 `TurnCompleted` 的 `outcome` 字段值为 `"Success"`
 
 ---
 
-## 意图 2：工具执行中途取消，工具调用有合成结果，messages.jsonl 中无孤儿 ToolUse 记录
+## 意图 2：工具执行过程中用户点击停止，消息历史中无孤儿 ToolUse 记录
 
 **场景**
-工具正在执行时用户停止，已开始的工具调用必须有对应的 tool_result（合成取消结果），消息文件中不允许出现没有 tool_result 的 ToolUse 记录。
+工具正在执行时用户停止，已开始的工具调用必须有对应的 tool_result，消息文件中不允许出现没有结果的孤儿工具调用记录。
 
 **前提**
-- 注册 `"long_tool"`，执行时等待 cancel 信号
-- MockLlmExecutor 预设：第 1 轮返回包含 `"long_tool"` 的 `ToolCalls`
-- 使用隔离存储，conversation_id 为 `"conv-tool-cancel-test"`
-- 工具开始执行后 30ms 触发取消
+- 使用会触发工具调用的 prompt，且工具执行耗时较长
+- 用户消息为 `"请帮我执行一个耗时的 bash 命令：sleep 30"`
+- 确认工具已开始执行
 
 **操作**
-- driver 执行对话，工具执行中途触发取消
+- 用户发送消息
+- 在工具执行过程��点击「停止」按钮
 
 **验收标准**
 - EventBus 中 `TurnCompleted` 的 `outcome` 字段值为 `"Cancelled"`
@@ -51,22 +51,22 @@
 
 ---
 
-## 意图 3：连续两次触发取消，messages.jsonl 中消息记录不重复，TurnCompleted 只出现一次
+## 意图 3：连续快速点击停止两次，消息记录不重复，TurnCompleted 只出现一次
 
 **场景**
-用户快速多次点击停止，系统不应 panic，消息文件不产生重复记录，TurnCompleted 只出现一次。
+用户快速多次点击停止，系统幂等处理，消息文件不产生重复记录，TurnCompleted 只出现一次。
 
 **前提**
-- MockLlmExecutor 预设：先发出 delta `"你好"`，检测到 cancel 后返回 `Cancelled`
-- 使用隔离存储，conversation_id 为 `"conv-double-cancel-test"`
-- 用户消息为 `"请介绍一下自己"`
-- 20ms 后触发第一次取消，立即再触发第二次取消
+- 使用有效 API key，新建对话
+- 用户消息为 `"请详细介绍一下自己，至少写300字"`
+- 确认 AI 已开始流式输出
 
 **操作**
-- driver 执行对话，连续触发两次取消
+- 用户发送消息
+- 在 AI 流式输出过程中快速连续点击「停止」按钮两次（间隔 ≤ 200ms）
 
 **验收标准**
 - EventBus 中 `TurnCompleted` 事件恰好出现 1 次，`outcome` 字段值为 `"Cancelled"`
 - EventBus 中 `AgentIdle` 事件恰好出现 1 次
 - `messages.jsonl` 存在，文件共 2 行，每行均为合法 JSON
-- 第 2 行 `role` 字段值为 `"assistant"`，`content.text` 字段值为 `"你好"`（不重复写入）
+- 第 2 行 `role` 字段值为 `"assistant"`，`content.text` 不为空（不重复写入）

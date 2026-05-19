@@ -4,82 +4,75 @@
 
 ---
 
-## 意图 1：API key 无效（401）时用户看到错误提示，assistant 消息不落盘
+## 意图 1：API key 无效时用户看到错误提示，assistant 消息不落盘
 
 **场景**
-用户发消息，provider 返回 401 认证失败。前端展示错误提示，对话历史中不产生空的 assistant 消息。
+用户配置了一个无效的 API key，发消息后应看到错误提示，对话历史中不产生空的 assistant 消息。
 
 **前提**
-- MockLlmExecutor 预设：`run_llm_step` 返回 Err，错误内容包含 `"API error (401): unauthorized"`
-- 使用隔离存储，conversation_id 为 `"conv-401-test"`
+- 应用配置了一个已知无效的 API key（如 `sk-invalid-key-for-testing`）
+- 新建对话，conversation_id 记录备用
 - 用户消息为 `"你好"`
 
 **操作**
-- driver 执行一轮对话，LLM 返回 401 错误
+- 用户发送消息，等待系统响应
 
 **验收标准**
-- EventBus 中出现 `StreamError` 事件，`error` 字段包含 `"401"` 或 `"unauthorized"`
-- EventBus 中 `StreamError` 出现在 `AgentIdle` 之前
-- `messages.jsonl` 存在，文件共 1 行，该行为合法 JSON，`role` 字段值为 `"user"`（无 assistant 消息写入）
+- 前端出现错误提示，提示内容包含认证失败相关字样（如「认证」「key」「401」之一）
+- `messages.jsonl` 存在，文件共 1 行，该行 `role` 字段值为 `"user"`（无 assistant 消息写入）
 
 ---
 
-## 意图 2：provider 限流（429）时用户看到错误提示，assistant 消息不落盘
+## 意图 2：provider 限流时用户看到错误提示，assistant 消息不落盘
 
 **场景**
-provider 配额耗尽返回 429，用户收到错误提示，不无限等待，存储中不产生空的 assistant 消息。
+provider 返回限流错误（429），用户应看到错误提示而非无限等待。
 
 **前提**
-- MockLlmExecutor 预设：`run_llm_step` 返回 Err，错误内容包含 `"API error (429): rate limit exceeded"`
-- 使用隔离存储，conversation_id 为 `"conv-429-test"`
-- 用户消息为 `"你好"`
+- 使用已达到配额上限的 API key，或通过网络层模拟 429 响应
+- 新建对话，用户消息为 `"你好"`
 
 **操作**
-- driver 执行一轮对话，LLM 返回 429 错误
+- 用户发送消息，等待系统响应
 
 **验收标准**
-- EventBus 中出现 `StreamError` 事件，`error` 字段包含 `"429"` 或 `"rate limit"`
+- 前端出现错误提示，提示内容包含限流相关字样（如「限流」「quota」「429」之一）
 - `messages.jsonl` 存在，文件共 1 行，`role` 字段值为 `"user"`
 
 ---
 
-## 意图 3：上下文过长触发 compaction 后 turn 正常完成，assistant 消���落盘
+## 意图 3：上下文过长时系统自动压缩历史后继续完成对话
 
 **场景**
-历史消息超出上下文窗口，系统自动压缩历史后继续完成 turn，用户感受到的是对话正常完成，assistant 消息正常写入。
+对话历史积累到超出上下文窗口，系统应自动触发 compaction 压缩历史后继续完成对话，用户感受到的是对话正常完成。
 
 **前提**
-- MockLlmExecutor 预设：第 1 次返回 PromptTooLong 错误，第 2 次返回 `ContentComplete { content: "压缩后的回复" }`
-- MockCompactClient 预设：返回摘要 `"历史已压缩"`
-- 使用隔离存储，conversation_id 为 `"conv-compact-test"`
+- 已有一个包含大量历史消息的对话（历史消息 token 数接近或超过当前 provider 上下文窗口的 80%）
+- 用户消息为 `"请继续"`
 
 **操作**
-- driver 执行一轮对话，触发 PromptTooLong 后自动 compaction 并重试
+- 用户发送消息，等待系统响应完成
 
 **验收标准**
+- 前端正常展示 AI 回复，无错误提示
 - EventBus 中出现 `TurnStageChanged` 事件，`stage.kind` 字段值为 `"compacting"`
-- EventBus 中 `TurnCompleted` 的 `outcome` 字段值为 `"Success"`
-- `messages.jsonl` 存在，文件共 2 行，每行均为合法 JSON
-- 第 2 行 `role` 字段值为 `"assistant"`，`content.text` 字段值为 `"压缩后的回复"`
+- `messages.jsonl` 新增 1 行，`role` 字段值为 `"assistant"`，`content.text` 不为空
 
 ---
 
-## 意图 4：正常 turn 完成后 StreamDelta 拼接内容与存储消息完全一致
+## 意图 4：正常对话中 StreamDelta 拼接内容与存储消息完全一致
 
 **场景**
-前端依赖 StreamDelta 事件逐字追加显示回复，存储中的消息必须与流式内容完全一致，不能丢字或重复。
+用户发消息，前端通过流式 delta 逐字展示回复。流式内容与磁盘存储的消息必须完全一致，不能丢字或重复。
 
 **前提**
-- MockLlmExecutor 预设：返回 `ContentComplete { content: "你好，我是 AI 助手" }`
-- 使用隔离存储，conversation_id 为 `"conv-delta-test"`
-- 用户消息为 `"请介绍一下你自己"`
+- 使用有效 API key，新建对话
+- 用户消息为 `"请用一句话介绍你自己"`
 
 **操作**
-- driver 执行一轮正常对话
+- 用户发送消息，等待 AI 完整回复
 
 **验收标准**
-- EventBus 中所有 `StreamDelta` 事件的 `content` 字段按出现顺序拼接后等于 `"你好，我是 AI 助手"`
-- `StreamDone` 出现在最后一个 `StreamDelta` 之后
+- 前端逐字展示 AI 回复，无跳变或内容缺失
 - `messages.jsonl` 存在，文件共 2 行，每行均为合法 JSON
-- 第 1 行 `role` 字段值为 `"user"`，`content.text` 字段值为 `"请介绍一下你自己"`
-- 第 2 行 `role` 字段值为 `"assistant"`，`content.text` 字段值为 `"你���，我是 AI 助手"`
+- 第 2 行 `role` 字段值为 `"assistant"`，`content.text` 不为空且与前端展示内容一致
