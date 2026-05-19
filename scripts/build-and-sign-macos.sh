@@ -158,5 +158,14 @@ case "${ARCH:-both}" in
 esac
 
 echo ""
+echo "--- Refresh public download page ---"
+# Regenerate downloads.html after upload so the new build shows up immediately.
+# CI already runs this once after Windows build, but local mac uploads happen
+# AFTER that, so without this step the page lags by a full release.
+if ! python3 "$SCRIPT_DIR/ci-generate-download-page.py"; then
+    echo "  warn: download page refresh failed (upload itself already succeeded)"
+fi
+
+echo ""
 echo "=== All done ==="
 echo "macOS arm64 + x86_64 v$VERSION ($RELEASE_TYPE) built, signed, notarized, uploaded."

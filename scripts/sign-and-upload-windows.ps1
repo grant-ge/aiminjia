@@ -140,5 +140,20 @@ print(f'\n[ok] Windows v{version} ({release_type}) uploaded')
 }
 
 Write-Host ""
+Write-Host "=== Step 4: Refresh public download page ===" -ForegroundColor Cyan
+# CI also runs this after the Windows build job, but local mac signing
+# uploads happen AFTER that, so refresh again here to pick up whatever
+# was just uploaded.
+$PageScript = Join-Path $ScriptDir "ci-generate-download-page.py"
+if (Test-Path $PageScript) {
+    python $PageScript
+    if ($LASTEXITCODE) {
+        Write-Host "  warn: download page refresh failed (upload itself already succeeded)" -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "  warn: ci-generate-download-page.py not found, skipping page refresh" -ForegroundColor Yellow
+}
+
+Write-Host ""
 Write-Host "=== Done ===" -ForegroundColor Green
 Write-Host "Windows v$version ($releaseType) signed and uploaded to OSS."
