@@ -45,6 +45,8 @@ import { SkillValidationResultDialog } from './SkillValidationResultDialog'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { SkillValidationError, type SkillValidationKind } from '@/stores/skillStore'
 import { uploadWithOverwriteConfirm } from './uploadWithOverwriteConfirm'
+import { AppDropdown } from '@/components/common/AppDropdown'
+import { ChevronDown, FolderOpen, Package } from 'lucide-react'
 
 const ICONS: Record<string, LucideIcon> = {
   'bar-chart-2': BarChart2,
@@ -106,6 +108,40 @@ export function SkillCenterPage() {
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
   useChat()
 
+  const runInstall = useCallback(
+    async (picked: string) => {
+      try {
+        const outcome = await uploadWithOverwriteConfirm((force) => upload(picked, force))
+        if (outcome === 'installed') {
+          pushNotification({
+            level: 'success',
+            title: t('skillCenter.uploadSuccess'),
+            message: t('skillCenter.uploadSuccessDesc'),
+            actions: [],
+            dismissible: true,
+            autoHide: 4,
+            context: 'toast',
+          })
+        }
+      } catch (err) {
+        if (err instanceof SkillValidationError) {
+          setValidationFailure({ kind: err.kind, detail: err.detail })
+          return
+        }
+        pushNotification({
+          level: 'error',
+          title: t('skillCenter.uploadFailed'),
+          message: err instanceof Error ? err.message : String(err),
+          actions: [],
+          dismissible: true,
+          autoHide: 6,
+          context: 'toast',
+        })
+      }
+    },
+    [pushNotification, t, upload],
+  )
+
   const handleImportDirectory = useCallback(async () => {
     const picked = await openDialog({
       directory: true,
@@ -113,36 +149,21 @@ export function SkillCenterPage() {
       title: t('skillCenter.selectDir'),
     })
     if (!picked || Array.isArray(picked)) return
+    await runInstall(picked)
+  }, [runInstall, t])
 
-    try {
-      const outcome = await uploadWithOverwriteConfirm((force) => upload(picked, force))
-      if (outcome === 'installed') {
-        pushNotification({
-          level: 'success',
-          title: t('skillCenter.uploadSuccess'),
-          message: t('skillCenter.uploadSuccessDesc'),
-          actions: [],
-          dismissible: true,
-          autoHide: 4,
-          context: 'toast',
-        })
-      }
-    } catch (err) {
-      if (err instanceof SkillValidationError) {
-        setValidationFailure({ kind: err.kind, detail: err.detail })
-        return
-      }
-      pushNotification({
-        level: 'error',
-        title: t('skillCenter.uploadFailed'),
-        message: err instanceof Error ? err.message : String(err),
-        actions: [],
-        dismissible: true,
-        autoHide: 6,
-        context: 'toast',
-      })
-    }
-  }, [pushNotification, upload])
+  const handleImportArchive = useCallback(async () => {
+    const picked = await openDialog({
+      directory: false,
+      multiple: false,
+      title: t('skillCenter.selectArchive'),
+      filters: [
+        { name: t('skillCenter.archiveFilter'), extensions: ['zip', 'aijia-skill'] },
+      ],
+    })
+    if (!picked || Array.isArray(picked)) return
+    await runInstall(picked)
+  }, [runInstall, t])
 
   const handleDeleteSkill = async (skillId: string, displayName: string) => {
     const confirmed = await requestConfirm({
@@ -360,9 +381,29 @@ export function SkillCenterPage() {
                 {syncing ? t('skillCenter.syncing') : t('skillCenter.syncBuiltin')}
               </Button>
             )}
-            <Button size="sm" onClick={() => void handleImportDirectory()}>
-              {t('skillCenter.importSkill')}
-            </Button>
+            <AppDropdown
+              ariaLabel={t('skillCenter.importSkill')}
+              trigger={
+                <Button size="sm">
+                  {t('skillCenter.importSkill')}
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </Button>
+              }
+              items={[
+                {
+                  id: 'import-dir',
+                  label: t('skillCenter.importDirectory'),
+                  icon: <FolderOpen className="h-4 w-4" />,
+                  onSelect: () => void handleImportDirectory(),
+                },
+                {
+                  id: 'import-archive',
+                  label: t('skillCenter.importArchive'),
+                  icon: <Package className="h-4 w-4" />,
+                  onSelect: () => void handleImportArchive(),
+                },
+              ]}
+            />
           </div>
         </header>
       }
