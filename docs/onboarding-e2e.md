@@ -30,16 +30,14 @@
 
 ---
 
-## 第一步：申请 tauri-pilot 仓权限
+## 第一步：申请 tauri-pilot 仓权限（人工，一次性）
 
 tauri-pilot fork 仓在云效私库 **`git@codeup.aliyun.com:renlijia/lotus/tauri-pilot.git`**，找 pzc 加入。
 
-权限的两条路径独立：
+确认权限到位的两个条件（这两个 agent 替不了你）：
 
-| 用途 | 所需权限 | 失败时的表现 |
-|---|---|---|
-| `pnpm dev:with-pilot`（lotus-app 编译时拉 plugin 源码） | 云效仓**读**权限 + 本地 SSH key 在云效注册 | `cargo fetch --features e2e` 失败 "authentication failed" |
-| `tauri-pilot` CLI（操作 webview） | 同上 | `cargo install` 时 git clone 失败 |
+1. 你的云效账号在 `renlijia/lotus/tauri-pilot` 有读权限
+2. 你本机的 SSH 公钥已加到云效（个人 Profile → SSH Keys）
 
 > **不是**上游 `mpiton/tauri-pilot`——上游没有 `aijia` 子命令组。
 
@@ -47,28 +45,48 @@ tauri-pilot fork 仓在云效私库 **`git@codeup.aliyun.com:renlijia/lotus/taur
 
 ```bash
 git ls-remote git@codeup.aliyun.com:renlijia/lotus/tauri-pilot.git
-# 期望：列出 main 分支 sha；如果 fail 看本地 ssh key 是否在云效绑定
+# 期望：列出 main 分支 sha
+# 报 Permission denied (publickey) → SSH key 没加到云效
+# 报 repository not found → 没仓权限，找 pzc 加
 ```
+
+通过这一步之后，**剩下的环境配置 agent 全自动**（`pnpm dev:with-pilot` 的 `predev` hook 会跑 `scripts/ensure-e2e-prereq.sh`）。
 
 ---
 
-## 第二步：让 cargo 用系统 git CLI
-
-Cargo 自带的 libgit2 不支持 ed25519 / macOS keychain 加密的 ssh key，需要让它走系统 git（git 走 ssh-agent 没问题）。
+## 第二步：启动 AIjia 带 e2e 模式（一行命令）
 
 ```bash
-mkdir -p ~/.cargo
-cat >> ~/.cargo/config.toml << 'EOF'
-[net]
-git-fetch-with-cli = true
-EOF
+cd lotus-app
+pnpm install                  # 如果之前没装过
+pnpm dev:with-pilot
 ```
 
-这是全局配置，对所有 cargo 项目生效。没有这个，`cargo fetch` 会报 "no authentication methods succeeded"。
+`dev:with-pilot` 会自动：
+
+1. **预检（`predev:with-pilot` hook 跑 `scripts/ensure-e2e-prereq.sh`）**：
+   - 检测 `~/.cargo/config.toml` 是否含 `[net] git-fetch-with-cli = true`，没有自动加（让 cargo 走系统 git，避开 libgit2 不识别 ed25519 / macOS keychain key 的问题）
+   - 检测 `jq` 是否在 PATH（bundled runtime 校验脚本需要），没装自动 `brew install` (macOS) / `apt-get install` (Linux)
+   - 软检测 ssh-agent 是否有 identity；没有也不阻塞（macOS keychain 整合的 key 是 lazy load 的）
+2. `ensure:runtime`：校验 / 下载内置运行时（Node + Python + uv）到 `src-tauri/resources/runtime/<platform>/`
+3. `tauri dev --features e2e`：触发 build.rs 复制 `capabilities/pilot.json`、cargo 从云效拉 tauri-plugin-pilot 源码（首次 ~30s，之后走 `~/.cargo/git/` 缓存）、plugin 编进来 + lib.rs 注册
+
+跳过预检：`SKIP_E2E_PREREQ=1 pnpm dev:with-pilot`（不推荐，自己确保环境齐）。
+
+首次跑总时长：~10 分钟（Rust 编译占大头）。
+
+启动后验证 plugin 真注入了：
+
+```bash
+ls /tmp/tauri-pilot-com.aijia.app.sock
+# 文件存在 = plugin socket 启动了
+```
 
 ---
 
-## 第三步：装 tauri-pilot CLI
+## 第三步（可选）：装 `tauri-pilot` CLI 跑 aijia 命令
+
+**只有当你要跑** `tauri-pilot aijia health-check` / `aijia send` 这些 e2e 命令时才需要。第二步起 app 不需要 CLI。
 
 ```bash
 cargo install \
@@ -85,26 +103,7 @@ cargo install \
 
 更新（aijia 子命令组有改动时）：重新跑同样的 `cargo install` 命令，`--force` 让它覆盖装新版。
 
----
-
-## 第四步：启动 AIjia 带 e2e 模式
-
-普通业务开发用 `pnpm tauri:dev`（不会触发拉 tauri-pilot）。要跑 e2e 用：
-
-```bash
-cd ~/IdeaProjects/lotus-app
-pnpm install                    # 如果之前没装过
-pnpm dev:with-pilot
-```
-
-`dev:with-pilot` 实际跑的是 `tauri dev --features e2e`，会：
-1. 触发 build.rs 复制 `capabilities/pilot.json`
-2. cargo 从云效拉 tauri-plugin-pilot 源码（首次 ~30s，之后走 ~/.cargo/git/ 缓存）
-3. plugin 编进来 + lib.rs 注册（feature gate）
-
-首次跑会触发完整 Rust 编译，大约 5–10 分钟。
-
-启动后，新开终端跑：
+跑命令验证：
 
 ```bash
 tauri-pilot aijia health-check
@@ -125,7 +124,7 @@ tauri-pilot aijia health-check
 
 ---
 
-## 第五步：常用命令速查
+## 第四步：常用命令速查
 
 完整 16 个命令文档：tauri-pilot 仓 `SKILL.md`（云效在线浏览 `git@codeup.aliyun.com:renlijia/lotus/tauri-pilot` → SKILL.md）的 "App-specific subcommand groups" 章节。
 
@@ -197,12 +196,13 @@ if (import.meta.env.DEV) {
 
 ### Q4. `pnpm dev:with-pilot` 失败：`failed to authenticate when downloading repository` / `no authentication methods succeeded`
 
-Cargo 的 libgit2 不识别你的 ssh key。回第二步配 `~/.cargo/config.toml` 加 `git-fetch-with-cli = true`。
+正常情况下不会发生 —— `predev:with-pilot` hook 已自动写入 `~/.cargo/config.toml` 的 `git-fetch-with-cli = true`。如果还看到这个错，说明：
 
-如果加了还失败：
+1. 跑时设了 `SKIP_E2E_PREREQ=1` 跳过自检 → 取消这个环境变量重新跑
+2. `~/.cargo/config.toml` 被你或其他工具改回去了 → 手动确认它含 `[net] git-fetch-with-cli = true`
+3. 真有 ssh key 问题 → 直接测系统 git：
 
 ```bash
-# 测试 git 能不能直接拉
 git ls-remote git@codeup.aliyun.com:renlijia/lotus/tauri-pilot.git
 ```
 

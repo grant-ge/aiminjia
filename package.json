@@ -14,10 +14,12 @@
     "test:watch": "vitest",
     "tauri": "tauri",
     "ensure:runtime": "node scripts/ensure-bundled-runtime.mjs",
+    "ensure:e2e-prereq": "bash scripts/ensure-e2e-prereq.sh",
     "pretauri:dev": "pnpm ensure:runtime",
     "tauri:dev": "tauri dev",
     "pretauri:build": "pnpm ensure:runtime",
     "tauri:build": "tauri build",
+    "predev:with-pilot": "pnpm ensure:e2e-prereq && pnpm ensure:runtime",
     "dev:with-pilot": "tauri dev --features e2e"
   },
   "dependencies": {
