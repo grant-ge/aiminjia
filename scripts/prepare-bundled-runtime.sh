@@ -131,6 +131,58 @@ extract_node "$node_tar"
 extract_python_unix "$python_tar"
 extract_uv "$uv_tar"
 
+# --- Trim unused runtime content to shrink installer (~110MB saved per arch) ---
+# Default tarballs ship Node C++ headers, Python stdlib test suites, IDLE,
+# tkinter etc. that the bundled runtime never executes. Strip aggressively;
+# anything genuinely required is asserted right after.
+#
+# Disable with TRIM_RUNTIME=0 if a future change starts depending on one of
+# these paths (we'll learn fast: the next build fails the post-trim asserts
+# or the runtime panics at start).
+if [ "${TRIM_RUNTIME:-1}" = "1" ]; then
+  echo "[prepare-runtime] trimming $plat (-headers -tests -tk -docs)"
+  # Node: headers (~53MB) + npm cache/docs + corepack
+  rm -rf "$out_dir/node/include"
+  rm -rf "$out_dir/node/share"
+  rm -rf "$out_dir/node/lib/node_modules/corepack"
+  rm -f  "$out_dir/node/CHANGELOG.md" "$out_dir/node/README.md" "$out_dir/node/LICENSE"
+  # Trim npm payload (tests/docs/man/changelogs inside npm itself)
+  find "$out_dir/node/lib/node_modules/npm" -type d \( \
+        -name test -o -name tests -o -name __tests__ -o -name docs \
+        -o -name man -o -name changelogs -o -name .github \
+      \) -prune -exec rm -rf {} + 2>/dev/null || true
+
+  # Python: stdlib bits we never use
+  py_lib="$out_dir/python/lib/python3.12"
+  rm -rf "$py_lib/idlelib" \
+         "$py_lib/tkinter" \
+         "$py_lib/turtledemo" \
+         "$py_lib/test" \
+         "$py_lib/tests" \
+         "$py_lib/ensurepip" \
+         "$py_lib/pydoc_data" \
+         "$py_lib/distutils" \
+         "$out_dir/python/include" \
+         "$out_dir/python/share"
+  # tkinter native module + IDLE entrypoints
+  find "$py_lib/lib-dynload" -name "_tkinter*.so" -delete 2>/dev/null || true
+  # Bytecode caches regenerate at first import; safe to delete
+  find "$out_dir/python" -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true
+  # Strip Python test/ dirs nested inside packages (NOT the stdlib root one we already deleted)
+  find "$py_lib" -type d \( -name test -o -name tests \) -prune -exec rm -rf {} + 2>/dev/null || true
+
+  # Sanity: things we MUST still have after trimming
+  test -x "$out_dir/node/bin/node" || { echo "ERROR: node binary lost during trim" >&2; exit 1; }
+  test -x "$out_dir/node/bin/npm"  || { echo "ERROR: npm shim lost during trim" >&2; exit 1; }
+  test -x "$out_dir/python/bin/python3" || { echo "ERROR: python3 lost during trim" >&2; exit 1; }
+  test -x "$out_dir/uv/bin/uv"  || { echo "ERROR: uv binary lost during trim" >&2; exit 1; }
+  # python3 -V quickly proves the interpreter still boots after trim
+  if ! "$out_dir/python/bin/python3" -c 'import json,ssl,sqlite3,zlib' >/dev/null 2>&1; then
+    echo "ERROR: python3 stdlib check failed after trim (json/ssl/sqlite3/zlib)" >&2
+    exit 1
+  fi
+fi
+
 # Empty node_modules placeholder so RuntimeLayout::validate sees the dir
 mkdir -p "$out_dir/node/node_modules"
 
