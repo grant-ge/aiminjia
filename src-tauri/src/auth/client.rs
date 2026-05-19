@@ -463,6 +463,13 @@ fn localize_error(msg: &str) -> &str {
         "Insufficient balance" => "账户余额不足，请联系管理员充值",
         "Rate limit exceeded" => "请求过于频繁，请稍后再试",
         "Password must be at least 8 characters" => "密码长度至少 8 个字符",
+        "invalid verification code" | "Invalid verification code" => "验证码错误或已过期",
+        "verification code expired" | "Verification code expired" => "验证码已过期，请重新获取",
+        "phone already registered" | "Phone already registered" => "该手机号已被注册",
+        "email already registered" | "Email already registered" => "该邮箱已被注册",
+        "invalid phone number format" | "Invalid phone number format" => "手机号格式不正确",
+        "invalid email format" | "Invalid email format" => "邮箱格式不正确",
+        "Personal account not registered" => "该手机号/邮箱尚未注册个人账号，请先注册",
         _ => msg,
     }
 }
