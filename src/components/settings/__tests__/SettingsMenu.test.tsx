@@ -9,11 +9,14 @@ import { SettingsMenu, SETTINGS_MENU_ITEMS } from '../SettingsMenu'
 // the menu structure + click handler, not on the language-specific labels.
 
 describe('SettingsMenu', () => {
+  // account-billing is conditionally hidden when tenant.type !== 'personal'.
+  // Tests don't set up authStore so tenant is null → hidden.
+  const visibleItems = SETTINGS_MENU_ITEMS.filter((it) => !it.disabled && it.key !== 'account-billing')
+
   it('renders only visible menu items (one button per enabled entry)', () => {
     render(<SettingsMenu activeKey="account" onSelect={() => {}} />)
-    const enabled = SETTINGS_MENU_ITEMS.filter((it) => !it.disabled)
     const buttons = screen.getAllByRole('button')
-    expect(buttons.length).toBe(enabled.length)
+    expect(buttons.length).toBe(visibleItems.length)
   })
 
   it('marks active item with bg-card class', () => {
@@ -28,10 +31,8 @@ describe('SettingsMenu', () => {
   it('fires onSelect with enabled key', () => {
     const onSelect = vi.fn()
     render(<SettingsMenu activeKey="account" onSelect={onSelect} />)
-    // Click the second enabled button; its key is "archived" (first is account/general).
-    const enabled = SETTINGS_MENU_ITEMS.filter((it) => !it.disabled)
     const buttons = screen.getAllByRole('button')
-    const idx = enabled.findIndex((it) => it.key === 'archived')
+    const idx = visibleItems.findIndex((it) => it.key === 'archived')
     fireEvent.click(buttons[idx])
     expect(onSelect).toHaveBeenCalledWith('archived')
   })
@@ -39,8 +40,7 @@ describe('SettingsMenu', () => {
   it('hides disabled entries', () => {
     render(<SettingsMenu activeKey="account" onSelect={() => {}} />)
     const buttons = screen.getAllByRole('button')
-    const enabledCount = SETTINGS_MENU_ITEMS.filter((it) => !it.disabled).length
-    expect(buttons.length).toBe(enabledCount)
+    expect(buttons.length).toBe(visibleItems.length)
     // Sanity: at least one entry should be disabled (i.e. menu has hidden rows).
     expect(SETTINGS_MENU_ITEMS.some((it) => it.disabled)).toBe(true)
   })

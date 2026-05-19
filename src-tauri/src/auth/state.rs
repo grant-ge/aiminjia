@@ -19,6 +19,9 @@ pub struct TenantInfo {
     pub id: i64,
     pub name: String,
     pub balance: String,
+    /// "personal" or "enterprise"; empty string when unknown.
+    #[serde(default)]
+    pub tenant_type: String,
     /// Custom product name (empty/None = default "AI小家").
     #[serde(default)]
     pub product_name: Option<String>,

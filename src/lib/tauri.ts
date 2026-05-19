@@ -1254,7 +1254,7 @@ export function getPluginInfo(): Promise<PluginInfo> {
 export interface CloudAuthInfo {
   loggedIn: boolean
   user: { id: number; name: string; username: string } | null
-  tenant: { id: number; name: string; balance: string; productName?: string; logoUrl?: string; accentColor?: string; primaryColor?: string; bgColor?: string; sidebarBgColor?: string; fontFamily?: string } | null
+  tenant: { id: number; name: string; balance: string; tenantType?: string; productName?: string; logoUrl?: string; accentColor?: string; primaryColor?: string; bgColor?: string; sidebarBgColor?: string; fontFamily?: string } | null
   models: CloudModel[]
 }
 

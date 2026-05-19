@@ -50,6 +50,8 @@ pub struct AuthTenantInfo {
     #[serde(default)]
     pub balance: String,
     #[serde(default)]
+    pub r#type: String,
+    #[serde(default)]
     pub product_name: Option<String>,
     #[serde(default)]
     pub logo_url: Option<String>,
@@ -81,6 +83,7 @@ impl From<AuthTenantInfo> for TenantInfo {
             id: t.id,
             name: t.name,
             balance: t.balance,
+            tenant_type: t.r#type,
             product_name: t.product_name,
             logo_url: t.logo_url,
             accent_color: t.accent_color,
