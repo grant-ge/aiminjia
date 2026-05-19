@@ -84,12 +84,17 @@ impl AuthManager {
                 log::debug!("No persisted cloud auth found");
             }
             Err(e) => {
-                log::warn!("Failed to restore cloud auth (preserving file, will retry next launch): {}", e);
-                // Do NOT clear the persisted file on a transient read / parse
-                // error. A corrupted file keeps the user stuck; a valid file
-                // with a format mismatch (e.g. a field added in a newer
-                // version) would silently destroy their login state. Prefer
-                // to log and let the next launch retry.
+                // Unreadable blob → wipe it and force re-login. Network-layer
+                // credentials carry no data worth preserving (session_key has
+                // 24h TTL anyway, user/tenant info is re-fetched on login).
+                // The previous "preserve and retry" behaviour created an
+                // unrecoverable loop for users upgrading from 0.3.x — see
+                // `storage::data_version` for the full incident write-up.
+                log::warn!(
+                    "Failed to restore cloud auth, clearing persisted file (will force re-login): {}",
+                    e
+                );
+                self.clear_persisted_auth();
             }
         }
     }
