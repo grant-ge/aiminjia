@@ -15,7 +15,8 @@ const DialogOverlay = React.forwardRef<
   <DialogPrimitive.Overlay
     ref={ref}
     data-slot="dialog-overlay"
-    className={cn('fixed inset-0 z-50 bg-gray-950/35', className)}
+    // spec §7.3 — modal overlay = --color-overlay (rgba(0,0,0,0.5))
+    className={cn('fixed inset-0 z-50 bg-[var(--color-overlay)]', className)}
     {...props}
   />
 ))
@@ -29,8 +30,9 @@ const DialogContent = React.forwardRef<
     <DialogOverlay />
     <DialogPrimitive.Content
       ref={ref}
+      // spec §7.3 — modal: rounded-lg, --shadow-modal, bg-card
       className={cn(
-        'fixed left-1/2 top-1/2 z-50 grid w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 border border-border/60 bg-background p-6 shadow-lg duration-200 sm:rounded-lg',
+        'fixed left-1/2 top-1/2 z-50 grid w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border border-border/60 bg-card p-6 shadow-[var(--shadow-modal)] duration-200',
         className,
       )}
       {...props}

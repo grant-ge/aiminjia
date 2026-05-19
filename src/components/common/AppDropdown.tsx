@@ -56,8 +56,9 @@ export function AppDropdown({
         side={side}
         sideOffset={sideOffset}
         className={cn(
-          // TODO: 自定义 shadow 不在 visual-standard 中，待 design tokens 补充统一阴影变量
-          'min-w-40 rounded-lg border border-border bg-popover p-1.5 text-foreground shadow-[0_8px_24px_rgba(0,0,0,0.10),0_2px_6px_rgba(0,0,0,0.06)]',
+          // spec §5 — uses --shadow-popover (already covered by DropdownMenuContent default,
+          // but kept explicit here for the wider min-width variant)
+          'min-w-40 rounded-lg border border-border bg-popover p-1.5 text-foreground shadow-[var(--shadow-popover)]',
           '[&_[data-highlighted]]:bg-accent [&_[data-highlighted]]:text-accent-foreground',
           contentClassName,
         )}

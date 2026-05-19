@@ -25,7 +25,8 @@ describe('ConfirmDialog', () => {
     expect(screen.getByText('归档此聊天？')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '取消' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '归档' })).toBeInTheDocument()
-    expect(getOverlay()).toHaveClass('bg-gray-950/35')
+    // spec §7.3 — confirm dialogs (AlertDialog) use full modal overlay token
+    expect(getOverlay()).toHaveClass('bg-[var(--color-overlay)]')
   })
 
   it('uses consistent cancel styling and supports destructive confirm styling', () => {

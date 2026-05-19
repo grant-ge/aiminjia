@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './dialog'
 
 describe('Dialog', () => {
-  it('uses the same softer gray mask as confirm dialogs', () => {
+  it('uses the spec §7.3 modal overlay token', () => {
     render(
       <Dialog open>
         <DialogContent>
@@ -16,7 +16,10 @@ describe('Dialog', () => {
     )
 
     expect(screen.getByRole('dialog')).toBeInTheDocument()
-    expect(document.body.querySelector('[data-slot="dialog-overlay"]')).toHaveClass('bg-gray-950/35')
+    // Tailwind arbitrary-value class for var(--color-overlay) = rgba(0,0,0,0.5)
+    expect(document.body.querySelector('[data-slot="dialog-overlay"]')).toHaveClass(
+      'bg-[var(--color-overlay)]',
+    )
   })
 
   it('uses a soft content border instead of the default dark border', () => {

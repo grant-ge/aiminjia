@@ -127,13 +127,37 @@
   --color-bg-secondary: var(--color-bg-neutral);
 
   --color-overlay: rgba(0, 0, 0, 0.5);
+  --color-overlay-light: rgba(0, 0, 0, 0.35);
+  --color-text-disabled: #C0C0C0;
   --color-user-avatar: #2c2c2c;
 
+  /* Missing semantic-color border variants (spec §1.7.2 — every semantic
+     color needs the -bg / -bg-light / -border triple). */
+  --color-semantic-green-border: rgba(52, 199, 89, 0.2);
+  --color-semantic-yellow-border: rgba(232, 200, 106, 0.2);
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
   --shadow-input: 0 0 0 1px var(--color-border-subtle), 0 2px 8px rgba(0, 0, 0, 0.04);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.12);
   --shadow-popover: 0 6px 16px 0 rgba(0, 0, 0, 0.08), 0 3px 6px -4px rgba(0, 0, 0, 0.12), 0 9px 28px 8px rgba(0, 0, 0, 0.05);
   --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.15);
   --shadow-card: var(--shadow-md);
+  --shadow-accent: 0 0 0 3px rgba(212, 168, 67, 0.2);
+  --shadow-accent-glow: 0 8px 24px rgba(212, 168, 67, 0.12);
+
+  /* Motion (spec §6) — components must reference these instead of
+     hardcoding `duration-150` etc. */
+  --transition-fast: 150ms ease;
+  --transition-normal: 250ms ease-out;
+  --transition-slow: 300ms ease;
+
+  /* Typography token added so `text-md` (spec §2.2 = 15px, used across
+     ChatTopBar / RightPanel / ModelPickerPopover / login forms) resolves
+     to a real value instead of silently falling through to browser default
+     1em. Other tx-* sizes intentionally inherit Tailwind defaults (xs/sm/
+     base/lg/xl/2xl). */
+  --text-md: 0.9375rem;
 
   /* User message bubble horizontal padding. Scoped to user-side because
      AssistantMarkdown is a flow-layout container and adding x-padding would
@@ -217,6 +241,8 @@
   --radius-md: var(--radius-md);
   --radius-lg: var(--radius-lg);
   --radius-xl: var(--radius-xl);
+  /* Register --text-md so Tailwind generates the `text-md` utility. */
+  --text-md: var(--text-md);
 }
 
 /* ===== Base Styles ===== */

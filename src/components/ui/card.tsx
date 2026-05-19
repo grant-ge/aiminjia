@@ -2,11 +2,17 @@ import * as React from 'react'
 
 import { cn } from '@/lib/utils'
 
+// spec §3.1 — generic Card uses rounded-lg (12px). Promotional / page-level
+// containers (EmployeeCard, Inbox list, channel cards) opt into rounded-xl
+// per §3.3 by passing className="rounded-xl".
 const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
   ({ className, ...props }, ref) => (
     <div
       ref={ref}
-      className={cn('rounded-xl border bg-card text-card-foreground shadow-sm border-border', className)}
+      className={cn(
+        'rounded-lg border border-border bg-card text-card-foreground shadow-[var(--shadow-card)]',
+        className,
+      )}
       {...props}
     />
   ),
