@@ -18,6 +18,56 @@ license: Internal
 - 处理意图测试 FAIL 的诊断 / triage
 - 解释 `tauri-pilot aijia ...` 命令
 
+## 0. 执行流程总览（被调起后从头看到尾）
+
+接到「跑 X 意图」/「跑 X task」后，按下面 6 阶段顺序执行：
+
+```
+┌─ 阶段 1: 环境预检（§4.1）─────────────────────┐
+│  - 检查 vite 是否在 5173 跑（lsof -ti tcp:5173）│
+│  - 检查 tauri-pilot socket 是否就绪          │
+│  - 没跑 → 提示用户起 `pnpm dev:with-pilot`   │
+│    并等到首次 build 通过（首次 cargo 编译可能│
+│    几分钟），不能用 `pnpm tauri:dev`         │
+│  - socket 残留 → `rm -f /tmp/tauri-pilot-*`  │
+└──────────────────────────────────────────────┘
+                    ↓
+┌─ 阶段 2: 探活 + 推断 scope ──────────────────┐
+│  - tauri-pilot aijia health-check --json     │
+│  - tauri-pilot aijia where --json 取 scope   │
+│  - 失败 → 报「FAIL 主因 = rules/CLI 问题」  │
+│    停止后续，不进阶段 3                       │
+└──────────────────────────────────────────────┘
+                    ↓
+┌─ 阶段 3: 读 rules.md（§1）───────────────────┐
+│  - 读 docs/test-intents/spec/tasks/<task>/   │
+│    rules.md，定位要跑的意图                   │
+│  - 跑全 task = 按 ID 升序逐条跑               │
+│  - 跑单条 = 找到对应 ID 块                    │
+└──────────────────────────────────────────────┘
+                    ↓
+┌─ 阶段 4: 逐条跑（§2）───────────────────────┐
+│  - 顺序执行「操作步骤」段                     │
+│  - 中途某步挂了 → 现场判断后续是否继续         │
+│    跑（§2.1）；验收永远跑                     │
+│  - 全 task：失败不串联，跑完所有意图才出报告 │
+└──────────────────────────────────────────────┘
+                    ↓
+┌─ 阶段 5: 核验 → 写报告（§3）─────────────────┐
+│  - 对每条意图核验 ✅ / ❌ 段                  │
+│  - 标 PASS/FAIL/SKIPPED + FAIL 主因三选一    │
+│  - 报告**直接在对话里输出**，不落盘          │
+└──────────────────────────────────────────────┘
+                    ↓
+┌─ 阶段 6: 经验沉淀建议（§5）──────────────────┐
+│  - 跑出新陷阱 / 新诊断套路 → 在报告末尾建议  │
+│    「这条经验值得沉淀到 runner skill §5」     │
+│  - 由人决定 PR 加进来（你不直接改 skill）    │
+└──────────────────────────────────────────────┘
+```
+
+**铁则**：不要跳阶段。阶段 1 没过就直接跑 CLI = 必失败。
+
 ## 1. 怎么读一条意图
 
 `rules.md` 每条意图固定 3 段，agent 读时这样用：
@@ -105,13 +155,28 @@ agent 跑完意图测试，**直接在对话里向调起者输出结构化报告
 
 ### 4.1 启动连通性
 
+⚠️ **必须用 `pnpm dev:with-pilot` 而不是 `pnpm tauri:dev`**——`tauri-plugin-pilot` 在 `Cargo.toml` 里是 `optional = true`，只在 `e2e` cargo feature 开启时才会被 `src-tauri/src/lib.rs::run()` 注册（`#[cfg(feature = "e2e")]`）。`pnpm tauri:dev` 默认不带 e2e feature，**plugin-pilot 不会被注册、socket 永远不存在**，CLI 全部命令会报 "No tauri-pilot socket found"。
+
+只有 `pnpm dev:with-pilot` 这个 npm 脚本带 `--features e2e`：
+
 ```bash
 cd ~/IdeaProjects/lotus-app
-rm -f /tmp/tauri-pilot-com.aijia.app.sock
-pnpm tauri:dev &
+rm -f /tmp/tauri-pilot-com.aijia.app.sock        # 清理可能的残留 socket
+
+# 启动带 e2e feature 的 dev server（首次 cargo 编译可能 5-10 分钟）
+pnpm dev:with-pilot &
+
+# 等 vite 起来
 until lsof -ti tcp:5173 >/dev/null; do sleep 2; done
+
+# 等 tauri build + socket 就绪（cargo 编译完才会有 socket）
+until [ -S /tmp/tauri-pilot-com.aijia.app.sock ]; do sleep 2; done
+
+# 探活
 tauri-pilot aijia health-check --json   # → {"ok":true,"readyState":"complete",...}
 ```
+
+如果用户已经有 dev server 在跑但 socket 不存在，**多半是用了错误的命令** `pnpm tauri:dev`——提示用户停掉重起 `pnpm dev:with-pilot`，**不要尝试用 `cargo build --features e2e` 或别的方式绕过**，那会和正在跑的 dev server 抢锁。
 
 ### 4.2 命令清单
 
@@ -184,43 +249,54 @@ test -d ~/.renlijia/users/$scope/conversations/$conv/
 
 agent 跑意图时遇到新陷阱 / 新诊断套路 / 新容忍判定，**在报告末尾建议「这条经验值得沉淀到本 skill §5」**，由人决定 PR 加进来。
 
-### 5.1 wait-reply 必须用 stability window
+### 5.1 `pnpm tauri:dev` 不带 e2e feature，**必须** `pnpm dev:with-pilot`
+
+`tauri-plugin-pilot` 在 `src-tauri/Cargo.toml` 里是 `optional = true`，只有开启 `e2e` cargo feature 才会被 `src-tauri/src/lib.rs::run()` 注册（`#[cfg(feature = "e2e")]`）。
+
+- ❌ `pnpm tauri:dev` —— 不带 feature，plugin-pilot 不注册，socket 永不存在
+- ✅ `pnpm dev:with-pilot` —— `package.json` 里专为 e2e 准备的脚本，等同于 `tauri dev --features e2e`
+
+**症状识别**：所有 `tauri-pilot aijia ...` 命令一律报 `Error: No tauri-pilot socket found. Is a Tauri app running?`——多半是用错命令。
+
+**首次跑会很慢**：开启 e2e feature 会重新拉 `tauri-plugin-pilot` 从云效 git，初次 cargo 编译 5-10 分钟，不要中途打断。
+
+### 5.2 wait-reply 必须用 stability window
 
 `aijia wait-reply` 用 3 连续 `isStreaming === false` 才算流结束——单点采样会在 tool_calls 之间误判完成。工具调用密集的 turn，默认 30s timeout 可能不够，按需调 `--timeout 60` 或更长。
 
-### 5.2 archive 后 list-sessions 不会自动刷新
+### 5.3 archive 后 list-sessions 不会自动刷新
 
 `aijia archive-session` 走 IPC：磁盘 `conv.json.isArchived=true` 已更新，但侧栏 DOM 还显示老状态。要么 sleep + 触发别处刷新，要么直接读 `~/.renlijia/.../conv.json` 验证。
 
-### 5.3 cleanup-test-sessions 只看 title 前缀
+### 5.4 cleanup-test-sessions 只看 title 前缀
 
 `aijia cleanup-test-sessions --prefix e2e-test-` 只匹配 title，发消息**不会更新 title**——想匹配必须先 rename。
 
-### 5.4 screenshot 30s 超时绕道
+### 5.5 screenshot 30s 超时绕道
 
 `aijia screenshot` 可能 30s 超时（wrapper 走 html-to-image）。用 raw `tauri-pilot screenshot <path>` 兜底（webview screenshot，~100ms 完成）。
 
-### 5.5 socket 残留
+### 5.6 socket 残留
 
 应用 crash 后 `/tmp/tauri-pilot-com.aijia.app.sock` 不会被清理，**下次启动前 `rm -f` 一下**。
 
-### 5.6 messages.jsonl 格式
+### 5.7 messages.jsonl 格式
 
 单文件 ndjson，每行末尾 `\t✓` 校验位——解析时要先 `split('\t')[0]`。`content` 是 `{text: "..."}` 嵌套对象，不是字符串。
 
-### 5.7 list-sessions 字段命名
+### 5.8 list-sessions 字段命名
 
 实际返回 `{id, title, index, active, archived}`（不是 `name` / `isActive` / `isArchived`）。
 
-### 5.8 last-reply 返回字段是 `text` 不是 `content`
+### 5.9 last-reply 返回字段是 `text` 不是 `content`
 
 实际是 `{id, index, role, text, tool_calls}`。
 
-### 5.9 跨工作目录测试不支持
+### 5.10 跨工作目录测试不支持
 
 `aijia select-workspace` 未实现，沿用当前 workspace。
 
-### 5.10 改 bridge.js 后 cargo 不会自动重编
+### 5.11 改 bridge.js 后 cargo 不会自动重编
 
 修改 `crates/tauri-plugin-pilot/src/bridge.js` 后，`touch crates/tauri-plugin-pilot/src/lib.rs` 强制重新 `include_str!`。
 
