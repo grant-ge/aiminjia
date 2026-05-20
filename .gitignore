@@ -31,7 +31,11 @@ src-tauri/target
 src-tauri/gen/
 
 # Claude Code
-.claude/
+# 注意：不能直接 `.claude/` + `!.claude/skills/`——git 不允许在父目录被屏蔽时
+# 用 `!` 重新包含子项。改为显式列出要屏蔽的具体子项，让 .claude/skills/ 自然入仓。
+.claude/settings.local.json
+.claude/memory/
+.claude/worktrees/
 
 # Local tool scratch dirs
 .codex/

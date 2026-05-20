@@ -31,7 +31,10 @@
 
 ## 入口
 
-- **方法论 + CLI 手册 + 经验库** → `skills/test-intents/SKILL.md`（agent 触发后自动加载）
+- **方法论 + CLI 手册 + 经验库** → `.claude/skills/` 下三个 skill（agent 触发关键词后自动加载）：
+  - `usertest-intents`：用户级入口（咨询 + 路由分发）
+  - `test-intents-runner`：跑意图 / 处理 FAIL / CLI 工具箱 / 经验库
+  - `test-intents-author`：写 / 改 / 删意图 / 字段格式 / 自查 lint
 - **设计权威** → `docs/superpowers/specs/2026-05-20-intent-test-redefinition-design.md`
 - **意图规约** → `spec/tasks/<task 中文名>/rules.md`
 

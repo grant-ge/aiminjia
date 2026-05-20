@@ -719,7 +719,7 @@ rules.md 「操作」段写产品视角的步骤（「点击新建按钮」「�
 
 **不再维护 `docs/test-intents/cli-reference.md` 类独立 CLI 手册**。
 
-`tauri-pilot aijia` 的 16 个子命令、稳定性边界、错误处理约定收敛到**单一仓库级 skill `test-intents`** 的「CLI 工具箱」章节（见 §8.4），agent 跑意图测试时**自动加载**该 skill。
+`tauri-pilot aijia` 的 16 个子命令、稳定性边界、错误处理约定收敛到 **`test-intents-runner`** skill 的「CLI 工具箱」章节（见 §8.4），agent 跑意图测试时**自动加载**该 skill。
 
 skill 内容（不在本 spec 范围内具体列，由实施 plan 负责）：
 - 16 个子命令清单 + 语义 + 参数 + 返回结构
@@ -745,25 +745,22 @@ skill 内容（不在本 spec 范围内具体列，由实施 plan 负责）：
 
 ## 8. 文档与 skill 结构（已敲定）
 
-### 8.1 核心方向：文档退场，单一仓库级 skill `test-intents`
+### 8.1 核心方向：文档退场，3 个项目级 skill（入口 + author + runner）
 
 **意图测试不再依赖任何 `how-to-*` 类方法论文档**。所有「怎么写 / 怎么跑 / 用什么 CLI 工具」的知识全部收敛到**一个仓库级 skill `test-intents`**（git 受控，跟随 clone 流动）。
 
 理由：
 - 文档需要主动读，「忘记读」是常态——agent 可能直接跳过去翻 rules.md，错过方法论
 - skill 在触发场景命中时**自动加载**，是 agent 行为的默认背景知识
-- 仓库级 skill（仓库内 `docs/test-intents/skills/test-intents/SKILL.md`）比用户级 (`~/.renlijia/skills/`) 更适合：同事 clone 仓库就拿到、与 rules.md 同步演进、有 git 历史
-- **单 skill 而非多 skill**：意图测试是一个完整工作面（读 → 跑 → 报告 / 读 → 改 → 写），不切分；单一入口「用户说意图测试相关的话 → 命中 test-intents skill → 一次性加载完整方法论 + CLI 知识」
+- 项目级 skill（仓库内 `.claude/skills/<name>/SKILL.md`，Claude Code 在该仓库 session 内自动加载）比用户级（`~/.claude/skills/`）更适合：同事 clone 仓库就拿到、与 rules.md 同步演进、有 git 历史
+- **3 个 skill 分层而非单一大 skill**：入口 `usertest-intents` 极薄、只做路由 + 一句话定义；实现层拆 `test-intents-author`（写）+ `test-intents-runner`（跑）。理由：用户咨询场景下加载薄入口即可；写和跑的方法论体量大、agent 关注点不同，分开减少不相关内容污染 context。`.gitignore` 已加例外让 `.claude/skills/` 入仓
 - 仓库已有先例：`docs/skills-migration/` 下放了 ~30 个 SKILL.md，路径方案直接复用
 
 ### 8.2 docs/test-intents/ 最终形态
 
 ```
 docs/test-intents/
-├── README.md                              # 极薄入口（≤ 50 行）：定义 + 13 个 task 一行简介 + 指向 skill
-├── skills/
-│   └── test-intents/
-│       └── SKILL.md                       # 单一 skill：方法论 + CLI 工具箱 + 报告格式 + 触发场景
+├── README.md                              # 极薄入口（≤ 50 行）：定义 + 13 个 task 一行简介 + 指向 .claude/skills/
 └── spec/tasks/
     ├── 日程/rules.md
     ├── 登录/rules.md
@@ -782,6 +779,15 @@ docs/test-intents/
 
 每个 task 目录**只**含 `rules.md`。
 
+**注意：skill 不在 `docs/test-intents/` 下**——Claude Code 项目级 skill 的标准位置是仓库根目录的 `.claude/skills/<name>/SKILL.md`。本项目通过 `.gitignore` 例外让 `.claude/skills/` 入仓，三个 skill 实际落地：
+
+```
+.claude/skills/
+├── usertest-intents/SKILL.md      # 用户级入口 + 路由
+├── test-intents-author/SKILL.md   # 写意图方法论
+└── test-intents-runner/SKILL.md   # 跑意图方法论 + CLI + 经验库
+```
+
 ### 8.3 删除清单（5 份方法论 + 26 份 progress）
 
 | 文件 | 处理 | 理由 |
@@ -793,16 +799,17 @@ docs/test-intents/
 | `docs/test-intents/README.md` | 重写为极薄入口 | 现行内容已与方法论冲突 |
 | `docs/test-intents/spec/tasks/*/test-progress.md` × 26 | 全删 | progress 已废除（§4） |
 
-### 8.4 `test-intents` skill 的内容大纲
+### 8.4 3 个 skill 的职责切分
 
-SKILL.md frontmatter 的 `description` 应能命中以下触发场景（任一即可激活）：
+| skill | 触发场景 | 职责 |
+|---|---|---|
+| `usertest-intents` | 「意图测试」/「AEIT」/ 纯咨询 / 用户意图模糊时 | 极薄入口（< 150 行）：一句话定义 + 13 个 task 清单 + 路由到 author/runner |
+| `test-intents-author` | 「加一条意图」/「改 X task 的 rules」/「拆复合意图」/「删 意图-XXX-NNN」 | 写 / 改 / 删意图的完整方法论：ID 体系、标题命名、字段集、措辞规则、验收 6 条、自查 13 项、命令白黑名单、跨意图禁引用、review 流程、新建 task 判定 |
+| `test-intents-runner` | 「跑一下 X 这个 task」/「跑 意图-XXX-NNN」/「FAIL 怎么处理」/「`tauri-pilot aijia ...`」 | 跑意图的完整方法论：怎么读 rules.md、执行语义、报告格式、CLI 工具箱 16 子命令、已知 quirks 经验库、环境契约 |
 
-- 「跑意图测试」/「跑一下 X 这个 task」/「跑 意图-XXX-NNN」
-- 「写意图」/「加一条意图」/「改 X task 的 rules」
-- 「意图测试」/「e2e 测试」/「AEIT」
-- 「tauri-pilot aijia ...」相关命令
+`usertest-intents` 是 user-facing 入口，**纯咨询场景**用它即可；**写或跑**时由它路由到对应实现 skill
 
-skill body 按以下结构组织（具体内容由 implementation plan 写）：
+下面是 runner / author 两个实现 skill 的 body 大纲（具体内容由 implementation plan 写；usertest-intents 只用 §1 + §3 task 清单 + §5）：
 
 1. **意图测试是什么**（§1 完整搬过来）—— L4 only / 产品承诺 / Agent 自评 / 触发时机
 2. **怎么读 + 跑一条意图**
@@ -913,7 +920,10 @@ CLAUDE.md 第 280-290 行「意图测试框架（test-intents）」节**完整�
 5. **重命名** `persistence-crash-recovery/` 为 `崩溃恢复/`
 6. **重写** `崩溃恢复/rules.md` 为 PM 视角（L4 调外部 kill 模拟 crash）
 7. **重写** `日程/rules.md` 按 §2.6 新模板（作为 13 份 rules 的示范）
-8. **创建** `docs/test-intents/skills/test-intents/SKILL.md`（单一 skill，内容大纲见 §8.4）
+8. **创建** 3 个项目级 skill（`.gitignore` 加例外允许 `.claude/skills/` 入仓）：
+   - `.claude/skills/usertest-intents/SKILL.md`（用户级入口 + 路由）
+   - `.claude/skills/test-intents-author/SKILL.md`（写意图方法论）
+   - `.claude/skills/test-intents-runner/SKILL.md`（跑意图方法论 + CLI + 经验库）
 9. **重写** `docs/test-intents/README.md` 为 50 行极薄入口
 10. **删除** CLAUDE.md 第 280-290 行"意图测试框架（test-intents）"整段
 
