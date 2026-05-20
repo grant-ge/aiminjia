@@ -138,15 +138,4 @@ impl PluginContext {
             .unwrap_or(&self.conversation_id)
     }
 
-    pub fn loaded_key(&self, file_id: &str) -> String {
-        format!("loaded:{}:{}", self.loaded_scope_id(), file_id)
-    }
-
-    pub fn load_failed_key(&self, file_id: &str) -> String {
-        format!("load_failed:{}:{}", self.loaded_scope_id(), file_id)
-    }
-
-    pub fn loaded_prefix(&self) -> String {
-        format!("loaded:{}:", self.loaded_scope_id())
-    }
 }
