@@ -46,6 +46,7 @@ export type ComposerJsonNodeType =
   | 'orderedList'
   | 'listItem'
   | 'attachmentToken'
+  | 'linkChip'
 
 export interface ComposerJsonNode {
   type: ComposerJsonNodeType

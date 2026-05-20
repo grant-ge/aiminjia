@@ -1,6 +1,7 @@
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import { AttachmentTokenExtension } from './attachmentTokenExtension'
+import { LinkChipExtension } from './linkChipExtension'
 
 export interface BuildComposerExtensionsOptions {
   placeholder?: string
@@ -24,5 +25,6 @@ export function buildComposerExtensions(options: BuildComposerExtensionsOptions 
       placeholder: options.placeholder ?? '',
     }),
     AttachmentTokenExtension,
+    LinkChipExtension,
   ]
 }

@@ -99,6 +99,11 @@ function renderInline(
       parts.push('  \n')
     } else if (node.type === 'attachmentToken') {
       parts.push(renderAttachmentToken(node, attachments))
+    } else if (node.type === 'linkChip') {
+      const url = typeof node.attrs?.url === 'string' ? node.attrs.url : ''
+      // Chip serializes back to the raw URL — the LLM sees plain text, the
+      // chip UI is purely a visual + edit-protection layer.
+      parts.push(url)
     }
   }
   return parts.join('')
