@@ -873,7 +873,7 @@ impl RuntimeRepositoryFacade {
                 storage: storage.clone(),
             }),
             authorized_workspace_store: std::sync::Arc::new(
-                crate::runtime::store::FileAuthorizedWorkspaceStore {
+                crate::runtime::store::ConvJsonAuthorizedWorkspaceStore {
                     storage: storage.clone(),
                 },
             ),
