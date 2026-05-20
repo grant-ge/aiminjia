@@ -23,6 +23,18 @@ pub struct PersistedAuthorizedWorkspace {
     pub authorized_at: String,
 }
 
+/// Conversation source kind, mirrored from `ConversationSource` into `ConversationIndexEntry`.
+/// Drives sidebar grouping + icon rendering — only `kind`, no IDs.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ConversationKind {
+    #[default]
+    User,
+    Employee,
+    ExpertTeam,
+    Im,
+}
+
 /// Conversation metadata stored in `conv.json`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -273,5 +285,32 @@ mod persisted_authorized_workspace_tests {
             "PersistedAuthorizedWorkspace must NOT carry sessionId; got: {}",
             json
         );
+    }
+}
+
+#[cfg(test)]
+mod conversation_kind_tests {
+    use super::*;
+
+    #[test]
+    fn serializes_as_camel_case() {
+        assert_eq!(serde_json::to_string(&ConversationKind::User).unwrap(), "\"user\"");
+        assert_eq!(serde_json::to_string(&ConversationKind::Employee).unwrap(), "\"employee\"");
+        assert_eq!(serde_json::to_string(&ConversationKind::ExpertTeam).unwrap(), "\"expertTeam\"");
+        assert_eq!(serde_json::to_string(&ConversationKind::Im).unwrap(), "\"im\"");
+    }
+
+    #[test]
+    fn default_is_user() {
+        assert_eq!(ConversationKind::default(), ConversationKind::User);
+    }
+
+    #[test]
+    fn deserialize_unknown_string_errors() {
+        // ConversationKind itself has no #[serde(other)] catch-all.
+        // Unknown strings must fail to deserialize — `ConversationIndexEntry` will
+        // then use `#[serde(default = "...")]` at the outer level to fall back.
+        let result: Result<ConversationKind, _> = serde_json::from_str("\"futureVariant\"");
+        assert!(result.is_err());
     }
 }
