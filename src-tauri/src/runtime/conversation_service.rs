@@ -151,9 +151,6 @@ pub async fn delete_conversation(
         ));
     }
 
-    let _ = db.delete_memories_by_prefix(&format!("loaded:{}:", conversation_id));
-    let _ = db.delete_memories_by_prefix(&format!("note:{}:", conversation_id));
-
     db.delete_conversation(&conversation_id)
         .map_err(|e| e.to_string())?;
 
