@@ -45,6 +45,7 @@ import { useSkillStore } from '@/stores/skillStore'
 import { useStreamingStore } from '@/stores/streamingStore'
 import { useInteractionStore } from '@/stores/interactionStore'
 import { useUiStore } from '@/stores/uiStore'
+import { hydrateHomeStore } from '@/stores/homeStore'
 import { initChannelListeners } from '@/stores/channelStore'
 import { applyFontScale, loadPersistedFontScale } from '@/styles/fontScale'
 
@@ -169,6 +170,21 @@ function App() {
         useSettingsStore.getState().setSettings(settings)
       })
       .catch((err) => console.error('Failed to load settings:', err))
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const settings = await getSettings()
+        if (!cancelled) hydrateHomeStore(settings)
+      } catch (err) {
+        console.warn('[App] hydrate homeStore failed:', err)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   useEffect(() => {
