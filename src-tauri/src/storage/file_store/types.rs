@@ -3,9 +3,25 @@
 //! These types define the on-disk format for all stored data.
 //! JSON files use `serde_json::to_string_pretty`, JSONL files use `serde_json::to_string`.
 
+use std::path::PathBuf;
+
 use serde::{Deserialize, Serialize};
 
 // ─── Conversation ────────────────────────────────────────────────────────────
+
+/// Authorized workspace stored on disk inside `conv.json`.
+///
+/// 不含 `session_id`：那是 runtime 内部 ID 概念，不应该被 disk 格式吃住。
+/// `AuthorizedWorkspace`（runtime 层、带 session_id）写盘前由调用方手动映射成
+/// `PersistedAuthorizedWorkspace`；读盘后由调用方按需补 session_id。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PersistedAuthorizedWorkspace {
+    pub id: String,
+    pub root_path: PathBuf,
+    pub display_name: String,
+    pub authorized_at: String,
+}
 
 /// Conversation metadata stored in `conv.json`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -222,3 +238,40 @@ pub struct SettingsMap(pub std::collections::HashMap<String, String>);
 /// Each key is stored as `provider → encrypted_value`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct EncryptedKeys(pub std::collections::HashMap<String, String>);
+
+#[cfg(test)]
+mod persisted_authorized_workspace_tests {
+    use super::*;
+
+    #[test]
+    fn round_trip_serialize_deserialize() {
+        let original = PersistedAuthorizedWorkspace {
+            id: "ws-1".to_string(),
+            root_path: PathBuf::from("/Users/foo/bar"),
+            display_name: "bar".to_string(),
+            authorized_at: "2026-05-20T00:00:00+00:00".to_string(),
+        };
+        let json = serde_json::to_string(&original).unwrap();
+        assert!(json.contains("\"rootPath\""));
+        assert!(json.contains("\"displayName\""));
+        assert!(json.contains("\"authorizedAt\""));
+        let parsed: PersistedAuthorizedWorkspace = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, original);
+    }
+
+    #[test]
+    fn no_session_id_field() {
+        let ws = PersistedAuthorizedWorkspace {
+            id: "ws-1".to_string(),
+            root_path: PathBuf::from("/x"),
+            display_name: "x".to_string(),
+            authorized_at: "t".to_string(),
+        };
+        let json = serde_json::to_string(&ws).unwrap();
+        assert!(
+            !json.contains("sessionId"),
+            "PersistedAuthorizedWorkspace must NOT carry sessionId; got: {}",
+            json
+        );
+    }
+}
