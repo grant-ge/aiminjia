@@ -77,7 +77,7 @@ dependencies = [
 
 [[package]]
 name = "aijia"
-version = "0.5.26-beta.6"
+version = "0.5.26"
 dependencies = [
  "aes-gcm",
  "anyhow",
