@@ -454,7 +454,7 @@ pub mod testsupport {
         let session_id = crate::runtime::ids::SessionId::new(session_id.to_string());
         facade
             .authorized_workspace_store()
-            .replace_for_session(&AuthorizedWorkspace {
+            .replace_for_session(session_id.as_str(), &AuthorizedWorkspace {
                 id: "aw-test".to_string(),
                 session_id: session_id.clone(),
                 root_path: authorized_root.to_path_buf(),
@@ -468,7 +468,7 @@ pub mod testsupport {
 
         let authorized_workspace = facade
             .authorized_workspace_store()
-            .get_current_for_session(&session_id)?
+            .get_current_for_session(session_id.as_str(), &session_id)?
             .map(|aw| AuthorizedWorkspaceRef {
                 id: aw.id,
                 root_path: aw.root_path,

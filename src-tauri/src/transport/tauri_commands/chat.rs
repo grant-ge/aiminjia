@@ -3249,7 +3249,7 @@ impl crate::runtime::agenda::AgendaRunDispatcher for TauriChatCommandAdapter {
                         display_name,
                         authorized_at: chrono::Utc::now().to_rfc3339(),
                     };
-                    if let Err(e) = facade.authorized_workspace_store().replace_for_session(&ws) {
+                    if let Err(e) = facade.authorized_workspace_store().replace_for_session(&conversation_id, &ws) {
                         log::warn!(
                             "[agenda-dispatch] authorize workspace failed conv={} path={} err={}",
                             conversation_id,

@@ -242,7 +242,7 @@ pub(crate) fn load_explicit_workspace(
         .and_then(|facade| {
             facade
                 .authorized_workspace_store()
-                .get_current_for_session(&SessionId::new(conversation_id.to_string()))
+                .get_current_for_session(conversation_id, &SessionId::new(conversation_id.to_string()))
                 .ok()
                 .flatten()
         })
@@ -262,7 +262,7 @@ pub(crate) fn load_authorized_workspace(
         .and_then(|facade| {
             facade
                 .authorized_workspace_store()
-                .get_current_for_session(&SessionId::new(conversation_id.to_string()))
+                .get_current_for_session(conversation_id, &SessionId::new(conversation_id.to_string()))
                 .ok()
                 .flatten()
         })

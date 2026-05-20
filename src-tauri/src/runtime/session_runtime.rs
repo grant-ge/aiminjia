@@ -462,7 +462,7 @@ impl SessionRuntime {
         let authorized_workspace = self
             .authorized_workspace_store
             .as_ref()
-            .and_then(|store| store.get_current_for_session(session_id).ok().flatten())
+            .and_then(|store| store.get_current_for_session(session_id.as_str(), session_id).ok().flatten())
             .map(|aw| AuthorizedWorkspaceRef {
                 id: aw.id,
                 root_path: aw.root_path,
@@ -912,7 +912,7 @@ mod tests {
         let store = Arc::new(crate::runtime::store::InMemoryAuthorizedWorkspaceStore::default());
         let session_id = crate::runtime::ids::SessionId::new("conv-authorized");
         store
-            .replace_for_session(&crate::runtime::store::AuthorizedWorkspace {
+            .replace_for_session(session_id.as_str(), &crate::runtime::store::AuthorizedWorkspace {
                 id: "aw-session".to_string(),
                 session_id: session_id.clone(),
                 root_path: external_workspace.path().to_path_buf(),
