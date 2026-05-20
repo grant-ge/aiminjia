@@ -869,7 +869,15 @@
     "cronEveryDay": "Daily {{time}}",
     "cronWeekdays": "Weekdays {{time}}",
     "cronWeekly": "Weekly {{days}} {{time}}",
-    "dayNames": ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+    "dayNames": [
+      "Sun",
+      "Mon",
+      "Tue",
+      "Wed",
+      "Thu",
+      "Fri",
+      "Sat"
+    ],
     "responsibility": "Responsibility",
     "triggerMethod": "Trigger",
     "onDemand": "On demand",
@@ -1020,5 +1028,98 @@
         "planRejectNoFeedback": "{{from}} rejected the plan"
       }
     }
+  },
+  "channel": {
+    "title": "IM Channel",
+    "heroTitle": "IM Channel",
+    "heroDesc": "Configure the DingTalk IM channel so AI Home can receive and reply to DingTalk messages.",
+    "heroPrivacy": "Channel credentials are stored locally and never uploaded.",
+    "status": {
+      "unconfigured": "Not configured",
+      "configuredOffline": "Configured / Disconnected",
+      "connected": "Connected",
+      "connecting": "Connecting",
+      "reconnecting": "Reconnecting",
+      "configError": "Configuration error"
+    },
+    "actions": {
+      "configure": "Configure",
+      "remove": "Remove",
+      "moreDingtalkConfig": "More DingTalk options",
+      "configureWith": "Configure {{name}}",
+      "enabledAria": "{{name}} channel enabled",
+      "disabledAria": "{{name}} channel disabled"
+    },
+    "dingtalk": {
+      "name": "DingTalk",
+      "icon": "D",
+      "description": "Receive and reply to user messages via a DingTalk bot",
+      "topbarTitle": "DingTalk",
+      "inactive": "This conversation belongs to a retired bot and cannot accept new messages."
+    },
+    "remove": {
+      "title": "Remove DingTalk channel?",
+      "description": "This disconnects the DingTalk channel and removes the locally stored AppKey and AppSecret. Chat history is preserved. You will need to re-scan to configure it again.",
+      "confirm": "Confirm remove",
+      "cancel": "Cancel"
+    },
+    "errors": {
+      "openFileTitle": "Cannot open file",
+      "openFileMessage": "Failed to open the generated file."
+    },
+    "dialog": {
+      "title": "Configure DingTalk",
+      "description": "Scan the QR code in DingTalk to register the app, or fill in app credentials manually."
+    }
+  },
+  "schedules": {
+    "pageTitle": "Scheduled Tasks",
+    "newTaskAria": "New scheduled task",
+    "taskList": "Task list",
+    "cancelled": "Cancelled",
+    "backToList": "Back",
+    "backToListAria": "Back to task list",
+    "viewCancelled": "View cancelled",
+    "cancelledWithCount": "Cancelled ({{count}})",
+    "columns": {
+      "name": "Task name",
+      "frequency": "Frequency",
+      "status": "Status",
+      "actions": "Actions"
+    },
+    "empty": {
+      "loading": "Loading scheduled tasks",
+      "loadingDesc": "Please wait while we load your local task configuration.",
+      "noCancelled": "No cancelled tasks",
+      "noCancelledDesc": "Cancelled tasks will appear here. You can restore them or delete them permanently.",
+      "noTasks": "No scheduled tasks yet",
+      "noTasksDesc": "Pick a template above or create your first scheduled task in chat."
+    },
+    "cancel": {
+      "title": "Cancel this scheduled task?",
+      "description": "Cancelled tasks stop triggering but can be restored from \"Cancelled\".",
+      "confirm": "Confirm cancel"
+    },
+    "delete": {
+      "title": "Permanently delete this task?",
+      "description": "This wipes the task and its execution history from disk and cannot be undone.",
+      "confirm": "Confirm permanent delete"
+    },
+    "templates": {
+      "dailyReport": {
+        "title": "Daily report",
+        "desc": "Auto-summarize yesterday's data into a daily report at 9 AM every day."
+      },
+      "storeInspection": {
+        "title": "Store inspection",
+        "desc": "Aggregate weekly store inspection results into a report every Monday."
+      },
+      "weeklyReview": {
+        "title": "Weekly review",
+        "desc": "Summarize weekly KPIs and team review points every Friday."
+      }
+    },
+    "itemCount": "{{count}} items",
+    "newButton": "New"
   }
 }

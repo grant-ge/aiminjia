@@ -1,5 +1,6 @@
 // code/src/features/expert-teams/ExpertTeamsPage.tsx
 import { useRef } from 'react'
+import { PageSectionShell } from '@/components/shell/PageSectionShell'
 import { PageTopBar } from '@/components/shell/PageTopBar'
 import { createConversation, renameConversation } from '@/lib/tauri'
 import { useChatStore } from '@/stores/chatStore'
@@ -65,15 +66,15 @@ export function ExpertTeamsPage() {
   }
 
   return (
-    <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
-      <PageTopBar variant="title" title="专家团" />
-      <div className="flex-1 overflow-y-auto px-6 py-6">
-        <div className="mx-auto grid w-full max-w-[1024px] grid-cols-1 gap-4 sm:grid-cols-2">
-          {EXPERT_TEAMS.map((team) => (
-            <ExpertTeamCard key={team.id} team={team} onStart={handleStart} />
-          ))}
-        </div>
+    <PageSectionShell
+      topBar={<PageTopBar variant="title" title="专家团" />}
+      maxWidthClass="max-w-[1024px]"
+    >
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        {EXPERT_TEAMS.map((team) => (
+          <ExpertTeamCard key={team.id} team={team} onStart={handleStart} />
+        ))}
       </div>
-    </div>
+    </PageSectionShell>
   )
 }

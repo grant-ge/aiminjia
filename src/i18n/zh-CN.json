@@ -869,7 +869,15 @@
     "cronEveryDay": "每天 {{time}}",
     "cronWeekdays": "工作日 {{time}}",
     "cronWeekly": "每周{{days}} {{time}}",
-    "dayNames": ["日", "一", "二", "三", "四", "五", "六"],
+    "dayNames": [
+      "日",
+      "一",
+      "二",
+      "三",
+      "四",
+      "五",
+      "六"
+    ],
     "responsibility": "职责",
     "triggerMethod": "触发方式",
     "onDemand": "按需派活",
@@ -1020,5 +1028,98 @@
         "planRejectNoFeedback": "{{from}} 不同意方案"
       }
     }
+  },
+  "channel": {
+    "title": "IM 频道",
+    "heroTitle": "IM 频道",
+    "heroDesc": "配置钉钉 IM 频道，让 AI 小家 接收并回复来自钉钉的消息。",
+    "heroPrivacy": "频道配置信息仅存储在本地，不会上传到云端。",
+    "status": {
+      "unconfigured": "未配置",
+      "configuredOffline": "已配置 / 未连接",
+      "connected": "已连接",
+      "connecting": "连接中",
+      "reconnecting": "重连中",
+      "configError": "配置有误"
+    },
+    "actions": {
+      "configure": "配置",
+      "remove": "移除",
+      "moreDingtalkConfig": "更多钉钉配置",
+      "configureWith": "配置{{name}}",
+      "enabledAria": "{{name}}频道已启用",
+      "disabledAria": "{{name}}频道已停用"
+    },
+    "dingtalk": {
+      "name": "钉钉",
+      "icon": "钉",
+      "description": "通过钉钉机器人接收并回复用户消息",
+      "topbarTitle": "钉钉",
+      "inactive": "该会话来自已下线的机器人，无法发送新消息"
+    },
+    "remove": {
+      "title": "移除钉钉频道？",
+      "description": "这会断开钉钉频道，并删除本地保存的 AppKey 和 AppSecret。已有聊天历史会保留。之后需要重新扫码才能再次配置。",
+      "confirm": "确认移除",
+      "cancel": "取消"
+    },
+    "errors": {
+      "openFileTitle": "无法打开文件",
+      "openFileMessage": "打开生成文件失败。"
+    },
+    "dialog": {
+      "title": "配置钉钉",
+      "description": "在钉钉中扫码完成应用注册，也可以手动填写应用凭证。"
+    }
+  },
+  "schedules": {
+    "pageTitle": "定时任务",
+    "newTaskAria": "新建日程",
+    "taskList": "任务列表",
+    "cancelled": "已取消",
+    "backToList": "返回",
+    "backToListAria": "返回任务列表",
+    "viewCancelled": "查看已取消",
+    "cancelledWithCount": "已取消 ({{count}})",
+    "columns": {
+      "name": "任务名称",
+      "frequency": "执行频率",
+      "status": "状态",
+      "actions": "操作"
+    },
+    "empty": {
+      "loading": "正在加载定时任务",
+      "loadingDesc": "请稍候，正在读取本地任务配置。",
+      "noCancelled": "没有已取消的任务",
+      "noCancelledDesc": "取消的任务会出现在这里，可以恢复或永久删除。",
+      "noTasks": "还没有定时任务",
+      "noTasksDesc": "选择上方模板或在对话中创建你的第一个定时任务。"
+    },
+    "cancel": {
+      "title": "取消此定时任务？",
+      "description": "取消后该任务将停止触发，但可以从「已取消」中恢复。",
+      "confirm": "确认取消"
+    },
+    "delete": {
+      "title": "永久删除此任务？",
+      "description": "此操作会从磁盘抹除任务及其执行历史，无法恢复。",
+      "confirm": "确认永久删除"
+    },
+    "templates": {
+      "dailyReport": {
+        "title": "日报汇总",
+        "desc": "每天 9 点自动汇总昨日数据生成日报。"
+      },
+      "storeInspection": {
+        "title": "门店巡检",
+        "desc": "每周一汇总各门店巡检结果并生成报表。"
+      },
+      "weeklyReview": {
+        "title": "周度复盘",
+        "desc": "每周五汇总周度 KPI 与团队复盘要点。"
+      }
+    },
+    "itemCount": "共 {{count}} 条",
+    "newButton": "新建"
   }
 }

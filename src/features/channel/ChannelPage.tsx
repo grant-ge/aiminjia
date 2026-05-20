@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { MoreHorizontal } from 'lucide-react'
 import { AppDropdown } from '@/components/common/AppDropdown'
 import { requestConfirm } from '@/components/common/ConfirmDialogHost'
@@ -9,6 +10,8 @@ import { RightPanel } from '@/components/chat/RightPanel'
 import type { PreviewTarget } from '@/components/chat/generatedFileActions'
 import { ChatArea } from '@/components/layout/ChatArea'
 import { ChatTopBar } from '@/components/shell/ChatTopBar'
+import { PageSectionShell } from '@/components/shell/PageSectionShell'
+import { PageTopBar } from '@/components/shell/PageTopBar'
 import { TeamChatDrawer } from '@/components/team/TeamChatDrawer'
 import { Button } from '@/components/ui/button'
 import {
@@ -39,39 +42,40 @@ interface PlatformCardModel {
   icon: string
   iconClassName: string
   state: ChannelPlatformState
-  statusLabel: string
+  statusKey: string
   statusTone: 'success' | 'muted' | 'error' | 'pending'
 }
 
 function statusMeta(state: ChannelPlatformState) {
-  if (state.capability === 'comingSoon') return { statusLabel: '未配置', statusTone: 'muted' as const }
-  if (!state.configured) return { statusLabel: '未配置', statusTone: 'muted' as const }
-  if (!state.enabled) return { statusLabel: '已配置 / 未连接', statusTone: 'muted' as const }
+  if (state.capability === 'comingSoon') return { statusKey: 'channel.status.unconfigured', statusTone: 'muted' as const }
+  if (!state.configured) return { statusKey: 'channel.status.unconfigured', statusTone: 'muted' as const }
+  if (!state.enabled) return { statusKey: 'channel.status.configuredOffline', statusTone: 'muted' as const }
   switch (state.connection) {
     case 'connected':
-      return { statusLabel: '已连接', statusTone: 'success' as const }
+      return { statusKey: 'channel.status.connected', statusTone: 'success' as const }
     case 'connecting':
-      return { statusLabel: '连接中', statusTone: 'pending' as const }
+      return { statusKey: 'channel.status.connecting', statusTone: 'pending' as const }
     case 'reconnecting':
-      return { statusLabel: '重连中', statusTone: 'pending' as const }
+      return { statusKey: 'channel.status.reconnecting', statusTone: 'pending' as const }
     case 'configError':
-      return { statusLabel: '配置有误', statusTone: 'error' as const }
+      return { statusKey: 'channel.status.configError', statusTone: 'error' as const }
     default:
-      return { statusLabel: '未配置', statusTone: 'muted' as const }
+      return { statusKey: 'channel.status.unconfigured', statusTone: 'muted' as const }
   }
 }
 
-function StatusBadge({ label, tone }: { label?: string; tone?: PlatformCardModel['statusTone'] }) {
-  if (!label) return null
+function StatusBadge({ tKey, tone }: { tKey?: string; tone?: PlatformCardModel['statusTone'] }) {
+  const { t } = useTranslation()
+  if (!tKey) return null
   const className =
     tone === 'success'
-      ? 'bg-emerald-50 text-emerald-600'
+      ? 'bg-primary/10 text-primary'
       : tone === 'error'
-        ? 'bg-red-50 text-red-500'
+        ? 'bg-destructive/10 text-destructive'
         : tone === 'pending'
-          ? 'bg-amber-50 text-amber-600'
+          ? 'bg-primary/8 text-primary/80'
           : 'bg-muted text-muted-foreground'
-  return <span className={`rounded-md px-2 py-1 text-xs font-bold ${className}`}>{label}</span>
+  return <span className={`rounded-md px-2 py-1 text-xs font-bold ${className}`}>{t(tKey)}</span>
 }
 
 function PlatformIcon({ platform }: { platform: PlatformCardModel }) {
@@ -95,6 +99,7 @@ function PlatformCard({
   onRemove: () => void
   onToggle: (enabled: boolean) => void
 }) {
+  const { t } = useTranslation()
   return (
     <div className="flex min-h-[92px] items-center justify-between rounded-xl border border-border bg-card px-6 py-4">
       <div className="flex min-w-0 items-center gap-4">
@@ -102,7 +107,7 @@ function PlatformCard({
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <h3 className="text-lg font-bold text-foreground">{platform.name}</h3>
-            <StatusBadge label={platform.statusLabel} tone={platform.statusTone} />
+            <StatusBadge tKey={platform.statusKey} tone={platform.statusTone} />
           </div>
           <p className="mt-1 text-sm font-medium text-muted-foreground">{platform.description}</p>
         </div>
@@ -111,22 +116,22 @@ function PlatformCard({
       <div className="ml-6 flex shrink-0 items-center gap-4">
         {platform.state.configured && platform.key === 'dingtalk' && (
           <AppDropdown
-            ariaLabel="更多钉钉配置"
+            ariaLabel={t('channel.actions.moreDingtalkConfig')}
             trigger={
               <button type="button" className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
                 <MoreHorizontal className="h-5 w-5" />
               </button>
             }
             items={[
-              { id: 'configure', label: '配置', onSelect: onShowDetails },
-              { id: 'remove', label: '移除', className: 'text-destructive', onSelect: onRemove },
+              { id: 'configure', label: t('channel.actions.configure'), onSelect: onShowDetails },
+              { id: 'remove', label: t('channel.actions.remove'), className: 'text-destructive', onSelect: onRemove },
             ]}
           />
         )}
         {platform.state.configured ? (
           <Switch
             checked={platform.state.enabled}
-            aria-label={platform.state.enabled ? `${platform.name}频道已启用` : `${platform.name}频道已停用`}
+            aria-label={t(platform.state.enabled ? 'channel.actions.enabledAria' : 'channel.actions.disabledAria', { name: platform.name })}
             onCheckedChange={onToggle}
           />
         ) : platform.state.capability === 'available' ? (
@@ -134,13 +139,13 @@ function PlatformCard({
             type="button"
             className="rounded-full px-6"
             onClick={onRegister}
-            aria-label={`配置${platform.name}`}
+            aria-label={t('channel.actions.configureWith', { name: platform.name })}
           >
-            配置
+            {t('channel.actions.configure')}
           </Button>
         ) : (
           <Button type="button" className="rounded-full px-6" disabled>
-            配置
+            {t('channel.actions.configure')}
           </Button>
         )}
       </div>
@@ -149,12 +154,13 @@ function PlatformCard({
 }
 
 function ChannelHero() {
+  const { t } = useTranslation()
   return (
     <div className="flex flex-col items-center text-center">
-      <h1 className="text-4xl font-extrabold tracking-tight text-foreground">IM 频道</h1>
-      <p className="mt-5 max-w-2xl text-lg font-semibold leading-8 text-muted-foreground">
-        配置钉钉 IM 频道，让 AI 小家 接收并回复来自钉钉的消息。
-        <br />频道配置信息仅存储在本地，不会上传到云端。
+      <h1 className="text-2xl font-bold tracking-tight text-foreground">{t('channel.heroTitle')}</h1>
+      <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
+        {t('channel.heroDesc')}
+        <br />{t('channel.heroPrivacy')}
       </p>
     </div>
   )
@@ -173,30 +179,31 @@ function ChannelOverview({
   onRemoveDingtalk: () => void
   onToggleDingtalk: (enabled: boolean) => void
 }) {
+  const { t } = useTranslation()
   return (
-    <div className="flex min-h-full flex-col">
-      <div data-tauri-drag-region className="h-10 shrink-0" />
-      <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col justify-center gap-8 px-6 pb-24 pt-6">
-        <ChannelHero />
-
-        <div className="flex flex-col gap-4">
-          {platforms.map((platform) => (
-            <PlatformCard
-              key={platform.key}
-              platform={platform}
-              onRegister={platform.key === 'dingtalk' ? onRegisterDingtalk : () => {}}
-              onShowDetails={platform.key === 'dingtalk' ? onShowDingtalkDetails : () => {}}
-              onRemove={platform.key === 'dingtalk' ? onRemoveDingtalk : () => {}}
-              onToggle={platform.key === 'dingtalk' ? onToggleDingtalk : () => {}}
-            />
-          ))}
-        </div>
+    <PageSectionShell
+      topBar={<PageTopBar variant="title" title={t('channel.title')} />}
+      maxWidthClass="max-w-4xl"
+    >
+      <ChannelHero />
+      <div className="flex flex-col gap-4">
+        {platforms.map((platform) => (
+          <PlatformCard
+            key={platform.key}
+            platform={platform}
+            onRegister={platform.key === 'dingtalk' ? onRegisterDingtalk : () => {}}
+            onShowDetails={platform.key === 'dingtalk' ? onShowDingtalkDetails : () => {}}
+            onRemove={platform.key === 'dingtalk' ? onRemoveDingtalk : () => {}}
+            onToggle={platform.key === 'dingtalk' ? onToggleDingtalk : () => {}}
+          />
+        ))}
       </div>
-    </div>
+    </PageSectionShell>
   )
 }
 
 function ChannelChatView({ sessionId }: { sessionId: string }) {
+  const { t } = useTranslation()
   const conversations = useChannelStore((s) => s.conversations)
   const pushNotification = useNotificationStore((s) => s.push)
   const activeConv = conversations.find((c) => c.sessionId === sessionId)
@@ -210,8 +217,8 @@ function ChannelChatView({ sessionId }: { sessionId: string }) {
     } catch (err) {
       pushNotification({
         level: 'error',
-        title: '无法打开文件',
-        message: err instanceof Error ? err.message : '打开生成文件失败。',
+        title: t('channel.errors.openFileTitle'),
+        message: err instanceof Error ? err.message : t('channel.errors.openFileMessage'),
         actions: [],
         dismissible: true,
         context: 'toast',
@@ -221,14 +228,14 @@ function ChannelChatView({ sessionId }: { sessionId: string }) {
 
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden bg-background">
-      <ChatTopBar title="钉钉" workspace={title || sessionId} />
+      <ChatTopBar title={t('channel.dingtalk.topbarTitle')} workspace={title || sessionId} />
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         <div data-testid="channel-chat-layout-column" className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
           <ChatArea />
           {isInactiveSession && (
             <div className="px-6 pb-2">
               <div className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">
-                该会话来自已下线的机器人，无法发送新消息
+                {t('channel.dingtalk.inactive')}
               </div>
             </div>
           )}
@@ -242,6 +249,7 @@ function ChannelChatView({ sessionId }: { sessionId: string }) {
 }
 
 export function ChannelPage({ sessionId }: ChannelPageProps) {
+  const { t } = useTranslation()
   const platformsByKey = useChannelStore((s) => s.platforms)
   const loadConversations = useChannelStore((s) => s.loadConversations)
   const setEnabled = useChannelStore((s) => s.setEnabled)
@@ -302,10 +310,10 @@ export function ChannelPage({ sessionId }: ChannelPageProps) {
 
   const handleRemoveDingtalk = async () => {
     const confirmed = await requestConfirm({
-      title: '移除钉钉频道？',
-      description: '这会断开钉钉频道，并删除本地保存的 AppKey 和 AppSecret。已有聊天历史会保留。之后需要重新扫码才能再次配置。',
-      confirmLabel: '确认移除',
-      cancelLabel: '取消',
+      title: t('channel.remove.title'),
+      description: t('channel.remove.description'),
+      confirmLabel: t('channel.remove.confirm'),
+      cancelLabel: t('channel.remove.cancel'),
       variant: 'destructive',
     })
     if (!confirmed) return
@@ -324,19 +332,19 @@ export function ChannelPage({ sessionId }: ChannelPageProps) {
     return [
       {
         key: 'dingtalk',
-        name: '钉钉',
-        description: '通过钉钉机器人接收并回复用户消息',
-        icon: '钉',
+        name: t('channel.dingtalk.name'),
+        description: t('channel.dingtalk.description'),
+        icon: t('channel.dingtalk.icon'),
         // 钉钉品牌蓝 #0b8cff：是平台 logo 识别色，不随主题切换
         iconClassName: 'bg-sky-50 text-[var(--color-semantic-blue)]',
         state: states.dingtalk,
         ...statusMeta(states.dingtalk),
       },
     ]
-  }, [dingtalkState])
+  }, [dingtalkState, t])
 
   return (
-    <div className={sessionId ? 'h-full overflow-hidden bg-white' : 'h-full overflow-y-auto bg-white'}>
+    <div className={sessionId ? 'h-full overflow-hidden bg-background' : 'h-full overflow-y-auto bg-background'}>
       {sessionId ? (
         <ChannelChatView sessionId={sessionId} />
       ) : (
@@ -352,8 +360,8 @@ export function ChannelPage({ sessionId }: ChannelPageProps) {
       <Dialog open={registrationOpen} onOpenChange={setRegistrationOpen}>
         <DialogContent className="max-w-xl overflow-hidden rounded-xl border border-border bg-background p-0 shadow-[var(--shadow-modal)]">
           <DialogHeader className="sr-only">
-            <DialogTitle>配置钉钉</DialogTitle>
-            <DialogDescription>在钉钉中扫码完成应用注册，也可以手动填写应用凭证。</DialogDescription>
+            <DialogTitle>{t('channel.dialog.title')}</DialogTitle>
+            <DialogDescription>{t('channel.dialog.description')}</DialogDescription>
           </DialogHeader>
           <ChannelConfig
             onSaved={() => {

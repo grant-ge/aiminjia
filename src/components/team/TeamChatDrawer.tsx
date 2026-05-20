@@ -248,8 +248,8 @@ function TeamSessionSection({ session, onDrill }: TeamSessionSectionProps) {
               {session.teamName ?? t('team.session.untitled')}
             </span>
             {isLive ? (
-              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-300">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                <span className="h-1.5 w-1.5 rounded-full bg-primary" />
                 {t('team.session.live')}
               </span>
             ) : (

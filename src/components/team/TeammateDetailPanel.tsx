@@ -215,7 +215,7 @@ function ToolChip({ call }: { call: ToolCallView }) {
           {call.result == null ? (
             <span className="text-[10px] text-muted-foreground">—</span>
           ) : ok ? (
-            <span className="text-[10px] text-emerald-600 dark:text-emerald-400">✓</span>
+            <span className="text-[10px] text-primary">✓</span>
           ) : (
             <span className="text-[10px] text-destructive">✗</span>
           )}
@@ -321,7 +321,7 @@ function MessageCard({ header, tone, parsed, raw }: MessageCardProps) {
         <span>{header}</span>
         {parsed.warning && (
           <span
-            className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium normal-case tracking-normal text-amber-700 dark:text-amber-300"
+            className="rounded bg-warning/15 px-1.5 py-0.5 text-[10px] font-medium normal-case tracking-normal text-warning"
             title={parsed.warning}
           >
             解析提示
@@ -347,7 +347,7 @@ function MessageCard({ header, tone, parsed, raw }: MessageCardProps) {
         )}
         <span>原始数据</span>
         {parsed.warning && (
-          <span className="ml-auto text-[10px] font-medium normal-case tracking-normal text-amber-700 dark:text-amber-400">
+          <span className="ml-auto text-[10px] font-medium normal-case tracking-normal text-warning">
             {parsed.warning}
           </span>
         )}

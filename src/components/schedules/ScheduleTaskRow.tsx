@@ -24,10 +24,10 @@ const STATUS_LABEL: Record<AgendaItem['status'], string> = {
 }
 
 const STATUS_BADGE: Record<AgendaItem['status'], string> = {
-  active: 'bg-blue-100 text-blue-700',
+  active: 'bg-primary/10 text-primary',
   paused: 'bg-muted text-muted-foreground',
-  completed: 'bg-green-100 text-green-700',
-  orphaned: 'bg-red-100 text-red-700',
+  completed: 'bg-primary/10 text-primary',
+  orphaned: 'bg-destructive/10 text-destructive',
   cancelled: 'bg-muted text-muted-foreground line-through',
 }
 

@@ -234,6 +234,8 @@
   --color-brand-secondary-subtle: var(--brand-secondary-subtle);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-warning: var(--color-semantic-orange);
+  --color-warning-foreground: #FFFFFF;
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
   --radius-sm: var(--radius-sm);

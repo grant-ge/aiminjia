@@ -370,7 +370,7 @@ export function SkillCenterPage() {
     <>
     <PageSectionShell
       topBar={
-        <header data-tauri-drag-region className="flex h-[45px] items-center justify-between border-b border-border px-6">
+        <header data-tauri-drag-region className="flex h-10 shrink-0 items-center justify-between border-b border-border bg-background px-6">
           <div className="flex items-center gap-3">
             <span className="text-base font-semibold text-foreground">{t('skillCenter.title')}</span>
             <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-muted-foreground">
@@ -424,8 +424,6 @@ export function SkillCenterPage() {
           </div>
         </header>
       }
-      padding="px-7 pt-6 pb-8"
-      gap="gap-5"
     >
       <SkillDraftBanner />
       <SkillOfficeSection

@@ -100,9 +100,7 @@ export function EmployeesPage() {
 
   return (
     <PageSectionShell
-      topBar={<div data-tauri-drag-region className="h-8 shrink-0" />}
-      padding="px-8 pt-5 pb-7"
-      gap="gap-6"
+      topBar={<div data-tauri-drag-region className="h-10 shrink-0" />}
       maxWidthClass="max-w-[900px]"
     >
       {/* ── 顶部 greeting ── */}
