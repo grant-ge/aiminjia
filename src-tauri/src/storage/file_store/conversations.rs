@@ -52,6 +52,9 @@ pub fn create_conversation(base_dir: &Path, id: &str, title: &str) -> StorageRes
         is_archived: false,
         model_override: None,
         employee_id: None,
+        source: Default::default(),
+        authorized_workspace: None,
+        source_label: None,
     };
     atomic_write_json(&conv_meta_path(base_dir, id), &meta)?;
 
@@ -472,6 +475,9 @@ mod tests {
             is_archived: false,
             model_override: None,
             employee_id: None,
+            source: Default::default(),
+            authorized_workspace: None,
+            source_label: None,
         };
         atomic_write_json(&orphan_dir.join("conv.json"), &meta).unwrap();
 

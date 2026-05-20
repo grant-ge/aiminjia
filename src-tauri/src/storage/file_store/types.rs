@@ -114,8 +114,23 @@ pub struct ConversationMeta {
     /// dispatching a digital employee. UI uses this to render the employee
     /// identity card in the chat top bar. Empty / None for user-initiated
     /// conversations.
+    ///
+    /// **过渡期保留**：新写入由 `source = Employee { employee_id }` 表达；本字段
+    /// 由 dispatch 路径双写以兼容老桌面端读 conv.json。后续 PR 删此字段。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub employee_id: Option<String>,
+    /// 新增：会话来源 tagged union。`#[serde(default)]` 让老 conv.json（无此字段）
+    /// 反序列化为 `User`。
+    #[serde(default)]
+    pub source: ConversationSource,
+    /// 新增：会话当前授权的本地工作目录（来自原 memory.jsonl 的 authorized_workspace 那条线）。
+    /// 不含 `session_id`，由读取方按需补 session_id 字段。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub authorized_workspace: Option<PersistedAuthorizedWorkspace>,
+    /// 新增：人类可读副标题（员工 display name / 团名 / IM 渠道描述）。
+    /// LLM 改 title 不影响这个字段——专门用于稳住"会话来源是什么"的视觉识别。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_label: Option<String>,
 }
 
 /// Lightweight entry in the global `index.json`.
@@ -445,5 +460,77 @@ mod conversation_source_tests {
     #[test]
     fn default_is_user() {
         assert_eq!(ConversationSource::default(), ConversationSource::User);
+    }
+}
+
+#[cfg(test)]
+mod conversation_meta_migration_tests {
+    use super::*;
+
+    #[test]
+    fn old_conv_json_without_new_fields_deserializes_with_defaults() {
+        let old_json = r#"{
+            "id": "c-1",
+            "title": "old conversation",
+            "createdAt": "2026-04-01T00:00:00+00:00",
+            "updatedAt": "2026-04-01T00:00:00+00:00",
+            "isArchived": false
+        }"#;
+        let meta: ConversationMeta = serde_json::from_str(old_json).unwrap();
+        assert_eq!(meta.id, "c-1");
+        assert_eq!(meta.source, ConversationSource::User);
+        assert!(meta.authorized_workspace.is_none());
+        assert!(meta.source_label.is_none());
+        assert!(meta.employee_id.is_none());
+    }
+
+    #[test]
+    fn employee_dispatch_old_conv_json_still_works() {
+        // 老格式：只有 employee_id 字段，没有 source。
+        let old_json = r#"{
+            "id": "c-2",
+            "title": "dispatch session",
+            "createdAt": "2026-04-15T00:00:00+00:00",
+            "updatedAt": "2026-04-15T00:00:00+00:00",
+            "isArchived": false,
+            "employeeId": "emp-001"
+        }"#;
+        let meta: ConversationMeta = serde_json::from_str(old_json).unwrap();
+        assert_eq!(meta.employee_id.as_deref(), Some("emp-001"));
+        // source 仍是 User（兼容期的兜底语义），需要 dispatch 路径在新代码里双写
+        assert_eq!(meta.source, ConversationSource::User);
+    }
+
+    #[test]
+    fn new_conv_json_with_all_fields_round_trips() {
+        let meta = ConversationMeta {
+            id: "c-3".to_string(),
+            title: "new conversation".to_string(),
+            created_at: "2026-05-20T00:00:00+00:00".to_string(),
+            updated_at: "2026-05-20T00:00:00+00:00".to_string(),
+            is_archived: false,
+            model_override: None,
+            employee_id: Some("emp-002".to_string()),
+            source: ConversationSource::Employee {
+                employee_id: "emp-002".to_string(),
+            },
+            authorized_workspace: Some(PersistedAuthorizedWorkspace {
+                id: "ws-1".to_string(),
+                root_path: PathBuf::from("/Users/foo"),
+                display_name: "foo".to_string(),
+                authorized_at: "2026-05-20T00:00:00+00:00".to_string(),
+            }),
+            source_label: Some("小销".to_string()),
+        };
+        let json = serde_json::to_string(&meta).unwrap();
+        let parsed: ConversationMeta = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.id, "c-3");
+        assert_eq!(parsed.employee_id.as_deref(), Some("emp-002"));
+        assert!(matches!(
+            parsed.source,
+            ConversationSource::Employee { ref employee_id } if employee_id == "emp-002"
+        ));
+        assert_eq!(parsed.source_label.as_deref(), Some("小销"));
+        assert!(parsed.authorized_workspace.is_some());
     }
 }
