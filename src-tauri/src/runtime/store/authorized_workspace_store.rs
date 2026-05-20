@@ -99,6 +99,70 @@ impl AuthorizedWorkspaceStore for FileAuthorizedWorkspaceStore {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// conv.json-backed implementation (production successor to FileAuthorizedWorkspaceStore)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// 把授权目录持久化到 `conversations/{id}/conv.json` 的 `authorizedWorkspace` 字段，
+/// 同时 mirror displayName 到 `index.json`。
+///
+/// 替代 `FileAuthorizedWorkspaceStore`（走 memory.jsonl 那条线）。
+pub struct ConvJsonAuthorizedWorkspaceStore {
+    pub storage: Arc<AppStorage>,
+}
+
+impl AuthorizedWorkspaceStore for ConvJsonAuthorizedWorkspaceStore {
+    fn replace_for_session(
+        &self,
+        conversation_id: &str,
+        ws: &AuthorizedWorkspace,
+    ) -> Result<()> {
+        let persisted = crate::storage::file_store::types::PersistedAuthorizedWorkspace {
+            id: ws.id.clone(),
+            root_path: ws.root_path.clone(),
+            display_name: ws.display_name.clone(),
+            authorized_at: ws.authorized_at.clone(),
+        };
+        crate::storage::file_store::conversations::set_conversation_workspace(
+            self.storage.base_dir(),
+            conversation_id,
+            Some(&persisted),
+        )?;
+        Ok(())
+    }
+
+    fn get_current_for_session(
+        &self,
+        conversation_id: &str,
+        session_id: &SessionId,
+    ) -> Result<Option<AuthorizedWorkspace>> {
+        let persisted = crate::storage::file_store::conversations::read_conversation_workspace(
+            self.storage.base_dir(),
+            conversation_id,
+        )?;
+        Ok(persisted.map(|p| AuthorizedWorkspace {
+            id: p.id,
+            session_id: session_id.clone(),
+            root_path: p.root_path,
+            display_name: p.display_name,
+            authorized_at: p.authorized_at,
+        }))
+    }
+
+    fn clear_for_session(
+        &self,
+        conversation_id: &str,
+        _session_id: &SessionId,
+    ) -> Result<()> {
+        crate::storage::file_store::conversations::set_conversation_workspace(
+            self.storage.base_dir(),
+            conversation_id,
+            None,
+        )?;
+        Ok(())
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // In-memory implementation (tests)
 // ─────────────────────────────────────────────────────────────────────────────
 
