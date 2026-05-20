@@ -3189,33 +3189,10 @@ impl TauriChatCommandAdapter {
     }
 
     pub async fn get_conversations(&self) -> Result<Vec<serde_json::Value>, String> {
-        let mut convs = conversation_service::get_conversations(
+        conversation_service::get_conversations(
             self.services.db().clone() as Arc<dyn ConversationStore>
         )
-        .await?;
-        // 为每个对话注入 workspaceName（来自已绑定的授权目录）。
-        // 没有绑定目录的对话不注入字段，前端视为"默认文件夹"。
-        let mut injected = 0usize;
-        for conv in &mut convs {
-            if let Some(id) = conv["id"].as_str() {
-                if let Some(ws) = chat_runtime_impl::load_explicit_workspace(&self.services.app, id)
-                {
-                    injected += 1;
-                    conv["workspaceName"] = serde_json::Value::String(ws.display_name);
-                }
-            }
-        }
-        // dev-only diagnostic: 若侧边栏首次加载时分组异常（例如只看到"默认文件夹"），
-        // 可对照前端 [diag-sidebar] console 日志判断是后端注入失败还是前端 race。
-        // total / injected 通过 release build 时编译掉。
-        if cfg!(debug_assertions) {
-            log::info!(
-                "[diag-sidebar] get_conversations total={} injected={}",
-                convs.len(),
-                injected
-            );
-        }
-        Ok(convs)
+        .await
     }
 
     pub async fn get_tasks(
