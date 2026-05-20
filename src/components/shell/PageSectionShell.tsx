@@ -11,9 +11,9 @@ interface PageSectionShellProps extends PropsWithChildren {
   topBar?: ReactNode
   /** @deprecated alias of topBar; will be removed in plan-B */
   header?: ReactNode
-  /** Tailwind padding classes, e.g. "px-10 pt-8 pb-7" */
+  /** Tailwind padding classes; default "px-8 pt-6 pb-8" — keep pages consistent unless there's a real design reason to override */
   padding?: string
-  /** Tailwind gap class, e.g. "gap-4" */
+  /** Tailwind gap class; default "gap-5" */
   gap?: string
   /** override max width if needed (default 1032) */
   maxWidthClass?: string
@@ -24,8 +24,8 @@ interface PageSectionShellProps extends PropsWithChildren {
 export function PageSectionShell({
   topBar,
   header,
-  padding = 'px-10 pt-8 pb-7',
-  gap = 'gap-4',
+  padding = 'px-8 pt-6 pb-8',
+  gap = 'gap-5',
   maxWidthClass = 'max-w-[1032px]',
   className = '',
   children,

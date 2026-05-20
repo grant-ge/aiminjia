@@ -10,16 +10,18 @@ AgentRuntime 管理子代理的状态机：从 spawn 到 complete/cancel/fail，
 主对话启动一个子代理任务，系统需要为它分配独立的 agent_id 和 child_run_id。
 
 **前提**
-- 构造 SpawnChildRunRequest，指定 parent_run_id
+- 应用已启动，父对话正在进行
+- 父对话有一个有效的 run_id
 
 **操作**
-- 调用 `AgentRuntime::spawn_child_run()`
+- 在父对话中发起一个后台子代理任务
+- 立刻查询该子代理的状态和身份信息
 
-**断言**
-- 返回的 ChildRunHandle 包含非空的 agent_id
-- 返回的 ChildRunHandle 包含非空的 child_run_id
-- child_run_id 与 parent_run_id 不相同
-- 立刻查询 status，返回 `"running"`
+**验收标准**
+- 子代理分配到的 `agent_id` 非空
+- 子代理分配到的 `child_run_id` 非空
+- `child_run_id` 与父对话的 `run_id` 不同
+- 立刻查询状态，结果为 `"running"`
 
 ---
 
@@ -29,15 +31,15 @@ AgentRuntime 管理子代理的状态机：从 spawn 到 complete/cancel/fail，
 子代理完成任务，主对话需要知道它已结束。
 
 **前提**
-- 已 spawn 一个子代理，状态为 Running
+- 应用已启动，已通过父对话发起一个子代理任务
+- 子代理当前状态为 `"running"`
 
 **操作**
-- 调用 `AgentRuntime::complete_run(child_run_id)`
-- 查询 status
+- 子代理正常完成执行后，查询其状态
 
-**断言**
-- status 返回 `"completed"`
-- 不返回 `"running"` 或其他状态
+**验收标准**
+- 状态查询结果为 `"completed"`
+- 状态查询结果不为 `"running"` 或其他中间状态
 
 ---
 
@@ -47,14 +49,15 @@ AgentRuntime 管理子代理的状态机：从 spawn 到 complete/cancel/fail，
 用户中止操作，父 run 需要取消正在运行的子代理。
 
 **前提**
-- 已 spawn 一个子代理，状态为 Running
+- 应用已启动，已通过父对话发起一个子代理任务
+- 子代理当前状态为 `"running"`
 
 **操作**
-- 调用 `AgentRuntime::cancel_run(child_run_id)`
-- 查询 status
+- 通过父对话的停止操作取消该子代理任务
+- 查询子代理状态
 
-**断言**
-- status 返回 `"cancelled"`
+**验收标准**
+- 状态查询结果为 `"cancelled"`
 
 ---
 
@@ -64,14 +67,15 @@ AgentRuntime 管理子代理的状态机：从 spawn 到 complete/cancel/fail，
 子代理执行过程中遇到不可恢复的错误。
 
 **前提**
-- 已 spawn 一个子代理，状态为 Running
+- 应用已启动，已通过父对话发起一个子代理任务
+- 子代理当前状态为 `"running"`
 
 **操作**
-- 调用 `AgentRuntime::fail_run(child_run_id)`
-- 查询 status
+- 子代理执行过程中遭遇不可恢复错误（如 LLM 服务返回致命错误）
+- 查询子代理状态
 
-**断言**
-- status 返回 `"failed"`
+**验收标准**
+- 状态查询结果为 `"failed"`
 
 ---
 
@@ -81,13 +85,14 @@ AgentRuntime 管理子代理的状态机：从 spawn 到 complete/cancel/fail，
 主对话查询一个从未创建过的子代理。
 
 **前提**
-- AgentRuntime 为空
+- 应用已启动
+- 当前没有任何子代理任务记录
 
 **操作**
-- 调用 `status(RunId::new("nonexistent"))` 查询任意不存在的 run_id
+- 使用一个随机生成的、从未分配过的 run_id 查询子代理状态
 
-**断言**
-- 返回 `"missing"`，不报错
+**验收标准**
+- 状态查询结果为 `"missing"`，不报错也不崩溃
 
 ---
 
@@ -97,15 +102,15 @@ AgentRuntime 管理子代理的状态机：从 spawn 到 complete/cancel/fail，
 后台子代理完成时，前端需要收到通知，以便显示任务结束。
 
 **前提**
-- 已 spawn 一个 background = true 的子代理
-- 构造 RuntimeEventBus，收集事件
+- 应用已启动，父对话正在进行
+- 已通过父对话发起一个后台（background）子代理任务
+- 事件监听已就绪，可接收 `AgentIdle` 事件
 
 **操作**
-- 调用 `complete_background_run(child_run_id, summary, transcript_ref, session_id, parent_run_id, bus)`
+- 等待后台子代理任务正常完成
 
-**断言**
-- EventBus 中包含至少一个事件
-- 该事件类型为 AgentIdle（通过 event_labels() 验证包含 `"AgentIdle"`）
+**验收标准**
+- 前端收到至少一个 `AgentIdle` 类型的事件通知
 - 子代理状态变为 `"completed"`
 
 ---
@@ -116,16 +121,17 @@ AgentRuntime 管理子代理的状态机：从 spawn 到 complete/cancel/fail，
 主对话需要回放子代理的完整对话记录，用于调试或结果提取。
 
 **前提**
-- 构造若干 SubagentTranscriptEntryRecord（至少含 user 和 assistant 各一条）
+- 应用已启动，已完成一个包含至少 1 条 user 消息和 1 条 assistant 消息的子代理任务
+- 子代理任务已正常结束，状态为 `"completed"`
 
 **操作**
-- 调用 `store_transcript(transcript_ref, entries)`
-- 调用 `transcript_store_get(transcript_ref)`
+- 从子代理完成后的 envelope 中获取 `transcript_ref`
+- 使用 `transcript_ref` 读取 `~/.renlijia/subagent_transcripts/` 下对应的转录文件
 
-**断言**
-- 返回值非 None
-- 返回的 entries 数量与写入时一致
-- 每条 entry 的 role 和 content 与写入时完全一致
+**验收标准**
+- 转录文件存在且内容不为空
+- 转录文件中条目数量与执行时记录的消息轮次一致
+- 每条转录条目的 `role` 和 `content` 字段与执行时产生的消息完全匹配
 
 ---
 
@@ -135,16 +141,16 @@ AgentRuntime 管理子代理的状态机：从 spawn 到 complete/cancel/fail，
 主对话只知道 child_run_id，需要通过它找到 transcript_ref，再读取完整转录。
 
 **前提**
-- 已 spawn 子代理
-- 调用 `complete_background_run` 时传入了 transcript_ref
+- 应用已启动，已完成一个子代理任务
+- 子代理任务结束时传入了有效的 `transcript_ref`
 
 **操作**
-- 调用 `get_transcript_ref(child_run_id)` 获取 transcript_ref
-- 用 transcript_ref 读取转录内容
+- 通过子代理的 `child_run_id` 查询其关联的 `transcript_ref`
+- 用该 `transcript_ref` 读取 `~/.renlijia/subagent_transcripts/` 下对应的转录文件
 
-**断言**
-- `get_transcript_ref()` 返回非 None
-- 用返回的 transcript_ref 读取到完整转录条目
+**验收标准**
+- 通过 `child_run_id` 查询到的 `transcript_ref` 不为空
+- 使用该 `transcript_ref` 能够成功读取到完整的转录条目
 
 ---
 
@@ -154,15 +160,16 @@ AgentRuntime 管理子代理的状态机：从 spawn 到 complete/cancel/fail，
 子代理在某些情况下需要恢复（如应用重启后继续追踪已知子代理状态）。
 
 **前提**
-- 已 spawn 一个子代理，保存 agent_id
-- 构造 ResumeChildRunRequest(agent_id)
+- 应用已启动，已通过父对话发起一个子代理任务，记录该任务分配的 `agent_id`
+- 模拟应用重启场景：重启应用后该子代理状态仍存在
 
 **操作**
-- 调用 `resume_child_run(request)`
+- 使用记录的 `agent_id` 发起子代理恢复（resume）请求
+- 查询恢复后的子代理 handle 信息
 
-**断言**
-- 返回的 ChildRunHandle 的 agent_id 与 spawn 时一致
-- 返回的 ChildRunHandle 的 child_run_id 与 spawn 时一致
+**验收标准**
+- 恢复后的 `agent_id` 与发起时记录的 `agent_id` 一致
+- 恢复后的 `child_run_id` 与发起时分配的 `child_run_id` 一致
 
 ---
 
@@ -171,8 +178,13 @@ AgentRuntime 管理子代理的状态机：从 spawn 到 complete/cancel/fail，
 **场景**
 传入一个从未 spawn 过的 agent_id 尝试 resume。
 
-**操作**
-- 调用 `resume_child_run(ResumeChildRunRequest::new("nonexistent-agent"))`
+**前提**
+- 应用已启动
+- 当前没有任何子代理任务记录
 
-**断言**
-- 返回 Err，不 panic
+**操作**
+- 使用一个随机生成的、从未分配过的 `agent_id` 发起子代理恢复（resume）请求
+
+**验收标准**
+- 恢复请求返回错误提示，不崩溃
+- 应用继续正常运行，可发起新的对话或子代理任务

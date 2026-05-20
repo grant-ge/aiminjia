@@ -252,6 +252,8 @@ workspace 目录（用户可自定义，默认也是 `~/.renlijia/`）下存放�
 
 ## 重要架构决策与约束
 
+- **个人版账户与消耗（2026-05-19）**：当 `tenant.type === 'personal'` 时，设置面板侧栏出现"我的账户"（key `account-billing`），展示余额 / 本月消耗 / 本月调用次数 + 消耗记录流水分页。后端走 lotus gateway 新端点 `GET /v1/billing/summary` 和 `GET /v1/billing/usage-records?page=&size=`（personal 租户专属，企业租户 403）。Rust 侧：`AuthManager::get_billing_summary` / `get_billing_usage_records`（吃 session_key），`#[tauri::command] billing_summary` / `billing_usage_records` 暴露给前端；TS 侧：`useBillingStore` zustand（summary + records + pagination + loading/error），打开面板 `useEffect` 触发 `refresh()` 并发拉两个接口。`tenant.type` 由 `/v1/profile` 透传 → `AuthTenantInfo.r#type` → `TenantInfo.tenant_type`（camelCase 序列化为 `tenantType`）→ `CloudAuthInfo.tenant.tenantType?: string`，企业用户读到 `enterprise` 后菜单 filter 隐藏 `account-billing`。新注册 personal 用户由 lotus 在 registration tx 内赠送 ¥10，幂等键 `tenants.signup_bonus_granted_at`；余额 < 赠送额度时 UI 不再显示"含 10 元赠送"提示。第二期接支付宝充值订单（暂未实现）。Spec：`~/lotus/docs/superpowers/specs/2026-05-19-personal-billing-and-signup-bonus-design.md`。
+
 - **数字员工配置表单 = 软校验（2026-05-14）**：所有内置员工的 hand-tuned 配置表单（`SalesTableConfigForm` / `CustomerSupportConfigForm` / `TechSupportConfigForm` / `MonitoringUrlsForm`）保存按钮**不再因必填项空缺而禁用**。设计原则：配置表单是"hint"而不是"gate"——空值或部分值都允许保存，员工在派活后的第一次对话中通过 dws 列字段、问用户子表名、列群关键字等方式补全。`SalesTableConfigForm.parseDingtalkAitableUrl` 现在 baseId 解析到就接受（sheetId 缺失时 tableId 留空），UI 提示"未包含 sheetId，小销会在对话中确认"。仅保留**格式错误**校验（如 fieldMapping JSON 解析失败），不再阻断保存空值。`MonitoringUrlsForm` 删除 URL 格式校验和"至少一行非空 name"校验；保存时过滤掉完全空的行。`SchemaForm` 的 schema-driven 校验**保留**，因为它是给未来自定义模板用的，校验由模板作者通过 JSON Schema 控制，不是产品默认行为。
 
 1. **Tauri command 层只做参数接收 → 转发 Runtime**，不含业务逻辑（见 `docs/architecture-blueprint.md`）

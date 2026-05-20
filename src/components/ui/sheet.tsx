@@ -13,17 +13,24 @@ const SheetOverlay = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Overlay>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Overlay>
 >(({ className, ...props }, ref) => (
-  <DialogPrimitive.Overlay ref={ref} className={cn('fixed inset-0 z-50 bg-gray-950/35', className)} {...props} />
+  // spec §7.9 — drawer/sheet overlay = --color-overlay-light (lighter than modal)
+  <DialogPrimitive.Overlay
+    ref={ref}
+    className={cn('fixed inset-0 z-50 bg-[var(--color-overlay-light)]', className)}
+    {...props}
+  />
 ))
 SheetOverlay.displayName = DialogPrimitive.Overlay.displayName
 
-const sheetVariants = cva('fixed z-50 gap-4 bg-background p-6 shadow-lg transition ease-in-out', {
+// spec §7.9 — Sheet: bg-card, --shadow-lg, right=520px / left=320px,
+// top/bottom drawers get rounded-t-xl / rounded-b-xl
+const sheetVariants = cva('fixed z-50 gap-4 bg-card p-6 shadow-[var(--shadow-lg)] transition ease-in-out', {
   variants: {
     side: {
-      top: 'inset-x-0 top-0 border-b border-border',
-      bottom: 'inset-x-0 bottom-0 border-t border-border',
-      left: 'inset-y-0 left-0 h-full w-3/4 border-r sm:max-w-sm border-border',
-      right: 'inset-y-0 right-0 h-full w-3/4 border-l sm:max-w-sm border-border',
+      top: 'inset-x-0 top-0 rounded-b-xl border-b border-border',
+      bottom: 'inset-x-0 bottom-0 rounded-t-xl border-t border-border',
+      left: 'inset-y-0 left-0 h-full w-[320px] border-r border-border',
+      right: 'inset-y-0 right-0 h-full w-[520px] border-l border-border',
     },
   },
   defaultVariants: {

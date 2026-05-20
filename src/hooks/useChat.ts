@@ -182,7 +182,11 @@ export function useChat() {
     recordDiagnostic({ event: 'conversation.switch.started', conversationId: id })
     const loadVersion = ++switchVersionRef.current
     const store = useChatStore.getState()
-    store.setMessages([])
+    // Keep messages already belonging to THIS conversation (covers the
+    // home → chat hand-off where HomeTaskComposerCard injects an optimistic
+    // user bubble before this effect lands). Drop messages from prior
+    // conversations so we don't briefly render stale history.
+    store.setMessages(store.messages.filter((m) => m.conversationId === id))
     useUiStore.getState().setRoute({ kind: 'chat', conversationId: id })
     void syncBusyConversations()
 
@@ -200,7 +204,31 @@ export function useChat() {
         conversationId: id,
         payload: { messageCount: msgs.length, taskCount: tasks.length },
       })
-      useChatStore.getState().setMessages(msgs)
+      // Merge-by-id instead of overwrite. The fetched list is the
+      // authoritative server state, but the store may legitimately hold
+      // optimistic / in-flight messages (e.g. a user bubble persisted
+      // by the home → chat path before backend's T9 commit landed).
+      // Race window symptom (pre-fix): user message disappears after
+      // sending from the home composer.
+      const current = useChatStore.getState().messages
+      const fetchedIds = new Set(msgs.map((m) => m.id))
+      const echoedClientIds = new Set(
+        msgs
+          .map((m) => (m as { clientMessageId?: string }).clientMessageId)
+          .filter((v): v is string => Boolean(v)),
+      )
+      const storeOnly = current.filter(
+        (m) =>
+          m.conversationId === id &&
+          !fetchedIds.has(m.id) &&
+          !echoedClientIds.has(m.id),
+      )
+      const merged = storeOnly.length === 0
+        ? msgs
+        : [...msgs, ...storeOnly].sort((a, b) =>
+            a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0,
+          )
+      useChatStore.getState().setMessages(merged)
       // 恢复 task 列表到 store
       const store = useChatStore.getState()
       for (const task of tasks) {

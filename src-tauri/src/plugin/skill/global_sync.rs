@@ -26,6 +26,12 @@ pub struct SkillPackageItem {
     pub package_url: String,
     #[serde(default)]
     pub package_size: i64,
+    /// `"tenant"` for caller's tenant-private skills, `"public"` for platform.
+    /// Gateway always returns this field (model.SkillPackage.Scope, default
+    /// `"tenant"`). Used only for telemetry today — future change can store
+    /// this per-skill so loader can tag SkillSource::Tenant vs Global.
+    #[serde(default)]
+    pub scope: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -248,6 +254,23 @@ fn copy_dir_without_symlinks(source: &Path, destination: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Find a single-level subdirectory that contains SKILL.md directly.
+/// Mirrors lotus tenant-portal `zipContainsSkillMd`: matches any first-level
+/// folder, not just one named exactly after plugin_id. Returns `None` if no
+/// such subdir exists (caller treats that as a missing-SKILL.md error).
+fn find_single_level_skill_root(prepared: &Path) -> Result<Option<std::path::PathBuf>> {
+    let entries = fs::read_dir(prepared)
+        .with_context(|| format!("read prepared dir '{}'", prepared.display()))?;
+    for entry in entries {
+        let entry = entry.with_context(|| format!("iterate '{}'", prepared.display()))?;
+        let path = entry.path();
+        if path.is_dir() && path.join("SKILL.md").is_file() {
+            return Ok(Some(path));
+        }
+    }
+    Ok(None)
+}
+
 pub fn extract_global_skills_zip(zip_path: &Path, output_dir: &Path) -> Result<()> {
     if output_dir.exists() {
         fs::remove_dir_all(output_dir)
@@ -255,7 +278,6 @@ pub fn extract_global_skills_zip(zip_path: &Path, output_dir: &Path) -> Result<(
     }
     fs::create_dir_all(output_dir)
         .with_context(|| format!("create output dir '{}'", output_dir.display()))?;
-
     let file =
         fs::File::open(zip_path).with_context(|| format!("open zip '{}'", zip_path.display()))?;
     let mut archive = zip::ZipArchive::new(file).context("open global skills zip")?;
@@ -311,8 +333,13 @@ async fn fetch_skill_list(
     server_base_url: &str,
     session_key: &str,
 ) -> Result<SkillListResponse> {
+    // No scope filter: gateway returns BOTH the caller's tenant private
+    // skills AND scope=public platform skills in one response (see lotus
+    // api-gateway handler.SkillPackageEmployeeHandler.List). Keeping
+    // scope=public would silently drop tenant-pushed skills, which was the
+    // pre-2026-05-19 bug.
     let url = format!(
-        "{}/v1/skill-packages?scope=public&page=1&size=100",
+        "{}/v1/skill-packages?page=1&size=100",
         server_base_url.trim_end_matches('/')
     );
     let response = client
@@ -387,11 +414,16 @@ async fn install_one_skill_package(
     let prepared = config.prepared_dir.join(&item.plugin_id);
     extract_global_skills_zip(&archive, &prepared)?;
 
-    // 4. Locate SKILL.md (compatible with both layouts)
+    // 4. Locate SKILL.md (compatible with both layouts: flat or one-level subdir).
+    //    Server-side validation (lotus tenant-portal zipContainsSkillMd) accepts
+    //    SKILL.md at archive root OR under ANY single subdir; mirror that here.
+    //    The previous logic only matched `{plugin_id}/SKILL.md` exactly, which
+    //    failed when the zip's inner folder name didn't match plugin_id (e.g.
+    //    user zipped as "skill/SKILL.md" but registered plugin_id="rehcm").
     let source = if prepared.join("SKILL.md").exists() {
         prepared.clone()
-    } else if prepared.join(&item.plugin_id).join("SKILL.md").exists() {
-        prepared.join(&item.plugin_id)
+    } else if let Some(sub) = find_single_level_skill_root(&prepared)? {
+        sub
     } else {
         bail!(
             "skill package '{}' v{} missing SKILL.md after extraction",
@@ -402,6 +434,20 @@ async fn install_one_skill_package(
 
     // 5. Atomically install into global_skills_dir/{plugin_id}/
     install_one_prepared_skill(&source, &config.global_skills_dir, &item.plugin_id)?;
+
+    // 6. Write scope marker so the loader can tag the skill as Tenant vs Global.
+    //    Gateway emits `"tenant"` for tenant-private skills and `"public"` for
+    //    platform/OPS skills (default `"tenant"` for legacy rows without scope).
+    let installed = config.global_skills_dir.join(&item.plugin_id);
+    let scope_marker = if item.scope == "public" { "public" } else { "tenant" };
+    let scope_path = installed.join(".scope");
+    if let Err(error) = fs::write(&scope_path, scope_marker) {
+        log::warn!(
+            "[skill-sync] write .scope marker for '{}' failed: {}",
+            item.plugin_id,
+            error
+        );
+    }
     Ok(())
 }
 
@@ -416,12 +462,17 @@ pub async fn sync_skill_packages_from_server(
 
     // 1. Fetch the published skill list from lotus-server
     let list = fetch_skill_list(&client, &server_base_url, &session_key).await?;
+    let (n_tenant, n_public) = list.data.iter().fold((0usize, 0usize), |(t, p), it| {
+        if it.scope == "tenant" { (t + 1, p) } else { (t, p + 1) }
+    });
     log::info!(
-        "[skill-sync] fetched {} skills from server: {:?}",
+        "[skill-sync] fetched {} skills from server ({} tenant + {} public): {:?}",
         list.data.len(),
+        n_tenant,
+        n_public,
         list.data
             .iter()
-            .map(|i| format!("{}@{}", i.plugin_id, i.version))
+            .map(|i| format!("{}@{}({})", i.plugin_id, i.version, i.scope))
             .collect::<Vec<_>>()
     );
 

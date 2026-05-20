@@ -140,6 +140,10 @@ export const useAuthStore = create<AuthState>((set) => ({
       useChatStore.getState().resetAll()
       useChatStore.getState().resetStreaming()
       useBrandingStore.getState().reset()
+      // Re-apply the persisted brand so the login page stays on the user's
+      // custom tenant skin instead of flashing back to defaults after logout.
+      // No-op when no cache exists.
+      void useBrandingStore.getState().restoreFromDisk()
       set({ ...EMPTY_AUTH_STATE, redirectFrom: null, isAuthPending: false })
     } catch (error) {
       set({ isAuthPending: false })

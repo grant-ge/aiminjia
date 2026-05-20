@@ -56,7 +56,11 @@ export function HomeTaskComposerCard() {
   )
   const [showSkillPopover, setShowSkillPopover] = useState(false)
   const getSkillById = useSkillStore((s) => s.getById)
-  const [selectedSkill, setSelectedSkill] = useState<{ id: string; label?: string } | null>(null)
+  const [selectedSkill, setSelectedSkill] = useState<{
+    id: string
+    label?: string
+    trigger: string
+  } | null>(null)
 
   // One-shot prefill text; consumed synchronously via lazy initializer so
   // RichComposer's useEditor receives it on its very first render.
@@ -68,12 +72,13 @@ export function HomeTaskComposerCard() {
   const handleSkillPick = useCallback((skillId: string) => {
     const skill = getSkillById(skillId)
     const trigger = skill?.triggerText || `/${skillId}`
-    const next = trigger.endsWith(' ') ? trigger : `${trigger} `
-    composerRef.current?.clear()
-    composerRef.current?.getEditor()?.commands.insertContent(next)
-    composerRef.current?.focus()
+    setSelectedSkill({
+      id: skillId,
+      label: skill?.displayName || skill?.id || skillId,
+      trigger,
+    })
     setShowSkillPopover(false)
-    setSelectedSkill({ id: skillId, label: skill?.displayName || skill?.id || skillId })
+    composerRef.current?.focus()
   }, [getSkillById])
 
   // Load default folder if no workspace has been selected yet
@@ -179,7 +184,13 @@ export function HomeTaskComposerCard() {
       }))
       const skillForThisTurn = selectedSkill
       setSelectedSkill(null)
-      await sendUserMessage(payload.markdown, fileInfos, skillForThisTurn)
+      let markdownToSend = payload.markdown
+      if (skillForThisTurn) {
+        const trigger = skillForThisTurn.trigger
+        const sep = trigger.endsWith(' ') ? '' : ' '
+        markdownToSend = `${trigger}${sep}${markdownToSend}`
+      }
+      await sendUserMessage(markdownToSend, fileInfos, skillForThisTurn)
     } finally {
       setIsSubmitting(false)
     }
@@ -191,7 +202,7 @@ export function HomeTaskComposerCard() {
   return (
     <div
       data-testid="home-composer-shell"
-      className="home-composer-large relative isolate overflow-visible rounded-[28px] shadow-[0_18px_52px_rgba(40,35,25,0.08)] [&_[data-testid=composer-root]]:relative [&_[data-testid=composer-root]]:z-10 [&_[data-testid=composer-root]]:rounded-[28px] [&_[data-testid=composer-root]]:border-border [&_[data-testid=composer-root]]:px-6 [&_[data-testid=composer-root]]:pb-4 [&_[data-testid=composer-root]]:pt-6 [&_[data-testid=composer-root]]:shadow-none [&_[data-testid=composer-root]>div:has(.ProseMirror)]:min-h-[60px] [&_[data-testid=composer-root]_.ProseMirror]:min-h-[60px]"
+      className="home-composer-large relative isolate overflow-visible rounded-[28px] shadow-[var(--shadow-card)] [&_[data-testid=composer-root]]:relative [&_[data-testid=composer-root]]:z-10 [&_[data-testid=composer-root]]:rounded-[28px] [&_[data-testid=composer-root]]:border-border [&_[data-testid=composer-root]]:px-6 [&_[data-testid=composer-root]]:pb-4 [&_[data-testid=composer-root]]:pt-6 [&_[data-testid=composer-root]]:shadow-none [&_[data-testid=composer-root]>div:has(.ProseMirror)]:min-h-[60px] [&_[data-testid=composer-root]_.ProseMirror]:min-h-[60px]"
     >
       <div className="absolute bottom-full left-1/2 z-30 mb-1 -translate-x-1/2">
         <SkillPopover
@@ -210,6 +221,16 @@ export function HomeTaskComposerCard() {
         autoFocus
         initialMarkdown={initialMarkdown}
         onOpenSkill={() => setShowSkillPopover((prev) => !prev)}
+        skillCommand={
+          selectedSkill
+            ? {
+                id: selectedSkill.id,
+                label: selectedSkill.label ?? selectedSkill.id,
+                command: selectedSkill.trigger.trim(),
+              }
+            : null
+        }
+        onClearSkillCommand={() => setSelectedSkill(null)}
         showProjectButton={false}
         onOpenAttachment={isPickingAttachments ? undefined : () => void handlePickAttachments()}
       />
@@ -236,7 +257,7 @@ export function HomeTaskComposerCard() {
             align="start"
             side="bottom"
             sideOffset={8}
-            className="w-[300px] max-w-[calc(100vw-32px)] rounded-2xl border-border bg-card p-1 shadow-[0_18px_44px_rgba(40,35,25,0.16)]"
+            className="w-[300px] max-w-[calc(100vw-32px)] rounded-2xl border-border bg-card p-1 shadow-[var(--shadow-popover)]"
           >
             {recentWorkspaces.filter((ws) => ws.id !== 'default').length > 0 ? (
               <div className="max-h-[200px] overflow-y-auto">

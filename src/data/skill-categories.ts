@@ -3,6 +3,7 @@ import i18n from '@/i18n'
 export type SkillCategoryId =
   | 'recommended'
   | 'mine'
+  | 'tenant'
   | 'hr'
   | 'finance'
   | 'legal'
@@ -18,6 +19,7 @@ export interface SkillCategory {
 
 export const SKILL_CATEGORIES: SkillCategory[] = [
   { id: 'mine',    get name() { return i18n.t('skillCategories.mine') },  icon: 'user' },
+  { id: 'tenant',  get name() { return i18n.t('skillCategories.tenant') }, icon: 'building' },
   { id: 'hr',      name: 'HR',   icon: 'users' },
   { id: 'finance', get name() { return i18n.t('skillCategories.finance') }, icon: 'bar-chart-2' },
   { id: 'legal',   get name() { return i18n.t('skillCategories.legal') }, icon: 'scale' },

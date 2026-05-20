@@ -62,8 +62,13 @@ export function ChatBottomArea({
   const getSkillById = useSkillStore((s) => s.getById)
   // Selected skill chip — UI state only (after the local IPC plumbing was
   // dropped, see commit `drop selected_skill ipc plumbing`). The id no longer
-  // flows to the backend; skills are discovered via the `Skill` runtime tool.
-  const [selectedSkill, setSelectedSkill] = useState<{ id: string; label?: string } | null>(null)
+  // flows to the backend; the trigger text is prepended to the outgoing
+  // markdown at submit time so the `Skill` runtime tool can discover it.
+  const [selectedSkill, setSelectedSkill] = useState<{
+    id: string
+    label?: string
+    trigger: string
+  } | null>(null)
 
   // One-shot prefill text (e.g., from generated suggestion); consumed synchronously
   // via lazy initializer so RichComposer's useEditor receives it on its very first render.
@@ -86,12 +91,13 @@ export function ChatBottomArea({
   const handleSkillPick = useCallback((skillId: string) => {
     const skill = getSkillById(skillId)
     const trigger = skill?.triggerText || `/${skillId}`
-    const next = trigger.endsWith(' ') ? trigger : `${trigger} `
-    composerRef.current?.clear()
-    composerRef.current?.getEditor()?.commands.insertContent(next)
-    composerRef.current?.focus()
+    setSelectedSkill({
+      id: skillId,
+      label: skill?.displayName || skill?.id || skillId,
+      trigger,
+    })
     setShowSkillPopover(false)
-    setSelectedSkill({ id: skillId, label: skill?.displayName || skill?.id || skillId })
+    composerRef.current?.focus()
   }, [getSkillById])
 
   const handleSubmit = useCallback(async (payload: RichComposerSubmitPayload) => {
@@ -116,11 +122,16 @@ export function ChatBottomArea({
     const skillForThisTurn = selectedSkill
     setSelectedSkill(null)
     let markdownToSend = payload.markdown
+    if (skillForThisTurn) {
+      const trigger = skillForThisTurn.trigger
+      const sep = trigger.endsWith(' ') ? '' : ' '
+      markdownToSend = `${trigger}${sep}${markdownToSend}`
+    }
     if (activeConversationId && messageCount === 0) {
       const teamId = getExpertTeamForConversation(activeConversationId)
       const team = teamId ? findTeam(teamId) : undefined
       if (team) {
-        markdownToSend = buildDirectorPrompt(team, payload.markdown)
+        markdownToSend = buildDirectorPrompt(team, markdownToSend)
       }
     }
     try {
@@ -187,6 +198,16 @@ export function ChatBottomArea({
               initialMarkdown={initialMarkdown}
               showProjectButton={false}
               onOpenSkill={() => setShowSkillPopover((prev) => !prev)}
+              skillCommand={
+                selectedSkill
+                  ? {
+                      id: selectedSkill.id,
+                      label: selectedSkill.label ?? selectedSkill.id,
+                      command: selectedSkill.trigger.trim(),
+                    }
+                  : null
+              }
+              onClearSkillCommand={() => setSelectedSkill(null)}
               onOpenAttachment={isPickingAttachments ? undefined : () => void handlePickAttachments()}
               tips={<BottomTips />}
             />

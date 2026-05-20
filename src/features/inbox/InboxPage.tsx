@@ -98,8 +98,6 @@ export function InboxPage() {
           }
         />
       }
-      padding="px-8 pt-5 pb-7"
-      gap="gap-4"
     >
       {/* Filter bar */}
       <div className="flex items-center gap-3">

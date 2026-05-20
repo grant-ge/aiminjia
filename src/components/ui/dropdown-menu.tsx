@@ -34,7 +34,11 @@ const DropdownMenuSubContent = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DropdownMenuPrimitive.SubContent
     ref={ref}
-    className={cn('z-50 min-w-[8rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-lg border-border', className)}
+    // spec §7.14 — container = rounded-lg + --shadow-lg; items inside stay rounded-md
+    className={cn(
+      'z-50 min-w-[8rem] overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-[var(--shadow-lg)]',
+      className,
+    )}
     {...props}
   />
 ))
@@ -48,7 +52,11 @@ const DropdownMenuContent = React.forwardRef<
     <DropdownMenuPrimitive.Content
       ref={ref}
       sideOffset={sideOffset}
-      className={cn('z-50 min-w-[8rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md outline-none border-border', className)}
+      // spec §7.14 — container = rounded-lg + --shadow-lg
+      className={cn(
+        'z-50 min-w-[8rem] overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-[var(--shadow-lg)] outline-none',
+        className,
+      )}
       {...props}
     />
   </DropdownMenuPrimitive.Portal>

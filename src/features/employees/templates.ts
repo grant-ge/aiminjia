@@ -268,7 +268,7 @@ export const BUILTIN_TEMPLATES: EmployeeTemplate[] = [
       '   - 出现 python_warnings 必须 ask_user_question 让用户拍板，不能自行放行',
       '6. (可选) ask_user_question — 给用户看预览，问要不要装',
       '7. skill_install(draft_id) — status="installed" 即完成；status="conflict" 时 ask_user_question 让用户选覆盖/改名/取消',
-      '8. (可选) skill_export — 导出 .aijia-skill 包给同事分享',
+      '8. (可选) skill_export — 导出 zip 包给同事分享',
       '',
       '## SKILL.md 写作模板',
       '```',

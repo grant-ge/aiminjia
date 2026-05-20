@@ -2,7 +2,7 @@
 //!
 //! 包格式（与 lotus OPS skill_packages API 对齐）：
 //! ```text
-//! my-skill-v0.1.0.aijia-skill            (zip)
+//! my-skill-v0.1.0.zip                     (zip)
 //! └── <skill_id>/                         一级子目录（推荐）或根目录
 //!     ├── SKILL.md                        必含
 //!     ├── scripts/                        可选
@@ -310,7 +310,7 @@ mod tests {
     fn pack_then_unpack_roundtrip() {
         let tmp = TempDir::new().unwrap();
         let src = make_skill_dir(tmp.path());
-        let dest = tmp.path().join("out").join("my-skill-v0.1.0.aijia-skill");
+        let dest = tmp.path().join("out").join("my-skill-v0.1.0.zip");
         pack_skill_dir(&src, &dest, "my-skill").unwrap();
         assert!(dest.exists());
 
@@ -327,7 +327,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let src = tmp.path().join("empty");
         fs::create_dir_all(&src).unwrap();
-        let dest = tmp.path().join("x.aijia-skill");
+        let dest = tmp.path().join("x.zip");
         let err = pack_skill_dir(&src, &dest, "x").unwrap_err();
         assert!(err.to_string().contains("SKILL.md missing"));
     }
@@ -335,7 +335,7 @@ mod tests {
     #[test]
     fn unpack_rejects_zip_slip() {
         let tmp = TempDir::new().unwrap();
-        let zip_path = tmp.path().join("evil.aijia-skill");
+        let zip_path = tmp.path().join("evil.zip");
         {
             let f = fs::File::create(&zip_path).unwrap();
             let mut z = ZipWriter::new(f);
@@ -351,7 +351,7 @@ mod tests {
     #[test]
     fn unpack_rejects_disallowed_subdir() {
         let tmp = TempDir::new().unwrap();
-        let zip_path = tmp.path().join("evil.aijia-skill");
+        let zip_path = tmp.path().join("evil.zip");
         {
             let f = fs::File::create(&zip_path).unwrap();
             let mut z = ZipWriter::new(f);
@@ -370,7 +370,7 @@ mod tests {
     fn unpack_accepts_root_layout() {
         // 兼容："SKILL.md 直接在 zip 根" 的扁平布局
         let tmp = TempDir::new().unwrap();
-        let zip_path = tmp.path().join("flat.aijia-skill");
+        let zip_path = tmp.path().join("flat.zip");
         {
             let f = fs::File::create(&zip_path).unwrap();
             let mut z = ZipWriter::new(f);
@@ -392,7 +392,7 @@ mod tests {
     fn unpack_skips_old_manifest_json_for_compat() {
         // 老 .aijia-skill 包带 manifest.json — 解包时应静默跳过，仍然能成功
         let tmp = TempDir::new().unwrap();
-        let zip_path = tmp.path().join("old.aijia-skill");
+        let zip_path = tmp.path().join("old.zip");
         {
             let f = fs::File::create(&zip_path).unwrap();
             let mut z = ZipWriter::new(f);

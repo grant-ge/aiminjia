@@ -86,10 +86,8 @@ export function ModelPickerPopover({ open, value, onChange, onClose }: ModelPick
 
   return (
     <div
-      className="absolute right-0 bottom-[calc(100%+10px)] z-50 flex h-[400px] w-[min(620px,calc(100vw-48px))] flex-col overflow-hidden rounded-full border border-border bg-card"
-      style={{
-        boxShadow: '0 22px 56px rgba(15, 23, 42, 0.16), 0 8px 20px rgba(15, 23, 42, 0.08)',
-      }}
+      // spec §5 — popover-level shadow token; was hardcoded slate-color dropshadow.
+      className="absolute right-0 bottom-[calc(100%+10px)] z-50 flex h-[400px] w-[min(620px,calc(100vw-48px))] flex-col overflow-hidden rounded-full border border-border bg-card shadow-[var(--shadow-popover)]"
       onMouseDown={(event) => {
         event.preventDefault()
       }}

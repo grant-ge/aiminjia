@@ -150,6 +150,15 @@ impl AiJiaHome {
         self.user_dir(scope).join("logs")
     }
 
+    /// `~/.renlijia/users/{scope}/brand.json` — last-seen tenant branding
+    /// snapshot for this user. Cached so the login page can pre-apply the
+    /// previous tenant's brand (logo / product name / colors) before the
+    /// user re-enters credentials, without putting it in localStorage where
+    /// a browser-context wipe would lose it.
+    pub fn user_brand_path(&self, scope: &UserScope) -> PathBuf {
+        self.user_dir(scope).join("brand.json")
+    }
+
     pub fn skills_dir(&self) -> PathBuf {
         self.root.join("skills")
     }

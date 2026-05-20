@@ -19,6 +19,7 @@ import { SettingsContentBody } from './SettingsContentBody'
 import { SettingsMenu } from './SettingsMenu'
 import { SettingsShell } from './SettingsShell'
 import { AboutPanel } from './panels/AboutPanel'
+import { AccountBillingPanel } from './panels/AccountBillingPanel'
 import { ArchivedPanel } from './panels/ArchivedPanel'
 import { GeneralPanel } from './panels/GeneralPanel'
 import { RuntimePanel } from './panels/RuntimePanel'
@@ -155,11 +156,11 @@ export function SettingsModal() {
                   onLogout={() => void onLogout()}
                 />
               ) : null}
+              {settingsModal === 'account-billing' ? <AccountBillingPanel /> : null}
               {settingsModal === 'about' ? (
                 <AboutPanel
                   appName={productName}
                   version={appVersion}
-                  copyright={t('settings.copyrightText')}
                   logoUrl={logoUrl}
                   onCheckUpdate={() => void onCheckUpdate()}
                   onUploadLogs={() => void onUploadLogs()}

@@ -45,7 +45,8 @@ describe('AppDropdown', () => {
     fireEvent.pointerDown(screen.getByRole('button', { name: '更多操作' }))
     const menu = screen.getByRole('menu')
 
-    expect(menu).toHaveClass('rounded-[13px]')
+    // spec §7.14 — container tier uses rounded-lg (12px); was rounded-[13px] pre-spec
+    expect(menu).toHaveClass('rounded-lg')
     expect(menu).toHaveClass('bg-popover')
     expect(menu).not.toHaveClass('bg-sidebar')
   })

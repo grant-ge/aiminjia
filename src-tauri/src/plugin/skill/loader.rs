@@ -20,10 +20,27 @@ pub fn is_valid_skill_id(id: &str) -> bool {
 }
 
 pub fn load_skill_roots(roots: &[PathBuf]) -> Result<HashMap<String, DiskSkill>> {
+    // Back-compat shim: legacy callers pass an ordered list and expect
+    // index 0 = User, the rest = Global. Forward to the explicit variant
+    // so all the dedup / warn-on-conflict logic lives in one place.
+    let tagged: Vec<(PathBuf, SkillSource)> = roots
+        .iter()
+        .enumerate()
+        .map(|(idx, root)| {
+            let src = if idx == 0 { SkillSource::User } else { SkillSource::Global };
+            (root.clone(), src)
+        })
+        .collect();
+    load_skill_roots_tagged(&tagged)
+}
+
+/// Load skills from `(root, source)` pairs in priority order. Earlier entries
+/// win on id collisions, with a warn-level log naming the loser so operators
+/// can detect when a local upload shadows a tenant-pushed skill.
+pub fn load_skill_roots_tagged(roots: &[(PathBuf, SkillSource)]) -> Result<HashMap<String, DiskSkill>> {
     let mut loaded = HashMap::new();
-    for (idx, root) in roots.iter().enumerate() {
-        let source = if idx == 0 { SkillSource::User } else { SkillSource::Global };
-        load_one_root(root, source, &mut loaded)?;
+    for (root, source) in roots {
+        load_one_root(root, *source, &mut loaded)?;
     }
     Ok(loaded)
 }
@@ -49,7 +66,18 @@ fn load_one_root(
         if name.starts_with('_') || name.starts_with('.') || !is_valid_skill_id(name) {
             continue;
         }
-        if loaded.contains_key(name) {
+        if let Some(existing) = loaded.get(name) {
+            // Don't overwrite — first-loaded (higher priority) wins. But surface
+            // the collision so users can diagnose "this skill shows the old
+            // local version, not the tenant push I just got."
+            log::warn!(
+                "skill id collision: '{}' kept from {:?} ({}), ignored {:?} ({})",
+                name,
+                existing.source,
+                existing.root.display(),
+                source,
+                path.display(),
+            );
             continue;
         }
         let skill_md = path.join("SKILL.md");
@@ -64,6 +92,16 @@ fn load_one_root(
                 continue;
             }
         };
+        // If sync wrote a `.scope` marker, upgrade Global → Tenant when marker
+        // says "tenant". User root never reads .scope (local uploads stay User).
+        let effective_source = if matches!(source, SkillSource::Global) {
+            match fs::read_to_string(path.join(".scope")) {
+                Ok(s) if s.trim() == "tenant" => SkillSource::Tenant,
+                _ => SkillSource::Global,
+            }
+        } else {
+            source
+        };
         loaded.insert(
             name.to_string(),
             DiskSkill {
@@ -71,7 +109,7 @@ fn load_one_root(
                 root: path,
                 frontmatter: parsed.frontmatter,
                 body: parsed.body,
-                source,
+                source: effective_source,
             },
         );
     }

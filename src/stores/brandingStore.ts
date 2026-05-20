@@ -14,6 +14,7 @@
 import i18n from '@/i18n'
 import { create } from 'zustand'
 
+import { getLastBrand, saveLastBrand, type BrandSnapshot } from '@/lib/tauri'
 import { darken, isDarkColor, lighten, mixColors, rgba } from '@/lib/themeUtils'
 
 export const DEFAULTS = {
@@ -57,6 +58,12 @@ interface BrandingState {
 
   applyBranding(tenant: TenantBranding | null): void
   reset(): void
+  /**
+   * Load the cached brand from disk (`~/.renlijia/users/{scope}/brand.json`)
+   * and apply it. No-op when no cache exists. Used by the login page so a
+   * returning user sees the last tenant's brand before re-entering credentials.
+   */
+  restoreFromDisk(): Promise<void>
 }
 
 // ---------- CSS variable helpers ----------
@@ -295,11 +302,40 @@ export const useBrandingStore = create<BrandingState>((set) => ({
       fontFamily,
       isCustom,
     })
+
+    // Mirror to disk so a returning user (or post-logout login page) sees
+    // the same brand before they re-enter credentials. Tenant.logoUrl is
+    // stored raw — resolveLogoUrl gets re-applied on next load.
+    if (isCustom) {
+      void saveLastBrand({
+        productName: tenant.productName,
+        logoUrl: tenant.logoUrl,
+        accentColor: tenant.accentColor,
+        primaryColor: tenant.primaryColor,
+        bgColor: tenant.bgColor,
+        sidebarBgColor: tenant.sidebarBgColor,
+        fontFamily: tenant.fontFamily,
+      }).catch((err) => {
+        console.warn('[brandingStore] saveLastBrand failed:', err)
+      })
+    }
   },
 
   reset() {
     ALL_OVERRIDDEN_VARS.forEach(removeVar)
     setWindowTitle(DEFAULTS.productName)
     set({ ...DEFAULTS, isCustom: false })
+  },
+
+  async restoreFromDisk() {
+    try {
+      const snap: BrandSnapshot | null = await getLastBrand()
+      if (!snap) return
+      // Reuse applyBranding so derive + isCustom stay consistent. The snap
+      // already lives in TenantBranding shape (camelCase, all-optional).
+      useBrandingStore.getState().applyBranding(snap)
+    } catch (err) {
+      console.warn('[brandingStore] restoreFromDisk failed:', err)
+    }
   },
 }))
