@@ -44,6 +44,21 @@ export interface Conversation {
    * on user-initiated conversations.
    */
   employeeId?: string
+  /**
+   * Conversation source kind. Mirrored from `ConversationIndexEntry.kind`
+   * in `index.json` so the sidebar can render groupings without fan-out.
+   */
+  kind?: 'user' | 'employee' | 'expertTeam' | 'im'
+  /**
+   * Human-readable source label. LLM 改 title 时本字段不变；侧边栏用它显示稳定的来源标签。
+   */
+  sourceLabel?: string
+  /**
+   * Expert team id, populated optimistically by `setExpertTeam` and lazily by
+   * a one-shot `getConversationSource` IPC when the conversation is first opened.
+   * NOT mirrored into index.json (spec §1.3 — index entries intentionally carry no ids).
+   */
+  expertTeamId?: string
 }
 
 /**
