@@ -8,7 +8,7 @@ use log::{info, warn};
 
 use super::error::StorageResult;
 use super::io::{atomic_write_json, read_json_optional, read_json_safe};
-use super::types::{ConversationIndexEntry, ConversationMeta, GlobalIndex};
+use super::types::{ConversationIndexEntry, ConversationKind, ConversationMeta, ConversationSource, GlobalIndex};
 
 use crate::llm::content_filter::strip_hallucinated_xml;
 
@@ -115,6 +115,41 @@ pub fn set_conversation_employee_id(
     let mut index = read_global_index(base_dir)?;
     if let Some(entry) = index.conversations.iter_mut().find(|e| e.id == id) {
         entry.employee_id = employee_id.map(|s| s.to_string());
+        atomic_write_json(&index_path(base_dir), &index)?;
+    }
+    Ok(())
+}
+
+/// Update both `ConversationMeta.source` + `ConversationMeta.source_label` in
+/// `conv.json`, and mirror the kind + label into the matching entry in
+/// `index.json`.
+///
+/// Mirrors the pattern of `set_conversation_employee_id`: index update only
+/// happens when an entry with the matching id exists.
+pub fn set_conversation_source(
+    base_dir: &Path,
+    id: &str,
+    source: ConversationSource,
+    source_label: Option<String>,
+) -> StorageResult<()> {
+    let meta_path = conv_meta_path(base_dir, id);
+    let mut meta: ConversationMeta = read_json_safe(&meta_path)?;
+
+    let kind = match &source {
+        ConversationSource::User => ConversationKind::User,
+        ConversationSource::Employee { .. } => ConversationKind::Employee,
+        ConversationSource::ExpertTeam { .. } => ConversationKind::ExpertTeam,
+        ConversationSource::Im => ConversationKind::Im,
+    };
+    meta.source = source;
+    meta.source_label = source_label.clone();
+    meta.updated_at = Utc::now().to_rfc3339();
+    atomic_write_json(&meta_path, &meta)?;
+
+    let mut index = read_global_index(base_dir)?;
+    if let Some(entry) = index.conversations.iter_mut().find(|e| e.id == id) {
+        entry.kind = kind;
+        entry.source_label = source_label;
         atomic_write_json(&index_path(base_dir), &index)?;
     }
     Ok(())
