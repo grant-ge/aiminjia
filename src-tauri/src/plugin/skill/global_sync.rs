@@ -434,6 +434,20 @@ async fn install_one_skill_package(
 
     // 5. Atomically install into global_skills_dir/{plugin_id}/
     install_one_prepared_skill(&source, &config.global_skills_dir, &item.plugin_id)?;
+
+    // 6. Write scope marker so the loader can tag the skill as Tenant vs Global.
+    //    Gateway emits `"tenant"` for tenant-private skills and `"public"` for
+    //    platform/OPS skills (default `"tenant"` for legacy rows without scope).
+    let installed = config.global_skills_dir.join(&item.plugin_id);
+    let scope_marker = if item.scope == "public" { "public" } else { "tenant" };
+    let scope_path = installed.join(".scope");
+    if let Err(error) = fs::write(&scope_path, scope_marker) {
+        log::warn!(
+            "[skill-sync] write .scope marker for '{}' failed: {}",
+            item.plugin_id,
+            error
+        );
+    }
     Ok(())
 }
 

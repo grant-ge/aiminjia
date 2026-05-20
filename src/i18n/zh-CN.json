@@ -605,6 +605,7 @@
   },
   "skillCategories": {
     "mine": "本地",
+    "tenant": "企业私有",
     "finance": "财务",
     "legal": "法务",
     "sales": "销售",

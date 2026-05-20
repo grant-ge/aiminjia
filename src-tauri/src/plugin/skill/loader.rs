@@ -92,6 +92,16 @@ fn load_one_root(
                 continue;
             }
         };
+        // If sync wrote a `.scope` marker, upgrade Global → Tenant when marker
+        // says "tenant". User root never reads .scope (local uploads stay User).
+        let effective_source = if matches!(source, SkillSource::Global) {
+            match fs::read_to_string(path.join(".scope")) {
+                Ok(s) if s.trim() == "tenant" => SkillSource::Tenant,
+                _ => SkillSource::Global,
+            }
+        } else {
+            source
+        };
         loaded.insert(
             name.to_string(),
             DiskSkill {
@@ -99,7 +109,7 @@ fn load_one_root(
                 root: path,
                 frontmatter: parsed.frontmatter,
                 body: parsed.body,
-                source,
+                source: effective_source,
             },
         );
     }

@@ -605,6 +605,7 @@
   },
   "skillCategories": {
     "mine": "Local",
+    "tenant": "Tenant",
     "finance": "Finance",
     "legal": "Legal",
     "sales": "Sales",

@@ -339,7 +339,9 @@ export function SkillCenterPage() {
       ? skills.filter(matchesQuery)
       : category === 'mine'
         ? skills.filter((s) => s.source === 'user').filter(matchesQuery)
-        : listByCategory(category).filter(matchesQuery)
+        : category === 'tenant'
+          ? skills.filter((s) => s.source === 'tenant').filter(matchesQuery)
+          : listByCategory(category).filter(matchesQuery)
 
   function getSkillMeta(source: string, cat: string) {
     const normalizedCategory = cat || 'general'
