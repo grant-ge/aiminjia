@@ -340,6 +340,11 @@ bash scripts/build-and-sign-macos.sh X.Y.Z release
 .\scripts\release-windows.ps1 -Version X.Y.Z -Type release
 bash scripts/verify-release.sh X.Y.Z release
 python3 scripts/release.py finalize           # 生成 update.json → 自动更新生效
+
+# 6. 收尾（finalize 之后）
+python3 scripts/bump-homebrew.py X.Y.Z        # 同步 grant-ge/homebrew-tap
+cd ~/lotus && ./scripts/update-changelog.sh desktop X.Y.Z
+# → 填 changelog.json → 部署 home → push → 自动推钉钉群（带 "AI小家"）
 ```
 
 ### 关键脚本
@@ -370,6 +375,7 @@ python3 scripts/release.py finalize           # 生成 update.json → 自动更
 3. **signtool 自动化**：脚本自动拼对的命令 `signtool sign /v /fd sha256 /sha1 <thumbprint> /tr <timestamp-url> /td sha256 <exe>`。不会再漏 `/tr` 导致无 timestamp 签名。
 4. **Tauri key 走文件路径**：`tauri signer sign -k <file>`，不走环境变量（避免 PowerShell 传 base64 给子进程时引入空白字符）。
 5. **公开 staging URL**：CI 上传到 `aijia/staging/unsigned/v{ver}/`，CDN 公开可下载（不需要 GitHub token / gh CLI），任何 Windows 机器只要 `git pull` 就能跑发版。
+6. **下载页刷新**：上传 + 清理 staging 之后调 `ci-generate-download-page.py` 重生成 `aijia/downloads.html`。背景：macOS `build-and-sign-macos.sh` 在自己跑完时刷一次下载页，但那时还没有 Windows exe；Windows 在 macOS 之后跑，必须自己再刷一次，否则下载页只列 macOS 4 个产物（v0.5.26-beta.6 实战踩过）。失败时只 warn 不阻断,因为产物已经上传成功。
 
 ### 签名机环境要求
 
