@@ -343,6 +343,34 @@ pub async fn archive_conversation(
 }
 
 #[tauri::command]
+pub async fn set_conversation_expert_team(
+    adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
+    conversation_id: String,
+    expert_team_id: String,
+    team_label: String,
+) -> Result<(), String> {
+    adapter
+        .set_conversation_expert_team(conversation_id, expert_team_id, team_label)
+        .await
+}
+
+#[tauri::command]
+pub async fn clear_conversation_source(
+    adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
+    conversation_id: String,
+) -> Result<(), String> {
+    adapter.clear_conversation_source(conversation_id).await
+}
+
+#[tauri::command]
+pub async fn get_conversation_source(
+    adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
+    conversation_id: String,
+) -> Result<crate::storage::file_store::types::ConversationSource, String> {
+    adapter.get_conversation_source(conversation_id).await
+}
+
+#[tauri::command]
 pub async fn restore_conversation(
     adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
     conversation_id: String,

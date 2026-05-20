@@ -3134,6 +3134,45 @@ impl TauriChatCommandAdapter {
         .await
     }
 
+    pub async fn set_conversation_expert_team(
+        &self,
+        conversation_id: String,
+        expert_team_id: String,
+        team_label: String,
+    ) -> Result<(), String> {
+        let base = self.services.db().base_dir().to_path_buf();
+        crate::storage::file_store::conversations::set_conversation_source(
+            &base,
+            &conversation_id,
+            crate::storage::file_store::types::ConversationSource::ExpertTeam { expert_team_id },
+            Some(team_label),
+        )
+        .map_err(|e| e.to_string())
+    }
+
+    pub async fn clear_conversation_source(
+        &self,
+        conversation_id: String,
+    ) -> Result<(), String> {
+        let base = self.services.db().base_dir().to_path_buf();
+        crate::storage::file_store::conversations::set_conversation_source(
+            &base,
+            &conversation_id,
+            crate::storage::file_store::types::ConversationSource::User,
+            None,
+        )
+        .map_err(|e| e.to_string())
+    }
+
+    pub async fn get_conversation_source(
+        &self,
+        conversation_id: String,
+    ) -> Result<crate::storage::file_store::types::ConversationSource, String> {
+        let base = self.services.db().base_dir().to_path_buf();
+        crate::storage::file_store::conversations::read_conversation_source(&base, &conversation_id)
+            .map_err(|e| e.to_string())
+    }
+
     pub async fn restore_conversation(&self, conversation_id: String) -> Result<(), String> {
         conversation_service::restore_conversation(
             self.services.db().clone() as Arc<dyn ConversationStore>,
