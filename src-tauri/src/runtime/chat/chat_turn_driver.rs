@@ -1388,6 +1388,7 @@ impl RuntimeChatTurnDriver {
             llm_settings,
             conversation_id: request.conversation_id.clone(),
             run_id: request.run_id.clone(),
+            trace_id: request.client_message_id.clone().unwrap_or_default(),
             hook_registry: request.hook_registry.clone(),
         };
         // Make primary_model available on TurnState so downstream emit sites
@@ -1887,6 +1888,7 @@ impl RuntimeChatTurnDriver {
                 llm_settings: &config.llm_settings,
                 conversation_id: config.conversation_id.as_str(),
                 run_id: config.run_id.as_str(),
+                trace_id: config.trace_id.as_str(),
                 estimated_tokens,
                 anthropic_multimodal_turn: anthropic_multimodal_turn.clone(),
             };

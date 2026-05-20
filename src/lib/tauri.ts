@@ -1142,6 +1142,9 @@ export interface UploadDiagnosticsResult {
   events_uploaded: number
   app_log_lines_uploaded: number
   bad_metrics_lines: number
+  /** SLS console deep-link pre-filtered by upload_session_id, when the gateway
+   * returned one. Empty string when the field is absent (older gateway). */
+  sls_url: string
 }
 
 /**

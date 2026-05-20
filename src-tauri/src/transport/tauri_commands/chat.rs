@@ -562,6 +562,8 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                     Some(input.conversation_id),
                     input.anthropic_multimodal_turn.clone(),
                     system_prompt_segments.clone(),
+                    Some(input.trace_id),
+                    Some(input.run_id),
                 )
                 .await;
 

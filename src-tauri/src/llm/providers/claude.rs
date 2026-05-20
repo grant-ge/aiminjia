@@ -177,6 +177,30 @@ impl ClaudeProvider {
                     );
                 }
             }
+            // AIjia trace headers — pure observability, propagated to gateway
+            // SLS so we can correlate gateway events back to the desktop turn.
+            if let Some(trace_id) = request.trace_id.as_deref() {
+                if !trace_id.is_empty() {
+                    headers.insert("X-Aijia-Trace-Id".to_string(), trace_id.to_string());
+                }
+            }
+            if let Some(conv_id) = request.conversation_id.as_deref() {
+                if !conv_id.is_empty() {
+                    headers.insert(
+                        "X-Aijia-Conversation-Id".to_string(),
+                        conv_id.to_string(),
+                    );
+                }
+            }
+            if let Some(run_id) = request.run_id.as_deref() {
+                if !run_id.is_empty() {
+                    headers.insert("X-Aijia-Run-Id".to_string(), run_id.to_string());
+                }
+            }
+            headers.insert(
+                "X-Aijia-Client-Version".to_string(),
+                env!("CARGO_PKG_VERSION").to_string(),
+            );
         }
         headers
     }
@@ -707,6 +731,25 @@ impl LlmProviderTrait for ClaudeProvider {
                 status,
                 error_text
             ));
+        }
+
+        // Capture gateway request id for cross-system correlation. Both the
+        // canonical X-Lotus-Request-ID header (current production) and the
+        // legacy X-Request-Id alias are accepted. None when talking directly
+        // to anthropic.com.
+        let lotus_request_id = response
+            .headers()
+            .get("x-lotus-request-id")
+            .or_else(|| response.headers().get("x-request-id"))
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string());
+        if let Some(rid) = lotus_request_id.as_deref() {
+            log::info!(
+                "[stream] gateway request_id={} conv={:?} run={:?}",
+                rid,
+                stream_request.conversation_id,
+                stream_request.run_id,
+            );
         }
 
         let byte_stream = response.bytes_stream();
