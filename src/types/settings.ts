@@ -32,6 +32,8 @@ export interface Settings {
   fontScale?: FontScale
   chatWidthMode?: ChatWidthMode
   accentColor?: string
+  uiHomeSelectedWorkspace?: string
+  uiHomeRecentWorkspaces?: string
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -56,6 +58,8 @@ export const DEFAULT_SETTINGS: Settings = {
   fontScale: 'medium',
   chatWidthMode: 'full',
   accentColor: '',
+  uiHomeSelectedWorkspace: '',
+  uiHomeRecentWorkspaces: '',
 }
 
 export const LLM_PROVIDER_LABELS: Record<LlmProvider, string> = {

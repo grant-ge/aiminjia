@@ -657,6 +657,28 @@ export function archiveConversation(conversationId: string): Promise<void> {
   return invoke<void>('archive_conversation', { conversationId })
 }
 
+export type ConversationSourceDto =
+  | { kind: 'user' }
+  | { kind: 'employee'; employeeId: string }
+  | { kind: 'expertTeam'; expertTeamId: string }
+  | { kind: 'im' }
+
+export function setConversationExpertTeam(
+  conversationId: string,
+  expertTeamId: string,
+  teamLabel: string,
+): Promise<void> {
+  return invoke('set_conversation_expert_team', { conversationId, expertTeamId, teamLabel })
+}
+
+export function clearConversationSource(conversationId: string): Promise<void> {
+  return invoke('clear_conversation_source', { conversationId })
+}
+
+export function getConversationSource(conversationId: string): Promise<ConversationSourceDto> {
+  return invoke('get_conversation_source', { conversationId })
+}
+
 // ---------------------------------------------------------------------------
 // Channel types
 // ---------------------------------------------------------------------------
