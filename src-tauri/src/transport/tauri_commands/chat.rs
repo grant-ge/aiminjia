@@ -1382,7 +1382,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         let max_iterations = employee_overrides
             .as_ref()
             .map(|ov| ov.max_iterations)
-            .unwrap_or(30);
+            .unwrap_or(300);
 
         let authorized_workspace = chat_runtime_impl::load_authorized_workspace(
             &self.services.app,

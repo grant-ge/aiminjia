@@ -27,7 +27,7 @@ pub fn project_employee_to_agent(rec: &EmployeeRecord) -> AgentDefinition {
         description: format!("{}（{}，数字员工）", rec.name, rec.role),
         allowed_tools: rec.tool_whitelist.clone(),
         disallowed_tools: Vec::new(),
-        max_iterations: 30,
+        max_iterations: 300,
         model: AgentModel::Inherit,
         system_prompt: AgentPrompt::Inline(
             rec.system_prompt_extra.clone().unwrap_or_default(),
