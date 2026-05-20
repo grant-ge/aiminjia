@@ -535,29 +535,6 @@ impl AppStorage {
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // Enterprise Memory
-    // ═══════════════════════════════════════════════════════════════════════
-
-    pub fn get_memory(&self, key: &str) -> Result<Option<String>> {
-        Ok(notes::get_memory(&self.base_dir, key)?)
-    }
-
-    pub fn set_memory(&self, key: &str, value: &str, source: Option<&str>) -> Result<()> {
-        let _lock = self.write_lock.lock().unwrap();
-        notes::set_memory(&self.base_dir, key, value, source)?;
-        Ok(())
-    }
-
-    pub fn get_memories_by_prefix(&self, prefix: &str) -> Result<Vec<(String, String)>> {
-        Ok(notes::get_memories_by_prefix(&self.base_dir, prefix)?)
-    }
-
-    pub fn delete_memories_by_prefix(&self, prefix: &str) -> Result<usize> {
-        let _lock = self.write_lock.lock().unwrap();
-        Ok(notes::delete_memories_by_prefix(&self.base_dir, prefix)?)
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════
     // Search Cache
     // ═══════════════════════════════════════════════════════════════════════
 
@@ -1605,26 +1582,6 @@ mod tests {
 
         let all = storage.get_all_settings().unwrap();
         assert_eq!(all["theme"], "dark");
-    }
-
-    #[test]
-    fn test_enterprise_memory() {
-        let (storage, _dir) = test_storage();
-
-        storage
-            .set_memory("company", "Acme Corp", Some("onboarding"))
-            .unwrap();
-        assert_eq!(
-            storage.get_memory("company").unwrap(),
-            Some("Acme Corp".to_string())
-        );
-
-        // Update
-        storage.set_memory("company", "Acme Inc", None).unwrap();
-        assert_eq!(
-            storage.get_memory("company").unwrap(),
-            Some("Acme Inc".to_string())
-        );
     }
 
     #[test]
