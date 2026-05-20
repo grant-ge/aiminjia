@@ -103,7 +103,6 @@ impl AppStorage {
     fn initialize(&self) -> Result<()> {
         // Create directory structure
         fs::create_dir_all(self.base_dir.join("conversations"))?;
-        fs::create_dir_all(self.base_dir.join("shared").join("memory"))?;
         fs::create_dir_all(self.base_dir.join("shared").join("cache"))?;
         fs::create_dir_all(self.base_dir.join("audit"))?;
         cognitive::ensure_dirs(&self.base_dir)?;

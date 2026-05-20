@@ -177,7 +177,6 @@ mod tests {
         cus.activate_scope(UserScope::new(1, 2)).unwrap();
         let user_dir = tmp.path().join("users").join("t_1__u_2");
         assert!(user_dir.join("conversations").is_dir());
-        assert!(user_dir.join("shared").join("memory").is_dir());
         assert!(user_dir.join("shared").join("cognitive").is_dir());
         assert!(user_dir.join("shared").join("cache").is_dir());
         assert!(user_dir.join("schedules").is_dir());

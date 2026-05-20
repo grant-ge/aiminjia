@@ -251,7 +251,6 @@ impl AiJiaHome {
     pub fn ensure_user_dirs(&self, scope: &UserScope) -> std::io::Result<()> {
         let user_dir = self.user_dir(scope);
         std::fs::create_dir_all(self.user_conversations_dir(scope))?;
-        std::fs::create_dir_all(user_dir.join("shared").join("memory"))?;
         std::fs::create_dir_all(user_dir.join("shared").join("cognitive"))?;
         std::fs::create_dir_all(user_dir.join("shared").join("cache"))?;
         std::fs::create_dir_all(self.user_audit_dir(scope))?;
@@ -438,7 +437,6 @@ mod tests {
         home.ensure_user_dirs(&scope).unwrap();
 
         assert!(home.user_conversations_dir(&scope).exists());
-        assert!(user_dir.join("shared").join("memory").exists());
         assert!(user_dir.join("shared").join("cache").exists());
         assert!(home.user_audit_dir(&scope).exists());
         assert!(home.user_schedules_dir(&scope).exists());
