@@ -417,6 +417,7 @@
       "icon": "icon",
       "version": "Version",
       "checkUpdate": "Check for updates",
+      "alreadyLatestVersion": "You're on the latest version",
       "policiesTitle": "Terms & Privacy",
       "terms": "Terms of Service",
       "privacyPolicy": "Privacy Policy",

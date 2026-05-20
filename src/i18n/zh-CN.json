@@ -417,6 +417,7 @@
       "icon": "图标",
       "version": "版本",
       "checkUpdate": "检查更新",
+      "alreadyLatestVersion": "当前已是最新版本",
       "policiesTitle": "条款与隐私",
       "terms": "用户协议",
       "privacyPolicy": "隐私政策",
