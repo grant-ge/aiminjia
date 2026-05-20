@@ -259,6 +259,22 @@ if (-not $KeepStaging) {
     Remove-Item Env:\OSS_ACCESS_KEY_SECRET -ErrorAction SilentlyContinue
 }
 
+# -- 7. Refresh downloads.html so the Windows row shows up --------------------
+# macOS build-and-sign-macos.sh regenerates downloads.html when its run
+# finishes; Windows usually runs AFTER macOS, so without this step the page
+# only lists the macOS artifacts. Re-run the page generator on demand.
+Write-Section "Refresh downloads.html"
+$PageScript = Join-Path $ScriptDir "ci-generate-download-page.py"
+if (Test-Path $PageScript) {
+    $env:OSS_ACCESS_KEY_ID = $OssKeyId
+    $env:OSS_ACCESS_KEY_SECRET = $OssKeySecret
+    & python $PageScript
+    Remove-Item Env:\OSS_ACCESS_KEY_ID -ErrorAction SilentlyContinue
+    Remove-Item Env:\OSS_ACCESS_KEY_SECRET -ErrorAction SilentlyContinue
+} else {
+    Write-Host "  warn: ci-generate-download-page.py not found, skipping page refresh" -ForegroundColor Yellow
+}
+
 Write-Host ''
 Write-Host "================================================================" -ForegroundColor Green
 Write-Host " [OK] Windows v$Version ($Type) released" -ForegroundColor Green

@@ -92,6 +92,24 @@ pub enum ImportSkillOutcome {
         name: String,
         version: String,
         existing_path: String,
+        /// When the same skill id also exists in the global skills dir
+        /// (`~/.renlijia/skills/<id>/`), this carries its source label so
+        /// the frontend can warn that the local import will shadow it.
+        /// Values: `"tenant"` / `"public"` / `null`.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        shadows: Option<String>,
+    },
+    #[serde(rename = "shadow_warning")]
+    /// User dir has no existing skill, but a tenant/global skill of the
+    /// same id is installed. Importing will silently shadow it on the
+    /// next reload — surface this to the user as a separate confirmation
+    /// step. Frontend retries with `force=true` to proceed.
+    ShadowWarning {
+        id: String,
+        name: String,
+        version: String,
+        /// `"tenant"` or `"public"` — source of the about-to-be-shadowed skill.
+        shadows: String,
     },
 }
 
@@ -133,6 +151,24 @@ pub async fn import_skill_package(
     std::fs::create_dir_all(&user_skills).map_err(|e| e.to_string())?;
     let target = user_skills.join(&res.skill_id);
 
+    // Detect whether a tenant/global skill with the same id is already
+    // installed in `~/.renlijia/skills/<id>/`. If yes, this import will
+    // shadow it (loader.rs gives User priority). Surface to the UI so the
+    // user can confirm intent rather than silently overriding a tenant push.
+    let global_skill_dir = home.skills_dir().join(&res.skill_id);
+    let shadow_source: Option<String> = if global_skill_dir.is_dir() {
+        match std::fs::read_to_string(global_skill_dir.join(".scope")) {
+            Ok(s) if s.trim() == "tenant" => Some("tenant".to_string()),
+            Ok(s) if s.trim() == "public" => Some("public".to_string()),
+            // Legacy installs without .scope marker: treat as public to keep
+            // the warning text accurate-by-default (these were platform skills
+            // before the tenant/public split was tagged).
+            _ => Some("public".to_string()),
+        }
+    } else {
+        None
+    };
+
     if target.exists() && !force {
         // 清理 tmp，把冲突信息丢回去
         let _ = remove_dir_all_retry(&tmp_root);
@@ -141,7 +177,22 @@ pub async fn import_skill_package(
             name: res.skill_id.clone(),
             version: String::new(),
             existing_path: target.to_string_lossy().to_string(),
+            shadows: shadow_source,
         });
+    }
+
+    // No user-dir conflict, but a tenant/global skill of the same id will
+    // be shadowed once we install. Ask the user before proceeding.
+    if !target.exists() && !force {
+        if let Some(src) = shadow_source {
+            let _ = remove_dir_all_retry(&tmp_root);
+            return Ok(ImportSkillOutcome::ShadowWarning {
+                id: res.skill_id.clone(),
+                name: res.skill_id.clone(),
+                version: String::new(),
+                shadows: src,
+            });
+        }
     }
 
     // 3) 原子替换：先 stage 再 swap，失败时回滚

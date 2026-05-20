@@ -125,7 +125,14 @@ function isAcceptableDropPath(path: string): boolean {
 
 type ImportOutcome =
   | { status: 'installed'; id: string; name: string; version: string; installed_to: string }
-  | { status: 'conflict'; id: string; name: string; version: string; existing_path: string }
+  | { status: 'conflict'; id: string; name: string; version: string; existing_path: string; shadows?: string | null }
+  | { status: 'shadow_warning'; id: string; name: string; version: string; shadows: string }
+
+function shadowSourceLabel(src: string | null | undefined): string {
+  if (src === 'tenant') return '企业私有技能'
+  if (src === 'public') return '平台公开技能'
+  return ''
+}
 
 export async function importSkillPackagesWithUI(paths: string[]): Promise<void> {
   const pushNotif = useNotificationStore.getState().push
@@ -147,10 +154,51 @@ export async function importSkillPackagesWithUI(paths: string[]): Promise<void> 
         })
         continue
       }
+      // shadow_warning → 用户目录没有同名，但租户/全局已有 → 询问是否屏蔽
+      if (outcome.status === 'shadow_warning') {
+        const label = shadowSourceLabel(outcome.shadows)
+        const ok = await requestConfirm({
+          title: `导入将屏蔽${label}「${outcome.name}」？`,
+          description: `平台已同步同名${label}（id=${outcome.id}）。导入本地版本后，会优先使用本地版本，平台版本将被遮蔽。`,
+          confirmLabel: '继续导入',
+          variant: 'destructive',
+        })
+        if (!ok) {
+          pushNotif({
+            level: 'info',
+            title: '导入已取消',
+            message: `${outcome.name} 未安装（保留${label}版本）`,
+            actions: [],
+            dismissible: true,
+            autoHide: 3,
+            context: 'toast',
+          })
+          continue
+        }
+        const forced = await invoke<ImportOutcome>('import_skill_package', {
+          archivePath: path,
+          force: true,
+        })
+        if (forced.status === 'installed') {
+          pushNotif({
+            level: 'success',
+            title: '技能已导入',
+            message: `${forced.name} v${forced.version} 已安装（已屏蔽${label}）`,
+            actions: [],
+            dismissible: true,
+            autoHide: 4,
+            context: 'toast',
+          })
+        }
+        continue
+      }
       // conflict → 询问用户
+      const shadowSuffix = outcome.shadows
+        ? `\n注意：同名${shadowSourceLabel(outcome.shadows)}也会被这次本地版本继续屏蔽。`
+        : ''
       const ok = await requestConfirm({
         title: `覆盖已有技能「${outcome.name}」？`,
-        description: `已存在 id=${outcome.id}。覆盖将替换现有版本，无法撤销。`,
+        description: `已存在 id=${outcome.id}。覆盖将替换现有版本，无法撤销。${shadowSuffix}`,
         confirmLabel: '覆盖',
         variant: 'destructive',
       })
