@@ -819,7 +819,6 @@ impl AppStorage {
 pub struct RuntimeRepositoryFacade {
     session_store: std::sync::Arc<dyn crate::runtime::store::SessionStore>,
     settings_store: std::sync::Arc<dyn crate::runtime::store::SettingsStore>,
-    memory_store: std::sync::Arc<dyn crate::runtime::store::MemoryStore>,
     audit_store: std::sync::Arc<dyn crate::runtime::store::AuditStore>,
     conversation_store: std::sync::Arc<dyn crate::runtime::store::ConversationStore>,
     persona_store: std::sync::Arc<dyn crate::runtime::store::PersonaStore>,
@@ -836,7 +835,6 @@ impl RuntimeRepositoryFacade {
             settings_store: std::sync::Arc::new(
                 crate::runtime::store::InMemorySettingsStore::default(),
             ),
-            memory_store: std::sync::Arc::new(crate::runtime::store::InMemoryMemoryStore::default()),
             audit_store: std::sync::Arc::new(crate::runtime::store::InMemoryAuditStore::default()),
             conversation_store: std::sync::Arc::new(
                 crate::runtime::store::InMemoryConversationStore::new(),
@@ -855,9 +853,6 @@ impl RuntimeRepositoryFacade {
                 storage: storage.clone(),
             }),
             settings_store: std::sync::Arc::new(FileSettingsStore {
-                storage: storage.clone(),
-            }),
-            memory_store: std::sync::Arc::new(FileMemoryStore {
                 storage: storage.clone(),
             }),
             audit_store: std::sync::Arc::new(FileAuditStore {
@@ -886,14 +881,6 @@ impl RuntimeRepositoryFacade {
 
     pub fn settings_store(&self) -> &dyn crate::runtime::store::SettingsStore {
         self.settings_store.as_ref()
-    }
-
-    pub fn memory_store(&self) -> &dyn crate::runtime::store::MemoryStore {
-        self.memory_store.as_ref()
-    }
-
-    pub fn clone_memory_store(&self) -> std::sync::Arc<dyn crate::runtime::store::MemoryStore> {
-        self.memory_store.clone()
     }
 
     pub fn audit_store(&self) -> &dyn crate::runtime::store::AuditStore {
@@ -992,20 +979,6 @@ impl crate::runtime::store::SettingsStore for FileSettingsStore {
 
     fn delete(&self, key: &str) -> Result<()> {
         self.storage.delete_setting(key)
-    }
-}
-
-struct FileMemoryStore {
-    storage: std::sync::Arc<AppStorage>,
-}
-
-impl crate::runtime::store::MemoryStore for FileMemoryStore {
-    fn get(&self, key: &str) -> Result<Option<String>> {
-        self.storage.get_memory(key)
-    }
-
-    fn set(&self, key: &str, value: &str) -> Result<()> {
-        self.storage.set_memory(key, value, Some("runtime"))
     }
 }
 

@@ -1,5 +1,5 @@
 use app_lib::runtime::store::{
-    AuditStore, ConversationStore, FileRecordStore, MemoryStore, PersonaRecord, PersonaStore,
+    AuditStore, ConversationStore, FileRecordStore, PersonaRecord, PersonaStore,
     SessionStore, SettingsStore,
 };
 use app_lib::storage::file_store::RuntimeRepositoryFacade;
@@ -9,7 +9,6 @@ fn file_store_exposes_domain_repositories() {
     let facade = RuntimeRepositoryFacade::for_test();
     let _: &dyn SessionStore = facade.session_store();
     let _: &dyn SettingsStore = facade.settings_store();
-    let _: &dyn MemoryStore = facade.memory_store();
     let _: &dyn AuditStore = facade.audit_store();
     let _: &dyn ConversationStore = facade.conversation_store();
     let _: &dyn PersonaStore = facade.persona_store();

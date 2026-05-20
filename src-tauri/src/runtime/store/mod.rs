@@ -3,7 +3,6 @@ pub mod audit_store;
 pub mod authorized_workspace_store;
 pub mod conversation_store;
 pub mod file_record_store;
-pub mod memory_store;
 pub mod pending_permission_request_store;
 pub mod permission_store;
 pub mod persona_store;
@@ -25,7 +24,6 @@ pub use authorized_workspace_store::{
 };
 pub use conversation_store::{ConversationStore, InMemoryConversationStore};
 pub use file_record_store::FileRecordStore;
-pub use memory_store::{InMemoryMemoryStore, MemoryEntry, MemoryStore};
 pub use pending_permission_request_store::{
     PendingPermissionControlPlane, PendingPermissionRequest, PendingPermissionRequestStore,
     PendingPermissionResolution,
