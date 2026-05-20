@@ -48,57 +48,6 @@ pub trait AuthorizedWorkspaceStore: Send + Sync {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// File-backed production implementation
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Persists the authorized workspace using `AppStorage::set_memory` /
-/// `get_memory` with the key `"authorized_workspace:{session_id}"`.
-///
-/// AppStorage has no dedicated `delete_memory` method, so `clear_for_session`
-/// writes an empty string and `get_current_for_session` treats an empty value
-/// as "absent".
-pub struct FileAuthorizedWorkspaceStore {
-    pub storage: Arc<AppStorage>,
-}
-
-impl AuthorizedWorkspaceStore for FileAuthorizedWorkspaceStore {
-    fn replace_for_session(
-        &self,
-        _conversation_id: &str,
-        ws: &AuthorizedWorkspace,
-    ) -> Result<()> {
-        let key = format!("authorized_workspace:{}", ws.session_id.as_str());
-        let value = serde_json::to_string(ws)?;
-        self.storage
-            .set_memory(&key, &value, Some("authorized_workspace"))
-    }
-
-    fn get_current_for_session(
-        &self,
-        _conversation_id: &str,
-        session_id: &SessionId,
-    ) -> Result<Option<AuthorizedWorkspace>> {
-        let key = format!("authorized_workspace:{}", session_id.as_str());
-        match self.storage.get_memory(&key)? {
-            Some(v) if !v.is_empty() => Ok(Some(serde_json::from_str(&v)?)),
-            _ => Ok(None),
-        }
-    }
-
-    fn clear_for_session(
-        &self,
-        _conversation_id: &str,
-        session_id: &SessionId,
-    ) -> Result<()> {
-        let key = format!("authorized_workspace:{}", session_id.as_str());
-        // AppStorage has no delete_memory; write empty string as sentinel.
-        self.storage
-            .set_memory(&key, "", Some("authorized_workspace_cleared"))?;
-        Ok(())
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // conv.json-backed implementation (production successor to FileAuthorizedWorkspaceStore)
 // ─────────────────────────────────────────────────────────────────────────────
 

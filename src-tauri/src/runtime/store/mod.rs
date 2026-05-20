@@ -20,7 +20,7 @@ pub use agent_invocation_store::{
 pub use audit_store::{AuditRecord, AuditStore, InMemoryAuditStore};
 pub use authorized_workspace_store::{
     AuthorizedWorkspace, AuthorizedWorkspaceRef, AuthorizedWorkspaceStore,
-    ConvJsonAuthorizedWorkspaceStore, FileAuthorizedWorkspaceStore, InMemoryAuthorizedWorkspaceStore,
+    ConvJsonAuthorizedWorkspaceStore, InMemoryAuthorizedWorkspaceStore,
 };
 pub use conversation_store::{ConversationStore, InMemoryConversationStore};
 pub use file_record_store::FileRecordStore;
