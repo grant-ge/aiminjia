@@ -46,7 +46,6 @@ pub mod files;
 pub mod id;
 pub mod io;
 pub mod messages;
-pub mod notes;
 pub mod persona;
 pub mod types;
 pub mod workspace_settings;

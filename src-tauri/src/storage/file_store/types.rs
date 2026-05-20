@@ -278,27 +278,6 @@ pub struct FileIndex {
 
 // ─── Enterprise Memory ───────────────────────────────────────────────────────
 
-/// A memory entry stored in `shared/memory/memory.jsonl`.
-///
-/// Uses last-writer-wins semantics: when reading, the last entry with a given
-/// `key` is the current value. `deleted: true` means the key was removed.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MemoryEntry {
-    pub key: String,
-    pub value: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub source: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub deleted: bool,
-}
-
-fn is_false(b: &bool) -> bool {
-    !(*b)
-}
-
 // ─── Audit Log ───────────────────────────────────────────────────────────────
 
 /// An audit log entry stored in `audit/audit.jsonl`.
