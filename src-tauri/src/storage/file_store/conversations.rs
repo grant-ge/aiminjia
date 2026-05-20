@@ -8,7 +8,7 @@ use log::{info, warn};
 
 use super::error::StorageResult;
 use super::io::{atomic_write_json, read_json_optional, read_json_safe};
-use super::types::{ConversationIndexEntry, ConversationKind, ConversationMeta, ConversationSource, GlobalIndex};
+use super::types::{ConversationIndexEntry, ConversationKind, ConversationMeta, ConversationSource, GlobalIndex, PersistedAuthorizedWorkspace};
 
 use crate::llm::content_filter::strip_hallucinated_xml;
 
@@ -153,6 +153,50 @@ pub fn set_conversation_source(
         atomic_write_json(&index_path(base_dir), &index)?;
     }
     Ok(())
+}
+
+/// Update the conversation's authorized workspace binding.
+///
+/// `workspace = Some(ws)` writes the persisted form into `conv.json` and
+/// mirrors the `display_name` into `ConversationIndexEntry.workspace_name`.
+/// `workspace = None` clears both.
+///
+/// Index update only happens when an entry with matching id exists.
+pub fn set_conversation_workspace(
+    base_dir: &Path,
+    id: &str,
+    workspace: Option<&PersistedAuthorizedWorkspace>,
+) -> StorageResult<()> {
+    let meta_path = conv_meta_path(base_dir, id);
+    let mut meta: ConversationMeta = read_json_safe(&meta_path)?;
+    meta.authorized_workspace = workspace.cloned();
+    meta.updated_at = Utc::now().to_rfc3339();
+    atomic_write_json(&meta_path, &meta)?;
+
+    let mut index = read_global_index(base_dir)?;
+    if let Some(entry) = index.conversations.iter_mut().find(|e| e.id == id) {
+        entry.workspace_name = workspace.map(|w| w.display_name.clone());
+        atomic_write_json(&index_path(base_dir), &index)?;
+    }
+    Ok(())
+}
+
+/// Read the conversation's authorized workspace from `conv.json`.
+pub fn read_conversation_workspace(
+    base_dir: &Path,
+    id: &str,
+) -> StorageResult<Option<PersistedAuthorizedWorkspace>> {
+    let meta: ConversationMeta = read_json_safe(&conv_meta_path(base_dir, id))?;
+    Ok(meta.authorized_workspace)
+}
+
+/// Read the conversation's source from `conv.json`.
+pub fn read_conversation_source(
+    base_dir: &Path,
+    id: &str,
+) -> StorageResult<ConversationSource> {
+    let meta: ConversationMeta = read_json_safe(&conv_meta_path(base_dir, id))?;
+    Ok(meta.source)
 }
 
 /// Set is_archived = true on conv.json and update the global index.
