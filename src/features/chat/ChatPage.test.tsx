@@ -29,10 +29,10 @@ vi.mock('@/components/chat/RightPanel', () => ({
 }))
 
 describe('ChatPage layout', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     switchConversationMock.mockClear()
-    clearExpertTeam('conv-layout')
-    clearExpertTeam('conv-team')
+    await clearExpertTeam('conv-layout')
+    await clearExpertTeam('conv-team')
     useChatStore.setState({ activeConversationId: null, conversations: [], messages: [] })
   })
 
@@ -53,13 +53,13 @@ describe('ChatPage layout', () => {
 
 
 
-  it('does not render a redundant expert team banner above the chat content', () => {
-    setExpertTeam('conv-team', 'marketing')
+  it('does not render a redundant expert team banner above the chat content', async () => {
     useChatStore.setState({
       activeConversationId: 'conv-team',
       conversations: [{ id: 'conv-team', title: '专家团会话', createdAt: '', updatedAt: '', isArchived: false }],
-      messages: [{ id: 'm1', role: 'assistant', content: '已有消息', createdAt: '' }],
+      messages: [{ id: 'm1', conversationId: 'conv-team', role: 'assistant', content: { text: '已有消息' }, createdAt: '' }],
     })
+    await setExpertTeam('conv-team', 'marketing')
 
     render(<ChatPage conversationId="conv-team" />)
 

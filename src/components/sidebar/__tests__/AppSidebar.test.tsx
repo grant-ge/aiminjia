@@ -75,13 +75,13 @@ import { clearExpertTeam, setExpertTeam } from '@/features/expert-teams/expertTe
 import { AppSidebar } from '../AppSidebar'
 
 describe('AppSidebar', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     uiState.route = { kind: 'home' }
     uiState.setRoute.mockClear()
     chatState.activeConversationId = null
     chatState.conversations = []
-    clearExpertTeam('normal-conv')
-    clearExpertTeam('expert-conv')
+    await clearExpertTeam('normal-conv')
+    await clearExpertTeam('expert-conv')
   })
 
   it('has sidebar background and 256 px width', () => {
@@ -178,7 +178,7 @@ describe('AppSidebar', () => {
       { id: 'normal-conv', title: '普通项目对话', workspaceName: '默认项目' },
       { id: 'expert-conv', title: '市场方案专家讨论', workspaceName: '默认项目' },
     ]
-    setExpertTeam('expert-conv', 'marketing')
+    await setExpertTeam('expert-conv', 'marketing')
 
     render(<AppSidebar />)
 
@@ -215,13 +215,13 @@ describe('AppSidebar route-derived sidebarTab', () => {
     localStorage.removeItem('aijia-sidebar-tab')
   })
 
-  it('shows channel list after fresh mount when channel tab persisted', () => {
+  it('shows channel list after fresh mount when channel tab persisted', async () => {
     localStorage.setItem('aijia-sidebar-tab', 'channel')
     uiState.route = { kind: 'channel', sessionId: 'dt-session-1' }
     chatState.activeConversationId = null
     chatState.conversations = []
-    clearExpertTeam('normal-conv')
-    clearExpertTeam('expert-conv')
+    await clearExpertTeam('normal-conv')
+    await clearExpertTeam('expert-conv')
     render(<AppSidebar />)
     // 钉钉会话 should be highlighted (the mock has displayName: '姚斌权')
     expect(screen.getByText('姚斌权')).toBeInTheDocument()
@@ -231,31 +231,31 @@ describe('AppSidebar route-derived sidebarTab', () => {
     uiState.route = { kind: 'channel', sessionId: 'dt-session-1' }
     chatState.activeConversationId = null
     chatState.conversations = []
-    clearExpertTeam('normal-conv')
-    clearExpertTeam('expert-conv')
+    await clearExpertTeam('normal-conv')
+    await clearExpertTeam('expert-conv')
     render(<AppSidebar />)
     await userEvent.click(screen.getByRole('button', { name: 'IM 频道' }))
     expect(uiState.setRoute).toHaveBeenCalledWith({ kind: 'channel' })
   })
 
-  it('highlights skill-center nav when route is skill-detail', () => {
+  it('highlights skill-center nav when route is skill-detail', async () => {
     uiState.route = { kind: 'skill-detail', skillId: 'sk-1' }
     chatState.activeConversationId = null
     chatState.conversations = []
-    clearExpertTeam('normal-conv')
-    clearExpertTeam('expert-conv')
+    await clearExpertTeam('normal-conv')
+    await clearExpertTeam('expert-conv')
     render(<AppSidebar />)
     expect(screen.getByRole('button', { name: '技能中心' }).className).toMatch(
       /(^|\s)bg-sidebar-accent(\s|$)/,
     )
   })
 
-  it('does NOT highlight IM 频道 nav when a specific session is selected (leaf-only)', () => {
+  it('does NOT highlight IM 频道 nav when a specific session is selected (leaf-only)', async () => {
     uiState.route = { kind: 'channel', sessionId: 'dt-session-1' }
     chatState.activeConversationId = null
     chatState.conversations = []
-    clearExpertTeam('normal-conv')
-    clearExpertTeam('expert-conv')
+    await clearExpertTeam('normal-conv')
+    await clearExpertTeam('expert-conv')
     render(<AppSidebar />)
     expect(screen.getByRole('button', { name: 'IM 频道' }).className).not.toMatch(
       /(^|\s)bg-sidebar-accent(\s|$)/,

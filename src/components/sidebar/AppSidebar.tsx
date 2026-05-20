@@ -10,7 +10,7 @@ import { useChat } from '@/hooks/useChat'
 import { useBrandingStore } from '@/stores/brandingStore'
 import { useUiStore, type Route, useActiveConversationId, useActiveChannelSessionId } from '@/stores/uiStore'
 import { useChannelStore } from '@/stores/channelStore'
-import { getExpertTeam } from '@/features/expert-teams/expertTeamRegistry'
+import { hasExpertTeam } from '@/features/expert-teams/expertTeamRegistry'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -107,7 +107,7 @@ export function AppSidebar() {
   // 的对话准备的，不应该再列一遍这些频道会话（"频道" tab 已经渲染它们）。
   const channelSessionIdSet = new Set(channelConversations.map((c) => c.sessionId))
   const nonChannelConversations = conversations.filter((c) => !channelSessionIdSet.has(c.id))
-  const expertTeamConversations = nonChannelConversations.filter((c) => getExpertTeam(c.id))
+  const expertTeamConversations = nonChannelConversations.filter((c) => hasExpertTeam(c.id))
   const expertTeamConversationIdSet = new Set(expertTeamConversations.map((c) => c.id))
   const projectConversations = nonChannelConversations.filter((c) => !expertTeamConversationIdSet.has(c.id))
 

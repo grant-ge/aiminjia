@@ -32,7 +32,7 @@ export function ExpertTeamsPage() {
       } catch (err) {
         console.warn('[ExpertTeamsPage] renameConversation failed', err)
       }
-      setExpertTeam(conversationId, id)
+      await setExpertTeam(conversationId, id)
       // Optimistically inject into chatStore so the sidebar shows the new
       // conversation immediately. The backend `conversation:created` event
       // will refresh the list anyway, but it can land after the user has
