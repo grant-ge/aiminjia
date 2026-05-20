@@ -67,6 +67,9 @@ pub fn create_conversation(base_dir: &Path, id: &str, title: &str) -> StorageRes
         updated_at: now,
         is_archived: false,
         employee_id: None,
+        kind: Default::default(),
+        source_label: None,
+        workspace_name: None,
     });
     atomic_write_json(&index_path(base_dir), &index)?;
 
@@ -291,6 +294,9 @@ pub fn reconcile_index(base_dir: &Path) -> StorageResult<()> {
                     updated_at: meta.updated_at,
                     is_archived: meta.is_archived,
                     employee_id: meta.employee_id,
+                    kind: Default::default(),
+                    source_label: meta.source_label,
+                    workspace_name: None,
                 });
                 info!("Reconciled: added missing index entry for {}", dir_id);
                 changed = true;
@@ -364,6 +370,9 @@ pub fn touch_index_entry(base_dir: &Path, conversation_id: &str) -> StorageResul
             updated_at: now,
             is_archived: false,
             employee_id: None,
+            kind: Default::default(),
+            source_label: None,
+            workspace_name: None,
         });
     }
     atomic_write_json(&index_path(base_dir), &index)?;

@@ -148,8 +148,20 @@ pub struct ConversationIndexEntry {
     /// Mirror of `ConversationMeta.employee_id`. Stored in the index so the
     /// sidebar / top bar don't have to fan-out and read every `conv.json` to
     /// know whether a conversation is a dispatch session.
+    ///
+    /// **过渡期保留**：新写入由 `kind = Employee` 表达；本字段由 dispatch 路径双写。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub employee_id: Option<String>,
+    /// 新增：来源 kind mirror（不含 id；点开会话才需要 id）。
+    /// 老 index.json 无此字段时反序列化为 `User`。
+    #[serde(default)]
+    pub kind: ConversationKind,
+    /// 新增：人类可读副标题 mirror。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_label: Option<String>,
+    /// 新增：授权目录 displayName mirror（用于侧边栏分组）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_name: Option<String>,
 }
 
 /// Global conversation index stored in `index.json`.
@@ -532,5 +544,49 @@ mod conversation_meta_migration_tests {
         ));
         assert_eq!(parsed.source_label.as_deref(), Some("小销"));
         assert!(parsed.authorized_workspace.is_some());
+    }
+}
+
+#[cfg(test)]
+mod conversation_index_entry_migration_tests {
+    use super::*;
+
+    #[test]
+    fn old_index_entry_deserializes_with_defaults() {
+        let old_json = r#"{
+            "id": "c-1",
+            "title": "old",
+            "createdAt": "2026-04-01T00:00:00+00:00",
+            "updatedAt": "2026-04-01T00:00:00+00:00",
+            "isArchived": false
+        }"#;
+        let entry: ConversationIndexEntry = serde_json::from_str(old_json).unwrap();
+        assert_eq!(entry.kind, ConversationKind::User);
+        assert!(entry.source_label.is_none());
+        assert!(entry.workspace_name.is_none());
+        assert!(entry.employee_id.is_none());
+    }
+
+    #[test]
+    fn new_index_entry_round_trips() {
+        let entry = ConversationIndexEntry {
+            id: "c-2".to_string(),
+            title: "new".to_string(),
+            created_at: "2026-05-20T00:00:00+00:00".to_string(),
+            updated_at: "2026-05-20T00:00:00+00:00".to_string(),
+            is_archived: false,
+            employee_id: None,
+            kind: ConversationKind::ExpertTeam,
+            source_label: Some("市场专家团".to_string()),
+            workspace_name: Some("foo-project".to_string()),
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        assert!(json.contains("\"kind\":\"expertTeam\""));
+        assert!(json.contains("\"sourceLabel\":\"市场专家团\""));
+        assert!(json.contains("\"workspaceName\":\"foo-project\""));
+        let parsed: ConversationIndexEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.kind, ConversationKind::ExpertTeam);
+        assert_eq!(parsed.source_label.as_deref(), Some("市场专家团"));
+        assert_eq!(parsed.workspace_name.as_deref(), Some("foo-project"));
     }
 }
