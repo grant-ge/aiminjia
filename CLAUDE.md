@@ -277,19 +277,6 @@ workspace 目录（用户可自定义，默认也是 `~/.renlijia/`）下存放�
 - `*_integration_test.rs` — 跨模块集成测试
 - `*_test.rs` — 针对单个功能的集成测试
 
-## 意图测试框架（test-intents）
-
-规范文档在 `docs/test-intents/`：
-- `context/context.md` — 业务规则（settings 优先级、masking 链路、skill 加载语义等）
-- `context/capabilities.md` — 测试工具箱（TempDir、MockLlmExecutor、ProbeExecutor 代码片段）
-- `context/how-to-test.md` — 操作规范（命名、执行顺序、漂移判断）
-- `context/how-to-write-rules.md` — **rules.md 写作规范**（产品视角、具体断言、可复现 fixture、常见陷阱）
-- `spec/tasks/<feature>/rules.md` — 该功能的意图列表与断言
-- `spec/tasks/<feature>/test-progress.md` — 执行记录（通过/失败/坑）
-
-**继续做某个功能的意图测试：先读对应 `rules.md` + `test-progress.md`，再看 `context/` 四文件，然后按 `how-to-test.md` 规范执行。**
-**新建一个功能的 rules.md：先读 `context/how-to-write-rules.md`，再按产品视角逐条写，写完用快速自查清单过一遍。**
-
 ## 发布流程（权威 · 自 v0.5.23 起，本地构建 + 一键 Windows）
 
 **架构：macOS 本地全流程 + Windows GitHub-hosted 构建未签名包 + 本地一键签名上传**。
