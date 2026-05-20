@@ -525,6 +525,26 @@ impl AuthManager {
         self.client.list_models(&session_key).await
     }
 
+    /// Fetch personal-tenant billing summary.
+    pub async fn get_billing_summary(
+        &self,
+    ) -> Result<crate::transport::tauri_commands::billing::BillingSummary> {
+        let session_key = self.get_session_key().await?;
+        self.client.get_billing_summary(&session_key).await
+    }
+
+    /// Fetch a page of personal-tenant usage records.
+    pub async fn get_billing_usage_records(
+        &self,
+        page: u32,
+        size: u32,
+    ) -> Result<crate::transport::tauri_commands::billing::UsageRecordsPage> {
+        let session_key = self.get_session_key().await?;
+        self.client
+            .get_billing_usage_records(&session_key, page, size)
+            .await
+    }
+
     /// Force-invalidate the cached session key so the next `get_session_key`
     /// call goes through the renewal path. Called by gateway when a 401
     /// "Session key revoked" comes back — at that point the local

@@ -1254,7 +1254,7 @@ export function getPluginInfo(): Promise<PluginInfo> {
 export interface CloudAuthInfo {
   loggedIn: boolean
   user: { id: number; name: string; username: string } | null
-  tenant: { id: number; name: string; balance: string; productName?: string; logoUrl?: string; accentColor?: string; primaryColor?: string; bgColor?: string; sidebarBgColor?: string; fontFamily?: string } | null
+  tenant: { id: number; name: string; balance: string; tenantType?: string; productName?: string; logoUrl?: string; accentColor?: string; primaryColor?: string; bgColor?: string; sidebarBgColor?: string; fontFamily?: string } | null
   models: CloudModel[]
 }
 
@@ -2446,4 +2446,60 @@ export function listenPendingRemoved(
   return listen<PendingRemovedPayload>(TAURI_EVENTS.PENDING_REMOVED, (event) =>
     handler(event.payload),
   )
+}
+
+// =====================================================================
+// Billing (personal-tenant only — gated by `tenant.type === 'personal'`)
+// =====================================================================
+
+export interface BillingThisMonth {
+  year_month: string
+  request_count: number
+  input_tokens: number
+  output_tokens: number
+  cached_tokens: number
+  cost: string
+}
+
+export interface BillingSignupBonus {
+  granted: boolean
+  amount: string
+  granted_at?: string
+}
+
+export interface BillingSummary {
+  balance: string
+  currency: string
+  this_month: BillingThisMonth
+  signup_bonus: BillingSignupBonus
+}
+
+export interface UsageRecord {
+  id: number
+  created_at: string
+  request_type: string
+  model_name: string
+  input_tokens: number
+  output_tokens: number
+  cached_tokens: number
+  cost: string
+  key_type: string
+}
+
+export interface UsageRecordsPage {
+  page: number
+  size: number
+  total: number
+  records: UsageRecord[]
+}
+
+export function billingSummary(): Promise<BillingSummary> {
+  return invoke<BillingSummary>('billing_summary')
+}
+
+export function billingUsageRecords(
+  page: number,
+  size: number,
+): Promise<UsageRecordsPage> {
+  return invoke<UsageRecordsPage>('billing_usage_records', { page, size })
 }

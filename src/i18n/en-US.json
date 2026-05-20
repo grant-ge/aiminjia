@@ -425,6 +425,23 @@
       "logUploadDesc": "When something goes wrong, send local logs to the team for diagnostics.",
       "uploadLogs": "Upload logs",
       "uploading": "Uploading..."
+    },
+    "billing": {
+      "title": "My Account",
+      "balance": "Balance",
+      "monthCost": "This Month",
+      "monthRequests": "Requests",
+      "bonusHint": "Includes ¥10 bonus",
+      "records": "Usage Records",
+      "empty": "No usage yet",
+      "retry": "Retry",
+      "cols": {
+        "time": "Time",
+        "model": "Model",
+        "type": "Type",
+        "tokens": "Tokens",
+        "cost": "Cost"
+      }
     }
   },
   "composer": {

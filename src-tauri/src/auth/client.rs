@@ -50,6 +50,8 @@ pub struct AuthTenantInfo {
     #[serde(default)]
     pub balance: String,
     #[serde(default)]
+    pub r#type: String,
+    #[serde(default)]
     pub product_name: Option<String>,
     #[serde(default)]
     pub logo_url: Option<String>,
@@ -81,6 +83,7 @@ impl From<AuthTenantInfo> for TenantInfo {
             id: t.id,
             name: t.name,
             balance: t.balance,
+            tenant_type: t.r#type,
             product_name: t.product_name,
             logo_url: t.logo_url,
             accent_color: t.accent_color,
@@ -426,6 +429,51 @@ impl AuthClient {
         let tenant: AuthTenantInfo = serde_json::from_value(body["tenant"].clone())
             .map_err(|e| anyhow!("Failed to parse tenant profile: {}", e))?;
         Ok((user, tenant))
+    }
+
+    /// Fetch personal-tenant billing summary (`/v1/billing/summary`).
+    pub async fn get_billing_summary(
+        &self,
+        session_key: &str,
+    ) -> Result<crate::transport::tauri_commands::billing::BillingSummary> {
+        let url = format!("{}/v1/billing/summary", BASE_URL);
+        let resp = self
+            .client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", session_key))
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(parse_api_error(status.as_u16(), &body));
+        }
+        Ok(resp.json().await?)
+    }
+
+    /// Fetch a page of usage records (`/v1/billing/usage-records?page=&size=`).
+    pub async fn get_billing_usage_records(
+        &self,
+        session_key: &str,
+        page: u32,
+        size: u32,
+    ) -> Result<crate::transport::tauri_commands::billing::UsageRecordsPage> {
+        let url = format!(
+            "{}/v1/billing/usage-records?page={}&size={}",
+            BASE_URL, page, size
+        );
+        let resp = self
+            .client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", session_key))
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(parse_api_error(status.as_u16(), &body));
+        }
+        Ok(resp.json().await?)
     }
 }
 
