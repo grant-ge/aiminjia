@@ -299,14 +299,6 @@ export interface PersistedTurnStage {
   lastHeartbeatAtMs: number
 }
 
-/** Mirror of backend `InterruptedTurnRecord` (interrupted_turn.json on disk). */
-export interface InterruptedTurnRecord {
-  conversationId: string
-  runId: string
-  lastStage: TurnStageKind
-  interruptedAtMs: number
-}
-
 export interface DiagnosticsEventPayload {
   ts: string
   seq: number
@@ -2323,23 +2315,6 @@ export async function getActiveTurnStage(
     conversationId,
   })
   return result
-}
-
-/** Read the crash-recovery sentinel for a conversation.  Returns null when
- *  the previous process didn't die mid-turn for this conversation. */
-export async function getInterruptedTurn(
-  conversationId: string,
-): Promise<InterruptedTurnRecord | null> {
-  const result = await invoke<InterruptedTurnRecord | null>('get_interrupted_turn', {
-    conversationId,
-  })
-  return result
-}
-
-/** Delete the interrupted-turn sentinel after the user dismisses (or
- *  resends) — so the banner doesn't keep showing on subsequent opens. */
-export async function dismissInterruptedTurn(conversationId: string): Promise<void> {
-  await invoke<void>('dismiss_interrupted_turn', { conversationId })
 }
 
 export function listenPendingSnapshot(

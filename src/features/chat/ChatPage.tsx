@@ -1,6 +1,5 @@
 import { ChatBottomArea } from '@/components/chat-scene/ChatBottomArea'
 import { ExpertTeamWelcome } from '@/components/chat-scene/ExpertTeamWelcome'
-import { InterruptedTurnBanner } from '@/components/chat/InterruptedTurnBanner'
 import { RightPanel } from '@/components/chat/RightPanel'
 import type { PreviewTarget } from '@/components/chat/generatedFileActions'
 import { ChatArea } from '@/components/layout/ChatArea'
@@ -81,7 +80,6 @@ export function ChatPage({ conversationId }: ChatPageProps) {
       ) : null}
       <div className="relative flex flex-1 overflow-hidden">
         <div data-testid="chat-layout-column" className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
-          <InterruptedTurnBanner conversationId={conversationId} />
           {expertTeam && messageCount === 0 ? (
             <div className="flex-1 overflow-y-auto">
               <ExpertTeamWelcome team={expertTeam} />
