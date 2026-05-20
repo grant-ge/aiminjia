@@ -437,9 +437,9 @@
       "retry": "重试",
       "cols": {
         "time": "时间",
-        "model": "模型",
         "type": "类型",
-        "tokens": "Tokens",
+        "inputTokens": "输入 Tokens",
+        "outputTokens": "输出 Tokens",
         "cost": "费用"
       }
     }

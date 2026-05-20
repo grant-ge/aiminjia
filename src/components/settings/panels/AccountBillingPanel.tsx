@@ -111,13 +111,13 @@ export function AccountBillingPanel() {
                   {t('settings.billing.cols.time')}
                 </th>
                 <th className="py-2 pr-3 font-normal">
-                  {t('settings.billing.cols.model')}
-                </th>
-                <th className="py-2 pr-3 font-normal">
                   {t('settings.billing.cols.type')}
                 </th>
                 <th className="py-2 pr-3 font-normal">
-                  {t('settings.billing.cols.tokens')}
+                  {t('settings.billing.cols.inputTokens')}
+                </th>
+                <th className="py-2 pr-3 font-normal">
+                  {t('settings.billing.cols.outputTokens')}
                 </th>
                 <th className="py-2 font-normal">
                   {t('settings.billing.cols.cost')}
@@ -130,12 +130,14 @@ export function AccountBillingPanel() {
                   <td className="py-2 pr-3 text-foreground">
                     {formatDate(r.created_at)}
                   </td>
-                  <td className="py-2 pr-3 text-foreground">{r.model_name}</td>
                   <td className="py-2 pr-3 text-muted-foreground">
                     {r.request_type}
                   </td>
                   <td className="py-2 pr-3 text-muted-foreground">
-                    {r.input_tokens}+{r.output_tokens}
+                    {r.input_tokens}
+                  </td>
+                  <td className="py-2 pr-3 text-muted-foreground">
+                    {r.output_tokens}
                   </td>
                   <td className="py-2 text-foreground">¥{r.cost}</td>
                 </tr>

@@ -437,9 +437,9 @@
       "retry": "Retry",
       "cols": {
         "time": "Time",
-        "model": "Model",
         "type": "Type",
-        "tokens": "Tokens",
+        "inputTokens": "Input Tokens",
+        "outputTokens": "Output Tokens",
         "cost": "Cost"
       }
     }
