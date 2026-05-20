@@ -44,10 +44,16 @@ pub(crate) use chat_runtime_impl::build_visible_tool_defs;
 /// Maximum number of stream-level retries within the agent loop.
 /// When a stream error or gateway error is retryable (5xx, timeout, connection),
 /// the current iteration is retried instead of aborting the entire agent loop.
-const MAX_STREAM_RETRIES: u32 = 2;
+const MAX_STREAM_RETRIES: u32 = 5;
 
-/// Delay before retrying a failed stream (seconds).
+/// Base delay before retrying a failed stream (seconds). Actual delay grows
+/// exponentially with attempt number: 2s, 4s, 8s, 16s, 32s.
 const STREAM_RETRY_DELAY_SECS: u64 = 2;
+
+/// Compute exponential backoff for retry attempt N (1-based).
+fn stream_retry_backoff_secs(attempt: u32) -> u64 {
+    STREAM_RETRY_DELAY_SECS.saturating_mul(1u64 << attempt.min(5).saturating_sub(1))
+}
 
 fn attachment_refs_from_json_array(
     files: &[serde_json::Value],
@@ -589,8 +595,10 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                                 RuntimeEventKind::StreamRetryReset,
                             ))
                             .await;
-                        tokio::time::sleep(std::time::Duration::from_secs(STREAM_RETRY_DELAY_SECS))
-                            .await;
+                        tokio::time::sleep(std::time::Duration::from_secs(
+                            stream_retry_backoff_secs(stream_retry_count),
+                        ))
+                        .await;
                         continue;
                     }
 
@@ -795,14 +803,15 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
 
             // If a retry was requested, sleep and restart the gateway call
             if stream_needs_retry {
+                let backoff = stream_retry_backoff_secs(stream_retry_count);
                 log::info!(
                     "[run_llm_step] Retrying after {}s (retry {}/{}) conv={}",
-                    STREAM_RETRY_DELAY_SECS,
+                    backoff,
                     stream_retry_count,
                     MAX_STREAM_RETRIES,
                     input.conversation_id
                 );
-                tokio::time::sleep(std::time::Duration::from_secs(STREAM_RETRY_DELAY_SECS)).await;
+                tokio::time::sleep(std::time::Duration::from_secs(backoff)).await;
                 continue;
             }
 

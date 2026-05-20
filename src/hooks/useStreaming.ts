@@ -497,6 +497,15 @@ export function useStreaming() {
       recordDiagnostic({ event: 'streaming.retry_reset.received', conversationId })
       delete deltaBufferRef.current[conversationId]
       useChatStore.getState().resetConversationStreamContent(conversationId)
+      useNotificationStore.getState().push({
+        level: 'info',
+        title: '网络抖动，正在重新连接...',
+        message: '',
+        actions: [],
+        dismissible: true,
+        autoHide: 4,
+        context: 'toast',
+      })
     }),
   )
 
