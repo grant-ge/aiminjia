@@ -1,7 +1,7 @@
 {
   "name": "aijia",
   "private": true,
-  "version": "0.5.26",
+  "version": "0.5.26-beta.7",
   "type": "module",
   "scripts": {
     "dev": "vite",
