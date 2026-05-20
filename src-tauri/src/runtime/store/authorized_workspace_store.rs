@@ -30,12 +30,21 @@ pub struct AuthorizedWorkspaceRef {
 /// Store trait: each session holds at most one authorized directory.
 /// Writing again replaces the previous value (upsert / single-value semantics).
 pub trait AuthorizedWorkspaceStore: Send + Sync {
-    fn replace_for_session(&self, ws: &AuthorizedWorkspace) -> Result<()>;
+    fn replace_for_session(
+        &self,
+        conversation_id: &str,
+        ws: &AuthorizedWorkspace,
+    ) -> Result<()>;
     fn get_current_for_session(
         &self,
+        conversation_id: &str,
         session_id: &SessionId,
     ) -> Result<Option<AuthorizedWorkspace>>;
-    fn clear_for_session(&self, session_id: &SessionId) -> Result<()>;
+    fn clear_for_session(
+        &self,
+        conversation_id: &str,
+        session_id: &SessionId,
+    ) -> Result<()>;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -53,7 +62,11 @@ pub struct FileAuthorizedWorkspaceStore {
 }
 
 impl AuthorizedWorkspaceStore for FileAuthorizedWorkspaceStore {
-    fn replace_for_session(&self, ws: &AuthorizedWorkspace) -> Result<()> {
+    fn replace_for_session(
+        &self,
+        _conversation_id: &str,
+        ws: &AuthorizedWorkspace,
+    ) -> Result<()> {
         let key = format!("authorized_workspace:{}", ws.session_id.as_str());
         let value = serde_json::to_string(ws)?;
         self.storage
@@ -62,6 +75,7 @@ impl AuthorizedWorkspaceStore for FileAuthorizedWorkspaceStore {
 
     fn get_current_for_session(
         &self,
+        _conversation_id: &str,
         session_id: &SessionId,
     ) -> Result<Option<AuthorizedWorkspace>> {
         let key = format!("authorized_workspace:{}", session_id.as_str());
@@ -71,7 +85,11 @@ impl AuthorizedWorkspaceStore for FileAuthorizedWorkspaceStore {
         }
     }
 
-    fn clear_for_session(&self, session_id: &SessionId) -> Result<()> {
+    fn clear_for_session(
+        &self,
+        _conversation_id: &str,
+        session_id: &SessionId,
+    ) -> Result<()> {
         let key = format!("authorized_workspace:{}", session_id.as_str());
         // AppStorage has no delete_memory; write empty string as sentinel.
         self.storage
@@ -90,23 +108,32 @@ pub struct InMemoryAuthorizedWorkspaceStore {
 }
 
 impl AuthorizedWorkspaceStore for InMemoryAuthorizedWorkspaceStore {
-    fn replace_for_session(&self, ws: &AuthorizedWorkspace) -> Result<()> {
+    fn replace_for_session(
+        &self,
+        conversation_id: &str,
+        ws: &AuthorizedWorkspace,
+    ) -> Result<()> {
         self.data
             .lock()
             .unwrap()
-            .insert(ws.session_id.as_str().to_string(), ws.clone());
+            .insert(conversation_id.to_string(), ws.clone());
         Ok(())
     }
 
     fn get_current_for_session(
         &self,
-        session_id: &SessionId,
+        conversation_id: &str,
+        _session_id: &SessionId,
     ) -> Result<Option<AuthorizedWorkspace>> {
-        Ok(self.data.lock().unwrap().get(session_id.as_str()).cloned())
+        Ok(self.data.lock().unwrap().get(conversation_id).cloned())
     }
 
-    fn clear_for_session(&self, session_id: &SessionId) -> Result<()> {
-        self.data.lock().unwrap().remove(session_id.as_str());
+    fn clear_for_session(
+        &self,
+        conversation_id: &str,
+        _session_id: &SessionId,
+    ) -> Result<()> {
+        self.data.lock().unwrap().remove(conversation_id);
         Ok(())
     }
 }
@@ -136,8 +163,8 @@ mod tests {
         let sid = SessionId::new("session-a");
         let ws = make_ws("session-a", "/tmp/project", "project");
 
-        store.replace_for_session(&ws).unwrap();
-        let got = store.get_current_for_session(&sid).unwrap();
+        store.replace_for_session(sid.as_str(), &ws).unwrap();
+        let got = store.get_current_for_session(sid.as_str(), &sid).unwrap();
         assert!(got.is_some());
         let got = got.unwrap();
         assert_eq!(got.display_name, "project");
@@ -152,10 +179,13 @@ mod tests {
         let ws1 = make_ws("session-b", "/tmp/old", "old");
         let ws2 = make_ws("session-b", "/tmp/new", "new");
 
-        store.replace_for_session(&ws1).unwrap();
-        store.replace_for_session(&ws2).unwrap();
+        store.replace_for_session(sid.as_str(), &ws1).unwrap();
+        store.replace_for_session(sid.as_str(), &ws2).unwrap();
 
-        let got = store.get_current_for_session(&sid).unwrap().unwrap();
+        let got = store
+            .get_current_for_session(sid.as_str(), &sid)
+            .unwrap()
+            .unwrap();
         assert_eq!(got.display_name, "new");
         assert_eq!(got.root_path, PathBuf::from("/tmp/new"));
     }
@@ -167,14 +197,18 @@ mod tests {
         let sid_b = SessionId::new("session-d");
 
         let ws_a = make_ws("session-c", "/tmp/a", "a");
-        store.replace_for_session(&ws_a).unwrap();
+        store.replace_for_session(sid_a.as_str(), &ws_a).unwrap();
 
         // Session B should find nothing
-        let got_b = store.get_current_for_session(&sid_b).unwrap();
+        let got_b = store
+            .get_current_for_session(sid_b.as_str(), &sid_b)
+            .unwrap();
         assert!(got_b.is_none());
 
         // Session A should still find its entry
-        let got_a = store.get_current_for_session(&sid_a).unwrap();
+        let got_a = store
+            .get_current_for_session(sid_a.as_str(), &sid_a)
+            .unwrap();
         assert!(got_a.is_some());
     }
 
@@ -184,10 +218,10 @@ mod tests {
         let sid = SessionId::new("session-e");
         let ws = make_ws("session-e", "/tmp/x", "x");
 
-        store.replace_for_session(&ws).unwrap();
-        store.clear_for_session(&sid).unwrap();
+        store.replace_for_session(sid.as_str(), &ws).unwrap();
+        store.clear_for_session(sid.as_str(), &sid).unwrap();
 
-        let got = store.get_current_for_session(&sid).unwrap();
+        let got = store.get_current_for_session(sid.as_str(), &sid).unwrap();
         assert!(got.is_none());
     }
 }
