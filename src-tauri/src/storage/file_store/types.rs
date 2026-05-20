@@ -35,6 +35,66 @@ pub enum ConversationKind {
     Im,
 }
 
+/// 会话来源 tagged union。序列化为 `{"kind":"...","employeeId":"..."}` 等扁平结构。
+///
+/// 反序列化兜底：未知 `kind` → `User`（避免老桌面端打开未来加入的 variant 时挂掉）。
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum ConversationSource {
+    User,
+    Employee {
+        #[serde(rename = "employeeId")]
+        employee_id: String,
+    },
+    ExpertTeam {
+        #[serde(rename = "expertTeamId")]
+        expert_team_id: String,
+    },
+    Im,
+}
+
+impl Default for ConversationSource {
+    fn default() -> Self {
+        Self::User
+    }
+}
+
+impl<'de> Deserialize<'de> for ConversationSource {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        // 先反序列化成通用 Value，再按 kind 字段分流
+        let value = serde_json::Value::deserialize(deserializer)?;
+        let kind = value.get("kind").and_then(|v| v.as_str()).unwrap_or("user");
+        match kind {
+            "user" => Ok(Self::User),
+            "employee" => {
+                let employee_id = value
+                    .get("employeeId")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+                match employee_id {
+                    Some(id) if !id.is_empty() => Ok(Self::Employee { employee_id: id }),
+                    _ => Ok(Self::User), // 缺字段 → 退化为 User
+                }
+            }
+            "expertTeam" => {
+                let team_id = value
+                    .get("expertTeamId")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+                match team_id {
+                    Some(id) if !id.is_empty() => Ok(Self::ExpertTeam { expert_team_id: id }),
+                    _ => Ok(Self::User),
+                }
+            }
+            "im" => Ok(Self::Im),
+            _ => Ok(Self::User), // 未知 kind → User
+        }
+    }
+}
+
 /// Conversation metadata stored in `conv.json`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -312,5 +372,78 @@ mod conversation_kind_tests {
         // then use `#[serde(default = "...")]` at the outer level to fall back.
         let result: Result<ConversationKind, _> = serde_json::from_str("\"futureVariant\"");
         assert!(result.is_err());
+    }
+}
+
+#[cfg(test)]
+mod conversation_source_tests {
+    use super::*;
+
+    #[test]
+    fn user_round_trip() {
+        let s = ConversationSource::User;
+        let json = serde_json::to_string(&s).unwrap();
+        assert_eq!(json, r#"{"kind":"user"}"#);
+        let parsed: ConversationSource = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, ConversationSource::User);
+    }
+
+    #[test]
+    fn employee_round_trip() {
+        let s = ConversationSource::Employee {
+            employee_id: "emp-001".to_string(),
+        };
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(json.contains("\"kind\":\"employee\""));
+        assert!(json.contains("\"employeeId\":\"emp-001\""));
+        let parsed: ConversationSource = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, s);
+    }
+
+    #[test]
+    fn expert_team_round_trip() {
+        let s = ConversationSource::ExpertTeam {
+            expert_team_id: "marketing".to_string(),
+        };
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(json.contains("\"kind\":\"expertTeam\""));
+        assert!(json.contains("\"expertTeamId\":\"marketing\""));
+        let parsed: ConversationSource = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, s);
+    }
+
+    #[test]
+    fn im_round_trip() {
+        let s = ConversationSource::Im;
+        let json = serde_json::to_string(&s).unwrap();
+        assert_eq!(json, r#"{"kind":"im"}"#);
+        let parsed: ConversationSource = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, ConversationSource::Im);
+    }
+
+    #[test]
+    fn unknown_kind_falls_back_to_user() {
+        let json = r#"{"kind":"futureVariant","foo":"bar"}"#;
+        let parsed: ConversationSource = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed, ConversationSource::User);
+    }
+
+    #[test]
+    fn employee_missing_id_falls_back_to_user() {
+        let json = r#"{"kind":"employee"}"#;
+        let parsed: ConversationSource = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed, ConversationSource::User);
+    }
+
+    #[test]
+    fn employee_empty_id_falls_back_to_user() {
+        let json = r#"{"kind":"employee","employeeId":""}"#;
+        let parsed: ConversationSource = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed, ConversationSource::User);
+    }
+
+    #[test]
+    fn default_is_user() {
+        assert_eq!(ConversationSource::default(), ConversationSource::User);
     }
 }
