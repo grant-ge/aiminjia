@@ -2,9 +2,12 @@ import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import { AttachmentTokenExtension } from './attachmentTokenExtension'
 import { LinkChipExtension } from './linkChipExtension'
+import { SkillTokenExtension } from './skillTokenExtension'
+import type { ComposerSkillToken } from './types'
 
 export interface BuildComposerExtensionsOptions {
   placeholder?: string
+  skills?: ComposerSkillToken[]
 }
 
 export function buildComposerExtensions(options: BuildComposerExtensionsOptions = {}) {
@@ -26,5 +29,6 @@ export function buildComposerExtensions(options: BuildComposerExtensionsOptions 
     }),
     AttachmentTokenExtension,
     LinkChipExtension,
+    SkillTokenExtension.configure({ skills: options.skills ?? [] }),
   ]
 }
