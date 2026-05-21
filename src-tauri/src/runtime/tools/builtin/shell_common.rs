@@ -6,7 +6,7 @@ use tokio::io::AsyncReadExt;
 use tokio::process::Child;
 use tokio::task::JoinHandle;
 
-use crate::runtime::cancellation::{CancellationReason, CancellationToken};
+use crate::runtime::cancellation::CancellationReason;
 use crate::runtime::tools::executor::ToolError;
 
 pub const MAX_OUTPUT_BYTES: usize = 512 * 1024;

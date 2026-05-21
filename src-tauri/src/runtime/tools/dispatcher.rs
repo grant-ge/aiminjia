@@ -377,7 +377,7 @@ impl ToolDispatcher {
 
             let should_start_new_batch = match batches.last() {
                 None => true,
-                Some(batch) if !is_concurrent => true,
+                Some(_) if !is_concurrent => true,
                 Some(batch) => !batch.concurrent,
             };
 

@@ -35,8 +35,7 @@ async fn query_engine_injects_capability_context_for_workspace_tool() {
     use app_lib::runtime::ids::RunId;
     use app_lib::runtime::state::TurnState;
     use app_lib::runtime::tools::builtin::workspace::SearchFilesRuntimeTool;
-    use app_lib::runtime::tools::description_context::ToolDescriptionContext;
-use app_lib::runtime::tools::{AllowAllPermissionPipeline, ToolDispatcher};
+    use app_lib::runtime::tools::{AllowAllPermissionPipeline, ToolDispatcher};
     use std::sync::Arc;
     use tempfile::TempDir;
 

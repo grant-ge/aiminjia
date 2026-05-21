@@ -898,7 +898,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
 
     async fn load_llm_settings_for_turn(
         &self,
-        request: &ChatTurnRequest,
+        _request: &ChatTurnRequest,
     ) -> Result<ResolvedLlmSettings, TurnError> {
         let global_settings_map = self.services.db().get_all_settings().unwrap_or_default();
         let global_settings = if global_settings_map.is_empty() {

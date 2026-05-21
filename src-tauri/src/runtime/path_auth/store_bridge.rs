@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::runtime::store::permission_store::{PermissionSource, PermissionStore, StoredPathOp};
+use crate::runtime::store::permission_store::{PermissionSource, PermissionStore};
 use super::context::{PermissionRule, RuleSource};
 use super::op::PathOp;
 

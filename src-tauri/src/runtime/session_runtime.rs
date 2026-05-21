@@ -1424,7 +1424,7 @@ mod tests {
     /// decide::is_path_allowed must return Allow without re-asking.
     #[test]
     fn path_auth_ask_persist_allow_round_trip() {
-        use crate::runtime::path_auth::context::{PermissionRule, RuleSource, ToolPermissionContext};
+        use crate::runtime::path_auth::context::{RuleSource, ToolPermissionContext};
         use crate::runtime::path_auth::decide::{self, Decision};
         use crate::runtime::path_auth::op::PathOp;
         use crate::runtime::path_auth::store_bridge::load_path_auth_entries;

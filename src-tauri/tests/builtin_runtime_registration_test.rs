@@ -6,7 +6,6 @@
 use app_lib::plugin::builtin::tools::register_builtin_tools;
 use app_lib::plugin::registry::{RequestScopedRuntimeDeps, ToolRegistry};
 use app_lib::plugin::skill_trait::{Skill, SkillState, ToolFilter};
-use app_lib::plugin::SkillRegistry;
 use app_lib::runtime::dependencies::StaticRuntimeResolver;
 use app_lib::runtime::tools::catalog::DAILY_ALLOWED_TOOLS;
 use app_lib::runtime::tools::ToolExecutionContext;
