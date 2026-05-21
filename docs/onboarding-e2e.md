@@ -1,21 +1,31 @@
 # 接入 AIjia e2e 测试：同事上手指南
 
 > 创建：2026-05-18
-> 更新：2026-05-19（tauri-pilot 改从云效 git dependency 拉，不再要求 sibling clone）
+> 更新：2026-05-21（迁移到 dual-manifest 方案，pilot 不再进主 Cargo.toml）
 > 受众：lotus-app 开发者（**本地开发**，不是 CI）
-> 关联：`docs/e2e-org1-chat-mainline.md`（CLI 工具规格）、`docs/e2e-testing-decisions.md`（选型决策）
+> 关联：`docs/superpowers/specs/2026-05-21-e2e-toolchain-dual-manifest-design.md`（架构）、`docs/e2e-org1-chat-mainline.md`（CLI 工具规格）
 
 ---
+
+## 谁需要读
+
+| 你的角色 | 需要读吗？ |
+|---|---|
+| 写业务代码（前端 / 后端） | ❌ 不需要，跳过 |
+| 写 / 跑意图测试（test-intents） | ✅ 需要 |
+| 维护 tauri-pilot 本身 | ✅ 需要 |
+
+普通业务开发：`pnpm tauri:dev` 直接跑即可，**不需要** pilot 仓权限、**不需要**任何额外配置。
 
 ## 你将获得什么
 
 跑完这份指南，你的本地环境会有：
 
-1. 一个能用的 `tauri-pilot` 命令（在 `~/.cargo/bin/`），自带 `aijia` 子命令组
+1. `tauri-pilot` 命令（在 `~/.cargo/bin/`），自带 `aijia` 子命令组
 2. AIjia dev server 用 `pnpm dev:with-pilot` 起来后，能用 `tauri-pilot aijia health-check` / `aijia send` / `aijia wait-reply` 等 16 个命令操作 webview
 3. **业务开发零负担**：`pnpm tauri:dev`（不带 e2e）跟以前一样跑，不需要装任何 tauri-pilot 相关的东西
 
-预计耗时：**首次 15–20 分钟**（含 Rust 工具链下载、tauri-pilot 编译）。日常使���零启动开销。
+预计耗时：**首次 15–20 分钟**（含 tauri-pilot CLI 编译 + 第一次跑 wrapper）。日常零启动开销。
 
 ---
 
@@ -23,7 +33,7 @@
 
 | 工具 | 推荐版本 | 检测命令 |
 |---|---|---|
-| macOS | 任意 | `sw_vers` |
+| macOS | 任意 | `sw_vers`（Windows 不支持 e2e） |
 | Rust | ≥ 1.95.0 | `rustc --version`（不够就 `rustup install 1.95.0`） |
 | pnpm | ≥ 8 | `pnpm --version`（已有的 AIjia 开发环境就够了） |
 | Tauri 2 系统依赖 | 标准 | `pnpm tauri:dev` 能跑就 OK |
@@ -34,7 +44,7 @@
 
 tauri-pilot fork 仓在云效私库 **`git@codeup.aliyun.com:renlijia/lotus/tauri-pilot.git`**，找 pzc 加入。
 
-确认权限到位的两个条件（这两个 agent 替不了你）：
+确认权限到位的两个条件：
 
 1. 你的云效账号在 `renlijia/lotus/tauri-pilot` 有读权限
 2. 你本机的 SSH 公钥已加到云效（个人 Profile → SSH Keys）
@@ -50,11 +60,33 @@ git ls-remote git@codeup.aliyun.com:renlijia/lotus/tauri-pilot.git
 # 报 repository not found → 没仓权限，找 pzc 加
 ```
 
-通过这一步之后，**剩下的环境配置 agent 全自动**（`pnpm dev:with-pilot` 的 `predev` hook 会跑 `scripts/ensure-e2e-prereq.sh`）。
+---
+
+## 第二步：clone tauri-pilot 到 lotus-app **同级目录**
+
+dual-manifest 方案要求 `tauri-pilot` 跟 `lotus-app` 同级 sibling clone。`.e2e/Cargo.toml` 用相对路径 `../../../tauri-pilot/crates/tauri-plugin-pilot` 引用 pilot crate。
+
+```bash
+cd /your/IdeaProjects        # ← lotus-app 父目录
+git clone git@codeup.aliyun.com:renlijia/lotus/tauri-pilot.git
+
+# 验证目录布局：
+# IdeaProjects/
+# ├── lotus-app/
+# └── tauri-pilot/
+#     └── crates/tauri-plugin-pilot/      ← 关键路径
+```
+
+验证布局：
+
+```bash
+ls -d ../tauri-pilot/crates/tauri-plugin-pilot
+# 期望：路径存在
+```
 
 ---
 
-## 第二步：启动 AIjia 带 e2e 模式（一行命令）
+## 第三步：启动 AIjia 带 e2e 模式
 
 ```bash
 cd lotus-app
@@ -65,15 +97,14 @@ pnpm dev:with-pilot
 `dev:with-pilot` 会自动：
 
 1. **预检（`predev:with-pilot` hook 跑 `scripts/ensure-e2e-prereq.sh`）**：
-   - 检测 `~/.cargo/config.toml` 是否含 `[net] git-fetch-with-cli = true`，没有自动加（让 cargo 走系统 git，避开 libgit2 不识别 ed25519 / macOS keychain key 的问题）
-   - 检测 `jq` 是否在 PATH（bundled runtime 校验脚本需要），没装自动 `brew install` (macOS) / `apt-get install` (Linux)
-   - 软检测 ssh-agent 是否有 identity；没有也不阻塞（macOS keychain 整合的 key 是 lazy load 的）
-2. `ensure:runtime`：校验 / 下载内置运行时（Node + Python + uv）到 `src-tauri/resources/runtime/<platform>/`
-3. `tauri dev --features e2e`：触发 build.rs 复制 `capabilities/pilot.json`、cargo 从云效拉 tauri-plugin-pilot 源码（首次 ~30s，之后走 `~/.cargo/git/` 缓存）、plugin 编进来 + lib.rs 注册
+   - 检测 `jq` 是否在 PATH（bundled runtime 校验脚本需要），没装自动 `brew install`
+   - 软检测 ssh-agent identity（不阻塞，pilot 走的是本地 path dep 不需要 ssh）
+2. `ensure:runtime`：校验 / 下载内置运行时（Node + Python + uv）
+3. `cd src-tauri/.e2e && tauri dev --features e2e`：进入 wrapper crate 目录，触发 build.rs 复制 `capabilities/pilot.json`、cargo 从本地 sibling path 编译 tauri-plugin-pilot、plugin 编进来 + lib.rs 注册
 
 跳过预检：`SKIP_E2E_PREREQ=1 pnpm dev:with-pilot`（不推荐，自己确保环境齐）。
 
-首次跑总时长：~10 分钟（Rust 编译占大头）。
+首次跑总时长：~5 分钟（首次 wrapper 全量编译；之后增量 ~20s）。
 
 启动后验证 plugin 真注入了：
 
@@ -84,9 +115,9 @@ ls /tmp/tauri-pilot-com.aijia.app.sock
 
 ---
 
-## 第三步（可选）：装 `tauri-pilot` CLI 跑 aijia 命令
+## 第四步（可选）：装 `tauri-pilot` CLI 跑 aijia 命令
 
-**只有当你要跑** `tauri-pilot aijia health-check` / `aijia send` 这些 e2e 命令时才需要。第二步起 app 不需要 CLI。
+**只有当你要跑** `tauri-pilot aijia health-check` / `aijia send` 这些 e2e 命令时才需要。第三步起 app 不需要 CLI。
 
 ```bash
 cargo install \
@@ -124,9 +155,26 @@ tauri-pilot aijia health-check
 
 ---
 
-## 第四步：常用命令速查
+## 架构原理（为什么不直接 `tauri dev`）
 
-完整 16 个命令文档：tauri-pilot 仓 `SKILL.md`（云效在线浏览 `git@codeup.aliyun.com:renlijia/lotus/tauri-pilot` → SKILL.md）的 "App-specific subcommand groups" 章节。
+主仓 `src-tauri/Cargo.toml` **不含** `tauri-plugin-pilot` dep——让没 codeup 权限的同事和 GitHub CI runner 都能 `pnpm tauri:dev` / `cargo build` 直接通过。
+
+e2e 单独一份 wrapper crate 在 `src-tauri/.e2e/`：
+
+- `src-tauri/.e2e/Cargo.toml` 含 `tauri-plugin-pilot = { path = "../../../tauri-pilot/crates/tauri-plugin-pilot", optional = true }`
+- `src-tauri/.e2e/tauri.conf.json` 是主配置的副本，相对路径加一层 `../`
+- `src-tauri/.e2e/Cargo.lock` 独立，含 pilot entry，跟主 `Cargo.lock` 完全隔离
+- `src-tauri/.e2e/src` / `build.rs` / 资源目录 全部 symlink 回主 `src-tauri/` —— 不复制源码
+
+所以 `pnpm dev:with-pilot` 内部就是 `cd src-tauri/.e2e && tauri dev --features e2e`。
+
+详见 spec：`docs/superpowers/specs/2026-05-21-e2e-toolchain-dual-manifest-design.md`。
+
+---
+
+## 常用命令速查
+
+完整 16 个命令文档：tauri-pilot 仓 `SKILL.md` 的 "App-specific subcommand groups" 章节。
 
 最常用的几个：
 
@@ -167,19 +215,23 @@ tauri-pilot aijia screenshot --label baseline    # PNG 到 /tmp/aijia-e2e-baseli
 
 ## 常见问题
 
-### Q1. `cargo install` 卡在某个 crate 半天没动
+### Q1. `pnpm dev:with-pilot` 报错 `path source '../../../tauri-pilot/...' does not exist`
 
-进入 tauri-pilot 仓跑 `cargo build --bin tauri-pilot --release` 直接看到底卡在哪——一般是 wry / tauri 这种大依赖编译慢，等就行。如果是网络拉不到，配 cargo 镜像（rsproxy.cn 或 ustc）。
+你没在 `lotus-app` 的同级目录 clone pilot 仓。回到第二步。
 
-### Q2. `tauri-pilot ping` 返回 "No tauri-pilot socket found"
+### Q2. 我加了个新 dep 到主 `Cargo.toml`，`pnpm dev:with-pilot` 编译失败说缺 dep
+
+`.e2e/Cargo.toml` 是手动维护的主 Cargo.toml 副本。把你新加的 dep 行也复制到 `.e2e/Cargo.toml` 同位置即可（频率低，~月一次）。
+
+### Q3. `tauri-pilot ping` 返回 "No tauri-pilot socket found"
 
 dev server 没起来，或者 dev server 起来了但 plugin 没注入。检查：
 
 1. AIjia 窗口确实开着
-2. lotus-app 是 dev 构建（`pnpm tauri:dev`），不是 release——release 包会把整个 plugin 剔除
+2. 用的是 `pnpm dev:with-pilot` 不是 `pnpm tauri:dev`（后者不含 pilot plugin）
 3. `ls /tmp/tauri-pilot-*.sock` 应该有一条 `tauri-pilot-com.aijia.app.sock`
 
-### Q3. `tauri-pilot aijia health-check` 报 `window.__aijia missing`
+### Q4. `tauri-pilot aijia health-check` 报 `window.__aijia missing`
 
 lotus-app 的 `src/main.tsx` 应该有这段（`import.meta.env.DEV` 守卫）：
 
@@ -194,55 +246,11 @@ if (import.meta.env.DEV) {
 
 如果你拉的 lotus-app 版本太老没这段，pull 最新 main。
 
-### Q4. `pnpm dev:with-pilot` 失败：`failed to authenticate when downloading repository` / `no authentication methods succeeded`
+### Q5. 我想改 aijia 子命令 / 加新命令
 
-正常情况下不会发生 —— `predev:with-pilot` hook 已自动写入 `~/.cargo/config.toml` 的 `git-fetch-with-cli = true`。如果还看到这个错，说明：
+直接在 sibling `../tauri-pilot/` 仓里改 → wrapper 跑 `pnpm dev:with-pilot` 自动从本地 path 拉到最新代码（因为是 `path = ...` 引用，不走 git cache）。改完测试 OK 后在 tauri-pilot 仓 commit + push 到云效 main，再让其他人 `git pull`。
 
-1. 跑时设了 `SKIP_E2E_PREREQ=1` 跳过自检 → 取消这个环境变量重新跑
-2. `~/.cargo/config.toml` 被你或其他工具改回去了 → 手动确认它含 `[net] git-fetch-with-cli = true`
-3. 真有 ssh key 问题 → 直接测系统 git：
-
-```bash
-git ls-remote git@codeup.aliyun.com:renlijia/lotus/tauri-pilot.git
-```
-
-- 报 `Permission denied (publickey)` → 你的 ssh key 没在云效注册，去云效 Profile → SSH 公钥 添加
-- 报 `repository not found` → 你的账号没仓权限，找 pzc 加
-
-### Q5. `tauri-pilot aijia screenshot` 30 秒超时
-
-老版本 plugin 没有 `skipFonts:true` 默认。需要让 cargo 重新拉云效 tauri-pilot 仓的最新 main：
-
-```bash
-# 在 lotus-app 这边
-cd ~/IdeaProjects/lotus-app/src-tauri
-cargo update -p tauri-plugin-pilot   # 强制重新拉 git dep 最新 commit
-# 然后重启 dev server
-pkill -f 'target/debug/aijia'
-rm -f /tmp/tauri-pilot-com.aijia.app.sock
-pnpm dev:with-pilot
-```
-
-### Q6. 我想改 aijia 子命令 / 加新命令
-
-不建议直接改 `~/.cargo/git/` 缓存（cargo 会覆盖）。正经流程：
-
-1. **本地 clone** tauri-pilot 到任意目录 + 改代码：
-   ```bash
-   git clone git@codeup.aliyun.com:renlijia/lotus/tauri-pilot.git ~/workspace/tauri-pilot
-   ```
-2. **临时让 lotus-app 走本地路径**：在 `~/.cargo/config.toml` 加：
-   ```toml
-   [patch."ssh://git@codeup.aliyun.com/renlijia/lotus/tauri-pilot.git"]
-   tauri-plugin-pilot = { path = "/Users/<you>/workspace/tauri-pilot/crates/tauri-plugin-pilot" }
-   ```
-   这样 cargo 解析 git dep 时会用你的本地 patch 路径。改完即时生效，不用 push。
-3. **改完测试 OK 后**：在 tauri-pilot 仓 commit + push 到云效 main：
-   ```bash
-   cd ~/workspace/tauri-pilot && git push origin main
-   ```
-4. **其他人**下次 `cargo update -p tauri-plugin-pilot` 就拿到了。
-5. **撤销本地 patch**：把 `~/.cargo/config.toml` 里那段 `[patch.*]` 删掉。
+CLI binary 想更新（推了新 commit 后），重跑第四步的 `cargo install` 命令带 `--force` 即可。
 
 主要文件：
 
@@ -250,9 +258,11 @@ pnpm dev:with-pilot
 - `crates/tauri-pilot-cli/src/aijia.rs` — 16 个命令实现 + 共享 helper
 - `crates/tauri-plugin-pilot/js/bridge.js` — 注入 webview 的 JS
 
-CLI binary 想更新（你或别人推了新 commit 后），重跑第三步的 `cargo install` 命令带 `--force` 即可。
-
 完整的 "添加新 aijia 子命令" 流程见 tauri-pilot 仓 `SKILL.md` 的 "Adding a new aijia subcommand" 段。
+
+### Q6. Windows 能跑 e2e 吗？
+
+不能。pilot 工具链当前 macOS-only。Windows 同事跑业务开发不受影响（主 `pnpm tauri:dev` 完全不依赖 pilot）。
 
 ---
 

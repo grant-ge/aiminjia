@@ -9,13 +9,13 @@ rust-version = "1.77.2"
 
 [lib]
 name = "app_lib"
+path = "src/lib.rs"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2.5.4", features = [] }
 
 [dependencies]
-# Tauri core
 tauri = { version = "2.10.0", features = ["devtools"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
@@ -25,40 +25,32 @@ tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 tauri-plugin-notification = "2"
 
-# Serialization
+tauri-plugin-pilot = { path = "../../../tauri-pilot/crates/tauri-plugin-pilot", optional = true }
+
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 base64 = "0.22"
 serde_yaml = "0.9"
 gray_matter = "0.2"
 
-# Async runtime
 tokio = { version = "1", features = ["full"] }
 
-# HTTP client (for LLM API calls)
 reqwest = { version = "0.12", features = ["json", "stream"] }
 
-# Encryption
 aes-gcm = "0.10"
 
-# Logging
 log = "0.4"
 
-# Home directory resolution
 dirs = "6"
 
-# Error handling
 thiserror = "2"
 anyhow = "1"
 
-# UUID generation
 uuid = { version = "1", features = ["v4"] }
 
-# Date/time
 chrono = { version = "0.4", features = ["serde"] }
 chrono-tz = "0.9"
 
-# Async utilities
 futures = "0.3"
 once_cell = "1"
 tokio-tungstenite = { version = "0.26", features = ["rustls-tls-native-roots"] }
@@ -71,18 +63,15 @@ globset = "0.4"
 
 urlencoding = "2"
 
-# Plugin system
 async-trait = "0.1"
 zip = "2"
 tar = "0.4"
 flate2 = "1"
 
-# File watching (skill dev mode hot-reload)
 notify = "7"
 lru = "0.12"
 regex = "1"
 
-# Unix process inspection (kill(pid, 0) for orphan lock detection)
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
@@ -104,11 +93,7 @@ mockito = "1"
 
 [features]
 default = []
-# Enable E2E UI automation. The actual pilot dep + plugin registration lives
-# in the wrapper crate at src-tauri/.e2e/, so this feature is a no-op in the
-# main manifest. Contributors without codeup access can build normally; e2e
-# work is done via `pnpm dev:with-pilot` which targets the wrapper.
-e2e = []
+e2e = ["dep:tauri-plugin-pilot"]
 
 [profile.dev]
 incremental = false
@@ -124,4 +109,4 @@ strip = true
 opt-level = "s"
 lto = true
 codegen-units = 1
-panic = "unwind" # TEMP v0.5.6: switched to unwind so panic hook can flush logs before abort
+panic = "unwind"
