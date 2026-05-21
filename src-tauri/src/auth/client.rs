@@ -50,6 +50,8 @@ pub struct AuthTenantInfo {
     #[serde(default)]
     pub balance: String,
     #[serde(default)]
+    pub r#type: String,
+    #[serde(default)]
     pub product_name: Option<String>,
     #[serde(default)]
     pub logo_url: Option<String>,
@@ -81,6 +83,7 @@ impl From<AuthTenantInfo> for TenantInfo {
             id: t.id,
             name: t.name,
             balance: t.balance,
+            tenant_type: t.r#type,
             product_name: t.product_name,
             logo_url: t.logo_url,
             accent_color: t.accent_color,
@@ -330,6 +333,79 @@ impl AuthClient {
         Ok(())
     }
 
+    /// Request a verification code via SMS for registration.
+    /// Hits tenant-portal `/api/auth/send-code`.
+    pub async fn send_sms_code(&self, phone: &str) -> Result<()> {
+        let url = format!("{}/api/auth/send-code", BASE_URL);
+        let resp = self
+            .client
+            .post(&url)
+            .json(&json!({ "phone": phone }))
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(parse_api_error(status.as_u16(), &body));
+        }
+        Ok(())
+    }
+
+    /// Request a verification code via email for registration.
+    /// Hits tenant-portal `/api/auth/send-email-code`.
+    pub async fn send_email_code(&self, email: &str) -> Result<()> {
+        let url = format!("{}/api/auth/send-email-code", BASE_URL);
+        let resp = self
+            .client
+            .post(&url)
+            .json(&json!({ "email": email }))
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(parse_api_error(status.as_u16(), &body));
+        }
+        Ok(())
+    }
+
+    /// Register a new personal account via phone or email.
+    /// Hits tenant-portal `/api/auth/register`.
+    ///
+    /// `method` must be `"phone"` or `"email"`. The matching identifier
+    /// (phone or email) must be supplied; the other can be empty.
+    /// `name` is the optional display name shown to the user post-login.
+    pub async fn register(
+        &self,
+        method: &str,
+        phone: &str,
+        email: &str,
+        code: &str,
+        password: &str,
+        name: &str,
+    ) -> Result<()> {
+        let url = format!("{}/api/auth/register", BASE_URL);
+        let resp = self
+            .client
+            .post(&url)
+            .json(&json!({
+                "method": method,
+                "phone": phone,
+                "email": email,
+                "code": code,
+                "password": password,
+                "name": name,
+            }))
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(parse_api_error(status.as_u16(), &body));
+        }
+        Ok(())
+    }
+
     /// Get current user + tenant profile (including latest branding).
     /// Uses session_key auth (Bearer), no token rotation.
     pub async fn get_profile(&self, session_key: &str) -> Result<(AuthUserInfo, AuthTenantInfo)> {
@@ -353,6 +429,51 @@ impl AuthClient {
         let tenant: AuthTenantInfo = serde_json::from_value(body["tenant"].clone())
             .map_err(|e| anyhow!("Failed to parse tenant profile: {}", e))?;
         Ok((user, tenant))
+    }
+
+    /// Fetch personal-tenant billing summary (`/v1/billing/summary`).
+    pub async fn get_billing_summary(
+        &self,
+        session_key: &str,
+    ) -> Result<crate::transport::tauri_commands::billing::BillingSummary> {
+        let url = format!("{}/v1/billing/summary", BASE_URL);
+        let resp = self
+            .client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", session_key))
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(parse_api_error(status.as_u16(), &body));
+        }
+        Ok(resp.json().await?)
+    }
+
+    /// Fetch a page of usage records (`/v1/billing/usage-records?page=&size=`).
+    pub async fn get_billing_usage_records(
+        &self,
+        session_key: &str,
+        page: u32,
+        size: u32,
+    ) -> Result<crate::transport::tauri_commands::billing::UsageRecordsPage> {
+        let url = format!(
+            "{}/v1/billing/usage-records?page={}&size={}",
+            BASE_URL, page, size
+        );
+        let resp = self
+            .client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", session_key))
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(parse_api_error(status.as_u16(), &body));
+        }
+        Ok(resp.json().await?)
     }
 }
 
@@ -390,6 +511,13 @@ fn localize_error(msg: &str) -> &str {
         "Insufficient balance" => "账户余额不足，请联系管理员充值",
         "Rate limit exceeded" => "请求过于频繁，请稍后再试",
         "Password must be at least 8 characters" => "密码长度至少 8 个字符",
+        "invalid verification code" | "Invalid verification code" => "验证码错误或已过期",
+        "verification code expired" | "Verification code expired" => "验证码已过期，请重新获取",
+        "phone already registered" | "Phone already registered" => "该手机号已被注册",
+        "email already registered" | "Email already registered" => "该邮箱已被注册",
+        "invalid phone number format" | "Invalid phone number format" => "手机号格式不正确",
+        "invalid email format" | "Invalid email format" => "邮箱格式不正确",
+        "Personal account not registered" => "该手机号/邮箱尚未注册个人账号，请先注册",
         _ => msg,
     }
 }

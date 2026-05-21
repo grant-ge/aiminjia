@@ -55,6 +55,7 @@ pub fn create_conversation(base_dir: &Path, id: &str, title: &str) -> StorageRes
         source: Default::default(),
         authorized_workspace: None,
         source_label: None,
+        active_team_name: None,
     };
     atomic_write_json(&conv_meta_path(base_dir, id), &meta)?;
 
@@ -241,6 +242,17 @@ pub fn get_conversations(base_dir: &Path) -> StorageResult<Vec<serde_json::Value
             if let Some(eid) = &e.employee_id {
                 obj["employeeId"] = serde_json::Value::String(eid.clone());
             }
+            // Surface kind + sourceLabel + workspaceName from the index mirror so
+            // the sidebar can render groupings without fan-out reads of conv.json.
+            // Expert team id is intentionally NOT here (spec §1.3 — index carries
+            // no IDs); callers needing teamId must read conv.json via getConversationSource.
+            obj["kind"] = serde_json::to_value(e.kind).unwrap_or(serde_json::Value::Null);
+            if let Some(label) = &e.source_label {
+                obj["sourceLabel"] = serde_json::Value::String(label.clone());
+            }
+            if let Some(ws) = &e.workspace_name {
+                obj["workspaceName"] = serde_json::Value::String(ws.clone());
+            }
             obj
         })
         .collect();
@@ -373,9 +385,14 @@ pub fn reconcile_index(base_dir: &Path) -> StorageResult<()> {
                     updated_at: meta.updated_at,
                     is_archived: meta.is_archived,
                     employee_id: meta.employee_id,
-                    kind: Default::default(),
+                    kind: match &meta.source {
+                        ConversationSource::User => ConversationKind::User,
+                        ConversationSource::Employee { .. } => ConversationKind::Employee,
+                        ConversationSource::ExpertTeam { .. } => ConversationKind::ExpertTeam,
+                        ConversationSource::Im => ConversationKind::Im,
+                    },
                     source_label: meta.source_label,
-                    workspace_name: None,
+                    workspace_name: meta.authorized_workspace.as_ref().map(|w| w.display_name.clone()),
                 });
                 info!("Reconciled: added missing index entry for {}", dir_id);
                 changed = true;
@@ -566,6 +583,7 @@ mod tests {
             source: Default::default(),
             authorized_workspace: None,
             source_label: None,
+            active_team_name: None,
         };
         atomic_write_json(&orphan_dir.join("conv.json"), &meta).unwrap();
 

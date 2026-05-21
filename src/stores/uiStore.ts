@@ -13,6 +13,7 @@ export type Route =
 
 export type SettingsModalKey =
   | 'account'
+  | 'account-billing'
   | 'usage'
   | 'permissions'
   | 'mcp'

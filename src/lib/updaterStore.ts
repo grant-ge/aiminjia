@@ -73,11 +73,11 @@ void readPending
 
 async function writePending(meta: PendingMeta): Promise<void> {
   const { dir, file } = await pendingPath()
-  try {
-    await mkdir(dir, { recursive: true })
-  } catch {
-    /* dir may already exist */
-  }
+  // recursive:true makes mkdir idempotent on existing dirs. Don't swallow
+  // errors — a real failure here (e.g. capability scope misconfigured) used
+  // to silently bubble up as "No such file or directory" on the subsequent
+  // writeTextFile, which we've debugged the hard way before.
+  await mkdir(dir, { recursive: true })
   await writeTextFile(file, JSON.stringify(meta, null, 2))
 }
 

@@ -78,15 +78,28 @@ impl RuntimeTool for TaskOutputRuntimeTool {
             .require_paths()
             .map_err(|e| ToolError::ExecutionFailed(format!("user scope unavailable: {e}")))?;
 
-        // Look up the transcript in 3 known locations (priority order):
-        //   1. conv_dir/teammates/{task_id}.jsonl    — new Teammate writes here
-        //   2. conv_dir/subagents/{task_id}.jsonl    — new AsyncOneShot writes here
-        //   3. subagent_transcripts/{task_id}.jsonl  — legacy spawn_subagent (global)
+        // Look up the transcript in known locations (priority order):
+        //   1. conv_dir/teams/{any}/teammates/{task_id}.jsonl
+        //      — Teammate writes here under per-team disk layout v2 (spec §3).
+        //   2. conv_dir/subagents/{task_id}.jsonl
+        //      — new AsyncOneShot writes here.
+        //   3. subagent_transcripts/{task_id}.jsonl
+        //      — legacy spawn_subagent (global).
         // Falling back to the legacy global path keeps existing async sub-agents
         // working with no behavior change.
-        let mut candidates: Vec<std::path::PathBuf> = Vec::with_capacity(3);
+        let mut candidates: Vec<std::path::PathBuf> = Vec::new();
         if let Some(conv_dir) = ctx.conv_dir.as_ref() {
-            candidates.push(conv_dir.join("teammates").join(format!("{task_id}.jsonl")));
+            if let Ok(entries) = std::fs::read_dir(conv_dir.join("teams")) {
+                for entry in entries.flatten() {
+                    if let Some(team_name) = entry.file_name().to_str() {
+                        let p = crate::runtime::agent::team_paths::TeamPaths::for_team(
+                            conv_dir, team_name,
+                        )
+                        .teammate_transcript(task_id);
+                        candidates.push(p);
+                    }
+                }
+            }
             candidates.push(conv_dir.join("subagents").join(format!("{task_id}.jsonl")));
         }
         candidates.push(output_writer::transcript_path(

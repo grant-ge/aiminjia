@@ -61,8 +61,6 @@ export function SkillDetailPage({ skillId }: SkillDetailPageProps) {
             ]}
           />
         }
-        padding="px-10 pt-10 pb-8"
-        gap="gap-4"
       >
         <div className="text-sm text-muted-foreground">技能不存在或尚未加载。</div>
       </PageSectionShell>
@@ -81,8 +79,6 @@ export function SkillDetailPage({ skillId }: SkillDetailPageProps) {
           ]}
         />
       }
-      padding="px-10 pt-7 pb-8"
-      gap="gap-6"
     >
       <SkillDetailHero
         iconNode={<Sparkles className="h-9 w-9 text-primary" />}

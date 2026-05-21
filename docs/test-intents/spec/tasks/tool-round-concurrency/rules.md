@@ -4,59 +4,44 @@
 
 ---
 
-## 意图 1：两个 concurrency-safe 工具可以同时执行，最大并发数为 2
+## 意图 1：同一 turn 内两个 concurrency-safe 工具并发执行，两个 ToolCallExecuting 事件出现时间差不超过 500ms
 
 **场景**
-一轮 LLM 返回两个都标记为 concurrency-safe 的工具调用时，系统应该允许它们并发执行，而不是强制串行。否则父代理会把本可并行的工作慢一倍。
+LLM 在同一轮返回两个标记为 concurrency-safe 的工具调用，系统应并发执行，不应等第一个完成后再开始第二个。否则父代理会把本可并行的工作慢一倍。
 
 **前提**
-- 注册两个 RuntimeTool：
-  - `safe_tool_a`
-  - `safe_tool_b`
-- 这两个工具都返回 `is_concurrency_safe = true`
-- 它们各自的输入固定为：
-  - `safe_tool_a` 的 input 是 `{ "label": "A" }`
-  - `safe_tool_b` 的 input 是 `{ "label": "B" }`
-- 两个工具都会记录自己的 start / finish 时刻，并共享一个 inflight 计数器
-- LLM 在同一轮里返回两个 tool call，顺序为：
-  1. `safe_tool_a`
-  2. `safe_tool_b`
+- 使用有效 API key，注册了两个执行各需约 1 秒的 concurrency-safe 工具（如两个执行 `sleep 1` 的 bash 命令工具）
+- 新建对话
 
 **操作**
-1. 执行这一轮 tool round
-2. 读取两个工具的开始时间、结束时间和最大 inflight 计数
+- 在输入框输入能让 LLM 同时调用这两个工具的消息，点击发送
+- 等待两个工具执行完成，turn 结束
 
-**断言**
-- `safe_tool_a` 和 `safe_tool_b` 的执行区间有重叠
-- 最大 inflight 计数等于 `2`
-- 两个工具都返回成功结果
-- `ToolCallCompleted` 事件各出现 1 次
+**验收标准**
+- EventBus 中 `ToolCallExecuting` 事件出现 2 次
+- EventBus 中 `ToolCallCompleted` 事件出现 2 次
+- 两个 `ToolCallExecuting` 事件的出现时间差 ≤ 500ms（说明并发启动，而非串行）
+- turn 总耗时 ≤ 单个工具耗时 × 1.5（说明并发执行，而非串行叠加）
+- `messages.jsonl` 中包含两条 role 为 `"tool"` 的记录
 
 ---
 
-## 意图 2：一安全一非安全时，非安全工具必须串行执行，最大并发数为 1
+## 意图 2：同一 turn 内一个 safe 工具和一个 unsafe 工具，unsafe 工具必须等 safe 工具结束后才开始
 
 **场景**
-如果同一轮里同时出现一个 safe 工具和一个 unsafe 工具，系统不能把它们并发起来。非安全工具必须等前一个结束后再开始。
+如果同一轮里同时出现一个 safe 工具和一个 unsafe 工具，系统不能把它们并发起来。非安全工具必须等前一个结束后再开始，防止并发副作用。
 
 **前提**
-- 注册两个 RuntimeTool：
-  - `safe_tool_a`
-  - `unsafe_tool_c`
-- `safe_tool_a` 返回 `is_concurrency_safe = true`
-- `unsafe_tool_c` 返回 `is_concurrency_safe = false`
-- 两个工具都记录自己的 start / finish 时刻，并共享一个 inflight 计数器
-- LLM 在同一轮里返回两个 tool call，顺序为：
-  1. `safe_tool_a`
-  2. `unsafe_tool_c`
+- 使用有效 API key，注册了一个 concurrency-safe 工具和一个 concurrency-unsafe 工具，各执行约 1 秒
+- 新建对话
 
 **操作**
-1. 执行这一轮 tool round
-2. 读取两个工具的开始时间、结束时间和最大 inflight 计数
+- 在输入框输入能让 LLM 同时调用这两个工具的消息，点击发��
+- 等待两个工具执行完成，turn 结束
 
-**断言**
-- `unsafe_tool_c` 的开始时间晚于 `safe_tool_a` 的结束时间，或者两者没有重叠
-- 最大 inflight 计数等于 `1`
-- 两个工具都返回成功结果
-- `unsafe_tool_c` 不会在 `safe_tool_a` 还在运行时启动
-
+**验收标准**
+- EventBus 中 `ToolCallExecuting` 事件出现 2 次
+- EventBus 中 `ToolCallCompleted` 事件出现 2 次
+- unsafe 工具的 `ToolCallExecuting` 事件，晚于 safe 工具的 `ToolCallCompleted` 事件出现（即 unsafe 工具在 safe 工具结束后才启动）
+- turn 总耗时 ≥ 单个工具耗时 × 1.8（说明串行执行，两个工具没有重叠）
+- `messages.jsonl` 中包含两条 role 为 `"tool"` 的记录，均为成功结果

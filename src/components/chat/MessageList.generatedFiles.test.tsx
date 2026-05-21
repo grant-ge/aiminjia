@@ -5,14 +5,18 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 const openGeneratedFileMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
 const openPreviewMock = vi.hoisted(() => vi.fn())
 
-vi.mock('@/lib/tauri', () => ({
-  openGeneratedFile: openGeneratedFileMock,
-  revealFileInFolder: vi.fn().mockResolvedValue(undefined),
-  getTeamOverview: vi.fn().mockResolvedValue({ conversationId: '', teams: [] }),
-  getTeammateTranscript: vi.fn().mockResolvedValue([]),
-  onMessageUpdated: vi.fn().mockResolvedValue(() => {}),
-  onToolCompleted: vi.fn().mockResolvedValue(() => {}),
-}))
+vi.mock('@/lib/tauri', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/tauri')>('@/lib/tauri')
+  return {
+    ...actual,
+    openGeneratedFile: openGeneratedFileMock,
+    revealFileInFolder: vi.fn().mockResolvedValue(undefined),
+    getTeamOverview: vi.fn().mockResolvedValue({ conversationId: '', teams: [] }),
+    getTeammateTranscript: vi.fn().mockResolvedValue([]),
+    onMessageUpdated: vi.fn().mockResolvedValue(() => {}),
+    onToolCompleted: vi.fn().mockResolvedValue(() => {}),
+  }
+})
 
 vi.mock('@/stores/generatedFilePreviewStore', () => ({
   useGeneratedFilePreviewStore: vi.fn((selector: (state: { openPreview: typeof openPreviewMock; clearIfConversationChanged: () => void }) => unknown) => selector({

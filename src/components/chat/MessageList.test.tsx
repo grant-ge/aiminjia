@@ -9,14 +9,18 @@ import { useNotificationStore } from '@/stores/notificationStore'
 import { openGeneratedFile, revealFileInFolder } from '@/lib/tauri'
 import type { GeneratedFile, Message } from '@/types/message'
 
-vi.mock('@/lib/tauri', () => ({
-  openGeneratedFile: vi.fn().mockResolvedValue(undefined),
-  revealFileInFolder: vi.fn().mockResolvedValue(undefined),
-  getTeamOverview: vi.fn().mockResolvedValue({ conversationId: '', teams: [] }),
-  getTeammateTranscript: vi.fn().mockResolvedValue([]),
-  onMessageUpdated: vi.fn().mockResolvedValue(() => {}),
-  onToolCompleted: vi.fn().mockResolvedValue(() => {}),
-}))
+vi.mock('@/lib/tauri', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/tauri')>('@/lib/tauri')
+  return {
+    ...actual,
+    openGeneratedFile: vi.fn().mockResolvedValue(undefined),
+    revealFileInFolder: vi.fn().mockResolvedValue(undefined),
+    getTeamOverview: vi.fn().mockResolvedValue({ conversationId: '', teams: [] }),
+    getTeammateTranscript: vi.fn().mockResolvedValue([]),
+    onMessageUpdated: vi.fn().mockResolvedValue(() => {}),
+    onToolCompleted: vi.fn().mockResolvedValue(() => {}),
+  }
+})
 
 const openGeneratedFileMock = vi.mocked(openGeneratedFile)
 const revealFileInFolderMock = vi.mocked(revealFileInFolder)

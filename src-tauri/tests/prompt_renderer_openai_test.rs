@@ -1,5 +1,5 @@
 use app_lib::runtime::chat::prompt::{
-    ChatPromptRenderer, PromptAssembly, PromptBlock, PromptCachePolicy, PromptSectionId,
+    ChatPromptRenderer, PromptAssembly, PromptBlock, PromptSectionId,
 };
 
 #[test]

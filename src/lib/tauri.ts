@@ -612,6 +612,38 @@ export function getTeammateTranscript(
 }
 
 /**
+ * PR9: one line out of `<conv>/teams/{team}/team-chat.jsonl`.  The shape
+ * matches what the writer (SendMessage tool) puts on disk.
+ */
+export interface TeamChatMessage {
+  ts: string
+  from: string
+  to: string
+  text: string
+  variant?: string
+}
+
+/**
+ * PR9: read the (optionally filtered/limited) tail of a team's team-chat.jsonl.
+ *
+ * - `sinceTs` filters out lines with `ts <= sinceTs` (string comparison, RFC3339-safe).
+ * - `limit` caps the result length.
+ */
+export function teamChatMessages(
+  conversationId: string,
+  teamName: string,
+  sinceTs?: string,
+  limit?: number,
+): Promise<TeamChatMessage[]> {
+  return invoke<TeamChatMessage[]>('team_chat_messages', {
+    conversationId,
+    teamName,
+    sinceTs,
+    limit,
+  })
+}
+
+/**
  * Create a new empty conversation.
  *
  * @returns The ID of the newly created conversation
@@ -677,6 +709,27 @@ export function clearConversationSource(conversationId: string): Promise<void> {
 
 export function getConversationSource(conversationId: string): Promise<ConversationSourceDto> {
   return invoke('get_conversation_source', { conversationId })
+}
+
+/**
+ * Full meta for a single conversation, including fields not present in the
+ * lightweight sidebar index (e.g. `activeTeamName`). Returns `null` if the
+ * conversation does not exist or its `conv.json` is unreadable.
+ */
+export interface ConversationMetaDto {
+  id: string
+  title: string
+  createdAt: string
+  updatedAt: string
+  isArchived: boolean
+  employeeId?: string | null
+  activeTeamName?: string | null
+}
+
+export function getConversationMeta(
+  conversationId: string,
+): Promise<ConversationMetaDto | null> {
+  return invoke<ConversationMetaDto | null>('get_conversation_meta', { conversationId })
 }
 
 // ---------------------------------------------------------------------------
@@ -1132,6 +1185,9 @@ export interface UploadDiagnosticsResult {
   events_uploaded: number
   app_log_lines_uploaded: number
   bad_metrics_lines: number
+  /** SLS console deep-link pre-filtered by upload_session_id, when the gateway
+   * returned one. Empty string when the field is absent (older gateway). */
+  sls_url: string
 }
 
 /**
@@ -1244,7 +1300,7 @@ export function getPluginInfo(): Promise<PluginInfo> {
 export interface CloudAuthInfo {
   loggedIn: boolean
   user: { id: number; name: string; username: string } | null
-  tenant: { id: number; name: string; balance: string; productName?: string; logoUrl?: string; accentColor?: string; primaryColor?: string; bgColor?: string; sidebarBgColor?: string; fontFamily?: string } | null
+  tenant: { id: number; name: string; balance: string; tenantType?: string; productName?: string; logoUrl?: string; accentColor?: string; primaryColor?: string; bgColor?: string; sidebarBgColor?: string; fontFamily?: string } | null
   models: CloudModel[]
 }
 
@@ -1318,6 +1374,56 @@ export function getCloudModels(): Promise<CloudModel[]> {
  */
 export function cloudChangePassword(oldPassword: string, newPassword: string): Promise<void> {
   return invoke<void>('cloud_change_password', { oldPassword, newPassword })
+}
+
+/**
+ * Cached brand snapshot persisted at `~/.renlijia/users/{scope}/brand.json`.
+ * Used to re-apply the last tenant's branding on the login page after logout.
+ */
+export interface BrandSnapshot {
+  productName?: string
+  logoUrl?: string
+  accentColor?: string
+  primaryColor?: string
+  bgColor?: string
+  sidebarBgColor?: string
+  fontFamily?: string
+}
+
+/** Read the cached brand snapshot for the last-active account on this machine. */
+export function getLastBrand(): Promise<BrandSnapshot | null> {
+  return invoke<BrandSnapshot | null>('get_last_brand')
+}
+
+/** Persist the brand snapshot for the currently-active account. */
+export function saveLastBrand(brand: BrandSnapshot): Promise<void> {
+  return invoke<void>('save_last_brand', { brand })
+}
+
+/** Send an SMS verification code for personal registration. */
+export function cloudSendSmsCode(phone: string): Promise<void> {
+  return invoke<void>('cloud_send_sms_code', { phone })
+}
+
+/** Send an email verification code for personal registration. */
+export function cloudSendEmailCode(email: string): Promise<void> {
+  return invoke<void>('cloud_send_email_code', { email })
+}
+
+/**
+ * Register a personal account via phone or email.
+ * On success the caller should immediately call `cloudLogin(identifier, password)`
+ * — registration does not auto-establish a session.
+ */
+export function cloudRegister(args: {
+  method: 'phone' | 'email'
+  phone?: string
+  email?: string
+  code: string
+  password: string
+  name?: string
+}): Promise<void> {
+  return invoke<void>('cloud_register', args)
 }
 
 // ---------------------------------------------------------------------------
@@ -2369,4 +2475,60 @@ export function listenPendingRemoved(
   return listen<PendingRemovedPayload>(TAURI_EVENTS.PENDING_REMOVED, (event) =>
     handler(event.payload),
   )
+}
+
+// =====================================================================
+// Billing (personal-tenant only — gated by `tenant.type === 'personal'`)
+// =====================================================================
+
+export interface BillingThisMonth {
+  year_month: string
+  request_count: number
+  input_tokens: number
+  output_tokens: number
+  cached_tokens: number
+  cost: string
+}
+
+export interface BillingSignupBonus {
+  granted: boolean
+  amount: string
+  granted_at?: string
+}
+
+export interface BillingSummary {
+  balance: string
+  currency: string
+  this_month: BillingThisMonth
+  signup_bonus: BillingSignupBonus
+}
+
+export interface UsageRecord {
+  id: number
+  created_at: string
+  request_type: string
+  model_name: string
+  input_tokens: number
+  output_tokens: number
+  cached_tokens: number
+  cost: string
+  key_type: string
+}
+
+export interface UsageRecordsPage {
+  page: number
+  size: number
+  total: number
+  records: UsageRecord[]
+}
+
+export function billingSummary(): Promise<BillingSummary> {
+  return invoke<BillingSummary>('billing_summary')
+}
+
+export function billingUsageRecords(
+  page: number,
+  size: number,
+): Promise<UsageRecordsPage> {
+  return invoke<UsageRecordsPage>('billing_usage_records', { page, size })
 }

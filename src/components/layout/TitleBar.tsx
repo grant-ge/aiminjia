@@ -14,8 +14,10 @@ function handleDragStart(e: React.MouseEvent) {
 }
 
 function WindowControls() {
+  // hover bg uses primary-foreground/15 so it follows tenant theme; close
+  // button hover routes to --destructive instead of hardcoded red.
   const btnClass =
-    'flex h-7 w-11 items-center justify-center text-primary-foreground/70 transition-colors hover:bg-black/15 hover:text-primary-foreground'
+    'flex h-7 w-11 items-center justify-center text-primary-foreground/70 transition-colors hover:bg-primary-foreground/15 hover:text-primary-foreground'
   return (
     <div className="flex shrink-0 items-center" onMouseDown={(e) => e.stopPropagation()}>
       <button className={btnClass} onClick={() => getCurrentWindow().minimize()} aria-label="Minimize">
@@ -25,7 +27,7 @@ function WindowControls() {
         <svg width="10" height="10" viewBox="0 0 10 10"><rect fill="none" stroke="currentColor" strokeWidth="1" x="0.5" y="0.5" width="9" height="9"/></svg>
       </button>
       <button
-        className={`${btnClass} hover:!bg-red-600 hover:!text-white`}
+        className={`${btnClass} hover:!bg-destructive hover:!text-destructive-foreground`}
         onClick={() => getCurrentWindow().close()}
         aria-label="Close"
       >
@@ -46,17 +48,14 @@ const DEV_STRIPE_STYLE: React.CSSProperties = {
     'repeating-linear-gradient(45deg, var(--primary) 0 10px, color-mix(in srgb, var(--primary), #000 10%) 10px 20px)',
 }
 
-export function getDevBadgeLabel(port = window.location.port) {
-  return port ? `DEV ${port}` : 'DEV'
-}
-
+// DEV badge: not tenant-themed by design (it's a build-mode marker, not UI).
+// Color picked from semantic blue so it stays distinct from any tenant accent.
 function DevBadge() {
   return (
     <span
-      className="pointer-events-none mr-2 rounded-sm px-1.5 py-0.5 text-[11px] font-semibold tracking-widest text-white shadow-sm"
-      style={{ backgroundColor: '#4338ca' }}
+      className="pointer-events-none mr-2 rounded-sm bg-[var(--color-semantic-purple)] px-1.5 py-0.5 text-[11px] font-semibold tracking-widest text-primary-foreground shadow-[var(--shadow-sm)]"
     >
-      {getDevBadgeLabel()}
+      DEV
     </span>
   )
 }

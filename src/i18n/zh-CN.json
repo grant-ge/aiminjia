@@ -384,7 +384,6 @@
       "chatWidthCentered": "居中",
       "chatWidthFull": "全宽"
     },
-    "copyrightText": "2026 任理家 · 保留所有权利",
     "archived": {
       "newChat": "新对话",
       "noRecords": "暂无归档记录",
@@ -422,8 +421,8 @@
     "about": {
       "icon": "图标",
       "version": "版本",
-      "copyright": "© ",
       "checkUpdate": "检查更新",
+      "alreadyLatestVersion": "当前已是最新版本",
       "policiesTitle": "条款与隐私",
       "terms": "用户协议",
       "privacyPolicy": "隐私政策",
@@ -432,6 +431,23 @@
       "logUploadDesc": "出现问题时，将本地日志上传给开发团队协助排查。",
       "uploadLogs": "上传日志",
       "uploading": "上传中..."
+    },
+    "billing": {
+      "title": "我的账户",
+      "balance": "当前余额",
+      "monthCost": "本月已消耗",
+      "monthRequests": "本月调用",
+      "bonusHint": "含 10 元赠送",
+      "records": "消耗记录",
+      "empty": "还没有消耗记录",
+      "retry": "重试",
+      "cols": {
+        "time": "时间",
+        "type": "类型",
+        "inputTokens": "输入 Tokens",
+        "outputTokens": "输出 Tokens",
+        "cost": "费用"
+      }
     }
   },
   "composer": {
@@ -498,7 +514,50 @@
     "termsOfService": "服务条款",
     "and": "与",
     "privacyPolicy": "隐私政策",
-    "forgotPassword": "忘记密码？"
+    "forgotPassword": "忘记密码？",
+    "accountPlaceholder": "手机号 / 邮箱 / 用户名@企业编号",
+    "accountHint": "支持手机号、邮箱或 用户名@企业编号 登录",
+    "continueWithAccount": "用账号继续",
+    "noAccount": "还没有账号？",
+    "registerNow": "立即注册",
+    "haveAccount": "已有账号？",
+    "backToLogin": "返回登录",
+    "selectTenantTitle": "选择要进入的空间",
+    "selectTenantDesc": "你的账号关联了多个空间，请选择本次登录的空间",
+    "personalTenantTag": "个人",
+    "enterpriseTenantTag": "企业",
+    "continueButton": "继续",
+    "version": "版本 v{{version}}",
+    "footerCopyright": "© 仁励家网络科技(杭州)有限公司"
+  },
+  "register": {
+    "title": "注册 {{name}}",
+    "subtitle": "创建个人账号即可开始使用",
+    "methodPhone": "手机号",
+    "methodEmail": "邮箱",
+    "phone": "手机号",
+    "phonePlaceholder": "请输入手机号",
+    "email": "邮箱",
+    "emailPlaceholder": "请输入邮箱",
+    "code": "验证码",
+    "codePlaceholder": "6 位验证码",
+    "sendCode": "获取验证码",
+    "sending": "发送中…",
+    "resendIn": "{{seconds}}s 后重发",
+    "codeSent": "验证码已发送，请注意查收",
+    "name": "昵称（可选）",
+    "namePlaceholder": "怎么称呼你",
+    "password": "密码",
+    "passwordPlaceholder": "至少 8 个字符",
+    "register": "注册",
+    "registering": "注册中…",
+    "registerSuccess": "注册成功，已自动登录",
+    "registerFailed": "注册失败，请稍后重试",
+    "invalidPhone": "请输入正确的手机号",
+    "invalidEmail": "请输入正确的邮箱地址",
+    "passwordTooShort": "密码至少 8 个字符",
+    "codeRequired": "请输入验证码",
+    "personalRegisterOnly": "目前仅支持个人账号注册，企业账号请联系管理员开通"
   },
   "onboarding": {
     "welcome": "欢迎使用 {{productName}}",
@@ -552,6 +611,7 @@
   },
   "skillCategories": {
     "mine": "本地",
+    "tenant": "企业私有",
     "finance": "财务",
     "legal": "法务",
     "sales": "销售",
@@ -563,7 +623,7 @@
     "output": "输出"
   },
   "toolGroup": {
-    "title": "工具执行轨迹",
+    "title": "工具调用",
     "running": "执行中 {{done}} / {{total}}",
     "done": "已完成 {{done}} 步",
     "doneCompact": "已完成 {{duration}}",
@@ -832,7 +892,15 @@
     "cronEveryDay": "每天 {{time}}",
     "cronWeekdays": "工作日 {{time}}",
     "cronWeekly": "每周{{days}} {{time}}",
-    "dayNames": ["日", "一", "二", "三", "四", "五", "六"],
+    "dayNames": [
+      "日",
+      "一",
+      "二",
+      "三",
+      "四",
+      "五",
+      "六"
+    ],
     "responsibility": "职责",
     "triggerMethod": "触发方式",
     "onDemand": "按需派活",
@@ -900,7 +968,11 @@
     "syncBuiltin": "同步内置技能",
     "syncing": "同步中...",
     "importSkill": "+ 导入技能",
+    "importDirectory": "导入技能目录",
+    "importArchive": "导入压缩包 (.zip)",
     "selectDir": "选择技能目录",
+    "selectArchive": "选择技能压缩包",
+    "archiveFilter": "技能压缩包",
     "uploadSuccess": "技能上传成功",
     "uploadSuccessDesc": "技能已安装到本地并刷新到技能中心。",
     "uploadFailed": "技能上传失败",
@@ -935,7 +1007,142 @@
     "noSkillsInCategoryDesc": "试试\"全部\"或\"本地\"分类；或者点右上角\"+ 导入技能\"选一个本地技能目录上传。",
     "builtin": "内置",
     "custom": "自定义",
+    "sourceUser": "自定义",
+    "sourceTenant": "企业推送",
+    "sourcePlatform": "平台",
     "allCategory": "全部",
     "defaultCategory": "通用"
+  },
+  "team": {
+    "button": {
+      "label": "团队",
+      "tooltip": "查看当前对话内的团队"
+    },
+    "drawer": {
+      "title": "团队列表",
+      "empty": "当前对话还没有团队"
+    },
+    "session": {
+      "untitled": "团队对话",
+      "live": "进行中",
+      "dismissed": "已解散",
+      "dismissedAt": "{{time}} 解散"
+    },
+    "chat": {
+      "empty": "该团队还没有内部消息",
+      "emptyText": "（空消息）",
+      "sendFailed": "⚠ 发送失败",
+      "lifecycle": {
+        "teamCreated": "团队已创建",
+        "teamCreatedWithName": "团队已创建 · {{teamName}}",
+        "teamDeleted": "团队已解散",
+        "agentJoined": "{{agentName}} 加入团队",
+        "agentLeft": "{{agentName}} 已退出"
+      },
+      "protocol": {
+        "shutdownRequest": "{{from}} 请求 {{to}} 退出团队",
+        "shutdownRequestWithReason": "{{from}} 请求 {{to}} 退出团队 · {{reason}}",
+        "shutdownApprove": "{{from}} 同意退出",
+        "shutdownReject": "{{from}} 拒绝退出",
+        "shutdownRejectWithReason": "{{from}} 拒绝退出 · {{reason}}",
+        "planApprovalRequest": "{{from}} 请 {{to}} 审批方案",
+        "planApprove": "{{from}} 同意方案",
+        "planReject": "{{from}} 修改建议：{{feedback}}",
+        "planRejectNoFeedback": "{{from}} 不同意方案"
+      }
+    }
+  },
+  "channel": {
+    "title": "IM 频道",
+    "heroTitle": "IM 频道",
+    "heroDesc": "配置钉钉 IM 频道，让 AI 小家 接收并回复来自钉钉的消息。",
+    "heroPrivacy": "频道配置信息仅存储在本地，不会上传到云端。",
+    "status": {
+      "unconfigured": "未配置",
+      "configuredOffline": "已配置 / 未连接",
+      "connected": "已连接",
+      "connecting": "连接中",
+      "reconnecting": "重连中",
+      "configError": "配置有误"
+    },
+    "actions": {
+      "configure": "配置",
+      "remove": "移除",
+      "moreDingtalkConfig": "更多钉钉配置",
+      "configureWith": "配置{{name}}",
+      "enabledAria": "{{name}}频道已启用",
+      "disabledAria": "{{name}}频道已停用"
+    },
+    "dingtalk": {
+      "name": "钉钉",
+      "icon": "钉",
+      "description": "通过钉钉机器人接收并回复用户消息",
+      "topbarTitle": "钉钉",
+      "inactive": "该会话来自已下线的机器人，无法发送新消息"
+    },
+    "remove": {
+      "title": "移除钉钉频道？",
+      "description": "这会断开钉钉频道，并删除本地保存的 AppKey 和 AppSecret。已有聊天历史会保留。之后需要重新扫码才能再次配置。",
+      "confirm": "确认移除",
+      "cancel": "取消"
+    },
+    "errors": {
+      "openFileTitle": "无法打开文件",
+      "openFileMessage": "打开生成文件失败。"
+    },
+    "dialog": {
+      "title": "配置钉钉",
+      "description": "在钉钉中扫码完成应用注册，也可以手动填写应用凭证。"
+    }
+  },
+  "schedules": {
+    "pageTitle": "定时任务",
+    "newTaskAria": "新建日程",
+    "taskList": "任务列表",
+    "cancelled": "已取消",
+    "backToList": "返回",
+    "backToListAria": "返回任务列表",
+    "viewCancelled": "查看已取消",
+    "cancelledWithCount": "已取消 ({{count}})",
+    "columns": {
+      "name": "任务名称",
+      "frequency": "执行频率",
+      "status": "状态",
+      "actions": "操作"
+    },
+    "empty": {
+      "loading": "正在加载定时任务",
+      "loadingDesc": "请稍候，正在读取本地任务配置。",
+      "noCancelled": "没有已取消的任务",
+      "noCancelledDesc": "取消的任务会出现在这里，可以恢复或永久删除。",
+      "noTasks": "还没有定时任务",
+      "noTasksDesc": "选择上方模板或在对话中创建你的第一个定时任务。"
+    },
+    "cancel": {
+      "title": "取消此定时任务？",
+      "description": "取消后该任务将停止触发，但可以从「已取消」中恢复。",
+      "confirm": "确认取消"
+    },
+    "delete": {
+      "title": "永久删除此任务？",
+      "description": "此操作会从磁盘抹除任务及其执行历史，无法恢复。",
+      "confirm": "确认永久删除"
+    },
+    "templates": {
+      "dailyReport": {
+        "title": "日报汇总",
+        "desc": "每天 9 点自动汇总昨日数据生成日报。"
+      },
+      "storeInspection": {
+        "title": "门店巡检",
+        "desc": "每周一汇总各门店巡检结果并生成报表。"
+      },
+      "weeklyReview": {
+        "title": "周度复盘",
+        "desc": "每周五汇总周度 KPI 与团队复盘要点。"
+      }
+    },
+    "itemCount": "共 {{count}} 条",
+    "newButton": "新建"
   }
 }

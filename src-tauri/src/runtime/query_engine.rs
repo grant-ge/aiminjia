@@ -199,6 +199,18 @@ impl QueryEngine {
         self
     }
 
+    /// Read the active team name for this engine's session.  Derives from
+    /// `TeamRegistry.active(&session)` — the single owner. `session_id`
+    /// is required because the registry is shared across sessions; callers
+    /// typically have it in scope already (turn / driver / event payloads).
+    ///
+    /// Returns `None` when no TeamRegistry was injected (legacy/test paths)
+    /// or when the session has no active team.
+    pub async fn active_team_name(&self, session_id: &crate::runtime::ids::SessionId) -> Option<String> {
+        let reg = self.team_registry.as_ref()?;
+        reg.active(session_id).await
+    }
+
     /// LTR (B-gap1): accessors for chat_turn_driver to wire Path A
     /// (mark_running on entry, mark_idle before AgentIdle).
     pub fn lead_idle_supervisor(&self) -> Option<&Arc<crate::runtime::agent::LeadIdleSupervisor>> {
@@ -215,11 +227,17 @@ impl QueryEngine {
     /// ToolExecutionContext.  Helper to avoid duplicating the wiring in every
     /// tool-call build site.  No-op for whichever registry isn't configured
     /// — tools defensively check for `None` and error out themselves.
-    fn attach_ltr_registries(
+    async fn attach_ltr_registries(
         &self,
         mut ctx: crate::runtime::tools::context::ToolExecutionContext,
     ) -> crate::runtime::tools::context::ToolExecutionContext {
         if let Some(team) = self.team_registry.clone() {
+            // Derive ctx.active_team_name from the registry **now** so that
+            // the snapshot the tool sees reflects any prior set_active call
+            // in this turn (e.g. TeamCreate → next tool call).
+            if let Some(name) = team.active(&ctx.session_id).await {
+                ctx = ctx.with_active_team(name);
+            }
             ctx = ctx.with_team_registry(team);
         }
         if let Some(names) = self.agent_names.clone() {
@@ -683,7 +701,7 @@ impl QueryEngine {
         // TurnState centralizes tool-call scoped cancellation so each call gets
         // a child token of the turn token.
         let ctx = turn.build_execution_context(call.tool_call_id.clone());
-        let ctx = self.attach_ltr_registries(ctx);
+        let ctx = self.attach_ltr_registries(ctx).await;
 
         // Inject capability context (Workspace-First guarantee) — same logic as
         // `run_tool_with_bus` so workspace-scoped tools receive the correct root.
@@ -861,7 +879,7 @@ impl QueryEngine {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("tool dispatcher not configured"))?;
         let ctx = turn.build_execution_context(format!("tool-call-{tool_name}"));
-        let ctx = self.attach_ltr_registries(ctx);
+        let ctx = self.attach_ltr_registries(ctx).await;
         // Inject capability context when workspace_path is available so that
         // workspace-scoped runtime tools (read_workspace_file, etc.)
         // can resolve their root path correctly.  When no workspace_path is set

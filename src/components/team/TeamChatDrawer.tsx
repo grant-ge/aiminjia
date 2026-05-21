@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { ArrowDown, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import type { TeamOverview, TeamSession } from '@/types/team'
 import { useConversationTeamState, useTeamStore } from '@/stores/teamStore'
-import { useSettingsStore } from '@/stores/settingsStore'
 
 import { AgentAvatar } from './AgentAvatar'
 import { TeamChatEvents } from './TeamChatEvents'
 import { TeammateDetailPanel } from './TeammateDetailPanel'
-import { formatDuration } from './formatters'
+import { formatDuration, formatShortDateTime } from './formatters'
 import { isLeadName } from './agentIdentity'
 
 interface TeamChatDrawerProps {
@@ -55,6 +55,7 @@ export function TeamChatDrawer({ conversationId, overview }: TeamChatDrawerProps
         />
       ) : (
         <DrawerOverview
+          conversationId={conversationId}
           overview={overview}
           onDrill={(agentId) => setDrillAgent(conversationId, agentId)}
           onClose={() => closeDrawer(conversationId, true)}
@@ -65,12 +66,15 @@ export function TeamChatDrawer({ conversationId, overview }: TeamChatDrawerProps
 }
 
 interface DrawerOverviewProps {
+  conversationId: string
   overview: TeamOverview | null
   onDrill: (agentId: string) => void
   onClose: () => void
 }
 
-function DrawerOverview({ overview, onDrill, onClose }: DrawerOverviewProps) {
+function DrawerOverview({ conversationId, overview, onDrill, onClose }: DrawerOverviewProps) {
+  const focusedTeamId = useConversationTeamState(conversationId).focusedTeamId
+  const clearFocusedTeam = useTeamStore((s) => s.clearFocusedTeam)
   const scrollRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const userScrolledUp = useRef(false)
@@ -122,6 +126,28 @@ function DrawerOverview({ overview, onDrill, onClose }: DrawerOverviewProps) {
     observer.observe(content)
     return () => observer.disconnect()
   }, [])
+
+  // focusedTeamId：点击主聊天里的 TeamProgressBlock 卡片会通过 openDrawer(convId,
+  // teamId) 把焦点写进 store；本 effect 等抽屉首次 render 出对应 section 之后
+  // scrollIntoView 一次，立刻 clear 焦点防止后续滚动被反复抢回。同时把
+  // userScrolledUp 置 true，让 ResizeObserver 不再自动追到底部（否则 markdown
+  // 排版完成后 scroll 又会跳到最新 team）。
+  useEffect(() => {
+    if (!focusedTeamId) return
+    const content = contentRef.current
+    if (!content) return
+    // 等下一帧让 sections DOM 实际挂载（首次 open 时 sections 与 effect 同步执行）。
+    const raf = requestAnimationFrame(() => {
+      const target = content.querySelector<HTMLElement>(`[data-team-id="${CSS.escape(focusedTeamId)}"]`)
+      if (target) {
+        target.scrollIntoView({ block: 'start', behavior: 'auto' })
+        userScrolledUp.current = true
+        setShowJumpToBottom(true)
+      }
+      clearFocusedTeam(conversationId)
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [focusedTeamId, conversationId, clearFocusedTeam])
 
   if (!overview || overview.teams.length === 0) {
     return (
@@ -210,20 +236,29 @@ interface TeamSessionSectionProps {
 }
 
 function TeamSessionSection({ session, onDrill }: TeamSessionSectionProps) {
+  const { t } = useTranslation()
   const visibleMembers = session.members.filter((m) => !isLeadName(m.agentName))
-  const chatWidthMode = useSettingsStore((s) => s.chatWidthMode ?? 'full')
+  const isLive = session.deletedAt === null
   return (
-    <section className="border-b border-border last:border-b-0">
+    <section data-team-id={session.teamId} className="border-b border-border last:border-b-0">
       <div className="sticky top-0 z-10 -mx-4 border-b border-border bg-background/95 px-4 py-2 backdrop-blur">
         <div className="flex items-center justify-between gap-2 text-xs">
           <div className="flex min-w-0 items-center gap-2">
             <span className="truncate font-medium text-foreground">
-              {session.teamName ?? '团队对话'}
+              {session.teamName ?? t('team.session.untitled')}
             </span>
-            {session.deletedAt === null && (
-              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-300">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                进行中
+            {isLive ? (
+              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+                {t('team.session.live')}
+              </span>
+            ) : (
+              <span
+                className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+                title={t('team.session.dismissedAt', { time: formatShortDateTime(session.deletedAt!) })}
+              >
+                <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60" />
+                {t('team.session.dismissed')}
               </span>
             )}
           </div>
@@ -252,7 +287,7 @@ function TeamSessionSection({ session, onDrill }: TeamSessionSectionProps) {
         )}
       </div>
 
-      <div className={chatWidthMode === 'centered' ? 'mx-auto w-full max-w-[736px]' : 'w-full'}>
+      <div className="mx-auto w-full max-w-[736px]">
         <TeamChatEvents events={session.events} onDrillAgent={onDrill} />
       </div>
     </section>

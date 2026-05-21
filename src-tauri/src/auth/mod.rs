@@ -84,12 +84,17 @@ impl AuthManager {
                 log::debug!("No persisted cloud auth found");
             }
             Err(e) => {
-                log::warn!("Failed to restore cloud auth (preserving file, will retry next launch): {}", e);
-                // Do NOT clear the persisted file on a transient read / parse
-                // error. A corrupted file keeps the user stuck; a valid file
-                // with a format mismatch (e.g. a field added in a newer
-                // version) would silently destroy their login state. Prefer
-                // to log and let the next launch retry.
+                // Unreadable blob → wipe it and force re-login. Network-layer
+                // credentials carry no data worth preserving (session_key has
+                // 24h TTL anyway, user/tenant info is re-fetched on login).
+                // The previous "preserve and retry" behaviour created an
+                // unrecoverable loop for users upgrading from 0.3.x — see
+                // `storage::data_version` for the full incident write-up.
+                log::warn!(
+                    "Failed to restore cloud auth, clearing persisted file (will force re-login): {}",
+                    e
+                );
+                self.clear_persisted_auth();
             }
         }
     }
@@ -146,6 +151,35 @@ impl AuthManager {
             tenant: Some(tenant),
             models,
         })
+    }
+
+    /// Send an SMS verification code for registration. No auth required.
+    pub async fn send_sms_code(&self, phone: &str) -> Result<()> {
+        self.client.send_sms_code(phone).await
+    }
+
+    /// Send an email verification code for registration. No auth required.
+    pub async fn send_email_code(&self, email: &str) -> Result<()> {
+        self.client.send_email_code(email).await
+    }
+
+    /// Register a personal account. After success the caller is expected to
+    /// call `login(...)` separately (we don't auto-login here because the
+    /// post-register handshake currently requires the same username/password
+    /// path as a regular login so session_key + scope activation happen via
+    /// the existing `cloud_login` flow).
+    pub async fn register(
+        &self,
+        method: &str,
+        phone: &str,
+        email: &str,
+        code: &str,
+        password: &str,
+        name: &str,
+    ) -> Result<()> {
+        self.client
+            .register(method, phone, email, code, password, name)
+            .await
     }
 
     /// Logout — call server API then clear local state and persisted data.
@@ -489,6 +523,26 @@ impl AuthManager {
     pub async fn get_available_models(&self) -> Result<Vec<CloudModelInfo>> {
         let session_key = self.get_session_key().await?;
         self.client.list_models(&session_key).await
+    }
+
+    /// Fetch personal-tenant billing summary.
+    pub async fn get_billing_summary(
+        &self,
+    ) -> Result<crate::transport::tauri_commands::billing::BillingSummary> {
+        let session_key = self.get_session_key().await?;
+        self.client.get_billing_summary(&session_key).await
+    }
+
+    /// Fetch a page of personal-tenant usage records.
+    pub async fn get_billing_usage_records(
+        &self,
+        page: u32,
+        size: u32,
+    ) -> Result<crate::transport::tauri_commands::billing::UsageRecordsPage> {
+        let session_key = self.get_session_key().await?;
+        self.client
+            .get_billing_usage_records(&session_key, page, size)
+            .await
     }
 
     /// Force-invalidate the cached session key so the next `get_session_key`

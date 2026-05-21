@@ -1,3 +1,5 @@
+// Must be first: installs Array.prototype.findLast etc. for Big Sur Safari 14.
+import '@/legacy-polyfills'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import '@/i18n'

@@ -54,9 +54,11 @@ export interface Conversation {
    */
   sourceLabel?: string
   /**
-   * Expert team id, populated optimistically by `setExpertTeam` and lazily by
-   * a one-shot `getConversationSource` IPC when the conversation is first opened.
-   * NOT mirrored into index.json (spec §1.3 — index entries intentionally carry no ids).
+   * Expert team id (one of EXPERT_TEAMS) when conversation was started from
+   * an expert team. Persisted in `conv.json::source.expertTeamId` (NOT mirrored
+   * to index.json — spec §1.3, index entries carry no ids). Populated on the
+   * front-end either optimistically by `setExpertTeam` or via `getConversationSource`
+   * IPC when the user enters the conversation.
    */
   expertTeamId?: string
 }

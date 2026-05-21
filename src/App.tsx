@@ -17,6 +17,7 @@ import { EmployeesPage } from '@/features/home/EmployeesPage'
 import { HomePage } from '@/features/home/HomePage'
 import { InboxPage } from '@/features/inbox/InboxPage'
 import { ExpertTeamsPage } from '@/features/expert-teams/ExpertTeamsPage'
+import { migrateExpertTeamRegistryOnce } from '@/features/expert-teams/migrateExpertTeamRegistry'
 import { SchedulesPage } from '@/features/schedules/SchedulesPage'
 import { SkillCenterPage } from '@/features/skill-center/SkillCenterPage'
 import { SkillDetailPage } from '@/features/skill-detail/SkillDetailPage'
@@ -207,6 +208,12 @@ function App() {
     }
   }, [t])
 
+  // One-shot migration: lift legacy localStorage expert-team mappings into
+  // conv.json. Idempotent — marker-based. Runs once per app lifetime.
+  useEffect(() => {
+    void migrateExpertTeamRegistryOnce()
+  }, [])
+
   useEffect(() => {
     const unlisten = onConversationTitleUpdated(({ conversationId, title }) => {
       const store = useChatStore.getState()
@@ -236,6 +243,7 @@ function App() {
           isArchived: (c.isArchived as boolean) ?? false,
           workspaceName: (c.workspaceName as string | undefined) ?? undefined,
           employeeId: (c.employeeId as string | undefined) ?? undefined,
+          expertTeamId: (c.expertTeamId as string | undefined) ?? undefined,
         }))
         useChatStore.getState().setConversations(convs)
       } catch (err) {

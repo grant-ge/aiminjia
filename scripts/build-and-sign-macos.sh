@@ -125,6 +125,23 @@ build_one_arch() {
         trap "[ -n '$stash_tmp' ] && [ -d '$stash_tmp/$plat_stash' ] && mv '$stash_tmp/$plat_stash' '$stash_src' && rmdir '$stash_tmp' 2>/dev/null; true" RETURN
     fi
 
+    # Wipe stale runtime/ inside the previous .app at this target dir. tauri
+    # bundle reuses the target/.../bundle/macos/AIjia.app directory across
+    # builds and only OVERWRITES files — it never DELETES paths that existed
+    # in the previous build but not this one. So a leftover darwin-arm64/
+    # from a prior x64 build (before we added the stash) would survive into
+    # the next bundle, doubling installer size (~78MB extra). See
+    # docs/superpowers/specs/2026-05-19-intel-bundle-bloat.md.
+    local target_subdir="release"
+    if [ -n "$tauri_target" ]; then
+        target_subdir="x86_64-apple-darwin/release"
+    fi
+    local stale_app_runtime="$PROJECT_DIR/src-tauri/target/$target_subdir/bundle/macos/AIjia.app/Contents/Resources/runtime"
+    if [ -d "$stale_app_runtime" ]; then
+        echo "  pruning stale .app runtime/ at $stale_app_runtime"
+        rm -rf "$stale_app_runtime"
+    fi
+
     echo ""
     echo "--- pnpm tauri build $tauri_target ---"
     # shellcheck disable=SC2086
@@ -156,6 +173,21 @@ case "${ARCH:-both}" in
         exit 1
         ;;
 esac
+
+echo ""
+echo "--- Refresh public download page ---"
+# Regenerate downloads.html after upload so the new build shows up immediately.
+# CI already runs this once after Windows build, but local mac uploads happen
+# AFTER that, so without this step the page lags by a full release.
+# Hard-fail: if the page can't be refreshed, users won't see the new build —
+# previously we'd silently move on and only notice the next day.
+if ! python3 "$SCRIPT_DIR/ci-generate-download-page.py"; then
+    echo "ERROR: download page refresh failed."
+    echo "  OSS upload itself succeeded — artifacts are at the URLs above."
+    echo "  Re-run by hand once you understand the failure:"
+    echo "    source .env.local.aijia && python3 scripts/ci-generate-download-page.py"
+    exit 1
+fi
 
 echo ""
 echo "=== All done ==="

@@ -29,25 +29,50 @@ use crate::telemetry::{record_diagnostic, DiagnosticEvent, DiagnosticSource};
 
 pub const BROADCAST_TOKEN: &str = "*";
 
-/// Append one SendMessage delivery to `<conv_dir>/team-chat.jsonl`. Best-effort:
-/// any IO error is logged at warn but never surfaced — inbox delivery is the
-/// authoritative path; this file is a UI-only mirror for the team chat drawer.
+/// Append one SendMessage delivery to `<conv_dir>/teams/{name}/team-chat.jsonl`.
+/// Best-effort: any IO error is logged at warn but never surfaced — inbox
+/// delivery is the authoritative path; this file is a UI-only mirror.
 fn append_team_chat_entry(
     conv_dir: Option<&std::path::Path>,
+    team_name: Option<&str>,
     from: &str,
     to: &str,
     message: &StructuredMessage,
 ) {
     let Some(dir) = conv_dir else { return };
+    let Some(team_name) = team_name else { return };
     let body = message.as_text().unwrap_or("").to_string();
-    let entry = serde_json::json!({
+    let mut entry = serde_json::json!({
         "ts": chrono::Utc::now().to_rfc3339(),
         "from": from,
         "to": to,
         "text": body,
         "variant": message.variant_name(),
     });
-    let path = dir.join("team-chat.jsonl");
+    // X 方案：协议握手变体把 approve / reason / feedback 透传进 jsonl。
+    // 这样前端可以区分"同意退出"vs"拒绝退出"。omit 缺失字段以保持 jsonl 行紧凑。
+    match message {
+        StructuredMessage::ShutdownRequest { reason } => {
+            if let Some(r) = reason {
+                entry["reason"] = Value::String(r.clone());
+            }
+        }
+        StructuredMessage::ShutdownResponse { approve, reason, .. } => {
+            entry["approve"] = Value::Bool(*approve);
+            if let Some(r) = reason {
+                entry["reason"] = Value::String(r.clone());
+            }
+        }
+        StructuredMessage::PlanApprovalResponse { approve, feedback, .. } => {
+            entry["approve"] = Value::Bool(*approve);
+            if let Some(f) = feedback {
+                entry["feedback"] = Value::String(f.clone());
+            }
+        }
+        _ => {}
+    }
+    use crate::runtime::agent::team_paths::TeamPaths;
+    let path = TeamPaths::for_team(dir, team_name).team_chat_jsonl();
     let line = match serde_json::to_string(&entry) {
         Ok(s) => s,
         Err(e) => {
@@ -55,6 +80,9 @@ fn append_team_chat_entry(
             return;
         }
     };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
     use std::io::Write;
     match std::fs::OpenOptions::new()
         .create(true)
@@ -119,6 +147,7 @@ impl RuntimeTool for SendMessageRuntimeTool {
                 .conversation_id(ctx.session_id.as_str())
                 .run_id(ctx.run_id.as_str())
                 .tool_call_id(ctx.tool_call_id.as_str())
+                .team_name(ctx.active_team_name.as_deref().unwrap_or(""))
                 .payload(serde_json::json!({
                     "to": to,
                     "variant": message.variant_name(),
@@ -141,14 +170,15 @@ impl RuntimeTool for SendMessageRuntimeTool {
         // Derive caller name (for source label + self-send guard) by reverse-
         // looking up the agent_id.  Unnamed callers (no entry in registry) get
         // MessageSource::System and bypass the self-send check.
+        let team_name = ctx.active_team_name.as_deref().unwrap_or("");
         let caller_name = if let Some(aid) = ctx.agent_id.as_ref() {
-            names.name_for(&session, aid).await
+            names.name_for(&session, team_name, aid).await
         } else {
             // FALLBACK: when ctx.agent_id is None (e.g. Lead's user turn never
             // stamped its own agent_id onto the TurnState), assume Lead is the
             // caller IF a Lead is registered for this session.  Without this,
             // every Lead-originated SendMessage renders as `from="system"`.
-            if names.resolve(&session, LEAD_NAME).await.is_some() {
+            if names.resolve(&session, team_name, LEAD_NAME).await.is_some() {
                 Some(LEAD_NAME.to_string())
             } else {
                 None
@@ -173,11 +203,17 @@ impl RuntimeTool for SendMessageRuntimeTool {
                     "team_registry not available — broadcast requires Team mode".into(),
                 )
             })?;
-            let team_handle = team_reg.get(&session).await.ok_or_else(|| {
-                ToolError::ExecutionFailed(
-                    "no team in this session — TeamCreate must be called first".into(),
-                )
-            })?;
+            let team_handle = {
+                // PR2 compat: use active_team_name if available, else fall back to first team.
+                // PR3 will inject active_team_name properly.
+                let teams = team_reg.list(&session).await;
+                let first = teams.into_iter().next().ok_or_else(|| {
+                    ToolError::ExecutionFailed(
+                        "no team in this session — TeamCreate must be called first".into(),
+                    )
+                })?;
+                first.1
+            };
 
             // Snapshot recipient list under the Team lock then drop it before
             // doing async sends, to avoid holding the lock across awaits that
@@ -194,8 +230,8 @@ impl RuntimeTool for SendMessageRuntimeTool {
             let mut delivered = 0usize;
             let mut missing: Vec<String> = Vec::new();
             for name in &recipients {
-                if let Some(target_id) = names.resolve(&session, name).await {
-                    if let Some(inbox) = inbox_reg.get(&session, &target_id).await {
+                if let Some(target_id) = names.resolve(&session, team_name, name).await {
+                    if let Some(inbox) = inbox_reg.get(&session, team_name, &target_id).await {
                         // mpsc full → record but keep going; this is best-effort
                         // broadcast, not transactional.
                         if inbox
@@ -209,6 +245,7 @@ impl RuntimeTool for SendMessageRuntimeTool {
                             delivered += 1;
                             append_team_chat_entry(
                                 ctx.conv_dir.as_deref(),
+                                ctx.active_team_name.as_deref(),
                                 caller_name.as_deref().unwrap_or("system"),
                                 name,
                                 &message,
@@ -230,6 +267,7 @@ impl RuntimeTool for SendMessageRuntimeTool {
                     .conversation_id(ctx.session_id.as_str())
                     .run_id(ctx.run_id.as_str())
                     .tool_call_id(ctx.tool_call_id.as_str())
+                    .team_name(team_name)
                     .ok(missing.is_empty())
                     .payload(serde_json::json!({
                         "delivered": delivered,
@@ -264,12 +302,12 @@ impl RuntimeTool for SendMessageRuntimeTool {
             )));
         }
 
-        let target_id = names.resolve(&session, &to).await.ok_or_else(|| {
+        let target_id = names.resolve(&session, team_name, &to).await.ok_or_else(|| {
             ToolError::ExecutionFailed(format!(
                 "no agent named `{to}` in this session — call TeamCreate first or check the spelling"
             ))
         })?;
-        let inbox = inbox_reg.get(&session, &target_id).await.ok_or_else(|| {
+        let inbox = inbox_reg.get(&session, team_name, &target_id).await.ok_or_else(|| {
             ToolError::ExecutionFailed(format!(
                 "agent `{to}` is registered but has no inbox — likely already exited or not a Teammate"
             ))
@@ -287,6 +325,7 @@ impl RuntimeTool for SendMessageRuntimeTool {
 
         append_team_chat_entry(
             ctx.conv_dir.as_deref(),
+            ctx.active_team_name.as_deref(),
             caller_name.as_deref().unwrap_or("system"),
             &to,
             &message,
@@ -298,6 +337,7 @@ impl RuntimeTool for SendMessageRuntimeTool {
                 .conversation_id(ctx.session_id.as_str())
                 .run_id(ctx.run_id.as_str())
                 .tool_call_id(ctx.tool_call_id.as_str())
+                .team_name(team_name)
                 .ok(true)
                 .payload(serde_json::json!({
                     "to_name": to,
@@ -318,9 +358,9 @@ impl RuntimeTool for SendMessageRuntimeTool {
             if let (Some(sup), Some(names_reg)) =
                 (ctx.lead_idle.as_ref(), ctx.agent_names.as_ref())
             {
-                if let Some(lead_id) = names_reg.resolve(&session, LEAD_NAME).await {
+                if let Some(lead_id) = names_reg.resolve(&session, team_name, LEAD_NAME).await {
                     let key = (session.clone(), lead_id.clone());
-                    let woke = sup.enqueue(&key).await;
+                    let woke = sup.enqueue(&key, team_name.to_string()).await;
                     if woke {
                         log::info!(
                             "[SendMessage] Lead idle → Path C wake triggered \
@@ -333,6 +373,7 @@ impl RuntimeTool for SendMessageRuntimeTool {
                                 .run_id(ctx.run_id.as_str())
                                 .tool_call_id(ctx.tool_call_id.as_str())
                                 .agent_id(lead_id.as_str())
+                                .team_name(team_name)
                                 .ok(true)
                                 .payload(serde_json::json!({ "transition": "idle_to_running", "wake_fired": true })),
                         );
@@ -349,6 +390,7 @@ impl RuntimeTool for SendMessageRuntimeTool {
                                 .run_id(ctx.run_id.as_str())
                                 .tool_call_id(ctx.tool_call_id.as_str())
                                 .agent_id(lead_id.as_str())
+                                .team_name(team_name)
                                 .ok(true)
                                 .payload(serde_json::json!({ "transition": "already_running_pending_recorded", "wake_fired": false })),
                         );
@@ -375,5 +417,115 @@ impl RuntimeTool for SendMessageRuntimeTool {
                 "variant": message.variant_name(),
             })),
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runtime::agent::team_paths::TeamPaths;
+    use tempfile::tempdir;
+
+    /// 读出 jsonl 的所有行，按 `\n` 拆分并 parse 成 Value。
+    fn read_jsonl(path: &std::path::Path) -> Vec<Value> {
+        let raw = std::fs::read_to_string(path).unwrap();
+        raw.lines()
+            .filter(|l| !l.trim().is_empty())
+            .map(|l| serde_json::from_str::<Value>(l).unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn append_team_chat_entry_writes_protocol_fields() {
+        let dir = tempdir().unwrap();
+        let conv_dir = dir.path();
+        let paths = TeamPaths::for_team(conv_dir, "alpha");
+        let jsonl = paths.team_chat_jsonl();
+
+        // 4 个 variant 各一条，覆盖 X 方案三个字段全部分支。
+        let cases = vec![
+            (
+                "team-lead",
+                "pro",
+                StructuredMessage::ShutdownRequest {
+                    reason: Some("task done".into()),
+                },
+            ),
+            (
+                "pro",
+                "team-lead",
+                StructuredMessage::ShutdownResponse {
+                    request_id: "rid-1".into(),
+                    approve: true,
+                    reason: None,
+                },
+            ),
+            (
+                "con",
+                "team-lead",
+                StructuredMessage::ShutdownResponse {
+                    request_id: "rid-2".into(),
+                    approve: false,
+                    reason: Some("still working".into()),
+                },
+            ),
+            (
+                "team-lead",
+                "con",
+                StructuredMessage::PlanApprovalResponse {
+                    request_id: "rid-3".into(),
+                    approve: false,
+                    feedback: Some("missed edge".into()),
+                },
+            ),
+        ];
+        for (from, to, msg) in &cases {
+            append_team_chat_entry(Some(conv_dir), Some("alpha"), from, to, msg);
+        }
+
+        let entries = read_jsonl(&jsonl);
+        assert_eq!(entries.len(), 4);
+
+        assert_eq!(entries[0]["variant"], "shutdown_request");
+        assert_eq!(entries[0]["reason"], "task done");
+        assert!(entries[0].get("approve").is_none());
+        assert!(entries[0].get("feedback").is_none());
+
+        assert_eq!(entries[1]["variant"], "shutdown_response");
+        assert_eq!(entries[1]["approve"], true);
+        assert!(entries[1].get("reason").is_none());
+
+        assert_eq!(entries[2]["variant"], "shutdown_response");
+        assert_eq!(entries[2]["approve"], false);
+        assert_eq!(entries[2]["reason"], "still working");
+
+        assert_eq!(entries[3]["variant"], "plan_approval_response");
+        assert_eq!(entries[3]["approve"], false);
+        assert_eq!(entries[3]["feedback"], "missed edge");
+    }
+
+    #[test]
+    fn append_team_chat_entry_omits_extra_fields_for_text() {
+        let dir = tempdir().unwrap();
+        let conv_dir = dir.path();
+        let paths = TeamPaths::for_team(conv_dir, "alpha");
+        let jsonl = paths.team_chat_jsonl();
+
+        append_team_chat_entry(
+            Some(conv_dir),
+            Some("alpha"),
+            "team-lead",
+            "pro",
+            &StructuredMessage::text("hi"),
+        );
+
+        let entries = read_jsonl(&jsonl);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0]["variant"], "text");
+        assert_eq!(entries[0]["text"], "hi");
+        // text variant 不应该泄漏协议字段。
+        assert!(entries[0].get("approve").is_none());
+        assert!(entries[0].get("reason").is_none());
+        assert!(entries[0].get("feedback").is_none());
     }
 }

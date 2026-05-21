@@ -12,9 +12,7 @@ use app_lib::runtime::cancellation::CancellationToken;
 use app_lib::runtime::ids::{AgentId, RunId, SessionId};
 use app_lib::runtime::task::task_models::{TaskRecord, TaskStatus};
 use app_lib::runtime::task::FileTaskV2Store;
-use app_lib::runtime::tools::builtin::task_tools::{
-    TaskClaimRuntimeTool, TaskCreateRuntimeTool,
-};
+use app_lib::runtime::tools::builtin::task_tools::TaskClaimRuntimeTool;
 use app_lib::runtime::tools::context::ToolExecutionContext;
 use app_lib::runtime::tools::executor::ToolError;
 use app_lib::runtime::tools::RuntimeTool;

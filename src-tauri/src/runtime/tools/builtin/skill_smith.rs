@@ -1024,7 +1024,7 @@ struct ExportInput {
     draft_id: Option<String>,
     #[serde(default)]
     installed_id: Option<String>,
-    /// 导出文件目标路径。默认 `~/Desktop/<name>-<version>.aijia-skill`。
+    /// 导出文件目标路径。默认 `~/Desktop/<name>-<version>.zip`。
     #[serde(default)]
     dest: Option<String>,
     /// 包元数据：版本号 / 作者。版本号默认 "0.1.0"。
@@ -1051,7 +1051,7 @@ impl RuntimeTool for SkillExportTool {
     async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new(
             "skill_export",
-            "把草稿或已安装技能打包成 .aijia-skill zip 包，方便发给同事。\n\n参数：\n- draft_id 或 installed_id 二选一（优先 draft_id）\n- dest：可选目标路径，默认 ~/Desktop/<name>-<version>.aijia-skill\n- version：版本号，默认 \"0.1.0\"\n- author：作者，可选\n\n包格式：zip 含 manifest.json + skill/ 目录（SKILL.md + scripts/ + references/），带 SHA-256 校验。",
+            "把草稿或已安装技能打包成 zip，方便发给同事。\n\n参数：\n- draft_id 或 installed_id 二选一（优先 draft_id）\n- dest：可选目标路径，默认 ~/Desktop/<name>-<version>.zip\n- version：版本号，默认 \"0.1.0\"\n- author：作者，可选\n\n包格式：标准 zip，根目录为 <skill_id>/，含 SKILL.md + scripts/ + references/。",
         )
         .with_kind(ToolKind::Power)
         .with_destructive(false)
@@ -1139,7 +1139,7 @@ impl RuntimeTool for SkillExportTool {
         Ok(ToolResult::new(
             "skill_export",
             format!(
-                "✅ 已导出 {} v{} 到 {}\n   把这个 .aijia-skill 文件发给同事，对方双击即可导入。",
+                "✅ 已导出 {} v{} 到 {}\n   把这个 zip 文件发给同事，在技能中心选「导入压缩包」即可。",
                 skill_id,
                 version,
                 dest_path.display()
@@ -1153,7 +1153,7 @@ fn default_export_dest(skill_id: &str, version: &str) -> std::path::PathBuf {
     let desktop = dirs::desktop_dir()
         .or_else(dirs::home_dir)
         .unwrap_or_else(|| std::path::PathBuf::from("."));
-    desktop.join(format!("{}-v{}.aijia-skill", skill_id, version))
+    desktop.join(format!("{}-v{}.zip", skill_id, version))
 }
 
 // ============================================================================
@@ -1265,7 +1265,7 @@ pub fn catalog_entries() -> Vec<(ToolDefinition, Value)> {
                 "properties": {
                     "draft_id": { "type": "string", "description": "导出草稿（与 installed_id 二选一）" },
                     "installed_id": { "type": "string", "description": "导出已安装技能（与 draft_id 二选一）" },
-                    "dest": { "type": "string", "description": "目标路径，默认 ~/Desktop/<id>-v<version>.aijia-skill" },
+                    "dest": { "type": "string", "description": "目标路径，默认 ~/Desktop/<id>-v<version>.zip" },
                     "version": { "type": "string", "default": "0.1.0" },
                     "author": { "type": "string" }
                 }
@@ -1861,7 +1861,7 @@ mod tests {
     // ── export tests ──────────────────────────────────────────────
 
     #[tokio::test]
-    async fn export_draft_produces_aijia_skill_zip() {
+    async fn export_draft_produces_zip() {
         let (tmp, deps) = fixture();
         SkillCreateDraftTool::new(deps.clone())
             .execute(json!({"name": "tmp-skill", "description": "y"}), ctx())
@@ -1875,7 +1875,7 @@ mod tests {
             )
             .await
             .unwrap();
-        let dest = tmp.path().join("out.aijia-skill");
+        let dest = tmp.path().join("out.zip");
         let r = SkillExportTool::new(deps.clone())
             .execute(
                 json!({"draft_id": deps.conversation_id, "dest": dest.to_string_lossy(), "version": "0.2.0"}),
@@ -1899,7 +1899,7 @@ mod tests {
     async fn export_requires_draft_or_installed_id() {
         let (_tmp, deps) = fixture();
         let err = SkillExportTool::new(deps.clone())
-            .execute(json!({"dest": "/tmp/x.aijia-skill"}), ctx())
+            .execute(json!({"dest": "/tmp/x.zip"}), ctx())
             .await
             .unwrap_err();
         assert!(matches!(err, ToolError::InputValidationError { .. }));

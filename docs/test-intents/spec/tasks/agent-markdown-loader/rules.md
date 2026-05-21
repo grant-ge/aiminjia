@@ -11,17 +11,15 @@
 
 **前提**
 - 用户 scope 是 `t_1__u_2`
-- root 目录是一个空的 TempDir
-- 调用 user scope 激活流程后，`UserScopedPaths::agents_dir()` 应指向 `users/t_1__u_2/agents`
+- 该 scope 尚未被激活，本地 agents 目录不存在
 
 **操作**
-1. 激活 `t_1__u_2` 这个用户 scope
-2. 读取 `agents_dir()` 对应的路径
+- 用户 scope `t_1__u_2` 激活，系统准备用户工作目录
 
-**断言**
+**验收标准**
 - `users/t_1__u_2/agents/` 目录存在
 - 这个目录是一个真实目录，不是普通文件
-- 目录创建后，后续把 `.md` 文件放进去就能被 registry loader 找到
+- 目录创建后，后续把 `.md` 文件放进去就能被系统加载器找到
 
 ---
 
@@ -31,23 +29,14 @@
 用户写了一个名字看起来像有值、但 trim 后为空的 agent 文件。系统不能把它注册成一个空名字 agent，否则后续覆盖和查找都会乱掉。
 
 **前提**
-- 文件路径是 `users/t_1__u_2/agents/empty-name.md`
-- frontmatter 内容为：
-  ```yaml
-  ---
-  name: "   "
-  description: "有效描述"
-  allowed_tools: ["read_workspace_file"]
-  ---
-  ```
-- body 内容是：
-  `You are a helper.`
+- 用户在 `users/t_1__u_2/agents/` 目录下放置了一个名为 `empty-name.md` 的 agent 文件
+- 该文件的 name 字段为纯空白字符（trim 后为空），description 字段为 `"有效描述"`，allowed_tools 包含 `read_workspace_file`，body 内容为 `You are a helper.`
 
 **操作**
-- 调用 registry loader 读取该文件
+- 用户 scope 激活后系统自动加载 agents 目录，扫描并解析该文件
 
-**断言**
-- loader 返回 `Err`
+**验收标准**
+- 系统拒绝注册该 agent，加载结果为错误
 - 错误信息包含文件路径 `empty-name.md`
 - registry 中不存在名字为空字符串的 agent
 - registry 中也不存在被空白名字污染的条目
@@ -60,23 +49,14 @@
 用户写的 agent 不能只有壳子。描述和 system prompt 都是 agent 的产品承诺，trim 后为空就不算有效 agent。
 
 **前提**
-- 文件路径是 `users/t_1__u_2/agents/blank-body.md`
-- frontmatter 内容为：
-  ```yaml
-  ---
-  name: "blank-body"
-  description: "   "
-  allowed_tools: ["read_workspace_file"]
-  ---
-  ```
-- body 内容只有空白字符：
-  `"   "`
+- 用户在 `users/t_1__u_2/agents/` 目录下放置了一个名为 `blank-body.md` 的 agent 文件
+- 该文件的 name 字段为 `blank-body`，description 字段为纯空白字符（trim 后为空），allowed_tools 包含 `read_workspace_file`，body 内容为纯空白字符
 
 **操作**
-- 调用 registry loader 读取该文件
+- 用户 scope 激活后系统自动加载 agents 目录，扫描并解析该文件
 
-**断言**
-- loader 返回 `Err`
+**验收标准**
+- 系统拒绝注册该 agent，加载结果为错误
 - 错误信息包含文件路径 `blank-body.md`
 - registry 中不存在名为 `blank-body` 的 agent
 
@@ -88,23 +68,14 @@
 用户可以限制自己的 agent 只能用某些工具，但这些工具名必须是真正的工具名，不能是空白字符串或带空格的伪名。
 
 **前提**
-- 文件路径是 `users/t_1__u_2/agents/blank-tool.md`
-- frontmatter 内容为：
-  ```yaml
-  ---
-  name: "blank-tool"
-  description: "有效描述"
-  allowed_tools: [" read_workspace_file ", "   "]
-  ---
-  ```
-- body 内容为：
-  `You are a helper.`
+- 用户在 `users/t_1__u_2/agents/` 目录下放置了一个名为 `blank-tool.md` 的 agent 文件
+- 该文件的 name 字段为 `blank-tool`，description 为有效描述，allowed_tools 列表中有一项为纯空白字符串（trim 后为空），同时还有一项带前后空格的 ` read_workspace_file `，body 内容为 `You are a helper.`
 
 **操作**
-- 调用 registry loader 读取该文件
+- 用户 scope 激活后系统自动加载 agents 目录，扫描并解析该文件
 
-**断言**
-- loader 返回 `Err`
+**验收标准**
+- 系统拒绝注册该 agent，加载结果为错误
 - 错误信息包含文件路径 `blank-tool.md`
 - registry 中不存在名为 `blank-tool` 的 agent
 - `allowed_tools` 不会把 `" read_workspace_file "` 当成合法工具名静默接受

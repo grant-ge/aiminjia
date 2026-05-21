@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use serde::Serialize;
+
 use crate::llm::gateway::LlmGateway;
 use crate::llm::masking::MaskingLevel;
 use crate::llm::streaming::ChatMessage;
@@ -9,6 +11,7 @@ use crate::runtime::agent::subagent_result_envelope::SubAgentResultEnvelope;
 use crate::runtime::agent::AgentRuntime;
 use crate::runtime::store::conversation_store::ConversationStore;
 use crate::storage::file_manager::FileManager;
+use crate::storage::file_store::types::ConversationMeta;
 use crate::storage::file_store::AppStorage;
 use crate::transport::runtime_host::RuntimeHost;
 
@@ -22,6 +25,53 @@ pub struct DeleteConversationOutcome {
 pub struct RenameConversationOutcome {
     pub conversation_id: String,
     pub new_title: String,
+}
+
+/// Frontend-facing view of `ConversationMeta`. Exposed by the
+/// `get_conversation_meta` Tauri command for routes that need fields
+/// not present in the lightweight `ConversationIndexEntry` (e.g.
+/// `expert_team_id`, `active_team_name`). Serialized camelCase to match
+/// the `Conversation` shape on the TS side.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationMetaDto {
+    pub id: String,
+    pub title: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub is_archived: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub employee_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_team_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expert_team_id: Option<String>,
+}
+
+impl From<ConversationMeta> for ConversationMetaDto {
+    fn from(m: ConversationMeta) -> Self {
+        // Derive expert_team_id from our tagged source field so callers that
+        // still ask for `expertTeamId` (legacy from main) get a sensible value.
+        let expert_team_id =
+            if let crate::storage::file_store::types::ConversationSource::ExpertTeam {
+                expert_team_id,
+            } = &m.source
+            {
+                Some(expert_team_id.clone())
+            } else {
+                None
+            };
+        Self {
+            id: m.id,
+            title: m.title,
+            created_at: m.created_at,
+            updated_at: m.updated_at,
+            is_archived: m.is_archived,
+            employee_id: m.employee_id,
+            active_team_name: m.active_team_name,
+            expert_team_id,
+        }
+    }
 }
 
 pub async fn stop_streaming(

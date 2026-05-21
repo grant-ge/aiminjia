@@ -8,11 +8,7 @@ export function HomePage() {
   const { t } = useTranslation()
   const logoUrl = useBrandingStore((s) => s.logoUrl)
   return (
-    <PageSectionShell
-      padding="px-10 pt-8 pb-7"
-      gap="gap-4"
-      className="min-h-full justify-center"
-    >
+    <PageSectionShell className="min-h-full justify-center">
       <div className="mx-auto flex w-[820px] flex-col items-center gap-10 -mt-6">
         <HomeMascotHero
           mascotUrl={logoUrl}

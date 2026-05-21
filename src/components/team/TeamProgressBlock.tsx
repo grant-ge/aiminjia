@@ -6,7 +6,7 @@ import { isLeadName } from './agentIdentity'
 
 interface TeamProgressBlockProps {
   session: TeamSession
-  onOpen: () => void
+  onOpen: (teamId: string) => void
 }
 
 /**
@@ -30,7 +30,7 @@ export function TeamProgressBlock({ session, onOpen }: TeamProgressBlockProps) {
   return (
     <button
       type="button"
-      onClick={onOpen}
+      onClick={() => onOpen(session.teamId)}
       className={cn(
         'group flex w-full items-center gap-3 rounded-lg border border-border bg-sidebar px-4 py-3 text-left transition-colors',
         'hover:border-primary/40 hover:bg-sidebar-accent',
@@ -55,8 +55,8 @@ export function TeamProgressBlock({ session, onOpen }: TeamProgressBlockProps) {
         <div className="flex items-center gap-2 text-sm font-medium text-foreground">
           <span className="truncate">{title}</span>
           {session.deletedAt === null && (
-            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-300">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+              <span className="h-1.5 w-1.5 rounded-full bg-primary" />
               进行中
             </span>
           )}

@@ -44,8 +44,9 @@ async fn try_notify_lead(
         return;
     };
     let actor_name = if let Some(aid) = ctx.agent_id.as_ref() {
+        let team_name = ctx.active_team_name.as_deref().unwrap_or("");
         name_reg
-            .name_for(&ctx.session_id, aid)
+            .name_for(&ctx.session_id, team_name, aid)
             .await
             .unwrap_or_else(|| "unknown-actor".into())
     } else {
@@ -60,6 +61,7 @@ async fn try_notify_lead(
     let outcome = emit_to_lead(
         &deps,
         &ctx.session_id,
+        ctx.active_team_name.as_deref().unwrap_or(""),
         &actor_name,
         task_id,
         action,
@@ -90,6 +92,18 @@ fn task_list_id(_ctx: &ToolExecutionContext) -> String {
 }
 
 fn store_for(ctx: &ToolExecutionContext) -> Result<FileTaskV2Store, ToolError> {
+    // 生产路径：用 TeamPaths 派生 tasks 目录。
+    // 若有 active_team_name，写 teams/{name}/tasks/；否则写 conv 根 tasks/。
+    if let Some(conv_dir) = ctx.conv_dir.as_ref() {
+        use crate::runtime::agent::team_paths::TeamPaths;
+        let paths = match ctx.active_team_name.as_deref() {
+            Some(name) => TeamPaths::for_team(conv_dir, name),
+            None => TeamPaths::for_conv(conv_dir),
+        };
+        return Ok(FileTaskV2Store::new(paths.tasks_dir()));
+    }
+
+    // Fallback：单测或老代码路径未注入 conv_dir 时，沿用原始拼接逻辑。
     let home = ctx
         .task_store_root
         .clone()

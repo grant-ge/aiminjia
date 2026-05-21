@@ -2,58 +2,44 @@
 import type {
   ComposerAttachmentToken,
   ComposerJsonNode,
-  ComposerSkillToken,
   ComposerMark,
   RichComposerSubmitPayload,
 } from './types'
 
 export function serializeComposerDoc(doc: ComposerJsonNode): RichComposerSubmitPayload {
   const attachments: ComposerAttachmentToken[] = []
-  const skills: ComposerSkillToken[] = []
-  const markdown = renderBlocks(doc.content ?? [], attachments, skills)
-  const isEmpty = markdown.trim().length === 0 && attachments.length === 0 && skills.length === 0
-  return { markdown, attachments, skills, isEmpty }
+  const markdown = renderBlocks(doc.content ?? [], attachments)
+  const isEmpty = markdown.trim().length === 0 && attachments.length === 0
+  return { markdown, attachments, isEmpty }
 }
 
-function renderBlocks(
-  nodes: ComposerJsonNode[],
-  attachments: ComposerAttachmentToken[],
-  skills: ComposerSkillToken[],
-): string {
+function renderBlocks(nodes: ComposerJsonNode[], attachments: ComposerAttachmentToken[]): string {
   const parts: string[] = []
   for (const node of nodes) {
-    parts.push(renderBlock(node, attachments, skills))
+    parts.push(renderBlock(node, attachments))
   }
   return parts.filter((s) => s.length > 0).join('\n\n')
 }
 
-function renderBlock(
-  node: ComposerJsonNode,
-  attachments: ComposerAttachmentToken[],
-  skills: ComposerSkillToken[],
-): string {
+function renderBlock(node: ComposerJsonNode, attachments: ComposerAttachmentToken[]): string {
   switch (node.type) {
     case 'paragraph':
-      return renderInline(node.content ?? [], attachments, skills)
+      return renderInline(node.content ?? [], attachments)
     case 'blockquote':
-      return renderBlockquote(node, attachments, skills)
+      return renderBlockquote(node, attachments)
     case 'codeBlock':
       return renderCodeBlock(node)
     case 'bulletList':
-      return renderList(node, attachments, skills, false)
+      return renderList(node, attachments, false)
     case 'orderedList':
-      return renderList(node, attachments, skills, true)
+      return renderList(node, attachments, true)
     default:
       return ''
   }
 }
 
-function renderBlockquote(
-  node: ComposerJsonNode,
-  attachments: ComposerAttachmentToken[],
-  skills: ComposerSkillToken[],
-): string {
-  const inner = renderBlocks(node.content ?? [], attachments, skills)
+function renderBlockquote(node: ComposerJsonNode, attachments: ComposerAttachmentToken[]): string {
+  const inner = renderBlocks(node.content ?? [], attachments)
   return inner
     .split('\n')
     .map((line) => (line.length === 0 ? '>' : '> ' + line))
@@ -72,14 +58,13 @@ function renderCodeBlock(node: ComposerJsonNode): string {
 function renderList(
   node: ComposerJsonNode,
   attachments: ComposerAttachmentToken[],
-  skills: ComposerSkillToken[],
   ordered: boolean,
 ): string {
   const items = node.content ?? []
   return items
     .map((item, idx) => {
       const marker = ordered ? `${idx + 1}. ` : '- '
-      const itemText = renderBlocks(item.content ?? [], attachments, skills)
+      const itemText = renderBlocks(item.content ?? [], attachments)
       return itemText
         .split('\n')
         .map((line, lineIdx) => indentListLine(line, lineIdx, marker))
@@ -105,7 +90,6 @@ const MARK_ORDER: Array<'code' | 'bold' | 'italic' | 'strike' | 'link'> = [
 function renderInline(
   nodes: ComposerJsonNode[],
   attachments: ComposerAttachmentToken[],
-  skills: ComposerSkillToken[],
 ): string {
   const parts: string[] = []
   for (const node of nodes) {
@@ -115,15 +99,18 @@ function renderInline(
       parts.push('  \n')
     } else if (node.type === 'attachmentToken') {
       parts.push(renderAttachmentToken(node, attachments))
-    } else if (node.type === 'skillToken') {
-      collectSkillToken(node, skills)
+    } else if (node.type === 'linkChip') {
+      const url = typeof node.attrs?.url === 'string' ? node.attrs.url : ''
+      // Chip serializes back to the raw URL — the LLM sees plain text, the
+      // chip UI is purely a visual + edit-protection layer.
+      parts.push(url)
     }
   }
   return parts.join('')
 }
 
 function renderText(node: ComposerJsonNode): string {
-  const raw = (node.text ?? '').replace(/\u200B/g, '')
+  const raw = node.text ?? ''
   const marks = node.marks ?? []
   const hasCode = marks.some((m) => m.type === 'code')
   // text inside `code` mark must not be markdown-escaped (it's verbatim)
@@ -215,25 +202,6 @@ function readAttachmentTokenAttrs(node: ComposerJsonNode): ComposerAttachmentTok
   }
   const mimeType = typeof attrs.mimeType === 'string' ? attrs.mimeType : undefined
   return { id, fileName, path, kind, fileType, fileSize, source, mimeType }
-}
-
-
-
-function collectSkillToken(node: ComposerJsonNode, skills: ComposerSkillToken[]): void {
-  const token = readSkillTokenAttrs(node)
-  if (!token) return
-  if (!skills.some((existing) => existing.id === token.id)) {
-    skills.push(token)
-  }
-}
-
-function readSkillTokenAttrs(node: ComposerJsonNode): ComposerSkillToken | null {
-  const attrs = node.attrs ?? {}
-  const id = typeof attrs.id === 'string' ? attrs.id : null
-  const label = typeof attrs.label === 'string' ? attrs.label : null
-  const command = typeof attrs.command === 'string' ? attrs.command : null
-  if (!id || !label || !command) return null
-  return { id, label, command }
 }
 
 function escapeMarkdownLinkText(text: string): string {

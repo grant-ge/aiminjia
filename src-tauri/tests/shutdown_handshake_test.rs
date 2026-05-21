@@ -18,6 +18,8 @@ use app_lib::runtime::cancellation::CancellationToken;
 use app_lib::runtime::ids::{AgentId, SessionId};
 use app_lib::runtime::messaging::StructuredMessage;
 
+const TEAM_NAME: &str = "test-team";
+
 fn build_ctx(
     tmp: &TempDir,
     session_id: &str,
@@ -34,7 +36,7 @@ fn build_ctx(
         created_at: chrono::Utc::now(),
         last_active_at: chrono::Utc::now(),
     };
-    let mut team = Team::new(SessionId::new(session_id), lead, "team".to_string());
+    let mut team = Team::new(SessionId::new(session_id), lead, TEAM_NAME.to_string());
     team.add_teammate(Member {
         agent_id: agent_id.clone(),
         name: agent_name.to_string(),
@@ -53,7 +55,7 @@ fn build_ctx(
         agent_name: Some(agent_name.to_string()),
         kind: TranscriptKind::Teammate,
         employee_id: Some("emp".into()),
-        team_id: Some(session_id.into()),
+        team_id: Some(TEAM_NAME.into()),
         spawned_by: Some("lead-id".into()),
         spawned_at: chrono::Utc::now(),
         model: None,
@@ -65,6 +67,7 @@ fn build_ctx(
         agent_id: agent_id.clone(),
         session_id: SessionId::new(session_id),
         conv_id: session_id.into(),
+        team_name: TEAM_NAME.to_string(),
         cancel,
         inbox,
         agent_names: names,
@@ -124,7 +127,7 @@ async fn shutdown_request_chat_message_does_not_terminate_teammate() {
     );
 
     // Transcript should now contain the shutdown-request wrapper.
-    let path = transcript_path_for_kind(&conv_dir, &TranscriptKind::Teammate, agent_id.as_str());
+    let path = transcript_path_for_kind(&conv_dir, &TranscriptKind::Teammate, TEAM_NAME, agent_id.as_str());
     let body = std::fs::read_to_string(&path).expect("transcript should exist");
     assert!(
         body.contains("shutdown-request"),

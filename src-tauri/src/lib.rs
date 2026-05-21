@@ -203,6 +203,16 @@ pub fn run() {
 
             // Initialize cloud auth manager
             let global_store = Arc::new(storage::GlobalConfigStore::new(aijia_home.global_dir()));
+            // Data-layout compatibility gate: if the on-disk layout predates a
+            // breaking storage / encryption change, the legacy `cloud_auth`
+            // blob is purged so the user is forced to re-login cleanly.  Must
+            // run BEFORE `bootstrap_cloud_auth_if_needed`, otherwise that
+            // function would copy the stale ciphertext from
+            // `~/.renlijia/config.json` back into the new location.
+            storage::data_version::ensure_compatible(
+                aijia_home.as_ref(),
+                secure_storage.as_deref(),
+            );
             if let Err(e) = storage::migration_user_scope::bootstrap_cloud_auth_if_needed(
                 aijia_home.root(),
                 &aijia_home.global_dir(),
@@ -362,11 +372,23 @@ pub fn run() {
             let user_skills_dir = current_user_storage
                 .resolve_paths()
                 .map(|paths| paths.skills_dir());
-            let skill_roots: Vec<std::path::PathBuf> = match user_skills_dir {
-                Some(user) => vec![user, global_skills_dir],
-                None => vec![global_skills_dir],
-            };
-            let loaded_skills = plugin::skill::loader::load_skill_roots(&skill_roots)
+            // (root, source) pairs — explicit so we don't rely on positional
+            // index-0=User convention. Tenant-pushed skills land in the same
+            // global dir as platform ones (handler returns both classes in one
+            // response), but at load time the registry currently tags them
+            // Global. A future change can split the global dir into
+            // managed/{public,tenant}/ and emit Tenant labels here.
+            let skill_roots_tagged: Vec<(std::path::PathBuf, plugin::skill::types::SkillSource)> =
+                match user_skills_dir {
+                    Some(user) => vec![
+                        (user, plugin::skill::types::SkillSource::User),
+                        (global_skills_dir.clone(), plugin::skill::types::SkillSource::Global),
+                    ],
+                    None => vec![(global_skills_dir.clone(), plugin::skill::types::SkillSource::Global)],
+                };
+            let skill_roots: Vec<std::path::PathBuf> =
+                skill_roots_tagged.iter().map(|(p, _)| p.clone()).collect();
+            let loaded_skills = plugin::skill::loader::load_skill_roots_tagged(&skill_roots_tagged)
                 .unwrap_or_else(|e| {
                     log::warn!("[setup] Failed to load skills from roots: {}", e);
                     Default::default()
@@ -872,9 +894,12 @@ pub fn run() {
             chat::get_subagent_transcript,
             chat::get_team_overview,
             chat::get_teammate_transcript,
+            chat::team_chat_messages,
             chat::create_conversation,
             chat::delete_conversation,
             chat::rename_conversation,
+            chat::set_conversation_expert_team,
+            chat::get_conversation_meta,
             chat::archive_conversation,
             chat::restore_conversation,
             chat::get_archived_conversations,
@@ -992,6 +1017,14 @@ pub fn run() {
             commands::auth::get_cloud_auth,
             commands::auth::get_cloud_models,
             commands::auth::cloud_change_password,
+            commands::auth::cloud_send_sms_code,
+            commands::auth::cloud_send_email_code,
+            commands::auth::cloud_register,
+            commands::auth::get_last_brand,
+            // Billing commands (personal tenant)
+            crate::transport::tauri_commands::billing::billing_summary,
+            crate::transport::tauri_commands::billing::billing_usage_records,
+            commands::auth::save_last_brand,
             // Skill management commands
             commands::skill_management::list_custom_skills,
             commands::skill_management::install_custom_skill,

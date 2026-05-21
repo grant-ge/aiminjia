@@ -6,6 +6,7 @@
 pub mod agenda;
 pub mod agents;
 pub mod auth;
+pub mod billing;
 pub mod chat;
 pub mod file;
 pub mod mcp;

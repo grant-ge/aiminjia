@@ -10,17 +10,16 @@ WorkerRuntime 执行行为：父对话取消级联、文件缓存隔离、权限
 用户取消了正在进行的父对话，子代理不能继续独立运行，否则会产生无法回收的资源占用。
 
 **前提**
-- 父对话有一个 CancellationToken（父 token）
-- 子代理启动时从父 token 派生出独立的子 token
+- 应用已启动，存在一个正在运行的父对话
+- 父对话下已发起一个子代理任务，子代理正在执行中
 
 **操作**
-1. 确认子 token 初始状态：is_cancelled() == false
-2. 触发父 token 取消
-3. 再次检查子 token 状态
+1. 在父对话界面点击「停止」按钮，取消父对话
+2. 等待 2 秒后，通过状态查询接口观察子代理的运行状态
 
-**断言**
-- 父 token 取消前，子 token 的 `is_cancelled()` 返回 `false`
-- 父 token 取消后，子 token 的 `is_cancelled()` 返回 `true`
+**验收标准**
+- 父对话停止前，子代理状态查询结果为 `"running"`
+- 父对话停止后，子代理状态查询结果变为 `"cancelled"`，不再为 `"running"`
 
 ---
 
@@ -30,18 +29,16 @@ WorkerRuntime 执行行为：父对话取消级联、文件缓存隔离、权限
 父代理和子代理都可能读取文件，但它们各自的文件状态缓存应该互不干扰——子代理的行为不能污染父代理的记录。
 
 **前提**
-- 父代理的 FileStateCache 已记录文件 `file_a.csv`（模拟父代理已读取该文件）
-- 子代理从父 cache 派生出独立 child cache
-- 子代理的 child cache 中记录文件 `file_b.csv`
+- 父代理在当前对话中已读取过文件 `file_a.csv`（对话历史中可见该文件被引用）
+- 在同一对话中，发起一个子代理任务，子代理任务读取了不同的文件 `file_b.csv`
 
 **操作**
-- 检查父 cache 中是否包含 `file_b.csv`
-- 检查 child cache 中是否包含 `file_a.csv`
+- 子代理任务完成后，查询父对话中已读取的文件列表
+- 查询子代理转录记录中涉及的文件列表
 
-**断言**
-- 父 cache 不包含 `file_b.csv`（子代理新增的文件不污染父代理）
-- child cache 包含 `file_a.csv`（继承父代理已有记录）
-- 两个 cache 是不同的对象引用
+**验收标准**
+- 父对话的文件读取记录中不包含 `file_b.csv`（子代理新增的文件未污染父代理）
+- 子代理的文���读取记录中包含 `file_a.csv`（继承了父代理已有的记录）
 
 ---
 
@@ -51,16 +48,16 @@ WorkerRuntime 执行行为：父对话取消级联、文件缓存隔离、权限
 某些工具行为在子代理中需要有所不同（如日志标记、权限范围）。工具执行时要能知道"我现在是在子代理里运行的"，以及当前子代理的 ID。
 
 **前提**
-- 通过完整的 spawn 流程创建子代理（不手动构造 CapabilityContext）
-- spawn 时得到 child_agent_id
+- 应用已启动，父对话正在进行
+- 通过父对话发起一个子代理任务，子代理启动并开始执行工具调用
 
 **操作**
-- 从子代理的 ToolExecutionContext 读取 capability 字段
-- 读取 `capability.agent_id` 和 `capability.is_subagent`
+- 子代理执行工具调用期间，查看子代理任务的上下文信息
+- 对比父对话 ID 与子代理执行时使用的 agent_id
 
-**断言**
-- `capability.is_subagent` 为 `true`
-- `capability.agent_id` 等于 spawn 时生成的 child_agent_id
+**验收标准**
+- 子代理执行工具时的上下文标记 `is_subagent` 为 `true`
+- 子代理执行时使用的 `agent_id` 与发起时分配的 child agent id 一致，与父对话 agent_id 不同
 
 ---
 
@@ -70,17 +67,17 @@ WorkerRuntime 执行行为：父对话取消级联、文件缓存隔离、权限
 子代理不能无限循环。达到 max_iterations 后应给出说明性输出，而不是 panic 或空结果。
 
 **前提**
-- `max_iterations = 2`
-- Mock LLM 每次都返回 ToolUse 响应（工具名 `dummy_tool`，无有效内容），迫使循环继续
-- Mock 工具执行始终成功返回空内容
+- 应用已启动，子代理的最大迭代次数（max_iterations）配置为 2
+- 子代理被分配了一个会连续触发工具调用的任务，使其在 2 轮内无法产出最终文本输出
 
 **操作**
-- 执行子代理 run()
+- 发起该子代理任务，等待其执行完毕
+- 查看子代理的输出内容和执行摘要
 
-**断言**
-- 返回 `Ok(SubAgentResult)`，不返回 Err
-- `result.output` 包含字符串 `"Sub-agent reached iteration limit."`
-- `result.iterations_used == 2`
+**验收标准**
+- 子代理任务正常结束，状态为 `"completed"`，不出现崩溃或错误状态
+- 子代理的输出内容包含字符串 `"Sub-agent reached iteration limit."`
+- 子代理执行摘要中 `iterations_used` 字段值为 `2`
 
 ---
 
@@ -90,14 +87,15 @@ WorkerRuntime 执行行为：父对话取消级联、文件缓存隔离、权限
 用户取消操作后，子代理应安全退出并说明原因，不能挂起或 panic。
 
 **前提**
-- 子代理的 CancellationToken 在第一轮 LLM 调用开始前被触发取消
+- 应用已启动，子代理任务已发起，正处于等待 LLM 响应的初始阶段
 
 **操作**
-- 执行子代理 run()
+- 在子代理开始处理前立即取消该子代理任务
+- 等待子代理结束，查看其输出内容
 
-**断言**
-- 返回 `Ok(SubAgentResult)`，不返回 Err
-- `result.output` 包含字符串 `"Sub-agent cancelled."`
+**验收标准**
+- 子代理任务正常结束，不出现崩溃或错误状态
+- 子代理的输出内容包含字符串 `"Sub-agent cancelled."`
 
 ---
 
@@ -107,15 +105,16 @@ WorkerRuntime 执行行为：父对话取消级联、文件缓存隔离、权限
 子代理执行某工具时触发了权限确认（Ask），这个确认请求不能在子代理内部消化——子代理没有能力展示 UI 让用户确认，必须向上抛给父代理处理。
 
 **前提**
-- 子代理调用的某个工具返回 AskRequired 结果
-- 该工具名为 `mcp__demo__action`
+- 应用已启动，子代理被分配了一个需要调用权限受限工具 `mcp__demo__action` 的任务
+- 该工具在当前权限配置下会触发权限确认请求
 
 **操作**
-- 执行子代理 run()
+- 发起该子代理任务，等待其执行
 
-**断言**
-- run() 返回 `Err`，错误类型为 `LegacyToolError::AskRequired`
-- AskRequired 携带的 decision 信息中可以提取到工具名 `mcp__demo__action`
+**验收标准**
+- 子代理任务执行后，父对话界面出现权限确认提示
+- 权限确认提示中可识别出工具名称 `mcp__demo__action`
+- 子代理任务状态标记为需要父代理处理（非直接 completed）
 
 ---
 
@@ -125,21 +124,20 @@ WorkerRuntime 执行行为：父对话取消级联、文件缓存隔离、权限
 子代理完成后，父代理需要从 envelope 中提取输出内容和执行摘要。
 
 **前提**
-- 子代理设置 `max_iterations = 3`
-- Mock LLM 第 1 轮返回 ToolUse，第 2 轮返回 ContentComplete，输出 `"分析完成"`
-- Mock 工具第 1 轮执行成功，生成文件路径 `reports/result.md`
+- 应用已启动，子代理 max_iterations 配置为 3
+- 子代理被分配的任务会先执行一次工具调用（生成文件 `reports/result.md`），再输出最终文字 `"分析完成"`
 
 **操作**
-- 执行子代理 run()，读取返回的 SubAgentResultEnvelope
+- 发起该子代理任务，等待其完成
+- 查看子代理完成后写入持久化存储的 envelope 摘要记录
 
-**断言**
-- `envelope.schema_version == 1`
-- `envelope.output == "分析完成"`
-- `envelope.iterations_used == 2`
-- `envelope.generated_files` 包含 `"reports/result.md"`
-- `envelope.generated_files` 已去重（无重复路径）
-- `envelope.transcript_snapshot.len() <= 16`
-- `envelope.transcript_ref` 以 `"subagent://"` 开头
+**验收标准**
+- `~/.renlijia/agent_invocations.json` 中对应子代理条目的 `storage_summary` 字段以 `"subagent-envelope:v1:"` 开头
+- envelope 反序列化后 `output` 字段值为 `"分析完成"`
+- envelope 反序列化后 `iterations_used` 字段值为 `2`
+- envelope 反序列化后 `generated_files` 列表中包含 `"reports/result.md"`，且无重复条目
+- envelope 反序列化后 `transcript_snapshot` 中条目数量不超过 16 条
+- envelope 反序列化后 `transcript_ref` 字段值以 `"subagent://"` 开头
 
 ---
 
@@ -149,18 +147,19 @@ WorkerRuntime 执行行为：父对话取消级联、文件缓存隔离、权限
 envelope 需要持久化到 invocation store 的 summary 字段，格式必须可逆。
 
 **前提**
-- 构造一个 SubAgentResultEnvelope：`output = "test output"`，`schema_version = 1`，`iterations_used = 3`
+- 应用已启动，已完成一个输出为 `"test output"`、经历 3 次迭代的子代理任务
+- 该子代理任务已正常结束，envelope 已写入持久化存储
 
 **操作**
-- 调用 `envelope.to_storage_summary()`
-- 调用 `SubAgentResultEnvelope::from_storage_summary(&summary)`
+- 读取 `~/.renlijia/agent_invocations.json` 中该子代理条目的 `storage_summary` 字段
+- 对 `storage_summary` 字段值执行反序列化还原
 
-**断言**
-- `to_storage_summary()` 返回值以 `"subagent-envelope:v1:"` 开头
-- `from_storage_summary()` 返回 `Some`，不返回 `None`
-- 还原后 `envelope.output == "test output"`
-- 还原后 `envelope.schema_version == 1`
-- 还原后 `envelope.iterations_used == 3`
+**验收标准**
+- `storage_summary` 字段值以 `"subagent-envelope:v1:"` 开头
+- 反序列化还原成功，不返回空或报错
+- 还原后 `output` 字段值为 `"test output"`
+- 还原后 `schema_version` 字段值为 `1`
+- 还原后 `iterations_used` 字段值为 `3`
 
 ---
 
@@ -170,17 +169,17 @@ envelope 需要持久化到 invocation store 的 summary 字段，格式必须�
 主对话需要能读取完整的子代理对话记录，条目数量必须与实际消息轮次一致，不能有遗漏。
 
 **前提**
-- Mock LLM 预设：第 1 轮返回 ToolUse（1 条 assistant 消息 + 1 条 tool_result）、第 2 轮返回 ContentComplete（1 条 assistant 消息）
-- 初始 1 条 user 消息
-- AgentRuntime 使用 InMemorySubagentTranscriptStore
+- 应用已启动，已完成一个子代理任务
+- 该任务经历了以下消息轮次：初始 user 消息 1 条，第 1 轮 LLM 返回工具调用 + 工具结果各 1 条，第 2 轮 LLM 返回最终文字 1 条
 
 **操作**
-- 执行子代理 run()
-- 通过 `AgentRuntime::load_transcript(child_run_id)` 读取转录
+- 子代理任务完成后，通过 `transcript_ref` 读取 `~/.renlijia/subagent_transcripts/` 下对应的转录文件
+- 逐条检查转录文件内容
 
-**断言**
-- 转录条目共 4 条（1 user + 1 assistant tool_use + 1 tool_result + 1 assistant final）
-- 第 1 条 `role == "user"`
-- 最后 1 条 `role == "assistant"`
-- `transcript_ref` 格式为 `"subagent://<child_run_id>"`
-- transcript_snapshot 中最后一条 `role == "assistant"`（保留最新的）
+**验收标准**
+- 转录文件存在且为合法 JSON
+- 转录条目共 4 条（1 条 user + 1 条 assistant tool_use + 1 条 tool_result + 1 条 assistant 最终输出）
+- 第 1 条 `role` 字段值为 `"user"`
+- 最后 1 条 `role` 字段值为 `"assistant"`
+- envelope 的 `transcript_ref` 字段值格式为 `"subagent://<child_run_id>"`
+- envelope 的 `transcript_snapshot` 中最后一条 `role` 字段值为 `"assistant"`

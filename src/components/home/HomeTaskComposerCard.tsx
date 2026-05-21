@@ -6,7 +6,7 @@
  * 2. On project button click: open folder picker, update homeStore.
  * 3. On submit: create conversation → authorize workspace → send message.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { BriefcaseBusiness, ChevronDown, Folder, FolderPlus, House, X } from 'lucide-react'
 
@@ -55,13 +55,12 @@ export function HomeTaskComposerCard() {
     selectedWorkspace,
   )
   const [showSkillPopover, setShowSkillPopover] = useState(false)
-  const skills = useSkillStore((s) => s.skills)
   const getSkillById = useSkillStore((s) => s.getById)
-  const skillTokens = useMemo(() => skills.map((skill) => ({
-    id: skill.id,
-    label: skill.displayName || skill.id,
-    command: skill.triggerText || `/${skill.id}`,
-  })), [skills])
+  const [selectedSkill, setSelectedSkill] = useState<{
+    id: string
+    label?: string
+    trigger: string
+  } | null>(null)
 
   // One-shot prefill text; consumed synchronously via lazy initializer so
   // RichComposer's useEditor receives it on its very first render.
@@ -72,13 +71,14 @@ export function HomeTaskComposerCard() {
 
   const handleSkillPick = useCallback((skillId: string) => {
     const skill = getSkillById(skillId)
-    composerRef.current?.insertSkillToken({
+    const trigger = skill?.triggerText || `/${skillId}`
+    setSelectedSkill({
       id: skillId,
       label: skill?.displayName || skill?.id || skillId,
-      command: skill?.triggerText || `/${skillId}`,
+      trigger,
     })
-    composerRef.current?.focus()
     setShowSkillPopover(false)
+    composerRef.current?.focus()
   }, [getSkillById])
 
   // Load default folder if no workspace has been selected yet
@@ -182,12 +182,19 @@ export function HomeTaskComposerCard() {
         fileType: f.fileType,
         mimeType: f.mimeType,
       }))
-      const skillForThisTurn = payload.skills[0] ?? null
-      await sendUserMessage(payload.markdown, fileInfos, skillForThisTurn)
+      const skillForThisTurn = selectedSkill
+      setSelectedSkill(null)
+      let markdownToSend = payload.markdown
+      if (skillForThisTurn) {
+        const trigger = skillForThisTurn.trigger
+        const sep = trigger.endsWith(' ') ? '' : ' '
+        markdownToSend = `${trigger}${sep}${markdownToSend}`
+      }
+      await sendUserMessage(markdownToSend, fileInfos, skillForThisTurn)
     } finally {
       setIsSubmitting(false)
     }
-  }, [displayWorkspace, isSubmitting, sendUserMessage])
+  }, [displayWorkspace, isSubmitting, sendUserMessage, selectedSkill])
 
   const workspaceLabel = displayWorkspace?.displayName ?? t('homeComposer.defaultProject')
   const workspacePath = displayWorkspace?.rootPath
@@ -195,7 +202,7 @@ export function HomeTaskComposerCard() {
   return (
     <div
       data-testid="home-composer-shell"
-      className="home-composer-large relative isolate overflow-visible rounded-[28px] shadow-[0_18px_52px_rgba(40,35,25,0.08)] [&_[data-testid=composer-root]]:relative [&_[data-testid=composer-root]]:z-10 [&_[data-testid=composer-root]]:rounded-[28px] [&_[data-testid=composer-root]]:border-border [&_[data-testid=composer-root]]:px-6 [&_[data-testid=composer-root]]:pb-4 [&_[data-testid=composer-root]]:pt-6 [&_[data-testid=composer-root]]:shadow-none [&_[data-testid=composer-root]>div:has(.ProseMirror)]:min-h-[60px] [&_[data-testid=composer-root]_.ProseMirror]:min-h-[60px]"
+      className="home-composer-large relative isolate overflow-visible rounded-[28px] shadow-[var(--shadow-card)] [&_[data-testid=composer-root]]:relative [&_[data-testid=composer-root]]:z-10 [&_[data-testid=composer-root]]:rounded-[28px] [&_[data-testid=composer-root]]:border-border [&_[data-testid=composer-root]]:px-6 [&_[data-testid=composer-root]]:pb-4 [&_[data-testid=composer-root]]:pt-6 [&_[data-testid=composer-root]]:shadow-none [&_[data-testid=composer-root]>div:has(.ProseMirror)]:min-h-[60px] [&_[data-testid=composer-root]_.ProseMirror]:min-h-[60px]"
     >
       <div className="absolute bottom-full left-1/2 z-30 mb-1 -translate-x-1/2">
         <SkillPopover
@@ -213,8 +220,17 @@ export function HomeTaskComposerCard() {
         clearOnSubmit
         autoFocus
         initialMarkdown={initialMarkdown}
-        skillTokens={skillTokens}
         onOpenSkill={() => setShowSkillPopover((prev) => !prev)}
+        skillCommand={
+          selectedSkill
+            ? {
+                id: selectedSkill.id,
+                label: selectedSkill.label ?? selectedSkill.id,
+                command: selectedSkill.trigger.trim(),
+              }
+            : null
+        }
+        onClearSkillCommand={() => setSelectedSkill(null)}
         showProjectButton={false}
         onOpenAttachment={isPickingAttachments ? undefined : () => void handlePickAttachments()}
       />
@@ -241,7 +257,7 @@ export function HomeTaskComposerCard() {
             align="start"
             side="bottom"
             sideOffset={8}
-            className="w-[300px] max-w-[calc(100vw-32px)] rounded-2xl border-border bg-card p-1 shadow-[0_18px_44px_rgba(40,35,25,0.16)]"
+            className="w-[300px] max-w-[calc(100vw-32px)] rounded-2xl border-border bg-card p-1 shadow-[var(--shadow-popover)]"
           >
             {recentWorkspaces.filter((ws) => ws.id !== 'default').length > 0 ? (
               <div className="max-h-[200px] overflow-y-auto">

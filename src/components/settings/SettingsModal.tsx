@@ -19,6 +19,7 @@ import { SettingsContentBody } from './SettingsContentBody'
 import { SettingsMenu } from './SettingsMenu'
 import { SettingsShell } from './SettingsShell'
 import { AboutPanel } from './panels/AboutPanel'
+import { AccountBillingPanel } from './panels/AccountBillingPanel'
 import { ArchivedPanel } from './panels/ArchivedPanel'
 import { GeneralPanel } from './panels/GeneralPanel'
 import { RuntimePanel } from './panels/RuntimePanel'
@@ -89,7 +90,7 @@ export function SettingsModal() {
       await store.bootstrap()
       const phase = useUpdaterStore.getState().phase
       if (phase === 'idle') {
-        await message(t('settings.alreadyLatestVersion'), { title: productName, kind: 'info' })
+        await message(t('settings.about.alreadyLatestVersion'), { title: productName, kind: 'info' })
       } else if (phase !== 'failed') {
         // downloading / ready / installing → show the panel
         store.openPanel()
@@ -126,6 +127,9 @@ export function SettingsModal() {
     if (!confirmed) return
 
     localStorage.clear()
+    // Preserve the expert-team migration marker so the legacy localStorage key
+    // (cleared above) doesn't trigger another empty migration pass next launch.
+    localStorage.setItem('aijia-expert-team-migration-v1', 'done')
     useBrandingStore.getState().reset()
     await message(t('settings.localCacheCleared'), { title: productName, kind: 'info' })
   }
@@ -155,11 +159,11 @@ export function SettingsModal() {
                   onLogout={() => void onLogout()}
                 />
               ) : null}
+              {settingsModal === 'account-billing' ? <AccountBillingPanel /> : null}
               {settingsModal === 'about' ? (
                 <AboutPanel
                   appName={productName}
                   version={appVersion}
-                  copyright={t('settings.copyrightText')}
                   logoUrl={logoUrl}
                   onCheckUpdate={() => void onCheckUpdate()}
                   onUploadLogs={() => void onUploadLogs()}

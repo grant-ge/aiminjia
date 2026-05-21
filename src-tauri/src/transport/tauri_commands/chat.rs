@@ -44,10 +44,16 @@ pub(crate) use chat_runtime_impl::build_visible_tool_defs;
 /// Maximum number of stream-level retries within the agent loop.
 /// When a stream error or gateway error is retryable (5xx, timeout, connection),
 /// the current iteration is retried instead of aborting the entire agent loop.
-const MAX_STREAM_RETRIES: u32 = 2;
+const MAX_STREAM_RETRIES: u32 = 5;
 
-/// Delay before retrying a failed stream (seconds).
+/// Base delay before retrying a failed stream (seconds). Actual delay grows
+/// exponentially with attempt number: 2s, 4s, 8s, 16s, 32s.
 const STREAM_RETRY_DELAY_SECS: u64 = 2;
+
+/// Compute exponential backoff for retry attempt N (1-based).
+fn stream_retry_backoff_secs(attempt: u32) -> u64 {
+    STREAM_RETRY_DELAY_SECS.saturating_mul(1u64 << attempt.min(5).saturating_sub(1))
+}
 
 fn attachment_refs_from_json_array(
     files: &[serde_json::Value],
@@ -556,6 +562,8 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                     Some(input.conversation_id),
                     input.anthropic_multimodal_turn.clone(),
                     system_prompt_segments.clone(),
+                    Some(input.trace_id),
+                    Some(input.run_id),
                 )
                 .await;
 
@@ -589,8 +597,10 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                                 RuntimeEventKind::StreamRetryReset,
                             ))
                             .await;
-                        tokio::time::sleep(std::time::Duration::from_secs(STREAM_RETRY_DELAY_SECS))
-                            .await;
+                        tokio::time::sleep(std::time::Duration::from_secs(
+                            stream_retry_backoff_secs(stream_retry_count),
+                        ))
+                        .await;
                         continue;
                     }
 
@@ -795,14 +805,15 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
 
             // If a retry was requested, sleep and restart the gateway call
             if stream_needs_retry {
+                let backoff = stream_retry_backoff_secs(stream_retry_count);
                 log::info!(
                     "[run_llm_step] Retrying after {}s (retry {}/{}) conv={}",
-                    STREAM_RETRY_DELAY_SECS,
+                    backoff,
                     stream_retry_count,
                     MAX_STREAM_RETRIES,
                     input.conversation_id
                 );
-                tokio::time::sleep(std::time::Duration::from_secs(STREAM_RETRY_DELAY_SECS)).await;
+                tokio::time::sleep(std::time::Duration::from_secs(backoff)).await;
                 continue;
             }
 
@@ -887,7 +898,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
 
     async fn load_llm_settings_for_turn(
         &self,
-        request: &ChatTurnRequest,
+        _request: &ChatTurnRequest,
     ) -> Result<ResolvedLlmSettings, TurnError> {
         let global_settings_map = self.services.db().get_all_settings().unwrap_or_default();
         let global_settings = if global_settings_map.is_empty() {
@@ -1373,7 +1384,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         let max_iterations = employee_overrides
             .as_ref()
             .map(|ov| ov.max_iterations)
-            .unwrap_or(30);
+            .unwrap_or(300);
 
         let authorized_workspace = chat_runtime_impl::load_authorized_workspace(
             &self.services.app,
@@ -2380,30 +2391,41 @@ impl TauriChatCommandAdapter {
         };
         let weak_self: std::sync::Weak<Self> = Arc::downgrade(self);
         let installed = sup.set_wake_fn(std::sync::Arc::new(
-            move |key: crate::runtime::agent::LeadKey| {
+            move |key: crate::runtime::agent::LeadKey, team_name: String| {
                 let Some(adapter) = weak_self.upgrade() else {
                     log::warn!(
                         "[path_c_wake] adapter has been dropped — skipping continuation \
-                         turn for session={} agent={}",
+                         turn for session={} agent={} team={}",
                         key.0.as_str(),
-                        key.1.as_str()
+                        key.1.as_str(),
+                        team_name
                     );
                     return;
                 };
                 let session_str = key.0.as_str().to_string();
                 let agent_str = key.1.as_str().to_string();
+                let team_str = team_name.clone();
                 tokio::spawn(async move {
                     log::info!(
                         "[path_c_wake] spawning continuation turn via send_chat_request \
-                         conv={} lead={}",
+                         conv={} lead={} team={}",
                         session_str,
-                        agent_str
+                        agent_str,
+                        team_str
                     );
-                    let req = ChatTurnRequest::new(
+                    // PR6: forward wake-source team_name verbatim so the
+                    // continuation turn uses it as active_team_name without
+                    // re-reading conv.json (which may not yet reflect this
+                    // team — e.g. when active_team is "alpha" but the wake
+                    // came from "beta").
+                    let mut req = ChatTurnRequest::new(
                         key.0.clone(),
                         "__resume_from_task_notification__".to_string(),
                         Vec::new(),
                     );
+                    if !team_name.is_empty() {
+                        req = req.with_active_team_name_override(team_name);
+                    }
                     match adapter.send_chat_request(req).await {
                         Ok(()) => {
                             log::info!(
@@ -3064,6 +3086,63 @@ impl TauriChatCommandAdapter {
         .map_err(|e| format!("join error: {e}"))?
     }
 
+    /// PR9: Read a slice of `<conv>/teams/{team_name}/team-chat.jsonl`.
+    /// Returns raw JSON lines (the writer's shape — `{ts, from, to, text, ...}`).
+    /// `since_ts` filters out lines whose `ts <= since_ts` (string compare,
+    /// fine for RFC3339).  `limit` caps the returned slice to that many lines.
+    pub async fn team_chat_messages(
+        &self,
+        conversation_id: String,
+        team_name: String,
+        since_ts: Option<String>,
+        limit: Option<usize>,
+    ) -> Result<Vec<serde_json::Value>, String> {
+        use crate::storage::{CurrentUserStorage, UserScopedPathResolver};
+        let conv_dir = self
+            .services
+            .app
+            .try_state::<Arc<CurrentUserStorage>>()
+            .and_then(|cus| cus.require_paths().ok())
+            .map(|paths| paths.conversations_dir().join(&conversation_id))
+            .ok_or_else(|| "user scope not active".to_string())?;
+        crate::runtime::agent::team_paths::validate_team_name(&team_name)
+            .map_err(|e| e.to_string())?;
+        let path = crate::runtime::agent::team_paths::TeamPaths::for_team(&conv_dir, &team_name)
+            .team_chat_jsonl();
+        if !path.exists() {
+            return Ok(Vec::new());
+        }
+        let content = tokio::fs::read_to_string(&path)
+            .await
+            .map_err(|e| e.to_string())?;
+        let mut out = Vec::new();
+        for line in content.lines() {
+            let trimmed = match line.find('\t') {
+                Some(idx) => &line[..idx],
+                None => line,
+            }
+            .trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed) else {
+                continue;
+            };
+            if let Some(ref since) = since_ts {
+                if v.get("ts").and_then(|t| t.as_str()).map_or(true, |t| t <= since.as_str()) {
+                    continue;
+                }
+            }
+            out.push(v);
+            if let Some(lim) = limit {
+                if out.len() >= lim {
+                    break;
+                }
+            }
+        }
+        Ok(out)
+    }
+
     pub async fn create_conversation(&self) -> Result<String, String> {
         // 不在这里 emit conversation:created：前端 createNewConversation 已经做了
         // 乐观更新（optimisticId → backendId 替换），重复事件会触发不必要的 reload。
@@ -3124,6 +3203,22 @@ impl TauriChatCommandAdapter {
             }),
         );
         Ok(())
+    }
+
+    pub async fn get_conversation_meta(
+        &self,
+        conversation_id: String,
+    ) -> Result<Option<conversation_service::ConversationMetaDto>, String> {
+        match self.services.db().get_conversation(&conversation_id) {
+            Ok(meta) => Ok(Some(meta.into())),
+            Err(e) => {
+                log::warn!(
+                    "[get_conversation_meta] conv {} unreadable: {e:#}",
+                    conversation_id
+                );
+                Ok(None)
+            }
+        }
     }
 
     pub async fn archive_conversation(&self, conversation_id: String) -> Result<(), String> {

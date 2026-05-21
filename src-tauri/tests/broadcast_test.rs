@@ -21,6 +21,8 @@ use app_lib::runtime::tools::context::ToolExecutionContext;
 use app_lib::runtime::tools::executor::ToolError;
 use app_lib::runtime::tools::RuntimeTool;
 
+const TEAM_NAME: &str = "team";
+
 struct Fixture {
     team_registry: Arc<TeamRegistry>,
     name_registry: Arc<AgentNameRegistry>,
@@ -44,18 +46,18 @@ impl Fixture {
                     created_at: chrono::Utc::now(),
                     last_active_at: chrono::Utc::now(),
                 },
-                "team".into(),
+                TEAM_NAME.into(),
             )
             .await
             .unwrap();
         name_registry
-            .register(&session_id, LEAD_NAME, AgentId::new("lead-id"))
+            .register(&session_id, TEAM_NAME, LEAD_NAME, AgentId::new("lead-id"))
             .await
             .unwrap();
         // Lead inbox so we can verify Lead doesn't receive broadcasts.
         let lead_inbox = AgentInbox::new(8);
         inbox_registry
-            .register(&session_id, AgentId::new("lead-id"), lead_inbox)
+            .register(&session_id, TEAM_NAME, AgentId::new("lead-id"), lead_inbox)
             .await;
         Self {
             team_registry,
@@ -69,13 +71,13 @@ impl Fixture {
         let id = AgentId::new(agent_id);
         let inbox = AgentInbox::new(8);
         self.name_registry
-            .register(&self.session, name, id.clone())
+            .register(&self.session, TEAM_NAME, name, id.clone())
             .await
             .unwrap();
         self.inbox_registry
-            .register(&self.session, id.clone(), inbox.clone())
+            .register(&self.session, TEAM_NAME, id.clone(), inbox.clone())
             .await;
-        let team = self.team_registry.get(&self.session).await.unwrap();
+        let team = self.team_registry.get(&self.session, TEAM_NAME).await.unwrap();
         let mut t = team.lock().await;
         t.add_teammate(Member {
             agent_id: id,
@@ -95,7 +97,8 @@ impl Fixture {
         let mut ctx = ToolExecutionContext::for_test(self.session.as_str(), "run-1", "tc-1")
             .with_team_registry(self.team_registry.clone())
             .with_agent_names(self.name_registry.clone())
-            .with_inbox_registry(self.inbox_registry.clone());
+            .with_inbox_registry(self.inbox_registry.clone())
+            .with_active_team(TEAM_NAME.to_string());
         ctx.agent_id = Some(AgentId::new(caller_agent_id));
         ctx
     }
@@ -109,7 +112,7 @@ async fn lead_broadcast_reaches_all_teammates_but_not_lead_itself() {
     let inbox_c = fx.add_teammate("gamma", "c-1").await;
     let lead_inbox = fx
         .inbox_registry
-        .get(&fx.session, &AgentId::new("lead-id"))
+        .get(&fx.session, TEAM_NAME, &AgentId::new("lead-id"))
         .await
         .unwrap();
 

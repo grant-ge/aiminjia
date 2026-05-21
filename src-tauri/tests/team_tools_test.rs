@@ -48,7 +48,7 @@ async fn team_create_seeds_registry_and_registers_lead_name() {
 
     // Team exists in registry with the calling agent as Lead.
     let team_handle = team_registry
-        .get(&SessionId::new(session))
+        .get(&SessionId::new(session), "research-team")
         .await
         .expect("team should exist");
     let team = team_handle.lock().await;
@@ -59,7 +59,7 @@ async fn team_create_seeds_registry_and_registers_lead_name() {
 
     // Lead name is registered so SendMessage(to: "team-lead") works.
     let resolved = name_registry
-        .resolve(&SessionId::new(session), LEAD_NAME)
+        .resolve(&SessionId::new(session), "research-team", LEAD_NAME)
         .await
         .expect("team-lead should be registered");
     assert_eq!(resolved.as_str(), "lead-id-1");
@@ -115,18 +115,19 @@ async fn team_delete_removes_team_and_clears_names() {
     let team_registry = TeamRegistry::new();
     let name_registry = AgentNameRegistry::new();
     let session = "conv-delete-happy";
+    let team_name = "ephemeral";
 
     // Seed via TeamCreate so the name registry also gets populated.
     let create_ctx = build_ctx(session, Some("lead-d"), team_registry.clone(), name_registry.clone());
     TeamCreateRuntimeTool
-        .execute(json!({"team_name": "ephemeral"}), create_ctx)
+        .execute(json!({"team_name": team_name}), create_ctx)
         .await
         .unwrap();
 
-    // Also register a teammate name to verify drop_session clears it.
+    // Also register a teammate name to verify unregister_team clears it.
     let sid = SessionId::new(session);
     name_registry
-        .register(&sid, "researcher", AgentId::new("teammate-1"))
+        .register(&sid, team_name, "researcher", AgentId::new("teammate-1"))
         .await
         .unwrap();
 
@@ -138,14 +139,16 @@ async fn team_delete_removes_team_and_clears_names() {
 
     let payload = result.data.as_ref().unwrap();
     assert_eq!(payload["team_existed"], true);
-    assert_eq!(payload["team_name"], "ephemeral");
+    assert_eq!(payload["team_name"], team_name);
 
-    // Team has been removed.
-    assert!(team_registry.get(&sid).await.is_none());
+    // Team has been removed from registry.
+    assert!(team_registry.get(&sid, team_name).await.is_none());
 
-    // Both names cleared.
-    assert!(name_registry.resolve(&sid, LEAD_NAME).await.is_none());
-    assert!(name_registry.resolve(&sid, "researcher").await.is_none());
+    // Note: TeamDelete in PR4 uses drop_session which clears the whole
+    // session, not per-team unregister. Names are cleared at session level.
+    // After drop_session, resolving either name should return None.
+    assert!(name_registry.resolve(&sid, team_name, LEAD_NAME).await.is_none());
+    assert!(name_registry.resolve(&sid, team_name, "researcher").await.is_none());
 }
 
 #[tokio::test]
@@ -178,6 +181,7 @@ async fn team_create_registers_lead_inbox_when_registry_is_present() {
     let inbox_registry = InboxRegistry::new();
     let session = "conv-lead-inbox";
     let lead_agent = "lead-with-inbox";
+    let team_name = "with-inbox";
 
     let mut ctx = ToolExecutionContext::for_test(session, "run-1", "tc-inbox-1")
         .with_team_registry(team_registry.clone())
@@ -186,7 +190,7 @@ async fn team_create_registers_lead_inbox_when_registry_is_present() {
     ctx.agent_id = Some(AgentId::new(lead_agent));
 
     TeamCreateRuntimeTool
-        .execute(json!({"team_name": "with-inbox"}), ctx)
+        .execute(json!({"team_name": team_name}), ctx)
         .await
         .expect("TeamCreate should succeed");
 
@@ -194,7 +198,7 @@ async fn team_create_registers_lead_inbox_when_registry_is_present() {
     // provided as the calling Lead.
     let sid = SessionId::new(session);
     let inbox = inbox_registry
-        .get(&sid, &AgentId::new(lead_agent))
+        .get(&sid, team_name, &AgentId::new(lead_agent))
         .await
         .expect("Lead inbox should be registered after TeamCreate");
 
@@ -225,15 +229,16 @@ async fn team_create_succeeds_without_inbox_registry_for_legacy_paths() {
     let team_registry = TeamRegistry::new();
     let name_registry = AgentNameRegistry::new();
     let session = "conv-no-inbox-reg";
+    let team_name = "legacy-team";
     let ctx = build_ctx(session, Some("lead-legacy"), team_registry, name_registry.clone());
 
     TeamCreateRuntimeTool
-        .execute(json!({"team_name": "legacy-team"}), ctx)
+        .execute(json!({"team_name": team_name}), ctx)
         .await
         .expect("TeamCreate should succeed even without inbox_registry wired");
 
     // The Lead name is still registered — that part is independent of
     // the inbox path.
     let sid = SessionId::new(session);
-    assert!(name_registry.resolve(&sid, LEAD_NAME).await.is_some());
+    assert!(name_registry.resolve(&sid, team_name, LEAD_NAME).await.is_some());
 }

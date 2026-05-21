@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { CalendarClock, Plus } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -24,28 +25,20 @@ import {
   updateAgendaItem,
 } from '@/lib/tauri'
 
-const TEMPLATES: ScheduleTemplate[] = [
-  {
-    title: '日报汇总',
-    desc: '每天 9 点自动汇总昨日数据生成日报。',
-    prompt: '每天 9 点自动汇总昨日数据生成日报。',
-    rule: null,
-  },
-  {
-    title: '门店巡检',
-    desc: '每周一汇总各门店巡检结果并生成报表。',
-    prompt: '每周一汇总各门店巡检结果并生成报表。',
-    rule: null,
-  },
-  {
-    title: '周度复盘',
-    desc: '每周五汇总周度 KPI 与团队复盘要点。',
-    prompt: '每周五汇总周度 KPI 与团队复盘要点。',
-    rule: null,
-  },
-]
+const TEMPLATE_KEYS = ['dailyReport', 'storeInspection', 'weeklyReview'] as const
 
 export function SchedulesPage() {
+  const { t } = useTranslation()
+  const TEMPLATES: ScheduleTemplate[] = useMemo(
+    () =>
+      TEMPLATE_KEYS.map((k) => ({
+        title: t(`schedules.templates.${k}.title`),
+        desc: t(`schedules.templates.${k}.desc`),
+        prompt: t(`schedules.templates.${k}.desc`),
+        rule: null,
+      })),
+    [t],
+  )
   const { items, loading, error, refresh } = useAgendaItems()
   const [pendingCancelId, setPendingCancelId] = useState<string | null>(null)
   const [pendingPurgeId, setPendingPurgeId] = useState<string | null>(null)
@@ -182,29 +175,27 @@ export function SchedulesPage() {
   const cancelledCount = items.filter((it) => it.status === 'cancelled').length
 
   const emptyTitle = loading
-    ? '正在加载定时任务'
+    ? t('schedules.empty.loading')
     : showCancelled
-      ? '没有已取消的任务'
-      : '还没有定时任务'
+      ? t('schedules.empty.noCancelled')
+      : t('schedules.empty.noTasks')
   const emptyDesc = loading
-    ? '请稍候，正在读取本地任务配置。'
+    ? t('schedules.empty.loadingDesc')
     : showCancelled
-      ? '取消的任务会出现在这里，可以恢复或永久删除。'
-      : '选择上方模板或在对话中创建你的第一个定时任务。'
+      ? t('schedules.empty.noCancelledDesc')
+      : t('schedules.empty.noTasksDesc')
 
   const displayedError = pageError ?? error
 
   return (
     <PageSectionShell
-      topBar={<PageTopBar variant="title" title="定时任务" />}
-      padding="px-7 pt-6 pb-8"
-      gap="gap-6"
+      topBar={<PageTopBar variant="title" title={t('schedules.pageTitle')} />}
     >
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        {TEMPLATES.map((t) => (
+        {TEMPLATES.map((tmpl) => (
           <ScheduleTemplateCard
-            key={t.title}
-            template={t}
+            key={tmpl.title}
+            template={tmpl}
             onPick={handleUseTemplate}
           />
         ))}
@@ -219,10 +210,10 @@ export function SchedulesPage() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="text-sm font-semibold text-foreground">
-                {showCancelled ? '已取消' : '任务列表'}
+                {showCancelled ? t('schedules.cancelled') : t('schedules.taskList')}
               </div>
               <div className="text-[0.8125rem] text-muted-foreground">
-                共 {visibleItems.length} 条
+                {t('schedules.itemCount', { count: visibleItems.length })}
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -230,20 +221,24 @@ export function SchedulesPage() {
                 size="sm"
                 variant={showCancelled ? 'default' : 'outline'}
                 onClick={() => setShowCancelled((v) => !v)}
-                aria-label={showCancelled ? '返回任务列表' : '查看已取消'}
+                aria-label={showCancelled ? t('schedules.backToListAria') : t('schedules.viewCancelled')}
               >
-                {showCancelled ? '返回' : `已取消 ${cancelledCount > 0 ? `(${cancelledCount})` : ''}`}
+                {showCancelled
+                  ? t('schedules.backToList')
+                  : cancelledCount > 0
+                    ? t('schedules.cancelledWithCount', { count: cancelledCount })
+                    : t('schedules.cancelled')}
               </Button>
               {showCancelled ? null : (
-                <Button size="sm" onClick={handleCreateBlank} aria-label="新建日程">
+                <Button size="sm" onClick={handleCreateBlank} aria-label={t('schedules.newTaskAria')}>
                   <Plus className="h-4 w-4" />
-                  新建
+                  {t('schedules.newButton')}
                 </Button>
               )}
             </div>
           </div>
         }
-        table={<ScheduleTableHeader columns={['任务名称', '执行频率', '状态', '操作']} />}
+        table={<ScheduleTableHeader columns={[t('schedules.columns.name'), t('schedules.columns.frequency'), t('schedules.columns.status'), t('schedules.columns.actions')]} />}
         empty={
           visibleItems.length === 0 ? (
             <ScheduleEmptyState
@@ -269,18 +264,18 @@ export function SchedulesPage() {
       </ScheduleListCard>
       <ConfirmDialog
         open={!!pendingCancelId}
-        title="取消此定时任务？"
-        description="取消后该任务将停止触发，但可以从「已取消」中恢复。"
-        confirmLabel="确认取消"
+        title={t('schedules.cancel.title')}
+        description={t('schedules.cancel.description')}
+        confirmLabel={t('schedules.cancel.confirm')}
         variant="destructive"
         onOpenChange={(open) => !open && setPendingCancelId(null)}
         onConfirm={() => pendingCancelId && void handleCancel(pendingCancelId)}
       />
       <ConfirmDialog
         open={!!pendingPurgeId}
-        title="永久删除此任务？"
-        description="此操作会从磁盘抹除任务及其执行历史，无法恢复。"
-        confirmLabel="确认永久删除"
+        title={t('schedules.delete.title')}
+        description={t('schedules.delete.description')}
+        confirmLabel={t('schedules.delete.confirm')}
         variant="destructive"
         onOpenChange={(open) => !open && setPendingPurgeId(null)}
         onConfirm={() => pendingPurgeId && void handlePurge(pendingPurgeId)}

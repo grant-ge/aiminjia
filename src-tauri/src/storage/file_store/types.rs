@@ -131,6 +131,14 @@ pub struct ConversationMeta {
     /// LLM 改 title 不影响这个字段——专门用于稳住"会话来源是什么"的视觉识别。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_label: Option<String>,
+    /// The name of the currently-active team for the Lead in this conversation.
+    /// Written by TeamCreate / TeamSwitch tools; read during ctx construction
+    /// to populate `ToolExecutionContext::active_team_name`.  `None` for
+    /// single-agent (no-team) conversations or old conv.json files.
+    ///
+    /// 这是 runtime team-tools 的状态，跟 `source_label`（来源标签）是两件事。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_team_name: Option<String>,
 }
 
 /// Lightweight entry in the global `index.json`.
@@ -512,6 +520,7 @@ mod conversation_meta_migration_tests {
                 authorized_at: "2026-05-20T00:00:00+00:00".to_string(),
             }),
             source_label: Some("小销".to_string()),
+            active_team_name: None,
         };
         let json = serde_json::to_string(&meta).unwrap();
         let parsed: ConversationMeta = serde_json::from_str(&json).unwrap();

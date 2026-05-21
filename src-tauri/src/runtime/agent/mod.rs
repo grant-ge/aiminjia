@@ -30,6 +30,7 @@ pub mod task_notification;
 pub mod task_notification_lead;
 pub mod team;
 pub mod team_context;
+pub mod team_paths;
 pub mod teammate_addendum;
 pub mod tool_whitelist;
 pub mod worker_runtime;
