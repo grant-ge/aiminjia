@@ -4,7 +4,7 @@
  */
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { CheckSquare, ChevronRight, GraduationCap, MessageSquare } from 'lucide-react'
+import { CheckSquare, ChevronRight, GraduationCap, MessageSquare, Users } from 'lucide-react'
 
 import { useChat } from '@/hooks/useChat'
 import { useBrandingStore } from '@/stores/brandingStore'
@@ -25,13 +25,13 @@ import { TenantHeader } from './TenantHeader'
 
 const SIDEBAR_TAB_STORAGE_KEY = 'aijia-sidebar-tab'
 
-type SidebarBodyTab = 'project' | 'expert-team' | 'channel'
+type SidebarBodyTab = 'project' | 'employee' | 'expert-team' | 'channel'
 
 function loadPersistedSidebarTab(): SidebarBodyTab {
   if (typeof localStorage === 'undefined') return 'project'
   try {
     const raw = localStorage.getItem(SIDEBAR_TAB_STORAGE_KEY)
-    return raw === 'channel' || raw === 'expert-team' ? raw : 'project'
+    return raw === 'channel' || raw === 'expert-team' || raw === 'employee' ? raw : 'project'
   } catch {
     return 'project'
   }
@@ -109,7 +109,11 @@ export function AppSidebar() {
   const nonChannelConversations = conversations.filter((c) => !channelSessionIdSet.has(c.id))
   const expertTeamConversations = nonChannelConversations.filter((c) => hasExpertTeam(c.id))
   const expertTeamConversationIdSet = new Set(expertTeamConversations.map((c) => c.id))
-  const projectConversations = nonChannelConversations.filter((c) => !expertTeamConversationIdSet.has(c.id))
+  const employeeConversations = nonChannelConversations.filter((c) => c.kind === 'employee')
+  const employeeConversationIdSet = new Set(employeeConversations.map((c) => c.id))
+  const projectConversations = nonChannelConversations.filter(
+    (c) => !expertTeamConversationIdSet.has(c.id) && !employeeConversationIdSet.has(c.id),
+  )
 
   const projects = groupConversationsByProject(
     projectConversations,
@@ -160,44 +164,46 @@ export function AppSidebar() {
       />
 
       <div className="flex min-h-0 flex-1 flex-col gap-2">
-        <div className="grid grid-cols-3 rounded-lg bg-sidebar-accent p-0.5 text-xs font-medium text-muted-foreground">
-          <button
-            type="button"
-            onClick={() => switchTab('project')}
-            className={
-              sidebarTab === 'project'
-                ? 'flex items-center justify-center gap-1.5 rounded-md bg-background px-2 py-1.5 text-foreground shadow-sm'
-                : 'flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5'
-            }
-          >
-            <CheckSquare className="h-3.5 w-3.5" />
-            {t('sidebar.project')}
-          </button>
-          <button
-            type="button"
-            onClick={() => switchTab('expert-team')}
-            className={
-              sidebarTab === 'expert-team'
-                ? 'flex items-center justify-center gap-1.5 rounded-md bg-background px-2 py-1.5 text-foreground shadow-sm'
-                : 'flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5'
-            }
-          >
-            <GraduationCap className="h-3.5 w-3.5" />
-            {t('sidebar.expertTeam')}
-          </button>
-          <button
-            type="button"
-            onClick={() => switchTab('channel')}
-            className={
-              sidebarTab === 'channel'
-                ? 'flex items-center justify-center gap-1.5 rounded-md bg-background px-2 py-1.5 text-foreground shadow-sm'
-                : 'flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5'
-            }
-          >
-            <MessageSquare className="h-3.5 w-3.5" />
-            {t('sidebar.channel')}
-          </button>
-        </div>
+        {(() => {
+          const TABS = [
+            { key: 'project' as SidebarBodyTab, Icon: CheckSquare, labelKey: 'sidebar.project' },
+            { key: 'employee' as SidebarBodyTab, Icon: Users, labelKey: 'sidebar.employeeTab' },
+            { key: 'expert-team' as SidebarBodyTab, Icon: GraduationCap, labelKey: 'sidebar.expertTeamTab' },
+            { key: 'channel' as SidebarBodyTab, Icon: MessageSquare, labelKey: 'sidebar.channel' },
+          ]
+          const activeIndex = TABS.findIndex((tab) => tab.key === sidebarTab)
+          return (
+            <div className="relative grid grid-cols-4 rounded-md bg-sidebar-accent py-0.5 px-1 text-xs font-medium text-muted-foreground">
+              {/* Sliding indicator — left/width account for px-1 (4px) horizontal padding */}
+              <div
+                className="absolute rounded-[5px] bg-background shadow-sm"
+                style={{
+                  top: '2px',
+                  bottom: '2px',
+                  left: '4px',
+                  width: 'calc(25% - 2px)',
+                  transform: `translateX(${activeIndex * 100}%)`,
+                  transition: 'transform 200ms ease-in-out',
+                }}
+              />
+              {TABS.map(({ key, Icon, labelKey }) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => switchTab(key)}
+                  className={`relative z-10 flex items-center justify-center gap-1 py-1.5 transition-colors duration-200 ${
+                    sidebarTab === key ? 'text-foreground' : ''
+                  }`}
+                >
+                  <Icon className="h-3.5 w-3.5 shrink-0" />
+                  {sidebarTab === key && (
+                    <span className="whitespace-nowrap">{t(labelKey)}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )
+        })()}
 
         {sidebarTab === 'project' ? (
           <div className="-mr-2 flex-1 overflow-auto">
@@ -207,6 +213,27 @@ export function AppSidebar() {
               onRenameConversation={handleRenameOpen}
               onArchiveConversation={setArchivingId}
             />
+          </div>
+        ) : sidebarTab === 'employee' ? (
+          <div className="-mr-2 flex-1 overflow-auto py-1">
+            {employeeConversations.length === 0 ? (
+              <div className="px-2 py-4 text-sm text-muted-foreground">{t('sidebar.noHistory')}</div>
+            ) : (
+              <div className="flex flex-col gap-1">
+                {employeeConversations.map((conversation) => (
+                  <ConversationRow
+                    key={conversation.id}
+                    id={conversation.id}
+                    title={conversation.title}
+                    active={activeConversationId === conversation.id}
+                    indent={false}
+                    onClick={() => void switchConversation(conversation.id)}
+                    onRename={() => handleRenameOpen(conversation.id)}
+                    onArchive={() => setArchivingId(conversation.id)}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         ) : sidebarTab === 'expert-team' ? (
           <div className="-mr-2 flex-1 overflow-auto py-1">

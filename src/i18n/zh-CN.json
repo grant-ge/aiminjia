@@ -73,7 +73,10 @@
     "noHistory": "还没有历史任务",
     "defaultFolder": "默认项目",
     "project": "项目",
+    "employee": "数字员工",
+    "employeeTab": "员工",
     "expertTeam": "专家团",
+    "expertTeamTab": "专家",
     "channel": "频道"
   },
   "inputBar": {

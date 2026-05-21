@@ -73,7 +73,10 @@
     "noHistory": "No tasks yet",
     "defaultFolder": "Default project",
     "project": "Projects",
+    "employee": "Employees",
+    "employeeTab": "Staff",
     "expertTeam": "Expert Teams",
+    "expertTeamTab": "Experts",
     "channel": "Channels"
   },
   "inputBar": {
