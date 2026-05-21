@@ -7,11 +7,7 @@ fn render_emits_content_array_with_static_block_cache_control() {
     let assembly = PromptAssembly::new(vec![
         PromptBlock::static_block(PromptSectionId::new("base"), "static content"),
         PromptBlock::dynamic_block(PromptSectionId::new("persona"), "dynamic content"),
-        PromptBlock::volatile_block(
-            PromptSectionId::new("env"),
-            "volatile content",
-            "test",
-        ),
+        PromptBlock::volatile_block(PromptSectionId::new("env"), "volatile content", "test"),
     ]);
 
     let msg = ChatPromptRenderer::render_system_message(&assembly)
@@ -30,8 +26,10 @@ fn render_emits_content_array_with_static_block_cache_control() {
         .iter()
         .find(|b| b["text"].as_str().unwrap_or("").contains("volatile"))
         .expect("should find volatile block");
-    assert!(volatile_block.get("cache_control").is_none(),
-        "volatile block must NOT have cache_control");
+    assert!(
+        volatile_block.get("cache_control").is_none(),
+        "volatile block must NOT have cache_control"
+    );
 }
 
 #[test]

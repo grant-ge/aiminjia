@@ -62,7 +62,8 @@ mod tests {
         let stamp = DirMtimeResolver.resolve(&skill).expect("should resolve");
         // RFC 3339 长这样：2026-05-13T16:30:00.123456789+00:00 或 ...Z
         assert!(
-            stamp.contains('T') && (stamp.ends_with('Z') || stamp.contains('+') || stamp.contains('-')),
+            stamp.contains('T')
+                && (stamp.ends_with('Z') || stamp.contains('+') || stamp.contains('-')),
             "expected RFC 3339, got: {stamp}",
         );
     }

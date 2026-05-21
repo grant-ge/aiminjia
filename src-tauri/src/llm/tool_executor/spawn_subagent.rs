@@ -13,11 +13,15 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::plugin::registry::RequestScopedRuntimeDeps;
-use crate::runtime::agent::async_task_store::{AsyncAgentTaskStore, AsyncTaskHandle, AsyncTaskState};
+use crate::runtime::agent::async_task_store::{
+    AsyncAgentTaskStore, AsyncTaskHandle, AsyncTaskState,
+};
 use crate::runtime::agent::definition::AgentPrompt;
 use crate::runtime::agent::output_writer;
 use crate::runtime::agent::registry::AgentRegistry;
-use crate::runtime::agent::task_notification::{build_task_notification_xml, TaskNotificationQueue};
+use crate::runtime::agent::task_notification::{
+    build_task_notification_xml, TaskNotificationQueue,
+};
 use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::ids::AgentId;
 use crate::runtime::tools::builtin::spawn_subagent::{
@@ -43,7 +47,13 @@ impl DefaultSpawnSubagentLauncher {
         notif_queue: Arc<TaskNotificationQueue>,
         paths: Arc<dyn UserScopedPathResolver>,
     ) -> Self {
-        Self { deps, registry, task_store, notif_queue, paths }
+        Self {
+            deps,
+            registry,
+            task_store,
+            notif_queue,
+            paths,
+        }
     }
 
     /// Extract the fields needed to run the sub-agent from `deps`, returning an error
@@ -128,10 +138,12 @@ impl DefaultSpawnSubagentLauncher {
         // Inject env block so the sub-agent knows the parent's authorized workspace
         // and current working directory. Reuses the same `build_env_info` that the
         // parent uses, so sub-agent and parent see identical environment context.
-        let authorized_pair = scoped_deps
-            .authorized_workspace
-            .as_ref()
-            .map(|aw| (aw.root_path.to_string_lossy().to_string(), aw.display_name.clone()));
+        let authorized_pair = scoped_deps.authorized_workspace.as_ref().map(|aw| {
+            (
+                aw.root_path.to_string_lossy().to_string(),
+                aw.display_name.clone(),
+            )
+        });
         let env_info = crate::runtime::chat::context_builder::build_env_info(
             &scoped_deps.workspace_path,
             authorized_pair
@@ -241,18 +253,21 @@ impl SpawnSubagentLauncher for DefaultSpawnSubagentLauncher {
         context: SpawnSubagentContext,
     ) -> Result<SpawnAsyncOutcome> {
         let (gateway, tool_registry, app_settings) = self.build_run_components()?;
-        let (mut config, runtime_deps) = self.build_sub_agent_args(&request, &context, true).await?;
+        let (mut config, runtime_deps) =
+            self.build_sub_agent_args(&request, &context, true).await?;
 
         // Generate a fresh AgentId for this async sub-agent.
         let agent_id = AgentId::new(uuid::Uuid::new_v4().to_string());
 
         let transcript_path = match self.paths.require_paths() {
-            Ok(p) => output_writer::transcript_path(
-                &p.subagent_transcripts_dir(),
-                agent_id.as_str(),
-            ),
+            Ok(p) => {
+                output_writer::transcript_path(&p.subagent_transcripts_dir(), agent_id.as_str())
+            }
             Err(e) => {
-                log::warn!("[spawn_subagent async] no user scope: {}; transcript disabled", e);
+                log::warn!(
+                    "[spawn_subagent async] no user scope: {}; transcript disabled",
+                    e
+                );
                 std::path::PathBuf::new()
             }
         };
@@ -516,4 +531,3 @@ impl SpawnSubagentLauncher for DefaultSpawnSubagentLauncher {
         })
     }
 }
-

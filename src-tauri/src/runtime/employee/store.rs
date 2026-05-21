@@ -467,7 +467,10 @@ impl EmployeeStore {
             .as_object_mut()
             .ok_or_else(|| anyhow::anyhow!("knowledge source is not an object"))?;
 
-        obj.insert("status".into(), serde_json::Value::String(status.as_str().into()));
+        obj.insert(
+            "status".into(),
+            serde_json::Value::String(status.as_str().into()),
+        );
         obj.insert("slicedCount".into(), serde_json::Value::from(sliced_count));
         match status {
             KnowledgeSourceStatus::Indexing => {
@@ -527,8 +530,8 @@ impl EmployeeStore {
         if !path.exists() {
             return Ok(false);
         }
-        let content = fs::read_to_string(&path)
-            .with_context(|| format!("employee not found: {id}"))?;
+        let content =
+            fs::read_to_string(&path).with_context(|| format!("employee not found: {id}"))?;
         let record: EmployeeRecord = serde_json::from_str(&content)?;
 
         if record.lifecycle != EmployeeLifecycle::Archived {
@@ -929,29 +932,44 @@ mod tests {
         let store = EmployeeStore::new(dir.path().to_path_buf());
 
         // Create an Active employee
-        let active = store.create(CreateEmployeeRequest {
-            name: "active".into(), role: "r".into(), description: "d".into(),
-            avatar: "🤖".into(), template_id: None, tool_whitelist: None,
-            cron: None, timezone: None,
-            lifecycle: Some(EmployeeLifecycle::Active),
-            cron_enabled: Some(true), resource_config: None,
-            system_prompt_extra: None, default_skill_id: None, skill_ids: None,
-        }).unwrap();
+        let active = store
+            .create(CreateEmployeeRequest {
+                name: "active".into(),
+                role: "r".into(),
+                description: "d".into(),
+                avatar: "🤖".into(),
+                template_id: None,
+                tool_whitelist: None,
+                cron: None,
+                timezone: None,
+                lifecycle: Some(EmployeeLifecycle::Active),
+                cron_enabled: Some(true),
+                resource_config: None,
+                system_prompt_extra: None,
+                default_skill_id: None,
+                skill_ids: None,
+            })
+            .unwrap();
 
         // Even if we lie about it being old, the lifecycle check should reject
         let path = dir.path().join(&active.id).join("employee.json");
         let content = std::fs::read_to_string(&path).unwrap();
         let mut value: serde_json::Value = serde_json::from_str(&content).unwrap();
-        value["updatedAt"] = serde_json::json!(
-            (chrono::Utc::now() - chrono::Duration::days(30)).to_rfc3339()
-        );
+        value["updatedAt"] =
+            serde_json::json!((chrono::Utc::now() - chrono::Duration::days(30)).to_rfc3339());
         std::fs::write(&path, serde_json::to_string_pretty(&value).unwrap()).unwrap();
 
         let purged = store
             .purge_if_archived_older_than(&active.id, Duration::days(7))
             .unwrap();
-        assert!(!purged, "Active employee should never be purged regardless of age");
-        assert!(store.get(&active.id).is_ok(), "directory should still exist");
+        assert!(
+            !purged,
+            "Active employee should never be purged regardless of age"
+        );
+        assert!(
+            store.get(&active.id).is_ok(),
+            "directory should still exist"
+        );
     }
 
     #[test]
@@ -960,14 +978,24 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let store = EmployeeStore::new(dir.path().to_path_buf());
 
-        let recent = store.create(CreateEmployeeRequest {
-            name: "recent".into(), role: "r".into(), description: "d".into(),
-            avatar: "🤖".into(), template_id: None, tool_whitelist: None,
-            cron: None, timezone: None,
-            lifecycle: Some(EmployeeLifecycle::Archived),
-            cron_enabled: Some(true), resource_config: None,
-            system_prompt_extra: None, default_skill_id: None, skill_ids: None,
-        }).unwrap();
+        let recent = store
+            .create(CreateEmployeeRequest {
+                name: "recent".into(),
+                role: "r".into(),
+                description: "d".into(),
+                avatar: "🤖".into(),
+                template_id: None,
+                tool_whitelist: None,
+                cron: None,
+                timezone: None,
+                lifecycle: Some(EmployeeLifecycle::Archived),
+                cron_enabled: Some(true),
+                resource_config: None,
+                system_prompt_extra: None,
+                default_skill_id: None,
+                skill_ids: None,
+            })
+            .unwrap();
 
         let purged = store
             .purge_if_archived_older_than(&recent.id, Duration::days(7))
@@ -1095,10 +1123,8 @@ fn default_true() -> bool {
 /// `take_due` forever.
 fn write_atomic(path: &std::path::Path, bytes: &[u8]) -> Result<()> {
     let tmp = path.with_extension("json.tmp");
-    fs::write(&tmp, bytes)
-        .with_context(|| format!("write tmp: {}", tmp.display()))?;
-    fs::rename(&tmp, path)
-        .with_context(|| format!("rename tmp → {}", path.display()))?;
+    fs::write(&tmp, bytes).with_context(|| format!("write tmp: {}", tmp.display()))?;
+    fs::rename(&tmp, path).with_context(|| format!("rename tmp → {}", path.display()))?;
     Ok(())
 }
 
@@ -1138,8 +1164,7 @@ fn stamp_snapshot_for_record(
 
     // 2) Try cache (highest version) if bootstrap missed.
     let snap_and_source = snap_and_source.or_else(|| {
-        let cache_dir =
-            crate::storage::AiJiaHome::from_home().employee_templates_cache_dir();
+        let cache_dir = crate::storage::AiJiaHome::from_home().employee_templates_cache_dir();
         let tid_dir = cache_dir.join(tid);
         let mut best: Option<ts::TemplateSnapshot> = None;
         if let Ok(rd) = std::fs::read_dir(&tid_dir) {

@@ -38,9 +38,9 @@ fn python_built_bundles_match_rust_unpacker() {
         if path.extension().and_then(|s| s.to_str()) != Some("aijia-skill") {
             continue;
         }
-        let unpack_root = tmp.path().join(
-            path.file_stem().unwrap().to_string_lossy().to_string(),
-        );
+        let unpack_root = tmp
+            .path()
+            .join(path.file_stem().unwrap().to_string_lossy().to_string());
         let res = unpack_skill_archive(&path, &unpack_root).unwrap_or_else(|e| {
             panic!(
                 "rust unpacker rejected python-built archive {:?}: {}",
@@ -52,6 +52,9 @@ fn python_built_bundles_match_rust_unpacker() {
         assert!(res.skill_dir.join("SKILL.md").is_file());
         verified += 1;
     }
-    assert!(verified > 0, "no .aijia-skill archives found in dist-skills/");
+    assert!(
+        verified > 0,
+        "no .aijia-skill archives found in dist-skills/"
+    );
     eprintln!("✅ cross-validated {} Python-built archives", verified);
 }

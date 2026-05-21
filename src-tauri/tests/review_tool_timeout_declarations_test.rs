@@ -2,9 +2,7 @@ use app_lib::runtime::tools::catalog::TOOL_CATALOG;
 
 #[test]
 fn review_long_running_tools_declare_timeout() {
-    for id in [
-        "Bash",
-    ] {
+    for id in ["Bash"] {
         let def = TOOL_CATALOG.get(id).unwrap();
         assert!(
             def.default_timeout_secs.is_some(),

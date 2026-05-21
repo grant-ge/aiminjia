@@ -130,7 +130,10 @@ async fn body_is_anthropic_native_no_openai_fields() {
         body.get("system").is_some(),
         "system prompt must be lifted to top-level `system`, not in messages"
     );
-    let messages = body.get("messages").and_then(|v| v.as_array()).expect("messages array");
+    let messages = body
+        .get("messages")
+        .and_then(|v| v.as_array())
+        .expect("messages array");
     for m in messages {
         assert_ne!(
             m.get("role").and_then(|r| r.as_str()),
@@ -140,7 +143,10 @@ async fn body_is_anthropic_native_no_openai_fields() {
     }
 
     // No OpenAI-isms.
-    assert!(body.get("functions").is_none(), "must not emit OpenAI `functions`");
+    assert!(
+        body.get("functions").is_none(),
+        "must not emit OpenAI `functions`"
+    );
     assert!(
         body.get("function_call").is_none(),
         "must not emit OpenAI `function_call`"
@@ -192,8 +198,7 @@ async fn thinking_blocks_roundtrip_byte_perfect() {
     let mut req = LlmRequest::default();
     req.stream = false;
 
-    let mut prior_assistant =
-        ChatMessage::text("assistant", "Sure, let me help.".to_string());
+    let mut prior_assistant = ChatMessage::text("assistant", "Sure, let me help.".to_string());
     prior_assistant.thinking_blocks = Some(vec![signed_thinking.clone()]);
 
     req.messages = vec![
@@ -230,7 +235,10 @@ async fn thinking_blocks_roundtrip_byte_perfect() {
     // The block must be byte-identical to what we passed in. We compare
     // serde Value equality (which is structural and order-insensitive
     // for objects) — that's the right semantic match for JSON.
-    assert_eq!(*first, signed_thinking, "thinking block must roundtrip verbatim");
+    assert_eq!(
+        *first, signed_thinking,
+        "thinking block must roundtrip verbatim"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -278,7 +286,10 @@ async fn tools_use_input_schema_not_parameters() {
     p.send(req).await.expect("send should succeed");
     let body = body_capture.lock().unwrap().clone().expect("body captured");
 
-    let tools = body.get("tools").and_then(|v| v.as_array()).expect("tools array");
+    let tools = body
+        .get("tools")
+        .and_then(|v| v.as_array())
+        .expect("tools array");
     assert_eq!(tools.len(), 1);
     let t = &tools[0];
     assert!(
@@ -304,7 +315,9 @@ async fn http_4xx_no_retry_no_silent_swallow() {
     let _m = server
         .mock("POST", "/anthropic/v1/messages")
         .with_status(400)
-        .with_body(r#"{"type":"error","error":{"type":"invalid_request_error","message":"bad model"}}"#)
+        .with_body(
+            r#"{"type":"error","error":{"type":"invalid_request_error","message":"bad model"}}"#,
+        )
         .expect(1) // critical: ensures no retry
         .create_async()
         .await;

@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 use app_lib::runtime::cancellation::CancellationToken;
+use app_lib::runtime::chat::compact_client::CompactSummaryClient;
 use app_lib::runtime::chat::compaction::{AutoCompactConfig, AutoCompactState, MicrocompactConfig};
 use app_lib::runtime::chat::preprocess::{
     apply_tool_result_budget, prepare_messages_for_llm, CollapseConfig, PreprocessConfig,
@@ -9,7 +10,6 @@ use app_lib::runtime::chat::preprocess::{
     ToolResultBudgetConfig,
 };
 use app_lib::runtime::chat::turn_config::{LlmStepInput, LlmStepResult, TurnError};
-use app_lib::runtime::chat::compact_client::CompactSummaryClient;
 use app_lib::runtime::chat::{ChatTurnRequest, RuntimeChatTurnDriver, RuntimeLlmExecutor};
 use app_lib::runtime::event_bus::RuntimeEventBus;
 use app_lib::runtime::identity::IdentityMapping;
@@ -379,7 +379,9 @@ struct CountingCompactSummaryClient {
 
 impl CountingCompactSummaryClient {
     fn new() -> Self {
-        Self { calls: Mutex::new(0) }
+        Self {
+            calls: Mutex::new(0),
+        }
     }
 
     fn call_count(&self) -> usize {
@@ -430,7 +432,7 @@ impl RuntimeLlmExecutor for PromptTooLongRecoveryExecutor {
     }
 
     async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
-        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
+        Ok(vec![]) // 显式声明此 mock 不关心 tool_defs
     }
 }
 

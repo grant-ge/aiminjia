@@ -27,9 +27,7 @@ pub fn decode_console_bytes(bytes: &[u8]) -> String {
             Err(_) => (String::from_utf8_lossy(bytes).into_owned(), true),
         };
         let (gbk, _, gbk_had_errors) = GBK.decode(bytes);
-        if !gbk_had_errors
-            && should_prefer_gbk_decoding(&utf8, gbk.as_ref(), utf8_had_errors)
-        {
+        if !gbk_had_errors && should_prefer_gbk_decoding(&utf8, gbk.as_ref(), utf8_had_errors) {
             return gbk.into_owned();
         }
         return utf8;

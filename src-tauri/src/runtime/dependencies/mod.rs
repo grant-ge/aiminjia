@@ -22,7 +22,10 @@ pub use archive::{validate_archive_entry_path, ArchiveError};
 pub use artifact_fetcher::{
     FetchedRuntimeArtifact, RuntimeArtifactFetchError, RuntimeArtifactFetcher,
 };
+pub use bundled_resolver::BundledRuntimeResolver;
+pub use chain_resolver::ChainResolver;
 pub use checksum::{verify_sha256, ChecksumError};
+pub use command_env::{prepend_bundle_bin_to_path, prepend_bundle_bin_to_path_tokio};
 pub use config::{configured_runtime_manifest_url, DEFAULT_RUNTIME_MANIFEST_URL};
 pub use downloader::{
     RuntimeDownloadCancellation, RuntimeDownloadError, RuntimeDownloadOptions,
@@ -44,7 +47,4 @@ pub use provider::{RuntimeArtifactProviderKind, RuntimeArtifactProviderPolicy};
 pub use resolver::{
     InstalledRuntimeResolver, ManagedRuntimeResolver, RuntimeResolver, StaticRuntimeResolver,
 };
-pub use bundled_resolver::BundledRuntimeResolver;
-pub use chain_resolver::ChainResolver;
 pub use types::{RuntimeDependencyError, RuntimeDependencyResult, WorkspaceDependencies};
-pub use command_env::{prepend_bundle_bin_to_path, prepend_bundle_bin_to_path_tokio};

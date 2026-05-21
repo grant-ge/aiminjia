@@ -20,8 +20,7 @@ impl ChatPromptRenderer {
                 });
                 match b.cache_policy {
                     PromptCachePolicy::StaticPrefix | PromptCachePolicy::SessionDynamic => {
-                        item["cache_control"] =
-                            serde_json::json!({ "type": "ephemeral" });
+                        item["cache_control"] = serde_json::json!({ "type": "ephemeral" });
                     }
                     PromptCachePolicy::Volatile => {}
                 }

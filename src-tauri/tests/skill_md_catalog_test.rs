@@ -27,13 +27,17 @@ fn catalog_respects_budget_and_desc_cap() {
 
 #[test]
 fn registry_tracks_sent_skill_names_incrementally() {
-    let mut registry = SkillRegistry::from_skills(vec![skill("a-skill", "A"), skill("b-skill", "B")]);
+    let mut registry =
+        SkillRegistry::from_skills(vec![skill("a-skill", "A"), skill("b-skill", "B")]);
     let first = registry.catalog_delta_for_agent(None, 200_000);
     assert!(first.contains("a-skill"));
     assert!(first.contains("b-skill"));
 
     let second = registry.catalog_delta_for_agent(None, 200_000);
-    assert!(second.is_empty(), "second call should send no already-sent skills");
+    assert!(
+        second.is_empty(),
+        "second call should send no already-sent skills"
+    );
 
     registry.insert(skill("c-skill", "C"));
     let third = registry.catalog_delta_for_agent(None, 200_000);

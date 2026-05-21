@@ -4,7 +4,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::json;
 
-use crate::connector::channel::ask_coordinator::ChannelSessionRegistry;
+use crate::connector::im::ask_coordinator::ChannelSessionRegistry;
 use crate::runtime::chat::ChatTurnOutcome;
 use crate::runtime::event_bus::RuntimeEventSubscriber;
 use crate::runtime::events::{RuntimeEvent, RuntimeEventKind};

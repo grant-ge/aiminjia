@@ -3,16 +3,17 @@
 use anyhow::{anyhow, Result};
 use serde_json::Value;
 
-use crate::plugin::context::PluginContext;
-use super::super::{require_str, optional_str, optional_i64};
+use super::super::{optional_i64, optional_str, require_str};
 use super::get_bridge;
+use crate::plugin::context::PluginContext;
 
 /// List bases. Response: data.bases[].baseId/baseName
 pub async fn handle_dingtalk_list_bases(ctx: &PluginContext, _args: &Value) -> Result<String> {
     let bridge = get_bridge(ctx).await?;
     let result = bridge.query(&["aitable", "base", "list"]).await?;
 
-    let bases = result.get("data")
+    let bases = result
+        .get("data")
         .and_then(|d| d.get("bases"))
         .and_then(|b| b.as_array());
 
@@ -22,13 +23,19 @@ pub async fn handle_dingtalk_list_bases(ctx: &PluginContext, _args: &Value) -> R
         }
         let mut output = format!("Found {} AI Table base(s):\n\n", arr.len());
         for base in arr {
-            let name = base.get("baseName").and_then(|v| v.as_str()).unwrap_or("Untitled");
+            let name = base
+                .get("baseName")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Untitled");
             let id = base.get("baseId").and_then(|v| v.as_str()).unwrap_or("?");
             output.push_str(&format!("- **{}** (base_id: `{}`)\n", name, id));
         }
         Ok(output)
     } else {
-        Ok(format!("Response:\n```json\n{}\n```", serde_json::to_string_pretty(&result)?))
+        Ok(format!(
+            "Response:\n```json\n{}\n```",
+            serde_json::to_string_pretty(&result)?
+        ))
     }
 }
 
@@ -40,9 +47,21 @@ pub async fn handle_dingtalk_schema(ctx: &PluginContext, args: &Value) -> Result
     let table_id = optional_str(args, "table_id");
 
     let result = if let Some(tid) = table_id {
-        bridge.query(&["aitable", "field", "get", "--base-id", base_id, "--table-id", tid]).await?
+        bridge
+            .query(&[
+                "aitable",
+                "field",
+                "get",
+                "--base-id",
+                base_id,
+                "--table-id",
+                tid,
+            ])
+            .await?
     } else {
-        bridge.query(&["aitable", "table", "get", "--base-id", base_id]).await?
+        bridge
+            .query(&["aitable", "table", "get", "--base-id", base_id])
+            .await?
     };
 
     let data = result.get("data").unwrap_or(&result);
@@ -73,7 +92,10 @@ pub async fn handle_dingtalk_schema(ctx: &PluginContext, args: &Value) -> Result
         }
     }
 
-    Ok(format!("Schema:\n```json\n{}\n```", serde_json::to_string_pretty(&data)?))
+    Ok(format!(
+        "Schema:\n```json\n{}\n```",
+        serde_json::to_string_pretty(&data)?
+    ))
 }
 
 /// Query records. Response: data.records[].cells/recordId
@@ -87,9 +109,13 @@ pub async fn handle_dingtalk_query_records(ctx: &PluginContext, args: &Value) ->
     let query_keyword = optional_str(args, "query");
 
     let mut cmd_args = vec![
-        "aitable", "record", "query",
-        "--base-id", base_id,
-        "--table-id", table_id,
+        "aitable",
+        "record",
+        "query",
+        "--base-id",
+        base_id,
+        "--table-id",
+        table_id,
     ];
 
     let limit_str = limit.to_string();
@@ -108,7 +134,8 @@ pub async fn handle_dingtalk_query_records(ctx: &PluginContext, args: &Value) ->
     let result = bridge.query(&cmd_args).await?;
 
     // data.records[]
-    let records = result.get("data")
+    let records = result
+        .get("data")
         .and_then(|d| d.get("records"))
         .and_then(|r| r.as_array());
 
@@ -128,11 +155,15 @@ pub async fn handle_dingtalk_query_records(ctx: &PluginContext, args: &Value) ->
         } else {
             Ok(format!(
                 "Query returned {} record(s):\n\n```json\n{}\n```",
-                count, serde_json::to_string_pretty(&records)?
+                count,
+                serde_json::to_string_pretty(&records)?
             ))
         }
     } else {
-        Ok(format!("Query result:\n```json\n{}\n```", serde_json::to_string_pretty(&result)?))
+        Ok(format!(
+            "Query result:\n```json\n{}\n```",
+            serde_json::to_string_pretty(&result)?
+        ))
     }
 }
 
@@ -141,20 +172,29 @@ pub async fn handle_dingtalk_create_record(ctx: &PluginContext, args: &Value) ->
     let bridge = get_bridge(ctx).await?;
     let base_id = require_str(args, "base_id")?;
     let table_id = require_str(args, "table_id")?;
-    let fields = args.get("fields")
+    let fields = args
+        .get("fields")
         .ok_or_else(|| anyhow!("Missing required argument: fields"))?;
 
     let records = serde_json::json!([{"cells": fields}]);
     let records_json = serde_json::to_string(&records)?;
 
-    let result = bridge.mutate(&[
-        "aitable", "record", "create",
-        "--base-id", base_id,
-        "--table-id", table_id,
-        "--records", &records_json,
-    ]).await?;
+    let result = bridge
+        .mutate(&[
+            "aitable",
+            "record",
+            "create",
+            "--base-id",
+            base_id,
+            "--table-id",
+            table_id,
+            "--records",
+            &records_json,
+        ])
+        .await?;
 
-    let record_id = result.get("data")
+    let record_id = result
+        .get("data")
         .and_then(|d| d.get("records"))
         .and_then(|r| r.as_array())
         .and_then(|arr| arr.first())
@@ -164,7 +204,8 @@ pub async fn handle_dingtalk_create_record(ctx: &PluginContext, args: &Value) ->
 
     Ok(format!(
         "Record created successfully (record_id: `{}`).\n\nFields:\n```json\n{}\n```",
-        record_id, serde_json::to_string_pretty(fields)?
+        record_id,
+        serde_json::to_string_pretty(fields)?
     ))
 }
 
@@ -174,22 +215,31 @@ pub async fn handle_dingtalk_update_record(ctx: &PluginContext, args: &Value) ->
     let base_id = require_str(args, "base_id")?;
     let table_id = require_str(args, "table_id")?;
     let record_id = require_str(args, "record_id")?;
-    let fields = args.get("fields")
+    let fields = args
+        .get("fields")
         .ok_or_else(|| anyhow!("Missing required argument: fields"))?;
 
     let records = serde_json::json!([{"recordId": record_id, "cells": fields}]);
     let records_json = serde_json::to_string(&records)?;
 
-    bridge.mutate(&[
-        "aitable", "record", "update",
-        "--base-id", base_id,
-        "--table-id", table_id,
-        "--records", &records_json,
-    ]).await?;
+    bridge
+        .mutate(&[
+            "aitable",
+            "record",
+            "update",
+            "--base-id",
+            base_id,
+            "--table-id",
+            table_id,
+            "--records",
+            &records_json,
+        ])
+        .await?;
 
     Ok(format!(
         "Record `{}` updated.\n\nUpdated fields:\n```json\n{}\n```",
-        record_id, serde_json::to_string_pretty(fields)?
+        record_id,
+        serde_json::to_string_pretty(fields)?
     ))
 }
 
@@ -200,19 +250,26 @@ pub async fn handle_dingtalk_delete_record(ctx: &PluginContext, args: &Value) ->
     let table_id = require_str(args, "table_id")?;
     let record_id = require_str(args, "record_id")?;
 
-    bridge.mutate(&[
-        "aitable", "record", "delete",
-        "--base-id", base_id,
-        "--table-id", table_id,
-        "--record-ids", record_id,
-    ]).await?;
+    bridge
+        .mutate(&[
+            "aitable",
+            "record",
+            "delete",
+            "--base-id",
+            base_id,
+            "--table-id",
+            table_id,
+            "--record-ids",
+            record_id,
+        ])
+        .await?;
 
     Ok(format!("Record `{}` deleted.", record_id))
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::llm::tool_executor::{require_str, optional_str, optional_i64};
+    use crate::llm::tool_executor::{optional_i64, optional_str, require_str};
     use serde_json::json;
 
     #[test]

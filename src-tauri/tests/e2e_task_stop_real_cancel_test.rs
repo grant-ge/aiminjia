@@ -134,7 +134,9 @@ async fn task_stop_unknown_id_is_a_clean_error() {
         store: store.clone(),
     };
     let ctx = ToolExecutionContext::for_test("e2e-session", "e2e-run", "e2e-tc-002");
-    let result = tool.execute(json!({"task_id": "ghost-id-does-not-exist"}), ctx).await;
+    let result = tool
+        .execute(json!({"task_id": "ghost-id-does-not-exist"}), ctx)
+        .await;
     assert!(
         result.is_err(),
         "TaskStop for an unknown id should return Err, got: {:?}",

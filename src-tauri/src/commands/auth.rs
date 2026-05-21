@@ -95,7 +95,11 @@ pub async fn cloud_login(
         let created_at = std::fs::read_to_string(&scope_path)
             .ok()
             .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
-            .and_then(|v| v.get("createdAt").and_then(|x| x.as_str()).map(String::from))
+            .and_then(|v| {
+                v.get("createdAt")
+                    .and_then(|x| x.as_str())
+                    .map(String::from)
+            })
             .unwrap_or_else(|| now.clone());
 
         let scope_json = serde_json::json!({

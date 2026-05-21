@@ -82,8 +82,14 @@ mod tests {
     #[test]
     fn render_substitutes_both_placeholders() {
         let out = render("研究小队", "researcher");
-        assert!(out.contains("`研究小队`"), "team_name not substituted: {out}");
-        assert!(out.contains("`researcher`"), "teammate_name not substituted: {out}");
+        assert!(
+            out.contains("`研究小队`"),
+            "team_name not substituted: {out}"
+        );
+        assert!(
+            out.contains("`researcher`"),
+            "teammate_name not substituted: {out}"
+        );
         assert!(
             !out.contains("{team_name}") && !out.contains("{teammate_name}"),
             "raw placeholder leaked: {out}"
@@ -95,7 +101,10 @@ mod tests {
         let out = render("t", "n");
         assert!(out.contains("SendMessage"), "missing SendMessage section");
         assert!(out.contains("team-lead"), "missing team-lead routing hint");
-        assert!(out.contains("shutdown_request"), "missing shutdown handshake");
+        assert!(
+            out.contains("shutdown_request"),
+            "missing shutdown handshake"
+        );
         assert!(out.contains("TaskClaim"), "missing task market guidance");
     }
 
@@ -109,7 +118,9 @@ mod tests {
     #[test]
     fn compose_boot_prompt_handles_empty_base() {
         let composed = compose_boot_prompt("", "team-a", "alice");
-        assert!(composed.trim_start().starts_with("## 你正在以 Teammate 身份"));
+        assert!(composed
+            .trim_start()
+            .starts_with("## 你正在以 Teammate 身份"));
     }
 
     #[test]

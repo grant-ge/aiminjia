@@ -50,16 +50,19 @@ pub fn install_custom_skill_to_dir_with_force(
     custom_dir: &std::path::Path,
     force: bool,
 ) -> Result<String, InstallSkillError> {
-    let basename = source
-        .file_name()
-        .ok_or_else(|| InstallSkillError::Io(format!("Source '{}' has no basename", source.display())))?;
+    let basename = source.file_name().ok_or_else(|| {
+        InstallSkillError::Io(format!("Source '{}' has no basename", source.display()))
+    })?;
     let dest = custom_dir.join(basename);
     if dest.exists() {
         if !force {
-            return Err(InstallSkillError::AlreadyExists(basename.to_string_lossy().to_string()));
+            return Err(InstallSkillError::AlreadyExists(
+                basename.to_string_lossy().to_string(),
+            ));
         }
-        std::fs::remove_dir_all(&dest)
-            .map_err(|e| InstallSkillError::Io(format!("Failed to remove existing skill: {}", e)))?;
+        std::fs::remove_dir_all(&dest).map_err(|e| {
+            InstallSkillError::Io(format!("Failed to remove existing skill: {}", e))
+        })?;
     }
     copy_dir_recursive(source, &dest)
         .map_err(|e| InstallSkillError::Io(format!("Failed to copy skill: {}", e)))?;
@@ -71,10 +74,7 @@ pub fn install_custom_skill_to_dir_with_force(
 /// upload that passes here is guaranteed to surface in `list_skills`.
 pub fn validate_skill_directory(source: &std::path::Path) -> Result<(), SkillValidationError> {
     // Check directory basename matches is_valid_skill_id — same rule as loader.rs:52
-    let basename = source
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("");
+    let basename = source.file_name().and_then(|n| n.to_str()).unwrap_or("");
     if basename.starts_with('_') || basename.starts_with('.') || !is_valid_skill_id(basename) {
         return Err(SkillValidationError::InvalidName(basename.to_string()));
     }
@@ -988,8 +988,8 @@ mod tests {
         zip.finish().unwrap();
 
         let custom_dir = tmp.path().join("user-skills");
-        let err = install_skill_archive(&archive, &tmp.path().join("u"), &custom_dir, false)
-            .unwrap_err();
+        let err =
+            install_skill_archive(&archive, &tmp.path().join("u"), &custom_dir, false).unwrap_err();
         assert!(
             matches!(err, InstallSkillError::ParseFailed(_)),
             "got {:?}",

@@ -25,18 +25,15 @@ fn is_archived_dir(employee_dir: &Path) -> bool {
         return false;
     };
     matches!(
-        value
-            .get("lifecycle")
-            .and_then(|v| v.as_str()),
+        value.get("lifecycle").and_then(|v| v.as_str()),
         Some("archived")
+    ) || matches!(
+        // Defensive: also handle the typed enum form in case serde changes.
+        serde_json::from_value::<EmployeeLifecycle>(
+            value.get("lifecycle").cloned().unwrap_or_default(),
+        ),
+        Ok(EmployeeLifecycle::Archived)
     )
-        || matches!(
-            // Defensive: also handle the typed enum form in case serde changes.
-            serde_json::from_value::<EmployeeLifecycle>(
-                value.get("lifecycle").cloned().unwrap_or_default(),
-            ),
-            Ok(EmployeeLifecycle::Archived)
-        )
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -166,7 +163,9 @@ impl InboxStore {
             .lines()
             .filter_map(|line| {
                 let line = line.ok()?;
-                if line.trim().is_empty() { return None; }
+                if line.trim().is_empty() {
+                    return None;
+                }
                 match serde_json::from_str(&line) {
                     Ok(e) => Some(e),
                     Err(err) => {
@@ -206,15 +205,13 @@ impl InboxStore {
             .lines()
             .filter_map(|l| l.ok())
             .filter(|l| !l.trim().is_empty())
-            .map(|line| {
-                match serde_json::from_str::<InboxEntry>(&line) {
-                    Ok(mut e) if !e.read => {
-                        e.read = true;
-                        count += 1;
-                        serde_json::to_string(&e).unwrap_or(line)
-                    }
-                    _ => line,
+            .map(|line| match serde_json::from_str::<InboxEntry>(&line) {
+                Ok(mut e) if !e.read => {
+                    e.read = true;
+                    count += 1;
+                    serde_json::to_string(&e).unwrap_or(line)
                 }
+                _ => line,
             })
             .collect();
         fs::write(&path, new_content.join("\n") + "\n")?;
@@ -243,13 +240,19 @@ impl InboxStore {
 
         let mut count = 0u32;
         for path in paths {
-            if !path.exists() { continue; }
+            if !path.exists() {
+                continue;
+            }
             let file = fs::File::open(&path)?;
             let reader = BufReader::new(file);
             for line in reader.lines().flatten() {
-                if line.trim().is_empty() { continue; }
+                if line.trim().is_empty() {
+                    continue;
+                }
                 if let Ok(e) = serde_json::from_str::<InboxEntry>(&line) {
-                    if !e.read { count += 1; }
+                    if !e.read {
+                        count += 1;
+                    }
                 }
             }
         }
@@ -273,18 +276,16 @@ impl InboxStore {
             .lines()
             .filter_map(|l| l.ok())
             .filter(|l| !l.trim().is_empty())
-            .map(|line| {
-                match serde_json::from_str::<InboxEntry>(&line) {
-                    Ok(mut e) => {
-                        if mutate(&mut e) {
-                            changed = true;
-                            serde_json::to_string(&e).unwrap_or(line)
-                        } else {
-                            serde_json::to_string(&e).unwrap_or(line)
-                        }
+            .map(|line| match serde_json::from_str::<InboxEntry>(&line) {
+                Ok(mut e) => {
+                    if mutate(&mut e) {
+                        changed = true;
+                        serde_json::to_string(&e).unwrap_or(line)
+                    } else {
+                        serde_json::to_string(&e).unwrap_or(line)
                     }
-                    Err(_) => line,
                 }
+                Err(_) => line,
             })
             .collect();
         if changed {
@@ -308,8 +309,28 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let store = make_store(&dir);
 
-        store.push("emp-1", InboxKind::Report, "周报".to_string(), None, None, None, None).unwrap();
-        store.push("emp-1", InboxKind::Signal, "异常信号".to_string(), None, None, None, None).unwrap();
+        store
+            .push(
+                "emp-1",
+                InboxKind::Report,
+                "周报".to_string(),
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        store
+            .push(
+                "emp-1",
+                InboxKind::Signal,
+                "异常信号".to_string(),
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
 
         let entries = store.list_for("emp-1", 100).unwrap();
         assert_eq!(entries.len(), 2);
@@ -322,7 +343,17 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let store = make_store(&dir);
 
-        let entry = store.push("emp-1", InboxKind::Report, "报告".to_string(), None, None, None, None).unwrap();
+        let entry = store
+            .push(
+                "emp-1",
+                InboxKind::Report,
+                "报告".to_string(),
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
         assert_eq!(store.unread_count(Some("emp-1")).unwrap(), 1);
 
         store.mark_read("emp-1", &entry.id).unwrap();
@@ -335,7 +366,17 @@ mod tests {
         let store = make_store(&dir);
 
         for _ in 0..3 {
-            store.push("emp-2", InboxKind::Report, "r".to_string(), None, None, None, None).unwrap();
+            store
+                .push(
+                    "emp-2",
+                    InboxKind::Report,
+                    "r".to_string(),
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap();
         }
         assert_eq!(store.unread_count(Some("emp-2")).unwrap(), 3);
         assert_eq!(store.mark_all_read("emp-2").unwrap(), 3);
@@ -347,8 +388,28 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let store = make_store(&dir);
 
-        store.push("emp-a", InboxKind::Report, "a1".to_string(), None, None, None, None).unwrap();
-        store.push("emp-b", InboxKind::Signal, "b1".to_string(), None, None, None, None).unwrap();
+        store
+            .push(
+                "emp-a",
+                InboxKind::Report,
+                "a1".to_string(),
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        store
+            .push(
+                "emp-b",
+                InboxKind::Signal,
+                "b1".to_string(),
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
 
         let all = store.list_all(100).unwrap();
         assert_eq!(all.len(), 2);
@@ -359,8 +420,28 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let store = make_store(&dir);
 
-        store.push("emp-x", InboxKind::Report, "r".to_string(), None, None, None, None).unwrap();
-        store.push("emp-y", InboxKind::Report, "r".to_string(), None, None, None, None).unwrap();
+        store
+            .push(
+                "emp-x",
+                InboxKind::Report,
+                "r".to_string(),
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        store
+            .push(
+                "emp-y",
+                InboxKind::Report,
+                "r".to_string(),
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
         assert_eq!(store.unread_count(None).unwrap(), 2);
     }
 
@@ -370,10 +451,26 @@ mod tests {
         let store = make_store(&dir);
 
         store
-            .push("emp-active", InboxKind::Report, "active".into(), None, None, None, None)
+            .push(
+                "emp-active",
+                InboxKind::Report,
+                "active".into(),
+                None,
+                None,
+                None,
+                None,
+            )
             .unwrap();
         store
-            .push("emp-archived", InboxKind::Report, "archived".into(), None, None, None, None)
+            .push(
+                "emp-archived",
+                InboxKind::Report,
+                "archived".into(),
+                None,
+                None,
+                None,
+                None,
+            )
             .unwrap();
 
         assert_eq!(store.list_all(100).unwrap().len(), 2);

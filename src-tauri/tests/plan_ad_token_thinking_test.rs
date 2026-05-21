@@ -226,6 +226,7 @@ fn ad3_llm_step_input_exposes_estimated_tokens() {
         llm_settings: &llm_settings,
         conversation_id: "conv",
         run_id: "run",
+        trace_id: "trace",
         estimated_tokens: 123,
         anthropic_multimodal_turn: None,
     };

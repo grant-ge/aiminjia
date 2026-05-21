@@ -37,8 +37,7 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
     }
     let tmp = tmp_sibling(path);
     fs::write(&tmp, bytes).with_context(|| format!("write tmp: {}", tmp.display()))?;
-    fs::rename(&tmp, path)
-        .with_context(|| format!("rename tmp → {}", path.display()))?;
+    fs::rename(&tmp, path).with_context(|| format!("rename tmp → {}", path.display()))?;
     Ok(())
 }
 

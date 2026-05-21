@@ -21,6 +21,7 @@ import type { ExpertTeamId } from '@/features/expert-teams/teams'
 import { getExpertTeam } from '@/features/expert-teams/teams'
 import { useAuthStore } from '@/stores/authStore'
 import { useBrandingStore } from '@/stores/brandingStore'
+import { useChannelStore } from '@/stores/channelStore'
 import { useChatStore } from '@/stores/chatStore'
 import { useGeneratedFilePreviewStore } from '@/stores/generatedFilePreviewStore'
 import { useNotificationStore } from '@/stores/notificationStore'
@@ -31,6 +32,18 @@ import { openGeneratedFile, revealFileInFolder } from '@/lib/tauri'
 import { useConversationTeamState, useTeamStore } from '@/stores/teamStore'
 
 type FileActionKind = 'preview' | 'open' | 'reveal'
+
+// Display name for IM platforms when the inbound conversation's sender is
+// rendered as the user-side identity. Keep in sync with AppSidebar's
+// CHANNEL_PLATFORM_NAME — WhatsApp intentionally not in this map because it
+// uses the contact's real push_name rather than the platform brand.
+const CHANNEL_PLATFORM_DISPLAY: Record<string, string> = {
+  dingtalk: '钉钉',
+  feishu: '飞书',
+  wecom: '企业微信',
+  wechat: '个人微信',
+  telegram: 'Telegram',
+}
 
 interface MessageListProps {
   expertTeamId?: ExpertTeamId
@@ -74,11 +87,43 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
   // configured (none of the current users have one).
   const assistantName = useBrandingStore((s) => s.productName)
   const assistantLogo = useBrandingStore((s) => s.logoUrl)
-  const userName = useAuthStore((s) => s.user?.name ?? s.user?.username ?? '我')
-  // User profile photos are not yet stored anywhere — colored-initial
-  // avatar from `ChatAvatar` is the default. When a profile-image field
-  // lands on the auth user, plug it in here.
-  const userAvatarUrl: string | null = null
+  const authUserName = useAuthStore((s) => s.user?.name ?? s.user?.username ?? '我')
+  // In channel chats (WhatsApp/Telegram/dingtalk/...), the "user" role
+  // bubbles come from the **external contact**, not the local AIjia operator.
+  // Identity rules (2026-05-21):
+  //   - WhatsApp: displayName (push_name) is reliable → use it for name +
+  //     initial-style avatar so each contact looks distinct.
+  //   - Other IM platforms (dingtalk/feishu/wecom/wechat/telegram): inbound
+  //     messages don't carry a stable real name (feishu/wecom/wechat only
+  //     give user_id). To stay visually consistent across IM tabs, render the
+  //     platform display name + platform logo as the "from" side identity.
+  //   - In-app (no channel binding): local auth user + neutral silhouette.
+  const channelConversation = useChannelStore((s) => {
+    if (!activeConversationId) return null
+    return s.conversations.find((conv) => conv.sessionId === activeConversationId) ?? null
+  })
+  const { userName, userAvatarUrl, userAvatarVariant } = (() => {
+    if (!channelConversation) {
+      return {
+        userName: authUserName,
+        userAvatarUrl: null as string | null,
+        userAvatarVariant: 'neutral' as 'initial' | 'neutral',
+      }
+    }
+    if (channelConversation.platform === 'whatsapp') {
+      const trimmed = channelConversation.displayName?.trim()
+      return {
+        userName: trimmed && trimmed.length > 0 ? trimmed : 'WhatsApp 私聊',
+        userAvatarUrl: null as string | null,
+        userAvatarVariant: 'initial' as 'initial' | 'neutral',
+      }
+    }
+    return {
+      userName: CHANNEL_PLATFORM_DISPLAY[channelConversation.platform] ?? channelConversation.platform,
+      userAvatarUrl: `/logos/${channelConversation.platform}.png`,
+      userAvatarVariant: 'initial' as 'initial' | 'neutral',
+    }
+  })()
 
   // Team chat drawer wiring.
   const { overview } = useTeamOverview(activeConversationId)
@@ -206,7 +251,7 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
                   conversationId={activeConversationId ?? undefined}
                 />
               ) : (
-                <ChatRow role="user" name={userName} avatarUrl={userAvatarUrl} avatarVariant="neutral">
+                <ChatRow role="user" name={userName} avatarUrl={userAvatarUrl} avatarVariant={userAvatarVariant}>
                   <UserMessageBubble
                     text={t.userMessage.text}
                     commandText={t.userMessage.commandText}

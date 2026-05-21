@@ -39,9 +39,14 @@ impl WriteMemoryRuntimeTool {
 
 #[async_trait]
 impl RuntimeTool for WriteMemoryRuntimeTool {
-    fn id(&self) -> &str { "WriteMemory" }
-    
-    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "WriteMemory"
+    }
+
+    async fn definition(
+        &self,
+        _ctx: &crate::runtime::tools::ToolDescriptionContext,
+    ) -> ToolDefinition {
         TOOL_CATALOG
             .get("WriteMemory")
             .unwrap_or_else(|| ToolDefinition::new("WriteMemory", "保存项目记忆"))
@@ -99,9 +104,14 @@ impl SearchMemoryRuntimeTool {
 
 #[async_trait]
 impl RuntimeTool for SearchMemoryRuntimeTool {
-    fn id(&self) -> &str { "SearchMemory" }
-    
-    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "SearchMemory"
+    }
+
+    async fn definition(
+        &self,
+        _ctx: &crate::runtime::tools::ToolDescriptionContext,
+    ) -> ToolDefinition {
         TOOL_CATALOG
             .get("SearchMemory")
             .unwrap_or_else(|| ToolDefinition::new("SearchMemory", "搜索项目记忆"))

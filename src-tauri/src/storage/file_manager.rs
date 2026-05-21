@@ -57,9 +57,7 @@ impl FileManager {
                 joined.clone()
             }
         };
-        let workspace_canonical = ws
-            .canonicalize()
-            .unwrap_or_else(|_| ws.clone());
+        let workspace_canonical = ws.canonicalize().unwrap_or_else(|_| ws.clone());
         if !canonical.starts_with(&workspace_canonical) {
             return Err(anyhow!(
                 "Path traversal rejected: '{}' resolves outside workspace",

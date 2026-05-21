@@ -9,8 +9,7 @@
 
 #[test]
 fn run_agenda_item_now_backend_returns_string_occurrence_id() {
-    let source =
-        std::fs::read_to_string("src/transport/tauri_commands/agenda.rs").unwrap();
+    let source = std::fs::read_to_string("src/transport/tauri_commands/agenda.rs").unwrap();
     let (_, after) = source
         .split_once("pub async fn run_agenda_item_now(")
         .expect("run_agenda_item_now command must exist in agenda.rs");
@@ -44,8 +43,7 @@ fn run_agenda_item_now_frontend_wrapper_returns_promise_string() {
 
 #[test]
 fn list_agenda_occurrences_backend_takes_only_item_id_and_limit() {
-    let source =
-        std::fs::read_to_string("src/transport/tauri_commands/agenda.rs").unwrap();
+    let source = std::fs::read_to_string("src/transport/tauri_commands/agenda.rs").unwrap();
     let (_, after) = source
         .split_once("pub async fn list_agenda_occurrences(")
         .expect("list_agenda_occurrences command must exist in agenda.rs");

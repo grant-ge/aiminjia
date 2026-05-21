@@ -84,9 +84,7 @@ async fn returns_full_task_for_known_id() {
 
     // Data must have a non-null task object with the expected fields
     let data = result.data.expect("data field must be present");
-    let task_obj = data
-        .get("task")
-        .expect("data.task must be present");
+    let task_obj = data.get("task").expect("data.task must be present");
     assert!(
         !task_obj.is_null(),
         "data.task must not be null for a known id"
@@ -134,9 +132,7 @@ async fn rejects_missing_taskId_field() {
     let tool = TaskGetRuntimeTool;
 
     // Pass empty json — no taskId key
-    let result = tool
-        .execute(json!({}), ctx(&root))
-        .await;
+    let result = tool.execute(json!({}), ctx(&root)).await;
 
     assert!(result.is_err(), "should return Err when taskId is missing");
     match result.unwrap_err() {

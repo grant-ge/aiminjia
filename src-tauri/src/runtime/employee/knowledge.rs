@@ -245,13 +245,8 @@ pub fn index_one(
                 format!("knowledge:{}", employee_id),
                 original_name.to_string(),
             ];
-            match app_storage.save_cognitive_memory(
-                &content,
-                &category,
-                &tags,
-                employee_id,
-                false,
-            ) {
+            match app_storage.save_cognitive_memory(&content, &category, &tags, employee_id, false)
+            {
                 Ok(_) => {
                     written += 1;
                 }

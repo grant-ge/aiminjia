@@ -183,7 +183,10 @@ async fn broadcast_without_team_errors_with_helpful_message() {
         .unwrap_err();
     match err {
         ToolError::ExecutionFailed(msg) => {
-            assert!(msg.contains("no team") || msg.contains("TeamCreate"), "msg: {msg}");
+            assert!(
+                msg.contains("no team") || msg.contains("TeamCreate"),
+                "msg: {msg}"
+            );
         }
         other => panic!("expected ExecutionFailed, got {other:?}"),
     }

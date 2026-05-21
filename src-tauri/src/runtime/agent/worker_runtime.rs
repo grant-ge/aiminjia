@@ -16,10 +16,10 @@ use crate::llm::streaming::{ChatMessage, StopReason, StreamEvent, ToolDefinition
 use crate::models::settings::AppSettings;
 use crate::plugin::registry::ToolRegistry;
 use crate::plugin::tool_trait::ToolError as LegacyToolError;
-use crate::runtime::agent::message_bridge;
 use crate::runtime::agent::empty_response_recovery::{
     EmptyResponseRecoveryConfig, EmptyResponseRecoveryState, RecoveryDecision,
 };
+use crate::runtime::agent::message_bridge;
 use crate::runtime::agent::subagent_result_envelope::{
     build_subagent_transcript_ref, SubAgentResultEnvelope, SubAgentTerminalToolResult,
     SubAgentTranscriptEntry,
@@ -287,12 +287,9 @@ impl<'a> SubagentWorkerRuntime<'a> {
         let mut terminal_tool_results: Vec<SubAgentTerminalToolResult> = Vec::new();
         let mut cancelled = false;
         let mut last_stop_reason: Option<StopReason> = None;
-        let mut recovery = EmptyResponseRecoveryState::new(
-            EmptyResponseRecoveryConfig::default(),
-        );
-        let max_tokens = crate::llm::max_tokens::default_max_tokens_for_model(
-            &effective_settings.primary_model,
-        );
+        let mut recovery = EmptyResponseRecoveryState::new(EmptyResponseRecoveryConfig::default());
+        let max_tokens =
+            crate::llm::max_tokens::default_max_tokens_for_model(&effective_settings.primary_model);
 
         'agent_loop: for iteration in 0..request.max_iterations {
             if child_cancel.is_cancelled() {
@@ -310,7 +307,9 @@ impl<'a> SubagentWorkerRuntime<'a> {
 
             {
                 let agent_found = request.tool_defs.iter().any(|d| d.name == "Agent");
-                let agent_has_emp = request.tool_defs.iter()
+                let agent_has_emp = request
+                    .tool_defs
+                    .iter()
                     .find(|d| d.name == "Agent")
                     .map(|d| d.description.contains("<available_subagent_types>"))
                     .unwrap_or(false);
@@ -867,7 +866,10 @@ fn emit_tool_executing(
     if let Some(app) = app_handle {
         log::info!(
             "[SubAgent-emit] tool:executing conv={} tool={} id={} parent_tool_use_id={:?}",
-            conversation_id, tool_name, tool_call_id, parent_tool_use_id
+            conversation_id,
+            tool_name,
+            tool_call_id,
+            parent_tool_use_id
         );
         let _ = tauri::Emitter::emit(
             app,
@@ -903,7 +905,10 @@ fn emit_tool_completed(
     if let Some(app) = app_handle {
         log::info!(
             "[SubAgent-emit] tool:completed conv={} id={} success={} parent_tool_use_id={:?}",
-            conversation_id, tool_call_id, success, parent_tool_use_id
+            conversation_id,
+            tool_call_id,
+            success,
+            parent_tool_use_id
         );
         let _ = tauri::Emitter::emit(
             app,
@@ -1047,8 +1052,8 @@ fn safe_truncate(content: &str, max_bytes: usize) -> &str {
 use crate::runtime::agent::inbox::{AgentInbox, InboxItem, MessageSource};
 use crate::runtime::agent::name_registry::AgentNameRegistry;
 use crate::runtime::agent::output_writer::{
-    append_line, AgentTranscriptMeta, TranscriptKind, TranscriptLine,
-    transcript_path_for_kind, write_meta,
+    append_line, transcript_path_for_kind, write_meta, AgentTranscriptMeta, TranscriptKind,
+    TranscriptLine,
 };
 use crate::runtime::agent::team::Team;
 use crate::runtime::cancellation::wait_for_cancellation;
@@ -1166,9 +1171,7 @@ pub async fn run_worker(
         WorkerMode::TeammateIdle {
             team_handle: th,
             agent_name,
-        } => {
-            run_teammate_idle(ctx, th, agent_name, initial_prompt).await
-        }
+        } => run_teammate_idle(ctx, th, agent_name, initial_prompt).await,
     }
 }
 
@@ -1233,8 +1236,7 @@ async fn run_teammate_idle(
     // Heartbeat interval — 60s in production; tests can override by controlling
     // how many ticks they drive before cancelling.
     let heartbeat_secs = if cfg!(test) { 1 } else { 60 };
-    let mut heartbeat =
-        tokio::time::interval(std::time::Duration::from_secs(heartbeat_secs));
+    let mut heartbeat = tokio::time::interval(std::time::Duration::from_secs(heartbeat_secs));
     // Skip the first tick that fires immediately.
     heartbeat.tick().await;
 
@@ -1400,8 +1402,7 @@ async fn teammate_stub_turn(
 
         let user_text = render_inbox_message_as_user_text(message);
 
-        let user_line =
-            TranscriptLine::user_from(user_text.clone(), from_label_for_source(source));
+        let user_line = TranscriptLine::user_from(user_text.clone(), from_label_for_source(source));
         let _ = append_line(&jl_path, &user_line);
 
         // P2.6 stub reply: explicitly NOT a self-shutdown.  Real LLM wiring
@@ -1453,11 +1454,7 @@ async fn teammate_real_turn(
     // System prompt for this Teammate.  Constructed once at spawn time
     // (Employee prompt + TEAMMATE_ADDENDUM) and frozen on `meta` so every
     // turn sees the same persona.
-    let system_prompt = ctx
-        .meta
-        .boot_system_prompt
-        .clone()
-        .unwrap_or_default();
+    let system_prompt = ctx.meta.boot_system_prompt.clone().unwrap_or_default();
 
     // Tool definitions filtered by the per-Teammate whitelist.  Resolved
     // freshly each turn so newly-loaded tools (e.g. MCP servers connected
@@ -1465,11 +1462,14 @@ async fn teammate_real_turn(
     let all_schemas = engine.tool_registry.get_all_schemas().await;
     let final_allowed = crate::runtime::agent::tool_whitelist::resolve_agent_tools_ex(
         &ctx.meta.tool_whitelist,
-        &[],          // no per-Teammate disallow list yet
-        &all_schemas.iter().map(|s| s.name.clone()).collect::<Vec<_>>(),
-        true,         // is_async = true (Teammate runs in background)
-        false,        // allow_recursive_spawn = false
-        true,         // is_teammate = true → injects TEAMMATE_TOOLS (SendMessage / TaskList / ...)
+        &[], // no per-Teammate disallow list yet
+        &all_schemas
+            .iter()
+            .map(|s| s.name.clone())
+            .collect::<Vec<_>>(),
+        true,  // is_async = true (Teammate runs in background)
+        false, // allow_recursive_spawn = false
+        true,  // is_teammate = true → injects TEAMMATE_TOOLS (SendMessage / TaskList / ...)
     );
     let tool_defs: Vec<crate::llm::streaming::ToolDefinition> = all_schemas
         .into_iter()
@@ -1491,7 +1491,11 @@ async fn teammate_real_turn(
     // 2. Per-turn cancellation token (child of the worker's lifecycle
     //    token so a TeammateStop kills the in-flight LLM call too).
     let turn_cancel = ctx.cancel.child_token();
-    let sub_conv_id = format!("teammate-{}-{}", ctx.agent_id.as_str(), uuid::Uuid::new_v4());
+    let sub_conv_id = format!(
+        "teammate-{}-{}",
+        ctx.agent_id.as_str(),
+        uuid::Uuid::new_v4()
+    );
 
     // 3. Build a per-turn TurnState + tool_event_bus + QueryEngine so
     //    ToolRoundDriver has everything it needs.  Reuses the
@@ -1520,8 +1524,8 @@ async fn teammate_real_turn(
 
     let permission_ask = crate::runtime::tools::permission::default_permission_ask();
     let _ = permission_ask; // reserved for future explicit injection; QueryEngine uses default ask internally
-    // Build QueryEngine mirroring SubagentWorkerRuntime::build_query_engine
-    // but inlined here since this is a free function (not a method).
+                            // Build QueryEngine mirroring SubagentWorkerRuntime::build_query_engine
+                            // but inlined here since this is a free function (not a method).
     let (python_binary, python_home) = engine
         .runtime_deps
         .runtime_resolver
@@ -1747,10 +1751,7 @@ async fn teammate_real_turn(
                 let assistant = ChatMessage::text("assistant", iter_content.clone());
                 messages.push(assistant.clone());
                 if let Some(ref path) = jl_path {
-                    let _ = append_line(
-                        path,
-                        &TranscriptLine::from_chat_message(&assistant),
-                    );
+                    let _ = append_line(path, &TranscriptLine::from_chat_message(&assistant));
                 }
             }
             break;
@@ -1788,8 +1789,8 @@ async fn teammate_real_turn(
             })
             .collect();
 
-        let round_driver = ToolRoundDriver::new(query_engine.clone())
-            .with_allowed_tools(final_allowed.clone());
+        let round_driver =
+            ToolRoundDriver::new(query_engine.clone()).with_allowed_tools(final_allowed.clone());
         let round_results = round_driver
             .execute_round(&turn, &tool_event_bus, runtime_tool_calls)
             .await;
@@ -1823,8 +1824,7 @@ async fn teammate_real_turn(
                 }) => (
                     tool_call_id,
                     tool_name,
-                    "Permission Ask required (Teammate is async — request auto-denied)"
-                        .to_string(),
+                    "Permission Ask required (Teammate is async — request auto-denied)".to_string(),
                     true,
                 ),
                 ToolRoundResult::Ok(RuntimeToolCallOutcome::InteractionRequired {
@@ -1954,11 +1954,7 @@ fn build_teammate_permission_ctx(
 /// Cleanup performed when the idle loop exits (cancellation, shutdown, inbox
 /// closed).  Removes the Teammate from `Team` and unregisters its name from
 /// `AgentNameRegistry`.
-async fn cleanup_teammate(
-    ctx: &TeammateWorkerCtx,
-    team_handle: &Arc<Mutex<Team>>,
-    name: &str,
-) {
+async fn cleanup_teammate(ctx: &TeammateWorkerCtx, team_handle: &Arc<Mutex<Team>>, name: &str) {
     // 1. Remove from Team roster.
     {
         let mut team = team_handle.lock().await;
@@ -2042,10 +2038,7 @@ mod tests {
             parent_tool_use_id: None,
             disallowed_tools: vec![],
         };
-        let all_schemas = vec![
-            tool_schema("Read"),
-            tool_schema("Agent"),
-        ];
+        let all_schemas = vec![tool_schema("Read"), tool_schema("Agent")];
         let available_names: Vec<String> = all_schemas
             .iter()
             .map(|schema| schema.name.clone())
@@ -2068,12 +2061,8 @@ mod tests {
 
         assert!(final_allowed.contains(&"Read".to_string()));
         assert!(!final_allowed.contains(&"Agent".to_string()));
-        assert!(run_config
-            .allowed_tools
-            .contains(&"Read".to_string()));
-        assert!(!run_config
-            .allowed_tools
-            .contains(&"Agent".to_string()));
+        assert!(run_config.allowed_tools.contains(&"Read".to_string()));
+        assert!(!run_config.allowed_tools.contains(&"Agent".to_string()));
         let tool_def_names: Vec<&str> = turn_request
             .tool_defs
             .iter()

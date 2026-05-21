@@ -61,7 +61,10 @@ fn register_anonymous_does_not_add_name_index() {
 
     // But by_id lookup must work
     let by_id = store.find_by_id(&AgentId::new("anon-bug-fix-002"));
-    assert!(by_id.is_some(), "by_id lookup must succeed after register_anonymous");
+    assert!(
+        by_id.is_some(),
+        "by_id lookup must succeed after register_anonymous"
+    );
 }
 
 // ─── Test 3 ──────────────────────────────────────────────────────────────────

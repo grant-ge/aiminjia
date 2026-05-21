@@ -9,10 +9,9 @@ fn runtime_llm_executor_does_not_contain_compact_summary() {
         .find("pub trait RuntimeLlmExecutor")
         .expect("RuntimeLlmExecutor trait must exist");
     let trait_end_marker = "// END_TRAIT_RuntimeLlmExecutor";
-    let trait_end = content[trait_start..]
-        .find(trait_end_marker)
-        .expect("must mark the end of RuntimeLlmExecutor trait with `// END_TRAIT_RuntimeLlmExecutor`")
-        + trait_start;
+    let trait_end = content[trait_start..].find(trait_end_marker).expect(
+        "must mark the end of RuntimeLlmExecutor trait with `// END_TRAIT_RuntimeLlmExecutor`",
+    ) + trait_start;
     let trait_body = &content[trait_start..trait_end];
 
     assert!(

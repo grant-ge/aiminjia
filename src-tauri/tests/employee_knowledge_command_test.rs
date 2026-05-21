@@ -26,9 +26,7 @@ async fn end_to_end_index_completes() {
     std::fs::create_dir_all(&employees_dir).unwrap();
 
     let store = Arc::new(EmployeeStore::new(employees_dir));
-    let app_storage = Arc::new(
-        AppStorage::new(&renlijia).expect("AppStorage::new failed"),
-    );
+    let app_storage = Arc::new(AppStorage::new(&renlijia).expect("AppStorage::new failed"));
 
     let rec = store
         .create(CreateEmployeeRequest {
@@ -88,10 +86,7 @@ async fn end_to_end_index_completes() {
             panic!("indexing failed: {}", err);
         }
         if std::time::Instant::now() > deadline {
-            panic!(
-                "indexing did not complete in 5s, last status = {}",
-                status
-            );
+            panic!("indexing did not complete in 5s, last status = {}", status);
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
@@ -99,11 +94,11 @@ async fn end_to_end_index_completes() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn reindexing_same_file_same_day_still_marks_done() {
-    use std::time::Duration;
-    use serde_json::json;
-    use app_lib::runtime::employee::store::{EmployeeStore, CreateEmployeeRequest};
     use app_lib::runtime::employee::knowledge;
+    use app_lib::runtime::employee::store::{CreateEmployeeRequest, EmployeeStore};
     use app_lib::storage::file_store::AppStorage;
+    use serde_json::json;
+    use std::time::Duration;
 
     let tmp = tempfile::tempdir().unwrap();
     let renlijia = tmp.path().to_path_buf();
@@ -112,32 +107,36 @@ async fn reindexing_same_file_same_day_still_marks_done() {
     std::fs::write(
         &faq,
         "## 注册\n\n点击右上角注册按钮。\n\n## 充值\n\n进入控制台 → 余额 → 充值。\n",
-    ).unwrap();
+    )
+    .unwrap();
 
     let store = std::sync::Arc::new(EmployeeStore::new(renlijia.join("employees")));
-    let app_storage = std::sync::Arc::new(AppStorage::new(&renlijia).expect("AppStorage::new failed"));
+    let app_storage =
+        std::sync::Arc::new(AppStorage::new(&renlijia).expect("AppStorage::new failed"));
 
-    let rec = store.create(CreateEmployeeRequest {
-        template_id: Some("builtin:xiaoke".into()),
-        avatar: "💬".into(),
-        name: "小客".into(),
-        role: "客服".into(),
-        description: "".into(),
-        tool_whitelist: Some(vec![]),
-        cron: None,
-        timezone: None,
-        lifecycle: None,
-        cron_enabled: None,
-        system_prompt_extra: Some("".into()),
-        default_skill_id: None,
-        skill_ids: None,
-        resource_config: Some(json!({
-            "knowledgeSources": [
-                { "path": faq.to_string_lossy(), "originalName": "faq.md", "size": 100,
-                  "status": "pending", "slicedCount": 0 }
-            ]
-        })),
-    }).unwrap();
+    let rec = store
+        .create(CreateEmployeeRequest {
+            template_id: Some("builtin:xiaoke".into()),
+            avatar: "💬".into(),
+            name: "小客".into(),
+            role: "客服".into(),
+            description: "".into(),
+            tool_whitelist: Some(vec![]),
+            cron: None,
+            timezone: None,
+            lifecycle: None,
+            cron_enabled: None,
+            system_prompt_extra: Some("".into()),
+            default_skill_id: None,
+            skill_ids: None,
+            resource_config: Some(json!({
+                "knowledgeSources": [
+                    { "path": faq.to_string_lossy(), "originalName": "faq.md", "size": 100,
+                      "status": "pending", "slicedCount": 0 }
+                ]
+            })),
+        })
+        .unwrap();
 
     // First index — writes 2 chunks.
     knowledge::spawn_index_all(
@@ -150,19 +149,25 @@ async fn reindexing_same_file_same_day_still_marks_done() {
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
     loop {
         let r = store.get(&rec.id).unwrap();
-        if r.resource_config["knowledgeSources"][0]["status"].as_str() == Some("done") { break; }
-        if std::time::Instant::now() > deadline { panic!("first index didn't complete"); }
+        if r.resource_config["knowledgeSources"][0]["status"].as_str() == Some("done") {
+            break;
+        }
+        if std::time::Instant::now() > deadline {
+            panic!("first index didn't complete");
+        }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
 
     // Reset to pending and re-index — should still mark Done (duplicate is benign).
-    store.update_knowledge_source_status(
-        &rec.id,
-        &faq.to_string_lossy(),
-        app_lib::runtime::employee::store::KnowledgeSourceStatus::Pending,
-        0,
-        None,
-    ).unwrap();
+    store
+        .update_knowledge_source_status(
+            &rec.id,
+            &faq.to_string_lossy(),
+            app_lib::runtime::employee::store::KnowledgeSourceStatus::Pending,
+            0,
+            None,
+        )
+        .unwrap();
 
     knowledge::spawn_index_all(
         std::sync::Arc::clone(&store),
@@ -174,7 +179,9 @@ async fn reindexing_same_file_same_day_still_marks_done() {
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
     loop {
         let r = store.get(&rec.id).unwrap();
-        let status = r.resource_config["knowledgeSources"][0]["status"].as_str().unwrap_or("");
+        let status = r.resource_config["knowledgeSources"][0]["status"]
+            .as_str()
+            .unwrap_or("");
         if status == "done" {
             assert_eq!(
                 r.resource_config["knowledgeSources"][0]["slicedCount"].as_u64(),
@@ -184,9 +191,14 @@ async fn reindexing_same_file_same_day_still_marks_done() {
             return;
         }
         if status == "failed" {
-            panic!("second index failed: {:?}", r.resource_config["knowledgeSources"][0]);
+            panic!(
+                "second index failed: {:?}",
+                r.resource_config["knowledgeSources"][0]
+            );
         }
-        if std::time::Instant::now() > deadline { panic!("second index timeout, last status = {}", status); }
+        if std::time::Instant::now() > deadline {
+            panic!("second index timeout, last status = {}", status);
+        }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
 }

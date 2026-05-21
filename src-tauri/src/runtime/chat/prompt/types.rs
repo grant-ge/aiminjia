@@ -137,9 +137,7 @@ impl TurnPromptSnapshot {
     /// 降级版本：用于不支持 content 数组的 OpenAI 兼容端点。
     /// 调用方判断 provider capability 决定走哪个。
     pub fn system_message_flat(&self) -> Option<serde_json::Value> {
-        crate::runtime::chat::prompt::ChatPromptRenderer::render_system_message_flat(
-            &self.assembly,
-        )
+        crate::runtime::chat::prompt::ChatPromptRenderer::render_system_message_flat(&self.assembly)
     }
 
     pub fn initial_user_reminders(&self) -> &[serde_json::Value] {

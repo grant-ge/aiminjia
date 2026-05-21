@@ -14,8 +14,7 @@ fn tool_kind_default_is_primitive() {
 
 #[test]
 fn spawn_subagent_kind_is_composite() {
-    let def = ToolDefinition::new("Agent", "Launch sub-agent")
-        .with_kind(ToolKind::Composite);
+    let def = ToolDefinition::new("Agent", "Launch sub-agent").with_kind(ToolKind::Composite);
     assert!(matches!(def.kind, ToolKind::Composite));
 }
 
@@ -63,10 +62,7 @@ async fn get_schemas_filtered_returns_sorted_by_name() {
     let ctx = app_lib::runtime::tools::ToolDescriptionContext::default();
     let schemas = registry
         .get_schemas_filtered(
-            &ToolFilter::Only(vec![
-                "WebSearch".to_string(),
-                "WriteMemory".to_string(),
-            ]),
+            &ToolFilter::Only(vec!["WebSearch".to_string(), "WriteMemory".to_string()]),
             &ctx,
             &std::collections::HashMap::new(),
         )
@@ -118,7 +114,7 @@ fn tool_definition_with_destructive_flag() {
 #[test]
 fn runtime_tool_default_predicates_follow_definition_flags() {
     use app_lib::runtime::tools::description_context::ToolDescriptionContext;
-use app_lib::runtime::tools::{RuntimeTool, ToolError, ToolExecutionContext, ToolResult};
+    use app_lib::runtime::tools::{RuntimeTool, ToolError, ToolExecutionContext, ToolResult};
     use async_trait::async_trait;
     use serde_json::{json, Value};
 
@@ -129,7 +125,6 @@ use app_lib::runtime::tools::{RuntimeTool, ToolError, ToolExecutionContext, Tool
         fn id(&self) -> &str {
             &self.0.id
         }
-
 
         async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
             self.0.clone()
@@ -168,7 +163,8 @@ fn tool_definition_default_max_result_size_chars_is_8000() {
 
 #[test]
 fn tool_definition_with_max_result_size_chars_sets_field() {
-    let def = ToolDefinition::new("some_tool_with_limit", "desc").with_max_result_size_chars(32_000);
+    let def =
+        ToolDefinition::new("some_tool_with_limit", "desc").with_max_result_size_chars(32_000);
     assert_eq!(def.default_max_result_size_chars, 32_000);
 }
 
@@ -190,9 +186,7 @@ fn catalog_search_files_has_4000_limit() {
 fn catalog_other_tools_default_to_8000_when_not_overridden() {
     use app_lib::runtime::tools::catalog::TOOL_CATALOG;
 
-    for id in [
-        "WebSearch",
-    ] {
+    for id in ["WebSearch"] {
         let def = TOOL_CATALOG.get(id).unwrap();
         assert_eq!(
             def.default_max_result_size_chars, 8_000,
@@ -206,9 +200,7 @@ fn catalog_other_tools_default_to_8000_when_not_overridden() {
 fn catalog_long_running_tools_have_declared_default_timeouts() {
     use app_lib::runtime::tools::catalog::TOOL_CATALOG;
 
-    for (id, expected) in [
-        ("Bash", Some(120)),
-    ] {
+    for (id, expected) in [("Bash", Some(120))] {
         let def = TOOL_CATALOG.get(id).unwrap();
         assert_eq!(
             def.default_timeout_secs, expected,
@@ -221,10 +213,7 @@ fn catalog_long_running_tools_have_declared_default_timeouts() {
 fn catalog_non_long_running_tools_keep_timeout_unset() {
     use app_lib::runtime::tools::catalog::TOOL_CATALOG;
 
-    for id in [
-        "Read",
-        "WebSearch",
-    ] {
+    for id in ["Read", "WebSearch"] {
         let def = TOOL_CATALOG.get(id).unwrap();
         assert_eq!(
             def.default_timeout_secs, None,

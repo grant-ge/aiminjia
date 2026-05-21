@@ -229,9 +229,9 @@ impl ToolExecutionContext {
     /// Panics if the orchestration layer did not inject a registry via
     /// [`Self::with_inbox_registry`].  SendMessage requires this.
     pub fn inbox_registry(&self) -> &Arc<InboxRegistry> {
-        self.inbox_registry
-            .as_ref()
-            .expect("inbox_registry not injected into ToolExecutionContext — use with_inbox_registry()")
+        self.inbox_registry.as_ref().expect(
+            "inbox_registry not injected into ToolExecutionContext — use with_inbox_registry()",
+        )
     }
 
     /// Returns the process-wide [`TeamRegistry`].
@@ -241,9 +241,9 @@ impl ToolExecutionContext {
     /// [`Self::with_team_registry`].  Tools that call this must only be
     /// dispatched through the full production path (not legacy / test stubs).
     pub fn team_registry(&self) -> &Arc<TeamRegistry> {
-        self.team_registry
-            .as_ref()
-            .expect("team_registry not injected into ToolExecutionContext — use with_team_registry()")
+        self.team_registry.as_ref().expect(
+            "team_registry not injected into ToolExecutionContext — use with_team_registry()",
+        )
     }
 
     /// Returns the process-wide [`AgentNameRegistry`].

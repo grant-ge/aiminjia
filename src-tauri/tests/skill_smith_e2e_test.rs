@@ -114,7 +114,10 @@ metadata:
         .await
         .expect("validate");
     let data = r.data.unwrap();
-    assert_eq!(data["ok"], false, "validate should fail before template.md exists");
+    assert_eq!(
+        data["ok"], false,
+        "validate should fail before template.md exists"
+    );
     let codes: Vec<String> = data["errors"]
         .as_array()
         .unwrap()

@@ -17,11 +17,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use app_lib::runtime::ids::RunId;
 use app_lib::runtime::identity::IdentityMapping;
+use app_lib::runtime::ids::RunId;
 use app_lib::runtime::path_auth::{
-    PathOp, PermissionRule, RuleSource, ToolPermissionContext,
-    derive_working_dirs_from_attachments,
+    derive_working_dirs_from_attachments, PathOp, PermissionRule, RuleSource, ToolPermissionContext,
 };
 use app_lib::runtime::query_engine::QueryEngine;
 use app_lib::runtime::state::TurnState;
@@ -128,8 +127,7 @@ fn subagent_inherits_parent_allow_rules() {
         "child engine must inherit parent's allow_rules"
     );
     assert_eq!(
-        child_ctx.allow_rules[0].pattern,
-        "/Users/example/Shared/**",
+        child_ctx.allow_rules[0].pattern, "/Users/example/Shared/**",
         "allow_rule pattern must be preserved in child"
     );
 }
@@ -146,7 +144,10 @@ fn subagent_inherits_parent_session_attachment_dirs_as_snapshot() {
     // Parent engine accumulates a session attachment dir.
     let parent_engine = QueryEngine::new();
     let attachment_dirs = derive_working_dirs_from_attachments(&[attachment_file.clone()]);
-    assert!(!attachment_dirs.is_empty(), "attachment should derive a dir");
+    assert!(
+        !attachment_dirs.is_empty(),
+        "attachment should derive a dir"
+    );
     parent_engine.merge_session_attachment_dirs(&attachment_dirs);
 
     // At spawn time: build_turn_permission_ctx produces a snapshot that includes
@@ -168,9 +169,7 @@ fn subagent_inherits_parent_session_attachment_dirs_as_snapshot() {
             .collect::<Vec<_>>()
     );
     assert_eq!(
-        parent_perm_ctx
-            .additional_working_dirs
-            .get(&attachment_dir),
+        parent_perm_ctx.additional_working_dirs.get(&attachment_dir),
         Some(&RuleSource::Session),
         "attachment dir source must be Session"
     );

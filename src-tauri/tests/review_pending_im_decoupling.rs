@@ -21,14 +21,14 @@ fn runtime_pending_does_not_use_tauri() {
 
 #[test]
 fn channel_manager_uses_only_public_pending_api() {
-    let path = "src/connector/channel/manager.rs";
+    let path = "src/connector/im/manager.rs";
     let content = std::fs::read_to_string(Path::new(path)).expect(path);
     assert!(
         !content.contains("runtime::pending::queue_manager::"),
-        "channel/manager.rs must not reach into queue_manager internals"
+        "im/manager.rs must not reach into queue_manager internals"
     );
     assert!(
         !content.contains("runtime::pending::store::"),
-        "channel/manager.rs must not reach into store internals"
+        "im/manager.rs must not reach into store internals"
     );
 }

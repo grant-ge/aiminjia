@@ -44,11 +44,8 @@ struct SpyTool {
 #[async_trait]
 impl RuntimeTool for SpyTool {
     fn id(&self) -> &str {
-
         self.name
-
     }
-
 
     async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new(

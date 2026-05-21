@@ -15,11 +15,8 @@ struct MissingCatalogRuntimeTool;
 #[async_trait]
 impl RuntimeTool for MissingCatalogRuntimeTool {
     fn id(&self) -> &str {
-
         "missing_catalog_runtime_tool"
-
     }
-
 
     async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new(
@@ -63,15 +60,7 @@ async fn review_register_builtin_tools_preserves_catalog_consistency() {
 
 #[test]
 fn review_registered_workspace_and_request_scoped_tools_all_in_catalog() {
-    for id in &[
-        "Read",
-        "Glob",
-        "Write",
-        "Edit",
-        "Bash",
-        "Grep",
-        "WebSearch",
-    ] {
+    for id in &["Read", "Glob", "Write", "Edit", "Bash", "Grep", "WebSearch"] {
         assert!(
             TOOL_CATALOG.get_entry(id).is_some(),
             "TOOL_CATALOG missing entry for '{id}'",

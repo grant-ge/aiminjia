@@ -7,18 +7,13 @@
 use std::fs;
 
 fn read_default_capabilities() -> serde_json::Value {
-    let path = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/capabilities/default.json"
-    );
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/capabilities/default.json");
     let raw = fs::read_to_string(path).expect("capabilities/default.json must exist");
     serde_json::from_str(&raw).expect("capabilities/default.json must be valid JSON")
 }
 
 fn has_permission(permissions: &[serde_json::Value], name: &str) -> bool {
-    permissions
-        .iter()
-        .any(|p| p.as_str() == Some(name))
+    permissions.iter().any(|p| p.as_str() == Some(name))
 }
 
 #[test]

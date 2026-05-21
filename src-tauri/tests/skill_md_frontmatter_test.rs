@@ -32,10 +32,16 @@ fn rejects_missing_frontmatter() {
 #[test]
 fn rejects_missing_required_name_or_description() {
     let missing_name = "---\ndescription: x\n---\nbody";
-    assert!(parse_skill_md(missing_name).unwrap_err().to_string().contains("name"));
+    assert!(parse_skill_md(missing_name)
+        .unwrap_err()
+        .to_string()
+        .contains("name"));
 
     let missing_desc = "---\nname: x\n---\nbody";
-    assert!(parse_skill_md(missing_desc).unwrap_err().to_string().contains("description"));
+    assert!(parse_skill_md(missing_desc)
+        .unwrap_err()
+        .to_string()
+        .contains("description"));
 }
 
 #[test]

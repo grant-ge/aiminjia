@@ -12,8 +12,8 @@ use app_lib::runtime::identity::IdentityMapping;
 use app_lib::runtime::ids::RunId;
 use app_lib::runtime::query_engine::QueryEngine;
 use app_lib::runtime::state::TurnState;
-use app_lib::runtime::tools::dispatcher::{RuntimeTool, ToolDispatchOutcome};
 use app_lib::runtime::tools::description_context::ToolDescriptionContext;
+use app_lib::runtime::tools::dispatcher::{RuntimeTool, ToolDispatchOutcome};
 use app_lib::runtime::tools::{
     AllowAllPermissionPipeline, ToolDefinition, ToolDispatcher, ToolError, ToolExecutionContext,
     ToolResult,
@@ -239,7 +239,7 @@ impl RuntimeLlmExecutor for RecordingExecutor {
     }
 
     async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
-        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
+        Ok(vec![]) // 显式声明此 mock 不关心 tool_defs
     }
 }
 

@@ -52,8 +52,7 @@ fn default_permission_mode() -> String {
 
 /// Parse a single agent .md file into an `AgentDefinition` with `source = User`.
 pub fn load_agent_from_markdown(path: &Path) -> Result<AgentDefinition> {
-    let raw =
-        std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
+    let raw = std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
     let matter = gray_matter::Matter::<gray_matter::engine::YAML>::new();
     let parsed = matter.parse(&raw);
     let data = parsed
@@ -180,6 +179,8 @@ mod tests {
         assert_eq!(def.name, "foo");
         assert_eq!(def.description, "A test agent");
         assert_eq!(def.allowed_tools, vec!["Read".to_string()]);
-        assert!(matches!(def.system_prompt, AgentPrompt::Inline(ref s) if s == "You are a test agent."));
+        assert!(
+            matches!(def.system_prompt, AgentPrompt::Inline(ref s) if s == "You are a test agent.")
+        );
     }
 }

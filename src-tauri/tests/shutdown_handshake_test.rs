@@ -9,7 +9,7 @@ use tokio::sync::Mutex;
 
 use app_lib::runtime::agent::inbox::{AgentInbox, InboxItem, MessageSource};
 use app_lib::runtime::agent::output_writer::{
-    AgentTranscriptMeta, TranscriptKind, transcript_path_for_kind,
+    transcript_path_for_kind, AgentTranscriptMeta, TranscriptKind,
 };
 use app_lib::runtime::agent::team::{Member, MemberRole, Team};
 use app_lib::runtime::agent::worker_runtime::{run_worker, TeammateWorkerCtx, WorkerMode};
@@ -89,7 +89,14 @@ async fn shutdown_request_chat_message_does_not_terminate_teammate() {
 
     let cancel = CancellationToken::new();
     let inbox = AgentInbox::new(8);
-    let (ctx, team) = build_ctx(&tmp, session, &agent_id, agent_name, inbox.clone(), cancel.clone());
+    let (ctx, team) = build_ctx(
+        &tmp,
+        session,
+        &agent_id,
+        agent_name,
+        inbox.clone(),
+        cancel.clone(),
+    );
     let conv_dir = ctx.conv_dir.clone().unwrap();
 
     let team_clone = team.clone();
@@ -155,7 +162,14 @@ async fn explicit_cancel_after_shutdown_request_completes_cleanup() {
 
     let cancel = CancellationToken::new();
     let inbox = AgentInbox::new(4);
-    let (ctx, team) = build_ctx(&tmp, session, &agent_id, agent_name, inbox.clone(), cancel.clone());
+    let (ctx, team) = build_ctx(
+        &tmp,
+        session,
+        &agent_id,
+        agent_name,
+        inbox.clone(),
+        cancel.clone(),
+    );
 
     let team_clone = team.clone();
     let agent_name_str = agent_name.to_string();
@@ -180,7 +194,10 @@ async fn explicit_cancel_after_shutdown_request_completes_cleanup() {
         .await
         .unwrap();
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-    assert!(!handle.is_finished(), "still running after shutdown_request");
+    assert!(
+        !handle.is_finished(),
+        "still running after shutdown_request"
+    );
 
     // Now Lead explicitly cancels — Teammate exits and is removed from Team.
     cancel.cancel();

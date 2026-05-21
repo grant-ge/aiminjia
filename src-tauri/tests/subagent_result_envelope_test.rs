@@ -46,10 +46,7 @@ fn envelope_roundtrip_keeps_core_sidechain_fields() {
 
     assert_eq!(decoded.generated_files, vec!["/tmp/a.json", "/tmp/b.json"]);
     assert_eq!(decoded.terminal_tool_results.len(), 1);
-    assert_eq!(
-        decoded.terminal_tool_results[0].tool_name,
-        "Bash"
-    );
+    assert_eq!(decoded.terminal_tool_results[0].tool_name, "Bash");
     assert_eq!(decoded.transcript_snapshot.len(), 2);
     assert_eq!(
         decoded.transcript_ref.as_deref(),

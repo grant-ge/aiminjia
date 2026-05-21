@@ -53,7 +53,10 @@ async fn enqueue_idle_session_returns_sent_directly() {
     let (mgr, _registry) = build_manager(&tmp);
     let session = SessionId::new("conv-1");
     let item = sample_item("pend-a");
-    let outcome = mgr.enqueue_or_send(session.clone(), item.clone()).await.unwrap();
+    let outcome = mgr
+        .enqueue_or_send(session.clone(), item.clone())
+        .await
+        .unwrap();
     match outcome {
         EnqueueOutcome::SentDirectly { request } => {
             assert_eq!(request.conversation_id.as_str(), "conv-1");
@@ -72,15 +75,23 @@ async fn enqueue_idle_but_queue_nonempty_still_queues() {
 
     // Mark busy, enqueue an item
     use crate::runtime::ids::RunId;
-    registry.reserve(session.as_str(), RunId::new("run-1")).unwrap();
-    let _ = mgr.enqueue_or_send(session.clone(), sample_item("first")).await.unwrap();
+    registry
+        .reserve(session.as_str(), RunId::new("run-1"))
+        .unwrap();
+    let _ = mgr
+        .enqueue_or_send(session.clone(), sample_item("first"))
+        .await
+        .unwrap();
 
     // Clear busy; queue still has "first"
     registry.clear(session.as_str());
 
     // Second enqueue should still be Queued (not SentDirectly), because
     // the queue is non-empty and must be drained first.
-    let outcome = mgr.enqueue_or_send(session.clone(), sample_item("second")).await.unwrap();
+    let outcome = mgr
+        .enqueue_or_send(session.clone(), sample_item("second"))
+        .await
+        .unwrap();
     match outcome {
         EnqueueOutcome::Queued { snapshot } => {
             assert_eq!(snapshot.len(), 2);
@@ -137,19 +148,23 @@ async fn enqueue_busy_full_queue_rejects() {
     let resolver = Arc::new(TempConvDirResolver(tmp.path().to_path_buf()));
     let mut config = PendingConfig::default();
     config.max_queue_per_session = 2;
-    let mgr = PendingQueueManager::new(
-        registry.clone(),
-        bus,
-        resolver,
-        config,
-    );
+    let mgr = PendingQueueManager::new(registry.clone(), bus, resolver, config);
     let session = SessionId::new("conv-full");
     use crate::runtime::ids::RunId;
-    registry.reserve(session.as_str(), RunId::new("run-1")).unwrap();
+    registry
+        .reserve(session.as_str(), RunId::new("run-1"))
+        .unwrap();
 
-    mgr.enqueue_or_send(session.clone(), sample_item("a")).await.unwrap();
-    mgr.enqueue_or_send(session.clone(), sample_item("b")).await.unwrap();
-    let outcome = mgr.enqueue_or_send(session.clone(), sample_item("c")).await.unwrap();
+    mgr.enqueue_or_send(session.clone(), sample_item("a"))
+        .await
+        .unwrap();
+    mgr.enqueue_or_send(session.clone(), sample_item("b"))
+        .await
+        .unwrap();
+    let outcome = mgr
+        .enqueue_or_send(session.clone(), sample_item("c"))
+        .await
+        .unwrap();
 
     match outcome {
         EnqueueOutcome::Rejected {
@@ -180,14 +195,12 @@ async fn enqueue_archived_session_rejects() {
     let registry = Arc::new(RuntimeRunRegistry::new());
     let bus = Arc::new(RuntimeEventBus::new());
     let resolver = Arc::new(ArchivedResolver(tmp.path().to_path_buf()));
-    let mgr = PendingQueueManager::new(
-        registry,
-        bus,
-        resolver,
-        PendingConfig::default(),
-    );
+    let mgr = PendingQueueManager::new(registry, bus, resolver, PendingConfig::default());
     let session = SessionId::new("conv-archived");
-    let outcome = mgr.enqueue_or_send(session, sample_item("x")).await.unwrap();
+    let outcome = mgr
+        .enqueue_or_send(session, sample_item("x"))
+        .await
+        .unwrap();
     assert!(matches!(
         outcome,
         EnqueueOutcome::Rejected {
@@ -232,9 +245,15 @@ async fn drain_dispatches_after_debounce() {
 
     let session = SessionId::new("conv-drain");
     use crate::runtime::ids::RunId;
-    registry.reserve(session.as_str(), RunId::new("run-1")).unwrap();
-    mgr.enqueue_or_send(session.clone(), sample_item("a")).await.unwrap();
-    mgr.enqueue_or_send(session.clone(), sample_item("b")).await.unwrap();
+    registry
+        .reserve(session.as_str(), RunId::new("run-1"))
+        .unwrap();
+    mgr.enqueue_or_send(session.clone(), sample_item("a"))
+        .await
+        .unwrap();
+    mgr.enqueue_or_send(session.clone(), sample_item("b"))
+        .await
+        .unwrap();
 
     // Release busy + schedule_drain
     registry.clear(session.as_str());
@@ -243,13 +262,23 @@ async fn drain_dispatches_after_debounce() {
     // Wait > debounce
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
-    assert_eq!(dispatcher.count.load(Ordering::SeqCst), 1, "dispatched once");
+    assert_eq!(
+        dispatcher.count.load(Ordering::SeqCst),
+        1,
+        "dispatched once"
+    );
     let text = dispatcher.last_text.lock().await.clone().unwrap();
     // Spec §6.1: drained batch lands as N independent user messages, the last
     // of which rides on the ChatTurnRequest (its content == last item's text).
     // Earlier items are persisted by the dispatcher impl before the LLM call.
-    assert!(text.contains("text for b"), "request.content carries last item");
-    assert!(!text.contains("text for a"), "earlier items don't appear in content");
+    assert!(
+        text.contains("text for b"),
+        "request.content carries last item"
+    );
+    assert!(
+        !text.contains("text for a"),
+        "earlier items don't appear in content"
+    );
     assert!(!text.contains("[以下是"), "no merge-header prefix");
 
     // Queue empty after drain
@@ -318,8 +347,12 @@ async fn drain_skipped_when_session_busy() {
 
     let session = SessionId::new("conv-busy-drain");
     use crate::runtime::ids::RunId;
-    registry.reserve(session.as_str(), RunId::new("run-1")).unwrap();
-    mgr.enqueue_or_send(session.clone(), sample_item("a")).await.unwrap();
+    registry
+        .reserve(session.as_str(), RunId::new("run-1"))
+        .unwrap();
+    mgr.enqueue_or_send(session.clone(), sample_item("a"))
+        .await
+        .unwrap();
 
     // Don't clear busy. schedule_drain anyway.
     mgr.schedule_drain(session.clone()).await;
@@ -335,10 +368,16 @@ async fn remove_item_removes_from_memory_disk_and_emits_event() {
     let (mgr, registry) = build_manager(&tmp);
     let session = SessionId::new("conv-remove");
     use crate::runtime::ids::RunId;
-    registry.reserve(session.as_str(), RunId::new("run-1")).unwrap();
+    registry
+        .reserve(session.as_str(), RunId::new("run-1"))
+        .unwrap();
 
-    mgr.enqueue_or_send(session.clone(), sample_item("keep")).await.unwrap();
-    mgr.enqueue_or_send(session.clone(), sample_item("drop")).await.unwrap();
+    mgr.enqueue_or_send(session.clone(), sample_item("keep"))
+        .await
+        .unwrap();
+    mgr.enqueue_or_send(session.clone(), sample_item("drop"))
+        .await
+        .unwrap();
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
     let removed = mgr.remove_item(&session, "drop").await.unwrap();
@@ -401,8 +440,12 @@ async fn drain_recently_drained_blocks_replay_after_restore() {
     mgr.set_dispatcher(dispatcher.clone()).await;
     let session = SessionId::new("conv-recent");
     use crate::runtime::ids::RunId;
-    registry.reserve(session.as_str(), RunId::new("run-1")).unwrap();
-    mgr.enqueue_or_send(session.clone(), sample_item("once")).await.unwrap();
+    registry
+        .reserve(session.as_str(), RunId::new("run-1"))
+        .unwrap();
+    mgr.enqueue_or_send(session.clone(), sample_item("once"))
+        .await
+        .unwrap();
     registry.clear(session.as_str());
     mgr.schedule_drain(session.clone()).await;
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;

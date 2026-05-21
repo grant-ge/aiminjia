@@ -1,15 +1,15 @@
+use async_trait::async_trait;
+use serde_json::Value;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use serde_json::Value;
-use async_trait::async_trait;
 
-use app_lib::runtime::cancellation::{CancellationToken, CancellationReason};
+use app_lib::runtime::cancellation::{CancellationReason, CancellationToken};
 use app_lib::runtime::mcp::{
     McpConnection, McpResult, McpRuntimeTool, McpServerConfig, McpToolDefinition,
     SharedMcpConnection,
 };
-use app_lib::runtime::tools::{ToolExecutionContext, RuntimeTool};
+use app_lib::runtime::tools::{RuntimeTool, ToolExecutionContext};
 
 /// Stub connection whose `call_tool` future never resolves until the test
 /// finishes — simulates an MCP server that hangs.
@@ -20,19 +20,29 @@ struct HangingConnection {
 
 #[async_trait]
 impl McpConnection for HangingConnection {
-    async fn connect(&self) -> McpResult<()> { Ok(()) }
+    async fn connect(&self) -> McpResult<()> {
+        Ok(())
+    }
     async fn disconnect(&self) -> McpResult<()> {
         self.disconnect_called.store(true, Ordering::SeqCst);
         Ok(())
     }
-    fn is_connected(&self) -> bool { true }
-    fn server_name(&self) -> &str { "stub" }
-    async fn list_tools(&self) -> McpResult<Vec<McpToolDefinition>> { Ok(vec![]) }
+    fn is_connected(&self) -> bool {
+        true
+    }
+    fn server_name(&self) -> &str {
+        "stub"
+    }
+    async fn list_tools(&self) -> McpResult<Vec<McpToolDefinition>> {
+        Ok(vec![])
+    }
     async fn call_tool(&self, _tool_name: &str, _arguments: Value) -> McpResult<Value> {
         // Simulates an MCP server that never responds.
         std::future::pending::<McpResult<Value>>().await
     }
-    fn config(&self) -> &McpServerConfig { &self.config }
+    fn config(&self) -> &McpServerConfig {
+        &self.config
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -60,9 +70,7 @@ async fn mcp_runtime_tool_aborts_within_one_second_when_token_cancelled() {
     let mut ctx = ToolExecutionContext::for_test("c1", "r1", "tc1");
     ctx.cancellation = cancel.clone();
 
-    let exec = tokio::spawn(async move {
-        tool.execute(serde_json::json!({}), ctx).await
-    });
+    let exec = tokio::spawn(async move { tool.execute(serde_json::json!({}), ctx).await });
 
     // Let the execute() call get into the select! before we cancel.
     tokio::time::sleep(Duration::from_millis(50)).await;
@@ -73,7 +81,11 @@ async fn mcp_runtime_tool_aborts_within_one_second_when_token_cancelled() {
         .expect("must abort within 1s of cancel")
         .expect("task should not panic");
 
-    assert!(result.is_err(), "expected ToolError after cancel, got: {:?}", result);
+    assert!(
+        result.is_err(),
+        "expected ToolError after cancel, got: {:?}",
+        result
+    );
     let err_msg = result.unwrap_err().to_string();
     assert!(
         err_msg.contains("cancelled"),

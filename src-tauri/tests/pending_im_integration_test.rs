@@ -53,6 +53,7 @@ fn item(id: &str, sender: Option<&str>, text: &str) -> PendingItem {
         text: text.into(),
         sender_nick: sender.map(String::from),
         attachments: vec![],
+        skill_command: None,
         received_at: "2026-05-11T03:21:00Z".into(),
     }
 }
@@ -62,8 +63,7 @@ async fn three_im_messages_merge_into_one_dispatch() {
     let tmp = TempDir::new().unwrap();
     let registry = Arc::new(RuntimeRunRegistry::new());
     let bus = Arc::new(RuntimeEventBus::new());
-    let resolver: Arc<dyn ConvDirResolver> =
-        Arc::new(TempResolver(tmp.path().to_path_buf()));
+    let resolver: Arc<dyn ConvDirResolver> = Arc::new(TempResolver(tmp.path().to_path_buf()));
     let mut config = PendingConfig::default();
     config.debounce_window = std::time::Duration::from_millis(50);
     let mgr = PendingQueueManager::new(registry.clone(), bus, resolver, config);
@@ -111,10 +111,19 @@ async fn three_im_messages_merge_into_one_dispatch() {
     // Spec §6.1: request.content carries the LAST drained item's text only.
     // Earlier items are persisted by the dispatcher impl before send_chat_request.
     let body = &last.content;
-    assert!(body.contains("就是 Q1"), "last item's text rides on request");
-    assert!(body.contains("[张三]:"), "sender prefix preserved on last item");
+    assert!(
+        body.contains("就是 Q1"),
+        "last item's text rides on request"
+    );
+    assert!(
+        body.contains("[张三]:"),
+        "sender prefix preserved on last item"
+    );
     assert!(!body.contains("帮我看下"), "earlier items NOT in content");
-    assert!(!body.contains("顺便看下这个"), "earlier items NOT in content");
+    assert!(
+        !body.contains("顺便看下这个"),
+        "earlier items NOT in content"
+    );
     assert!(!body.contains("[以下是"), "no merge-header prefix");
     // pending_batch carried through with all 3 items for the dispatcher impl.
     assert!(last.pending_batch.is_some());
@@ -126,8 +135,7 @@ async fn idle_session_returns_sent_directly_without_queue() {
     let tmp = TempDir::new().unwrap();
     let registry = Arc::new(RuntimeRunRegistry::new());
     let bus = Arc::new(RuntimeEventBus::new());
-    let resolver: Arc<dyn ConvDirResolver> =
-        Arc::new(TempResolver(tmp.path().to_path_buf()));
+    let resolver: Arc<dyn ConvDirResolver> = Arc::new(TempResolver(tmp.path().to_path_buf()));
     let mgr = PendingQueueManager::new(registry, bus, resolver, PendingConfig::default());
     let dispatcher = Arc::new(CountingDispatcher {
         count: AtomicUsize::new(0),

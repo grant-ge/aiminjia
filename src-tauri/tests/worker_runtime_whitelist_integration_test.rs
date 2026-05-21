@@ -15,7 +15,7 @@ fn resolve_agent_tools_removes_recursive_spawn_by_default_for_subagents() {
     let available = vec!["Agent".to_string(), "Read".to_string()];
     let allowed = resolve_agent_tools(
         &["Agent".to_string(), "Read".to_string()], // def_allowed
-        &[],                                                        // def_disallowed
+        &[],                                        // def_disallowed
         &available,
         false, // not async
         false, // allow_recursive_spawn (matches worker_runtime default)
@@ -30,13 +30,7 @@ fn resolve_agent_tools_removes_recursive_spawn_by_default_for_subagents() {
 #[test]
 fn resolve_agent_tools_blocks_ask_user_question_for_subagents() {
     let available = vec!["AskUserQuestion".to_string(), "Read".to_string()];
-    let allowed = resolve_agent_tools(
-        &[],
-        &[],
-        &available,
-        false,
-        false,
-    );
+    let allowed = resolve_agent_tools(&[], &[], &available, false, false);
     // ALL_AGENT_DISALLOWED contains AskUserQuestion
     assert!(!allowed.contains(&"AskUserQuestion".to_string()));
     assert!(allowed.contains(&"Read".to_string()));
@@ -53,7 +47,7 @@ fn resolve_agent_tools_async_mode_restricts_to_safe_subset() {
         &[],
         &[],
         &available,
-        true,  // is_async
+        true, // is_async
         false,
     );
     assert!(allowed.contains(&"Read".to_string()));

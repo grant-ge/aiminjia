@@ -88,10 +88,7 @@ impl AgentInbox {
 
     /// Send an item to the inbox.  Returns `Err` if the inbox has been dropped
     /// (Teammate already exited).
-    pub async fn send(
-        &self,
-        item: InboxItem,
-    ) -> Result<(), mpsc::error::SendError<InboxItem>> {
+    pub async fn send(&self, item: InboxItem) -> Result<(), mpsc::error::SendError<InboxItem>> {
         self.tx.send(item).await
     }
 

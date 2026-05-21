@@ -9,9 +9,7 @@ use crate::runtime::agenda::{
 };
 use crate::storage::UserScopedPathResolver;
 
-fn store_for(
-    resolver: &Arc<dyn UserScopedPathResolver>,
-) -> Result<AgendaStore, String> {
+fn store_for(resolver: &Arc<dyn UserScopedPathResolver>) -> Result<AgendaStore, String> {
     let paths = resolver.require_paths().map_err(|e| e.to_string())?;
     Ok(AgendaStore::new(paths.base_dir()))
 }
@@ -42,8 +40,7 @@ pub async fn list_agenda_items(
         if let Some(search) = filter.search.filter(|s| !s.is_empty()) {
             let lower = search.to_lowercase();
             items.retain(|i| {
-                i.title.to_lowercase().contains(&lower)
-                    || i.prompt.to_lowercase().contains(&lower)
+                i.title.to_lowercase().contains(&lower) || i.prompt.to_lowercase().contains(&lower)
             });
         }
     }
@@ -132,8 +129,7 @@ fn build_agenda_item_from_create_request(
         created_at: now,
         updated_at: now,
     };
-    item.next_fire_at =
-        crate::runtime::agenda::compute_next_fire_at(&item, now);
+    item.next_fire_at = crate::runtime::agenda::compute_next_fire_at(&item, now);
     Ok(item)
 }
 
@@ -162,9 +158,7 @@ where
     }
 }
 
-fn deserialize_nullable_string<'de, D>(
-    deserializer: D,
-) -> Result<Option<Option<String>>, D::Error>
+fn deserialize_nullable_string<'de, D>(deserializer: D) -> Result<Option<Option<String>>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
@@ -315,7 +309,9 @@ pub async fn skip_occurrence(
     resolver: State<'_, Arc<dyn UserScopedPathResolver>>,
 ) -> Result<AgendaItem, String> {
     let store = store_for(&resolver)?;
-    store.set_skip(&AgendaItemId(id), at).map_err(|e| e.to_string())
+    store
+        .set_skip(&AgendaItemId(id), at)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -325,7 +321,9 @@ pub async fn unskip_occurrence(
     resolver: State<'_, Arc<dyn UserScopedPathResolver>>,
 ) -> Result<AgendaItem, String> {
     let store = store_for(&resolver)?;
-    store.unset_skip(&AgendaItemId(id), at).map_err(|e| e.to_string())
+    store
+        .unset_skip(&AgendaItemId(id), at)
+        .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -354,7 +352,12 @@ mod tests {
     fn build_create_item_trims_required_fields_and_defaults_blank_timezone() {
         let now = Utc.with_ymd_and_hms(2026, 5, 7, 8, 0, 0).unwrap();
         let item = build_agenda_item_from_create_request(
-            create_request("  Standup  ", "  Discuss blockers  ", " persona-1 ", Some("   ")),
+            create_request(
+                "  Standup  ",
+                "  Discuss blockers  ",
+                " persona-1 ",
+                Some("   "),
+            ),
             now,
         )
         .unwrap();

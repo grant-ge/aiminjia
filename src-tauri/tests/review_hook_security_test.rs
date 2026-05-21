@@ -20,11 +20,8 @@ struct RecordingTool {
 #[async_trait]
 impl RuntimeTool for RecordingTool {
     fn id(&self) -> &str {
-
         &self.name
-
     }
-
 
     async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new(&self.name, "recording tool")

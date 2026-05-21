@@ -21,7 +21,12 @@ pub(crate) fn canonicalize_or_ancestor(p: &Path) -> std::io::Result<PathBuf> {
     let mut tail = Vec::new();
     loop {
         match ancestor.parent() {
-            None => return Err(std::io::Error::new(std::io::ErrorKind::NotFound, "no existing ancestor")),
+            None => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "no existing ancestor",
+                ))
+            }
             Some(parent) => {
                 if let Some(component) = ancestor.file_name() {
                     tail.push(component.to_os_string());
@@ -138,10 +143,7 @@ pub fn is_path_allowed(path: &Path, op: PathOp, ctx: &ToolPermissionContext) -> 
     // Step 6: default by mode
     match ctx.mode {
         PermissionMode::Default | PermissionMode::AcceptEdits => Decision::Ask {
-            reason: format!(
-                "该路径未授权，需要用户确认：路径={}",
-                canonical.display()
-            ),
+            reason: format!("该路径未授权，需要用户确认：路径={}", canonical.display()),
         },
         PermissionMode::Plan => Decision::Deny(format!(
             "Plan 模式禁止访问未授权路径：路径={}",
@@ -442,7 +444,9 @@ mod tests {
         let target = tmp.path().join("not_yet_created.txt");
         assert!(!target.exists());
         let result = super::canonicalize_or_ancestor(&target).unwrap();
-        let expected = std::fs::canonicalize(tmp.path()).unwrap().join("not_yet_created.txt");
+        let expected = std::fs::canonicalize(tmp.path())
+            .unwrap()
+            .join("not_yet_created.txt");
         assert_eq!(result, expected);
     }
 
@@ -457,8 +461,10 @@ mod tests {
         let upper_dir = PathBuf::from(tmp.path().to_string_lossy().to_uppercase());
         let mut ctx = ToolPermissionContext::empty();
         // Add the real (lowercase) dir; the upper-case path should canonicalize to same
-        ctx.additional_working_dirs
-            .insert(std::fs::canonicalize(tmp.path()).unwrap(), RuleSource::Session);
+        ctx.additional_working_dirs.insert(
+            std::fs::canonicalize(tmp.path()).unwrap(),
+            RuleSource::Session,
+        );
 
         // The file path uses mixed case; after canonicalize it should match the working dir
         let result = is_path_allowed(&file, PathOp::Read, &ctx);

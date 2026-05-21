@@ -35,6 +35,22 @@ fn index_path(base_dir: &Path) -> PathBuf {
 /// 2. Writes `conv.json`
 /// 3. Adds an entry to `index.json`
 pub fn create_conversation(base_dir: &Path, id: &str, title: &str) -> StorageResult<()> {
+    create_conversation_with_im_source(base_dir, id, title, None)
+}
+
+/// Same as `create_conversation` but marks the conversation as IM-originated
+/// when `im_source` is supplied. The platform string itself is not stored at
+/// this layer (use `channels/<platform>/sessions.json` to recover platform);
+/// here we only set `ConversationSource::Im` so the sidebar can group/filter.
+///
+/// Used by the IM workers (dingtalk / feishu / wecom / telegram / whatsapp /
+/// wechat). `im_source = None` is equivalent to `create_conversation`.
+pub fn create_conversation_with_im_source(
+    base_dir: &Path,
+    id: &str,
+    title: &str,
+    im_source: Option<&str>,
+) -> StorageResult<()> {
     let dir = conv_dir(base_dir, id);
     let now = Utc::now().to_rfc3339();
 
@@ -42,6 +58,10 @@ pub fn create_conversation(base_dir: &Path, id: &str, title: &str) -> StorageRes
     fs::create_dir_all(dir.join("uploads"))?;
     fs::create_dir_all(dir.join("generated"))?;
     fs::create_dir_all(dir.join("notes"))?;
+
+    let is_im = im_source.is_some();
+    let source = if is_im { ConversationSource::Im } else { ConversationSource::User };
+    let kind = if is_im { ConversationKind::Im } else { ConversationKind::User };
 
     // Write conv.json
     let meta = ConversationMeta {
@@ -52,7 +72,7 @@ pub fn create_conversation(base_dir: &Path, id: &str, title: &str) -> StorageRes
         is_archived: false,
         employee_id: None,
         model_override: None,
-        source: Default::default(),
+        source,
         authorized_workspace: None,
         source_label: None,
         active_team_name: None,
@@ -67,7 +87,7 @@ pub fn create_conversation(base_dir: &Path, id: &str, title: &str) -> StorageRes
         created_at: now.clone(),
         updated_at: now,
         is_archived: false,
-        kind: Default::default(),
+        kind,
         source_label: None,
         workspace_name: None,
     });
@@ -93,6 +113,66 @@ pub fn update_conversation_title(base_dir: &Path, id: &str, title: &str) -> Stor
         entry.updated_at = now;
     }
     atomic_write_json(&index_path(base_dir), &index)?;
+
+    Ok(())
+}
+
+/// One-shot backfill: stamp a conversation as IM-originated if it isn't
+/// already. Called from `hydrate_conversations` at startup for every
+/// session_id listed in `channels/<platform>/sessions.json` — old conv.json
+/// files predating the IM-source migration still have `kind = User` (or the
+/// legacy `imSource` string field), which leaks them into the project
+/// sidebar. This rewrites both `conv.json` and the index entry idempotently:
+///
+/// - `conv.json` raw value: drops the legacy `imSource` field if present,
+///   sets `source = { kind: "im" }` only when current `source.kind` is not
+///   already `"im"`. `updated_at` is NOT bumped — this is a schema fix.
+/// - `index.json` entry: sets `kind = "im"` only when current kind is not
+///   already `"im"`.
+///
+/// Silently no-ops if the conversation directory doesn't exist (the per-
+/// platform `sessions.json` can outlive a manually-deleted conversation).
+pub fn backfill_conversation_to_im(base_dir: &Path, id: &str) -> StorageResult<()> {
+    let meta_path = conv_meta_path(base_dir, id);
+    if !meta_path.exists() {
+        return Ok(());
+    }
+
+    // Read conv.json as a raw Value so we can detect and strip the legacy
+    // `imSource` field without going through `ConversationMeta` (which
+    // doesn't know about it).
+    let mut meta_value: serde_json::Value = read_json_safe(&meta_path)?;
+    let mut meta_dirty = false;
+    if let Some(obj) = meta_value.as_object_mut() {
+        if obj.remove("imSource").is_some() {
+            meta_dirty = true;
+        }
+        let needs_source_update = obj
+            .get("source")
+            .and_then(|s| s.get("kind"))
+            .and_then(|k| k.as_str())
+            != Some("im");
+        if needs_source_update {
+            obj.insert("source".to_string(), serde_json::json!({ "kind": "im" }));
+            meta_dirty = true;
+        }
+    }
+    if meta_dirty {
+        atomic_write_json(&meta_path, &meta_value)?;
+    }
+
+    // Mirror onto the global index entry.
+    let mut index = read_global_index(base_dir)?;
+    let mut index_dirty = false;
+    if let Some(entry) = index.conversations.iter_mut().find(|e| e.id == id) {
+        if !matches!(entry.kind, ConversationKind::Im) {
+            entry.kind = ConversationKind::Im;
+            index_dirty = true;
+        }
+    }
+    if index_dirty {
+        atomic_write_json(&index_path(base_dir), &index)?;
+    }
 
     Ok(())
 }
@@ -445,9 +525,10 @@ pub fn touch_index_entry(base_dir: &Path, conversation_id: &str) -> StorageResul
         let title = read_json_safe::<ConversationMeta>(&conv_meta_path(base_dir, conversation_id))
             .map(|m| m.title)
             .unwrap_or_else(|_| "新对话".to_string());
-        let created_at = read_json_safe::<ConversationMeta>(&conv_meta_path(base_dir, conversation_id))
-            .map(|m| m.created_at)
-            .unwrap_or_else(|_| now.clone());
+        let created_at =
+            read_json_safe::<ConversationMeta>(&conv_meta_path(base_dir, conversation_id))
+                .map(|m| m.created_at)
+                .unwrap_or_else(|_| now.clone());
         index.conversations.push(ConversationIndexEntry {
             id: conversation_id.to_string(),
             title,
@@ -639,6 +720,55 @@ mod tests {
         set_conversation_employee_id(base, "conv-disp", None).unwrap();
         let meta2 = get_conversation(base, "conv-disp").unwrap();
         assert!(meta2.employee_id.is_none());
+    }
+
+    #[test]
+    fn backfill_to_im_upgrades_legacy_imsource_conv_json() {
+        let (base, _dir) = setup();
+        // Pre-merge dingtalk conv.json: has legacy `imSource: "dingtalk"`
+        // string, no `source` field, index entry kind defaults to user.
+        create_conversation(&base, "c-old", "钉钉私聊 张三").unwrap();
+        let meta_path = conv_dir(&base, "c-old").join("conv.json");
+        std::fs::write(
+            &meta_path,
+            r#"{"id":"c-old","title":"钉钉私聊 张三","createdAt":"2026-05-01T00:00:00Z","updatedAt":"2026-05-01T00:00:00Z","isArchived":false,"imSource":"dingtalk"}"#,
+        )
+        .unwrap();
+
+        backfill_conversation_to_im(&base, "c-old").unwrap();
+
+        // conv.json: imSource dropped, source = { kind: "im" }.
+        let raw: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&meta_path).unwrap()).unwrap();
+        assert!(raw.get("imSource").is_none(), "legacy field should be removed");
+        assert_eq!(raw["source"]["kind"], "im");
+
+        // index.json: kind = "im".
+        let index = read_global_index(&base).unwrap();
+        let entry = index.conversations.iter().find(|e| e.id == "c-old").unwrap();
+        assert!(matches!(entry.kind, ConversationKind::Im));
+    }
+
+    #[test]
+    fn backfill_to_im_is_idempotent() {
+        let (base, _dir) = setup();
+        create_conversation_with_im_source(&base, "c-im", "已迁移", Some("telegram")).unwrap();
+        // Capture mtime before second call to ensure no rewrite.
+        let meta_path = conv_dir(&base, "c-im").join("conv.json");
+        let before = std::fs::metadata(&meta_path).unwrap().modified().unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+
+        backfill_conversation_to_im(&base, "c-im").unwrap();
+
+        let after = std::fs::metadata(&meta_path).unwrap().modified().unwrap();
+        assert_eq!(before, after, "already-Im conv.json must not be rewritten");
+    }
+
+    #[test]
+    fn backfill_to_im_skips_missing_conversation() {
+        let (base, _dir) = setup();
+        // session.json may outlive a manually-deleted conv directory.
+        backfill_conversation_to_im(&base, "does-not-exist").unwrap();
     }
 
     #[test]

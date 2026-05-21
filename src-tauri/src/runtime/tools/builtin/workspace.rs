@@ -221,7 +221,10 @@ pub(crate) fn check_path_permission(
             let scope_path: std::path::PathBuf = if canonical.is_dir() {
                 canonical.clone()
             } else {
-                canonical.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| canonical.clone())
+                canonical
+                    .parent()
+                    .map(|p| p.to_path_buf())
+                    .unwrap_or_else(|| canonical.clone())
             };
             let path_auth_scope = if is_step_4b_write(&canonical, op, ctx_ref) {
                 format!("pathwrite:{}", scope_path.display())
@@ -230,11 +233,7 @@ pub(crate) fn check_path_permission(
             };
             Some(PermissionDecision::Ask {
                 message: reason,
-                suggestions: vec![
-                    "仅本次允许".into(),
-                    "永久允许".into(),
-                    "拒绝".into(),
-                ],
+                suggestions: vec!["仅本次允许".into(), "永久允许".into(), "拒绝".into()],
                 remember_options: vec![
                     crate::runtime::tools::permission::PermissionDestination::Session,
                     crate::runtime::tools::permission::PermissionDestination::User,
@@ -323,9 +322,14 @@ pub struct ReadWorkspaceFileRuntimeTool;
 
 #[async_trait]
 impl RuntimeTool for ReadWorkspaceFileRuntimeTool {
-    fn id(&self) -> &str { "Read" }
-    
-    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "Read"
+    }
+
+    async fn definition(
+        &self,
+        _ctx: &crate::runtime::tools::ToolDescriptionContext,
+    ) -> ToolDefinition {
         TOOL_CATALOG
             .get("Read")
             .unwrap_or_else(|| ToolDefinition::new("Read", "Read workspace file"))
@@ -537,9 +541,14 @@ fn walk_dir_collect(
 
 #[async_trait]
 impl RuntimeTool for SearchFilesRuntimeTool {
-    fn id(&self) -> &str { "Glob" }
-    
-    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "Glob"
+    }
+
+    async fn definition(
+        &self,
+        _ctx: &crate::runtime::tools::ToolDescriptionContext,
+    ) -> ToolDefinition {
         TOOL_CATALOG
             .get("Glob")
             .unwrap_or_else(|| ToolDefinition::new("Glob", "Search files"))
@@ -594,9 +603,14 @@ pub struct WriteFileRuntimeTool;
 
 #[async_trait]
 impl RuntimeTool for WriteFileRuntimeTool {
-    fn id(&self) -> &str { "Write" }
-    
-    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "Write"
+    }
+
+    async fn definition(
+        &self,
+        _ctx: &crate::runtime::tools::ToolDescriptionContext,
+    ) -> ToolDefinition {
         TOOL_CATALOG
             .get("Write")
             .unwrap_or_else(|| ToolDefinition::new("Write", "Write workspace file"))
@@ -656,9 +670,14 @@ pub struct EditFileRuntimeTool;
 
 #[async_trait]
 impl RuntimeTool for EditFileRuntimeTool {
-    fn id(&self) -> &str { "Edit" }
-    
-    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "Edit"
+    }
+
+    async fn definition(
+        &self,
+        _ctx: &crate::runtime::tools::ToolDescriptionContext,
+    ) -> ToolDefinition {
         TOOL_CATALOG
             .get("Edit")
             .unwrap_or_else(|| ToolDefinition::new("Edit", "Edit workspace file"))

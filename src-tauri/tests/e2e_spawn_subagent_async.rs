@@ -92,10 +92,7 @@ impl SpawnSubagentLauncher for StubLauncher {
         if let Some(path) = transcript_path.as_ref() {
             let _ = output_writer::append_line(
                 path,
-                &output_writer::TranscriptLine::assistant(&format!(
-                    "done: {}",
-                    agent_id.as_str()
-                )),
+                &output_writer::TranscriptLine::assistant(&format!("done: {}", agent_id.as_str())),
             );
         }
 
@@ -148,17 +145,13 @@ const TEST_RUN_ID: &str = "run-async";
 
 /// Execute the tool with `run_in_background: true` and return the parsed JSON
 /// content from `ToolResult`.
-async fn execute_async(
-    tool: &SpawnSubagentRuntimeTool,
-    input: Value,
-) -> Value {
+async fn execute_async(tool: &SpawnSubagentRuntimeTool, input: Value) -> Value {
     let ctx = ToolExecutionContext::for_test(TEST_SESSION_ID, TEST_RUN_ID, "tc-async");
     let result = tool
         .execute(input, ctx)
         .await
         .expect("async execute must not return Err");
-    serde_json::from_str(&result.content)
-        .expect("async ToolResult.content must be valid JSON")
+    serde_json::from_str(&result.content).expect("async ToolResult.content must be valid JSON")
 }
 
 // ─── Test 1 ───────────────────────────────────────────────────────────────────
@@ -455,9 +448,7 @@ async fn async_path_without_user_scope_still_launches_and_enqueues_notification(
         .await
         .expect("async launch without user scope should still succeed");
     let body: Value = serde_json::from_str(&result.content).expect("json body");
-    let agent_id = body["agent_id"]
-        .as_str()
-        .expect("agent_id must be present");
+    let agent_id = body["agent_id"].as_str().expect("agent_id must be present");
     assert!(!agent_id.is_empty());
 
     let handle = task_store

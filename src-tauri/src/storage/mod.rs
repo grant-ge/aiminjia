@@ -16,9 +16,9 @@ pub mod safe_filename;
 pub mod skill_draft_store;
 pub mod skill_package;
 pub mod text_io;
+pub mod upload_gc;
 pub mod user_scope;
 pub mod user_scoped_paths;
-pub mod upload_gc;
 pub mod workspace;
 
 pub use aijia_home::AiJiaHome;

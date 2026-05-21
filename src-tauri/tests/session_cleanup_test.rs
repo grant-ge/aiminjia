@@ -11,12 +11,10 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use app_lib::runtime::agent::{
-    AgentNameRegistry, Member, MemberRole, TeamRegistry,
-};
+use app_lib::runtime::agent::{AgentNameRegistry, Member, MemberRole, TeamRegistry};
 use app_lib::runtime::cancellation::CancellationReason;
-use app_lib::runtime::ids::{AgentId, SessionId};
 use app_lib::runtime::event_bus::RuntimeEventBus;
+use app_lib::runtime::ids::{AgentId, SessionId};
 use app_lib::runtime::query_engine::QueryEngine;
 use app_lib::runtime::session_runtime::SessionRuntime;
 
@@ -38,15 +36,19 @@ async fn cancel_session_drops_team_and_name_bindings() {
 
     // Pre-populate registries as if the Lead had run TeamCreate + spawned a Teammate.
     team_registry
-        .create(session.clone(), seed_lead("team-lead", "lead-1"), "team-x".to_string())
+        .create(
+            session.clone(),
+            seed_lead("team-lead", "lead-1"),
+            "team-x".to_string(),
+        )
         .await
         .unwrap();
     name_registry
-        .register(&session, "team-lead", AgentId::new("lead-1"))
+        .register(&session, "team-x", "team-lead", AgentId::new("lead-1"))
         .await
         .unwrap();
     name_registry
-        .register(&session, "researcher", AgentId::new("teammate-1"))
+        .register(&session, "team-x", "researcher", AgentId::new("teammate-1"))
         .await
         .unwrap();
 
@@ -58,9 +60,12 @@ async fn cancel_session_drops_team_and_name_bindings() {
 
     // cleanup is spawned async — give the runtime a tick to land it.
     for _ in 0..20 {
-        if team_registry.get(&session).await.is_none()
-            && name_registry.resolve(&session, "team-lead").await.is_none()
-            && name_registry.resolve(&session, "researcher").await.is_none()
+        if team_registry.get(&session, "team-x").await.is_none()
+            && name_registry.resolve(&session, "team-x", "team-lead").await.is_none()
+            && name_registry
+                .resolve(&session, "team-x", "researcher")
+                .await
+                .is_none()
         {
             return;
         }
@@ -93,8 +98,8 @@ async fn clear_all_empties_team_registry() {
 
     let dropped = team_registry.clear_all().await;
     assert_eq!(dropped, 2);
-    assert!(team_registry.get(&s1).await.is_none());
-    assert!(team_registry.get(&s2).await.is_none());
+    assert!(team_registry.get(&s1, "team-a").await.is_none());
+    assert!(team_registry.get(&s2, "team-b").await.is_none());
 }
 
 #[tokio::test]
@@ -103,16 +108,16 @@ async fn clear_all_empties_name_registry() {
     let s1 = SessionId::new("a");
     let s2 = SessionId::new("b");
     name_registry
-        .register(&s1, "alpha", AgentId::new("a-1"))
+        .register(&s1, "team-a", "alpha", AgentId::new("a-1"))
         .await
         .unwrap();
     name_registry
-        .register(&s2, "beta", AgentId::new("b-1"))
+        .register(&s2, "team-b", "beta", AgentId::new("b-1"))
         .await
         .unwrap();
 
     let dropped = name_registry.clear_all().await;
     assert_eq!(dropped, 2);
-    assert!(name_registry.resolve(&s1, "alpha").await.is_none());
-    assert!(name_registry.resolve(&s2, "beta").await.is_none());
+    assert!(name_registry.resolve(&s1, "team-a", "alpha").await.is_none());
+    assert!(name_registry.resolve(&s2, "team-b", "beta").await.is_none());
 }

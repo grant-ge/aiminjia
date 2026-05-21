@@ -2235,7 +2235,7 @@ impl TauriChatCommandAdapter {
         auth_manager: Arc<AuthManager>,
         permission_store: Arc<crate::runtime::store::PermissionStore>,
         app: tauri::AppHandle,
-        channel_sessions: Option<Arc<dyn crate::connector::channel::ask_coordinator::ChannelSessionRegistry>>,
+        channel_sessions: Option<Arc<dyn crate::connector::im::shared::ask_coordinator::ChannelSessionRegistry>>,
     ) -> Self {
         let runtime_resolver = app
             .try_state::<crate::runtime::dependencies::ManagedRuntimeResolver>()

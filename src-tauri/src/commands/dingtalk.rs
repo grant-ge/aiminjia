@@ -15,9 +15,7 @@ pub async fn dingtalk_login(
 
 /// Disconnect from DingTalk.
 #[tauri::command]
-pub async fn dingtalk_logout(
-    bridge: State<'_, Arc<DingtalkBridge>>,
-) -> Result<(), String> {
+pub async fn dingtalk_logout(bridge: State<'_, Arc<DingtalkBridge>>) -> Result<(), String> {
     bridge.logout().await.map_err(|e| format!("{:#}", e))
 }
 
@@ -34,5 +32,8 @@ pub async fn dingtalk_status(
 pub async fn dingtalk_refresh_status(
     bridge: State<'_, Arc<DingtalkBridge>>,
 ) -> Result<DingtalkStatusInfo, String> {
-    bridge.refresh_status().await.map_err(|e| format!("{:#}", e))
+    bridge
+        .refresh_status()
+        .await
+        .map_err(|e| format!("{:#}", e))
 }

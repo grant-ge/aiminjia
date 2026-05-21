@@ -1,7 +1,7 @@
-use serde_json::json;
 use app_lib::runtime::employee::store::{
-    EmployeeStore, CreateEmployeeRequest, KnowledgeSourceStatus,
+    CreateEmployeeRequest, EmployeeStore, KnowledgeSourceStatus,
 };
+use serde_json::json;
 
 fn tmp_store() -> (tempfile::TempDir, EmployeeStore) {
     let tmp = tempfile::tempdir().unwrap();

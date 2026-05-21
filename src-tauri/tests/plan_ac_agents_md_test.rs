@@ -10,6 +10,7 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+use app_lib::runtime::agents_md::AgentsMdFile;
 use app_lib::runtime::cancellation::CancellationToken;
 use app_lib::runtime::chat::{
     ChatTurnRequest, LlmStepInput, LlmStepResult, RuntimeChatTurnDriver, RuntimeLlmExecutor,
@@ -19,7 +20,6 @@ use app_lib::runtime::event_bus::RuntimeEventBus;
 use app_lib::runtime::identity::IdentityMapping;
 use app_lib::runtime::ids::RunId;
 use app_lib::runtime::query_engine::QueryEngine;
-use app_lib::runtime::agents_md::AgentsMdFile;
 use app_lib::runtime::state::TurnState;
 use app_lib::runtime::store::AuthorizedWorkspaceRef;
 use async_trait::async_trait;
@@ -218,8 +218,7 @@ async fn does_not_load_agents_local_md_variant() {
 
 #[test]
 fn review_agents_md_loader_has_no_tauri_dependency() {
-    let source =
-        std::fs::read_to_string("src/runtime/agents_md.rs").expect("read agents_md.rs");
+    let source = std::fs::read_to_string("src/runtime/agents_md.rs").expect("read agents_md.rs");
     assert!(
         !source.contains("use tauri::"),
         "runtime/agents_md.rs must not depend on tauri::*"

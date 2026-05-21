@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use app_lib::runtime::agents_md::AgentsMdFile;
 use app_lib::runtime::cancellation::CancellationToken;
 use app_lib::runtime::chat::{
     ChatTurnRequest, LlmStepInput, LlmStepResult, RuntimeChatTurnDriver, RuntimeLlmExecutor,
@@ -13,7 +14,6 @@ use app_lib::runtime::project_memory::{
     ProjectMemoryContext, ProjectMemoryEntryDraft, ProjectMemoryService, ProjectMemoryType,
 };
 use app_lib::runtime::query_engine::QueryEngine;
-use app_lib::runtime::agents_md::AgentsMdFile;
 use app_lib::runtime::state::TurnState;
 use async_trait::async_trait;
 
@@ -264,7 +264,7 @@ impl RuntimeLlmExecutor for ProjectMemoryCapturingExecutor {
     }
 
     async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
-        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
+        Ok(vec![]) // 显式声明此 mock 不关心 tool_defs
     }
 }
 

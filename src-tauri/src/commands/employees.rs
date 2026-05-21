@@ -102,9 +102,7 @@ pub async fn employee_template_refresh() -> Result<u32, String> {
 
         match ensure_cached(&cache_dir, &client, &template_id, &version).await {
             Ok(_) => downloaded += 1,
-            Err(e) => log::warn!(
-                "[employee_template_refresh] {template_id}@{version}: {e}"
-            ),
+            Err(e) => log::warn!("[employee_template_refresh] {template_id}@{version}: {e}"),
         }
     }
 
@@ -206,8 +204,8 @@ pub async fn employee_trigger(
     prompt_override: Option<String>,
     attachments: Vec<crate::runtime::chat::chat_turn_driver::ChatAttachmentRef>,
 ) -> Result<String, String> {
-    use crate::transport::tauri_commands::chat::TauriChatCommandAdapter;
     use crate::runtime::employee::runner::{EmployeeRunDispatcher, TriggerKind};
+    use crate::transport::tauri_commands::chat::TauriChatCommandAdapter;
     use chrono::Utc;
 
     let store = employee_store(&app)?;
@@ -226,10 +224,7 @@ pub async fn employee_trigger(
         EmployeeLifecycle::Active | EmployeeLifecycle::Paused => {}
     }
 
-    let adapter = app
-        .state::<Arc<TauriChatCommandAdapter>>()
-        .inner()
-        .clone();
+    let adapter = app.state::<Arc<TauriChatCommandAdapter>>().inner().clone();
 
     let conversation_id = adapter
         .dispatch_employee_run(
@@ -279,10 +274,7 @@ pub async fn inbox_mark_read(
 }
 
 #[tauri::command]
-pub async fn inbox_mark_all_read(
-    app: AppHandle,
-    employee_id: String,
-) -> Result<u32, String> {
+pub async fn inbox_mark_all_read(app: AppHandle, employee_id: String) -> Result<u32, String> {
     inbox_store(&app)?
         .mark_all_read(&employee_id)
         .map_err(|e| e.to_string())
@@ -315,10 +307,7 @@ pub async fn employee_stop_run(app: AppHandle, id: String) -> Result<bool, Strin
         return Ok(false);
     };
 
-    let adapter = app
-        .state::<Arc<TauriChatCommandAdapter>>()
-        .inner()
-        .clone();
+    let adapter = app.state::<Arc<TauriChatCommandAdapter>>().inner().clone();
     adapter
         .stop_streaming(run.conversation_id.clone())
         .await
@@ -414,9 +403,7 @@ pub async fn employee_template_check_upgrade(
 
     let employees_dir = current_employees_dir(&app)?;
     let instance_dir = employees_dir.join(&record.id);
-    let current = read_instance_snapshot(&instance_dir)
-        .ok()
-        .flatten();
+    let current = read_instance_snapshot(&instance_dir).ok().flatten();
 
     let template_id = match record.template_id.as_deref() {
         Some(t) => t,
@@ -510,8 +497,7 @@ pub async fn employee_template_upgrade(
 
     let employees_dir = current_employees_dir(&app)?;
     let instance_dir = employees_dir.join(&record.id);
-    let current = read_instance_snapshot(&instance_dir)
-        .map_err(|e| e.to_string())?;
+    let current = read_instance_snapshot(&instance_dir).map_err(|e| e.to_string())?;
 
     let cache_dir = AiJiaHome::from_home().employee_templates_cache_dir();
     let latest = find_latest_for_template(&cache_dir, template_id)
@@ -519,10 +505,7 @@ pub async fn employee_template_upgrade(
 
     if let Some(ref cur) = current {
         if latest.version <= cur.version {
-            return Err(format!(
-                "当前已是最新版本 (v{})，无需升级",
-                cur.version
-            ));
+            return Err(format!("当前已是最新版本 (v{})，无需升级", cur.version));
         }
     }
 
@@ -545,20 +528,16 @@ pub async fn employee_template_upgrade(
                 role: Some(latest.role.clone()),
                 description: Some(latest.description.clone()),
                 avatar: Some(latest.avatar.clone()),
-                system_prompt_extra: Some(
-                    if latest.system_prompt_extra.is_empty() {
-                        None
-                    } else {
-                        Some(latest.system_prompt_extra.clone())
-                    },
-                ),
-                default_skill_id: Some(
-                    if latest.default_skill_id.is_empty() {
-                        None
-                    } else {
-                        Some(latest.default_skill_id.clone())
-                    },
-                ),
+                system_prompt_extra: Some(if latest.system_prompt_extra.is_empty() {
+                    None
+                } else {
+                    Some(latest.system_prompt_extra.clone())
+                }),
+                default_skill_id: Some(if latest.default_skill_id.is_empty() {
+                    None
+                } else {
+                    Some(latest.default_skill_id.clone())
+                }),
                 skill_ids: Some(latest.skill_ids.clone()),
                 // PR-11: tool_whitelist is vestigial. Pass an empty vec so
                 // a record that still carries a stale legacy whitelist gets

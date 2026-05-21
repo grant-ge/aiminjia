@@ -19,13 +19,13 @@ use crate::runtime::tools::RuntimeTool;
 use crate::storage::process_ext::NoWindowExt;
 
 use super::powershell_detect::{detect, PowerShellLocation};
-use crate::runtime::cancellation::wait_for_cancellation;
 use super::shell_common::{
     collect_reader, content_from_output, format_cancel_message, format_command_failure,
     interpret_command_result, kill_child_process_tree, read_merged_streams, truncated_to_max_bytes,
     ExitKind, MAX_OUTPUT_BYTES,
 };
 use super::workspace::require_workspace_root;
+use crate::runtime::cancellation::wait_for_cancellation;
 
 const DEFAULT_TIMEOUT_SECS: u64 = 120;
 const MAX_TIMEOUT_SECS: u64 = 600;
@@ -105,9 +105,14 @@ fn tool_result_powershell(content: String, data: Value) -> ToolResult {
 
 #[async_trait]
 impl RuntimeTool for PowerShellTool {
-    fn id(&self) -> &str { "PowerShell" }
-    
-    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "PowerShell"
+    }
+
+    async fn definition(
+        &self,
+        _ctx: &crate::runtime::tools::ToolDescriptionContext,
+    ) -> ToolDefinition {
         TOOL_CATALOG
             .get("PowerShell")
             .unwrap_or_else(|| ToolDefinition::new("PowerShell", "Execute PowerShell command"))

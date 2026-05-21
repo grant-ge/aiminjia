@@ -26,11 +26,8 @@ struct WorkspacePrinterTool;
 #[async_trait]
 impl RuntimeTool for WorkspacePrinterTool {
     fn id(&self) -> &str {
-
         "workspace_printer"
-
     }
-
 
     async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new(

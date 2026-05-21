@@ -13,9 +13,7 @@
 use chrono::Utc;
 use tempfile::TempDir;
 
-use app_lib::runtime::agenda::{
-    AgendaItem, AgendaItemId, AgendaStore, ItemStatus, Participant,
-};
+use app_lib::runtime::agenda::{AgendaItem, AgendaItemId, AgendaStore, ItemStatus, Participant};
 
 fn make(employee_id: &str) -> AgendaItem {
     let now = Utc::now();

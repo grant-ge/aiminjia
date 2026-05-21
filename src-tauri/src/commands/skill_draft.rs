@@ -48,7 +48,9 @@ fn store_for(app: &AppHandle) -> Result<(Arc<SkillDraftStore>, crate::storage::U
         .ok_or_else(|| "CurrentUserStorage not registered".to_string())?
         .inner()
         .clone();
-    let scope = cus.scope().ok_or_else(|| "no active user scope".to_string())?;
+    let scope = cus
+        .scope()
+        .ok_or_else(|| "no active user scope".to_string())?;
     let home = Arc::new(cus.home().clone());
     Ok((Arc::new(SkillDraftStore::new(home)), scope))
 }
@@ -70,9 +72,14 @@ pub async fn discard_skill_draft(app: AppHandle, draft_id: String) -> Result<(),
 
 /// 读取单条 meta（前端继续草稿时用）。
 #[tauri::command]
-pub async fn get_skill_draft_meta(app: AppHandle, draft_id: String) -> Result<DraftMetaInfo, String> {
+pub async fn get_skill_draft_meta(
+    app: AppHandle,
+    draft_id: String,
+) -> Result<DraftMetaInfo, String> {
     let (store, scope) = store_for(&app)?;
-    let meta = store.read_meta(&scope, &draft_id).map_err(|e| e.to_string())?;
+    let meta = store
+        .read_meta(&scope, &draft_id)
+        .map_err(|e| e.to_string())?;
     Ok(DraftMetaInfo::from(meta))
 }
 
@@ -135,7 +142,9 @@ pub async fn import_skill_package(
         .ok_or_else(|| "CurrentUserStorage not registered".to_string())?
         .inner()
         .clone();
-    let scope = cus.scope().ok_or_else(|| "no active user scope".to_string())?;
+    let scope = cus
+        .scope()
+        .ok_or_else(|| "no active user scope".to_string())?;
     let home = cus.home();
 
     // 1) 解包到临时区
@@ -203,8 +212,8 @@ pub async fn import_skill_package(
     let _ = remove_dir_all_retry(&tmp_root);
 
     // 热加载：刷新全局 SkillRegistry，让新导入的技能立即可用，无需重启 app。
-    if let Some(registry) = app
-        .try_state::<Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>>()
+    if let Some(registry) =
+        app.try_state::<Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>>()
     {
         let roots = vec![home.user_skills_dir(&scope), home.skills_dir()];
         crate::plugin::skill::global_sync::reload_skill_registry(&roots, registry.inner());
@@ -238,7 +247,9 @@ pub async fn export_installed_skill(
         .ok_or_else(|| "CurrentUserStorage not registered".to_string())?
         .inner()
         .clone();
-    let scope = cus.scope().ok_or_else(|| "no active user scope".to_string())?;
+    let scope = cus
+        .scope()
+        .ok_or_else(|| "no active user scope".to_string())?;
     let home = cus.home();
 
     let user_dir = home.user_skills_dir(&scope).join(&skill_id);

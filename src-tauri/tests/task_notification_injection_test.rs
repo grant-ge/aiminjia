@@ -7,14 +7,10 @@ use serde_json::Value;
 
 use app_lib::runtime::agent::task_notification::TaskNotificationQueue;
 use app_lib::runtime::cancellation::CancellationToken;
-use app_lib::runtime::chat::turn_config::{
-    LlmStepInput, LlmStepResult, TurnError,
-};
-use app_lib::runtime::chat::tool_round_types::RuntimeToolCallRequest;
-use app_lib::runtime::chat::{
-    ChatTurnRequest, RuntimeChatTurnDriver, RuntimeLlmExecutor,
-};
 use app_lib::runtime::chat::chat_turn_driver::ChatAttachmentRef;
+use app_lib::runtime::chat::tool_round_types::RuntimeToolCallRequest;
+use app_lib::runtime::chat::turn_config::{LlmStepInput, LlmStepResult, TurnError};
+use app_lib::runtime::chat::{ChatTurnRequest, RuntimeChatTurnDriver, RuntimeLlmExecutor};
 use app_lib::runtime::event_bus::RuntimeEventBus;
 use app_lib::runtime::identity::IdentityMapping;
 use app_lib::runtime::ids::{RunId, SessionId};
@@ -78,7 +74,10 @@ impl RuntimeLlmExecutor for RecordingExecutor {
         _bus: &RuntimeEventBus,
         _cancel: &CancellationToken,
     ) -> Result<LlmStepResult, TurnError> {
-        self.seen_messages.lock().unwrap().push(input.messages.clone());
+        self.seen_messages
+            .lock()
+            .unwrap()
+            .push(input.messages.clone());
         Ok(LlmStepResult::ContentComplete {
             content: "done".to_string(),
             tokens_in: 0,
@@ -105,6 +104,7 @@ impl RuntimeLlmExecutor for RecordingExecutor {
         _conversation_id: &str,
         _content: &str,
         _attachments: &[ChatAttachmentRef],
+        _skill_command: Option<&app_lib::runtime::chat::chat_turn_driver::SkillCommandRef>,
         _client_message_id: Option<&str>,
     ) -> Result<String, TurnError> {
         Ok("user-msg".to_string())
@@ -115,7 +115,7 @@ impl RuntimeLlmExecutor for RecordingExecutor {
     }
 
     async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
-        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
+        Ok(vec![]) // 显式声明此 mock 不关心 tool_defs
     }
 }
 
@@ -127,7 +127,10 @@ impl RuntimeLlmExecutor for CancelingExecutor {
         _bus: &RuntimeEventBus,
         _cancel: &CancellationToken,
     ) -> Result<LlmStepResult, TurnError> {
-        self.seen_messages.lock().unwrap().push(input.messages.clone());
+        self.seen_messages
+            .lock()
+            .unwrap()
+            .push(input.messages.clone());
         Ok(LlmStepResult::Cancelled)
     }
 
@@ -147,6 +150,7 @@ impl RuntimeLlmExecutor for CancelingExecutor {
         _conversation_id: &str,
         _content: &str,
         _attachments: &[ChatAttachmentRef],
+        _skill_command: Option<&app_lib::runtime::chat::chat_turn_driver::SkillCommandRef>,
         _client_message_id: Option<&str>,
     ) -> Result<String, TurnError> {
         Ok("user-msg".to_string())
@@ -157,7 +161,7 @@ impl RuntimeLlmExecutor for CancelingExecutor {
     }
 
     async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
-        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
+        Ok(vec![]) // 显式声明此 mock 不关心 tool_defs
     }
 }
 
@@ -222,6 +226,7 @@ impl RuntimeLlmExecutor for IterationDrainExecutor {
         _conversation_id: &str,
         _content: &str,
         _attachments: &[ChatAttachmentRef],
+        _skill_command: Option<&app_lib::runtime::chat::chat_turn_driver::SkillCommandRef>,
         _client_message_id: Option<&str>,
     ) -> Result<String, TurnError> {
         Ok("user-msg".to_string())
@@ -240,7 +245,7 @@ impl RuntimeLlmExecutor for IterationDrainExecutor {
     }
 
     async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
-        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
+        Ok(vec![]) // 显式声明此 mock 不关心 tool_defs
     }
 }
 
@@ -258,9 +263,7 @@ fn test_session_id() -> SessionId {
     SessionId::new("task-notification-injection")
 }
 
-async fn run_turn_with_queue(
-    queue: Arc<TaskNotificationQueue>,
-) -> Arc<RecordingExecutor> {
+async fn run_turn_with_queue(queue: Arc<TaskNotificationQueue>) -> Arc<RecordingExecutor> {
     let executor = Arc::new(RecordingExecutor::default());
     let driver = RuntimeChatTurnDriver::with_llm_executor(
         QueryEngine::new(),
@@ -316,7 +319,8 @@ async fn empty_queue_does_not_add_synthetic_task_notification_message() {
 async fn multiple_task_notifications_are_injected_in_enqueue_order() {
     let queue = Arc::new(TaskNotificationQueue::new());
     let xml1 = "<task-notification><task-id>agent-1</task-id><status>completed</status></task-notification>";
-    let xml2 = "<task-notification><task-id>agent-2</task-id><status>failed</status></task-notification>";
+    let xml2 =
+        "<task-notification><task-id>agent-2</task-id><status>failed</status></task-notification>";
     queue.enqueue("agent-1", xml1, test_session_id(), None);
     queue.enqueue("agent-2", xml2, test_session_id(), None);
 

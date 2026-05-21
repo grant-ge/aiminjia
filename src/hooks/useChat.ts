@@ -164,15 +164,17 @@ export function useChat() {
       // Rollback: reload conversations from backend
       try {
         const raw = await getConversations()
-        const convs: Conversation[] = raw.map((c) => ({
-          id: (c.id as string) ?? '',
-          title: (c.title as string) ?? '新对话',
-          createdAt: (c.createdAt as string) ?? new Date().toISOString(),
-          updatedAt: (c.updatedAt as string) ?? new Date().toISOString(),
-          isArchived: (c.isArchived as boolean) ?? false,
-          kind: (c.kind as Conversation['kind']) ?? undefined,
-          workspaceName: (c.workspaceName as string | undefined) ?? undefined,
-        }))
+        const convs: Conversation[] = raw
+          .map((c) => ({
+            id: (c.id as string) ?? '',
+            title: (c.title as string) ?? '新对话',
+            createdAt: (c.createdAt as string) ?? new Date().toISOString(),
+            updatedAt: (c.updatedAt as string) ?? new Date().toISOString(),
+            isArchived: (c.isArchived as boolean) ?? false,
+            kind: (c.kind as Conversation['kind']) ?? undefined,
+            workspaceName: (c.workspaceName as string | undefined) ?? undefined,
+          }))
+          .filter((c) => c.kind !== 'im')
         useChatStore.getState().setConversations(convs)
       } catch {
         // If re-fetch also fails, nothing more we can do
@@ -452,17 +454,19 @@ export function useChat() {
     console.log('[useChat] loadConversations')
     try {
       const raw = await getConversations()
-      const convs: Conversation[] = raw.map((c) => ({
-        id: (c.id as string) ?? '',
-        title: (c.title as string) ?? '新对话',
-        createdAt: (c.createdAt as string) ?? new Date().toISOString(),
-        updatedAt: (c.updatedAt as string) ?? new Date().toISOString(),
-        isArchived: (c.isArchived as boolean) ?? false,
-        kind: (c.kind as Conversation['kind']) ?? undefined,
-        workspaceName: (c.workspaceName as string | undefined) ?? undefined,
-        employeeId: (c.employeeId as string | undefined) ?? undefined,
-        expertTeamId: (c.expertTeamId as string | undefined) ?? undefined,
-      }))
+      const convs: Conversation[] = raw
+        .map((c) => ({
+          id: (c.id as string) ?? '',
+          title: (c.title as string) ?? '新对话',
+          createdAt: (c.createdAt as string) ?? new Date().toISOString(),
+          updatedAt: (c.updatedAt as string) ?? new Date().toISOString(),
+          isArchived: (c.isArchived as boolean) ?? false,
+          kind: (c.kind as Conversation['kind']) ?? undefined,
+          workspaceName: (c.workspaceName as string | undefined) ?? undefined,
+        }))
+        // Project sidebar only shows app-side conversations; IM-origin
+        // chats are surfaced through the channel page (`channelStore`).
+        .filter((c) => c.kind !== 'im')
       // dev-only diagnostic：侧边栏首次只看到"默认文件夹"或分组数明显偏少时，
       // 看 workspace tally：若 <none> 占比异常高，多半是后端注入前 race（auth scope 未激活）。
       if (import.meta.env.DEV) {

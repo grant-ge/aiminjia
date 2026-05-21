@@ -21,7 +21,8 @@ use tokio::time::sleep;
 use app_lib::runtime::agent::registry::AgentRegistry;
 use app_lib::runtime::ids::AgentId;
 use app_lib::runtime::tools::builtin::spawn_subagent::{
-    SpawnAsyncOutcome, SpawnSubagentContext, SpawnSubagentLauncher, SpawnSubagentRequest, SpawnSubagentRuntimeTool,
+    SpawnAsyncOutcome, SpawnSubagentContext, SpawnSubagentLauncher, SpawnSubagentRequest,
+    SpawnSubagentRuntimeTool,
 };
 use app_lib::runtime::tools::context::ToolExecutionContext;
 use app_lib::runtime::tools::RuntimeTool;
@@ -159,11 +160,8 @@ async fn dispatch_batch_runs_concurrency_safe_tools_in_parallel() {
 
     let calls: Vec<_> = (0..4)
         .map(|i| {
-            let ctx = ToolExecutionContext::for_test(
-                "sess-batch",
-                "run-batch",
-                format!("tc-batch-{i}"),
-            );
+            let ctx =
+                ToolExecutionContext::for_test("sess-batch", "run-batch", format!("tc-batch-{i}"));
             let input = json!({
                 "subagent_type": "explore",
                 "prompt": format!("batch-task-{i}"),

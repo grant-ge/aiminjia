@@ -42,14 +42,7 @@ fn spawn_subagent_is_composite_in_catalog() {
 #[test]
 fn workspace_tools_are_primitive_in_catalog() {
     let catalog = ToolCatalog::default_catalog();
-    for name in &[
-        "Read",
-        "Glob",
-        "Write",
-        "Edit",
-        "Bash",
-        "Grep",
-    ] {
+    for name in &["Read", "Glob", "Write", "Edit", "Bash", "Grep"] {
         let def = catalog
             .get(name)
             .unwrap_or_else(|| panic!("{} must be in catalog", name));

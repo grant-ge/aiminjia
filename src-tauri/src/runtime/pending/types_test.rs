@@ -46,4 +46,8 @@ fn pending_source_kebab_case() {
     assert_eq!(s, "\"im-dingtalk\"");
     let s2 = serde_json::to_string(&PendingSource::App).unwrap();
     assert_eq!(s2, "\"app\"");
+    let s3 = serde_json::to_string(&PendingSource::ImFeishu).unwrap();
+    assert_eq!(s3, "\"im-feishu\"");
+    let back: PendingSource = serde_json::from_str("\"im-feishu\"").unwrap();
+    assert_eq!(back, PendingSource::ImFeishu);
 }

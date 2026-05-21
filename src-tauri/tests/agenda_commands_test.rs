@@ -14,7 +14,10 @@ fn make_item(persona: &str, start_at: chrono::DateTime<chrono::Utc>) -> AgendaIt
         title: "测试日程".into(),
         prompt: "做点事".into(),
         organizer_employee_id: persona.into(),
-        participants: vec![Participant { employee_id: persona.into(), joined_at: now }],
+        participants: vec![Participant {
+            employee_id: persona.into(),
+            joined_at: now,
+        }],
         start_at,
         timezone: "Asia/Shanghai".into(),
         rule: None,
@@ -33,7 +36,9 @@ fn make_item(persona: &str, start_at: chrono::DateTime<chrono::Utc>) -> AgendaIt
 fn create_then_list_includes_item() {
     let dir = TempDir::new().unwrap();
     let store = AgendaStore::new(dir.path());
-    let saved = store.create(make_item("p1", Utc::now() + Duration::hours(1))).unwrap();
+    let saved = store
+        .create(make_item("p1", Utc::now() + Duration::hours(1)))
+        .unwrap();
     let listed = store.list().unwrap();
     assert!(listed.iter().any(|i| i.id == saved.id));
 }
@@ -42,7 +47,9 @@ fn create_then_list_includes_item() {
 fn delete_then_list_excludes_item() {
     let dir = TempDir::new().unwrap();
     let store = AgendaStore::new(dir.path());
-    let saved = store.create(make_item("p1", Utc::now() + Duration::hours(1))).unwrap();
+    let saved = store
+        .create(make_item("p1", Utc::now() + Duration::hours(1)))
+        .unwrap();
     assert!(store.delete(&saved.id).unwrap());
     assert!(store.list().unwrap().iter().all(|i| i.id != saved.id));
 }
@@ -53,8 +60,11 @@ fn skip_then_unskip_round_trip() {
     let store = AgendaStore::new(dir.path());
     let mut item = make_item("p1", Utc::now() + Duration::hours(1));
     item.rule = Some(RecurrenceRule {
-        freq: Freq::Daily, interval: 1, end_condition: EndCondition::Never,
-        by_day: vec![], by_month_day: vec![],
+        freq: Freq::Daily,
+        interval: 1,
+        end_condition: EndCondition::Never,
+        by_day: vec![],
+        by_month_day: vec![],
     });
     store.create(item.clone()).unwrap();
     let target = Utc::now() + Duration::days(2);

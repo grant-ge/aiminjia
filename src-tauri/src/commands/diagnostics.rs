@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::auth::AuthManager;
-use crate::storage::{AiJiaHome, file_manager::FileManager};
+use crate::storage::{file_manager::FileManager, AiJiaHome};
 
 /// Server-side per-request limits (mirrors `code/api-gateway/internal/handler/diagnostics.go`).
 const MAX_APP_LOG_BYTES_PER_CHUNK: usize = 256 * 1024;
@@ -170,10 +170,8 @@ pub async fn upload_diagnostic_logs(
     // chunk_events still operates on a flat list; reuse the existing helper
     // by handing it a Vec of pre-serialized strings, then re-deserialize per
     // chunk below. Simpler than introducing a parallel helper for Values.
-    let event_lines_for_chunking: Vec<String> = event_strings
-        .iter()
-        .map(|v| v.to_string())
-        .collect();
+    let event_lines_for_chunking: Vec<String> =
+        event_strings.iter().map(|v| v.to_string()).collect();
     let event_chunks = chunk_events(&event_lines_for_chunking, MAX_EVENTS_PER_CHUNK);
     let chunks_total = app_chunks.len() + event_chunks.len();
 
@@ -241,10 +239,7 @@ pub async fn upload_diagnostic_logs(
         chunk_index += 1;
     }
 
-    let app_log_lines_uploaded = app_log_raw
-        .lines()
-        .filter(|l| !l.trim().is_empty())
-        .count();
+    let app_log_lines_uploaded = app_log_raw.lines().filter(|l| !l.trim().is_empty()).count();
 
     if !sls_url.is_empty() {
         log::info!(
@@ -614,7 +609,12 @@ mod tests {
         let raw = format!("short\n{big}\nshort2\n");
         let chunks = chunk_app_log(&raw, 10);
         // Expected layout: ["short\n"], [big without \n + "\n"], ["short2\n"]
-        assert!(chunks.len() >= 3, "got {} chunks: {:?}", chunks.len(), chunks);
+        assert!(
+            chunks.len() >= 3,
+            "got {} chunks: {:?}",
+            chunks.len(),
+            chunks
+        );
         assert!(chunks.iter().any(|c| c.contains(&big)));
     }
 

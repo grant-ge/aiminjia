@@ -27,8 +27,8 @@ use app_lib::runtime::state::TurnState;
 use app_lib::runtime::store::AuthorizedWorkspaceRef;
 use app_lib::runtime::tools::description_context::ToolDescriptionContext;
 use app_lib::runtime::tools::{
-    AllowAllPermissionPipeline, RuntimeTool, ToolDefinition,
-    ToolDispatcher, ToolError, ToolExecutionContext, ToolResult,
+    AllowAllPermissionPipeline, RuntimeTool, ToolDefinition, ToolDispatcher, ToolError,
+    ToolExecutionContext, ToolResult,
 };
 use app_lib::transport::tauri_event_adapter::TauriEventAdapter;
 use app_lib::transport::testing::RecordingRuntimeHost;
@@ -49,11 +49,8 @@ struct CapturingRuntimeTool {
 #[async_trait]
 impl RuntimeTool for CapturingRuntimeTool {
     fn id(&self) -> &str {
-
         self.name
-
     }
-
 
     async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new(self.name, "Test tool that captures capability context")
@@ -229,5 +226,3 @@ async fn runtime_chat_mainline_emits_tool_events_once() {
         completed_count, event_names
     );
 }
-
-

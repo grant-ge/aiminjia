@@ -235,7 +235,8 @@ impl AiJiaHome {
     /// in the path) lets the emitter write without resolving the user scope
     /// at every transition.
     pub fn turn_stage_path(&self, conversation_id: &str) -> PathBuf {
-        self.turn_stages_dir().join(format!("{conversation_id}.json"))
+        self.turn_stages_dir()
+            .join(format!("{conversation_id}.json"))
     }
 
     /// 剪贴板贴图保存目录 `~/.renlijia/tmp/clipboard/`。
@@ -246,6 +247,40 @@ impl AiJiaHome {
     /// 钉钉附件下载目录 `~/.renlijia/tmp/dingtalk_downloads/`。
     pub fn tmp_dingtalk_downloads_dir(&self) -> PathBuf {
         self.tmp_dir().join("dingtalk_downloads")
+    }
+
+    /// 飞书附件下载目录 `~/.renlijia/tmp/feishu_downloads/`。镜像
+    /// `tmp_dingtalk_downloads_dir`，PR6 引入。父目录在首次写文件时由
+    /// `FeishuFileDownloader::download` 通过 `tokio::fs::create_dir_all` 按需创建。
+    pub fn tmp_feishu_downloads_dir(&self) -> PathBuf {
+        self.tmp_dir().join("feishu_downloads")
+    }
+
+    /// 企微附件下载目录 `~/.renlijia/tmp/wecom_downloads/`。镜像
+    /// `tmp_feishu_downloads_dir`，PR6b 后期引入。父目录在首次写文件时由
+    /// `wecom::media::download_and_save` 通过 `tokio::fs::create_dir_all` 按需创建。
+    pub fn tmp_wecom_downloads_dir(&self) -> PathBuf {
+        self.tmp_dir().join("wecom_downloads")
+    }
+
+    /// 个人微信（iLink）附件下载目录 `~/.renlijia/tmp/wechat_downloads/`。
+    /// 镜像 `tmp_wecom_downloads_dir`。父目录在首次写文件时由
+    /// `wechat::media::download_and_save` 按需创建。
+    pub fn tmp_wechat_downloads_dir(&self) -> PathBuf {
+        self.tmp_dir().join("wechat_downloads")
+    }
+
+    /// Telegram 附件下载目录 `~/.renlijia/tmp/telegram_downloads/`。
+    /// 镜像 `tmp_wecom_downloads_dir`。
+    pub fn tmp_telegram_downloads_dir(&self) -> PathBuf {
+        self.tmp_dir().join("telegram_downloads")
+    }
+
+    /// WhatsApp 附件下载目录 `~/.renlijia/tmp/whatsapp_downloads/`。
+    /// 镜像 `tmp_telegram_downloads_dir`。父目录在首次写文件时由
+    /// `WhatsAppMediaDownloader::download_*` 通过 `tokio::fs::create_dir_all` 按需创建。
+    pub fn tmp_whatsapp_downloads_dir(&self) -> PathBuf {
+        self.tmp_dir().join("whatsapp_downloads")
     }
 
     /// 确保全局层目录存在，供 auth restore 等登录前流程使用。

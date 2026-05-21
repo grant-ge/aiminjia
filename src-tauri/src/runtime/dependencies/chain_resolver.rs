@@ -3,7 +3,9 @@
 
 use std::sync::Arc;
 
-use super::{RuntimeDependencyError, RuntimeDependencyResult, RuntimeResolver, WorkspaceDependencies};
+use super::{
+    RuntimeDependencyError, RuntimeDependencyResult, RuntimeResolver, WorkspaceDependencies,
+};
 
 #[derive(Clone)]
 pub struct ChainResolver {
@@ -40,9 +42,7 @@ impl RuntimeResolver for ChainResolver {
             }
         }
         Err(last_err.unwrap_or_else(|| {
-            RuntimeDependencyError::ResolverUnavailable(
-                "chain resolver has no entries".to_string(),
-            )
+            RuntimeDependencyError::ResolverUnavailable("chain resolver has no entries".to_string())
         }))
     }
 }

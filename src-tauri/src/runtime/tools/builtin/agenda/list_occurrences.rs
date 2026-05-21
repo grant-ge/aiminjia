@@ -16,9 +16,14 @@ pub struct ListAgendaOccurrencesRuntimeTool {
 
 #[async_trait]
 impl RuntimeTool for ListAgendaOccurrencesRuntimeTool {
-    fn id(&self) -> &str { "list_agenda_occurrences" }
-    
-    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "list_agenda_occurrences"
+    }
+
+    async fn definition(
+        &self,
+        _ctx: &crate::runtime::tools::ToolDescriptionContext,
+    ) -> ToolDefinition {
         ToolDefinition::new(
             "list_agenda_occurrences",
             "【自用】查看你自己日程过往的执行历史（成功/失败记录）。",

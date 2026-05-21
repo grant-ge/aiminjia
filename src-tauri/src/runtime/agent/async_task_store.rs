@@ -214,11 +214,16 @@ mod tests {
     fn update_state_persists_handle() {
         let store = AsyncAgentTaskStore::new();
         let id = AgentId::new("agent-persist");
-        store.register("persist-test", make_handle("agent-persist", AsyncTaskState::Running));
+        store.register(
+            "persist-test",
+            make_handle("agent-persist", AsyncTaskState::Running),
+        );
 
         store.update_state(&id, AsyncTaskState::Completed);
 
-        let found = store.find_by_id(&id).expect("handle should still exist after Completed");
+        let found = store
+            .find_by_id(&id)
+            .expect("handle should still exist after Completed");
         assert_eq!(found.state, AsyncTaskState::Completed);
     }
 

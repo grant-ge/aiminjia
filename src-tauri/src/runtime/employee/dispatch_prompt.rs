@@ -238,7 +238,10 @@ fn join_chinese(parts: &[&str]) -> String {
     parts.join("、")
 }
 
-fn pluck_str_array<'a>(obj: &'a serde_json::Map<String, serde_json::Value>, key: &str) -> Vec<&'a str> {
+fn pluck_str_array<'a>(
+    obj: &'a serde_json::Map<String, serde_json::Value>,
+    key: &str,
+) -> Vec<&'a str> {
     obj.get(key)
         .and_then(|v| v.as_array())
         .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
@@ -269,7 +272,11 @@ fn summarize_monitoring_urls(obj: &serde_json::Map<String, serde_json::Value>) -
     if rows.is_empty() {
         return vec!["- 监听目标：（未配置，将在对话中由你协助补全）".to_string()];
     }
-    vec![format!("- 监听目标（{} 个）：{}", rows.len(), rows.join("；"))]
+    vec![format!(
+        "- 监听目标（{} 个）：{}",
+        rows.len(),
+        rows.join("；")
+    )]
 }
 
 fn summarize_sales_table(obj: &serde_json::Map<String, serde_json::Value>) -> Vec<String> {
@@ -279,14 +286,18 @@ fn summarize_sales_table(obj: &serde_json::Map<String, serde_json::Value>) -> Ve
     let share_url = obj.get("shareUrl").and_then(|v| v.as_str()).unwrap_or("");
     if !base_id.is_empty() {
         if !table_id.is_empty() {
-            lines.push(format!("- 钉钉多维表：baseId={base_id} · tableId={table_id}"));
+            lines.push(format!(
+                "- 钉钉多维表：baseId={base_id} · tableId={table_id}"
+            ));
         } else {
             lines.push(format!(
                 "- 钉钉多维表：baseId={base_id}（tableId 未指定，请在对话中向用户确认子表名）"
             ));
         }
     } else if !share_url.is_empty() {
-        lines.push(format!("- 钉钉多维表链接：{share_url}（请解析 baseId/tableId）"));
+        lines.push(format!(
+            "- 钉钉多维表链接：{share_url}（请解析 baseId/tableId）"
+        ));
     } else {
         lines.push("- 钉钉多维表：（未配置，将在对话中由你协助补全分享链接）".to_string());
     }
@@ -395,7 +406,11 @@ fn summarize_weekly_report(obj: &serde_json::Map<String, serde_json::Value>) -> 
     if let Some(template) = obj.get("template").and_then(|v| v.as_str()) {
         if !template.trim().is_empty() {
             let preview: String = template.chars().take(60).collect();
-            let suffix = if template.chars().count() > 60 { "…" } else { "" };
+            let suffix = if template.chars().count() > 60 {
+                "…"
+            } else {
+                ""
+            };
             lines.push(format!("- 周报模板：{preview}{suffix}"));
         }
     }
@@ -551,7 +566,10 @@ mod tests {
         let p = build_dispatch_prompt(&e, "[按需派活]", None, None, None);
         let count = p.matches("dingtalk-workspace").count();
         // Appears in: "· dingtalk-workspace（默认…）" + "首先加载 dingtalk-workspace"
-        assert_eq!(count, 2, "default should appear exactly twice (list + instruction), got {count}: {p}");
+        assert_eq!(
+            count, 2,
+            "default should appear exactly twice (list + instruction), got {count}: {p}"
+        );
     }
 
     #[test]
@@ -672,7 +690,10 @@ mod tests {
             ]
         }));
         let p = build_dispatch_prompt(&e, "[按需派活]", None, None, None);
-        assert!(p.contains("memory_search"), "missing memory_search hint: {p}");
+        assert!(
+            p.contains("memory_search"),
+            "missing memory_search hint: {p}"
+        );
         assert!(p.contains("knowledge:emp-xk"), "missing tag hint: {p}");
     }
 
@@ -685,13 +706,19 @@ mod tests {
 
     #[test]
     fn knowledge_memory_hint_omitted_for_unrelated_template() {
-        let e = employee(None, serde_json::json!({
-            "knowledgeSources": [
-                { "path": "/tmp/x.md", "originalName": "x.md", "status": "done", "slicedCount": 1 }
-            ]
-        }));
+        let e = employee(
+            None,
+            serde_json::json!({
+                "knowledgeSources": [
+                    { "path": "/tmp/x.md", "originalName": "x.md", "status": "done", "slicedCount": 1 }
+                ]
+            }),
+        );
         let p = build_dispatch_prompt(&e, "[按需派活]", None, None, None);
-        assert!(!p.contains("memory_search"), "hint leaked to wrong template: {p}");
+        assert!(
+            !p.contains("memory_search"),
+            "hint leaked to wrong template: {p}"
+        );
     }
 
     #[test]
@@ -726,7 +753,10 @@ mod tests {
         ensure_instance_snapshot(&root.join(&e.id), &snap, "bootstrap").unwrap();
 
         let with_snap = build_dispatch_prompt(&e, "[按需派活]", None, None, Some(root));
-        assert!(with_snap.contains("SNAPSHOT-WINS"), "snapshot not applied: {with_snap}");
+        assert!(
+            with_snap.contains("SNAPSHOT-WINS"),
+            "snapshot not applied: {with_snap}"
+        );
         assert!(
             !with_snap.contains("record-extra"),
             "record field leaked through: {with_snap}"
@@ -760,13 +790,19 @@ mod tests {
             }),
         );
         let p = build_dispatch_prompt(&e, "[按需派活]", None, None, None);
-        assert!(p.contains("群关键词：技术、对接、集成"), "keywords missing: {p}");
+        assert!(
+            p.contains("群关键词：技术、对接、集成"),
+            "keywords missing: {p}"
+        );
         assert!(p.contains("排除关键词：内部"), "exclude missing: {p}");
         assert!(p.contains("响应风格：专业"), "style label missing: {p}");
         assert!(p.contains("汇总频率：每周"), "summary cron missing: {p}");
         // raw JSON keys must not leak
         assert!(!p.contains("groupMatch"), "raw key groupMatch leaked: {p}");
-        assert!(!p.contains("responseStyle"), "raw key responseStyle leaked: {p}");
+        assert!(
+            !p.contains("responseStyle"),
+            "raw key responseStyle leaked: {p}"
+        );
     }
 
     #[test]
@@ -785,9 +821,15 @@ mod tests {
         let p = build_dispatch_prompt(&e, "[按需派活]", None, None, None);
         assert!(p.contains("群关键词：售后"), "keywords missing: {p}");
         assert!(p.contains("响应风格：亲切"), "style missing: {p}");
-        assert!(p.contains("开场白：您好，我是 AI 客服"), "greeting missing: {p}");
+        assert!(
+            p.contains("开场白：您好，我是 AI 客服"),
+            "greeting missing: {p}"
+        );
         assert!(p.contains("结束语：祝您生活愉快"), "closing missing: {p}");
-        assert!(p.contains("转人工关键词：投诉、退款"), "escalation missing: {p}");
+        assert!(
+            p.contains("转人工关键词：投诉、退款"),
+            "escalation missing: {p}"
+        );
         assert!(p.contains("技术问题关键词：bug"), "tech kw missing: {p}");
     }
 
@@ -804,8 +846,14 @@ mod tests {
         );
         let p = build_dispatch_prompt(&e, "[按需派活]", None, None, None);
         assert!(p.contains("监听目标（2 个）"), "count missing: {p}");
-        assert!(p.contains("Anthropic（https://anthropic.com）"), "first target missing: {p}");
-        assert!(p.contains("OpenAI（https://openai.com）"), "second target missing: {p}");
+        assert!(
+            p.contains("Anthropic（https://anthropic.com）"),
+            "first target missing: {p}"
+        );
+        assert!(
+            p.contains("OpenAI（https://openai.com）"),
+            "second target missing: {p}"
+        );
     }
 
     #[test]
@@ -828,10 +876,7 @@ mod tests {
 
     #[test]
     fn summarize_xiaobiao_with_only_base_id_hints_user_followup() {
-        let e = emp_with_template(
-            "builtin:xiaobiao",
-            serde_json::json!({"baseId": "BASE123"}),
-        );
+        let e = emp_with_template("builtin:xiaobiao", serde_json::json!({"baseId": "BASE123"}));
         let p = build_dispatch_prompt(&e, "[按需派活]", None, None, None);
         assert!(
             p.contains("tableId 未指定"),
@@ -851,11 +896,20 @@ mod tests {
             }),
         );
         let p = build_dispatch_prompt(&e, "[按需派活]", None, None, None);
-        assert!(p.contains("周报模板：本周完成事项"), "template missing: {p}");
-        assert!(p.contains("监听群：研发周报、产品周报"), "groups missing: {p}");
+        assert!(
+            p.contains("周报模板：本周完成事项"),
+            "template missing: {p}"
+        );
+        assert!(
+            p.contains("监听群：研发周报、产品周报"),
+            "groups missing: {p}"
+        );
         assert!(p.contains("汇总范围：team"), "scope missing: {p}");
         // language=zh is default → not rendered
-        assert!(!p.contains("输出语言"), "default language should not be rendered: {p}");
+        assert!(
+            !p.contains("输出语言"),
+            "default language should not be rendered: {p}"
+        );
     }
 
     #[test]
@@ -907,7 +961,10 @@ mod tests {
         let p = build_dispatch_prompt(&e, "[按需派活]", None, None, Some(root));
         assert!(p.contains("【附件】"), "missing attachment block: {p}");
         assert!(p.contains(".pdf,.docx"), "accept missing: {p}");
-        assert!(p.contains("1–5 份") || p.contains("1-5 份"), "count phrase missing: {p}");
+        assert!(
+            p.contains("1–5 份") || p.contains("1-5 份"),
+            "count phrase missing: {p}"
+        );
         assert!(p.contains("拖入对话框"), "guide phrasing missing: {p}");
     }
 

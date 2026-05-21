@@ -47,7 +47,8 @@ pub fn explore_agent_definition() -> AgentDefinition {
 - 用 Markdown 列出发现的事实\n\
 - 引用代码必须 `path:line` 标注\n\
 - 末尾给一段 ≤ 5 行的\"结论\"总结\n\
-- 信息不足以回答时，明确说\"信息不足\"，列出还需要查的方向".into()
+- 信息不足以回答时，明确说\"信息不足\"，列出还需要查的方向"
+                .into(),
         ),
         source: AgentSource::Builtin,
         permission_mode: AgentPermissionMode::AutoDeny,
@@ -74,7 +75,7 @@ mod tests {
             "Glob",
             "WebSearch",
             "Write", // not requested → must not appear
-            "Bash",       // not requested → must not appear
+            "Bash",  // not requested → must not appear
         ]
         .iter()
         .map(|s| s.to_string())
@@ -88,12 +89,7 @@ mod tests {
             false, // allow_recursive_spawn
         );
 
-        for required in [
-            "Read",
-            "Grep",
-            "Glob",
-            "WebSearch",
-        ] {
+        for required in ["Read", "Grep", "Glob", "WebSearch"] {
             assert!(
                 resolved.contains(&required.to_string()),
                 "explore must retain {required} after whitelist; got {resolved:?}"

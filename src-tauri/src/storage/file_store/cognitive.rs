@@ -1239,7 +1239,8 @@ mod tests {
         )
         .unwrap();
 
-        let results = search_memory_readonly(&base, "box plots", Some("preference"), 30, None).unwrap();
+        let results =
+            search_memory_readonly(&base, "box plots", Some("preference"), 30, None).unwrap();
         assert_eq!(results.len(), 1);
     }
 

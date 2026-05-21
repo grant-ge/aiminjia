@@ -84,7 +84,7 @@ impl RuntimeLlmExecutor for ErrorAfterHistoryExecutor {
     }
 
     async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
-        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
+        Ok(vec![]) // 显式声明此 mock 不关心 tool_defs
     }
 }
 
@@ -101,7 +101,9 @@ struct StaticCompactSummaryClient {
 
 impl StaticCompactSummaryClient {
     fn new(summary: impl Into<String>) -> Self {
-        Self { summary: summary.into() }
+        Self {
+            summary: summary.into(),
+        }
     }
 }
 
@@ -182,7 +184,7 @@ impl RuntimeLlmExecutor for CompactingExecutor {
     }
 
     async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
-        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
+        Ok(vec![]) // 显式声明此 mock 不关心 tool_defs
     }
 }
 
@@ -227,7 +229,9 @@ fn u2_inject_synthetic_results_repairs_orphan_tool_calls() {
 async fn u3_compact_success_persists_boundary_record_with_anchor() {
     let executor = Arc::new(CompactingExecutor::new());
     let bus = RuntimeEventBus::new();
-    let compact_client = Arc::new(StaticCompactSummaryClient::new("压缩摘要：保留最后一个 user 问题。"));
+    let compact_client = Arc::new(StaticCompactSummaryClient::new(
+        "压缩摘要：保留最后一个 user 问题。",
+    ));
     let driver =
         RuntimeChatTurnDriver::with_llm_executor(QueryEngine::default(), bus, executor.clone())
             .with_compact_client(compact_client);

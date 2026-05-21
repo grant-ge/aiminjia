@@ -427,7 +427,10 @@ impl LlmGateway {
         let mut mask_ctx = MaskingContext::new(masking_level.clone());
         let mut masked_messages = mask_ctx.mask_messages(&messages);
         if route.provider == "lotus" {
-            attach_anthropic_multimodal_turn(&mut masked_messages, anthropic_multimodal_turn.clone());
+            attach_anthropic_multimodal_turn(
+                &mut masked_messages,
+                anthropic_multimodal_turn.clone(),
+            );
         }
 
         // 3. Build request
@@ -655,7 +658,11 @@ impl LlmGateway {
     }
 
     pub fn clear_task_for_run(&self, conversation_id: &str, run_id: &RunId) {
-        if self.run_registry.clear_for_run(conversation_id, run_id).is_some() {
+        if self
+            .run_registry
+            .clear_for_run(conversation_id, run_id)
+            .is_some()
+        {
             log::info!(
                 "Cleared active task: conversation_id={}, run_id={}",
                 conversation_id,

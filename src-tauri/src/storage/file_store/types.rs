@@ -120,7 +120,9 @@ pub struct ConversationMeta {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub employee_id: Option<String>,
     /// 新增：会话来源 tagged union。`#[serde(default)]` 让老 conv.json（无此字段）
-    /// 反序列化为 `User`。
+    /// 反序列化为 `User`。IM connector（dingtalk / telegram / ...）创建的 conversation
+    /// 走 `ConversationSource::Im`；具体平台从 `channels/<platform>/sessions.json`
+    /// 反查（这一层不持有 platform 信息）。
     #[serde(default)]
     pub source: ConversationSource,
     /// 新增：会话当前授权的本地工作目录（来自原 memory.jsonl 的 authorized_workspace 那条线）。

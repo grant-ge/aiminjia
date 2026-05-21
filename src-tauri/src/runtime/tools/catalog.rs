@@ -326,7 +326,6 @@ fn build_default_catalog() -> ToolCatalog {
         }),
     ));
 
-
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
             "Agent",
@@ -802,8 +801,8 @@ fn build_default_catalog() -> ToolCatalog {
             "update_agenda_item",
             "【自用】修改你自己创建的日程（标题/触发内容/频率/启用状态）。",
         )
-            .with_kind(ToolKind::Primitive)
-            .with_read_only(false),
+        .with_kind(ToolKind::Primitive)
+        .with_read_only(false),
         json!({
             "type": "object",
             "required": ["id"],
@@ -822,9 +821,9 @@ fn build_default_catalog() -> ToolCatalog {
             "cancel_agenda_item",
             "【自用】取消你自己创建的日程（软删除，可在 UI 恢复）。",
         )
-            .with_kind(ToolKind::Primitive)
-            .with_read_only(false)
-            .with_destructive(true),
+        .with_kind(ToolKind::Primitive)
+        .with_read_only(false)
+        .with_destructive(true),
         json!({
             "type": "object",
             "required": ["id"],
@@ -837,8 +836,8 @@ fn build_default_catalog() -> ToolCatalog {
             "skip_occurrence",
             "【自用】跳过你自己循环日程的某一次触发。",
         )
-            .with_kind(ToolKind::Primitive)
-            .with_read_only(false),
+        .with_kind(ToolKind::Primitive)
+        .with_read_only(false),
         json!({
             "type": "object",
             "required": ["id", "at"],
@@ -854,8 +853,8 @@ fn build_default_catalog() -> ToolCatalog {
             "list_agenda_occurrences",
             "【自用】查看你自己日程过往的执行历史（成功/失败记录）。",
         )
-            .with_kind(ToolKind::Primitive)
-            .with_read_only(true),
+        .with_kind(ToolKind::Primitive)
+        .with_read_only(true),
         json!({
             "type": "object",
             "required": ["agenda_item_id"],

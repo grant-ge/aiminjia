@@ -14,7 +14,7 @@
 /// 子 agent 调用会破坏控制流（如反向问父之外的人，或操纵 plan mode）。
 pub const ALL_AGENT_DISALLOWED: &[&str] = &[
     "AskUserQuestion",
-    "Agent",  // 防止子 agent 递归 spawn（对齐 claude-code-best 默认）
+    "Agent",    // 防止子 agent 递归 spawn（对齐 claude-code-best 默认）
     "TaskStop", // 子 agent 不能取消兄弟/父 agent 任务
 ];
 
@@ -25,8 +25,12 @@ pub const ALL_AGENT_DISALLOWED: &[&str] = &[
 /// canonical 名一致；否则 `resolve_agent_tools` 会在 available_names 过滤步骤把
 /// async agent 的工具集裁成空。
 pub const ASYNC_AGENT_ALLOWED: &[&str] = &[
-    "Read", "Write", "Edit",
-    "Bash", "Grep", "Glob",
+    "Read",
+    "Write",
+    "Edit",
+    "Bash",
+    "Grep",
+    "Glob",
     "WebSearch",
     "Agent",
     "TaskOutput",
@@ -141,13 +145,7 @@ mod tests {
 
     #[test]
     fn empty_def_allowed_means_full_subset() {
-        let allowed = resolve_agent_tools(
-            &[],
-            &[],
-            &vs(&["read_file", "Bash"]),
-            false,
-            false,
-        );
+        let allowed = resolve_agent_tools(&[], &[], &vs(&["read_file", "Bash"]), false, false);
         assert_eq!(allowed.len(), 2);
         assert!(allowed.contains(&"read_file".to_string()));
     }
@@ -194,12 +192,7 @@ mod tests {
         let allowed = resolve_agent_tools(
             &[],
             &[],
-            &vs(&[
-                "Read",
-                "AskUserQuestion",
-                "WebSearch",
-                "unknown_tool",
-            ]),
+            &vs(&["Read", "AskUserQuestion", "WebSearch", "unknown_tool"]),
             true,
             false,
         );
@@ -212,13 +205,7 @@ mod tests {
 
     #[test]
     fn recursive_spawn_blocked_by_default() {
-        let allowed = resolve_agent_tools(
-            &[],
-            &[],
-            &vs(&["read_file", "Agent"]),
-            false,
-            false,
-        );
+        let allowed = resolve_agent_tools(&[], &[], &vs(&["read_file", "Agent"]), false, false);
         assert!(allowed.contains(&"read_file".to_string()));
         assert!(!allowed.contains(&"Agent".to_string()));
     }
@@ -226,13 +213,7 @@ mod tests {
     #[test]
     fn recursive_spawn_blocked_unconditionally_by_system_disallowed() {
         // spawn_subagent 在 ALL_AGENT_DISALLOWED，allow_recursive_spawn=true 也无效
-        let allowed = resolve_agent_tools(
-            &[],
-            &[],
-            &vs(&["read_file", "Agent"]),
-            false,
-            true,
-        );
+        let allowed = resolve_agent_tools(&[], &[], &vs(&["read_file", "Agent"]), false, true);
         assert!(allowed.contains(&"read_file".to_string()));
         assert!(!allowed.contains(&"Agent".to_string()));
     }
@@ -240,13 +221,7 @@ mod tests {
     #[test]
     fn async_spawn_also_blocked_by_system_disallowed() {
         // spawn_subagent 在 ALL_AGENT_DISALLOWED，async + allow_recursive_spawn=true 也无效
-        let allowed = resolve_agent_tools(
-            &[],
-            &[],
-            &vs(&["Agent"]),
-            true,
-            true,
-        );
+        let allowed = resolve_agent_tools(&[], &[], &vs(&["Agent"]), true, true);
         assert!(allowed.is_empty());
     }
 
@@ -262,8 +237,13 @@ mod tests {
             &vs(&["Read", "Grep", "Glob", "WebSearch"]),
             &[],
             &vs(&[
-                "Read", "Grep", "Glob", "WebSearch",
-                "SendMessage", "TaskList", "TaskGet",
+                "Read",
+                "Grep",
+                "Glob",
+                "WebSearch",
+                "SendMessage",
+                "TaskList",
+                "TaskGet",
                 "Bash", // present but not in def_allowed — must NOT be added
             ]),
             /* is_async */ false,
@@ -303,8 +283,11 @@ mod tests {
             &[],
             &[],
             &vs(&[
-                "Read", "Bash",
-                "SendMessage", "TaskList", "TaskGet",
+                "Read",
+                "Bash",
+                "SendMessage",
+                "TaskList",
+                "TaskGet",
                 "Write",
             ]),
             /* is_async */ true,
@@ -352,7 +335,10 @@ mod tests {
             /* is_teammate */ true,
         );
         let send_count = allowed.iter().filter(|t| t == &"SendMessage").count();
-        assert_eq!(send_count, 1, "SendMessage must appear exactly once after injection");
+        assert_eq!(
+            send_count, 1,
+            "SendMessage must appear exactly once after injection"
+        );
     }
 
     #[test]

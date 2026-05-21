@@ -36,6 +36,9 @@ pub struct PendingAttachment {
 pub enum PendingSource {
     App,
     ImDingtalk,
+    ImFeishu,
+    ImWecom,
+    ImTelegram,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]

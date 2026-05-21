@@ -1,4 +1,4 @@
-use app_lib::connector::channel::types::ConversationType;
+use app_lib::connector::im::types::ConversationType;
 use app_lib::runtime::chat::chat_turn_driver::ChatAttachmentRef;
 use app_lib::runtime::path_auth::derive_working_dirs_from_attachments;
 

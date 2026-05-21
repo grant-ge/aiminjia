@@ -235,8 +235,7 @@ pub fn sanitize_title(raw: &str) -> String {
             if let Some(close) = bytes[i + 1..].iter().position(|&c| c == ']') {
                 let text_end = i + 1 + close;
                 if text_end + 1 < bytes.len() && bytes[text_end + 1] == '(' {
-                    if let Some(paren_close) =
-                        bytes[text_end + 2..].iter().position(|&c| c == ')')
+                    if let Some(paren_close) = bytes[text_end + 2..].iter().position(|&c| c == ')')
                     {
                         stripped.extend(&bytes[i + 1..text_end]);
                         i = text_end + 2 + paren_close + 1;
@@ -581,9 +580,15 @@ mod title_tests {
         assert_eq!(sanitize_title("# React 19 新特性详解"), "React 19 新");
         assert_eq!(sanitize_title("**重要标题**"), "重要标题");
         // bold/italic mid-string and inline code
-        assert_eq!(sanitize_title("讨论 **React** 的 `useEffect`"), "讨论 React 的");
+        assert_eq!(
+            sanitize_title("讨论 **React** 的 `useEffect`"),
+            "讨论 React 的"
+        );
         // markdown link [text](url) keeps only the text
-        assert_eq!(sanitize_title("[React 文档](https://react.dev)"), "React 文档");
+        assert_eq!(
+            sanitize_title("[React 文档](https://react.dev)"),
+            "React 文档"
+        );
         // underscore italic + tilde strikethrough
         assert_eq!(sanitize_title("_emphasis_ ~strike~"), "emphasis s");
     }

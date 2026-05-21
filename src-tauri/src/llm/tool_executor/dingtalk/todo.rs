@@ -5,9 +5,9 @@
 use anyhow::Result;
 use serde_json::Value;
 
-use crate::plugin::context::PluginContext;
-use super::super::{require_str, optional_str, optional_i64};
+use super::super::{optional_i64, optional_str, require_str};
 use super::get_bridge;
+use crate::plugin::context::PluginContext;
 
 /// List todos. Response: result.todoCards[]
 pub async fn handle_dingtalk_list_todos(ctx: &PluginContext, args: &Value) -> Result<String> {
@@ -30,7 +30,8 @@ pub async fn handle_dingtalk_list_todos(ctx: &PluginContext, args: &Value) -> Re
     let result = bridge.query(&cmd_args).await?;
 
     // result.todoCards[]
-    let tasks = result.get("result")
+    let tasks = result
+        .get("result")
         .and_then(|r| r.get("todoCards"))
         .and_then(|t| t.as_array());
 
@@ -40,7 +41,10 @@ pub async fn handle_dingtalk_list_todos(ctx: &PluginContext, args: &Value) -> Re
         }
         let mut output = format!("Found {} task(s):\n\n", tasks.len());
         for t in tasks {
-            let subject = t.get("subject").and_then(|v| v.as_str()).unwrap_or("Untitled");
+            let subject = t
+                .get("subject")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Untitled");
             let tid = t.get("taskId").and_then(|v| v.as_str()).unwrap_or("?");
             // dueTime is milliseconds timestamp
             let due_ms = t.get("dueTime").and_then(|v| v.as_i64()).unwrap_or(0);
@@ -52,7 +56,10 @@ pub async fn handle_dingtalk_list_todos(ctx: &PluginContext, args: &Value) -> Re
                 String::new()
             };
             // finalStatusStage: 0=not started, 1=in progress, 2=completed
-            let stage = t.get("finalStatusStage").and_then(|v| v.as_i64()).unwrap_or(0);
+            let stage = t
+                .get("finalStatusStage")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
             let status_icon = if stage == 2 { "[done]" } else { "[open]" };
             let priority = t.get("priority").and_then(|v| v.as_i64()).unwrap_or(0);
             let priority_str = match priority {
@@ -63,7 +70,10 @@ pub async fn handle_dingtalk_list_todos(ctx: &PluginContext, args: &Value) -> Re
                 _ => "",
             };
 
-            output.push_str(&format!("{} **{}**{} (task_id: `{}`)", status_icon, subject, priority_str, tid));
+            output.push_str(&format!(
+                "{} **{}**{} (task_id: `{}`)",
+                status_icon, subject, priority_str, tid
+            ));
             if !due_str.is_empty() {
                 output.push_str(&format!(" — due: {}", due_str));
             }
@@ -71,7 +81,10 @@ pub async fn handle_dingtalk_list_todos(ctx: &PluginContext, args: &Value) -> Re
         }
         Ok(output)
     } else {
-        Ok(format!("Tasks:\n```json\n{}\n```", serde_json::to_string_pretty(&result)?))
+        Ok(format!(
+            "Tasks:\n```json\n{}\n```",
+            serde_json::to_string_pretty(&result)?
+        ))
     }
 }
 
@@ -98,7 +111,8 @@ pub async fn handle_dingtalk_create_todo(ctx: &PluginContext, args: &Value) -> R
 
     let result = bridge.mutate(&cmd_args).await?;
 
-    let task_id = result.get("result")
+    let task_id = result
+        .get("result")
         .and_then(|r| r.get("id").or_else(|| r.get("taskId")))
         .and_then(|v| v.as_str())
         .unwrap_or("unknown");
@@ -113,9 +127,15 @@ pub async fn handle_dingtalk_create_todo(ctx: &PluginContext, args: &Value) -> R
 
     Ok(format!(
         "Todo created (task_id: `{}`).\n\n**{}**{}\n{}{}",
-        task_id, subject, priority_label,
-        due_time.map(|d| format!("Due: {}\n", d)).unwrap_or_default(),
-        executors.map(|e| format!("Executors: {}\n", e)).unwrap_or_default(),
+        task_id,
+        subject,
+        priority_label,
+        due_time
+            .map(|d| format!("Due: {}\n", d))
+            .unwrap_or_default(),
+        executors
+            .map(|e| format!("Executors: {}\n", e))
+            .unwrap_or_default(),
     ))
 }
 
@@ -124,7 +144,17 @@ pub async fn handle_dingtalk_complete_todo(ctx: &PluginContext, args: &Value) ->
     let bridge = get_bridge(ctx).await?;
     let task_id = require_str(args, "task_id")?;
 
-    bridge.mutate(&["todo", "task", "done", "--task-id", task_id, "--status", "true"]).await?;
+    bridge
+        .mutate(&[
+            "todo",
+            "task",
+            "done",
+            "--task-id",
+            task_id,
+            "--status",
+            "true",
+        ])
+        .await?;
 
     Ok(format!("Task `{}` marked as complete.", task_id))
 }

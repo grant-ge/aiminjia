@@ -56,10 +56,10 @@ impl LotusProvider {
         Self {
             inner: ClaudeProvider::with_url_opts(
                 session_key,
-                None,                              // model unused (gateway decides)
+                None, // model unused (gateway decides)
                 LOTUS_ANTHROPIC_URL.to_string(),
-                false,                             // is_direct=false → no beta headers
-                true,                              // omit_model in request body
+                false, // is_direct=false → no beta headers
+                true,  // omit_model in request body
             ),
         }
     }
@@ -152,34 +152,32 @@ impl LlmProviderTrait for LotusProvider {
         for attempt in 0..=MAX_RETRY_ATTEMPTS {
             match self.inner.send(request.clone()).await {
                 Ok(resp) => return Ok(resp),
-                Err(err) => {
-                    match classify_for_retry(&err) {
-                        Some(delay) if attempt < MAX_RETRY_ATTEMPTS => {
-                            if let Some(d) = delay {
-                                debug!(
-                                    "lotus send retry after {:?} (attempt {}/{}): {}",
-                                    d,
-                                    attempt + 1,
-                                    MAX_RETRY_ATTEMPTS + 1,
-                                    err
-                                );
-                                tokio::time::sleep(d).await;
-                            } else {
-                                debug!(
-                                    "lotus send retry immediately (attempt {}/{}): {}",
-                                    attempt + 1,
-                                    MAX_RETRY_ATTEMPTS + 1,
-                                    err
-                                );
-                            }
-                            last_err = Some(err);
-                            continue;
+                Err(err) => match classify_for_retry(&err) {
+                    Some(delay) if attempt < MAX_RETRY_ATTEMPTS => {
+                        if let Some(d) = delay {
+                            debug!(
+                                "lotus send retry after {:?} (attempt {}/{}): {}",
+                                d,
+                                attempt + 1,
+                                MAX_RETRY_ATTEMPTS + 1,
+                                err
+                            );
+                            tokio::time::sleep(d).await;
+                        } else {
+                            debug!(
+                                "lotus send retry immediately (attempt {}/{}): {}",
+                                attempt + 1,
+                                MAX_RETRY_ATTEMPTS + 1,
+                                err
+                            );
                         }
-                        _ => {
-                            return Err(err);
-                        }
+                        last_err = Some(err);
+                        continue;
                     }
-                }
+                    _ => {
+                        return Err(err);
+                    }
+                },
             }
         }
         // Loop exits only when the last classification said "retry" but

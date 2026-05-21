@@ -182,9 +182,14 @@ fn format_task_line(task: &TaskRecord) -> String {
 
 #[async_trait]
 impl RuntimeTool for TaskCreateRuntimeTool {
-    fn id(&self) -> &str { "TaskCreate" }
-    
-    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "TaskCreate"
+    }
+
+    async fn definition(
+        &self,
+        _ctx: &crate::runtime::tools::ToolDescriptionContext,
+    ) -> ToolDefinition {
         TOOL_CATALOG
             .get("TaskCreate")
             .unwrap_or_else(|| ToolDefinition::new("TaskCreate", "创建任务"))
@@ -250,9 +255,14 @@ impl RuntimeTool for TaskCreateRuntimeTool {
 
 #[async_trait]
 impl RuntimeTool for TaskListRuntimeTool {
-    fn id(&self) -> &str { "TaskList" }
-    
-    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "TaskList"
+    }
+
+    async fn definition(
+        &self,
+        _ctx: &crate::runtime::tools::ToolDescriptionContext,
+    ) -> ToolDefinition {
         TOOL_CATALOG
             .get("TaskList")
             .unwrap_or_else(|| ToolDefinition::new("TaskList", "列出任务"))
@@ -392,9 +402,14 @@ fn dfs_inner<'a>(
 
 #[async_trait]
 impl RuntimeTool for TaskUpdateRuntimeTool {
-    fn id(&self) -> &str { "TaskUpdate" }
-    
-    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "TaskUpdate"
+    }
+
+    async fn definition(
+        &self,
+        _ctx: &crate::runtime::tools::ToolDescriptionContext,
+    ) -> ToolDefinition {
         TOOL_CATALOG
             .get("TaskUpdate")
             .unwrap_or_else(|| ToolDefinition::new("TaskUpdate", "更新任务"))
@@ -498,10 +513,8 @@ impl RuntimeTool for TaskUpdateRuntimeTool {
                 let all_tasks = store
                     .list(&list_id)
                     .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
-                let new_edges: Vec<(&str, &str)> = proposed_blocks
-                    .iter()
-                    .map(|&b| (task_id, b))
-                    .collect();
+                let new_edges: Vec<(&str, &str)> =
+                    proposed_blocks.iter().map(|&b| (task_id, b)).collect();
                 check_no_cycle(&all_tasks, &new_edges)
                     .map_err(|msg| ToolError::ExecutionFailed(msg))?;
             }
@@ -526,10 +539,8 @@ impl RuntimeTool for TaskUpdateRuntimeTool {
                 let all_tasks = store
                     .list(&list_id)
                     .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
-                let new_edges: Vec<(&str, &str)> = proposed_blockers
-                    .iter()
-                    .map(|&b| (b, task_id))
-                    .collect();
+                let new_edges: Vec<(&str, &str)> =
+                    proposed_blockers.iter().map(|&b| (b, task_id)).collect();
                 check_no_cycle(&all_tasks, &new_edges)
                     .map_err(|msg| ToolError::ExecutionFailed(msg))?;
             }
@@ -595,9 +606,14 @@ async fn notify_after_update(
 
 #[async_trait]
 impl RuntimeTool for TaskGetRuntimeTool {
-    fn id(&self) -> &str { "TaskGet" }
-    
-    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "TaskGet"
+    }
+
+    async fn definition(
+        &self,
+        _ctx: &crate::runtime::tools::ToolDescriptionContext,
+    ) -> ToolDefinition {
         TOOL_CATALOG
             .get("TaskGet")
             .unwrap_or_else(|| ToolDefinition::new("TaskGet", "获取单条任务"))
@@ -641,9 +657,14 @@ impl RuntimeTool for TaskGetRuntimeTool {
 
 #[async_trait]
 impl RuntimeTool for TaskClaimRuntimeTool {
-    fn id(&self) -> &str { "TaskClaim" }
-    
-    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "TaskClaim"
+    }
+
+    async fn definition(
+        &self,
+        _ctx: &crate::runtime::tools::ToolDescriptionContext,
+    ) -> ToolDefinition {
         TOOL_CATALOG.get("TaskClaim").unwrap_or_else(|| {
             ToolDefinition::new(
                 "TaskClaim",
@@ -714,28 +735,38 @@ impl RuntimeTool for TaskClaimRuntimeTool {
             ClaimDecision::AlreadyOwned => {
                 record_diagnostic(
                     &ws,
-                    DiagnosticEvent::new("tool.task_claim.already_owned", DiagnosticSource::Backend)
-                        .conversation_id(ctx.session_id.as_str())
-                        .run_id(ctx.run_id.as_str())
-                        .tool_call_id(ctx.tool_call_id.as_str())
-                        .ok(true)
-                        .payload(serde_json::json!({ "task_id": task_id, "caller": caller })),
+                    DiagnosticEvent::new(
+                        "tool.task_claim.already_owned",
+                        DiagnosticSource::Backend,
+                    )
+                    .conversation_id(ctx.session_id.as_str())
+                    .run_id(ctx.run_id.as_str())
+                    .tool_call_id(ctx.tool_call_id.as_str())
+                    .ok(true)
+                    .payload(serde_json::json!({ "task_id": task_id, "caller": caller })),
                 );
                 return Ok(ToolResult::new(
                     "TaskClaim",
                     format!("Task #{} already owned by you ({})", task_id, caller),
-                    Some(json!({ "success": true, "taskId": task_id, "task": task_to_json(&task) })),
+                    Some(
+                        json!({ "success": true, "taskId": task_id, "task": task_to_json(&task) }),
+                    ),
                 ));
             }
             ClaimDecision::Taken(existing_owner) => {
                 record_diagnostic(
                     &ws,
-                    DiagnosticEvent::new("tool.task_claim.already_claimed", DiagnosticSource::Backend)
-                        .conversation_id(ctx.session_id.as_str())
-                        .run_id(ctx.run_id.as_str())
-                        .tool_call_id(ctx.tool_call_id.as_str())
-                        .ok(false)
-                        .payload(serde_json::json!({ "task_id": task_id, "existing_owner": existing_owner })),
+                    DiagnosticEvent::new(
+                        "tool.task_claim.already_claimed",
+                        DiagnosticSource::Backend,
+                    )
+                    .conversation_id(ctx.session_id.as_str())
+                    .run_id(ctx.run_id.as_str())
+                    .tool_call_id(ctx.tool_call_id.as_str())
+                    .ok(false)
+                    .payload(
+                        serde_json::json!({ "task_id": task_id, "existing_owner": existing_owner }),
+                    ),
                 );
                 return Err(ToolError::ExecutionFailed(format!(
                     "task already claimed by '{}'",

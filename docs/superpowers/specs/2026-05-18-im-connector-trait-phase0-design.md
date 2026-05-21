@@ -31,7 +31,7 @@ src-tauri/src/connector/channel/
 
 - `dingtalk-openclaw-connector-main/`（钉钉，Stream + AI Card）
 - `openclaw-lark-main/`（飞书，WebSocket + REST）
-- `openclaw-weixin-main/`（个微，需外部 native daemon）
+- `openclaw-weixin-main/`（个微，腾讯官方 iLink HTTP API + 扫码登录 + AES-128-ECB 媒体——不需要外部 daemon）
 - `wecom-openclaw-plugin-main/`（企微，HTTP webhook + template card）
 
 每个 plugin 都按 **"一平台一独立目录"** 的形态组织：自带 `channel.ts`（描述符）/ `runtime.ts`（主循环）/ `config/`（schema）/ `messaging/`（normalize）/ `media/`（附件）。没人尝试在 TS 侧抽象统一 trait——每个平台是独立 plugin、对外只 export `channel descriptor` + `runtime start` 两个东西。
@@ -88,8 +88,9 @@ pub enum InboundModel {
     Stream,
     /// HTTP webhook 推送（wecom / telegram / whatsapp），connector 内部起 HTTP 端口
     Webhook,
-    /// 通过外部 native daemon（个微），connector 内部 spawn / 管理 daemon 进程
-    Daemon,
+    // Daemon 变体已删除：Phase 5 调研结论表明个微走 iLink HTTP 长轮询（Stream 形），
+    // 不需要外部 native daemon。如未来出现真正的 PC 客户端 daemon 接入场景再加回。
+    // 详见 Phase 5 spec §11 反向修订。
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -100,7 +101,7 @@ pub enum AuthFlow {
     OAuth,
     /// 静态 API key / token（telegram bot token）
     ApiKey,
-    /// 扫码登录（个微）
+    /// 扫码登录（个微，iLink HTTP API）
     QRCode,
 }
 
@@ -178,7 +179,7 @@ pub trait IMConnector: Send + Sync {
 ### 入站（IM → Lotus）
 
 ```
-[平台 SDK / Webhook HTTP server / Daemon stdin]
+[平台 SDK / Webhook HTTP server / iLink 长轮询 HTTP client]
    ↓ 平台特定解析 → ChannelMessage normalize
 DingtalkConnector::start() 返回的 Stream
    ↓

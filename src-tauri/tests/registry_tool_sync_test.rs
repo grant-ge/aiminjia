@@ -19,7 +19,6 @@ impl RuntimeTool for MockRuntimeTool {
         &self.def.id
     }
 
-
     async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
         self.def.clone()
     }

@@ -228,15 +228,19 @@ function App() {
     const unlisten = onConversationCreated(async () => {
       try {
         const raw = await getConversations()
-        const convs = raw.map((c) => ({
-          id: (c.id as string) ?? '',
-          title: (c.title as string) ?? '新对话',
-          createdAt: (c.createdAt as string) ?? new Date().toISOString(),
-          updatedAt: (c.updatedAt as string) ?? new Date().toISOString(),
-          isArchived: (c.isArchived as boolean) ?? false,
-          kind: (c.kind as import('@/types/message').Conversation['kind']) ?? undefined,
-          workspaceName: (c.workspaceName as string | undefined) ?? undefined,
-        }))
+        const convs = raw
+          .map((c) => ({
+            id: (c.id as string) ?? '',
+            title: (c.title as string) ?? '新对话',
+            createdAt: (c.createdAt as string) ?? new Date().toISOString(),
+            updatedAt: (c.updatedAt as string) ?? new Date().toISOString(),
+            isArchived: (c.isArchived as boolean) ?? false,
+            kind: (c.kind as import('@/types/message').Conversation['kind']) ?? undefined,
+            workspaceName: (c.workspaceName as string | undefined) ?? undefined,
+          }))
+          // Sidebar / project list only shows app-side conversations;
+          // IM-origin chats are surfaced through the channel page.
+          .filter((c) => c.kind !== 'im')
         useChatStore.getState().setConversations(convs)
       } catch (err) {
         console.error('[App] reload conversations after conversation:created failed:', err)

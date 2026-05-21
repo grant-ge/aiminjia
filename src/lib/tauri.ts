@@ -737,10 +737,17 @@ export function getConversationMeta(
 // Channel types
 // ---------------------------------------------------------------------------
 
-export type ChannelPlatform = 'dingtalk' | 'feishu' | 'wechat' | 'wecom'
+export type ChannelPlatform =
+  | 'dingtalk'
+  | 'feishu'
+  | 'wechat'
+  | 'wecom'
+  | 'telegram'
+  | 'whatsapp'
 
 export type ChannelCapability = 'available' | 'comingSoon'
 
+// Mirror of src-tauri/src/connector/im/types.rs ChannelConnectionState (serde camelCase).
 export type ChannelConnectionState =
   | 'unconfigured'
   | 'disconnected'
@@ -748,6 +755,7 @@ export type ChannelConnectionState =
   | 'connected'
   | 'reconnecting'
   | 'configError'
+  | 'needsReauth'
 
 export type RobotCodeSource = 'registration' | 'appKeyFallback'
 
@@ -860,6 +868,66 @@ export function channelRevealSecret(platform: ChannelPlatform): Promise<string> 
   return invoke<string>('channel_reveal_secret', { platform })
 }
 
+// ---------------------------------------------------------------------------
+// Wecom-specific channel commands
+// ---------------------------------------------------------------------------
+
+export interface WecomTestConnectionResult {
+  ok: boolean
+  error: string | null
+}
+
+export function channelWecomSave(
+  botId: string,
+  secret: string,
+  displayName?: string,
+): Promise<ChannelPlatformState> {
+  return invoke<ChannelPlatformState>('channel_wecom_save', { botId, secret, displayName })
+}
+
+export function channelWecomTestConnection(
+  botId: string,
+  secret: string,
+): Promise<WecomTestConnectionResult> {
+  return invoke<WecomTestConnectionResult>('channel_wecom_test_connection', { botId, secret })
+}
+
+export function channelWecomRemove(): Promise<ChannelPlatformState> {
+  return invoke<ChannelPlatformState>('channel_wecom_remove')
+}
+
+export function channelWecomSetEnabled(enabled: boolean): Promise<ChannelPlatformState> {
+  return invoke<ChannelPlatformState>('channel_wecom_set_enabled', { enabled })
+}
+
+// ---- Wecom QR scan registration -------------------------------------------
+// 协议参考 @wecom/wecom-openclaw-cli 的扫码注册流程：begin → 拿 scode + 二维码 URL，
+// 用户用企业微信扫码并在 App 内确认创建机器人 → 前端按 intervalSeconds 轮询 →
+// 成功时拿到 botId/secret，前端再调 channelWecomSave 完成持久化 + 自动连接。
+
+export interface WecomBeginResult {
+  scode: string
+  authUrl: string
+  fallbackUrl: string
+  intervalSeconds: number
+  expiresInSeconds: number
+  source: string
+}
+
+export interface WecomPollResult {
+  state: 'waiting' | 'success'
+  botId: string | null
+  secret: string | null
+}
+
+export function channelWecomBeginRegistration(): Promise<WecomBeginResult> {
+  return invoke<WecomBeginResult>('channel_wecom_begin_registration')
+}
+
+export function channelWecomPollRegistration(scode: string): Promise<WecomPollResult> {
+  return invoke<WecomPollResult>('channel_wecom_poll_registration', { scode })
+}
+
 export function onChannelPlatformState(
   handler: (payload: ChannelPlatformStatePayload) => void,
 ): Promise<() => void> {
@@ -873,6 +941,77 @@ export function onChannelMessage(
   handler: (payload: ChannelMessagePayload) => void,
 ): Promise<() => void> {
   return listen<ChannelMessagePayload>(TAURI_EVENTS.CHANNEL_MESSAGE, (e) => handler(e.payload))
+}
+
+// ---------------------------------------------------------------------------
+// Telegram-specific channel commands
+// ---------------------------------------------------------------------------
+
+export interface TelegramPairingBeginResult {
+  code: string
+  deepLink: string
+  expiresInSeconds: number
+  botUsername: string
+}
+
+export interface TelegramPendingPairing {
+  code: string
+  /** Telegram user id (i64). JS number is safe up to 2^53. */
+  userId: number
+  firstName: string
+  username: string | null
+  requestedAt: string
+}
+
+export interface TelegramPairedUser {
+  /** Telegram user id (i64). JS number is safe up to 2^53; Telegram currently uses ~10-digit ids so headroom is large. */
+  userId: number
+  firstName: string
+  username: string | null
+}
+
+export function channelTelegramSave(token: string): Promise<ChannelPlatformState> {
+  return invoke<ChannelPlatformState>('channel_telegram_save', { token })
+}
+
+export function channelTelegramRemove(): Promise<ChannelPlatformState> {
+  return invoke<ChannelPlatformState>('channel_telegram_remove')
+}
+
+export function channelTelegramSetEnabled(enabled: boolean): Promise<ChannelPlatformState> {
+  return invoke<ChannelPlatformState>('channel_telegram_set_enabled', { enabled })
+}
+
+export function channelTelegramBeginPairing(): Promise<TelegramPairingBeginResult> {
+  return invoke<TelegramPairingBeginResult>('channel_telegram_begin_pairing')
+}
+
+export function channelTelegramListPendingPairings(): Promise<TelegramPendingPairing[]> {
+  return invoke<TelegramPendingPairing[]>('channel_telegram_list_pending_pairings')
+}
+
+export function channelTelegramApprovePairing(code: string): Promise<TelegramPairedUser> {
+  return invoke<TelegramPairedUser>('channel_telegram_approve_pairing', { code })
+}
+
+export function channelTelegramRejectPairing(code: string): Promise<void> {
+  return invoke<void>('channel_telegram_reject_pairing', { code })
+}
+
+export function channelTelegramRevokeUser(userId: number): Promise<ChannelPlatformState> {
+  return invoke<ChannelPlatformState>('channel_telegram_revoke_user', { userId })
+}
+
+export function channelTelegramListPairedUsers(): Promise<TelegramPairedUser[]> {
+  return invoke<TelegramPairedUser[]>('channel_telegram_list_paired_users')
+}
+
+// ---------------------------------------------------------------------------
+// WhatsApp-specific channel commands
+// ---------------------------------------------------------------------------
+
+export async function channelWhatsappUpdateAllowFrom(allowFrom: string[]): Promise<void> {
+  await invoke('channel_whatsapp_update_allow_from', { allowFrom })
 }
 
 export function restoreConversation(conversationId: string): Promise<void> {

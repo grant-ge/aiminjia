@@ -5,8 +5,8 @@
 use std::path::PathBuf;
 
 use super::{
-    RuntimeDependencyError, RuntimeDependencyResult, RuntimePlatform,
-    RuntimePlatformError, RuntimeResolver, WorkspaceDependencies,
+    RuntimeDependencyError, RuntimeDependencyResult, RuntimePlatform, RuntimePlatformError,
+    RuntimeResolver, WorkspaceDependencies,
 };
 
 #[derive(Debug, Clone)]
@@ -21,7 +21,10 @@ impl BundledRuntimeResolver {
 
     pub fn runtime_dir(&self) -> RuntimeDependencyResult<PathBuf> {
         let platform = RuntimePlatform::current().map_err(platform_err)?;
-        Ok(self.resource_dir.join("runtime").join(platform.manifest_key()))
+        Ok(self
+            .resource_dir
+            .join("runtime")
+            .join(platform.manifest_key()))
     }
 
     pub fn bundled_version(&self) -> Option<String> {

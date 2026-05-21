@@ -39,12 +39,8 @@ fn recorded_stages(bus: &RuntimeEventBus) -> Vec<TurnStage> {
 /// explicit `with_enabled(...)` to stay hermetic against the ambient env var.
 fn make_disabled_emitter() -> (TurnStageEmitter, RuntimeEventBus) {
     let bus = RuntimeEventBus::new();
-    let emitter = TurnStageEmitter::new(
-        bus.clone(),
-        SessionId::new("conv-X"),
-        RunId::new("run-Y"),
-    )
-    .with_enabled(false);
+    let emitter = TurnStageEmitter::new(bus.clone(), SessionId::new("conv-X"), RunId::new("run-Y"))
+        .with_enabled(false);
     (emitter, bus)
 }
 
@@ -54,7 +50,9 @@ async fn flag_off_emitter_drops_every_transition_silently() {
 
     emitter.submitted().await;
     emitter.waiting_llm(0).await;
-    emitter.tools_started(0, vec![running("Bash", "tc-1")]).await;
+    emitter
+        .tools_started(0, vec![running("Bash", "tc-1")])
+        .await;
     emitter
         .waiting_permission("Write".into(), "tc-2".into())
         .await;
@@ -79,12 +77,8 @@ async fn flag_off_emitter_drops_every_transition_silently() {
 #[tokio::test]
 async fn flag_on_emitter_records_every_transition_in_order() {
     let bus = RuntimeEventBus::new();
-    let emitter = TurnStageEmitter::new(
-        bus.clone(),
-        SessionId::new("conv-X"),
-        RunId::new("run-Y"),
-    )
-    .with_enabled(true);
+    let emitter = TurnStageEmitter::new(bus.clone(), SessionId::new("conv-X"), RunId::new("run-Y"))
+        .with_enabled(true);
 
     emitter.submitted().await;
     emitter.waiting_llm(0).await;
@@ -101,12 +95,19 @@ async fn flag_on_emitter_records_every_transition_in_order() {
     emitter.completing().await;
 
     let stages = recorded_stages(&bus);
-    assert_eq!(stages.len(), 7, "expected 7 transitions, got {}", stages.len());
+    assert_eq!(
+        stages.len(),
+        7,
+        "expected 7 transitions, got {}",
+        stages.len()
+    );
 
     assert!(matches!(stages[0], TurnStage::Submitted));
     assert!(matches!(stages[1], TurnStage::WaitingLlm { iteration: 0 }));
     match &stages[2] {
-        TurnStage::Tools { iteration, running, .. } => {
+        TurnStage::Tools {
+            iteration, running, ..
+        } => {
             assert_eq!(*iteration, 0);
             assert_eq!(running.len(), 2);
             assert_eq!(running[0].tool_name, "Bash");
@@ -115,14 +116,20 @@ async fn flag_on_emitter_records_every_transition_in_order() {
         other => panic!("expected Tools, got {other:?}"),
     }
     match &stages[3] {
-        TurnStage::WaitingPermission { tool_name, tool_call_id } => {
+        TurnStage::WaitingPermission {
+            tool_name,
+            tool_call_id,
+        } => {
             assert_eq!(tool_name, "Write");
             assert_eq!(tool_call_id, "tc-3");
         }
         other => panic!("expected WaitingPermission, got {other:?}"),
     }
     match &stages[4] {
-        TurnStage::WaitingInteraction { interaction_kind, interaction_id } => {
+        TurnStage::WaitingInteraction {
+            interaction_kind,
+            interaction_id,
+        } => {
             assert_eq!(interaction_kind, "AskUserQuestion");
             assert_eq!(interaction_id, "int-9");
         }
@@ -139,16 +146,14 @@ async fn every_stage_variant_maps_to_camelcase_legacy_event() {
     // protocol-stability check: any future refactor that changes field
     // names or casing must update this test.
     let bus = RuntimeEventBus::new();
-    let emitter = TurnStageEmitter::new(
-        bus.clone(),
-        SessionId::new("conv-X"),
-        RunId::new("run-Y"),
-    )
-    .with_enabled(true);
+    let emitter = TurnStageEmitter::new(bus.clone(), SessionId::new("conv-X"), RunId::new("run-Y"))
+        .with_enabled(true);
 
     emitter.submitted().await;
     emitter.waiting_llm(2).await;
-    emitter.tools_started(2, vec![running("Grep", "tc-1")]).await;
+    emitter
+        .tools_started(2, vec![running("Grep", "tc-1")])
+        .await;
     emitter
         .waiting_permission("Write".into(), "tc-9".into())
         .await;
@@ -174,7 +179,10 @@ async fn every_stage_variant_maps_to_camelcase_legacy_event() {
             legacy.payload["stageStartedAtMs"].is_u64(),
             "stageStartedAtMs must be a u64"
         );
-        assert!(legacy.payload["stage"].is_object(), "stage must be a JSON object");
+        assert!(
+            legacy.payload["stage"].is_object(),
+            "stage must be a JSON object"
+        );
         assert!(
             legacy.payload["stage"]["kind"].is_string(),
             "stage.kind must be the discriminator"
@@ -242,8 +250,8 @@ async fn waiting_permission_in_camelcase_does_not_leak_snake_case() {
     // Regression guard: if someone removes the per-variant rename_all on
     // TurnStage::WaitingPermission, this test catches the leak.
     let bus = RuntimeEventBus::new();
-    let emitter = TurnStageEmitter::new(bus.clone(), SessionId::new("c"), RunId::new("r"))
-        .with_enabled(true);
+    let emitter =
+        TurnStageEmitter::new(bus.clone(), SessionId::new("c"), RunId::new("r")).with_enabled(true);
     emitter
         .waiting_permission("Edit".into(), "tc-42".into())
         .await;

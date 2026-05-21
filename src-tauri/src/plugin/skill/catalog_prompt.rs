@@ -5,7 +5,10 @@ const CHARS_PER_TOKEN: usize = 4;
 const DEFAULT_CHAR_BUDGET: usize = 8_000;
 const MAX_LISTING_DESC_CHARS: usize = 250;
 
-pub fn format_skill_catalog_with_budget(skills: &[DiskSkill], context_window_tokens: usize) -> String {
+pub fn format_skill_catalog_with_budget(
+    skills: &[DiskSkill],
+    context_window_tokens: usize,
+) -> String {
     if skills.is_empty() {
         return String::new();
     }
@@ -24,7 +27,10 @@ pub fn format_skill_catalog_with_budget(skills: &[DiskSkill], context_window_tok
             desc.push_str(when);
         }
         if desc.chars().count() > MAX_LISTING_DESC_CHARS {
-            desc = desc.chars().take(MAX_LISTING_DESC_CHARS).collect::<String>();
+            desc = desc
+                .chars()
+                .take(MAX_LISTING_DESC_CHARS)
+                .collect::<String>();
             desc.push('…');
         }
         lines.push(format!("- `{}` — {}", skill.id, desc));

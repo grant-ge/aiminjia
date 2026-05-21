@@ -5,15 +5,19 @@
 use anyhow::Result;
 use serde_json::Value;
 
-use crate::plugin::context::PluginContext;
-use super::super::{require_str, optional_str};
+use super::super::{optional_str, require_str};
 use super::get_bridge;
+use crate::plugin::context::PluginContext;
 
 fn truncate_str(s: &str, max_chars: usize) -> String {
     if s.chars().count() <= max_chars {
         s.to_string()
     } else {
-        let end = s.char_indices().nth(max_chars).map(|(i, _)| i).unwrap_or(s.len());
+        let end = s
+            .char_indices()
+            .nth(max_chars)
+            .map(|(i, _)| i)
+            .unwrap_or(s.len());
         format!("{}...", &s[..end])
     }
 }
@@ -25,7 +29,8 @@ pub async fn handle_dingtalk_list_groups(ctx: &PluginContext, args: &Value) -> R
 
     let result = bridge.query(&["chat", "search", "--query", query]).await?;
 
-    let groups = result.get("result")
+    let groups = result
+        .get("result")
         .and_then(|r| r.get("value"))
         .and_then(|v| v.as_array());
 
@@ -33,20 +38,34 @@ pub async fn handle_dingtalk_list_groups(ctx: &PluginContext, args: &Value) -> R
         if groups.is_empty() {
             return Ok("No groups found.".into());
         }
-        let total = result.get("result")
+        let total = result
+            .get("result")
             .and_then(|r| r.get("total"))
             .and_then(|v| v.as_i64())
             .unwrap_or(groups.len() as i64);
-        let mut output = format!("Found {} conversation(s) (showing {}):\n\n", total, groups.len());
+        let mut output = format!(
+            "Found {} conversation(s) (showing {}):\n\n",
+            total,
+            groups.len()
+        );
         for g in groups {
             let name = g.get("title").and_then(|v| v.as_str()).unwrap_or("Unnamed");
-            let gid = g.get("openConversationId").and_then(|v| v.as_str()).unwrap_or("?");
+            let gid = g
+                .get("openConversationId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
             let members = g.get("memberCount").and_then(|v| v.as_i64()).unwrap_or(0);
-            output.push_str(&format!("- **{}** ({} members, id: `{}`)\n", name, members, gid));
+            output.push_str(&format!(
+                "- **{}** ({} members, id: `{}`)\n",
+                name, members, gid
+            ));
         }
         Ok(output)
     } else {
-        Ok(format!("Groups:\n```json\n{}\n```", serde_json::to_string_pretty(&result)?))
+        Ok(format!(
+            "Groups:\n```json\n{}\n```",
+            serde_json::to_string_pretty(&result)?
+        ))
     }
 }
 
@@ -59,10 +78,15 @@ pub async fn handle_dingtalk_send_message(ctx: &PluginContext, args: &Value) -> 
     let text = require_str(args, "text")?;
 
     let mut cmd_args = vec![
-        "chat", "message", "send-by-bot",
-        "--robot-code", robot_code,
-        "--group", group_id,
-        "--text", text,
+        "chat",
+        "message",
+        "send-by-bot",
+        "--robot-code",
+        robot_code,
+        "--group",
+        group_id,
+        "--text",
+        text,
     ];
     if !title.is_empty() {
         cmd_args.extend(["--title", title]);
@@ -72,7 +96,8 @@ pub async fn handle_dingtalk_send_message(ctx: &PluginContext, args: &Value) -> 
 
     Ok(format!(
         "Message sent to group `{}`.\n\nContent: {}",
-        group_id, truncate_str(text, 100)
+        group_id,
+        truncate_str(text, 100)
     ))
 }
 
@@ -83,7 +108,8 @@ pub async fn handle_dingtalk_search_chat(ctx: &PluginContext, args: &Value) -> R
 
     let result = bridge.query(&["chat", "search", "--query", query]).await?;
 
-    let groups = result.get("result")
+    let groups = result
+        .get("result")
         .and_then(|r| r.get("value"))
         .and_then(|v| v.as_array());
 
@@ -91,16 +117,32 @@ pub async fn handle_dingtalk_search_chat(ctx: &PluginContext, args: &Value) -> R
         if groups.is_empty() {
             return Ok(format!("No conversations found for \"{}\".", query));
         }
-        let mut output = format!("Found {} result(s) matching \"{}\":\n\n", groups.len(), query);
+        let mut output = format!(
+            "Found {} result(s) matching \"{}\":\n\n",
+            groups.len(),
+            query
+        );
         for (i, g) in groups.iter().enumerate().take(10) {
             let name = g.get("title").and_then(|v| v.as_str()).unwrap_or("?");
-            let gid = g.get("openConversationId").and_then(|v| v.as_str()).unwrap_or("?");
+            let gid = g
+                .get("openConversationId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
             let members = g.get("memberCount").and_then(|v| v.as_i64()).unwrap_or(0);
-            output.push_str(&format!("{}. **{}** ({} members, id: `{}`)\n", i + 1, name, members, gid));
+            output.push_str(&format!(
+                "{}. **{}** ({} members, id: `{}`)\n",
+                i + 1,
+                name,
+                members,
+                gid
+            ));
         }
         Ok(output)
     } else {
-        Ok(format!("Search results:\n```json\n{}\n```", serde_json::to_string_pretty(&result)?))
+        Ok(format!(
+            "Search results:\n```json\n{}\n```",
+            serde_json::to_string_pretty(&result)?
+        ))
     }
 }
 

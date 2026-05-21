@@ -229,7 +229,10 @@ fn preview_from_bytes(file_name: &str, file_type: &str, bytes: Vec<u8>) -> FileP
     }
 
     let Some(kind) = normalize_preview_kind(file_name, file_type) else {
-        return unsupported_preview(file_name, format!("File type '{}' is not supported", file_type));
+        return unsupported_preview(
+            file_name,
+            format!("File type '{}' is not supported", file_type),
+        );
     };
 
     if matches!(kind, "png" | "jpeg" | "webp" | "gif" | "bmp" | "svg") {
@@ -465,17 +468,15 @@ pub async fn save_clipboard_image_to_workspace_staging(
     bytes: Vec<u8>,
     mime_type: String,
 ) -> Result<SavedClipboardAttachment, String> {
-    save_clipboard_image_to_tmp_clipboard_impl(
-        &aijia_home.tmp_clipboard_dir(),
-        &bytes,
-        &mime_type,
-    )
+    save_clipboard_image_to_tmp_clipboard_impl(&aijia_home.tmp_clipboard_dir(), &bytes, &mime_type)
 }
 
 /// Best-effort cleanup: remove files older than `max_age_days` from the
 /// given tmp clipboard directory. Errors are swallowed.
 pub fn cleanup_workspace_clipboard_staging(dir: &Path, max_age_days: u64) {
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     let cutoff = std::time::SystemTime::now()
         .checked_sub(std::time::Duration::from_secs(max_age_days * 86_400));
     for entry in entries.flatten() {
@@ -651,13 +652,21 @@ pub async fn get_local_file_preview(path: String) -> Result<FilePreview, String>
 
     let metadata = match std::fs::metadata(p) {
         Ok(m) => m,
-        Err(e) => return Ok(unsupported_preview(&file_name, format!("File is unavailable: {}", e))),
+        Err(e) => {
+            return Ok(unsupported_preview(
+                &file_name,
+                format!("File is unavailable: {}", e),
+            ))
+        }
     };
     if !metadata.is_file() {
         return Ok(unsupported_preview(&file_name, "Not a regular file"));
     }
     if metadata.len() > MAX_PREVIEW_BYTES {
-        return Ok(unsupported_preview(&file_name, "File is too large to preview"));
+        return Ok(unsupported_preview(
+            &file_name,
+            "File is too large to preview",
+        ));
     }
 
     let file_type = p
@@ -675,7 +684,12 @@ pub async fn get_local_file_preview(path: String) -> Result<FilePreview, String>
 
     let bytes = match std::fs::read(p) {
         Ok(b) => b,
-        Err(e) => return Ok(unsupported_preview(&file_name, format!("File is unavailable: {}", e))),
+        Err(e) => {
+            return Ok(unsupported_preview(
+                &file_name,
+                format!("File is unavailable: {}", e),
+            ))
+        }
     };
 
     Ok(preview_from_bytes(&file_name, &file_type, bytes))

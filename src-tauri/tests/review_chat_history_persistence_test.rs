@@ -74,10 +74,7 @@ fn review_tool_message_round_trip() {
         tool_msg["toolResult"]["toolCallId"].as_str().unwrap(),
         "tc-001"
     );
-    assert_eq!(
-        tool_msg["toolResult"]["name"].as_str().unwrap(),
-        "Bash"
-    );
+    assert_eq!(tool_msg["toolResult"]["name"].as_str().unwrap(), "Bash");
     assert_eq!(
         tool_msg["toolResult"]["content"].as_str().unwrap(),
         "Page ready: https://example.com"

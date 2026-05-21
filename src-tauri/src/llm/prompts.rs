@@ -672,11 +672,7 @@ mod tests {
         init_prompts(&bundled, &user);
 
         let parts = build_system_prompt_parts(PromptMode::Daily, None, None);
-        for retired_tool in [
-            "save_memory",
-            "load_core_memory",
-            "distill_memories",
-        ] {
+        for retired_tool in ["save_memory", "load_core_memory", "distill_memories"] {
             assert!(
                 !parts.static_section.contains(retired_tool),
                 "system prompt must not mention retired tool name {}",

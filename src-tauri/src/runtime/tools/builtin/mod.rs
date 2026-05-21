@@ -9,17 +9,17 @@ pub mod grep;
 pub mod load_skill;
 pub mod memory;
 pub mod network;
-pub mod send_message;
 #[cfg(windows)]
 pub mod powershell;
 #[cfg(windows)]
 pub mod powershell_detect;
+pub mod send_message;
 pub mod shell_common;
 pub mod skill_smith;
 pub mod spawn_subagent;
+pub mod task_output;
 pub mod task_stop;
 pub mod task_tools;
-pub mod task_output;
 pub mod team_tools;
 pub mod teammate_stop;
 pub mod workspace;

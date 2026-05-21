@@ -5,9 +5,7 @@ use std::fs;
 use std::sync::Arc;
 use tempfile::TempDir;
 
-use app_lib::runtime::dependencies::{
-    BundledRuntimeResolver, RuntimePlatform, RuntimeResolver,
-};
+use app_lib::runtime::dependencies::{BundledRuntimeResolver, RuntimePlatform, RuntimeResolver};
 
 #[test]
 fn bundled_resolver_finds_runtime_for_current_platform() {
@@ -20,7 +18,14 @@ fn bundled_resolver_finds_runtime_for_current_platform() {
     // Lay out per the spec
     let layout = app_lib::runtime::dependencies::RuntimeLayout::for_platform(platform);
     let deps = layout.workspace_dependencies(&runtime_dir);
-    for path in [&deps.python, &deps.node, &deps.npm, &deps.npx, &deps.uv, &deps.uvx] {
+    for path in [
+        &deps.python,
+        &deps.node,
+        &deps.npm,
+        &deps.npx,
+        &deps.uv,
+        &deps.uvx,
+    ] {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).unwrap();
         }
@@ -70,8 +75,17 @@ fn chain_falls_back_to_installed_when_bundled_missing() {
     let platform = RuntimePlatform::current().unwrap();
     let layout = app_lib::runtime::dependencies::RuntimeLayout::for_platform(platform);
     let deps = layout.workspace_dependencies(&install_dir);
-    for p in [&deps.python, &deps.node, &deps.npm, &deps.npx, &deps.uv, &deps.uvx] {
-        if let Some(parent) = p.parent() { fs::create_dir_all(parent).unwrap(); }
+    for p in [
+        &deps.python,
+        &deps.node,
+        &deps.npm,
+        &deps.npx,
+        &deps.uv,
+        &deps.uvx,
+    ] {
+        if let Some(parent) = p.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
         fs::write(p, b"").unwrap();
     }
     fs::create_dir_all(&deps.node_modules).unwrap();
@@ -81,6 +95,8 @@ fn chain_falls_back_to_installed_when_bundled_missing() {
     let installed = InstalledRuntimeResolver::new(&bundle_root);
     let chain = ChainResolver::new(vec![Arc::new(bundled), Arc::new(installed)]);
 
-    let resolved = chain.workspace_dependencies().expect("chain resolves via installed");
+    let resolved = chain
+        .workspace_dependencies()
+        .expect("chain resolves via installed");
     assert_eq!(resolved.node, deps.node);
 }

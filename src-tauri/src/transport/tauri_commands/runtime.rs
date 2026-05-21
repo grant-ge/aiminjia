@@ -362,9 +362,15 @@ pub async fn runtime_diagnostics(
         "none"
     };
 
-    let node_v = diag_run_version(&deps.node).await.unwrap_or_else(|| "unknown".into());
-    let py_v = diag_run_version(&deps.python).await.unwrap_or_else(|| "unknown".into());
-    let uv_v = diag_run_version(&deps.uv).await.unwrap_or_else(|| "unknown".into());
+    let node_v = diag_run_version(&deps.node)
+        .await
+        .unwrap_or_else(|| "unknown".into());
+    let py_v = diag_run_version(&deps.python)
+        .await
+        .unwrap_or_else(|| "unknown".into());
+    let uv_v = diag_run_version(&deps.uv)
+        .await
+        .unwrap_or_else(|| "unknown".into());
 
     let installed_version = diag_read_installed_version(&app);
 
@@ -390,14 +396,20 @@ async fn diag_run_version(path: &std::path::Path) -> Option<String> {
         .await
         .ok()?
         .ok()?;
-    let merged = if out.stdout.is_empty() { out.stderr } else { out.stdout };
+    let merged = if out.stdout.is_empty() {
+        out.stderr
+    } else {
+        out.stdout
+    };
     Some(String::from_utf8_lossy(&merged).trim().to_string())
 }
 
 fn diag_read_installed_version(app: &tauri::AppHandle) -> Option<String> {
     use tauri::Manager;
     let home = app.try_state::<crate::storage::aijia_home::AiJiaHome>()?;
-    let pointer = home.root().join("runtimes/renlijia-primary-runtime/current");
+    let pointer = home
+        .root()
+        .join("runtimes/renlijia-primary-runtime/current");
     let content = std::fs::read_to_string(&pointer).ok()?;
     let trimmed = content.trim().trim_start_matches("versions/");
     Some(trimmed.to_string())

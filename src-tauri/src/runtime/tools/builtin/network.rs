@@ -47,9 +47,14 @@ impl WebSearchRuntimeTool {
 
 #[async_trait]
 impl RuntimeTool for WebSearchRuntimeTool {
-    fn id(&self) -> &str { "WebSearch" }
-    
-    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "WebSearch"
+    }
+
+    async fn definition(
+        &self,
+        _ctx: &crate::runtime::tools::ToolDescriptionContext,
+    ) -> ToolDefinition {
         TOOL_CATALOG
             .get("WebSearch")
             .unwrap_or_else(|| ToolDefinition::new("WebSearch", "搜索互联网获取最新信息"))

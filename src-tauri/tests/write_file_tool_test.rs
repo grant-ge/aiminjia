@@ -75,7 +75,10 @@ async fn write_file_rejects_path_traversal() {
 
     let tool = WriteFileRuntimeTool;
     let result = tool
-        .execute(json!({ "file_path": "../escape.txt", "content": "evil" }), ctx)
+        .execute(
+            json!({ "file_path": "../escape.txt", "content": "evil" }),
+            ctx,
+        )
         .await;
 
     assert!(result.is_err(), "Path traversal should be rejected");

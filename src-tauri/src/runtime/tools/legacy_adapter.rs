@@ -107,7 +107,10 @@ impl RuntimeTool for LegacyToolAdapter {
         &self.definition.id
     }
 
-    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
+    async fn definition(
+        &self,
+        _ctx: &crate::runtime::tools::ToolDescriptionContext,
+    ) -> ToolDefinition {
         self.definition.clone()
     }
 

@@ -52,8 +52,7 @@ where
     let value = Option::<StringOrVec>::deserialize(deserializer)?;
     Ok(match value {
         None => Vec::new(),
-        Some(StringOrVec::String(s)) => shell_words::split(&s)
-            .map_err(serde::de::Error::custom)?,
+        Some(StringOrVec::String(s)) => shell_words::split(&s).map_err(serde::de::Error::custom)?,
         Some(StringOrVec::Vec(v)) => v,
     })
 }

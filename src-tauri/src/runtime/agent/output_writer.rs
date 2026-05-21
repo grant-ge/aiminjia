@@ -108,7 +108,11 @@ impl TranscriptLine {
         Self {
             role: "assistant".to_string(),
             content: content.into(),
-            tool_calls: if tool_calls.is_empty() { None } else { Some(tool_calls) },
+            tool_calls: if tool_calls.is_empty() {
+                None
+            } else {
+                Some(tool_calls)
+            },
             tool_call_id: None,
             tool_name: None,
             from: None,

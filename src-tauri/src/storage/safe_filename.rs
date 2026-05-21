@@ -5,13 +5,12 @@
 //! that's fine on macOS will silently fail to write on Windows. Validate at the
 //! boundary instead.
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 
 const FORBIDDEN_CHARS: &[char] = &['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
 const RESERVED_NAMES: &[&str] = &[
-    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6",
-    "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6",
-    "LPT7", "LPT8", "LPT9",
+    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+    "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
 ];
 
 /// Validate a filename for cross-platform filesystem safety. Returns Err with
@@ -38,10 +37,7 @@ pub fn ensure_safe_filename(name: &str) -> Result<()> {
     }
     for ch in name.chars() {
         if (ch as u32) < 0x20 {
-            return Err(anyhow!(
-                "filename '{}' contains a control character",
-                name
-            ));
+            return Err(anyhow!("filename '{}' contains a control character", name));
         }
         if FORBIDDEN_CHARS.contains(&ch) {
             return Err(anyhow!(
@@ -52,14 +48,8 @@ pub fn ensure_safe_filename(name: &str) -> Result<()> {
         }
     }
     let stem = name.split('.').next().unwrap_or(name);
-    if RESERVED_NAMES
-        .iter()
-        .any(|r| stem.eq_ignore_ascii_case(r))
-    {
-        return Err(anyhow!(
-            "filename '{}' uses a Windows reserved name",
-            name
-        ));
+    if RESERVED_NAMES.iter().any(|r| stem.eq_ignore_ascii_case(r)) {
+        return Err(anyhow!("filename '{}' uses a Windows reserved name", name));
     }
     Ok(())
 }

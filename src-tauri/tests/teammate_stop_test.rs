@@ -4,9 +4,7 @@ use std::sync::Arc;
 
 use serde_json::json;
 
-use app_lib::runtime::agent::{
-    AgentNameRegistry, CancellationRegistry,
-};
+use app_lib::runtime::agent::{AgentNameRegistry, CancellationRegistry};
 use app_lib::runtime::cancellation::CancellationToken;
 use app_lib::runtime::ids::{AgentId, SessionId};
 use app_lib::runtime::tools::builtin::teammate_stop::TeammateStopRuntimeTool;
@@ -104,5 +102,8 @@ async fn stop_missing_agent_name_field_errors() {
         .await
         .unwrap_err();
     let msg = format!("{err:?}");
-    assert!(msg.contains("agent_name"), "expected missing-field error: {msg}");
+    assert!(
+        msg.contains("agent_name"),
+        "expected missing-field error: {msg}"
+    );
 }

@@ -76,7 +76,10 @@ async fn cancels_running_task_and_marks_killed() {
     assert!(result.is_ok(), "TaskStop should succeed: {:?}", result);
 
     // Cancel token must have been triggered with BackgroundStop reason
-    assert!(token.is_cancelled(), "cancel token must be cancelled after TaskStop");
+    assert!(
+        token.is_cancelled(),
+        "cancel token must be cancelled after TaskStop"
+    );
     assert_eq!(
         token.reason(),
         Some(CancellationReason::BackgroundStop),
@@ -139,11 +142,12 @@ async fn rejects_already_terminal_task() {
 async fn rejects_missing_task_id_field() {
     let store = Arc::new(AsyncAgentTaskStore::new());
     // Input has no task_id key at all
-    let result = tool(store)
-        .execute(json!({}), ctx())
-        .await;
+    let result = tool(store).execute(json!({}), ctx()).await;
 
-    assert!(result.is_err(), "should return Err when task_id field is missing");
+    assert!(
+        result.is_err(),
+        "should return Err when task_id field is missing"
+    );
     match result.unwrap_err() {
         ToolError::InputValidationError { tool_name, message } => {
             assert_eq!(tool_name, "TaskStop");
@@ -162,11 +166,12 @@ async fn rejects_missing_task_id_field() {
 async fn rejects_empty_task_id_string() {
     let store = Arc::new(AsyncAgentTaskStore::new());
     // Input has task_id = "" (empty string, should be rejected)
-    let result = tool(store)
-        .execute(json!({"task_id": ""}), ctx())
-        .await;
+    let result = tool(store).execute(json!({"task_id": ""}), ctx()).await;
 
-    assert!(result.is_err(), "should return Err for empty task_id string");
+    assert!(
+        result.is_err(),
+        "should return Err for empty task_id string"
+    );
     match result.unwrap_err() {
         ToolError::InputValidationError { tool_name, message } => {
             assert_eq!(tool_name, "TaskStop");

@@ -8,9 +8,7 @@ use anyhow::Result;
 use chrono::Utc;
 use tempfile::TempDir;
 
-use app_lib::runtime::agenda::{
-    AgendaItem, AgendaItemId, AgendaStore, ItemStatus, Participant,
-};
+use app_lib::runtime::agenda::{AgendaItem, AgendaItemId, AgendaStore, ItemStatus, Participant};
 
 #[test]
 fn purging_employee_marks_dependent_agenda_orphaned() -> Result<()> {

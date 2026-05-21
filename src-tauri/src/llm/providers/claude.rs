@@ -171,10 +171,7 @@ impl ClaudeProvider {
         if !self.is_direct {
             if let Some(conv_id) = request.conversation_id.as_deref() {
                 if !conv_id.is_empty() {
-                    headers.insert(
-                        "X-Lotus-Conversation-ID".to_string(),
-                        conv_id.to_string(),
-                    );
+                    headers.insert("X-Lotus-Conversation-ID".to_string(), conv_id.to_string());
                 }
             }
             // AIjia trace headers — pure observability, propagated to gateway
@@ -644,9 +641,9 @@ fn concat_user_content(a: Value, b: Value) -> Value {
     blocks.extend(user_content_to_blocks(a));
     blocks.extend(user_content_to_blocks(b));
 
-    let (tool_results, others): (Vec<_>, Vec<_>) = blocks.into_iter().partition(|block| {
-        block.get("type").and_then(|v| v.as_str()) == Some("tool_result")
-    });
+    let (tool_results, others): (Vec<_>, Vec<_>) = blocks
+        .into_iter()
+        .partition(|block| block.get("type").and_then(|v| v.as_str()) == Some("tool_result"));
     let mut hoisted: Vec<Value> = Vec::with_capacity(tool_results.len() + others.len());
     hoisted.extend(tool_results);
     hoisted.extend(others);
@@ -799,9 +796,9 @@ impl LlmProviderTrait for ClaudeProvider {
                                     let raw = e.into_bytes();
                                     // Append the valid prefix to the buffer
                                     // SAFETY: raw[..valid_up_to] is guaranteed valid UTF-8
-                                    state.buffer.push_str(
-                                        unsafe { std::str::from_utf8_unchecked(&raw[..valid_up_to]) }
-                                    );
+                                    state.buffer.push_str(unsafe {
+                                        std::str::from_utf8_unchecked(&raw[..valid_up_to])
+                                    });
                                     // Stash trailing incomplete bytes for the next chunk
                                     state.incomplete_utf8 = raw[valid_up_to..].to_vec();
                                 }
@@ -1119,7 +1116,11 @@ mod tests {
         ];
 
         let merged = merge_consecutive_user_messages(input);
-        assert_eq!(merged.len(), 2, "the two user messages must collapse into one");
+        assert_eq!(
+            merged.len(),
+            2,
+            "the two user messages must collapse into one"
+        );
         assert_eq!(merged[1]["role"], "user");
         let blocks = merged[1]["content"].as_array().expect("content is array");
         assert_eq!(blocks.len(), 2);
@@ -1473,7 +1474,10 @@ mod tests {
         // and matches the official claude-code reference implementation.)
         assert_eq!(messages.len(), 1);
         let content = messages[0]["content"].as_array().unwrap();
-        assert_eq!(content[0], json!({"type": "text", "text": "Context message"}));
+        assert_eq!(
+            content[0],
+            json!({"type": "text", "text": "Context message"})
+        );
         assert_eq!(
             content[1],
             json!({"type": "text", "text": "Describe this image"})

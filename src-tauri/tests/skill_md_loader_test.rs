@@ -25,8 +25,14 @@ fn loads_user_and_global_skills_with_user_precedence() {
     let skills = skills.expect("skills should load");
 
     assert_eq!(skills.len(), 2);
-    assert_eq!(skills.get("salary-query").unwrap().frontmatter.description, "user desc");
-    assert_eq!(skills.get("biz-writing").unwrap().frontmatter.description, "biz desc");
+    assert_eq!(
+        skills.get("salary-query").unwrap().frontmatter.description,
+        "user desc"
+    );
+    assert_eq!(
+        skills.get("biz-writing").unwrap().frontmatter.description,
+        "biz desc"
+    );
 }
 
 #[test]
@@ -34,7 +40,11 @@ fn skips_hidden_draft_and_invalid_entries() {
     let root = TempDir::new().unwrap();
     write_skill(root.path(), "valid-skill", "valid", "body");
     write_skill(root.path(), "_draft", "draft", "body");
-    fs::write(root.path().join("loose.md"), "---\nname: loose\ndescription: no\n---\n").unwrap();
+    fs::write(
+        root.path().join("loose.md"),
+        "---\nname: loose\ndescription: no\n---\n",
+    )
+    .unwrap();
 
     let skills = load_skill_roots(&[root.path().to_path_buf()]).unwrap();
     assert!(skills.contains_key("valid-skill"));

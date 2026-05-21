@@ -173,6 +173,25 @@ impl AppStorage {
         Ok(())
     }
 
+    /// IM-aware variant: stamps `im_source` on both conv.json + index.json
+    /// when an inbound IM message triggers the first turn of a new
+    /// conversation. App-side `create_conversation` keeps `im_source = None`.
+    pub fn create_conversation_with_im_source(
+        &self,
+        id: &str,
+        title: &str,
+        im_source: &str,
+    ) -> Result<()> {
+        let _lock = self.write_lock.lock().unwrap();
+        conversations::create_conversation_with_im_source(
+            &self.base_dir,
+            id,
+            title,
+            Some(im_source),
+        )?;
+        Ok(())
+    }
+
     pub fn update_conversation_title(&self, id: &str, title: &str) -> Result<()> {
         let _lock = self.write_lock.lock().unwrap();
         conversations::update_conversation_title(&self.base_dir, id, title)?;
@@ -584,13 +603,8 @@ impl AppStorage {
         tag_filter: Option<&str>,
     ) -> Result<Vec<serde_json::Value>> {
         // Phase 1: Search (read-only, no lock needed)
-        let results = cognitive::search_memory_readonly(
-            &self.base_dir,
-            query,
-            category,
-            days,
-            tag_filter,
-        )?;
+        let results =
+            cognitive::search_memory_readonly(&self.base_dir, query, category, days, tag_filter)?;
 
         // Phase 2: Record hit counts (write, needs lock)
         if !results.is_empty() {
@@ -986,6 +1000,25 @@ impl crate::runtime::store::ConversationStore for FileConversationStore {
         self.storage.create_conversation(id, title)
     }
 
+    fn create_conversation_with_im_source(
+        &self,
+        id: &str,
+        title: &str,
+        im_source: &str,
+    ) -> Result<()> {
+        self.storage
+            .create_conversation_with_im_source(id, title, im_source)
+    }
+
+    fn backfill_conversation_im_source(&self, id: &str, _im_source: &str) -> Result<()> {
+        // Platform string is intentionally ignored here — ConversationSource::Im
+        // is platform-agnostic; the per-platform `channels/<p>/sessions.json` is
+        // the source of truth for which platform the session belongs to.
+        let _lock = self.storage.write_lock.lock().unwrap();
+        conversations::backfill_conversation_to_im(&self.storage.base_dir, id)?;
+        Ok(())
+    }
+
     fn list_conversation_ids(&self) -> Result<Vec<String>> {
         let convs = self.storage.get_conversations()?;
         Ok(convs
@@ -1048,6 +1081,23 @@ impl crate::runtime::store::ConversationStore for FileConversationStore {
 impl crate::runtime::store::ConversationStore for AppStorage {
     fn create_conversation(&self, id: &str, title: &str) -> Result<()> {
         self.create_conversation(id, title)
+    }
+
+    fn create_conversation_with_im_source(
+        &self,
+        id: &str,
+        title: &str,
+        im_source: &str,
+    ) -> Result<()> {
+        self.create_conversation_with_im_source(id, title, im_source)
+    }
+
+    fn backfill_conversation_im_source(&self, id: &str, _im_source: &str) -> Result<()> {
+        // See FileConversationStore impl: platform string ignored, only
+        // mark conv.json + index.json as IM-originated.
+        let _lock = self.write_lock.lock().unwrap();
+        conversations::backfill_conversation_to_im(&self.base_dir, id)?;
+        Ok(())
     }
 
     fn list_conversation_ids(&self) -> Result<Vec<String>> {

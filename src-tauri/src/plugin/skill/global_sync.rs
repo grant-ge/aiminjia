@@ -94,7 +94,6 @@ impl GlobalSkillsState {
     }
 }
 
-
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GlobalSkillInstallReport {
     pub installed: Vec<String>,
@@ -529,8 +528,7 @@ pub async fn sync_skill_packages_from_server(
     );
 
     // 2. Read local installed-version state (None if first run or schema mismatch)
-    let local_state = read_global_skills_state(&config.state_path)?
-        .unwrap_or_default();
+    let local_state = read_global_skills_state(&config.state_path)?.unwrap_or_default();
     log::info!(
         "[skill-sync] local state has {} installed skills: {:?}",
         local_state.installed.len(),
@@ -541,12 +539,10 @@ pub async fn sync_skill_packages_from_server(
     let mut new_installed: HashMap<String, String> = local_state.installed.clone();
     let mut remote_ids: HashSet<String> = HashSet::new();
 
-    fs::create_dir_all(&config.downloads_dir).with_context(|| {
-        format!("create downloads dir '{}'", config.downloads_dir.display())
-    })?;
-    fs::create_dir_all(&config.prepared_dir).with_context(|| {
-        format!("create prepared dir '{}'", config.prepared_dir.display())
-    })?;
+    fs::create_dir_all(&config.downloads_dir)
+        .with_context(|| format!("create downloads dir '{}'", config.downloads_dir.display()))?;
+    fs::create_dir_all(&config.prepared_dir)
+        .with_context(|| format!("create prepared dir '{}'", config.prepared_dir.display()))?;
 
     // 3. Install or update remote skills whose version changed (or are missing locally)
     for item in &list.data {
@@ -634,10 +630,7 @@ pub async fn sync_skill_packages_from_server(
     Ok(report)
 }
 
-pub fn reload_skill_registry(
-    skill_roots: &[PathBuf],
-    registry: &Arc<Mutex<SkillRegistry>>,
-) {
+pub fn reload_skill_registry(skill_roots: &[PathBuf], registry: &Arc<Mutex<SkillRegistry>>) {
     match load_skill_roots(skill_roots) {
         Ok(skills) => match registry.lock() {
             Ok(mut guard) => {

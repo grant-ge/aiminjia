@@ -646,7 +646,7 @@ pub fn run() {
                     permission_store.clone(),
                     app.handle().clone(),
                     Some(channel_session_ids.clone()
-                        as Arc<dyn connector::channel::ask_coordinator::ChannelSessionRegistry>),
+                        as Arc<dyn connector::im::ask_coordinator::ChannelSessionRegistry>),
                 ),
             );
             // LTR P2 follow-up: wire Path C wake (continuation turn triggered by
@@ -774,25 +774,25 @@ pub fn run() {
                     .clone();
 
                 // reply_manager is shared between ChannelManager and the coordinator (as AskOutputSink)
-                let reply_manager = Arc::new(connector::channel::DingtalkReplyManager::new());
+                let reply_manager = Arc::new(connector::im::DingtalkReplyManager::new());
 
-                let judge = Arc::new(connector::channel::ask_coordinator::GatewayAskReplyJudge::new(
+                let judge = Arc::new(connector::im::ask_coordinator::GatewayAskReplyJudge::new(
                     gateway_ref,
                     models::settings::AppSettings::default(),
                 ));
                 let ask_coordinator = Arc::new(
-                    connector::channel::ask_coordinator::IMAskCoordinator::new(
+                    connector::im::ask_coordinator::IMAskCoordinator::new(
                         channel_session_ids.clone()
-                            as Arc<dyn connector::channel::ask_coordinator::ChannelSessionRegistry>,
+                            as Arc<dyn connector::im::ask_coordinator::ChannelSessionRegistry>,
                         reply_manager.clone()
-                            as Arc<dyn connector::channel::ask_coordinator::AskOutputSink>,
+                            as Arc<dyn connector::im::ask_coordinator::AskOutputSink>,
                         chat_adapter_ref.permission_control_plane(),
                         chat_adapter_ref.interaction_control_plane(),
                         judge,
                     ),
                 );
 
-                let channel_manager = Arc::new(connector::channel::ChannelManager::new(
+                let channel_manager = Arc::new(connector::im::ChannelManager::new(
                     app.handle().clone(),
                     chat_adapter_ref,
                     app.state::<Arc<storage::file_store::RuntimeRepositoryFacade>>()
@@ -1053,6 +1053,22 @@ pub fn run() {
             commands::channel::channel_set_enabled,
             commands::channel::channel_remove_platform,
             commands::channel::channel_reveal_secret,
+            commands::channel::channel_wecom_save,
+            commands::channel::channel_wecom_test_connection,
+            commands::channel::channel_wecom_remove,
+            commands::channel::channel_wecom_set_enabled,
+            commands::channel::channel_wecom_begin_registration,
+            commands::channel::channel_wecom_poll_registration,
+            commands::channel::channel_telegram_save,
+            commands::channel::channel_telegram_remove,
+            commands::channel::channel_telegram_set_enabled,
+            commands::channel::channel_telegram_begin_pairing,
+            commands::channel::channel_telegram_list_pending_pairings,
+            commands::channel::channel_telegram_approve_pairing,
+            commands::channel::channel_telegram_reject_pairing,
+            commands::channel::channel_telegram_revoke_user,
+            commands::channel::channel_telegram_list_paired_users,
+            commands::channel::channel_whatsapp_update_allow_from,
             // Pending queue commands
             crate::transport::tauri_commands::pending::pending_snapshot_for_session,
             crate::transport::tauri_commands::pending::pending_remove_item,

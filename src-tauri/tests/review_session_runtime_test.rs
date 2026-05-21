@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use app_lib::runtime::cancellation::{CancellationReason, CancellationToken};
+use app_lib::runtime::chat::chat_turn_driver::ChatAttachmentRef;
 use app_lib::runtime::chat::tool_round_types::RuntimeToolCallRequest;
 use app_lib::runtime::chat::turn_config::{
     LlmStepInput, LlmStepResult, TurnConfigOverrides, TurnError,
@@ -11,7 +12,6 @@ use app_lib::runtime::event_bus::RuntimeEventBus;
 use app_lib::runtime::events::RuntimeEventKind;
 use app_lib::runtime::ids::{RunId, SessionId};
 use app_lib::runtime::query_engine::QueryEngine;
-use app_lib::runtime::chat::chat_turn_driver::ChatAttachmentRef;
 use app_lib::runtime::session_runtime::{ChatTurnRequest, SessionRuntime};
 use app_lib::runtime::tools::description_context::ToolDescriptionContext;
 use app_lib::runtime::tools::{
@@ -109,6 +109,7 @@ impl RuntimeLlmExecutor for SessionTestExecutor {
         _conversation_id: &str,
         _content: &str,
         _attachments: &[ChatAttachmentRef],
+        _skill_command: Option<&app_lib::runtime::chat::chat_turn_driver::SkillCommandRef>,
         _client_message_id: Option<&str>,
     ) -> Result<String, TurnError> {
         Ok("user-msg".to_string())
@@ -126,7 +127,7 @@ impl RuntimeLlmExecutor for SessionTestExecutor {
     }
 
     async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
-        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
+        Ok(vec![]) // 显式声明此 mock 不关心 tool_defs
     }
 }
 
@@ -265,7 +266,6 @@ async fn all_events_in_one_turn_share_the_same_run_id() {
         events.last().unwrap().run_id
     );
 }
-
 
 #[tokio::test]
 async fn run_chat_request_uses_request_run_id_as_authoritative_identity() {

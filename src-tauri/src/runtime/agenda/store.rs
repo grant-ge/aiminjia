@@ -77,9 +77,7 @@ impl AgendaStore {
         if prev.organizer_employee_id != item.organizer_employee_id
             && prev.status != super::item::ItemStatus::Orphaned
         {
-            anyhow::bail!(
-                "phase1 constraint: organizer can only change when status was Orphaned"
-            );
+            anyhow::bail!("phase1 constraint: organizer can only change when status was Orphaned");
         }
         atomic_write_json(&path, &item)?;
         Ok(item)
@@ -237,10 +235,7 @@ impl AgendaStore {
         Ok(out)
     }
 
-    pub fn take_due(
-        &self,
-        now: chrono::DateTime<chrono::Utc>,
-    ) -> anyhow::Result<Vec<AgendaItem>> {
+    pub fn take_due(&self, now: chrono::DateTime<chrono::Utc>) -> anyhow::Result<Vec<AgendaItem>> {
         use super::item::ItemStatus;
         let _guard = self.lock.lock().unwrap();
         let mut out = Vec::new();
@@ -439,10 +434,12 @@ mod tests {
         }
     }
 
-    fn make_running_occurrence(item_id: &super::super::item::AgendaItemId) -> super::super::occurrence::Occurrence {
-        use chrono::Utc;
+    fn make_running_occurrence(
+        item_id: &super::super::item::AgendaItemId,
+    ) -> super::super::occurrence::Occurrence {
         use super::super::occurrence::*;
         use crate::runtime::ids::{RunId, SessionId};
+        use chrono::Utc;
         let now = Utc::now();
         Occurrence {
             id: Occurrence::new_id(),
@@ -750,7 +747,9 @@ mod tests {
         std::fs::create_dir_all(&store.root).unwrap();
         std::fs::write(&outside, "{}").unwrap();
 
-        let err = store.delete(&AgendaItemId("../outside".into())).unwrap_err();
+        let err = store
+            .delete(&AgendaItemId("../outside".into()))
+            .unwrap_err();
         assert!(err.to_string().contains("invalid agenda item id"));
         assert!(outside.exists());
     }
@@ -779,8 +778,8 @@ mod tests {
 
     #[test]
     fn take_due_returns_active_items_with_past_next_fire_at() {
-        use chrono::{TimeZone, Utc};
         use super::super::item::ItemStatus;
+        use chrono::{TimeZone, Utc};
         let dir = TempDir::new().unwrap();
         let store = AgendaStore::new(dir.path());
         let mut item = make_valid_item("p1");
@@ -796,13 +795,17 @@ mod tests {
 
     #[test]
     fn take_due_skips_paused_completed_orphaned() {
-        use chrono::{TimeZone, Utc};
         use super::super::item::ItemStatus;
+        use chrono::{TimeZone, Utc};
         let dir = TempDir::new().unwrap();
         let store = AgendaStore::new(dir.path());
         let now = Utc.with_ymd_and_hms(2026, 5, 7, 9, 0, 0).unwrap();
         let past = Utc.with_ymd_and_hms(2026, 5, 7, 8, 0, 0).unwrap();
-        for status in [ItemStatus::Paused, ItemStatus::Completed, ItemStatus::Orphaned] {
+        for status in [
+            ItemStatus::Paused,
+            ItemStatus::Completed,
+            ItemStatus::Orphaned,
+        ] {
             let mut item = make_valid_item("p1");
             item.next_fire_at = Some(past);
             item.status = status;
@@ -814,8 +817,8 @@ mod tests {
 
     #[test]
     fn advance_after_fire_increments_count_and_recomputes() {
-        use chrono::{TimeZone, Utc};
         use super::super::item::*;
+        use chrono::{TimeZone, Utc};
         let dir = TempDir::new().unwrap();
         let store = AgendaStore::new(dir.path());
         let start = Utc.with_ymd_and_hms(2026, 5, 7, 9, 0, 0).unwrap();
@@ -823,8 +826,11 @@ mod tests {
         item.start_at = start;
         item.next_fire_at = Some(start);
         item.rule = Some(RecurrenceRule {
-            freq: Freq::Daily, interval: 1, end_condition: EndCondition::Never,
-            by_day: vec![], by_month_day: vec![],
+            freq: Freq::Daily,
+            interval: 1,
+            end_condition: EndCondition::Never,
+            by_day: vec![],
+            by_month_day: vec![],
         });
         store.create(item.clone()).unwrap();
 
@@ -840,8 +846,8 @@ mod tests {
 
     #[test]
     fn advance_after_fire_one_shot_marks_completed() {
-        use chrono::{TimeZone, Utc};
         use super::super::item::ItemStatus;
+        use chrono::{TimeZone, Utc};
         let dir = TempDir::new().unwrap();
         let store = AgendaStore::new(dir.path());
         let start = Utc.with_ymd_and_hms(2026, 5, 7, 9, 0, 0).unwrap();
@@ -859,8 +865,8 @@ mod tests {
 
     #[test]
     fn advance_after_fire_rejects_non_active_without_mutating() {
-        use chrono::{TimeZone, Utc};
         use super::super::item::ItemStatus;
+        use chrono::{TimeZone, Utc};
         let dir = TempDir::new().unwrap();
         let store = AgendaStore::new(dir.path());
         let start = Utc.with_ymd_and_hms(2026, 5, 7, 9, 0, 0).unwrap();
@@ -881,14 +887,17 @@ mod tests {
 
     #[test]
     fn set_skip_adds_to_skip_dates() {
-        use chrono::{TimeZone, Utc};
         use super::super::item::*;
+        use chrono::{TimeZone, Utc};
         let dir = TempDir::new().unwrap();
         let store = AgendaStore::new(dir.path());
         let mut item = make_valid_item("p1");
         item.rule = Some(RecurrenceRule {
-            freq: Freq::Daily, interval: 1, end_condition: EndCondition::Never,
-            by_day: vec![], by_month_day: vec![],
+            freq: Freq::Daily,
+            interval: 1,
+            end_condition: EndCondition::Never,
+            by_day: vec![],
+            by_month_day: vec![],
         });
         store.create(item.clone()).unwrap();
         let when = Utc.with_ymd_and_hms(2026, 5, 8, 9, 0, 0).unwrap();
@@ -898,14 +907,17 @@ mod tests {
 
     #[test]
     fn unset_skip_removes_from_skip_dates() {
-        use chrono::{TimeZone, Utc};
         use super::super::item::*;
+        use chrono::{TimeZone, Utc};
         let dir = TempDir::new().unwrap();
         let store = AgendaStore::new(dir.path());
         let mut item = make_valid_item("p1");
         item.rule = Some(RecurrenceRule {
-            freq: Freq::Daily, interval: 1, end_condition: EndCondition::Never,
-            by_day: vec![], by_month_day: vec![],
+            freq: Freq::Daily,
+            interval: 1,
+            end_condition: EndCondition::Never,
+            by_day: vec![],
+            by_month_day: vec![],
         });
         let when = Utc.with_ymd_and_hms(2026, 5, 8, 9, 0, 0).unwrap();
         item.skip_dates.push(when);
@@ -923,5 +935,4 @@ mod tests {
         let err = store.set_skip(&item.id, Utc::now()).unwrap_err();
         assert!(err.to_string().contains("rule"));
     }
-
 }

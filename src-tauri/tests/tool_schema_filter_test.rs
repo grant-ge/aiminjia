@@ -22,11 +22,8 @@ struct FakeRuntimeTool {
 #[async_trait]
 impl RuntimeTool for FakeRuntimeTool {
     fn id(&self) -> &str {
-
         self.id
-
     }
-
 
     async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new(self.id, "fake tool for schema filter tests")
@@ -57,13 +54,16 @@ async fn make_test_registry_with_tools(names: &[&'static str]) -> ToolRegistry {
 #[tokio::test]
 async fn daily_filter_excludes_tools_not_in_whitelist() {
     // "SearchMemory" is in DAILY_ALLOWED_TOOLS; "obscure_tool_not_in_daily" is not.
-    let registry = make_test_registry_with_tools(&[
-        "SearchMemory",
-        "Read",
-        "obscure_tool_not_in_daily",
-    ])
+    let registry =
+        make_test_registry_with_tools(&["SearchMemory", "Read", "obscure_tool_not_in_daily"]).await;
+    let defs = build_visible_tool_defs(
+        &registry,
+        true,
+        ToolSchemaFilter::DailyWhitelist,
+        &app_lib::runtime::tools::ToolDescriptionContext::default(),
+        &std::collections::HashMap::new(),
+    )
     .await;
-    let defs = build_visible_tool_defs(&registry, true, ToolSchemaFilter::DailyWhitelist, &app_lib::runtime::tools::ToolDescriptionContext::default(), &std::collections::HashMap::new()).await;
     let names: HashSet<_> = defs.iter().map(|d| d.name.as_str()).collect();
     assert!(
         names.contains("SearchMemory"),
@@ -77,12 +77,7 @@ async fn daily_filter_excludes_tools_not_in_whitelist() {
 
 #[tokio::test]
 async fn employee_filter_uses_employee_whitelist_only() {
-    let registry = make_test_registry_with_tools(&[
-        "Bash",
-        "Read",
-        "Grep",
-    ])
-    .await;
+    let registry = make_test_registry_with_tools(&["Bash", "Read", "Grep"]).await;
     let mut employee_set = HashSet::new();
     employee_set.insert("Read".to_string());
     employee_set.insert("Grep".to_string());
@@ -115,8 +110,20 @@ async fn no_filter_returns_full_set() {
     // include the registered fake tools. (TOOL_CATALOG also exposes other
     // request-scoped tools globally, so we only assert presence of our names,
     // not exact length.)
-    let registry = make_test_registry_with_tools(&["fake_no_filter_a", "fake_no_filter_b", "fake_no_filter_c"]).await;
-    let defs = build_visible_tool_defs(&registry, true, ToolSchemaFilter::None, &app_lib::runtime::tools::ToolDescriptionContext::default(), &std::collections::HashMap::new()).await;
+    let registry = make_test_registry_with_tools(&[
+        "fake_no_filter_a",
+        "fake_no_filter_b",
+        "fake_no_filter_c",
+    ])
+    .await;
+    let defs = build_visible_tool_defs(
+        &registry,
+        true,
+        ToolSchemaFilter::None,
+        &app_lib::runtime::tools::ToolDescriptionContext::default(),
+        &std::collections::HashMap::new(),
+    )
+    .await;
     let names: HashSet<_> = defs.iter().map(|d| d.name.as_str()).collect();
     for expected in ["fake_no_filter_a", "fake_no_filter_b", "fake_no_filter_c"] {
         assert!(

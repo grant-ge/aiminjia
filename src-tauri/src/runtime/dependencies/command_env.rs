@@ -20,13 +20,11 @@ pub fn prepend_bundle_bin_to_path(command: &mut Command, tool_path: &Path) {
     };
     let new_path = match std::env::var_os("PATH") {
         Some(existing) => {
-            let mut paths: Vec<std::path::PathBuf> =
-                std::env::split_paths(&existing).collect();
+            let mut paths: Vec<std::path::PathBuf> = std::env::split_paths(&existing).collect();
             // de-dup if our dir is already in the list (don't grow PATH unbounded over time)
             paths.retain(|p| p != bin_dir);
             paths.insert(0, bin_dir.to_path_buf());
-            std::env::join_paths(paths)
-                .unwrap_or_else(|_| std::ffi::OsString::from(bin_dir))
+            std::env::join_paths(paths).unwrap_or_else(|_| std::ffi::OsString::from(bin_dir))
         }
         None => std::ffi::OsString::from(bin_dir),
     };
@@ -40,21 +38,16 @@ pub fn prepend_bundle_bin_to_path(command: &mut Command, tool_path: &Path) {
 
 /// Prepend the bundle bin directory containing `tool_path` to a tokio Command's PATH.
 /// Same logic as `prepend_bundle_bin_to_path` but operates on `tokio::process::Command`.
-pub fn prepend_bundle_bin_to_path_tokio(
-    command: &mut tokio::process::Command,
-    tool_path: &Path,
-) {
+pub fn prepend_bundle_bin_to_path_tokio(command: &mut tokio::process::Command, tool_path: &Path) {
     let Some(bin_dir) = tool_path.parent() else {
         return;
     };
     let new_path = match std::env::var_os("PATH") {
         Some(existing) => {
-            let mut paths: Vec<std::path::PathBuf> =
-                std::env::split_paths(&existing).collect();
+            let mut paths: Vec<std::path::PathBuf> = std::env::split_paths(&existing).collect();
             paths.retain(|p| p != bin_dir);
             paths.insert(0, bin_dir.to_path_buf());
-            std::env::join_paths(paths)
-                .unwrap_or_else(|_| std::ffi::OsString::from(bin_dir))
+            std::env::join_paths(paths).unwrap_or_else(|_| std::ffi::OsString::from(bin_dir))
         }
         None => std::ffi::OsString::from(bin_dir),
     };
