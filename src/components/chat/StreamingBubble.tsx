@@ -138,11 +138,16 @@ function useTick(intervalMs: number): number {
   return now
 }
 
+// Stable empty array reference so Zustand selectors that fall back to []
+// don't return a new array every render (which would cause useSyncExternalStore
+// to detect a "changed" snapshot every tick and recurse into Maximum-update-depth).
+const EMPTY_TOOL_EXECUTIONS: never[] = []
+
 export function StreamingBubble({ content }: StreamingBubbleProps) {
   const { t } = useTranslation()
   const toolExecutions = useChatStore((s) => {
     const activeId = s.activeConversationId
-    return activeId ? (s.streamStates[activeId]?.toolExecutions ?? []) : []
+    return activeId ? (s.streamStates[activeId]?.toolExecutions ?? EMPTY_TOOL_EXECUTIONS) : EMPTY_TOOL_EXECUTIONS
   })
   const turnStage = useChatStore((s) => {
     const activeId = s.activeConversationId

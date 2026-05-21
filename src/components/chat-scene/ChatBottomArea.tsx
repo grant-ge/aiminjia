@@ -17,11 +17,12 @@ import { useChat, type PendingFileInfo } from '@/hooks/useChat'
 import { useChatAttachments } from '@/hooks/useChatAttachments'
 import { useChatStore } from '@/stores/chatStore'
 import { usePendingStore } from '@/stores/pendingStore'
+import { useSettingsStore } from '@/stores/settingsStore'
 import { useSkillStore } from '@/stores/skillStore'
 import { useUiStore } from '@/stores/uiStore'
 import { pendingSnapshotForSession } from '@/lib/tauri'
 import { PendingChips } from '@/features/chat/PendingChips'
-import { getExpertTeam as getExpertTeamForConversation } from '@/features/expert-teams/expertTeamRegistry'
+import { ensureExpertTeam } from '@/features/expert-teams/expertTeamRegistry'
 import { getExpertTeam as findTeam } from '@/features/expert-teams/teams'
 import { buildDirectorPrompt } from '@/features/expert-teams/buildDirectorPrompt'
 
@@ -60,6 +61,7 @@ export function ChatBottomArea({
   const { isPickingAttachments, pickAttachments } = useChatAttachments()
   const [showSkillPopover, setShowSkillPopover] = useState(false)
   const getSkillById = useSkillStore((s) => s.getById)
+  const chatWidthMode = useSettingsStore((s) => s.chatWidthMode ?? 'full')
   // Selected skill chip — UI state only (after the local IPC plumbing was
   // dropped, see commit `drop selected_skill ipc plumbing`). The id no longer
   // flows to the backend; the trigger text is prepended to the outgoing
@@ -128,7 +130,7 @@ export function ChatBottomArea({
       markdownToSend = `${trigger}${sep}${markdownToSend}`
     }
     if (activeConversationId && messageCount === 0) {
-      const teamId = getExpertTeamForConversation(activeConversationId)
+      const teamId = await ensureExpertTeam(activeConversationId)
       const team = teamId ? findTeam(teamId) : undefined
       if (team) {
         markdownToSend = buildDirectorPrompt(team, markdownToSend)
@@ -175,7 +177,7 @@ export function ChatBottomArea({
       <div
         className="absolute right-0 bottom-0 left-0 px-6 pt-4 pb-5"
       >
-        <div className="relative mx-auto w-full max-w-[736px]">
+        <div className={chatWidthMode === 'full' ? 'relative w-full' : 'relative mx-auto w-full max-w-[736px]'}>
           <div className="absolute bottom-full left-1/2 z-30 mb-1 -translate-x-1/2">
             <SkillPopover
               open={showSkillPopover}

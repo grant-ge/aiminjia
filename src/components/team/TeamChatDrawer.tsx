@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { ArrowDown, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { useSettingsStore } from '@/stores/settingsStore'
 import type { TeamOverview, TeamSession } from '@/types/team'
 import { useConversationTeamState, useTeamStore } from '@/stores/teamStore'
 
@@ -237,6 +238,7 @@ interface TeamSessionSectionProps {
 
 function TeamSessionSection({ session, onDrill }: TeamSessionSectionProps) {
   const { t } = useTranslation()
+  const chatWidthMode = useSettingsStore((s) => s.chatWidthMode ?? 'full')
   const visibleMembers = session.members.filter((m) => !isLeadName(m.agentName))
   const isLive = session.deletedAt === null
   return (
@@ -287,7 +289,7 @@ function TeamSessionSection({ session, onDrill }: TeamSessionSectionProps) {
         )}
       </div>
 
-      <div className="mx-auto w-full max-w-[736px]">
+      <div className={chatWidthMode === 'full' ? 'w-full' : 'mx-auto w-full max-w-[736px]'}>
         <TeamChatEvents events={session.events} onDrillAgent={onDrill} />
       </div>
     </section>
