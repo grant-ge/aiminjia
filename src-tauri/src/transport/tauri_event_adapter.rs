@@ -34,11 +34,12 @@ pub fn map_runtime_event(event: &RuntimeEvent) -> Option<LegacyEvent> {
                 "runId": event.run_id.as_str(),
             }),
         }),
-        RuntimeEventKind::StreamRetryReset => Some(LegacyEvent {
+        RuntimeEventKind::StreamRetryReset { reason } => Some(LegacyEvent {
             name: "streaming:retry-reset".to_string(),
             payload: json!({
                 "conversationId": conversation_id,
                 "runId": event.run_id.as_str(),
+                "reason": reason,
             }),
         }),
         RuntimeEventKind::StreamError {

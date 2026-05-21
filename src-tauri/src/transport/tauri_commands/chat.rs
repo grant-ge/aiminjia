@@ -473,7 +473,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
     ) -> Result<LlmStepResult, TurnError> {
         use crate::llm::masking::MaskingLevel;
         use crate::llm::streaming::{ChatMessage, StopReason, StreamEvent, ToolDefinition};
-        use crate::runtime::events::{RuntimeEvent, RuntimeEventKind};
+        use crate::runtime::events::{RetryReason, RuntimeEvent, RuntimeEventKind};
         use crate::runtime::ids::{RunId, SessionId};
         use futures::StreamExt;
 
@@ -594,7 +594,9 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                             .emit(RuntimeEvent::new(
                                 session_id.clone(),
                                 run_id.clone(),
-                                RuntimeEventKind::StreamRetryReset,
+                                RuntimeEventKind::StreamRetryReset {
+                                    reason: classify_retry_reason(&err_str),
+                                },
                             ))
                             .await;
                         tokio::time::sleep(std::time::Duration::from_secs(
@@ -670,7 +672,9 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                                 .emit(RuntimeEvent::new(
                                     session_id.clone(),
                                     run_id.clone(),
-                                    RuntimeEventKind::StreamRetryReset,
+                                    RuntimeEventKind::StreamRetryReset {
+                                        reason: RetryReason::NetworkFlap,
+                                    },
                                 ))
                                 .await;
                             iter_content.clear();
@@ -768,7 +772,9 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                                         .emit(RuntimeEvent::new(
                                             session_id.clone(),
                                             run_id.clone(),
-                                            RuntimeEventKind::StreamRetryReset,
+                                            RuntimeEventKind::StreamRetryReset {
+                                                reason: classify_retry_reason(&error),
+                                            },
                                         ))
                                         .await;
                                     iter_content.clear();
@@ -2051,6 +2057,33 @@ fn is_retryable_stream_error_str(error: &str) -> bool {
         || lower.contains("network")
         || lower.contains("429")
         || lower.contains("rate limit")
+}
+
+/// Classify a retryable error into a [`RetryReason`] so the frontend can show
+/// the right toast (upstream busy vs local network flap vs rate limit).
+fn classify_retry_reason(error: &str) -> crate::runtime::events::RetryReason {
+    use crate::runtime::events::RetryReason;
+    let lower = error.to_lowercase();
+    // Local-side signals win over status codes — a "timeout" wrapping a 5xx
+    // response is still a real timeout on our side worth flagging as network.
+    if lower.contains("timeout")
+        || lower.contains("timed out")
+        || lower.contains("connection reset")
+        || lower.contains("connection refused")
+        || lower.contains("broken pipe")
+    {
+        RetryReason::NetworkFlap
+    } else if lower.contains("429") || lower.contains("rate limit") {
+        RetryReason::RateLimited
+    } else if lower.contains("500")
+        || lower.contains("502")
+        || lower.contains("503")
+        || lower.contains("504")
+    {
+        RetryReason::UpstreamBusy
+    } else {
+        RetryReason::NetworkFlap
+    }
 }
 
 #[cfg(test)]
@@ -4016,4 +4049,69 @@ fn emit_conversation_created(
             "title": title,
         }),
     );
+}
+
+#[cfg(test)]
+mod retry_reason_tests {
+    use super::classify_retry_reason;
+    use crate::runtime::events::RetryReason;
+
+    #[test]
+    fn upstream_5xx_is_upstream_busy() {
+        assert_eq!(
+            classify_retry_reason(
+                "Anthropic API stream error (502 Bad Gateway): <html>nginx/1.20.1</html>"
+            ),
+            RetryReason::UpstreamBusy
+        );
+        assert_eq!(
+            classify_retry_reason("500 Internal Server Error: distributor unavailable"),
+            RetryReason::UpstreamBusy
+        );
+        assert_eq!(
+            classify_retry_reason("503 Service Unavailable: model_not_found"),
+            RetryReason::UpstreamBusy
+        );
+    }
+
+    #[test]
+    fn rate_limit_is_rate_limited() {
+        assert_eq!(
+            classify_retry_reason("429 Too Many Requests"),
+            RetryReason::RateLimited
+        );
+        assert_eq!(
+            classify_retry_reason("Anthropic rate limit exceeded"),
+            RetryReason::RateLimited
+        );
+    }
+
+    #[test]
+    fn local_network_is_network_flap() {
+        assert_eq!(
+            classify_retry_reason("request timed out after 60s"),
+            RetryReason::NetworkFlap
+        );
+        assert_eq!(
+            classify_retry_reason("connection reset by peer"),
+            RetryReason::NetworkFlap
+        );
+        assert_eq!(
+            classify_retry_reason("broken pipe writing to upstream"),
+            RetryReason::NetworkFlap
+        );
+        // A "timeout" wrapping a 5xx still counts as local network.
+        assert_eq!(
+            classify_retry_reason("502 timed out waiting for upstream"),
+            RetryReason::NetworkFlap
+        );
+    }
+
+    #[test]
+    fn unknown_falls_back_to_network_flap() {
+        assert_eq!(
+            classify_retry_reason("some weird unclassified blip"),
+            RetryReason::NetworkFlap
+        );
+    }
 }

@@ -492,14 +492,20 @@ export function useStreaming() {
 
   // --- streaming:retry-reset -------------------------------------------
   useTauriEvent(() =>
-    onStreamingRetryReset(({ conversationId }: StreamingRetryResetPayload) => {
-      console.log('[streaming:retry-reset]', conversationId)
-      recordDiagnostic({ event: 'streaming.retry_reset.received', conversationId })
+    onStreamingRetryReset(({ conversationId, reason }: StreamingRetryResetPayload) => {
+      console.log('[streaming:retry-reset]', conversationId, reason)
+      recordDiagnostic({ event: 'streaming.retry_reset.received', conversationId, payload: { reason } })
       delete deltaBufferRef.current[conversationId]
       useChatStore.getState().resetConversationStreamContent(conversationId)
+      const title =
+        reason === 'upstream_busy'
+          ? 'AI 服务繁忙，正在重试...'
+          : reason === 'rate_limited'
+            ? '请求过于频繁，正在重试...'
+            : '网络抖动，正在重新连接...'
       useNotificationStore.getState().push({
         level: 'info',
-        title: '网络抖动，正在重新连接...',
+        title,
         message: '',
         actions: [],
         dismissible: true,
