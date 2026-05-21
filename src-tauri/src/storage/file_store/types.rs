@@ -153,14 +153,7 @@ pub struct ConversationIndexEntry {
     pub created_at: String,
     pub updated_at: String,
     pub is_archived: bool,
-    /// Mirror of `ConversationMeta.employee_id`. Stored in the index so the
-    /// sidebar / top bar don't have to fan-out and read every `conv.json` to
-    /// know whether a conversation is a dispatch session.
-    ///
-    /// **过渡期保留**：新写入由 `kind = Employee` 表达；本字段由 dispatch 路径双写。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub employee_id: Option<String>,
-    /// 新增：来源 kind mirror（不含 id；点开会话才需要 id）。
+    /// 来源 kind mirror（不含 id；点开会话才需要 id，从 conv.json 读取）。
     /// 老 index.json 无此字段时反序列化为 `User`。
     #[serde(default)]
     pub kind: ConversationKind,
@@ -552,7 +545,6 @@ mod conversation_index_entry_migration_tests {
         assert_eq!(entry.kind, ConversationKind::User);
         assert!(entry.source_label.is_none());
         assert!(entry.workspace_name.is_none());
-        assert!(entry.employee_id.is_none());
     }
 
     #[test]
@@ -563,7 +555,6 @@ mod conversation_index_entry_migration_tests {
             created_at: "2026-05-20T00:00:00+00:00".to_string(),
             updated_at: "2026-05-20T00:00:00+00:00".to_string(),
             is_archived: false,
-            employee_id: None,
             kind: ConversationKind::ExpertTeam,
             source_label: Some("市场专家团".to_string()),
             workspace_name: Some("foo-project".to_string()),

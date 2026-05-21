@@ -234,9 +234,8 @@ function App() {
           createdAt: (c.createdAt as string) ?? new Date().toISOString(),
           updatedAt: (c.updatedAt as string) ?? new Date().toISOString(),
           isArchived: (c.isArchived as boolean) ?? false,
+          kind: (c.kind as import('@/types/message').Conversation['kind']) ?? undefined,
           workspaceName: (c.workspaceName as string | undefined) ?? undefined,
-          employeeId: (c.employeeId as string | undefined) ?? undefined,
-          expertTeamId: (c.expertTeamId as string | undefined) ?? undefined,
         }))
         useChatStore.getState().setConversations(convs)
       } catch (err) {

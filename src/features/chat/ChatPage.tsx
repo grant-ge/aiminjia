@@ -13,8 +13,8 @@ import { useTeamOverview } from '@/hooks/useTeamOverview'
 import { useChatStore } from '@/stores/chatStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { useGeneratedFilePreviewStore } from '@/stores/generatedFilePreviewStore'
-import { openGeneratedFile } from '@/lib/tauri'
-import { useEffect } from 'react'
+import { getConversationSource, openGeneratedFile } from '@/lib/tauri'
+import { useEffect, useState } from 'react'
 import { useEmployeeById } from '@/features/employees/useEmployeeById'
 
 interface ChatPageProps {
@@ -31,7 +31,20 @@ export function ChatPage({ conversationId }: ChatPageProps) {
   const previewOpen = previewTarget?.conversationId === conversationId
   const conv = conversations.find((c) => c.id === conversationId)
   const title = conv?.title ?? ''
-  const employee = useEmployeeById(conv?.employeeId ?? null)
+
+  // employee_id lives in conv.json (not the index); read it lazily when this
+  // conversation is an employee dispatch session.
+  const [employeeId, setEmployeeId] = useState<string | null>(null)
+  useEffect(() => {
+    if (conv?.kind !== 'employee') { setEmployeeId(null); return }
+    let cancelled = false
+    getConversationSource(conversationId).then((src) => {
+      if (!cancelled && src.kind === 'employee') setEmployeeId(src.employeeId)
+    }).catch(() => { /* non-fatal */ })
+    return () => { cancelled = true }
+  }, [conversationId, conv?.kind])
+
+  const employee = useEmployeeById(employeeId)
   const { overview: teamOverview } = useTeamOverview(activeConversationId)
   const expertTeamId = useExpertTeamForConversation(conversationId)
   const expertTeam = expertTeamId ? getExpertTeam(expertTeamId) : undefined

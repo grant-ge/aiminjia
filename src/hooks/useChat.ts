@@ -170,8 +170,8 @@ export function useChat() {
           createdAt: (c.createdAt as string) ?? new Date().toISOString(),
           updatedAt: (c.updatedAt as string) ?? new Date().toISOString(),
           isArchived: (c.isArchived as boolean) ?? false,
-          employeeId: (c.employeeId as string | undefined) ?? undefined,
-          expertTeamId: (c.expertTeamId as string | undefined) ?? undefined,
+          kind: (c.kind as Conversation['kind']) ?? undefined,
+          workspaceName: (c.workspaceName as string | undefined) ?? undefined,
         }))
         useChatStore.getState().setConversations(convs)
       } catch {
@@ -458,6 +458,7 @@ export function useChat() {
         createdAt: (c.createdAt as string) ?? new Date().toISOString(),
         updatedAt: (c.updatedAt as string) ?? new Date().toISOString(),
         isArchived: (c.isArchived as boolean) ?? false,
+        kind: (c.kind as Conversation['kind']) ?? undefined,
         workspaceName: (c.workspaceName as string | undefined) ?? undefined,
         employeeId: (c.employeeId as string | undefined) ?? undefined,
         expertTeamId: (c.expertTeamId as string | undefined) ?? undefined,

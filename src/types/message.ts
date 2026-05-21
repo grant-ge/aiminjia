@@ -39,12 +39,6 @@ export interface Conversation {
   isArchived: boolean
   workspaceName?: string
   /**
-   * Set on conversations created by employee dispatch (`employee_trigger`).
-   * Used by `ChatTopBar` to render the employee identity card. Undefined
-   * on user-initiated conversations.
-   */
-  employeeId?: string
-  /**
    * Conversation source kind. Mirrored from `ConversationIndexEntry.kind`
    * in `index.json` so the sidebar can render groupings without fan-out.
    */
@@ -53,14 +47,6 @@ export interface Conversation {
    * Human-readable source label. LLM 改 title 时本字段不变；侧边栏用它显示稳定的来源标签。
    */
   sourceLabel?: string
-  /**
-   * Expert team id (one of EXPERT_TEAMS) when conversation was started from
-   * an expert team. Persisted in `conv.json::source.expertTeamId` (NOT mirrored
-   * to index.json — spec §1.3, index entries carry no ids). Populated on the
-   * front-end either optimistically by `setExpertTeam` or via `getConversationSource`
-   * IPC when the user enters the conversation.
-   */
-  expertTeamId?: string
 }
 
 /**

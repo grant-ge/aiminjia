@@ -8,7 +8,7 @@ import { CheckSquare, ChevronRight, GraduationCap, MessageSquare, Users } from '
 
 import { useChat } from '@/hooks/useChat'
 import { useBrandingStore } from '@/stores/brandingStore'
-import { useUiStore, type Route, useActiveConversationId, useActiveChannelSessionId } from '@/stores/uiStore'
+import { useUiStore, type Route, type SidebarBodyTab, useActiveConversationId, useActiveChannelSessionId } from '@/stores/uiStore'
 import { useChannelStore } from '@/stores/channelStore'
 import { hasExpertTeam } from '@/features/expert-teams/expertTeamRegistry'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
@@ -23,29 +23,6 @@ import { SidebarFooterSettings } from './SidebarFooterSettings'
 import { SidebarNav, type SidebarNavKey } from './SidebarNav'
 import { TenantHeader } from './TenantHeader'
 
-const SIDEBAR_TAB_STORAGE_KEY = 'aijia-sidebar-tab'
-
-type SidebarBodyTab = 'project' | 'employee' | 'expert-team' | 'channel'
-
-function loadPersistedSidebarTab(): SidebarBodyTab {
-  if (typeof localStorage === 'undefined') return 'project'
-  try {
-    const raw = localStorage.getItem(SIDEBAR_TAB_STORAGE_KEY)
-    return raw === 'channel' || raw === 'expert-team' || raw === 'employee' ? raw : 'project'
-  } catch {
-    return 'project'
-  }
-}
-
-function persistSidebarTab(tab: SidebarBodyTab) {
-  if (typeof localStorage === 'undefined') return
-  try {
-    localStorage.setItem(SIDEBAR_TAB_STORAGE_KEY, tab)
-  } catch {
-    // Ignore storage failures; tab still works in memory.
-  }
-}
-
 export function AppSidebar() {
   const { t } = useTranslation()
   const productName = useBrandingStore((s) => s.productName)
@@ -53,6 +30,8 @@ export function AppSidebar() {
   const route = useUiStore((s) => s.route)
   const setRoute = useUiStore((s) => s.setRoute)
   const openSettings = useUiStore((s) => s.openSettings)
+  const sidebarTab = useUiStore((s) => s.sidebarTab)
+  const setSidebarTab = useUiStore((s) => s.setSidebarTab)
   const { conversations, switchConversation, renameConversation, archiveConversation } = useChat()
   const activeConversationId = useActiveConversationId()
   const channelActiveSessionId = useActiveChannelSessionId()
@@ -63,12 +42,10 @@ export function AppSidebar() {
   const [renameValue, setRenameValue] = useState('')
   const [archivingId, setArchivingId] = useState<string | null>(null)
 
-  const [sidebarTab, setSidebarTab] = useState<SidebarBodyTab>(loadPersistedSidebarTab)
   const [legacyExpanded, setLegacyExpanded] = useState(false)
 
   const switchTab = (next: SidebarBodyTab) => {
     setSidebarTab(next)
-    persistSidebarTab(next)
   }
 
   // isActiveRobot=undefined (old data) treated as active for backward compatibility

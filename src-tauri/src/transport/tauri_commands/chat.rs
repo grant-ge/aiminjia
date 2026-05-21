@@ -3648,10 +3648,12 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
         )
         .await
         .map_err(anyhow::Error::msg)?;
-        // Stamp employee_id onto conv.json + index entry so the chat top bar
-        // and any future "dispatched conversations" filter can identify this
-        // session as a dispatch run. Failure here is non-fatal: the UI just
-        // won't render the employee identity card.
+        // Stamp employee identity onto conv.json:
+        //   1) `employee_id` field (legacy reader still hits this)
+        //   2) `source = Employee { employee_id }` + index `kind = Employee` mirror
+        //      (so the sidebar can group this conversation under 数字员工)
+        // Failure here is non-fatal: the UI just won't render the employee
+        // identity card / grouping.
         if let Err(e) = self
             .services
             .db()
@@ -3659,6 +3661,21 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
         {
             log::warn!(
                 "[dispatch_employee_run] failed to stamp employee_id for {} on conv {}: {e:#}",
+                employee.id,
+                conversation_id
+            );
+        }
+        let base = self.services.db().base_dir().to_path_buf();
+        if let Err(e) = crate::storage::file_store::conversations::set_conversation_source(
+            &base,
+            &conversation_id,
+            crate::storage::file_store::types::ConversationSource::Employee {
+                employee_id: employee.id.clone(),
+            },
+            Some(employee.name.clone()),
+        ) {
+            log::warn!(
+                "[dispatch_employee_run] failed to stamp source=Employee for {} on conv {}: {e:#}",
                 employee.id,
                 conversation_id
             );

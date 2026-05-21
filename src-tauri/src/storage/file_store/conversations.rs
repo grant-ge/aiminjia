@@ -50,8 +50,8 @@ pub fn create_conversation(base_dir: &Path, id: &str, title: &str) -> StorageRes
         created_at: now.clone(),
         updated_at: now.clone(),
         is_archived: false,
-        model_override: None,
         employee_id: None,
+        model_override: None,
         source: Default::default(),
         authorized_workspace: None,
         source_label: None,
@@ -67,7 +67,6 @@ pub fn create_conversation(base_dir: &Path, id: &str, title: &str) -> StorageRes
         created_at: now.clone(),
         updated_at: now,
         is_archived: false,
-        employee_id: None,
         kind: Default::default(),
         source_label: None,
         workspace_name: None,
@@ -98,10 +97,10 @@ pub fn update_conversation_title(base_dir: &Path, id: &str, title: &str) -> Stor
     Ok(())
 }
 
-/// Set the conversation's `employee_id` to indicate it was created via
-/// employee dispatch. Pass `None` to clear (e.g. on rollback). Both
-/// `conv.json` and the global index entry are updated so the sidebar /
-/// top bar don't have to fan-out and read every conv.json.
+/// Set the conversation's `employee_id` in `conv.json` to indicate it was
+/// created via employee dispatch. Pass `None` to clear (e.g. on rollback).
+/// Only `conv.json` is updated — the index carries `kind` for grouping but
+/// not the employee id; callers needing the id read `conv.json` directly.
 pub fn set_conversation_employee_id(
     base_dir: &Path,
     id: &str,
@@ -112,12 +111,6 @@ pub fn set_conversation_employee_id(
     meta.employee_id = employee_id.map(|s| s.to_string());
     meta.updated_at = Utc::now().to_rfc3339();
     atomic_write_json(&meta_path, &meta)?;
-
-    let mut index = read_global_index(base_dir)?;
-    if let Some(entry) = index.conversations.iter_mut().find(|e| e.id == id) {
-        entry.employee_id = employee_id.map(|s| s.to_string());
-        atomic_write_json(&index_path(base_dir), &index)?;
-    }
     Ok(())
 }
 
@@ -239,9 +232,6 @@ pub fn get_conversations(base_dir: &Path) -> StorageResult<Vec<serde_json::Value
                 "updatedAt": e.updated_at,
                 "isArchived": e.is_archived,
             });
-            if let Some(eid) = &e.employee_id {
-                obj["employeeId"] = serde_json::Value::String(eid.clone());
-            }
             // Surface kind + sourceLabel + workspaceName from the index mirror so
             // the sidebar can render groupings without fan-out reads of conv.json.
             // Expert team id is intentionally NOT here (spec §1.3 — index carries
@@ -384,7 +374,6 @@ pub fn reconcile_index(base_dir: &Path) -> StorageResult<()> {
                     created_at: meta.created_at,
                     updated_at: meta.updated_at,
                     is_archived: meta.is_archived,
-                    employee_id: meta.employee_id,
                     kind: match &meta.source {
                         ConversationSource::User => ConversationKind::User,
                         ConversationSource::Employee { .. } => ConversationKind::Employee,
@@ -465,7 +454,6 @@ pub fn touch_index_entry(base_dir: &Path, conversation_id: &str) -> StorageResul
             created_at,
             updated_at: now,
             is_archived: false,
-            employee_id: None,
             kind: Default::default(),
             source_label: None,
             workspace_name: None,
@@ -578,8 +566,8 @@ mod tests {
             created_at: Utc::now().to_rfc3339(),
             updated_at: Utc::now().to_rfc3339(),
             is_archived: false,
-            model_override: None,
             employee_id: None,
+            model_override: None,
             source: Default::default(),
             authorized_workspace: None,
             source_label: None,
@@ -625,33 +613,32 @@ mod tests {
     }
 
     #[test]
-    fn employee_id_round_trips_through_conv_meta_and_index() {
+    fn employee_id_round_trips_through_conv_meta() {
         let dir = TempDir::new().unwrap();
         let base = dir.path();
 
         create_conversation(base, "conv-disp", "派活: 小工").unwrap();
 
-        // Before stamp: get_conversations omits employeeId
+        // Before stamp: get_conversations has no employeeId (not in index)
         let before = get_conversations(base).unwrap();
         assert_eq!(before.len(), 1);
         assert!(before[0].get("employeeId").is_none());
 
-        // Stamp employee_id
+        // Stamp employee_id — only writes conv.json
         set_conversation_employee_id(base, "conv-disp", Some("emp-xiaogong-1")).unwrap();
 
-        // After: both conv.json and index entry carry it
+        // conv.json carries the employee_id
         let meta = get_conversation(base, "conv-disp").unwrap();
         assert_eq!(meta.employee_id.as_deref(), Some("emp-xiaogong-1"));
 
+        // index (get_conversations) still has no employeeId — by design
         let after = get_conversations(base).unwrap();
-        assert_eq!(after[0]["employeeId"], "emp-xiaogong-1");
+        assert!(after[0].get("employeeId").is_none());
 
-        // Clear: passing None removes the field from both layers
+        // Clear: conv.json employee_id is removed
         set_conversation_employee_id(base, "conv-disp", None).unwrap();
         let meta2 = get_conversation(base, "conv-disp").unwrap();
         assert!(meta2.employee_id.is_none());
-        let after_clear = get_conversations(base).unwrap();
-        assert!(after_clear[0].get("employeeId").is_none());
     }
 
     #[test]
