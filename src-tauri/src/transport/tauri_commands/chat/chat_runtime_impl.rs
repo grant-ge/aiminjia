@@ -233,26 +233,6 @@ fn first_sentence(s: &str, max_chars: usize) -> String {
     }
 }
 
-/// 只查真实绑定，不做 defaultFolder fallback。用于列表展示场景。
-pub(crate) fn load_explicit_workspace(
-    app: &AppHandle,
-    conversation_id: &str,
-) -> Option<crate::runtime::store::AuthorizedWorkspaceRef> {
-    app.try_state::<Arc<RuntimeRepositoryFacade>>()
-        .and_then(|facade| {
-            facade
-                .authorized_workspace_store()
-                .get_current_for_session(&SessionId::new(conversation_id.to_string()))
-                .ok()
-                .flatten()
-        })
-        .map(|aw| crate::runtime::store::AuthorizedWorkspaceRef {
-            id: aw.id,
-            root_path: aw.root_path,
-            display_name: aw.display_name,
-        })
-}
-
 pub(crate) fn load_authorized_workspace(
     app: &AppHandle,
     conversation_id: &str,
@@ -262,7 +242,7 @@ pub(crate) fn load_authorized_workspace(
         .and_then(|facade| {
             facade
                 .authorized_workspace_store()
-                .get_current_for_session(&SessionId::new(conversation_id.to_string()))
+                .get_current_for_session(conversation_id, &SessionId::new(conversation_id.to_string()))
                 .ok()
                 .flatten()
         })

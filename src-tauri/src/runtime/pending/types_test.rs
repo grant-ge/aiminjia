@@ -13,6 +13,7 @@ fn pending_item_roundtrip_camel_case() {
             mime: Some("image/png".into()),
             size_bytes: Some(1024),
         }],
+        skill_command: None,
         received_at: "2026-05-11T03:21:00Z".into(),
     };
     let json = serde_json::to_string(&item).unwrap();

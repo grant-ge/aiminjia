@@ -126,12 +126,9 @@ pub trait NotificationSink: Send + Sync + std::fmt::Debug {
 ///
 /// The `load_file` method was removed in Phase 3 of the tool cleanup.
 /// The trait is retained because `CapabilityContext` and `QueryEngine` still
-/// carry an `Option<Arc<dyn FileOperations>>` field for `is_loaded` checks and
-/// workspace path resolution.
+/// carry an `Option<Arc<dyn FileOperations>>` field for workspace path
+/// resolution.
 pub trait FileOperations: Send + Sync + std::fmt::Debug {
-    /// Return whether this file is already loaded for the given scope.
-    fn is_loaded(&self, file_id: &str, scope_id: &str) -> bool;
-
     /// Absolute workspace path used by this file-operations instance.
     fn workspace_path(&self) -> &Path;
 }
@@ -314,11 +311,6 @@ impl std::fmt::Debug for DefaultFileOperations {
 }
 
 impl FileOperations for DefaultFileOperations {
-    fn is_loaded(&self, file_id: &str, scope_id: &str) -> bool {
-        let key = format!("loaded:{}:{}", scope_id, file_id);
-        matches!(self.storage.get_memory(&key), Ok(Some(_)))
-    }
-
     fn workspace_path(&self) -> &Path {
         &self.workspace_path
     }

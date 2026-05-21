@@ -4,27 +4,23 @@
  * Renders a 28×28 circular avatar with three fallback layers:
  *   1. `src` (preferred — assistant uses `brandingStore.logoUrl`,
  *      user can supply a saved profile image)
- *   2. `variant='neutral'` (gender-free user silhouette using lucide
- *      `User` icon in brand `var(--primary)` accent — colored via the
- *      Tailwind `text-primary` class so it automatically tracks tenant
- *      brand changes through `currentColor`)
+ *   2. `variant='neutral'` (current-user initial with a subtle
+ *      brand-tinted background)
  *   3. `initial` (first non-whitespace character of `name`) painted on a
  *      deterministic color derived from the `colorSeed` (hashes the name
  *      by default)
  *
  * Used by `MessageList` to give each chat row a "two people talking"
  * feel — AI assistant on the left with product logo, user on the right
- * with the neutral brand-tinted silhouette.
+ * with the neutral brand-tinted initial.
  */
-import { User } from 'lucide-react'
-
 interface ChatAvatarProps {
   name: string
   src?: string | null
   /**
-   * Override the default fallback. `'neutral'` paints a gender-free
-   * `User` icon (lucide) in `var(--primary)` (good default for the
-   * current user, since we don't store profile photos yet).
+   * Override the default fallback. `'neutral'` paints the first character
+   * in the tenant brand color (good default for the current user, since we
+   * don't store profile photos yet).
    * `'initial'` paints the first character on a palette color hashed
    * from `colorSeed` / `name` — kept for non-user contexts (e.g. a chat
    * room with multiple expert names where varied colors aid scanning).
@@ -87,10 +83,8 @@ export function ChatAvatar({
   const usingImage = normalizedSrc !== null
   const usingNeutralFallback = !usingImage && variant === 'neutral'
   const initial = firstInitial(name)
-  // Neutral variant: container fills with `--primary` at ~12% alpha (subtle
-  // accent halo) and the lucide `User` icon paints itself with the full
-  // `--primary` via `text-primary` (currentColor). Tenant accent swaps
-  // automatically through the CSS variable — no JS wiring needed.
+  // Neutral variant: container fills with `--primary` at ~12% alpha and the
+  // initial uses the full tenant brand color.
   const dataVariant = usingImage ? 'image' : usingNeutralFallback ? 'neutral' : 'initial'
   const bg = usingImage
     ? 'transparent'
@@ -125,13 +119,9 @@ export function ChatAvatar({
           }}
         />
       ) : usingNeutralFallback ? (
-        <User
-          aria-hidden
-          className="text-primary"
-          // Icon occupies ~60% of the avatar so the bg halo reads as a ring
-          style={{ width: size * 0.6, height: size * 0.6 }}
-          strokeWidth={2.25}
-        />
+        <span aria-hidden className="text-primary">
+          {initial}
+        </span>
       ) : (
         <span aria-hidden>{initial}</span>
       )}

@@ -36,7 +36,7 @@ describe('useChat sendUserMessage', () => {
     })
   })
 
-  it('sends slash-prefixed text verbatim without skill id param', async () => {
+  it('sends slash-prefixed text verbatim without skill metadata', async () => {
     const { result } = renderHook(() => useChat())
 
     await act(async () => {
@@ -45,24 +45,43 @@ describe('useChat sendUserMessage', () => {
 
     expect(tauriMock.sendMessage).toHaveBeenCalledWith(
       'conv-test',
-      expect.any(String),
       '/salary-query 北京 算法工程师',
-      [],
+      undefined,
+      null,
+      expect.any(String),
+      null,
     )
   })
 
-  it('does not pass skill id param — signature is (convId, msgId, text, fileIds)', async () => {
+  it('passes explicit skill metadata and keeps it on the optimistic user message', async () => {
     const { result } = renderHook(() => useChat())
 
     await act(async () => {
-      await result.current.sendUserMessage('普通消息')
+      await result.current.sendUserMessage('查今天日程', undefined, {
+        id: 'dingtalk-workspace',
+        label: '玩转钉钉',
+        command: '/dingtalk-workspace',
+      })
     })
 
-    const callArgs = tauriMock.sendMessage.mock.calls[0]
-    expect(callArgs).toHaveLength(4)
-    expect(callArgs[0]).toBe('conv-test')
-    expect(callArgs[2]).toBe('普通消息')
-    expect(callArgs[3]).toEqual([])
+    expect(tauriMock.sendMessage).toHaveBeenCalledWith(
+      'conv-test',
+      '查今天日程',
+      undefined,
+      null,
+      expect.any(String),
+      {
+        id: 'dingtalk-workspace',
+        label: '玩转钉钉',
+        command: '/dingtalk-workspace',
+      },
+    )
+    expect(useChatStore.getState().messages[0].content.skillCommand).toEqual({
+      id: 'dingtalk-workspace',
+      label: '玩转钉钉',
+      command: '/dingtalk-workspace',
+    })
+    expect(useChatStore.getState().messages[0].content.commandText).toBe('/dingtalk-workspace')
   })
 
   it('stopCurrentStream keeps conversation busy until backend terminal event clears it', () => {

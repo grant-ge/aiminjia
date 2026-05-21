@@ -24,6 +24,29 @@ describe('SkillPopoverPanel', () => {
     expect(onPick).toHaveBeenCalledWith('b')
   })
 
+  it('closes when clicking outside the popover', () => {
+    const onClose = vi.fn()
+    render(
+      <>
+        <button type="button">外部区域</button>
+        <SkillPopoverPanel items={ITEMS} onPick={() => {}} onClose={onClose} />
+      </>,
+    )
+
+    fireEvent.pointerDown(screen.getByRole('button', { name: '外部区域' }))
+
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not close when clicking inside the popover', () => {
+    const onClose = vi.fn()
+    render(<SkillPopoverPanel items={ITEMS} onPick={() => {}} onClose={onClose} />)
+
+    fireEvent.pointerDown(screen.getByTestId('skill-popover-search'))
+
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
   it('filters items by query', () => {
     render(<SkillPopoverPanel items={ITEMS} onPick={() => {}} onClose={() => {}} />)
     const input = screen.getByTestId('skill-popover-search') as HTMLInputElement

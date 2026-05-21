@@ -14,7 +14,7 @@ import type { Editor } from '@tiptap/react'
 import { buildComposerExtensions } from './composerSchema'
 import { serializeComposerDoc } from './serializer'
 import { parseMarkdownToComposerJson } from './parseMarkdown'
-import type { ComposerAttachmentToken, ComposerJsonNode, RichComposerSubmitPayload } from './types'
+import type { ComposerAttachmentToken, ComposerJsonNode, ComposerSkillToken, RichComposerSubmitPayload } from './types'
 
 export interface ComposerSkillCommand {
   command: string
@@ -45,11 +45,13 @@ export interface RichComposerProps {
   showProjectButton?: boolean
 
   onOpenAttachment?: () => void
+  skillTokens?: ComposerSkillToken[]
 }
 
 export interface RichComposerHandle {
   focus: () => void
   insertAttachmentTokens: (tokens: ComposerAttachmentToken[]) => void
+  insertSkillToken: (token: ComposerSkillToken) => void
   clear: () => void
   getEditor: () => Editor | null
 }
@@ -73,6 +75,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
     onPickProject,
     showProjectButton = true,
     onOpenAttachment,
+    skillTokens,
   },
   ref,
 ) {
@@ -82,7 +85,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
   // Force a re-render when content/submit state changes so the send button's disabled state stays accurate.
   const [, forceTick] = useState(0)
   const editor = useEditor({
-    extensions: buildComposerExtensions({ placeholder }),
+    extensions: buildComposerExtensions({ placeholder, skills: skillTokens ?? [] }),
     content: initialMarkdown
       ? (parseMarkdownToComposerJson(initialMarkdown) as unknown as object)
       : undefined,
@@ -169,6 +172,9 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
       },
       insertAttachmentTokens: (tokens) => {
         editor?.commands.insertAttachmentTokens(tokens)
+      },
+      insertSkillToken: (token) => {
+        editor?.commands.insertSkillToken(token)
       },
       clear: () => {
         editor?.commands.clearContent()

@@ -4,6 +4,8 @@
 // `public/expert-avatars/<teamId>/<safeName>.svg` — committed to git so
 // runtime never needs network or @dicebear at all.
 
+import type { ExpertTeam } from './teams'
+
 const SAFE_RE = /[\\/<>:"|?*\s]/g
 
 /** Mirrors the `safe()` helper in scripts/generate-expert-avatars.mjs. */
@@ -71,4 +73,28 @@ export function getExpertAvatarUrl(teamId: string, expertName: string): string |
   const key = `${teamId}:${expertName}`
   if (!expertHasAvatar.has(key)) return null
   return `/expert-avatars/${teamId}/${safeName(expertName)}.svg`
+}
+
+/** Loose normalization: lower-case + strip spaces / hyphens / underscores so
+ * 'CEO' matches 'ceo'，'CEO 教练' matches 'ceo-coach'，etc. */
+function normalize(s: string): string {
+  return s.toLowerCase().replace(/[\s\-_]+/g, '')
+}
+
+export function getExpertAvatarUrlForAgent(team: ExpertTeam | null | undefined, agentName: string): string | null {
+  if (!team) return null
+  const target = normalize(agentName)
+  // Try strict match first (cheapest, exact UI display name).
+  let expert = team.experts.find((e) => e.agentName === agentName || e.name === agentName)
+  if (!expert) {
+    // Fuzzy: LLM 经常把"CEO" spawn 成 "ceo"，把"数据分析师" spawn 成 "analyst"。
+    // 同时比较 normalize(name) / normalize(agentName)，宽松地兜底。
+    expert = team.experts.find((e) => {
+      const nName = normalize(e.name)
+      const nAgent = e.agentName ? normalize(e.agentName) : ''
+      return nName === target || nAgent === target
+    })
+  }
+  if (!expert) return null
+  return getExpertAvatarUrl(team.id, expert.name)
 }

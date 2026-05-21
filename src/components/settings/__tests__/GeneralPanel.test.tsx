@@ -56,6 +56,20 @@ describe('GeneralPanel', () => {
     expect(setFontScale).toHaveBeenCalledWith('large')
   })
 
+  it('renders chat width options and applies full width mode', () => {
+    const setChatWidthMode = vi.fn()
+    useSettingsStore.setState({ chatWidthMode: 'centered', setChatWidthMode } as never)
+
+    render(<GeneralPanel user={mockUser} onLogout={() => {}} />)
+
+    expect(screen.getByText('聊天区域宽度')).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: '居中' })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('radio', { name: '全宽' })).toHaveAttribute('aria-checked', 'false')
+
+    fireEvent.click(screen.getByRole('radio', { name: '全宽' }))
+    expect(setChatWidthMode).toHaveBeenCalledWith('full')
+  })
+
   it('does not render language select while language switching is unavailable', () => {
     const setAppLanguage = vi.fn()
     useSettingsStore.setState({ setAppLanguage } as never)

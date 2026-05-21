@@ -957,13 +957,15 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         conversation_id: &str,
         content: &str,
         attachments: &[crate::runtime::chat::chat_turn_driver::ChatAttachmentRef],
+        skill_command: Option<&crate::runtime::chat::chat_turn_driver::SkillCommandRef>,
         _client_message_id: Option<&str>,
     ) -> Result<String, TurnError> {
         let msg_id = format!("msg-{}", uuid::Uuid::new_v4());
 
-        let content_json = crate::runtime::chat::chat_turn_driver::build_user_content_json(
+        let content_json = crate::runtime::chat::chat_turn_driver::build_user_content_json_with_skill(
             content,
             attachments,
+            skill_command,
         )
         .to_string();
 
@@ -2628,6 +2630,7 @@ impl TauriChatCommandAdapter {
         permission_mode: Option<crate::runtime::tools::permission::PermissionMode>,
         agent_name: Option<String>,
         client_message_id: Option<String>,
+        skill_command: Option<crate::runtime::chat::chat_turn_driver::SkillCommandRef>,
     ) -> Result<(), String> {
         log::info!(
             "[send_message] trace_id={:?} conversation_id={} content_len={} attachments_count={}",
@@ -2666,6 +2669,7 @@ impl TauriChatCommandAdapter {
                         size_bytes: Some(a.file_size),
                     })
                     .collect(),
+                skill_command: skill_command.clone(),
                 received_at: chrono::Utc::now().to_rfc3339(),
             };
             let session_id = crate::runtime::ids::SessionId::new(conversation_id.clone());
@@ -2700,6 +2704,7 @@ impl TauriChatCommandAdapter {
         }
 
         let mut request = ChatTurnRequest::new(conversation_id.clone(), content, attachments);
+        request.skill_command = skill_command;
         // Derive per-turn attachment dirs on the backend (frontend paths are untrusted).
         // The derived dirs will be merged into the per-turn ToolPermissionContext as
         // RuleSource::Session in QueryEngine::build_turn_permission_ctx.
@@ -3233,17 +3238,6 @@ impl TauriChatCommandAdapter {
         Ok(())
     }
 
-    pub async fn set_conversation_expert_team(
-        &self,
-        conversation_id: String,
-        team_id: Option<String>,
-    ) -> Result<(), String> {
-        self.services
-            .db()
-            .set_conversation_expert_team(&conversation_id, team_id.as_deref())
-            .map_err(|e| e.to_string())
-    }
-
     pub async fn get_conversation_meta(
         &self,
         conversation_id: String,
@@ -3268,6 +3262,45 @@ impl TauriChatCommandAdapter {
         .await
     }
 
+    pub async fn set_conversation_expert_team(
+        &self,
+        conversation_id: String,
+        expert_team_id: String,
+        team_label: String,
+    ) -> Result<(), String> {
+        let base = self.services.db().base_dir().to_path_buf();
+        crate::storage::file_store::conversations::set_conversation_source(
+            &base,
+            &conversation_id,
+            crate::storage::file_store::types::ConversationSource::ExpertTeam { expert_team_id },
+            Some(team_label),
+        )
+        .map_err(|e| e.to_string())
+    }
+
+    pub async fn clear_conversation_source(
+        &self,
+        conversation_id: String,
+    ) -> Result<(), String> {
+        let base = self.services.db().base_dir().to_path_buf();
+        crate::storage::file_store::conversations::set_conversation_source(
+            &base,
+            &conversation_id,
+            crate::storage::file_store::types::ConversationSource::User,
+            None,
+        )
+        .map_err(|e| e.to_string())
+    }
+
+    pub async fn get_conversation_source(
+        &self,
+        conversation_id: String,
+    ) -> Result<crate::storage::file_store::types::ConversationSource, String> {
+        let base = self.services.db().base_dir().to_path_buf();
+        crate::storage::file_store::conversations::read_conversation_source(&base, &conversation_id)
+            .map_err(|e| e.to_string())
+    }
+
     pub async fn restore_conversation(&self, conversation_id: String) -> Result<(), String> {
         conversation_service::restore_conversation(
             self.services.db().clone() as Arc<dyn ConversationStore>,
@@ -3284,33 +3317,10 @@ impl TauriChatCommandAdapter {
     }
 
     pub async fn get_conversations(&self) -> Result<Vec<serde_json::Value>, String> {
-        let mut convs = conversation_service::get_conversations(
+        conversation_service::get_conversations(
             self.services.db().clone() as Arc<dyn ConversationStore>
         )
-        .await?;
-        // 为每个对话注入 workspaceName（来自已绑定的授权目录）。
-        // 没有绑定目录的对话不注入字段，前端视为"默认文件夹"。
-        let mut injected = 0usize;
-        for conv in &mut convs {
-            if let Some(id) = conv["id"].as_str() {
-                if let Some(ws) = chat_runtime_impl::load_explicit_workspace(&self.services.app, id)
-                {
-                    injected += 1;
-                    conv["workspaceName"] = serde_json::Value::String(ws.display_name);
-                }
-            }
-        }
-        // dev-only diagnostic: 若侧边栏首次加载时分组异常（例如只看到"默认文件夹"），
-        // 可对照前端 [diag-sidebar] console 日志判断是后端注入失败还是前端 race。
-        // total / injected 通过 release build 时编译掉。
-        if cfg!(debug_assertions) {
-            log::info!(
-                "[diag-sidebar] get_conversations total={} injected={}",
-                convs.len(),
-                injected
-            );
-        }
-        Ok(convs)
+        .await
     }
 
     pub async fn get_tasks(
@@ -3383,7 +3393,7 @@ impl crate::runtime::agenda::AgendaRunDispatcher for TauriChatCommandAdapter {
                         display_name,
                         authorized_at: chrono::Utc::now().to_rfc3339(),
                     };
-                    if let Err(e) = facade.authorized_workspace_store().replace_for_session(&ws) {
+                    if let Err(e) = facade.authorized_workspace_store().replace_for_session(&conversation_id, &ws) {
                         log::warn!(
                             "[agenda-dispatch] authorize workspace failed conv={} path={} err={}",
                             conversation_id,
@@ -3595,9 +3605,10 @@ impl crate::runtime::pending::ChatTurnDispatcher for TauriChatCommandAdapter {
                             .collect();
                     let msg_id = format!("msg-{}", uuid::Uuid::new_v4());
                     let content_value =
-                        crate::runtime::chat::chat_turn_driver::build_user_content_json(
+                        crate::runtime::chat::chat_turn_driver::build_user_content_json_with_skill(
                             &text,
                             &attachments,
+                            item.skill_command.as_ref(),
                         );
                     let content_json = content_value.to_string();
                     if let Err(e) =
@@ -3670,10 +3681,12 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
         )
         .await
         .map_err(anyhow::Error::msg)?;
-        // Stamp employee_id onto conv.json + index entry so the chat top bar
-        // and any future "dispatched conversations" filter can identify this
-        // session as a dispatch run. Failure here is non-fatal: the UI just
-        // won't render the employee identity card.
+        // Stamp employee identity onto conv.json:
+        //   1) `employee_id` field (legacy reader still hits this)
+        //   2) `source = Employee { employee_id }` + index `kind = Employee` mirror
+        //      (so the sidebar can group this conversation under 数字员工)
+        // Failure here is non-fatal: the UI just won't render the employee
+        // identity card / grouping.
         if let Err(e) = self
             .services
             .db()
@@ -3681,6 +3694,21 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
         {
             log::warn!(
                 "[dispatch_employee_run] failed to stamp employee_id for {} on conv {}: {e:#}",
+                employee.id,
+                conversation_id
+            );
+        }
+        let base = self.services.db().base_dir().to_path_buf();
+        if let Err(e) = crate::storage::file_store::conversations::set_conversation_source(
+            &base,
+            &conversation_id,
+            crate::storage::file_store::types::ConversationSource::Employee {
+                employee_id: employee.id.clone(),
+            },
+            Some(employee.name.clone()),
+        ) {
+            log::warn!(
+                "[dispatch_employee_run] failed to stamp source=Employee for {} on conv {}: {e:#}",
                 employee.id,
                 conversation_id
             );

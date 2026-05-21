@@ -48,6 +48,15 @@ const DEV_STRIPE_STYLE: React.CSSProperties = {
     'repeating-linear-gradient(45deg, var(--primary) 0 10px, color-mix(in srgb, var(--primary), #000 10%) 10px 20px)',
 }
 
+// "DEV" or "DEV 5174" when a vite dev port is detectable.  Including the port
+// makes multi-instance dev (two vite servers side by side) visually
+// distinguishable.  Pass an explicit `port` for tests; otherwise reads
+// `window.location.port` at call time.
+export function getDevBadgeLabel(port?: string): string {
+  const detected = port ?? (typeof window !== 'undefined' ? window.location.port : '')
+  return detected ? `DEV ${detected}` : 'DEV'
+}
+
 // DEV badge: not tenant-themed by design (it's a build-mode marker, not UI).
 // Color picked from semantic blue so it stays distinct from any tenant accent.
 function DevBadge() {
@@ -55,7 +64,7 @@ function DevBadge() {
     <span
       className="pointer-events-none mr-2 rounded-sm bg-[var(--color-semantic-purple)] px-1.5 py-0.5 text-[11px] font-semibold tracking-widest text-primary-foreground shadow-[var(--shadow-sm)]"
     >
-      DEV
+      {getDevBadgeLabel()}
     </span>
   )
 }

@@ -42,6 +42,7 @@ fn sample_item(id: &str) -> PendingItem {
         text: format!("text for {id}"),
         sender_nick: None,
         attachments: vec![],
+        skill_command: None,
         received_at: "2026-05-11T03:21:00Z".into(),
     }
 }
@@ -200,12 +201,14 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 struct CountingDispatcher {
     pub count: AtomicUsize,
     pub last_text: tokio::sync::Mutex<Option<String>>,
+    pub last_skill_id: tokio::sync::Mutex<Option<String>>,
 }
 
 #[async_trait::async_trait]
 impl ChatTurnDispatcher for CountingDispatcher {
     async fn dispatch(&self, request: crate::runtime::chat::ChatTurnRequest) -> anyhow::Result<()> {
         self.count.fetch_add(1, Ordering::SeqCst);
+        *self.last_skill_id.lock().await = request.skill_command.as_ref().map(|skill| skill.id.clone());
         *self.last_text.lock().await = Some(request.content);
         Ok(())
     }
@@ -222,6 +225,7 @@ async fn drain_dispatches_after_debounce() {
     let dispatcher = Arc::new(CountingDispatcher {
         count: AtomicUsize::new(0),
         last_text: tokio::sync::Mutex::new(None),
+        last_skill_id: tokio::sync::Mutex::new(None),
     });
     let mgr = PendingQueueManager::new(registry.clone(), bus, resolver, config);
     mgr.set_dispatcher(dispatcher.clone()).await;
@@ -258,6 +262,45 @@ async fn drain_dispatches_after_debounce() {
 }
 
 #[tokio::test]
+async fn drain_preserves_skill_command_on_dispatched_request() {
+    let tmp = TempDir::new().unwrap();
+    let registry = Arc::new(RuntimeRunRegistry::new());
+    let bus = Arc::new(RuntimeEventBus::new());
+    let resolver = Arc::new(TempConvDirResolver(tmp.path().to_path_buf()));
+    let mut config = PendingConfig::default();
+    config.debounce_window = std::time::Duration::from_millis(50);
+    let dispatcher = Arc::new(CountingDispatcher {
+        count: AtomicUsize::new(0),
+        last_text: tokio::sync::Mutex::new(None),
+        last_skill_id: tokio::sync::Mutex::new(None),
+    });
+    let mgr = PendingQueueManager::new(registry.clone(), bus, resolver, config);
+    mgr.set_dispatcher(dispatcher.clone()).await;
+
+    let session = SessionId::new("conv-skill-drain");
+    use crate::runtime::chat::chat_turn_driver::SkillCommandRef;
+    use crate::runtime::ids::RunId;
+    registry.reserve(session.as_str(), RunId::new("run-1")).unwrap();
+    let mut item = sample_item("skill");
+    item.skill_command = Some(SkillCommandRef {
+        id: "dingtalk-workspace".into(),
+        label: Some("玩转钉钉".into()),
+        command: Some("/dingtalk-workspace".into()),
+    });
+    mgr.enqueue_or_send(session.clone(), item).await.unwrap();
+
+    registry.clear(session.as_str());
+    mgr.schedule_drain(session.clone()).await;
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+    assert_eq!(dispatcher.count.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        dispatcher.last_skill_id.lock().await.as_deref(),
+        Some("dingtalk-workspace")
+    );
+}
+
+#[tokio::test]
 async fn drain_skipped_when_session_busy() {
     let tmp = TempDir::new().unwrap();
     let registry = Arc::new(RuntimeRunRegistry::new());
@@ -268,6 +311,7 @@ async fn drain_skipped_when_session_busy() {
     let dispatcher = Arc::new(CountingDispatcher {
         count: AtomicUsize::new(0),
         last_text: tokio::sync::Mutex::new(None),
+        last_skill_id: tokio::sync::Mutex::new(None),
     });
     let mgr = PendingQueueManager::new(registry.clone(), bus, resolver, config);
     mgr.set_dispatcher(dispatcher.clone()).await;
@@ -351,6 +395,7 @@ async fn drain_recently_drained_blocks_replay_after_restore() {
     let dispatcher = Arc::new(CountingDispatcher {
         count: AtomicUsize::new(0),
         last_text: tokio::sync::Mutex::new(None),
+        last_skill_id: tokio::sync::Mutex::new(None),
     });
     let mgr = PendingQueueManager::new(registry.clone(), bus, resolver, config);
     mgr.set_dispatcher(dispatcher.clone()).await;

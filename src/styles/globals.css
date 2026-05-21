@@ -269,6 +269,17 @@ body {
   display: flex;
 }
 
+.ProseMirror {
+  caret-color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.ProseMirror .react-renderer.node-attachmentToken,
+.ProseMirror .react-renderer.node-skillToken {
+  display: inline-block;
+  margin: 0 0.25em;
+  vertical-align: middle;
+}
+
 /* ===== Scrollbar Styles ===== */
 ::-webkit-scrollbar {
   width: 6px;

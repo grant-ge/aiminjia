@@ -1,7 +1,7 @@
 /**
  * @designSource design.pen#Cbtm1 ChatBottomArea
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { SkillPopover } from '@/components/chat/SkillPopover'
@@ -17,11 +17,12 @@ import { useChat, type PendingFileInfo } from '@/hooks/useChat'
 import { useChatAttachments } from '@/hooks/useChatAttachments'
 import { useChatStore } from '@/stores/chatStore'
 import { usePendingStore } from '@/stores/pendingStore'
+import { useSettingsStore } from '@/stores/settingsStore'
 import { useSkillStore } from '@/stores/skillStore'
 import { useUiStore } from '@/stores/uiStore'
 import { pendingSnapshotForSession } from '@/lib/tauri'
 import { PendingChips } from '@/features/chat/PendingChips'
-import { getExpertTeam as getExpertTeamForConversation } from '@/features/expert-teams/expertTeamRegistry'
+import { ensureExpertTeam } from '@/features/expert-teams/expertTeamRegistry'
 import { getExpertTeam as findTeam } from '@/features/expert-teams/teams'
 import { buildDirectorPrompt } from '@/features/expert-teams/buildDirectorPrompt'
 
@@ -59,16 +60,21 @@ export function ChatBottomArea({
   const { sendUserMessage, isStreaming, stopCurrentStream } = useChat()
   const { isPickingAttachments, pickAttachments } = useChatAttachments()
   const [showSkillPopover, setShowSkillPopover] = useState(false)
+  const skills = useSkillStore((s) => s.skills)
   const getSkillById = useSkillStore((s) => s.getById)
-  // Selected skill chip — UI state only (after the local IPC plumbing was
-  // dropped, see commit `drop selected_skill ipc plumbing`). The id no longer
-  // flows to the backend; the trigger text is prepended to the outgoing
-  // markdown at submit time so the `Skill` runtime tool can discover it.
-  const [selectedSkill, setSelectedSkill] = useState<{
-    id: string
-    label?: string
-    trigger: string
-  } | null>(null)
+  const chatWidthMode = useSettingsStore((s) => s.chatWidthMode ?? 'full')
+  // Snapshot of the installed skills as composer-friendly tokens.  The list
+  // drives both the slash-command input rule inside the editor and the chip
+  // rendered for any inline skill token already in the document.
+  const skillTokens = useMemo(
+    () =>
+      skills.map((skill) => ({
+        id: skill.id,
+        label: skill.displayName || skill.id,
+        command: skill.triggerText || `/${skill.id}`,
+      })),
+    [skills],
+  )
 
   // One-shot prefill text (e.g., from generated suggestion); consumed synchronously
   // via lazy initializer so RichComposer's useEditor receives it on its very first render.
@@ -90,14 +96,13 @@ export function ChatBottomArea({
 
   const handleSkillPick = useCallback((skillId: string) => {
     const skill = getSkillById(skillId)
-    const trigger = skill?.triggerText || `/${skillId}`
-    setSelectedSkill({
+    composerRef.current?.insertSkillToken({
       id: skillId,
       label: skill?.displayName || skill?.id || skillId,
-      trigger,
+      command: skill?.triggerText || `/${skillId}`,
     })
-    setShowSkillPopover(false)
     composerRef.current?.focus()
+    setShowSkillPopover(false)
   }, [getSkillById])
 
   const handleSubmit = useCallback(async (payload: RichComposerSubmitPayload) => {
@@ -116,19 +121,14 @@ export function ChatBottomArea({
       fileSize: f.fileSize,
       mimeType: f.mimeType,
     }))
-    // Capture and clear the skill chip BEFORE awaiting send. If the user picked
-    // a different skill while the previous send is mid-flight, that selection
-    // belongs to the next turn, not this one.
-    const skillForThisTurn = selectedSkill
-    setSelectedSkill(null)
+    // The inline skill chip is the source of truth — it travels with the
+    // doc, gets cleared automatically on submit, and is collected by the
+    // serializer into payload.skills.  Only the first skill in a turn drives
+    // the runtime; additional chips are dropped to avoid ambiguous routing.
+    const skillForThisTurn = payload.skills[0] ?? null
     let markdownToSend = payload.markdown
-    if (skillForThisTurn) {
-      const trigger = skillForThisTurn.trigger
-      const sep = trigger.endsWith(' ') ? '' : ' '
-      markdownToSend = `${trigger}${sep}${markdownToSend}`
-    }
     if (activeConversationId && messageCount === 0) {
-      const teamId = getExpertTeamForConversation(activeConversationId)
+      const teamId = await ensureExpertTeam(activeConversationId)
       const team = teamId ? findTeam(teamId) : undefined
       if (team) {
         markdownToSend = buildDirectorPrompt(team, markdownToSend)
@@ -144,7 +144,7 @@ export function ChatBottomArea({
       console.error('[ChatBottomArea] sendUserMessage failed:', err)
       throw err
     }
-  }, [selectedSkill, sendUserMessage, activeConversationId, messageCount])
+  }, [sendUserMessage, activeConversationId, messageCount])
 
   const handlePickAttachments = useCallback(async () => {
     const results = await pickAttachments()
@@ -175,7 +175,10 @@ export function ChatBottomArea({
       <div
         className="absolute right-0 bottom-0 left-0 px-6 pt-4 pb-5"
       >
-        <div className="relative mx-auto w-full max-w-[736px]">
+        <div
+          data-testid="chat-composer-width-shell"
+          className={chatWidthMode === 'full' ? 'relative w-full' : 'relative mx-auto w-full max-w-[736px]'}
+        >
           <div className="absolute bottom-full left-1/2 z-30 mb-1 -translate-x-1/2">
             <SkillPopover
               open={showSkillPopover}
@@ -198,16 +201,7 @@ export function ChatBottomArea({
               initialMarkdown={initialMarkdown}
               showProjectButton={false}
               onOpenSkill={() => setShowSkillPopover((prev) => !prev)}
-              skillCommand={
-                selectedSkill
-                  ? {
-                      id: selectedSkill.id,
-                      label: selectedSkill.label ?? selectedSkill.id,
-                      command: selectedSkill.trigger.trim(),
-                    }
-                  : null
-              }
-              onClearSkillCommand={() => setSelectedSkill(null)}
+              skillTokens={skillTokens}
               onOpenAttachment={isPickingAttachments ? undefined : () => void handlePickAttachments()}
               tips={<BottomTips />}
             />

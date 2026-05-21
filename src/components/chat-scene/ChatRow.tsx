@@ -39,11 +39,12 @@ export function ChatRow({ role, name, avatarUrl, avatarVariant, colorSeed, child
   // don't drift the avatar to the middle. `items-start` does that.
   const rowDir = isUser ? 'flex-row-reverse' : 'flex-row'
   const nameAlign = isUser ? 'text-right' : 'text-left'
+  const rowInset = isUser ? '' : 'pr-9'
   return (
     <div
       data-testid="chat-row"
       data-role={role}
-      className={`flex w-full items-start gap-2 ${rowDir}`}
+      className={`flex w-full items-start gap-2 ${rowDir} ${rowInset}`.trim()}
     >
       <div className="flex shrink-0 flex-col items-center gap-1 pt-1">
         <ChatAvatar
@@ -53,7 +54,7 @@ export function ChatRow({ role, name, avatarUrl, avatarVariant, colorSeed, child
           colorSeed={colorSeed}
         />
       </div>
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
+      <div data-testid="chat-row-content" className="flex min-w-0 flex-1 flex-col gap-1">
         <div
           data-testid="chat-row-name"
           className={`text-xs font-medium text-muted-foreground ${nameAlign}`}

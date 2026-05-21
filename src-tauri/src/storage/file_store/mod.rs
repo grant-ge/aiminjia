@@ -46,7 +46,6 @@ pub mod files;
 pub mod id;
 pub mod io;
 pub mod messages;
-pub mod notes;
 pub mod persona;
 pub mod types;
 pub mod workspace_settings;
@@ -104,7 +103,6 @@ impl AppStorage {
     fn initialize(&self) -> Result<()> {
         // Create directory structure
         fs::create_dir_all(self.base_dir.join("conversations"))?;
-        fs::create_dir_all(self.base_dir.join("shared").join("memory"))?;
         fs::create_dir_all(self.base_dir.join("shared").join("cache"))?;
         fs::create_dir_all(self.base_dir.join("audit"))?;
         cognitive::ensure_dirs(&self.base_dir)?;
@@ -187,15 +185,6 @@ impl AppStorage {
     pub fn set_conversation_employee_id(&self, id: &str, employee_id: Option<&str>) -> Result<()> {
         let _lock = self.write_lock.lock().unwrap();
         conversations::set_conversation_employee_id(&self.base_dir, id, employee_id)?;
-        Ok(())
-    }
-
-    /// Bind the conversation to one of the EXPERT_TEAMS (or clear the binding
-    /// with `None`). Only conv.json is written — see
-    /// `conversations::set_conversation_expert_team` for rationale.
-    pub fn set_conversation_expert_team(&self, id: &str, team_id: Option<&str>) -> Result<()> {
-        let _lock = self.write_lock.lock().unwrap();
-        conversations::set_conversation_expert_team(&self.base_dir, id, team_id)?;
         Ok(())
     }
 
@@ -544,29 +533,6 @@ impl AppStorage {
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // Enterprise Memory
-    // ═══════════════════════════════════════════════════════════════════════
-
-    pub fn get_memory(&self, key: &str) -> Result<Option<String>> {
-        Ok(notes::get_memory(&self.base_dir, key)?)
-    }
-
-    pub fn set_memory(&self, key: &str, value: &str, source: Option<&str>) -> Result<()> {
-        let _lock = self.write_lock.lock().unwrap();
-        notes::set_memory(&self.base_dir, key, value, source)?;
-        Ok(())
-    }
-
-    pub fn get_memories_by_prefix(&self, prefix: &str) -> Result<Vec<(String, String)>> {
-        Ok(notes::get_memories_by_prefix(&self.base_dir, prefix)?)
-    }
-
-    pub fn delete_memories_by_prefix(&self, prefix: &str) -> Result<usize> {
-        let _lock = self.write_lock.lock().unwrap();
-        Ok(notes::delete_memories_by_prefix(&self.base_dir, prefix)?)
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════
     // Search Cache
     // ═══════════════════════════════════════════════════════════════════════
 
@@ -828,7 +794,6 @@ impl AppStorage {
 pub struct RuntimeRepositoryFacade {
     session_store: std::sync::Arc<dyn crate::runtime::store::SessionStore>,
     settings_store: std::sync::Arc<dyn crate::runtime::store::SettingsStore>,
-    memory_store: std::sync::Arc<dyn crate::runtime::store::MemoryStore>,
     audit_store: std::sync::Arc<dyn crate::runtime::store::AuditStore>,
     conversation_store: std::sync::Arc<dyn crate::runtime::store::ConversationStore>,
     persona_store: std::sync::Arc<dyn crate::runtime::store::PersonaStore>,
@@ -845,7 +810,6 @@ impl RuntimeRepositoryFacade {
             settings_store: std::sync::Arc::new(
                 crate::runtime::store::InMemorySettingsStore::default(),
             ),
-            memory_store: std::sync::Arc::new(crate::runtime::store::InMemoryMemoryStore::default()),
             audit_store: std::sync::Arc::new(crate::runtime::store::InMemoryAuditStore::default()),
             conversation_store: std::sync::Arc::new(
                 crate::runtime::store::InMemoryConversationStore::new(),
@@ -866,9 +830,6 @@ impl RuntimeRepositoryFacade {
             settings_store: std::sync::Arc::new(FileSettingsStore {
                 storage: storage.clone(),
             }),
-            memory_store: std::sync::Arc::new(FileMemoryStore {
-                storage: storage.clone(),
-            }),
             audit_store: std::sync::Arc::new(FileAuditStore {
                 storage: storage.clone(),
             }),
@@ -882,7 +843,7 @@ impl RuntimeRepositoryFacade {
                 storage: storage.clone(),
             }),
             authorized_workspace_store: std::sync::Arc::new(
-                crate::runtime::store::FileAuthorizedWorkspaceStore {
+                crate::runtime::store::ConvJsonAuthorizedWorkspaceStore {
                     storage: storage.clone(),
                 },
             ),
@@ -895,14 +856,6 @@ impl RuntimeRepositoryFacade {
 
     pub fn settings_store(&self) -> &dyn crate::runtime::store::SettingsStore {
         self.settings_store.as_ref()
-    }
-
-    pub fn memory_store(&self) -> &dyn crate::runtime::store::MemoryStore {
-        self.memory_store.as_ref()
-    }
-
-    pub fn clone_memory_store(&self) -> std::sync::Arc<dyn crate::runtime::store::MemoryStore> {
-        self.memory_store.clone()
     }
 
     pub fn audit_store(&self) -> &dyn crate::runtime::store::AuditStore {
@@ -1001,20 +954,6 @@ impl crate::runtime::store::SettingsStore for FileSettingsStore {
 
     fn delete(&self, key: &str) -> Result<()> {
         self.storage.delete_setting(key)
-    }
-}
-
-struct FileMemoryStore {
-    storage: std::sync::Arc<AppStorage>,
-}
-
-impl crate::runtime::store::MemoryStore for FileMemoryStore {
-    fn get(&self, key: &str) -> Result<Option<String>> {
-        self.storage.get_memory(key)
-    }
-
-    fn set(&self, key: &str, value: &str) -> Result<()> {
-        self.storage.set_memory(key, value, Some("runtime"))
     }
 }
 
@@ -1641,26 +1580,6 @@ mod tests {
 
         let all = storage.get_all_settings().unwrap();
         assert_eq!(all["theme"], "dark");
-    }
-
-    #[test]
-    fn test_enterprise_memory() {
-        let (storage, _dir) = test_storage();
-
-        storage
-            .set_memory("company", "Acme Corp", Some("onboarding"))
-            .unwrap();
-        assert_eq!(
-            storage.get_memory("company").unwrap(),
-            Some("Acme Corp".to_string())
-        );
-
-        // Update
-        storage.set_memory("company", "Acme Inc", None).unwrap();
-        assert_eq!(
-            storage.get_memory("company").unwrap(),
-            Some("Acme Inc".to_string())
-        );
     }
 
     #[test]

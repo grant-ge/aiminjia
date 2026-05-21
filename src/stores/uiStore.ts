@@ -33,18 +33,23 @@ const DISABLED_SETTINGS_KEYS = new Set<SettingsModalKey>([
   'shortcuts',
 ])
 
+export type SidebarBodyTab = 'project' | 'employee' | 'expert-team' | 'channel'
+
 interface UiState {
   route: Route
   settingsModal: SettingsModalState
+  sidebarTab: SidebarBodyTab
   prefillText: string | null
   setRoute: (route: Route) => void
   openSettings: (settingsModal: SettingsModalKey) => void
   closeSettings: () => void
+  setSidebarTab: (tab: SidebarBodyTab) => void
   setPrefillText: (text: string) => void
   consumePrefillText: () => string | null
 }
 
 const ROUTE_STORAGE_KEY = 'aijia-ui-route'
+const SIDEBAR_TAB_STORAGE_KEY = 'aijia-sidebar-tab'
 const DEFAULT_ROUTE: Route = { kind: 'home' }
 
 function isRoute(value: unknown): value is Route {
@@ -90,9 +95,29 @@ function persistRoute(route: Route) {
   }
 }
 
+function loadPersistedSidebarTab(): SidebarBodyTab {
+  if (typeof localStorage === 'undefined') return 'project'
+  try {
+    const raw = localStorage.getItem(SIDEBAR_TAB_STORAGE_KEY)
+    return raw === 'channel' || raw === 'expert-team' || raw === 'employee' ? raw : 'project'
+  } catch {
+    return 'project'
+  }
+}
+
+function persistSidebarTab(tab: SidebarBodyTab) {
+  if (typeof localStorage === 'undefined') return
+  try {
+    localStorage.setItem(SIDEBAR_TAB_STORAGE_KEY, tab)
+  } catch {
+    // Ignore storage failures; tab still works in memory.
+  }
+}
+
 export const useUiStore = create<UiState>((set, get) => ({
   route: loadPersistedRoute(),
   settingsModal: null,
+  sidebarTab: loadPersistedSidebarTab(),
   prefillText: null,
   setRoute: (route) => {
     persistRoute(route)
@@ -104,6 +129,10 @@ export const useUiStore = create<UiState>((set, get) => ({
     set({ settingsModal: DISABLED_SETTINGS_KEYS.has(normalized) ? 'account' : normalized })
   },
   closeSettings: () => set({ settingsModal: null }),
+  setSidebarTab: (tab) => {
+    persistSidebarTab(tab)
+    set({ sidebarTab: tab })
+  },
   setPrefillText: (text) => set({ prefillText: text }),
   consumePrefillText: () => {
     const text = get().prefillText

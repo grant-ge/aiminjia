@@ -93,6 +93,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
   const [cronModalOpen, setCronModalOpen] = useState(false)
   const [upgradeCheck, setUpgradeCheck] = useState<TemplateUpgradeCheck | null>(null)
   const setRoute = useUiStore((s) => s.setRoute)
+  const setSidebarTab = useUiStore((s) => s.setSidebarTab)
   const getSkillById = useSkillStore((s) => s.getById)
 
   // PR-12: probe whether a newer template version is available for this
@@ -145,6 +146,9 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
     chatStore.setMessages([])
     await onRefresh()
     onClose()
+    // Switch sidebar to 数字员工 tab so the user lands in the right section
+    // when they navigate back to the home view.
+    setSidebarTab('employee')
     setRoute({ kind: 'chat', conversationId: convId })
   }
 

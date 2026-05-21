@@ -8,6 +8,7 @@ import type { AppLanguage } from '@/i18n'
 export type LlmProvider = 'deepseek-v3' | 'qwen-plus' | 'volcano' | 'openai' | 'claude' | 'custom'
 export type DataMaskingLevel = 'strict' | 'standard' | 'relaxed'
 export type FontScale = 'small' | 'medium' | 'large'
+export type ChatWidthMode = 'centered' | 'full'
 
 export interface Settings {
   primaryModel: LlmProvider
@@ -29,7 +30,10 @@ export interface Settings {
   personaOnboardingDone?: boolean
   appLanguage?: AppLanguage
   fontScale?: FontScale
+  chatWidthMode?: ChatWidthMode
   accentColor?: string
+  uiHomeSelectedWorkspace?: string
+  uiHomeRecentWorkspaces?: string
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -52,7 +56,10 @@ export const DEFAULT_SETTINGS: Settings = {
   personaOnboardingDone: false,
   appLanguage: 'zh-CN',
   fontScale: 'medium',
+  chatWidthMode: 'full',
   accentColor: '',
+  uiHomeSelectedWorkspace: '',
+  uiHomeRecentWorkspaces: '',
 }
 
 export const LLM_PROVIDER_LABELS: Record<LlmProvider, string> = {

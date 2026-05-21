@@ -14,17 +14,17 @@ const t = (text: string, marks?: ComposerJsonNode['marks']): ComposerJsonNode =>
 describe('serializeComposerDoc — 空 / 纯文本', () => {
   it('空 doc → markdown=""，isEmpty=true', () => {
     const result = serializeComposerDoc(doc())
-    expect(result).toEqual({ markdown: '', attachments: [], isEmpty: true })
+    expect(result).toEqual({ markdown: '', attachments: [], skills: [], isEmpty: true })
   })
 
   it('空 paragraph → markdown=""，isEmpty=true', () => {
     const result = serializeComposerDoc(doc(p()))
-    expect(result).toEqual({ markdown: '', attachments: [], isEmpty: true })
+    expect(result).toEqual({ markdown: '', attachments: [], skills: [], isEmpty: true })
   })
 
   it('单段纯文本 → 原样输出，isEmpty=false', () => {
     const result = serializeComposerDoc(doc(p(t('hello world'))))
-    expect(result).toEqual({ markdown: 'hello world', attachments: [], isEmpty: false })
+    expect(result).toEqual({ markdown: 'hello world', attachments: [], skills: [], isEmpty: false })
   })
 
   it('多段段落用 \\n\\n 分隔', () => {
@@ -325,6 +325,42 @@ describe('serializeComposerDoc — attachmentToken', () => {
       doc(p(at({ id: 'w2', fileName: 'foo.pdf', path: 'D:/data/foo.pdf' })))
     )
     expect(result.markdown).toBe('[附件: foo.pdf](<file:///D:/data/foo.pdf>)')
+  })
+})
+
+
+describe('serializeComposerDoc — skillToken', () => {
+  const skill = (overrides: Partial<ComposerJsonNode['attrs']> = {}): ComposerJsonNode => ({
+    type: 'skillToken',
+    attrs: {
+      id: 'dingtalk-workspace',
+      label: '玩转钉钉',
+      command: '/dingtalk-workspace',
+      ...overrides,
+    },
+  })
+
+  it('skill token is collected but omitted from markdown', () => {
+    const result = serializeComposerDoc(doc(p(skill(), t(' 帮我查今天日程'))))
+    expect(result.markdown).toBe(' 帮我查今天日程')
+    expect(result.skills).toEqual([
+      { id: 'dingtalk-workspace', label: '玩转钉钉', command: '/dingtalk-workspace' },
+    ])
+    expect(result.isEmpty).toBe(false)
+  })
+
+  it('skill-only submit is not empty', () => {
+    const result = serializeComposerDoc(doc(p(skill())))
+    expect(result.markdown).toBe('')
+    expect(result.skills).toHaveLength(1)
+    expect(result.isEmpty).toBe(false)
+  })
+
+  it('duplicate skill tokens are collected once', () => {
+    const result = serializeComposerDoc(doc(p(skill(), t(' and '), skill())))
+    expect(result.skills).toEqual([
+      { id: 'dingtalk-workspace', label: '玩转钉钉', command: '/dingtalk-workspace' },
+    ])
   })
 })
 

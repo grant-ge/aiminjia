@@ -51,6 +51,7 @@ pub async fn send_message(
     permission_mode: Option<crate::runtime::tools::permission::PermissionMode>,
     agent_name: Option<String>,
     client_message_id: Option<String>,
+    skill_command: Option<crate::runtime::chat::chat_turn_driver::SkillCommandRef>,
 ) -> Result<(), String> {
     // Compatibility marker for review tests:
     // .send_message(conversation_id, content, attachments, permission_mode, agent_name)
@@ -70,6 +71,7 @@ pub async fn send_message(
             permission_mode,
             agent_name,
             client_message_id,
+            skill_command,
         )
         .await;
     match &result {
@@ -346,17 +348,6 @@ pub async fn rename_conversation(
 }
 
 #[tauri::command]
-pub async fn set_conversation_expert_team(
-    adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
-    conversation_id: String,
-    team_id: Option<String>,
-) -> Result<(), String> {
-    adapter
-        .set_conversation_expert_team(conversation_id, team_id)
-        .await
-}
-
-#[tauri::command]
 pub async fn get_conversation_meta(
     adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
     conversation_id: String,
@@ -373,6 +364,34 @@ pub async fn archive_conversation(
     conversation_id: String,
 ) -> Result<(), String> {
     adapter.archive_conversation(conversation_id).await
+}
+
+#[tauri::command]
+pub async fn set_conversation_expert_team(
+    adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
+    conversation_id: String,
+    expert_team_id: String,
+    team_label: String,
+) -> Result<(), String> {
+    adapter
+        .set_conversation_expert_team(conversation_id, expert_team_id, team_label)
+        .await
+}
+
+#[tauri::command]
+pub async fn clear_conversation_source(
+    adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
+    conversation_id: String,
+) -> Result<(), String> {
+    adapter.clear_conversation_source(conversation_id).await
+}
+
+#[tauri::command]
+pub async fn get_conversation_source(
+    adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
+    conversation_id: String,
+) -> Result<crate::storage::file_store::types::ConversationSource, String> {
+    adapter.get_conversation_source(conversation_id).await
 }
 
 #[tauri::command]
@@ -487,7 +506,7 @@ pub mod testsupport {
         let session_id = crate::runtime::ids::SessionId::new(session_id.to_string());
         facade
             .authorized_workspace_store()
-            .replace_for_session(&AuthorizedWorkspace {
+            .replace_for_session(session_id.as_str(), &AuthorizedWorkspace {
                 id: "aw-test".to_string(),
                 session_id: session_id.clone(),
                 root_path: authorized_root.to_path_buf(),
@@ -501,7 +520,7 @@ pub mod testsupport {
 
         let authorized_workspace = facade
             .authorized_workspace_store()
-            .get_current_for_session(&session_id)?
+            .get_current_for_session(session_id.as_str(), &session_id)?
             .map(|aw| AuthorizedWorkspaceRef {
                 id: aw.id,
                 root_path: aw.root_path,

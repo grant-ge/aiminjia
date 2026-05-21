@@ -1,15 +1,24 @@
 import { NodeViewWrapper } from '@tiptap/react'
-import { Image as ImageIcon, Folder, X } from 'lucide-react'
+import {
+  File,
+  FileJson,
+  FileSpreadsheet,
+  FileText,
+  Folder,
+  Image as ImageIcon,
+  X,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { ComposerAttachmentToken } from './types'
 
-const FILE_TYPE_LABEL: Partial<Record<ComposerAttachmentToken['fileType'], string>> = {
-  excel: 'XLS',
-  csv: 'CSV',
-  word: 'DOC',
-  pdf: 'PDF',
-  json: 'JSON',
-  image: 'IMG',
+const FILE_TYPE_ICON = {
+  excel: FileSpreadsheet,
+  csv: FileSpreadsheet,
+  word: FileText,
+  pdf: FileText,
+  json: FileJson,
+  image: ImageIcon,
+  folder: Folder,
 }
 
 interface AttachmentTokenViewProps {
@@ -19,24 +28,26 @@ interface AttachmentTokenViewProps {
 
 export function AttachmentTokenView({ node, deleteNode }: AttachmentTokenViewProps) {
   const attrs = node.attrs
+  const AttachmentIcon =
+    attrs.kind === 'image'
+      ? ImageIcon
+      : attrs.kind === 'folder'
+        ? Folder
+        : (FILE_TYPE_ICON[attrs.fileType] ?? File)
+
   return (
     <NodeViewWrapper
       as="span"
       data-attachment-chip
       contentEditable={false}
       className={cn(
-        'inline-flex max-w-[180px] items-center gap-1 rounded-md border border-border bg-muted px-1.5 py-0.5 align-middle text-xs leading-none text-foreground',
+        'inline-flex max-w-[180px] items-center gap-1 rounded-md border border-border bg-muted px-1.5 py-0.5 text-xs leading-none text-foreground',
       )}
     >
-      {attrs.kind === 'image' ? (
-        <ImageIcon aria-label="image attachment" className="h-3.5 w-3.5 shrink-0" />
-      ) : attrs.kind === 'folder' ? (
-        <Folder aria-label="folder attachment" className="h-3.5 w-3.5 shrink-0" />
-      ) : (
-        <span className="shrink-0 rounded bg-background px-1 text-xs font-bold text-muted-foreground">
-          {FILE_TYPE_LABEL[attrs.fileType] ?? 'FILE'}
-        </span>
-      )}
+      <AttachmentIcon
+        aria-label={`${attrs.fileType} attachment`}
+        className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+      />
       <span className="truncate">{attrs.fileName}</span>
       <button
         type="button"

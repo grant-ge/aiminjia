@@ -29,8 +29,6 @@ function toConversation(raw: Record<string, unknown>, newChatLabel: string): Con
     updatedAt: (raw.updatedAt as string) ?? new Date().toISOString(),
     isArchived: (raw.isArchived as boolean) ?? false,
     workspaceName: (raw.workspaceName as string | undefined) ?? undefined,
-    employeeId: (raw.employeeId as string | undefined) ?? undefined,
-    expertTeamId: (raw.expertTeamId as string | undefined) ?? undefined,
   }
 }
 

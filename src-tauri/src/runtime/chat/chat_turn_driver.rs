@@ -56,11 +56,30 @@ pub struct ChatAttachmentRef {
     pub mime_type: Option<String>,
 }
 
-pub fn build_user_content_json(
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillCommandRef {
+    pub id: String,
+    pub label: Option<String>,
+    pub command: Option<String>,
+}
+
+pub fn build_user_content_json_with_skill(
     content: &str,
     attachments: &[ChatAttachmentRef],
+    skill_command: Option<&SkillCommandRef>,
 ) -> serde_json::Value {
     let mut value = serde_json::json!({ "text": content });
+    if let Some(skill) = skill_command {
+        let label = skill.label.as_deref().unwrap_or(skill.id.as_str());
+        let command = skill.command.clone().unwrap_or_else(|| format!("/{}", skill.id));
+        value["commandText"] = serde_json::Value::String(command.clone());
+        value["skillCommand"] = serde_json::json!({
+            "id": skill.id,
+            "label": label,
+            "command": command,
+        });
+    }
     if !attachments.is_empty() {
         value["files"] = serde_json::Value::Array(
             attachments
@@ -83,6 +102,25 @@ pub fn build_user_content_json(
     value
 }
 
+pub fn build_user_content_json(
+    content: &str,
+    attachments: &[ChatAttachmentRef],
+) -> serde_json::Value {
+    build_user_content_json_with_skill(content, attachments, None)
+}
+
+pub fn selected_skill_instruction(skill_command: Option<&SkillCommandRef>) -> Option<String> {
+    let skill = skill_command?;
+    let label = skill.label.as_deref().unwrap_or(skill.id.as_str());
+    let command = skill.command.as_deref().unwrap_or("");
+    Some(format!(
+        "\n\n<system-reminder>\n本轮用户显式选择技能：id={id}, label={label}, command={command}\n请优先调用 Skill({{ skill_id: \"{id}\" }}) 加载该技能指令，然后按该技能要求处理用户请求。\n不要使用 label 作为 skill_id；后端只识别稳定 id `{id}`。\n</system-reminder>",
+        id = skill.id,
+        label = label,
+        command = command,
+    ))
+}
+
 /// The chat turn request type.  Defined here to avoid circular imports between
 /// `session_runtime` and `chat`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -90,6 +128,7 @@ pub struct ChatTurnRequest {
     pub conversation_id: SessionId,
     pub content: String,
     pub attachments: Vec<ChatAttachmentRef>,
+    pub skill_command: Option<SkillCommandRef>,
     pub agent_name: Option<String>,
     pub permission_mode: PermissionMode,
     /// The authoritative run_id for this turn.
@@ -145,6 +184,7 @@ impl ChatTurnRequest {
             conversation_id: conversation_id.into(),
             content: content.into(),
             attachments,
+            skill_command: None,
             agent_name: None,
             permission_mode: PermissionMode::Default,
             run_id: RunId::new(uuid::Uuid::new_v4().to_string()),
@@ -217,6 +257,7 @@ pub trait RuntimeLlmExecutor: Send + Sync {
         _conversation_id: &str,
         _content: &str,
         _attachments: &[ChatAttachmentRef],
+        _skill_command: Option<&SkillCommandRef>,
         _client_message_id: Option<&str>,
     ) -> Result<String, TurnError> {
         Ok(String::new())
@@ -1540,6 +1581,7 @@ impl RuntimeChatTurnDriver {
                     &notification.xml,
                     &[],
                     None,
+                    None,
                 )
                 .await
             {
@@ -1591,6 +1633,7 @@ impl RuntimeChatTurnDriver {
                     request.conversation_id.as_str(),
                     &xml,
                     &[],
+                    None,
                     None,
                 )
                 .await
@@ -1674,6 +1717,7 @@ impl RuntimeChatTurnDriver {
                     request.conversation_id.as_str(),
                     &request.content,
                     &request.attachments,
+                    request.skill_command.as_ref(),
                     request.client_message_id.as_deref(),
                 )
                 .await
@@ -1692,9 +1736,10 @@ impl RuntimeChatTurnDriver {
                 RuntimeEventKind::StreamStarted,
             ))
             .await?;
-        let pending_user_content = build_user_content_json(
+        let pending_user_content = build_user_content_json_with_skill(
             &request.content,
             &request.attachments,
+            request.skill_command.as_ref(),
         );
         // Skip emitting MessagePersisted for the resume-sentinel: it's an
         // internal wake signal, not a user-visible turn. Emitting it would
@@ -1736,6 +1781,13 @@ impl RuntimeChatTurnDriver {
                 String::new()
             });
         let skill_catalog = executor.get_skill_catalog(None).await;
+        let skill_context = match selected_skill_instruction(request.skill_command.as_ref()) {
+            Some(instruction) if !skill_catalog.is_empty() => {
+                format!("{skill_catalog}{instruction}")
+            }
+            Some(instruction) => instruction,
+            None => skill_catalog,
+        };
         let project_memory_ctx = executor
             .load_project_memory(&config.workspace_path, request.content.as_str())
             .await
@@ -1830,7 +1882,7 @@ impl RuntimeChatTurnDriver {
                 "",
                 None,
                 None,
-                &skill_catalog,
+                &skill_context,
             );
 
             // Build the read-only executor input.
@@ -2666,17 +2718,30 @@ mod tests {
             !req.pre_persisted,
             "ChatTurnRequest::new must default pre_persisted to false; dispatch path opts in explicitly"
         );
+        assert!(
+            req.skill_command.is_none(),
+            "ChatTurnRequest::new must not imply a selected skill"
+        );
     }
 
     #[test]
     fn chat_turn_request_pre_persisted_round_trips() {
         let mut req = ChatTurnRequest::new("conv-y", "dispatch prompt body", vec![]);
         req.pre_persisted = true;
+        req.skill_command = Some(SkillCommandRef {
+            id: "dingtalk-workspace".to_string(),
+            label: Some("玩转钉钉".to_string()),
+            command: Some("/dingtalk-workspace".to_string()),
+        });
         assert!(req.pre_persisted);
         let cloned = req.clone();
         assert!(
             cloned.pre_persisted,
             "Clone must preserve pre_persisted so spawn body sees the flag"
+        );
+        assert_eq!(
+            cloned.skill_command.as_ref().map(|skill| skill.id.as_str()),
+            Some("dingtalk-workspace")
         );
     }
     use crate::runtime::store::{
@@ -2823,6 +2888,40 @@ mod tests {
                 .and_then(|value| value.as_str()),
             Some("/tmp/report.csv")
         );
+    }
+
+    #[test]
+    fn build_user_content_json_includes_skill_command() {
+        let skill = SkillCommandRef {
+            id: "dingtalk-workspace".to_string(),
+            label: Some("玩转钉钉".to_string()),
+            command: Some("/dingtalk-workspace".to_string()),
+        };
+
+        let content = build_user_content_json_with_skill("查今天日程", &[], Some(&skill));
+
+        assert_eq!(content["text"].as_str(), Some("查今天日程"));
+        assert_eq!(content["commandText"].as_str(), Some("/dingtalk-workspace"));
+        assert_eq!(content["skillCommand"]["id"].as_str(), Some("dingtalk-workspace"));
+        assert_eq!(content["skillCommand"]["label"].as_str(), Some("玩转钉钉"));
+        assert_eq!(content["skillCommand"]["command"].as_str(), Some("/dingtalk-workspace"));
+    }
+
+    #[test]
+    fn selected_skill_instruction_mentions_skill_tool_and_id() {
+        let skill = SkillCommandRef {
+            id: "dingtalk-workspace".to_string(),
+            label: Some("玩转钉钉".to_string()),
+            command: Some("/dingtalk-workspace".to_string()),
+        };
+
+        let instruction = selected_skill_instruction(Some(&skill)).expect("instruction");
+
+        assert!(instruction.contains("dingtalk-workspace"));
+        assert!(instruction.contains("玩转钉钉"));
+        assert!(instruction.contains("Skill({ skill_id: \"dingtalk-workspace\" })"));
+        assert!(instruction.contains("不要使用 label 作为 skill_id"));
+        assert!(!instruction.contains("skill_id: \"玩转钉钉\""));
     }
 
     #[tokio::test]
@@ -3032,6 +3131,7 @@ mod tests {
             _conversation_id: &str,
             _content: &str,
             _attachments: &[ChatAttachmentRef],
+            _skill_command: Option<&SkillCommandRef>,
             _client_message_id: Option<&str>,
         ) -> Result<String, TurnError> {
             Ok("user-msg".to_string())
@@ -3162,6 +3262,40 @@ mod tests {
         assert_eq!(dynamic_contexts.len(), 1);
         assert!(dynamic_contexts[0].contains("可用专项技能"));
         assert!(dynamic_contexts[0].contains("biz-writing"));
+    }
+
+    #[tokio::test]
+    async fn driver_injects_selected_skill_instruction_into_dynamic_context() {
+        let executor = Arc::new(SnapshotPromptExecutor::with_skill_catalog(
+            "## 可用专项技能\n- `dingtalk-workspace` — 玩转钉钉",
+        ));
+        let bus = RuntimeEventBus::new();
+        let driver =
+            RuntimeChatTurnDriver::with_llm_executor(QueryEngine::new(), bus, executor.clone());
+        let mut turn = TurnState::new(
+            IdentityMapping::from_legacy_conversation_id("conv-driver-selected-skill".to_string()),
+            RunId::new("run-driver-selected-skill"),
+            "查今天日程".to_string(),
+        );
+        let mut request =
+            ChatTurnRequest::new("conv-driver-selected-skill", "查今天日程", vec![]);
+        request.skill_command = Some(SkillCommandRef {
+            id: "dingtalk-workspace".to_string(),
+            label: Some("玩转钉钉".to_string()),
+            command: Some("/dingtalk-workspace".to_string()),
+        });
+
+        driver
+            .run_chat_turn(&mut turn, &request)
+            .await
+            .expect("driver should run with selected skill");
+
+        let dynamic_contexts = executor.seen_dynamic_contexts.lock().unwrap().clone();
+        assert_eq!(dynamic_contexts.len(), 1);
+        assert!(dynamic_contexts[0].contains("dingtalk-workspace"));
+        assert!(dynamic_contexts[0].contains("玩转钉钉"));
+        assert!(dynamic_contexts[0].contains("Skill({ skill_id: \"dingtalk-workspace\" })"));
+        assert!(!dynamic_contexts[0].contains("skill_id: \"玩转钉钉\""));
     }
 
     // ── LTR (B-gap1) Path A wiring tests ─────────────────────────────────────

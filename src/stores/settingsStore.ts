@@ -8,7 +8,7 @@ import {
   normalizeFontScale,
   persistFontScale,
 } from '@/styles/fontScale'
-import type { Settings, LlmProvider, FontScale, DataMaskingLevel } from '@/types/settings'
+import type { Settings, LlmProvider, FontScale, DataMaskingLevel, ChatWidthMode } from '@/types/settings'
 import { DEFAULT_SETTINGS } from '@/types/settings'
 
 interface SettingsState extends Settings {
@@ -26,6 +26,7 @@ interface SettingsState extends Settings {
   setConfiguredProviders: (providers: LlmProvider[]) => void
   setAppLanguage: (language: AppLanguage) => void
   setFontScale: (scale: FontScale) => void
+  setChatWidthMode: (mode: ChatWidthMode) => void
   setDataMaskingLevel: (level: DataMaskingLevel) => void
   markLoaded: () => void
 }
@@ -64,6 +65,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     applyFontScale(normalized)
     set({ fontScale: normalized })
   },
+  setChatWidthMode: (chatWidthMode) => set({ chatWidthMode }),
   setDataMaskingLevel: (dataMaskingLevel) => set({ dataMaskingLevel }),
   markLoaded: () => set({ isLoaded: true }),
 }))

@@ -32,9 +32,6 @@ impl UserScopedPaths {
     pub fn shared_dir(&self) -> PathBuf {
         self.base.join("shared")
     }
-    pub fn memory_dir(&self) -> PathBuf {
-        self.base.join("shared").join("memory")
-    }
     pub fn cognitive_dir(&self) -> PathBuf {
         self.base.join("shared").join("cognitive")
     }
@@ -186,7 +183,6 @@ mod tests {
         assert_eq!(paths.scope_json_path(), base.join("scope.json"));
         assert_eq!(paths.index_path(), base.join("index.json"));
         assert_eq!(paths.shared_dir(), base.join("shared"));
-        assert_eq!(paths.memory_dir(), base.join("shared/memory"));
         assert_eq!(paths.cognitive_dir(), base.join("shared/cognitive"));
         assert_eq!(paths.cache_dir(), base.join("shared/cache"));
         assert_eq!(paths.project_memories_dir(), base.join("project_memories"));

@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
-import { TitleBar } from './TitleBar'
+import { getDevBadgeLabel, TitleBar } from './TitleBar'
 
 vi.mock('@tauri-apps/api/window', () => ({
   getCurrentWindow: () => ({
@@ -48,7 +48,12 @@ describe('TitleBar', () => {
     vi.stubEnv('DEV', true)
     Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Macintosh)', configurable: true })
     render(<TitleBar />)
-    expect(screen.getByText('DEV')).toBeInTheDocument()
+    expect(screen.getByText(getDevBadgeLabel())).toBeInTheDocument()
+  })
+
+  it('formats current dev server port in DEV badge', () => {
+    expect(getDevBadgeLabel('5174')).toBe('DEV 5174')
+    expect(getDevBadgeLabel('')).toBe('DEV')
   })
 
   it('does not show DEV badge in production build', () => {

@@ -225,10 +225,8 @@ impl AiJiaHome {
     }
 
     /// `~/.renlijia/turn_stages/` — ephemeral per-turn stage snapshots written
-    /// by `TurnStageEmitter` (spec 2026-05-17-turn-stages §5).  Files here are
-    /// crash-detection sentinels: any file present at process startup means
-    /// the previous run died mid-turn for that conversation, and the recovery
-    /// sweep converts it into `interrupted_turns/{conv_id}.json`.
+    /// by `TurnStageEmitter` (spec 2026-05-17-turn-stages §5).  The frontend
+    /// reads these to hydrate in-flight turn status after a webview reload.
     pub fn turn_stages_dir(&self) -> PathBuf {
         self.root.join("turn_stages")
     }
@@ -238,18 +236,6 @@ impl AiJiaHome {
     /// at every transition.
     pub fn turn_stage_path(&self, conversation_id: &str) -> PathBuf {
         self.turn_stages_dir().join(format!("{conversation_id}.json"))
-    }
-
-    /// `~/.renlijia/interrupted_turns/` — set of "the last process died while
-    /// this conversation was mid-turn" markers.  Frontend reads on open and
-    /// shows a banner so the user can resend or dismiss.
-    pub fn interrupted_turns_dir(&self) -> PathBuf {
-        self.root.join("interrupted_turns")
-    }
-
-    pub fn interrupted_turn_path(&self, conversation_id: &str) -> PathBuf {
-        self.interrupted_turns_dir()
-            .join(format!("{conversation_id}.json"))
     }
 
     /// 剪贴板贴图保存目录 `~/.renlijia/tmp/clipboard/`。
@@ -274,7 +260,6 @@ impl AiJiaHome {
     pub fn ensure_user_dirs(&self, scope: &UserScope) -> std::io::Result<()> {
         let user_dir = self.user_dir(scope);
         std::fs::create_dir_all(self.user_conversations_dir(scope))?;
-        std::fs::create_dir_all(user_dir.join("shared").join("memory"))?;
         std::fs::create_dir_all(user_dir.join("shared").join("cognitive"))?;
         std::fs::create_dir_all(user_dir.join("shared").join("cache"))?;
         std::fs::create_dir_all(self.user_audit_dir(scope))?;
@@ -461,7 +446,6 @@ mod tests {
         home.ensure_user_dirs(&scope).unwrap();
 
         assert!(home.user_conversations_dir(&scope).exists());
-        assert!(user_dir.join("shared").join("memory").exists());
         assert!(user_dir.join("shared").join("cache").exists());
         assert!(home.user_audit_dir(&scope).exists());
         assert!(home.user_schedules_dir(&scope).exists());

@@ -50,6 +50,17 @@ pub struct ConversationMetaDto {
 
 impl From<ConversationMeta> for ConversationMetaDto {
     fn from(m: ConversationMeta) -> Self {
+        // Derive expert_team_id from our tagged source field so callers that
+        // still ask for `expertTeamId` (legacy from main) get a sensible value.
+        let expert_team_id =
+            if let crate::storage::file_store::types::ConversationSource::ExpertTeam {
+                expert_team_id,
+            } = &m.source
+            {
+                Some(expert_team_id.clone())
+            } else {
+                None
+            };
         Self {
             id: m.id,
             title: m.title,
@@ -58,7 +69,7 @@ impl From<ConversationMeta> for ConversationMetaDto {
             is_archived: m.is_archived,
             employee_id: m.employee_id,
             active_team_name: m.active_team_name,
-            expert_team_id: m.expert_team_id,
+            expert_team_id,
         }
     }
 }
@@ -189,9 +200,6 @@ pub async fn delete_conversation(
             failures.join("; ")
         ));
     }
-
-    let _ = db.delete_memories_by_prefix(&format!("loaded:{}:", conversation_id));
-    let _ = db.delete_memories_by_prefix(&format!("note:{}:", conversation_id));
 
     db.delete_conversation(&conversation_id)
         .map_err(|e| e.to_string())?;

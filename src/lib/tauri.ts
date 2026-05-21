@@ -135,6 +135,12 @@ export interface ChatAttachmentPayload {
   mimeType?: string
 }
 
+export interface SkillCommandPayload {
+  id: string
+  label?: string
+  command?: string
+}
+
 export interface SavedClipboardAttachmentPayload {
   fileName: string
   path: string
@@ -294,14 +300,6 @@ export interface PersistedTurnStage {
   lastHeartbeatAtMs: number
 }
 
-/** Mirror of backend `InterruptedTurnRecord` (interrupted_turn.json on disk). */
-export interface InterruptedTurnRecord {
-  conversationId: string
-  runId: string
-  lastStage: TurnStageKind
-  interruptedAtMs: number
-}
-
 export interface DiagnosticsEventPayload {
   ts: string
   seq: number
@@ -348,6 +346,7 @@ export function sendMessage(
   attachments?: ChatAttachmentPayload[],
   agentName?: string | null,
   clientMessageId?: string,
+  skillCommand?: SkillCommandPayload | null,
 ): Promise<void> {
   return invoke<void>('send_message', {
     conversationId,
@@ -355,6 +354,7 @@ export function sendMessage(
     attachments: attachments ?? [],
     agentName: agentName ?? null,
     clientMessageId: clientMessageId ?? null,
+    skillCommand: skillCommand ?? null,
   })
 }
 
@@ -690,22 +690,32 @@ export function archiveConversation(conversationId: string): Promise<void> {
   return invoke<void>('archive_conversation', { conversationId })
 }
 
-/**
- * Bind a conversation to one of the EXPERT_TEAMS, or clear the binding with
- * `null`. Persisted to `conv.json` on disk (no localStorage). The mapping
- * follows the conversation through restart, export/import, and tenant scope.
- */
+export type ConversationSourceDto =
+  | { kind: 'user' }
+  | { kind: 'employee'; employeeId: string }
+  | { kind: 'expertTeam'; expertTeamId: string }
+  | { kind: 'im' }
+
 export function setConversationExpertTeam(
   conversationId: string,
-  teamId: string | null,
+  expertTeamId: string,
+  teamLabel: string,
 ): Promise<void> {
-  return invoke<void>('set_conversation_expert_team', { conversationId, teamId })
+  return invoke('set_conversation_expert_team', { conversationId, expertTeamId, teamLabel })
+}
+
+export function clearConversationSource(conversationId: string): Promise<void> {
+  return invoke('clear_conversation_source', { conversationId })
+}
+
+export function getConversationSource(conversationId: string): Promise<ConversationSourceDto> {
+  return invoke('get_conversation_source', { conversationId })
 }
 
 /**
  * Full meta for a single conversation, including fields not present in the
- * lightweight sidebar index (`expertTeamId`, `activeTeamName`). Returns `null`
- * if the conversation does not exist or its `conv.json` is unreadable.
+ * lightweight sidebar index (e.g. `activeTeamName`). Returns `null` if the
+ * conversation does not exist or its `conv.json` is unreadable.
  */
 export interface ConversationMetaDto {
   id: string
@@ -715,7 +725,6 @@ export interface ConversationMetaDto {
   isArchived: boolean
   employeeId?: string | null
   activeTeamName?: string | null
-  expertTeamId?: string | null
 }
 
 export function getConversationMeta(
@@ -2435,23 +2444,6 @@ export async function getActiveTurnStage(
     conversationId,
   })
   return result
-}
-
-/** Read the crash-recovery sentinel for a conversation.  Returns null when
- *  the previous process didn't die mid-turn for this conversation. */
-export async function getInterruptedTurn(
-  conversationId: string,
-): Promise<InterruptedTurnRecord | null> {
-  const result = await invoke<InterruptedTurnRecord | null>('get_interrupted_turn', {
-    conversationId,
-  })
-  return result
-}
-
-/** Delete the interrupted-turn sentinel after the user dismisses (or
- *  resends) — so the banner doesn't keep showing on subsequent opens. */
-export async function dismissInterruptedTurn(conversationId: string): Promise<void> {
-  await invoke<void>('dismiss_interrupted_turn', { conversationId })
 }
 
 export function listenPendingSnapshot(

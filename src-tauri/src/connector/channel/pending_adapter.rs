@@ -46,6 +46,7 @@ pub fn build_pending_item_from_dingtalk(
         text: body,
         sender_nick: nick,
         attachments: pending_attachments,
+        skill_command: None,
         received_at: chrono::Utc::now().to_rfc3339(),
     }
 }

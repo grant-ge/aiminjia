@@ -17,7 +17,6 @@ import { EmployeesPage } from '@/features/home/EmployeesPage'
 import { HomePage } from '@/features/home/HomePage'
 import { InboxPage } from '@/features/inbox/InboxPage'
 import { ExpertTeamsPage } from '@/features/expert-teams/ExpertTeamsPage'
-import { migrateExpertTeamRegistryOnce } from '@/features/expert-teams/migrateExpertTeamRegistry'
 import { SchedulesPage } from '@/features/schedules/SchedulesPage'
 import { SkillCenterPage } from '@/features/skill-center/SkillCenterPage'
 import { SkillDetailPage } from '@/features/skill-detail/SkillDetailPage'
@@ -46,8 +45,9 @@ import { useSkillStore } from '@/stores/skillStore'
 import { useStreamingStore } from '@/stores/streamingStore'
 import { useInteractionStore } from '@/stores/interactionStore'
 import { useUiStore } from '@/stores/uiStore'
+import { hydrateHomeStore } from '@/stores/homeStore'
 import { initChannelListeners } from '@/stores/channelStore'
-import { applyFontScale, loadPersistedFontScale, normalizeFontScale, persistFontScale } from '@/styles/fontScale'
+import { applyFontScale, loadPersistedFontScale } from '@/styles/fontScale'
 
 applyFontScale(loadPersistedFontScale())
 
@@ -167,14 +167,24 @@ function App() {
   useEffect(() => {
     getSettings()
       .then((settings) => {
-        if (settings.fontScale) {
-          const fontScale = normalizeFontScale(settings.fontScale)
-          persistFontScale(fontScale)
-          applyFontScale(fontScale)
-          useSettingsStore.setState({ fontScale })
-        }
+        useSettingsStore.getState().setSettings(settings)
       })
       .catch((err) => console.error('Failed to load settings:', err))
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const settings = await getSettings()
+        if (!cancelled) hydrateHomeStore(settings)
+      } catch (err) {
+        console.warn('[App] hydrate homeStore failed:', err)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   useEffect(() => {
@@ -196,12 +206,6 @@ function App() {
       unlisten.then((fn) => fn())
     }
   }, [t])
-
-  // One-shot migration: lift legacy localStorage expert-team mappings into
-  // conv.json. Idempotent — marker-based. Runs once per app lifetime.
-  useEffect(() => {
-    void migrateExpertTeamRegistryOnce()
-  }, [])
 
   useEffect(() => {
     const unlisten = onConversationTitleUpdated(({ conversationId, title }) => {
@@ -230,9 +234,8 @@ function App() {
           createdAt: (c.createdAt as string) ?? new Date().toISOString(),
           updatedAt: (c.updatedAt as string) ?? new Date().toISOString(),
           isArchived: (c.isArchived as boolean) ?? false,
+          kind: (c.kind as import('@/types/message').Conversation['kind']) ?? undefined,
           workspaceName: (c.workspaceName as string | undefined) ?? undefined,
-          employeeId: (c.employeeId as string | undefined) ?? undefined,
-          expertTeamId: (c.expertTeamId as string | undefined) ?? undefined,
         }))
         useChatStore.getState().setConversations(convs)
       } catch (err) {
