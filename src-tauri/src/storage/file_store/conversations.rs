@@ -53,6 +53,7 @@ pub fn create_conversation(base_dir: &Path, id: &str, title: &str) -> StorageRes
         model_override: None,
         employee_id: None,
         active_team_name: None,
+        expert_team_id: None,
     };
     atomic_write_json(&conv_meta_path(base_dir, id), &meta)?;
 
@@ -65,6 +66,7 @@ pub fn create_conversation(base_dir: &Path, id: &str, title: &str) -> StorageRes
         updated_at: now,
         is_archived: false,
         employee_id: None,
+        expert_team_id: None,
     });
     atomic_write_json(&index_path(base_dir), &index)?;
 
@@ -115,6 +117,29 @@ pub fn set_conversation_employee_id(
     Ok(())
 }
 
+/// Set the conversation's `expert_team_id` to bind it to one of EXPERT_TEAMS.
+/// Pass `None` to clear. Mirrored to the global index entry (same pattern as
+/// `set_conversation_employee_id`) so `get_conversations` returns the field
+/// without per-conv fan-out reads.
+pub fn set_conversation_expert_team(
+    base_dir: &Path,
+    id: &str,
+    team_id: Option<&str>,
+) -> StorageResult<()> {
+    let meta_path = conv_meta_path(base_dir, id);
+    let mut meta: ConversationMeta = read_json_safe(&meta_path)?;
+    meta.expert_team_id = team_id.map(|s| s.to_string());
+    meta.updated_at = Utc::now().to_rfc3339();
+    atomic_write_json(&meta_path, &meta)?;
+
+    let mut index = read_global_index(base_dir)?;
+    if let Some(entry) = index.conversations.iter_mut().find(|e| e.id == id) {
+        entry.expert_team_id = team_id.map(|s| s.to_string());
+        atomic_write_json(&index_path(base_dir), &index)?;
+    }
+    Ok(())
+}
+
 /// Set is_archived = true on conv.json and update the global index.
 pub fn archive_conversation(base_dir: &Path, id: &str) -> StorageResult<()> {
     let meta_path = conv_meta_path(base_dir, id);
@@ -156,6 +181,9 @@ pub fn get_conversations(base_dir: &Path) -> StorageResult<Vec<serde_json::Value
             });
             if let Some(eid) = &e.employee_id {
                 obj["employeeId"] = serde_json::Value::String(eid.clone());
+            }
+            if let Some(tid) = &e.expert_team_id {
+                obj["expertTeamId"] = serde_json::Value::String(tid.clone());
             }
             obj
         })
@@ -289,6 +317,7 @@ pub fn reconcile_index(base_dir: &Path) -> StorageResult<()> {
                     updated_at: meta.updated_at,
                     is_archived: meta.is_archived,
                     employee_id: meta.employee_id,
+                    expert_team_id: meta.expert_team_id,
                 });
                 info!("Reconciled: added missing index entry for {}", dir_id);
                 changed = true;
@@ -362,6 +391,7 @@ pub fn touch_index_entry(base_dir: &Path, conversation_id: &str) -> StorageResul
             updated_at: now,
             is_archived: false,
             employee_id: None,
+            expert_team_id: None,
         });
     }
     atomic_write_json(&index_path(base_dir), &index)?;
@@ -474,6 +504,7 @@ mod tests {
             model_override: None,
             employee_id: None,
             active_team_name: None,
+            expert_team_id: None,
         };
         atomic_write_json(&orphan_dir.join("conv.json"), &meta).unwrap();
 
@@ -561,5 +592,71 @@ mod tests {
         let meta = get_conversation(base, "legacy").unwrap();
         assert_eq!(meta.id, "legacy");
         assert!(meta.employee_id.is_none());
+    }
+
+    #[test]
+    fn expert_team_id_round_trips_through_conv_meta() {
+        let (base, _dir) = setup();
+
+        create_conversation(&base, "conv-team", "团对话").unwrap();
+
+        set_conversation_expert_team(&base, "conv-team", Some("marketing")).unwrap();
+        let meta = get_conversation(&base, "conv-team").unwrap();
+        assert_eq!(meta.expert_team_id.as_deref(), Some("marketing"));
+
+        set_conversation_expert_team(&base, "conv-team", None).unwrap();
+        let meta2 = get_conversation(&base, "conv-team").unwrap();
+        assert!(meta2.expert_team_id.is_none());
+
+        // skip_serializing_if must drop the field from the serialized JSON
+        // when None — otherwise we'd be persisting `"expertTeamId": null`.
+        let raw = std::fs::read_to_string(conv_dir(&base, "conv-team").join("conv.json")).unwrap();
+        assert!(
+            !raw.contains("expertTeamId"),
+            "expertTeamId must be skipped when None, conv.json was: {raw}"
+        );
+    }
+
+    #[test]
+    fn legacy_conv_json_without_expert_team_id_field_deserializes() {
+        let dir = TempDir::new().unwrap();
+        let base = dir.path();
+        let cdir = conv_dir(base, "legacy");
+        std::fs::create_dir_all(&cdir).unwrap();
+        std::fs::write(
+            cdir.join("conv.json"),
+            r#"{"id":"legacy","title":"Legacy","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z","isArchived":false}"#,
+        )
+        .unwrap();
+        let meta = get_conversation(base, "legacy").unwrap();
+        assert_eq!(meta.id, "legacy");
+        assert!(meta.expert_team_id.is_none());
+    }
+
+    #[test]
+    fn set_expert_team_mirrors_to_index_entry() {
+        let (base, _dir) = setup();
+
+        create_conversation(&base, "conv-team", "团对话").unwrap();
+
+        // Before set: get_conversations omits expertTeamId.
+        let before = get_conversations(&base).unwrap();
+        assert!(before[0].get("expertTeamId").is_none());
+
+        set_conversation_expert_team(&base, "conv-team", Some("strategy")).unwrap();
+
+        // After set: both conv.json and index entry carry it; the sidebar
+        // (get_conversations) sees it without a per-conv fan-out read.
+        let meta = get_conversation(&base, "conv-team").unwrap();
+        assert_eq!(meta.expert_team_id.as_deref(), Some("strategy"));
+        let after = get_conversations(&base).unwrap();
+        assert_eq!(after[0]["expertTeamId"], "strategy");
+
+        // Clear: passing None removes the field from both layers.
+        set_conversation_expert_team(&base, "conv-team", None).unwrap();
+        let meta2 = get_conversation(&base, "conv-team").unwrap();
+        assert!(meta2.expert_team_id.is_none());
+        let after_clear = get_conversations(&base).unwrap();
+        assert!(after_clear[0].get("expertTeamId").is_none());
     }
 }

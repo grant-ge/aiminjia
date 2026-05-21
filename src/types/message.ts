@@ -44,6 +44,13 @@ export interface Conversation {
    * on user-initiated conversations.
    */
   employeeId?: string
+  /**
+   * Expert team id (one of EXPERT_TEAMS) when this conversation was started
+   * from the ExpertTeamsPage. Persisted in conv.json. Not present on the
+   * sidebar `getConversations` payload (index doesn't mirror it) — populated
+   * via `getConversationMeta` when the user enters the conversation.
+   */
+  expertTeamId?: string
 }
 
 /**

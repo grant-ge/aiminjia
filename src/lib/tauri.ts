@@ -689,6 +689,40 @@ export function archiveConversation(conversationId: string): Promise<void> {
   return invoke<void>('archive_conversation', { conversationId })
 }
 
+/**
+ * Bind a conversation to one of the EXPERT_TEAMS, or clear the binding with
+ * `null`. Persisted to `conv.json` on disk (no localStorage). The mapping
+ * follows the conversation through restart, export/import, and tenant scope.
+ */
+export function setConversationExpertTeam(
+  conversationId: string,
+  teamId: string | null,
+): Promise<void> {
+  return invoke<void>('set_conversation_expert_team', { conversationId, teamId })
+}
+
+/**
+ * Full meta for a single conversation, including fields not present in the
+ * lightweight sidebar index (`expertTeamId`, `activeTeamName`). Returns `null`
+ * if the conversation does not exist or its `conv.json` is unreadable.
+ */
+export interface ConversationMetaDto {
+  id: string
+  title: string
+  createdAt: string
+  updatedAt: string
+  isArchived: boolean
+  employeeId?: string | null
+  activeTeamName?: string | null
+  expertTeamId?: string | null
+}
+
+export function getConversationMeta(
+  conversationId: string,
+): Promise<ConversationMetaDto | null> {
+  return invoke<ConversationMetaDto | null>('get_conversation_meta', { conversationId })
+}
+
 // ---------------------------------------------------------------------------
 // Channel types
 // ---------------------------------------------------------------------------

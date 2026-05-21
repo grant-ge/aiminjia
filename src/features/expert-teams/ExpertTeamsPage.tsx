@@ -33,7 +33,9 @@ export function ExpertTeamsPage() {
       } catch (err) {
         console.warn('[ExpertTeamsPage] renameConversation failed', err)
       }
-      setExpertTeam(conversationId, id)
+      // Await so the chatStore patch lands before navigate — otherwise the
+      // ExpertTeamBanner on the chat page would flash empty for a beat.
+      await setExpertTeam(conversationId, id)
       // Optimistically inject into chatStore so the sidebar shows the new
       // conversation immediately. The backend `conversation:created` event
       // will refresh the list anyway, but it can land after the user has
@@ -47,6 +49,7 @@ export function ExpertTeamsPage() {
           createdAt: now,
           updatedAt: now,
           isArchived: false,
+          expertTeamId: id,
         },
         ...store.conversations.filter((c) => c.id !== conversationId),
       ])

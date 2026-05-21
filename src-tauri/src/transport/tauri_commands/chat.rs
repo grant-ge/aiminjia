@@ -3200,6 +3200,33 @@ impl TauriChatCommandAdapter {
         Ok(())
     }
 
+    pub async fn set_conversation_expert_team(
+        &self,
+        conversation_id: String,
+        team_id: Option<String>,
+    ) -> Result<(), String> {
+        self.services
+            .db()
+            .set_conversation_expert_team(&conversation_id, team_id.as_deref())
+            .map_err(|e| e.to_string())
+    }
+
+    pub async fn get_conversation_meta(
+        &self,
+        conversation_id: String,
+    ) -> Result<Option<conversation_service::ConversationMetaDto>, String> {
+        match self.services.db().get_conversation(&conversation_id) {
+            Ok(meta) => Ok(Some(meta.into())),
+            Err(e) => {
+                log::warn!(
+                    "[get_conversation_meta] conv {} unreadable: {e:#}",
+                    conversation_id
+                );
+                Ok(None)
+            }
+        }
+    }
+
     pub async fn archive_conversation(&self, conversation_id: String) -> Result<(), String> {
         conversation_service::archive_conversation(
             self.services.db().clone() as Arc<dyn ConversationStore>,

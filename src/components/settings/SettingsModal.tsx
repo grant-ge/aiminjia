@@ -127,6 +127,9 @@ export function SettingsModal() {
     if (!confirmed) return
 
     localStorage.clear()
+    // Preserve the expert-team migration marker so the legacy localStorage key
+    // (cleared above) doesn't trigger another empty migration pass next launch.
+    localStorage.setItem('aijia-expert-team-migration-v1', 'done')
     useBrandingStore.getState().reset()
     await message(t('settings.localCacheCleared'), { title: productName, kind: 'info' })
   }

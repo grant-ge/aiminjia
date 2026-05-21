@@ -346,6 +346,28 @@ pub async fn rename_conversation(
 }
 
 #[tauri::command]
+pub async fn set_conversation_expert_team(
+    adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
+    conversation_id: String,
+    team_id: Option<String>,
+) -> Result<(), String> {
+    adapter
+        .set_conversation_expert_team(conversation_id, team_id)
+        .await
+}
+
+#[tauri::command]
+pub async fn get_conversation_meta(
+    adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
+    conversation_id: String,
+) -> Result<
+    Option<crate::runtime::conversation_service::ConversationMetaDto>,
+    String,
+> {
+    adapter.get_conversation_meta(conversation_id).await
+}
+
+#[tauri::command]
 pub async fn archive_conversation(
     adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
     conversation_id: String,

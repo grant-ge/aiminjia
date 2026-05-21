@@ -166,6 +166,7 @@ export function useChat() {
           updatedAt: (c.updatedAt as string) ?? new Date().toISOString(),
           isArchived: (c.isArchived as boolean) ?? false,
           employeeId: (c.employeeId as string | undefined) ?? undefined,
+          expertTeamId: (c.expertTeamId as string | undefined) ?? undefined,
         }))
         useChatStore.getState().setConversations(convs)
       } catch {
@@ -445,6 +446,7 @@ export function useChat() {
         isArchived: (c.isArchived as boolean) ?? false,
         workspaceName: (c.workspaceName as string | undefined) ?? undefined,
         employeeId: (c.employeeId as string | undefined) ?? undefined,
+        expertTeamId: (c.expertTeamId as string | undefined) ?? undefined,
       }))
       // dev-only diagnostic：侧边栏首次只看到"默认文件夹"或分组数明显偏少时，
       // 看 workspace tally：若 <none> 占比异常高，多半是后端注入前 race（auth scope 未激活）。

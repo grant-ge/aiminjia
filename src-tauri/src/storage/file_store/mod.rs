@@ -190,6 +190,15 @@ impl AppStorage {
         Ok(())
     }
 
+    /// Bind the conversation to one of the EXPERT_TEAMS (or clear the binding
+    /// with `None`). Only conv.json is written — see
+    /// `conversations::set_conversation_expert_team` for rationale.
+    pub fn set_conversation_expert_team(&self, id: &str, team_id: Option<&str>) -> Result<()> {
+        let _lock = self.write_lock.lock().unwrap();
+        conversations::set_conversation_expert_team(&self.base_dir, id, team_id)?;
+        Ok(())
+    }
+
     pub fn get_conversations(&self) -> Result<Vec<serde_json::Value>> {
         Ok(conversations::get_conversations(&self.base_dir)?)
     }

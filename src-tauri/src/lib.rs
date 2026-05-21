@@ -914,6 +914,8 @@ pub fn run() {
             chat::create_conversation,
             chat::delete_conversation,
             chat::rename_conversation,
+            chat::set_conversation_expert_team,
+            chat::get_conversation_meta,
             chat::archive_conversation,
             chat::restore_conversation,
             chat::get_archived_conversations,

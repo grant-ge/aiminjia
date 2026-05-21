@@ -34,6 +34,12 @@ pub struct ConversationMeta {
     /// single-agent (no-team) conversations or old conv.json files.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_team_name: Option<String>,
+    /// Expert team id (one of EXPERT_TEAMS in the frontend) if this
+    /// conversation was started from the ExpertTeamsPage. None for normal
+    /// conversations and dispatch sessions. Backward-compat via serde default
+    /// — pre-PR conv.json files load with `expert_team_id = None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expert_team_id: Option<String>,
 }
 
 /// Lightweight entry in the global `index.json`.
@@ -53,6 +59,12 @@ pub struct ConversationIndexEntry {
     /// know whether a conversation is a dispatch session.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub employee_id: Option<String>,
+    /// Mirror of `ConversationMeta.expert_team_id`. Stored in the index so
+    /// `get_conversations` can surface the team binding without per-conv
+    /// fan-out reads — lets the frontend treat chatStore as a transparent
+    /// cache of backend state rather than maintaining shadow state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expert_team_id: Option<String>,
 }
 
 /// Global conversation index stored in `index.json`.
