@@ -10,9 +10,10 @@ interface SkillCardProps {
   size?: 'hot' | 'office'
   actionsSlot?: ReactNode
   /**
-   * Optional version chip shown next to the title (e.g. "v1.2"). Rendered
+   * Optional version chip shown next to the title (e.g. "1.2"). Rendered
    * only when non-empty. Source: `SkillInfo.version`, pulled from the
-   * SKILL.md frontmatter `version:` field by the backend.
+   * SKILL.md frontmatter `version:` field by the backend. Canonical form
+   * is MAJOR.MINOR with no "v" prefix (mirrors lotus DB storage).
    */
   version?: string | null
 }
@@ -55,7 +56,7 @@ export function SkillCard({ title, meta, desc, iconNode, iconBg = 'bg-brand-prim
                 title={version}
                 className="shrink-0 rounded-full border border-border bg-muted px-1.5 py-0 font-mono text-[10px] leading-relaxed text-muted-foreground"
               >
-                v{version}
+                {version}
               </span>
             ) : null}
           </div>
