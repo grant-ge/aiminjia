@@ -31,3 +31,15 @@ jobs:
           echo "=== Finalizing release v${version} ==="
           python3 -m pip install --disable-pip-version-check --user --break-system-packages oss2
           python3 scripts/ci-finalize.py "$version"
+
+      - name: Refresh downloads.html
+        env:
+          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+        run: |
+          set -e
+          # After finalize the new release version becomes the canonical
+          # downloadable; the public page must reflect that immediately.
+          # ci-generate-download-page.py rescans OSS so it is idempotent and
+          # safe to re-run from any step.
+          python3 scripts/ci-generate-download-page.py

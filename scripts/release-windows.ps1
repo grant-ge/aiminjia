@@ -263,16 +263,27 @@ if (-not $KeepStaging) {
 # macOS build-and-sign-macos.sh regenerates downloads.html when its run
 # finishes; Windows usually runs AFTER macOS, so without this step the page
 # only lists the macOS artifacts. Re-run the page generator on demand.
+# Hard-fail: previously we silently skipped this when python wasn't on PATH,
+# which is exactly how 0.5.28-beta.1 shipped without its Windows exe listed.
 Write-Section "Refresh downloads.html"
 $PageScript = Join-Path $ScriptDir "ci-generate-download-page.py"
-if (Test-Path $PageScript) {
-    $env:OSS_ACCESS_KEY_ID = $OssKeyId
-    $env:OSS_ACCESS_KEY_SECRET = $OssKeySecret
-    & python $PageScript
-    Remove-Item Env:\OSS_ACCESS_KEY_ID -ErrorAction SilentlyContinue
-    Remove-Item Env:\OSS_ACCESS_KEY_SECRET -ErrorAction SilentlyContinue
-} else {
-    Write-Host "  warn: ci-generate-download-page.py not found, skipping page refresh" -ForegroundColor Yellow
+if (-not (Test-Path $PageScript)) {
+    Write-Host "ERROR: ci-generate-download-page.py not found at $PageScript" -ForegroundColor Red
+    Write-Host "  OSS upload itself succeeded — artifacts are at the URLs above." -ForegroundColor Yellow
+    exit 1
+}
+$env:OSS_ACCESS_KEY_ID = $OssKeyId
+$env:OSS_ACCESS_KEY_SECRET = $OssKeySecret
+& python $PageScript
+$pageExit = $LASTEXITCODE
+Remove-Item Env:\OSS_ACCESS_KEY_ID -ErrorAction SilentlyContinue
+Remove-Item Env:\OSS_ACCESS_KEY_SECRET -ErrorAction SilentlyContinue
+if ($pageExit -ne 0) {
+    Write-Host "ERROR: download page refresh failed (exit code $pageExit)." -ForegroundColor Red
+    Write-Host "  OSS upload itself succeeded — artifacts are at the URLs above." -ForegroundColor Yellow
+    Write-Host "  Re-run by hand from a shell with python + oss2 available:" -ForegroundColor Yellow
+    Write-Host "    python scripts/ci-generate-download-page.py" -ForegroundColor Yellow
+    exit 1
 }
 
 Write-Host ''
