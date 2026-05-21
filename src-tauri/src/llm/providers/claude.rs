@@ -1299,6 +1299,8 @@ mod tests {
             anthropic_multimodal_turn: None,
             system_segments: None,
             conversation_id: None,
+            trace_id: None,
+            run_id: None,
         };
 
         let body = provider.build_request_body(&request);
@@ -1330,6 +1332,8 @@ mod tests {
             anthropic_multimodal_turn: None,
             system_segments: None,
             conversation_id: None,
+            trace_id: None,
+            run_id: None,
         };
 
         let body = provider.build_request_body(&request);
@@ -1407,6 +1411,8 @@ mod tests {
             anthropic_multimodal_turn: None,
             system_segments: None,
             conversation_id: None,
+            trace_id: None,
+            run_id: None,
         };
 
         let body = provider.build_request_body(&request);
@@ -1453,6 +1459,8 @@ mod tests {
             }),
             system_segments: None,
             conversation_id: None,
+            trace_id: None,
+            run_id: None,
         };
 
         let body = provider.build_request_body(&request);
@@ -1743,6 +1751,8 @@ mod tests {
             ]),
             anthropic_multimodal_turn: None,
             conversation_id: None,
+            trace_id: None,
+            run_id: None,
         };
 
         let body = provider.build_request_body(&request);
@@ -1781,6 +1791,8 @@ mod tests {
             system_segments: Some(segs),
             anthropic_multimodal_turn: None,
             conversation_id: None,
+            trace_id: None,
+            run_id: None,
         };
 
         let body = provider.build_request_body(&request);
@@ -1810,6 +1822,8 @@ mod tests {
             system_segments: None,
             anthropic_multimodal_turn: None,
             conversation_id: None,
+            trace_id: None,
+            run_id: None,
         };
 
         let body = provider.build_request_body(&request);
