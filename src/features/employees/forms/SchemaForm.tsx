@@ -242,7 +242,7 @@ export function SchemaForm({ schema, initial, onSubmit, onCancel }: SchemaFormPr
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div data-aijia-resource-form="schema" className="flex flex-col gap-4">
       {Object.entries(props).map(([key, prop]) => (
         <FieldRow
           key={key}
@@ -256,10 +256,10 @@ export function SchemaForm({ schema, initial, onSubmit, onCancel }: SchemaFormPr
       ))}
 
       <div className="flex items-center justify-end gap-2 pt-2">
-        <Button variant="ghost" onClick={onCancel}>
+        <Button variant="ghost" data-aijia-resource-action="cancel" onClick={onCancel}>
           {t('employee.config.cancel', 'Cancel')}
         </Button>
-        <Button onClick={handleSubmit}>
+        <Button data-aijia-resource-action="save" onClick={handleSubmit}>
           {t('employee.config.save', 'Save')}
         </Button>
       </div>
@@ -281,7 +281,7 @@ function FieldRow({ name, prop, value, required, error, onChange }: FieldRowProp
   const placeholder = prop['ui:placeholder']
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div data-aijia-resource-field={name} className="flex flex-col gap-1.5">
       <label className="text-xs font-medium text-muted-foreground">
         {label}
         {required && <span className="ml-0.5 text-destructive">*</span>}

@@ -155,7 +155,7 @@ export function SalesTableConfigForm({ initial, onSubmit, onCancel }: SalesTable
   const showParseHint = state.shareUrl.trim().length > 0
 
   return (
-    <div className="flex flex-col gap-4">
+    <div data-aijia-resource-form="sales-table" className="flex flex-col gap-4">
       <p className="text-xs leading-relaxed text-muted-foreground">
         {t('employee.config.salesTable.intro')}
       </p>
@@ -168,6 +168,7 @@ export function SalesTableConfigForm({ initial, onSubmit, onCancel }: SalesTable
         <Input
           value={state.shareUrl}
           onChange={(e) => update({ shareUrl: e.target.value })}
+          data-aijia-resource-field="shareUrl"
           placeholder={t('employee.config.salesTable.shareUrlPlaceholder')}
           className="font-mono text-xs"
         />
@@ -198,6 +199,7 @@ export function SalesTableConfigForm({ initial, onSubmit, onCancel }: SalesTable
             <Input
               value={state.baseId}
               onChange={(e) => update({ baseId: e.target.value })}
+              data-aijia-resource-field="baseId"
               placeholder={t('employee.config.salesTable.baseIdPlaceholder')}
               className="font-mono text-xs"
             />
@@ -209,6 +211,7 @@ export function SalesTableConfigForm({ initial, onSubmit, onCancel }: SalesTable
             <Input
               value={state.tableId}
               onChange={(e) => update({ tableId: e.target.value })}
+              data-aijia-resource-field="tableId"
               placeholder={t('employee.config.salesTable.tableIdPlaceholder')}
               className="font-mono text-xs"
             />
@@ -260,6 +263,7 @@ export function SalesTableConfigForm({ initial, onSubmit, onCancel }: SalesTable
             <textarea
               value={state.fieldMappingRaw}
               onChange={(e) => update({ fieldMappingRaw: e.target.value })}
+              data-aijia-resource-field="fieldMapping"
               rows={9}
               placeholder={DEFAULT_FIELD_MAPPING_TEMPLATE}
               className="rounded-md border border-input bg-background px-3 py-2 font-mono text-xs leading-relaxed"
@@ -275,8 +279,8 @@ export function SalesTableConfigForm({ initial, onSubmit, onCancel }: SalesTable
       </div>
 
       <div className="flex items-center justify-end gap-2 pt-2">
-        <Button variant="ghost" onClick={onCancel}>{t('employee.config.cancel')}</Button>
-        <Button onClick={handleSave} disabled={!valid}>{t('employee.config.save')}</Button>
+        <Button variant="ghost" data-aijia-resource-action="cancel" onClick={onCancel}>{t('employee.config.cancel')}</Button>
+        <Button data-aijia-resource-action="save" onClick={handleSave} disabled={!valid}>{t('employee.config.save')}</Button>
       </div>
     </div>
   )

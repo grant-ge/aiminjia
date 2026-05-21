@@ -71,7 +71,7 @@ export function WeeklyReportConfigForm({ initial, onSubmit, onCancel }: WeeklyRe
   const parsedGroups = parseGroups(state.watchGroupsInput)
 
   return (
-    <div className="flex flex-col gap-4">
+    <div data-aijia-resource-form="weekly-report" className="flex flex-col gap-4">
       <p className="text-xs leading-relaxed text-muted-foreground">
         {t('employee.config.weeklyReport.intro')}
       </p>
@@ -138,6 +138,7 @@ export function WeeklyReportConfigForm({ initial, onSubmit, onCancel }: WeeklyRe
         <Input
           value={state.watchGroupsInput}
           onChange={(e) => update({ watchGroupsInput: e.target.value })}
+          data-aijia-resource-field="watchGroups"
           placeholder={t('employee.config.weeklyReport.watchGroupsPlaceholder')}
           className="text-xs"
         />
@@ -153,8 +154,8 @@ export function WeeklyReportConfigForm({ initial, onSubmit, onCancel }: WeeklyRe
       </div>
 
       <div className="flex items-center justify-end gap-2 pt-2">
-        <Button variant="ghost" onClick={onCancel}>{t('employee.config.cancel')}</Button>
-        <Button onClick={handleSave}>{t('employee.config.save')}</Button>
+        <Button variant="ghost" data-aijia-resource-action="cancel" onClick={onCancel}>{t('employee.config.cancel')}</Button>
+        <Button data-aijia-resource-action="save" onClick={handleSave}>{t('employee.config.save')}</Button>
       </div>
     </div>
   )

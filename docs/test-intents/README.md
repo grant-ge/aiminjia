@@ -37,6 +37,7 @@
   - `test-intents-author`：写 / 改 / 删意图 / 字段格式 / 自查 lint
 - **设计权威** → `docs/superpowers/specs/2026-05-20-intent-test-redefinition-design.md`
 - **意图规约** → `spec/tasks/<task 中文名>/rules.md`
+- **CLI 缺失清单** → `cli-gap.md`（runner 跑测时累积，待 tauri-pilot 仓库实现）
 
 ## 约束
 

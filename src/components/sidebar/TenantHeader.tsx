@@ -31,7 +31,7 @@ export function TenantHeader({
             className="h-full w-full object-cover"
           />
         </div>
-        <div className="min-w-0 truncate text-sm font-semibold text-sidebar-foreground">
+        <div data-aijia-product-name className="min-w-0 truncate text-sm font-semibold text-sidebar-foreground">
           {name}
         </div>
       </div>

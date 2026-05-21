@@ -31,6 +31,7 @@ export function SidebarNav({ activeKey = null, onSelect = () => {} }: SidebarNav
           <button
             key={key}
             type="button"
+            data-aijia-nav={key}
             onClick={() => onSelect(key)}
             className={
               active

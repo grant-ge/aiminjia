@@ -26,8 +26,20 @@ fn sync_e2e_capability() {
     let e2e_enabled = std::env::var("CARGO_FEATURE_E2E").is_ok();
 
     if e2e_enabled {
-        fs::copy(&src, &dst)
-            .unwrap_or_else(|e| panic!("failed to copy {} -> {}: {e}", src.display(), dst.display()));
+        // Content-equal skip: writing dst unconditionally bumps mtime, which
+        // makes `tauri dev`'s watcher re-trigger a rebuild that re-runs this
+        // build script — an infinite loop. Only write when content actually
+        // differs (or dst is missing) so the steady state is mtime-stable.
+        let src_bytes = fs::read(&src)
+            .unwrap_or_else(|e| panic!("failed to read {}: {e}", src.display()));
+        let needs_write = match fs::read(&dst) {
+            Ok(dst_bytes) => dst_bytes != src_bytes,
+            Err(_) => true,
+        };
+        if needs_write {
+            fs::write(&dst, &src_bytes)
+                .unwrap_or_else(|e| panic!("failed to write {}: {e}", dst.display()));
+        }
     } else if dst.exists() {
         fs::remove_file(&dst)
             .unwrap_or_else(|e| panic!("failed to remove stale {}: {e}", dst.display()));

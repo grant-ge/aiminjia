@@ -113,7 +113,7 @@ export function CustomerSupportConfigForm({ initial, onSubmit, onCancel }: Props
   const summaries: SummaryCron[] = ['daily', 'weekly', 'off']
 
   return (
-    <div className="flex flex-col gap-4">
+    <div data-aijia-resource-form="customer-support" className="flex flex-col gap-4">
       <p className="text-xs leading-relaxed text-muted-foreground">{t('employee.config.customerSupport.intro')}</p>
 
       <GroupMatchInput
@@ -143,11 +143,11 @@ export function CustomerSupportConfigForm({ initial, onSubmit, onCancel }: Props
       <div className="flex items-center gap-3">
         <div className="flex flex-1 flex-col gap-1.5">
           <label className="text-xs font-medium text-muted-foreground">{t('employee.config.greeting')}</label>
-          <Input value={state.greeting} onChange={(e) => update({ greeting: e.target.value })} className="text-xs" />
+          <Input value={state.greeting} data-aijia-resource-field="greeting" onChange={(e) => update({ greeting: e.target.value })} className="text-xs" />
         </div>
         <div className="flex flex-1 flex-col gap-1.5">
           <label className="text-xs font-medium text-muted-foreground">{t('employee.config.closing')}</label>
-          <Input value={state.closing} onChange={(e) => update({ closing: e.target.value })} className="text-xs" />
+          <Input value={state.closing} data-aijia-resource-field="closing" onChange={(e) => update({ closing: e.target.value })} className="text-xs" />
         </div>
       </div>
 
@@ -177,8 +177,8 @@ export function CustomerSupportConfigForm({ initial, onSubmit, onCancel }: Props
       </div>
 
       <div className="flex items-center justify-end gap-2 pt-2">
-        <Button variant="ghost" onClick={onCancel}>{t('employee.config.cancel')}</Button>
-        <Button onClick={handleSave}>{t('employee.config.save')}</Button>
+        <Button variant="ghost" data-aijia-resource-action="cancel" onClick={onCancel}>{t('employee.config.cancel')}</Button>
+        <Button data-aijia-resource-action="save" onClick={handleSave}>{t('employee.config.save')}</Button>
       </div>
     </div>
   )

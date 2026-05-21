@@ -45,7 +45,7 @@ export function TechSupportConfigForm({ initial, onSubmit, onCancel }: Props) {
   const summaries: SummaryCron[] = ['daily', 'weekly', 'off']
 
   return (
-    <div className="flex flex-col gap-4">
+    <div data-aijia-resource-form="tech-support" className="flex flex-col gap-4">
       <p className="text-xs leading-relaxed text-muted-foreground">{t('employee.config.techSupport.intro')}</p>
       <GroupMatchInput value={state.groupMatch} onChange={(gm) => update({ groupMatch: gm })}
         defaultKeywords={['技术', '对接', '集成']} defaultExclude={['内部', '测试']} />
@@ -73,8 +73,8 @@ export function TechSupportConfigForm({ initial, onSubmit, onCancel }: Props) {
         </div>
       </div>
       <div className="flex items-center justify-end gap-2 pt-2">
-        <Button variant="ghost" onClick={onCancel}>{t('employee.config.cancel')}</Button>
-        <Button onClick={handleSave}>{t('employee.config.save')}</Button>
+        <Button variant="ghost" data-aijia-resource-action="cancel" onClick={onCancel}>{t('employee.config.cancel')}</Button>
+        <Button data-aijia-resource-action="save" onClick={handleSave}>{t('employee.config.save')}</Button>
       </div>
     </div>
   )

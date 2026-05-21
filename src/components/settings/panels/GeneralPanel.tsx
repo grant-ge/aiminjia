@@ -65,7 +65,7 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
             <div className="truncate text-sm leading-none text-muted-foreground">{user.tenantName}</div>
           </div>
         </div>
-        <Button variant="outline" className="h-9 rounded-lg px-5 text-sm font-semibold" onClick={onLogout}>
+        <Button variant="outline" data-aijia-logout-button className="h-9 rounded-lg px-5 text-sm font-semibold" onClick={onLogout}>
           {t('settings.general.logout')}
         </Button>
       </section>

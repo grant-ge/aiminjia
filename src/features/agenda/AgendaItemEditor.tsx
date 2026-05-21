@@ -211,7 +211,10 @@ export function AgendaItemEditor({
 
   return (
     <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
-      <SheetContent className="w-[480px] flex flex-col gap-4 overflow-y-auto">
+      <SheetContent
+        data-aijia-agenda-editor
+        className="w-[480px] flex flex-col gap-4 overflow-y-auto"
+      >
         <SheetHeader>
           <SheetTitle>{initial ? '编辑日程' : '新建日程'}</SheetTitle>
         </SheetHeader>
@@ -254,11 +257,15 @@ export function AgendaItemEditor({
 
         <Input
           placeholder="标题"
+          aria-label="标题"
+          data-aijia-agenda-field="title"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
         />
         <Textarea
           placeholder="到点要做什么？"
+          aria-label="Prompt"
+          data-aijia-agenda-field="prompt"
           rows={4}
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
@@ -366,10 +373,10 @@ export function AgendaItemEditor({
         ) : null}
 
         <div className="mt-auto flex gap-2">
-          <Button variant="outline" onClick={onClose} disabled={saving}>
+          <Button variant="outline" onClick={onClose} disabled={saving} data-aijia-agenda-action="cancel">
             取消
           </Button>
-          <Button onClick={handleSave} disabled={!canSave}>
+          <Button onClick={handleSave} disabled={!canSave} data-aijia-agenda-action="save">
             保存
           </Button>
         </div>

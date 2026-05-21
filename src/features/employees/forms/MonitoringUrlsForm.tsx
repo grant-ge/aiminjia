@@ -69,31 +69,35 @@ export function MonitoringUrlsForm({ initial, onSubmit, onCancel }: MonitoringUr
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div data-aijia-resource-form="monitoring-urls" className="flex flex-col gap-4">
       <div className="flex flex-col gap-2">
         {rows.map((r, i) => (
-          <div key={i} className="flex items-start gap-2">
+          <div key={i} data-aijia-resource-row={i} className="flex items-start gap-2">
             <Input
               placeholder={t('employee.config.monitoringUrls.namePlaceholder')}
               value={r.name}
               onChange={(e) => update(i, { name: e.target.value })}
+              data-aijia-resource-field="name"
               className="w-40"
             />
             <Input
               placeholder={t('employee.config.monitoringUrls.urlPlaceholder')}
               value={r.url}
               onChange={(e) => update(i, { url: e.target.value })}
+              data-aijia-resource-field="url"
               className="flex-1 font-mono text-xs"
             />
             <Input
               placeholder={t('employee.config.monitoringUrls.tagsPlaceholder')}
               value={r.tagsRaw}
               onChange={(e) => update(i, { tagsRaw: e.target.value })}
+              data-aijia-resource-field="tags"
               className="w-44"
             />
             <button
               type="button"
               onClick={() => removeRow(i)}
+              data-aijia-resource-action="remove-row"
               disabled={rows.length <= 1}
               className="p-2 text-muted-foreground hover:text-destructive disabled:opacity-30"
             >
@@ -106,16 +110,17 @@ export function MonitoringUrlsForm({ initial, onSubmit, onCancel }: MonitoringUr
       <button
         type="button"
         onClick={addRow}
+        data-aijia-resource-action="add-row"
         className="flex items-center gap-1 self-start text-xs text-primary hover:underline"
       >
         <Plus className="h-3 w-3" /> {t('employee.config.monitoringUrls.addRow')}
       </button>
 
       <div className="flex items-center justify-end gap-2 pt-2">
-        <Button variant="ghost" onClick={onCancel}>
+        <Button variant="ghost" data-aijia-resource-action="cancel" onClick={onCancel}>
           {t('employee.config.cancel')}
         </Button>
-        <Button onClick={handleSave}>
+        <Button data-aijia-resource-action="save" onClick={handleSave}>
           {t('employee.config.save')}
         </Button>
       </div>

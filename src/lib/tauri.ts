@@ -1078,6 +1078,16 @@ interface PickLocalDirectoryOptions {
 export function pickLocalDirectory(
   options?: PickLocalDirectoryOptions,
 ): Promise<string | null> {
+  // E2E one-shot: if CLI queued a path via `__aijia._pickDirectoryMockQueue`,
+  // shift it and skip the OS folder dialog. Dev-only; tree-shaken from prod.
+  // Mirrors `useChatAttachments::pickAttachments` mock pattern. Downstream
+  // `authorizeLocalDirectory` IPC + state updates still run on the real path.
+  if (import.meta.env.DEV) {
+    const mocked = (window as unknown as {
+      __aijia?: { _pickDirectoryMockQueue?: string[] }
+    }).__aijia?._pickDirectoryMockQueue?.shift()
+    if (mocked) return Promise.resolve(mocked)
+  }
   return invoke<string | null>('pick_local_directory', {
     defaultPath: options?.defaultPath ?? null,
     title: options?.title ?? null,

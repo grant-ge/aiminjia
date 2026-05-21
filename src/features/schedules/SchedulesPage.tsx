@@ -230,7 +230,7 @@ export function SchedulesPage() {
                     : t('schedules.cancelled')}
               </Button>
               {showCancelled ? null : (
-                <Button size="sm" onClick={handleCreateBlank} aria-label={t('schedules.newTaskAria')}>
+                <Button size="sm" onClick={handleCreateBlank} aria-label={t('schedules.newTaskAria')} data-aijia-agenda-new>
                   <Plus className="h-4 w-4" />
                   {t('schedules.newButton')}
                 </Button>

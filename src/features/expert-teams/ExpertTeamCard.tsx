@@ -11,6 +11,9 @@ export function ExpertTeamCard({ team, onStart }: ExpertTeamCardProps) {
   return (
     <button
       type="button"
+      data-aijia-expert-team-card
+      data-aijia-expert-team-id={team.id}
+      data-aijia-expert-team-name={team.name}
       onClick={() => onStart(team.id)}
       aria-label={`启动 ${team.name}`}
       className="flex h-full w-full flex-col gap-3 rounded-lg border border-border bg-card p-4 text-left text-card-foreground transition-colors hover:border-primary/50 hover:bg-accent/30"

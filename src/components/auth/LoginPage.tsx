@@ -164,7 +164,7 @@ export function LoginPage() {
               onForget={() => {}}
             />
             {error ? (
-              <div className="text-sm text-destructive">{error}</div>
+              <div data-aijia-login-error className="text-sm text-destructive">{error}</div>
             ) : null}
             <Button
               type="submit"

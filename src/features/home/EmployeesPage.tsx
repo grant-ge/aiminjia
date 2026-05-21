@@ -118,6 +118,7 @@ export function EmployeesPage() {
           <h2 className="text-sm font-semibold text-foreground">{t('employeesPage.myEmployees')}</h2>
           <button
             type="button"
+            data-aijia-hire-button="template-market"
             className="text-xs text-muted-foreground hover:text-foreground"
             onClick={() => setHireOpen(true)}
           >

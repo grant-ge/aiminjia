@@ -56,6 +56,7 @@ export function SettingsMenu({ activeKey, onSelect }: SettingsMenuProps) {
             <button
               key={it.key}
               type="button"
+              data-aijia-settings-panel={it.key}
               aria-label={label}
               onClick={() => {
                 onSelect(it.key)

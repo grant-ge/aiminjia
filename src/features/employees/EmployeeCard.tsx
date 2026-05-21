@@ -135,6 +135,12 @@ export function EmployeeCard({ employee: emp, inboxEntries, activeRun = null, on
   return (
     <button
       type="button"
+      data-aijia-employee-card
+      data-aijia-employee-id={emp.id}
+      data-aijia-employee-name={emp.name}
+      data-aijia-employee-status={status}
+      data-aijia-employee-cron-enabled={emp.cron ? (emp.cronEnabled ? 'true' : 'false') : 'none'}
+      data-aijia-employee-dispatch-disabled={emp.lifecycle === 'archived' ? 'true' : 'false'}
       onClick={onClick}
       className={cn(
         'group relative flex w-full flex-col gap-3 rounded-xl border bg-card p-4 text-left transition-all hover:border-border/80 hover:shadow-sm border-border',
@@ -192,6 +198,7 @@ export function EmployeeCard({ employee: emp, inboxEntries, activeRun = null, on
             <Button
               variant="ghost"
               size="icon"
+              data-aijia-employee-action={emp.cronEnabled ? 'pause-cron' : 'resume-cron'}
               className="h-6 w-6"
               disabled={busy}
               onClick={handleTogglePause}
@@ -220,6 +227,7 @@ export function AddEmployeeCard({ onClick }: AddEmployeeCardProps) {
   return (
     <button
       type="button"
+      data-aijia-hire-button="add-card"
       onClick={onClick}
       className="flex w-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-card/50 p-4 text-center transition-colors hover:border-border/80 hover:bg-card"
       style={{ minHeight: 152 }}

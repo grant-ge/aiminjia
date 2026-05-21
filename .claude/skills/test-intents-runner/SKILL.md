@@ -300,6 +300,17 @@ agent 跑意图时遇到新陷阱 / 新诊断套路 / 新容忍判定，**在报
 
 修改 `crates/tauri-plugin-pilot/src/bridge.js` 后，`touch crates/tauri-plugin-pilot/src/lib.rs` 强制重新 `include_str!`。
 
+### 5.12 `wait-reply` 超时多半是授权弹窗卡住，不是 LLM 慢
+
+`wait-reply --timeout 90` 超时后**先怀疑授权弹窗**：某些 tool（ReadFile 跨目录、上传文件、外部 HTTP 等）首次执行会弹权限对话框等用户同意，UI 期间 `isStreaming: true` 但流不前进。诊断顺序：
+1. `aijia where --json` 看 `isStreaming` 还是 true → 截图 `aijia screenshot --label timeout-debug` 看屏幕
+2. 看到弹窗 → **手动点同意/记住选择**，再 `wait-reply --timeout 60` 续等
+3. 没弹窗、`isStreaming` 还在 true → 看 `messages.jsonl` 时间戳：相邻两条 assistant/tool 行间隔 > 60s 就是真有东西卡住，不是 stability window 没捕到
+
+实战来源：项目记忆 task 意图 2，SearchMemory 完成后到 ReadFile 触发之间空档 **3 分 37 秒**（07:43:15 → 07:46:52），跨 workspace 路径访问的授权弹窗在等同意。`wait-reply` 阻塞期间无法看到弹窗，必须先 `aijia where --json` + screenshot。
+
+**长期方向**：`aijia` 应加 `auto-approve-permissions` / 启动期 e2e 模式禁用所有需要交互的 permission ask，避免每次跑测都被弹窗截胡。
+
 ## 6. 环境契约
 
 - 直接在真实 `~/.renlijia/` 跑、**不**隔离、跑后**不**清理

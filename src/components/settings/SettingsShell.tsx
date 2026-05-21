@@ -49,6 +49,7 @@ export function SettingsShell({
         onClick={onClose}
       />
       <div
+        data-aijia-settings-shell
         data-testid="settings-modal-box"
         // spec §8.2 Modal xl 980×720; §5 shadow-modal token
         className="relative z-10 grid h-[720px] w-[980px] max-h-[calc(100vh-48px)] max-w-[calc(100vw-48px)] grid-cols-[220px_minmax(0,1fr)] overflow-hidden rounded-xl border border-border bg-card shadow-[var(--shadow-modal)]"
@@ -59,6 +60,7 @@ export function SettingsShell({
         <button
           type="button"
           aria-label={t('common.close')}
+          data-aijia-settings-action="close"
           data-testid="settings-close-button"
           onClick={onClose}
           className="absolute right-3 top-3 z-20 inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"

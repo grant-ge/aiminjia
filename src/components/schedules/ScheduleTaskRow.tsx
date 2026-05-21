@@ -46,6 +46,10 @@ export function ScheduleTaskRow({
 
   return (
     <div
+      data-aijia-agenda-row
+      data-aijia-agenda-id={item.id}
+      data-aijia-agenda-title={item.title}
+      data-aijia-agenda-status={item.status}
       className={`group grid grid-cols-4 items-center gap-3 border-t border-border px-5 py-3 text-[0.8125rem] hover:bg-muted/50 ${dimmed}`}
     >
       {/* 列 1：任务名称 */}

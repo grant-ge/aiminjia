@@ -167,7 +167,7 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) handleClose() }}>
-      <DialogContent className="max-w-2xl p-0">
+      <DialogContent data-aijia-hire-wizard data-aijia-hire-step={step} className="max-w-2xl p-0">
         <DialogHeader className="border-b border-border px-6 py-4">
           <div className="flex items-center gap-3">
             <DialogTitle className="text-base">
@@ -198,6 +198,9 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
               <button
                 key={t.templateId}
                 type="button"
+                data-aijia-hire-template
+                data-aijia-hire-template-id={t.templateId}
+                data-aijia-hire-template-name={t.name}
                 onClick={() => handleSelectTemplate(t)}
                 className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4 text-left transition-all hover:border-border/70 hover:shadow-sm"
               >
@@ -237,6 +240,7 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
               <Input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                data-aijia-hire-field="name"
                 placeholder={selected.name}
                 maxLength={20}
               />
@@ -263,6 +267,7 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
                   <Input
                     value={cron}
                     onChange={(e) => setCron(e.target.value)}
+                    data-aijia-hire-field="cron"
                     placeholder={t('employee.config.wizard.cronPlaceholder')}
                     className="font-mono text-sm"
                   />
@@ -276,10 +281,10 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
 
             {/* Actions */}
             <div className="flex items-center justify-between pt-1">
-              <Button variant="ghost" onClick={() => setStep(1)} disabled={busy}>
+              <Button variant="ghost" data-aijia-hire-action="prev" onClick={() => setStep(1)} disabled={busy}>
                 {t('employee.config.wizard.back')}
               </Button>
-              <Button onClick={handleStep2Next} disabled={busy || !name.trim()}>
+              <Button data-aijia-hire-action={selected.resourceConfigKind === 'none' && !hasSchemaForm(selected) ? 'save' : 'next'} onClick={handleStep2Next} disabled={busy || !name.trim()}>
                 {busy
                   ? t('employee.config.wizard.hiring')
                   : selected.resourceConfigKind === 'none' && !hasSchemaForm(selected)

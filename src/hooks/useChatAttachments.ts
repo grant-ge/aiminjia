@@ -130,6 +130,16 @@ export function useChatAttachments() {
   const pickAttachments = useCallback(async (): Promise<PendingAttachment[]> => {
     setIsPickingAttachments(true)
     try {
+      // E2E one-shot: if CLI queued paths via `__aijia._pickAttachmentsMockQueue`,
+      // shift one batch and skip the OS dialog. Dev-only; tree-shaken from prod.
+      if (import.meta.env.DEV) {
+        const mocked = (window as unknown as {
+          __aijia?: { _pickAttachmentsMockQueue?: string[][] }
+        }).__aijia?._pickAttachmentsMockQueue?.shift()
+        if (mocked && mocked.length > 0) {
+          return mocked.map((p) => makePendingAttachment(p))
+        }
+      }
       const selected = await open({
         multiple: true,
         directory: false,

@@ -16,6 +16,7 @@ import {
 } from '@/lib/tauri'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
+import { requestConfirm } from '@/components/common/ConfirmDialogHost'
 import { deriveStatus, type EmployeeStatus } from './EmployeeCard'
 import { useChatStore } from '@/stores/chatStore'
 import { useSkillStore } from '@/stores/skillStore'
@@ -244,13 +245,14 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
   const handleUpgradeTemplate = async () => {
     if (!upgradeCheck?.hasUpgrade) return
     const fields = upgradeCheck.changedFields.join('、') || t('employeeDrawer.upgradeFieldsDefault')
-    const ok = confirm(
-      t('employeeDrawer.upgradeConfirm', {
+    const ok = await requestConfirm({
+      title: t('employeeDrawer.upgrade'),
+      description: t('employeeDrawer.upgradeConfirm', {
         from: upgradeCheck.currentVersion ?? '?',
         to: upgradeCheck.latestVersion,
         fields,
       }),
-    )
+    })
     if (!ok) return
     setBusy(true)
     try {
@@ -267,9 +269,12 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
   }
 
   const handleDismiss = async () => {
-    if (!confirm(t('employeeDrawer.deleteConfirm', { name: emp.name }))) {
-      return
-    }
+    const ok = await requestConfirm({
+      title: t('employeeDrawer.deleteEmployee'),
+      description: t('employeeDrawer.deleteConfirm', { name: emp.name }),
+      variant: 'destructive',
+    })
+    if (!ok) return
     setBusy(true)
     try {
       await employeeDelete(emp.id)
@@ -287,7 +292,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
 
   return (
     <Sheet open={!!emp} onOpenChange={(open) => { if (!open) onClose() }}>
-      <SheetContent side="right" className="w-[520px] p-0 flex flex-col">
+      <SheetContent side="right" data-aijia-employee-drawer className="w-[520px] p-0 flex flex-col">
         {/* Header */}
         <div className="flex items-start justify-between border-b border-border p-5">
           <div className="flex items-center gap-3">
@@ -301,7 +306,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
             <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${statusBadgeClass(status)}`}>
               {t(STATUS_TEXT_KEY[status])}
             </span>
-            <button type="button" onClick={onClose} className="rounded-md p-1 hover:bg-accent">
+            <button type="button" onClick={onClose} data-aijia-employee-action="close" className="rounded-md p-1 hover:bg-accent">
               <X className="h-4 w-4 text-muted-foreground" />
             </button>
           </div>
@@ -362,6 +367,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
                     </div>
                     <button
                       type="button"
+                      data-aijia-employee-action="toggle-cron-badge"
                       onClick={handleToggleCron}
                       disabled={busy}
                       className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
@@ -472,6 +478,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
                 <Button
                   variant="outline"
                   className="flex-1 gap-1.5"
+                  data-aijia-employee-action="view-chat"
                   onClick={() => {
                     onClose()
                     setRoute({ kind: 'chat', conversationId: activeRun.conversationId })
@@ -482,6 +489,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
                 <Button
                   variant="outline"
                   className="flex-1 gap-1.5 text-destructive hover:bg-destructive/10"
+                  data-aijia-employee-action="stop"
                   disabled={busy}
                   onClick={handleStop}
                 >
@@ -497,6 +505,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
                 size="lg"
                 disabled={busy || emp.lifecycle === 'archived'}
                 onClick={handleTrigger}
+                data-aijia-employee-action="dispatch"
               >
                 <MessageSquare className="h-4 w-4" />
                 {emp.lifecycle === 'archived' ? t('employeeDrawer.employeeDeleted') : t('employeeDrawer.dispatchNow')}
@@ -517,6 +526,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
                   <div className="flex shrink-0 items-center gap-1">
                     <button
                       type="button"
+                      data-aijia-employee-action="edit-cron"
                       onClick={() => setCronModalOpen(true)}
                       className="text-muted-foreground hover:text-foreground"
                     >
@@ -525,6 +535,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
                     <span className="text-muted-foreground/40">·</span>
                     <button
                       type="button"
+                      data-aijia-employee-action="toggle-cron"
                       onClick={handleToggleCron}
                       className={
                         emp.cronEnabled
@@ -540,6 +551,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
               ) : (
                 <button
                   type="button"
+                  data-aijia-employee-action="add-cron-trigger"
                   onClick={() => setCronModalOpen(true)}
                   className="flex items-center gap-1.5 self-start text-xs text-muted-foreground hover:text-foreground"
                 >
@@ -552,6 +564,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
                 {template && template.resourceConfigKind !== 'none' && (
                   <button
                     type="button"
+                    data-aijia-employee-action="config-resource"
                     onClick={() => setResourceModalOpen(true)}
                     className="text-muted-foreground hover:text-foreground"
                   >
@@ -560,6 +573,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
                 )}
                 <button
                   type="button"
+                  data-aijia-employee-action="fire"
                   onClick={handleDismiss}
                   disabled={busy}
                   className="text-muted-foreground hover:text-destructive"

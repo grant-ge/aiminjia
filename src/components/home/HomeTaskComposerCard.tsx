@@ -243,6 +243,7 @@ export function HomeTaskComposerCard() {
           <DropdownMenuTrigger asChild>
             <button
               type="button"
+              data-aijia-workspace-trigger
               disabled={isSubmitting}
               aria-label={t('homeComposer.selectWorkDirAria', { name: workspaceLabel })}
               title={workspacePath}
@@ -264,6 +265,8 @@ export function HomeTaskComposerCard() {
                 {recentWorkspaces.filter((ws) => ws.id !== 'default').map((ws) => (
                   <DropdownMenuItem
                     key={ws.rootPath}
+                    data-aijia-workspace-recent
+                    data-aijia-workspace-path={ws.rootPath}
                     onSelect={() => selectWorkspace(ws)}
                     title={ws.rootPath}
                     className="group flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium outline-none focus:bg-muted"
@@ -289,6 +292,7 @@ export function HomeTaskComposerCard() {
             ) : null}
             {recentWorkspaces.filter((ws) => ws.id !== 'default').length > 0 ? <DropdownMenuSeparator className="mx-2 bg-border" /> : null}
             <DropdownMenuItem
+              data-aijia-workspace-action="pick-default"
               onSelect={() => void handleSelectDefaultFolder()}
               className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium outline-none focus:bg-muted"
             >
@@ -296,6 +300,7 @@ export function HomeTaskComposerCard() {
               <span>{t('homeComposer.useDefaultFolder')}</span>
             </DropdownMenuItem>
             <DropdownMenuItem
+              data-aijia-workspace-action="pick-other"
               onSelect={() => void handlePickProject()}
               className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium outline-none focus:bg-muted"
             >

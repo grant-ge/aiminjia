@@ -236,6 +236,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
           <div className="flex items-center gap-0">
             <button
               type="button"
+              data-aijia-composer-plus
               aria-label={t('composer.addAttachment')}
               onClick={onOpenAttachment}
               disabled={disabled}
