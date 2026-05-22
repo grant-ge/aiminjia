@@ -50,7 +50,7 @@
 
 **前提**
 - 已雇佣员工「小研」（templateId `builtin:xiaoyuan`），`lifecycle === 'active'`
-- 该员工 `resourceConfig` 为空对象 `{}`（未配置任何监控目标）
+- 该员工 `resourceConfig.monitoringTargets` 为空数组 `[]` 或字段不存在（未配置任何监控目标；HireWizard step 3 空保存得到的就是 `{"monitoringTargets": []}`，前端 `deriveStatus` 据此判定 `needs-setup`）
 - 该员工卡片在主页显示状态为 `needs-setup`（橙色圆点 + 需配置）
 
 **操作**

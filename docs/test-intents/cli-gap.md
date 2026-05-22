@@ -1,7 +1,7 @@
 # `tauri-pilot aijia` CLI 缺失清单
 
 > 来源：跑日程 + 项目记忆 两个 task 实战暴露的 gap
-> 更新：2026-05-20
+> 更新：2026-05-22
 > 定位：补充 `tauri-pilot aijia` 业务子命令；底层仍走 webview DOM 操作（click / fill / eval），**不**改为直调内部 IPC
 
 ## 背景
@@ -837,3 +837,47 @@ aijia handle-dialog --action accept                    # 确认解雇
 **整 task 7 条全 SKIPPED**，主因都是 `data-aijia-nav` 没落地导致 `aijia goto employees` 永远到不了员工页。
 
 
+
+---
+
+## 2026-05-22 批次：意图测试 4 轮跑测（Haiku/Sonnet × 裸/加强 prompt）暴露的 4 个新 CLI 缺口
+
+来源：2026-05-22 用同一份 prompt 对两个模型分别跑两轮意图测试，Sonnet 加强版 5/5 PASS 时识别出 2 个真缺口；同期审计技能 task rules.md 时识别出另 2 个缺口。
+
+### 1. `aijia skill-refresh` — P0（解锁技能 task）
+
+**封装**：`reload_skill` Tauri 命令（`src-tauri/src/lib.rs:1058` 注册，前端 wrapper `src/lib/tauri.ts:1848`，底层是 `plugin::skill::global_sync::reload_skill_registry`）。
+
+**用途**：放好新 SKILL.md / good-skill / bad-skill 后**热加载** SkillRegistry，让 catalog 在不重启 app 的前提下生效。
+
+**为什么必须有**：技能 task 全 6 条意图都隐含"放文件 → 让产品看到" 这一步；rules 老版本写"关闭应用→重启"违反"不许 kill app"约束（已在 2026-05-22 的 rules 修正中改写为"触发 reload_skill"，**等本 CLI 落地**）。
+
+**签名建议**：`tauri-pilot aijia skill-refresh [--scope global|user]`，返回 `{ok, reloaded_count}`。
+
+### 2. `aijia skill-list --json` — P0（技能 task 验收）
+
+**封装**：`list_skills` Tauri 命令（`src-tauri/src/lib.rs:969`）。
+
+**用途**：列当前 SkillRegistry 中的全部 skill `[{id, name, description, source, installedAt}]`，意图测试用来验收"放好 SKILL.md → 触发 reload → catalog 出现 demo-skill" 这条链路最后一步。
+
+**为什么必须有**：当前没办法在不发对话的情况下验技能是否真进 catalog；2026-05-22 跑测时 Sonnet 只能问 AI"列出你的可用技能"——这违反 L4 testing 应"直接观察可观察信号"的原则。
+
+**签名建议**：`tauri-pilot aijia skill-list --json` 返回 `[{id, name, description, source, ...}]`。
+
+### 3. `aijia employee-open-card --id <id>` 与 `aijia employee-status --id <id>` — P1（多同名员工）
+
+**实测背景**：2026-05-22 跑测环境累计有 6 个员工，4 个都叫"小研"。`--name 小研` 只匹配第一个，无法精确定位特定 employee id。
+
+**用途**：当多个员工同名时按 employee id 精确定位卡片 / drawer / 状态读取。
+
+**变更**：现有 `employee-open-card --name <substr>` 与 `employee-status --name <substr>` 加 `--id <employee-id>` 参数（互斥，二选一）。`--id` 走 `[data-aijia-employee-id="..."]` selector 直接命中。
+
+**临时绕路**：跑测前给员工改个独特 name（runner 实际正在用这招）。
+
+### 4. `aijia agenda-wait-occurrence --agenda-id <id> --status succeeded|failed --timeout <s>` — P2（提速日程意图）
+
+**用途**：`agenda-row-action --action run-now` 后，目前只能轮询磁盘 `~/.renlijia/.../agenda/occurrences/{agendaId}/*.jsonl` 取末条记录的 `status` 等待收敛——加 CLI 包装后 runner 一行命令即可。
+
+**实现**：内部 poll items.json + occurrences jsonl，匹配 `--status` 时返回 `{ok, occurrenceId, status, conversationId, finishedAt}`；**注意 jsonl 是 append-update 语义**（runner skill §5.7b 已注明），实现要 tail 取最新条而非 head。
+
+**优先级 P2**：runner 可以自己写 poll 循环替代，不算阻塞，只是减负。

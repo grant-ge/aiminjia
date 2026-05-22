@@ -282,7 +282,11 @@ agent 跑意图时遇到新陷阱 / 新诊断套路 / 新容忍判定，**在报
 
 ### 5.7 messages.jsonl 格式
 
-单文件 ndjson，每行末尾 `\t✓` 校验位——解析时要先 `split('\t')[0]`。`content` 是 `{text: "..."}` 嵌套对象，不是字符串。
+单文件 ndjson，每行末尾 `\t✓` 校验位——解析时要先 `split('\t')[0]`。`content` 是 `{text: "..."}` 嵌套对象，不是字符串。**额外坑**：`content.text` 内的真实换行 `\n` 没被 JSON-escape 成 `\\n`，所以 `wc -l` / 按字面行号取 user / assistant 都会错位。真正的记录分隔符是 `\t✓\n`——按它 split 后的每段才是一条记录。`tool_calls` 在顶层（不在 `content.tool_calls`），tool_result 关联字段是 `toolCallId`（不是 `tool_use_id`）。
+
+### 5.7b agenda occurrences jsonl 是 append-update 语义
+
+每条 occurrence 在生命周期中会**写多行同 id 记录**：先在 `running` 状态写入一行、`succeeded`/`failed` 完成时再 append 新一行。验收时**必须 `tail -1`** 取最新一条而非首条；按行数判定 occurrence 数量会虚高（一条 manual_run_now 看上去像 2 条 occurrence）。判 `occurrenceCount` 时应该读 items 文件里的字段，不是数 jsonl 行。
 
 ### 5.8 list-sessions 字段命名
 

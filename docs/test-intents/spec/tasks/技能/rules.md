@@ -14,10 +14,10 @@
 
 ---
 
-## 意图 1：放置合法 SKILL.md 后，技能在应用中可见
+## 意图 1：放置合法 SKILL.md 后，触发热加载，技能在应用中可见
 
 **场景**
-用户把一个新的 skill 目录放进 `~/.renlijia/skills/`，应用应该自动识别这个技能：技能中心页面能看到它，新对话也能看到它。
+用户把一个新的 skill 目录放进 `~/.renlijia/skills/`，应用通过热加载机制（`reload_skill` IPC）刷新 SkillRegistry，技能中心和新对话都能立刻看到它，**无需重启应用**（产品已支持热加载，详见 `src-tauri/src/plugin/skill/global_sync.rs::reload_skill_registry`，skill_smith 工具明确说"无需重启"）。
 
 **前提**
 - 应用已启动并已登录有效账号。
@@ -25,9 +25,8 @@
 - 全局技能目录 `~/.renlijia/skills/` 下**不存在**名为 `demo-skill` 的子目录。
 
 **操作**
-1. 关闭应用。
-2. 在文件系统中创建目录 `~/.renlijia/skills/demo-skill/`。
-3. 在该目录下创建文件 `SKILL.md`，内容为：
+1. 在文件系统中创建目录 `~/.renlijia/skills/demo-skill/`。
+2. 在该目录下创建文件 `SKILL.md`，内容为：
    ```
    ---
    name: demo-skill
@@ -37,14 +36,14 @@
 
    本技能用于意图测试。被加载后请在回复开头加上「[demo-skill]」前缀。
    ```
-4. 重新启动应用并进入主界面。
-5. 打开「技能中心」页面，浏览技能列表。
+3. 触发后端 `reload_skill` IPC 重新加载 SkillRegistry（CLI 待补 `aijia skill-refresh`，详见 `cli-gap.md`；当前临时方法是在对话中让 AI 调 `skill_smith` 触发隐式 reload，或开发者控制台 invoke `reload_skill`）。
+4. 打开「技能中心」页面，浏览技能列表。
 
 **验收标准**
 - `~/.renlijia/skills/demo-skill/SKILL.md` 存在，文件首行为 `---`。
 - 技能中心列表中出现一张技能卡片，卡片标题为 `demo-skill`，描述为 `演示用：一个最小可加载技能`，分类标签显示来源为「全局」（对应后端 `source = "global"`）。
 - 应用日志中**不包含** `Failed to parse skill demo-skill` 字样。
-- 在主界面发起一个新的空对话，发送任意一句话后，从 `~/.renlijia/users/{scope}/conversations/{conv_id}/messages.jsonl` 抽取本轮的 system prompt 段（或在开发者面板的「查看 system prompt」处查看），其中包含字符串 `demo-skill` 与 `演示用：一个最小可加载技能`。
+- 在主界面发起一个新的空对话，发送任意一句话后，本轮 turn 的 system prompt（通过 `aijia skill-list --json` CLI 验证 catalog 条目；CLI 待补，详见 `cli-gap.md`）包含字符串 `demo-skill` 与 `演示用：一个最小可加载技能`。
 
 ---
 
@@ -54,7 +53,7 @@
 对话中当 AI 判断应该使用某个技能时，它调用 `Skill` 工具，工具把该技能的 SKILL.md 正文返回给 AI，AI 随后按正文里的指令调整行为。
 
 **前提**
-- 意图 1 中的 `demo-skill` 已经被应用识别（技能中心可见，system prompt 含其 catalog 条目）。
+- 意图 1 中的 `demo-skill` 已经被应用识别（technique catalog 中可见——通过 `aijia skill-list` 或观察 AI 的回复行为验证；不能预设"重启过应用"）。
 - 应用使用一个有效的 LLM API key，主模型已配置完成且可正常对话。
 - 新建一个空对话并打开它。
 
@@ -76,8 +75,8 @@
 用户放了两个技能目录，一个合法、一个 SKILL.md frontmatter 缺 `name`（或 `name` 为空）。应用启动后，合法的那个正常出现在技能中心，非法的那个被悄悄跳过，且不会让整个技能列表加载失败。
 
 **前提**
-- 应用已退出。
-- 全局技能目录 `~/.renlijia/skills/` 存在且当前为空（或不含 `good-skill` / `bad-skill` 两个子目录）。
+- 应用已启动并已登录。
+- 全局技能目录 `~/.renlijia/skills/` 不含 `good-skill` / `bad-skill` 两个子目录。
 
 **操作**
 1. 在 `~/.renlijia/skills/` 下新建两个目录 `good-skill/` 与 `bad-skill/`。
@@ -99,7 +98,7 @@
    # bad-skill
    正文。
    ```
-4. 启动应用，登录并进入主界面。
+4. 触发后端 `reload_skill` IPC 重新加载 SkillRegistry（CLI 待补 `aijia skill-refresh`，详见 `cli-gap.md`）。
 5. 打开技能中心页面。
 
 **验收标准**
