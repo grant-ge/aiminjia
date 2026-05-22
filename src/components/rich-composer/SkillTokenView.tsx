@@ -16,12 +16,17 @@ export function SkillTokenView({ node, deleteNode }: SkillTokenViewProps) {
       data-skill-chip
       contentEditable={false}
       className={cn(
-        'inline-flex max-w-[180px] items-center gap-1 rounded-md border border-border bg-muted px-1.5 py-0.5 text-xs leading-none text-foreground',
+        // .skill-token-chip injects the animated gradient + breathing glow
+        // (defined in globals.css). Keep tailwind classes for layout/typo only.
+        'skill-token-chip relative inline-flex max-w-[200px] items-center gap-1.5 rounded-md px-2 py-1 text-xs font-semibold leading-none text-primary',
       )}
       title={attrs.command}
     >
-      <Blocks aria-label="skill" className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-      <span className="truncate">{attrs.label}</span>
+      <Blocks
+        aria-label="skill"
+        className="h-3.5 w-3.5 shrink-0 drop-shadow-[0_0_4px_color-mix(in_srgb,var(--primary)_45%,transparent)]"
+      />
+      <span className="truncate tracking-tight">{attrs.label}</span>
       <button
         type="button"
         aria-label={`remove skill ${attrs.label}`}
@@ -31,7 +36,7 @@ export function SkillTokenView({ node, deleteNode }: SkillTokenViewProps) {
           event.stopPropagation()
           deleteNode()
         }}
-        className="ml-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded hover:bg-background"
+        className="ml-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-primary/60 transition-all hover:bg-primary/20 hover:text-primary"
       >
         <X className="h-3 w-3" />
       </button>

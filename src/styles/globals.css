@@ -687,6 +687,43 @@ button:not(:disabled) {
   to   { opacity: 1; transform: none; }
 }
 
+/* Skill token chip — subtle "active capability" sheen.
+   Two layered effects:
+   1) breathing glow shadow that pulses every ~3s (signals "this is live")
+   2) gradient sweep on the bg via background-position animation (premium feel)
+   Stays accessible: pure CSS, no layout thrash, motion reduced via prefers-reduced-motion. */
+@keyframes skillTokenSheen {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes skillTokenGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(var(--primary-rgb, 59 130 246) / 0), inset 0 0 0 1px color-mix(in srgb, var(--primary) 18%, transparent); }
+  50%      { box-shadow: 0 0 12px 0 color-mix(in srgb, var(--primary) 28%, transparent), inset 0 0 0 1px color-mix(in srgb, var(--primary) 35%, transparent); }
+}
+
+.skill-token-chip {
+  background-image: linear-gradient(
+    115deg,
+    color-mix(in srgb, var(--primary) 14%, transparent) 0%,
+    color-mix(in srgb, var(--primary) 22%, transparent) 35%,
+    color-mix(in srgb, var(--primary) 10%, transparent) 70%,
+    color-mix(in srgb, var(--primary) 20%, transparent) 100%
+  );
+  background-size: 220% 220%;
+  animation: skillTokenSheen 6s ease-in-out infinite, skillTokenGlow 3s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skill-token-chip {
+    animation: none;
+    background-image: linear-gradient(115deg,
+      color-mix(in srgb, var(--primary) 14%, transparent),
+      color-mix(in srgb, var(--primary) 18%, transparent));
+  }
+}
+
 /* ===== Focus Styles ===== */
 :focus-visible {
   outline: none;
