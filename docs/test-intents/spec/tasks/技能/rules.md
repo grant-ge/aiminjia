@@ -14,19 +14,20 @@
 
 ---
 
-## 意图 1：放置合法 SKILL.md 后，触发热加载，技能在应用中可见
+## 意图 1：在技能中心通过「导入目录」按钮导入新技能后，技能在应用中可见
 
 **场景**
-用户把一个新的 skill 目录放进 `~/.renlijia/skills/`，应用通过热加载机制（`reload_skill` IPC）刷新 SkillRegistry，技能中心和新对话都能立刻看到它，**无需重启应用**（产品已支持热加载，详见 `src-tauri/src/plugin/skill/global_sync.rs::reload_skill_registry`，skill_smith 工具明确说"无需重启"）。
+用户准备好一个新 skill 目录（含 `SKILL.md`），通过技能中心右上角「导入技能 → 导入目录」按钮把它导入应用。导入后该 skill 出现在技能中心列表，新对话能在 catalog 中看到它。
+
+**为什么是这条路径**：产品没有"扔目录到 `~/.renlijia/skills/` 后自动看到"的机制（`SkillRegistry` 是 in-memory，不主动 watch 磁盘）。用户在 UI 上唯一能添加新技能的入口是技能中心的导入按钮——它走 `install_custom_skill` IPC，后端会自动 `refresh_skill_registry()`。这才是产品真承诺。
 
 **前提**
 - 应用已启动并已登录有效账号。
-- 当前账号的 scope 已经初始化（`~/.renlijia/users/{scope}/skills/` 目录存在或可以被创建）。
-- 全局技能目录 `~/.renlijia/skills/` 下**不存在**名为 `demo-skill` 的子目录。
+- 准备一个临时源目录（不在 `~/.renlijia/skills/` 内，例如 `/tmp/aijia-skill-import/demo-skill/`）含 `SKILL.md`。
+- `~/.renlijia/users/{scope}/skills/demo-skill/` **不存在**（首次导入场景）。
 
 **操作**
-1. 在文件系统中创建目录 `~/.renlijia/skills/demo-skill/`。
-2. 在该目录下创建文件 `SKILL.md`，内容为：
+1. 在临时目录 `/tmp/aijia-skill-import/demo-skill/` 创建 `SKILL.md`：
    ```
    ---
    name: demo-skill
@@ -36,14 +37,23 @@
 
    本技能用于意图测试。被加载后请在回复开头加上「[demo-skill]」前缀。
    ```
-3. 触发后端 `reload_skill` IPC 重新加载 SkillRegistry（CLI 待补 `aijia skill-refresh`，详见 `cli-gap.md`；当前临时方法是在对话中让 AI 调 `skill_smith` 触发隐式 reload，或开发者控制台 invoke `reload_skill`）。
-4. 打开「技能中心」页面，浏览技能列表。
+2. 切到技能中心：`tauri-pilot aijia goto skill-center`
+3. 入队 OS dialog mock 路径：`tauri-pilot aijia skill-import-queue --paths /tmp/aijia-skill-import/demo-skill`（CLI 待补，详见 `cli-gap.md`）
+4. 点导入按钮 → 选「导入目录」：`tauri-pilot aijia skill-import-pick --variant directory`（CLI 待补）
+5. 等技能中心刷新（store auto-reload）。
 
 **验收标准**
-- `~/.renlijia/skills/demo-skill/SKILL.md` 存在，文件首行为 `---`。
-- 技能中心列表中出现一张技能卡片，卡片标题为 `demo-skill`，描述为 `演示用：一个最小可加载技能`，分类标签显示来源为「全局」（对应后端 `source = "global"`）。
-- 应用日志中**不包含** `Failed to parse skill demo-skill` 字样。
-- 在主界面发起一个新的空对话，发送任意一句话后，本轮 turn 的 system prompt（通过 `aijia skill-list --json` CLI 验证 catalog 条目；CLI 待补，详见 `cli-gap.md`）包含字符串 `demo-skill` 与 `演示用：一个最小可加载技能`。
+
+✅ 应该看到
+- 文件 `~/.renlijia/users/{scope}/skills/demo-skill/SKILL.md` 存在
+- 该文件首行为 `---`、内容含 `name: demo-skill` 与 `演示用：一个最小可加载技能`
+- 技能中心 DOM 中存在 `[data-aijia-skill-card][data-aijia-skill-id="demo-skill"]` 节点（CLI 待补 `aijia skill-cards --json`，详见 `cli-gap.md`）
+- 该卡片节点的 `data-aijia-skill-source` 属性值为 `"user"`（导入路径下沉到 user scope，不是 global）
+- 技能中心 UI 上该卡片的可见文本含 `demo-skill` 与 `演示用：一个最小可加载技能`
+
+❌ 不应该看到
+- 应用日志中含 `Failed to parse skill demo-skill` 字样
+- 技能中心出现重复的 `demo-skill` 卡片（多次 mock 入队 + click 不能造成多份导入）
 
 ---
 
@@ -53,7 +63,7 @@
 对话中当 AI 判断应该使用某个技能时，它调用 `Skill` 工具，工具把该技能的 SKILL.md 正文返回给 AI，AI 随后按正文里的指令调整行为。
 
 **前提**
-- 意图 1 中的 `demo-skill` 已经被应用识别（technique catalog 中可见——通过 `aijia skill-list` 或观察 AI 的回复行为验证；不能预设"重启过应用"）。
+- 意图 1 已成功完成：`demo-skill` 已通过技能中心导入按钮路径成功导入，技能中心 DOM 中能看到 `[data-aijia-skill-card][data-aijia-skill-id="demo-skill"]` 节点。
 - 应用使用一个有效的 LLM API key，主模型已配置完成且可正常对话。
 - 新建一个空对话并打开它。
 
@@ -62,51 +72,64 @@
 2. 等待 AI 完成一轮回复（看到「停止」按钮变回「发送」按钮）。
 
 **验收标准**
-- 在该对话目录 `~/.renlijia/users/{scope}/conversations/{conv_id}/` 下，`messages.jsonl` 中出现至少一条 `role` 为 `"assistant"` 的消息，其 `content` 中包含一条 tool_use 记录，`name` 字段值为 `"Skill"`，且参数中包含 `"demo-skill"`。
-- 同一对话的消息文件中紧随其后出现一条 `role` 为 `"tool"`（或对应 tool_result 形态）的消息，其内容文本中包含 `demo-skill` SKILL.md 的正文片段，例如 `本技能用于意图测试` 字样。
-- 对话界面最终展示的 AI 回复文本中**引用了** `demo-skill` SKILL.md body 的内容（包含 `本技能用于意图测试` 子串，或对该 body 描述的功能做出回应）。
-- 对话 UI 中该轮没有出现红色错误提示，没有「工具调用失败」之类的 toast。
+
+✅ 应该看到
+- 在该对话目录 `~/.renlijia/users/{scope}/conversations/{conv_id}/` 下，`messages.jsonl` 中出现至少一条 `role` 为 `"assistant"` 的消息，其顶层 `toolCalls[].name` 字段值为 `"Skill"`，且参数中包含 `"demo-skill"`
+- 同一对话的消息文件中紧随其后出现一条 `role` 为 `"tool"` 的消息，其 `content` 字段（经 `\t✓\n` 分隔后取记录）的文本中包含 `本技能用于意图测试`
+- 对话界面最终展示的 AI 回复文本中**引用了** `demo-skill` SKILL.md body 的内容（包含 `本技能用于意图测试` 子串，或对该 body 描述的功能做出回应）
+
+❌ 不应该看到
+- 对话 UI 中该轮出现红色错误提示
+- 「工具调用失败」之类的 toast
+- AI 回复"我没有找到 demo-skill 技能"（说明 catalog 没注入或 skill 未导入成功）
 
 ---
 
-## 意图 3：缺必填 frontmatter 字段的 SKILL.md 被跳过，不影响其他技能
+## 意图 3：含非法 frontmatter 的目录导入失败，合法的同批导入仍生效
 
 **场景**
-用户放了两个技能目录，一个合法、一个 SKILL.md frontmatter 缺 `name`（或 `name` 为空）。应用启动后，合法的那个正常出现在技能中心，非法的那个被悄悄跳过，且不会让整个技能列表加载失败。
+用户尝试用「导入目录」按钮导入一个内含两层子目录（一个合法、一个 frontmatter 非法）的源；产品应当让合法的成功导入、非法的导入失败但**不影响合法的那个**。
 
 **前提**
 - 应用已启动并已登录。
-- 全局技能目录 `~/.renlijia/skills/` 不含 `good-skill` / `bad-skill` 两个子目录。
+- `~/.renlijia/users/{scope}/skills/` 不含 `good-skill` / `bad-skill` 两个子目录。
 
 **操作**
-1. 在 `~/.renlijia/skills/` 下新建两个目录 `good-skill/` 与 `bad-skill/`。
-2. 写入 `~/.renlijia/skills/good-skill/SKILL.md`：
-   ```
-   ---
-   name: good-skill
-   description: 一个能正常加载的技能
-   ---
-   # good-skill
-   正文。
-   ```
-3. 写入 `~/.renlijia/skills/bad-skill/SKILL.md`（注意 `name:` 留空）：
-   ```
-   ---
-   name:
-   description: 缺 name 的非法技能
-   ---
-   # bad-skill
-   正文。
-   ```
-4. 触发后端 `reload_skill` IPC 重新加载 SkillRegistry（CLI 待补 `aijia skill-refresh`，详见 `cli-gap.md`）。
-5. 打开技能中心页面。
+1. 在临时位置创建两个独立源目录：
+   - `/tmp/aijia-skill-import/good-skill/SKILL.md`：
+     ```
+     ---
+     name: good-skill
+     description: 一个能正常加载的技能
+     ---
+     # good-skill
+     正文。
+     ```
+   - `/tmp/aijia-skill-import/bad-skill/SKILL.md`（注意 `name:` 留空）：
+     ```
+     ---
+     name:
+     description: 缺 name 的非法技能
+     ---
+     # bad-skill
+     正文。
+     ```
+2. 切到技能中心：`tauri-pilot aijia goto skill-center`
+3. 先导入 good-skill：`skill-import-queue --paths /tmp/aijia-skill-import/good-skill` + `skill-import-pick --variant directory`
+4. 再导入 bad-skill：`skill-import-queue --paths /tmp/aijia-skill-import/bad-skill` + `skill-import-pick --variant directory`
 
 **验收标准**
-- 技能中心列表中出现 `good-skill`，其描述为 `一个能正常加载的技能`。
-- 技能中心列表中**不出现** `bad-skill`（无论是作为可用技能还是作为「加载失败」条目都不出现）。
-- 文件系统中 `~/.renlijia/skills/bad-skill/SKILL.md` **仍然存在且内容未被修改**（应用不删除非法技能目录）。
-- 应用日志中包含一条 error 级别记录，文本包含 `Failed to parse skill bad-skill`（或 `frontmatter field 'name' is required` 等同义信息），且不包含针对 `good-skill` 的解析错误。
-- 在主界面新建对话发送任意一句话后，本轮 system prompt 中包含 `good-skill` 字符串，**不包含** `bad-skill` 字符串。
+
+✅ 应该看到
+- 第 3 步成功（toast 提示导入成功 / 技能中心出现 good-skill 卡片）
+- 第 4 步**失败**（toast 提示导入失败 / 错误提示含 "name" 必填校验信息）
+- 技能中心 DOM 含 `[data-aijia-skill-card][data-aijia-skill-id="good-skill"]` 节点
+- `~/.renlijia/users/{scope}/skills/good-skill/SKILL.md` 存在
+
+❌ 不应该看到
+- 技能中心 DOM 出现 `[data-aijia-skill-card][data-aijia-skill-id="bad-skill"]` 节点
+- `~/.renlijia/users/{scope}/skills/bad-skill/` 目录被创建（产品在导入校验失败时不应落盘）
+- good-skill 同批被错误退回（一个失败影响另一个）
 
 ---
 

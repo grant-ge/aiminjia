@@ -840,44 +840,102 @@ aijia handle-dialog --action accept                    # 确认解雇
 
 ---
 
-## 2026-05-22 批次：意图测试 4 轮跑测（Haiku/Sonnet × 裸/加强 prompt）暴露的 4 个新 CLI 缺口
+## 2026-05-22 批次：意图测试 4 轮跑测（Haiku/Sonnet × 裸/加强 prompt）暴露的 CLI 缺口
 
-来源：2026-05-22 用同一份 prompt 对两个模型分别跑两轮意图测试，Sonnet 加强版 5/5 PASS 时识别出 2 个真缺口；同期审计技能 task rules.md 时识别出另 2 个缺口。
+来源：2026-05-22 用同一份 prompt 对两个模型分别跑两轮意图测试，Sonnet 加强版 5/5 PASS 时识别出 employee-open-card 缺口；同期审计技能 task rules.md 时发现 rules 设计本身脱离产品真路径。
 
-### 1. `aijia skill-refresh` — P0（解锁技能 task）
+> **本节经过 cli-author skill 铁则复审**（2026-05-22 末），撤回了 2 条违反铁则的初稿建议（`skill-refresh` 封 IPC、`agenda-wait-occurrence` 封磁盘 poll），重写 `skill-list` 改读 DOM/store，新增 3 条走 OS-modal mock 的真合规 CLI。
 
-**封装**：`reload_skill` Tauri 命令（`src-tauri/src/lib.rs:1058` 注册，前端 wrapper `src/lib/tauri.ts:1848`，底层是 `plugin::skill::global_sync::reload_skill_registry`）。
+### ❌ 已撤回：`aijia skill-refresh`
 
-**用途**：放好新 SKILL.md / good-skill / bad-skill 后**热加载** SkillRegistry，让 catalog 在不重启 app 的前提下生效。
+**初稿建议**：封装 `reload_skill` Tauri 命令，让放好 SKILL.md 后能热加载 SkillRegistry。
 
-**为什么必须有**：技能 task 全 6 条意图都隐含"放文件 → 让产品看到" 这一步；rules 老版本写"关闭应用→重启"违反"不许 kill app"约束（已在 2026-05-22 的 rules 修正中改写为"触发 reload_skill"，**等本 CLI 落地**）。
+**撤回原因**：
+1. **`reload_skill` 实际是 `unimplemented!()` 桩**（`src-tauri/src/commands/skill_management.rs:488`），根本不能调
+2. 真扫盘函数 `refresh_skill_registry` 不是 #[tauri::command]，不暴露给前端
+3. 即使能调也违反 cli-author skill 铁则「禁止走 IPC」
+4. **产品根本没给用户"扔目录到 ~/.renlijia/skills/ 后看到"的 UI 路径**——产品真路径是「技能中心 → 导入按钮 → 选目录/zip」走 `install_custom_skill`（后端会自动 `refresh_skill_registry`）
 
-**签名建议**：`tauri-pilot aijia skill-refresh [--scope global|user]`，返回 `{ok, reloaded_count}`。
+**取代方案**：见下方「✅ 新增 3 条」走真导入按钮路径。
 
-### 2. `aijia skill-list --json` — P0（技能 task 验收）
+### ❌ 已撤回：`aijia agenda-wait-occurrence`
 
-**封装**：`list_skills` Tauri 命令（`src-tauri/src/lib.rs:969`）。
+**初稿建议**：内部 poll `agenda/items` 和 `occurrences/*.jsonl`，等 status 收敛。
 
-**用途**：列当前 SkillRegistry 中的全部 skill `[{id, name, description, source, installedAt}]`，意图测试用来验收"放好 SKILL.md → 触发 reload → catalog 出现 demo-skill" 这条链路最后一步。
+**撤回原因**：
+1. 不是 UI 操作，是磁盘文件 polling，违反铁则「等一个 element/attribute 变化」
+2. 日程行 DOM 只暴露 `data-aijia-agenda-status`（item 状态），不暴露 occurrence 状态
+3. cli-author skill 明确说"序列组装在 rules.md / runner，不是 CLI 的事"
 
-**为什么必须有**：当前没办法在不发对话的情况下验技能是否真进 catalog；2026-05-22 跑测时 Sonnet 只能问 AI"列出你的可用技能"——这违反 L4 testing 应"直接观察可观察信号"的原则。
+**取代方案**：runner 自己写 shell `while ! tail -1 ...jsonl | grep '"status":"succeeded"'; do sleep 1; done`，或在 rules.md 操作步骤里写 `sleep 30` 兜底。
 
-**签名建议**：`tauri-pilot aijia skill-list --json` 返回 `[{id, name, description, source, ...}]`。
+### ⚠️ 改写：`aijia skill-list --json` → `aijia skill-cards --json`
 
-### 3. `aijia employee-open-card --id <id>` 与 `aijia employee-status --id <id>` — P1（多同名员工）
+**初稿建议**：封装 `list_skills` IPC（**违反铁则**）。
 
-**实测背景**：2026-05-22 跑测环境累计有 6 个员工，4 个都叫"小研"。`--name 小研` 只匹配第一个，无法精确定位特定 employee id。
+**改写后**：读技能中心 DOM 的卡片列表（lotus-app 给每张 SkillCard 加 `[data-aijia-skill-card][data-aijia-skill-id="..."][data-aijia-skill-source="global|user"]` selector）。或读 zustand store `__aijia.skillStore.getState().skills`（cli-author skill 允许 read-only hook）。
 
-**用途**：当多个员工同名时按 employee id 精确定位卡片 / drawer / 状态读取。
+**前提**：lotus-app `src/components/skills/SkillCard.tsx` 加 3 个 data-aijia-* attr。技能中心页面必须先打开（`aijia goto skill-center`）。
 
-**变更**：现有 `employee-open-card --name <substr>` 与 `employee-status --name <substr>` 加 `--id <employee-id>` 参数（互斥，二选一）。`--id` 走 `[data-aijia-employee-id="..."]` selector 直接命中。
+**用途**：意图测试验收"导入操作执行后技能卡片出现/消失"。
 
-**临时绕路**：跑测前给员工改个独特 name（runner 实际正在用这招）。
+**签名**：
+- `tauri-pilot aijia skill-cards --json` → `[{id, name, description, source}]`（读 DOM 子树）
 
-### 4. `aijia agenda-wait-occurrence --agenda-id <id> --status succeeded|failed --timeout <s>` — P2（提速日程意图）
+### ✅ 保留：`aijia employee-open-card --id <id>` / `aijia employee-status --id <id>`
 
-**用途**：`agenda-row-action --action run-now` 后，目前只能轮询磁盘 `~/.renlijia/.../agenda/occurrences/{agendaId}/*.jsonl` 取末条记录的 `status` 等待收敛——加 CLI 包装后 runner 一行命令即可。
+**实测背景**：2026-05-22 跑测环境累计 6 个员工 4 个叫"小研"，`--name` 只匹配第一个。
 
-**实现**：内部 poll items.json + occurrences jsonl，匹配 `--status` 时返回 `{ok, occurrenceId, status, conversationId, finishedAt}`；**注意 jsonl 是 append-update 语义**（runner skill §5.7b 已注明），实现要 tail 取最新条而非 head。
+**变更**：现有 `employee-open-card --name <substr>` 和 `employee-status --name <substr>` 加 `--id <employee-id>` 参数（与 `--name` 互斥）。selector 已存在（`EmployeeCard.tsx:139` 的 `data-aijia-employee-id`），无需 lotus-app 改动。
 
-**优先级 P2**：runner 可以自己写 poll 循环替代，不算阻塞，只是减负。
+**优先级**：P1（多同名员工时必需）。
+
+### ✅ 新增 3 条：技能 task 真路径走「导入按钮 + OS dialog mock」
+
+**为什么这是真路径**：用户在 UI 上唯一能"添加新技能"的入口是技能中心右上角「导入技能」按钮 → 下拉「导入目录 / 导入压缩包」 → OS file dialog 选源 → 后端 `install_custom_skill` 自动 refresh registry。**直接往 `~/.renlijia/skills/` 扔目录在产品上不保证看到**（registry 是 in-memory，不主动 watch 磁盘）。
+
+OS file dialog 是 cli-author skill §"OS-level modal 是 e2e 死区"明确允许 mock 的场景，参考已有的 `composer-queue-files` + `composer-click-plus` 模式。
+
+#### 新增 1：`aijia skill-import-queue --paths <p1>[,<p2>...]` — P0
+
+**封装**：dev mock 队列入队，对应 `__aijia._pickSkillImportMockQueue`。
+
+**配套 lotus-app 改动**：
+- `src/main.tsx` 加 `_pickSkillImportMockQueue: [] as string[][]`（dev only）
+- `src/features/skill-center/SkillCenterPage.tsx` 的 `handleImportDirectory` / `handleImportArchive` 第一行加 `if (import.meta.env.DEV)` 检查队列、命中就跳过 `openDialog()`
+
+**单次消费**：一次 `skill-import-pick` click 消化一批 paths。
+
+#### 新增 2：`aijia skill-import-pick --variant directory|archive` — P0
+
+**封装**：原子 = 「点导入按钮 + 点下拉项」（cli-author skill 模式 E：Radix 下拉违反单步原子，但"做一次导入决定"用户视角是单一动作，类似 login 豁免）。或拆成两步：
+- `skill-import-open`：点 `[data-aijia-skill-import-trigger]` 打开 AppDropdown
+- `skill-import-pick --variant directory|archive`：点 `[data-aijia-skill-import-action="directory|archive"]`
+
+**配套 lotus-app 改动**：
+- `SkillCenterPage.tsx` line 406 的 trigger Button 加 `data-aijia-skill-import-trigger`
+- AppDropdown items（line 411-424）的下拉项加 `data-aijia-skill-import-action="directory|archive"`（需要 AppDropdown 组件支持 item-level data-attr 透传）
+
+**典型组合**：
+```bash
+# 在 skill-center 页面下，先入队再触发
+aijia goto skill-center
+aijia skill-import-queue --paths "/Users/x/demo-skill"
+aijia skill-import-open
+aijia skill-import-pick --variant directory
+# 后端 install_custom_skill 自动跑 + refresh_skill_registry → store 自动 reload
+aijia skill-cards --json | jq '.[] | select(.id == "demo-skill")'  # 验收
+```
+
+#### 新增 3：`aijia skill-cards --json` — P0（前面已说明）
+
+读 `[data-aijia-skill-card]` DOM 子树，返回 `[{id, name, description, source}]`。
+
+**配套 lotus-app 改动**：`src/components/skills/SkillCard.tsx` 加 `data-aijia-skill-card` / `data-aijia-skill-id={id}` / `data-aijia-skill-source={source}` 三个 attr。
+
+### 落地顺序建议
+
+1. lotus-app 加 5 个 selector（SkillCard 3 个 + AppDropdown trigger 1 个 + import-action 2 个）→ 1 commit
+2. tauri-pilot 加 4 条原子 CLI（`skill-import-queue` / `skill-import-open` / `skill-import-pick` / `skill-cards`）+ `employee-open-card --id` 改造 → 1 commit
+3. 技能 1/2/3 rules.md 重写为真路径（导入按钮 + 验收 cards 出现）→ 1 commit
+
