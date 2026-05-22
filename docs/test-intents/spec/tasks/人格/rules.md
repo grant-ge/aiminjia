@@ -65,10 +65,10 @@
 **验收标准**
 - 切换操作完成后，`~/.renlijia/users/{scope}/personas/index.json` 反序列化后 `active` 字段值为 `"hr-expert"`，不再为 `"default"`
 - 对话顶栏 persona 切换器显示 `"HR 专家"`（不是 `"通用工作助手"`）
-- 消息发送后 `~/.renlijia/users/{scope}/conversations/{conv_id}/messages.1.jsonl` 共 2 行，每行合法 JSON
-- 第 1 行 `role` 字段值为 `"user"`，`content.text` 字段值为 `"请介绍一下你自己"`
-- 第 2 行 `role` 字段值为 `"assistant"`，`content.text` 字段值非空
-- 第 2 行 `content.text` 字段值包含字符串 `"HR"` 或 `"人力资源"` 或 `"招聘"` 之一（说明 HR 专家 persona 的 identity 已注入 system prompt）
+- 消息发送后 `~/.renlijia/users/{scope}/conversations/{conv_id}/messages.jsonl` 共 2 条记录，每条合法 JSON
+- 第 1 条记录 `role` 字段值为 `"user"`，`content.text` 字段值为 `"请介绍一下你自己"`
+- 第 2 条记录 `role` 字段值为 `"assistant"`，`content.text` 字段值非空
+- 第 2 条记录 `content.text` 字段值包含字符串 `"HR"` 或 `"人力资源"` 或 `"招聘"` 之一（说明 HR 专家 persona 的 identity 已注入 system prompt）
 - `TurnCompleted` 事件中 `persona_id` 字段值（或 system prompt 段落中可见的人格段）含 `"hr-expert"`
 - `TurnCompleted` 的 `outcome` 字段值为 `"Success"`
 

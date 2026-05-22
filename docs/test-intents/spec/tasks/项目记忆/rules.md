@@ -36,7 +36,7 @@ AI 在对话中通过 `WriteMemory` 工具保存一条用户偏好记忆。执�
 - 该 `.md` 文件 frontmatter 之后的正文（`---\n\n` 之后的内容）包含字符串 `"箱型图"` 或 `"boxplot"` 之一
 - `~/.renlijia/users/{scope}/project_memories/{bucket}/MEMORY.md` 文件存在（`rebuild_index` 被触发），内容包含该条 entry 的链接行（格式为 `- [name](entries/...)` ）
 - 对话窗口中工具调用气泡显示 `WriteMemory` 已成功，tool_result 中 `status` 字段值为 `"saved"`
-- `~/.renlijia/users/{scope}/conversations/{conv_id}/messages.1.jsonl` 中存在一行 `role` 字段值为 `"tool"` 或 `"tool_result"`，该行 JSON 的 `content` 字段包含字符串 `"saved"`
+- `~/.renlijia/users/{scope}/conversations/{conv_id}/messages.jsonl` 中存在一条记录 `role` 字段值为 `"tool"` 或 `"tool_result"`，该记录 JSON 的 `content` 字段包含字符串 `"saved"`
 
 ---
 
@@ -55,7 +55,7 @@ AI 在对话中通过 `WriteMemory` 工具保存一条用户偏好记忆。执�
 2. 等待 AI 调用 `SearchMemory` 工具，并完整回复
 
 **验收标准**
-- `~/.renlijia/users/{scope}/conversations/{conv_id}/messages.1.jsonl` 中存在一行 `role` 字段值为 `"tool"` 或 `"tool_result"`，该行 JSON 的 `content` 字段包含字符串 `"SearchMemory"` 或工具调用结果 JSON
+- `~/.renlijia/users/{scope}/conversations/{conv_id}/messages.jsonl` 中存在一条记录 `role` 字段值为 `"tool"` 或 `"tool_result"`，该记录 JSON 的 `content` 字段包含字符串 `"SearchMemory"` 或工具调用结果 JSON
 - tool_result 反序列化后 `status` 字段值为 `"ok"`
 - tool_result 反序列化后 `count` 字段值大于 `0`
 - tool_result 反序列化后 `results` 数组第 1 个元素的 `name` 字段值非空字符串
@@ -81,7 +81,7 @@ AI 在对话中通过 `WriteMemory` 工具保存一条用户偏好记忆。执�
 
 **验收标准**
 - AI 回复（`role: "assistant"` 的消息 `content.text` 字段）包含字符串 `"箱型图"` 或 `"boxplot"` 之一
-- 本轮消息对应的 `messages.1.jsonl` 中**不存在**新的 `tool_name` 字段值为 `"SearchMemory"` 的行（说明记忆是通过 `[项目记忆]` 段落注入的，不是靠 AI 主动检索）
+- 本轮消息对应的 `messages.jsonl` 中**不存在**新的 `tool_name` 字段值为 `"SearchMemory"` 的记录（说明记忆是通过 `[项目记忆]` 段落注入的，不是靠 AI 主动检索）
 - 若用调试 dump 查看本轮 turn 发出的 dynamic context 消息，其文本中包含字符串 `"[项目记忆]"` 或 `"箱型图"` 或 `"boxplot"` 之一（可通过查看 `TurnStarted` 事件携带的 context 段落，或直接在 `build_iteration_context` 输出中确认）
 - `TurnCompleted` 事件 `outcome` 字段值为 `"Success"`
 - 对话消息列表中本轮共 2 条消息（user + assistant），未出现 tool_call / tool_result 气泡

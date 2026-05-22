@@ -29,12 +29,12 @@
 **操作**
 1. 在输入框输入 `"用网络搜索查一下：2025 年诺贝尔物理学奖得主是谁？把来源 URL 也告诉我。"`，点击发送
 2. 等待 AI 完整回复结束（流式输出停止 + 工具气泡折叠完成）
-3. 打开 `~/.renlijia/users/{scope}/conversations/{conv_id}/messages.N.jsonl`
+3. 打开 `~/.renlijia/users/{scope}/conversations/{conv_id}/messages.jsonl`
 
 **验收标准**
 - 对话区出现一个工具调用气泡，名为 `web_search` 或显示 `web_search` 字样
 - 工具气泡展开后可见至少 1 条结果项，每条至少包含 url（含 `http://` 或 `https://`）和一段非空摘要文本
-- `messages.N.jsonl` 中至少有 1 行的 JSON 解析后存在 tool_use 标识（含 `tool_name` / `name` 字段等于 `"web_search"`），且存在另 1 行包含 tool_result（`tool_use_id` / `tool_call_id` 字段与上一条匹配）
+- `messages.jsonl` 中至少有 1 条记录的 JSON 解析后存在 tool_use 标识（含 `tool_name` / `name` 字段等于 `"web_search"`），且存在另 1 条记录包含 tool_result（`tool_use_id` / `tool_call_id` 字段与上一条匹配）
 - 包含 tool_result 的那一行 JSON 中，`content` 或等价字段为非空字符串，且字符串中至少出现一个 `http` 开头的 URL
 - AI 最终 assistant 回复 `content.text` 字段非空，且其中至少出现 1 个 `http` 开头的 URL（说明 AI 真的引用了搜索结果，而不是脑补）
 
@@ -56,7 +56,7 @@
 
 **验收标准**
 - 对话区出现一个 `web_search` 工具调用气泡，且气泡状态显示为「失败」或带错误标识（不是 spinning 卡死）
-- `~/.renlijia/users/{scope}/conversations/{conv_id}/messages.N.jsonl` 中存在一行 tool_result，其 `content` 字段字符串中包含 `搜索不可用` 或 `搜索引擎暂时无法访问` 或 `请基于已有知识回答` 这三段子串中的至少一段
+- `~/.renlijia/users/{scope}/conversations/{conv_id}/messages.jsonl` 中存在一条 tool_result 记录，其 `content` 字段字符串中包含 `搜索不可用` 或 `搜索引擎暂时无法访问` 或 `请基于已有知识回答` 这三段子串中的至少一段
 - 同一 turn 的 assistant 最终 `content.text` 非空（AI 拿到错误后继续生成了用户可读回复，没有 turn 崩溃 / 空回复）
 - EventBus 中存在 `TurnCompleted` 事件，且 `outcome` 字段值为 `"Success"`（说明工具失败被工具层吸收，turn 本身完成正常）
 - 应用未弹出"应用崩溃 / unexpected error"原生对话框
@@ -82,5 +82,5 @@
 - 该对话在列表中存在，标题或预览中至少一项与「意图 1」中发送的提问内容相关
 - 进入对话后，对话历史按顺序展示：用户提问气泡 → `web_search` 工具气泡 → assistant 回复气泡
 - 点开 `web_search` 工具气泡，结果区至少能看到 1 条结果项（与「意图 1」结束时落盘的内容一致），结果项中包含 url（含 `http://` 或 `https://`）
-- 重启后 `messages.N.jsonl` 内容与重启前完全一致：行数相同、每一行 JSON 内容字节比对一致（可用 `diff` 验证启动前后的文件副本）
+- 重启后 `messages.jsonl` 内容与重启前完全一致：记录条数相同、每一条记录 JSON 内容字节比对一致（可用 `diff` 验证启动前后的文件副本）
 - 重启后 AI 回复气泡 `content.text` 字段值与重启前展示内容一致

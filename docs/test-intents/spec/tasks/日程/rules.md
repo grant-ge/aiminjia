@@ -80,7 +80,7 @@
   - `status` 在 `T0 + 5 分钟` 时已经收敛为 `"succeeded"` 或 `"failed"`（不长期停在 `"running"`）
   - `conversationId` 不为空
 - `conversationId` 字段值是一个**新对话 ID**（不在 `$S_BEFORE` 集合内）
-- 该新对话目录 `~/.renlijia/users/$SCOPE/conversations/<conversationId>/messages.jsonl` 存在，第 1 行 `role == "user"`、`content.text` 包含 `提醒我今天的三件事`（注：这里 prompt 是 `请说一句你好`——验收里要按本意图实际填的 prompt 串改）
+- 该新对话目录 `~/.renlijia/users/$SCOPE/conversations/<conversationId>/messages.jsonl` 存在，第 1 条记录 `role == "user"`、`content.text` 包含 `提醒我今天的三件事`（注：这里 prompt 是 `请说一句你好`——验收里要按本意图实际填的 prompt 串改）
 - 日程文件 `~/.renlijia/users/$SCOPE/agenda/items/$AGENDA` 中：
   - `occurrenceCount == 1`
   - `nextFireAt == null`

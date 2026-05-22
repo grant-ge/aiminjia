@@ -37,7 +37,7 @@
 - 第 2 步结束后，「设置 → 渠道 → 钉钉」状态文本显示为「已连接 / Connected」（对应后端 `ChannelConnectionState` 序列化值 `"connected"`），无红色错误条
 - 第 2 步结束后，钉钉凭据已落盘：`~/.renlijia/users/{scope}/channels/dingtalk/` 或同等目录下存在凭据相关文件（不一定明文存 AppSecret，但配置元数据文件存在）
 - 第 4 步结束后，应用对话列表中出现一条新对话，标题或预览中至少包含发送内容 `"你好，能听到我说话吗？"` 的一部分（去掉 `@机器人` 前缀后的实质文本）
-- 该对话目录 `~/.renlijia/users/{scope}/conversations/{conv_id}/messages.N.jsonl` 至少有 2 行，第 1 行 `role` 为 `"user"`、`content.text` 中包含 `"你好，能听到我说话吗"` 子串，第 2 行 `role` 为 `"assistant"`、`content.text` 非空
+- 该对话目录 `~/.renlijia/users/{scope}/conversations/{conv_id}/messages.jsonl` 至少有 2 条记录，第 1 条 `role` 为 `"user"`、`content.text` 中包含 `"你好，能听到我说话吗"` 子串，第 2 条 `role` 为 `"assistant"`、`content.text` 非空
 - 该对话的 `conv.json`（或同目录元数据文件）中存在标识来源为钉钉的字段，其值的字符串形式中包含 `dingtalk` 子串（对应后端 `PendingSource::ImDingtalk` 序列化值 `"im-dingtalk"`）
 
 ---
@@ -59,14 +59,14 @@
 3. 在钉钉里完整截屏 / 复制卡片正文（记为 dingtalk_text）
 4. 在应用对话列表中找到本次对话，打开
 5. 复制 assistant 那条气泡的完整文本（记为 app_text）
-6. 打开 `~/.renlijia/users/{scope}/conversations/{conv_id}/messages.N.jsonl`，找到 `role` 为 `"assistant"` 的最后一行，提取 `content.text` 字段（记为 store_text）
+6. 打开 `~/.renlijia/users/{scope}/conversations/{conv_id}/messages.jsonl`，找到 `role` 为 `"assistant"` 的最后一条记录，提取 `content.text` 字段（记为 store_text）
 
 **验收标准**
 - 钉钉里收到的是一张 interactive card（不是纯文本群消息），有明确的卡片边框和应用机器人头像
 - dingtalk_text 与 app_text 字符串完全相等（去掉两端空白字符后用 `diff` 比较一致）
 - dingtalk_text 与 store_text 字符串完全相等（去掉两端空白字符后比较一致）
 - 卡片内容不为空，且长度 ≥ 50 个字符（说明不是空回复 / 占位卡）
-- 应用对话页 assistant 气泡状态显示为「已完成」（非 streaming、非错误），同一行在 `messages.N.jsonl` 中不缺失
+- 应用对话页 assistant 气泡状态显示为「已完成」（非 streaming、非错误），同一条记录在 `messages.jsonl` 中不缺失
 
 ---
 
@@ -93,6 +93,6 @@
 - 第 3 步：状态文本显示为「未配置 / 未连接」（对应后端 `ChannelConnectionState` 序列化值 `"unconfigured"` 或 `"disconnected"` 之一），AppKey / AppSecret 输入框为空（或显示「未绑定」占位）
 - 第 3 步：`~/.renlijia/users/{scope}/channels/dingtalk/` 目录下存放凭据的文件已被删除或其中的敏感字段值为空字符串（用 `cat` 或文件浏览器查看）
 - 第 6 步：N_after == N_before（没有新对话被创建）
-- 第 6 步：所有历史 dingtalk 来源对话仍然存在于列表中（解绑不会删历史数据）；任选一条历史对话打开，其 `messages.N.jsonl` 文件存在且行数与解绑前一致
+- 第 6 步：所有历史 dingtalk 来源对话仍然存在于列表中（解绑不会删历史数据）；任选一条历史对话打开，其 `messages.jsonl` 文件存在且记录条数与解绑前一致
 - 第 4 步发送后到第 5 步结束之间，钉钉群里**未**收到机器人的卡片回复（机器人在解绑后不应再回话）
 - 钉钉端可能仍然显示「@机器人」这条消息（钉钉本身不擦消息），但应用日志中不出现因这条新消息触发的 turn 启动记录（搜索 `~/.renlijia/logs/` 最新日志，没有时间戳在解绑之后、内容包含 `"解绑后还能收到吗"` 的 turn 启动 / chat send 行）

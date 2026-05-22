@@ -83,8 +83,8 @@
 4. 切回 workspace A，打开 conv_A，发送消息 `"A 的第二条"`，等待回复完成
 
 **验收标准**
-- conv_A 目录 `~/.renlijia/users/{scope}/conversations/{conv_A}/messages.N.jsonl` 共 4 行（两轮 user + assistant），第 1 行 `content.text` 为 `"A 的第一条"`，第 3 行 `content.text` 为 `"A 的第二条"`
+- conv_A 目录 `~/.renlijia/users/{scope}/conversations/{conv_A}/messages.jsonl` 共 4 条记录（两轮 user + assistant），第 1 条 `content.text` 为 `"A 的第一条"`，第 3 条 `content.text` 为 `"A 的第二条"`
 - conv_A 目录下任一记录 turn temperature 的字段，前后两轮值均为 `0.2`
-- conv_B 目录 `~/.renlijia/users/{scope}/conversations/{conv_B}/messages.N.jsonl` 共 2 行，第 1 行 `content.text` 为 `"B 的第一条"`
+- conv_B 目录 `~/.renlijia/users/{scope}/conversations/{conv_B}/messages.jsonl` 共 2 条记录，第 1 条 `content.text` 为 `"B 的第一条"`
 - conv_B 目录下记录 turn temperature 的字段值为 `0.9`
 - 工作区侧边栏切换到 A 时显示 conv_A 在对话列表中，切到 B 时 conv_A 不出现在 B 的对话列表里

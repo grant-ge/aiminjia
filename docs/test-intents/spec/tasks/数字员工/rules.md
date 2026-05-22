@@ -65,7 +65,7 @@
 - 保存资源后，磁盘上 `employee.json` 中 `resourceConfig.monitoringTargets` 字段是一个长度 ≥ 1 的数组，第 0 项的 `url` 字段值为 `"https://competitor.example.com"`
 - 主页员工卡片上的状态从 `needs-setup` 变为 `idle`
 - 第二次点击派活后，UI 跳转到新对话页，URL/路由的 `conversationId` 为新生成的 ID
-- `~/.renlijia/conversations/{newConvId}/` 目录存在，`conv.json` 文件存在
+- `~/.renlijia/users/{scope}/conversations/{newConvId}/` 目录存在，`conv.json` 文件存在
 
 ---
 
@@ -86,10 +86,10 @@
 
 **验收标准**
 - UI 跳转到新对话页
-- `~/.renlijia/conversations/{convId}/messages.0.jsonl` 文件存在
-- 文件第 1 行 `role` 字段值为 `"user"`，`content.text` 末尾以 `"请立即开始按职责执行"` 结尾
-- 文件第 1 行 `content.text` 包含「小研」的角色描述（如 `"行业/竞品调研员"` 或 `systemPromptExtra` 关键词「竞品与行业调研」）
-- 文件至少存在第 2 行 `role` 字段值为 `"assistant"` 的记录，且 `content.text` 不为空
+- `~/.renlijia/users/{scope}/conversations/{convId}/messages.jsonl` 文件存在
+- 文件第 1 条记录 `role` 字段值为 `"user"`，`content.text` 末尾以 `"请立即开始按职责执行"` 结尾
+- 文件第 1 条记录 `content.text` 包含「小研」的角色描述（如 `"行业/竞品调研员"` 或 `systemPromptExtra` 关键词「竞品与行业调研」）
+- 文件至少存在第 2 条记录 `role` 字段值为 `"assistant"` 的记录，且 `content.text` 不为空
 - EventBus 中出现 `TurnCompleted` 事件，`outcome` 字段值为 `"Success"`
 - 派活后 `employee.json` 中 `lastRunAt` 字段被更新（不为 null，且时间戳晚于派活前的值）
 

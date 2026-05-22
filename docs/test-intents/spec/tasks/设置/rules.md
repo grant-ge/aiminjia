@@ -35,9 +35,9 @@
 
 **验收标准**
 - 第 1 轮发送后，UI 出现错误提示，提示内容包含 `401` / `认证` / `key` / `unauthorized` 中的至少一项
-- 第 1 轮结束后，`~/.renlijia/users/{scope}/conversations/{conv_id}/messages.N.jsonl` 共 2 行，第 1 行 `role` 为 `"user"`、`content.text` 为 `"你好"`，第 2 行为 assistant 错误占位或 turn 失败记录（具体取决于现有错误持久化策略，但本行存在）
+- 第 1 轮结束后，`~/.renlijia/users/{scope}/conversations/{conv_id}/messages.jsonl` 共 2 条记录，第 1 条 `role` 为 `"user"`、`content.text` 为 `"你好"`，第 2 条为 assistant 错误占位或 turn 失败记录（具体取决于现有错误持久化策略，但本条存在）
 - 第 4 轮（改 key 后）发送，UI 不再出现 401 / 认证错误，AI 气泡正常流式输出
-- 第 4 轮结束后，`messages.N.jsonl` 至少新增 2 行（user `"再来一次"` + assistant 非空回复）
+- 第 4 轮结束后，`messages.jsonl` 至少新增 2 条记录（user `"再来一次"` + assistant 非空回复）
 - 「设置 → 模型 → API key」字段值显示为新 key（或其脱敏形式，前几位 / 后几位明文与刚才输入的新 key 一致）
 
 ---
@@ -64,7 +64,7 @@
 - conv_B 目录下同一字段值为 `0.2`
 - `~/Projects/proj-a/.aijia/settings.json` 在两轮操作完成后内容仍为 `{ "temperature": 0.9 }`（应用没把 workspace 设置改回去）
 - 「设置 → 全局」UI 中显示的 temperature 字段仍为 `0.2`（workspace 覆盖不污染 global）
-- 两个对话的 `messages.N.jsonl` 各自共 2 行，assistant 行 `content.text` 均非空（说明覆盖不影响 turn 完成）
+- 两个对话的 `messages.jsonl` 各自共 2 条记录，assistant 记录 `content.text` 均非空（说明覆盖不影响 turn 完成）
 
 ---
 
@@ -91,7 +91,7 @@
 **验收标准**
 - 第 1 步：应用主窗口能正常显示，未出现原生崩溃对话框 / 白屏超过 10 秒 / 无法点击
 - 第 1 步：应用日志（`~/.renlijia/logs/` 下最新日志文件）中出现至少一行包含 `settings` 且包含 `parse` / `invalid` / `corrupt` / `fallback` / `default` 中至少一个关键字的 warn / error 行
-- 第 3 步：AI 能正常回复，`messages.N.jsonl` 共 2 行，第 2 行 `role` 为 `"assistant"`、`content.text` 非空
+- 第 3 步：AI 能正常回复，`messages.jsonl` 共 2 条记录，第 2 条 `role` 为 `"assistant"`、`content.text` 非空
 - 第 4 步：「设置」页面所有分组都能打开，未出现 React error boundary 报错横幅 / "Something went wrong" 提示
 - 第 4 步：「设置 → 全局 → temperature」字段显示为某个默认值（具体值取决于代码默认，但不为空、不为 NaN）
 - 第 5 步：保存后 `~/.renlijia/settings.json` 重新变为合法 JSON（可用 `python -m json.tool ~/.renlijia/settings.json` 验证），且其中 `temperature` 字段值为 `0.3`

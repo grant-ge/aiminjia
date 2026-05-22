@@ -44,7 +44,7 @@
 - `~/.renlijia/skills/demo-skill/SKILL.md` 存在，文件首行为 `---`。
 - 技能中心列表中出现一张技能卡片，卡片标题为 `demo-skill`，描述为 `演示用：一个最小可加载技能`，分类标签显示来源为「全局」（对应后端 `source = "global"`）。
 - 应用日志中**不包含** `Failed to parse skill demo-skill` 字样。
-- 在主界面发起一个新的空对话，发送任意一句话后，从 `~/.renlijia/conversations/{conv_id}/messages.*.jsonl` 抽取本轮的 system prompt 段（或在开发者面板的「查看 system prompt」处查看），其中包含字符串 `demo-skill` 与 `演示用：一个最小可加载技能`。
+- 在主界面发起一个新的空对话，发送任意一句话后，从 `~/.renlijia/users/{scope}/conversations/{conv_id}/messages.jsonl` 抽取本轮的 system prompt 段（或在开发者面板的「查看 system prompt」处查看），其中包含字符串 `demo-skill` 与 `演示用：一个最小可加载技能`。
 
 ---
 
@@ -63,7 +63,7 @@
 2. 等待 AI 完成一轮回复（看到「停止」按钮变回「发送」按钮）。
 
 **验收标准**
-- 在该对话目录 `~/.renlijia/conversations/{conv_id}/` 下，`messages.*.jsonl` 中出现至少一条 `role` 为 `"assistant"` 的消息，其 `content` 中包含一条 tool_use 记录，`name` 字段值为 `"load_skill"`，且参数中包含 `"demo-skill"`。
+- 在该对话目录 `~/.renlijia/users/{scope}/conversations/{conv_id}/` 下，`messages.jsonl` 中出现至少一条 `role` 为 `"assistant"` 的消息，其 `content` 中包含一条 tool_use 记录，`name` 字段值为 `"load_skill"`，且参数中包含 `"demo-skill"`。
 - 同一对话的消息文件中紧随其后出现一条 `role` 为 `"tool"`（或对应 tool_result 形态）的消息，其内容文本中包含 `demo-skill` SKILL.md 的正文片段，例如 `本技能用于意图测试` 或 `[demo-skill]` 字样。
 - 对话界面最终展示的 AI 回复文本以 `[demo-skill]` 前缀开头。
 - 对话 UI 中该轮没有出现红色错误提示，没有「工具调用失败」之类的 toast。

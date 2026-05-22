@@ -36,7 +36,7 @@
 - 第 2 步发送后，UI 上出现一个独立的「等待中 / Pending」气泡或 chip，文本内容包含 `"补充一句：风格要正式。"`
 - 此时 AI 仍在继续输出第 1 步「慢问题」的回复（屏幕上 AI 气泡文字继续增长），未被截断
 - `pending_snapshot_for_session` 返回的数组长度为 1，唯一一项的 `text` 字段值为 `"补充一句：风格要正式。"`，`source` 字段值为 `"app"`
-- 此刻 `~/.renlijia/users/{scope}/conversations/{conv_id}/messages.N.jsonl` 行数不增加（未把 pending 写入持久化的对话历史）
+- 此刻 `~/.renlijia/users/{scope}/conversations/{conv_id}/messages.jsonl` 记录条数不增加（未把 pending 写入持久化的对话历史）
 
 ---
 
@@ -53,14 +53,14 @@
 1. 静等当前 turn 自然结束（AI 气泡停止增长，输入框重新可用）
 2. 等待 30 秒，让 pending drain 完成
 3. 调用 `pending_snapshot_for_session(sessionId)` 读取队列快照
-4. 打开 `~/.renlijia/users/{scope}/conversations/{conv_id}/messages.N.jsonl`
+4. 打开 `~/.renlijia/users/{scope}/conversations/{conv_id}/messages.jsonl`
 
 **验收标准**
 - 当前 turn 结束后 5 秒内，UI 上原本的「等待中」气泡消失，对话区出现一条新的用户消息 bubble，内容为 `"补充一句：风格要正式。"`
 - 紧接着对话区出现新的 assistant 流式输出气泡（说明 drain 触发了新一轮 turn）
 - `pending_snapshot_for_session` 返回数组长度为 0
-- `messages.N.jsonl` 共 4 行：第 1 行 `role` 为 `"user"`、`content.text` 为「慢问题」；第 2 行 `role` 为 `"assistant"`、`content.text` 不为空；第 3 行 `role` 为 `"user"`、`content.text` 为 `"补充一句：风格要正式。"`；第 4 行 `role` 为 `"assistant"`、`content.text` 不为空
-- 第 3 行 user 消息的 timestamp 字段晚于第 2 行 assistant 消息的 timestamp 字段
+- `messages.jsonl` 共 4 条记录：第 1 条 `role` 为 `"user"`、`content.text` 为「慢问题」；第 2 条 `role` 为 `"assistant"`、`content.text` 不为空；第 3 条 `role` 为 `"user"`、`content.text` 为 `"补充一句：风格要正式。"`；第 4 条 `role` 为 `"assistant"`、`content.text` 不为空
+- 第 3 条 user 记录的 timestamp 字段晚于第 2 条 assistant 记录的 timestamp 字段
 
 ---
 
@@ -81,12 +81,12 @@
 4. 等待 5 秒
 5. 再次调用 `pending_snapshot_for_session(sessionId)` 读取队列快照
 6. 等待 30 秒，确认无新 turn 被触发
-7. 打开 `~/.renlijia/users/{scope}/conversations/{conv_id}/messages.N.jsonl`
+7. 打开 `~/.renlijia/users/{scope}/conversations/{conv_id}/messages.jsonl`
 
 **验收标准**
 - 第 2 步快照返回数组长度为 3，三项 `text` 字段按顺序为 `"备注 1"`、`"备注 2"`、`"备注 3"`
 - 点击「停止」后，UI 上「等待中」相关的 3 个 pending 气泡 / chip 全部消失
 - 第 5 步快照返回数组长度为 0
 - 第 6 步等待结束时，对话区没有任何新的 user / assistant 消息 bubble 自动出现
-- `messages.N.jsonl` 中不存在 `content.text` 为 `"备注 1"` / `"备注 2"` / `"备注 3"` 的行
+- `messages.jsonl` 中不存在 `content.text` 为 `"备注 1"` / `"备注 2"` / `"备注 3"` 的记录
 - 此后用户在输入框输入新消息并发送，能正常起新 turn（说明取消 + 清空 pending 没把对话搞坏）
