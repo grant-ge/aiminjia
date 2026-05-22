@@ -84,6 +84,11 @@ globset = "0.4"
 
 urlencoding = "2"
 
+# System proxy detection (macOS scutil / Windows registry).
+# Telegram + WhatsApp 用,直接读系统级网络代理(系统偏好设置 → 网络 → 代理,
+# 或 ClashX / Surge / Clash for Windows 等翻墙工具开"系统代理"时写入的位置)。
+sysproxy = "0.3"
+
 # Plugin system
 async-trait = "0.1"
 tokio-stream = "0.1"

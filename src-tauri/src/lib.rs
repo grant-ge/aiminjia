@@ -29,15 +29,6 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
-            // **必须在所有 reqwest client 创建之前**:把 env 里的 HTTPS_PROXY /
-            // HTTP_PROXY / ALL_PROXY 抓进 shared::proxy 的 snapshot 并从环境里清掉。
-            // 之后默认 reqwest::Client::new() 不会再被污染的 env 接管(典型场景:
-            // antproxy 这类工具 export 大写 HTTPS_PROXY → 国内 IM 渠道直连 OSS
-            // 时被错路由 → 502 → 附件下载失败)。需要走代理的渠道(Telegram /
-            // WhatsApp)显式走 shared::proxy::build_reqwest_client_with_proxy()
-            // 从 snapshot 读,功能不受影响。
-            connector::im::shared::proxy::capture_and_isolate_proxy_env();
-
             // Keep the legacy app data dir only as migration input; runtime data lives in ~/.renlijia/.
             let app_data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&app_data_dir)?;
