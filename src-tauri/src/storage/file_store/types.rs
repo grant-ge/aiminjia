@@ -141,6 +141,13 @@ pub struct ConversationMeta {
     /// 这是 runtime team-tools 的状态，跟 `source_label`（来源标签）是两件事。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_team_name: Option<String>,
+    /// 用户置顶的会话。前端在排序时按 (pinned DESC, updatedAt DESC) 升序排列，
+    /// 让置顶会话浮在列表顶部。`pinned_at` 仅作为多个置顶之间的二级排序键备用，
+    /// 当前 UI 仅按是否置顶分桶。老 conv.json 无此字段时反序列化为 `false / None`。
+    #[serde(default)]
+    pub is_pinned: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pinned_at: Option<String>,
 }
 
 /// Lightweight entry in the global `index.json`.
@@ -165,6 +172,11 @@ pub struct ConversationIndexEntry {
     /// 新增：授权目录 displayName mirror（用于侧边栏分组）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace_name: Option<String>,
+    /// 用户置顶 mirror。同 `ConversationMeta.is_pinned`，写入由 pin/unpin 路径双写。
+    #[serde(default)]
+    pub is_pinned: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pinned_at: Option<String>,
 }
 
 /// Global conversation index stored in `index.json`.
@@ -516,6 +528,8 @@ mod conversation_meta_migration_tests {
             }),
             source_label: Some("小销".to_string()),
             active_team_name: None,
+            is_pinned: false,
+            pinned_at: None,
         };
         let json = serde_json::to_string(&meta).unwrap();
         let parsed: ConversationMeta = serde_json::from_str(&json).unwrap();
@@ -560,6 +574,8 @@ mod conversation_index_entry_migration_tests {
             kind: ConversationKind::ExpertTeam,
             source_label: Some("市场专家团".to_string()),
             workspace_name: Some("foo-project".to_string()),
+            is_pinned: false,
+            pinned_at: None,
         };
         let json = serde_json::to_string(&entry).unwrap();
         assert!(json.contains("\"kind\":\"expertTeam\""));

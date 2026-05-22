@@ -69,6 +69,10 @@
     "archiveChat": "Archive chat",
     "archiveChatTooltip": "Archive conversation",
     "archiveChatConfirmTooltip": "Click again to confirm",
+    "pinChat": "Pin conversation",
+    "unpinChat": "Unpin conversation",
+    "pinnedSection": "Pinned",
+    "allPinnedHint": "All conversations are pinned",
     "renameChat": "Rename chat",
     "copyConversationId": "Copy conversation ID",
     "chatMoreActions": "More chat actions",
@@ -168,6 +172,9 @@
     "completing": "Finishing…",
     "elapsed": " · {{sec}}s",
     "stalled": "Network is slow, still waiting…"
+  },
+  "chatTopBar": {
+    "updatedAt": "updated {{time}}"
   },
   "messageList": {
     "steps": {

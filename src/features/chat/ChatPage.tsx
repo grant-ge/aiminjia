@@ -80,6 +80,10 @@ export function ChatPage({ conversationId }: ChatPageProps) {
       {title ? (
         <ChatTopBar
           title={title}
+          workspace={conv?.workspaceName}
+          kind={conv?.kind}
+          sourceLabel={conv?.sourceLabel}
+          updatedAt={conv?.updatedAt}
           employee={
             employee
               ? {

@@ -2,7 +2,7 @@
  * @designSource design.pen#0EZDr / HsGnf / GknhC
  * @sizing padding [6,8,6,30] (indent 30 under ProjectAccordion), fontSize 13
  */
-import { Archive, Copy, Loader2, Pencil } from 'lucide-react'
+import { Archive, Copy, Loader2, Pencil, Pin, PinOff } from 'lucide-react'
 import * as ContextMenuPrimitive from '@radix-ui/react-context-menu'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -21,9 +21,11 @@ interface ConversationRowProps {
   active?: boolean
   indent?: boolean
   loading?: boolean
+  pinned?: boolean
   onClick: () => void
   onArchive?: () => void
   onRename?: () => void
+  onTogglePin?: () => void
 }
 
 const CONFIRM_RESET_MS = 3000
@@ -34,9 +36,11 @@ export function ConversationRow({
   active = false,
   indent = true,
   loading = false,
+  pinned = false,
   onClick,
   onArchive,
   onRename,
+  onTogglePin,
 }: ConversationRowProps) {
   const { t } = useTranslation()
   const [hovered, setHovered] = useState(false)
@@ -109,7 +113,35 @@ export function ConversationRow({
               <span className="truncate">{title}</span>
             </button>
 
-            <div className={showArchive ? 'block shrink-0' : 'hidden'}>
+            <div className={showArchive ? 'flex shrink-0 items-center gap-0.5' : 'hidden'}>
+              <TooltipProvider delayDuration={400}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      aria-label={
+                        pinned
+                          ? t('sidebar.unpinChat')
+                          : t('sidebar.pinChat')
+                      }
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onTogglePin?.()
+                      }}
+                      className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                    >
+                      {pinned ? (
+                        <PinOff className="h-3.5 w-3.5" />
+                      ) : (
+                        <Pin className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">
+                    {pinned ? t('sidebar.unpinChat') : t('sidebar.pinChat')}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
               <TooltipProvider delayDuration={400}>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -118,13 +150,17 @@ export function ConversationRow({
                       aria-label={t('sidebar.archiveChat')}
                       onClick={handleArchiveClick}
                       className={cn(
-                        'flex h-5 w-5 items-center justify-center rounded transition-colors',
+                        'flex h-5 items-center justify-center rounded transition-colors',
                         armed
-                          ? 'bg-destructive text-destructive-foreground'
-                          : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground',
+                          ? 'w-auto bg-destructive px-1.5 text-[10px] font-semibold leading-none text-destructive-foreground'
+                          : 'w-5 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground',
                       )}
                     >
-                      <Archive className="h-3.5 w-3.5" />
+                      {armed ? (
+                        <span>{t('common.confirm')}</span>
+                      ) : (
+                        <Archive className="h-3.5 w-3.5" />
+                      )}
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="top">
@@ -142,6 +178,17 @@ export function ConversationRow({
         <ContextMenuPrimitive.Content
           className="z-50 min-w-[10rem] overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-[var(--shadow-popover)]"
         >
+          <ContextMenuPrimitive.Item
+            onSelect={() => onTogglePin?.()}
+            className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground"
+          >
+            {pinned ? (
+              <PinOff className="h-3.5 w-3.5 shrink-0" />
+            ) : (
+              <Pin className="h-3.5 w-3.5 shrink-0" />
+            )}
+            <span>{pinned ? t('sidebar.unpinChat') : t('sidebar.pinChat')}</span>
+          </ContextMenuPrimitive.Item>
           <ContextMenuPrimitive.Item
             onSelect={() => onArchive?.()}
             className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground"

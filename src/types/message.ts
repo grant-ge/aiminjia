@@ -47,6 +47,8 @@ export interface Conversation {
    * Human-readable source label. LLM 改 title 时本字段不变；侧边栏用它显示稳定的来源标签。
    */
   sourceLabel?: string
+  /** 用户置顶的会话浮在侧边栏顶部。后端持久化在 conv.json + index.json。 */
+  isPinned?: boolean
 }
 
 /**

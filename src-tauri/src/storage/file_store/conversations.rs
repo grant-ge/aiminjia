@@ -76,6 +76,8 @@ pub fn create_conversation_with_im_source(
         authorized_workspace: None,
         source_label: None,
         active_team_name: None,
+        is_pinned: false,
+        pinned_at: None,
     };
     atomic_write_json(&conv_meta_path(base_dir, id), &meta)?;
 
@@ -90,6 +92,8 @@ pub fn create_conversation_with_im_source(
         kind,
         source_label: None,
         workspace_name: None,
+        is_pinned: false,
+        pinned_at: None,
     });
     atomic_write_json(&index_path(base_dir), &index)?;
 
@@ -293,6 +297,40 @@ pub fn archive_conversation(base_dir: &Path, id: &str) -> StorageResult<()> {
     Ok(())
 }
 
+/// Toggle a conversation's pinned status. `pinned == true` stamps
+/// `pinned_at` so future UIs can multi-tier-sort within pinned bucket;
+/// `false` clears it. Both conv.json and the global index are updated so
+/// the sidebar can read the index without fanning out into conv.json.
+pub fn set_conversation_pinned(
+    base_dir: &Path,
+    id: &str,
+    pinned: bool,
+) -> StorageResult<()> {
+    let meta_path = conv_meta_path(base_dir, id);
+    let mut meta: ConversationMeta = read_json_safe(&meta_path)?;
+    if meta.is_pinned == pinned {
+        // No-op — but still touch the index in case it had drifted.
+        return Ok(());
+    }
+    let now = Utc::now().to_rfc3339();
+    meta.is_pinned = pinned;
+    meta.pinned_at = if pinned { Some(now.clone()) } else { None };
+    atomic_write_json(&meta_path, &meta)?;
+
+    let mut index = read_global_index(base_dir)?;
+    if let Some(entry) = index.conversations.iter_mut().find(|e| e.id == id) {
+        entry.is_pinned = pinned;
+        entry.pinned_at = if pinned { Some(now) } else { None };
+    }
+    atomic_write_json(&index_path(base_dir), &index)?;
+
+    info!(
+        "Set conversation {} pinned = {}",
+        id, pinned
+    );
+    Ok(())
+}
+
 /// Retrieve all non-archived conversations, most recent first.
 ///
 /// Returns `serde_json::Value` for backward compatibility with the existing
@@ -311,7 +349,11 @@ pub fn get_conversations(base_dir: &Path) -> StorageResult<Vec<serde_json::Value
                 "createdAt": e.created_at,
                 "updatedAt": e.updated_at,
                 "isArchived": e.is_archived,
+                "isPinned": e.is_pinned,
             });
+            if let Some(pa) = &e.pinned_at {
+                obj["pinnedAt"] = serde_json::Value::String(pa.clone());
+            }
             // Surface kind + sourceLabel + workspaceName from the index mirror so
             // the sidebar can render groupings without fan-out reads of conv.json.
             // Expert team id is intentionally NOT here (spec §1.3 — index carries
@@ -327,11 +369,19 @@ pub fn get_conversations(base_dir: &Path) -> StorageResult<Vec<serde_json::Value
         })
         .collect();
 
-    // Sort by updatedAt descending
+    // Sort: pinned conversations float to the top, then by updatedAt desc.
     result.sort_by(|a, b| {
-        let a_time = a["updatedAt"].as_str().unwrap_or("");
-        let b_time = b["updatedAt"].as_str().unwrap_or("");
-        b_time.cmp(a_time)
+        let a_pinned = a["isPinned"].as_bool().unwrap_or(false);
+        let b_pinned = b["isPinned"].as_bool().unwrap_or(false);
+        match (a_pinned, b_pinned) {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            _ => {
+                let a_time = a["updatedAt"].as_str().unwrap_or("");
+                let b_time = b["updatedAt"].as_str().unwrap_or("");
+                b_time.cmp(a_time)
+            }
+        }
     });
 
     Ok(result)
@@ -462,6 +512,8 @@ pub fn reconcile_index(base_dir: &Path) -> StorageResult<()> {
                     },
                     source_label: meta.source_label,
                     workspace_name: meta.authorized_workspace.as_ref().map(|w| w.display_name.clone()),
+                    is_pinned: meta.is_pinned,
+                    pinned_at: meta.pinned_at.clone(),
                 });
                 info!("Reconciled: added missing index entry for {}", dir_id);
                 changed = true;
@@ -538,6 +590,8 @@ pub fn touch_index_entry(base_dir: &Path, conversation_id: &str) -> StorageResul
             kind: Default::default(),
             source_label: None,
             workspace_name: None,
+            is_pinned: false,
+            pinned_at: None,
         });
     }
     atomic_write_json(&index_path(base_dir), &index)?;
@@ -653,6 +707,8 @@ mod tests {
             authorized_workspace: None,
             source_label: None,
             active_team_name: None,
+            is_pinned: false,
+            pinned_at: None,
         };
         atomic_write_json(&orphan_dir.join("conv.json"), &meta).unwrap();
 

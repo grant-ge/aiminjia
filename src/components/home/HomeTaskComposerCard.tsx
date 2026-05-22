@@ -146,6 +146,9 @@ export function HomeTaskComposerCard() {
       ])
       store.setMessages([])
       useUiStore.getState().setRoute({ kind: 'chat', conversationId: backendId })
+      // Switch sidebar to 项目 tab so the new conversation is visible in the
+      // sidebar list — same UX as the employee / expert-team paths.
+      useUiStore.getState().setSidebarTab('project')
 
       // Authorize the selected workspace. Skip when it's the implicit default
       // folder (id === 'default') — leaving workspaceName empty lets the sidebar

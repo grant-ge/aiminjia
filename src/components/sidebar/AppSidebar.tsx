@@ -63,7 +63,13 @@ export function AppSidebar() {
   const openSettings = useUiStore((s) => s.openSettings)
   const sidebarTab = useUiStore((s) => s.sidebarTab)
   const setSidebarTab = useUiStore((s) => s.setSidebarTab)
-  const { conversations, switchConversation, renameConversation, archiveConversation } = useChat()
+  const {
+    conversations,
+    switchConversation,
+    renameConversation,
+    archiveConversation,
+    setConversationPinned,
+  } = useChat()
   const activeConversationId = useActiveConversationId()
   const channelActiveSessionId = useActiveChannelSessionId()
   const channelConversations = useChannelStore((s) => s.conversations)
@@ -127,10 +133,57 @@ export function AppSidebar() {
     (c) => (c.kind ?? 'user') === 'user' && !hasExpertTeam(c.id),
   )
 
+  // Global pinned section: every pinned in-app conversation regardless of
+  // tab kind. Order = useChat ordering (already pinned-first from the Rust
+  // sort), so users see consistent ordering whichever tab is active. IM
+  // channel sessions are not yet pin-aware (no isPinned column on
+  // ChannelConversation) so they're excluded.
+  const globalPinned = nonChannelConversations.filter((c) => c.isPinned)
+
+  // 各 tab 内已经经过全局置顶过滤，避免 pinned 会话同时出现在置顶区和 tab 内。
   const projects = groupConversationsByProject(
-    projectConversations,
+    projectConversations.filter((c) => !c.isPinned),
     activeConversationId,
   )
+
+  /**
+   * Render a flat tab body (employee / expert-team).  The global pinned
+   * section above already surfaces pinned items, so within the tab we just
+   * list non-pinned conversations to avoid duplicates.
+   */
+  const renderFlatTab = (items: typeof conversations) => {
+    if (items.length === 0) {
+      return (
+        <div className="px-2 py-4 text-sm text-muted-foreground">{t('sidebar.noHistory')}</div>
+      )
+    }
+    const visible = items.filter((c) => !c.isPinned)
+    if (visible.length === 0) {
+      return (
+        <div className="px-2 py-4 text-sm text-muted-foreground">{t('sidebar.allPinnedHint')}</div>
+      )
+    }
+    return (
+      <div className="flex flex-col gap-0.5">
+        {visible.map((conversation) => (
+          <ConversationRow
+            key={conversation.id}
+            id={conversation.id}
+            title={conversation.title}
+            active={activeConversationId === conversation.id}
+            indent={false}
+            pinned={conversation.isPinned ?? false}
+            onClick={() => void switchConversation(conversation.id)}
+            onRename={() => handleRenameOpen(conversation.id)}
+            onArchive={() => void handleArchive(conversation.id)}
+            onTogglePin={() =>
+              void setConversationPinned(conversation.id, !(conversation.isPinned ?? false))
+            }
+          />
+        ))}
+      </div>
+    )
+  }
 
   const activeKey: SidebarNavKey | null =
     route.kind === 'channel'
@@ -176,6 +229,29 @@ export function AppSidebar() {
       />
 
       <div className="flex min-h-0 flex-1 flex-col gap-2">
+        {globalPinned.length > 0 ? (
+          <div className="flex flex-col mb-1">
+            <div className="px-2 py-1 text-xs font-medium text-muted-foreground">
+              {t('sidebar.pinnedSection')}
+            </div>
+            <div className="flex flex-col gap-0.5">
+              {globalPinned.map((conversation) => (
+                <ConversationRow
+                  key={conversation.id}
+                  id={conversation.id}
+                  title={conversation.title}
+                  active={activeConversationId === conversation.id}
+                  indent={false}
+                  pinned
+                  onClick={() => void switchConversation(conversation.id)}
+                  onRename={() => handleRenameOpen(conversation.id)}
+                  onArchive={() => void handleArchive(conversation.id)}
+                  onTogglePin={() => void setConversationPinned(conversation.id, false)}
+                />
+              ))}
+            </div>
+          </div>
+        ) : null}
         {(() => {
           const TABS = [
             { key: 'project' as SidebarBodyTab, Icon: CheckSquare, labelKey: 'sidebar.project' },
@@ -224,49 +300,16 @@ export function AppSidebar() {
               onSelectConversation={(id) => void switchConversation(id)}
               onRenameConversation={handleRenameOpen}
               onArchiveConversation={(id) => void handleArchive(id)}
+              onTogglePinConversation={(id, next) => void setConversationPinned(id, next)}
             />
           </div>
         ) : sidebarTab === 'employee' ? (
           <div className="-mr-2 flex-1 overflow-auto py-1">
-            {employeeConversations.length === 0 ? (
-              <div className="px-2 py-4 text-sm text-muted-foreground">{t('sidebar.noHistory')}</div>
-            ) : (
-              <div className="flex flex-col gap-1">
-                {employeeConversations.map((conversation) => (
-                  <ConversationRow
-                    key={conversation.id}
-                    id={conversation.id}
-                    title={conversation.title}
-                    active={activeConversationId === conversation.id}
-                    indent={false}
-                    onClick={() => void switchConversation(conversation.id)}
-                    onRename={() => handleRenameOpen(conversation.id)}
-                    onArchive={() => void handleArchive(conversation.id)}
-                  />
-                ))}
-              </div>
-            )}
+            {renderFlatTab(employeeConversations)}
           </div>
         ) : sidebarTab === 'expert-team' ? (
           <div className="-mr-2 flex-1 overflow-auto py-1">
-            {expertTeamConversations.length === 0 ? (
-              <div className="px-2 py-4 text-sm text-muted-foreground">{t('sidebar.noHistory')}</div>
-            ) : (
-              <div className="flex flex-col gap-1">
-                {expertTeamConversations.map((conversation) => (
-                  <ConversationRow
-                    key={conversation.id}
-                    id={conversation.id}
-                    title={conversation.title}
-                    active={activeConversationId === conversation.id}
-                    indent={false}
-                    onClick={() => void switchConversation(conversation.id)}
-                    onRename={() => handleRenameOpen(conversation.id)}
-                    onArchive={() => void handleArchive(conversation.id)}
-                  />
-                ))}
-              </div>
-            )}
+            {renderFlatTab(expertTeamConversations)}
           </div>
         ) : (
           <div className="-mr-2 flex-1 overflow-auto pr-2">

@@ -69,6 +69,10 @@
     "archiveChat": "归档聊天",
     "archiveChatTooltip": "归档对话",
     "archiveChatConfirmTooltip": "再次点击确认归档",
+    "pinChat": "置顶对话",
+    "unpinChat": "取消置顶",
+    "pinnedSection": "置顶",
+    "allPinnedHint": "所有对话都已置顶",
     "renameChat": "重命名聊天",
     "copyConversationId": "复制会话 ID",
     "chatMoreActions": "聊天更多操作",
@@ -168,6 +172,9 @@
     "completing": "收尾中…",
     "elapsed": " · 已 {{sec}}s",
     "stalled": "网络较慢，仍在等待…"
+  },
+  "chatTopBar": {
+    "updatedAt": "更新于 {{time}}"
   },
   "messageList": {
     "steps": {

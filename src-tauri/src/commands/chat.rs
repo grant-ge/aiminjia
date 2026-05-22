@@ -367,6 +367,15 @@ pub async fn archive_conversation(
 }
 
 #[tauri::command]
+pub async fn set_conversation_pinned(
+    adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
+    conversation_id: String,
+    pinned: bool,
+) -> Result<(), String> {
+    adapter.set_conversation_pinned(conversation_id, pinned).await
+}
+
+#[tauri::command]
 pub async fn set_conversation_expert_team(
     adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
     conversation_id: String,

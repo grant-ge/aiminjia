@@ -690,6 +690,13 @@ export function archiveConversation(conversationId: string): Promise<void> {
   return invoke<void>('archive_conversation', { conversationId })
 }
 
+export function setConversationPinned(
+  conversationId: string,
+  pinned: boolean,
+): Promise<void> {
+  return invoke<void>('set_conversation_pinned', { conversationId, pinned })
+}
+
 export type ConversationSourceDto =
   | { kind: 'user' }
   | { kind: 'employee'; employeeId: string }

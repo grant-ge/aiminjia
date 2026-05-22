@@ -24,7 +24,7 @@ const NAV: Array<{ key: SidebarNavKey; i18nKey: string; icon: LucideIcon }> = [
 export function SidebarNav({ activeKey = null, onSelect = () => {} }: SidebarNavProps) {
   const { t } = useTranslation()
   return (
-    <nav className="flex flex-col gap-0.5 mt-3 mb-4">
+    <nav className="flex flex-col gap-0.5 mb-2">
       {NAV.map(({ key, i18nKey, icon: Icon }) => {
         const active = key === activeKey
         return (

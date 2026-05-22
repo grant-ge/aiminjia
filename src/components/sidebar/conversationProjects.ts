@@ -3,6 +3,9 @@
  *
  * 分组依据：conversation.workspaceName（后端从 authorized_workspace_store 注入）。
  * 未绑定工作目录的对话归到"默认文件夹"。
+ *
+ * 置顶会话不在这里特殊处理 —— AppSidebar 把所有 pinned 会话提到全局"置顶"区
+ * （tab 切换条之上），传进来的 conversations 列表已经过 pinned 过滤。
  */
 import i18n from '@/i18n'
 
@@ -13,6 +16,7 @@ export interface RawConversation {
   title: string
   workspaceName?: string | null
   loading?: boolean
+  isPinned?: boolean
 }
 
 const DEFAULT_PROJECT_ID = 'default'
@@ -36,6 +40,7 @@ export function groupConversationsByProject(
       title: c.title,
       active: c.id === activeId,
       loading: c.loading,
+      pinned: c.isPinned ?? false,
     })
   }
   // 默认文件夹排在最后
