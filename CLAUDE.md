@@ -220,7 +220,7 @@ Skill 系统采用无状态架构，仅加载 `~/.renlijia/users/{scope}/skills/
 
 ## 存储结构
 
-**权威规范在 `~/lotus/docs/desktop/aijia/storage-conventions.md`**（仓库内为 `docs/storage-conventions.md`）。本节只给一句话指引 + 入口；任何写盘改动以规范文档为准。
+**权威规范在 `~/lotus/docs/desktop/storage-conventions.md`**。本节只给一句话指引 + 入口；任何写盘改动以规范文档为准。
 
 ### 五个域
 
