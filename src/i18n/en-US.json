@@ -951,6 +951,13 @@
     "openExternal": "Open with default app",
     "reveal": "Show in folder"
   },
+  "filePreview": {
+    "openWithDefault": "Open with default app",
+    "selectArtifact": "Select a file to preview",
+    "loadingPreview": "Loading preview...",
+    "cannotPreview": "Cannot preview this file",
+    "retry": "Retry"
+  },
   "inbox": {
     "title": "Report Center",
     "markAllRead": "Mark all read",

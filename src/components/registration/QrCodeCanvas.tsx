@@ -16,10 +16,11 @@ interface QrCodeCanvasProps {
  *
  * - White background is **fixed** (not theme-driven): WeChat / DingTalk scanner
  *   apps fail to decode against dark backgrounds.
- * - When `value` is empty, shows a structural 7x7 grid placeholder so the layout
- *   doesn't jump while begin_registration is still in flight.
- * - When `loading=true`, overlays a backdrop + spinner without unmounting the
- *   QR image (avoids flash on re-render).
+ * - 占位策略:`value` 为空(begin_registration 还未返回) → 显示居中 spinner +
+ *   "二维码加载中…"文案。旧版用一个 7×7 黑白格子假装是二维码,容易被用户
+ *   误以为"扫码失败 / bug",换成显式 loading 状态。
+ * - `loading=true` 时在已有 QR 上叠 backdrop + spinner(用于刷新过期的 QR),
+ *   不卸载 <img> 避免闪烁。
  */
 export function QrCodeCanvas({ value, loading, alt = '注册二维码' }: QrCodeCanvasProps) {
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
@@ -52,21 +53,20 @@ export function QrCodeCanvas({ value, loading, alt = '注册二维码' }: QrCode
       {qrDataUrl ? (
         <img src={qrDataUrl} alt={alt} className="h-full w-full" />
       ) : (
-        // Structural placeholder: black dots on white grid, keeps slot height stable
+        // value 还没拿到 → 显式 loading 占位。bg-white 保持二维码区视觉一致,
+        // 不闪到 bg-background 让弹窗看起来跳。
         <div
+          data-testid="qr-placeholder-loading"
           aria-label={alt}
-          data-testid="qr-placeholder-grid"
-          className="grid h-full w-full grid-cols-7 grid-rows-7 gap-1 rounded bg-white p-2"
+          aria-busy="true"
+          role="status"
+          className="flex h-full w-full flex-col items-center justify-center gap-3 rounded bg-white"
         >
-          {Array.from({ length: 49 }).map((_, index) => (
-            <span
-              key={index}
-              className={`rounded-[2px] ${[0, 1, 2, 7, 14, 42, 43, 44, 48, 34, 24, 18, 12, 31, 39, 5, 10, 29, 36, 46].includes(index) ? 'bg-black' : 'bg-zinc-100'}`}
-            />
-          ))}
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-xs font-medium text-zinc-500">二维码加载中…</p>
         </div>
       )}
-      {loading && (
+      {loading && qrDataUrl && (
         <div
           data-testid="qr-spinner-overlay"
           className="absolute inset-4 flex items-center justify-center rounded-xl bg-background/75 backdrop-blur-[1px]"

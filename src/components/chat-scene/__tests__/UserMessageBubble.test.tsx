@@ -27,13 +27,13 @@ describe('UserMessageBubble', () => {
     expect(bubble?.className).toMatch(/max-w-\[80%\]/)
   })
 
-  it('bubble uses 8px vertical padding + horizontal padding from --user-bubble-padding-x', () => {
+  it('bubble uses 8px vertical padding and 12px horizontal padding', () => {
     const { container } = render(<UserMessageBubble text="X" />)
     const bubble = container.querySelector('[data-testid="user-bubble"]')
     expect(bubble?.className).toMatch(/\bpy-2\b/)
-    // Horizontal padding consumes the global token so design-system tweaks
-    // ripple through every user bubble at once.
-    expect(bubble?.className).toMatch(/px-\[var\(--user-bubble-padding-x\)\]/)
+    // 之前是走 --user-bubble-padding-x 变量,但该变量只此一处用,已删,
+    // 直接 px-3 (= 12px)。
+    expect(bubble?.className).toMatch(/\bpx-3\b/)
   })
 
   it('renders selected skill as a visible token inside the user bubble', () => {

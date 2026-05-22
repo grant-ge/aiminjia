@@ -204,6 +204,7 @@ export function ChatBottomArea({
               skillTokens={skillTokens}
               onOpenAttachment={isPickingAttachments ? undefined : () => void handlePickAttachments()}
               tips={<BottomTips />}
+              containerClassName="shadow-[var(--shadow-md)]"
             />
           </div>
         </div>

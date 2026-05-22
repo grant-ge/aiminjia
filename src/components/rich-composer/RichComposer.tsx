@@ -46,6 +46,9 @@ export interface RichComposerProps {
 
   onOpenAttachment?: () => void
   skillTokens?: ComposerSkillToken[]
+  /** Extra classes appended to the outer rounded-xl container. Caller-controlled
+   * styling (e.g. shadow for the in-chat composer vs. flat for home composer). */
+  containerClassName?: string
 }
 
 export interface RichComposerHandle {
@@ -76,6 +79,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
     showProjectButton = true,
     onOpenAttachment,
     skillTokens,
+    containerClassName,
   },
   ref,
 ) {
@@ -193,7 +197,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
     <div className="flex w-full flex-col gap-2">
       <div
         data-testid="composer-root"
-        className="flex w-full flex-col rounded-xl border border-border bg-card px-4 pb-1 pt-4"
+        className={`flex w-full flex-col rounded-xl border border-border bg-card px-4 pb-1 pt-4${containerClassName ? ` ${containerClassName}` : ''}`}
       >
         {topSlot}
         {skillCommand ? (

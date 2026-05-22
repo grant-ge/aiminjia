@@ -13,7 +13,10 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio::sync::RwLock;
 
+use crate::connector::im::shared::proxy::build_reqwest_client_with_proxy;
+
 const TELEGRAM_API_BASE: &str = "https://api.telegram.org";
+const TELEGRAM_API_HOST: &str = "api.telegram.org";
 
 /// HTTP client wrapping a single bot token. Construct one per connector.
 pub struct TelegramApi {
@@ -249,10 +252,14 @@ fn classify_reqwest_error(e: reqwest::Error) -> TelegramApiError {
 impl TelegramApi {
     pub fn new(token: String) -> Result<Self> {
         let timeout = Duration::from_secs(35);
+        // 走 shared::proxy 统一出口,跟 WhatsApp 同源。resolver 没拿到代理 →
+        // 显式 .no_proxy(),避免 reqwest 自己读 HTTPS_PROXY(大写优先)绕过
+        // 我们的优先级。
+        let http = build_reqwest_client_with_proxy(timeout, TELEGRAM_API_HOST)?;
         Ok(Self {
             token,
             api_base: TELEGRAM_API_BASE.to_string(),
-            http: RwLock::new(reqwest::Client::builder().timeout(timeout).build()?),
+            http: RwLock::new(http),
             client_timeout: timeout,
         })
     }
@@ -276,14 +283,16 @@ impl TelegramApi {
     /// 丢弃当前 reqwest client（释放 keep-alive），新建替换。
     /// Watchdog 检测到 stall 时调用，强制下次请求走新连接。
     pub async fn rebuild_client(&self) -> Result<()> {
-        let builder = if self.api_base != TELEGRAM_API_BASE {
+        let new_client = if self.api_base != TELEGRAM_API_BASE {
+            // mockito / 本地 test server,不走代理。
             reqwest::Client::builder()
                 .no_proxy()
                 .timeout(self.client_timeout)
+                .build()?
         } else {
-            reqwest::Client::builder().timeout(self.client_timeout)
+            // 跟 ::new() 同路径,重连后代理设置仍生效。
+            build_reqwest_client_with_proxy(self.client_timeout, TELEGRAM_API_HOST)?
         };
-        let new_client = builder.build()?;
         *self.http.write().await = new_client;
         Ok(())
     }
