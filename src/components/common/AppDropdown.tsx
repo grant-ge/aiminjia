@@ -16,6 +16,8 @@ export interface AppDropdownItem {
   disabled?: boolean
   className?: string
   onSelect?: (event: Event) => void
+  /** Optional data-* attributes to passthrough to the rendered item (e.g. e2e selectors). */
+  dataAttrs?: Record<string, string>
 }
 
 interface AppDropdownProps {
@@ -75,6 +77,7 @@ export function AppDropdown({
               itemClassName,
               item.className,
             )}
+            {...(item.dataAttrs ?? {})}
           >
             {item.icon}
             <span>{item.label}</span>

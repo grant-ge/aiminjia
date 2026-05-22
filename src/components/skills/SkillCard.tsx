@@ -15,9 +15,13 @@ interface SkillCardProps {
    * SKILL.md frontmatter `version:` field by the backend.
    */
   version?: string | null
+  /** Skill id (e.g. `demo-skill`)—used for e2e selectors. */
+  skillId?: string
+  /** Skill source (`builtin` / `user`)—used for e2e selectors. */
+  skillSource?: string
 }
 
-export function SkillCard({ title, meta, desc, iconNode, iconBg = 'bg-brand-primary-subtle', onClick, size = 'office', actionsSlot, version }: SkillCardProps) {
+export function SkillCard({ title, meta, desc, iconNode, iconBg = 'bg-brand-primary-subtle', onClick, size = 'office', actionsSlot, version, skillId, skillSource }: SkillCardProps) {
   const isHot = size === 'hot'
   const height = isHot ? 'h-[140px]' : 'h-[120px]'
   const iconSize = isHot ? 'h-9 w-9' : 'h-[34px] w-[34px]'
@@ -39,6 +43,9 @@ export function SkillCard({ title, meta, desc, iconNode, iconBg = 'bg-brand-prim
   return (
     <div
       data-testid="skill-card"
+      data-aijia-skill-card
+      data-aijia-skill-id={skillId}
+      data-aijia-skill-source={skillSource}
       {...interactiveProps}
       className={`group relative flex ${height} flex-col rounded-lg border border-border bg-card p-4 transition-all duration-150 ${interactiveClass}`}
     >

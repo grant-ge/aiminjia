@@ -26,6 +26,15 @@ if (import.meta.env.DEV) {
     // shifts one and skips the OS folder dialog. Downstream
     // `authorizeLocalDirectory` IPC and home composer state updates still run.
     _pickDirectoryMockQueue: [] as string[],
+    // E2E one-shot mock for skill-center's `openDialog()` calls in
+    // `handleImportDirectory` / `handleImportArchive`. CLI pushes a single
+    // absolute path (folder for directory variant, .zip file for archive
+    // variant). The next matching dropdown click in SkillCenterPage shifts
+    // one and skips the OS dialog. Real `runInstall(picked)` →
+    // `installCustomSkill` → backend `install_custom_skill` chain runs as
+    // normal. The variant selection (which item the user clicks) determines
+    // which handler consumes the queue—queue itself is variant-agnostic.
+    _pickSkillImportMockQueue: [] as string[],
   }
 }
 

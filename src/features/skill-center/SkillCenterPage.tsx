@@ -142,6 +142,16 @@ export function SkillCenterPage() {
   )
 
   const handleImportDirectory = useCallback(async () => {
+    if (import.meta.env.DEV) {
+      const queue = (window as unknown as { __aijia?: { _pickSkillImportMockQueue?: string[] } }).__aijia?._pickSkillImportMockQueue
+      if (queue && queue.length > 0) {
+        const mocked = queue.shift()
+        if (mocked) {
+          await runInstall(mocked)
+          return
+        }
+      }
+    }
     const picked = await openDialog({
       directory: true,
       multiple: false,
@@ -152,6 +162,16 @@ export function SkillCenterPage() {
   }, [runInstall, t])
 
   const handleImportArchive = useCallback(async () => {
+    if (import.meta.env.DEV) {
+      const queue = (window as unknown as { __aijia?: { _pickSkillImportMockQueue?: string[] } }).__aijia?._pickSkillImportMockQueue
+      if (queue && queue.length > 0) {
+        const mocked = queue.shift()
+        if (mocked) {
+          await runInstall(mocked)
+          return
+        }
+      }
+    }
     const picked = await openDialog({
       directory: false,
       multiple: false,
@@ -403,7 +423,7 @@ export function SkillCenterPage() {
             <AppDropdown
               ariaLabel={t('skillCenter.importSkill')}
               trigger={
-                <Button size="sm">
+                <Button size="sm" data-aijia-skill-import-trigger>
                   {t('skillCenter.importSkill')}
                   <ChevronDown className="h-3.5 w-3.5" />
                 </Button>
@@ -414,12 +434,14 @@ export function SkillCenterPage() {
                   label: t('skillCenter.importDirectory'),
                   icon: <FolderOpen className="h-4 w-4" />,
                   onSelect: () => void handleImportDirectory(),
+                  dataAttrs: { 'data-aijia-skill-import-action': 'directory' },
                 },
                 {
                   id: 'import-archive',
                   label: t('skillCenter.importArchive'),
                   icon: <Package className="h-4 w-4" />,
                   onSelect: () => void handleImportArchive(),
+                  dataAttrs: { 'data-aijia-skill-import-action': 'archive' },
                 },
               ]}
             />
@@ -501,6 +523,8 @@ export function SkillCenterPage() {
                 iconNode={getSkillIcon(skill.icon)}
                 iconBg={getIconBg(skill.category)}
                 version={skill.version}
+                skillId={skill.id}
+                skillSource={skill.source}
                 onClick={() => setRoute({ kind: 'skill-detail', skillId: skill.id })}
                 actionsSlot={
                   menuItems.length === 0 ? (
