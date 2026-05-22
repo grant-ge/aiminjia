@@ -32,6 +32,7 @@ export function ToolTraceDetails({ steps }: ToolTraceDetailsProps) {
             />
             {isOpen ? (
               <ToolTraceIO
+                toolName={step.name}
                 inputJson={step.inputJson}
                 output={step.output}
               />

@@ -56,6 +56,9 @@ pub trait ConversationStore: Send + Sync {
     fn restore_conversation(&self, id: &str) -> Result<()>;
     /// Return all archived conversations as JSON values.
     fn get_archived_conversations(&self) -> Result<Vec<serde_json::Value>>;
+    /// Toggle a conversation's pinned status. Pinned conversations float to
+    /// the top of the sidebar list.
+    fn set_conversation_pinned(&self, id: &str, pinned: bool) -> Result<()>;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -69,6 +72,7 @@ pub struct InMemoryConversationStore {
     active_tasks: Mutex<std::collections::HashSet<String>>,
     compact_boundaries: Mutex<HashMap<String, Vec<CompactBoundaryRecord>>>,
     archived: Mutex<std::collections::HashSet<String>>,
+    pinned: Mutex<std::collections::HashSet<String>>,
 }
 
 impl InMemoryConversationStore {
@@ -111,6 +115,7 @@ impl ConversationStore for InMemoryConversationStore {
         self.active_tasks.lock().unwrap().remove(id);
         self.compact_boundaries.lock().unwrap().remove(id);
         self.archived.lock().unwrap().remove(id);
+        self.pinned.lock().unwrap().remove(id);
         Ok(())
     }
 
@@ -188,6 +193,16 @@ impl ConversationStore for InMemoryConversationStore {
                 )
             })
             .collect())
+    }
+
+    fn set_conversation_pinned(&self, id: &str, pinned: bool) -> Result<()> {
+        let mut p = self.pinned.lock().unwrap();
+        if pinned {
+            p.insert(id.to_string());
+        } else {
+            p.remove(id);
+        }
+        Ok(())
     }
 }
 

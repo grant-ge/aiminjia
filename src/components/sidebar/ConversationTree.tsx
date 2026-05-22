@@ -2,6 +2,8 @@
  * @designSource design.pen#47U5w (proj1/conv1..3 + proj2/convA..B)
  *
  * 按 project 分组渲染会话；项目折叠状态由本组件内部 state 管理。
+ * 置顶会话由 AppSidebar 全局 pinned 区域统一渲染（在 tab 切换条之上），
+ * 这里只负责非置顶的项目分桶视图。
  */
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -14,6 +16,7 @@ export interface ConversationTreeItem {
   title: string
   active?: boolean
   loading?: boolean
+  pinned?: boolean
 }
 
 export interface ConversationTreeProject {
@@ -27,6 +30,7 @@ interface ConversationTreeProps {
   onSelectConversation?: (conversationId: string) => void
   onRenameConversation?: (id: string) => void
   onArchiveConversation?: (id: string) => void
+  onTogglePinConversation?: (id: string, nextPinned: boolean) => void
 }
 
 export function ConversationTree({
@@ -34,6 +38,7 @@ export function ConversationTree({
   onSelectConversation = () => {},
   onRenameConversation,
   onArchiveConversation,
+  onTogglePinConversation,
 }: ConversationTreeProps) {
   const { t } = useTranslation()
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
@@ -60,9 +65,11 @@ export function ConversationTree({
               title={c.title}
               active={c.active}
               loading={c.loading}
+              pinned={c.pinned}
               onClick={() => onSelectConversation(c.id)}
               onRename={() => onRenameConversation?.(c.id)}
               onArchive={() => onArchiveConversation?.(c.id)}
+              onTogglePin={() => onTogglePinConversation?.(c.id, !c.pinned)}
             />
           ))}
         </ProjectAccordion>

@@ -80,6 +80,10 @@ export function ChatPage({ conversationId }: ChatPageProps) {
       {title ? (
         <ChatTopBar
           title={title}
+          workspace={conv?.workspaceName}
+          kind={conv?.kind}
+          sourceLabel={conv?.sourceLabel}
+          updatedAt={conv?.updatedAt}
           employee={
             employee
               ? {
@@ -94,7 +98,7 @@ export function ChatPage({ conversationId }: ChatPageProps) {
       <div className="relative flex flex-1 overflow-hidden">
         <div data-testid="chat-layout-column" className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
           {expertTeam && messageCount === 0 ? (
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 overflow-y-auto overscroll-contain">
               <ExpertTeamWelcome team={expertTeam} />
             </div>
           ) : (

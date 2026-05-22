@@ -234,6 +234,12 @@ impl AppStorage {
         conversations::restore_conversation(&self.base_dir, id).map_err(|e| anyhow::anyhow!(e))
     }
 
+    pub fn set_conversation_pinned(&self, id: &str, pinned: bool) -> Result<()> {
+        let _lock = self.write_lock.lock().unwrap();
+        conversations::set_conversation_pinned(&self.base_dir, id, pinned)
+            .map_err(|e| anyhow::anyhow!(e))
+    }
+
     pub fn get_archived_conversations(&self) -> Result<Vec<serde_json::Value>> {
         conversations::get_archived_conversations(&self.base_dir).map_err(|e| anyhow::anyhow!(e))
     }
@@ -1076,6 +1082,10 @@ impl crate::runtime::store::ConversationStore for FileConversationStore {
     fn get_archived_conversations(&self) -> Result<Vec<serde_json::Value>> {
         self.storage.get_archived_conversations()
     }
+
+    fn set_conversation_pinned(&self, id: &str, pinned: bool) -> Result<()> {
+        self.storage.set_conversation_pinned(id, pinned)
+    }
 }
 
 impl crate::runtime::store::ConversationStore for AppStorage {
@@ -1156,6 +1166,10 @@ impl crate::runtime::store::ConversationStore for AppStorage {
 
     fn get_archived_conversations(&self) -> Result<Vec<serde_json::Value>> {
         self.get_archived_conversations()
+    }
+
+    fn set_conversation_pinned(&self, id: &str, pinned: bool) -> Result<()> {
+        self.set_conversation_pinned(id, pinned)
     }
 }
 

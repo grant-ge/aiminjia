@@ -223,8 +223,91 @@ pub async fn rename_conversation(
     })
 }
 
+/// Visual width of a character: ASCII counts as 1, otherwise 2.
+/// Used to cap title length so mixed CJK/Latin titles get equal screen real
+/// estate (~16 CJK chars or ~32 ASCII chars).
+fn visual_width(c: char) -> usize {
+    if c.is_ascii() {
+        1
+    } else {
+        2
+    }
+}
+
+const TITLE_VISUAL_WIDTH_CAP: usize = 32;
+
+/// Take a leading prefix bounded by visual width. Truncates on a char boundary.
+fn take_by_visual_width(s: &str, cap: usize) -> String {
+    let mut acc = 0usize;
+    let mut out = String::new();
+    for c in s.chars() {
+        let w = visual_width(c);
+        if acc + w > cap {
+            break;
+        }
+        acc += w;
+        out.push(c);
+    }
+    out
+}
+
+/// Find the first non-empty trimmed line. Skip common LLM lead-ins like
+/// "标题：" / "标题如下：" that prefix the actual title.
+fn first_meaningful_line(raw: &str) -> &str {
+    const LEAD_INS: &[&str] = &[
+        "好的，", "好的:", "好的：", "标题：", "标题:", "标题如下：", "标题如下:",
+        "Title:", "title:",
+    ];
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if LEAD_INS.iter().any(|p| trimmed == *p) {
+            continue;
+        }
+        return trimmed;
+    }
+    ""
+}
+
+/// 从 user 首句生成对话标题：
+/// - 取首句（按 `,。?!？！,.\n` 切）
+/// - 剥常见礼貌前缀（"请帮我" / "Please " 等）
+/// - 截到 32 视觉宽度（≈ 16 中文字 / 32 ASCII）
+pub fn title_from_user_text(user_text: &str) -> String {
+    if user_text.trim().is_empty() {
+        return String::new();
+    }
+    // 切第一个有内容的句子
+    let first_sentence = user_text
+        .split(|c: char| matches!(c, ',' | '。' | '?' | '!' | '？' | '！' | ',' | '.' | '\n'))
+        .map(|s| s.trim())
+        .find(|s| !s.is_empty())
+        .unwrap_or("")
+        .trim();
+    if first_sentence.is_empty() {
+        return String::new();
+    }
+    // 剥礼貌前缀
+    let polite_prefixes = [
+        "请帮我", "请帮", "请", "麻烦", "你好", "帮我", "帮忙", "可以", "能否",
+        "Please ", "please ", "Can you ", "can you ", "Could you ", "could you ",
+    ];
+    let mut s = first_sentence.to_string();
+    for p in polite_prefixes {
+        if s.starts_with(p) {
+            s = s[p.len()..].trim().to_string();
+            break;
+        }
+    }
+    // 走 sanitize（保留宽度截断 + markdown 剥离 + 引号清理），但跳过 refusal 检测
+    // 直接复用 sanitize_title 即可——user 文本不会触发 refusal
+    sanitize_title(&s)
+}
+
 pub fn sanitize_title(raw: &str) -> String {
-    let line = raw.lines().next().unwrap_or("").trim();
+    let line = first_meaningful_line(raw);
 
     // Strip markdown link syntax: [text](url) -> text
     let mut stripped = String::with_capacity(line.len());
@@ -277,12 +360,16 @@ pub fn sanitize_title(raw: &str) -> String {
         })
         .collect();
 
-    let candidate: String = cleaned.trim().chars().take(10).collect();
+    let trimmed_cleaned = cleaned.trim();
 
-    if looks_like_refusal(&candidate) {
+    // Refusal detection runs against the full cleaned text (not the truncated
+    // candidate), so a long apology like "我无法直接访问网页…" is recognised
+    // even when the first 10 chars look benign.
+    if looks_like_refusal(trimmed_cleaned) {
         return String::new();
     }
-    candidate
+
+    take_by_visual_width(trimmed_cleaned, TITLE_VISUAL_WIDTH_CAP)
 }
 
 fn looks_like_refusal(s: &str) -> bool {
@@ -319,18 +406,16 @@ pub fn should_auto_title(
         return Ok(false);
     }
 
+    // 只需要 user 消息：早期触发标题生成不必等到 assistant 回复完毕。
+    // turn 跑完后会再触发一次，但那时 title 已不是"新对话"，会被这里的 guard 跳过。
     let messages = db.get_messages(conversation_id)?;
     let has_user = messages.iter().any(|m| m["role"].as_str() == Some("user"));
-    let has_assistant = messages
-        .iter()
-        .any(|m| m["role"].as_str() == Some("assistant"));
-    Ok(has_user && has_assistant)
+    Ok(has_user)
 }
 
 /// Generate and set a title for the conversation.
-/// Returns the rename outcome (new conversationId + title) so the caller
-/// (transport layer) can emit any necessary events.
-/// All errors are logged and swallowed; returns None on failure.
+///
+/// 策略：调 LLM 总结 user 首句，失败则兜底到 user 首句字面截断。
 pub async fn generate_and_set_title(
     db: Arc<dyn crate::runtime::store::conversation_store::ConversationStore>,
     gateway: Arc<LlmGateway>,
@@ -354,7 +439,7 @@ async fn generate_and_set_title_inner(
     conversation_id: String,
     settings: AppSettings,
 ) -> anyhow::Result<Option<RenameConversationOutcome>> {
-    // Check title guard inline (no message fetch needed here)
+    // Idempotent guard
     let convs = db.get_conversations()?;
     let current_title = convs
         .iter()
@@ -365,66 +450,78 @@ async fn generate_and_set_title_inner(
         return Ok(None);
     }
 
-    // Fetch messages once
+    // 取 user 首条非空消息（含附件 / skill 兜底）
     let messages = db.get_messages(&conversation_id)?;
-    let has_user = messages.iter().any(|m| m["role"].as_str() == Some("user"));
-    let has_assistant = messages
+    let extract_text = |m: &serde_json::Value| -> String {
+        let raw = m["content"]["text"]
+            .as_str()
+            .or_else(|| m["content"].as_str())
+            .unwrap_or("");
+
+        if raw.trim().is_empty() && m["role"].as_str() == Some("user") {
+            // 纯附件 / 纯 skill / 纯粘贴图：从 commandText / skill label / 附件名拼
+            let mut parts: Vec<String> = Vec::new();
+            if let Some(cmd) = m["content"]["commandText"].as_str() {
+                if !cmd.trim().is_empty() {
+                    parts.push(cmd.trim().to_string());
+                }
+            }
+            if let Some(label) = m["content"]["skillCommand"]["label"].as_str() {
+                if !label.trim().is_empty() && !parts.iter().any(|p| p.contains(label)) {
+                    parts.push(label.trim().to_string());
+                }
+            }
+            if let Some(files) = m["content"]["files"].as_array() {
+                let names: Vec<String> = files
+                    .iter()
+                    .filter_map(|f| f["fileName"].as_str())
+                    .filter(|n| !n.trim().is_empty())
+                    .take(3)
+                    .map(|s| s.to_string())
+                    .collect();
+                if !names.is_empty() {
+                    parts.push(format!("附件：{}", names.join("、")));
+                }
+            }
+            return parts.join(" ").chars().take(500).collect();
+        }
+
+        raw.chars().take(500).collect()
+    };
+
+    let first_user = messages
         .iter()
-        .any(|m| m["role"].as_str() == Some("assistant"));
-    if !has_user || !has_assistant {
+        .filter(|m| m["role"].as_str() == Some("user"))
+        .map(extract_text)
+        .find(|s| !s.trim().is_empty())
+        .unwrap_or_default();
+
+    if first_user.is_empty() {
         return Ok(None);
     }
 
-    let extract_text = |m: &serde_json::Value| -> String {
-        m["content"]["text"]
-            .as_str()
-            .or_else(|| m["content"].as_str())
-            .unwrap_or("")
-            .chars()
-            .take(500)
-            .collect()
+    // 先尝试 LLM 总结，失败/空 → fallback 到 user 首句截断
+    let title = match try_llm_title(&gateway, &settings, &first_user, &conversation_id).await {
+        Ok(t) if !t.is_empty() => t,
+        Ok(_) => {
+            log::warn!(
+                "[auto-title] LLM returned empty title; falling back to user-text. conv={}",
+                conversation_id
+            );
+            title_from_user_text(&first_user)
+        }
+        Err(e) => {
+            log::warn!(
+                "[auto-title] LLM call failed ({:#}); falling back to user-text. conv={}",
+                e,
+                conversation_id
+            );
+            title_from_user_text(&first_user)
+        }
     };
 
-    let first_nonempty = |role: &str| -> String {
-        messages
-            .iter()
-            .filter(|m| m["role"].as_str() == Some(role))
-            .map(extract_text)
-            .find(|s| !s.trim().is_empty())
-            .unwrap_or_default()
-    };
-
-    let first_user = first_nonempty("user");
-    let first_assistant = first_nonempty("assistant");
-
-    if first_user.is_empty() {
-        anyhow::bail!("no user message content found");
-    }
-
-    let mut llm_messages = vec![ChatMessage::text("user", &first_user)];
-    if !first_assistant.is_empty() {
-        llm_messages.push(ChatMessage::text("assistant", &first_assistant));
-    }
-
-    let system_prompt =
-        "你是一个对话标题生成器。根据下面的对话内容，用不超过 10 个中文字生成一个简洁标题，\
-         只输出纯文本标题本身，禁止使用任何 Markdown 语法（不要 #、*、_、`、链接、引号或括号），\
-         不加标点、不加解释。";
-
-    let response = gateway
-        .send_message(
-            &settings,
-            llm_messages,
-            MaskingLevel::Relaxed,
-            Some(system_prompt),
-            None,
-            Some(vec![]),
-        )
-        .await?;
-
-    let title = sanitize_title(&response.content);
     if title.is_empty() {
-        anyhow::bail!("sanitized title is empty");
+        anyhow::bail!("derived title is empty");
     }
 
     let outcome = rename_conversation(db, conversation_id, title)
@@ -441,6 +538,37 @@ async fn generate_and_set_title_inner(
 
     log::info!("[auto-title] set title: {}", outcome.new_title);
     Ok(Some(outcome))
+}
+
+async fn try_llm_title(
+    gateway: &LlmGateway,
+    settings: &AppSettings,
+    first_user: &str,
+    conversation_id: &str,
+) -> anyhow::Result<String> {
+    let llm_messages = vec![ChatMessage::text("user", first_user)];
+
+    let system_prompt =
+        "你是一个对话标题生成器。根据下面的用户消息，生成一个能完整概括主题的简洁标题：\
+         中文标题 6-16 字、英文标题 2-6 个单词，必须语义完整，不要在词语中间截断。\
+         只输出纯文本标题本身，禁止使用任何 Markdown 语法（不要 #、*、_、`、链接、引号或括号），\
+         不加结尾标点、不加解释、不加前缀（如\"标题：\"）。";
+
+    let response = gateway
+        .send_message(
+            settings,
+            llm_messages,
+            MaskingLevel::Relaxed,
+            Some(system_prompt),
+            None,
+            // 必须传空数组（而非 None）：None 会让 gateway 默认注入全部工具，
+            // 模型看到工具列表后会用 tool_use 回应（如 Grep 搜索 user 提到的 token）
+            // 而不是输出文本，导致 response.content 为空。
+            Some(vec![]),
+        )
+        .await?;
+
+    Ok(sanitize_title(&response.content))
 }
 
 pub async fn get_conversations(
@@ -469,6 +597,15 @@ pub async fn get_archived_conversations(
     db: Arc<dyn ConversationStore>,
 ) -> Result<Vec<serde_json::Value>, String> {
     db.get_archived_conversations().map_err(|e| e.to_string())
+}
+
+pub async fn pin_conversation(
+    db: Arc<dyn ConversationStore>,
+    conversation_id: String,
+    pinned: bool,
+) -> Result<(), String> {
+    db.set_conversation_pinned(&conversation_id, pinned)
+        .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -545,6 +682,45 @@ mod title_tests {
         fn get_archived_conversations(&self) -> anyhow::Result<Vec<serde_json::Value>> {
             self.inner.get_archived_conversations()
         }
+        fn set_conversation_pinned(&self, id: &str, pinned: bool) -> anyhow::Result<()> {
+            self.inner.set_conversation_pinned(id, pinned)
+        }
+    }
+
+    #[test]
+    fn title_from_user_text_takes_first_sentence() {
+        // 你那个例子：长 user 句子取首句作为标题
+        assert_eq!(
+            title_from_user_text("这个文件夹内有啥, 可以作为我的年中总结的资料吗, 不够的话, 我再去找资料"),
+            "这个文件夹内有啥"
+        );
+    }
+
+    #[test]
+    fn title_from_user_text_strips_polite_prefix() {
+        assert_eq!(title_from_user_text("请帮我分析一下销售数据"), "分析一下销售数据");
+        assert_eq!(title_from_user_text("麻烦你看下这个 bug"), "你看下这个 bug");
+        assert_eq!(title_from_user_text("Please review the design"), "review the design");
+    }
+
+    #[test]
+    fn title_from_user_text_truncates_long_input() {
+        // 没有句号但句子很长时按视觉宽度截
+        let long = "讨论数据库迁移方案的具体实施步骤以及相关的配置改造需要哪些注意事项";
+        let result = title_from_user_text(long);
+        // 应该截到 16 字内（32 视觉宽度）
+        let visual_width: usize = result
+            .chars()
+            .map(|c| if c.is_ascii() { 1 } else { 2 })
+            .sum();
+        assert!(visual_width <= 32, "got: {result}");
+        assert!(result.starts_with("讨论数据库迁移方案"));
+    }
+
+    #[test]
+    fn title_from_user_text_handles_empty() {
+        assert_eq!(title_from_user_text(""), "");
+        assert_eq!(title_from_user_text("   "), "");
     }
 
     #[test]
@@ -557,10 +733,26 @@ mod title_tests {
 
     #[test]
     fn sanitize_title_truncates_long_output() {
-        let long = "一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十X";
+        // 16 中文字 = 32 视觉宽度，恰好填满；第 17 字被截掉
+        let long = "一二三四五六七八九十一二三四五六七八九十";
         let result = sanitize_title(long);
-        assert!(result.chars().count() <= 10);
-        assert_eq!(result, "一二三四五六七八九十");
+        assert_eq!(result, "一二三四五六七八九十一二三四五六");
+    }
+
+    #[test]
+    fn sanitize_title_strips_lead_in_prefix() {
+        // 模型偶尔输出 "好的，标题如下：\n实际标题"
+        assert_eq!(sanitize_title("标题：\nReact 19 新特性详解"), "React 19 新特性详解");
+        assert_eq!(sanitize_title("好的，\n实际标题"), "实际标题");
+    }
+
+    #[test]
+    fn sanitize_title_keeps_full_chinese_title() {
+        // 16 字中文应该完整保留
+        assert_eq!(
+            sanitize_title("讨论数据库迁移方案的具体实施步骤"),
+            "讨论数据库迁移方案的具体实施步骤"
+        );
     }
 
     #[test]
@@ -576,13 +768,13 @@ mod title_tests {
 
     #[test]
     fn sanitize_title_strips_markdown_decoration() {
-        // # heading marker stripped, then truncated to 10 chars
-        assert_eq!(sanitize_title("# React 19 新特性详解"), "React 19 新");
+        // # heading marker stripped; 16 字内全部保留（不再硬截 10 char）
+        assert_eq!(sanitize_title("# React 19 新特性详解"), "React 19 新特性详解");
         assert_eq!(sanitize_title("**重要标题**"), "重要标题");
         // bold/italic mid-string and inline code
         assert_eq!(
             sanitize_title("讨论 **React** 的 `useEffect`"),
-            "讨论 React 的"
+            "讨论 React 的 useEffect"
         );
         // markdown link [text](url) keeps only the text
         assert_eq!(
@@ -590,7 +782,7 @@ mod title_tests {
             "React 文档"
         );
         // underscore italic + tilde strikethrough
-        assert_eq!(sanitize_title("_emphasis_ ~strike~"), "emphasis s");
+        assert_eq!(sanitize_title("_emphasis_ ~strike~"), "emphasis strike");
     }
 
     #[test]
@@ -607,12 +799,20 @@ mod title_tests {
     }
 
     #[test]
-    fn should_auto_title_returns_false_when_no_assistant_message() {
+    fn should_auto_title_returns_true_when_only_user_present() {
+        // 早期触发：只要有 user message 就总结，不必等 assistant
         let store = StoreWithMessages::new(
             "新对话",
             "conv1",
             vec![serde_json::json!({"role": "user", "content": {"text": "hello"}})],
         );
+        assert!(should_auto_title(store.as_ref() as &dyn ConversationStore, "conv1").unwrap());
+    }
+
+    #[test]
+    fn should_auto_title_returns_false_when_no_user_message() {
+        // 没有任何 user 消息时不触发（防止空对话被乱总结）
+        let store = StoreWithMessages::new("新对话", "conv1", vec![]);
         assert!(!should_auto_title(store.as_ref() as &dyn ConversationStore, "conv1").unwrap());
     }
 

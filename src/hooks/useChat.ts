@@ -27,6 +27,7 @@ import {
   isAgentBusy as isAgentBusyIpc,
   renameConversation as tauriRenameConversation,
   archiveConversation as tauriArchiveConversation,
+  setConversationPinned as tauriSetConversationPinned,
   getActiveTurnStage,
   type ChatAttachmentPayload,
   type SkillCommandPayload,
@@ -120,6 +121,7 @@ export function useChat() {
           ),
         )
         useUiStore.getState().setRoute({ kind: 'chat', conversationId: backendId })
+        useUiStore.getState().setSidebarTab('project')
         return backendId
       }
     } catch (err) {
@@ -132,6 +134,7 @@ export function useChat() {
     }
 
     useUiStore.getState().setRoute({ kind: 'chat', conversationId: optimisticId })
+    useUiStore.getState().setSidebarTab('project')
     return optimisticId
   }, [])
 
@@ -173,6 +176,7 @@ export function useChat() {
             isArchived: (c.isArchived as boolean) ?? false,
             kind: (c.kind as Conversation['kind']) ?? undefined,
             workspaceName: (c.workspaceName as string | undefined) ?? undefined,
+            isPinned: (c.isPinned as boolean) ?? false,
           }))
           .filter((c) => c.kind !== 'im')
         useChatStore.getState().setConversations(convs)
@@ -331,6 +335,7 @@ export function useChat() {
         ])
         store.setMessages([])
         useUiStore.getState().setRoute({ kind: 'chat', conversationId: backendId })
+        useUiStore.getState().setSidebarTab('project')
         conversationId = backendId
       } catch (err) {
         console.error('[useChat] Failed to auto-create conversation:', err)
@@ -463,6 +468,7 @@ export function useChat() {
           isArchived: (c.isArchived as boolean) ?? false,
           kind: (c.kind as Conversation['kind']) ?? undefined,
           workspaceName: (c.workspaceName as string | undefined) ?? undefined,
+          isPinned: (c.isPinned as boolean) ?? false,
         }))
         // Project sidebar only shows app-side conversations; IM-origin
         // chats are surfaced through the channel page (`channelStore`).
@@ -526,6 +532,23 @@ export function useChat() {
     }
   }, [loadConversations])
 
+  const setConversationPinned = useCallback(async (id: string, pinned: boolean) => {
+    const store = useChatStore.getState()
+    // Optimistic update — the sidebar reorders synchronously, then we reload
+    // from disk to pick up the authoritative ordering.
+    store.setConversations(
+      store.conversations.map((c) => (c.id === id ? { ...c, isPinned: pinned } : c)),
+    )
+    try {
+      await tauriSetConversationPinned(id, pinned)
+      await loadConversations()
+    } catch (err) {
+      console.error('[useChat] setConversationPinned failed:', err)
+      // Roll back on failure.
+      await loadConversations()
+    }
+  }, [loadConversations])
+
   const createConversationFromSkill = useCallback(async (_skillId: string) => {
     const conversationId = await createNewConversation()
     useUiStore.getState().setRoute({ kind: 'chat', conversationId })
@@ -544,6 +567,7 @@ export function useChat() {
     deleteConversation: removeConversation,
     renameConversation,
     archiveConversation,
+    setConversationPinned,
     switchConversation,
     createConversationFromSkill,
     sendUserMessage,

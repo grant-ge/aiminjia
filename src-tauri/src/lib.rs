@@ -935,6 +935,7 @@ pub fn run() {
             chat::archive_conversation,
             chat::restore_conversation,
             chat::get_archived_conversations,
+            chat::set_conversation_pinned,
             chat::set_conversation_expert_team,
             chat::clear_conversation_source,
             chat::get_conversation_source,

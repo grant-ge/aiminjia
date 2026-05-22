@@ -11,7 +11,6 @@ import { useBrandingStore } from '@/stores/brandingStore'
 import { useUiStore, type Route, type SidebarBodyTab, useActiveConversationId, useActiveChannelSessionId } from '@/stores/uiStore'
 import { useChannelStore } from '@/stores/channelStore'
 import { hasExpertTeam } from '@/features/expert-teams/expertTeamRegistry'
-import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -64,7 +63,13 @@ export function AppSidebar() {
   const openSettings = useUiStore((s) => s.openSettings)
   const sidebarTab = useUiStore((s) => s.sidebarTab)
   const setSidebarTab = useUiStore((s) => s.setSidebarTab)
-  const { conversations, switchConversation, renameConversation, archiveConversation } = useChat()
+  const {
+    conversations,
+    switchConversation,
+    renameConversation,
+    archiveConversation,
+    setConversationPinned,
+  } = useChat()
   const activeConversationId = useActiveConversationId()
   const channelActiveSessionId = useActiveChannelSessionId()
   const channelConversations = useChannelStore((s) => s.conversations)
@@ -77,7 +82,6 @@ export function AppSidebar() {
 
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
-  const [archivingId, setArchivingId] = useState<string | null>(null)
 
   const switchTab = (next: SidebarBodyTab) => {
     setSidebarTab(next)
@@ -111,10 +115,8 @@ export function AppSidebar() {
     setRenamingId(null)
   }
 
-  const handleArchiveConfirm = async () => {
-    if (!archivingId) return
-    await archiveConversation(archivingId)
-    setArchivingId(null)
+  const handleArchive = async (id: string) => {
+    await archiveConversation(id)
   }
 
   // IM 频道（钉钉私聊/群）的 session id 复用 conv_store 的 conversation id，
@@ -131,10 +133,57 @@ export function AppSidebar() {
     (c) => (c.kind ?? 'user') === 'user' && !hasExpertTeam(c.id),
   )
 
+  // Global pinned section: every pinned in-app conversation regardless of
+  // tab kind. Order = useChat ordering (already pinned-first from the Rust
+  // sort), so users see consistent ordering whichever tab is active. IM
+  // channel sessions are not yet pin-aware (no isPinned column on
+  // ChannelConversation) so they're excluded.
+  const globalPinned = nonChannelConversations.filter((c) => c.isPinned)
+
+  // 各 tab 内已经经过全局置顶过滤，避免 pinned 会话同时出现在置顶区和 tab 内。
   const projects = groupConversationsByProject(
-    projectConversations,
+    projectConversations.filter((c) => !c.isPinned),
     activeConversationId,
   )
+
+  /**
+   * Render a flat tab body (employee / expert-team).  The global pinned
+   * section above already surfaces pinned items, so within the tab we just
+   * list non-pinned conversations to avoid duplicates.
+   */
+  const renderFlatTab = (items: typeof conversations) => {
+    if (items.length === 0) {
+      return (
+        <div className="px-2 py-4 text-sm text-muted-foreground">{t('sidebar.noHistory')}</div>
+      )
+    }
+    const visible = items.filter((c) => !c.isPinned)
+    if (visible.length === 0) {
+      return (
+        <div className="px-2 py-4 text-sm text-muted-foreground">{t('sidebar.allPinnedHint')}</div>
+      )
+    }
+    return (
+      <div className="flex flex-col gap-0.5">
+        {visible.map((conversation) => (
+          <ConversationRow
+            key={conversation.id}
+            id={conversation.id}
+            title={conversation.title}
+            active={activeConversationId === conversation.id}
+            indent={false}
+            pinned={conversation.isPinned ?? false}
+            onClick={() => void switchConversation(conversation.id)}
+            onRename={() => handleRenameOpen(conversation.id)}
+            onArchive={() => void handleArchive(conversation.id)}
+            onTogglePin={() =>
+              void setConversationPinned(conversation.id, !(conversation.isPinned ?? false))
+            }
+          />
+        ))}
+      </div>
+    )
+  }
 
   const activeKey: SidebarNavKey | null =
     route.kind === 'channel'
@@ -180,6 +229,29 @@ export function AppSidebar() {
       />
 
       <div className="flex min-h-0 flex-1 flex-col gap-2">
+        {globalPinned.length > 0 ? (
+          <div className="flex flex-col mb-1">
+            <div className="px-2 py-1 text-xs font-medium text-muted-foreground">
+              {t('sidebar.pinnedSection')}
+            </div>
+            <div className="flex flex-col gap-0.5">
+              {globalPinned.map((conversation) => (
+                <ConversationRow
+                  key={conversation.id}
+                  id={conversation.id}
+                  title={conversation.title}
+                  active={activeConversationId === conversation.id}
+                  indent={false}
+                  pinned
+                  onClick={() => void switchConversation(conversation.id)}
+                  onRename={() => handleRenameOpen(conversation.id)}
+                  onArchive={() => void handleArchive(conversation.id)}
+                  onTogglePin={() => void setConversationPinned(conversation.id, false)}
+                />
+              ))}
+            </div>
+          </div>
+        ) : null}
         {(() => {
           const TABS = [
             { key: 'project' as SidebarBodyTab, Icon: CheckSquare, labelKey: 'sidebar.project' },
@@ -227,50 +299,17 @@ export function AppSidebar() {
               projects={projects}
               onSelectConversation={(id) => void switchConversation(id)}
               onRenameConversation={handleRenameOpen}
-              onArchiveConversation={setArchivingId}
+              onArchiveConversation={(id) => void handleArchive(id)}
+              onTogglePinConversation={(id, next) => void setConversationPinned(id, next)}
             />
           </div>
         ) : sidebarTab === 'employee' ? (
           <div className="-mr-2 flex-1 overflow-auto py-1">
-            {employeeConversations.length === 0 ? (
-              <div className="px-2 py-4 text-sm text-muted-foreground">{t('sidebar.noHistory')}</div>
-            ) : (
-              <div className="flex flex-col gap-1">
-                {employeeConversations.map((conversation) => (
-                  <ConversationRow
-                    key={conversation.id}
-                    id={conversation.id}
-                    title={conversation.title}
-                    active={activeConversationId === conversation.id}
-                    indent={false}
-                    onClick={() => void switchConversation(conversation.id)}
-                    onRename={() => handleRenameOpen(conversation.id)}
-                    onArchive={() => setArchivingId(conversation.id)}
-                  />
-                ))}
-              </div>
-            )}
+            {renderFlatTab(employeeConversations)}
           </div>
         ) : sidebarTab === 'expert-team' ? (
           <div className="-mr-2 flex-1 overflow-auto py-1">
-            {expertTeamConversations.length === 0 ? (
-              <div className="px-2 py-4 text-sm text-muted-foreground">{t('sidebar.noHistory')}</div>
-            ) : (
-              <div className="flex flex-col gap-1">
-                {expertTeamConversations.map((conversation) => (
-                  <ConversationRow
-                    key={conversation.id}
-                    id={conversation.id}
-                    title={conversation.title}
-                    active={activeConversationId === conversation.id}
-                    indent={false}
-                    onClick={() => void switchConversation(conversation.id)}
-                    onRename={() => handleRenameOpen(conversation.id)}
-                    onArchive={() => setArchivingId(conversation.id)}
-                  />
-                ))}
-              </div>
-            )}
+            {renderFlatTab(expertTeamConversations)}
           </div>
         ) : (
           <div className="-mr-2 flex-1 overflow-auto pr-2">
@@ -293,7 +332,7 @@ export function AppSidebar() {
                       {!dingtalkState?.configured
                         ? '未配置，点击右侧设置'
                         : !dingtalkState.enabled
-                          ? '已暂停，点击右侧启用'
+                          ? '未连接，点击右侧启用'
                           : dingtalkState.connection === 'connected'
                             ? '暂无会话，等待消息…'
                             : dingtalkState.connection === 'connecting'
@@ -332,7 +371,7 @@ export function AppSidebar() {
                     {!feishuState?.configured
                       ? '未配置'
                       : !feishuState.enabled
-                        ? '已暂停'
+                        ? '未连接'
                         : feishuState.connection === 'connected'
                           ? '已连接'
                           : feishuState.connection === 'connecting'
@@ -354,7 +393,7 @@ export function AppSidebar() {
                       {!feishuState?.configured
                         ? '未配置，点击右侧设置'
                         : !feishuState.enabled
-                          ? '已暂停，点击右侧启用'
+                          ? '未连接，点击右侧启用'
                           : feishuState.connection === 'connected'
                             ? '暂无会话，等待消息…'
                             : feishuState.connection === 'connecting'
@@ -393,7 +432,7 @@ export function AppSidebar() {
                     {!wecomState?.configured
                       ? '未配置'
                       : !wecomState.enabled
-                        ? '已暂停'
+                        ? '未连接'
                         : wecomState.connection === 'connected'
                           ? '已连接'
                           : wecomState.connection === 'connecting'
@@ -415,7 +454,7 @@ export function AppSidebar() {
                       {!wecomState?.configured
                         ? '未配置，点击右侧设置'
                         : !wecomState.enabled
-                          ? '已暂停，点击右侧启用'
+                          ? '未连接，点击右侧启用'
                           : wecomState.connection === 'connected'
                             ? '暂无会话，等待消息…'
                             : wecomState.connection === 'connecting'
@@ -454,7 +493,7 @@ export function AppSidebar() {
                     {!wechatState?.configured
                       ? '未配置'
                       : !wechatState.enabled
-                        ? '已暂停'
+                        ? '未连接'
                         : wechatState.connection === 'connected'
                           ? '已连接'
                           : wechatState.connection === 'connecting'
@@ -478,7 +517,7 @@ export function AppSidebar() {
                       {!wechatState?.configured
                         ? '未配置，点击右侧设置'
                         : !wechatState.enabled
-                          ? '已暂停，点击右侧启用'
+                          ? '未连接，点击右侧启用'
                           : wechatState.connection === 'connected'
                             ? '暂无会话，等待消息…'
                             : wechatState.connection === 'connecting'
@@ -519,7 +558,7 @@ export function AppSidebar() {
                     {!telegramState?.configured
                       ? '未配置'
                       : !telegramState.enabled
-                        ? '已暂停'
+                        ? '未连接'
                         : telegramState.connection === 'connected'
                           ? '已连接'
                           : telegramState.connection === 'connecting'
@@ -543,7 +582,7 @@ export function AppSidebar() {
                       {!telegramState?.configured
                         ? '未配置，点击右侧设置'
                         : !telegramState.enabled
-                          ? '已暂停，点击右侧启用'
+                          ? '未连接，点击右侧启用'
                           : telegramState.connection === 'connected'
                             ? '暂无会话，等待消息…'
                             : telegramState.connection === 'connecting'
@@ -584,7 +623,7 @@ export function AppSidebar() {
                     {!whatsappState?.configured
                       ? '未配置'
                       : !whatsappState.enabled
-                        ? '已暂停'
+                        ? '未连接'
                         : whatsappState.connection === 'connected'
                           ? '已连接'
                           : whatsappState.connection === 'connecting'
@@ -608,7 +647,7 @@ export function AppSidebar() {
                       {!whatsappState?.configured
                         ? '未配置，点击右侧设置'
                         : !whatsappState.enabled
-                          ? '已暂停，点击右侧启用'
+                          ? '未连接，点击右侧启用'
                           : whatsappState.connection === 'connected'
                             ? '暂无会话，等待消息…'
                             : whatsappState.connection === 'connecting'
@@ -666,15 +705,6 @@ export function AppSidebar() {
         </DialogFooter>
       </DialogContent>
     </Dialog>
-
-    <ConfirmDialog
-      open={!!archivingId}
-      title="归档此聊天？"
-      description="归档后聊天将从列表中隐藏，可在设置的归档记录中查看和恢复。"
-      confirmLabel="归档"
-      onOpenChange={(open) => !open && setArchivingId(null)}
-      onConfirm={() => void handleArchiveConfirm()}
-    />
   </>
   )
 }

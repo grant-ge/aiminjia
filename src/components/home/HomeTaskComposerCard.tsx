@@ -6,7 +6,7 @@
  * 2. On project button click: open folder picker, update homeStore.
  * 3. On submit: create conversation → authorize workspace → send message.
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { BriefcaseBusiness, ChevronDown, Folder, FolderPlus, House, X } from 'lucide-react'
 
@@ -55,12 +55,20 @@ export function HomeTaskComposerCard() {
     selectedWorkspace,
   )
   const [showSkillPopover, setShowSkillPopover] = useState(false)
+  const skills = useSkillStore((s) => s.skills)
   const getSkillById = useSkillStore((s) => s.getById)
-  const [selectedSkill, setSelectedSkill] = useState<{
-    id: string
-    label?: string
-    trigger: string
-  } | null>(() => useUiStore.getState().consumePendingSkill())
+  // Snapshot of the installed skills as composer-friendly tokens. Drives the
+  // slash-command input rule and chip rendering inside the editor (mirrors
+  // ChatBottomArea — single source of truth for selected skills).
+  const skillTokens = useMemo(
+    () =>
+      skills.map((skill) => ({
+        id: skill.id,
+        label: skill.displayName || skill.id,
+        command: skill.triggerText || `/${skill.id}`,
+      })),
+    [skills],
+  )
 
   // One-shot prefill text; consumed synchronously via lazy initializer so
   // RichComposer's useEditor receives it on its very first render.
@@ -69,16 +77,32 @@ export function HomeTaskComposerCard() {
     return prefill ?? undefined
   })
 
+  // One-shot pending skill from SkillsPage (e.g. user clicked "use this skill"
+  // and got routed to home). Insert as an inline editor token after mount, so
+  // it shows up as a chip in the composer body — same as ChatBottomArea.
+  const [pendingSkill] = useState(() => useUiStore.getState().consumePendingSkill())
+  useEffect(() => {
+    if (!pendingSkill) return
+    const skill = getSkillById(pendingSkill.id)
+    composerRef.current?.insertSkillToken({
+      id: pendingSkill.id,
+      label: pendingSkill.label || skill?.displayName || pendingSkill.id,
+      command: pendingSkill.trigger || skill?.triggerText || `/${pendingSkill.id}`,
+    })
+    composerRef.current?.focus()
+    // Run once after first render — composerRef is stable, deps intentionally empty.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const handleSkillPick = useCallback((skillId: string) => {
     const skill = getSkillById(skillId)
-    const trigger = skill?.triggerText || `/${skillId}`
-    setSelectedSkill({
+    composerRef.current?.insertSkillToken({
       id: skillId,
       label: skill?.displayName || skill?.id || skillId,
-      trigger,
+      command: skill?.triggerText || `/${skillId}`,
     })
-    setShowSkillPopover(false)
     composerRef.current?.focus()
+    setShowSkillPopover(false)
   }, [getSkillById])
 
   // Load default folder if no workspace has been selected yet
@@ -146,6 +170,9 @@ export function HomeTaskComposerCard() {
       ])
       store.setMessages([])
       useUiStore.getState().setRoute({ kind: 'chat', conversationId: backendId })
+      // Switch sidebar to 项目 tab so the new conversation is visible in the
+      // sidebar list — same UX as the employee / expert-team paths.
+      useUiStore.getState().setSidebarTab('project')
 
       // Authorize the selected workspace. Skip when it's the implicit default
       // folder (id === 'default') — leaving workspaceName empty lets the sidebar
@@ -182,19 +209,15 @@ export function HomeTaskComposerCard() {
         fileType: f.fileType,
         mimeType: f.mimeType,
       }))
-      const skillForThisTurn = selectedSkill
-      setSelectedSkill(null)
-      let markdownToSend = payload.markdown
-      if (skillForThisTurn) {
-        const trigger = skillForThisTurn.trigger
-        const sep = trigger.endsWith(' ') ? '' : ' '
-        markdownToSend = `${trigger}${sep}${markdownToSend}`
-      }
-      await sendUserMessage(markdownToSend, fileInfos, skillForThisTurn)
+      // The inline skill chip is the source of truth — it travels with the
+      // doc, gets cleared automatically on submit, and is collected by the
+      // serializer into payload.skills (mirrors ChatBottomArea).
+      const skillForThisTurn = payload.skills[0] ?? null
+      await sendUserMessage(payload.markdown, fileInfos, skillForThisTurn)
     } finally {
       setIsSubmitting(false)
     }
-  }, [displayWorkspace, isSubmitting, sendUserMessage, selectedSkill])
+  }, [displayWorkspace, isSubmitting, sendUserMessage])
 
   const workspaceLabel = displayWorkspace?.displayName ?? t('homeComposer.defaultProject')
   const workspacePath = displayWorkspace?.rootPath
@@ -221,16 +244,7 @@ export function HomeTaskComposerCard() {
         autoFocus
         initialMarkdown={initialMarkdown}
         onOpenSkill={() => setShowSkillPopover((prev) => !prev)}
-        skillCommand={
-          selectedSkill
-            ? {
-                id: selectedSkill.id,
-                label: selectedSkill.label ?? selectedSkill.id,
-                command: selectedSkill.trigger.trim(),
-              }
-            : null
-        }
-        onClearSkillCommand={() => setSelectedSkill(null)}
+        skillTokens={skillTokens}
         showProjectButton={false}
         onOpenAttachment={isPickingAttachments ? undefined : () => void handlePickAttachments()}
       />

@@ -219,7 +219,7 @@ function FileImage({
       <img
         src={url}
         alt={alt}
-        className="max-h-40 max-w-[200px] rounded-lg object-cover transition-opacity hover:opacity-90"
+        className="h-40 max-w-[200px] rounded-lg object-cover transition-opacity hover:opacity-90"
       />
     </button>
   )
@@ -298,7 +298,7 @@ export function UserBubbleMarkdown({ text, conversationId, files }: UserBubbleMa
               return <FileImage href={srcStr} alt={altStr} files={files} conversationId={conversationId} />
             }
             return (
-              <img src={srcStr} alt={altStr} className="max-h-40 max-w-[200px] rounded-lg object-cover" />
+              <img src={srcStr} alt={altStr} className="h-40 max-w-[200px] rounded-lg object-cover" />
             )
           },
           code: ({ className, children }) => {

@@ -47,7 +47,7 @@ export function RightPanel({ conversationId, onOpenExternal }: RightPanelProps) 
     return (
       <div
         data-testid="right-panel"
-        className="flex h-full w-[720px] shrink-0 overflow-hidden border-l border-border bg-background"
+        className="flex h-full w-[600px] shrink-0 overflow-hidden border-l border-border bg-background"
       >
         <div className="min-w-0 flex-1">
           <FilePreviewPane
@@ -57,7 +57,7 @@ export function RightPanel({ conversationId, onOpenExternal }: RightPanelProps) 
           />
         </div>
         {SHOW_TASK_MONITOR ? (
-          <div className="flex h-full w-[260px] shrink-0 flex-col overflow-y-auto border-l border-border bg-background">
+          <div className="flex h-full w-[260px] shrink-0 flex-col overflow-y-auto overscroll-contain border-l border-border bg-background">
             <div className="px-4 py-2">
               <h2 className="text-md font-semibold text-foreground">任务监控</h2>
             </div>
@@ -76,7 +76,7 @@ export function RightPanel({ conversationId, onOpenExternal }: RightPanelProps) 
   return (
     <div
       data-testid="right-panel"
-      className="flex h-full w-[260px] shrink-0 flex-col overflow-y-auto border-l border-border bg-background"
+      className="flex h-full w-[260px] shrink-0 flex-col overflow-y-auto overscroll-contain border-l border-border bg-background"
     >
       <div className="px-4 py-2">
         <h2 className="text-md font-semibold text-foreground">任务监控</h2>
