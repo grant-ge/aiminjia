@@ -418,6 +418,17 @@ pub trait RuntimeLlmExecutor: Send + Sync {
 ///   `run_chat_turn_s4` is the driver-owned loop.  The `RuntimeLlmExecutor` is a
 ///   pure provider streaming adapter; the driver owns the query/tool loop and
 ///   emits all lifecycle events through the bus.
+/// Resolves the on-disk write-through path for a conversation's turn-stage
+/// snapshot (spec 2026-05-17-turn-stages §5).  Returns `None` when no user is
+/// logged in — the emitter degrades to in-memory only.
+///
+/// Injected via [`RuntimeChatTurnDriver::with_turn_stage_path_resolver`]; in
+/// production wired by `SessionRuntime::build_driver_for_turn` to delegate to
+/// `RuntimeHost::resolve_turn_stage_path` which reads the active user scope
+/// from `CurrentUserStorage`.  Tests can leave it unset for pure in-memory.
+pub type TurnStagePathResolver =
+    Arc<dyn Fn(&str) -> Option<std::path::PathBuf> + Send + Sync>;
+
 #[derive(Clone)]
 pub struct RuntimeChatTurnDriver {
     query_engine: QueryEngine,
@@ -429,6 +440,9 @@ pub struct RuntimeChatTurnDriver {
     task_notification_queue: Option<Arc<TaskNotificationQueue>>,
     /// Compaction backend, decoupled from llm_executor (P0.2).
     compact_client: Option<Arc<dyn CompactSummaryClient>>,
+    /// User-scoped resolver for `turn_stage.json` write path.  None ⇒ emitter
+    /// runs in-memory only (no persistence).  Spec §5.
+    turn_stage_path_resolver: Option<TurnStagePathResolver>,
 }
 
 fn synthetic_cancelled_tool_result(reason: Option<CancellationReason>) -> &'static str {
@@ -746,6 +760,7 @@ impl RuntimeChatTurnDriver {
             pending_interaction_control_plane: None,
             task_notification_queue: None,
             compact_client: None,
+            turn_stage_path_resolver: None,
         }
     }
 
@@ -762,6 +777,7 @@ impl RuntimeChatTurnDriver {
             pending_interaction_control_plane: None,
             task_notification_queue: None,
             compact_client: None,
+            turn_stage_path_resolver: None,
         }
     }
 
@@ -779,6 +795,7 @@ impl RuntimeChatTurnDriver {
             pending_interaction_control_plane: None,
             task_notification_queue: None,
             compact_client: None,
+            turn_stage_path_resolver: None,
         }
     }
 
@@ -797,6 +814,7 @@ impl RuntimeChatTurnDriver {
             pending_interaction_control_plane: Some(pending_interaction_control_plane),
             task_notification_queue: None,
             compact_client: None,
+            turn_stage_path_resolver: None,
         }
     }
 
@@ -812,6 +830,14 @@ impl RuntimeChatTurnDriver {
     /// compaction requests warn-log and return an empty summary.
     pub fn with_compact_client(mut self, client: Arc<dyn CompactSummaryClient>) -> Self {
         self.compact_client = Some(client);
+        self
+    }
+
+    /// Inject the resolver that returns the user-scoped write path for
+    /// `turn_stage.json`.  Without this, the emitter cannot persist (in-memory
+    /// only) — production wires this in `SessionRuntime::build_driver_for_turn`.
+    pub fn with_turn_stage_path_resolver(mut self, resolver: TurnStagePathResolver) -> Self {
+        self.turn_stage_path_resolver = Some(resolver);
         self
     }
 
@@ -1299,14 +1325,21 @@ impl RuntimeChatTurnDriver {
     ) -> Result<()> {
         // Turn-stage emitter (spec §3 + §8 + §5).  When the env flag is off
         // this is a zero-cost no-op for every emit / persist call.
-        let stage_persist_path = crate::storage::AiJiaHome::from_home()
-            .turn_stage_path(turn.session_id().as_str());
-        let stage_emitter = TurnStageEmitter::new(
+        //
+        // Persist path is user-scoped via the injected resolver
+        // (`users/{scope}/turn_stages/{conv_id}.json`).  When no user is
+        // logged in (or the resolver isn't wired in tests), the emitter runs
+        // in-memory only — no on-disk snapshot, no cross-user leakage.
+        let mut stage_emitter = TurnStageEmitter::new(
             self.event_bus.clone(),
             turn.session_id().clone(),
             turn.run_id().clone(),
-        )
-        .with_persist_path(stage_persist_path);
+        );
+        if let Some(resolver) = self.turn_stage_path_resolver.as_ref() {
+            if let Some(path) = resolver(turn.session_id().as_str()) {
+                stage_emitter = stage_emitter.with_persist_path(path);
+            }
+        }
         stage_emitter.submitted().await;
         // RAII guard — spec §8.  Spawning here ensures every ? / early return
         // / panic / cancel path inside this function drops the guard and the
@@ -2942,6 +2975,7 @@ mod tests {
             pending_interaction_control_plane: None,
             task_notification_queue: None,
             compact_client: None,
+            turn_stage_path_resolver: None,
         };
         let turn = TurnState::new(
             IdentityMapping::from_legacy_conversation_id("conv-ask-mode".to_string()),

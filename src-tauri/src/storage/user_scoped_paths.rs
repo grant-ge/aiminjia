@@ -112,6 +112,15 @@ impl UserScopedPaths {
     pub fn employees_dir(&self) -> PathBuf {
         self.base.join("employees")
     }
+    /// `users/{scope}/turn_stages/` — per-user ephemeral active-turn snapshots
+    /// (spec 2026-05-17-turn-stages §5).  Moved out of the legacy root-flat
+    /// layout to respect user isolation across multi-account machines.
+    pub fn turn_stages_dir(&self) -> PathBuf {
+        self.base.join("turn_stages")
+    }
+    pub fn turn_stage_path(&self, conversation_id: &str) -> PathBuf {
+        self.turn_stages_dir().join(format!("{conversation_id}.json"))
+    }
 }
 
 /// Trait for services that need user-scoped paths.
@@ -192,6 +201,11 @@ mod tests {
         assert_eq!(paths.audit_dir(), base.join("audit"));
         assert_eq!(paths.logs_dir(), base.join("logs"));
         assert_eq!(paths.downloads_dir(), base.join("downloads"));
+        assert_eq!(paths.turn_stages_dir(), base.join("turn_stages"));
+        assert_eq!(
+            paths.turn_stage_path("conv-abc"),
+            base.join("turn_stages/conv-abc.json"),
+        );
     }
 
     #[test]

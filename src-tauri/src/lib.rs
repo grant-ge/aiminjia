@@ -259,6 +259,12 @@ pub fn run() {
                 ) {
                     log::warn!("[setup] config split warning: {}", e);
                 }
+                if let Err(e) = storage::migration_user_scope::migrate_legacy_turn_stages_if_needed(
+                    aijia_home.root(),
+                    &user_dir,
+                ) {
+                    log::warn!("[setup] turn-stages migration warning: {}", e);
+                }
                 current_user_storage
                     .activate_scope(scope.clone())
                     .expect("Failed to activate user storage");

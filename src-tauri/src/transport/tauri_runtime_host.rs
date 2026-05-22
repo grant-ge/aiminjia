@@ -54,4 +54,10 @@ impl RuntimeHost for TauriRuntimeHost {
         let paths = cus.inner().require_paths().ok()?;
         Some(paths.conversations_dir().join(conv_id))
     }
+
+    fn resolve_turn_stage_path(&self, conv_id: &str) -> Option<PathBuf> {
+        let cus = self.app.try_state::<Arc<CurrentUserStorage>>()?;
+        let paths = cus.inner().require_paths().ok()?;
+        Some(paths.turn_stage_path(conv_id))
+    }
 }

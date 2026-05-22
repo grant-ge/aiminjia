@@ -5,15 +5,25 @@
 //!   no turn is active (no file, or file doesn't exist).  Source of truth is
 //!   in-memory in the driver; this disk read serves the cross-process /
 //!   webview-reload path.
+//!
+//! Path is resolved user-scoped (`users/{scope}/turn_stages/{conv_id}.json`)
+//! via `CurrentUserStorage`; returns `None` when no user is logged in.
+
+use std::sync::Arc;
 
 use crate::runtime::chat::turn_stage::PersistedTurnStage;
-use crate::storage::AiJiaHome;
+use crate::storage::current_user_storage::CurrentUserStorage;
+use crate::storage::user_scoped_paths::UserScopedPathResolver;
 
 #[tauri::command]
 pub async fn get_active_turn_stage(
+    current_user: tauri::State<'_, Arc<CurrentUserStorage>>,
     conversation_id: String,
 ) -> Result<Option<PersistedTurnStage>, String> {
-    let path = AiJiaHome::from_home().turn_stage_path(&conversation_id);
+    let Some(paths) = current_user.resolve_paths() else {
+        return Ok(None);
+    };
+    let path = paths.turn_stage_path(&conversation_id);
     match std::fs::read(&path) {
         Ok(bytes) => match serde_json::from_slice::<PersistedTurnStage>(&bytes) {
             Ok(record) => Ok(Some(record)),

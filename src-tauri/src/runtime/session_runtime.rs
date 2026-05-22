@@ -609,6 +609,15 @@ impl SessionRuntime {
         if let Some(ref queue) = self.task_notification_queue {
             driver = driver.with_task_notification_queue(queue.clone());
         }
+        // Turn-stage persistence write-through path is now user-scoped (spec
+        // 2026-05-17-turn-stages §5).  Delegate to the host so the active
+        // user's `users/{scope}/turn_stages/{conv_id}.json` is used; the
+        // driver no-ops persistence when no user is logged in.
+        if let Some(host) = self.host.clone() {
+            driver = driver.with_turn_stage_path_resolver(Arc::new(move |conv_id: &str| {
+                host.resolve_turn_stage_path(conv_id)
+            }));
+        }
         driver
     }
 

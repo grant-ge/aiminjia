@@ -224,18 +224,29 @@ impl AiJiaHome {
         self.root.join("tmp")
     }
 
-    /// `~/.renlijia/turn_stages/` — ephemeral per-turn stage snapshots written
-    /// by `TurnStageEmitter` (spec 2026-05-17-turn-stages §5).  The frontend
-    /// reads these to hydrate in-flight turn status after a webview reload.
+    /// LEGACY root-flat `turn_stages/` dir.  Kept only so the one-shot
+    /// `migrate_legacy_turn_stages_if_needed` can find files left over from
+    /// older builds.  Production code must use
+    /// `UserScopedPaths::turn_stages_dir()` instead — the path is now
+    /// user-scoped to respect multi-account isolation.
+    #[deprecated(
+        since = "0.5.27",
+        note = "use UserScopedPaths::turn_stages_dir() — turn_stages is now user-scoped"
+    )]
     pub fn turn_stages_dir(&self) -> PathBuf {
         self.root.join("turn_stages")
     }
 
-    /// Per-conversation active-turn-stage file.  Flat layout (no user scope
-    /// in the path) lets the emitter write without resolving the user scope
-    /// at every transition.
+    /// LEGACY root-flat per-conversation active-turn-stage file.  See
+    /// `turn_stages_dir` above; production code must use
+    /// `UserScopedPaths::turn_stage_path(conv_id)` instead.
+    #[deprecated(
+        since = "0.5.27",
+        note = "use UserScopedPaths::turn_stage_path(conv_id) — turn_stages is now user-scoped"
+    )]
     pub fn turn_stage_path(&self, conversation_id: &str) -> PathBuf {
-        self.turn_stages_dir()
+        self.root
+            .join("turn_stages")
             .join(format!("{conversation_id}.json"))
     }
 
@@ -310,6 +321,7 @@ impl AiJiaHome {
         std::fs::create_dir_all(self.user_site_profiles_dir(scope))?;
         std::fs::create_dir_all(self.user_logs_dir(scope))?;
         std::fs::create_dir_all(user_dir.join("channels"))?;
+        std::fs::create_dir_all(user_dir.join("turn_stages"))?;
         Ok(())
     }
 
