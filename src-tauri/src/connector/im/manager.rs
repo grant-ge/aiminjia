@@ -3010,20 +3010,22 @@ impl ChannelManager {
     pub async fn begin_whatsapp_registration(&self) -> Result<ChannelRegistrationBeginResult> {
         let paths = self.resolve_whatsapp_paths()?;
 
-        // 重新扫码场景：config.json 存在 → 停旧 connector + 删 config + session.db
-        if paths.config_path().exists() {
-            log::info!("[whatsapp] config.json exists — clearing for re-pairing");
-            if let Some(conn) = self
-                .connectors
-                .read()
-                .await
-                .get(&Platform::Whatsapp)
-                .cloned()
-            {
-                let _ = conn.stop().await;
-            }
-            super::whatsapp::session::delete_for_reauth(&paths)?;
+        // 重新扫码场景:无论 config.json 是否存在，都先停旧 connector + 清
+        // session.db。原因: kebab"移除"只删了 config.json，留下了 session.db
+        // (保留聊天历史)。如果用户接着点"配置"想重新扫码，wa-rs 启动时会发现
+        // session.db 里还有旧凭证 → 直接 Authenticated 跳过 PairingQrCode →
+        // 前端永远等不到 QR (空白卡片)。所以 begin 路径必须无条件清 session。
+        log::info!("[whatsapp] begin_registration — clearing any prior session for fresh QR pairing");
+        if let Some(conn) = self
+            .connectors
+            .read()
+            .await
+            .get(&Platform::Whatsapp)
+            .cloned()
+        {
+            let _ = conn.stop().await;
         }
+        super::whatsapp::session::delete_for_reauth(&paths)?;
 
         let on_status = self.make_whatsapp_status_callback();
         let concrete = self.register_whatsapp_connector(on_status).await;
