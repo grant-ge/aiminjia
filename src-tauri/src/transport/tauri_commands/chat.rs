@@ -2581,27 +2581,7 @@ impl TauriChatCommandAdapter {
             .clear_task_for_run(&conversation_id, &run_id);
 
         if result.is_ok() {
-            let needs_title =
-                conversation_service::should_auto_title(&*self.services.db(), &conversation_id)
-                    .unwrap_or(false);
-            if needs_title {
-                let dummy_request =
-                    ChatTurnRequest::new(conversation_id.clone(), String::new(), vec![]);
-                if let Ok(resolved) = self.load_llm_settings_for_turn(&dummy_request).await {
-                    let db = self.services.db().clone() as Arc<dyn ConversationStore>;
-                    let gateway = self.services.gateway.clone();
-                    let host: Arc<dyn crate::transport::runtime_host::RuntimeHost> =
-                        Arc::new(TauriRuntimeHost::new(self.services.app.clone()));
-                    let conv_id = conversation_id.clone();
-                    let settings = build_gateway_settings(&resolved);
-                    tauri::async_runtime::spawn(async move {
-                        conversation_service::generate_and_set_title(
-                            db, gateway, host, conv_id, settings,
-                        )
-                        .await;
-                    });
-                }
-            }
+            self.spawn_auto_title(conversation_id.clone(), 0).await;
         }
 
         // After this turn ends (success or otherwise), let the PendingQueueManager
@@ -2888,6 +2868,10 @@ impl TauriChatCommandAdapter {
             "[send_message] calling runtime.run_chat_request conv={}",
             conversation_id
         );
+        // 早期触发标题生成：等 user message 持久化后（约 1.5s 给 driver 写盘），
+        // 立即开始总结，不必等到整个 turn（含工具循环）跑完。后面 turn 结束再
+        // 兜底触发一次，should_auto_title guard 会跳过已生成的情况。
+        self.spawn_auto_title(conversation_id.clone(), 500).await;
         // Compatibility marker for review tests: self.runtime.run_chat_request(request)
         let result = runtime.run_chat_request(request).await;
         // Release the stream-cancel bridge for this turn before any post-turn work
@@ -2897,31 +2881,7 @@ impl TauriChatCommandAdapter {
             .clear_task_for_run(&conversation_id, &run_id);
 
         if result.is_ok() {
-            // Quick synchronous guard: only attempt title generation when needed.
-            let needs_title =
-                conversation_service::should_auto_title(&*self.services.db(), &conversation_id)
-                    .unwrap_or(false);
-
-            if needs_title {
-                // Load settings with the correct conversation context so per-conversation
-                // model overrides are respected.
-                let dummy_request =
-                    ChatTurnRequest::new(conversation_id.clone(), String::new(), vec![]);
-                if let Ok(resolved) = self.load_llm_settings_for_turn(&dummy_request).await {
-                    let db = self.services.db().clone() as Arc<dyn ConversationStore>;
-                    let gateway = self.services.gateway.clone();
-                    let host: Arc<dyn crate::transport::runtime_host::RuntimeHost> =
-                        Arc::new(TauriRuntimeHost::new(self.services.app.clone()));
-                    let conv_id = conversation_id.clone();
-                    let settings = build_gateway_settings(&resolved);
-                    tauri::async_runtime::spawn(async move {
-                        conversation_service::generate_and_set_title(
-                            db, gateway, host, conv_id, settings,
-                        )
-                        .await;
-                    });
-                }
-            }
+            self.spawn_auto_title(conversation_id.clone(), 0).await;
         }
 
         // After this turn ends (success or otherwise), let the PendingQueueManager
@@ -3176,6 +3136,44 @@ impl TauriChatCommandAdapter {
         Ok(out)
     }
 
+    /// Fire-and-forget: 触发对话标题自动生成。先尝试 LLM 总结 user 首句，
+    /// 失败则兜底到 user 首句字面截断。idempotent guard 由 should_auto_title
+    /// + generate_and_set_title 内部 title=="新对话" 双重检查保证。
+    async fn spawn_auto_title(&self, conversation_id: String, delay_ms: u64) {
+        // 提前加载 settings —— spawn 内部跨线程 self 不安全
+        let dummy_request =
+            ChatTurnRequest::new(conversation_id.clone(), String::new(), vec![]);
+        let settings = match self.load_llm_settings_for_turn(&dummy_request).await {
+            Ok(r) => build_gateway_settings(&r),
+            Err(e) => {
+                log::warn!("[auto-title] load_llm_settings_for_turn failed: {:?}", e);
+                return;
+            }
+        };
+        let db = self.services.db().clone() as Arc<dyn ConversationStore>;
+        let gateway = self.services.gateway.clone();
+        let host: Arc<dyn crate::transport::runtime_host::RuntimeHost> =
+            Arc::new(TauriRuntimeHost::new(self.services.app.clone()));
+        tauri::async_runtime::spawn(async move {
+            if delay_ms > 0 {
+                tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+            }
+            let needs = conversation_service::should_auto_title(&*db, &conversation_id)
+                .unwrap_or(false);
+            if !needs {
+                return;
+            }
+            conversation_service::generate_and_set_title(
+                db,
+                gateway,
+                host,
+                conversation_id,
+                settings,
+            )
+            .await;
+        });
+    }
+
     pub async fn create_conversation(&self) -> Result<String, String> {
         // 不在这里 emit conversation:created：前端 createNewConversation 已经做了
         // 乐观更新（optimisticId → backendId 替换），重复事件会触发不必要的 reload。
@@ -3312,6 +3310,19 @@ impl TauriChatCommandAdapter {
     pub async fn get_archived_conversations(&self) -> Result<Vec<serde_json::Value>, String> {
         conversation_service::get_archived_conversations(
             self.services.db().clone() as Arc<dyn ConversationStore>
+        )
+        .await
+    }
+
+    pub async fn set_conversation_pinned(
+        &self,
+        conversation_id: String,
+        pinned: bool,
+    ) -> Result<(), String> {
+        conversation_service::pin_conversation(
+            self.services.db().clone() as Arc<dyn ConversationStore>,
+            conversation_id,
+            pinned,
         )
         .await
     }
