@@ -35,17 +35,26 @@ const DISABLED_SETTINGS_KEYS = new Set<SettingsModalKey>([
 
 export type SidebarBodyTab = 'project' | 'employee' | 'expert-team' | 'channel'
 
+export interface PendingSkillSelection {
+  id: string
+  label: string
+  trigger: string
+}
+
 interface UiState {
   route: Route
   settingsModal: SettingsModalState
   sidebarTab: SidebarBodyTab
   prefillText: string | null
+  pendingSkill: PendingSkillSelection | null
   setRoute: (route: Route) => void
   openSettings: (settingsModal: SettingsModalKey) => void
   closeSettings: () => void
   setSidebarTab: (tab: SidebarBodyTab) => void
   setPrefillText: (text: string) => void
   consumePrefillText: () => string | null
+  setPendingSkill: (skill: PendingSkillSelection) => void
+  consumePendingSkill: () => PendingSkillSelection | null
 }
 
 const ROUTE_STORAGE_KEY = 'aijia-ui-route'
@@ -119,6 +128,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   settingsModal: null,
   sidebarTab: loadPersistedSidebarTab(),
   prefillText: null,
+  pendingSkill: null,
   setRoute: (route) => {
     persistRoute(route)
     set({ route })
@@ -138,6 +148,12 @@ export const useUiStore = create<UiState>((set, get) => ({
     const text = get().prefillText
     if (text !== null) set({ prefillText: null })
     return text
+  },
+  setPendingSkill: (skill) => set({ pendingSkill: skill }),
+  consumePendingSkill: () => {
+    const skill = get().pendingSkill
+    if (skill !== null) set({ pendingSkill: null })
+    return skill
   },
 }))
 

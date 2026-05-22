@@ -60,7 +60,7 @@ export function HomeTaskComposerCard() {
     id: string
     label?: string
     trigger: string
-  } | null>(null)
+  } | null>(() => useUiStore.getState().consumePendingSkill())
 
   // One-shot prefill text; consumed synchronously via lazy initializer so
   // RichComposer's useEditor receives it on its very first render.
