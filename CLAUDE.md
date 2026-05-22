@@ -220,31 +220,31 @@ Skill 系统采用无状态架构，仅加载 `~/.renlijia/users/{scope}/skills/
 
 ## 存储结构
 
-所有运行时数据持久化到 `~/.renlijia/`（`AiJiaHome::from_home()`），不再使用 Tauri app data dir（后者仅用于启动时一次性迁移）：
+**权威规范在 `~/lotus/docs/desktop/aijia/storage-conventions.md`**（仓库内为 `docs/storage-conventions.md`）。本节只给一句话指引 + 入口；任何写盘改动以规范文档为准。
 
-```
-~/.renlijia/
-├── conversations/{id}/
-│   ├── conv.json                  # 对话元数据
-│   ├── messages.N.jsonl           # 消息分片（100 条/片）
-│   ├── _current                   # 分片指针 "shard_num:next_seq"
-│   ├── compact_boundaries.jsonl   # 压缩边界记录
-│   └── file_index.json            # 文件索引
-├── subagent_transcripts/          # 子代理完整转录（JSON 数组）
-├── skills/                        # 本地 skill 文件
-├── crypto/                        # 加密主密钥
-├── screenshots/
-├── site-profiles/
-├── mcp_servers.json
-├── permissions.json
-└── agent_invocations.json
-```
+### 五个域
 
-workspace 目录（用户可自定义，默认也是 `~/.renlijia/`）下存放生成物：
+| 域 | 路径 | 例子 | 入口 |
+|---|---|---|---|
+| L0 全局元数据 | `~/.renlijia/global/` | `config.json` / `state.json` / `auth/` | `AiJiaHome::global_*` |
+| L0 系统单点 | `~/.renlijia/` 根级（白名单） | `crypto/` / `device_id` / `employee-templates-cache/` / `tmp/` | `AiJiaHome::*` |
+| L1 用户私有 | `~/.renlijia/users/{scope}/` | `conversations/` / `employees/` / `skills/` / `permissions.json` / `turn_stages/` | `UserScopedPaths::*` |
+| L2 临时可重生成 | `~/.renlijia/tmp/` | 剪贴板贴图、IM 附件下载 | `AiJiaHome::tmp_*_dir()` |
+| L3 用户工作区 | `<workspacePath>/`（默认 `defaultFolder/`） | 报表 / 图表 / 上传副本 | 工具上下文 `workspace_path()` |
 
-- `uploads/` — 用户上传文件副本
-- `reports/` / `charts/` / `analysis/` — 生成物
-- `logs/` — 运行日志
+### 关键约束
+
+- **L1 用户私有数据是缺省**：不知道往哪写就用 `UserScopedPaths`。
+- **runtime/ 模块不得直接构造 `AiJiaHome`**，必须通过 `UserScopedPathResolver` trait 注入（参考 `chat_turn_driver::turn_stage_path_resolver`、`RuntimeHost::resolve_*` 一族）。
+- **L1 未登录态必须 no-op**，不得回退到 root（参考 `transport/tauri_commands/turn_stage.rs::get_active_turn_stage`）。
+- **新增 root 级条目必须更新规范 §5 白名单 + `migration_root_cleanup::ARCHIVE_ITEMS`**，否则会被下一轮 cleanup 误归档。
+- **消息存储是单文件 `messages.jsonl`**（append-only，按 `id` LWW + `_rev` 增量），旧 shard 模型（`messages.N.jsonl` / `_current` / `compact_boundaries.jsonl`）已通过 `migrate_shards_to_single_file` 自动合并，新代码不要再用 shard 路径。
+
+### 迁移历史 / 进行中
+
+- `users/{scope}/` 已是主写入路径；老 root-level 数据由 `migration_user_scope` 一次性 copy 后，`migration_root_cleanup` 归档到 `.archived-legacy-{ts}/`，30 天自动 GC。
+- `turn_stages/` 已 user-scope 化（commit 4108f8e）。`subagent_transcripts/` 已迁到 `conversations/{conv_id}/subagents/`，旧路径标 `#[deprecated]`。
+- 仍在做：`playwright-profile/` 用户化、`tmpImage/` 收编到 `tmp/clipboard/`、IM `*_downloads/` 加 GC、`runtimes_dir()` 从 `~/Library/Caches/` 收编回根。完整清单见规范 §11。
 
 ## 重要架构决策与约束
 
