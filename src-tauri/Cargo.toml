@@ -107,6 +107,14 @@ rand = "0.8"
 # wa-rs re-exports sqlite-storage / tokio-transport / ureq-http as default
 # features; cross-platform (sqlite via rusqlite bundled).
 wa-rs = "0.2"
+# wa-rs's sqlite-storage feature pulls in `libsqlite3-sys` (via diesel),
+# which by default expects the system sqlite3 lib at link time. Windows
+# CI runners don't ship sqlite3.lib, so the link step fails with
+# `LNK1181: cannot open input file 'sqlite3.lib'`. Pin the same
+# libsqlite3-sys version transitive deps select and turn on `bundled`
+# so the C source is compiled in — works on all 3 platforms without
+# needing a system install.
+libsqlite3-sys = { version = "0.37", features = ["bundled"] }
 
 # Unix process inspection (kill(pid, 0) for orphan lock detection)
 [target.'cfg(unix)'.dependencies]
