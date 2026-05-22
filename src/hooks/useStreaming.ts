@@ -368,14 +368,11 @@ export function useStreaming() {
       const store = useChatStore.getState()
       store.clearConversationStreamState(conversationId)
       store.removeBusyConversation(conversationId)
-      if (conversationId === store.activeConversationId) {
-        const lastUserMsg = [...store.messages]
-          .reverse()
-          .find((m) => m.role === 'user' && m.conversationId === conversationId)
-        if (lastUserMsg && !lastUserMsg.id.startsWith('msg-')) {
-          store.removeMessage(lastUserMsg.id)
-        }
-      }
+      // 历史 bug：streaming:error 会删最后一条非乐观 id 的 user message（"非乐观 id"
+      // 当年靠 `id.startsWith('msg-')` 判断）。后来 generateId 改用 crypto.randomUUID()
+      // 不再带 'msg-' 前缀，判断恒为真 → 每次错误都删 user message。新对话首发遇网络
+      // 抖动 retry 终极失败时表现为"本会话所有消息都没了"。删除这段逻辑：流式失败
+      // 必须保留用户原文，方便复制 / 重发；后端持久化不受影响。
 
       // Auto-recover from "selected model has no route" errors. The gateway
       // route catalog can change at any time (ops disables a route, a tenant
