@@ -24,6 +24,15 @@ pub struct WhatsAppChannelConfig {
     /// PR3 配置 UI 编辑，PR4 入站 worker 过滤时读这里。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allow_from: Option<Vec<String>>,
+    /// 用户是否启用此频道。`true` = 自动连接 + 收发消息；`false` = 暂停（保留
+    /// 已配对凭证，但不连接服务器）。老 config.json 没有此字段时默认为 `true`，
+    /// 保持与历史行为一致（已配对即已启用）。
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+}
+
+fn default_enabled() -> bool {
+    true
 }
 
 /// 读 config.json。返回 `Ok(None)` 表示文件不存在或为空（未配对），
@@ -68,6 +77,7 @@ mod tests {
             push_name: "Alice".into(),
             paired_at: "2026-05-20T10:30:00Z".into(),
             allow_from: None,
+            enabled: true,
         }
     }
 

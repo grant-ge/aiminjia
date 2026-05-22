@@ -148,6 +148,7 @@ pub(crate) async fn handle_event(
                 push_name: push_name.clone(),
                 paired_at: chrono::Utc::now().to_rfc3339(),
                 allow_from: None,
+                enabled: true,
             };
             if let Err(e) = config::write(&paths.config_path(), &cfg) {
                 log::error!("[whatsapp] failed to write config.json: {e:#}");
@@ -409,6 +410,7 @@ mod tests {
             push_name: "Bob".into(),
             paired_at: "2026-05-19T10:00:00Z".into(),
             allow_from: None,
+            enabled: true,
         };
         config::write(&paths.config_path(), &cfg).unwrap();
 

@@ -332,7 +332,7 @@ export function AppSidebar() {
                       {!dingtalkState?.configured
                         ? '未配置，点击右侧设置'
                         : !dingtalkState.enabled
-                          ? '已暂停，点击右侧启用'
+                          ? '未连接，点击右侧启用'
                           : dingtalkState.connection === 'connected'
                             ? '暂无会话，等待消息…'
                             : dingtalkState.connection === 'connecting'
@@ -371,7 +371,7 @@ export function AppSidebar() {
                     {!feishuState?.configured
                       ? '未配置'
                       : !feishuState.enabled
-                        ? '已暂停'
+                        ? '未连接'
                         : feishuState.connection === 'connected'
                           ? '已连接'
                           : feishuState.connection === 'connecting'
@@ -393,7 +393,7 @@ export function AppSidebar() {
                       {!feishuState?.configured
                         ? '未配置，点击右侧设置'
                         : !feishuState.enabled
-                          ? '已暂停，点击右侧启用'
+                          ? '未连接，点击右侧启用'
                           : feishuState.connection === 'connected'
                             ? '暂无会话，等待消息…'
                             : feishuState.connection === 'connecting'
@@ -432,7 +432,7 @@ export function AppSidebar() {
                     {!wecomState?.configured
                       ? '未配置'
                       : !wecomState.enabled
-                        ? '已暂停'
+                        ? '未连接'
                         : wecomState.connection === 'connected'
                           ? '已连接'
                           : wecomState.connection === 'connecting'
@@ -454,7 +454,7 @@ export function AppSidebar() {
                       {!wecomState?.configured
                         ? '未配置，点击右侧设置'
                         : !wecomState.enabled
-                          ? '已暂停，点击右侧启用'
+                          ? '未连接，点击右侧启用'
                           : wecomState.connection === 'connected'
                             ? '暂无会话，等待消息…'
                             : wecomState.connection === 'connecting'
@@ -493,7 +493,7 @@ export function AppSidebar() {
                     {!wechatState?.configured
                       ? '未配置'
                       : !wechatState.enabled
-                        ? '已暂停'
+                        ? '未连接'
                         : wechatState.connection === 'connected'
                           ? '已连接'
                           : wechatState.connection === 'connecting'
@@ -517,7 +517,7 @@ export function AppSidebar() {
                       {!wechatState?.configured
                         ? '未配置，点击右侧设置'
                         : !wechatState.enabled
-                          ? '已暂停，点击右侧启用'
+                          ? '未连接，点击右侧启用'
                           : wechatState.connection === 'connected'
                             ? '暂无会话，等待消息…'
                             : wechatState.connection === 'connecting'
@@ -558,7 +558,7 @@ export function AppSidebar() {
                     {!telegramState?.configured
                       ? '未配置'
                       : !telegramState.enabled
-                        ? '已暂停'
+                        ? '未连接'
                         : telegramState.connection === 'connected'
                           ? '已连接'
                           : telegramState.connection === 'connecting'
@@ -582,7 +582,7 @@ export function AppSidebar() {
                       {!telegramState?.configured
                         ? '未配置，点击右侧设置'
                         : !telegramState.enabled
-                          ? '已暂停，点击右侧启用'
+                          ? '未连接，点击右侧启用'
                           : telegramState.connection === 'connected'
                             ? '暂无会话，等待消息…'
                             : telegramState.connection === 'connecting'
@@ -623,7 +623,7 @@ export function AppSidebar() {
                     {!whatsappState?.configured
                       ? '未配置'
                       : !whatsappState.enabled
-                        ? '已暂停'
+                        ? '未连接'
                         : whatsappState.connection === 'connected'
                           ? '已连接'
                           : whatsappState.connection === 'connecting'
@@ -647,7 +647,7 @@ export function AppSidebar() {
                       {!whatsappState?.configured
                         ? '未配置，点击右侧设置'
                         : !whatsappState.enabled
-                          ? '已暂停，点击右侧启用'
+                          ? '未连接，点击右侧启用'
                           : whatsappState.connection === 'connected'
                             ? '暂无会话，等待消息…'
                             : whatsappState.connection === 'connecting'

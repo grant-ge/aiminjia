@@ -82,28 +82,39 @@ function statusMeta(state: ChannelPlatformState) {
       return { statusLabel: '配置有误', statusTone: 'error' as const }
     case 'needsReauth':
       return { statusLabel: '会话失效', statusTone: 'error' as const }
+    case 'disconnected':
+      return { statusLabel: '未连接', statusTone: 'muted' as const }
     default:
-      return { statusLabel: '未配置', statusTone: 'muted' as const }
+      return { statusLabel: '未连接', statusTone: 'muted' as const }
   }
 }
 
 /**
- * 已配置 + 已启用但连不上时给一句具体的、用户可操作的网络提示，覆盖默认
+ * 已配置 + 已启用但连不上时给一句具体的、用户可操作的提示，覆盖默认
  * "通过 XX 机器人接收并回复用户消息" 描述。
  *
- * 现在只对 Telegram / WhatsApp 触发：这两个走海外服务器，国内通常需要代理；
+ * 现在只对 Telegram / WhatsApp 触发：这两个走海外服务器，国内通常需要代理。
  * 其它渠道（钉钉/飞书/企微/微信）走国内服务器，"重连中"通常是临时问题，
  * 不给一刀切的代理提示避免误导。
+ *
+ * 重要：connection=disconnected 不一定是网络问题。WhatsApp 主端踢掉 web
+ * session 时后端可能仍停留在 disconnected（等待 connector 翻成 needsReauth），
+ * 此时再说"网络/代理不可用"是误报。所以这里的提示只描述现象 + 列出几种
+ * 可能的原因，不主观断言。
  */
 function networkHint(state: ChannelPlatformState): string | null {
   if (!state.configured || !state.enabled) return null
   if (state.platform !== 'telegram' && state.platform !== 'whatsapp') return null
   const platformName = state.platform === 'telegram' ? 'Telegram' : 'WhatsApp'
   switch (state.connection) {
-    case 'reconnecting':
-    case 'disconnected':
     case 'connecting':
-      return `无法连接到 ${platformName} 服务器，请检查网络 / 代理是否可用${state.platform === 'whatsapp' ? '，并保持手机端 WhatsApp 在线' : ''}`
+      return `正在连接 ${platformName} 服务器…`
+    case 'reconnecting':
+      return `${platformName} 连接已断开，正在重连…`
+    case 'disconnected':
+      return state.platform === 'whatsapp'
+        ? '未连接到 WhatsApp。可能原因：网络/代理不可用、手机端 WhatsApp 离线，或主端已踢掉本设备会话（需重新扫码）'
+        : '未连接到 Telegram 服务器，请检查网络 / 代理是否可用'
     case 'needsReauth':
       return state.platform === 'whatsapp'
         ? '与 WhatsApp 主端会话失效（常见于手机端退出登录或长时间离线），需要重新扫码配对'

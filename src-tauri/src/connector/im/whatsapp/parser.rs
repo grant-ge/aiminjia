@@ -507,6 +507,7 @@ mod tests {
             push_name: "Bot".into(),
             paired_at: "2026-05-20T10:00:00Z".into(),
             allow_from: Some(vec!["+8613999999999".into()]), // different number
+            enabled: true,
         };
         assert!(normalize_async(&msg, &info, Some(&cfg), None)
             .await
@@ -529,6 +530,7 @@ mod tests {
             push_name: "Bot".into(),
             paired_at: "2026-05-20T10:00:00Z".into(),
             allow_from: None,
+            enabled: true,
         };
         assert!(normalize_async(&msg, &info, Some(&cfg_none), None)
             .await

@@ -2285,6 +2285,24 @@ impl ChannelManager {
                     self.current_telegram_state().await
                 }
             }
+            Platform::Whatsapp => {
+                if enabled {
+                    self.config_store.set_whatsapp_enabled(true)?;
+                    self.connect_whatsapp_from_store().await?;
+                } else {
+                    self.stop_stream(Platform::Whatsapp).await;
+                    self.config_store.set_whatsapp_enabled(false)?;
+                    self.set_whatsapp_connection_state(ChannelConnectionState::Disconnected, None)
+                        .await;
+                }
+                let (connection, last_error) = self
+                    .platform_state_read(Platform::Whatsapp, |s| {
+                        (s.connection.clone(), s.last_error.clone())
+                    })
+                    .await
+                    .unwrap_or((ChannelConnectionState::Unconfigured, None));
+                self.config_store.whatsapp_state(connection, last_error)
+            }
             other => anyhow::bail!("{} channel is not available yet", other.as_str()),
         }
     }
@@ -2334,6 +2352,17 @@ impl ChannelManager {
                     *guard = None;
                 }
                 self.set_telegram_connection_state(ChannelConnectionState::Unconfigured, None)
+                    .await;
+                Ok(state)
+            }
+            Platform::Whatsapp => {
+                self.stop_stream(Platform::Whatsapp).await;
+                let state = self.config_store.remove_whatsapp()?;
+                {
+                    let mut guard = self.whatsapp_concrete.write().await;
+                    *guard = None;
+                }
+                self.set_whatsapp_connection_state(ChannelConnectionState::Unconfigured, None)
                     .await;
                 Ok(state)
             }
@@ -2716,6 +2745,16 @@ impl ChannelManager {
         if !paths.config_path().exists() {
             log::info!("[whatsapp] no config.json — skipping auto-connect");
             return Ok(());
+        }
+        // Respect user-paused state — config exists but enabled=false means
+        // the user toggled the channel off; don't auto-reconnect.
+        match super::whatsapp::config::read(&paths.config_path()) {
+            Ok(Some(cfg)) if !cfg.enabled => {
+                log::info!("[whatsapp] config.json present but enabled=false — skipping auto-connect");
+                return Ok(());
+            }
+            Ok(_) => {}
+            Err(e) => log::warn!("[whatsapp] read config.json failed: {e:#}"),
         }
         log::info!("[whatsapp] auto-connect: reusing existing session.db");
         let on_status = self.make_whatsapp_status_callback();

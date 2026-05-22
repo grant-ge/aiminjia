@@ -763,23 +763,27 @@ impl ChannelConfigStore {
     // ----- WhatsApp -----
 
     /// WhatsApp 单账号约定（spec §0.4 #1）：config.json 存在 = 已配对。
-    /// 镜像 `telegram_state` 结构，但不暴露 jid/push_name 给 ChannelConfigView。
+    /// `enabled` 字段允许用户暂停频道（保留凭证不连接），与其它 platform 一致。
+    /// 老 config.json 没有 `enabled` 字段时 serde default = true，保持历史行为。
     pub fn whatsapp_state(
         &self,
         connection: ChannelConnectionState,
         last_error: Option<String>,
     ) -> Result<ChannelPlatformState> {
         let config_path = self.platform_config_path(Platform::Whatsapp);
-        let configured = match crate::connector::im::whatsapp::config::read(&config_path) {
-            Ok(Some(_)) => true,
-            Ok(None) => false,
+        let cfg = match crate::connector::im::whatsapp::config::read(&config_path) {
+            Ok(opt) => opt,
             Err(e) => {
                 log::warn!("[whatsapp] read config.json failed: {e:#}");
-                false
+                None
             }
         };
+        let configured = cfg.is_some();
+        let enabled = cfg.as_ref().is_some_and(|c| c.enabled);
         let connection = if !configured {
             ChannelConnectionState::Unconfigured
+        } else if !enabled {
+            ChannelConnectionState::Disconnected
         } else {
             connection
         };
@@ -787,11 +791,44 @@ impl ChannelConfigStore {
             platform: Platform::Whatsapp,
             capability: ChannelCapability::Available,
             configured,
-            enabled: configured, // 单账号约定：configured = enabled
+            enabled,
             connection,
             config: None, // 不暴露 jid / push_name 给 ChannelConfigView
             last_connected_at: None,
             last_error,
+        })
+    }
+
+    pub fn set_whatsapp_enabled(&self, enabled: bool) -> Result<ChannelPlatformState> {
+        let config_path = self.platform_config_path(Platform::Whatsapp);
+        let mut cfg = crate::connector::im::whatsapp::config::read(&config_path)
+            .map_err(|e| anyhow::anyhow!("read whatsapp config.json failed: {e}"))?
+            .ok_or_else(|| anyhow::anyhow!("WhatsApp channel is not configured"))?;
+        cfg.enabled = enabled;
+        crate::connector::im::whatsapp::config::write(&config_path, &cfg)
+            .map_err(|e| anyhow::anyhow!("write whatsapp config.json failed: {e}"))?;
+        let connection = if enabled {
+            ChannelConnectionState::Connecting
+        } else {
+            ChannelConnectionState::Disconnected
+        };
+        self.whatsapp_state(connection, None)
+    }
+
+    pub fn remove_whatsapp(&self) -> Result<ChannelPlatformState> {
+        let path = self.platform_config_path(Platform::Whatsapp);
+        if path.exists() {
+            std::fs::remove_file(path)?;
+        }
+        Ok(ChannelPlatformState {
+            platform: Platform::Whatsapp,
+            capability: ChannelCapability::Available,
+            configured: false,
+            enabled: false,
+            connection: ChannelConnectionState::Unconfigured,
+            config: None,
+            last_connected_at: None,
+            last_error: None,
         })
     }
 
