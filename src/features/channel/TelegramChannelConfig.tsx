@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import QRCode from 'qrcode'
 import { open as openExternal } from '@tauri-apps/plugin-shell'
 import { CheckCircle2, ExternalLink, Loader2, X } from 'lucide-react'
+import { QrCodeCanvas } from '@/components/registration/QrCodeCanvas'
 import { requestConfirm } from '@/components/common/ConfirmDialogHost'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -27,43 +27,6 @@ interface TelegramChannelConfigProps {
 }
 
 const POLL_INTERVAL_MS = 2000
-
-function QrPanel({ value }: { value: string | null }) {
-  const [dataUrl, setDataUrl] = useState<string | null>(null)
-  useEffect(() => {
-    if (!value) {
-      setDataUrl(null)
-      return
-    }
-    let cancelled = false
-    QRCode.toDataURL(value, {
-      errorCorrectionLevel: 'M',
-      margin: 1,
-      width: 224,
-      color: { dark: '#111111', light: '#ffffff' },
-    })
-      .then((url) => {
-        if (!cancelled) setDataUrl(url)
-      })
-      .catch(() => {
-        if (!cancelled) setDataUrl(null)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [value])
-
-  return (
-    // QR scanner requires literal white background; cannot use bg-background (would be invisible in dark mode + QRCode lib already bakes light:#fff into the PNG). Same pattern as WecomChannelConfig QR panel.
-    <div className="flex h-60 w-60 items-center justify-center rounded-3xl border border-border bg-white p-4">
-      {dataUrl ? (
-        <img src={dataUrl} alt="Telegram 扫码配对" className="h-full w-full" />
-      ) : (
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      )}
-    </div>
-  )
-}
 
 export function TelegramChannelConfig({ onSaved, onClose }: TelegramChannelConfigProps) {
   const tgState = useChannelStore((s) => s.platforms.telegram)
@@ -324,7 +287,7 @@ export function TelegramChannelConfig({ onSaved, onClose }: TelegramChannelConfi
       </div>
       <div className="flex-1 overflow-y-auto px-10 pb-6">
         <div className="flex flex-col items-center gap-4">
-          <QrPanel value={begin?.deepLink ?? null} />
+          <QrCodeCanvas value={begin?.deepLink ?? ''} loading={false} alt="Telegram 扫码配对" />
           <div className="text-xs text-muted-foreground">
             二维码 {m}:{s.toString().padStart(2, '0')} 后过期
           </div>

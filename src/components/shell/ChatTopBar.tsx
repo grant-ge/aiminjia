@@ -62,7 +62,7 @@ export function ChatTopBar({
             ) : null}
           </button>
         ) : (
-          <div className="truncate text-md font-semibold text-foreground">
+          <div className="truncate text-base font-semibold tracking-tight text-foreground">
             {title}
           </div>
         )}

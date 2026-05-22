@@ -1014,6 +1014,14 @@ export async function channelWhatsappUpdateAllowFrom(allowFrom: string[]): Promi
   await invoke('channel_whatsapp_update_allow_from', { allowFrom })
 }
 
+/**
+ * 读当前 allow_from 列表。未配对返回 null;已配对但接收所有联系人返回 [];
+ * 有限制返回 ["+86xxx", ...]。供"管理允许列表"UI 初始化预填用。
+ */
+export async function channelWhatsappGetAllowFrom(): Promise<string[] | null> {
+  return (await invoke<string[] | null>('channel_whatsapp_get_allow_from')) ?? null
+}
+
 export function restoreConversation(conversationId: string): Promise<void> {
   return invoke<void>('restore_conversation', { conversationId })
 }

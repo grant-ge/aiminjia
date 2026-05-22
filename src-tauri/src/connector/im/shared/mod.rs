@@ -14,6 +14,7 @@ pub mod ask_coordinator;
 pub mod config_store;
 pub mod dedup;
 pub mod pending_adapter;
+pub mod proxy;
 pub mod reconnect;
 pub mod reply_manager;
 pub mod router;

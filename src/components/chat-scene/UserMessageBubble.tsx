@@ -55,8 +55,10 @@ export function UserMessageBubble({
         data-testid="user-bubble"
         // 头像在右上方紧挨着 bubble，bubble 右上角去尖（rounded-tr-none）能形
         // 成一个"指向头像"的小切角，让 user / avatar 是一组的视觉关系更明确。
-        // 水平 padding 走 --user-bubble-padding-x 变量，全局调一处生效。
-        className="max-w-[80%] overflow-hidden rounded-xl rounded-tr-none bg-primary py-2 px-[var(--user-bubble-padding-x)] text-sm leading-relaxed text-primary-foreground"
+        // px-3 = 12px:之前是 16px(走 --user-bubble-padding-x 变量),气泡里
+        // 只夹一个附件 chip 时显得空,12px 视觉更紧凑且对纯文字也够呼吸。
+        // 该变量只此一处使用,已从 globals.css 移除。
+        className="max-w-[80%] overflow-hidden rounded-xl rounded-tr-none bg-primary px-3 py-2 text-sm leading-relaxed text-primary-foreground"
       >
         <div
           data-testid="user-bubble-content"

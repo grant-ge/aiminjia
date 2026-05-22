@@ -12,14 +12,19 @@ describe('QrCodeCanvas', () => {
     })
   })
 
-  it('shows the spinner overlay when loading=true', () => {
+  it('shows the spinner overlay on top of the QR while loading=true (refresh)', async () => {
     render(<QrCodeCanvas value="https://example.com/qr-payload" loading={true} />)
-    expect(screen.getByTestId('qr-spinner-overlay')).toBeInTheDocument()
+    // 等 qrcode lib 把 dataURL 渲出来再断言 overlay,因为 overlay 现在只在
+    // 已有 QR 之上显示(不再叠在 placeholder 上,避免双 spinner)。
+    await screen.findByRole('img', { name: /二维码/ })
+    await waitFor(() => {
+      expect(screen.getByTestId('qr-spinner-overlay')).toBeInTheDocument()
+    })
   })
 
-  it('renders the structural placeholder grid when value is empty', () => {
+  it('renders a loading placeholder when value is empty', () => {
     render(<QrCodeCanvas value="" loading={false} />)
     expect(screen.queryByRole('img', { name: /二维码/ })).not.toBeInTheDocument()
-    expect(screen.getByTestId('qr-placeholder-grid')).toBeInTheDocument()
+    expect(screen.getByTestId('qr-placeholder-loading')).toBeInTheDocument()
   })
 })

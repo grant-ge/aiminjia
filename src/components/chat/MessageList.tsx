@@ -6,7 +6,9 @@ import { useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { AiBubble } from '@/components/chat/AiBubble'
+import { DayDivider } from '@/components/chat/DayDivider'
 import { StreamingBubble } from '@/components/chat/StreamingBubble'
+import { isSameDay } from '@/lib/chatTime'
 import { ChatRow } from '@/components/chat-scene/ChatRow'
 import { GeneratedFileCard } from '@/components/chat-scene/GeneratedFileCard'
 import { PeerMessageBanner } from '@/components/chat-scene/PeerMessageBanner'
@@ -228,6 +230,19 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
     if (activeConversationId) openDrawer(activeConversationId, teamId)
   }
 
+  // 同一天内只在第一条之前显示分隔条；跨天再插一条。
+  const dayDividerFlags = useMemo(() => {
+    const flags: boolean[] = []
+    let prevIso: string | null = null
+    for (const t of turns) {
+      const anchor = t.userMessage?.createdAt ?? t.aiSegments[0]?.message.createdAt ?? null
+      const show =
+        !!anchor && (!prevIso || !isSameDay(new Date(prevIso), new Date(anchor)))
+      flags.push(show)
+      if (anchor) prevIso = anchor
+    }
+    return flags
+  }, [turns])
   return (
     <div className="flex flex-col gap-5 px-2 py-3">
       {turns.map((t, i) => {
@@ -236,8 +251,12 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
         // (handled inside UserMessageBubble). For those, skip the chat-row
         // avatar wrapper — the banner already announces the dispatch.
         const isDispatchTurn = !!(t.userMessage && parseDispatchHeader(t.userMessage.text))
+        const aiAnchorIso = t.aiSegments[0]?.message.createdAt ?? null
+        const turnAnchorIso = t.userMessage?.createdAt ?? aiAnchorIso
+        const showDayDivider = dayDividerFlags[i]
         return (
           <div key={i} className="flex flex-col gap-4">
+            {showDayDivider && turnAnchorIso ? <DayDivider iso={turnAnchorIso} /> : null}
             {t.peerBanners.length > 0 ? (
               <PeerMessageBanner banners={t.peerBanners} />
             ) : null}
@@ -251,7 +270,13 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
                   conversationId={activeConversationId ?? undefined}
                 />
               ) : (
-                <ChatRow role="user" name={userName} avatarUrl={userAvatarUrl} avatarVariant={userAvatarVariant}>
+                <ChatRow
+                  role="user"
+                  name={userName}
+                  avatarUrl={userAvatarUrl}
+                  avatarVariant={userAvatarVariant}
+                  timestamp={t.userMessage.createdAt}
+                >
                   <UserMessageBubble
                     text={t.userMessage.text}
                     commandText={t.userMessage.commandText}
@@ -291,6 +316,7 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
                 role="assistant"
                 name={assistantName}
                 avatarUrl={assistantLogo}
+                timestamp={aiAnchorIso}
               >
                 {t.aiSegments.map((s) => (
                   <AiBubble key={s.id} message={s.message} />

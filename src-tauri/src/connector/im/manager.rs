@@ -2698,6 +2698,15 @@ impl ChannelManager {
         Ok(())
     }
 
+    /// 读当前 config.json 里的 allow_from 列表。未配对时返回 `None`,已配对但
+    /// 列表为空(= 接收所有联系人)返回 `Some(vec![])`。前端"管理允许列表"
+    /// 弹窗初始化时调用,据此推断 UI 该显示"接收所有"还是"仅指定"模式。
+    pub async fn get_whatsapp_allow_from(&self) -> Result<Option<Vec<String>>> {
+        let paths = self.resolve_whatsapp_paths()?;
+        let cfg = super::whatsapp::config::read(&paths.config_path())?;
+        Ok(cfg.map(|c| c.allow_from.unwrap_or_default()))
+    }
+
     /// Phase 4 PR3 启动期 auto-connect：如果 config.json 存在则直接起 Bot
     /// 复用既有 session.db 凭证，不需用户重新扫码。Connected 状态由
     /// runtime.rs Event::Connected handler 推到 PairingState::Connected；

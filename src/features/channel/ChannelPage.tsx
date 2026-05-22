@@ -239,9 +239,13 @@ function ChannelOverview({
   onRemoveWechat,
   onToggleWechat,
   onRegisterTelegram,
+  onShowTelegramDetails,
   onRemoveTelegram,
   onToggleTelegram,
   onRegisterWhatsapp,
+  onShowWhatsappDetails,
+  onRemoveWhatsapp,
+  onToggleWhatsapp,
 }: {
   platforms: PlatformCardModel[]
   onRegisterDingtalk: () => void
@@ -261,9 +265,15 @@ function ChannelOverview({
   onRemoveWechat: () => void
   onToggleWechat: (enabled: boolean) => void
   onRegisterTelegram: () => void
+  /** 已配对后 kebab "配置" 入口 —— 复用注册对话框,组件内部按 alreadyConfigured 渲染管理界面。 */
+  onShowTelegramDetails: () => void
   onRemoveTelegram: () => void
   onToggleTelegram: (enabled: boolean) => void
   onRegisterWhatsapp: () => void
+  /** 同上,WhatsApp 二次编辑入口,对话框按 connected 显示"允许列表"管理。 */
+  onShowWhatsappDetails: () => void
+  onRemoveWhatsapp: () => void
+  onToggleWhatsapp: (enabled: boolean) => void
 }) {
   const noop = () => {}
   const noopToggle = () => {}
@@ -302,7 +312,11 @@ function ChannelOverview({
                       ? onShowWecomDetails
                       : platform.key === 'wechat'
                         ? onShowWechatDetails
-                        : noop
+                        : platform.key === 'telegram'
+                          ? onShowTelegramDetails
+                          : platform.key === 'whatsapp'
+                            ? onShowWhatsappDetails
+                            : noop
               }
               onRemove={
                 platform.key === 'dingtalk'
@@ -315,7 +329,9 @@ function ChannelOverview({
                         ? onRemoveWechat
                         : platform.key === 'telegram'
                           ? onRemoveTelegram
-                          : noop
+                          : platform.key === 'whatsapp'
+                            ? onRemoveWhatsapp
+                            : noop
               }
               onToggle={
                 platform.key === 'dingtalk'
@@ -328,7 +344,9 @@ function ChannelOverview({
                         ? onToggleWechat
                         : platform.key === 'telegram'
                           ? onToggleTelegram
-                          : noopToggle
+                          : platform.key === 'whatsapp'
+                            ? onToggleWhatsapp
+                            : noopToggle
               }
             />
           ))}
@@ -344,11 +362,18 @@ function ChannelChatView({ sessionId }: { sessionId: string }) {
   const activeConv = conversations.find((c) => c.sessionId === sessionId)
   // 顶栏副标题：直接展示后端填的 displayName（= sender push_name / nick / userid）。
   // 后端已经按"私聊用 sender_nick、群聊用 fallback"填好，前端不需要再加平台前缀。
-  // displayName 缺失（极少见）时降级到通用 "私聊/群聊" 字样。
+  // 后端没拿到真实 push_name / nick 时会拼一段"{平台}用户 ou_xxx / ww_xxx / ..."
+  // 的占位串。这里把它视作未知用户：直接隐藏 workspace 副标题，等后端能取到
+  // 真实用户名再自然显示。匹配 `用户` 紧跟一段 6+ 位字母数字 token。
+  const placeholderRe = /用户\s+[A-Za-z0-9_-]{6,}/
+  const rawDisplayName = activeConv?.displayName?.trim() ?? ''
+  const isPlaceholderName = !!rawDisplayName && placeholderRe.test(rawDisplayName)
   const title = activeConv
-    ? activeConv.displayName?.trim() ||
+    ? (!isPlaceholderName && rawDisplayName) ||
       (activeConv.conversationType === 'group' ? '群聊' : '私聊')
     : ''
+  // 占位用户名时不要再 fallback 到 sessionId（"私聊"也没价值），整段 workspace 隐藏。
+  const workspaceLabel = isPlaceholderName ? undefined : title || sessionId
   const platformTitle = activeConv
     ? (PLATFORM_DISPLAY_NAME[activeConv.platform] ?? activeConv.platform)
     : ''
@@ -372,7 +397,7 @@ function ChannelChatView({ sessionId }: { sessionId: string }) {
 
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden bg-background">
-      <ChatTopBar title={platformTitle} workspace={title || sessionId} />
+      <ChatTopBar title={platformTitle} workspace={workspaceLabel} />
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         <div data-testid="channel-chat-layout-column" className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
           <ChatArea />
@@ -603,6 +628,22 @@ export function ChannelPage({ sessionId }: ChannelPageProps) {
     await setEnabled('telegram', enabled)
   }
 
+  const handleRemoveWhatsapp = async () => {
+    const confirmed = await requestConfirm({
+      title: '移除 WhatsApp 频道？',
+      description: '会删除本地保存的 WhatsApp 会话和允许列表。已有聊天历史保留。',
+      confirmLabel: '确认移除',
+      cancelLabel: '取消',
+      variant: 'destructive',
+    })
+    if (!confirmed) return
+    await removePlatform('whatsapp')
+  }
+
+  const handleToggleWhatsapp = async (enabled: boolean) => {
+    await setEnabled('whatsapp', enabled)
+  }
+
   const platforms = useMemo<PlatformCardModel[]>(() => {
     const states: Record<PlatformKey, ChannelPlatformState> = {
       dingtalk: dingtalkState,
@@ -695,9 +736,18 @@ export function ChannelPage({ sessionId }: ChannelPageProps) {
           onRemoveWechat={() => void handleRemoveWechat()}
           onToggleWechat={(enabled) => void handleToggleWechat(enabled)}
           onRegisterTelegram={() => setTelegramRegistrationOpen(true)}
+          // 已配置后的 kebab "配置" 入口复用同一个对话框 ——
+          // TelegramChannelConfig 检测到 alreadyConfigured 会跳过 token 步骤,
+          // 直接进入"扫码配对 / 已连接用户管理 / 移除整个频道"管理界面。
+          onShowTelegramDetails={() => setTelegramRegistrationOpen(true)}
           onRemoveTelegram={() => void handleRemoveTelegram()}
           onToggleTelegram={(enabled) => void handleToggleTelegram(enabled)}
           onRegisterWhatsapp={() => setWhatsappRegistrationOpen(true)}
+          // 同 telegram —— WhatsappChannelConfig 收到 connected=true 时显示
+          // "允许的发送人(E.164)"管理区域,允许编辑 allow_from 列表。
+          onShowWhatsappDetails={() => setWhatsappRegistrationOpen(true)}
+          onRemoveWhatsapp={() => void handleRemoveWhatsapp()}
+          onToggleWhatsapp={(enabled) => void handleToggleWhatsapp(enabled)}
         />
       )}
 

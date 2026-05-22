@@ -426,3 +426,15 @@ pub async fn channel_whatsapp_update_allow_from(
         .await
         .map_err(|e| format!("{:#}", e))
 }
+
+/// 读 WhatsApp 当前 allow_from 列表(供"管理允许列表"UI 预填用)。
+/// 未配对返回 `None`,已配对但接收所有联系人返回 `Some([])`,有限制返回 `Some([...])`。
+#[tauri::command]
+pub async fn channel_whatsapp_get_allow_from(
+    app: AppHandle,
+) -> Result<Option<Vec<String>>, String> {
+    manager(&app)?
+        .get_whatsapp_allow_from()
+        .await
+        .map_err(|e| format!("{:#}", e))
+}

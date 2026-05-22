@@ -145,6 +145,11 @@
   --shadow-card: var(--shadow-md);
   --shadow-accent: 0 0 0 3px rgba(212, 168, 67, 0.2);
   --shadow-accent-glow: 0 8px 24px rgba(212, 168, 67, 0.12);
+  /* Sidebar → main seam. Inset shadow on the main area's left edge to
+     suggest the sidebar sits at slightly higher elevation, sharpening the
+     boundary without a hard divider. Pair with bg-sidebar / bg-background
+     color contrast — never use alone (a11y: depth alone is not a signal). */
+  --shadow-sidebar-edge: inset 12px 0 16px -16px rgba(0, 0, 0, 0.08);
 
   /* Motion (spec §6) — components must reference these instead of
      hardcoding `duration-150` etc. */
@@ -158,13 +163,6 @@
      1em. Other tx-* sizes intentionally inherit Tailwind defaults (xs/sm/
      base/lg/xl/2xl). */
   --text-md: 0.9375rem;
-
-  /* User message bubble horizontal padding. Scoped to user-side because
-     AssistantMarkdown is a flow-layout container and adding x-padding would
-     collide with its inner block elements (tables / code / lists). If a
-     future "ai bubble" surface needs its own token, add --ai-bubble-* next
-     to this one rather than overloading a single name. */
-  --user-bubble-padding-x: 16px;
 
   /* ────────────── Table ────────────── */
   /* Font family is intentionally not declared — tables inherit from parent */

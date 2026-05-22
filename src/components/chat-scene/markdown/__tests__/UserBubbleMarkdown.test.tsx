@@ -131,13 +131,14 @@ describe('UserBubbleMarkdown', () => {
     expect(mockOpenPreview.mock.calls[0][0].localPath).toBe('/p/thumb-click.png')
   })
 
-  it('file:// image with no thumbnail available falls back to chip', async () => {
+  it('file:// image with no thumbnail available falls back to chip with file icon', async () => {
     const { container } = render(<UserBubbleMarkdown text="![chart](file:///p/thumb-fallback.png)" />)
     // Wait for the async preview attempt to settle
     await waitFor(() => expect(mockGetLocalFilePreview).toHaveBeenCalled())
     expect(container.querySelector('img')).toBeNull()
+    // chip 由文字 label("IMG") 改成 lucide 图标 SVG;断言 chip 按钮里有 svg 即可
     const btn = screen.getByRole('button', { name: 'chart' })
-    expect(btn).toHaveTextContent('IMG')
+    expect(btn.querySelector('svg')).not.toBeNull()
   })
 
   it('renders https image directly', () => {

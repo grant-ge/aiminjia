@@ -17,6 +17,7 @@
  */
 import type { ReactNode } from 'react'
 import { ChatAvatar } from './ChatAvatar'
+import { formatChatTime, formatFullDateTime } from '@/lib/chatTime'
 
 interface ChatRowProps {
   role: 'user' | 'assistant'
@@ -30,10 +31,15 @@ interface ChatRowProps {
   avatarVariant?: 'initial' | 'neutral'
   /** Background color seed for the avatar fallback. Defaults to `name`. */
   colorSeed?: string
+  /**
+   * ISO 时间。提供时在 name 旁渲染小号时间戳（hover 显示完整时间）。
+   * 同一个 turn 内的连续消息只在第一条传入，避免视觉噪音。
+   */
+  timestamp?: string | null
   children: ReactNode
 }
 
-export function ChatRow({ role, name, avatarUrl, avatarVariant, colorSeed, children }: ChatRowProps) {
+export function ChatRow({ role, name, avatarUrl, avatarVariant, colorSeed, timestamp, children }: ChatRowProps) {
   const isUser = role === 'user'
   // We anchor the header (avatar+name) at the top so multi-line bubbles
   // don't drift the avatar to the middle. `items-start` does that.
@@ -57,9 +63,21 @@ export function ChatRow({ role, name, avatarUrl, avatarVariant, colorSeed, child
       <div data-testid="chat-row-content" className="flex min-w-0 flex-1 flex-col gap-1">
         <div
           data-testid="chat-row-name"
-          className={`text-xs font-medium text-muted-foreground ${nameAlign}`}
+          className={`flex items-baseline gap-2 text-xs font-medium text-muted-foreground ${
+            isUser ? 'flex-row-reverse justify-start' : 'justify-start'
+          }`}
         >
-          {name}
+          <span className={nameAlign}>{name}</span>
+          {timestamp ? (
+            <time
+              data-testid="chat-row-time"
+              dateTime={timestamp}
+              title={formatFullDateTime(timestamp)}
+              className="font-normal text-muted-foreground/70 tabular-nums"
+            >
+              {formatChatTime(timestamp)}
+            </time>
+          ) : null}
         </div>
         <div
           className={

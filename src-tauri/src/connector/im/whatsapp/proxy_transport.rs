@@ -4,12 +4,8 @@
 //! `HTTPS_PROXY` / `ALL_PROXY` 环境变量；用户在国内环境运行（WhatsApp 服务器
 //! 直连被墙）就连不上。OpenClaw 用 Node `https-proxy-agent` 读 env 注入
 //! Baileys WebSocket agent —— 这里照同一个思路：自己实现 wa-rs 的两个 trait
-//! (`TransportFactory` + `HttpClient`)，读 env 走 SOCKS5/HTTP proxy。
-//!
-//! 用户系统配代理后 (`ALL_PROXY=socks5://127.0.0.1:7890` 等)，**零应用层
-//! 配置**：transport 直接拨代理拿 TCP，上 TLS，上 WebSocket。
-//!
-//! HTTP 走 reqwest（已 socks feature），无需手动拼。
+//! (`TransportFactory` + `HttpClient`)，走 [`crate::connector::im::shared::proxy`]
+//! 统一出口拿代理 URL（与 Telegram 同源,保证两端行为一致）。
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -26,86 +22,25 @@ use tokio_websockets::{ClientBuilder, Message, WebSocketStream};
 use wa_rs::http::{HttpClient, HttpRequest, HttpResponse};
 use wa_rs::transport::{Transport, TransportEvent, TransportFactory};
 
+use crate::connector::im::shared::proxy::{
+    build_reqwest_client_with_proxy, parse_proxy_url, resolve_proxy_url, ProxyScheme,
+};
+
 /// WhatsApp Web WebSocket URL —— 同 wa-rs-core::net::WHATSAPP_WEB_WS_URL，
 /// 但 wa-rs 0.2 没在顶层 re-export，直接硬编码避免引 wa-rs-core 作为额外 dep。
 const WHATSAPP_WEB_WS_URL: &str = "wss://web.whatsapp.com/ws/chat";
 
-// =============================================================================
-// Proxy resolution
-// =============================================================================
-
-/// 读 env 决定走代理。优先级：`https_proxy` > `HTTPS_PROXY` > `all_proxy` > `ALL_PROXY`。
-/// `no_proxy` / `NO_PROXY` 命中目标 host 时返回 None（直连）。
-fn resolve_proxy_url(target_host: &str) -> Option<String> {
-    if let Some(no_proxy) = std::env::var("no_proxy").ok().or_else(|| std::env::var("NO_PROXY").ok()) {
-        if no_proxy_matches(&no_proxy, target_host) {
-            return None;
-        }
-    }
-    for key in ["https_proxy", "HTTPS_PROXY", "all_proxy", "ALL_PROXY"] {
-        if let Ok(v) = std::env::var(key) {
-            let trimmed = v.trim();
-            if !trimmed.is_empty() {
-                return Some(trimmed.to_string());
-            }
-        }
-    }
-    None
-}
-
-fn no_proxy_matches(no_proxy: &str, host: &str) -> bool {
-    no_proxy
-        .split(',')
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .any(|rule| {
-            let rule = rule.trim_start_matches('.');
-            host == rule || host.ends_with(&format!(".{rule}"))
-        })
-}
-
-/// Parse `socks5://host:port` 或 `http(s)://host:port` 形式的 proxy URL。
-/// 返回 (scheme, host, port)。Unknown scheme → 当 http 处理。
-fn parse_proxy_url(url: &str) -> anyhow::Result<(ProxyScheme, String, u16)> {
-    let uri: Uri = url
-        .parse()
-        .map_err(|e| anyhow::anyhow!("invalid proxy url '{url}': {e}"))?;
-    let scheme = uri.scheme_str().unwrap_or("http").to_ascii_lowercase();
-    let scheme = match scheme.as_str() {
-        "socks5" | "socks5h" => ProxyScheme::Socks5,
-        "http" | "https" => ProxyScheme::Http,
-        other => {
-            log::warn!("[whatsapp/proxy] unknown scheme '{other}', treating as http");
-            ProxyScheme::Http
-        }
-    };
-    let host = uri
-        .host()
-        .ok_or_else(|| anyhow::anyhow!("proxy url missing host: {url}"))?
-        .to_string();
-    let port = uri.port_u16().unwrap_or(match scheme {
-        ProxyScheme::Socks5 => 1080,
-        ProxyScheme::Http => 8080,
-    });
-    Ok((scheme, host, port))
-}
-
-#[derive(Clone, Copy, Debug)]
-enum ProxyScheme {
-    Socks5,
-    Http,
-}
-
-/// 拨 TCP（走代理或直连）。
+/// 拨 TCP（走代理或直连）。代理来源走 [`crate::connector::im::shared::proxy`]。
 async fn dial_tcp(target_host: &str, target_port: u16) -> anyhow::Result<TcpStream> {
     match resolve_proxy_url(target_host) {
         Some(proxy_url) => {
-            let (scheme, proxy_host, proxy_port) = parse_proxy_url(&proxy_url)?;
-            let proxy_addr = format!("{proxy_host}:{proxy_port}");
+            let endpoint = parse_proxy_url(&proxy_url)?;
+            let proxy_addr = format!("{}:{}", endpoint.host, endpoint.port);
             log::info!(
-                "[whatsapp/proxy] dial {target_host}:{target_port} via {scheme:?} {proxy_addr}"
+                "[whatsapp/proxy] dial {target_host}:{target_port} via {:?} {proxy_addr}",
+                endpoint.scheme
             );
-            match scheme {
+            match endpoint.scheme {
                 ProxyScheme::Socks5 => {
                     let stream =
                         Socks5Stream::connect(proxy_addr.as_str(), (target_host, target_port))
@@ -331,12 +266,13 @@ pub struct ProxyHttpClient {
 
 impl ProxyHttpClient {
     pub fn new() -> anyhow::Result<Self> {
-        // reqwest 0.12 + socks feature: 默认从 env 拿 ALL_PROXY / HTTPS_PROXY。
-        // 显式 builder 防 user 把 dev shell env 改了又 reload。
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(60))
-            .build()
-            .map_err(|e| anyhow::anyhow!("reqwest client build failed: {e}"))?;
+        // 跟 dial_tcp 用同一份 shared::proxy resolver,保证 WebSocket 和 HTTP
+        // 都走同一个代理出口。target_host 用 web.whatsapp.com:`no_proxy`
+        // 规则判定相对 WhatsApp 域。
+        let client = build_reqwest_client_with_proxy(
+            Duration::from_secs(60),
+            "web.whatsapp.com",
+        )?;
         Ok(Self { client })
     }
 }
@@ -372,45 +308,4 @@ impl HttpClient for ProxyHttpClient {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn no_proxy_matches_exact_host() {
-        assert!(no_proxy_matches("example.com", "example.com"));
-    }
-
-    #[test]
-    fn no_proxy_matches_suffix() {
-        assert!(no_proxy_matches(".example.com", "api.example.com"));
-        assert!(no_proxy_matches("example.com", "api.example.com"));
-    }
-
-    #[test]
-    fn no_proxy_does_not_match_unrelated() {
-        assert!(!no_proxy_matches("example.com", "other.com"));
-    }
-
-    #[test]
-    fn parse_socks5_proxy_url() {
-        let (scheme, host, port) = parse_proxy_url("socks5://127.0.0.1:7890").unwrap();
-        assert!(matches!(scheme, ProxyScheme::Socks5));
-        assert_eq!(host, "127.0.0.1");
-        assert_eq!(port, 7890);
-    }
-
-    #[test]
-    fn parse_http_proxy_url() {
-        let (scheme, host, port) = parse_proxy_url("http://127.0.0.1:7890").unwrap();
-        assert!(matches!(scheme, ProxyScheme::Http));
-        assert_eq!(host, "127.0.0.1");
-        assert_eq!(port, 7890);
-    }
-
-    #[test]
-    fn parse_proxy_default_socks5_port() {
-        let (_, _, port) = parse_proxy_url("socks5://127.0.0.1").unwrap();
-        assert_eq!(port, 1080);
-    }
-}
+// 单测已搬到 [`crate::connector::im::shared::proxy`] 模块,见同名 #[cfg(test)] mod。
