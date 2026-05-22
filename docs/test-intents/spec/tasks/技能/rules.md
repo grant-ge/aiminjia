@@ -2,12 +2,12 @@
 
 ## 测试范围
 
-覆盖无状态 Skill 系统的端到端行为：从本地 `~/.renlijia/skills/` 与 `~/.renlijia/users/{scope}/skills/` 目录下 SKILL.md 的加载与 frontmatter 解析、技能目录在对话 turn 中的 prompt 注入（catalog_prompt）、对话中 LLM 通过 `load_skill` 工具按需加载 SKILL.md body，到技能草稿（skill draft）的编辑、校验、发布上线（覆盖原 skill 目录）流程。关注 `plugin/skill/`、`commands/skill_management.rs`、`commands/skill_draft.rs`、前端 `src/features/skill-center/` 的一致性。
+覆盖无状态 Skill 系统的端到端行为：从本地 `~/.renlijia/skills/` 与 `~/.renlijia/users/{scope}/skills/` 目录下 SKILL.md 的加载与 frontmatter 解析、技能目录在对话 turn 中的 prompt 注入（catalog_prompt）、对话中 LLM 通过 `Skill` 工具按需加载 SKILL.md body，到技能草稿（skill draft）的编辑、校验、发布上线（覆盖原 skill 目录）流程。关注 `plugin/skill/`、`commands/skill_management.rs`、`commands/skill_draft.rs`、前端 `src/features/skill-center/` 的一致性。
 
 ## 待覆盖的主要场景
 
 - 场景 1：`~/.renlijia/skills/foo/SKILL.md` 存在时，新对话 turn 的 system prompt 中包含该技能的 catalog 条目（名称 + description），且技能中心页能看到该技能
-- 场景 2：LLM 在对话中调用 `load_skill` 工具，工具返回该 SKILL.md 的 body 文本，AI 按 body 中的指令执行
+- 场景 2：LLM 在对话中调用 `Skill` 工具，工具返回该 SKILL.md 的 body 文本，AI 按 body 中的指令执行
 - 场景 3：SKILL.md frontmatter 字段缺失或非法（如 `name:` 为空）时 loader 跳过该 skill，不影响其他 skill 加载
 - 场景 4：用户在技能中心创建草稿、编辑 SKILL.md 后保存，草稿落盘到 `~/.renlijia/users/{scope}/skill-drafts/`，正式技能目录不受影响
 - 场景 5：草稿发布（publish）后 `~/.renlijia/skills/{id}/SKILL.md` 出现并与草稿内容一致，技能中心可见
@@ -48,10 +48,10 @@
 
 ---
 
-## 意图 2：对话中 AI 通过 load_skill 工具加载技能 body 后按指令执行
+## 意图 2：对话中 AI 通过 Skill 工具加载技能 body 后按指令执行
 
 **场景**
-对话中当 AI 判断应该使用某个技能时，它调用 `load_skill` 工具，工具把该技能的 SKILL.md 正文返回给 AI，AI 随后按正文里的指令调整行为。
+对话中当 AI 判断应该使用某个技能时，它调用 `Skill` 工具，工具把该技能的 SKILL.md 正文返回给 AI，AI 随后按正文里的指令调整行为。
 
 **前提**
 - 意图 1 中的 `demo-skill` 已经被应用识别（技能中心可见，system prompt 含其 catalog 条目）。
@@ -63,9 +63,9 @@
 2. 等待 AI 完成一轮回复（看到「停止」按钮变回「发送」按钮）。
 
 **验收标准**
-- 在该对话目录 `~/.renlijia/users/{scope}/conversations/{conv_id}/` 下，`messages.jsonl` 中出现至少一条 `role` 为 `"assistant"` 的消息，其 `content` 中包含一条 tool_use 记录，`name` 字段值为 `"load_skill"`，且参数中包含 `"demo-skill"`。
-- 同一对话的消息文件中紧随其后出现一条 `role` 为 `"tool"`（或对应 tool_result 形态）的消息，其内容文本中包含 `demo-skill` SKILL.md 的正文片段，例如 `本技能用于意图测试` 或 `[demo-skill]` 字样。
-- 对话界面最终展示的 AI 回复文本以 `[demo-skill]` 前缀开头。
+- 在该对话目录 `~/.renlijia/users/{scope}/conversations/{conv_id}/` 下，`messages.jsonl` 中出现至少一条 `role` 为 `"assistant"` 的消息，其 `content` 中包含一条 tool_use 记录，`name` 字段值为 `"Skill"`，且参数中包含 `"demo-skill"`。
+- 同一对话的消息文件中紧随其后出现一条 `role` 为 `"tool"`（或对应 tool_result 形态）的消息，其内容文本中包含 `demo-skill` SKILL.md 的正文片段，例如 `本技能用于意图测试` 字样。
+- 对话界面最终展示的 AI 回复文本中**引用了** `demo-skill` SKILL.md body 的内容（包含 `本技能用于意图测试` 子串，或对该 body 描述的功能做出回应）。
 - 对话 UI 中该轮没有出现红色错误提示，没有「工具调用失败」之类的 toast。
 
 ---

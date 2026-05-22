@@ -15,16 +15,16 @@
 
 ---
 
-## 意图 1：AI 触发 web_search 工具后，搜索结果作为 tool_result 写入对话历史
+## 意图 1：AI 触发 WebSearch 工具后，搜索结果作为 tool_result 写入对话历史
 
 **场景**
-用户问一个需要实时信息的问题，AI 选择调用 web_search 工具。工具跑完后结果应当作为一条 tool_result 出现在对话历史里（前端能看到工具调用气泡 + 结果摘要），AI 在下一步回复中能引用结果回答用户。
+用户问一个需要实时信息的问题，AI 选择调用 WebSearch 工具。工具跑完后结果应当作为一条 tool_result 出现在对话历史里（前端能看到工具调用气泡 + 结果摘要），AI 在下一步回复中能引用结果回答用户。
 
 **前提**
 - 应用已启动并登录
 - 当前用户已登录云端搜索（默认渠道）或在 settings 中至少配置了 Bocha / Tavily 中的一个有效 API key
 - 新建一个空对话，记录 conv_id
-- 在「设置 → 工具」中确认 `web_search` 工具处于启用状态
+- 在「设置 → 工具」中确认 `WebSearch` 工具处于启用状态
 
 **操作**
 1. 在输入框输入 `"用网络搜索查一下：2025 年诺贝尔物理学奖得主是谁？把来源 URL 也告诉我。"`，点击发送
@@ -32,9 +32,9 @@
 3. 打开 `~/.renlijia/users/{scope}/conversations/{conv_id}/messages.jsonl`
 
 **验收标准**
-- 对话区出现一个工具调用气泡，名为 `web_search` 或显示 `web_search` 字样
+- 对话区出现一个工具调用气泡，名为 `WebSearch` 或显示 `WebSearch` 字样
 - 工具气泡展开后可见至少 1 条结果项，每条至少包含 url（含 `http://` 或 `https://`）和一段非空摘要文本
-- `messages.jsonl` 中至少有 1 条记录的 JSON 解析后存在 tool_use 标识（含 `tool_name` / `name` 字段等于 `"web_search"`），且存在另 1 条记录包含 tool_result（`tool_use_id` / `tool_call_id` 字段与上一条匹配）
+- `messages.jsonl` 中至少有 1 条记录的 JSON 解析后存在 tool_use 标识（含 `tool_name` / `name` 字段等于 `"WebSearch"`），且存在另 1 条记录包含 tool_result（`tool_use_id` / `tool_call_id` 字段与上一条匹配）
 - 包含 tool_result 的那一行 JSON 中，`content` 或等价字段为非空字符串，且字符串中至少出现一个 `http` 开头的 URL
 - AI 最终 assistant 回复 `content.text` 字段非空，且其中至少出现 1 个 `http` 开头的 URL（说明 AI 真的引用了搜索结果，而不是脑补）
 
@@ -47,15 +47,15 @@
 
 **前提**
 - 应用已启动但**未登录云端**（处于游客 / 离线状态，或登录后明确清除了 session）
-- 在「设置 → 工具 → web_search」中确认 Bocha API key 与 Tavily API key 字段均为空
+- 在「设置 → 工具 → WebSearch」中确认 Bocha API key 与 Tavily API key 字段均为空
 - 新建一个空对话，记录 conv_id
 
 **操作**
-1. 在输入框输入 `"请用 web_search 工具查一下：明天北京天气。"`，点击发送
+1. 在输入框输入 `"请用 WebSearch 工具查一下：明天北京天气。"`，点击发送
 2. 等待 AI 完整回复结束
 
 **验收标准**
-- 对话区出现一个 `web_search` 工具调用气泡，且气泡状态显示为「失败」或带错误标识（不是 spinning 卡死）
+- 对话区出现一个 `WebSearch` 工具调用气泡，且气泡状态显示为「失败」或带错误标识（不是 spinning 卡死）
 - `~/.renlijia/users/{scope}/conversations/{conv_id}/messages.jsonl` 中存在一条 tool_result 记录，其 `content` 字段字符串中包含 `搜索不可用` 或 `搜索引擎暂时无法访问` 或 `请基于已有知识回答` 这三段子串中的至少一段
 - 同一 turn 的 assistant 最终 `content.text` 非空（AI 拿到错误后继续生成了用户可读回复，没有 turn 崩溃 / 空回复）
 - EventBus 中存在 `TurnCompleted` 事件，且 `outcome` 字段值为 `"Success"`（说明工具失败被工具层吸收，turn 本身完成正常）
@@ -80,7 +80,7 @@
 
 **验收标准**
 - 该对话在列表中存在，标题或预览中至少一项与「意图 1」中发送的提问内容相关
-- 进入对话后，对话历史按顺序展示：用户提问气泡 → `web_search` 工具气泡 → assistant 回复气泡
-- 点开 `web_search` 工具气泡，结果区至少能看到 1 条结果项（与「意图 1」结束时落盘的内容一致），结果项中包含 url（含 `http://` 或 `https://`）
+- 进入对话后，对话历史按顺序展示：用户提问气泡 → `WebSearch` 工具气泡 → assistant 回复气泡
+- 点开 `WebSearch` 工具气泡，结果区至少能看到 1 条结果项（与「意图 1」结束时落盘的内容一致），结果项中包含 url（含 `http://` 或 `https://`）
 - 重启后 `messages.jsonl` 内容与重启前完全一致：记录条数相同、每一条记录 JSON 内容字节比对一致（可用 `diff` 验证启动前后的文件副本）
 - 重启后 AI 回复气泡 `content.text` 字段值与重启前展示内容一致

@@ -36,7 +36,7 @@
 - 文件 `~/.renlijia/global/auth/active_account.json` 存在
 - 该文件为合法 JSON，包含 `scopeKey`、`tenantId`、`userId` 三个字段，且三个字段值非空
 - 目录 `~/.renlijia/users/t_{tenantId}__u_{userId}/` 存在
-- 该目录下 `scope.json` 存在，`username` 字段值为 `"acct@example.com"`
+- 该目录下 `scope.json` 存在，`username` 字段值等于登录账号的用户标识部分（不含 `@tenant` 后缀；例如登录用 `acct@example.com` 时 `username == "acct"`，登录用手机号 `13800000000@pzctest` 时 `username == "13800000000"`）
 - 登录页上方原本显示的「错误提示」区域为空（无 `text-destructive` 文本）
 
 ---
@@ -122,20 +122,25 @@
 
 **前提**
 - 应用已启动，当前未登录
-- 在租户后台为目标租户配置了非默认品牌：`productName = "DemoCorp 智办"`，`accentColor = "#2F6FEB"`，`primaryColor = "#101828"`，`bgColor = "#F3F6FB"`，`sidebarBgColor = "#E6ECF5"`，`logoUrl` 指向一张可访问的 png
-- 已知有效账号 `acct-democorp@example.com` + 密码 `Pwd-Valid-002` 属于该租户
+- 测试用账号属于一个**已在 lotus 后台配置非默认品牌**的租户（非空 `productName`、`accentColor` 不等于默认值）；记该租户后台配置的 accentColor 为 `$ACCENT_COLOR`、productName 为 `$PRODUCT_NAME`
 - `~/.renlijia/users/{scope}/brand.json` 在测试前不存在（首次登录场景）
 
 **操作**
-1. 在登录卡片输入 `acct-democorp@example.com` / `Pwd-Valid-002`
+1. 在登录卡片输入有效账号 + 密码
 2. 点击「登录」按钮
 3. 等待主界面渲染完成（侧边栏出现）
 
 **验收标准**
+
+✅ 应该看到
 - 文件 `~/.renlijia/users/t_{tenantId}__u_{userId}/brand.json` 存在
 - 该文件为合法 JSON，至少包含 `productName`、`accentColor`、`primaryColor`、`bgColor`、`sidebarBgColor` 五个字段
-- `productName` 字段值为 `"DemoCorp 智办"`；`accentColor` 字段值为 `"#2F6FEB"`（大小写不敏感比较）
-- 在浏览器/Webview DevTools 中检查 `:root` 元素，`--primary` CSS 变量解析值为 `#2F6FEB` 或等价 `rgb(47, 111, 235)`
-- 顶栏（Tauri overlay 区或 Windows 标题栏）背景色经截图取色 = `#2F6FEB`（容差 ±2/255）
-- 顶栏 productName 文本节点显示 `"DemoCorp 智办"`，不显示默认的 `"AI小家"`
-- 登出（按意图 3 操作）后再回到登录页，`<LoginLogoStack>` 显示的 brandName 仍为 `"DemoCorp 智办"`，logo 渲染使用 `brand.json` 中保存的 `logoUrl`（即不闪回默认 logo）
+- `productName` 字段值等于 `$PRODUCT_NAME`；`accentColor` 字段值等于 `$ACCENT_COLOR`（大小写不敏感比较）
+- 在 Webview DevTools 中检查 `:root` 元素，`--primary` CSS 变量解析值等于 `$ACCENT_COLOR`（或等价 rgb 值）
+- 顶栏节点 `[data-aijia-product-name]` 的可见文本等于 `$PRODUCT_NAME`，不显示默认的 `"AI小家"`
+- 登出（按意图 3 操作）后再回到登录页，登录页 logo 区域使用 `brand.json` 中保存的 `logoUrl`（即不闪回默认 logo）
+
+❌ 不应该看到
+- `~/.renlijia/` 下完全找不到任何包含 `brand` 的文件（说明 brandingStore 没把品牌信息持久化）
+- 顶栏 `[data-aijia-product-name]` 节点缺失（说明 selector 还没加到 LoginCard / 顶栏）
+- `brand.json` 字段值与 lotus 后台配置不一致（写盘错位）
