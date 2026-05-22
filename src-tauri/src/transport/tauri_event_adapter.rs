@@ -34,17 +34,22 @@ pub fn map_runtime_event(event: &RuntimeEvent) -> Option<LegacyEvent> {
                 "runId": event.run_id.as_str(),
             }),
         }),
-        RuntimeEventKind::StreamRetryReset { reason } => Some(LegacyEvent {
+        RuntimeEventKind::StreamRetryReset {
+            reason,
+            partial_message_id,
+        } => Some(LegacyEvent {
             name: "streaming:retry-reset".to_string(),
             payload: json!({
                 "conversationId": conversation_id,
                 "runId": event.run_id.as_str(),
                 "reason": reason,
+                "partialMessageId": partial_message_id,
             }),
         }),
         RuntimeEventKind::StreamError {
             ref error,
             ref raw_error,
+            ref partial_message_id,
         } => Some(LegacyEvent {
             name: "streaming:error".to_string(),
             payload: serde_json::json!({
@@ -52,6 +57,7 @@ pub fn map_runtime_event(event: &RuntimeEvent) -> Option<LegacyEvent> {
                 "error": error,
                 "rawError": raw_error,
                 "runId": event.run_id.as_str(),
+                "partialMessageId": partial_message_id,
             }),
         }),
         RuntimeEventKind::ToolCallExecuting {

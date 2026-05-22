@@ -23,6 +23,7 @@ fn stream_error_maps_to_legacy_event() {
         RuntimeEventKind::StreamError {
             error: "Connection timeout".to_string(),
             raw_error: Some("reqwest::Error".to_string()),
+            partial_message_id: None,
         },
     );
     let legacy = map_runtime_event(&event);

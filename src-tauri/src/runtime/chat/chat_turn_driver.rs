@@ -69,7 +69,23 @@ pub fn build_user_content_json_with_skill(
     attachments: &[ChatAttachmentRef],
     skill_command: Option<&SkillCommandRef>,
 ) -> serde_json::Value {
+    build_user_content_json_full(content, attachments, skill_command, None)
+}
+
+/// 完整版：可选携带 `clientMessageId`，写到 content JSON 顶层（serde camelCase）。
+/// 用于 `persist_user_message` 的幂等去重——同一 client_message_id 第二次到达
+/// 时复用旧 message id，详见 spec
+/// `~/lotus/docs/superpowers/specs/2026-05-22-streaming-partial-preservation.md` §8.1。
+pub fn build_user_content_json_full(
+    content: &str,
+    attachments: &[ChatAttachmentRef],
+    skill_command: Option<&SkillCommandRef>,
+    client_message_id: Option<&str>,
+) -> serde_json::Value {
     let mut value = serde_json::json!({ "text": content });
+    if let Some(cid) = client_message_id {
+        value["clientMessageId"] = serde_json::Value::String(cid.to_string());
+    }
     if let Some(skill) = skill_command {
         let label = skill.label.as_deref().unwrap_or(skill.id.as_str());
         let command = skill.command.clone().unwrap_or_else(|| format!("/{}", skill.id));
@@ -2053,6 +2069,7 @@ impl RuntimeChatTurnDriver {
                             RuntimeEventKind::StreamError {
                                 error: message.clone(),
                                 raw_error: Some("prompt_too_long".to_string()),
+                                partial_message_id: None,
                             },
                         ))
                         .await?;
@@ -2938,6 +2955,24 @@ mod tests {
         assert_eq!(content["skillCommand"]["id"].as_str(), Some("dingtalk-workspace"));
         assert_eq!(content["skillCommand"]["label"].as_str(), Some("玩转钉钉"));
         assert_eq!(content["skillCommand"]["command"].as_str(), Some("/dingtalk-workspace"));
+    }
+
+    #[test]
+    fn build_user_content_json_full_writes_client_message_id() {
+        // Spec ~/lotus/docs/superpowers/specs/2026-05-22-streaming-partial-preservation.md §8.1
+        // 同一个 clientMessageId 第二次到达时，靠这个字段做幂等去重。
+        let content = build_user_content_json_full(
+            "你好",
+            &[],
+            None,
+            Some("client-id-abc"),
+        );
+        assert_eq!(content["text"].as_str(), Some("你好"));
+        assert_eq!(content["clientMessageId"].as_str(), Some("client-id-abc"));
+
+        // 不传 client_message_id 时不写入这个字段
+        let content_no_cid = build_user_content_json_full("你好", &[], None, None);
+        assert!(content_no_cid.get("clientMessageId").is_none());
     }
 
     #[test]

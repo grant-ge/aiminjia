@@ -77,6 +77,17 @@ export interface MessageContent {
   progress?: ProgressState
   generatedFiles?: GeneratedFile[]
   subagentEnvelope?: SubAgentEnvelopeContent
+  /**
+   * 流式输出状态。仅对 assistant 消息有意义；缺省（undefined）按 'final' 渲染。
+   * - 'final'：正常完成
+   * - 'incomplete'：chunk_timeout / network_flap retry 时持久化的中断 partial
+   * - 'failed'：retry 全部耗尽后的最终失败标记
+   * - 'aborted'：用户主动 stop 中止
+   * 详见 spec：~/lotus/docs/superpowers/specs/2026-05-22-streaming-partial-preservation.md
+   */
+  streamStatus?: 'final' | 'incomplete' | 'failed' | 'aborted'
+  /** 后端落库的 user message 携带的乐观 id，用于幂等去重判断；前端只需读取，不主动写。 */
+  clientMessageId?: string
 }
 
 /** The fixed rendering order for MessageContent fields */

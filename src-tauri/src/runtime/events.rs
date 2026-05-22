@@ -84,10 +84,18 @@ pub enum RuntimeEventKind {
     StreamRetryReset {
         #[serde(default)]
         reason: RetryReason,
+        /// 已收到的 partial assistant content 已经持久化为这条 message id。
+        /// None 表示 partial 为空（错误发生在建连前 / 还没吐字）。
+        /// 老前端不识别该字段，serde(default) 兼容。
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        partial_message_id: Option<String>,
     },
     StreamError {
         error: String,
         raw_error: Option<String>,
+        /// Retry 全部耗尽时，已收到的 partial assistant content 已持久化为该 id。
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        partial_message_id: Option<String>,
     },
     ToolCallExecuting {
         tool_call_id: ToolCallId,

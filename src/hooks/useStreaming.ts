@@ -489,17 +489,24 @@ export function useStreaming() {
 
   // --- streaming:retry-reset -------------------------------------------
   useTauriEvent(() =>
-    onStreamingRetryReset(({ conversationId, reason }: StreamingRetryResetPayload) => {
-      console.log('[streaming:retry-reset]', conversationId, reason)
-      recordDiagnostic({ event: 'streaming.retry_reset.received', conversationId, payload: { reason } })
+    onStreamingRetryReset(({ conversationId, reason, partialMessageId }: StreamingRetryResetPayload) => {
+      console.log('[streaming:retry-reset]', conversationId, reason, 'partial=', partialMessageId)
+      recordDiagnostic({ event: 'streaming.retry_reset.received', conversationId, payload: { reason, partialMessageId } })
       delete deltaBufferRef.current[conversationId]
+      // partial 已由后端落库 + emit message:updated upsert 进 store；这里只清流式
+      // bubble 自身的累积 buffer，让下一轮 retry 的 first delta 从 0 开始累积。
+      // 不再像旧实现那样让用户已读的文字"凭空消失"——partial 现在以正式
+      // assistant message 的形态留在画面上。详见 spec
+      // ~/lotus/docs/superpowers/specs/2026-05-22-streaming-partial-preservation.md
       useChatStore.getState().resetConversationStreamContent(conversationId)
       const title =
         reason === 'upstream_busy'
           ? 'AI 服务繁忙，正在重试...'
           : reason === 'rate_limited'
             ? '请求过于频繁，正在重试...'
-            : '网络抖动，正在重新连接...'
+            : partialMessageId
+              ? '网络抖动，已保存当前输出，正在重新生成...'
+              : '网络抖动，正在重新连接...'
       useNotificationStore.getState().push({
         level: 'info',
         title,

@@ -41,6 +41,7 @@ fn stream_error_maps_to_streaming_error_with_error_and_raw_error() {
     let legacy = mapped(RuntimeEventKind::StreamError {
         error: "LLM 超时".to_string(),
         raw_error: Some("upstream timeout".to_string()),
+        partial_message_id: None,
     });
 
     assert_eq!(legacy.name, "streaming:error");
@@ -48,6 +49,29 @@ fn stream_error_maps_to_streaming_error_with_error_and_raw_error() {
     assert_eq!(legacy.payload["rawError"], "upstream timeout");
     assert_eq!(legacy.payload["conversationId"], "conv-123");
     assert_eq!(legacy.payload["runId"], "run-456");
+}
+
+#[test]
+fn stream_error_forwards_partial_message_id_to_frontend() {
+    // Spec ~/lotus/docs/superpowers/specs/2026-05-22-streaming-partial-preservation.md §3.4
+    let legacy = mapped(RuntimeEventKind::StreamError {
+        error: "响应超时".to_string(),
+        raw_error: Some("chunk_timeout".to_string()),
+        partial_message_id: Some("inc-1234".to_string()),
+    });
+    assert_eq!(legacy.name, "streaming:error");
+    assert_eq!(legacy.payload["partialMessageId"], "inc-1234");
+}
+
+#[test]
+fn stream_retry_reset_forwards_partial_message_id_to_frontend() {
+    let legacy = mapped(RuntimeEventKind::StreamRetryReset {
+        reason: app_lib::runtime::events::RetryReason::NetworkFlap,
+        partial_message_id: Some("inc-5678".to_string()),
+    });
+    assert_eq!(legacy.name, "streaming:retry-reset");
+    assert_eq!(legacy.payload["partialMessageId"], "inc-5678");
+    assert_eq!(legacy.payload["reason"], "network_flap");
 }
 
 #[test]

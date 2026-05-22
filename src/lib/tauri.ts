@@ -87,12 +87,19 @@ export interface StreamingErrorPayload {
   conversationId: string
   error: string
   rawError?: string
+  /**
+   * Retry 全部耗尽时已收到的 partial 已落库为该 message id。
+   * 老后端不带；新前端读取后由 message:updated 事件 upsert 进 store。
+   */
+  partialMessageId?: string | null
 }
 
 export interface StreamingRetryResetPayload {
   conversationId: string
   runId?: string
   reason?: 'upstream_busy' | 'rate_limited' | 'network_flap'
+  /** 已收到的 partial 已落库为该 message id；老后端为空时退化到清屏旧行为。 */
+  partialMessageId?: string | null
 }
 
 export interface AgentIdlePayload {

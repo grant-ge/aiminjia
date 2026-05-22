@@ -86,6 +86,30 @@ pub struct MessageContent {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subagent_envelope: Option<SubAgentEnvelopePayload>,
+
+    /// 流式输出状态。仅对 assistant 消息有意义；缺省（None）按 Final 渲染。
+    /// 详见 `~/lotus/docs/superpowers/specs/2026-05-22-streaming-partial-preservation.md`。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stream_status: Option<StreamStatus>,
+
+    /// 前端生成的乐观 id，用于 user message 写入幂等去重。
+    /// 同一 `clientMessageId` 第二次到达时复用已落库的 message id，不再 append 新行。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_message_id: Option<String>,
+}
+
+/// 流式输出的最终状态。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum StreamStatus {
+    /// 正常完成（缺省视为 Final，跨版本兼容老消息）
+    Final,
+    /// chunk_timeout / network_flap retry 时持久化的中断 partial
+    Incomplete,
+    /// retry 全部耗尽后 final-error 标记
+    Failed,
+    /// 用户主动 stop 中止
+    Aborted,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

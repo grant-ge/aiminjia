@@ -58,12 +58,34 @@ function AiBubbleImpl({ message, isStreaming }: AiBubbleProps) {
         })}
 
         {isStreaming && <TypingIndicator variant="default" />}
+        <StreamStatusHint status={content.streamStatus} />
       </div>
     </div>
   )
 }
 
 export const AiBubble = memo(AiBubbleImpl)
+
+/**
+ * 在 assistant bubble 末尾渲染流式状态 hint：partial 被打断 / 失败 / 用户中止。
+ * 缺省（'final' 或 undefined）不渲染。详见 spec
+ * `~/lotus/docs/superpowers/specs/2026-05-22-streaming-partial-preservation.md`。
+ */
+function StreamStatusHint({ status }: { status?: MessageContent['streamStatus'] }) {
+  if (!status || status === 'final') return null
+  const text =
+    status === 'incomplete'
+      ? '— 输出在此处中断，下方为重新生成的内容 —'
+      : status === 'aborted'
+        ? '— 已被中止 —'
+        : '— 输出失败 —'
+  const tone = status === 'failed' ? 'text-destructive' : 'text-muted-foreground'
+  return (
+    <div className={`mt-1 text-xs italic ${tone}`}>
+      {text}
+    </div>
+  )
+}
 
 /**
  * ContentRenderer dispatches each MessageContent field to

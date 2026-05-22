@@ -463,6 +463,80 @@ async fn persist_assistant_content_json(
     }
 }
 
+/// 把当前 LLM stream 还没结束就被打断的 partial 文本持久化为一条 assistant
+/// message，并把 `streamStatus` 字段标为传入值（`Incomplete` / `Failed`）。
+/// 落库后还会 emit `MessagePersisted`，让前端即时把 partial 当作正式 assistant
+/// bubble 渲染（避免"用户已读文字消失"），new bubble 会随下一轮 retry 的 stream
+/// 在它之下重新生成。
+/// 返回新落库的 message id；当 `iter_content.trim().is_empty()` 时返回 None
+/// （建连阶段错误尚未吐字，没必要落空 message）。
+///
+/// 详见 spec：~/lotus/docs/superpowers/specs/2026-05-22-streaming-partial-preservation.md
+async fn persist_partial_assistant_message(
+    db: Arc<AppStorage>,
+    assistant_write_queue: Arc<MessageWriteQueue>,
+    bus: &crate::runtime::event_bus::RuntimeEventBus,
+    session_id: &crate::runtime::ids::SessionId,
+    run_id: &crate::runtime::ids::RunId,
+    conversation_id: &str,
+    iter_content: &str,
+    stream_status: &'static str,
+) -> Option<String> {
+    if iter_content.trim().is_empty() {
+        return None;
+    }
+    let id = format!("inc-{}", uuid::Uuid::new_v4());
+    let content_value = serde_json::json!({
+        "text": iter_content,
+        "streamStatus": stream_status,
+    });
+    let content_json = content_value.to_string();
+    match persist_assistant_content_json(
+        db,
+        assistant_write_queue,
+        id.clone(),
+        conversation_id.to_string(),
+        content_json,
+    )
+    .await
+    {
+        Ok(()) => {
+            log::info!(
+                "[persist_partial_assistant_message] Persisted partial id={} conv={} status={} len={}",
+                id,
+                conversation_id,
+                stream_status,
+                iter_content.len(),
+            );
+            // 通知前端：让 partial 立刻作为正式 assistant message upsert 进 store，
+            // 不再被 streaming bubble 的清屏行为覆盖。
+            let _ = bus
+                .emit(crate::runtime::events::RuntimeEvent::new(
+                    session_id.clone(),
+                    run_id.clone(),
+                    crate::runtime::events::RuntimeEventKind::MessagePersisted {
+                        message_id: id.clone(),
+                        role: "assistant".to_string(),
+                        content: content_value,
+                        client_message_id: None,
+                        tool_calls: None,
+                    },
+                ))
+                .await;
+            Some(id)
+        }
+        Err(err) => {
+            log::warn!(
+                "[persist_partial_assistant_message] Failed to persist partial conv={} status={}: {:?}",
+                conversation_id,
+                stream_status,
+                err
+            );
+            None
+        }
+    }
+}
+
 #[async_trait]
 impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
     async fn run_llm_step(
@@ -596,6 +670,9 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                                 run_id.clone(),
                                 RuntimeEventKind::StreamRetryReset {
                                     reason: classify_retry_reason(&err_str),
+                                    // Gateway 建连阶段 retry：此时还没进 stream loop，
+                                    // 没有 iter_content 可保留，永远 None。
+                                    partial_message_id: None,
                                 },
                             ))
                             .await;
@@ -615,6 +692,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                                 RuntimeEventKind::StreamError {
                                     error: user_error.clone(),
                                     raw_error: Some(truncate_str(&err_str, 200)),
+                                    partial_message_id: None,
                                 },
                             ))
                             .await;
@@ -668,12 +746,24 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                                 "[run_llm_step] Chunk timeout retryable (attempt {}/{}) conv={}",
                                 stream_retry_count, MAX_STREAM_RETRIES, input.conversation_id
                             );
+                            let partial_id = persist_partial_assistant_message(
+                                self.services.db(),
+                                self.services.assistant_write_queue.clone(),
+                                bus,
+                                &session_id,
+                                &run_id,
+                                input.conversation_id,
+                                &iter_content,
+                                "incomplete",
+                            )
+                            .await;
                             let _ = bus
                                 .emit(RuntimeEvent::new(
                                     session_id.clone(),
                                     run_id.clone(),
                                     RuntimeEventKind::StreamRetryReset {
                                         reason: RetryReason::NetworkFlap,
+                                        partial_message_id: partial_id,
                                     },
                                 ))
                                 .await;
@@ -687,6 +777,17 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                             "响应超时（{}秒无数据）。请检查网络连接后重试。",
                             input.chunk_timeout_secs
                         );
+                        let partial_id = persist_partial_assistant_message(
+                            self.services.db(),
+                            self.services.assistant_write_queue.clone(),
+                            bus,
+                            &session_id,
+                            &run_id,
+                            input.conversation_id,
+                            &iter_content,
+                            "incomplete",
+                        )
+                        .await;
                         let _ = bus
                             .emit(RuntimeEvent::new(
                                 session_id.clone(),
@@ -694,6 +795,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                                 RuntimeEventKind::StreamError {
                                     error: error_msg.clone(),
                                     raw_error: Some("chunk_timeout".to_string()),
+                                    partial_message_id: partial_id,
                                 },
                             ))
                             .await;
@@ -768,12 +870,24 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                                         stream_retry_count, MAX_STREAM_RETRIES,
                                         input.conversation_id
                                     );
+                                    let partial_id = persist_partial_assistant_message(
+                                        self.services.db(),
+                                        self.services.assistant_write_queue.clone(),
+                                        bus,
+                                        &session_id,
+                                        &run_id,
+                                        input.conversation_id,
+                                        &iter_content,
+                                        "incomplete",
+                                    )
+                                    .await;
                                     let _ = bus
                                         .emit(RuntimeEvent::new(
                                             session_id.clone(),
                                             run_id.clone(),
                                             RuntimeEventKind::StreamRetryReset {
                                                 reason: classify_retry_reason(&error),
+                                                partial_message_id: partial_id,
                                             },
                                         ))
                                         .await;
@@ -784,6 +898,17 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                                 }
                                 let classified = classify_llm_error(&error);
                                 if let TurnError::LlmError(user_error) = &classified {
+                                    let partial_id = persist_partial_assistant_message(
+                                        self.services.db(),
+                                        self.services.assistant_write_queue.clone(),
+                                        bus,
+                                        &session_id,
+                                        &run_id,
+                                        input.conversation_id,
+                                        &iter_content,
+                                        "incomplete",
+                                    )
+                                    .await;
                                     let _ = bus
                                         .emit(RuntimeEvent::new(
                                             session_id.clone(),
@@ -791,6 +916,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                                             RuntimeEventKind::StreamError {
                                                 error: user_error.clone(),
                                                 raw_error: Some(truncate_str(&error, 200)),
+                                                partial_message_id: partial_id,
                                             },
                                         ))
                                         .await;
@@ -958,14 +1084,41 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         content: &str,
         attachments: &[crate::runtime::chat::chat_turn_driver::ChatAttachmentRef],
         skill_command: Option<&crate::runtime::chat::chat_turn_driver::SkillCommandRef>,
-        _client_message_id: Option<&str>,
+        client_message_id: Option<&str>,
     ) -> Result<String, TurnError> {
+        // Idempotency: 同一个 clientMessageId 第二次到达（前端意外重发 / IPC 重试），
+        // 直接复用已落库的 message id，不再 append 新行。详见 spec
+        // ~/lotus/docs/superpowers/specs/2026-05-22-streaming-partial-preservation.md §8.1
+        if let Some(cid) = client_message_id {
+            if let Ok(existing_messages) = self.services.db().get_messages(conversation_id) {
+                for msg in &existing_messages {
+                    let matches_client_id = msg
+                        .get("content")
+                        .and_then(|c| c.get("clientMessageId"))
+                        .and_then(|v| v.as_str())
+                        == Some(cid);
+                    if matches_client_id {
+                        if let Some(id) = msg.get("id").and_then(|v| v.as_str()) {
+                            log::info!(
+                                "[persist_user_message] Idempotent skip: clientMessageId={} → existing id={} conv={}",
+                                cid,
+                                id,
+                                conversation_id
+                            );
+                            return Ok(id.to_string());
+                        }
+                    }
+                }
+            }
+        }
+
         let msg_id = format!("msg-{}", uuid::Uuid::new_v4());
 
-        let content_json = crate::runtime::chat::chat_turn_driver::build_user_content_json_with_skill(
+        let content_json = crate::runtime::chat::chat_turn_driver::build_user_content_json_full(
             content,
             attachments,
             skill_command,
+            client_message_id,
         )
         .to_string();
 
