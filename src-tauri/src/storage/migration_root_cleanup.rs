@@ -162,7 +162,7 @@ pub fn cleanup_legacy_root_if_claimed(
         }
         match fs::rename(&src, &dst) {
             Ok(_) => moved_paths.push((*rel).to_string()),
-            Err(e) if e.raw_os_error() == Some(libc::EXDEV) => {
+            Err(e) if is_cross_device_error(&e) => {
                 // Cross-device — fall back to copy + remove.
                 if let Err(e2) = copy_then_remove(&src, &dst) {
                     log::warn!(
@@ -254,6 +254,35 @@ pub fn cleanup_legacy_archive_if_expired(root: &Path) -> std::io::Result<usize> 
         removed += 1;
     }
     Ok(removed)
+}
+
+/// Returns true when an std::io::Error indicates a cross-filesystem rename
+/// attempt (the canonical case is moving from `~/.renlijia` to a temp dir on
+/// a different mount, which `fs::rename` refuses on every platform).
+///
+/// - Unix: `EXDEV` (errno 18). Pulled from `libc` to avoid hardcoding.
+/// - Windows: `ERROR_NOT_SAME_DEVICE` (Win32 0x11 = decimal 17). Hardcoded
+///   here to avoid pulling `windows-sys::Win32::Foundation` solely for this
+///   constant.
+///
+/// Falls back to `ErrorKind::CrossesDevices` (stable since Rust 1.85) for
+/// any platform that maps the OS error there but doesn't match a known
+/// raw_os_error.
+fn is_cross_device_error(e: &std::io::Error) -> bool {
+    #[cfg(unix)]
+    {
+        if e.raw_os_error() == Some(libc::EXDEV) {
+            return true;
+        }
+    }
+    #[cfg(windows)]
+    {
+        // ERROR_NOT_SAME_DEVICE = 0x11 = 17
+        if e.raw_os_error() == Some(17) {
+            return true;
+        }
+    }
+    matches!(e.kind(), std::io::ErrorKind::CrossesDevices)
 }
 
 fn copy_then_remove(src: &Path, dst: &Path) -> std::io::Result<()> {
