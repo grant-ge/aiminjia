@@ -98,7 +98,7 @@ describe('RightPanel preview workspace', () => {
 
     render(<RightPanel conversationId="conv-1" />)
 
-    expect(screen.getByTestId('right-panel')).toHaveClass('w-[720px]')
+    expect(screen.getByTestId('right-panel')).toHaveClass('w-[600px]')
     expect(screen.getByText('summary.md')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Close preview' })).toBeInTheDocument()
   })

@@ -30,3 +30,16 @@ if (typeof Element !== 'undefined') {
     }
   }
 }
+
+// jsdom does not implement ResizeObserver — used by use-stick-to-bottom and
+// any other layout-aware hook. Provide a no-op stub so component renders
+// don't crash; tests that need resize callbacks should override this.
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  class StubResizeObserver {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  }
+  ;(globalThis as { ResizeObserver: typeof ResizeObserver }).ResizeObserver =
+    StubResizeObserver as unknown as typeof ResizeObserver
+}

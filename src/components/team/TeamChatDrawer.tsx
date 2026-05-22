@@ -171,7 +171,7 @@ function DrawerOverview({ conversationId, overview, onDrill, onClose }: DrawerOv
       />
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto px-4"
+        className="flex-1 overflow-y-auto overscroll-contain px-4"
         onScroll={handleScroll}
         onWheel={markUserIntent}
         onTouchMove={markUserIntent}
