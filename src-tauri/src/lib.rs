@@ -42,6 +42,14 @@ pub fn run() {
                 .expect("Failed to create global dirs");
             telemetry::set_diagnostics_workspace(aijia_home.root().to_path_buf());
             commands::file::cleanup_workspace_clipboard_staging(&aijia_home.tmp_clipboard_dir(), 7);
+            // GC expired legacy-root archives (30d retention).  Independent
+            // of login state because the dirs live at the data root, not
+            // inside a user scope.
+            if let Err(e) =
+                storage::migration_root_cleanup::cleanup_legacy_archive_if_expired(aijia_home.root())
+            {
+                log::warn!("[setup] legacy-root archive GC warning: {}", e);
+            }
             if let Err(e) = storage::migration::migrate_if_needed(&app_data_dir, aijia_home.root())
             {
                 log::warn!("[setup] migration warning (non-fatal): {}", e);
@@ -264,6 +272,15 @@ pub fn run() {
                     &user_dir,
                 ) {
                     log::warn!("[setup] turn-stages migration warning: {}", e);
+                }
+                // Archive legacy root copies after the user-scope migration
+                // grace window (24h).  Runs every startup; the function
+                // self-skips if already done or grace not elapsed.
+                if let Err(e) = storage::migration_root_cleanup::cleanup_legacy_root_if_claimed(
+                    aijia_home.root(),
+                    &aijia_home.global_state_path(),
+                ) {
+                    log::warn!("[setup] legacy-root cleanup warning: {}", e);
                 }
                 current_user_storage
                     .activate_scope(scope.clone())
