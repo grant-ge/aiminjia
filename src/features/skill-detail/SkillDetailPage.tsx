@@ -3,10 +3,8 @@ import { ArrowLeft, Sparkles } from 'lucide-react'
 import { PageSectionShell } from '@/components/shell/PageSectionShell'
 import { PageTopBar } from '@/components/shell/PageTopBar'
 import { SkillActionBar } from '@/components/skills/SkillActionBar'
-import { SkillCard } from '@/components/skills/SkillCard'
 import { SkillDetailHero } from '@/components/skills/SkillDetailHero'
 import { SkillMetaRow } from '@/components/skills/SkillMetaRow'
-import { SkillTryGrid } from '@/components/skills/SkillTryGrid'
 import { SkillUsageBlock } from '@/components/skills/SkillUsageBlock'
 import { useSkillStore } from '@/stores/skillStore'
 import { useUiStore } from '@/stores/uiStore'
@@ -16,12 +14,6 @@ import { formatSkillUpdatedAt } from './formatSkillUpdatedAt'
 interface SkillDetailPageProps {
   skillId: string
 }
-
-const TRY_PROMPTS = [
-  '依据这份表格，分析本月经营数据，输出 KPI 达成率、趋势图和 P0/P1 行动建议。',
-  '帮我分析表格数据，自动挖掘 KPI、趋势和异常，输出可视化报告。',
-  '把这份多 sheet Excel 拆开分析，各模块独立出报告并关联对比。',
-]
 
 export function SkillDetailPage({ skillId }: SkillDetailPageProps) {
   const skill = useSkillStore((s) => s.getById(skillId))
@@ -103,17 +95,6 @@ export function SkillDetailPage({ skillId }: SkillDetailPageProps) {
             : []),
         ]}
       />
-      <SkillTryGrid>
-        {TRY_PROMPTS.map((p, i) => (
-          <SkillCard
-            key={i}
-            iconNode={<Sparkles className="h-4 w-4 text-primary" />}
-            title={skill.displayName}
-            meta={skill.source === 'builtin' ? '内置' : '自定义'}
-            desc={p}
-          />
-        ))}
-      </SkillTryGrid>
       <SkillUsageBlock
         usageSteps={[
           '点击右上角"使用"按钮,自动跳转到对话首页,输入框上方会出现技能 chip。',
