@@ -951,6 +951,13 @@
     "openExternal": "用默认应用打开",
     "reveal": "在文件夹中显示"
   },
+  "filePreview": {
+    "openWithDefault": "用默认应用打开",
+    "selectArtifact": "选择左侧文件以预览",
+    "loadingPreview": "正在加载预览...",
+    "cannotPreview": "无法预览此文件",
+    "retry": "重试"
+  },
   "inbox": {
     "title": "汇报中心",
     "markAllRead": "全部已读",

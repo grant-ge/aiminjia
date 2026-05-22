@@ -361,19 +361,18 @@ function ChannelChatView({ sessionId }: { sessionId: string }) {
   const pushNotification = useNotificationStore((s) => s.push)
   const activeConv = conversations.find((c) => c.sessionId === sessionId)
   // 顶栏副标题：直接展示后端填的 displayName（= sender push_name / nick / userid）。
-  // 后端已经按"私聊用 sender_nick、群聊用 fallback"填好，前端不需要再加平台前缀。
-  // 后端没拿到真实 push_name / nick 时会拼一段"{平台}用户 ou_xxx / ww_xxx / ..."
-  // 的占位串。这里把它视作未知用户：直接隐藏 workspace 副标题，等后端能取到
-  // 真实用户名再自然显示。匹配 `用户` 紧跟一段 6+ 位字母数字 token。
-  const placeholderRe = /用户\s+[A-Za-z0-9_-]{6,}/
-  const rawDisplayName = activeConv?.displayName?.trim() ?? ''
-  const isPlaceholderName = !!rawDisplayName && placeholderRe.test(rawDisplayName)
+  // 飞书 / 个人微信目前后端拿不到真实用户名（飞书是 "飞书用户 ou_xxx" 占位，
+  // 微信是裸 wxid_xxx 或 openid@im.wechat），展示无价值，整段 workspace 隐藏；
+  // 等后端补上真实用户名时把 platform 从 HIDE_WORKSPACE_PLATFORMS 删掉即可。
+  const HIDE_WORKSPACE_PLATFORMS = new Set(['feishu', 'wechat'])
   const title = activeConv
-    ? (!isPlaceholderName && rawDisplayName) ||
+    ? activeConv.displayName?.trim() ||
       (activeConv.conversationType === 'group' ? '群聊' : '私聊')
     : ''
-  // 占位用户名时不要再 fallback 到 sessionId（"私聊"也没价值），整段 workspace 隐藏。
-  const workspaceLabel = isPlaceholderName ? undefined : title || sessionId
+  const workspaceLabel =
+    activeConv && HIDE_WORKSPACE_PLATFORMS.has(activeConv.platform)
+      ? undefined
+      : title || sessionId
   const platformTitle = activeConv
     ? (PLATFORM_DISPLAY_NAME[activeConv.platform] ?? activeConv.platform)
     : ''
