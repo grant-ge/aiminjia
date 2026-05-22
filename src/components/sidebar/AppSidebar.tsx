@@ -11,7 +11,6 @@ import { useBrandingStore } from '@/stores/brandingStore'
 import { useUiStore, type Route, type SidebarBodyTab, useActiveConversationId, useActiveChannelSessionId } from '@/stores/uiStore'
 import { useChannelStore } from '@/stores/channelStore'
 import { hasExpertTeam } from '@/features/expert-teams/expertTeamRegistry'
-import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -77,7 +76,6 @@ export function AppSidebar() {
 
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
-  const [archivingId, setArchivingId] = useState<string | null>(null)
 
   const switchTab = (next: SidebarBodyTab) => {
     setSidebarTab(next)
@@ -111,10 +109,8 @@ export function AppSidebar() {
     setRenamingId(null)
   }
 
-  const handleArchiveConfirm = async () => {
-    if (!archivingId) return
-    await archiveConversation(archivingId)
-    setArchivingId(null)
+  const handleArchive = async (id: string) => {
+    await archiveConversation(id)
   }
 
   // IM 频道（钉钉私聊/群）的 session id 复用 conv_store 的 conversation id，
@@ -227,7 +223,7 @@ export function AppSidebar() {
               projects={projects}
               onSelectConversation={(id) => void switchConversation(id)}
               onRenameConversation={handleRenameOpen}
-              onArchiveConversation={setArchivingId}
+              onArchiveConversation={(id) => void handleArchive(id)}
             />
           </div>
         ) : sidebarTab === 'employee' ? (
@@ -245,7 +241,7 @@ export function AppSidebar() {
                     indent={false}
                     onClick={() => void switchConversation(conversation.id)}
                     onRename={() => handleRenameOpen(conversation.id)}
-                    onArchive={() => setArchivingId(conversation.id)}
+                    onArchive={() => void handleArchive(conversation.id)}
                   />
                 ))}
               </div>
@@ -266,7 +262,7 @@ export function AppSidebar() {
                     indent={false}
                     onClick={() => void switchConversation(conversation.id)}
                     onRename={() => handleRenameOpen(conversation.id)}
-                    onArchive={() => setArchivingId(conversation.id)}
+                    onArchive={() => void handleArchive(conversation.id)}
                   />
                 ))}
               </div>
@@ -666,15 +662,6 @@ export function AppSidebar() {
         </DialogFooter>
       </DialogContent>
     </Dialog>
-
-    <ConfirmDialog
-      open={!!archivingId}
-      title="归档此聊天？"
-      description="归档后聊天将从列表中隐藏，可在设置的归档记录中查看和恢复。"
-      confirmLabel="归档"
-      onOpenChange={(open) => !open && setArchivingId(null)}
-      onConfirm={() => void handleArchiveConfirm()}
-    />
   </>
   )
 }

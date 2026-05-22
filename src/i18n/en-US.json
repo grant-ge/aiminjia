@@ -67,6 +67,8 @@
     "schedules": "Schedules",
     "tasks": "Tasks",
     "archiveChat": "Archive chat",
+    "archiveChatTooltip": "Archive conversation",
+    "archiveChatConfirmTooltip": "Click again to confirm",
     "renameChat": "Rename chat",
     "copyConversationId": "Copy conversation ID",
     "chatMoreActions": "More chat actions",
@@ -402,7 +404,15 @@
       "restoreFailed": "Restore failed",
       "permanentlyDeleted": "Permanently deleted",
       "deletedWithFiles": "\"{{title}}\" and its files were deleted",
-      "deleteFailed": "Delete failed"
+      "deleteFailed": "Delete failed",
+      "selectedCount": "{{count}} selected",
+      "selectAll": "Select all",
+      "clearSelection": "Clear selection",
+      "deleteSelected": "Delete selected",
+      "deleteSelectedTitle": "Permanently delete {{count}} chats?",
+      "deleteSelectedDescription": "These chats and their associated files will be permanently deleted and cannot be recovered.",
+      "batchDeleteSucceeded": "Deleted {{count}} chats",
+      "batchDeletePartial": "Succeeded {{success}}, failed {{failure}}"
     },
     "runtime": {
       "title": "Runtime",

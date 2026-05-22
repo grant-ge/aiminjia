@@ -67,6 +67,8 @@
     "schedules": "定时任务",
     "tasks": "任务",
     "archiveChat": "归档聊天",
+    "archiveChatTooltip": "归档对话",
+    "archiveChatConfirmTooltip": "再次点击确认归档",
     "renameChat": "重命名聊天",
     "copyConversationId": "复制会话 ID",
     "chatMoreActions": "聊天更多操作",
@@ -402,7 +404,15 @@
       "restoreFailed": "恢复失败",
       "permanentlyDeleted": "已彻底删除",
       "deletedWithFiles": "「{{title}}」及其关联文件已删除",
-      "deleteFailed": "删除失败"
+      "deleteFailed": "删除失败",
+      "selectedCount": "已选 {{count}} 项",
+      "selectAll": "全选",
+      "clearSelection": "取消选择",
+      "deleteSelected": "删除选中",
+      "deleteSelectedTitle": "彻底删除 {{count}} 个对话？",
+      "deleteSelectedDescription": "这些对话及其关联文件将被永久删除，无法恢复。",
+      "batchDeleteSucceeded": "已删除 {{count}} 个对话",
+      "batchDeletePartial": "成功 {{success}}，失败 {{failure}}"
     },
     "runtime": {
       "title": "运行时",

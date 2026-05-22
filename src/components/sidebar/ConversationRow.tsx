@@ -2,22 +2,31 @@
  * @designSource design.pen#0EZDr / HsGnf / GknhC
  * @sizing padding [6,8,6,30] (indent 30 under ProjectAccordion), fontSize 13
  */
-import { Archive, Copy, Ellipsis, Loader2, Pencil } from "lucide-react";
-import { useState } from "react";
-import { useTranslation } from "react-i18next";
+import { Archive, Copy, Loader2, Pencil } from 'lucide-react'
+import * as ContextMenuPrimitive from '@radix-ui/react-context-menu'
+import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
-import { AppDropdown, type AppDropdownItem } from "@/components/common/AppDropdown";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import { cn } from '@/lib/utils'
 
 interface ConversationRowProps {
-  id: string;
-  title: string;
-  active?: boolean;
-  indent?: boolean;
-  loading?: boolean;
-  onClick: () => void;
-  onArchive?: () => void;
-  onRename?: () => void;
+  id: string
+  title: string
+  active?: boolean
+  indent?: boolean
+  loading?: boolean
+  onClick: () => void
+  onArchive?: () => void
+  onRename?: () => void
 }
+
+const CONFIRM_RESET_MS = 3000
 
 export function ConversationRow({
   id,
@@ -29,77 +38,133 @@ export function ConversationRow({
   onArchive,
   onRename,
 }: ConversationRowProps) {
-  const { t } = useTranslation();
-  const [hovered, setHovered] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const { t } = useTranslation()
+  const [hovered, setHovered] = useState(false)
+  const [armed, setArmed] = useState(false)
+  const armedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const showMore = hovered || menuOpen || active;
-  const menuItems: AppDropdownItem[] = [
-    {
-      id: 'archive',
-      label: t('sidebar.archiveChat'),
-      icon: <Archive className="h-3.5 w-3.5 shrink-0" />,
-      onSelect: () => onArchive?.(),
-    },
-    {
-      id: 'rename',
-      label: t('sidebar.renameChat'),
-      icon: <Pencil className="h-3.5 w-3.5 shrink-0" />,
-      onSelect: () => onRename?.(),
-    },
-    {
-      id: 'copy-id',
-      label: t('sidebar.copyConversationId'),
-      icon: <Copy className="h-3.5 w-3.5 shrink-0" />,
-      onSelect: () => void navigator.clipboard.writeText(id),
-    },
-  ];
+  // The archive icon button is only revealed on hover or for the active row.
+  // The active row keeps it visible so the user can find it without first
+  // moving the cursor onto the (already-selected) row.
+  const showArchive = hovered || active
 
-  const paddingCls = indent ? "pl-[32px] pr-2" : "pl-2 pr-2";
+  useEffect(() => {
+    return () => {
+      if (armedTimerRef.current) clearTimeout(armedTimerRef.current)
+    }
+  }, [])
+
+  const disarm = () => {
+    if (armedTimerRef.current) {
+      clearTimeout(armedTimerRef.current)
+      armedTimerRef.current = null
+    }
+    setArmed(false)
+  }
+
+  const handleArchiveClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!onArchive) return
+    if (armed) {
+      // Second click within the armed window — actually archive.
+      disarm()
+      onArchive()
+      return
+    }
+    setArmed(true)
+    if (armedTimerRef.current) clearTimeout(armedTimerRef.current)
+    armedTimerRef.current = setTimeout(() => setArmed(false), CONFIRM_RESET_MS)
+  }
+
+  const paddingCls = indent ? 'pl-[32px] pr-2' : 'pl-2 pr-2'
   const wrapperCls = active
     ? `flex items-center rounded-md ${paddingCls} bg-sidebar-accent text-sidebar-foreground`
-    : `flex items-center rounded-md ${paddingCls} text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/40`;
+    : `flex items-center rounded-md ${paddingCls} text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/40`
 
   return (
-    <div
-      className="pr-1"
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-    >
-      <div className={wrapperCls}>
-        <button
-          type="button"
-          onClick={onClick}
-          className="group flex flex-1 min-w-0 items-center py-1.5 pr-2 text-left text-sm"
+    <ContextMenuPrimitive.Root>
+      <ContextMenuPrimitive.Trigger asChild>
+        <div
+          className="pr-1"
+          onMouseEnter={() => setHovered(true)}
+          onMouseLeave={() => {
+            setHovered(false)
+            // Disarm on leave so the red confirm state never persists once the
+            // user moves away — armed state should always be user-attended.
+            if (armed) disarm()
+          }}
         >
-          {loading ? (
-            <Loader2
-              data-icon="loader"
-              className="h-3.5 w-3.5 shrink-0 animate-spin text-sidebar-foreground"
-            />
-          ) : null}
-          <span className="truncate">{title}</span>
-        </button>
+          <div className={wrapperCls}>
+            <button
+              type="button"
+              onClick={onClick}
+              className="group flex flex-1 min-w-0 items-center py-1.5 pr-2 text-left text-sm"
+            >
+              {loading ? (
+                <Loader2
+                  data-icon="loader"
+                  className="h-3.5 w-3.5 shrink-0 animate-spin text-sidebar-foreground"
+                />
+              ) : null}
+              <span className="truncate">{title}</span>
+            </button>
 
-        <div className={showMore ? "block shrink-0" : "hidden"}>
-          <AppDropdown
-            open={menuOpen}
-            onOpenChange={setMenuOpen}
-            ariaLabel={t('sidebar.chatMoreActions')}
-            contentClassName="w-40"
-            trigger={
-              <button
-                type="button"
-                onClick={(e) => e.stopPropagation()}
-                className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground"
-              >
-                <Ellipsis className="h-3.5 w-3.5" />
-              </button>
-            }
-            items={menuItems}
-          />
+            <div className={showArchive ? 'block shrink-0' : 'hidden'}>
+              <TooltipProvider delayDuration={400}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      aria-label={t('sidebar.archiveChat')}
+                      onClick={handleArchiveClick}
+                      className={cn(
+                        'flex h-5 w-5 items-center justify-center rounded transition-colors',
+                        armed
+                          ? 'bg-destructive text-destructive-foreground'
+                          : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground',
+                      )}
+                    >
+                      <Archive className="h-3.5 w-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">
+                    {armed
+                      ? t('sidebar.archiveChatConfirmTooltip')
+                      : t('sidebar.archiveChatTooltip')}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+          </div>
         </div>
-      </div>
-    </div>
-  );
+      </ContextMenuPrimitive.Trigger>
+      <ContextMenuPrimitive.Portal>
+        <ContextMenuPrimitive.Content
+          className="z-50 min-w-[10rem] overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-[var(--shadow-popover)]"
+        >
+          <ContextMenuPrimitive.Item
+            onSelect={() => onArchive?.()}
+            className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground"
+          >
+            <Archive className="h-3.5 w-3.5 shrink-0" />
+            <span>{t('sidebar.archiveChat')}</span>
+          </ContextMenuPrimitive.Item>
+          <ContextMenuPrimitive.Item
+            onSelect={() => onRename?.()}
+            className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground"
+          >
+            <Pencil className="h-3.5 w-3.5 shrink-0" />
+            <span>{t('sidebar.renameChat')}</span>
+          </ContextMenuPrimitive.Item>
+          <ContextMenuPrimitive.Item
+            onSelect={() => void navigator.clipboard.writeText(id)}
+            className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground"
+          >
+            <Copy className="h-3.5 w-3.5 shrink-0" />
+            <span>{t('sidebar.copyConversationId')}</span>
+          </ContextMenuPrimitive.Item>
+        </ContextMenuPrimitive.Content>
+      </ContextMenuPrimitive.Portal>
+    </ContextMenuPrimitive.Root>
+  )
 }
