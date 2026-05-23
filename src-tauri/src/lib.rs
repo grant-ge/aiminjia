@@ -341,8 +341,14 @@ pub fn run() {
             // Window setup: custom titlebar on all platforms
             {
                 if let Some(win) = app.get_webview_window("main") {
-                    // Title bar is rendered by HTML TitleBar component
-                    let _ = win.set_title(" ");
+                    // Title bar is rendered by the HTML TitleBar component, but the
+                    // native window title still drives the macOS Dock right-click
+                    // menu, Mission Control and Cmd+Tab window list — a blank " "
+                    // there shows up as a nameless entry. Seed it with the product
+                    // name; brandingStore refines it to the tenant productName once
+                    // the webview loads. (titleBarStyle: Overlay hides the title
+                    // text in-window, so this has no visual side effect.)
+                    let _ = win.set_title("AIjia");
 
                     // Windows: disable native decorations to avoid double titlebar.
                     // macOS uses titleBarStyle: Overlay (set in tauri.conf.json) which

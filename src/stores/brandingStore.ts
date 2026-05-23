@@ -244,10 +244,12 @@ function resolveLogoUrl(raw: string): string {
 function setWindowTitle(title: string) {
   const fullTitle = `${title} — ${i18n.t('welcome.defaultSubtitle')}`
   document.title = fullTitle
-  // titleBarStyle: Overlay 用 HTML <title> 显示，原生 window title 留空避免重复。
+  // 原生 window title 设为产品名（而非空格）：titleBarStyle: Overlay 不在窗口内
+  // 渲染标题文字，所以无视觉重复；但 macOS Dock 右键菜单 / Mission Control /
+  // Cmd+Tab 的窗口名取的是原生 title，留空会显示成无名条目。
   import('@tauri-apps/api/webviewWindow')
     .then(({ getCurrentWebviewWindow }) => {
-      getCurrentWebviewWindow().setTitle(' ').catch(() => {})
+      getCurrentWebviewWindow().setTitle(title).catch(() => {})
     })
     .catch(() => {})
 }

@@ -40,6 +40,17 @@ export default defineConfig({
     },
   },
 
+  // Build target floor for the Tauri webview (system WebKit on macOS / WebView2
+  // on Windows). macOS Monterey 12.x ships Safari 15.x; Vite 7's default target
+  // (baseline-widely-available ≈ Safari 16) emits syntax that throws at parse on
+  // those systems → blank white screen. Pin a conservative floor.
+  // NOTE: `target` only down-levels *JS syntax* — it does NOT transpile regex
+  // (e.g. lookbehind, unsupported < Safari 16.4) nor polyfill runtime APIs.
+  // Keep risky deps version-locked (see `pnpm.overrides` in package.json).
+  build: {
+    target: process.env.TAURI_ENV_PLATFORM === 'windows' ? 'chrome105' : 'safari13',
+  },
+
   // Env prefix for Tauri
   envPrefix: ['VITE_', 'TAURI_'],
 })
