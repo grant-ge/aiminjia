@@ -1,64 +1,30 @@
-# TODO：前端单测重对齐 — 剩余 25 个失败(2026-05-23)
+# 前端单测重对齐 —— 已解决(2026-05-23 起,2026-05-24 收尾)
 
 ## 背景
 
-`pnpm test` 有一批既有失败的前端单测,根因是 oayzz 一轮 UI 大改(IM 多平台频道矩阵、技能页、产物预览面板、设置页等)后**测试腐烂**:组件已随 v0.5.29 上线、是事实上的预期行为,但测试断言停留在旧设计。
+`pnpm test` 曾有一批既有失败单测,根因是 oayzz 一轮 UI 大改(IM 多平台频道矩阵、技能页、产物预览面板、设置页等)后**测试腐烂**:组件已随 v0.5.29 上线、是事实上的预期行为,但测试断言停留在旧设计。
 
-本轮已修 **43 → 25**(4 个 commit:`13d3e11f` / `f2f54527` / `e26b9bc3` / `c3aa8c61`),包括:
-- 新增 `src/test/setup-tauri.ts` 全局 stub `window.__TAURI_INTERNALS__`(消除组件 mount 时 IPC 同步崩溃);
-- **真实 a11y 回归修复**:`ExecutionTraceCard` 可折叠头部按钮补 `aria-expanded`;
-- 文案/尺寸/class/store-mock 重对齐 + 删除 2 个过时重复文件。
+## 结果
 
-剩下 25 个失败集中在**改版幅度大、需对照新组件重写交互断言**的文件,不是简单换字符串,故单独记录。
+**既有失败 43 → 0**。全量:`160 files passed / 1002 passed / 10 skipped`。
 
-## 复现
+排查准则:组件已上线即事实预期,默认以组件为准重对齐断言;但凡看着像**真实回归**(测试对、组件错)的就**修组件**,不弱化测试。
 
-```bash
-cd code
-pnpm exec vitest run   # 看 FAIL 列表
-# 或单文件:pnpm exec vitest run src/components/chat/RightPanel.test.tsx
-```
+## 顺带发现并修复的 3 个真实 bug
 
-## 剩余清单(按文件)
+1. **`ExecutionTraceCard` 可折叠头部缺 `aria-expanded`** —— 补上(ToolGroupCard 折叠 a11y 测试守护的就是它)。
+2. **侧栏 4 个 body tab(项目/员工/专家/频道)图标按钮无可访问名称** —— 未激活时纯图标,补 `aria-label`(无障碍 + 测试可定位)。
+3. **`messageList.cannotPreview/cannotOpen/cannotReveal` 三个 i18n key 缺失** —— 文件预览/打开/定位失败时 toast 标题显示生肉 key(如 `messageList.cannotOpen`),补齐 zh-CN + en-US。
 
-### 1. `src/components/chat/RightPanel.test.tsx`(10)— 产物预览面板改版
-预览/打开按钮的 aria-name、产物列表项结构、`data-testid="right-panel"` 都变了。需对照当前 `RightPanel` + 产物行组件重写。失败用例:
-- renders the default narrow panel without empty preview
-- filters the artifact list by conversation
-- switches the preview target when clicking a previewable / image artifact
-- previews image artifacts when legacy actions omit preview
-- keeps non-previewable artifacts disabled when no default-app opener is available
-- opens non-previewable artifacts with the default app instead of disabling them
-- previews previewable / json+csv artifacts even when preview action is disabled
-- keeps preview-disabled markdown artifacts previewable by type
+## 主要测试重对齐(组件为准)
 
-### 2. `src/components/sidebar/__tests__/AppSidebar.test.tsx`(5)— 多平台频道矩阵改版
-单平台(dingtalk)频道模型 → 多平台(dingtalk/feishu/wecom/wechat/telegram)。频道 tab、频道列表渲染、nav 项数都变了。失败用例:
-- renders the main nav items, the section title 项目, and footer 设置(`expected 1 to be greater than 1`)
-- renders a top drag-region spacer on macOS(spacer 选择器失效)
-- separates expert team conversations from the project tab into an expert team tab
-- switches the sidebar body between 项目 and 频道 tabs without changing route(找不到「频道」按钮)
-- (route-derived sidebarTab)shows channel list after fresh mount when channel tab persisted(频道会话渲染)
-> 另:已删除的 `sidebar/AppSidebar.test.tsx`(非 __tests__)曾覆盖频道区「未配置/折叠」状态,这部分覆盖应在本文件按新多平台设计**重新补写**。
+- 测试基建:新增 `src/test/setup-tauri.ts` 全局 stub `window.__TAURI_INTERNALS__`,消除组件 mount 时直接调 `@tauri-apps/api` 的同步崩溃。
+- store/mock 补全:`useUiStore`(getState/subscribe/sidebarTab/consumePendingSkill,AppSidebar 改为响应式 mock)、`@/lib/tauri`(getLastBrand/saveLastBrand)、`chatStore`(busyConversations / getState.conversations 供 hasExpertTeam)、turn 的 `peerBanners`。
+- 文案/标签/尺寸/class:ChatTopBar、AuthGate(登录表单改账号+密码)、FilePreviewPane、SettingsModal、ArchivedPanel、TenantHeader、AboutPanel、HomeMascotHero、ScheduleTemplateCard、GeneratedFileCard 等。
+- 交互改版:SkillCenter 导入改下拉菜单(pointerDown 开菜单 + 点「导入技能目录」)、AiBubble transcript 改展开式、SkillDetail「试试」模块移除后重写为「使用」按钮、AppSidebar 多平台频道矩阵(频道会话标签「钉钉私聊」)、专家团 tab→「专家」。
+- 逻辑:useTurnRenderModel 用 `toMatchObject` 容纳新增透传字段。
+- 清理:删除 2 个过时重复测试文件(`layout/Sidebar.test`、`sidebar/AppSidebar.test`)。
 
-### 3. `src/features/skill-center/SkillCenterPage.integration.test.tsx`(4)— 技能导入流程
-directory picker 调用 / 校验结果对话框文案("技能目录不符合规范")变了。失败用例:
-- 点击「+ 导入技能」走 directory picker(picker mock 未被调用)
-- upload 抛出 SkillValidationError / parseFailed 时弹校验结果对话框(文案不匹配)
-- upload 抛出 alreadyExists 时走覆盖确认
+## 唯一待办(功能恢复时)
 
-### 4. `src/components/chat/MessageList.generatedFiles.test.tsx`(3)— 生成文件预览交互改版
-- opens generated files using the file id and owning conversation id
-- previews markdown generated files from the primary action
-- previews image generated files from the primary action without opening externally(`Cannot read properties of undefined (reading 'has')` — 疑似某 Set/Map 未初始化,需确认是测试 setup 还是组件)
-
-### 5. 单个失败
-- `src/components/chat/MessageList.test.tsx` > pushes an error toast when open external fails — toast title 文案变了(`无法打开文件` → 现文案待查)
-- `src/components/chat/AiBubble.subagent.test.tsx` > renders SubAgentResultCard when message has subagentEnvelope — 找不到 `data-testid="transcript-viewer-stub"`(stub/结构变了)
-- `src/features/skill-detail/SkillDetailPage.test.tsx` > renders try items without click-to-run behavior — 找不到 `data-testid="skill-card"`(改版)
-
-## 注意事项(本轮总结的判断准则)
-
-- **组件已上线 = 事实预期**,默认以组件为准重对齐测试断言;
-- 但凡看着像**真实回归**(测试对、组件错)的,**修组件**而不是弱化测试 —— 例如本轮的 `ExecutionTraceCard` `aria-expanded`。`MessageList.generatedFiles` 的 `reading 'has'` 需要按此甄别;
-- 弹窗确认按钮可能与列表行同名(如 ArchivedPanel 的「恢复」),用 `within(screen.getByRole('alertdialog'))` 作用域消歧。
+`src/components/chat/RightPanel.test.tsx` 有 **10 个 `it.skip`**:RightPanel 改版后 `SHOW_TASK_MONITOR=false`,任务监控/产物侧栏返回 null(代码路径保留)。这些测产物列表的用例已 skip 并注明 —— **当 `SHOW_TASK_MONITOR` 翻回 `true` 时,去掉 `it.skip` 即自动恢复**。
