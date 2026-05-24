@@ -183,7 +183,10 @@
       "3": "职级框架",
       "4": "公平性诊断 + 根因分析",
       "5": "行动方案 + 管理层材料"
-    }
+    },
+    "cannotPreview": "无法预览此文件",
+    "cannotOpen": "无法打开文件",
+    "cannotReveal": "无法在文件夹中显示"
   },
   "subagent": {
     "resultCard": {

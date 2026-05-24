@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { Message, MessageContent } from '@/types/message'
@@ -74,6 +74,10 @@ describe('AiBubble — subagentEnvelope integration', () => {
     ).toBeInTheDocument()
     expect(screen.getByText('analysis.xlsx')).toBeInTheDocument()
     expect(screen.getByText(/5/)).toBeInTheDocument()
+
+    // Transcript viewer now lives behind an expandable "View execution trace"
+    // control on SubAgentResultCard rather than rendering inline.
+    fireEvent.click(screen.getByText('View execution trace'))
     expect(screen.getByTestId('transcript-viewer-stub')).toBeInTheDocument()
   })
 

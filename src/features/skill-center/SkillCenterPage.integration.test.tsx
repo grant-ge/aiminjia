@@ -80,7 +80,8 @@ describe('SkillCenterPage', () => {
     openDialogMock.mockResolvedValueOnce(null)
     render(<SkillCenterPage />)
 
-    fireEvent.click(screen.getByRole('button', { name: /导入技能/ }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: /导入技能/ }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '导入技能目录' }))
 
     await waitFor(() => expect(openDialogMock).toHaveBeenCalled())
     expect(openDialogMock).toHaveBeenCalledWith(
@@ -97,7 +98,10 @@ describe('SkillCenterPage', () => {
 
     render(<SkillCenterPage />)
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /导入技能/ }))
+      fireEvent.pointerDown(screen.getByRole('button', { name: /导入技能/ }))
+    })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('menuitem', { name: '导入技能目录' }))
     })
 
     await waitFor(() => expect(screen.getByText('技能目录不符合规范')).toBeInTheDocument())
@@ -114,7 +118,10 @@ describe('SkillCenterPage', () => {
 
     render(<SkillCenterPage />)
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /导入技能/ }))
+      fireEvent.pointerDown(screen.getByRole('button', { name: /导入技能/ }))
+    })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('menuitem', { name: '导入技能目录' }))
     })
 
     await waitFor(() => expect(screen.getByText('技能目录不符合规范')).toBeInTheDocument())
@@ -129,7 +136,10 @@ describe('SkillCenterPage', () => {
 
     render(<SkillCenterPage />)
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /导入技能/ }))
+      fireEvent.pointerDown(screen.getByRole('button', { name: /导入技能/ }))
+    })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('menuitem', { name: '导入技能目录' }))
     })
 
     await waitFor(() => expect(askDialogMock).toHaveBeenCalled())

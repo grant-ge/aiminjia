@@ -183,7 +183,10 @@
       "3": "Grade Framework",
       "4": "Equity Diagnosis & Root Cause Analysis",
       "5": "Action Plan & Executive Materials"
-    }
+    },
+    "cannotPreview": "Cannot preview this file",
+    "cannotOpen": "Cannot open file",
+    "cannotReveal": "Cannot reveal in folder"
   },
   "subagent": {
     "resultCard": {
