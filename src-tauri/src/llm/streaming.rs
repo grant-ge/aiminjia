@@ -59,6 +59,14 @@ pub enum StreamEvent {
     },
     /// Error occurred
     Error { error: String },
+    /// Liveness tick — emitted when a real SSE `data:` event arrived on the
+    /// wire but carried no user-visible content (Anthropic `ping`,
+    /// `input_json_delta` tool-argument fragments, `message_start`,
+    /// `signature_delta`, …). Consumers ignore it except to reset
+    /// stall/inactivity watchdogs: it proves the stream is alive during long
+    /// tool-argument writes or ping-only thinking windows, preventing false
+    /// "响应超时（90秒无数据）" timeouts that abort an otherwise-healthy stream.
+    Keepalive,
 }
 
 /// Full (non-streaming) LLM response.

@@ -766,10 +766,8 @@ impl LlmProviderTrait for ClaudeProvider {
                             continue;
                         }
 
-                        if let Some(data) = parse_sse_line(&line) {
-                            if let Some(events) = process_sse_data(&data, &mut state) {
-                                return Some((stream::iter(events), (byte_stream, state)));
-                            }
+                        if let Some(events) = sse_line_to_events(&line, &mut state) {
+                            return Some((stream::iter(events), (byte_stream, state)));
                         }
                         continue;
                     }
@@ -869,6 +867,27 @@ impl LlmProviderTrait for ClaudeProvider {
 // ---------------------------------------------------------------------------
 // SSE event processing helpers
 // ---------------------------------------------------------------------------
+
+/// Convert one raw SSE line into the `StreamEvent`s to surface to the consumer.
+///
+/// Returns:
+///  - `Some(events)` — a `data:` line that produced content events.
+///  - `Some(vec![StreamEvent::Keepalive])` — a `data:` line that parsed but
+///    produced no content event (Anthropic `ping`, `input_json_delta`
+///    tool-argument fragments, `message_start`, `signature_delta`, …). The
+///    Keepalive is a pure liveness tick: it carries no content but resets the
+///    caller's chunk-timeout watchdog, so long tool-argument streaming and
+///    ping-only thinking windows are not mistaken for a stalled stream (the
+///    cause of false "响应超时（90秒无数据）" → "Max retries exceeded" aborts).
+///  - `None` — not a `data:` line (e.g. `event:` framing or blank); the caller
+///    keeps reading without resetting the watchdog.
+fn sse_line_to_events(line: &str, state: &mut SseState) -> Option<Vec<StreamEvent>> {
+    let data = parse_sse_line(line)?;
+    match process_sse_data(&data, state) {
+        Some(events) => Some(events),
+        None => Some(vec![StreamEvent::Keepalive]),
+    }
+}
 
 /// Process a single SSE JSON data payload. Returns `Some(events)` when there
 /// are `StreamEvent`s to emit, `None` otherwise.
@@ -1511,6 +1530,51 @@ mod tests {
             StreamEvent::ContentDelta { delta } => assert_eq!(delta, "Hello"),
             _ => panic!("Expected ContentDelta"),
         }
+    }
+
+    #[test]
+    fn test_sse_line_to_events_ping_yields_keepalive() {
+        let mut state = SseState::new();
+        // Anthropic keepalive ping carries no content but proves the wire is alive.
+        // It must surface as a Keepalive so the chunk-timeout watchdog resets.
+        let events = sse_line_to_events(r#"data: {"type":"ping"}"#, &mut state)
+            .expect("ping data line should yield a Keepalive tick");
+        assert_eq!(events.len(), 1);
+        assert!(matches!(events[0], StreamEvent::Keepalive));
+    }
+
+    #[test]
+    fn test_sse_line_to_events_input_json_delta_yields_keepalive() {
+        let mut state = SseState::new();
+        // Tool-argument fragments (e.g. writing a long md doc / code edit via a
+        // tool call) accumulate silently in state; without the Keepalive the
+        // chunk-timeout watchdog would false-fire mid-write despite live data.
+        let line = r#"data: {"type":"content_block_delta","delta":{"type":"input_json_delta","partial_json":"{\"path\":"}}"#;
+        let events = sse_line_to_events(line, &mut state)
+            .expect("input_json_delta should yield a Keepalive tick");
+        assert_eq!(events.len(), 1);
+        assert!(matches!(events[0], StreamEvent::Keepalive));
+    }
+
+    #[test]
+    fn test_sse_line_to_events_text_delta_yields_content() {
+        let mut state = SseState::new();
+        let line =
+            r#"data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"Hi"}}"#;
+        let events = sse_line_to_events(line, &mut state).expect("text delta yields content");
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            StreamEvent::ContentDelta { delta } => assert_eq!(delta, "Hi"),
+            other => panic!("expected ContentDelta, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_sse_line_to_events_non_data_line_is_none() {
+        let mut state = SseState::new();
+        // `event:` framing lines are not data payloads — keep reading, don't tick.
+        assert!(sse_line_to_events("event: ping", &mut state).is_none());
+        assert!(sse_line_to_events("", &mut state).is_none());
     }
 
     #[test]

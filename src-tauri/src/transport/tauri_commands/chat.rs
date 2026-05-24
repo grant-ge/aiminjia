@@ -729,6 +729,15 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                             Some(StreamEvent::ThinkingBlock { .. }) => {
                                 // ThinkingBlock: full thinking block w/ signature — intentionally dropped here.
                             }
+                            Some(StreamEvent::Keepalive) => {
+                                // Liveness tick (Anthropic ping / input_json_delta tool-arg
+                                // fragment / message_start). No content to process — but
+                                // reaching this arm means a fresh SSE event arrived on the
+                                // wire, so the per-iteration chunk-timeout watchdog (re-armed
+                                // at the top of the loop) is effectively reset. This is the
+                                // fix for false "响应超时（90秒无数据）" aborts during long
+                                // tool-argument streaming and ping-only thinking windows.
+                            }
                             Some(StreamEvent::ToolCallStart { tool_call }) => {
                                 log::info!(
                                     "[run_llm_step] Tool call received: name='{}' id='{}'",
