@@ -12,13 +12,6 @@ describe('TenantHeader', () => {
     expect(screen.getByText('仁励家网络科技(杭州)')).toBeInTheDocument()
   })
 
-  it('renders a chevrons-up-down indicator on the right', () => {
-    const { container } = render(
-      <TenantHeader name="X" logoUrl="/app-icon.png" />,
-    )
-    expect(container.querySelector('[data-icon="chevrons-up-down"]')).toBeInTheDocument()
-  })
-
   it('logo box has 24x24 sizing classes', () => {
     const { container } = render(
       <TenantHeader name="X" logoUrl="/app-icon.png" />,

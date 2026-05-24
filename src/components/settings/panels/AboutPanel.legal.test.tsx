@@ -34,7 +34,7 @@ describe('AboutPanel legal documents', () => {
   it('restores local legal document entries through callbacks', () => {
     render(<AboutPanel {...baseProps} />)
 
-    fireEvent.click(screen.getByRole('button', { name: '服务条款' }))
+    fireEvent.click(screen.getByRole('button', { name: '用户协议' }))
     fireEvent.click(screen.getByRole('button', { name: '隐私政策' }))
 
     expect(baseProps.links.terms).toHaveBeenCalledTimes(1)

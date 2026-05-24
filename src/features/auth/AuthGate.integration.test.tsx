@@ -39,6 +39,8 @@ const tauriMock = vi.hoisted(() => ({
   isAgentBusy: vi.fn().mockResolvedValue([]),
   cloudLogout: vi.fn().mockResolvedValue(undefined),
   syncBuiltinSkills: vi.fn().mockResolvedValue({ installed: [], skipped: [] }),
+  getLastBrand: vi.fn().mockResolvedValue(null),
+  saveLastBrand: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock('@/lib/tauri', () => tauriMock)
@@ -108,8 +110,7 @@ describe('AuthGate', () => {
       </AuthGate>,
     )
 
-    fireEvent.change(await screen.findByPlaceholderText('用户名'), { target: { value: 'demo' } })
-    fireEvent.change(await screen.findByPlaceholderText('企业编号'), { target: { value: 'test' } })
+    fireEvent.change(await screen.findByLabelText('账号'), { target: { value: 'demo' } })
     fireEvent.change(await screen.findByLabelText('密码'), { target: { value: '123456' } })
     fireEvent.click(screen.getByRole('button', { name: '登录' }))
 
