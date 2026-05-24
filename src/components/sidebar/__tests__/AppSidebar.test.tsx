@@ -8,6 +8,10 @@ const uiState = vi.hoisted(() => ({
   setRoute: vi.fn((next: { kind: string; conversationId?: string; sessionId?: string; skillId?: string }) => {
     uiState.route = next
   }),
+  sidebarTab: 'project' as string,
+  setSidebarTab: vi.fn((tab: string) => {
+    uiState.sidebarTab = tab
+  }),
 }))
 
 const chatState = vi.hoisted(() => ({
@@ -24,16 +28,26 @@ vi.mock('@/hooks/useChat', () => ({
   }),
 }))
 
-vi.mock('@/stores/uiStore', () => ({
-  useUiStore: (sel: (s: unknown) => unknown) =>
-    sel({
-      route: uiState.route,
-      setRoute: uiState.setRoute,
-      openSettings: vi.fn(),
-    }),
-  useActiveConversationId: () => (uiState.route.kind === 'chat' ? uiState.route.conversationId ?? null : null),
-  useActiveChannelSessionId: () => (uiState.route.kind === 'channel' ? uiState.route.sessionId ?? null : null),
-}))
+vi.mock('@/stores/uiStore', () => {
+  const snapshot = () => ({
+    route: uiState.route,
+    setRoute: uiState.setRoute,
+    openSettings: vi.fn(),
+    sidebarTab: uiState.sidebarTab,
+    setSidebarTab: uiState.setSidebarTab,
+    consumePendingSkill: () => null,
+  })
+  const useUiStore = Object.assign((sel: (s: unknown) => unknown) => sel(snapshot()), {
+    getState: () => snapshot(),
+    subscribe: () => () => {},
+    setState: () => {},
+  })
+  return {
+    useUiStore,
+    useActiveConversationId: () => (uiState.route.kind === 'chat' ? uiState.route.conversationId ?? null : null),
+    useActiveChannelSessionId: () => (uiState.route.kind === 'channel' ? uiState.route.sessionId ?? null : null),
+  }
+})
 
 vi.mock('@/stores/authStore', () => ({
   useAuthStore: (sel: (s: unknown) => unknown) => sel({ user: null, tenant: null }),

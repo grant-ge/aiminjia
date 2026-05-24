@@ -20,7 +20,7 @@ describe('ScheduleTemplateCard', () => {
     expect(onPick).toHaveBeenCalledWith(SAMPLE)
   })
 
-  it('uses rounded-[14px] border class on card root', () => {
+  it('uses rounded-lg border class on card root', () => {
     const { container } = render(
       <ScheduleTemplateCard
         template={{ title: 't', desc: 'd', prompt: 'p', rule: null }}
@@ -28,7 +28,7 @@ describe('ScheduleTemplateCard', () => {
       />,
     )
     const card = container.querySelector('[data-testid="schedule-template-card"]')
-    expect(card?.className).toMatch(/rounded-\[14px\]/)
+    expect(card?.className).toMatch(/rounded-lg/)
     expect(card?.className).toMatch(/border/)
   })
 })

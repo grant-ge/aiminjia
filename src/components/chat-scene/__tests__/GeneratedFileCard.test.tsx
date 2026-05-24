@@ -116,7 +116,7 @@ describe('GeneratedFileCard', () => {
 
     openMenu()
 
-    expect(screen.getByRole('menu')).toHaveClass('bg-[#fbfbfa]')
+    expect(screen.getByRole('menu')).toHaveClass('bg-popover')
   })
 
   it('disables preview menu item and labels it unavailable when preview cannot run', () => {

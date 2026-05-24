@@ -7,7 +7,7 @@ const sendUserMessage = vi.fn(async () => undefined)
 // Mock stores that HomePage's children touch
 const setRoute = vi.fn()
 const consumePrefillText = vi.fn(() => null)
-const uiState = { route: { kind: 'home' }, setRoute, openSettings: vi.fn(), consumePrefillText }
+const uiState = { route: { kind: 'home' }, setRoute, openSettings: vi.fn(), consumePrefillText, consumePendingSkill: vi.fn(() => null) }
 
 vi.mock('@/stores/uiStore', () => ({
   useUiStore: Object.assign(

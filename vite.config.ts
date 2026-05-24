@@ -16,7 +16,7 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     include: ['src/**/*.test.{ts,tsx}'],
-    setupFiles: ['./src/test/setup-i18n.ts', './src/test/setup-tiptap-jsdom.ts'],
+    setupFiles: ['./src/test/setup-tauri.ts', './src/test/setup-i18n.ts', './src/test/setup-tiptap-jsdom.ts'],
   },
 
   // Prevent vite from obscuring Rust errors
