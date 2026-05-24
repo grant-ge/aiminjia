@@ -278,6 +278,7 @@ export function AppSidebar() {
                 <button
                   key={key}
                   type="button"
+                  aria-label={t(labelKey)}
                   onClick={() => switchTab(key)}
                   className={`relative z-10 flex items-center justify-center gap-1 py-1.5 transition-colors duration-200 ${
                     sidebarTab === key ? 'text-foreground' : ''

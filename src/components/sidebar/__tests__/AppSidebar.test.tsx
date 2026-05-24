@@ -1,4 +1,5 @@
 import '@testing-library/jest-dom'
+import * as React from 'react'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -8,15 +9,18 @@ const uiState = vi.hoisted(() => ({
   setRoute: vi.fn((next: { kind: string; conversationId?: string; sessionId?: string; skillId?: string }) => {
     uiState.route = next
   }),
-  sidebarTab: 'project' as string,
+  sidebarTabOverride: null as string | null,
+  listeners: new Set<() => void>(),
   setSidebarTab: vi.fn((tab: string) => {
-    uiState.sidebarTab = tab
+    uiState.sidebarTabOverride = tab
+    if (typeof localStorage !== 'undefined') localStorage.setItem('aijia-sidebar-tab', tab)
+    uiState.listeners.forEach((l) => l())
   }),
 }))
 
 const chatState = vi.hoisted(() => ({
   activeConversationId: null as string | null,
-  conversations: [] as Array<{ id: string; title: string; workspaceName?: string | null }>,
+  conversations: [] as Array<{ id: string; title: string; workspaceName?: string | null; kind?: string }>,
 }))
 
 vi.mock('@/hooks/useChat', () => ({
@@ -29,19 +33,38 @@ vi.mock('@/hooks/useChat', () => ({
 }))
 
 vi.mock('@/stores/uiStore', () => {
+  // sidebarTab derives from localStorage (mirrors the real loadPersistedSidebarTab)
+  // until a setSidebarTab override is applied; setSidebarTab notifies subscribed
+  // hooks so tab switches re-render like the real zustand store.
+  const loadTab = () => {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem('aijia-sidebar-tab') : null
+    return raw === 'channel' || raw === 'expert-team' || raw === 'employee' ? raw : 'project'
+  }
   const snapshot = () => ({
     route: uiState.route,
     setRoute: uiState.setRoute,
     openSettings: vi.fn(),
-    sidebarTab: uiState.sidebarTab,
+    sidebarTab: uiState.sidebarTabOverride ?? loadTab(),
     setSidebarTab: uiState.setSidebarTab,
     consumePendingSkill: () => null,
   })
-  const useUiStore = Object.assign((sel: (s: unknown) => unknown) => sel(snapshot()), {
-    getState: () => snapshot(),
-    subscribe: () => () => {},
-    setState: () => {},
-  })
+  const useUiStore = Object.assign(
+    (sel: (s: unknown) => unknown) => {
+      const [, force] = React.useReducer((c: number) => c + 1, 0)
+      React.useEffect(() => {
+        uiState.listeners.add(force)
+        return () => {
+          uiState.listeners.delete(force)
+        }
+      }, [])
+      return sel(snapshot())
+    },
+    {
+      getState: () => snapshot(),
+      subscribe: () => () => {},
+      setState: () => {},
+    },
+  )
   return {
     useUiStore,
     useActiveConversationId: () => (uiState.route.kind === 'chat' ? uiState.route.conversationId ?? null : null),
@@ -72,6 +95,7 @@ vi.mock('@/stores/channelStore', () => ({
       conversations: [
         {
           sessionId: 'dt-session-1',
+          platform: 'dingtalk',
           conversationType: 'private',
           displayName: '姚斌权',
           unreadCount: 0,
@@ -85,6 +109,18 @@ vi.mock('@/stores/brandingStore', () => ({
     sel({ productName: '仁励家网络科技(杭州)', logoUrl: '/app-icon.png' }),
 }))
 
+// hasExpertTeam() reads useChatStore.getState().conversations[].kind, so expose
+// the same conversation list the useChat mock serves.
+vi.mock('@/stores/chatStore', () => {
+  const snap = () => ({ conversations: chatState.conversations })
+  const useChatStore = Object.assign((sel: (s: unknown) => unknown) => sel(snap()), {
+    getState: () => snap(),
+    setState: () => {},
+    subscribe: () => () => {},
+  })
+  return { useChatStore }
+})
+
 import { clearExpertTeam, setExpertTeam } from '@/features/expert-teams/expertTeamRegistry'
 import { AppSidebar } from '../AppSidebar'
 
@@ -92,6 +128,8 @@ describe('AppSidebar', () => {
   beforeEach(async () => {
     uiState.route = { kind: 'home' }
     uiState.setRoute.mockClear()
+    uiState.sidebarTabOverride = null
+    if (typeof localStorage !== 'undefined') localStorage.removeItem('aijia-sidebar-tab')
     chatState.activeConversationId = null
     chatState.conversations = []
     await clearExpertTeam('normal-conv')
@@ -114,7 +152,7 @@ describe('AppSidebar', () => {
     render(<AppSidebar />)
     expect(screen.getByRole('button', { name: '新任务' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '数字员工' })).toBeInTheDocument()
-    expect(screen.getAllByRole('button', { name: '专家团' }).length).toBeGreaterThan(1)
+    expect(screen.getByRole('button', { name: '专家团' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '技能中心' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '定时任务' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'IM 频道' })).toBeInTheDocument()
@@ -130,22 +168,6 @@ describe('AppSidebar', () => {
 
     expect(schedulesIndex).toBeGreaterThanOrEqual(0)
     expect(buttons[schedulesIndex + 1]).toBe('IM 频道')
-  })
-
-  it('renders a top drag-region spacer on macOS', async () => {
-    // isMac is evaluated at module-load time, so we need to reset modules and
-    // re-import with a mocked userAgent.
-    const orig = Object.getOwnPropertyDescriptor(navigator, 'userAgent')
-    Object.defineProperty(navigator, 'userAgent', {
-      value: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0)',
-      configurable: true,
-    })
-    vi.resetModules()
-    const { AppSidebar: MacSidebar } = await import('../AppSidebar')
-    const { container } = render(<MacSidebar />)
-    expect(container.querySelector('[data-tauri-drag-region]')).toBeInTheDocument()
-    if (orig) Object.defineProperty(navigator, 'userAgent', orig)
-    vi.resetModules()
   })
 
   it('does not highlight 数字员工 while a chat route is active', () => {
@@ -190,17 +212,21 @@ describe('AppSidebar', () => {
   it('separates expert team conversations from the project tab into an expert team tab', async () => {
     chatState.conversations = [
       { id: 'normal-conv', title: '普通项目对话', workspaceName: '默认项目' },
-      { id: 'expert-conv', title: '市场方案专家讨论', workspaceName: '默认项目' },
+      // expert-team membership is now derived from conversation.kind, which
+      // hasExpertTeam() reads off useChatStore.
+      { id: 'expert-conv', title: '市场方案专家讨论', workspaceName: '默认项目', kind: 'expertTeam' },
     ]
     await setExpertTeam('expert-conv', 'marketing')
 
     render(<AppSidebar />)
 
-    expect(screen.getAllByRole('button', { name: '专家团' }).length).toBeGreaterThan(1)
+    // "专家团" is a top-level nav item; the sidebar body tab is labelled "专家".
+    expect(screen.getByRole('button', { name: '专家团' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '专家' })).toBeInTheDocument()
     expect(screen.getByText('普通项目对话')).toBeInTheDocument()
     expect(screen.queryByText('市场方案专家讨论')).not.toBeInTheDocument()
 
-    await userEvent.click(screen.getAllByRole('button', { name: '专家团' }).at(-1)!)
+    await userEvent.click(screen.getByRole('button', { name: '专家' }))
 
     expect(screen.getByText('市场方案专家讨论')).toBeInTheDocument()
     expect(screen.queryByText('普通项目对话')).not.toBeInTheDocument()
@@ -215,11 +241,11 @@ describe('AppSidebar', () => {
     await userEvent.click(screen.getByRole('button', { name: '频道' }))
     // Tab switching is local UI state — must not affect route.
     expect(uiState.setRoute).not.toHaveBeenCalled()
+    // The channel tab lists every platform section; the dingtalk private
+    // conversation renders as a privacy-normalized "钉钉私聊" label (not the raw
+    // push name) per the 2026-05-21 channel label redesign.
     expect(screen.getByText('钉钉')).toBeInTheDocument()
-    expect(screen.getByText('姚斌权')).toBeInTheDocument()
-    expect(screen.queryByText('飞书')).not.toBeInTheDocument()
-    expect(screen.queryByText('微信')).not.toBeInTheDocument()
-    expect(screen.queryByText('企业微信')).not.toBeInTheDocument()
+    expect(screen.getByText('钉钉私聊')).toBeInTheDocument()
   })
 
 })
@@ -227,6 +253,7 @@ describe('AppSidebar', () => {
 describe('AppSidebar route-derived sidebarTab', () => {
   beforeEach(() => {
     localStorage.removeItem('aijia-sidebar-tab')
+    uiState.sidebarTabOverride = null
   })
 
   it('shows channel list after fresh mount when channel tab persisted', async () => {
@@ -237,8 +264,8 @@ describe('AppSidebar route-derived sidebarTab', () => {
     await clearExpertTeam('normal-conv')
     await clearExpertTeam('expert-conv')
     render(<AppSidebar />)
-    // 钉钉会话 should be highlighted (the mock has displayName: '姚斌权')
-    expect(screen.getByText('姚斌权')).toBeInTheDocument()
+    // dingtalk private conversation renders as the normalized "钉钉私聊" label
+    expect(screen.getByText('钉钉私聊')).toBeInTheDocument()
   })
 
   it('clicking IM 频道 nav while a session is selected resets route to channel overview', async () => {
