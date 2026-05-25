@@ -353,9 +353,14 @@ pub fn run() {
                     // menu, Mission Control and Cmd+Tab window list — a blank " "
                     // there shows up as a nameless entry. Seed it with the product
                     // name; brandingStore refines it to the tenant productName once
-                    // the webview loads. (titleBarStyle: Overlay hides the title
-                    // text in-window, so this has no visual side effect.)
+                    // the webview loads.
                     let _ = win.set_title("AIjia");
+
+                    // macOS: `titleBarStyle: Overlay` floats the traffic lights over
+                    // content but does NOT hide the native title text — it would
+                    // otherwise show "AIjia" right of the lights. Hide it so the
+                    // TitleBar React component is the only thing in that strip.
+                    commands::window_chrome::hide_window_title(&win);
 
                     // Windows: disable native decorations to avoid double titlebar.
                     // macOS uses titleBarStyle: Overlay (set in tauri.conf.json) which
