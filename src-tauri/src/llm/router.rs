@@ -187,119 +187,26 @@ pub fn infer_task_type(messages: &[ChatMessage]) -> TaskType {
 /// The reasoning model is auto-determined from provider capabilities.
 /// No separate configuration is needed — the same API key is used.
 pub fn select_route(task_type: &TaskType, settings: &AppSettings) -> RouteResult {
-    // Cloud mode: if use_cloud is enabled, route through Lotus gateway.
-    // Use cloud_model_type from settings to determine endpoint.
-    // If TaskType::Reasoning, force reasoner endpoint regardless of cloud_model_type.
-    if settings.use_cloud {
-        let model_type = if *task_type == TaskType::Reasoning {
-            "reasoner"
-        } else {
-            // Use the model_type from settings (set when user selects a model)
-            if settings.cloud_model_type.is_empty() {
-                "chat"
-            } else {
-                &settings.cloud_model_type
-            }
-        };
-        return RouteResult {
-            provider: "lotus".to_string(),
-            api_key: settings.primary_api_key.clone(), // session_key
-            model_hint: settings.cloud_model.clone(),
-            use_tools: model_type != "reasoner",
-            endpoint_url: String::new(),
-            model_type: model_type.to_string(),
-        };
-    }
-
-    let caps = get_provider_capabilities(&settings.primary_model);
-
-    // If auto routing is disabled, always use primary model
-    if !settings.auto_model_routing {
-        return RouteResult {
-            provider: settings.primary_model.clone(),
-            api_key: settings.primary_api_key.clone(),
-            model_hint: if settings.primary_model == "custom" {
-                settings.custom_model_name.clone()
-            } else {
-                String::new()
-            },
-            use_tools: true,
-            endpoint_url: if settings.primary_model == "custom" {
-                settings.custom_model_endpoint.clone()
-            } else {
-                String::new()
-            },
-            model_type: String::new(),
-        };
-    }
-
-    match task_type {
-        // Analysis ALWAYS uses primary model with tools — this is critical
-        // for agentic turns that call shell and workspace tools.
-        TaskType::Analysis => RouteResult {
-            provider: settings.primary_model.clone(),
-            api_key: settings.primary_api_key.clone(),
-            model_hint: if settings.primary_model == "custom" {
-                settings.custom_model_name.clone()
-            } else {
-                String::new()
-            },
-            use_tools: true,
-            endpoint_url: if settings.primary_model == "custom" {
-                settings.custom_model_endpoint.clone()
-            } else {
-                String::new()
-            },
-            model_type: String::new(),
-        },
-        // Reasoning tasks use the reasoning variant if available (same API key)
-        TaskType::Reasoning => {
-            if let Some(reasoning) = caps.reasoning_provider {
-                RouteResult {
-                    provider: reasoning.to_string(),
-                    api_key: settings.primary_api_key.clone(),
-                    model_hint: String::new(),
-                    use_tools: false,
-                    endpoint_url: String::new(),
-                    model_type: String::new(),
-                }
-            } else {
-                // No reasoning variant — use primary model
-                RouteResult {
-                    provider: settings.primary_model.clone(),
-                    api_key: settings.primary_api_key.clone(),
-                    model_hint: if settings.primary_model == "custom" {
-                        settings.custom_model_name.clone()
-                    } else {
-                        String::new()
-                    },
-                    use_tools: true,
-                    endpoint_url: if settings.primary_model == "custom" {
-                        settings.custom_model_endpoint.clone()
-                    } else {
-                        String::new()
-                    },
-                    model_type: String::new(),
-                }
-            }
-        }
-        // All other tasks use primary model
-        _ => RouteResult {
-            provider: settings.primary_model.clone(),
-            api_key: settings.primary_api_key.clone(),
-            model_hint: if settings.primary_model == "custom" {
-                settings.custom_model_name.clone()
-            } else {
-                String::new()
-            },
-            use_tools: true,
-            endpoint_url: if settings.primary_model == "custom" {
-                settings.custom_model_endpoint.clone()
-            } else {
-                String::new()
-            },
-            model_type: String::new(),
-        },
+    // All chat routes through the Lotus cloud gateway. Local-model and
+    // custom-provider configuration was removed from the product, so there is
+    // no non-cloud path. Reasoning tasks force the reasoner endpoint; every
+    // other task uses the model_type implied by the user's selection
+    // (default "chat"). The session_key is injected by the gateway, so
+    // `api_key` here is just a placeholder carrier.
+    let model_type = if *task_type == TaskType::Reasoning {
+        "reasoner"
+    } else if settings.cloud_model_type.is_empty() {
+        "chat"
+    } else {
+        &settings.cloud_model_type
+    };
+    RouteResult {
+        provider: "lotus".to_string(),
+        api_key: settings.primary_api_key.clone(),
+        model_hint: settings.cloud_model.clone(),
+        use_tools: model_type != "reasoner",
+        endpoint_url: String::new(),
+        model_type: model_type.to_string(),
     }
 }
 
@@ -317,10 +224,8 @@ mod tests {
 
     fn default_settings() -> AppSettings {
         AppSettings {
-            auto_model_routing: true,
-            primary_model: "claude".to_string(),
-            primary_api_key: "pk-test".to_string(),
-            use_cloud: false,
+            primary_api_key: "sk-sess-test".to_string(),
+            cloud_model: "claude-sonnet-4-5".to_string(),
             ..Default::default()
         }
     }
@@ -386,79 +291,58 @@ mod tests {
     }
 
     #[test]
-    fn test_route_auto_disabled() {
-        let mut settings = default_settings();
-        settings.auto_model_routing = false;
-
-        let route = select_route(&TaskType::Analysis, &settings);
-        assert_eq!(route.provider, "claude");
-        assert_eq!(route.api_key, "pk-test");
-        assert!(route.use_tools);
-    }
-
-    #[test]
-    fn test_route_analysis_uses_primary_with_tools() {
-        let settings = default_settings();
-        let route = select_route(&TaskType::Analysis, &settings);
-        // Analysis MUST use primary model with tools enabled
-        assert_eq!(route.provider, "claude");
-        assert_eq!(route.api_key, "pk-test");
-        assert!(route.use_tools);
-    }
-
-    #[test]
-    fn test_route_reasoning_uses_reasoning_model() {
-        // Claude has no reasoning variant — falls back to primary with tools off.
-        let settings = default_settings();
-        let route = select_route(&TaskType::Reasoning, &settings);
-        assert_eq!(route.provider, "claude");
-        assert_eq!(route.api_key, "pk-test");
-        // No reasoning_provider → falls through to "_ => primary" branch which
-        // turns tools on. The use_cloud==false + Reasoning path keeps use_tools.
-        assert!(route.use_tools);
-    }
-
-    #[test]
-    fn test_route_analysis_fallback_no_reasoning() {
-        // custom provider has no reasoning variant — reasoning tasks fall back to primary
-        let mut settings = default_settings();
-        settings.primary_model = "custom".to_string();
-
-        let route = select_route(&TaskType::Reasoning, &settings);
-        assert_eq!(route.provider, "custom");
-        assert!(route.use_tools);
-    }
-
-    #[test]
-    fn test_route_provider_capabilities() {
-        let caps = get_provider_capabilities("claude");
-        assert!(caps.reasoning_provider.is_none());
-
-        let caps = get_provider_capabilities("custom");
-        assert!(caps.reasoning_provider.is_none());
-    }
-
-    #[test]
-    fn test_route_general_uses_primary() {
+    fn test_route_general_uses_lotus_with_tools() {
         let settings = default_settings();
         let route = select_route(&TaskType::General, &settings);
-        assert_eq!(route.provider, "claude");
+        // Everything routes through the lotus gateway now.
+        assert_eq!(route.provider, "lotus");
+        assert_eq!(route.api_key, "sk-sess-test");
+        assert_eq!(route.model_hint, "claude-sonnet-4-5");
+        assert_eq!(route.model_type, "chat");
         assert!(route.use_tools);
     }
 
     #[test]
-    fn test_route_codegen_uses_primary() {
+    fn test_route_analysis_uses_lotus_with_tools() {
+        let settings = default_settings();
+        let route = select_route(&TaskType::Analysis, &settings);
+        assert_eq!(route.provider, "lotus");
+        assert_eq!(route.model_type, "chat");
+        assert!(route.use_tools);
+    }
+
+    #[test]
+    fn test_route_codegen_uses_lotus_with_tools() {
         let settings = default_settings();
         let route = select_route(&TaskType::CodeGen, &settings);
-        assert_eq!(route.provider, "claude");
+        assert_eq!(route.provider, "lotus");
         assert!(route.use_tools);
     }
 
     #[test]
-    fn test_route_search_uses_primary() {
+    fn test_route_search_uses_lotus_with_tools() {
         let settings = default_settings();
         let route = select_route(&TaskType::Search, &settings);
-        assert_eq!(route.provider, "claude");
+        assert_eq!(route.provider, "lotus");
+        assert!(route.use_tools);
+    }
+
+    #[test]
+    fn test_route_reasoning_forces_reasoner_endpoint() {
+        let settings = default_settings();
+        let route = select_route(&TaskType::Reasoning, &settings);
+        assert_eq!(route.provider, "lotus");
+        assert_eq!(route.model_type, "reasoner");
+        // The reasoner endpoint runs without tools.
+        assert!(!route.use_tools);
+    }
+
+    #[test]
+    fn test_route_honors_explicit_cloud_model_type() {
+        let mut settings = default_settings();
+        settings.cloud_model_type = "chat".to_string();
+        let route = select_route(&TaskType::General, &settings);
+        assert_eq!(route.model_type, "chat");
         assert!(route.use_tools);
     }
 }

@@ -83,12 +83,9 @@ pub struct PluginContext {
     pub session_id: SessionId,
     pub run_id: Option<RunId>,
     pub agent_id: Option<AgentId>,
-    pub tavily_api_key: Option<String>,
-    pub bocha_api_key: Option<String>,
     pub app_handle: Option<tauri::AppHandle>,
     pub auth_manager: Option<Arc<AuthManager>>,
     pub dingtalk_bridge: Option<Arc<DingtalkBridge>>,
-    pub use_cloud: bool,
     pub model: String,
     /// LLM gateway for sub-agent execution (delegation tools).
     pub gateway: Option<Arc<LlmGateway>>,

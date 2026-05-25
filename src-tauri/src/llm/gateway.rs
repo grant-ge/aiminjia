@@ -87,17 +87,44 @@ fn is_auth_revoked_error(err: &anyhow::Error) -> bool {
     let lower = msg.to_lowercase();
     let is_401 = extract_status_code(&msg) == Some(401)
         || lower.contains("401 unauthorized")
-        || lower.contains("(401)")
-        || lower.contains("authentication_error");
+        || lower.contains("(401)");
     if !is_401 {
         return false;
     }
-    // Avoid retrying when the error is some other 401 reason that a refresh
-    // wouldn't fix (e.g. tenant disabled). Match server's documented codes.
-    lower.contains("session key revoked")
-        || lower.contains("session_key_revoked")
-        || lower.contains("session expired")
+    // Match by the gateway's structured error *type/code*, not the
+    // human-readable message text. The lotus gateway tags every session-key
+    // auth failure with `authentication_error` (anthropic ingress) /
+    // `auth_error` (openai ingress) — this covers "Session key expired",
+    // "Session key revoked", "Invalid session key", "Missing Authorization
+    // header", "Invalid key format", etc. A fresh session_key fixes all of
+    // them, so a refresh + retry is always the right response. Other
+    // 401-shaped reasons a refresh can't fix (tenant disabled, budget) come
+    // back as 402/403 and never reach here.
+    //
+    // Previously this matched fixed substrings ("session expired" /
+    // "invalid session" / ...), which silently missed "Session key expired"
+    // (the "key" in the middle breaks the "session expired" substring) and
+    // "Missing Authorization header" — so those 401s surfaced to the UI as
+    // "API 密钥无效或已过期" with no auto-recovery. The trailing keyword checks
+    // are defensive fallbacks for older gateway builds or non-JSON bodies.
+    lower.contains("authentication_error")
+        || lower.contains("auth_error")
+        || lower.contains("session key")
         || lower.contains("invalid session")
+        || lower.contains("authorization")
+}
+
+/// Whether a route's provider string will actually be dispatched to the lotus
+/// cloud gateway. `dispatch_stream` / `dispatch` route any provider that is not
+/// a known local one (`openai` / `claude` / `custom`) to lotus via the
+/// `other =>` fallback arm. The session_key injection keys off this same
+/// predicate — not the literal string `"lotus"` — so that any provider which
+/// resolves to lotus (e.g. a legacy cloud model name like `"deepseek-v3"`)
+/// gets the session_key attached. Without this, such a request would dispatch
+/// to lotus with an empty Authorization header → 401 "Missing Authorization
+/// header". Routing now always yields `"lotus"`, so this is defensive depth.
+fn provider_resolves_to_lotus(provider: &str) -> bool {
+    !matches!(provider, "openai" | "claude" | "custom")
 }
 
 fn is_retryable_error(err: &anyhow::Error) -> bool {
@@ -402,7 +429,10 @@ impl LlmGateway {
         // Cloud mode: replace api_key with a fresh session_key from AuthManager.
         // primary_api_key in settings is for non-cloud providers; Lotus needs the
         // login-issued session_key which may have been refreshed since last save.
-        if route.provider == "lotus" {
+        // Keyed on `provider_resolves_to_lotus` (not the literal "lotus") so that
+        // an unknown provider that falls back to lotus inside `dispatch_stream`
+        // still gets the session_key — otherwise it dispatches with an empty key.
+        if provider_resolves_to_lotus(&route.provider) {
             if let Some(auth) = &self.auth_manager {
                 match auth.get_session_key().await {
                     Ok(sk) => route.api_key = sk,
@@ -426,7 +456,7 @@ impl LlmGateway {
         // 2. Apply data masking
         let mut mask_ctx = MaskingContext::new(masking_level.clone());
         let mut masked_messages = mask_ctx.mask_messages(&messages);
-        if route.provider == "lotus" {
+        if provider_resolves_to_lotus(&route.provider) {
             attach_anthropic_multimodal_turn(
                 &mut masked_messages,
                 anthropic_multimodal_turn.clone(),
@@ -484,7 +514,7 @@ impl LlmGateway {
         );
         let stream = match retry_dispatch_stream(&route, request.clone()).await {
             Ok(s) => s,
-            Err(e) if route.provider == "lotus" && is_auth_revoked_error(&e) => {
+            Err(e) if provider_resolves_to_lotus(&route.provider) && is_auth_revoked_error(&e) => {
                 // 401 + "Session key revoked" from lotus → the local cache
                 // wallclock can't be trusted (clock skew, server-side revoke,
                 // tz mismatch — see auth/mod.rs invalidate_session_key).
@@ -503,7 +533,7 @@ impl LlmGateway {
                             // stale key in Authorization header).
                             let mut mask_ctx_retry = MaskingContext::new(masking_level);
                             let mut masked_retry = mask_ctx_retry.mask_messages(&messages);
-                            if route.provider == "lotus" {
+                            if provider_resolves_to_lotus(&route.provider) {
                                 attach_anthropic_multimodal_turn(
                                     &mut masked_retry,
                                     anthropic_multimodal_turn,
@@ -578,8 +608,10 @@ impl LlmGateway {
         let task_type = router::infer_task_type(&messages);
         let mut route = router::select_route(&task_type, settings);
 
-        // Cloud mode: same session_key injection as stream_message.
-        if route.provider == "lotus" {
+        // Cloud mode: same session_key injection as stream_message — keyed on
+        // `provider_resolves_to_lotus` so an unknown provider that falls back to
+        // lotus also gets the session_key.
+        if provider_resolves_to_lotus(&route.provider) {
             if let Some(auth) = &self.auth_manager {
                 match auth.get_session_key().await {
                     Ok(sk) => route.api_key = sk,

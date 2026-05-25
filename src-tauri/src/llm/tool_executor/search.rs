@@ -8,24 +8,16 @@ use serde_json::Value;
 
 use crate::plugin::context::PluginContext;
 use crate::search::bing::BingClient;
-use crate::search::bocha::BochaClient;
-use crate::search::tavily::TavilyClient;
 
 use super::require_str;
 
-/// 1. web_search — search the web via cloud (if logged in), Bocha, Bing, or Tavily.
+/// 1. web_search — search the web via the cloud gateway (when logged in),
+/// falling back to a keyless Bing scrape. Local API-key providers
+/// (Bocha/Tavily) were removed from the product.
 pub(crate) async fn handle_web_search(ctx: &PluginContext, args: &Value) -> Result<String> {
     let raw_query = require_str(args, "query")?;
     let max_results = super::optional_i64(args, "max_results", 5) as u32;
-    execute_web_search_core(
-        raw_query,
-        max_results,
-        ctx.use_cloud,
-        ctx.auth_manager.as_ref(),
-        ctx.bocha_api_key.as_deref(),
-        ctx.tavily_api_key.as_deref(),
-    )
-    .await
+    execute_web_search_core(raw_query, max_results, ctx.auth_manager.as_ref()).await
 }
 
 /// Core web search implementation — does not require PluginContext.
@@ -33,10 +25,7 @@ pub(crate) async fn handle_web_search(ctx: &PluginContext, args: &Value) -> Resu
 pub(crate) async fn execute_web_search_core(
     raw_query: &str,
     max_results: u32,
-    use_cloud: bool,
     auth_manager: Option<&std::sync::Arc<crate::auth::AuthManager>>,
-    bocha_api_key: Option<&str>,
-    tavily_api_key: Option<&str>,
 ) -> Result<String> {
     // Auto-append recent year range if the query doesn't already mention any year
     let has_year = raw_query.chars().collect::<Vec<_>>().windows(4).any(|w| {
@@ -55,47 +44,20 @@ pub(crate) async fn execute_web_search_core(
         format!("{} {}-{}", raw_query, last_year, this_year)
     };
 
-    // 0. Cloud search — 现在产品策略是默认走云端（本地 API key 入口已下线），
-    //    只要登录了就走云端，不再受 use_cloud 字段控制。`use_cloud` 参数保留
-    //    是为了兼容老调用点，但已不影响这里的判断。
-    let _ = use_cloud;
+    // 0. Cloud search — the product's primary path. Local API-key providers
+    //    (Bocha/Tavily) were removed; only the keyless Bing scrape remains as a
+    //    fallback when cloud search is unavailable.
     if let Some(auth_mgr) = auth_manager {
         if auth_mgr.is_logged_in().await {
             match cloud_search(auth_mgr, &query, max_results).await {
                 Ok(output) if !output.is_empty() => return Ok(output),
-                Ok(_) => info!("Cloud search returned empty results, trying local fallback"),
-                Err(e) => info!("Cloud search failed, trying local fallback: {}", e),
+                Ok(_) => info!("Cloud search returned empty results, trying Bing fallback"),
+                Err(e) => info!("Cloud search failed, trying Bing fallback: {}", e),
             }
         }
     }
 
-    // 1. Try Bocha first (if API key is configured)
-    if let Some(api_key) = bocha_api_key {
-        let bocha = BochaClient::new(api_key.to_string());
-        match bocha.search(&query, max_results).await {
-            Ok(results) if !results.is_empty() => {
-                let mut output = String::new();
-                for (i, result) in results.iter().enumerate() {
-                    output.push_str(&format!(
-                        "{}. **{}**\n   URL: {}\n   {}\n\n",
-                        i + 1,
-                        result.title,
-                        result.url,
-                        result.summary
-                    ));
-                }
-                return Ok(output);
-            }
-            Ok(_) => {
-                info!("Bocha returned empty results, trying Bing fallback");
-            }
-            Err(e) => {
-                info!("Bocha search failed, trying Bing fallback: {}", e);
-            }
-        }
-    }
-
-    // 2. Try Bing (free, no API key needed)
+    // 1. Bing fallback (free, no API key needed).
     let bing = BingClient::new();
     match bing.search(&query, max_results).await {
         Ok(results) if !results.is_empty() => {
@@ -112,43 +74,14 @@ pub(crate) async fn execute_web_search_core(
             return Ok(output);
         }
         Ok(_) => {
-            info!("Bing returned empty results, trying Tavily fallback");
+            info!("Bing returned empty results");
         }
         Err(e) => {
-            info!("Bing search failed, trying Tavily fallback: {}", e);
+            info!("Bing search failed: {}", e);
         }
     }
 
-    // 3. Fallback: use Tavily if an API key is available
-    if let Some(api_key) = tavily_api_key {
-        let tavily = TavilyClient::new(api_key.to_string());
-        match tavily.search(&query, true, max_results).await {
-            Ok(response) => {
-                let mut output = String::new();
-                if let Some(answer) = &response.answer {
-                    output.push_str(&format!("**Summary:** {}\n\n", answer));
-                }
-                for (i, result) in response.results.iter().enumerate() {
-                    output.push_str(&format!(
-                        "{}. **{}**\n   URL: {}\n   {}\n\n",
-                        i + 1,
-                        result.title,
-                        result.url,
-                        result.content
-                    ));
-                }
-                if output.is_empty() {
-                    output = "No search results found.".to_string();
-                }
-                return Ok(output);
-            }
-            Err(e) => {
-                info!("Tavily search also failed: {}", e);
-            }
-        }
-    }
-
-    // All engines failed (or none configured)
+    // All engines failed (or none reachable)
     Err(anyhow!(
         "[搜索不可用] 搜索引擎暂时无法访问。请基于已有知识回答，不要编造搜索结果。"
     ))

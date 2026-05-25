@@ -258,12 +258,13 @@ Skill 系统采用无状态架构，仅加载 `~/.renlijia/users/{scope}/skills/
 8. **Windows 子进程黑窗**：所有 `Command::spawn/.output()` 必须先调 `.no_window()`（`storage::process_ext::NoWindowExt`）。详见同上
 9. **旧 macOS 白屏防护**：禁止引入含正则 lookbehind `(?<=`/`(?<!` 的依赖；`vite.config.ts` build.target 已设 safari13。详见同上
 10. **Shell 工具 PATH**：BashTool/PowerShellTool spawn 前必须 `inject_bundled_runtime_path`；命令收尾走 `emit_shell_failure_diagnostic`。详见 [`docs/decisions/runtime-decisions.md`](docs/decisions/runtime-decisions.md)
+11. **云端唯一 + auth 401 按错误码判定**：所有 LLM 路由恒走 lotus 网关（已移除 `use_cloud`/本地模型/`tavily`/`bocha` 配置）；判定可刷新的 auth 401 用 HTTP 401 + 错误码/类型（`authentication_error`/`auth_error`），**禁止再用消息文案子串匹配**。详见 [`docs/decisions/runtime-decisions.md`](docs/decisions/runtime-decisions.md)
 
 ### 已归档的设计决策（详情外迁，按需查阅）
 
 - 数字员工系统（模板服务化 PR1-PR6 / 状态机 / SKILL bundle / 配置软校验）→ [`docs/decisions/employee-system-decisions.md`](docs/decisions/employee-system-decisions.md)
 - UI / 平台决策（换肤 / 拖拽 / 粘贴 / 标题栏 / 登录页关闭按钮）→ [`docs/decisions/ui-platform-decisions.md`](docs/decisions/ui-platform-decisions.md)
-- 运行时决策（max_tokens / 个人版账户计费 / Shell bundled PATH）→ [`docs/decisions/runtime-decisions.md`](docs/decisions/runtime-decisions.md)
+- 运行时决策（max_tokens / 个人版账户计费 / Shell bundled PATH / 云端唯一化 + auth 401 按错误码）→ [`docs/decisions/runtime-decisions.md`](docs/decisions/runtime-decisions.md)
 
 ## 进行中的架构专项
 

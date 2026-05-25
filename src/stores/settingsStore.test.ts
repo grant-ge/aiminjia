@@ -71,11 +71,6 @@ describe('settingsStore — setters', () => {
     expect(useSettingsStore.getState().chatWidthMode).toBe('centered')
   })
 
-  it('sets Tavily API key', () => {
-    useSettingsStore.getState().setTavilyApiKey('tvly-xxx')
-    expect(useSettingsStore.getState().tavilyApiKey).toBe('tvly-xxx')
-  })
-
   it('marks as loaded', () => {
     useSettingsStore.getState().markLoaded()
     expect(useSettingsStore.getState().isLoaded).toBe(true)

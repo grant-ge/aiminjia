@@ -39,7 +39,6 @@ impl RuntimeLlmExecutor for CountingSettingsExecutor {
             auto_model_routing: true,
             custom_model_endpoint: String::new(),
             custom_model_name: String::new(),
-            use_cloud: false,
             cloud_model: String::new(),
             cloud_model_type: String::new(),
             thinking_type: "disabled".to_string(),

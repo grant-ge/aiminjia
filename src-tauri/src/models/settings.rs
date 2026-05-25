@@ -41,15 +41,9 @@ pub struct AppSettings {
     pub temp_file_retention_days: u32,
     pub keep_old_versions: u32,
     #[serde(default)]
-    pub tavily_api_key: String,
-    #[serde(default)]
-    pub bocha_api_key: String,
-    #[serde(default)]
     pub custom_model_endpoint: String,
     #[serde(default)]
     pub custom_model_name: String,
-    #[serde(default)]
-    pub use_cloud: bool,
     /// Cloud mode: selected model name from /v1/models (used when logged in).
     #[serde(default)]
     pub cloud_model: String,
@@ -104,11 +98,8 @@ impl Default for AppSettings {
             auto_cleanup_enabled: true,
             temp_file_retention_days: 7,
             keep_old_versions: 1,
-            tavily_api_key: String::new(),
-            bocha_api_key: String::new(),
             custom_model_endpoint: String::new(),
             custom_model_name: String::new(),
-            use_cloud: true,
             cloud_model: String::new(),
             cloud_model_type: String::new(),
             persona_onboarding_done: false,
@@ -162,11 +153,8 @@ impl AppSettings {
                 defaults.temp_file_retention_days,
             ),
             keep_old_versions: get_u32("keepOldVersions", defaults.keep_old_versions),
-            tavily_api_key: get_str("tavilyApiKey", &defaults.tavily_api_key),
-            bocha_api_key: get_str("bochaApiKey", &defaults.bocha_api_key),
             custom_model_endpoint: get_str("customModelEndpoint", &defaults.custom_model_endpoint),
             custom_model_name: get_str("customModelName", &defaults.custom_model_name),
-            use_cloud: get_bool("useCloud", defaults.use_cloud),
             cloud_model: get_str("cloudModel", &defaults.cloud_model),
             cloud_model_type: get_str("cloudModelType", &defaults.cloud_model_type),
             persona_onboarding_done: get_bool(

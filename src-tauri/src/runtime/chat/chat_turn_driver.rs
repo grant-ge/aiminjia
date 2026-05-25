@@ -1442,19 +1442,10 @@ impl RuntimeChatTurnDriver {
             tool_defs: final_tool_defs,
             allowed_tools: overrides.allowed_tools,
             max_iterations: overrides.max_iterations.unwrap_or(120),
-            token_budget: overrides.token_budget.unwrap_or_else(|| {
-                // Cloud mode: ask for an aspirational ceiling and let the lotus
-                // gateway clamp to the real per-upstream-model cap (Step 1).
-                // Local mode: use the model-name heuristic since there's no
-                // gateway in the loop.
-                if llm_settings.use_cloud {
-                    1_000_000
-                } else {
-                    crate::llm::max_tokens::default_max_tokens_for_model(
-                        &llm_settings.primary_model,
-                    ) as usize
-                }
-            }),
+            // All chat routes through the lotus gateway now: ask for an
+            // aspirational ceiling and let the gateway clamp to the real
+            // per-upstream-model cap (Step 1).
+            token_budget: overrides.token_budget.unwrap_or(1_000_000),
             chunk_timeout_secs: 90,
             masking_level: llm_settings.masking_level.clone(),
             workspace_path: workspace_path.clone(),
@@ -1524,8 +1515,8 @@ impl RuntimeChatTurnDriver {
             == "__resume_from_task_notification__"
             && request.attachments.is_empty();
 
-        let should_try_anthropic_images = config.llm_settings.use_cloud
-            && crate::llm::vision_support::supports_lotus_anthropic_vision(
+        let should_try_anthropic_images =
+            crate::llm::vision_support::supports_lotus_anthropic_vision(
                 &config.llm_settings.cloud_model,
             );
         let anthropic_image_result =

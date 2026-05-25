@@ -20,11 +20,8 @@ export interface Settings {
   autoCleanupEnabled: boolean
   tempFileRetentionDays: number
   keepOldVersions: number
-  tavilyApiKey: string
-  bochaApiKey: string
   customModelEndpoint: string
   customModelName: string
-  useCloud: boolean
   cloudModel: string
   cloudModelType: string
   personaOnboardingDone?: boolean
@@ -46,11 +43,8 @@ export const DEFAULT_SETTINGS: Settings = {
   autoCleanupEnabled: true,
   tempFileRetentionDays: 7,
   keepOldVersions: 1,
-  tavilyApiKey: '',
-  bochaApiKey: '',
   customModelEndpoint: '',
   customModelName: '',
-  useCloud: true,
   cloudModel: '',
   cloudModelType: '',
   personaOnboardingDone: false,

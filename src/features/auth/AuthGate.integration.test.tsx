@@ -26,13 +26,10 @@ const tauriMock = vi.hoisted(() => ({
     autoCleanupEnabled: true,
     tempFileRetentionDays: 7,
     keepOldVersions: 1,
-    tavilyApiKey: '',
-    bochaApiKey: '',
     customModelEndpoint: '',
     customModelName: '',
     cloudModel: '',
     cloudModelType: '',
-    useCloud: true,
   }),
   updateSettings: vi.fn().mockResolvedValue(undefined),
   getConversations: vi.fn().mockResolvedValue([]),
@@ -68,13 +65,10 @@ describe('AuthGate', () => {
       autoCleanupEnabled: true,
       tempFileRetentionDays: 7,
       keepOldVersions: 1,
-      tavilyApiKey: '',
-      bochaApiKey: '',
       customModelEndpoint: '',
       customModelName: '',
       cloudModel: '',
       cloudModelType: '',
-      useCloud: true,
     })
     tauriMock.updateSettings.mockResolvedValue(undefined)
     tauriMock.getConversations.mockResolvedValue([])
@@ -157,13 +151,10 @@ describe('AuthGate', () => {
       autoCleanupEnabled: true,
       tempFileRetentionDays: 7,
       keepOldVersions: 1,
-      tavilyApiKey: '',
-      bochaApiKey: '',
       customModelEndpoint: '',
       customModelName: '',
       cloudModel: 'qwen3-coder-30b-a3b-instruct',
       cloudModelType: 'chat',
-      useCloud: true,
     })
 
     render(

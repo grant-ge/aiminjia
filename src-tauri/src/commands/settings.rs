@@ -50,8 +50,6 @@ pub async fn get_settings(
     // Decrypt sensitive fields if SecureStorage is available
     if let Some(ss) = crypto.as_ref() {
         settings.primary_api_key = decrypt_if_encrypted(ss, &settings.primary_api_key);
-        settings.tavily_api_key = decrypt_if_encrypted(ss, &settings.tavily_api_key);
-        settings.bocha_api_key = decrypt_if_encrypted(ss, &settings.bocha_api_key);
     }
 
     Ok(settings)

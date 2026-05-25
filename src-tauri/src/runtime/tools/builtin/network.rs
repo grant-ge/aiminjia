@@ -25,9 +25,6 @@ use crate::runtime::tools::RuntimeTool;
 /// Only the fields that `web_search` actually needs are present here.
 /// `CapabilityContext` is intentionally NOT extended with these fields.
 pub struct SearchDeps {
-    pub tavily_api_key: Option<String>,
-    pub bocha_api_key: Option<String>,
-    pub use_cloud: bool,
     pub auth_manager: Option<Arc<AuthManager>>,
 }
 
@@ -77,10 +74,7 @@ impl RuntimeTool for WebSearchRuntimeTool {
         let result = crate::llm::tool_executor::execute_web_search_core(
             query,
             max_results,
-            self.deps.use_cloud,
             self.deps.auth_manager.as_ref(),
-            self.deps.bocha_api_key.as_deref(),
-            self.deps.tavily_api_key.as_deref(),
         )
         .await
         .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;

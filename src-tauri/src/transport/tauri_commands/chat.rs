@@ -948,7 +948,6 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             auto_model_routing: settings.auto_model_routing,
             custom_model_endpoint: settings.custom_model_endpoint,
             custom_model_name: settings.custom_model_name,
-            use_cloud: settings.use_cloud,
             cloud_model: settings.cloud_model,
             cloud_model_type: settings.cloud_model_type,
             thinking_type: settings.thinking_type,
@@ -1969,7 +1968,6 @@ fn build_gateway_settings(settings: &ResolvedLlmSettings) -> AppSettings {
         auto_model_routing: settings.auto_model_routing,
         custom_model_endpoint: settings.custom_model_endpoint.clone(),
         custom_model_name: settings.custom_model_name.clone(),
-        use_cloud: settings.use_cloud,
         cloud_model: settings.cloud_model.clone(),
         cloud_model_type: settings.cloud_model_type.clone(),
         thinking_type: settings.thinking_type.clone(),
@@ -2530,21 +2528,6 @@ impl TauriChatCommandAdapter {
             .app
             .try_state::<Arc<crate::runtime::agent::AgentRuntime>>()
             .map(|v| v.inner().clone());
-        let (tavily_api_key, bocha_api_key, use_cloud) = {
-            let map = self.services.db().get_all_settings().unwrap_or_default();
-            let mut s = if map.is_empty() {
-                AppSettings::default()
-            } else {
-                AppSettings::from_string_map(&map)
-            };
-            if let Some(ss) = self.services.crypto.as_ref() {
-                s.tavily_api_key = decrypt_api_key(ss, &s.tavily_api_key);
-                s.bocha_api_key = decrypt_api_key(ss, &s.bocha_api_key);
-            }
-            let tavily = if s.tavily_api_key.is_empty() { None } else { Some(s.tavily_api_key) };
-            let bocha = if s.bocha_api_key.is_empty() { None } else { Some(s.bocha_api_key) };
-            (tavily, bocha, s.use_cloud)
-        };
         let workspace_path = self.services.file_mgr.workspace_path();
         let request_scoped_runtime_deps = crate::plugin::registry::RequestScopedRuntimeDeps {
             storage: self.services.db().clone(),
@@ -2554,11 +2537,8 @@ impl TauriChatCommandAdapter {
             session_id: session_id.clone(),
             run_id: Some(run_id.clone()),
             agent_id: None,
-            tavily_api_key,
-            bocha_api_key,
             app_handle: Some(self.services.app.clone()),
             auth_manager: Some(self.services.auth_manager.clone()),
-            use_cloud,
             model: String::new(),
             gateway: Some(self.services.gateway.clone()),
             tool_registry: Some(self.services.tool_registry.clone()),
@@ -2775,13 +2755,12 @@ impl TauriChatCommandAdapter {
             "[send_message] agent_runtime={}",
             agent_runtime.is_some()
         );
-        // 读 tavily/bocha key 和 use_cloud 给 web_search 工具用。之前这里写死成
-        // None/false，导致 web_search 只能走 Bing 抓取，反爬挂掉就整个工具失败。
+        // Load app settings (decrypting the primary key) for the runtime deps.
         log::info!(
-            "[send_message] loading settings for api-keys conv={}",
+            "[send_message] loading settings conv={}",
             conversation_id
         );
-        let (tavily_api_key, bocha_api_key, use_cloud, app_settings_arc) = {
+        let app_settings_arc = {
             let map = self.services.db().get_all_settings().unwrap_or_default();
             let mut s = if map.is_empty() {
                 AppSettings::default()
@@ -2789,30 +2768,10 @@ impl TauriChatCommandAdapter {
                 AppSettings::from_string_map(&map)
             };
             if let Some(ss) = self.services.crypto.as_ref() {
-                s.tavily_api_key = decrypt_api_key(ss, &s.tavily_api_key);
-                s.bocha_api_key = decrypt_api_key(ss, &s.bocha_api_key);
                 s.primary_api_key = decrypt_api_key(ss, &s.primary_api_key);
             }
-            let tavily = if s.tavily_api_key.is_empty() {
-                None
-            } else {
-                Some(s.tavily_api_key.clone())
-            };
-            let bocha = if s.bocha_api_key.is_empty() {
-                None
-            } else {
-                Some(s.bocha_api_key.clone())
-            };
-            let use_cloud = s.use_cloud;
-            (tavily, bocha, use_cloud, Arc::new(s))
+            Arc::new(s)
         };
-        log::info!(
-            "[send_message] settings loaded use_cloud={} tavily={} bocha={} conv={}",
-            use_cloud,
-            tavily_api_key.is_some(),
-            bocha_api_key.is_some(),
-            conversation_id
-        );
         let workspace_path = self.services.file_mgr.workspace_path();
         log::info!(
             "[send_message] workspace_path={} exists={} conv={}",
@@ -2832,11 +2791,8 @@ impl TauriChatCommandAdapter {
             session_id: session_id.clone(),
             run_id: Some(run_id.clone()),
             agent_id: None,
-            tavily_api_key,
-            bocha_api_key,
             app_handle: Some(self.services.app.clone()),
             auth_manager: Some(self.services.auth_manager.clone()),
-            use_cloud,
             model: String::new(),
             gateway: Some(self.services.gateway.clone()),
             tool_registry: Some(self.services.tool_registry.clone()),
