@@ -1,22 +1,32 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { getDevBadgeLabel, TitleBar } from './TitleBar'
 
+// Shared spies so window-control / drag wiring can be asserted. The inner
+// closure dereferences these lazily (on getCurrentWindow() call), so they are
+// already initialized by the time a test fires an event.
+const startDragging = vi.fn()
+const toggleMaximize = vi.fn()
+
 vi.mock('@tauri-apps/api/window', () => ({
   getCurrentWindow: () => ({
     minimize: vi.fn(),
-    toggleMaximize: vi.fn(),
+    toggleMaximize,
     close: vi.fn(),
-    startDragging: vi.fn(),
+    startDragging,
   }),
 }))
+
+const WINDOWS_UA = 'Mozilla/5.0 (Windows NT 10.0)'
 
 describe('TitleBar', () => {
   const originalUserAgent = navigator.userAgent
 
   beforeEach(() => {
     vi.stubEnv('DEV', false)
+    startDragging.mockClear()
+    toggleMaximize.mockClear()
   })
 
   afterEach(() => {
@@ -60,5 +70,31 @@ describe('TitleBar', () => {
     Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Macintosh)', configurable: true })
     render(<TitleBar />)
     expect(screen.queryByText('DEV')).not.toBeInTheDocument()
+  })
+
+  describe('Windows drag behavior', () => {
+    beforeEach(() => {
+      Object.defineProperty(navigator, 'userAgent', { value: WINDOWS_UA, configurable: true })
+    })
+
+    it('left-button single press starts window dragging', () => {
+      const { container } = render(<TitleBar />)
+      fireEvent.mouseDown(container.firstChild as Element, { buttons: 1, detail: 1 })
+      expect(startDragging).toHaveBeenCalledTimes(1)
+      expect(toggleMaximize).not.toHaveBeenCalled()
+    })
+
+    it('left-button double press toggles maximize instead of dragging', () => {
+      const { container } = render(<TitleBar />)
+      fireEvent.mouseDown(container.firstChild as Element, { buttons: 1, detail: 2 })
+      expect(toggleMaximize).toHaveBeenCalledTimes(1)
+      expect(startDragging).not.toHaveBeenCalled()
+    })
+
+    it('window control buttons do not trigger window dragging', () => {
+      render(<TitleBar />)
+      fireEvent.mouseDown(screen.getByLabelText('Close'), { buttons: 1, detail: 1 })
+      expect(startDragging).not.toHaveBeenCalled()
+    })
   })
 })
