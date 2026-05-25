@@ -525,6 +525,7 @@
     "loginButton": "登录",
     "loginFailed": "登录失败，请重试",
     "loginTo": "登录到 {{name}}",
+    "language": "界面语言",
     "continueWithEnterprise": "使用企业账号继续",
     "account": "账号",
     "username": "用户名",

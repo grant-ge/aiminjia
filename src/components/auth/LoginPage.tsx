@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 
 import { LoginCard } from '@/components/auth/LoginCard'
 import { LoginFooter } from '@/components/auth/LoginFooter'
+import { LoginLanguageSwitch } from '@/components/auth/LoginLanguageSwitch'
 import { LoginLogoStack } from '@/components/auth/LoginLogoStack'
 import { LoginOptionsRow } from '@/components/auth/LoginOptionsRow'
 import { RegisterCard } from '@/components/auth/RegisterCard'
@@ -108,6 +109,11 @@ export function LoginPage() {
           mounted, and native window decorations are disabled on Windows — without
           this the login/register screen has no way to close or minimize. */}
       <TitleBar />
+      {/* Pre-auth language toggle: pinned top-right under the title bar so it
+          stays in place for both the login and register cards. */}
+      <div className="absolute right-4 top-11 z-10">
+        <LoginLanguageSwitch />
+      </div>
       <div className="relative flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-6 overflow-y-auto px-6">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute -left-32 -top-32 h-[500px] w-[500px] rounded-full opacity-30" style={{ background: 'radial-gradient(circle, var(--primary) 0%, transparent 70%)', filter: 'blur(80px)' }} />

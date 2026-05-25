@@ -30,6 +30,12 @@ Tauri webview = 系统 WebKit（mac）/ WebView2（win）。macOS 12 Monterey �
 
 未登录态 `AuthGate` 渲染 `LoginPage` 替代主 `AppShell`，因此 `<TitleBar />` 不挂载；Windows 又 `set_decorations(false)`，导致登录/注册页（含内嵌切换的 `RegisterCard`）无任何关窗/最小化按钮。修法：`LoginPage` 顶部内嵌 `<TitleBar />`（mac 走原生红绿灯 overlay，Windows 出自绘 `WindowControls`）。同时 `ui/dialog` 的 `DialogContent` 加内置右上角 X（见「UI 编写规范」），技能市场 / 协议文档等之前只能 Esc/点遮罩的弹窗统一有可见关闭。
 
+## 登录/注册页中英文切换 + 语言一致性（v0.5.29）
+
+未登录态只渲染 `LoginPage`，设置面板（`GeneralPanel` 的「界面语言」）拿不到，用户进不去就无法切语言。修法：新建 `src/components/auth/LoginLanguageSwitch.tsx`（复用 `GeneralPanel` 同款 `bg-muted` 胶囊分段切换，主题变量驱动），由 `LoginPage` 在标题栏下方右上角（`absolute right-4 top-11 z-10`）**页面级**挂载，登录卡和注册卡两种 `mode` 都显示。选中态读实时 `i18n.language`（设置 store 未认证态还没从后端 hydrate，不能用它判断），切换走共享的 `settingsStore.setAppLanguage`（= `i18n.changeLanguage` + `persistLanguage` 落 localStorage + set store），与设置页同一条路径，无第二套真相源。语言名用本名「中文 / English」（语言切换器惯例，不随 UI 语言变）。
+
+**语言一致性约束（活跃）**：设备本地语言（登录页 / 设置页选择，均经 `persistLanguage` 落 localStorage 并 apply 到 i18n）是该设备的权威值。`settingsStore.setSettings` 在登录后加载后端设置时，**不得**用后端 `appLanguage` 静默覆盖屏幕上的语言——会出现「界面是英文、设置单选项却是中文」的不一致。实现：`setSettings` 仅当传入 `appLanguage` 时，把 store 值与当前 `i18n.language` 对齐（设备选择胜出），而非直接吃后端值。契约由 `settingsStore.test.ts` 的 `appLanguage consistency` 三条用例钉死。未把登录页选择回写后端（pre-auth `updateSettings` 不可靠），定位为逐设备偏好。
+
 ## Windows 兼容性约定（v0.5.7）
 
 所有 git 子进程必须传 `-c core.quotepath=false`（中文文件名展示）；用户可编辑 JSON 文件（mcp_config / global_config）的读路径走 `storage::text_io::read_to_string_strip_bom`（剥 Win10 Notepad BOM）；外部 CLI 输出（dws / where.exe / tasklist）解码走 `storage::console_decode::decode_console_bytes`（Windows GBK fallback，靠 `encoding_rs`）；MCP 子进程 spawn 时强制 `PYTHONIOENCODING=utf-8` / `PYTHONUTF8=1` / `LANG=en_US.UTF-8`；hooks runner + skill `!cmd` 替换在 Windows 走 `powershell.exe -NoProfile -Command`（不能裸 `sh -c`）；用户/LLM 提供的文件名走 `storage::safe_filename::ensure_safe_filename`（CON/PRN/COM*/LPT* 保留名 + 禁字符 `<>:"\|?*` + 尾部 `.`/空格 + 长度 ≤ 200）；任何写到磁盘的状态文件优先 tmp + rename 原子写（参考 `runtime::employee::store::write_atomic`），目录删除走 `remove_dir_all_retry` 3×150–300ms backoff。

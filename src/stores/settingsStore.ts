@@ -41,7 +41,16 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       persistFontScale(fontScale)
       applyFontScale(fontScale)
     }
-    set(settings)
+    // The device's live UI language (chosen on the login screen or in Settings,
+    // both persisted via persistLanguage and applied to i18n) is authoritative.
+    // When backend settings load post sign-in, don't let a stored appLanguage
+    // silently contradict what's actually on screen — keep the store value in
+    // lockstep with i18n so a language picked on the login page stays in effect.
+    const next =
+      settings.appLanguage === undefined
+        ? settings
+        : { ...settings, appLanguage: (i18n.language === 'en-US' ? 'en-US' : 'zh-CN') as AppLanguage }
+    set(next)
   },
   setPrimaryModel: (primaryModel) => set({ primaryModel }),
   setPrimaryApiKey: (primaryApiKey) => set({ primaryApiKey }),

@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { useSettingsStore } from './settingsStore'
+import i18n from '@/i18n'
 import { DEFAULT_SETTINGS } from '@/types/settings'
 
 // Reset store between tests
@@ -112,6 +113,43 @@ describe('settingsStore — setter independence', () => {
     expect(useSettingsStore.getState().autoModelRouting).toBe(false)
     // Unrelated settings untouched
     expect(useSettingsStore.getState().primaryModel).toBe('deepseek-v3')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Language: device choice (login page / settings) wins over backend on load
+// ---------------------------------------------------------------------------
+
+describe('settingsStore — appLanguage consistency', () => {
+  afterEach(() => {
+    void i18n.changeLanguage('zh-CN')
+  })
+
+  it('setAppLanguage updates both i18n and the store', () => {
+    useSettingsStore.getState().setAppLanguage('en-US')
+    expect(i18n.language).toBe('en-US')
+    expect(useSettingsStore.getState().appLanguage).toBe('en-US')
+  })
+
+  it('keeps the live UI language when backend settings load with a different appLanguage', () => {
+    // Simulate the user picking English on the login screen…
+    useSettingsStore.getState().setAppLanguage('en-US')
+
+    // …then backend settings (saved on another session) arriving post sign-in.
+    useSettingsStore.getState().setSettings({ primaryModel: 'claude', appLanguage: 'zh-CN' })
+
+    const state = useSettingsStore.getState()
+    // Device choice wins: the on-screen language and the store agree.
+    expect(i18n.language).toBe('en-US')
+    expect(state.appLanguage).toBe('en-US')
+    // Unrelated settings still apply.
+    expect(state.primaryModel).toBe('claude')
+  })
+
+  it('leaves appLanguage untouched on a partial update that omits it', () => {
+    useSettingsStore.getState().setAppLanguage('en-US')
+    useSettingsStore.getState().setSettings({ primaryModel: 'openai' })
+    expect(useSettingsStore.getState().appLanguage).toBe('en-US')
   })
 })
 

@@ -525,6 +525,7 @@
     "loginButton": "Log In",
     "loginFailed": "Login failed, please try again",
     "loginTo": "Sign in to {{name}}",
+    "language": "Language",
     "continueWithEnterprise": "Continue with enterprise account",
     "account": "Account",
     "username": "Username",
