@@ -3,9 +3,40 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
+use serde::Deserialize;
 
 use super::frontmatter::parse_skill_md;
 use super::types::{DiskSkill, SkillSource};
+
+/// Sidecar metadata written by the lotus skill-sync path. Used to overlay
+/// fields onto the SKILL.md frontmatter when the in-package values are
+/// missing — primarily category, for legacy packages uploaded before the
+/// strict-frontmatter contract. Leaving SKILL.md untouched preserves the
+/// sha256 integrity check.
+#[derive(Debug, Default, Deserialize)]
+struct LotusMeta {
+    #[serde(default)]
+    category: Option<String>,
+}
+
+fn read_lotus_meta(skill_dir: &Path) -> LotusMeta {
+    let path = skill_dir.join(".lotus-meta.json");
+    let bytes = match fs::read(&path) {
+        Ok(b) => b,
+        Err(_) => return LotusMeta::default(),
+    };
+    match serde_json::from_slice::<LotusMeta>(&bytes) {
+        Ok(meta) => meta,
+        Err(err) => {
+            log::warn!(
+                "parse .lotus-meta.json at {} failed: {} (ignoring sidecar)",
+                path.display(),
+                err
+            );
+            LotusMeta::default()
+        }
+    }
+}
 
 pub fn is_valid_skill_id(id: &str) -> bool {
     let mut chars = id.chars();
@@ -85,13 +116,31 @@ fn load_one_root(
             continue;
         }
         let content = fs::read_to_string(&skill_md)?;
-        let parsed = match parse_skill_md(&content) {
+        let mut parsed = match parse_skill_md(&content) {
             Ok(parsed) => parsed,
             Err(err) => {
                 log::error!("Failed to parse skill {} at {}: {}", name, skill_md.display(), err);
                 continue;
             }
         };
+        // Overlay .lotus-meta.json sidecar fields onto the frontmatter. Only
+        // applied when the frontmatter value is missing — packages with
+        // explicit `category:` in SKILL.md remain authoritative.
+        let is_blank = parsed
+            .frontmatter
+            .category
+            .as_deref()
+            .map(|s| s.trim().is_empty())
+            .unwrap_or(true);
+        if is_blank {
+            let meta = read_lotus_meta(&path);
+            if let Some(cat) = meta.category {
+                let cat_trimmed = cat.trim();
+                if !cat_trimmed.is_empty() {
+                    parsed.frontmatter.category = Some(cat_trimmed.to_string());
+                }
+            }
+        }
         // If sync wrote a `.scope` marker, upgrade Global → Tenant when marker
         // says "tenant". User root never reads .scope (local uploads stay User).
         let effective_source = if matches!(source, SkillSource::Global) {
@@ -114,4 +163,83 @@ fn load_one_root(
         );
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn write_skill(root: &Path, id: &str, skill_md: &str, sidecar: Option<&str>) {
+        let dir = root.join(id);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("SKILL.md"), skill_md).unwrap();
+        if let Some(s) = sidecar {
+            fs::write(dir.join(".lotus-meta.json"), s).unwrap();
+        }
+    }
+
+    const MD_WITH_CATEGORY: &str = "---\nname: explicit\ndescription: x\nversion: \"1.0\"\ncategory: hr\n---\nbody\n";
+    const MD_WITHOUT_CATEGORY: &str = "---\nname: legacy\ndescription: x\nversion: \"1.0\"\n---\nbody\n";
+
+    #[test]
+    fn sidecar_fills_missing_category() {
+        let tmp = TempDir::new().unwrap();
+        write_skill(tmp.path(), "legacy-skill", MD_WITHOUT_CATEGORY, Some(r#"{"category":"hr"}"#));
+        let loaded =
+            load_skill_roots_tagged(&[(tmp.path().to_path_buf(), SkillSource::Global)]).unwrap();
+        let skill = loaded.get("legacy-skill").expect("loaded");
+        assert_eq!(skill.frontmatter.category.as_deref(), Some("hr"));
+    }
+
+    #[test]
+    fn frontmatter_category_beats_sidecar() {
+        let tmp = TempDir::new().unwrap();
+        write_skill(
+            tmp.path(),
+            "explicit-skill",
+            MD_WITH_CATEGORY,
+            Some(r#"{"category":"finance"}"#),
+        );
+        let loaded =
+            load_skill_roots_tagged(&[(tmp.path().to_path_buf(), SkillSource::Global)]).unwrap();
+        let skill = loaded.get("explicit-skill").expect("loaded");
+        // SKILL.md wins; sidecar is fallback only
+        assert_eq!(skill.frontmatter.category.as_deref(), Some("hr"));
+    }
+
+    #[test]
+    fn missing_sidecar_leaves_category_unset() {
+        let tmp = TempDir::new().unwrap();
+        write_skill(tmp.path(), "no-sidecar", MD_WITHOUT_CATEGORY, None);
+        let loaded =
+            load_skill_roots_tagged(&[(tmp.path().to_path_buf(), SkillSource::Global)]).unwrap();
+        let skill = loaded.get("no-sidecar").expect("loaded");
+        assert!(skill.frontmatter.category.is_none());
+    }
+
+    #[test]
+    fn malformed_sidecar_does_not_break_load() {
+        let tmp = TempDir::new().unwrap();
+        write_skill(tmp.path(), "bad-sidecar", MD_WITHOUT_CATEGORY, Some("not json"));
+        let loaded =
+            load_skill_roots_tagged(&[(tmp.path().to_path_buf(), SkillSource::Global)]).unwrap();
+        let skill = loaded.get("bad-sidecar").expect("still loads despite bad sidecar");
+        assert!(skill.frontmatter.category.is_none());
+    }
+
+    #[test]
+    fn sidecar_empty_category_does_not_overwrite() {
+        let tmp = TempDir::new().unwrap();
+        write_skill(
+            tmp.path(),
+            "blank-sidecar",
+            MD_WITHOUT_CATEGORY,
+            Some(r#"{"category":"   "}"#),
+        );
+        let loaded =
+            load_skill_roots_tagged(&[(tmp.path().to_path_buf(), SkillSource::Global)]).unwrap();
+        let skill = loaded.get("blank-sidecar").expect("loaded");
+        assert!(skill.frontmatter.category.is_none());
+    }
 }

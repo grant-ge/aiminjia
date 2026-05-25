@@ -370,7 +370,18 @@ def step_3_release(state):
 def step_4_finalize(state):
     """Step 4: Generate update.json → users get auto-update."""
     check_prereq(state, "release_tagged", "finalize release")
-    version = state["version"]
+    # Read version from package.json / tauri.conf.json — the state file can
+    # legitimately lag (e.g. previous finalize bumped state to v0.5.26 then
+    # the user manually bumped to v0.5.27 and re-ran). The on-disk config
+    # files are the source of truth for what was actually built and tagged.
+    version = get_current_version()
+    state_version = state.get("version")
+    if state_version and state_version != version:
+        print(yellow(
+            f"  Note: state file says v{state_version} but package.json/tauri.conf.json says v{version}."
+        ))
+        print(yellow(f"  Using v{version} (disk source of truth)."))
+        state["version"] = version
 
     print(bold(f"\n═══ Step 4: Finalize Release (v{version}) ═══"))
     print(f"  This will generate update.json and push auto-updates to all users.")

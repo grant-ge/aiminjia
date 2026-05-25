@@ -35,9 +35,14 @@ impl LoadSkillRuntimeTool {
 
 #[async_trait]
 impl RuntimeTool for LoadSkillRuntimeTool {
-    fn id(&self) -> &str { "Skill" }
-    
-    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "Skill"
+    }
+
+    async fn definition(
+        &self,
+        _ctx: &crate::runtime::tools::ToolDescriptionContext,
+    ) -> ToolDefinition {
         let ids = self
             .skill_registry
             .lock()

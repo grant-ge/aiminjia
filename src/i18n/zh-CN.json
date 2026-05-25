@@ -67,12 +67,22 @@
     "schedules": "定时任务",
     "tasks": "任务",
     "archiveChat": "归档聊天",
+    "archiveChatTooltip": "归档对话",
+    "archiveChatConfirmTooltip": "再次点击确认归档",
+    "pinChat": "置顶对话",
+    "unpinChat": "取消置顶",
+    "pinnedSection": "置顶",
+    "allPinnedHint": "所有对话都已置顶",
     "renameChat": "重命名聊天",
     "copyConversationId": "复制会话 ID",
     "chatMoreActions": "聊天更多操作",
     "noHistory": "还没有历史任务",
     "defaultFolder": "默认项目",
     "project": "项目",
+    "employee": "数字员工",
+    "employeeTab": "员工",
+    "expertTeam": "专家团",
+    "expertTeamTab": "专家",
     "channel": "频道"
   },
   "inputBar": {
@@ -163,6 +173,9 @@
     "elapsed": " · 已 {{sec}}s",
     "stalled": "网络较慢，仍在等待…"
   },
+  "chatTopBar": {
+    "updatedAt": "更新于 {{time}}"
+  },
   "messageList": {
     "steps": {
       "1": "数据清洗与理解",
@@ -170,7 +183,10 @@
       "3": "职级框架",
       "4": "公平性诊断 + 根因分析",
       "5": "行动方案 + 管理层材料"
-    }
+    },
+    "cannotPreview": "无法预览此文件",
+    "cannotOpen": "无法打开文件",
+    "cannotReveal": "无法在文件夹中显示"
   },
   "subagent": {
     "resultCard": {
@@ -377,7 +393,11 @@
       "fontSizeDesc": "调整界面文字和间距的整体缩放",
       "fontSmall": "小",
       "fontMedium": "中",
-      "fontLarge": "大"
+      "fontLarge": "大",
+      "chatWidth": "聊天区域宽度",
+      "chatWidthDesc": "控制对话内容居中显示或铺满可用宽度",
+      "chatWidthCentered": "居中",
+      "chatWidthFull": "全宽"
     },
     "archived": {
       "newChat": "新对话",
@@ -394,7 +414,15 @@
       "restoreFailed": "恢复失败",
       "permanentlyDeleted": "已彻底删除",
       "deletedWithFiles": "「{{title}}」及其关联文件已删除",
-      "deleteFailed": "删除失败"
+      "deleteFailed": "删除失败",
+      "selectedCount": "已选 {{count}} 项",
+      "selectAll": "全选",
+      "clearSelection": "取消选择",
+      "deleteSelected": "删除选中",
+      "deleteSelectedTitle": "彻底删除 {{count}} 个对话？",
+      "deleteSelectedDescription": "这些对话及其关联文件将被永久删除，无法恢复。",
+      "batchDeleteSucceeded": "已删除 {{count}} 个对话",
+      "batchDeletePartial": "成功 {{success}}，失败 {{failure}}"
     },
     "runtime": {
       "title": "运行时",
@@ -818,8 +846,7 @@
     }
   },
   "ExpertTeams": {
-    "pageTitle": "专家团",
-    "closeBanner": "关闭专家团"
+    "pageTitle": "专家团"
   },
   "nav": {
     "home": "新任务",
@@ -943,6 +970,13 @@
     "previewUnavailable": "暂不支持预览",
     "openExternal": "用默认应用打开",
     "reveal": "在文件夹中显示"
+  },
+  "filePreview": {
+    "openWithDefault": "用默认应用打开",
+    "selectArtifact": "选择左侧文件以预览",
+    "loadingPreview": "正在加载预览...",
+    "cannotPreview": "无法预览此文件",
+    "retry": "重试"
   },
   "inbox": {
     "title": "汇报中心",

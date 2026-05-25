@@ -27,11 +27,9 @@ pub fn project_employee_to_agent(rec: &EmployeeRecord) -> AgentDefinition {
         description: format!("{}（{}，数字员工）", rec.name, rec.role),
         allowed_tools: rec.tool_whitelist.clone(),
         disallowed_tools: Vec::new(),
-        max_iterations: 30,
+        max_iterations: 300,
         model: AgentModel::Inherit,
-        system_prompt: AgentPrompt::Inline(
-            rec.system_prompt_extra.clone().unwrap_or_default(),
-        ),
+        system_prompt: AgentPrompt::Inline(rec.system_prompt_extra.clone().unwrap_or_default()),
         source: AgentSource::Employee,
         permission_mode: AgentPermissionMode::AutoDeny,
         background_default: true,
@@ -64,7 +62,8 @@ pub struct AgentRegistrySync {
 
 impl EmployeeAgentSync for AgentRegistrySync {
     fn on_active(&self, rec: &EmployeeRecord) {
-        self.registry.register_dynamic(project_employee_to_agent(rec));
+        self.registry
+            .register_dynamic(project_employee_to_agent(rec));
     }
     fn on_inactive(&self, name: &str) {
         self.registry.unregister(name);
@@ -74,10 +73,7 @@ impl EmployeeAgentSync for AgentRegistrySync {
 /// 启动时把所有 Active employee 灌进 AgentRegistry。返回实际注册的条目数。
 /// `records` 是 `EmployeeStore::list()` 的产物；这里再做一次 lifecycle 过滤，
 /// 避免误注册 Paused / Archived 项。
-pub fn seed_registry_from_employees(
-    registry: &AgentRegistry,
-    records: &[EmployeeRecord],
-) -> usize {
+pub fn seed_registry_from_employees(registry: &AgentRegistry, records: &[EmployeeRecord]) -> usize {
     let mut count = 0;
     for rec in records {
         if matches!(rec.lifecycle, EmployeeLifecycle::Active) {
@@ -143,7 +139,10 @@ mod tests {
             .unwrap();
         let def = project_employee_to_agent(&rec);
         assert_eq!(def.name, rec.id);
-        assert_eq!(def.allowed_tools, vec!["Read".to_string(), "Grep".to_string()]);
+        assert_eq!(
+            def.allowed_tools,
+            vec!["Read".to_string(), "Grep".to_string()]
+        );
         assert_eq!(def.source, AgentSource::Employee);
         match def.system_prompt {
             AgentPrompt::Inline(s) => assert!(s.contains("小研")),
@@ -157,8 +156,12 @@ mod tests {
     fn seed_skips_non_active_employees() {
         let registry = AgentRegistry::with_builtins();
         let (store, _tmp) = mk_store();
-        let active = store.create(mk_req("n1", Some(EmployeeLifecycle::Active))).unwrap();
-        let paused = store.create(mk_req("n2", Some(EmployeeLifecycle::Paused))).unwrap();
+        let active = store
+            .create(mk_req("n1", Some(EmployeeLifecycle::Active)))
+            .unwrap();
+        let paused = store
+            .create(mk_req("n2", Some(EmployeeLifecycle::Paused)))
+            .unwrap();
         let n = seed_registry_from_employees(&registry, &[active.clone(), paused]);
         assert_eq!(n, 1);
         assert!(registry.get(&active.id).is_some());

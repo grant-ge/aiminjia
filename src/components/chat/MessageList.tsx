@@ -6,7 +6,9 @@ import { useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { AiBubble } from '@/components/chat/AiBubble'
+import { DayDivider } from '@/components/chat/DayDivider'
 import { StreamingBubble } from '@/components/chat/StreamingBubble'
+import { isSameDay } from '@/lib/chatTime'
 import { ChatRow } from '@/components/chat-scene/ChatRow'
 import { GeneratedFileCard } from '@/components/chat-scene/GeneratedFileCard'
 import { PeerMessageBanner } from '@/components/chat-scene/PeerMessageBanner'
@@ -15,9 +17,13 @@ import { SuggestChipGroup } from '@/components/chat-scene/SuggestChipGroup'
 import { ToolGroupCard } from '@/components/chat-scene/ToolGroupCard'
 import { UserMessageBubble } from '@/components/chat-scene/UserMessageBubble'
 import { TeamProgressBlock } from '@/components/team/TeamProgressBlock'
+import { TeamVisualProvider } from '@/components/team/TeamVisualContext'
 import { toPreviewTarget } from '@/components/chat/generatedFileActions'
+import type { ExpertTeamId } from '@/features/expert-teams/teams'
+import { getExpertTeam } from '@/features/expert-teams/teams'
 import { useAuthStore } from '@/stores/authStore'
 import { useBrandingStore } from '@/stores/brandingStore'
+import { useChannelStore } from '@/stores/channelStore'
 import { useChatStore } from '@/stores/chatStore'
 import { useGeneratedFilePreviewStore } from '@/stores/generatedFilePreviewStore'
 import { useNotificationStore } from '@/stores/notificationStore'
@@ -29,8 +35,25 @@ import { useConversationTeamState, useTeamStore } from '@/stores/teamStore'
 
 type FileActionKind = 'preview' | 'open' | 'reveal'
 
-export function MessageList() {
+// Display name for IM platforms when the inbound conversation's sender is
+// rendered as the user-side identity. Keep in sync with AppSidebar's
+// CHANNEL_PLATFORM_NAME — WhatsApp intentionally not in this map because it
+// uses the contact's real push_name rather than the platform brand.
+const CHANNEL_PLATFORM_DISPLAY: Record<string, string> = {
+  dingtalk: '钉钉',
+  feishu: '飞书',
+  wecom: '企业微信',
+  wechat: '个人微信',
+  telegram: 'Telegram',
+}
+
+interface MessageListProps {
+  expertTeamId?: ExpertTeamId
+}
+
+export function MessageList({ expertTeamId }: MessageListProps = {}) {
   const { t } = useTranslation()
+  const expertTeam = expertTeamId ? getExpertTeam(expertTeamId) : undefined
 
   const FILE_ACTION_ERROR_TITLES: Record<FileActionKind, string> = {
     preview: t('messageList.cannotPreview'),
@@ -66,11 +89,43 @@ export function MessageList() {
   // configured (none of the current users have one).
   const assistantName = useBrandingStore((s) => s.productName)
   const assistantLogo = useBrandingStore((s) => s.logoUrl)
-  const userName = useAuthStore((s) => s.user?.name ?? s.user?.username ?? '我')
-  // User profile photos are not yet stored anywhere — colored-initial
-  // avatar from `ChatAvatar` is the default. When a profile-image field
-  // lands on the auth user, plug it in here.
-  const userAvatarUrl: string | null = null
+  const authUserName = useAuthStore((s) => s.user?.name ?? s.user?.username ?? '我')
+  // In channel chats (WhatsApp/Telegram/dingtalk/...), the "user" role
+  // bubbles come from the **external contact**, not the local AIjia operator.
+  // Identity rules (2026-05-21):
+  //   - WhatsApp: displayName (push_name) is reliable → use it for name +
+  //     initial-style avatar so each contact looks distinct.
+  //   - Other IM platforms (dingtalk/feishu/wecom/wechat/telegram): inbound
+  //     messages don't carry a stable real name (feishu/wecom/wechat only
+  //     give user_id). To stay visually consistent across IM tabs, render the
+  //     platform display name + platform logo as the "from" side identity.
+  //   - In-app (no channel binding): local auth user + neutral silhouette.
+  const channelConversation = useChannelStore((s) => {
+    if (!activeConversationId) return null
+    return s.conversations.find((conv) => conv.sessionId === activeConversationId) ?? null
+  })
+  const { userName, userAvatarUrl, userAvatarVariant } = (() => {
+    if (!channelConversation) {
+      return {
+        userName: authUserName,
+        userAvatarUrl: null as string | null,
+        userAvatarVariant: 'neutral' as 'initial' | 'neutral',
+      }
+    }
+    if (channelConversation.platform === 'whatsapp') {
+      const trimmed = channelConversation.displayName?.trim()
+      return {
+        userName: trimmed && trimmed.length > 0 ? trimmed : 'WhatsApp 私聊',
+        userAvatarUrl: null as string | null,
+        userAvatarVariant: 'initial' as 'initial' | 'neutral',
+      }
+    }
+    return {
+      userName: CHANNEL_PLATFORM_DISPLAY[channelConversation.platform] ?? channelConversation.platform,
+      userAvatarUrl: `/logos/${channelConversation.platform}.png`,
+      userAvatarVariant: 'initial' as 'initial' | 'neutral',
+    }
+  })()
 
   // Team chat drawer wiring.
   const { overview } = useTeamOverview(activeConversationId)
@@ -175,6 +230,19 @@ export function MessageList() {
     if (activeConversationId) openDrawer(activeConversationId, teamId)
   }
 
+  // 同一天内只在第一条之前显示分隔条；跨天再插一条。
+  const dayDividerFlags = useMemo(() => {
+    const flags: boolean[] = []
+    let prevIso: string | null = null
+    for (const t of turns) {
+      const anchor = t.userMessage?.createdAt ?? t.aiSegments[0]?.message.createdAt ?? null
+      const show =
+        !!anchor && (!prevIso || !isSameDay(new Date(prevIso), new Date(anchor)))
+      flags.push(show)
+      if (anchor) prevIso = anchor
+    }
+    return flags
+  }, [turns])
   return (
     <div
       className="flex flex-col gap-5 px-2 py-3"
@@ -187,8 +255,12 @@ export function MessageList() {
         // (handled inside UserMessageBubble). For those, skip the chat-row
         // avatar wrapper — the banner already announces the dispatch.
         const isDispatchTurn = !!(t.userMessage && parseDispatchHeader(t.userMessage.text))
+        const aiAnchorIso = t.aiSegments[0]?.message.createdAt ?? null
+        const turnAnchorIso = t.userMessage?.createdAt ?? aiAnchorIso
+        const showDayDivider = dayDividerFlags[i]
         return (
           <div key={i} className="flex flex-col gap-4">
+            {showDayDivider && turnAnchorIso ? <DayDivider iso={turnAnchorIso} /> : null}
             {t.peerBanners.length > 0 ? (
               <PeerMessageBanner banners={t.peerBanners} />
             ) : null}
@@ -202,7 +274,13 @@ export function MessageList() {
                   conversationId={activeConversationId ?? undefined}
                 />
               ) : (
-                <ChatRow role="user" name={userName} avatarUrl={userAvatarUrl} avatarVariant="neutral">
+                <ChatRow
+                  role="user"
+                  name={userName}
+                  avatarUrl={userAvatarUrl}
+                  avatarVariant={userAvatarVariant}
+                  timestamp={t.userMessage.createdAt}
+                >
                   <UserMessageBubble
                     text={t.userMessage.text}
                     commandText={t.userMessage.commandText}
@@ -221,7 +299,9 @@ export function MessageList() {
               />
             ) : null}
             {teamSession ? (
-              <TeamProgressBlock session={teamSession} onOpen={handleOpenTeamDrawer} />
+              <TeamVisualProvider value={expertTeam ?? null}>
+                <TeamProgressBlock session={teamSession} onOpen={handleOpenTeamDrawer} />
+              </TeamVisualProvider>
             ) : null}
             {/*
              * One ChatRow groups what the assistant actually produced:
@@ -240,6 +320,7 @@ export function MessageList() {
                 role="assistant"
                 name={assistantName}
                 avatarUrl={assistantLogo}
+                timestamp={aiAnchorIso}
               >
                 {t.aiSegments.map((s) => (
                   <AiBubble key={s.id} message={s.message} />

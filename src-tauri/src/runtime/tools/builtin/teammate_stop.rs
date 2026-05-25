@@ -27,9 +27,14 @@ pub struct TeammateStopRuntimeTool;
 
 #[async_trait]
 impl RuntimeTool for TeammateStopRuntimeTool {
-    fn id(&self) -> &str { "TeammateStop" }
-    
-    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "TeammateStop"
+    }
+
+    async fn definition(
+        &self,
+        _ctx: &crate::runtime::tools::ToolDescriptionContext,
+    ) -> ToolDefinition {
         TOOL_CATALOG.get("TeammateStop").unwrap_or_else(|| {
             ToolDefinition::new(
                 "TeammateStop",
@@ -52,9 +57,7 @@ impl RuntimeTool for TeammateStopRuntimeTool {
             .and_then(Value::as_str)
             .filter(|s| !s.is_empty())
             .ok_or_else(|| {
-                ToolError::ExecutionFailed(
-                    "missing required string field `agent_name`".into(),
-                )
+                ToolError::ExecutionFailed("missing required string field `agent_name`".into())
             })?
             .to_string();
 
@@ -75,8 +78,7 @@ impl RuntimeTool for TeammateStopRuntimeTool {
         })?;
         let cancels = ctx.cancellation_registry.clone().ok_or_else(|| {
             ToolError::ExecutionFailed(
-                "cancellation_registry not configured — TeammateStop requires LTR wiring"
-                    .into(),
+                "cancellation_registry not configured — TeammateStop requires LTR wiring".into(),
             )
         })?;
 
@@ -131,13 +133,18 @@ impl RuntimeTool for TeammateStopRuntimeTool {
             None => {
                 record_diagnostic(
                     &ws,
-                    DiagnosticEvent::new("tool.teammate_stop.no_cancel_token", DiagnosticSource::Backend)
-                        .conversation_id(ctx.session_id.as_str())
-                        .run_id(ctx.run_id.as_str())
-                        .tool_call_id(ctx.tool_call_id.as_str())
-                        .agent_id(agent_id.as_str())
-                        .ok(true)
-                        .payload(serde_json::json!({ "agent_name": name, "reason": "no_cancel_token" })),
+                    DiagnosticEvent::new(
+                        "tool.teammate_stop.no_cancel_token",
+                        DiagnosticSource::Backend,
+                    )
+                    .conversation_id(ctx.session_id.as_str())
+                    .run_id(ctx.run_id.as_str())
+                    .tool_call_id(ctx.tool_call_id.as_str())
+                    .agent_id(agent_id.as_str())
+                    .ok(true)
+                    .payload(
+                        serde_json::json!({ "agent_name": name, "reason": "no_cancel_token" }),
+                    ),
                 );
                 Ok(ToolResult::new(
                     "TeammateStop",

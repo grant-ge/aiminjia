@@ -98,7 +98,9 @@ body"#,
     let err = load_agent_from_markdown(&path).expect_err("should reject");
     assert!(
         err.to_string().contains("unknown permission_mode")
-            || err.chain().any(|e| e.to_string().contains("permission_mode")),
+            || err
+                .chain()
+                .any(|e| e.to_string().contains("permission_mode")),
         "expected error to mention permission_mode: {err}"
     );
 }

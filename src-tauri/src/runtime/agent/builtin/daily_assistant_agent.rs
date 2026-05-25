@@ -1,4 +1,6 @@
-use crate::runtime::agent::definition::{AgentDefinition, AgentModel, AgentPermissionMode, AgentPrompt, AgentSource};
+use crate::runtime::agent::definition::{
+    AgentDefinition, AgentModel, AgentPermissionMode, AgentPrompt, AgentSource,
+};
 use crate::runtime::tools::catalog::DAILY_ALLOWED_TOOLS;
 
 pub fn daily_assistant_agent_definition() -> AgentDefinition {
@@ -31,7 +33,8 @@ pub fn daily_assistant_agent_definition() -> AgentDefinition {
 输出：\n\
 - 用 Markdown\n\
 - 写作类任务直接给成品，不要\"以下是初稿\"这种废话\n\
-- 整理类任务用清单或表格".into()
+- 整理类任务用清单或表格"
+                .into(),
         ),
         source: AgentSource::Builtin,
         permission_mode: AgentPermissionMode::Bubble,

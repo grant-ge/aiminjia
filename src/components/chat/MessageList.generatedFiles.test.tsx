@@ -29,6 +29,7 @@ vi.mock('@/hooks/useTurnRenderModel', () => ({
   useTurnRenderModel: () => [
     {
       aiSegments: [],
+      peerBanners: [],
       generatedFiles: [
         {
           id: 'gf-report-html-001',
@@ -66,10 +67,11 @@ vi.mock('@/hooks/useTurnRenderModel', () => ({
 }))
 
 vi.mock('@/stores/chatStore', () => ({
-  useChatStore: vi.fn((selector: (state: { isStreaming: boolean; activeConversationId: string | null; streamStates: Record<string, { streamingContent?: string }> }) => unknown) => selector({
+  useChatStore: vi.fn((selector: (state: { isStreaming: boolean; activeConversationId: string | null; streamStates: Record<string, { streamingContent?: string }>; busyConversations: Set<string> }) => unknown) => selector({
     isStreaming: false,
     activeConversationId: '6dcab8d4-cac3-476e-8c1b-930e14f12fe7',
     streamStates: {},
+    busyConversations: new Set<string>(),
   })),
 }))
 

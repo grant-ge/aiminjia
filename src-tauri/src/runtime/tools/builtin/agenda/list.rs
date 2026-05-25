@@ -16,9 +16,14 @@ pub struct ListAgendaItemsRuntimeTool {
 
 #[async_trait]
 impl RuntimeTool for ListAgendaItemsRuntimeTool {
-    fn id(&self) -> &str { "list_agenda_items" }
-    
-    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "list_agenda_items"
+    }
+
+    async fn definition(
+        &self,
+        _ctx: &crate::runtime::tools::ToolDescriptionContext,
+    ) -> ToolDefinition {
         ToolDefinition::new(
             "list_agenda_items",
             "【自用】列出你（当前数字员工）自己的日程清单——你给自己设的循环任务、定时提醒。",
@@ -42,10 +47,7 @@ impl RuntimeTool for ListAgendaItemsRuntimeTool {
         let status_filter: Option<Vec<ItemStatus>> = input
             .get("status_in")
             .and_then(|v| serde_json::from_value(v.clone()).ok());
-        let limit = input
-            .get("limit")
-            .and_then(Value::as_u64)
-            .unwrap_or(50) as usize;
+        let limit = input.get("limit").and_then(Value::as_u64).unwrap_or(50) as usize;
         let mut filtered: Vec<_> = items
             .into_iter()
             .filter(|i| i.organizer_employee_id == self.deps.current_persona_id)
@@ -76,7 +78,10 @@ mod tests {
         let dir = TempDir::new().unwrap();
         for employee_id in ["alice", "bob"] {
             let tool = super::super::create::CreateAgendaItemRuntimeTool {
-                deps: Arc::new(AgendaToolDeps::new(dir.path().to_path_buf(), employee_id.into())),
+                deps: Arc::new(AgendaToolDeps::new(
+                    dir.path().to_path_buf(),
+                    employee_id.into(),
+                )),
             };
             tool.execute(
                 json!({ "title": "T", "prompt": "P", "start_at": "2999-05-07T01:00:00Z" }),

@@ -101,7 +101,8 @@ pub struct PluginContext {
     /// Event bus for emitting runtime events (e.g. AgentIdle on background completion).
     pub event_bus: Option<RuntimeEventBus>,
     /// Skill registry for request-scoped skill switch runtime tools.
-    pub skill_registry: Option<Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>>,
+    pub skill_registry:
+        Option<Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>>,
     /// 用户通过 UI 授权的本地目录（workspace-first 专项新增）
     pub authorized_workspace: Option<crate::runtime::store::AuthorizedWorkspaceRef>,
     /// Transitional bridge for request-scoped runtime executions that still
@@ -138,15 +139,4 @@ impl PluginContext {
             .unwrap_or(&self.conversation_id)
     }
 
-    pub fn loaded_key(&self, file_id: &str) -> String {
-        format!("loaded:{}:{}", self.loaded_scope_id(), file_id)
-    }
-
-    pub fn load_failed_key(&self, file_id: &str) -> String {
-        format!("load_failed:{}:{}", self.loaded_scope_id(), file_id)
-    }
-
-    pub fn loaded_prefix(&self) -> String {
-        format!("loaded:{}:", self.loaded_scope_id())
-    }
 }

@@ -50,6 +50,7 @@ fn app_item(id: &str, text: &str, atts: Vec<PendingAttachment>) -> PendingItem {
         text: text.into(),
         sender_nick: None,
         attachments: atts,
+        skill_command: None,
         received_at: "2026-05-11T03:21:00Z".into(),
     }
 }
@@ -59,8 +60,7 @@ async fn app_idle_returns_sent_directly() {
     let tmp = TempDir::new().unwrap();
     let registry = Arc::new(RuntimeRunRegistry::new());
     let bus = Arc::new(RuntimeEventBus::new());
-    let resolver: Arc<dyn ConvDirResolver> =
-        Arc::new(TempResolver(tmp.path().to_path_buf()));
+    let resolver: Arc<dyn ConvDirResolver> = Arc::new(TempResolver(tmp.path().to_path_buf()));
     let mgr = PendingQueueManager::new(registry, bus, resolver, PendingConfig::default());
 
     let session = SessionId::new("conv-app-idle");
@@ -84,8 +84,7 @@ async fn app_busy_path_queues_and_persists() {
     let tmp = TempDir::new().unwrap();
     let registry = Arc::new(RuntimeRunRegistry::new());
     let bus = Arc::new(RuntimeEventBus::new());
-    let resolver: Arc<dyn ConvDirResolver> =
-        Arc::new(TempResolver(tmp.path().to_path_buf()));
+    let resolver: Arc<dyn ConvDirResolver> = Arc::new(TempResolver(tmp.path().to_path_buf()));
     let mgr = PendingQueueManager::new(registry.clone(), bus, resolver, PendingConfig::default());
 
     let session = SessionId::new("conv-app-busy");
@@ -119,8 +118,7 @@ async fn app_drains_to_dispatcher_after_busy_clears() {
     let tmp = TempDir::new().unwrap();
     let registry = Arc::new(RuntimeRunRegistry::new());
     let bus = Arc::new(RuntimeEventBus::new());
-    let resolver: Arc<dyn ConvDirResolver> =
-        Arc::new(TempResolver(tmp.path().to_path_buf()));
+    let resolver: Arc<dyn ConvDirResolver> = Arc::new(TempResolver(tmp.path().to_path_buf()));
     let mut config = PendingConfig::default();
     config.debounce_window = std::time::Duration::from_millis(50);
     let mgr = PendingQueueManager::new(registry.clone(), bus, resolver, config);
@@ -131,9 +129,15 @@ async fn app_drains_to_dispatcher_after_busy_clears() {
     mgr.set_dispatcher(dispatcher.clone()).await;
 
     let session = SessionId::new("conv-app-drain");
-    registry.reserve(session.as_str(), RunId::new("run-1")).unwrap();
-    mgr.enqueue_or_send(session.clone(), app_item("p1", "first", vec![])).await.unwrap();
-    mgr.enqueue_or_send(session.clone(), app_item("p2", "second", vec![])).await.unwrap();
+    registry
+        .reserve(session.as_str(), RunId::new("run-1"))
+        .unwrap();
+    mgr.enqueue_or_send(session.clone(), app_item("p1", "first", vec![]))
+        .await
+        .unwrap();
+    mgr.enqueue_or_send(session.clone(), app_item("p2", "second", vec![]))
+        .await
+        .unwrap();
 
     registry.clear(session.as_str());
     mgr.schedule_drain(session.clone()).await;
@@ -143,14 +147,20 @@ async fn app_drains_to_dispatcher_after_busy_clears() {
     let last = dispatcher.last.lock().await.clone().unwrap();
     // Spec §6.1: only the LAST drained item rides on request.content. Earlier
     // items are persisted by the dispatcher impl as independent user messages.
-    assert!(last.content.contains("second"), "last item on request.content");
+    assert!(
+        last.content.contains("second"),
+        "last item on request.content"
+    );
     assert!(!last.content.contains("first"), "first item NOT in content");
     assert!(!last.content.contains("[以下是"), "no merge-header prefix");
     // App items have no sender prefix.
     assert!(!last.content.contains("["));
     // pending_batch carries all 2 items for the dispatcher impl.
     assert_eq!(last.pending_batch.as_ref().unwrap().len(), 2);
-    assert_eq!(last.pending_batch.as_ref().unwrap()[0].source, PendingSource::App);
+    assert_eq!(
+        last.pending_batch.as_ref().unwrap()[0].source,
+        PendingSource::App
+    );
 }
 
 #[tokio::test]
@@ -158,16 +168,21 @@ async fn app_queue_full_rejects() {
     let tmp = TempDir::new().unwrap();
     let registry = Arc::new(RuntimeRunRegistry::new());
     let bus = Arc::new(RuntimeEventBus::new());
-    let resolver: Arc<dyn ConvDirResolver> =
-        Arc::new(TempResolver(tmp.path().to_path_buf()));
+    let resolver: Arc<dyn ConvDirResolver> = Arc::new(TempResolver(tmp.path().to_path_buf()));
     let mut config = PendingConfig::default();
     config.max_queue_per_session = 2;
     let mgr = PendingQueueManager::new(registry.clone(), bus, resolver, config);
 
     let session = SessionId::new("conv-app-full");
-    registry.reserve(session.as_str(), RunId::new("run-1")).unwrap();
-    mgr.enqueue_or_send(session.clone(), app_item("p1", "a", vec![])).await.unwrap();
-    mgr.enqueue_or_send(session.clone(), app_item("p2", "b", vec![])).await.unwrap();
+    registry
+        .reserve(session.as_str(), RunId::new("run-1"))
+        .unwrap();
+    mgr.enqueue_or_send(session.clone(), app_item("p1", "a", vec![]))
+        .await
+        .unwrap();
+    mgr.enqueue_or_send(session.clone(), app_item("p2", "b", vec![]))
+        .await
+        .unwrap();
     let outcome = mgr
         .enqueue_or_send(session.clone(), app_item("p3", "c", vec![]))
         .await

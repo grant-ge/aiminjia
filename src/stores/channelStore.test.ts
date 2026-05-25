@@ -99,6 +99,39 @@ describe('channelStore platform domain', () => {
     expect(useChannelStore.getState().platforms.feishu).toBe(existingFeishu)
   })
 
+  it('setEnabled keeps Feishu connecting until the platform-state event reports connected', async () => {
+    const connectingFeishu = platformState({
+      platform: 'feishu',
+      connection: 'connecting',
+      enabled: true,
+    })
+    const connectedFeishu = platformState({
+      platform: 'feishu',
+      connection: 'connected',
+      enabled: true,
+    })
+    useChannelStore.setState({
+      platforms: {
+        dingtalk: platformState({ platform: 'dingtalk' }),
+        feishu: platformState({
+          platform: 'feishu',
+          connection: 'disconnected',
+          enabled: false,
+        }),
+      },
+    })
+    tauriMock.channelSetEnabled.mockResolvedValue(connectingFeishu)
+
+    await useChannelStore.getState().setEnabled('feishu', true)
+
+    expect(tauriMock.channelSetEnabled).toHaveBeenCalledWith('feishu', true)
+    expect(useChannelStore.getState().platforms.feishu).toEqual(connectingFeishu)
+
+    useChannelStore.getState().setPlatformState(connectedFeishu)
+
+    expect(useChannelStore.getState().platforms.feishu).toEqual(connectedFeishu)
+  })
+
   it('removePlatform clears runtime conversations and resets route when active session belongs to removed platform', async () => {
     const unconfigured = platformState({
       configured: false,

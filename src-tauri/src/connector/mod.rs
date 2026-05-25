@@ -1,2 +1,2 @@
 pub mod dingtalk;
-pub mod channel;
+pub mod im;

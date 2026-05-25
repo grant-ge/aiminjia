@@ -27,8 +27,10 @@ import {
   isAgentBusy as isAgentBusyIpc,
   renameConversation as tauriRenameConversation,
   archiveConversation as tauriArchiveConversation,
+  setConversationPinned as tauriSetConversationPinned,
   getActiveTurnStage,
   type ChatAttachmentPayload,
+  type SkillCommandPayload,
 } from '@/lib/tauri'
 import type { Conversation, Message } from '@/types/message'
 
@@ -42,6 +44,10 @@ function generateId(): string {
 
 /** File info passed from chat input UI to sendUserMessage. */
 export interface PendingFileInfo extends ChatAttachmentPayload {}
+
+export interface PendingSkillCommand extends SkillCommandPayload {
+  id: string
+}
 
 /**
  * Hook that exposes every chat-related action the UI needs.
@@ -115,6 +121,7 @@ export function useChat() {
           ),
         )
         useUiStore.getState().setRoute({ kind: 'chat', conversationId: backendId })
+        useUiStore.getState().setSidebarTab('project')
         return backendId
       }
     } catch (err) {
@@ -127,6 +134,7 @@ export function useChat() {
     }
 
     useUiStore.getState().setRoute({ kind: 'chat', conversationId: optimisticId })
+    useUiStore.getState().setSidebarTab('project')
     return optimisticId
   }, [])
 
@@ -159,14 +167,18 @@ export function useChat() {
       // Rollback: reload conversations from backend
       try {
         const raw = await getConversations()
-        const convs: Conversation[] = raw.map((c) => ({
-          id: (c.id as string) ?? '',
-          title: (c.title as string) ?? '新对话',
-          createdAt: (c.createdAt as string) ?? new Date().toISOString(),
-          updatedAt: (c.updatedAt as string) ?? new Date().toISOString(),
-          isArchived: (c.isArchived as boolean) ?? false,
-          employeeId: (c.employeeId as string | undefined) ?? undefined,
-        }))
+        const convs: Conversation[] = raw
+          .map((c) => ({
+            id: (c.id as string) ?? '',
+            title: (c.title as string) ?? '新对话',
+            createdAt: (c.createdAt as string) ?? new Date().toISOString(),
+            updatedAt: (c.updatedAt as string) ?? new Date().toISOString(),
+            isArchived: (c.isArchived as boolean) ?? false,
+            kind: (c.kind as Conversation['kind']) ?? undefined,
+            workspaceName: (c.workspaceName as string | undefined) ?? undefined,
+            isPinned: (c.isPinned as boolean) ?? false,
+          }))
+          .filter((c) => c.kind !== 'im')
         useChatStore.getState().setConversations(convs)
       } catch {
         // If re-fetch also fails, nothing more we can do
@@ -273,7 +285,7 @@ export function useChat() {
   const sendUserMessage = useCallback(async (
     text: string,
     files?: PendingFileInfo[],
-    _skill?: { id: string; label?: string } | null,
+    skill?: PendingSkillCommand | null,
   ): Promise<boolean> => {
     let store = useChatStore.getState()
     let conversationId = store.activeConversationId
@@ -323,6 +335,7 @@ export function useChat() {
         ])
         store.setMessages([])
         useUiStore.getState().setRoute({ kind: 'chat', conversationId: backendId })
+        useUiStore.getState().setSidebarTab('project')
         conversationId = backendId
       } catch (err) {
         console.error('[useChat] Failed to auto-create conversation:', err)
@@ -332,6 +345,13 @@ export function useChat() {
 
     const messageId = generateId()
     const now = new Date().toISOString()
+    const skillCommand = skill
+      ? {
+        id: skill.id,
+        label: skill.label ?? skill.id,
+        command: skill.command ?? `/${skill.id}`,
+      }
+      : null
     recordDiagnostic({
       event: 'chat.submit.started',
       conversationId,
@@ -348,6 +368,8 @@ export function useChat() {
       createdAt: now,
       content: {
         text,
+        commandText: skillCommand?.command,
+        skillCommand: skillCommand ?? undefined,
         files: files?.map((f) => ({
           id: f.id,
           fileName: f.fileName,
@@ -381,7 +403,7 @@ export function useChat() {
 
     try {
       console.log('[useChat] Calling sendMessage IPC, attachments:', files, 'willBeQueued:', willBeQueued)
-      await sendMessage(conversationId, text, files, null, messageId)
+      await sendMessage(conversationId, text, files, null, messageId, skillCommand)
       console.log('[useChat] sendMessage IPC returned OK')
       recordDiagnostic({
         event: 'chat.submit.completed',
@@ -437,15 +459,20 @@ export function useChat() {
     console.log('[useChat] loadConversations')
     try {
       const raw = await getConversations()
-      const convs: Conversation[] = raw.map((c) => ({
-        id: (c.id as string) ?? '',
-        title: (c.title as string) ?? '新对话',
-        createdAt: (c.createdAt as string) ?? new Date().toISOString(),
-        updatedAt: (c.updatedAt as string) ?? new Date().toISOString(),
-        isArchived: (c.isArchived as boolean) ?? false,
-        workspaceName: (c.workspaceName as string | undefined) ?? undefined,
-        employeeId: (c.employeeId as string | undefined) ?? undefined,
-      }))
+      const convs: Conversation[] = raw
+        .map((c) => ({
+          id: (c.id as string) ?? '',
+          title: (c.title as string) ?? '新对话',
+          createdAt: (c.createdAt as string) ?? new Date().toISOString(),
+          updatedAt: (c.updatedAt as string) ?? new Date().toISOString(),
+          isArchived: (c.isArchived as boolean) ?? false,
+          kind: (c.kind as Conversation['kind']) ?? undefined,
+          workspaceName: (c.workspaceName as string | undefined) ?? undefined,
+          isPinned: (c.isPinned as boolean) ?? false,
+        }))
+        // Project sidebar only shows app-side conversations; IM-origin
+        // chats are surfaced through the channel page (`channelStore`).
+        .filter((c) => c.kind !== 'im')
       // dev-only diagnostic：侧边栏首次只看到"默认文件夹"或分组数明显偏少时，
       // 看 workspace tally：若 <none> 占比异常高，多半是后端注入前 race（auth scope 未激活）。
       if (import.meta.env.DEV) {
@@ -505,6 +532,23 @@ export function useChat() {
     }
   }, [loadConversations])
 
+  const setConversationPinned = useCallback(async (id: string, pinned: boolean) => {
+    const store = useChatStore.getState()
+    // Optimistic update — the sidebar reorders synchronously, then we reload
+    // from disk to pick up the authoritative ordering.
+    store.setConversations(
+      store.conversations.map((c) => (c.id === id ? { ...c, isPinned: pinned } : c)),
+    )
+    try {
+      await tauriSetConversationPinned(id, pinned)
+      await loadConversations()
+    } catch (err) {
+      console.error('[useChat] setConversationPinned failed:', err)
+      // Roll back on failure.
+      await loadConversations()
+    }
+  }, [loadConversations])
+
   const createConversationFromSkill = useCallback(async (_skillId: string) => {
     const conversationId = await createNewConversation()
     useUiStore.getState().setRoute({ kind: 'chat', conversationId })
@@ -523,6 +567,7 @@ export function useChat() {
     deleteConversation: removeConversation,
     renameConversation,
     archiveConversation,
+    setConversationPinned,
     switchConversation,
     createConversationFromSkill,
     sendUserMessage,

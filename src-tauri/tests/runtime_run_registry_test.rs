@@ -23,7 +23,9 @@ fn runtime_run_registry_tracks_active_run_identity_and_cancel_state() {
 #[test]
 fn cancelled_session_can_attach_again_after_clear() {
     let registry = RuntimeRunRegistry::new();
-    registry.reserve("conv-reattach", RunId::new("run-cancelled")).unwrap();
+    registry
+        .reserve("conv-reattach", RunId::new("run-cancelled"))
+        .unwrap();
     registry.cancel("conv-reattach");
 
     let err = registry
@@ -42,15 +44,21 @@ fn cancelled_session_can_attach_again_after_clear() {
     assert!(registry.is_session_busy("conv-reattach"));
 }
 
-
 #[test]
 fn clear_for_run_does_not_remove_newer_run_for_same_session() {
     let registry = RuntimeRunRegistry::new();
-    registry.reserve("conv-race", RunId::new("run-old")).unwrap();
+    registry
+        .reserve("conv-race", RunId::new("run-old"))
+        .unwrap();
     registry.clear("conv-race");
-    registry.reserve("conv-race", RunId::new("run-new")).unwrap();
+    registry
+        .reserve("conv-race", RunId::new("run-new"))
+        .unwrap();
 
-    assert_eq!(registry.clear_for_run("conv-race", &RunId::new("run-old")), None);
+    assert_eq!(
+        registry.clear_for_run("conv-race", &RunId::new("run-old")),
+        None
+    );
     assert_eq!(
         registry.run_id_for_session("conv-race").unwrap().as_str(),
         "run-new"
@@ -66,7 +74,9 @@ fn clear_for_run_does_not_remove_newer_run_for_same_session() {
 #[test]
 fn reserve_replaces_cancelled_stale_run_for_same_session() {
     let registry = RuntimeRunRegistry::new();
-    registry.reserve("conv-replace", RunId::new("run-old")).unwrap();
+    registry
+        .reserve("conv-replace", RunId::new("run-old"))
+        .unwrap();
     registry.cancel("conv-replace");
 
     registry
@@ -74,7 +84,10 @@ fn reserve_replaces_cancelled_stale_run_for_same_session() {
         .expect("cancelled stale run should not block a fresh turn");
 
     assert_eq!(
-        registry.run_id_for_session("conv-replace").unwrap().as_str(),
+        registry
+            .run_id_for_session("conv-replace")
+            .unwrap()
+            .as_str(),
         "run-new"
     );
     assert!(!registry.is_cancelled("conv-replace"));

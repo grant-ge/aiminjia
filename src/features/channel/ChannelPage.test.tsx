@@ -60,7 +60,7 @@ const connected = {
 
 const feishu = {
   platform: 'feishu' as const,
-  capability: 'comingSoon' as const,
+  capability: 'available' as const,
   configured: false,
   enabled: false,
   connection: 'unconfigured' as const,
@@ -115,22 +115,28 @@ describe('ChannelPage domain UI', () => {
     expect(screen.queryByRole('switch', { name: /钉钉/ })).not.toBeInTheDocument()
   })
 
-  it('only shows DingTalk platform while other IM integrations are not implemented', () => {
+  it('shows DingTalk, Feishu, WeChat, and Wecom cards when all are available', () => {
     useChannelStore.setState({
       platforms: {
         dingtalk: unconfigured,
         feishu,
-        wechat: { ...feishu, platform: 'wechat' },
-        wecom: { ...feishu, platform: 'wecom' },
+        wechat: { ...feishu, platform: 'wechat', capability: 'available' as const, configured: false, enabled: false, connection: 'unconfigured' as const, config: null },
+        wecom: { ...feishu, platform: 'wecom', capability: 'available' as const, configured: false, enabled: false, connection: 'unconfigured' as const, config: null },
       },
     })
 
     renderPage()
 
     expect(screen.getByText('钉钉')).toBeInTheDocument()
-    expect(screen.queryByText('飞书')).not.toBeInTheDocument()
-    expect(screen.queryByText('微信')).not.toBeInTheDocument()
-    expect(screen.queryByText('企业微信')).not.toBeInTheDocument()
+    expect(screen.getByText('飞书')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '配置飞书' })).toBeInTheDocument()
+    // Phase 5 MVP: 个人微信 card is rendered and the 配置 button is active so
+    // the user can drive the iLink scan-to-login flow (credentials don't
+    // persist yet — that's Phase 5 PR3 territory).
+    expect(screen.getByText('个人微信')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '配置个人微信' })).toBeInTheDocument()
+    // Phase 2: 企业微信 card already shipping in parallel.
+    expect(screen.getByText('企业微信')).toBeInTheDocument()
   })
 
   it('configured DingTalk opens read-only config details from menu', async () => {

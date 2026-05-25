@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::runtime::chat::ChatTurnRequest;
+use crate::runtime::chat::chat_turn_driver::SkillCommandRef;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -14,6 +15,8 @@ pub struct PendingItem {
     pub sender_nick: Option<String>,
     #[serde(default)]
     pub attachments: Vec<PendingAttachment>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skill_command: Option<SkillCommandRef>,
     pub received_at: String,
 }
 
@@ -33,6 +36,9 @@ pub struct PendingAttachment {
 pub enum PendingSource {
     App,
     ImDingtalk,
+    ImFeishu,
+    ImWecom,
+    ImTelegram,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]

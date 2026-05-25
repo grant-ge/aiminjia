@@ -1,7 +1,6 @@
 //! 验证 daily 模式工具集合的约束。
 
 use app_lib::runtime::tools::catalog::{ToolCatalog, DAILY_ALLOWED_TOOLS};
-use app_lib::runtime::tools::definition::ToolKind;
 
 #[test]
 fn all_catalog_tools_have_valid_kind() {

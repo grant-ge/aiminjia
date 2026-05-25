@@ -138,43 +138,50 @@ fn build_chat_message_content(message: &StoredMessage, config: &HistoryConfig) -
                 .and_then(|value| value.as_array())
             {
                 if !files.is_empty() {
-                    let attachments: Vec<crate::runtime::chat::chat_turn_driver::ChatAttachmentRef> = files
+                    let attachments: Vec<
+                        crate::runtime::chat::chat_turn_driver::ChatAttachmentRef,
+                    > = files
                         .iter()
-                        .map(|file| crate::runtime::chat::chat_turn_driver::ChatAttachmentRef {
-                            id: file
-                                .get("id")
-                                .and_then(|value| value.as_str())
-                                .unwrap_or_default()
-                                .to_string(),
-                            file_name: file
-                                .get("fileName")
-                                .or_else(|| file.get("originalName"))
-                                .and_then(|value| value.as_str())
-                                .unwrap_or("unknown")
-                                .to_string(),
-                            file_path: file
-                                .get("filePath")
-                                .or_else(|| file.get("path"))
-                                .or_else(|| file.get("id"))
-                                .and_then(|value| value.as_str())
-                                .unwrap_or_default()
-                                .to_string(),
-                            kind: file
-                                .get("kind")
-                                .and_then(|value| value.as_str())
-                                .unwrap_or("file")
-                                .to_string(),
-                            file_size: file.get("fileSize").and_then(|value| value.as_u64()).unwrap_or(0),
-                            file_type: file
-                                .get("fileType")
-                                .and_then(|value| value.as_str())
-                                .unwrap_or("unknown")
-                                .to_string(),
-                            mime_type: file
-                                .get("mimeType")
-                                .and_then(|value| value.as_str())
-                                .map(ToString::to_string),
-                        })
+                        .map(
+                            |file| crate::runtime::chat::chat_turn_driver::ChatAttachmentRef {
+                                id: file
+                                    .get("id")
+                                    .and_then(|value| value.as_str())
+                                    .unwrap_or_default()
+                                    .to_string(),
+                                file_name: file
+                                    .get("fileName")
+                                    .or_else(|| file.get("originalName"))
+                                    .and_then(|value| value.as_str())
+                                    .unwrap_or("unknown")
+                                    .to_string(),
+                                file_path: file
+                                    .get("filePath")
+                                    .or_else(|| file.get("path"))
+                                    .or_else(|| file.get("id"))
+                                    .and_then(|value| value.as_str())
+                                    .unwrap_or_default()
+                                    .to_string(),
+                                kind: file
+                                    .get("kind")
+                                    .and_then(|value| value.as_str())
+                                    .unwrap_or("file")
+                                    .to_string(),
+                                file_size: file
+                                    .get("fileSize")
+                                    .and_then(|value| value.as_u64())
+                                    .unwrap_or(0),
+                                file_type: file
+                                    .get("fileType")
+                                    .and_then(|value| value.as_str())
+                                    .unwrap_or("unknown")
+                                    .to_string(),
+                                mime_type: file
+                                    .get("mimeType")
+                                    .and_then(|value| value.as_str())
+                                    .map(ToString::to_string),
+                            },
+                        )
                         .collect();
                     return crate::transport::tauri_commands::chat::chat_runtime_impl::build_llm_content(
                         text,
@@ -462,7 +469,11 @@ mod collapse_trailing_tests {
 
     #[test]
     fn merges_two_trailing_users() {
-        let input = vec![msg("assistant", "ok"), msg("user", "first"), msg("user", "second")];
+        let input = vec![
+            msg("assistant", "ok"),
+            msg("user", "first"),
+            msg("user", "second"),
+        ];
         let out = collapse_trailing_consecutive_user(input);
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].role, "assistant");
@@ -503,5 +514,3 @@ mod collapse_trailing_tests {
         assert_eq!(out[3].content, "c\n\nd");
     }
 }
-
-

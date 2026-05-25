@@ -23,11 +23,8 @@ struct ReadFileStateCaptureTool {
 #[async_trait]
 impl RuntimeTool for ReadFileStateCaptureTool {
     fn id(&self) -> &str {
-
         "capture_read_file_state"
-
     }
-
 
     async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new(

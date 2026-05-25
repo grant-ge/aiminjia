@@ -1,4 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
+import {
+  File as FileIcon,
+  FileJson,
+  FileSpreadsheet,
+  FileText,
+  Folder,
+  Image as ImageIcon,
+  type LucideIcon,
+} from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { getLocalFilePreview, openLocalFile } from '@/lib/tauri'
@@ -6,29 +15,39 @@ import { isPreviewableFileType } from '@/components/chat/generatedFileActions'
 import { useGeneratedFilePreviewStore } from '@/stores/generatedFilePreviewStore'
 import type { FileAttachment } from '@/types/message'
 
-const FILE_TYPE_LABEL: Record<FileAttachment['fileType'], string> = {
-  excel: 'XLS',
-  csv: 'CSV',
-  word: 'DOC',
-  pdf: 'PDF',
-  json: 'JSON',
-  image: 'IMG',
-  folder: 'DIR',
+/**
+ * 把已知的 fileType 映射到 lucide 图标。fileType 来自 `FileAttachment.fileType`,
+ * 是上传时后端识别后的结构化字段;比扩展名推断更可靠,优先用。
+ */
+const FILE_TYPE_ICON: Record<FileAttachment['fileType'], LucideIcon> = {
+  excel: FileSpreadsheet,
+  csv: FileSpreadsheet,
+  word: FileText,
+  pdf: FileText,
+  json: FileJson,
+  image: ImageIcon,
+  folder: Folder,
 }
 
-const EXT_TO_LABEL: Record<string, string> = {
-  png: 'IMG', jpg: 'IMG', jpeg: 'IMG', gif: 'IMG', webp: 'IMG', bmp: 'IMG', svg: 'IMG',
-  xls: 'XLS', xlsx: 'XLS',
-  doc: 'DOC', docx: 'DOC',
-  pdf: 'PDF',
-  csv: 'CSV',
-  json: 'JSON',
+/**
+ * fileType 缺失时(老消息或 IM channel 入站直接传字符串路径)按扩展名兜底。
+ * 扩展名 → lucide 图标,识别不到的统一用通用 [`FileIcon`]。
+ */
+const EXT_TO_ICON: Record<string, LucideIcon> = {
+  png: ImageIcon, jpg: ImageIcon, jpeg: ImageIcon, gif: ImageIcon, webp: ImageIcon, bmp: ImageIcon, svg: ImageIcon,
+  xls: FileSpreadsheet, xlsx: FileSpreadsheet,
+  doc: FileText, docx: FileText,
+  pdf: FileText,
+  csv: FileSpreadsheet,
+  json: FileJson,
+  md: FileText,
+  txt: FileText,
 }
 
-function inferLabelFromName(name: string): string {
+function inferIconFromName(name: string): LucideIcon {
   const m = /\.([A-Za-z0-9]+)$/.exec(name)
-  if (!m) return 'FILE'
-  return EXT_TO_LABEL[m[1].toLowerCase()] ?? 'FILE'
+  if (!m) return FileIcon
+  return EXT_TO_ICON[m[1].toLowerCase()] ?? FileIcon
 }
 
 interface UserBubbleMarkdownProps {
@@ -133,19 +152,32 @@ function FileLinkChip({
   const path = fileUrlToPath(href) ?? ''
   const matched = useMemo(() => files?.find((f) => f.filePath === path), [path, files])
   const fileName = matched?.fileName ?? path.split(/[\\/]/).pop() ?? text
-  const label = matched?.fileType
-    ? FILE_TYPE_LABEL[matched.fileType]
-    : inferLabelFromName(fileName)
+  // 文件类型图标:优先用结构化 fileType,在 enum 里没映射 / fileType 缺失时
+  // 走扩展名兜底,最终兜底 FileIcon。两层 fallback 保证 Icon 永远是有效组件
+  // (FileAttachment.fileType 是 TS 联合类型,但运行时后端 / 老消息可能塞
+  // 未知值,直接 FILE_TYPE_ICON[fileType] 会 undefined → React "Element type
+  // is invalid")。
+  // 视觉:旧版本是显示 "XLS"/"PDF" text label,但内层 badge bg 与 button text
+  // 都是 primary-foreground 系(15% white on white)对比度太低,蓝色 bubble
+  // 上几乎看不见。换 lucide 图标 + currentColor 描边,清晰多了。
+  const Icon: LucideIcon =
+    (matched?.fileType && FILE_TYPE_ICON[matched.fileType]) || inferIconFromName(fileName)
 
   return (
     <button
       type="button"
       onClick={() => openAttachment({ path, fileName, files, conversationId })}
       aria-label={text}
-      className="mx-0.5 my-0.5 inline-flex h-6 items-center gap-1.5 rounded-md bg-primary-foreground/15 px-2 align-middle text-xs leading-none text-primary-foreground transition-opacity hover:opacity-80"
+      // 视觉:`py-1` 让 chip 高度 = 14(icon h-3.5) + 8(2*py-1) = 22px,正好
+      // 撑满父级 `text-sm leading-relaxed` 的 ~22px 行高,避免 chip 底色比
+      // 行高矮 4px 露出空白看起来未对齐。横向用 `px-2`(比 composer 的
+      // `px-1.5` 稍宽)让 icon 与文字之间不挤;尺寸略大于输入框 chip 是
+      // 故意的——气泡 text-sm 比 composer text-sm 视觉密度更松,小一点的
+      // chip 在这里反而显薄。
+      className="mx-0.5 inline-flex items-center gap-1 rounded-md bg-primary-foreground/15 px-2 py-1 align-middle text-xs leading-none text-primary-foreground transition-opacity hover:opacity-80"
       title={text}
     >
-      <span aria-hidden="true" className="rounded bg-primary-foreground/15 px-1 text-xs font-bold">{label}</span>
+      <Icon aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
       <span className="max-w-[200px] truncate">{text}</span>
     </button>
   )
@@ -187,7 +219,7 @@ function FileImage({
       <img
         src={url}
         alt={alt}
-        className="max-h-40 max-w-[200px] rounded-lg object-cover transition-opacity hover:opacity-90"
+        className="h-40 max-w-[200px] rounded-lg object-cover transition-opacity hover:opacity-90"
       />
     </button>
   )
@@ -266,7 +298,7 @@ export function UserBubbleMarkdown({ text, conversationId, files }: UserBubbleMa
               return <FileImage href={srcStr} alt={altStr} files={files} conversationId={conversationId} />
             }
             return (
-              <img src={srcStr} alt={altStr} className="max-h-40 max-w-[200px] rounded-lg object-cover" />
+              <img src={srcStr} alt={altStr} className="h-40 max-w-[200px] rounded-lg object-cover" />
             )
           },
           code: ({ className, children }) => {

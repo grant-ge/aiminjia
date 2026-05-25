@@ -54,11 +54,7 @@ async fn task_create_writes_to_conversation_scoped_dir() {
     );
 
     // The task file must be flat under the per-conversation tasks dir.
-    let conv_tasks_dir = tmp
-        .path()
-        .join("conversations")
-        .join(conv_id)
-        .join("tasks");
+    let conv_tasks_dir = tmp.path().join("conversations").join(conv_id).join("tasks");
     assert!(
         conv_tasks_dir.exists(),
         "per-conversation tasks dir must exist: {}",
@@ -108,15 +104,33 @@ async fn tasks_from_different_conversations_are_isolated() {
     .await
     .expect("create conv-b task");
 
-    let conv_a_dir = tmp.path().join("conversations").join("conv-a").join("tasks");
-    let conv_b_dir = tmp.path().join("conversations").join("conv-b").join("tasks");
+    let conv_a_dir = tmp
+        .path()
+        .join("conversations")
+        .join("conv-a")
+        .join("tasks");
+    let conv_b_dir = tmp
+        .path()
+        .join("conversations")
+        .join("conv-b")
+        .join("tasks");
 
     assert!(conv_a_dir.exists(), "conv-a tasks dir must exist");
     assert!(conv_b_dir.exists(), "conv-b tasks dir must exist");
 
     // Files in conv-a must not appear in conv-b and vice-versa.
-    let count_a = std::fs::read_dir(&conv_a_dir).map(|d| d.count()).unwrap_or(0);
-    let count_b = std::fs::read_dir(&conv_b_dir).map(|d| d.count()).unwrap_or(0);
-    assert_eq!(count_a, 2, "conv-a should have 1 task file + 1 highwatermark");
-    assert_eq!(count_b, 2, "conv-b should have 1 task file + 1 highwatermark");
+    let count_a = std::fs::read_dir(&conv_a_dir)
+        .map(|d| d.count())
+        .unwrap_or(0);
+    let count_b = std::fs::read_dir(&conv_b_dir)
+        .map(|d| d.count())
+        .unwrap_or(0);
+    assert_eq!(
+        count_a, 2,
+        "conv-a should have 1 task file + 1 highwatermark"
+    );
+    assert_eq!(
+        count_b, 2,
+        "conv-b should have 1 task file + 1 highwatermark"
+    );
 }

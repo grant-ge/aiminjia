@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { ChatTopBar } from '../ChatTopBar'
 
 describe('ChatTopBar', () => {
-  it('renders title, separator and workspace', () => {
+  it('renders title and workspace', () => {
     render(
       <ChatTopBar
         title="打开 BI 看板导出绩效分析数据并总结"
@@ -16,7 +16,6 @@ describe('ChatTopBar', () => {
       screen.getByText('打开 BI 看板导出绩效分析数据并总结'),
     ).toBeInTheDocument()
     expect(screen.getByText('Desktop')).toBeInTheDocument()
-    expect(screen.getByText('/')).toBeInTheDocument()
   })
 
   it('fires share/more/toggleSidebar callbacks', () => {

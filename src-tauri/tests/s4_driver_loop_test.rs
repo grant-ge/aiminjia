@@ -87,7 +87,7 @@ impl RuntimeLlmExecutor for MockLlmExecutor {
     }
 
     async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
-        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
+        Ok(vec![]) // 显式声明此 mock 不关心 tool_defs
     }
 }
 
@@ -600,7 +600,7 @@ impl RuntimeLlmExecutor for RecordingMockExecutor {
     }
 
     async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
-        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
+        Ok(vec![]) // 显式声明此 mock 不关心 tool_defs
     }
 }
 
@@ -759,7 +759,7 @@ impl RuntimeLlmExecutor for EnrichedUserMessageExecutor {
     }
 
     async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
-        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
+        Ok(vec![]) // 显式声明此 mock 不关心 tool_defs
     }
 }
 
@@ -770,15 +770,19 @@ async fn driver_s4_uses_enriched_user_message_content_for_uploaded_files() {
     let qe = QueryEngine::default();
     let driver = RuntimeChatTurnDriver::with_llm_executor(qe, bus.clone(), executor.clone());
     let mut turn = make_test_turn("conv-upload");
-    let request = ChatTurnRequest::new("conv-upload", "请分析这个文件", vec![ChatAttachmentRef {
-        id: "attachment-1".to_string(),
-        file_name: "demo.csv".to_string(),
-        file_path: "/tmp/demo.csv".to_string(),
-        kind: "file".to_string(),
-        file_size: 0,
-        file_type: "csv".to_string(),
-        mime_type: Some("text/csv".to_string()),
-    }]);
+    let request = ChatTurnRequest::new(
+        "conv-upload",
+        "请分析这个文件",
+        vec![ChatAttachmentRef {
+            id: "attachment-1".to_string(),
+            file_name: "demo.csv".to_string(),
+            file_path: "/tmp/demo.csv".to_string(),
+            kind: "file".to_string(),
+            file_size: 0,
+            file_type: "csv".to_string(),
+            mime_type: Some("text/csv".to_string()),
+        }],
+    );
 
     driver.run_chat_turn(&mut turn, &request).await.unwrap();
 
@@ -864,7 +868,7 @@ impl RuntimeLlmExecutor for CapturingMockExecutor {
     }
 
     async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
-        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
+        Ok(vec![]) // 显式声明此 mock 不关心 tool_defs
     }
 }
 
@@ -912,14 +916,14 @@ impl ToolDefsCapturingExecutor {
     async fn new() -> Self {
         let registry = ToolRegistry::new();
         register_builtin_tools(&registry).await;
-        let visible =
-            build_visible_tool_defs(
-                &registry,
-                true,
-                ToolSchemaFilter::DailyWhitelist,
-                &app_lib::runtime::tools::ToolDescriptionContext::default(),
-                &std::collections::HashMap::new(),
-            ).await;
+        let visible = build_visible_tool_defs(
+            &registry,
+            true,
+            ToolSchemaFilter::DailyWhitelist,
+            &app_lib::runtime::tools::ToolDescriptionContext::default(),
+            &std::collections::HashMap::new(),
+        )
+        .await;
         let precomputed_tool_defs: Vec<serde_json::Value> = visible
             .into_iter()
             .filter_map(|td| serde_json::to_value(&td).ok())
@@ -1048,8 +1052,7 @@ async fn driver_s4_daily_tool_defs_match_whitelist() {
     // (This is the dual-track separation: tool_defs drives LLM schema visibility,
     //  runtime_allowed_tools drives executor-side enforcement — both must align.)
     assert_eq!(
-        executor.precomputed_runtime_allowed,
-        expected_names,
+        executor.precomputed_runtime_allowed, expected_names,
         "precomputed runtime_allowed must match DAILY_ALLOWED_TOOLS exactly"
     );
 }
@@ -1144,6 +1147,7 @@ impl RuntimeLlmExecutor for TurnConfigOverrideExecutor {
         _conversation_id: &str,
         _content: &str,
         _attachments: &[ChatAttachmentRef],
+        _skill_command: Option<&app_lib::runtime::chat::chat_turn_driver::SkillCommandRef>,
         _client_message_id: Option<&str>,
     ) -> Result<String, TurnError> {
         Ok("user-id".to_string())
@@ -1306,7 +1310,7 @@ impl RuntimeLlmExecutor for HistoryAwareMockExecutor {
     }
 
     async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
-        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
+        Ok(vec![]) // 显式声明此 mock 不关心 tool_defs
     }
 }
 
@@ -1447,7 +1451,7 @@ impl RuntimeLlmExecutor for FailingHistoryExecutor {
     }
 
     async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
-        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
+        Ok(vec![]) // 显式声明此 mock 不关心 tool_defs
     }
 }
 
@@ -1522,7 +1526,7 @@ impl RuntimeLlmExecutor for EnvInfoCapturingExecutor {
     }
 
     async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
-        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
+        Ok(vec![]) // 显式声明此 mock 不关心 tool_defs
     }
 }
 
@@ -1634,7 +1638,7 @@ impl RuntimeLlmExecutor for CountingEnvInfoExecutor {
     }
 
     async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
-        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
+        Ok(vec![]) // 显式声明此 mock 不关心 tool_defs
     }
 }
 
@@ -1654,9 +1658,15 @@ async fn driver_s4_env_info_present_in_dynamic_context() {
     let captured = executor.captured_dynamic_contexts.lock().unwrap();
     assert!(!captured.is_empty(), "must capture dynamic_context");
     let ctx = &captured[0];
-    assert!(ctx.contains("[当前环境]"), "dynamic context must contain env info");
+    assert!(
+        ctx.contains("[当前环境]"),
+        "dynamic context must contain env info"
+    );
     // Stateful workflow precompute pipeline removed in Phase B Task 7.
-    assert!(!ctx.contains("[precompute_result]"), "precompute_result must not appear in dynamic context");
+    assert!(
+        !ctx.contains("[precompute_result]"),
+        "precompute_result must not appear in dynamic context"
+    );
 }
 
 #[tokio::test]
@@ -1783,7 +1793,7 @@ impl RuntimeLlmExecutor for SkillCatalogCapturingExecutor {
     }
 
     async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
-        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
+        Ok(vec![]) // 显式声明此 mock 不关心 tool_defs
     }
 }
 
@@ -1828,4 +1838,3 @@ async fn driver_injects_skill_catalog_into_dynamic_context() {
         ctx
     );
 }
-

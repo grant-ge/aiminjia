@@ -377,6 +377,8 @@ pub(super) async fn validate_key_openai_compat(
         anthropic_multimodal_turn: None,
         system_segments: None,
         conversation_id: None,
+        trace_id: None,
+        run_id: None,
     };
 
     let body = build_request_body(&request, model, false, false);
@@ -1338,12 +1340,7 @@ mod tests {
         // After Go's json roundtrip, the client receives these fragments.
         //
         // Build chunks properly using serde_json to avoid escaping issues.
-        let fragments = vec![
-            "{\"cmd\": \"echo hello\"",
-            ", \"timeout\": ",
-            "30",
-            "}",
-        ];
+        let fragments = vec!["{\"cmd\": \"echo hello\"", ", \"timeout\": ", "30", "}"];
 
         for frag in &fragments {
             let chunk = serde_json::json!({
@@ -1418,7 +1415,7 @@ mod tests {
         let fragments = vec![
             "{\"cmd\": \"echo test\"",
             ", \"env\": {",
-            "\n  \"",                                   // real 0x0a
+            "\n  \"", // real 0x0a
             "key",
             "\": \"val\"",
             "\n}",
@@ -1551,7 +1548,10 @@ mod tests {
             assert_eq!(tool_call.id, "toolu_normal");
             assert_eq!(tool_call.name, "Read");
             assert_eq!(
-                tool_call.arguments.get("file_path").and_then(|v| v.as_str()),
+                tool_call
+                    .arguments
+                    .get("file_path")
+                    .and_then(|v| v.as_str()),
                 Some("/tmp")
             );
         }

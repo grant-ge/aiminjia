@@ -41,13 +41,12 @@ describe('AboutPanel', () => {
 
     expect(screen.getByText('AI小家')).toBeInTheDocument()
     expect(screen.getByText('版本 0.9.30-26041603')).toBeInTheDocument()
-    expect(screen.getByText('版权公告：仁励家网络科技(杭州)有限公司 版权所有')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '检查更新' })).toBeInTheDocument()
     expect(screen.queryByText('帮助与反馈')).not.toBeInTheDocument()
     expect(screen.queryByText('用户体验改进计划')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '隐私权政策' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '隐私政策' })).toBeInTheDocument()
-    expect(screen.getByText('开发者模式')).toBeInTheDocument()
+    expect(screen.getByText('开发者')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '上传日志' })).toBeInTheDocument()
   })
 
@@ -73,7 +72,7 @@ describe('AboutPanel', () => {
     expect(screen.queryByRole('switch', { name: '用户体验改进计划' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /在线客服/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /产品建议/ })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '服务条款' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '用户协议' })).toBeInTheDocument()
   })
 
   it('does not render reset while reset is unavailable', () => {

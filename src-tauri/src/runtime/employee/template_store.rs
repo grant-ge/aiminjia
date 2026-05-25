@@ -142,8 +142,8 @@ pub fn bootstrap_templates() -> Result<Vec<TemplateSnapshot>> {
     if let Some(cached) = BOOTSTRAP_CACHE.get() {
         return Ok(cached.clone());
     }
-    let parsed: Vec<TemplateSnapshot> = serde_json::from_str(BOOTSTRAP_JSON)
-        .context("parsing bootstrap template JSON")?;
+    let parsed: Vec<TemplateSnapshot> =
+        serde_json::from_str(BOOTSTRAP_JSON).context("parsing bootstrap template JSON")?;
     let _ = BOOTSTRAP_CACHE.set(parsed.clone());
     Ok(parsed)
 }
@@ -253,10 +253,9 @@ pub fn read_instance_snapshot(instance_dir: &Path) -> Result<Option<TemplateSnap
     if !p.exists() {
         return Ok(None);
     }
-    let content = fs::read_to_string(&p)
-        .with_context(|| format!("reading {}", p.display()))?;
-    let snap: TemplateSnapshot = serde_json::from_str(&content)
-        .with_context(|| format!("parsing {}", p.display()))?;
+    let content = fs::read_to_string(&p).with_context(|| format!("reading {}", p.display()))?;
+    let snap: TemplateSnapshot =
+        serde_json::from_str(&content).with_context(|| format!("parsing {}", p.display()))?;
     Ok(Some(snap))
 }
 
@@ -379,10 +378,7 @@ pub fn effective_requires_attachment(
 /// Used by `employee_template_check_upgrade` / `employee_upgrade_template`
 /// to surface the "升级模板" affordance in the drawer when a newer
 /// version has landed than the one frozen into the employee's snapshot.
-pub fn find_latest_for_template(
-    cache_dir: &Path,
-    template_id: &str,
-) -> Option<TemplateSnapshot> {
+pub fn find_latest_for_template(cache_dir: &Path, template_id: &str) -> Option<TemplateSnapshot> {
     let mut best: Option<TemplateSnapshot> = None;
     if let Ok(Some(boot)) = bootstrap_template(template_id) {
         best = Some(boot);
@@ -414,9 +410,7 @@ pub fn find_latest_for_template(
 fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
     let tmp = path.with_extension(format!(
         "{}.tmp",
-        path.extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("tmp")
+        path.extension().and_then(|e| e.to_str()).unwrap_or("tmp")
     ));
     fs::write(&tmp, bytes).with_context(|| format!("writing {}", tmp.display()))?;
     fs::rename(&tmp, path).with_context(|| format!("renaming {}", tmp.display()))?;
@@ -478,21 +472,14 @@ fn cache_path_for(cache_dir: &Path, template_id: &str, version: &str) -> PathBuf
 /// Read a cached template snapshot if present + valid. Any parse/IO error
 /// is swallowed (returns `None`) so a corrupted cache file is just
 /// re-fetched, not a hard failure.
-pub fn read_cache(
-    cache_dir: &Path,
-    template_id: &str,
-    version: &str,
-) -> Option<TemplateSnapshot> {
+pub fn read_cache(cache_dir: &Path, template_id: &str, version: &str) -> Option<TemplateSnapshot> {
     let p = cache_path_for(cache_dir, template_id, version);
     let content = fs::read_to_string(&p).ok()?;
     serde_json::from_str(&content).ok()
 }
 
 /// Persist `snapshot` to the cache directory. Atomic (tmp + rename).
-pub fn write_cache(
-    cache_dir: &Path,
-    snapshot: &TemplateSnapshot,
-) -> Result<PathBuf> {
+pub fn write_cache(cache_dir: &Path, snapshot: &TemplateSnapshot) -> Result<PathBuf> {
     let dir = cache_dir.join(&snapshot.template_id);
     fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
     let p = dir.join(format!("{}.json", snapshot.version));
@@ -504,10 +491,7 @@ pub fn write_cache(
 /// Fetch the manifest for a template from lotus ops-portal.
 ///
 /// `GET {base}/api/public/employee-templates/{template_id}/manifest`
-pub async fn fetch_manifest(
-    client: &reqwest::Client,
-    template_id: &str,
-) -> Result<RemoteManifest> {
+pub async fn fetch_manifest(client: &reqwest::Client, template_id: &str) -> Result<RemoteManifest> {
     let url = format!(
         "{}/api/public/employee-templates/{}/manifest",
         ops_base_url(),
@@ -550,10 +534,8 @@ pub async fn fetch_catalog(client: &reqwest::Client) -> Result<Vec<serde_json::V
     if !resp.status().is_success() {
         anyhow::bail!("catalog HTTP {} from {url}", resp.status());
     }
-    let env: OpsEnvelope<Vec<serde_json::Value>> = resp
-        .json()
-        .await
-        .context("decoding catalog envelope")?;
+    let env: OpsEnvelope<Vec<serde_json::Value>> =
+        resp.json().await.context("decoding catalog envelope")?;
     if env.code != 0 {
         anyhow::bail!("ops returned code={} message={}", env.code, env.message);
     }
@@ -621,8 +603,7 @@ pub async fn ensure_cached(
             manifest.latest_version
         );
     }
-    let snap =
-        download_snapshot(client, &manifest.package_url, &manifest.package_sha256).await?;
+    let snap = download_snapshot(client, &manifest.package_url, &manifest.package_sha256).await?;
     write_cache(cache_dir, &snap)?;
     Ok(snap)
 }
@@ -630,10 +611,7 @@ pub async fn ensure_cached(
 /// Merge the bootstrap list with any cached (downloaded) versions. When
 /// both sources have a `template_id`, the cached one wins iff its version
 /// string sorts higher. This is the catalog the new-hire wizard should see.
-pub fn merge_catalog(
-    bootstrap: Vec<TemplateSnapshot>,
-    cache_dir: &Path,
-) -> Vec<TemplateSnapshot> {
+pub fn merge_catalog(bootstrap: Vec<TemplateSnapshot>, cache_dir: &Path) -> Vec<TemplateSnapshot> {
     let mut by_id: std::collections::BTreeMap<String, TemplateSnapshot> = bootstrap
         .into_iter()
         .map(|t| (t.template_id.clone(), t))
@@ -820,7 +798,10 @@ mod tests {
         write_cache(cache, &make_snap("org:custom", "0.1.0")).unwrap();
 
         let merged = merge_catalog(boot, cache);
-        let x = merged.iter().find(|t| t.template_id == "builtin:x").unwrap();
+        let x = merged
+            .iter()
+            .find(|t| t.template_id == "builtin:x")
+            .unwrap();
         assert_eq!(x.version, "1.1.0", "cache should override bootstrap");
         let custom = merged
             .iter()
@@ -837,7 +818,10 @@ mod tests {
         let boot = vec![make_snap("builtin:y", "2.0.0")];
         write_cache(cache, &make_snap("builtin:y", "1.0.0")).unwrap();
         let merged = merge_catalog(boot, cache);
-        let y = merged.iter().find(|t| t.template_id == "builtin:y").unwrap();
+        let y = merged
+            .iter()
+            .find(|t| t.template_id == "builtin:y")
+            .unwrap();
         assert_eq!(y.version, "2.0.0");
     }
 

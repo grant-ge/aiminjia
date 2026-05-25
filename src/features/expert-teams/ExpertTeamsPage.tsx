@@ -12,6 +12,7 @@ import { setExpertTeam } from './expertTeamRegistry'
 
 export function ExpertTeamsPage() {
   const setRoute = useUiStore((s) => s.setRoute)
+  const setSidebarTab = useUiStore((s) => s.setSidebarTab)
   const pushNotification = useNotificationStore((s) => s.push)
   // Synchronous guard: React state updates are batched, so two rapid clicks
   // can both pass a useState-based check before re-render. A ref flips
@@ -26,18 +27,11 @@ export function ExpertTeamsPage() {
     try {
       const conversationId = await createConversation()
       const title = `专家团: ${team.name}`
-      // Persist the title on the backend so reloads / sidebar reloads keep it.
-      // Best-effort: if rename fails the optimistic local title still shows.
-      try {
-        await renameConversation(conversationId, title)
-      } catch (err) {
-        console.warn('[ExpertTeamsPage] renameConversation failed', err)
-      }
-      setExpertTeam(conversationId, id)
-      // Optimistically inject into chatStore so the sidebar shows the new
-      // conversation immediately. The backend `conversation:created` event
-      // will refresh the list anyway, but it can land after the user has
-      // already navigated away, leaving them unable to find the chat.
+      // Optimistically inject into chatStore FIRST so the sidebar shows the new
+      // conversation immediately. The backend `conversation:created` event will
+      // refresh the list anyway, but it can land after the user has navigated
+      // away. `kind` + `sourceLabel` are set here so the conversation lands in
+      // the 专家团 sidebar group instead of falling into 默认项目.
       const store = useChatStore.getState()
       const now = new Date().toISOString()
       store.setConversations([
@@ -47,9 +41,25 @@ export function ExpertTeamsPage() {
           createdAt: now,
           updatedAt: now,
           isArchived: false,
+          kind: 'expertTeam',
+          sourceLabel: team.name,
         },
         ...store.conversations.filter((c) => c.id !== conversationId),
       ])
+      // Persist the title on the backend so reloads / sidebar reloads keep it.
+      // Best-effort: if rename fails the optimistic local title still shows.
+      try {
+        await renameConversation(conversationId, title)
+      } catch (err) {
+        console.warn('[ExpertTeamsPage] renameConversation failed', err)
+      }
+      // Await so the chatStore patch lands before navigate — otherwise the
+      // ExpertTeamBanner on the chat page would flash empty for a beat.
+      // setExpertTeam also seeds the id cache so useExpertTeamForConversation
+      // hits synchronously on the first render of ChatPage.
+      await setExpertTeam(conversationId, id)
+      // Switch sidebar to 专家团 tab so the user lands in the right section.
+      setSidebarTab('expert-team')
       setRoute({ kind: 'chat', conversationId })
     } catch (err) {
       pushNotification({

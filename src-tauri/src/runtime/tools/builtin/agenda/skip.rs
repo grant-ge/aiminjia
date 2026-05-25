@@ -17,9 +17,14 @@ pub struct SkipOccurrenceRuntimeTool {
 
 #[async_trait]
 impl RuntimeTool for SkipOccurrenceRuntimeTool {
-    fn id(&self) -> &str { "skip_occurrence" }
-    
-    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "skip_occurrence"
+    }
+
+    async fn definition(
+        &self,
+        _ctx: &crate::runtime::tools::ToolDescriptionContext,
+    ) -> ToolDefinition {
         ToolDefinition::new(
             "skip_occurrence",
             "【自用】跳过你自己循环日程的某一次触发。",
@@ -31,25 +36,21 @@ impl RuntimeTool for SkipOccurrenceRuntimeTool {
         input: Value,
         _ctx: ToolExecutionContext,
     ) -> Result<ToolResult, ToolError> {
-        let id_str = input
-            .get("id")
-            .and_then(Value::as_str)
-            .ok_or_else(|| ToolError::InputValidationError {
+        let id_str = input.get("id").and_then(Value::as_str).ok_or_else(|| {
+            ToolError::InputValidationError {
                 tool_name: "skip_occurrence".into(),
                 message: "missing 'id'".into(),
-            })?;
-        let at_str = input
-            .get("at")
-            .and_then(Value::as_str)
-            .ok_or_else(|| ToolError::InputValidationError {
+            }
+        })?;
+        let at_str = input.get("at").and_then(Value::as_str).ok_or_else(|| {
+            ToolError::InputValidationError {
                 tool_name: "skip_occurrence".into(),
                 message: "missing 'at'".into(),
-            })?;
-        let at: DateTime<Utc> = at_str
-            .parse()
-            .map_err(|e: chrono::ParseError| {
-                ToolError::ExecutionFailed(format!("at parse: {e}"))
-            })?;
+            }
+        })?;
+        let at: DateTime<Utc> = at_str.parse().map_err(|e: chrono::ParseError| {
+            ToolError::ExecutionFailed(format!("at parse: {e}"))
+        })?;
         let id = AgendaItemId(id_str.to_string());
 
         let item = self

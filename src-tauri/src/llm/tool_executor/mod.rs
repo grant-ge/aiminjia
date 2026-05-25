@@ -105,11 +105,11 @@ fn optional_f64(args: &Value, key: &str, default: f64) -> f64 {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use serde_json::json;
-    use std::sync::Arc;
     use crate::plugin::context::PluginContext;
     use crate::storage::file_manager::FileManager;
     use crate::storage::file_store::AppStorage;
+    use serde_json::json;
+    use std::sync::Arc;
 
     // ── Test helpers ─────────────────────────────
 
@@ -211,5 +211,4 @@ pub(crate) mod tests {
         let args = json!({});
         assert!((optional_f64(&args, "alpha", 0.05) - 0.05).abs() < f64::EPSILON);
     }
-
 }

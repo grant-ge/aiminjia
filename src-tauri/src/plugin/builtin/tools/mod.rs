@@ -29,8 +29,8 @@ pub async fn register_builtin_tools(registry: &ToolRegistry) {
     };
     use crate::runtime::tools::builtin::teammate_stop::TeammateStopRuntimeTool;
     use crate::runtime::tools::builtin::workspace::{
-        EditFileRuntimeTool,
-        ReadWorkspaceFileRuntimeTool, SearchFilesRuntimeTool, WriteFileRuntimeTool,
+        EditFileRuntimeTool, ReadWorkspaceFileRuntimeTool, SearchFilesRuntimeTool,
+        WriteFileRuntimeTool,
     };
     registry
         .register_runtime(Arc::new(ReadWorkspaceFileRuntimeTool))

@@ -4,13 +4,9 @@ use std::sync::Arc;
 
 use app_lib::plugin::builtin::tools::register_builtin_tools;
 use app_lib::plugin::context::PluginContext;
-use app_lib::plugin::registry::{RequestScopedRuntimeDeps, ToolRegistry};
-use app_lib::plugin::skill_trait::ToolFilter;
+use app_lib::plugin::registry::ToolRegistry;
 use app_lib::runtime::ids::SessionId;
 use app_lib::runtime::tools::catalog::TOOL_CATALOG;
-use app_lib::runtime::tools::ToolExecutionContext;
-use serde_json::json;
-use tempfile::TempDir;
 
 fn build_test_plugin_ctx(workspace_path: std::path::PathBuf) -> PluginContext {
     let storage = Arc::new(
@@ -46,7 +42,7 @@ fn build_test_plugin_ctx(workspace_path: std::path::PathBuf) -> PluginContext {
         read_file_state: None,
         cancellation: None,
         permission_mode: app_lib::runtime::tools::permission::PermissionMode::Default,
-            runtime_resolver: None,
+        runtime_resolver: None,
         permission_ctx: None,
         current_persona_id: None,
     }

@@ -54,6 +54,9 @@ fn render_for_conv_dir_derives_canonical_subpaths() {
 #[test]
 fn rendered_block_documents_send_message_shape() {
     let out = render("t", "n", &PathBuf::from("/a"), &PathBuf::from("/b"));
-    assert!(out.contains("\"to\": \"team-lead\""), "missing send example");
+    assert!(
+        out.contains("\"to\": \"team-lead\""),
+        "missing send example"
+    );
     assert!(out.contains("summary"), "missing summary hint");
 }

@@ -8,6 +8,7 @@ import { LoginOptionsRow } from '@/components/auth/LoginOptionsRow'
 import { RegisterCard } from '@/components/auth/RegisterCard'
 import { LegalDocumentDialog } from '@/components/legal/LegalDocumentDialog'
 import { LEGAL_DOCUMENTS, type LegalDocumentKey } from '@/components/legal/legalDocuments'
+import { TitleBar } from '@/components/layout/TitleBar'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -96,13 +97,18 @@ export function LoginPage() {
 
   return (
     <div
-      className="relative flex min-h-screen w-full flex-col items-center justify-center gap-6 overflow-hidden px-6"
+      className="relative flex h-screen w-full flex-col overflow-hidden"
       style={{
         background:
           'linear-gradient(135deg, var(--background) 0%, var(--brand-primary-subtle) 46%, color-mix(in srgb, var(--primary) 10%, var(--background)) 100%)',
       }}
     >
-      <div data-tauri-drag-region className="absolute inset-x-0 top-0 h-8 z-10" />
+      {/* Window chrome: drag region + (Windows) minimize/maximize/close controls.
+          Pre-auth the main app shell (which owns the only other TitleBar) is not
+          mounted, and native window decorations are disabled on Windows — without
+          this the login/register screen has no way to close or minimize. */}
+      <TitleBar />
+      <div className="relative flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-6 overflow-y-auto px-6">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute -left-32 -top-32 h-[500px] w-[500px] rounded-full opacity-30" style={{ background: 'radial-gradient(circle, var(--primary) 0%, transparent 70%)', filter: 'blur(80px)' }} />
         <div className="absolute -bottom-40 -right-40 h-[600px] w-[600px] rounded-full opacity-20" style={{ background: 'radial-gradient(circle, color-mix(in srgb, var(--primary) 72%, var(--background)) 0%, transparent 70%)', filter: 'blur(100px)' }} />
@@ -225,7 +231,8 @@ export function LoginPage() {
           onSuccess={handleRegisterSuccess}
         />
       )}
-      <LoginFooter text={footerText} />
+        <LoginFooter text={footerText} />
+      </div>
       <LegalDocumentDialog
         document={legalDocument}
         open={legalDocument !== null}

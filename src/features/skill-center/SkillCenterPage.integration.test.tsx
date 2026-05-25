@@ -61,7 +61,10 @@ describe('SkillCenterPage', () => {
   })
 
   it('顶栏渲染标题、技能数量徽章和搜索框', () => {
-    render(<SkillCenterPage />)
+    const { container } = render(<SkillCenterPage />)
+    const topBar = container.querySelector('header[data-tauri-drag-region]')
+    expect(topBar).toHaveClass('h-10')
+    expect(topBar).not.toHaveClass('h-[45px]')
     expect(screen.getByText('技能中心')).toBeInTheDocument()
     expect(screen.getByText(/5 个技能/)).toBeInTheDocument()
     expect(screen.getByPlaceholderText('搜索技能名称或场景')).toBeInTheDocument()
@@ -77,7 +80,8 @@ describe('SkillCenterPage', () => {
     openDialogMock.mockResolvedValueOnce(null)
     render(<SkillCenterPage />)
 
-    fireEvent.click(screen.getByRole('button', { name: /导入技能/ }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: /导入技能/ }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '导入技能目录' }))
 
     await waitFor(() => expect(openDialogMock).toHaveBeenCalled())
     expect(openDialogMock).toHaveBeenCalledWith(
@@ -94,7 +98,10 @@ describe('SkillCenterPage', () => {
 
     render(<SkillCenterPage />)
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /导入技能/ }))
+      fireEvent.pointerDown(screen.getByRole('button', { name: /导入技能/ }))
+    })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('menuitem', { name: '导入技能目录' }))
     })
 
     await waitFor(() => expect(screen.getByText('技能目录不符合规范')).toBeInTheDocument())
@@ -111,7 +118,10 @@ describe('SkillCenterPage', () => {
 
     render(<SkillCenterPage />)
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /导入技能/ }))
+      fireEvent.pointerDown(screen.getByRole('button', { name: /导入技能/ }))
+    })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('menuitem', { name: '导入技能目录' }))
     })
 
     await waitFor(() => expect(screen.getByText('技能目录不符合规范')).toBeInTheDocument())
@@ -126,7 +136,10 @@ describe('SkillCenterPage', () => {
 
     render(<SkillCenterPage />)
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /导入技能/ }))
+      fireEvent.pointerDown(screen.getByRole('button', { name: /导入技能/ }))
+    })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('menuitem', { name: '导入技能目录' }))
     })
 
     await waitFor(() => expect(askDialogMock).toHaveBeenCalled())

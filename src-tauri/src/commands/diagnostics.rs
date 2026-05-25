@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::auth::AuthManager;
-use crate::storage::{AiJiaHome, file_manager::FileManager};
+use crate::storage::{file_manager::FileManager, AiJiaHome};
 
 /// Server-side per-request limits (mirrors `code/api-gateway/internal/handler/diagnostics.go`).
 const MAX_APP_LOG_BYTES_PER_CHUNK: usize = 256 * 1024;
@@ -113,6 +113,11 @@ pub struct UploadDiagnosticsResult {
     /// Number of metrics.jsonl lines that failed to parse and were sent as
     /// `[BAD_METRICS_LINE]` entries via app_log instead of being dropped.
     pub bad_metrics_lines: usize,
+    /// Deep-link into SLS console pre-filtered to this upload's session id.
+    /// Populated by the gateway when the server-side handler can build one;
+    /// empty string otherwise so the UI can choose to hide the link.
+    #[serde(default)]
+    pub sls_url: String,
 }
 
 /// Tauri command — read local diagnostic logs, split into chunks, and upload
@@ -165,10 +170,8 @@ pub async fn upload_diagnostic_logs(
     // chunk_events still operates on a flat list; reuse the existing helper
     // by handing it a Vec of pre-serialized strings, then re-deserialize per
     // chunk below. Simpler than introducing a parallel helper for Values.
-    let event_lines_for_chunking: Vec<String> = event_strings
-        .iter()
-        .map(|v| v.to_string())
-        .collect();
+    let event_lines_for_chunking: Vec<String> =
+        event_strings.iter().map(|v| v.to_string()).collect();
     let event_chunks = chunk_events(&event_lines_for_chunking, MAX_EVENTS_PER_CHUNK);
     let chunks_total = app_chunks.len() + event_chunks.len();
 
@@ -188,6 +191,7 @@ pub async fn upload_diagnostic_logs(
 
     let mut chunks_uploaded = 0usize;
     let mut chunk_index = 0usize;
+    let mut sls_url = String::new();
 
     // 1) app_log chunks first.
     for chunk in &app_chunks {
@@ -201,7 +205,10 @@ pub async fn upload_diagnostic_logs(
             app_log: chunk,
             events: &[],
         };
-        post_chunk(&client, &session_key, &payload).await?;
+        let url = post_chunk(&client, &session_key, &payload).await?;
+        if sls_url.is_empty() && !url.is_empty() {
+            sls_url = url;
+        }
         chunks_uploaded += 1;
         chunk_index += 1;
     }
@@ -224,15 +231,23 @@ pub async fn upload_diagnostic_logs(
             app_log: "",
             events: &parsed,
         };
-        post_chunk(&client, &session_key, &payload).await?;
+        let url = post_chunk(&client, &session_key, &payload).await?;
+        if sls_url.is_empty() && !url.is_empty() {
+            sls_url = url;
+        }
         chunks_uploaded += 1;
         chunk_index += 1;
     }
 
-    let app_log_lines_uploaded = app_log_raw
-        .lines()
-        .filter(|l| !l.trim().is_empty())
-        .count();
+    let app_log_lines_uploaded = app_log_raw.lines().filter(|l| !l.trim().is_empty()).count();
+
+    if !sls_url.is_empty() {
+        log::info!(
+            "[diagnostics] upload complete session={} sls_url={}",
+            session_id,
+            sls_url
+        );
+    }
 
     Ok(UploadDiagnosticsResult {
         session_id,
@@ -241,6 +256,7 @@ pub async fn upload_diagnostic_logs(
         events_uploaded: event_strings.len(),
         app_log_lines_uploaded,
         bad_metrics_lines: bad_metrics_lines.len(),
+        sls_url,
     })
 }
 
@@ -248,7 +264,7 @@ async fn post_chunk(
     client: &reqwest::Client,
     session_key: &str,
     payload: &DiagnosticsChunkPayload<'_>,
-) -> Result<(), String> {
+) -> Result<String, String> {
     let resp = client
         .post(DIAGNOSTICS_URL)
         .bearer_auth(session_key)
@@ -257,15 +273,21 @@ async fn post_chunk(
         .await
         .map_err(|e| format!("上传失败: {e}"))?;
 
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let body = resp.text().await.unwrap_or_default();
+    let status = resp.status();
+    let body = resp.text().await.unwrap_or_default();
+    if !status.is_success() {
         return Err(format!(
             "上传失败 chunk={} 状态={status}: {body}",
             payload.chunk_index
         ));
     }
-    Ok(())
+    // Best-effort: extract sls_url field. Missing field / parse failure is
+    // not fatal — the caller falls back to empty string.
+    let sls_url = serde_json::from_str::<serde_json::Value>(&body)
+        .ok()
+        .and_then(|v| v.get("sls_url").and_then(|u| u.as_str()).map(String::from))
+        .unwrap_or_default();
+    Ok(sls_url)
 }
 
 // ─── Background incremental upload ────────────────────────────────────────
@@ -587,7 +609,12 @@ mod tests {
         let raw = format!("short\n{big}\nshort2\n");
         let chunks = chunk_app_log(&raw, 10);
         // Expected layout: ["short\n"], [big without \n + "\n"], ["short2\n"]
-        assert!(chunks.len() >= 3, "got {} chunks: {:?}", chunks.len(), chunks);
+        assert!(
+            chunks.len() >= 3,
+            "got {} chunks: {:?}",
+            chunks.len(),
+            chunks
+        );
         assert!(chunks.iter().any(|c| c.contains(&big)));
     }
 

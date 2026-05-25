@@ -113,7 +113,6 @@ impl RequestScopedRuntimeDeps {
         self.runtime_resolver = Some(runtime_resolver);
         self
     }
-
 }
 
 const REQUEST_SCOPED_RUNTIME_TOOL_NAMES: &[&str] = &[
@@ -416,11 +415,19 @@ impl ToolRegistry {
         let legacy_tools = self.tools.read().await;
         let mut schemas = Vec::new();
 
-        let override_keys: Vec<&str> = request_scoped_overrides.keys().map(|k| k.as_str()).collect();
+        let override_keys: Vec<&str> = request_scoped_overrides
+            .keys()
+            .map(|k| k.as_str())
+            .collect();
         let employee_count = ctx
             .agents
             .iter()
-            .filter(|a| matches!(a.source, crate::runtime::agent::definition::AgentSource::Employee))
+            .filter(|a| {
+                matches!(
+                    a.source,
+                    crate::runtime::agent::definition::AgentSource::Employee
+                )
+            })
             .count();
         log::info!(
             "[tool-desc-trace] entered get_schemas_filtered ctx_employees={} ctx_agents={} overrides_keys={:?}",
@@ -474,7 +481,9 @@ impl ToolRegistry {
                 if let Some(override_def) = request_scoped_overrides.get(*id) {
                     // Caller supplied a freshly-rendered description (e.g.
                     // Agent with employee_id catalog) — use it verbatim.
-                    let has_emp = override_def.description.contains("<available_subagent_types>");
+                    let has_emp = override_def
+                        .description
+                        .contains("<available_subagent_types>");
                     log::info!(
                         "[tool-desc-trace] used override for tool: id={} desc_len={} has_emp_section={}",
                         id,
@@ -521,7 +530,8 @@ impl ToolRegistry {
 
         let result = partition_sort_tool_schemas(schemas);
         let agent_found = result.iter().any(|d| d.name == "Agent");
-        let agent_has_emp = result.iter()
+        let agent_has_emp = result
+            .iter()
             .find(|d| d.name == "Agent")
             .map(|d| d.description.contains("<available_subagent_types>"))
             .unwrap_or(false);
@@ -574,14 +584,11 @@ impl ToolRegistry {
                     authorized_workspace: ctx.authorized_workspace.clone(),
                     // Phase 5: inherit parent's permission_ctx when available
                     // (sub-agent path), otherwise fall back to empty() (legacy/test).
-                    permission_ctx: ctx
-                        .permission_ctx
-                        .clone()
-                        .unwrap_or_else(|| {
-                            std::sync::Arc::new(
-                                crate::runtime::path_auth::ToolPermissionContext::empty(),
-                            )
-                        }),
+                    permission_ctx: ctx.permission_ctx.clone().unwrap_or_else(|| {
+                        std::sync::Arc::new(
+                            crate::runtime::path_auth::ToolPermissionContext::empty(),
+                        )
+                    }),
                 };
                 let cap = CapabilityContext {
                     storage: Some(storage),
@@ -959,8 +966,10 @@ impl ToolRegistry {
                         return None;
                     }
                 };
-                Some(Arc::new(builtin::task_output::TaskOutputRuntimeTool::new(resolver))
-                    as Arc<dyn crate::runtime::tools::RuntimeTool>)
+                Some(
+                    Arc::new(builtin::task_output::TaskOutputRuntimeTool::new(resolver))
+                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
+                )
             }
             "WriteMemory" => Some(Arc::new(builtin::memory::WriteMemoryRuntimeTool::new(
                 builtin::memory::MemoryDeps {
@@ -1005,8 +1014,10 @@ impl ToolRegistry {
                         return None;
                     }
                 };
-                Some(Arc::new(builtin::task_stop::TaskStopRuntimeTool { store: task_store })
-                    as Arc<dyn crate::runtime::tools::RuntimeTool>)
+                Some(
+                    Arc::new(builtin::task_stop::TaskStopRuntimeTool { store: task_store })
+                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
+                )
             }
             "create_agenda_item"
             | "list_agenda_items"
@@ -1017,13 +1028,8 @@ impl ToolRegistry {
                 let deps = Self::try_build_agenda_deps(ctx)?;
                 Some(Self::make_agenda_tool(name, deps))
             }
-            "skill_create_draft"
-            | "skill_write_md"
-            | "skill_add_file"
-            | "skill_validate"
-            | "skill_dry_run"
-            | "skill_install"
-            | "skill_export" => {
+            "skill_create_draft" | "skill_write_md" | "skill_add_file" | "skill_validate"
+            | "skill_dry_run" | "skill_install" | "skill_export" => {
                 use tauri::Manager;
                 let app = ctx.app_handle.as_ref()?;
                 let cus = app
@@ -1044,14 +1050,18 @@ impl ToolRegistry {
                     deps = deps.with_skill_registry(reg);
                 }
                 Some(match name {
-                    "skill_create_draft" => Arc::new(builtin::skill_smith::SkillCreateDraftTool::new(deps))
-                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
+                    "skill_create_draft" => {
+                        Arc::new(builtin::skill_smith::SkillCreateDraftTool::new(deps))
+                            as Arc<dyn crate::runtime::tools::RuntimeTool>
+                    }
                     "skill_write_md" => Arc::new(builtin::skill_smith::SkillWriteMdTool::new(deps))
                         as Arc<dyn crate::runtime::tools::RuntimeTool>,
                     "skill_add_file" => Arc::new(builtin::skill_smith::SkillAddFileTool::new(deps))
                         as Arc<dyn crate::runtime::tools::RuntimeTool>,
-                    "skill_validate" => Arc::new(builtin::skill_smith::SkillValidateTool::new(deps))
-                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
+                    "skill_validate" => {
+                        Arc::new(builtin::skill_smith::SkillValidateTool::new(deps))
+                            as Arc<dyn crate::runtime::tools::RuntimeTool>
+                    }
                     "skill_dry_run" => Arc::new(builtin::skill_smith::SkillDryRunTool::new(deps))
                         as Arc<dyn crate::runtime::tools::RuntimeTool>,
                     "skill_install" => Arc::new(builtin::skill_smith::SkillInstallTool::new(deps))
@@ -1227,10 +1237,8 @@ mod current_persona_id_tests {
 
     fn make_plugin_ctx(persona_id: Option<String>) -> crate::plugin::context::PluginContext {
         let tmp = tempfile::TempDir::new().unwrap();
-        let storage =
-            Arc::new(crate::storage::file_store::AppStorage::new(tmp.path()).unwrap());
-        let file_manager =
-            Arc::new(crate::storage::file_manager::FileManager::new(tmp.path()));
+        let storage = Arc::new(crate::storage::file_store::AppStorage::new(tmp.path()).unwrap());
+        let file_manager = Arc::new(crate::storage::file_manager::FileManager::new(tmp.path()));
         let mut ctx = crate::plugin::context::PluginContext {
             storage,
             file_manager,

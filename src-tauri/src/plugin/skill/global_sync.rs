@@ -32,6 +32,20 @@ pub struct SkillPackageItem {
     /// this per-skill so loader can tag SkillSource::Tenant vs Global.
     #[serde(default)]
     pub scope: String,
+    /// Category as recorded in lotus DB (e.g. "hr"/"finance"/"legal"). Used
+    /// as a sidecar fallback when the package's SKILL.md frontmatter is
+    /// missing `category:`. Empty string is normalized to None.
+    #[serde(default, deserialize_with = "deserialize_optional_nonempty_string")]
+    pub category: Option<String>,
+}
+
+fn deserialize_optional_nonempty_string<'de, D>(d: D) -> std::result::Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize;
+    let raw: Option<String> = Option::deserialize(d)?;
+    Ok(raw.and_then(|s| if s.trim().is_empty() { None } else { Some(s) }))
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -49,6 +63,10 @@ pub struct DownloadResponseEnvelope {
 #[derive(Debug, Clone, Deserialize)]
 pub struct DownloadResponseData {
     pub url: String,
+    /// Category as recorded in lotus DB. Gateway omits this field for rows
+    /// where category is empty (legacy). Empty string normalized to None.
+    #[serde(default, deserialize_with = "deserialize_optional_nonempty_string")]
+    pub category: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -75,7 +93,6 @@ impl GlobalSkillsState {
         }
     }
 }
-
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GlobalSkillInstallReport {
@@ -363,7 +380,7 @@ async fn fetch_download_url(
     server_base_url: &str,
     session_key: &str,
     skill_id: u64,
-) -> Result<String> {
+) -> Result<DownloadResponseData> {
     let url = format!(
         "{}/v1/skill-packages/{}/download",
         server_base_url.trim_end_matches('/'),
@@ -385,7 +402,7 @@ async fn fetch_download_url(
     if body.data.url.is_empty() {
         bail!("server returned empty download url for skill {}", skill_id);
     }
-    Ok(body.data.url)
+    Ok(body.data)
 }
 
 async fn install_one_skill_package(
@@ -399,8 +416,14 @@ async fn install_one_skill_package(
         bail!("invalid skill id from server: {}", item.plugin_id);
     }
 
-    // 1. Get a fresh signed download URL from server
-    let download_url = fetch_download_url(client, server_base_url, session_key, item.id).await?;
+    // 1. Get a fresh signed download URL from server. The response also
+    //    carries the DB-recorded category (when set), used below as a
+    //    sidecar fallback for SKILL.md frontmatter missing `category:`.
+    let download = fetch_download_url(client, server_base_url, session_key, item.id).await?;
+    let download_url = &download.url;
+    // Prefer download.category (fresher), fall back to item.category from
+    // the list endpoint when download response omits it.
+    let db_category = download.category.clone().or_else(|| item.category.clone());
 
     // 2. Download zip into downloads/{plugin_id}-{version}.zip
     let archive = config.downloads_dir.join(format!(
@@ -408,7 +431,7 @@ async fn install_one_skill_package(
         sanitize_filename(&item.plugin_id),
         sanitize_filename(&item.version)
     ));
-    download_file(&download_url, &archive).await?;
+    download_file(download_url, &archive).await?;
 
     // 3. Extract into prepared/{plugin_id}/  (clears any prior content)
     let prepared = config.prepared_dir.join(&item.plugin_id);
@@ -448,6 +471,34 @@ async fn install_one_skill_package(
             error
         );
     }
+
+    // 7. Write the lotus-side metadata sidecar (.lotus-meta.json). The loader
+    //    overlays this onto the SKILL.md frontmatter when frontmatter fields
+    //    are missing — primarily to give legacy packages (uploaded before the
+    //    strict-frontmatter contract) a correct category instead of falling
+    //    back to "general". Untouched SKILL.md keeps sha256 integrity intact.
+    if let Some(cat) = db_category.as_deref() {
+        let meta_path = installed.join(".lotus-meta.json");
+        let payload = serde_json::json!({ "category": cat });
+        match serde_json::to_vec(&payload) {
+            Ok(bytes) => {
+                if let Err(error) = fs::write(&meta_path, bytes) {
+                    log::warn!(
+                        "[skill-sync] write .lotus-meta.json for '{}' failed: {}",
+                        item.plugin_id,
+                        error
+                    );
+                }
+            }
+            Err(error) => {
+                log::warn!(
+                    "[skill-sync] encode .lotus-meta.json for '{}' failed: {}",
+                    item.plugin_id,
+                    error
+                );
+            }
+        }
+    }
     Ok(())
 }
 
@@ -477,8 +528,7 @@ pub async fn sync_skill_packages_from_server(
     );
 
     // 2. Read local installed-version state (None if first run or schema mismatch)
-    let local_state = read_global_skills_state(&config.state_path)?
-        .unwrap_or_default();
+    let local_state = read_global_skills_state(&config.state_path)?.unwrap_or_default();
     log::info!(
         "[skill-sync] local state has {} installed skills: {:?}",
         local_state.installed.len(),
@@ -489,12 +539,10 @@ pub async fn sync_skill_packages_from_server(
     let mut new_installed: HashMap<String, String> = local_state.installed.clone();
     let mut remote_ids: HashSet<String> = HashSet::new();
 
-    fs::create_dir_all(&config.downloads_dir).with_context(|| {
-        format!("create downloads dir '{}'", config.downloads_dir.display())
-    })?;
-    fs::create_dir_all(&config.prepared_dir).with_context(|| {
-        format!("create prepared dir '{}'", config.prepared_dir.display())
-    })?;
+    fs::create_dir_all(&config.downloads_dir)
+        .with_context(|| format!("create downloads dir '{}'", config.downloads_dir.display()))?;
+    fs::create_dir_all(&config.prepared_dir)
+        .with_context(|| format!("create prepared dir '{}'", config.prepared_dir.display()))?;
 
     // 3. Install or update remote skills whose version changed (or are missing locally)
     for item in &list.data {
@@ -582,10 +630,7 @@ pub async fn sync_skill_packages_from_server(
     Ok(report)
 }
 
-pub fn reload_skill_registry(
-    skill_roots: &[PathBuf],
-    registry: &Arc<Mutex<SkillRegistry>>,
-) {
+pub fn reload_skill_registry(skill_roots: &[PathBuf], registry: &Arc<Mutex<SkillRegistry>>) {
     match load_skill_roots(skill_roots) {
         Ok(skills) => match registry.lock() {
             Ok(mut guard) => {

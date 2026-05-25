@@ -224,31 +224,29 @@ impl AiJiaHome {
         self.root.join("tmp")
     }
 
-    /// `~/.renlijia/turn_stages/` — ephemeral per-turn stage snapshots written
-    /// by `TurnStageEmitter` (spec 2026-05-17-turn-stages §5).  Files here are
-    /// crash-detection sentinels: any file present at process startup means
-    /// the previous run died mid-turn for that conversation, and the recovery
-    /// sweep converts it into `interrupted_turns/{conv_id}.json`.
+    /// LEGACY root-flat `turn_stages/` dir.  Kept only so the one-shot
+    /// `migrate_legacy_turn_stages_if_needed` can find files left over from
+    /// older builds.  Production code must use
+    /// `UserScopedPaths::turn_stages_dir()` instead — the path is now
+    /// user-scoped to respect multi-account isolation.
+    #[deprecated(
+        since = "0.5.27",
+        note = "use UserScopedPaths::turn_stages_dir() — turn_stages is now user-scoped"
+    )]
     pub fn turn_stages_dir(&self) -> PathBuf {
         self.root.join("turn_stages")
     }
 
-    /// Per-conversation active-turn-stage file.  Flat layout (no user scope
-    /// in the path) lets the emitter write without resolving the user scope
-    /// at every transition.
+    /// LEGACY root-flat per-conversation active-turn-stage file.  See
+    /// `turn_stages_dir` above; production code must use
+    /// `UserScopedPaths::turn_stage_path(conv_id)` instead.
+    #[deprecated(
+        since = "0.5.27",
+        note = "use UserScopedPaths::turn_stage_path(conv_id) — turn_stages is now user-scoped"
+    )]
     pub fn turn_stage_path(&self, conversation_id: &str) -> PathBuf {
-        self.turn_stages_dir().join(format!("{conversation_id}.json"))
-    }
-
-    /// `~/.renlijia/interrupted_turns/` — set of "the last process died while
-    /// this conversation was mid-turn" markers.  Frontend reads on open and
-    /// shows a banner so the user can resend or dismiss.
-    pub fn interrupted_turns_dir(&self) -> PathBuf {
-        self.root.join("interrupted_turns")
-    }
-
-    pub fn interrupted_turn_path(&self, conversation_id: &str) -> PathBuf {
-        self.interrupted_turns_dir()
+        self.root
+            .join("turn_stages")
             .join(format!("{conversation_id}.json"))
     }
 
@@ -260,6 +258,40 @@ impl AiJiaHome {
     /// 钉钉附件下载目录 `~/.renlijia/tmp/dingtalk_downloads/`。
     pub fn tmp_dingtalk_downloads_dir(&self) -> PathBuf {
         self.tmp_dir().join("dingtalk_downloads")
+    }
+
+    /// 飞书附件下载目录 `~/.renlijia/tmp/feishu_downloads/`。镜像
+    /// `tmp_dingtalk_downloads_dir`，PR6 引入。父目录在首次写文件时由
+    /// `FeishuFileDownloader::download` 通过 `tokio::fs::create_dir_all` 按需创建。
+    pub fn tmp_feishu_downloads_dir(&self) -> PathBuf {
+        self.tmp_dir().join("feishu_downloads")
+    }
+
+    /// 企微附件下载目录 `~/.renlijia/tmp/wecom_downloads/`。镜像
+    /// `tmp_feishu_downloads_dir`，PR6b 后期引入。父目录在首次写文件时由
+    /// `wecom::media::download_and_save` 通过 `tokio::fs::create_dir_all` 按需创建。
+    pub fn tmp_wecom_downloads_dir(&self) -> PathBuf {
+        self.tmp_dir().join("wecom_downloads")
+    }
+
+    /// 个人微信（iLink）附件下载目录 `~/.renlijia/tmp/wechat_downloads/`。
+    /// 镜像 `tmp_wecom_downloads_dir`。父目录在首次写文件时由
+    /// `wechat::media::download_and_save` 按需创建。
+    pub fn tmp_wechat_downloads_dir(&self) -> PathBuf {
+        self.tmp_dir().join("wechat_downloads")
+    }
+
+    /// Telegram 附件下载目录 `~/.renlijia/tmp/telegram_downloads/`。
+    /// 镜像 `tmp_wecom_downloads_dir`。
+    pub fn tmp_telegram_downloads_dir(&self) -> PathBuf {
+        self.tmp_dir().join("telegram_downloads")
+    }
+
+    /// WhatsApp 附件下载目录 `~/.renlijia/tmp/whatsapp_downloads/`。
+    /// 镜像 `tmp_telegram_downloads_dir`。父目录在首次写文件时由
+    /// `WhatsAppMediaDownloader::download_*` 通过 `tokio::fs::create_dir_all` 按需创建。
+    pub fn tmp_whatsapp_downloads_dir(&self) -> PathBuf {
+        self.tmp_dir().join("whatsapp_downloads")
     }
 
     /// 确保全局层目录存在，供 auth restore 等登录前流程使用。
@@ -274,7 +306,6 @@ impl AiJiaHome {
     pub fn ensure_user_dirs(&self, scope: &UserScope) -> std::io::Result<()> {
         let user_dir = self.user_dir(scope);
         std::fs::create_dir_all(self.user_conversations_dir(scope))?;
-        std::fs::create_dir_all(user_dir.join("shared").join("memory"))?;
         std::fs::create_dir_all(user_dir.join("shared").join("cognitive"))?;
         std::fs::create_dir_all(user_dir.join("shared").join("cache"))?;
         std::fs::create_dir_all(self.user_audit_dir(scope))?;
@@ -290,6 +321,7 @@ impl AiJiaHome {
         std::fs::create_dir_all(self.user_site_profiles_dir(scope))?;
         std::fs::create_dir_all(self.user_logs_dir(scope))?;
         std::fs::create_dir_all(user_dir.join("channels"))?;
+        std::fs::create_dir_all(user_dir.join("turn_stages"))?;
         Ok(())
     }
 
@@ -461,7 +493,6 @@ mod tests {
         home.ensure_user_dirs(&scope).unwrap();
 
         assert!(home.user_conversations_dir(&scope).exists());
-        assert!(user_dir.join("shared").join("memory").exists());
         assert!(user_dir.join("shared").join("cache").exists());
         assert!(home.user_audit_dir(&scope).exists());
         assert!(home.user_schedules_dir(&scope).exists());

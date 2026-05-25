@@ -145,6 +145,11 @@
   --shadow-card: var(--shadow-md);
   --shadow-accent: 0 0 0 3px rgba(212, 168, 67, 0.2);
   --shadow-accent-glow: 0 8px 24px rgba(212, 168, 67, 0.12);
+  /* Sidebar → main seam. Inset shadow on the main area's left edge to
+     suggest the sidebar sits at slightly higher elevation, sharpening the
+     boundary without a hard divider. Pair with bg-sidebar / bg-background
+     color contrast — never use alone (a11y: depth alone is not a signal). */
+  --shadow-sidebar-edge: inset 12px 0 16px -16px rgba(0, 0, 0, 0.08);
 
   /* Motion (spec §6) — components must reference these instead of
      hardcoding `duration-150` etc. */
@@ -158,13 +163,6 @@
      1em. Other tx-* sizes intentionally inherit Tailwind defaults (xs/sm/
      base/lg/xl/2xl). */
   --text-md: 0.9375rem;
-
-  /* User message bubble horizontal padding. Scoped to user-side because
-     AssistantMarkdown is a flow-layout container and adding x-padding would
-     collide with its inner block elements (tables / code / lists). If a
-     future "ai bubble" surface needs its own token, add --ai-bubble-* next
-     to this one rather than overloading a single name. */
-  --user-bubble-padding-x: 16px;
 
   /* ────────────── Table ────────────── */
   /* Font family is intentionally not declared — tables inherit from parent */
@@ -267,6 +265,17 @@ body {
   height: 100vh;
   width: 100vw;
   display: flex;
+}
+
+.ProseMirror {
+  caret-color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.ProseMirror .react-renderer.node-attachmentToken,
+.ProseMirror .react-renderer.node-skillToken {
+  display: inline-block;
+  margin: 0 0.25em;
+  vertical-align: middle;
 }
 
 /* ===== Scrollbar Styles ===== */
@@ -676,6 +685,43 @@ button:not(:disabled) {
 @keyframes modalIn {
   from { opacity: 0; transform: scale(0.97) translateY(4px); }
   to   { opacity: 1; transform: none; }
+}
+
+/* Skill token chip — subtle "active capability" sheen.
+   Two layered effects:
+   1) breathing glow shadow that pulses every ~3s (signals "this is live")
+   2) gradient sweep on the bg via background-position animation (premium feel)
+   Stays accessible: pure CSS, no layout thrash, motion reduced via prefers-reduced-motion. */
+@keyframes skillTokenSheen {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes skillTokenGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(var(--primary-rgb, 59 130 246) / 0), inset 0 0 0 1px color-mix(in srgb, var(--primary) 18%, transparent); }
+  50%      { box-shadow: 0 0 12px 0 color-mix(in srgb, var(--primary) 28%, transparent), inset 0 0 0 1px color-mix(in srgb, var(--primary) 35%, transparent); }
+}
+
+.skill-token-chip {
+  background-image: linear-gradient(
+    115deg,
+    color-mix(in srgb, var(--primary) 14%, transparent) 0%,
+    color-mix(in srgb, var(--primary) 22%, transparent) 35%,
+    color-mix(in srgb, var(--primary) 10%, transparent) 70%,
+    color-mix(in srgb, var(--primary) 20%, transparent) 100%
+  );
+  background-size: 220% 220%;
+  animation: skillTokenSheen 6s ease-in-out infinite, skillTokenGlow 3s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skill-token-chip {
+    animation: none;
+    background-image: linear-gradient(115deg,
+      color-mix(in srgb, var(--primary) 14%, transparent),
+      color-mix(in srgb, var(--primary) 18%, transparent));
+  }
 }
 
 /* ===== Focus Styles ===== */

@@ -5,9 +5,9 @@
 use anyhow::Result;
 use serde_json::Value;
 
-use crate::plugin::context::PluginContext;
-use super::super::{require_str, optional_str};
+use super::super::{optional_str, require_str};
 use super::get_bridge;
+use crate::plugin::context::PluginContext;
 
 /// Try to extract events array from dws calendar response.
 /// Tries: result[] → data.events[] → data[] → events[] → top-level array
@@ -34,23 +34,47 @@ fn extract_events(result: &Value) -> Option<&Vec<Value>> {
 }
 
 fn format_event(e: &Value) -> String {
-    let summary = e.get("summary").or_else(|| e.get("title"))
-        .and_then(|v| v.as_str()).unwrap_or("Untitled");
-    let start = e.get("start").and_then(|v| {
-        v.get("dateTime").or_else(|| v.get("date")).and_then(|d| d.as_str())
-    }).or_else(|| e.get("startTime").and_then(|v| v.as_str()))
+    let summary = e
+        .get("summary")
+        .or_else(|| e.get("title"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("Untitled");
+    let start = e
+        .get("start")
+        .and_then(|v| {
+            v.get("dateTime")
+                .or_else(|| v.get("date"))
+                .and_then(|d| d.as_str())
+        })
+        .or_else(|| e.get("startTime").and_then(|v| v.as_str()))
         .unwrap_or("?");
-    let end = e.get("end").and_then(|v| {
-        v.get("dateTime").or_else(|| v.get("date")).and_then(|d| d.as_str())
-    }).or_else(|| e.get("endTime").and_then(|v| v.as_str()))
+    let end = e
+        .get("end")
+        .and_then(|v| {
+            v.get("dateTime")
+                .or_else(|| v.get("date"))
+                .and_then(|d| d.as_str())
+        })
+        .or_else(|| e.get("endTime").and_then(|v| v.as_str()))
         .unwrap_or("?");
-    let location = e.get("location").and_then(|v| {
-        v.get("displayName").and_then(|d| d.as_str()).or_else(|| v.as_str())
-    }).unwrap_or("");
-    let eid = e.get("id").or_else(|| e.get("eventId"))
-        .and_then(|v| v.as_str()).unwrap_or("?");
+    let location = e
+        .get("location")
+        .and_then(|v| {
+            v.get("displayName")
+                .and_then(|d| d.as_str())
+                .or_else(|| v.as_str())
+        })
+        .unwrap_or("");
+    let eid = e
+        .get("id")
+        .or_else(|| e.get("eventId"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("?");
 
-    let mut line = format!("- **{}** (event_id: `{}`)\n  {} -> {}", summary, eid, start, end);
+    let mut line = format!(
+        "- **{}** (event_id: `{}`)\n  {} -> {}",
+        summary, eid, start, end
+    );
     if !location.is_empty() {
         line.push_str(&format!(" @ {}", location));
     }
@@ -64,11 +88,18 @@ pub async fn handle_dingtalk_list_events(ctx: &PluginContext, args: &Value) -> R
     let start_time = require_str(args, "start_time")?;
     let end_time = require_str(args, "end_time")?;
 
-    let result = bridge.query(&["calendar", "event", "list", "--start", start_time, "--end", end_time]).await?;
+    let result = bridge
+        .query(&[
+            "calendar", "event", "list", "--start", start_time, "--end", end_time,
+        ])
+        .await?;
 
     if let Some(events) = extract_events(&result) {
         if events.is_empty() {
-            return Ok(format!("No events found between {} and {}.", start_time, end_time));
+            return Ok(format!(
+                "No events found between {} and {}.",
+                start_time, end_time
+            ));
         }
         let mut output = format!("Found {} event(s):\n\n", events.len());
         for e in events {
@@ -76,7 +107,10 @@ pub async fn handle_dingtalk_list_events(ctx: &PluginContext, args: &Value) -> R
         }
         Ok(output)
     } else {
-        Ok(format!("Events:\n```json\n{}\n```", serde_json::to_string_pretty(&result)?))
+        Ok(format!(
+            "Events:\n```json\n{}\n```",
+            serde_json::to_string_pretty(&result)?
+        ))
     }
 }
 
@@ -90,10 +124,7 @@ pub async fn handle_dingtalk_create_event(ctx: &PluginContext, args: &Value) -> 
     let attendees = optional_str(args, "attendee_user_ids");
 
     let mut cmd_args = vec![
-        "calendar", "event", "create",
-        "--title", summary,
-        "--start", start_time,
-        "--end", end_time,
+        "calendar", "event", "create", "--title", summary, "--start", start_time, "--end", end_time,
     ];
 
     if let Some(desc) = description {
@@ -106,7 +137,8 @@ pub async fn handle_dingtalk_create_event(ctx: &PluginContext, args: &Value) -> 
     let result = bridge.mutate(&cmd_args).await?;
 
     // Try to extract event ID from response
-    let event_id = result.get("result")
+    let event_id = result
+        .get("result")
         .or_else(|| result.get("data"))
         .and_then(|d| d.get("id").or_else(|| d.get("eventId")))
         .and_then(|v| v.as_str())
@@ -114,8 +146,13 @@ pub async fn handle_dingtalk_create_event(ctx: &PluginContext, args: &Value) -> 
 
     Ok(format!(
         "Event created (event_id: `{}`).\n\n**{}**\n{} -> {}\n{}",
-        event_id, summary, start_time, end_time,
-        attendees.map(|a| format!("Attendees: {}\n", a)).unwrap_or_default(),
+        event_id,
+        summary,
+        start_time,
+        end_time,
+        attendees
+            .map(|a| format!("Attendees: {}\n", a))
+            .unwrap_or_default(),
     ))
 }
 
@@ -125,26 +162,34 @@ pub async fn handle_dingtalk_free_busy(ctx: &PluginContext, args: &Value) -> Res
     let start_time = require_str(args, "start_time")?;
     let end_time = require_str(args, "end_time")?;
 
-    let result = bridge.query(&[
-        "calendar", "event", "list",
-        "--start", start_time,
-        "--end", end_time,
-    ]).await?;
+    let result = bridge
+        .query(&[
+            "calendar", "event", "list", "--start", start_time, "--end", end_time,
+        ])
+        .await?;
 
     if let Some(events) = extract_events(&result) {
         if events.is_empty() {
-            return Ok(format!("No events in {} -> {}. The time slot appears free.", start_time, end_time));
+            return Ok(format!(
+                "No events in {} -> {}. The time slot appears free.",
+                start_time, end_time
+            ));
         }
         let mut output = format!(
             "Found {} event(s) in {} -> {} (busy times):\n\n",
-            events.len(), start_time, end_time
+            events.len(),
+            start_time,
+            end_time
         );
         for e in events {
             output.push_str(&format_event(e));
         }
         Ok(output)
     } else {
-        Ok(format!("Events in range:\n```json\n{}\n```", serde_json::to_string_pretty(&result)?))
+        Ok(format!(
+            "Events in range:\n```json\n{}\n```",
+            serde_json::to_string_pretty(&result)?
+        ))
     }
 }
 
@@ -157,6 +202,9 @@ mod tests {
     fn test_require_event_fields() {
         let args = json!({"summary": "Meeting", "start_time": "2026-04-27T14:00:00", "end_time": "2026-04-27T15:00:00"});
         assert_eq!(require_str(&args, "summary").unwrap(), "Meeting");
-        assert_eq!(require_str(&args, "start_time").unwrap(), "2026-04-27T14:00:00");
+        assert_eq!(
+            require_str(&args, "start_time").unwrap(),
+            "2026-04-27T14:00:00"
+        );
     }
 }

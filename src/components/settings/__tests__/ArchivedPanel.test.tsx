@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useNotificationStore } from '@/stores/notificationStore'
@@ -41,8 +41,8 @@ describe('ArchivedPanel', () => {
 
     await screen.findByText('归档会话')
     fireEvent.click(screen.getByRole('button', { name: '恢复' }))
-    expect(screen.getByText('恢复此聊天？')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '确认恢复' }))
+    expect(screen.getByText('恢复此对话？')).toBeInTheDocument()
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: '恢复' }))
 
     await waitFor(() => expect(tauriMock.restoreConversation).toHaveBeenCalledWith('c1'))
     await waitFor(() => expect(screen.getByText('暂无归档记录')).toBeInTheDocument())
@@ -68,8 +68,8 @@ describe('ArchivedPanel', () => {
 
     await screen.findByText('归档会话')
     fireEvent.click(screen.getByRole('button', { name: '彻底删除' }))
-    expect(screen.getByText('彻底删除此聊天？')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '确认删除' }))
+    expect(screen.getByText('彻底删除此对话？')).toBeInTheDocument()
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: '确认' }))
 
     await waitFor(() => expect(tauriMock.deleteConversation).toHaveBeenCalledWith('c1'))
     await waitFor(() => expect(screen.getByText('暂无归档记录')).toBeInTheDocument())
@@ -89,7 +89,7 @@ describe('ArchivedPanel', () => {
 
     await screen.findByText('归档会话')
     fireEvent.click(screen.getByRole('button', { name: '恢复' }))
-    fireEvent.click(screen.getByRole('button', { name: '确认恢复' }))
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: '恢复' }))
 
     await waitFor(() => {
       const notifications = useNotificationStore.getState().notifications
@@ -110,7 +110,7 @@ describe('ArchivedPanel', () => {
 
     await screen.findByText('归档会话')
     fireEvent.click(screen.getByRole('button', { name: '彻底删除' }))
-    fireEvent.click(screen.getByRole('button', { name: '确认删除' }))
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: '确认' }))
 
     await waitFor(() => {
       const notifications = useNotificationStore.getState().notifications

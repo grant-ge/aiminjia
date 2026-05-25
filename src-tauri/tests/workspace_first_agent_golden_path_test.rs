@@ -21,10 +21,7 @@ async fn authorized_session_exposes_workspace_tools_and_searches_workspace() {
     .await
     .unwrap();
 
-    for tool_name in &[
-        "Read",
-        "Glob",
-    ] {
+    for tool_name in &["Read", "Glob"] {
         assert!(
             trace
                 .visible_tool_names
@@ -67,10 +64,7 @@ async fn authorized_session_reads_workspace_file_without_upload_flow() {
     .unwrap();
 
     assert!(
-        trace
-            .visible_tool_names
-            .iter()
-            .any(|name| name == "Read"),
+        trace.visible_tool_names.iter().any(|name| name == "Read"),
         "authorized session should expose read_workspace_file, got {:?}",
         trace.visible_tool_names
     );

@@ -32,11 +32,7 @@ fn rejects_missing_skill_md() {
 fn rejects_invalid_frontmatter_yaml() {
     let tmp = TempDir::new().unwrap();
     let dir = skill_dir(&tmp);
-    write(
-        &dir,
-        "SKILL.md",
-        "---\nname: [unterminated\n---\nbody\n",
-    );
+    write(&dir, "SKILL.md", "---\nname: [unterminated\n---\nbody\n");
     let err = validate_skill_directory(&dir).unwrap_err();
     assert!(matches!(err, SkillValidationError::ParseFailed(_)));
 }
@@ -86,7 +82,11 @@ fn install_succeeds_when_target_missing() {
     let staging = TempDir::new().unwrap();
     let src = staging.path().join("my-skill-src");
     fs::create_dir(&src).unwrap();
-    write(&src, "SKILL.md", "---\nname: my-skill\ndescription: ok\n---\nbody\n");
+    write(
+        &src,
+        "SKILL.md",
+        "---\nname: my-skill\ndescription: ok\n---\nbody\n",
+    );
 
     let dst_parent = TempDir::new().unwrap();
     let result = install_custom_skill_to_dir_with_force(&src, dst_parent.path(), false).unwrap();
@@ -99,7 +99,11 @@ fn install_returns_already_exists_when_target_present_and_force_false() {
     let src_parent = TempDir::new().unwrap();
     let src = src_parent.path().join("dup-skill");
     fs::create_dir(&src).unwrap();
-    write(&src, "SKILL.md", "---\nname: dup-skill\ndescription: ok\n---\n");
+    write(
+        &src,
+        "SKILL.md",
+        "---\nname: dup-skill\ndescription: ok\n---\n",
+    );
 
     let dst_parent = TempDir::new().unwrap();
     fs::create_dir(dst_parent.path().join("dup-skill")).unwrap();
@@ -118,7 +122,11 @@ fn install_overwrites_when_force_true() {
     let src_parent = TempDir::new().unwrap();
     let src = src_parent.path().join("dup-skill");
     fs::create_dir(&src).unwrap();
-    write(&src, "SKILL.md", "---\nname: dup-skill\ndescription: ok\n---\nNEW\n");
+    write(
+        &src,
+        "SKILL.md",
+        "---\nname: dup-skill\ndescription: ok\n---\nNEW\n",
+    );
 
     let dst_parent = TempDir::new().unwrap();
     fs::create_dir(dst_parent.path().join("dup-skill")).unwrap();

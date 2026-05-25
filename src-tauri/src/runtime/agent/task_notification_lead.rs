@@ -14,9 +14,7 @@
 use std::sync::Arc;
 
 use crate::runtime::agent::inbox::{InboxItem, MessageSource};
-use crate::runtime::agent::{
-    AgentNameRegistry, InboxRegistry, LeadIdleSupervisor, TeamRegistry,
-};
+use crate::runtime::agent::{AgentNameRegistry, InboxRegistry, LeadIdleSupervisor, TeamRegistry};
 use crate::runtime::ids::SessionId;
 use crate::runtime::messaging::StructuredMessage;
 
@@ -156,7 +154,13 @@ mod tests {
 
     #[test]
     fn envelope_escapes_special_chars_and_uses_action_attr() {
-        let xml = build_envelope("t-1", "Alice & Bob", TaskAction::Claimed, "<plot>", "in_progress");
+        let xml = build_envelope(
+            "t-1",
+            "Alice & Bob",
+            TaskAction::Claimed,
+            "<plot>",
+            "in_progress",
+        );
         assert!(xml.contains(r#"id="t-1""#));
         assert!(xml.contains(r#"action="claimed""#));
         assert!(xml.contains("Alice &amp; Bob"));

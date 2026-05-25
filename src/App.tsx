@@ -45,8 +45,9 @@ import { useSkillStore } from '@/stores/skillStore'
 import { useStreamingStore } from '@/stores/streamingStore'
 import { useInteractionStore } from '@/stores/interactionStore'
 import { useUiStore } from '@/stores/uiStore'
+import { hydrateHomeStore } from '@/stores/homeStore'
 import { initChannelListeners } from '@/stores/channelStore'
-import { applyFontScale, loadPersistedFontScale, normalizeFontScale, persistFontScale } from '@/styles/fontScale'
+import { applyFontScale, loadPersistedFontScale } from '@/styles/fontScale'
 
 applyFontScale(loadPersistedFontScale())
 
@@ -122,7 +123,10 @@ function AppShell() {
       <TitleBar />
       <div className="flex min-h-0 flex-1">
         <AppSidebar />
-        <main className="min-w-0 flex-1 overflow-hidden border-l border-border">
+        <main
+          className="min-w-0 flex-1 overflow-hidden border-l border-border"
+          style={{ boxShadow: 'var(--shadow-sidebar-edge)' }}
+        >
           <RouteSwitch />
         </main>
       </div>
@@ -166,14 +170,24 @@ function App() {
   useEffect(() => {
     getSettings()
       .then((settings) => {
-        if (settings.fontScale) {
-          const fontScale = normalizeFontScale(settings.fontScale)
-          persistFontScale(fontScale)
-          applyFontScale(fontScale)
-          useSettingsStore.setState({ fontScale })
-        }
+        useSettingsStore.getState().setSettings(settings)
       })
       .catch((err) => console.error('Failed to load settings:', err))
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const settings = await getSettings()
+        if (!cancelled) hydrateHomeStore(settings)
+      } catch (err) {
+        console.warn('[App] hydrate homeStore failed:', err)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   useEffect(() => {
@@ -217,15 +231,19 @@ function App() {
     const unlisten = onConversationCreated(async () => {
       try {
         const raw = await getConversations()
-        const convs = raw.map((c) => ({
-          id: (c.id as string) ?? '',
-          title: (c.title as string) ?? '新对话',
-          createdAt: (c.createdAt as string) ?? new Date().toISOString(),
-          updatedAt: (c.updatedAt as string) ?? new Date().toISOString(),
-          isArchived: (c.isArchived as boolean) ?? false,
-          workspaceName: (c.workspaceName as string | undefined) ?? undefined,
-          employeeId: (c.employeeId as string | undefined) ?? undefined,
-        }))
+        const convs = raw
+          .map((c) => ({
+            id: (c.id as string) ?? '',
+            title: (c.title as string) ?? '新对话',
+            createdAt: (c.createdAt as string) ?? new Date().toISOString(),
+            updatedAt: (c.updatedAt as string) ?? new Date().toISOString(),
+            isArchived: (c.isArchived as boolean) ?? false,
+            kind: (c.kind as import('@/types/message').Conversation['kind']) ?? undefined,
+            workspaceName: (c.workspaceName as string | undefined) ?? undefined,
+          }))
+          // Sidebar / project list only shows app-side conversations;
+          // IM-origin chats are surfaced through the channel page.
+          .filter((c) => c.kind !== 'im')
         useChatStore.getState().setConversations(convs)
       } catch (err) {
         console.error('[App] reload conversations after conversation:created failed:', err)

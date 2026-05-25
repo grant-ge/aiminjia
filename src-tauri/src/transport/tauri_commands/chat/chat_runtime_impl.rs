@@ -43,7 +43,10 @@ pub async fn build_visible_tool_defs(
     has_authorized_workspace: bool,
     schema_filter: ToolSchemaFilter,
     ctx: &crate::runtime::tools::ToolDescriptionContext,
-    request_scoped_overrides: &std::collections::HashMap<String, crate::llm::streaming::ToolDefinition>,
+    request_scoped_overrides: &std::collections::HashMap<
+        String,
+        crate::llm::streaming::ToolDefinition,
+    >,
 ) -> Vec<crate::llm::streaming::ToolDefinition> {
     let defs = if has_authorized_workspace {
         registry
@@ -52,9 +55,7 @@ pub async fn build_visible_tool_defs(
     } else {
         registry
             .get_schemas_filtered(
-                &ToolFilter::Exclude(
-                    WORKSPACE_TOOL_NAMES.iter().map(|s| s.to_string()).collect(),
-                ),
+                &ToolFilter::Exclude(WORKSPACE_TOOL_NAMES.iter().map(|s| s.to_string()).collect()),
                 ctx,
                 request_scoped_overrides,
             )
@@ -132,7 +133,12 @@ pub async fn build_request_scoped_tool_overrides(
     let employee_count = ctx
         .agents
         .iter()
-        .filter(|a| matches!(a.source, crate::runtime::agent::definition::AgentSource::Employee))
+        .filter(|a| {
+            matches!(
+                a.source,
+                crate::runtime::agent::definition::AgentSource::Employee
+            )
+        })
         .count();
     log::info!(
         "[tool-desc-trace] enter: ctx agents={} (employees within={})",
@@ -145,12 +151,11 @@ pub async fn build_request_scoped_tool_overrides(
     // Note: the tool's launcher is irrelevant for description rendering
     // (we never call execute() on this throwaway instance), but the
     // constructor demands one — use a stub that errors if invoked.
-    let agent_registry = match app
-        .try_state::<Arc<crate::runtime::agent::registry::AgentRegistry>>()
-    {
-        Some(s) => s.inner().clone(),
-        None => return out,
-    };
+    let agent_registry =
+        match app.try_state::<Arc<crate::runtime::agent::registry::AgentRegistry>>() {
+            Some(s) => s.inner().clone(),
+            None => return out,
+        };
 
     let stub_launcher = Arc::new(StubLauncher);
     let tool: Arc<dyn RuntimeTool> = Arc::new(
@@ -164,7 +169,12 @@ pub async fn build_request_scoped_tool_overrides(
     let first_emp_id = ctx
         .agents
         .iter()
-        .find(|a| matches!(a.source, crate::runtime::agent::definition::AgentSource::Employee))
+        .find(|a| {
+            matches!(
+                a.source,
+                crate::runtime::agent::definition::AgentSource::Employee
+            )
+        })
         .map(|a| a.name.clone());
     log::info!(
         "[tool-desc-trace] Agent rendered: desc_len={} contains_emp_section={} contains_emp_id={}",
@@ -233,26 +243,6 @@ fn first_sentence(s: &str, max_chars: usize) -> String {
     }
 }
 
-/// 只查真实绑定，不做 defaultFolder fallback。用于列表展示场景。
-pub(crate) fn load_explicit_workspace(
-    app: &AppHandle,
-    conversation_id: &str,
-) -> Option<crate::runtime::store::AuthorizedWorkspaceRef> {
-    app.try_state::<Arc<RuntimeRepositoryFacade>>()
-        .and_then(|facade| {
-            facade
-                .authorized_workspace_store()
-                .get_current_for_session(&SessionId::new(conversation_id.to_string()))
-                .ok()
-                .flatten()
-        })
-        .map(|aw| crate::runtime::store::AuthorizedWorkspaceRef {
-            id: aw.id,
-            root_path: aw.root_path,
-            display_name: aw.display_name,
-        })
-}
-
 pub(crate) fn load_authorized_workspace(
     app: &AppHandle,
     conversation_id: &str,
@@ -262,7 +252,7 @@ pub(crate) fn load_authorized_workspace(
         .and_then(|facade| {
             facade
                 .authorized_workspace_store()
-                .get_current_for_session(&SessionId::new(conversation_id.to_string()))
+                .get_current_for_session(conversation_id, &SessionId::new(conversation_id.to_string()))
                 .ok()
                 .flatten()
         })
@@ -311,9 +301,7 @@ pub(crate) fn build_llm_content(
         .map(|file| {
             format!(
                 "- {} (path: \"{}\", 类型: {})",
-                file.file_name,
-                file.file_path,
-                file.file_type
+                file.file_name, file.file_path, file.file_type
             )
         })
         .collect();
@@ -343,7 +331,14 @@ mod tests {
         let registry = ToolRegistry::new();
         register_builtin_tools(&registry).await;
 
-        let defs = build_visible_tool_defs(&registry, true, ToolSchemaFilter::None, &crate::runtime::tools::ToolDescriptionContext::empty(), &std::collections::HashMap::new()).await;
+        let defs = build_visible_tool_defs(
+            &registry,
+            true,
+            ToolSchemaFilter::None,
+            &crate::runtime::tools::ToolDescriptionContext::empty(),
+            &std::collections::HashMap::new(),
+        )
+        .await;
         let names: Vec<&str> = defs.iter().map(|def| def.name.as_str()).collect();
 
         // Bash / PowerShell are mutually exclusive (registered per-platform):
@@ -367,7 +362,14 @@ mod tests {
         let registry = ToolRegistry::new();
         register_builtin_tools(&registry).await;
 
-        let defs = build_visible_tool_defs(&registry, false, ToolSchemaFilter::None, &crate::runtime::tools::ToolDescriptionContext::empty(), &std::collections::HashMap::new()).await;
+        let defs = build_visible_tool_defs(
+            &registry,
+            false,
+            ToolSchemaFilter::None,
+            &crate::runtime::tools::ToolDescriptionContext::empty(),
+            &std::collections::HashMap::new(),
+        )
+        .await;
         let names: Vec<&str> = defs.iter().map(|def| def.name.as_str()).collect();
 
         for tool_name in WORKSPACE_TOOL_NAMES {
@@ -396,10 +398,7 @@ mod tests {
     async fn test_build_visible_tool_defs_applies_allowed_tools_filter_after_workspace_filter() {
         let registry = ToolRegistry::new();
         register_builtin_tools(&registry).await;
-        let allowed = std::collections::HashSet::from([
-            "Grep".to_string(),
-            "Read".to_string(),
-        ]);
+        let allowed = std::collections::HashSet::from(["Grep".to_string(), "Read".to_string()]);
 
         let defs = build_visible_tool_defs(
             &registry,
@@ -413,7 +412,11 @@ mod tests {
 
         // read_workspace_file is in WORKSPACE_TOOL_NAMES so it gets filtered out first;
         // grep_content is also a workspace tool so both are excluded without auth.
-        assert!(names.is_empty(), "all allowed tools are workspace-scoped, expect empty after double filter; got {:?}", names);
+        assert!(
+            names.is_empty(),
+            "all allowed tools are workspace-scoped, expect empty after double filter; got {:?}",
+            names
+        );
     }
 
     #[test]

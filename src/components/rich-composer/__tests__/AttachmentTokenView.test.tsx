@@ -22,10 +22,10 @@ describe('AttachmentTokenView', () => {
     expect(screen.getByText('plan.pdf')).toBeInTheDocument()
   })
 
-  it('文件 kind → 显示 fileType 标签', () => {
+  it('文件 kind → 显示 fileType 图标', () => {
     const node = { attrs: mkAttrs({ fileType: 'pdf' }) } as never
     render(<AttachmentTokenView node={node} deleteNode={() => {}} />)
-    expect(screen.getByText('PDF')).toBeInTheDocument()
+    expect(screen.getByLabelText('pdf attachment')).toBeInTheDocument()
   })
 
   it('image kind → 显示 image 图标 (aria-label "image attachment")', () => {
@@ -38,6 +38,13 @@ describe('AttachmentTokenView', () => {
     const node = { attrs: mkAttrs({ kind: 'folder', fileType: 'folder' }) } as never
     render(<AttachmentTokenView node={node} deleteNode={() => {}} />)
     expect(screen.getByLabelText('folder attachment')).toBeInTheDocument()
+  })
+
+  it('csv kind → 显示 csv 图标而不是文字标签', () => {
+    const node = { attrs: mkAttrs({ fileType: 'csv' }) } as never
+    render(<AttachmentTokenView node={node} deleteNode={() => {}} />)
+    expect(screen.getByLabelText('csv attachment')).toBeInTheDocument()
+    expect(screen.queryByText('CSV')).not.toBeInTheDocument()
   })
 
   it('点击删除按钮 → 调用 deleteNode', () => {

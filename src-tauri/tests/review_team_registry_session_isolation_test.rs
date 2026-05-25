@@ -3,9 +3,7 @@
 //!
 //! These are compile+runtime guards for the Team entity introduced in P1.1.
 
-use app_lib::runtime::agent::team::{
-    Member, MemberRole, TeamError, TeamRegistry, MAX_TEAMMATES,
-};
+use app_lib::runtime::agent::team::{Member, MemberRole, TeamError, TeamRegistry, MAX_TEAMMATES};
 use app_lib::runtime::ids::{AgentId, SessionId};
 
 fn mk_lead(name: &str) -> Member {
@@ -41,10 +39,7 @@ async fn different_session_ids_have_isolated_teams() {
     reg.create(s1.clone(), mk_lead("team-lead"), "t1".into())
         .await
         .unwrap();
-    assert!(
-        reg.get(&s2).await.is_none(),
-        "s2 must not see s1's team"
-    );
+    assert!(reg.get(&s2, "t1").await.is_none(), "s2 must not see s1's team");
 }
 
 #[tokio::test]
@@ -93,9 +88,7 @@ async fn duplicate_name_in_team_rejected() {
         .unwrap();
     let mut team_g = team.lock().await;
     let lead_id = team_g.lead.agent_id.clone();
-    team_g
-        .add_teammate(mk_teammate("alice", &lead_id))
-        .unwrap();
+    team_g.add_teammate(mk_teammate("alice", &lead_id)).unwrap();
     let err = team_g
         .add_teammate(mk_teammate("alice", &lead_id))
         .unwrap_err();

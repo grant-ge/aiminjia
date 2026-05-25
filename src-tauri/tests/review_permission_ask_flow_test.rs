@@ -12,11 +12,11 @@ use app_lib::runtime::ids::{RunId, SessionId, ToolCallId};
 use app_lib::runtime::query_engine::QueryEngine;
 use app_lib::runtime::state::TurnState;
 use app_lib::runtime::store::{PendingPermissionRequestStore, PendingPermissionResolution};
+use app_lib::runtime::tools::description_context::ToolDescriptionContext;
 use app_lib::runtime::tools::permission::{
     default_permission_ask, PermissionDecision, PermissionDestination, PermissionMode,
     PermissionReason,
 };
-use app_lib::runtime::tools::description_context::ToolDescriptionContext;
 use app_lib::runtime::tools::{
     PermissionPipeline, RuntimeTool, ToolDefinition, ToolDispatcher, ToolError,
     ToolExecutionContext, ToolResult,
@@ -81,11 +81,8 @@ struct DemoActionTool {
 #[async_trait]
 impl RuntimeTool for DemoActionTool {
     fn id(&self) -> &str {
-
         self.name
-
     }
-
 
     async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new(self.name, "demo mcp action").with_capability_scope(["mcp"])
@@ -147,7 +144,7 @@ impl RuntimeLlmExecutor for ToolCallExecutor {
     }
 
     async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
-        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
+        Ok(vec![]) // 显式声明此 mock 不关心 tool_defs
     }
 }
 

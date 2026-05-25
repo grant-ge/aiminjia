@@ -1,12 +1,11 @@
 import { ChatBottomArea } from '@/components/chat-scene/ChatBottomArea'
-import { ExpertTeamBanner } from '@/components/chat-scene/ExpertTeamBanner'
 import { ExpertTeamWelcome } from '@/components/chat-scene/ExpertTeamWelcome'
-import { InterruptedTurnBanner } from '@/components/chat/InterruptedTurnBanner'
 import { RightPanel } from '@/components/chat/RightPanel'
 import type { PreviewTarget } from '@/components/chat/generatedFileActions'
 import { ChatArea } from '@/components/layout/ChatArea'
 import { ChatTopBar } from '@/components/shell/ChatTopBar'
 import { TeamChatDrawer } from '@/components/team/TeamChatDrawer'
+import { TeamVisualProvider } from '@/components/team/TeamVisualContext'
 import { useExpertTeamForConversation } from '@/features/expert-teams/expertTeamRegistry'
 import { getExpertTeam } from '@/features/expert-teams/teams'
 import { useChat } from '@/hooks/useChat'
@@ -14,8 +13,8 @@ import { useTeamOverview } from '@/hooks/useTeamOverview'
 import { useChatStore } from '@/stores/chatStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { useGeneratedFilePreviewStore } from '@/stores/generatedFilePreviewStore'
-import { openGeneratedFile } from '@/lib/tauri'
-import { useEffect } from 'react'
+import { getConversationSource, openGeneratedFile } from '@/lib/tauri'
+import { useEffect, useState } from 'react'
 import { useEmployeeById } from '@/features/employees/useEmployeeById'
 
 interface ChatPageProps {
@@ -32,7 +31,20 @@ export function ChatPage({ conversationId }: ChatPageProps) {
   const previewOpen = previewTarget?.conversationId === conversationId
   const conv = conversations.find((c) => c.id === conversationId)
   const title = conv?.title ?? ''
-  const employee = useEmployeeById(conv?.employeeId ?? null)
+
+  // employee_id lives in conv.json (not the index); read it lazily when this
+  // conversation is an employee dispatch session.
+  const [employeeId, setEmployeeId] = useState<string | null>(null)
+  useEffect(() => {
+    if (conv?.kind !== 'employee') { setEmployeeId(null); return }
+    let cancelled = false
+    getConversationSource(conversationId).then((src) => {
+      if (!cancelled && src.kind === 'employee') setEmployeeId(src.employeeId)
+    }).catch(() => { /* non-fatal */ })
+    return () => { cancelled = true }
+  }, [conversationId, conv?.kind])
+
+  const employee = useEmployeeById(employeeId)
   const { overview: teamOverview } = useTeamOverview(activeConversationId)
   const expertTeamId = useExpertTeamForConversation(conversationId)
   const expertTeam = expertTeamId ? getExpertTeam(expertTeamId) : undefined
@@ -68,6 +80,10 @@ export function ChatPage({ conversationId }: ChatPageProps) {
       {title ? (
         <ChatTopBar
           title={title}
+          workspace={conv?.workspaceName}
+          kind={conv?.kind}
+          sourceLabel={conv?.sourceLabel}
+          updatedAt={conv?.updatedAt}
           employee={
             employee
               ? {
@@ -81,21 +97,19 @@ export function ChatPage({ conversationId }: ChatPageProps) {
       ) : null}
       <div className="relative flex flex-1 overflow-hidden">
         <div data-testid="chat-layout-column" className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
-          <InterruptedTurnBanner conversationId={conversationId} />
-          {expertTeamId ? (
-            <ExpertTeamBanner conversationId={conversationId} teamId={expertTeamId} />
-          ) : null}
           {expertTeam && messageCount === 0 ? (
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 overflow-y-auto overscroll-contain">
               <ExpertTeamWelcome team={expertTeam} />
             </div>
           ) : (
-            <ChatArea />
+            <ChatArea expertTeamId={expertTeamId} />
           )}
           <ChatBottomArea placeholderOverride={expertTeam?.composerPlaceholder} />
         </div>
         {activeConversationId ? (
-          <TeamChatDrawer conversationId={activeConversationId} overview={teamOverview} />
+          <TeamVisualProvider value={expertTeam ?? null}>
+            <TeamChatDrawer conversationId={activeConversationId} overview={teamOverview} />
+          </TeamVisualProvider>
         ) : null}
         {previewOpen ? (
           <RightPanel

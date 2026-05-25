@@ -329,7 +329,9 @@ impl RuntimeManager {
                 // is ever reconfigured to current-thread this will panic — revisit.
                 match tokio::runtime::Handle::try_current() {
                     Ok(handle) => {
-                        log::info!("[runtime-manager] using block_in_place + existing tokio handle");
+                        log::info!(
+                            "[runtime-manager] using block_in_place + existing tokio handle"
+                        );
                         tokio::task::block_in_place(|| {
                             handle.block_on(self.install_from_manifest_url(
                                 url,

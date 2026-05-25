@@ -1,4 +1,4 @@
-use app_lib::connector::channel::ask_coordinator::{format_pending_ask_markdown, PendingAskKind};
+use app_lib::connector::im::ask_coordinator::{format_pending_ask_markdown, PendingAskKind};
 use app_lib::runtime::ids::ToolCallId;
 
 #[test]

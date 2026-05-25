@@ -368,14 +368,11 @@ export function useStreaming() {
       const store = useChatStore.getState()
       store.clearConversationStreamState(conversationId)
       store.removeBusyConversation(conversationId)
-      if (conversationId === store.activeConversationId) {
-        const lastUserMsg = [...store.messages]
-          .reverse()
-          .find((m) => m.role === 'user' && m.conversationId === conversationId)
-        if (lastUserMsg && !lastUserMsg.id.startsWith('msg-')) {
-          store.removeMessage(lastUserMsg.id)
-        }
-      }
+      // 历史 bug：streaming:error 会删最后一条非乐观 id 的 user message（"非乐观 id"
+      // 当年靠 `id.startsWith('msg-')` 判断）。后来 generateId 改用 crypto.randomUUID()
+      // 不再带 'msg-' 前缀，判断恒为真 → 每次错误都删 user message。新对话首发遇网络
+      // 抖动 retry 终极失败时表现为"本会话所有消息都没了"。删除这段逻辑：流式失败
+      // 必须保留用户原文，方便复制 / 重发；后端持久化不受影响。
 
       // Auto-recover from "selected model has no route" errors. The gateway
       // route catalog can change at any time (ops disables a route, a tenant
@@ -492,11 +489,26 @@ export function useStreaming() {
 
   // --- streaming:retry-reset -------------------------------------------
   useTauriEvent(() =>
-    onStreamingRetryReset(({ conversationId }: StreamingRetryResetPayload) => {
-      console.log('[streaming:retry-reset]', conversationId)
-      recordDiagnostic({ event: 'streaming.retry_reset.received', conversationId })
+    onStreamingRetryReset(({ conversationId, reason }: StreamingRetryResetPayload) => {
+      console.log('[streaming:retry-reset]', conversationId, reason)
+      recordDiagnostic({ event: 'streaming.retry_reset.received', conversationId, payload: { reason } })
       delete deltaBufferRef.current[conversationId]
       useChatStore.getState().resetConversationStreamContent(conversationId)
+      const title =
+        reason === 'upstream_busy'
+          ? 'AI 服务繁忙，正在重试...'
+          : reason === 'rate_limited'
+            ? '请求过于频繁，正在重试...'
+            : '网络抖动，正在重新连接...'
+      useNotificationStore.getState().push({
+        level: 'info',
+        title,
+        message: '',
+        actions: [],
+        dismissible: true,
+        autoHide: 4,
+        context: 'toast',
+      })
     }),
   )
 

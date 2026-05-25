@@ -177,10 +177,7 @@ impl QueryEngine {
         self
     }
 
-    pub fn with_lead_idle(
-        mut self,
-        sup: Arc<crate::runtime::agent::LeadIdleSupervisor>,
-    ) -> Self {
+    pub fn with_lead_idle(mut self, sup: Arc<crate::runtime::agent::LeadIdleSupervisor>) -> Self {
         self.lead_idle = Some(sup);
         self
     }

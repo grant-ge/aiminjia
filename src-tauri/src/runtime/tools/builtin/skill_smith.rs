@@ -41,7 +41,8 @@ pub struct SkillSmithDeps {
     pub conversation_id: String,
     /// 全局 SkillRegistry — install 后调 reload_skill_registry 让新技能立即可用，
     /// 无需重启 app。None 仅用于测试 / dummy 构造。
-    pub skill_registry: Option<Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>>,
+    pub skill_registry:
+        Option<Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>>,
 }
 
 impl SkillSmithDeps {
@@ -91,9 +92,14 @@ impl SkillCreateDraftTool {
 
 #[async_trait]
 impl RuntimeTool for SkillCreateDraftTool {
-    fn id(&self) -> &str { "skill_create_draft" }
-    
-    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "skill_create_draft"
+    }
+
+    async fn definition(
+        &self,
+        _ctx: &crate::runtime::tools::ToolDescriptionContext,
+    ) -> ToolDefinition {
         ToolDefinition::new(
             "skill_create_draft",
             "创建一个新的技能草稿目录。draft_id 自动绑定当前会话。后续 skill_write_md / skill_add_file / skill_install 都用返回的 draft_id 操作。",
@@ -107,17 +113,16 @@ impl RuntimeTool for SkillCreateDraftTool {
         input: Value,
         _ctx: ToolExecutionContext,
     ) -> Result<ToolResult, ToolError> {
-        let CreateDraftInput { name, description } = serde_json::from_value(input)
-            .map_err(|e| ToolError::InputValidationError {
+        let CreateDraftInput { name, description } =
+            serde_json::from_value(input).map_err(|e| ToolError::InputValidationError {
                 tool_name: "skill_create_draft".into(),
                 message: format!("invalid input: {}", e),
             })?;
 
-        validate_skill_name(&name)
-            .map_err(|e| ToolError::InputValidationError {
-                tool_name: "skill_create_draft".into(),
-                message: e.to_string(),
-            })?;
+        validate_skill_name(&name).map_err(|e| ToolError::InputValidationError {
+            tool_name: "skill_create_draft".into(),
+            message: e.to_string(),
+        })?;
 
         let draft_id = self.deps.conversation_id.clone();
         // 同会话已有草稿则视为继续编辑（返回 existing）
@@ -179,9 +184,14 @@ impl SkillWriteMdTool {
 
 #[async_trait]
 impl RuntimeTool for SkillWriteMdTool {
-    fn id(&self) -> &str { "skill_write_md" }
-    
-    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "skill_write_md"
+    }
+
+    async fn definition(
+        &self,
+        _ctx: &crate::runtime::tools::ToolDescriptionContext,
+    ) -> ToolDefinition {
         ToolDefinition::new(
             "skill_write_md",
             "把完整的 SKILL.md 内容（YAML frontmatter + Markdown body）整体写入草稿。\n要求 content 必须以 '---' 开头并包含 frontmatter（至少 name + description 字段）。",
@@ -209,7 +219,10 @@ impl RuntimeTool for SkillWriteMdTool {
         let bytes = content.len();
         Ok(ToolResult::new(
             "skill_write_md",
-            format!("✅ 已写入 SKILL.md（{} 字节）。下一步建议：调用 skill_validate 验证。", bytes),
+            format!(
+                "✅ 已写入 SKILL.md（{} 字节）。下一步建议：调用 skill_validate 验证。",
+                bytes
+            ),
             Some(json!({"draft_id": draft_id, "bytes": bytes})),
         ))
     }
@@ -239,9 +252,14 @@ impl SkillAddFileTool {
 
 #[async_trait]
 impl RuntimeTool for SkillAddFileTool {
-    fn id(&self) -> &str { "skill_add_file" }
-    
-    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "skill_add_file"
+    }
+
+    async fn definition(
+        &self,
+        _ctx: &crate::runtime::tools::ToolDescriptionContext,
+    ) -> ToolDefinition {
         ToolDefinition::new(
             "skill_add_file",
             "在草稿目录下写入额外文件（scripts/ 或 references/ 子目录），用于附加 Python 脚本或参考资料。\npath 格式必须是 'scripts/<filename>' 或 'references/<filename>'，仅一级子目录。",
@@ -298,9 +316,14 @@ impl SkillValidateTool {
 
 #[async_trait]
 impl RuntimeTool for SkillValidateTool {
-    fn id(&self) -> &str { "skill_validate" }
-    
-    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "skill_validate"
+    }
+
+    async fn definition(
+        &self,
+        _ctx: &crate::runtime::tools::ToolDescriptionContext,
+    ) -> ToolDefinition {
         ToolDefinition::new(
             "skill_validate",
             "对草稿做 6 项校验：① frontmatter 必填字段（name/description）② name kebab-case ③ frontmatter YAML 合法 ④ body 非空 ⑤ scripts/references 引用存在 ⑥ allowed_tools 引用工具存在。\n返回 errors[].fix_hint 中文提示，便于 LLM 自动修复。",
@@ -318,12 +341,11 @@ impl RuntimeTool for SkillValidateTool {
         input: Value,
         _ctx: ToolExecutionContext,
     ) -> Result<ToolResult, ToolError> {
-        let ValidateInput { draft_id } = serde_json::from_value(input).map_err(|e| {
-            ToolError::InputValidationError {
+        let ValidateInput { draft_id } =
+            serde_json::from_value(input).map_err(|e| ToolError::InputValidationError {
                 tool_name: "skill_validate".into(),
                 message: format!("invalid input: {}", e),
-            }
-        })?;
+            })?;
 
         let body = self
             .deps
@@ -335,11 +357,7 @@ impl RuntimeTool for SkillValidateTool {
             .store
             .draft_dir(&self.deps.scope, &draft_id)
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
-        let meta = self
-            .deps
-            .store
-            .read_meta(&self.deps.scope, &draft_id)
-            .ok();
+        let meta = self.deps.store.read_meta(&self.deps.scope, &draft_id).ok();
 
         let errors = run_validation(&body, draft_dir, meta.as_ref());
         let ok = errors.is_empty();
@@ -399,9 +417,14 @@ impl SkillInstallTool {
 
 #[async_trait]
 impl RuntimeTool for SkillInstallTool {
-    fn id(&self) -> &str { "skill_install" }
-    
-    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "skill_install"
+    }
+
+    async fn definition(
+        &self,
+        _ctx: &crate::runtime::tools::ToolDescriptionContext,
+    ) -> ToolDefinition {
         ToolDefinition::new(
             "skill_install",
             "把草稿复制到 ~/.renlijia/users/{scope}/skills/<name>/，使其在新对话中可用。\n同名冲突时返回 status='conflict'，除非传 force=true 强制覆盖。",
@@ -415,12 +438,11 @@ impl RuntimeTool for SkillInstallTool {
         input: Value,
         _ctx: ToolExecutionContext,
     ) -> Result<ToolResult, ToolError> {
-        let InstallInput { draft_id, force } = serde_json::from_value(input).map_err(|e| {
-            ToolError::InputValidationError {
+        let InstallInput { draft_id, force } =
+            serde_json::from_value(input).map_err(|e| ToolError::InputValidationError {
                 tool_name: "skill_install".into(),
                 message: format!("invalid input: {}", e),
-            }
-        })?;
+            })?;
 
         let body = self
             .deps
@@ -438,9 +460,8 @@ impl RuntimeTool for SkillInstallTool {
             .and_then(|v| v.as_str())
             .ok_or_else(|| ToolError::ExecutionFailed("frontmatter 缺少 name 字段".into()))?
             .to_string();
-        validate_skill_name(&name).map_err(|e| {
-            ToolError::ExecutionFailed(format!("name 无效：{}", e))
-        })?;
+        validate_skill_name(&name)
+            .map_err(|e| ToolError::ExecutionFailed(format!("name 无效：{}", e)))?;
 
         let target = self.deps.home.user_skills_dir(&self.deps.scope).join(&name);
         if target.exists() && !force {
@@ -465,10 +486,13 @@ impl RuntimeTool for SkillInstallTool {
         // 翻成 target。这样 force=true 时不会出现"目标已删但新内容还没拷完"的窗口，
         // Windows 上 AV / 文件占用导致的中断也不会破坏现有 skill。
         let user_skills = self.deps.home.user_skills_dir(&self.deps.scope);
-        std::fs::create_dir_all(&user_skills).map_err(|e| {
-            ToolError::ExecutionFailed(format!("mkdir user skills: {}", e))
-        })?;
-        let staging = user_skills.join(format!(".{}.installing.{}", name, uuid::Uuid::new_v4().simple()));
+        std::fs::create_dir_all(&user_skills)
+            .map_err(|e| ToolError::ExecutionFailed(format!("mkdir user skills: {}", e)))?;
+        let staging = user_skills.join(format!(
+            ".{}.installing.{}",
+            name,
+            uuid::Uuid::new_v4().simple()
+        ));
         self.deps
             .store
             .copy_to(&self.deps.scope, &draft_id, &staging)
@@ -523,7 +547,11 @@ pub struct ValidationError {
     pub fix_hint: String,
 }
 
-fn run_validation(body: &str, draft_dir: PathBuf, _meta: Option<&DraftMeta>) -> Vec<ValidationError> {
+fn run_validation(
+    body: &str,
+    draft_dir: PathBuf,
+    _meta: Option<&DraftMeta>,
+) -> Vec<ValidationError> {
     let mut errors = vec![];
 
     // ① frontmatter 存在
@@ -593,7 +621,9 @@ fn run_validation(body: &str, draft_dir: PathBuf, _meta: Option<&DraftMeta>) -> 
         errors.push(ValidationError {
             code: "body.empty",
             message: "SKILL.md body 为空".into(),
-            fix_hint: "在 frontmatter 之后写明：技能要做什么、输入是什么、输出格式、需要调用哪些工具。".into(),
+            fix_hint:
+                "在 frontmatter 之后写明：技能要做什么、输入是什么、输出格式、需要调用哪些工具。"
+                    .into(),
         });
     }
 
@@ -642,12 +672,18 @@ fn run_validation(body: &str, draft_dir: PathBuf, _meta: Option<&DraftMeta>) -> 
 /// 输入须以 `---\n` 开头，再有一行 `---` 作为结束，否则视为缺失。
 fn split_frontmatter(s: &str) -> Result<(String, String)> {
     let s = s.trim_start_matches('\u{feff}');
-    let s = s.strip_prefix("---").ok_or_else(|| anyhow!("missing leading ---"))?;
+    let s = s
+        .strip_prefix("---")
+        .ok_or_else(|| anyhow!("missing leading ---"))?;
     let s = s.trim_start_matches(|c: char| c == '\r' || c == '\n');
-    let end = s.find("\n---").ok_or_else(|| anyhow!("missing closing ---"))?;
+    let end = s
+        .find("\n---")
+        .ok_or_else(|| anyhow!("missing closing ---"))?;
     let frontmatter = s[..end].to_string();
     let after = &s[end + 4..]; // skip "\n---"
-    let body = after.trim_start_matches(|c: char| c == '\r' || c == '\n').to_string();
+    let body = after
+        .trim_start_matches(|c: char| c == '\r' || c == '\n')
+        .to_string();
     Ok((frontmatter, body))
 }
 
@@ -659,7 +695,11 @@ fn find_referenced_paths(body: &str, subdir: &str) -> Vec<String> {
     let prefix_back = format!("{}\\", subdir);
     let mut out = vec![];
     for token in body.split(|c: char| {
-        c.is_whitespace() || matches!(c, '`' | '"' | '\'' | '(' | ')' | '[' | ']' | '<' | '>' | ',' | ';')
+        c.is_whitespace()
+            || matches!(
+                c,
+                '`' | '"' | '\'' | '(' | ')' | '[' | ']' | '<' | '>' | ',' | ';'
+            )
     }) {
         let rest = token
             .strip_prefix(&prefix_fwd)
@@ -667,7 +707,10 @@ fn find_referenced_paths(body: &str, subdir: &str) -> Vec<String> {
         if let Some(rest) = rest {
             // 仅一级文件名，不能含 / 或 ..
             if !rest.is_empty() && !rest.contains('/') && !rest.contains('\\') && rest != ".." {
-                out.push(rest.trim_end_matches(|c: char| matches!(c, '.' | ',' | ';' | ':')).to_string());
+                out.push(
+                    rest.trim_end_matches(|c: char| matches!(c, '.' | ',' | ';' | ':'))
+                        .to_string(),
+                );
             }
         }
     }
@@ -776,9 +819,14 @@ impl SkillDryRunTool {
 
 #[async_trait]
 impl RuntimeTool for SkillDryRunTool {
-    fn id(&self) -> &str { "skill_dry_run" }
-    
-    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "skill_dry_run"
+    }
+
+    async fn definition(
+        &self,
+        _ctx: &crate::runtime::tools::ToolDescriptionContext,
+    ) -> ToolDefinition {
         ToolDefinition::new(
             "skill_dry_run",
             "对草稿做一次干跑：① 用真正的 skill loader 解析（跟 install 后一样的代码路径）；② 校验 scripts/references 文件全部存在；③ 对 scripts/*.py 做静态危险模式扫描；④ 渲染 LLM 加载这条 skill 时会看到的 system prompt 预览。\n\n不真正跑 LLM——这是为了在 install 之前最后一道把关。\n如果有 sample_input，预览会附上一段 'when user says ...' 的演示文本。",
@@ -886,9 +934,7 @@ fn run_dry_run(body: &str, draft_dir: &std::path::Path) -> DryRunReport {
         for fname in find_referenced_paths(body, subdir) {
             let path = draft_dir.join(subdir).join(&fname);
             if !path.exists() {
-                report
-                    .missing_files
-                    .push(format!("{}/{}", subdir, fname));
+                report.missing_files.push(format!("{}/{}", subdir, fname));
             }
         }
     }
@@ -906,7 +952,9 @@ fn run_dry_run(body: &str, draft_dir: &std::path::Path) -> DryRunReport {
                             .and_then(|n| n.to_str())
                             .unwrap_or("")
                             .to_string();
-                        report.python_warnings.extend(scan_python_dangerous(&fname, &content));
+                        report
+                            .python_warnings
+                            .extend(scan_python_dangerous(&fname, &content));
                     }
                 }
             }
@@ -926,7 +974,10 @@ fn render_preview(body: &str) -> String {
         out.push_str(&format!("{:>3} │ {}\n", i + 1, line));
     }
     if body.lines().count() > 30 {
-        out.push_str(&format!("    │ ... ({} 行省略)\n", body.lines().count() - 30));
+        out.push_str(&format!(
+            "    │ ... ({} 行省略)\n",
+            body.lines().count() - 30
+        ));
     }
     out
 }
@@ -940,17 +991,41 @@ fn scan_python_dangerous(file: &str, content: &str) -> Vec<PyWarning> {
     use regex::Regex;
     // 危险模式表 —— 第一个匹配组只用于 anchor，warning 文本独立给出。
     let patterns: &[(&str, &str)] = &[
-        (r"(?m)^\s*import\s+os\s*$|^\s*from\s+os\s+import", "导入 os 模块（可读写任意文件 / 执行 shell）"),
-        (r"(?m)^\s*import\s+subprocess|^\s*from\s+subprocess", "导入 subprocess 模块（可执行任意外部进程）"),
+        (
+            r"(?m)^\s*import\s+os\s*$|^\s*from\s+os\s+import",
+            "导入 os 模块（可读写任意文件 / 执行 shell）",
+        ),
+        (
+            r"(?m)^\s*import\s+subprocess|^\s*from\s+subprocess",
+            "导入 subprocess 模块（可执行任意外部进程）",
+        ),
         (r"(?m)\bos\.system\s*\(", "调用 os.system —— 直接执行 shell"),
-        (r"(?m)subprocess\.(?:call|run|Popen|check_output|check_call)\s*\(", "subprocess 调用 —— 启动外部进程"),
+        (
+            r"(?m)subprocess\.(?:call|run|Popen|check_output|check_call)\s*\(",
+            "subprocess 调用 —— 启动外部进程",
+        ),
         (r"(?m)\beval\s*\(", "调用 eval —— 执行任意 Python 代码"),
         (r"(?m)\bexec\s*\(", "调用 exec —— 执行任意 Python 代码"),
-        (r"(?m)__import__\s*\(", "动态 __import__ —— 可绕过静态依赖检查"),
-        (r#"(?m)\bopen\s*\([^)]*("w"|'w')"#, "open(..., 'w') —— 写文件"),
-        (r"(?m)\brequests\.|^\s*import\s+requests|^\s*import\s+urllib|^\s*import\s+http", "导入网络库（requests/urllib/http）—— 可外发数据"),
-        (r"(?m)\bsocket\.|^\s*import\s+socket", "导入 socket —— 可建立网络连接"),
-        (r"(?m)pickle\.loads?\s*\(", "pickle 反序列化 —— 可执行任意代码"),
+        (
+            r"(?m)__import__\s*\(",
+            "动态 __import__ —— 可绕过静态依赖检查",
+        ),
+        (
+            r#"(?m)\bopen\s*\([^)]*("w"|'w')"#,
+            "open(..., 'w') —— 写文件",
+        ),
+        (
+            r"(?m)\brequests\.|^\s*import\s+requests|^\s*import\s+urllib|^\s*import\s+http",
+            "导入网络库（requests/urllib/http）—— 可外发数据",
+        ),
+        (
+            r"(?m)\bsocket\.|^\s*import\s+socket",
+            "导入 socket —— 可建立网络连接",
+        ),
+        (
+            r"(?m)pickle\.loads?\s*\(",
+            "pickle 反序列化 —— 可执行任意代码",
+        ),
     ];
     let mut warnings = vec![];
     for (re_str, msg) in patterns {
@@ -977,7 +1052,10 @@ fn format_dry_run_summary(r: &DryRunReport, sample_input: Option<&str>) -> Strin
     }
     if r.loader_ok {
         if let (Some(id), Some(desc)) = (&r.skill_id, &r.skill_description) {
-            out.push_str(&format!("• Loader：✅ 解析成功，name='{}'，description='{}'\n", id, desc));
+            out.push_str(&format!(
+                "• Loader：✅ 解析成功，name='{}'，description='{}'\n",
+                id, desc
+            ));
         }
     } else if let Some(err) = &r.loader_error {
         out.push_str(&format!("• Loader：❌ {}\n", err));
@@ -1046,9 +1124,14 @@ impl SkillExportTool {
 
 #[async_trait]
 impl RuntimeTool for SkillExportTool {
-    fn id(&self) -> &str { "skill_export" }
-    
-    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "skill_export"
+    }
+
+    async fn definition(
+        &self,
+        _ctx: &crate::runtime::tools::ToolDescriptionContext,
+    ) -> ToolDefinition {
         ToolDefinition::new(
             "skill_export",
             "把草稿或已安装技能打包成 zip，方便发给同事。\n\n参数：\n- draft_id 或 installed_id 二选一（优先 draft_id）\n- dest：可选目标路径，默认 ~/Desktop/<name>-<version>.zip\n- version：版本号，默认 \"0.1.0\"\n- author：作者，可选\n\n包格式：标准 zip，根目录为 <skill_id>/，含 SKILL.md + scripts/ + references/。",
@@ -1285,7 +1368,9 @@ impl DummyCtor for SkillCreateDraftTool {
                 store: Arc::new(SkillDraftStore::new(Arc::new(AiJiaHome::from_path(
                     PathBuf::from("/tmp/__skill_smith_dummy__"),
                 )))),
-                home: Arc::new(AiJiaHome::from_path(PathBuf::from("/tmp/__skill_smith_dummy__"))),
+                home: Arc::new(AiJiaHome::from_path(PathBuf::from(
+                    "/tmp/__skill_smith_dummy__",
+                ))),
                 scope: UserScope::new(0, 0),
                 conversation_id: String::new(),
                 skill_registry: None,
@@ -1371,10 +1456,7 @@ mod tests {
         let (_tmp, deps) = fixture();
         let tool = SkillCreateDraftTool::new(deps.clone());
         let result = tool
-            .execute(
-                json!({"name": "my-skill", "description": "x"}),
-                ctx(),
-            )
+            .execute(json!({"name": "my-skill", "description": "x"}), ctx())
             .await
             .unwrap();
         let data = result.data.unwrap();
@@ -1591,7 +1673,13 @@ mod tests {
         assert_eq!(data["status"], "installed");
         assert_eq!(data["name"], "hello-world");
         let installed_to = data["installed_to"].as_str().unwrap();
-        assert!(tmp.path().join("users").join("t_1__u_1").join("skills").join("hello-world").exists());
+        assert!(tmp
+            .path()
+            .join("users")
+            .join("t_1__u_1")
+            .join("skills")
+            .join("hello-world")
+            .exists());
         assert!(PathBuf::from(installed_to).join("SKILL.md").exists());
     }
 
@@ -1735,7 +1823,10 @@ mod tests {
         let data = r.data.unwrap();
         assert_eq!(data["ok"], false);
         assert_eq!(data["loader_ok"], false);
-        assert!(data["loader_error"].as_str().unwrap().contains("description"));
+        assert!(data["loader_error"]
+            .as_str()
+            .unwrap()
+            .contains("description"));
     }
 
     #[tokio::test]

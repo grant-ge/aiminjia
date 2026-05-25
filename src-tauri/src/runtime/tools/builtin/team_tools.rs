@@ -17,7 +17,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
-use crate::runtime::agent::team_paths::{validate_team_name, TeamPaths};
+use crate::runtime::agent::team_paths::validate_team_name;
 use crate::runtime::agent::{Member, MemberRole};
 use crate::runtime::ids::AgentId;
 use crate::runtime::tools::catalog::TOOL_CATALOG;

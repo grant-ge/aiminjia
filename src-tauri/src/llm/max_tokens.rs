@@ -94,7 +94,10 @@ mod tests {
     #[test]
     fn deepseek_v4_distinct_from_v3() {
         assert_eq!(default_max_tokens_for_model("deepseek-v4"), 384_000);
-        assert_eq!(default_max_tokens_for_model("deepseek-chat-v4-pro"), 384_000);
+        assert_eq!(
+            default_max_tokens_for_model("deepseek-chat-v4-pro"),
+            384_000
+        );
         assert_eq!(default_max_tokens_for_model("deepseek-chat"), 8_192);
         assert_eq!(default_max_tokens_for_model("deepseek-reasoner"), 8_192);
     }

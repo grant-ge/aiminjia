@@ -6,7 +6,6 @@
 use app_lib::plugin::builtin::tools::register_builtin_tools;
 use app_lib::plugin::registry::{RequestScopedRuntimeDeps, ToolRegistry};
 use app_lib::plugin::skill_trait::{Skill, SkillState, ToolFilter};
-use app_lib::plugin::SkillRegistry;
 use app_lib::runtime::dependencies::StaticRuntimeResolver;
 use app_lib::runtime::tools::catalog::DAILY_ALLOWED_TOOLS;
 use app_lib::runtime::tools::ToolExecutionContext;
@@ -157,14 +156,7 @@ async fn all_workspace_runtime_tools_are_registered() {
     let schemas = registry.get_all_schemas().await;
     let names: Vec<&str> = schemas.iter().map(|s| s.name.as_str()).collect();
 
-    for tool_name in &[
-        "Read",
-        "Glob",
-        "Write",
-        "Edit",
-        "Bash",
-        "Grep",
-    ] {
+    for tool_name in &["Read", "Glob", "Write", "Edit", "Bash", "Grep"] {
         assert!(
             names.contains(tool_name),
             "Expected '{}' in schemas, got: {:?}",
@@ -400,9 +392,9 @@ async fn web_search_routes_to_runtime_tool_via_factory() {
 
 #[tokio::test]
 async fn registry_execute_uses_runtime_tool_check_permissions() {
-    use app_lib::runtime::tools::permission::{PermissionDecision, PermissionReason};
     use app_lib::runtime::tools::description_context::ToolDescriptionContext;
-use app_lib::runtime::tools::{RuntimeTool, ToolDefinition, ToolError, ToolResult};
+    use app_lib::runtime::tools::permission::{PermissionDecision, PermissionReason};
+    use app_lib::runtime::tools::{RuntimeTool, ToolDefinition, ToolError, ToolResult};
     use async_trait::async_trait;
     use serde_json::Value;
 
@@ -515,11 +507,15 @@ async fn load_skill_routes_through_request_scoped_runtime_factory() {
             .map(|tool| tool.to_string())
             .collect(),
     );
-    let daily_schemas = registry.get_schemas_filtered(&daily_filter, &app_lib::runtime::tools::ToolDescriptionContext::default(), &std::collections::HashMap::new()).await;
+    let daily_schemas = registry
+        .get_schemas_filtered(
+            &daily_filter,
+            &app_lib::runtime::tools::ToolDescriptionContext::default(),
+            &std::collections::HashMap::new(),
+        )
+        .await;
     assert!(
-        daily_schemas
-            .iter()
-            .any(|schema| schema.name == "Skill"),
+        daily_schemas.iter().any(|schema| schema.name == "Skill"),
         "load_skill schema must remain visible after daily tool filtering"
     );
 

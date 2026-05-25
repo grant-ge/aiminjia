@@ -95,8 +95,9 @@ fn first_load_hire_stamps_bootstrap_snapshot() {
     assert_eq!(snap.template_id, "builtin:xiaoyuan");
     assert_eq!(snap.version, "1.0");
     // System prompt comes from bootstrap, not the empty record field.
-    assert!(snap.system_prompt_extra.contains("调研员")
-        || snap.system_prompt_extra.contains("竞品"));
+    assert!(
+        snap.system_prompt_extra.contains("调研员") || snap.system_prompt_extra.contains("竞品")
+    );
 
     // 3. Manifest file also written.
     assert!(inst.join("template/manifest.json").exists());
@@ -182,8 +183,10 @@ fn legacy_record_without_template_ref_is_backfilled_on_get() {
         .expect("legacy record back-filled");
     assert_eq!(tref.template_id, "builtin:xiaoyuan");
     assert_eq!(tref.version, "1.0");
-    assert!(inst_dir.join("template/template.json").exists(),
-        "snapshot file written");
+    assert!(
+        inst_dir.join("template/template.json").exists(),
+        "snapshot file written"
+    );
 
     // Idempotency: second read sees a record with `templateRef` already set
     // and doesn't churn (no exception, sha256 same).
@@ -195,7 +198,10 @@ fn legacy_record_without_template_ref_is_backfilled_on_get() {
 
     // employee.json on disk now has `templateRef` persisted.
     let raw = fs::read_to_string(inst_dir.join("employee.json")).unwrap();
-    assert!(raw.contains("\"templateRef\""), "templateRef persisted: {raw}");
+    assert!(
+        raw.contains("\"templateRef\""),
+        "templateRef persisted: {raw}"
+    );
 }
 
 #[test]
@@ -239,11 +245,15 @@ fn legacy_record_list_also_triggers_migration() {
     let list = store.list().expect("list ok");
     assert_eq!(list.len(), 2);
     for r in &list {
-        let tref = r.template_ref.as_ref().unwrap_or_else(|| {
-            panic!("record {} not back-filled", r.id)
-        });
+        let tref = r
+            .template_ref
+            .as_ref()
+            .unwrap_or_else(|| panic!("record {} not back-filled", r.id));
         assert_eq!(tref.version, "1.0");
-        assert!(employees_dir.join(&r.id).join("template/template.json").exists());
+        assert!(employees_dir
+            .join(&r.id)
+            .join("template/template.json")
+            .exists());
     }
 }
 
@@ -281,9 +291,7 @@ fn merge_catalog_keeps_bootstrap_when_cache_is_older_or_missing() {
     let tmp = tempfile::tempdir().unwrap();
     let cache_dir = tmp.path();
 
-    let boot = bootstrap_template("builtin:xiaoyuan")
-        .unwrap()
-        .unwrap();
+    let boot = bootstrap_template("builtin:xiaoyuan").unwrap().unwrap();
     // Cache has older v0.9 — bootstrap wins.
     let older = synthetic_snap("builtin:xiaoyuan", "0.9", "stale");
     write_cache(cache_dir, &older).unwrap();
@@ -355,7 +363,10 @@ fn upgrade_path_writes_new_snapshot_to_existing_instance() {
 
 #[allow(dead_code)]
 fn assert_no_template_dir(p: &Path) {
-    assert!(!p.join("template").exists(), "should not have template/ yet");
+    assert!(
+        !p.join("template").exists(),
+        "should not have template/ yet"
+    );
 }
 
 // ─── Live HTTP smoke (off by default) ────────────────────────────────────
@@ -372,12 +383,10 @@ fn assert_no_template_dir(p: &Path) {
 #[ignore]
 async fn live_fetch_manifest_and_download_decodes_camelcase() {
     let client = reqwest::Client::new();
-    let manifest = app_lib::runtime::employee::template_store::fetch_manifest(
-        &client,
-        "builtin:xiaoyuan",
-    )
-    .await
-    .expect("manifest fetch");
+    let manifest =
+        app_lib::runtime::employee::template_store::fetch_manifest(&client, "builtin:xiaoyuan")
+            .await
+            .expect("manifest fetch");
     assert_eq!(manifest.template_id, "builtin:xiaoyuan");
     assert_eq!(manifest.latest_version, "1.0");
     assert!(
@@ -421,15 +430,10 @@ async fn live_full_refresh_caches_all_published_templates() {
     let first = &catalog[0];
     let tid = first.get("template_id").and_then(|v| v.as_str()).unwrap();
     let ver = first.get("version").and_then(|v| v.as_str()).unwrap();
-    app_lib::runtime::employee::template_store::ensure_cached(
-        cache_dir, &client, tid, ver,
-    )
-    .await
-    .expect("ensure_cached");
+    app_lib::runtime::employee::template_store::ensure_cached(cache_dir, &client, tid, ver)
+        .await
+        .expect("ensure_cached");
 
     // File now on disk in the cache.
-    assert!(cache_dir
-        .join(tid)
-        .join(format!("{ver}.json"))
-        .exists());
+    assert!(cache_dir.join(tid).join(format!("{ver}.json")).exists());
 }

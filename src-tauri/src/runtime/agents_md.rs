@@ -67,10 +67,7 @@ impl AgentsMdLoader {
         let agents_md_path = ws.root_path.join("AGENTS.md");
         let content = match self.read_with_cache(&agents_md_path) {
             None => {
-                log::info!(
-                    "agents_md absent path={}",
-                    agents_md_path.display()
-                );
+                log::info!("agents_md absent path={}", agents_md_path.display());
                 return Vec::new();
             }
             Some(c) => c,

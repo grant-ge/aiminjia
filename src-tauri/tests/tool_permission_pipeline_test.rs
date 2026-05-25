@@ -82,9 +82,9 @@ fn mcp_tool_denied_without_store_policy() {
 
 #[tokio::test]
 async fn tool_check_permissions_overrides_pipeline_when_some() {
-    use app_lib::runtime::tools::permission::PermissionReason;
     use app_lib::runtime::tools::description_context::ToolDescriptionContext;
-use app_lib::runtime::tools::{
+    use app_lib::runtime::tools::permission::PermissionReason;
+    use app_lib::runtime::tools::{
         AllowAllPermissionPipeline, RuntimeTool, ToolDispatcher, ToolError, ToolResult,
     };
     use async_trait::async_trait;

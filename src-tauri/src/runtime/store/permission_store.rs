@@ -484,18 +484,8 @@ impl PermissionStore {
     }
 
     pub(crate) fn path_auth_data(&self) -> PathAuthData {
-        let session_working_dirs = self
-            .session
-            .read()
-            .unwrap()
-            .additional_working_dirs
-            .clone();
-        let session_allow_rules = self
-            .session
-            .read()
-            .unwrap()
-            .path_allow_rules
-            .clone();
+        let session_working_dirs = self.session.read().unwrap().additional_working_dirs.clone();
+        let session_allow_rules = self.session.read().unwrap().path_allow_rules.clone();
 
         let workspace_working_dirs = self
             .workspace
@@ -503,25 +493,10 @@ impl PermissionStore {
             .unwrap()
             .additional_working_dirs
             .clone();
-        let workspace_allow_rules = self
-            .workspace
-            .read()
-            .unwrap()
-            .path_allow_rules
-            .clone();
+        let workspace_allow_rules = self.workspace.read().unwrap().path_allow_rules.clone();
 
-        let user_working_dirs = self
-            .user
-            .read()
-            .unwrap()
-            .additional_working_dirs
-            .clone();
-        let user_allow_rules = self
-            .user
-            .read()
-            .unwrap()
-            .path_allow_rules
-            .clone();
+        let user_working_dirs = self.user.read().unwrap().additional_working_dirs.clone();
+        let user_allow_rules = self.user.read().unwrap().path_allow_rules.clone();
 
         PathAuthData {
             session_working_dirs,
@@ -584,7 +559,9 @@ impl PermissionStore {
             crate::runtime::tools::permission::PermissionDestination::Session => {
                 let mut layer = self.session.write().unwrap();
                 if !layer.additional_working_dirs.iter().any(|e| e.path == path) {
-                    layer.additional_working_dirs.push(AdditionalWorkingDirEntry { path });
+                    layer
+                        .additional_working_dirs
+                        .push(AdditionalWorkingDirEntry { path });
                 }
                 Ok(())
             }
@@ -592,7 +569,9 @@ impl PermissionStore {
                 {
                     let mut layer = self.workspace.write().unwrap();
                     if !layer.additional_working_dirs.iter().any(|e| e.path == path) {
-                        layer.additional_working_dirs.push(AdditionalWorkingDirEntry { path });
+                        layer
+                            .additional_working_dirs
+                            .push(AdditionalWorkingDirEntry { path });
                     }
                 }
                 self.flush_workspace_result()
@@ -601,7 +580,9 @@ impl PermissionStore {
                 {
                     let mut layer = self.user.write().unwrap();
                     if !layer.additional_working_dirs.iter().any(|e| e.path == path) {
-                        layer.additional_working_dirs.push(AdditionalWorkingDirEntry { path });
+                        layer
+                            .additional_working_dirs
+                            .push(AdditionalWorkingDirEntry { path });
                     }
                 }
                 self.flush_user_result()
@@ -616,11 +597,18 @@ impl PermissionStore {
         op: Option<crate::runtime::path_auth::PathOp>,
     ) -> std::io::Result<()> {
         let stored_op = op.map(StoredPathOp::from);
-        let entry = PathAllowRuleEntry { pattern, op: stored_op };
+        let entry = PathAllowRuleEntry {
+            pattern,
+            op: stored_op,
+        };
         match destination {
             crate::runtime::tools::permission::PermissionDestination::Session => {
                 let mut layer = self.session.write().unwrap();
-                if !layer.path_allow_rules.iter().any(|e| e.pattern == entry.pattern && e.op == entry.op) {
+                if !layer
+                    .path_allow_rules
+                    .iter()
+                    .any(|e| e.pattern == entry.pattern && e.op == entry.op)
+                {
                     layer.path_allow_rules.push(entry);
                 }
                 Ok(())
@@ -628,7 +616,11 @@ impl PermissionStore {
             crate::runtime::tools::permission::PermissionDestination::Workspace => {
                 {
                     let mut layer = self.workspace.write().unwrap();
-                    if !layer.path_allow_rules.iter().any(|e| e.pattern == entry.pattern && e.op == entry.op) {
+                    if !layer
+                        .path_allow_rules
+                        .iter()
+                        .any(|e| e.pattern == entry.pattern && e.op == entry.op)
+                    {
                         layer.path_allow_rules.push(entry);
                     }
                 }
@@ -637,7 +629,11 @@ impl PermissionStore {
             crate::runtime::tools::permission::PermissionDestination::User => {
                 {
                     let mut layer = self.user.write().unwrap();
-                    if !layer.path_allow_rules.iter().any(|e| e.pattern == entry.pattern && e.op == entry.op) {
+                    if !layer
+                        .path_allow_rules
+                        .iter()
+                        .any(|e| e.pattern == entry.pattern && e.op == entry.op)
+                    {
                         layer.path_allow_rules.push(entry);
                     }
                 }
@@ -775,7 +771,9 @@ mod tests {
         let path = temp.path().join("perms.json");
         let entry_path = PathBuf::from("/tmp/my-project");
         let snapshot = PermissionStoreSnapshot {
-            additional_working_dirs: vec![AdditionalWorkingDirEntry { path: entry_path.clone() }],
+            additional_working_dirs: vec![AdditionalWorkingDirEntry {
+                path: entry_path.clone(),
+            }],
             ..Default::default()
         };
         std::fs::write(&path, serde_json::to_string(&snapshot).unwrap()).unwrap();
@@ -810,7 +808,9 @@ mod tests {
         let user_path = temp.path().join("user.json");
         let store = PermissionStore::with_layer_files(None, Some(user_path.clone()));
         let p = PathBuf::from("/tmp/user-project");
-        store.append_working_dir(PermissionDestination::User, p.clone()).unwrap();
+        store
+            .append_working_dir(PermissionDestination::User, p.clone())
+            .unwrap();
 
         let content = std::fs::read_to_string(&user_path).unwrap();
         assert!(
@@ -842,7 +842,10 @@ mod tests {
             content
         );
         let snapshot: PermissionStoreSnapshot = serde_json::from_str(&content).unwrap();
-        assert!(snapshot.path_allow_rules.iter().any(|e| e.pattern == "/tmp/**" && e.op == Some(StoredPathOp::Write)));
+        assert!(snapshot
+            .path_allow_rules
+            .iter()
+            .any(|e| e.pattern == "/tmp/**" && e.op == Some(StoredPathOp::Write)));
     }
 
     #[test]
@@ -880,8 +883,12 @@ mod tests {
     fn path_auth_dedup_working_dir_idempotent() {
         let store = PermissionStore::in_memory();
         let p = PathBuf::from("/tmp/dedup-test");
-        store.append_working_dir(PermissionDestination::Session, p.clone()).unwrap();
-        store.append_working_dir(PermissionDestination::Session, p.clone()).unwrap();
+        store
+            .append_working_dir(PermissionDestination::Session, p.clone())
+            .unwrap();
+        store
+            .append_working_dir(PermissionDestination::Session, p.clone())
+            .unwrap();
         let entries = crate::runtime::path_auth::store_bridge::load_path_auth_entries(&store);
         let count = entries.working_dirs.keys().filter(|k| **k == p).count();
         assert_eq!(count, 1);
@@ -905,7 +912,11 @@ mod tests {
             )
             .unwrap();
         let entries = crate::runtime::path_auth::store_bridge::load_path_auth_entries(&store);
-        let count = entries.allow_rules.iter().filter(|r| r.pattern == "/tmp/**").count();
+        let count = entries
+            .allow_rules
+            .iter()
+            .filter(|r| r.pattern == "/tmp/**")
+            .count();
         assert_eq!(count, 1);
     }
 }

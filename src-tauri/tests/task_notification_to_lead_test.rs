@@ -23,7 +23,13 @@ const TEAM_NAME: &str = "test-team";
 
 #[test]
 fn envelope_has_required_attributes_and_escapes() {
-    let xml = build_envelope("t-1", "alice", TaskAction::Updated, "Investigate <bug>", "completed");
+    let xml = build_envelope(
+        "t-1",
+        "alice",
+        TaskAction::Updated,
+        "Investigate <bug>",
+        "completed",
+    );
     assert!(xml.contains(r#"id="t-1""#));
     assert!(xml.contains(r#"actor="alice""#));
     assert!(xml.contains(r#"action="updated""#));
@@ -33,7 +39,12 @@ fn envelope_has_required_attributes_and_escapes() {
 
 async fn setup_team_with_lead(
     session: &SessionId,
-) -> (Arc<TeamRegistry>, Arc<AgentNameRegistry>, Arc<InboxRegistry>, Arc<AgentInbox>) {
+) -> (
+    Arc<TeamRegistry>,
+    Arc<AgentNameRegistry>,
+    Arc<InboxRegistry>,
+    Arc<AgentInbox>,
+) {
     let team_reg = TeamRegistry::new();
     let name_reg = AgentNameRegistry::new();
     let inbox_reg = InboxRegistry::new();
@@ -87,7 +98,10 @@ async fn delivered_when_actor_is_teammate_and_team_exists() {
 
     let item = lead_inbox.recv().await.unwrap();
     match item {
-        InboxItem::ChatMessage { message, source: MessageSource::System } => {
+        InboxItem::ChatMessage {
+            message,
+            source: MessageSource::System,
+        } => {
             let text = message.as_text().unwrap();
             assert!(text.contains(r#"id="task-42""#));
             assert!(text.contains(r#"actor="researcher""#));

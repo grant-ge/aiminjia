@@ -13,7 +13,10 @@ fn write_skill(parent: &std::path::Path, id: &str, description: &str) {
     fs::create_dir_all(&dir).unwrap();
     fs::write(
         dir.join("SKILL.md"),
-        format!("---\nname: {}\ndescription: {}\n---\nbody\n", id, description),
+        format!(
+            "---\nname: {}\ndescription: {}\n---\nbody\n",
+            id, description
+        ),
     )
     .unwrap();
 }
@@ -25,9 +28,11 @@ fn install_then_refresh_makes_skill_visible_via_list() {
     let staging = TempDir::new().unwrap();
 
     // 1. Initial registry from empty roots
-    let loaded =
-        load_skill_roots(&[user_root.path().to_path_buf(), global_root.path().to_path_buf()])
-            .unwrap();
+    let loaded = load_skill_roots(&[
+        user_root.path().to_path_buf(),
+        global_root.path().to_path_buf(),
+    ])
+    .unwrap();
     let registry = Arc::new(Mutex::new(SkillRegistry::from_skills(
         loaded.into_values().collect(),
     )));
@@ -39,9 +44,11 @@ fn install_then_refresh_makes_skill_visible_via_list() {
     install_custom_skill_to_dir_with_force(&src, user_root.path(), false).unwrap();
 
     // 3. Manually refresh (mirrors refresh_skill_registry's internal logic)
-    let loaded =
-        load_skill_roots(&[user_root.path().to_path_buf(), global_root.path().to_path_buf()])
-            .unwrap();
+    let loaded = load_skill_roots(&[
+        user_root.path().to_path_buf(),
+        global_root.path().to_path_buf(),
+    ])
+    .unwrap();
     registry
         .lock()
         .unwrap()
@@ -60,9 +67,11 @@ fn user_root_takes_precedence_over_global_for_same_id() {
     write_skill(user_root.path(), "shared", "user version");
     write_skill(global_root.path(), "shared", "global version");
 
-    let loaded =
-        load_skill_roots(&[user_root.path().to_path_buf(), global_root.path().to_path_buf()])
-            .unwrap();
+    let loaded = load_skill_roots(&[
+        user_root.path().to_path_buf(),
+        global_root.path().to_path_buf(),
+    ])
+    .unwrap();
     let registry = Arc::new(Mutex::new(SkillRegistry::from_skills(
         loaded.into_values().collect(),
     )));

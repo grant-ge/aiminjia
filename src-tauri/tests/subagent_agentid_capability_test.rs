@@ -92,7 +92,7 @@ fn make_plugin_ctx(workspace: &Path, agent_id: Option<AgentId>) -> PluginContext
         read_file_state: None,
         cancellation: None,
         permission_mode: app_lib::runtime::tools::permission::PermissionMode::Default,
-            runtime_resolver: None,
+        runtime_resolver: None,
         permission_ctx: None,
         current_persona_id: None,
     }

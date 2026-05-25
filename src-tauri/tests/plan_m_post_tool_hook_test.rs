@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 
 use app_lib::runtime::hooks::config::{HookConfig, HookEvent, HookRegistry};
-use app_lib::runtime::tools::dispatcher::{RuntimeTool, ToolDispatchOutcome};
 use app_lib::runtime::tools::description_context::ToolDescriptionContext;
+use app_lib::runtime::tools::dispatcher::{RuntimeTool, ToolDispatchOutcome};
 use app_lib::runtime::tools::{
     AllowAllPermissionPipeline, ToolDefinition, ToolDispatcher, ToolError, ToolExecutionContext,
     ToolResult,
@@ -18,11 +18,8 @@ struct OkTool {
 #[async_trait]
 impl RuntimeTool for OkTool {
     fn id(&self) -> &str {
-
         &self.name
-
     }
-
 
     async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new(&self.name, "always ok")

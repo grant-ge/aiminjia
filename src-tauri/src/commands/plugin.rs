@@ -4,8 +4,8 @@ use std::sync::{Arc, Mutex};
 use tauri::State;
 
 use crate::commands::skill_management::{list_skills_from_registry, SkillInfo};
-use crate::plugin::{ToolInfo, ToolRegistry};
 use crate::plugin::skill::registry::SkillRegistry;
+use crate::plugin::{ToolInfo, ToolRegistry};
 
 /// List all registered tools.
 #[tauri::command]

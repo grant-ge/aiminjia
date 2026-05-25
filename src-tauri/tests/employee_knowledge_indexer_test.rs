@@ -12,7 +12,8 @@ fn chunk_markdown_splits_on_h2_headings() {
 
 #[test]
 fn chunk_markdown_splits_q_a_pattern() {
-    let src = "Q: 怎么找回密码？\nA: 在登录页点击\"忘记密码\"。\n\nQ: 客服电话？\nA: 400-123-4567\n";
+    let src =
+        "Q: 怎么找回密码？\nA: 在登录页点击\"忘记密码\"。\n\nQ: 客服电话？\nA: 400-123-4567\n";
     let chunks = chunk_markdown(src);
     assert_eq!(chunks.len(), 2);
     assert!(chunks[0].content.starts_with("Q: 怎么找回密码"));
@@ -64,7 +65,8 @@ fn chunk_markdown_respects_cognitive_memory_byte_limit() {
 #[test]
 fn chunk_markdown_short_chinese_paragraph_fits_byte_limit() {
     use app_lib::storage::file_store::cognitive::CONTENT_MAX_LEN;
-    let src = "## 注册流程\n\n打开 App，点击右上角的注册按钮，输入手机号收到验证码后填写并提交即可。";
+    let src =
+        "## 注册流程\n\n打开 App，点击右上角的注册按钮，输入手机号收到验证码后填写并提交即可。";
     let chunks = chunk_markdown(src);
     assert!(!chunks.is_empty());
     for c in &chunks {

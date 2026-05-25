@@ -90,7 +90,7 @@ export function SettingsModal() {
       await store.bootstrap()
       const phase = useUpdaterStore.getState().phase
       if (phase === 'idle') {
-        await message(t('settings.alreadyLatestVersion'), { title: productName, kind: 'info' })
+        await message(t('settings.about.alreadyLatestVersion'), { title: productName, kind: 'info' })
       } else if (phase !== 'failed') {
         // downloading / ready / installing → show the panel
         store.openPanel()

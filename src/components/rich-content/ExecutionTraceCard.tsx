@@ -53,6 +53,7 @@ export function ExecutionTraceCard({
       {headerCollapsible ? (
         <button
           type="button"
+          aria-expanded={headerExpanded}
           onClick={() => setHeaderExpanded((prev) => !prev)}
           className={`flex w-full items-center justify-between px-4 py-2.5 text-left transition-colors hover:bg-[var(--color-bg-hover)] ${headerExpanded ? 'rounded-t-lg border-b border-border' : 'rounded-lg'}`}
           style={{

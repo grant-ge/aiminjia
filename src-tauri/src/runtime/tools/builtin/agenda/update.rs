@@ -16,9 +16,14 @@ pub struct UpdateAgendaItemRuntimeTool {
 
 #[async_trait]
 impl RuntimeTool for UpdateAgendaItemRuntimeTool {
-    fn id(&self) -> &str { "update_agenda_item" }
-    
-    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "update_agenda_item"
+    }
+
+    async fn definition(
+        &self,
+        _ctx: &crate::runtime::tools::ToolDescriptionContext,
+    ) -> ToolDefinition {
         ToolDefinition::new(
             "update_agenda_item",
             "【自用】修改你自己创建的日程（标题/触发内容/频率/启用状态）。",
@@ -30,13 +35,12 @@ impl RuntimeTool for UpdateAgendaItemRuntimeTool {
         input: Value,
         _ctx: ToolExecutionContext,
     ) -> Result<ToolResult, ToolError> {
-        let id_str = input
-            .get("id")
-            .and_then(Value::as_str)
-            .ok_or_else(|| ToolError::InputValidationError {
+        let id_str = input.get("id").and_then(Value::as_str).ok_or_else(|| {
+            ToolError::InputValidationError {
                 tool_name: "update_agenda_item".into(),
                 message: "missing 'id'".into(),
-            })?;
+            }
+        })?;
         let id = AgendaItemId(id_str.to_string());
         let mut item = self
             .deps
@@ -71,9 +75,7 @@ impl RuntimeTool for UpdateAgendaItemRuntimeTool {
                 other => {
                     return Err(ToolError::InputValidationError {
                         tool_name: "update_agenda_item".into(),
-                        message: format!(
-                            "status only supports active|paused, got '{other}'"
-                        ),
+                        message: format!("status only supports active|paused, got '{other}'"),
                     });
                 }
             };

@@ -15,7 +15,7 @@ use tokio::sync::Mutex;
 
 use app_lib::runtime::agent::inbox::{AgentInbox, InboxItem, MessageSource};
 use app_lib::runtime::agent::output_writer::{
-    read_from, AgentTranscriptMeta, TranscriptKind, transcript_path_for_kind, write_meta,
+    read_from, AgentTranscriptMeta, TranscriptKind, transcript_path_for_kind,
 };
 use app_lib::runtime::agent::team::{Member, MemberRole, Team};
 use app_lib::runtime::agent::worker_runtime::{run_worker, TeammateWorkerCtx, WorkerMode};

@@ -20,11 +20,8 @@ struct FakeBuiltinTool {
 #[async_trait]
 impl RuntimeTool for FakeBuiltinTool {
     fn id(&self) -> &str {
-
         self.id
-
     }
-
 
     async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
         ToolDefinition::new(self.id, "fake builtin tool")
@@ -137,7 +134,13 @@ fn split_partitions(names: &[String]) -> (Vec<String>, Vec<String>) {
 #[tokio::test]
 async fn review_builtin_tools_precede_mcp_tools_in_filtered_schema() {
     let registry = build_registry().await;
-    let schemas = registry.get_schemas_filtered(&ToolFilter::All, &app_lib::runtime::tools::ToolDescriptionContext::default(), &std::collections::HashMap::new()).await;
+    let schemas = registry
+        .get_schemas_filtered(
+            &ToolFilter::All,
+            &app_lib::runtime::tools::ToolDescriptionContext::default(),
+            &std::collections::HashMap::new(),
+        )
+        .await;
     let names: Vec<String> = schemas.into_iter().map(|schema| schema.name).collect();
 
     let first_mcp = names
@@ -157,7 +160,13 @@ async fn review_builtin_tools_precede_mcp_tools_in_filtered_schema() {
 #[tokio::test]
 async fn review_builtin_partition_is_internally_sorted() {
     let registry = build_registry().await;
-    let schemas = registry.get_schemas_filtered(&ToolFilter::All, &app_lib::runtime::tools::ToolDescriptionContext::default(), &std::collections::HashMap::new()).await;
+    let schemas = registry
+        .get_schemas_filtered(
+            &ToolFilter::All,
+            &app_lib::runtime::tools::ToolDescriptionContext::default(),
+            &std::collections::HashMap::new(),
+        )
+        .await;
     let names: Vec<String> = schemas.into_iter().map(|schema| schema.name).collect();
     let (builtin, _) = split_partitions(&names);
     let mut sorted = builtin.clone();

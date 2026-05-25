@@ -126,11 +126,8 @@ async fn dispatch_batch_serial_tool_runs_after_concurrent_batch() {
     #[async_trait]
     impl RuntimeTool for OrderedTool {
         fn id(&self) -> &str {
-
             self.name
-
         }
-
 
         async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
             ToolDefinition::new(self.name, "ordered")

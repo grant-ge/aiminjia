@@ -4,8 +4,7 @@
 //! 注：browse_data_agent 已在 tool cleanup Phase 3 中删除（连同浏览器工具族）。
 
 use app_lib::runtime::agent::builtin::{
-    daily_assistant_agent::daily_assistant_agent_definition,
-    explore::explore_agent_definition,
+    daily_assistant_agent::daily_assistant_agent_definition, explore::explore_agent_definition,
     general_purpose::general_purpose_agent_definition,
 };
 use app_lib::runtime::agent::definition::AgentPrompt;

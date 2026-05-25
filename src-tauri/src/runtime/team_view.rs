@@ -557,9 +557,7 @@ fn parse_teammate_name_from_stop_text(text: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::agent::{
-        Member, MemberRole, Team, TeamRegistry,
-    };
+    use crate::runtime::agent::{Member, MemberRole, TeamRegistry};
     use crate::runtime::ids::{AgentId, SessionId};
     use tempfile::tempdir;
 

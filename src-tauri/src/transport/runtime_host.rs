@@ -34,4 +34,12 @@ pub trait RuntimeHost: Send + Sync {
     fn resolve_conv_dir(&self, _conv_id: &str) -> Option<PathBuf> {
         None
     }
+
+    /// Resolve `<aijia_home>/users/{scope}/turn_stages/{conv_id}.json` for the
+    /// active user scope.  Used by `TurnStageEmitter` write-through persistence
+    /// (spec 2026-05-17-turn-stages §5).  Returns `None` when no user is logged
+    /// in — emitter degrades to in-memory only, snapshot is not persisted.
+    fn resolve_turn_stage_path(&self, _conv_id: &str) -> Option<PathBuf> {
+        None
+    }
 }

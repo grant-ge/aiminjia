@@ -46,7 +46,6 @@ pub mod files;
 pub mod id;
 pub mod io;
 pub mod messages;
-pub mod notes;
 pub mod persona;
 pub mod types;
 pub mod workspace_settings;
@@ -104,7 +103,6 @@ impl AppStorage {
     fn initialize(&self) -> Result<()> {
         // Create directory structure
         fs::create_dir_all(self.base_dir.join("conversations"))?;
-        fs::create_dir_all(self.base_dir.join("shared").join("memory"))?;
         fs::create_dir_all(self.base_dir.join("shared").join("cache"))?;
         fs::create_dir_all(self.base_dir.join("audit"))?;
         cognitive::ensure_dirs(&self.base_dir)?;
@@ -175,6 +173,25 @@ impl AppStorage {
         Ok(())
     }
 
+    /// IM-aware variant: stamps `im_source` on both conv.json + index.json
+    /// when an inbound IM message triggers the first turn of a new
+    /// conversation. App-side `create_conversation` keeps `im_source = None`.
+    pub fn create_conversation_with_im_source(
+        &self,
+        id: &str,
+        title: &str,
+        im_source: &str,
+    ) -> Result<()> {
+        let _lock = self.write_lock.lock().unwrap();
+        conversations::create_conversation_with_im_source(
+            &self.base_dir,
+            id,
+            title,
+            Some(im_source),
+        )?;
+        Ok(())
+    }
+
     pub fn update_conversation_title(&self, id: &str, title: &str) -> Result<()> {
         let _lock = self.write_lock.lock().unwrap();
         conversations::update_conversation_title(&self.base_dir, id, title)?;
@@ -215,6 +232,12 @@ impl AppStorage {
     pub fn restore_conversation(&self, id: &str) -> Result<()> {
         let _lock = self.write_lock.lock().unwrap();
         conversations::restore_conversation(&self.base_dir, id).map_err(|e| anyhow::anyhow!(e))
+    }
+
+    pub fn set_conversation_pinned(&self, id: &str, pinned: bool) -> Result<()> {
+        let _lock = self.write_lock.lock().unwrap();
+        conversations::set_conversation_pinned(&self.base_dir, id, pinned)
+            .map_err(|e| anyhow::anyhow!(e))
     }
 
     pub fn get_archived_conversations(&self) -> Result<Vec<serde_json::Value>> {
@@ -535,29 +558,6 @@ impl AppStorage {
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // Enterprise Memory
-    // ═══════════════════════════════════════════════════════════════════════
-
-    pub fn get_memory(&self, key: &str) -> Result<Option<String>> {
-        Ok(notes::get_memory(&self.base_dir, key)?)
-    }
-
-    pub fn set_memory(&self, key: &str, value: &str, source: Option<&str>) -> Result<()> {
-        let _lock = self.write_lock.lock().unwrap();
-        notes::set_memory(&self.base_dir, key, value, source)?;
-        Ok(())
-    }
-
-    pub fn get_memories_by_prefix(&self, prefix: &str) -> Result<Vec<(String, String)>> {
-        Ok(notes::get_memories_by_prefix(&self.base_dir, prefix)?)
-    }
-
-    pub fn delete_memories_by_prefix(&self, prefix: &str) -> Result<usize> {
-        let _lock = self.write_lock.lock().unwrap();
-        Ok(notes::delete_memories_by_prefix(&self.base_dir, prefix)?)
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════
     // Search Cache
     // ═══════════════════════════════════════════════════════════════════════
 
@@ -609,13 +609,8 @@ impl AppStorage {
         tag_filter: Option<&str>,
     ) -> Result<Vec<serde_json::Value>> {
         // Phase 1: Search (read-only, no lock needed)
-        let results = cognitive::search_memory_readonly(
-            &self.base_dir,
-            query,
-            category,
-            days,
-            tag_filter,
-        )?;
+        let results =
+            cognitive::search_memory_readonly(&self.base_dir, query, category, days, tag_filter)?;
 
         // Phase 2: Record hit counts (write, needs lock)
         if !results.is_empty() {
@@ -819,7 +814,6 @@ impl AppStorage {
 pub struct RuntimeRepositoryFacade {
     session_store: std::sync::Arc<dyn crate::runtime::store::SessionStore>,
     settings_store: std::sync::Arc<dyn crate::runtime::store::SettingsStore>,
-    memory_store: std::sync::Arc<dyn crate::runtime::store::MemoryStore>,
     audit_store: std::sync::Arc<dyn crate::runtime::store::AuditStore>,
     conversation_store: std::sync::Arc<dyn crate::runtime::store::ConversationStore>,
     persona_store: std::sync::Arc<dyn crate::runtime::store::PersonaStore>,
@@ -836,7 +830,6 @@ impl RuntimeRepositoryFacade {
             settings_store: std::sync::Arc::new(
                 crate::runtime::store::InMemorySettingsStore::default(),
             ),
-            memory_store: std::sync::Arc::new(crate::runtime::store::InMemoryMemoryStore::default()),
             audit_store: std::sync::Arc::new(crate::runtime::store::InMemoryAuditStore::default()),
             conversation_store: std::sync::Arc::new(
                 crate::runtime::store::InMemoryConversationStore::new(),
@@ -857,9 +850,6 @@ impl RuntimeRepositoryFacade {
             settings_store: std::sync::Arc::new(FileSettingsStore {
                 storage: storage.clone(),
             }),
-            memory_store: std::sync::Arc::new(FileMemoryStore {
-                storage: storage.clone(),
-            }),
             audit_store: std::sync::Arc::new(FileAuditStore {
                 storage: storage.clone(),
             }),
@@ -873,7 +863,7 @@ impl RuntimeRepositoryFacade {
                 storage: storage.clone(),
             }),
             authorized_workspace_store: std::sync::Arc::new(
-                crate::runtime::store::FileAuthorizedWorkspaceStore {
+                crate::runtime::store::ConvJsonAuthorizedWorkspaceStore {
                     storage: storage.clone(),
                 },
             ),
@@ -886,14 +876,6 @@ impl RuntimeRepositoryFacade {
 
     pub fn settings_store(&self) -> &dyn crate::runtime::store::SettingsStore {
         self.settings_store.as_ref()
-    }
-
-    pub fn memory_store(&self) -> &dyn crate::runtime::store::MemoryStore {
-        self.memory_store.as_ref()
-    }
-
-    pub fn clone_memory_store(&self) -> std::sync::Arc<dyn crate::runtime::store::MemoryStore> {
-        self.memory_store.clone()
     }
 
     pub fn audit_store(&self) -> &dyn crate::runtime::store::AuditStore {
@@ -995,20 +977,6 @@ impl crate::runtime::store::SettingsStore for FileSettingsStore {
     }
 }
 
-struct FileMemoryStore {
-    storage: std::sync::Arc<AppStorage>,
-}
-
-impl crate::runtime::store::MemoryStore for FileMemoryStore {
-    fn get(&self, key: &str) -> Result<Option<String>> {
-        self.storage.get_memory(key)
-    }
-
-    fn set(&self, key: &str, value: &str) -> Result<()> {
-        self.storage.set_memory(key, value, Some("runtime"))
-    }
-}
-
 struct FileAuditStore {
     storage: std::sync::Arc<AppStorage>,
 }
@@ -1036,6 +1004,25 @@ struct FileConversationStore {
 impl crate::runtime::store::ConversationStore for FileConversationStore {
     fn create_conversation(&self, id: &str, title: &str) -> Result<()> {
         self.storage.create_conversation(id, title)
+    }
+
+    fn create_conversation_with_im_source(
+        &self,
+        id: &str,
+        title: &str,
+        im_source: &str,
+    ) -> Result<()> {
+        self.storage
+            .create_conversation_with_im_source(id, title, im_source)
+    }
+
+    fn backfill_conversation_im_source(&self, id: &str, _im_source: &str) -> Result<()> {
+        // Platform string is intentionally ignored here — ConversationSource::Im
+        // is platform-agnostic; the per-platform `channels/<p>/sessions.json` is
+        // the source of truth for which platform the session belongs to.
+        let _lock = self.storage.write_lock.lock().unwrap();
+        conversations::backfill_conversation_to_im(&self.storage.base_dir, id)?;
+        Ok(())
     }
 
     fn list_conversation_ids(&self) -> Result<Vec<String>> {
@@ -1095,11 +1082,32 @@ impl crate::runtime::store::ConversationStore for FileConversationStore {
     fn get_archived_conversations(&self) -> Result<Vec<serde_json::Value>> {
         self.storage.get_archived_conversations()
     }
+
+    fn set_conversation_pinned(&self, id: &str, pinned: bool) -> Result<()> {
+        self.storage.set_conversation_pinned(id, pinned)
+    }
 }
 
 impl crate::runtime::store::ConversationStore for AppStorage {
     fn create_conversation(&self, id: &str, title: &str) -> Result<()> {
         self.create_conversation(id, title)
+    }
+
+    fn create_conversation_with_im_source(
+        &self,
+        id: &str,
+        title: &str,
+        im_source: &str,
+    ) -> Result<()> {
+        self.create_conversation_with_im_source(id, title, im_source)
+    }
+
+    fn backfill_conversation_im_source(&self, id: &str, _im_source: &str) -> Result<()> {
+        // See FileConversationStore impl: platform string ignored, only
+        // mark conv.json + index.json as IM-originated.
+        let _lock = self.write_lock.lock().unwrap();
+        conversations::backfill_conversation_to_im(&self.base_dir, id)?;
+        Ok(())
     }
 
     fn list_conversation_ids(&self) -> Result<Vec<String>> {
@@ -1158,6 +1166,10 @@ impl crate::runtime::store::ConversationStore for AppStorage {
 
     fn get_archived_conversations(&self) -> Result<Vec<serde_json::Value>> {
         self.get_archived_conversations()
+    }
+
+    fn set_conversation_pinned(&self, id: &str, pinned: bool) -> Result<()> {
+        self.set_conversation_pinned(id, pinned)
     }
 }
 
@@ -1632,26 +1644,6 @@ mod tests {
 
         let all = storage.get_all_settings().unwrap();
         assert_eq!(all["theme"], "dark");
-    }
-
-    #[test]
-    fn test_enterprise_memory() {
-        let (storage, _dir) = test_storage();
-
-        storage
-            .set_memory("company", "Acme Corp", Some("onboarding"))
-            .unwrap();
-        assert_eq!(
-            storage.get_memory("company").unwrap(),
-            Some("Acme Corp".to_string())
-        );
-
-        // Update
-        storage.set_memory("company", "Acme Inc", None).unwrap();
-        assert_eq!(
-            storage.get_memory("company").unwrap(),
-            Some("Acme Inc".to_string())
-        );
     }
 
     #[test]

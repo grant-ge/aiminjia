@@ -3,7 +3,7 @@
  * @sizing each row padding [6,8], gap 2
  */
 import { useTranslation } from 'react-i18next'
-import { Blocks, Clock3, MessageSquare, Sparkles, SquarePen, Users, type LucideIcon } from 'lucide-react'
+import { Blocks, CheckSquare, Clock3, GraduationCap, MessageSquare, Users, type LucideIcon } from 'lucide-react'
 
 export type SidebarNavKey = 'home' | 'employees' | 'skill-center' | 'schedules' | 'expert-teams' | 'channel'
 
@@ -13,9 +13,9 @@ interface SidebarNavProps {
 }
 
 const NAV: Array<{ key: SidebarNavKey; i18nKey: string; icon: LucideIcon }> = [
-  { key: 'home', i18nKey: 'nav.home', icon: SquarePen },
+  { key: 'home', i18nKey: 'nav.home', icon: CheckSquare },
   { key: 'employees', i18nKey: 'nav.employees', icon: Users },
-  { key: 'expert-teams', i18nKey: 'nav.expertTeams', icon: Sparkles },
+  { key: 'expert-teams', i18nKey: 'nav.expertTeams', icon: GraduationCap },
   { key: 'skill-center', i18nKey: 'nav.skillCenter', icon: Blocks },
   { key: 'schedules', i18nKey: 'nav.schedules', icon: Clock3 },
   { key: 'channel', i18nKey: 'nav.channel', icon: MessageSquare },
@@ -24,7 +24,7 @@ const NAV: Array<{ key: SidebarNavKey; i18nKey: string; icon: LucideIcon }> = [
 export function SidebarNav({ activeKey = null, onSelect = () => {} }: SidebarNavProps) {
   const { t } = useTranslation()
   return (
-    <nav className="flex flex-col gap-0.5 mt-3 mb-4">
+    <nav className="flex flex-col gap-0.5 mb-2">
       {NAV.map(({ key, i18nKey, icon: Icon }) => {
         const active = key === activeKey
         return (

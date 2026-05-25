@@ -39,11 +39,16 @@ export interface Conversation {
   isArchived: boolean
   workspaceName?: string
   /**
-   * Set on conversations created by employee dispatch (`employee_trigger`).
-   * Used by `ChatTopBar` to render the employee identity card. Undefined
-   * on user-initiated conversations.
+   * Conversation source kind. Mirrored from `ConversationIndexEntry.kind`
+   * in `index.json` so the sidebar can render groupings without fan-out.
    */
-  employeeId?: string
+  kind?: 'user' | 'employee' | 'expertTeam' | 'im'
+  /**
+   * Human-readable source label. LLM 改 title 时本字段不变；侧边栏用它显示稳定的来源标签。
+   */
+  sourceLabel?: string
+  /** 用户置顶的会话浮在侧边栏顶部。后端持久化在 conv.json + index.json。 */
+  isPinned?: boolean
 }
 
 /**

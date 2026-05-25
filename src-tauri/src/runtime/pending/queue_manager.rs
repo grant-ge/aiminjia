@@ -9,15 +9,13 @@ use anyhow::Result;
 use async_trait::async_trait;
 use tokio::task::JoinHandle;
 
-use crate::runtime::chat::ChatTurnRequest;
 use crate::runtime::chat::chat_turn_driver::ChatAttachmentRef;
+use crate::runtime::chat::ChatTurnRequest;
 use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::ids::SessionId;
 use crate::runtime::run_registry::RuntimeRunRegistry;
 
-use super::types::{
-    EnqueueOutcome, EnqueueRejection, PendingConfig, PendingItem,
-};
+use super::types::{EnqueueOutcome, EnqueueRejection, PendingConfig, PendingItem};
 
 /// Per-host abstraction over conversation directory layout.
 pub trait ConvDirResolver: Send + Sync {
@@ -297,7 +295,8 @@ impl PendingQueueManager {
         }
 
         // Persist new state
-        if let (Some(snap), Some(dir)) = (snapshot_opt, self.resolver.conversation_dir(session_id)) {
+        if let (Some(snap), Some(dir)) = (snapshot_opt, self.resolver.conversation_dir(session_id))
+        {
             let path = dir.join("pending.json");
             tokio::task::spawn_blocking(move || {
                 if let Err(e) = super::store::write_pending(&path, &snap) {
@@ -323,9 +322,10 @@ impl PendingQueueManager {
     /// drained (within TTL) are filtered.
     pub async fn restore_from_disk(&self) -> Result<()> {
         let root = self.resolver.conversations_root();
-        let scanned = tokio::task::spawn_blocking(move || super::store::scan_conversation_pending(&root))
-            .await
-            .map_err(|e| anyhow::anyhow!("join: {e}"))??;
+        let scanned =
+            tokio::task::spawn_blocking(move || super::store::scan_conversation_pending(&root))
+                .await
+                .map_err(|e| anyhow::anyhow!("join: {e}"))??;
 
         let mut guard = self.inner.lock().expect("pending mutex poisoned");
         for (conv_id, items) in scanned {
@@ -377,7 +377,9 @@ fn build_request_from_single(session_id: &SessionId, item: PendingItem) -> ChatT
             mime_type: a.mime.clone(),
         })
         .collect();
-    ChatTurnRequest::new(session_id.clone(), item.text, attachments)
+    let mut req = ChatTurnRequest::new(session_id.clone(), item.text, attachments);
+    req.skill_command = item.skill_command;
+    req
 }
 
 /// Build a ChatTurnRequest from a drained batch.
@@ -388,7 +390,10 @@ fn build_request_from_single(session_id: &SessionId, item: PendingItem) -> ChatT
 /// standalone user messages BEFORE calling `send_chat_request` on this request.
 /// `request.pending_batch` carries the full Vec for the dispatcher to read.
 fn build_request_from_batch(session_id: &SessionId, items: Vec<PendingItem>) -> ChatTurnRequest {
-    debug_assert!(!items.is_empty(), "drain should never invoke with empty items");
+    debug_assert!(
+        !items.is_empty(),
+        "drain should never invoke with empty items"
+    );
     let last = items.last().expect("non-empty");
     let last_text = match &last.sender_nick {
         Some(nick) if !nick.is_empty() => format!("[{}]: {}", nick, last.text),
@@ -411,6 +416,7 @@ fn build_request_from_batch(session_id: &SessionId, items: Vec<PendingItem>) -> 
         })
         .collect();
     let mut req = ChatTurnRequest::new(session_id.clone(), last_text, last_attachments);
+    req.skill_command = last.skill_command.clone();
     req.pending_batch = Some(items);
     req
 }

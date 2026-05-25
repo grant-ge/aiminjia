@@ -167,7 +167,10 @@ async fn self_send_is_rejected() {
 
     match err {
         ToolError::ExecutionFailed(msg) => {
-            assert!(msg.contains("self-send"), "expected self-send rejection: {msg}");
+            assert!(
+                msg.contains("self-send"),
+                "expected self-send rejection: {msg}"
+            );
         }
         other => panic!("expected ExecutionFailed, got {other:?}"),
     }
@@ -192,7 +195,10 @@ async fn shutdown_request_variant_round_trips_through_inbox() {
 
     let item = inbox.recv().await.unwrap();
     match item {
-        InboxItem::ChatMessage { message, source: MessageSource::Lead } => {
+        InboxItem::ChatMessage {
+            message,
+            source: MessageSource::Lead,
+        } => {
             assert!(matches!(
                 message,
                 StructuredMessage::ShutdownRequest { ref reason }

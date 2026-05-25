@@ -462,7 +462,7 @@ impl SessionRuntime {
         let authorized_workspace = self
             .authorized_workspace_store
             .as_ref()
-            .and_then(|store| store.get_current_for_session(session_id).ok().flatten())
+            .and_then(|store| store.get_current_for_session(session_id.as_str(), session_id).ok().flatten())
             .map(|aw| AuthorizedWorkspaceRef {
                 id: aw.id,
                 root_path: aw.root_path,
@@ -608,6 +608,15 @@ impl SessionRuntime {
         // Both S4 and QueryEngine paths surface task notifications.
         if let Some(ref queue) = self.task_notification_queue {
             driver = driver.with_task_notification_queue(queue.clone());
+        }
+        // Turn-stage persistence write-through path is now user-scoped (spec
+        // 2026-05-17-turn-stages §5).  Delegate to the host so the active
+        // user's `users/{scope}/turn_stages/{conv_id}.json` is used; the
+        // driver no-ops persistence when no user is logged in.
+        if let Some(host) = self.host.clone() {
+            driver = driver.with_turn_stage_path_resolver(Arc::new(move |conv_id: &str| {
+                host.resolve_turn_stage_path(conv_id)
+            }));
         }
         driver
     }
@@ -863,6 +872,7 @@ mod tests {
             _conversation_id: &str,
             _content: &str,
             _attachments: &[crate::runtime::chat::chat_turn_driver::ChatAttachmentRef],
+            _skill_command: Option<&crate::runtime::chat::chat_turn_driver::SkillCommandRef>,
             _client_message_id: Option<&str>,
         ) -> anyhow::Result<String, TurnError> {
             Ok("user-msg".to_string())
@@ -956,7 +966,7 @@ mod tests {
         let store = Arc::new(crate::runtime::store::InMemoryAuthorizedWorkspaceStore::default());
         let session_id = crate::runtime::ids::SessionId::new("conv-authorized");
         store
-            .replace_for_session(&crate::runtime::store::AuthorizedWorkspace {
+            .replace_for_session(session_id.as_str(), &crate::runtime::store::AuthorizedWorkspace {
                 id: "aw-session".to_string(),
                 session_id: session_id.clone(),
                 root_path: external_workspace.path().to_path_buf(),
@@ -1424,7 +1434,7 @@ mod tests {
     /// decide::is_path_allowed must return Allow without re-asking.
     #[test]
     fn path_auth_ask_persist_allow_round_trip() {
-        use crate::runtime::path_auth::context::{PermissionRule, RuleSource, ToolPermissionContext};
+        use crate::runtime::path_auth::context::{RuleSource, ToolPermissionContext};
         use crate::runtime::path_auth::decide::{self, Decision};
         use crate::runtime::path_auth::op::PathOp;
         use crate::runtime::path_auth::store_bridge::load_path_auth_entries;

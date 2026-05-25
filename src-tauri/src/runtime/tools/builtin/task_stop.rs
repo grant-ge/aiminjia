@@ -22,9 +22,14 @@ pub struct TaskStopRuntimeTool {
 
 #[async_trait]
 impl RuntimeTool for TaskStopRuntimeTool {
-    fn id(&self) -> &str { "TaskStop" }
-    
-    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "TaskStop"
+    }
+
+    async fn definition(
+        &self,
+        _ctx: &crate::runtime::tools::ToolDescriptionContext,
+    ) -> ToolDefinition {
         TOOL_CATALOG
             .get("TaskStop")
             .unwrap_or_else(|| ToolDefinition::new("TaskStop", "终止一个正在后台运行的 Agent 任务"))

@@ -32,7 +32,7 @@ describe('FilePreviewPane', () => {
   it('shows an empty state when no target is selected without loading preview content', () => {
     render(<FilePreviewPane target={null} onOpenExternal={vi.fn()} />)
 
-    expect(screen.getByText('选择一个产物进行预览')).toBeInTheDocument()
+    expect(screen.getByText('选择左侧文件以预览')).toBeInTheDocument()
     expect(previewMock.getFilePreview).not.toHaveBeenCalled()
   })
 
@@ -61,7 +61,7 @@ describe('FilePreviewPane', () => {
 
     render(<FilePreviewPane target={target} onOpenExternal={() => {}} />)
 
-    expect(screen.getByText('正在加载预览')).toBeInTheDocument()
+    expect(screen.getByText('正在加载预览...')).toBeInTheDocument()
     expect(await screen.findByRole('heading', { name: 'Summary' })).toBeInTheDocument()
     expect(previewMock.getFilePreview).toHaveBeenCalledWith('gf-1', 'conv-1')
   })

@@ -20,7 +20,10 @@ use crate::storage::process_ext::NoWindowExt;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum DingtalkAuthStatus {
-    Connected { user_name: String, corp_name: String },
+    Connected {
+        user_name: String,
+        corp_name: String,
+    },
     Disconnected,
     Expired,
 }
@@ -37,7 +40,10 @@ pub struct DingtalkStatusInfo {
 impl From<&DingtalkAuthStatus> for DingtalkStatusInfo {
     fn from(status: &DingtalkAuthStatus) -> Self {
         match status {
-            DingtalkAuthStatus::Connected { user_name, corp_name } => DingtalkStatusInfo {
+            DingtalkAuthStatus::Connected {
+                user_name,
+                corp_name,
+            } => DingtalkStatusInfo {
                 connected: true,
                 user_name: Some(user_name.clone()),
                 corp_name: Some(corp_name.clone()),
@@ -68,7 +74,11 @@ impl DingtalkBridge {
 
     /// Find the dws binary. Priority: bundled > dev > system PATH.
     fn find_dws(&self) -> Result<PathBuf> {
-        let bin_name = if cfg!(target_os = "windows") { "dws.exe" } else { "dws" };
+        let bin_name = if cfg!(target_os = "windows") {
+            "dws.exe"
+        } else {
+            "dws"
+        };
 
         // 1. Bundled (production): resource_dir/dws
         if let Ok(resource_dir) = self.app_handle.path().resource_dir() {
@@ -107,7 +117,11 @@ impl DingtalkBridge {
         {
             if output.status.success() {
                 let path = crate::storage::console_decode::decode_console_bytes(&output.stdout)
-                    .lines().next().unwrap_or("").trim().to_string();
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
                 if !path.is_empty() {
                     return Ok(PathBuf::from(path));
                 }
@@ -144,8 +158,7 @@ impl DingtalkBridge {
             cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
         }
 
-        let child = cmd.spawn()
-            .context("Failed to spawn dws process")?;
+        let child = cmd.spawn().context("Failed to spawn dws process")?;
 
         let output = tokio::time::timeout(timeout, child.wait_with_output())
             .await
@@ -158,20 +171,26 @@ impl DingtalkBridge {
         if !output.status.success() {
             let code = output.status.code().unwrap_or(-1);
             // Check for auth expiry
-            if stderr.contains("token") && (stderr.contains("expired") || stderr.contains("invalid")) {
+            if stderr.contains("token")
+                && (stderr.contains("expired") || stderr.contains("invalid"))
+            {
                 *self.auth_status.write().await = DingtalkAuthStatus::Expired;
                 return Err(anyhow!(
                     "DingTalk authorization expired. Please re-authorize in Settings → DingTalk Account."
                 ));
             }
             return Err(anyhow!(
-                "dws command failed (exit {}): {}", code, stderr.trim()
+                "dws command failed (exit {}): {}",
+                code,
+                stderr.trim()
             ));
         }
 
         // Parse JSON from stdout
-        let json: Value = serde_json::from_str(stdout.trim())
-            .context(format!("Failed to parse dws JSON output: {}", stdout.chars().take(200).collect::<String>()))?;
+        let json: Value = serde_json::from_str(stdout.trim()).context(format!(
+            "Failed to parse dws JSON output: {}",
+            stdout.chars().take(200).collect::<String>()
+        ))?;
 
         Ok(json)
     }
@@ -210,11 +229,12 @@ impl DingtalkBridge {
             cmd.creation_flags(0x08000000);
         }
 
-        let mut child = cmd.spawn()
-            .context("Failed to start dws auth login")?;
+        let mut child = cmd.spawn().context("Failed to start dws auth login")?;
 
         // dws outputs interactive info (OAuth URL) to stderr when stdout is piped.
-        let stderr_pipe = child.stderr.take()
+        let stderr_pipe = child
+            .stderr
+            .take()
             .ok_or_else(|| anyhow!("Failed to capture dws stderr"))?;
 
         let mut reader = tokio::io::BufReader::new(stderr_pipe);
@@ -227,13 +247,11 @@ impl DingtalkBridge {
         // Phase 1: scan stderr for the OAuth URL (max 30s)
         loop {
             line.clear();
-            let read_result = tokio::time::timeout_at(
-                read_deadline,
-                reader.read_line(&mut line),
-            ).await;
+            let read_result =
+                tokio::time::timeout_at(read_deadline, reader.read_line(&mut line)).await;
 
             match read_result {
-                Ok(Ok(0)) => break,  // EOF — dws exited (maybe cached token was valid)
+                Ok(Ok(0)) => break, // EOF — dws exited (maybe cached token was valid)
                 Ok(Ok(_)) => {
                     let trimmed = line.trim();
                     log::info!("[dws-login] {}", trimmed);
@@ -298,7 +316,8 @@ impl DingtalkBridge {
             cmd.creation_flags(0x08000000);
         }
 
-        let output = cmd.output()
+        let output = cmd
+            .output()
             .await
             .context("Failed to run dws auth logout")?;
 
@@ -320,7 +339,8 @@ impl DingtalkBridge {
 
         match auth_result {
             Ok(json) => {
-                let authenticated = json.get("authenticated")
+                let authenticated = json
+                    .get("authenticated")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
 
@@ -330,34 +350,39 @@ impl DingtalkBridge {
                 }
 
                 // Step 2: get user info via contact get-self
-                let (user_name, corp_name) = match self.exec(&["contact", "user", "get-self"], 10).await {
-                    Ok(user_json) => {
-                        // Path: result[0].orgEmployeeModel.orgUserName / orgName
-                        let employee = user_json.get("result")
-                            .and_then(|r| r.as_array())
-                            .and_then(|arr| arr.first())
-                            .and_then(|item| item.get("orgEmployeeModel"));
+                let (user_name, corp_name) =
+                    match self.exec(&["contact", "user", "get-self"], 10).await {
+                        Ok(user_json) => {
+                            // Path: result[0].orgEmployeeModel.orgUserName / orgName
+                            let employee = user_json
+                                .get("result")
+                                .and_then(|r| r.as_array())
+                                .and_then(|arr| arr.first())
+                                .and_then(|item| item.get("orgEmployeeModel"));
 
-                        let name = employee
-                            .and_then(|e| e.get("orgUserName"))
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("Unknown")
-                            .to_string();
-                        let org = employee
-                            .and_then(|e| e.get("orgName"))
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string();
+                            let name = employee
+                                .and_then(|e| e.get("orgUserName"))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("Unknown")
+                                .to_string();
+                            let org = employee
+                                .and_then(|e| e.get("orgName"))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
 
-                        (name, org)
-                    }
-                    Err(e) => {
-                        warn!("[dws] Failed to get user info: {}", e);
-                        ("Unknown".to_string(), String::new())
-                    }
+                            (name, org)
+                        }
+                        Err(e) => {
+                            warn!("[dws] Failed to get user info: {}", e);
+                            ("Unknown".to_string(), String::new())
+                        }
+                    };
+
+                let status = DingtalkAuthStatus::Connected {
+                    user_name,
+                    corp_name,
                 };
-
-                let status = DingtalkAuthStatus::Connected { user_name, corp_name };
                 let info = DingtalkStatusInfo::from(&status);
                 *self.auth_status.write().await = status;
                 Ok(info)
@@ -376,7 +401,10 @@ impl DingtalkBridge {
 
     /// Check if currently authenticated.
     pub async fn is_connected(&self) -> bool {
-        matches!(&*self.auth_status.read().await, DingtalkAuthStatus::Connected { .. })
+        matches!(
+            &*self.auth_status.read().await,
+            DingtalkAuthStatus::Connected { .. }
+        )
     }
 
     /// Get current status info (no network call).

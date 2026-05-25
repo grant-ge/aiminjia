@@ -49,7 +49,13 @@ struct CapturedContext {
 }
 
 impl RecordingLauncher {
-    fn new(output: impl Into<String>) -> (Arc<Self>, Arc<Mutex<Option<SpawnSubagentRequest>>>, Arc<Mutex<Option<CapturedContext>>>) {
+    fn new(
+        output: impl Into<String>,
+    ) -> (
+        Arc<Self>,
+        Arc<Mutex<Option<SpawnSubagentRequest>>>,
+        Arc<Mutex<Option<CapturedContext>>>,
+    ) {
         let last_request = Arc::new(Mutex::new(None));
         let last_context = Arc::new(Mutex::new(None));
         let launcher = Arc::new(Self {
@@ -92,9 +98,7 @@ impl SpawnSubagentLauncher for RecordingLauncher {
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
-fn build_dispatcher_with_launcher(
-    launcher: Arc<dyn SpawnSubagentLauncher>,
-) -> ToolDispatcher {
+fn build_dispatcher_with_launcher(launcher: Arc<dyn SpawnSubagentLauncher>) -> ToolDispatcher {
     let registry = Arc::new(AgentRegistry::with_builtins());
     let tool = Arc::new(SpawnSubagentRuntimeTool::new(launcher, registry));
     let dispatcher = ToolDispatcher::new(Arc::new(AllowAllPermissionPipeline));
@@ -139,7 +143,10 @@ async fn explore_agent_e2e_through_dispatcher() {
     // ── Outcome must be Completed, not AskRequired or InteractionRequired ──
     let result: ToolResult = match outcome {
         ToolDispatchOutcome::Completed { result, .. } => result,
-        other => panic!("expected Completed, got: {:?}", std::mem::discriminant(&other)),
+        other => panic!(
+            "expected Completed, got: {:?}",
+            std::mem::discriminant(&other)
+        ),
     };
 
     // ── ToolResult.content equals launcher output verbatim ─────────────────
@@ -149,7 +156,11 @@ async fn explore_agent_e2e_through_dispatcher() {
     );
 
     // ── Request assertions ─────────────────────────────────────────────────
-    let req = req_slot.lock().unwrap().clone().expect("launcher must have been called");
+    let req = req_slot
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("launcher must have been called");
     assert_eq!(req.subagent_type, "explore");
     assert_eq!(req.prompt, "find Cargo.toml in workspace");
     assert_eq!(req.description, "locate Cargo manifest");
@@ -158,11 +169,18 @@ async fn explore_agent_e2e_through_dispatcher() {
         "explore.model=Inherit with no caller model → effective_model must be None, got: {:?}",
         req.effective_model
     );
-    assert!(!req.run_in_background, "run_in_background defaults to false");
+    assert!(
+        !req.run_in_background,
+        "run_in_background defaults to false"
+    );
     assert!(req.name.is_none(), "no name field in input → must be None");
 
     // ── Context assertions ────────────────────────────────────────────────
-    let cap = ctx_slot.lock().unwrap().clone().expect("context must have been captured");
+    let cap = ctx_slot
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("context must have been captured");
     assert_eq!(cap.session_id.as_str(), "sess-e2e-1");
     assert_eq!(
         cap.parent_run_id.as_ref().map(|r| r.as_str()),
@@ -206,7 +224,11 @@ async fn caller_model_overrides_inherit_definition() {
         .await
         .expect("dispatch must succeed");
 
-    let req = req_slot.lock().unwrap().clone().expect("launcher must have been called");
+    let req = req_slot
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("launcher must have been called");
     assert_eq!(
         req.effective_model,
         Some("some-cloud-model-id".to_string()),
@@ -241,12 +263,19 @@ async fn general_purpose_agent_resolves_through_registry() {
 
     let result = match outcome {
         ToolDispatchOutcome::Completed { result, .. } => result,
-        other => panic!("expected Completed, got discriminant {:?}", std::mem::discriminant(&other)),
+        other => panic!(
+            "expected Completed, got discriminant {:?}",
+            std::mem::discriminant(&other)
+        ),
     };
 
     assert_eq!(result.content, "general-purpose completed");
 
-    let req = req_slot.lock().unwrap().clone().expect("launcher must have been called");
+    let req = req_slot
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("launcher must have been called");
     assert_eq!(req.subagent_type, "general-purpose");
     // general-purpose.model = Inherit, no caller model → effective_model=None
     assert!(

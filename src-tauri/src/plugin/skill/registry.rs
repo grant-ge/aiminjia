@@ -61,7 +61,11 @@ impl SkillRegistry {
         format_skill_catalog_with_budget(&skills, context_window_tokens)
     }
 
-    pub fn catalog_delta_for_agent(&mut self, agent_id: Option<&str>, context_window_tokens: usize) -> String {
+    pub fn catalog_delta_for_agent(
+        &mut self,
+        agent_id: Option<&str>,
+        context_window_tokens: usize,
+    ) -> String {
         let key = agent_id.unwrap_or("").to_string();
         let sent = self.sent_skill_names.entry(key).or_default();
         let mut new_skills = self

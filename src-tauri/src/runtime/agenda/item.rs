@@ -168,9 +168,21 @@ mod migration_tests {
             updated_at: chrono::Utc::now(),
         };
         let s = serde_json::to_string(&item).unwrap();
-        assert!(s.contains("\"organizerEmployeeId\":\"emp-1\""), "wire format = camelCase, got {s}");
-        assert!(!s.contains("organizerPersonaId"), "must not emit legacy field on write, got {s}");
-        assert!(s.contains("\"employeeId\":\"emp-1\""), "participant wire format = camelCase, got {s}");
-        assert!(!s.contains("personaId"), "must not emit legacy participant field on write, got {s}");
+        assert!(
+            s.contains("\"organizerEmployeeId\":\"emp-1\""),
+            "wire format = camelCase, got {s}"
+        );
+        assert!(
+            !s.contains("organizerPersonaId"),
+            "must not emit legacy field on write, got {s}"
+        );
+        assert!(
+            s.contains("\"employeeId\":\"emp-1\""),
+            "participant wire format = camelCase, got {s}"
+        );
+        assert!(
+            !s.contains("personaId"),
+            "must not emit legacy participant field on write, got {s}"
+        );
     }
 }

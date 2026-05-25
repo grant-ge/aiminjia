@@ -19,9 +19,7 @@ use tempfile::TempDir;
 use app_lib::runtime::agent::employee_projection::project_employee_to_agent;
 use app_lib::runtime::agent::registry::AgentRegistry;
 use app_lib::runtime::agent::{AgentNameRegistry, Member, MemberRole, TeamRegistry};
-use app_lib::runtime::employee::store::{
-    CreateEmployeeRequest, EmployeeLifecycle, EmployeeStore,
-};
+use app_lib::runtime::employee::store::{CreateEmployeeRequest, EmployeeLifecycle, EmployeeStore};
 use app_lib::runtime::ids::{AgentId, SessionId};
 use app_lib::runtime::tools::builtin::spawn_subagent::{
     SpawnAsyncOutcome, SpawnSubagentContext, SpawnSubagentLauncher, SpawnSubagentRequest,
@@ -59,9 +57,7 @@ impl SpawnSubagentLauncher for NopLauncher {
 
 // ─── Helper: build tool with employee store seeded into registry ─────────────
 
-fn build_tool_with_employee_store(
-    employee_store: Arc<EmployeeStore>,
-) -> SpawnSubagentRuntimeTool {
+fn build_tool_with_employee_store(employee_store: Arc<EmployeeStore>) -> SpawnSubagentRuntimeTool {
     let registry = Arc::new(AgentRegistry::with_builtins());
     // Seed all Active employees as dynamic AgentDefinitions so spawn_subagent
     // can resolve `subagent_type=emp-…` via the single registry query path.
@@ -175,16 +171,16 @@ async fn rejects_duplicate_name_in_same_session() {
         last_active_at: chrono::Utc::now(),
     };
     team_registry
-        .create(SessionId::new(session_id), lead, "research-team".to_string())
+        .create(
+            SessionId::new(session_id),
+            lead,
+            "research-team".to_string(),
+        )
         .await
         .unwrap();
 
     // First dispatch with name "researcher" should fail (stub) but register the name.
-    let ctx1 = build_ctx_with_registries(
-        session_id,
-        team_registry.clone(),
-        name_registry.clone(),
-    );
+    let ctx1 = build_ctx_with_registries(session_id, team_registry.clone(), name_registry.clone());
     let _ = tool
         .execute(
             json!({
@@ -199,11 +195,7 @@ async fn rejects_duplicate_name_in_same_session() {
         .await; // May fail with P1.6 stub; we don't care about the result here.
 
     // Second dispatch with the SAME name in the same session → NameRegistry::Duplicate.
-    let ctx2 = build_ctx_with_registries(
-        session_id,
-        team_registry.clone(),
-        name_registry.clone(),
-    );
+    let ctx2 = build_ctx_with_registries(session_id, team_registry.clone(), name_registry.clone());
     let err = tool
         .execute(
             json!({
@@ -225,7 +217,10 @@ async fn rejects_duplicate_name_in_same_session() {
                 "error should mention duplicate name, got: {msg}"
             );
         }
-        other => panic!("expected ExecutionFailed for duplicate name, got: {:?}", other),
+        other => panic!(
+            "expected ExecutionFailed for duplicate name, got: {:?}",
+            other
+        ),
     }
 }
 
@@ -259,11 +254,7 @@ async fn happy_path_employee_subagent_type_creates_teammate_and_registers_name()
         .await
         .unwrap();
 
-    let ctx = build_ctx_with_registries(
-        session_id,
-        team_registry.clone(),
-        name_registry.clone(),
-    );
+    let ctx = build_ctx_with_registries(session_id, team_registry.clone(), name_registry.clone());
 
     // This will error with the P1.6 stub, but name registration happens BEFORE
     // the stub is called, so we can assert on AgentNameRegistry state.
@@ -282,7 +273,7 @@ async fn happy_path_employee_subagent_type_creates_teammate_and_registers_name()
 
     // Assert: name "researcher" was registered in AgentNameRegistry.
     let sid = SessionId::new(session_id);
-    let resolved = name_registry.resolve(&sid, "researcher").await;
+    let resolved = name_registry.resolve(&sid, "default", "researcher").await;
     assert!(
         resolved.is_some(),
         "AgentNameRegistry should have 'researcher' registered"

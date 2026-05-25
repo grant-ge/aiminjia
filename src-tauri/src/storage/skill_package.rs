@@ -49,8 +49,7 @@ pub fn pack_skill_dir(source_dir: &Path, dest_path: &Path, skill_id: &str) -> Re
     if let Some(parent) = dest_path.parent() {
         fs::create_dir_all(parent).ok();
     }
-    let file = fs::File::create(dest_path)
-        .with_context(|| format!("create {:?}", dest_path))?;
+    let file = fs::File::create(dest_path).with_context(|| format!("create {:?}", dest_path))?;
     let mut zip = ZipWriter::new(file);
     let opts: FileOptions<'_, ()> =
         FileOptions::default().compression_method(CompressionMethod::Deflated);
@@ -79,8 +78,7 @@ pub struct UnpackResult {
 /// - 一级子目录：`<skill_id>/SKILL.md` （推荐）
 /// - 扁平：`SKILL.md` 直接在根
 pub fn unpack_skill_archive(zip_path: &Path, tmp_root: &Path) -> Result<UnpackResult> {
-    let file = fs::File::open(zip_path)
-        .with_context(|| format!("open {:?}", zip_path))?;
+    let file = fs::File::open(zip_path).with_context(|| format!("open {:?}", zip_path))?;
     unpack_skill_archive_from_reader(file, tmp_root)
 }
 
@@ -188,7 +186,10 @@ pub fn unpack_skill_archive_from_reader<R: Read + Seek>(
         Err(_) => strip_prefix.unwrap_or_else(|| "unknown".to_string()),
     };
 
-    Ok(UnpackResult { skill_dir, skill_id })
+    Ok(UnpackResult {
+        skill_dir,
+        skill_id,
+    })
 }
 
 /// 收集 source_dir 下需要打包的相对路径。
@@ -259,9 +260,7 @@ fn validate_skill_subpath(rel: &Path) -> Result<()> {
         }
         2 => {
             let dir = comps[0].as_os_str().to_string_lossy();
-            if !one_level_only.contains(dir.as_ref())
-                && !nested_allowed.contains(dir.as_ref())
-            {
+            if !one_level_only.contains(dir.as_ref()) && !nested_allowed.contains(dir.as_ref()) {
                 return Err(anyhow!(
                     "subdirectory '{}' not allowed (allowed: scripts/ references/ assets/ templates/ docs/)",
                     dir

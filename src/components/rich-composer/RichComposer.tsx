@@ -14,7 +14,7 @@ import type { Editor } from '@tiptap/react'
 import { buildComposerExtensions } from './composerSchema'
 import { serializeComposerDoc } from './serializer'
 import { parseMarkdownToComposerJson } from './parseMarkdown'
-import type { ComposerAttachmentToken, ComposerJsonNode, RichComposerSubmitPayload } from './types'
+import type { ComposerAttachmentToken, ComposerJsonNode, ComposerSkillToken, RichComposerSubmitPayload } from './types'
 
 export interface ComposerSkillCommand {
   command: string
@@ -45,11 +45,16 @@ export interface RichComposerProps {
   showProjectButton?: boolean
 
   onOpenAttachment?: () => void
+  skillTokens?: ComposerSkillToken[]
+  /** Extra classes appended to the outer rounded-xl container. Caller-controlled
+   * styling (e.g. shadow for the in-chat composer vs. flat for home composer). */
+  containerClassName?: string
 }
 
 export interface RichComposerHandle {
   focus: () => void
   insertAttachmentTokens: (tokens: ComposerAttachmentToken[]) => void
+  insertSkillToken: (token: ComposerSkillToken) => void
   clear: () => void
   getEditor: () => Editor | null
 }
@@ -73,6 +78,8 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
     onPickProject,
     showProjectButton = true,
     onOpenAttachment,
+    skillTokens,
+    containerClassName,
   },
   ref,
 ) {
@@ -82,7 +89,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
   // Force a re-render when content/submit state changes so the send button's disabled state stays accurate.
   const [, forceTick] = useState(0)
   const editor = useEditor({
-    extensions: buildComposerExtensions({ placeholder }),
+    extensions: buildComposerExtensions({ placeholder, skills: skillTokens ?? [] }),
     content: initialMarkdown
       ? (parseMarkdownToComposerJson(initialMarkdown) as unknown as object)
       : undefined,
@@ -170,6 +177,9 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
       insertAttachmentTokens: (tokens) => {
         editor?.commands.insertAttachmentTokens(tokens)
       },
+      insertSkillToken: (token) => {
+        editor?.commands.insertSkillToken(token)
+      },
       clear: () => {
         editor?.commands.clearContent()
       },
@@ -187,7 +197,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
     <div className="flex w-full flex-col gap-2">
       <div
         data-testid="composer-root"
-        className="flex w-full flex-col rounded-xl border border-border bg-card px-4 pb-1 pt-4"
+        className={`flex w-full flex-col rounded-xl border border-border bg-card px-4 pb-1 pt-4${containerClassName ? ` ${containerClassName}` : ''}`}
       >
         {topSlot}
         {skillCommand ? (

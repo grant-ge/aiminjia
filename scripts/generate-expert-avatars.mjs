@@ -46,7 +46,7 @@ for (const team of teamBlocks) {
   mkdirSync(dir, { recursive: true })
   for (const exp of team.experts) {
     const svg = createAvatar(personas, {
-      seed: `${team.id}:${exp.name}`,
+      seed: exp.name,
       size: 96,
       backgroundColor: ['transparent'],
     }).toString()

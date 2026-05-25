@@ -46,7 +46,12 @@ pub struct DraftMeta {
 }
 
 impl DraftMeta {
-    fn new(draft_id: String, conversation_id: Option<String>, name: String, description: String) -> Self {
+    fn new(
+        draft_id: String,
+        conversation_id: Option<String>,
+        name: String,
+        description: String,
+    ) -> Self {
         let now = Utc::now();
         Self {
             draft_id,
@@ -198,8 +203,7 @@ impl SkillDraftStore {
     /// 应对 AV / 缩略图缓存短暂占用文件句柄的情况。
     pub fn discard(&self, scope: &UserScope, draft_id: &str) -> Result<()> {
         let dir = self.draft_dir(scope, draft_id)?;
-        remove_dir_all_retry(&dir)
-            .with_context(|| format!("remove draft dir {:?}", dir))?;
+        remove_dir_all_retry(&dir).with_context(|| format!("remove draft dir {:?}", dir))?;
         Ok(())
     }
 
@@ -243,7 +247,9 @@ impl SkillDraftStore {
             return Err(anyhow!("target '{:?}' already exists", target));
         }
         fs::create_dir_all(target)?;
-        copy_recursive(&src, target, &|p| p.file_name().map(|n| n != META_FILENAME).unwrap_or(true))?;
+        copy_recursive(&src, target, &|p| {
+            p.file_name().map(|n| n != META_FILENAME).unwrap_or(true)
+        })?;
         Ok(())
     }
 }
@@ -257,7 +263,12 @@ fn parse_extra_path(rel_path: &str) -> Result<(&'static str, String)> {
     let subdir: &'static str = match subdir_raw {
         "scripts" => "scripts",
         "references" => "references",
-        other => return Err(anyhow!("subdir must be 'scripts' or 'references', got '{}'", other)),
+        other => {
+            return Err(anyhow!(
+                "subdir must be 'scripts' or 'references', got '{}'",
+                other
+            ))
+        }
     };
     if rest.contains('/') || rest.contains('\\') {
         return Err(anyhow!("only one-level deep is allowed"));
@@ -371,9 +382,7 @@ mod tests {
     #[test]
     fn write_and_read_skill_md_bumps_meta() {
         let (_tmp, store, scope) = fixture();
-        let meta_a = store
-            .create(&scope, "draft-1", None, "x", "y")
-            .unwrap();
+        let meta_a = store.create(&scope, "draft-1", None, "x", "y").unwrap();
         std::thread::sleep(std::time::Duration::from_millis(10));
         store
             .write_skill_md(&scope, "draft-1", "---\nname: x\n---\nbody")
@@ -439,10 +448,10 @@ mod tests {
     #[test]
     fn copy_to_skips_meta_json() {
         let (tmp, store, scope) = fixture();
-        store.create(&scope, "draft-1", None, "my-skill", "y").unwrap();
         store
-            .write_skill_md(&scope, "draft-1", "body")
+            .create(&scope, "draft-1", None, "my-skill", "y")
             .unwrap();
+        store.write_skill_md(&scope, "draft-1", "body").unwrap();
         store
             .write_extra_file(&scope, "draft-1", "scripts/foo.py", "print('hi')")
             .unwrap();
@@ -484,12 +493,16 @@ mod tests {
     fn gc_removes_old_unsaved_drafts() {
         let (_tmp, store, scope) = fixture();
         // 1) old, not installed → should be removed
-        store.create(&scope, "old-untouched", None, "x", "y").unwrap();
+        store
+            .create(&scope, "old-untouched", None, "x", "y")
+            .unwrap();
         let mut m = store.read_meta(&scope, "old-untouched").unwrap();
         m.last_modified_at = Utc::now() - chrono::Duration::days(10);
         store.write_meta(&scope, &m).unwrap();
         // 2) old, but installed → keep
-        store.create(&scope, "old-installed", None, "x", "y").unwrap();
+        store
+            .create(&scope, "old-installed", None, "x", "y")
+            .unwrap();
         let mut m = store.read_meta(&scope, "old-installed").unwrap();
         m.last_modified_at = Utc::now() - chrono::Duration::days(10);
         m.installed_to = Some(PathBuf::from("/somewhere"));

@@ -105,7 +105,10 @@ pub fn count_entries_since(
 ) -> usize {
     let store = InboxStore::new(employees_root);
     match store.list_for(employee_id, 100) {
-        Ok(entries) => entries.into_iter().filter(|e| e.created_at >= since).count(),
+        Ok(entries) => entries
+            .into_iter()
+            .filter(|e| e.created_at >= since)
+            .count(),
         Err(_) => 0,
     }
 }

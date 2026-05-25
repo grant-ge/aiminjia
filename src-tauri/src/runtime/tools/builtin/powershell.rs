@@ -19,13 +19,14 @@ use crate::runtime::tools::RuntimeTool;
 use crate::storage::process_ext::NoWindowExt;
 
 use super::powershell_detect::{detect, PowerShellLocation};
-use crate::runtime::cancellation::wait_for_cancellation;
 use super::shell_common::{
-    collect_reader, content_from_output, format_cancel_message, format_command_failure,
-    interpret_command_result, kill_child_process_tree, read_merged_streams, truncated_to_max_bytes,
-    ExitKind, MAX_OUTPUT_BYTES,
+    collect_reader, content_from_output, emit_shell_failure_diagnostic, format_cancel_message,
+    format_command_failure, inject_bundled_runtime_path, interpret_command_result,
+    kill_child_process_tree, read_merged_streams, truncated_to_max_bytes, ExitKind,
+    MAX_OUTPUT_BYTES,
 };
 use super::workspace::require_workspace_root;
+use crate::runtime::cancellation::wait_for_cancellation;
 
 const DEFAULT_TIMEOUT_SECS: u64 = 120;
 const MAX_TIMEOUT_SECS: u64 = 600;
@@ -105,9 +106,14 @@ fn tool_result_powershell(content: String, data: Value) -> ToolResult {
 
 #[async_trait]
 impl RuntimeTool for PowerShellTool {
-    fn id(&self) -> &str { "PowerShell" }
-    
-    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "PowerShell"
+    }
+
+    async fn definition(
+        &self,
+        _ctx: &crate::runtime::tools::ToolDescriptionContext,
+    ) -> ToolDefinition {
         TOOL_CATALOG
             .get("PowerShell")
             .unwrap_or_else(|| ToolDefinition::new("PowerShell", "Execute PowerShell command"))
@@ -209,7 +215,8 @@ impl RuntimeTool for PowerShellTool {
              {command}"
         );
 
-        let mut child = Command::new(&location.path)
+        let mut shell = Command::new(&location.path);
+        shell
             .arg("-NoProfile")
             .arg("-NonInteractive")
             .arg("-Command")
@@ -217,7 +224,9 @@ impl RuntimeTool for PowerShellTool {
             .current_dir(&root)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
-            .no_window()
+            .no_window();
+        inject_bundled_runtime_path(&ctx, &mut shell);
+        let mut child = shell
             .spawn()
             .map_err(|e| ToolError::ExecutionFailed(format!("Failed to spawn PowerShell: {e}")))?;
 
@@ -256,6 +265,14 @@ impl RuntimeTool for PowerShellTool {
             ExitKind::Completed(status) => {
                 let exit_code = status.code().unwrap_or(-1);
                 let semantics = interpret_command_result(&command, exit_code);
+                emit_shell_failure_diagnostic(
+                    &ctx,
+                    "powershell",
+                    &command,
+                    exit_code,
+                    &combined_output,
+                    semantics.is_error,
+                );
                 if semantics.is_error {
                     return Err(ToolError::ExecutionFailed(format_command_failure(
                         &command,

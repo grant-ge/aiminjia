@@ -33,11 +33,11 @@ fn list_skills_from_registry_populates_updated_at_from_dir_mtime() {
     let info = &infos[0];
     assert_eq!(info.id, "my-skill");
     // RFC 3339 长这样：2026-05-13T16:30:00.123456789+00:00 或 ...Z
-    let stamp = info.updated_at.as_deref().expect("updated_at should be present");
-    assert!(
-        stamp.contains('T'),
-        "expected RFC 3339, got: {stamp}",
-    );
+    let stamp = info
+        .updated_at
+        .as_deref()
+        .expect("updated_at should be present");
+    assert!(stamp.contains('T'), "expected RFC 3339, got: {stamp}",);
 }
 
 #[test]

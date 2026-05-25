@@ -204,9 +204,7 @@ pub fn collect_results(round_results: Vec<ToolRoundResult>) -> ToolRoundResults 
 mod tests {
     use super::*;
     use crate::runtime::chat::tool_round_driver::ToolRoundResult;
-    use crate::runtime::chat::tool_round_types::{
-        BlockedToolOutcome, RuntimeToolCallOutcome,
-    };
+    use crate::runtime::chat::tool_round_types::{BlockedToolOutcome, RuntimeToolCallOutcome};
 
     fn completed(id: &str, name: &str, content: &str, is_error: bool) -> ToolRoundResult {
         ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
@@ -299,7 +297,6 @@ mod tests {
         let msg = &out.tool_result_messages[0];
         assert_eq!(msg["isError"], true);
     }
-
 
     #[test]
     fn context_modifier_messages_are_collected() {

@@ -44,9 +44,14 @@ fn validate_task_id(s: &str) -> Result<&str, ToolError> {
 
 #[async_trait]
 impl RuntimeTool for TaskOutputRuntimeTool {
-    fn id(&self) -> &str { "TaskOutput" }
-    
-    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "TaskOutput"
+    }
+
+    async fn definition(
+        &self,
+        _ctx: &crate::runtime::tools::ToolDescriptionContext,
+    ) -> ToolDefinition {
         TOOL_CATALOG.get("TaskOutput").unwrap_or_else(|| {
             ToolDefinition::new("TaskOutput", "Read async sub-agent transcript")
                 .with_kind(ToolKind::Support)

@@ -18,7 +18,9 @@ pub fn spawn_agenda_runner(
         let mut interval = time::interval(Duration::from_secs(60));
         loop {
             interval.tick().await;
-            let Some(paths) = path_resolver.resolve_paths() else { continue; };
+            let Some(paths) = path_resolver.resolve_paths() else {
+                continue;
+            };
             let store = AgendaStore::new(paths.base_dir());
             if let Err(e) = run_due_once(&store, dispatcher.as_ref(), Utc::now()).await {
                 log::warn!("agenda runner tick failed: {e}");
@@ -65,20 +67,29 @@ mod tests {
             src: TriggerSource,
             _now: DateTime<Utc>,
         ) -> anyhow::Result<String> {
-            self.calls.lock().unwrap().push(item.id.as_str().to_string());
+            self.calls
+                .lock()
+                .unwrap()
+                .push(item.id.as_str().to_string());
             self.triggers.lock().unwrap().push(src);
             Ok("occ-test".into())
         }
     }
 
-    fn make_active_due_item(employee_id: &str, when: DateTime<Utc>) -> super::super::item::AgendaItem {
+    fn make_active_due_item(
+        employee_id: &str,
+        when: DateTime<Utc>,
+    ) -> super::super::item::AgendaItem {
         use super::super::item::*;
         AgendaItem {
             id: AgendaItemId::new(),
             title: "T".into(),
             prompt: "P".into(),
             organizer_employee_id: employee_id.into(),
-            participants: vec![Participant { employee_id: employee_id.into(), joined_at: when }],
+            participants: vec![Participant {
+                employee_id: employee_id.into(),
+                joined_at: when,
+            }],
             start_at: when,
             timezone: "UTC".into(),
             rule: None,

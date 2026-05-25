@@ -275,7 +275,11 @@ impl AuthClient {
                     .map(|m| {
                         let id = m["id"].as_str().unwrap_or("").to_string();
                         let display = m["display_name"].as_str().unwrap_or("").to_string();
-                        let name = if display.is_empty() { id.clone() } else { display };
+                        let name = if display.is_empty() {
+                            id.clone()
+                        } else {
+                            display
+                        };
                         CloudModelInfo {
                             id,
                             name,

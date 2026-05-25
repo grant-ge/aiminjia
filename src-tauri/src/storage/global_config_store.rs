@@ -163,7 +163,13 @@ mod tests {
 
         // Instance 2 reads (simulates app restart)
         let store2 = GlobalConfigStore::new(path);
-        assert_eq!(store2.get_setting("theme").unwrap(), Some("dark".to_string()));
-        assert_eq!(store2.get_setting("cloud_auth").unwrap(), Some("token123".to_string()));
+        assert_eq!(
+            store2.get_setting("theme").unwrap(),
+            Some("dark".to_string())
+        );
+        assert_eq!(
+            store2.get_setting("cloud_auth").unwrap(),
+            Some("token123".to_string())
+        );
     }
 }

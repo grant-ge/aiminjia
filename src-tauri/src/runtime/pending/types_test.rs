@@ -13,6 +13,7 @@ fn pending_item_roundtrip_camel_case() {
             mime: Some("image/png".into()),
             size_bytes: Some(1024),
         }],
+        skill_command: None,
         received_at: "2026-05-11T03:21:00Z".into(),
     };
     let json = serde_json::to_string(&item).unwrap();
@@ -45,4 +46,8 @@ fn pending_source_kebab_case() {
     assert_eq!(s, "\"im-dingtalk\"");
     let s2 = serde_json::to_string(&PendingSource::App).unwrap();
     assert_eq!(s2, "\"app\"");
+    let s3 = serde_json::to_string(&PendingSource::ImFeishu).unwrap();
+    assert_eq!(s3, "\"im-feishu\"");
+    let back: PendingSource = serde_json::from_str("\"im-feishu\"").unwrap();
+    assert_eq!(back, PendingSource::ImFeishu);
 }

@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { getSettings, updateSettings } from '@/lib/tauri'
 import { useSettingsStore } from '@/stores/settingsStore'
-import type { FontScale } from '@/types/settings'
+import type { ChatWidthMode, FontScale } from '@/types/settings'
 import type { AppLanguage } from '@/i18n'
 
 interface GeneralPanelProps {
@@ -14,10 +14,16 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
   const { t } = useTranslation()
   const fontScale = useSettingsStore((s) => s.fontScale ?? 'medium')
   const setFontScale = useSettingsStore((s) => s.setFontScale)
+  const chatWidthMode = useSettingsStore((s) => s.chatWidthMode ?? 'full')
+  const setChatWidthMode = useSettingsStore((s) => s.setChatWidthMode)
   const appLanguage = useSettingsStore((s) => s.appLanguage ?? 'zh-CN')
   const setAppLanguage = useSettingsStore((s) => s.setAppLanguage)
 
-  const persistToBackend = async (patch: { fontScale?: FontScale; appLanguage?: AppLanguage }) => {
+  const persistToBackend = async (patch: {
+    fontScale?: FontScale
+    appLanguage?: AppLanguage
+    chatWidthMode?: ChatWidthMode
+  }) => {
     try {
       const current = await getSettings()
       await updateSettings({ ...current, ...patch })
@@ -36,6 +42,11 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
     void persistToBackend({ appLanguage: value })
   }
 
+  const handleChatWidthModeChange = (value: ChatWidthMode) => {
+    setChatWidthMode(value)
+    void persistToBackend({ chatWidthMode: value })
+  }
+
   const FONT_SCALE_OPTIONS: Array<{ value: FontScale; description: string; labelKey: string }> = [
     { value: 'small', description: '14px', labelKey: 'settings.general.fontSmall' },
     { value: 'medium', description: '16px', labelKey: 'settings.general.fontMedium' },
@@ -45,6 +56,11 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
   const LANGUAGE_OPTIONS: Array<{ value: AppLanguage; label: string }> = [
     { value: 'zh-CN', label: t('settings.general.languageZh') },
     { value: 'en-US', label: t('settings.general.languageEn') },
+  ]
+
+  const CHAT_WIDTH_OPTIONS: Array<{ value: ChatWidthMode; labelKey: string }> = [
+    { value: 'centered', labelKey: 'settings.general.chatWidthCentered' },
+    { value: 'full', labelKey: 'settings.general.chatWidthFull' },
   ]
 
   return (
@@ -97,6 +113,40 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
                   aria-label={label}
                   title={option.description}
                   onClick={() => handleFontScaleChange(option.value)}
+                  className={
+                    selected
+                      ? 'rounded-md bg-card px-3 py-1.5 text-sm font-semibold text-foreground shadow-sm'
+                      : 'rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground'
+                  }
+                >
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-8">
+          <div className="flex min-w-0 flex-col gap-1">
+            <div className="text-base font-semibold text-foreground">{t('settings.general.chatWidth')}</div>
+            <div className="text-sm text-muted-foreground">{t('settings.general.chatWidthDesc')}</div>
+          </div>
+          <div
+            className="inline-flex rounded-lg bg-muted p-1"
+            role="radiogroup"
+            aria-label={t('settings.general.chatWidth')}
+          >
+            {CHAT_WIDTH_OPTIONS.map((option) => {
+              const selected = chatWidthMode === option.value
+              const label = t(option.labelKey)
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  aria-label={label}
+                  onClick={() => handleChatWidthModeChange(option.value)}
                   className={
                     selected
                       ? 'rounded-md bg-card px-3 py-1.5 text-sm font-semibold text-foreground shadow-sm'

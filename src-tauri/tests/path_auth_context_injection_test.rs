@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use app_lib::runtime::chat::chat_turn_driver::ChatTurnRequest;
-use app_lib::runtime::ids::{RunId, SessionId};
+use app_lib::runtime::ids::RunId;
 use app_lib::runtime::identity::IdentityMapping;
 use app_lib::runtime::path_auth::{RuleSource, ToolPermissionContext};
 use app_lib::runtime::query_engine::QueryEngine;
@@ -210,7 +210,7 @@ fn chat_turn_request_new_initializes_session_attachment_dirs_empty() {
 // ---------------------------------------------------------------------------
 #[test]
 fn storage_capability_permission_ctx_field_is_accessible() {
-    use app_lib::runtime::tools::capability::{CapabilityContext, StorageCapability};
+    use app_lib::runtime::tools::capability::CapabilityContext;
 
     let ctx = CapabilityContext::with_workspace(
         PathBuf::from("/tmp/test-workspace"),

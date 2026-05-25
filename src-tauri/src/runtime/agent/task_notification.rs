@@ -48,7 +48,10 @@ pub fn build_task_notification_xml(
     if let Some(t) = parent_tool_use_id {
         s.push_str(&format!("  <tool-use-id>{}</tool-use-id>\n", xml_escape(t)));
     }
-    s.push_str(&format!("  <output-file>{}</output-file>\n", xml_escape(output_file)));
+    s.push_str(&format!(
+        "  <output-file>{}</output-file>\n",
+        xml_escape(output_file)
+    ));
     s.push_str(&format!("  <status>{}</status>\n", xml_escape(status)));
     s.push_str(&format!("  <summary>{}</summary>\n", xml_escape(summary)));
     if let Some(r) = result {
@@ -133,7 +136,10 @@ impl TaskNotificationQueue {
 
     /// Peek count without draining (for diagnostics / tests).
     pub fn pending_count(&self) -> usize {
-        self.inner.lock().expect("notification queue poisoned").len()
+        self.inner
+            .lock()
+            .expect("notification queue poisoned")
+            .len()
     }
 
     /// TEST-ONLY: drain everything regardless of session.
@@ -254,7 +260,11 @@ mod tests {
 
         assert_eq!(drained.len(), 1);
         assert_eq!(drained[0].agent_id, "a1");
-        assert_eq!(q.pending_count(), 1, "B's notification should remain queued");
+        assert_eq!(
+            q.pending_count(),
+            1,
+            "B's notification should remain queued"
+        );
     }
 
     #[test]
@@ -269,7 +279,10 @@ mod tests {
 
         let final_drain = q.drain_for_session(&s);
         assert_eq!(final_drain.len(), 2);
-        assert_eq!(final_drain[0].agent_id, "a", "re-enqueued items should come first");
+        assert_eq!(
+            final_drain[0].agent_id, "a",
+            "re-enqueued items should come first"
+        );
         assert_eq!(final_drain[1].agent_id, "b");
     }
 }

@@ -1,3 +1,8 @@
+> **⚠️ 已被 [2026-05-20 conversation-source-and-workspace-cleanup spec](../specs/2026-05-20-conversation-source-and-workspace-cleanup-design.md) 取代**：
+> 本 plan 提到的 `aijia-home-workspace` / `aijia-home-recent-workspaces` 等 localStorage key 已迁到 `AppSettings.uiHomeSelectedWorkspace` / `uiHomeRecentWorkspaces` 文件持久化字段。下面的内容仅作历史归档。
+
+---
+
 # Homepage Workspace Selection Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

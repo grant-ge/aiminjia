@@ -67,12 +67,22 @@
     "schedules": "Schedules",
     "tasks": "Tasks",
     "archiveChat": "Archive chat",
+    "archiveChatTooltip": "Archive conversation",
+    "archiveChatConfirmTooltip": "Click again to confirm",
+    "pinChat": "Pin conversation",
+    "unpinChat": "Unpin conversation",
+    "pinnedSection": "Pinned",
+    "allPinnedHint": "All conversations are pinned",
     "renameChat": "Rename chat",
     "copyConversationId": "Copy conversation ID",
     "chatMoreActions": "More chat actions",
     "noHistory": "No tasks yet",
     "defaultFolder": "Default project",
     "project": "Projects",
+    "employee": "Employees",
+    "employeeTab": "Staff",
+    "expertTeam": "Expert Teams",
+    "expertTeamTab": "Experts",
     "channel": "Channels"
   },
   "inputBar": {
@@ -163,6 +173,9 @@
     "elapsed": " · {{sec}}s",
     "stalled": "Network is slow, still waiting…"
   },
+  "chatTopBar": {
+    "updatedAt": "updated {{time}}"
+  },
   "messageList": {
     "steps": {
       "1": "Data Cleaning & Understanding",
@@ -170,7 +183,10 @@
       "3": "Grade Framework",
       "4": "Equity Diagnosis & Root Cause Analysis",
       "5": "Action Plan & Executive Materials"
-    }
+    },
+    "cannotPreview": "Cannot preview this file",
+    "cannotOpen": "Cannot open file",
+    "cannotReveal": "Cannot reveal in folder"
   },
   "subagent": {
     "resultCard": {
@@ -377,7 +393,11 @@
       "fontSizeDesc": "Scale interface text and spacing",
       "fontSmall": "Small",
       "fontMedium": "Medium",
-      "fontLarge": "Large"
+      "fontLarge": "Large",
+      "chatWidth": "Chat width",
+      "chatWidthDesc": "Control whether chat content is centered or spans the available width",
+      "chatWidthCentered": "Centered",
+      "chatWidthFull": "Full width"
     },
     "archived": {
       "newChat": "New chat",
@@ -394,7 +414,15 @@
       "restoreFailed": "Restore failed",
       "permanentlyDeleted": "Permanently deleted",
       "deletedWithFiles": "\"{{title}}\" and its files were deleted",
-      "deleteFailed": "Delete failed"
+      "deleteFailed": "Delete failed",
+      "selectedCount": "{{count}} selected",
+      "selectAll": "Select all",
+      "clearSelection": "Clear selection",
+      "deleteSelected": "Delete selected",
+      "deleteSelectedTitle": "Permanently delete {{count}} chats?",
+      "deleteSelectedDescription": "These chats and their associated files will be permanently deleted and cannot be recovered.",
+      "batchDeleteSucceeded": "Deleted {{count}} chats",
+      "batchDeletePartial": "Succeeded {{success}}, failed {{failure}}"
     },
     "runtime": {
       "title": "Runtime",
@@ -818,8 +846,7 @@
     }
   },
   "ExpertTeams": {
-    "pageTitle": "Expert Teams",
-    "closeBanner": "Close expert team"
+    "pageTitle": "Expert Teams"
   },
   "nav": {
     "home": "New Task",
@@ -943,6 +970,13 @@
     "previewUnavailable": "Preview not available",
     "openExternal": "Open with default app",
     "reveal": "Show in folder"
+  },
+  "filePreview": {
+    "openWithDefault": "Open with default app",
+    "selectArtifact": "Select a file to preview",
+    "loadingPreview": "Loading preview...",
+    "cannotPreview": "Cannot preview this file",
+    "retry": "Retry"
   },
   "inbox": {
     "title": "Report Center",

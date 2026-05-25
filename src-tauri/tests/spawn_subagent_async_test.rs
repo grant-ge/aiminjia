@@ -67,9 +67,7 @@ impl SpawnSubagentLauncher for RecordingLauncher {
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
-fn build_tool_with_launcher(
-    launcher: Arc<dyn SpawnSubagentLauncher>,
-) -> SpawnSubagentRuntimeTool {
+fn build_tool_with_launcher(launcher: Arc<dyn SpawnSubagentLauncher>) -> SpawnSubagentRuntimeTool {
     let registry = Arc::new(AgentRegistry::with_builtins());
     SpawnSubagentRuntimeTool::new(launcher, registry)
 }

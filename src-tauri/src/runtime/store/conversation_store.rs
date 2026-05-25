@@ -11,6 +11,27 @@ use crate::runtime::chat::compaction::CompactBoundaryRecord;
 pub trait ConversationStore: Send + Sync {
     /// Create a new conversation with the given id and initial title.
     fn create_conversation(&self, id: &str, title: &str) -> Result<()>;
+    /// Same as `create_conversation` but stamps the conversation with an
+    /// `im_source` (lowercase platform name) so the sidebar / project list
+    /// can filter out channel-origin conversations. Default impl delegates
+    /// back to `create_conversation`, ignoring `im_source` — the file-store
+    /// impl overrides this to actually persist it.
+    fn create_conversation_with_im_source(
+        &self,
+        id: &str,
+        title: &str,
+        _im_source: &str,
+    ) -> Result<()> {
+        self.create_conversation(id, title)
+    }
+    /// Backfill `im_source` on an existing conversation (one-shot migration
+    /// from `channels/<platform>/sessions.json`). Idempotent — implementations
+    /// must skip when `im_source` is already set. Default impl is a no-op
+    /// (used by `InMemoryConversationStore` in tests; the file-store impl
+    /// overrides).
+    fn backfill_conversation_im_source(&self, _id: &str, _im_source: &str) -> Result<()> {
+        Ok(())
+    }
     /// List the ids of all known conversations.
     fn list_conversation_ids(&self) -> Result<Vec<String>>;
     /// Return all conversations as JSON values (same shape as AppStorage::get_conversations).
@@ -35,6 +56,9 @@ pub trait ConversationStore: Send + Sync {
     fn restore_conversation(&self, id: &str) -> Result<()>;
     /// Return all archived conversations as JSON values.
     fn get_archived_conversations(&self) -> Result<Vec<serde_json::Value>>;
+    /// Toggle a conversation's pinned status. Pinned conversations float to
+    /// the top of the sidebar list.
+    fn set_conversation_pinned(&self, id: &str, pinned: bool) -> Result<()>;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -48,6 +72,7 @@ pub struct InMemoryConversationStore {
     active_tasks: Mutex<std::collections::HashSet<String>>,
     compact_boundaries: Mutex<HashMap<String, Vec<CompactBoundaryRecord>>>,
     archived: Mutex<std::collections::HashSet<String>>,
+    pinned: Mutex<std::collections::HashSet<String>>,
 }
 
 impl InMemoryConversationStore {
@@ -90,6 +115,7 @@ impl ConversationStore for InMemoryConversationStore {
         self.active_tasks.lock().unwrap().remove(id);
         self.compact_boundaries.lock().unwrap().remove(id);
         self.archived.lock().unwrap().remove(id);
+        self.pinned.lock().unwrap().remove(id);
         Ok(())
     }
 
@@ -167,6 +193,16 @@ impl ConversationStore for InMemoryConversationStore {
                 )
             })
             .collect())
+    }
+
+    fn set_conversation_pinned(&self, id: &str, pinned: bool) -> Result<()> {
+        let mut p = self.pinned.lock().unwrap();
+        if pinned {
+            p.insert(id.to_string());
+        } else {
+            p.remove(id);
+        }
+        Ok(())
     }
 }
 

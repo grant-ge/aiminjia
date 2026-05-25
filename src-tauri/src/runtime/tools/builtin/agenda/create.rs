@@ -19,9 +19,14 @@ pub struct CreateAgendaItemRuntimeTool {
 
 #[async_trait]
 impl RuntimeTool for CreateAgendaItemRuntimeTool {
-    fn id(&self) -> &str { "create_agenda_item" }
-    
-    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "create_agenda_item"
+    }
+
+    async fn definition(
+        &self,
+        _ctx: &crate::runtime::tools::ToolDescriptionContext,
+    ) -> ToolDefinition {
         ToolDefinition::new(
             "create_agenda_item",
             "【自用】为你（当前数字员工）自己创建一条到点自动触发的日程：一次性或循环（每天/每周/每月/每年），到点会以你（同一个 persona）的身份自动执行内置 prompt。",
@@ -35,11 +40,12 @@ impl RuntimeTool for CreateAgendaItemRuntimeTool {
     ) -> Result<ToolResult, ToolError> {
         let title = required_str(&input, "title")?.to_string();
         let prompt = required_str(&input, "prompt")?.to_string();
-        let start_at: DateTime<Utc> = required_str(&input, "start_at")?
-            .parse()
-            .map_err(|e: chrono::ParseError| {
-                ToolError::ExecutionFailed(format!("start_at parse: {e}"))
-            })?;
+        let start_at: DateTime<Utc> =
+            required_str(&input, "start_at")?
+                .parse()
+                .map_err(|e: chrono::ParseError| {
+                    ToolError::ExecutionFailed(format!("start_at parse: {e}"))
+                })?;
         let timezone = input
             .get("timezone")
             .and_then(Value::as_str)

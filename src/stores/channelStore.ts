@@ -145,15 +145,18 @@ export async function initChannelListeners() {
   if (listenersInitialized) return
   listenersInitialized = true
 
-  await useChannelStore.getState().loadPlatforms()
-  await useChannelStore.getState().loadConversations()
-
   await onChannelPlatformState(({ state }) => {
     useChannelStore.getState().setPlatformState(state)
     // refresh_active_robot_flags 改了 is_active_robot 但没单独的 conversations 事件，
     // 所以这里要主动拉一次新快照（remove / reconnect / 切换机器人都走这条）。
     void useChannelStore.getState().loadConversations()
   })
+
+  // 注册 listener 之后再 loadPlatforms — 否则如果 app 启动期间后端已经
+  // emit 过 Connected（钉钉/飞书 ws handshake 比前端 mount 还快），那条
+  // 事件会丢，UI 永远停在 Connecting。先注册再 load 保证不漏。
+  await useChannelStore.getState().loadPlatforms()
+  await useChannelStore.getState().loadConversations()
   await onChannelMessage(({ sessionId }) => {
     const { conversations } = useChannelStore.getState()
     const isKnownSession = conversations.some((c) => c.sessionId === sessionId)

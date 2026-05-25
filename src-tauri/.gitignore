@@ -8,6 +8,11 @@
 /python-runtime/*
 !/python-runtime/.gitkeep
 
+# Bundled Playwright runtime (downloaded at runtime; chrome / node binaries
+# are 200MB+ each and got accidentally committed in 00d781c3 — keep them
+# out of git history forever).
+/playwright-runtime/
+
 # Copied at build time from lotus/code/home/changelog.json
 /changelog.json
 

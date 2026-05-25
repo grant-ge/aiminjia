@@ -3,11 +3,15 @@
 //! 在输出截断、cancellation、stderr 合并、grep/find 等命令的语义豁免上行为一致。
 
 use tokio::io::AsyncReadExt;
-use tokio::process::Child;
+use tokio::process::{Child, Command};
 use tokio::task::JoinHandle;
 
-use crate::runtime::cancellation::{CancellationReason, CancellationToken};
+use crate::runtime::cancellation::CancellationReason;
+use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::executor::ToolError;
+use crate::telemetry::{
+    diagnostics_workspace, record_diagnostic, DiagnosticEvent, DiagnosticLevel, DiagnosticSource,
+};
 
 pub const MAX_OUTPUT_BYTES: usize = 512 * 1024;
 
@@ -175,6 +179,186 @@ pub async fn collect_reader(
         crate::storage::console_decode::decode_console_bytes(&bytes),
         truncated,
     ))
+}
+
+/// Inject the bundled runtime bin dir into a child shell's PATH so that
+/// shebang scripts like `npm`/`npx`/`uvx` (`#!/usr/bin/env node` /
+/// `python3`) can locate the interpreter we ship. Without this every
+/// `npm install -g …` emitted by the LLM dies with
+/// `env: node: No such file or directory` (observed on real customer
+/// machines, see screenshots in the 2026-05-21 review).
+///
+/// No-op for legacy/test paths whose `ToolExecutionContext` does not carry
+/// a runtime resolver.
+pub fn inject_bundled_runtime_path(ctx: &ToolExecutionContext, command: &mut Command) {
+    let Some(cap) = ctx.capability.as_ref() else {
+        return;
+    };
+    let Some(resolver) = cap.runtime_resolver.as_ref() else {
+        return;
+    };
+    let Ok(deps) = resolver.workspace_dependencies() else {
+        return;
+    };
+    crate::runtime::dependencies::prepend_bundle_bin_to_path_tokio(command, &deps.node);
+}
+
+/// Classify a shell exit code + stderr into a category we can route on the
+/// server side. Mirrors the logic the lotus diagnostics handler uses to
+/// elevate signals to Error level for DingTalk alerting.
+fn classify_shell_failure(command: &str, exit_code: i32, output: &str) -> Option<&'static str> {
+    let is_install_cmd = command.contains("npm install")
+        || command.contains("npm i ")
+        || command.contains("pnpm install")
+        || command.contains("pnpm add")
+        || command.contains("yarn add")
+        || command.contains("uv pip install")
+        || command.contains("pip install")
+        || command.contains("uvx ");
+    let has_install_failure_marker = output.contains("npm error")
+        || output.contains("npm ERR!")
+        || output.contains("postinstall")
+        || output.contains("ERROR: Could not install");
+
+    if is_install_cmd && (has_install_failure_marker || exit_code != 0) {
+        return Some("runtime_install_failure");
+    }
+    match exit_code {
+        127 => Some("command_not_found"),
+        126 => Some("permission_denied"),
+        124 => Some("command_timeout"),
+        0 => None,
+        _ => Some("command_failure"),
+    }
+}
+
+fn stderr_signature(output: &str) -> Option<String> {
+    output
+        .lines()
+        .rev()
+        .find(|line| {
+            let l = line.to_ascii_lowercase();
+            l.contains("not found")
+                || l.contains("no such file")
+                || l.contains("permission denied")
+                || l.contains("error:")
+                || l.contains("err!")
+        })
+        .map(|line| {
+            let trimmed = line.trim();
+            if trimmed.chars().count() > 240 {
+                let truncated: String = trimmed.chars().take(240).collect();
+                format!("{truncated}…")
+            } else {
+                trimmed.to_string()
+            }
+        })
+}
+
+fn tail_chars(output: &str, max_chars: usize) -> String {
+    let total = output.chars().count();
+    if total <= max_chars {
+        return output.to_string();
+    }
+    let skip = total - max_chars;
+    output.chars().skip(skip).collect()
+}
+
+/// Record a diagnostic for a shell command that ended with a non-zero exit
+/// code or otherwise looked like a runtime install failure. The server
+/// classifies on `payload.category` and elevates known severe categories
+/// (`runtime_install_failure`, `command_not_found`) into DingTalk alerts.
+pub fn emit_shell_failure_diagnostic(
+    ctx: &ToolExecutionContext,
+    tool: &str,
+    command: &str,
+    exit_code: i32,
+    output: &str,
+    is_semantic_error: bool,
+) {
+    let Some(category) = classify_shell_failure(command, exit_code, output) else {
+        return;
+    };
+    if !is_semantic_error && exit_code == 0 {
+        return;
+    }
+    let level = match category {
+        "runtime_install_failure" | "command_not_found" => DiagnosticLevel::Error,
+        _ => DiagnosticLevel::Warn,
+    };
+    let ws = diagnostics_workspace();
+    let signature = stderr_signature(output);
+    let tail = tail_chars(output, 800);
+
+    record_diagnostic(
+        &ws,
+        DiagnosticEvent::new(format!("tool.{tool}.failure"), DiagnosticSource::Backend)
+            .level(level)
+            .conversation_id(ctx.session_id.as_str())
+            .run_id(ctx.run_id.as_str())
+            .tool_call_id(ctx.tool_call_id.as_str())
+            .error(
+                signature
+                    .clone()
+                    .unwrap_or_else(|| format!("exit_code={exit_code}")),
+            )
+            .payload(serde_json::json!({
+                "category": category,
+                "tool": tool,
+                "exit_code": exit_code,
+                "command": command.chars().take(400).collect::<String>(),
+                "stderr_signature": signature,
+                "output_tail": tail,
+            })),
+    );
+}
+
+#[cfg(test)]
+mod classifier_tests {
+    use super::{classify_shell_failure, stderr_signature, tail_chars};
+
+    #[test]
+    fn npm_install_postinstall_failure_classified() {
+        let output = "npm error code 127\nnpm error sh: node: command not found";
+        assert_eq!(
+            classify_shell_failure("npm install -g dws", 1, output),
+            Some("runtime_install_failure")
+        );
+    }
+
+    #[test]
+    fn bare_command_not_found_uses_command_not_found() {
+        assert_eq!(
+            classify_shell_failure("dws --version", 127, "/bin/sh: dws: command not found"),
+            Some("command_not_found")
+        );
+    }
+
+    #[test]
+    fn exit_zero_returns_none() {
+        assert_eq!(classify_shell_failure("ls", 0, ""), None);
+    }
+
+    #[test]
+    fn signature_picks_last_error_line() {
+        let out = "v22.15.0\nnpm error sh: node: command not found\nbye";
+        assert_eq!(
+            stderr_signature(out).as_deref(),
+            Some("npm error sh: node: command not found")
+        );
+    }
+
+    #[test]
+    fn tail_chars_handles_short_output() {
+        assert_eq!(tail_chars("hello", 100), "hello");
+    }
+
+    #[test]
+    fn tail_chars_truncates_long_output() {
+        let s: String = std::iter::repeat('a').take(2000).collect();
+        let tail = tail_chars(&s, 500);
+        assert_eq!(tail.chars().count(), 500);
+    }
 }
 
 pub async fn kill_child_process_tree(child: &mut Child) {

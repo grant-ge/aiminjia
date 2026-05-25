@@ -179,8 +179,14 @@ echo "--- Refresh public download page ---"
 # Regenerate downloads.html after upload so the new build shows up immediately.
 # CI already runs this once after Windows build, but local mac uploads happen
 # AFTER that, so without this step the page lags by a full release.
+# Hard-fail: if the page can't be refreshed, users won't see the new build —
+# previously we'd silently move on and only notice the next day.
 if ! python3 "$SCRIPT_DIR/ci-generate-download-page.py"; then
-    echo "  warn: download page refresh failed (upload itself already succeeded)"
+    echo "ERROR: download page refresh failed."
+    echo "  OSS upload itself succeeded — artifacts are at the URLs above."
+    echo "  Re-run by hand once you understand the failure:"
+    echo "    source .env.local.aijia && python3 scripts/ci-generate-download-page.py"
+    exit 1
 fi
 
 echo ""

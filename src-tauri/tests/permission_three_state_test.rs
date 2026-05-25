@@ -10,10 +10,10 @@
 use std::sync::Arc;
 
 use app_lib::runtime::store::permission_store::PermissionStore;
+use app_lib::runtime::tools::description_context::ToolDescriptionContext;
 use app_lib::runtime::tools::permission::{
     default_permission_ask, PermissionReason, StorePolicyPipeline,
 };
-use app_lib::runtime::tools::description_context::ToolDescriptionContext;
 use app_lib::runtime::tools::{
     PermissionDecision, PermissionPipeline, RuntimeTool, ToolDefinition, ToolDispatchOutcome,
     ToolDispatcher, ToolError, ToolExecutionContext, ToolResult,
@@ -60,11 +60,8 @@ struct EchoTool;
 #[async_trait]
 impl RuntimeTool for EchoTool {
     fn id(&self) -> &str {
-
         "echo_tool"
-
     }
-
 
     async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
         // 使用 unknown scope 以触发 Ask
@@ -247,11 +244,8 @@ async fn registry_execute_unknown_scope_not_silently_allowed() {
     #[async_trait]
     impl RuntimeTool for RuntimeUnknownScopeTool {
         fn id(&self) -> &str {
-
             "legacy_unknown_scope_tool"
-
         }
-
 
         async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
             ToolDefinition::new(
@@ -319,7 +313,7 @@ async fn registry_execute_unknown_scope_not_silently_allowed() {
         read_file_state: None,
         cancellation: None,
         permission_mode: app_lib::runtime::tools::permission::PermissionMode::Default,
-            runtime_resolver: None,
+        runtime_resolver: None,
         permission_ctx: None,
         current_persona_id: None,
     };

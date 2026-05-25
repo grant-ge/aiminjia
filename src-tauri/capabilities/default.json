@@ -15,23 +15,38 @@
     "fs:default",
     {
       "identifier": "fs:allow-write-text-file",
-      "allow": [{ "path": "$APPCACHE/updater/*" }]
+      "allow": [
+        { "path": "$APPCACHE/updater" },
+        { "path": "$APPCACHE/updater/*" }
+      ]
     },
     {
       "identifier": "fs:allow-read-text-file",
-      "allow": [{ "path": "$APPCACHE/updater/*" }]
+      "allow": [
+        { "path": "$APPCACHE/updater" },
+        { "path": "$APPCACHE/updater/*" }
+      ]
     },
     {
       "identifier": "fs:allow-mkdir",
-      "allow": [{ "path": "$APPCACHE/updater/*" }]
+      "allow": [
+        { "path": "$APPCACHE/updater" },
+        { "path": "$APPCACHE/updater/*" }
+      ]
     },
     {
       "identifier": "fs:allow-remove",
-      "allow": [{ "path": "$APPCACHE/updater/*" }]
+      "allow": [
+        { "path": "$APPCACHE/updater" },
+        { "path": "$APPCACHE/updater/*" }
+      ]
     },
     {
       "identifier": "fs:allow-exists",
-      "allow": [{ "path": "$APPCACHE/updater/*" }]
+      "allow": [
+        { "path": "$APPCACHE/updater" },
+        { "path": "$APPCACHE/updater/*" }
+      ]
     },
     "shell:allow-open",
     "updater:default",

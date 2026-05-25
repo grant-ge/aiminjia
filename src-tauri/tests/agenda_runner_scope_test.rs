@@ -78,10 +78,14 @@ async fn switching_scope_dirs_picks_up_new_items() {
     store_b.create(make("bob", due_at)).unwrap();
 
     // tick 1: runner sees scope A, dispatches alice's item only
-    run_due_once(&store_a, dispatcher.as_ref(), now).await.unwrap();
+    run_due_once(&store_a, dispatcher.as_ref(), now)
+        .await
+        .unwrap();
     assert_eq!(*dispatcher.count.lock().unwrap(), 1);
 
     // tick 2: runner re-resolves to scope B, dispatches bob's item only
-    run_due_once(&store_b, dispatcher.as_ref(), now).await.unwrap();
+    run_due_once(&store_b, dispatcher.as_ref(), now)
+        .await
+        .unwrap();
     assert_eq!(*dispatcher.count.lock().unwrap(), 2);
 }

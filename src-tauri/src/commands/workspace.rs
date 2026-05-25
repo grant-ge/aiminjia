@@ -349,7 +349,7 @@ pub async fn authorize_local_directory(
     };
     facade
         .authorized_workspace_store()
-        .replace_for_session(&ws)
+        .replace_for_session(ws.session_id.as_str(), &ws)
         .map_err(|e| e.to_string())?;
     log::info!(
         "[workspace-auth] authorize_local_directory succeeded: session_id={} root={}",
@@ -372,7 +372,7 @@ pub async fn get_authorized_workspace(
     let sid = crate::runtime::ids::SessionId::new(session_id);
     let current = facade
         .authorized_workspace_store()
-        .get_current_for_session(&sid)
+        .get_current_for_session(sid.as_str(), &sid)
         .map_err(|e| e.to_string())?;
     log::info!(
         "[workspace-auth] get_authorized_workspace: session_id={} present={}",
@@ -402,7 +402,7 @@ pub async fn revoke_authorized_workspace(
     );
     facade
         .authorized_workspace_store()
-        .clear_for_session(&sid)
+        .clear_for_session(sid.as_str(), &sid)
         .map_err(|e| e.to_string())?;
     log::info!(
         "[workspace-auth] revoke_authorized_workspace succeeded: session_id={}",

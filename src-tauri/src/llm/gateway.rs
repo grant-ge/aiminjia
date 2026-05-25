@@ -225,6 +225,8 @@ impl LlmGateway {
         settings: &AppSettings,
         system_segments: Option<Vec<crate::llm::streaming::SystemPromptSegment>>,
         conversation_id: Option<&str>,
+        trace_id: Option<&str>,
+        run_id: Option<&str>,
     ) -> LlmRequest {
         // Prepend system prompt if provided (stable prefix for KV cache)
         if let Some(prompt) = system_prompt {
@@ -257,6 +259,12 @@ impl LlmGateway {
             anthropic_multimodal_turn: None,
             system_segments,
             conversation_id: conversation_id
+                .filter(|id| !id.is_empty())
+                .map(|id| id.to_string()),
+            trace_id: trace_id
+                .filter(|id| !id.is_empty())
+                .map(|id| id.to_string()),
+            run_id: run_id
                 .filter(|id| !id.is_empty())
                 .map(|id| id.to_string()),
         }
@@ -312,6 +320,8 @@ impl LlmGateway {
             conversation_id,
             None,
             anthropic_multimodal_turn,
+            None,
+            None,
         )
         .await
     }
@@ -332,6 +342,8 @@ impl LlmGateway {
         conversation_id: Option<&str>,
         anthropic_multimodal_turn: Option<AnthropicMultimodalTurn>,
         system_segments: Vec<crate::llm::streaming::SystemPromptSegment>,
+        trace_id: Option<&str>,
+        run_id: Option<&str>,
     ) -> Result<(
         String,
         StreamBox,
@@ -354,6 +366,8 @@ impl LlmGateway {
             conversation_id,
             segments,
             anthropic_multimodal_turn,
+            trace_id,
+            run_id,
         )
         .await
     }
@@ -370,6 +384,8 @@ impl LlmGateway {
         conversation_id: Option<&str>,
         system_segments: Option<Vec<crate::llm::streaming::SystemPromptSegment>>,
         anthropic_multimodal_turn: Option<AnthropicMultimodalTurn>,
+        trace_id: Option<&str>,
+        run_id: Option<&str>,
     ) -> Result<(
         String,
         StreamBox,
@@ -411,7 +427,10 @@ impl LlmGateway {
         let mut mask_ctx = MaskingContext::new(masking_level.clone());
         let mut masked_messages = mask_ctx.mask_messages(&messages);
         if route.provider == "lotus" {
-            attach_anthropic_multimodal_turn(&mut masked_messages, anthropic_multimodal_turn.clone());
+            attach_anthropic_multimodal_turn(
+                &mut masked_messages,
+                anthropic_multimodal_turn.clone(),
+            );
         }
 
         // 3. Build request
@@ -426,6 +445,8 @@ impl LlmGateway {
             settings,
             system_segments.clone(),
             Some(conv_id.as_str()),
+            trace_id,
+            run_id,
         );
 
         // Log request summary for debugging LLM quality
@@ -499,6 +520,8 @@ impl LlmGateway {
                                 settings,
                                 system_segments,
                                 Some(conv_id.as_str()),
+                                trace_id,
+                                run_id,
                             );
                             log::info!(
                                 "[stream_message] retrying with refreshed session_key (len={})",
@@ -592,6 +615,8 @@ impl LlmGateway {
             settings,
             None,
             None, // send_message is non-streaming, conversation-less by signature
+            None,
+            None,
         );
 
         // 4. Dispatch to provider with retry on transient errors
@@ -633,7 +658,11 @@ impl LlmGateway {
     }
 
     pub fn clear_task_for_run(&self, conversation_id: &str, run_id: &RunId) {
-        if self.run_registry.clear_for_run(conversation_id, run_id).is_some() {
+        if self
+            .run_registry
+            .clear_for_run(conversation_id, run_id)
+            .is_some()
+        {
             log::info!(
                 "Cleared active task: conversation_id={}, run_id={}",
                 conversation_id,
@@ -964,6 +993,8 @@ mod tests {
             None,
             4096,
             &settings,
+            None,
+            None,
             None,
             None,
         );

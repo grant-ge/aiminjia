@@ -2,14 +2,49 @@ import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 interface ToolTraceIOProps {
+  toolName?: string
   inputJson?: string
   output?: ReactNode
   isError?: boolean
 }
 
-export function ToolTraceIO({ inputJson, output, isError = false }: ToolTraceIOProps) {
+/**
+ * 对单字符串参数的工具（Bash / PowerShell / SkillRun 等），把外层 JSON 包装拆掉，
+ * 直接显示命令本身。否则 JSON.stringify 会把 \n 编码成字面字符，多行命令挤在
+ * 一行难以阅读。返回 null 表示不适用，调用方 fallback 到原始 inputJson。
+ */
+function tryUnwrapAsCommand(toolName: string | undefined, inputJson: string): string | null {
+  if (!toolName) return null
+  // 只对已知"参数主要是一个长字符串"的工具走解包，避免误伤多字段输入。
+  const SINGLE_STRING_ARG_TOOLS: Record<string, string> = {
+    Bash: 'command',
+    PowerShell: 'command',
+    Shell: 'command',
+  }
+  const argKey = SINGLE_STRING_ARG_TOOLS[toolName]
+  if (!argKey) return null
+  try {
+    const parsed = JSON.parse(inputJson) as Record<string, unknown>
+    const main = parsed[argKey]
+    if (typeof main !== 'string') return null
+    // 如果除主字段外还有其他非 trivial 字段，保留原始 JSON 以免丢信息
+    const otherKeys = Object.keys(parsed).filter((k) => k !== argKey && parsed[k] != null && parsed[k] !== '')
+    if (otherKeys.length === 0) return main
+    // 有额外字段：把命令放上面，其他参数附在下面注释里
+    const meta = otherKeys
+      .map((k) => `# ${k}: ${typeof parsed[k] === 'string' ? parsed[k] : JSON.stringify(parsed[k])}`)
+      .join('\n')
+    return `${meta}\n${main}`
+  } catch {
+    return null
+  }
+}
+
+export function ToolTraceIO({ toolName, inputJson, output, isError = false }: ToolTraceIOProps) {
   const { t } = useTranslation()
   if (!inputJson && !output) return null
+
+  const unwrappedCommand = inputJson ? tryUnwrapAsCommand(toolName, inputJson) : null
 
   return (
     <div
@@ -28,7 +63,7 @@ export function ToolTraceIO({ inputJson, output, isError = false }: ToolTraceIOP
               color: 'var(--color-text-code)',
             }}
           >
-            {inputJson}
+            {unwrappedCommand ?? inputJson}
           </pre>
         </div>
       ) : null}

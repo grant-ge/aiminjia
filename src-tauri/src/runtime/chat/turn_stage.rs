@@ -38,8 +38,7 @@ pub const TURN_STAGE_PERSIST_SCHEMA: u32 = 1;
 
 /// On-disk snapshot of an active turn's stage.  Written through every
 /// transition + heartbeat tick; deleted by `mark_turn_complete()` at the
-/// terminal exit of `run_chat_turn_s4`.  Any file left at process startup
-/// is treated as a crash sentinel by the recovery sweep.
+/// terminal exit of `run_chat_turn_s4`.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PersistedTurnStage {
@@ -85,123 +84,6 @@ pub async fn emit_oneshot(
     {
         log::warn!("[turn-stage] emit_oneshot failed: {e}");
     }
-}
-
-/// On-disk shape produced by the recovery sweep.  Mirrors
-/// `transport::tauri_commands::turn_stage::InterruptedTurnRecord` (kept in
-/// the transport layer so the runtime stays IPC-free).  Defined here as the
-/// JSON-serializable payload the sweep writes.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct InterruptedTurnDisk {
-    pub conversation_id: String,
-    pub run_id: String,
-    pub last_stage: TurnStage,
-    pub interrupted_at_ms: u64,
-}
-
-/// Sweep result for diagnostics / tests.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct RecoverySweepResult {
-    pub orphans_found: usize,
-    pub interrupted_written: usize,
-    pub deleted: usize,
-    pub errors: usize,
-}
-
-/// Spec §5.5: at process startup, every file under `turn_stages_dir` means
-/// the previous process died mid-turn.  Convert each into an
-/// `interrupted_turn.json` record and delete the orphan stage file.
-///
-/// Safe to call when the directory doesn't exist (returns zeroed result).
-/// Errors on individual files are logged + counted; the sweep never returns
-/// Err — startup must not fail because of stale telemetry files.
-pub fn run_recovery_sweep(
-    turn_stages_dir: &std::path::Path,
-    interrupted_turns_dir: &std::path::Path,
-) -> RecoverySweepResult {
-    let mut result = RecoverySweepResult::default();
-    let read_dir = match std::fs::read_dir(turn_stages_dir) {
-        Ok(rd) => rd,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return result,
-        Err(e) => {
-            log::warn!(
-                "[turn-stage] recovery sweep: read_dir {:?} failed: {e}",
-                turn_stages_dir
-            );
-            result.errors += 1;
-            return result;
-        }
-    };
-    if let Err(e) = std::fs::create_dir_all(interrupted_turns_dir) {
-        log::warn!(
-            "[turn-stage] recovery sweep: mkdir {:?} failed: {e}",
-            interrupted_turns_dir
-        );
-        result.errors += 1;
-        return result;
-    }
-    let now_ms = now_unix_ms();
-    for entry in read_dir.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|s| s.to_str()) != Some("json") {
-            continue;
-        }
-        result.orphans_found += 1;
-        let bytes = match std::fs::read(&path) {
-            Ok(b) => b,
-            Err(e) => {
-                log::warn!("[turn-stage] recovery sweep: read {:?} failed: {e}", path);
-                result.errors += 1;
-                continue;
-            }
-        };
-        let snapshot: PersistedTurnStage = match serde_json::from_slice(&bytes) {
-            Ok(s) => s,
-            Err(e) => {
-                log::warn!(
-                    "[turn-stage] recovery sweep: parse {:?} failed: {e}",
-                    path
-                );
-                // Still delete the unparseable file so it doesn't sit forever.
-                let _ = std::fs::remove_file(&path);
-                result.errors += 1;
-                continue;
-            }
-        };
-        let record = InterruptedTurnDisk {
-            conversation_id: snapshot.conversation_id.clone(),
-            run_id: snapshot.run_id,
-            last_stage: snapshot.stage,
-            interrupted_at_ms: now_ms,
-        };
-        let dest = interrupted_turns_dir.join(format!("{}.json", snapshot.conversation_id));
-        match serde_json::to_vec_pretty(&record) {
-            Ok(record_bytes) => match fs_atomic::write_atomic(&dest, &record_bytes) {
-                Ok(_) => result.interrupted_written += 1,
-                Err(e) => {
-                    log::warn!(
-                        "[turn-stage] recovery sweep: write {:?} failed: {e}",
-                        dest
-                    );
-                    result.errors += 1;
-                    continue;
-                }
-            },
-            Err(e) => {
-                log::warn!("[turn-stage] recovery sweep: serialize failed: {e}");
-                result.errors += 1;
-                continue;
-            }
-        }
-        if let Err(e) = std::fs::remove_file(&path) {
-            log::warn!("[turn-stage] recovery sweep: remove {:?} failed: {e}", path);
-            result.errors += 1;
-            continue;
-        }
-        result.deleted += 1;
-    }
-    result
 }
 
 /// Wall-clock milliseconds since the unix epoch.  We use this instead of
@@ -727,71 +609,6 @@ mod tests {
             let _guard = emitter.cleanup_guard();
         } // guard drops → file removed
         assert!(!path.exists(), "CleanupGuard drop should remove file");
-    }
-
-    #[test]
-    fn recovery_sweep_converts_orphan_to_interrupted_record() {
-        let dir = tempfile::tempdir().unwrap();
-        let stages_dir = dir.path().join("turn_stages");
-        let interrupted_dir = dir.path().join("interrupted_turns");
-        std::fs::create_dir_all(&stages_dir).unwrap();
-
-        let orphan = PersistedTurnStage {
-            schema_version: TURN_STAGE_PERSIST_SCHEMA,
-            conversation_id: "conv-crash".into(),
-            run_id: "run-crash".into(),
-            stage: TurnStage::WaitingPermission {
-                tool_name: "Write".into(),
-                tool_call_id: "tc-9".into(),
-            },
-            stage_started_at_ms: 1_700_000_000_000,
-            turn_started_at_ms: 1_700_000_000_000,
-            last_heartbeat_at_ms: 1_700_000_002_000,
-        };
-        let orphan_path = stages_dir.join("conv-crash.json");
-        std::fs::write(&orphan_path, serde_json::to_vec_pretty(&orphan).unwrap()).unwrap();
-
-        let result = run_recovery_sweep(&stages_dir, &interrupted_dir);
-        assert_eq!(result.orphans_found, 1);
-        assert_eq!(result.interrupted_written, 1);
-        assert_eq!(result.deleted, 1);
-        assert_eq!(result.errors, 0);
-
-        assert!(!orphan_path.exists(), "orphan stage file should be removed");
-        let interrupted_path = interrupted_dir.join("conv-crash.json");
-        let raw = std::fs::read(&interrupted_path).expect("interrupted record should exist");
-        let record: InterruptedTurnDisk = serde_json::from_slice(&raw).expect("parse");
-        assert_eq!(record.conversation_id, "conv-crash");
-        assert_eq!(record.run_id, "run-crash");
-        match record.last_stage {
-            TurnStage::WaitingPermission { tool_name, .. } => assert_eq!(tool_name, "Write"),
-            other => panic!("expected WaitingPermission, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn recovery_sweep_is_noop_when_dir_missing() {
-        let dir = tempfile::tempdir().unwrap();
-        let stages_dir = dir.path().join("never-created");
-        let interrupted_dir = dir.path().join("interrupted_turns");
-        let result = run_recovery_sweep(&stages_dir, &interrupted_dir);
-        assert_eq!(result, RecoverySweepResult::default());
-    }
-
-    #[test]
-    fn recovery_sweep_removes_unparseable_orphan_and_counts_error() {
-        let dir = tempfile::tempdir().unwrap();
-        let stages_dir = dir.path().join("turn_stages");
-        let interrupted_dir = dir.path().join("interrupted_turns");
-        std::fs::create_dir_all(&stages_dir).unwrap();
-        let garbage_path = stages_dir.join("garbage.json");
-        std::fs::write(&garbage_path, b"not json {{").unwrap();
-
-        let result = run_recovery_sweep(&stages_dir, &interrupted_dir);
-        assert_eq!(result.orphans_found, 1);
-        assert_eq!(result.interrupted_written, 0);
-        assert_eq!(result.errors, 1);
-        assert!(!garbage_path.exists(), "unparseable orphan should still be removed");
     }
 
     fn running_helper(name: &str, id: &str) -> RunningTool {

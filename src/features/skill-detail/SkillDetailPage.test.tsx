@@ -37,14 +37,15 @@ describe('SkillDetailPage', () => {
     useUiStore.setState({ route: { kind: 'skill-detail', skillId: 'biz-proposal' }, settingsModal: null })
   })
 
-  it('renders try items without click-to-run behavior', () => {
+  it('uses the skill via the action bar without auto-running it', () => {
     render(<SkillDetailPage skillId="biz-proposal" />)
 
-    const cards = screen.getAllByTestId('skill-card')
-    expect(cards).toHaveLength(3)
-    fireEvent.click(cards[0])
+    expect(screen.getAllByText('商业方案撰写').length).toBeGreaterThan(0)
+    fireEvent.click(screen.getByRole('button', { name: '使用' }))
 
+    // The redesigned "使用" button injects a pending skill chip and routes to
+    // home; it must NOT auto-create/run a conversation.
     expect(createConversationFromSkillMock).not.toHaveBeenCalled()
-    expect(useUiStore.getState().route).toEqual({ kind: 'skill-detail', skillId: 'biz-proposal' })
+    expect(useUiStore.getState().route).toEqual({ kind: 'home' })
   })
 })

@@ -38,7 +38,11 @@ export function PageTopBar({
       ) : variant === 'title' ? (
         <div className="flex min-w-0 items-center gap-3">
           {leading}
-          <span className="truncate text-base font-semibold text-foreground">{title}</span>
+          {typeof title === 'string' ? (
+            <span className="truncate text-base font-semibold text-foreground">{title}</span>
+          ) : (
+            title
+          )}
         </div>
       ) : variant === 'breadcrumb' ? (
         <div className="flex min-w-0 items-center gap-3">

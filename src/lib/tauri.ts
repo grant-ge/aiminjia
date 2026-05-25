@@ -92,6 +92,7 @@ export interface StreamingErrorPayload {
 export interface StreamingRetryResetPayload {
   conversationId: string
   runId?: string
+  reason?: 'upstream_busy' | 'rate_limited' | 'network_flap'
 }
 
 export interface AgentIdlePayload {
@@ -132,6 +133,12 @@ export interface ChatAttachmentPayload {
   fileSize: number
   fileType: 'excel' | 'csv' | 'word' | 'pdf' | 'json' | 'folder' | 'image'
   mimeType?: string
+}
+
+export interface SkillCommandPayload {
+  id: string
+  label?: string
+  command?: string
 }
 
 export interface SavedClipboardAttachmentPayload {
@@ -293,14 +300,6 @@ export interface PersistedTurnStage {
   lastHeartbeatAtMs: number
 }
 
-/** Mirror of backend `InterruptedTurnRecord` (interrupted_turn.json on disk). */
-export interface InterruptedTurnRecord {
-  conversationId: string
-  runId: string
-  lastStage: TurnStageKind
-  interruptedAtMs: number
-}
-
 export interface DiagnosticsEventPayload {
   ts: string
   seq: number
@@ -347,6 +346,7 @@ export function sendMessage(
   attachments?: ChatAttachmentPayload[],
   agentName?: string | null,
   clientMessageId?: string,
+  skillCommand?: SkillCommandPayload | null,
 ): Promise<void> {
   return invoke<void>('send_message', {
     conversationId,
@@ -354,6 +354,7 @@ export function sendMessage(
     attachments: attachments ?? [],
     agentName: agentName ?? null,
     clientMessageId: clientMessageId ?? null,
+    skillCommand: skillCommand ?? null,
   })
 }
 
@@ -689,14 +690,71 @@ export function archiveConversation(conversationId: string): Promise<void> {
   return invoke<void>('archive_conversation', { conversationId })
 }
 
+export function setConversationPinned(
+  conversationId: string,
+  pinned: boolean,
+): Promise<void> {
+  return invoke<void>('set_conversation_pinned', { conversationId, pinned })
+}
+
+export type ConversationSourceDto =
+  | { kind: 'user' }
+  | { kind: 'employee'; employeeId: string }
+  | { kind: 'expertTeam'; expertTeamId: string }
+  | { kind: 'im' }
+
+export function setConversationExpertTeam(
+  conversationId: string,
+  expertTeamId: string,
+  teamLabel: string,
+): Promise<void> {
+  return invoke('set_conversation_expert_team', { conversationId, expertTeamId, teamLabel })
+}
+
+export function clearConversationSource(conversationId: string): Promise<void> {
+  return invoke('clear_conversation_source', { conversationId })
+}
+
+export function getConversationSource(conversationId: string): Promise<ConversationSourceDto> {
+  return invoke('get_conversation_source', { conversationId })
+}
+
+/**
+ * Full meta for a single conversation, including fields not present in the
+ * lightweight sidebar index (e.g. `activeTeamName`). Returns `null` if the
+ * conversation does not exist or its `conv.json` is unreadable.
+ */
+export interface ConversationMetaDto {
+  id: string
+  title: string
+  createdAt: string
+  updatedAt: string
+  isArchived: boolean
+  employeeId?: string | null
+  activeTeamName?: string | null
+}
+
+export function getConversationMeta(
+  conversationId: string,
+): Promise<ConversationMetaDto | null> {
+  return invoke<ConversationMetaDto | null>('get_conversation_meta', { conversationId })
+}
+
 // ---------------------------------------------------------------------------
 // Channel types
 // ---------------------------------------------------------------------------
 
-export type ChannelPlatform = 'dingtalk' | 'feishu' | 'wechat' | 'wecom'
+export type ChannelPlatform =
+  | 'dingtalk'
+  | 'feishu'
+  | 'wechat'
+  | 'wecom'
+  | 'telegram'
+  | 'whatsapp'
 
 export type ChannelCapability = 'available' | 'comingSoon'
 
+// Mirror of src-tauri/src/connector/im/types.rs ChannelConnectionState (serde camelCase).
 export type ChannelConnectionState =
   | 'unconfigured'
   | 'disconnected'
@@ -704,6 +762,7 @@ export type ChannelConnectionState =
   | 'connected'
   | 'reconnecting'
   | 'configError'
+  | 'needsReauth'
 
 export type RobotCodeSource = 'registration' | 'appKeyFallback'
 
@@ -816,6 +875,66 @@ export function channelRevealSecret(platform: ChannelPlatform): Promise<string> 
   return invoke<string>('channel_reveal_secret', { platform })
 }
 
+// ---------------------------------------------------------------------------
+// Wecom-specific channel commands
+// ---------------------------------------------------------------------------
+
+export interface WecomTestConnectionResult {
+  ok: boolean
+  error: string | null
+}
+
+export function channelWecomSave(
+  botId: string,
+  secret: string,
+  displayName?: string,
+): Promise<ChannelPlatformState> {
+  return invoke<ChannelPlatformState>('channel_wecom_save', { botId, secret, displayName })
+}
+
+export function channelWecomTestConnection(
+  botId: string,
+  secret: string,
+): Promise<WecomTestConnectionResult> {
+  return invoke<WecomTestConnectionResult>('channel_wecom_test_connection', { botId, secret })
+}
+
+export function channelWecomRemove(): Promise<ChannelPlatformState> {
+  return invoke<ChannelPlatformState>('channel_wecom_remove')
+}
+
+export function channelWecomSetEnabled(enabled: boolean): Promise<ChannelPlatformState> {
+  return invoke<ChannelPlatformState>('channel_wecom_set_enabled', { enabled })
+}
+
+// ---- Wecom QR scan registration -------------------------------------------
+// 协议参考 @wecom/wecom-openclaw-cli 的扫码注册流程：begin → 拿 scode + 二维码 URL，
+// 用户用企业微信扫码并在 App 内确认创建机器人 → 前端按 intervalSeconds 轮询 →
+// 成功时拿到 botId/secret，前端再调 channelWecomSave 完成持久化 + 自动连接。
+
+export interface WecomBeginResult {
+  scode: string
+  authUrl: string
+  fallbackUrl: string
+  intervalSeconds: number
+  expiresInSeconds: number
+  source: string
+}
+
+export interface WecomPollResult {
+  state: 'waiting' | 'success'
+  botId: string | null
+  secret: string | null
+}
+
+export function channelWecomBeginRegistration(): Promise<WecomBeginResult> {
+  return invoke<WecomBeginResult>('channel_wecom_begin_registration')
+}
+
+export function channelWecomPollRegistration(scode: string): Promise<WecomPollResult> {
+  return invoke<WecomPollResult>('channel_wecom_poll_registration', { scode })
+}
+
 export function onChannelPlatformState(
   handler: (payload: ChannelPlatformStatePayload) => void,
 ): Promise<() => void> {
@@ -829,6 +948,85 @@ export function onChannelMessage(
   handler: (payload: ChannelMessagePayload) => void,
 ): Promise<() => void> {
   return listen<ChannelMessagePayload>(TAURI_EVENTS.CHANNEL_MESSAGE, (e) => handler(e.payload))
+}
+
+// ---------------------------------------------------------------------------
+// Telegram-specific channel commands
+// ---------------------------------------------------------------------------
+
+export interface TelegramPairingBeginResult {
+  code: string
+  deepLink: string
+  expiresInSeconds: number
+  botUsername: string
+}
+
+export interface TelegramPendingPairing {
+  code: string
+  /** Telegram user id (i64). JS number is safe up to 2^53. */
+  userId: number
+  firstName: string
+  username: string | null
+  requestedAt: string
+}
+
+export interface TelegramPairedUser {
+  /** Telegram user id (i64). JS number is safe up to 2^53; Telegram currently uses ~10-digit ids so headroom is large. */
+  userId: number
+  firstName: string
+  username: string | null
+}
+
+export function channelTelegramSave(token: string): Promise<ChannelPlatformState> {
+  return invoke<ChannelPlatformState>('channel_telegram_save', { token })
+}
+
+export function channelTelegramRemove(): Promise<ChannelPlatformState> {
+  return invoke<ChannelPlatformState>('channel_telegram_remove')
+}
+
+export function channelTelegramSetEnabled(enabled: boolean): Promise<ChannelPlatformState> {
+  return invoke<ChannelPlatformState>('channel_telegram_set_enabled', { enabled })
+}
+
+export function channelTelegramBeginPairing(): Promise<TelegramPairingBeginResult> {
+  return invoke<TelegramPairingBeginResult>('channel_telegram_begin_pairing')
+}
+
+export function channelTelegramListPendingPairings(): Promise<TelegramPendingPairing[]> {
+  return invoke<TelegramPendingPairing[]>('channel_telegram_list_pending_pairings')
+}
+
+export function channelTelegramApprovePairing(code: string): Promise<TelegramPairedUser> {
+  return invoke<TelegramPairedUser>('channel_telegram_approve_pairing', { code })
+}
+
+export function channelTelegramRejectPairing(code: string): Promise<void> {
+  return invoke<void>('channel_telegram_reject_pairing', { code })
+}
+
+export function channelTelegramRevokeUser(userId: number): Promise<ChannelPlatformState> {
+  return invoke<ChannelPlatformState>('channel_telegram_revoke_user', { userId })
+}
+
+export function channelTelegramListPairedUsers(): Promise<TelegramPairedUser[]> {
+  return invoke<TelegramPairedUser[]>('channel_telegram_list_paired_users')
+}
+
+// ---------------------------------------------------------------------------
+// WhatsApp-specific channel commands
+// ---------------------------------------------------------------------------
+
+export async function channelWhatsappUpdateAllowFrom(allowFrom: string[]): Promise<void> {
+  await invoke('channel_whatsapp_update_allow_from', { allowFrom })
+}
+
+/**
+ * 读当前 allow_from 列表。未配对返回 null;已配对但接收所有联系人返回 [];
+ * 有限制返回 ["+86xxx", ...]。供"管理允许列表"UI 初始化预填用。
+ */
+export async function channelWhatsappGetAllowFrom(): Promise<string[] | null> {
+  return (await invoke<string[] | null>('channel_whatsapp_get_allow_from')) ?? null
 }
 
 export function restoreConversation(conversationId: string): Promise<void> {
@@ -1152,6 +1350,9 @@ export interface UploadDiagnosticsResult {
   events_uploaded: number
   app_log_lines_uploaded: number
   bad_metrics_lines: number
+  /** SLS console deep-link pre-filtered by upload_session_id, when the gateway
+   * returned one. Empty string when the field is absent (older gateway). */
+  sls_url: string
 }
 
 /**
@@ -2407,23 +2608,6 @@ export async function getActiveTurnStage(
     conversationId,
   })
   return result
-}
-
-/** Read the crash-recovery sentinel for a conversation.  Returns null when
- *  the previous process didn't die mid-turn for this conversation. */
-export async function getInterruptedTurn(
-  conversationId: string,
-): Promise<InterruptedTurnRecord | null> {
-  const result = await invoke<InterruptedTurnRecord | null>('get_interrupted_turn', {
-    conversationId,
-  })
-  return result
-}
-
-/** Delete the interrupted-turn sentinel after the user dismisses (or
- *  resends) — so the banner doesn't keep showing on subsequent opens. */
-export async function dismissInterruptedTurn(conversationId: string): Promise<void> {
-  await invoke<void>('dismiss_interrupted_turn', { conversationId })
 }
 
 export function listenPendingSnapshot(

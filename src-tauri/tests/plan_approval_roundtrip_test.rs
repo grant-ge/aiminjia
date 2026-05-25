@@ -7,7 +7,7 @@ use tokio::sync::Mutex;
 
 use app_lib::runtime::agent::inbox::{AgentInbox, InboxItem, MessageSource};
 use app_lib::runtime::agent::output_writer::{
-    AgentTranscriptMeta, TranscriptKind, transcript_path_for_kind,
+    transcript_path_for_kind, AgentTranscriptMeta, TranscriptKind,
 };
 use app_lib::runtime::agent::team::{Member, MemberRole, Team};
 use app_lib::runtime::agent::worker_runtime::{run_worker, TeammateWorkerCtx, WorkerMode};
@@ -86,7 +86,14 @@ async fn plan_approval_request_renders_xml_in_transcript() {
 
     let cancel = CancellationToken::new();
     let inbox = AgentInbox::new(4);
-    let (ctx, team) = build_ctx(&tmp, session, &agent_id, agent_name, inbox.clone(), cancel.clone());
+    let (ctx, team) = build_ctx(
+        &tmp,
+        session,
+        &agent_id,
+        agent_name,
+        inbox.clone(),
+        cancel.clone(),
+    );
     let conv_dir = ctx.conv_dir.clone().unwrap();
 
     let team_clone = team.clone();
@@ -122,7 +129,10 @@ async fn plan_approval_request_renders_xml_in_transcript() {
     assert!(body.contains("<plan-approval-request id="), "{body}");
     assert!(body.contains("pa-42"), "{body}");
     assert!(body.contains("rm -rf /tmp/cache"), "{body}");
-    assert!(body.contains("plan_approval_response"), "instructions: {body}");
+    assert!(
+        body.contains("plan_approval_response"),
+        "instructions: {body}"
+    );
 
     cancel.cancel();
     let _ = tokio::time::timeout(std::time::Duration::from_secs(3), handle)
@@ -140,7 +150,14 @@ async fn plan_approval_response_renders_xml_in_transcript() {
 
     let cancel = CancellationToken::new();
     let inbox = AgentInbox::new(4);
-    let (ctx, team) = build_ctx(&tmp, session, &agent_id, agent_name, inbox.clone(), cancel.clone());
+    let (ctx, team) = build_ctx(
+        &tmp,
+        session,
+        &agent_id,
+        agent_name,
+        inbox.clone(),
+        cancel.clone(),
+    );
     let conv_dir = ctx.conv_dir.clone().unwrap();
 
     let team_clone = team.clone();

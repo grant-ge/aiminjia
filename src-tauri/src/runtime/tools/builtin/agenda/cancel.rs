@@ -18,9 +18,14 @@ pub struct CancelAgendaItemRuntimeTool {
 
 #[async_trait]
 impl RuntimeTool for CancelAgendaItemRuntimeTool {
-    fn id(&self) -> &str { "cancel_agenda_item" }
-    
-    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "cancel_agenda_item"
+    }
+
+    async fn definition(
+        &self,
+        _ctx: &crate::runtime::tools::ToolDescriptionContext,
+    ) -> ToolDefinition {
         ToolDefinition::new(
             "cancel_agenda_item",
             "【自用】取消你自己创建的日程（软删除，可在 UI 恢复）。",
@@ -32,13 +37,12 @@ impl RuntimeTool for CancelAgendaItemRuntimeTool {
         input: Value,
         _ctx: ToolExecutionContext,
     ) -> Result<ToolResult, ToolError> {
-        let id_str = input
-            .get("id")
-            .and_then(Value::as_str)
-            .ok_or_else(|| ToolError::InputValidationError {
+        let id_str = input.get("id").and_then(Value::as_str).ok_or_else(|| {
+            ToolError::InputValidationError {
                 tool_name: "cancel_agenda_item".into(),
                 message: "missing 'id'".into(),
-            })?;
+            }
+        })?;
         let id = AgendaItemId(id_str.to_string());
         let item = self
             .deps

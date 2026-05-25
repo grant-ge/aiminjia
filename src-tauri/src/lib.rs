@@ -49,6 +49,14 @@ pub fn run() {
                 .expect("Failed to create global dirs");
             telemetry::set_diagnostics_workspace(aijia_home.root().to_path_buf());
             commands::file::cleanup_workspace_clipboard_staging(&aijia_home.tmp_clipboard_dir(), 7);
+            // GC expired legacy-root archives (30d retention).  Independent
+            // of login state because the dirs live at the data root, not
+            // inside a user scope.
+            if let Err(e) =
+                storage::migration_root_cleanup::cleanup_legacy_archive_if_expired(aijia_home.root())
+            {
+                log::warn!("[setup] legacy-root archive GC warning: {}", e);
+            }
             if let Err(e) = storage::migration::migrate_if_needed(&app_data_dir, aijia_home.root())
             {
                 log::warn!("[setup] migration warning (non-fatal): {}", e);
@@ -66,22 +74,6 @@ pub fn run() {
                 aijia_home.root(),
             ) {
                 log::warn!("[setup] message shard migration warning (non-fatal): {}", e);
-            }
-            // Spec 2026-05-17-turn-stages §5.5: any turn_stage.json present at
-            // startup means the previous process died mid-turn — convert each
-            // into an interrupted_turn.json sentinel and clear the orphan.
-            let sweep = runtime::chat::turn_stage::run_recovery_sweep(
-                &aijia_home.turn_stages_dir(),
-                &aijia_home.interrupted_turns_dir(),
-            );
-            if sweep.orphans_found > 0 {
-                log::info!(
-                    "[setup] turn-stage recovery sweep: orphans={} written={} deleted={} errors={}",
-                    sweep.orphans_found,
-                    sweep.interrupted_written,
-                    sweep.deleted,
-                    sweep.errors,
-                );
             }
             app.manage(aijia_home.clone());
             let runtime_paths = runtime::dependencies::RuntimePaths::new(
@@ -282,6 +274,21 @@ pub fn run() {
                 ) {
                     log::warn!("[setup] config split warning: {}", e);
                 }
+                if let Err(e) = storage::migration_user_scope::migrate_legacy_turn_stages_if_needed(
+                    aijia_home.root(),
+                    &user_dir,
+                ) {
+                    log::warn!("[setup] turn-stages migration warning: {}", e);
+                }
+                // Archive legacy root copies after the user-scope migration
+                // grace window (24h).  Runs every startup; the function
+                // self-skips if already done or grace not elapsed.
+                if let Err(e) = storage::migration_root_cleanup::cleanup_legacy_root_if_claimed(
+                    aijia_home.root(),
+                    &aijia_home.global_state_path(),
+                ) {
+                    log::warn!("[setup] legacy-root cleanup warning: {}", e);
+                }
                 current_user_storage
                     .activate_scope(scope.clone())
                     .expect("Failed to activate user storage");
@@ -341,8 +348,14 @@ pub fn run() {
             // Window setup: custom titlebar on all platforms
             {
                 if let Some(win) = app.get_webview_window("main") {
-                    // Title bar is rendered by HTML TitleBar component
-                    let _ = win.set_title(" ");
+                    // Title bar is rendered by the HTML TitleBar component, but the
+                    // native window title still drives the macOS Dock right-click
+                    // menu, Mission Control and Cmd+Tab window list — a blank " "
+                    // there shows up as a nameless entry. Seed it with the product
+                    // name; brandingStore refines it to the tenant productName once
+                    // the webview loads. (titleBarStyle: Overlay hides the title
+                    // text in-window, so this has no visual side effect.)
+                    let _ = win.set_title("AIjia");
 
                     // Windows: disable native decorations to avoid double titlebar.
                     // macOS uses titleBarStyle: Overlay (set in tauri.conf.json) which
@@ -669,7 +682,7 @@ pub fn run() {
                     permission_store.clone(),
                     app.handle().clone(),
                     Some(channel_session_ids.clone()
-                        as Arc<dyn connector::channel::ask_coordinator::ChannelSessionRegistry>),
+                        as Arc<dyn connector::im::ask_coordinator::ChannelSessionRegistry>),
                 ),
             );
             // LTR P2 follow-up: wire Path C wake (continuation turn triggered by
@@ -797,25 +810,25 @@ pub fn run() {
                     .clone();
 
                 // reply_manager is shared between ChannelManager and the coordinator (as AskOutputSink)
-                let reply_manager = Arc::new(connector::channel::DingtalkReplyManager::new());
+                let reply_manager = Arc::new(connector::im::DingtalkReplyManager::new());
 
-                let judge = Arc::new(connector::channel::ask_coordinator::GatewayAskReplyJudge::new(
+                let judge = Arc::new(connector::im::ask_coordinator::GatewayAskReplyJudge::new(
                     gateway_ref,
                     models::settings::AppSettings::default(),
                 ));
                 let ask_coordinator = Arc::new(
-                    connector::channel::ask_coordinator::IMAskCoordinator::new(
+                    connector::im::ask_coordinator::IMAskCoordinator::new(
                         channel_session_ids.clone()
-                            as Arc<dyn connector::channel::ask_coordinator::ChannelSessionRegistry>,
+                            as Arc<dyn connector::im::ask_coordinator::ChannelSessionRegistry>,
                         reply_manager.clone()
-                            as Arc<dyn connector::channel::ask_coordinator::AskOutputSink>,
+                            as Arc<dyn connector::im::ask_coordinator::AskOutputSink>,
                         chat_adapter_ref.permission_control_plane(),
                         chat_adapter_ref.interaction_control_plane(),
                         judge,
                     ),
                 );
 
-                let channel_manager = Arc::new(connector::channel::ChannelManager::new(
+                let channel_manager = Arc::new(connector::im::ChannelManager::new(
                     app.handle().clone(),
                     chat_adapter_ref,
                     app.state::<Arc<storage::file_store::RuntimeRepositoryFacade>>()
@@ -921,9 +934,15 @@ pub fn run() {
             chat::create_conversation,
             chat::delete_conversation,
             chat::rename_conversation,
+            chat::set_conversation_expert_team,
+            chat::get_conversation_meta,
             chat::archive_conversation,
             chat::restore_conversation,
             chat::get_archived_conversations,
+            chat::set_conversation_pinned,
+            chat::set_conversation_expert_team,
+            chat::clear_conversation_source,
+            chat::get_conversation_source,
             chat::get_conversations,
             chat::get_tasks,
             chat::is_agent_busy,
@@ -1071,13 +1090,28 @@ pub fn run() {
             commands::channel::channel_set_enabled,
             commands::channel::channel_remove_platform,
             commands::channel::channel_reveal_secret,
+            commands::channel::channel_wecom_save,
+            commands::channel::channel_wecom_test_connection,
+            commands::channel::channel_wecom_remove,
+            commands::channel::channel_wecom_set_enabled,
+            commands::channel::channel_wecom_begin_registration,
+            commands::channel::channel_wecom_poll_registration,
+            commands::channel::channel_telegram_save,
+            commands::channel::channel_telegram_remove,
+            commands::channel::channel_telegram_set_enabled,
+            commands::channel::channel_telegram_begin_pairing,
+            commands::channel::channel_telegram_list_pending_pairings,
+            commands::channel::channel_telegram_approve_pairing,
+            commands::channel::channel_telegram_reject_pairing,
+            commands::channel::channel_telegram_revoke_user,
+            commands::channel::channel_telegram_list_paired_users,
+            commands::channel::channel_whatsapp_update_allow_from,
+            commands::channel::channel_whatsapp_get_allow_from,
             // Pending queue commands
             crate::transport::tauri_commands::pending::pending_snapshot_for_session,
             crate::transport::tauri_commands::pending::pending_remove_item,
             // Turn-stage persistence (spec 2026-05-17-turn-stages §5)
             crate::transport::tauri_commands::turn_stage::get_active_turn_stage,
-            crate::transport::tauri_commands::turn_stage::get_interrupted_turn,
-            crate::transport::tauri_commands::turn_stage::dismiss_interrupted_turn,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

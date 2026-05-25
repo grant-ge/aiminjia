@@ -13,11 +13,17 @@ pub struct SkillFrontmatter {
     pub description: String,
     #[serde(default)]
     pub when_to_use: Option<String>,
-    #[serde(default, deserialize_with = "crate::plugin::skill::frontmatter::deserialize_string_or_vec")]
+    #[serde(
+        default,
+        deserialize_with = "crate::plugin::skill::frontmatter::deserialize_string_or_vec"
+    )]
     pub allowed_tools: Vec<String>,
     #[serde(default)]
     pub argument_hint: Option<String>,
-    #[serde(default, deserialize_with = "crate::plugin::skill::frontmatter::deserialize_string_or_vec")]
+    #[serde(
+        default,
+        deserialize_with = "crate::plugin::skill::frontmatter::deserialize_string_or_vec"
+    )]
     pub arguments: Vec<String>,
     #[serde(default)]
     pub model: Option<String>,

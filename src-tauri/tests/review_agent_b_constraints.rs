@@ -1,12 +1,12 @@
-use async_trait::async_trait;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use app_lib::runtime::agent::registry::AgentRegistry;
 use app_lib::runtime::tools::builtin::spawn_subagent::{
     SpawnAsyncOutcome, SpawnSubagentContext, SpawnSubagentLauncher, SpawnSubagentRequest,
     SpawnSubagentRuntimeTool,
 };
 use app_lib::runtime::tools::RuntimeTool;
+use async_trait::async_trait;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 /// Legacy modules that still depend on `tauri::*` and are tracked under separate
 /// architectural cleanup tickets. New code MUST NOT add to this list — extend
@@ -18,7 +18,9 @@ const LEGACY_TAURI_ALLOWED: &[&str] = &[
 ];
 
 fn collect_rs_files(root: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(root) else { return };
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
@@ -87,8 +89,20 @@ fn runtime_modules_do_not_use_tauri_directly() {
 struct NoopLauncher;
 #[async_trait]
 impl SpawnSubagentLauncher for NoopLauncher {
-    async fn launch_sync(&self, _: SpawnSubagentRequest, _: SpawnSubagentContext) -> anyhow::Result<String> { unreachable!() }
-    async fn launch_async(&self, _: SpawnSubagentRequest, _: SpawnSubagentContext) -> anyhow::Result<SpawnAsyncOutcome> { unreachable!() }
+    async fn launch_sync(
+        &self,
+        _: SpawnSubagentRequest,
+        _: SpawnSubagentContext,
+    ) -> anyhow::Result<String> {
+        unreachable!()
+    }
+    async fn launch_async(
+        &self,
+        _: SpawnSubagentRequest,
+        _: SpawnSubagentContext,
+    ) -> anyhow::Result<SpawnAsyncOutcome> {
+        unreachable!()
+    }
 }
 
 #[test]
@@ -104,11 +118,11 @@ fn spawn_subagent_tool_is_concurrency_safe() {
 fn async_agent_default_disallows_ask_user_question() {
     use app_lib::runtime::agent::tool_whitelist::resolve_agent_tools;
     let allowed = resolve_agent_tools(
-        &[],  // def_allowed = empty (= all)
-        &[],  // def_disallowed
-        &["ask_user_question".to_string(), "Read".to_string()],  // available
-        true,  // is_async
-        false, // allow_recursive_spawn
+        &[],                                                    // def_allowed = empty (= all)
+        &[],                                                    // def_disallowed
+        &["ask_user_question".to_string(), "Read".to_string()], // available
+        true,                                                   // is_async
+        false,                                                  // allow_recursive_spawn
     );
     assert!(
         !allowed.contains(&"ask_user_question".to_string()),

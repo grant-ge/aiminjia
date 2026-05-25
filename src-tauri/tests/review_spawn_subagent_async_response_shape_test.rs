@@ -76,8 +76,8 @@ async fn async_response_has_agent_id_field() {
         .await
         .expect("async spawn must succeed");
 
-    let parsed: Value = serde_json::from_str(&result.content)
-        .expect("response content must be valid JSON");
+    let parsed: Value =
+        serde_json::from_str(&result.content).expect("response content must be valid JSON");
 
     let agent_id = parsed
         .get("agent_id")
@@ -109,8 +109,8 @@ async fn async_response_has_task_id_equal_to_agent_id() {
         .await
         .expect("async spawn must succeed");
 
-    let parsed: Value = serde_json::from_str(&result.content)
-        .expect("response content must be valid JSON");
+    let parsed: Value =
+        serde_json::from_str(&result.content).expect("response content must be valid JSON");
 
     // Both fields must be present
     let agent_id = parsed

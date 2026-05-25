@@ -38,15 +38,18 @@ pub mod worktree;
 
 pub use agent_runtime::AgentRuntime;
 pub use cancellation_registry::CancellationRegistry;
+pub use inbox::{AgentInbox, InboxItem, MessageSource, ShutdownRequest, TaskNotificationItem};
+pub use inbox_registry::InboxRegistry;
 pub use invocation::{
     AgentInvocation, AgentStatus, ChildRunHandle, ResumeChildRunRequest, SpawnChildRunRequest,
 };
+pub use lead_idle::{LeadIdleSupervisor, LeadKey};
+pub use name_registry::{AgentNameRegistry, NameRegistryError};
 pub use subagent_transcript_store::{
     FileSubagentTranscriptStore, InMemorySubagentTranscriptStore, SubagentTranscriptEntryRecord,
     SubagentTranscriptStore,
 };
-pub use inbox::{AgentInbox, InboxItem, MessageSource, ShutdownRequest, TaskNotificationItem};
-pub use inbox_registry::InboxRegistry;
-pub use lead_idle::{LeadIdleSupervisor, LeadKey};
-pub use name_registry::{AgentNameRegistry, NameRegistryError};
-pub use team::{Member, MemberRole, MemberSnapshot, Team, TeamError, TeamPersistError, TeamRegistry, TeamSnapshot, MAX_TEAMMATES};
+pub use team::{
+    Member, MemberRole, MemberSnapshot, Team, TeamError, TeamPersistError, TeamRegistry,
+    TeamSnapshot, MAX_TEAMMATES,
+};

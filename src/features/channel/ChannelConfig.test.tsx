@@ -54,7 +54,7 @@ describe('ChannelConfig OPEN_CLAW registration', () => {
 
     render(<ChannelConfig />)
 
-    expect(screen.getByLabelText('钉钉扫码二维码')).toBeInTheDocument()
+    expect(await screen.findByLabelText('注册二维码')).toBeInTheDocument()
     expect(screen.queryByText('手动配置')).not.toBeInTheDocument()
     await waitFor(() => {
       expect(beginRegistration).toHaveBeenCalledWith('dingtalk')

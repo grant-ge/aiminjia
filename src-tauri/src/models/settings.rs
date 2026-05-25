@@ -7,6 +7,10 @@ fn default_thinking_budget_tokens() -> u32 {
     8000
 }
 
+fn default_chat_width_mode() -> String {
+    "full".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LlmProvider {
@@ -67,6 +71,17 @@ pub struct AppSettings {
     /// UI accent color hex string, e.g. "#DBAA22". Empty = use default.
     #[serde(default)]
     pub accent_color: String,
+    /// Chat content width mode: centered | full.
+    #[serde(default = "default_chat_width_mode")]
+    pub chat_width_mode: String,
+    /// JSON-stringified `AuthorizedWorkspaceRef` ({id, rootPath, displayName}) — 首页 task composer
+    /// 当前选中的 workspace。空字符串视为未选中。
+    #[serde(default)]
+    pub ui_home_selected_workspace: String,
+    /// JSON-stringified `AuthorizedWorkspaceRef[]` — 首页切换器最近 workspace 列表。
+    /// 空字符串或 "[]" 视为空列表。**前端限定最多 10 条**：超出时 LRU 截断（新加入的在前，超过 10 截��）。
+    #[serde(default)]
+    pub ui_home_recent_workspaces: String,
 }
 
 fn default_font_scale() -> String {
@@ -101,6 +116,9 @@ impl Default for AppSettings {
             thinking_budget_tokens: default_thinking_budget_tokens(),
             font_scale: default_font_scale(),
             accent_color: String::new(),
+            chat_width_mode: default_chat_width_mode(),
+            ui_home_selected_workspace: String::new(),
+            ui_home_recent_workspaces: String::new(),
         }
     }
 }
@@ -162,6 +180,61 @@ impl AppSettings {
             ),
             font_scale: get_str("fontScale", &defaults.font_scale),
             accent_color: get_str("accentColor", &defaults.accent_color),
+            chat_width_mode: get_str("chatWidthMode", &defaults.chat_width_mode),
+            ui_home_selected_workspace: get_str(
+                "uiHomeSelectedWorkspace",
+                &defaults.ui_home_selected_workspace,
+            ),
+            ui_home_recent_workspaces: get_str(
+                "uiHomeRecentWorkspaces",
+                &defaults.ui_home_recent_workspaces,
+            ),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AppSettings;
+    use std::collections::HashMap;
+
+    #[test]
+    fn defaults_chat_width_mode_to_full() {
+        assert_eq!(AppSettings::default().chat_width_mode, "full");
+    }
+
+    #[test]
+    fn reads_chat_width_mode_from_string_map() {
+        let mut map = HashMap::new();
+        map.insert("chatWidthMode".to_string(), "full".to_string());
+
+        let settings = AppSettings::from_string_map(&map);
+
+        assert_eq!(settings.chat_width_mode, "full");
+    }
+
+    #[test]
+    fn home_workspace_fields_default_to_empty_string() {
+        let s = AppSettings::default();
+        assert_eq!(s.ui_home_selected_workspace, "");
+        assert_eq!(s.ui_home_recent_workspaces, "");
+    }
+
+    #[test]
+    fn home_workspace_fields_round_trip_through_json() {
+        let s = AppSettings {
+            ui_home_selected_workspace: r#"{"id":"ws-1","rootPath":"/x","displayName":"x"}"#
+                .to_string(),
+            ui_home_recent_workspaces: r#"[{"id":"ws-1","rootPath":"/x","displayName":"x"}]"#
+                .to_string(),
+            ..AppSettings::default()
+        };
+        let json = serde_json::to_string(&s).unwrap();
+        let parsed: AppSettings = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            parsed.ui_home_selected_workspace,
+            s.ui_home_selected_workspace
+        );
+        assert_eq!(parsed.ui_home_recent_workspaces, s.ui_home_recent_workspaces);
     }
 }

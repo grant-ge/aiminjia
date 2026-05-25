@@ -4,7 +4,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::json;
 
-use crate::connector::channel::ask_coordinator::ChannelSessionRegistry;
+use crate::connector::im::ask_coordinator::ChannelSessionRegistry;
 use crate::runtime::chat::ChatTurnOutcome;
 use crate::runtime::event_bus::RuntimeEventSubscriber;
 use crate::runtime::events::{RuntimeEvent, RuntimeEventKind};
@@ -34,11 +34,12 @@ pub fn map_runtime_event(event: &RuntimeEvent) -> Option<LegacyEvent> {
                 "runId": event.run_id.as_str(),
             }),
         }),
-        RuntimeEventKind::StreamRetryReset => Some(LegacyEvent {
+        RuntimeEventKind::StreamRetryReset { reason } => Some(LegacyEvent {
             name: "streaming:retry-reset".to_string(),
             payload: json!({
                 "conversationId": conversation_id,
                 "runId": event.run_id.as_str(),
+                "reason": reason,
             }),
         }),
         RuntimeEventKind::StreamError {
@@ -429,6 +430,7 @@ mod pending_event_tests {
             text: "hi".into(),
             sender_nick: None,
             attachments: vec![],
+            skill_command: None,
             received_at: "2026-05-11T03:21:00Z".into(),
         };
         let e = evt(RuntimeEventKind::PendingQueued { item });

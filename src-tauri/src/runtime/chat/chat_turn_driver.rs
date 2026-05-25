@@ -56,11 +56,30 @@ pub struct ChatAttachmentRef {
     pub mime_type: Option<String>,
 }
 
-pub fn build_user_content_json(
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillCommandRef {
+    pub id: String,
+    pub label: Option<String>,
+    pub command: Option<String>,
+}
+
+pub fn build_user_content_json_with_skill(
     content: &str,
     attachments: &[ChatAttachmentRef],
+    skill_command: Option<&SkillCommandRef>,
 ) -> serde_json::Value {
     let mut value = serde_json::json!({ "text": content });
+    if let Some(skill) = skill_command {
+        let label = skill.label.as_deref().unwrap_or(skill.id.as_str());
+        let command = skill.command.clone().unwrap_or_else(|| format!("/{}", skill.id));
+        value["commandText"] = serde_json::Value::String(command.clone());
+        value["skillCommand"] = serde_json::json!({
+            "id": skill.id,
+            "label": label,
+            "command": command,
+        });
+    }
     if !attachments.is_empty() {
         value["files"] = serde_json::Value::Array(
             attachments
@@ -83,6 +102,25 @@ pub fn build_user_content_json(
     value
 }
 
+pub fn build_user_content_json(
+    content: &str,
+    attachments: &[ChatAttachmentRef],
+) -> serde_json::Value {
+    build_user_content_json_with_skill(content, attachments, None)
+}
+
+pub fn selected_skill_instruction(skill_command: Option<&SkillCommandRef>) -> Option<String> {
+    let skill = skill_command?;
+    let label = skill.label.as_deref().unwrap_or(skill.id.as_str());
+    let command = skill.command.as_deref().unwrap_or("");
+    Some(format!(
+        "\n\n<system-reminder>\n本轮用户显式选择技能：id={id}, label={label}, command={command}\n请优先调用 Skill({{ skill_id: \"{id}\" }}) 加载该技能指令，然后按该技能要求处理用户请求。\n不要使用 label 作为 skill_id；后端只识别稳定 id `{id}`。\n</system-reminder>",
+        id = skill.id,
+        label = label,
+        command = command,
+    ))
+}
+
 /// The chat turn request type.  Defined here to avoid circular imports between
 /// `session_runtime` and `chat`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -90,6 +128,7 @@ pub struct ChatTurnRequest {
     pub conversation_id: SessionId,
     pub content: String,
     pub attachments: Vec<ChatAttachmentRef>,
+    pub skill_command: Option<SkillCommandRef>,
     pub agent_name: Option<String>,
     pub permission_mode: PermissionMode,
     /// The authoritative run_id for this turn.
@@ -145,6 +184,7 @@ impl ChatTurnRequest {
             conversation_id: conversation_id.into(),
             content: content.into(),
             attachments,
+            skill_command: None,
             agent_name: None,
             permission_mode: PermissionMode::Default,
             run_id: RunId::new(uuid::Uuid::new_v4().to_string()),
@@ -217,6 +257,7 @@ pub trait RuntimeLlmExecutor: Send + Sync {
         _conversation_id: &str,
         _content: &str,
         _attachments: &[ChatAttachmentRef],
+        _skill_command: Option<&SkillCommandRef>,
         _client_message_id: Option<&str>,
     ) -> Result<String, TurnError> {
         Ok(String::new())
@@ -377,6 +418,17 @@ pub trait RuntimeLlmExecutor: Send + Sync {
 ///   `run_chat_turn_s4` is the driver-owned loop.  The `RuntimeLlmExecutor` is a
 ///   pure provider streaming adapter; the driver owns the query/tool loop and
 ///   emits all lifecycle events through the bus.
+/// Resolves the on-disk write-through path for a conversation's turn-stage
+/// snapshot (spec 2026-05-17-turn-stages §5).  Returns `None` when no user is
+/// logged in — the emitter degrades to in-memory only.
+///
+/// Injected via [`RuntimeChatTurnDriver::with_turn_stage_path_resolver`]; in
+/// production wired by `SessionRuntime::build_driver_for_turn` to delegate to
+/// `RuntimeHost::resolve_turn_stage_path` which reads the active user scope
+/// from `CurrentUserStorage`.  Tests can leave it unset for pure in-memory.
+pub type TurnStagePathResolver =
+    Arc<dyn Fn(&str) -> Option<std::path::PathBuf> + Send + Sync>;
+
 #[derive(Clone)]
 pub struct RuntimeChatTurnDriver {
     query_engine: QueryEngine,
@@ -388,6 +440,9 @@ pub struct RuntimeChatTurnDriver {
     task_notification_queue: Option<Arc<TaskNotificationQueue>>,
     /// Compaction backend, decoupled from llm_executor (P0.2).
     compact_client: Option<Arc<dyn CompactSummaryClient>>,
+    /// User-scoped resolver for `turn_stage.json` write path.  None ⇒ emitter
+    /// runs in-memory only (no persistence).  Spec §5.
+    turn_stage_path_resolver: Option<TurnStagePathResolver>,
 }
 
 fn synthetic_cancelled_tool_result(reason: Option<CancellationReason>) -> &'static str {
@@ -705,6 +760,7 @@ impl RuntimeChatTurnDriver {
             pending_interaction_control_plane: None,
             task_notification_queue: None,
             compact_client: None,
+            turn_stage_path_resolver: None,
         }
     }
 
@@ -721,6 +777,7 @@ impl RuntimeChatTurnDriver {
             pending_interaction_control_plane: None,
             task_notification_queue: None,
             compact_client: None,
+            turn_stage_path_resolver: None,
         }
     }
 
@@ -738,6 +795,7 @@ impl RuntimeChatTurnDriver {
             pending_interaction_control_plane: None,
             task_notification_queue: None,
             compact_client: None,
+            turn_stage_path_resolver: None,
         }
     }
 
@@ -756,6 +814,7 @@ impl RuntimeChatTurnDriver {
             pending_interaction_control_plane: Some(pending_interaction_control_plane),
             task_notification_queue: None,
             compact_client: None,
+            turn_stage_path_resolver: None,
         }
     }
 
@@ -771,6 +830,14 @@ impl RuntimeChatTurnDriver {
     /// compaction requests warn-log and return an empty summary.
     pub fn with_compact_client(mut self, client: Arc<dyn CompactSummaryClient>) -> Self {
         self.compact_client = Some(client);
+        self
+    }
+
+    /// Inject the resolver that returns the user-scoped write path for
+    /// `turn_stage.json`.  Without this, the emitter cannot persist (in-memory
+    /// only) — production wires this in `SessionRuntime::build_driver_for_turn`.
+    pub fn with_turn_stage_path_resolver(mut self, resolver: TurnStagePathResolver) -> Self {
+        self.turn_stage_path_resolver = Some(resolver);
         self
     }
 
@@ -1258,14 +1325,21 @@ impl RuntimeChatTurnDriver {
     ) -> Result<()> {
         // Turn-stage emitter (spec §3 + §8 + §5).  When the env flag is off
         // this is a zero-cost no-op for every emit / persist call.
-        let stage_persist_path = crate::storage::AiJiaHome::from_home()
-            .turn_stage_path(turn.session_id().as_str());
-        let stage_emitter = TurnStageEmitter::new(
+        //
+        // Persist path is user-scoped via the injected resolver
+        // (`users/{scope}/turn_stages/{conv_id}.json`).  When no user is
+        // logged in (or the resolver isn't wired in tests), the emitter runs
+        // in-memory only — no on-disk snapshot, no cross-user leakage.
+        let mut stage_emitter = TurnStageEmitter::new(
             self.event_bus.clone(),
             turn.session_id().clone(),
             turn.run_id().clone(),
-        )
-        .with_persist_path(stage_persist_path);
+        );
+        if let Some(resolver) = self.turn_stage_path_resolver.as_ref() {
+            if let Some(path) = resolver(turn.session_id().as_str()) {
+                stage_emitter = stage_emitter.with_persist_path(path);
+            }
+        }
         stage_emitter.submitted().await;
         // RAII guard — spec §8.  Spawning here ensures every ? / early return
         // / panic / cancel path inside this function drops the guard and the
@@ -1388,6 +1462,7 @@ impl RuntimeChatTurnDriver {
             llm_settings,
             conversation_id: request.conversation_id.clone(),
             run_id: request.run_id.clone(),
+            trace_id: request.client_message_id.clone().unwrap_or_default(),
             hook_registry: request.hook_registry.clone(),
         };
         // Make primary_model available on TurnState so downstream emit sites
@@ -1539,6 +1614,7 @@ impl RuntimeChatTurnDriver {
                     &notification.xml,
                     &[],
                     None,
+                    None,
                 )
                 .await
             {
@@ -1590,6 +1666,7 @@ impl RuntimeChatTurnDriver {
                     request.conversation_id.as_str(),
                     &xml,
                     &[],
+                    None,
                     None,
                 )
                 .await
@@ -1673,6 +1750,7 @@ impl RuntimeChatTurnDriver {
                     request.conversation_id.as_str(),
                     &request.content,
                     &request.attachments,
+                    request.skill_command.as_ref(),
                     request.client_message_id.as_deref(),
                 )
                 .await
@@ -1691,9 +1769,10 @@ impl RuntimeChatTurnDriver {
                 RuntimeEventKind::StreamStarted,
             ))
             .await?;
-        let pending_user_content = build_user_content_json(
+        let pending_user_content = build_user_content_json_with_skill(
             &request.content,
             &request.attachments,
+            request.skill_command.as_ref(),
         );
         // Skip emitting MessagePersisted for the resume-sentinel: it's an
         // internal wake signal, not a user-visible turn. Emitting it would
@@ -1735,6 +1814,13 @@ impl RuntimeChatTurnDriver {
                 String::new()
             });
         let skill_catalog = executor.get_skill_catalog(None).await;
+        let skill_context = match selected_skill_instruction(request.skill_command.as_ref()) {
+            Some(instruction) if !skill_catalog.is_empty() => {
+                format!("{skill_catalog}{instruction}")
+            }
+            Some(instruction) => instruction,
+            None => skill_catalog,
+        };
         let project_memory_ctx = executor
             .load_project_memory(&config.workspace_path, request.content.as_str())
             .await
@@ -1829,7 +1915,7 @@ impl RuntimeChatTurnDriver {
                 "",
                 None,
                 None,
-                &skill_catalog,
+                &skill_context,
             );
 
             // Build the read-only executor input.
@@ -1887,6 +1973,7 @@ impl RuntimeChatTurnDriver {
                 llm_settings: &config.llm_settings,
                 conversation_id: config.conversation_id.as_str(),
                 run_id: config.run_id.as_str(),
+                trace_id: config.trace_id.as_str(),
                 estimated_tokens,
                 anthropic_multimodal_turn: anthropic_multimodal_turn.clone(),
             };
@@ -2664,17 +2751,30 @@ mod tests {
             !req.pre_persisted,
             "ChatTurnRequest::new must default pre_persisted to false; dispatch path opts in explicitly"
         );
+        assert!(
+            req.skill_command.is_none(),
+            "ChatTurnRequest::new must not imply a selected skill"
+        );
     }
 
     #[test]
     fn chat_turn_request_pre_persisted_round_trips() {
         let mut req = ChatTurnRequest::new("conv-y", "dispatch prompt body", vec![]);
         req.pre_persisted = true;
+        req.skill_command = Some(SkillCommandRef {
+            id: "dingtalk-workspace".to_string(),
+            label: Some("玩转钉钉".to_string()),
+            command: Some("/dingtalk-workspace".to_string()),
+        });
         assert!(req.pre_persisted);
         let cloned = req.clone();
         assert!(
             cloned.pre_persisted,
             "Clone must preserve pre_persisted so spawn body sees the flag"
+        );
+        assert_eq!(
+            cloned.skill_command.as_ref().map(|skill| skill.id.as_str()),
+            Some("dingtalk-workspace")
         );
     }
     use crate::runtime::store::{
@@ -2823,6 +2923,40 @@ mod tests {
         );
     }
 
+    #[test]
+    fn build_user_content_json_includes_skill_command() {
+        let skill = SkillCommandRef {
+            id: "dingtalk-workspace".to_string(),
+            label: Some("玩转钉钉".to_string()),
+            command: Some("/dingtalk-workspace".to_string()),
+        };
+
+        let content = build_user_content_json_with_skill("查今天日程", &[], Some(&skill));
+
+        assert_eq!(content["text"].as_str(), Some("查今天日程"));
+        assert_eq!(content["commandText"].as_str(), Some("/dingtalk-workspace"));
+        assert_eq!(content["skillCommand"]["id"].as_str(), Some("dingtalk-workspace"));
+        assert_eq!(content["skillCommand"]["label"].as_str(), Some("玩转钉钉"));
+        assert_eq!(content["skillCommand"]["command"].as_str(), Some("/dingtalk-workspace"));
+    }
+
+    #[test]
+    fn selected_skill_instruction_mentions_skill_tool_and_id() {
+        let skill = SkillCommandRef {
+            id: "dingtalk-workspace".to_string(),
+            label: Some("玩转钉钉".to_string()),
+            command: Some("/dingtalk-workspace".to_string()),
+        };
+
+        let instruction = selected_skill_instruction(Some(&skill)).expect("instruction");
+
+        assert!(instruction.contains("dingtalk-workspace"));
+        assert!(instruction.contains("玩转钉钉"));
+        assert!(instruction.contains("Skill({ skill_id: \"dingtalk-workspace\" })"));
+        assert!(instruction.contains("不要使用 label 作为 skill_id"));
+        assert!(!instruction.contains("skill_id: \"玩转钉钉\""));
+    }
+
     #[tokio::test]
     async fn resolve_permission_asks_uses_runtime_permission_mode_instead_of_decision_reason() {
         let bus = RuntimeEventBus::new();
@@ -2841,6 +2975,7 @@ mod tests {
             pending_interaction_control_plane: None,
             task_notification_queue: None,
             compact_client: None,
+            turn_stage_path_resolver: None,
         };
         let turn = TurnState::new(
             IdentityMapping::from_legacy_conversation_id("conv-ask-mode".to_string()),
@@ -3030,6 +3165,7 @@ mod tests {
             _conversation_id: &str,
             _content: &str,
             _attachments: &[ChatAttachmentRef],
+            _skill_command: Option<&SkillCommandRef>,
             _client_message_id: Option<&str>,
         ) -> Result<String, TurnError> {
             Ok("user-msg".to_string())
@@ -3160,6 +3296,40 @@ mod tests {
         assert_eq!(dynamic_contexts.len(), 1);
         assert!(dynamic_contexts[0].contains("可用专项技能"));
         assert!(dynamic_contexts[0].contains("biz-writing"));
+    }
+
+    #[tokio::test]
+    async fn driver_injects_selected_skill_instruction_into_dynamic_context() {
+        let executor = Arc::new(SnapshotPromptExecutor::with_skill_catalog(
+            "## 可用专项技能\n- `dingtalk-workspace` — 玩转钉钉",
+        ));
+        let bus = RuntimeEventBus::new();
+        let driver =
+            RuntimeChatTurnDriver::with_llm_executor(QueryEngine::new(), bus, executor.clone());
+        let mut turn = TurnState::new(
+            IdentityMapping::from_legacy_conversation_id("conv-driver-selected-skill".to_string()),
+            RunId::new("run-driver-selected-skill"),
+            "查今天日程".to_string(),
+        );
+        let mut request =
+            ChatTurnRequest::new("conv-driver-selected-skill", "查今天日程", vec![]);
+        request.skill_command = Some(SkillCommandRef {
+            id: "dingtalk-workspace".to_string(),
+            label: Some("玩转钉钉".to_string()),
+            command: Some("/dingtalk-workspace".to_string()),
+        });
+
+        driver
+            .run_chat_turn(&mut turn, &request)
+            .await
+            .expect("driver should run with selected skill");
+
+        let dynamic_contexts = executor.seen_dynamic_contexts.lock().unwrap().clone();
+        assert_eq!(dynamic_contexts.len(), 1);
+        assert!(dynamic_contexts[0].contains("dingtalk-workspace"));
+        assert!(dynamic_contexts[0].contains("玩转钉钉"));
+        assert!(dynamic_contexts[0].contains("Skill({ skill_id: \"dingtalk-workspace\" })"));
+        assert!(!dynamic_contexts[0].contains("skill_id: \"玩转钉钉\""));
     }
 
     // ── LTR (B-gap1) Path A wiring tests ─────────────────────────────────────

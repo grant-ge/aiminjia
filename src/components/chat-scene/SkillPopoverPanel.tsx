@@ -2,7 +2,7 @@
  * @designSource design.pen#ip8MF popover
  * @sizing w 560 r-14 bg popover border 1; head padding [12,16] bottom-border 1; row padding [10,16]
  */
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Blocks, Search, X } from 'lucide-react'
 
@@ -22,6 +22,18 @@ interface SkillPopoverPanelProps {
 export function SkillPopoverPanel({ items, onPick, onClose }: SkillPopoverPanelProps) {
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
+  const panelRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      const panel = panelRef.current
+      if (!panel || !(event.target instanceof Node)) return
+      if (!panel.contains(event.target)) onClose()
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown)
+    return () => document.removeEventListener('pointerdown', handlePointerDown)
+  }, [onClose])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -44,7 +56,10 @@ export function SkillPopoverPanel({ items, onPick, onClose }: SkillPopoverPanelP
   }, [items, query])
 
   return (
-    <div className="w-[560px] overflow-hidden rounded-lg border border-border bg-popover shadow-[var(--shadow-popover)]">
+    <div
+      ref={panelRef}
+      className="w-[560px] overflow-hidden rounded-lg border border-border bg-popover shadow-[var(--shadow-popover)]"
+    >
       <header className="flex items-center gap-2 border-b border-border px-3 py-2.5">
         <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
         <input

@@ -248,8 +248,7 @@ mod tests {
 
     #[test]
     fn test_connector_context_block() {
-        let result =
-            build_iteration_context("", "", "", "", "", Some("connector info"), None, "");
+        let result = build_iteration_context("", "", "", "", "", Some("connector info"), None, "");
         assert!(result.contains("[内部系统浏览]\n"));
         assert!(result.contains("connector info"));
         assert!(result.contains("[/内部系统浏览]"));

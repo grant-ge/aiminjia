@@ -311,7 +311,10 @@ mod tests {
             &self.name
         }
 
-        async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
+        async fn definition(
+            &self,
+            _ctx: &crate::runtime::tools::ToolDescriptionContext,
+        ) -> ToolDefinition {
             ToolDefinition::new(&self.name, "Recording test tool")
         }
 

@@ -16,7 +16,7 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     include: ['src/**/*.test.{ts,tsx}'],
-    setupFiles: ['./src/test/setup-i18n.ts', './src/test/setup-tiptap-jsdom.ts'],
+    setupFiles: ['./src/test/setup-tauri.ts', './src/test/setup-i18n.ts', './src/test/setup-tiptap-jsdom.ts'],
   },
 
   // Prevent vite from obscuring Rust errors
@@ -38,6 +38,17 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
+  },
+
+  // Build target floor for the Tauri webview (system WebKit on macOS / WebView2
+  // on Windows). macOS Monterey 12.x ships Safari 15.x; Vite 7's default target
+  // (baseline-widely-available ≈ Safari 16) emits syntax that throws at parse on
+  // those systems → blank white screen. Pin a conservative floor.
+  // NOTE: `target` only down-levels *JS syntax* — it does NOT transpile regex
+  // (e.g. lookbehind, unsupported < Safari 16.4) nor polyfill runtime APIs.
+  // Keep risky deps version-locked (see `pnpm.overrides` in package.json).
+  build: {
+    target: process.env.TAURI_ENV_PLATFORM === 'windows' ? 'chrome105' : 'safari13',
   },
 
   // Env prefix for Tauri

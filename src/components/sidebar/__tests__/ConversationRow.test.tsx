@@ -34,26 +34,14 @@ describe('ConversationRow', () => {
     expect(onClick).toHaveBeenCalledTimes(1)
   })
 
-  it('invokes configured dropdown actions', () => {
+  it('archive icon arms first click, fires onArchive on second click', () => {
     const onArchive = vi.fn()
-    const onRename = vi.fn()
-    render(
-      <ConversationRow
-        id="c5"
-        title="X"
-        active
-        onClick={() => {}}
-        onArchive={onArchive}
-        onRename={onRename}
-      />,
-    )
+    render(<ConversationRow id="c5" title="X" active onClick={() => {}} onArchive={onArchive} />)
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: '聊天更多操作' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '归档聊天' }))
-    fireEvent.pointerDown(screen.getByRole('button', { name: '聊天更多操作' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '重命名聊天' }))
-
+    const archiveBtn = screen.getByRole('button', { name: '归档聊天' })
+    fireEvent.click(archiveBtn)
+    expect(onArchive).not.toHaveBeenCalled()
+    fireEvent.click(archiveBtn)
     expect(onArchive).toHaveBeenCalledTimes(1)
-    expect(onRename).toHaveBeenCalledTimes(1)
   })
 })

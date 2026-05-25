@@ -180,7 +180,7 @@ Skill 系统采用无状态架构，仅加载 `~/.renlijia/users/{scope}/skills/
 
 - 按钮 → `@/components/ui/button` 的 `<Button>`，靠 `variant` 切色（`default` / `secondary` / `ghost` / `destructive` / `outline` / `link`），不要再叠 `bg-black text-white hover:bg-black/85` 把默认 variant 覆盖掉
 - 顶栏 → `@/components/shell/ChatTopBar`（聊天页 / 频道页）或 `@/components/shell/PageTopBar`（普通页），不要手写 `<div data-tauri-drag-region className="flex h-10 ...">`
-- 对话框 → `@/components/ui/dialog` 的 `Dialog` / `DialogContent`，外层圆角想生效就给 `DialogContent` 加 `overflow-hidden`
+- 对话框 → `@/components/ui/dialog` 的 `Dialog` / `DialogContent`，外层圆角想生效就给 `DialogContent` 加 `overflow-hidden`。**`DialogContent` 自带右上角关闭 X**（`DialogPrimitive.Close` + lucide `X`，主题色），不要再在弹窗里手搓关闭按钮；个别需要强流程不可关的弹窗传 `hideClose` 关掉内置 X
 - 下拉 → `@/components/common/AppDropdown`
 - 确认弹窗 → `requestConfirm`（`@/components/common/ConfirmDialogHost`）
 - Toast → `useNotificationStore.push({ context: 'toast' })`
@@ -220,35 +220,31 @@ Skill 系统采用无状态架构，仅加载 `~/.renlijia/users/{scope}/skills/
 
 ## 存储结构
 
-所有运行时数据持久化到 `~/.renlijia/`（`AiJiaHome::from_home()`），不再使用 Tauri app data dir（后者仅用于启动时一次性迁移）：
+**权威规范在 `~/lotus/docs/desktop/storage-conventions.md`**。本节只给一句话指引 + 入口；任何写盘改动以规范文档为准。
 
-```
-~/.renlijia/
-├── users/{scope}/conversations/{id}/  # per-team 布局（scope = t_{tenantId}__u_{userId}）
-│   ├── conv.json                  # 对话元数据（含 isArchived / title / messageCount）
-│   ├── conv.json.bak              # 原子写时的备份
-│   ├── messages.jsonl             # 消息流水（单文件 ndjson，每行末尾带 `\t✓` 校验位）
-│   ├── compact_boundaries.jsonl   # 压缩边界记录
-│   ├── file_index.json            # 文件索引
-│   ├── generated/                 # LLM 生成产物（报告、图表等）
-│   ├── notes/                     # 长文笔记
-│   └── uploads/                   # 上传文件副本
-├── conversations/{id}/            # 老布局（迁移前会话；新会话不再落到这里）
-├── subagent_transcripts/          # 子代理完整转录（JSON 数组）
-├── skills/                        # 本地 skill 文件
-├── crypto/                        # 加密主密钥
-├── screenshots/
-├── site-profiles/
-├── mcp_servers.json
-├── permissions.json
-└── agent_invocations.json
-```
+### 五个域
 
-workspace 目录（用户可自定义，默认也是 `~/.renlijia/`）下存放生成物：
+| 域 | 路径 | 例子 | 入口 |
+|---|---|---|---|
+| L0 全局元数据 | `~/.renlijia/global/` | `config.json` / `state.json` / `auth/` | `AiJiaHome::global_*` |
+| L0 系统单点 | `~/.renlijia/` 根级（白名单） | `crypto/` / `device_id` / `employee-templates-cache/` / `tmp/` | `AiJiaHome::*` |
+| L1 用户私有 | `~/.renlijia/users/{scope}/` | `conversations/` / `employees/` / `skills/` / `permissions.json` / `turn_stages/` | `UserScopedPaths::*` |
+| L2 临时可重生成 | `~/.renlijia/tmp/` | 剪贴板贴图、IM 附件下载 | `AiJiaHome::tmp_*_dir()` |
+| L3 用户工作区 | `<workspacePath>/`（默认 `defaultFolder/`） | 报表 / 图表 / 上传副本 | 工具上下文 `workspace_path()` |
 
-- `uploads/` — 用户上传文件副本
-- `reports/` / `charts/` / `analysis/` — 生成物
-- `logs/` — 运行日志
+### 关键约束
+
+- **L1 用户私有数据是缺省**：不知道往哪写就用 `UserScopedPaths`。
+- **runtime/ 模块不得直接构造 `AiJiaHome`**，必须通过 `UserScopedPathResolver` trait 注入（参考 `chat_turn_driver::turn_stage_path_resolver`、`RuntimeHost::resolve_*` 一族）。
+- **L1 未登录态必须 no-op**，不得回退到 root（参考 `transport/tauri_commands/turn_stage.rs::get_active_turn_stage`）。
+- **新增 root 级条目必须更新规范 §5 白名单 + `migration_root_cleanup::ARCHIVE_ITEMS`**，否则会被下一轮 cleanup 误归档。
+- **消息存储是单文件 `messages.jsonl`**（append-only，按 `id` LWW + `_rev` 增量），旧 shard 模型（`messages.N.jsonl` / `_current` / `compact_boundaries.jsonl`）已通过 `migrate_shards_to_single_file` 自动合并，新代码不要再用 shard 路径。
+
+### 迁移历史 / 进行中
+
+- `users/{scope}/` 已是主写入路径；老 root-level 数据由 `migration_user_scope` 一次性 copy 后，`migration_root_cleanup` 归档到 `.archived-legacy-{ts}/`，30 天自动 GC。
+- `turn_stages/` 已 user-scope 化（commit 4108f8e）。`subagent_transcripts/` 已迁到 `conversations/{conv_id}/subagents/`，旧路径标 `#[deprecated]`。
+- 仍在做：`playwright-profile/` 用户化、`tmpImage/` 收编到 `tmp/clipboard/`、IM `*_downloads/` 加 GC、`runtimes_dir()` 从 `~/Library/Caches/` 收编回根。完整清单见规范 §11。
 
 ## 重要架构决策与约束
 
@@ -331,6 +327,11 @@ bash scripts/build-and-sign-macos.sh X.Y.Z release
 .\scripts\release-windows.ps1 -Version X.Y.Z -Type release
 bash scripts/verify-release.sh X.Y.Z release
 python3 scripts/release.py finalize           # 生成 update.json → 自动更新生效
+
+# 6. 收尾（finalize 之后）
+python3 scripts/bump-homebrew.py X.Y.Z        # 同步 grant-ge/homebrew-tap
+cd ~/lotus && ./scripts/update-changelog.sh desktop X.Y.Z
+# → 填 changelog.json → 部署 home → push → 自动推钉钉群（带 "AI小家"）
 ```
 
 ### 关键脚本
@@ -361,6 +362,7 @@ python3 scripts/release.py finalize           # 生成 update.json → 自动更
 3. **signtool 自动化**：脚本自动拼对的命令 `signtool sign /v /fd sha256 /sha1 <thumbprint> /tr <timestamp-url> /td sha256 <exe>`。不会再漏 `/tr` 导致无 timestamp 签名。
 4. **Tauri key 走文件路径**：`tauri signer sign -k <file>`，不走环境变量（避免 PowerShell 传 base64 给子进程时引入空白字符）。
 5. **公开 staging URL**：CI 上传到 `aijia/staging/unsigned/v{ver}/`，CDN 公开可下载（不需要 GitHub token / gh CLI），任何 Windows 机器只要 `git pull` 就能跑发版。
+6. **下载页刷新**：上传 + 清理 staging 之后调 `ci-generate-download-page.py` 重生成 `aijia/downloads.html`。背景：macOS `build-and-sign-macos.sh` 在自己跑完时刷一次下载页，但那时还没有 Windows exe；Windows 在 macOS 之后跑，必须自己再刷一次，否则下载页只列 macOS 4 个产物（v0.5.26-beta.6 实战踩过）。失败时只 warn 不阻断,因为产物已经上传成功。
 
 ### 签名机环境要求
 
@@ -445,4 +447,8 @@ aijia/
 - **剪贴板图片粘贴**：`useComposerPaste.handlePaste` 支持截图/复制图片粘贴。流程：同步提取 `clipboardData.items` 中的 image blob（异步后 clipboardData 会被浏览器清空）→ 先尝试 native file paths（Finder 复制文件）→ 路径为空时 fallback 到 image blob → `saveClipboardImage()` 写入 `tmpImage/` → 添加为 `PendingAttachment`。`saveClipboardImage` 从 `useChatAttachments` 传入（Tauri IPC → Rust `save_clipboard_image_to_tmp`）。ChatBottomArea + HomeTaskComposerCard 两个 composer 均已接入。
 - **租户运行时换肤（C 路径，2026-05-09 重做）**：tenant 4 色（`accentColor` / `primaryColor` / `bgColor` / `sidebarBgColor`）+ `productName` + `logoUrl` + `fontFamily` 由 lotus 后台（`tenant-portal/web/src/pages/settings/branding.tsx`，10 个 PRESET_THEMES）下发；后端 `auth/state.rs::TenantInfo` 透传，前端 `src/stores/brandingStore.ts::applyBranding` 派生 ~40 个 CSS 变量（design.pen + legacy `--color-*` 双套命名空间）。派生算法在 `src/lib/themeUtils.ts`：accent 用 lighten/darken/rgba 派生 hover/subtle/-50/-100/...；primary 决定 `--foreground` 和文字色；bg/sidebar 用 `mixColors(bg, fg, ratio)` 派生 muted/border/popover。`isDarkColor` 决定 `--*-foreground` 用 `#FFFFFF` 还是 `#1A1A1A`，所以 dark mode 不需要 `.dark` selector，直接 4 色填深色即可。`authStore` 在 `restoreFromStorage / login` 后调 `applyTenantBranding(info)`，`logout` 时 `useBrandingStore.reset()`。**前端不再提供本地 accent 选择器**（之前 `GeneralPanel` 的强调色 swatch 已删除）——皮肤完全由 lotus 后台定，避免"用户本地选择 vs 租户下发"的覆盖冲突。`localStorage` 里历史残留的 `aijia-accent-color` 和后端 settings 里的 `accentColor` 字段都不再被读取。
 - **标题栏 = accent 色（2026-05-09）**：mac Overlay 区 + Windows 自绘标题栏统一用 `bg-primary text-primary-foreground` 显示租户 accent，是用户感知最强的换肤点。`App.tsx` 顶层 wrapper 用 `bg-background`（不再是 `bg-sidebar`），让租户 bgColor 一改 wrapper 就跟着变。Windows 标题栏拖拽踩坑：① `flex-1` 占位 div 必须有 `data-tauri-drag-region`，吃掉中间空白区域的拖拽；② `WindowControls` 外层 `onMouseDown stopPropagation`，否则点击关闭按钮会被父级拖拽吞；③ `UpdateAvailableLink` 也必须包 `stopPropagation` 容器，否则点击更新链接没反应（0.3.x 历史 bug）。mac Overlay 拖拽由系统提供，**不要**额外绑 `onMouseDown=startDragging` 否则跟系统冲突。Windows 标题栏底部用 `border-b border-primary-foreground/15` 做半透明分隔线，避免 accent 与 background 色差小时糊在一起。
+- **Shell 工具走 bundled runtime PATH + 失败信号上报（2026-05-21）**：`BashTool`（Unix）和 `PowerShellTool`（Windows）spawn 子进程前必须调用 `shell_common::inject_bundled_runtime_path(&ctx, &mut cmd)`，把 `<bundled>/node/bin` 前置到子进程 PATH。**为什么**：npm/npx 是 `#!/usr/bin/env node` 的 shebang 脚本，即便用绝对路径调 `$NODE_DIR/bin/npm`，npm 内部的 postinstall(`sh -c "node install.js"`) 也走 PATH，没有这一步，`npm install -g dingtalk-workspace-cli` 之类的命令在用户机器上必现 `env: node: No such file or directory`（2026-05-21 客户截图复现）。`inject_bundled_runtime_path` 在 `ctx.capability.runtime_resolver` 缺失时静默 no-op（legacy/test 路径不受影响）。每个命令收尾都走 `emit_shell_failure_diagnostic(&ctx, tool, command, exit_code, output, semantics.is_error)` —— 把 exit_code 127/126 或 npm install 失败分类成 `runtime_install_failure / command_not_found / permission_denied / command_timeout / command_failure`，level=Error 的两类（runtime_install / command_not_found）会被服务端 lotus diagnostics handler 升级为 `client_diagnostic_alert` 推到钉钉群。所有逻辑集中在 `src-tauri/src/runtime/tools/builtin/shell_common.rs`，bash.rs / powershell.rs 各只引入两个函数 + 调用两次；6 个分类器单测钉死行为（含 npm postinstall 模式、纯 exit 127、exit 0 不上报、stderr signature 抽取等）。
+- **旧 macOS / WebKit 解析期白屏防护（v0.5.29）**：Tauri webview = 系统 WebKit（mac）/ WebView2（win）。macOS 12 Monterey 自带 Safari 15.x，bundle 里若含它不支持的语法，WKWebView 在 **parse 阶段**就抛 `SyntaxError`，整个 React tree 崩 → 纯白屏（无 error boundary 兜底）。两类元凶分清楚：① **正则 lookbehind `(?<=` / `(?<!`**（Safari 16.4 才支持）—— `build.target` **无法转译正则**，只能锁依赖版本（已知 `mdast-util-gfm-autolink-literal` 2.0.1 的邮箱 autolink 踩雷，`package.json` `pnpm.overrides` 锁 2.0.0）；② **JS 语法超标** —— Vite 7 默认 target `baseline-widely-available`（≈ Safari 16）本身就不兼容 Monterey，已在 `vite.config.ts` 加 `build.target`（`windows→chrome105 / 其它→safari13`）兜底。注意 target 只降语法，**不 polyfill 运行时 API**（structuredClone / crypto.randomUUID 等）。排查：`grep -roE '\(\?<[=!]' dist/assets/*.js` 应为 0；`highlight.js` 里 r/scala/haskell/gcode 的 lookbehind 全在注释里、压缩剥离、非风险；Node 工具链（vite/vitest/tailwind/eslint）的 lookbehind 不进 webview。
+- **窗口标题 = productName（Dock 菜单，v0.5.29）**：原生 window title 之前被设成单空格 `" "`，导致 macOS Dock 右键菜单 / Mission Control / Cmd+Tab 的窗口名显示空白。改为：`lib.rs` 启动 `set_title("AIjia")` 作 fallback，`brandingStore.setWindowTitle` 调 `getCurrentWebviewWindow().setTitle(title)` 设为租户 `productName`。`titleBarStyle: Overlay` 不在窗口内渲染标题文字，所以**无视觉副作用**，纯修 OS 层窗口名。
+- **登录/注册页 + 全局弹窗关闭按钮（v0.5.29）**：未登录态 `AuthGate` 渲染 `LoginPage` 替代主 `AppShell`，因此 `<TitleBar />` 不挂载；Windows 又 `set_decorations(false)`，导致登录/注册页（含内嵌切换的 `RegisterCard`）无任何关窗/最小化按钮。修法：`LoginPage` 顶部内嵌 `<TitleBar />`（mac 走原生红绿灯 overlay，Windows 出自绘 `WindowControls`）。同时 `ui/dialog` 的 `DialogContent` 加内置右上角 X（见「UI 编写规范」），技能市场 / 协议文档等之前只能 Esc/点遮罩的弹窗统一有可见关闭。
 

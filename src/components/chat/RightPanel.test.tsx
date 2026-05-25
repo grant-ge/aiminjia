@@ -74,7 +74,11 @@ beforeEach(() => {
 })
 
 describe('RightPanel preview workspace', () => {
-  it('renders the default narrow panel without empty preview', () => {
+  // NOTE: the task-monitor / artifact sidebar is currently disabled behind
+  // SHOW_TASK_MONITOR (false) in RightPanel.tsx — the narrow panel returns null
+  // and only the file-preview panel renders. The artifact-list tests below are
+  // skipped (not deleted) so they re-activate when the flag is flipped back on.
+  it.skip('renders the default narrow panel without empty preview', () => {
     render(<RightPanel conversationId="conv-1" />)
 
     expect(screen.getByTestId('right-panel')).toHaveClass('w-[260px]')
@@ -98,12 +102,12 @@ describe('RightPanel preview workspace', () => {
 
     render(<RightPanel conversationId="conv-1" />)
 
-    expect(screen.getByTestId('right-panel')).toHaveClass('w-[720px]')
+    expect(screen.getByTestId('right-panel')).toHaveClass('w-[600px]')
     expect(screen.getByText('summary.md')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Close preview' })).toBeInTheDocument()
   })
 
-  it('filters the artifact list by conversation', () => {
+  it.skip('filters the artifact list by conversation', () => {
     useChatStore.setState({
       messages: [
         messageWithFile('conv-1', generatedFile({ id: 'gf-1', fileName: 'summary.md' })),
@@ -117,7 +121,7 @@ describe('RightPanel preview workspace', () => {
     expect(screen.queryByText('other.md')).not.toBeInTheDocument()
   })
 
-  it('switches the preview target when clicking a previewable artifact', () => {
+  it.skip('switches the preview target when clicking a previewable artifact', () => {
     useChatStore.setState({
       messages: [messageWithFile('conv-1', generatedFile({ id: 'gf-1', fileName: 'summary.md' }))],
     })
@@ -134,7 +138,7 @@ describe('RightPanel preview workspace', () => {
     })
   })
 
-  it('previews image artifacts when legacy actions omit preview', () => {
+  it.skip('previews image artifacts when legacy actions omit preview', () => {
     const onOpenExternal = vi.fn()
     useChatStore.setState({
       messages: [
@@ -163,7 +167,7 @@ describe('RightPanel preview workspace', () => {
     expect(onOpenExternal).not.toHaveBeenCalled()
   })
 
-  it('switches the preview target when clicking an image artifact', () => {
+  it.skip('switches the preview target when clicking an image artifact', () => {
     const onOpenExternal = vi.fn()
     useChatStore.setState({
       messages: [
@@ -188,7 +192,7 @@ describe('RightPanel preview workspace', () => {
     expect(onOpenExternal).not.toHaveBeenCalled()
   })
 
-  it('keeps non-previewable artifacts disabled when no default-app opener is available', () => {
+  it.skip('keeps non-previewable artifacts disabled when no default-app opener is available', () => {
     useChatStore.setState({
       messages: [
         messageWithFile('conv-1', generatedFile({ id: 'gf-1', fileName: 'summary.md' })),
@@ -211,7 +215,7 @@ describe('RightPanel preview workspace', () => {
     expect(useGeneratedFilePreviewStore.getState().target).toBeNull()
   })
 
-  it('opens non-previewable artifacts with the default app instead of disabling them', () => {
+  it.skip('opens non-previewable artifacts with the default app instead of disabling them', () => {
     const onOpenExternal = vi.fn()
     useChatStore.setState({
       messages: [
@@ -239,7 +243,7 @@ describe('RightPanel preview workspace', () => {
     expect(useGeneratedFilePreviewStore.getState().target).toBeNull()
   })
 
-  it('previews previewable artifacts even when preview action is disabled', () => {
+  it.skip('previews previewable artifacts even when preview action is disabled', () => {
     const onOpenExternal = vi.fn()
     useChatStore.setState({
       messages: [
@@ -271,7 +275,7 @@ describe('RightPanel preview workspace', () => {
     expect(onOpenExternal).not.toHaveBeenCalled()
   })
 
-  it('previews json and csv artifacts even when preview action is disabled', () => {
+  it.skip('previews json and csv artifacts even when preview action is disabled', () => {
     const onOpenExternal = vi.fn()
     useChatStore.setState({
       messages: [
@@ -309,7 +313,7 @@ describe('RightPanel preview workspace', () => {
     expect(onOpenExternal).not.toHaveBeenCalled()
   })
 
-  it('keeps preview-disabled markdown artifacts previewable by type', () => {
+  it.skip('keeps preview-disabled markdown artifacts previewable by type', () => {
     useChatStore.setState({
       messages: [
         messageWithFile('conv-1', generatedFile({ id: 'gf-1', fileName: 'summary.md' })),

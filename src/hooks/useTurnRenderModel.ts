@@ -62,7 +62,7 @@ export interface RenderPeerBanner {
 }
 
 export interface RenderTurn {
-  userMessage?: { id: string; text: string; commandText?: string; skillCommand?: SkillCommandBreadcrumb; files?: FileAttachment[] }
+  userMessage?: { id: string; text: string; createdAt: string; commandText?: string; skillCommand?: SkillCommandBreadcrumb; files?: FileAttachment[] }
   aiSegments: RenderAiSegment[]
   toolGroup?: RenderToolGroup
   generatedFiles: RenderGeneratedFile[]
@@ -192,6 +192,7 @@ function normalizeUserMessageForRender(message: Message): NonNullable<RenderTurn
     return {
       id: message.id,
       text: rawText,
+      createdAt: message.createdAt,
       commandText: message.content.commandText,
       skillCommand: message.content.skillCommand,
       files,
@@ -200,7 +201,7 @@ function normalizeUserMessageForRender(message: Message): NonNullable<RenderTurn
 
   const slashMatch = rawText.match(/^\/([A-Za-z0-9][A-Za-z0-9_-]*)(?:\s+([\s\S]*))?$/)
   if (!slashMatch) {
-    return { id: message.id, text: rawText, files }
+    return { id: message.id, text: rawText, createdAt: message.createdAt, files }
   }
 
   const skillId = slashMatch[1]
@@ -209,6 +210,7 @@ function normalizeUserMessageForRender(message: Message): NonNullable<RenderTurn
   return {
     id: message.id,
     text,
+    createdAt: message.createdAt,
     commandText: rawText,
     skillCommand: { id: skillId, label: skillId, command },
     files,

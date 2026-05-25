@@ -106,9 +106,7 @@ fn stop_sequence_with_empty_surfaces_immediately() {
 
 #[test]
 fn custom_max_attempts_respected() {
-    let mut s = EmptyResponseRecoveryState::new(EmptyResponseRecoveryConfig {
-        max_attempts: 1,
-    });
+    let mut s = EmptyResponseRecoveryState::new(EmptyResponseRecoveryConfig { max_attempts: 1 });
     let d1 = s.decide(StopReason::MaxTokens, false, false, 64000, 1);
     assert!(matches!(d1, RecoveryDecision::Retry { .. }));
     let d2 = s.decide(StopReason::MaxTokens, false, false, 64000, 2);

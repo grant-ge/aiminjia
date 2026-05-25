@@ -3,10 +3,8 @@ import { ArrowLeft, Sparkles } from 'lucide-react'
 import { PageSectionShell } from '@/components/shell/PageSectionShell'
 import { PageTopBar } from '@/components/shell/PageTopBar'
 import { SkillActionBar } from '@/components/skills/SkillActionBar'
-import { SkillCard } from '@/components/skills/SkillCard'
 import { SkillDetailHero } from '@/components/skills/SkillDetailHero'
 import { SkillMetaRow } from '@/components/skills/SkillMetaRow'
-import { SkillTryGrid } from '@/components/skills/SkillTryGrid'
 import { SkillUsageBlock } from '@/components/skills/SkillUsageBlock'
 import { useSkillStore } from '@/stores/skillStore'
 import { useUiStore } from '@/stores/uiStore'
@@ -17,23 +15,20 @@ interface SkillDetailPageProps {
   skillId: string
 }
 
-const TRY_PROMPTS = [
-  '依据这份表格，分析本月经营数据，输出 KPI 达成率、趋势图和 P0/P1 行动建议。',
-  '帮我分析表格数据，自动挖掘 KPI、趋势和异常，输出可视化报告。',
-  '把这份多 sheet Excel 拆开分析，各模块独立出报告并关联对比。',
-]
-
 export function SkillDetailPage({ skillId }: SkillDetailPageProps) {
   const skill = useSkillStore((s) => s.getById(skillId))
   const setRoute = useUiStore((s) => s.setRoute)
-  const setPrefillText = useUiStore((s) => s.setPrefillText)
+  const setPendingSkill = useUiStore((s) => s.setPendingSkill)
   const goToSkillCenter = () => setRoute({ kind: 'skill-center' })
 
   const handleUseSkill = () => {
     if (!skill) return
-    const trigger = skill.triggerText?.trim() || `/${skill.id}`
-    const next = trigger.endsWith(' ') ? trigger : `${trigger} `
-    setPrefillText(next)
+    const trigger = (skill.triggerText?.trim() || `/${skill.id}`)
+    setPendingSkill({
+      id: skill.id,
+      label: skill.displayName || skill.id,
+      trigger,
+    })
     setRoute({ kind: 'home' })
   }
 
@@ -83,7 +78,7 @@ export function SkillDetailPage({ skillId }: SkillDetailPageProps) {
       <SkillDetailHero
         iconNode={<Sparkles className="h-9 w-9 text-primary" />}
         title={skill.displayName}
-        subtitle={skill.shortDescription || skill.description}
+        subtitle={skill.shortDescription || `通过命令 ${skill.triggerText?.trim() || `/${skill.id}`} 快速调用`}
         actionBar={
           <SkillActionBar
             primaryLabel="使用"
@@ -94,24 +89,27 @@ export function SkillDetailPage({ skillId }: SkillDetailPageProps) {
       <SkillMetaRow
         items={[
           { label: '来源', value: skill.source === 'builtin' ? 'AI 小家内置' : '已安装' },
+          { label: '调用命令', value: skill.triggerText?.trim() || `/${skill.id}` },
           ...(formatSkillUpdatedAt(skill.updatedAt)
             ? [{ label: '更新时间', value: formatSkillUpdatedAt(skill.updatedAt) as string }]
             : []),
         ]}
       />
-      <SkillTryGrid>
-        {TRY_PROMPTS.map((p, i) => (
-          <SkillCard
-            key={i}
-            iconNode={<Sparkles className="h-4 w-4 text-primary" />}
-            title={skill.displayName}
-            meta={skill.source === 'builtin' ? '内置' : '自定义'}
-            desc={p}
-          />
-        ))}
-      </SkillTryGrid>
       <SkillUsageBlock
-        text={skill.description || '上传 Excel 或 CSV 表格，一键生成可视化数据分析报告。'}
+        usageSteps={[
+          '点击右上角"使用"按钮,自动跳转到对话首页,输入框上方会出现技能 chip。',
+          '按需要补充上下文：可拖拽/选择文件作为附件,或直接在输入框继续描述任务。',
+          '回车发送后,AI 小家会按该技能的执行规则完成工作并产出结果。',
+          `也可以在任意对话输入框手动输入 ${skill.triggerText?.trim() || `/${skill.id}`} + 你的具体要求来触发。`,
+        ]}
+        notes={[
+          '技能 chip 仅对当前这一轮消息生效,发送后会自动清除;再次使用请重新进入技能详情或在输入框中重新调用命令。',
+          '建议描述任务时尽量具体(目标 / 约束 / 期望输出格式),技能内置的执行逻辑会按上下文展开,信息越足结果越准。',
+          '若技能依赖文件输入(如表格 / 文档 / 截图),请确保附件已加载完成再点击发送。',
+          skill.source === 'builtin'
+            ? '本技能为 AI 小家内置,会随客户端版本统一升级,无需手动维护。'
+            : '本技能为本地安装,如需更新请在技能中心重新导入最新版本的 SKILL 包。',
+        ]}
       />
     </PageSectionShell>
   )

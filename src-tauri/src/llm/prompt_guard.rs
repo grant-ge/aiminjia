@@ -143,5 +143,4 @@ mod tests {
                         数据显示 Compa-Ratio 中位数为 95%，CV 为 18%。";
         assert!(matches!(check_for_leak(content), LeakCheckResult::Clean));
     }
-
 }

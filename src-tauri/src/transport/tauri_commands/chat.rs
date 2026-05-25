@@ -44,10 +44,16 @@ pub(crate) use chat_runtime_impl::build_visible_tool_defs;
 /// Maximum number of stream-level retries within the agent loop.
 /// When a stream error or gateway error is retryable (5xx, timeout, connection),
 /// the current iteration is retried instead of aborting the entire agent loop.
-const MAX_STREAM_RETRIES: u32 = 2;
+const MAX_STREAM_RETRIES: u32 = 5;
 
-/// Delay before retrying a failed stream (seconds).
+/// Base delay before retrying a failed stream (seconds). Actual delay grows
+/// exponentially with attempt number: 2s, 4s, 8s, 16s, 32s.
 const STREAM_RETRY_DELAY_SECS: u64 = 2;
+
+/// Compute exponential backoff for retry attempt N (1-based).
+fn stream_retry_backoff_secs(attempt: u32) -> u64 {
+    STREAM_RETRY_DELAY_SECS.saturating_mul(1u64 << attempt.min(5).saturating_sub(1))
+}
 
 fn attachment_refs_from_json_array(
     files: &[serde_json::Value],
@@ -467,7 +473,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
     ) -> Result<LlmStepResult, TurnError> {
         use crate::llm::masking::MaskingLevel;
         use crate::llm::streaming::{ChatMessage, StopReason, StreamEvent, ToolDefinition};
-        use crate::runtime::events::{RuntimeEvent, RuntimeEventKind};
+        use crate::runtime::events::{RetryReason, RuntimeEvent, RuntimeEventKind};
         use crate::runtime::ids::{RunId, SessionId};
         use futures::StreamExt;
 
@@ -556,6 +562,8 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                     Some(input.conversation_id),
                     input.anthropic_multimodal_turn.clone(),
                     system_prompt_segments.clone(),
+                    Some(input.trace_id),
+                    Some(input.run_id),
                 )
                 .await;
 
@@ -586,11 +594,15 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                             .emit(RuntimeEvent::new(
                                 session_id.clone(),
                                 run_id.clone(),
-                                RuntimeEventKind::StreamRetryReset,
+                                RuntimeEventKind::StreamRetryReset {
+                                    reason: classify_retry_reason(&err_str),
+                                },
                             ))
                             .await;
-                        tokio::time::sleep(std::time::Duration::from_secs(STREAM_RETRY_DELAY_SECS))
-                            .await;
+                        tokio::time::sleep(std::time::Duration::from_secs(
+                            stream_retry_backoff_secs(stream_retry_count),
+                        ))
+                        .await;
                         continue;
                     }
 
@@ -660,7 +672,9 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                                 .emit(RuntimeEvent::new(
                                     session_id.clone(),
                                     run_id.clone(),
-                                    RuntimeEventKind::StreamRetryReset,
+                                    RuntimeEventKind::StreamRetryReset {
+                                        reason: RetryReason::NetworkFlap,
+                                    },
                                 ))
                                 .await;
                             iter_content.clear();
@@ -715,6 +729,15 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                             Some(StreamEvent::ThinkingBlock { .. }) => {
                                 // ThinkingBlock: full thinking block w/ signature — intentionally dropped here.
                             }
+                            Some(StreamEvent::Keepalive) => {
+                                // Liveness tick (Anthropic ping / input_json_delta tool-arg
+                                // fragment / message_start). No content to process — but
+                                // reaching this arm means a fresh SSE event arrived on the
+                                // wire, so the per-iteration chunk-timeout watchdog (re-armed
+                                // at the top of the loop) is effectively reset. This is the
+                                // fix for false "响应超时（90秒无数据）" aborts during long
+                                // tool-argument streaming and ping-only thinking windows.
+                            }
                             Some(StreamEvent::ToolCallStart { tool_call }) => {
                                 log::info!(
                                     "[run_llm_step] Tool call received: name='{}' id='{}'",
@@ -758,7 +781,9 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                                         .emit(RuntimeEvent::new(
                                             session_id.clone(),
                                             run_id.clone(),
-                                            RuntimeEventKind::StreamRetryReset,
+                                            RuntimeEventKind::StreamRetryReset {
+                                                reason: classify_retry_reason(&error),
+                                            },
                                         ))
                                         .await;
                                     iter_content.clear();
@@ -795,14 +820,15 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
 
             // If a retry was requested, sleep and restart the gateway call
             if stream_needs_retry {
+                let backoff = stream_retry_backoff_secs(stream_retry_count);
                 log::info!(
                     "[run_llm_step] Retrying after {}s (retry {}/{}) conv={}",
-                    STREAM_RETRY_DELAY_SECS,
+                    backoff,
                     stream_retry_count,
                     MAX_STREAM_RETRIES,
                     input.conversation_id
                 );
-                tokio::time::sleep(std::time::Duration::from_secs(STREAM_RETRY_DELAY_SECS)).await;
+                tokio::time::sleep(std::time::Duration::from_secs(backoff)).await;
                 continue;
             }
 
@@ -887,7 +913,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
 
     async fn load_llm_settings_for_turn(
         &self,
-        request: &ChatTurnRequest,
+        _request: &ChatTurnRequest,
     ) -> Result<ResolvedLlmSettings, TurnError> {
         let global_settings_map = self.services.db().get_all_settings().unwrap_or_default();
         let global_settings = if global_settings_map.is_empty() {
@@ -940,13 +966,15 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         conversation_id: &str,
         content: &str,
         attachments: &[crate::runtime::chat::chat_turn_driver::ChatAttachmentRef],
+        skill_command: Option<&crate::runtime::chat::chat_turn_driver::SkillCommandRef>,
         _client_message_id: Option<&str>,
     ) -> Result<String, TurnError> {
         let msg_id = format!("msg-{}", uuid::Uuid::new_v4());
 
-        let content_json = crate::runtime::chat::chat_turn_driver::build_user_content_json(
+        let content_json = crate::runtime::chat::chat_turn_driver::build_user_content_json_with_skill(
             content,
             attachments,
+            skill_command,
         )
         .to_string();
 
@@ -1371,7 +1399,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         let max_iterations = employee_overrides
             .as_ref()
             .map(|ov| ov.max_iterations)
-            .unwrap_or(30);
+            .unwrap_or(300);
 
         let authorized_workspace = chat_runtime_impl::load_authorized_workspace(
             &self.services.app,
@@ -2042,6 +2070,33 @@ fn is_retryable_stream_error_str(error: &str) -> bool {
         || lower.contains("rate limit")
 }
 
+/// Classify a retryable error into a [`RetryReason`] so the frontend can show
+/// the right toast (upstream busy vs local network flap vs rate limit).
+fn classify_retry_reason(error: &str) -> crate::runtime::events::RetryReason {
+    use crate::runtime::events::RetryReason;
+    let lower = error.to_lowercase();
+    // Local-side signals win over status codes — a "timeout" wrapping a 5xx
+    // response is still a real timeout on our side worth flagging as network.
+    if lower.contains("timeout")
+        || lower.contains("timed out")
+        || lower.contains("connection reset")
+        || lower.contains("connection refused")
+        || lower.contains("broken pipe")
+    {
+        RetryReason::NetworkFlap
+    } else if lower.contains("429") || lower.contains("rate limit") {
+        RetryReason::RateLimited
+    } else if lower.contains("500")
+        || lower.contains("502")
+        || lower.contains("503")
+        || lower.contains("504")
+    {
+        RetryReason::UpstreamBusy
+    } else {
+        RetryReason::NetworkFlap
+    }
+}
+
 #[cfg(test)]
 mod openai_system_prompt_tests {
     use super::*;
@@ -2189,7 +2244,7 @@ impl TauriChatCommandAdapter {
         auth_manager: Arc<AuthManager>,
         permission_store: Arc<crate::runtime::store::PermissionStore>,
         app: tauri::AppHandle,
-        channel_sessions: Option<Arc<dyn crate::connector::channel::ask_coordinator::ChannelSessionRegistry>>,
+        channel_sessions: Option<Arc<dyn crate::connector::im::shared::ask_coordinator::ChannelSessionRegistry>>,
     ) -> Self {
         let runtime_resolver = app
             .try_state::<crate::runtime::dependencies::ManagedRuntimeResolver>()
@@ -2535,27 +2590,7 @@ impl TauriChatCommandAdapter {
             .clear_task_for_run(&conversation_id, &run_id);
 
         if result.is_ok() {
-            let needs_title =
-                conversation_service::should_auto_title(&*self.services.db(), &conversation_id)
-                    .unwrap_or(false);
-            if needs_title {
-                let dummy_request =
-                    ChatTurnRequest::new(conversation_id.clone(), String::new(), vec![]);
-                if let Ok(resolved) = self.load_llm_settings_for_turn(&dummy_request).await {
-                    let db = self.services.db().clone() as Arc<dyn ConversationStore>;
-                    let gateway = self.services.gateway.clone();
-                    let host: Arc<dyn crate::transport::runtime_host::RuntimeHost> =
-                        Arc::new(TauriRuntimeHost::new(self.services.app.clone()));
-                    let conv_id = conversation_id.clone();
-                    let settings = build_gateway_settings(&resolved);
-                    tauri::async_runtime::spawn(async move {
-                        conversation_service::generate_and_set_title(
-                            db, gateway, host, conv_id, settings,
-                        )
-                        .await;
-                    });
-                }
-            }
+            self.spawn_auto_title(conversation_id.clone(), 0).await;
         }
 
         // After this turn ends (success or otherwise), let the PendingQueueManager
@@ -2584,6 +2619,7 @@ impl TauriChatCommandAdapter {
         permission_mode: Option<crate::runtime::tools::permission::PermissionMode>,
         agent_name: Option<String>,
         client_message_id: Option<String>,
+        skill_command: Option<crate::runtime::chat::chat_turn_driver::SkillCommandRef>,
     ) -> Result<(), String> {
         log::info!(
             "[send_message] trace_id={:?} conversation_id={} content_len={} attachments_count={}",
@@ -2622,6 +2658,7 @@ impl TauriChatCommandAdapter {
                         size_bytes: Some(a.file_size),
                     })
                     .collect(),
+                skill_command: skill_command.clone(),
                 received_at: chrono::Utc::now().to_rfc3339(),
             };
             let session_id = crate::runtime::ids::SessionId::new(conversation_id.clone());
@@ -2656,6 +2693,7 @@ impl TauriChatCommandAdapter {
         }
 
         let mut request = ChatTurnRequest::new(conversation_id.clone(), content, attachments);
+        request.skill_command = skill_command;
         // Derive per-turn attachment dirs on the backend (frontend paths are untrusted).
         // The derived dirs will be merged into the per-turn ToolPermissionContext as
         // RuleSource::Session in QueryEngine::build_turn_permission_ctx.
@@ -2839,6 +2877,10 @@ impl TauriChatCommandAdapter {
             "[send_message] calling runtime.run_chat_request conv={}",
             conversation_id
         );
+        // 早期触发标题生成：等 user message 持久化后（约 1.5s 给 driver 写盘），
+        // 立即开始总结，不必等到整个 turn（含工具循环）跑完。后面 turn 结束再
+        // 兜底触发一次，should_auto_title guard 会跳过已生成的情况。
+        self.spawn_auto_title(conversation_id.clone(), 500).await;
         // Compatibility marker for review tests: self.runtime.run_chat_request(request)
         let result = runtime.run_chat_request(request).await;
         // Release the stream-cancel bridge for this turn before any post-turn work
@@ -2848,31 +2890,7 @@ impl TauriChatCommandAdapter {
             .clear_task_for_run(&conversation_id, &run_id);
 
         if result.is_ok() {
-            // Quick synchronous guard: only attempt title generation when needed.
-            let needs_title =
-                conversation_service::should_auto_title(&*self.services.db(), &conversation_id)
-                    .unwrap_or(false);
-
-            if needs_title {
-                // Load settings with the correct conversation context so per-conversation
-                // model overrides are respected.
-                let dummy_request =
-                    ChatTurnRequest::new(conversation_id.clone(), String::new(), vec![]);
-                if let Ok(resolved) = self.load_llm_settings_for_turn(&dummy_request).await {
-                    let db = self.services.db().clone() as Arc<dyn ConversationStore>;
-                    let gateway = self.services.gateway.clone();
-                    let host: Arc<dyn crate::transport::runtime_host::RuntimeHost> =
-                        Arc::new(TauriRuntimeHost::new(self.services.app.clone()));
-                    let conv_id = conversation_id.clone();
-                    let settings = build_gateway_settings(&resolved);
-                    tauri::async_runtime::spawn(async move {
-                        conversation_service::generate_and_set_title(
-                            db, gateway, host, conv_id, settings,
-                        )
-                        .await;
-                    });
-                }
-            }
+            self.spawn_auto_title(conversation_id.clone(), 0).await;
         }
 
         // After this turn ends (success or otherwise), let the PendingQueueManager
@@ -3127,6 +3145,44 @@ impl TauriChatCommandAdapter {
         Ok(out)
     }
 
+    /// Fire-and-forget: 触发对话标题自动生成。先尝试 LLM 总结 user 首句，
+    /// 失败则兜底到 user 首句字面截断。idempotent guard 由 should_auto_title
+    /// + generate_and_set_title 内部 title=="新对话" 双重检查保证。
+    async fn spawn_auto_title(&self, conversation_id: String, delay_ms: u64) {
+        // 提前加载 settings —— spawn 内部跨线程 self 不安全
+        let dummy_request =
+            ChatTurnRequest::new(conversation_id.clone(), String::new(), vec![]);
+        let settings = match self.load_llm_settings_for_turn(&dummy_request).await {
+            Ok(r) => build_gateway_settings(&r),
+            Err(e) => {
+                log::warn!("[auto-title] load_llm_settings_for_turn failed: {:?}", e);
+                return;
+            }
+        };
+        let db = self.services.db().clone() as Arc<dyn ConversationStore>;
+        let gateway = self.services.gateway.clone();
+        let host: Arc<dyn crate::transport::runtime_host::RuntimeHost> =
+            Arc::new(TauriRuntimeHost::new(self.services.app.clone()));
+        tauri::async_runtime::spawn(async move {
+            if delay_ms > 0 {
+                tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+            }
+            let needs = conversation_service::should_auto_title(&*db, &conversation_id)
+                .unwrap_or(false);
+            if !needs {
+                return;
+            }
+            conversation_service::generate_and_set_title(
+                db,
+                gateway,
+                host,
+                conversation_id,
+                settings,
+            )
+            .await;
+        });
+    }
+
     pub async fn create_conversation(&self) -> Result<String, String> {
         // 不在这里 emit conversation:created：前端 createNewConversation 已经做了
         // 乐观更新（optimisticId → backendId 替换），重复事件会触发不必要的 reload。
@@ -3189,12 +3245,67 @@ impl TauriChatCommandAdapter {
         Ok(())
     }
 
+    pub async fn get_conversation_meta(
+        &self,
+        conversation_id: String,
+    ) -> Result<Option<conversation_service::ConversationMetaDto>, String> {
+        match self.services.db().get_conversation(&conversation_id) {
+            Ok(meta) => Ok(Some(meta.into())),
+            Err(e) => {
+                log::warn!(
+                    "[get_conversation_meta] conv {} unreadable: {e:#}",
+                    conversation_id
+                );
+                Ok(None)
+            }
+        }
+    }
+
     pub async fn archive_conversation(&self, conversation_id: String) -> Result<(), String> {
         conversation_service::archive_conversation(
             self.services.db().clone() as Arc<dyn ConversationStore>,
             conversation_id,
         )
         .await
+    }
+
+    pub async fn set_conversation_expert_team(
+        &self,
+        conversation_id: String,
+        expert_team_id: String,
+        team_label: String,
+    ) -> Result<(), String> {
+        let base = self.services.db().base_dir().to_path_buf();
+        crate::storage::file_store::conversations::set_conversation_source(
+            &base,
+            &conversation_id,
+            crate::storage::file_store::types::ConversationSource::ExpertTeam { expert_team_id },
+            Some(team_label),
+        )
+        .map_err(|e| e.to_string())
+    }
+
+    pub async fn clear_conversation_source(
+        &self,
+        conversation_id: String,
+    ) -> Result<(), String> {
+        let base = self.services.db().base_dir().to_path_buf();
+        crate::storage::file_store::conversations::set_conversation_source(
+            &base,
+            &conversation_id,
+            crate::storage::file_store::types::ConversationSource::User,
+            None,
+        )
+        .map_err(|e| e.to_string())
+    }
+
+    pub async fn get_conversation_source(
+        &self,
+        conversation_id: String,
+    ) -> Result<crate::storage::file_store::types::ConversationSource, String> {
+        let base = self.services.db().base_dir().to_path_buf();
+        crate::storage::file_store::conversations::read_conversation_source(&base, &conversation_id)
+            .map_err(|e| e.to_string())
     }
 
     pub async fn restore_conversation(&self, conversation_id: String) -> Result<(), String> {
@@ -3212,34 +3323,24 @@ impl TauriChatCommandAdapter {
         .await
     }
 
+    pub async fn set_conversation_pinned(
+        &self,
+        conversation_id: String,
+        pinned: bool,
+    ) -> Result<(), String> {
+        conversation_service::pin_conversation(
+            self.services.db().clone() as Arc<dyn ConversationStore>,
+            conversation_id,
+            pinned,
+        )
+        .await
+    }
+
     pub async fn get_conversations(&self) -> Result<Vec<serde_json::Value>, String> {
-        let mut convs = conversation_service::get_conversations(
+        conversation_service::get_conversations(
             self.services.db().clone() as Arc<dyn ConversationStore>
         )
-        .await?;
-        // 为每个对话注入 workspaceName（来自已绑定的授权目录）。
-        // 没有绑定目录的对话不注入字段，前端视为"默认文件夹"。
-        let mut injected = 0usize;
-        for conv in &mut convs {
-            if let Some(id) = conv["id"].as_str() {
-                if let Some(ws) = chat_runtime_impl::load_explicit_workspace(&self.services.app, id)
-                {
-                    injected += 1;
-                    conv["workspaceName"] = serde_json::Value::String(ws.display_name);
-                }
-            }
-        }
-        // dev-only diagnostic: 若侧边栏首次加载时分组异常（例如只看到"默认文件夹"），
-        // 可对照前端 [diag-sidebar] console 日志判断是后端注入失败还是前端 race。
-        // total / injected 通过 release build 时编译掉。
-        if cfg!(debug_assertions) {
-            log::info!(
-                "[diag-sidebar] get_conversations total={} injected={}",
-                convs.len(),
-                injected
-            );
-        }
-        Ok(convs)
+        .await
     }
 
     pub async fn get_tasks(
@@ -3312,7 +3413,7 @@ impl crate::runtime::agenda::AgendaRunDispatcher for TauriChatCommandAdapter {
                         display_name,
                         authorized_at: chrono::Utc::now().to_rfc3339(),
                     };
-                    if let Err(e) = facade.authorized_workspace_store().replace_for_session(&ws) {
+                    if let Err(e) = facade.authorized_workspace_store().replace_for_session(&conversation_id, &ws) {
                         log::warn!(
                             "[agenda-dispatch] authorize workspace failed conv={} path={} err={}",
                             conversation_id,
@@ -3524,9 +3625,10 @@ impl crate::runtime::pending::ChatTurnDispatcher for TauriChatCommandAdapter {
                             .collect();
                     let msg_id = format!("msg-{}", uuid::Uuid::new_v4());
                     let content_value =
-                        crate::runtime::chat::chat_turn_driver::build_user_content_json(
+                        crate::runtime::chat::chat_turn_driver::build_user_content_json_with_skill(
                             &text,
                             &attachments,
+                            item.skill_command.as_ref(),
                         );
                     let content_json = content_value.to_string();
                     if let Err(e) =
@@ -3599,10 +3701,12 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
         )
         .await
         .map_err(anyhow::Error::msg)?;
-        // Stamp employee_id onto conv.json + index entry so the chat top bar
-        // and any future "dispatched conversations" filter can identify this
-        // session as a dispatch run. Failure here is non-fatal: the UI just
-        // won't render the employee identity card.
+        // Stamp employee identity onto conv.json:
+        //   1) `employee_id` field (legacy reader still hits this)
+        //   2) `source = Employee { employee_id }` + index `kind = Employee` mirror
+        //      (so the sidebar can group this conversation under 数字员工)
+        // Failure here is non-fatal: the UI just won't render the employee
+        // identity card / grouping.
         if let Err(e) = self
             .services
             .db()
@@ -3610,6 +3714,21 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
         {
             log::warn!(
                 "[dispatch_employee_run] failed to stamp employee_id for {} on conv {}: {e:#}",
+                employee.id,
+                conversation_id
+            );
+        }
+        let base = self.services.db().base_dir().to_path_buf();
+        if let Err(e) = crate::storage::file_store::conversations::set_conversation_source(
+            &base,
+            &conversation_id,
+            crate::storage::file_store::types::ConversationSource::Employee {
+                employee_id: employee.id.clone(),
+            },
+            Some(employee.name.clone()),
+        ) {
+            log::warn!(
+                "[dispatch_employee_run] failed to stamp source=Employee for {} on conv {}: {e:#}",
                 employee.id,
                 conversation_id
             );
@@ -3978,4 +4097,69 @@ fn emit_conversation_created(
             "title": title,
         }),
     );
+}
+
+#[cfg(test)]
+mod retry_reason_tests {
+    use super::classify_retry_reason;
+    use crate::runtime::events::RetryReason;
+
+    #[test]
+    fn upstream_5xx_is_upstream_busy() {
+        assert_eq!(
+            classify_retry_reason(
+                "Anthropic API stream error (502 Bad Gateway): <html>nginx/1.20.1</html>"
+            ),
+            RetryReason::UpstreamBusy
+        );
+        assert_eq!(
+            classify_retry_reason("500 Internal Server Error: distributor unavailable"),
+            RetryReason::UpstreamBusy
+        );
+        assert_eq!(
+            classify_retry_reason("503 Service Unavailable: model_not_found"),
+            RetryReason::UpstreamBusy
+        );
+    }
+
+    #[test]
+    fn rate_limit_is_rate_limited() {
+        assert_eq!(
+            classify_retry_reason("429 Too Many Requests"),
+            RetryReason::RateLimited
+        );
+        assert_eq!(
+            classify_retry_reason("Anthropic rate limit exceeded"),
+            RetryReason::RateLimited
+        );
+    }
+
+    #[test]
+    fn local_network_is_network_flap() {
+        assert_eq!(
+            classify_retry_reason("request timed out after 60s"),
+            RetryReason::NetworkFlap
+        );
+        assert_eq!(
+            classify_retry_reason("connection reset by peer"),
+            RetryReason::NetworkFlap
+        );
+        assert_eq!(
+            classify_retry_reason("broken pipe writing to upstream"),
+            RetryReason::NetworkFlap
+        );
+        // A "timeout" wrapping a 5xx still counts as local network.
+        assert_eq!(
+            classify_retry_reason("502 timed out waiting for upstream"),
+            RetryReason::NetworkFlap
+        );
+    }
+
+    #[test]
+    fn unknown_falls_back_to_network_flap() {
+        assert_eq!(
+            classify_retry_reason("some weird unclassified blip"),
+            RetryReason::NetworkFlap
+        );
+    }
 }

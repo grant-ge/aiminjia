@@ -22,10 +22,7 @@ fn is_sensitive_key(key: &str) -> bool {
 /// otherwise. Settings reads/writes must go through the same path that
 /// `send_message` reads through (TauriChatServices::db()), or saved values
 /// won't be visible at request time.
-fn settings_store(
-    cus: &Arc<CurrentUserStorage>,
-    root: &Arc<AppStorage>,
-) -> Arc<AppStorage> {
+fn settings_store(cus: &Arc<CurrentUserStorage>, root: &Arc<AppStorage>) -> Arc<AppStorage> {
     cus.get_or(root)
 }
 
@@ -93,7 +90,9 @@ pub async fn update_settings(
                 }
             }
 
-            store.set_setting(&key, &value_str).map_err(|e| e.to_string())?;
+            store
+                .set_setting(&key, &value_str)
+                .map_err(|e| e.to_string())?;
         }
     }
 

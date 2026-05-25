@@ -10,6 +10,20 @@ pub enum AgentIdleScope {
     Child,
 }
 
+/// Why the stream is being retried. Drives frontend toast wording so we don't
+/// blame the user's network for upstream 5xx / rate-limit failures.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum RetryReason {
+    /// Upstream gateway returned 5xx — service-side problem, not the user's network.
+    UpstreamBusy,
+    /// Upstream returned 429 / rate limit.
+    RateLimited,
+    /// Local-side network issue: timeout, connection reset, broken pipe, chunk stall.
+    #[default]
+    NetworkFlap,
+}
+
 /// One tool that the agent is currently executing as part of a `TurnStage::Tools`
 /// batch.  `started_at_ms` lets the frontend display elapsed time per tool.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -67,7 +81,10 @@ pub enum RuntimeEventKind {
         content: String,
     },
     StreamDone,
-    StreamRetryReset,
+    StreamRetryReset {
+        #[serde(default)]
+        reason: RetryReason,
+    },
     StreamError {
         error: String,
         raw_error: Option<String>,

@@ -3,9 +3,9 @@
 //! See `docs/superpowers/specs/2026-05-11-pending-message-queue-design.md`.
 
 pub mod aijia_resolver;
-pub mod types;
-pub mod store;
 pub mod queue_manager;
+pub mod store;
+pub mod types;
 
 pub use aijia_resolver::AiJiaPendingResolver;
 

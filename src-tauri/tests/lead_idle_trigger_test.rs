@@ -47,10 +47,13 @@ fn supervisor_with_wake_counter() -> (Arc<LeadIdleSupervisor>, Arc<AtomicUsize>)
     let sup = LeadIdleSupervisor::new();
     let counter = Arc::new(AtomicUsize::new(0));
     let counter_clone = counter.clone();
-    let installed = sup.set_wake_fn(Arc::new(move |_k: LeadKey| {
+    let installed = sup.set_wake_fn(Arc::new(move |_k: LeadKey, _team: String| {
         counter_clone.fetch_add(1, Ordering::SeqCst);
     }));
-    assert!(installed, "wake_fn install must succeed in a fresh supervisor");
+    assert!(
+        installed,
+        "wake_fn install must succeed in a fresh supervisor"
+    );
     (sup, counter)
 }
 
@@ -62,7 +65,7 @@ async fn case1_send_during_run_does_not_wake_then_path_a_sees_pending() {
     let k = key("conv-c1", "lead-1");
 
     sup.mark_running(&k).await;
-    let woke = sup.enqueue(&k).await;
+    let woke = sup.enqueue(&k, "default".to_string()).await;
 
     assert!(!woke, "enqueue while Running must return false");
     assert_eq!(
@@ -94,7 +97,7 @@ async fn case2_send_when_idle_immediately_triggers_path_c_wake() {
         "supervisor should be Idle before the Path C send"
     );
 
-    let woke = sup.enqueue(&k).await;
+    let woke = sup.enqueue(&k, "default".to_string()).await;
     assert!(woke, "enqueue while Idle must return true (CAS won)");
     assert_eq!(
         wake_count.load(Ordering::SeqCst),
@@ -124,8 +127,8 @@ async fn case3_two_concurrent_sends_when_idle_only_wake_once() {
     let k1 = k.clone();
     let k2 = k.clone();
     let (a, b) = tokio::join!(
-        tokio::spawn(async move { s1.enqueue(&k1).await }),
-        tokio::spawn(async move { s2.enqueue(&k2).await }),
+        tokio::spawn(async move { s1.enqueue(&k1, "default".to_string()).await }),
+        tokio::spawn(async move { s2.enqueue(&k2, "default".to_string()).await }),
     );
     let r1 = a.unwrap();
     let r2 = b.unwrap();
@@ -151,7 +154,7 @@ async fn case4_ten_sends_during_run_collapse_into_one_continuation() {
 
     sup.mark_running(&k).await;
     for _ in 0..10 {
-        let woke = sup.enqueue(&k).await;
+        let woke = sup.enqueue(&k, "default".to_string()).await;
         assert!(!woke, "enqueue during Running must always return false");
     }
     assert_eq!(

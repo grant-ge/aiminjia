@@ -61,46 +61,9 @@ async fn conversation_runtime_service_handles_crud_and_busy_cleanup_without_taur
         .all(|item| item.get("id").and_then(|v| v.as_str()) != Some(conversation_id.as_str())));
 }
 
-#[tokio::test]
-async fn delete_conversation_clears_persisted_active_skill_state() {
-    let dir = TempDir::new().unwrap();
-    let db = Arc::new(AppStorage::new(dir.path()).unwrap());
-    let workspace = dir.path().join("workspace");
-    std::fs::create_dir_all(&workspace).unwrap();
-
-    let file_mgr = Arc::new(FileManager::new(&workspace));
-    let run_registry = Arc::new(RuntimeRunRegistry::new());
-    let gateway = Arc::new(LlmGateway::new_with_registry(db.clone(), run_registry));
-
-    let conversation_id = conversation_service::create_conversation(db.clone())
-        .await
-        .unwrap();
-    db.set_memory(
-        &format!("note:{}:active_skill_state", conversation_id),
-        r#"{"skillId":"comp-analysis","currentStep":"step1"}"#,
-        Some("test"),
-    )
-    .unwrap();
-    assert!(db
-        .get_memory(&format!("note:{}:active_skill_state", conversation_id))
-        .unwrap()
-        .is_some());
-
-    conversation_service::delete_conversation(
-        db.clone(),
-        gateway,
-        file_mgr,
-        conversation_id.clone(),
-    )
-    .await
-    .unwrap();
-
-    assert_eq!(
-        db.get_memory(&format!("note:{}:active_skill_state", conversation_id))
-            .unwrap(),
-        None
-    );
-}
+// `delete_conversation_clears_persisted_active_skill_state` was removed when
+// MemoryStore was deleted from main (commit 404cff06). The active skill state
+// is no longer persisted via the memory KV facility.
 
 #[tokio::test]
 async fn delete_conversation_returns_error_when_associated_file_delete_fails() {

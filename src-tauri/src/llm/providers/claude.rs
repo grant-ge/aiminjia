@@ -171,12 +171,33 @@ impl ClaudeProvider {
         if !self.is_direct {
             if let Some(conv_id) = request.conversation_id.as_deref() {
                 if !conv_id.is_empty() {
+                    headers.insert("X-Lotus-Conversation-ID".to_string(), conv_id.to_string());
+                }
+            }
+            // AIjia trace headers — pure observability, propagated to gateway
+            // SLS so we can correlate gateway events back to the desktop turn.
+            if let Some(trace_id) = request.trace_id.as_deref() {
+                if !trace_id.is_empty() {
+                    headers.insert("X-Aijia-Trace-Id".to_string(), trace_id.to_string());
+                }
+            }
+            if let Some(conv_id) = request.conversation_id.as_deref() {
+                if !conv_id.is_empty() {
                     headers.insert(
-                        "X-Lotus-Conversation-ID".to_string(),
+                        "X-Aijia-Conversation-Id".to_string(),
                         conv_id.to_string(),
                     );
                 }
             }
+            if let Some(run_id) = request.run_id.as_deref() {
+                if !run_id.is_empty() {
+                    headers.insert("X-Aijia-Run-Id".to_string(), run_id.to_string());
+                }
+            }
+            headers.insert(
+                "X-Aijia-Client-Version".to_string(),
+                env!("CARGO_PKG_VERSION").to_string(),
+            );
         }
         headers
     }
@@ -620,9 +641,9 @@ fn concat_user_content(a: Value, b: Value) -> Value {
     blocks.extend(user_content_to_blocks(a));
     blocks.extend(user_content_to_blocks(b));
 
-    let (tool_results, others): (Vec<_>, Vec<_>) = blocks.into_iter().partition(|block| {
-        block.get("type").and_then(|v| v.as_str()) == Some("tool_result")
-    });
+    let (tool_results, others): (Vec<_>, Vec<_>) = blocks
+        .into_iter()
+        .partition(|block| block.get("type").and_then(|v| v.as_str()) == Some("tool_result"));
     let mut hoisted: Vec<Value> = Vec::with_capacity(tool_results.len() + others.len());
     hoisted.extend(tool_results);
     hoisted.extend(others);
@@ -709,6 +730,25 @@ impl LlmProviderTrait for ClaudeProvider {
             ));
         }
 
+        // Capture gateway request id for cross-system correlation. Both the
+        // canonical X-Lotus-Request-ID header (current production) and the
+        // legacy X-Request-Id alias are accepted. None when talking directly
+        // to anthropic.com.
+        let lotus_request_id = response
+            .headers()
+            .get("x-lotus-request-id")
+            .or_else(|| response.headers().get("x-request-id"))
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string());
+        if let Some(rid) = lotus_request_id.as_deref() {
+            log::info!(
+                "[stream] gateway request_id={} conv={:?} run={:?}",
+                rid,
+                stream_request.conversation_id,
+                stream_request.run_id,
+            );
+        }
+
         let byte_stream = response.bytes_stream();
         let pinned_byte_stream = Box::pin(byte_stream);
         let state = SseState::new();
@@ -726,10 +766,8 @@ impl LlmProviderTrait for ClaudeProvider {
                             continue;
                         }
 
-                        if let Some(data) = parse_sse_line(&line) {
-                            if let Some(events) = process_sse_data(&data, &mut state) {
-                                return Some((stream::iter(events), (byte_stream, state)));
-                            }
+                        if let Some(events) = sse_line_to_events(&line, &mut state) {
+                            return Some((stream::iter(events), (byte_stream, state)));
                         }
                         continue;
                     }
@@ -756,9 +794,9 @@ impl LlmProviderTrait for ClaudeProvider {
                                     let raw = e.into_bytes();
                                     // Append the valid prefix to the buffer
                                     // SAFETY: raw[..valid_up_to] is guaranteed valid UTF-8
-                                    state.buffer.push_str(
-                                        unsafe { std::str::from_utf8_unchecked(&raw[..valid_up_to]) }
-                                    );
+                                    state.buffer.push_str(unsafe {
+                                        std::str::from_utf8_unchecked(&raw[..valid_up_to])
+                                    });
                                     // Stash trailing incomplete bytes for the next chunk
                                     state.incomplete_utf8 = raw[valid_up_to..].to_vec();
                                 }
@@ -829,6 +867,27 @@ impl LlmProviderTrait for ClaudeProvider {
 // ---------------------------------------------------------------------------
 // SSE event processing helpers
 // ---------------------------------------------------------------------------
+
+/// Convert one raw SSE line into the `StreamEvent`s to surface to the consumer.
+///
+/// Returns:
+///  - `Some(events)` — a `data:` line that produced content events.
+///  - `Some(vec![StreamEvent::Keepalive])` — a `data:` line that parsed but
+///    produced no content event (Anthropic `ping`, `input_json_delta`
+///    tool-argument fragments, `message_start`, `signature_delta`, …). The
+///    Keepalive is a pure liveness tick: it carries no content but resets the
+///    caller's chunk-timeout watchdog, so long tool-argument streaming and
+///    ping-only thinking windows are not mistaken for a stalled stream (the
+///    cause of false "响应超时（90秒无数据）" → "Max retries exceeded" aborts).
+///  - `None` — not a `data:` line (e.g. `event:` framing or blank); the caller
+///    keeps reading without resetting the watchdog.
+fn sse_line_to_events(line: &str, state: &mut SseState) -> Option<Vec<StreamEvent>> {
+    let data = parse_sse_line(line)?;
+    match process_sse_data(&data, state) {
+        Some(events) => Some(events),
+        None => Some(vec![StreamEvent::Keepalive]),
+    }
+}
 
 /// Process a single SSE JSON data payload. Returns `Some(events)` when there
 /// are `StreamEvent`s to emit, `None` otherwise.
@@ -1076,7 +1135,11 @@ mod tests {
         ];
 
         let merged = merge_consecutive_user_messages(input);
-        assert_eq!(merged.len(), 2, "the two user messages must collapse into one");
+        assert_eq!(
+            merged.len(),
+            2,
+            "the two user messages must collapse into one"
+        );
         assert_eq!(merged[1]["role"], "user");
         let blocks = merged[1]["content"].as_array().expect("content is array");
         assert_eq!(blocks.len(), 2);
@@ -1256,6 +1319,8 @@ mod tests {
             anthropic_multimodal_turn: None,
             system_segments: None,
             conversation_id: None,
+            trace_id: None,
+            run_id: None,
         };
 
         let body = provider.build_request_body(&request);
@@ -1287,6 +1352,8 @@ mod tests {
             anthropic_multimodal_turn: None,
             system_segments: None,
             conversation_id: None,
+            trace_id: None,
+            run_id: None,
         };
 
         let body = provider.build_request_body(&request);
@@ -1364,6 +1431,8 @@ mod tests {
             anthropic_multimodal_turn: None,
             system_segments: None,
             conversation_id: None,
+            trace_id: None,
+            run_id: None,
         };
 
         let body = provider.build_request_body(&request);
@@ -1410,6 +1479,8 @@ mod tests {
             }),
             system_segments: None,
             conversation_id: None,
+            trace_id: None,
+            run_id: None,
         };
 
         let body = provider.build_request_body(&request);
@@ -1422,7 +1493,10 @@ mod tests {
         // and matches the official claude-code reference implementation.)
         assert_eq!(messages.len(), 1);
         let content = messages[0]["content"].as_array().unwrap();
-        assert_eq!(content[0], json!({"type": "text", "text": "Context message"}));
+        assert_eq!(
+            content[0],
+            json!({"type": "text", "text": "Context message"})
+        );
         assert_eq!(
             content[1],
             json!({"type": "text", "text": "Describe this image"})
@@ -1456,6 +1530,51 @@ mod tests {
             StreamEvent::ContentDelta { delta } => assert_eq!(delta, "Hello"),
             _ => panic!("Expected ContentDelta"),
         }
+    }
+
+    #[test]
+    fn test_sse_line_to_events_ping_yields_keepalive() {
+        let mut state = SseState::new();
+        // Anthropic keepalive ping carries no content but proves the wire is alive.
+        // It must surface as a Keepalive so the chunk-timeout watchdog resets.
+        let events = sse_line_to_events(r#"data: {"type":"ping"}"#, &mut state)
+            .expect("ping data line should yield a Keepalive tick");
+        assert_eq!(events.len(), 1);
+        assert!(matches!(events[0], StreamEvent::Keepalive));
+    }
+
+    #[test]
+    fn test_sse_line_to_events_input_json_delta_yields_keepalive() {
+        let mut state = SseState::new();
+        // Tool-argument fragments (e.g. writing a long md doc / code edit via a
+        // tool call) accumulate silently in state; without the Keepalive the
+        // chunk-timeout watchdog would false-fire mid-write despite live data.
+        let line = r#"data: {"type":"content_block_delta","delta":{"type":"input_json_delta","partial_json":"{\"path\":"}}"#;
+        let events = sse_line_to_events(line, &mut state)
+            .expect("input_json_delta should yield a Keepalive tick");
+        assert_eq!(events.len(), 1);
+        assert!(matches!(events[0], StreamEvent::Keepalive));
+    }
+
+    #[test]
+    fn test_sse_line_to_events_text_delta_yields_content() {
+        let mut state = SseState::new();
+        let line =
+            r#"data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"Hi"}}"#;
+        let events = sse_line_to_events(line, &mut state).expect("text delta yields content");
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            StreamEvent::ContentDelta { delta } => assert_eq!(delta, "Hi"),
+            other => panic!("expected ContentDelta, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_sse_line_to_events_non_data_line_is_none() {
+        let mut state = SseState::new();
+        // `event:` framing lines are not data payloads — keep reading, don't tick.
+        assert!(sse_line_to_events("event: ping", &mut state).is_none());
+        assert!(sse_line_to_events("", &mut state).is_none());
     }
 
     #[test]
@@ -1700,6 +1819,8 @@ mod tests {
             ]),
             anthropic_multimodal_turn: None,
             conversation_id: None,
+            trace_id: None,
+            run_id: None,
         };
 
         let body = provider.build_request_body(&request);
@@ -1738,6 +1859,8 @@ mod tests {
             system_segments: Some(segs),
             anthropic_multimodal_turn: None,
             conversation_id: None,
+            trace_id: None,
+            run_id: None,
         };
 
         let body = provider.build_request_body(&request);
@@ -1767,6 +1890,8 @@ mod tests {
             system_segments: None,
             anthropic_multimodal_turn: None,
             conversation_id: None,
+            trace_id: None,
+            run_id: None,
         };
 
         let body = provider.build_request_body(&request);
