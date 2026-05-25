@@ -5,13 +5,19 @@ description: >
 when_to_use: >
   当用户提到绩效体系、绩效管理、KPI设计、OKR设计、绩效考核方案、绩效改革、绩效指标、考核方案、绩效制度或 performance management 时使用。
 allowed-tools:
-  - web_search
-  - generate_report
-  - generate_slides
+  - Read
+  - Grep
+  - WebSearch
+  - Bash
+  - Write
+  - Edit
+  - WriteMemory
+  - SearchMemory
+  - Skill
 context: inline
 user-invocable: true
 disable-model-invocation: false
-version: "1.1"
+version: "1.2"
 category: hr
 metadata:
   label: 绩效体系设计向导
@@ -97,7 +103,7 @@ metadata:
 - 中层管理者：部门目标、团队管理、跨部门协作和人才发展指标。
 - 基层员工：2-3 个典型岗位的岗位结果、过程质量和行为要求。
 
-KPI 模板应包含指标名称、定义、计算公式、数据来源、目标值设定方法、权重和评分规则。OKR 模板应包含 Objective、3-5 个 Key Results、评分标准和复盘方式。混合方案要说明如何合并评分、如何避免重复考核。可用 `web_search` 查询行业最佳实践，但必须结合用户情况改写。在当前回复中用简短清单复述模板口径，并询问是否需要补充特定岗位。
+KPI 模板应包含指标名称、定义、计算公式、数据来源、目标值设定方法、权重和评分规则。OKR 模板应包含 Objective、3-5 个 Key Results、评分标准和复盘方式。混合方案要说明如何合并评分、如何避免重复考核。可用 `WebSearch` 查询行业最佳实践，但必须结合用户情况改写。在当前回复中用简短清单复述模板口径，并询问是否需要补充特定岗位。
 
 ### 5. 实施路线图与报告
 
@@ -108,7 +114,7 @@ KPI 模板应包含指标名称、定义、计算公式、数据来源、目标�
 - 第 3 阶段（3-6 个月）：全面推行并建立校准机制。
 - 第 4 阶段（6-12 个月）：复盘优化、系统化和文化固化。
 
-每阶段明确关键任务、里程碑、责任人、预期产出、成功标准、风险预警和应对措施。用户确认后可使用 `generate_report` 生成完整报告，包含企业画像、工具选择、体系结构、指标模板、路线图和 FAQ。报告完成后询问是否需要用 `generate_slides` 生成 PPT 汇报材料。
+每阶段明确关键任务、里程碑、责任人、预期产出、成功标准、风险预警和应对措施。用户确认后可使用 `Write` 生成完整报告，包含企业画像、工具选择、体系结构、指标模板、路线图和 FAQ。报告完成后询问是否需要用 `Skill` 生成 PPT 汇报材料。
 
 ## 输出标准
 
@@ -116,3 +122,10 @@ KPI 模板应包含指标名称、定义、计算公式、数据来源、目标�
 - 引用方法论时说明适用条件，不把 KPI 或 OKR 神化。
 - 所有指标必须可定义、可衡量、可追踪，并说明数据来源。
 - 对薪酬挂钩、强制分布、末位淘汰、员工申诉等高风险设计要提示风险和替代方案。
+
+
+## 桌面端工具说明（迁移自旧平台）
+
+本技能在 AIjia 桌面端运行。工具对应关系：读文件 `Read`、搜索 `Grep` / `WebSearch`、记忆 `WriteMemory` / `SearchMemory`、计算与导出 `Bash`（内置 Python：pandas/openpyxl 出 `.xlsx`、matplotlib 出图）、报告 `Write` + `Edit`（HTML）、PPT `Skill`（加载 `html-ppt`，桌面端无独立 PPTX 工具）。
+
+**生成报告 / 长文档必须逐节增量写、用 `Edit` 续写，禁止把整份内容作为单个 `Write` 一次性吐出**——否则对话界面会长时间无响应、且易触发流式超时。

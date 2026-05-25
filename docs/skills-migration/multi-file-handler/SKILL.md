@@ -4,18 +4,21 @@ description: >
   多文件处理助手。用于对两个或多个文件进行差异对比、合并汇总、批量翻译、交叉引用 lookup、逐文件摘要和跨文件总结。
 when_to_use: 用户上传或引用多个文件，并提出多文件、批量、这两个文件、这些文件、一起、对比、合并、汇总、版本对比、月度对比、batch、compare、merge 或 aggregate 等需求时使用；通常需要至少两个相关文件或数据源。
 allowed-tools:
-  - load_file
-  - execute_python
-  - export_data
-  - generate_chart
-  - generate_report
-  - generate_slides
+  - Read
+  - Grep
+  - WebSearch
+  - Bash
+  - Write
+  - Edit
+  - WriteMemory
+  - SearchMemory
+  - Skill
 model: opus
 effort: high
 context: inline
 user-invocable: true
 disable-model-invocation: false
-version: "1.1"
+version: "1.2"
 category: general
 metadata:
   label: 多文件处理
@@ -50,7 +53,7 @@ metadata:
 
 先快速理解文件和目标：
 
-- 使用 `load_file` 浏览每个文件的基本结构：文件名、类型、行数/页数、字段或文本样本。
+- 使用 `Read` 浏览每个文件的基本结构：文件名、类型、行数/页数、字段或文本样本。
 - 判断文件数量、文件类型、是否同 schema、是否存在可用主键。
 - 根据用户原话和文件结构推断处理模式：
   - 两个同 schema 表格 + “对比/差异” -> `compare`。
@@ -81,7 +84,7 @@ metadata:
 - 表格类：字段名、数据类型、前 3 行样本、行数、缺失率、重复主键。
 - 文档类：页数/段落数、前 200 字样本、标题结构、语言和可提取文本质量。
 - 多 sheet Excel：默认不要擅自只取第一个 sheet；先列出 sheet 并询问用户或说明默认选择。
-- 大文件：超过 5000 行时先抽样做 schema 分析，正式处理可用 `execute_python` 分批计算。
+- 大文件：超过 5000 行时先抽样做 schema 分析，正式处理可用 `Bash` 分批计算。
 
 按 mode 生成对齐表：
 
@@ -144,10 +147,10 @@ metadata:
 
 根据结果选择交付形式：
 
-- `export_data`：差异明细、合并主表、lookup 结果、摘要结构化表、术语表。
-- `generate_chart`：关键指标对比、分布变化、趋势或命中率图表。
-- `generate_report`：HTML 完整报告，开头直接给结论，正文放表格和图表，结尾给 1-3 条具体建议。
-- `generate_slides`：仅在用户需要汇报材料时生成 PPTX；每页一个结论，bullets 控制在 4-6 条，附演讲备注。
+- `Bash`：差异明细、合并主表、lookup 结果、摘要结构化表、术语表。
+- `Bash`：关键指标对比、分布变化、趋势或命中率图表。
+- `Write`：HTML 完整报告，开头直接给结论，正文放表格和图表，结尾给 1-3 条具体建议。
+- `Skill`：仅在用户需要汇报材料时生成 PPTX；每页一个结论，bullets 控制在 4-6 条，附演讲备注。
 
 报告模板按 mode 调整：
 
@@ -160,7 +163,14 @@ metadata:
 ## 质量和安全要求
 
 - 所有结论必须来自用户文件、实际计算或清晰标注的经验判断；禁止编造数据。
-- 关键计算优先用 `execute_python`，不要靠肉眼估算。
+- 关键计算优先用 `Bash`，不要靠肉眼估算。
 - 每次导出前说明字段口径、样本范围、缺失值处理和异常值处理。
 - 文件损坏、格式不支持、编码错误或 OCR 质量差时，立即报告限制并给出替代方案。
 - 每个阶段都给用户可确认的摘要；用户改主键、字段映射或处理模式时，回到对应步骤重做。
+
+
+## 桌面端工具说明（迁移自旧平台）
+
+本技能在 AIjia 桌面端运行。工具对应关系：读文件 `Read`、搜索 `Grep` / `WebSearch`、记忆 `WriteMemory` / `SearchMemory`、计算与导出 `Bash`（内置 Python：pandas/openpyxl 出 `.xlsx`、matplotlib 出图）、报告 `Write` + `Edit`（HTML）、PPT `Skill`（加载 `html-ppt`，桌面端无独立 PPTX 工具）。
+
+**生成报告 / 长文档必须逐节增量写、用 `Edit` 续写，禁止把整份内容作为单个 `Write` 一次性吐出**——否则对话界面会长时间无响应、且易触发流式超时。

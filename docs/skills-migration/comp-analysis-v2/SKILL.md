@@ -2,15 +2,21 @@
 name: comp-analysis-v2
 description: 薪酬公平性分析——对工资表进行数据清洗、岗位归一化、职级推断、CR值/区间渗透率/倒挂诊断，并生成保守/平衡/激进三档调薪方案和诊断报告。当用户提供工资表、薪酬表或薪资明细文件，并要求薪酬分析、薪酬诊断、公平性分析、工资表分析、pay equity 或 salary analysis 时使用，且必须有上传数据文件。
 allowed-tools:
-  - load_file
-  - bash
-  - export_data
+  - Read
+  - Grep
+  - WebSearch
+  - Bash
+  - Write
+  - Edit
+  - WriteMemory
+  - SearchMemory
+  - Skill
 model: opus
 effort: high
 context: inline
 user-invocable: true
 disable-model-invocation: false
-version: "2.0"
+version: "2.1"
 metadata:
   label: 薪酬公平性分析 v2
 ---
@@ -50,7 +56,7 @@ metadata:
 
 ### Step 0. 分析方向确认
 
-1. 用 `load_file` 读取文件，概括这是工资明细、月度薪酬、年度总包还是调薪数据。
+1. 用 `Read` 读取文件，概括这是工资明细、月度薪酬、年度总包还是调薪数据。
 2. 展示识别到的字段和样本规模。
 3. 告知用户将执行 5 步分析流程（Step 1~5），询问是否开始，并确认特别关注方向（特定部门/岗位/新老员工差异/性别薪酬差异/离群值/调薪预算）。
 4. 如用户提供关注方向，在当前回复中用简短清单复述已确认口径，并请用户确认。
@@ -184,3 +190,10 @@ bash python3 ${AIJIA_SKILL_DIR}/scripts/calc_scenarios.py \
 - 用户只有岗位名称列表，无薪酬数据 → 无法做公平性分析，建议先收集员工薪酬明细
 - 用户需要设计薪酬体系（薪酬带、岗位价值评估）→ 超出本 skill 范围，应先做体系设计再跑本流程
 - 数据少于 10 人 → 样本太小，统计结论不可靠，应明确告知用户
+
+
+## 桌面端工具说明（迁移自旧平台）
+
+本技能在 AIjia 桌面端运行。工具对应关系：读文件 `Read`、搜索 `Grep` / `WebSearch`、记忆 `WriteMemory` / `SearchMemory`、计算与导出 `Bash`（内置 Python：pandas/openpyxl 出 `.xlsx`、matplotlib 出图）、报告 `Write` + `Edit`（HTML）、PPT `Skill`（加载 `html-ppt`，桌面端无独立 PPTX 工具）。
+
+**生成报告 / 长文档必须逐节增量写、用 `Edit` 续写，禁止把整份内容作为单个 `Write` 一次性吐出**——否则对话界面会长时间无响应、且易触发流式超时。

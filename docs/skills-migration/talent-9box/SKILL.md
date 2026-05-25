@@ -2,16 +2,21 @@
 name: talent-9box
 description: 人才盘点九宫格分析——对绩效/潜力数据归一化、九宫格定位、健康度评估、结构切片，并基于 IDP 模板生成差异化发展策略报告。当用户提供绩效和潜力评估数据文件，并要求人才盘点、九宫格、9box、talent mapping、talent review、高潜力分析、继任计划或人才评估时使用，且必须有含绩效和潜力字段的上传文件。
 allowed-tools:
-  - load_file
-  - bash
-  - export_data
-  - generate_chart
+  - Read
+  - Grep
+  - WebSearch
+  - Bash
+  - Write
+  - Edit
+  - WriteMemory
+  - SearchMemory
+  - Skill
 model: opus
 effort: high
 context: inline
 user-invocable: true
 disable-model-invocation: false
-version: "2.0"
+version: "2.1"
 metadata:
   label: 人才盘点九宫格
 ---
@@ -67,7 +72,7 @@ metadata:
 
 ### Step 0. 数据识别与评估口径确认
 
-1. 使用 `load_file` 读取文件，概括样本规模、字段和数据类型。
+1. 使用 `Read` 读取文件，概括样本规模、字段和数据类型。
 2. 识别绩效、潜力和员工基本信息字段。
 3. 询问并确认评分标准（1-5 分、百分制、A/B/C、优秀/良好/待改进等）。
 4. 确认高/中/低阈值：可使用用户指定阈值；若无明确标准，可建议三分位切割并说明局限。
@@ -111,7 +116,7 @@ bash python3 ${AIJIA_SKILL_DIR}/scripts/map_9box.py \
 - 实际触发的 `warning_signals`（如"明星人才<5%"、"需改进者>10%"、"稳定贡献者>40%"）
 - 未分类人数
 
-告知用户已导出 `step2_9box_mapping.xlsx`。调用 `generate_chart` 生成九宫格图，图表数据来自脚本输出的 `grid` 结构，并保存图表路径供 Step 4 使用。询问分布是否合理，确认后进入 Step 3。
+告知用户已导出 `step2_9box_mapping.xlsx`。调用 `Bash` 生成九宫格图，图表数据来自脚本输出的 `grid` 结构，并保存图表路径供 Step 4 使用。询问分布是否合理，确认后进入 Step 3。
 
 ### Step 3. 人才结构切片分析
 
@@ -181,3 +186,10 @@ bash cat ${AIJIA_SKILL_DIR}/references/templates.json
 - 只有员工绩效数据，无潜力评估 → 告知九宫格需要两个维度，建议先明确潜力评估口径
 - 用户需要设计绩效考核体系 → 超出本 skill 范围
 - 数据少于 15 人 → 样本太小，九宫格分布无统计意义，应明确告知用户
+
+
+## 桌面端工具说明（迁移自旧平台）
+
+本技能在 AIjia 桌面端运行。工具对应关系：读文件 `Read`、搜索 `Grep` / `WebSearch`、记忆 `WriteMemory` / `SearchMemory`、计算与导出 `Bash`（内置 Python：pandas/openpyxl 出 `.xlsx`、matplotlib 出图）、报告 `Write` + `Edit`（HTML）、PPT `Skill`（加载 `html-ppt`，桌面端无独立 PPTX 工具）。
+
+**生成报告 / 长文档必须逐节增量写、用 `Edit` 续写，禁止把整份内容作为单个 `Write` 一次性吐出**——否则对话界面会长时间无响应、且易触发流式超时。

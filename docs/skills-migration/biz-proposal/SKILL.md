@@ -4,16 +4,18 @@ description: >
   商业方案撰写助手。用于商业计划书、项目建议书、解决方案、投标方案、融资 BP、立项方案和项目方案的结构设计、论证和成稿。
 when_to_use: 用户需要写商业方案、项目方案、提案、方案撰写、商业计划、项目建议书、解决方案、方案书、business proposal、project proposal 或 solution proposal 时使用；可无文件输入，也可结合参考材料、预算表或客户需求文件。
 allowed-tools:
-  - load_file
-  - export_data
-  - generate_report
-  - generate_slides
+  - Read
+  - Write
+  - Edit
+  - Bash
+  - WebSearch
+  - Skill
 model: opus
 effort: high
 context: inline
 user-invocable: true
 disable-model-invocation: false
-version: "1.1"
+version: "1.2"
 category: general
 metadata:
   label: 商业方案撰写
@@ -52,7 +54,7 @@ metadata:
 - 核心问题：当前痛点是什么，不做的损失是什么，为什么现在要做。
 - 决策关注点：收益、成本、风险、周期、资源、合规、可落地性。
 - 已知约束：预算范围、时间要求、团队能力、客户要求、招标条款。
-- 参考材料：如用户提供文件，使用 `load_file` 读取并提炼事实、限制和证据。
+- 参考材料：如用户提供文件，使用 `Read` 读取并提炼事实、限制和证据。
 
 信息不足时先输出“方案信息缺口清单”；如果用户要求先写，可生成假设版大纲，并明确列出假设条件。
 
@@ -93,7 +95,7 @@ metadata:
 - 风险真实：不要只写低风险，要写出真正可能阻碍落地的问题。
 - 行动明确：下一步审批、试点、签约或资源投入有清晰动作。
 
-需要正式交付物时，可用 `generate_report` 生成方案文档，用 `export_data` 输出预算表、风险表或里程碑清单。用户明确需要汇报材料时，再使用 `generate_slides` 生成 PPTX；PPT 应像“讲给人听”的方案，每页一个结论，bullets 控制在 4-6 条，并提供演讲备注。
+需要正式交付物时，把方案写成 HTML 报告文件落盘（用 `Write` 创建）。**长文档必须逐节增量写——先写骨架/执行摘要落盘，再用 `Edit` 逐节续写；禁止把整份方案作为单个 `Write` 参数一次性吐出**，否则对话会长时间无可见输出、还容易触发流式超时。预算表、风险表、里程碑清单优先用 HTML 表格嵌进报告；需要单独的 Excel 时，用 `Bash` 跑内置 Python（`openpyxl`）导出 `.xlsx` 到工作目录。用户明确需要汇报 PPT 时，用 `Skill` 加载 `html-ppt` 技能产出幻灯片（桌面端没有独立的 PPTX 工具）；PPT 应像“讲给人听”的方案，每页一个结论，bullets 控制在 4-6 条，并把演讲备注放进 notes。
 
 ## 常用输出模板
 

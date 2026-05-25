@@ -5,13 +5,19 @@ description: >
 when_to_use: >
   当用户提到组织诊断、组织优化、组织设计、六盒子、组织架构诊断、跨部门协作、决策效率、组织变革、组织健康度或 organizational design 时使用。
 allowed-tools:
-  - web_search
-  - generate_report
-  - generate_slides
+  - Read
+  - Grep
+  - WebSearch
+  - Bash
+  - Write
+  - Edit
+  - WriteMemory
+  - SearchMemory
+  - Skill
 context: inline
 user-invocable: true
 disable-model-invocation: false
-version: "1.1"
+version: "1.2"
 category: hr
 metadata:
   label: 组织诊断报告
@@ -89,7 +95,7 @@ metadata:
 - 3 分：需关注，存在局部风险或不稳定因素。
 - 1-2 分：需改进，对组织绩效或员工体验已有明显影响。
 
-分析时要区分症状、直接原因和根因，说明维度之间的因果链。例如“战略不清”可能导致“部门目标冲突”，再表现为“协作低效”。如需行业最佳实践，可使用 `web_search`，但必须把外部信息与用户现状区分开。完成后在当前回复中用简短清单复述根因结论，并邀请用户修正评分或背景信息。
+分析时要区分症状、直接原因和根因，说明维度之间的因果链。例如“战略不清”可能导致“部门目标冲突”，再表现为“协作低效”。如需行业最佳实践，可使用 `WebSearch`，但必须把外部信息与用户现状区分开。完成后在当前回复中用简短清单复述根因结论，并邀请用户修正评分或背景信息。
 
 ### 4. 改善方案设计
 
@@ -103,7 +109,7 @@ metadata:
 
 ### 5. 报告与汇报材料
 
-用户确认方案后，可使用 `generate_report` 生成结构化诊断报告。报告建议包含：
+用户确认方案后，可使用 `Write` 生成结构化诊断报告。报告建议包含：
 
 - 组织概况与诊断背景。
 - 诊断方法说明。
@@ -113,7 +119,7 @@ metadata:
 - 1-3 个月、3-6 个月、6-12 个月实施路线图。
 - 成功指标、监测方法和风险预警清单。
 
-报告完成后主动询问是否需要 PPT 汇报材料。若用户确认，使用 `generate_slides`，每页控制在 4-6 条要点，突出核心发现、关键评分、建议和时间表。
+报告完成后主动询问是否需要 PPT 汇报材料。若用户确认，使用 `Skill`，每页控制在 4-6 条要点，突出核心发现、关键评分、建议和时间表。
 
 ## 输出标准
 
@@ -121,3 +127,10 @@ metadata:
 - 多用表格呈现评分、证据、风险和行动计划。
 - 所有建议分短期、中期、长期，并明确责任角色、衡量指标和依赖条件。
 - 对信息缺口、样本局限、未验证假设要明确标注。
+
+
+## 桌面端工具说明（迁移自旧平台）
+
+本技能在 AIjia 桌面端运行。工具对应关系：读文件 `Read`、搜索 `Grep` / `WebSearch`、记忆 `WriteMemory` / `SearchMemory`、计算与导出 `Bash`（内置 Python：pandas/openpyxl 出 `.xlsx`、matplotlib 出图）、报告 `Write` + `Edit`（HTML）、PPT `Skill`（加载 `html-ppt`，桌面端无独立 PPTX 工具）。
+
+**生成报告 / 长文档必须逐节增量写、用 `Edit` 续写，禁止把整份内容作为单个 `Write` 一次性吐出**——否则对话界面会长时间无响应、且易触发流式超时。

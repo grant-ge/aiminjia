@@ -5,17 +5,21 @@ description: >
 when_to_use: >
   当用户要求规章制度审查、员工手册合规、考勤制度/薪酬制度/奖惩制度审查、policy audit、handbook review，或上传公司制度文本时使用。
 allowed-tools:
-  - load_file
-  - web_search
-  - export_data
-  - generate_report
-  - generate_slides
+  - Read
+  - Grep
+  - WebSearch
+  - Bash
+  - Write
+  - Edit
+  - WriteMemory
+  - SearchMemory
+  - Skill
 model: opus
 effort: high
 context: inline
 user-invocable: true
 disable-model-invocation: false
-version: "1.1"
+version: "1.2"
 category: legal
 metadata:
   label: 规章制度合规审查
@@ -28,7 +32,7 @@ metadata:
 - 仅基于用户上传或粘贴的制度文本分析，禁止构造条款。
 - 面向非技术、非法律专业用户输出；不要展示代码或内部处理细节。
 - 本技能提供合规风险提示，不构成法律意见；各地司法实践可能不同，重大制度修订建议咨询专业律师。
-- 引用法规时写明法律名称和条款编号；涉及最新地方规则或司法实践时使用 `web_search` 核验。
+- 引用法规时写明法律名称和条款编号；涉及最新地方规则或司法实践时使用 `WebSearch` 核验。
 
 ## 可选资源
 
@@ -53,7 +57,7 @@ metadata:
 
 ### 1. 文件加载与背景确认
 
-1. 使用 `load_file` 读取制度文本。
+1. 使用 `Read` 读取制度文本。
 2. 识别制度类型：员工手册、考勤制度、薪酬办法、奖惩制度、保密制度、综合性规章等。
 3. 提取制度名称、适用范围、发布日期、生效日期、章节结构。
 4. 询问企业背景：地区、行业、人数规模、是否有工会或职工代表、制定程序、公示告知方式、近期争议。
@@ -78,11 +82,11 @@ metadata:
 
 同时评估制定程序是否满足《劳动合同法》第四条要求，并说明程序瑕疵对制度效力的影响。
 
-如需查询最新司法解释、地方规定或案例，可使用 `web_search`。
+如需查询最新司法解释、地方规定或案例，可使用 `WebSearch`。
 
 ### 4. 报告与数据导出
 
-用 `generate_report` 生成完整审查报告，建议包含：
+用 `Write` 生成完整审查报告，建议包含：
 
 1. 审查概要：制度名称、类型、审查范围、企业背景。
 2. 制定程序评估：民主程序、公示告知、证据留存、补救建议。
@@ -92,4 +96,11 @@ metadata:
 6. 合规评分：A级到E级，并说明评分逻辑和局限。
 7. 免责声明。
 
-可用 `export_data` 导出条款审查清单；如用户需要汇报材料，先询问确认，再用 `generate_slides` 生成 PPTX。
+可用 `Bash` 导出条款审查清单；如用户需要汇报材料，先询问确认，再用 `Skill` 生成 PPTX。
+
+
+## 桌面端工具说明（迁移自旧平台）
+
+本技能在 AIjia 桌面端运行。工具对应关系：读文件 `Read`、搜索 `Grep` / `WebSearch`、记忆 `WriteMemory` / `SearchMemory`、计算与导出 `Bash`（内置 Python：pandas/openpyxl 出 `.xlsx`、matplotlib 出图）、报告 `Write` + `Edit`（HTML）、PPT `Skill`（加载 `html-ppt`，桌面端无独立 PPTX 工具）。
+
+**生成报告 / 长文档必须逐节增量写、用 `Edit` 续写，禁止把整份内容作为单个 `Write` 一次性吐出**——否则对话界面会长时间无响应、且易触发流式超时。

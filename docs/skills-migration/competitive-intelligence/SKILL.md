@@ -5,20 +5,21 @@ description: >
 when_to_use: >
   当数字员工"小研"或类似定位的员工被派活进行周度竞品/行业动态汇总时使用。需要 monitoringTargets 才能开始工作；如未提供则先要求用户配置。
 allowed-tools:
-  - web_search
-  - browse_and_extract
-  - browse_navigate
-  - extract_table_data
-  - read_page_content
-  - memory_save
-  - memory_search
-  - generate_report
+  - Read
+  - Grep
+  - WebSearch
+  - Bash
+  - Write
+  - Edit
+  - WriteMemory
+  - SearchMemory
+  - Skill
 model: sonnet
 effort: high
 context: inline
 user-invocable: true
 disable-model-invocation: false
-version: "1.1"
+version: "1.2"
 category: ops
 metadata:
   label: 行业/竞品调研
@@ -49,15 +50,15 @@ metadata:
 
 1. 解析 resource_config.monitoringTargets，得到目标列表。
 2. 计算本周窗口：以中国时区计，本周一 00:00 至触发时刻。
-3. 调用 `memory_search`，关键词使用每个监测对象的 name，召回上一周写入的 `comp_intel:*` 记忆条目，作为后续去重基础。
+3. 调用 `SearchMemory`，关键词使用每个监测对象的 name，召回上一周写入的 `comp_intel:*` 记忆条目，作为后续去重基础。
 
 ### 2. 抓取
 
 对每个监测对象：
 
-1. `browse_navigate` 打开 url，必要时 `browse_and_extract` 提取首屏摘要 + 列表项。
-2. 列表中筛选"本周窗口内的更新"——通过列表中的发布时间字段过滤；若页面无显式时间，回退到 `web_search` 用 `<name> 2026-{当前周一日期}..{今天}` 等 query 找补充信号。
-3. 对每条候选项调用 `read_page_content`（或继续 `browse_and_extract`）拉取详情页正文，提取：标题、发布时间、概要、原文 URL。
+1. `WebSearch` 打开 url，必要时 `WebSearch` 提取首屏摘要 + 列表项。
+2. 列表中筛选"本周窗口内的更新"——通过列表中的发布时间字段过滤；若页面无显式时间，回退到 `WebSearch` 用 `<name> 2026-{当前周一日期}..{今天}` 等 query 找补充信号。
+3. 对每条候选项调用 `WebSearch`（或继续 `WebSearch`）拉取详情页正文，提取：标题、发布时间、概要、原文 URL。
 
 ### 3. 维度归类
 
@@ -78,7 +79,7 @@ metadata:
 
 ### 5. 生成周报
 
-调用 `generate_report` 生成 HTML：
+调用 `Write` 生成 HTML：
 
 - 标题：`{本周一 YYYY-MM-DD} 竞品周报`
 - 顶部一段 1-2 句"本周看点"摘要
@@ -87,7 +88,7 @@ metadata:
 
 ### 6. 写回 memory
 
-调用 `memory_save`，namespace 用 `comp_intel`，每条记录 1 个 entry：
+调用 `WriteMemory`，namespace 用 `comp_intel`，每条记录 1 个 entry：
 ```json
 { "url": "...", "title": "...", "dimension": "...", "publishedAt": "..." }
 ```
@@ -97,3 +98,10 @@ metadata:
 ### 7. 汇报
 
 工作流结束。最后给用户一句话："本周已抓取 {N} 条变化，{K} 条提示信号；详见周报。"
+
+
+## 桌面端工具说明（迁移自旧平台）
+
+本技能在 AIjia 桌面端运行。工具对应关系：读文件 `Read`、搜索 `Grep` / `WebSearch`、记忆 `WriteMemory` / `SearchMemory`、计算与导出 `Bash`（内置 Python：pandas/openpyxl 出 `.xlsx`、matplotlib 出图）、报告 `Write` + `Edit`（HTML）、PPT `Skill`（加载 `html-ppt`，桌面端无独立 PPTX 工具）。
+
+**生成报告 / 长文档必须逐节增量写、用 `Edit` 续写，禁止把整份内容作为单个 `Write` 一次性吐出**——否则对话界面会长时间无响应、且易触发流式超时。

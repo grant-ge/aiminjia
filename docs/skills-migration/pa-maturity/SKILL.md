@@ -5,13 +5,19 @@ description: >
 when_to_use: >
   当用户提到数据成熟度、HR数字化、People Analytics、HR analytics、数据分析能力、HR数据、人力分析、数据驱动HR 或数字化转型时使用。
 allowed-tools:
-  - web_search
-  - generate_report
-  - generate_slides
+  - Read
+  - Grep
+  - WebSearch
+  - Bash
+  - Write
+  - Edit
+  - WriteMemory
+  - SearchMemory
+  - Skill
 context: inline
 user-invocable: true
 disable-model-invocation: false
-version: "1.1"
+version: "1.2"
 category: hr
 metadata:
   label: HR数据分析成熟度评估
@@ -109,7 +115,7 @@ metadata:
 - 组织支撑差距：团队、技能、预算、高管支持。
 - 价值实现差距：决策渗透、模块覆盖、ROI 和改进闭环。
 
-如需对标工具或行业做法，可使用 `web_search`，但必须区分外部参考和用户现状。输出每个差距的业务影响、优先级、前置依赖和建议行动。在当前回复中用简短清单复述差距分析，并请用户确认。
+如需对标工具或行业做法，可使用 `WebSearch`，但必须区分外部参考和用户现状。输出每个差距的业务影响、优先级、前置依赖和建议行动。在当前回复中用简短清单复述差距分析，并请用户确认。
 
 ### 5. 升级路线图与报告
 
@@ -120,7 +126,7 @@ metadata:
 - Phase 3（7-12 个月）：高级分析方法、业务场景扩展、内部推广。
 - Phase 4（13-24 个月）：预测模型、决策支持体系、ROI 评估和持续优化。
 
-每阶段写清行动项、资源需求、里程碑、验收标准、风险和应对。用户确认后可使用 `generate_report` 生成完整报告，包含现状摘要、评估结果、成熟度级别、差距分析、路线图、工具和培训资源、投资回报预期。报告后询问是否需要 `generate_slides` 生成 PPT。
+每阶段写清行动项、资源需求、里程碑、验收标准、风险和应对。用户确认后可使用 `Write` 生成完整报告，包含现状摘要、评估结果、成熟度级别、差距分析、路线图、工具和培训资源、投资回报预期。报告后询问是否需要 `Skill` 生成 PPT。
 
 ## 输出标准
 
@@ -128,3 +134,10 @@ metadata:
 - 每项建议标注时间、预算、人力和依赖条件。
 - 对自评分数的主观性、样本局限和未验证假设做显式提示。
 - 表格优先用于评分、差距、行动计划和路线图。
+
+
+## 桌面端工具说明（迁移自旧平台）
+
+本技能在 AIjia 桌面端运行。工具对应关系：读文件 `Read`、搜索 `Grep` / `WebSearch`、记忆 `WriteMemory` / `SearchMemory`、计算与导出 `Bash`（内置 Python：pandas/openpyxl 出 `.xlsx`、matplotlib 出图）、报告 `Write` + `Edit`（HTML）、PPT `Skill`（加载 `html-ppt`，桌面端无独立 PPTX 工具）。
+
+**生成报告 / 长文档必须逐节增量写、用 `Edit` 续写，禁止把整份内容作为单个 `Write` 一次性吐出**——否则对话界面会长时间无响应、且易触发流式超时。

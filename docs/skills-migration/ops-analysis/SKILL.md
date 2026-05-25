@@ -5,17 +5,21 @@ description: >
 when_to_use: >
   用户提到运营分析、运营数据、GMV分析、转化分析、渠道分析、留存分析、活跃分析、DAU、运营报表、运营指标、增长分析、conversion funnel、retention analysis、channel ROI，且需要基于文件或表格数据定位增长机会。
 allowed-tools:
-  - load_file
-  - execute_python
-  - export_data
-  - generate_report
-  - generate_slides
+  - Read
+  - Grep
+  - WebSearch
+  - Bash
+  - Write
+  - Edit
+  - WriteMemory
+  - SearchMemory
+  - Skill
 model: opus
 effort: high
 context: inline
 user-invocable: true
 disable-model-invocation: false
-version: "1.1"
+version: "1.2"
 category: ops
 metadata:
   label: 运营数据分析
@@ -34,7 +38,7 @@ metadata:
 - 适用场景：GMV、转化漏斗、渠道 ROI、留存和增长策略。
 - 通常需要用户提供文件或表格数据；若没有文件，先说明需要的数据类型、字段和口径，再询问用户是否上传或改为框架性建议。
 - 推荐输入：运营指标表、交易/GMV 数据、用户行为日志、渠道投放数据、活动数据、留存 cohort 表；关键字段包括日期、用户 ID、渠道、行为事件、金额、曝光、点击、转化、成本和活跃指标。
-- 所有数字结论必须来自用户文件、`load_file` 读取结果或 `execute_python` 实际计算结果；经验性判断必须明确标注为假设或建议。
+- 所有数字结论必须来自用户文件、`Read` 读取结果或 `Bash` 实际计算结果；经验性判断必须明确标注为假设或建议。
 - 面向非技术用户输出，不展示代码、脚本细节或内部变量名。
 
 ## 可选参考资料
@@ -55,7 +59,7 @@ metadata:
 ## 推荐流程
 
 ### 1. 数据加载与指标识别
-- 用 `load_file` 读取数据，用 `execute_python` 识别流量、交易、用户行为、渠道投放或活动数据。
+- 用 `Read` 读取数据，用 `Bash` 识别流量、交易、用户行为、渠道投放或活动数据。
 - 识别日期、用户 ID、渠道、事件、金额、成本、曝光、点击、订单和活跃指标字段。
 - 向用户确认业务类型、电商/SaaS/内容/O2O/零售等场景、分析目标和北极星指标。
 - 如果数据不能支撑漏斗、渠道或留存分析，先说明缺少字段并调整分析范围。
@@ -70,20 +74,20 @@ metadata:
 - 比较各渠道访问量、转化率、收入、成本、CAC、ROI 和用户质量。
 - 如有用户 ID 和日期，做留存曲线或 cohort 分析，输出 cohort 大小和留存率矩阵。
 - 识别留存拐点、异常 cohort 和可能的用户行为原因。
-- 用 `export_data` 导出渠道效率、留存矩阵或关键指标表。
+- 用 `Bash` 导出渠道效率、留存矩阵或关键指标表。
 
 ### 4. 增长策略与报告
 - 形成运营健康度仪表盘，展示北极星指标、关键指标和整体增长状态。
 - 输出 3-5 条核心发现，按影响排序列出增长机会、效率瓶颈和风险信号。
 - 按 Quick Win、本月优化和长期投入组织增长建议，并标注预期影响和实施难度。
-- 用 `generate_report` 生成运营分析报告；用户需要汇报材料时再用 `generate_slides` 生成 PPT。
+- 用 `Write` 生成运营分析报告；用户需要汇报材料时再用 `Skill` 生成 PPT。
 
 ## 输出要求
 
 - 先给一句话结论，再给关键数据支撑和解释。
 - 表格适合展示指标、排名、差异和风险清单；文字适合解释原因、假设和建议。
 - 每个关键发现都回答：是什么、为什么、影响多大、下一步做什么。
-- 需要交付物时，用 `export_data` 导出明细或指标表，用 `generate_report` 生成报告；只有用户确认需要汇报材料时再用 `generate_slides`。
+- 需要交付物时，用 `Bash` 导出明细或指标表，用 `Write` 生成报告；只有用户确认需要汇报材料时再用 `Skill`。
 
 ## 质量检查
 
@@ -91,3 +95,10 @@ metadata:
 - 渠道 ROI 需要成本数据；缺成本时只能做渠道质量或转化效率对比。
 - 留存分析需要用户 ID 和时间字段；缺字段时说明限制并改做趋势分析。
 - 增长 playbook 只能作为建议库，必须结合实际瓶颈选择。
+
+
+## 桌面端工具说明（迁移自旧平台）
+
+本技能在 AIjia 桌面端运行。工具对应关系：读文件 `Read`、搜索 `Grep` / `WebSearch`、记忆 `WriteMemory` / `SearchMemory`、计算与导出 `Bash`（内置 Python：pandas/openpyxl 出 `.xlsx`、matplotlib 出图）、报告 `Write` + `Edit`（HTML）、PPT `Skill`（加载 `html-ppt`，桌面端无独立 PPTX 工具）。
+
+**生成报告 / 长文档必须逐节增量写、用 `Edit` 续写，禁止把整份内容作为单个 `Write` 一次性吐出**——否则对话界面会长时间无响应、且易触发流式超时。

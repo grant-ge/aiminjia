@@ -5,17 +5,21 @@ description: >
 when_to_use: >
   用户提到预算分析、预算执行、预算对比、预算差异、预实对比、预算达成、预算偏差、预算管控、budget vs actual、variance analysis、forecast accuracy，且需要基于文件或表格数据输出差异归因、全年预测或管控报告。
 allowed-tools:
-  - load_file
-  - execute_python
-  - export_data
-  - generate_report
-  - generate_slides
+  - Read
+  - Grep
+  - WebSearch
+  - Bash
+  - Write
+  - Edit
+  - WriteMemory
+  - SearchMemory
+  - Skill
 model: opus
 effort: high
 context: inline
 user-invocable: true
 disable-model-invocation: false
-version: "1.1"
+version: "1.2"
 category: finance
 metadata:
   label: 预算执行分析
@@ -34,7 +38,7 @@ metadata:
 - 适用场景：预算执行、预实对比、滚动预测和预算管控。
 - 通常需要用户提供文件或表格数据；若没有文件，先说明需要的数据类型、字段和口径，再询问用户是否上传或改为框架性建议。
 - 推荐输入：预算表、实际执行表、预实对比表、费用明细、部门/项目预算执行数据；关键字段包括科目/部门/项目/期间、预算金额、实际金额、差异或达成率。
-- 所有数字结论必须来自用户文件、`load_file` 读取结果或 `execute_python` 实际计算结果；经验性判断必须明确标注为假设或建议。
+- 所有数字结论必须来自用户文件、`Read` 读取结果或 `Bash` 实际计算结果；经验性判断必须明确标注为假设或建议。
 - 面向非技术用户输出，不展示代码、脚本细节或内部变量名。
 
 ## 可选参考资料
@@ -56,7 +60,7 @@ metadata:
 ## 推荐流程
 
 ### 1. 数据加载与预算结构识别
-- 用 `load_file` 读取用户文件，用 `execute_python` 识别预算表、实际执行表、预实对比表或单一明细表。
+- 用 `Read` 读取用户文件，用 `Bash` 识别预算表、实际执行表、预实对比表或单一明细表。
 - 确认维度（科目/部门/项目/期间）、度量（预算、实际、差异、达成率）、时间粒度和缺失项。
 - 向用户确认分析范围、重点偏差科目、是否有去年同期或预算版本，并记录分析方向。
 - 若只有预算表，转为预算结构合理性分析；若只有实际表，先说明无法做预实差异，询问是否补传预算或改做支出结构分析。
@@ -65,26 +69,26 @@ metadata:
 - 计算总预算、总实际、总差异、差异率和达成率，输出逐行差异明细。
 - 按影响金额提取 Top 不利差异和 Top 有利差异，标注严重度，避免只关注超支而忽略异常节约。
 - 对重大差异下钻到月度、部门、项目或科目；必要时用 `variance_rules.json` 辅助列出可能原因，但原因必须与数据证据区分。
-- 用 `export_data` 导出差异明细，例如 `step1_variance.xlsx`。
+- 用 `Bash` 导出差异明细，例如 `step1_variance.xlsx`。
 
 ### 3. 滚动预测与风险评估
 - 根据已实现期间和实际累计金额预测全年预算达成，优先选择与数据形态匹配的预测方法。
 - 输出已实现、剩余预测、全年预算、预测达成率、预测缺口和风险等级。
 - 对关键收入/成本假设做敏感性分析，例如收入下降、成本上升或费用冻结情景。
-- 用 `export_data` 导出预测表，例如 `step2_forecast.xlsx`。
+- 用 `Bash` 导出预测表，例如 `step2_forecast.xlsx`。
 
 ### 4. 管控建议与报告
 - 形成执行摘要：整体达成率、重大偏差、全年预测和风险等级。
 - 给出 Top 5-10 重大差异清单，每项说明是什么、为什么、怎么办。
 - 按立即行动、本月跟进、下季度规划组织管控建议，并标注预期节省/增收金额。
-- 用 `generate_report` 生成预算分析报告；用户需要汇报材料时再用 `generate_slides` 生成 PPT。
+- 用 `Write` 生成预算分析报告；用户需要汇报材料时再用 `Skill` 生成 PPT。
 
 ## 输出要求
 
 - 先给一句话结论，再给关键数据支撑和解释。
 - 表格适合展示指标、排名、差异和风险清单；文字适合解释原因、假设和建议。
 - 每个关键发现都回答：是什么、为什么、影响多大、下一步做什么。
-- 需要交付物时，用 `export_data` 导出明细或指标表，用 `generate_report` 生成报告；只有用户确认需要汇报材料时再用 `generate_slides`。
+- 需要交付物时，用 `Bash` 导出明细或指标表，用 `Write` 生成报告；只有用户确认需要汇报材料时再用 `Skill`。
 
 ## 质量检查
 
@@ -92,3 +96,10 @@ metadata:
 - 有利差异也要检查可持续性，不能默认视为好消息。
 - 缺预算、缺期间或字段不清时先确认口径，不要直接套公式。
 - 每条建议都要能追溯到具体科目、部门、项目或金额影响。
+
+
+## 桌面端工具说明（迁移自旧平台）
+
+本技能在 AIjia 桌面端运行。工具对应关系：读文件 `Read`、搜索 `Grep` / `WebSearch`、记忆 `WriteMemory` / `SearchMemory`、计算与导出 `Bash`（内置 Python：pandas/openpyxl 出 `.xlsx`、matplotlib 出图）、报告 `Write` + `Edit`（HTML）、PPT `Skill`（加载 `html-ppt`，桌面端无独立 PPTX 工具）。
+
+**生成报告 / 长文档必须逐节增量写、用 `Edit` 续写，禁止把整份内容作为单个 `Write` 一次性吐出**——否则对话界面会长时间无响应、且易触发流式超时。

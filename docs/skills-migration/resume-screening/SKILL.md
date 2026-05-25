@@ -5,22 +5,21 @@ description: >
 when_to_use: >
   当数字员工"小招"被派活进行简历筛选、JD 撰写、候选人调研或面试题生成时使用。用户通常会拖入简历文件或在对话中描述招聘需求。
 allowed-tools:
-  - load_file
-  - read_file
-  - grep_content
-  - web_search
-  - browse_and_extract
-  - read_page_content
-  - execute_python
-  - memory_save
-  - memory_search
-  - generate_report
+  - Read
+  - Grep
+  - WebSearch
+  - Bash
+  - Write
+  - Edit
+  - WriteMemory
+  - SearchMemory
+  - Skill
 model: opus
 effort: high
 context: inline
 user-invocable: true
 disable-model-invocation: false
-version: "1.0"
+version: "1.1"
 category: hr
 metadata:
   label: 简历筛选
@@ -56,7 +55,7 @@ metadata:
 
 ### 1. 确认筛选标准
 
-- 如用户拖入了 JD 文件：`load_file` 解析 JD，提取硬性条件和加分项
+- 如用户拖入了 JD 文件：`Read` 解析 JD，提取硬性条件和加分项
 - 如用户口述要求：整理为结构化标准
 - 与用户确认最终筛选标准：
 
@@ -76,7 +75,7 @@ metadata:
 
 ### 2. 逐份解析简历
 
-对每份简历调用 `load_file` → `read_file`，提取结构化信息：
+对每份简历调用 `Read` → `Read`，提取结构化信息：
 
 - 姓名
 - 联系方式（脱敏）
@@ -90,7 +89,7 @@ metadata:
 
 ### 3. 匹配评分
 
-调用 `execute_python` 计算匹配度：
+调用 `Bash` 计算匹配度：
 
 - 硬性条件逐项检查：全部满足 → 基础分 60；每缺一项 -20
 - 加分项逐项检查：每满足一项 +10（上限 40）
@@ -107,7 +106,7 @@ metadata:
 
 ### 5. 生成筛选报告
 
-调用 `generate_report` 生成 HTML 报告：
+调用 `Write` 生成 HTML 报告：
 
 **汇总表**（在前）：
 
@@ -123,7 +122,7 @@ metadata:
 
 ### 6. 保存筛选标准
 
-调用 `memory_save`，namespace 用 `resume_screening`，保存本次使用的筛选标准，方便下次复用：
+调用 `WriteMemory`，namespace 用 `resume_screening`，保存本次使用的筛选标准，方便下次复用：
 
 ```json
 { "position": "高级前端工程师", "criteria": {...}, "date": "2026-05-08" }
@@ -145,7 +144,7 @@ metadata:
 
 ### 2. 检查历史模板
 
-调用 `memory_search`，namespace 用 `resume_screening`，查找同岗位历史 JD 作为参考。
+调用 `SearchMemory`，namespace 用 `resume_screening`，查找同岗位历史 JD 作为参考。
 
 ### 3. 生成 JD
 
@@ -173,7 +172,7 @@ metadata:
 
 ### 2. 多源搜索
 
-调用 `web_search` + `browse_and_extract`：
+调用 `WebSearch` + `WebSearch`：
 - 搜索 LinkedIn 公开页面
 - 搜索 GitHub（如技术岗）
 - 搜索公开文章/演讲/专利
@@ -183,7 +182,7 @@ metadata:
 
 ### 3. 生成一页纸报告
 
-调用 `generate_report`：
+调用 `Write`：
 
 - 职业轨迹（公司 → 公司，时间线）
 - 技术方向 / 专业领域
@@ -197,7 +196,7 @@ metadata:
 
 ### 1. 解析输入
 
-- `load_file` 解析候选人简历
+- `Read` 解析候选人简历
 - 确认岗位 JD（用户提供或口述）
 
 ### 2. 生成问题
@@ -218,3 +217,10 @@ metadata:
 - 每题附追问方向
 
 输出为结构化文档，可直接打印给面试官使用。
+
+
+## 桌面端工具说明（迁移自旧平台）
+
+本技能在 AIjia 桌面端运行。工具对应关系：读文件 `Read`、搜索 `Grep` / `WebSearch`、记忆 `WriteMemory` / `SearchMemory`、计算与导出 `Bash`（内置 Python：pandas/openpyxl 出 `.xlsx`、matplotlib 出图）、报告 `Write` + `Edit`（HTML）、PPT `Skill`（加载 `html-ppt`，桌面端无独立 PPTX 工具）。
+
+**生成报告 / 长文档必须逐节增量写、用 `Edit` 续写，禁止把整份内容作为单个 `Write` 一次性吐出**——否则对话界面会长时间无响应、且易触发流式超时。

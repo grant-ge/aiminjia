@@ -5,17 +5,21 @@ description: >
 when_to_use: >
   当用户要求问卷分析、调研分析、问卷数据、满意度调查、NPS分析、问卷统计、调研报告、survey analysis，或上传问卷/反馈数据时使用。
 allowed-tools:
-  - load_file
-  - execute_python
-  - export_data
-  - generate_report
-  - generate_slides
+  - Read
+  - Grep
+  - WebSearch
+  - Bash
+  - Write
+  - Edit
+  - WriteMemory
+  - SearchMemory
+  - Skill
 model: opus
 effort: high
 context: inline
 user-invocable: true
 disable-model-invocation: false
-version: "1.1"
+version: "1.2"
 category: general
 metadata:
   label: 问卷调研分析
@@ -25,7 +29,7 @@ metadata:
 
 ## 使用原则
 
-- 所有统计结果必须来自用户上传的数据或 `execute_python` 的实际计算结果，禁止构造样本量、比例、得分或典型回答。
+- 所有统计结果必须来自用户上传的数据或 `Bash` 的实际计算结果，禁止构造样本量、比例、得分或典型回答。
 - 面向非技术业务用户输出，不展示代码；说明样本范围、有效回收、缺失值、异常值和统计局限。
 - 先判断问卷类型：满意度、NPS、员工调研、客户反馈、市场调研、投票或开放反馈。
 - 开放题分析只能概括主题和情感倾向；引用原话时注意脱敏。
@@ -43,8 +47,8 @@ metadata:
 
 ### 1. 数据加载与问卷结构
 
-1. 使用 `load_file` 读取问卷、调研或反馈数据。
-2. 使用 `execute_python` 识别题目类型：单选、多选、量表、NPS、开放题、人口统计学变量。
+1. 使用 `Read` 读取问卷、调研或反馈数据。
+2. 使用 `Bash` 识别题目类型：单选、多选、量表、NPS、开放题、人口统计学变量。
 3. 评估数据质量：样本量、完成率、缺失值、直线作答、极短作答时长、重复提交。
 4. 向用户确认分析目标：总体满意度、群体差异、驱动因素、开放题主题、改善建议或汇报报告。
 
@@ -57,13 +61,13 @@ metadata:
 - NPS：推荐者、中立者、贬损者占比，以及 NPS 得分。
 - 异常结构：双峰分布、极端值、缺失集中题目。
 
-展示时先给整体结论，再用表格列关键题目；可用 `export_data` 导出题目统计表。
+展示时先给整体结论，再用表格列关键题目；可用 `Bash` 导出题目统计表。
 
 ### 3. 交叉分析与洞察
 
 1. 按人口统计学或业务变量交叉分析，例如部门、地区、年龄、客户类型、渠道。
 2. 对关键量表或满意度指标做群体对比，标出最高和最低群体。
-3. 需要显著性判断时，使用 `execute_python` 进行卡方检验、t 检验、方差分析或非参数检验，并解释为统计参考而非因果结论。
+3. 需要显著性判断时，使用 `Bash` 进行卡方检验、t 检验、方差分析或非参数检验，并解释为统计参考而非因果结论。
 4. 对开放题做关键词、主题、情感倾向和典型问题归纳。
 5. 如有历史数据，比较趋势变化和改善/恶化维度。
 
@@ -76,4 +80,11 @@ metadata:
 - 重点群体：列出需要优先沟通、访谈或补救的群体。
 - 后续监控：建议复测周期、追踪指标和样本要求。
 
-用 `generate_report` 生成调研报告，并用 `export_data` 导出统计结果或交叉分析表。如用户需要汇报材料，先询问确认，再用 `generate_slides` 生成 PPTX。
+用 `Write` 生成调研报告，并用 `Bash` 导出统计结果或交叉分析表。如用户需要汇报材料，先询问确认，再用 `Skill` 生成 PPTX。
+
+
+## 桌面端工具说明（迁移自旧平台）
+
+本技能在 AIjia 桌面端运行。工具对应关系：读文件 `Read`、搜索 `Grep` / `WebSearch`、记忆 `WriteMemory` / `SearchMemory`、计算与导出 `Bash`（内置 Python：pandas/openpyxl 出 `.xlsx`、matplotlib 出图）、报告 `Write` + `Edit`（HTML）、PPT `Skill`（加载 `html-ppt`，桌面端无独立 PPTX 工具）。
+
+**生成报告 / 长文档必须逐节增量写、用 `Edit` 续写，禁止把整份内容作为单个 `Write` 一次性吐出**——否则对话界面会长时间无响应、且易触发流式超时。

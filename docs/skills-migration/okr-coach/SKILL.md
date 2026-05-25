@@ -4,16 +4,21 @@ description: >
   OKR 制定辅导助手。用于公司、部门、团队或个人的 Objective 设定、Key Result 设计、KPI/指标选择、目标拆解和对齐检查。
 when_to_use: 用户提到 OKR、目标制定、关键结果、目标管理、OKR 辅导、目标拆解、KPI、目标对齐、objective setting、key results、goal setting 或 KPI design 时使用；可无文件输入，也可结合上级 OKR、战略材料或绩效文档。
 allowed-tools:
-  - load_file
-  - export_data
-  - generate_report
-  - generate_slides
+  - Read
+  - Grep
+  - WebSearch
+  - Bash
+  - Write
+  - Edit
+  - WriteMemory
+  - SearchMemory
+  - Skill
 model: opus
 effort: high
 context: inline
 user-invocable: true
 disable-model-invocation: false
-version: "1.1"
+version: "1.2"
 category: hr
 metadata:
   label: OKR 制定辅导
@@ -68,7 +73,7 @@ metadata:
 - 周期：季度、半年、年度或项目周期。
 - 职能：产品、工程、销售、市场、HR、财务、运营或综合管理。
 - 战略重点：本周期最重要的业务方向、约束和机会。
-- 上级目标：如有上级 OKR 或战略文档，使用 `load_file` 读取并提炼对齐点。
+- 上级目标：如有上级 OKR 或战略文档，使用 `Read` 读取并提炼对齐点。
 - 当前基线：已有指标、历史表现、资源约束和关键风险。
 
 如果信息不足，先给用户一个最小补充清单；如果用户只想要初稿，可基于显式假设生成，并标注待确认基线。
@@ -108,7 +113,7 @@ metadata:
 - 风险与依赖：需要哪些资源、协作和前置条件。
 - 复盘建议：周期中检查频率、评分方式和偏差处理方法。
 
-需要正式文档时，可用 `generate_report` 输出 OKR 文档，用 `export_data` 输出 OKR 表格。用户明确需要宣讲或汇报时，再用 `generate_slides` 生成 PPTX；PPT 每页聚焦一个主题，例如目标总览、关键 KR、对齐关系、风险依赖、复盘机制。
+需要正式文档时，可用 `Write` 输出 OKR 文档，用 `Bash` 输出 OKR 表格。用户明确需要宣讲或汇报时，再用 `Skill` 生成 PPTX；PPT 每页聚焦一个主题，例如目标总览、关键 KR、对齐关系、风险依赖、复盘机制。
 
 ## 常见错误与改写方向
 
@@ -116,3 +121,10 @@ metadata:
 - KR 不可衡量：把“优化用户体验”改为“核心流程完成率从 62% 提升至 80%”。
 - KR 是任务：把“上线推荐系统”改为“推荐带来的点击转化率提升至 12%”。
 - 目标过多：合并相近方向，保留最影响业务结果的 3-5 个 Objective。
+
+
+## 桌面端工具说明（迁移自旧平台）
+
+本技能在 AIjia 桌面端运行。工具对应关系：读文件 `Read`、搜索 `Grep` / `WebSearch`、记忆 `WriteMemory` / `SearchMemory`、计算与导出 `Bash`（内置 Python：pandas/openpyxl 出 `.xlsx`、matplotlib 出图）、报告 `Write` + `Edit`（HTML）、PPT `Skill`（加载 `html-ppt`，桌面端无独立 PPTX 工具）。
+
+**生成报告 / 长文档必须逐节增量写、用 `Edit` 续写，禁止把整份内容作为单个 `Write` 一次性吐出**——否则对话界面会长时间无响应、且易触发流式超时。

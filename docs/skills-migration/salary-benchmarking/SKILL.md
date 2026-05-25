@@ -3,17 +3,21 @@ name: salary-benchmarking
 description: 薪酬市场对标分析助手，用于在用户提供薪酬、岗位、职级或市场分位数据后，完成内部薪酬结构、薪酬带、市场竞争力、红绿圈和调薪建议分析。
 when_to_use: 用户要求市场对标、薪酬竞争力、薪酬分位、薪酬定位、外部对标、薪酬带设计、宽带薪酬、market comparison 或 salary benchmarking；通常需要薪酬明细、岗位/职级、部门、城市/行业或市场 P25/P50/P75 数据文件。
 allowed-tools:
-  - load_file
-  - execute_python
-  - export_data
-  - generate_report
-  - generate_slides
+  - Read
+  - Grep
+  - WebSearch
+  - Bash
+  - Write
+  - Edit
+  - WriteMemory
+  - SearchMemory
+  - Skill
 model: opus
 effort: high
 context: inline
 user-invocable: true
 disable-model-invocation: false
-version: "1.1"
+version: "1.2"
 category: hr
 metadata:
   label: 薪酬市场对标分析
@@ -48,7 +52,7 @@ metadata:
 
 ### 1. 数据识别与对标模式确认
 
-1. 使用 `load_file` 读取用户上传文件，概括文件类型、行列规模和疑似关键字段。
+1. 使用 `Read` 读取用户上传文件，概括文件类型、行列规模和疑似关键字段。
 2. 判断并向用户确认对标模式：
    - 纯内部分析：只有内部薪酬数据，重点分析薪酬结构、公平性和薪酬带。
    - 内外对标：同时存在市场分位或外部调研数据，重点分析市场竞争力和定位。
@@ -104,4 +108,11 @@ metadata:
 - 市场竞争力策略：领先、跟随或滞后策略，分别适用于关键岗位、核心岗位和支持岗位。
 - 预算估算：分场景列出总成本、人均调幅、覆盖人数和实施节奏。
 
-需要正式交付时调用 `generate_report` 生成报告。报告完成后主动询问是否需要 PPT；用户确认后再用 `generate_slides` 生成汇报材料，控制每页 4-6 条重点，突出数字和建议。
+需要正式交付时调用 `Write` 生成报告。报告完成后主动询问是否需要 PPT；用户确认后再用 `Skill` 生成汇报材料，控制每页 4-6 条重点，突出数字和建议。
+
+
+## 桌面端工具说明（迁移自旧平台）
+
+本技能在 AIjia 桌面端运行。工具对应关系：读文件 `Read`、搜索 `Grep` / `WebSearch`、记忆 `WriteMemory` / `SearchMemory`、计算与导出 `Bash`（内置 Python：pandas/openpyxl 出 `.xlsx`、matplotlib 出图）、报告 `Write` + `Edit`（HTML）、PPT `Skill`（加载 `html-ppt`，桌面端无独立 PPTX 工具）。
+
+**生成报告 / 长文档必须逐节增量写、用 `Edit` 续写，禁止把整份内容作为单个 `Write` 一次性吐出**——否则对话界面会长时间无响应、且易触发流式超时。

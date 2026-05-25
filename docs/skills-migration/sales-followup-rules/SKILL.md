@@ -5,18 +5,21 @@ description: >
 when_to_use: >
   数字员工"小销"或类似客户跟进角色被派活时；resource_config 必须包含 tableId 和 fieldMapping。
 allowed-tools:
-  - bash
-  - web_search
-  - memory_save
-  - memory_search
-  - load_skill
-  - generate_report
+  - Read
+  - Grep
+  - WebSearch
+  - Bash
+  - Write
+  - Edit
+  - WriteMemory
+  - SearchMemory
+  - Skill
 model: sonnet
 effort: high
 context: inline
 user-invocable: true
 disable-model-invocation: false
-version: "1.1"
+version: "1.2"
 category: sales
 metadata:
   label: 客户跟进规则判定
@@ -41,7 +44,7 @@ metadata:
 配置可以来自两条路径：
 
 - **路径 B（用户在 EmployeeDrawer ⚙️ 配置资源里填好的）**：派活 prompt 的"资源配置"段会带上完整的 `{ baseId, tableId, fieldMapping, scope }`。
-- **路径 A（首次派活，用户没在表单里填）**：prompt 没有"资源配置"段，需要在对话中向用户引导取值，然后用 `memory_save` 持久化（namespace `sales:config`），下次直接从 memory 读，不再问用户。
+- **路径 A（首次派活，用户没在表单里填）**：prompt 没有"资源配置"段，需要在对话中向用户引导取值，然后用 `WriteMemory` 持久化（namespace `sales:config`），下次直接从 memory 读，不再问用户。
 
 需要的字段：
 
@@ -69,8 +72,8 @@ metadata:
 1. `load_skill('dingtalk-workspace')` — 学习 dws 的环境检查、登录验证、命令发现规则。
 2. 通过 dws 验证已登录：`dws auth status --format json`
 3. **配置加载优先级**：
-   - **(a)** 派活 prompt 的"资源配置"段如果有 `baseId / tableId / fieldMapping / scope` —— 直接用，进入步骤 1。同时 `memory_save` 一份到 `sales:config`，作为后续 fallback。
-   - **(b)** 否则 `memory_search` 关键词 `sales:config`。找到 → 用它，进入步骤 1。
+   - **(a)** 派活 prompt 的"资源配置"段如果有 `baseId / tableId / fieldMapping / scope` —— 直接用，进入步骤 1。同时 `WriteMemory` 一份到 `sales:config`，作为后续 fallback。
+   - **(b)** 否则 `SearchMemory` 关键词 `sales:config`。找到 → 用它，进入步骤 1。
    - **(c)** 都没有（首次派活且未在表单填过）→ 进入步骤 0a 引导用户配置。
 
 ### 0a. 首次配置流程（仅当 (a)(b) 都没有时）
@@ -82,9 +85,9 @@ metadata:
 3. 拉表的字段：`dws table schema --base-id <baseId> --table-id <tableId> --format json`，向用户展示所有列，逐项让 ta 把 customerName / stage / lastContact / nextAction / nextActionDate / owner / notes 七个语义字段映射到具体的列名（缺失的字段映射为 null 也行，运行时跳过相关规则）。
 4. 询问 scope：`self`（仅自己负责的）或 `department`（整个部门）。
 5. 拼好整个 config JSON，复述给用户，等用户回 "确认"。
-6. `memory_save` namespace=`sales:config`，把整个对象存进去。
+6. `WriteMemory` namespace=`sales:config`，把整个对象存进去。
 
-之后每次派活都从 memory 直接读。如果用户想修改配置，可以在对话里说"重新配置"，员工就 `memory_save` 覆写；或在 EmployeeDrawer ⚙️ 配置资源里直接改（路径 B 优先级最高）。
+之后每次派活都从 memory 直接读。如果用户想修改配置，可以在对话里说"重新配置"，员工就 `WriteMemory` 覆写；或在 EmployeeDrawer ⚙️ 配置资源里直接改（路径 B 优先级最高）。
 
 ### 1. 拉取客户列表
 
@@ -103,7 +106,7 @@ dws table records list --base-id <baseId> --table-id <tableId> --format json
 对每条记录按 fieldMapping 提取核心字段，判断是否进入"今日跟进":
 
 - **R1: 上次联系超过 7 天** —— `now - lastContact >= 7d`
-- **R2: 阶段停滞** —— `stage` 字段连续 ≥ 14 天未变化（用 `memory_search` 拉上次记录的 stage 比对）
+- **R2: 阶段停滞** —— `stage` 字段连续 ≥ 14 天未变化（用 `SearchMemory` 拉上次记录的 stage 比对）
 - **R3: next_action 到期或过期** —— `nextActionDate <= today`
 
 命中任一规则即入选。每条入选记录附"触发原因"。
@@ -112,13 +115,13 @@ dws table records list --base-id <baseId> --table-id <tableId> --format json
 
 对入选客户：
 
-1. `memory_search` 拉最近 3 次跟进笔记（namespace `sales:<customerName>`）
+1. `SearchMemory` 拉最近 3 次跟进笔记（namespace `sales:<customerName>`）
 2. 可选用 dws 在客户群里搜最近 7 天关键词（金额、合同、技术问题等）—— 命令以 dingtalk-workspace SKILL 中的 chat search 段为准
-3. 可选 `web_search`：搜索"<客户公司> 最近动态"，找 0-1 条公开信号
+3. 可选 `WebSearch`：搜索"<客户公司> 最近动态"，找 0-1 条公开信号
 
 ### 4. 生成今日跟进提醒
 
-`generate_report` 输出 Markdown：
+`Write` 输出 Markdown：
 
 ```
 # 今日跟进 — {YYYY-MM-DD}
@@ -135,7 +138,7 @@ dws table records list --base-id <baseId> --table-id <tableId> --format json
 
 ### 5. 写回 memory
 
-为每个入选客户调用 `memory_save`：
+为每个入选客户调用 `WriteMemory`：
 ```json
 { "customerName": "...", "stage": "...", "lastContact": "...", "todayPushedAt": "..." }
 ```
@@ -149,4 +152,11 @@ dws table records list --base-id <baseId> --table-id <tableId> --format json
 1. 解析意图，识别要更新的字段（lastContact / nextAction / notes / stage）
 2. 在对话中明示："我将把『{客户名}』的 lastContact 更新为今天，nextAction 更新为'签合同'，nextActionDate 更新为下周一。请确认。"
 3. 等用户确认后通过 dws 调用对应的 record update 命令（实际命令以 dingtalk-workspace SKILL 为准）
-4. 同步 `memory_save` 当次跟进笔记
+4. 同步 `WriteMemory` 当次跟进笔记
+
+
+## 桌面端工具说明（迁移自旧平台）
+
+本技能在 AIjia 桌面端运行。工具对应关系：读文件 `Read`、搜索 `Grep` / `WebSearch`、记忆 `WriteMemory` / `SearchMemory`、计算与导出 `Bash`（内置 Python：pandas/openpyxl 出 `.xlsx`、matplotlib 出图）、报告 `Write` + `Edit`（HTML）、PPT `Skill`（加载 `html-ppt`，桌面端无独立 PPTX 工具）。
+
+**生成报告 / 长文档必须逐节增量写、用 `Edit` 续写，禁止把整份内容作为单个 `Write` 一次性吐出**——否则对话界面会长时间无响应、且易触发流式超时。

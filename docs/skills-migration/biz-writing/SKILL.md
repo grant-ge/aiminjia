@@ -4,16 +4,21 @@ description: >
   商务文档撰写助手。用于起草、改写或定稿商务邮件、工作报告、会议纪要、周报/月报、通知、制度文档、述职报告和 PPT 大纲。
 when_to_use: 用户需要写商务写作、商务邮件、工作报告、会议纪要、汇报材料、总结报告、商务文档、PPT 大纲、business writing、business email、report writing、memo 或 presentation outline 时使用；可无文件输入，也可结合用户提供的参考材料。
 allowed-tools:
-  - load_file
-  - export_data
-  - generate_report
-  - generate_slides
+  - Read
+  - Grep
+  - WebSearch
+  - Bash
+  - Write
+  - Edit
+  - WriteMemory
+  - SearchMemory
+  - Skill
 model: opus
 effort: high
 context: inline
 user-invocable: true
 disable-model-invocation: false
-version: "1.1"
+version: "1.2"
 category: general
 metadata:
   label: 商务文档撰写
@@ -52,7 +57,7 @@ metadata:
 - 写作目的：告知、说服、请示、推动行动、记录事实、复盘总结。
 - 关键信息：时间、地点、人物、事件、数据、约束、截止日期。
 - 语气要求：正式、简洁、坚定、委婉、感谢、紧急、对外口径。
-- 参考材料：如用户提供文件，使用 `load_file` 读取并只基于已读取内容提炼事实。
+- 参考材料：如用户提供文件，使用 `Read` 读取并只基于已读取内容提炼事实。
 
 信息不足时先给用户一个可选择的补充清单；如果用户要求快速起草，可以基于已知信息生成“可替换占位版”，并明确哪些地方需要用户补充。
 
@@ -91,7 +96,7 @@ metadata:
 - 简洁检查：删除空话、套话、重复话，长句拆短句。
 - 行动检查：是否明确下一步、截止时间和反馈方式。
 
-需要生成正式交付物时，可用 `generate_report` 输出报告文档，用 `export_data` 输出结构化清单。用户明确需要汇报材料时，再使用 `generate_slides` 生成 PPTX；PPT 每页只保留一个核心观点，bullets 控制在 4-6 条，并为演讲备注写要点。
+需要生成正式交付物时，可用 `Write` 输出报告文档，用 `Bash` 输出结构化清单。用户明确需要汇报材料时，再使用 `Skill` 生成 PPTX；PPT 每页只保留一个核心观点，bullets 控制在 4-6 条，并为演讲备注写要点。
 
 ## 交付格式建议
 
@@ -100,3 +105,10 @@ metadata:
 - 会议纪要：优先用表格列出决议和待办。
 - PPT 大纲：按页列“标题、核心观点、关键证据、建议图表”。
 - 如存在不确定信息，在文末列“需用户确认的信息”，不要把猜测写成事实。
+
+
+## 桌面端工具说明（迁移自旧平台）
+
+本技能在 AIjia 桌面端运行。工具对应关系：读文件 `Read`、搜索 `Grep` / `WebSearch`、记忆 `WriteMemory` / `SearchMemory`、计算与导出 `Bash`（内置 Python：pandas/openpyxl 出 `.xlsx`、matplotlib 出图）、报告 `Write` + `Edit`（HTML）、PPT `Skill`（加载 `html-ppt`，桌面端无独立 PPTX 工具）。
+
+**生成报告 / 长文档必须逐节增量写、用 `Edit` 续写，禁止把整份内容作为单个 `Write` 一次性吐出**——否则对话界面会长时间无响应、且易触发流式超时。

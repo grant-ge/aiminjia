@@ -5,22 +5,20 @@ description: >
 when_to_use: >
   当数字员工"小标"被派活，或用户要求"写标书 / 投标书 / 应答文件 / 投标方案"，并提供招标文件 + 参考模板时使用。
 allowed-tools:
-  - load_file
-  - read_file
-  - grep_content
-  - web_search
-  - browse_and_extract
-  - read_page_content
-  - execute_python
-  - memory_save
-  - memory_search
-  - generate_report
+  - Read
+  - Grep
+  - WebSearch
+  - Bash
+  - Write
+  - Edit
+  - WriteMemory
+  - SearchMemory
 model: opus
 effort: high
 context: inline
 user-invocable: true
 disable-model-invocation: false
-version: "0.1"
+version: "0.3"
 category: general
 metadata:
   label: 标书撰写工作流
@@ -48,28 +46,28 @@ metadata:
 ### 1.1 招标文件解析
 
 对每个招标文件：
-1. `load_file(path)` 读取
+1. 用 `Read` 读取
 2. 提取并结构化以下要素：
    - 项目背景与采购方
    - **必须响应项**（资质、技术、商务硬性要求），按 `R1, R2, ...` ���号
    - 评分标准（技术分/商务分/价格分权重）
    - 提交格式要求（份数、装订、签章、电子文件格式）
-3. 用 `memory_save` 保存"必须响应项"清单（key 形如 `bid:<project_name>:requirements`）
+3. 用 `WriteMemory` 保存"必须响应项"清单（key 形如 `bid:<project_name>:requirements`）
 
 ### 1.2 参考模板解析
 
 如果模板是 DOCX：
-1. 用 `execute_python` 执行 `references/parse_template.py`，传入 `TEMPLATE_PATH` 环境变量
+1. 用 `Bash` 执行 `TEMPLATE_PATH=<模板路径> python3 "$AIJIA_SKILL_DIR/references/parse_template.py"`（python3 来自内置运行时）
 2. 拿到 `chapters`（章节大纲数组）和 `style_hint`（字体/颜色）
 
 如果模板是 PDF：
-1. 用 `load_file` 提取文本
+1. 用 `Read` 提取文本
 2. 用启发式（行首数字编号 `1.`, `1.1`, `第一章` 等）识别章节标题
 3. `style_hint` 留空（仅记录"模板为 PDF，样式按默认"）
 
 ### 1.3 解析摘要报告
 
-调用 `generate_report` 生成"解析摘要"卡片：
+用 `Write` 输出"解析摘要"（HTML 卡片）：
 - 招标要求识别 N 项（编号 + 摘要 + 来源页码）
 - 模板识别 M 个章节（层级树）
 - ⚠️ 风险/疑点（如要求模糊、模板不完整）
@@ -103,7 +101,7 @@ metadata:
 
 ### 2.2 覆盖率检查
 
-用 `execute_python` 执行 `references/outline_check.py`，输入 `requirements + outline`，得到 `coverage_rate` 和 `uncovered`。
+用 `Bash` 执行 `python3 "$AIJIA_SKILL_DIR/references/outline_check.py"`（`requirements + outline` 经临时 JSON 文件或 stdin 传入），得到 `coverage_rate` 和 `uncovered`。
 
 **`coverage_rate` 必须 ≥ 0.95**。如果有 `uncovered`，主动补章节后再次检查，直到通过。
 
@@ -122,6 +120,7 @@ metadata:
 ### 3.1 撰写规则
 
 - **严格串行**，按大纲顺序依次撰写。**禁止并行。**
+- **每章写完即落盘**：首章用 `Write` 新建草稿文件，后续章节用 `Edit` 续写追加。**不要把整本标书攒在上下文里到 Step 4 一次性输出**——逐章落盘既给用户持续进度，又避免上下文膨胀、避免单次超长输出导致界面无响应。
 - 每章独立 prompt，包含：
   - 章节标题与层级
   - 上下文摘要（前文每章一句话总结，**不要全文回灌**）
@@ -156,25 +155,24 @@ metadata:
 
 ## Step 4：合并导出 docx
 
-### 4.1 拼接 Markdown
+### 4.1 合并完整文档
 
-将所有章节按顺序拼接为单个 Markdown 字符串：
-- 章节标题用 `#` / `##` / `###`（与 level 对应）
-- 段落直接写
-- 列表用 `-` / `1.`
-- 表格用 GFM 表格
-- 加粗用 `**`
+逐章草稿已在 Step 3 落盘。把它们合并为完整标书 HTML：
+- 若各章写在同一草稿文件：用 `Read` 检查完整性，用 `Edit` 补全封面 / 目录 / 页眉页脚
+- 若分章存盘：按大纲顺序 `Read` 后合并写入最终 HTML 文件
+- 章节标题用 `<h1>` / `<h2>` / `<h3>`（与 level 对应），正文 `<p>`，列表 `<ul>` / `<ol>`，表格 `<table>`，关键项 `<strong>`
+- 保留 Step 1 的 `style_hint`（字体 / 颜色）映射到内联样式或 `<style>`
 
-### 4.2 调用 `generate_report`
+### 4.2 导出交付文件
 
+主交付物是上面的 HTML 报告文件（已落盘）。用户需要 `.docx` 时，用 `Bash` 从 HTML 转换：
+
+```bash
+pandoc "<项目名称>投标文件.html" -o "<项目名称>投标文件.docx"
+# pandoc 不可用时，退而用内置 Python + python-docx 从 HTML 生成
 ```
-generate_report({
-  format: "docx",
-  title: "<项目名称> 投标文件",
-  content: "<拼接好的 Markdown>",
-  style_hint: <Step 1 提取的 style_hint>  // 仅供参考；如不支持可忽略
-})
-```
+
+桌面端没有内置 docx 生成工具，docx 一律由这一步从 HTML 转出。
 
 ### 4.3 用户确认
 
@@ -187,7 +185,7 @@ generate_report({
 
 ### 4.4 记忆保存
 
-调用 `memory_save`：
+调用 `WriteMemory`：
 - key: `bid:<project_name>:final`
 - value: 章节摘要 + 关键卖点（供下次类似投标快速复用）
 
@@ -195,9 +193,9 @@ generate_report({
 
 ## 工具白名单约束
 
-只能使用：`load_file`, `read_file`, `grep_content`, `web_search`, `browse_and_extract`, `read_page_content`, `execute_python`, `memory_save`, `memory_search`, `generate_report`。
+只能使用：`Read`, `Grep`, `WebSearch`, `Bash`, `Write`, `Edit`, `WriteMemory`, `SearchMemory`。
 
-不要尝试调用 `bash`、`docx_export`、其他未列出的工具。
+`Bash` 用于跑内置 Python（解析模板 / 覆盖率检查 / HTML→docx 转换），脚本在 `$AIJIA_SKILL_DIR/references/`。不要调用未列出的工具。
 
 ---
 
@@ -205,4 +203,4 @@ generate_report({
 
 - 不在报告中暴露资料库的内部文件路径，仅显示文件名
 - 不向第三方 API 发送公司未公开数据
-- 用户的资料库内容不写入 `memory_save`（只写元数据：文件名、用途）
+- 用户的资料库内容不写入 `WriteMemory`（只写元数据：文件名、用途）

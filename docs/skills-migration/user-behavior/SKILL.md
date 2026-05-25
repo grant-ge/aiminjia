@@ -5,17 +5,21 @@ description: >
 when_to_use: >
   当用户要求用户行为、行为分析、路径分析、功能使用、用户画像、活跃度、参与度、user behavior、path analysis、feature usage，或上传埋点/事件/日志数据时使用。
 allowed-tools:
-  - load_file
-  - execute_python
-  - export_data
-  - generate_report
-  - generate_slides
+  - Read
+  - Grep
+  - WebSearch
+  - Bash
+  - Write
+  - Edit
+  - WriteMemory
+  - SearchMemory
+  - Skill
 model: opus
 effort: high
 context: inline
 user-invocable: true
 disable-model-invocation: false
-version: "1.1"
+version: "1.2"
 category: ops
 metadata:
   label: 用户行为分析
@@ -25,7 +29,7 @@ metadata:
 
 ## 使用原则
 
-- 所有结论必须来自用户上传的数据或 `execute_python` 的实际计算结果，禁止编造 DAU、留存、路径或功能使用数据。
+- 所有结论必须来自用户上传的数据或 `Bash` 的实际计算结果，禁止编造 DAU、留存、路径或功能使用数据。
 - 面向产品和运营用户输出，不展示代码；说明数据口径、时间范围、事件定义、采样或缺失局限。
 - 区分相关性和因果性；每个洞察都要回答“对产品优化有什么启示”。
 - 如缺少用户ID、事件名称或时间戳，先说明哪些分析不可做，并给出替代分析方案。
@@ -43,8 +47,8 @@ metadata:
 
 ### 1. 数据加载与结构识别
 
-1. 使用 `load_file` 读取埋点、事件、访问、点击或日志数据。
-2. 使用 `execute_python` 识别关键字段：用户ID、事件名称、时间戳、页面/功能、设备、渠道、属性字段。
+1. 使用 `Read` 读取埋点、事件、访问、点击或日志数据。
+2. 使用 `Bash` 识别关键字段：用户ID、事件名称、时间戳、页面/功能、设备、渠道、属性字段。
 3. 统计行数、用户数、事件类型分布、时间范围、缺失值和重复记录。
 4. 向用户确认分析目标：功能优化、用户激活、留存提升、路径诊断、用户画像或运营策略。
 
@@ -58,7 +62,7 @@ metadata:
 - 关键路径：用户完成核心任务的典型路径。
 - 流失路径和异常路径：在哪些步骤、页面或事件组合上流失最多。
 
-可用 `export_data` 导出活跃趋势、留存表或路径统计。
+可用 `Bash` 导出活跃趋势、留存表或路径统计。
 
 ### 3. 功能使用与参与度
 
@@ -79,4 +83,11 @@ metadata:
 - 留存提升：沉默用户唤醒、内容或功能推荐、分层运营。
 - 路线图建议：按影响、覆盖人群和实现成本排序。
 
-用 `generate_report` 生成用户行为分析报告，并用 `export_data` 导出关键指标或分层名单。如用户需要汇报材料，先询问确认，再用 `generate_slides` 生成 PPTX。
+用 `Write` 生成用户行为分析报告，并用 `Bash` 导出关键指标或分层名单。如用户需要汇报材料，先询问确认，再用 `Skill` 生成 PPTX。
+
+
+## 桌面端工具说明（迁移自旧平台）
+
+本技能在 AIjia 桌面端运行。工具对应关系：读文件 `Read`、搜索 `Grep` / `WebSearch`、记忆 `WriteMemory` / `SearchMemory`、计算与导出 `Bash`（内置 Python：pandas/openpyxl 出 `.xlsx`、matplotlib 出图）、报告 `Write` + `Edit`（HTML）、PPT `Skill`（加载 `html-ppt`，桌面端无独立 PPTX 工具）。
+
+**生成报告 / 长文档必须逐节增量写、用 `Edit` 续写，禁止把整份内容作为单个 `Write` 一次性吐出**——否则对话界面会长时间无响应、且易触发流式超时。

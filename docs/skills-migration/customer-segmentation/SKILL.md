@@ -5,17 +5,21 @@ description: >
 when_to_use: >
   当用户要求客户细分、客户分层、客户画像、RFM分析、客户价值、客户生命周期、客户分群、customer segmentation 或上传客户/订单/消费数据时使用。
 allowed-tools:
-  - load_file
-  - execute_python
-  - export_data
-  - generate_report
-  - generate_slides
+  - Read
+  - Grep
+  - WebSearch
+  - Bash
+  - Write
+  - Edit
+  - WriteMemory
+  - SearchMemory
+  - Skill
 model: opus
 effort: high
 context: inline
 user-invocable: true
 disable-model-invocation: false
-version: "1.1"
+version: "1.2"
 category: sales
 metadata:
   label: 客户细分分析
@@ -25,7 +29,7 @@ metadata:
 
 ## 使用原则
 
-- 所有数据结论必须来自用户上传的文件或 `execute_python` 的实际计算结果，禁止编造客户数、金额或比例。
+- 所有数据结论必须来自用户上传的文件或 `Bash` 的实际计算结果，禁止编造客户数、金额或比例。
 - 面向业务用户输出，不展示代码；解释字段口径、样本范围、异常值处理和局限性。
 - 如缺少客户ID、交易日期、交易金额、订单次数等关键字段，先说明影响并提供可替代分析方案。
 - 分层结果必须可行动：每个群体都要有定义、规模、贡献、风险或机会、运营建议。
@@ -44,14 +48,14 @@ metadata:
 
 ### 1. 数据加载与探查
 
-1. 使用 `load_file` 读取客户、会员、订单、交易或消费数据。
-2. 使用 `execute_python` 探查字段和质量：客户ID、交易日期、交易金额、交易次数、渠道、品类、地区、会员等级、缺失值、重复记录。
+1. 使用 `Read` 读取客户、会员、订单、交易或消费数据。
+2. 使用 `Bash` 探查字段和质量：客户ID、交易日期、交易金额、交易次数、渠道、品类、地区、会员等级、缺失值、重复记录。
 3. 判断 RFM 是否可行：是否同时具备客户ID、日期和金额；缺金额时可做活跃/频次分层，缺日期时可做价值/偏好分层。
 4. 向用户确认目标：提升复购、识别流失风险、精准营销、会员运营、VIP策略或全量分层。
 
 ### 2. RFM 分层
 
-使用 `execute_python` 计算：
+使用 `Bash` 计算：
 
 - Recency：距离最近一次消费的天数。
 - Frequency：历史消费次数或订单数。
@@ -59,7 +63,7 @@ metadata:
 
 按数据分布分成 3 档或 5 档，组合出 5-8 个有业务意义的群体，例如高价值活跃客户、高价值沉睡客户、重要发展客户、一般维持客户、低价值流失客户。
 
-输出表格字段建议：群体、定义、客户数、占比、总消费/贡献、平均客单价、最近消费天数、运营建议。可用 `export_data` 导出分层名单。
+输出表格字段建议：群体、定义、客户数、占比、总消费/贡献、平均客单价、最近消费天数、运营建议。可用 `Bash` 导出分层名单。
 
 ### 3. 生命周期与价值分析
 
@@ -82,4 +86,11 @@ metadata:
 - 新客培育：首购后旅程、复购激励、内容教育。
 - 流失预警：召回优先级、成本控制、触达频次。
 
-用 `generate_report` 生成客户细分报告，并用 `export_data` 导出客户分层名单或群体摘要。如用户需要汇报材料，先询问确认，再用 `generate_slides` 生成 PPTX。
+用 `Write` 生成客户细分报告，并用 `Bash` 导出客户分层名单或群体摘要。如用户需要汇报材料，先询问确认，再用 `Skill` 生成 PPTX。
+
+
+## 桌面端工具说明（迁移自旧平台）
+
+本技能在 AIjia 桌面端运行。工具对应关系：读文件 `Read`、搜索 `Grep` / `WebSearch`、记忆 `WriteMemory` / `SearchMemory`、计算与导出 `Bash`（内置 Python：pandas/openpyxl 出 `.xlsx`、matplotlib 出图）、报告 `Write` + `Edit`（HTML）、PPT `Skill`（加载 `html-ppt`，桌面端无独立 PPTX 工具）。
+
+**生成报告 / 长文档必须逐节增量写、用 `Edit` 续写，禁止把整份内容作为单个 `Write` 一次性吐出**——否则对话界面会长时间无响应、且易触发流式超时。

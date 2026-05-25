@@ -3,17 +3,21 @@ name: recruitment-funnel
 description: 招聘漏斗分析助手，用于在用户提供招聘候选人、流程、渠道或成本数据后，分析各阶段转化率、招聘周期、渠道 ROI、候选人质量和瓶颈改进方案。
 when_to_use: 用户要求招聘分析、招聘漏斗、招聘效率、渠道分析、转化率分析、招聘报表、hiring funnel、recruitment analysis、hiring metrics、招聘渠道、面试转化或 offer 转化；通常需要招聘流程明细或候选人数据文件。
 allowed-tools:
-  - load_file
-  - execute_python
-  - export_data
-  - generate_report
-  - generate_slides
+  - Read
+  - Grep
+  - WebSearch
+  - Bash
+  - Write
+  - Edit
+  - WriteMemory
+  - SearchMemory
+  - Skill
 model: opus
 effort: high
 context: inline
 user-invocable: true
 disable-model-invocation: false
-version: "1.1"
+version: "1.2"
 category: hr
 metadata:
   label: 招聘漏斗分析
@@ -47,7 +51,7 @@ metadata:
 
 ### 1. 数据识别与分析方向确认
 
-1. 用 `load_file` 读取文件，概括候选人记录数、字段和疑似阶段。
+1. 用 `Read` 读取文件，概括候选人记录数、字段和疑似阶段。
 2. 确认分析范围：时间段、岗位、部门、招聘类型、渠道范围。
 3. 确认漏斗阶段：简历收集、简历初筛、电话/AI 面、一面、二面、终面、Offer、入职，也可按用户企业流程调整。
 4. 询问用户特别关注方向，例如某渠道、某岗位、Offer 接受率、面试效率或入职质量。
@@ -94,4 +98,11 @@ metadata:
 - 长期建设（6-12 个月）：人才池、雇主品牌、校招/内推体系、质量追踪闭环。
 - 说明每项建议的预期影响、负责人建议和优先级。
 
-需要正式交付时调用 `generate_report` 生成招聘漏斗分析报告。报告完成后主动询问是否需要 `generate_slides` 输出 PPT 汇报材料，每页控制 4-6 条重点，突出转化率、周期和行动建议。
+需要正式交付时调用 `Write` 生成招聘漏斗分析报告。报告完成后主动询问是否需要 `Skill` 输出 PPT 汇报材料，每页控制 4-6 条重点，突出转化率、周期和行动建议。
+
+
+## 桌面端工具说明（迁移自旧平台）
+
+本技能在 AIjia 桌面端运行。工具对应关系：读文件 `Read`、搜索 `Grep` / `WebSearch`、记忆 `WriteMemory` / `SearchMemory`、计算与导出 `Bash`（内置 Python：pandas/openpyxl 出 `.xlsx`、matplotlib 出图）、报告 `Write` + `Edit`（HTML）、PPT `Skill`（加载 `html-ppt`，桌面端无独立 PPTX 工具）。
+
+**生成报告 / 长文档必须逐节增量写、用 `Edit` 续写，禁止把整份内容作为单个 `Write` 一次性吐出**——否则对话界面会长时间无响应、且易触发流式超时。
