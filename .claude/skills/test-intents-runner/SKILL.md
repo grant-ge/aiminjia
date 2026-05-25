@@ -155,9 +155,9 @@ agent 跑完意图测试，**直接在对话里向调起者输出结构化报告
 
 ### 4.1 启动连通性
 
-⚠️ **必须用 `pnpm dev:with-pilot` 而不是 `pnpm tauri:dev`**——`tauri-plugin-pilot` 在 `Cargo.toml` 里是 `optional = true`，只在 `e2e` cargo feature 开启时才会被 `src-tauri/src/lib.rs::run()` 注册（`#[cfg(feature = "e2e")]`）。`pnpm tauri:dev` 默认不带 e2e feature，**plugin-pilot 不会被注册、socket 永远不存在**，CLI 全部命令会报 "No tauri-pilot socket found"。
+⚠️ **必须用 `pnpm dev:with-pilot` 而不是 `pnpm tauri:dev`**——`tauri-plugin-pilot` 在 `src-tauri/Cargo.toml` 里是 `optional = true`，只在 `e2e` cargo feature 开启时才会被 `src-tauri/src/lib.rs` 注册（`#[cfg(feature = "e2e")]`）。`pnpm tauri:dev` 默认不带 e2e feature，**plugin-pilot 不会被注册、socket 永远不存在**，CLI 全部命令会报 "No tauri-pilot socket found"。
 
-只有 `pnpm dev:with-pilot` 这个 npm 脚本带 `--features e2e`：
+`pnpm dev:with-pilot` 等同于 `tauri dev --features e2e`：
 
 ```bash
 cd ~/IdeaProjects/lotus-app
@@ -176,7 +176,25 @@ until [ -S /tmp/tauri-pilot-com.aijia.app.sock ]; do sleep 2; done
 tauri-pilot aijia health-check --json   # → {"ok":true,"readyState":"complete",...}
 ```
 
-如果用户已经有 dev server 在跑但 socket 不存在，**多半是用了错误的命令** `pnpm tauri:dev`——提示用户停掉重起 `pnpm dev:with-pilot`，**不要尝试用 `cargo build --features e2e` 或别的方式绕过**，那会和正在跑的 dev server 抢锁。
+如果 dev server 在跑但 socket 不存在，多半是用了错误的命令 `pnpm tauri:dev`——停掉 + 重起 `pnpm dev:with-pilot`。不要尝试同时跑两个 dev server 抢 cargo lock。
+
+### 4.1b 也可以用 release 包跑意图测试（自 2026-05-25 起）
+
+如果你有 `pnpm build:with-pilot` 出来的 release 包（`src-tauri/target/release/bundle/macos/AIjia.app`），可以直接 `open` 它代替起 dev server。Release 包跟 dev 模式**接口完全等价**——同样的 socket 路径、同样的 `aijia` CLI 子命令。差异只是：
+
+- ✅ 不需要 vite / cargo 跑着（启动更快、不占编译器）
+- ✅ 体感跟 QA 真实场景一致（带 bundled runtime、release 优化）
+- ⚠️ 修改 lotus-app 代码不会热更新，要重 `pnpm build:with-pilot`（每次 5-7 分钟）
+
+实操：
+```bash
+rm -f /tmp/tauri-pilot-com.aijia.app.sock
+open /Users/a20250311/IdeaProjects/lotus-app/src-tauri/target/release/bundle/macos/AIjia.app
+until [ -S /tmp/tauri-pilot-com.aijia.app.sock ]; do sleep 1; done
+tauri-pilot aijia health-check --json
+```
+
+发版流程 + release build 工程细节见 `docs/e2e-release-build.md`。
 
 ### 4.2 命令清单
 
@@ -258,7 +276,7 @@ agent 跑意图时遇到新陷阱 / 新诊断套路 / 新容忍判定，**在报
 
 **症状识别**：所有 `tauri-pilot aijia ...` 命令一律报 `Error: No tauri-pilot socket found. Is a Tauri app running?`——多半是用错命令。
 
-**首次跑会很慢**：开启 e2e feature 会重新拉 `tauri-plugin-pilot` 从云效 git，初次 cargo 编译 5-10 分钟，不要中途打断。
+**首次跑会很慢**：开启 e2e feature 会从 GitHub 拉 `tauri-plugin-pilot`（https://github.com/panzhenchao/tauri-pilot.git），初次 cargo 编译 5-10 分钟，不要中途打断。
 
 ### 5.2 wait-reply 必须用 stability window
 

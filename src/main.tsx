@@ -10,7 +10,7 @@ import { useChatStore } from '@/stores/chatStore'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useUiStore } from '@/stores/uiStore'
 
-if (import.meta.env.DEV) {
+if (import.meta.env.DEV || import.meta.env.VITE_E2E_ENABLED === 'true') {
   ;(window as unknown as { __aijia?: unknown }).__aijia = {
     chatStore: useChatStore,
     sessionStore: useSessionStore,

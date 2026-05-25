@@ -256,6 +256,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
         to: upgradeCheck.latestVersion,
         fields,
       }),
+      confirmLabel: t('common.confirm'),
     })
     if (!ok) return
     setBusy(true)
@@ -276,6 +277,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
     const ok = await requestConfirm({
       title: t('employeeDrawer.deleteEmployee'),
       description: t('employeeDrawer.deleteConfirm', { name: emp.name }),
+      confirmLabel: t('common.confirm'),
       variant: 'destructive',
     })
     if (!ok) return
