@@ -81,6 +81,10 @@ impl AiJiaHome {
         self.root.join("employee-templates-cache")
     }
 
+    pub fn expert_team_templates_cache_dir(&self) -> PathBuf {
+        self.root.join("expert-team-templates-cache")
+    }
+
     pub fn user_dir(&self, scope: &UserScope) -> PathBuf {
         self.users_dir().join(scope.key())
     }

@@ -1044,6 +1044,9 @@ pub fn run() {
             commands::employees::employee_index_knowledge_async,
             commands::employees::employee_template_catalog,
             commands::employees::employee_template_refresh,
+            // Expert team commands
+            commands::expert_teams::expert_team_template_catalog,
+            commands::expert_teams::expert_team_upgrade_conversation,
             commands::desktop_resources::sync_desktop_resources,
             commands::desktop_resources::get_desktop_resource_status,
             commands::employees::inbox_list,

@@ -7,6 +7,7 @@ pub mod conversation_service;
 pub mod dependencies;
 pub mod desktop_resources;
 pub mod employee;
+pub mod expert_team;
 pub mod event_bus;
 pub mod events;
 pub mod hooks;

@@ -4,6 +4,7 @@ pub mod desktop_resources;
 pub mod diagnostics;
 pub mod dingtalk;
 pub mod employees;
+pub mod expert_teams;
 pub mod file;
 pub mod plugin;
 
