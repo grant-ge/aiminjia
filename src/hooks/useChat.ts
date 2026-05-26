@@ -14,6 +14,7 @@ import { useChatStore } from '@/stores/chatStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useUiStore } from '@/stores/uiStore'
+import { useOfflineSendWarning } from './useOfflineSendWarning'
 import i18n from '@/i18n'
 import { recordDiagnostic, recordDiagnosticError } from '@/lib/diagnostics'
 import {
@@ -66,6 +67,7 @@ export function useChat() {
   const activeConversationId = useChatStore((s) => s.activeConversationId)
   const messages = useChatStore((s) => s.messages)
   const isStreaming = useChatStore((s) => s.isStreaming)
+  const { warnIfOffline } = useOfflineSendWarning()
   const switchVersionRef = useRef(0)
 
   const syncBusyConversations = useCallback(async (): Promise<Set<string>> => {
@@ -403,6 +405,7 @@ export function useChat() {
 
     try {
       console.log('[useChat] Calling sendMessage IPC, attachments:', files, 'willBeQueued:', willBeQueued)
+      warnIfOffline()
       await sendMessage(conversationId, text, files, null, messageId, skillCommand)
       console.log('[useChat] sendMessage IPC returned OK')
       recordDiagnostic({
