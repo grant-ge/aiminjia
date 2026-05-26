@@ -2377,6 +2377,29 @@ export interface EmployeeTemplateSnapshot {
   resourceConfigUI: Record<string, unknown> | null
 }
 
+export interface LocalizedExpertTeamDisplay {
+  name: string
+  tagline?: string
+  examples?: string[]
+  composerPlaceholder?: string
+}
+
+export interface ExpertPersonaSnapshot {
+  stableName: string
+  emoji?: string
+  displayI18n?: Record<string, { name: string }>
+  promptI18n?: Record<string, { persona: string }>
+}
+
+export interface ExpertTeamSnapshot {
+  teamId: string
+  version: string
+  facilitationStyle: 'rounds' | 'debate' | 'open'
+  displayI18n: Record<string, LocalizedExpertTeamDisplay>
+  experts: ExpertPersonaSnapshot[]
+  directorPromptI18n: Record<string, { template: string }>
+}
+
 export interface CreateEmployeeRequest {
   name: string
   role: string
@@ -2507,6 +2530,10 @@ export function employeeActiveRun(id: string): Promise<EmployeeActiveRunInfo | n
  */
 export function employeeTemplateCatalog(): Promise<EmployeeTemplateSnapshot[]> {
   return invoke<EmployeeTemplateSnapshot[]>('employee_template_catalog')
+}
+
+export function expertTeamTemplateCatalog(): Promise<ExpertTeamSnapshot[]> {
+  return invoke<ExpertTeamSnapshot[]>('expert_team_template_catalog')
 }
 
 /**

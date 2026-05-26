@@ -2,15 +2,10 @@
 // 内置专家团 — 单一真相源。任何 UI / prompt 渲染从此读取。
 // MVP 仅中文；不做 i18n，prompt 也是中文。
 
-export type ExpertTeamId =
-  | 'marketing'
-  | 'operations'
-  | 'strategy'
-  | 'negotiation'
-  | 'retrospective'
-  | 'investment'
-  | 'debate'
-  | 'roundtable'
+import i18n from '@/i18n'
+import type { ExpertTeamSnapshot } from '@/lib/tauri'
+
+export type ExpertTeamId = string
 
 export type FacilitationStyle = 'rounds' | 'debate' | 'open'
 
@@ -42,9 +37,10 @@ export interface ExpertTeam {
   composerPlaceholder: string
   /** 决定 buildDirectorPrompt 的模板分支 */
   facilitationStyle: FacilitationStyle
+  snapshot?: ExpertTeamSnapshot
 }
 
-export const EXPERT_TEAMS: ExpertTeam[] = [
+export const BUILTIN_EXPERT_TEAMS: ExpertTeam[] = [
   {
     id: 'marketing',
     name: '市场营销策划团',
@@ -161,6 +157,31 @@ export const EXPERT_TEAMS: ExpertTeam[] = [
     facilitationStyle: 'open',
   },
 ]
+
+export const EXPERT_TEAMS = BUILTIN_EXPERT_TEAMS
+
+export function snapshotToExpertTeam(snapshot: ExpertTeamSnapshot): ExpertTeam {
+  const lang = i18n.language === 'en-US' ? 'en-US' : 'zh-CN'
+  const display = snapshot.displayI18n[lang] ?? snapshot.displayI18n['zh-CN'] ?? {
+    name: snapshot.teamId,
+  }
+  return {
+    id: snapshot.teamId,
+    name: display.name,
+    emoji: snapshot.experts[0]?.emoji ?? '🧠',
+    tagline: display.tagline ?? '',
+    experts: snapshot.experts.map((expert) => ({
+      name: expert.displayI18n?.[lang]?.name ?? expert.displayI18n?.['zh-CN']?.name ?? expert.stableName,
+      agentName: expert.stableName,
+      persona: expert.promptI18n?.[lang]?.persona ?? expert.promptI18n?.['zh-CN']?.persona ?? '',
+      emoji: expert.emoji ?? '🧠',
+    })),
+    examples: display.examples ?? [],
+    composerPlaceholder: display.composerPlaceholder ?? '',
+    facilitationStyle: snapshot.facilitationStyle,
+    snapshot,
+  }
+}
 
 export function getExpertTeam(id: ExpertTeamId): ExpertTeam | undefined {
   return EXPERT_TEAMS.find((t) => t.id === id)
