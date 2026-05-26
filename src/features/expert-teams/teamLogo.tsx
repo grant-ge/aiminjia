@@ -67,6 +67,9 @@ export const TEAM_LOGOS: Record<BuiltinExpertTeamId, ExpertTeamLogo> = {
   },
 }
 
-export function getExpertTeamLogo(teamId: ExpertTeamId) {
-  return TEAM_LOGOS[teamId as BuiltinExpertTeamId] ?? DEFAULT_TEAM_LOGO
+export function getExpertTeamLogo(teamId: ExpertTeamId): ExpertTeamLogo {
+  if (Object.prototype.hasOwnProperty.call(TEAM_LOGOS, teamId)) {
+    return TEAM_LOGOS[teamId as BuiltinExpertTeamId]
+  }
+  return DEFAULT_TEAM_LOGO
 }

@@ -34,6 +34,27 @@ describe('ExpertTeamCard', () => {
     expect(screen.getByTestId(`expert-team-logo-${team.id}`)).toBeInTheDocument()
   })
 
+  it.each(['constructor', 'toString'])(
+    'renders a fallback logo for inherited object key %s',
+    (id) => {
+      const team: ExpertTeam = {
+        id,
+        name: `Remote ${id}`,
+        emoji: '🧠',
+        tagline: 'Remote catalog team',
+        experts: [],
+        examples: [],
+        composerPlaceholder: '',
+        facilitationStyle: 'open',
+      }
+
+      render(<ExpertTeamCard team={team} onStart={() => {}} />)
+
+      expect(screen.getByText(team.name)).toBeInTheDocument()
+      expect(screen.getByTestId(`expert-team-logo-${team.id}`)).toBeInTheDocument()
+    },
+  )
+
   it('shows expert roster avatars for staffed teams', () => {
     const team = EXPERT_TEAMS.find((t) => t.id === 'strategy')!
     render(<ExpertTeamCard team={team} onStart={() => {}} />)
