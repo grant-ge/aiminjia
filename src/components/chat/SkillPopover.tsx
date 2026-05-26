@@ -37,7 +37,7 @@ export function SkillPopover({ open: openProp, onPick, onClose }: SkillPopoverPr
     id: s.id,
     title: s.displayName,
     subtitle: s.shortDescription || s.description,
-    source: s.source === 'builtin' ? '内置' : '已安装',
+    icon: s.icon || undefined,
   }))
 
   return <SkillPopoverPanel items={items} onPick={handlePick} onClose={handleClose} />

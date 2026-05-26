@@ -16,6 +16,20 @@ import { serializeComposerDoc } from './serializer'
 import { parseMarkdownToComposerJson } from './parseMarkdown'
 import type { ComposerAttachmentToken, ComposerJsonNode, ComposerSkillToken, RichComposerSubmitPayload } from './types'
 
+// `/` should open the skill picker only where a real slash-command could
+// start: an empty doc, or right after whitespace. Anywhere else (mid-word,
+// mid-URL) we let the slash type through as a normal character.
+function isSlashBoundary(editor: Editor | null): boolean {
+  if (!editor) return false
+  const { selection, doc } = editor.state
+  if (!selection.empty) return false
+  const $from = selection.$from
+  if (doc.textContent.length === 0) return true
+  if ($from.parentOffset === 0) return true
+  const before = $from.parent.textBetween(Math.max(0, $from.parentOffset - 1), $from.parentOffset, undefined, '￼')
+  return /\s/.test(before)
+}
+
 export interface ComposerSkillCommand {
   command: string
   label: string
@@ -149,8 +163,28 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
       }, 50)
     }
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Enter' || e.shiftKey) return
       if (isComposingRef.current || e.isComposing) return
+      // Slash shortcut: pop the skill picker when "/" is typed at a position
+      // where it would naturally start a command — empty doc or whitespace
+      // boundary. We swallow the keystroke (no "/" lands in the editor) and
+      // delegate to the caller's onOpenSkill so home/chat composers reuse
+      // the same popover they already wire to the Blocks button.
+      if (
+        e.key === '/' &&
+        !e.shiftKey &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey &&
+        onOpenSkill
+      ) {
+        if (isSlashBoundary(editor)) {
+          e.preventDefault()
+          e.stopImmediatePropagation()
+          onOpenSkill()
+          return
+        }
+      }
+      if (e.key !== 'Enter' || e.shiftKey) return
       // Capture phase + stopImmediatePropagation: beat ProseMirror's own
       // keydown handler so Enter never reaches the default newline insertion.
       e.preventDefault()
@@ -166,7 +200,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
       dom.removeEventListener('compositionend', onCompositionEnd)
       dom.removeEventListener('keydown', onKeyDown, true)
     }
-  }, [editor, trySubmit])
+  }, [editor, trySubmit, onOpenSkill])
 
   useImperativeHandle(
     ref,

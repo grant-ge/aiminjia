@@ -484,11 +484,12 @@
     "removeSkill": "移除技能 {{name}}"
   },
   "skillPopover": {
-    "searchPlaceholder": "搜索技能（名称 / 说明）",
+    "searchPlaceholder": "搜索",
     "emptyNoSkills": "还没有可用的技能",
     "emptyNoMatch": "没有匹配的技能",
     "emptyInstallHint": "安装技能后会显示在这里",
-    "emptyTryOther": "试试别的关键词"
+    "emptyTryOther": "试试别的关键词",
+    "exploreAndManage": "探索和管理技能"
   },
   "login": {
     "loginSuccess": "登录成功",
