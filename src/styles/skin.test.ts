@@ -3,22 +3,27 @@ import { describe, expect, it } from 'vitest'
 import { DEFAULT_ACCENT_COLOR, DERIVED_SKIN_KEYS, deriveSkin } from './skin'
 
 describe('deriveSkin', () => {
-  it('returns only the 6 accent-bound CSS variables', () => {
+  it('returns only the 7 accent-bound CSS variables', () => {
     const result = deriveSkin(DEFAULT_ACCENT_COLOR)
     expect(Object.keys(result).sort()).toEqual([
       '--brand-primary-subtle',
       '--primary',
       '--primary-foreground',
+      '--primary-rgb',
       '--ring',
       '--sidebar-primary',
       '--sidebar-primary-foreground',
     ])
   })
 
-  it('derives --brand-primary-subtle from accent via color-mix with white', () => {
-    expect(deriveSkin('#DBAA22')['--brand-primary-subtle']).toBe(
-      'color-mix(in srgb, #DBAA22 14%, #FFFFFF)',
-    )
+  it('derives --brand-primary-subtle from accent mixed with white (14% accent)', () => {
+    // #D4A843 14% + #FFFFFF 86% = #f9f3e5
+    expect(deriveSkin('#D4A843')['--brand-primary-subtle']).toBe('#f9f3e5')
+  })
+
+  it('derives --primary-rgb as comma-separated R, G, B components', () => {
+    // #D4A843 = rgb(212, 168, 67)
+    expect(deriveSkin('#D4A843')['--primary-rgb']).toBe('212, 168, 67')
   })
 
   it('uses the given accent color for --primary / --ring / --sidebar-primary', () => {

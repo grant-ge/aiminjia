@@ -2,8 +2,22 @@
 
 :root {
   /* === design.pen Light + Neutral + Default 单一皮肤 === */
-  --primary: #DBAA22;
+  --primary: #D4A843;
   --primary-foreground: #FFFFFF;
+  /* Safari 13 compat: rgba() fallbacks for color-mix() */
+  --primary-rgb: 212, 168, 67;
+  --foreground-rgb: 10, 10, 10;
+  --color-bg-base-rgb: 242, 241, 238;
+  --muted-foreground-rgb: 115, 115, 115;
+  --card-rgb: 250, 250, 248;
+  /* Cross-palette defaults: accent=#D4A843, bg=#FAFAF8 (matches brandingStore DEFAULTS).
+     Overwritten by applyBranding() at runtime; these only cover cold-start/pre-brand renders. */
+  --primary-on-bg-10: #F6F2E6;
+  --primary-on-bg-24: #F1E6CD;
+  --primary-on-bg-72: #DFBF76;
+  --primary-darken-10: #BF973C;
+  --primary-mix-scrollbar: #DBC9A0;
+  --primary-mix-blockquote: #DBCAA3;
   --ring: var(--primary);
   --sidebar-primary: var(--primary);
   --sidebar-primary-foreground: #FFFFFF;
@@ -30,7 +44,7 @@
   --sidebar-border: #ebebeb;
   --sidebar-ring: #71717a;
 
-  --brand-primary-subtle: #FBF3DC;
+  --brand-primary-subtle: #F9F3E5;
   --brand-secondary: #3F3F46;
   --brand-secondary-subtle: #F3F4F6;
 
@@ -183,11 +197,11 @@
   --table-cell-fg: var(--color-text-primary);
   --table-cell-pad-y: 8px;
   --table-cell-pad-x: 12px;
-  --table-row-zebra: color-mix(in srgb, var(--color-bg-base) 40%, transparent);
-  --table-row-hover: color-mix(in srgb, var(--color-bg-base) 60%, transparent);
+  --table-row-zebra: rgba(var(--color-bg-base-rgb), 0.4);
+  --table-row-hover: rgba(var(--color-bg-base-rgb), 0.6);
 
   /* Cell tones — map spec names to existing semantic palette */
-  --table-tone-neutral-bg: color-mix(in srgb, var(--color-text-secondary) 10%, transparent);
+  --table-tone-neutral-bg: rgba(var(--muted-foreground-rgb), 0.1);
   --table-tone-neutral-fg: var(--color-text-primary);
   --table-tone-success-bg: var(--color-semantic-green-bg);
   --table-tone-success-fg: var(--color-semantic-green);
@@ -268,7 +282,7 @@ body {
 }
 
 .ProseMirror {
-  caret-color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  caret-color: rgba(var(--foreground-rgb), 0.55);
 }
 
 .ProseMirror .react-renderer.node-attachmentToken,
@@ -293,7 +307,7 @@ body {
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--primary) 40%, var(--color-border));
+  background: var(--primary-mix-scrollbar);
 }
 
 * {
@@ -485,7 +499,7 @@ button:not(:disabled) {
   color: var(--primary);
   font-weight: 500;
   text-decoration-line: underline;
-  text-decoration-color: color-mix(in srgb, var(--primary) 45%, transparent);
+  text-decoration-color: rgba(var(--primary-rgb), 0.45);
   text-underline-offset: 3px;
 }
 
@@ -495,7 +509,7 @@ button:not(:disabled) {
 }
 
 .assistant-markdown blockquote {
-  border-left: 3px solid color-mix(in srgb, var(--primary) 38%, var(--color-border));
+  border-left: 3px solid var(--primary-mix-blockquote);
   border-radius: 0;
   padding: 0.15rem 0 0.15rem 0.85rem;
   background: transparent;
@@ -699,17 +713,17 @@ button:not(:disabled) {
 }
 
 @keyframes skillTokenGlow {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(var(--primary-rgb, 59 130 246) / 0), inset 0 0 0 1px color-mix(in srgb, var(--primary) 18%, transparent); }
-  50%      { box-shadow: 0 0 12px 0 color-mix(in srgb, var(--primary) 28%, transparent), inset 0 0 0 1px color-mix(in srgb, var(--primary) 35%, transparent); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(var(--primary-rgb), 0), inset 0 0 0 1px rgba(var(--primary-rgb), 0.18); }
+  50%      { box-shadow: 0 0 12px 0 rgba(var(--primary-rgb), 0.28), inset 0 0 0 1px rgba(var(--primary-rgb), 0.35); }
 }
 
 .skill-token-chip {
   background-image: linear-gradient(
     115deg,
-    color-mix(in srgb, var(--primary) 14%, transparent) 0%,
-    color-mix(in srgb, var(--primary) 22%, transparent) 35%,
-    color-mix(in srgb, var(--primary) 10%, transparent) 70%,
-    color-mix(in srgb, var(--primary) 20%, transparent) 100%
+    rgba(var(--primary-rgb), 0.14) 0%,
+    rgba(var(--primary-rgb), 0.22) 35%,
+    rgba(var(--primary-rgb), 0.1) 70%,
+    rgba(var(--primary-rgb), 0.2) 100%
   );
   background-size: 220% 220%;
   animation: skillTokenSheen 6s ease-in-out infinite, skillTokenGlow 3s ease-in-out infinite;
@@ -719,8 +733,8 @@ button:not(:disabled) {
   .skill-token-chip {
     animation: none;
     background-image: linear-gradient(115deg,
-      color-mix(in srgb, var(--primary) 14%, transparent),
-      color-mix(in srgb, var(--primary) 18%, transparent));
+      rgba(var(--primary-rgb), 0.14),
+      rgba(var(--primary-rgb), 0.18));
   }
 }
 
