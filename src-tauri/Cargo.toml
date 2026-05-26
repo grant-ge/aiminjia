@@ -151,6 +151,9 @@ default = []
 # which is registered in `src/lib.rs` under `#[cfg(feature = "e2e")]`.
 # Build / run with `--features e2e` to enable.
 e2e = ["dep:tauri-plugin-pilot"]
+# Expose test-only constructors/helpers (e.g. NetworkProbe::new_for_test).
+# Used by integration tests: cargo test --test <name> --features test-support
+test-support = []
 
 [profile.dev]
 incremental = false

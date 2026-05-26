@@ -867,6 +867,12 @@
     "channel": "IM 频道",
     "settings": "设置"
   },
+  "network": {
+    "retryNow": "重试",
+    "bannerOfflineText": "网络连接已断开 · 请检查 WiFi、有线网络或 VPN",
+    "bannerDegradedText": "AI 服务暂时无法访问 · 已连接网络，请稍后重试",
+    "bannerRetryingText": "正在重新检测网络连接…"
+  },
   "bottomTips": {
     "aiDisclaimer": "内容由 AI 生成，请仔细核实回答内容",
     "enterToSend": "Enter 发送",

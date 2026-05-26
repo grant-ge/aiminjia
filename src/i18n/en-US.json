@@ -867,6 +867,12 @@
     "channel": "IM Channel",
     "settings": "Settings"
   },
+  "network": {
+    "retryNow": "Retry",
+    "bannerOfflineText": "Network connection lost · Check your Wi-Fi, wired connection, or VPN",
+    "bannerDegradedText": "AI service is temporarily unavailable · Network is fine, please retry shortly",
+    "bannerRetryingText": "Re-checking network connection…"
+  },
   "bottomTips": {
     "aiDisclaimer": "Content is AI-generated. Please verify carefully.",
     "enterToSend": "Enter to send",

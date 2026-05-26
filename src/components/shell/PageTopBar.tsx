@@ -74,7 +74,9 @@ export function PageTopBar({
           {leading}
         </div>
       )}
-      {trailing ? <div className="flex items-center gap-2">{trailing}</div> : null}
+      <div className="flex items-center gap-2">
+        {trailing ? <div className="flex items-center gap-2">{trailing}</div> : null}
+      </div>
     </header>
   )
 }
