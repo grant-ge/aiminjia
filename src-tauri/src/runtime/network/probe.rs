@@ -113,11 +113,14 @@ impl NetworkProbe {
         }
     }
 
-    /// Spawn the long-running probe task. Returns immediately.
-    pub fn spawn(self: Arc<Self>) {
-        tokio::spawn(async move {
+    /// Returns the long-running probe loop future. The caller is responsible for
+    /// spawning it onto a runtime (e.g. `tauri::async_runtime::spawn` from
+    /// `lib.rs::setup`). Spawning lives in the transport layer so this module
+    /// stays free of Tauri / runtime-specific dependencies (CLAUDE.md #4).
+    pub fn run(self: Arc<Self>) -> impl std::future::Future<Output = ()> + Send + 'static {
+        async move {
             self.run_loop().await;
-        });
+        }
     }
 
     async fn run_loop(self: Arc<Self>) {

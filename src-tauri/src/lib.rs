@@ -928,7 +928,11 @@ pub fn run() {
                 );
                 let network_probe = crate::runtime::network::probe::NetworkProbe::new(probe_host);
                 app.manage(network_probe.clone());
-                network_probe.spawn();
+                // Spawn on Tauri's managed runtime — Tauri's `setup()` runs on the
+                // main thread, not inside a tokio runtime, so `tokio::spawn` would
+                // panic with "there is no reactor running". `tauri::async_runtime`
+                // wraps the runtime Tauri itself uses.
+                tauri::async_runtime::spawn(network_probe.run());
             }
 
             Ok(())
