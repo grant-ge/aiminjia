@@ -189,11 +189,21 @@ pub fn render_dispatch_catalog(ctx: &crate::runtime::tools::ToolDescriptionConte
 /// 对齐 claude-code-best `AgentTool.tsx:532-536` 的 `Available agents: ...` 模式。
 pub fn build_unknown_subagent_type_error(bad_name: &str, registry: &AgentRegistry) -> String {
     let available: Vec<String> = registry.list().iter().map(|d| d.name.clone()).collect();
+    // Trailing hint points users at where to add their own agent definitions
+    // (builtin agents ship with the app; user-level lives under ~/.renlijia/agents/;
+    // project-level lives under <workspace>/agents/).  Aligns with
+    // claude-code-best `AgentTool.tsx` which also surfaces install paths.
+    const LOCATION_HINT: &str =
+        " Add new agents under ~/.renlijia/agents/ or <workspace>/agents/, \
+         or use a builtin agent name.";
     if available.is_empty() {
-        format!("unknown subagent_type '{}'; no agents configured", bad_name)
+        format!(
+            "unknown subagent_type '{}'; no agents configured.{LOCATION_HINT}",
+            bad_name
+        )
     } else {
         format!(
-            "unknown subagent_type '{}'. Available subagent_type values: {}",
+            "unknown subagent_type '{}'. Available subagent_type values: {}.{LOCATION_HINT}",
             bad_name,
             available.join(", ")
         )

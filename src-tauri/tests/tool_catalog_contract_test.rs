@@ -126,6 +126,19 @@ fn runtime_tool_default_predicates_follow_definition_flags() {
             &self.0.id
         }
 
+        // The trait's default `is_read_only` / `is_destructive` call
+        // `default_read_only()` / `default_destructive()`.  Tools whose
+        // static flags live in `ToolDefinition` plumb them through here so
+        // the predicates honor the definition without a per-call async
+        // round-trip into `definition()`.
+        fn default_read_only(&self) -> bool {
+            self.0.default_read_only
+        }
+
+        fn default_destructive(&self) -> bool {
+            self.0.default_destructive
+        }
+
         async fn definition(&self, _ctx: &ToolDescriptionContext) -> ToolDefinition {
             self.0.clone()
         }

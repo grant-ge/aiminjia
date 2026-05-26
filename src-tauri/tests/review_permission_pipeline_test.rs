@@ -179,8 +179,10 @@ fn mcp_scope_without_stored_policy_becomes_ask_in_store_policy_pipeline() {
         message.contains("external server") || message.contains("MCP"),
         "message should mention external server/MCP: {message}"
     );
-    assert!(suggestions.contains(&"Allow once".to_string()));
-    assert!(suggestions.contains(&"Deny".to_string()));
+    // Suggestions are the localized Chinese strings produced by StorePolicyPipeline
+    // for unknown scopes; see runtime/tools/permission.rs UnknownScope branch.
+    assert!(suggestions.contains(&"仅本次允许".to_string()));
+    assert!(suggestions.contains(&"拒绝".to_string()));
     assert!(remember_options.contains(&PermissionDestination::Session));
     assert!(remember_options.contains(&PermissionDestination::Workspace));
     assert!(remember_options.contains(&PermissionDestination::User));

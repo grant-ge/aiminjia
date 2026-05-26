@@ -83,6 +83,8 @@ async fn team_create_default_team_name_uses_session_prefix() {
 
 #[tokio::test]
 async fn team_create_twice_returns_already_exists_error() {
+    // PR5+: TeamRegistry supports multiple teams per session, so duplicate
+    // detection is keyed on team_name, not "any team already in session".
     let team_registry = TeamRegistry::new();
     let name_registry = AgentNameRegistry::new();
     let session = "conv-dup-team";
@@ -95,7 +97,7 @@ async fn team_create_twice_returns_already_exists_error() {
 
     let ctx2 = build_ctx(session, Some("lead-2"), team_registry.clone(), name_registry.clone());
     let err = TeamCreateRuntimeTool
-        .execute(json!({"team_name": "team-b"}), ctx2)
+        .execute(json!({"team_name": "team-a"}), ctx2)
         .await
         .unwrap_err();
 
@@ -133,7 +135,7 @@ async fn team_delete_removes_team_and_clears_names() {
 
     let delete_ctx = build_ctx(session, Some("lead-d"), team_registry.clone(), name_registry.clone());
     let result = TeamDeleteRuntimeTool
-        .execute(json!({}), delete_ctx)
+        .execute(json!({"team_name": team_name}), delete_ctx)
         .await
         .unwrap();
 
@@ -159,7 +161,7 @@ async fn team_delete_without_team_is_idempotent_noop() {
     let ctx = build_ctx(session, Some("lead-n"), team_registry.clone(), name_registry);
 
     let result = TeamDeleteRuntimeTool
-        .execute(json!({}), ctx)
+        .execute(json!({"team_name": "ephemeral"}), ctx)
         .await
         .expect("TeamDelete should be a noop, not error, when no team exists");
 
