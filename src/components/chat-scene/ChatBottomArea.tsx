@@ -205,6 +205,7 @@ export function ChatBottomArea({
               onOpenAttachment={isPickingAttachments ? undefined : () => void handlePickAttachments()}
               tips={<BottomTips />}
               containerClassName="shadow-[var(--shadow-md)]"
+              limitEditorHeight
             />
           </div>
         </div>
