@@ -3,7 +3,7 @@ import '@testing-library/jest-dom'
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { ExpertTeamCard } from '../ExpertTeamCard'
-import { EXPERT_TEAMS } from '../teams'
+import { EXPERT_TEAMS, type ExpertTeam } from '../teams'
 
 describe('ExpertTeamCard', () => {
   it('renders team logo badge, name and tagline', () => {
@@ -14,6 +14,24 @@ describe('ExpertTeamCard', () => {
     expect(screen.getByTestId(`expert-team-logo-${team.id}`)).toBeInTheDocument()
     expect(container.querySelector('[data-testid^="expert-team-logo-"] svg')).toBeInTheDocument()
     expect(screen.queryByText(team.emoji)).toBeNull()
+  })
+
+  it('renders a fallback logo for remote-only team ids', () => {
+    const team: ExpertTeam = {
+      id: 'remote-growth-council',
+      name: 'Remote Growth Council',
+      emoji: '🧠',
+      tagline: 'Remote catalog team',
+      experts: [],
+      examples: [],
+      composerPlaceholder: '',
+      facilitationStyle: 'open',
+    }
+
+    render(<ExpertTeamCard team={team} onStart={() => {}} />)
+
+    expect(screen.getByText(team.name)).toBeInTheDocument()
+    expect(screen.getByTestId(`expert-team-logo-${team.id}`)).toBeInTheDocument()
   })
 
   it('shows expert roster avatars for staffed teams', () => {

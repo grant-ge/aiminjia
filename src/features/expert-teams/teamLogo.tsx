@@ -12,7 +12,27 @@ import {
 
 import type { ExpertTeamId } from './teams'
 
-export const TEAM_LOGOS: Record<ExpertTeamId, { icon: LucideIcon; className: string }> = {
+type BuiltinExpertTeamId =
+  | 'marketing'
+  | 'operations'
+  | 'strategy'
+  | 'negotiation'
+  | 'retrospective'
+  | 'investment'
+  | 'debate'
+  | 'roundtable'
+
+interface ExpertTeamLogo {
+  icon: LucideIcon
+  className: string
+}
+
+const DEFAULT_TEAM_LOGO: ExpertTeamLogo = {
+  icon: SearchCheck,
+  className: 'bg-slate-100 text-slate-600',
+}
+
+export const TEAM_LOGOS: Record<BuiltinExpertTeamId, ExpertTeamLogo> = {
   marketing: {
     icon: Megaphone,
     className: 'bg-rose-50 text-rose-600',
@@ -48,5 +68,5 @@ export const TEAM_LOGOS: Record<ExpertTeamId, { icon: LucideIcon; className: str
 }
 
 export function getExpertTeamLogo(teamId: ExpertTeamId) {
-  return TEAM_LOGOS[teamId]
+  return TEAM_LOGOS[teamId as BuiltinExpertTeamId] ?? DEFAULT_TEAM_LOGO
 }

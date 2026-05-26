@@ -21,6 +21,7 @@ import {
 } from '../expertTeamRegistry'
 
 const MARKETING = 'marketing'
+const REMOTE_TEAM_ID = 'remote-growth-council'
 
 beforeEach(() => {
   useChatStore.setState((state: any) => ({
@@ -45,6 +46,15 @@ describe('expertTeamRegistry', () => {
     expect(conv?.sourceLabel).toBeTruthy()
     expect(getExpertTeam('c-2')).toBe(MARKETING)
     expect(mockSetExpertTeam).toHaveBeenCalledWith('c-2', MARKETING, expect.any(String))
+  })
+
+  it('setExpertTeam accepts remote-only ids and calls IPC', async () => {
+    await setExpertTeam('c-2', REMOTE_TEAM_ID)
+    const conv = useChatStore.getState().conversations.find((c) => c.id === 'c-2')
+    expect(conv?.kind).toBe('expertTeam')
+    expect(conv?.sourceLabel).toBe(REMOTE_TEAM_ID)
+    expect(getExpertTeam('c-2')).toBe(REMOTE_TEAM_ID)
+    expect(mockSetExpertTeam).toHaveBeenCalledWith('c-2', REMOTE_TEAM_ID, REMOTE_TEAM_ID)
   })
 
   it('hasExpertTeam returns true for kind=expertTeam', () => {
@@ -79,6 +89,18 @@ describe('expertTeamRegistry', () => {
     expect(mockGetSource).toHaveBeenCalledTimes(1)
     // Sync getter now hits
     expect(getExpertTeam('c-1')).toBe(MARKETING)
+  })
+
+  it('ensureExpertTeam accepts remote-only ids from conv.json and caches them', async () => {
+    mockGetSource.mockResolvedValueOnce({ kind: 'expertTeam', expertTeamId: REMOTE_TEAM_ID })
+    const id = await ensureExpertTeam('c-1')
+    expect(id).toBe(REMOTE_TEAM_ID)
+    expect(mockGetSource).toHaveBeenCalledWith('c-1')
+
+    const id2 = await ensureExpertTeam('c-1')
+    expect(id2).toBe(REMOTE_TEAM_ID)
+    expect(mockGetSource).toHaveBeenCalledTimes(1)
+    expect(getExpertTeam('c-1')).toBe(REMOTE_TEAM_ID)
   })
 
   it('ensureExpertTeam returns undefined for non-expert-team conv', async () => {
