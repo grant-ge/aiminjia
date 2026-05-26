@@ -36,6 +36,7 @@ src-tauri/gen/
 .claude/settings.local.json
 .claude/memory/
 .claude/worktrees/
+.claire/worktrees/
 
 # Local tool scratch dirs
 .codex/
