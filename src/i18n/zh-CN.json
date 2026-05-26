@@ -485,11 +485,12 @@
     "removeSkill": "移除技能 {{name}}"
   },
   "skillPopover": {
-    "searchPlaceholder": "搜索技能（名称 / 说明）",
+    "searchPlaceholder": "搜索",
     "emptyNoSkills": "还没有可用的技能",
     "emptyNoMatch": "没有匹配的技能",
     "emptyInstallHint": "安装技能后会显示在这里",
-    "emptyTryOther": "试试别的关键词"
+    "emptyTryOther": "试试别的关键词",
+    "exploreAndManage": "探索和管理技能"
   },
   "login": {
     "loginSuccess": "登录成功",
@@ -664,7 +665,7 @@
     "durationSec": "{{sec}}秒"
   },
   "homeComposer": {
-    "placeholder": "描述你的任务，或点击「技能」按钮选择技能...",
+    "placeholder": "描述你的任务，输入 / 或点「技能」选择技能...",
     "selectWorkDir": "选择工作目录",
     "defaultProject": "默认项目",
     "workingIn": "在 {{name}} 中工作",
