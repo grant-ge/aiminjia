@@ -142,6 +142,14 @@ impl NetworkProbe {
 
         // Initial probe immediately.
         self.probe_once_and_emit().await;
+        // Apply backoff period from the initial probe — if app starts offline,
+        // the second probe must fire at OFFLINE_INTERVAL_SECS, not the default 30s.
+        apply_backoff(
+            &self.snapshot,
+            &mut current_period,
+            &mut consecutive_success,
+            &mut current_interval,
+        );
 
         loop {
             tokio::select! {
@@ -153,20 +161,12 @@ impl NetworkProbe {
                 }
             }
 
-            let snap = self.snapshot.lock().unwrap().clone();
-            let desired_period = next_interval_period(
-                snap.as_ref().map(|s| s.status),
-                current_period,
+            apply_backoff(
+                &self.snapshot,
+                &mut current_period,
                 &mut consecutive_success,
+                &mut current_interval,
             );
-            if desired_period != current_period {
-                current_period = desired_period;
-                current_interval = tokio::time::interval_at(
-                    tokio::time::Instant::now() + Duration::from_secs(current_period),
-                    Duration::from_secs(current_period),
-                );
-                current_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
-            }
         }
     }
 
@@ -303,6 +303,31 @@ pub(crate) fn next_interval_period(
             }
         }
         None => current_period,
+    }
+}
+
+/// Read the latest probe result from `snapshot`, compute the desired interval
+/// period, and rebuild `current_interval` if the period changes. Used after
+/// both the initial probe and each loop iteration so backoff applies uniformly.
+fn apply_backoff(
+    snapshot: &std::sync::Mutex<Option<NetworkSnapshot>>,
+    current_period: &mut u64,
+    consecutive_success: &mut u32,
+    current_interval: &mut tokio::time::Interval,
+) {
+    let snap = snapshot.lock().unwrap().clone();
+    let desired = next_interval_period(
+        snap.as_ref().map(|s| s.status),
+        *current_period,
+        consecutive_success,
+    );
+    if desired != *current_period {
+        *current_period = desired;
+        *current_interval = tokio::time::interval_at(
+            tokio::time::Instant::now() + Duration::from_secs(*current_period),
+            Duration::from_secs(*current_period),
+        );
+        current_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
     }
 }
 
