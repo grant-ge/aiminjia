@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
-import { expertTeamTemplateCatalog } from '@/lib/tauri'
+import { expertTeamTemplateCatalog, type ExpertTeamSnapshot } from '@/lib/tauri'
 import { BUILTIN_EXPERT_TEAMS, snapshotToExpertTeam, type ExpertTeam } from './teams'
 
 export type ExpertTeamCatalogSource = 'remote' | 'bootstrap'
@@ -16,9 +17,21 @@ export function getCachedExpertTeam(teamId: string): ExpertTeam | undefined {
 }
 
 export function useExpertTeamCatalog() {
-  const [teams, setTeams] = useState<ExpertTeam[]>(BUILTIN_EXPERT_TEAMS)
+  const { i18n } = useTranslation()
+  const [snapshots, setSnapshots] = useState<ExpertTeamSnapshot[]>([])
   const [source, setSource] = useState<ExpertTeamCatalogSource>('bootstrap')
   const [isLoading, setIsLoading] = useState(true)
+  const teams = useMemo(
+    () =>
+      snapshots.length > 0
+        ? snapshots.map((snapshot) => snapshotToExpertTeam(snapshot, i18n.language))
+        : BUILTIN_EXPERT_TEAMS,
+    [snapshots, i18n.language],
+  )
+
+  useEffect(() => {
+    seedExpertTeamCatalog(teams)
+  }, [teams])
 
   useEffect(() => {
     let cancelled = false
@@ -26,9 +39,7 @@ export function useExpertTeamCatalog() {
       try {
         const snapshots = await expertTeamTemplateCatalog()
         if (!cancelled && snapshots.length > 0) {
-          const remoteTeams = snapshots.map(snapshotToExpertTeam)
-          seedExpertTeamCatalog(remoteTeams)
-          setTeams(remoteTeams)
+          setSnapshots(snapshots)
           setSource('remote')
         }
       } catch (err) {

@@ -160,8 +160,8 @@ export const BUILTIN_EXPERT_TEAMS: ExpertTeam[] = [
 
 export const EXPERT_TEAMS = BUILTIN_EXPERT_TEAMS
 
-export function snapshotToExpertTeam(snapshot: ExpertTeamSnapshot): ExpertTeam {
-  const lang = i18n.language === 'en-US' ? 'en-US' : 'zh-CN'
+export function snapshotToExpertTeam(snapshot: ExpertTeamSnapshot, language?: string): ExpertTeam {
+  const lang = (language ?? i18n.language) === 'en-US' ? 'en-US' : 'zh-CN'
   const display = snapshot.displayI18n[lang] ?? snapshot.displayI18n['zh-CN'] ?? {
     name: snapshot.teamId,
   }

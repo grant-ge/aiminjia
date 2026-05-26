@@ -1,8 +1,11 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+
+use crate::runtime::desktop_resources::catalog::compare_versions;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -68,6 +71,100 @@ pub fn write_cache(cache_dir: &Path, snapshot: &ExpertTeamSnapshot) -> Result<Pa
     let json = serde_json::to_vec_pretty(snapshot)?;
     write_atomic(&path, &json)?;
     Ok(path)
+}
+
+pub fn read_cache_snapshots(cache_dir: &Path) -> Result<Vec<ExpertTeamSnapshot>> {
+    if !cache_dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut snapshots = Vec::new();
+    for team_entry in
+        fs::read_dir(cache_dir).with_context(|| format!("reading {}", cache_dir.display()))?
+    {
+        let team_entry =
+            team_entry.with_context(|| format!("reading entry in {}", cache_dir.display()))?;
+        let team_dir = team_entry.path();
+        if !team_dir.is_dir() {
+            continue;
+        }
+
+        for version_entry in
+            fs::read_dir(&team_dir).with_context(|| format!("reading {}", team_dir.display()))?
+        {
+            let version_entry = version_entry
+                .with_context(|| format!("reading entry in {}", team_dir.display()))?;
+            let path = version_entry.path();
+            if path.extension().and_then(|extension| extension.to_str()) != Some("json") {
+                continue;
+            }
+
+            let bytes = match fs::read(&path) {
+                Ok(bytes) => bytes,
+                Err(err) => {
+                    log::warn!(
+                        "[expert-team] cache read skipped for {}: {}",
+                        path.display(),
+                        err
+                    );
+                    continue;
+                }
+            };
+            match serde_json::from_slice::<ExpertTeamSnapshot>(&bytes) {
+                Ok(snapshot) => snapshots.push(snapshot),
+                Err(err) => {
+                    log::warn!(
+                        "[expert-team] cache parse skipped for {}: {}",
+                        path.display(),
+                        err
+                    );
+                }
+            }
+        }
+    }
+
+    Ok(snapshots)
+}
+
+fn choose_newer(current: &mut ExpertTeamSnapshot, incoming: ExpertTeamSnapshot) {
+    if compare_versions(&incoming.version, &current.version) == Ordering::Greater {
+        *current = incoming;
+    }
+}
+
+pub fn find_latest_for_team(cache_dir: &Path, team_id: &str) -> Result<Option<ExpertTeamSnapshot>> {
+    let mut latest: Option<ExpertTeamSnapshot> = None;
+    for snapshot in bootstrap_teams()?
+        .into_iter()
+        .chain(read_cache_snapshots(cache_dir)?.into_iter())
+        .filter(|snapshot| snapshot.team_id == team_id)
+    {
+        match latest.as_mut() {
+            Some(current) => choose_newer(current, snapshot),
+            None => latest = Some(snapshot),
+        }
+    }
+
+    Ok(latest)
+}
+
+pub fn catalog_teams(cache_dir: &Path) -> Result<Vec<ExpertTeamSnapshot>> {
+    let mut by_team_id: BTreeMap<String, ExpertTeamSnapshot> = bootstrap_teams()?
+        .into_iter()
+        .map(|snapshot| (snapshot.team_id.clone(), snapshot))
+        .collect();
+
+    for snapshot in read_cache_snapshots(cache_dir)? {
+        let team_id = snapshot.team_id.clone();
+        match by_team_id.get_mut(&team_id) {
+            Some(current) => choose_newer(current, snapshot),
+            None => {
+                by_team_id.insert(team_id, snapshot);
+            }
+        }
+    }
+
+    Ok(by_team_id.into_values().collect())
 }
 
 pub fn conversation_template_dir(conv_dir: &Path) -> PathBuf {
@@ -209,9 +306,13 @@ mod tests {
     }
 
     fn minimal_snapshot() -> ExpertTeamSnapshot {
+        make_snapshot("strategy", "1.0.0")
+    }
+
+    fn make_snapshot(team_id: &str, version: &str) -> ExpertTeamSnapshot {
         ExpertTeamSnapshot {
-            team_id: "strategy".to_string(),
-            version: "1.0.0".to_string(),
+            team_id: team_id.to_string(),
+            version: version.to_string(),
             facilitation_style: "fixed".to_string(),
             display_i18n: BTreeMap::new(),
             experts: Vec::new(),
@@ -256,5 +357,37 @@ mod tests {
             .expect("template path directory should be created");
 
         assert!(read_conversation_snapshot(tmp.path()).is_err());
+    }
+
+    #[test]
+    fn find_latest_for_team_prefers_newer_cache_version() {
+        let tmp = tempfile::tempdir().expect("tempdir should be created");
+        let cache_dir = tmp.path();
+        write_cache(cache_dir, &make_snapshot("strategy", "1.2.0"))
+            .expect("cache write should succeed");
+        write_cache(cache_dir, &make_snapshot("strategy", "1.10.0"))
+            .expect("cache write should succeed");
+
+        let latest = find_latest_for_team(cache_dir, "strategy")
+            .expect("lookup should succeed")
+            .expect("strategy should be found");
+
+        assert_eq!(latest.version, "1.10.0");
+    }
+
+    #[test]
+    fn catalog_teams_includes_cache_only_teams() {
+        let tmp = tempfile::tempdir().expect("tempdir should be created");
+        let cache_dir = tmp.path();
+        write_cache(cache_dir, &make_snapshot("org:custom-council", "0.1.0"))
+            .expect("cache write should succeed");
+
+        let catalog = catalog_teams(cache_dir).expect("catalog should merge");
+
+        let custom = catalog
+            .iter()
+            .find(|team| team.team_id == "org:custom-council")
+            .expect("cache-only team should be returned");
+        assert_eq!(custom.version, "0.1.0");
     }
 }

@@ -1,8 +1,10 @@
-use crate::runtime::expert_team::store::{bootstrap_teams, ExpertTeamSnapshot};
+use crate::runtime::expert_team::store::{catalog_teams, ExpertTeamSnapshot};
+use crate::storage::aijia_home::AiJiaHome;
 
 #[tauri::command]
 pub async fn expert_team_template_catalog() -> Result<Vec<ExpertTeamSnapshot>, String> {
-    bootstrap_teams().map_err(|e| e.to_string())
+    let cache_dir = AiJiaHome::from_home().expert_team_templates_cache_dir();
+    catalog_teams(&cache_dir).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

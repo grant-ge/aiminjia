@@ -2400,6 +2400,29 @@ export interface ExpertTeamSnapshot {
   directorPromptI18n: Record<string, { template: string }>
 }
 
+export interface DesktopResourceDisplay {
+  name: string
+  description?: string
+  tagline?: string
+  examples?: string[]
+}
+
+export interface DesktopResourceItem {
+  resourceType: string
+  resourceId: string
+  version: string
+  scope: string
+  display: DesktopResourceDisplay
+  manifestUrl?: string
+  manifestSha256?: string
+  manifestSize?: number
+  status?: string
+}
+
+export interface DesktopResourceIndex {
+  resources: Record<string, DesktopResourceItem>
+}
+
 export interface CreateEmployeeRequest {
   name: string
   role: string
@@ -2538,6 +2561,14 @@ export function expertTeamTemplateCatalog(): Promise<ExpertTeamSnapshot[]> {
 
 export function expertTeamUpgradeConversation(conversationId: string, targetVersion: string): Promise<void> {
   return invoke<void>('expert_team_upgrade_conversation', { conversationId, targetVersion })
+}
+
+export function syncDesktopResources(): Promise<DesktopResourceIndex> {
+  return invoke<DesktopResourceIndex>('sync_desktop_resources')
+}
+
+export function getDesktopResourceStatus(): Promise<DesktopResourceIndex> {
+  return invoke<DesktopResourceIndex>('get_desktop_resource_status')
 }
 
 /**

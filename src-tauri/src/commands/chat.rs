@@ -4,7 +4,8 @@ use std::path::Path;
 use std::sync::Arc;
 use tauri::State;
 
-use crate::runtime::expert_team::store::{bootstrap_teams, freeze_conversation_snapshot};
+use crate::runtime::expert_team::store::{find_latest_for_team, freeze_conversation_snapshot};
+use crate::storage::aijia_home::AiJiaHome;
 use crate::telemetry::{record_diagnostic, DiagnosticEvent, DiagnosticSource};
 
 fn record_command_event(
@@ -402,26 +403,23 @@ pub async fn set_conversation_expert_team(
     };
     let conv_dir = paths.conversations_dir().join(&conversation_id);
 
-    match bootstrap_teams() {
-        Ok(teams) => {
-            if let Some(snapshot) = teams
-                .into_iter()
-                .find(|team| team.team_id == expert_team_id)
-            {
-                if let Err(err) = freeze_conversation_snapshot(&conv_dir, &snapshot) {
-                    log::warn!(
-                        "[expert-team] freeze snapshot failed for conv={}: {}",
-                        conversation_id,
-                        err
-                    );
-                }
-            } else {
+    let cache_dir = AiJiaHome::from_home().expert_team_templates_cache_dir();
+    match find_latest_for_team(&cache_dir, &expert_team_id) {
+        Ok(Some(snapshot)) => {
+            if let Err(err) = freeze_conversation_snapshot(&conv_dir, &snapshot) {
                 log::warn!(
-                    "[expert-team] freeze snapshot skipped for conv={}: expert team {} not found",
+                    "[expert-team] freeze snapshot failed for conv={}: {}",
                     conversation_id,
-                    expert_team_id
+                    err
                 );
             }
+        }
+        Ok(None) => {
+            log::warn!(
+                "[expert-team] freeze snapshot skipped for conv={}: expert team {} not found",
+                conversation_id,
+                expert_team_id
+            );
         }
         Err(err) => {
             log::warn!(

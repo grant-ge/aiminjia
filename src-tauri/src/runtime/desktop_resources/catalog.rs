@@ -28,6 +28,8 @@ pub struct DesktopResourceItem {
     pub manifest_sha256: String,
     #[serde(default)]
     pub manifest_size: u64,
+    #[serde(default)]
+    pub status: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -135,5 +137,19 @@ mod tests {
         let selected = select_newer(current, incoming);
 
         assert_eq!(selected.version, "1.10.0");
+    }
+
+    #[test]
+    fn desktop_resource_item_defaults_status_when_absent() {
+        let parsed: DesktopResourceItem = serde_json::from_value(serde_json::json!({
+            "resourceType": "expert_team_template",
+            "resourceId": "strategy",
+            "version": "1.0.0",
+            "scope": "public",
+            "display": { "name": "Strategy" }
+        }))
+        .expect("resource item should parse without status");
+
+        assert_eq!(parsed.status, "");
     }
 }
