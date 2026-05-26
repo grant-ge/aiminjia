@@ -2520,7 +2520,7 @@ export function employeeActiveRun(id: string): Promise<EmployeeActiveRunInfo | n
  * Returns the catalog of templates the new-hire wizard should display.
  *
  * Sources merged in the backend (last write wins on `template_id`, by
- * version string):
+ * numeric-segment version):
  *   1. Embedded bootstrap registry (always available)
  *   2. `~/.renlijia/employee-templates-cache/` (downloaded via
  *      `employeeTemplateRefresh()`)
@@ -2534,6 +2534,10 @@ export function employeeTemplateCatalog(): Promise<EmployeeTemplateSnapshot[]> {
 
 export function expertTeamTemplateCatalog(): Promise<ExpertTeamSnapshot[]> {
   return invoke<ExpertTeamSnapshot[]>('expert_team_template_catalog')
+}
+
+export function expertTeamUpgradeConversation(conversationId: string, targetVersion: string): Promise<void> {
+  return invoke<void>('expert_team_upgrade_conversation', { conversationId, targetVersion })
 }
 
 /**

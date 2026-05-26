@@ -26,12 +26,18 @@
 //! PR4 will switch dispatch / runner reads to the snapshot and then prune
 //! the redundant fields.
 
+use std::cmp::Ordering;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::runtime::desktop_resources::catalog::compare_versions;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+
+pub fn is_newer_version(candidate: &str, current: &str) -> bool {
+    compare_versions(candidate, current) == Ordering::Greater
+}
 
 /// Pointer attached to `EmployeeRecord` identifying which template version
 /// the instance was hired from. Kept tiny so embedding it in every record
@@ -394,7 +400,7 @@ pub fn find_latest_for_template(cache_dir: &Path, template_id: &str) -> Option<T
                 if let Ok(s) = serde_json::from_str::<TemplateSnapshot>(&content) {
                     match best.as_ref() {
                         None => best = Some(s),
-                        Some(prev) if s.version > prev.version => best = Some(s),
+                        Some(prev) if is_newer_version(&s.version, &prev.version) => best = Some(s),
                         _ => {}
                     }
                 }
@@ -610,7 +616,7 @@ pub async fn ensure_cached(
 
 /// Merge the bootstrap list with any cached (downloaded) versions. When
 /// both sources have a `template_id`, the cached one wins iff its version
-/// string sorts higher. This is the catalog the new-hire wizard should see.
+/// is newer. This is the catalog the new-hire wizard should see.
 pub fn merge_catalog(bootstrap: Vec<TemplateSnapshot>, cache_dir: &Path) -> Vec<TemplateSnapshot> {
     let mut by_id: std::collections::BTreeMap<String, TemplateSnapshot> = bootstrap
         .into_iter()
@@ -618,7 +624,7 @@ pub fn merge_catalog(bootstrap: Vec<TemplateSnapshot>, cache_dir: &Path) -> Vec<
         .collect();
 
     // Walk the cache dir: each subdirectory is a template_id, each `.json`
-    // file inside it is a version. Pick the highest-sorting version per id.
+    // file inside it is a version. Pick the newest version per id.
     if let Ok(rd) = fs::read_dir(cache_dir) {
         for entry in rd.flatten() {
             let sub = entry.path();
@@ -636,7 +642,9 @@ pub fn merge_catalog(bootstrap: Vec<TemplateSnapshot>, cache_dir: &Path) -> Vec<
                         if let Ok(s) = serde_json::from_str::<TemplateSnapshot>(&content) {
                             match best.as_ref() {
                                 None => best = Some(s),
-                                Some(prev) if s.version > prev.version => best = Some(s),
+                                Some(prev) if is_newer_version(&s.version, &prev.version) => {
+                                    best = Some(s)
+                                }
                                 _ => {}
                             }
                         }
@@ -645,7 +653,7 @@ pub fn merge_catalog(bootstrap: Vec<TemplateSnapshot>, cache_dir: &Path) -> Vec<
             }
             if let Some(cached) = best {
                 match by_id.get(&cached.template_id) {
-                    Some(b) if cached.version > b.version => {
+                    Some(b) if is_newer_version(&cached.version, &b.version) => {
                         by_id.insert(cached.template_id.clone(), cached);
                     }
                     None => {
@@ -783,6 +791,12 @@ mod tests {
         let back = read_cache(cache, "builtin:cache-rt", "1.2.3").unwrap();
         assert_eq!(back.template_id, "builtin:cache-rt");
         assert_eq!(back.version, "1.2.3");
+    }
+
+    #[test]
+    fn version_is_newer_uses_numeric_segments() {
+        assert!(is_newer_version("1.10.0", "1.2.0"));
+        assert!(!is_newer_version("1.2.0", "1.10.0"));
     }
 
     #[test]

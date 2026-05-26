@@ -8,7 +8,8 @@ use crate::runtime::employee::store::{
 };
 use crate::runtime::employee::template_store::{
     bootstrap_templates, ensure_cached, ensure_instance_snapshot, fetch_catalog,
-    find_latest_for_template, merge_catalog, read_instance_snapshot, TemplateSnapshot,
+    find_latest_for_template, is_newer_version, merge_catalog, read_instance_snapshot,
+    TemplateSnapshot,
 };
 use crate::storage::file_store::AppStorage;
 use crate::storage::{AiJiaHome, CurrentUserStorage, UserScopedPathResolver};
@@ -49,7 +50,7 @@ fn agenda_store_for(app: &AppHandle) -> Option<crate::runtime::agenda::AgendaSto
 
 /// Returns the catalog of templates the new-hire wizard should display.
 ///
-/// Sources merged (last write wins on `template_id`, by version string):
+/// Sources merged (last write wins on `template_id`, by numeric-segment version):
 ///   1. Embedded bootstrap (always available, ~11 entries at v1.0.0)
 ///   2. `~/.renlijia/employee-templates-cache/` — versions previously
 ///      downloaded from lotus OPS via `employee_template_refresh` or
@@ -390,9 +391,8 @@ pub struct TemplateUpgradeCheck {
 /// (bootstrap ∪ cache) version. Returns metadata for the frontend to
 /// decide whether to surface the 升级模板 button.
 ///
-/// "Latest" follows the same lexicographic version comparison as
-/// `merge_catalog` (works for `1.0` < `1.1` < `1.2` patterns; `1.10`
-/// vs `1.2` is a known weakness but not in current play).
+/// "Latest" follows the same numeric-segment version comparison as
+/// `merge_catalog`.
 #[tauri::command]
 pub async fn employee_template_check_upgrade(
     app: AppHandle,
@@ -429,7 +429,7 @@ pub async fn employee_template_check_upgrade(
         });
     };
 
-    if lat.version <= cur.version {
+    if !is_newer_version(&lat.version, &cur.version) {
         return Ok(TemplateUpgradeCheck {
             current_version: Some(cur.version.clone()),
             latest_version: Some(lat.version.clone()),
@@ -504,7 +504,7 @@ pub async fn employee_template_upgrade(
         .ok_or_else(|| "未找到任何可用模板版本，请先刷新模板".to_string())?;
 
     if let Some(ref cur) = current {
-        if latest.version <= cur.version {
+        if !is_newer_version(&latest.version, &cur.version) {
             return Err(format!("当前已是最新版本 (v{})，无需升级", cur.version));
         }
     }

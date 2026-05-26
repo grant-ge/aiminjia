@@ -247,10 +247,10 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
   }
 
   const handleUpgradeTemplate = async () => {
-    if (!upgradeCheck?.hasUpgrade) return
+    if (!upgradeCheck?.hasUpgrade || activeRun) return
     const fields = upgradeCheck.changedFields.join('、') || t('employeeDrawer.upgradeFieldsDefault')
     const ok = await requestConfirm({
-      title: t('employeeDrawer.upgrade'),
+      title: t('resourceUpdates.upgrade'),
       description: t('employeeDrawer.upgradeConfirm', {
         from: upgradeCheck.currentVersion ?? '?',
         to: upgradeCheck.latestVersion,
@@ -295,6 +295,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
   }
 
   const empInbox = inboxEntries.filter((e) => e.employeeId === emp.id).slice(0, 5)
+  const upgradeUnavailableTitle = activeRun ? t('resourceUpdates.upgradeUnavailable') : undefined
 
   return (
     <Sheet open={!!emp} onOpenChange={(open) => { if (!open) onClose() }}>
@@ -331,6 +332,9 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
                 <RefreshCw className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" aria-hidden />
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-medium text-blue-900 dark:text-blue-100">
+                    {t('resourceUpdates.newVersion')}
+                  </p>
+                  <p className="mt-0.5 text-xs text-blue-800/80 dark:text-blue-100/70">
                     {t('employeeDrawer.templateUpgradeBanner', { from: upgradeCheck.currentVersion ?? '?', to: upgradeCheck.latestVersion })}
                   </p>
                   {upgradeCheck.changedFields.length > 0 ? (
@@ -343,10 +347,11 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
                   size="sm"
                   variant="outline"
                   className="shrink-0"
-                  disabled={busy}
+                  disabled={busy || Boolean(activeRun)}
+                  title={upgradeUnavailableTitle}
                   onClick={handleUpgradeTemplate}
                 >
-                  {t('employeeDrawer.upgrade')}
+                  {t('resourceUpdates.upgrade')}
                 </Button>
               </section>
             ) : null}

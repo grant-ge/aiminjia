@@ -7,8 +7,13 @@ pub async fn expert_team_template_catalog() -> Result<Vec<ExpertTeamSnapshot>, S
 
 #[tauri::command]
 pub async fn expert_team_upgrade_conversation(
-    _conversation_id: String,
-    _target_version: String,
+    conversation_id: String,
+    target_version: String,
 ) -> Result<(), String> {
-    Err("专家团升级将在远程快照同步完成后启用".to_string())
+    log::info!(
+        "[expert-team] upgrade requested conv={} target_version={}",
+        conversation_id,
+        target_version
+    );
+    Err("当前版本仅支持检测专家团新版本，升级写入将在快照同步完成后启用".to_string())
 }

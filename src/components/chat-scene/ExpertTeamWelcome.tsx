@@ -35,6 +35,8 @@ export function ExpertTeamWelcome({ team }: ExpertTeamWelcomeProps) {
     }
   }, [picking, sendUserMessage, team, i18n.language])
 
+  // TODO: Render expert-team upgrade affordance here once version check data
+  // is available; avoid a placeholder button without a real target version.
   return (
     <div
       data-testid="expert-team-welcome-shell"

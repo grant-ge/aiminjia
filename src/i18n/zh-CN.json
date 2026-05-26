@@ -41,6 +41,11 @@
     "loading": "加载中...",
     "unknownError": "未知错误"
   },
+  "resourceUpdates": {
+    "newVersion": "有新版本",
+    "upgrade": "升级",
+    "upgradeUnavailable": "当前正在运行，完成后可升级"
+  },
   "sidebar": {
     "newChat": "新对话",
     "noConversations": "暂无对话记录",

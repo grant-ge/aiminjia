@@ -41,6 +41,11 @@
     "loading": "Loading...",
     "unknownError": "Unknown error"
   },
+  "resourceUpdates": {
+    "newVersion": "New version available",
+    "upgrade": "Upgrade",
+    "upgradeUnavailable": "A run is active. Upgrade after it finishes."
+  },
   "sidebar": {
     "newChat": "New Chat",
     "noConversations": "No conversations yet",
