@@ -481,26 +481,68 @@ impl AuthClient {
     }
 }
 
-/// Parse API error body into a user-friendly Chinese error message.
+/// Typed wrapper for API errors so downstream code can branch on the HTTP
+/// status code without parsing message substrings. Lotus gateway returns 401
+/// from `/auth/refresh` only on hard token rejection (JWT bad / Redis miss /
+/// user/tenant gone) — those are the cases where AuthManager must clear local
+/// state and force re-login. 5xx / network / 4xx-other are transient: state
+/// must stay intact so a later retry can recover.
+#[derive(Debug)]
+pub struct AuthApiError {
+    pub status: u16,
+    pub message: String,
+}
+
+impl std::fmt::Display for AuthApiError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl std::error::Error for AuthApiError {}
+
+impl AuthApiError {
+    /// True iff the server returned an HTTP 401 — the *only* status meaning
+    /// "this token can never work, fail closed and re-login". Aligned with
+    /// CLAUDE.md decision 11: judge auth-revoked by HTTP status + structured
+    /// code, not by message substring.
+    pub fn is_unauthorized(&self) -> bool {
+        self.status == 401
+    }
+}
+
+/// Convenience extractor for callers holding an `anyhow::Error`: returns true
+/// iff the underlying error is an `AuthApiError` with HTTP 401. Anything else
+/// (network error, 5xx, 4xx-other, non-typed anyhow) is treated as transient.
+pub fn is_auth_unauthorized(err: &anyhow::Error) -> bool {
+    err.downcast_ref::<AuthApiError>()
+        .map(AuthApiError::is_unauthorized)
+        .unwrap_or(false)
+}
+
+/// Parse API error body into a user-friendly Chinese error message wrapped in
+/// `AuthApiError`. The typed wrapper preserves the HTTP status code so
+/// callers (e.g. `auth/mod.rs`) can distinguish "token revoked, clear state"
+/// from "transient failure, keep state".
 fn parse_api_error(status: u16, body: &str) -> anyhow::Error {
     // Try to parse as JSON { "code": int, "message": "..." }
-    if let Ok(json) = serde_json::from_str::<serde_json::Value>(body) {
-        if let Some(msg) = json["error"]["message"]
-            .as_str()
-            .or(json["message"].as_str())
-        {
-            return anyhow!("{}", localize_error(msg));
-        }
-    }
-
-    match status {
-        401 => anyhow!("用户名或密码错误"),
-        403 => anyhow!("账户已被禁用"),
-        429 => anyhow!("请求过于频繁，请稍后再试"),
-        502 | 503 | 504 => anyhow!("服务器暂时不可用，请稍后重试"),
-        500..=599 => anyhow!("服务器内部错误 ({})", status),
-        _ => anyhow!("请求失败 ({})", status),
-    }
+    let message = serde_json::from_str::<serde_json::Value>(body)
+        .ok()
+        .and_then(|json| {
+            json["error"]["message"]
+                .as_str()
+                .or_else(|| json["message"].as_str())
+                .map(|m| localize_error(m).to_string())
+        })
+        .unwrap_or_else(|| match status {
+            401 => "用户名或密码错误".to_string(),
+            403 => "账户已被禁用".to_string(),
+            429 => "请求过于频繁，请稍后再试".to_string(),
+            502 | 503 | 504 => "服务器暂时不可用，请稍后重试".to_string(),
+            500..=599 => format!("服务器内部错误 ({})", status),
+            _ => format!("请求失败 ({})", status),
+        });
+    anyhow::Error::new(AuthApiError { status, message })
 }
 
 /// Translate known English server messages to Chinese.

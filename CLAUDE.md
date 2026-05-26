@@ -270,6 +270,7 @@ Skill 系统采用无状态架构，仅加载 `~/.renlijia/users/{scope}/skills/
 9. **旧 macOS 白屏防护**：禁止引入含正则 lookbehind `(?<=`/`(?<!` 的依赖；`vite.config.ts` build.target 已设 safari13。详见同上
 10. **Shell 工具 PATH**：BashTool/PowerShellTool spawn 前必须 `inject_bundled_runtime_path`；命令收尾走 `emit_shell_failure_diagnostic`。详见 [`docs/decisions/runtime-decisions.md`](docs/decisions/runtime-decisions.md)
 11. **云端唯一 + auth 401 按错误码判定**：所有 LLM 路由恒走 lotus 网关（已移除 `use_cloud`/本地模型/`tavily`/`bocha` 配置）；判定可刷新的 auth 401 用 HTTP 401 + 错误码/类型（`authentication_error`/`auth_error`），**禁止再用消息文案子串匹配**。详见 [`docs/decisions/runtime-decisions.md`](docs/decisions/runtime-decisions.md)
+12. **`/auth/refresh` 必须单飞 + 先落盘后改内存**（`auth/mod.rs`）：服务器对 refresh_token 是单用即吊销，客户端必须把"读 refresh_token → 调 server → persist 磁盘 → 改 in-memory state"整段串行化（用 `AuthManager.refresh_lock: Mutex<()>`），并且 **持久化失败一律拒绝把新 token 提交到内存**（`persist_auth` 现在返回 `Result<()>`，调用方 `?` 传出）。两条铁规：① `refresh_auth_info` 和 `get_session_key` 不许各自独立发 refresh；② disk = source of truth，下次启动 `restore()` 看到的必须是服务器认可的最新 token。判定服务器拒签用 `client::is_auth_unauthorized(err)`（typed `AuthApiError.status==401`），网络/5xx 不清状态、留给下次重试。背景：SLS 实锤 `user_id=87` 服务器持有 `ed8f044d` / 客户端硬盘还是 `c104df42` 的 token 错位，根因就是 race + persist 静默失败。
 
 ### 已归档的设计决策（详情外迁，按需查阅）
 
