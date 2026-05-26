@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod chat;
+pub mod desktop_resources;
 pub mod diagnostics;
 pub mod dingtalk;
 pub mod employees;

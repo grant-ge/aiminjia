@@ -5,6 +5,7 @@ pub mod cancellation;
 pub mod chat;
 pub mod conversation_service;
 pub mod dependencies;
+pub mod desktop_resources;
 pub mod employee;
 pub mod event_bus;
 pub mod events;
