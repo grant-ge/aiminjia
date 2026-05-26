@@ -656,7 +656,7 @@
     "durationSec": "{{sec}}s"
   },
   "homeComposer": {
-    "placeholder": "Describe your task, or click the Skill button to pick a skill...",
+    "placeholder": "Describe your task, type / or click Skill to pick...",
     "selectWorkDir": "Select working directory",
     "defaultProject": "Default project",
     "workingIn": "Working in {{name}}",

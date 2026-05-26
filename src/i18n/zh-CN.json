@@ -656,7 +656,7 @@
     "durationSec": "{{sec}}秒"
   },
   "homeComposer": {
-    "placeholder": "描述你的任务，或点击「技能」按钮选择技能...",
+    "placeholder": "描述你的任务，输入 / 或点「技能」选择技能...",
     "selectWorkDir": "选择工作目录",
     "defaultProject": "默认项目",
     "workingIn": "在 {{name}} 中工作",
