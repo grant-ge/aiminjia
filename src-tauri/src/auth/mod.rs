@@ -15,12 +15,12 @@ pub mod state;
 use anyhow::{anyhow, Result};
 use chrono::Utc;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 
 use crate::storage::crypto::SecureStorage;
 use crate::storage::{AiJiaHome, GlobalConfigStore};
 
-use client::AuthClient;
+use client::{is_auth_unauthorized, AuthClient};
 use state::{CloudAuth, CloudAuthInfo, CloudModelInfo};
 
 /// Storage key for persisted encrypted auth state.
@@ -29,6 +29,23 @@ const AUTH_STORAGE_KEY: &str = "cloud_auth";
 pub struct AuthManager {
     client: AuthClient,
     state: RwLock<Option<CloudAuth>>,
+    /// Single-flight serializer for refresh_token network calls.  Without
+    /// this, `refresh_auth_info` (drops the read lock before the network
+    /// call) and `get_session_key` (holds write lock through the network
+    /// call) could fire two `/auth/refresh` requests with the same
+    /// `refresh_token`. Server's single-use semantics revoke the token on
+    /// the first hit; the second concurrent caller then 401s, and (worse)
+    /// any state update from the second caller can overwrite the new
+    /// tokens just persisted by the first. Holding this lock around the
+    /// entire `read state → server call → persist → commit state` cycle
+    /// guarantees only one in-flight refresh per AuthManager, and a
+    /// follower re-reads state after acquiring the lock so a freshly
+    /// rotated session_key is reused without a redundant server hit. See
+    /// commit history for the SLS-confirmed user_id=87 incident
+    /// (token c104df42... was rotated to ed8f044d... server-side but the
+    /// client never persisted ed8f044d — re-using c104df42 24h later
+    /// produced the recurring "API 密钥无效或已过期" symptom).
+    refresh_lock: Mutex<()>,
     global_store: Arc<GlobalConfigStore>,
     secure_storage: Option<Arc<SecureStorage>>,
     /// Stable per-install identifier sent to the server when creating
@@ -54,6 +71,7 @@ impl AuthManager {
         Self {
             client: AuthClient::new(),
             state: RwLock::new(None),
+            refresh_lock: Mutex::new(()),
             global_store,
             secure_storage,
             device_id,
@@ -141,8 +159,11 @@ impl AuthManager {
             tenant: tenant.clone(),
         };
 
-        // Persist and store
-        self.persist_auth(&cloud_auth);
+        // Persist BEFORE updating in-memory state. If disk fails, return
+        // the error and DON'T put the new tokens in memory — otherwise we'd
+        // have a session that works until restart, then can't log back in
+        // because disk holds nothing.
+        self.persist_auth(&cloud_auth)?;
         *self.state.write().await = Some(cloud_auth);
 
         Ok(CloudAuthInfo {
@@ -251,7 +272,18 @@ impl AuthManager {
 
     /// Refresh auth info from server using refresh_token and persist the latest tenant/user profile.
     /// Best-effort: if refresh fails, falls back to current persisted auth info.
+    ///
+    /// Single-flight via `refresh_lock`: concurrent callers (typically
+    /// `refresh_auth_info` from a startup task and `get_session_key` from
+    /// the first chat send) serialize through one in-flight refresh. The
+    /// follower re-reads state after acquiring the lock and skips the
+    /// server hit if the leader already refreshed it.
     pub async fn refresh_auth_info(&self) -> CloudAuthInfo {
+        // Single-flight: only one refresh op at a time.  Holding this for
+        // the whole network round-trip is fine — refresh_auth_info is a
+        // foreground op invoked at most once per user-visible event.
+        let _refresh_guard = self.refresh_lock.lock().await;
+
         let (refresh_token, session_key) = {
             let state = self.state.read().await;
             match state.as_ref() {
@@ -338,24 +370,44 @@ impl AuthManager {
                         );
                     }
 
-                    self.persist_auth(&cloud_auth);
-                    *self.state.write().await = Some(cloud_auth);
-
-                    return CloudAuthInfo {
-                        logged_in: true,
-                        user: Some(user),
-                        tenant: Some(tenant),
-                        models: vec![],
-                    };
+                    // PERSIST FIRST — if disk write fails, do NOT update in-memory.
+                    // That way next launch's `restore()` reads the old (still-valid)
+                    // disk state and the user keeps working; the refreshed-but-lost
+                    // tokens just stay lost server-side until the next refresh.
+                    // Letting in-memory diverge from disk created the user_id=87
+                    // class of incidents.
+                    if let Err(e) = self.persist_auth(&cloud_auth) {
+                        log::error!(
+                            "refresh_auth_info: persist failed, NOT committing new tokens to memory: {}",
+                            e
+                        );
+                        // Fall through to Strategy 2 / fallback path.
+                    } else {
+                        *self.state.write().await = Some(cloud_auth);
+                        return CloudAuthInfo {
+                            logged_in: true,
+                            user: Some(user),
+                            tenant: Some(tenant),
+                            models: vec![],
+                        };
+                    }
                 }
                 Err(e) => {
-                    if session_key.is_some() {
+                    // CLAUDE.md decision 11: only HTTP 401 means the refresh
+                    // token is irrecoverable; everything else is transient
+                    // (network blip, 5xx, etc) and we must NOT wipe state.
+                    if is_auth_unauthorized(&e) {
+                        log::warn!(
+                            "refresh_auth_info: refresh_token revoked (HTTP 401): {}",
+                            e
+                        );
+                    } else if session_key.is_some() {
                         log::debug!(
-                            "refresh_auth_info: refresh_token failed: {}, will fall back to session_key",
+                            "refresh_auth_info: refresh_token failed (transient, will fall back to session_key): {}",
                             e
                         );
                     } else {
-                        log::warn!("refresh_auth_info: refresh_token failed: {}", e);
+                        log::warn!("refresh_auth_info: refresh_token failed (transient): {}", e);
                     }
                 }
             }
@@ -367,12 +419,30 @@ impl AuthManager {
                 Ok((user_info, tenant_info)) => {
                     let user: state::UserInfo = user_info.into();
                     let tenant: state::TenantInfo = tenant_info.into();
-                    // Update only user/tenant in persisted state (keep existing tokens)
-                    let mut state = self.state.write().await;
-                    if let Some(auth) = state.as_mut() {
-                        auth.user = user.clone();
-                        auth.tenant = tenant.clone();
-                        self.persist_auth(auth);
+                    // Update only user/tenant in persisted state (keep existing tokens).
+                    // Build a fresh CloudAuth snapshot, persist it first, then commit.
+                    // If persist fails, leave in-memory state alone — we don't want
+                    // memory and disk to diverge over a profile-update cosmetic change.
+                    let snapshot = {
+                        let state = self.state.read().await;
+                        state.as_ref().map(|auth| CloudAuth {
+                            user: user.clone(),
+                            tenant: tenant.clone(),
+                            ..auth.clone()
+                        })
+                    };
+                    if let Some(updated) = snapshot {
+                        match self.persist_auth(&updated) {
+                            Ok(()) => {
+                                *self.state.write().await = Some(updated);
+                            }
+                            Err(e) => {
+                                log::warn!(
+                                    "refresh_auth_info: profile-only persist failed (keeping in-memory): {}",
+                                    e
+                                );
+                            }
+                        }
                     }
                     return CloudAuthInfo {
                         logged_in: true,
@@ -397,13 +467,19 @@ impl AuthManager {
     /// 1. session_key valid → return it
     /// 2. session_key expired, access_token valid → create new session_key
     /// 3. access_token expired, refresh_token valid → refresh → create new session_key
-    /// 4. all expired → error (triggers re-login)
+    /// 4. all expired or server says "revoked" (HTTP 401) → clear state, force re-login
+    /// 5. transient failure (network / 5xx) → keep state, surface error so caller retries later
+    ///
+    /// Concurrent refresh-side calls (this one + `refresh_auth_info`) serialize
+    /// through `refresh_lock`, so a concurrent pair never produces a 401-back-from-server
+    /// from one call's single-use revocation hitting the other call's still-in-flight
+    /// request with the same refresh_token.
     pub async fn get_session_key(&self) -> Result<String> {
         let now = Utc::now();
         // Add 60-second buffer to prevent edge-case expiry during request
         let buffer = chrono::Duration::seconds(60);
 
-        // Fast path: session_key still valid
+        // Fast path: session_key still valid (read lock only)
         {
             let state = self.state.read().await;
             if let Some(auth) = state.as_ref() {
@@ -418,14 +494,26 @@ impl AuthManager {
             }
         }
 
-        // Need renewal — acquire write lock
-        let mut state = self.state.write().await;
-        let auth = state.as_mut().ok_or_else(|| anyhow!("未登录"))?;
+        // Slow path: need to renew → acquire single-flight refresh lock.
+        // A concurrent caller (refresh_auth_info / another get_session_key)
+        // could already have refreshed by the time we get here; we re-check
+        // state below before doing a server hit.
+        let _refresh_guard = self.refresh_lock.lock().await;
 
-        // Double-check after acquiring write lock (another task may have renewed)
-        if auth.session_key_expires_at > now + buffer {
-            return Ok(auth.session_key.clone());
-        }
+        // Re-read state under read lock. Snapshot the fields we need so we
+        // don't hold the read lock across the network call.
+        let snapshot = {
+            let state = self.state.read().await;
+            let Some(auth) = state.as_ref() else {
+                return Err(anyhow!("未登录"));
+            };
+            // Race-winner double-check: another concurrent caller already
+            // refreshed for us. Return their session_key.
+            if auth.session_key_expires_at > now + buffer {
+                return Ok(auth.session_key.clone());
+            }
+            auth.clone()
+        };
 
         log::info!("Session key expired, attempting renewal...");
 
@@ -442,19 +530,31 @@ impl AuthManager {
                     (Utc::now() - last).num_seconds(),
                     throttle_window.num_seconds()
                 );
-                return Ok(auth.session_key.clone());
+                return Ok(snapshot.session_key);
             }
         }
 
-        // Try to create new session key with current access_token
-        if auth.access_expires_at > now + buffer {
-            match self.client.create_session_key(&auth.access_token, Some(&self.device_id)).await {
+        // Track whether server explicitly told us "this credential is dead".
+        // Only such a signal warrants clearing state (decision §11 — judge
+        // revocation by HTTP status, not by absence of success path).
+        let mut auth_revoked_by_server = false;
+
+        // Try to create new session key with current access_token.
+        if snapshot.access_expires_at > now + buffer {
+            match self
+                .client
+                .create_session_key(&snapshot.access_token, Some(&self.device_id))
+                .await
+            {
                 Ok(sk_resp) => {
                     let sk_expires = sk_resp.effective_expires_at();
                     if sk_expires > now {
-                        auth.session_key = sk_resp.key.clone();
-                        auth.session_key_expires_at = sk_expires;
-                        self.persist_auth(auth);
+                        // Build new state from snapshot + new session_key.
+                        let mut updated = snapshot.clone();
+                        updated.session_key = sk_resp.key.clone();
+                        updated.session_key_expires_at = sk_expires;
+                        self.persist_auth(&updated)?;
+                        *self.state.write().await = Some(updated);
                         *self.last_session_create_at.write().await = Some(Utc::now());
                         log::info!(
                             "[get_session_key] renewed via access_token (len={}, expires_at={})",
@@ -467,56 +567,92 @@ impl AuthManager {
                     }
                 }
                 Err(e) => {
-                    log::warn!("Failed to create session key: {}", e);
+                    if is_auth_unauthorized(&e) {
+                        log::warn!("create_session_key returned 401 (access_token rejected): {}", e);
+                        auth_revoked_by_server = true;
+                    } else {
+                        log::warn!("Failed to create session key (transient): {}", e);
+                    }
                 }
             }
         }
 
-        // Access token expired — try refresh
-        if auth.refresh_expires_at > now + buffer {
+        // Access token expired or rejected — try refresh.
+        if snapshot.refresh_expires_at > now + buffer {
             log::info!("Access token expired, refreshing...");
-            match self.client.refresh_token(&auth.refresh_token).await {
+            match self.client.refresh_token(&snapshot.refresh_token).await {
                 Ok(auth_resp)
                     if auth_resp.access_expires_at > now && auth_resp.refresh_expires_at > now =>
                 {
                     let new_access_token = auth_resp.access_token.clone();
-                    auth.access_token = auth_resp.access_token;
-                    auth.access_expires_at = auth_resp.access_expires_at;
-                    auth.refresh_token = auth_resp.refresh_token;
-                    auth.refresh_expires_at = auth_resp.refresh_expires_at;
-                    auth.user = auth_resp.user.into();
-                    auth.tenant = auth_resp.tenant.into();
+                    let mut updated = CloudAuth {
+                        access_token: auth_resp.access_token,
+                        access_expires_at: auth_resp.access_expires_at,
+                        refresh_token: auth_resp.refresh_token,
+                        refresh_expires_at: auth_resp.refresh_expires_at,
+                        // Keep prior session_key as fallback; replaced below
+                        // on successful create_session_key.
+                        session_key: snapshot.session_key.clone(),
+                        session_key_expires_at: snapshot.session_key_expires_at,
+                        user: auth_resp.user.into(),
+                        tenant: auth_resp.tenant.into(),
+                    };
 
-                    // Persist refreshed tokens immediately (even before session_key creation)
-                    // so they aren't lost if create_session_key fails
-                    self.persist_auth(auth);
+                    // PERSIST the rotated tokens before doing anything else.
+                    // The old refresh_token has just been revoked server-side
+                    // (single-use); if we lose the new one in a crash here we
+                    // have no way back. This was the root of the user_id=87
+                    // SLS incident (server had ed8f044d, client kept c104df42).
+                    self.persist_auth(&updated)?;
+                    *self.state.write().await = Some(updated.clone());
 
                     // Create new session key
-                    let sk_resp = self.client.create_session_key(&new_access_token, Some(&self.device_id)).await?;
+                    let sk_resp = self
+                        .client
+                        .create_session_key(&new_access_token, Some(&self.device_id))
+                        .await?;
                     let sk_expires = sk_resp.effective_expires_at();
                     if sk_expires <= now {
                         return Err(anyhow!("服务器返回了无效的会话密钥有效期"));
                     }
                     *self.last_session_create_at.write().await = Some(Utc::now());
-                    auth.session_key = sk_resp.key.clone();
-                    auth.session_key_expires_at = sk_expires;
-                    self.persist_auth(auth);
+                    updated.session_key = sk_resp.key.clone();
+                    updated.session_key_expires_at = sk_expires;
+                    self.persist_auth(&updated)?;
+                    *self.state.write().await = Some(updated);
                     log::info!("Token refreshed and session key renewed");
                     return Ok(sk_resp.key);
                 }
                 Ok(_) => {
                     log::warn!("Token refresh returned invalid TTL, treating as expired");
+                    auth_revoked_by_server = true;
                 }
                 Err(e) => {
-                    log::warn!("Token refresh failed: {}", e);
+                    if is_auth_unauthorized(&e) {
+                        log::warn!("Token refresh returned HTTP 401 (refresh_token revoked): {}", e);
+                        auth_revoked_by_server = true;
+                    } else {
+                        log::warn!("Token refresh failed (transient, keeping state): {}", e);
+                    }
                 }
             }
         }
 
-        // All tokens expired — clear state, force re-login
-        *state = None;
-        self.clear_persisted_auth();
-        Err(anyhow!("登录已过期，请重新登录"))
+        // Decide: did the server actively reject us, or was this a transient
+        // failure?  Only the former clears state.  Wiping on a transient
+        // (network blip / 5xx) used to silently log out an otherwise-fine
+        // user — they then either re-login (annoying) or, worse, hit the
+        // disk-cleared state across a restart and lose all conversations
+        // they hadn't pushed up.
+        if auth_revoked_by_server {
+            *self.state.write().await = None;
+            self.clear_persisted_auth();
+            Err(anyhow!("登录已过期，请重新登录"))
+        } else {
+            Err(anyhow!(
+                "无法获取会话密钥，请稍后重试（网络或服务器暂时不可用）"
+            ))
+        }
     }
 
     /// Fetch available models from the server.
@@ -559,35 +695,38 @@ impl AuthManager {
         log::info!(
             "[invalidate_session_key] session_key marked expired; next get_session_key will refresh"
         );
-        self.persist_auth(auth);
+        // Best-effort persist of the invalidation marker. Failure here only
+        // means the in-memory invalidation works for this run; next startup
+        // would reload the cached (now-expired) value from disk and hit the
+        // same fast-path miss. Either way `get_session_key` re-derives.
+        if let Err(e) = self.persist_auth(auth) {
+            log::warn!("[invalidate_session_key] persist failed (non-fatal): {}", e);
+        }
     }
 
     // --- Persistence ---
 
-    fn persist_auth(&self, auth: &CloudAuth) {
-        let json = match serde_json::to_string(auth) {
-            Ok(j) => j,
-            Err(e) => {
-                log::error!("Failed to serialize cloud auth: {}", e);
-                return;
-            }
-        };
+    /// Serialize + encrypt + write auth state to disk. Returns `Err` on any
+    /// failure so callers can refuse to commit the in-memory state (and thus
+    /// not lose the new refresh_token in memory-only). Previously this swallowed
+    /// errors with `log::error!`; that hid the case where a successful
+    /// `/auth/refresh` returned new tokens but they never reached disk —
+    /// next launch then loaded the OLD (already revoked) refresh_token and
+    /// the user hit "API 密钥无效或已过期" on every retry.
+    fn persist_auth(&self, auth: &CloudAuth) -> Result<()> {
+        let json = serde_json::to_string(auth)
+            .map_err(|e| anyhow!("Failed to serialize cloud auth: {}", e))?;
 
         let value = if let Some(ref ss) = self.secure_storage {
-            match ss.encrypt(&json) {
-                Ok(encrypted) => encrypted,
-                Err(e) => {
-                    log::error!("Failed to encrypt cloud auth: {}", e);
-                    return;
-                }
-            }
+            ss.encrypt(&json)
+                .map_err(|e| anyhow!("Failed to encrypt cloud auth: {}", e))?
         } else {
             json
         };
 
-        if let Err(e) = self.global_store.set_setting(AUTH_STORAGE_KEY, &value) {
-            log::error!("Failed to persist cloud auth: {}", e);
-        }
+        self.global_store
+            .set_setting(AUTH_STORAGE_KEY, &value)
+            .map_err(|e| anyhow!("Failed to persist cloud auth: {}", e))
     }
 
     fn load_persisted_auth(&self) -> Result<Option<CloudAuth>> {
