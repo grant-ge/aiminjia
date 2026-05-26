@@ -867,6 +867,18 @@
     "channel": "IM Channel",
     "settings": "Settings"
   },
+  "network": {
+    "offlineBadge": "No network",
+    "degradedBadge": "AI service unavailable",
+    "popoverOfflineTitle": "Can't connect to the network",
+    "popoverOfflineDesc": "Check your Wi-Fi, wired connection, or VPN, then click Retry.",
+    "popoverDegradedTitle": "AI service is temporarily unavailable",
+    "popoverDegradedDesc": "Your network is fine, but the AI service is having issues. Please retry shortly.",
+    "lastOnline": "Last online: {{time}}",
+    "retryNow": "Retry",
+    "sendWhileOfflineTitle": "No network",
+    "sendWhileOfflineDesc": "Sending may fail. Please check your network and retry."
+  },
   "bottomTips": {
     "aiDisclaimer": "Content is AI-generated. Please verify carefully.",
     "enterToSend": "Enter to send",
