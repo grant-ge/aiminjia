@@ -12,4 +12,5 @@ pub mod project_memory;
 pub mod settings;
 pub mod skill_draft;
 pub mod skill_management;
+pub mod window_chrome;
 pub mod workspace;
