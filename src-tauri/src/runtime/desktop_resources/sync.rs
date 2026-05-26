@@ -151,7 +151,7 @@ async fn download_manifest(
 
 fn verify_sha256(bytes: &[u8], expected_sha256: &str, url: &str) -> Result<()> {
     if expected_sha256.is_empty() {
-        return Ok(());
+        anyhow::bail!("missing manifest_sha256 for {url}");
     }
 
     let mut hasher = Sha256::new();
@@ -171,4 +171,20 @@ fn hex_lower(bytes: &[u8]) -> String {
         out.push_str(&format!("{byte:02x}"));
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn verify_sha256_rejects_missing_expected_hash() {
+        let err = verify_sha256(b"{}", "", "https://example.test/resource.json")
+            .expect_err("missing manifest hash must reject the resource");
+
+        assert!(
+            err.to_string().contains("missing manifest_sha256"),
+            "unexpected error: {err}"
+        );
+    }
 }
