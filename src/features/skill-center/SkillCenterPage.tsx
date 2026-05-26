@@ -1,26 +1,4 @@
-import {
-  BarChart2,
-  Briefcase,
-  Building2,
-  Clipboard,
-  Coins,
-  FileSearch,
-  FileText,
-  Folder,
-  Heart,
-  MoreHorizontal,
-  PenLine,
-  Scale,
-  Scroll,
-  Search,
-  ShoppingCart,
-  Smartphone,
-  Target,
-  Trash2,
-  TrendingUp,
-  Users,
-  type LucideIcon,
-} from 'lucide-react'
+import { MoreHorizontal, Search, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { invoke } from '@tauri-apps/api/core'
@@ -31,6 +9,7 @@ import { PageSectionShell } from '@/components/shell/PageSectionShell'
 import { SkillCard } from '@/components/skills/SkillCard'
 import { SkillCategoryBar } from '@/components/skills/SkillCategoryBar'
 import { SkillOfficeSection } from '@/components/skills/SkillOfficeSection'
+import { getSkillCategoryBg, getSkillIconComponent } from '@/components/skills/skillVisual'
 import { Button } from '@/components/ui/button'
 import { SKILL_CATEGORIES, type SkillCategoryId } from '@/data/skill-categories'
 import { useChat } from '@/hooks/useChat'
@@ -47,43 +26,9 @@ import { SkillValidationError, type SkillValidationKind } from '@/stores/skillSt
 import { uploadWithOverwriteConfirm } from './uploadWithOverwriteConfirm'
 import { ChevronDown, FolderOpen, Package } from 'lucide-react'
 
-const ICONS: Record<string, LucideIcon> = {
-  'bar-chart-2': BarChart2,
-  briefcase: Briefcase,
-  'building-2': Building2,
-  clipboard: Clipboard,
-  'clipboard-list': Clipboard,
-  coins: Coins,
-  'file-search': FileSearch,
-  'file-text': FileText,
-  folder: Folder,
-  heart: Heart,
-  'pen-line': PenLine,
-  scale: Scale,
-  scroll: Scroll,
-  'shopping-cart': ShoppingCart,
-  smartphone: Smartphone,
-  target: Target,
-  'trending-up': TrendingUp,
-  users: Users,
-}
-
-const CATEGORY_STYLE: Record<string, { bg: string }> = {
-  hr:      { bg: 'bg-blue-500' },
-  finance: { bg: 'bg-emerald-500' },
-  legal:   { bg: 'bg-violet-500' },
-  sales:   { bg: 'bg-orange-500' },
-  ops:     { bg: 'bg-rose-500' },
-  general: { bg: 'bg-amber-500' },
-}
-
 function getSkillIcon(icon: string) {
-  const Icon = ICONS[icon] ?? FileText
+  const Icon = getSkillIconComponent(icon)
   return <Icon className="h-4 w-4 text-primary-foreground" />
-}
-
-function getIconBg(category: string) {
-  return CATEGORY_STYLE[category]?.bg ?? 'bg-slate-500'
 }
 
 export function SkillCenterPage() {
@@ -521,7 +466,7 @@ export function SkillCenterPage() {
                 meta={getSkillMeta(skill.source, skill.category)}
                 desc={skill.shortDescription || skill.description}
                 iconNode={getSkillIcon(skill.icon)}
-                iconBg={getIconBg(skill.category)}
+                iconBg={getSkillCategoryBg(skill.category)}
                 version={skill.version}
                 skillId={skill.id}
                 skillSource={skill.source}

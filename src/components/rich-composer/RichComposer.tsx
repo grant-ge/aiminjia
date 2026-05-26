@@ -16,6 +16,20 @@ import { serializeComposerDoc } from './serializer'
 import { parseMarkdownToComposerJson } from './parseMarkdown'
 import type { ComposerAttachmentToken, ComposerJsonNode, ComposerSkillToken, RichComposerSubmitPayload } from './types'
 
+// `/` should open the skill picker only where a real slash-command could
+// start: an empty doc, or right after whitespace. Anywhere else (mid-word,
+// mid-URL) we let the slash type through as a normal character.
+function isSlashBoundary(editor: Editor | null): boolean {
+  if (!editor) return false
+  const { selection, doc } = editor.state
+  if (!selection.empty) return false
+  const $from = selection.$from
+  if (doc.textContent.length === 0) return true
+  if ($from.parentOffset === 0) return true
+  const before = $from.parent.textBetween(Math.max(0, $from.parentOffset - 1), $from.parentOffset, undefined, '￼')
+  return /\s/.test(before)
+}
+
 export interface ComposerSkillCommand {
   command: string
   label: string
@@ -49,6 +63,8 @@ export interface RichComposerProps {
   /** Extra classes appended to the outer rounded-xl container. Caller-controlled
    * styling (e.g. shadow for the in-chat composer vs. flat for home composer). */
   containerClassName?: string
+  /** When true, caps the editor content area at 200px and enables internal scrolling. */
+  limitEditorHeight?: boolean
 }
 
 export interface RichComposerHandle {
@@ -80,6 +96,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
     onOpenAttachment,
     skillTokens,
     containerClassName,
+    limitEditorHeight = false,
   },
   ref,
 ) {
@@ -149,8 +166,28 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
       }, 50)
     }
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Enter' || e.shiftKey) return
       if (isComposingRef.current || e.isComposing) return
+      // Slash shortcut: pop the skill picker when "/" is typed at a position
+      // where it would naturally start a command — empty doc or whitespace
+      // boundary. We swallow the keystroke (no "/" lands in the editor) and
+      // delegate to the caller's onOpenSkill so home/chat composers reuse
+      // the same popover they already wire to the Blocks button.
+      if (
+        e.key === '/' &&
+        !e.shiftKey &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey &&
+        onOpenSkill
+      ) {
+        if (isSlashBoundary(editor)) {
+          e.preventDefault()
+          e.stopImmediatePropagation()
+          onOpenSkill()
+          return
+        }
+      }
+      if (e.key !== 'Enter' || e.shiftKey) return
       // Capture phase + stopImmediatePropagation: beat ProseMirror's own
       // keydown handler so Enter never reaches the default newline insertion.
       e.preventDefault()
@@ -166,7 +203,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
       dom.removeEventListener('compositionend', onCompositionEnd)
       dom.removeEventListener('keydown', onKeyDown, true)
     }
-  }, [editor, trySubmit])
+  }, [editor, trySubmit, onOpenSkill])
 
   useImperativeHandle(
     ref,
@@ -194,7 +231,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
   const sendDisabled = disabled || isEmpty || submittingRef.current
 
   return (
-    <div className="flex w-full flex-col gap-2">
+    <div className="relative z-10 flex w-full flex-col gap-2">
       <div
         data-testid="composer-root"
         className={`flex w-full flex-col rounded-xl border border-border bg-card px-4 pb-1 pt-4${containerClassName ? ` ${containerClassName}` : ''}`}
@@ -238,12 +275,10 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
             </div>
           </div>
         ) : null}
-        <div className="max-h-[200px] overflow-y-auto overscroll-contain">
-          <EditorContent
-            editor={editor}
-            className="min-h-[40px] w-full text-sm text-foreground [&_.ProseMirror]:outline-none [&_.ProseMirror_p.is-editor-empty:first-child]:before:pointer-events-none [&_.ProseMirror_p.is-editor-empty:first-child]:before:content-[attr(data-placeholder)] [&_.ProseMirror_p.is-editor-empty:first-child]:before:text-muted-foreground [&_.ProseMirror_p.is-editor-empty:first-child]:before:float-left [&_.ProseMirror_p.is-editor-empty:first-child]:before:h-0 [&_.ProseMirror_a]:text-primary [&_.ProseMirror_a]:underline [&_.ProseMirror_a]:underline-offset-2 [&_.ProseMirror_a]:cursor-pointer [&_.ProseMirror_strong]:font-semibold [&_.ProseMirror_em]:italic [&_.ProseMirror_code]:rounded [&_.ProseMirror_code]:bg-muted [&_.ProseMirror_code]:px-1 [&_.ProseMirror_code]:text-[0.85em] [&_.ProseMirror_pre]:overflow-x-auto [&_.ProseMirror_pre]:rounded [&_.ProseMirror_pre]:bg-muted [&_.ProseMirror_pre]:p-2 [&_.ProseMirror_pre]:text-xs [&_.ProseMirror_pre_code]:bg-transparent [&_.ProseMirror_pre_code]:p-0 [&_.ProseMirror_ul]:list-disc [&_.ProseMirror_ul]:pl-5 [&_.ProseMirror_ol]:list-decimal [&_.ProseMirror_ol]:pl-5 [&_.ProseMirror_blockquote]:border-l-2 [&_.ProseMirror_blockquote]:border-border [&_.ProseMirror_blockquote]:pl-3 [&_.ProseMirror_blockquote]:opacity-90"
-          />
-        </div>
+        <EditorContent
+          editor={editor}
+          className={`min-h-[40px] w-full text-sm text-foreground [&_.ProseMirror_a]:text-primary [&_.ProseMirror_a]:underline [&_.ProseMirror_a]:underline-offset-2 [&_.ProseMirror_a]:cursor-pointer [&_.ProseMirror_strong]:font-semibold [&_.ProseMirror_em]:italic [&_.ProseMirror_code]:rounded [&_.ProseMirror_code]:bg-muted [&_.ProseMirror_code]:px-1 [&_.ProseMirror_code]:text-[0.85em] [&_.ProseMirror_pre]:overflow-x-auto [&_.ProseMirror_pre]:rounded [&_.ProseMirror_pre]:bg-muted [&_.ProseMirror_pre]:p-2 [&_.ProseMirror_pre]:text-xs [&_.ProseMirror_pre_code]:bg-transparent [&_.ProseMirror_pre_code]:p-0 [&_.ProseMirror_ul]:list-disc [&_.ProseMirror_ul]:pl-5 [&_.ProseMirror_ol]:list-decimal [&_.ProseMirror_ol]:pl-5 [&_.ProseMirror_blockquote]:border-l-2 [&_.ProseMirror_blockquote]:border-border [&_.ProseMirror_blockquote]:pl-3 [&_.ProseMirror_blockquote]:opacity-90${limitEditorHeight ? ' [&_.ProseMirror]:max-h-[200px] [&_.ProseMirror]:overflow-y-auto [&_.ProseMirror]:overscroll-contain' : ''}`}
+        />
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-0">
             <button

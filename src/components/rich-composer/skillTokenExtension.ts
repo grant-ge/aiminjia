@@ -113,6 +113,7 @@ export const SkillTokenExtension = Node.create<SkillTokenExtensionOptions>({
           if (!tokenType) return null
           let tr = newState.tr
           let changed = false
+          // 1) Slash-shortcut → token replacement (typing "/foo ").
           newState.doc.descendants((node, pos) => {
             if (!node.isTextblock) return true
             const text = node.textBetween(0, node.content.size, undefined, undefined)
@@ -127,7 +128,56 @@ export const SkillTokenExtension = Node.create<SkillTokenExtensionOptions>({
             changed = true
             return false
           })
-          return changed ? tr : null
+          if (changed) return tr
+
+          // 2) Stranded caret-boundary cleanup. `insertSkillToken` injects a
+          // U+200B before the chip when inserted at parentOffset 0 so the
+          // caret has somewhere to land. After the chip is removed the
+          // zero-width lingers, making the chip feel like it needs two
+          // backspaces to clear. Strip any U+200B run that no longer sits
+          // next to a skillToken in the same textblock.
+          let cleaned = newState.tr
+          let didClean = false
+          newState.doc.descendants((node, pos) => {
+            if (!node.isTextblock) return true
+            // Build a flat list of (kind, fromOffset, toOffset) for this block.
+            type Span = { kind: 'text' | 'skill'; from: number; to: number; text?: string }
+            const spans: Span[] = []
+            node.forEach((child, offset) => {
+              const childFrom = offset
+              const childTo = offset + child.nodeSize
+              if (child.type.name === 'skillToken') {
+                spans.push({ kind: 'skill', from: childFrom, to: childTo })
+              } else if (child.isText && typeof child.text === 'string') {
+                spans.push({ kind: 'text', from: childFrom, to: childTo, text: child.text })
+              } else {
+                spans.push({ kind: 'text', from: childFrom, to: childTo })
+              }
+            })
+            spans.forEach((span, idx) => {
+              if (span.kind !== 'text' || !span.text) return
+              if (!span.text.includes('​')) return
+              const prevIsSkill = idx > 0 && spans[idx - 1].kind === 'skill'
+              const nextIsSkill = idx < spans.length - 1 && spans[idx + 1].kind === 'skill'
+              if (prevIsSkill || nextIsSkill) return
+              // No adjacent skill token — the zero-width is orphaned. Strip it.
+              const cleanedText = span.text.replace(/​+/g, '')
+              const blockFrom = pos + 1 + span.from
+              const blockTo = pos + 1 + span.to
+              if (cleanedText.length === 0) {
+                cleaned = cleaned.delete(blockFrom, blockTo)
+              } else {
+                cleaned = cleaned.replaceWith(
+                  blockFrom,
+                  blockTo,
+                  newState.schema.text(cleanedText),
+                )
+              }
+              didClean = true
+            })
+            return false
+          })
+          return didClean ? cleaned : null
         },
       }),
     ]

@@ -246,6 +246,7 @@ export function HomeTaskComposerCard() {
         onOpenSkill={() => setShowSkillPopover((prev) => !prev)}
         skillTokens={skillTokens}
         showProjectButton={false}
+        limitEditorHeight
         onOpenAttachment={isPickingAttachments ? undefined : () => void handlePickAttachments()}
       />
 

@@ -265,3 +265,53 @@ describe('RichComposer — getEditor handle', () => {
     expect(typeof ed?.view?.dom).toBe('object')
   })
 })
+
+describe('RichComposer — slash shortcut to open skill picker', () => {
+  it('empty editor: pressing / calls onOpenSkill and the slash does not enter the editor', async () => {
+    const onOpenSkill = vi.fn()
+    const user = userEvent.setup()
+    render(<RichComposer onSubmit={() => {}} onOpenSkill={onOpenSkill} />)
+    await waitFor(() => expect(document.querySelector('.ProseMirror')).toBeTruthy())
+    const editor = document.querySelector('.ProseMirror') as HTMLElement
+    await user.click(editor)
+    await user.keyboard('/')
+    expect(onOpenSkill).toHaveBeenCalledTimes(1)
+    expect(editor.textContent ?? '').toBe('')
+  })
+
+  it('after whitespace: pressing / opens picker and the slash is swallowed', async () => {
+    const onOpenSkill = vi.fn()
+    const user = userEvent.setup()
+    render(<RichComposer onSubmit={() => {}} onOpenSkill={onOpenSkill} />)
+    await waitFor(() => expect(document.querySelector('.ProseMirror')).toBeTruthy())
+    const editor = document.querySelector('.ProseMirror') as HTMLElement
+    await user.click(editor)
+    await user.type(editor, 'hello ')
+    await user.keyboard('/')
+    expect(onOpenSkill).toHaveBeenCalledTimes(1)
+    expect(editor.textContent).toBe('hello ')
+  })
+
+  it('after a non-space character: / falls through into the editor and onOpenSkill is not called', async () => {
+    const onOpenSkill = vi.fn()
+    const user = userEvent.setup()
+    render(<RichComposer onSubmit={() => {}} onOpenSkill={onOpenSkill} />)
+    await waitFor(() => expect(document.querySelector('.ProseMirror')).toBeTruthy())
+    const editor = document.querySelector('.ProseMirror') as HTMLElement
+    await user.click(editor)
+    await user.type(editor, 'a')
+    await user.keyboard('/')
+    expect(onOpenSkill).not.toHaveBeenCalled()
+    expect(editor.textContent).toBe('a/')
+  })
+
+  it('no onOpenSkill prop: / always falls through to the editor (preserves legacy /command input rule)', async () => {
+    const user = userEvent.setup()
+    render(<RichComposer onSubmit={() => {}} />)
+    await waitFor(() => expect(document.querySelector('.ProseMirror')).toBeTruthy())
+    const editor = document.querySelector('.ProseMirror') as HTMLElement
+    await user.click(editor)
+    await user.keyboard('/')
+    expect(editor.textContent).toBe('/')
+  })
+})

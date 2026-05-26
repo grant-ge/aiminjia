@@ -10,6 +10,7 @@ import type { PermissionAskDecision } from '@/components/common/PermissionAskDia
 import { AskUserQuestionDialog } from '@/components/interactions/AskUserQuestionDialog'
 import { SettingsModal } from '@/components/settings/SettingsModal'
 import { TitleBar } from '@/components/layout/TitleBar'
+import { NetworkStatusIndicator } from '@/components/shell/NetworkStatusIndicator'
 import { AppSidebar } from '@/components/sidebar/AppSidebar'
 import { ChatPage } from '@/features/chat/ChatPage'
 import { ChannelPage } from '@/features/channel/ChannelPage'
@@ -20,6 +21,7 @@ import { ExpertTeamsPage } from '@/features/expert-teams/ExpertTeamsPage'
 import { SchedulesPage } from '@/features/schedules/SchedulesPage'
 import { SkillCenterPage } from '@/features/skill-center/SkillCenterPage'
 import { SkillDetailPage } from '@/features/skill-detail/SkillDetailPage'
+import { useNetworkStatus } from '@/hooks/useNetworkStatus'
 import { useStreaming } from '@/hooks/useStreaming'
 import { useUpdater } from '@/hooks/useUpdater'
 import { useDragDropListener } from '@/hooks/useDragDropListener'
@@ -121,6 +123,7 @@ function AppShell() {
   return (
     <div className="flex h-screen w-screen flex-col bg-background text-foreground">
       <TitleBar />
+      <NetworkStatusIndicator />
       <div className="flex min-h-0 flex-1">
         <AppSidebar />
         <main
@@ -154,6 +157,7 @@ function AppShell() {
 
 function App() {
   useStreaming()
+  useNetworkStatus()
   useDragDropListener()
   usePendingEventListener()
   const { t } = useTranslation()

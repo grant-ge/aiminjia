@@ -68,6 +68,8 @@ export const TAURI_EVENTS = {
   TURN_STAGE: 'turn:stage',
   /** Spec 2026-05-17 §4.1 — ~2s keep-alive while a turn is in progress. */
   TURN_HEARTBEAT: 'turn:heartbeat',
+  /** Spec 2026-05-26 §5.2 — Network probe result broadcast. */
+  NETWORK_STATUS: 'network:status',
 } as const
 
 // ---------------------------------------------------------------------------
@@ -287,6 +289,18 @@ export interface TurnHeartbeatPayload {
   runId: string
   stageElapsedMs: number
   turnElapsedMs: number
+}
+
+/** Spec 2026-05-26 §5.2 — mirrors Rust NetworkStatus enum (camelCase). */
+export type NetworkStatus = 'online' | 'offline' | 'server-degraded'
+/** Spec 2026-05-26 §5.2 — mirrors Rust NetworkErrorKind enum (camelCase). */
+export type NetworkErrorKind = 'timeout' | 'dns' | 'connect_refused' | 'tls' | 'other'
+
+export interface NetworkStatusPayload {
+  status: NetworkStatus
+  lastCheckAtMs: number
+  latencyMs: number | null
+  errorKind: NetworkErrorKind | null
 }
 
 /** Mirror of backend `PersistedTurnStage` (turn_stage.json on disk). */
@@ -2744,4 +2758,16 @@ export function updaterInstallCached(version: string): Promise<void> {
 
 export function updaterPlatformKey(): Promise<string> {
   return invoke<string>('updater_platform_key')
+}
+
+// ---------------------------------------------------------------------------
+// Network probe commands (Spec 2026-05-26 §6.1)
+// ---------------------------------------------------------------------------
+
+export async function networkGetStatus(): Promise<NetworkStatusPayload | null> {
+  return invoke<NetworkStatusPayload | null>('network_get_status')
+}
+
+export async function networkForceProbe(): Promise<{ triggered: boolean }> {
+  return invoke<{ triggered: boolean }>('network_force_probe')
 }

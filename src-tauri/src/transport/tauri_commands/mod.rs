@@ -10,6 +10,7 @@ pub mod billing;
 pub mod chat;
 pub mod file;
 pub mod mcp;
+pub mod network;
 pub mod pending;
 pub mod persona;
 pub mod runtime;

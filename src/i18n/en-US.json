@@ -485,11 +485,12 @@
     "removeSkill": "Remove skill {{name}}"
   },
   "skillPopover": {
-    "searchPlaceholder": "Search skills (name / description)",
+    "searchPlaceholder": "Search",
     "emptyNoSkills": "No skills available",
     "emptyNoMatch": "No matching skills",
     "emptyInstallHint": "Install a skill to see it here",
-    "emptyTryOther": "Try different keywords"
+    "emptyTryOther": "Try different keywords",
+    "exploreAndManage": "Explore & manage skills"
   },
   "login": {
     "loginSuccess": "Login successful",
@@ -664,7 +665,7 @@
     "durationSec": "{{sec}}s"
   },
   "homeComposer": {
-    "placeholder": "Describe your task, or click the Skill button to pick a skill...",
+    "placeholder": "Describe your task, type / or click Skill to pick...",
     "selectWorkDir": "Select working directory",
     "defaultProject": "Default project",
     "workingIn": "Working in {{name}}",
@@ -866,6 +867,12 @@
     "schedules": "Schedules",
     "channel": "IM Channel",
     "settings": "Settings"
+  },
+  "network": {
+    "retryNow": "Retry",
+    "bannerOfflineText": "Network connection lost · Check your Wi-Fi, wired connection, or VPN",
+    "bannerDegradedText": "AI service is temporarily unavailable · Network is fine, please retry shortly",
+    "bannerRetryingText": "Re-checking network connection…"
   },
   "bottomTips": {
     "aiDisclaimer": "Content is AI-generated. Please verify carefully.",

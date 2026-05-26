@@ -1,10 +1,23 @@
 # 断网检测与提示 Implementation Plan
 
+> **状态（2026-05-26）**：Implemented & deployed in branch `worktree-feat-network-detection`. 14 个 task 全部完成 + 1 个 fix commit（spawn 改 `tauri::async_runtime`）。**手测阶段对 UI 形态做了较大调整**，下方的 task 是按原始计划留存的实施记录，**不**反映最终设计。
+>
+> **看最终设计请读 spec**：`docs/superpowers/specs/2026-05-26-network-detection-design.md`（已重写为最终版，并在 §11 演进备注记录了与本 plan 的所有差异）。
+>
+> 主要差异：
+> - UI 形态：右上角小角标 + Popover → 顶部全宽 banner（仿钉钉）
+> - 删除 `useOfflineSendWarning` hook（banner 已经够强，避免重复打扰）
+> - 删除「打开系统网络设置」按钮 / Popover 详情 / lastOnline 时间展示 / 9 个废弃 i18n key
+> - 重试按钮：ghost variant → destructive variant + 加 Loader2 spinner + 5.5s 兜底超时
+> - lib.rs spawn 用 `tauri::async_runtime::spawn`（plan 写的 `tokio::spawn` 在 Tauri setup() 上下文会 panic）
+>
+> ---
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 后端常驻 30s 探测 lotus 网关，状态变化推前端；UI 顶栏红点 + 发送时 toast 提示"网络不通"，技术细节只落日志不进 UI。
+**Goal（原始）:** 后端常驻 30s 探测 lotus 网关，状态变化推前端；UI 顶栏红点 + 发送时 toast 提示"网络不通"，技术细节只落日志不进 UI。
 
-**Architecture:** Rust 后端 `runtime/network/` 模块用独立 `reqwest::Client` HEAD `https://ai-tenant.renlijia.com`，结果分三态（Online / Offline / ServerDegraded）。状态变化时通过 `RuntimeHost::emit_legacy_event` 直接发 `network:status` legacy event（不经 `RuntimeEventBus`，因为 `RuntimeEvent` 强制带 SessionId/RunId 而网络状态是全局的）。前端 `useNetworkStatus` 订阅事件写入 `networkStore`，`NetworkStatusIndicator` 渲染顶栏角标，`useChat` 发送前检查 store 离线则 toast。
+**Architecture（原始）:** Rust 后端 `runtime/network/` 模块用独立 `reqwest::Client` HEAD `https://ai-tenant.renlijia.com`，结果分三态（Online / Offline / ServerDegraded）。状态变化时通过 `RuntimeHost::emit_legacy_event` 直接发 `network:status` legacy event（不经 `RuntimeEventBus`，因为 `RuntimeEvent` 强制带 SessionId/RunId 而网络状态是全局的）。前端 `useNetworkStatus` 订阅事件写入 `networkStore`，`NetworkStatusIndicator` 渲染顶栏角标，`useChat` 发送前检查 store 离线则 toast。
 
 **Tech Stack:** Rust（tokio interval + reqwest）、Tauri 2 command/event、React + TypeScript + Zustand、lucide-react、Radix Popover、react-i18next、Vitest、wiremock。
 
