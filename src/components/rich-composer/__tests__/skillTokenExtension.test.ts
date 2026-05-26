@@ -63,4 +63,39 @@ describe('skillTokenExtension', () => {
     editor2.destroy()
     editor.destroy()
   })
+
+  it('removes the stranded U+200B caret boundary after the chip is deleted', () => {
+    const editor = makeEditor()
+    // insertSkillToken at offset 0 injects a U+200B caret boundary before the chip.
+    editor.commands.insertSkillToken(skill)
+    type Node = { type: string; text?: string; content?: Node[] }
+    const paraBefore = (editor.getJSON().content as Node[])[0]
+    expect(paraBefore.content?.[0]?.text).toBe('​')
+    expect(paraBefore.content?.[1]?.type).toBe('skillToken')
+
+    // Delete the chip — the zero-width is now orphaned.
+    const tokenPos = (() => {
+      let found = -1
+      editor.state.doc.descendants((node, pos) => {
+        if (node.type.name === 'skillToken') {
+          found = pos
+          return false
+        }
+        return true
+      })
+      return found
+    })()
+    expect(tokenPos).toBeGreaterThanOrEqual(0)
+    editor
+      .chain()
+      .focus()
+      .setNodeSelection(tokenPos)
+      .deleteSelection()
+      .run()
+
+    const paraAfter = (editor.getJSON().content as Node[])[0]
+    const hasZeroWidth = (paraAfter.content ?? []).some((n) => n.text?.includes('​'))
+    expect(hasZeroWidth).toBe(false)
+    editor.destroy()
+  })
 })
