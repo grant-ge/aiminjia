@@ -151,23 +151,11 @@ impl NetworkProbe {
             }
 
             let snap = self.snapshot.lock().unwrap().clone();
-            let desired_period = match snap.as_ref().map(|s| s.status) {
-                Some(NetworkStatus::Offline) => {
-                    consecutive_success = 0;
-                    OFFLINE_INTERVAL_SECS
-                }
-                Some(NetworkStatus::Online) | Some(NetworkStatus::ServerDegraded) => {
-                    consecutive_success = consecutive_success.saturating_add(1);
-                    if current_period == OFFLINE_INTERVAL_SECS
-                        && consecutive_success >= RECOVERY_SUCCESS_THRESHOLD
-                    {
-                        ONLINE_INTERVAL_SECS
-                    } else {
-                        current_period
-                    }
-                }
-                None => current_period,
-            };
+            let desired_period = next_interval_period(
+                snap.as_ref().map(|s| s.status),
+                current_period,
+                &mut consecutive_success,
+            );
             if desired_period != current_period {
                 current_period = desired_period;
                 current_interval = tokio::time::interval_at(
@@ -282,6 +270,39 @@ impl NetworkProbe {
     }
 }
 
+// ── pure helpers ─────────────────────────────────────────────────────────
+
+/// Decide the next probe period from the last observed status.
+///
+/// - `Offline`  → reset `consecutive_success` to 0, return `OFFLINE_INTERVAL_SECS` (10 s)
+/// - `Online` / `ServerDegraded` → increment counter; if we *were* in the offline
+///   fast-poll window and have reached `RECOVERY_SUCCESS_THRESHOLD` consecutive
+///   successes, promote back to `ONLINE_INTERVAL_SECS` (30 s)
+/// - `None`   → leave everything unchanged
+pub(crate) fn next_interval_period(
+    status: Option<NetworkStatus>,
+    current_period: u64,
+    consecutive_success: &mut u32,
+) -> u64 {
+    match status {
+        Some(NetworkStatus::Offline) => {
+            *consecutive_success = 0;
+            OFFLINE_INTERVAL_SECS
+        }
+        Some(NetworkStatus::Online) | Some(NetworkStatus::ServerDegraded) => {
+            *consecutive_success = consecutive_success.saturating_add(1);
+            if current_period == OFFLINE_INTERVAL_SECS
+                && *consecutive_success >= RECOVERY_SUCCESS_THRESHOLD
+            {
+                ONLINE_INTERVAL_SECS
+            } else {
+                current_period
+            }
+        }
+        None => current_period,
+    }
+}
+
 // ── tests ─────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -322,5 +343,91 @@ mod tests {
     fn test_502_is_server_degraded() {
         let (status, _) = classify_response(&ok_response(StatusCode::BAD_GATEWAY));
         assert_eq!(status, NetworkStatus::ServerDegraded);
+    }
+
+    // ── force probe throttle ───────────────────────────────────────────────
+
+    #[test]
+    fn test_force_probe_throttles_within_1_second() {
+        use crate::transport::testing::NoopRuntimeHost;
+
+        let host: Arc<dyn crate::transport::runtime_host::RuntimeHost> =
+            Arc::new(NoopRuntimeHost::default());
+        let probe = NetworkProbe::new_for_test(host, "http://127.0.0.1:1".to_string());
+
+        // Force-set last to "just now" so the next call is throttled.
+        *probe.last_force_at_ms.lock().unwrap() = Utc::now().timestamp_millis();
+        assert_eq!(probe.request_force_probe(), false, "should be throttled");
+
+        // Set last to 2s ago — should succeed.
+        *probe.last_force_at_ms.lock().unwrap() = Utc::now().timestamp_millis() - 2000;
+        assert_eq!(
+            probe.request_force_probe(),
+            true,
+            "after throttle window should succeed"
+        );
+
+        // Immediately after — throttled again.
+        assert_eq!(
+            probe.request_force_probe(),
+            false,
+            "back-to-back call should be throttled"
+        );
+    }
+
+    // ── interval backoff / recovery ────────────────────────────────────────
+
+    #[test]
+    fn test_next_interval_offline_resets_to_10s() {
+        let mut succ = 5u32;
+        let period = next_interval_period(
+            Some(NetworkStatus::Offline),
+            ONLINE_INTERVAL_SECS,
+            &mut succ,
+        );
+        assert_eq!(period, OFFLINE_INTERVAL_SECS, "offline → 10 s");
+        assert_eq!(succ, 0, "offline must reset consecutive_success");
+    }
+
+    #[test]
+    fn test_next_interval_recovers_after_3_successes() {
+        let mut succ = 0u32;
+        let mut current = OFFLINE_INTERVAL_SECS;
+
+        // 1st success: stay in offline period
+        current = next_interval_period(Some(NetworkStatus::Online), current, &mut succ);
+        assert_eq!(current, OFFLINE_INTERVAL_SECS, "1st success still 10s");
+        assert_eq!(succ, 1);
+
+        // 2nd success
+        current = next_interval_period(Some(NetworkStatus::Online), current, &mut succ);
+        assert_eq!(current, OFFLINE_INTERVAL_SECS, "2nd success still 10s");
+        assert_eq!(succ, 2);
+
+        // 3rd success: recover to 30s
+        current = next_interval_period(Some(NetworkStatus::Online), current, &mut succ);
+        assert_eq!(current, ONLINE_INTERVAL_SECS, "3rd success recovers to 30s");
+        assert_eq!(succ, 3);
+    }
+
+    #[test]
+    fn test_next_interval_server_degraded_counts_as_success() {
+        let mut succ = 2u32;
+        let period = next_interval_period(
+            Some(NetworkStatus::ServerDegraded),
+            OFFLINE_INTERVAL_SECS,
+            &mut succ,
+        );
+        // 3rd "success" (degraded counts) recovers
+        assert_eq!(period, ONLINE_INTERVAL_SECS, "degraded 3rd count recovers");
+        assert_eq!(succ, 3);
+    }
+
+    #[test]
+    fn test_next_interval_unknown_holds_period() {
+        let mut succ = 5u32;
+        let period = next_interval_period(None, ONLINE_INTERVAL_SECS, &mut succ);
+        assert_eq!(period, ONLINE_INTERVAL_SECS, "None holds current period");
+        assert_eq!(succ, 5, "None must not touch counter");
     }
 }
