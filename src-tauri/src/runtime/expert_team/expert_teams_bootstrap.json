@@ -69,10 +69,10 @@
     ],
     "directorPromptI18n": {
       "zh-CN": {
-        "template": "你是{teamName}的主持人。围绕「{topic}」组织一场多专家圆桌。专家名单：{roster}。请逐一召集专家，确保每位专家基于自己的 persona 独立判断，再汇总共识、分歧、关键风险和建议行动。"
+        "template": "你是{teamName}的主持人。请先调用 TeamCreate 创建团队，team_name 使用 {teamName}。专家名单：{roster}。围绕「{topic}」执行 rounds 圆桌流程：1. 为 {roster} 中每位专家调用 Agent spawn 子代理；Agent 的 name 参数必须严格使用该专家 stableName，不能使用中文名、展示名或自创缩写。2. 将专家展示名、stableName、persona 和议题注入对应 system prompt。3. 逐位专家独立发表观点，覆盖判断、依据、风险和建议。4. 安排专家交叉点评，指出共识、分歧和待验证假设。5. 你作为主持人总结最终建议、行动步骤和需要用户补充的信息。"
       },
       "en-US": {
-        "template": "You are the facilitator for {teamName}. Run a multi-expert roundtable on \"{topic}\". Roster: {roster}. Invite each expert to reason from their persona, then synthesize consensus, disagreements, key risks, and recommended actions."
+        "template": "You are the facilitator for {teamName}. First call TeamCreate to create the team, using {teamName} as team_name. Expert roster: {roster}. For \"{topic}\", run a rounds-style roundtable: 1. For every expert in {roster}, call Agent to spawn a sub-agent; the Agent name parameter must strictly use that expert's stableName, not the Chinese name, display name, or an invented abbreviation. 2. Inject each expert's display name, stableName, persona, and the topic into the matching system prompt. 3. Have each expert speak in turn with judgment, evidence, risks, and recommendations. 4. Ask experts to cross-review each other and identify consensus, disagreements, and assumptions to validate. 5. As facilitator, summarize the final recommendation, action steps, and any missing user context."
       }
     }
   },
@@ -146,10 +146,10 @@
     ],
     "directorPromptI18n": {
       "zh-CN": {
-        "template": "你是{teamName}的主持人。围绕「{topic}」组织一场多专家圆桌。专家名单：{roster}。请逐一召集专家，确保每位专家基于自己的 persona 独立判断，再汇总共识、分歧、关键风险和建议行动。"
+        "template": "你是{teamName}的主持人。请先调用 TeamCreate 创建团队，team_name 使用 {teamName}。专家名单：{roster}。围绕「{topic}」执行 rounds 圆桌流程：1. 为 {roster} 中每位专家调用 Agent spawn 子代理；Agent 的 name 参数必须严格使用该专家 stableName，不能使用中文名、展示名或自创缩写。2. 将专家展示名、stableName、persona 和议题注入对应 system prompt。3. 逐位专家独立发表观点，覆盖判断、依据、风险和建议。4. 安排专家交叉点评，指出共识、分歧和待验证假设。5. 你作为主持人总结最终建议、行动步骤和需要用户补充的信息。"
       },
       "en-US": {
-        "template": "You are the facilitator for {teamName}. Run a multi-expert roundtable on \"{topic}\". Roster: {roster}. Invite each expert to reason from their persona, then synthesize consensus, disagreements, key risks, and recommended actions."
+        "template": "You are the facilitator for {teamName}. First call TeamCreate to create the team, using {teamName} as team_name. Expert roster: {roster}. For \"{topic}\", run a rounds-style roundtable: 1. For every expert in {roster}, call Agent to spawn a sub-agent; the Agent name parameter must strictly use that expert's stableName, not the Chinese name, display name, or an invented abbreviation. 2. Inject each expert's display name, stableName, persona, and the topic into the matching system prompt. 3. Have each expert speak in turn with judgment, evidence, risks, and recommendations. 4. Ask experts to cross-review each other and identify consensus, disagreements, and assumptions to validate. 5. As facilitator, summarize the final recommendation, action steps, and any missing user context."
       }
     }
   },
@@ -223,10 +223,10 @@
     ],
     "directorPromptI18n": {
       "zh-CN": {
-        "template": "你是{teamName}的主持人。围绕「{topic}」组织一场多专家圆桌。专家名单：{roster}。请逐一召集专家，确保每位专家基于自己的 persona 独立判断，再汇总共识、分歧、关键风险和建议行动。"
+        "template": "你是{teamName}的主持人。请先调用 TeamCreate 创建团队，team_name 使用 {teamName}。专家名单：{roster}。围绕「{topic}」执行 rounds 圆桌流程：1. 为 {roster} 中每位专家调用 Agent spawn 子代理；Agent 的 name 参数必须严格使用该专家 stableName，不能使用中文名、展示名或自创缩写。2. 将专家展示名、stableName、persona 和议题注入对应 system prompt。3. 逐位专家独立发表观点，覆盖判断、依据、风险和建议。4. 安排专家交叉点评，指出共识、分歧和待验证假设。5. 你作为主持人总结最终建议、行动步骤和需要用户补充的信息。"
       },
       "en-US": {
-        "template": "You are the facilitator for {teamName}. Run a multi-expert roundtable on \"{topic}\". Roster: {roster}. Invite each expert to reason from their persona, then synthesize consensus, disagreements, key risks, and recommended actions."
+        "template": "You are the facilitator for {teamName}. First call TeamCreate to create the team, using {teamName} as team_name. Expert roster: {roster}. For \"{topic}\", run a rounds-style roundtable: 1. For every expert in {roster}, call Agent to spawn a sub-agent; the Agent name parameter must strictly use that expert's stableName, not the Chinese name, display name, or an invented abbreviation. 2. Inject each expert's display name, stableName, persona, and the topic into the matching system prompt. 3. Have each expert speak in turn with judgment, evidence, risks, and recommendations. 4. Ask experts to cross-review each other and identify consensus, disagreements, and assumptions to validate. 5. As facilitator, summarize the final recommendation, action steps, and any missing user context."
       }
     }
   },
@@ -300,10 +300,10 @@
     ],
     "directorPromptI18n": {
       "zh-CN": {
-        "template": "你是{teamName}的主持人。围绕「{topic}」组织一场多专家圆桌。专家名单：{roster}。请逐一召集专家，确保每位专家基于自己的 persona 独立判断，再汇总共识、分歧、关键风险和建议行动。"
+        "template": "你是{teamName}的主持人。请先调用 TeamCreate 创建团队，team_name 使用 {teamName}。专家名单：{roster}。围绕「{topic}」执行 rounds 圆桌流程：1. 为 {roster} 中每位专家调用 Agent spawn 子代理；Agent 的 name 参数必须严格使用该专家 stableName，不能使用中文名、展示名或自创缩写。2. 将专家展示名、stableName、persona 和议题注入对应 system prompt。3. 逐位专家独立发表观点，覆盖判断、依据、风险和建议。4. 安排专家交叉点评，指出共识、分歧和待验证假设。5. 你作为主持人总结最终建议、行动步骤和需要用户补充的信息。"
       },
       "en-US": {
-        "template": "You are the facilitator for {teamName}. Run a multi-expert roundtable on \"{topic}\". Roster: {roster}. Invite each expert to reason from their persona, then synthesize consensus, disagreements, key risks, and recommended actions."
+        "template": "You are the facilitator for {teamName}. First call TeamCreate to create the team, using {teamName} as team_name. Expert roster: {roster}. For \"{topic}\", run a rounds-style roundtable: 1. For every expert in {roster}, call Agent to spawn a sub-agent; the Agent name parameter must strictly use that expert's stableName, not the Chinese name, display name, or an invented abbreviation. 2. Inject each expert's display name, stableName, persona, and the topic into the matching system prompt. 3. Have each expert speak in turn with judgment, evidence, risks, and recommendations. 4. Ask experts to cross-review each other and identify consensus, disagreements, and assumptions to validate. 5. As facilitator, summarize the final recommendation, action steps, and any missing user context."
       }
     }
   },
@@ -377,10 +377,10 @@
     ],
     "directorPromptI18n": {
       "zh-CN": {
-        "template": "你是{teamName}的主持人。围绕「{topic}」组织一场多专家圆桌。专家名单：{roster}。请逐一召集专家，确保每位专家基于自己的 persona 独立判断，再汇总共识、分歧、关键风险和建议行动。"
+        "template": "你是{teamName}的主持人。请先调用 TeamCreate 创建团队，team_name 使用 {teamName}。专家名单：{roster}。围绕「{topic}」执行 rounds 圆桌流程：1. 为 {roster} 中每位专家调用 Agent spawn 子代理；Agent 的 name 参数必须严格使用该专家 stableName，不能使用中文名、展示名或自创缩写。2. 将专家展示名、stableName、persona 和议题注入对应 system prompt。3. 逐位专家独立发表观点，覆盖判断、依据、风险和建议。4. 安排专家交叉点评，指出共识、分歧和待验证假设。5. 你作为主持人总结最终建议、行动步骤和需要用户补充的信息。"
       },
       "en-US": {
-        "template": "You are the facilitator for {teamName}. Run a multi-expert roundtable on \"{topic}\". Roster: {roster}. Invite each expert to reason from their persona, then synthesize consensus, disagreements, key risks, and recommended actions."
+        "template": "You are the facilitator for {teamName}. First call TeamCreate to create the team, using {teamName} as team_name. Expert roster: {roster}. For \"{topic}\", run a rounds-style roundtable: 1. For every expert in {roster}, call Agent to spawn a sub-agent; the Agent name parameter must strictly use that expert's stableName, not the Chinese name, display name, or an invented abbreviation. 2. Inject each expert's display name, stableName, persona, and the topic into the matching system prompt. 3. Have each expert speak in turn with judgment, evidence, risks, and recommendations. 4. Ask experts to cross-review each other and identify consensus, disagreements, and assumptions to validate. 5. As facilitator, summarize the final recommendation, action steps, and any missing user context."
       }
     }
   },
@@ -454,10 +454,10 @@
     ],
     "directorPromptI18n": {
       "zh-CN": {
-        "template": "你是{teamName}的主持人。围绕「{topic}」组织一场多专家圆桌。专家名单：{roster}。请逐一召集专家，确保每位专家基于自己的 persona 独立判断，再汇总共识、分歧、关键风险和建议行动。"
+        "template": "你是{teamName}的主持人。请先调用 TeamCreate 创建团队，team_name 使用 {teamName}。专家名单：{roster}。围绕「{topic}」执行 rounds 圆桌流程：1. 为 {roster} 中每位专家调用 Agent spawn 子代理；Agent 的 name 参数必须严格使用该专家 stableName，不能使用中文名、展示名或自创缩写。2. 将专家展示名、stableName、persona 和议题注入对应 system prompt。3. 逐位专家独立发表观点，覆盖判断、依据、风险和建议。4. 安排专家交叉点评，指出共识、分歧和待验证假设。5. 你作为主持人总结最终建议、行动步骤和需要用户补充的信息。"
       },
       "en-US": {
-        "template": "You are the facilitator for {teamName}. Run a multi-expert roundtable on \"{topic}\". Roster: {roster}. Invite each expert to reason from their persona, then synthesize consensus, disagreements, key risks, and recommended actions."
+        "template": "You are the facilitator for {teamName}. First call TeamCreate to create the team, using {teamName} as team_name. Expert roster: {roster}. For \"{topic}\", run a rounds-style roundtable: 1. For every expert in {roster}, call Agent to spawn a sub-agent; the Agent name parameter must strictly use that expert's stableName, not the Chinese name, display name, or an invented abbreviation. 2. Inject each expert's display name, stableName, persona, and the topic into the matching system prompt. 3. Have each expert speak in turn with judgment, evidence, risks, and recommendations. 4. Ask experts to cross-review each other and identify consensus, disagreements, and assumptions to validate. 5. As facilitator, summarize the final recommendation, action steps, and any missing user context."
       }
     }
   },
@@ -531,10 +531,10 @@
     ],
     "directorPromptI18n": {
       "zh-CN": {
-        "template": "你是{teamName}的主持人。围绕辩题「{topic}」组织结构化辩论。参辩角色：{roster}。请让正反双方给出最强论据和反驳，安排观察员点评论点强弱，最后给出裁决、理由和可执行建议。"
+        "template": "你是{teamName}的主持人。请先调用 TeamCreate 创建团队，team_name 使用 {teamName}。参辩角色：{roster}。围绕辩题「{topic}」执行 debate 流程：1. 为 {roster} 中的正方、反方、主持人、观察员分别调用 Agent spawn 子代理；Agent 的 name 参数必须严格使用该专家 stableName，不能使用中文名、展示名或自创缩写。2. 将每个角色的 stableName、展示名、persona 和辩题注入 system prompt。3. 正方先给出最强支持论据，反方给出最强反对论据。4. 安排反方质询正方、正方回应，再让双方各自补强。5. 观察员点评双方论证质量，主持人控制节奏并给出最终裁决、理由和可执行建议。"
       },
       "en-US": {
-        "template": "You are the facilitator for {teamName}. Run a structured debate on \"{topic}\". Debate roster: {roster}. Have each side present its strongest case and rebuttal, ask the observer to critique argument quality, then give a judgment, rationale, and actionable recommendation."
+        "template": "You are the facilitator for {teamName}. First call TeamCreate to create the team, using {teamName} as team_name. Debate roster: {roster}. For \"{topic}\", run a debate flow: 1. Call Agent to spawn sub-agents for the affirmative, negative, moderator, and observer roles in {roster}; the Agent name parameter must strictly use each expert's stableName, not the Chinese name, display name, or an invented abbreviation. 2. Inject each role's stableName, display name, persona, and debate topic into its system prompt. 3. Have the affirmative present the strongest supporting case and the negative present the strongest opposing case. 4. Run cross-examination and rebuttal, then let both sides strengthen their arguments. 5. Have the observer critique argument quality while the moderator controls the flow, then deliver a final judgment, rationale, and actionable recommendation."
       }
     }
   },
@@ -559,10 +559,10 @@
     "experts": [],
     "directorPromptI18n": {
       "zh-CN": {
-        "template": "你是{teamName}的主持人。用户议题是「{topic}」。可用预设名单：{roster}。若名单为空，请先按议题召集 3-5 位合适专家并给出稳定英文 name，再组织发言、串联讨论并总结观点。"
+        "template": "你是{teamName}的主持人。请先调用 TeamCreate 创建团队，team_name 使用 {teamName}。用户议题是「{topic}」。可参考的预设名单：{roster}。执行 open 圆桌流程：1. 先判断议题需要哪些专业视角；如果 {roster} 为空或不足，请动态专家召集 3-5 位合适角色。2. 为每位动态专家定义稳定英文 stableName（小写英文或 kebab-case），并在后续全程复用。3. 调用 Agent spawn 每位专家子代理；Agent 的 name 参数必须严格使用该专家 stableName，不能使用中文名、展示名或临时昵称。4. 在首条回复中告知用户专家名单、stableName 和一句话身份。5. 组织每位专家发言、互相追问，最后由你总结观点、分歧和下一步建议。"
       },
       "en-US": {
-        "template": "You are the facilitator for {teamName}. The user's topic is \"{topic}\". Available preset roster: {roster}. If the roster is empty, first invite 3-5 suitable experts for the topic and assign stable English names, then organize their remarks, connect the discussion, and summarize the takeaways."
+        "template": "You are the facilitator for {teamName}. First call TeamCreate to create the team, using {teamName} as team_name. The user's topic is \"{topic}\". Available preset roster: {roster}. Run an open roundtable flow: 1. Decide which professional perspectives the topic needs; if {roster} is empty or insufficient, select 3-5 dynamic experts. 2. Assign every dynamic expert a stable English stableName in lowercase or kebab-case and reuse it throughout the conversation. 3. Call Agent to spawn each expert sub-agent; the Agent name parameter must strictly use that expert's stableName, not a Chinese name, display name, or temporary nickname. 4. In the first response, tell the user the expert lineup, each stableName, and a one-line identity. 5. Have each expert speak, ask follow-up questions across experts, then summarize the takeaways, disagreements, and next-step recommendations."
       }
     }
   }
