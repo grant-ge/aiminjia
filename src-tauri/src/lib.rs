@@ -921,6 +921,16 @@ pub fn run() {
                 });
             }
 
+            // --- Network probe (spec docs/superpowers/specs/2026-05-26-network-detection-design.md) ---
+            {
+                let probe_host: Arc<dyn crate::transport::runtime_host::RuntimeHost> = Arc::new(
+                    crate::transport::tauri_runtime_host::TauriRuntimeHost::new(app.handle().clone()),
+                );
+                let network_probe = crate::runtime::network::probe::NetworkProbe::new(probe_host);
+                app.manage(network_probe.clone());
+                network_probe.spawn();
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -1125,6 +1135,9 @@ pub fn run() {
             updater::commands::updater_clear_cache,
             updater::commands::updater_install_cached,
             updater::commands::updater_platform_key,
+            // Network status commands (spec docs/superpowers/specs/2026-05-26-network-detection-design.md)
+            transport::tauri_commands::network::network_get_status,
+            transport::tauri_commands::network::network_force_probe,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
