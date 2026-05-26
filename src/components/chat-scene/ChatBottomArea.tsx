@@ -23,7 +23,7 @@ import { useUiStore } from '@/stores/uiStore'
 import { pendingSnapshotForSession } from '@/lib/tauri'
 import { PendingChips } from '@/features/chat/PendingChips'
 import { ensureExpertTeam } from '@/features/expert-teams/expertTeamRegistry'
-import { getExpertTeam as findTeam } from '@/features/expert-teams/teams'
+import { getCachedExpertTeam } from '@/features/expert-teams/useExpertTeamCatalog'
 import { buildDirectorPrompt } from '@/features/expert-teams/buildDirectorPrompt'
 
 function BottomTips() {
@@ -129,7 +129,7 @@ export function ChatBottomArea({
     let markdownToSend = payload.markdown
     if (activeConversationId && messageCount === 0) {
       const teamId = await ensureExpertTeam(activeConversationId)
-      const team = teamId ? findTeam(teamId) : undefined
+      const team = teamId ? getCachedExpertTeam(teamId) : undefined
       if (team) {
         markdownToSend = buildDirectorPrompt(team, markdownToSend, i18n.language)
       }

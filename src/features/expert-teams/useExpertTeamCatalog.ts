@@ -5,6 +5,16 @@ import { BUILTIN_EXPERT_TEAMS, snapshotToExpertTeam, type ExpertTeam } from './t
 
 export type ExpertTeamCatalogSource = 'remote' | 'bootstrap'
 
+let catalogById = new Map(BUILTIN_EXPERT_TEAMS.map((team) => [team.id, team]))
+
+export function seedExpertTeamCatalog(teams: ExpertTeam[]) {
+  catalogById = new Map(teams.map((team) => [team.id, team]))
+}
+
+export function getCachedExpertTeam(teamId: string): ExpertTeam | undefined {
+  return catalogById.get(teamId)
+}
+
 export function useExpertTeamCatalog() {
   const [teams, setTeams] = useState<ExpertTeam[]>(BUILTIN_EXPERT_TEAMS)
   const [source, setSource] = useState<ExpertTeamCatalogSource>('bootstrap')
@@ -16,7 +26,9 @@ export function useExpertTeamCatalog() {
       try {
         const snapshots = await expertTeamTemplateCatalog()
         if (!cancelled && snapshots.length > 0) {
-          setTeams(snapshots.map(snapshotToExpertTeam))
+          const remoteTeams = snapshots.map(snapshotToExpertTeam)
+          seedExpertTeamCatalog(remoteTeams)
+          setTeams(remoteTeams)
           setSource('remote')
         }
       } catch (err) {

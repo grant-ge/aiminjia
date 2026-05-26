@@ -5,6 +5,9 @@ import userEvent from '@testing-library/user-event'
 import { ChatBottomArea } from '../ChatBottomArea'
 import { useChatStore } from '@/stores/chatStore'
 import { useSkillStore } from '@/stores/skillStore'
+import { setExpertTeam, __resetExpertTeamRegistryCacheForTesting } from '@/features/expert-teams/expertTeamRegistry'
+import { seedExpertTeamCatalog } from '@/features/expert-teams/useExpertTeamCatalog'
+import { EXPERT_TEAMS, type ExpertTeam } from '@/features/expert-teams/teams'
 
 vi.mock('@tiptap/react', async (importOriginal) => {
   const mod = await importOriginal<typeof import('@tiptap/react')>()
@@ -36,15 +39,18 @@ vi.mock('@/hooks/useChatAttachments', () => ({
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) => key,
+    i18n: { language: 'zh-CN' },
   }),
 }))
 
 beforeEach(() => {
+  __resetExpertTeamRegistryCacheForTesting()
+  seedExpertTeamCatalog(EXPERT_TEAMS)
   mockSendUserMessage.mockReset().mockResolvedValue(undefined)
   mockStopCurrentStream.mockReset()
   mockPickAttachments.mockReset().mockResolvedValue([])
   mockIsStreaming = false
-  useChatStore.setState({ activeConversationId: 'conv-1' })
+  useChatStore.setState({ activeConversationId: 'conv-1', messages: [], conversations: [] })
   useSkillStore.setState({
     skills: [{
       id: 'dingtalk-workspace',
@@ -150,5 +156,67 @@ describe('ChatBottomArea', () => {
     const editor = document.querySelector('.ProseMirror') as HTMLElement
     fireEvent.keyDown(editor, { key: 'Enter', code: 'Enter' })
     expect(mockSendUserMessage).not.toHaveBeenCalled()
+  })
+
+  it('wraps the first message with a cached remote expert team snapshot prompt', async () => {
+    const remoteTeam: ExpertTeam = {
+      id: 'remote-growth-council',
+      name: 'Remote Growth Council',
+      emoji: 'R',
+      tagline: 'Remote-only team',
+      experts: [
+        {
+          name: 'Growth Lead',
+          agentName: 'growth-lead',
+          persona: 'Finds expansion levers',
+          emoji: 'G',
+        },
+      ],
+      examples: [],
+      composerPlaceholder: '',
+      facilitationStyle: 'rounds',
+      snapshot: {
+        teamId: 'remote-growth-council',
+        version: '1',
+        facilitationStyle: 'rounds',
+        displayI18n: {
+          'zh-CN': { name: 'Remote Growth Council' },
+        },
+        experts: [],
+        directorPromptI18n: {
+          'zh-CN': {
+            template: 'REMOTE SNAPSHOT {teamName}: {topic}\n{roster}',
+          },
+        },
+      },
+    }
+    seedExpertTeamCatalog([...EXPERT_TEAMS, remoteTeam])
+    useChatStore.setState({
+      activeConversationId: 'conv-remote',
+      messages: [],
+      conversations: [{
+        id: 'conv-remote',
+        title: 'Remote Growth Council',
+        createdAt: '2026-05-26T00:00:00.000Z',
+        updatedAt: '2026-05-26T00:00:00.000Z',
+        isArchived: false,
+        kind: 'expertTeam',
+        sourceLabel: remoteTeam.name,
+      }],
+    })
+    await setExpertTeam('conv-remote', remoteTeam.id)
+
+    const user = userEvent.setup()
+    render(<ChatBottomArea />)
+    await waitFor(() => expect(document.querySelector('.ProseMirror')).toBeTruthy())
+    const editor = document.querySelector('.ProseMirror') as HTMLElement
+    await user.click(editor)
+    await user.type(editor, 'market expansion')
+    fireEvent.keyDown(editor, { key: 'Enter', code: 'Enter' })
+
+    await waitFor(() => expect(mockSendUserMessage).toHaveBeenCalledTimes(1))
+    expect(mockSendUserMessage.mock.calls[0][0]).toContain(
+      'REMOTE SNAPSHOT Remote Growth Council: market expansion',
+    )
   })
 })
