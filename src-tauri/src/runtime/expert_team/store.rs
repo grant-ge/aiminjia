@@ -70,6 +70,31 @@ pub fn write_cache(cache_dir: &Path, snapshot: &ExpertTeamSnapshot) -> Result<Pa
     Ok(path)
 }
 
+pub fn conversation_template_dir(conv_dir: &Path) -> PathBuf {
+    conv_dir.join("expert-team")
+}
+
+pub fn conversation_template_path(conv_dir: &Path) -> PathBuf {
+    conversation_template_dir(conv_dir).join("template.json")
+}
+
+pub fn freeze_conversation_snapshot(conv_dir: &Path, snapshot: &ExpertTeamSnapshot) -> Result<()> {
+    let dir = conversation_template_dir(conv_dir);
+    fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
+    let json = serde_json::to_vec_pretty(snapshot)?;
+    write_atomic(&conversation_template_path(conv_dir), &json)?;
+    Ok(())
+}
+
+pub fn read_conversation_snapshot(conv_dir: &Path) -> Result<Option<ExpertTeamSnapshot>> {
+    let path = conversation_template_path(conv_dir);
+    if !path.is_file() {
+        return Ok(None);
+    }
+    let bytes = fs::read(&path).with_context(|| format!("reading {}", path.display()))?;
+    Ok(Some(serde_json::from_slice(&bytes)?))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -178,5 +203,46 @@ mod tests {
         let parsed: ExpertTeamSnapshot =
             serde_json::from_str(&content).expect("cache file should parse");
         assert_eq!(parsed, snapshot);
+    }
+
+    fn minimal_snapshot() -> ExpertTeamSnapshot {
+        ExpertTeamSnapshot {
+            team_id: "strategy".to_string(),
+            version: "1.0.0".to_string(),
+            facilitation_style: "fixed".to_string(),
+            display_i18n: BTreeMap::new(),
+            experts: Vec::new(),
+            director_prompt_i18n: BTreeMap::new(),
+        }
+    }
+
+    #[test]
+    fn freeze_snapshot_writes_template_json() {
+        let tmp = tempfile::tempdir().expect("tempdir should be created");
+        let snapshot = minimal_snapshot();
+
+        freeze_conversation_snapshot(tmp.path(), &snapshot)
+            .expect("conversation snapshot should freeze");
+
+        assert!(tmp.path().join("expert-team/template.json").is_file());
+    }
+
+    #[test]
+    fn read_conversation_snapshot_returns_none_before_freeze_and_snapshot_after() {
+        let tmp = tempfile::tempdir().expect("tempdir should be created");
+        let snapshot = minimal_snapshot();
+
+        assert_eq!(
+            read_conversation_snapshot(tmp.path()).expect("read before freeze should succeed"),
+            None
+        );
+
+        freeze_conversation_snapshot(tmp.path(), &snapshot)
+            .expect("conversation snapshot should freeze");
+
+        assert_eq!(
+            read_conversation_snapshot(tmp.path()).expect("read after freeze should succeed"),
+            Some(snapshot)
+        );
     }
 }

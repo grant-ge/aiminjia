@@ -1,8 +1,10 @@
 use crate::storage::file_manager::FileManager;
+use crate::storage::{CurrentUserStorage, UserScopedPathResolver};
 use std::path::Path;
 use std::sync::Arc;
 use tauri::State;
 
+use crate::runtime::expert_team::store::{bootstrap_teams, freeze_conversation_snapshot};
 use crate::telemetry::{record_diagnostic, DiagnosticEvent, DiagnosticSource};
 
 fn record_command_event(
@@ -378,13 +380,59 @@ pub async fn set_conversation_pinned(
 #[tauri::command]
 pub async fn set_conversation_expert_team(
     adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
+    current_user: State<'_, Arc<CurrentUserStorage>>,
     conversation_id: String,
     expert_team_id: String,
     team_label: String,
 ) -> Result<(), String> {
     adapter
-        .set_conversation_expert_team(conversation_id, expert_team_id, team_label)
-        .await
+        .set_conversation_expert_team(conversation_id.clone(), expert_team_id.clone(), team_label)
+        .await?;
+
+    let paths = match current_user.require_paths() {
+        Ok(paths) => paths,
+        Err(err) => {
+            log::warn!(
+                "[expert-team] freeze snapshot skipped for conv={}: {}",
+                conversation_id,
+                err
+            );
+            return Ok(());
+        }
+    };
+    let conv_dir = paths.conversations_dir().join(&conversation_id);
+
+    match bootstrap_teams() {
+        Ok(teams) => {
+            if let Some(snapshot) = teams
+                .into_iter()
+                .find(|team| team.team_id == expert_team_id)
+            {
+                if let Err(err) = freeze_conversation_snapshot(&conv_dir, &snapshot) {
+                    log::warn!(
+                        "[expert-team] freeze snapshot failed for conv={}: {}",
+                        conversation_id,
+                        err
+                    );
+                }
+            } else {
+                log::warn!(
+                    "[expert-team] freeze snapshot skipped for conv={}: expert team {} not found",
+                    conversation_id,
+                    expert_team_id
+                );
+            }
+        }
+        Err(err) => {
+            log::warn!(
+                "[expert-team] freeze snapshot failed for conv={}: {}",
+                conversation_id,
+                err
+            );
+        }
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
