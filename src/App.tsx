@@ -20,6 +20,7 @@ import { ExpertTeamsPage } from '@/features/expert-teams/ExpertTeamsPage'
 import { SchedulesPage } from '@/features/schedules/SchedulesPage'
 import { SkillCenterPage } from '@/features/skill-center/SkillCenterPage'
 import { SkillDetailPage } from '@/features/skill-detail/SkillDetailPage'
+import { useNetworkStatus } from '@/hooks/useNetworkStatus'
 import { useStreaming } from '@/hooks/useStreaming'
 import { useUpdater } from '@/hooks/useUpdater'
 import { useDragDropListener } from '@/hooks/useDragDropListener'
@@ -154,6 +155,7 @@ function AppShell() {
 
 function App() {
   useStreaming()
+  useNetworkStatus()
   useDragDropListener()
   usePendingEventListener()
   const { t } = useTranslation()
