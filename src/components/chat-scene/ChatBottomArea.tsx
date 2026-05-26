@@ -52,7 +52,7 @@ export function ChatBottomArea({
   /** When set, overrides the default i18n placeholder. Used by expert-teams. */
   placeholderOverride?: string
 }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const composerRef = useRef<RichComposerHandle>(null)
   const activeConversationId = useChatStore((s) => s.activeConversationId)
   const messageCount = useChatStore((s) => s.messages.length)
@@ -131,7 +131,7 @@ export function ChatBottomArea({
       const teamId = await ensureExpertTeam(activeConversationId)
       const team = teamId ? findTeam(teamId) : undefined
       if (team) {
-        markdownToSend = buildDirectorPrompt(team, markdownToSend)
+        markdownToSend = buildDirectorPrompt(team, markdownToSend, i18n.language)
       }
     }
     try {
@@ -144,7 +144,7 @@ export function ChatBottomArea({
       console.error('[ChatBottomArea] sendUserMessage failed:', err)
       throw err
     }
-  }, [sendUserMessage, activeConversationId, messageCount])
+  }, [sendUserMessage, activeConversationId, messageCount, i18n.language])
 
   const handlePickAttachments = useCallback(async () => {
     const results = await pickAttachments()

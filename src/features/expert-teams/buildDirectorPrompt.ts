@@ -11,7 +11,22 @@ function renderRoster(team: ExpertTeam): string {
 }
 
 /** Common spawn convention reminder shared by all facilitation styles. */
-const SPAWN_NAME_RULE = `**spawn 子代理时，name 参数必须严格使用 \`[name="..."]\` 中给定的值（如 ceo、cfo、analyst），不要自创翻译或缩写**。这是前端识别每位专家的依据；不一致��导致头像、消息归属错乱。`
+const SPAWN_NAME_RULE = `**spawn 子代理时，name 参数必须严格使用 \`[name="..."]\` 中给定的值（如 ceo、cfo、analyst），不要自创翻译或缩写**。这是前端识别每位专家的依据；不一致会导致头像、消息归属错乱。`
+
+function renderSnapshotPrompt(
+  team: ExpertTeam,
+  topic: string,
+  language?: string,
+): string | null {
+  const template =
+    team.snapshot?.directorPromptI18n?.[language === 'en-US' ? 'en-US' : 'zh-CN']
+      ?.template ?? team.snapshot?.directorPromptI18n?.['zh-CN']?.template
+  if (!template) return null
+  return template
+    .replaceAll('{teamName}', team.name)
+    .replaceAll('{topic}', topic)
+    .replaceAll('{roster}', renderRoster(team))
+}
 
 function rounds(team: ExpertTeam, topic: string): string {
   return `你现在的任务是为用户主持一场「${team.name}」圆桌讨论。
@@ -59,7 +74,7 @@ ${topic}
 # 执行要求
 1. 你是主持人（Lead）。先判断议题需要哪些专业视角：
    - 若用户已在议题里点名了具体角色，优先采用
-   - 否则你自行召集 3-5 位合适的专��
+   - 否则你自行召集 3-5 位合适的专家
 2. 在首条回复里**明确告知用户名单**（名字 + 一句话身份），让用户知晓召集到的专家
 3. 调用 TeamCreate 创建团队（team_name = "${team.name}"）
 4. 用 Agent 工具为每位专家 spawn 子代理，注入 name + persona
@@ -67,8 +82,15 @@ ${topic}
 6. 让每位专家就议题发言一轮（每人 200-400 字），你串场并最终汇总观点`
 }
 
-export function buildDirectorPrompt(team: ExpertTeam, userTopic: string): string {
+export function buildDirectorPrompt(
+  team: ExpertTeam,
+  userTopic: string,
+  language?: string,
+): string {
   const topic = userTopic.trim()
+  const fromSnapshot = renderSnapshotPrompt(team, topic, language)
+  if (fromSnapshot) return fromSnapshot
+
   switch (team.facilitationStyle) {
     case 'debate':
       return debate(team, topic)

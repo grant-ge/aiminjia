@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { EXPERT_TEAMS } from '../teams'
+import { EXPERT_TEAMS, type ExpertTeam } from '../teams'
 import { buildDirectorPrompt } from '../buildDirectorPrompt'
 
 describe('buildDirectorPrompt', () => {
@@ -29,5 +29,47 @@ describe('buildDirectorPrompt', () => {
     expect(prompt).toMatch(/每位专家.*一轮观点/)
     expect(prompt).toMatch(/TeamCreate/)
     expect(prompt).toMatch(/战略推演团/)
+  })
+
+  it('uses snapshot English director prompt when provided', () => {
+    const team: ExpertTeam = {
+      id: 'remote-strategy-simulation',
+      name: 'Strategy Simulation Team',
+      emoji: 'S',
+      tagline: 'Remote strategy team',
+      experts: [
+        {
+          name: 'Market Analyst',
+          agentName: 'market-analyst',
+          persona: 'Maps demand and competitive pressure',
+          emoji: 'A',
+        },
+      ],
+      examples: [],
+      composerPlaceholder: '',
+      facilitationStyle: 'rounds',
+      snapshot: {
+        teamId: 'remote-strategy-simulation',
+        version: '1',
+        facilitationStyle: 'rounds',
+        displayI18n: {
+          'en-US': { name: 'Strategy Simulation Team' },
+          'zh-CN': { name: '战略推演团' },
+        },
+        experts: [],
+        directorPromptI18n: {
+          'en-US': {
+            template: 'Facilitate {teamName} for {topic}\n\nRoster:\n{roster}',
+          },
+          'zh-CN': {
+            template: '请主持「{teamName}」讨论：{topic}\n\n{roster}',
+          },
+        },
+      },
+    }
+
+    const prompt = buildDirectorPrompt(team, 'market expansion', 'en-US')
+
+    expect(prompt).toContain('Facilitate Strategy Simulation Team for market expansion')
   })
 })

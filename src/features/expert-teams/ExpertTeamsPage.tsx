@@ -7,13 +7,15 @@ import { useChatStore } from '@/stores/chatStore'
 import { useUiStore } from '@/stores/uiStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { ExpertTeamCard } from './ExpertTeamCard'
-import { EXPERT_TEAMS, type ExpertTeamId, getExpertTeam } from './teams'
+import { type ExpertTeamId } from './teams'
 import { setExpertTeam } from './expertTeamRegistry'
+import { useExpertTeamCatalog } from './useExpertTeamCatalog'
 
 export function ExpertTeamsPage() {
   const setRoute = useUiStore((s) => s.setRoute)
   const setSidebarTab = useUiStore((s) => s.setSidebarTab)
   const pushNotification = useNotificationStore((s) => s.push)
+  const { teams } = useExpertTeamCatalog()
   // Synchronous guard: React state updates are batched, so two rapid clicks
   // can both pass a useState-based check before re-render. A ref flips
   // immediately and blocks the second call.
@@ -22,8 +24,11 @@ export function ExpertTeamsPage() {
   const handleStart = async (id: ExpertTeamId) => {
     if (busyRef.current) return
     busyRef.current = true
-    const team = getExpertTeam(id)
-    if (!team) return
+    const team = teams.find((t) => t.id === id)
+    if (!team) {
+      busyRef.current = false
+      return
+    }
     try {
       const conversationId = await createConversation()
       const title = `专家团: ${team.name}`
@@ -81,7 +86,7 @@ export function ExpertTeamsPage() {
       maxWidthClass="max-w-[1024px]"
     >
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        {EXPERT_TEAMS.map((team) => (
+        {teams.map((team) => (
           <ExpertTeamCard key={team.id} team={team} onStart={handleStart} />
         ))}
       </div>
