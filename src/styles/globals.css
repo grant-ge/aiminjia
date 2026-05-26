@@ -283,6 +283,21 @@ body {
 
 .ProseMirror {
   caret-color: rgba(var(--foreground-rgb), 0.55);
+  outline: none;
+}
+
+.ProseMirror p.is-editor-empty:first-child {
+  position: relative;
+}
+
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  color: var(--muted-foreground);
+  white-space: pre-wrap;
 }
 
 .ProseMirror .react-renderer.node-attachmentToken,
