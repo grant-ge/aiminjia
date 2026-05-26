@@ -11,16 +11,22 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Blocks, ChevronRight, CornerDownLeft, Search, Settings2 } from 'lucide-react'
+import { ChevronRight, CornerDownLeft, Search, Settings2 } from 'lucide-react'
 
+import { getSkillCategoryBg, getSkillIconComponent } from '@/components/skills/skillVisual'
 import { useUiStore } from '@/stores/uiStore'
 
 export interface SkillPopoverItem {
   id: string
   title: string
   subtitle: string
-  /** Emoji (preferred) or empty when unset — falls back to a lucide Blocks icon. */
-  icon?: string
+  /**
+   * SKILL.md frontmatter `icon` slug (kebab-case lucide name). When missing,
+   * falls back to a category-driven default (matches SkillCenter cards).
+   */
+  icon?: string | null
+  /** Skill category slug (`hr` / `finance` / ...). Drives the icon tile color. */
+  category?: string | null
 }
 
 interface SkillPopoverPanelProps {
@@ -50,10 +56,7 @@ export function SkillPopoverPanel({ items, onPick, onClose }: SkillPopoverPanelP
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    // Cap to 3 rows total — the popover is a quick picker, not a directory.
-    // Anything beyond the top 3 lives behind the "explore & manage skills" entry.
-    const LIMIT = 3
-    if (!q) return items.slice(0, LIMIT)
+    if (!q) return items
     // Rank: title prefix (0) > title contains (1) > subtitle (2); drop non-matches.
     const ranked: Array<{ item: SkillPopoverItem; rank: number }> = []
     for (const it of items) {
@@ -66,7 +69,7 @@ export function SkillPopoverPanel({ items, onPick, onClose }: SkillPopoverPanelP
       if (rank >= 0) ranked.push({ item: it, rank })
     }
     ranked.sort((a, b) => a.rank - b.rank)
-    return ranked.slice(0, LIMIT).map((r) => r.item)
+    return ranked.map((r) => r.item)
   }, [items, query])
 
   // Reset / clamp highlight whenever the filtered list shape changes (search input changes).
@@ -128,11 +131,11 @@ export function SkillPopoverPanel({ items, onPick, onClose }: SkillPopoverPanelP
           data-testid="skill-popover-search"
         />
       </header>
-      <div className="h-[120px] overflow-hidden">
+      <div className="max-h-[210px] overflow-y-auto">
         {filtered.length === 0 ? (
           <div
             data-testid="skill-popover-empty"
-            className="flex h-full flex-col items-center justify-center gap-1 px-4 text-center"
+            className="flex h-[120px] flex-col items-center justify-center gap-1 px-4 text-center"
           >
             <span className="text-sm font-medium text-foreground">
               {items.length === 0 ? t('skillPopover.emptyNoSkills') : t('skillPopover.emptyNoMatch')}
@@ -150,6 +153,8 @@ export function SkillPopoverPanel({ items, onPick, onClose }: SkillPopoverPanelP
           >
             {filtered.map((it, idx) => {
               const isActive = idx === activeIndex
+              const Icon = getSkillIconComponent(it.icon)
+              const iconBg = getSkillCategoryBg(it.category)
               return (
                 <li key={it.id}>
                   <button
@@ -162,19 +167,24 @@ export function SkillPopoverPanel({ items, onPick, onClose }: SkillPopoverPanelP
                     onClick={() => onPick(it.id)}
                     className={
                       isActive
-                        ? 'flex h-8 w-full items-center gap-3 px-3 text-left transition-colors bg-muted'
-                        : 'flex h-8 w-full items-center gap-3 px-3 text-left transition-colors hover:bg-muted'
+                        ? 'flex w-full items-center gap-3 px-3 py-2 text-left transition-colors bg-muted'
+                        : 'flex w-full items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-muted'
                     }
                   >
-                    <span className="flex h-5 w-5 shrink-0 items-center justify-center text-base">
-                      {it.icon ? (
-                        <span aria-hidden>{it.icon}</span>
-                      ) : (
-                        <Blocks className="h-4 w-4 text-muted-foreground" />
-                      )}
+                    <span
+                      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${iconBg}`}
+                    >
+                      <Icon className="h-3.5 w-3.5 text-primary-foreground" />
                     </span>
-                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
-                      {it.title}
+                    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <span className="truncate text-sm font-medium text-foreground">
+                        {it.title}
+                      </span>
+                      {it.subtitle ? (
+                        <span className="truncate text-xs text-muted-foreground">
+                          {it.subtitle}
+                        </span>
+                      ) : null}
                     </span>
                     {isActive ? (
                       <span

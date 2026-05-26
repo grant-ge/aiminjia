@@ -6,8 +6,8 @@ import { SkillPopoverPanel } from '../SkillPopoverPanel'
 import { useUiStore } from '@/stores/uiStore'
 
 const ITEMS = [
-  { id: 'a', title: '数据分析', subtitle: '上传 Excel / CSV 生成报告', icon: '📊' },
-  { id: 'b', title: '文案助手', subtitle: '起草邮件 / 日报' },
+  { id: 'a', title: '数据分析', subtitle: '上传 Excel / CSV 生成报告', icon: 'bar-chart-2', category: 'finance' },
+  { id: 'b', title: '文案助手', subtitle: '起草邮件 / 日报', category: 'general' },
 ]
 
 describe('SkillPopoverPanel', () => {
@@ -22,9 +22,10 @@ describe('SkillPopoverPanel', () => {
     expect(screen.getByText('文案助手')).toBeInTheDocument()
   })
 
-  it('renders emoji icon when provided, blocks fallback otherwise', () => {
+  it('renders subtitle below the title for each row', () => {
     render(<SkillPopoverPanel items={ITEMS} onPick={() => {}} onClose={() => {}} />)
-    expect(screen.getByText('📊')).toBeInTheDocument()
+    expect(screen.getByText('上传 Excel / CSV 生成报告')).toBeInTheDocument()
+    expect(screen.getByText('起草邮件 / 日报')).toBeInTheDocument()
   })
 
   it('fires onPick with id when an item clicked', () => {
@@ -96,14 +97,14 @@ describe('SkillPopoverPanel', () => {
     expect(screen.getByText('没有匹配的技能')).toBeInTheDocument()
   })
 
-  it('caps the list to at most 3 rows; the rest live behind the explore footer', () => {
+  it('renders all items and scrolls when the list overflows', () => {
     const many = Array.from({ length: 10 }, (_, i) => ({
       id: String(i),
       title: `技能 ${i}`,
       subtitle: '...',
     }))
     render(<SkillPopoverPanel items={many} onPick={() => {}} onClose={() => {}} />)
-    expect(screen.getAllByRole('option')).toHaveLength(3)
+    expect(screen.getAllByRole('option')).toHaveLength(10)
   })
 
   describe('keyboard navigation', () => {

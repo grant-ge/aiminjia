@@ -38,6 +38,7 @@ export function SkillPopover({ open: openProp, onPick, onClose }: SkillPopoverPr
     title: s.displayName,
     subtitle: s.shortDescription || s.description,
     icon: s.icon || undefined,
+    category: s.category || undefined,
   }))
 
   return <SkillPopoverPanel items={items} onPick={handlePick} onClose={handleClose} />
