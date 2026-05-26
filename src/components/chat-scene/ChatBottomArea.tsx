@@ -170,10 +170,10 @@ export function ChatBottomArea({
   return (
     <footer
       data-testid="chat-bottom-area"
-      className="relative h-[148px] shrink-0"
+      className="relative shrink-0"
     >
       <div
-        className="absolute right-0 bottom-0 left-0 px-6 pt-4 pb-5"
+        className="px-6 pt-4 pb-5"
       >
         <div
           data-testid="chat-composer-width-shell"

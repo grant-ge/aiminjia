@@ -89,7 +89,7 @@ export function ChatAvatar({
   const bg = usingImage
     ? 'transparent'
     : usingNeutralFallback
-      ? 'color-mix(in srgb, var(--primary) 12%, transparent)'
+      ? 'rgba(var(--primary-rgb), 0.12)'
       : pickColor(colorSeed ?? name)
   const style: React.CSSProperties = {
     width: size,

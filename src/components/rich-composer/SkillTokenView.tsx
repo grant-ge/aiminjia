@@ -24,7 +24,8 @@ export function SkillTokenView({ node, deleteNode }: SkillTokenViewProps) {
     >
       <Blocks
         aria-label="skill"
-        className="h-3.5 w-3.5 shrink-0 drop-shadow-[0_0_4px_color-mix(in_srgb,var(--primary)_45%,transparent)]"
+        className="h-3.5 w-3.5 shrink-0"
+        style={{ filter: 'drop-shadow(0 0 4px rgba(var(--primary-rgb), 0.45))' }}
       />
       <span className="truncate tracking-tight">{attrs.label}</span>
       <button

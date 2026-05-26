@@ -87,7 +87,7 @@ export function UserMessageBubble({
             <UserBubbleMarkdown text={text} files={files} conversationId={conversationId} />
           ) : null}
           {shouldCollapse && !expanded ? (
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-primary to-transparent" />
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12" style={{ backgroundImage: 'linear-gradient(to top, var(--primary), transparent)' }} />
           ) : null}
         </div>
         {shouldCollapse ? (

@@ -120,4 +120,51 @@ describe('brandingStore', () => {
     expect(state.primaryColor).toBe(DEFAULTS.primaryColor)
     expect(state.isCustom).toBe(false)
   })
+
+  it('applyBranding 同步写入所有 Safari 13 compat RGB 变量和跨 palette 派生变量', () => {
+    useBrandingStore.getState().applyBranding({
+      accentColor: '#2563EB',
+      primaryColor: '#1E293B',
+      bgColor: '#F7F9FE',
+    })
+    const style = document.documentElement.style
+    // RGB companion vars — exact values
+    expect(style.getPropertyValue('--primary-rgb')).toBe('37, 99, 235')
+    expect(style.getPropertyValue('--foreground-rgb')).toBe('30, 41, 59')
+    expect(style.getPropertyValue('--card-rgb')).toBe('247, 249, 254')
+    expect(style.getPropertyValue('--color-bg-base-rgb')).toBe('238, 241, 246')
+    expect(style.getPropertyValue('--muted-foreground-rgb')).toBe('128, 135, 147')
+    // cross-palette vars — exact values
+    expect(style.getPropertyValue('--primary-on-bg-10')).toBe('#e2eafc')
+    expect(style.getPropertyValue('--primary-on-bg-24')).toBe('#c5d5f9')
+    expect(style.getPropertyValue('--primary-on-bg-72')).toBe('#608df0')
+    expect(style.getPropertyValue('--primary-darken-10')).toBe('#2159d4')
+    expect(style.getPropertyValue('--primary-mix-scrollbar')).toBe('#93aee9')
+    expect(style.getPropertyValue('--primary-mix-blockquote')).toBe('#97b1e9')
+  })
+
+  it('reset 清除所有 RGB 和跨 palette 派生变量', () => {
+    useBrandingStore.getState().applyBranding({ accentColor: '#2563EB', bgColor: '#F7F9FE' })
+    useBrandingStore.getState().reset()
+    const style = document.documentElement.style
+    expect(style.getPropertyValue('--primary-rgb')).toBe('')
+    expect(style.getPropertyValue('--foreground-rgb')).toBe('')
+    expect(style.getPropertyValue('--card-rgb')).toBe('')
+    expect(style.getPropertyValue('--muted-foreground-rgb')).toBe('')
+    expect(style.getPropertyValue('--color-bg-base-rgb')).toBe('')
+    expect(style.getPropertyValue('--primary-on-bg-10')).toBe('')
+    expect(style.getPropertyValue('--primary-on-bg-24')).toBe('')
+    expect(style.getPropertyValue('--primary-on-bg-72')).toBe('')
+    expect(style.getPropertyValue('--primary-darken-10')).toBe('')
+    expect(style.getPropertyValue('--primary-mix-scrollbar')).toBe('')
+    expect(style.getPropertyValue('--primary-mix-blockquote')).toBe('')
+  })
+
+  it('applyBranding({}) 后默认主题 CSS 变量与 globals.css 静态默认值一致', () => {
+    useBrandingStore.getState().applyBranding({})
+    const style = document.documentElement.style
+    expect(style.getPropertyValue('--primary')).toBe(DEFAULTS.accentColor)
+    expect(style.getPropertyValue('--primary-rgb')).toBe('212, 168, 67')
+    expect(style.getPropertyValue('--brand-primary-subtle')).toBe('#f9f3e5')
+  })
 })
