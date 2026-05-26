@@ -10,6 +10,7 @@ import type { PermissionAskDecision } from '@/components/common/PermissionAskDia
 import { AskUserQuestionDialog } from '@/components/interactions/AskUserQuestionDialog'
 import { SettingsModal } from '@/components/settings/SettingsModal'
 import { TitleBar } from '@/components/layout/TitleBar'
+import { NetworkStatusIndicator } from '@/components/shell/NetworkStatusIndicator'
 import { AppSidebar } from '@/components/sidebar/AppSidebar'
 import { ChatPage } from '@/features/chat/ChatPage'
 import { ChannelPage } from '@/features/channel/ChannelPage'
@@ -122,6 +123,7 @@ function AppShell() {
   return (
     <div className="flex h-screen w-screen flex-col bg-background text-foreground">
       <TitleBar />
+      <NetworkStatusIndicator />
       <div className="flex min-h-0 flex-1">
         <AppSidebar />
         <main

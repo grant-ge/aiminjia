@@ -34,25 +34,28 @@ describe('NetworkStatusIndicator', () => {
     expect(container.firstChild).toBeNull()
   })
 
-  it('renders offline indicator when offline', () => {
+  it('renders banner when offline', () => {
     useNetworkStore.setState({ status: 'offline', errorKind: 'dns' })
     render(<NetworkStatusIndicator />)
-    expect(screen.getByRole('button', { name: /network\.offlineBadge/i })).toBeInTheDocument()
+    const banner = screen.getByRole('alert')
+    expect(banner).toBeInTheDocument()
+    expect(banner).toHaveTextContent('network.bannerOfflineText')
   })
 
-  it('renders degraded indicator when server-degraded', () => {
+  it('renders banner when server-degraded', () => {
     useNetworkStore.setState({ status: 'server-degraded' })
     render(<NetworkStatusIndicator />)
-    expect(screen.getByRole('button', { name: /network\.degradedBadge/i })).toBeInTheDocument()
+    const banner = screen.getByRole('alert')
+    expect(banner).toBeInTheDocument()
+    expect(banner).toHaveTextContent('network.bannerDegradedText')
   })
 
-  it('calls forceProbe when retry button clicked', async () => {
+  it('calls forceProbe when retry button clicked', () => {
     const forceProbe = vi.fn().mockResolvedValue(undefined)
     useNetworkStore.setState({ status: 'offline', forceProbe })
     render(<NetworkStatusIndicator />)
-    fireEvent.click(screen.getByRole('button', { name: /network\.offlineBadge/i }))
-    const retry = await screen.findByRole('button', { name: /network\.retryNow/i })
-    fireEvent.click(retry)
+    const retryBtn = screen.getByRole('button', { name: 'network.retryNow' })
+    fireEvent.click(retryBtn)
     expect(forceProbe).toHaveBeenCalledTimes(1)
   })
 })

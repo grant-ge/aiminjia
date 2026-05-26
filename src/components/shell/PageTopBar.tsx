@@ -4,7 +4,6 @@
  */
 import type { ReactNode } from 'react'
 import { ChevronRight } from 'lucide-react'
-import { NetworkStatusIndicator } from './NetworkStatusIndicator'
 
 export type PageTopBarVariant = 'default' | 'title' | 'breadcrumb' | 'compact'
 
@@ -76,8 +75,7 @@ export function PageTopBar({
         </div>
       )}
       <div className="flex items-center gap-2">
-        <NetworkStatusIndicator />
-        {trailing}
+        {trailing ? <div className="flex items-center gap-2">{trailing}</div> : null}
       </div>
     </header>
   )

@@ -868,16 +868,10 @@
     "settings": "设置"
   },
   "network": {
-    "offlineBadge": "网络不通",
-    "degradedBadge": "AI 服务暂时不可用",
-    "popoverOfflineTitle": "当前无法连接到网络",
-    "popoverOfflineDesc": "请检查 WiFi、有线网络或 VPN 是否正常，然后点击「重试」。",
-    "popoverDegradedTitle": "AI 服务暂时无法访问",
-    "popoverDegradedDesc": "网络已连通，但 AI 服务端暂时异常，请稍后重试。",
-    "lastOnline": "上次连接成功：{{time}}",
     "retryNow": "重试",
-    "sendWhileOfflineTitle": "网络不通",
-    "sendWhileOfflineDesc": "消息可能发送失败，请检查网络后重试。"
+    "bannerOfflineText": "网络连接已断开 · 请检查 WiFi、有线网络或 VPN",
+    "bannerDegradedText": "AI 服务暂时无法访问 · 已连接网络，请稍后重试",
+    "bannerRetryingText": "正在重新检测网络连接…"
   },
   "bottomTips": {
     "aiDisclaimer": "内容由 AI 生成，请仔细核实回答内容",
