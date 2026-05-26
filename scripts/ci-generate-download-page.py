@@ -9,6 +9,7 @@ Env vars required:
   OSS_ACCESS_KEY_SECRET
 """
 
+import json
 import os
 import sys
 from datetime import datetime, timezone
@@ -105,6 +106,99 @@ def _semver_key(v):
     return tuple(parts[:3]) + tag_key
 
 
+def _pick_installers(files):
+    """From a version's files, pick the user-facing installers per platform.
+
+    Returns (windows_exe, mac_arm_dmg, mac_intel_dmg) — each a file dict or None.
+    Updater tar.gz / .sig are skipped (those are for the auto-updater, not humans).
+    """
+    win = mac_arm = mac_intel = None
+    for f in files:
+        n = f["name"].lower()
+        if n.endswith(".exe"):
+            win = f
+        elif n.endswith(".dmg"):
+            if "aarch64" in n or "arm64" in n:
+                mac_arm = f
+            elif "x64" in n or "x86_64" in n:
+                mac_intel = f
+    return win, mac_arm, mac_intel
+
+
+def _hero_data(release_versions):
+    """Build the 'recommended download' payload from the latest release."""
+    if not release_versions:
+        return None
+    ver = sorted(release_versions.keys(), key=_semver_key, reverse=True)[0]
+    win, mac_arm, mac_intel = _pick_installers(release_versions[ver])
+    return {
+        "version": ver.lstrip("v"),
+        "win": win["url"] if win else "",
+        "macArm": mac_arm["url"] if mac_arm else "",
+        "macIntel": mac_intel["url"] if mac_intel else "",
+    }
+
+
+HERO_SCRIPT = """<script>
+(function () {
+  var REL = __REL_JSON__;
+  var hero = document.getElementById('hero');
+  if (!hero || !REL) return;
+  var titleEl = document.getElementById('heroTitle');
+  var btn = document.getElementById('heroBtn');
+
+  function show(label, url) {
+    if (!url) { hero.style.display = 'none'; return; }
+    titleEl.textContent = '为你的系统推荐 · ' + label + ' v' + REL.version;
+    btn.textContent = '下载 ' + label;
+    btn.href = url;
+    hero.style.display = '';
+  }
+  function pickMac(arch) {
+    if (arch === 'intel' && REL.macIntel) show('macOS (Intel)', REL.macIntel);
+    else if (REL.macArm) show('macOS (Apple Silicon)', REL.macArm);
+    else if (REL.macIntel) show('macOS (Intel)', REL.macIntel);
+    else show('macOS', '');
+  }
+  // Browsers report navigator.platform as "MacIntel" even on Apple Silicon,
+  // so distinguish via the WebGL renderer string (or UA-CH architecture).
+  function macArchFromWebGL() {
+    try {
+      var c = document.createElement('canvas');
+      var gl = c.getContext('webgl') || c.getContext('experimental-webgl');
+      if (gl) {
+        var ext = gl.getExtension('WEBGL_debug_renderer_info');
+        if (ext) {
+          var r = (gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) || '') + '';
+          if (/intel|amd|radeon/i.test(r)) return 'intel';
+          if (/apple/i.test(r)) return 'arm';
+        }
+      }
+    } catch (e) {}
+    return 'unknown';
+  }
+
+  var ua = navigator.userAgent || '';
+  var plat = (navigator.platform || '') + ' ' + ua;
+  var isWin = /Win/i.test(plat);
+  var isMac = /Mac/i.test(plat) && !/iPhone|iPad|iPod/i.test(ua);
+
+  if (isWin) { show('Windows', REL.win); return; }
+  if (isMac) {
+    if (navigator.userAgentData && navigator.userAgentData.getHighEntropyValues) {
+      navigator.userAgentData.getHighEntropyValues(['architecture']).then(function (v) {
+        var a = v && v.architecture;
+        pickMac(a === 'arm' ? 'arm' : (a ? 'intel' : macArchFromWebGL()));
+      }).catch(function () { pickMac(macArchFromWebGL()); });
+    } else {
+      pickMac(macArchFromWebGL());
+    }
+    return;
+  }
+  show('', ''); // unknown OS (e.g. Linux) — fall back to the full list below
+})();
+</script>"""
+
 
 def generate_html(dev_files, beta_versions, release_versions):
     sections = []
@@ -121,8 +215,9 @@ def generate_html(dev_files, beta_versions, release_versions):
             <table><thead><tr><th>Platform</th><th>File</th><th>Size</th><th>Built</th></tr></thead><tbody>{rows}</tbody></table>
         </div>""")
 
-    # Beta section — sort by semver, not lexicographic ("0.5.9" > "0.5.10" lex).
-    for ver, files in sorted(beta_versions.items(), key=lambda kv: _semver_key(kv[0]), reverse=True)[:5]:
+    # Beta section — only the single newest beta (testers want the latest;
+    # older betas just clutter the page). Sort by semver, not lexicographic.
+    for ver, files in sorted(beta_versions.items(), key=lambda kv: _semver_key(kv[0]), reverse=True)[:1]:
         rows = ""
         for f in sorted(files, key=lambda x: _platform_sort_key(x["name"])):
             rows += f'<tr><td>{detect_platform(f["name"])}</td><td><a href="{f["url"]}">{f["name"]}</a></td><td>{format_size(f["size"])}</td></tr>\n'
@@ -147,7 +242,16 @@ def generate_html(dev_files, beta_versions, release_versions):
             <table><thead><tr><th>Platform</th><th>File</th><th>Size</th></tr></thead><tbody>{rows}</tbody></table>
         </div>""")
 
-    return f"""<!DOCTYPE html>
+    hero = _hero_data(release_versions)
+    rel_json = json.dumps(hero, ensure_ascii=False) if hero else "null"
+    hero_html = """
+<div class="hero" id="hero" style="display:none">
+  <div class="hero-title" id="heroTitle">推荐下载</div>
+  <a class="hero-btn" id="heroBtn" href="#all">下载</a>
+  <div class="hero-sub"><a href="#all">其他平台与历史版本 ↓</a></div>
+</div>""" if hero else ""
+
+    page = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -159,6 +263,16 @@ def generate_html(dev_files, beta_versions, release_versions):
          max-width: 800px; margin: 40px auto; padding: 0 20px; color: #333; background: #f8f9fa; }}
   h1 {{ margin-bottom: 8px; }}
   .subtitle {{ color: #666; margin-bottom: 32px; }}
+  .hero {{ background: linear-gradient(135deg, #0066cc, #004a99); color: #fff; border-radius: 12px;
+           padding: 28px 24px; margin-bottom: 24px; text-align: center;
+           box-shadow: 0 4px 16px rgba(0,80,180,0.25); }}
+  .hero-title {{ font-size: 15px; opacity: 0.92; margin-bottom: 14px; }}
+  .hero-btn {{ display: inline-block; background: #fff; color: #0066cc; font-weight: 600;
+               font-size: 16px; padding: 12px 28px; border-radius: 8px; text-decoration: none; }}
+  .hero-btn:hover {{ background: #f0f6ff; text-decoration: none; }}
+  .hero-sub {{ margin-top: 14px; font-size: 13px; }}
+  .hero-sub a {{ color: #cfe4ff; }}
+  .hero-sub a:hover {{ color: #fff; }}
   .section {{ background: #fff; border-radius: 8px; padding: 20px; margin-bottom: 16px;
               box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
   h2 {{ font-size: 18px; margin-bottom: 12px; }}
@@ -181,10 +295,16 @@ def generate_html(dev_files, beta_versions, release_versions):
 <body>
 <h1>AIjia Downloads</h1>
 <p class="subtitle">AI小家 Desktop App</p>
+{hero_html}
+<div id="all">
 {''.join(sections) if sections else '<p>No builds available yet.</p>'}
+</div>
 <p class="footer">Generated {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}</p>
+__HERO_SCRIPT__
 </body>
 </html>"""
+    script = HERO_SCRIPT.replace("__REL_JSON__", rel_json) if hero else ""
+    return page.replace("__HERO_SCRIPT__", script)
 
 
 def main():
