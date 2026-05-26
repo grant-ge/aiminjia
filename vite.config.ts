@@ -40,6 +40,17 @@ export default defineConfig({
     },
   },
 
+  // Use lightningcss as the CSS transformer in both dev and build so that
+  // CSS Nesting and other modern syntax are lowered to the same target in
+  // both modes. Without this, dev serves raw nested CSS that WebKit 605
+  // (macOS 10.15) cannot parse, while build (esbuild) would flatten it.
+  css: {
+    transformer: 'lightningcss',
+    lightningcss: {
+      targets: { safari: (13 << 16) },
+    },
+  },
+
   // Build target floor for the Tauri webview (system WebKit on macOS / WebView2
   // on Windows). macOS Monterey 12.x ships Safari 15.x; Vite 7's default target
   // (baseline-widely-available ≈ Safari 16) emits syntax that throws at parse on
@@ -49,6 +60,7 @@ export default defineConfig({
   // Keep risky deps version-locked (see `pnpm.overrides` in package.json).
   build: {
     target: process.env.TAURI_ENV_PLATFORM === 'windows' ? 'chrome105' : 'safari13',
+    cssMinify: 'lightningcss',
   },
 
   // Env prefix for Tauri
