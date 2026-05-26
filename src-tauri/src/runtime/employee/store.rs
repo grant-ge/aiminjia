@@ -718,6 +718,46 @@ mod tests {
     }
 
     #[test]
+    fn best_cached_snapshot_uses_numeric_version_segments() {
+        use crate::runtime::employee::template_store::TemplateSnapshot;
+        use std::fs;
+
+        let dir = TempDir::new().unwrap();
+        let tid_dir = dir.path().join("org:cache-only");
+        fs::create_dir_all(&tid_dir).unwrap();
+
+        for version in ["1.2.0", "1.10.0"] {
+            let snap = TemplateSnapshot {
+                template_id: "org:cache-only".into(),
+                version: version.into(),
+                name: "cache-only".into(),
+                avatar: "".into(),
+                role: format!("role-{version}"),
+                description: "".into(),
+                badge: "".into(),
+                system_prompt_extra: "".into(),
+                tool_whitelist: vec![],
+                cron: "".into(),
+                default_skill_id: "".into(),
+                skill_ids: vec![],
+                requires_dingtalk: false,
+                requires_attachment: serde_json::Value::Null,
+                resource_config_schema: serde_json::Value::Null,
+                resource_config_ui: serde_json::Value::Null,
+            };
+            fs::write(
+                tid_dir.join(format!("{version}.json")),
+                serde_json::to_string_pretty(&snap).unwrap(),
+            )
+            .unwrap();
+        }
+
+        let best = best_cached_snapshot_for_template(&tid_dir).unwrap();
+        assert_eq!(best.version, "1.10.0");
+        assert_eq!(best.role, "role-1.10.0");
+    }
+
+    #[test]
     fn create_and_get_with_default_skill_id() {
         let dir = TempDir::new().unwrap();
         let store = EmployeeStore::new(dir.path().to_path_buf());
@@ -1166,25 +1206,7 @@ fn stamp_snapshot_for_record(
     let snap_and_source = snap_and_source.or_else(|| {
         let cache_dir = crate::storage::AiJiaHome::from_home().employee_templates_cache_dir();
         let tid_dir = cache_dir.join(tid);
-        let mut best: Option<ts::TemplateSnapshot> = None;
-        if let Ok(rd) = std::fs::read_dir(&tid_dir) {
-            for entry in rd.flatten() {
-                let p = entry.path();
-                if p.extension().and_then(|e| e.to_str()) != Some("json") {
-                    continue;
-                }
-                if let Ok(content) = std::fs::read_to_string(&p) {
-                    if let Ok(s) = serde_json::from_str::<ts::TemplateSnapshot>(&content) {
-                        match best.as_ref() {
-                            None => best = Some(s),
-                            Some(prev) if s.version > prev.version => best = Some(s),
-                            _ => {}
-                        }
-                    }
-                }
-            }
-        }
-        best.map(|s| (s, "cache"))
+        best_cached_snapshot_for_template(&tid_dir).map(|s| (s, "cache"))
     });
 
     let (snap, source) = snap_and_source?;
@@ -1199,6 +1221,34 @@ fn stamp_snapshot_for_record(
             None
         }
     }
+}
+
+fn best_cached_snapshot_for_template(
+    tid_dir: &std::path::Path,
+) -> Option<crate::runtime::employee::template_store::TemplateSnapshot> {
+    use crate::runtime::employee::template_store as ts;
+
+    let mut best: Option<ts::TemplateSnapshot> = None;
+    if let Ok(rd) = std::fs::read_dir(tid_dir) {
+        for entry in rd.flatten() {
+            let p = entry.path();
+            if p.extension().and_then(|e| e.to_str()) != Some("json") {
+                continue;
+            }
+            if let Ok(content) = std::fs::read_to_string(&p) {
+                if let Ok(s) = serde_json::from_str::<ts::TemplateSnapshot>(&content) {
+                    match best.as_ref() {
+                        None => best = Some(s),
+                        Some(prev) if ts::is_newer_version(&s.version, &prev.version) => {
+                            best = Some(s)
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+    best
 }
 
 /// `fs::remove_dir_all` with Windows-friendly retry. AV / Indexer / Explorer

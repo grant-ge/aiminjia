@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { X, MessageSquare, Square, Clock, RefreshCw } from 'lucide-react'
 import {
@@ -93,6 +93,8 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
   const [resourceModalOpen, setResourceModalOpen] = useState(false)
   const [cronModalOpen, setCronModalOpen] = useState(false)
   const [upgradeCheck, setUpgradeCheck] = useState<TemplateUpgradeCheck | null>(null)
+  const activeRunRef = useRef<EmployeeActiveRunInfo | null>(activeRun)
+  activeRunRef.current = activeRun
   const setRoute = useUiStore((s) => s.setRoute)
   const setSidebarTab = useUiStore((s) => s.setSidebarTab)
   const getSkillById = useSkillStore((s) => s.getById)
@@ -247,7 +249,11 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
   }
 
   const handleUpgradeTemplate = async () => {
-    if (!upgradeCheck?.hasUpgrade || activeRun) return
+    if (!upgradeCheck?.hasUpgrade) return
+    if (activeRunRef.current) {
+      alert(t('resourceUpdates.upgradeUnavailable'))
+      return
+    }
     const fields = upgradeCheck.changedFields.join('、') || t('employeeDrawer.upgradeFieldsDefault')
     const ok = await requestConfirm({
       title: t('resourceUpdates.upgrade'),
@@ -259,6 +265,10 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
       confirmLabel: t('common.confirm'),
     })
     if (!ok) return
+    if (activeRunRef.current) {
+      alert(t('resourceUpdates.upgradeUnavailable'))
+      return
+    }
     setBusy(true)
     try {
       await employeeTemplateUpgrade(emp.id)
@@ -343,16 +353,16 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
                     </p>
                   ) : null}
                 </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="shrink-0"
-                  disabled={busy || Boolean(activeRun)}
-                  title={upgradeUnavailableTitle}
-                  onClick={handleUpgradeTemplate}
-                >
-                  {t('resourceUpdates.upgrade')}
-                </Button>
+                <span className="inline-flex shrink-0" title={upgradeUnavailableTitle}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busy || Boolean(activeRun)}
+                    onClick={handleUpgradeTemplate}
+                  >
+                    {t('resourceUpdates.upgrade')}
+                  </Button>
+                </span>
               </section>
             ) : null}
 

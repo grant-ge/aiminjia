@@ -11,6 +11,7 @@ use crate::runtime::employee::template_store::{
     find_latest_for_template, is_newer_version, merge_catalog, read_instance_snapshot,
     TemplateSnapshot,
 };
+use crate::runtime::employee::EmployeeActiveRuns;
 use crate::storage::file_store::AppStorage;
 use crate::storage::{AiJiaHome, CurrentUserStorage, UserScopedPathResolver};
 
@@ -487,6 +488,12 @@ pub async fn employee_template_upgrade(
     app: AppHandle,
     id: String,
 ) -> Result<EmployeeRecord, String> {
+    if let Some(active_runs) = app.try_state::<Arc<EmployeeActiveRuns>>() {
+        if active_runs.inner().lookup(&id).is_some() {
+            return Err("当前正在运行，完成后可升级".to_string());
+        }
+    }
+
     let store = employee_store(&app)?;
     let record = store.get(&id).map_err(|e| e.to_string())?;
 
