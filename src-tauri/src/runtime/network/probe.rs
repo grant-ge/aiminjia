@@ -2,10 +2,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use chrono::Utc;
-use reqwest::StatusCode;
 use serde_json::json;
 use tokio::sync::mpsc;
-use tokio::time::{interval, MissedTickBehavior};
+use tokio::time::MissedTickBehavior;
 use log::{debug, info, warn};
 
 use crate::runtime::network::state::{NetworkErrorKind, NetworkSnapshot, NetworkStatus};
@@ -239,7 +238,7 @@ impl NetworkProbe {
             let status_str = match snapshot.status {
                 NetworkStatus::Online => "online",
                 NetworkStatus::Offline => "offline",
-                NetworkStatus::ServerDegraded => "server_degraded",
+                NetworkStatus::ServerDegraded => "server-degraded",
             };
             info!("network status changed -> {}", status_str);
             let payload = serde_json::to_value(&snapshot).unwrap_or(json!({}));
@@ -248,6 +247,39 @@ impl NetworkProbe {
             }
         }
     }
+
+    // ── test-only API ─────────────────────────────────────────────────────
+
+    /// Construct a probe with a custom URL for integration testing.
+    /// Gated by the `test-support` feature so it never appears in production
+    /// builds. Integration tests must be run with `--features test-support`.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn new_for_test(host: Arc<dyn RuntimeHost>, probe_url: String) -> Arc<Self> {
+        // no_proxy: bypass system HTTP proxy (e.g. Clash/v2ray on macOS) for
+        // loopback addresses so integration tests hit stub servers directly.
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(HEAD_TIMEOUT_SECS))
+            .no_proxy()
+            .build()
+            .expect("network probe reqwest client");
+        let (force_tx, force_rx) = mpsc::channel(4);
+        Arc::new(Self {
+            client,
+            host,
+            snapshot: Arc::new(Mutex::new(None)),
+            force_tx,
+            force_rx: Arc::new(Mutex::new(Some(force_rx))),
+            last_force_at_ms: Arc::new(Mutex::new(0)),
+            probe_url_override: Some(probe_url),
+        })
+    }
+
+    /// Execute a single probe cycle and emit — for integration tests only.
+    /// Does not start the run_loop (avoids infinite loops in tests).
+    #[cfg(any(test, feature = "test-support"))]
+    pub async fn probe_once_for_test(&self) {
+        self.probe_once_and_emit().await;
+    }
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────
@@ -255,6 +287,7 @@ impl NetworkProbe {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use reqwest::StatusCode;
 
     fn ok_response(status: StatusCode) -> Result<reqwest::Response, reqwest::Error> {
         Ok(reqwest::Response::from(
