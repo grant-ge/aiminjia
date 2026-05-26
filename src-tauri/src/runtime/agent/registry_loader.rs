@@ -1,6 +1,6 @@
 //! Build an `AgentRegistry` by merging three sources with precedence:
 //!
-//! ```
+//! ```text
 //! builtin < user_dir < project_dir
 //! ```
 //!

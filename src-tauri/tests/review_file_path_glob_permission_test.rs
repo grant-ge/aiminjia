@@ -20,6 +20,18 @@ fn make_ctx(store: Arc<PermissionStore>, tmp: &TempDir) -> ToolExecutionContext 
         .with_permission_store(store)
 }
 
+/// macOS: `TempDir` returns `/var/folders/...` but `fs::canonicalize` resolves
+/// it to `/private/var/folders/...` (the `/var → /private/var` symlink).  The
+/// impl canonicalizes lookup paths before matching against PathGlob rules,
+/// so the glob in the rule has to use the canonical prefix too — otherwise
+/// `/var/.../blocked/**` never matches `/private/var/.../blocked/output.csv`.
+fn canonical_path_display(tmp: &TempDir) -> String {
+    std::fs::canonicalize(tmp.path())
+        .unwrap_or_else(|_| tmp.path().to_path_buf())
+        .display()
+        .to_string()
+}
+
 #[tokio::test]
 async fn review_write_file_path_glob_deny_blocks_matching_path() {
     let tmp = TempDir::new().unwrap();
@@ -28,7 +40,7 @@ async fn review_write_file_path_glob_deny_blocks_matching_path() {
         PermissionDestination::User,
         PermissionRule::simple(
             "Write",
-            PermissionScope::PathGlob(format!("{}/blocked/**", tmp.path().display())),
+            PermissionScope::PathGlob(format!("{}/blocked/**", canonical_path_display(&tmp))),
             PolicyDecision::AlwaysDeny,
             PermissionSource::User,
         ),
@@ -68,7 +80,7 @@ async fn review_edit_file_path_glob_deny_blocks_matching_path() {
         PermissionDestination::Session,
         PermissionRule::simple(
             "Edit",
-            PermissionScope::PathGlob(format!("{}/secret/**", tmp.path().display())),
+            PermissionScope::PathGlob(format!("{}/secret/**", canonical_path_display(&tmp))),
             PolicyDecision::AlwaysDeny,
             PermissionSource::Session,
         ),

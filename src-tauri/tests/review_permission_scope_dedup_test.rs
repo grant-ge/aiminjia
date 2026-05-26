@@ -38,6 +38,11 @@ fn review_known_scopes_keep_aligned_outcomes_between_pipelines() {
     let capability_pipeline = CapabilityPermissionPipeline;
     let store_pipeline = StorePolicyPipeline::new(Arc::new(PermissionStore::in_memory()));
 
+    // Known scopes only — the two pipelines diverge on *unknown* scopes by
+    // design (Capability → Deny fail-closed; StorePolicy → Ask).  See
+    // `review_unknown_scope_semantics_remain_split_between_pipelines` below
+    // for the unknown-scope contract.  "browser" is currently unknown to
+    // `check_scope_capability` and lives in the unknown-scope contract test.
     let cases = [
         ("workspace:read", ctx_without_capability(), "deny"),
         ("workspace:read", ctx_with_workspace(), "allow"),
@@ -45,7 +50,6 @@ fn review_known_scopes_keep_aligned_outcomes_between_pipelines() {
         ("workspace:write", ctx_with_workspace(), "allow"),
         ("python:exec", ctx_without_capability(), "deny"),
         ("python:exec", ctx_with_workspace(), "allow"),
-        ("browser", ctx_without_capability(), "deny"),
         ("network", ctx_without_capability(), "allow"),
     ];
 

@@ -339,6 +339,10 @@ impl RuntimeTool for ReadWorkspaceFileRuntimeTool {
         true
     }
 
+    fn is_read_only(&self, _input: &Value) -> bool {
+        true
+    }
+
     async fn check_permissions(
         &self,
         input: &Value,
@@ -558,6 +562,10 @@ impl RuntimeTool for SearchFilesRuntimeTool {
         true
     }
 
+    fn is_read_only(&self, _input: &Value) -> bool {
+        true
+    }
+
     async fn check_permissions(
         &self,
         input: &Value,
@@ -625,7 +633,7 @@ impl RuntimeTool for WriteFileRuntimeTool {
         input: &Value,
         ctx: &ToolExecutionContext,
     ) -> Option<PermissionDecision> {
-        check_path_permission(input, ctx, PathOp::Write, "write_file")
+        check_path_permission(input, ctx, PathOp::Write, "Write")
     }
 
     async fn execute(
@@ -692,7 +700,7 @@ impl RuntimeTool for EditFileRuntimeTool {
         input: &Value,
         ctx: &ToolExecutionContext,
     ) -> Option<PermissionDecision> {
-        check_path_permission(input, ctx, PathOp::Write, "edit_file")
+        check_path_permission(input, ctx, PathOp::Write, "Edit")
     }
 
     async fn execute(

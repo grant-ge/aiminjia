@@ -45,10 +45,13 @@ fn render_includes_absolute_paths_verbatim() {
 
 #[test]
 fn render_for_conv_dir_derives_canonical_subpaths() {
+    // Per-team disk layout (spec §3): `<conv_dir>/teams/{team_name}/config.json`
+    // + `<conv_dir>/teams/{team_name}/tasks`.  The old flat `team.json` /
+    // `tasks` paths at the conv root are gone since the multi-team refactor.
     let conv = PathBuf::from("/x/users/scope/conversations/c-42");
     let out = render_for_conv_dir("t", "n", &conv);
-    assert!(out.contains("/x/users/scope/conversations/c-42/team.json"));
-    assert!(out.contains("/x/users/scope/conversations/c-42/tasks"));
+    assert!(out.contains("/x/users/scope/conversations/c-42/teams/t/config.json"));
+    assert!(out.contains("/x/users/scope/conversations/c-42/teams/t/tasks"));
 }
 
 #[test]

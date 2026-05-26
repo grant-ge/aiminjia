@@ -271,11 +271,13 @@ async fn happy_path_employee_subagent_type_creates_teammate_and_registers_name()
         )
         .await; // Expect Err from P1.6 stub — that's OK.
 
-    // Assert: name "researcher" was registered in AgentNameRegistry.
+    // Assert: name "researcher" was registered in AgentNameRegistry under
+    // the team_name resolved from `team_handle` ("research-team"), not the
+    // single-team era "default" placeholder.
     let sid = SessionId::new(session_id);
-    let resolved = name_registry.resolve(&sid, "default", "researcher").await;
+    let resolved = name_registry.resolve(&sid, "research-team", "researcher").await;
     assert!(
         resolved.is_some(),
-        "AgentNameRegistry should have 'researcher' registered"
+        "AgentNameRegistry should have 'researcher' registered under 'research-team'"
     );
 }
