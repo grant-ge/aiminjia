@@ -14,6 +14,7 @@ pub mod ids;
 pub mod interaction;
 pub mod mcp;
 pub mod messaging;
+pub mod network;
 pub mod path_auth;
 pub mod pending;
 pub mod project_memory;
