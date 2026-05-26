@@ -7,6 +7,7 @@ import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { formatRelativeTime } from '@/lib/format'
+import { NetworkStatusIndicator } from './NetworkStatusIndicator'
 
 export interface ChatTopBarEmployee {
   avatar: string
@@ -119,6 +120,7 @@ export function ChatTopBar({
         ) : null}
       </div>
       <div className="flex items-center gap-4">
+        <NetworkStatusIndicator />
         {trailing}
         {onShare ? (
           <button
