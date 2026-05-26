@@ -10,6 +10,7 @@ pub mod search;
 pub mod storage;
 pub mod telemetry;
 pub mod transport;
+pub mod updater;
 
 use commands::chat;
 use commands::file;
@@ -1117,6 +1118,13 @@ pub fn run() {
             crate::transport::tauri_commands::pending::pending_remove_item,
             // Turn-stage persistence (spec 2026-05-17-turn-stages §5)
             crate::transport::tauri_commands::turn_stage::get_active_turn_stage,
+            // Updater cache/download commands
+            updater::commands::updater_check_cache,
+            updater::commands::updater_download,
+            updater::commands::updater_read_cached_bytes,
+            updater::commands::updater_clear_cache,
+            updater::commands::updater_install_cached,
+            updater::commands::updater_platform_key,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

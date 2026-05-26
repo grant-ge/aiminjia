@@ -218,6 +218,17 @@ Skill 系统采用无状态架构，仅加载 `~/.renlijia/users/{scope}/skills/
 
 **Code review 自查清单**：diff 里看到 `bg-black` / `text-white` / `text-[#` / `bg-[#` / `border-white` / 没带颜色的裸 `border-b`、看到自己手写顶栏 / 按钮样式而不是用组件、看到 `public/*.svg` 新增图标资产或 inline 自写 `<svg>` 图形（除主 logo / 结构性图形外）、看到给 lucide 图标硬编码 `color="#"` / `stroke="#"` 或图标视觉全黑没绑 `text-*` 变量、看到 `boxShadow: '0 ... rgba(...)'` 硬编码字面量、看到对 store 中的 message / content 原地赋值或 push / Object.assign / `msg.foo = ...`——立刻换成变量 / 公共组件 / 图标库 / immutable 写法。
 
+**6. macOS 10.15 (WebKit 605 / Safari 13) CSS 兼容性约束**
+
+`vite.config.ts` 的 `build.target: 'safari13'` **只降级 JS 语法，对 CSS 完全无效**。以下 CSS 特性在 Safari 13 上不可用，禁止在源码中使用：
+
+- ❌ `color-mix()` — Safari 16.2+。替代方案：在 `:root` 定义 `--foo-rgb: R, G, B` 变量，用 `rgba(var(--foo-rgb), 0.X)` 替代；需要混合两个实色时预计算静态 hex 值
+- ❌ Tailwind v4 渐变工具类（`bg-gradient-to-*` / `from-*` / `to-*`）— v4 生成带 `in oklch` 色彩空间的 CSS，Safari 15.4+ 才支持。替代方案：内联 style 手写标准 `linear-gradient(to top, var(--primary), transparent)`
+- ❌ `color-mix()` 嵌套在 `linear-gradient` / `radial-gradient` 中 — 整条渐变声明失效
+- ❌ Tailwind 任意值 `drop-shadow-[..._color-mix(...)]` — 整条 filter 失效，改用内联 style `filter: drop-shadow(...)`
+
+项目已有 `--primary-rgb` / `--foreground-rgb` / `--color-bg-base-rgb` / `--muted-foreground-rgb` / `--card-rgb` 等 RGB 分量变量（`globals.css :root`），新增颜色混合需求优先复用。`src/lib/themeUtils.ts` 中已有 `mixColors(hex1, hex2, weight)` 可用于运行时计算两个 hex 色的混合值。
+
 ## 存储结构
 
 **权威规范在 `~/lotus/docs/desktop/storage-conventions.md`**。本节只给一句话指引 + 入口；任何写盘改动以规范文档为准。

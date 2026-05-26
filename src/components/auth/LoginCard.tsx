@@ -9,11 +9,11 @@ export function LoginCard({ children }: PropsWithChildren) {
     <div
       data-testid="login-card"
       // spec §3.3 — page-level container rounded-xl; §5 shadow-lg.
-      // Glass-pane uses color-mix from --card so it stays correct under
-      // tenant theming / dark backgrounds instead of hardcoded white.
+      // Glass-pane uses rgba(var(--card-rgb), 0.75); --card-rgb is kept in sync
+      // with --card by deriveBackgroundPalette() in brandingStore.
       className="relative flex w-[460px] flex-col gap-5 rounded-xl border border-border/60 px-10 pb-8 pt-10 shadow-[var(--shadow-lg)]"
       style={{
-        background: 'color-mix(in srgb, var(--card) 75%, transparent)',
+        background: 'rgba(var(--card-rgb, 250, 250, 248), 0.75)',
         backdropFilter: 'blur(24px)',
         WebkitBackdropFilter: 'blur(24px)',
       }}

@@ -19,6 +19,7 @@ interface AboutPanelProps {
   appName: string
   version: string
   logoUrl: string
+  checkingUpdate?: boolean
   onCheckUpdate: () => void
   onUploadLogs: () => void | Promise<void>
   onResetData: () => void
@@ -58,6 +59,7 @@ export function AboutPanel({
   appName,
   version,
   logoUrl,
+  checkingUpdate = false,
   onCheckUpdate,
   onUploadLogs,
   links,
@@ -89,7 +91,9 @@ export function AboutPanel({
             <div className="text-sm leading-none text-muted-foreground">{t('settings.about.version')} {version}</div>
           </div>
         </div>
-        <PillButton onClick={onCheckUpdate}>{t('settings.about.checkUpdate')}</PillButton>
+        <PillButton onClick={onCheckUpdate} disabled={checkingUpdate}>
+          {checkingUpdate ? t('settings.about.checkingUpdate') : t('settings.about.checkUpdate')}
+        </PillButton>
       </section>
 
       <div className="h-px bg-border mb-2" />

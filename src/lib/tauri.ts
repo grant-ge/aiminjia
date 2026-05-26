@@ -2697,3 +2697,51 @@ export function billingUsageRecords(
 ): Promise<UsageRecordsPage> {
   return invoke<UsageRecordsPage>('billing_usage_records', { page, size })
 }
+
+// ─────────────────────────────────────────────────────────────
+// Updater Commands
+// ─────────────────────────────────────────────────────────────
+
+export type UpdaterCacheStatus = 'complete' | 'partial' | 'none'
+
+export interface UpdaterCacheCheckResult {
+  status: UpdaterCacheStatus
+  downloaded_size: number
+}
+
+export function updaterCheckCache(
+  version: string,
+  expectedSize: number,
+  etag?: string,
+): Promise<UpdaterCacheCheckResult> {
+  return invoke<UpdaterCacheCheckResult>('updater_check_cache', {
+    version,
+    expectedSize,
+    etag,
+  })
+}
+
+export function updaterDownload(
+  url: string,
+  version: string,
+  expectedSize: number,
+  etag?: string,
+): Promise<void> {
+  return invoke('updater_download', { url, version, expectedSize, etag })
+}
+
+export function updaterReadCachedBytes(version: string): Promise<number[]> {
+  return invoke<number[]>('updater_read_cached_bytes', { version })
+}
+
+export function updaterClearCache(): Promise<void> {
+  return invoke('updater_clear_cache')
+}
+
+export function updaterInstallCached(version: string): Promise<void> {
+  return invoke('updater_install_cached', { version })
+}
+
+export function updaterPlatformKey(): Promise<string> {
+  return invoke<string>('updater_platform_key')
+}

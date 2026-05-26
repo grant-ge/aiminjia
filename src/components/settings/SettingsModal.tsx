@@ -38,6 +38,7 @@ export function SettingsModal() {
   const setDataMaskingLevel = useSettingsStore((s) => s.setDataMaskingLevel)
   const [pendingLogout, setPendingLogout] = useState(false)
   const [appVersion, setAppVersion] = useState(t('settings.loadingVersion'))
+  const [checkingUpdate, setCheckingUpdate] = useState(false)
   const [activeLegalDocument, setActiveLegalDocument] = useState<LegalDocumentKey | null>(null)
 
   useEffect(() => {
@@ -83,21 +84,31 @@ export function SettingsModal() {
   }
 
   const onCheckUpdate = async () => {
+    if (checkingUpdate) return
+    setCheckingUpdate(true)
     try {
       const store = useUpdaterStore.getState()
-      // Always re-check via bootstrap() — it deduplicates concurrent calls
-      // and handles the full check → download → ready pipeline (#1).
-      await store.bootstrap()
-      const phase = useUpdaterStore.getState().phase
-      if (phase === 'idle') {
+      // If an update is already known (any non-idle phase), just open the panel
+      // — re-running bootstrap could race with an in-flight download.
+      const phase = store.phase
+      if (phase !== 'idle' && phase !== 'checking') {
+        store.openPanel()
+        return
+      }
+      // Manual mode: bootstrap stays in `available` if a new version is found
+      // (instead of auto-starting the download), so the user explicitly
+      // confirms in the dialog.
+      await store.bootstrap({ triggeredBy: 'manual' })
+      const newPhase = useUpdaterStore.getState().phase
+      if (newPhase === 'idle' || newPhase === 'checking') {
         await message(t('settings.about.alreadyLatestVersion'), { title: productName, kind: 'info' })
-      } else if (phase !== 'failed') {
-        // downloading / ready / installing → show the panel
+      } else {
         store.openPanel()
       }
-      // 'failed' → download-failure toast already shown by bootstrap()
     } catch (e) {
       await message(e instanceof Error ? e.message : String(e), { title: productName, kind: 'error' })
+    } finally {
+      setCheckingUpdate(false)
     }
   }
 
@@ -162,6 +173,7 @@ export function SettingsModal() {
                   appName={productName}
                   version={appVersion}
                   logoUrl={logoUrl}
+                  checkingUpdate={checkingUpdate}
                   onCheckUpdate={() => void onCheckUpdate()}
                   onUploadLogs={() => void onUploadLogs()}
                   onResetData={() => void onResetData()}

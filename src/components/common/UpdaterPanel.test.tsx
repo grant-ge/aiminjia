@@ -30,7 +30,7 @@ describe('UpdaterPanel', () => {
       progress: null,
       panelOpen: false,
       _update: null,
-      _downloaded: false,
+      _cachedBytes: null,
       _bootstrapPromise: null,
     }))
   })
@@ -40,14 +40,16 @@ describe('UpdaterPanel', () => {
       phase: 'downloading',
       version: '0.5.21',
       notes: '',
-      progress: { downloaded: 0, total: 100 },
+      progress: { downloaded: 50, total: 100 },
       panelOpen: true,
       _update: { install: vi.fn() } as never,
-      _downloaded: false,
+      _cachedBytes: null,
     }))
 
     render(<UpdaterPanel />)
 
-    expect(screen.getByRole('button', { name: 'updater.downloading' })).toBeDisabled()
+    // During downloading phase the install-and-restart button is not rendered —
+    // this is how the new UI prevents triggering install before _cachedBytes is ready.
+    expect(screen.queryByRole('button', { name: 'updater.installAndRestart' })).toBeNull()
   })
 })

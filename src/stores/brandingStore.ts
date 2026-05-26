@@ -15,7 +15,7 @@ import i18n from '@/i18n'
 import { create } from 'zustand'
 
 import { getLastBrand, saveLastBrand, type BrandSnapshot } from '@/lib/tauri'
-import { darken, isDarkColor, lighten, mixColors, rgba } from '@/lib/themeUtils'
+import { darken, hexToRgb, isDarkColor, lighten, mixColors, rgba } from '@/lib/themeUtils'
 
 export const DEFAULTS = {
   productName: 'AI小家',
@@ -104,6 +104,9 @@ function deriveAccentPalette(accent: string) {
   setVar('--sidebar-primary', accent)
   setVar('--sidebar-primary-foreground', onAccent)
   setVar('--brand-primary-subtle', mixColors(accent, '#FFFFFF', 0.14))
+  // Safari 13 compat: keep RGB components in sync for rgba(var(--primary-rgb), X) fallbacks
+  const [pr, pg, pb] = hexToRgb(accent)
+  setVar('--primary-rgb', `${pr}, ${pg}, ${pb}`)
 
   // === legacy --color-accent-* (53 处旧组件还在消费) ===
   setVar('--color-accent', accent)
@@ -149,6 +152,10 @@ function derivePrimaryPalette(primary: string) {
   setVar('--color-text-primary', primary)
   setVar('--color-text-secondary', rgba(primary, 0.65))
   setVar('--color-text-muted', rgba(primary, 0.45))
+
+  // Safari 13 compat
+  const [fr, fg2, fb] = hexToRgb(primary)
+  setVar('--foreground-rgb', `${fr}, ${fg2}, ${fb}`)
 }
 
 /**
@@ -166,6 +173,12 @@ function deriveBackgroundPalette(bg: string, fg: string) {
   setVar('--border', mixColors(bg, fg, 0.88))
   setVar('--input', mixColors(bg, fg, 0.88))
 
+  // Safari 13 compat: keep RGB companions in sync for rgba(var(--*-rgb), alpha) fallbacks
+  const [cr, cg, cb] = hexToRgb(bg)
+  setVar('--card-rgb', `${cr}, ${cg}, ${cb}`)
+  const [mr, mg, mb] = hexToRgb(mixColors(bg, fg, 0.45))
+  setVar('--muted-foreground-rgb', `${mr}, ${mg}, ${mb}`)
+
   // === legacy ===
   setVar('--color-bg-main', bg)
   setVar('--color-bg-card', bg)
@@ -179,6 +192,9 @@ function deriveBackgroundPalette(bg: string, fg: string) {
   setVar('--color-bg-msg-user', mixColors(bg, fg, 0.94))
   setVar('--color-bg-code', mixColors(bg, fg, 0.94))
   setVar('--color-bg-code-header', bg)
+
+  const [br, bg2, bb] = hexToRgb(mixColors(bg, fg, 0.96))
+  setVar('--color-bg-base-rgb', `${br}, ${bg2}, ${bb}`)
 }
 
 /**
@@ -222,6 +238,18 @@ const ALL_OVERRIDDEN_VARS = [
   '--color-bg-input', '--color-bg-base', '--color-bg-msg-user', '--color-bg-code', '--color-bg-code-header',
   '--color-border', '--color-border-light', '--color-border-subtle',
   '--color-bg-sidebar', '--color-bg-sidebar-hover',
+  // Safari 13 compat: RGB companion vars
+  '--primary-rgb',
+  '--foreground-rgb',
+  '--card-rgb',
+  '--muted-foreground-rgb',
+  '--primary-on-bg-10',
+  '--primary-on-bg-24',
+  '--primary-on-bg-72',
+  '--primary-darken-10',
+  '--color-bg-base-rgb',
+  '--primary-mix-scrollbar',
+  '--primary-mix-blockquote',
 ]
 
 // ---------- Logo URL 代理（OSS 远端 URL 走 lotus /api/file 代理） ----------
@@ -277,6 +305,16 @@ export const useBrandingStore = create<BrandingState>((set) => ({
     derivePrimaryPalette(primaryColor)
     deriveBackgroundPalette(bgColor, primaryColor)
     deriveSidebarPalette(sidebarBgColor, primaryColor)
+
+    // Cross-palette derived vars: accent blended into bg at various opacities,
+    // used in LoginPage gradients and TitleBar DEV stripe to stay tenant-aware.
+    setVar('--primary-on-bg-10', mixColors(accentColor, bgColor, 0.10))
+    setVar('--primary-on-bg-24', mixColors(accentColor, bgColor, 0.24))
+    setVar('--primary-on-bg-72', mixColors(accentColor, bgColor, 0.72))
+    setVar('--primary-darken-10', darken(accentColor, 0.10))
+    const border = mixColors(bgColor, primaryColor, 0.88)
+    setVar('--primary-mix-scrollbar', mixColors(accentColor, border, 0.40))
+    setVar('--primary-mix-blockquote', mixColors(accentColor, border, 0.38))
 
     if (hasValue(tenant.fontFamily)) {
       setVar('--font-sans', FONT_MAP[fontFamily] || fontFamily)

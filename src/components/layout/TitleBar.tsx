@@ -38,14 +38,14 @@ function WindowControls() {
 }
 
 /**
- * dev 模式下：底色 --primary，斜纹另一档用 --primary 派生的"淡 60%"实色
- * （color-mix 朝白色混 60%），两条都是实色（不透明），不论租户 accent
- * 是什么颜色都自动协调。45° 斜纹 + 中央 DEV 标签。
+ * dev 模式下：底色 --primary，斜纹另一档用运行时派生的 --primary-darken-10
+ * （暗 10%），两条都是实色（不透明），不论租户 accent 是什么颜色都自动协调。
+ * 45° 斜纹 + 中央 DEV 标签。
  */
 const DEV_STRIPE_STYLE: React.CSSProperties = {
   backgroundColor: 'var(--primary)',
   backgroundImage:
-    'repeating-linear-gradient(45deg, var(--primary) 0 10px, color-mix(in srgb, var(--primary), #000 10%) 10px 20px)',
+    'repeating-linear-gradient(45deg, var(--primary) 0 10px, var(--primary-darken-10) 10px 20px)',
 }
 
 // "DEV" or "DEV 5174" when a vite dev port is detectable.  Including the port
@@ -75,7 +75,9 @@ function DevBadge() {
  * area of the window. macOS draws native traffic lights over this strip.
  */
 export function TitleBar() {
-  const updateReady = useUpdaterStore((s) => s.phase === 'ready')
+  const showUpdateLink = useUpdaterStore((s) =>
+    s.phase === 'available' || s.phase === 'downloading' || s.phase === 'ready' || s.phase === 'failed'
+  )
   const isWindows = navigator.userAgent.includes('Windows')
   const isDev = import.meta.env.DEV
 
@@ -91,7 +93,7 @@ export function TitleBar() {
         className={`${barClass} justify-end`}
         style={barStyle}
       >
-        {updateReady ? (
+        {showUpdateLink ? (
           <div className="pr-3" onMouseDown={(e) => e.stopPropagation()}>
             <UpdateAvailableLink />
           </div>

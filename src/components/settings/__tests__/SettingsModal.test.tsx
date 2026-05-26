@@ -36,7 +36,7 @@ describe('SettingsModal', () => {
     useUiStore.getState().openSettings('account')
     render(<SettingsModal />)
     fireEvent.click(screen.getByRole('button', { name: '关于' }))
-    expect(screen.getByText('检查更新')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '检查更新' })).toBeInTheDocument()
   })
 
   it('does not render unavailable settings', () => {

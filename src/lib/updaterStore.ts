@@ -3,120 +3,133 @@ import type { Update } from '@tauri-apps/plugin-updater'
 import { check } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
 import { getVersion } from '@tauri-apps/api/app'
-import { appCacheDir, join } from '@tauri-apps/api/path'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import {
-  exists,
-  readTextFile,
-  writeTextFile,
-  remove,
-  mkdir,
-} from '@tauri-apps/plugin-fs'
+  updaterCheckCache,
+  updaterDownload,
+  updaterReadCachedBytes,
+  updaterClearCache,
+  updaterInstallCached,
+  updaterPlatformKey,
+} from '@/lib/tauri'
 import { useNotificationStore } from '@/stores/notificationStore'
 import i18n from '@/i18n'
 
-type Phase = 'idle' | 'downloading' | 'ready' | 'failed' | 'installing'
-
-interface PendingMeta {
-  version: string
-  totalBytes: number
-  downloadedBytes: number
-  status: 'downloading' | 'ready' | 'failed'
-  checkedAt: string
-  readyAt?: string
-}
+type Phase = 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'failed' | 'installing'
 
 interface UpdaterState {
   phase: Phase
   version: string | null
   notes: string
   progress: { downloaded: number; total: number } | null
+  error: string | null
   panelOpen: boolean
   online: boolean
-  /** Internal: live Update handle. Not persisted. */
   _update: Update | null
-  /** Internal: true only after this session's Update.download() has resolved. */
-  _downloaded: boolean
-  /** Internal: de-dupes React StrictMode/settings-triggered bootstraps. */
+  _cachedBytes: Uint8Array | null
+  _expectedSize: number
+  _downloadUrl: string
+  _etag: string
   _bootstrapPromise: Promise<void> | null
+  _downloadInFlight: Promise<void> | null
+  _progressUnlisten: UnlistenFn | null
+  _failedUnlisten: UnlistenFn | null
 
-  bootstrap(): Promise<void>
+  bootstrap(opts?: { triggeredBy?: 'auto' | 'manual' }): Promise<void>
+  startDownload(): Promise<void>
+  retryDownload(): Promise<void>
   openPanel(): void
   closePanel(): void
   installNow(): Promise<void>
 }
 
-const PENDING_DIRNAME = 'updater'
-const PENDING_FILENAME = 'pending.json'
-
-async function pendingPath(): Promise<{ dir: string; file: string }> {
-  const cache = await appCacheDir()
-  const dir = await join(cache, PENDING_DIRNAME)
-  const file = await join(dir, PENDING_FILENAME)
-  return { dir, file }
-}
-
-async function readPending(): Promise<PendingMeta | null> {
-  // Currently unused (bootstrap clears unconditionally), kept for diagnostics
-  // and future re-enablement. eslint-disable-next-line @typescript-eslint/no-unused-vars
-  try {
-    const { file } = await pendingPath()
-    if (!(await exists(file))) return null
-    const text = await readTextFile(file)
-    const meta = JSON.parse(text) as PendingMeta
-    if (!meta.version || !meta.status) return null
-    return meta
-  } catch {
-    return null
-  }
-}
-void readPending
-
-async function writePending(meta: PendingMeta): Promise<void> {
-  const { dir, file } = await pendingPath()
-  // recursive:true makes mkdir idempotent on existing dirs. Don't swallow
-  // errors — a real failure here (e.g. capability scope misconfigured) used
-  // to silently bubble up as "No such file or directory" on the subsequent
-  // writeTextFile, which we've debugged the hard way before.
-  await mkdir(dir, { recursive: true })
-  await writeTextFile(file, JSON.stringify(meta, null, 2))
-}
-
-async function clearPending(): Promise<void> {
-  try {
-    const { file } = await pendingPath()
-    if (await exists(file)) {
-      await remove(file)
-    }
-  } catch {
-    /* best-effort */
-  }
-}
-
-// Module-level flag: register online/offline listeners only once (#7).
 let networkListenersInstalled = false
+
+async function setupEventListeners(set: (partial: Partial<UpdaterState>) => void, get: () => UpdaterState) {
+  if (get()._progressUnlisten) return
+  let lastDownloaded = 0
+  const progressUnlisten = await listen<{ version: string; downloaded: number; total: number }>(
+    'updater:download-progress',
+    (e) => {
+      const { downloaded, total } = e.payload
+      if (downloaded < lastDownloaded) {
+        console.warn('[updater] progress went backwards:', lastDownloaded, '→', downloaded, 'phase=', get().phase)
+      }
+      lastDownloaded = downloaded
+      set({ progress: { downloaded, total } })
+    },
+  )
+  const failedUnlisten = await listen<{ version: string; error: string }>(
+    'updater:download-failed',
+    (e) => {
+      console.warn('[updater] download-failed event:', e.payload.error)
+      set({ phase: 'failed', error: e.payload.error })
+    },
+  )
+  set({ _progressUnlisten: progressUnlisten, _failedUnlisten: failedUnlisten })
+}
+
+function extractUpdateMeta(
+  update: Update,
+  platformKey: string,
+): { url: string; size: number; etag: string } {
+  // Tauri Update doesn't expose the platform-resolved download URL directly —
+  // only the raw update.json contents via `rawJson`. Pick the entry that
+  // matches our compile-time {os}-{arch} (resolved Rust-side via cfg!), so
+  // Intel mac builds get `darwin-x86_64`, not whatever entry is listed first.
+  // navigator.userAgent is unreliable here: Apple Silicon's webview UA hides
+  // arch, and Rosetta-translated processes lie about it. Trust the Rust side.
+  const raw = (update as unknown as { rawJson?: { platforms?: Record<string, { url?: string }> } })?.rawJson
+  let url = ''
+  if (raw && raw.platforms) {
+    const matched = raw.platforms[platformKey]?.url
+    if (matched) {
+      url = matched
+    } else {
+      console.warn('[updater] no manifest entry for', platformKey, '— falling back to first available')
+      for (const platform of Object.values(raw.platforms)) {
+        if (platform?.url) { url = platform.url; break }
+      }
+    }
+  }
+  return { url, size: 0, etag: '' }
+}
 
 export const useUpdaterStore = create<UpdaterState>()((set, get) => ({
   phase: 'idle',
   version: null,
   notes: '',
   progress: null,
+  error: null,
   panelOpen: false,
   online: typeof navigator !== 'undefined' ? navigator.onLine : true,
   _update: null,
-  _downloaded: false,
+  _cachedBytes: null,
+  _expectedSize: 0,
+  _downloadUrl: '',
+  _etag: '',
   _bootstrapPromise: null,
+  _downloadInFlight: null,
+  _progressUnlisten: null,
+  _failedUnlisten: null,
 
-  async bootstrap() {
-    // Synchronous dedup check — must happen before the async IIFE starts (#2).
+  async bootstrap(opts?: { triggeredBy?: 'auto' | 'manual' }) {
+    const triggeredBy = opts?.triggeredBy ?? 'auto'
     const inFlight = get()._bootstrapPromise
-    if (inFlight) {
-      return inFlight
+    if (inFlight) return inFlight
+
+    // Don't re-check if we've already discovered an update in this session.
+    // Re-running bootstrap() would wipe version/_update/_cachedBytes if the
+    // new check() returns null (Tauri updater can be flaky on repeat calls),
+    // making the user think there's no update. Once we're past 'checking',
+    // assume state is authoritative — user can use the UpdaterPanel directly.
+    const currentPhase = get().phase
+    if (currentPhase === 'available' || currentPhase === 'downloading'
+        || currentPhase === 'ready' || currentPhase === 'failed'
+        || currentPhase === 'installing') {
+      return
     }
 
-    // Allocate the promise placeholder synchronously so concurrent callers
-    // that arrive before the first `await` inside the IIFE see a non-null
-    // `_bootstrapPromise` and de-dup.  We assign the actual promise to it
-    // right after the IIFE expression (still in the same synchronous frame).
     let resolveHolder!: () => void
     const holder = new Promise<void>((r) => { resolveHolder = r })
     set({ _bootstrapPromise: holder })
@@ -127,190 +140,204 @@ export const useUpdaterStore = create<UpdaterState>()((set, get) => ({
         window.addEventListener('online', () => set({ online: true }))
         window.addEventListener('offline', () => set({ online: false }))
       }
+      await setupEventListeners(set, get)
 
-      // pending.json from a prior session is unreliable: the Tauri Update handle
-      // can't be persisted across launches, so even a "ready" status would mean
-      // we'd have to re-download anyway. Worse, surfacing an old version (e.g.
-      // 0.5.18 cached while the server is now on 0.5.20) confuses users and the
-      // install button silently no-ops without an Update handle. Always start
-      // from a clean slate and trust this session's check() result.
-      await clearPending()
+      set({ phase: 'checking', error: null })
 
       let update: Update | null = null
       try {
         update = await check()
       } catch (e) {
         console.warn('[updater] check failed:', e)
+        set({ phase: 'idle' })
         return
       }
-
       if (!update) {
-        set({ phase: 'idle', version: null, notes: '', progress: null, _update: null, _downloaded: false })
+        set({ phase: 'idle', version: null, notes: '', progress: null, _update: null, _cachedBytes: null })
+        return
+      }
+      const current = await getVersion()
+      if (update.version === current) {
+        set({ phase: 'idle', version: null, notes: '', progress: null, _update: null, _cachedBytes: null })
         return
       }
 
-      const currentVersion = await getVersion()
-      if (update.version === currentVersion) {
-        set({ phase: 'idle', version: null, notes: '', progress: null, _update: null, _downloaded: false })
-        return
+      let platformKey = ''
+      try {
+        platformKey = await updaterPlatformKey()
+      } catch (e) {
+        console.warn('[updater] platform key lookup failed:', e)
       }
+      const { url, etag } = extractUpdateMeta(update, platformKey)
+      const expectedSize = 0  // 0 = unknown (downloader treats as best-effort)
 
       set({
         _update: update,
         version: update.version,
         notes: update.body ?? '',
-        phase: 'downloading',
-        progress: { downloaded: 0, total: 0 },
-        _downloaded: false,
-      })
-      await writePending({
-        version: update.version,
-        totalBytes: 0,
-        downloadedBytes: 0,
-        status: 'downloading',
-        checkedAt: new Date().toISOString(),
+        _downloadUrl: url,
+        _expectedSize: expectedSize,
+        _etag: etag,
+        error: null,
       })
 
-      let total = 0
-      let downloaded = 0
+      // Check cache
+      let cacheStatus: 'complete' | 'partial' | 'none' = 'none'
       try {
-        await update.download((event) => {
-          if (event.event === 'Started') {
-            total = event.data.contentLength ?? 0
-          } else if (event.event === 'Progress') {
-            downloaded += event.data.chunkLength
-            set({ progress: { downloaded, total } })
-          }
-        })
-        const readyAt = new Date().toISOString()
-        await writePending({
-          version: update.version,
-          totalBytes: total,
-          downloadedBytes: downloaded,
-          status: 'ready',
-          checkedAt: new Date().toISOString(),
-          readyAt,
-        })
-        set({
-          phase: 'ready',
-          progress: { downloaded, total },
-          _downloaded: true,
-        })
+        const r = await updaterCheckCache(update.version, expectedSize, etag)
+        cacheStatus = r.status
       } catch (e) {
-        console.warn('[updater] download failed:', e)
-        await writePending({
-          version: update.version,
-          totalBytes: total,
-          downloadedBytes: downloaded,
-          status: 'failed',
-          checkedAt: new Date().toISOString(),
-        })
-        set({ phase: 'failed', _downloaded: false })
-        useNotificationStore.getState().push({
-          context: 'toast',
-          level: 'error',
-          title: i18n.t('updater.downloadFailed'),
-          message: i18n.t('updater.downloadFailedDesc'),
-          actions: [],
-          dismissible: true,
-          autoHide: 8,
-        })
+        console.warn('[updater] cache check failed:', e)
+      }
+
+      if (cacheStatus === 'complete') {
+        try {
+          const bytes = await updaterReadCachedBytes(update.version)
+          set({
+            phase: 'ready',
+            _cachedBytes: new Uint8Array(bytes),
+            progress: { downloaded: bytes.length, total: bytes.length },
+          })
+          return
+        } catch (e) {
+          console.warn('[updater] read cached bytes failed:', e)
+        }
+      }
+
+      // Partial cache means a download was interrupted previously. Always
+      // continue regardless of the autoDownload setting — the user already
+      // committed to downloading this version, we're just resuming. Showing
+      // the available phase here would be confusing: clicking "立即更新" in
+      // the dialog would jump to a non-zero progress and look broken.
+      if (cacheStatus === 'partial') {
+        void get().startDownload()
+        return
+      }
+
+      // No cache. Auto trigger downloads silently in the background; manual
+      // trigger stays in `available` so the user explicitly confirms in the
+      // dialog before bytes start flowing — that's the whole point of the
+      // manual path: not surprising the user with a download.
+      if (triggeredBy === 'manual') {
+        set({ phase: 'available' })
+      } else {
+        void get().startDownload()
       }
     })()
 
-    try {
-      await run
-    } finally {
+    try { await run } finally {
       resolveHolder()
-      if (get()._bootstrapPromise === holder) {
-        set({ _bootstrapPromise: null })
-      }
+      if (get()._bootstrapPromise === holder) set({ _bootstrapPromise: null })
     }
   },
 
-  openPanel() {
-    set({ panelOpen: true })
+  async startDownload() {
+    const { _update, _downloadUrl, _expectedSize, _etag, phase } = get()
+    if (!_update || (phase !== 'available' && phase !== 'failed' && phase !== 'checking')) return
+    if (!_downloadUrl) {
+      set({ phase: 'failed', error: 'Download URL not available from update metadata' })
+      return
+    }
+    // Dedup concurrent calls — guards against React StrictMode double-mount,
+    // HMR re-runs, and parallel UI triggers. Without this two downloads append
+    // to the same partial file in Rust and corrupt it.
+    if (get()._downloadInFlight) {
+      return get()._downloadInFlight!
+    }
+
+    set({
+      phase: 'downloading',
+      progress: { downloaded: 0, total: _expectedSize },
+      error: null,
+      _cachedBytes: null,
+    })
+
+    const run = (async () => {
+      try {
+        await updaterDownload(_downloadUrl, _update.version, _expectedSize, _etag)
+        const bytes = await updaterReadCachedBytes(_update.version)
+        set({
+          phase: 'ready',
+          _cachedBytes: new Uint8Array(bytes),
+          progress: { downloaded: bytes.length, total: bytes.length },
+        })
+      } catch (e) {
+        const msg = String((e as Error)?.message ?? e)
+        if (get().phase !== 'failed') {
+          set({ phase: 'failed', error: msg })
+        }
+      } finally {
+        set({ _downloadInFlight: null })
+      }
+    })()
+    set({ _downloadInFlight: run })
+    return run
   },
 
-  closePanel() {
-    set({ panelOpen: false })
+  async retryDownload() {
+    if (get().phase !== 'failed') return
+    await get().startDownload()
   },
+
+  openPanel() { set({ panelOpen: true }) },
+  closePanel() { set({ panelOpen: false }) },
 
   async installNow() {
-    const { _update, _downloaded, phase, online } = get()
-    if (!_update || !_downloaded || phase !== 'ready') {
+    const { _update, _cachedBytes, phase, online } = get()
+    if (!_update || !_cachedBytes || phase !== 'ready') {
       useNotificationStore.getState().push({
         context: 'toast',
         level: 'error',
         title: i18n.t('updater.installFailedTitle'),
         message: i18n.t('updater.notReadyMessage'),
-        actions: [],
-        dismissible: true,
-        autoHide: 6,
+        actions: [], dismissible: true, autoHide: 6,
       })
       return
     }
-    // Guard: network may be required for signature verification (#5).
     if (!online) {
       useNotificationStore.getState().push({
         context: 'toast',
         level: 'error',
         title: i18n.t('updater.installFailedTitle'),
         message: i18n.t('updater.offlineHint'),
-        actions: [],
-        dismissible: true,
-        autoHide: 6,
+        actions: [], dismissible: true, autoHide: 6,
       })
       return
     }
     set({ phase: 'installing' })
     let installed = false
     try {
-      try {
-        await _update.install()
-      } catch (e) {
-        const msg = String((e as Error)?.message ?? e)
-        if (msg.includes('called before Update.download')) {
-          await _update.download((event) => {
-            if (event.event === 'Progress') {
-              const p = get().progress ?? { downloaded: 0, total: 0 }
-              set({ progress: { downloaded: p.downloaded + event.data.chunkLength, total: p.total } })
-            }
-          })
-          await _update.install()
-        } else {
-          throw e
-        }
-      }
+      // The JS plugin-updater's install() requires a prior JS-side download()
+      // call (it tracks bytesRid internally). We have bytes in Rust cache,
+      // so we go through our custom command that uses the Rust-side
+      // Update::install(bytes) API directly.
+      await updaterInstallCached(_update.version)
       installed = true
-      await clearPending()
-      set({ phase: 'idle', version: null, notes: '', progress: null, _update: null, _downloaded: false })
+      await updaterClearCache().catch(() => {})
+      set({ phase: 'idle', version: null, notes: '', progress: null, _update: null, _cachedBytes: null })
       await relaunch()
     } catch (e) {
       console.error('[updater] install failed:', e)
       if (installed) {
-        // Install succeeded but relaunch failed — tell user to restart manually (#6).
         useNotificationStore.getState().push({
-          context: 'toast',
-          level: 'info',
+          context: 'toast', level: 'info',
           title: i18n.t('updater.installSuccessTitle'),
           message: i18n.t('updater.relaunchFailedHint'),
-          actions: [],
-          dismissible: true,
-          autoHide: 10,
+          actions: [], dismissible: true, autoHide: 10,
         })
-        set({ phase: 'idle', version: null, notes: '', progress: null, _update: null, _downloaded: false })
+        set({ phase: 'idle', version: null, notes: '', progress: null, _update: null, _cachedBytes: null })
       } else {
+        const msg = String((e as Error)?.message ?? e)
+        if (msg.toLowerCase().includes('signature')) {
+          await updaterClearCache().catch(() => {})
+        }
         useNotificationStore.getState().push({
-          context: 'toast',
-          level: 'error',
+          context: 'toast', level: 'error',
           title: i18n.t('updater.installFailedTitle'),
-          message: String((e as Error)?.message ?? e),
-          actions: [],
-          dismissible: true,
-          autoHide: 8,
+          message: msg,
+          actions: [], dismissible: true, autoHide: 8,
         })
-        set({ phase: 'ready' })
+        set({ phase: 'failed', error: msg })
       }
     }
   },
