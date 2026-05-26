@@ -75,7 +75,9 @@ function DevBadge() {
  * area of the window. macOS draws native traffic lights over this strip.
  */
 export function TitleBar() {
-  const updateReady = useUpdaterStore((s) => s.phase === 'ready')
+  const showUpdateLink = useUpdaterStore((s) =>
+    s.phase === 'available' || s.phase === 'downloading' || s.phase === 'ready' || s.phase === 'failed'
+  )
   const isWindows = navigator.userAgent.includes('Windows')
   const isDev = import.meta.env.DEV
 
@@ -91,7 +93,7 @@ export function TitleBar() {
         className={`${barClass} justify-end`}
         style={barStyle}
       >
-        {updateReady ? (
+        {showUpdateLink ? (
           <div className="pr-3" onMouseDown={(e) => e.stopPropagation()}>
             <UpdateAvailableLink />
           </div>

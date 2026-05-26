@@ -1,344 +1,269 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Mock Tauri APIs that the store imports at module load time.
 const checkMock = vi.fn()
 const relaunchMock = vi.fn()
 const getVersionMock = vi.fn()
-const existsMock = vi.fn().mockResolvedValue(false)
-const readTextFileMock = vi.fn()
-const writeTextFileMock = vi.fn().mockResolvedValue(undefined)
-const removeMock = vi.fn().mockResolvedValue(undefined)
-const mkdirMock = vi.fn().mockResolvedValue(undefined)
-const appCacheDirMock = vi.fn().mockResolvedValue('/tmp/cache')
-const joinMock = vi.fn(async (...parts: string[]) => parts.join('/'))
+const listenMock = vi.fn(async (..._a: unknown[]) => () => {})
+const invokeMock = vi.fn()
 
 vi.mock('@tauri-apps/plugin-updater', () => ({ check: (...a: unknown[]) => checkMock(...a) }))
 vi.mock('@tauri-apps/plugin-process', () => ({ relaunch: (...a: unknown[]) => relaunchMock(...a) }))
 vi.mock('@tauri-apps/api/app', () => ({ getVersion: (...a: unknown[]) => getVersionMock(...a) }))
-vi.mock('@tauri-apps/api/path', () => ({
-  appCacheDir: (...a: unknown[]) => appCacheDirMock(...a),
-  join: (...a: unknown[]) => joinMock(...(a as string[])),
-}))
-vi.mock('@tauri-apps/plugin-fs', () => ({
-  exists: (...a: unknown[]) => existsMock(...a),
-  readTextFile: (...a: unknown[]) => readTextFileMock(...a),
-  writeTextFile: (...a: unknown[]) => writeTextFileMock(...a),
-  remove: (...a: unknown[]) => removeMock(...a),
-  mkdir: (...a: unknown[]) => mkdirMock(...a),
-}))
+vi.mock('@tauri-apps/api/event', () => ({ listen: (...a: unknown[]) => listenMock(...a) }))
+vi.mock('@tauri-apps/api/core', () => ({ invoke: (...a: unknown[]) => invokeMock(...a) }))
 
-// Reset modules so each test imports a fresh store with reset zustand state.
 async function loadModules() {
   vi.resetModules()
   const storeMod = await import('./updaterStore')
   const notifMod = await import('@/stores/notificationStore')
-  return { useUpdaterStore: storeMod.useUpdaterStore, useNotificationStore: notifMod.useNotificationStore }
+  return {
+    useUpdaterStore: storeMod.useUpdaterStore,
+    useNotificationStore: notifMod.useNotificationStore,
+  }
 }
+
+function setupCommandMocks(opts: {
+  cacheStatus?: 'complete' | 'partial' | 'none'
+  cachedBytes?: number[]
+  downloadResolve?: boolean
+  platformKey?: string
+}) {
+  invokeMock.mockImplementation(async (cmd: string) => {
+    if (cmd === 'updater_platform_key') return opts.platformKey ?? 'darwin-aarch64'
+    if (cmd === 'updater_check_cache') {
+      return { status: opts.cacheStatus ?? 'none', downloaded_size: 0 }
+    }
+    if (cmd === 'updater_read_cached_bytes') {
+      return opts.cachedBytes ?? [1, 2, 3]
+    }
+    if (cmd === 'updater_download') {
+      if (opts.downloadResolve === false) throw new Error('network timeout')
+      return undefined
+    }
+    if (cmd === 'updater_clear_cache') return undefined
+    if (cmd === 'updater_install_cached') return undefined
+    throw new Error(`unexpected command: ${cmd}`)
+  })
+}
+
+function fakeUpdate(version = '0.5.30', body = 'notes') {
+  return {
+    version,
+    body,
+    rawJson: { platforms: { 'darwin-aarch64': { url: 'https://example/pkg.tar.gz' } } },
+    install: vi.fn().mockResolvedValue(undefined),
+  }
+}
+
+function fakeMultiPlatformUpdate(version = '0.5.30') {
+  return {
+    version,
+    body: 'notes',
+    rawJson: {
+      platforms: {
+        'darwin-aarch64': { url: 'https://example/AIjia.app.tar.gz' },
+        'darwin-x86_64': { url: 'https://example/AIjia_x64.app.tar.gz' },
+        'windows-x86_64': { url: 'https://example/AIjia_x64-setup.exe' },
+      },
+    },
+    install: vi.fn().mockResolvedValue(undefined),
+  }
+}
+
+beforeEach(() => {
+  vi.clearAllMocks()
+})
 
 afterEach(() => {
   vi.clearAllMocks()
-  existsMock.mockResolvedValue(false)
 })
 
 describe('updaterStore.bootstrap', () => {
-  it('does not surface stale prior-ready cache without a live Update handle', async () => {
-    // Simulate prior session that left "ready" cache for old version 0.5.18
-    existsMock.mockResolvedValue(true)
-    readTextFileMock.mockResolvedValue(JSON.stringify({
-      version: '0.5.18',
-      totalBytes: 1000,
-      downloadedBytes: 1000,
-      status: 'ready',
-      checkedAt: '2026-05-09T00:00:00Z',
-      readyAt: '2026-05-09T00:00:00Z',
-    }))
-    // No live update available now
+  it('stays idle when no update available', async () => {
     checkMock.mockResolvedValue(null)
-    getVersionMock.mockResolvedValue('0.5.20')
-
-    const { useUpdaterStore: useStore } = await loadModules()
-    await useStore.getState().bootstrap()
-    const s = useStore.getState()
-
-    expect(s.phase).toBe('idle')
-    expect(s.version).toBeNull()
-    // The stale pending.json must have been cleared, not surfaced
-    expect(removeMock).toHaveBeenCalled()
+    getVersionMock.mockResolvedValue('0.5.29')
+    const { useUpdaterStore } = await loadModules()
+    await useUpdaterStore.getState().bootstrap()
+    expect(useUpdaterStore.getState().phase).toBe('idle')
   })
 
-  it('downloads and exposes the latest server version, not the stale cache', async () => {
-    existsMock.mockResolvedValue(true)
-    readTextFileMock.mockResolvedValue(JSON.stringify({
-      version: '0.5.18',
-      totalBytes: 100, downloadedBytes: 100, status: 'ready',
-      checkedAt: '2026-05-09T00:00:00Z',
-    }))
-    const fakeUpdate = {
-      version: '0.5.21',
-      body: 'Fixes',
-      download: vi.fn(async (cb: (e: { event: string; data: { contentLength?: number; chunkLength?: number } }) => void) => {
-        cb({ event: 'Started', data: { contentLength: 200 } })
-        cb({ event: 'Progress', data: { chunkLength: 200 } })
-      }),
-      install: vi.fn(),
-    }
-    checkMock.mockResolvedValue(fakeUpdate)
-    getVersionMock.mockResolvedValue('0.5.18')
-
-    const { useUpdaterStore: useStore } = await loadModules()
-    await useStore.getState().bootstrap()
-    const s = useStore.getState()
-
-    expect(s.version).toBe('0.5.21')
-    expect(s.phase).toBe('ready')
+  it('stays idle when server version equals current', async () => {
+    checkMock.mockResolvedValue(fakeUpdate('0.5.29'))
+    getVersionMock.mockResolvedValue('0.5.29')
+    const { useUpdaterStore } = await loadModules()
+    await useUpdaterStore.getState().bootstrap()
+    expect(useUpdaterStore.getState().phase).toBe('idle')
   })
 
-  it('reuses an in-flight bootstrap so a slower duplicate check cannot expose an undownloaded handle as ready', async () => {
-    let finishFirstDownload!: () => void
-    let firstDownloaded = false
-    const firstUpdate = {
-      version: '0.5.21',
-      body: 'first',
-      download: vi.fn(async () => {
-        await new Promise<void>((resolve) => {
-          finishFirstDownload = resolve
-        })
-        firstDownloaded = true
-      }),
-      install: vi.fn(async () => {
-        if (!firstDownloaded) throw new Error('Update.install called before Update.download')
-      }),
-    }
-    checkMock.mockResolvedValue(firstUpdate)
-    getVersionMock.mockResolvedValue('0.5.18')
-
-    const { useUpdaterStore: useStore, useNotificationStore } = await loadModules()
-    useNotificationStore.getState().dismissAll()
-    const firstBootstrap = useStore.getState().bootstrap()
-    await vi.waitFor(() => expect(firstUpdate.download).toHaveBeenCalled())
-    const secondBootstrap = useStore.getState().bootstrap()
-
-    finishFirstDownload()
-    await firstBootstrap
-    await secondBootstrap
-    expect(checkMock).toHaveBeenCalledTimes(1)
-    expect(useStore.getState().phase).toBe('ready')
-    await useStore.getState().installNow()
-
-    expect(firstUpdate.install).toHaveBeenCalled()
-    expect(useNotificationStore.getState().notifications).toHaveLength(0)
+  it('always auto-starts download when no cache (no autoDownload toggle anymore)', async () => {
+    checkMock.mockResolvedValue(fakeUpdate())
+    getVersionMock.mockResolvedValue('0.5.29')
+    setupCommandMocks({ cacheStatus: 'none', cachedBytes: [9, 9] })
+    const { useUpdaterStore } = await loadModules()
+    await useUpdaterStore.getState().bootstrap()
+    // bootstrap kicks off startDownload via void (not awaited).
+    // Wait for the phase to settle on 'ready'.
+    await vi.waitFor(() => {
+      expect(useUpdaterStore.getState().phase).toBe('ready')
+    })
   })
 
-  it('pushes an error toast when download fails', async () => {
-    const fakeUpdate = {
-      version: '0.5.21',
-      body: '',
-      download: vi.fn().mockRejectedValue(new Error('network timeout')),
-      install: vi.fn(),
-    }
-    checkMock.mockResolvedValue(fakeUpdate)
-    getVersionMock.mockResolvedValue('0.5.18')
+  it('manual trigger: stays in available when no cache (waits for user confirm)', async () => {
+    checkMock.mockResolvedValue(fakeUpdate())
+    getVersionMock.mockResolvedValue('0.5.29')
+    setupCommandMocks({ cacheStatus: 'none' })
+    const { useUpdaterStore } = await loadModules()
+    await useUpdaterStore.getState().bootstrap({ triggeredBy: 'manual' })
+    expect(useUpdaterStore.getState().phase).toBe('available')
+  })
 
-    const { useUpdaterStore: useStore, useNotificationStore } = await loadModules()
-    useNotificationStore.getState().dismissAll()
-    await useStore.getState().bootstrap()
+  it('cache complete: jumps straight to ready', async () => {
+    checkMock.mockResolvedValue(fakeUpdate())
+    getVersionMock.mockResolvedValue('0.5.29')
+    setupCommandMocks({ cacheStatus: 'complete', cachedBytes: [1, 2, 3] })
+    const { useUpdaterStore } = await loadModules()
+    await useUpdaterStore.getState().bootstrap()
+    expect(useUpdaterStore.getState().phase).toBe('ready')
+  })
+})
 
-    expect(useStore.getState().phase).toBe('failed')
-    const notes = useNotificationStore.getState().notifications
-    expect(notes.length).toBeGreaterThanOrEqual(1)
-    expect(notes[notes.length - 1].level).toBe('error')
+describe('updaterStore.startDownload', () => {
+  it('transitions to ready on successful download', async () => {
+    checkMock.mockResolvedValue(fakeUpdate())
+    getVersionMock.mockResolvedValue('0.5.29')
+    setupCommandMocks({ cacheStatus: 'none', cachedBytes: [7, 8, 9] })
+    const { useUpdaterStore } = await loadModules()
+    await useUpdaterStore.getState().bootstrap()
+
+    await vi.waitFor(() => {
+      expect(useUpdaterStore.getState().phase).toBe('ready')
+    })
+  })
+
+  it('transitions to failed on download error', async () => {
+    checkMock.mockResolvedValue(fakeUpdate())
+    getVersionMock.mockResolvedValue('0.5.29')
+    setupCommandMocks({ cacheStatus: 'none', downloadResolve: false })
+    const { useUpdaterStore } = await loadModules()
+    await useUpdaterStore.getState().bootstrap()
+    await vi.waitFor(() => {
+      expect(useUpdaterStore.getState().phase).toBe('failed')
+    })
+  })
+})
+
+describe('updaterStore.retryDownload', () => {
+  it('only runs from failed state', async () => {
+    const { useUpdaterStore } = await loadModules()
+    await useUpdaterStore.getState().retryDownload()
+    expect(useUpdaterStore.getState().phase).toBe('idle')
+  })
+
+  it('retries from failed state', async () => {
+    checkMock.mockResolvedValue(fakeUpdate())
+    getVersionMock.mockResolvedValue('0.5.29')
+    let downloadAttempts = 0
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === 'updater_platform_key') return 'darwin-aarch64'
+      if (cmd === 'updater_check_cache') return { status: 'none', downloaded_size: 0 }
+      if (cmd === 'updater_read_cached_bytes') return [1, 2, 3]
+      if (cmd === 'updater_download') {
+        downloadAttempts++
+        if (downloadAttempts === 1) throw new Error('first attempt failed')
+        return undefined
+      }
+      if (cmd === 'updater_clear_cache') return undefined
+      throw new Error('unexpected: ' + cmd)
+    })
+    const { useUpdaterStore } = await loadModules()
+    await useUpdaterStore.getState().bootstrap()
+    await vi.waitFor(() => {
+      expect(useUpdaterStore.getState().phase).toBe('failed')
+    })
+
+    await useUpdaterStore.getState().retryDownload()
+    expect(useUpdaterStore.getState().phase).toBe('ready')
+    expect(downloadAttempts).toBe(2)
   })
 })
 
 describe('updaterStore.installNow', () => {
-  it('does not call install while the update download is still in progress', async () => {
-    let finishDownload!: () => void
-    const fakeUpdate = {
-      version: '0.5.21',
-      body: '',
-      download: vi.fn(async () => {
-        await new Promise<void>((resolve) => {
-          finishDownload = resolve
-        })
-      }),
-      install: vi.fn().mockRejectedValue(new Error('Update.install called before Update.download')),
-    }
-    checkMock.mockResolvedValue(fakeUpdate)
-    getVersionMock.mockResolvedValue('0.5.18')
-
-    const { useUpdaterStore: useStore, useNotificationStore } = await loadModules()
-    useNotificationStore.getState().dismissAll()
-    const bootstrap = useStore.getState().bootstrap()
-    await vi.waitFor(() => expect(fakeUpdate.download).toHaveBeenCalled())
-
-    await useStore.getState().installNow()
-
-    expect(fakeUpdate.install).not.toHaveBeenCalled()
-    expect(useStore.getState().phase).toBe('downloading')
-    expect(useNotificationStore.getState().notifications).toHaveLength(1)
-
-    finishDownload()
-    await bootstrap
-  })
-
-  it('pushes a user-visible toast when no Update handle is present', async () => {
-    const { useUpdaterStore: useStore, useNotificationStore } = await loadModules()
-    useNotificationStore.getState().dismissAll()
-    // No bootstrap → no _update handle
-    await useStore.getState().installNow()
-
-    const notes = useNotificationStore.getState().notifications
-    expect(notes.length).toBe(1)
-    expect(notes[0].level).toBe('error')
-    expect(notes[0].context).toBe('toast')
-  })
-
-  it('pushes a toast and reverts to ready when install() throws', async () => {
-    const fakeUpdate = {
-      version: '0.5.21',
-      body: '',
-      download: vi.fn(async (cb: (e: { event: string; data: { contentLength?: number; chunkLength?: number } }) => void) => {
-        cb({ event: 'Started', data: { contentLength: 1 } })
-        cb({ event: 'Progress', data: { chunkLength: 1 } })
-      }),
-      install: vi.fn().mockRejectedValue(new Error('disk full')),
-    }
-    checkMock.mockResolvedValue(fakeUpdate)
-    getVersionMock.mockResolvedValue('0.5.18')
-
-    const { useUpdaterStore: useStore, useNotificationStore } = await loadModules()
-    useNotificationStore.getState().dismissAll()
-    await useStore.getState().bootstrap()
-    await useStore.getState().installNow()
-
-    const notes = useNotificationStore.getState().notifications
-    expect(notes.length).toBeGreaterThanOrEqual(1)
-    expect(notes[notes.length - 1].level).toBe('error')
-    expect(useStore.getState().phase).toBe('ready')
-  })
-
-  it('shows info toast and goes idle when install succeeds but relaunch fails', async () => {
-    const fakeUpdate = {
-      version: '0.5.21',
-      body: '',
-      download: vi.fn(async (cb: (e: { event: string; data: { contentLength?: number; chunkLength?: number } }) => void) => {
-        cb({ event: 'Started', data: { contentLength: 1 } })
-        cb({ event: 'Progress', data: { chunkLength: 1 } })
-      }),
-      install: vi.fn().mockResolvedValue(undefined),
-    }
-    checkMock.mockResolvedValue(fakeUpdate)
-    getVersionMock.mockResolvedValue('0.5.18')
-    relaunchMock.mockRejectedValue(new Error('relaunch failed'))
-
-    const { useUpdaterStore: useStore, useNotificationStore } = await loadModules()
-    useNotificationStore.getState().dismissAll()
-    await useStore.getState().bootstrap()
-    await useStore.getState().installNow()
-
-    expect(fakeUpdate.install).toHaveBeenCalled()
-    expect(useStore.getState().phase).toBe('idle')
-    expect(useStore.getState()._update).toBeNull()
-    expect(useStore.getState()._downloaded).toBe(false)
-    // Should push an info toast telling user to restart manually
-    const notes = useNotificationStore.getState().notifications
-    expect(notes.length).toBeGreaterThanOrEqual(1)
-    expect(notes[notes.length - 1].level).toBe('info')
-  })
-
-  it('recovers by re-downloading when install() throws "called before Update.download"', async () => {
-    let downloadCallCount = 0
-    let installCallCount = 0
-    const fakeUpdate = {
-      version: '0.5.21',
-      body: '',
-      download: vi.fn(async (cb: (e: { event: string; data: { contentLength?: number; chunkLength?: number } }) => void) => {
-        downloadCallCount++
-        cb({ event: 'Started', data: { contentLength: 100 } })
-        cb({ event: 'Progress', data: { chunkLength: 100 } })
-      }),
-      install: vi.fn(async () => {
-        installCallCount++
-        // First install attempt fails with the plugin-level error; second succeeds
-        if (installCallCount === 1) {
-          throw new Error('Update.install called before Update.download')
-        }
-      }),
-    }
-    checkMock.mockResolvedValue(fakeUpdate)
-    getVersionMock.mockResolvedValue('0.5.18')
+  it('invokes updater_install_cached command with the version', async () => {
+    const upd = fakeUpdate()
+    checkMock.mockResolvedValue(upd)
+    getVersionMock.mockResolvedValue('0.5.29')
+    setupCommandMocks({ cacheStatus: 'complete', cachedBytes: [1, 2, 3] })
     relaunchMock.mockResolvedValue(undefined)
+    const { useUpdaterStore } = await loadModules()
+    await useUpdaterStore.getState().bootstrap()
+    expect(useUpdaterStore.getState().phase).toBe('ready')
 
-    const { useUpdaterStore: useStore, useNotificationStore } = await loadModules()
-    useNotificationStore.getState().dismissAll()
-    await useStore.getState().bootstrap()
-    expect(useStore.getState().phase).toBe('ready')
-    expect(downloadCallCount).toBe(1)
-
-    await useStore.getState().installNow()
-
-    // Should have re-downloaded once and called install twice (fail, then succeed)
-    expect(downloadCallCount).toBe(2)
-    expect(installCallCount).toBe(2)
+    await useUpdaterStore.getState().installNow()
+    // install goes through our custom Tauri command (not the JS Update.install)
+    const installCalls = invokeMock.mock.calls.filter((c) => c[0] === 'updater_install_cached')
+    expect(installCalls.length).toBe(1)
+    expect(installCalls[0][1]).toEqual({ version: '0.5.30' })
     expect(relaunchMock).toHaveBeenCalled()
-    expect(useStore.getState().phase).toBe('idle')
-    // No error toast — recovery was transparent
-    const errorNotes = useNotificationStore.getState().notifications.filter((n) => n.level === 'error')
-    expect(errorNotes).toHaveLength(0)
   })
 
-  it('still surfaces non-download errors from install() as error toast', async () => {
-    const fakeUpdate = {
-      version: '0.5.21',
-      body: '',
-      download: vi.fn(async (cb: (e: { event: string; data: { contentLength?: number; chunkLength?: number } }) => void) => {
-        cb({ event: 'Started', data: { contentLength: 1 } })
-        cb({ event: 'Progress', data: { chunkLength: 1 } })
-      }),
-      install: vi.fn().mockRejectedValue(new Error('signature verification failed')),
-    }
-    checkMock.mockResolvedValue(fakeUpdate)
-    getVersionMock.mockResolvedValue('0.5.18')
-
-    const { useUpdaterStore: useStore, useNotificationStore } = await loadModules()
+  it('shows error toast when not ready', async () => {
+    const { useUpdaterStore, useNotificationStore } = await loadModules()
     useNotificationStore.getState().dismissAll()
-    await useStore.getState().bootstrap()
-    await useStore.getState().installNow()
-
-    // download() called once during bootstrap, NOT a second time (error not the recoverable one)
-    expect(fakeUpdate.download).toHaveBeenCalledTimes(1)
-    expect(fakeUpdate.install).toHaveBeenCalledTimes(1)
-    expect(useStore.getState().phase).toBe('ready')
-    const notes = useNotificationStore.getState().notifications
-    expect(notes[notes.length - 1].level).toBe('error')
-  })
-
-  it('blocks install and shows offline toast when network is unavailable', async () => {
-    const fakeUpdate = {
-      version: '0.5.21',
-      body: '',
-      download: vi.fn(async (cb: (e: { event: string; data: { contentLength?: number; chunkLength?: number } }) => void) => {
-        cb({ event: 'Started', data: { contentLength: 1 } })
-        cb({ event: 'Progress', data: { chunkLength: 1 } })
-      }),
-      install: vi.fn().mockResolvedValue(undefined),
-    }
-    checkMock.mockResolvedValue(fakeUpdate)
-    getVersionMock.mockResolvedValue('0.5.18')
-
-    const { useUpdaterStore: useStore, useNotificationStore } = await loadModules()
-    useNotificationStore.getState().dismissAll()
-    await useStore.getState().bootstrap()
-    expect(useStore.getState().phase).toBe('ready')
-
-    // Simulate going offline
-    useStore.setState({ online: false })
-    await useStore.getState().installNow()
-
-    expect(fakeUpdate.install).not.toHaveBeenCalled()
-    expect(useStore.getState().phase).toBe('ready')
+    await useUpdaterStore.getState().installNow()
     const notes = useNotificationStore.getState().notifications
     expect(notes.length).toBe(1)
     expect(notes[0].level).toBe('error')
+  })
+})
+
+describe('updaterStore.bootstrap platform-key URL selection', () => {
+  it('intel mac picks darwin-x86_64 url, not darwin-aarch64', async () => {
+    checkMock.mockResolvedValue(fakeMultiPlatformUpdate())
+    getVersionMock.mockResolvedValue('0.5.29')
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === 'updater_platform_key') return 'darwin-x86_64'
+      if (cmd === 'updater_check_cache') return { status: 'none', downloaded_size: 0 }
+      if (cmd === 'updater_read_cached_bytes') return [1, 2, 3]
+      if (cmd === 'updater_download') return undefined
+      if (cmd === 'updater_clear_cache') return undefined
+      throw new Error('unexpected: ' + cmd)
+    })
+    const { useUpdaterStore } = await loadModules()
+    // Use manual trigger so bootstrap stops in 'available' without firing
+    // startDownload — keeps the assertion focused on platform-key resolution.
+    await useUpdaterStore.getState().bootstrap({ triggeredBy: 'manual' })
+
+    const state = useUpdaterStore.getState() as unknown as { _downloadUrl: string }
+    expect(state._downloadUrl).toBe('https://example/AIjia_x64.app.tar.gz')
+  })
+
+  it('apple silicon mac picks darwin-aarch64 url', async () => {
+    checkMock.mockResolvedValue(fakeMultiPlatformUpdate())
+    getVersionMock.mockResolvedValue('0.5.29')
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === 'updater_platform_key') return 'darwin-aarch64'
+      if (cmd === 'updater_check_cache') return { status: 'none', downloaded_size: 0 }
+      throw new Error('unexpected: ' + cmd)
+    })
+    const { useUpdaterStore } = await loadModules()
+    await useUpdaterStore.getState().bootstrap({ triggeredBy: 'manual' })
+
+    const state = useUpdaterStore.getState() as unknown as { _downloadUrl: string }
+    expect(state._downloadUrl).toBe('https://example/AIjia.app.tar.gz')
+  })
+
+  it('windows picks windows-x86_64 url', async () => {
+    checkMock.mockResolvedValue(fakeMultiPlatformUpdate())
+    getVersionMock.mockResolvedValue('0.5.29')
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === 'updater_platform_key') return 'windows-x86_64'
+      if (cmd === 'updater_check_cache') return { status: 'none', downloaded_size: 0 }
+      throw new Error('unexpected: ' + cmd)
+    })
+    const { useUpdaterStore } = await loadModules()
+    await useUpdaterStore.getState().bootstrap({ triggeredBy: 'manual' })
+
+    const state = useUpdaterStore.getState() as unknown as { _downloadUrl: string }
+    expect(state._downloadUrl).toBe('https://example/AIjia_x64-setup.exe')
   })
 })

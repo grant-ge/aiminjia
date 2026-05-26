@@ -58,12 +58,19 @@ describe('AboutPanel', () => {
     expect(screen.queryByRole('button', { name: '重置' })).not.toBeInTheDocument()
   })
 
-  it('wires the still-active actions to their handlers', () => {
+  it('wires the check-update button to its handler', () => {
     render(<AboutPanel {...baseProps} />)
 
     fireEvent.click(screen.getByRole('button', { name: '检查更新' }))
 
     expect(baseProps.onCheckUpdate).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows checking state and disables the button while checking', () => {
+    render(<AboutPanel {...baseProps} checkingUpdate />)
+
+    const button = screen.getByRole('button', { name: '检查中…' })
+    expect(button).toBeDisabled()
   })
 
   it('hides unavailable help and feedback entries', () => {

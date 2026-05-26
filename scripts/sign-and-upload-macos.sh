@@ -494,7 +494,7 @@ if [ -n "$APP" ]; then
     TAR="$TAR_DIR/AIjia.app.tar.gz"
     SIG="$TAR.sig"
     rm -f "$TAR" "$SIG"
-    tar czf "$TAR" -C "$TAR_DIR" "AIjia.app"
+    COPYFILE_DISABLE=1 tar czf "$TAR" -C "$TAR_DIR" --exclude='.DS_Store' "AIjia.app"
 
     # Use global tauri-cli or npx
     if command -v tauri &>/dev/null; then

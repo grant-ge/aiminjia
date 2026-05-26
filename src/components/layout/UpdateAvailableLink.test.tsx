@@ -11,7 +11,7 @@ vi.mock('react-i18next', () => ({
   },
   useTranslation: () => ({
     t: (key: string, values?: Record<string, string>) => {
-      if (key === 'updater.linkText') return `v${values?.version} ready`
+      if (key === 'updater.linkReady') return `v${values?.version} ready`
       return key
     },
   }),
@@ -24,7 +24,7 @@ describe('UpdateAvailableLink', () => {
       version: null,
       panelOpen: false,
       _update: null,
-      _downloaded: false,
+      _cachedBytes: null,
       _bootstrapPromise: null,
     }))
   })
@@ -34,7 +34,7 @@ describe('UpdateAvailableLink', () => {
       phase: 'ready',
       version: '0.5.22',
       _update: { install: vi.fn() } as never,
-      _downloaded: true,
+      _cachedBytes: new Uint8Array([1]),
     }))
 
     render(<UpdateAvailableLink />)

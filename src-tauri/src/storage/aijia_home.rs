@@ -49,6 +49,10 @@ impl AiJiaHome {
         self.root.join("global")
     }
 
+    pub fn global_updater_dir(&self) -> PathBuf {
+        self.global_dir().join("updater")
+    }
+
     pub fn global_config_path(&self) -> PathBuf {
         self.global_dir().join("config.json")
     }

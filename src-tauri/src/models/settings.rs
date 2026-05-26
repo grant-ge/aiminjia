@@ -73,7 +73,7 @@ pub struct AppSettings {
     #[serde(default)]
     pub ui_home_selected_workspace: String,
     /// JSON-stringified `AuthorizedWorkspaceRef[]` — 首页切换器最近 workspace 列表。
-    /// 空字符串或 "[]" 视为空列表。**前端限定最多 10 条**：超出时 LRU 截断（新加入的在前，超过 10 截��）。
+    /// 空字符串或 "[]" 视为空列表。**前端限定最多 10 条**：超出时 LRU 截断（新加入的在前，超过 10 截断）。
     #[serde(default)]
     pub ui_home_recent_workspaces: String,
 }
