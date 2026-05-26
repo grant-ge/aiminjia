@@ -88,11 +88,14 @@ pub fn freeze_conversation_snapshot(conv_dir: &Path, snapshot: &ExpertTeamSnapsh
 
 pub fn read_conversation_snapshot(conv_dir: &Path) -> Result<Option<ExpertTeamSnapshot>> {
     let path = conversation_template_path(conv_dir);
-    if !path.is_file() {
-        return Ok(None);
-    }
-    let bytes = fs::read(&path).with_context(|| format!("reading {}", path.display()))?;
-    Ok(Some(serde_json::from_slice(&bytes)?))
+    let bytes = match fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(err).with_context(|| format!("reading {}", path.display())),
+    };
+    Ok(Some(
+        serde_json::from_slice(&bytes).with_context(|| format!("parsing {}", path.display()))?,
+    ))
 }
 
 #[cfg(test)]
@@ -244,5 +247,14 @@ mod tests {
             read_conversation_snapshot(tmp.path()).expect("read after freeze should succeed"),
             Some(snapshot)
         );
+    }
+
+    #[test]
+    fn read_conversation_snapshot_errors_when_template_path_is_directory() {
+        let tmp = tempfile::tempdir().expect("tempdir should be created");
+        fs::create_dir_all(conversation_template_path(tmp.path()))
+            .expect("template path directory should be created");
+
+        assert!(read_conversation_snapshot(tmp.path()).is_err());
     }
 }
