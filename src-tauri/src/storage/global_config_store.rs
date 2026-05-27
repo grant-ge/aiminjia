@@ -52,7 +52,14 @@ impl GlobalConfigStore {
             if let Some(parent) = path.parent() {
                 fs::create_dir_all(parent)?;
             }
-            fs::write(path, value)?;
+            // Atomic write: tmp + rename. fs::write truncates first, so a
+            // crash mid-write left an empty file that restore() would treat
+            // as "unreadable" and delete → next launch's bootstrap revived
+            // the legacy fossil. tmp+rename gives all-or-nothing semantics:
+            // the old file stays intact until rename succeeds.
+            let tmp = path.with_extension("tmp");
+            fs::write(&tmp, value)?;
+            fs::rename(&tmp, &path)?;
             return Ok(());
         }
         let mut map = self.read_map()?;

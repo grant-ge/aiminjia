@@ -147,7 +147,14 @@ pub fn purge_auth_state(home: &AiJiaHome) -> std::io::Result<()> {
 
 /// Remove a residual `"cloud_auth"` key from the legacy `~/.renlijia/config.json`
 /// (the bootstrap source).  Returns `true` if the key was present and removed.
-fn remove_cloud_auth_from_legacy_config(root: &Path) -> std::io::Result<bool> {
+///
+/// Exposed for `migration_user_scope::bootstrap_cloud_auth_if_needed` so the
+/// one-time legacy → new-location copy can also drop the key on the way out.
+/// Leaving the key around after a successful copy means any later loss of
+/// the new file (logout-then-crash, non-atomic write interrupted) lets
+/// bootstrap revive the fossil token on the next launch — see the
+/// "化石复活" SLS incident write-up tied to user_id=87.
+pub fn remove_cloud_auth_from_legacy_config(root: &Path) -> std::io::Result<bool> {
     let legacy = root.join("config.json");
     if !legacy.exists() {
         return Ok(false);

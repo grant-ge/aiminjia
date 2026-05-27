@@ -286,7 +286,22 @@ pub fn bootstrap_cloud_auth_if_needed(root: &Path, global_dir: &Path) -> std::io
         if let Some(parent) = target.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::write(target, value)?;
+        // Atomic write: tmp + rename. Without this, an interrupted write
+        // (app force-killed during account-switch) leaves a truncated/empty
+        // file that later confuses restore() into clearing it — handing
+        // bootstrap the chance to revive the fossil on the next launch.
+        let tmp = target.with_extension("tmp");
+        fs::write(&tmp, value)?;
+        fs::rename(&tmp, &target)?;
+        // Now that the migration is done, drop the legacy key so a future
+        // loss of the new file (logout-then-crash, corrupted partial write,
+        // etc.) cannot revive this fossil token. The new persist path in
+        // GlobalConfigStore never writes cloud_auth back into config.json,
+        // so the legacy entry is frozen at the value it had on first
+        // migration — typically the very first login the user ever made.
+        // See SLS incident: zhaoyunxing (user_id=87) repeatedly snapped
+        // back to a token from his initial login across many app launches.
+        let _ = super::data_version::remove_cloud_auth_from_legacy_config(root);
     }
     Ok(())
 }
@@ -359,5 +374,101 @@ mod turn_stages_migration_tests {
         // Second call: legacy dir is gone, must still succeed cleanly.
         migrate_legacy_turn_stages_if_needed(root, &user_dir).unwrap();
         assert!(user_dir.join("turn_stages/conv-a.json").exists());
+    }
+}
+
+#[cfg(test)]
+mod bootstrap_cloud_auth_tests {
+    use super::*;
+    use std::collections::HashMap;
+    use tempfile::TempDir;
+
+    fn write_legacy_with_cloud_auth(root: &Path, blob: &str) {
+        let mut m = HashMap::new();
+        m.insert("cloud_auth".to_string(), blob.to_string());
+        m.insert("theme".to_string(), "dark".to_string());
+        let text = serde_json::to_string_pretty(&m).unwrap();
+        fs::write(root.join("config.json"), text).unwrap();
+    }
+
+    #[test]
+    fn copies_legacy_and_purges_key_so_revival_is_impossible() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        let global = root.join("global");
+        fs::create_dir_all(&global).unwrap();
+        write_legacy_with_cloud_auth(root, "FOSSIL_TOKEN");
+
+        // First bootstrap: copies legacy → new and drops the legacy key.
+        bootstrap_cloud_auth_if_needed(root, &global).unwrap();
+        let target = global.join("auth").join("cloud_auth");
+        assert_eq!(fs::read_to_string(&target).unwrap(), "FOSSIL_TOKEN");
+
+        // Legacy key must be gone — otherwise a later loss of `target`
+        // (logout-then-crash, partial write, etc.) would revive the fossil.
+        let legacy_text = fs::read_to_string(root.join("config.json")).unwrap();
+        let legacy_map: HashMap<String, String> =
+            serde_json::from_str(&legacy_text).unwrap();
+        assert!(!legacy_map.contains_key("cloud_auth"));
+        // Unrelated keys are preserved.
+        assert_eq!(legacy_map.get("theme").map(String::as_str), Some("dark"));
+    }
+
+    #[test]
+    fn after_target_loss_second_bootstrap_does_not_revive_fossil() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        let global = root.join("global");
+        fs::create_dir_all(&global).unwrap();
+        write_legacy_with_cloud_auth(root, "FOSSIL_TOKEN");
+
+        // First bootstrap copies + purges legacy key.
+        bootstrap_cloud_auth_if_needed(root, &global).unwrap();
+        let target = global.join("auth").join("cloud_auth");
+
+        // Simulate: user logged out (target removed), then app force-killed
+        // before next login could persist new auth.
+        fs::remove_file(&target).unwrap();
+
+        // Next launch's bootstrap — legacy key is gone, so target stays
+        // absent and `restore()` correctly sees "no cloud auth, log in".
+        bootstrap_cloud_auth_if_needed(root, &global).unwrap();
+        assert!(!target.exists(),
+            "fossil cloud_auth revived after target loss — bug from SLS incident user_id=87");
+    }
+
+    #[test]
+    fn noop_when_target_already_exists() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        let global = root.join("global");
+        let auth_dir = global.join("auth");
+        fs::create_dir_all(&auth_dir).unwrap();
+        // Target already has fresh user data.
+        fs::write(auth_dir.join("cloud_auth"), "FRESH_USER_DATA").unwrap();
+        // Legacy still has a stale entry — must not overwrite target.
+        write_legacy_with_cloud_auth(root, "STALE");
+
+        bootstrap_cloud_auth_if_needed(root, &global).unwrap();
+        assert_eq!(
+            fs::read_to_string(auth_dir.join("cloud_auth")).unwrap(),
+            "FRESH_USER_DATA"
+        );
+        // Legacy key untouched too — bootstrap short-circuited.
+        let legacy_text = fs::read_to_string(root.join("config.json")).unwrap();
+        let legacy_map: HashMap<String, String> =
+            serde_json::from_str(&legacy_text).unwrap();
+        assert!(legacy_map.contains_key("cloud_auth"));
+    }
+
+    #[test]
+    fn noop_when_no_legacy_config() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        let global = root.join("global");
+        fs::create_dir_all(&global).unwrap();
+        // No legacy config.json at all (brand-new install).
+        bootstrap_cloud_auth_if_needed(root, &global).unwrap();
+        assert!(!global.join("auth").join("cloud_auth").exists());
     }
 }
