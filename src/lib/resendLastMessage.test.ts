@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const invokeMock = vi.hoisted(() => vi.fn(() => Promise.resolve()))
+const invokeMock = vi.hoisted(() => vi.fn())
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: invokeMock,
@@ -36,7 +36,7 @@ describe('resendLastUserMessage', () => {
     invokeMock.mockReset()
     // Default: every invoke resolves. Individual tests can override via
     // mockImplementation when they need a specific cmd to throw.
-    invokeMock.mockImplementation(() => Promise.resolve())
+    invokeMock.mockResolvedValue(undefined)
     useChatStore.setState({
       messages: [],
       streamStates: {},
