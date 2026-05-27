@@ -1344,9 +1344,13 @@ pub async fn ensure_channel_manager_registered(app: &tauri::AppHandle) {
     let new_cm = Arc::new(connector::im::ChannelManager::new(
         app.clone(),
         chat_adapter_ref,
-        app.state::<Arc<storage::file_store::RuntimeRepositoryFacade>>()
-            .inner()
-            .conversation_store_arc(),
+        cus.get()
+            .map(|s| s as Arc<dyn crate::runtime::store::ConversationStore>)
+            .unwrap_or_else(|| {
+                app.state::<Arc<storage::file_store::RuntimeRepositoryFacade>>()
+                    .inner()
+                    .conversation_store_arc()
+            }),
         app.state::<Option<Arc<storage::crypto::SecureStorage>>>()
             .inner()
             .clone(),

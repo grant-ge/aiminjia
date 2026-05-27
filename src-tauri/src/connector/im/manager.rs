@@ -694,11 +694,13 @@ impl ChannelManager {
                 }
 
                 let store_ref = Arc::clone(&conv_store);
+                let ensure_store_ref = Arc::clone(&conv_store);
                 let sender_nick_for_create = sender_nick.clone();
+                let sender_nick_for_ensure = sender_nick.clone();
                 let conv_key_for_create = conv_key.clone();
                 let conv_type_for_create = conv_type.clone();
                 let session_id =
-                    match router.get_or_create_session(&conv_type, &router_key, &conv_key, || {
+                    match router.get_or_create_session_with_ensure(&conv_type, &router_key, &conv_key, || {
                         let title = match &conv_type_for_create {
                             ConversationType::Group => format!(
                                 "Telegram 群 {}",
@@ -715,6 +717,10 @@ impl ChannelManager {
                             )
                             .map_err(|e| anyhow::anyhow!(e))?;
                         Ok(id)
+                    }, |existing_id| {
+                        ensure_store_ref
+                            .create_conversation_with_im_source(existing_id, &sender_nick_for_ensure, Platform::Telegram.as_str())
+                            .map_err(|e| anyhow::anyhow!(e))
                     }) {
                         Ok(s) => s,
                         Err(e) => {
@@ -1408,11 +1414,13 @@ impl ChannelManager {
                 }
 
                 let store_ref = Arc::clone(&conv_store);
+                let ensure_store_ref = Arc::clone(&conv_store);
                 let sender_nick_for_create = sender_nick.clone();
+                let sender_nick_for_ensure = sender_nick.clone();
                 let conv_key_for_create = conv_key.clone();
                 let conv_type_for_create = conv_type.clone();
                 let session_id =
-                    match router.get_or_create_session(&conv_type, &router_key, &conv_key, || {
+                    match router.get_or_create_session_with_ensure(&conv_type, &router_key, &conv_key, || {
                         let title = match &conv_type_for_create {
                             ConversationType::Group => format!(
                                 "企微群 {}",
@@ -1429,6 +1437,10 @@ impl ChannelManager {
                             )
                             .map_err(|e| anyhow::anyhow!(e))?;
                         Ok(id)
+                    }, |existing_id| {
+                        ensure_store_ref
+                            .create_conversation_with_im_source(existing_id, &sender_nick_for_ensure, Platform::Wecom.as_str())
+                            .map_err(|e| anyhow::anyhow!(e))
                     }) {
                         Ok(id) => id,
                         Err(e) => {
@@ -2899,9 +2911,11 @@ impl ChannelManager {
                 let text = msg.text.clone();
 
                 let store_ref = Arc::clone(&conv_store);
+                let ensure_store_ref = Arc::clone(&conv_store);
                 let sender_nick_for_create = sender_nick.clone();
+                let sender_nick_for_ensure = sender_nick.clone();
                 let session_id =
-                    match router.get_or_create_session(&conv_type, ROUTER_KEY, &conv_key, || {
+                    match router.get_or_create_session_with_ensure(&conv_type, ROUTER_KEY, &conv_key, || {
                         let title = sender_nick_for_create.clone();
                         let id = uuid::Uuid::new_v4().to_string();
                         store_ref
@@ -2912,6 +2926,10 @@ impl ChannelManager {
                             )
                             .map_err(|e| anyhow::anyhow!(e))?;
                         Ok(id)
+                    }, |existing_id| {
+                        ensure_store_ref
+                            .create_conversation_with_im_source(existing_id, &sender_nick_for_ensure, Platform::Whatsapp.as_str())
+                            .map_err(|e| anyhow::anyhow!(e))
                     }) {
                         Ok(s) => s,
                         Err(e) => {
@@ -3443,11 +3461,13 @@ impl ChannelManager {
                 }
 
                 let store_ref = Arc::clone(&conv_store);
+                let ensure_store_ref = Arc::clone(&conv_store);
                 let sender_nick_for_create = sender_nick.clone();
+                let sender_nick_for_ensure = sender_nick.clone();
                 let conv_key_for_create = conv_key.clone();
                 let conv_type_for_create = conv_type.clone();
                 let session_id =
-                    match router.get_or_create_session(&conv_type, &router_key, &conv_key, || {
+                    match router.get_or_create_session_with_ensure(&conv_type, &router_key, &conv_key, || {
                         let title = match &conv_type_for_create {
                             ConversationType::Group => format!(
                                 "飞书群 {}",
@@ -3464,6 +3484,10 @@ impl ChannelManager {
                             )
                             .map_err(|e| anyhow::anyhow!(e))?;
                         Ok(id)
+                    }, |existing_id| {
+                        ensure_store_ref
+                            .create_conversation_with_im_source(existing_id, &sender_nick_for_ensure, Platform::Feishu.as_str())
+                            .map_err(|e| anyhow::anyhow!(e))
                     }) {
                         Ok(id) => id,
                         Err(e) => {
@@ -3929,10 +3953,12 @@ impl ChannelManager {
                 let text = msg.text.clone();
 
                 let store_ref = Arc::clone(&conv_store);
+                let ensure_store_ref = Arc::clone(&conv_store);
                 let sender_nick_for_create = sender_nick.clone();
+                let sender_nick_for_ensure = sender_nick.clone();
                 let conv_type_for_create = conv_type.clone();
                 let session_id =
-                    match router.get_or_create_session(&conv_type, &router_key, &conv_key, || {
+                    match router.get_or_create_session_with_ensure(&conv_type, &router_key, &conv_key, || {
                         let title = match &conv_type_for_create {
                             ConversationType::Group => {
                                 format!("微信群 {}", &sender_nick_for_create)
@@ -3948,6 +3974,10 @@ impl ChannelManager {
                             )
                             .map_err(|e| anyhow::anyhow!(e))?;
                         Ok(id)
+                    }, |existing_id| {
+                        ensure_store_ref
+                            .create_conversation_with_im_source(existing_id, &sender_nick_for_ensure, Platform::Wechat.as_str())
+                            .map_err(|e| anyhow::anyhow!(e))
                     }) {
                         Ok(id) => id,
                         Err(e) => {
@@ -4402,10 +4432,12 @@ impl ChannelManager {
                 }
                 // 路由到 session
                 let store_ref = Arc::clone(&conv_store);
+                let ensure_store_ref = Arc::clone(&conv_store);
                 let sender_nick_for_create = sender_nick.clone();
+                let sender_nick_for_ensure = sender_nick.clone();
                 let conv_key_for_create = conv_key.clone();
                 let conv_type_for_create = conv_type.clone();
-                let session_id = match router.get_or_create_session(
+                let session_id = match router.get_or_create_session_with_ensure(
                     &conv_type,
                     &reply_robot_code_for_worker,
                     &conv_key,
@@ -4426,6 +4458,15 @@ impl ChannelManager {
                             )
                             .map_err(|e| anyhow::anyhow!(e))?;
                         Ok(id)
+                    },
+                    |existing_id| {
+                        ensure_store_ref
+                            .create_conversation_with_im_source(
+                                existing_id,
+                                &sender_nick_for_ensure,
+                                Platform::Dingtalk.as_str(),
+                            )
+                            .map_err(|e| anyhow::anyhow!(e))
                     },
                 ) {
                     Ok(id) => id,
