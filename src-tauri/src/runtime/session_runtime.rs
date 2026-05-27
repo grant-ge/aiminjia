@@ -60,6 +60,11 @@ pub struct SessionRuntime {
     /// (`<aijia_home>/users/{scope}/conversations/{conv_id}`) when building
     /// the per-session QueryEngine.  Optional so tests can omit it.
     host: Option<Arc<dyn RuntimeHost>>,
+    /// Strong references to event bus subscribers. The bus itself stores `Weak`
+    /// refs, so subscribers stay alive only as long as their owner holds the Arc.
+    /// When this runtime (or the adapter that wraps it) is dropped, subscribers
+    /// automatically become unreachable and are pruned on next bus emit.
+    _subscriber_anchors: Vec<Arc<dyn crate::runtime::event_bus::RuntimeEventSubscriber>>,
 }
 
 impl SessionRuntime {
@@ -82,6 +87,7 @@ impl SessionRuntime {
             lead_idle: None,
             cancellation_registry: None,
             host: None,
+            _subscriber_anchors: Vec::new(),
         }
     }
 
@@ -113,6 +119,7 @@ impl SessionRuntime {
             lead_idle: None,
             cancellation_registry: None,
             host: None,
+            _subscriber_anchors: Vec::new(),
         }
     }
 
@@ -246,6 +253,12 @@ impl SessionRuntime {
         self.event_bus.subscribe(subscriber);
     }
 
+    /// Keep a strong reference to a subscriber so its Weak ref in the bus
+    /// stays alive as long as this runtime lives.
+    pub fn anchor_subscriber(&mut self, subscriber: Arc<dyn crate::runtime::event_bus::RuntimeEventSubscriber>) {
+        self._subscriber_anchors.push(subscriber);
+    }
+
     /// 暴露 event_bus 句柄，供需要主动 emit 事件的外部组件使用
     /// （如 PendingQueueManager dispatcher 在 drain 时为 N-1 条已落库
     /// user message 补发 MessagePersisted）。
@@ -264,10 +277,13 @@ impl SessionRuntime {
     }
 
     pub fn for_test(host: Arc<dyn RuntimeHost>) -> Self {
-        let adapter = Arc::new(TauriEventAdapter::new(host));
+        let adapter: Arc<dyn crate::runtime::event_bus::RuntimeEventSubscriber> =
+            Arc::new(TauriEventAdapter::new(host));
         let bus = RuntimeEventBus::new();
-        bus.subscribe(adapter);
-        Self::new(QueryEngine::new(), bus)
+        bus.subscribe(adapter.clone());
+        let mut rt = Self::new(QueryEngine::new(), bus);
+        rt.anchor_subscriber(adapter);
+        rt
     }
 
     pub async fn run_turn(&self, turn: &mut TurnState) -> Result<()> {

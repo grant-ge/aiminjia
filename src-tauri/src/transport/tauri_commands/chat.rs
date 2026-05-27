@@ -2278,12 +2278,12 @@ impl TauriChatCommandAdapter {
             employee_run_overrides: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         };
         let host = Arc::new(TauriRuntimeHost::new(services.app.clone()));
-        let adapter = Arc::new(match channel_sessions {
+        let adapter: Arc<dyn crate::runtime::event_bus::RuntimeEventSubscriber> = Arc::new(match channel_sessions {
             Some(registry) => TauriEventAdapter::with_channel_sessions(host.clone(), registry),
             None => TauriEventAdapter::new(host.clone()),
         });
         let bus = RuntimeEventBus::new();
-        bus.subscribe(adapter);
+        bus.subscribe(adapter.clone());
         let llm_executor: Arc<dyn RuntimeLlmExecutor> = Arc::new(TauriLegacyTurnExecutor {
             services: services.clone(),
             agents_md_loader: Arc::new(tokio::sync::Mutex::new(
@@ -2363,6 +2363,7 @@ impl TauriChatCommandAdapter {
             runtime = runtime.with_cancellation_registry(reg.inner().clone());
         }
         runtime = runtime.with_host(host as Arc<dyn crate::transport::runtime_host::RuntimeHost>);
+        runtime.anchor_subscriber(adapter);
         // Path C wake (LTR B-gap1) is now wired by `wire_path_c_wake_to_self`
         // after the adapter is wrapped in `Arc<Self>` (see lib.rs).  We can't
         // wire it here because the wake closure needs to call

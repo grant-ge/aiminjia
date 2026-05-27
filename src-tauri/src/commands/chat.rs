@@ -482,7 +482,9 @@ pub mod testsupport {
     ) -> Result<CapturedTrace> {
         let host = RecordingRuntimeHost::new();
         let bus = RuntimeEventBus::new();
-        bus.subscribe(Arc::new(TauriEventAdapter::new(host.clone())));
+        let _adapter: Arc<dyn crate::runtime::event_bus::RuntimeEventSubscriber> =
+            Arc::new(TauriEventAdapter::new(host.clone()));
+        bus.subscribe(_adapter.clone());
 
         let dispatcher = single_legacy_tool_dispatcher(tool_name);
         let query_engine = QueryEngine::for_test(dispatcher);

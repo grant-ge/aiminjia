@@ -738,10 +738,12 @@ pub fn run() {
                 let pending_host = std::sync::Arc::new(
                     crate::transport::tauri_runtime_host::TauriRuntimeHost::new(app.handle().clone()),
                 );
-                let pending_adapter = std::sync::Arc::new(
+                let pending_adapter: std::sync::Arc<dyn crate::runtime::event_bus::RuntimeEventSubscriber> = std::sync::Arc::new(
                     crate::transport::tauri_event_adapter::TauriEventAdapter::new(pending_host),
                 );
-                pending_event_bus.subscribe(pending_adapter);
+                pending_event_bus.subscribe(pending_adapter.clone());
+                // Anchor the subscriber so the Weak ref in the bus stays alive.
+                app.manage(pending_adapter);
 
                 let run_registry_ref = app
                     .state::<std::sync::Arc<crate::runtime::RuntimeRunRegistry>>()

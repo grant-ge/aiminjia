@@ -128,6 +128,10 @@ pub struct ChannelManager {
     /// 早于 (started_at - grace) 的视作重发，只 ACK 不触发 LLM。
     started_at_ms: i64,
     active_scope: Option<crate::storage::UserScope>,
+    /// Strong references to event bus subscribers owned by this instance.
+    /// The bus stores `Weak` refs, so when this CM is dropped the subscribers
+    /// become unreachable and are pruned on next emit — no unsubscribe needed.
+    subscriber_anchors: std::sync::Mutex<Vec<Arc<dyn crate::runtime::event_bus::RuntimeEventSubscriber>>>,
     /// Set to `true` by `shutdown()`. Once inactive, mutating entry points
     /// (`set_enabled`, `begin_*_registration`) and worker session-id inserts
     /// become no-ops. Guards against a zombie worker polluting a new user's
@@ -196,6 +200,7 @@ impl ChannelManager {
             connectors: Arc::new(RwLock::new(HashMap::new())),
             started_at_ms: now_epoch_ms(),
             active_scope,
+            subscriber_anchors: std::sync::Mutex::new(Vec::new()),
             inactive: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
@@ -562,8 +567,9 @@ impl ChannelManager {
                     &concrete,
                 )),
             );
-            let sub = forwarder as Arc<dyn crate::runtime::event_bus::RuntimeEventSubscriber>;
-            self.chat_adapter.subscribe_event_listener(sub);
+            let sub: Arc<dyn crate::runtime::event_bus::RuntimeEventSubscriber> = forwarder;
+            self.chat_adapter.subscribe_event_listener(sub.clone());
+            self.anchor_subscriber(sub);
             log::info!("[channel/telegram] subscribed TelegramReplyForwarder to RuntimeEventBus");
         }
 
@@ -995,8 +1001,9 @@ impl ChannelManager {
                     &concrete,
                 )),
             );
-            let sub = forwarder as Arc<dyn crate::runtime::event_bus::RuntimeEventSubscriber>;
-            self.chat_adapter.subscribe_event_listener(sub);
+            let sub: Arc<dyn crate::runtime::event_bus::RuntimeEventSubscriber> = forwarder;
+            self.chat_adapter.subscribe_event_listener(sub.clone());
+            self.anchor_subscriber(sub);
             log::info!("[channel/whatsapp] subscribed WhatsAppReplyForwarder to RuntimeEventBus");
         }
         // 整个进程只 spawn 一次 GC 任务，OnceCell 保证幂等。
@@ -1276,8 +1283,9 @@ impl ChannelManager {
             let forwarder = Arc::new(super::wecom::reply_forwarder::WecomReplyForwarder::new(
                 Arc::clone(&concrete_wecom),
             ));
-            let sub = forwarder as Arc<dyn crate::runtime::event_bus::RuntimeEventSubscriber>;
-            self.chat_adapter.subscribe_event_listener(sub);
+            let sub: Arc<dyn crate::runtime::event_bus::RuntimeEventSubscriber> = forwarder;
+            self.chat_adapter.subscribe_event_listener(sub.clone());
+            self.anchor_subscriber(sub);
             log::info!("[channel/wecom] subscribed WecomReplyForwarder to RuntimeEventBus");
         }
 
@@ -3270,8 +3278,9 @@ impl ChannelManager {
             let forwarder = Arc::new(super::feishu::reply_forwarder::FeishuReplyForwarder::new(
                 Arc::clone(&concrete_feishu),
             ));
-            let sub = forwarder as Arc<dyn crate::runtime::event_bus::RuntimeEventSubscriber>;
-            self.chat_adapter.subscribe_event_listener(sub);
+            let sub: Arc<dyn crate::runtime::event_bus::RuntimeEventSubscriber> = forwarder;
+            self.chat_adapter.subscribe_event_listener(sub.clone());
+            self.anchor_subscriber(sub);
             log::info!("[channel/feishu] subscribed FeishuReplyForwarder to RuntimeEventBus");
         }
 
@@ -3809,8 +3818,9 @@ impl ChannelManager {
             let forwarder = Arc::new(super::wechat::reply_forwarder::WechatReplyForwarder::new(
                 Arc::clone(&concrete_wechat),
             ));
-            let sub = forwarder as Arc<dyn crate::runtime::event_bus::RuntimeEventSubscriber>;
-            self.chat_adapter.subscribe_event_listener(sub);
+            let sub: Arc<dyn crate::runtime::event_bus::RuntimeEventSubscriber> = forwarder;
+            self.chat_adapter.subscribe_event_listener(sub.clone());
+            self.anchor_subscriber(sub);
             log::info!("[channel/wechat] subscribed WechatReplyForwarder to RuntimeEventBus");
         }
 
@@ -4303,7 +4313,8 @@ impl ChannelManager {
         if claim_first_subscription(&self.reply_subscribed) {
             let reply_sub = Arc::clone(&self.reply_manager)
                 as Arc<dyn crate::runtime::event_bus::RuntimeEventSubscriber>;
-            self.chat_adapter.subscribe_event_listener(reply_sub);
+            self.chat_adapter.subscribe_event_listener(reply_sub.clone());
+            self.anchor_subscriber(reply_sub);
         }
 
         // 订阅 ask_coordinator 到 event bus（同样只做一次，避免重连时重复订阅）
@@ -4311,7 +4322,8 @@ impl ChannelManager {
             if claim_first_subscription(&self.ask_subscribed) {
                 let sub = Arc::clone(coordinator)
                     as Arc<dyn crate::runtime::event_bus::RuntimeEventSubscriber>;
-                self.chat_adapter.subscribe_event_listener(sub);
+                self.chat_adapter.subscribe_event_listener(sub.clone());
+                self.anchor_subscriber(sub);
             }
         }
 
@@ -4824,6 +4836,10 @@ impl ChannelManager {
         self.active_scope.clone()
     }
 
+    fn anchor_subscriber(&self, sub: Arc<dyn crate::runtime::event_bus::RuntimeEventSubscriber>) {
+        self.subscriber_anchors.lock().unwrap().push(sub);
+    }
+
     /// Test-only: directly insert a session id into the shared registry,
     /// honouring the inactive gate. Used to verify that `shutdown()` prevents
     /// further session-id registrations.
@@ -4909,6 +4925,9 @@ impl ChannelManager {
                 ids.remove(&sid);
             }
         }
+
+        // Step 4: release subscriber anchors so the bus's Weak refs die.
+        self.subscriber_anchors.lock().unwrap().clear();
 
         log::info!("[channel] shutdown: complete");
     }
