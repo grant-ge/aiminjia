@@ -60,7 +60,6 @@ export default defineConfig({
   // Keep risky deps version-locked (see `pnpm.overrides` in package.json).
   build: {
     target: process.env.TAURI_ENV_PLATFORM === 'windows' ? 'chrome105' : 'safari13',
-    cssMinify: 'lightningcss',
   },
 
   // Env prefix for Tauri
