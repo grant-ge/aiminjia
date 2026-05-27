@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -72,7 +74,44 @@ pub struct DiskSkill {
     pub root: PathBuf,
     pub frontmatter: SkillFrontmatter,
     pub body: String,
+    pub localized: HashMap<String, LocalizedSkillMd>,
     pub source: SkillSource,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocalizedSkillMd {
+    pub frontmatter: SkillFrontmatter,
+    pub body: String,
+}
+
+impl DiskSkill {
+    pub fn localized(&self, language: &str) -> LocalizedSkillMd {
+        let locale = normalize_skill_locale(language);
+        self.localized
+            .get(locale)
+            .cloned()
+            .unwrap_or_else(|| LocalizedSkillMd {
+                frontmatter: self.frontmatter.clone(),
+                body: self.body.clone(),
+            })
+    }
+}
+
+pub fn normalize_skill_locale(language: &str) -> &'static str {
+    canonical_skill_locale(language).unwrap_or("zh-CN")
+}
+
+pub fn canonical_skill_locale(language: &str) -> Option<&'static str> {
+    if language.eq_ignore_ascii_case("en") || language.eq_ignore_ascii_case("en-us") {
+        Some("en-US")
+    } else if language.eq_ignore_ascii_case("zh")
+        || language.eq_ignore_ascii_case("zh-cn")
+        || language.eq_ignore_ascii_case("zh-hans")
+    {
+        Some("zh-CN")
+    } else {
+        None
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

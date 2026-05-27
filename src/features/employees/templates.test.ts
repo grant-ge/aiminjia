@@ -99,4 +99,30 @@ describe('snapshotToTemplate', () => {
     expect(out.badge).toBe('Ready to use')
     expect(out.systemPromptExtra).toBe('You are an industry research analyst.')
   })
+
+  it('uses localized resource schema when schemaI18n matches the active language', () => {
+    const snap = makeSnapshot({
+      templateId: 'org:custom-schema',
+      resourceConfigSchema: {
+        type: 'object',
+        title: '中文配置',
+      },
+      schemaI18n: {
+        'en-US': {
+          type: 'object',
+          title: 'English Settings',
+          properties: {
+            topic: { type: 'string', title: 'Topic' },
+          },
+        },
+      },
+    } as unknown as Partial<EmployeeTemplateSnapshot>)
+
+    const out = snapshotToTemplate(snap, 'en-US')
+
+    expect(out.resourceConfigSchema).toMatchObject({
+      title: 'English Settings',
+      properties: { topic: { title: 'Topic' } },
+    })
+  })
 })

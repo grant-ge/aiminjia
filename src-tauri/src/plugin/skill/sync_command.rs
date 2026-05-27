@@ -2,10 +2,10 @@ use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 
-use crate::auth::client::BASE_URL;
 use crate::auth::AuthManager;
+use crate::auth::client::BASE_URL;
 use crate::plugin::skill::global_sync::{
-    reload_skill_registry, sync_skill_packages_from_server, GlobalSkillSyncConfig,
+    GlobalSkillSyncConfig, reload_skill_registry, sync_skill_packages_from_server,
 };
 use crate::plugin::skill::registry::SkillRegistry;
 
@@ -20,6 +20,7 @@ pub async fn sync_builtin_skills(
     config: tauri::State<'_, GlobalSkillSyncConfig>,
     auth_manager: tauri::State<'_, Arc<AuthManager>>,
     registry: tauri::State<'_, Arc<Mutex<SkillRegistry>>>,
+    language: Option<String>,
 ) -> Result<SyncBuiltinSkillsResult, String> {
     let session_key = auth_manager
         .get_session_key()
@@ -30,7 +31,7 @@ pub async fn sync_builtin_skills(
     let registry_arc: Arc<Mutex<SkillRegistry>> = registry.inner().clone();
     let skill_roots = cfg.skill_roots_for_reload.clone();
 
-    let report = sync_skill_packages_from_server(cfg, BASE_URL.to_string(), session_key)
+    let report = sync_skill_packages_from_server(cfg, BASE_URL.to_string(), session_key, language)
         .await
         .map_err(|e| e.to_string())?;
 

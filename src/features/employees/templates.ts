@@ -368,6 +368,7 @@ export function snapshotToTemplate(snap: EmployeeTemplateSnapshot, language?: st
   const lang = language === 'en-US' ? 'en-US' : 'zh-CN'
   const display = snap.displayI18n?.[lang] ?? snap.displayI18n?.['zh-CN']
   const prompt = snap.promptI18n?.[lang] ?? snap.promptI18n?.['zh-CN']
+  const schema = snap.schemaI18n?.[lang] ?? snap.schemaI18n?.['zh-CN'] ?? snap.resourceConfigSchema
   const builtin = BUILTIN_TEMPLATES.find((t) => t.templateId === snap.templateId)
   if (builtin && !display && !prompt) return builtin
   return {
@@ -384,6 +385,6 @@ export function snapshotToTemplate(snap: EmployeeTemplateSnapshot, language?: st
     requiresAttachment: snap.requiresAttachment,
     resourceConfigKind: RESOURCE_CONFIG_KIND_BY_ID[snap.templateId] ?? 'none',
     requiresDingtalk: snap.requiresDingtalk,
-    resourceConfigSchema: snap.resourceConfigSchema,
+    resourceConfigSchema: schema,
   }
 }

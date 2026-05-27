@@ -117,7 +117,7 @@ pub struct SkillInfo {
 /// Pure function for testability: list all skills in the new disk-backed registry.
 pub fn list_skills_from_registry(registry: &Arc<Mutex<SkillRegistry>>) -> Vec<SkillInfo> {
     use crate::plugin::skill::updated_at::DirMtimeResolver;
-    list_skills_from_registry_with_resolver(registry, &DirMtimeResolver)
+    list_skills_from_registry_with_resolver(registry, &DirMtimeResolver, "zh-CN")
 }
 
 /// 同上，但允许调用方注入自定义的 `SkillUpdatedAtResolver`，用于单测或
@@ -125,30 +125,34 @@ pub fn list_skills_from_registry(registry: &Arc<Mutex<SkillRegistry>>) -> Vec<Sk
 pub fn list_skills_from_registry_with_resolver(
     registry: &Arc<Mutex<SkillRegistry>>,
     resolver: &dyn crate::plugin::skill::updated_at::SkillUpdatedAtResolver,
+    language: &str,
 ) -> Vec<SkillInfo> {
     let guard = registry.lock().unwrap();
     guard
         .skill_ids()
         .into_iter()
         .filter_map(|id| {
-            guard.get(&id).map(|skill| SkillInfo {
-                id: skill.id.clone(),
-                display_name: skill
-                    .frontmatter
-                    .metadata
-                    .label
-                    .clone()
-                    .unwrap_or_else(|| skill.frontmatter.name.clone()),
-                description: skill.frontmatter.description.clone(),
-                icon: None,
-                category: skill.frontmatter.category.clone(),
-                source: match skill.source {
-                    crate::plugin::skill::types::SkillSource::User => "user".to_string(),
-                    crate::plugin::skill::types::SkillSource::Tenant => "tenant".to_string(),
-                    crate::plugin::skill::types::SkillSource::Global => "global".to_string(),
-                },
-                updated_at: resolver.resolve(skill),
-                version: skill.frontmatter.version.clone(),
+            guard.get(&id).map(|skill| {
+                let localized = skill.localized(language);
+                SkillInfo {
+                    id: skill.id.clone(),
+                    display_name: localized
+                        .frontmatter
+                        .metadata
+                        .label
+                        .clone()
+                        .unwrap_or_else(|| localized.frontmatter.name.clone()),
+                    description: localized.frontmatter.description.clone(),
+                    icon: None,
+                    category: localized.frontmatter.category.clone(),
+                    source: match skill.source {
+                        crate::plugin::skill::types::SkillSource::User => "user".to_string(),
+                        crate::plugin::skill::types::SkillSource::Tenant => "tenant".to_string(),
+                        crate::plugin::skill::types::SkillSource::Global => "global".to_string(),
+                    },
+                    updated_at: resolver.resolve(skill),
+                    version: localized.frontmatter.version.clone(),
+                }
             })
         })
         .collect()

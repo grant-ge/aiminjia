@@ -1448,13 +1448,13 @@ export function listTools(): Promise<ToolInfo[]> {
 }
 
 /** List all registered skills. */
-export function listSkills(): Promise<SkillInfo[]> {
-  return invoke<SkillInfo[]>('list_skills')
+export function listSkills(language?: string): Promise<SkillInfo[]> {
+  return invoke<SkillInfo[]>('list_skills', { language: language ?? null })
 }
 
 /** Get combined tool + skill info. */
-export function getPluginInfo(): Promise<PluginInfo> {
-  return invoke<PluginInfo>('get_plugin_info')
+export function getPluginInfo(language?: string): Promise<PluginInfo> {
+  return invoke<PluginInfo>('get_plugin_info', { language: language ?? null })
 }
 
 // ---------------------------------------------------------------------------
@@ -2310,8 +2310,8 @@ export interface SyncBuiltinSkillsResult {
   skipped: string[]
 }
 
-export async function syncBuiltinSkills(): Promise<SyncBuiltinSkillsResult> {
-  return invoke<SyncBuiltinSkillsResult>('sync_builtin_skills')
+export async function syncBuiltinSkills(language?: string): Promise<SyncBuiltinSkillsResult> {
+  return invoke<SyncBuiltinSkillsResult>('sync_builtin_skills', { language: language ?? null })
 }
 
 // ---------------------------------------------------------------------------
@@ -2377,7 +2377,7 @@ export interface EmployeeTemplateSnapshot {
   resourceConfigUI: Record<string, unknown> | null
   displayI18n?: Record<string, EmployeeTemplateDisplayI18n>
   promptI18n?: Record<string, EmployeeTemplatePromptI18n>
-  schemaI18n?: Record<string, unknown>
+  schemaI18n?: Record<string, Record<string, unknown> | null>
   skillIds?: string[]
 }
 

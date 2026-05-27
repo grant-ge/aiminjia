@@ -11,7 +11,7 @@ use std::path::Path;
 use crate::runtime::employee::store::EmployeeRecord;
 use crate::runtime::employee::template_store::{
     effective_default_skill_id, effective_requires_attachment, effective_skill_ids,
-    effective_system_prompt_extra,
+    effective_system_prompt_extra_for_language, effective_template_display_for_language,
 };
 
 /// Build the user-facing prompt sent on employee dispatch.
@@ -42,9 +42,48 @@ pub fn build_dispatch_prompt(
     prompt_override: Option<&str>,
     employees_root: Option<&Path>,
 ) -> String {
+    build_dispatch_prompt_for_language(
+        employee,
+        trigger_label,
+        catchup_info,
+        prompt_override,
+        employees_root,
+        None,
+    )
+}
+
+pub fn build_dispatch_prompt_for_language(
+    employee: &EmployeeRecord,
+    trigger_label: &str,
+    catchup_info: Option<&str>,
+    prompt_override: Option<&str>,
+    employees_root: Option<&Path>,
+    language: Option<&str>,
+) -> String {
+    let display = employees_root.and_then(|root| {
+        effective_template_display_for_language(
+            root,
+            &employee.id,
+            &employee.name,
+            &employee.role,
+            &employee.description,
+            language,
+        )
+    });
     let identity_block = format!(
         "你现在是「{}」（{}）。\n{}\n",
-        employee.name, employee.role, employee.description
+        display
+            .as_ref()
+            .map(|value| value.name.as_str())
+            .unwrap_or(employee.name.as_str()),
+        display
+            .as_ref()
+            .map(|value| value.role.as_str())
+            .unwrap_or(employee.role.as_str()),
+        display
+            .as_ref()
+            .map(|value| value.description.as_str())
+            .unwrap_or(employee.description.as_str())
     );
     // Snapshot-first lookup: when an instance has a `template/template.json`
     // (always true for post-PR3 hires + back-filled legacy records), the
@@ -53,10 +92,11 @@ pub fn build_dispatch_prompt(
     // branch goes away then.
     let extra = employees_root
         .and_then(|root| {
-            effective_system_prompt_extra(
+            effective_system_prompt_extra_for_language(
                 root,
                 &employee.id,
                 employee.system_prompt_extra.as_deref(),
+                language,
             )
         })
         .or_else(|| employee.system_prompt_extra.clone())
@@ -724,7 +764,7 @@ mod tests {
     #[test]
     fn snapshot_system_prompt_extra_wins_over_record_field() {
         use crate::runtime::employee::template_store::{
-            ensure_instance_snapshot, TemplateSnapshot,
+            TemplateSnapshot, ensure_instance_snapshot,
         };
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
@@ -769,6 +809,71 @@ mod tests {
             without_snap.contains("record-extra"),
             "fallback to record field broken: {without_snap}"
         );
+    }
+
+    #[test]
+    fn snapshot_i18n_fields_are_used_for_english_dispatch_prompt() {
+        use crate::runtime::employee::template_store::{
+            TemplateSnapshot, ensure_instance_snapshot,
+        };
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let mut e = employee(None, serde_json::json!({}));
+        e.id = "emp-i18n-dispatch".to_string();
+        e.system_prompt_extra = Some("record-extra".into());
+        let mut extra = std::collections::BTreeMap::new();
+        extra.insert(
+            "displayI18n".into(),
+            serde_json::json!({
+                "en-US": {
+                    "name": "Alex",
+                    "role": "Research Analyst",
+                    "description": "Tracks competitor updates"
+                }
+            }),
+        );
+        extra.insert(
+            "promptI18n".into(),
+            serde_json::json!({
+                "en-US": { "systemPromptExtra": "Use concise English." }
+            }),
+        );
+        let snap = TemplateSnapshot {
+            template_id: "builtin:xiaoyuan".into(),
+            version: "1.0.0".into(),
+            name: e.name.clone(),
+            avatar: e.avatar.clone(),
+            role: e.role.clone(),
+            description: e.description.clone(),
+            badge: "".into(),
+            system_prompt_extra: "中文模板提示".into(),
+            tool_whitelist: vec![],
+            cron: "".into(),
+            default_skill_id: "".into(),
+            skill_ids: vec![],
+            requires_dingtalk: false,
+            requires_attachment: serde_json::Value::Null,
+            resource_config_schema: serde_json::Value::Null,
+            resource_config_ui: serde_json::Value::Null,
+            extra,
+        };
+        ensure_instance_snapshot(&root.join(&e.id), &snap, "bootstrap").unwrap();
+
+        let prompt = build_dispatch_prompt_for_language(
+            &e,
+            "[按需派活]",
+            None,
+            None,
+            Some(root),
+            Some("en-US"),
+        );
+
+        assert!(prompt.contains("Alex"));
+        assert!(prompt.contains("Research Analyst"));
+        assert!(prompt.contains("Tracks competitor updates"));
+        assert!(prompt.contains("Use concise English."));
+        assert!(!prompt.contains("中文模板提示"));
+        assert!(!prompt.contains("record-extra"));
     }
 
     // ── PR-3: summarize_resource_config tests ─────────────────────────────
@@ -929,7 +1034,7 @@ mod tests {
     #[test]
     fn attachment_hint_injected_when_snapshot_requires_attachment() {
         use crate::runtime::employee::template_store::{
-            ensure_instance_snapshot, TemplateSnapshot,
+            TemplateSnapshot, ensure_instance_snapshot,
         };
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
@@ -973,7 +1078,7 @@ mod tests {
     #[test]
     fn attachment_hint_absent_when_snapshot_has_no_requirement() {
         use crate::runtime::employee::template_store::{
-            ensure_instance_snapshot, TemplateSnapshot,
+            TemplateSnapshot, ensure_instance_snapshot,
         };
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();

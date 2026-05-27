@@ -13,6 +13,7 @@ fn skill(id: &str, desc: &str) -> DiskSkill {
             ..Default::default()
         },
         body: format!("body for {id}"),
+        localized: Default::default(),
         source: SkillSource::User,
     }
 }
@@ -20,7 +21,7 @@ fn skill(id: &str, desc: &str) -> DiskSkill {
 #[test]
 fn catalog_respects_budget_and_desc_cap() {
     let entries = vec![skill("salary-query", &"x".repeat(400))];
-    let catalog = format_skill_catalog_with_budget(&entries, 200_000);
+    let catalog = format_skill_catalog_with_budget(&entries, 200_000, "zh-CN");
     assert!(catalog.contains("salary-query"));
     assert!(catalog.len() < 1_000);
 }

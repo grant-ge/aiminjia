@@ -975,10 +975,11 @@ impl ToolRegistry {
                 as Arc<dyn crate::runtime::tools::RuntimeTool>),
             "Skill" => {
                 let registry = ctx.skill_registry.clone()?;
-                Some(
-                    Arc::new(builtin::load_skill::LoadSkillRuntimeTool::new(registry))
-                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
-                )
+                Some(Arc::new(builtin::load_skill::LoadSkillRuntimeTool::new(
+                    registry,
+                    ctx.app_settings.clone(),
+                ))
+                    as Arc<dyn crate::runtime::tools::RuntimeTool>)
             }
             "TaskStop" => {
                 use tauri::Manager;

@@ -25,8 +25,8 @@ use crate::runtime::chat::{
 };
 use crate::runtime::conversation_service;
 use crate::runtime::ids::{SessionId, ToolCallId};
-use crate::runtime::store::conversation_store::ConversationStore;
 use crate::runtime::store::PendingPermissionResolution;
+use crate::runtime::store::conversation_store::ConversationStore;
 use crate::runtime::tools::permission::PermissionDestination;
 use crate::runtime::{ChatTurnRequest, QueryEngine, RuntimeEventBus, SessionRuntime};
 use crate::storage::crypto::SecureStorage;
@@ -270,7 +270,11 @@ pub fn deserialize_chat_messages_for_gateway(
                     .unwrap_or_default();
                 log::warn!(
                     "[run_llm_step] Failed to deserialize message for conv={}: {} — role={} content_chars={} fields=[{}]",
-                    conversation_id, error, role, content_chars, fields
+                    conversation_id,
+                    error,
+                    role,
+                    content_chars,
+                    fields
                 );
             }
         }
@@ -328,8 +332,6 @@ pub fn load_history_via_runtime_history(
         })
         .collect())
 }
-
-
 
 /// Per-conversation overrides injected by `dispatch_employee_run`.
 /// Stored by conversation_id so concurrent employee runs do not interfere.
@@ -394,7 +396,8 @@ struct TauriChatServices {
     skill_registry: Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>,
     runtime_resolver: Option<crate::runtime::dependencies::ManagedRuntimeResolver>,
     /// Shared map for injecting employee-run tool whitelists per conversation.
-    employee_run_overrides: Arc<std::sync::Mutex<std::collections::HashMap<String, EmployeeRunOverrides>>>,
+    employee_run_overrides:
+        Arc<std::sync::Mutex<std::collections::HashMap<String, EmployeeRunOverrides>>>,
 }
 
 impl TauriChatServices {
@@ -406,6 +409,18 @@ impl TauriChatServices {
 struct TauriLegacyTurnExecutor {
     services: TauriChatServices,
     agents_md_loader: Arc<tokio::sync::Mutex<crate::runtime::agents_md::AgentsMdLoader>>,
+}
+
+impl TauriLegacyTurnExecutor {
+    fn current_app_language(&self) -> String {
+        let settings_map = self.services.db().get_all_settings().unwrap_or_default();
+        let settings = AppSettings::from_string_map(&settings_map);
+        if settings.app_language == "en-US" {
+            "en-US".to_string()
+        } else {
+            "zh-CN".to_string()
+        }
+    }
 }
 
 async fn wait_for_message_write_completion(
@@ -970,12 +985,13 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
     ) -> Result<String, TurnError> {
         let msg_id = format!("msg-{}", uuid::Uuid::new_v4());
 
-        let content_json = crate::runtime::chat::chat_turn_driver::build_user_content_json_with_skill(
-            content,
-            attachments,
-            skill_command,
-        )
-        .to_string();
+        let content_json =
+            crate::runtime::chat::chat_turn_driver::build_user_content_json_with_skill(
+                content,
+                attachments,
+                skill_command,
+            )
+            .to_string();
 
         if let Err(e) =
             self.services
@@ -1130,7 +1146,12 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         }
 
         // Check that the conversation still exists (might have been deleted while the agent ran).
-        if self.services.db().get_conversation(conversation_id).is_err() {
+        if self
+            .services
+            .db()
+            .get_conversation(conversation_id)
+            .is_err()
+        {
             log::warn!(
                 "[persist_assistant_message] Conversation {} deleted during agent run, skipping save",
                 conversation_id
@@ -1384,16 +1405,15 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         };
 
         // 第二步：独立计算运行时权限白名单（与 schema 过滤是两回事）
-        let runtime_allowed_tools: std::collections::HashSet<String> =
-            match &employee_overrides {
-                Some(ov) if !ov.tool_whitelist.is_empty() => {
-                    ov.tool_whitelist.iter().cloned().collect()
-                }
-                _ => crate::runtime::tools::catalog::DAILY_ALLOWED_TOOLS
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect(),
-            };
+        let runtime_allowed_tools: std::collections::HashSet<String> = match &employee_overrides {
+            Some(ov) if !ov.tool_whitelist.is_empty() => {
+                ov.tool_whitelist.iter().cloned().collect()
+            }
+            _ => crate::runtime::tools::catalog::DAILY_ALLOWED_TOOLS
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+        };
 
         let max_iterations = employee_overrides
             .as_ref()
@@ -1410,10 +1430,8 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         // `Agent`, which must list dispatchable subagent types and hired
         // employees) read from this.  Mirrors claude-code-best's
         // `tool.prompt({ agents, tools, ... })` pipeline.
-        let tool_desc_ctx = chat_runtime_impl::build_tool_description_context(
-            &self.services.app,
-        )
-        .await;
+        let tool_desc_ctx =
+            chat_runtime_impl::build_tool_description_context(&self.services.app).await;
         let employee_count_in_ctx = tool_desc_ctx
             .agents
             .iter()
@@ -1437,14 +1455,16 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         // AgentRegistry + EmployeeStore handles via app state) and
         // render its description once so the emp-id catalog actually
         // reaches the LLM.
-        let request_scoped_overrides =
-            chat_runtime_impl::build_request_scoped_tool_overrides(
-                &self.services.app,
-                &tool_desc_ctx,
-            )
-            .await;
+        let request_scoped_overrides = chat_runtime_impl::build_request_scoped_tool_overrides(
+            &self.services.app,
+            &tool_desc_ctx,
+        )
+        .await;
         {
-            let keys: Vec<&str> = request_scoped_overrides.keys().map(|k| k.as_str()).collect();
+            let keys: Vec<&str> = request_scoped_overrides
+                .keys()
+                .map(|k| k.as_str())
+                .collect();
             log::info!("[tool-desc-trace] built overrides: keys={:?}", keys);
         }
 
@@ -1517,7 +1537,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
     }
 
     async fn get_env_info(&self, conversation_id: &str) -> Result<String, TurnError> {
-        use crate::runtime::chat::context_builder::{build_env_info, ManagedRuntimeEnvInfo};
+        use crate::runtime::chat::context_builder::{ManagedRuntimeEnvInfo, build_env_info};
 
         let workspace_path = self.services.file_mgr.workspace_path().to_path_buf();
 
@@ -1566,10 +1586,11 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
     }
 
     async fn get_skill_catalog(&self, _agent_id: Option<&str>) -> String {
+        let language = self.current_app_language();
         self.services
             .skill_registry
             .lock()
-            .map(|reg| reg.format_full_catalog(200_000))
+            .map(|reg| reg.format_full_catalog_for_language(200_000, &language))
             .unwrap_or_default()
     }
 
@@ -1605,7 +1626,9 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         // (returns Some(json_defs)), so the driver overrides this empty default.
         // This impl exists only to satisfy the trait — it should never be the value
         // actually used in a turn.
-        log::info!("[tool-desc-trace] entered get_tool_defs (fallback path — should be overridden by load_turn_config_overrides)");
+        log::info!(
+            "[tool-desc-trace] entered get_tool_defs (fallback path — should be overridden by load_turn_config_overrides)"
+        );
         Ok(vec![])
     }
 
@@ -1854,8 +1877,12 @@ mod tests {
     // TauriChatServices::db() — dynamic user-scope resolution
     // -----------------------------------------------------------------------
 
-    fn make_cus_with_home(tmp: &TempDir) -> Arc<crate::storage::current_user_storage::CurrentUserStorage> {
-        let home = Arc::new(crate::storage::AiJiaHome::from_path(tmp.path().to_path_buf()));
+    fn make_cus_with_home(
+        tmp: &TempDir,
+    ) -> Arc<crate::storage::current_user_storage::CurrentUserStorage> {
+        let home = Arc::new(crate::storage::AiJiaHome::from_path(
+            tmp.path().to_path_buf(),
+        ));
         Arc::new(crate::storage::current_user_storage::CurrentUserStorage::new(home))
     }
 
@@ -1910,7 +1937,8 @@ mod tests {
         let root_db = Arc::new(AppStorage::new(root_tmp.path()).unwrap());
         let cus = make_cus_with_home(&cus_tmp);
 
-        cus.activate_scope(crate::storage::UserScope::new(1, 2)).unwrap();
+        cus.activate_scope(crate::storage::UserScope::new(1, 2))
+            .unwrap();
         cus.deactivate();
 
         assert_eq!(
@@ -1976,10 +2004,7 @@ fn build_gateway_settings(settings: &ResolvedLlmSettings) -> AppSettings {
     }
 }
 
-fn system_prompt_content(
-    value: Option<serde_json::Value>,
-    fallback: &str,
-) -> Option<String> {
+fn system_prompt_content(value: Option<serde_json::Value>, fallback: &str) -> Option<String> {
     value
         .as_ref()
         .and_then(|v| flatten_system_message_value(v))
@@ -2202,6 +2227,16 @@ fn infer_runtime_root(path: &std::path::Path) -> std::path::PathBuf {
 }
 
 impl TauriChatCommandAdapter {
+    fn current_app_language(&self) -> String {
+        let settings_map = self.services.db().get_all_settings().unwrap_or_default();
+        let settings = AppSettings::from_string_map(&settings_map);
+        if settings.app_language == "en-US" {
+            "en-US".to_string()
+        } else {
+            "zh-CN".to_string()
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         cus: Arc<CurrentUserStorage>,
@@ -2242,15 +2277,18 @@ impl TauriChatCommandAdapter {
         auth_manager: Arc<AuthManager>,
         permission_store: Arc<crate::runtime::store::PermissionStore>,
         app: tauri::AppHandle,
-        channel_sessions: Option<Arc<dyn crate::connector::im::shared::ask_coordinator::ChannelSessionRegistry>>,
+        channel_sessions: Option<
+            Arc<dyn crate::connector::im::shared::ask_coordinator::ChannelSessionRegistry>,
+        >,
     ) -> Self {
         let runtime_resolver = app
             .try_state::<crate::runtime::dependencies::ManagedRuntimeResolver>()
             .map(|resolver| resolver.inner().clone());
-        let assistant_write_queue = Arc::new(MessageWriteQueue::new(Arc::new(DynamicWriteTarget {
-            cus: cus.clone(),
-            root_db: root_db.clone(),
-        })));
+        let assistant_write_queue =
+            Arc::new(MessageWriteQueue::new(Arc::new(DynamicWriteTarget {
+                cus: cus.clone(),
+                root_db: root_db.clone(),
+            })));
         let services = TauriChatServices {
             cus,
             root_db,
@@ -2263,7 +2301,9 @@ impl TauriChatCommandAdapter {
             app,
             skill_registry,
             runtime_resolver,
-            employee_run_overrides: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            employee_run_overrides: Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
         };
         let host = Arc::new(TauriRuntimeHost::new(services.app.clone()));
         let adapter = Arc::new(match channel_sessions {
@@ -2306,7 +2346,10 @@ impl TauriChatCommandAdapter {
                  TauriChatCommandAdapter::new() is called."
             );
         }
-        if let Some(queue) = services.app.try_state::<Arc<crate::runtime::agent::task_notification::TaskNotificationQueue>>() {
+        if let Some(queue) = services
+            .app
+            .try_state::<Arc<crate::runtime::agent::task_notification::TaskNotificationQueue>>()
+        {
             runtime = runtime.with_task_notification_queue(queue.inner().clone());
         } else {
             // Fail-closed: log error and leave the queue as None (no notifications this session).
@@ -2321,8 +2364,9 @@ impl TauriChatCommandAdapter {
         }
         // LTR (P1.8): wire per-process Team / AgentName registries so
         // cancel_session can drop their per-session entries.
-        if let Some(team_reg) =
-            services.app.try_state::<Arc<crate::runtime::agent::TeamRegistry>>()
+        if let Some(team_reg) = services
+            .app
+            .try_state::<Arc<crate::runtime::agent::TeamRegistry>>()
         {
             runtime = runtime.with_team_registry(team_reg.inner().clone());
         }
@@ -2393,7 +2437,10 @@ impl TauriChatCommandAdapter {
     }
 
     /// 向内部 runtime event bus 注册外部订阅者。
-    pub fn subscribe_event_listener(&self, subscriber: std::sync::Arc<dyn crate::runtime::event_bus::RuntimeEventSubscriber>) {
+    pub fn subscribe_event_listener(
+        &self,
+        subscriber: std::sync::Arc<dyn crate::runtime::event_bus::RuntimeEventSubscriber>,
+    ) {
         self.runtime.subscribe_event_listener(subscriber);
     }
 
@@ -2504,12 +2551,16 @@ impl TauriChatCommandAdapter {
     }
 
     /// 暴露权限控制平面，供 IM 协调器等外部组件使用。
-    pub fn permission_control_plane(&self) -> std::sync::Arc<dyn crate::runtime::store::PendingPermissionControlPlane> {
+    pub fn permission_control_plane(
+        &self,
+    ) -> std::sync::Arc<dyn crate::runtime::store::PendingPermissionControlPlane> {
         self.runtime.permission_control_plane()
     }
 
     /// 暴露交互控制平面，供 IM 协调器等外部组件使用。
-    pub fn interaction_control_plane(&self) -> std::sync::Arc<dyn crate::runtime::interaction::PendingInteractionControlPlane> {
+    pub fn interaction_control_plane(
+        &self,
+    ) -> std::sync::Arc<dyn crate::runtime::interaction::PendingInteractionControlPlane> {
         self.runtime.interaction_control_plane()
     }
 
@@ -2611,7 +2662,10 @@ impl TauriChatCommandAdapter {
         for att in &attachments {
             log::info!(
                 "[send_message] attachment: name={} path={} kind={} type={}",
-                att.file_name, att.file_path, att.kind, att.file_type
+                att.file_name,
+                att.file_path,
+                att.kind,
+                att.file_type
             );
         }
 
@@ -2751,15 +2805,9 @@ impl TauriChatCommandAdapter {
             .app
             .try_state::<Arc<crate::runtime::agent::AgentRuntime>>()
             .map(|v| v.inner().clone());
-        log::info!(
-            "[send_message] agent_runtime={}",
-            agent_runtime.is_some()
-        );
+        log::info!("[send_message] agent_runtime={}", agent_runtime.is_some());
         // Load app settings (decrypting the primary key) for the runtime deps.
-        log::info!(
-            "[send_message] loading settings conv={}",
-            conversation_id
-        );
+        log::info!("[send_message] loading settings conv={}", conversation_id);
         let app_settings_arc = {
             let map = self.services.db().get_all_settings().unwrap_or_default();
             let mut s = if map.is_empty() {
@@ -2886,11 +2934,7 @@ impl TauriChatCommandAdapter {
             &session_id,
             crate::runtime::cancellation::CancellationReason::Interrupt,
         );
-        conversation_service::stop_streaming(
-            self.services.gateway.clone(),
-            conversation_id,
-        )
-        .await
+        conversation_service::stop_streaming(self.services.gateway.clone(), conversation_id).await
     }
 
     pub async fn approve_permission_request(
@@ -2902,7 +2946,9 @@ impl TauriChatCommandAdapter {
     ) -> Result<(), String> {
         log::info!(
             "[approve_permission_request] tool_call_id={} remember={:?} destination={:?}",
-            tool_call_id, remember, destination
+            tool_call_id,
+            remember,
+            destination
         );
         self.runtime
             .resolve_permission_request(
@@ -2925,7 +2971,9 @@ impl TauriChatCommandAdapter {
     ) -> Result<(), String> {
         log::info!(
             "[deny_permission_request] tool_call_id={} remember={:?} destination={:?}",
-            tool_call_id, remember, destination
+            tool_call_id,
+            remember,
+            destination
         );
         self.runtime
             .resolve_permission_request(
@@ -3087,7 +3135,10 @@ impl TauriChatCommandAdapter {
                 continue;
             };
             if let Some(ref since) = since_ts {
-                if v.get("ts").and_then(|t| t.as_str()).map_or(true, |t| t <= since.as_str()) {
+                if v.get("ts")
+                    .and_then(|t| t.as_str())
+                    .map_or(true, |t| t <= since.as_str())
+                {
                     continue;
                 }
             }
@@ -3106,8 +3157,7 @@ impl TauriChatCommandAdapter {
     /// + generate_and_set_title 内部 title=="新对话" 双重检查保证。
     async fn spawn_auto_title(&self, conversation_id: String, delay_ms: u64) {
         // 提前加载 settings —— spawn 内部跨线程 self 不安全
-        let dummy_request =
-            ChatTurnRequest::new(conversation_id.clone(), String::new(), vec![]);
+        let dummy_request = ChatTurnRequest::new(conversation_id.clone(), String::new(), vec![]);
         let settings = match self.load_llm_settings_for_turn(&dummy_request).await {
             Ok(r) => build_gateway_settings(&r),
             Err(e) => {
@@ -3123,8 +3173,8 @@ impl TauriChatCommandAdapter {
             if delay_ms > 0 {
                 tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
             }
-            let needs = conversation_service::should_auto_title(&*db, &conversation_id)
-                .unwrap_or(false);
+            let needs =
+                conversation_service::should_auto_title(&*db, &conversation_id).unwrap_or(false);
             if !needs {
                 return;
             }
@@ -3241,10 +3291,7 @@ impl TauriChatCommandAdapter {
         .map_err(|e| e.to_string())
     }
 
-    pub async fn clear_conversation_source(
-        &self,
-        conversation_id: String,
-    ) -> Result<(), String> {
+    pub async fn clear_conversation_source(&self, conversation_id: String) -> Result<(), String> {
         let base = self.services.db().base_dir().to_path_buf();
         crate::storage::file_store::conversations::set_conversation_source(
             &base,
@@ -3327,7 +3374,7 @@ impl crate::runtime::agenda::AgendaRunDispatcher for TauriChatCommandAdapter {
 
         // 1. 创建 conversation
         let conversation_id = conversation_service::create_conversation(
-            self.services.db().clone() as Arc<dyn ConversationStore>,
+            self.services.db().clone() as Arc<dyn ConversationStore>
         )
         .await
         .map_err(anyhow::Error::msg)?;
@@ -3369,7 +3416,10 @@ impl crate::runtime::agenda::AgendaRunDispatcher for TauriChatCommandAdapter {
                         display_name,
                         authorized_at: chrono::Utc::now().to_rfc3339(),
                     };
-                    if let Err(e) = facade.authorized_workspace_store().replace_for_session(&conversation_id, &ws) {
+                    if let Err(e) = facade
+                        .authorized_workspace_store()
+                        .replace_for_session(&conversation_id, &ws)
+                    {
                         log::warn!(
                             "[agenda-dispatch] authorize workspace failed conv={} path={} err={}",
                             conversation_id,
@@ -3463,13 +3513,15 @@ impl crate::runtime::agenda::AgendaRunDispatcher for TauriChatCommandAdapter {
                 .and_then(|cus| cus.require_paths().ok())
                 .map(|paths| paths.employees_dir())
         };
+        let language = self.current_app_language();
         let prompt = if let Some(emp) = employee.as_ref() {
-            crate::runtime::employee::dispatch_prompt::build_dispatch_prompt(
+            crate::runtime::employee::dispatch_prompt::build_dispatch_prompt_for_language(
                 emp,
                 &trigger_label,
                 None,
                 Some(&item.prompt),
                 employees_dir.as_deref(),
+                Some(&language),
             )
         } else {
             format!("{trigger_label}\n\n{}", item.prompt)
@@ -3559,10 +3611,13 @@ impl crate::runtime::pending::ChatTurnDispatcher for TauriChatCommandAdapter {
                         }
                         _ => item.text.clone(),
                     };
-                    let attachments: Vec<crate::runtime::chat::chat_turn_driver::ChatAttachmentRef> =
-                        item.attachments
-                            .iter()
-                            .map(|a| crate::runtime::chat::chat_turn_driver::ChatAttachmentRef {
+                    let attachments: Vec<
+                        crate::runtime::chat::chat_turn_driver::ChatAttachmentRef,
+                    > = item
+                        .attachments
+                        .iter()
+                        .map(
+                            |a| crate::runtime::chat::chat_turn_driver::ChatAttachmentRef {
                                 id: a.id.clone(),
                                 file_name: std::path::Path::new(&a.file_path)
                                     .file_name()
@@ -3577,8 +3632,9 @@ impl crate::runtime::pending::ChatTurnDispatcher for TauriChatCommandAdapter {
                                     .clone()
                                     .unwrap_or_else(|| "application/octet-stream".into()),
                                 mime_type: a.mime.clone(),
-                            })
-                            .collect();
+                            },
+                        )
+                        .collect();
                     let msg_id = format!("msg-{}", uuid::Uuid::new_v4());
                     let content_value =
                         crate::runtime::chat::chat_turn_driver::build_user_content_json_with_skill(
@@ -3724,12 +3780,14 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
             paths.employees_dir()
         };
 
-        let prompt = crate::runtime::employee::dispatch_prompt::build_dispatch_prompt(
+        let language = self.current_app_language();
+        let prompt = crate::runtime::employee::dispatch_prompt::build_dispatch_prompt_for_language(
             &employee,
             &trigger_label,
             catchup_info.as_deref(),
             prompt_override.as_deref(),
             Some(employees_dir.as_path()),
+            Some(&language),
         );
 
         // record_run synchronously: last_run_at represents "last dispatched at"
@@ -3880,9 +3938,10 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
                             .map(|a| std::path::PathBuf::from(&a.file_path))
                             .collect::<Vec<_>>(),
                     );
-                adapter.send_chat_request(req).await.map_err(|e| {
-                    anyhow::anyhow!("send_chat_request failed in dispatch: {e}")
-                })
+                adapter
+                    .send_chat_request(req)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("send_chat_request failed in dispatch: {e}"))
             };
 
             match &result {
@@ -3890,10 +3949,8 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
                     // Flush any pending assistant-message writes, then read the
                     // conversation to build a useful title + summary for the inbox.
                     let _ = adapter.services.assistant_write_queue.flush();
-                    let (title, summary) = extract_report_title_summary(
-                        adapter.services.db().as_ref(),
-                        &conv_id,
-                    );
+                    let (title, summary) =
+                        extract_report_title_summary(adapter.services.db().as_ref(), &conv_id);
                     if let Err(e) = inbox_writer::push_report(
                         employees_dir_async.clone(),
                         &employee_clone.id,
@@ -3991,9 +4048,9 @@ impl TauriChatCommandAdapter {
         employee_id: &str,
         since: chrono::DateTime<chrono::Utc>,
     ) {
-        use tauri::Manager;
-        use crate::storage::{CurrentUserStorage, UserScopedPathResolver};
         use crate::runtime::employee::inbox::InboxStore;
+        use crate::storage::{CurrentUserStorage, UserScopedPathResolver};
+        use tauri::Manager;
         use tauri_plugin_notification::NotificationExt;
 
         let app = self.services.app.clone();
@@ -4001,12 +4058,15 @@ impl TauriChatCommandAdapter {
         let employee_id = employee_id.to_string();
 
         tauri::async_runtime::spawn(async move {
-            let Ok(cus) = app.try_state::<std::sync::Arc<CurrentUserStorage>>()
+            let Ok(cus) = app
+                .try_state::<std::sync::Arc<CurrentUserStorage>>()
                 .ok_or_else(|| "no CurrentUserStorage".to_string())
             else {
                 return;
             };
-            let Ok(paths) = cus.require_paths() else { return };
+            let Ok(paths) = cus.require_paths() else {
+                return;
+            };
             let inbox = InboxStore::new(paths.employees_dir());
             let entries = match inbox.list_for(&employee_id, 50) {
                 Ok(e) => e,

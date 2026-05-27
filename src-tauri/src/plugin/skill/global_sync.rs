@@ -5,13 +5,14 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::plugin::skill::frontmatter::parse_skill_md;
 use crate::plugin::skill::loader::{is_valid_skill_id, load_skill_roots};
 use crate::plugin::skill::registry::SkillRegistry;
+use crate::plugin::skill::types::normalize_skill_locale;
 
 const MAX_EXTRACTED_BYTES: u64 = 50 * 1024 * 1024;
 const MANIFEST_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(15);
@@ -37,9 +38,17 @@ pub struct SkillPackageItem {
     /// missing `category:`. Empty string is normalized to None.
     #[serde(default, deserialize_with = "deserialize_optional_nonempty_string")]
     pub category: Option<String>,
+    #[serde(default)]
+    pub display_i18n: Option<Value>,
+    #[serde(default)]
+    pub default_locale: Option<String>,
+    #[serde(default)]
+    pub supported_locales: Option<Vec<String>>,
 }
 
-fn deserialize_optional_nonempty_string<'de, D>(d: D) -> std::result::Result<Option<String>, D::Error>
+fn deserialize_optional_nonempty_string<'de, D>(
+    d: D,
+) -> std::result::Result<Option<String>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
@@ -67,6 +76,12 @@ pub struct DownloadResponseData {
     /// where category is empty (legacy). Empty string normalized to None.
     #[serde(default, deserialize_with = "deserialize_optional_nonempty_string")]
     pub category: Option<String>,
+    #[serde(default)]
+    pub display_i18n: Option<Value>,
+    #[serde(default)]
+    pub default_locale: Option<String>,
+    #[serde(default)]
+    pub supported_locales: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -349,16 +364,21 @@ async fn fetch_skill_list(
     client: &reqwest::Client,
     server_base_url: &str,
     session_key: &str,
+    language: Option<&str>,
 ) -> Result<SkillListResponse> {
     // No scope filter: gateway returns BOTH the caller's tenant private
     // skills AND scope=public platform skills in one response (see lotus
     // api-gateway handler.SkillPackageEmployeeHandler.List). Keeping
     // scope=public would silently drop tenant-pushed skills, which was the
     // pre-2026-05-19 bug.
-    let url = format!(
+    let mut url = format!(
         "{}/v1/skill-packages?page=1&size=100",
         server_base_url.trim_end_matches('/')
     );
+    if let Some(language) = language {
+        url.push_str("&lang=");
+        url.push_str(normalize_skill_locale(language));
+    }
     let response = client
         .get(&url)
         .bearer_auth(session_key)
@@ -380,12 +400,17 @@ async fn fetch_download_url(
     server_base_url: &str,
     session_key: &str,
     skill_id: u64,
+    language: Option<&str>,
 ) -> Result<DownloadResponseData> {
-    let url = format!(
+    let mut url = format!(
         "{}/v1/skill-packages/{}/download",
         server_base_url.trim_end_matches('/'),
         skill_id
     );
+    if let Some(language) = language {
+        url.push_str("?lang=");
+        url.push_str(normalize_skill_locale(language));
+    }
     let response = client
         .post(&url)
         .bearer_auth(session_key)
@@ -411,6 +436,7 @@ async fn install_one_skill_package(
     session_key: &str,
     item: &SkillPackageItem,
     config: &GlobalSkillSyncConfig,
+    language: Option<&str>,
 ) -> Result<()> {
     if !is_valid_skill_id(&item.plugin_id) {
         bail!("invalid skill id from server: {}", item.plugin_id);
@@ -419,11 +445,24 @@ async fn install_one_skill_package(
     // 1. Get a fresh signed download URL from server. The response also
     //    carries the DB-recorded category (when set), used below as a
     //    sidecar fallback for SKILL.md frontmatter missing `category:`.
-    let download = fetch_download_url(client, server_base_url, session_key, item.id).await?;
+    let download =
+        fetch_download_url(client, server_base_url, session_key, item.id, language).await?;
     let download_url = &download.url;
     // Prefer download.category (fresher), fall back to item.category from
     // the list endpoint when download response omits it.
     let db_category = download.category.clone().or_else(|| item.category.clone());
+    let db_display_i18n = download
+        .display_i18n
+        .clone()
+        .or_else(|| item.display_i18n.clone());
+    let db_default_locale = download
+        .default_locale
+        .clone()
+        .or_else(|| item.default_locale.clone());
+    let db_supported_locales = download
+        .supported_locales
+        .clone()
+        .or_else(|| item.supported_locales.clone());
 
     // 2. Download zip into downloads/{plugin_id}-{version}.zip
     let archive = config.downloads_dir.join(format!(
@@ -462,7 +501,11 @@ async fn install_one_skill_package(
     //    Gateway emits `"tenant"` for tenant-private skills and `"public"` for
     //    platform/OPS skills (default `"tenant"` for legacy rows without scope).
     let installed = config.global_skills_dir.join(&item.plugin_id);
-    let scope_marker = if item.scope == "public" { "public" } else { "tenant" };
+    let scope_marker = if item.scope == "public" {
+        "public"
+    } else {
+        "tenant"
+    };
     let scope_path = installed.join(".scope");
     if let Err(error) = fs::write(&scope_path, scope_marker) {
         log::warn!(
@@ -477,9 +520,30 @@ async fn install_one_skill_package(
     //    are missing — primarily to give legacy packages (uploaded before the
     //    strict-frontmatter contract) a correct category instead of falling
     //    back to "general". Untouched SKILL.md keeps sha256 integrity intact.
-    if let Some(cat) = db_category.as_deref() {
+    if db_category.is_some()
+        || db_display_i18n.is_some()
+        || db_default_locale.is_some()
+        || db_supported_locales.is_some()
+    {
         let meta_path = installed.join(".lotus-meta.json");
-        let payload = serde_json::json!({ "category": cat });
+        let mut payload = serde_json::Map::new();
+        if let Some(cat) = db_category.as_deref() {
+            payload.insert("category".to_string(), Value::String(cat.to_string()));
+        }
+        if let Some(display_i18n) = db_display_i18n {
+            payload.insert("display_i18n".to_string(), display_i18n);
+        }
+        if let Some(default_locale) = db_default_locale {
+            payload.insert("default_locale".to_string(), Value::String(default_locale));
+        }
+        if let Some(supported_locales) = db_supported_locales {
+            payload.insert(
+                "supported_locales".to_string(),
+                serde_json::to_value(supported_locales)
+                    .unwrap_or_else(|_| Value::Array(Vec::new())),
+            );
+        }
+        let payload = Value::Object(payload);
         match serde_json::to_vec(&payload) {
             Ok(bytes) => {
                 if let Err(error) = fs::write(&meta_path, bytes) {
@@ -506,15 +570,21 @@ pub async fn sync_skill_packages_from_server(
     config: GlobalSkillSyncConfig,
     server_base_url: String,
     session_key: String,
+    language: Option<String>,
 ) -> Result<GlobalSkillInstallReport> {
     let client = reqwest::Client::new();
+    let language = language.as_deref();
 
     log::info!("[skill-sync] start sync from {}", server_base_url);
 
     // 1. Fetch the published skill list from lotus-server
-    let list = fetch_skill_list(&client, &server_base_url, &session_key).await?;
+    let list = fetch_skill_list(&client, &server_base_url, &session_key, language).await?;
     let (n_tenant, n_public) = list.data.iter().fold((0usize, 0usize), |(t, p), it| {
-        if it.scope == "tenant" { (t + 1, p) } else { (t, p + 1) }
+        if it.scope == "tenant" {
+            (t + 1, p)
+        } else {
+            (t, p + 1)
+        }
     });
     log::info!(
         "[skill-sync] fetched {} skills from server ({} tenant + {} public): {:?}",
@@ -565,8 +635,15 @@ pub async fn sync_skill_packages_from_server(
             item.plugin_id,
             item.version
         );
-        match install_one_skill_package(&client, &server_base_url, &session_key, item, &config)
-            .await
+        match install_one_skill_package(
+            &client,
+            &server_base_url,
+            &session_key,
+            item,
+            &config,
+            language,
+        )
+        .await
         {
             Ok(()) => {
                 report.installed.push(item.plugin_id.clone());

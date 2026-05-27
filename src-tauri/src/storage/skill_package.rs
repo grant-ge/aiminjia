@@ -22,7 +22,7 @@ use std::fs;
 use std::io::{Read, Seek, Write};
 use std::path::{Component, Path, PathBuf};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use zip::write::FileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
@@ -220,6 +220,27 @@ fn collect_entries(source_dir: &Path) -> Result<Vec<(PathBuf, PathBuf)>> {
             out.push((PathBuf::from(sub).join(&fname), p));
         }
     }
+    let i18n_root = source_dir.join("i18n");
+    if i18n_root.is_dir() {
+        for locale_entry in fs::read_dir(&i18n_root)? {
+            let locale_entry = locale_entry?;
+            let locale_dir = locale_entry.path();
+            if !locale_dir.is_dir() {
+                continue;
+            }
+            let locale = locale_entry.file_name().to_string_lossy().to_string();
+            if !matches!(locale.as_str(), "zh-CN" | "en-US") {
+                continue;
+            }
+            let skill_md = locale_dir.join("SKILL.md");
+            if skill_md.is_file() {
+                out.push((
+                    PathBuf::from("i18n").join(locale).join("SKILL.md"),
+                    skill_md,
+                ));
+            }
+        }
+    }
     out.sort_by(|a, b| a.0.cmp(&b.0));
     Ok(out)
 }
@@ -271,6 +292,16 @@ fn validate_skill_subpath(rel: &Path) -> Result<()> {
                 .map_err(|e| anyhow!("unsafe filename '{}': {}", fname, e))?;
         }
         _ => {
+            if comps.len() == 3
+                && comps[0].as_os_str() == "i18n"
+                && matches!(
+                    comps[1].as_os_str().to_string_lossy().as_ref(),
+                    "zh-CN" | "en-US"
+                )
+                && comps[2].as_os_str() == "SKILL.md"
+            {
+                return Ok(());
+            }
             // 三级及以上：仅 assets/ templates/ docs/ 允许（模板类技能）。
             let top = comps[0].as_os_str().to_string_lossy();
             if !nested_allowed.contains(top.as_ref()) {
@@ -319,6 +350,28 @@ mod tests {
         assert!(res.skill_dir.join("SKILL.md").is_file());
         assert!(res.skill_dir.join("scripts/foo.py").is_file());
         assert!(res.skill_dir.join("references/note.md").is_file());
+    }
+
+    #[test]
+    fn pack_then_unpack_preserves_localized_skill_md_variants() {
+        let tmp = TempDir::new().unwrap();
+        let src = make_skill_dir(tmp.path());
+        fs::create_dir_all(src.join("i18n/en-US")).unwrap();
+        fs::write(
+            src.join("i18n/en-US/SKILL.md"),
+            "---\nname: my-skill\ndescription: English\n---\nEnglish body",
+        )
+        .unwrap();
+        let dest = tmp.path().join("out").join("my-skill-v0.1.0.zip");
+
+        pack_skill_dir(&src, &dest, "my-skill").unwrap();
+
+        let unpack_root = tmp.path().join("unpack");
+        let res = unpack_skill_archive(&dest, &unpack_root).unwrap();
+        assert_eq!(
+            fs::read_to_string(res.skill_dir.join("i18n/en-US/SKILL.md")).unwrap(),
+            "---\nname: my-skill\ndescription: English\n---\nEnglish body"
+        );
     }
 
     #[test]

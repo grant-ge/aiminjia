@@ -304,6 +304,95 @@ fn load_snapshot_silent(instance_dir: &Path) -> Option<TemplateSnapshot> {
     }
 }
 
+fn normalize_template_language(language: Option<&str>) -> &'static str {
+    if matches!(language, Some("en-US") | Some("en") | Some("en-us")) {
+        "en-US"
+    } else {
+        "zh-CN"
+    }
+}
+
+fn localized_object<'a>(
+    snapshot: &'a TemplateSnapshot,
+    field: &str,
+    language: Option<&str>,
+) -> Option<&'a serde_json::Map<String, serde_json::Value>> {
+    let locale = normalize_template_language(language);
+    let value = snapshot.extra.get(field).or_else(|| match field {
+        "displayI18n" => snapshot.extra.get("display_i18n"),
+        "promptI18n" => snapshot.extra.get("prompt_i18n"),
+        "schemaI18n" => snapshot.extra.get("schema_i18n"),
+        _ => None,
+    })?;
+    let locales = value.as_object()?;
+    locales
+        .get(locale)
+        .or_else(|| locales.get("zh-CN"))
+        .and_then(|value| value.as_object())
+}
+
+fn localized_string(
+    object: &serde_json::Map<String, serde_json::Value>,
+    camel_key: &str,
+    snake_key: &str,
+) -> Option<String> {
+    object
+        .get(camel_key)
+        .or_else(|| object.get(snake_key))
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EffectiveTemplateDisplay {
+    pub name: String,
+    pub role: String,
+    pub description: String,
+}
+
+pub fn effective_template_display_for_language(
+    employees_root: &Path,
+    employee_id: &str,
+    record_name: &str,
+    record_role: &str,
+    record_description: &str,
+    language: Option<&str>,
+) -> Option<EffectiveTemplateDisplay> {
+    let snapshot = load_snapshot_silent(&employees_root.join(employee_id))?;
+    let localized = localized_object(&snapshot, "displayI18n", language);
+    Some(EffectiveTemplateDisplay {
+        name: localized
+            .and_then(|value| localized_string(value, "name", "name"))
+            .unwrap_or_else(|| {
+                if snapshot.name.is_empty() {
+                    record_name.to_string()
+                } else {
+                    snapshot.name.clone()
+                }
+            }),
+        role: localized
+            .and_then(|value| localized_string(value, "role", "role"))
+            .unwrap_or_else(|| {
+                if snapshot.role.is_empty() {
+                    record_role.to_string()
+                } else {
+                    snapshot.role.clone()
+                }
+            }),
+        description: localized
+            .and_then(|value| localized_string(value, "description", "description"))
+            .unwrap_or_else(|| {
+                if snapshot.description.is_empty() {
+                    record_description.to_string()
+                } else {
+                    snapshot.description.clone()
+                }
+            }),
+    })
+}
+
 /// Returns the effective tool whitelist for an employee. Snapshot wins;
 /// falls back to the record field when no snapshot is present (pre-PR3
 /// hired employees that haven't been touched by `stamp_snapshot_for_record`
@@ -327,7 +416,21 @@ pub fn effective_system_prompt_extra(
     employee_id: &str,
     record_fallback: Option<&str>,
 ) -> Option<String> {
+    effective_system_prompt_extra_for_language(employees_root, employee_id, record_fallback, None)
+}
+
+pub fn effective_system_prompt_extra_for_language(
+    employees_root: &Path,
+    employee_id: &str,
+    record_fallback: Option<&str>,
+    language: Option<&str>,
+) -> Option<String> {
     if let Some(s) = load_snapshot_silent(&employees_root.join(employee_id)) {
+        if let Some(prompt) = localized_object(&s, "promptI18n", language)
+            .and_then(|value| localized_string(value, "systemPromptExtra", "system_prompt_extra"))
+        {
+            return Some(prompt);
+        }
         if !s.system_prompt_extra.is_empty() {
             return Some(s.system_prompt_extra);
         }
@@ -904,6 +1007,65 @@ mod tests {
 
         let skill = effective_default_skill_id(root, id, Some("record-skill"));
         assert_eq!(skill.as_deref(), Some("snap-skill"));
+    }
+
+    #[test]
+    fn effective_system_prompt_extra_selects_prompt_i18n_by_language() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let id = "emp-i18n";
+        let inst = root.join(id);
+        let mut snap = make_snap("builtin:i18n", "1.0.0");
+        snap.system_prompt_extra = "中文系统提示".into();
+        snap.extra.insert(
+            "promptI18n".into(),
+            serde_json::json!({
+                "en-US": { "systemPromptExtra": "English system prompt" }
+            }),
+        );
+        ensure_instance_snapshot(&inst, &snap, "bootstrap").unwrap();
+
+        let extra =
+            effective_system_prompt_extra_for_language(root, id, Some("record"), Some("en-US"));
+
+        assert_eq!(extra.as_deref(), Some("English system prompt"));
+    }
+
+    #[test]
+    fn effective_template_display_selects_display_i18n_by_language() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let id = "emp-display-i18n";
+        let inst = root.join(id);
+        let mut snap = make_snap("builtin:i18n", "1.0.0");
+        snap.name = "小英".into();
+        snap.role = "中文角色".into();
+        snap.description = "中文描述".into();
+        snap.extra.insert(
+            "displayI18n".into(),
+            serde_json::json!({
+                "en-US": {
+                    "name": "Alex",
+                    "role": "Research Analyst",
+                    "description": "Tracks competitor updates"
+                }
+            }),
+        );
+        ensure_instance_snapshot(&inst, &snap, "bootstrap").unwrap();
+
+        let display = effective_template_display_for_language(
+            root,
+            id,
+            "record name",
+            "record role",
+            "record description",
+            Some("en-US"),
+        )
+        .expect("display");
+
+        assert_eq!(display.name, "Alex");
+        assert_eq!(display.role, "Research Analyst");
+        assert_eq!(display.description, "Tracks competitor updates");
     }
 
     #[test]

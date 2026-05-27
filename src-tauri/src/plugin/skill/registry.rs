@@ -56,15 +56,32 @@ impl SkillRegistry {
     /// wiring lands, the main chat path must use this full-catalog variant so
     /// that every new conversation sees the skill listing.
     pub fn format_full_catalog(&self, context_window_tokens: usize) -> String {
+        self.format_full_catalog_for_language(context_window_tokens, "zh-CN")
+    }
+
+    pub fn format_full_catalog_for_language(
+        &self,
+        context_window_tokens: usize,
+        language: &str,
+    ) -> String {
         let mut skills = self.skills.values().cloned().collect::<Vec<_>>();
         skills.sort_by(|a, b| a.id.cmp(&b.id));
-        format_skill_catalog_with_budget(&skills, context_window_tokens)
+        format_skill_catalog_with_budget(&skills, context_window_tokens, language)
     }
 
     pub fn catalog_delta_for_agent(
         &mut self,
         agent_id: Option<&str>,
         context_window_tokens: usize,
+    ) -> String {
+        self.catalog_delta_for_agent_for_language(agent_id, context_window_tokens, "zh-CN")
+    }
+
+    pub fn catalog_delta_for_agent_for_language(
+        &mut self,
+        agent_id: Option<&str>,
+        context_window_tokens: usize,
+        language: &str,
     ) -> String {
         let key = agent_id.unwrap_or("").to_string();
         let sent = self.sent_skill_names.entry(key).or_default();
@@ -81,7 +98,7 @@ impl SkillRegistry {
         for skill in &new_skills {
             sent.insert(skill.id.clone());
         }
-        format_skill_catalog_with_budget(&new_skills, context_window_tokens)
+        format_skill_catalog_with_budget(&new_skills, context_window_tokens, language)
     }
 
     pub fn reset_sent_skill_names(&mut self) {
@@ -124,6 +141,7 @@ mod replace_all_tests {
                 metadata: SkillMetadata::default(),
             },
             body: String::new(),
+            localized: Default::default(),
             source: SkillSource::User,
         }
     }

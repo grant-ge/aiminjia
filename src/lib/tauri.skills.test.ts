@@ -12,20 +12,20 @@ vi.mock('@tauri-apps/api/event', () => ({
 import { getPluginInfo, installCustomSkill, listSkills } from './tauri'
 
 describe('skill tauri ipc wrappers', () => {
-  it('listSkills 调用后端 list_skills', async () => {
+  it('listSkills passes the active language to list_skills', async () => {
     invokeMock.mockResolvedValueOnce([])
 
-    await listSkills()
+    await listSkills('en-US')
 
-    expect(invokeMock).toHaveBeenCalledWith('list_skills')
+    expect(invokeMock).toHaveBeenCalledWith('list_skills', { language: 'en-US' })
   })
 
-  it('getPluginInfo 调用后端 get_plugin_info', async () => {
+  it('getPluginInfo passes the active language to get_plugin_info', async () => {
     invokeMock.mockResolvedValueOnce({ tools: [], skills: [] })
 
-    await getPluginInfo()
+    await getPluginInfo('en-US')
 
-    expect(invokeMock).toHaveBeenCalledWith('get_plugin_info')
+    expect(invokeMock).toHaveBeenCalledWith('get_plugin_info', { language: 'en-US' })
   })
 
   it('installCustomSkill 调用后端 install_custom_skill', async () => {

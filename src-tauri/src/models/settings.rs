@@ -11,6 +11,10 @@ fn default_chat_width_mode() -> String {
     "full".to_string()
 }
 
+fn default_app_language() -> String {
+    "zh-CN".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LlmProvider {
@@ -68,6 +72,9 @@ pub struct AppSettings {
     /// Chat content width mode: centered | full.
     #[serde(default = "default_chat_width_mode")]
     pub chat_width_mode: String,
+    /// App UI/runtime language: zh-CN | en-US.
+    #[serde(default = "default_app_language")]
+    pub app_language: String,
     /// JSON-stringified `AuthorizedWorkspaceRef` ({id, rootPath, displayName}) — 首页 task composer
     /// 当前选中的 workspace。空字符串视为未选中。
     #[serde(default)]
@@ -108,6 +115,7 @@ impl Default for AppSettings {
             font_scale: default_font_scale(),
             accent_color: String::new(),
             chat_width_mode: default_chat_width_mode(),
+            app_language: default_app_language(),
             ui_home_selected_workspace: String::new(),
             ui_home_recent_workspaces: String::new(),
         }
@@ -169,6 +177,7 @@ impl AppSettings {
             font_scale: get_str("fontScale", &defaults.font_scale),
             accent_color: get_str("accentColor", &defaults.accent_color),
             chat_width_mode: get_str("chatWidthMode", &defaults.chat_width_mode),
+            app_language: get_str("appLanguage", &defaults.app_language),
             ui_home_selected_workspace: get_str(
                 "uiHomeSelectedWorkspace",
                 &defaults.ui_home_selected_workspace,
@@ -202,6 +211,16 @@ mod tests {
     }
 
     #[test]
+    fn reads_app_language_from_string_map() {
+        let mut map = HashMap::new();
+        map.insert("appLanguage".to_string(), "en-US".to_string());
+
+        let settings = AppSettings::from_string_map(&map);
+
+        assert_eq!(settings.app_language, "en-US");
+    }
+
+    #[test]
     fn home_workspace_fields_default_to_empty_string() {
         let s = AppSettings::default();
         assert_eq!(s.ui_home_selected_workspace, "");
@@ -223,6 +242,9 @@ mod tests {
             parsed.ui_home_selected_workspace,
             s.ui_home_selected_workspace
         );
-        assert_eq!(parsed.ui_home_recent_workspaces, s.ui_home_recent_workspaces);
+        assert_eq!(
+            parsed.ui_home_recent_workspaces,
+            s.ui_home_recent_workspaces
+        );
     }
 }

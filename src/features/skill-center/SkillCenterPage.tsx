@@ -87,7 +87,7 @@ function getIconBg(category: string) {
 }
 
 export function SkillCenterPage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [category, setCategory] = useState<SkillCategoryId>('recommended')
   const [query, setQuery] = useState('')
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -222,7 +222,7 @@ export function SkillCenterPage() {
     if (syncing) return
     setSyncing(true)
     try {
-      const result = await syncBuiltinSkills()
+      const result = await syncBuiltinSkills(i18n.language)
       await reload()
       pushNotification({
         level: 'success',
@@ -261,7 +261,7 @@ export function SkillCenterPage() {
     if (checkingId || syncing) return
     setCheckingId(skillId)
     try {
-      const result = await syncBuiltinSkills()
+      const result = await syncBuiltinSkills(i18n.language)
       await reload()
       const updated = result.installed.includes(skillId)
       pushNotification({
@@ -330,7 +330,7 @@ export function SkillCenterPage() {
 
   useEffect(() => {
     void reload().catch(handleLoadError)
-  }, [reload])
+  }, [reload, i18n.language])
 
   const categoryItems = useMemo(
     () => [

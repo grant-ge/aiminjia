@@ -38,7 +38,7 @@ export function AuthGate({ children }: PropsWithChildren) {
     if (isLoggedIn) {
       void loadConversations()
 
-      syncBuiltinSkills()
+      syncBuiltinSkills(i18n.language)
         .then((result) => {
           if (result.installed.length > 0) {
             console.info('[builtin-skills] installed:', result.installed)

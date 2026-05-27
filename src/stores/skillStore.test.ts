@@ -6,9 +6,13 @@ const tauriMock = vi.hoisted(() => ({
     { id: 'shop-report', displayName: '店铺日报', description: 'desc', source: 'user', hasWorkflow: false, icon: 'store', category: 'ops', triggerText: '', shortDescription: 'short', displayNameEn: 'Ops', shortDescriptionEn: 'short' },
   ]),
   installCustomSkill: vi.fn().mockResolvedValue('installed'),
+  uninstallCustomSkill: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock('@/lib/tauri', () => tauriMock)
+vi.mock('@/i18n', () => ({
+  default: { language: 'en-US' },
+}))
 
 import { useSkillStore } from '@/stores/skillStore'
 
@@ -21,6 +25,7 @@ describe('skillStore', () => {
   it('reload 后可按分类过滤', async () => {
     await useSkillStore.getState().reload()
 
+    expect(tauriMock.listSkills).toHaveBeenCalledWith('en-US')
     expect(useSkillStore.getState().listByCategory('general')).toHaveLength(1)
     expect(useSkillStore.getState().listByCategory('recommended')).toHaveLength(1)
     expect(useSkillStore.getState().getById('shop-report')?.displayName).toBe('店铺日报')

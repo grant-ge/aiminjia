@@ -8,6 +8,7 @@ const MAX_LISTING_DESC_CHARS: usize = 250;
 pub fn format_skill_catalog_with_budget(
     skills: &[DiskSkill],
     context_window_tokens: usize,
+    language: &str,
 ) -> String {
     if skills.is_empty() {
         return String::new();
@@ -21,8 +22,9 @@ pub fn format_skill_catalog_with_budget(
 
     let mut lines = Vec::new();
     for skill in skills {
-        let mut desc = skill.frontmatter.description.clone();
-        if let Some(when) = &skill.frontmatter.when_to_use {
+        let localized = skill.localized(language);
+        let mut desc = localized.frontmatter.description.clone();
+        if let Some(when) = &localized.frontmatter.when_to_use {
             desc.push(' ');
             desc.push_str(when);
         }

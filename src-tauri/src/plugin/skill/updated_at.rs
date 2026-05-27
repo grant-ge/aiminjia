@@ -51,6 +51,7 @@ mod tests {
             root,
             frontmatter: SkillFrontmatter::default(),
             body: String::new(),
+            localized: Default::default(),
             source: SkillSource::User,
         }
     }

@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 
 import type { SkillCategoryId } from '@/data/skill-categories'
+import i18n from '@/i18n'
 import { installCustomSkill, listSkills, uninstallCustomSkill, type SkillInfo } from '@/lib/tauri'
 
 export type SkillValidationKind =
@@ -103,7 +104,7 @@ export const useSkillStore = create<SkillState>((set, get) => ({
   async reload() {
     set({ isLoading: true })
     try {
-      const skills = (await listSkills()).map(normalizeSkill)
+      const skills = (await listSkills(i18n.language)).map(normalizeSkill)
       set({ skills, isLoading: false })
     } catch (error) {
       set({ isLoading: false })

@@ -15,6 +15,7 @@ fn make_disk_skill(id: &str, root: std::path::PathBuf) -> DiskSkill {
         root,
         frontmatter: fm,
         body: String::new(),
+        localized: Default::default(),
         source: SkillSource::User,
     }
 }

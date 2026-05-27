@@ -5,15 +5,16 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 
+use crate::models::settings::AppSettings;
 use crate::plugin::skill::registry::SkillRegistry;
-use crate::plugin::skill::substitution::{substitute_skill_body, SkillSubstitutionContext};
+use crate::plugin::skill::substitution::{SkillSubstitutionContext, substitute_skill_body};
+use crate::runtime::tools::RuntimeTool;
 use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::{ToolDefinition, ToolKind};
 use crate::runtime::tools::executor::{ToolError, ToolResult};
-use crate::runtime::tools::RuntimeTool;
 
 /// Format the result of a forked skill execution.
 pub fn format_fork_result(skill_name: &str, result_text: &str) -> String {
@@ -25,11 +26,25 @@ pub fn format_fork_result(skill_name: &str, result_text: &str) -> String {
 
 pub struct LoadSkillRuntimeTool {
     skill_registry: Arc<Mutex<SkillRegistry>>,
+    app_settings: Option<Arc<AppSettings>>,
 }
 
 impl LoadSkillRuntimeTool {
-    pub fn new(skill_registry: Arc<Mutex<SkillRegistry>>) -> Self {
-        Self { skill_registry }
+    pub fn new(
+        skill_registry: Arc<Mutex<SkillRegistry>>,
+        app_settings: Option<Arc<AppSettings>>,
+    ) -> Self {
+        Self {
+            skill_registry,
+            app_settings,
+        }
+    }
+
+    fn language(&self) -> &str {
+        self.app_settings
+            .as_ref()
+            .map(|settings| settings.app_language.as_str())
+            .unwrap_or("zh-CN")
     }
 }
 
@@ -100,12 +115,13 @@ impl RuntimeTool for LoadSkillRuntimeTool {
                 ))
             })?
         };
+        let localized = skill.localized(self.language());
 
         // Check for fork mode (placeholder — full sub-agent wiring in follow-up)
-        if skill.frontmatter.context.as_deref() == Some("fork") {
+        if localized.frontmatter.context.as_deref() == Some("fork") {
             // TODO: wire to AgentRuntime in follow-up
             let placeholder = format_fork_result(
-                &skill.frontmatter.name,
+                &localized.frontmatter.name,
                 "fork mode: subagent dispatch will be wired in a follow-up task. Returning a placeholder body so the call doesn't fail.",
             );
             return Ok(ToolResult::new(
@@ -113,8 +129,8 @@ impl RuntimeTool for LoadSkillRuntimeTool {
                 placeholder,
                 Some(json!({
                     "skill_id": skill_id,
-                    "display_name": skill.frontmatter.metadata.label.clone()
-                        .unwrap_or_else(|| skill.frontmatter.name.clone()),
+                    "display_name": localized.frontmatter.metadata.label.clone()
+                        .unwrap_or_else(|| localized.frontmatter.name.clone()),
                     "context": "fork",
                 })),
             ));
@@ -126,16 +142,16 @@ impl RuntimeTool for LoadSkillRuntimeTool {
             skill_dir: skill.root.clone(),
             session_id: session_id_str,
             args,
-            argument_names: skill.frontmatter.arguments.clone(),
+            argument_names: localized.frontmatter.arguments.clone(),
             execute_shell: false,
         };
 
-        let substituted_body = substitute_skill_body(&skill.body, &sub_ctx)
+        let substituted_body = substitute_skill_body(&localized.body, &sub_ctx)
             .map_err(|e| ToolError::ExecutionFailed(format!("Body substitution failed: {}", e)))?;
 
         let content = format!(
             "## {} ({})\n\nBase directory for this skill: {}\n\n{}",
-            skill.frontmatter.name,
+            localized.frontmatter.name,
             skill_id,
             skill.root.display(),
             substituted_body
@@ -153,8 +169,8 @@ impl RuntimeTool for LoadSkillRuntimeTool {
             content,
             Some(json!({
                 "skill_id": skill_id,
-                "display_name": skill.frontmatter.metadata.label.clone()
-                    .unwrap_or_else(|| skill.frontmatter.name.clone()),
+                "display_name": localized.frontmatter.metadata.label.clone()
+                    .unwrap_or_else(|| localized.frontmatter.name.clone()),
             })),
         ))
     }
