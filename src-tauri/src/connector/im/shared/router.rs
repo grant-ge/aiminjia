@@ -110,6 +110,10 @@ impl ChannelSessionRouter {
     }
 
     /// 查询或新建 session_id。新建时持久化到磁盘。
+    /// Returns the existing session for the given key, or creates a new one
+    /// via `create_session`. When `ensure_fn` is provided, it is called with
+    /// the existing session_id so the caller can ensure the backing conv.json
+    /// exists in the current user scope (needed after account switch).
     pub fn get_or_create_session(
         &mut self,
         conversation_type: &ConversationType,
@@ -119,6 +123,28 @@ impl ChannelSessionRouter {
     ) -> Result<String> {
         let key = Self::make_key(conversation_type, robot_code, external_id);
         if let Some(session_id) = self.state.sessions.get(&key) {
+            return Ok(session_id.clone());
+        }
+        let session_id = create_session()?;
+        self.state.sessions.insert(key, session_id.clone());
+        self.session_ids.insert(session_id.clone());
+        self.persist()?;
+        Ok(session_id)
+    }
+
+    /// Like `get_or_create_session` but also calls `ensure_fn` for existing
+    /// sessions. Use this to guarantee conv.json exists after account switch.
+    pub fn get_or_create_session_with_ensure(
+        &mut self,
+        conversation_type: &ConversationType,
+        robot_code: &str,
+        external_id: &str,
+        create_session: impl FnOnce() -> Result<String>,
+        ensure_fn: impl FnOnce(&str) -> Result<()>,
+    ) -> Result<String> {
+        let key = Self::make_key(conversation_type, robot_code, external_id);
+        if let Some(session_id) = self.state.sessions.get(&key) {
+            let _ = ensure_fn(session_id);
             return Ok(session_id.clone());
         }
         let session_id = create_session()?;

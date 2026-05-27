@@ -51,6 +51,13 @@ pub fn create_conversation_with_im_source(
     title: &str,
     im_source: Option<&str>,
 ) -> StorageResult<()> {
+    // Idempotent: if conv.json already exists in this scope, skip creation.
+    // This covers the account-switch case where the router hydrated a session
+    // from disk but the conversation was originally created under a different
+    // user scope.
+    if conv_meta_path(base_dir, id).exists() {
+        return Ok(());
+    }
     let dir = conv_dir(base_dir, id);
     let now = Utc::now().to_rfc3339();
 
