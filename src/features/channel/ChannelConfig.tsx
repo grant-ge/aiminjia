@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { CheckCircle2 } from 'lucide-react'
 import { type ChannelConfigView, type ChannelRegistrationBeginResult } from '@/lib/tauri'
 import { useChannelStore } from '@/stores/channelStore'
@@ -27,6 +28,7 @@ function CredentialRow({ label, value }: { label: string; value: string }) {
 }
 
 export function ChannelConfig({ onSaved, onClose }: ChannelConfigProps) {
+  const { t } = useTranslation()
   const [error, setError] = useState<string | null>(null)
   const [begin, setBegin] = useState<ChannelRegistrationBeginResult | null>(null)
   const [credentials, setCredentials] = useState<RegisteredCredentials | null>(null)
@@ -52,14 +54,14 @@ export function ChannelConfig({ onSaved, onClose }: ChannelConfigProps) {
         setBegin(result)
       } catch (e) {
         if (cancelled) return
-        setError(e instanceof Error ? e.message : '钉钉扫码开通失败，请重试')
+        setError(e instanceof Error ? e.message : t('channel.dingtalk.config.errorBeginFailed'))
       }
     }
     void run()
     return () => {
       cancelled = true
     }
-  }, [attempt, beginRegistration])
+  }, [attempt, beginRegistration, t])
 
   // Adapter: backend's pollRegistration -> RegistrationModal's RegistrationPollState
   const pollState = async (): Promise<RegistrationPollState> => {
@@ -69,7 +71,7 @@ export function ChannelConfig({ onSaved, onClose }: ChannelConfigProps) {
     if (result.state === 'success') {
       const config = result.config ?? result.platformState?.config
       if (!config) {
-        setError('钉钉已授权，但未返回频道配置')
+        setError(t('channel.dingtalk.config.errorNoConfig'))
         return 'cancelled'
       }
       if (result.platformState) setPlatformState(result.platformState)
@@ -79,7 +81,7 @@ export function ChannelConfig({ onSaved, onClose }: ChannelConfigProps) {
     }
     if (result.state === 'expired') return 'expired'
     if (result.state === 'fail') {
-      setError(result.failReason || '钉钉扫码开通失败')
+      setError(result.failReason || t('channel.dingtalk.config.errorScanFailed'))
       return 'cancelled'
     }
     return 'waiting'
@@ -91,14 +93,14 @@ export function ChannelConfig({ onSaved, onClose }: ChannelConfigProps) {
     return (
       <div className="flex max-h-[78vh] w-full flex-col overflow-hidden bg-background">
         <div className="flex flex-col items-center px-10 pb-5 pt-8 text-center">
-          <h2 className="text-2xl font-bold tracking-tight text-foreground">配置钉钉</h2>
+          <h2 className="text-2xl font-bold tracking-tight text-foreground">{t('channel.dingtalk.config.title')}</h2>
         </div>
         <div className="flex-1 overflow-y-auto px-10 pb-6">
           <div className="flex w-full flex-col items-center gap-5">
             <div className="flex w-64 flex-col items-center rounded-xl bg-emerald-50 px-8 py-5 text-emerald-500">
               <CheckCircle2 className="h-8 w-8" />
-              <div className="mt-3 text-xl font-bold">扫码开通成功</div>
-              <div className="mt-1 text-sm font-semibold">应用已创建</div>
+              <div className="mt-3 text-xl font-bold">{t('channel.dingtalk.config.scanSuccess')}</div>
+              <div className="mt-1 text-sm font-semibold">{t('channel.dingtalk.config.appCreated')}</div>
             </div>
             <div className="grid w-full gap-3 rounded-xl border border-border bg-card p-4 text-left">
               <CredentialRow label="AppKey" value={credentials.config.appKey} />
@@ -106,7 +108,7 @@ export function ChannelConfig({ onSaved, onClose }: ChannelConfigProps) {
               <CredentialRow label="RobotCode" value={credentials.config.robotCode} />
             </div>
             <Button size="sm" variant="secondary" onClick={handleRetry}>
-              重新扫码更换配置
+              {t('channel.dingtalk.config.rescanConfig')}
             </Button>
           </div>
         </div>
@@ -118,7 +120,7 @@ export function ChannelConfig({ onSaved, onClose }: ChannelConfigProps) {
               onClose?.()
             }}
           >
-            完成
+            {t('channel.actions.done')}
           </Button>
         </div>
       </div>
@@ -130,7 +132,7 @@ export function ChannelConfig({ onSaved, onClose }: ChannelConfigProps) {
       <div className="flex max-h-[78vh] w-full flex-col items-center justify-center bg-background p-10">
         <p className="text-sm text-red-500">{error}</p>
         <Button className="mt-4 h-10 w-64 rounded-full" onClick={handleRetry}>
-          重新生成二维码
+          {t('channel.dingtalk.config.retryQr')}
         </Button>
       </div>
     )
@@ -139,7 +141,7 @@ export function ChannelConfig({ onSaved, onClose }: ChannelConfigProps) {
   if (!begin) {
     return (
       <div className="flex max-h-[78vh] w-full flex-col items-center justify-center bg-background p-10 text-sm text-muted-foreground">
-        正在准备扫码…
+        {t('channel.dingtalk.config.preparingQr')}
       </div>
     )
   }
@@ -148,7 +150,7 @@ export function ChannelConfig({ onSaved, onClose }: ChannelConfigProps) {
     <div className="flex max-h-[78vh] w-full flex-col overflow-hidden bg-background">
       <RegistrationModal
         mode="url"
-        title="配置钉钉"
+        title={t('channel.dingtalk.config.title')}
         url={begin.verificationUriComplete}
         userCode={begin.userCode}
         expireSeconds={begin.expiresInSeconds || 7200}
@@ -160,7 +162,7 @@ export function ChannelConfig({ onSaved, onClose }: ChannelConfigProps) {
         onCancel={handleRetry}
       />
       <p className="px-10 pb-4 text-center text-xs font-medium text-muted-foreground">
-        等待你在钉钉页面完成创建，完成后会自动连接。
+        {t('channel.dingtalk.config.waitingHint')}
       </p>
     </div>
   )

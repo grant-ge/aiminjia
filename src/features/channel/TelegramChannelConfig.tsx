@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { open as openExternal } from '@tauri-apps/plugin-shell'
 import { CheckCircle2, ExternalLink, Loader2, X } from 'lucide-react'
 import { QrCodeCanvas } from '@/components/registration/QrCodeCanvas'
@@ -29,6 +30,7 @@ interface TelegramChannelConfigProps {
 const POLL_INTERVAL_MS = 2000
 
 export function TelegramChannelConfig({ onSaved, onClose }: TelegramChannelConfigProps) {
+  const { t } = useTranslation()
   const tgState = useChannelStore((s) => s.platforms.telegram)
   const setPlatformState = useChannelStore((s) => s.setPlatformState)
   const pushNotification = useNotificationStore((s) => s.push)
@@ -50,7 +52,7 @@ export function TelegramChannelConfig({ onSaved, onClose }: TelegramChannelConfi
   const handleSaveToken = async () => {
     const trimmed = token.trim()
     if (!trimmed) {
-      setError('请输入 bot token')
+      setError(t('channel.telegram.config.errorEmptyToken'))
       return
     }
     setSaving(true)
@@ -61,7 +63,7 @@ export function TelegramChannelConfig({ onSaved, onClose }: TelegramChannelConfi
       setStep('pairing')
       onSaved?.()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'token 验证失败')
+      setError(e instanceof Error ? e.message : t('channel.telegram.config.errorTokenFailed'))
     } finally {
       setSaving(false)
     }
@@ -75,7 +77,7 @@ export function TelegramChannelConfig({ onSaved, onClose }: TelegramChannelConfi
     } catch (e) {
       pushNotification({
         level: 'error',
-        title: '生成配对码失败',
+        title: t('channel.telegram.config.errorPairingFailed'),
         message: e instanceof Error ? e.message : String(e),
         actions: [],
         dismissible: true,
@@ -135,7 +137,7 @@ export function TelegramChannelConfig({ onSaved, onClose }: TelegramChannelConfi
     } catch (e) {
       pushNotification({
         level: 'error',
-        title: '批准失败',
+        title: t('channel.telegram.config.approveFailed'),
         message: e instanceof Error ? e.message : String(e),
         actions: [],
         dismissible: true,
@@ -156,10 +158,10 @@ export function TelegramChannelConfig({ onSaved, onClose }: TelegramChannelConfi
 
   const handleRevokeUser = async (userId: number) => {
     const confirmed = await requestConfirm({
-      title: '移除该 Telegram 用户？',
-      description: '用户将不再能与你的 bot 对话；需要重新扫码才能恢复连接。',
-      confirmLabel: '确认移除',
-      cancelLabel: '取消',
+      title: t('channel.telegram.config.revokeUserTitle'),
+      description: t('channel.telegram.config.revokeUserDesc'),
+      confirmLabel: t('channel.actions.confirmRemove'),
+      cancelLabel: t('channel.actions.cancel'),
       variant: 'destructive',
     })
     if (!confirmed) return
@@ -170,7 +172,7 @@ export function TelegramChannelConfig({ onSaved, onClose }: TelegramChannelConfi
     } catch (e) {
       pushNotification({
         level: 'error',
-        title: '移除失败',
+        title: t('channel.telegram.config.revokeFailed'),
         message: e instanceof Error ? e.message : String(e),
         actions: [],
         dismissible: true,
@@ -182,10 +184,10 @@ export function TelegramChannelConfig({ onSaved, onClose }: TelegramChannelConfi
 
   const handleRemove = async () => {
     const confirmed = await requestConfirm({
-      title: '移除 Telegram 频道？',
-      description: '会删除本地保存的 bot token 和已配对用户列表。已有聊天历史保留。',
-      confirmLabel: '确认移除',
-      cancelLabel: '取消',
+      title: t('channel.remove.telegram.title'),
+      description: t('channel.remove.telegram.description'),
+      confirmLabel: t('channel.actions.confirmRemove'),
+      cancelLabel: t('channel.actions.cancel'),
       variant: 'destructive',
     })
     if (!confirmed) return
@@ -196,7 +198,7 @@ export function TelegramChannelConfig({ onSaved, onClose }: TelegramChannelConfi
     } catch (e) {
       pushNotification({
         level: 'error',
-        title: '移除失败',
+        title: t('channel.telegram.config.removeFailed'),
         message: e instanceof Error ? e.message : String(e),
         actions: [],
         dismissible: true,
@@ -212,9 +214,9 @@ export function TelegramChannelConfig({ onSaved, onClose }: TelegramChannelConfi
     return (
       <div className="flex max-h-[78vh] w-full flex-col overflow-hidden bg-background">
         <div className="flex flex-col items-center px-10 pb-5 pt-8 text-center">
-          <h2 className="text-2xl font-bold tracking-tight text-foreground">配置 Telegram</h2>
+          <h2 className="text-2xl font-bold tracking-tight text-foreground">{t('channel.telegram.config.title')}</h2>
           <p className="mt-3 text-sm font-medium text-muted-foreground">
-            在 Telegram 中找到 @BotFather 创建 bot，将拿到的 token 粘贴到下面。
+            {t('channel.telegram.config.tokenSubtitle')}
           </p>
         </div>
         <div className="flex-1 overflow-y-auto px-10 pb-6">
@@ -226,10 +228,10 @@ export function TelegramChannelConfig({ onSaved, onClose }: TelegramChannelConfi
               onClick={() => void openExternal('https://t.me/BotFather')}
             >
               <ExternalLink className="mr-2 h-4 w-4" />
-              打开 BotFather
+              {t('channel.telegram.config.openBotFather')}
             </Button>
             <label className="text-xs font-semibold text-foreground" htmlFor="tg-token">
-              Bot Token <span className="text-destructive">*</span>
+              {t('channel.telegram.config.botTokenLabel')} <span className="text-destructive">*</span>
             </label>
             <Input
               id="tg-token"
@@ -242,20 +244,20 @@ export function TelegramChannelConfig({ onSaved, onClose }: TelegramChannelConfi
             {error && <p className="text-sm text-destructive">{error}</p>}
             <details className="text-xs text-muted-foreground">
               <summary className="cursor-pointer font-semibold text-foreground">
-                BotFather 使用步骤
+                {t('channel.telegram.config.botFatherSteps')}
               </summary>
               <ol className="ml-4 mt-2 list-decimal space-y-1">
-                <li>在手机或桌面 Telegram 搜索 <span className="font-mono">@BotFather</span> 并打开对话</li>
-                <li>发送 <span className="font-mono">/newbot</span></li>
-                <li>按提示输入 bot 名称（可中文）和 username（必须以 _bot 结尾）</li>
-                <li>把返回的 token（形如 <span className="font-mono">123456:ABC...</span>）复制到上面</li>
+                <li>{t('channel.telegram.config.step1').split('@BotFather')[0]}<span className="font-mono">@BotFather</span>{t('channel.telegram.config.step1').split('@BotFather')[1]}</li>
+                <li>{t('channel.telegram.config.step2').split('/newbot')[0]}<span className="font-mono">/newbot</span>{t('channel.telegram.config.step2').split('/newbot')[1]}</li>
+                <li>{t('channel.telegram.config.step3')}</li>
+                <li>{t('channel.telegram.config.step4Prefix')}<span className="font-mono">123456:ABC...</span>{t('channel.telegram.config.step4Suffix')}</li>
               </ol>
             </details>
           </div>
         </div>
         <div className="flex gap-3 border-t border-border bg-background px-10 py-4">
           <Button variant="ghost" className="flex-1 rounded-full" onClick={onClose}>
-            取消
+            {t('channel.actions.cancel')}
           </Button>
           <Button
             className="flex-1 rounded-full"
@@ -263,7 +265,7 @@ export function TelegramChannelConfig({ onSaved, onClose }: TelegramChannelConfi
             onClick={() => void handleSaveToken()}
           >
             {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            下一步
+            {t('channel.actions.next')}
           </Button>
         </div>
       </div>
@@ -277,19 +279,19 @@ export function TelegramChannelConfig({ onSaved, onClose }: TelegramChannelConfi
   return (
     <div className="flex max-h-[78vh] w-full flex-col overflow-hidden bg-background">
       <div className="flex flex-col items-center px-10 pb-5 pt-8 text-center">
-        <h2 className="text-2xl font-bold tracking-tight text-foreground">扫码配对</h2>
+        <h2 className="text-2xl font-bold tracking-tight text-foreground">{t('channel.telegram.config.pairingTitle')}</h2>
         <p className="mt-3 text-sm font-medium text-muted-foreground">
           {tgState?.config ? `@${tgState.config.appKey}` : 'Telegram bot'}
         </p>
         <p className="mt-2 text-xs text-muted-foreground">
-          用 <span className="font-semibold text-foreground">手机相机 / 微信扫一扫 / 支付宝扫一扫</span> 扫描下方二维码（Telegram App 自身不支持扫这种码）
+          {t('channel.telegram.config.pairingScanHint', { methods: t('channel.telegram.config.pairingScanMethods') })}
         </p>
       </div>
       <div className="flex-1 overflow-y-auto px-10 pb-6">
         <div className="flex flex-col items-center gap-4">
-          <QrCodeCanvas value={begin?.deepLink ?? ''} loading={false} alt="Telegram 扫码配对" />
+          <QrCodeCanvas value={begin?.deepLink ?? ''} loading={false} alt={t('channel.telegram.config.qrAlt')} />
           <div className="text-xs text-muted-foreground">
-            二维码 {m}:{s.toString().padStart(2, '0')} 后过期
+            {t('channel.telegram.config.qrExpiry', { time: `${m}:${s.toString().padStart(2, '0')}` })}
           </div>
           {begin?.deepLink && (
             <button
@@ -297,13 +299,13 @@ export function TelegramChannelConfig({ onSaved, onClose }: TelegramChannelConfi
               onClick={() => void openExternal(begin.deepLink)}
               className="inline-flex items-center gap-1 text-xs font-medium text-primary underline-offset-4 hover:underline"
             >
-              本机已装 Telegram？直接打开 <ExternalLink className="h-3 w-3" />
+              {t('channel.telegram.config.openTelegramDirect')} <ExternalLink className="h-3 w-3" />
             </button>
           )}
 
           {pending.length > 0 && (
             <div className="flex w-full flex-col gap-2 rounded-xl border border-border bg-card p-3">
-              <div className="text-xs font-semibold text-foreground">待批准</div>
+              <div className="text-xs font-semibold text-foreground">{t('channel.telegram.config.pendingTitle')}</div>
               {pending.map((p) => (
                 <div key={p.code} className="flex items-center justify-between gap-2 rounded-lg bg-muted px-3 py-2 text-sm">
                   <span className="font-semibold text-foreground">
@@ -313,7 +315,7 @@ export function TelegramChannelConfig({ onSaved, onClose }: TelegramChannelConfi
                   <div className="flex gap-2">
                     <Button size="sm" className="rounded-full" onClick={() => void handleApprove(p.code)}>
                       <CheckCircle2 className="mr-1 h-4 w-4" />
-                      批准
+                      {t('channel.telegram.config.approve')}
                     </Button>
                     <Button size="sm" variant="ghost" className="rounded-full" onClick={() => void handleReject(p.code)}>
                       <X className="h-4 w-4" />
@@ -326,12 +328,12 @@ export function TelegramChannelConfig({ onSaved, onClose }: TelegramChannelConfi
 
           {paired.length > 0 && (
             <div className="flex w-full flex-col gap-2 rounded-xl border border-border bg-card p-3">
-              <div className="text-xs font-semibold text-foreground">已连接用户</div>
+              <div className="text-xs font-semibold text-foreground">{t('channel.telegram.config.pairedUsersTitle')}</div>
               {paired.map((u) => (
                 <div key={u.userId} className="flex items-center justify-between gap-2 rounded-lg bg-muted px-3 py-2 text-sm">
                   <span className="font-semibold text-foreground">{u.firstName}</span>
                   <Button size="sm" variant="ghost" className="rounded-full" onClick={() => void handleRevokeUser(u.userId)}>
-                    移除
+                    {t('channel.actions.remove')}
                   </Button>
                 </div>
               ))}
@@ -342,11 +344,11 @@ export function TelegramChannelConfig({ onSaved, onClose }: TelegramChannelConfi
       <div className="flex gap-3 border-t border-border bg-background px-10 py-4">
         {alreadyConfigured && (
           <Button variant="destructive" className="flex-1 rounded-full" onClick={() => void handleRemove()}>
-            移除整个频道
+            {t('channel.actions.removeChannel')}
           </Button>
         )}
         <Button className={`rounded-full ${alreadyConfigured ? 'flex-1' : 'w-full'}`} onClick={onClose}>
-          完成
+          {t('channel.actions.done')}
         </Button>
       </div>
     </div>

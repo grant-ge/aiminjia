@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
 import { Eye, EyeOff } from 'lucide-react'
 import { requestConfirm } from '@/components/common/ConfirmDialogHost'
 import { Button } from '@/components/ui/button'
@@ -38,63 +40,64 @@ interface PlatformCopy {
   showRobotCode: boolean
 }
 
-function copyForPlatform(platform: ChannelConfigView['platform']): PlatformCopy {
+function copyForPlatform(platform: ChannelConfigView['platform'], t: TFunction): PlatformCopy {
   switch (platform) {
     case 'feishu':
       return {
-        title: '飞书配置',
+        title: t('channel.details.titleByPlatform.feishu'),
         appKeyLabel: 'AppID',
         secretLabel: 'AppSecret',
-        secretConfirmTitle: '显示 AppSecret？',
-        secretConfirmDescription: 'AppSecret 是敏感凭证。确认后会在当前弹窗中显示，关闭弹窗后会自动清除。',
-        secretRevealButton: '显示 AppSecret',
+        secretConfirmTitle: t('channel.details.secretConfirm.feishu.title'),
+        secretConfirmDescription: t('channel.details.secretConfirm.feishu.description'),
+        secretRevealButton: t('channel.details.secretConfirm.feishu.revealButton'),
         showRobotCode: false,
       }
     case 'wecom':
       return {
-        title: '企业微信配置',
+        title: t('channel.details.titleByPlatform.wecom'),
         appKeyLabel: 'Bot ID',
         secretLabel: 'Secret',
-        secretConfirmTitle: '显示 Secret？',
-        secretConfirmDescription: 'Secret 是敏感凭证。确认后会在当前弹窗中显示，关闭弹窗后会自动清除。',
-        secretRevealButton: '显示 Secret',
+        secretConfirmTitle: t('channel.details.secretConfirm.wecom.title'),
+        secretConfirmDescription: t('channel.details.secretConfirm.wecom.description'),
+        secretRevealButton: t('channel.details.secretConfirm.wecom.revealButton'),
         showRobotCode: false,
       }
     case 'wechat':
       return {
-        title: '个人微信配置',
+        title: t('channel.details.titleByPlatform.wechat'),
         // 后端 wechat_config_view 把 ilink_user_id 放进 appKey、ilink_bot_id 放进
         // robotCode，bot_token mask 走 appSecretMasked。详见
         // src-tauri/.../shared/config_store.rs::wechat_config_view。
-        appKeyLabel: '账号 ID (ilink_user_id)',
+        appKeyLabel: t('channel.details.fields.wechatAccountId'),
         secretLabel: 'Bot Token',
-        secretConfirmTitle: '显示 Bot Token？',
-        secretConfirmDescription: 'Bot Token 是敏感凭证。确认后会在当前弹窗中显示，关闭弹窗后会自动清除。',
-        secretRevealButton: '显示 Bot Token',
+        secretConfirmTitle: t('channel.details.secretConfirm.wechat.title'),
+        secretConfirmDescription: t('channel.details.secretConfirm.wechat.description'),
+        secretRevealButton: t('channel.details.secretConfirm.wechat.revealButton'),
         showRobotCode: false,
       }
     case 'dingtalk':
     default:
       return {
-        title: '钉钉配置',
+        title: t('channel.details.titleByPlatform.dingtalk'),
         appKeyLabel: 'AppKey',
         secretLabel: 'AppSecret',
-        secretConfirmTitle: '显示 AppSecret？',
-        secretConfirmDescription: 'AppSecret 是敏感凭证。确认后会在当前弹窗中显示，关闭弹窗后会自动清除。',
-        secretRevealButton: '显示 AppSecret',
+        secretConfirmTitle: t('channel.details.secretConfirm.dingtalk.title'),
+        secretConfirmDescription: t('channel.details.secretConfirm.dingtalk.description'),
+        secretRevealButton: t('channel.details.secretConfirm.dingtalk.revealButton'),
         showRobotCode: true,
       }
   }
 }
 
 export function ChannelConfigDetails({ config, open, onOpenChange }: ChannelConfigDetailsProps) {
+  const { t } = useTranslation()
   const revealSecret = useChannelStore((s) => s.revealSecret)
   const openRef = useRef(open)
   const [revealedSecret, setRevealedSecret] = useState<string | null>(null)
   const [revealing, setRevealing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const revealRunIdRef = useRef(0)
-  const copy = copyForPlatform(config.platform)
+  const copy = copyForPlatform(config.platform, t)
 
   useEffect(() => {
     openRef.current = open
@@ -112,8 +115,8 @@ export function ChannelConfigDetails({ config, open, onOpenChange }: ChannelConf
     const confirmed = await requestConfirm({
       title: copy.secretConfirmTitle,
       description: copy.secretConfirmDescription,
-      confirmLabel: '确认显示',
-      cancelLabel: '取消',
+      confirmLabel: t('channel.actions.confirmReveal'),
+      cancelLabel: t('channel.actions.cancel'),
       variant: 'destructive',
     })
     if (revealRunIdRef.current !== runId || !openRef.current) return
@@ -127,7 +130,7 @@ export function ChannelConfigDetails({ config, open, onOpenChange }: ChannelConf
       setRevealedSecret(secret)
     } catch (err) {
       if (revealRunIdRef.current !== runId) return
-      setError(err instanceof Error ? err.message : `读取 ${copy.secretLabel} 失败`)
+      setError(err instanceof Error ? err.message : t('channel.details.secretReadFailed', { label: copy.secretLabel }))
     } finally {
       if (revealRunIdRef.current === runId) {
         setRevealing(false)
@@ -142,7 +145,7 @@ export function ChannelConfigDetails({ config, open, onOpenChange }: ChannelConf
       <DialogContent className="max-w-xl rounded-xl border border-border bg-background p-0 shadow-[var(--shadow-modal)]">
         <DialogHeader className="px-8 pt-8 text-left">
           <DialogTitle className="text-2xl font-bold">{copy.title}</DialogTitle>
-          <DialogDescription>当前配置为只读。需要更换凭证时，请移除后重新扫码配置。</DialogDescription>
+          <DialogDescription>{t('channel.details.readonly')}</DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-3 px-8 pb-8 pt-4">
@@ -155,15 +158,15 @@ export function ChannelConfigDetails({ config, open, onOpenChange }: ChannelConf
               </div>
               <Button type="button" variant="secondary" size="sm" onClick={handleReveal} disabled={revealing}>
                 {revealedSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                {revealedSecret ? '已显示' : revealing ? '读取中...' : copy.secretRevealButton}
+                {revealedSecret ? t('channel.details.secretRevealed') : revealing ? t('channel.details.secretReading') : copy.secretRevealButton}
               </Button>
             </div>
           </div>
           {copy.showRobotCode && <DetailRow label="RobotCode" value={config.robotCode} />}
-          {config.platform === 'wechat' && <DetailRow label="iLink Bot ID" value={config.robotCode} />}
+          {config.platform === 'wechat' && <DetailRow label={t('channel.details.fields.wechatBotId')} value={config.robotCode} />}
           <DetailRow label="Source" value={config.source} />
-          <DetailRow label="创建时间" value={config.createdAt} />
-          <DetailRow label="更新时间" value={config.updatedAt} />
+          <DetailRow label={t('channel.details.createdAt')} value={config.createdAt} />
+          <DetailRow label={t('channel.details.updatedAt')} value={config.updatedAt} />
           {error && <div className="rounded-xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-500">{error}</div>}
         </div>
       </DialogContent>

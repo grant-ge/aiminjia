@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -22,6 +23,7 @@ interface Props {
  * （重新扫码会再弹）。
  */
 export function WhatsappRiskBanner({ open, onAccept, onCancel }: Props) {
+  const { t } = useTranslation()
   const [acknowledged, setAcknowledged] = useState(false)
 
   return (
@@ -33,54 +35,50 @@ export function WhatsappRiskBanner({ open, onAccept, onCancel }: Props) {
     >
       <DialogContent className="max-w-lg overflow-hidden">
         <DialogHeader>
-          <DialogTitle>关于 AIjia 接入 WhatsApp 的说明</DialogTitle>
+          <DialogTitle>{t('channel.whatsapp.risk.dialogTitle')}</DialogTitle>
         </DialogHeader>
         <DialogDescription asChild>
           <div className="space-y-3 text-sm text-foreground">
             <p>
-              AIjia 接入 WhatsApp 当前采用与开源项目{' '}
+              {t('channel.whatsapp.risk.intro')}{' '}
               <a
                 href="https://docs.openclaw.ai/channels/whatsapp"
                 target="_blank"
                 rel="noreferrer"
                 className="underline text-primary"
               >
-                OpenClaw
+                {t('channel.whatsapp.risk.openClawLink')}
               </a>
-              {' '}相同的方案：通过 <b>WhatsApp Web 多设备协议</b>把 AIjia
-              作为一台"已链接设备"接入你的 WhatsApp
-              账号（与你手机上的"已链接的设备 → 链接设备"是同一套机制）。
-              我们正在申请 WhatsApp Business 官方接入资质，待批复后会迁移到官方
-              API；在此之前先用 OpenClaw 的方式保证可用。
+              {' '}{t('channel.whatsapp.risk.introDesc', { protocol: t('channel.whatsapp.risk.introProtocol') })}
+              {t('channel.whatsapp.risk.introMigration')}
             </p>
             <h4 className="font-semibold mt-2">
-              这个方案的风险（与 OpenClaw 完全相同）
+              {t('channel.whatsapp.risk.risksHeading')}
             </h4>
             <ul className="list-disc list-inside space-y-1">
               <li>
-                <b>WhatsApp 官方未授权</b>这种接入方式，属于 TOS 灰区
+                <b>{t('channel.whatsapp.risk.riskUnauthorized')}</b>{t('channel.whatsapp.risk.riskUnauthorizedSuffix')}
               </li>
               <li>
-                账号有被 WhatsApp <b>限速 / 封禁</b>的风险，
-                <b>风险由你自行承担</b>
+                {t('channel.whatsapp.risk.riskBanPrefix')} <b>{t('channel.whatsapp.risk.riskBan')}</b>{t('channel.whatsapp.risk.riskBanSuffix')}
+                <b>{t('channel.whatsapp.risk.riskBanOwn')}</b>
               </li>
               <li>
-                实测中，<b>虚拟号</b>（Google Voice
-                等）被封概率显著高于真实手机号
+                {t('channel.whatsapp.risk.riskVirtualNumberDesc', { virtualNumber: t('channel.whatsapp.risk.riskVirtualNumber') })}
               </li>
-              <li>群发、频繁主动外呼、异常高频回复都会增加封号风险</li>
+              <li>{t('channel.whatsapp.risk.riskBroadcast')}</li>
             </ul>
-            <h4 className="font-semibold mt-2">强烈建议</h4>
+            <h4 className="font-semibold mt-2">{t('channel.whatsapp.risk.suggestionsHeading')}</h4>
             <ul className="list-disc list-inside space-y-1">
               <li>
-                使用<b>真实手机号</b>，不要用虚拟号
+                {t('channel.whatsapp.risk.suggestRealPhoneDesc', { phone: t('channel.whatsapp.risk.suggestRealPhone') })}
               </li>
               <li>
-                不在 AIjia 中<b>群发</b>或频繁主动外呼
+                {t('channel.whatsapp.risk.suggestNoBroadcastDesc', { broadcast: t('channel.whatsapp.risk.suggestNoBroadcast') })}
               </li>
-              <li>用于 AI 辅助对话场景，不用于营销 / 推广</li>
+              <li>{t('channel.whatsapp.risk.suggestAiOnly')}</li>
               <li>
-                重要号码请勿接入，建议用<b>专门的工作号</b>
+                {t('channel.whatsapp.risk.suggestWorkPhoneDesc', { phone: t('channel.whatsapp.risk.suggestWorkPhone') })}
               </li>
             </ul>
           </div>
@@ -91,14 +89,14 @@ export function WhatsappRiskBanner({ open, onAccept, onCancel }: Props) {
             checked={acknowledged}
             onChange={(e) => setAcknowledged(e.target.checked)}
           />
-          我已了解上述风险，继续扫码
+          {t('channel.whatsapp.risk.acknowledge')}
         </label>
         <DialogFooter className="mt-4">
           <Button variant="ghost" onClick={onCancel}>
-            取消
+            {t('channel.actions.cancel')}
           </Button>
           <Button onClick={onAccept} disabled={!acknowledged}>
-            继续
+            {t('channel.whatsapp.risk.continue')}
           </Button>
         </DialogFooter>
       </DialogContent>

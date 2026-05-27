@@ -23,31 +23,16 @@ import { SidebarFooterSettings } from './SidebarFooterSettings'
 import { SidebarNav, type SidebarNavKey } from './SidebarNav'
 import { TenantHeader } from './TenantHeader'
 
-const CHANNEL_PLATFORM_NAME: Record<string, string> = {
-  dingtalk: '钉钉',
-  feishu: '飞书',
-  wecom: '企业微信',
-  wechat: '个人微信',
-  telegram: 'Telegram',
-  whatsapp: 'WhatsApp',
-}
-
-/** 频道会话侧边栏显示名。
- *  规则按平台分流（2026-05-21 调整）：
- *  - WhatsApp：私聊里 displayName = sender push_name 真名稳定可用，直接展示；
- *    群聊或拿不到名时 fallback 成 "WhatsApp 私聊"/"WhatsApp 群聊"。
- *  - 其他平台（钉钉/飞书/企微/个微/Telegram）：入站消息要么没有真名（飞书/
- *    企微/个微只有 user_id），要么有真名但视觉上和 WhatsApp 处理统一更整齐 ——
- *    一律显示 "<平台>私聊" / "<平台>群聊"，避免有的会话叫张三、有的叫
- *    `ou_45...` 这种参差感。
- */
-function channelConversationLabel(conversation: {
-  platform: string
-  conversationType: 'group' | 'private'
-  displayName?: string | null
-}): string {
-  const platform = CHANNEL_PLATFORM_NAME[conversation.platform] ?? conversation.platform
-  const kind = conversation.conversationType === 'group' ? '群聊' : '私聊'
+function channelConversationLabel(
+  conversation: {
+    platform: string
+    conversationType: 'group' | 'private'
+    displayName?: string | null
+  },
+  t: (key: string) => string,
+): string {
+  const platform = t(`channel.platforms.${conversation.platform}.name`)
+  const kind = conversation.conversationType === 'group' ? t('channel.chat.groupChat') : t('channel.chat.privateChat')
   if (conversation.platform === 'whatsapp') {
     const trimmed = conversation.displayName?.trim()
     if (trimmed) return trimmed
@@ -197,19 +182,30 @@ export function AppSidebar() {
       : null
 
   const tenantDisplay = productName
-  const dingtalkChannelLabel = !dingtalkState?.configured
-    ? '未配置'
-    : !dingtalkState.enabled
-    ? '未连接'
-    : dingtalkState.connection === 'connected'
-    ? '已连接'
-    : dingtalkState.connection === 'connecting'
-    ? '连接中'
-    : dingtalkState.connection === 'reconnecting'
-    ? '重连中'
-    : dingtalkState.connection === 'configError'
-    ? '配置有误'
-    : '未连接'
+
+  function channelStatusLabel(state: typeof dingtalkState): string {
+    if (!state?.configured) return t('channel.status.unconfigured')
+    if (!state.enabled) return t('channel.status.disconnected')
+    switch (state.connection) {
+      case 'connected': return t('channel.status.connected')
+      case 'connecting': return t('channel.status.connecting')
+      case 'reconnecting': return t('channel.status.reconnecting')
+      case 'configError': return t('channel.status.configError')
+      case 'needsReauth': return t('channel.status.needsReauth')
+      default: return t('channel.status.disconnected')
+    }
+  }
+
+  function channelEmptyHint(state: typeof dingtalkState): string {
+    if (!state?.configured) return t('channel.sidebar.notConfiguredHint')
+    if (!state.enabled) return t('channel.sidebar.disabledHint')
+    switch (state.connection) {
+      case 'connected': return t('channel.sidebar.noConversations')
+      case 'connecting': return t('channel.sidebar.connectingHint')
+      case 'needsReauth': return t('channel.sidebar.needsReauthHint')
+      default: return t('channel.sidebar.disconnectedHint')
+    }
+  }
 
   const openChannelOverview = () => {
     setRoute({ kind: 'channel' })
@@ -322,9 +318,9 @@ export function AppSidebar() {
               <div>
                 <div className="mb-2 flex items-center gap-2 px-2 text-sm font-semibold text-sidebar-foreground">
                   <img src="/logos/dingtalk.png" alt="" className="h-5 w-5 rounded" draggable={false} />
-                  钉钉
+                  {t('channel.platforms.dingtalk.name')}
                   <span className="ml-auto rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-                    {dingtalkChannelLabel}
+                    {channelStatusLabel(dingtalkState)}
                   </span>
                 </div>
                 <div className="pl-6">
@@ -334,15 +330,7 @@ export function AppSidebar() {
                       onClick={openChannelOverview}
                       className="w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
                     >
-                      {!dingtalkState?.configured
-                        ? '未配置，点击右侧设置'
-                        : !dingtalkState.enabled
-                          ? '未连接，点击右侧启用'
-                          : dingtalkState.connection === 'connected'
-                            ? '暂无会话，等待消息…'
-                            : dingtalkState.connection === 'connecting'
-                              ? '连接中…'
-                              : '未连接，点击右侧重试'}
+                      {channelEmptyHint(dingtalkState)}
                     </button>
                   ) : (
                     activeConversations.map((conversation) => (
@@ -356,7 +344,7 @@ export function AppSidebar() {
                             : 'flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
                         }
                       >
-                        <span className="truncate">{channelConversationLabel(conversation)}</span>
+                        <span className="truncate">{channelConversationLabel(conversation, t)}</span>
                         {conversation.unreadCount > 0 && (
                           <span className="ml-2 rounded-full bg-primary px-1.5 text-xs text-primary-foreground">
                             {conversation.unreadCount}
@@ -371,21 +359,9 @@ export function AppSidebar() {
               <div>
                 <div className="mb-2 flex items-center gap-2 px-2 text-sm font-semibold text-sidebar-foreground">
                   <img src="/logos/feishu.png" alt="" className="h-5 w-5 rounded" draggable={false} />
-                  飞书
+                  {t('channel.platforms.feishu.name')}
                   <span className="ml-auto rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-                    {!feishuState?.configured
-                      ? '未配置'
-                      : !feishuState.enabled
-                        ? '未连接'
-                        : feishuState.connection === 'connected'
-                          ? '已连接'
-                          : feishuState.connection === 'connecting'
-                            ? '连接中'
-                            : feishuState.connection === 'reconnecting'
-                              ? '重连中'
-                              : feishuState.connection === 'configError'
-                                ? '配置有误'
-                                : '未连接'}
+                    {channelStatusLabel(feishuState)}
                   </span>
                 </div>
                 <div className="pl-6">
@@ -395,15 +371,7 @@ export function AppSidebar() {
                       onClick={openChannelOverview}
                       className="w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
                     >
-                      {!feishuState?.configured
-                        ? '未配置，点击右侧设置'
-                        : !feishuState.enabled
-                          ? '未连接，点击右侧启用'
-                          : feishuState.connection === 'connected'
-                            ? '暂无会话，等待消息…'
-                            : feishuState.connection === 'connecting'
-                              ? '连接中…'
-                              : '未连接，点击右侧重试'}
+                      {channelEmptyHint(feishuState)}
                     </button>
                   ) : (
                     activeFeishuConversations.map((conversation) => (
@@ -417,7 +385,7 @@ export function AppSidebar() {
                             : 'flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
                         }
                       >
-                        <span className="truncate">{channelConversationLabel(conversation)}</span>
+                        <span className="truncate">{channelConversationLabel(conversation, t)}</span>
                         {conversation.unreadCount > 0 && (
                           <span className="ml-2 rounded-full bg-primary px-1.5 text-xs text-primary-foreground">
                             {conversation.unreadCount}
@@ -432,21 +400,9 @@ export function AppSidebar() {
               <div>
                 <div className="mb-2 flex items-center gap-2 px-2 text-sm font-semibold text-sidebar-foreground">
                   <img src="/logos/wecom.png" alt="" className="h-5 w-5 rounded" draggable={false} />
-                  企业微信
+                  {t('channel.platforms.wecom.name')}
                   <span className="ml-auto rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-                    {!wecomState?.configured
-                      ? '未配置'
-                      : !wecomState.enabled
-                        ? '未连接'
-                        : wecomState.connection === 'connected'
-                          ? '已连接'
-                          : wecomState.connection === 'connecting'
-                            ? '连接中'
-                            : wecomState.connection === 'reconnecting'
-                              ? '重连中'
-                              : wecomState.connection === 'configError'
-                                ? '配置有误'
-                                : '未连接'}
+                    {channelStatusLabel(wecomState)}
                   </span>
                 </div>
                 <div className="pl-6">
@@ -456,15 +412,7 @@ export function AppSidebar() {
                       onClick={openChannelOverview}
                       className="w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
                     >
-                      {!wecomState?.configured
-                        ? '未配置，点击右侧设置'
-                        : !wecomState.enabled
-                          ? '未连接，点击右侧启用'
-                          : wecomState.connection === 'connected'
-                            ? '暂无会话，等待消息…'
-                            : wecomState.connection === 'connecting'
-                              ? '连接中…'
-                              : '未连接，点击右侧重试'}
+                      {channelEmptyHint(wecomState)}
                     </button>
                   ) : (
                     activeWecomConversations.map((conversation) => (
@@ -478,7 +426,7 @@ export function AppSidebar() {
                             : 'flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
                         }
                       >
-                        <span className="truncate">{channelConversationLabel(conversation)}</span>
+                        <span className="truncate">{channelConversationLabel(conversation, t)}</span>
                         {conversation.unreadCount > 0 && (
                           <span className="ml-2 rounded-full bg-primary px-1.5 text-xs text-primary-foreground">
                             {conversation.unreadCount}
@@ -493,23 +441,9 @@ export function AppSidebar() {
               <div>
                 <div className="mb-2 flex items-center gap-2 px-2 text-sm font-semibold text-sidebar-foreground">
                   <img src="/logos/wechat.png" alt="" className="h-5 w-5 rounded" draggable={false} />
-                  个人微信
+                  {t('channel.platforms.wechat.name')}
                   <span className="ml-auto rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-                    {!wechatState?.configured
-                      ? '未配置'
-                      : !wechatState.enabled
-                        ? '未连接'
-                        : wechatState.connection === 'connected'
-                          ? '已连接'
-                          : wechatState.connection === 'connecting'
-                            ? '连接中'
-                            : wechatState.connection === 'reconnecting'
-                              ? '重连中'
-                              : wechatState.connection === 'configError'
-                                ? '配置有误'
-                                : wechatState.connection === 'needsReauth'
-                                  ? '需重新扫码'
-                                  : '未连接'}
+                    {channelStatusLabel(wechatState)}
                   </span>
                 </div>
                 <div className="pl-6">
@@ -519,17 +453,7 @@ export function AppSidebar() {
                       onClick={openChannelOverview}
                       className="w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
                     >
-                      {!wechatState?.configured
-                        ? '未配置，点击右侧设置'
-                        : !wechatState.enabled
-                          ? '未连接，点击右侧启用'
-                          : wechatState.connection === 'connected'
-                            ? '暂无会话，等待消息…'
-                            : wechatState.connection === 'connecting'
-                              ? '连接中…'
-                              : wechatState.connection === 'needsReauth'
-                                ? '会话已过期，请重新扫码'
-                                : '未连接，点击右侧重试'}
+                      {channelEmptyHint(wechatState)}
                     </button>
                   ) : (
                     activeWechatConversations.map((conversation) => (
@@ -543,7 +467,7 @@ export function AppSidebar() {
                             : 'flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
                         }
                       >
-                        <span className="truncate">{channelConversationLabel(conversation)}</span>
+                        <span className="truncate">{channelConversationLabel(conversation, t)}</span>
                         {conversation.unreadCount > 0 && (
                           <span className="ml-2 rounded-full bg-primary px-1.5 text-xs text-primary-foreground">
                             {conversation.unreadCount}
@@ -558,23 +482,9 @@ export function AppSidebar() {
               <div>
                 <div className="mb-2 flex items-center gap-2 px-2 text-sm font-semibold text-sidebar-foreground">
                   <img src="/logos/telegram.png" alt="" className="h-5 w-5 rounded" draggable={false} />
-                  Telegram
+                  {t('channel.platforms.telegram.name')}
                   <span className="ml-auto rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-                    {!telegramState?.configured
-                      ? '未配置'
-                      : !telegramState.enabled
-                        ? '未连接'
-                        : telegramState.connection === 'connected'
-                          ? '已连接'
-                          : telegramState.connection === 'connecting'
-                            ? '连接中'
-                            : telegramState.connection === 'reconnecting'
-                              ? '重连中'
-                              : telegramState.connection === 'configError'
-                                ? '配置有误'
-                                : telegramState.connection === 'needsReauth'
-                                  ? 'Token 失效'
-                                  : '未连接'}
+                    {channelStatusLabel(telegramState)}
                   </span>
                 </div>
                 <div className="pl-6">
@@ -584,17 +494,7 @@ export function AppSidebar() {
                       onClick={openChannelOverview}
                       className="w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
                     >
-                      {!telegramState?.configured
-                        ? '未配置，点击右侧设置'
-                        : !telegramState.enabled
-                          ? '未连接，点击右侧启用'
-                          : telegramState.connection === 'connected'
-                            ? '暂无会话，等待消息…'
-                            : telegramState.connection === 'connecting'
-                              ? '连接中…'
-                              : telegramState.connection === 'needsReauth'
-                                ? 'Token 失效，请重新配置'
-                                : '未连接，点击右侧重试'}
+                      {channelEmptyHint(telegramState)}
                     </button>
                   ) : (
                     activeTelegramConversations.map((conversation) => (
@@ -608,7 +508,7 @@ export function AppSidebar() {
                             : 'flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
                         }
                       >
-                        <span className="truncate">{channelConversationLabel(conversation)}</span>
+                        <span className="truncate">{channelConversationLabel(conversation, t)}</span>
                         {conversation.unreadCount > 0 && (
                           <span className="ml-2 rounded-full bg-primary px-1.5 text-xs text-primary-foreground">
                             {conversation.unreadCount}
@@ -623,23 +523,9 @@ export function AppSidebar() {
               <div>
                 <div className="mb-2 flex items-center gap-2 px-2 text-sm font-semibold text-sidebar-foreground">
                   <img src="/logos/whatsapp.png" alt="" className="h-5 w-5 rounded" draggable={false} />
-                  WhatsApp
+                  {t('channel.platforms.whatsapp.name')}
                   <span className="ml-auto rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-                    {!whatsappState?.configured
-                      ? '未配置'
-                      : !whatsappState.enabled
-                        ? '未连接'
-                        : whatsappState.connection === 'connected'
-                          ? '已连接'
-                          : whatsappState.connection === 'connecting'
-                            ? '连接中'
-                            : whatsappState.connection === 'reconnecting'
-                              ? '重连中'
-                              : whatsappState.connection === 'configError'
-                                ? '配置有误'
-                                : whatsappState.connection === 'needsReauth'
-                                  ? '会话失效'
-                                  : '未连接'}
+                    {channelStatusLabel(whatsappState)}
                   </span>
                 </div>
                 <div className="pl-6">
@@ -649,17 +535,7 @@ export function AppSidebar() {
                       onClick={openChannelOverview}
                       className="w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
                     >
-                      {!whatsappState?.configured
-                        ? '未配置，点击右侧设置'
-                        : !whatsappState.enabled
-                          ? '未连接，点击右侧启用'
-                          : whatsappState.connection === 'connected'
-                            ? '暂无会话，等待消息…'
-                            : whatsappState.connection === 'connecting'
-                              ? '连接中…'
-                              : whatsappState.connection === 'needsReauth'
-                                ? '会话失效，请重新扫码'
-                                : '未连接，点击右侧重试'}
+                      {channelEmptyHint(whatsappState)}
                     </button>
                   ) : (
                     activeWhatsappConversations.map((conversation) => (
@@ -673,7 +549,7 @@ export function AppSidebar() {
                             : 'flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
                         }
                       >
-                        <span className="truncate">{channelConversationLabel(conversation)}</span>
+                        <span className="truncate">{channelConversationLabel(conversation, t)}</span>
                         {conversation.unreadCount > 0 && (
                           <span className="ml-2 rounded-full bg-primary px-1.5 text-xs text-primary-foreground">
                             {conversation.unreadCount}

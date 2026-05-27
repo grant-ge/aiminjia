@@ -1105,9 +1105,9 @@
     }
   },
   "channel": {
-    "title": "IM Channel",
-    "heroTitle": "IM Channel",
-    "heroDesc": "Configure the DingTalk IM channel so AI Home can receive and reply to DingTalk messages.",
+    "title": "IM Channels",
+    "heroTitle": "IM Channels",
+    "heroDesc": "Configure IM channels so AI Home can receive and reply to messages from various platforms.",
     "heroPrivacy": "Channel credentials are stored locally and never uploaded.",
     "status": {
       "unconfigured": "Not configured",
@@ -1115,36 +1115,404 @@
       "connected": "Connected",
       "connecting": "Connecting",
       "reconnecting": "Reconnecting",
-      "configError": "Configuration error"
+      "configError": "Configuration error",
+      "sessionExpired": "Session expired",
+      "disconnected": "Disconnected",
+      "needsReauth": "Re-scan needed",
+      "tokenExpired": "Token expired"
     },
     "actions": {
       "configure": "Configure",
       "remove": "Remove",
-      "moreDingtalkConfig": "More DingTalk options",
+      "morePlatformConfig": "More {{name}} options",
       "configureWith": "Configure {{name}}",
       "enabledAria": "{{name}} channel enabled",
-      "disabledAria": "{{name}} channel disabled"
+      "disabledAria": "{{name}} channel disabled",
+      "done": "Done",
+      "cancel": "Cancel",
+      "close": "Close",
+      "confirm": "Confirm",
+      "retryQr": "Regenerate QR code",
+      "rescanConfig": "Re-scan to change configuration",
+      "next": "Next",
+      "save": "Save",
+      "confirmRemove": "Confirm remove",
+      "confirmReveal": "Confirm reveal",
+      "addNumber": "Add number",
+      "deleteRow": "Delete this row",
+      "removeChannel": "Remove entire channel",
+      "saveManualConfig": "Save manual configuration"
     },
-    "dingtalk": {
-      "name": "DingTalk",
-      "icon": "D",
-      "description": "Receive and reply to user messages via a DingTalk bot",
-      "topbarTitle": "DingTalk",
-      "inactive": "This conversation belongs to a retired bot and cannot accept new messages."
+    "chat": {
+      "groupChat": "Group",
+      "privateChat": "Private",
+      "inactiveBanner": "This conversation belongs to a retired bot and cannot accept new messages."
+    },
+    "networkHint": {
+      "connecting": "Connecting to {{name}} server…",
+      "reconnecting": "{{name}} disconnected, reconnecting…",
+      "whatsappDisconnected": "Not connected to WhatsApp. Possible causes: network/proxy unavailable, phone WhatsApp offline, or the primary device has logged out this linked device (re-scan required).",
+      "telegramDisconnected": "Not connected to Telegram server. Please check your network or proxy.",
+      "whatsappNeedsReauth": "WhatsApp session expired (usually caused by logging out on the phone or extended offline). Please re-scan to pair.",
+      "telegramNeedsReauth": "Telegram session expired. Please re-login."
+    },
+    "platforms": {
+      "dingtalk": {
+        "name": "DingTalk",
+        "icon": "D",
+        "description": "Receive and reply to user messages via a DingTalk bot",
+        "topbarTitle": "DingTalk"
+      },
+      "feishu": {
+        "name": "Feishu",
+        "description": "Receive and reply to user messages via a Feishu bot",
+        "topbarTitle": "Feishu"
+      },
+      "wecom": {
+        "name": "WeCom",
+        "description": "Receive and reply to user messages via a WeCom bot",
+        "topbarTitle": "WeCom"
+      },
+      "wechat": {
+        "name": "WeChat",
+        "description": "Receive and reply to user messages via a personal WeChat account",
+        "topbarTitle": "WeChat"
+      },
+      "telegram": {
+        "name": "Telegram",
+        "description": "Receive and reply to user messages via a Telegram bot",
+        "topbarTitle": "Telegram"
+      },
+      "whatsapp": {
+        "name": "WhatsApp",
+        "description": "Receive and reply to user messages via WhatsApp",
+        "topbarTitle": "WhatsApp"
+      }
     },
     "remove": {
-      "title": "Remove DingTalk channel?",
-      "description": "This disconnects the DingTalk channel and removes the locally stored AppKey and AppSecret. Chat history is preserved. You will need to re-scan to configure it again.",
-      "confirm": "Confirm remove",
-      "cancel": "Cancel"
+      "dingtalk": {
+        "title": "Remove DingTalk channel?",
+        "description": "This disconnects the DingTalk channel and removes the locally stored AppKey and AppSecret. Chat history is preserved. You will need to re-scan to configure it again."
+      },
+      "feishu": {
+        "title": "Remove Feishu channel?",
+        "description": "This disconnects the Feishu channel and removes the locally stored AppID and AppSecret. Chat history is preserved. You will need to re-scan to configure it again."
+      },
+      "wecom": {
+        "title": "Remove WeCom channel?",
+        "description": "This disconnects the WeCom channel and removes the locally stored Bot ID and Secret. Chat history is preserved."
+      },
+      "wechat": {
+        "title": "Remove WeChat channel?",
+        "description": "This disconnects the WeChat channel and removes locally stored login credentials. Chat history is preserved. You will need to re-scan to configure it again."
+      },
+      "telegram": {
+        "title": "Remove Telegram channel?",
+        "description": "This removes the locally stored bot token and paired user list. Chat history is preserved."
+      },
+      "whatsapp": {
+        "title": "Remove WhatsApp channel?",
+        "description": "This removes the locally stored WhatsApp session and allowlist. Chat history is preserved."
+      }
+    },
+    "dialog": {
+      "dingtalk": {
+        "title": "Configure DingTalk",
+        "description": "Scan the QR code in DingTalk to register the app, or fill in app credentials manually."
+      },
+      "feishu": {
+        "title": "Configure Feishu",
+        "description": "Scan the QR code in Feishu to register the app."
+      },
+      "wecom": {
+        "title": "Configure WeCom",
+        "description": "Enter WeCom smart bot credentials to complete channel setup."
+      },
+      "wechat": {
+        "title": "Add WeChat Account",
+        "description": "Sign in to your iLink WeChat account by scanning the QR code."
+      },
+      "telegram": {
+        "title": "Configure Telegram",
+        "description": "Enter a Bot Token and pair via QR code."
+      },
+      "whatsapp": {
+        "title": "Add WhatsApp Account",
+        "description": "Scan the QR code with your phone's WhatsApp to sign in."
+      }
+    },
+    "dingtalk": {
+      "config": {
+        "title": "Configure DingTalk",
+        "scanSuccess": "Scan successful",
+        "appCreated": "App created",
+        "rescanConfig": "Re-scan to change configuration",
+        "retryQr": "Regenerate QR code",
+        "preparingQr": "Preparing QR code…",
+        "waitingHint": "Waiting for you to complete setup in DingTalk. It will connect automatically.",
+        "errorBeginFailed": "Failed to start DingTalk scan flow. Please retry.",
+        "errorNoConfig": "DingTalk authorized, but no channel configuration was returned.",
+        "errorScanFailed": "DingTalk scan registration failed"
+      },
+      "inactive": "This conversation belongs to a retired bot and cannot accept new messages."
+    },
+    "feishu": {
+      "config": {
+        "title": "Configure Feishu",
+        "subtitle": "Scan the Feishu QR code to create an app and bot. Credentials are read automatically.",
+        "scanSuccess": "Scan successful",
+        "appCreated": "App created",
+        "rescanConfig": "Re-scan to change configuration",
+        "retryQr": "Regenerate QR code",
+        "openLinkHint": "Page didn't open? Click to continue",
+        "waitingHint": "Waiting for you to complete setup in Feishu. It will connect automatically.",
+        "connected": "Feishu channel connected",
+        "errorNoConfig": "Feishu authorized, but no channel configuration was returned.",
+        "errorExpired": "Scan flow expired. Please start again.",
+        "errorScanFailed": "Feishu scan registration failed",
+        "errorUnknownState": "Feishu returned an unknown status. Please retry.",
+        "errorBeginFailed": "Failed to start Feishu scan flow. Please retry.",
+        "qrAlt": "Feishu QR code"
+      }
+    },
+    "wecom": {
+      "config": {
+        "title": "Configure WeCom",
+        "subtitle": "Scan the WeCom QR code to create a bot instantly — no admin console needed.",
+        "botCreated": "Bot created",
+        "connected": "WeCom channel connected",
+        "rescanBot": "Re-scan to change bot",
+        "retryQr": "Regenerate QR code",
+        "openInBrowser": "Can't scan? Open in browser",
+        "waitingConfirm": "Waiting for you to confirm bot creation in WeCom…",
+        "scanSuccessSaving": "Scan successful, saving configuration…",
+        "scanSuccessNoBotInfo": "Scan succeeded but no Bot info was returned",
+        "errorTimeout": "Scan timed out (5 minutes). Please regenerate the QR code.",
+        "errorScanFailed": "Scan registration failed. Please retry.",
+        "qrAlt": "WeCom QR code",
+        "manualTitle": "Advanced: Manually enter Bot ID and Secret",
+        "manualBotIdLabel": "Bot ID",
+        "manualBotIdPlaceholder": "WeCom Admin → Smart Bot → Details page",
+        "manualSecretLabel": "Secret",
+        "manualSecretPlaceholder": "Same location as above",
+        "manualDisplayNameLabel": "Display name",
+        "manualDisplayNameOptional": "(optional)",
+        "manualDisplayNamePlaceholder": "e.g. Sales Group Bot",
+        "manualSave": "Save manual configuration",
+        "missingFieldsTitle": "Missing required fields",
+        "missingFieldsMessage": "Bot ID and Secret cannot be empty",
+        "saveFailedTitle": "Save failed",
+        "saveFailedMessage": "Failed to save WeCom configuration. Please retry.",
+        "removedTitle": "WeCom removed",
+        "removedMessage": "Channel configuration deleted",
+        "removeFailedTitle": "Remove failed",
+        "removeFailedMessage": "Failed to remove WeCom configuration. Please retry."
+      },
+      "help": {
+        "summary": "Can't see QR code / can't scan? View instructions",
+        "whoCanScan": "Who can scan to create a bot",
+        "whoCanScanAuthorized": "authorized enterprise members",
+        "whoCanScanDesc": "Enterprise super admin + {{authorized}}. Default is open to all, but admins can change it at",
+        "whoCanScanPath": "Admin Console → Security & Management → Management Tools → Smart Bot → Management → Bot Creation Permissions",
+        "whoCanScanSuffix": "to allowlist / department / tag.",
+        "memberLimit": "Each regular member can create up to {{memberMax}}, and each organization up to {{orgMax}}.",
+        "preScanCheck": "Pre-scan checklist",
+        "preScanStep1": "Open the \"Workbench\" in the WeCom mobile app",
+        "preScanStep2": "Find the \"Smart Bot\" app — if you can't see it, the admin has disabled this feature; ask them to enable it",
+        "preScanStep3": "If you can enter the \"Smart Bot\" homepage and see the \"Create Smart Bot\" button — you have permission",
+        "preScanStep4": "Return to this dialog and scan: open the QR scanner in the WeCom app",
+        "troubleshoot": "No response after scanning / stuck on \"Waiting\"",
+        "troubleshootItem1": "Didn't confirm creation? Go back to the WeCom app and check for a pending confirmation page",
+        "troubleshootItem2": "QR code expired? It's valid for 5 minutes. Click \"Regenerate QR code\" to get a new one",
+        "troubleshootItem3": "Still failing? Expand \"Advanced: Manually enter Bot ID and Secret\" below, and ask your admin to create the bot in the admin console and share the credentials",
+        "officialDocs": "Official documentation",
+        "doc1Label": "WeCom · How to Use Smart Bots",
+        "doc1Hint": "Creation permissions / limits / entry points",
+        "doc2Label": "WeCom · OpenClaw Smart Bot Integration Guide",
+        "doc2Hint": "API mode + long-connection official setup guide",
+        "doc3Label": "WeCom Developer Center · Smart Bot Long-Connection Protocol",
+        "doc3Hint": "Protocol details / heartbeat / rate limits (rarely needed)"
+      }
+    },
+    "wechat": {
+      "config": {
+        "title": "Add WeChat Account",
+        "scanSuccess": "Login successful",
+        "accountConfirmed": "Account identity confirmed",
+        "mvpNote": "MVP phase: Credentials are not yet persisted with encryption. Long-polling inbound/outbound messaging will land in Phase 5 PR3+.",
+        "retryQr": "Regenerate QR code",
+        "preparingQr": "Preparing QR code…",
+        "scannedHint": "Scanned! Please tap \"Confirm Login\" on your phone…",
+        "scanHint": "Scan the QR code with WeChat and confirm on your phone.",
+        "errorTimeout": "QR code preparation timed out. Please click retry.",
+        "errorBeginFailed": "Failed to start WeChat login. Please retry."
+      }
+    },
+    "telegram": {
+      "config": {
+        "title": "Configure Telegram",
+        "tokenSubtitle": "Find @BotFather in Telegram to create a bot, then paste the token below.",
+        "openBotFather": "Open BotFather",
+        "botTokenLabel": "Bot Token",
+        "botFatherSteps": "BotFather steps",
+        "step1": "Search for @BotFather in Telegram (mobile or desktop) and open the chat",
+        "step2": "Send /newbot",
+        "step3": "Follow the prompts to enter a bot name and username (must end with _bot)",
+        "step4Prefix": "Copy the returned token (looks like",
+        "step4Suffix": ") into the field above",
+        "errorEmptyToken": "Please enter a bot token",
+        "errorTokenFailed": "Token verification failed",
+        "errorPairingFailed": "Failed to generate pairing code",
+        "pairingTitle": "Scan to Pair",
+        "pairingScanMethods": "phone camera / WeChat scan / Alipay scan",
+        "pairingScanHint": "Scan the QR code below with {{methods}} (the Telegram app itself does not support scanning this type of code)",
+        "qrAlt": "Telegram pairing QR code",
+        "qrExpiry": "QR code expires in {{time}}",
+        "openTelegramDirect": "Telegram installed locally? Open directly",
+        "pendingTitle": "Pending approval",
+        "approve": "Approve",
+        "approveFailed": "Approval failed",
+        "pairedUsersTitle": "Connected users",
+        "revokeUserTitle": "Remove this Telegram user?",
+        "revokeUserDesc": "The user will no longer be able to chat with your bot. They will need to re-scan to reconnect.",
+        "revokeFailed": "Remove failed",
+        "removeFailed": "Remove failed"
+      }
+    },
+    "whatsapp": {
+      "config": {
+        "titleConfigured": "WhatsApp Settings",
+        "titleNew": "Configure WhatsApp",
+        "subtitleConnected": "Set which contacts' messages trigger AI replies",
+        "subtitleDisconnected": "Manage allowlist; re-scan if session expired",
+        "subtitleNew": "Sign in via WhatsApp QR code. AIjia will connect as a linked device.",
+        "addAccount": "Add WhatsApp Account",
+        "sessionExpired": "Session expired",
+        "sessionExpiredHint": "The phone may have logged out or been offline too long. Please re-scan to pair.",
+        "rescan": "Re-scan",
+        "scanTitle": "Scan to Sign In to WhatsApp",
+        "connectedTitle": "WhatsApp Connected",
+        "connectedMessage": "Connected: {{name}}",
+        "connectedGeneric": "Account successfully linked",
+        "addFailed": "Failed to add WhatsApp",
+        "removeFailed": "Remove failed"
+      },
+      "allowlist": {
+        "title": "Allowed Senders",
+        "loading": "Loading allowlist…",
+        "modeAll": "Receive from all contacts",
+        "modeAllHint": "Anyone who can message you will trigger an AI reply (default)",
+        "modeSpecific": "Receive from specific numbers only",
+        "modeSpecificHint": "Only the numbers listed below will trigger AI replies; others are ignored",
+        "selectCountry": "Select country/region code",
+        "placeholder": "13912345678",
+        "invalidTitle": "Invalid phone number format",
+        "invalidMessage": "{{count}} row(s) have invalid formats. Please fix them before saving.",
+        "savedTitle": "Saved",
+        "savedAll": "Set to receive from all contacts",
+        "savedSpecific": "Restricted to {{count}} specific number(s)",
+        "saveFailed": "Save failed",
+        "errorCountryFormat": "Invalid country code (should be + followed by 1-4 digits)",
+        "errorNumberFormat": "Invalid number format (should be 7-14 digits)",
+        "errorE164Length": "Total length does not match E.164 (8-15 digits)"
+      },
+      "countryCodes": {
+        "+86": "China Mainland (+86)",
+        "+852": "Hong Kong (+852)",
+        "+853": "Macau (+853)",
+        "+886": "Taiwan (+886)",
+        "+65": "Singapore (+65)",
+        "+60": "Malaysia (+60)",
+        "+1": "US / Canada (+1)",
+        "+44": "United Kingdom (+44)",
+        "+81": "Japan (+81)",
+        "+82": "South Korea (+82)",
+        "+61": "Australia (+61)",
+        "+49": "Germany (+49)",
+        "+33": "France (+33)"
+      },
+      "risk": {
+        "dialogTitle": "About AIjia's WhatsApp Integration",
+        "intro": "AIjia's WhatsApp integration currently uses the same approach as the open-source project",
+        "openClawLink": "OpenClaw",
+        "introProtocol": "WhatsApp Web multi-device protocol",
+        "introDesc": ": connecting AIjia as a \"linked device\" to your WhatsApp account via the {{protocol}} (the same mechanism as \"Linked Devices → Link a Device\" on your phone).",
+        "introMigration": "We are applying for official WhatsApp Business API access. Once approved, we will migrate to the official API. In the meantime, we use the OpenClaw approach to ensure availability.",
+        "risksHeading": "Risks of this approach (identical to OpenClaw)",
+        "riskUnauthorized": "WhatsApp has not officially authorized",
+        "riskUnauthorizedSuffix": "this integration method; it falls in a TOS gray area",
+        "riskBanPrefix": "Your account may be",
+        "riskBan": "rate-limited or banned",
+        "riskBanSuffix": "by WhatsApp; ",
+        "riskBanOwn": "you assume all risk",
+        "riskVirtualNumber": "virtual numbers",
+        "riskVirtualNumberDesc": "In practice, {{virtualNumber}} (Google Voice, etc.) have a significantly higher ban rate than real phone numbers",
+        "riskBroadcast": "Mass messaging, frequent outbound calls, and abnormally high reply rates all increase the risk of account suspension",
+        "suggestionsHeading": "Strong recommendations",
+        "suggestRealPhone": "a real phone number",
+        "suggestRealPhoneDesc": "Use {{phone}} instead of virtual numbers",
+        "suggestNoBroadcast": "mass messaging",
+        "suggestNoBroadcastDesc": "Do not use AIjia for {{broadcast}} or frequent outbound calls",
+        "suggestAiOnly": "Use for AI-assisted conversations only, not for marketing or promotions",
+        "suggestWorkPhone": "a dedicated work number",
+        "suggestWorkPhoneDesc": "Do not connect important numbers; use {{phone}} instead",
+        "acknowledge": "I understand the risks above and want to proceed",
+        "continue": "Continue"
+      }
+    },
+    "details": {
+      "readonly": "This configuration is read-only. To change credentials, remove the channel and re-scan.",
+      "secretRevealed": "Revealed",
+      "secretReading": "Reading…",
+      "secretReadFailed": "Failed to read {{label}}",
+      "createdAt": "Created at",
+      "updatedAt": "Updated at",
+      "titleByPlatform": {
+        "dingtalk": "DingTalk Configuration",
+        "feishu": "Feishu Configuration",
+        "wecom": "WeCom Configuration",
+        "wechat": "WeChat Configuration"
+      },
+      "secretConfirm": {
+        "dingtalk": {
+          "title": "Reveal AppSecret?",
+          "description": "AppSecret is a sensitive credential. It will be displayed in this dialog and cleared when the dialog is closed.",
+          "revealButton": "Reveal AppSecret"
+        },
+        "feishu": {
+          "title": "Reveal AppSecret?",
+          "description": "AppSecret is a sensitive credential. It will be displayed in this dialog and cleared when the dialog is closed.",
+          "revealButton": "Reveal AppSecret"
+        },
+        "wecom": {
+          "title": "Reveal Secret?",
+          "description": "Secret is a sensitive credential. It will be displayed in this dialog and cleared when the dialog is closed.",
+          "revealButton": "Reveal Secret"
+        },
+        "wechat": {
+          "title": "Reveal Bot Token?",
+          "description": "Bot Token is a sensitive credential. It will be displayed in this dialog and cleared when the dialog is closed.",
+          "revealButton": "Reveal Bot Token"
+        }
+      },
+      "fields": {
+        "wechatAccountId": "Account ID (ilink_user_id)",
+        "wechatBotId": "iLink Bot ID"
+      }
     },
     "errors": {
       "openFileTitle": "Cannot open file",
       "openFileMessage": "Failed to open the generated file."
     },
-    "dialog": {
-      "title": "Configure DingTalk",
-      "description": "Scan the QR code in DingTalk to register the app, or fill in app credentials manually."
+    "sidebar": {
+      "notConfiguredHint": "Not configured. Click to set up.",
+      "disabledHint": "Disabled. Click the right panel to enable.",
+      "noConversations": "No conversations yet, waiting for messages…",
+      "connectingHint": "Connecting…",
+      "disconnectedHint": "Disconnected. Click the right panel to retry.",
+      "needsReauthHint": "Session expired. Please re-scan.",
+      "tokenExpiredHint": "Token expired. Please reconfigure.",
+      "sessionExpiredHint": "Session expired. Please re-scan."
     }
   },
   "schedules": {

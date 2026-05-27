@@ -1107,7 +1107,7 @@
   "channel": {
     "title": "IM 频道",
     "heroTitle": "IM 频道",
-    "heroDesc": "配置钉钉 IM 频道，让 AI 小家 接收并回复来自钉钉的消息。",
+    "heroDesc": "配置 IM 频道，让 AI 小家 接收并回复来自各平台的消息。",
     "heroPrivacy": "频道配置信息仅存储在本地，不会上传到云端。",
     "status": {
       "unconfigured": "未配置",
@@ -1115,36 +1115,404 @@
       "connected": "已连接",
       "connecting": "连接中",
       "reconnecting": "重连中",
-      "configError": "配置有误"
+      "configError": "配置有误",
+      "sessionExpired": "会话失效",
+      "disconnected": "未连接",
+      "needsReauth": "需重新扫码",
+      "tokenExpired": "Token 失效"
     },
     "actions": {
       "configure": "配置",
       "remove": "移除",
-      "moreDingtalkConfig": "更多钉钉配置",
+      "morePlatformConfig": "更多{{name}}配置",
       "configureWith": "配置{{name}}",
       "enabledAria": "{{name}}频道已启用",
-      "disabledAria": "{{name}}频道已停用"
+      "disabledAria": "{{name}}频道已停用",
+      "done": "完成",
+      "cancel": "取消",
+      "close": "关闭",
+      "confirm": "确认",
+      "retryQr": "重新生成二维码",
+      "rescanConfig": "重新扫码更换配置",
+      "next": "下一步",
+      "save": "保存",
+      "confirmRemove": "确认移除",
+      "confirmReveal": "确认显示",
+      "addNumber": "添加号码",
+      "deleteRow": "删除此行",
+      "removeChannel": "移除整个频道",
+      "saveManualConfig": "保存手动配置"
     },
-    "dingtalk": {
-      "name": "钉钉",
-      "icon": "钉",
-      "description": "通过钉钉机器人接收并回复用户消息",
-      "topbarTitle": "钉钉",
-      "inactive": "该会话来自已下线的机器人，无法发送新消息"
+    "chat": {
+      "groupChat": "群聊",
+      "privateChat": "私聊",
+      "inactiveBanner": "该会话来自已下线的机器人，无法发送新消息"
+    },
+    "networkHint": {
+      "connecting": "正在连接 {{name}} 服务器…",
+      "reconnecting": "{{name}} 连接已断开，正在重连…",
+      "whatsappDisconnected": "未连接到 WhatsApp。可能原因：网络/代理不可用、手机端 WhatsApp 离线，或主端已踢掉本设备会话（需重新扫码）",
+      "telegramDisconnected": "未连接到 Telegram 服务器，请检查网络 / 代理是否可用",
+      "whatsappNeedsReauth": "与 WhatsApp 主端会话失效（常见于手机端退出登录或长时间离线），需要重新扫码配对",
+      "telegramNeedsReauth": "Telegram 会话失效，请重新登录"
+    },
+    "platforms": {
+      "dingtalk": {
+        "name": "钉钉",
+        "icon": "钉",
+        "description": "通过钉钉机器人接收并回复用户消息",
+        "topbarTitle": "钉钉"
+      },
+      "feishu": {
+        "name": "飞书",
+        "description": "通过飞书机器人接收并回复用户消息",
+        "topbarTitle": "飞书"
+      },
+      "wecom": {
+        "name": "企业微信",
+        "description": "通过企业微信机器人接收并回复用户消息",
+        "topbarTitle": "企业微信"
+      },
+      "wechat": {
+        "name": "个人微信",
+        "description": "通过个人微信账号接收并回复用户消息",
+        "topbarTitle": "个人微信"
+      },
+      "telegram": {
+        "name": "Telegram",
+        "description": "通过 Telegram 机器人接收并回复用户消息",
+        "topbarTitle": "Telegram"
+      },
+      "whatsapp": {
+        "name": "WhatsApp",
+        "description": "通过 WhatsApp 机器人接收并回复用户消息",
+        "topbarTitle": "WhatsApp"
+      }
     },
     "remove": {
-      "title": "移除钉钉频道？",
-      "description": "这会断开钉钉频道，并删除本地保存的 AppKey 和 AppSecret。已有聊天历史会保留。之后需要重新扫码才能再次配置。",
-      "confirm": "确认移除",
-      "cancel": "取消"
+      "dingtalk": {
+        "title": "移除钉钉频道？",
+        "description": "这会断开钉钉频道，并删除本地保存的 AppKey 和 AppSecret。已有聊天历史会保留。之后需要重新扫码才能再次配置。"
+      },
+      "feishu": {
+        "title": "移除飞书频道？",
+        "description": "这会断开飞书频道，并删除本地保存的 AppID 和 AppSecret。已有聊天历史会保留。之后需要重新扫码才能再次配置。"
+      },
+      "wecom": {
+        "title": "移除企业微信频道？",
+        "description": "这会断开企业微信频道，并删除本地保存的 Bot ID 和 Secret。已有聊天历史会保留。"
+      },
+      "wechat": {
+        "title": "移除个人微信频道？",
+        "description": "这会断开个人微信频道并删除本地保存的登录凭证。已有聊天历史会保留。之后需要重新扫码才能再次配置。"
+      },
+      "telegram": {
+        "title": "移除 Telegram 频道？",
+        "description": "会删除本地保存的 bot token 和已配对用户列表。已有聊天历史保留。"
+      },
+      "whatsapp": {
+        "title": "移除 WhatsApp 频道？",
+        "description": "会删除本地保存的 WhatsApp 会话和允许列表。已有聊天历史保留。"
+      }
+    },
+    "dialog": {
+      "dingtalk": {
+        "title": "配置钉钉",
+        "description": "在钉钉中扫码完成应用注册，也可以手动填写应用凭证。"
+      },
+      "feishu": {
+        "title": "配置飞书",
+        "description": "在飞书中扫码完成应用注册。"
+      },
+      "wecom": {
+        "title": "配置企业微信",
+        "description": "填写企业微信智能机器人凭证完成频道配置。"
+      },
+      "wechat": {
+        "title": "添加个人微信账号",
+        "description": "使用微信扫码登录 iLink 个人微信账号。"
+      },
+      "telegram": {
+        "title": "配置 Telegram",
+        "description": "输入 Bot Token 并扫码配对。"
+      },
+      "whatsapp": {
+        "title": "添加 WhatsApp 账号",
+        "description": "使用手机 WhatsApp 扫码登录。"
+      }
+    },
+    "dingtalk": {
+      "config": {
+        "title": "配置钉钉",
+        "scanSuccess": "扫码开通成功",
+        "appCreated": "应用已创建",
+        "rescanConfig": "重新扫码更换配置",
+        "retryQr": "重新生成二维码",
+        "preparingQr": "正在准备扫码…",
+        "waitingHint": "等待你在钉钉页面完成创建，完成后会自动连接。",
+        "errorBeginFailed": "钉钉扫码开通失败，请重试",
+        "errorNoConfig": "钉钉已授权，但未返回频道配置",
+        "errorScanFailed": "钉钉扫码开通失败"
+      },
+      "inactive": "该会话来自已下线的机器人，无法发送新消息"
+    },
+    "feishu": {
+      "config": {
+        "title": "配置飞书",
+        "subtitle": "使用飞书扫码创建应用和机器人，完成后自动读取凭证。",
+        "scanSuccess": "扫码开通成功",
+        "appCreated": "应用已创建",
+        "rescanConfig": "重新扫码更换配置",
+        "retryQr": "重新生成二维码",
+        "openLinkHint": "页面未自动打开？点击继续",
+        "waitingHint": "等待你在飞书页面完成创建，完成后会自动连接。",
+        "connected": "飞书频道已连接",
+        "errorNoConfig": "飞书已授权，但未返回频道配置",
+        "errorExpired": "扫码开通已过期，请重新发起",
+        "errorScanFailed": "飞书扫码开通失败",
+        "errorUnknownState": "飞书返回未知开通状态，请重试",
+        "errorBeginFailed": "飞书扫码开通失败，请重试",
+        "qrAlt": "飞书扫码二维码"
+      }
+    },
+    "wecom": {
+      "config": {
+        "title": "配置企业微信",
+        "subtitle": "用企业微信扫码即可一键创建机器人，无需进入管理后台。",
+        "botCreated": "机器人已创建",
+        "connected": "企业微信频道已连接",
+        "rescanBot": "重新扫码更换机器人",
+        "retryQr": "重新生成二维码",
+        "openInBrowser": "无法扫码？在浏览器中打开",
+        "waitingConfirm": "等待你在企业微信里确认创建机器人…",
+        "scanSuccessSaving": "扫码成功，正在保存配置…",
+        "scanSuccessNoBotInfo": "扫码成功但未返回 Bot 信息",
+        "errorTimeout": "扫码超时（5 分钟），请重新生成二维码",
+        "errorScanFailed": "扫码注册失败，请重试",
+        "qrAlt": "企业微信扫码二维码",
+        "manualTitle": "高级：手动填写 Bot ID 和 Secret",
+        "manualBotIdLabel": "Bot ID",
+        "manualBotIdPlaceholder": "企业微信后台 → 智能机器人 → 详情页",
+        "manualSecretLabel": "Secret",
+        "manualSecretPlaceholder": "同上",
+        "manualDisplayNameLabel": "显示名称",
+        "manualDisplayNameOptional": "（可选）",
+        "manualDisplayNamePlaceholder": "例如：销售群机器人",
+        "manualSave": "保存手动配置",
+        "missingFieldsTitle": "缺少必填项",
+        "missingFieldsMessage": "Bot ID 和 Secret 不能为空",
+        "saveFailedTitle": "保存失败",
+        "saveFailedMessage": "保存企业微信配置失败，请重试",
+        "removedTitle": "企业微信已移除",
+        "removedMessage": "频道配置已删除",
+        "removeFailedTitle": "移除失败",
+        "removeFailedMessage": "移除企业微信配置失败，请重试"
+      },
+      "help": {
+        "summary": "看不到二维码 / 扫不上？查看使用说明",
+        "whoCanScan": "谁能扫码创建机器人",
+        "whoCanScanAuthorized": "被授权的企业成员",
+        "whoCanScanDesc": "企业超级管理员 + {{authorized}}。默认「全员开放」，但管理员可以在",
+        "whoCanScanPath": "管理后台 → 安全与管理 → 管理工具 → 智能机器人 → 管理 → 机器人创建权限",
+        "whoCanScanSuffix": "里改为白名单 / 部门 / 标签。",
+        "memberLimit": "单个普通成员最多可建 {{memberMax}} 个，单企业最多 {{orgMax}} 个。",
+        "preScanCheck": "扫码前自查",
+        "preScanStep1": "用手机企业微信 App 打开「工作台」",
+        "preScanStep2": "找到「智能机器人」应用 — 如果连入口都没有，说明管理员关闭了该能力，需要联系管理员开放",
+        "preScanStep3": "能进入「智能机器人」首页 → 看到「创建智能机器人」按钮可点 → 你就有权限",
+        "preScanStep4": "回到本弹窗扫码：在企业微信 App 内打开扫一扫即可",
+        "troubleshoot": "扫码后没反应 / 一直「等待中」",
+        "troubleshootItem1": "没有点确认创建？回到企业微信 App 看是否有待确认页面",
+        "troubleshootItem2": "二维码过期了？5 分钟内有效，点「重新生成二维码」拿新的",
+        "troubleshootItem3": "仍然失败？展开下方「手动填写 Bot ID 和 Secret」，让管理员在管理后台建好机器人后把凭证给你",
+        "officialDocs": "官方文档",
+        "doc1Label": "企业微信 · 如何使用智能机器人",
+        "doc1Hint": "创建权限规则 / 数量上限 / 入口位置",
+        "doc2Label": "企业微信 · 接入 OpenClaw 智能机器人指引",
+        "doc2Hint": "API 模式 + 长连接的官方接入说明",
+        "doc3Label": "企业微信开发者中心 · 智能机器人长连接协议",
+        "doc3Hint": "协议细节 / 心跳 / 频控限制（一般用不到）"
+      }
+    },
+    "wechat": {
+      "config": {
+        "title": "添加个人微信账号",
+        "scanSuccess": "扫码登录成功",
+        "accountConfirmed": "已确认账号身份",
+        "mvpNote": "MVP 阶段：凭证尚未落盘加密保存，长轮询入站 / 出站发送等功能在 Phase 5 PR3+ 落地。",
+        "retryQr": "重新生成二维码",
+        "preparingQr": "正在准备扫码…",
+        "scannedHint": "已扫码，请在手机上点击「确认登录」完成授权…",
+        "scanHint": "请用微信扫描二维码并在手机上确认。",
+        "errorTimeout": "扫码准备超时，请点击重试。",
+        "errorBeginFailed": "个微扫码登录启动失败，请重试"
+      }
+    },
+    "telegram": {
+      "config": {
+        "title": "配置 Telegram",
+        "tokenSubtitle": "在 Telegram 中找到 @BotFather 创建 bot，将拿到的 token 粘贴到下面。",
+        "openBotFather": "打开 BotFather",
+        "botTokenLabel": "Bot Token",
+        "botFatherSteps": "BotFather 使用步骤",
+        "step1": "在手机或桌面 Telegram 搜索 @BotFather 并打开对话",
+        "step2": "发送 /newbot",
+        "step3": "按提示输入 bot 名称（可中文）和 username（必须以 _bot 结尾）",
+        "step4Prefix": "把返回的 token（形如",
+        "step4Suffix": "）复制到上面",
+        "errorEmptyToken": "请输入 bot token",
+        "errorTokenFailed": "token 验证失败",
+        "errorPairingFailed": "生成配对码失败",
+        "pairingTitle": "扫码配对",
+        "pairingScanMethods": "手机相机 / 微信扫一扫 / 支付宝扫一扫",
+        "pairingScanHint": "用 {{methods}} 扫描下方二维码（Telegram App 自身不支持扫这种码）",
+        "qrAlt": "Telegram 扫码配对",
+        "qrExpiry": "二维码 {{time}} 后过期",
+        "openTelegramDirect": "本机已装 Telegram？直接打开",
+        "pendingTitle": "待批准",
+        "approve": "批准",
+        "approveFailed": "批准失败",
+        "pairedUsersTitle": "已连接用户",
+        "revokeUserTitle": "移除该 Telegram 用户？",
+        "revokeUserDesc": "用户将不再能与你的 bot 对话；需要重新扫码才能恢复连接。",
+        "revokeFailed": "移除失败",
+        "removeFailed": "移除失败"
+      }
+    },
+    "whatsapp": {
+      "config": {
+        "titleConfigured": "WhatsApp 配置",
+        "titleNew": "配置 WhatsApp",
+        "subtitleConnected": "设置哪些联系人发来的消息会触发 AI 回复",
+        "subtitleDisconnected": "管理允许列表；会话失效时可重新扫码",
+        "subtitleNew": "通过手机 WhatsApp 扫码登录，AIjia 将作为已链接设备接入",
+        "addAccount": "添加 WhatsApp 账号",
+        "sessionExpired": "会话已失效",
+        "sessionExpiredHint": "手机端可能退出了登录或长时间离线，需要重新扫码配对。",
+        "rescan": "重新扫码",
+        "scanTitle": "扫码登录 WhatsApp",
+        "connectedTitle": "WhatsApp 已连接",
+        "connectedMessage": "已连接：{{name}}",
+        "connectedGeneric": "账号已成功接入",
+        "addFailed": "添加 WhatsApp 失败",
+        "removeFailed": "移除失败"
+      },
+      "allowlist": {
+        "title": "允许的发送人",
+        "loading": "读取允许列表…",
+        "modeAll": "接收所有联系人",
+        "modeAllHint": "任何能发消息给你的人都会触发 AI 回复（默认）",
+        "modeSpecific": "仅接收指定号码",
+        "modeSpecificHint": "只对下方列出的号码触发 AI 回复，其它来源不打扰",
+        "selectCountry": "选择国家或地区区号",
+        "placeholder": "13912345678",
+        "invalidTitle": "号码格式无效",
+        "invalidMessage": "{{count}} 行号码格式有误，请检查后再保存",
+        "savedTitle": "已保存",
+        "savedAll": "已设置为接收所有联系人",
+        "savedSpecific": "已限制为 {{count}} 个指定号码",
+        "saveFailed": "保存失败",
+        "errorCountryFormat": "区号格式错误（应为 + 后跟 1-4 位数字）",
+        "errorNumberFormat": "号码格式错误（应为 7-14 位数字）",
+        "errorE164Length": "号码总长不符合 E.164（8-15 位）"
+      },
+      "countryCodes": {
+        "+86": "中国大陆 (+86)",
+        "+852": "中国香港 (+852)",
+        "+853": "中国澳门 (+853)",
+        "+886": "中国台湾 (+886)",
+        "+65": "新加坡 (+65)",
+        "+60": "马来西亚 (+60)",
+        "+1": "美国 / 加拿大 (+1)",
+        "+44": "英国 (+44)",
+        "+81": "日本 (+81)",
+        "+82": "韩国 (+82)",
+        "+61": "澳大利亚 (+61)",
+        "+49": "德国 (+49)",
+        "+33": "法国 (+33)"
+      },
+      "risk": {
+        "dialogTitle": "关于 AIjia 接入 WhatsApp 的说明",
+        "intro": "AIjia 接入 WhatsApp 当前采用与开源项目",
+        "openClawLink": "OpenClaw",
+        "introProtocol": "WhatsApp Web 多设备协议",
+        "introDesc": "相同的方案：通过{{protocol}}把 AIjia 作为一台“已链接设备”接入你的 WhatsApp 账号（与你手机上的“已链接的设备 → 链接设备”是同一套机制）。",
+        "introMigration": "我们正在申请 WhatsApp Business 官方接入资质，待批复后会迁移到官方 API；在此之前先用 OpenClaw 的方式保证可用。",
+        "risksHeading": "这个方案的风险（与 OpenClaw 完全相同）",
+        "riskUnauthorized": "WhatsApp 官方未授权",
+        "riskUnauthorizedSuffix": "这种接入方式，属于 TOS 灰区",
+        "riskBanPrefix": "账号有被 WhatsApp",
+        "riskBan": "限速 / 封禁",
+        "riskBanSuffix": "的风险，",
+        "riskBanOwn": "风险由你自行承担",
+        "riskVirtualNumber": "虚拟号",
+        "riskVirtualNumberDesc": "实测中，{{virtualNumber}}（Google Voice 等）被封概率显著高于真实手机号",
+        "riskBroadcast": "群发、频繁主动外呼、异常高频回复都会增加封号风险",
+        "suggestionsHeading": "强烈建议",
+        "suggestRealPhone": "真实手机号",
+        "suggestRealPhoneDesc": "使用{{phone}}，不要用虚拟号",
+        "suggestNoBroadcast": "群发",
+        "suggestNoBroadcastDesc": "不在 AIjia 中{{broadcast}}或频繁主动外呼",
+        "suggestAiOnly": "用于 AI 辅助对话场景，不用于营销 / 推广",
+        "suggestWorkPhone": "专门的工作号",
+        "suggestWorkPhoneDesc": "重要号码请勿接入，建议用{{phone}}",
+        "acknowledge": "我已了解上述风险，继续扫码",
+        "continue": "继续"
+      }
+    },
+    "details": {
+      "readonly": "当前配置为只读。需要更换凭证时，请移除后重新扫码配置。",
+      "secretRevealed": "已显示",
+      "secretReading": "读取中...",
+      "secretReadFailed": "读取 {{label}} 失败",
+      "createdAt": "创建时间",
+      "updatedAt": "更新时间",
+      "titleByPlatform": {
+        "dingtalk": "钉钉配置",
+        "feishu": "飞书配置",
+        "wecom": "企业微信配置",
+        "wechat": "个人微信配置"
+      },
+      "secretConfirm": {
+        "dingtalk": {
+          "title": "显示 AppSecret？",
+          "description": "AppSecret 是敏感凭证。确认后会在当前弹窗中显示，关闭弹窗后会自动清除。",
+          "revealButton": "显示 AppSecret"
+        },
+        "feishu": {
+          "title": "显示 AppSecret？",
+          "description": "AppSecret 是敏感凭证。确认后会在当前弹窗中显示，关闭弹窗后会自动清除。",
+          "revealButton": "显示 AppSecret"
+        },
+        "wecom": {
+          "title": "显示 Secret？",
+          "description": "Secret 是敏感凭证。确认后会在当前弹窗中显示，关闭弹窗后会自动清除。",
+          "revealButton": "显示 Secret"
+        },
+        "wechat": {
+          "title": "显示 Bot Token？",
+          "description": "Bot Token 是敏感凭证。确认后会在当前弹窗中显示，关闭弹窗后会自动清除。",
+          "revealButton": "显示 Bot Token"
+        }
+      },
+      "fields": {
+        "wechatAccountId": "账号 ID (ilink_user_id)",
+        "wechatBotId": "iLink Bot ID"
+      }
     },
     "errors": {
       "openFileTitle": "无法打开文件",
       "openFileMessage": "打开生成文件失败。"
     },
-    "dialog": {
-      "title": "配置钉钉",
-      "description": "在钉钉中扫码完成应用注册，也可以手动填写应用凭证。"
+    "sidebar": {
+      "notConfiguredHint": "未配置，点击设置",
+      "disabledHint": "未连接，点击右侧启用",
+      "noConversations": "暂无会话，等待消息…",
+      "connectingHint": "连接中…",
+      "disconnectedHint": "未连接，点击右侧重试",
+      "needsReauthHint": "会话已过期，请重新扫码",
+      "tokenExpiredHint": "Token 失效，请重新配置",
+      "sessionExpiredHint": "会话失效，请重新扫码"
     }
   },
   "schedules": {

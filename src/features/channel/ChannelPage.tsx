@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
 import { MoreHorizontal } from 'lucide-react'
 import { AppDropdown } from '@/components/common/AppDropdown'
 import { requestConfirm } from '@/components/common/ConfirmDialogHost'
@@ -37,15 +39,6 @@ interface ChannelPageProps {
 
 type PlatformKey = ChannelPlatform
 
-const PLATFORM_DISPLAY_NAME: Record<PlatformKey, string> = {
-  dingtalk: '钉钉',
-  feishu: '飞书',
-  wecom: '企业微信',
-  wechat: '个人微信',
-  telegram: 'Telegram',
-  whatsapp: 'WhatsApp',
-}
-
 // eslint-disable-next-line react-refresh/only-export-components
 export const PLATFORM_LOGO_SRC: Record<PlatformKey, string> = {
   dingtalk: '/logos/dingtalk.png',
@@ -67,25 +60,25 @@ interface PlatformCardModel {
   networkHint: string | null
 }
 
-function statusMeta(state: ChannelPlatformState) {
-  if (state.capability === 'comingSoon') return { statusLabel: '未配置', statusTone: 'muted' as const }
-  if (!state.configured) return { statusLabel: '未配置', statusTone: 'muted' as const }
-  if (!state.enabled) return { statusLabel: '已配置 / 未连接', statusTone: 'muted' as const }
+function statusMeta(state: ChannelPlatformState, t: TFunction) {
+  if (state.capability === 'comingSoon') return { statusLabel: t('channel.status.unconfigured'), statusTone: 'muted' as const }
+  if (!state.configured) return { statusLabel: t('channel.status.unconfigured'), statusTone: 'muted' as const }
+  if (!state.enabled) return { statusLabel: t('channel.status.configuredOffline'), statusTone: 'muted' as const }
   switch (state.connection) {
     case 'connected':
-      return { statusLabel: '已连接', statusTone: 'success' as const }
+      return { statusLabel: t('channel.status.connected'), statusTone: 'success' as const }
     case 'connecting':
-      return { statusLabel: '连接中', statusTone: 'pending' as const }
+      return { statusLabel: t('channel.status.connecting'), statusTone: 'pending' as const }
     case 'reconnecting':
-      return { statusLabel: '重连中', statusTone: 'pending' as const }
+      return { statusLabel: t('channel.status.reconnecting'), statusTone: 'pending' as const }
     case 'configError':
-      return { statusLabel: '配置有误', statusTone: 'error' as const }
+      return { statusLabel: t('channel.status.configError'), statusTone: 'error' as const }
     case 'needsReauth':
-      return { statusLabel: '会话失效', statusTone: 'error' as const }
+      return { statusLabel: t('channel.status.sessionExpired'), statusTone: 'error' as const }
     case 'disconnected':
-      return { statusLabel: '未连接', statusTone: 'muted' as const }
+      return { statusLabel: t('channel.status.disconnected'), statusTone: 'muted' as const }
     default:
-      return { statusLabel: '未连接', statusTone: 'muted' as const }
+      return { statusLabel: t('channel.status.disconnected'), statusTone: 'muted' as const }
   }
 }
 
@@ -102,23 +95,23 @@ function statusMeta(state: ChannelPlatformState) {
  * 此时再说"网络/代理不可用"是误报。所以这里的提示只描述现象 + 列出几种
  * 可能的原因，不主观断言。
  */
-function networkHint(state: ChannelPlatformState): string | null {
+function networkHint(state: ChannelPlatformState, t: TFunction): string | null {
   if (!state.configured || !state.enabled) return null
   if (state.platform !== 'telegram' && state.platform !== 'whatsapp') return null
   const platformName = state.platform === 'telegram' ? 'Telegram' : 'WhatsApp'
   switch (state.connection) {
     case 'connecting':
-      return `正在连接 ${platformName} 服务器…`
+      return t('channel.networkHint.connecting', { name: platformName })
     case 'reconnecting':
-      return `${platformName} 连接已断开，正在重连…`
+      return t('channel.networkHint.reconnecting', { name: platformName })
     case 'disconnected':
       return state.platform === 'whatsapp'
-        ? '未连接到 WhatsApp。可能原因：网络/代理不可用、手机端 WhatsApp 离线，或主端已踢掉本设备会话（需重新扫码）'
-        : '未连接到 Telegram 服务器，请检查网络 / 代理是否可用'
+        ? t('channel.networkHint.whatsappDisconnected')
+        : t('channel.networkHint.telegramDisconnected')
     case 'needsReauth':
       return state.platform === 'whatsapp'
-        ? '与 WhatsApp 主端会话失效（常见于手机端退出登录或长时间离线），需要重新扫码配对'
-        : 'Telegram 会话失效，请重新登录'
+        ? t('channel.networkHint.whatsappNeedsReauth')
+        : t('channel.networkHint.telegramNeedsReauth')
     default:
       return null
   }
@@ -161,6 +154,7 @@ function PlatformCard({
   onRemove: () => void
   onToggle: (enabled: boolean) => void
 }) {
+  const { t } = useTranslation()
   return (
     <div className="flex min-h-[64px] items-center justify-between rounded-lg border border-border bg-card px-4 py-3">
       <div className="flex min-w-0 items-center gap-3">
@@ -181,22 +175,22 @@ function PlatformCard({
       <div className="ml-4 flex shrink-0 items-center gap-3">
         {platform.state.configured && (
           <AppDropdown
-            ariaLabel={`更多${platform.name}配置`}
+            ariaLabel={t('channel.actions.morePlatformConfig', { name: platform.name })}
             trigger={
               <button type="button" className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
                 <MoreHorizontal className="h-4 w-4" />
               </button>
             }
             items={[
-              { id: 'configure', label: '配置', onSelect: onShowDetails },
-              { id: 'remove', label: '移除', className: 'text-destructive', onSelect: onRemove },
+              { id: 'configure', label: t('channel.actions.configure'), onSelect: onShowDetails },
+              { id: 'remove', label: t('channel.actions.remove'), className: 'text-destructive', onSelect: onRemove },
             ]}
           />
         )}
         {platform.state.configured ? (
           <Switch
             checked={platform.state.enabled}
-            aria-label={platform.state.enabled ? `${platform.name}频道已启用` : `${platform.name}频道已停用`}
+            aria-label={platform.state.enabled ? t('channel.actions.enabledAria', { name: platform.name }) : t('channel.actions.disabledAria', { name: platform.name })}
             onCheckedChange={onToggle}
           />
         ) : platform.state.capability === 'available' ? (
@@ -205,13 +199,13 @@ function PlatformCard({
             size="sm"
             className="rounded-full px-4"
             onClick={onRegister}
-            aria-label={`配置${platform.name}`}
+            aria-label={t('channel.actions.configureWith', { name: platform.name })}
           >
-            配置
+            {t('channel.actions.configure')}
           </Button>
         ) : (
           <Button type="button" size="sm" className="rounded-full px-4" disabled>
-            配置
+            {t('channel.actions.configure')}
           </Button>
         )}
       </div>
@@ -220,12 +214,13 @@ function PlatformCard({
 }
 
 function ChannelHero() {
+  const { t } = useTranslation()
   return (
     <div className="flex flex-col items-center text-center">
-      <h1 className="text-4xl font-extrabold tracking-tight text-foreground">IM 频道</h1>
+      <h1 className="text-4xl font-extrabold tracking-tight text-foreground">{t('channel.heroTitle')}</h1>
       <p className="mt-5 max-w-2xl text-lg font-semibold leading-8 text-muted-foreground">
-        配置 IM 频道，让 AI 小家 接收并回复来自各平台的消息。
-        <br />频道配置信息仅存储在本地，不会上传到云端。
+        {t('channel.heroDesc')}
+        <br />{t('channel.heroPrivacy')}
       </p>
     </div>
   )
@@ -368,6 +363,7 @@ function ChannelOverview({
 }
 
 function ChannelChatView({ sessionId }: { sessionId: string }) {
+  const { t } = useTranslation()
   const conversations = useChannelStore((s) => s.conversations)
   const pushNotification = useNotificationStore((s) => s.push)
   const activeConv = conversations.find((c) => c.sessionId === sessionId)
@@ -378,14 +374,14 @@ function ChannelChatView({ sessionId }: { sessionId: string }) {
   const HIDE_WORKSPACE_PLATFORMS = new Set(['feishu', 'wechat'])
   const title = activeConv
     ? activeConv.displayName?.trim() ||
-      (activeConv.conversationType === 'group' ? '群聊' : '私聊')
+      (activeConv.conversationType === 'group' ? t('channel.chat.groupChat') : t('channel.chat.privateChat'))
     : ''
   const workspaceLabel =
     activeConv && HIDE_WORKSPACE_PLATFORMS.has(activeConv.platform)
       ? undefined
       : title || sessionId
   const platformTitle = activeConv
-    ? (PLATFORM_DISPLAY_NAME[activeConv.platform] ?? activeConv.platform)
+    ? (t(`channel.platforms.${activeConv.platform}.name`) ?? activeConv.platform)
     : ''
   const isInactiveSession = !!activeConv && !activeConv.isActiveRobot
   const { overview: teamOverview } = useTeamOverview(sessionId)
@@ -396,8 +392,8 @@ function ChannelChatView({ sessionId }: { sessionId: string }) {
     } catch (err) {
       pushNotification({
         level: 'error',
-        title: '无法打开文件',
-        message: err instanceof Error ? err.message : '打开生成文件失败。',
+        title: t('channel.errors.openFileTitle'),
+        message: err instanceof Error ? err.message : t('channel.errors.openFileMessage'),
         actions: [],
         dismissible: true,
         context: 'toast',
@@ -414,7 +410,7 @@ function ChannelChatView({ sessionId }: { sessionId: string }) {
           {isInactiveSession && (
             <div className="px-6 pb-2">
               <div className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">
-                该会话来自已下线的机器人，无法发送新消息
+                {t('channel.chat.inactiveBanner')}
               </div>
             </div>
           )}
@@ -428,6 +424,7 @@ function ChannelChatView({ sessionId }: { sessionId: string }) {
 }
 
 export function ChannelPage({ sessionId }: ChannelPageProps) {
+  const { t } = useTranslation()
   const platformsByKey = useChannelStore((s) => s.platforms)
   const loadConversations = useChannelStore((s) => s.loadConversations)
   const setEnabled = useChannelStore((s) => s.setEnabled)
@@ -560,10 +557,10 @@ export function ChannelPage({ sessionId }: ChannelPageProps) {
 
   const handleRemoveDingtalk = async () => {
     const confirmed = await requestConfirm({
-      title: '移除钉钉频道？',
-      description: '这会断开钉钉频道，并删除本地保存的 AppKey 和 AppSecret。已有聊天历史会保留。之后需要重新扫码才能再次配置。',
-      confirmLabel: '确认移除',
-      cancelLabel: '取消',
+      title: t('channel.remove.dingtalk.title'),
+      description: t('channel.remove.dingtalk.description'),
+      confirmLabel: t('channel.actions.confirmRemove'),
+      cancelLabel: t('channel.actions.cancel'),
       variant: 'destructive',
     })
     if (!confirmed) return
@@ -576,10 +573,10 @@ export function ChannelPage({ sessionId }: ChannelPageProps) {
 
   const handleRemoveFeishu = async () => {
     const confirmed = await requestConfirm({
-      title: '移除飞书频道？',
-      description: '这会断开飞书频道，并删除本地保存的 AppID 和 AppSecret。已有聊天历史会保留。之后需要重新扫码才能再次配置。',
-      confirmLabel: '确认移除',
-      cancelLabel: '取消',
+      title: t('channel.remove.feishu.title'),
+      description: t('channel.remove.feishu.description'),
+      confirmLabel: t('channel.actions.confirmRemove'),
+      cancelLabel: t('channel.actions.cancel'),
       variant: 'destructive',
     })
     if (!confirmed) return
@@ -592,10 +589,10 @@ export function ChannelPage({ sessionId }: ChannelPageProps) {
 
   const handleRemoveWecom = async () => {
     const confirmed = await requestConfirm({
-      title: '移除企业微信频道？',
-      description: '这会断开企业微信频道，并删除本地保存的 Bot ID 和 Secret。已有聊天历史会保留。',
-      confirmLabel: '确认移除',
-      cancelLabel: '取消',
+      title: t('channel.remove.wecom.title'),
+      description: t('channel.remove.wecom.description'),
+      confirmLabel: t('channel.actions.confirmRemove'),
+      cancelLabel: t('channel.actions.cancel'),
       variant: 'destructive',
     })
     if (!confirmed) return
@@ -608,10 +605,10 @@ export function ChannelPage({ sessionId }: ChannelPageProps) {
 
   const handleRemoveWechat = async () => {
     const confirmed = await requestConfirm({
-      title: '移除个人微信频道？',
-      description: '这会断开个人微信频道并删除本地保存的登录凭证。已有聊天历史会保留。之后需要重新扫码才能再次配置。',
-      confirmLabel: '确认移除',
-      cancelLabel: '取消',
+      title: t('channel.remove.wechat.title'),
+      description: t('channel.remove.wechat.description'),
+      confirmLabel: t('channel.actions.confirmRemove'),
+      cancelLabel: t('channel.actions.cancel'),
       variant: 'destructive',
     })
     if (!confirmed) return
@@ -624,10 +621,10 @@ export function ChannelPage({ sessionId }: ChannelPageProps) {
 
   const handleRemoveTelegram = async () => {
     const confirmed = await requestConfirm({
-      title: '移除 Telegram 频道？',
-      description: '会删除本地保存的 bot token 和已配对用户列表。',
-      confirmLabel: '确认移除',
-      cancelLabel: '取消',
+      title: t('channel.remove.telegram.title'),
+      description: t('channel.remove.telegram.description'),
+      confirmLabel: t('channel.actions.confirmRemove'),
+      cancelLabel: t('channel.actions.cancel'),
       variant: 'destructive',
     })
     if (!confirmed) return
@@ -640,10 +637,10 @@ export function ChannelPage({ sessionId }: ChannelPageProps) {
 
   const handleRemoveWhatsapp = async () => {
     const confirmed = await requestConfirm({
-      title: '移除 WhatsApp 频道？',
-      description: '会删除本地保存的 WhatsApp 会话和允许列表。已有聊天历史保留。',
-      confirmLabel: '确认移除',
-      cancelLabel: '取消',
+      title: t('channel.remove.whatsapp.title'),
+      description: t('channel.remove.whatsapp.description'),
+      confirmLabel: t('channel.actions.confirmRemove'),
+      cancelLabel: t('channel.actions.cancel'),
       variant: 'destructive',
     })
     if (!confirmed) return
@@ -667,60 +664,60 @@ export function ChannelPage({ sessionId }: ChannelPageProps) {
     return [
       {
         key: 'dingtalk',
-        name: PLATFORM_DISPLAY_NAME.dingtalk,
-        description: '通过钉钉机器人接收并回复用户消息',
+        name: t('channel.platforms.dingtalk.name'),
+        description: t('channel.platforms.dingtalk.description'),
         logoSrc: PLATFORM_LOGO_SRC.dingtalk,
         state: states.dingtalk,
-        networkHint: networkHint(states.dingtalk),
-        ...statusMeta(states.dingtalk),
+        networkHint: networkHint(states.dingtalk, t),
+        ...statusMeta(states.dingtalk, t),
       },
       {
         key: 'feishu',
-        name: PLATFORM_DISPLAY_NAME.feishu,
-        description: '通过飞书机器人接收并回复用户消息',
+        name: t('channel.platforms.feishu.name'),
+        description: t('channel.platforms.feishu.description'),
         logoSrc: PLATFORM_LOGO_SRC.feishu,
         state: states.feishu,
-        networkHint: networkHint(states.feishu),
-        ...statusMeta(states.feishu),
+        networkHint: networkHint(states.feishu, t),
+        ...statusMeta(states.feishu, t),
       },
       {
         key: 'wecom',
-        name: PLATFORM_DISPLAY_NAME.wecom,
-        description: '通过企业微信机器人接收并回复用户消息',
+        name: t('channel.platforms.wecom.name'),
+        description: t('channel.platforms.wecom.description'),
         logoSrc: PLATFORM_LOGO_SRC.wecom,
         state: states.wecom,
-        networkHint: networkHint(states.wecom),
-        ...statusMeta(states.wecom),
+        networkHint: networkHint(states.wecom, t),
+        ...statusMeta(states.wecom, t),
       },
       {
         key: 'wechat',
-        name: PLATFORM_DISPLAY_NAME.wechat,
-        description: '通过个人微信账号接收并回复用户消息',
+        name: t('channel.platforms.wechat.name'),
+        description: t('channel.platforms.wechat.description'),
         logoSrc: PLATFORM_LOGO_SRC.wechat,
         state: states.wechat,
-        networkHint: networkHint(states.wechat),
-        ...statusMeta(states.wechat),
+        networkHint: networkHint(states.wechat, t),
+        ...statusMeta(states.wechat, t),
       },
       {
         key: 'telegram',
-        name: PLATFORM_DISPLAY_NAME.telegram,
-        description: '通过 Telegram 机器人接收并回复用户消息',
+        name: t('channel.platforms.telegram.name'),
+        description: t('channel.platforms.telegram.description'),
         logoSrc: PLATFORM_LOGO_SRC.telegram,
         state: states.telegram,
-        networkHint: networkHint(states.telegram),
-        ...statusMeta(states.telegram),
+        networkHint: networkHint(states.telegram, t),
+        ...statusMeta(states.telegram, t),
       },
       {
         key: 'whatsapp',
-        name: PLATFORM_DISPLAY_NAME.whatsapp,
-        description: '通过 WhatsApp 机器人接收并回复用户消息',
+        name: t('channel.platforms.whatsapp.name'),
+        description: t('channel.platforms.whatsapp.description'),
         logoSrc: PLATFORM_LOGO_SRC.whatsapp,
         state: states.whatsapp,
-        networkHint: networkHint(states.whatsapp),
-        ...statusMeta(states.whatsapp),
+        networkHint: networkHint(states.whatsapp, t),
+        ...statusMeta(states.whatsapp, t),
       },
     ]
-  }, [dingtalkState, feishuState, wecomState, wechatState, telegramState, whatsappState])
+  }, [dingtalkState, feishuState, wecomState, wechatState, telegramState, whatsappState, t])
 
   return (
     <div className={sessionId ? 'h-full overflow-hidden bg-background' : 'h-full overflow-y-auto bg-background'}>
@@ -764,8 +761,8 @@ export function ChannelPage({ sessionId }: ChannelPageProps) {
       <Dialog open={registrationOpen} onOpenChange={setRegistrationOpen}>
         <DialogContent className="max-w-xl overflow-hidden rounded-xl border border-border bg-background p-0 shadow-[var(--shadow-modal)]">
           <DialogHeader className="sr-only">
-            <DialogTitle>配置钉钉</DialogTitle>
-            <DialogDescription>在钉钉中扫码完成应用注册，也可以手动填写应用凭证。</DialogDescription>
+            <DialogTitle>{t('channel.dialog.dingtalk.title')}</DialogTitle>
+            <DialogDescription>{t('channel.dialog.dingtalk.description')}</DialogDescription>
           </DialogHeader>
           <ChannelConfig
             onSaved={() => {
@@ -779,8 +776,8 @@ export function ChannelPage({ sessionId }: ChannelPageProps) {
       <Dialog open={feishuRegistrationOpen} onOpenChange={setFeishuRegistrationOpen}>
         <DialogContent className="max-w-xl overflow-hidden rounded-xl border border-border bg-background p-0 shadow-[var(--shadow-modal)]">
           <DialogHeader className="sr-only">
-            <DialogTitle>配置飞书</DialogTitle>
-            <DialogDescription>在飞书中扫码完成应用注册。</DialogDescription>
+            <DialogTitle>{t('channel.dialog.feishu.title')}</DialogTitle>
+            <DialogDescription>{t('channel.dialog.feishu.description')}</DialogDescription>
           </DialogHeader>
           <FeishuChannelConfig
             onSaved={() => {
@@ -794,8 +791,8 @@ export function ChannelPage({ sessionId }: ChannelPageProps) {
       <Dialog open={wecomRegistrationOpen} onOpenChange={setWecomRegistrationOpen}>
         <DialogContent className="max-w-xl overflow-hidden rounded-xl border border-border bg-background p-0 shadow-[var(--shadow-modal)]">
           <DialogHeader className="sr-only">
-            <DialogTitle>配置企业微信</DialogTitle>
-            <DialogDescription>填写企业微信智能机器人凭证完成频道配置。</DialogDescription>
+            <DialogTitle>{t('channel.dialog.wecom.title')}</DialogTitle>
+            <DialogDescription>{t('channel.dialog.wecom.description')}</DialogDescription>
           </DialogHeader>
           <WecomChannelConfig
             onSaved={() => {
@@ -809,8 +806,8 @@ export function ChannelPage({ sessionId }: ChannelPageProps) {
       <Dialog open={wechatRegistrationOpen} onOpenChange={setWechatRegistrationOpen}>
         <DialogContent className="max-w-xl overflow-hidden rounded-xl border border-border bg-background p-0 shadow-[var(--shadow-modal)]">
           <DialogHeader className="sr-only">
-            <DialogTitle>添加个人微信账号</DialogTitle>
-            <DialogDescription>使用微信扫码登录 iLink 个人微信账号。</DialogDescription>
+            <DialogTitle>{t('channel.dialog.wechat.title')}</DialogTitle>
+            <DialogDescription>{t('channel.dialog.wechat.description')}</DialogDescription>
           </DialogHeader>
           <WechatChannelConfig
             onSaved={() => {
@@ -824,8 +821,8 @@ export function ChannelPage({ sessionId }: ChannelPageProps) {
       <Dialog open={telegramRegistrationOpen} onOpenChange={setTelegramRegistrationOpen}>
         <DialogContent className="max-w-xl overflow-hidden rounded-xl border border-border bg-background p-0 shadow-[var(--shadow-modal)]">
           <DialogHeader className="sr-only">
-            <DialogTitle>配置 Telegram</DialogTitle>
-            <DialogDescription>输入 Bot Token 并扫码配对。</DialogDescription>
+            <DialogTitle>{t('channel.dialog.telegram.title')}</DialogTitle>
+            <DialogDescription>{t('channel.dialog.telegram.description')}</DialogDescription>
           </DialogHeader>
           <TelegramChannelConfig
             onSaved={() => {
@@ -839,8 +836,8 @@ export function ChannelPage({ sessionId }: ChannelPageProps) {
       <Dialog open={whatsappRegistrationOpen} onOpenChange={setWhatsappRegistrationOpen}>
         <DialogContent className="max-w-xl overflow-hidden rounded-xl border border-border bg-background p-0 shadow-[var(--shadow-modal)]">
           <DialogHeader className="sr-only">
-            <DialogTitle>添加 WhatsApp 账号</DialogTitle>
-            <DialogDescription>使用手机 WhatsApp 扫码登录。</DialogDescription>
+            <DialogTitle>{t('channel.dialog.whatsapp.title')}</DialogTitle>
+            <DialogDescription>{t('channel.dialog.whatsapp.description')}</DialogDescription>
           </DialogHeader>
           <WhatsappChannelConfig
             onSaved={() => {
