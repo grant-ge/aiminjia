@@ -6,6 +6,12 @@
 
 import type { ExpertTeam } from './teams'
 
+export interface ExpertAvatarStyle {
+  backgroundImage: string
+  backgroundPosition: string
+  backgroundSize: string
+}
+
 const SAFE_RE = /[\\/<>:"|?*\s]/g
 
 /** Mirrors the `safe()` helper in scripts/generate-expert-avatars.mjs. */
@@ -81,7 +87,7 @@ function normalize(s: string): string {
   return s.toLowerCase().replace(/[\s\-_]+/g, '')
 }
 
-export function getExpertAvatarUrlForAgent(team: ExpertTeam | null | undefined, agentName: string): string | null {
+function findExpertForAgent(team: ExpertTeam | null | undefined, agentName: string) {
   if (!team) return null
   const target = normalize(agentName)
   // Try strict match first (cheapest, exact UI display name).
@@ -95,6 +101,36 @@ export function getExpertAvatarUrlForAgent(team: ExpertTeam | null | undefined, 
       return nName === target || nAgent === target
     })
   }
-  if (!expert) return null
+  return expert ?? null
+}
+
+export function getExpertAvatarUrlForAgent(team: ExpertTeam | null | undefined, agentName: string): string | null {
+  if (!team) return null
+  const expert = findExpertForAgent(team, agentName)
+  if (!expert || expert.avatar?.kind === 'atlas') return null
   return getExpertAvatarUrl(team.id, expert.name)
+}
+
+function percentage(offset: number, total: number, size: number): string {
+  const span = total - size
+  if (span <= 0) return '0%'
+  return `${(offset / span) * 100}%`
+}
+
+function atlasStyle(avatar: NonNullable<ReturnType<typeof findExpertForAgent>>['avatar']): ExpertAvatarStyle | null {
+  if (!avatar || avatar.kind !== 'atlas') return null
+  return {
+    backgroundImage: `url("${avatar.url}")`,
+    backgroundPosition: `${percentage(avatar.x, avatar.atlasWidth, avatar.w)} ${percentage(avatar.y, avatar.atlasHeight, avatar.h)}`,
+    backgroundSize: `${(avatar.atlasWidth / avatar.w) * 100}% ${(avatar.atlasHeight / avatar.h) * 100}%`,
+  }
+}
+
+export function getExpertAvatarStyleForAgent(team: ExpertTeam | null | undefined, agentName: string): ExpertAvatarStyle | null {
+  return atlasStyle(findExpertForAgent(team, agentName)?.avatar)
+}
+
+export function getExpertAvatarStyle(team: ExpertTeam | null | undefined, expertName: string): ExpertAvatarStyle | null {
+  if (!team) return null
+  return atlasStyle(team.experts.find((expert) => expert.name === expertName)?.avatar)
 }

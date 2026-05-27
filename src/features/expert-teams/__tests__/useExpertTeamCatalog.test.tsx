@@ -95,4 +95,53 @@ describe('useExpertTeamCatalog', () => {
     expect(result.current.teams[0].experts[0].name).toBe('Growth Lead')
     expect(getCachedExpertTeam('remote-growth-council')?.name).toBe('Growth Council')
   })
+
+  it('maps production expert persona fields and OSS atlas avatars', async () => {
+    mocks.expertTeamTemplateCatalog.mockResolvedValue([
+      {
+        teamId: 'remote-marketing-council',
+        version: '1.0.0',
+        facilitationStyle: 'rounds',
+        displayI18n: {
+          'zh-CN': {
+            name: '营销策划团',
+            tagline: '中文副标题',
+          },
+        },
+        experts: [
+          {
+            stableName: 'brand-lead',
+            agentName: 'brand-lead',
+            name: '品牌负责人',
+            persona: '关注定位、调性、长期心智占领',
+            emoji: '🎨',
+            avatar: {
+              kind: 'atlas',
+              url: 'https://lotus-releases.oss-cn-beijing.aliyuncs.com/desktop-resources/expert-team-avatars/v1/avatar-atlas.svg',
+              x: 96,
+              y: 0,
+              w: 96,
+              h: 96,
+              atlasWidth: 672,
+              atlasHeight: 384,
+            },
+          },
+        ],
+        directorPromptI18n: {},
+      } as ExpertTeamSnapshot,
+    ])
+
+    const { result } = renderHook(() => useExpertTeamCatalog())
+
+    await waitFor(() => expect(result.current.source).toBe('remote'))
+    expect(result.current.teams[0].experts[0]).toMatchObject({
+      name: '品牌负责人',
+      agentName: 'brand-lead',
+      persona: '关注定位、调性、长期心智占领',
+      avatar: {
+        kind: 'atlas',
+        url: 'https://lotus-releases.oss-cn-beijing.aliyuncs.com/desktop-resources/expert-team-avatars/v1/avatar-atlas.svg',
+      },
+    })
+  })
 })

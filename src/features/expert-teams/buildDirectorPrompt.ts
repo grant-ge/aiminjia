@@ -23,6 +23,9 @@ function renderSnapshotPrompt(
       ?.template ?? team.snapshot?.directorPromptI18n?.['zh-CN']?.template
   if (!template) return null
   return template
+    .replaceAll('{{teamName}}', team.name)
+    .replaceAll('{{topic}}', topic)
+    .replaceAll('{{roster}}', renderRoster(team))
     .replaceAll('{teamName}', team.name)
     .replaceAll('{topic}', topic)
     .replaceAll('{roster}', renderRoster(team))

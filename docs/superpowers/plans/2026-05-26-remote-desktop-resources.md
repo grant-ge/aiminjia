@@ -8,6 +8,27 @@
 
 **Tech Stack:** Go 1.23 + Gin + GORM + MySQL + Redis in `~/lotus`; Tauri 2 + Rust + reqwest + serde in `aijia/code/src-tauri`; React 19 + Zustand + Vitest in `aijia/code/src`.
 
+## Implementation Update — 2026-05-26
+
+Desktop follow-up for remote employee templates and expert teams is implemented in the `feat/remote-desktop-resources` worktree:
+
+- Login now triggers best-effort `sync_desktop_resources` alongside builtin skill sync.
+- Employee templates and expert team templates are stored under `~/.renlijia/employee-templates` and `~/.renlijia/expert-team-templates`, sibling to global `~/.renlijia/skills`.
+- The hire wizard syncs through the unified desktop resource gateway and maps localized employee template display/prompt fields for the current UI language.
+- Expert team catalog rendering supports production manifest persona fields, director prompt templates with `{topic}` and `{{topic}}`, local language remapping, dynamic remote ids/labels, and OSS avatar atlas rendering.
+- Remote atlas avatars use one shared cached URL and CSS background positioning; packaged SVG avatars remain bootstrap fallback.
+
+Verification commands run for this desktop slice:
+
+```bash
+npm run test -- src/features/expert-teams/__tests__/buildDirectorPrompt.test.ts src/features/expert-teams/__tests__/useExpertTeamCatalog.test.tsx src/features/expert-teams/expertVisuals.test.ts src/features/auth/AuthGate.integration.test.tsx src/features/employees/templates.test.ts src/components/chat-scene/ExpertTeamWelcome.test.tsx
+npm run build
+cargo test --lib storage::aijia_home::tests::managed_resource_dirs_are_siblings_of_global_skills_dir
+cargo test --lib runtime::expert_team::store
+cargo test --lib runtime::employee::template_store
+cargo test --lib runtime::desktop_resources::sync
+```
+
 ---
 
 ## Scope Check

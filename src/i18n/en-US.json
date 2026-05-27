@@ -854,6 +854,19 @@
   "ExpertTeams": {
     "pageTitle": "Expert Teams"
   },
+  "expertTeams": {
+    "conversationTitle": "Expert Team: {{name}}",
+    "startAria": "Start {{name}}",
+    "startFailedTitle": "Cannot start expert team",
+    "startFailedMessage": "Could not create the conversation. Please try again.",
+    "members": "Members",
+    "dynamicMembers": "Facilitator picks experts for the topic",
+    "dynamicMembersLong": "The facilitator will invite 3 to 5 experts for the topic",
+    "examplesHeading": "Start with a topic:",
+    "exampleChip": "\"{{example}}\"",
+    "exampleStarting": "Starting: {{example}}…",
+    "customTopicHint": "Or type your own topic below and press Enter."
+  },
   "nav": {
     "home": "New Task",
     "employees": "Employees",

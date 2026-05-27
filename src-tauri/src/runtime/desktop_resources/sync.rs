@@ -41,8 +41,9 @@ pub async fn sync_desktop_resources(
     client: &reqwest::Client,
     base_url: &str,
     session_key: &str,
+    language: Option<&str>,
 ) -> Result<DesktopResourceIndex> {
-    let items = fetch_desktop_resource_catalog(client, base_url, session_key).await?;
+    let items = fetch_desktop_resource_catalog(client, base_url, session_key, language).await?;
     let home = AiJiaHome::from_home();
 
     for item in &items {
@@ -70,10 +71,16 @@ async fn fetch_desktop_resource_catalog(
     client: &reqwest::Client,
     base_url: &str,
     session_key: &str,
+    language: Option<&str>,
 ) -> Result<Vec<DesktopResourceItem>> {
+    let lang = if matches!(language, Some("en-US")) {
+        "en-US"
+    } else {
+        "zh-CN"
+    };
     let url = format!(
-        "{}/v1/desktop-resources?types=employee_template,expert_team_template&lang=zh-CN",
-        base_url.trim_end_matches('/')
+        "{}/v1/desktop-resources?types=employee_template,expert_team_template&lang={lang}",
+        base_url.trim_end_matches('/'),
     );
     let response = client
         .get(&url)

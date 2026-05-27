@@ -9,13 +9,14 @@ use tauri::State;
 #[tauri::command]
 pub async fn sync_desktop_resources(
     auth_manager: State<'_, Arc<AuthManager>>,
+    language: Option<String>,
 ) -> Result<DesktopResourceIndex, String> {
     let session_key = auth_manager
         .get_session_key()
         .await
         .map_err(|err| err.to_string())?;
     let client = reqwest::Client::new();
-    sync::sync_desktop_resources(&client, BASE_URL, &session_key)
+    sync::sync_desktop_resources(&client, BASE_URL, &session_key, language.as_deref())
         .await
         .map_err(|err| err.to_string())
 }

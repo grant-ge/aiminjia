@@ -364,19 +364,22 @@ const RESOURCE_CONFIG_KIND_BY_ID: Record<string, ResourceConfigKind> = {
  * during the bootstrap → backend transition. Once PR5 deletes the
  * fallback constants, this preference goes away.
  */
-export function snapshotToTemplate(snap: EmployeeTemplateSnapshot): EmployeeTemplate {
+export function snapshotToTemplate(snap: EmployeeTemplateSnapshot, language?: string): EmployeeTemplate {
+  const lang = language === 'en-US' ? 'en-US' : 'zh-CN'
+  const display = snap.displayI18n?.[lang] ?? snap.displayI18n?.['zh-CN']
+  const prompt = snap.promptI18n?.[lang] ?? snap.promptI18n?.['zh-CN']
   const builtin = BUILTIN_TEMPLATES.find((t) => t.templateId === snap.templateId)
-  if (builtin) return builtin
+  if (builtin && !display && !prompt) return builtin
   return {
     templateId: snap.templateId,
-    avatar: snap.avatar,
-    name: snap.name,
-    role: snap.role,
-    description: snap.description,
-    toolWhitelist: snap.toolWhitelist,
+    avatar: snap.avatar || builtin?.avatar || '',
+    name: display?.name || snap.name || builtin?.name || snap.templateId,
+    role: display?.role || snap.role || builtin?.role || '',
+    description: display?.description || snap.description || builtin?.description || '',
+    toolWhitelist: snap.toolWhitelist.length > 0 ? snap.toolWhitelist : (builtin?.toolWhitelist ?? []),
     cron: snap.cron === '' ? null : snap.cron,
-    systemPromptExtra: snap.systemPromptExtra,
-    badge: snap.badge,
+    systemPromptExtra: prompt?.systemPromptExtra || snap.systemPromptExtra || builtin?.systemPromptExtra || '',
+    badge: display?.badge || snap.badge || builtin?.badge || '',
     defaultSkillId: snap.defaultSkillId === '' ? null : snap.defaultSkillId,
     requiresAttachment: snap.requiresAttachment,
     resourceConfigKind: RESOURCE_CONFIG_KIND_BY_ID[snap.templateId] ?? 'none',

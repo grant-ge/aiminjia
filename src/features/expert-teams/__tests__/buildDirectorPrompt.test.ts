@@ -72,4 +72,35 @@ describe('buildDirectorPrompt', () => {
 
     expect(prompt).toContain('Facilitate Strategy Simulation Team for market expansion')
   })
+
+  it('replaces production double-brace topic placeholders in snapshot prompts', () => {
+    const team: ExpertTeam = {
+      id: 'remote-marketing-council',
+      name: 'Marketing Planning Council',
+      emoji: 'M',
+      tagline: 'Remote marketing team',
+      experts: [],
+      examples: [],
+      composerPlaceholder: '',
+      facilitationStyle: 'rounds',
+      snapshot: {
+        teamId: 'remote-marketing-council',
+        version: '1',
+        facilitationStyle: 'rounds',
+        displayI18n: {
+          'zh-CN': { name: '营销策划团' },
+        },
+        experts: [],
+        directorPromptI18n: {
+          'zh-CN': {
+            template: '围绕「{{topic}}」主持「{{teamName}}」\n{{roster}}',
+          },
+        },
+      },
+    }
+
+    const prompt = buildDirectorPrompt(team, '新品发布会', 'zh-CN')
+
+    expect(prompt).toBe('围绕「新品发布会」主持「Marketing Planning Council」\n（待主持人按议题召集）')
+  })
 })

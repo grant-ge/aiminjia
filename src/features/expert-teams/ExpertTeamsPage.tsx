@@ -1,5 +1,6 @@
 // code/src/features/expert-teams/ExpertTeamsPage.tsx
 import { useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { PageSectionShell } from '@/components/shell/PageSectionShell'
 import { PageTopBar } from '@/components/shell/PageTopBar'
 import { createConversation, renameConversation } from '@/lib/tauri'
@@ -12,6 +13,7 @@ import { setExpertTeam } from './expertTeamRegistry'
 import { useExpertTeamCatalog } from './useExpertTeamCatalog'
 
 export function ExpertTeamsPage() {
+  const { t } = useTranslation()
   const setRoute = useUiStore((s) => s.setRoute)
   const setSidebarTab = useUiStore((s) => s.setSidebarTab)
   const pushNotification = useNotificationStore((s) => s.push)
@@ -31,7 +33,7 @@ export function ExpertTeamsPage() {
     }
     try {
       const conversationId = await createConversation()
-      const title = `专家团: ${team.name}`
+      const title = t('expertTeams.conversationTitle', { name: team.name })
       // Optimistically inject into chatStore FIRST so the sidebar shows the new
       // conversation immediately. The backend `conversation:created` event will
       // refresh the list anyway, but it can land after the user has navigated
@@ -62,15 +64,15 @@ export function ExpertTeamsPage() {
       // ExpertTeamBanner on the chat page would flash empty for a beat.
       // setExpertTeam also seeds the id cache so useExpertTeamForConversation
       // hits synchronously on the first render of ChatPage.
-      await setExpertTeam(conversationId, id)
+      await setExpertTeam(conversationId, id, team.name)
       // Switch sidebar to 专家团 tab so the user lands in the right section.
       setSidebarTab('expert-team')
       setRoute({ kind: 'chat', conversationId })
     } catch (err) {
       pushNotification({
         level: 'error',
-        title: '无法启动专家团',
-        message: err instanceof Error ? err.message : '创建会话失败，请重试。',
+        title: t('expertTeams.startFailedTitle'),
+        message: err instanceof Error ? err.message : t('expertTeams.startFailedMessage'),
         actions: [],
         dismissible: true,
         context: 'toast',
@@ -82,7 +84,7 @@ export function ExpertTeamsPage() {
 
   return (
     <PageSectionShell
-      topBar={<PageTopBar variant="title" title="专家团" />}
+      topBar={<PageTopBar variant="title" title={t('nav.expertTeams')} />}
       maxWidthClass="max-w-[1024px]"
     >
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

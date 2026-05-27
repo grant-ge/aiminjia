@@ -36,6 +36,7 @@ const tauriMock = vi.hoisted(() => ({
   isAgentBusy: vi.fn().mockResolvedValue([]),
   cloudLogout: vi.fn().mockResolvedValue(undefined),
   syncBuiltinSkills: vi.fn().mockResolvedValue({ installed: [], skipped: [] }),
+  syncDesktopResources: vi.fn().mockResolvedValue({ resources: {} }),
   getLastBrand: vi.fn().mockResolvedValue(null),
   saveLastBrand: vi.fn().mockResolvedValue(undefined),
 }))
@@ -73,6 +74,10 @@ describe('AuthGate', () => {
     tauriMock.updateSettings.mockResolvedValue(undefined)
     tauriMock.getConversations.mockResolvedValue([])
     tauriMock.isAgentBusy.mockResolvedValue([])
+    tauriMock.syncBuiltinSkills.mockResolvedValue({ installed: [], skipped: [] })
+    tauriMock.syncDesktopResources.mockResolvedValue({ resources: {} })
+    tauriMock.syncBuiltinSkills.mockClear()
+    tauriMock.syncDesktopResources.mockClear()
 
     useAuthStore.setState({
       isLoggedIn: false,
@@ -173,5 +178,26 @@ describe('AuthGate', () => {
     // 关键回归点：不再把 cloudModel 写回 settings —— 网关按协议+优先级
     // 路由，桌面端不该再固化用户的"第一次选择"。
     expect(tauriMock.updateSettings).not.toHaveBeenCalled()
+  })
+
+  it('登录后同步技能和远程桌面资源', async () => {
+    useAuthStore.setState({
+      isLoggedIn: true,
+      user: { id: 1, name: 'Test', username: 'test' },
+      tenant: { id: 2, name: 'Tenant', balance: '0' },
+      cloudModels: [],
+      selectedCloudModel: null,
+      redirectFrom: null,
+      isAuthPending: false,
+    })
+
+    render(
+      <AuthGate>
+        <div>APP SHELL</div>
+      </AuthGate>,
+    )
+
+    await waitFor(() => expect(tauriMock.syncBuiltinSkills).toHaveBeenCalled())
+    expect(tauriMock.syncDesktopResources).toHaveBeenCalled()
   })
 })

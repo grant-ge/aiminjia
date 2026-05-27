@@ -73,16 +73,16 @@ impl AiJiaHome {
         self.root.join("users")
     }
 
-    /// `~/.renlijia/employee-templates-cache/` — global, content-addressed
-    /// cache for digital-employee templates downloaded from lotus OPS. Not
+    /// `~/.renlijia/employee-templates/` — global, managed resource storage
+    /// for digital-employee templates downloaded from lotus. Not
     /// scoped to user — all users on this machine share the same immutable
     /// template versions (cf. `lotus/docs/superpowers/specs/2026-05-10-employee-templates-as-a-service.md` §5).
     pub fn employee_templates_cache_dir(&self) -> PathBuf {
-        self.root.join("employee-templates-cache")
+        self.root.join("employee-templates")
     }
 
     pub fn expert_team_templates_cache_dir(&self) -> PathBuf {
-        self.root.join("expert-team-templates-cache")
+        self.root.join("expert-team-templates")
     }
 
     pub fn user_dir(&self, scope: &UserScope) -> PathBuf {
@@ -370,6 +370,22 @@ mod tests {
             Some("renlijia-runtimes")
         );
         assert!(!home.runtimes_dir().starts_with(tmp.path()));
+    }
+
+    #[test]
+    fn managed_resource_dirs_are_siblings_of_global_skills_dir() {
+        let tmp = TempDir::new().unwrap();
+        let home = AiJiaHome::from_path(tmp.path().to_path_buf());
+
+        assert_eq!(home.skills_dir(), tmp.path().join("skills"));
+        assert_eq!(
+            home.employee_templates_cache_dir(),
+            tmp.path().join("employee-templates")
+        );
+        assert_eq!(
+            home.expert_team_templates_cache_dir(),
+            tmp.path().join("expert-team-templates")
+        );
     }
 
     #[test]

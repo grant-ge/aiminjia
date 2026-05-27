@@ -744,6 +744,7 @@ mod tests {
                 requires_attachment: serde_json::Value::Null,
                 resource_config_schema: serde_json::Value::Null,
                 resource_config_ui: serde_json::Value::Null,
+                extra: std::collections::BTreeMap::new(),
             };
             fs::write(
                 tid_dir.join(format!("{version}.json")),

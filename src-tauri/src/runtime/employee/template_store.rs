@@ -27,6 +27,7 @@
 //! the redundant fields.
 
 use std::cmp::Ordering;
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -103,6 +104,11 @@ pub struct TemplateSnapshot {
     pub resource_config_schema: serde_json::Value,
     #[serde(default)]
     pub resource_config_ui: serde_json::Value,
+    /// Forward-compatible fields such as displayI18n/promptI18n/schemaI18n.
+    /// Keep them flattened so downloaded manifests round-trip byte shape to
+    /// the frontend instead of losing localized payloads during cache writes.
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, serde_json::Value>,
 }
 
 impl TemplateSnapshot {
@@ -720,6 +726,7 @@ mod tests {
             requires_attachment: serde_json::Value::Null,
             resource_config_schema: serde_json::json!({}),
             resource_config_ui: serde_json::json!({}),
+            extra: BTreeMap::new(),
         };
 
         let r1 = ensure_instance_snapshot(&inst, &snap, "bootstrap").unwrap();
@@ -753,6 +760,7 @@ mod tests {
             requires_attachment: serde_json::Value::Null,
             resource_config_schema: serde_json::Value::Null,
             resource_config_ui: serde_json::Value::Null,
+            extra: BTreeMap::new(),
         };
         ensure_instance_snapshot(&inst, &snap, "bootstrap").unwrap();
         let read = read_instance_snapshot(&inst).unwrap().unwrap();
@@ -777,6 +785,7 @@ mod tests {
             requires_attachment: serde_json::Value::Null,
             resource_config_schema: serde_json::Value::Null,
             resource_config_ui: serde_json::Value::Null,
+            extra: BTreeMap::new(),
         }
     }
 
@@ -882,6 +891,7 @@ mod tests {
             requires_attachment: serde_json::Value::Null,
             resource_config_schema: serde_json::Value::Null,
             resource_config_ui: serde_json::Value::Null,
+            extra: BTreeMap::new(),
         };
         ensure_instance_snapshot(&inst, &snap, "bootstrap").unwrap();
 
@@ -967,6 +977,7 @@ mod tests {
             requires_attachment: serde_json::Value::Null,
             resource_config_schema: serde_json::Value::Null,
             resource_config_ui: serde_json::Value::Null,
+            extra: BTreeMap::new(),
         };
         let path = tid_dir.join("9.9.json");
         fs::write(&path, serde_json::to_string_pretty(&cached).unwrap()).unwrap();

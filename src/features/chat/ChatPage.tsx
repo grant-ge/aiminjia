@@ -7,7 +7,7 @@ import { ChatTopBar } from '@/components/shell/ChatTopBar'
 import { TeamChatDrawer } from '@/components/team/TeamChatDrawer'
 import { TeamVisualProvider } from '@/components/team/TeamVisualContext'
 import { useExpertTeamForConversation } from '@/features/expert-teams/expertTeamRegistry'
-import { getCachedExpertTeam } from '@/features/expert-teams/useExpertTeamCatalog'
+import { getCachedExpertTeam, useExpertTeamCatalog } from '@/features/expert-teams/useExpertTeamCatalog'
 import { useChat } from '@/hooks/useChat'
 import { useTeamOverview } from '@/hooks/useTeamOverview'
 import { useChatStore } from '@/stores/chatStore'
@@ -47,7 +47,10 @@ export function ChatPage({ conversationId }: ChatPageProps) {
   const employee = useEmployeeById(employeeId)
   const { overview: teamOverview } = useTeamOverview(activeConversationId)
   const expertTeamId = useExpertTeamForConversation(conversationId)
-  const expertTeam = expertTeamId ? getCachedExpertTeam(expertTeamId) : undefined
+  const { teams: expertTeams } = useExpertTeamCatalog()
+  const expertTeam = expertTeamId
+    ? expertTeams.find((team) => team.id === expertTeamId) ?? getCachedExpertTeam(expertTeamId)
+    : undefined
 
   const handleOpenPreviewTarget = async (target: PreviewTarget) => {
     try {

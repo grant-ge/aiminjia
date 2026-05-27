@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useChat, type PendingFileInfo } from '@/hooks/useChat'
 import { buildDirectorPrompt } from '@/features/expert-teams/buildDirectorPrompt'
 import type { ExpertTeam } from '@/features/expert-teams/teams'
-import { getExpertAvatarUrl } from '@/features/expert-teams/expertAvatar'
+import { getExpertAvatarStyle, getExpertAvatarUrl } from '@/features/expert-teams/expertAvatar'
 import { getExpertTeamLogo } from '@/features/expert-teams/teamLogo'
 import { useSettingsStore } from '@/stores/settingsStore'
 
@@ -12,7 +12,7 @@ interface ExpertTeamWelcomeProps {
 }
 
 export function ExpertTeamWelcome({ team }: ExpertTeamWelcomeProps) {
-  const { i18n } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { sendUserMessage } = useChat()
   const [picking, setPicking] = useState<string | null>(null)
   const chatWidthMode = useSettingsStore((s) => s.chatWidthMode ?? 'full')
@@ -55,11 +55,12 @@ export function ExpertTeamWelcome({ team }: ExpertTeamWelcomeProps) {
       </div>
 
       <div className="w-full rounded-lg border border-border bg-card px-4 py-3 text-left">
-        <div className="text-xs text-muted-foreground">团队成员</div>
+        <div className="text-xs text-muted-foreground">{t('expertTeams.members')}</div>
         {team.experts.length > 0 ? (
           <div className="mt-2 flex flex-wrap gap-2">
             {team.experts.map((expert) => {
               const avatarUrl = getExpertAvatarUrl(team.id, expert.name)
+              const avatarStyle = getExpertAvatarStyle(team, expert.name)
               return (
                 <span
                   key={expert.name}
@@ -67,7 +68,13 @@ export function ExpertTeamWelcome({ team }: ExpertTeamWelcomeProps) {
                   title={expert.persona}
                 >
                   <span className="flex h-5 w-5 items-center justify-center overflow-hidden rounded-full bg-muted text-xs">
-                    {avatarUrl ? <img src={avatarUrl} alt="" className="h-full w-full object-cover" /> : expert.emoji}
+                    {avatarStyle ? (
+                      <span aria-hidden className="h-full w-full bg-no-repeat" style={avatarStyle} />
+                    ) : avatarUrl ? (
+                      <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      expert.emoji
+                    )}
                   </span>
                   {expert.name}
                 </span>
@@ -75,12 +82,12 @@ export function ExpertTeamWelcome({ team }: ExpertTeamWelcomeProps) {
             })}
           </div>
         ) : (
-          <div className="mt-1 text-sm text-foreground">主持人将按议题召集 3-5 位专家</div>
+          <div className="mt-1 text-sm text-foreground">{t('expertTeams.dynamicMembersLong')}</div>
         )}
       </div>
 
       <div className="w-full space-y-2">
-        <div className="text-sm font-medium text-foreground">点击一个议题直接开始：</div>
+        <div className="text-sm font-medium text-foreground">{t('expertTeams.examplesHeading')}</div>
         <ul className="space-y-1.5">
           {team.examples.map((example) => {
             const isPicking = picking === example
@@ -92,7 +99,9 @@ export function ExpertTeamWelcome({ team }: ExpertTeamWelcomeProps) {
                   onClick={() => void handlePick(example)}
                   className="w-full rounded-md border border-border bg-card px-3 py-2 text-left text-sm text-foreground transition-colors hover:border-primary/50 hover:bg-accent/30 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {isPicking ? `正在启动：${example}…` : `「${example}」`}
+                  {isPicking
+                    ? t('expertTeams.exampleStarting', { example })
+                    : t('expertTeams.exampleChip', { example })}
                 </button>
               </li>
             )
@@ -101,7 +110,7 @@ export function ExpertTeamWelcome({ team }: ExpertTeamWelcomeProps) {
       </div>
 
       <p className="text-xs text-muted-foreground">
-        或在下方输入你自己的议题，回车发送。
+        {t('expertTeams.customTopicHint')}
       </p>
     </div>
   )

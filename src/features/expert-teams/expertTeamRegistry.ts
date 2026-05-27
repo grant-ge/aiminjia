@@ -23,6 +23,7 @@ import {
 } from '@/lib/tauri'
 import { useChatStore } from '@/stores/chatStore'
 import { EXPERT_TEAMS, type ExpertTeamId } from './teams'
+import { getCachedExpertTeam } from './useExpertTeamCatalog'
 
 // convId → ExpertTeamId | null (null = 已查过，不是专家团；undefined = 还没查)
 const cache = new Map<string, ExpertTeamId | null>()
@@ -31,7 +32,7 @@ type Subscriber = (teamId: ExpertTeamId | null) => void
 const subscribers = new Map<string, Set<Subscriber>>()
 
 function labelFor(teamId: ExpertTeamId): string {
-  return EXPERT_TEAMS.find((t) => t.id === teamId)?.name ?? teamId
+  return getCachedExpertTeam(teamId)?.name ?? EXPERT_TEAMS.find((t) => t.id === teamId)?.name ?? teamId
 }
 
 function notify(convId: string, teamId: ExpertTeamId | null) {
@@ -70,8 +71,10 @@ async function fetchTeamId(conversationId: string): Promise<ExpertTeamId | null>
 export async function setExpertTeam(
   conversationId: string,
   teamId: ExpertTeamId,
+  sourceLabel?: string,
 ): Promise<void> {
   if (!teamId.trim()) return
+  const label = sourceLabel ?? labelFor(teamId)
   // Seed cache so synchronous readers (getExpertTeam) see the id immediately.
   cache.set(conversationId, teamId)
   notify(conversationId, teamId)
@@ -79,12 +82,12 @@ export async function setExpertTeam(
   useChatStore.setState((state) => ({
     conversations: state.conversations.map((c) =>
       c.id === conversationId
-        ? { ...c, kind: 'expertTeam' as const, sourceLabel: labelFor(teamId) }
+        ? { ...c, kind: 'expertTeam' as const, sourceLabel: label }
         : c,
     ),
   }))
   try {
-    await setConversationExpertTeam(conversationId, teamId, labelFor(teamId))
+    await setConversationExpertTeam(conversationId, teamId, label)
   } catch (err) {
     console.warn('[expertTeamRegistry] setExpertTeam IPC failed:', err)
   }

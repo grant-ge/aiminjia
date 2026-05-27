@@ -2375,18 +2375,50 @@ export interface EmployeeTemplateSnapshot {
   requiresAttachment: { accept: string; min: number; max: number } | null
   resourceConfigSchema: Record<string, unknown> | null
   resourceConfigUI: Record<string, unknown> | null
+  displayI18n?: Record<string, EmployeeTemplateDisplayI18n>
+  promptI18n?: Record<string, EmployeeTemplatePromptI18n>
+  schemaI18n?: Record<string, unknown>
+  skillIds?: string[]
+}
+
+export interface EmployeeTemplateDisplayI18n {
+  name?: string
+  role?: string
+  description?: string
+  badge?: string
+}
+
+export interface EmployeeTemplatePromptI18n {
+  systemPromptExtra?: string
 }
 
 export interface LocalizedExpertTeamDisplay {
   name: string
+  description?: string
   tagline?: string
   examples?: string[]
   composerPlaceholder?: string
+  emoji?: string
+}
+
+export interface ExpertAvatarAtlas {
+  kind: 'atlas'
+  url: string
+  x: number
+  y: number
+  w: number
+  h: number
+  atlasWidth: number
+  atlasHeight: number
 }
 
 export interface ExpertPersonaSnapshot {
   stableName: string
+  agentName?: string
+  name?: string
+  persona?: string
   emoji?: string
+  avatar?: ExpertAvatarAtlas | null
   displayI18n?: Record<string, { name: string }>
   promptI18n?: Record<string, { persona: string }>
 }
@@ -2563,8 +2595,8 @@ export function expertTeamUpgradeConversation(conversationId: string, targetVers
   return invoke<void>('expert_team_upgrade_conversation', { conversationId, targetVersion })
 }
 
-export function syncDesktopResources(): Promise<DesktopResourceIndex> {
-  return invoke<DesktopResourceIndex>('sync_desktop_resources')
+export function syncDesktopResources(language?: string): Promise<DesktopResourceIndex> {
+  return invoke<DesktopResourceIndex>('sync_desktop_resources', { language: language ?? null })
 }
 
 export function getDesktopResourceStatus(): Promise<DesktopResourceIndex> {

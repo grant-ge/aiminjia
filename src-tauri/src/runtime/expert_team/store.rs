@@ -11,20 +11,45 @@ use crate::runtime::desktop_resources::catalog::compare_versions;
 #[serde(rename_all = "camelCase")]
 pub struct LocalizedText {
     pub name: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub description: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub tagline: String,
     #[serde(default)]
     pub examples: Vec<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub composer_placeholder: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub emoji: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ExpertAvatarSnapshot {
+    pub kind: String,
+    pub url: String,
+    pub x: u32,
+    pub y: u32,
+    pub w: u32,
+    pub h: u32,
+    pub atlas_width: u32,
+    pub atlas_height: u32,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ExpertPersonaSnapshot {
     pub stable_name: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub agent_name: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub name: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub persona: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub emoji: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avatar: Option<ExpertAvatarSnapshot>,
     #[serde(default)]
     pub display_i18n: BTreeMap<String, BTreeMap<String, String>>,
     #[serde(default)]

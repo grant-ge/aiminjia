@@ -66,4 +66,37 @@ describe('snapshotToTemplate', () => {
     expect(out.cron).toBeNull()
     expect(out.defaultSkillId).toBeNull()
   })
+
+  it('uses localized remote fields for builtin templates when language changes', () => {
+    const snap = makeSnapshot({
+      templateId: 'builtin:xiaoyuan',
+      displayI18n: {
+        'zh-CN': {
+          name: '小研',
+          role: '行业/竞品调研员',
+          description: '中文描述',
+          badge: '中文徽章',
+        },
+        'en-US': {
+          name: 'Research Analyst',
+          role: 'Industry researcher',
+          description: 'English description',
+          badge: 'Ready to use',
+        },
+      },
+      promptI18n: {
+        'en-US': {
+          systemPromptExtra: 'You are an industry research analyst.',
+        },
+      },
+    } as unknown as Partial<EmployeeTemplateSnapshot>)
+
+    const out = snapshotToTemplate(snap, 'en-US')
+
+    expect(out.name).toBe('Research Analyst')
+    expect(out.role).toBe('Industry researcher')
+    expect(out.description).toBe('English description')
+    expect(out.badge).toBe('Ready to use')
+    expect(out.systemPromptExtra).toBe('You are an industry research analyst.')
+  })
 })

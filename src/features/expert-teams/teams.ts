@@ -9,6 +9,19 @@ export type ExpertTeamId = string
 
 export type FacilitationStyle = 'rounds' | 'debate' | 'open'
 
+export interface ExpertAvatarAtlas {
+  kind: 'atlas'
+  url: string
+  x: number
+  y: number
+  w: number
+  h: number
+  atlasWidth: number
+  atlasHeight: number
+}
+
+export type ExpertAvatar = ExpertAvatarAtlas
+
 export interface ExpertPersona {
   /** 角色名，会被注入 sub-agent system prompt */
   name: string
@@ -22,6 +35,7 @@ export interface ExpertPersona {
    * 升级为真人头像（向 SubAgentResultCard 传 avatarUrl 即可）。
    */
   emoji: string
+  avatar?: ExpertAvatar | null
 }
 
 export interface ExpertTeam {
@@ -168,13 +182,14 @@ export function snapshotToExpertTeam(snapshot: ExpertTeamSnapshot, language?: st
   return {
     id: snapshot.teamId,
     name: display.name,
-    emoji: snapshot.experts[0]?.emoji ?? '🧠',
+    emoji: display.emoji || snapshot.experts[0]?.emoji || '🧠',
     tagline: display.tagline ?? '',
     experts: snapshot.experts.map((expert) => ({
-      name: expert.displayI18n?.[lang]?.name ?? expert.displayI18n?.['zh-CN']?.name ?? expert.stableName,
-      agentName: expert.stableName,
-      persona: expert.promptI18n?.[lang]?.persona ?? expert.promptI18n?.['zh-CN']?.persona ?? '',
-      emoji: expert.emoji ?? '🧠',
+      name: expert.displayI18n?.[lang]?.name || expert.displayI18n?.['zh-CN']?.name || expert.name || expert.stableName,
+      agentName: expert.agentName || expert.stableName,
+      persona: expert.promptI18n?.[lang]?.persona || expert.promptI18n?.['zh-CN']?.persona || expert.persona || '',
+      emoji: expert.emoji || '🧠',
+      avatar: expert.avatar ?? null,
     })),
     examples: display.examples ?? [],
     composerPlaceholder: display.composerPlaceholder ?? '',

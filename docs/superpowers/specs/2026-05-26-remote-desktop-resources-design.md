@@ -1,7 +1,7 @@
 # Remote Desktop Resources — Skills, Employees, Expert Teams
 
 **Date**: 2026-05-26
-**Status**: Design for review
+**Status**: Implemented for Phase 1 desktop sync slice
 **Scope**: AIjia desktop + Lotus api-gateway / ops-portal / shared models
 
 ## 1. Summary
@@ -17,6 +17,39 @@ The design is to unify the publishing and discovery layer, not the resource cont
 Long term, all three resource types support `public` and `tenant` scopes. Phase 1 only implements platform OPS publishing for `public` resources. Tenant-scoped publishing is reserved in schema and contracts but not exposed in UI or API flows.
 
 All remote employee and expert-team resources must support both Chinese and English for display text and runtime prompts. Existing instances freeze the version they were created with and surface manual upgrade prompts when newer versions are available.
+
+## 1.1 Desktop Implementation Update
+
+The desktop client now treats remote digital employee templates and expert team templates as managed global resources, stored as siblings of the global skills directory:
+
+```text
+~/.renlijia/skills
+~/.renlijia/employee-templates
+~/.renlijia/expert-team-templates
+```
+
+On login, the desktop runs best-effort sync for both builtin skills and remote desktop resources. Sync uses the session-key protected Lotus gateway endpoint and passes the current UI language (`zh-CN` or `en-US`) for catalog display projection. A sync failure does not block login; local cache and bootstrap resources remain usable.
+
+Digital employee templates are listed from the local merged catalog in the hire wizard. Remote templates are ready to hire after sync; the desktop does not expose install/uninstall controls for employee templates. Existing hired employee instances remain user data and continue to freeze the exact template snapshot they were created with.
+
+Expert teams are also listed from the local merged catalog with bootstrap fallback. Remote manifests can provide production fields (`stableName`, `agentName`, `name`, `persona`) plus `displayI18n`, `promptI18n`, and `directorPromptI18n`. Language switching remaps display names, examples, composer placeholders, and director prompt templates locally without another network request.
+
+Expert avatars are expected to use a shared OSS atlas when provided by the manifest:
+
+```json
+{
+  "kind": "atlas",
+  "url": "https://lotus-releases.oss-cn-beijing.aliyuncs.com/desktop-resources/expert-team-avatars/v1/avatar-atlas.svg",
+  "x": 96,
+  "y": 0,
+  "w": 96,
+  "h": 96,
+  "atlasWidth": 672,
+  "atlasHeight": 384
+}
+```
+
+The frontend renders atlas entries through CSS `background-image`, `background-size`, and `background-position`, so all experts in the current atlas share a single browser-cached request. The older packaged SVG avatars remain only as bootstrap fallback for built-in teams.
 
 ## 2. Decisions
 

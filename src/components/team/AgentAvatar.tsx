@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils'
-import { getExpertAvatarUrlForAgent } from '@/features/expert-teams/expertAvatar'
+import { getExpertAvatarStyleForAgent, getExpertAvatarUrlForAgent } from '@/features/expert-teams/expertAvatar'
 import { getAgentIdentity } from './agentIdentity'
 import { useTeamVisualContext } from './TeamVisualContext'
 
@@ -19,6 +19,7 @@ export function AgentAvatar({ name, size = 'md', className }: AgentAvatarProps) 
   const id = getAgentIdentity(name)
   const team = useTeamVisualContext()
   const expertAvatarUrl = getExpertAvatarUrlForAgent(team, name)
+  const expertAvatarStyle = getExpertAvatarStyleForAgent(team, name)
   return (
     <span
       className={cn(
@@ -30,7 +31,9 @@ export function AgentAvatar({ name, size = 'md', className }: AgentAvatarProps) 
       aria-label={name}
       title={name}
     >
-      {expertAvatarUrl ? (
+      {expertAvatarStyle ? (
+        <span aria-hidden className="h-full w-full rounded-full bg-no-repeat" style={expertAvatarStyle} />
+      ) : expertAvatarUrl ? (
         <img src={expertAvatarUrl} alt="" className="h-full w-full rounded-full object-cover" />
       ) : (
         id.initials

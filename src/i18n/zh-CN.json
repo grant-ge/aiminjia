@@ -854,6 +854,19 @@
   "ExpertTeams": {
     "pageTitle": "专家团"
   },
+  "expertTeams": {
+    "conversationTitle": "专家团: {{name}}",
+    "startAria": "启动 {{name}}",
+    "startFailedTitle": "无法启动专家团",
+    "startFailedMessage": "创建会话失败，请重试。",
+    "members": "团队成员",
+    "dynamicMembers": "主持人按议题召集",
+    "dynamicMembersLong": "主持人将按议题召集 3-5 位专家",
+    "examplesHeading": "点击一个议题直接开始：",
+    "exampleChip": "「{{example}}」",
+    "exampleStarting": "正在启动：{{example}}…",
+    "customTopicHint": "或在下方输入你自己的议题，回车发送。"
+  },
   "nav": {
     "home": "新任务",
     "employees": "数字员工",

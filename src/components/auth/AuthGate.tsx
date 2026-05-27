@@ -5,7 +5,8 @@ import { useBrandingStore } from '@/stores/brandingStore'
 import { useChat } from '@/hooks/useChat'
 import { useUiStore } from '@/stores/uiStore'
 import { useSkillStore } from '@/stores/skillStore'
-import { syncBuiltinSkills } from '@/lib/tauri'
+import i18n from '@/i18n'
+import { syncBuiltinSkills, syncDesktopResources } from '@/lib/tauri'
 
 import { FullscreenLoader } from './FullscreenLoader'
 import { LoginPage } from './LoginPage'
@@ -49,6 +50,11 @@ export function AuthGate({ children }: PropsWithChildren) {
         })
         .catch((err) => {
           console.warn('[builtin-skills] sync failed:', err)
+        })
+
+      syncDesktopResources(i18n.language)
+        .catch((err) => {
+          console.warn('[desktop-resources] sync failed:', err)
         })
     }
   }, [isLoggedIn, loadConversations])

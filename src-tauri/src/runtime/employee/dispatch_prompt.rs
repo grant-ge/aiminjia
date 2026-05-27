@@ -749,6 +749,7 @@ mod tests {
             requires_attachment: serde_json::Value::Null,
             resource_config_schema: serde_json::Value::Null,
             resource_config_ui: serde_json::Value::Null,
+            extra: std::collections::BTreeMap::new(),
         };
         ensure_instance_snapshot(&root.join(&e.id), &snap, "bootstrap").unwrap();
 
@@ -956,6 +957,7 @@ mod tests {
             }),
             resource_config_schema: serde_json::Value::Null,
             resource_config_ui: serde_json::Value::Null,
+            extra: std::collections::BTreeMap::new(),
         };
         ensure_instance_snapshot(&root.join(&e.id), &snap, "bootstrap").unwrap();
         let p = build_dispatch_prompt(&e, "[按需派活]", None, None, Some(root));
@@ -994,6 +996,7 @@ mod tests {
             requires_attachment: serde_json::Value::Null,
             resource_config_schema: serde_json::Value::Null,
             resource_config_ui: serde_json::Value::Null,
+            extra: std::collections::BTreeMap::new(),
         };
         ensure_instance_snapshot(&root.join(&e.id), &snap, "bootstrap").unwrap();
         let p = build_dispatch_prompt(&e, "[按需派活]", None, None, Some(root));

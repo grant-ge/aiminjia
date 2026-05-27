@@ -4,7 +4,7 @@ import {
   employeeCreate,
   employeeIndexKnowledgeAsync,
   employeeTemplateCatalog,
-  employeeTemplateRefresh,
+  syncDesktopResources,
   type EmployeeTemplateSnapshot,
   type PendingKnowledgeSource,
 } from '@/lib/tauri'
@@ -43,7 +43,7 @@ interface HireWizardProps {
 }
 
 export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [step, setStep] = useState<1 | 2 | 3>(1)
   const [selected, setSelected] = useState<EmployeeTemplate | null>(null)
   // Catalog: backend (`employee_template_catalog` = bootstrap ∪ cache) when
@@ -74,14 +74,14 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
       try {
         // Fire-and-forget refresh; if it fails we just use whatever the
         // backend already has cached + bootstrap.
-        await employeeTemplateRefresh().catch((e) => {
-          console.warn('[HireWizard] employee_template_refresh failed:', e)
-          return 0
+        await syncDesktopResources(i18n.language).catch((e) => {
+          console.warn('[HireWizard] desktop resource sync failed:', e)
+          return null
         })
         const snapshots: EmployeeTemplateSnapshot[] = await employeeTemplateCatalog()
         if (cancelled) return
         if (snapshots.length > 0) {
-          setCatalog(snapshots.map(snapshotToTemplate))
+          setCatalog(snapshots.map((snapshot) => snapshotToTemplate(snapshot, i18n.language)))
         }
       } catch (e) {
         console.error('[HireWizard] employee_template_catalog failed, using BUILTIN_TEMPLATES:', e)
@@ -90,7 +90,7 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
     return () => {
       cancelled = true
     }
-  }, [open])
+  }, [open, i18n.language])
 
   function handleClose() {
     setStep(1)

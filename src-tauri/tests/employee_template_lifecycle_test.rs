@@ -49,6 +49,7 @@ fn synthetic_snap(template_id: &str, version: &str, name: &str) -> TemplateSnaps
         requires_attachment: serde_json::Value::Null,
         resource_config_schema: serde_json::Value::Null,
         resource_config_ui: serde_json::Value::Null,
+        extra: std::collections::BTreeMap::new(),
     }
 }
 

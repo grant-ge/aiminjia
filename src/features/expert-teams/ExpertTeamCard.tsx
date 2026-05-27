@@ -1,6 +1,7 @@
 // code/src/features/expert-teams/ExpertTeamCard.tsx
+import { useTranslation } from 'react-i18next'
 import type { ExpertTeam, ExpertTeamId } from './teams'
-import { getExpertAvatarUrl } from './expertAvatar'
+import { getExpertAvatarStyle, getExpertAvatarUrl } from './expertAvatar'
 import { getExpertTeamLogo } from './teamLogo'
 
 interface ExpertTeamCardProps {
@@ -9,6 +10,7 @@ interface ExpertTeamCardProps {
 }
 
 export function ExpertTeamCard({ team, onStart }: ExpertTeamCardProps) {
+  const { t } = useTranslation()
   const logo = getExpertTeamLogo(team.id)
   const TeamLogo = logo.icon
 
@@ -19,7 +21,7 @@ export function ExpertTeamCard({ team, onStart }: ExpertTeamCardProps) {
       data-aijia-expert-team-id={team.id}
       data-aijia-expert-team-name={team.name}
       onClick={() => onStart(team.id)}
-      aria-label={`启动 ${team.name}`}
+      aria-label={t('expertTeams.startAria', { name: team.name })}
       className="flex h-full w-full flex-col gap-3 rounded-lg border border-border bg-card p-4 text-left text-card-foreground transition-colors hover:border-primary/50 hover:bg-accent/30"
     >
       <div className="flex items-center gap-2">
@@ -41,6 +43,7 @@ export function ExpertTeamCard({ team, onStart }: ExpertTeamCardProps) {
         <div className="flex flex-wrap gap-2.5" data-testid="expert-team-roster">
           {team.experts.map((expert) => {
             const avatarUrl = getExpertAvatarUrl(team.id, expert.name)
+            const avatarStyle = getExpertAvatarStyle(team, expert.name)
             return (
               <div
                 key={expert.name}
@@ -48,7 +51,13 @@ export function ExpertTeamCard({ team, onStart }: ExpertTeamCardProps) {
                 className="flex flex-col items-center gap-0.5"
               >
                 <span className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-border bg-muted/40">
-                  {avatarUrl ? (
+                  {avatarStyle ? (
+                    <span
+                      aria-hidden
+                      className="h-full w-full bg-no-repeat"
+                      style={avatarStyle}
+                    />
+                  ) : avatarUrl ? (
                     <img
                       src={avatarUrl}
                       alt=""
@@ -68,7 +77,7 @@ export function ExpertTeamCard({ team, onStart }: ExpertTeamCardProps) {
           })}
         </div>
       ) : (
-        <p className="text-xs text-muted-foreground">主持人按议题召集</p>
+        <p className="text-xs text-muted-foreground">{t('expertTeams.dynamicMembers')}</p>
       )}
 
       <div className="mt-auto flex flex-wrap gap-1.5">
