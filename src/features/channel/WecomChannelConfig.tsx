@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import QRCode from 'qrcode'
+import { useTranslation } from 'react-i18next'
 import { open as openExternal } from '@tauri-apps/plugin-shell'
 import { CheckCircle2, ExternalLink, HelpCircle, Loader2, RefreshCw } from 'lucide-react'
 import { requestConfirm } from '@/components/common/ConfirmDialogHost'
@@ -28,7 +29,7 @@ function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms))
 }
 
-function QrCodePanel({ value, loading }: { value: string | null; loading: boolean }) {
+function QrCodePanel({ value, loading, qrAlt }: { value: string | null; loading: boolean; qrAlt: string }) {
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
 
   useEffect(() => {
@@ -61,10 +62,10 @@ function QrCodePanel({ value, loading }: { value: string | null; loading: boolea
     // QR 容器固定白底：保证扫码相机/企微客户端可识别，不随主题切换
     <div className="relative flex h-60 w-60 items-center justify-center rounded-3xl border border-border bg-white p-4">
       {qrDataUrl ? (
-        <img src={qrDataUrl} alt="企业微信扫码二维码" className="h-full w-full" />
+        <img src={qrDataUrl} alt={qrAlt} className="h-full w-full" />
       ) : (
         // 占位 QR pattern：和外层一致保持白底，黑点是结构性占位
-        <div aria-label="企业微信扫码二维码" className="grid h-full w-full grid-cols-7 grid-rows-7 gap-1 rounded bg-white p-2">
+        <div aria-label={qrAlt} className="grid h-full w-full grid-cols-7 grid-rows-7 gap-1 rounded bg-white p-2">
           {Array.from({ length: 49 }).map((_, index) => (
             <span
               key={index}
@@ -90,21 +91,22 @@ function QrCodePanel({ value, loading }: { value: string | null; loading: boolea
  * 默认展开会喧宾夺主；扫不上时再来翻这里也来得及。
  */
 function HelpPanel() {
+  const { t } = useTranslation()
   const officialDocs: Array<{ label: string; url: string; hint?: string }> = [
     {
-      label: '企业微信 · 如何使用智能机器人',
+      label: t('channel.wecom.help.doc1Label'),
       url: 'https://open.work.weixin.qq.com/help2/pc/21663',
-      hint: '创建权限规则 / 数量上限 / 入口位置',
+      hint: t('channel.wecom.help.doc1Hint'),
     },
     {
-      label: '企业微信 · 接入 OpenClaw 智能机器人指引',
+      label: t('channel.wecom.help.doc2Label'),
       url: 'https://open.work.weixin.qq.com/help2/pc/21657',
-      hint: 'API 模式 + 长连接的官方接入说明',
+      hint: t('channel.wecom.help.doc2Hint'),
     },
     {
-      label: '企业微信开发者中心 · 智能机器人长连接协议',
+      label: t('channel.wecom.help.doc3Label'),
       url: 'https://developer.work.weixin.qq.com/document/path/101463',
-      hint: '协议细节 / 心跳 / 频控限制（一般用不到）',
+      hint: t('channel.wecom.help.doc3Hint'),
     },
   ]
 
@@ -112,52 +114,50 @@ function HelpPanel() {
     <details className="w-full rounded-xl border border-border bg-muted/30 px-4 py-3 text-sm">
       <summary className="flex cursor-pointer items-center gap-2 font-semibold text-foreground">
         <HelpCircle className="h-4 w-4 text-primary" />
-        看不到二维码 / 扫不上？查看使用说明
+        {t('channel.wecom.help.summary')}
       </summary>
 
       <div className="mt-3 flex flex-col gap-4 text-xs leading-relaxed text-muted-foreground">
         <div>
           <div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-foreground">
-            谁能扫码创建机器人
+            {t('channel.wecom.help.whoCanScan')}
           </div>
           <p>
-            企业超级管理员 + <span className="font-semibold text-foreground">被授权的企业成员</span>。
-            默认「全员开放」，但管理员可以在
-            <span className="font-mono"> 管理后台 → 安全与管理 → 管理工具 → 智能机器人 → 管理 → 机器人创建权限 </span>
-            里改为白名单 / 部门 / 标签。
+            {t('channel.wecom.help.whoCanScanDesc', { authorized: t('channel.wecom.help.whoCanScanAuthorized') })}
+            <span className="font-mono"> {t('channel.wecom.help.whoCanScanPath')} </span>
+            {t('channel.wecom.help.whoCanScanSuffix')}
           </p>
           <p className="mt-1">
-            单个普通成员最多可建 <span className="font-semibold text-foreground">20 个</span>，
-            单企业最多 <span className="font-semibold text-foreground">300 个</span>。
+            {t('channel.wecom.help.memberLimit', { memberMax: 20, orgMax: 300 })}
           </p>
         </div>
 
         <div>
           <div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-foreground">
-            扫码前自查
+            {t('channel.wecom.help.preScanCheck')}
           </div>
           <ol className="ml-4 list-decimal space-y-1">
-            <li>用手机企业微信 App 打开「工作台」</li>
-            <li>找到「智能机器人」应用 — 如果连入口都没有，说明管理员关闭了该能力，需要联系管理员开放</li>
-            <li>能进入「智能机器人」首页 → 看到「创建智能机器人」按钮可点 → 你就有权限</li>
-            <li>回到本弹窗扫码：在企业微信 App 内打开扫一扫即可</li>
+            <li>{t('channel.wecom.help.preScanStep1')}</li>
+            <li>{t('channel.wecom.help.preScanStep2')}</li>
+            <li>{t('channel.wecom.help.preScanStep3')}</li>
+            <li>{t('channel.wecom.help.preScanStep4')}</li>
           </ol>
         </div>
 
         <div>
           <div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-foreground">
-            扫码后没反应 / 一直「等待中」
+            {t('channel.wecom.help.troubleshoot')}
           </div>
           <ul className="ml-4 list-disc space-y-1">
-            <li>没有点确认创建？回到企业微信 App 看是否有待确认页面</li>
-            <li>二维码过期了？5 分钟内有效，点「重新生成二维码」拿新的</li>
-            <li>仍然失败？展开下方「手动填写 Bot ID 和 Secret」，让管理员在管理后台建好机器人后把凭证给你</li>
+            <li>{t('channel.wecom.help.troubleshootItem1')}</li>
+            <li>{t('channel.wecom.help.troubleshootItem2')}</li>
+            <li>{t('channel.wecom.help.troubleshootItem3')}</li>
           </ul>
         </div>
 
         <div>
           <div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-foreground">
-            官方文档
+            {t('channel.wecom.help.officialDocs')}
           </div>
           <ul className="space-y-1.5">
             {officialDocs.map((d) => (
@@ -185,6 +185,7 @@ function HelpPanel() {
 }
 
 export function WecomChannelConfig({ onSaved, onClose }: WecomChannelConfigProps) {
+  const { t } = useTranslation()
   const wecomState = useChannelStore((s) => s.platforms.wecom)
   const setPlatformState = useChannelStore((s) => s.setPlatformState)
   const pushNotification = useNotificationStore((s) => s.push)
@@ -229,20 +230,20 @@ export function WecomChannelConfig({ onSaved, onClose }: WecomChannelConfigProps
       if (pollRunIdRef.current !== runId) return
       if (result.state === 'success') {
         if (!result.botId || !result.secret) {
-          throw new Error('扫码成功但未返回 Bot 信息')
+          throw new Error(t('channel.wecom.config.scanSuccessNoBotInfo'))
         }
         setRegistrationStatus('success')
-        setRegistrationMessage('扫码成功，正在保存配置…')
+        setRegistrationMessage(t('channel.wecom.config.scanSuccessSaving'))
         await persistBotInfo(result.botId, result.secret)
-        setRegistrationMessage('企业微信频道已连接')
+        setRegistrationMessage(t('channel.wecom.config.connected'))
         onSaved?.()
         return
       }
       // 其他状态一律 Waiting；按 interval 继续轮询。
-      setRegistrationMessage('等待你在企业微信里确认创建机器人…')
+      setRegistrationMessage(t('channel.wecom.config.waitingConfirm'))
       await sleep(Math.min(intervalMs, Math.max(0, deadline - Date.now())))
     }
-    throw new Error('扫码超时（5 分钟），请重新生成二维码')
+    throw new Error(t('channel.wecom.config.errorTimeout'))
   }
 
   const handleStartRegistration = async () => {
@@ -258,12 +259,12 @@ export function WecomChannelConfig({ onSaved, onClose }: WecomChannelConfigProps
       if (pollRunIdRef.current !== runId) return
       setBegin(resp)
       setRegistrationStatus('waiting')
-      setRegistrationMessage('等待你在企业微信里确认创建机器人…')
+      setRegistrationMessage(t('channel.wecom.config.waitingConfirm'))
       await pollUntilDoneOrTimeout(resp, runId)
     } catch (e) {
       if (pollRunIdRef.current !== runId) return
       setRegistrationStatus('error')
-      const msg = e instanceof Error ? e.message : '扫码注册失败，请重试'
+      const msg = e instanceof Error ? e.message : t('channel.wecom.config.errorScanFailed')
       setError(msg)
       setRegistrationMessage(msg)
     }
@@ -281,8 +282,8 @@ export function WecomChannelConfig({ onSaved, onClose }: WecomChannelConfigProps
     if (!manualBotId.trim() || !manualSecret.trim()) {
       pushNotification({
         level: 'error',
-        title: '缺少必填项',
-        message: 'Bot ID 和 Secret 不能为空',
+        title: t('channel.wecom.config.missingFieldsTitle'),
+        message: t('channel.wecom.config.missingFieldsMessage'),
         actions: [],
         dismissible: true,
         autoHide: 4,
@@ -298,13 +299,13 @@ export function WecomChannelConfig({ onSaved, onClose }: WecomChannelConfigProps
         manualDisplayName.trim() || undefined,
       )
       setRegistrationStatus('success')
-      setRegistrationMessage('企业微信频道已连接')
+      setRegistrationMessage(t('channel.wecom.config.connected'))
       onSaved?.()
     } catch (e) {
       pushNotification({
         level: 'error',
-        title: '保存失败',
-        message: e instanceof Error ? e.message : '保存企业微信配置失败，请重试',
+        title: t('channel.wecom.config.saveFailedTitle'),
+        message: e instanceof Error ? e.message : t('channel.wecom.config.saveFailedMessage'),
         actions: [],
         dismissible: true,
         autoHide: 6,
@@ -317,10 +318,10 @@ export function WecomChannelConfig({ onSaved, onClose }: WecomChannelConfigProps
 
   const handleRemove = async () => {
     const confirmed = await requestConfirm({
-      title: '移除企业微信频道？',
-      description: '这会断开企业微信频道，并删除本地保存的 Bot ID 和 Secret。已有聊天历史会保留。',
-      confirmLabel: '确认移除',
-      cancelLabel: '取消',
+      title: t('channel.remove.wecom.title'),
+      description: t('channel.remove.wecom.description'),
+      confirmLabel: t('channel.actions.confirmRemove'),
+      cancelLabel: t('channel.actions.cancel'),
       variant: 'destructive',
     })
     if (!confirmed) return
@@ -332,8 +333,8 @@ export function WecomChannelConfig({ onSaved, onClose }: WecomChannelConfigProps
       setRegistrationMessage(null)
       pushNotification({
         level: 'success',
-        title: '企业微信已移除',
-        message: '频道配置已删除',
+        title: t('channel.wecom.config.removedTitle'),
+        message: t('channel.wecom.config.removedMessage'),
         actions: [],
         dismissible: true,
         autoHide: 4,
@@ -342,8 +343,8 @@ export function WecomChannelConfig({ onSaved, onClose }: WecomChannelConfigProps
     } catch (e) {
       pushNotification({
         level: 'error',
-        title: '移除失败',
-        message: e instanceof Error ? e.message : '移除企业微信配置失败，请重试',
+        title: t('channel.wecom.config.removeFailedTitle'),
+        message: e instanceof Error ? e.message : t('channel.wecom.config.removeFailedMessage'),
         actions: [],
         dismissible: true,
         autoHide: 6,
@@ -358,9 +359,9 @@ export function WecomChannelConfig({ onSaved, onClose }: WecomChannelConfigProps
   return (
     <div className="flex max-h-[78vh] w-full flex-col overflow-hidden bg-background">
       <div className="flex flex-col items-center px-10 pb-5 pt-8 text-center">
-        <h2 className="text-2xl font-bold tracking-tight text-foreground">配置企业微信</h2>
+        <h2 className="text-2xl font-bold tracking-tight text-foreground">{t('channel.wecom.config.title')}</h2>
         <p className="mt-3 text-sm font-medium text-muted-foreground">
-          用企业微信扫码即可一键创建机器人，无需进入管理后台。
+          {t('channel.wecom.config.subtitle')}
         </p>
       </div>
 
@@ -370,8 +371,8 @@ export function WecomChannelConfig({ onSaved, onClose }: WecomChannelConfigProps
             <div className="flex w-full flex-col items-center gap-5">
               <div className="flex w-64 flex-col items-center rounded-xl bg-emerald-50 px-8 py-5 text-emerald-500">
                 <CheckCircle2 className="h-8 w-8" />
-                <div className="mt-3 text-xl font-bold">机器人已创建</div>
-                <div className="mt-1 text-sm font-semibold">企业微信频道已连接</div>
+                <div className="mt-3 text-xl font-bold">{t('channel.wecom.config.botCreated')}</div>
+                <div className="mt-1 text-sm font-semibold">{t('channel.wecom.config.connected')}</div>
               </div>
               {savedBotId && (
                 <div className="w-full rounded-xl border border-border bg-card px-4 py-3 text-left">
@@ -380,15 +381,15 @@ export function WecomChannelConfig({ onSaved, onClose }: WecomChannelConfigProps
                 </div>
               )}
               <Button size="sm" variant="secondary" onClick={() => void handleStartRegistration()}>
-                重新扫码更换机器人
+                {t('channel.wecom.config.rescanBot')}
               </Button>
             </div>
           ) : (
             <div className="flex w-full flex-col items-center gap-4">
-              <QrCodePanel value={begin?.authUrl ?? null} loading={registrationStatus === 'opening'} />
+              <QrCodePanel value={begin?.authUrl ?? null} loading={registrationStatus === 'opening'} qrAlt={t('channel.wecom.config.qrAlt')} />
               {registrationStatus === 'error' && (
                 <Button onClick={() => void handleStartRegistration()} className="h-10 w-64 rounded-full">
-                  重新生成二维码
+                  {t('channel.wecom.config.retryQr')}
                 </Button>
               )}
               {begin?.fallbackUrl && busy && (
@@ -397,7 +398,7 @@ export function WecomChannelConfig({ onSaved, onClose }: WecomChannelConfigProps
                   onClick={() => void openExternal(begin.fallbackUrl)}
                   className="inline-flex items-center gap-1 text-xs font-medium text-primary underline-offset-4 hover:underline"
                 >
-                  无法扫码？在浏览器中打开 <ExternalLink className="h-3 w-3" />
+                  {t('channel.wecom.config.openInBrowser')} <ExternalLink className="h-3 w-3" />
                 </button>
               )}
             </div>
@@ -428,7 +429,7 @@ export function WecomChannelConfig({ onSaved, onClose }: WecomChannelConfigProps
               onToggle={(e) => setManualOpen((e.target as HTMLDetailsElement).open)}
             >
               <summary className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground">
-                高级：手动填写 Bot ID 和 Secret
+                {t('channel.wecom.config.manualTitle')}
               </summary>
               <div className="mt-3 flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
                 <div className="flex flex-col gap-1.5">
@@ -439,7 +440,7 @@ export function WecomChannelConfig({ onSaved, onClose }: WecomChannelConfigProps
                     id="wecom-manual-bot-id"
                     value={manualBotId}
                     onChange={(e) => setManualBotId(e.target.value)}
-                    placeholder="企业微信后台 → 智能机器人 → 详情页"
+                    placeholder={t('channel.wecom.config.manualBotIdPlaceholder')}
                     autoComplete="off"
                   />
                 </div>
@@ -452,19 +453,19 @@ export function WecomChannelConfig({ onSaved, onClose }: WecomChannelConfigProps
                     type="password"
                     value={manualSecret}
                     onChange={(e) => setManualSecret(e.target.value)}
-                    placeholder="同上"
+                    placeholder={t('channel.wecom.config.manualSecretPlaceholder')}
                     autoComplete="new-password"
                   />
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <label className="text-xs font-semibold text-foreground" htmlFor="wecom-manual-display">
-                    显示名称 <span className="text-[10px] font-normal text-muted-foreground">（可选）</span>
+                    {t('channel.wecom.config.manualDisplayNameLabel')} <span className="text-[10px] font-normal text-muted-foreground">{t('channel.wecom.config.manualDisplayNameOptional')}</span>
                   </label>
                   <Input
                     id="wecom-manual-display"
                     value={manualDisplayName}
                     onChange={(e) => setManualDisplayName(e.target.value)}
-                    placeholder="例如：销售群机器人"
+                    placeholder={t('channel.wecom.config.manualDisplayNamePlaceholder')}
                     autoComplete="off"
                   />
                 </div>
@@ -475,7 +476,7 @@ export function WecomChannelConfig({ onSaved, onClose }: WecomChannelConfigProps
                   disabled={manualSaving || !manualBotId.trim() || !manualSecret.trim()}
                 >
                   {manualSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  保存手动配置
+                  {t('channel.wecom.config.manualSave')}
                 </Button>
               </div>
             </details>
@@ -486,7 +487,7 @@ export function WecomChannelConfig({ onSaved, onClose }: WecomChannelConfigProps
       <div className="flex flex-col gap-3 border-t border-border bg-background px-10 py-4">
         {done ? (
           <Button className="h-10 w-full rounded-full" onClick={onClose}>
-            完成
+            {t('channel.actions.done')}
           </Button>
         ) : (
           <div className="flex gap-3">
@@ -496,7 +497,7 @@ export function WecomChannelConfig({ onSaved, onClose }: WecomChannelConfigProps
                 className="flex-1 rounded-full"
                 onClick={() => void handleRemove()}
               >
-                移除
+                {t('channel.actions.remove')}
               </Button>
             )}
             <Button
@@ -504,7 +505,7 @@ export function WecomChannelConfig({ onSaved, onClose }: WecomChannelConfigProps
               className={`rounded-full ${alreadyConfigured ? 'flex-1' : 'w-full'}`}
               onClick={onClose}
             >
-              关闭
+              {t('channel.actions.close')}
             </Button>
           </div>
         )}

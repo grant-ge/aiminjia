@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -12,7 +12,7 @@ pub trait RuntimeEventSubscriber: Send + Sync {
 
 #[derive(Clone, Default)]
 pub struct RuntimeEventBus {
-    subscribers: Arc<Mutex<Vec<Arc<dyn RuntimeEventSubscriber>>>>,
+    subscribers: Arc<Mutex<Vec<Weak<dyn RuntimeEventSubscriber>>>>,
     recorded: Arc<Mutex<Vec<RuntimeEvent>>>,
 }
 
@@ -28,13 +28,26 @@ impl RuntimeEventBus {
     }
 
     pub fn subscribe(&self, subscriber: Arc<dyn RuntimeEventSubscriber>) {
-        self.subscribers.lock().unwrap().push(subscriber);
+        self.subscribers.lock().unwrap().push(Arc::downgrade(&subscriber));
     }
 
     pub async fn emit(&self, event: RuntimeEvent) -> Result<()> {
         self.recorded.lock().unwrap().push(event.clone());
-        let subscribers = self.subscribers.lock().unwrap().clone();
-        for subscriber in subscribers {
+        let snapshot: Vec<Arc<dyn RuntimeEventSubscriber>> = {
+            let mut subs = self.subscribers.lock().unwrap();
+            // Prune dead weak refs while collecting live ones.
+            let mut live = Vec::with_capacity(subs.len());
+            subs.retain(|w| {
+                if let Some(arc) = w.upgrade() {
+                    live.push(arc);
+                    true
+                } else {
+                    false
+                }
+            });
+            live
+        };
+        for subscriber in snapshot {
             subscriber.on_event(&event).await?;
         }
         Ok(())

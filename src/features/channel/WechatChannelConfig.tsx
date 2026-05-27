@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { CheckCircle2 } from 'lucide-react'
 import { useChannelStore } from '@/stores/channelStore'
 import { Button } from '@/components/ui/button'
@@ -87,6 +88,7 @@ async function getOrCreateBegin(
  * in Phase 5 PR3.
  */
 export function WechatChannelConfig({ onSaved, onClose }: WechatChannelConfigProps) {
+  const { t } = useTranslation()
   const beginRegistration = useChannelStore((s) => s.beginRegistration)
   const pollRegistrationAction = useChannelStore((s) => s.pollRegistration)
 
@@ -120,7 +122,7 @@ export function WechatChannelConfig({ onSaved, onClose }: WechatChannelConfigPro
     // begin <= 3s 返回，cache 命中时是同步的（resolved value 立即可用）。
     const timeoutHandle = window.setTimeout(() => {
       if (cancelled) return
-      setError('扫码准备超时，请点击重试。')
+      setError(t('channel.wechat.config.errorTimeout'))
     }, 25_000)
     const run = async () => {
       try {
@@ -132,7 +134,7 @@ export function WechatChannelConfig({ onSaved, onClose }: WechatChannelConfigPro
         if (cancelled) return
         // 失败时把 cache 清掉，下次 mount 重新发请求。
         invalidateBeginCache()
-        setError(e instanceof Error ? e.message : '个微扫码登录启动失败，请重试')
+        setError(e instanceof Error ? e.message : t('channel.wechat.config.errorBeginFailed'))
       } finally {
         window.clearTimeout(timeoutHandle)
       }
@@ -190,7 +192,7 @@ export function WechatChannelConfig({ onSaved, onClose }: WechatChannelConfigPro
     }
     if (result.state === 'fail') {
       invalidateBeginCache()
-      setError(result.failReason || '个微扫码登录失败')
+      setError(result.failReason || t('channel.wechat.config.errorBeginFailed'))
       return 'cancelled'
     }
     return 'waiting'
@@ -200,14 +202,14 @@ export function WechatChannelConfig({ onSaved, onClose }: WechatChannelConfigPro
     return (
       <div className="flex max-h-[78vh] w-full flex-col overflow-hidden bg-background">
         <div className="flex flex-col items-center px-10 pb-5 pt-8 text-center">
-          <h2 className="text-2xl font-bold tracking-tight text-foreground">添加个人微信账号</h2>
+          <h2 className="text-2xl font-bold tracking-tight text-foreground">{t('channel.wechat.config.title')}</h2>
         </div>
         <div className="flex-1 overflow-y-auto px-10 pb-6">
           <div className="flex w-full flex-col items-center gap-5">
             <div className="flex w-72 flex-col items-center rounded-xl bg-emerald-50 px-8 py-5 text-emerald-500">
               <CheckCircle2 className="h-8 w-8" />
-              <div className="mt-3 text-xl font-bold">扫码登录成功</div>
-              <div className="mt-1 text-sm font-semibold">已确认账号身份</div>
+              <div className="mt-3 text-xl font-bold">{t('channel.wechat.config.scanSuccess')}</div>
+              <div className="mt-1 text-sm font-semibold">{t('channel.wechat.config.accountConfirmed')}</div>
             </div>
             <div className="grid w-full gap-3 rounded-xl border border-border bg-card p-4 text-left">
               <CredentialRow label="ilink_bot_id" value={loginInfo.ilink_bot_id} />
@@ -215,7 +217,7 @@ export function WechatChannelConfig({ onSaved, onClose }: WechatChannelConfigPro
               <CredentialRow label="baseurl" value={loginInfo.baseurl} />
             </div>
             <p className="text-xs text-muted-foreground">
-              MVP 阶段：凭证尚未落盘加密保存，长轮询入站 / 出站发送等功能在 Phase 5 PR3+ 落地。
+              {t('channel.wechat.config.mvpNote')}
             </p>
           </div>
         </div>
@@ -227,7 +229,7 @@ export function WechatChannelConfig({ onSaved, onClose }: WechatChannelConfigPro
               onClose?.()
             }}
           >
-            完成
+            {t('channel.actions.done')}
           </Button>
         </div>
       </div>
@@ -239,7 +241,7 @@ export function WechatChannelConfig({ onSaved, onClose }: WechatChannelConfigPro
       <div className="flex max-h-[78vh] w-full flex-col items-center justify-center bg-background p-10">
         <p className="text-sm text-red-500">{error}</p>
         <Button className="mt-4 h-10 w-64 rounded-full" onClick={handleRetry}>
-          重新生成二维码
+          {t('channel.wechat.config.retryQr')}
         </Button>
       </div>
     )
@@ -248,7 +250,7 @@ export function WechatChannelConfig({ onSaved, onClose }: WechatChannelConfigPro
   if (!begin) {
     return (
       <div className="flex max-h-[78vh] w-full flex-col items-center justify-center bg-background p-10 text-sm text-muted-foreground">
-        正在准备扫码…
+        {t('channel.wechat.config.preparingQr')}
       </div>
     )
   }
@@ -259,7 +261,7 @@ export function WechatChannelConfig({ onSaved, onClose }: WechatChannelConfigPro
     <div className="flex max-h-[78vh] w-full flex-col overflow-hidden bg-background">
       <RegistrationModal
         mode="qr_url"
-        title="添加个人微信账号"
+        title={t('channel.wechat.config.title')}
         qrUrl={qrUrl}
         expireSeconds={begin.expiresInSeconds || 600}
         pollIntervalMs={Math.max(1, begin.intervalSeconds || 2) * 1000}
@@ -272,11 +274,11 @@ export function WechatChannelConfig({ onSaved, onClose }: WechatChannelConfigPro
       {scanned ? (
         <div className="mx-10 mb-4 flex items-center justify-center gap-2 rounded-xl bg-emerald-50 px-5 py-3 text-sm font-semibold text-emerald-600">
           <CheckCircle2 className="h-4 w-4" />
-          已扫码，请在手机上点击「确认登录」完成授权…
+          {t('channel.wechat.config.scannedHint')}
         </div>
       ) : (
         <p className="px-10 pb-4 text-center text-xs font-medium text-muted-foreground">
-          请用微信扫描二维码并在手机上确认。
+          {t('channel.wechat.config.scanHint')}
         </p>
       )}
     </div>

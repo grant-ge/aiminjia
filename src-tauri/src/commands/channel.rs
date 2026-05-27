@@ -12,15 +12,20 @@ fn parse_platform(platform: String) -> Result<Platform, String> {
     Platform::from_str(&platform).ok_or_else(|| format!("Unsupported channel platform: {platform}"))
 }
 
-fn manager(app: &AppHandle) -> Result<Arc<ChannelManager>, String> {
-    app.try_state::<Arc<ChannelManager>>()
-        .map(|state| state.inner().clone())
+async fn manager(app: &AppHandle) -> Result<Arc<ChannelManager>, String> {
+    let slot = app
+        .try_state::<Arc<crate::connector::im::ChannelManagerSlot>>()
+        .ok_or_else(|| "频道功能未初始化，请先登录".to_string())?
+        .inner()
+        .clone();
+    slot.current()
+        .await
         .ok_or_else(|| "频道功能未初始化，请先登录".to_string())
 }
 
 #[tauri::command]
 pub async fn channel_get_platforms(app: AppHandle) -> Result<Vec<ChannelPlatformState>, String> {
-    manager(&app)?
+    manager(&app).await?
         .get_platforms()
         .await
         .map_err(|e| format!("{:#}", e))
@@ -31,7 +36,7 @@ pub async fn channel_get_platform(
     app: AppHandle,
     platform: String,
 ) -> Result<ChannelPlatformState, String> {
-    manager(&app)?
+    manager(&app).await?
         .get_platform(parse_platform(platform)?)
         .await
         .map_err(|e| format!("{:#}", e))
@@ -43,19 +48,19 @@ pub async fn channel_begin_registration(
     platform: String,
 ) -> Result<ChannelRegistrationBeginResult, String> {
     match parse_platform(platform)? {
-        Platform::Dingtalk => manager(&app)?
+        Platform::Dingtalk => manager(&app).await?
             .begin_dingtalk_registration()
             .await
             .map_err(|e| format!("{:#}", e)),
-        Platform::Feishu => manager(&app)?
+        Platform::Feishu => manager(&app).await?
             .begin_feishu_registration()
             .await
             .map_err(|e| format!("{:#}", e)),
-        Platform::Wechat => manager(&app)?
+        Platform::Wechat => manager(&app).await?
             .begin_wechat_registration()
             .await
             .map_err(|e| format!("{:#}", e)),
-        Platform::Whatsapp => manager(&app)?
+        Platform::Whatsapp => manager(&app).await?
             .begin_whatsapp_registration()
             .await
             .map_err(|e| format!("{:#}", e)),
@@ -73,19 +78,19 @@ pub async fn channel_poll_registration(
     device_code: String,
 ) -> Result<ChannelRegistrationPollResult, String> {
     match parse_platform(platform)? {
-        Platform::Dingtalk => manager(&app)?
+        Platform::Dingtalk => manager(&app).await?
             .poll_dingtalk_registration(device_code)
             .await
             .map_err(|e| format!("{:#}", e)),
-        Platform::Feishu => manager(&app)?
+        Platform::Feishu => manager(&app).await?
             .poll_feishu_registration(device_code)
             .await
             .map_err(|e| format!("{:#}", e)),
-        Platform::Wechat => manager(&app)?
+        Platform::Wechat => manager(&app).await?
             .poll_wechat_registration(device_code)
             .await
             .map_err(|e| format!("{:#}", e)),
-        Platform::Whatsapp => manager(&app)?
+        Platform::Whatsapp => manager(&app).await?
             .poll_whatsapp_registration(device_code)
             .await
             .map_err(|e| format!("{:#}", e)),
@@ -102,7 +107,7 @@ pub async fn channel_set_enabled(
     platform: String,
     enabled: bool,
 ) -> Result<ChannelPlatformState, String> {
-    manager(&app)?
+    manager(&app).await?
         .set_enabled(parse_platform(platform)?, enabled)
         .await
         .map_err(|e| format!("{:#}", e))
@@ -113,7 +118,7 @@ pub async fn channel_remove_platform(
     app: AppHandle,
     platform: String,
 ) -> Result<ChannelPlatformState, String> {
-    manager(&app)?
+    manager(&app).await?
         .remove_platform(parse_platform(platform)?)
         .await
         .map_err(|e| format!("{:#}", e))
@@ -121,7 +126,7 @@ pub async fn channel_remove_platform(
 
 #[tauri::command]
 pub async fn channel_reveal_secret(app: AppHandle, platform: String) -> Result<String, String> {
-    manager(&app)?
+    manager(&app).await?
         .reveal_secret(parse_platform(platform)?)
         .await
         .map_err(|e| format!("{:#}", e))
@@ -136,8 +141,11 @@ pub async fn channel_get_conversations(
         Some(p) => Some(parse_platform(p)?),
         None => None,
     };
-    let conversations = match app.try_state::<Arc<ChannelManager>>() {
-        Some(m) => m.get_conversations().await,
+    let conversations = match app.try_state::<Arc<crate::connector::im::ChannelManagerSlot>>() {
+        Some(slot) => match slot.inner().clone().current().await {
+            Some(cm) => cm.get_conversations().await,
+            None => return Ok(vec![]),
+        },
         None => return Ok(vec![]),
     };
     Ok(match parsed_filter {
@@ -165,7 +173,7 @@ pub async fn channel_wecom_save(
     secret: String,
     display_name: Option<String>,
 ) -> Result<ChannelPlatformState, String> {
-    manager(&app)?
+    manager(&app).await?
         .save_wecom_and_connect(bot_id, secret, display_name)
         .await
         .map_err(|e| format!("{:#}", e))
@@ -254,7 +262,7 @@ pub async fn channel_wecom_test_connection(
 /// Cancel the wecom stream if active, remove the config, return the state.
 #[tauri::command]
 pub async fn channel_wecom_remove(app: AppHandle) -> Result<ChannelPlatformState, String> {
-    manager(&app)?
+    manager(&app).await?
         .remove_platform(Platform::Wecom)
         .await
         .map_err(|e| format!("{:#}", e))
@@ -266,7 +274,7 @@ pub async fn channel_wecom_set_enabled(
     app: AppHandle,
     enabled: bool,
 ) -> Result<ChannelPlatformState, String> {
-    manager(&app)?
+    manager(&app).await?
         .set_enabled(Platform::Wecom, enabled)
         .await
         .map_err(|e| format!("{:#}", e))
@@ -313,7 +321,7 @@ pub async fn channel_telegram_save(
     let username = info
         .username
         .ok_or_else(|| "bot 缺少 username，请在 BotFather 里设置".to_string())?;
-    manager(&app)?
+    manager(&app).await?
         .save_telegram_and_connect(token, info.id.to_string(), username, info.first_name)
         .await
         .map_err(|e| format!("{:#}", e))
@@ -321,7 +329,7 @@ pub async fn channel_telegram_save(
 
 #[tauri::command]
 pub async fn channel_telegram_remove(app: AppHandle) -> Result<ChannelPlatformState, String> {
-    manager(&app)?
+    manager(&app).await?
         .remove_platform(Platform::Telegram)
         .await
         .map_err(|e| format!("{:#}", e))
@@ -332,7 +340,7 @@ pub async fn channel_telegram_set_enabled(
     app: AppHandle,
     enabled: bool,
 ) -> Result<ChannelPlatformState, String> {
-    manager(&app)?
+    manager(&app).await?
         .set_enabled(Platform::Telegram, enabled)
         .await
         .map_err(|e| format!("{:#}", e))
@@ -341,7 +349,7 @@ pub async fn channel_telegram_set_enabled(
 async fn telegram_connector(
     app: &AppHandle,
 ) -> Result<Arc<crate::connector::im::telegram::connector::TelegramConnector>, String> {
-    manager(app)?
+    manager(app).await?
         .telegram_connector()
         .await
         .ok_or_else(|| "Telegram connector 未启动".to_string())
@@ -373,7 +381,7 @@ pub async fn channel_telegram_approve_pairing(
     code: String,
 ) -> Result<tg_reg::TelegramPairedUser, String> {
     let c = telegram_connector(&app).await?;
-    let cs = manager(&app)?.config_store_arc();
+    let cs = manager(&app).await?.config_store_arc();
     tg_reg::approve(&c, &cs, &code)
         .await
         .map_err(|e| format!("{:#}", e))
@@ -393,11 +401,11 @@ pub async fn channel_telegram_revoke_user(
     user_id: i64,
 ) -> Result<ChannelPlatformState, String> {
     let c = telegram_connector(&app).await?;
-    let cs = manager(&app)?.config_store_arc();
+    let cs = manager(&app).await?.config_store_arc();
     tg_reg::revoke_user(&c, &cs, user_id)
         .await
         .map_err(|e| format!("{:#}", e))?;
-    manager(&app)?
+    manager(&app).await?
         .get_platform(Platform::Telegram)
         .await
         .map_err(|e| format!("{:#}", e))
@@ -407,7 +415,7 @@ pub async fn channel_telegram_revoke_user(
 pub async fn channel_telegram_list_paired_users(
     app: AppHandle,
 ) -> Result<Vec<tg_reg::TelegramPairedUser>, String> {
-    let cs = manager(&app)?.config_store_arc();
+    let cs = manager(&app).await?.config_store_arc();
     tg_reg::list_paired_users(&cs).map_err(|e| format!("{:#}", e))
 }
 
@@ -421,7 +429,7 @@ pub async fn channel_whatsapp_update_allow_from(
     app: AppHandle,
     allow_from: Vec<String>,
 ) -> Result<(), String> {
-    manager(&app)?
+    manager(&app).await?
         .update_whatsapp_allow_from(allow_from)
         .await
         .map_err(|e| format!("{:#}", e))
@@ -433,7 +441,7 @@ pub async fn channel_whatsapp_update_allow_from(
 pub async fn channel_whatsapp_get_allow_from(
     app: AppHandle,
 ) -> Result<Option<Vec<String>>, String> {
-    manager(&app)?
+    manager(&app).await?
         .get_whatsapp_allow_from()
         .await
         .map_err(|e| format!("{:#}", e))

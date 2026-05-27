@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import QRCode from 'qrcode'
+import { useTranslation } from 'react-i18next'
 import { CheckCircle2, ExternalLink, Loader2, RefreshCw } from 'lucide-react'
 import { type ChannelConfigView, type ChannelRegistrationBeginResult } from '@/lib/tauri'
 import { useChannelStore } from '@/stores/channelStore'
@@ -31,7 +32,7 @@ function CredentialRow({ label, value }: { label: string; value: string }) {
   )
 }
 
-function QrCodePanel({ value, loading }: { value: string | null; loading: boolean }) {
+function QrCodePanel({ value, loading, qrAlt }: { value: string | null; loading: boolean; qrAlt: string }) {
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
 
   useEffect(() => {
@@ -64,10 +65,10 @@ function QrCodePanel({ value, loading }: { value: string | null; loading: boolea
     // QR 容器固定白底：保证扫码相机/飞书客户端可识别，不随主题切换
     <div className="relative flex h-60 w-60 items-center justify-center rounded-3xl border border-border bg-white p-4">
       {qrDataUrl ? (
-        <img src={qrDataUrl} alt="飞书扫码二维码" className="h-full w-full" />
+        <img src={qrDataUrl} alt={qrAlt} className="h-full w-full" />
       ) : (
         // 占位 QR pattern：和外层一致保持白底，黑点是结构性占位
-        <div aria-label="飞书扫码二维码" className="grid h-full w-full grid-cols-7 grid-rows-7 gap-1 rounded bg-white p-2">
+        <div aria-label={qrAlt} className="grid h-full w-full grid-cols-7 grid-rows-7 gap-1 rounded bg-white p-2">
           {Array.from({ length: 49 }).map((_, index) => (
             <span
               key={index}
@@ -86,6 +87,7 @@ function QrCodePanel({ value, loading }: { value: string | null; loading: boolea
 }
 
 export function FeishuChannelConfig({ onSaved, onClose }: FeishuChannelConfigProps) {
+  const { t } = useTranslation()
   const [error, setError] = useState<string | null>(null)
   const [registrationStatus, setRegistrationStatus] = useState<RegistrationStatus>('idle')
   const [registrationUrl, setRegistrationUrl] = useState<string | null>(null)
@@ -112,33 +114,33 @@ export function FeishuChannelConfig({ onSaved, onClose }: FeishuChannelConfigPro
       const result = await pollRegistrationAction('feishu', begin.deviceCode)
       if (pollRunIdRef.current !== runId) return
       if (result.state === 'waiting') {
-        setRegistrationMessage('等待你在飞书页面完成创建，完成后会自动连接。')
+        setRegistrationMessage(t('channel.feishu.config.waitingHint'))
         await sleep(Math.min(intervalMs, Math.max(0, deadline - Date.now())))
         continue
       }
       if (result.state === 'success') {
         const config = result.config ?? result.platformState?.config
         if (!config) {
-          throw new Error('飞书已授权，但未返回频道配置')
+          throw new Error(t('channel.feishu.config.errorNoConfig'))
         }
         if (result.platformState) {
           setPlatformState(result.platformState)
         }
         setRegistrationStatus('success')
         setCredentials({ config })
-        setRegistrationMessage('飞书频道已连接')
+        setRegistrationMessage(t('channel.feishu.config.connected'))
         onSaved?.()
         return
       }
       if (result.state === 'expired') {
-        throw new Error('扫码开通已过期，请重新发起')
+        throw new Error(t('channel.feishu.config.errorExpired'))
       }
       if (result.state === 'fail') {
-        throw new Error(result.failReason || '飞书扫码开通失败')
+        throw new Error(result.failReason || t('channel.feishu.config.errorScanFailed'))
       }
-      throw new Error('飞书返回未知开通状态，请重试')
+      throw new Error(t('channel.feishu.config.errorUnknownState'))
     }
-    throw new Error('扫码开通已过期，请重新发起')
+    throw new Error(t('channel.feishu.config.errorExpired'))
   }
 
   const handleStartRegistration = async () => {
@@ -156,12 +158,12 @@ export function FeishuChannelConfig({ onSaved, onClose }: FeishuChannelConfigPro
       setRegistrationUrl(begin.verificationUriComplete)
       setHasRegistrationUrl(true)
       setRegistrationStatus('waiting')
-      setRegistrationMessage('等待你在飞书页面完成创建，完成后会自动连接。')
+      setRegistrationMessage(t('channel.feishu.config.waitingHint'))
       await pollRegistration(begin, runId)
     } catch (e) {
       if (pollRunIdRef.current !== runId) return
       setRegistrationStatus('error')
-      const message = e instanceof Error ? e.message : '飞书扫码开通失败，请重试'
+      const message = e instanceof Error ? e.message : t('channel.feishu.config.errorBeginFailed')
       setRegistrationMessage(message)
       setError(message)
     }
@@ -179,8 +181,8 @@ export function FeishuChannelConfig({ onSaved, onClose }: FeishuChannelConfigPro
   return (
     <div className="flex max-h-[78vh] w-full flex-col overflow-hidden bg-background">
       <div className="flex flex-col items-center px-10 pb-5 pt-8 text-center">
-        <h2 className="text-2xl font-bold tracking-tight text-foreground">配置飞书</h2>
-        <p className="mt-3 text-sm font-medium text-muted-foreground">使用飞书扫码创建应用和机器人，完成后自动读取凭证。</p>
+        <h2 className="text-2xl font-bold tracking-tight text-foreground">{t('channel.feishu.config.title')}</h2>
+        <p className="mt-3 text-sm font-medium text-muted-foreground">{t('channel.feishu.config.subtitle')}</p>
       </div>
 
       <div className="flex-1 overflow-y-auto px-10 pb-6">
@@ -189,26 +191,26 @@ export function FeishuChannelConfig({ onSaved, onClose }: FeishuChannelConfigPro
             <div className="flex w-full flex-col items-center gap-5">
               <div className="flex w-64 flex-col items-center rounded-xl bg-emerald-50 px-8 py-5 text-emerald-500">
                 <CheckCircle2 className="h-8 w-8" />
-                <div className="mt-3 text-xl font-bold">扫码开通成功</div>
-                <div className="mt-1 text-sm font-semibold">应用已创建</div>
+                <div className="mt-3 text-xl font-bold">{t('channel.feishu.config.scanSuccess')}</div>
+                <div className="mt-1 text-sm font-semibold">{t('channel.feishu.config.appCreated')}</div>
               </div>
               <div className="grid w-full gap-3 rounded-xl border border-border bg-card p-4 text-left">
                 <CredentialRow label="AppID" value={credentials.config.appKey} />
                 <CredentialRow label="AppSecret" value={credentials.config.appSecretMasked} />
               </div>
               <Button size="sm" variant="secondary" onClick={handleStartRegistration}>
-                重新扫码更换配置
+                {t('channel.feishu.config.rescanConfig')}
               </Button>
             </div>
           ) : (
             <div className="flex w-full flex-col items-center gap-4">
-              <QrCodePanel value={registrationUrl} loading={registrationStatus === 'opening'} />
+              <QrCodePanel value={registrationUrl} loading={registrationStatus === 'opening'} qrAlt={t('channel.feishu.config.qrAlt')} />
               {registrationStatus === 'error' && (
                 <Button
                   onClick={handleStartRegistration}
                   className="h-10 w-64 rounded-full"
                 >
-                  重新生成二维码
+                  {t('channel.feishu.config.retryQr')}
                 </Button>
               )}
               {hasRegistrationUrl && registrationUrl && registrationBusy && (
@@ -218,7 +220,7 @@ export function FeishuChannelConfig({ onSaved, onClose }: FeishuChannelConfigPro
                   rel="noreferrer"
                   className="inline-flex items-center gap-1 text-xs font-medium text-primary underline-offset-4 hover:underline"
                 >
-                  页面未自动打开？点击继续 <ExternalLink className="h-3 w-3" />
+                  {t('channel.feishu.config.openLinkHint')} <ExternalLink className="h-3 w-3" />
                 </a>
               )}
             </div>
@@ -251,7 +253,7 @@ export function FeishuChannelConfig({ onSaved, onClose }: FeishuChannelConfigPro
               onClose?.()
             }}
           >
-            完成
+            {t('channel.actions.done')}
           </Button>
         </div>
       )}

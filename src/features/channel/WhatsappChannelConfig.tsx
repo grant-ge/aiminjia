@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
 import { ChevronDown, Loader2, Plus, RefreshCcw, Trash2 } from 'lucide-react'
 import { AppDropdown } from '@/components/common/AppDropdown'
 import { requestConfirm } from '@/components/common/ConfirmDialogHost'
@@ -54,21 +56,11 @@ interface SuccessPayload {
  * Input,所以这不是闭合枚举,只是引导。顺序按国内 → 港澳台 → 海外华语圈 →
  * 主要英语国家 → 欧亚其它的常用度排,不按字母。
  */
-const COMMON_COUNTRIES: ReadonlyArray<{ code: string; label: string }> = [
-  { code: '+86', label: '中国大陆 (+86)' },
-  { code: '+852', label: '中国香港 (+852)' },
-  { code: '+853', label: '中国澳门 (+853)' },
-  { code: '+886', label: '中国台湾 (+886)' },
-  { code: '+65', label: '新加坡 (+65)' },
-  { code: '+60', label: '马来西亚 (+60)' },
-  { code: '+1', label: '美国 / 加拿大 (+1)' },
-  { code: '+44', label: '英国 (+44)' },
-  { code: '+81', label: '日本 (+81)' },
-  { code: '+82', label: '韩国 (+82)' },
-  { code: '+61', label: '澳大利亚 (+61)' },
-  { code: '+49', label: '德国 (+49)' },
-  { code: '+33', label: '法国 (+33)' },
-]
+const COUNTRY_CODES = ['+86', '+852', '+853', '+886', '+65', '+60', '+1', '+44', '+81', '+82', '+61', '+49', '+33'] as const
+
+function getCommonCountries(t: TFunction): ReadonlyArray<{ code: string; label: string }> {
+  return COUNTRY_CODES.map((code) => ({ code, label: t(`channel.whatsapp.countryCodes.${code}`) }))
+}
 
 function uid(): string {
   return Math.random().toString(36).slice(2, 10)
@@ -85,11 +77,11 @@ function emptyRow(country = '+86'): PhoneEntry {
  */
 function parseE164(raw: string): PhoneEntry {
   const s = raw.startsWith('+') ? raw : `+${raw}`
-  const known = [...COMMON_COUNTRIES]
-    .sort((a, b) => b.code.length - a.code.length)
-    .find((c) => s.startsWith(c.code))
+  const known = [...COUNTRY_CODES]
+    .sort((a, b) => b.length - a.length)
+    .find((c) => s.startsWith(c))
   if (known) {
-    return { id: uid(), country: known.code, number: s.slice(known.code.length) }
+    return { id: uid(), country: known, number: s.slice(known.length) }
   }
   // 未知区号:截前 1-3 位数字,把剩下当 number。
   const m = /^\+(\d{1,3})(\d*)$/.exec(s)
@@ -116,17 +108,17 @@ function rowsToE164(rows: PhoneEntry[]): ParsedRows {
     const number = row.number.replace(/[\s-]/g, '')
     if (!country && !number) continue // 整行空,跳过
     if (!/^\+\d{1,4}$/.test(country)) {
-      errors.push({ id: row.id, reason: '区号格式错误(应为 + 后跟 1-4 位数字)' })
+      errors.push({ id: row.id, reason: 'channel.whatsapp.allowlist.errorCountryFormat' })
       continue
     }
     if (!/^\d{7,14}$/.test(number)) {
-      errors.push({ id: row.id, reason: '号码格式错误(应为 7-14 位数字)' })
+      errors.push({ id: row.id, reason: 'channel.whatsapp.allowlist.errorNumberFormat' })
       continue
     }
     const full = `${country}${number}`
     // E.164 总长 8-15(含 +)
     if (full.length < 8 || full.length > 16) {
-      errors.push({ id: row.id, reason: '号码总长不符合 E.164 (8-15 位)' })
+      errors.push({ id: row.id, reason: 'channel.whatsapp.allowlist.errorE164Length' })
       continue
     }
     ok.push(full)
@@ -142,9 +134,11 @@ function CountryCodePicker({
   value: string
   onChange: (next: string) => void
 }) {
+  const { t } = useTranslation()
+  const commonCountries = getCommonCountries(t)
   return (
     <AppDropdown
-      ariaLabel="选择国家或地区区号"
+      ariaLabel={t('channel.whatsapp.allowlist.selectCountry')}
       contentClassName="max-h-72 overflow-y-auto"
       trigger={
         <button
@@ -155,7 +149,7 @@ function CountryCodePicker({
           <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
         </button>
       }
-      items={COMMON_COUNTRIES.map((c) => ({
+      items={commonCountries.map((c) => ({
         id: c.code,
         label: c.label,
         onSelect: () => onChange(c.code),
@@ -172,6 +166,7 @@ function ModeRadio({
   value: AllowMode
   onChange: (next: AllowMode) => void
 }) {
+  const { t } = useTranslation()
   const Option = ({ kind, label, hint }: { kind: AllowMode; label: string; hint: string }) => {
     const active = value === kind
     return (
@@ -200,13 +195,13 @@ function ModeRadio({
     <div role="radiogroup" className="flex flex-col gap-2">
       <Option
         kind="all"
-        label="接收所有联系人"
-        hint="任何能发消息给你的人都会触发 AI 回复(默认)"
+        label={t('channel.whatsapp.allowlist.modeAll')}
+        hint={t('channel.whatsapp.allowlist.modeAllHint')}
       />
       <Option
         kind="specific"
-        label="仅接收指定号码"
-        hint="只对下方列出的号码触发 AI 回复,其它来源不打扰"
+        label={t('channel.whatsapp.allowlist.modeSpecific')}
+        hint={t('channel.whatsapp.allowlist.modeSpecificHint')}
       />
     </div>
   )
@@ -224,6 +219,7 @@ function ModeRadio({
  * spec v3 §3.6 / §3.8 / §3.10 / §9.1。
  */
 export function WhatsappChannelConfig({ onSaved, onClose, connected }: Props) {
+  const { t } = useTranslation()
   const [phase, setPhase] = useState<Phase>('idle')
   const [qrUrl, setQrUrl] = useState<string>('')
   const [expireSec, setExpireSec] = useState<number>(60)
@@ -293,7 +289,7 @@ export function WhatsappChannelConfig({ onSaved, onClose, connected }: Props) {
     } catch (e) {
       pushNotification({
         level: 'error',
-        title: '添加 WhatsApp 失败',
+        title: t('channel.whatsapp.config.addFailed'),
         message: e instanceof Error ? e.message : String(e),
         actions: [],
         dismissible: true,
@@ -313,8 +309,8 @@ export function WhatsappChannelConfig({ onSaved, onClose, connected }: Props) {
             const payload = JSON.parse(result.failReason) as SuccessPayload
             pushNotification({
               level: 'success',
-              title: 'WhatsApp 已连接',
-              message: `已连接:${payload.push_name}`,
+              title: t('channel.whatsapp.config.connectedTitle'),
+              message: t('channel.whatsapp.config.connectedMessage', { name: payload.push_name }),
               actions: [],
               dismissible: true,
               autoHide: 4,
@@ -323,8 +319,8 @@ export function WhatsappChannelConfig({ onSaved, onClose, connected }: Props) {
           } catch {
             pushNotification({
               level: 'success',
-              title: 'WhatsApp 已连接',
-              message: '账号已成功接入',
+              title: t('channel.whatsapp.config.connectedTitle'),
+              message: t('channel.whatsapp.config.connectedGeneric'),
               actions: [],
               dismissible: true,
               autoHide: 4,
@@ -398,8 +394,8 @@ export function WhatsappChannelConfig({ onSaved, onClose, connected }: Props) {
     if (allowMode === 'specific' && parsed.errors.length > 0) {
       pushNotification({
         level: 'error',
-        title: '号码格式无效',
-        message: `${parsed.errors.length} 行号码格式有误,请检查后再保存`,
+        title: t('channel.whatsapp.allowlist.invalidTitle'),
+        message: t('channel.whatsapp.allowlist.invalidMessage', { count: parsed.errors.length }),
         actions: [],
         dismissible: true,
         autoHide: 4,
@@ -412,11 +408,11 @@ export function WhatsappChannelConfig({ onSaved, onClose, connected }: Props) {
       await channelWhatsappUpdateAllowFrom(parsed.ok)
       pushNotification({
         level: 'success',
-        title: '已保存',
+        title: t('channel.whatsapp.allowlist.savedTitle'),
         message:
           allowMode === 'all'
-            ? '已设置为接收所有联系人'
-            : `已限制为 ${parsed.ok.length} 个指定号码`,
+            ? t('channel.whatsapp.allowlist.savedAll')
+            : t('channel.whatsapp.allowlist.savedSpecific', { count: parsed.ok.length }),
         actions: [],
         dismissible: true,
         autoHide: 4,
@@ -427,7 +423,7 @@ export function WhatsappChannelConfig({ onSaved, onClose, connected }: Props) {
     } catch (e) {
       pushNotification({
         level: 'error',
-        title: '保存失败',
+        title: t('channel.whatsapp.allowlist.saveFailed'),
         message: e instanceof Error ? e.message : String(e),
         actions: [],
         dismissible: true,
@@ -441,10 +437,10 @@ export function WhatsappChannelConfig({ onSaved, onClose, connected }: Props) {
 
   async function handleRemove() {
     const confirmed = await requestConfirm({
-      title: '移除 WhatsApp 频道?',
-      description: '会删除本地保存的 WhatsApp 会话和允许列表。已有聊天历史保留。',
-      confirmLabel: '确认移除',
-      cancelLabel: '取消',
+      title: t('channel.remove.whatsapp.title'),
+      description: t('channel.remove.whatsapp.description'),
+      confirmLabel: t('channel.actions.confirmRemove'),
+      cancelLabel: t('channel.actions.cancel'),
       variant: 'destructive',
     })
     if (!confirmed) return
@@ -456,7 +452,7 @@ export function WhatsappChannelConfig({ onSaved, onClose, connected }: Props) {
     } catch (e) {
       pushNotification({
         level: 'error',
-        title: '移除失败',
+        title: t('channel.whatsapp.config.removeFailed'),
         message: e instanceof Error ? e.message : String(e),
         actions: [],
         dismissible: true,
@@ -484,7 +480,7 @@ export function WhatsappChannelConfig({ onSaved, onClose, connected }: Props) {
     return (
       <RegistrationModal
         mode="qr_url"
-        title="扫码登录 WhatsApp"
+        title={t('channel.whatsapp.config.scanTitle')}
         qrUrl={qrUrl}
         expireSeconds={expireSec}
         pollState={pollOnce}
@@ -499,14 +495,14 @@ export function WhatsappChannelConfig({ onSaved, onClose, connected }: Props) {
     <div className="flex max-h-[78vh] w-full flex-col overflow-hidden bg-background">
       <div className="flex flex-col items-center px-10 pb-5 pt-8 text-center">
         <h2 className="text-2xl font-bold tracking-tight text-foreground">
-          {isConfigured ? 'WhatsApp 配置' : '配置 WhatsApp'}
+          {isConfigured ? t('channel.whatsapp.config.titleConfigured') : t('channel.whatsapp.config.titleNew')}
         </h2>
         <p className="mt-3 text-sm font-medium text-muted-foreground">
           {isConfigured
             ? connected
-              ? '设置哪些联系人发来的消息会触发 AI 回复'
-              : '管理允许列表;会话失效时可重新扫码'
-            : '通过手机 WhatsApp 扫码登录,AIjia 将作为已链接设备接入'}
+              ? t('channel.whatsapp.config.subtitleConnected')
+              : t('channel.whatsapp.config.subtitleDisconnected')
+            : t('channel.whatsapp.config.subtitleNew')}
         </p>
       </div>
 
@@ -514,7 +510,7 @@ export function WhatsappChannelConfig({ onSaved, onClose, connected }: Props) {
         {!isConfigured && (
           <div className="flex justify-center">
             <Button onClick={handleAddOrRescan} className="rounded-full px-6">
-              添加 WhatsApp 账号
+              {t('channel.whatsapp.config.addAccount')}
             </Button>
           </div>
         )}
@@ -522,9 +518,9 @@ export function WhatsappChannelConfig({ onSaved, onClose, connected }: Props) {
         {isConfigured && needsReauth && (
           <div className="flex items-start gap-3 rounded-xl border border-border bg-card p-4">
             <div className="flex-1">
-              <div className="text-sm font-semibold text-destructive">会话已失效</div>
+              <div className="text-sm font-semibold text-destructive">{t('channel.whatsapp.config.sessionExpired')}</div>
               <div className="mt-1 text-xs text-muted-foreground">
-                手机端可能退出了登录或长时间离线,需要重新扫码配对。
+                {t('channel.whatsapp.config.sessionExpiredHint')}
               </div>
             </div>
             <Button
@@ -534,19 +530,19 @@ export function WhatsappChannelConfig({ onSaved, onClose, connected }: Props) {
               onClick={handleAddOrRescan}
             >
               <RefreshCcw className="mr-1.5 h-3.5 w-3.5" />
-              重新扫码
+              {t('channel.whatsapp.config.rescan')}
             </Button>
           </div>
         )}
 
         {isConfigured && (
           <section className="space-y-4">
-            <h3 className="text-sm font-semibold text-foreground">允许的发送人</h3>
+            <h3 className="text-sm font-semibold text-foreground">{t('channel.whatsapp.allowlist.title')}</h3>
 
             {allowLoading ? (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                读取允许列表…
+                {t('channel.whatsapp.allowlist.loading')}
               </div>
             ) : (
               <>
@@ -566,14 +562,14 @@ export function WhatsappChannelConfig({ onSaved, onClose, connected }: Props) {
                             <Input
                               value={row.number}
                               onChange={(e) => setRowNumber(row.id, e.target.value)}
-                              placeholder="13912345678"
+                              placeholder={t('channel.whatsapp.allowlist.placeholder')}
                               inputMode="tel"
                               className="h-9 flex-1"
                               aria-invalid={err ? true : undefined}
                             />
                             <button
                               type="button"
-                              aria-label="删除此行"
+                              aria-label={t('channel.actions.deleteRow')}
                               onClick={() => removeRow(row.id)}
                               className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-destructive"
                             >
@@ -581,7 +577,7 @@ export function WhatsappChannelConfig({ onSaved, onClose, connected }: Props) {
                             </button>
                           </div>
                           {err && (
-                            <p className="px-1 text-xs text-destructive">{err.reason}</p>
+                            <p className="px-1 text-xs text-destructive">{t(err.reason)}</p>
                           )}
                         </div>
                       )
@@ -595,7 +591,7 @@ export function WhatsappChannelConfig({ onSaved, onClose, connected }: Props) {
                       onClick={addRow}
                     >
                       <Plus className="mr-1 h-3.5 w-3.5" />
-                      添加号码
+                      {t('channel.actions.addNumber')}
                     </Button>
                   </div>
                 )}
@@ -615,7 +611,7 @@ export function WhatsappChannelConfig({ onSaved, onClose, connected }: Props) {
               disabled={removing || saving}
             >
               {removing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              移除整个频道
+              {t('channel.actions.removeChannel')}
             </Button>
             <Button
               className="flex-1 rounded-full"
@@ -623,12 +619,12 @@ export function WhatsappChannelConfig({ onSaved, onClose, connected }: Props) {
               disabled={saving || removing || allowLoading}
             >
               {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              保存
+              {t('channel.actions.save')}
             </Button>
           </>
         ) : (
           <Button variant="ghost" className="w-full rounded-full" onClick={onClose}>
-            取消
+            {t('channel.actions.cancel')}
           </Button>
         )}
       </div>
