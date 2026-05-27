@@ -57,6 +57,14 @@ pub struct CanonicalMessage {
     pub tool_name: Option<String>,
     #[serde(default)]
     pub is_error: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stop_reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,11 +74,23 @@ pub struct ContentBlock {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub mime_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub arguments: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub opaque: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -120,13 +140,23 @@ mod tests {
                     content: vec![ContentBlock {
                         kind: "text".to_string(),
                         text: Some("hi".to_string()),
+                        mime_type: None,
+                        data: None,
+                        url: None,
                         id: None,
                         name: None,
                         arguments: None,
+                        signature: None,
+                        opaque: None,
+                        source: None,
                     }],
                     tool_call_id: None,
                     tool_name: None,
                     is_error: false,
+                    provider: None,
+                    usage: None,
+                    stop_reason: None,
+                    created_at: None,
                 }],
             },
             tools: vec![],

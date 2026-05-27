@@ -868,7 +868,11 @@ async fn dispatch_stream(route: &RouteResult, request: LlmRequest) -> Result<Str
             p.stream(request).await
         }
         "aijia-v2" => {
-            let p = aijia_gateway_v2::AijiaGatewayV2Provider::new(route.api_key.clone());
+            let p = aijia_gateway_v2::AijiaGatewayV2Provider::with_route(
+                route.api_key.clone(),
+                route.model_type.clone(),
+                route.use_tools,
+            );
             p.stream(request).await
         }
         other => {
