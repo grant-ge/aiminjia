@@ -15,6 +15,7 @@ use std::sync::Arc;
 
 use crate::auth::AuthManager;
 use crate::llm::masking::{MaskingContext, MaskingLevel};
+use crate::llm::providers::aijia_gateway_v2;
 use crate::llm::providers::claude;
 use crate::llm::providers::custom;
 use crate::llm::providers::lotus;
@@ -23,7 +24,7 @@ use crate::llm::providers::LlmProviderTrait;
 use crate::llm::router::{self, RouteResult};
 use crate::llm::streaming::*;
 use crate::llm::tools;
-use crate::models::settings::AppSettings;
+use crate::models::settings::{AppSettings, CloudGatewayMode};
 use crate::runtime::ids::RunId;
 use crate::runtime::run_registry::RuntimeRunRegistry;
 use crate::storage::file_store::AppStorage;
@@ -125,6 +126,19 @@ fn is_auth_revoked_error(err: &anyhow::Error) -> bool {
 /// header". Routing now always yields `"lotus"`, so this is defensive depth.
 fn provider_resolves_to_lotus(provider: &str) -> bool {
     !matches!(provider, "openai" | "claude" | "custom")
+}
+
+fn apply_cloud_gateway_mode(route: &mut RouteResult, settings: &AppSettings) {
+    if !provider_resolves_to_lotus(&route.provider) {
+        return;
+    }
+
+    match settings.cloud_gateway_mode {
+        CloudGatewayMode::V2 | CloudGatewayMode::Auto => {
+            route.provider = "aijia-v2".to_string();
+        }
+        CloudGatewayMode::Legacy => {}
+    }
 }
 
 fn is_retryable_error(err: &anyhow::Error) -> bool {
@@ -445,6 +459,7 @@ impl LlmGateway {
                 }
             }
         }
+        apply_cloud_gateway_mode(&mut route, settings);
 
         log::info!(
             "Routing task {:?} to provider '{}' (tools={})",
@@ -852,6 +867,10 @@ async fn dispatch_stream(route: &RouteResult, request: LlmRequest) -> Result<Str
             let p = lotus::LotusProvider::new(route.api_key.clone());
             p.stream(request).await
         }
+        "aijia-v2" => {
+            let p = aijia_gateway_v2::AijiaGatewayV2Provider::new(route.api_key.clone());
+            p.stream(request).await
+        }
         other => {
             log::warn!("Unknown provider '{}', falling back to lotus", other);
             let p = lotus::LotusProvider::new(route.api_key.clone());
@@ -1044,6 +1063,36 @@ mod tests {
                 ("user", "original user"),
             ]
         );
+    }
+
+    #[test]
+    fn cloud_gateway_mode_v2_rewrites_lotus_route_only() {
+        let settings = AppSettings {
+            cloud_gateway_mode: CloudGatewayMode::V2,
+            ..AppSettings::default()
+        };
+        let mut lotus_route = RouteResult {
+            provider: "lotus".to_string(),
+            api_key: "session".to_string(),
+            model_hint: String::new(),
+            use_tools: true,
+            endpoint_url: String::new(),
+            model_type: "chat".to_string(),
+        };
+        let mut custom_route = RouteResult {
+            provider: "custom".to_string(),
+            api_key: "key".to_string(),
+            model_hint: String::new(),
+            use_tools: true,
+            endpoint_url: "http://localhost".to_string(),
+            model_type: "chat".to_string(),
+        };
+
+        apply_cloud_gateway_mode(&mut lotus_route, &settings);
+        apply_cloud_gateway_mode(&mut custom_route, &settings);
+
+        assert_eq!(lotus_route.provider, "aijia-v2");
+        assert_eq!(custom_route.provider, "custom");
     }
 
     #[test]
