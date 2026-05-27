@@ -106,6 +106,21 @@ pub enum RuntimeEventKind {
         /// Optional wall-clock duration of the tool execution in milliseconds.
         duration_ms: Option<u64>,
     },
+    /// Live stdout/stderr tail emitted by long-running shell tools (Bash /
+    /// PowerShell). Throttled to ~500ms so a chatty command doesn't saturate
+    /// the IPC bus. The frontend renders this in-line under the running tool
+    /// card so users can see progress instead of a silent spinner for the
+    /// whole timeout window. Sent in coalesced "latest tail" form (watch
+    /// channel semantics) — clients should treat each event as the current
+    /// snapshot, not as an append.
+    ToolProgress {
+        tool_call_id: ToolCallId,
+        /// Most recent N lines of merged stdout/stderr (UTF-8 safe truncation).
+        stdout_tail: String,
+        /// Total bytes captured so far (including bytes not in `stdout_tail`).
+        /// Lets the UI show "已收到 12.4 KB" without keeping its own counter.
+        total_bytes: u64,
+    },
     PermissionAskRequired {
         tool_call_id: ToolCallId,
         tool_name: String,
@@ -222,6 +237,7 @@ impl RuntimeEvent {
         let tool_call_id = match &kind {
             RuntimeEventKind::ToolCallExecuting { tool_call_id, .. }
             | RuntimeEventKind::ToolCallCompleted { tool_call_id, .. }
+            | RuntimeEventKind::ToolProgress { tool_call_id, .. }
             | RuntimeEventKind::PermissionAskRequired { tool_call_id, .. } => {
                 Some(tool_call_id.clone())
             }

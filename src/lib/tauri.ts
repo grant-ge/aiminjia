@@ -45,6 +45,8 @@ export const TAURI_EVENTS = {
   NOTIFICATION: 'notification',
   TOOL_EXECUTING: 'tool:executing',
   TOOL_COMPLETED: 'tool:completed',
+  /** Live stdout/stderr tail for long-running shell tools (Bash/PowerShell). */
+  TOOL_PROGRESS: 'tool:progress',
   CONVERSATION_TITLE_UPDATED: 'conversation:title-updated',
   AGENT_IDLE: 'agent:idle',
   TASK_STATUS_CHANGED: 'task:status-changed',
@@ -125,6 +127,24 @@ export interface ToolCompletedPayload {
   toolId: string
   success: boolean
   summary?: string
+}
+
+/** Live progress snapshot from a running shell tool (Bash/PowerShell).
+ *
+ * Each event is a "current tail" snapshot (watch-channel semantics on the
+ * backend), not an append — the frontend should overwrite, not concatenate.
+ * Backend throttles emit to ~500ms so high-frequency commands don't saturate
+ * the IPC bus. `totalBytes` includes bytes already discarded by the 512KB
+ * buffer cap, so the UI can show "已收到 N KB" even after the buffer plateaus.
+ */
+export interface ToolProgressPayload {
+  conversationId: string
+  runId?: string
+  toolId: string
+  /** Up to ~20 lines of the most recent merged stdout/stderr. */
+  stdoutTail: string
+  /** Total bytes captured so far (cumulative, not the tail length). */
+  totalBytes: number
 }
 
 export interface ChatAttachmentPayload {
@@ -1811,6 +1831,20 @@ export function onToolExecuting(
   handler: (payload: ToolExecutingPayload) => void,
 ): Promise<() => void> {
   return listen<ToolExecutingPayload>(TAURI_EVENTS.TOOL_EXECUTING, createInstrumentedEventHandler(TAURI_EVENTS.TOOL_EXECUTING, (event) => {
+    handler(event.payload)
+  }))
+}
+
+/**
+ * Listen for live progress snapshots from long-running shell tools.
+ *
+ * @param handler - Callback receiving the current stdout/stderr tail + total bytes received.
+ * @returns A function to unlisten (unsubscribe) from the event.
+ */
+export function onToolProgress(
+  handler: (payload: ToolProgressPayload) => void,
+): Promise<() => void> {
+  return listen<ToolProgressPayload>(TAURI_EVENTS.TOOL_PROGRESS, createInstrumentedEventHandler(TAURI_EVENTS.TOOL_PROGRESS, (event) => {
     handler(event.payload)
   }))
 }

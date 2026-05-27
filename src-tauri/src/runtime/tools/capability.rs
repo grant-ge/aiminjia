@@ -120,6 +120,29 @@ pub trait NotificationSink: Send + Sync + std::fmt::Debug {
     fn notify(&self, message: &str);
 }
 
+/// Narrow sink for long-running tools (Bash / PowerShell) to push
+/// incremental stdout/stderr snapshots while a single tool call is still
+/// executing.
+///
+/// **Architecture note**: tools must not reach into `RuntimeEventBus`
+/// directly (`CapabilityContext` is a deliberately narrow interface, see
+/// `CLAUDE.md` §4). The orchestration layer injects a concrete impl that
+/// translates `on_progress` into `RuntimeEventKind::ToolProgress` and
+/// forwards it through the bus.
+///
+/// **Throttling**: this trait makes no throttling guarantees — the caller
+/// (typically a bash spawner) is responsible for coalescing rapid updates
+/// to ~500ms so the IPC bus doesn't melt. The default implementation
+/// (`BusBackedToolProgressSink`) accepts every call.
+pub trait ToolProgressSink: Send + Sync + std::fmt::Debug {
+    /// Push a progress snapshot for the currently executing tool call.
+    ///
+    /// `stdout_tail` should be the most recent N lines of merged stdout +
+    /// stderr (UTF-8 safe). `total_bytes` is the total bytes captured so
+    /// far (lets the UI show "已收到 N KB" without keeping its own counter).
+    fn on_progress(&self, tool_call_id: &str, stdout_tail: &str, total_bytes: u64);
+}
+
 // ── FileOperations trait ─────────────────────────────────────────────────────
 
 /// Narrow file-operations capability exposed to runtime tools.
@@ -167,6 +190,9 @@ pub struct CapabilityContext {
     pub file_reading_limits: Option<FileReadingLimits>,
     /// Optional sink for user-visible notifications emitted by runtime tools.
     pub notification_sink: Option<Arc<dyn NotificationSink>>,
+    /// Optional sink for incremental tool progress (live stdout/stderr).
+    /// `None` for legacy/test paths or short-lived tools that don't stream.
+    pub tool_progress_sink: Option<Arc<dyn ToolProgressSink>>,
     /// Whether this execution is running inside a subagent / child context.
     pub is_subagent: bool,
 }
@@ -196,6 +222,13 @@ impl std::fmt::Debug for CapabilityContext {
                     .as_ref()
                     .map(|_| "<NotificationSink>"),
             )
+            .field(
+                "tool_progress_sink",
+                &self
+                    .tool_progress_sink
+                    .as_ref()
+                    .map(|_| "<ToolProgressSink>"),
+            )
             .field("is_subagent", &self.is_subagent)
             .finish()
     }
@@ -216,6 +249,7 @@ impl CapabilityContext {
             read_file_state: None,
             file_reading_limits: None,
             notification_sink: None,
+            tool_progress_sink: None,
             is_subagent: false,
         }
     }
@@ -237,6 +271,14 @@ impl CapabilityContext {
 
     pub fn with_notification_sink(mut self, notification_sink: Arc<dyn NotificationSink>) -> Self {
         self.notification_sink = Some(notification_sink);
+        self
+    }
+
+    pub fn with_tool_progress_sink(
+        mut self,
+        sink: Arc<dyn ToolProgressSink>,
+    ) -> Self {
+        self.tool_progress_sink = Some(sink);
         self
     }
 

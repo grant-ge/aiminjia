@@ -12,6 +12,10 @@ export interface ToolStep {
   durationMs?: number
   inputJson?: string
   output?: ReactNode
+  /** Live stdout/stderr tail while status === 'running' (Bash et al). */
+  progressTail?: string
+  /** Total bytes captured so far (independent of `progressTail` length). */
+  progressTotalBytes?: number
 }
 
 interface ToolGroupStepRowProps {

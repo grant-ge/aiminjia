@@ -17,6 +17,7 @@ pub fn kind_label(kind: &RuntimeEventKind) -> &'static str {
         RuntimeEventKind::MessagePersisted { .. } => "MessagePersisted",
         RuntimeEventKind::ToolCallExecuting { .. } => "ToolCallExecuting",
         RuntimeEventKind::ToolCallCompleted { .. } => "ToolCallCompleted",
+        RuntimeEventKind::ToolProgress { .. } => "ToolProgress",
         RuntimeEventKind::PermissionAskRequired { .. } => "PermissionAskRequired",
         RuntimeEventKind::UserInteractionRequired { .. } => "UserInteractionRequired",
         RuntimeEventKind::UserInteractionResolved { .. } => "UserInteractionResolved",

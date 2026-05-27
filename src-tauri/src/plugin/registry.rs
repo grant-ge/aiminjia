@@ -593,6 +593,14 @@ impl ToolRegistry {
                         crate::runtime::tools::capability::FileReadingLimits::default(),
                     ),
                     notification_sink: None,
+                    // Tool progress sink is wired by the per-turn QueryEngine
+                    // (BusBackedToolProgressSink) and propagates into the
+                    // ToolExecutionContext that actually reaches bash/powershell.
+                    // The legacy `plugin/registry.rs` builder doesn't have a
+                    // bus reference here, so leave it None — long-running tools
+                    // dispatched through this path will degrade silently to
+                    // "no live tail", which matches pre-2026-05-26 behavior.
+                    tool_progress_sink: None,
                     runtime_resolver: ctx.runtime_resolver.clone(),
                     is_subagent: ctx.agent_id.is_some(),
                 };

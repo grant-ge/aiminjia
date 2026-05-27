@@ -117,12 +117,40 @@ pub fn content_from_output(output: &str, semantic_message: Option<&str>) -> Stri
 }
 
 pub async fn read_merged_streams<R1, R2>(
-    mut stdout: R1,
-    mut stderr: R2,
+    stdout: R1,
+    stderr: R2,
 ) -> std::io::Result<(Vec<u8>, bool)>
 where
     R1: tokio::io::AsyncRead + Unpin,
     R2: tokio::io::AsyncRead + Unpin,
+{
+    // Delegate to the with-progress variant with a no-op callback so old
+    // callers (PowerShell, tests) keep the existing signature.
+    read_merged_streams_with_progress(stdout, stderr, |_, _| {}).await
+}
+
+/// Same as [`read_merged_streams`] but invokes `on_chunk` synchronously
+/// after every successful append.
+///
+/// Contract:
+/// - `captured` is the **current full buffer** (already capped at
+///   `MAX_OUTPUT_BYTES`); the callback must NOT mutate it. Take a tail
+///   snapshot if you need to forward something.
+/// - `total_received_bytes` is the cumulative byte count *including*
+///   bytes that were dropped by the cap — so the UI can show "12 KB
+///   received" even after the buffer plateaus.
+/// - The callback runs in the same task as the IO loop; keep it cheap
+///   (e.g. update a `tokio::sync::watch` sender) and let a separate
+///   throttling task do the actual emit.
+pub async fn read_merged_streams_with_progress<R1, R2, F>(
+    mut stdout: R1,
+    mut stderr: R2,
+    mut on_chunk: F,
+) -> std::io::Result<(Vec<u8>, bool)>
+where
+    R1: tokio::io::AsyncRead + Unpin,
+    R2: tokio::io::AsyncRead + Unpin,
+    F: FnMut(&[u8], u64) + Send,
 {
     let mut captured = Vec::new();
     let mut stdout_buf = [0u8; 8192];
@@ -130,6 +158,7 @@ where
     let mut stdout_open = true;
     let mut stderr_open = true;
     let mut truncated = false;
+    let mut total_received_bytes: u64 = 0;
 
     while stdout_open || stderr_open {
         tokio::select! {
@@ -139,6 +168,8 @@ where
                     stdout_open = false;
                 } else {
                     append_capped_bytes(&mut captured, &stdout_buf[..read], &mut truncated);
+                    total_received_bytes = total_received_bytes.saturating_add(read as u64);
+                    on_chunk(&captured, total_received_bytes);
                 }
             }
             read = stderr.read(&mut stderr_buf), if stderr_open => {
@@ -147,12 +178,29 @@ where
                     stderr_open = false;
                 } else {
                     append_capped_bytes(&mut captured, &stderr_buf[..read], &mut truncated);
+                    total_received_bytes = total_received_bytes.saturating_add(read as u64);
+                    on_chunk(&captured, total_received_bytes);
                 }
             }
         }
     }
 
     Ok((captured, truncated))
+}
+
+/// Returns the last `n` lines of `s`, ASCII-byte counted. Used to build a
+/// compact tail for the live progress event (full output still goes to
+/// `metrics.jsonl` and the final tool result).
+pub fn tail_n_lines(s: &str, n: usize) -> String {
+    if n == 0 {
+        return String::new();
+    }
+    let lines: Vec<&str> = s.lines().collect();
+    let total = lines.len();
+    if total <= n {
+        return s.to_string();
+    }
+    lines[total - n..].join("\n")
 }
 
 fn append_capped_bytes(captured: &mut Vec<u8>, chunk: &[u8], truncated: &mut bool) {
@@ -373,4 +421,60 @@ pub async fn kill_child_process_tree(child: &mut Child) {
 
     let _ = child.kill().await;
     let _ = child.wait().await;
+}
+
+#[cfg(test)]
+mod progress_helpers_tests {
+    use super::{read_merged_streams_with_progress, tail_n_lines};
+    use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn tail_n_lines_returns_full_string_when_under_limit() {
+        let s = "a\nb\nc";
+        assert_eq!(tail_n_lines(s, 5), s);
+    }
+
+    #[test]
+    fn tail_n_lines_returns_last_n_lines() {
+        let s = "a\nb\nc\nd\ne";
+        assert_eq!(tail_n_lines(s, 2), "d\ne");
+    }
+
+    #[test]
+    fn tail_n_lines_with_zero_returns_empty() {
+        let s = "a\nb\nc";
+        assert_eq!(tail_n_lines(s, 0), "");
+    }
+
+    /// `on_chunk` must be called for every appended chunk, with monotonically
+    /// non-decreasing `total_received_bytes` and the current full buffer.
+    #[tokio::test]
+    async fn on_chunk_called_per_append_with_monotonic_bytes() {
+        let stdout = std::io::Cursor::new(b"hello\n".to_vec());
+        let stderr = std::io::Cursor::new(b"world\n".to_vec());
+        let observed: Arc<Mutex<Vec<(usize, u64)>>> = Arc::new(Mutex::new(vec![]));
+        let observed_clone = observed.clone();
+
+        let (bytes, truncated) = read_merged_streams_with_progress(stdout, stderr, move |buf, total| {
+            observed_clone.lock().unwrap().push((buf.len(), total));
+        })
+        .await
+        .unwrap();
+
+        assert!(!truncated);
+        // Captured bytes contain both streams (order indeterminate).
+        let captured_str = String::from_utf8_lossy(&bytes);
+        assert!(captured_str.contains("hello"));
+        assert!(captured_str.contains("world"));
+
+        let observed = observed.lock().unwrap().clone();
+        assert!(!observed.is_empty(), "on_chunk should fire at least once");
+        let mut prev_total = 0u64;
+        for (_buf_len, total) in &observed {
+            assert!(*total >= prev_total, "total bytes must be monotonic");
+            prev_total = *total;
+        }
+        // Final total ≥ sum of input lengths (6 + 6 = 12).
+        assert!(prev_total >= 12);
+    }
 }

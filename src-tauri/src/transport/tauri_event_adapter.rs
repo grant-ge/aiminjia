@@ -68,6 +68,20 @@ pub fn map_runtime_event(event: &RuntimeEvent) -> Option<LegacyEvent> {
                 "input": input,
             }),
         }),
+        RuntimeEventKind::ToolProgress {
+            tool_call_id,
+            stdout_tail,
+            total_bytes,
+        } => Some(LegacyEvent {
+            name: "tool:progress".to_string(),
+            payload: json!({
+                "conversationId": conversation_id,
+                "runId": event.run_id.as_str(),
+                "toolId": tool_call_id.as_str(),
+                "stdoutTail": stdout_tail,
+                "totalBytes": total_bytes,
+            }),
+        }),
         RuntimeEventKind::ToolCallCompleted {
             tool_call_id,
             tool_name,

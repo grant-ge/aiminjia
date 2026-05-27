@@ -654,7 +654,9 @@
   },
   "toolTrace": {
     "input": "输入",
-    "output": "输出"
+    "output": "输出",
+    "live": "实时输出",
+    "liveBytes": "已收到 {{bytes}}"
   },
   "toolGroup": {
     "title": "工具调用",
@@ -686,7 +688,10 @@
     "sendFailed": "发送失败",
     "sendFailedDesc": "消息发送失败，请检查网络和设置。",
     "modelRouteUnavailable": "已切换模型",
-    "modelRouteUnavailableDesc": "原模型暂不可用，已自动切换到 {{model}}，请重新发送。"
+    "modelRouteUnavailableDesc": "原模型暂不可用，已自动切换到 {{model}}，请重新发送。",
+    "resend": "重发",
+    "resendNoUserMessage": "没有可重发的消息",
+    "resendFailed": "重发失败"
   },
   "format": {
     "justNow": "刚刚",

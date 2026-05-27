@@ -6,6 +6,20 @@ interface ToolTraceIOProps {
   inputJson?: string
   output?: ReactNode
   isError?: boolean
+  /**
+   * Live stdout/stderr tail while the tool is still running.
+   * Rendered as a third "实时输出" block below input. Empty/undefined
+   * suppresses the block.
+   */
+  progressTail?: string
+  /** Total bytes captured so far (for the "已收到 N KB" label). */
+  progressTotalBytes?: number
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`
 }
 
 /**
@@ -40,9 +54,17 @@ function tryUnwrapAsCommand(toolName: string | undefined, inputJson: string): st
   }
 }
 
-export function ToolTraceIO({ toolName, inputJson, output, isError = false }: ToolTraceIOProps) {
+export function ToolTraceIO({
+  toolName,
+  inputJson,
+  output,
+  isError = false,
+  progressTail,
+  progressTotalBytes,
+}: ToolTraceIOProps) {
   const { t } = useTranslation()
-  if (!inputJson && !output) return null
+  const hasProgress = !!(progressTail && progressTail.length > 0)
+  if (!inputJson && !output && !hasProgress) return null
 
   const unwrappedCommand = inputJson ? tryUnwrapAsCommand(toolName, inputJson) : null
 
@@ -64,6 +86,37 @@ export function ToolTraceIO({ toolName, inputJson, output, isError = false }: To
             }}
           >
             {unwrappedCommand ?? inputJson}
+          </pre>
+        </div>
+      ) : null}
+      {hasProgress ? (
+        <div className="flex flex-col gap-1.5">
+          <div
+            className="flex items-baseline justify-between gap-2 text-xs font-semibold"
+            style={{ color: 'var(--color-text-muted)' }}
+          >
+            <span>{t('toolTrace.live', '实时输出')}</span>
+            {typeof progressTotalBytes === 'number' && progressTotalBytes > 0 ? (
+              <span className="font-normal">
+                {t('toolTrace.liveBytes', { bytes: formatBytes(progressTotalBytes), defaultValue: '已收到 {{bytes}}' })}
+              </span>
+            ) : null}
+          </div>
+          <pre
+            // Tail block: monospace, muted background, scrolls within a max
+            // height so a chatty command (npm install) doesn't push the rest
+            // of the chat off-screen. Latest line stays visible at the bottom
+            // — we render the tail end-of-string, so naturally the most recent
+            // output is at the bottom of the pre element. Browsers don't
+            // auto-scroll pre tags; that's acceptable because the tail is
+            // overwritten in place by each progress event (no append).
+            className="max-h-48 overflow-auto whitespace-pre-wrap rounded-md p-3 font-mono text-xs leading-relaxed"
+            style={{
+              background: 'var(--color-bg-neutral)',
+              color: 'var(--color-text-secondary)',
+            }}
+          >
+            {progressTail}
           </pre>
         </div>
       ) : null}

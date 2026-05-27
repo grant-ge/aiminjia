@@ -12,11 +12,57 @@ use crate::runtime::events::{RuntimeEvent, RuntimeEventKind};
 use crate::runtime::path_auth::{RuleSource, ToolPermissionContext};
 use crate::runtime::state::TurnState;
 use crate::runtime::store::AuthorizedWorkspaceRef;
+use crate::runtime::ids::{RunId, SessionId, ToolCallId};
 use crate::runtime::tools::permission::{PermissionDecision, PermissionReason};
 use crate::runtime::tools::{
     CapabilityContext, FileOperations, FileStateCache, InterruptBehavior, StorageCapability,
-    ToolDispatcher, ToolExecutionContext,
+    ToolDispatcher, ToolExecutionContext, ToolProgressSink,
 };
+
+/// Concrete `ToolProgressSink` impl used in production: forwards each
+/// `on_progress` call to a `RuntimeEventKind::ToolProgress` on the per-turn
+/// `RuntimeEventBus`. Owned by the per-turn capability context so its
+/// `(session_id, run_id)` identifies the caller without any further routing.
+///
+/// Spawns a detached tokio task per call so the IO loop in `bash.rs` never
+/// blocks on subscribers (some of which fan out to the Tauri webview, which
+/// can stall briefly on dev tools). The throttling contract lives in the
+/// caller (watch-channel coalesce in bash), not here.
+#[derive(Clone)]
+struct BusBackedToolProgressSink {
+    bus: RuntimeEventBus,
+    session_id: SessionId,
+    run_id: RunId,
+}
+
+impl std::fmt::Debug for BusBackedToolProgressSink {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BusBackedToolProgressSink")
+            .field("session_id", &self.session_id.as_str())
+            .field("run_id", &self.run_id.as_str())
+            .finish()
+    }
+}
+
+impl ToolProgressSink for BusBackedToolProgressSink {
+    fn on_progress(&self, tool_call_id: &str, stdout_tail: &str, total_bytes: u64) {
+        let bus = self.bus.clone();
+        let event = RuntimeEvent::new(
+            self.session_id.clone(),
+            self.run_id.clone(),
+            RuntimeEventKind::ToolProgress {
+                tool_call_id: ToolCallId::new(tool_call_id.to_string()),
+                stdout_tail: stdout_tail.to_string(),
+                total_bytes,
+            },
+        );
+        tokio::spawn(async move {
+            if let Err(err) = bus.emit(event).await {
+                log::debug!("[tool_progress] emit failed: {err}");
+            }
+        });
+    }
+}
 
 #[derive(Clone, Default)]
 pub struct QueryEngine {
@@ -709,6 +755,12 @@ impl QueryEngine {
         });
         let mut ctx = if let Some(workspace_path) = capability_workspace {
             let permission_ctx = self.build_turn_permission_ctx(turn);
+            let progress_sink: Arc<dyn ToolProgressSink> =
+                Arc::new(BusBackedToolProgressSink {
+                    bus: bus.clone(),
+                    session_id: turn.session_id().clone(),
+                    run_id: turn.run_id().clone(),
+                });
             let capability = Arc::new(CapabilityContext {
                 storage: Some(StorageCapability {
                     workspace_path,
@@ -720,6 +772,7 @@ impl QueryEngine {
                 read_file_state: Some(self.read_file_state.clone()),
                 file_reading_limits: None,
                 notification_sink: None,
+                tool_progress_sink: Some(progress_sink),
                 runtime_resolver: self.runtime_resolver.clone(),
                 is_subagent: turn.agent_id().is_some(),
             });
@@ -889,6 +942,12 @@ impl QueryEngine {
         });
         let ctx = if let Some(workspace_path) = capability_workspace {
             let permission_ctx = self.build_turn_permission_ctx(turn);
+            let progress_sink: Arc<dyn ToolProgressSink> =
+                Arc::new(BusBackedToolProgressSink {
+                    bus: bus.clone(),
+                    session_id: turn.session_id().clone(),
+                    run_id: turn.run_id().clone(),
+                });
             let capability = Arc::new(CapabilityContext {
                 storage: Some(StorageCapability {
                     workspace_path,
@@ -900,6 +959,7 @@ impl QueryEngine {
                 read_file_state: Some(self.read_file_state.clone()),
                 file_reading_limits: None,
                 notification_sink: None,
+                tool_progress_sink: Some(progress_sink),
                 runtime_resolver: self.runtime_resolver.clone(),
                 is_subagent: turn.agent_id().is_some(),
             });

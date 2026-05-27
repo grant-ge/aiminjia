@@ -19,8 +19,8 @@ use crate::runtime::tools::RuntimeTool;
 use super::shell_common::{
     collect_reader, content_from_output, emit_shell_failure_diagnostic, format_cancel_message,
     format_command_failure, inject_bundled_runtime_path, interpret_command_result,
-    kill_child_process_tree, read_merged_streams, truncated_to_max_bytes, ExitKind,
-    MAX_OUTPUT_BYTES,
+    kill_child_process_tree, read_merged_streams_with_progress, tail_n_lines,
+    truncated_to_max_bytes, ExitKind, MAX_OUTPUT_BYTES,
 };
 use super::workspace::require_workspace_root;
 use crate::runtime::cancellation::wait_for_cancellation;
@@ -239,7 +239,90 @@ impl RuntimeTool for BashTool {
             .stderr
             .take()
             .ok_or_else(|| ToolError::ExecutionFailed("stderr pipe missing".into()))?;
-        let merged_handle = tokio::spawn(read_merged_streams(stdout, stderr));
+
+        // Live progress wiring. The IO loop writes the latest (captured,
+        // total_bytes) tuple into a tokio::sync::watch channel; a separate
+        // throttling task pulls from it every PROGRESS_TICK_MS, decodes the
+        // last N lines of stdout/stderr, and pushes that snapshot to the
+        // tool_progress_sink (if present). Watch semantics give us natural
+        // coalescing: when the bash command vomits 100 lines in 10ms, the
+        // throttler only sends *one* progress event with the latest tail —
+        // no per-line spam on the bus.
+        const PROGRESS_TICK_MS: u64 = 500;
+        const PROGRESS_TAIL_LINES: usize = 20;
+        // Hard cap on the tail string to protect against pathological lines
+        // (a 100 MB single-line minified payload). 8 KB == ~200 80-col lines.
+        const PROGRESS_TAIL_MAX_BYTES: usize = 8 * 1024;
+
+        let progress_sink = ctx
+            .capability
+            .as_ref()
+            .and_then(|cap| cap.tool_progress_sink.clone());
+        let tool_call_id_for_progress = ctx.tool_call_id.as_str().to_string();
+
+        let (progress_tx, mut progress_rx) =
+            tokio::sync::watch::channel::<(Vec<u8>, u64)>((Vec::new(), 0));
+
+        let progress_task = if let Some(sink) = progress_sink.clone() {
+            let tool_call_id = tool_call_id_for_progress.clone();
+            Some(tokio::spawn(async move {
+                let mut last_sent_bytes: u64 = 0;
+                let mut ticker =
+                    tokio::time::interval(Duration::from_millis(PROGRESS_TICK_MS));
+                ticker.set_missed_tick_behavior(
+                    tokio::time::MissedTickBehavior::Skip,
+                );
+                loop {
+                    tokio::select! {
+                        // watch sender drop → command finished, exit the loop.
+                        changed = progress_rx.changed() => {
+                            if changed.is_err() {
+                                break;
+                            }
+                        }
+                        _ = ticker.tick() => {}
+                    }
+                    let (captured, total_bytes) = progress_rx.borrow().clone();
+                    if total_bytes == last_sent_bytes {
+                        continue;
+                    }
+                    last_sent_bytes = total_bytes;
+                    // Decode for tail extraction only; the original bytes are
+                    // already kept in `captured` for the final tool result.
+                    let decoded = crate::storage::console_decode::decode_console_bytes(
+                        &captured,
+                    );
+                    let mut tail = tail_n_lines(&decoded, PROGRESS_TAIL_LINES);
+                    if tail.len() > PROGRESS_TAIL_MAX_BYTES {
+                        // UTF-8 safe truncation: walk back to a char boundary.
+                        let mut end = PROGRESS_TAIL_MAX_BYTES;
+                        while end > 0 && !tail.is_char_boundary(end) {
+                            end -= 1;
+                        }
+                        // Trim from the start so we keep the *most recent* bytes.
+                        let drop = tail.len() - end;
+                        tail = tail[drop..].to_string();
+                    }
+                    sink.on_progress(&tool_call_id, &tail, total_bytes);
+                }
+            }))
+        } else {
+            None
+        };
+
+        // The IO task writes into the watch channel on every appended chunk.
+        // We move `progress_tx` into it so dropping the task naturally signals
+        // the throttler to stop (Err on `changed()`).
+        let merged_handle = tokio::spawn(async move {
+            read_merged_streams_with_progress(stdout, stderr, |captured, total| {
+                // try_send-equivalent for watch: send() never blocks; receivers
+                // see the latest value on their next poll. We clone the buffer
+                // because the read loop owns it — keeping a borrow alive across
+                // an await point is not possible inside the callback.
+                let _ = progress_tx.send((captured.to_vec(), total));
+            })
+            .await
+        });
 
         let exit_kind = tokio::select! {
             status = child.wait() => {
@@ -261,6 +344,14 @@ impl RuntimeTool for BashTool {
         let (combined_output, combined_truncated) =
             truncated_to_max_bytes(&combined_output, MAX_OUTPUT_BYTES);
         let truncated = stream_truncated || combined_truncated;
+
+        // The merged_handle has finished — the watch sender it owned is now
+        // dropped, so the throttler task will exit on its next `changed()`
+        // poll. Wait briefly for that to happen so we don't leak the task or
+        // race the final tool:completed event with one last stale tool:progress.
+        if let Some(handle) = progress_task {
+            let _ = tokio::time::timeout(Duration::from_millis(750), handle).await;
+        }
 
         match exit_kind {
             ExitKind::Completed(status) => {
@@ -340,5 +431,113 @@ mod tests {
     fn resolve_timeout_secs_rounds_up_subsecond_ms() {
         // 1500ms should round up to 2s (don't truncate to 1s)
         assert_eq!(resolve_timeout_secs(&json!({ "timeout": 1500 })), 2);
+    }
+}
+
+#[cfg(test)]
+mod progress_tests {
+    use crate::runtime::tools::capability::ToolProgressSink;
+    use crate::runtime::tools::{
+        CapabilityContext, RuntimeTool, StorageCapability, ToolExecutionContext,
+    };
+    use serde_json::json;
+    use std::path::PathBuf;
+    use std::sync::{Arc, Mutex};
+    use tempfile::TempDir;
+
+    #[derive(Debug, Default)]
+    struct RecordingSink {
+        events: Mutex<Vec<(String, String, u64)>>,
+    }
+
+    impl ToolProgressSink for RecordingSink {
+        fn on_progress(&self, tool_call_id: &str, stdout_tail: &str, total_bytes: u64) {
+            self.events.lock().unwrap().push((
+                tool_call_id.to_string(),
+                stdout_tail.to_string(),
+                total_bytes,
+            ));
+        }
+    }
+
+    fn cap_with_sink(workspace: PathBuf, sink: Arc<RecordingSink>) -> Arc<CapabilityContext> {
+        Arc::new(CapabilityContext {
+            storage: Some(StorageCapability {
+                workspace_path: workspace,
+                authorized_workspace: None,
+                permission_ctx: Arc::new(
+                    crate::runtime::path_auth::ToolPermissionContext::empty(),
+                ),
+            }),
+            workspace_id: Some("ws-test".to_string()),
+            runtime_resolver: None,
+            file_ops: None,
+            read_file_state: None,
+            file_reading_limits: None,
+            notification_sink: None,
+            tool_progress_sink: Some(sink as Arc<dyn ToolProgressSink>),
+            is_subagent: false,
+        })
+    }
+
+    /// Long-running command (sleep 1.5s + N print bursts) should emit at least
+    /// one progress event well before completion. The throttler ticks every
+    /// 500ms, so over ~1.5s we expect 2-3 emits and a final one near 1500ms.
+    #[tokio::test]
+    #[ignore = "shells out and sleeps ~1.5s — keep out of fast unit run"]
+    async fn long_running_command_emits_progress_before_completion() {
+        let tmp = TempDir::new().unwrap();
+        let sink = Arc::new(RecordingSink::default());
+        let ctx = ToolExecutionContext::for_test("conv-bp", "run-bp", "tc-bp")
+            .with_capability(cap_with_sink(tmp.path().to_path_buf(), sink.clone()));
+        let tool = super::BashTool;
+        let cmd = "for i in 1 2 3; do echo line-$i; sleep 0.6; done";
+        RuntimeTool::execute(&tool, json!({ "command": cmd }), ctx)
+            .await
+            .expect("bash command should succeed");
+
+        let events = sink.events.lock().unwrap().clone();
+        assert!(
+            !events.is_empty(),
+            "expected at least one tool:progress event before completion"
+        );
+        // Each event must carry the correct tool_call_id
+        for (tool_call_id, _tail, _bytes) in &events {
+            assert_eq!(tool_call_id, "tc-bp");
+        }
+        // Total bytes must be monotonic.
+        let mut prev_bytes = 0u64;
+        for (_, _, bytes) in &events {
+            assert!(*bytes >= prev_bytes, "total_bytes must not decrease");
+            prev_bytes = *bytes;
+        }
+        // Last event should mention at least one of the printed lines.
+        let last = &events.last().unwrap().1;
+        assert!(
+            last.contains("line-1") || last.contains("line-2") || last.contains("line-3"),
+            "last tail should contain one of the printed lines, got: {last}",
+        );
+    }
+
+    /// Fast command (`echo hi`) finishes in < 500ms. The throttler may emit a
+    /// final tick or skip emit entirely — either is acceptable as long as the
+    /// command result is correct and no panic happens.
+    #[tokio::test]
+    async fn fast_command_does_not_panic_with_progress_sink() {
+        let tmp = TempDir::new().unwrap();
+        let sink = Arc::new(RecordingSink::default());
+        let ctx = ToolExecutionContext::for_test("conv-fast", "run-fast", "tc-fast")
+            .with_capability(cap_with_sink(tmp.path().to_path_buf(), sink.clone()));
+        let tool = super::BashTool;
+        let result = RuntimeTool::execute(&tool, json!({ "command": "echo hi" }), ctx)
+            .await
+            .expect("fast bash should succeed");
+        assert!(result.content.contains("hi"));
+        // Don't assert on event count — fast commands may finish before the
+        // first 500ms tick. The contract is "won't panic" + "tail correct if
+        // emitted".
+        for (tcid, _, _) in sink.events.lock().unwrap().iter() {
+            assert_eq!(tcid, "tc-fast");
+        }
     }
 }

@@ -80,6 +80,7 @@ async fn runtime_tool_reads_workspace_from_capability_context() {
         read_file_state: None,
         file_reading_limits: None,
         notification_sink: None,
+        tool_progress_sink: None,
         is_subagent: false,
     };
     let ctx = ToolExecutionContext::for_test("conv-1", "run-1", "tc-1")
@@ -104,6 +105,7 @@ fn capability_context_does_not_expose_full_plugin_context() {
         read_file_state: None,
         file_reading_limits: None,
         notification_sink: None,
+        tool_progress_sink: None,
         is_subagent: false,
     };
     // Verify we can ONLY access the declared fields: storage, workspace_id.
@@ -160,6 +162,7 @@ fn capability_context_new_fields_default_to_none() {
         read_file_state: None,
         file_reading_limits: None,
         notification_sink: None,
+        tool_progress_sink: None,
         is_subagent: false,
     };
     assert!(ctx.read_file_state.is_none());
@@ -445,6 +448,7 @@ fn notification_sink_receives_message_from_tool_context() {
         read_file_state: None,
         file_reading_limits: None,
         notification_sink: Some(sink.clone()),
+        tool_progress_sink: None,
         is_subagent: false,
     };
 

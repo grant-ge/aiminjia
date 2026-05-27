@@ -654,7 +654,9 @@
   },
   "toolTrace": {
     "input": "Input",
-    "output": "Output"
+    "output": "Output",
+    "live": "Live output",
+    "liveBytes": "Received {{bytes}}"
   },
   "toolGroup": {
     "title": "Tool calls",
@@ -686,7 +688,10 @@
     "sendFailed": "Send failed",
     "sendFailedDesc": "Failed to send message. Please check your network and settings.",
     "modelRouteUnavailable": "Model switched",
-    "modelRouteUnavailableDesc": "The previous model is unavailable. Auto-switched to {{model}} — please resend your message."
+    "modelRouteUnavailableDesc": "The previous model is unavailable. Auto-switched to {{model}} — please resend your message.",
+    "resend": "Resend",
+    "resendNoUserMessage": "No message to resend",
+    "resendFailed": "Resend failed"
   },
   "format": {
     "justNow": "Just now",

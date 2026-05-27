@@ -12,6 +12,16 @@ export interface ToolExecution {
   durationMs?: number
   input?: unknown  // 来自 tool:executing 事件
   output?: string   // 来自 tool:completed 事件
+  /**
+   * Most recent stdout/stderr tail snapshot from the live `tool:progress`
+   * event. Overwritten each tick; null/undefined once `output` is set.
+   * Only populated for tools that emit progress (Bash today).
+   */
+  progressTail?: string
+  /** Total bytes the backend has captured so far (cumulative). */
+  progressTotalBytes?: number
+  /** Wall-clock Date.now() of the last `tool:progress` event. */
+  progressUpdatedAt?: number
 }
 
 export interface ConversationTaskState {

@@ -38,6 +38,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useDiagnosticsStore } from '@/stores/diagnosticsStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { recordDiagnostic } from '@/lib/diagnostics'
+import { resendLastUserMessage } from '@/lib/resendLastMessage'
 import i18n from '@/i18n'
 import type { Message } from '@/types/message'
 import {
@@ -48,6 +49,7 @@ import {
   onMessageUpdated,
   onToolExecuting,
   onToolCompleted,
+  onToolProgress,
   onAgentIdle,
   onPermissionAsk,
   onInteractionRequired,
@@ -68,6 +70,7 @@ import type {
   StreamingRetryResetPayload,
   AgentIdlePayload,
   ToolExecutingPayload,
+  ToolProgressPayload,
   PermissionAskPayload,
   InteractionRequiredPayload,
   InteractionResolvedPayload,
@@ -389,11 +392,42 @@ export function useStreaming() {
 
       const suffix = ''
 
+      // Offer a "重发" button only for network-class errors. Auth/route/4xx
+      // errors all need a different fix (re-login, switch model, edit the
+      // prompt) — replaying the same IPC verbatim won't help and would just
+      // burn another retry budget. We piggy-back on the existing chunk_timeout
+      // check + a broad message-substring scan for network keywords.
+      const isNetworkClass = (() => {
+        if (rawError === 'chunk_timeout' || rawError === 'agent_timeout') return true
+        const blob = `${error ?? ''} ${rawError ?? ''}`.toLowerCase()
+        return (
+          blob.includes('timeout')
+          || blob.includes('timed out')
+          || blob.includes('connection reset')
+          || blob.includes('connection refused')
+          || blob.includes('broken pipe')
+          || blob.includes('network')
+          || /\b(500|502|503|504)\b/.test(blob)
+        )
+      })()
+      const isAuthOrRoute =
+        looksLikeRouteError(error) || looksLikeRouteError(rawError)
+      const actions: Array<{ label: string; action: () => void; primary?: boolean }> =
+        isNetworkClass && !isAuthOrRoute
+          ? [{
+            label: i18n.t('errors.resend', '重发'),
+            primary: true,
+            action: () => {
+              void resendLastUserMessage(conversationId)
+            },
+          }]
+          : []
+
       useNotificationStore.getState().push({
         level: 'error',
         title: i18n.t('errors.streamingError'),
         message: (error ?? i18n.t('errors.unknownRetry')) + suffix,
-        actions: [],
+        actions,
         dismissible: true,
         autoHide: autoHideSecs,
         context: 'toast',
@@ -536,6 +570,22 @@ export function useStreaming() {
         status: 'executing',
         summary: purpose,
         input,
+      })
+    }),
+  )
+
+  // --- tool:progress -----------------------------------------------------
+  // Live stdout/stderr tail from long-running shell tools (Bash). Updates the
+  // matching ToolExecution row in chatStore so the ToolGroupCard can render
+  // a "最近 N 行" panel. Backend throttles to ~500ms so we don't churn the
+  // store; we still flush deltas to keep the watchdog happy.
+  useTauriEvent(() =>
+    onToolProgress(({ conversationId, toolId, stdoutTail, totalBytes }: ToolProgressPayload) => {
+      touchActivity(conversationId)
+      useChatStore.getState().updateConversationToolExecution(conversationId, toolId, {
+        progressTail: stdoutTail,
+        progressTotalBytes: totalBytes,
+        progressUpdatedAt: Date.now(),
       })
     }),
   )

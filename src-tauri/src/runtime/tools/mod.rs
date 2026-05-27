@@ -10,7 +10,7 @@ pub mod testing;
 
 pub use capability::{
     CapabilityContext, FileOperations, FileReadingLimits, FileState, FileStateCache,
-    NotificationSink, SharedCapabilityContext, StorageCapability,
+    NotificationSink, SharedCapabilityContext, StorageCapability, ToolProgressSink,
 };
 pub use context::{EventCollectingSink, ToolExecutionContext};
 pub use definition::ToolDefinition;

@@ -44,15 +44,27 @@ pub(crate) use chat_runtime_impl::build_visible_tool_defs;
 /// Maximum number of stream-level retries within the agent loop.
 /// When a stream error or gateway error is retryable (5xx, timeout, connection),
 /// the current iteration is retried instead of aborting the entire agent loop.
-const MAX_STREAM_RETRIES: u32 = 5;
+///
+/// 2026-05-26: bumped 5 → 10 so brief network outages (subway tunnels, wifi
+/// roaming, building elevators) don't bubble up to the user as a hard failure
+/// when an automatic retry would have succeeded within a few attempts.
+const MAX_STREAM_RETRIES: u32 = 10;
 
-/// Base delay before retrying a failed stream (seconds). Actual delay grows
-/// exponentially with attempt number: 2s, 4s, 8s, 16s, 32s.
+/// Base delay before retrying a failed stream (seconds). Actual delay doubles
+/// each attempt and is then clamped by `STREAM_RETRY_MAX_BACKOFF_SECS`:
+/// 2s, 4s, 8s, 16s, 32s, 60s, 60s, 60s, 60s, 60s (worst-case total ≈ 6.4 min).
 const STREAM_RETRY_DELAY_SECS: u64 = 2;
 
-/// Compute exponential backoff for retry attempt N (1-based).
+/// Cap for the per-attempt sleep so a long-tail outage doesn't make the user
+/// wait 17 minutes (2^10 = 1024s) on the 10th retry. Past attempt 5 every
+/// retry waits exactly `STREAM_RETRY_MAX_BACKOFF_SECS`.
+const STREAM_RETRY_MAX_BACKOFF_SECS: u64 = 60;
+
+/// Compute exponential backoff for retry attempt N (1-based), capped by
+/// [`STREAM_RETRY_MAX_BACKOFF_SECS`].
 fn stream_retry_backoff_secs(attempt: u32) -> u64 {
-    STREAM_RETRY_DELAY_SECS.saturating_mul(1u64 << attempt.min(5).saturating_sub(1))
+    let raw = STREAM_RETRY_DELAY_SECS.saturating_mul(1u64 << attempt.min(10).saturating_sub(1));
+    raw.min(STREAM_RETRY_MAX_BACKOFF_SECS)
 }
 
 fn attachment_refs_from_json_array(
@@ -4117,5 +4129,42 @@ mod retry_reason_tests {
             classify_retry_reason("some weird unclassified blip"),
             RetryReason::NetworkFlap
         );
+    }
+}
+
+#[cfg(test)]
+mod retry_backoff_tests {
+    use super::{stream_retry_backoff_secs, MAX_STREAM_RETRIES, STREAM_RETRY_MAX_BACKOFF_SECS};
+
+    /// Sequence: 2, 4, 8, 16, 32, 60, 60, 60, 60, 60 for attempts 1..=10.
+    /// Worst case total wait = 2+4+8+16+32+60*5 = 362s (~6 min), well below
+    /// the user's tolerance for "is it still working".
+    #[test]
+    fn backoff_doubles_then_clamps_to_max() {
+        let expected = [2u64, 4, 8, 16, 32, 60, 60, 60, 60, 60];
+        for (idx, want) in expected.iter().enumerate() {
+            let attempt = (idx + 1) as u32;
+            assert_eq!(
+                stream_retry_backoff_secs(attempt),
+                *want,
+                "attempt {attempt} should sleep {want}s",
+            );
+        }
+    }
+
+    #[test]
+    fn backoff_never_exceeds_cap_even_past_max_retries() {
+        // Defensive: even if someone bumps MAX_STREAM_RETRIES higher, the cap
+        // still holds.
+        for attempt in 1..=20u32 {
+            assert!(stream_retry_backoff_secs(attempt) <= STREAM_RETRY_MAX_BACKOFF_SECS);
+        }
+    }
+
+    #[test]
+    fn worst_case_total_wait_is_bounded() {
+        let total: u64 = (1..=MAX_STREAM_RETRIES).map(stream_retry_backoff_secs).sum();
+        // 2+4+8+16+32+60*5 = 362
+        assert_eq!(total, 362);
     }
 }

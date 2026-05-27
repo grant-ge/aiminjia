@@ -28,6 +28,13 @@ export interface RenderToolStep {
   durationMs?: number
   inputJson?: string
   output?: ReactNode
+  /**
+   * Live stdout/stderr tail captured while the step is still running.
+   * Cleared once the step transitions to done/error (final output takes over).
+   * Driven by `tool:progress` events for long-running shell tools.
+   */
+  progressTail?: string
+  progressTotalBytes?: number
 }
 
 export interface RenderToolGroup {
@@ -379,11 +386,19 @@ export function buildTurnsFromMessages(
     for (const t of toolExecutions) {
       const existing = group.steps.find((s) => s.toolCallId === t.toolId)
       const output = t.output ? truncateOutput(t.output, t.status === 'error') : undefined
+      // progressTail is meaningful only while the step is still running.
+      // Once the step finishes, the final `output` (from tool:completed)
+      // takes over so we don't double-render.
+      const progressTail = t.status === 'executing' ? t.progressTail : undefined
+      const progressTotalBytes =
+        t.status === 'executing' ? t.progressTotalBytes : undefined
       if (existing) {
         existing.status = toolExecStatusToStep(t.status)
         if (t.durationMs != null) existing.durationMs = t.durationMs
         if (t.input != null && !existing.inputJson) existing.inputJson = stringifyInput(t.input)
         if (output && !existing.output) existing.output = output
+        existing.progressTail = progressTail
+        existing.progressTotalBytes = progressTotalBytes
       } else {
         group.steps.push({
           index: group.steps.length + 1,
@@ -393,6 +408,8 @@ export function buildTurnsFromMessages(
           durationMs: t.durationMs,
           inputJson: stringifyInput(t.input),
           output,
+          progressTail,
+          progressTotalBytes,
         })
       }
     }
