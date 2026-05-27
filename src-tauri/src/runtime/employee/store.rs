@@ -751,6 +751,46 @@ mod tests {
         );
     }
 
+    fn make_template_snapshot(
+        template_id: &str,
+        version: &str,
+    ) -> crate::runtime::employee::template_store::TemplateSnapshot {
+        crate::runtime::employee::template_store::TemplateSnapshot {
+            template_id: template_id.to_string(),
+            version: version.to_string(),
+            name: "X".to_string(),
+            avatar: "".to_string(),
+            role: "".to_string(),
+            description: "".to_string(),
+            badge: "".to_string(),
+            system_prompt_extra: "".to_string(),
+            tool_whitelist: vec![],
+            cron: "".to_string(),
+            default_skill_id: "".to_string(),
+            skill_ids: vec![],
+            requires_dingtalk: false,
+            requires_attachment: serde_json::Value::Null,
+            resource_config_schema: serde_json::Value::Null,
+            resource_config_ui: serde_json::Value::Null,
+        }
+    }
+
+    #[test]
+    fn latest_snapshot_for_template_prefers_newer_cache_over_bootstrap() {
+        let dir = TempDir::new().unwrap();
+        let cache_dir = dir.path().join("cache");
+        crate::runtime::employee::template_store::write_cache(
+            &cache_dir,
+            &make_template_snapshot("builtin:xiaoyuan", "9.9.9"),
+        )
+        .unwrap();
+
+        let (snap, source) = latest_snapshot_for_template("builtin:xiaoyuan", &cache_dir).unwrap();
+
+        assert_eq!(snap.version, "9.9.9");
+        assert_eq!(source, "cache");
+    }
+
     #[test]
     fn list_returns_all() {
         let dir = TempDir::new().unwrap();
@@ -1128,13 +1168,59 @@ fn write_atomic(path: &std::path::Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
+/// Pick the newest available snapshot for one template id.
+///
+/// Bootstrap is always available for built-ins, but a cached server copy with
+/// a higher version must win so manual/automatic sync affects newly hired
+/// employees immediately.
+fn latest_snapshot_for_template(
+    tid: &str,
+    cache_dir: &std::path::Path,
+) -> Option<(
+    crate::runtime::employee::template_store::TemplateSnapshot,
+    &'static str,
+)> {
+    use crate::runtime::employee::template_store as ts;
+
+    let mut best: Option<(ts::TemplateSnapshot, &'static str)> = match ts::bootstrap_template(tid) {
+        Ok(Some(s)) => Some((s, "bootstrap")),
+        Ok(None) => None,
+        Err(e) => {
+            log::warn!("[EmployeeStore] bootstrap lookup failed for {tid}: {e}");
+            None
+        }
+    };
+
+    let tid_dir = cache_dir.join(tid);
+    if let Ok(rd) = std::fs::read_dir(&tid_dir) {
+        for entry in rd.flatten() {
+            let p = entry.path();
+            if p.extension().and_then(|e| e.to_str()) != Some("json") {
+                continue;
+            }
+            let Ok(content) = std::fs::read_to_string(&p) else {
+                continue;
+            };
+            let Ok(snap) = serde_json::from_str::<ts::TemplateSnapshot>(&content) else {
+                continue;
+            };
+            match best.as_ref() {
+                None => best = Some((snap, "cache")),
+                Some((prev, _)) if snap.version > prev.version => best = Some((snap, "cache")),
+                _ => {}
+            }
+        }
+    }
+
+    best
+}
+
 /// Stamp the per-instance `template/` snapshot dir based on `record.template_id`.
 ///
 /// Lookup order:
-///   1. Embedded bootstrap registry (covers the 11 v1.0.0 built-ins, always
-///      available, used during first-run + offline hire).
+///   1. Embedded bootstrap registry for offline first-run support.
 ///   2. Global cache `~/.renlijia/employee-templates-cache/{tid}/*.json`
-///      (highest version wins; populated by `employee_template_refresh`).
+///      populated by `employee_template_refresh`; newer cache versions win.
 ///
 /// Returns the `TemplateRef` to store on the record, or `None` if neither
 /// source has the template (e.g. custom hand-edited records, or a record
@@ -1150,42 +1236,8 @@ fn stamp_snapshot_for_record(
 ) -> Option<crate::runtime::employee::template_store::TemplateRef> {
     use crate::runtime::employee::template_store as ts;
     let tid = record.template_id.as_deref()?;
-
-    // 1) Try bootstrap.
-    let snap_and_source: Option<(ts::TemplateSnapshot, &'static str)> =
-        match ts::bootstrap_template(tid) {
-            Ok(Some(s)) => Some((s, "bootstrap")),
-            Ok(None) => None,
-            Err(e) => {
-                log::warn!("[EmployeeStore] bootstrap lookup failed for {tid}: {e}");
-                None
-            }
-        };
-
-    // 2) Try cache (highest version) if bootstrap missed.
-    let snap_and_source = snap_and_source.or_else(|| {
-        let cache_dir = crate::storage::AiJiaHome::from_home().employee_templates_cache_dir();
-        let tid_dir = cache_dir.join(tid);
-        let mut best: Option<ts::TemplateSnapshot> = None;
-        if let Ok(rd) = std::fs::read_dir(&tid_dir) {
-            for entry in rd.flatten() {
-                let p = entry.path();
-                if p.extension().and_then(|e| e.to_str()) != Some("json") {
-                    continue;
-                }
-                if let Ok(content) = std::fs::read_to_string(&p) {
-                    if let Ok(s) = serde_json::from_str::<ts::TemplateSnapshot>(&content) {
-                        match best.as_ref() {
-                            None => best = Some(s),
-                            Some(prev) if s.version > prev.version => best = Some(s),
-                            _ => {}
-                        }
-                    }
-                }
-            }
-        }
-        best.map(|s| (s, "cache"))
-    });
+    let cache_dir = crate::storage::AiJiaHome::from_home().employee_templates_cache_dir();
+    let snap_and_source = latest_snapshot_for_template(tid, &cache_dir);
 
     let (snap, source) = snap_and_source?;
     let instance_dir = root.join(&record.id);

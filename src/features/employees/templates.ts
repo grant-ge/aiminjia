@@ -22,6 +22,7 @@ export interface RequiresAttachmentSpec {
 
 export interface EmployeeTemplate {
   templateId: string
+  version?: string | null
   avatar: string
   name: string
   role: string
@@ -357,18 +358,14 @@ const RESOURCE_CONFIG_KIND_BY_ID: Record<string, ResourceConfigKind> = {
  *   - `systemPromptExtra`: `""` is allowed; we keep empty string as-is
  *     because the runtime concat logic tolerates it
  *   - `resourceConfigKind`: looked up by id, defaults to `'none'`
- *
- * If the snapshot's id matches a `BUILTIN_TEMPLATES` entry, we prefer the
- * frontend hardcoded copy verbatim — same id + same v1.0.0 means same
- * content, and this avoids any subtle differences (e.g. emoji rendering)
- * during the bootstrap → backend transition. Once PR5 deletes the
- * fallback constants, this preference goes away.
+ * Builtin ids still use the local `resourceConfigKind` mapping for their
+ * hand-tuned forms, but all user-facing template fields come from the
+ * backend snapshot so server sync updates the visible catalog immediately.
  */
 export function snapshotToTemplate(snap: EmployeeTemplateSnapshot): EmployeeTemplate {
-  const builtin = BUILTIN_TEMPLATES.find((t) => t.templateId === snap.templateId)
-  if (builtin) return builtin
   return {
     templateId: snap.templateId,
+    version: snap.version,
     avatar: snap.avatar,
     name: snap.name,
     role: snap.role,

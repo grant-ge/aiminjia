@@ -27,6 +27,19 @@ describe('ExpertTeamCard', () => {
     }
   })
 
+  it('renders image avatars for every fixed-roster expert instead of emoji fallbacks', () => {
+    for (const team of EXPERT_TEAMS.filter((t) => t.experts.length > 0)) {
+      const { container, unmount } = render(<ExpertTeamCard team={team} onStart={() => {}} />)
+      const roster = screen.getByTestId('expert-team-roster')
+      expect(roster.querySelectorAll('img[src^="/expert-avatars/"]')).toHaveLength(team.experts.length)
+      for (const expert of team.experts) {
+        expect(container.querySelector(`img[title="${expert.name}"]`)).not.toBeInTheDocument()
+        expect(roster).not.toHaveTextContent(expert.emoji)
+      }
+      unmount()
+    }
+  })
+
   it('falls back to dynamic-roster hint when experts is empty', () => {
     const team = EXPERT_TEAMS.find((t) => t.id === 'roundtable')!
     render(<ExpertTeamCard team={team} onStart={() => {}} />)

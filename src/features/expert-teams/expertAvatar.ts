@@ -4,7 +4,7 @@
 // `public/expert-avatars/<teamId>/<safeName>.svg` — committed to git so
 // runtime never needs network or @dicebear at all.
 
-import type { ExpertTeam } from './teams'
+import { EXPERT_TEAMS, type ExpertTeam } from './teams'
 
 const SAFE_RE = /[\\/<>:"|?*\s]/g
 
@@ -23,51 +23,15 @@ function safeName(name: string): string {
  * experts) — caller falls back to `ChatAvatar`'s initial / neutral
  * variant.
  *
- * The `expertNamesByTeam` snapshot below is hand-maintained next to
- * the generator script; if the rosters drift, re-run the script and
- * update this list. We deliberately don't bundle the SVG payload —
- * just the existence check — so the JS bundle stays small.
+ * The existence check is derived from `EXPERT_TEAMS` so roster edits do
+ * not silently drift from the avatar URL helper. Tests verify matching SVG
+ * files exist under `public/expert-avatars/`.
  */
-
-// Hand-maintained snapshot of which (team, expert) pairs have an
-// avatar on disk. Regenerate when teams.ts changes.
-const expertHasAvatar = new Set<string>([
-  // marketing
-  'marketing:品牌负责人',
-  'marketing:内容主理人',
-  'marketing:增长黑客',
-  'marketing:渠道经理',
-  // operations
-  'operations:CEO',
-  'operations:CFO',
-  'operations:COO',
-  'operations:数据分析师',
-  // strategy
-  'strategy:战略顾问',
-  'strategy:CFO',
-  'strategy:法务总监',
-  'strategy:CEO 教练',
-  // negotiation
-  'negotiation:沟通教练',
-  'negotiation:异议方角色',
-  'negotiation:第三方观察',
-  'negotiation:我方代表',
-  // retrospective
-  'retrospective:业务负责人',
-  'retrospective:数据分析师',
-  'retrospective:HR',
-  'retrospective:流程顾问',
-  // investment
-  'investment:资深投资人',
-  'investment:CFO',
-  'investment:行业专家',
-  'investment:风控总监',
-  // debate
-  'debate:正方',
-  'debate:反方',
-  'debate:主持人',
-  'debate:观察员',
-])
+const expertHasAvatar = new Set(
+  EXPERT_TEAMS.flatMap((team) =>
+    team.experts.map((expert) => `${team.id}:${expert.name}`),
+  ),
+)
 
 export function getExpertAvatarUrl(teamId: string, expertName: string): string | null {
   const key = `${teamId}:${expertName}`

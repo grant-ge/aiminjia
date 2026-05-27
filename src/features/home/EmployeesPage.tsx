@@ -1,14 +1,18 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { RefreshCw } from 'lucide-react'
 
 import { PageSectionShell } from '@/components/shell/PageSectionShell'
+import { Button } from '@/components/ui/button'
 import { useUiStore } from '@/stores/uiStore'
 import { useEmployees } from '@/features/employees/useEmployees'
 import { useInbox } from '@/features/employees/useInbox'
 import { EmployeeCard, AddEmployeeCard } from '@/features/employees/EmployeeCard'
 import { EmployeeDrawer } from '@/features/employees/EmployeeDrawer'
 import { HireWizard } from '@/features/employees/HireWizard'
-import type { EmployeeRecord } from '@/lib/tauri'
+import { employeeTemplateRefresh, type EmployeeRecord } from '@/lib/tauri'
+import { useAuthStore } from '@/stores/authStore'
+import { useNotificationStore } from '@/stores/notificationStore'
 
 // ─── daily feed ──────────────────────────────────────────────────────────────
 
@@ -60,12 +64,65 @@ export function EmployeesPage() {
   const setRoute = useUiStore((s) => s.setRoute)
   const { employees, activeRuns, loading: empLoading, refresh: refreshEmp } = useEmployees()
   const { entries, refresh: refreshInbox, markRead } = useInbox()
+  const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
+  const pushNotification = useNotificationStore((s) => s.push)
 
   const [selectedEmp, setSelectedEmp] = useState<EmployeeRecord | null>(null)
   const [hireOpen, setHireOpen] = useState(false)
+  const [syncingTemplates, setSyncingTemplates] = useState(false)
 
   const handleRefreshAll = async () => {
     await Promise.all([refreshEmp(), refreshInbox()])
+  }
+
+  useEffect(() => {
+    if (!isLoggedIn) return
+    let cancelled = false
+    void (async () => {
+      try {
+        await employeeTemplateRefresh()
+        if (!cancelled) {
+          await refreshEmp()
+        }
+      } catch (err) {
+        console.warn('[EmployeesPage] automatic employee template sync failed:', err)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [isLoggedIn, refreshEmp])
+
+  const handleSyncTemplates = async () => {
+    if (syncingTemplates) return
+    setSyncingTemplates(true)
+    try {
+      const count = await employeeTemplateRefresh()
+      await handleRefreshAll()
+      pushNotification({
+        level: 'success',
+        title: count > 0
+          ? t('employeesPage.syncDone', { count })
+          : t('employeesPage.syncUpToDate'),
+        message: '',
+        actions: [],
+        dismissible: true,
+        autoHide: 4,
+        context: 'toast',
+      })
+    } catch (err) {
+      pushNotification({
+        level: 'error',
+        title: t('employeesPage.syncFailed'),
+        message: err instanceof Error ? err.message : String(err),
+        actions: [],
+        dismissible: true,
+        autoHide: 6,
+        context: 'toast',
+      })
+    } finally {
+      setSyncingTemplates(false)
+    }
   }
 
   const todayEntries = entries.filter((e) => {
@@ -116,14 +173,29 @@ export function EmployeesPage() {
       <section>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-foreground">{t('employeesPage.myEmployees')}</h2>
-          <button
-            type="button"
-            data-aijia-hire-button="template-market"
-            className="text-xs text-muted-foreground hover:text-foreground"
-            onClick={() => setHireOpen(true)}
-          >
-            {t('employeesPage.templateMarket')}
-          </button>
+          <div className="flex items-center gap-2">
+            {isLoggedIn && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 gap-1.5 px-2 text-xs"
+                disabled={syncingTemplates}
+                onClick={() => void handleSyncTemplates()}
+              >
+                <RefreshCw className={`h-3 w-3 ${syncingTemplates ? 'animate-spin' : ''}`} />
+                {syncingTemplates ? t('employeesPage.syncing') : t('employeesPage.syncServer')}
+              </Button>
+            )}
+            <button
+              type="button"
+              data-aijia-hire-button="template-market"
+              className="text-xs text-muted-foreground hover:text-foreground"
+              onClick={() => setHireOpen(true)}
+            >
+              {t('employeesPage.templateMarket')}
+            </button>
+          </div>
         </div>
 
         {empLoading ? (

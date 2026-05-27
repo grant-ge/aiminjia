@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { EmployeeTemplateSnapshot } from '@/lib/tauri'
 
-import { BUILTIN_TEMPLATES, snapshotToTemplate } from './templates'
+import { snapshotToTemplate } from './templates'
 
 function makeSnapshot(overrides: Partial<EmployeeTemplateSnapshot> = {}): EmployeeTemplateSnapshot {
   return {
@@ -26,19 +26,18 @@ function makeSnapshot(overrides: Partial<EmployeeTemplateSnapshot> = {}): Employ
 }
 
 describe('snapshotToTemplate', () => {
-  it('returns the verbatim BUILTIN_TEMPLATES entry when ids match', () => {
-    // Same id ⇒ trust the hardcoded copy until PR5 removes it. This
-    // means edits to the bootstrap JSON on the backend don't change UX
-    // until the user upgrades the desktop app — that's intentional.
-    const snap = makeSnapshot({ templateId: 'builtin:xiaoyuan', name: 'IGNORED' })
+  it('uses catalog fields and version when a builtin id comes from the server catalog', () => {
+    const snap = makeSnapshot({ templateId: 'builtin:xiaoyuan', name: '远程小研', version: '1.2.0' })
     const out = snapshotToTemplate(snap)
-    const builtin = BUILTIN_TEMPLATES.find((t) => t.templateId === 'builtin:xiaoyuan')!
-    expect(out).toBe(builtin)
+    expect(out.name).toBe('远程小研')
+    expect(out.version).toBe('1.2.0')
+    expect(out.resourceConfigKind).toBe('monitoring-urls')
   })
 
   it('maps an unknown templateId to a synthesized EmployeeTemplate', () => {
     const snap = makeSnapshot({
       templateId: 'org:acme-recruiter',
+      version: '2.3.4',
       name: '招聘助理',
       cron: '0 9 * * 1',
       defaultSkillId: 'resume-screening',
@@ -47,6 +46,7 @@ describe('snapshotToTemplate', () => {
     })
     const out = snapshotToTemplate(snap)
     expect(out.templateId).toBe('org:acme-recruiter')
+    expect(out.version).toBe('2.3.4')
     expect(out.name).toBe('招聘助理')
     expect(out.cron).toBe('0 9 * * 1')
     expect(out.defaultSkillId).toBe('resume-screening')
@@ -65,5 +65,14 @@ describe('snapshotToTemplate', () => {
     const out = snapshotToTemplate(snap)
     expect(out.cron).toBeNull()
     expect(out.defaultSkillId).toBeNull()
+  })
+
+  it('keeps the catalog version for builtin snapshots', () => {
+    const snap = makeSnapshot({
+      templateId: 'builtin:xiaoyuan',
+      version: '1.2.0',
+    })
+    const out = snapshotToTemplate(snap)
+    expect(out.version).toBe('1.2.0')
   })
 })

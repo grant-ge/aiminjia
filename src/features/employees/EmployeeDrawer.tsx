@@ -125,6 +125,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
 
   const template = findTemplate(emp.templateId)
   const status = deriveStatus(emp, inboxEntries, activeRun)
+  const templateVersion = emp.templateRef?.version ?? null
 
   const triggerNow = async (attachments: ChatAttachmentPayload[]) => {
     const convId = await employeeTrigger(emp.id, undefined, attachments)
@@ -356,6 +357,15 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
               <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('employeeDrawer.responsibility')}</h3>
               <p className="text-sm leading-relaxed text-foreground">{emp.description}</p>
             </section>
+
+            {templateVersion ? (
+              <section>
+                <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('employeeDrawer.templateVersion')}</h3>
+                <span className="inline-flex rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                  v{templateVersion}
+                </span>
+              </section>
+            ) : null}
 
             {/* 触发器 */}
             <section>

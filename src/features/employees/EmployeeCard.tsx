@@ -118,6 +118,7 @@ export function EmployeeCard({ employee: emp, inboxEntries, activeRun = null, on
   const { t } = useTranslation()
   const [busy, setBusy] = useState(false)
   const status = deriveStatus(emp, inboxEntries, activeRun)
+  const templateVersion = emp.templateRef?.version ?? null
 
   const handleTogglePause = async (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -157,6 +158,11 @@ export function EmployeeCard({ employee: emp, inboxEntries, activeRun = null, on
             <div className="flex items-center gap-1.5">
               <span className="text-sm font-semibold text-foreground">{emp.name}</span>
               <StatusDot status={status} />
+              {templateVersion && (
+                <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] leading-none text-muted-foreground">
+                  v{templateVersion}
+                </span>
+              )}
             </div>
             <p className="truncate text-xs text-muted-foreground">{emp.role}</p>
           </div>
