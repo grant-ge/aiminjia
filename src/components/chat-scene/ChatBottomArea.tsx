@@ -21,6 +21,7 @@ import { useSettingsStore } from '@/stores/settingsStore'
 import { useSkillStore } from '@/stores/skillStore'
 import { useUiStore } from '@/stores/uiStore'
 import { pendingSnapshotForSession } from '@/lib/tauri'
+import { localizeSkill, localizedSkillName } from '@/lib/skillLocalization'
 import { PendingChips } from '@/features/chat/PendingChips'
 import { ensureExpertTeam } from '@/features/expert-teams/expertTeamRegistry'
 import { getExpertTeam as findTeam } from '@/features/expert-teams/teams'
@@ -52,7 +53,7 @@ export function ChatBottomArea({
   /** When set, overrides the default i18n placeholder. Used by expert-teams. */
   placeholderOverride?: string
 }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const composerRef = useRef<RichComposerHandle>(null)
   const activeConversationId = useChatStore((s) => s.activeConversationId)
   const messageCount = useChatStore((s) => s.messages.length)
@@ -70,10 +71,10 @@ export function ChatBottomArea({
     () =>
       skills.map((skill) => ({
         id: skill.id,
-        label: skill.displayName || skill.id,
+        label: localizeSkill(skill, i18n.language).name,
         command: skill.triggerText || `/${skill.id}`,
       })),
-    [skills],
+    [skills, i18n.language],
   )
 
   // One-shot prefill text (e.g., from generated suggestion); consumed synchronously
@@ -98,12 +99,12 @@ export function ChatBottomArea({
     const skill = getSkillById(skillId)
     composerRef.current?.insertSkillToken({
       id: skillId,
-      label: skill?.displayName || skill?.id || skillId,
+      label: localizedSkillName(skill, skillId, i18n.language),
       command: skill?.triggerText || `/${skillId}`,
     })
     composerRef.current?.focus()
     setShowSkillPopover(false)
-  }, [getSkillById])
+  }, [getSkillById, i18n.language])
 
   const handleSubmit = useCallback(async (payload: RichComposerSubmitPayload) => {
     // Note: RichComposer.trySubmit already has a `submittingRef` guard against

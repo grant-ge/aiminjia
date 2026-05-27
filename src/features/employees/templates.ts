@@ -325,6 +325,166 @@ export function findTemplate(templateId: string | null | undefined): EmployeeTem
   return BUILTIN_TEMPLATES.find((t) => t.templateId === templateId) ?? null
 }
 
+type TemplateLocale = 'zh-CN' | 'en-US'
+type EmployeeTemplateDisplay = Pick<EmployeeTemplate, 'name' | 'role' | 'description' | 'badge'>
+
+const BUILTIN_TEMPLATE_I18N: Record<string, Partial<Record<TemplateLocale, Partial<EmployeeTemplateDisplay>>>> = {
+  'builtin:xiaoyuan': {
+    'en-US': {
+      name: 'XiaoYan',
+      role: 'Industry and competitor researcher',
+      description: 'Tracks product launches, pricing, hiring, and media signals from competitors and industry channels, then deduplicates them into a weekly report.',
+      badge: 'Ready',
+    },
+  },
+  'builtin:xiaofa': {
+    'en-US': {
+      name: 'XiaoFa',
+      role: 'Contract reviewer',
+      description: 'Scans PDF/DOCX contracts for key risk clauses and produces risk notes with rewrite suggestions.',
+      badge: 'Ready',
+    },
+  },
+  'builtin:xiaosuan': {
+    'en-US': {
+      name: 'XiaoSuan',
+      role: 'Data analyst',
+      description: 'Runs EDA, anomaly checks, charts, hypothesis tests, and report generation for Excel/CSV datasets.',
+      badge: 'Ready',
+    },
+  },
+  'builtin:xiaoxiao': {
+    'en-US': {
+      name: 'XiaoXiao',
+      role: 'Customer follow-up specialist',
+      description: 'Reads active opportunities from DingTalk tables each workday, prioritizes follow-ups, and syncs confirmed results back.',
+      badge: 'Needs data source',
+    },
+  },
+  'builtin:xiaoding': {
+    'en-US': {
+      name: 'XiaoDing',
+      role: 'DingTalk office assistant',
+      description: 'Summarizes schedules, tasks, and group-chat highlights every morning, then helps book meetings or send confirmed messages.',
+      badge: 'Needs DingTalk auth',
+    },
+  },
+  'builtin:xiaozhao': {
+    'en-US': {
+      name: 'XiaoZhao',
+      role: 'Recruiting assistant',
+      description: 'Screens resumes in bulk, writes job descriptions, researches public candidate information, and generates tailored interview questions.',
+      badge: 'Ready',
+    },
+  },
+  'builtin:xiaozhou': {
+    'en-US': {
+      name: 'XiaoZhou',
+      role: 'Weekly report writer',
+      description: 'Summarizes DingTalk schedules, completed tasks, and key chat discussions every Friday into a structured weekly report.',
+      badge: 'Needs DingTalk auth',
+    },
+  },
+  'builtin:xiaobiao': {
+    'en-US': {
+      name: 'XiaoBiao',
+      role: 'Bid proposal writer',
+      description: 'Parses tender files and reference templates, drafts bid documents section by section, and exports docx files in the requested style.',
+      badge: 'Ready',
+    },
+  },
+  'builtin:xiaogong': {
+    'en-US': {
+      name: 'XiaoGong',
+      role: 'Technical support assistant',
+      description: 'Monitors support channels, searches the knowledge base and past cases, then drafts technical replies for review.',
+      badge: 'Needs knowledge base',
+    },
+  },
+  'builtin:xiaoke': {
+    'en-US': {
+      name: 'XiaoKe',
+      role: 'Customer service assistant',
+      description: 'Monitors customer inquiry channels, searches knowledge and past conversations, then drafts friendly replies for review.',
+      badge: 'Needs knowledge base',
+    },
+  },
+  'builtin:xiaocheng': {
+    'en-US': {
+      name: 'XiaoCheng',
+      role: 'Workflow designer',
+      description: 'Helps turn repeatable work into reusable skills by clarifying scenarios, designing steps, and drafting skill instructions.',
+      badge: 'Ready',
+    },
+  },
+}
+
+function normalizeLocale(language?: string): TemplateLocale {
+  return language?.toLowerCase().startsWith('en') ? 'en-US' : 'zh-CN'
+}
+
+function selectTemplateDisplay(
+  snap: EmployeeTemplateSnapshot,
+  language?: string,
+): Partial<EmployeeTemplateDisplay> {
+  const locale = normalizeLocale(language)
+  return (
+    snap.displayI18n?.[locale] ??
+    snap.displayI18n?.['zh-CN'] ??
+    BUILTIN_TEMPLATE_I18N[snap.templateId]?.[locale] ??
+    {}
+  )
+}
+
+function selectTemplatePrompt(snap: EmployeeTemplateSnapshot, language?: string): string | undefined {
+  const locale = normalizeLocale(language)
+  return snap.promptI18n?.[locale]?.systemPromptExtra ?? snap.promptI18n?.['zh-CN']?.systemPromptExtra
+}
+
+export function localizeBuiltinTemplates(language?: string): EmployeeTemplate[] {
+  const locale = normalizeLocale(language)
+  return BUILTIN_TEMPLATES.map((template) => ({
+    ...template,
+    ...(BUILTIN_TEMPLATE_I18N[template.templateId]?.[locale] ?? {}),
+  }))
+}
+
+function matchesKnownTemplateValue(
+  current: string,
+  baseValue: string,
+  localizedValues: Array<string | undefined>,
+): boolean {
+  return current === baseValue || localizedValues.some((value) => !!value && current === value)
+}
+
+export function localizeEmployeeDisplay(
+  templateId: string | null | undefined,
+  fallback: Pick<EmployeeTemplate, 'name' | 'role' | 'description'>,
+  language?: string,
+): Pick<EmployeeTemplate, 'name' | 'role' | 'description'> {
+  const base = findTemplate(templateId)
+  if (!base) return fallback
+  const locale = normalizeLocale(language)
+  const display = BUILTIN_TEMPLATE_I18N[base.templateId]?.[locale]
+  if (!display) return fallback
+  const allDisplays = Object.values(BUILTIN_TEMPLATE_I18N[base.templateId] ?? {})
+  return {
+    name: matchesKnownTemplateValue(fallback.name, base.name, allDisplays.map((item) => item?.name))
+      ? (display.name ?? fallback.name)
+      : fallback.name,
+    role: matchesKnownTemplateValue(fallback.role, base.role, allDisplays.map((item) => item?.role))
+      ? (display.role ?? fallback.role)
+      : fallback.role,
+    description: matchesKnownTemplateValue(
+      fallback.description,
+      base.description,
+      allDisplays.map((item) => item?.description),
+    )
+      ? (display.description ?? fallback.description)
+      : fallback.description,
+  }
+}
+
 /**
  * Per-template-id `resource_config_kind` lookup. Hardcoded because the
  * backend `EmployeeTemplateSnapshot` doesn't carry this field today —
@@ -362,18 +522,19 @@ const RESOURCE_CONFIG_KIND_BY_ID: Record<string, ResourceConfigKind> = {
  * hand-tuned forms, but all user-facing template fields come from the
  * backend snapshot so server sync updates the visible catalog immediately.
  */
-export function snapshotToTemplate(snap: EmployeeTemplateSnapshot): EmployeeTemplate {
+export function snapshotToTemplate(snap: EmployeeTemplateSnapshot, language?: string): EmployeeTemplate {
+  const display = selectTemplateDisplay(snap, language)
   return {
     templateId: snap.templateId,
     version: snap.version,
     avatar: snap.avatar,
-    name: snap.name,
-    role: snap.role,
-    description: snap.description,
+    name: display.name ?? snap.name,
+    role: display.role ?? snap.role,
+    description: display.description ?? snap.description,
     toolWhitelist: snap.toolWhitelist,
     cron: snap.cron === '' ? null : snap.cron,
-    systemPromptExtra: snap.systemPromptExtra,
-    badge: snap.badge,
+    systemPromptExtra: selectTemplatePrompt(snap, language) ?? snap.systemPromptExtra,
+    badge: display.badge ?? snap.badge,
     defaultSkillId: snap.defaultSkillId === '' ? null : snap.defaultSkillId,
     requiresAttachment: snap.requiresAttachment,
     resourceConfigKind: RESOURCE_CONFIG_KIND_BY_ID[snap.templateId] ?? 'none',

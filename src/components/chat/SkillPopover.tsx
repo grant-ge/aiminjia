@@ -1,6 +1,7 @@
 import { useState } from 'react'
 
 import { SkillPopoverPanel } from '@/components/chat-scene/SkillPopoverPanel'
+import { localizeSkill } from '@/lib/skillLocalization'
 import { useSkillStore } from '@/stores/skillStore'
 
 interface SkillPopoverProps {
@@ -33,13 +34,16 @@ export function SkillPopover({ open: openProp, onPick, onClose }: SkillPopoverPr
 
   if (!isOpen) return null
 
-  const items = skills.map((s) => ({
-    id: s.id,
-    title: s.displayName,
-    subtitle: s.shortDescription || s.description,
-    icon: s.icon || undefined,
-    category: s.category || undefined,
-  }))
+  const items = skills.map((s) => {
+    const localized = localizeSkill(s)
+    return {
+      id: s.id,
+      title: localized.name,
+      subtitle: localized.description,
+      icon: s.icon || undefined,
+      category: s.category || undefined,
+    }
+  })
 
   return <SkillPopoverPanel items={items} onPick={handlePick} onClose={handleClose} />
 }

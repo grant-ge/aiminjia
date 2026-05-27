@@ -1,4 +1,5 @@
 // code/src/features/expert-teams/ExpertTeamCard.tsx
+import { useTranslation } from 'react-i18next'
 import type { ExpertTeam, ExpertTeamId } from './teams'
 import { getExpertAvatarUrl } from './expertAvatar'
 import { getExpertTeamLogo } from './teamLogo'
@@ -9,6 +10,7 @@ interface ExpertTeamCardProps {
 }
 
 export function ExpertTeamCard({ team, onStart }: ExpertTeamCardProps) {
+  const { t } = useTranslation()
   const logo = getExpertTeamLogo(team.id)
   const TeamLogo = logo.icon
 
@@ -19,7 +21,7 @@ export function ExpertTeamCard({ team, onStart }: ExpertTeamCardProps) {
       data-aijia-expert-team-id={team.id}
       data-aijia-expert-team-name={team.name}
       onClick={() => onStart(team.id)}
-      aria-label={`启动 ${team.name}`}
+      aria-label={t('ExpertTeams.startTeam', { name: team.name })}
       className="flex h-full w-full flex-col gap-3 rounded-lg border border-border bg-card p-4 text-left text-card-foreground transition-colors hover:border-primary/50 hover:bg-accent/30"
     >
       <div className="flex items-center gap-2">
@@ -40,7 +42,7 @@ export function ExpertTeamCard({ team, onStart }: ExpertTeamCardProps) {
       {team.experts.length > 0 ? (
         <div className="flex flex-wrap gap-2.5" data-testid="expert-team-roster">
           {team.experts.map((expert) => {
-            const avatarUrl = getExpertAvatarUrl(team.id, expert.name)
+            const avatarUrl = getExpertAvatarUrl(team.id, expert.avatarName ?? expert.name)
             return (
               <div
                 key={expert.name}
@@ -68,7 +70,7 @@ export function ExpertTeamCard({ team, onStart }: ExpertTeamCardProps) {
           })}
         </div>
       ) : (
-        <p className="text-xs text-muted-foreground">主持人按议题召集</p>
+        <p className="text-xs text-muted-foreground">{t('ExpertTeams.openTableHint')}</p>
       )}
 
       <div className="mt-auto flex flex-wrap gap-1.5">

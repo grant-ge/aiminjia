@@ -74,6 +74,12 @@ pub struct TemplateSnapshot {
     #[serde(default)]
     pub badge: String,
     #[serde(default)]
+    pub display_i18n: serde_json::Value,
+    #[serde(default)]
+    pub prompt_i18n: serde_json::Value,
+    #[serde(default)]
+    pub schema_i18n: serde_json::Value,
+    #[serde(default)]
     pub system_prompt_extra: String,
     #[serde(default)]
     pub tool_whitelist: Vec<String>,
@@ -703,6 +709,9 @@ mod tests {
             role: "tester".into(),
             description: "".into(),
             badge: "".into(),
+            display_i18n: serde_json::Value::Null,
+            prompt_i18n: serde_json::Value::Null,
+            schema_i18n: serde_json::Value::Null,
             system_prompt_extra: "".into(),
             tool_whitelist: vec!["Read".into()],
             cron: "".into(),
@@ -736,6 +745,9 @@ mod tests {
             role: "".into(),
             description: "".into(),
             badge: "".into(),
+            display_i18n: serde_json::Value::Null,
+            prompt_i18n: serde_json::Value::Null,
+            schema_i18n: serde_json::Value::Null,
             system_prompt_extra: "".into(),
             tool_whitelist: vec![],
             cron: "".into(),
@@ -760,6 +772,9 @@ mod tests {
             role: "".into(),
             description: "".into(),
             badge: "".into(),
+            display_i18n: serde_json::Value::Null,
+            prompt_i18n: serde_json::Value::Null,
+            schema_i18n: serde_json::Value::Null,
             system_prompt_extra: "".into(),
             tool_whitelist: vec![],
             cron: "".into(),
@@ -859,6 +874,9 @@ mod tests {
             role: "".into(),
             description: "".into(),
             badge: "".into(),
+            display_i18n: serde_json::Value::Null,
+            prompt_i18n: serde_json::Value::Null,
+            schema_i18n: serde_json::Value::Null,
             system_prompt_extra: "from-snapshot".into(),
             tool_whitelist: vec!["Snap1".into(), "Snap2".into()],
             cron: "".into(),
@@ -944,6 +962,9 @@ mod tests {
             role: "from-cache".into(),
             description: "".into(),
             badge: "".into(),
+            display_i18n: serde_json::Value::Null,
+            prompt_i18n: serde_json::Value::Null,
+            schema_i18n: serde_json::Value::Null,
             system_prompt_extra: "".into(),
             tool_whitelist: vec![],
             cron: "".into(),

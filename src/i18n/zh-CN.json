@@ -867,7 +867,15 @@
     "syncing": "同步中...",
     "syncDone": "同步完成，更新 {{count}} 个专家团",
     "syncUpToDate": "已是最新",
-    "syncFailed": "同步失败"
+    "syncFailed": "同步失败",
+    "startTeam": "启动 {{name}}",
+    "openTableHint": "主持人按议题召集",
+    "members": "团队成员",
+    "directorInvites": "主持人将按议题召集 3-5 位专家",
+    "pickTopic": "点击一个议题直接开始：",
+    "startingTopic": "正在启动：{{topic}}...",
+    "topicQuote": "「{{topic}}」",
+    "customTopicHint": "或在下方输入你自己的议题，回车发送。"
   },
   "nav": {
     "home": "新任务",

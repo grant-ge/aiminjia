@@ -6,7 +6,7 @@ use anyhow::Result;
 use serde::Deserialize;
 
 use super::frontmatter::parse_skill_md;
-use super::types::{DiskSkill, SkillSource};
+use super::types::{DiskSkill, SkillDisplayI18nText, SkillSource};
 
 /// Sidecar metadata written by the lotus skill-sync path. Used to overlay
 /// fields onto the SKILL.md frontmatter when the in-package values are
@@ -17,6 +17,8 @@ use super::types::{DiskSkill, SkillSource};
 struct LotusMeta {
     #[serde(default)]
     category: Option<String>,
+    #[serde(default, rename = "displayI18n", alias = "display_i18n")]
+    display_i18n: HashMap<String, SkillDisplayI18nText>,
 }
 
 fn read_lotus_meta(skill_dir: &Path) -> LotusMeta {
@@ -126,6 +128,10 @@ fn load_one_root(
         // Overlay .lotus-meta.json sidecar fields onto the frontmatter. Only
         // applied when the frontmatter value is missing — packages with
         // explicit `category:` in SKILL.md remain authoritative.
+        let meta = read_lotus_meta(&path);
+        if !meta.display_i18n.is_empty() {
+            parsed.frontmatter.metadata.display_i18n = meta.display_i18n;
+        }
         let is_blank = parsed
             .frontmatter
             .category
@@ -133,7 +139,6 @@ fn load_one_root(
             .map(|s| s.trim().is_empty())
             .unwrap_or(true);
         if is_blank {
-            let meta = read_lotus_meta(&path);
             if let Some(cat) = meta.category {
                 let cat_trimmed = cat.trim();
                 if !cat_trimmed.is_empty() {
@@ -190,6 +195,50 @@ mod tests {
             load_skill_roots_tagged(&[(tmp.path().to_path_buf(), SkillSource::Global)]).unwrap();
         let skill = loaded.get("legacy-skill").expect("loaded");
         assert_eq!(skill.frontmatter.category.as_deref(), Some("hr"));
+    }
+
+    #[test]
+    fn sidecar_fills_display_i18n() {
+        let tmp = TempDir::new().unwrap();
+        write_skill(
+            tmp.path(),
+            "legacy-skill",
+            MD_WITHOUT_CATEGORY,
+            Some(r#"{"displayI18n":{"en-US":{"name":"Budget Analysis","description":"Analyze budget execution"}}}"#),
+        );
+        let loaded =
+            load_skill_roots_tagged(&[(tmp.path().to_path_buf(), SkillSource::Global)]).unwrap();
+        let skill = loaded.get("legacy-skill").expect("loaded");
+        let en = skill
+            .frontmatter
+            .metadata
+            .display_i18n
+            .get("en-US")
+            .expect("en-US display");
+        assert_eq!(en.name.as_deref(), Some("Budget Analysis"));
+        assert_eq!(en.description.as_deref(), Some("Analyze budget execution"));
+    }
+
+    #[test]
+    fn sidecar_accepts_go_field_name_display_i18n() {
+        let tmp = TempDir::new().unwrap();
+        write_skill(
+            tmp.path(),
+            "legacy-skill",
+            MD_WITHOUT_CATEGORY,
+            Some(r#"{"displayI18n":{"en-US":{"Name":"Budget Analysis","Description":"Analyze budget execution"}}}"#),
+        );
+        let loaded =
+            load_skill_roots_tagged(&[(tmp.path().to_path_buf(), SkillSource::Global)]).unwrap();
+        let skill = loaded.get("legacy-skill").expect("loaded");
+        let en = skill
+            .frontmatter
+            .metadata
+            .display_i18n
+            .get("en-US")
+            .expect("en-US display");
+        assert_eq!(en.name.as_deref(), Some("Budget Analysis"));
+        assert_eq!(en.description.as_deref(), Some("Analyze budget execution"));
     }
 
     #[test]

@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useChat, type PendingFileInfo } from '@/hooks/useChat'
 import { buildDirectorPrompt } from '@/features/expert-teams/buildDirectorPrompt'
 import type { ExpertTeam } from '@/features/expert-teams/teams'
@@ -11,6 +12,7 @@ interface ExpertTeamWelcomeProps {
 }
 
 export function ExpertTeamWelcome({ team }: ExpertTeamWelcomeProps) {
+  const { t } = useTranslation()
   const { sendUserMessage } = useChat()
   const [picking, setPicking] = useState<string | null>(null)
   const chatWidthMode = useSettingsStore((s) => s.chatWidthMode ?? 'full')
@@ -51,11 +53,11 @@ export function ExpertTeamWelcome({ team }: ExpertTeamWelcomeProps) {
       </div>
 
       <div className="w-full rounded-lg border border-border bg-card px-4 py-3 text-left">
-        <div className="text-xs text-muted-foreground">团队成员</div>
+        <div className="text-xs text-muted-foreground">{t('ExpertTeams.members')}</div>
         {team.experts.length > 0 ? (
           <div className="mt-2 flex flex-wrap gap-2">
             {team.experts.map((expert) => {
-              const avatarUrl = getExpertAvatarUrl(team.id, expert.name)
+              const avatarUrl = getExpertAvatarUrl(team.id, expert.avatarName ?? expert.name)
               return (
                 <span
                   key={expert.name}
@@ -71,12 +73,12 @@ export function ExpertTeamWelcome({ team }: ExpertTeamWelcomeProps) {
             })}
           </div>
         ) : (
-          <div className="mt-1 text-sm text-foreground">主持人将按议题召集 3-5 位专家</div>
+          <div className="mt-1 text-sm text-foreground">{t('ExpertTeams.directorInvites')}</div>
         )}
       </div>
 
       <div className="w-full space-y-2">
-        <div className="text-sm font-medium text-foreground">点击一个议题直接开始：</div>
+        <div className="text-sm font-medium text-foreground">{t('ExpertTeams.pickTopic')}</div>
         <ul className="space-y-1.5">
           {team.examples.map((example) => {
             const isPicking = picking === example
@@ -88,7 +90,9 @@ export function ExpertTeamWelcome({ team }: ExpertTeamWelcomeProps) {
                   onClick={() => void handlePick(example)}
                   className="w-full rounded-md border border-border bg-card px-3 py-2 text-left text-sm text-foreground transition-colors hover:border-primary/50 hover:bg-accent/30 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {isPicking ? `正在启动：${example}…` : `「${example}」`}
+                  {isPicking
+                    ? t('ExpertTeams.startingTopic', { topic: example })
+                    : t('ExpertTeams.topicQuote', { topic: example })}
                 </button>
               </li>
             )
@@ -97,7 +101,7 @@ export function ExpertTeamWelcome({ team }: ExpertTeamWelcomeProps) {
       </div>
 
       <p className="text-xs text-muted-foreground">
-        或在下方输入你自己的议题，回车发送。
+        {t('ExpertTeams.customTopicHint')}
       </p>
     </div>
   )

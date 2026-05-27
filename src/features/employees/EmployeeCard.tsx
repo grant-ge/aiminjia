@@ -9,7 +9,7 @@ import {
   type InboxEntry,
 } from '@/lib/tauri'
 import { Button } from '@/components/ui/button'
-import { findTemplate } from './templates'
+import { findTemplate, localizeEmployeeDisplay } from './templates'
 import { formatRelativeNextRun } from './timeFormat'
 
 // ─── status derivation ───────────────────────────────────────────────────────
@@ -115,10 +115,15 @@ interface EmployeeCardProps {
 }
 
 export function EmployeeCard({ employee: emp, inboxEntries, activeRun = null, onClick, onRefresh }: EmployeeCardProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [busy, setBusy] = useState(false)
   const status = deriveStatus(emp, inboxEntries, activeRun)
   const templateVersion = emp.templateRef?.version ?? null
+  const display = localizeEmployeeDisplay(
+    emp.templateId,
+    { name: emp.name, role: emp.role, description: emp.description },
+    i18n.language,
+  )
 
   const handleTogglePause = async (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -138,7 +143,7 @@ export function EmployeeCard({ employee: emp, inboxEntries, activeRun = null, on
       type="button"
       data-aijia-employee-card
       data-aijia-employee-id={emp.id}
-      data-aijia-employee-name={emp.name}
+      data-aijia-employee-name={display.name}
       data-aijia-employee-status={status}
       data-aijia-employee-cron-enabled={emp.cron ? (emp.cronEnabled ? 'true' : 'false') : 'none'}
       data-aijia-employee-dispatch-disabled={emp.lifecycle === 'archived' ? 'true' : 'false'}
@@ -156,7 +161,7 @@ export function EmployeeCard({ employee: emp, inboxEntries, activeRun = null, on
           <span className="text-2xl leading-none">{emp.avatar}</span>
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
-              <span className="text-sm font-semibold text-foreground">{emp.name}</span>
+              <span className="text-sm font-semibold text-foreground">{display.name}</span>
               <StatusDot status={status} />
               {templateVersion && (
                 <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] leading-none text-muted-foreground">
@@ -164,7 +169,7 @@ export function EmployeeCard({ employee: emp, inboxEntries, activeRun = null, on
                 </span>
               )}
             </div>
-            <p className="truncate text-xs text-muted-foreground">{emp.role}</p>
+            <p className="truncate text-xs text-muted-foreground">{display.role}</p>
           </div>
         </div>
         <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/50 transition-transform group-hover:translate-x-0.5" />
@@ -172,7 +177,7 @@ export function EmployeeCard({ employee: emp, inboxEntries, activeRun = null, on
 
       {/* Description */}
       <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
-        {emp.description}
+        {display.description}
       </p>
 
       {/* Footer */}

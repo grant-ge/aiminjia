@@ -10,11 +10,11 @@ import { useChatStore } from '@/stores/chatStore'
 import { useUiStore } from '@/stores/uiStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { ExpertTeamCard } from './ExpertTeamCard'
-import { EXPERT_TEAMS, type ExpertTeamId, getExpertTeam } from './teams'
+import { getExpertTeams, type ExpertTeamId, getExpertTeam } from './teams'
 import { setExpertTeam } from './expertTeamRegistry'
 
 export function ExpertTeamsPage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const setRoute = useUiStore((s) => s.setRoute)
   const setSidebarTab = useUiStore((s) => s.setSidebarTab)
   const pushNotification = useNotificationStore((s) => s.push)
@@ -27,7 +27,7 @@ export function ExpertTeamsPage() {
   const handleStart = async (id: ExpertTeamId) => {
     if (busyRef.current) return
     busyRef.current = true
-    const team = getExpertTeam(id)
+    const team = getExpertTeam(id, i18n.language)
     if (!team) return
     try {
       const conversationId = await createConversation()
@@ -135,7 +135,7 @@ export function ExpertTeamsPage() {
       maxWidthClass="max-w-[1024px]"
     >
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        {EXPERT_TEAMS.map((team) => (
+        {getExpertTeams(i18n.language).map((team) => (
           <ExpertTeamCard key={team.id} team={team} onStart={handleStart} />
         ))}
       </div>

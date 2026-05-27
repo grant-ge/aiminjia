@@ -8,6 +8,7 @@ import { SkillMetaRow } from '@/components/skills/SkillMetaRow'
 import { SkillUsageBlock } from '@/components/skills/SkillUsageBlock'
 import { useSkillStore } from '@/stores/skillStore'
 import { useUiStore } from '@/stores/uiStore'
+import { localizeSkill } from '@/lib/skillLocalization'
 
 import { formatSkillUpdatedAt } from './formatSkillUpdatedAt'
 
@@ -23,10 +24,11 @@ export function SkillDetailPage({ skillId }: SkillDetailPageProps) {
 
   const handleUseSkill = () => {
     if (!skill) return
+    const localized = localizeSkill(skill)
     const trigger = (skill.triggerText?.trim() || `/${skill.id}`)
     setPendingSkill({
       id: skill.id,
-      label: skill.displayName || skill.id,
+      label: localized.name,
       trigger,
     })
     setRoute({ kind: 'home' })
@@ -62,6 +64,8 @@ export function SkillDetailPage({ skillId }: SkillDetailPageProps) {
     )
   }
 
+  const localized = skill ? localizeSkill(skill) : null
+
   return (
     <PageSectionShell
       topBar={
@@ -70,15 +74,15 @@ export function SkillDetailPage({ skillId }: SkillDetailPageProps) {
           leading={backButton}
           breadcrumbs={[
             { label: '技能中心', onClick: goToSkillCenter },
-            { label: skill.displayName, current: true },
+            { label: localized?.name ?? skill.id, current: true },
           ]}
         />
       }
     >
       <SkillDetailHero
         iconNode={<Sparkles className="h-9 w-9 text-primary" />}
-        title={skill.displayName}
-        subtitle={skill.shortDescription || `通过命令 ${skill.triggerText?.trim() || `/${skill.id}`} 快速调用`}
+        title={localized?.name ?? skill.id}
+        subtitle={localized?.description || `通过命令 ${skill.triggerText?.trim() || `/${skill.id}`} 快速调用`}
         actionBar={
           <SkillActionBar
             primaryLabel="使用"

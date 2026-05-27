@@ -21,7 +21,8 @@ import { deriveStatus, type EmployeeStatus } from './EmployeeCard'
 import { useChatStore } from '@/stores/chatStore'
 import { useSkillStore } from '@/stores/skillStore'
 import { useUiStore } from '@/stores/uiStore'
-import { findTemplate } from './templates'
+import { localizeSkill } from '@/lib/skillLocalization'
+import { findTemplate, localizeEmployeeDisplay } from './templates'
 import { ResourceConfigForm } from './ResourceConfigForm'
 import { runTriggerPrechecks } from './triggerPrechecks'
 import { CronEditDialog } from './CronEditDialog'
@@ -126,6 +127,11 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
   const template = findTemplate(emp.templateId)
   const status = deriveStatus(emp, inboxEntries, activeRun)
   const templateVersion = emp.templateRef?.version ?? null
+  const display = localizeEmployeeDisplay(
+    emp.templateId,
+    { name: emp.name, role: emp.role, description: emp.description },
+    i18n.language,
+  )
 
   const triggerNow = async (attachments: ChatAttachmentPayload[]) => {
     const convId = await employeeTrigger(emp.id, undefined, attachments)
@@ -140,7 +146,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
     const nextConversations = seedDispatchConversation(
       chatStore.conversations,
       convId,
-      emp.name,
+      display.name,
     )
     if (nextConversations !== chatStore.conversations) {
       chatStore.setConversations(nextConversations)
@@ -277,7 +283,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
   const handleDismiss = async () => {
     const ok = await requestConfirm({
       title: t('employeeDrawer.deleteEmployee'),
-      description: t('employeeDrawer.deleteConfirm', { name: emp.name }),
+      description: t('employeeDrawer.deleteConfirm', { name: display.name }),
       confirmLabel: t('common.confirm'),
       variant: 'destructive',
     })
@@ -305,8 +311,8 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
           <div className="flex items-center gap-3">
             <span className="text-3xl">{emp.avatar}</span>
             <div>
-              <h2 className="text-base font-semibold text-foreground">{emp.name}</h2>
-              <p className="text-sm text-muted-foreground">{emp.role}</p>
+              <h2 className="text-base font-semibold text-foreground">{display.name}</h2>
+              <p className="text-sm text-muted-foreground">{display.role}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -355,7 +361,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
             {/* 职责 */}
             <section>
               <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('employeeDrawer.responsibility')}</h3>
-              <p className="text-sm leading-relaxed text-foreground">{emp.description}</p>
+              <p className="text-sm leading-relaxed text-foreground">{display.description}</p>
             </section>
 
             {templateVersion ? (
@@ -411,6 +417,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
                 "员工会做什么" is the SKILL.md it's bound to. */}
             {emp.defaultSkillId && (() => {
               const skill = getSkillById(emp.defaultSkillId)
+              const localizedSkill = skill ? localizeSkill(skill, i18n.language) : null
               return (
                 <section>
                   <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -418,11 +425,11 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
                   </h3>
                   <div className="rounded-md border border-border bg-card px-3 py-2">
                     <div className="text-sm font-medium text-foreground">
-                      {skill?.displayName || emp.defaultSkillId}
+                      {localizedSkill?.name || emp.defaultSkillId}
                     </div>
-                    {skill?.shortDescription || skill?.description ? (
+                    {localizedSkill?.description ? (
                       <div className="mt-0.5 text-xs text-muted-foreground">
-                        {skill.shortDescription || skill.description}
+                        {localizedSkill.description}
                       </div>
                     ) : null}
                   </div>

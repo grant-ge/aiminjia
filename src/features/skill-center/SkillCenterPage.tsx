@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button'
 import { SKILL_CATEGORIES, type SkillCategoryId } from '@/data/skill-categories'
 import { useChat } from '@/hooks/useChat'
 import { syncBuiltinSkills } from '@/lib/tauri'
+import { localizeSkill } from '@/lib/skillLocalization'
 import { useAuthStore } from '@/stores/authStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { useSkillStore } from '@/stores/skillStore'
@@ -32,7 +33,7 @@ function getSkillIcon(icon: string) {
 }
 
 export function SkillCenterPage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [category, setCategory] = useState<SkillCategoryId>('recommended')
   const [query, setQuery] = useState('')
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -427,6 +428,7 @@ export function SkillCenterPage() {
           )
         ) : (
           officeSkills.map((skill) => {
+            const localized = localizeSkill(skill, i18n.language)
             const isUserSkill = skill.source === 'user'
             const menuItems: Array<{
               id: string
@@ -440,14 +442,14 @@ export function SkillCenterPage() {
               menuItems.push({
                 id: 'export',
                 label: t('skillCenter.exportLabel'),
-                onSelect: () => void handleExportSkill(skill.id, skill.displayName),
+                onSelect: () => void handleExportSkill(skill.id, localized.name),
               })
               menuItems.push({
                 id: 'delete',
                 label: t('skillCenter.deleteSkill'),
                 icon: <Trash2 />,
                 className: 'text-destructive [&_svg]:text-destructive',
-                onSelect: () => void handleDeleteSkill(skill.id, skill.displayName),
+                onSelect: () => void handleDeleteSkill(skill.id, localized.name),
               })
             } else if (isLoggedIn) {
               // Non-user skills (builtin / global) can be re-synced from OPS.
@@ -456,15 +458,15 @@ export function SkillCenterPage() {
                 label: checkingId === skill.id ? t('skillCenter.checking') : t('skillCenter.checkUpdate'),
                 disabled: checkingId === skill.id || syncing,
                 onSelect: () =>
-                  void handleCheckSkillUpdate(skill.id, skill.displayName),
+                  void handleCheckSkillUpdate(skill.id, localized.name),
               })
             }
             return (
               <SkillCard
                 key={skill.id}
-                title={skill.displayName}
+                title={localized.name}
                 meta={getSkillMeta(skill.source, skill.category)}
-                desc={skill.shortDescription || skill.description}
+                desc={localized.description}
                 iconNode={getSkillIcon(skill.icon)}
                 iconBg={getSkillCategoryBg(skill.category)}
                 version={skill.version}
@@ -476,7 +478,7 @@ export function SkillCenterPage() {
                     <div aria-hidden="true" className="h-7 w-7" />
                   ) : (
                     <AppDropdown
-                      ariaLabel={`${skill.displayName} ${t('skillCenter.moreActions')}`}
+                      ariaLabel={`${localized.name} ${t('skillCenter.moreActions')}`}
                       trigger={
                         <button
                           type="button"

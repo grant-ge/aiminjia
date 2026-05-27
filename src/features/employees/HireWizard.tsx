@@ -12,7 +12,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { BUILTIN_TEMPLATES, snapshotToTemplate, type EmployeeTemplate } from './templates'
+import { localizeBuiltinTemplates, snapshotToTemplate, type EmployeeTemplate } from './templates'
 import { MonitoringUrlsForm } from './forms/MonitoringUrlsForm'
 import { SalesTableConfigForm } from './forms/SalesTableConfigForm'
 import { WeeklyReportConfigForm } from './forms/WeeklyReportConfigForm'
@@ -44,14 +44,14 @@ interface HireWizardProps {
 }
 
 export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [step, setStep] = useState<1 | 2 | 3>(1)
   const [selected, setSelected] = useState<EmployeeTemplate | null>(null)
   // Catalog: backend (`employee_template_catalog` = bootstrap ∪ cache) when
   // available, falls back to the legacy hardcoded `BUILTIN_TEMPLATES` if
   // the IPC call fails (e.g. dev server with mismatched binary). The
   // wizard renders this list directly; we don't update it after open.
-  const [catalog, setCatalog] = useState<EmployeeTemplate[]>(BUILTIN_TEMPLATES)
+  const [catalog, setCatalog] = useState<EmployeeTemplate[]>(() => localizeBuiltinTemplates(i18n.language))
   const [name, setName] = useState('')
   const [enableCron, setEnableCron] = useState(true)
   const [cron, setCron] = useState('')
@@ -83,16 +83,17 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
         const snapshots: EmployeeTemplateSnapshot[] = await employeeTemplateCatalog()
         if (cancelled) return
         if (snapshots.length > 0) {
-          setCatalog(snapshots.map(snapshotToTemplate))
+          setCatalog(snapshots.map((snap) => snapshotToTemplate(snap, i18n.language)))
         }
       } catch (e) {
-        console.error('[HireWizard] employee_template_catalog failed, using BUILTIN_TEMPLATES:', e)
+        console.error('[HireWizard] employee_template_catalog failed, using builtin templates:', e)
+        setCatalog(localizeBuiltinTemplates(i18n.language))
       }
     })()
     return () => {
       cancelled = true
     }
-  }, [open])
+  }, [open, i18n.language])
 
   function handleClose() {
     setStep(1)
@@ -117,7 +118,9 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
   async function reloadCatalog() {
     const snapshots: EmployeeTemplateSnapshot[] = await employeeTemplateCatalog()
     if (snapshots.length > 0) {
-      setCatalog(snapshots.map(snapshotToTemplate))
+      setCatalog(snapshots.map((snap) => snapshotToTemplate(snap, i18n.language)))
+    } else {
+      setCatalog(localizeBuiltinTemplates(i18n.language))
     }
   }
 

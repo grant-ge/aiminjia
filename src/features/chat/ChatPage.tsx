@@ -15,6 +15,7 @@ import { useNotificationStore } from '@/stores/notificationStore'
 import { useGeneratedFilePreviewStore } from '@/stores/generatedFilePreviewStore'
 import { getConversationSource, openGeneratedFile } from '@/lib/tauri'
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useEmployeeById } from '@/features/employees/useEmployeeById'
 
 interface ChatPageProps {
@@ -22,6 +23,7 @@ interface ChatPageProps {
 }
 
 export function ChatPage({ conversationId }: ChatPageProps) {
+  const { i18n } = useTranslation()
   const { switchConversation } = useChat()
   const conversations = useChatStore((s) => s.conversations)
   const activeConversationId = useChatStore((s) => s.activeConversationId)
@@ -47,7 +49,7 @@ export function ChatPage({ conversationId }: ChatPageProps) {
   const employee = useEmployeeById(employeeId)
   const { overview: teamOverview } = useTeamOverview(activeConversationId)
   const expertTeamId = useExpertTeamForConversation(conversationId)
-  const expertTeam = expertTeamId ? getExpertTeam(expertTeamId) : undefined
+  const expertTeam = expertTeamId ? getExpertTeam(expertTeamId, i18n.language) : undefined
 
   const handleOpenPreviewTarget = async (target: PreviewTarget) => {
     try {

@@ -6,9 +6,10 @@ import { useSkillStore } from '@/stores/skillStore'
 import { useProductName } from '@/hooks/useProductName'
 import { useChat } from '@/hooks/useChat'
 import { useTranslation } from 'react-i18next'
+import { localizeSkill } from '@/lib/skillLocalization'
 
 export function WelcomeScreen() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const skills = useSkillStore((s) => s.skills)
   const productName = useProductName()
   const { sendUserMessage } = useChat()
@@ -101,34 +102,37 @@ export function WelcomeScreen() {
       {displaySkills.length > 0 && (
         <div className="mt-4 w-full max-w-[640px] px-4">
           <div className="grid grid-cols-3 gap-2.5">
-            {displaySkills.map((skill) => (
-              <button
-                key={skill.id}
-                type="button"
-                className="flex flex-col items-center gap-1.5 rounded-lg px-3 py-3.5 text-center transition-all duration-150 hover:-translate-y-0.5 cursor-pointer"
-                style={{
-                  background: 'var(--color-bg-elevated)',
-                  border: '1px solid var(--color-border-subtle)',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = 'var(--color-accent)'
-                  e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.06)'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = 'var(--color-border-subtle)'
-                  e.currentTarget.style.boxShadow = 'none'
-                }}
-                onClick={() => handleSkillClick(skill.triggerText)}
-              >
-                <span className="text-xl leading-none">{skill.icon}</span>
-                <span
-                  className="text-xs font-medium leading-tight"
-                  style={{ color: 'var(--color-text-primary)' }}
+            {displaySkills.map((skill) => {
+              const localized = localizeSkill(skill, i18n.language)
+              return (
+                <button
+                  key={skill.id}
+                  type="button"
+                  className="flex flex-col items-center gap-1.5 rounded-lg px-3 py-3.5 text-center transition-all duration-150 hover:-translate-y-0.5 cursor-pointer"
+                  style={{
+                    background: 'var(--color-bg-elevated)',
+                    border: '1px solid var(--color-border-subtle)',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--color-accent)'
+                    e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.06)'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--color-border-subtle)'
+                    e.currentTarget.style.boxShadow = 'none'
+                  }}
+                  onClick={() => handleSkillClick(skill.triggerText)}
                 >
-                  {t(`skills.${skill.id}`, skill.displayName)}
-                </span>
-              </button>
-            ))}
+                  <span className="text-xl leading-none">{skill.icon}</span>
+                  <span
+                    className="text-xs font-medium leading-tight"
+                    style={{ color: 'var(--color-text-primary)' }}
+                  >
+                    {localized.name}
+                  </span>
+                </button>
+              )
+            })}
           </div>
         </div>
       )}

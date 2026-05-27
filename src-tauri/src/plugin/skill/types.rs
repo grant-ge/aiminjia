@@ -1,9 +1,22 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillDisplayI18nText {
+    #[serde(default, alias = "Name")]
+    pub name: Option<String>,
+    #[serde(default, alias = "Description")]
+    pub description: Option<String>,
+}
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SkillMetadata {
     #[serde(default)]
     pub label: Option<String>,
+    #[serde(default, rename = "displayI18n", alias = "display_i18n")]
+    pub display_i18n: HashMap<String, SkillDisplayI18nText>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

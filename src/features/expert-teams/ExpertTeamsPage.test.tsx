@@ -1,6 +1,7 @@
 import '@testing-library/jest-dom'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import i18n from '@/i18n'
 
 const mocks = vi.hoisted(() => ({
   createConversation: vi.fn(),
@@ -39,6 +40,7 @@ import { ExpertTeamsPage } from './ExpertTeamsPage'
 
 describe('ExpertTeamsPage', () => {
   beforeEach(() => {
+    void i18n.changeLanguage('zh-CN')
     mocks.expertTeamTemplateRefresh.mockClear()
     mocks.pushNotification.mockClear()
   })
@@ -56,5 +58,13 @@ describe('ExpertTeamsPage', () => {
       level: 'success',
       title: '同步完成，更新 2 个专家团',
     }))
+  })
+
+  it('renders localized expert team names in English', async () => {
+    await i18n.changeLanguage('en-US')
+    render(<ExpertTeamsPage />)
+
+    expect(screen.getByText('Marketing Planning Team')).toBeInTheDocument()
+    expect(screen.queryByText('市场营销策划团')).toBeNull()
   })
 })

@@ -37,6 +37,8 @@ pub struct SkillPackageItem {
     /// missing `category:`. Empty string is normalized to None.
     #[serde(default, deserialize_with = "deserialize_optional_nonempty_string")]
     pub category: Option<String>,
+    #[serde(default)]
+    pub display_i18n: Option<Value>,
 }
 
 fn deserialize_optional_nonempty_string<'de, D>(d: D) -> std::result::Result<Option<String>, D::Error>
@@ -67,6 +69,8 @@ pub struct DownloadResponseData {
     /// where category is empty (legacy). Empty string normalized to None.
     #[serde(default, deserialize_with = "deserialize_optional_nonempty_string")]
     pub category: Option<String>,
+    #[serde(default)]
+    pub display_i18n: Option<Value>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -424,6 +428,11 @@ async fn install_one_skill_package(
     // Prefer download.category (fresher), fall back to item.category from
     // the list endpoint when download response omits it.
     let db_category = download.category.clone().or_else(|| item.category.clone());
+    let display_i18n = download
+        .display_i18n
+        .clone()
+        .or_else(|| item.display_i18n.clone())
+        .filter(|value| !value.is_null());
 
     // 2. Download zip into downloads/{plugin_id}-{version}.zip
     let archive = config.downloads_dir.join(format!(
@@ -477,9 +486,15 @@ async fn install_one_skill_package(
     //    are missing — primarily to give legacy packages (uploaded before the
     //    strict-frontmatter contract) a correct category instead of falling
     //    back to "general". Untouched SKILL.md keeps sha256 integrity intact.
-    if let Some(cat) = db_category.as_deref() {
+    if db_category.is_some() || display_i18n.is_some() {
         let meta_path = installed.join(".lotus-meta.json");
-        let payload = serde_json::json!({ "category": cat });
+        let mut payload = serde_json::Map::new();
+        if let Some(cat) = db_category.as_deref() {
+            payload.insert("category".to_string(), Value::String(cat.to_string()));
+        }
+        if let Some(display) = display_i18n {
+            payload.insert("displayI18n".to_string(), display);
+        }
         match serde_json::to_vec(&payload) {
             Ok(bytes) => {
                 if let Err(error) = fs::write(&meta_path, bytes) {

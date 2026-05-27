@@ -2415,6 +2415,16 @@ export interface EmployeeTemplateSnapshot {
   role: string
   description: string
   badge: string
+  displayI18n?: Record<string, {
+    name?: string
+    role?: string
+    description?: string
+    badge?: string
+  }> | null
+  promptI18n?: Record<string, {
+    systemPromptExtra?: string
+  }> | null
+  schemaI18n?: Record<string, unknown> | null
   systemPromptExtra: string
   toolWhitelist: string[]
   cron: string

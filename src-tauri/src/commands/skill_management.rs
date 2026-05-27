@@ -98,7 +98,9 @@ pub fn validate_skill_directory(source: &std::path::Path) -> Result<(), SkillVal
 pub struct SkillInfo {
     pub id: String,
     pub display_name: String,
+    pub display_name_en: String,
     pub description: String,
+    pub short_description_en: String,
     pub icon: Option<String>,
     pub category: Option<String>,
     /// "user"  — installed under ~/.renlijia/users/{scope}/skills/
@@ -131,24 +133,35 @@ pub fn list_skills_from_registry_with_resolver(
         .skill_ids()
         .into_iter()
         .filter_map(|id| {
-            guard.get(&id).map(|skill| SkillInfo {
-                id: skill.id.clone(),
-                display_name: skill
+            guard.get(&id).map(|skill| {
+                let english_display = skill
                     .frontmatter
                     .metadata
-                    .label
-                    .clone()
-                    .unwrap_or_else(|| skill.frontmatter.name.clone()),
-                description: skill.frontmatter.description.clone(),
-                icon: None,
-                category: skill.frontmatter.category.clone(),
-                source: match skill.source {
-                    crate::plugin::skill::types::SkillSource::User => "user".to_string(),
-                    crate::plugin::skill::types::SkillSource::Tenant => "tenant".to_string(),
-                    crate::plugin::skill::types::SkillSource::Global => "global".to_string(),
-                },
-                updated_at: resolver.resolve(skill),
-                version: skill.frontmatter.version.clone(),
+                    .display_i18n
+                    .get("en-US")
+                    .cloned()
+                    .unwrap_or_default();
+                SkillInfo {
+                    id: skill.id.clone(),
+                    display_name: skill
+                        .frontmatter
+                        .metadata
+                        .label
+                        .clone()
+                        .unwrap_or_else(|| skill.frontmatter.name.clone()),
+                    display_name_en: english_display.name.unwrap_or_default(),
+                    description: skill.frontmatter.description.clone(),
+                    short_description_en: english_display.description.unwrap_or_default(),
+                    icon: None,
+                    category: skill.frontmatter.category.clone(),
+                    source: match skill.source {
+                        crate::plugin::skill::types::SkillSource::User => "user".to_string(),
+                        crate::plugin::skill::types::SkillSource::Tenant => "tenant".to_string(),
+                        crate::plugin::skill::types::SkillSource::Global => "global".to_string(),
+                    },
+                    updated_at: resolver.resolve(skill),
+                    version: skill.frontmatter.version.clone(),
+                }
             })
         })
         .collect()

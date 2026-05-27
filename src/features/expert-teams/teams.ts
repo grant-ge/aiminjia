@@ -17,6 +17,8 @@ export type FacilitationStyle = 'rounds' | 'debate' | 'open'
 export interface ExpertPersona {
   /** 角色名，会被注入 sub-agent system prompt */
   name: string
+  /** Stable source name used for local avatar filenames when display name is localized. */
+  avatarName?: string
   /** Runtime teammate name emitted by Team events. UI keeps this name visible but can use it for avatar lookup. */
   agentName?: string
   /** 简短 persona，描述风格 / 关注点 */
@@ -162,8 +164,155 @@ export const EXPERT_TEAMS: ExpertTeam[] = [
   },
 ]
 
-export function getExpertTeam(id: ExpertTeamId): ExpertTeam | undefined {
-  return EXPERT_TEAMS.find((t) => t.id === id)
+type ExpertTeamLocale = 'zh-CN' | 'en-US'
+type ExpertTeamText = Pick<ExpertTeam, 'name' | 'tagline' | 'examples' | 'composerPlaceholder'> & {
+  experts?: Array<Pick<ExpertPersona, 'name' | 'persona'>>
+}
+
+const EXPERT_TEAM_I18N: Record<ExpertTeamId, Partial<Record<ExpertTeamLocale, ExpertTeamText>>> = {
+  marketing: {
+    'en-US': {
+      name: 'Marketing Planning Team',
+      tagline: 'Launches, campaigns, and market strategy',
+      examples: ['Plan a new product launch', 'Build a promotion timeline for 618'],
+      composerPlaceholder: 'Tell the team what campaign you want to plan...',
+      experts: [
+        { name: 'Brand Lead', persona: 'Focuses on positioning, tone, and long-term mindshare' },
+        { name: 'Content Lead', persona: 'Uses stories and emotion to improve conversion copy' },
+        { name: 'Growth Hacker', persona: 'Data-driven, focused on funnels and ROI experiments' },
+        { name: 'Channel Manager', persona: 'Understands media mix and mainstream acquisition channels' },
+      ],
+    },
+  },
+  operations: {
+    'en-US': {
+      name: 'Business Decision Team',
+      tagline: 'Report reviews, operating decisions, and budget allocation',
+      examples: ['Analyze why Q2 metrics declined', 'Decide next year budget allocation'],
+      composerPlaceholder: 'Tell the team what decision you want to review...',
+      experts: [
+        { name: 'CEO', persona: 'Balances short-term returns with long-term strategy' },
+        { name: 'CFO', persona: 'Focuses on cash flow, gross margin, and unit economics' },
+        { name: 'COO', persona: 'Focuses on execution efficiency, collaboration, and process bottlenecks' },
+        { name: 'Data Analyst', persona: 'Uses numbers to break down metrics and explain anomalies' },
+      ],
+    },
+  },
+  strategy: {
+    'en-US': {
+      name: 'Strategy Simulation Team',
+      tagline: 'Multi-perspective stress tests before major decisions',
+      examples: ['Should we expand into Southeast Asia?', 'Should we start Series B fundraising?'],
+      composerPlaceholder: 'Tell the team what decision you want to simulate...',
+      experts: [
+        { name: 'Strategy Advisor', persona: 'Rigorous consultant style, strong at SWOT and Five Forces' },
+        { name: 'CFO', persona: 'Focuses on ROI, cash flow, and risk exposure' },
+        { name: 'Legal Director', persona: 'Focuses on compliance, contracts, and regulatory risk' },
+        { name: 'CEO Coach', persona: 'Asks sharp questions and exposes blind spots' },
+      ],
+    },
+  },
+  negotiation: {
+    'en-US': {
+      name: 'Communication and Negotiation Team',
+      tagline: 'Practice for difficult conversations',
+      examples: ['Discuss salary cuts with a key employee', 'Negotiate a 20% supplier discount'],
+      composerPlaceholder: 'Tell the team what conversation you want to rehearse...',
+      experts: [
+        { name: 'Communication Coach', persona: 'Focuses on wording, pacing, and emotional control' },
+        { name: 'Opposing Role', persona: 'Represents the other side and gives realistic objections' },
+        { name: 'Neutral Observer', persona: 'Reviews strengths and weaknesses from a neutral stance' },
+        { name: 'Our Representative', persona: 'Prepares our claims and accepts coaching' },
+      ],
+    },
+  },
+  retrospective: {
+    'en-US': {
+      name: 'Retrospective Diagnosis Team',
+      tagline: 'Failed project reviews and metric decline diagnosis',
+      examples: ['Why did a product line miss expectations last quarter?', 'Why did 30-day new hire churn rise?'],
+      composerPlaceholder: 'Tell the team what event you want to review...',
+      experts: [
+        { name: 'Business Lead', persona: 'Adds frontline context and concrete decision history' },
+        { name: 'Data Analyst', persona: 'Breaks down metrics and finds anomaly drivers' },
+        { name: 'HR', persona: 'Focuses on organizational and people factors' },
+        { name: 'Process Advisor', persona: 'Focuses on SOPs and collaboration breakdowns' },
+      ],
+    },
+  },
+  investment: {
+    'en-US': {
+      name: 'Investment Evaluation Team',
+      tagline: 'Due diligence for M&A, new businesses, and investments',
+      examples: ['Should we invest in an AI education company?', 'Is acquiring team X worth the cost?'],
+      composerPlaceholder: 'Tell the team what target you want to evaluate...',
+      experts: [
+        { name: 'Senior Investor', persona: 'Evaluates market, team, and valuation reasonableness' },
+        { name: 'CFO', persona: 'Examines financial models and cash-flow sensitivity' },
+        { name: 'Industry Expert', persona: 'Evaluates competitive landscape and technical moats' },
+        { name: 'Risk Director', persona: 'Evaluates compliance, legal, and exit risks' },
+      ],
+    },
+  },
+  debate: {
+    'en-US': {
+      name: 'Debate Team',
+      tagline: 'Binary choices and dilemma decisions',
+      examples: ['Should AI replace all junior roles?', 'Should we shut down an unprofitable passion project?'],
+      composerPlaceholder: 'Tell the team what topic you want to debate...',
+      experts: [
+        { name: 'Affirmative', persona: 'Argues the strongest case for yes' },
+        { name: 'Negative', persona: 'Argues the strongest case against' },
+        { name: 'Moderator', persona: 'Runs the process, manages time, and makes the final call' },
+        { name: 'Observer', persona: 'Reviews the strengths and weaknesses of both sides' },
+      ],
+    },
+  },
+  roundtable: {
+    'en-US': {
+      name: 'Roundtable Team',
+      tagline: 'Open topics with flexible expert roles',
+      examples: ['What will work look like in five years?', 'How should small businesses adopt AI?'],
+      composerPlaceholder: 'Share a topic and the director will invite suitable experts...',
+      experts: [],
+    },
+  },
+}
+
+function normalizeLocale(language?: string): ExpertTeamLocale {
+  return language?.toLowerCase().startsWith('en') ? 'en-US' : 'zh-CN'
+}
+
+export function localizeExpertTeam(team: ExpertTeam, language?: string): ExpertTeam {
+  const locale = normalizeLocale(language)
+  const text = EXPERT_TEAM_I18N[team.id]?.[locale]
+  if (!text) return team
+  return {
+    ...team,
+    name: text.name,
+    tagline: text.tagline,
+    examples: text.examples,
+    composerPlaceholder: text.composerPlaceholder,
+    experts: team.experts.map((expert, index) => {
+      const localized = text.experts?.[index]
+      if (!localized) return expert
+      return {
+        ...expert,
+        avatarName: expert.avatarName ?? expert.name,
+        name: localized.name,
+        persona: localized.persona,
+      }
+    }),
+  }
+}
+
+export function getExpertTeams(language?: string): ExpertTeam[] {
+  return EXPERT_TEAMS.map((team) => localizeExpertTeam(team, language))
+}
+
+export function getExpertTeam(id: ExpertTeamId, language?: string): ExpertTeam | undefined {
+  const team = EXPERT_TEAMS.find((t) => t.id === id)
+  return team ? localizeExpertTeam(team, language) : undefined
 }
 
 /**

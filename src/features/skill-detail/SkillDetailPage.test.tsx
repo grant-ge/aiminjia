@@ -2,6 +2,7 @@ import '@testing-library/jest-dom'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import i18n from '@/i18n'
 import { useSkillStore } from '@/stores/skillStore'
 import { useUiStore } from '@/stores/uiStore'
 
@@ -15,6 +16,7 @@ import { SkillDetailPage } from './SkillDetailPage'
 
 describe('SkillDetailPage', () => {
   beforeEach(() => {
+    void i18n.changeLanguage('zh-CN')
     createConversationFromSkillMock.mockClear()
     useSkillStore.setState({
       skills: [
@@ -47,5 +49,15 @@ describe('SkillDetailPage', () => {
     // home; it must NOT auto-create/run a conversation.
     expect(createConversationFromSkillMock).not.toHaveBeenCalled()
     expect(useUiStore.getState().route).toEqual({ kind: 'home' })
+  })
+
+  it('renders the English skill name and description when language is English', async () => {
+    await i18n.changeLanguage('en-US')
+
+    render(<SkillDetailPage skillId="biz-proposal" />)
+
+    expect(screen.getAllByText('Business Proposal').length).toBeGreaterThan(0)
+    expect(screen.getByText('Business proposal writing')).toBeInTheDocument()
+    expect(screen.queryByText('商业方案撰写')).toBeNull()
   })
 })

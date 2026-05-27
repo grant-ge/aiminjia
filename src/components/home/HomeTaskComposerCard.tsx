@@ -35,13 +35,14 @@ import {
   pickLocalDirectory,
   type AuthorizedWorkspaceRef,
 } from '@/lib/tauri'
+import { localizeSkill, localizedSkillName } from '@/lib/skillLocalization'
 import { useChatStore } from '@/stores/chatStore'
 import { useHomeStore } from '@/stores/homeStore'
 import { useSkillStore } from '@/stores/skillStore'
 import { useUiStore } from '@/stores/uiStore'
 
 export function HomeTaskComposerCard() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const composerRef = useRef<RichComposerHandle>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const { sendUserMessage } = useChat()
@@ -64,10 +65,10 @@ export function HomeTaskComposerCard() {
     () =>
       skills.map((skill) => ({
         id: skill.id,
-        label: skill.displayName || skill.id,
+        label: localizeSkill(skill, i18n.language).name,
         command: skill.triggerText || `/${skill.id}`,
       })),
-    [skills],
+    [skills, i18n.language],
   )
 
   // One-shot prefill text; consumed synchronously via lazy initializer so
@@ -86,7 +87,7 @@ export function HomeTaskComposerCard() {
     const skill = getSkillById(pendingSkill.id)
     composerRef.current?.insertSkillToken({
       id: pendingSkill.id,
-      label: pendingSkill.label || skill?.displayName || pendingSkill.id,
+      label: pendingSkill.label || localizedSkillName(skill, pendingSkill.id, i18n.language),
       command: pendingSkill.trigger || skill?.triggerText || `/${pendingSkill.id}`,
     })
     composerRef.current?.focus()
@@ -98,12 +99,12 @@ export function HomeTaskComposerCard() {
     const skill = getSkillById(skillId)
     composerRef.current?.insertSkillToken({
       id: skillId,
-      label: skill?.displayName || skill?.id || skillId,
+      label: localizedSkillName(skill, skillId, i18n.language),
       command: skill?.triggerText || `/${skillId}`,
     })
     composerRef.current?.focus()
     setShowSkillPopover(false)
-  }, [getSkillById])
+  }, [getSkillById, i18n.language])
 
   // Load default folder if no workspace has been selected yet
   useEffect(() => {

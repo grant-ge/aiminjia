@@ -75,4 +75,22 @@ describe('snapshotToTemplate', () => {
     const out = snapshotToTemplate(snap)
     expect(out.version).toBe('1.2.0')
   })
+
+  it('uses displayI18n fields for the requested locale', () => {
+    const snap = makeSnapshot({
+      displayI18n: {
+        'en-US': {
+          name: 'Researcher',
+          role: 'Market research analyst',
+          description: 'Tracks competitors weekly.',
+          badge: 'Ready',
+        },
+      },
+    })
+    const out = snapshotToTemplate(snap, 'en-US')
+    expect(out.name).toBe('Researcher')
+    expect(out.role).toBe('Market research analyst')
+    expect(out.description).toBe('Tracks competitors weekly.')
+    expect(out.badge).toBe('Ready')
+  })
 })

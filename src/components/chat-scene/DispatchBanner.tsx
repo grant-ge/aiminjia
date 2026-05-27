@@ -15,6 +15,7 @@
  * monitoring targets render as chips with the URL on title hover.
  */
 import { useTranslation } from 'react-i18next'
+import { localizedSkillDescription, localizedSkillName } from '@/lib/skillLocalization'
 import { useSkillStore } from '@/stores/skillStore'
 import type { DispatchHeader, DispatchMonitoringTarget } from './parseDispatchHeader'
 
@@ -32,12 +33,13 @@ function useFormatTriggerLabel() {
 }
 
 function SkillChip({ id }: { id: string }) {
+  const { i18n } = useTranslation()
   const skill = useSkillStore((s) => s.getById(id))
-  const label = skill?.displayName || id
+  const label = localizedSkillName(skill, id, i18n.language)
   return (
     <span
       data-testid="dispatch-skill-chip"
-      title={skill?.shortDescription || skill?.description || id}
+      title={localizedSkillDescription(skill, id, i18n.language)}
       className="inline-flex items-center rounded-md bg-accent px-1.5 py-0.5 text-xs font-medium text-foreground"
     >
       {label}

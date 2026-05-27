@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { SkillCenterPage } from '@/features/skill-center/SkillCenterPage'
+import i18n from '@/i18n'
 import { SkillAlreadyExistsError, SkillValidationError, useSkillStore } from '@/stores/skillStore'
 import { useUiStore } from '@/stores/uiStore'
 
@@ -53,6 +54,7 @@ function seedStore(extra?: Partial<ReturnType<typeof useSkillStore.getState>>) {
 
 describe('SkillCenterPage', () => {
   beforeEach(() => {
+    void i18n.changeLanguage('zh-CN')
     createConversationFromSkillMock.mockClear()
     openDialogMock.mockReset()
     askDialogMock.mockReset()
@@ -180,6 +182,15 @@ describe('SkillCenterPage', () => {
 
     expect(screen.getByText('HR分析')).toBeInTheDocument()
     expect(screen.queryByText('推荐1')).toBeNull()
+  })
+
+  it('英文环境下用技能英文名称和简介渲染卡片', async () => {
+    await i18n.changeLanguage('en-US')
+    render(<SkillCenterPage />)
+
+    expect(screen.getByText('HR Analysis')).toBeInTheDocument()
+    expect(screen.getByText('short')).toBeInTheDocument()
+    expect(screen.queryByText('HR分析')).toBeNull()
   })
 
   it('加载中显示状态文案', () => {
