@@ -14,6 +14,7 @@ import { hasExpertTeam } from '@/features/expert-teams/expertTeamRegistry'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
 import { ConversationRow } from './ConversationRow'
 import { ConversationTree } from './ConversationTree'
@@ -275,20 +276,23 @@ export function AppSidebar() {
                 }}
               />
               {TABS.map(({ key, Icon, labelKey }) => (
-                <button
-                  key={key}
-                  type="button"
-                  aria-label={t(labelKey)}
-                  onClick={() => switchTab(key)}
-                  className={`relative z-10 flex items-center justify-center gap-1 py-1.5 transition-colors duration-200 ${
-                    sidebarTab === key ? 'text-foreground' : ''
-                  }`}
-                >
-                  <Icon className="h-3.5 w-3.5 shrink-0" />
-                  {sidebarTab === key && (
-                    <span className="whitespace-nowrap">{t(labelKey)}</span>
-                  )}
-                </button>
+                <TooltipProvider key={key} delayDuration={400}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label={t(labelKey)}
+                        onClick={() => switchTab(key)}
+                        className={`relative z-10 flex items-center justify-center py-1.5 transition-colors duration-200 ${
+                          sidebarTab === key ? 'text-foreground' : ''
+                        }`}
+                      >
+                        <Icon className="h-3.5 w-3.5 shrink-0" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">{t(labelKey)}</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               ))}
             </div>
           )
