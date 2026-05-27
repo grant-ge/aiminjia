@@ -30,6 +30,7 @@
 //     for persisted-setting compat (anthropic ingress has one endpoint).
 // ============================================================================
 
+pub mod aijia_gateway_v2;
 pub mod claude;
 pub mod custom;
 pub mod lotus;

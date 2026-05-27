@@ -1,3 +1,4 @@
+pub mod canonical;
 pub mod content_filter;
 pub mod context_decay;
 pub mod gateway;
