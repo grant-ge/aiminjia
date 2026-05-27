@@ -3,6 +3,7 @@ pub mod chat;
 pub mod diagnostics;
 pub mod dingtalk;
 pub mod employees;
+pub mod expert_team_templates;
 pub mod file;
 pub mod plugin;
 

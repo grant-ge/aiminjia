@@ -862,7 +862,12 @@
     }
   },
   "ExpertTeams": {
-    "pageTitle": "专家团"
+    "pageTitle": "专家团",
+    "syncServer": "同步服务端",
+    "syncing": "同步中...",
+    "syncDone": "同步完成，更新 {{count}} 个专家团",
+    "syncUpToDate": "已是最新",
+    "syncFailed": "同步失败"
   },
   "nav": {
     "home": "新任务",
@@ -912,7 +917,7 @@
     "syncDone": "同步完成，更新 {{count}} 个模板",
     "syncUpToDate": "已是最新",
     "syncFailed": "同步失败",
-    "templateMarket": "模板市场",
+    "templateMarket": "员工市场",
     "todayFeed": "今日动态",
     "viewAll": "查看全部",
     "noFeedToday": "今天还没有任何动态",

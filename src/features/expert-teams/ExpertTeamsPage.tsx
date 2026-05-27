@@ -1,8 +1,11 @@
 // code/src/features/expert-teams/ExpertTeamsPage.tsx
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { RefreshCw } from 'lucide-react'
 import { PageSectionShell } from '@/components/shell/PageSectionShell'
 import { PageTopBar } from '@/components/shell/PageTopBar'
-import { createConversation, renameConversation } from '@/lib/tauri'
+import { Button } from '@/components/ui/button'
+import { createConversation, expertTeamTemplateRefresh, renameConversation } from '@/lib/tauri'
 import { useChatStore } from '@/stores/chatStore'
 import { useUiStore } from '@/stores/uiStore'
 import { useNotificationStore } from '@/stores/notificationStore'
@@ -11,9 +14,11 @@ import { EXPERT_TEAMS, type ExpertTeamId, getExpertTeam } from './teams'
 import { setExpertTeam } from './expertTeamRegistry'
 
 export function ExpertTeamsPage() {
+  const { t } = useTranslation()
   const setRoute = useUiStore((s) => s.setRoute)
   const setSidebarTab = useUiStore((s) => s.setSidebarTab)
   const pushNotification = useNotificationStore((s) => s.push)
+  const [syncing, setSyncing] = useState(false)
   // Synchronous guard: React state updates are batched, so two rapid clicks
   // can both pass a useState-based check before re-render. A ref flips
   // immediately and blocks the second call.
@@ -75,9 +80,58 @@ export function ExpertTeamsPage() {
     }
   }
 
+  const handleSync = async () => {
+    if (syncing) return
+    setSyncing(true)
+    try {
+      const count = await expertTeamTemplateRefresh()
+      pushNotification({
+        level: 'success',
+        title: count > 0
+          ? t('ExpertTeams.syncDone', { count })
+          : t('ExpertTeams.syncUpToDate'),
+        message: '',
+        actions: [],
+        dismissible: true,
+        autoHide: 4,
+        context: 'toast',
+      })
+    } catch (err) {
+      pushNotification({
+        level: 'error',
+        title: t('ExpertTeams.syncFailed'),
+        message: err instanceof Error ? err.message : String(err),
+        actions: [],
+        dismissible: true,
+        autoHide: 6,
+        context: 'toast',
+      })
+    } finally {
+      setSyncing(false)
+    }
+  }
+
   return (
     <PageSectionShell
-      topBar={<PageTopBar variant="title" title="专家团" />}
+      topBar={(
+        <PageTopBar
+          variant="title"
+          title={t('ExpertTeams.pageTitle')}
+          trailing={(
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 gap-1.5 px-2 text-xs"
+              disabled={syncing}
+              onClick={() => void handleSync()}
+            >
+              <RefreshCw className={`h-3 w-3 ${syncing ? 'animate-spin' : ''}`} />
+              {syncing ? t('ExpertTeams.syncing') : t('ExpertTeams.syncServer')}
+            </Button>
+          )}
+        />
+      )}
       maxWidthClass="max-w-[1024px]"
     >
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

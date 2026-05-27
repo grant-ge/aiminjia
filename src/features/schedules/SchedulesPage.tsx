@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CalendarClock, Plus } from 'lucide-react'
 
@@ -19,7 +19,6 @@ import {
   type CreateAgendaItemRequest,
   cancelAgendaItem,
   deleteAgendaItem,
-  employeeList,
   restoreAgendaItem,
   runAgendaItemNow,
   updateAgendaItem,
@@ -48,24 +47,7 @@ export function SchedulesPage() {
   const [editing, setEditing] = useState<AgendaItem | null>(null)
   const [editorOpen, setEditorOpen] = useState(false)
   const [detail, setDetail] = useState<AgendaItem | null>(null)
-  const [defaultEmployeeId, setDefaultEmployeeId] = useState<string>('')
   const [pageError, setPageError] = useState<string | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    void employeeList()
-      .then((list) => {
-        if (cancelled) return
-        const first = list.find((e) => e.lifecycle === 'active')
-        setDefaultEmployeeId(first?.id ?? '')
-      })
-      .catch(() => {
-        if (!cancelled) setDefaultEmployeeId('')
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
 
   const handleUseTemplate = useCallback((template: ScheduleTemplate) => {
     setDraftFromTemplate({
@@ -284,7 +266,7 @@ export function SchedulesPage() {
         open={editorOpen}
         initial={editing}
         initialDraft={draftFromTemplate}
-        organizerEmployeeId={editing?.organizerEmployeeId ?? defaultEmployeeId}
+        organizerEmployeeId={editing?.organizerEmployeeId}
         onClose={closeEditor}
         onSaved={onEditorSaved}
       />

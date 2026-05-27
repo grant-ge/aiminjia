@@ -4,12 +4,10 @@ import { Folder } from 'lucide-react'
 import {
   type AgendaItem,
   type CreateAgendaItemRequest,
-  type EmployeeRecord,
   type Freq,
   type RecurrenceRule,
   type UpdateAgendaItemRequest,
   createAgendaItem,
-  employeeList,
   getDefaultFolder,
   pickLocalDirectory,
   updateAgendaItem,
@@ -31,10 +29,12 @@ interface AgendaItemEditorProps {
   open: boolean
   initial?: AgendaItem | null
   initialDraft?: Partial<CreateAgendaItemRequest> | null
-  organizerEmployeeId: string
+  organizerEmployeeId?: string
   onClose: () => void
   onSaved: () => void
 }
+
+const DEFAULT_AGENDA_ORGANIZER_ID = 'default'
 
 const FREQ_NOUN: Record<Freq, string> = {
   daily: '天',
@@ -61,29 +61,10 @@ export function AgendaItemEditor({
   const [endCount, setEndCount] = useState(10)
   const [endUntilLocal, setEndUntilLocal] = useState('')
   const [workspacePath, setWorkspacePath] = useState<string | null>(null)
-  const [employees, setEmployees] = useState<EmployeeRecord[]>([])
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>(organizerEmployeeId)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const homeWorkspace = useHomeStore((s) => s.selectedWorkspace)
-
-  // 拉员工名册（一次性，Sheet 打开时）。失败不阻塞，回退为空列表。
-  useEffect(() => {
-    if (!open) return
-    let cancelled = false
-    employeeList()
-      .then((list) => {
-        if (cancelled) return
-        setEmployees(list.filter((e) => e.lifecycle === 'active'))
-      })
-      .catch(() => {
-        if (!cancelled) setEmployees([])
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [open])
 
   useEffect(() => {
     if (initial) {
@@ -104,9 +85,7 @@ export function AgendaItemEditor({
         setEndUntilLocal(toLocalInput(ec.at))
       }
       setWorkspacePath(initial.workspacePath ?? null)
-      setSelectedEmployeeId(initial.organizerEmployeeId)
     } else {
-      setSelectedEmployeeId(organizerEmployeeId)
       setTitle(initialDraft?.title ?? '')
       setPrompt(initialDraft?.prompt ?? '')
       setStartAtLocal('')
@@ -158,8 +137,7 @@ export function AgendaItemEditor({
     return { freq: frequency, interval: intervalCount, endCondition }
   }
 
-  const canSave =
-    !!title && !!prompt && !!startAtLocal && !saving && employees.length > 0 && !!selectedEmployeeId
+  const canSave = !!title && !!prompt && !!startAtLocal && !saving
 
   const handleSave = async () => {
     setSaving(true)
@@ -177,12 +155,13 @@ export function AgendaItemEditor({
         }
         await updateAgendaItem(initial.id, req)
       } else {
+        const organizerId = (organizerEmployeeId ?? '').trim() || DEFAULT_AGENDA_ORGANIZER_ID
         const req: CreateAgendaItemRequest = {
           title,
           prompt,
           startAt,
           timezone,
-          organizerEmployeeId: selectedEmployeeId,
+          organizerEmployeeId: organizerId,
           rule: buildRule(),
           workspacePath,
         }
@@ -218,42 +197,6 @@ export function AgendaItemEditor({
         <SheetHeader>
           <SheetTitle>{initial ? '编辑日程' : '新建日程'}</SheetTitle>
         </SheetHeader>
-
-        <div className="space-y-2">
-          <label className="text-xs text-muted-foreground" htmlFor="agenda-editor-organizer">
-            执行员工
-          </label>
-          {employees.length === 0 ? (
-            <div className="rounded-md border border-dashed border-input px-3 py-3 text-xs">
-              <p className="text-muted-foreground">还没有数字员工，无法新建日程。</p>
-              <Button type="button" variant="outline" size="sm" className="mt-2" onClick={onClose}>
-                去「数字员工」页雇一个
-              </Button>
-            </div>
-          ) : (
-            <>
-              <select
-                id="agenda-editor-organizer"
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
-                value={selectedEmployeeId}
-                onChange={(e) => setSelectedEmployeeId(e.target.value)}
-                disabled={!!initial}
-                aria-label="执行员工"
-              >
-                {employees.map((emp) => (
-                  <option key={emp.id} value={emp.id}>
-                    {emp.avatar} {emp.name} · {emp.role}
-                  </option>
-                ))}
-              </select>
-              {initial ? (
-                <p className="text-xs text-muted-foreground">
-                  已创建的日程不能改派给其他员工。
-                </p>
-              ) : null}
-            </>
-          )}
-        </div>
 
         <Input
           placeholder="标题"

@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
@@ -69,24 +69,13 @@ describe('EmployeesPage', () => {
     expect(mocks.refreshEmployees).toHaveBeenCalled()
   })
 
-  it('lets a logged-in user manually sync employee templates from the server', async () => {
-    mocks.employeeTemplateRefresh.mockResolvedValueOnce(0).mockResolvedValueOnce(3)
+  it('opens the employee market from the employees page without exposing page-level sync', async () => {
     render(<EmployeesPage />)
     await waitFor(() => {
       expect(mocks.employeeTemplateRefresh).toHaveBeenCalledTimes(1)
     })
-    mocks.employeeTemplateRefresh.mockClear()
-    mocks.refreshEmployees.mockClear()
 
-    fireEvent.click(screen.getByRole('button', { name: '同步服务端' }))
-
-    await waitFor(() => {
-      expect(mocks.employeeTemplateRefresh).toHaveBeenCalledTimes(1)
-    })
-    expect(mocks.refreshEmployees).toHaveBeenCalled()
-    expect(mocks.pushNotification).toHaveBeenCalledWith(expect.objectContaining({
-      level: 'success',
-      title: '同步完成，更新 3 个模板',
-    }))
+    expect(screen.queryByRole('button', { name: '同步服务端' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '员工市场' })).toBeInTheDocument()
   })
 })

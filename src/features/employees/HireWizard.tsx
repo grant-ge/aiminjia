@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { RefreshCw } from 'lucide-react'
 import {
   employeeCreate,
   employeeIndexKnowledgeAsync,
@@ -56,6 +57,7 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
   const [cron, setCron] = useState('')
   const [resourceConfig, setResourceConfig] = useState<Record<string, unknown>>({})
   const [busy, setBusy] = useState(false)
+  const [syncingTemplates, setSyncingTemplates] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   // When the dialog opens: best-effort refresh the local template cache
@@ -110,6 +112,27 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
     setCron(t.cron ?? '')
     setResourceConfig({})
     setStep(2)
+  }
+
+  async function reloadCatalog() {
+    const snapshots: EmployeeTemplateSnapshot[] = await employeeTemplateCatalog()
+    if (snapshots.length > 0) {
+      setCatalog(snapshots.map(snapshotToTemplate))
+    }
+  }
+
+  async function handleSyncTemplates() {
+    if (syncingTemplates) return
+    setSyncingTemplates(true)
+    setError(null)
+    try {
+      await employeeTemplateRefresh()
+      await reloadCatalog()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setSyncingTemplates(false)
+    }
   }
 
   async function hireWithConfig(cfg: Record<string, unknown>) {
@@ -169,31 +192,49 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
     <Dialog open={open} onOpenChange={(o) => { if (!o) handleClose() }}>
       <DialogContent data-aijia-hire-wizard data-aijia-hire-step={step} className="max-w-2xl p-0">
         <DialogHeader className="border-b border-border px-6 py-4">
-          <div className="flex items-center gap-3">
-            <DialogTitle className="text-base">
-              {step === 1
-                ? t('employee.config.wizard.titleStep1')
-                : step === 2
-                  ? t('employee.config.wizard.titleStep2')
-                  : t('employee.config.wizard.titleStep3')}
-            </DialogTitle>
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span className={step === 1 ? 'text-foreground font-medium' : ''}>{t('employee.config.wizard.stepLabel1')}</span>
-              <span>→</span>
-              <span className={step === 2 ? 'text-foreground font-medium' : ''}>{t('employee.config.wizard.stepLabel2')}</span>
-              {selected && (selected.resourceConfigKind !== 'none' || hasSchemaForm(selected)) && (
-                <>
-                  <span>→</span>
-                  <span className={step === 3 ? 'text-foreground font-medium' : ''}>{t('employee.config.wizard.stepLabel3')}</span>
-                </>
-              )}
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <DialogTitle className="text-base">
+                {step === 1
+                  ? t('employee.config.wizard.titleStep1')
+                  : step === 2
+                    ? t('employee.config.wizard.titleStep2')
+                    : t('employee.config.wizard.titleStep3')}
+              </DialogTitle>
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <span className={step === 1 ? 'text-foreground font-medium' : ''}>{t('employee.config.wizard.stepLabel1')}</span>
+                <span>→</span>
+                <span className={step === 2 ? 'text-foreground font-medium' : ''}>{t('employee.config.wizard.stepLabel2')}</span>
+                {selected && (selected.resourceConfigKind !== 'none' || hasSchemaForm(selected)) && (
+                  <>
+                    <span>→</span>
+                    <span className={step === 3 ? 'text-foreground font-medium' : ''}>{t('employee.config.wizard.stepLabel3')}</span>
+                  </>
+                )}
+              </div>
             </div>
+            {step === 1 ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 gap-1.5 px-2 text-xs"
+                disabled={syncingTemplates}
+                onClick={() => void handleSyncTemplates()}
+              >
+                <RefreshCw className={`h-3 w-3 ${syncingTemplates ? 'animate-spin' : ''}`} />
+                {syncingTemplates ? t('employeesPage.syncing') : t('employeesPage.syncServer')}
+              </Button>
+            ) : null}
           </div>
         </DialogHeader>
 
         {/* Step 1: template grid */}
         {step === 1 && (
           <div className="grid grid-cols-2 gap-3 p-6 sm:grid-cols-3">
+            {error && (
+              <p className="col-span-full rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</p>
+            )}
             {catalog.map((t) => (
               <button
                 key={t.templateId}

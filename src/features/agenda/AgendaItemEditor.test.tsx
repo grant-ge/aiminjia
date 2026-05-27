@@ -85,9 +85,6 @@ describe('AgendaItemEditor', () => {
       />,
     )
 
-    // Wait for employee list to load so save is not disabled
-    await screen.findByLabelText('执行员工')
-
     fireEvent.change(screen.getByPlaceholderText('标题'), { target: { value: 'T' } })
     fireEvent.change(screen.getByPlaceholderText('到点要做什么？'), { target: { value: 'P' } })
     fireEvent.change(screen.getByLabelText(/开始时间/), { target: { value: '2026-05-07T09:00' } })
@@ -122,7 +119,7 @@ describe('AgendaItemEditor', () => {
     await waitFor(() => expect(screen.getByLabelText('结束条件')).toBeInTheDocument())
   })
 
-  it('defaults organizer to the prop employee id when creating', async () => {
+  it('does not render an employee selector when creating', async () => {
     render(
       <AgendaItemEditor
         open
@@ -131,12 +128,10 @@ describe('AgendaItemEditor', () => {
         onSaved={() => {}}
       />,
     )
-    const select = (await screen.findByLabelText('执行员工')) as HTMLSelectElement
-    expect(select.value).toBe('emp-2')
-    expect(select.disabled).toBe(false)
+    expect(screen.queryByLabelText('执行员工')).not.toBeInTheDocument()
   })
 
-  it('passes the chosen employee id when creating', async () => {
+  it('uses the default organizer id when creating', async () => {
     const onSaved = vi.fn()
     render(
       <AgendaItemEditor
@@ -146,9 +141,6 @@ describe('AgendaItemEditor', () => {
         onSaved={onSaved}
       />,
     )
-    const select = (await screen.findByLabelText('执行员工')) as HTMLSelectElement
-    await waitFor(() => expect(select.querySelectorAll('option').length).toBeGreaterThan(1))
-    fireEvent.change(select, { target: { value: 'emp-2' } })
     fireEvent.change(screen.getByPlaceholderText('标题'), { target: { value: 'T' } })
     fireEvent.change(screen.getByPlaceholderText('到点要做什么？'), { target: { value: 'P' } })
     fireEvent.change(screen.getByLabelText(/开始时间/), { target: { value: '2026-05-07T09:00' } })
@@ -157,34 +149,45 @@ describe('AgendaItemEditor', () => {
       expect(invokeMock).toHaveBeenCalledWith(
         'create_agenda_item',
         expect.objectContaining({
-          request: expect.objectContaining({ organizerEmployeeId: 'emp-2' }),
+          request: expect.objectContaining({ organizerEmployeeId: 'emp-1' }),
         }),
       )
       expect(onSaved).toHaveBeenCalled()
     })
   })
 
-  it('disables save and shows hire CTA when no employee exists', async () => {
+  it('allows creating an agenda item without any hired employee', async () => {
     invokeMock.mockImplementation(async (cmd: string) => {
       if (cmd === 'get_default_folder') return null
-      if (cmd === 'employee_list') return []
+      if (cmd === 'create_agenda_item') return { id: 'agenda-x' }
       return null
     })
+    const onSaved = vi.fn()
     render(
       <AgendaItemEditor
         open
         organizerEmployeeId=""
         onClose={() => {}}
-        onSaved={() => {}}
+        onSaved={onSaved}
       />,
     )
+    fireEvent.change(screen.getByPlaceholderText('标题'), { target: { value: 'T' } })
+    fireEvent.change(screen.getByPlaceholderText('到点要做什么？'), { target: { value: 'P' } })
+    fireEvent.change(screen.getByLabelText(/开始时间/), { target: { value: '2026-05-07T09:00' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+
     await waitFor(() => {
-      expect(screen.getByText(/还没有数字员工/)).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: '保存' })).toBeDisabled()
+      expect(invokeMock).toHaveBeenCalledWith(
+        'create_agenda_item',
+        expect.objectContaining({
+          request: expect.objectContaining({ organizerEmployeeId: 'default' }),
+        }),
+      )
+      expect(onSaved).toHaveBeenCalled()
     })
   })
 
-  it('locks organizer when editing an existing item', async () => {
+  it('keeps the existing organizer id when editing an item', async () => {
     const item = {
       id: 'a1',
       title: 'X',
@@ -205,8 +208,6 @@ describe('AgendaItemEditor', () => {
         onSaved={() => {}}
       />,
     )
-    const select = (await screen.findByLabelText('执行员工')) as HTMLSelectElement
-    expect(select.value).toBe('emp-2')
-    expect(select.disabled).toBe(true)
+    expect(screen.queryByLabelText('执行员工')).not.toBeInTheDocument()
   })
 })

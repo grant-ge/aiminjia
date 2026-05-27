@@ -2573,6 +2573,10 @@ export function employeeTemplateRefresh(): Promise<number> {
   return invoke<number>('employee_template_refresh')
 }
 
+export function expertTeamTemplateRefresh(): Promise<number> {
+  return invoke<number>('expert_team_template_refresh')
+}
+
 // ---------------------------------------------------------------------------
 // Knowledge Indexing Commands
 // ---------------------------------------------------------------------------
