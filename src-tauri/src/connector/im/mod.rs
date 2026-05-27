@@ -20,6 +20,9 @@ pub use shared::pending_adapter;
 pub use shared::reply_manager;
 pub use shared::router;
 
+pub mod channel_manager_slot;
+pub use channel_manager_slot::ChannelManagerSlot;
+
 pub use manager::ChannelManager;
 pub use shared::config_store::ChannelConfigStore;
 pub use shared::reply_manager::DingtalkReplyManager;

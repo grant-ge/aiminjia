@@ -804,59 +804,52 @@ pub fn run() {
                 app.manage(pending_manager);
             }
 
-            // Initialize ChannelManager for IM channel integration
-            if let Some(paths) = current_user_storage.resolve_paths() {
-                let chat_adapter_ref = app
-                    .state::<Arc<transport::tauri_commands::chat::TauriChatCommandAdapter>>()
-                    .inner()
-                    .clone();
-                let gateway_ref = app
-                    .state::<Arc<llm::gateway::LlmGateway>>()
-                    .inner()
-                    .clone();
+            // Slot is registered unconditionally — actual instance is installed by
+            // ensure_channel_manager_registered() either now (if logged in at boot)
+            // or later via cloud_login.
+            app.manage(Arc::new(connector::im::ChannelManagerSlot::new()));
+            app.manage(channel_session_ids);
 
-                // reply_manager is shared between ChannelManager and the coordinator (as AskOutputSink)
-                let reply_manager = Arc::new(connector::im::DingtalkReplyManager::new());
-
-                let judge = Arc::new(connector::im::ask_coordinator::GatewayAskReplyJudge::new(
-                    gateway_ref,
-                    models::settings::AppSettings::default(),
-                ));
-                let ask_coordinator = Arc::new(
-                    connector::im::ask_coordinator::IMAskCoordinator::new(
-                        channel_session_ids.clone()
-                            as Arc<dyn connector::im::ask_coordinator::ChannelSessionRegistry>,
-                        reply_manager.clone()
-                            as Arc<dyn connector::im::ask_coordinator::AskOutputSink>,
-                        chat_adapter_ref.permission_control_plane(),
-                        chat_adapter_ref.interaction_control_plane(),
-                        judge,
-                    ),
-                );
-
-                let channel_manager = Arc::new(connector::im::ChannelManager::new(
-                    app.handle().clone(),
-                    chat_adapter_ref,
-                    app.state::<Arc<storage::file_store::RuntimeRepositoryFacade>>()
-                        .inner()
-                        .conversation_store_arc(),
-                    app.state::<Option<Arc<storage::crypto::SecureStorage>>>()
-                        .inner()
-                        .clone(),
-                    paths.channels_dir(),
-                    Some(ask_coordinator),
-                    reply_manager,
-                    channel_session_ids,
-                    app.state::<Arc<crate::runtime::pending::PendingQueueManager>>()
-                        .inner()
-                        .clone(),
-                ));
-                let cm = channel_manager.clone();
+            // Boot-time bring-up: only effective when current_user_storage already
+            // has a scope (restored from disk in setup above).
+            {
+                let handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
-                    cm.hydrate_conversations().await;
-                    cm.auto_connect_if_configured().await;
+                    ensure_channel_manager_registered(&handle).await;
                 });
-                app.manage(channel_manager);
+            }
+
+            // Register deactivation handlers — fire on logout / change_password / auto-401.
+            {
+                let slot_ref = app
+                    .state::<Arc<connector::im::ChannelManagerSlot>>()
+                    .inner()
+                    .clone();
+                let cus_ref = app
+                    .state::<Arc<storage::CurrentUserStorage>>()
+                    .inner()
+                    .clone();
+                let file_mgr_ref = app
+                    .state::<Arc<storage::file_manager::FileManager>>()
+                    .inner()
+                    .clone();
+                let home_ref = aijia_home.clone();
+                let am = app.state::<Arc<auth::AuthManager>>().inner().clone();
+                tauri::async_runtime::block_on(async {
+                    am.register_deactivation_handler(Arc::new(ChannelManagerDeactivator {
+                        slot: slot_ref,
+                    }))
+                    .await;
+                    am.register_deactivation_handler(Arc::new(CurrentUserStorageDeactivator {
+                        cus: cus_ref,
+                    }))
+                    .await;
+                    am.register_deactivation_handler(Arc::new(FileManagerWorkspaceResetter {
+                        file_mgr: file_mgr_ref,
+                        home: home_ref,
+                    }))
+                    .await;
+                });
             }
 
             runtime::agenda::spawn_agenda_runner(
@@ -1242,6 +1235,145 @@ fn cleanup_old_logs(logs_dir: &std::path::Path, retention_days: u64) {
             }
         }
     }
+}
+
+struct ChannelManagerDeactivator {
+    slot: std::sync::Arc<connector::im::ChannelManagerSlot>,
+}
+
+#[async_trait::async_trait]
+impl auth::AuthDeactivationHandler for ChannelManagerDeactivator {
+    async fn on_deactivated(&self) {
+        let prev = self.slot.replace(None).await;
+        if let Some(cm) = prev {
+            tokio::spawn(async move {
+                log::info!("[channel] deactivation: shutting down current instance");
+                cm.shutdown().await;
+            });
+        }
+    }
+}
+
+struct CurrentUserStorageDeactivator {
+    cus: std::sync::Arc<storage::CurrentUserStorage>,
+}
+
+#[async_trait::async_trait]
+impl auth::AuthDeactivationHandler for CurrentUserStorageDeactivator {
+    async fn on_deactivated(&self) {
+        self.cus.deactivate();
+    }
+}
+
+struct FileManagerWorkspaceResetter {
+    file_mgr: std::sync::Arc<storage::file_manager::FileManager>,
+    home: std::sync::Arc<storage::AiJiaHome>,
+}
+
+#[async_trait::async_trait]
+impl auth::AuthDeactivationHandler for FileManagerWorkspaceResetter {
+    async fn on_deactivated(&self) {
+        self.file_mgr.update_workspace_path(self.home.root());
+    }
+}
+
+/// Idempotent helper: ensure an active `ChannelManager` exists in the slot
+/// matching the currently-active user scope. Safe to call from setup (when
+/// the user was already logged in at boot) and from `cloud_login` (post-
+/// login activation).
+pub async fn ensure_channel_manager_registered(app: &tauri::AppHandle) {
+    use std::sync::Arc;
+    use tauri::Manager;
+
+    let cus = app
+        .state::<Arc<storage::CurrentUserStorage>>()
+        .inner()
+        .clone();
+    let Some(paths) = cus.resolve_paths() else {
+        log::info!("[channel] ensure: no active user scope, slot stays empty");
+        return;
+    };
+    let current_scope = cus.scope();
+
+    let slot = app
+        .state::<Arc<connector::im::ChannelManagerSlot>>()
+        .inner()
+        .clone();
+
+    // Fast path: same scope already installed.
+    if let Some(existing) = slot.current().await {
+        if existing.active_scope() == current_scope {
+            log::info!("[channel] ensure: instance already matches active scope");
+            return;
+        }
+    }
+
+    // Build new instance — same wiring as the old inline setup block.
+    let chat_adapter_ref = app
+        .state::<Arc<transport::tauri_commands::chat::TauriChatCommandAdapter>>()
+        .inner()
+        .clone();
+    let gateway_ref = app
+        .state::<Arc<llm::gateway::LlmGateway>>()
+        .inner()
+        .clone();
+
+    let reply_manager = Arc::new(connector::im::DingtalkReplyManager::new());
+    let judge = Arc::new(connector::im::ask_coordinator::GatewayAskReplyJudge::new(
+        gateway_ref,
+        models::settings::AppSettings::default(),
+    ));
+    let channel_session_ids = app
+        .state::<Arc<std::sync::RwLock<std::collections::HashSet<String>>>>()
+        .inner()
+        .clone();
+    let ask_coordinator = Arc::new(
+        connector::im::ask_coordinator::IMAskCoordinator::new(
+            channel_session_ids.clone()
+                as Arc<dyn connector::im::ask_coordinator::ChannelSessionRegistry>,
+            reply_manager.clone()
+                as Arc<dyn connector::im::ask_coordinator::AskOutputSink>,
+            chat_adapter_ref.permission_control_plane(),
+            chat_adapter_ref.interaction_control_plane(),
+            judge,
+        ),
+    );
+
+    let new_cm = Arc::new(connector::im::ChannelManager::new(
+        app.clone(),
+        chat_adapter_ref,
+        app.state::<Arc<storage::file_store::RuntimeRepositoryFacade>>()
+            .inner()
+            .conversation_store_arc(),
+        app.state::<Option<Arc<storage::crypto::SecureStorage>>>()
+            .inner()
+            .clone(),
+        paths.channels_dir(),
+        Some(ask_coordinator),
+        reply_manager,
+        channel_session_ids,
+        app.state::<Arc<crate::runtime::pending::PendingQueueManager>>()
+            .inner()
+            .clone(),
+        current_scope,
+    ));
+
+    // Swap in, fire-and-forget shutdown on old.
+    let prev = slot.replace(Some(new_cm.clone())).await;
+    if let Some(old) = prev {
+        tokio::spawn(async move {
+            log::info!("[channel] ensure: shutting down previous instance");
+            old.shutdown().await;
+        });
+    }
+
+    // Hydrate + auto-connect on the new instance.
+    let cm_clone = new_cm.clone();
+    tauri::async_runtime::spawn(async move {
+        cm_clone.hydrate_conversations().await;
+        cm_clone.auto_connect_if_configured().await;
+    });
+    log::info!("[channel] ensure: installed new ChannelManager for scope");
 }
 
 /// Remove stale Python temp files (code_*.py) from the workspace temp directory.

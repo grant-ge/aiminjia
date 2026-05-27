@@ -9,8 +9,11 @@
 //! Thread-safe via `RwLock<Option<CloudAuth>>`.
 
 pub mod client;
+pub mod deactivation;
 pub mod device_id;
 pub mod state;
+
+pub use deactivation::AuthDeactivationHandler;
 
 use anyhow::{anyhow, Result};
 use chrono::Utc;
@@ -57,6 +60,9 @@ pub struct AuthManager {
     /// rebuilding the session key faster than every 60s. Stores the last
     /// successful `create_session_key` timestamp.
     last_session_create_at: RwLock<Option<chrono::DateTime<Utc>>>,
+    /// Registered deactivation handlers — fired after state is cleared at
+    /// any of the three deactivation sites (logout, change_password, auto-401).
+    deactivation_handlers: RwLock<Vec<Arc<dyn AuthDeactivationHandler>>>,
 }
 
 impl AuthManager {
@@ -76,6 +82,23 @@ impl AuthManager {
             secure_storage,
             device_id,
             last_session_create_at: RwLock::new(None),
+            deactivation_handlers: RwLock::new(Vec::new()),
+        }
+    }
+
+    /// Register a handler to be called whenever this manager deactivates the
+    /// current user (logout, password change, or server-initiated 401).
+    pub async fn register_deactivation_handler(&self, h: Arc<dyn AuthDeactivationHandler>) {
+        self.deactivation_handlers.write().await.push(h);
+    }
+
+    /// Internal: fire all handlers AFTER `state` write lock is released and
+    /// persistence has been cleared. Each handler runs sequentially; handlers
+    /// must be idempotent and must not panic (see trait docs).
+    async fn fire_deactivation_handlers(&self) {
+        let handlers = self.deactivation_handlers.read().await.clone();
+        for h in handlers {
+            h.on_deactivated().await;
         }
     }
 
@@ -211,6 +234,7 @@ impl AuthManager {
         }
         *self.state.write().await = None;
         self.clear_persisted_auth();
+        self.fire_deactivation_handlers().await;
         log::info!("Cloud auth logged out");
     }
 
@@ -228,6 +252,7 @@ impl AuthManager {
         // Server revoked all refresh tokens; clear local state
         *self.state.write().await = None;
         self.clear_persisted_auth();
+        self.fire_deactivation_handlers().await;
         Ok(())
     }
 
@@ -647,6 +672,7 @@ impl AuthManager {
         if auth_revoked_by_server {
             *self.state.write().await = None;
             self.clear_persisted_auth();
+            self.fire_deactivation_handlers().await;
             Err(anyhow!("登录已过期，请重新登录"))
         } else {
             Err(anyhow!(
@@ -757,5 +783,112 @@ impl AuthManager {
         if let Err(e) = self.global_store.delete_setting(AUTH_STORAGE_KEY) {
             log::warn!("Failed to clear persisted cloud auth: {}", e);
         }
+    }
+}
+
+#[cfg(test)]
+impl AuthManager {
+    /// Construct a throwaway AuthManager backed by a temp directory.
+    /// The TempDir is intentionally leaked (via `std::mem::forget`) so the
+    /// directory outlives this function and the manager that holds paths into
+    /// it. Tests are short-lived processes so the OS cleans up on exit.
+    pub fn for_test() -> Self {
+        let tmp = tempfile::TempDir::new().expect("create temp dir");
+        let home = crate::storage::AiJiaHome::from_path(tmp.path().to_path_buf());
+        let global_store = Arc::new(crate::storage::GlobalConfigStore::new(
+            tmp.path().to_path_buf(),
+        ));
+        // Keep the dir alive for the duration of the test by leaking it.
+        std::mem::forget(tmp);
+        let device_id = device_id::load_or_create(&home);
+        Self {
+            client: AuthClient::new(),
+            state: RwLock::new(None),
+            refresh_lock: Mutex::new(()),
+            global_store,
+            secure_storage: None,
+            device_id,
+            last_session_create_at: RwLock::new(None),
+            deactivation_handlers: RwLock::new(Vec::new()),
+        }
+    }
+
+    pub fn set_state_for_test(&self, auth: state::CloudAuth) {
+        *self.state.try_write().unwrap() = Some(auth);
+    }
+
+    pub async fn clear_state_and_fire_handlers_for_test(&self) {
+        *self.state.write().await = None;
+        self.clear_persisted_auth();
+        self.fire_deactivation_handlers().await;
+    }
+}
+
+#[cfg(test)]
+pub fn test_cloud_auth() -> state::CloudAuth {
+    use chrono::{Duration, Utc};
+    state::CloudAuth {
+        access_token: "test".into(),
+        access_expires_at: Utc::now() + Duration::hours(1),
+        refresh_token: "test".into(),
+        refresh_expires_at: Utc::now() + Duration::hours(24),
+        session_key: "test".into(),
+        session_key_expires_at: Utc::now() + Duration::hours(24),
+        user: state::UserInfo {
+            id: 1,
+            username: "test".into(),
+            name: "test".into(),
+        },
+        tenant: state::TenantInfo {
+            id: 1,
+            name: "test".into(),
+            balance: "0".into(),
+            tenant_type: String::new(),
+            product_name: None,
+            logo_url: None,
+            accent_color: None,
+            primary_color: None,
+            bg_color: None,
+            sidebar_bg_color: None,
+            font_family: None,
+        },
+    }
+}
+
+#[cfg(test)]
+mod deactivation_chain_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct Counting(Arc<AtomicUsize>);
+
+    #[async_trait::async_trait]
+    impl crate::auth::AuthDeactivationHandler for Counting {
+        async fn on_deactivated(&self) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    #[tokio::test]
+    async fn logout_triggers_registered_handlers() {
+        let am = AuthManager::for_test();
+        let counter = Arc::new(AtomicUsize::new(0));
+        am.register_deactivation_handler(Arc::new(Counting(counter.clone())))
+            .await;
+        // Pre-populate state so logout has something to clear
+        am.set_state_for_test(test_cloud_auth());
+        am.logout().await;
+        assert_eq!(counter.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn change_password_triggers_handlers_on_state_clear() {
+        let am = AuthManager::for_test();
+        let counter = Arc::new(AtomicUsize::new(0));
+        am.register_deactivation_handler(Arc::new(Counting(counter.clone())))
+            .await;
+        am.set_state_for_test(test_cloud_auth());
+        am.clear_state_and_fire_handlers_for_test().await;
+        assert_eq!(counter.load(Ordering::SeqCst), 1);
     }
 }

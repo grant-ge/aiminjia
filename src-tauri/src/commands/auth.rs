@@ -28,6 +28,7 @@ fn format_auth_error(e: anyhow::Error) -> String {
 /// Returns user info, tenant info, and available models.
 #[tauri::command]
 pub async fn cloud_login(
+    app: tauri::AppHandle,
     auth: State<'_, Arc<AuthManager>>,
     cus: State<'_, Arc<CurrentUserStorage>>,
     home: State<'_, Arc<AiJiaHome>>,
@@ -127,21 +128,22 @@ pub async fn cloud_login(
         );
     }
 
+    log::info!("[cloud_login] calling ensure_channel_manager_registered");
+    crate::ensure_channel_manager_registered(&app).await;
+    log::info!("[cloud_login] ensure_channel_manager_registered done");
+
     Ok(result)
 }
 
 /// Logout from cloud mode.
+/// Deactivation handlers (registered in setup) take care of clearing
+/// CurrentUserStorage, resetting FileManager workspace, and shutting
+/// down ChannelManager — no need to duplicate that logic here.
 #[tauri::command]
 pub async fn cloud_logout(
     auth: State<'_, Arc<AuthManager>>,
-    cus: State<'_, Arc<CurrentUserStorage>>,
-    home: State<'_, Arc<AiJiaHome>>,
-    file_mgr: State<'_, Arc<crate::storage::file_manager::FileManager>>,
 ) -> Result<(), String> {
     auth.logout().await;
-    cus.deactivate();
-    // Reset FileManager to root default, preventing stale user workspace access
-    file_mgr.update_workspace_path(home.root());
     Ok(())
 }
 
