@@ -7,7 +7,7 @@ import { message } from '@tauri-apps/plugin-dialog'
 
 import { requestConfirm } from '@/components/common/ConfirmDialogHost'
 import { LegalDocumentDialog } from '@/components/legal/LegalDocumentDialog'
-import { LEGAL_DOCUMENTS, type LegalDocumentKey } from '@/components/legal/legalDocuments'
+import { getLegalDocument, type LegalDocumentKey } from '@/components/legal/legalDocuments'
 import { getSettings, updateSettings } from '@/lib/tauri'
 import { useUpdaterStore } from '@/lib/updaterStore'
 import { useAuthStore } from '@/stores/authStore'
@@ -25,7 +25,7 @@ import { GeneralPanel } from './panels/GeneralPanel'
 import { RuntimePanel } from './panels/RuntimePanel'
 
 export function SettingsModal() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const settingsModal = useUiStore((s) => s.settingsModal)
   const closeSettings = useUiStore((s) => s.closeSettings)
   const openSettings = useUiStore((s) => s.openSettings)
@@ -61,7 +61,9 @@ export function SettingsModal() {
 
   if (!settingsModal) return null
 
-  const legalDocument = activeLegalDocument ? LEGAL_DOCUMENTS[activeLegalDocument] : null
+  const legalDocument = activeLegalDocument
+    ? getLegalDocument(activeLegalDocument, i18n.language)
+    : null
 
   const onLogout = async () => {
     if (pendingLogout) return
