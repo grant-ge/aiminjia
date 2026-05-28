@@ -93,6 +93,7 @@ pub struct TurnIterationState {
     pub generated_file_ids: Vec<String>,
     pub all_file_metas: Vec<JsonValue>,
     pub all_tool_calls: Vec<JsonValue>,
+    pub final_thinking_blocks: Vec<JsonValue>,
     pub iteration_count: usize,
     pub stream_cancelled: bool,
     pub step_tokens_in: u64,
@@ -117,6 +118,7 @@ impl TurnIterationState {
             generated_file_ids: Vec::new(),
             all_file_metas: Vec::new(),
             all_tool_calls: Vec::new(),
+            final_thinking_blocks: Vec::new(),
             iteration_count: 0,
             stream_cancelled: false,
             step_tokens_in: 0,
@@ -173,6 +175,7 @@ pub enum LlmStepResult {
     /// LLM 返回了工具调用
     ToolCalls {
         assistant_content: String,
+        thinking_blocks: Vec<serde_json::Value>,
         tool_calls: Vec<RuntimeToolCallRequest>,
         tokens_in: u64,
         tokens_out: u64,
@@ -182,6 +185,7 @@ pub enum LlmStepResult {
     /// LLM 返回纯文本，无工具调用
     ContentComplete {
         content: String,
+        thinking_blocks: Vec<serde_json::Value>,
         tokens_in: u64,
         tokens_out: u64,
         cache_creation_input_tokens: u64,

@@ -17,13 +17,13 @@ use crate::runtime::ids::{RunId, SessionId, ToolCallId};
 use crate::runtime::interaction::{
     InMemoryInteractionControlPlane, InteractionId, InteractionResolution,
 };
+use crate::runtime::path_auth::{load_path_auth_entries, ToolPermissionContext};
 use crate::runtime::query_engine::QueryEngine;
 use crate::runtime::state::TurnState;
 use crate::runtime::store::{
     AuthorizedWorkspaceRef, AuthorizedWorkspaceStore, PendingPermissionRequest,
     PendingPermissionRequestStore, PendingPermissionResolution, PermissionStore, PolicyDecision,
 };
-use crate::runtime::path_auth::{load_path_auth_entries, ToolPermissionContext};
 use crate::runtime::tools::permission::{persist_permission_decision, PermissionDestination};
 use crate::transport::runtime_host::RuntimeHost;
 use crate::transport::tauri_event_adapter::TauriEventAdapter;
@@ -157,10 +157,7 @@ impl SessionRuntime {
         self
     }
 
-    pub fn with_task_notification_queue(
-        mut self,
-        queue: Arc<TaskNotificationQueue>,
-    ) -> Self {
+    pub fn with_task_notification_queue(mut self, queue: Arc<TaskNotificationQueue>) -> Self {
         self.task_notification_queue = Some(queue);
         self
     }
@@ -196,10 +193,7 @@ impl SessionRuntime {
     }
 
     /// LTR (P2.4): inject the per-process Lead idle supervisor.
-    pub fn with_lead_idle(
-        mut self,
-        sup: Arc<crate::runtime::agent::LeadIdleSupervisor>,
-    ) -> Self {
+    pub fn with_lead_idle(mut self, sup: Arc<crate::runtime::agent::LeadIdleSupervisor>) -> Self {
         self.lead_idle = Some(sup);
         self
     }
@@ -210,9 +204,7 @@ impl SessionRuntime {
     /// previous design (continuation turns spawned from `SessionRuntime` itself)
     /// could not construct the per-request `ToolDispatcher` and produced
     /// "tool dispatcher not configured" errors.
-    pub fn lead_idle_supervisor(
-        &self,
-    ) -> Option<&Arc<crate::runtime::agent::LeadIdleSupervisor>> {
+    pub fn lead_idle_supervisor(&self) -> Option<&Arc<crate::runtime::agent::LeadIdleSupervisor>> {
         self.lead_idle.as_ref()
     }
 
@@ -249,13 +241,19 @@ impl SessionRuntime {
     }
 
     /// 向内部 event_bus 注册一个外部订阅者。
-    pub fn subscribe_event_listener(&self, subscriber: Arc<dyn crate::runtime::event_bus::RuntimeEventSubscriber>) {
+    pub fn subscribe_event_listener(
+        &self,
+        subscriber: Arc<dyn crate::runtime::event_bus::RuntimeEventSubscriber>,
+    ) {
         self.event_bus.subscribe(subscriber);
     }
 
     /// Keep a strong reference to a subscriber so its Weak ref in the bus
     /// stays alive as long as this runtime lives.
-    pub fn anchor_subscriber(&mut self, subscriber: Arc<dyn crate::runtime::event_bus::RuntimeEventSubscriber>) {
+    pub fn anchor_subscriber(
+        &mut self,
+        subscriber: Arc<dyn crate::runtime::event_bus::RuntimeEventSubscriber>,
+    ) {
         self._subscriber_anchors.push(subscriber);
     }
 
@@ -267,12 +265,16 @@ impl SessionRuntime {
     }
 
     /// 暴露权限控制平面，供 IM 协调器等外部组件使用。
-    pub fn permission_control_plane(&self) -> Arc<dyn crate::runtime::store::PendingPermissionControlPlane> {
+    pub fn permission_control_plane(
+        &self,
+    ) -> Arc<dyn crate::runtime::store::PendingPermissionControlPlane> {
         self.pending_permission_store.clone()
     }
 
     /// 暴露交互控制平面，供 IM 协调器等外部组件使用。
-    pub fn interaction_control_plane(&self) -> Arc<dyn crate::runtime::interaction::PendingInteractionControlPlane> {
+    pub fn interaction_control_plane(
+        &self,
+    ) -> Arc<dyn crate::runtime::interaction::PendingInteractionControlPlane> {
         self.pending_interaction_store.clone()
     }
 
@@ -327,7 +329,9 @@ impl SessionRuntime {
             "[session_runtime] build_driver_for_turn conv={}",
             turn.session_id().as_str()
         );
-        let driver = self.build_driver_for_turn(&turn, request.active_team_name_override.clone()).await;
+        let driver = self
+            .build_driver_for_turn(&turn, request.active_team_name_override.clone())
+            .await;
         log::info!(
             "[session_runtime] run_chat_turn starting conv={}",
             turn.session_id().as_str()
@@ -427,11 +431,7 @@ impl SessionRuntime {
         let name_reg = self.agent_names.clone();
         let inbox_reg = self.inbox_registry.clone();
         let cancel_reg = self.cancellation_registry.clone();
-        if team_reg.is_some()
-            || name_reg.is_some()
-            || inbox_reg.is_some()
-            || cancel_reg.is_some()
-        {
+        if team_reg.is_some() || name_reg.is_some() || inbox_reg.is_some() || cancel_reg.is_some() {
             let sid = session_id.clone();
             tokio::spawn(async move {
                 if let Some(reg) = team_reg {
@@ -478,7 +478,12 @@ impl SessionRuntime {
         let authorized_workspace = self
             .authorized_workspace_store
             .as_ref()
-            .and_then(|store| store.get_current_for_session(session_id.as_str(), session_id).ok().flatten())
+            .and_then(|store| {
+                store
+                    .get_current_for_session(session_id.as_str(), session_id)
+                    .ok()
+                    .flatten()
+            })
             .map(|aw| AuthorizedWorkspaceRef {
                 id: aw.id,
                 root_path: aw.root_path,
@@ -712,7 +717,8 @@ impl SessionRuntime {
     ) {
         log::info!(
             "[persist_path_auth_grant] scope='{}' destination={:?}",
-            scope, destination
+            scope,
+            destination
         );
         let (kind, path_str) = match scope.split_once(':') {
             Some((k, p)) => (k, p),
@@ -727,7 +733,8 @@ impl SessionRuntime {
                 // step-6 Ask → working dir grant
                 log::info!(
                     "[persist_path_auth_grant] -> append_working_dir({:?}, {})",
-                    destination, path.display()
+                    destination,
+                    path.display()
                 );
                 if let Err(err) = store.append_working_dir(destination, path) {
                     log::warn!(
@@ -742,7 +749,8 @@ impl SessionRuntime {
                 let pattern = format!("{}/**", path_str);
                 log::info!(
                     "[persist_path_auth_grant] -> append_path_allow_rule({:?}, {}, op=Write)",
-                    destination, pattern
+                    destination,
+                    pattern
                 );
                 if let Err(err) = store.append_path_allow_rule(
                     destination,
@@ -816,9 +824,14 @@ mod tests {
 
     #[async_trait]
     impl RuntimeTool for CapturePermissionModeTool {
-        fn id(&self) -> &str { "capture_permission_mode" }
-        
-        async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
+        fn id(&self) -> &str {
+            "capture_permission_mode"
+        }
+
+        async fn definition(
+            &self,
+            _ctx: &crate::runtime::tools::ToolDescriptionContext,
+        ) -> ToolDefinition {
             ToolDefinition::new("capture_permission_mode", "Capture permission mode")
         }
 
@@ -848,6 +861,7 @@ mod tests {
             match self.next_step.fetch_add(1, Ordering::SeqCst) {
                 0 => Ok(LlmStepResult::ToolCalls {
                     assistant_content: String::new(),
+                    thinking_blocks: Vec::new(),
                     tool_calls: vec![
                         crate::runtime::chat::tool_round_types::RuntimeToolCallRequest {
                             tool_call_id: "tc-session-mode".to_string(),
@@ -863,6 +877,7 @@ mod tests {
                 }),
                 _ => Ok(LlmStepResult::ContentComplete {
                     content: "done".to_string(),
+                    thinking_blocks: Vec::new(),
                     tokens_in: 0,
                     tokens_out: 0,
                     cache_creation_input_tokens: 0,
@@ -879,6 +894,7 @@ mod tests {
             _tool_calls: &[serde_json::Value],
             _generated_file_ids: &[String],
             _file_metas: &[serde_json::Value],
+            _thinking_blocks: &[serde_json::Value],
         ) -> anyhow::Result<String, TurnError> {
             Ok("assistant-msg".to_string())
         }
@@ -944,9 +960,14 @@ mod tests {
 
     #[async_trait]
     impl RuntimeTool for CaptureAuthorizedWorkspaceTool {
-        fn id(&self) -> &str { "capture_authorized_workspace" }
+        fn id(&self) -> &str {
+            "capture_authorized_workspace"
+        }
 
-        async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
+        async fn definition(
+            &self,
+            _ctx: &crate::runtime::tools::ToolDescriptionContext,
+        ) -> ToolDefinition {
             ToolDefinition::new(
                 "capture_authorized_workspace",
                 "Capture authorized workspace",
@@ -982,13 +1003,16 @@ mod tests {
         let store = Arc::new(crate::runtime::store::InMemoryAuthorizedWorkspaceStore::default());
         let session_id = crate::runtime::ids::SessionId::new("conv-authorized");
         store
-            .replace_for_session(session_id.as_str(), &crate::runtime::store::AuthorizedWorkspace {
-                id: "aw-session".to_string(),
-                session_id: session_id.clone(),
-                root_path: external_workspace.path().to_path_buf(),
-                display_name: "external".to_string(),
-                authorized_at: chrono::Utc::now().to_rfc3339(),
-            })
+            .replace_for_session(
+                session_id.as_str(),
+                &crate::runtime::store::AuthorizedWorkspace {
+                    id: "aw-session".to_string(),
+                    session_id: session_id.clone(),
+                    root_path: external_workspace.path().to_path_buf(),
+                    display_name: "external".to_string(),
+                    authorized_at: chrono::Utc::now().to_rfc3339(),
+                },
+            )
             .unwrap();
 
         let runtime = SessionRuntime::new(
@@ -1339,12 +1363,14 @@ mod tests {
         // The PermissionStore should now contain a User path_allow_rule for the pattern.
         let entries = crate::runtime::path_auth::load_path_auth_entries(&permission_store);
         let expected_pattern = "/Users/example/Docs/**";
-        let found = entries.allow_rules.iter().any(|r| r.pattern == expected_pattern);
+        let found = entries
+            .allow_rules
+            .iter()
+            .any(|r| r.pattern == expected_pattern);
         assert!(
             found,
             "append_path_allow_rule must have been called with pattern '{}': {:?}",
-            expected_pattern,
-            entries.allow_rules
+            expected_pattern, entries.allow_rules
         );
     }
 
@@ -1395,10 +1421,10 @@ mod tests {
 
     #[test]
     fn subscribe_event_listener_adds_subscriber() {
-        use std::sync::Arc;
-        use tokio::sync::Mutex;
         use crate::runtime::events::{RuntimeEvent, RuntimeEventKind};
         use crate::runtime::ids::{RunId, SessionId};
+        use std::sync::Arc;
+        use tokio::sync::Mutex;
 
         struct CounterSubscriber {
             count: Arc<Mutex<usize>>,
@@ -1414,7 +1440,9 @@ mod tests {
 
         let count = Arc::new(Mutex::new(0usize));
         let runtime = SessionRuntime::new(QueryEngine::new(), RuntimeEventBus::new());
-        runtime.subscribe_event_listener(Arc::new(CounterSubscriber { count: count.clone() }));
+        runtime.subscribe_event_listener(Arc::new(CounterSubscriber {
+            count: count.clone(),
+        }));
 
         tokio::runtime::Runtime::new().unwrap().block_on(async {
             let event = RuntimeEvent::new(
@@ -1522,7 +1550,11 @@ mod tests {
         let rule = &entries.allow_rules[0];
         assert_eq!(rule.pattern, expected_pattern, "pattern must be dir/**");
         assert_eq!(rule.op, Some(PathOp::Write), "op must be Write");
-        assert_eq!(rule.source, RuleSource::UserSettings, "source must be UserSettings");
+        assert_eq!(
+            rule.source,
+            RuleSource::UserSettings,
+            "source must be UserSettings"
+        );
 
         // 5. Build a ToolPermissionContext from those entries.
         let ctx = ToolPermissionContext {

@@ -95,9 +95,26 @@ fn stored_to_chat(message: &StoredMessage, config: &HistoryConfig) -> ChatMessag
                 .map(String::from)
         }),
         thinking: None,
-        thinking_blocks: None,
+        thinking_blocks: extract_thinking_blocks(message),
         anthropic_multimodal_turn: None,
     }
+}
+
+fn extract_thinking_blocks(message: &StoredMessage) -> Option<Vec<serde_json::Value>> {
+    if message.role != "assistant" {
+        return None;
+    }
+    let blocks = message
+        .content
+        .get("thinkingBlocks")
+        .or_else(|| message.content.get("thinking_blocks"))?
+        .as_array()?;
+    let blocks: Vec<serde_json::Value> = blocks
+        .iter()
+        .filter(|block| block.is_object())
+        .cloned()
+        .collect();
+    (!blocks.is_empty()).then_some(blocks)
 }
 
 /// Tool messages may have toolCallId at top-level (new schema) or nested in
@@ -512,5 +529,42 @@ mod collapse_trailing_tests {
         assert_eq!(out[1].content, "b");
         assert_eq!(out[2].content, "mid");
         assert_eq!(out[3].content, "c\n\nd");
+    }
+
+    #[test]
+    fn stored_assistant_preserves_thinking_blocks_from_content() {
+        let stored = StoredMessage {
+            id: "m1".to_string(),
+            conversation_id: "c1".to_string(),
+            role: "assistant".to_string(),
+            content: serde_json::json!({
+                "text": "",
+                "thinkingBlocks": [{
+                    "type": "thinking",
+                    "thinking": "hidden",
+                    "signature": "sig-1"
+                }]
+            }),
+            created_at: "2026-05-28T00:00:00Z".to_string(),
+            tool_calls: Some(vec![serde_json::json!({
+                "id": "call_1",
+                "name": "SearchMemory",
+                "arguments": {"query": "x"}
+            })]),
+            tool_call_id: None,
+            name: None,
+            run_id: None,
+            schema_version: Some(2),
+            sequence: None,
+            seq: None,
+            rev: None,
+        };
+
+        let chat = stored_to_chat(&stored, &HistoryConfig::default());
+
+        let blocks = chat.thinking_blocks.expect("thinking blocks");
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0]["thinking"], "hidden");
+        assert_eq!(blocks[0]["signature"], "sig-1");
     }
 }

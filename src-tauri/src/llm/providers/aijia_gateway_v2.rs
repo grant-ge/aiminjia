@@ -400,6 +400,11 @@ fn chunk_to_stream_event(frame: &str) -> StreamEvent {
         StreamEvent::ThinkingDelta {
             delta: extract_sse_data_field(frame, "delta").unwrap_or_default(),
         }
+    } else if frame.contains("event: thinking.block") {
+        let block = extract_sse_json(frame)
+            .and_then(|v| v.get("block").cloned())
+            .unwrap_or(Value::Null);
+        StreamEvent::ThinkingBlock { block }
     } else if frame.contains("event: tool_call.completed") {
         let tool_call = extract_sse_json(frame)
             .and_then(|v| v.get("tool_call").cloned())
@@ -620,6 +625,23 @@ mod tests {
                 assert!(error.contains("provider_stream_error"));
             }
             other => panic!("expected error event, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn maps_thinking_block_chunks_to_stream_events() {
+        let event = chunk_to_stream_event(
+            "event: thinking.block\ndata: {\"index\":0,\"block\":{\"type\":\"thinking\",\"thinking\":\"hidden\",\"signature\":\"sig-1\",\"opaque\":true}}\n\n",
+        );
+
+        match event {
+            StreamEvent::ThinkingBlock { block } => {
+                assert_eq!(block["type"], "thinking");
+                assert_eq!(block["thinking"], "hidden");
+                assert_eq!(block["signature"], "sig-1");
+                assert_eq!(block["opaque"], true);
+            }
+            other => panic!("expected thinking block event, got {other:?}"),
         }
     }
 
