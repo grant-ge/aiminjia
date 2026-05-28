@@ -1,4 +1,5 @@
 import { Pause, Pencil, Play, RotateCcw, Trash2, X } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { OrganizerName } from '@/components/agenda/OrganizerName'
@@ -13,14 +14,6 @@ interface ScheduleTaskRowProps {
   onPurge: (id: string) => void
   onRunNow: (id: string) => void
   onToggleStatus: (item: AgendaItem) => void
-}
-
-const STATUS_LABEL: Record<AgendaItem['status'], string> = {
-  active: '已启用',
-  paused: '已暂停',
-  completed: '已完成',
-  orphaned: '组织者缺失',
-  cancelled: '已取消',
 }
 
 const STATUS_BADGE: Record<AgendaItem['status'], string> = {
@@ -40,9 +33,16 @@ export function ScheduleTaskRow({
   onRunNow,
   onToggleStatus,
 }: ScheduleTaskRowProps) {
+  const { t, i18n } = useTranslation()
   const isPaused = item.status === 'paused'
   const isCancelled = item.status === 'cancelled'
   const dimmed = isPaused || isCancelled ? 'opacity-70' : ''
+  const toggleLabel = isPaused
+    ? t('schedules.row.actions.resume')
+    : t('schedules.row.actions.pause')
+  const toggleAriaKey = isPaused
+    ? 'schedules.row.actions.resumeAria'
+    : 'schedules.row.actions.pauseAria'
 
   return (
     <div
@@ -52,7 +52,7 @@ export function ScheduleTaskRow({
       data-aijia-agenda-status={item.status}
       className={`group grid grid-cols-4 items-center gap-3 border-t border-border px-5 py-3 text-[0.8125rem] hover:bg-muted/50 ${dimmed}`}
     >
-      {/* 列 1：任务名称 */}
+      {/* Column 1: task name */}
       <div className="flex min-w-0 items-center gap-2">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
@@ -70,34 +70,35 @@ export function ScheduleTaskRow({
         </div>
       </div>
 
-      {/* 列 2：执行频率 */}
+      {/* Column 2: frequency */}
       <div className="min-w-0 text-muted-foreground">
         <div className="truncate">
-          {describeFrequency(item.rule, item.startAt, item.timezone)}
+          {describeFrequency(item.rule, item.startAt, item.timezone, t, i18n.language)}
         </div>
         <div className="mt-1 truncate text-xs">
-          下次：{item.nextFireAt ? formatNextFire(item.nextFireAt) : '-'}
+          {t('schedules.row.nextFireLabel')}
+          {item.nextFireAt ? formatNextFire(item.nextFireAt, i18n.language) : '-'}
         </div>
       </div>
 
-      {/* 列 3：状态 */}
+      {/* Column 3: status */}
       <div className="min-w-0">
         <span
           className={`rounded-full px-2 py-1 text-xs font-medium ${STATUS_BADGE[item.status]}`}
         >
-          {STATUS_LABEL[item.status]}
+          {t(`schedules.row.status.${item.status}`)}
         </span>
       </div>
 
-      {/* 列 4：操作（hover 显示） */}
+      {/* Column 4: actions (hover) */}
       <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100">
         {isCancelled ? (
           <>
             <Button
               variant="ghost"
               size="icon"
-              title="恢复"
-              aria-label={`恢复 ${item.title}`}
+              title={t('schedules.row.actions.restore')}
+              aria-label={t('schedules.row.actions.restoreAria', { title: item.title })}
               onClick={() => onRestore(item.id)}
             >
               <RotateCcw className="h-4 w-4" />
@@ -105,8 +106,8 @@ export function ScheduleTaskRow({
             <Button
               variant="ghost"
               size="icon"
-              title="永久删除"
-              aria-label={`永久删除 ${item.title}`}
+              title={t('schedules.row.actions.purge')}
+              aria-label={t('schedules.row.actions.purgeAria', { title: item.title })}
               onClick={() => onPurge(item.id)}
             >
               <Trash2 className="h-4 w-4 text-destructive" />
@@ -117,8 +118,8 @@ export function ScheduleTaskRow({
             <Button
               variant="ghost"
               size="icon"
-              title="立即运行"
-              aria-label={`立即运行 ${item.title}`}
+              title={t('schedules.row.actions.runNow')}
+              aria-label={t('schedules.row.actions.runNowAria', { title: item.title })}
               onClick={() => onRunNow(item.id)}
             >
               <Play className="h-4 w-4" />
@@ -126,8 +127,8 @@ export function ScheduleTaskRow({
             <Button
               variant="ghost"
               size="icon"
-              title={isPaused ? '启用' : '暂停'}
-              aria-label={`${isPaused ? '启用' : '暂停'} ${item.title}`}
+              title={toggleLabel}
+              aria-label={t(toggleAriaKey, { title: item.title })}
               onClick={() => onToggleStatus(item)}
             >
               {isPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
@@ -135,8 +136,8 @@ export function ScheduleTaskRow({
             <Button
               variant="ghost"
               size="icon"
-              title="编辑"
-              aria-label={`编辑 ${item.title}`}
+              title={t('schedules.row.actions.edit')}
+              aria-label={t('schedules.row.actions.editAria', { title: item.title })}
               onClick={() => onEdit(item)}
             >
               <Pencil className="h-4 w-4" />
@@ -144,8 +145,8 @@ export function ScheduleTaskRow({
             <Button
               variant="ghost"
               size="icon"
-              title="取消"
-              aria-label={`取消 ${item.title}`}
+              title={t('schedules.row.actions.cancel')}
+              aria-label={t('schedules.row.actions.cancelAria', { title: item.title })}
               onClick={() => onCancel(item.id)}
             >
               <X className="h-4 w-4 text-destructive" />
@@ -157,12 +158,12 @@ export function ScheduleTaskRow({
   )
 }
 
-function formatNextFire(value: string) {
+function formatNextFire(value: string, locale: string) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) {
     return value
   }
-  return new Intl.DateTimeFormat('zh-CN', {
+  return new Intl.DateTimeFormat(locale, {
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',

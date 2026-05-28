@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Folder } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 
 import {
   type AgendaItem,
@@ -36,13 +37,6 @@ interface AgendaItemEditorProps {
 
 const DEFAULT_AGENDA_ORGANIZER_ID = 'default'
 
-const FREQ_NOUN: Record<Freq, string> = {
-  daily: '天',
-  weekly: '周',
-  monthly: '月',
-  yearly: '年',
-}
-
 export function AgendaItemEditor({
   open,
   initial,
@@ -51,6 +45,7 @@ export function AgendaItemEditor({
   onClose,
   onSaved,
 }: AgendaItemEditorProps) {
+  const { t } = useTranslation()
   const [title, setTitle] = useState('')
   const [prompt, setPrompt] = useState('')
   const [startAtLocal, setStartAtLocal] = useState('')
@@ -180,7 +175,7 @@ export function AgendaItemEditor({
     try {
       const path = await pickLocalDirectory({
         defaultPath: workspacePath ?? undefined,
-        title: '选择此日程触发时使用的工作目录',
+        title: t('schedules.editor.fields.pickDialogTitle'),
       })
       if (path) setWorkspacePath(path)
     } catch (e) {
@@ -195,19 +190,21 @@ export function AgendaItemEditor({
         className="w-[480px] flex flex-col gap-4 overflow-y-auto"
       >
         <SheetHeader>
-          <SheetTitle>{initial ? '编辑日程' : '新建日程'}</SheetTitle>
+          <SheetTitle>
+            {initial ? t('schedules.editor.titleEdit') : t('schedules.editor.titleNew')}
+          </SheetTitle>
         </SheetHeader>
 
         <Input
-          placeholder="标题"
-          aria-label="标题"
+          placeholder={t('schedules.editor.fields.title')}
+          aria-label={t('schedules.editor.fields.title')}
           data-aijia-agenda-field="title"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
         />
         <Textarea
-          placeholder="到点要做什么？"
-          aria-label="Prompt"
+          placeholder={t('schedules.editor.fields.promptPlaceholder')}
+          aria-label={t('schedules.editor.fields.promptAria')}
           data-aijia-agenda-field="prompt"
           rows={4}
           value={prompt}
@@ -215,44 +212,50 @@ export function AgendaItemEditor({
         />
 
         <div className="space-y-2">
-          <label className="text-xs text-muted-foreground">频率</label>
+          <label className="text-xs text-muted-foreground">
+            {t('schedules.editor.fields.frequency')}
+          </label>
           <select
             className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
             value={frequency}
             onChange={(e) => setFrequency(e.target.value as Frequency)}
-            aria-label="频率"
+            aria-label={t('schedules.editor.fields.frequency')}
           >
-            <option value="one_shot">一次性</option>
-            <option value="daily">每天</option>
-            <option value="weekly">每周</option>
-            <option value="monthly">每月</option>
-            <option value="yearly">每年</option>
+            <option value="one_shot">{t('schedules.editor.freqOptions.oneShot')}</option>
+            <option value="daily">{t('schedules.editor.freqOptions.daily')}</option>
+            <option value="weekly">{t('schedules.editor.freqOptions.weekly')}</option>
+            <option value="monthly">{t('schedules.editor.freqOptions.monthly')}</option>
+            <option value="yearly">{t('schedules.editor.freqOptions.yearly')}</option>
           </select>
         </div>
 
         {frequency !== 'one_shot' ? (
           <div className="space-y-2">
             <label className="text-xs text-muted-foreground">
-              {`每 N ${FREQ_NOUN[frequency]}`}
+              {t('schedules.editor.fields.intervalEvery', {
+                unit: t(`schedules.frequency.noun.${frequency}`),
+              })}
             </label>
             <Input
               type="number"
               min={1}
               value={intervalCount}
               onChange={(e) => setIntervalCount(Math.max(1, Number(e.target.value) || 1))}
-              aria-label="间隔"
+              aria-label={t('schedules.editor.fields.intervalAria')}
             />
 
-            <label className="text-xs text-muted-foreground mt-2 block">结束条件</label>
+            <label className="text-xs text-muted-foreground mt-2 block">
+              {t('schedules.editor.fields.endCondition')}
+            </label>
             <select
               className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
               value={endKind}
               onChange={(e) => setEndKind(e.target.value as 'never' | 'count' | 'until')}
-              aria-label="结束条件"
+              aria-label={t('schedules.editor.fields.endCondition')}
             >
-              <option value="never">永不结束</option>
-              <option value="count">N 次后结束</option>
-              <option value="until">到日期</option>
+              <option value="never">{t('schedules.editor.endOptions.never')}</option>
+              <option value="count">{t('schedules.editor.endOptions.count')}</option>
+              <option value="until">{t('schedules.editor.endOptions.until')}</option>
             </select>
             {endKind === 'count' ? (
               <Input
@@ -260,7 +263,7 @@ export function AgendaItemEditor({
                 min={1}
                 value={endCount}
                 onChange={(e) => setEndCount(Math.max(1, Number(e.target.value) || 1))}
-                aria-label="结束次数"
+                aria-label={t('schedules.editor.fields.endCountAria')}
               />
             ) : null}
             {endKind === 'until' ? (
@@ -268,7 +271,7 @@ export function AgendaItemEditor({
                 type="datetime-local"
                 value={endUntilLocal}
                 onChange={(e) => setEndUntilLocal(e.target.value)}
-                aria-label="结束日期"
+                aria-label={t('schedules.editor.fields.endUntilAria')}
               />
             ) : null}
           </div>
@@ -276,7 +279,7 @@ export function AgendaItemEditor({
 
         <div className="space-y-2">
           <label className="text-xs text-muted-foreground" htmlFor="agenda-editor-start">
-            开始时间
+            {t('schedules.editor.fields.startTime')}
           </label>
           <Input
             id="agenda-editor-start"
@@ -287,27 +290,29 @@ export function AgendaItemEditor({
         </div>
 
         <div className="space-y-2">
-          <label className="text-xs text-muted-foreground">工作目录</label>
+          <label className="text-xs text-muted-foreground">
+            {t('schedules.editor.fields.workspace')}
+          </label>
           <div className="flex items-center gap-2">
             <div
               className="flex-1 truncate rounded-md border border-input bg-transparent px-3 py-1.5 text-sm"
               title={workspacePath ?? undefined}
             >
-              {workspacePath ?? '使用应用当前工作目录'}
+              {workspacePath ?? t('schedules.editor.fields.workspaceDefault')}
             </div>
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={handlePickWorkspace}
-              aria-label="选择工作目录"
+              aria-label={t('schedules.editor.fields.pickWorkspaceAria')}
             >
               <Folder className="h-4 w-4" />
-              选择
+              {t('schedules.editor.fields.pick')}
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
-            触发时会把该目录授权给新对话；留空则跟随应用当前选中的工作目录。
+            {t('schedules.editor.fields.workspaceHint')}
           </p>
         </div>
 
@@ -317,10 +322,10 @@ export function AgendaItemEditor({
 
         <div className="mt-auto flex gap-2">
           <Button variant="outline" onClick={onClose} disabled={saving} data-aijia-agenda-action="cancel">
-            取消
+            {t('schedules.editor.actions.cancel')}
           </Button>
           <Button onClick={handleSave} disabled={!canSave} data-aijia-agenda-action="save">
-            保存
+            {t('schedules.editor.actions.save')}
           </Button>
         </div>
       </SheetContent>
