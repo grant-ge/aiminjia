@@ -228,3 +228,101 @@
 - 技能中心列表中 `weather-helper` 卡片描述更新为 `给出穿衣建议 v2`。
 - 在不重启应用的前提下，新对话第一轮的 system prompt 中包含 `给出穿衣建议 v2` 字样，**不包含** `根据输入温度给出穿衣建议` 字样。
 - 应用日志中**不包含** `Failed to parse skill weather-helper`。
+
+---
+
+## 意图 7：用户在对话里提到「钉钉」时，AI 自动加载 dingtalk-workspace 技能
+
+**场景**
+用户在对话里用日常语言聊到钉钉相关需求，AI 应当根据 system prompt 中的 skill catalog 自主决定调用 `Skill` 工具加载 `dingtalk-workspace`，**不需要用户显式说「请使用 dingtalk-workspace 技能」**。这是「关键词驱动 + LLM 自主调度」的产品承诺。本意图覆盖 3 种代表性提及方式：① 口语点功能（「用钉钉发消息」）② 念中文产品词（「钉钉日历」）③ 念 CLI 名（「dws 怎么用」）。3 轮各自独立新建对话，任一轮未触发 Skill 工具即整条 FAIL。（**不**覆盖用户念 UI label「玩转钉钉」——那是意图 8 的承诺。）
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 推断 scope；从环境记下 `{scope}`
+3. 确认 `dingtalk-workspace` 已就位：检查 `~/.renlijia/skills/dingtalk-workspace/SKILL.md` 存在；如不存在，先用「技能」task 意图 1 的「导入目录」流程把它放进来，**不通过手工 `cp` 落盘**（手工落盘绕过产品入口、不复现 catalog 注入逻辑）
+4. **轮 A — 口语点功能**：
+   1. 新建空对话：`tauri-pilot aijia new-task`
+   2. 输入：`我想用钉钉给同事发条消息提醒他开会，怎么操作？`
+   3. 点发送 + 等回复：`tauri-pilot aijia send` + `tauri-pilot aijia wait-reply --timeout 90`
+   4. 记下 `conv_a=$(tauri-pilot aijia where --json | jq -r .activeConversationId)`
+5. **轮 B — 念中文产品词**：
+   1. 新建空对话：`tauri-pilot aijia new-task`
+   2. 输入：`帮我看看今天钉钉日历上有什么会`
+   3. 点发送 + 等回复：`tauri-pilot aijia send` + `tauri-pilot aijia wait-reply --timeout 90`
+   4. 记下 `conv_b=$(tauri-pilot aijia where --json | jq -r .activeConversationId)`
+6. **轮 C — 念 CLI 名**：
+   1. 新建空对话：`tauri-pilot aijia new-task`
+   2. 输入：`dws 怎么用？我想看看群里待办`
+   3. 点发送 + 等回复：`tauri-pilot aijia send` + `tauri-pilot aijia wait-reply --timeout 90`
+   4. 记下 `conv_c=$(tauri-pilot aijia where --json | jq -r .activeConversationId)`
+
+**验收标准**
+
+✅ 应该看到（3 轮**每一轮都必须独立满足**，任一轮未满足即整条 FAIL）
+- 轮 A 的 `~/.renlijia/users/{scope}/conversations/{conv_a}/messages.jsonl` 中存在一条 `role == "assistant"` 的记录，其顶层 `toolCalls` 数组中存在一项 `name == "Skill"` 且参数 JSON 中 `skill_id == "dingtalk-workspace"`
+- 轮 A 紧随其后存在一条 `role == "tool"` 的记录，其 `toolCallId` 等于上一条对应 `toolCalls[N].id`，且 `content.text` 中包含字符串 `dingtalk-workspace-cli`
+- 轮 B 的 `~/.renlijia/users/{scope}/conversations/{conv_b}/messages.jsonl` 中存在一条 `role == "assistant"` 的记录，其 `toolCalls` 中存在一项 `name == "Skill"` 且参数 JSON 中 `skill_id == "dingtalk-workspace"`
+- 轮 B 紧随其后存在一条 `role == "tool"` 的记录，`content.text` 中包含字符串 `dingtalk-workspace-cli`
+- 轮 C 的 `~/.renlijia/users/{scope}/conversations/{conv_c}/messages.jsonl` 中存在一条 `role == "assistant"` 的记录，其 `toolCalls` 中存在一项 `name == "Skill"` 且参数 JSON 中 `skill_id == "dingtalk-workspace"`
+- 轮 C 紧随其后存在一条 `role == "tool"` 的记录，`content.text` 中包含字符串 `dingtalk-workspace-cli`
+
+❌ 不应该看到
+- 任何一轮中出现红色错误提示或「工具调用失败」类 toast
+- 任何一轮 `toolCalls[].name == "Skill"` 的参数中 `skill_id` 为 `钉钉`、`dingtalk`、`dws`、`钉钉日历`（这些都不是 skill 真 id，传错会 not found）
+- 任何一轮 AI 回复文本中出现「我不知道怎么操作钉钉」「我没有相关技能」等否认有能力的措辞
+
+---
+
+## 意图 8：用户提到 skill 的 label 文案「玩转钉钉」时，AI 也能识别并加载 dingtalk-workspace
+
+**场景**
+`dingtalk-workspace` 的 SKILL.md frontmatter 里 `metadata.label` 是「玩转钉钂」（用户在 UI 上看到的中文名），但 skill 真实 id 是英文 `dingtalk-workspace`。用户在对话里用 UI 上看到的中文文案「玩转钉钉」表达意图时，AI 应能映射到正确的 skill id 并加载，**不应**因为字面不匹配就找不到。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 推断 scope；确认 `~/.renlijia/skills/dingtalk-workspace/SKILL.md` 存在且其 frontmatter 中 `metadata.label` 字段值为 `玩转钉钉`（若不是，本意图前提不成立，标 FAIL 主因 = rules/CLI 问题）
+3. 新建空对话：`tauri-pilot aijia new-task`
+4. 在对话输入框输入：`帮我玩转钉钉，从查日历开始`
+5. 点发送 + 等回复完成：`tauri-pilot aijia send` + `tauri-pilot aijia wait-reply --timeout 90`
+6. 推断当前对话 id：`conv_id=$(tauri-pilot aijia where --json | jq -r .activeConversationId)`
+
+**验收标准**
+
+✅ 应该看到
+- `~/.renlijia/users/{scope}/conversations/{conv_id}/messages.jsonl` 中存在一条 `role == "assistant"` 的记录，其 `toolCalls` 中存在一项 `name == "Skill"`
+- 该 `Skill` 调用参数 JSON 中 `skill_id == "dingtalk-workspace"`
+- 该 `Skill` 调用对应的 `role == "tool"` 记录的 `content.text` 中包含字符串 `dingtalk-workspace-cli`
+
+❌ 不应该看到
+- `toolCalls[].name == "Skill"` 的参数中 `skill_id == "玩转钉钉"`（按 label 字面找会 not found）
+- 该 turn 出现「skill not found」类错误 tool result
+- AI 回复中出现「没有名叫玩转钉钉的技能」「找不到对应技能」等措辞
+
+---
+
+## 意图 10：用户一句话涉及多个技能时，AI 同对话加载全部
+
+**场景**
+用户在一句自然语言里同时提到涉及不同技能领域的需求（如「做 PPT + 用钉钉发消息」），AI 应理解这是跨技能的需求并加载所有相关技能；允许同 turn 串行加载，也允许先加载主技能、并在回复中明确告知用户后续会用第二个技能。本意图覆盖最小双技能组合：`html-ppt`（PPT 生成）+ `dingtalk-workspace`（钉钉）。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 推断 scope；从环境记下 `{scope}`
+3. 确认两个 skill 已就位：检查 `~/.renlijia/skills/html-ppt/SKILL.md` 和 `~/.renlijia/skills/dingtalk-workspace/SKILL.md` 均存在（任一不存在，先按「技能」task 意图 1 的「导入目录」流程导入，不通过手工 `cp` 落盘）
+4. 新建空对话：`tauri-pilot aijia new-task`
+5. 在对话输入框输入：`帮我生成一份年度总结 PPT，做完后用钉钉发给自己`
+6. 点发送 + 等回复完成：`tauri-pilot aijia send` + `tauri-pilot aijia wait-reply --timeout 120`
+7. 推断当前对话 id：`conv_id=$(tauri-pilot aijia where --json | jq -r .routeObj.conversationId)`
+
+**验收标准**
+
+✅ 应该看到（双分支任一满足即 PASS）
+- **分支 A（同对话双技能均加载）**：`~/.renlijia/users/{scope}/conversations/{conv_id}/messages.jsonl` 中 `toolCalls[].name == "Skill"` 调用的 `skill_id` 去重集合 == `{"html-ppt", "dingtalk-workspace"}`
+- **分支 B（先主后副、AI 在 reply 中预告第二个技能）**：jsonl 中至少存在 1 条 `toolCalls[].name == "Skill"` 调用，且 `skill_id` ∈ `{"html-ppt", "dingtalk-workspace"}`；并且 jsonl 中最后一条 `role == "assistant"` 且 `toolCalls.length == 0` 的记录，其 `content.text` 中同时包含字符串 `钉钉` 和 `PPT`（说明 LLM 在文本里 acknowledge 了两个领域、把第二个技能留给后续轮处理）
+- 任一被加载的 `Skill` 调用紧随其后的 `role == "tool"` 记录 `isError != true` 且 `content.text` 长度 `!= 0`
+
+❌ 不应该看到
+- jsonl 中**无任何** `toolCalls[].name == "Skill"` 调用（一个技能都没加载 = 完全没理解需求）
+- `toolCalls[].name == "Skill"` 的参数中 `skill_id` 出现非 `html-ppt` / `dingtalk-workspace` 字面（如 `ppt` / `dingtalk` / `钉钉` / `年度总结 PPT` 等错误字面 id）
+- AI 回复中出现「我没有 PPT 生成技能」「无法生成 PPT」「无法发送钉钉」等否认能力的措辞
+- 任一 `Skill` 调用对应的 tool record `content.text` 包含 `not found` / `does not exist` 等错误字样

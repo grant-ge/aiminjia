@@ -2,6 +2,8 @@
  * @designSource design.pen#YQ44C tpl1
  * @sizing r-14 border 1 padding 18 gap 10
  */
+import { useTranslation } from 'react-i18next'
+
 import { Button } from '@/components/ui/button'
 import type { RecurrenceRule } from '@/lib/tauri'
 
@@ -18,6 +20,7 @@ interface ScheduleTemplateCardProps {
 }
 
 export function ScheduleTemplateCard({ template, onPick }: ScheduleTemplateCardProps) {
+  const { t } = useTranslation()
   return (
     <div
       data-testid="schedule-template-card"
@@ -27,7 +30,7 @@ export function ScheduleTemplateCard({ template, onPick }: ScheduleTemplateCardP
       <p className="flex-1 text-[0.8125rem] text-muted-foreground">{template.desc}</p>
       <div>
         <Button variant="secondary" onClick={() => onPick(template)}>
-          用此模板
+          {t('schedules.template.useThis')}
         </Button>
       </div>
     </div>

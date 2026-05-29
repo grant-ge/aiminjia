@@ -195,6 +195,7 @@ fn message_persisted_maps_to_message_updated_with_ids_role_run_id_and_created_at
         content: json!({ "text": "你好" }),
         client_message_id: None,
         tool_calls: None,
+        error: None,
     });
 
     assert_eq!(legacy.name, "message:updated");
@@ -335,4 +336,48 @@ fn turn_heartbeat_maps_with_elapsed_ms_fields() {
     assert_eq!(legacy.payload["runId"], "run-456");
     assert_eq!(legacy.payload["stageElapsedMs"], 2400);
     assert_eq!(legacy.payload["turnElapsedMs"], 18_500);
+}
+
+#[test]
+fn message_persisted_with_error_forwards_error_field() {
+    use app_lib::runtime::events::RuntimeEvent;
+    use app_lib::storage::file_store::types::{ErrorKind, MessageError};
+    use app_lib::transport::tauri_event_adapter::map_runtime_event;
+
+    let event = RuntimeEvent::message_persisted_with_error(
+        "test-session".into(),
+        "test-run".into(),
+        "msg-1",
+        "assistant",
+        serde_json::json!({"text": "占位"}),
+        MessageError {
+            kind: ErrorKind::ChunkTimeout,
+            message: "AI 服务暂时无法响应".to_string(),
+            raw: None,
+        },
+    );
+
+    let legacy = map_runtime_event(&event).expect("should produce legacy event");
+    assert_eq!(legacy.name, "message:updated");
+
+    let error = legacy.payload.get("error").expect("error field must be forwarded to frontend");
+    assert_eq!(error.get("kind").and_then(|v| v.as_str()), Some("chunk_timeout"));
+    assert_eq!(error.get("message").and_then(|v| v.as_str()), Some("AI 服务暂时无法响应"));
+}
+
+#[test]
+fn message_persisted_without_error_omits_error_field() {
+    use app_lib::runtime::events::RuntimeEvent;
+    use app_lib::transport::tauri_event_adapter::map_runtime_event;
+
+    let event = RuntimeEvent::message_persisted(
+        "test-session".into(),
+        "test-run".into(),
+        "msg-1",
+        "assistant",
+        serde_json::json!({"text": "normal"}),
+    );
+
+    let legacy = map_runtime_event(&event).expect("should produce legacy event");
+    assert!(legacy.payload.get("error").is_none(), "正常 MessagePersisted 不应携带 error 字段");
 }

@@ -228,6 +228,11 @@ pub fn build_history_from_compact_boundary(
                         out["toolCalls"] = tcs.clone();
                     }
                 }
+                if let Some(tb) = content_obj.get("_thinking_blocks") {
+                    if tb.as_array().map_or(false, |a| !a.is_empty()) {
+                        out["thinkingBlocks"] = tb.clone();
+                    }
+                }
                 Some(out)
             }
             "user" => {
@@ -420,6 +425,65 @@ struct TauriLegacyTurnExecutor {
     agents_md_loader: Arc<tokio::sync::Mutex<crate::runtime::agents_md::AgentsMdLoader>>,
 }
 
+/// PR3 fallback helper：把非流式 LlmResponse 拼回成 LlmStepResult。
+///
+/// 拿到非流式响应后按 tool_calls / stop_reason 分发到 ToolCalls / ContentComplete。
+/// 拼回字段必须完整（含 cache_creation_input_tokens / cache_read_input_tokens），
+/// 否则会丢 token 计费。LlmResponse 当前不携带 thinking_blocks（仅 stream 路径
+/// 暴露），fallback 路径设为空 Vec。
+///
+/// Spec: docs/superpowers/specs/2026-05-28-streaming-error-handling-design.md §五.9.2
+fn llm_response_to_step_result(
+    response: crate::llm::streaming::LlmResponse,
+) -> crate::runtime::chat::turn_config::LlmStepResult {
+    use crate::llm::streaming::StopReason;
+    use crate::runtime::chat::tool_round_types::RuntimeToolCallRequest;
+    use crate::runtime::chat::turn_config::LlmStepResult;
+
+    let tokens_in = response.usage.input_tokens as u64;
+    let tokens_out = response.usage.output_tokens as u64;
+    let cache_creation = response.usage.cache_creation_input_tokens.unwrap_or(0) as u64;
+    let cache_read = response.usage.cache_read_input_tokens.unwrap_or(0) as u64;
+
+    if !response.tool_calls.is_empty() {
+        let tool_calls: Vec<RuntimeToolCallRequest> = response
+            .tool_calls
+            .into_iter()
+            .map(|tc| RuntimeToolCallRequest {
+                tool_call_id: tc.id,
+                tool_name: tc.name,
+                args: tc.arguments,
+                purpose: None,
+            })
+            .collect();
+        LlmStepResult::ToolCalls {
+            assistant_content: response.content,
+            tool_calls,
+            tokens_in,
+            tokens_out,
+            cache_creation_input_tokens: cache_creation,
+            cache_read_input_tokens: cache_read,
+            thinking_blocks: Vec::new(),
+        }
+    } else {
+        let stop_reason_str = match response.stop_reason {
+            StopReason::EndTurn => "end_turn",
+            StopReason::ToolUse => "tool_use",
+            StopReason::MaxTokens => "max_tokens",
+            StopReason::StopSequence => "stop_sequence",
+        };
+        LlmStepResult::ContentComplete {
+            content: response.content,
+            tokens_in,
+            tokens_out,
+            cache_creation_input_tokens: cache_creation,
+            cache_read_input_tokens: cache_read,
+            stop_reason: Some(stop_reason_str.to_string()),
+            thinking_blocks: Vec::new(),
+        }
+    }
+}
+
 async fn wait_for_message_write_completion(
     completion: MessageWriteCompletion,
 ) -> Result<(), TurnError> {
@@ -487,6 +551,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         use crate::llm::streaming::{ChatMessage, StopReason, StreamEvent, ToolDefinition};
         use crate::runtime::events::{RetryReason, RuntimeEvent, RuntimeEventKind};
         use crate::runtime::ids::{RunId, SessionId};
+        use crate::telemetry::{record_diagnostic, DiagnosticEvent, DiagnosticSource};
         use futures::StreamExt;
 
         let session_id = SessionId::from(input.conversation_id);
@@ -602,6 +667,18 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                             MAX_STREAM_RETRIES,
                             input.conversation_id
                         );
+                        record_diagnostic(
+                            &crate::telemetry::diagnostics_workspace(),
+                            DiagnosticEvent::new("streaming.retry.attempt", DiagnosticSource::Backend)
+                                .conversation_id(input.conversation_id)
+                                .run_id(input.run_id)
+                                .ok(true)
+                                .payload(serde_json::json!({
+                                    "attempt": stream_retry_count,
+                                    "max": MAX_STREAM_RETRIES,
+                                    "cause": "gateway_error",
+                                })),
+                        );
                         let _ = bus
                             .emit(RuntimeEvent::new(
                                 session_id.clone(),
@@ -638,6 +715,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             // --- Block 16/17: stream event loop ---
             let mut iter_content = String::new();
             let mut tool_calls = Vec::new();
+            let mut thinking_blocks: Vec<serde_json::Value> = Vec::new();
             let mut stop_reason = StopReason::EndTurn;
             let mut tokens_in: u64 = 0;
             let mut tokens_out: u64 = 0;
@@ -680,6 +758,19 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                                 "[run_llm_step] Chunk timeout retryable (attempt {}/{}) conv={}",
                                 stream_retry_count, MAX_STREAM_RETRIES, input.conversation_id
                             );
+                            record_diagnostic(
+                                &crate::telemetry::diagnostics_workspace(),
+                                DiagnosticEvent::new("streaming.retry.attempt", DiagnosticSource::Backend)
+                                    .conversation_id(input.conversation_id)
+                                    .run_id(input.run_id)
+                                    .ok(true)
+                                    .payload(serde_json::json!({
+                                        "attempt": stream_retry_count,
+                                        "max": MAX_STREAM_RETRIES,
+                                        "cause": "chunk_timeout",
+                                        "chunk_timeout_secs": input.chunk_timeout_secs,
+                                    })),
+                            );
                             let _ = bus
                                 .emit(RuntimeEvent::new(
                                     session_id.clone(),
@@ -691,10 +782,132 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                                 .await;
                             iter_content.clear();
                             tool_calls.clear();
+                            thinking_blocks.clear();
                             stream_needs_retry = true;
                             break;
                         }
-                        // All retries exhausted
+                        // PR3: 流式重试耗尽，先尝试非流式 fallback 兜底再宣告失败.
+                        // emit retry-reset { reason: FallbackToNonStream } 让前端切到
+                        // "切换备用通道" 文案，清空 partial bubble.
+                        record_diagnostic(
+                            &crate::telemetry::diagnostics_workspace(),
+                            DiagnosticEvent::new("streaming.retry.exhausted", DiagnosticSource::Backend)
+                                .conversation_id(input.conversation_id)
+                                .run_id(input.run_id)
+                                .ok(false)
+                                .payload(serde_json::json!({
+                                    "cause": "chunk_timeout",
+                                    "retries_consumed": MAX_STREAM_RETRIES,
+                                    "chunk_timeout_secs": input.chunk_timeout_secs,
+                                })),
+                        );
+                        let _ = bus
+                            .emit(RuntimeEvent::new(
+                                session_id.clone(),
+                                run_id.clone(),
+                                RuntimeEventKind::StreamRetryReset {
+                                    reason: RetryReason::FallbackToNonStream,
+                                },
+                            ))
+                            .await;
+                        log::warn!(
+                            "[run_llm_step] chunk timeout retries exhausted, attempting non-streaming fallback conv={}",
+                            input.conversation_id
+                        );
+
+                        // 60s 总体超时封顶（spec §三 时间预算）.
+                        let fallback_timeout = tokio::time::Duration::from_secs(60);
+                        let fallback_started_at = std::time::Instant::now();
+                        record_diagnostic(
+                            &crate::telemetry::diagnostics_workspace(),
+                            DiagnosticEvent::new("streaming.fallback.started", DiagnosticSource::Backend)
+                                .conversation_id(input.conversation_id)
+                                .run_id(input.run_id)
+                                .ok(true)
+                                .payload(serde_json::json!({
+                                    "cause": "chunk_timeout_exhausted",
+                                    "timeout_ms": fallback_timeout.as_millis() as u64,
+                                })),
+                        );
+                        let fallback_result = tokio::time::timeout(
+                            fallback_timeout,
+                            self.services.gateway.send_message_with_segments(
+                                &settings,
+                                chat_messages.clone(),
+                                masking_level.clone(),
+                                system_prompt_for_gateway.as_deref(),
+                                dynamic_ctx_opt,
+                                effective_tools.clone(),
+                                input.token_budget as u32,
+                                Some(input.conversation_id),
+                                input.anthropic_multimodal_turn.clone(),
+                                system_prompt_segments.clone(),
+                                Some(input.trace_id),
+                                Some(input.run_id),
+                            ),
+                        )
+                        .await;
+
+                        match fallback_result {
+                            Ok(Ok(response)) => {
+                                let elapsed_ms = fallback_started_at.elapsed().as_millis() as u64;
+                                log::info!(
+                                    "[run_llm_step] fallback success conv={} content_len={} tool_calls={}",
+                                    input.conversation_id,
+                                    response.content.len(),
+                                    response.tool_calls.len()
+                                );
+                                record_diagnostic(
+                                    &crate::telemetry::diagnostics_workspace(),
+                                    DiagnosticEvent::new("streaming.fallback.success", DiagnosticSource::Backend)
+                                        .conversation_id(input.conversation_id)
+                                        .run_id(input.run_id)
+                                        .ok(true)
+                                        .duration_ms(elapsed_ms)
+                                        .payload(serde_json::json!({
+                                            "content_len": response.content.len(),
+                                            "tool_calls": response.tool_calls.len(),
+                                        })),
+                                );
+                                return Ok(llm_response_to_step_result(response));
+                            }
+                            Ok(Err(fallback_err)) => {
+                                let elapsed_ms = fallback_started_at.elapsed().as_millis() as u64;
+                                log::error!(
+                                    "[run_llm_step] fallback failed conv={}: {}",
+                                    input.conversation_id, fallback_err
+                                );
+                                record_diagnostic(
+                                    &crate::telemetry::diagnostics_workspace(),
+                                    DiagnosticEvent::new("streaming.fallback.failed", DiagnosticSource::Backend)
+                                        .conversation_id(input.conversation_id)
+                                        .run_id(input.run_id)
+                                        .ok(false)
+                                        .duration_ms(elapsed_ms)
+                                        .error(fallback_err.to_string())
+                                        .payload(serde_json::json!({ "cause": "gateway_error" })),
+                                );
+                            }
+                            Err(_elapsed) => {
+                                let elapsed_ms = fallback_started_at.elapsed().as_millis() as u64;
+                                log::error!(
+                                    "[run_llm_step] fallback timeout (60s) conv={}",
+                                    input.conversation_id
+                                );
+                                record_diagnostic(
+                                    &crate::telemetry::diagnostics_workspace(),
+                                    DiagnosticEvent::new("streaming.fallback.failed", DiagnosticSource::Backend)
+                                        .conversation_id(input.conversation_id)
+                                        .run_id(input.run_id)
+                                        .ok(false)
+                                        .duration_ms(elapsed_ms)
+                                        .error("fallback timeout".to_string())
+                                        .payload(serde_json::json!({ "cause": "timeout", "timeout_secs": 60 })),
+                                );
+                            }
+                        }
+
+                        // Fallback 也失败 → emit StreamError + 进层 2（PR1 已修复白屏）
                         let error_msg = format!(
                             "响应超时（{}秒无数据）。请检查网络连接后重试。",
                             input.chunk_timeout_secs
@@ -738,8 +951,8 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                                 // ThinkingDelta: internal model reasoning — intentionally dropped.
                                 // Not shown to users; bypasses prompt_guard.
                             }
-                            Some(StreamEvent::ThinkingBlock { .. }) => {
-                                // ThinkingBlock: full thinking block w/ signature — intentionally dropped here.
+                            Some(StreamEvent::ThinkingBlock { block }) => {
+                                thinking_blocks.push(block);
                             }
                             Some(StreamEvent::Keepalive) => {
                                 // Liveness tick (Anthropic ping / input_json_delta tool-arg
@@ -788,6 +1001,18 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                                          (attempt {}/{}) conv={}",
                                         stream_retry_count, MAX_STREAM_RETRIES,
                                         input.conversation_id
+                                    );
+                                    record_diagnostic(
+                                        &crate::telemetry::diagnostics_workspace(),
+                                        DiagnosticEvent::new("streaming.retry.attempt", DiagnosticSource::Backend)
+                                            .conversation_id(input.conversation_id)
+                                            .run_id(input.run_id)
+                                            .ok(true)
+                                            .payload(serde_json::json!({
+                                                "attempt": stream_retry_count,
+                                                "max": MAX_STREAM_RETRIES,
+                                                "cause": "stream_event_error",
+                                            })),
                                     );
                                     let _ = bus
                                         .emit(RuntimeEvent::new(
@@ -879,6 +1104,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                         }
                         .to_string(),
                     ),
+                    thinking_blocks,
                 });
             }
 
@@ -914,6 +1140,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                 tokens_out,
                 cache_creation_input_tokens,
                 cache_read_input_tokens,
+                thinking_blocks,
             });
         }
     }
@@ -1014,22 +1241,29 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
     async fn persist_iteration_assistant_message(
         &self,
         conversation_id: &str,
+        assistant_content: &str,
         tool_calls: &[serde_json::Value],
+        thinking_blocks: &[serde_json::Value],
     ) -> Result<Option<String>, TurnError> {
         if tool_calls.is_empty() {
             return Ok(None);
         }
         let msg_id = uuid::Uuid::new_v4().to_string();
         log::info!(
-            "[persist_iteration_assistant_message] Saving assistant[toolCalls] id={} conv={}",
+            "[persist_iteration_assistant_message] Saving assistant[toolCalls] id={} conv={} content_len={}",
             msg_id,
-            conversation_id
+            conversation_id,
+            assistant_content.len()
         );
+        let mut content = serde_json::json!({ "text": assistant_content });
+        if !thinking_blocks.is_empty() {
+            content["_thinking_blocks"] = serde_json::json!(thinking_blocks);
+        }
         let stored = crate::storage::file_store::types::StoredMessage {
             id: msg_id.clone(),
             conversation_id: conversation_id.to_string(),
             role: "assistant".to_string(),
-            content: serde_json::json!({ "text": "" }),
+            content,
             created_at: chrono::Utc::now().to_rfc3339(),
             tool_calls: Some(tool_calls.to_vec()),
             tool_call_id: None,
@@ -1039,6 +1273,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             sequence: None,
             seq: None,
             rev: None,
+            error: None,
         };
         self.services
             .db()
@@ -1094,6 +1329,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                 sequence: None,
                 seq: None,
                 rev: None,
+                error: None,
             };
             if let Err(e) = self.services.db().insert_chat_message_record(&stored) {
                 log::warn!(
@@ -1114,6 +1350,8 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         tool_calls: &[serde_json::Value],
         generated_file_ids: &[String],
         file_metas: &[serde_json::Value],
+        thinking_blocks: &[serde_json::Value],
+        error: Option<&crate::storage::file_store::types::MessageError>,
     ) -> Result<String, TurnError> {
         // Generate a stable message ID for this assistant turn.
         let message_id = uuid::Uuid::new_v4().to_string();
@@ -1153,7 +1391,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         let workspace_path = self.services.file_mgr.workspace_path();
 
         // --- Build content JSON, attaching generated files when present ---
-        let content_value = if !generated_file_ids.is_empty() {
+        let mut content_value = if !generated_file_ids.is_empty() {
             match self
                 .services
                 .db()
@@ -1232,6 +1470,16 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             build_assistant_content_json(&filtered_content, tool_calls, None)
         };
 
+        // Inject thinking blocks for Anthropic API round-trip (must be echoed back on next turn).
+        if !thinking_blocks.is_empty() {
+            if let Some(obj) = content_value.as_object_mut() {
+                obj.insert(
+                    "_thinking_blocks".to_string(),
+                    serde_json::json!(thinking_blocks),
+                );
+            }
+        }
+
         // --- Persist to AppStorage ---
         let content_json = content_value.to_string();
         log::info!(
@@ -1240,14 +1488,40 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             conversation_id,
             content_json.len()
         );
-        persist_assistant_content_json(
-            self.services.db().clone(),
-            self.services.assistant_write_queue.clone(),
-            message_id.clone(),
-            conversation_id.to_string(),
-            content_json,
-        )
-        .await?;
+        if let Some(err) = error {
+            // 错误占位：绕过 write_queue 直接同步写（每 turn 最多一次，性能可接受），
+            // 这样 error 字段能跟着 message 一起进入 jsonl，下次 reload 前端拿到 error
+            // 仍可渲染红色 callout；history.rs 也能 stored.error.is_some() 过滤掉.
+            let db = self.services.db().clone();
+            let mid = message_id.clone();
+            let conv = conversation_id.to_string();
+            let err_owned = err.clone();
+            tokio::task::spawn_blocking(move || {
+                db.insert_message_with_error(&mid, &conv, "assistant", &content_json, Some(&err_owned))
+            })
+            .await
+            .map_err(|join_err| {
+                TurnError::PersistenceError(format!(
+                    "Assistant error-message persistence worker join failed: {}",
+                    join_err
+                ))
+            })?
+            .map_err(|e| {
+                TurnError::PersistenceError(format!(
+                    "Failed to save assistant error message: {}",
+                    e
+                ))
+            })?;
+        } else {
+            persist_assistant_content_json(
+                self.services.db().clone(),
+                self.services.assistant_write_queue.clone(),
+                message_id.clone(),
+                conversation_id.to_string(),
+                content_json,
+            )
+            .await?;
+        }
 
         // NOTE: message:updated event is NOT emitted here — that is the driver's
         // responsibility via bus.emit(RuntimeEventKind::MessagePersisted { ... }).
@@ -3628,6 +3902,7 @@ impl crate::runtime::pending::ChatTurnDispatcher for TauriChatCommandAdapter {
                                 content: content_value,
                                 client_message_id: None,
                                 tool_calls: None,
+                                error: None,
                             },
                         );
                         if let Err(e) = self.runtime.event_bus().emit(event).await {

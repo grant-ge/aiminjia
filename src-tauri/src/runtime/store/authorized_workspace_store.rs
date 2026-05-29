@@ -57,6 +57,17 @@ pub trait AuthorizedWorkspaceStore: Send + Sync {
 /// 替代 `FileAuthorizedWorkspaceStore`（走 memory.jsonl 那条线）。
 pub struct ConvJsonAuthorizedWorkspaceStore {
     pub storage: Arc<AppStorage>,
+    pub cus: Option<Arc<crate::storage::CurrentUserStorage>>,
+}
+
+impl ConvJsonAuthorizedWorkspaceStore {
+    fn db(&self) -> Arc<AppStorage> {
+        if let Some(cus) = &self.cus {
+            cus.get_or(&self.storage)
+        } else {
+            self.storage.clone()
+        }
+    }
 }
 
 impl AuthorizedWorkspaceStore for ConvJsonAuthorizedWorkspaceStore {
@@ -72,7 +83,7 @@ impl AuthorizedWorkspaceStore for ConvJsonAuthorizedWorkspaceStore {
             authorized_at: ws.authorized_at.clone(),
         };
         crate::storage::file_store::conversations::set_conversation_workspace(
-            self.storage.base_dir(),
+            self.db().base_dir(),
             conversation_id,
             Some(&persisted),
         )?;
@@ -85,7 +96,7 @@ impl AuthorizedWorkspaceStore for ConvJsonAuthorizedWorkspaceStore {
         session_id: &SessionId,
     ) -> Result<Option<AuthorizedWorkspace>> {
         let persisted = crate::storage::file_store::conversations::read_conversation_workspace(
-            self.storage.base_dir(),
+            self.db().base_dir(),
             conversation_id,
         )?;
         Ok(persisted.map(|p| AuthorizedWorkspace {
@@ -103,7 +114,7 @@ impl AuthorizedWorkspaceStore for ConvJsonAuthorizedWorkspaceStore {
         _session_id: &SessionId,
     ) -> Result<()> {
         crate::storage::file_store::conversations::set_conversation_workspace(
-            self.storage.base_dir(),
+            self.db().base_dir(),
             conversation_id,
             None,
         )?;

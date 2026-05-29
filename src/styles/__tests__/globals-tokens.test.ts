@@ -62,13 +62,13 @@ describe('design.pen token alignment', () => {
 
 describe('assistant markdown typography', () => {
   it('restores markdown heading, list, and rich text styles inside the assistant scope', () => {
-    expect(CSS).toMatch(/\.assistant-markdown h1[\s\S]*font-size:\s*1\.45em;/)
-    expect(CSS).toMatch(/\.assistant-markdown h2[\s\S]*font-size:\s*1\.28em;/)
+    expect(CSS).toMatch(/\.assistant-markdown h1[\s\S]*font-size:\s*1\.4em;/)
+    expect(CSS).toMatch(/\.assistant-markdown h2[\s\S]*font-size:\s*1\.25em;/)
     expect(CSS).toMatch(/\.assistant-markdown ul\s*\{[\s\S]*list-style-type:\s*disc;/)
     expect(CSS).toMatch(/\.assistant-markdown ol\s*\{[\s\S]*list-style-type:\s*decimal;/)
     expect(CSS).toMatch(/\.assistant-markdown blockquote\s*\{[\s\S]*border-left:/)
     expect(CSS).toMatch(/\.assistant-markdown :not\(pre\) > code\s*\{[\s\S]*background:\s*var\(--color-bg-code\);/)
-    expect(CSS).toMatch(/\.assistant-markdown \.markdown-table-wrap,[\s\S]*margin-top:\s*20px;[\s\S]*margin-bottom:\s*12px;/)
+    expect(CSS).toMatch(/\.assistant-markdown \.markdown-table-wrap,[\s\S]*margin-top:\s*0\.875rem;[\s\S]*margin-bottom:\s*0\.5rem;/)
     expect(CSS).toMatch(/\.assistant-markdown \.markdown-table-copy\s*\{[\s\S]*display:\s*inline-flex;/)
     expect(CSS).toMatch(/\.assistant-markdown \.markdown-table-copy\s*\{[\s\S]*font-size:\s*inherit;/)
     expect(CSS).not.toMatch(/\.assistant-markdown \.markdown-table-copy\s*\{[\s\S]*font-size:\s*15px;/)

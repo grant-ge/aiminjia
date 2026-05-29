@@ -25,47 +25,16 @@
     "comingSoon": "即将开放"
   },
   "common": {
-    "save": "保存",
     "cancel": "取消",
-    "delete": "删除",
-    "export": "导出",
-    "edit": "编辑",
     "confirm": "确认",
-    "show": "显示",
-    "hide": "隐藏",
     "copied": "已复制",
     "copy": "复制",
-    "copyTable": "复制表格",
     "copyFailed": "复制失败",
     "close": "关闭",
     "loading": "加载中...",
-    "unknownError": "未知错误"
+    "openFile": "打开文件"
   },
   "sidebar": {
-    "newChat": "新对话",
-    "noConversations": "暂无对话记录",
-    "searchPlaceholder": "搜索对话...",
-    "noSearchResults": "没有匹配的对话",
-    "conversationActions": "对话操作",
-    "deleteConversation": "删除对话",
-    "selectPersona": "选择角色",
-    "settings": "设置",
-    "switchToLocal": "点击切换到本地模式",
-    "switchToCloud": "点击切换到云端模式",
-    "cloud": "☁ 云端",
-    "local": "⚡ 本地",
-    "maxConcurrent": "已达最大并发数，请等待",
-    "useGlobalModel": "使用全局设置",
-    "timeGroup": {
-      "today": "今天",
-      "yesterday": "昨天",
-      "thisWeek": "本周",
-      "earlier": "更早"
-    },
-    "home": "新任务",
-    "skillCenter": "技能中心",
-    "schedules": "定时任务",
-    "tasks": "任务",
     "archiveChat": "归档聊天",
     "archiveChatTooltip": "归档对话",
     "archiveChatConfirmTooltip": "再次点击确认归档",
@@ -75,88 +44,30 @@
     "allPinnedHint": "所有对话都已置顶",
     "renameChat": "重命名聊天",
     "copyConversationId": "复制会话 ID",
-    "chatMoreActions": "聊天更多操作",
     "noHistory": "还没有历史任务",
     "defaultFolder": "默认项目",
     "project": "项目",
-    "employee": "数字员工",
     "employeeTab": "员工",
-    "expertTeam": "专家团",
     "expertTeamTab": "专家",
     "channel": "频道"
   },
   "inputBar": {
-    "attachData": "添加文件或本地目录",
-    "uploadFile": "上传文件（Excel/Word/PDF）",
-    "placeholderWithFile": "请输入你的问题，然后按回车发送...",
-    "placeholder": "随时提问，或上传文件让我分析...",
-    "analyzeFile": "请分析这个文件",
-    "slashEmpty": "没有匹配的技能",
-    "slashFiltered": "{{count}} 个技能",
-    "slashNav": "上下移动",
-    "slashSelect": "选择",
-    "slashClose": "关闭"
+    "placeholder": "随时提问，或上传文件让我分析..."
   },
   "chatArea": {
     "fileNotFound": "文件未找到",
     "cannotOpenFile": "无法打开文件 \"{{fileName}}\"，文件可能尚未生成或已被移动。"
   },
   "welcome": {
-    "greeting": "你好！我是 {{productName}}",
-    "greetingWithPersona": "你好！我是 {{productName}} · {{personaName}}",
     "defaultSubtitle": "你的智能工作助手",
     "generalMode": "通用模式",
     "generalModeDesc": "直接对话，不使用专业技能",
     "askAnything": "也可以直接问我任何工作相关问题",
-    "hello": "你好"
-  },
-  "skillSmith": {
-    "banner": {
-      "title": "你有 {{count}} 个未完成的技能草稿",
-      "title_one": "你有 1 个未完成的技能草稿",
-      "unnamed": "未命名",
-      "resume": "继续",
-      "discard": "丢弃",
-      "discardTitle": "丢弃技能草稿",
-      "discardConfirm": "确定要丢弃草稿「{{name}}」吗？此操作不可撤销。",
-      "justNow": "刚刚",
-      "minutesAgo": "{{n}} 分钟前",
-      "hoursAgo": "{{n}} 小时前",
-      "daysAgo": "{{n}} 天前"
-    }
-  },
-  "aiBubble": {
-    "sendFailed": "发送失败",
-    "sendFailedDesc": "未能发送回复，请重试。",
-    "openFileFailed": "打开文件失败",
-    "openFileFailedDesc": "无法打开文件，文件可能已被移动或删除。",
-    "revealFileFailed": "定位文件失败",
-    "revealFileFailedDesc": "无法在文件管理器中显示文件。",
-    "selectAction": "[选择]",
-    "confirmAction": "[确认]",
-    "rejectAction": "[拒绝]"
+    "hello": "你好",
+    "defaultGreeting": "你好！我是 {{productName}}"
   },
   "userBubble": {
     "me": "我"
-  },
-  "streaming": {
-    "tools": {
-      "execute_python": "正在分析数据...",
-      "load_file": "正在加载文件...",
-      "save_analysis_note": "正在保存分析记录...",
-      "update_progress": "正在更新分析进度...",
-      "WebSearch": "正在搜索相关信息...",
-      "generate_report": "正在生成报告...",
-      "export_data": "正在导出数据...",
-      "hypothesis_test": "正在进行统计检验...",
-      "detect_anomalies": "正在检测异常数据...",
-      "generate_chart": "正在生成图表..."
-    },
-    "phases": {
-      "think": "正在思考...",
-      "act": "正在执行...",
-      "observe": "正在整理..."
-    }
   },
   "turnStage": {
     "fallback": "思考中…",
@@ -164,8 +75,6 @@
     "waitingLlm": "等待模型响应",
     "streaming": "思考中…",
     "toolsPreparing": "正在准备工具…",
-    "toolSingle": "正在执行 {{name}}",
-    "toolsMulti": "正在并行运行 {{count}} 个工具",
     "waitingPermission": "等待你审批：{{name}}",
     "waitingInteraction": "等待你回答…",
     "compacting": "整理上下文中…",
@@ -177,13 +86,6 @@
     "updatedAt": "更新于 {{time}}"
   },
   "messageList": {
-    "steps": {
-      "1": "数据清洗与理解",
-      "2": "岗位体系",
-      "3": "职级框架",
-      "4": "公平性诊断 + 根因分析",
-      "5": "行动方案 + 管理层材料"
-    },
     "cannotPreview": "无法预览此文件",
     "cannotOpen": "无法打开文件",
     "cannotReveal": "无法在文件夹中显示"
@@ -472,6 +374,37 @@
         "outputTokens": "输出 Tokens",
         "cost": "费用"
       }
+    },
+    "loadingVersion": "加载中...",
+    "localCacheCleared": "本地缓存已清除",
+    "logsUploaded": "日志已上传",
+    "notLoggedIn": "未登录",
+    "reset": "重置",
+    "resetDescription": "将清除所有本地数据并重启应用",
+    "unknown": "未知",
+    "uploadId": "上传 ID",
+    "appLogLines": "应用日志行数",
+    "badMetricsLines": "异常指标行数",
+    "chunks": "分片",
+    "diagnosticEvents": "诊断事件",
+    "usage": {
+      "details": "用量详情"
+    },
+    "dingtalk": {
+      "title": "钉钉",
+      "description": "连接钉钉以同步通讯录、消息和待办",
+      "capabilities": "已开通能力",
+      "connectButton": "连接",
+      "connecting": "连接中...",
+      "disconnectButton": "断开",
+      "refreshButton": "刷新",
+      "connected": "已连接",
+      "disconnected": "未连接",
+      "connectSuccess": "连接成功",
+      "connectFailed": "连接失败",
+      "disconnectSuccess": "已断开连接",
+      "corpName": "企业",
+      "userName": "用户"
     }
   },
   "composer": {
@@ -482,7 +415,15 @@
     "skillLoaded": "已加载技能",
     "openSkillPicker": "选择技能",
     "openSkillPickerWithSkill": "当前技能：{{name}}",
-    "removeSkill": "移除技能 {{name}}"
+    "removeSkill": "移除技能 {{name}}",
+    "paste": {
+      "cannotPaste": "无法粘贴",
+      "clipboardImageFailed": "读取剪贴板图片失败",
+      "fileTypeUnsupported": "不支持的文件类型",
+      "ignoredCount": "已忽略 {{count}} 个",
+      "selectedItemsUnsupported": "所选内容暂不支持",
+      "someItemsIgnored": "部分内容已忽略"
+    }
   },
   "skillPopover": {
     "searchPlaceholder": "搜索",
@@ -585,22 +526,9 @@
     "codeRequired": "请输入验证码",
     "personalRegisterOnly": "目前仅支持个人账号注册，企业账号请联系管理员开通"
   },
-  "onboarding": {
-    "welcome": "欢迎使用 {{productName}}",
-    "selectPersona": "选择一个角色开始,AI 会根据你的角色调整专业能力和记忆重点",
-    "settingUp": "正在设置...",
-    "startUsing": "开始使用",
-    "canSwitchLater": "你可以随时在设置中切换或自定义角色"
-  },
   "updater": {
-    "linkAvailable": "v{{version}} 可用",
-    "linkAvailableTooltip": "有新版本，点击查看",
-    "linkDownloading": "v{{version}} 下载中 {{pct}}%",
-    "linkDownloadingTooltip": "正在下载更新，点击查看进度",
     "linkReady": "v{{version}} 可安装",
     "linkReadyTooltip": "下载完成，点击安装",
-    "linkFailed": "更新失败，点击重试",
-    "linkFailedTooltip": "下载更新时出错，点击重新尝试",
     "dialogTitleAvailable": "新版本可用 v{{version}}",
     "dialogTitleDownloading": "正在下载更新 v{{version}}",
     "dialogTitleReady": "更新下载完成 v{{version}}",
@@ -620,19 +548,11 @@
     "installSuccessTitle": "更新安装成功",
     "relaunchFailedHint": "安装已完成，但自动重启失败。请手动关闭并重新打开应用以使用新版本。",
     "notReadyMessage": "更新尚未就绪，请稍候再试或重启应用",
-    "offlineHint": "网络不可用，无法安装更新，请稍后重试",
-    "downloadFailed": "更新下载失败",
-    "downloadFailedDesc": "请稍后重试或手动下载新版本",
-    "updateAvailable": "新版本可用",
-    "downloadNow": "立即下载",
-    "retried3Times": "已重试 3 次仍失败"
+    "offlineHint": "网络不可用，无法安装更新，请稍后重试"
   },
   "auth": {
     "expired": "登录已失效",
     "expiredDesc": "请重新登录后继续操作。",
-    "login": "登录",
-    "username": "账号",
-    "password": "密码",
     "restoringSession": "正在恢复登录状态..."
   },
   "dispatch": {
@@ -658,13 +578,18 @@
     "live": "实时输出",
     "liveBytes": "已收到 {{bytes}}"
   },
-  "toolGroup": {
-    "title": "工具调用",
-    "running": "执行中 {{done}} / {{total}}",
-    "done": "已完成 {{done}} 步",
-    "doneCompact": "已完成 {{duration}}",
-    "durationMinSec": "{{min}}分{{sec}}秒",
-    "durationSec": "{{sec}}秒"
+  "toolGroupSummary": {
+    "bucket": {
+      "command": "运行了 {{count}} 个命令",
+      "file_read": "读取了 {{count}} 个文件",
+      "file_edit": "编辑了 {{count}} 个文件",
+      "search": "搜索了 {{count}} 次",
+      "mcp": "调用了 {{count}} 个 MCP 工具",
+      "other": "使用了 {{count}} 个工具"
+    },
+    "separator": "、",
+    "failedSuffix": "{{count}} 个失败",
+    "runningSuffix": "…"
   },
   "homeComposer": {
     "placeholder": "描述你的任务，输入 / 或点「技能」选择技能...",
@@ -702,22 +627,6 @@
     "monthsAgo": "{{count}} 个月前",
     "yearsAgo": "{{count}} 年前"
   },
-  "providers": {
-    "deepseek-v3": "DeepSeek",
-    "qwen-plus": "通义千问",
-    "volcano": "火山引擎",
-    "openai": "GPT-4o",
-    "claude": "Claude",
-    "custom": "自定义模型",
-    "capabilities": {
-      "deepseek-v3": "默认: deepseek-chat | 推理: deepseek-reasoner",
-      "qwen-plus": "默认: qwen-plus",
-      "openai": "默认: GPT-4o",
-      "claude": "默认: Claude Sonnet",
-      "volcano": "默认: 字节跳动大模型",
-      "custom": "自定义 OpenAI 兼容模型"
-    }
-  },
   "turnOutcome": {
     "maxIterationsTitle": "已达最大迭代次数",
     "maxIterationsDesc": "Agent 已达到本轮最大迭代次数上限，本轮已停止。如需继续，请发送新消息。",
@@ -725,6 +634,8 @@
     "budgetExceededDesc": "本轮 Token 用量已超出预设预算，已自动停止。",
     "executionErrorTitle": "执行出现错误",
     "executionErrorDesc": "Agent 执行过程中出现错误，本轮已中止。请重试或检查设置。",
+    "cancelledTitle": "已取消",
+    "cancelledDesc": "本轮已被用户取消。",
     "successSummaryTitle": "Turn 完成",
     "successSummaryDesc": "共消耗 {{tokens}} tokens，估算费用 ${{cost}}。"
   },
@@ -858,7 +769,8 @@
       "singleHint": "1 条待处理消息",
       "batchHint": "{{count}} 条待处理消息",
       "removeAria": "移除这条待处理消息",
-      "attachmentsCount": "{{count}} 个附件"
+      "attachmentsCount": "{{count}} 个附件",
+      "attachmentOnly": "附件"
     }
   },
   "ExpertTeams": {
@@ -922,9 +834,6 @@
     "myEmployees": "我的数字员工",
     "syncServer": "同步服务端",
     "syncing": "同步中...",
-    "syncDone": "同步完成，更新 {{count}} 个模板",
-    "syncUpToDate": "已是最新",
-    "syncFailed": "同步失败",
     "templateMarket": "员工市场",
     "todayFeed": "今日动态",
     "viewAll": "查看全部",
@@ -1076,7 +985,6 @@
     "noMatchDesc": "\"{{query}}\" 下没找到技能。试试切到\"全部\"或换个关键词。",
     "noSkillsInCategory": "该分类下还没有技能",
     "noSkillsInCategoryDesc": "试试\"全部\"或\"本地\"分类；或者点右上角\"+ 导入技能\"选一个本地技能目录上传。",
-    "builtin": "内置",
     "custom": "自定义",
     "sourceUser": "自定义",
     "sourceTenant": "企业推送",
@@ -1582,6 +1490,131 @@
       }
     },
     "itemCount": "共 {{count}} 条",
-    "newButton": "新建"
+    "newButton": "新建",
+    "template": {
+      "useThis": "用此模板"
+    },
+    "row": {
+      "nextFireLabel": "下次：",
+      "status": {
+        "active": "已启用",
+        "paused": "已暂停",
+        "completed": "已完成",
+        "orphaned": "组织者缺失",
+        "cancelled": "已取消"
+      },
+      "actions": {
+        "restore": "恢复",
+        "purge": "永久删除",
+        "runNow": "立即运行",
+        "resume": "启用",
+        "pause": "暂停",
+        "edit": "编辑",
+        "cancel": "取消",
+        "restoreAria": "恢复 {{title}}",
+        "purgeAria": "永久删除 {{title}}",
+        "runNowAria": "立即运行 {{title}}",
+        "resumeAria": "启用 {{title}}",
+        "pauseAria": "暂停 {{title}}",
+        "editAria": "编辑 {{title}}",
+        "cancelAria": "取消 {{title}}"
+      }
+    },
+    "frequency": {
+      "noun": {
+        "daily": "天",
+        "weekly": "周",
+        "monthly": "月",
+        "yearly": "年"
+      },
+      "intervalOne": {
+        "daily": "每天",
+        "weekly": "每周",
+        "monthly": "每月",
+        "yearly": "每年"
+      },
+      "intervalN": "每 {{n}} {{unit}}",
+      "endCount": "，共 {{n}} 次",
+      "endUntil": "，至 {{date}}",
+      "withTime": "{{interval}} {{time}}"
+    },
+    "editor": {
+      "titleNew": "新建日程",
+      "titleEdit": "编辑日程",
+      "fields": {
+        "title": "标题",
+        "promptPlaceholder": "到点要做什么？",
+        "promptAria": "Prompt",
+        "frequency": "频率",
+        "intervalEvery": "每 N {{unit}}",
+        "intervalAria": "间隔",
+        "endCondition": "结束条件",
+        "endCountAria": "结束次数",
+        "endUntilAria": "结束日期",
+        "startTime": "开始时间",
+        "workspace": "工作目录",
+        "workspaceDefault": "使用应用当前工作目录",
+        "workspaceHint": "触发时会把该目录授权给新对话；留空则跟随应用当前选中的工作目录。",
+        "pickWorkspaceAria": "选择工作目录",
+        "pick": "选择",
+        "pickDialogTitle": "选择此日程触发时使用的工作目录"
+      },
+      "freqOptions": {
+        "oneShot": "一次性",
+        "daily": "每天",
+        "weekly": "每周",
+        "monthly": "每月",
+        "yearly": "每年"
+      },
+      "endOptions": {
+        "never": "永不结束",
+        "count": "N 次后结束",
+        "until": "到日期"
+      },
+      "actions": {
+        "cancel": "取消",
+        "save": "保存"
+      }
+    },
+    "detail": {
+      "tabs": {
+        "overview": "概览",
+        "history": "执行历史",
+        "settings": "设置"
+      },
+      "labels": {
+        "organizer": "组织者",
+        "frequency": "频率",
+        "nextFire": "下次触发",
+        "status": "状态",
+        "workspace": "工作目录"
+      },
+      "workspaceDefault": "使用应用当前目录",
+      "historyEmpty": "暂无执行记录",
+      "editButton": "编辑"
+    }
+  },
+  "changelog": {
+    "whatsNew": "更新内容 v{{version}}",
+    "noChanges": "暂无更新内容",
+    "ok": "知道了"
+  },
+  "dataTable": {
+    "truncatedFooter": "显示 {{shown}} / {{total}} 行",
+    "expandedFooter": "已显示全部 {{total}} 行",
+    "empty": "暂无数据",
+    "collapse": "折叠",
+    "expandAll": "展开全部",
+    "copyCsv": "复制为 CSV（按住 Shift 复制为 TSV）",
+    "copyTsv": "复制为 TSV"
+  },
+  "legal": {
+    "terms": {
+      "title": "AI小家软件许可及服务协议"
+    },
+    "privacy": {
+      "title": "AI小家隐私政策"
+    },
+    "dialogTitleFallback": "协议文档"
   }
 }

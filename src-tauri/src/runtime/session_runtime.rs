@@ -860,6 +860,7 @@ mod tests {
                     tokens_out: 0,
                     cache_creation_input_tokens: 0,
                     cache_read_input_tokens: 0,
+                    thinking_blocks: Vec::new(),
                 }),
                 _ => Ok(LlmStepResult::ContentComplete {
                     content: "done".to_string(),
@@ -868,6 +869,7 @@ mod tests {
                     cache_creation_input_tokens: 0,
                     cache_read_input_tokens: 0,
                     stop_reason: Some("end_turn".to_string()),
+                    thinking_blocks: Vec::new(),
                 }),
             }
         }
@@ -879,6 +881,8 @@ mod tests {
             _tool_calls: &[serde_json::Value],
             _generated_file_ids: &[String],
             _file_metas: &[serde_json::Value],
+            _thinking_blocks: &[serde_json::Value],
+            _error: Option<&crate::storage::file_store::types::MessageError>,
         ) -> anyhow::Result<String, TurnError> {
             Ok("assistant-msg".to_string())
         }

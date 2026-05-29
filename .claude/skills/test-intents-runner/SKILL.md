@@ -231,7 +231,7 @@ tauri-pilot aijia health-check --json
 | 命令 | 作用 |
 |---|---|
 | `aijia where` | dump 现场 `{url, title, route, activeConversationId, messageCount, isStreaming, hasEditor}`——**失败时第一步跑这个** |
-| `aijia screenshot [--name <label>]` | 截图到 `/tmp/aijia-e2e-{label}-{ts}.png` |
+| `aijia screenshot [--label <label>]` | 截图到 `/tmp/aijia-e2e-{label}-{ts}.png` |
 | `aijia health-check` | app ready 探测（启动后第一个跑） |
 
 #### 未实现（不要在 rules.md 里依赖）
@@ -332,6 +332,12 @@ agent 跑意图时遇到新陷阱 / 新诊断套路 / 新容忍判定，**在报
 实战来源：项目记忆 task 意图 2，SearchMemory 完成后到 ReadFile 触发之间空档 **3 分 37 秒**（07:43:15 → 07:46:52），跨 workspace 路径访问的授权弹窗在等同意。`wait-reply` 阻塞期间无法看到弹窗，必须先 `aijia where --json` + screenshot。
 
 **长期方向**：`aijia` 应加 `auto-approve-permissions` / 启动期 e2e 模式禁用所有需要交互的 permission ask，避免每次跑测都被弹窗截胡。
+
+### 5.13 `aijia new-task` 切到 home 路由，conv id 懒创建
+
+`aijia new-task` 调用后立刻 `aijia where --json` 拿到 `route: "home"`、`sessionId: null`（或 stale 的上一个 active sessionId）、stale 的 `messageCount`。新对话 ID 要等 `aijia send` 真把第一条消息发出去后才生成。rules.md 写"新建对话"步骤的 CLI 序列必须是 `new-task` → `type-message` → `send`，**send 之后**再 `where --json` 才能取到新 `sessionId` 作为 `$CONV_ID`。
+
+实战来源：意图-对话-001 跑测（2026-05-29），new-task 后 where 返回 home + stale `messageCount=162`（上一个 active conv 的字段），send 后才出现新 conv id。
 
 ## 6. 环境契约
 

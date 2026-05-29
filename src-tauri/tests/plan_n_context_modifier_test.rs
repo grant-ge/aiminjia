@@ -219,7 +219,7 @@ impl RuntimeLlmExecutor for RecordingExecutor {
                 tokens_in: 0,
                 tokens_out: 0,
                 cache_creation_input_tokens: 0,
-                cache_read_input_tokens: 0,
+                cache_read_input_tokens: 0, thinking_blocks: Vec::new(),
                 stop_reason: Some("end_turn".to_string()),
             })
         } else {
@@ -233,7 +233,7 @@ impl RuntimeLlmExecutor for RecordingExecutor {
         _content: &str,
         _tool_calls: &[serde_json::Value],
         _generated_file_ids: &[String],
-        _file_metas: &[serde_json::Value],
+        _file_metas: &[serde_json::Value], _thinking_blocks: &[serde_json::Value],
     ) -> Result<String, TurnError> {
         Ok("mock-msg-id".to_string())
     }
@@ -260,14 +260,14 @@ async fn driver_appends_context_modifier_message_after_tool_result() {
             tokens_in: 0,
             tokens_out: 0,
             cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 0,
+            cache_read_input_tokens: 0, thinking_blocks: Vec::new(),
         },
         LlmStepResult::ContentComplete {
             content: "ok".to_string(),
             tokens_in: 0,
             tokens_out: 0,
             cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 0,
+            cache_read_input_tokens: 0, thinking_blocks: Vec::new(),
             stop_reason: Some("end_turn".to_string()),
         },
     ]));

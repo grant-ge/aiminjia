@@ -66,14 +66,27 @@ pub fn finalize_content(
     }
 
     // 2. Provide a fallback when the LLM returned absolutely nothing.
-    if full_content.trim().is_empty() && !stream_cancelled {
-        log::warn!(
-            "[post_process] LLM returned empty content (iterations={})",
-            iteration_count,
-        );
-        *full_content =
-            "抱歉，模型未能生成回复。可能原因：内容限制、网络问题或服务暂时不可用。请尝试换一种方式提问。"
-                .to_string();
+    //    Two distinct cases:
+    //    (a) user cancelled → write a 已取消 placeholder so the message row is
+    //        not blank after refresh (in-memory TurnSummaryBadge shows the
+    //        same state during the current session).
+    //    (b) LLM truly returned empty → standard error fallback.
+    if full_content.trim().is_empty() {
+        if stream_cancelled {
+            log::info!(
+                "[post_process] empty content + stream_cancelled — writing cancel placeholder (iterations={})",
+                iteration_count,
+            );
+            *full_content = "（已取消）".to_string();
+        } else {
+            log::warn!(
+                "[post_process] LLM returned empty content (iterations={})",
+                iteration_count,
+            );
+            *full_content =
+                "抱歉，模型未能生成回复。可能原因：内容限制、网络问题或服务暂时不可用。请尝试换一种方式提问。"
+                    .to_string();
+        }
     }
 
     // 3. Strip hallucinated XML function-call blocks before saving.
@@ -109,11 +122,20 @@ mod tests {
     }
 
     #[test]
-    fn no_fallback_when_empty_but_cancelled() {
+    fn cancel_placeholder_written_when_empty_and_cancelled() {
         let mut content = String::new();
         finalize_content(&mut content, 1, 10, true);
-        // stream was cancelled → no fallback, content stays empty (after strip)
-        assert!(content.is_empty());
+        // stream was cancelled with no content → write 已取消 placeholder so the
+        // persisted final message is not blank after refresh.
+        assert_eq!(content, "（已取消）");
+    }
+
+    #[test]
+    fn cancel_does_not_overwrite_existing_content() {
+        let mut content = "Partial response before cancel.".to_string();
+        finalize_content(&mut content, 1, 10, true);
+        // If LLM already produced text before cancel, keep it.
+        assert_eq!(content, "Partial response before cancel.");
     }
 
     #[test]

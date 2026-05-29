@@ -96,7 +96,7 @@ export interface StreamingErrorPayload {
 export interface StreamingRetryResetPayload {
   conversationId: string
   runId?: string
-  reason?: 'upstream_busy' | 'rate_limited' | 'network_flap'
+  reason?: 'upstream_busy' | 'rate_limited' | 'network_flap' | 'fallback_to_non_stream'
 }
 
 export interface AgentIdlePayload {

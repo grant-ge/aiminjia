@@ -92,6 +92,13 @@ export interface StreamingState {
   setConversationStreaming: (convId: string, isStreaming: boolean) => void
   appendConversationStreamingContent: (convId: string, delta: string) => void
   clearConversationStreamState: (convId: string) => void
+  /**
+   * 仅清空 streamingContent 字段，不动 isStreaming/busyConversations/toolExecutions。
+   * 用于 iter assistant message 持久化时——该 iter 的文本已落到 messages，避免被下一个
+   * iter 的 streaming:delta 累积成"text1text2text3"；但 turn 还在进行中，loading 状态
+   * 和正在 executing 的工具不能清。
+   */
+  clearConversationStreamingTextOnly: (convId: string) => void
   resetConversationStreamContent: (convId: string) => void
   deleteConversationStreamState: (convId: string) => void
   addConversationToolExecution: (convId: string, exec: ToolExecution) => void
@@ -276,6 +283,18 @@ export function createStreamingSlice<T extends StreamingState & StreamingSliceBr
         const streamStates = {
           ...state.streamStates,
           [convId]: { isStreaming: true, streamingContent: '', toolExecutions: [] },
+        }
+        const legacy = deriveLegacy(state.activeConversationId, streamStates)
+        return { streamStates, ...legacy } as Partial<T>
+      }),
+
+    clearConversationStreamingTextOnly: (convId) =>
+      apply((state) => {
+        const previous = state.streamStates[convId]
+        if (!previous || previous.streamingContent === '') return {} as Partial<T>
+        const streamStates = {
+          ...state.streamStates,
+          [convId]: { ...previous, streamingContent: '' },
         }
         const legacy = deriveLegacy(state.activeConversationId, streamStates)
         return { streamStates, ...legacy } as Partial<T>

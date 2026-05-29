@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import {
   type AgendaItem,
@@ -30,6 +31,7 @@ export function AgendaItemDetail({
   onClose,
   onChanged,
 }: AgendaItemDetailProps) {
+  const { t, i18n } = useTranslation()
   const [occs, setOccs] = useState<Occurrence[]>([])
   const [editorOpen, setEditorOpen] = useState(false)
 
@@ -60,23 +62,34 @@ export function AgendaItemDetail({
           </SheetHeader>
           <Tabs defaultValue="overview" className="flex flex-col gap-3">
             <TabsList>
-              <TabsTrigger value="overview">概览</TabsTrigger>
-              <TabsTrigger value="history">执行历史</TabsTrigger>
-              <TabsTrigger value="settings">设置</TabsTrigger>
+              <TabsTrigger value="overview">{t('schedules.detail.tabs.overview')}</TabsTrigger>
+              <TabsTrigger value="history">{t('schedules.detail.tabs.history')}</TabsTrigger>
+              <TabsTrigger value="settings">{t('schedules.detail.tabs.settings')}</TabsTrigger>
             </TabsList>
             <TabsContent value="overview" className="space-y-2">
-              <Row label="组织者" value={item.organizerEmployeeId} />
               <Row
-                label="频率"
-                value={describeFrequency(item.rule, item.startAt, item.timezone)}
+                label={t('schedules.detail.labels.organizer')}
+                value={item.organizerEmployeeId}
               />
-              <Row label="下次触发" value={item.nextFireAt ?? '-'} />
-              <Row label="状态" value={item.status} />
-              <Row label="工作目录" value={item.workspacePath ?? '使用应用当前目录'} />
+              <Row
+                label={t('schedules.detail.labels.frequency')}
+                value={describeFrequency(item.rule, item.startAt, item.timezone, t, i18n.language)}
+              />
+              <Row label={t('schedules.detail.labels.nextFire')} value={item.nextFireAt ?? '-'} />
+              <Row
+                label={t('schedules.detail.labels.status')}
+                value={t(`schedules.row.status.${item.status}`)}
+              />
+              <Row
+                label={t('schedules.detail.labels.workspace')}
+                value={item.workspacePath ?? t('schedules.detail.workspaceDefault')}
+              />
             </TabsContent>
             <TabsContent value="history" className="space-y-1">
               {occs.length === 0 ? (
-                <div className="text-xs text-muted-foreground">暂无执行记录</div>
+                <div className="text-xs text-muted-foreground">
+                  {t('schedules.detail.historyEmpty')}
+                </div>
               ) : (
                 occs.map((o) => (
                   <div
@@ -93,7 +106,9 @@ export function AgendaItemDetail({
               )}
             </TabsContent>
             <TabsContent value="settings">
-              <Button onClick={() => setEditorOpen(true)}>编辑</Button>
+              <Button onClick={() => setEditorOpen(true)}>
+                {t('schedules.detail.editButton')}
+              </Button>
             </TabsContent>
           </Tabs>
         </SheetContent>

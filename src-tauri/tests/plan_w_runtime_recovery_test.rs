@@ -70,6 +70,7 @@ impl RuntimeLlmExecutor for RecordingExecutor {
         _tool_calls: &[serde_json::Value],
         _generated_file_ids: &[String],
         _file_metas: &[Value],
+        _thinking_blocks: &[Value],
     ) -> Result<String, TurnError> {
         Ok("assistant-msg".to_string())
     }
@@ -87,7 +88,7 @@ async fn w2_max_tokens_injects_resume_message_and_completes() {
             tokens_in: 5,
             tokens_out: 7,
             cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 0,
+            cache_read_input_tokens: 0, thinking_blocks: Vec::new(),
             stop_reason: Some("max_tokens".to_string()),
         },
         LlmStepResult::ContentComplete {
@@ -95,7 +96,7 @@ async fn w2_max_tokens_injects_resume_message_and_completes() {
             tokens_in: 3,
             tokens_out: 4,
             cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 0,
+            cache_read_input_tokens: 0, thinking_blocks: Vec::new(),
             stop_reason: Some("end_turn".to_string()),
         },
     ]));
@@ -161,7 +162,7 @@ async fn w2_max_tokens_recovery_stops_after_limit_and_keeps_partial_content() {
                 tokens_in: 1,
                 tokens_out: 1,
                 cache_creation_input_tokens: 0,
-                cache_read_input_tokens: 0,
+                cache_read_input_tokens: 0, thinking_blocks: Vec::new(),
                 stop_reason: Some("max_tokens".to_string()),
             })
             .collect(),
@@ -213,7 +214,7 @@ async fn w3_stop_hook_blocking_errors_drive_new_llm_turn_once() {
             tokens_in: 1,
             tokens_out: 1,
             cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 0,
+            cache_read_input_tokens: 0, thinking_blocks: Vec::new(),
             stop_reason: Some("end_turn".to_string()),
         },
         LlmStepResult::ContentComplete {
@@ -221,7 +222,7 @@ async fn w3_stop_hook_blocking_errors_drive_new_llm_turn_once() {
             tokens_in: 1,
             tokens_out: 1,
             cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 0,
+            cache_read_input_tokens: 0, thinking_blocks: Vec::new(),
             stop_reason: Some("end_turn".to_string()),
         },
     ]));
@@ -273,7 +274,7 @@ async fn w4_orphaned_permission_is_cancelled_and_event_emitted() {
             tokens_in: 1,
             tokens_out: 1,
             cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 0,
+            cache_read_input_tokens: 0, thinking_blocks: Vec::new(),
             stop_reason: Some("end_turn".to_string()),
         },
     ]));

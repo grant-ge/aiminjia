@@ -35,6 +35,7 @@ fn replace_and_get_round_trip() {
 
     let store = ConvJsonAuthorizedWorkspaceStore {
         storage: storage.clone(),
+        cus: None,
     };
     let sid = SessionId::new(conv_id.to_string());
     let ws = make_ws(conv_id, "/tmp/foo", "foo");
@@ -57,6 +58,7 @@ fn clear_for_session_removes_workspace() {
 
     let store = ConvJsonAuthorizedWorkspaceStore {
         storage: storage.clone(),
+        cus: None,
     };
     let sid = SessionId::new(conv_id.to_string());
     let ws = make_ws(conv_id, "/tmp/bar", "bar");
@@ -75,6 +77,7 @@ fn replace_overwrites_previous() {
 
     let store = ConvJsonAuthorizedWorkspaceStore {
         storage: storage.clone(),
+        cus: None,
     };
     let sid = SessionId::new(conv_id.to_string());
 
@@ -101,6 +104,7 @@ fn workspace_mirrors_to_index_json() {
 
     let store = ConvJsonAuthorizedWorkspaceStore {
         storage: storage.clone(),
+        cus: None,
     };
     store
         .replace_for_session(conv_id, &make_ws(conv_id, "/tmp/proj", "proj"))

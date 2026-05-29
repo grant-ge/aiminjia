@@ -6,7 +6,7 @@
  * tripped our earlier hand-rolled ResizeObserver.
  */
 import { ArrowDown } from 'lucide-react'
-import { useCallback, useLayoutEffect, useRef } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef } from 'react'
 import { useStickToBottom } from 'use-stick-to-bottom'
 import { useChatStore } from '@/stores/chatStore'
 import { useSettingsStore } from '@/stores/settingsStore'
@@ -22,7 +22,7 @@ export function ChatArea({ expertTeamId }: ChatAreaProps = {}) {
   const activeConversationId = useChatStore((s) => s.activeConversationId)
   const chatWidthMode = useSettingsStore((s) => s.chatWidthMode ?? 'full')
 
-  const { scrollRef, contentRef, scrollToBottom, isNearBottom, escapedFromLock } =
+  const { scrollRef, contentRef, scrollToBottom, isNearBottom } =
     useStickToBottom({
       // 'instant' for both: streaming output should pin to bottom synchronously
       // every tick, like ChatGPT — spring physics here feels laggy when text
@@ -52,14 +52,28 @@ export function ChatArea({ expertTeamId }: ChatAreaProps = {}) {
     if (messages.length > 0) pendingHardJump.current = false
   })
 
-  // Show jump-to-bottom button only when the user has actively escaped the
-  // sticky lock (i.e. scrolled up themselves). `isNearBottom` alone would
-  // flicker during programmatic scrolls.
-  const showJumpToBottom = escapedFromLock && !isNearBottom
+  // 仅靠物理位置判定：下面有内容（>70px 距底）就显示按钮。
+  // 不再 gating 在 escapedFromLock 上——会漏掉 limbo 态（用户下滑但没滑够
+  // 70px 之内，lib 把 escapedFromLock 清回 false 但 isAtBottom 没续锁），
+  // 表现为下面明显还有内容却既不吸底也不出按钮。
+  const showJumpToBottom = !isNearBottom
 
   const jumpToBottom = useCallback(() => {
     void scrollToBottom({ animation: 'instant' })
   }, [scrollToBottom])
+
+  // 用户每发一条消息，强制吸底一次。scrollToBottom 不带 preserveScrollPosition
+  // 时会 setIsAtBottom(true)，等于把 lib 内部状态重置回干净基线——这一轮流式
+  // 之后 lib 自己的 ResizeObserver 续锁就能正常工作。覆盖 trackpad 反弹/
+  // scroll handler 竞速等场景下 state.isAtBottom 被脏置 false 的情况。
+  const lastUserMsgIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    const last = messages[messages.length - 1]
+    if (!last || last.role !== 'user') return
+    if (lastUserMsgIdRef.current === last.id) return
+    lastUserMsgIdRef.current = last.id
+    void scrollToBottom({ animation: 'instant' })
+  }, [messages, scrollToBottom])
 
   return (
     <div className="relative flex min-h-0 flex-1">
