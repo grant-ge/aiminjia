@@ -9,6 +9,7 @@ export type LlmProvider = 'deepseek-v3' | 'qwen-plus' | 'volcano' | 'openai' | '
 export type DataMaskingLevel = 'strict' | 'standard' | 'relaxed'
 export type FontScale = 'small' | 'medium' | 'large'
 export type ChatWidthMode = 'centered' | 'full'
+export type CloudGatewayMode = 'legacy' | 'v2'
 
 export interface Settings {
   primaryModel: LlmProvider
@@ -24,6 +25,7 @@ export interface Settings {
   customModelName: string
   cloudModel: string
   cloudModelType: string
+  cloudGatewayMode: CloudGatewayMode
   personaOnboardingDone?: boolean
   appLanguage?: AppLanguage
   fontScale?: FontScale
@@ -47,6 +49,7 @@ export const DEFAULT_SETTINGS: Settings = {
   customModelName: '',
   cloudModel: '',
   cloudModelType: '',
+  cloudGatewayMode: 'legacy',
   personaOnboardingDone: false,
   appLanguage: 'zh-CN',
   fontScale: 'medium',

@@ -136,7 +136,10 @@ pub fn purge_auth_state(home: &AiJiaHome) -> std::io::Result<()> {
     }
 
     if remove_cloud_auth_from_legacy_config(home.root())? {
-        purged.push(format!("{}::cloud_auth", home.root().join("config.json").display()));
+        purged.push(format!(
+            "{}::cloud_auth",
+            home.root().join("config.json").display()
+        ));
     }
 
     if !purged.is_empty() {
@@ -237,12 +240,18 @@ mod tests {
 
         let purged = ensure_compatible(&home, Some(&new_ss));
         assert!(purged, "stale blob should be purged");
-        assert!(!home.cloud_auth_path().exists(), "cloud_auth file must be gone");
+        assert!(
+            !home.cloud_auth_path().exists(),
+            "cloud_auth file must be gone"
+        );
         assert_eq!(read_on_disk(&home), REQUIRED_DATA_VERSION);
 
         // Critical: legacy source emptied so bootstrap won't resurrect it.
         let legacy_text = fs::read_to_string(home.root().join("config.json")).unwrap();
-        assert!(!legacy_text.contains("cloud_auth"), "legacy cloud_auth key must be removed");
+        assert!(
+            !legacy_text.contains("cloud_auth"),
+            "legacy cloud_auth key must be removed"
+        );
         // Other legacy keys preserved.
         assert!(legacy_text.contains("theme"));
     }

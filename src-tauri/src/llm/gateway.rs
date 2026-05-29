@@ -42,7 +42,7 @@ pub fn thinking_config_for_route(
     route: &RouteResult,
     settings: &AppSettings,
 ) -> Option<ThinkingConfig> {
-    if route.provider != "claude" {
+    if route.provider != "claude" && route.provider != "aijia-v2" {
         return None;
     }
 
@@ -54,6 +54,40 @@ pub fn thinking_config_for_route(
         "disabled" => Some(ThinkingConfig::Disabled),
         _ => Some(ThinkingConfig::Disabled),
     }
+}
+
+pub(crate) fn format_llm_error_diagnostics(err: &anyhow::Error) -> String {
+    let mut parts = vec![err.to_string()];
+
+    for (idx, cause) in err.chain().enumerate().skip(1) {
+        parts.push(format!("caused_by[{idx}]: {cause}"));
+    }
+
+    for cause in err.chain() {
+        if let Some(reqwest_err) = cause.downcast_ref::<reqwest::Error>() {
+            let status = reqwest_err
+                .status()
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "-".to_string());
+            let url = reqwest_err
+                .url()
+                .map(|u| u.as_str().to_string())
+                .unwrap_or_else(|| "-".to_string());
+            parts.push(format!(
+                "reqwest: timeout={} connect={} request={} body={} decode={} status={} url={}",
+                reqwest_err.is_timeout(),
+                reqwest_err.is_connect(),
+                reqwest_err.is_request(),
+                reqwest_err.is_body(),
+                reqwest_err.is_decode(),
+                status,
+                url
+            ));
+            break;
+        }
+    }
+
+    parts.join("; ")
 }
 
 fn attach_anthropic_multimodal_turn(
@@ -133,12 +167,34 @@ fn apply_cloud_gateway_mode(route: &mut RouteResult, settings: &AppSettings) {
         return;
     }
 
-    match settings.cloud_gateway_mode {
-        CloudGatewayMode::V2 | CloudGatewayMode::Auto => {
-            route.provider = "aijia-v2".to_string();
-        }
-        CloudGatewayMode::Legacy => {}
+    if settings.cloud_gateway_mode == CloudGatewayMode::V2 {
+        route.provider = "aijia-v2".to_string();
     }
+}
+
+fn gate_log_expected_for_route(route: &RouteResult) -> bool {
+    route.provider == "aijia-v2"
+}
+
+fn route_log_summary(
+    task_type: &router::TaskType,
+    route: &RouteResult,
+    settings: &AppSettings,
+    conversation_id: Option<&str>,
+    run_id: Option<&str>,
+) -> String {
+    format!(
+        "[llm-route] task={:?} provider={} model_type={} model_hint={} tools={} cloud_gateway_mode={:?} gate_log_expected={} conv={} run={}",
+        task_type,
+        route.provider,
+        route.model_type,
+        route.model_hint,
+        route.use_tools,
+        settings.cloud_gateway_mode,
+        gate_log_expected_for_route(route),
+        conversation_id.filter(|s| !s.is_empty()).unwrap_or("-"),
+        run_id.filter(|s| !s.is_empty()).unwrap_or("-"),
+    )
 }
 
 fn is_retryable_error(err: &anyhow::Error) -> bool {
@@ -305,9 +361,7 @@ impl LlmGateway {
             trace_id: trace_id
                 .filter(|id| !id.is_empty())
                 .map(|id| id.to_string()),
-            run_id: run_id
-                .filter(|id| !id.is_empty())
-                .map(|id| id.to_string()),
+            run_id: run_id.filter(|id| !id.is_empty()).map(|id| id.to_string()),
         }
     }
 
@@ -462,10 +516,8 @@ impl LlmGateway {
         apply_cloud_gateway_mode(&mut route, settings);
 
         log::info!(
-            "Routing task {:?} to provider '{}' (tools={})",
-            task_type,
-            route.provider,
-            route.use_tools
+            "{}",
+            route_log_summary(&task_type, &route, settings, conversation_id, run_id)
         );
 
         // 2. Apply data masking
@@ -641,9 +693,8 @@ impl LlmGateway {
         }
 
         log::info!(
-            "Sending (non-stream) task {:?} to provider '{}'",
-            task_type,
-            route.provider
+            "{}",
+            route_log_summary(&task_type, &route, settings, None, None)
         );
 
         // 2. Apply data masking
@@ -732,7 +783,10 @@ impl LlmGateway {
         let mut mask_ctx = MaskingContext::new(masking_level);
         let mut masked_messages = mask_ctx.mask_messages(&messages);
         if provider_resolves_to_lotus(&route.provider) {
-            attach_anthropic_multimodal_turn(&mut masked_messages, anthropic_multimodal_turn.clone());
+            attach_anthropic_multimodal_turn(
+                &mut masked_messages,
+                anthropic_multimodal_turn.clone(),
+            );
         }
 
         let segments = if system_segments.is_empty() {
@@ -858,7 +912,7 @@ async fn retry_dispatch_stream(route: &RouteResult, request: LlmRequest) -> Resu
                         attempt + 1,
                         MAX_RETRIES + 1,
                         delay,
-                        e
+                        format_llm_error_diagnostics(&e)
                     );
                     tokio::time::sleep(delay).await;
                     last_err = Some(e);
@@ -867,7 +921,7 @@ async fn retry_dispatch_stream(route: &RouteResult, request: LlmRequest) -> Resu
                         log::error!(
                             "[retry] dispatch_stream failed after {} attempts: {}",
                             attempt + 1,
-                            e
+                            format_llm_error_diagnostics(&e)
                         );
                     }
                     return Err(e);
@@ -906,7 +960,7 @@ async fn retry_dispatch_send(route: &RouteResult, request: LlmRequest) -> Result
                         attempt + 1,
                         MAX_RETRIES + 1,
                         delay,
-                        e
+                        format_llm_error_diagnostics(&e)
                     );
                     tokio::time::sleep(delay).await;
                     last_err = Some(e);
@@ -915,7 +969,7 @@ async fn retry_dispatch_send(route: &RouteResult, request: LlmRequest) -> Result
                         log::error!(
                             "[retry] dispatch_send failed after {} attempts: {}",
                             attempt + 1,
-                            e
+                            format_llm_error_diagnostics(&e)
                         );
                     }
                     return Err(e);
@@ -1108,6 +1162,22 @@ mod tests {
     }
 
     #[test]
+    fn format_llm_error_diagnostics_includes_error_chain() {
+        let err = anyhow::anyhow!(std::io::Error::new(
+            std::io::ErrorKind::ConnectionReset,
+            "connection reset by peer"
+        ))
+        .context(
+            "error sending request for url (https://ai-tenant.renlijia.com/aijia/v2/ai/responses)",
+        );
+
+        let formatted = format_llm_error_diagnostics(&err);
+
+        assert!(formatted.contains("error sending request for url"));
+        assert!(formatted.contains("caused_by[1]: connection reset by peer"));
+    }
+
+    #[test]
     fn build_request_inserts_dynamic_context_after_existing_system_message() {
         let route = RouteResult {
             provider: "openai".to_string(),
@@ -1184,6 +1254,81 @@ mod tests {
 
         assert_eq!(lotus_route.provider, "aijia-v2");
         assert_eq!(custom_route.provider, "custom");
+    }
+
+    #[test]
+    fn route_log_summary_marks_gate_log_expectation() {
+        let settings = AppSettings {
+            cloud_gateway_mode: CloudGatewayMode::Legacy,
+            ..AppSettings::default()
+        };
+        let legacy_route = RouteResult {
+            provider: "lotus".to_string(),
+            api_key: "session".to_string(),
+            model_hint: "claude-sonnet".to_string(),
+            use_tools: true,
+            endpoint_url: String::new(),
+            model_type: "chat".to_string(),
+        };
+        let v2_route = RouteResult {
+            provider: "aijia-v2".to_string(),
+            api_key: "session".to_string(),
+            model_hint: "claude-sonnet".to_string(),
+            use_tools: true,
+            endpoint_url: String::new(),
+            model_type: "chat".to_string(),
+        };
+
+        let legacy = route_log_summary(
+            &router::TaskType::General,
+            &legacy_route,
+            &settings,
+            Some("conv-1"),
+            Some("run-1"),
+        );
+        let v2 = route_log_summary(
+            &router::TaskType::General,
+            &v2_route,
+            &settings,
+            Some("conv-1"),
+            Some("run-1"),
+        );
+
+        assert!(legacy.contains("provider=lotus"));
+        assert!(legacy.contains("gate_log_expected=false"));
+        assert!(legacy.contains("conv=conv-1"));
+        assert!(legacy.contains("run=run-1"));
+        assert!(v2.contains("provider=aijia-v2"));
+        assert!(v2.contains("gate_log_expected=true"));
+    }
+
+    #[test]
+    fn thinking_config_remains_v2_only_for_cloud_gateway() {
+        let settings = AppSettings {
+            thinking_type: "enabled".to_string(),
+            thinking_budget_tokens: 8192,
+            ..AppSettings::default()
+        };
+        let lotus_route = RouteResult {
+            provider: "lotus".to_string(),
+            api_key: "session".to_string(),
+            model_hint: String::new(),
+            use_tools: true,
+            endpoint_url: String::new(),
+            model_type: "chat".to_string(),
+        };
+        let v2_route = RouteResult {
+            provider: "aijia-v2".to_string(),
+            ..lotus_route.clone()
+        };
+
+        assert_eq!(thinking_config_for_route(&lotus_route, &settings), None);
+        assert_eq!(
+            thinking_config_for_route(&v2_route, &settings),
+            Some(ThinkingConfig::Enabled {
+                budget_tokens: 8192
+            })
+        );
     }
 
     #[test]

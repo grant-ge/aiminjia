@@ -15,7 +15,7 @@ use tokio::sync::Mutex;
 
 use app_lib::runtime::agent::inbox::{AgentInbox, InboxItem, MessageSource};
 use app_lib::runtime::agent::output_writer::{
-    read_from, AgentTranscriptMeta, TranscriptKind, transcript_path_for_kind,
+    read_from, transcript_path_for_kind, AgentTranscriptMeta, TranscriptKind,
 };
 use app_lib::runtime::agent::team::{Member, MemberRole, Team};
 use app_lib::runtime::agent::worker_runtime::{run_worker, TeammateWorkerCtx, WorkerMode};
@@ -63,7 +63,7 @@ fn make_meta(agent_id: &str, agent_name: &str) -> AgentTranscriptMeta {
         model: None,
         is_async: true,
         boot_system_prompt: None,
-            tool_whitelist: vec![],
+        tool_whitelist: vec![],
     }
 }
 
@@ -106,13 +106,25 @@ async fn cancel_triggers_cleanup_removes_teammate_and_unregisters_name() {
     let name_registry = AgentNameRegistry::new();
     // Pre-register the name so we can verify it gets unregistered.
     name_registry
-        .register(&SessionId::new(session_id), TEAM_NAME, agent_name, agent_id.clone())
+        .register(
+            &SessionId::new(session_id),
+            TEAM_NAME,
+            agent_name,
+            agent_id.clone(),
+        )
         .await
         .unwrap();
 
     let cancel = CancellationToken::new();
     let inbox = AgentInbox::new(4);
-    let ctx = make_ctx(&tmp, agent_id.clone(), session_id, inbox.clone(), name_registry.clone(), cancel.clone());
+    let ctx = make_ctx(
+        &tmp,
+        agent_id.clone(),
+        session_id,
+        inbox.clone(),
+        name_registry.clone(),
+        cancel.clone(),
+    );
 
     // Spawn the idle loop.
     let team_clone = team.clone();
@@ -172,7 +184,14 @@ async fn chat_message_received_writes_transcript_lines() {
     let name_registry = AgentNameRegistry::new();
     let cancel = CancellationToken::new();
     let inbox = AgentInbox::new(4);
-    let ctx = make_ctx(&tmp, agent_id.clone(), session_id, inbox.clone(), name_registry.clone(), cancel.clone());
+    let ctx = make_ctx(
+        &tmp,
+        agent_id.clone(),
+        session_id,
+        inbox.clone(),
+        name_registry.clone(),
+        cancel.clone(),
+    );
 
     let conv_dir = ctx.conv_dir.clone().unwrap();
     let agent_id_str = agent_id.as_str().to_string();
@@ -215,8 +234,12 @@ async fn chat_message_received_writes_transcript_lines() {
         .expect("no panic");
 
     // Verify transcript JSONL exists and has content.
-    let transcript_path =
-        transcript_path_for_kind(&conv_dir, &TranscriptKind::Teammate, TEAM_NAME, &agent_id_str);
+    let transcript_path = transcript_path_for_kind(
+        &conv_dir,
+        &TranscriptKind::Teammate,
+        TEAM_NAME,
+        &agent_id_str,
+    );
     assert!(
         transcript_path.exists(),
         "transcript JSONL should have been written at {:?}",
@@ -250,7 +273,12 @@ async fn inbox_close_causes_graceful_exit() {
     let team = make_team(session_id, agent_id.clone(), agent_name);
     let name_registry = AgentNameRegistry::new();
     name_registry
-        .register(&SessionId::new(session_id), TEAM_NAME, agent_name, agent_id.clone())
+        .register(
+            &SessionId::new(session_id),
+            TEAM_NAME,
+            agent_name,
+            agent_id.clone(),
+        )
         .await
         .unwrap();
 
@@ -338,9 +366,7 @@ async fn heartbeat_updates_last_active_at() {
     // Record the initial last_active_at.
     let initial_last_active = {
         let g = team.lock().await;
-        g.find_by_name(agent_name)
-            .unwrap()
-            .last_active_at
+        g.find_by_name(agent_name).unwrap().last_active_at
     };
 
     let team_clone = team.clone();

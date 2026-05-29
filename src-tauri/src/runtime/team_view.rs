@@ -235,7 +235,11 @@ impl LifecycleByTeam {
     /// `agent_name` is in the given member set.  `member_names` should be
     /// the names of teammates registered to this team (from the on-disk
     /// `config.json` snapshot).
-    fn drain_for(&mut self, team_name: &str, member_names: &std::collections::HashSet<String>) -> Vec<TeamEvent> {
+    fn drain_for(
+        &mut self,
+        team_name: &str,
+        member_names: &std::collections::HashSet<String>,
+    ) -> Vec<TeamEvent> {
         let mut events = self.by_team.remove(team_name).unwrap_or_default();
         // Reattach stop events whose agent_name belongs to this team.
         // We mutate stops_by_agent_name in-place: each matching key is
@@ -622,7 +626,10 @@ mod tests {
         for s in &sessions {
             assert_eq!(s.members.len(), 1);
             assert!(matches!(s.members[0].agent_name.as_str(), "a" | "b"));
-            assert_eq!(s.team_id, format!("conv-1#{}", s.team_name.as_deref().unwrap()));
+            assert_eq!(
+                s.team_id,
+                format!("conv-1#{}", s.team_name.as_deref().unwrap())
+            );
             // live team：deleted_at 仍是 None。
             assert!(s.deleted_at.is_none());
         }
@@ -643,10 +650,17 @@ mod tests {
         TeamRegistry::mark_deleted_on_disk(&conv_dir, "alpha").unwrap();
 
         let sessions = scan_teams_dir(&conv_dir, "conv-deleted", &LifecycleByTeam::default());
-        assert_eq!(sessions.len(), 1, "soft-deleted team must still appear in overview");
+        assert_eq!(
+            sessions.len(),
+            1,
+            "soft-deleted team must still appear in overview"
+        );
         // RFC3339 字符串带 Z 时区，含 "T" 分隔——格式校验粗一点即可。
         let ts = sessions[0].deleted_at.as_deref().expect("deleted_at透传");
-        assert!(ts.contains('T'), "deleted_at should be RFC3339 string, got {ts}");
+        assert!(
+            ts.contains('T'),
+            "deleted_at should be RFC3339 string, got {ts}"
+        );
     }
 
     #[test]
@@ -676,7 +690,13 @@ mod tests {
         append_events_from_team_chat_jsonl(&mut out, &path, "alpha");
         assert_eq!(out.len(), 2);
         match &out[0] {
-            TeamEvent::SendMessage { from, to, text, variant, .. } => {
+            TeamEvent::SendMessage {
+                from,
+                to,
+                text,
+                variant,
+                ..
+            } => {
                 assert_eq!(from, "team-lead");
                 assert_eq!(to, "pro");
                 assert_eq!(text, "go");
@@ -709,7 +729,13 @@ mod tests {
         assert_eq!(out.len(), 4);
 
         match &out[0] {
-            TeamEvent::SendMessage { variant, reason, approve, feedback, .. } => {
+            TeamEvent::SendMessage {
+                variant,
+                reason,
+                approve,
+                feedback,
+                ..
+            } => {
                 assert_eq!(variant, "shutdown_request");
                 assert_eq!(reason.as_deref(), Some("task done"));
                 assert!(approve.is_none());
@@ -718,7 +744,13 @@ mod tests {
             _ => panic!("expected SendMessage[0]"),
         }
         match &out[1] {
-            TeamEvent::SendMessage { variant, approve, reason, feedback, .. } => {
+            TeamEvent::SendMessage {
+                variant,
+                approve,
+                reason,
+                feedback,
+                ..
+            } => {
                 assert_eq!(variant, "shutdown_response");
                 assert_eq!(*approve, Some(true));
                 assert!(reason.is_none());
@@ -727,7 +759,12 @@ mod tests {
             _ => panic!("expected SendMessage[1]"),
         }
         match &out[2] {
-            TeamEvent::SendMessage { variant, approve, reason, .. } => {
+            TeamEvent::SendMessage {
+                variant,
+                approve,
+                reason,
+                ..
+            } => {
                 assert_eq!(variant, "shutdown_response");
                 assert_eq!(*approve, Some(false));
                 assert_eq!(reason.as_deref(), Some("still working"));
@@ -735,7 +772,12 @@ mod tests {
             _ => panic!("expected SendMessage[2]"),
         }
         match &out[3] {
-            TeamEvent::SendMessage { variant, approve, feedback, .. } => {
+            TeamEvent::SendMessage {
+                variant,
+                approve,
+                feedback,
+                ..
+            } => {
                 assert_eq!(variant, "plan_approval_response");
                 assert_eq!(*approve, Some(false));
                 assert_eq!(feedback.as_deref(), Some("missed edge"));
@@ -787,7 +829,11 @@ mod tests {
             ["analyst".to_string()].into_iter().collect();
 
         let alpha_events = lc.drain_for("alpha", &alpha_members);
-        assert_eq!(alpha_events.len(), 2, "alpha gets spawn + researcher's stop");
+        assert_eq!(
+            alpha_events.len(),
+            2,
+            "alpha gets spawn + researcher's stop"
+        );
         assert!(matches!(alpha_events[0], TeamEvent::AgentSpawn { .. }));
         assert!(matches!(
             alpha_events[1],
@@ -802,7 +848,10 @@ mod tests {
         ));
 
         // Stops bucket is fully drained — no leftover.
-        assert!(lc.stops_by_agent_name.is_empty(), "stops bucket fully consumed");
+        assert!(
+            lc.stops_by_agent_name.is_empty(),
+            "stops bucket fully consumed"
+        );
     }
 
     #[test]

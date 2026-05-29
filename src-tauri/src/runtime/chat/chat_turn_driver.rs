@@ -8,8 +8,8 @@ use std::time::Duration;
 
 use crate::llm::context_decay::{context_window_for_provider, CONTEXT_OVERFLOW_THRESHOLD};
 use crate::runtime::agent::task_notification::{QueuedNotification, TaskNotificationQueue};
-use crate::runtime::chat::compact_client::CompactSummaryClient;
 use crate::runtime::cancellation::{CancellationReason, CancellationToken};
+use crate::runtime::chat::compact_client::CompactSummaryClient;
 use crate::runtime::chat::context_builder::build_iteration_context;
 use crate::runtime::chat::multimodal::{
     build_anthropic_image_blocks, retain_text_fallback_attachments,
@@ -72,7 +72,10 @@ pub fn build_user_content_json_with_skill(
     let mut value = serde_json::json!({ "text": content });
     if let Some(skill) = skill_command {
         let label = skill.label.as_deref().unwrap_or(skill.id.as_str());
-        let command = skill.command.clone().unwrap_or_else(|| format!("/{}", skill.id));
+        let command = skill
+            .command
+            .clone()
+            .unwrap_or_else(|| format!("/{}", skill.id));
         value["commandText"] = serde_json::Value::String(command.clone());
         value["skillCommand"] = serde_json::json!({
             "id": skill.id,
@@ -434,8 +437,7 @@ pub trait RuntimeLlmExecutor: Send + Sync {
 /// production wired by `SessionRuntime::build_driver_for_turn` to delegate to
 /// `RuntimeHost::resolve_turn_stage_path` which reads the active user scope
 /// from `CurrentUserStorage`.  Tests can leave it unset for pure in-memory.
-pub type TurnStagePathResolver =
-    Arc<dyn Fn(&str) -> Option<std::path::PathBuf> + Send + Sync>;
+pub type TurnStagePathResolver = Arc<dyn Fn(&str) -> Option<std::path::PathBuf> + Send + Sync>;
 
 #[derive(Clone)]
 pub struct RuntimeChatTurnDriver {
@@ -542,7 +544,10 @@ async fn drain_and_inject_lead_inbox_messages(
     let Some(inbox_reg) = query_engine.inbox_registry() else {
         return (0, None);
     };
-    let active_team = query_engine.active_team_name(session_id).await.unwrap_or_default();
+    let active_team = query_engine
+        .active_team_name(session_id)
+        .await
+        .unwrap_or_default();
     let Some(lead_id) = names
         .resolve(
             session_id,
@@ -553,7 +558,10 @@ async fn drain_and_inject_lead_inbox_messages(
     else {
         return (0, None);
     };
-    let Some(lead_inbox) = inbox_reg.get(session_id, active_team.as_str(), &lead_id).await else {
+    let Some(lead_inbox) = inbox_reg
+        .get(session_id, active_team.as_str(), &lead_id)
+        .await
+    else {
         return (0, None);
     };
     let drained = lead_inbox.drain_pending().await;
@@ -603,13 +611,13 @@ fn render_peer_messages_xml(items: &[crate::runtime::agent::inbox::InboxItem]) -
             MessageSource::System => "system".to_string(),
         };
         let variant = message.variant_name();
-        let body = message
-            .as_text()
-            .map(|t| escape_xml(t))
-            .unwrap_or_else(|| match serde_json::to_string(message) {
-                Ok(j) => escape_xml(&j),
-                Err(_) => String::new(),
-            });
+        let body =
+            message.as_text().map(|t| escape_xml(t)).unwrap_or_else(
+                || match serde_json::to_string(message) {
+                    Ok(j) => escape_xml(&j),
+                    Err(_) => String::new(),
+                },
+            );
         s.push_str(&format!(
             "  <peer-message from=\"{}\" variant=\"{}\">{}</peer-message>\n",
             escape_xml_attr(&from),
@@ -630,7 +638,6 @@ fn escape_xml(s: &str) -> String {
 fn escape_xml_attr(s: &str) -> String {
     escape_xml(s).replace('"', "&quot;")
 }
-
 
 /// Inject synthetic tool results for assistant tool calls that have no matching
 /// tool response yet. Returns the number of injected messages.
@@ -826,10 +833,7 @@ impl RuntimeChatTurnDriver {
         }
     }
 
-    pub fn with_task_notification_queue(
-        mut self,
-        queue: Arc<TaskNotificationQueue>,
-    ) -> Self {
+    pub fn with_task_notification_queue(mut self, queue: Arc<TaskNotificationQueue>) -> Self {
         self.task_notification_queue = Some(queue);
         self
     }
@@ -1382,11 +1386,12 @@ impl RuntimeChatTurnDriver {
             .await
             .map_err(|e| anyhow::anyhow!("{}", e))?;
         {
-            let agent_has_emp = tool_defs.iter().find(|v| {
-                v.get("name").and_then(|n| n.as_str()) == Some("Agent")
-            }).and_then(|v| v.get("description").and_then(|d| d.as_str()))
-              .map(|d| d.contains("<available_subagent_types>"))
-              .unwrap_or(false);
+            let agent_has_emp = tool_defs
+                .iter()
+                .find(|v| v.get("name").and_then(|n| n.as_str()) == Some("Agent"))
+                .and_then(|v| v.get("description").and_then(|d| d.as_str()))
+                .map(|d| d.contains("<available_subagent_types>"))
+                .unwrap_or(false);
             log::info!(
                 "[tool-desc-trace] get_tool_defs returned: count={} agent_desc_has_emp_section={}",
                 tool_defs.len(),
@@ -1433,11 +1438,12 @@ impl RuntimeChatTurnDriver {
         }
         let final_tool_defs = overrides.tool_defs.unwrap_or(tool_defs);
         {
-            let agent_has_emp = final_tool_defs.iter().find(|v| {
-                v.get("name").and_then(|n| n.as_str()) == Some("Agent")
-            }).and_then(|v| v.get("description").and_then(|d| d.as_str()))
-              .map(|d| d.contains("<available_subagent_types>"))
-              .unwrap_or(false);
+            let agent_has_emp = final_tool_defs
+                .iter()
+                .find(|v| v.get("name").and_then(|n| n.as_str()) == Some("Agent"))
+                .and_then(|v| v.get("description").and_then(|d| d.as_str()))
+                .map(|d| d.contains("<available_subagent_types>"))
+                .unwrap_or(false);
             log::info!(
                 "[tool-desc-trace] final tool_defs: count={} agent_desc_has_emp_section={}",
                 final_tool_defs.len(),
@@ -1662,13 +1668,7 @@ impl RuntimeChatTurnDriver {
         // persist peer messages XML as user message (best-effort)
         if let Some(xml) = peer_xml {
             match executor
-                .persist_user_message(
-                    request.conversation_id.as_str(),
-                    &xml,
-                    &[],
-                    None,
-                    None,
-                )
+                .persist_user_message(request.conversation_id.as_str(), &xml, &[], None, None)
                 .await
             {
                 Ok(msg_id) => {
@@ -1697,9 +1697,9 @@ impl RuntimeChatTurnDriver {
                         );
                     }
                 }
-                Err(e) => log::warn!(
-                    "[chat_turn_driver] persist peer-messages failed (best-effort): {e}"
-                ),
+                Err(e) => {
+                    log::warn!("[chat_turn_driver] persist peer-messages failed (best-effort): {e}")
+                }
             }
         }
 
@@ -1876,7 +1876,11 @@ impl RuntimeChatTurnDriver {
                         )
                         .await;
                         match compact_client.as_ref() {
-                            Some(client) => client.compact_summary(conversation_id.as_str(), &messages).await,
+                            Some(client) => {
+                                client
+                                    .compact_summary(conversation_id.as_str(), &messages)
+                                    .await
+                            }
                             None => {
                                 warn_no_compact_client();
                                 Ok(String::new())
@@ -1982,7 +1986,10 @@ impl RuntimeChatTurnDriver {
 
             // CP-1: check cancellation before invoking provider.
             if cancel.is_cancelled() {
-                re_enqueue_task_notifications(&self.task_notification_queue, std::mem::take(&mut pending_task_notifications));
+                re_enqueue_task_notifications(
+                    &self.task_notification_queue,
+                    std::mem::take(&mut pending_task_notifications),
+                );
                 mark_turn_cancelled_with_synthetic_results(&mut state, cancel.reason());
                 break 'turn;
             }
@@ -2033,7 +2040,11 @@ impl RuntimeChatTurnDriver {
                                 )
                                 .await;
                                 match compact_client.as_ref() {
-                                    Some(client) => client.compact_summary(conversation_id.as_str(), &messages).await,
+                                    Some(client) => {
+                                        client
+                                            .compact_summary(conversation_id.as_str(), &messages)
+                                            .await
+                                    }
                                     None => {
                                         warn_no_compact_client();
                                         Ok(String::new())
@@ -2055,11 +2066,17 @@ impl RuntimeChatTurnDriver {
                     }
                     if prepared.retry == PreprocessRetryAction::RetryTurn {
                         // Re-enqueue so the notifications are tried again on retry.
-                        re_enqueue_task_notifications(&self.task_notification_queue, std::mem::take(&mut pending_task_notifications));
+                        re_enqueue_task_notifications(
+                            &self.task_notification_queue,
+                            std::mem::take(&mut pending_task_notifications),
+                        );
                         continue 'turn;
                     }
 
-                    re_enqueue_task_notifications(&self.task_notification_queue, std::mem::take(&mut pending_task_notifications));
+                    re_enqueue_task_notifications(
+                        &self.task_notification_queue,
+                        std::mem::take(&mut pending_task_notifications),
+                    );
                     self.event_bus
                         .emit(RuntimeEvent::new(
                             session_id.clone(),
@@ -2076,7 +2093,8 @@ impl RuntimeChatTurnDriver {
                     );
 
                     // PR2: PromptTooLong 用专用 kind 让 UI 显示"压缩历史/新建会话"指引
-                    let error_text = "对话上下文已超出模型限制。请新建会话或精简历史后再试。".to_string();
+                    let error_text =
+                        "对话上下文已超出模型限制。请新建会话或精简历史后再试。".to_string();
                     let error = crate::storage::file_store::types::MessageError {
                         kind: crate::storage::file_store::types::ErrorKind::PromptTooLong,
                         message: error_text.clone(),
@@ -2102,7 +2120,10 @@ impl RuntimeChatTurnDriver {
                     return Err(anyhow::anyhow!(message));
                 }
                 Err(err) => {
-                    re_enqueue_task_notifications(&self.task_notification_queue, std::mem::take(&mut pending_task_notifications));
+                    re_enqueue_task_notifications(
+                        &self.task_notification_queue,
+                        std::mem::take(&mut pending_task_notifications),
+                    );
                     inject_synthetic_tool_results_for_missing_calls(
                         &mut state.messages,
                         cancel.reason(),
@@ -2111,7 +2132,9 @@ impl RuntimeChatTurnDriver {
                     // PR2: 构造结构化 MessageError 替代 PR1 纯字符串占位。
                     // 通用 LLM 错误归 kind=Unknown（PR3 fallback 后这里基本不会触达）。
                     // spec: docs/superpowers/specs/2026-05-28-streaming-error-handling-design.md §3.1
-                    let error_text = "抱歉，AI 服务暂时无法响应（已自动尝试多次）。请稍后再试，或换个方式提问。".to_string();
+                    let error_text =
+                        "抱歉，AI 服务暂时无法响应（已自动尝试多次）。请稍后再试，或换个方式提问。"
+                            .to_string();
                     let error = crate::storage::file_store::types::MessageError {
                         kind: crate::storage::file_store::types::ErrorKind::Unknown,
                         message: error_text.clone(),
@@ -2142,15 +2165,16 @@ impl RuntimeChatTurnDriver {
                 // ── 5c: pure content response — done ─────────────────────────
                 LlmStepResult::ContentComplete {
                     content,
+                    thinking_blocks,
                     tokens_in,
                     tokens_out,
                     cache_creation_input_tokens,
                     cache_read_input_tokens,
                     stop_reason,
-                    thinking_blocks,
                 } => {
                     if !thinking_blocks.is_empty() {
-                        state.last_thinking_blocks = thinking_blocks;
+                        state.last_thinking_blocks = thinking_blocks.clone();
+                        state.final_thinking_blocks = thinking_blocks.clone();
                     }
                     state.final_only_content = content.clone();
                     if !content.is_empty() && !state.full_content.is_empty() {
@@ -2234,7 +2258,10 @@ impl RuntimeChatTurnDriver {
 
                 // ── 5d: user / token cancellation ────────────────────────────
                 LlmStepResult::Cancelled => {
-                    re_enqueue_task_notifications(&self.task_notification_queue, std::mem::take(&mut pending_task_notifications));
+                    re_enqueue_task_notifications(
+                        &self.task_notification_queue,
+                        std::mem::take(&mut pending_task_notifications),
+                    );
                     mark_turn_cancelled_with_synthetic_results(&mut state, cancel.reason());
                     break 'turn;
                 }
@@ -2242,15 +2269,15 @@ impl RuntimeChatTurnDriver {
                 // ── 5e: tool calls ────────────────────────────────────────────
                 LlmStepResult::ToolCalls {
                     assistant_content,
+                    thinking_blocks,
                     tool_calls,
                     tokens_in,
                     tokens_out,
                     cache_creation_input_tokens,
                     cache_read_input_tokens,
-                    thinking_blocks,
                 } => {
                     if !thinking_blocks.is_empty() {
-                        state.last_thinking_blocks = thinking_blocks;
+                        state.last_thinking_blocks = thinking_blocks.clone();
                     }
                     if !assistant_content.is_empty() {
                         if !state.full_content.is_empty() {
@@ -2269,11 +2296,15 @@ impl RuntimeChatTurnDriver {
                         })
                         .collect();
                     state.all_tool_calls.extend(normalized_tool_calls.clone());
-                    let assistant_history_message = serde_json::json!({
+                    let mut assistant_history_message = serde_json::json!({
                         "role": "assistant",
                         "content": assistant_content,
                         "toolCalls": normalized_tool_calls,
                     });
+                    if !thinking_blocks.is_empty() {
+                        assistant_history_message["thinkingBlocks"] =
+                            serde_json::Value::Array(thinking_blocks.clone());
+                    }
                     state.step_tokens_in += tokens_in;
                     state.step_tokens_out += tokens_out;
                     state.step_cache_creation_input_tokens += cache_creation_input_tokens;
@@ -2298,9 +2329,7 @@ impl RuntimeChatTurnDriver {
                                 started_at_ms: now_ms,
                             })
                             .collect();
-                        stage_emitter
-                            .tools_started(iteration as u32, running)
-                            .await;
+                        stage_emitter.tools_started(iteration as u32, running).await;
                     }
 
                     // 先持久化 + emit iter assistant message（含 toolCalls），
@@ -2601,17 +2630,24 @@ impl RuntimeChatTurnDriver {
                 ChatTurnOutcome::MaxIterationsReached { iterations } => {
                     Some(crate::storage::file_store::types::MessageError {
                         kind: crate::storage::file_store::types::ErrorKind::MaxIterations,
-                        message: format!("分析步骤超过上限 ({} 次)，已停止。可继续追问深入。", iterations),
+                        message: format!(
+                            "分析步骤超过上限 ({} 次)，已停止。可继续追问深入。",
+                            iterations
+                        ),
                         raw: None,
                     })
                 }
-                ChatTurnOutcome::BudgetExceeded { reason, total_cost_usd } => {
-                    Some(crate::storage::file_store::types::MessageError {
-                        kind: crate::storage::file_store::types::ErrorKind::BudgetExceeded,
-                        message: format!("已超出预算（约 ${:.4}），请调整预算或新建会话。", total_cost_usd),
-                        raw: Some(reason.clone()),
-                    })
-                }
+                ChatTurnOutcome::BudgetExceeded {
+                    reason,
+                    total_cost_usd,
+                } => Some(crate::storage::file_store::types::MessageError {
+                    kind: crate::storage::file_store::types::ErrorKind::BudgetExceeded,
+                    message: format!(
+                        "已超出预算（约 ${:.4}），请调整预算或新建会话。",
+                        total_cost_usd
+                    ),
+                    raw: Some(reason.clone()),
+                }),
                 ChatTurnOutcome::ExecutionError { message } => {
                     Some(crate::storage::file_store::types::MessageError {
                         kind: crate::storage::file_store::types::ErrorKind::ExecutionError,
@@ -2702,7 +2738,11 @@ impl RuntimeChatTurnDriver {
             if let Some(lead_id) = names
                 .resolve(
                     &session_id,
-                    self.query_engine.active_team_name(&session_id).await.unwrap_or_default().as_str(),
+                    self.query_engine
+                        .active_team_name(&session_id)
+                        .await
+                        .unwrap_or_default()
+                        .as_str(),
                     crate::runtime::tools::builtin::team_tools::LEAD_NAME,
                 )
                 .await
@@ -2789,10 +2829,9 @@ impl RuntimeChatTurnDriver {
 
         // Step 8a：MessagePersisted（前端 message:updated 渲染气泡 + error callout）
         // PR4 Layer 2 诊断：先 clone 出 kind 字符串和 message_id（emit 会消耗 error / message_id）.
-        let error_kind_for_diag =
-            serde_json::to_value(&error.kind).ok().and_then(|v| {
-                v.as_str().map(|s| s.to_string())
-            });
+        let error_kind_for_diag = serde_json::to_value(&error.kind)
+            .ok()
+            .and_then(|v| v.as_str().map(|s| s.to_string()));
         let message_id_for_diag = message_id.clone();
         self.event_bus
             .emit(RuntimeEvent::message_persisted_with_error(
@@ -2876,13 +2915,16 @@ impl RuntimeChatTurnDriver {
         if pending {
             record_diagnostic(
                 &ws,
-                DiagnosticEvent::new("turn.path_a.mark_idle.pending_true", DiagnosticSource::Backend)
-                    .conversation_id(session_id.as_str())
-                    .run_id(run_id.as_str())
-                    .agent_id(key.1.as_str())
-                    .team_name(active_team.as_str())
-                    .ok(true)
-                    .payload(serde_json::json!({ "action": "emitting_lead_has_pending_messages" })),
+                DiagnosticEvent::new(
+                    "turn.path_a.mark_idle.pending_true",
+                    DiagnosticSource::Backend,
+                )
+                .conversation_id(session_id.as_str())
+                .run_id(run_id.as_str())
+                .agent_id(key.1.as_str())
+                .team_name(active_team.as_str())
+                .ok(true)
+                .payload(serde_json::json!({ "action": "emitting_lead_has_pending_messages" })),
             );
             self.event_bus
                 .emit(RuntimeEvent::new(
@@ -2901,26 +2943,26 @@ impl RuntimeChatTurnDriver {
             let woke = sup.enqueue(key, active_team.clone()).await;
             record_diagnostic(
                 &ws,
+                DiagnosticEvent::new("turn.path_a.wake_fn_fired", DiagnosticSource::Backend)
+                    .conversation_id(session_id.as_str())
+                    .run_id(run_id.as_str())
+                    .agent_id(key.1.as_str())
+                    .team_name(active_team.as_str())
+                    .ok(woke)
+                    .payload(serde_json::json!({ "transition_won": woke })),
+            );
+        } else {
+            record_diagnostic(
+                &ws,
                 DiagnosticEvent::new(
-                    "turn.path_a.wake_fn_fired",
+                    "turn.path_a.mark_idle.no_pending",
                     DiagnosticSource::Backend,
                 )
                 .conversation_id(session_id.as_str())
                 .run_id(run_id.as_str())
                 .agent_id(key.1.as_str())
                 .team_name(active_team.as_str())
-                .ok(woke)
-                .payload(serde_json::json!({ "transition_won": woke })),
-            );
-        } else {
-            record_diagnostic(
-                &ws,
-                DiagnosticEvent::new("turn.path_a.mark_idle.no_pending", DiagnosticSource::Backend)
-                    .conversation_id(session_id.as_str())
-                    .run_id(run_id.as_str())
-                    .agent_id(key.1.as_str())
-                    .team_name(active_team.as_str())
-                    .ok(true),
+                .ok(true),
             );
         }
         Ok(())
@@ -2969,12 +3011,15 @@ impl RuntimeChatTurnDriver {
         sup.mark_running(&key).await;
         record_diagnostic(
             &ws,
-            DiagnosticEvent::new("turn.path_a.mark_running.resolved", DiagnosticSource::Backend)
-                .conversation_id(session.as_str())
-                .agent_id(lead_id.as_str())
-                .team_name(active_team.as_str())
-                .ok(true)
-                .payload(serde_json::json!({ "state": "running" })),
+            DiagnosticEvent::new(
+                "turn.path_a.mark_running.resolved",
+                DiagnosticSource::Backend,
+            )
+            .conversation_id(session.as_str())
+            .agent_id(lead_id.as_str())
+            .team_name(active_team.as_str())
+            .ok(true)
+            .payload(serde_json::json!({ "state": "running" })),
         );
         Some(key)
     }
@@ -3012,7 +3057,14 @@ fn sanitize_error_raw(raw: &str) -> String {
     let mut s = raw.to_string();
     // 粗粒度替换：对 known sensitive keys 做 prefix 匹配
     // 使用显式偏移量避免替换后再次匹配 REDACTED 占位符造成无限循环
-    for key in &["token=", "api_key=", "apiKey=", "session=", "session_key=", "sessionKey="] {
+    for key in &[
+        "token=",
+        "api_key=",
+        "apiKey=",
+        "session=",
+        "session_key=",
+        "sessionKey=",
+    ] {
         let mut search_from: usize = 0;
         while let Some(rel_start) = s[search_from..].find(key) {
             let start = search_from + rel_start;
@@ -3050,7 +3102,11 @@ mod sanitize_error_raw_tests {
         let out = sanitize_error_raw(input);
         assert!(out.contains("token=REDACTED"));
         assert!(!out.contains("abc123"));
-        assert!(out.contains("model=claude"), "non-sensitive params should be kept: {}", out);
+        assert!(
+            out.contains("model=claude"),
+            "non-sensitive params should be kept: {}",
+            out
+        );
     }
 
     #[test]
@@ -3273,9 +3329,15 @@ mod tests {
 
         assert_eq!(content["text"].as_str(), Some("查今天日程"));
         assert_eq!(content["commandText"].as_str(), Some("/dingtalk-workspace"));
-        assert_eq!(content["skillCommand"]["id"].as_str(), Some("dingtalk-workspace"));
+        assert_eq!(
+            content["skillCommand"]["id"].as_str(),
+            Some("dingtalk-workspace")
+        );
         assert_eq!(content["skillCommand"]["label"].as_str(), Some("玩转钉钉"));
-        assert_eq!(content["skillCommand"]["command"].as_str(), Some("/dingtalk-workspace"));
+        assert_eq!(
+            content["skillCommand"]["command"].as_str(),
+            Some("/dingtalk-workspace")
+        );
     }
 
     #[test]
@@ -3479,12 +3541,12 @@ mod tests {
                 .push(input.dynamic_context.to_string());
             Ok(LlmStepResult::ContentComplete {
                 content: "snapshot done".to_string(),
+                thinking_blocks: Vec::new(),
                 tokens_in: 0,
                 tokens_out: 0,
                 cache_creation_input_tokens: 0,
                 cache_read_input_tokens: 0,
                 stop_reason: Some("end_turn".to_string()),
-                thinking_blocks: Vec::new(),
             })
         }
 
@@ -3531,7 +3593,10 @@ mod tests {
             )))
         }
 
-        async fn build_system_prompt(&self, _request: &ChatTurnRequest) -> Result<String, TurnError> {
+        async fn build_system_prompt(
+            &self,
+            _request: &ChatTurnRequest,
+        ) -> Result<String, TurnError> {
             self.legacy_calls.fetch_add(1, Ordering::SeqCst);
             Ok("legacy prompt should not be used".to_string())
         }
@@ -3555,7 +3620,7 @@ mod tests {
         }
 
         async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
-            Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
+            Ok(vec![]) // 显式声明此 mock 不关心 tool_defs
         }
     }
 
@@ -3585,9 +3650,8 @@ mod tests {
 
     #[tokio::test]
     async fn driver_keeps_prompt_snapshot_when_system_prompt_override_is_set() {
-        let executor = Arc::new(
-            SnapshotPromptExecutor::new().with_override_system_prompt("override prompt"),
-        );
+        let executor =
+            Arc::new(SnapshotPromptExecutor::new().with_override_system_prompt("override prompt"));
         let bus = RuntimeEventBus::new();
         let driver =
             RuntimeChatTurnDriver::with_llm_executor(QueryEngine::new(), bus, executor.clone());
@@ -3598,8 +3662,7 @@ mod tests {
             RunId::new("run-driver-snapshot-override"),
             "use snapshot".to_string(),
         );
-        let request =
-            ChatTurnRequest::new("conv-driver-snapshot-override", "use snapshot", vec![]);
+        let request = ChatTurnRequest::new("conv-driver-snapshot-override", "use snapshot", vec![]);
 
         driver
             .run_chat_turn(&mut turn, &request)
@@ -3652,8 +3715,7 @@ mod tests {
             RunId::new("run-driver-selected-skill"),
             "查今天日程".to_string(),
         );
-        let mut request =
-            ChatTurnRequest::new("conv-driver-selected-skill", "查今天日程", vec![]);
+        let mut request = ChatTurnRequest::new("conv-driver-selected-skill", "查今天日程", vec![]);
         request.skill_command = Some(SkillCommandRef {
             id: "dingtalk-workspace".to_string(),
             label: Some("玩转钉钉".to_string()),
@@ -3776,8 +3838,7 @@ mod tests {
     /// pending == true (i.e. SendMessage arrived during the Running window).
     #[tokio::test]
     async fn path_a_exit_emits_pending_event_when_send_arrived_during_run() {
-        let (driver, capture, key) =
-            build_driver_with_lead("conv-pa-exit-pending", "lead-2").await;
+        let (driver, capture, key) = build_driver_with_lead("conv-pa-exit-pending", "lead-2").await;
         let sup = driver
             .query_engine
             .lead_idle_supervisor()
@@ -3809,8 +3870,7 @@ mod tests {
     /// proceeds normally.
     #[tokio::test]
     async fn path_a_exit_quiet_when_no_send_during_run() {
-        let (driver, capture, key) =
-            build_driver_with_lead("conv-pa-exit-clean", "lead-3").await;
+        let (driver, capture, key) = build_driver_with_lead("conv-pa-exit-clean", "lead-3").await;
         let sup = driver
             .query_engine
             .lead_idle_supervisor()

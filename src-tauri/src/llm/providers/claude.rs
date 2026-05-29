@@ -183,10 +183,7 @@ impl ClaudeProvider {
             }
             if let Some(conv_id) = request.conversation_id.as_deref() {
                 if !conv_id.is_empty() {
-                    headers.insert(
-                        "X-Aijia-Conversation-Id".to_string(),
-                        conv_id.to_string(),
-                    );
+                    headers.insert("X-Aijia-Conversation-Id".to_string(), conv_id.to_string());
                 }
             }
             if let Some(run_id) = request.run_id.as_deref() {

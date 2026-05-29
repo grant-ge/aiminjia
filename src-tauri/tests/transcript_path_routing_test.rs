@@ -14,8 +14,8 @@ use tokio::sync::Mutex;
 
 use app_lib::runtime::agent::inbox::AgentInbox;
 use app_lib::runtime::agent::output_writer::{
-    append_line, read_from, AgentTranscriptMeta, TranscriptKind, TranscriptLine,
-    meta_path_for_kind, transcript_path_for_kind, write_meta,
+    append_line, meta_path_for_kind, read_from, transcript_path_for_kind, write_meta,
+    AgentTranscriptMeta, TranscriptKind, TranscriptLine,
 };
 use app_lib::runtime::agent::team::{Member, MemberRole, Team};
 use app_lib::runtime::agent::worker_runtime::{run_worker, TeammateWorkerCtx, WorkerMode};
@@ -173,14 +173,20 @@ async fn teammate_idle_transcript_path_is_under_teams_teammates() {
         .expect("loop should exit");
 
     // Verify sidecar is in teams/{name}/teammates/.
-    let meta_path =
-        meta_path_for_kind(&conv_dir, &TranscriptKind::Teammate, TEAM_NAME, agent_id.as_str());
+    let meta_path = meta_path_for_kind(
+        &conv_dir,
+        &TranscriptKind::Teammate,
+        TEAM_NAME,
+        agent_id.as_str(),
+    );
     assert!(
         meta_path.exists(),
         "teammate meta should exist at {meta_path:?}"
     );
     assert!(
-        meta_path.to_string_lossy().contains(&format!("teams/{TEAM_NAME}/teammates")),
+        meta_path
+            .to_string_lossy()
+            .contains(&format!("teams/{TEAM_NAME}/teammates")),
         "meta path must live under teams/{TEAM_NAME}/teammates/, got {meta_path:?}"
     );
     let meta_body: serde_json::Value =
@@ -190,10 +196,16 @@ async fn teammate_idle_transcript_path_is_under_teams_teammates() {
     assert_eq!(meta_body["employee_id"].as_str(), Some("emp-routing-1"));
 
     // Verify transcript is in teams/{name}/teammates/.
-    let transcript =
-        transcript_path_for_kind(&conv_dir, &TranscriptKind::Teammate, TEAM_NAME, agent_id.as_str());
+    let transcript = transcript_path_for_kind(
+        &conv_dir,
+        &TranscriptKind::Teammate,
+        TEAM_NAME,
+        agent_id.as_str(),
+    );
     assert!(
-        transcript.to_string_lossy().contains(&format!("teams/{TEAM_NAME}/teammates")),
+        transcript
+            .to_string_lossy()
+            .contains(&format!("teams/{TEAM_NAME}/teammates")),
         "transcript path must live under teams/{TEAM_NAME}/teammates/, got {transcript:?}"
     );
     assert!(
@@ -283,7 +295,10 @@ async fn subagent_and_teammate_coexist_in_same_conversation() {
 
     // Subagent transcript still intact.
     let (sub_lines, _) = read_from(&sub_transcript, 0).unwrap();
-    assert!(!sub_lines.is_empty(), "subagent transcript should still exist");
+    assert!(
+        !sub_lines.is_empty(),
+        "subagent transcript should still exist"
+    );
     assert!(sub_lines[0].contains("subagent answer"));
 
     // Teammate transcript is separate.
@@ -297,8 +312,12 @@ async fn subagent_and_teammate_coexist_in_same_conversation() {
 
     // Paths do not overlap.
     assert_ne!(
-        sub_transcript.canonicalize().unwrap_or(sub_transcript.clone()),
-        tm_transcript.canonicalize().unwrap_or(tm_transcript.clone()),
+        sub_transcript
+            .canonicalize()
+            .unwrap_or(sub_transcript.clone()),
+        tm_transcript
+            .canonicalize()
+            .unwrap_or(tm_transcript.clone()),
         "subagent and teammate transcripts must be different files"
     );
 
@@ -306,7 +325,10 @@ async fn subagent_and_teammate_coexist_in_same_conversation() {
     let teams_dir = conv_dir.join("teams");
     if teams_dir.exists() {
         for entry in std::fs::read_dir(&teams_dir).unwrap().flatten() {
-            let path = entry.path().join("teammates").join(format!("{subagent_id}.jsonl"));
+            let path = entry
+                .path()
+                .join("teammates")
+                .join(format!("{subagent_id}.jsonl"));
             assert!(
                 !path.exists(),
                 "subagent transcript must NOT be under teams/*/teammates/, found: {path:?}"

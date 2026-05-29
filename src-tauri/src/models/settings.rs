@@ -33,7 +33,6 @@ pub enum DataMaskingLevel {
 pub enum CloudGatewayMode {
     Legacy,
     V2,
-    Auto,
 }
 
 impl Default for CloudGatewayMode {
@@ -64,7 +63,7 @@ pub struct AppSettings {
     /// Cloud mode: model type ("chat" or "reasoner") for the selected cloud model.
     #[serde(default)]
     pub cloud_model_type: String,
-    /// Cloud gateway rollout mode. Defaults to legacy so existing customers are unchanged.
+    /// Cloud gateway mode. Defaults to legacy; users opt in to V2 explicitly.
     #[serde(default)]
     pub cloud_gateway_mode: CloudGatewayMode,
     /// Whether persona onboarding has been completed.
@@ -254,6 +253,9 @@ mod tests {
             parsed.ui_home_selected_workspace,
             s.ui_home_selected_workspace
         );
-        assert_eq!(parsed.ui_home_recent_workspaces, s.ui_home_recent_workspaces);
+        assert_eq!(
+            parsed.ui_home_recent_workspaces,
+            s.ui_home_recent_workspaces
+        );
     }
 }

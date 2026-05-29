@@ -64,9 +64,7 @@ pub struct UsageRecordsPage {
 }
 
 #[tauri::command]
-pub async fn billing_summary(
-    auth: State<'_, Arc<AuthManager>>,
-) -> Result<BillingSummary, String> {
+pub async fn billing_summary(auth: State<'_, Arc<AuthManager>>) -> Result<BillingSummary, String> {
     auth.get_billing_summary()
         .await
         .map_err(|e| format!("{:#}", e))

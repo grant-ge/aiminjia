@@ -86,9 +86,8 @@ pub fn build_reqwest_client_with_proxy(
     let builder = match resolve_proxy_url(target_host) {
         Some(proxy_url) => {
             log::info!("[im/proxy] reqwest target={target_host} proxy={proxy_url}");
-            let proxy = reqwest::Proxy::all(&proxy_url).map_err(|e| {
-                anyhow::anyhow!("reqwest::Proxy::all('{proxy_url}') failed: {e}")
-            })?;
+            let proxy = reqwest::Proxy::all(&proxy_url)
+                .map_err(|e| anyhow::anyhow!("reqwest::Proxy::all('{proxy_url}') failed: {e}"))?;
             builder.proxy(proxy)
         }
         None => {

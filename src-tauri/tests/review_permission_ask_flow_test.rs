@@ -138,7 +138,8 @@ impl RuntimeLlmExecutor for ToolCallExecutor {
         _content: &str,
         _tool_calls: &[serde_json::Value],
         _generated_file_ids: &[String],
-        _file_metas: &[serde_json::Value], _thinking_blocks: &[serde_json::Value],
+        _file_metas: &[serde_json::Value],
+        _thinking_blocks: &[serde_json::Value],
     ) -> Result<String, TurnError> {
         Ok("mock-msg-id".to_string())
     }
@@ -181,7 +182,8 @@ fn content_complete() -> LlmStepResult {
         tokens_in: 1,
         tokens_out: 1,
         cache_creation_input_tokens: 0,
-        cache_read_input_tokens: 0, thinking_blocks: Vec::new(),
+        cache_read_input_tokens: 0,
+        thinking_blocks: Vec::new(),
         stop_reason: Some("end_turn".to_string()),
     }
 }
@@ -196,7 +198,8 @@ async fn ask_event_contains_full_permission_information() {
             tokens_in: 5,
             tokens_out: 7,
             cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 0, thinking_blocks: Vec::new(),
+            cache_read_input_tokens: 0,
+            thinking_blocks: Vec::new(),
         },
         content_complete(),
     ]));
@@ -288,7 +291,8 @@ async fn allow_resolution_replays_tool_and_returns_successful_tool_result_to_llm
             tokens_in: 5,
             tokens_out: 7,
             cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 0, thinking_blocks: Vec::new(),
+            cache_read_input_tokens: 0,
+            thinking_blocks: Vec::new(),
         },
         content_complete(),
     ]));
@@ -357,7 +361,8 @@ async fn deny_resolution_returns_error_tool_result_and_turn_continues() {
             tokens_in: 5,
             tokens_out: 7,
             cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 0, thinking_blocks: Vec::new(),
+            cache_read_input_tokens: 0,
+            thinking_blocks: Vec::new(),
         },
         content_complete(),
     ]));
@@ -422,7 +427,8 @@ async fn cancel_resolution_is_treated_as_denied_tool_result_without_hanging() {
             tokens_in: 5,
             tokens_out: 7,
             cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 0, thinking_blocks: Vec::new(),
+            cache_read_input_tokens: 0,
+            thinking_blocks: Vec::new(),
         },
         content_complete(),
     ]));
@@ -484,7 +490,8 @@ async fn multiple_asks_are_processed_in_order_with_independent_results() {
             tokens_in: 5,
             tokens_out: 7,
             cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 0, thinking_blocks: Vec::new(),
+            cache_read_input_tokens: 0,
+            thinking_blocks: Vec::new(),
         },
         content_complete(),
     ]));
@@ -567,7 +574,8 @@ async fn cancelling_turn_while_waiting_for_ask_exits_without_deadlock() {
             tokens_in: 5,
             tokens_out: 7,
             cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 0, thinking_blocks: Vec::new(),
+            cache_read_input_tokens: 0,
+            thinking_blocks: Vec::new(),
         },
         content_complete(),
     ]));

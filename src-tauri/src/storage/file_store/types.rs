@@ -413,10 +413,22 @@ mod conversation_kind_tests {
 
     #[test]
     fn serializes_as_camel_case() {
-        assert_eq!(serde_json::to_string(&ConversationKind::User).unwrap(), "\"user\"");
-        assert_eq!(serde_json::to_string(&ConversationKind::Employee).unwrap(), "\"employee\"");
-        assert_eq!(serde_json::to_string(&ConversationKind::ExpertTeam).unwrap(), "\"expertTeam\"");
-        assert_eq!(serde_json::to_string(&ConversationKind::Im).unwrap(), "\"im\"");
+        assert_eq!(
+            serde_json::to_string(&ConversationKind::User).unwrap(),
+            "\"user\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ConversationKind::Employee).unwrap(),
+            "\"employee\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ConversationKind::ExpertTeam).unwrap(),
+            "\"expertTeam\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ConversationKind::Im).unwrap(),
+            "\"im\""
+        );
     }
 
     #[test]
@@ -620,7 +632,11 @@ mod stored_message_error_tests {
             error: None,
         };
         let s = serde_json::to_string(&m).unwrap();
-        assert!(!s.contains("error"), "serialized form must not contain 'error' field when None: {}", s);
+        assert!(
+            !s.contains("error"),
+            "serialized form must not contain 'error' field when None: {}",
+            s
+        );
     }
 
     #[test]
@@ -647,7 +663,11 @@ mod stored_message_error_tests {
             }),
         };
         let s = serde_json::to_string(&m).unwrap();
-        assert!(s.contains(r#""kind":"chunk_timeout""#), "kind must be snake_case: {}", s);
+        assert!(
+            s.contains(r#""kind":"chunk_timeout""#),
+            "kind must be snake_case: {}",
+            s
+        );
         let back: StoredMessage = serde_json::from_str(&s).unwrap();
         assert_eq!(back.error, m.error);
     }

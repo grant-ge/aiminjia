@@ -61,7 +61,10 @@ async fn cancel_session_drops_team_and_name_bindings() {
     // cleanup is spawned async — give the runtime a tick to land it.
     for _ in 0..20 {
         if team_registry.get(&session, "team-x").await.is_none()
-            && name_registry.resolve(&session, "team-x", "team-lead").await.is_none()
+            && name_registry
+                .resolve(&session, "team-x", "team-lead")
+                .await
+                .is_none()
             && name_registry
                 .resolve(&session, "team-x", "researcher")
                 .await
@@ -118,6 +121,9 @@ async fn clear_all_empties_name_registry() {
 
     let dropped = name_registry.clear_all().await;
     assert_eq!(dropped, 2);
-    assert!(name_registry.resolve(&s1, "team-a", "alpha").await.is_none());
+    assert!(name_registry
+        .resolve(&s1, "team-a", "alpha")
+        .await
+        .is_none());
     assert!(name_registry.resolve(&s2, "team-b", "beta").await.is_none());
 }

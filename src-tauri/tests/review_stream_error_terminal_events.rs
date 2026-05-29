@@ -12,9 +12,7 @@
 
 use app_lib::runtime::cancellation::CancellationToken;
 use app_lib::runtime::chat::turn_config::{LlmStepInput, LlmStepResult, TurnError};
-use app_lib::runtime::chat::{
-    ChatTurnRequest, RuntimeChatTurnDriver, RuntimeLlmExecutor,
-};
+use app_lib::runtime::chat::{ChatTurnRequest, RuntimeChatTurnDriver, RuntimeLlmExecutor};
 use app_lib::runtime::event_bus::RuntimeEventBus;
 use app_lib::runtime::events::RuntimeEventKind;
 use app_lib::runtime::identity::IdentityMapping;
@@ -88,24 +86,21 @@ async fn driver_emits_message_persisted_when_run_llm_step_errors() {
 
     // 关键不变式：不论 driver 返回 Ok 还是 Err，三件套必须已发出
     assert!(
-        events.iter().any(|e| matches!(
-            &e.kind,
-            RuntimeEventKind::MessagePersisted { .. }
-        )),
+        events
+            .iter()
+            .any(|e| matches!(&e.kind, RuntimeEventKind::MessagePersisted { .. })),
         "missing MessagePersisted on stream error — frontend will see white screen"
     );
     assert!(
-        events.iter().any(|e| matches!(
-            e.kind,
-            RuntimeEventKind::StreamDone
-        )),
+        events
+            .iter()
+            .any(|e| matches!(e.kind, RuntimeEventKind::StreamDone)),
         "missing StreamDone on stream error"
     );
     assert!(
-        events.iter().any(|e| matches!(
-            &e.kind,
-            RuntimeEventKind::AgentIdle { .. }
-        )),
+        events
+            .iter()
+            .any(|e| matches!(&e.kind, RuntimeEventKind::AgentIdle { .. })),
         "missing AgentIdle on stream error — agent will appear stuck"
     );
 }
@@ -133,9 +128,7 @@ async fn message_persisted_payload_contains_error_text_on_stream_error() {
     let persisted = events
         .iter()
         .find_map(|e| match &e.kind {
-            RuntimeEventKind::MessagePersisted { role, content, .. }
-                if role == "assistant" =>
-            {
+            RuntimeEventKind::MessagePersisted { role, content, .. } if role == "assistant" => {
                 Some(content)
             }
             _ => None,
@@ -213,24 +206,21 @@ async fn driver_emits_message_persisted_on_prompt_too_long() {
         "PromptTooLong should still emit StreamError with raw_error=prompt_too_long"
     );
     assert!(
-        events.iter().any(|e| matches!(
-            &e.kind,
-            RuntimeEventKind::MessagePersisted { .. }
-        )),
+        events
+            .iter()
+            .any(|e| matches!(&e.kind, RuntimeEventKind::MessagePersisted { .. })),
         "PromptTooLong should emit MessagePersisted (PR1 fix)"
     );
     assert!(
-        events.iter().any(|e| matches!(
-            e.kind,
-            RuntimeEventKind::StreamDone
-        )),
+        events
+            .iter()
+            .any(|e| matches!(e.kind, RuntimeEventKind::StreamDone)),
         "PromptTooLong should emit StreamDone (PR1 fix)"
     );
     assert!(
-        events.iter().any(|e| matches!(
-            &e.kind,
-            RuntimeEventKind::AgentIdle { .. }
-        )),
+        events
+            .iter()
+            .any(|e| matches!(&e.kind, RuntimeEventKind::AgentIdle { .. })),
         "PromptTooLong should emit AgentIdle (PR1 fix)"
     );
 }

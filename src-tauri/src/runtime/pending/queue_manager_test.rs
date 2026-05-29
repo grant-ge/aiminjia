@@ -221,7 +221,8 @@ struct CountingDispatcher {
 impl ChatTurnDispatcher for CountingDispatcher {
     async fn dispatch(&self, request: crate::runtime::chat::ChatTurnRequest) -> anyhow::Result<()> {
         self.count.fetch_add(1, Ordering::SeqCst);
-        *self.last_skill_id.lock().await = request.skill_command.as_ref().map(|skill| skill.id.clone());
+        *self.last_skill_id.lock().await =
+            request.skill_command.as_ref().map(|skill| skill.id.clone());
         *self.last_text.lock().await = Some(request.content);
         Ok(())
     }
@@ -309,7 +310,9 @@ async fn drain_preserves_skill_command_on_dispatched_request() {
     let session = SessionId::new("conv-skill-drain");
     use crate::runtime::chat::chat_turn_driver::SkillCommandRef;
     use crate::runtime::ids::RunId;
-    registry.reserve(session.as_str(), RunId::new("run-1")).unwrap();
+    registry
+        .reserve(session.as_str(), RunId::new("run-1"))
+        .unwrap();
     let mut item = sample_item("skill");
     item.skill_command = Some(SkillCommandRef {
         id: "dingtalk-workspace".into(),

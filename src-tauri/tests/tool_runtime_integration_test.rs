@@ -28,8 +28,8 @@ async fn query_engine_routes_tool_calls_through_dispatcher_and_permission_pipeli
 /// to confirm that capability injection happens inside the engine's dispatch logic.
 #[tokio::test]
 async fn query_engine_injects_capability_context_for_workspace_tool() {
-    use app_lib::runtime::chat::tool_round_types::RuntimeToolCallRequest;
     use app_lib::runtime::chat::tool_round_types::RuntimeToolCallOutcome;
+    use app_lib::runtime::chat::tool_round_types::RuntimeToolCallRequest;
     use app_lib::runtime::event_bus::RuntimeEventBus;
     use app_lib::runtime::identity::IdentityMapping;
     use app_lib::runtime::ids::RunId;
@@ -80,8 +80,8 @@ async fn query_engine_injects_capability_context_for_workspace_tool() {
 
     // ── Positive case: with_workspace_path → QueryEngine injects capability → success ──
 
-    let engine = QueryEngine::with_dispatcher(dispatcher)
-        .with_workspace_path(tmp.path().to_path_buf());
+    let engine =
+        QueryEngine::with_dispatcher(dispatcher).with_workspace_path(tmp.path().to_path_buf());
 
     let mapping = IdentityMapping::from_legacy_conversation_id("conv-ws".to_string());
     let turn = TurnState::new(
@@ -118,11 +118,11 @@ async fn query_engine_injects_authorized_workspace_into_capability_context() {
     use app_lib::runtime::ids::RunId;
     use app_lib::runtime::state::TurnState;
     use app_lib::runtime::store::AuthorizedWorkspaceRef;
+    use app_lib::runtime::tools::description_context::ToolDescriptionContext;
     use app_lib::runtime::tools::{
         AllowAllPermissionPipeline, RuntimeTool, ToolDefinition, ToolDispatcher, ToolError,
         ToolExecutionContext, ToolResult,
     };
-    use app_lib::runtime::tools::description_context::ToolDescriptionContext;
     use async_trait::async_trait;
     use serde_json::Value;
     use std::path::PathBuf;

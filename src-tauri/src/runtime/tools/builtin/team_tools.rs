@@ -74,9 +74,14 @@ pub struct TeamCreateRuntimeTool;
 
 #[async_trait]
 impl RuntimeTool for TeamCreateRuntimeTool {
-    fn id(&self) -> &str { "TeamCreate" }
-    
-    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "TeamCreate"
+    }
+
+    async fn definition(
+        &self,
+        _ctx: &crate::runtime::tools::ToolDescriptionContext,
+    ) -> ToolDefinition {
         TOOL_CATALOG.get("TeamCreate").unwrap_or_else(|| {
             ToolDefinition::new("TeamCreate", "Mark this session as a multi-agent Team.")
         })
@@ -230,10 +235,18 @@ impl RuntimeTool for TeamCreateRuntimeTool {
             session.as_str()
         );
         if let Some(ref conv_dir) = ctx.conv_dir {
-            match ctx.team_registry().persist(&session, &team_name, conv_dir).await {
+            match ctx
+                .team_registry()
+                .persist(&session, &team_name, conv_dir)
+                .await
+            {
                 Ok(()) => log::info!(
                     "[TeamCreate] persisted config.json at {}",
-                    conv_dir.join("teams").join(&team_name).join("config.json").display()
+                    conv_dir
+                        .join("teams")
+                        .join(&team_name)
+                        .join("config.json")
+                        .display()
                 ),
                 Err(e) => log::warn!("[TeamCreate] persist config.json failed: {e}"),
             }
@@ -277,9 +290,14 @@ pub struct TeamDeleteRuntimeTool;
 
 #[async_trait]
 impl RuntimeTool for TeamDeleteRuntimeTool {
-    fn id(&self) -> &str { "TeamDelete" }
-    
-    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "TeamDelete"
+    }
+
+    async fn definition(
+        &self,
+        _ctx: &crate::runtime::tools::ToolDescriptionContext,
+    ) -> ToolDefinition {
         TOOL_CATALOG.get("TeamDelete").unwrap_or_else(|| {
             ToolDefinition::new("TeamDelete", "Exit Team mode and dismiss all teammates.")
         })
@@ -351,7 +369,9 @@ impl RuntimeTool for TeamDeleteRuntimeTool {
         // 自动清理"，可以扫 deleted_at 早于 N 天的目录调用
         // `delete_persisted_team` 兜底回收。
         if let Some(ref conv_dir) = ctx.conv_dir {
-            if let Err(e) = crate::runtime::agent::TeamRegistry::mark_deleted_on_disk(conv_dir, &team_name) {
+            if let Err(e) =
+                crate::runtime::agent::TeamRegistry::mark_deleted_on_disk(conv_dir, &team_name)
+            {
                 log::warn!("[TeamDelete] mark teams/{team_name}/config.json deleted failed: {e}");
             }
         }
@@ -367,13 +387,7 @@ impl RuntimeTool for TeamDeleteRuntimeTool {
         // step f: 若此 team 是 active，清掉。两层：① TeamRegistry 内存
         // 单一 owner（同 turn 后续 tool 立刻看到）；② conv.json 持久化镜
         // 像（重启 hydration 用）。
-        if ctx
-            .team_registry()
-            .active(&session)
-            .await
-            .as_deref()
-            == Some(team_name.as_str())
-        {
+        if ctx.team_registry().active(&session).await.as_deref() == Some(team_name.as_str()) {
             ctx.team_registry().clear_active(&session).await;
         }
         if let Some(ref conv_dir) = ctx.conv_dir {
@@ -431,9 +445,14 @@ pub struct TeamSwitchRuntimeTool;
 
 #[async_trait]
 impl RuntimeTool for TeamSwitchRuntimeTool {
-    fn id(&self) -> &str { "TeamSwitch" }
+    fn id(&self) -> &str {
+        "TeamSwitch"
+    }
 
-    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
+    async fn definition(
+        &self,
+        _ctx: &crate::runtime::tools::ToolDescriptionContext,
+    ) -> ToolDefinition {
         TOOL_CATALOG.get("TeamSwitch").unwrap_or_else(|| {
             ToolDefinition::new(
                 "TeamSwitch",
@@ -464,7 +483,12 @@ impl RuntimeTool for TeamSwitchRuntimeTool {
         let session = ctx.session_id.clone();
 
         // 校验 team 存在
-        if ctx.team_registry().get(&session, &team_name).await.is_none() {
+        if ctx
+            .team_registry()
+            .get(&session, &team_name)
+            .await
+            .is_none()
+        {
             return Err(ToolError::ExecutionFailed(format!(
                 "team `{team_name}` not found in this conversation"
             )));
@@ -542,10 +566,7 @@ mod tests {
         assert_eq!(team_registry.active(&session).await, None);
 
         TeamCreateRuntimeTool
-            .execute(
-                serde_json::json!({ "team_name": "regression-team" }),
-                ctx,
-            )
+            .execute(serde_json::json!({ "team_name": "regression-team" }), ctx)
             .await
             .expect("TeamCreate should succeed");
 
@@ -570,23 +591,20 @@ mod tests {
             .with_inbox_registry(inboxes.clone());
         let session = ctx_create.session_id.clone();
         TeamCreateRuntimeTool
-            .execute(
-                serde_json::json!({ "team_name": "to-delete" }),
-                ctx_create,
-            )
+            .execute(serde_json::json!({ "team_name": "to-delete" }), ctx_create)
             .await
             .unwrap();
-        assert_eq!(team_registry.active(&session).await, Some("to-delete".into()));
+        assert_eq!(
+            team_registry.active(&session).await,
+            Some("to-delete".into())
+        );
 
         let ctx_delete = ToolExecutionContext::for_test(session_str, "run-2", "call-td")
             .with_team_registry(team_registry.clone())
             .with_agent_names(names.clone())
             .with_inbox_registry(inboxes.clone());
         TeamDeleteRuntimeTool
-            .execute(
-                serde_json::json!({ "team_name": "to-delete" }),
-                ctx_delete,
-            )
+            .execute(serde_json::json!({ "team_name": "to-delete" }), ctx_delete)
             .await
             .unwrap();
 

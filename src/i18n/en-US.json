@@ -338,6 +338,8 @@
       "checking": "Checking...",
       "recheck": "Re-check",
       "lastChecked": "Last checked: ",
+      "gatewayV2Title": "Try the new gateway",
+      "gatewayV2Description": "Off by default. When off, AI requests use the stable gateway. When on, all AI requests use the new gateway and will not automatically fall back.",
       "justNow": "just now",
       "secondsAgo": "{{count}}s ago",
       "minutesAgo": "{{count}}m ago",

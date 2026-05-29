@@ -15,8 +15,9 @@ fn sync_e2e_capability() {
     use std::fs;
     use std::path::PathBuf;
 
-    let manifest_dir =
-        PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR set by cargo"));
+    let manifest_dir = PathBuf::from(
+        std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR set by cargo"),
+    );
     let src = manifest_dir.join("capabilities-e2e").join("pilot.json");
     let dst = manifest_dir.join("capabilities").join("pilot.json");
 
@@ -30,8 +31,8 @@ fn sync_e2e_capability() {
         // makes `tauri dev`'s watcher re-trigger a rebuild that re-runs this
         // build script — an infinite loop. Only write when content actually
         // differs (or dst is missing) so the steady state is mtime-stable.
-        let src_bytes = fs::read(&src)
-            .unwrap_or_else(|e| panic!("failed to read {}: {e}", src.display()));
+        let src_bytes =
+            fs::read(&src).unwrap_or_else(|e| panic!("failed to read {}: {e}", src.display()));
         let needs_write = match fs::read(&dst) {
             Ok(dst_bytes) => dst_bytes != src_bytes,
             Err(_) => true,

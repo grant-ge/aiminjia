@@ -199,7 +199,8 @@ fn content_complete() -> LlmStepResult {
         tokens_in: 1,
         tokens_out: 1,
         cache_creation_input_tokens: 0,
-        cache_read_input_tokens: 0, thinking_blocks: Vec::new(),
+        cache_read_input_tokens: 0,
+        thinking_blocks: Vec::new(),
         stop_reason: Some("end_turn".to_string()),
     }
 }
@@ -216,7 +217,8 @@ fn tool_call_step(id: &str) -> LlmStepResult {
         tokens_in: 1,
         tokens_out: 1,
         cache_creation_input_tokens: 0,
-        cache_read_input_tokens: 0, thinking_blocks: Vec::new(),
+        cache_read_input_tokens: 0,
+        thinking_blocks: Vec::new(),
     }
 }
 

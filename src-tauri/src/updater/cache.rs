@@ -74,12 +74,7 @@ impl UpdaterCache {
 
     /// Decide cache status given the server's version, expected_size, and optional etag.
     /// Returns Partial only if metadata matches and partial file exists.
-    pub fn check(
-        &self,
-        version: &str,
-        expected_size: u64,
-        etag: &str,
-    ) -> Result<CacheCheckResult> {
+    pub fn check(&self, version: &str, expected_size: u64, etag: &str) -> Result<CacheCheckResult> {
         let Some(meta) = self.load_meta() else {
             return Ok(CacheCheckResult {
                 status: CacheStatus::None,
@@ -114,7 +109,11 @@ impl UpdaterCache {
 
         // Verify on-disk size matches meta. Use meta.expected_size (the truth
         // from the prior download), not the (possibly-zero) input expected_size.
-        let target = if expected_size > 0 { expected_size } else { meta.expected_size };
+        let target = if expected_size > 0 {
+            expected_size
+        } else {
+            meta.expected_size
+        };
         let actual = fs::metadata(&pkg).map(|m| m.len()).unwrap_or(0);
         if meta.complete && actual == target {
             return Ok(CacheCheckResult {

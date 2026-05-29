@@ -16,7 +16,9 @@ pub struct ChannelManagerSlot {
 
 impl ChannelManagerSlot {
     pub fn new() -> Self {
-        Self { inner: Mutex::new(None) }
+        Self {
+            inner: Mutex::new(None),
+        }
     }
 
     /// Read-only snapshot. Returns the current instance if any.
@@ -33,7 +35,9 @@ impl ChannelManagerSlot {
 }
 
 impl Default for ChannelManagerSlot {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]

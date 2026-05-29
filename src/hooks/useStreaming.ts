@@ -38,7 +38,6 @@ import { useAuthStore } from '@/stores/authStore'
 import { useDiagnosticsStore } from '@/stores/diagnosticsStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { recordDiagnostic } from '@/lib/diagnostics'
-import { resendLastUserMessage } from '@/lib/resendLastMessage'
 import i18n from '@/i18n'
 import type { Message } from '@/types/message'
 import {

@@ -73,7 +73,10 @@ fn build_chat_history_skips_messages_with_error() {
 
     // 正常消息（u1, u2, a2）必须保留
     assert!(texts.iter().any(|t| t.contains("hi")), "user u1 应保留");
-    assert!(texts.iter().any(|t| t.contains("再试一次")), "user u2 应保留");
+    assert!(
+        texts.iter().any(|t| t.contains("再试一次")),
+        "user u2 应保留"
+    );
     assert!(
         texts.iter().any(|t| t.contains("好的，这是回复")),
         "assistant a2 应保留"

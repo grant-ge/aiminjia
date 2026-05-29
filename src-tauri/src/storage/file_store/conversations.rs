@@ -8,7 +8,10 @@ use log::{info, warn};
 
 use super::error::StorageResult;
 use super::io::{atomic_write_json, read_json_optional, read_json_safe};
-use super::types::{ConversationIndexEntry, ConversationKind, ConversationMeta, ConversationSource, GlobalIndex, PersistedAuthorizedWorkspace};
+use super::types::{
+    ConversationIndexEntry, ConversationKind, ConversationMeta, ConversationSource, GlobalIndex,
+    PersistedAuthorizedWorkspace,
+};
 
 use crate::llm::content_filter::strip_hallucinated_xml;
 
@@ -67,8 +70,16 @@ pub fn create_conversation_with_im_source(
     fs::create_dir_all(dir.join("notes"))?;
 
     let is_im = im_source.is_some();
-    let source = if is_im { ConversationSource::Im } else { ConversationSource::User };
-    let kind = if is_im { ConversationKind::Im } else { ConversationKind::User };
+    let source = if is_im {
+        ConversationSource::Im
+    } else {
+        ConversationSource::User
+    };
+    let kind = if is_im {
+        ConversationKind::Im
+    } else {
+        ConversationKind::User
+    };
 
     // Write conv.json
     let meta = ConversationMeta {
@@ -276,10 +287,7 @@ pub fn read_conversation_workspace(
 }
 
 /// Read the conversation's source from `conv.json`.
-pub fn read_conversation_source(
-    base_dir: &Path,
-    id: &str,
-) -> StorageResult<ConversationSource> {
+pub fn read_conversation_source(base_dir: &Path, id: &str) -> StorageResult<ConversationSource> {
     let meta: ConversationMeta = read_json_safe(&conv_meta_path(base_dir, id))?;
     Ok(meta.source)
 }
@@ -308,11 +316,7 @@ pub fn archive_conversation(base_dir: &Path, id: &str) -> StorageResult<()> {
 /// `pinned_at` so future UIs can multi-tier-sort within pinned bucket;
 /// `false` clears it. Both conv.json and the global index are updated so
 /// the sidebar can read the index without fanning out into conv.json.
-pub fn set_conversation_pinned(
-    base_dir: &Path,
-    id: &str,
-    pinned: bool,
-) -> StorageResult<()> {
+pub fn set_conversation_pinned(base_dir: &Path, id: &str, pinned: bool) -> StorageResult<()> {
     let meta_path = conv_meta_path(base_dir, id);
     let mut meta: ConversationMeta = read_json_safe(&meta_path)?;
     if meta.is_pinned == pinned {
@@ -331,10 +335,7 @@ pub fn set_conversation_pinned(
     }
     atomic_write_json(&index_path(base_dir), &index)?;
 
-    info!(
-        "Set conversation {} pinned = {}",
-        id, pinned
-    );
+    info!("Set conversation {} pinned = {}", id, pinned);
     Ok(())
 }
 
@@ -518,7 +519,10 @@ pub fn reconcile_index(base_dir: &Path) -> StorageResult<()> {
                         ConversationSource::Im => ConversationKind::Im,
                     },
                     source_label: meta.source_label,
-                    workspace_name: meta.authorized_workspace.as_ref().map(|w| w.display_name.clone()),
+                    workspace_name: meta
+                        .authorized_workspace
+                        .as_ref()
+                        .map(|w| w.display_name.clone()),
                     is_pinned: meta.is_pinned,
                     pinned_at: meta.pinned_at.clone(),
                 });
@@ -803,12 +807,19 @@ mod tests {
         // conv.json: imSource dropped, source = { kind: "im" }.
         let raw: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&meta_path).unwrap()).unwrap();
-        assert!(raw.get("imSource").is_none(), "legacy field should be removed");
+        assert!(
+            raw.get("imSource").is_none(),
+            "legacy field should be removed"
+        );
         assert_eq!(raw["source"]["kind"], "im");
 
         // index.json: kind = "im".
         let index = read_global_index(&base).unwrap();
-        let entry = index.conversations.iter().find(|e| e.id == "c-old").unwrap();
+        let entry = index
+            .conversations
+            .iter()
+            .find(|e| e.id == "c-old")
+            .unwrap();
         assert!(matches!(entry.kind, ConversationKind::Im));
     }
 

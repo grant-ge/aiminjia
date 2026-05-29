@@ -2,10 +2,10 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use chrono::Utc;
+use log::{debug, info, warn};
 use serde_json::json;
 use tokio::sync::mpsc;
 use tokio::time::MissedTickBehavior;
-use log::{debug, info, warn};
 
 use crate::runtime::network::state::{NetworkErrorKind, NetworkSnapshot, NetworkStatus};
 use crate::transport::runtime_host::RuntimeHost;
@@ -179,10 +179,7 @@ impl NetworkProbe {
 
         match (&result, status) {
             (Ok(_), NetworkStatus::Online) => {
-                debug!(
-                    "network probe ok: status=online latency_ms={}",
-                    elapsed_ms
-                );
+                debug!("network probe ok: status=online latency_ms={}", elapsed_ms);
             }
             (Ok(resp), NetworkStatus::ServerDegraded) => {
                 warn!(
@@ -200,8 +197,10 @@ impl NetworkProbe {
             _ => {}
         }
 
-        let latency_ms = if matches!(status, NetworkStatus::Online | NetworkStatus::ServerDegraded)
-        {
+        let latency_ms = if matches!(
+            status,
+            NetworkStatus::Online | NetworkStatus::ServerDegraded
+        ) {
             Some(elapsed_ms)
         } else {
             None
@@ -340,10 +339,7 @@ mod tests {
 
     fn ok_response(status: StatusCode) -> Result<reqwest::Response, reqwest::Error> {
         Ok(reqwest::Response::from(
-            http::Response::builder()
-                .status(status)
-                .body("")
-                .unwrap(),
+            http::Response::builder().status(status).body("").unwrap(),
         ))
     }
 

@@ -36,7 +36,8 @@ impl TelegramSender {
 
     /// markdown → Telegram HTML send；不带 reply_to。对外 default。
     pub async fn send_markdown(&self, chat_id: i64, raw_markdown: &str) -> Result<(), SenderError> {
-        self.send_markdown_with_reply(chat_id, raw_markdown, None).await
+        self.send_markdown_with_reply(chat_id, raw_markdown, None)
+            .await
     }
 
     /// markdown → Telegram HTML 分片 send；可指定 reply_to_message_id（**仅首条** chunk 带）。
@@ -61,7 +62,10 @@ impl TelegramSender {
         let mut is_first = true;
         for chunk in chunks {
             let reply = if is_first { reply_to_message_id } else { None };
-            match self.send_html_chunk_with_reply(chat_id, &chunk, reply).await {
+            match self
+                .send_html_chunk_with_reply(chat_id, &chunk, reply)
+                .await
+            {
                 Ok(sent_id) => {
                     if is_first {
                         first_chunk_id = Some(sent_id);
@@ -298,9 +302,7 @@ pub fn split_telegram_html(input: &str, max_bytes: usize) -> Vec<String> {
     for seg in segments {
         match seg {
             Segment::CodeBlock(text) => {
-                if !current.is_empty()
-                    && current.len() + text.len() > max_bytes
-                {
+                if !current.is_empty() && current.len() + text.len() > max_bytes {
                     chunks.push(std::mem::take(&mut current));
                 }
                 if text.len() > max_bytes {
@@ -1006,9 +1008,7 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join("\n");
             assert!(inner_lines.len() > 4000);
-            let block = format!(
-                "<pre><code class=\"language-rust\">{inner_lines}</code></pre>"
-            );
+            let block = format!("<pre><code class=\"language-rust\">{inner_lines}</code></pre>");
             let chunks = split_telegram_html(&block, 4000);
             assert!(chunks.len() >= 2);
             for c in &chunks {
@@ -1079,7 +1079,11 @@ mod tests {
         fn tilde_home_is_expanded() {
             // ~/ 展开到 home dir；如果 home 目录里没有 nonexistent_test_file.xyz 就 OK
             let refs = extract_local_paths("[x](~/definitely_nonexistent_test_file_abc123.xyz)");
-            assert_eq!(refs.len(), 0, "nonexistent tilde path should not be extracted");
+            assert_eq!(
+                refs.len(),
+                0,
+                "nonexistent tilde path should not be extracted"
+            );
         }
 
         #[test]

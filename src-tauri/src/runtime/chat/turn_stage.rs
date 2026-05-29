@@ -335,13 +335,7 @@ impl TurnStageEmitter {
                 // Refresh persisted last_heartbeat_at_ms (best-effort).  Done
                 // before emit so the file is fresh even if the bus is slow.
                 if let Some(path) = persist_path.as_ref() {
-                    persist_heartbeat_to(
-                        path,
-                        &session_id,
-                        &run_id,
-                        &snapshot,
-                        turn_started_at_ms,
-                    );
+                    persist_heartbeat_to(path, &session_id, &run_id, &snapshot, turn_started_at_ms);
                 }
                 if let Err(e) = event_bus
                     .emit(RuntimeEvent::turn_heartbeat(
@@ -454,8 +448,7 @@ mod tests {
     /// to the ambient env var.
     fn disabled_fixture() -> TurnStageEmitter {
         let bus = RuntimeEventBus::new();
-        TurnStageEmitter::new(bus, SessionId::new("s-1"), RunId::new("r-1"))
-            .with_enabled(false)
+        TurnStageEmitter::new(bus, SessionId::new("s-1"), RunId::new("r-1")).with_enabled(false)
     }
 
     #[tokio::test]
@@ -468,7 +461,10 @@ mod tests {
             .iter()
             .filter(|e| matches!(e.kind, RuntimeEventKind::TurnStageChanged { .. }))
             .collect();
-        assert!(stage_events.is_empty(), "expected no TurnStageChanged when flag off");
+        assert!(
+            stage_events.is_empty(),
+            "expected no TurnStageChanged when flag off"
+        );
     }
 
     #[tokio::test]
@@ -569,10 +565,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("turn_stages").join("conv-1.json");
         let bus = RuntimeEventBus::new();
-        let emitter =
-            TurnStageEmitter::new(bus, SessionId::new("conv-1"), RunId::new("run-1"))
-                .with_enabled(true)
-                .with_persist_path(path.clone());
+        let emitter = TurnStageEmitter::new(bus, SessionId::new("conv-1"), RunId::new("run-1"))
+            .with_enabled(true)
+            .with_persist_path(path.clone());
 
         emitter.submitted().await;
         emitter
@@ -585,7 +580,9 @@ mod tests {
         assert_eq!(parsed.conversation_id, "conv-1");
         assert_eq!(parsed.run_id, "run-1");
         match parsed.stage {
-            TurnStage::Tools { iteration, running, .. } => {
+            TurnStage::Tools {
+                iteration, running, ..
+            } => {
                 assert_eq!(iteration, 0);
                 assert_eq!(running[0].tool_name, "Bash");
             }
@@ -599,10 +596,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("turn_stages").join("conv-x.json");
         let bus = RuntimeEventBus::new();
-        let emitter =
-            TurnStageEmitter::new(bus, SessionId::new("conv-x"), RunId::new("run-x"))
-                .with_enabled(true)
-                .with_persist_path(path.clone());
+        let emitter = TurnStageEmitter::new(bus, SessionId::new("conv-x"), RunId::new("run-x"))
+            .with_enabled(true)
+            .with_persist_path(path.clone());
         emitter.submitted().await;
         assert!(path.exists(), "transition should produce file");
         {

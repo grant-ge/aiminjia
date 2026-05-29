@@ -7,6 +7,7 @@ use std::sync::Arc;
 use serde_json::Value as JsonValue;
 
 use crate::llm::streaming::AnthropicMultimodalTurn;
+use crate::models::settings::CloudGatewayMode;
 use crate::runtime::chat::compaction::AutoCompactState;
 use crate::runtime::chat::preprocess::PreprocessRuntimeState;
 use crate::runtime::chat::tool_round_types::RuntimeToolCallRequest;
@@ -27,6 +28,7 @@ pub struct ResolvedLlmSettings {
     pub custom_model_name: String,
     pub cloud_model: String,
     pub cloud_model_type: String,
+    pub cloud_gateway_mode: CloudGatewayMode,
     pub thinking_type: String,
     pub thinking_budget_tokens: u32,
     pub masking_level: String,
@@ -42,6 +44,7 @@ impl Default for ResolvedLlmSettings {
             custom_model_name: String::new(),
             cloud_model: String::new(),
             cloud_model_type: String::new(),
+            cloud_gateway_mode: CloudGatewayMode::Legacy,
             thinking_type: "disabled".to_string(),
             thinking_budget_tokens: 8000,
             masking_level: "strict".to_string(),
@@ -93,6 +96,7 @@ pub struct TurnIterationState {
     pub generated_file_ids: Vec<String>,
     pub all_file_metas: Vec<JsonValue>,
     pub all_tool_calls: Vec<JsonValue>,
+    pub final_thinking_blocks: Vec<JsonValue>,
     pub iteration_count: usize,
     pub stream_cancelled: bool,
     pub step_tokens_in: u64,
@@ -119,6 +123,7 @@ impl TurnIterationState {
             generated_file_ids: Vec::new(),
             all_file_metas: Vec::new(),
             all_tool_calls: Vec::new(),
+            final_thinking_blocks: Vec::new(),
             iteration_count: 0,
             stream_cancelled: false,
             step_tokens_in: 0,
@@ -177,22 +182,22 @@ pub enum LlmStepResult {
     /// LLM 返回了工具调用
     ToolCalls {
         assistant_content: String,
+        thinking_blocks: Vec<serde_json::Value>,
         tool_calls: Vec<RuntimeToolCallRequest>,
         tokens_in: u64,
         tokens_out: u64,
         cache_creation_input_tokens: u64,
         cache_read_input_tokens: u64,
-        thinking_blocks: Vec<serde_json::Value>,
     },
     /// LLM 返回纯文本，无工具调用
     ContentComplete {
         content: String,
+        thinking_blocks: Vec<serde_json::Value>,
         tokens_in: u64,
         tokens_out: u64,
         cache_creation_input_tokens: u64,
         cache_read_input_tokens: u64,
         stop_reason: Option<String>,
-        thinking_blocks: Vec<serde_json::Value>,
     },
     /// 用户取消
     Cancelled,

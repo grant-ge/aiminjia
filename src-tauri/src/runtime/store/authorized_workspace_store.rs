@@ -30,21 +30,13 @@ pub struct AuthorizedWorkspaceRef {
 /// Store trait: each session holds at most one authorized directory.
 /// Writing again replaces the previous value (upsert / single-value semantics).
 pub trait AuthorizedWorkspaceStore: Send + Sync {
-    fn replace_for_session(
-        &self,
-        conversation_id: &str,
-        ws: &AuthorizedWorkspace,
-    ) -> Result<()>;
+    fn replace_for_session(&self, conversation_id: &str, ws: &AuthorizedWorkspace) -> Result<()>;
     fn get_current_for_session(
         &self,
         conversation_id: &str,
         session_id: &SessionId,
     ) -> Result<Option<AuthorizedWorkspace>>;
-    fn clear_for_session(
-        &self,
-        conversation_id: &str,
-        session_id: &SessionId,
-    ) -> Result<()>;
+    fn clear_for_session(&self, conversation_id: &str, session_id: &SessionId) -> Result<()>;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -71,11 +63,7 @@ impl ConvJsonAuthorizedWorkspaceStore {
 }
 
 impl AuthorizedWorkspaceStore for ConvJsonAuthorizedWorkspaceStore {
-    fn replace_for_session(
-        &self,
-        conversation_id: &str,
-        ws: &AuthorizedWorkspace,
-    ) -> Result<()> {
+    fn replace_for_session(&self, conversation_id: &str, ws: &AuthorizedWorkspace) -> Result<()> {
         let persisted = crate::storage::file_store::types::PersistedAuthorizedWorkspace {
             id: ws.id.clone(),
             root_path: ws.root_path.clone(),
@@ -108,11 +96,7 @@ impl AuthorizedWorkspaceStore for ConvJsonAuthorizedWorkspaceStore {
         }))
     }
 
-    fn clear_for_session(
-        &self,
-        conversation_id: &str,
-        _session_id: &SessionId,
-    ) -> Result<()> {
+    fn clear_for_session(&self, conversation_id: &str, _session_id: &SessionId) -> Result<()> {
         crate::storage::file_store::conversations::set_conversation_workspace(
             self.db().base_dir(),
             conversation_id,
@@ -132,11 +116,7 @@ pub struct InMemoryAuthorizedWorkspaceStore {
 }
 
 impl AuthorizedWorkspaceStore for InMemoryAuthorizedWorkspaceStore {
-    fn replace_for_session(
-        &self,
-        conversation_id: &str,
-        ws: &AuthorizedWorkspace,
-    ) -> Result<()> {
+    fn replace_for_session(&self, conversation_id: &str, ws: &AuthorizedWorkspace) -> Result<()> {
         self.data
             .lock()
             .unwrap()
@@ -152,11 +132,7 @@ impl AuthorizedWorkspaceStore for InMemoryAuthorizedWorkspaceStore {
         Ok(self.data.lock().unwrap().get(conversation_id).cloned())
     }
 
-    fn clear_for_session(
-        &self,
-        conversation_id: &str,
-        _session_id: &SessionId,
-    ) -> Result<()> {
+    fn clear_for_session(&self, conversation_id: &str, _session_id: &SessionId) -> Result<()> {
         self.data.lock().unwrap().remove(conversation_id);
         Ok(())
     }

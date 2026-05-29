@@ -288,7 +288,9 @@ pub fn meta_path_for_kind(
 ) -> PathBuf {
     use crate::runtime::agent::team_paths::TeamPaths;
     match kind {
-        TranscriptKind::Teammate => TeamPaths::for_team(conv_dir, team_name).teammate_meta(agent_id),
+        TranscriptKind::Teammate => {
+            TeamPaths::for_team(conv_dir, team_name).teammate_meta(agent_id)
+        }
         TranscriptKind::Subagent => conv_dir
             .join("subagents")
             .join(format!("{agent_id}.meta.json")),
@@ -463,19 +465,9 @@ mod tests {
     #[test]
     fn teammate_kind_uses_team_scoped_teammates_dir() {
         let conv_dir = std::path::PathBuf::from("/tmp/conv-abc");
-        let p = transcript_path_for_kind(
-            &conv_dir,
-            &TranscriptKind::Teammate,
-            "alpha",
-            "agent-2",
-        );
+        let p = transcript_path_for_kind(&conv_dir, &TranscriptKind::Teammate, "alpha", "agent-2");
         assert_eq!(p, conv_dir.join("teams/alpha/teammates/agent-2.jsonl"));
-        let mp = meta_path_for_kind(
-            &conv_dir,
-            &TranscriptKind::Teammate,
-            "alpha",
-            "agent-2",
-        );
+        let mp = meta_path_for_kind(&conv_dir, &TranscriptKind::Teammate, "alpha", "agent-2");
         assert_eq!(mp, conv_dir.join("teams/alpha/teammates/agent-2.meta.json"));
     }
 

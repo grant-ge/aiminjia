@@ -66,7 +66,12 @@ async fn setup_team_with_lead(
         .unwrap();
     let lead_inbox = AgentInbox::new(8);
     inbox_reg
-        .register(session, TEAM_NAME, AgentId::new("lead-id"), lead_inbox.clone())
+        .register(
+            session,
+            TEAM_NAME,
+            AgentId::new("lead-id"),
+            lead_inbox.clone(),
+        )
         .await;
     (team_reg, name_reg, inbox_reg, lead_inbox)
 }

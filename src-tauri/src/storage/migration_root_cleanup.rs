@@ -116,9 +116,7 @@ pub fn cleanup_legacy_root_if_claimed(
         .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
         .map(|dt| dt.with_timezone(&Utc));
     let Some(claimed_at) = claimed_at else {
-        log::warn!(
-            "[root-cleanup] legacyRootClaim missing/unparseable claimedAt — skip"
-        );
+        log::warn!("[root-cleanup] legacyRootClaim missing/unparseable claimedAt — skip");
         return Ok(false);
     };
     let now = Utc::now();
@@ -134,10 +132,7 @@ pub fn cleanup_legacy_root_if_claimed(
     // Build the archive dir name from the *claim* timestamp (not `now`) so
     // a third user logging in years later doesn't create a fresh dir for
     // the same legacy bundle.  Use a filesystem-safe form of the timestamp.
-    let archive_name = format!(
-        ".archived-legacy-{}",
-        claimed_at.format("%Y%m%dT%H%M%SZ"),
-    );
+    let archive_name = format!(".archived-legacy-{}", claimed_at.format("%Y%m%dT%H%M%SZ"),);
     let archive_dir = root.join(&archive_name);
 
     let mut moved_paths: Vec<String> = Vec::new();
@@ -233,9 +228,7 @@ pub fn cleanup_legacy_archive_if_expired(root: &Path) -> std::io::Result<usize> 
             .map(|dt| DateTime::<Utc>::from_naive_utc_and_offset(dt, Utc))
             .ok();
         let Some(archived_at) = parsed else {
-            log::warn!(
-                "[root-cleanup] unparseable archive dir name {name_str}, skip"
-            );
+            log::warn!("[root-cleanup] unparseable archive dir name {name_str}, skip");
             continue;
         };
         if now - archived_at < ARCHIVE_RETENTION {

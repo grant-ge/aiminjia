@@ -123,24 +123,40 @@ impl TeamRegistry {
         if inner.contains_key(&team_name) {
             return Err(TeamError::TeamAlreadyExists(team_name));
         }
-        let team = Arc::new(Mutex::new(Team::new(session_id.clone(), lead, team_name.clone())));
+        let team = Arc::new(Mutex::new(Team::new(
+            session_id.clone(),
+            lead,
+            team_name.clone(),
+        )));
         inner.insert(team_name, team.clone());
         Ok(team)
     }
 
     pub async fn get(&self, session_id: &SessionId, team_name: &str) -> Option<Arc<Mutex<Team>>> {
-        self.teams.lock().await.get(session_id)?.get(team_name).cloned()
+        self.teams
+            .lock()
+            .await
+            .get(session_id)?
+            .get(team_name)
+            .cloned()
     }
 
     pub async fn list(&self, session_id: &SessionId) -> Vec<(String, Arc<Mutex<Team>>)> {
-        self.teams.lock().await.get(session_id)
+        self.teams
+            .lock()
+            .await
+            .get(session_id)
             .map(|m| m.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
             .unwrap_or_default()
     }
 
     /// Delete one specific team within a session. Used by TeamDelete tool.
     /// If the inner map becomes empty, the session entry is also removed.
-    pub async fn delete_team(&self, session_id: &SessionId, team_name: &str) -> Option<Arc<Mutex<Team>>> {
+    pub async fn delete_team(
+        &self,
+        session_id: &SessionId,
+        team_name: &str,
+    ) -> Option<Arc<Mutex<Team>>> {
         let mut g = self.teams.lock().await;
         let inner = g.get_mut(session_id)?;
         let removed = inner.remove(team_name);
@@ -154,7 +170,8 @@ impl TeamRegistry {
     /// Strictly different from `delete_team`—this removes every team at once.
     pub async fn drop_session(&self, session_id: &SessionId) -> Vec<(String, Arc<Mutex<Team>>)> {
         let mut g = self.teams.lock().await;
-        let dropped = g.remove(session_id)
+        let dropped = g
+            .remove(session_id)
             .map(|m| m.into_iter().collect())
             .unwrap_or_default();
         self.active.lock().await.remove(session_id);
@@ -223,13 +240,18 @@ impl TeamRegistry {
             let team = team_handle.lock().await;
             TeamSnapshot::from(&*team)
         };
-        let path = crate::runtime::agent::team_paths::TeamPaths::for_team(conv_dir, team_name).config_json();
+        let path = crate::runtime::agent::team_paths::TeamPaths::for_team(conv_dir, team_name)
+            .config_json();
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(TeamPersistError::Io)?;
         }
         let bytes = serde_json::to_vec_pretty(&snapshot).map_err(TeamPersistError::Serde)?;
-        crate::storage::fs_atomic::write_atomic(&path, &bytes)
-            .map_err(|e| TeamPersistError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        crate::storage::fs_atomic::write_atomic(&path, &bytes).map_err(|e| {
+            TeamPersistError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })?;
         Ok(())
     }
 
@@ -274,8 +296,12 @@ impl TeamRegistry {
             serde_json::from_slice(&bytes).map_err(TeamPersistError::Serde)?;
         snapshot.deleted_at = Some(chrono::Utc::now());
         let out = serde_json::to_vec_pretty(&snapshot).map_err(TeamPersistError::Serde)?;
-        crate::storage::fs_atomic::write_atomic(&path, &out)
-            .map_err(|e| TeamPersistError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        crate::storage::fs_atomic::write_atomic(&path, &out).map_err(|e| {
+            TeamPersistError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })?;
         Ok(())
     }
 }
@@ -300,28 +326,47 @@ impl TeamRegistry {
         conv_dir: &Path,
     ) -> Result<usize, TeamHydrateError> {
         let teams_root = conv_dir.join("teams");
-        if !teams_root.exists() { return Ok(0); }
+        if !teams_root.exists() {
+            return Ok(0);
+        }
         let mut count = 0;
         for entry in std::fs::read_dir(&teams_root)? {
-            let entry = match entry { Ok(e) => e, Err(_) => continue };
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
             let team_dir = entry.path();
-            if !team_dir.is_dir() { continue; }
+            if !team_dir.is_dir() {
+                continue;
+            }
             let dir_name = match entry.file_name().into_string() {
                 Ok(s) => s,
                 Err(_) => continue,
             };
             let config = team_dir.join("config.json");
-            if !config.exists() { continue; }
+            if !config.exists() {
+                continue;
+            }
             let bytes = match std::fs::read(&config) {
                 Ok(b) => b,
-                Err(e) => { log::warn!("hydrate skip {:?}: {e}", config); continue; }
+                Err(e) => {
+                    log::warn!("hydrate skip {:?}: {e}", config);
+                    continue;
+                }
             };
             let snapshot: TeamSnapshot = match serde_json::from_slice(&bytes) {
                 Ok(s) => s,
-                Err(e) => { log::warn!("hydrate skip {:?}: {e}", config); continue; }
+                Err(e) => {
+                    log::warn!("hydrate skip {:?}: {e}", config);
+                    continue;
+                }
             };
             if snapshot.team_name != dir_name {
-                log::warn!("hydrate skip: team_name `{}` != dir `{}`", snapshot.team_name, dir_name);
+                log::warn!(
+                    "hydrate skip: team_name `{}` != dir `{}`",
+                    snapshot.team_name,
+                    dir_name
+                );
                 continue;
             }
             let mut g = self.teams.lock().await;
@@ -344,7 +389,10 @@ impl TeamRegistry {
                     name: tm.name.clone(),
                     role: MemberRole::Teammate {
                         employee_id: tm.employee_id.clone().unwrap_or_default(),
-                        spawned_by: tm.spawned_by.clone().unwrap_or_else(|| snapshot.lead.agent_id.clone()),
+                        spawned_by: tm
+                            .spawned_by
+                            .clone()
+                            .unwrap_or_else(|| snapshot.lead.agent_id.clone()),
                     },
                     created_at: tm.created_at,
                     last_active_at: tm.last_active_at,
@@ -460,8 +508,12 @@ mod registry_v2_tests {
     async fn create_two_teams_in_same_session() {
         let reg = TeamRegistry::new();
         let s = SessionId::new("s1");
-        reg.create(s.clone(), dummy_lead("a"), "alpha".to_string()).await.unwrap();
-        reg.create(s.clone(), dummy_lead("b"), "beta".to_string()).await.unwrap();
+        reg.create(s.clone(), dummy_lead("a"), "alpha".to_string())
+            .await
+            .unwrap();
+        reg.create(s.clone(), dummy_lead("b"), "beta".to_string())
+            .await
+            .unwrap();
         let listed = reg.list(&s).await;
         assert_eq!(listed.len(), 2);
     }
@@ -470,8 +522,13 @@ mod registry_v2_tests {
     async fn duplicate_team_name_rejected() {
         let reg = TeamRegistry::new();
         let s = SessionId::new("s1");
-        reg.create(s.clone(), dummy_lead("a"), "alpha".to_string()).await.unwrap();
-        let err = reg.create(s, dummy_lead("a2"), "alpha".to_string()).await.unwrap_err();
+        reg.create(s.clone(), dummy_lead("a"), "alpha".to_string())
+            .await
+            .unwrap();
+        let err = reg
+            .create(s, dummy_lead("a2"), "alpha".to_string())
+            .await
+            .unwrap_err();
         assert!(matches!(err, TeamError::TeamAlreadyExists(_)));
     }
 
@@ -479,8 +536,12 @@ mod registry_v2_tests {
     async fn delete_team_keeps_other_teams() {
         let reg = TeamRegistry::new();
         let s = SessionId::new("s1");
-        reg.create(s.clone(), dummy_lead("a"), "alpha".to_string()).await.unwrap();
-        reg.create(s.clone(), dummy_lead("b"), "beta".to_string()).await.unwrap();
+        reg.create(s.clone(), dummy_lead("a"), "alpha".to_string())
+            .await
+            .unwrap();
+        reg.create(s.clone(), dummy_lead("b"), "beta".to_string())
+            .await
+            .unwrap();
         reg.delete_team(&s, "alpha").await.unwrap();
         assert!(reg.get(&s, "alpha").await.is_none());
         assert!(reg.get(&s, "beta").await.is_some());
@@ -490,8 +551,12 @@ mod registry_v2_tests {
     async fn drop_session_clears_all() {
         let reg = TeamRegistry::new();
         let s = SessionId::new("s1");
-        reg.create(s.clone(), dummy_lead("a"), "alpha".to_string()).await.unwrap();
-        reg.create(s.clone(), dummy_lead("b"), "beta".to_string()).await.unwrap();
+        reg.create(s.clone(), dummy_lead("a"), "alpha".to_string())
+            .await
+            .unwrap();
+        reg.create(s.clone(), dummy_lead("b"), "beta".to_string())
+            .await
+            .unwrap();
         let dropped = reg.drop_session(&s).await;
         assert_eq!(dropped.len(), 2);
         assert_eq!(reg.list(&s).await.len(), 0);
@@ -511,7 +576,9 @@ mod registry_v2_tests {
         let dir = tempdir().unwrap();
         let reg = TeamRegistry::new();
         let s = SessionId::new("s1");
-        reg.create(s.clone(), dummy_lead("a"), "alpha".to_string()).await.unwrap();
+        reg.create(s.clone(), dummy_lead("a"), "alpha".to_string())
+            .await
+            .unwrap();
         reg.persist(&s, "alpha", dir.path()).await.unwrap();
         // drop in-memory state, re-hydrate
         reg.drop_session(&s).await;
@@ -552,7 +619,9 @@ mod registry_v2_tests {
     async fn drop_session_clears_active() {
         let reg = TeamRegistry::new();
         let s = SessionId::new("s-drop");
-        reg.create(s.clone(), dummy_lead("a"), "alpha".to_string()).await.unwrap();
+        reg.create(s.clone(), dummy_lead("a"), "alpha".to_string())
+            .await
+            .unwrap();
         reg.set_active(&s, "alpha".to_string()).await;
         reg.drop_session(&s).await;
         assert_eq!(reg.active(&s).await, None);
@@ -574,7 +643,9 @@ mod registry_v2_tests {
         std::fs::create_dir_all(&conv_dir).unwrap();
         let reg = TeamRegistry::new();
         let s = SessionId::new("conv-soft-delete");
-        reg.create(s.clone(), dummy_lead("a"), "alpha".to_string()).await.unwrap();
+        reg.create(s.clone(), dummy_lead("a"), "alpha".to_string())
+            .await
+            .unwrap();
         reg.persist(&s, "alpha", &conv_dir).await.unwrap();
 
         // 软删除：标记 deleted_at，文件仍在。
@@ -584,13 +655,19 @@ mod registry_v2_tests {
         let team_root = crate::runtime::agent::team_paths::TeamPaths::for_team(&conv_dir, "alpha")
             .team_root()
             .unwrap();
-        assert!(team_root.exists(), "soft-delete must leave teams/{{name}}/ on disk");
+        assert!(
+            team_root.exists(),
+            "soft-delete must leave teams/{{name}}/ on disk"
+        );
 
         // 2. config.json 反序列化后 deleted_at 是 Some(...)
         let cfg_path = team_root.join("config.json");
         let bytes = std::fs::read(&cfg_path).unwrap();
         let snapshot: TeamSnapshot = serde_json::from_slice(&bytes).unwrap();
-        assert!(snapshot.deleted_at.is_some(), "deleted_at must be set after mark");
+        assert!(
+            snapshot.deleted_at.is_some(),
+            "deleted_at must be set after mark"
+        );
     }
 
     #[tokio::test]

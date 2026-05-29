@@ -140,9 +140,7 @@ pub async fn cloud_login(
 /// CurrentUserStorage, resetting FileManager workspace, and shutting
 /// down ChannelManager — no need to duplicate that logic here.
 #[tauri::command]
-pub async fn cloud_logout(
-    auth: State<'_, Arc<AuthManager>>,
-) -> Result<(), String> {
+pub async fn cloud_logout(auth: State<'_, Arc<AuthManager>>) -> Result<(), String> {
     auth.logout().await;
     Ok(())
 }

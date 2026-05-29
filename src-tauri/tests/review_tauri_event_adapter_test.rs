@@ -360,9 +360,18 @@ fn message_persisted_with_error_forwards_error_field() {
     let legacy = map_runtime_event(&event).expect("should produce legacy event");
     assert_eq!(legacy.name, "message:updated");
 
-    let error = legacy.payload.get("error").expect("error field must be forwarded to frontend");
-    assert_eq!(error.get("kind").and_then(|v| v.as_str()), Some("chunk_timeout"));
-    assert_eq!(error.get("message").and_then(|v| v.as_str()), Some("AI 服务暂时无法响应"));
+    let error = legacy
+        .payload
+        .get("error")
+        .expect("error field must be forwarded to frontend");
+    assert_eq!(
+        error.get("kind").and_then(|v| v.as_str()),
+        Some("chunk_timeout")
+    );
+    assert_eq!(
+        error.get("message").and_then(|v| v.as_str()),
+        Some("AI 服务暂时无法响应")
+    );
 }
 
 #[test]
@@ -379,5 +388,8 @@ fn message_persisted_without_error_omits_error_field() {
     );
 
     let legacy = map_runtime_event(&event).expect("should produce legacy event");
-    assert!(legacy.payload.get("error").is_none(), "正常 MessagePersisted 不应携带 error 字段");
+    assert!(
+        legacy.payload.get("error").is_none(),
+        "正常 MessagePersisted 不应携带 error 字段"
+    );
 }

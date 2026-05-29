@@ -83,7 +83,8 @@ impl RuntimeLlmExecutor for RecordingExecutor {
             tokens_in: 0,
             tokens_out: 0,
             cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 0, thinking_blocks: Vec::new(),
+            cache_read_input_tokens: 0,
+            thinking_blocks: Vec::new(),
             stop_reason: Some("end_turn".to_string()),
         })
     }
@@ -196,7 +197,8 @@ impl RuntimeLlmExecutor for IterationDrainExecutor {
                 tokens_in: 0,
                 tokens_out: 0,
                 cache_creation_input_tokens: 0,
-                cache_read_input_tokens: 0, thinking_blocks: Vec::new(),
+                cache_read_input_tokens: 0,
+                thinking_blocks: Vec::new(),
             });
         }
 
@@ -205,7 +207,8 @@ impl RuntimeLlmExecutor for IterationDrainExecutor {
             tokens_in: 0,
             tokens_out: 0,
             cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 0, thinking_blocks: Vec::new(),
+            cache_read_input_tokens: 0,
+            thinking_blocks: Vec::new(),
             stop_reason: Some("end_turn".to_string()),
         })
     }

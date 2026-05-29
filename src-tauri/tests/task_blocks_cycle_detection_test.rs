@@ -10,9 +10,7 @@ use tempfile::TempDir;
 
 use app_lib::runtime::cancellation::CancellationToken;
 use app_lib::runtime::ids::{RunId, SessionId};
-use app_lib::runtime::tools::builtin::task_tools::{
-    TaskCreateRuntimeTool, TaskUpdateRuntimeTool,
-};
+use app_lib::runtime::tools::builtin::task_tools::{TaskCreateRuntimeTool, TaskUpdateRuntimeTool};
 use app_lib::runtime::tools::context::ToolExecutionContext;
 use app_lib::runtime::tools::executor::ToolError;
 use app_lib::runtime::tools::RuntimeTool;
@@ -82,28 +80,19 @@ async fn linear_blocks_chain_succeeds() {
 
     // A blocks B
     update
-        .execute(
-            json!({ "taskId": &a, "addBlocks": [&b] }),
-            ctx(&root),
-        )
+        .execute(json!({ "taskId": &a, "addBlocks": [&b] }), ctx(&root))
         .await
         .expect("A blocks B should succeed");
 
     // B blocks C
     update
-        .execute(
-            json!({ "taskId": &b, "addBlocks": [&c] }),
-            ctx(&root),
-        )
+        .execute(json!({ "taskId": &b, "addBlocks": [&c] }), ctx(&root))
         .await
         .expect("B blocks C should succeed");
 
     // C has no further blocks — no cycle
     update
-        .execute(
-            json!({ "taskId": &c, "addBlocks": [] }),
-            ctx(&root),
-        )
+        .execute(json!({ "taskId": &c, "addBlocks": [] }), ctx(&root))
         .await
         .expect("no-op update on C should succeed");
 }

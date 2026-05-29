@@ -9,10 +9,10 @@ use crate::runtime::chat::PermissionDenialRecord;
 use crate::runtime::dependencies::ManagedRuntimeResolver;
 use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::events::{RuntimeEvent, RuntimeEventKind};
+use crate::runtime::ids::{RunId, SessionId, ToolCallId};
 use crate::runtime::path_auth::{RuleSource, ToolPermissionContext};
 use crate::runtime::state::TurnState;
 use crate::runtime::store::AuthorizedWorkspaceRef;
-use crate::runtime::ids::{RunId, SessionId, ToolCallId};
 use crate::runtime::tools::permission::{PermissionDecision, PermissionReason};
 use crate::runtime::tools::{
     CapabilityContext, FileOperations, FileStateCache, InterruptBehavior, StorageCapability,
@@ -249,7 +249,10 @@ impl QueryEngine {
     ///
     /// Returns `None` when no TeamRegistry was injected (legacy/test paths)
     /// or when the session has no active team.
-    pub async fn active_team_name(&self, session_id: &crate::runtime::ids::SessionId) -> Option<String> {
+    pub async fn active_team_name(
+        &self,
+        session_id: &crate::runtime::ids::SessionId,
+    ) -> Option<String> {
         let reg = self.team_registry.as_ref()?;
         reg.active(session_id).await
     }
@@ -755,12 +758,11 @@ impl QueryEngine {
         });
         let mut ctx = if let Some(workspace_path) = capability_workspace {
             let permission_ctx = self.build_turn_permission_ctx(turn);
-            let progress_sink: Arc<dyn ToolProgressSink> =
-                Arc::new(BusBackedToolProgressSink {
-                    bus: bus.clone(),
-                    session_id: turn.session_id().clone(),
-                    run_id: turn.run_id().clone(),
-                });
+            let progress_sink: Arc<dyn ToolProgressSink> = Arc::new(BusBackedToolProgressSink {
+                bus: bus.clone(),
+                session_id: turn.session_id().clone(),
+                run_id: turn.run_id().clone(),
+            });
             let capability = Arc::new(CapabilityContext {
                 storage: Some(StorageCapability {
                     workspace_path,
@@ -942,12 +944,11 @@ impl QueryEngine {
         });
         let ctx = if let Some(workspace_path) = capability_workspace {
             let permission_ctx = self.build_turn_permission_ctx(turn);
-            let progress_sink: Arc<dyn ToolProgressSink> =
-                Arc::new(BusBackedToolProgressSink {
-                    bus: bus.clone(),
-                    session_id: turn.session_id().clone(),
-                    run_id: turn.run_id().clone(),
-                });
+            let progress_sink: Arc<dyn ToolProgressSink> = Arc::new(BusBackedToolProgressSink {
+                bus: bus.clone(),
+                session_id: turn.session_id().clone(),
+                run_id: turn.run_id().clone(),
+            });
             let capability = Arc::new(CapabilityContext {
                 storage: Some(StorageCapability {
                     workspace_path,

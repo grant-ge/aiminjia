@@ -255,8 +255,15 @@ fn take_by_visual_width(s: &str, cap: usize) -> String {
 /// "标题：" / "标题如下：" that prefix the actual title.
 fn first_meaningful_line(raw: &str) -> &str {
     const LEAD_INS: &[&str] = &[
-        "好的，", "好的:", "好的：", "标题：", "标题:", "标题如下：", "标题如下:",
-        "Title:", "title:",
+        "好的，",
+        "好的:",
+        "好的：",
+        "标题：",
+        "标题:",
+        "标题如下：",
+        "标题如下:",
+        "Title:",
+        "title:",
     ];
     for line in raw.lines() {
         let trimmed = line.trim();
@@ -291,8 +298,21 @@ pub fn title_from_user_text(user_text: &str) -> String {
     }
     // 剥礼貌前缀
     let polite_prefixes = [
-        "请帮我", "请帮", "请", "麻烦", "你好", "帮我", "帮忙", "可以", "能否",
-        "Please ", "please ", "Can you ", "can you ", "Could you ", "could you ",
+        "请帮我",
+        "请帮",
+        "请",
+        "麻烦",
+        "你好",
+        "帮我",
+        "帮忙",
+        "可以",
+        "能否",
+        "Please ",
+        "please ",
+        "Can you ",
+        "can you ",
+        "Could you ",
+        "could you ",
     ];
     let mut s = first_sentence.to_string();
     for p in polite_prefixes {
@@ -389,6 +409,20 @@ fn looks_like_refusal(s: &str) -> bool {
         "I'm unable",
     ];
     REFUSAL_PREFIXES.iter().any(|p| s.starts_with(p))
+}
+
+pub fn is_generic_auto_title(title: &str) -> bool {
+    let normalized = title.trim().to_lowercase();
+    matches!(
+        normalized.as_str(),
+        "new conversation"
+            | "conversation"
+            | "untitled"
+            | "untitled conversation"
+            | "新对话"
+            | "无标题"
+            | "新的对话"
+    )
 }
 
 pub fn should_auto_title(
@@ -502,11 +536,12 @@ async fn generate_and_set_title_inner(
 
     // 先尝试 LLM 总结，失败/空 → fallback 到 user 首句截断
     let title = match try_llm_title(&gateway, &settings, &first_user, &conversation_id).await {
-        Ok(t) if !t.is_empty() => t,
-        Ok(_) => {
+        Ok(t) if !t.is_empty() && !is_generic_auto_title(&t) => t,
+        Ok(t) => {
             log::warn!(
-                "[auto-title] LLM returned empty title; falling back to user-text. conv={}",
-                conversation_id
+                "[auto-title] LLM returned empty/generic title; falling back to user-text. conv={} title={:?}",
+                conversation_id,
+                t
             );
             title_from_user_text(&first_user)
         }
@@ -520,8 +555,13 @@ async fn generate_and_set_title_inner(
         }
     };
 
-    if title.is_empty() {
-        anyhow::bail!("derived title is empty");
+    if title.is_empty() || is_generic_auto_title(&title) {
+        log::info!(
+            "[auto-title] skipped title update: derived title is empty/generic. conv={} title={:?}",
+            conversation_id,
+            title
+        );
+        return Ok(None);
     }
 
     let outcome = rename_conversation(db, conversation_id, title)
@@ -693,16 +733,24 @@ mod title_tests {
     fn title_from_user_text_takes_first_sentence() {
         // 你那个例子：长 user 句子取首句作为标题
         assert_eq!(
-            title_from_user_text("这个文件夹内有啥, 可以作为我的年中总结的资料吗, 不够的话, 我再去找资料"),
+            title_from_user_text(
+                "这个文件夹内有啥, 可以作为我的年中总结的资料吗, 不够的话, 我再去找资料"
+            ),
             "这个文件夹内有啥"
         );
     }
 
     #[test]
     fn title_from_user_text_strips_polite_prefix() {
-        assert_eq!(title_from_user_text("请帮我分析一下销售数据"), "分析一下销售数据");
+        assert_eq!(
+            title_from_user_text("请帮我分析一下销售数据"),
+            "分析一下销售数据"
+        );
         assert_eq!(title_from_user_text("麻烦你看下这个 bug"), "你看下这个 bug");
-        assert_eq!(title_from_user_text("Please review the design"), "review the design");
+        assert_eq!(
+            title_from_user_text("Please review the design"),
+            "review the design"
+        );
     }
 
     #[test]
@@ -744,7 +792,10 @@ mod title_tests {
     #[test]
     fn sanitize_title_strips_lead_in_prefix() {
         // 模型偶尔输出 "好的，标题如下：\n实际标题"
-        assert_eq!(sanitize_title("标题：\nReact 19 新特性详解"), "React 19 新特性详解");
+        assert_eq!(
+            sanitize_title("标题：\nReact 19 新特性详解"),
+            "React 19 新特性详解"
+        );
         assert_eq!(sanitize_title("好的，\n实际标题"), "实际标题");
     }
 
@@ -771,7 +822,10 @@ mod title_tests {
     #[test]
     fn sanitize_title_strips_markdown_decoration() {
         // # heading marker stripped; 16 字内全部保留（不再硬截 10 char）
-        assert_eq!(sanitize_title("# React 19 新特性详解"), "React 19 新特性详解");
+        assert_eq!(
+            sanitize_title("# React 19 新特性详解"),
+            "React 19 新特性详解"
+        );
         assert_eq!(sanitize_title("**重要标题**"), "重要标题");
         // bold/italic mid-string and inline code
         assert_eq!(
@@ -785,6 +839,15 @@ mod title_tests {
         );
         // underscore italic + tilde strikethrough
         assert_eq!(sanitize_title("_emphasis_ ~strike~"), "emphasis strike");
+    }
+
+    #[test]
+    fn generic_auto_titles_are_rejected() {
+        assert!(is_generic_auto_title("New Conversation"));
+        assert!(is_generic_auto_title(" new conversation "));
+        assert!(is_generic_auto_title("新对话"));
+        assert!(is_generic_auto_title("Untitled"));
+        assert!(!is_generic_auto_title("分析销售数据"));
     }
 
     #[test]

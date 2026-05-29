@@ -67,7 +67,8 @@ impl RuntimeLlmExecutor for MockLlmExecutor {
                 tokens_in: 0,
                 tokens_out: 0,
                 cache_creation_input_tokens: 0,
-                cache_read_input_tokens: 0, thinking_blocks: Vec::new(),
+                cache_read_input_tokens: 0,
+                thinking_blocks: Vec::new(),
                 stop_reason: Some("end_turn".to_string()),
             })
         } else {
@@ -81,7 +82,8 @@ impl RuntimeLlmExecutor for MockLlmExecutor {
         _content: &str,
         _tool_calls: &[serde_json::Value],
         _generated_file_ids: &[String],
-        _file_metas: &[serde_json::Value], _thinking_blocks: &[serde_json::Value],
+        _file_metas: &[serde_json::Value],
+        _thinking_blocks: &[serde_json::Value],
         _error: Option<&app_lib::storage::file_store::types::MessageError>,
     ) -> Result<String, TurnError> {
         Ok("mock-msg-id".to_string())
@@ -99,7 +101,8 @@ fn mock_executor_implements_trait() {
         tokens_in: 10,
         tokens_out: 5,
         cache_creation_input_tokens: 0,
-        cache_read_input_tokens: 0, thinking_blocks: Vec::new(),
+        cache_read_input_tokens: 0,
+        thinking_blocks: Vec::new(),
         stop_reason: Some("end_turn".to_string()),
     }]);
     let _arc: Arc<dyn RuntimeLlmExecutor> = Arc::new(executor);
@@ -301,7 +304,8 @@ async fn driver_s4_loop_content_complete() {
         tokens_in: 10,
         tokens_out: 5,
         cache_creation_input_tokens: 0,
-        cache_read_input_tokens: 0, thinking_blocks: Vec::new(),
+        cache_read_input_tokens: 0,
+        thinking_blocks: Vec::new(),
         stop_reason: Some("end_turn".to_string()),
     }]));
 
@@ -407,14 +411,16 @@ async fn driver_s4_loop_tool_calls_then_content() {
             tokens_in: 20,
             tokens_out: 10,
             cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 0, thinking_blocks: Vec::new(),
+            cache_read_input_tokens: 0,
+            thinking_blocks: Vec::new(),
         },
         LlmStepResult::ContentComplete {
             content: "Done.".to_string(),
             tokens_in: 5,
             tokens_out: 3,
             cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 0, thinking_blocks: Vec::new(),
+            cache_read_input_tokens: 0,
+            thinking_blocks: Vec::new(),
             stop_reason: Some("end_turn".to_string()),
         },
     ]));
@@ -454,7 +460,8 @@ async fn driver_s4_message_persisted_carries_content() {
         tokens_in: 8,
         tokens_out: 4,
         cache_creation_input_tokens: 0,
-        cache_read_input_tokens: 0, thinking_blocks: Vec::new(),
+        cache_read_input_tokens: 0,
+        thinking_blocks: Vec::new(),
         stop_reason: Some("end_turn".to_string()),
     }]));
 
@@ -581,7 +588,8 @@ impl RuntimeLlmExecutor for RecordingMockExecutor {
                 tokens_in: 0,
                 tokens_out: 0,
                 cache_creation_input_tokens: 0,
-                cache_read_input_tokens: 0, thinking_blocks: Vec::new(),
+                cache_read_input_tokens: 0,
+                thinking_blocks: Vec::new(),
                 stop_reason: Some("end_turn".to_string()),
             })
         } else {
@@ -595,7 +603,8 @@ impl RuntimeLlmExecutor for RecordingMockExecutor {
         _content: &str,
         _tool_calls: &[serde_json::Value],
         _generated_file_ids: &[String],
-        _file_metas: &[serde_json::Value], _thinking_blocks: &[serde_json::Value],
+        _file_metas: &[serde_json::Value],
+        _thinking_blocks: &[serde_json::Value],
         _error: Option<&app_lib::storage::file_store::types::MessageError>,
     ) -> Result<String, TurnError> {
         Ok("mock-msg-id".to_string())
@@ -614,7 +623,8 @@ async fn driver_s4_injects_system_reminder_as_first_user_message() {
             tokens_in: 0,
             tokens_out: 0,
             cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 0, thinking_blocks: Vec::new(),
+            cache_read_input_tokens: 0,
+            thinking_blocks: Vec::new(),
             stop_reason: Some("end_turn".to_string()),
         },
     ]));
@@ -662,7 +672,8 @@ async fn driver_s4_system_reminder_precedes_user_content_message() {
             tokens_in: 0,
             tokens_out: 0,
             cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 0, thinking_blocks: Vec::new(),
+            cache_read_input_tokens: 0,
+            thinking_blocks: Vec::new(),
             stop_reason: Some("end_turn".to_string()),
         },
     ]));
@@ -730,7 +741,8 @@ impl RuntimeLlmExecutor for EnrichedUserMessageExecutor {
             tokens_in: 0,
             tokens_out: 0,
             cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 0, thinking_blocks: Vec::new(),
+            cache_read_input_tokens: 0,
+            thinking_blocks: Vec::new(),
             stop_reason: Some("end_turn".to_string()),
         })
     }
@@ -755,7 +767,8 @@ impl RuntimeLlmExecutor for EnrichedUserMessageExecutor {
         _content: &str,
         _tool_calls: &[serde_json::Value],
         _generated_file_ids: &[String],
-        _file_metas: &[serde_json::Value], _thinking_blocks: &[serde_json::Value],
+        _file_metas: &[serde_json::Value],
+        _thinking_blocks: &[serde_json::Value],
         _error: Option<&app_lib::storage::file_store::types::MessageError>,
     ) -> Result<String, TurnError> {
         Ok("mock-msg-id".to_string())
@@ -820,7 +833,8 @@ impl CapturingMockExecutor {
                 tokens_in: 0,
                 tokens_out: 0,
                 cache_creation_input_tokens: 0,
-                cache_read_input_tokens: 0, thinking_blocks: Vec::new(),
+                cache_read_input_tokens: 0,
+                thinking_blocks: Vec::new(),
                 stop_reason: Some("end_turn".to_string()),
             }]),
             received_system_prompts: std::sync::Mutex::new(Vec::new()),
@@ -847,7 +861,8 @@ impl RuntimeLlmExecutor for CapturingMockExecutor {
                 tokens_in: 0,
                 tokens_out: 0,
                 cache_creation_input_tokens: 0,
-                cache_read_input_tokens: 0, thinking_blocks: Vec::new(),
+                cache_read_input_tokens: 0,
+                thinking_blocks: Vec::new(),
                 stop_reason: Some("end_turn".to_string()),
             })
         } else {
@@ -865,7 +880,8 @@ impl RuntimeLlmExecutor for CapturingMockExecutor {
         _content: &str,
         _tool_calls: &[serde_json::Value],
         _generated_file_ids: &[String],
-        _file_metas: &[serde_json::Value], _thinking_blocks: &[serde_json::Value],
+        _file_metas: &[serde_json::Value],
+        _thinking_blocks: &[serde_json::Value],
         _error: Option<&app_lib::storage::file_store::types::MessageError>,
     ) -> Result<String, TurnError> {
         Ok("mock-id".to_string())
@@ -960,7 +976,8 @@ impl RuntimeLlmExecutor for ToolDefsCapturingExecutor {
             tokens_in: 0,
             tokens_out: 0,
             cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 0, thinking_blocks: Vec::new(),
+            cache_read_input_tokens: 0,
+            thinking_blocks: Vec::new(),
             stop_reason: Some("end_turn".to_string()),
         })
     }
@@ -992,7 +1009,8 @@ impl RuntimeLlmExecutor for ToolDefsCapturingExecutor {
         _content: &str,
         _tool_calls: &[serde_json::Value],
         _generated_file_ids: &[String],
-        _file_metas: &[serde_json::Value], _thinking_blocks: &[serde_json::Value],
+        _file_metas: &[serde_json::Value],
+        _thinking_blocks: &[serde_json::Value],
         _error: Option<&app_lib::storage::file_store::types::MessageError>,
     ) -> Result<String, TurnError> {
         Ok("mock-id".to_string())
@@ -1110,7 +1128,8 @@ impl RuntimeLlmExecutor for TurnConfigOverrideExecutor {
                 tokens_in: 0,
                 tokens_out: 0,
                 cache_creation_input_tokens: 0,
-                cache_read_input_tokens: 0, thinking_blocks: Vec::new(),
+                cache_read_input_tokens: 0,
+                thinking_blocks: Vec::new(),
                 stop_reason: Some("end_turn".to_string()),
             })
         } else {
@@ -1142,7 +1161,8 @@ impl RuntimeLlmExecutor for TurnConfigOverrideExecutor {
         _content: &str,
         _tool_calls: &[serde_json::Value],
         _generated_file_ids: &[String],
-        _file_metas: &[serde_json::Value], _thinking_blocks: &[serde_json::Value],
+        _file_metas: &[serde_json::Value],
+        _thinking_blocks: &[serde_json::Value],
         _error: Option<&app_lib::storage::file_store::types::MessageError>,
     ) -> Result<String, TurnError> {
         Ok("mock-id".to_string())
@@ -1176,7 +1196,8 @@ async fn driver_s4_prefers_turn_override_system_prompt_and_tool_defs() {
             tokens_in: 0,
             tokens_out: 0,
             cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 0, thinking_blocks: Vec::new(),
+            cache_read_input_tokens: 0,
+            thinking_blocks: Vec::new(),
             stop_reason: Some("end_turn".to_string()),
         }],
     ));
@@ -1218,14 +1239,16 @@ async fn driver_s4_turn_override_allowed_tools_blocks_runtime_execution() {
                 tokens_in: 0,
                 tokens_out: 0,
                 cache_creation_input_tokens: 0,
-                cache_read_input_tokens: 0, thinking_blocks: Vec::new(),
+                cache_read_input_tokens: 0,
+                thinking_blocks: Vec::new(),
             },
             LlmStepResult::ContentComplete {
                 content: "done".to_string(),
                 tokens_in: 0,
                 tokens_out: 0,
                 cache_creation_input_tokens: 0,
-                cache_read_input_tokens: 0, thinking_blocks: Vec::new(),
+                cache_read_input_tokens: 0,
+                thinking_blocks: Vec::new(),
                 stop_reason: Some("end_turn".to_string()),
             },
         ],
@@ -1292,7 +1315,8 @@ impl RuntimeLlmExecutor for HistoryAwareMockExecutor {
             tokens_in: 0,
             tokens_out: 0,
             cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 0, thinking_blocks: Vec::new(),
+            cache_read_input_tokens: 0,
+            thinking_blocks: Vec::new(),
             stop_reason: Some("end_turn".to_string()),
         })
     }
@@ -1310,7 +1334,8 @@ impl RuntimeLlmExecutor for HistoryAwareMockExecutor {
         _content: &str,
         _tool_calls: &[serde_json::Value],
         _generated_file_ids: &[String],
-        _file_metas: &[serde_json::Value], _thinking_blocks: &[serde_json::Value],
+        _file_metas: &[serde_json::Value],
+        _thinking_blocks: &[serde_json::Value],
         _error: Option<&app_lib::storage::file_store::types::MessageError>,
     ) -> Result<String, TurnError> {
         Ok("mock-id".to_string())
@@ -1452,7 +1477,8 @@ impl RuntimeLlmExecutor for FailingHistoryExecutor {
         _content: &str,
         _tool_calls: &[serde_json::Value],
         _generated_file_ids: &[String],
-        _file_metas: &[serde_json::Value], _thinking_blocks: &[serde_json::Value],
+        _file_metas: &[serde_json::Value],
+        _thinking_blocks: &[serde_json::Value],
         _error: Option<&app_lib::storage::file_store::types::MessageError>,
     ) -> Result<String, TurnError> {
         Ok("mock-id".to_string())
@@ -1513,7 +1539,8 @@ impl RuntimeLlmExecutor for EnvInfoCapturingExecutor {
             tokens_in: 0,
             tokens_out: 0,
             cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 0, thinking_blocks: Vec::new(),
+            cache_read_input_tokens: 0,
+            thinking_blocks: Vec::new(),
             stop_reason: Some("end_turn".to_string()),
         })
     }
@@ -1528,7 +1555,8 @@ impl RuntimeLlmExecutor for EnvInfoCapturingExecutor {
         _content: &str,
         _tool_calls: &[serde_json::Value],
         _generated_file_ids: &[String],
-        _file_metas: &[serde_json::Value], _thinking_blocks: &[serde_json::Value],
+        _file_metas: &[serde_json::Value],
+        _thinking_blocks: &[serde_json::Value],
         _error: Option<&app_lib::storage::file_store::types::MessageError>,
     ) -> Result<String, TurnError> {
         Ok("mock-id".to_string())
@@ -1622,7 +1650,8 @@ impl RuntimeLlmExecutor for CountingEnvInfoExecutor {
             tokens_in: 0,
             tokens_out: 0,
             cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 0, thinking_blocks: Vec::new(),
+            cache_read_input_tokens: 0,
+            thinking_blocks: Vec::new(),
             stop_reason: Some("end_turn".to_string()),
         })
     }
@@ -1641,7 +1670,8 @@ impl RuntimeLlmExecutor for CountingEnvInfoExecutor {
         _content: &str,
         _tool_calls: &[serde_json::Value],
         _generated_file_ids: &[String],
-        _file_metas: &[serde_json::Value], _thinking_blocks: &[serde_json::Value],
+        _file_metas: &[serde_json::Value],
+        _thinking_blocks: &[serde_json::Value],
         _error: Option<&app_lib::storage::file_store::types::MessageError>,
     ) -> Result<String, TurnError> {
         Ok("mock-id".to_string())
@@ -1782,7 +1812,8 @@ impl RuntimeLlmExecutor for SkillCatalogCapturingExecutor {
             tokens_in: 0,
             tokens_out: 0,
             cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 0, thinking_blocks: Vec::new(),
+            cache_read_input_tokens: 0,
+            thinking_blocks: Vec::new(),
             stop_reason: Some("end_turn".to_string()),
         })
     }
@@ -1797,7 +1828,8 @@ impl RuntimeLlmExecutor for SkillCatalogCapturingExecutor {
         _content: &str,
         _tool_calls: &[serde_json::Value],
         _generated_file_ids: &[String],
-        _file_metas: &[serde_json::Value], _thinking_blocks: &[serde_json::Value],
+        _file_metas: &[serde_json::Value],
+        _thinking_blocks: &[serde_json::Value],
         _error: Option<&app_lib::storage::file_store::types::MessageError>,
     ) -> Result<String, TurnError> {
         Ok("mock-id".to_string())

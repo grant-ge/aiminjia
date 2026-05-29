@@ -335,10 +335,7 @@ impl TelegramApi {
             .await
             .map_err(classify_reqwest_error)?;
         let status = resp.status();
-        let body = resp
-            .text()
-            .await
-            .map_err(classify_reqwest_error)?;
+        let body = resp.text().await.map_err(classify_reqwest_error)?;
 
         // DEV diagnostic：把非空 result（即有真实 update）的原始 JSON 打印到日志，
         // 用来排查"图片/文件消息为什么没识别"。空 result（long-poll 25s timeout 返回 []）
@@ -363,8 +360,9 @@ impl TelegramApi {
             ))
         })?;
         if env.ok {
-            env.result
-                .ok_or_else(|| TelegramApiError::TransportConnected("ok=true but result missing".into()))
+            env.result.ok_or_else(|| {
+                TelegramApiError::TransportConnected("ok=true but result missing".into())
+            })
         } else {
             let desc = env.description.unwrap_or_default();
             match env.error_code.unwrap_or(0) {
@@ -433,9 +431,9 @@ impl TelegramApi {
     ) -> Result<TgMessage, TelegramApiError> {
         const MAX_BYTES: u64 = 50 * 1024 * 1024;
 
-        let meta = tokio::fs::metadata(file_path).await.map_err(|e| {
-            TelegramApiError::IoError(format!("stat {}: {e}", file_path.display()))
-        })?;
+        let meta = tokio::fs::metadata(file_path)
+            .await
+            .map_err(|e| TelegramApiError::IoError(format!("stat {}: {e}", file_path.display())))?;
         let size = meta.len();
         if size > MAX_BYTES {
             return Err(TelegramApiError::FileTooBig {
@@ -443,9 +441,9 @@ impl TelegramApi {
                 limit: MAX_BYTES,
             });
         }
-        let bytes = tokio::fs::read(file_path).await.map_err(|e| {
-            TelegramApiError::IoError(format!("read {}: {e}", file_path.display()))
-        })?;
+        let bytes = tokio::fs::read(file_path)
+            .await
+            .map_err(|e| TelegramApiError::IoError(format!("read {}: {e}", file_path.display())))?;
         let file_name = file_path
             .file_name()
             .and_then(|n| n.to_str())
@@ -506,9 +504,8 @@ impl TelegramApi {
         // 加 host + scheme 校验。仅对生产 api_base 严格；测试 api_base 跳过。
         let is_default_api = self.api_base == TELEGRAM_API_BASE;
         if is_default_api {
-            let parsed = url::Url::parse(&url).map_err(|e| {
-                TelegramApiError::TransportConnected(format!("invalid url: {e}"))
-            })?;
+            let parsed = url::Url::parse(&url)
+                .map_err(|e| TelegramApiError::TransportConnected(format!("invalid url: {e}")))?;
             if parsed.host_str() != Some("api.telegram.org") {
                 return Err(TelegramApiError::TransportConnected(format!(
                     "SSRF rejected: host {:?} not allowed",
@@ -545,10 +542,7 @@ impl TelegramApi {
                 ))),
             };
         }
-        let bytes = resp
-            .bytes()
-            .await
-            .map_err(classify_reqwest_error)?;
+        let bytes = resp.bytes().await.map_err(classify_reqwest_error)?;
         Ok(bytes.to_vec())
     }
 }
@@ -557,16 +551,14 @@ async fn parse_envelope<T: for<'de> Deserialize<'de>>(
     resp: reqwest::Response,
 ) -> Result<T, TelegramApiError> {
     let status = resp.status();
-    let body = resp
-        .text()
-        .await
-        .map_err(classify_reqwest_error)?;
+    let body = resp.text().await.map_err(classify_reqwest_error)?;
     let env: Envelope<T> = serde_json::from_str(&body)
         .with_context(|| format!("parse telegram envelope status={status} body={body}"))
         .map_err(|e| TelegramApiError::TransportConnected(e.to_string()))?;
     if env.ok {
-        env.result
-            .ok_or_else(|| TelegramApiError::TransportConnected("ok=true but result missing".to_string()))
+        env.result.ok_or_else(|| {
+            TelegramApiError::TransportConnected("ok=true but result missing".to_string())
+        })
     } else {
         let desc = env.description.unwrap_or_default();
         match env.error_code.unwrap_or(0) {
@@ -686,11 +678,9 @@ mod tests {
 
     #[tokio::test]
     async fn connect_to_nonexistent_port_classified_as_transport_connect() {
-        let api = TelegramApi::new_with_api_base_for_tests(
-            "T".into(),
-            "http://127.0.0.1:10".into(),
-        )
-        .unwrap();
+        let api =
+            TelegramApi::new_with_api_base_for_tests("T".into(), "http://127.0.0.1:10".into())
+                .unwrap();
         match api.send_message(1, "hi", None).await {
             Err(TelegramApiError::TransportConnect(_)) => {}
             other => panic!("expected TransportConnect, got {:?}", other),
@@ -718,18 +708,16 @@ mod tests {
         let file_path = dir.path().join("report.xlsx");
         std::fs::write(&file_path, b"fake xlsx content").unwrap();
 
-        let msg = api
-            .send_document(42, &file_path, None, None)
-            .await
-            .unwrap();
+        let msg = api.send_document(42, &file_path, None, None).await.unwrap();
         assert_eq!(msg.message_id, 777);
         // TempDir drops here
     }
 
     #[tokio::test]
     async fn send_document_rejects_files_over_50mb() {
-        let api = TelegramApi::new_with_api_base_for_tests("T".into(), "http://127.0.0.1:10".into())
-            .unwrap();
+        let api =
+            TelegramApi::new_with_api_base_for_tests("T".into(), "http://127.0.0.1:10".into())
+                .unwrap();
         let dir = tempfile::TempDir::new().unwrap();
         let file_path = dir.path().join("big.bin");
         // Create a file with metadata size > 50MB by writing a sparse file
@@ -755,8 +743,9 @@ mod tests {
 
     #[tokio::test]
     async fn send_document_nonexistent_path_returns_io_error() {
-        let api = TelegramApi::new_with_api_base_for_tests("T".into(), "http://127.0.0.1:10".into())
-            .unwrap();
+        let api =
+            TelegramApi::new_with_api_base_for_tests("T".into(), "http://127.0.0.1:10".into())
+                .unwrap();
         let path = std::path::Path::new("/nonexistent/path/to/missing.xlsx");
         match api.send_document(42, path, None, None).await {
             Err(TelegramApiError::IoError(_)) => {}
@@ -775,7 +764,11 @@ mod tests {
         // 使用 mock server base URL（非 TELEGRAM_API_BASE），SSRF 检查跳过
         let api = TelegramApi::new_with_api_base_for_tests("T".into(), server.uri()).unwrap();
         let res = api.download_file("photos/file_1.jpg").await;
-        assert!(res.is_ok(), "normal path should not be rejected, got {:?}", res);
+        assert!(
+            res.is_ok(),
+            "normal path should not be rejected, got {:?}",
+            res
+        );
         assert_eq!(res.unwrap(), b"jpegbytes");
     }
 }
