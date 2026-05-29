@@ -333,6 +333,12 @@ agent 跑意图时遇到新陷阱 / 新诊断套路 / 新容忍判定，**在报
 
 **长期方向**：`aijia` 应加 `auto-approve-permissions` / 启动期 e2e 模式禁用所有需要交互的 permission ask，避免每次跑测都被弹窗截胡。
 
+### 5.13 `aijia new-task` 切到 home 路由，conv id 懒创建
+
+`aijia new-task` 调用后立刻 `aijia where --json` 拿到 `route: "home"`、`sessionId: null`（或 stale 的上一个 active sessionId）、stale 的 `messageCount`。新对话 ID 要等 `aijia send` 真把第一条消息发出去后才生成。rules.md 写"新建对话"步骤的 CLI 序列必须是 `new-task` → `type-message` → `send`，**send 之后**再 `where --json` 才能取到新 `sessionId` 作为 `$CONV_ID`。
+
+实战来源：意图-对话-001 跑测（2026-05-29），new-task 后 where 返回 home + stale `messageCount=162`（上一个 active conv 的字段），send 后才出现新 conv id。
+
 ## 6. 环境契约
 
 - 直接在真实 `~/.renlijia/` 跑、**不**隔离、跑后**不**清理
