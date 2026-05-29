@@ -300,28 +300,29 @@
 
 ---
 
-## 意图 9：用户 scope 下 dingtalk-workspace 缺失时，AI 不应幻觉加载、应在工具层报错
+## 意图 10：用户一句话涉及多个技能时，AI 同对话加载全部
 
 **场景**
-当用户 scope 下 `dingtalk-workspace` skill 不存在（被卸载、未导入、loader 跳过）时，用户提到「钉钉」相关需求，AI 应当能感知 skill catalog 中没有这条记录，不在 `Skill` 工具里硬传 `dingtalk-workspace`；即便 LLM 自信传了，工具应返回明确的 not found 错误而非空字符串或假数据。
+用户在一句自然语言里同时提到涉及不同技能领域的需求（如「做 PPT + 用钉钉发消息」），AI 应理解这是跨技能的需求并加载所有相关技能；允许同 turn 串行加载，也允许先加载主技能、并在回复中明确告知用户后续会用第二个技能。本意图覆盖最小双技能组合：`html-ppt`（PPT 生成）+ `dingtalk-workspace`（钉钉）。
 
 **操作步骤**
 1. 应用探活：`tauri-pilot aijia health-check`
-2. 推断 scope
-3. 移除 user scope 下的 dingtalk 技能（若存在）：`rm -rf ~/.renlijia/users/{scope}/skills/dingtalk-workspace/`
-4. 移除 global skill 副本（若存在）：`rm -rf ~/.renlijia/skills/dingtalk-workspace/`
-5. 触发 skill registry 刷新（按产品入口）：在技能中心点「刷新」按钮或重启应用 turn — 用 `tauri-pilot aijia new-task` 新建空对话足以让下一个 turn 重读 catalog
-6. 在新对话中输入：`帮我用钉钉发条消息`
-7. 点发送 + 等回复完成：`tauri-pilot aijia send` + `tauri-pilot aijia wait-reply --timeout 90`
-8. 推断当前对话 id：`conv_id=$(tauri-pilot aijia where --json | jq -r .activeConversationId)`
+2. 推断 scope；从环境记下 `{scope}`
+3. 确认两个 skill 已就位：检查 `~/.renlijia/skills/html-ppt/SKILL.md` 和 `~/.renlijia/skills/dingtalk-workspace/SKILL.md` 均存在（任一不存在，先按「技能」task 意图 1 的「导入目录」流程导入，不通过手工 `cp` 落盘）
+4. 新建空对话：`tauri-pilot aijia new-task`
+5. 在对话输入框输入：`帮我生成一份年度总结 PPT，做完后用钉钉发给自己`
+6. 点发送 + 等回复完成：`tauri-pilot aijia send` + `tauri-pilot aijia wait-reply --timeout 120`
+7. 推断当前对话 id：`conv_id=$(tauri-pilot aijia where --json | jq -r .routeObj.conversationId)`
 
 **验收标准**
 
-✅ 应该看到（两种合法分支任一满足即 PASS，分支由产品当前实现决定）
-- **分支 A（LLM 看到 catalog 没钉钉、不调 Skill 工具）**：`~/.renlijia/users/{scope}/conversations/{conv_id}/messages.jsonl` 中**不存在** `toolCalls[].name == "Skill"` 且 `skill_id == "dingtalk-workspace"` 的记录；AI 回复文本中明确表达「没有钉钉技能」「需要先安装钉钉技能」类含义
-- **分支 B（LLM 硬调 Skill 工具）**：存在 `toolCalls[].name == "Skill"` 且 `skill_id == "dingtalk-workspace"` 的记录，但对应的 `role == "tool"` 记录中 `isError == true` 或 `content.text` 包含 `not found` / `does not exist` 等明确错误字样
+✅ 应该看到（双分支任一满足即 PASS）
+- **分支 A（同对话双技能均加载）**：`~/.renlijia/users/{scope}/conversations/{conv_id}/messages.jsonl` 中 `toolCalls[].name == "Skill"` 调用的 `skill_id` 去重集合 == `{"html-ppt", "dingtalk-workspace"}`
+- **分支 B（先主后副、AI 在 reply 中预告第二个技能）**：jsonl 中至少存在 1 条 `toolCalls[].name == "Skill"` 调用，且 `skill_id` ∈ `{"html-ppt", "dingtalk-workspace"}`；并且 jsonl 中最后一条 `role == "assistant"` 且 `toolCalls.length == 0` 的记录，其 `content.text` 中同时包含字符串 `钉钉` 和 `PPT`（说明 LLM 在文本里 acknowledge 了两个领域、把第二个技能留给后续轮处理）
+- 任一被加载的 `Skill` 调用紧随其后的 `role == "tool"` 记录 `isError != true` 且 `content.text` 长度 `!= 0`
 
 ❌ 不应该看到
-- 同时同对话目录下 `~/.renlijia/users/{scope}/skills/dingtalk-workspace/` 仍然存在（说明第 3 步删除未生效，本意图前提不成立）
-- 工具返回 `content.text` 为空字符串但 `isError == false`（"静默成功 + 空内容" = 幻觉风险）
-- AI 回复中假装钉钉 skill 存在并给出了来自该 skill 的具体步骤（如 `dws calendar list` 之类 — 没装 skill 时不该凭记忆吐 dws 命令）
+- jsonl 中**无任何** `toolCalls[].name == "Skill"` 调用（一个技能都没加载 = 完全没理解需求）
+- `toolCalls[].name == "Skill"` 的参数中 `skill_id` 出现非 `html-ppt` / `dingtalk-workspace` 字面（如 `ppt` / `dingtalk` / `钉钉` / `年度总结 PPT` 等错误字面 id）
+- AI 回复中出现「我没有 PPT 生成技能」「无法生成 PPT」「无法发送钉钉」等否认能力的措辞
+- 任一 `Skill` 调用对应的 tool record `content.text` 包含 `not found` / `does not exist` 等错误字样

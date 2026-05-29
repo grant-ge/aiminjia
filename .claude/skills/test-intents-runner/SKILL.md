@@ -231,7 +231,7 @@ tauri-pilot aijia health-check --json
 | 命令 | 作用 |
 |---|---|
 | `aijia where` | dump 现场 `{url, title, route, activeConversationId, messageCount, isStreaming, hasEditor}`——**失败时第一步跑这个** |
-| `aijia screenshot [--name <label>]` | 截图到 `/tmp/aijia-e2e-{label}-{ts}.png` |
+| `aijia screenshot [--label <label>]` | 截图到 `/tmp/aijia-e2e-{label}-{ts}.png` |
 | `aijia health-check` | app ready 探测（启动后第一个跑） |
 
 #### 未实现（不要在 rules.md 里依赖）
