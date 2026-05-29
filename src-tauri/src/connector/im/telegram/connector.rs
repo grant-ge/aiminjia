@@ -62,8 +62,9 @@ impl TelegramConnector {
         let pairing_path =
             super::pairing::pending_path_in(&config_store.platform_dir(Platform::Telegram));
         let pairing = tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current()
-                .block_on(super::pairing::PairingCodeStore::load_from_disk(&pairing_path))
+            tokio::runtime::Handle::current().block_on(
+                super::pairing::PairingCodeStore::load_from_disk(&pairing_path),
+            )
         })
         .with_save_path(pairing_path);
         Ok(Self {
@@ -194,8 +195,7 @@ impl IMConnector for TelegramConnector {
         let config_store = self.config_store.clone();
         let on_status = self.on_status.clone();
         let cancel = ctx.cancel_token.clone();
-        let last_get_updates_at =
-            std::sync::Arc::new(std::sync::atomic::AtomicI64::new(0));
+        let last_get_updates_at = std::sync::Arc::new(std::sync::atomic::AtomicI64::new(0));
 
         // Watchdog 独立 task，共享 cancel 和时间戳
         let watchdog_params = super::long_poll::WatchdogParams {

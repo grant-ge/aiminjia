@@ -30,21 +30,13 @@ pub struct AuthorizedWorkspaceRef {
 /// Store trait: each session holds at most one authorized directory.
 /// Writing again replaces the previous value (upsert / single-value semantics).
 pub trait AuthorizedWorkspaceStore: Send + Sync {
-    fn replace_for_session(
-        &self,
-        conversation_id: &str,
-        ws: &AuthorizedWorkspace,
-    ) -> Result<()>;
+    fn replace_for_session(&self, conversation_id: &str, ws: &AuthorizedWorkspace) -> Result<()>;
     fn get_current_for_session(
         &self,
         conversation_id: &str,
         session_id: &SessionId,
     ) -> Result<Option<AuthorizedWorkspace>>;
-    fn clear_for_session(
-        &self,
-        conversation_id: &str,
-        session_id: &SessionId,
-    ) -> Result<()>;
+    fn clear_for_session(&self, conversation_id: &str, session_id: &SessionId) -> Result<()>;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -57,14 +49,21 @@ pub trait AuthorizedWorkspaceStore: Send + Sync {
 /// 替代 `FileAuthorizedWorkspaceStore`（走 memory.jsonl 那条线）。
 pub struct ConvJsonAuthorizedWorkspaceStore {
     pub storage: Arc<AppStorage>,
+    pub cus: Option<Arc<crate::storage::CurrentUserStorage>>,
+}
+
+impl ConvJsonAuthorizedWorkspaceStore {
+    fn db(&self) -> Arc<AppStorage> {
+        if let Some(cus) = &self.cus {
+            cus.get_or(&self.storage)
+        } else {
+            self.storage.clone()
+        }
+    }
 }
 
 impl AuthorizedWorkspaceStore for ConvJsonAuthorizedWorkspaceStore {
-    fn replace_for_session(
-        &self,
-        conversation_id: &str,
-        ws: &AuthorizedWorkspace,
-    ) -> Result<()> {
+    fn replace_for_session(&self, conversation_id: &str, ws: &AuthorizedWorkspace) -> Result<()> {
         let persisted = crate::storage::file_store::types::PersistedAuthorizedWorkspace {
             id: ws.id.clone(),
             root_path: ws.root_path.clone(),
@@ -72,7 +71,7 @@ impl AuthorizedWorkspaceStore for ConvJsonAuthorizedWorkspaceStore {
             authorized_at: ws.authorized_at.clone(),
         };
         crate::storage::file_store::conversations::set_conversation_workspace(
-            self.storage.base_dir(),
+            self.db().base_dir(),
             conversation_id,
             Some(&persisted),
         )?;
@@ -85,7 +84,7 @@ impl AuthorizedWorkspaceStore for ConvJsonAuthorizedWorkspaceStore {
         session_id: &SessionId,
     ) -> Result<Option<AuthorizedWorkspace>> {
         let persisted = crate::storage::file_store::conversations::read_conversation_workspace(
-            self.storage.base_dir(),
+            self.db().base_dir(),
             conversation_id,
         )?;
         Ok(persisted.map(|p| AuthorizedWorkspace {
@@ -97,13 +96,9 @@ impl AuthorizedWorkspaceStore for ConvJsonAuthorizedWorkspaceStore {
         }))
     }
 
-    fn clear_for_session(
-        &self,
-        conversation_id: &str,
-        _session_id: &SessionId,
-    ) -> Result<()> {
+    fn clear_for_session(&self, conversation_id: &str, _session_id: &SessionId) -> Result<()> {
         crate::storage::file_store::conversations::set_conversation_workspace(
-            self.storage.base_dir(),
+            self.db().base_dir(),
             conversation_id,
             None,
         )?;
@@ -121,11 +116,7 @@ pub struct InMemoryAuthorizedWorkspaceStore {
 }
 
 impl AuthorizedWorkspaceStore for InMemoryAuthorizedWorkspaceStore {
-    fn replace_for_session(
-        &self,
-        conversation_id: &str,
-        ws: &AuthorizedWorkspace,
-    ) -> Result<()> {
+    fn replace_for_session(&self, conversation_id: &str, ws: &AuthorizedWorkspace) -> Result<()> {
         self.data
             .lock()
             .unwrap()
@@ -141,11 +132,7 @@ impl AuthorizedWorkspaceStore for InMemoryAuthorizedWorkspaceStore {
         Ok(self.data.lock().unwrap().get(conversation_id).cloned())
     }
 
-    fn clear_for_session(
-        &self,
-        conversation_id: &str,
-        _session_id: &SessionId,
-    ) -> Result<()> {
+    fn clear_for_session(&self, conversation_id: &str, _session_id: &SessionId) -> Result<()> {
         self.data.lock().unwrap().remove(conversation_id);
         Ok(())
     }

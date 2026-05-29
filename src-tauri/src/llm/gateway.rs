@@ -42,7 +42,7 @@ pub fn thinking_config_for_route(
     route: &RouteResult,
     settings: &AppSettings,
 ) -> Option<ThinkingConfig> {
-    if route.provider != "claude" {
+    if route.provider != "claude" && route.provider != "aijia-v2" {
         return None;
     }
 
@@ -133,11 +133,8 @@ fn apply_cloud_gateway_mode(route: &mut RouteResult, settings: &AppSettings) {
         return;
     }
 
-    match settings.cloud_gateway_mode {
-        CloudGatewayMode::V2 | CloudGatewayMode::Auto => {
-            route.provider = "aijia-v2".to_string();
-        }
-        CloudGatewayMode::Legacy => {}
+    if settings.cloud_gateway_mode == CloudGatewayMode::V2 {
+        route.provider = "aijia-v2".to_string();
     }
 }
 
@@ -305,9 +302,7 @@ impl LlmGateway {
             trace_id: trace_id
                 .filter(|id| !id.is_empty())
                 .map(|id| id.to_string()),
-            run_id: run_id
-                .filter(|id| !id.is_empty())
-                .map(|id| id.to_string()),
+            run_id: run_id.filter(|id| !id.is_empty()).map(|id| id.to_string()),
         }
     }
 
@@ -670,6 +665,96 @@ impl LlmGateway {
         let response = retry_dispatch_send(&route, request).await?;
 
         // 5. Unmask the response content
+        let unmasked_content = mask_ctx.unmask(&response.content);
+        Ok(LlmResponse {
+            content: unmasked_content,
+            ..response
+        })
+    }
+
+    /// 非流式版本的 [`stream_message_with_segments`]，用于 PR3 流式失败兜底。
+    ///
+    /// 签名与 stream_message_with_segments 完全对齐：复用 max_tokens /
+    /// conversation_id / system_segments (block-level cache_control) /
+    /// anthropic_multimodal_turn / trace_id / run_id，保证 fallback 与
+    /// stream 走完全相同的 request 上下文（不丢图 / cache 不失效 / 追踪不断链）。
+    ///
+    /// 内部仍走 `retry_dispatch_send` → 非流式 `/anthropic/v1/messages`，
+    /// 网关侧已支持非流式分支（lotus-server anthropic_native.go:190）并在流式失败
+    /// 自动退款（anthropic_native.go:499），所以 fallback 不会双扣费。
+    ///
+    /// Spec: docs/superpowers/specs/2026-05-28-streaming-error-handling-design.md §五.9.2
+    #[allow(clippy::too_many_arguments)]
+    pub async fn send_message_with_segments(
+        &self,
+        settings: &AppSettings,
+        messages: Vec<ChatMessage>,
+        masking_level: MaskingLevel,
+        system_prompt: Option<&str>,
+        context_message: Option<&str>,
+        tool_defs_override: Option<Vec<ToolDefinition>>,
+        max_tokens: u32,
+        conversation_id: Option<&str>,
+        anthropic_multimodal_turn: Option<AnthropicMultimodalTurn>,
+        system_segments: Vec<crate::llm::streaming::SystemPromptSegment>,
+        trace_id: Option<&str>,
+        run_id: Option<&str>,
+    ) -> Result<LlmResponse> {
+        let task_type = router::infer_task_type(&messages);
+        let mut route = router::select_route(&task_type, settings);
+
+        if provider_resolves_to_lotus(&route.provider) {
+            if let Some(auth) = &self.auth_manager {
+                match auth.get_session_key().await {
+                    Ok(sk) => route.api_key = sk,
+                    Err(e) => {
+                        return Err(anyhow::anyhow!(
+                            "API 密钥无效或已过期，请在设置中检查 API Key 配置。({})",
+                            e
+                        ))
+                    }
+                }
+            }
+        }
+
+        log::info!(
+            "Sending (non-stream fallback) task {:?} to provider '{}' conv={:?}",
+            task_type,
+            route.provider,
+            conversation_id
+        );
+
+        let mut mask_ctx = MaskingContext::new(masking_level);
+        let mut masked_messages = mask_ctx.mask_messages(&messages);
+        if provider_resolves_to_lotus(&route.provider) {
+            attach_anthropic_multimodal_turn(
+                &mut masked_messages,
+                anthropic_multimodal_turn.clone(),
+            );
+        }
+
+        let segments = if system_segments.is_empty() {
+            None
+        } else {
+            Some(system_segments)
+        };
+
+        let request = Self::build_request(
+            masked_messages,
+            &route,
+            false, // stream = false（关键：走非流式）
+            system_prompt,
+            context_message,
+            tool_defs_override,
+            max_tokens,
+            settings,
+            segments,
+            conversation_id,
+            trace_id,
+            run_id,
+        );
+
+        let response = retry_dispatch_send(&route, request).await?;
         let unmasked_content = mask_ctx.unmask(&response.content);
         Ok(LlmResponse {
             content: unmasked_content,
@@ -1097,6 +1182,35 @@ mod tests {
 
         assert_eq!(lotus_route.provider, "aijia-v2");
         assert_eq!(custom_route.provider, "custom");
+    }
+
+    #[test]
+    fn thinking_config_remains_v2_only_for_cloud_gateway() {
+        let settings = AppSettings {
+            thinking_type: "enabled".to_string(),
+            thinking_budget_tokens: 8192,
+            ..AppSettings::default()
+        };
+        let lotus_route = RouteResult {
+            provider: "lotus".to_string(),
+            api_key: "session".to_string(),
+            model_hint: String::new(),
+            use_tools: true,
+            endpoint_url: String::new(),
+            model_type: "chat".to_string(),
+        };
+        let v2_route = RouteResult {
+            provider: "aijia-v2".to_string(),
+            ..lotus_route.clone()
+        };
+
+        assert_eq!(thinking_config_for_route(&lotus_route, &settings), None);
+        assert_eq!(
+            thinking_config_for_route(&v2_route, &settings),
+            Some(ThinkingConfig::Enabled {
+                budget_tokens: 8192
+            })
+        );
     }
 
     #[test]

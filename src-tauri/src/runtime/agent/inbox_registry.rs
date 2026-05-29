@@ -100,7 +100,8 @@ mod tests {
         let team = "alpha";
         let id = AgentId::new("a1");
         let inbox = AgentInbox::new(4);
-        reg.register(&session, team, id.clone(), inbox.clone()).await;
+        reg.register(&session, team, id.clone(), inbox.clone())
+            .await;
 
         let resolved = reg
             .get(&session, team, &id)

@@ -275,7 +275,9 @@ async fn happy_path_employee_subagent_type_creates_teammate_and_registers_name()
     // the team_name resolved from `team_handle` ("research-team"), not the
     // single-team era "default" placeholder.
     let sid = SessionId::new(session_id);
-    let resolved = name_registry.resolve(&sid, "research-team", "researcher").await;
+    let resolved = name_registry
+        .resolve(&sid, "research-team", "researcher")
+        .await;
     assert!(
         resolved.is_some(),
         "AgentNameRegistry should have 'researcher' registered under 'research-team'"

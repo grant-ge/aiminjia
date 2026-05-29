@@ -651,8 +651,9 @@ pub fn run() {
             // IMPORTANT: facade must be managed before TauriChatCommandAdapter::new() is
             // called, because new() calls try_state::<RuntimeRepositoryFacade>() to wire
             // authorized_workspace_store. Registering it here ensures try_state succeeds.
-            let facade = Arc::new(storage::file_store::RuntimeRepositoryFacade::from_storage(
+            let facade = Arc::new(storage::file_store::RuntimeRepositoryFacade::from_storage_with_cus(
                 db.clone(),
+                Some(current_user_storage.clone()),
             ));
             app.manage(facade);
 
@@ -1316,10 +1317,7 @@ pub async fn ensure_channel_manager_registered(app: &tauri::AppHandle) {
         .state::<Arc<transport::tauri_commands::chat::TauriChatCommandAdapter>>()
         .inner()
         .clone();
-    let gateway_ref = app
-        .state::<Arc<llm::gateway::LlmGateway>>()
-        .inner()
-        .clone();
+    let gateway_ref = app.state::<Arc<llm::gateway::LlmGateway>>().inner().clone();
 
     let reply_manager = Arc::new(connector::im::DingtalkReplyManager::new());
     let judge = Arc::new(connector::im::ask_coordinator::GatewayAskReplyJudge::new(
@@ -1330,17 +1328,14 @@ pub async fn ensure_channel_manager_registered(app: &tauri::AppHandle) {
         .state::<Arc<std::sync::RwLock<std::collections::HashSet<String>>>>()
         .inner()
         .clone();
-    let ask_coordinator = Arc::new(
-        connector::im::ask_coordinator::IMAskCoordinator::new(
-            channel_session_ids.clone()
-                as Arc<dyn connector::im::ask_coordinator::ChannelSessionRegistry>,
-            reply_manager.clone()
-                as Arc<dyn connector::im::ask_coordinator::AskOutputSink>,
-            chat_adapter_ref.permission_control_plane(),
-            chat_adapter_ref.interaction_control_plane(),
-            judge,
-        ),
-    );
+    let ask_coordinator = Arc::new(connector::im::ask_coordinator::IMAskCoordinator::new(
+        channel_session_ids.clone()
+            as Arc<dyn connector::im::ask_coordinator::ChannelSessionRegistry>,
+        reply_manager.clone() as Arc<dyn connector::im::ask_coordinator::AskOutputSink>,
+        chat_adapter_ref.permission_control_plane(),
+        chat_adapter_ref.interaction_control_plane(),
+        judge,
+    ));
 
     let new_cm = Arc::new(connector::im::ChannelManager::new(
         app.clone(),

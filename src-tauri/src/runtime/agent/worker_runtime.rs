@@ -1397,8 +1397,12 @@ async fn teammate_stub_turn(
     source: &MessageSource,
 ) {
     if let Some(ref conv_dir) = ctx.conv_dir {
-        let jl_path =
-            transcript_path_for_kind(conv_dir, &TranscriptKind::Teammate, &ctx.team_name, ctx.agent_id.as_str());
+        let jl_path = transcript_path_for_kind(
+            conv_dir,
+            &TranscriptKind::Teammate,
+            &ctx.team_name,
+            ctx.agent_id.as_str(),
+        );
 
         let user_text = render_inbox_message_as_user_text(message);
 
@@ -1448,7 +1452,12 @@ async fn teammate_real_turn(
     };
 
     let jl_path = ctx.conv_dir.as_ref().map(|conv_dir| {
-        transcript_path_for_kind(conv_dir, &TranscriptKind::Teammate, &ctx.team_name, ctx.agent_id.as_str())
+        transcript_path_for_kind(
+            conv_dir,
+            &TranscriptKind::Teammate,
+            &ctx.team_name,
+            ctx.agent_id.as_str(),
+        )
     });
 
     // System prompt for this Teammate.  Constructed once at spawn time
@@ -1961,15 +1970,19 @@ async fn cleanup_teammate(ctx: &TeammateWorkerCtx, team_handle: &Arc<Mutex<Team>
         team.remove_teammate(name);
     }
     // 2. Unregister from AgentNameRegistry so the name can be reused.
-    ctx.agent_names.unregister(&ctx.session_id, &ctx.team_name, name).await;
+    ctx.agent_names
+        .unregister(&ctx.session_id, &ctx.team_name, name)
+        .await;
     // 3. Deregister from InboxRegistry so SendMessage stops resolving this
     //    Teammate (P2.2).  Skipped if no registry was injected.
     if let Some(reg) = ctx.inbox_registry.as_ref() {
-        reg.unregister(&ctx.session_id, &ctx.team_name, &ctx.agent_id).await;
+        reg.unregister(&ctx.session_id, &ctx.team_name, &ctx.agent_id)
+            .await;
     }
     // 4. Deregister from CancellationRegistry (P2.7).
     if let Some(reg) = ctx.cancellation_registry.as_ref() {
-        reg.unregister(&ctx.session_id, &ctx.team_name, &ctx.agent_id).await;
+        reg.unregister(&ctx.session_id, &ctx.team_name, &ctx.agent_id)
+            .await;
     }
 
     log::info!(

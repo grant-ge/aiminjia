@@ -28,7 +28,10 @@ impl RuntimeEventBus {
     }
 
     pub fn subscribe(&self, subscriber: Arc<dyn RuntimeEventSubscriber>) {
-        self.subscribers.lock().unwrap().push(Arc::downgrade(&subscriber));
+        self.subscribers
+            .lock()
+            .unwrap()
+            .push(Arc::downgrade(&subscriber));
     }
 
     pub async fn emit(&self, event: RuntimeEvent) -> Result<()> {

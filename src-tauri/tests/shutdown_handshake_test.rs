@@ -134,7 +134,12 @@ async fn shutdown_request_chat_message_does_not_terminate_teammate() {
     );
 
     // Transcript should now contain the shutdown-request wrapper.
-    let path = transcript_path_for_kind(&conv_dir, &TranscriptKind::Teammate, TEAM_NAME, agent_id.as_str());
+    let path = transcript_path_for_kind(
+        &conv_dir,
+        &TranscriptKind::Teammate,
+        TEAM_NAME,
+        agent_id.as_str(),
+    );
     let body = std::fs::read_to_string(&path).expect("transcript should exist");
     assert!(
         body.contains("shutdown-request"),

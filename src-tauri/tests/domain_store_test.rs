@@ -1,6 +1,6 @@
 use app_lib::runtime::store::{
-    AuditStore, ConversationStore, FileRecordStore, PersonaRecord, PersonaStore,
-    SessionStore, SettingsStore,
+    AuditStore, ConversationStore, FileRecordStore, PersonaRecord, PersonaStore, SessionStore,
+    SettingsStore,
 };
 use app_lib::storage::file_store::RuntimeRepositoryFacade;
 

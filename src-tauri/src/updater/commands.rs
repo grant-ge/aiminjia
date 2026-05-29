@@ -20,7 +20,9 @@ pub async fn updater_check_cache(
 ) -> Result<CacheCheckResult, String> {
     let cache = cache_for(&home);
     let etag = etag.unwrap_or_default();
-    cache.check(&version, expected_size, &etag).map_err(|e| e.to_string())
+    cache
+        .check(&version, expected_size, &etag)
+        .map_err(|e| e.to_string())
 }
 
 struct EmitSink {
@@ -87,9 +89,7 @@ pub async fn updater_read_cached_bytes(
 }
 
 #[tauri::command]
-pub async fn updater_clear_cache(
-    home: State<'_, Arc<AiJiaHome>>,
-) -> Result<(), String> {
+pub async fn updater_clear_cache(home: State<'_, Arc<AiJiaHome>>) -> Result<(), String> {
     let cache = cache_for(&home);
     cache.clear().map_err(|e| e.to_string())
 }
@@ -111,7 +111,10 @@ pub async fn updater_install_cached(
         log::error!("[updater_install_cached] read_complete failed: {}", e);
         e.to_string()
     })?;
-    log::info!("[updater_install_cached] loaded {} bytes from cache", bytes.len());
+    log::info!(
+        "[updater_install_cached] loaded {} bytes from cache",
+        bytes.len()
+    );
 
     // Strip macOS AppleDouble (`._*`) and `.DS_Store` entries that the Tauri
     // bundler embeds into the tarball. The Rust tar crate that
@@ -157,7 +160,10 @@ pub async fn updater_install_cached(
         ));
     }
 
-    log::info!("[updater_install_cached] calling update.install() with {} bytes", bytes.len());
+    log::info!(
+        "[updater_install_cached] calling update.install() with {} bytes",
+        bytes.len()
+    );
     update.install(bytes).map_err(|e| {
         log::error!("[updater_install_cached] install() failed: {:#}", e);
         format!("{:#}", e)

@@ -39,10 +39,8 @@ fn deactivation_handler_trait_is_composable() {
     rt.block_on(async {
         let c1 = Arc::new(AtomicUsize::new(0));
         let c2 = Arc::new(AtomicUsize::new(0));
-        let handlers: Vec<Arc<dyn AuthDeactivationHandler>> = vec![
-            Arc::new(Probe(c1.clone())),
-            Arc::new(Probe(c2.clone())),
-        ];
+        let handlers: Vec<Arc<dyn AuthDeactivationHandler>> =
+            vec![Arc::new(Probe(c1.clone())), Arc::new(Probe(c2.clone()))];
         for h in &handlers {
             h.on_deactivated().await;
         }

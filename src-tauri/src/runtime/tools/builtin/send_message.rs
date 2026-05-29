@@ -57,13 +57,17 @@ fn append_team_chat_entry(
                 entry["reason"] = Value::String(r.clone());
             }
         }
-        StructuredMessage::ShutdownResponse { approve, reason, .. } => {
+        StructuredMessage::ShutdownResponse {
+            approve, reason, ..
+        } => {
             entry["approve"] = Value::Bool(*approve);
             if let Some(r) = reason {
                 entry["reason"] = Value::String(r.clone());
             }
         }
-        StructuredMessage::PlanApprovalResponse { approve, feedback, .. } => {
+        StructuredMessage::PlanApprovalResponse {
+            approve, feedback, ..
+        } => {
             entry["approve"] = Value::Bool(*approve);
             if let Some(f) = feedback {
                 entry["feedback"] = Value::String(f.clone());
@@ -91,7 +95,10 @@ fn append_team_chat_entry(
     {
         Ok(mut f) => {
             if let Err(e) = writeln!(f, "{line}") {
-                log::warn!("[team_chat.jsonl] write failed path={}: {e}", path.display());
+                log::warn!(
+                    "[team_chat.jsonl] write failed path={}: {e}",
+                    path.display()
+                );
             }
         }
         Err(e) => {
@@ -104,9 +111,14 @@ pub struct SendMessageRuntimeTool;
 
 #[async_trait]
 impl RuntimeTool for SendMessageRuntimeTool {
-    fn id(&self) -> &str { "SendMessage" }
-    
-    async fn definition(&self, _ctx: &crate::runtime::tools::ToolDescriptionContext) -> ToolDefinition {
+    fn id(&self) -> &str {
+        "SendMessage"
+    }
+
+    async fn definition(
+        &self,
+        _ctx: &crate::runtime::tools::ToolDescriptionContext,
+    ) -> ToolDefinition {
         TOOL_CATALOG.get("SendMessage").unwrap_or_else(|| {
             ToolDefinition::new("SendMessage", "Send a structured message to another agent.")
         })
@@ -126,9 +138,7 @@ impl RuntimeTool for SendMessageRuntimeTool {
             .get("to")
             .and_then(Value::as_str)
             .filter(|s| !s.is_empty())
-            .ok_or_else(|| {
-                ToolError::ExecutionFailed("missing required string field `to`".into())
-            })?
+            .ok_or_else(|| ToolError::ExecutionFailed("missing required string field `to`".into()))?
             .to_string();
 
         let message_value = input.get("message").cloned().ok_or_else(|| {
@@ -178,7 +188,11 @@ impl RuntimeTool for SendMessageRuntimeTool {
             // stamped its own agent_id onto the TurnState), assume Lead is the
             // caller IF a Lead is registered for this session.  Without this,
             // every Lead-originated SendMessage renders as `from="system"`.
-            if names.resolve(&session, team_name, LEAD_NAME).await.is_some() {
+            if names
+                .resolve(&session, team_name, LEAD_NAME)
+                .await
+                .is_some()
+            {
                 Some(LEAD_NAME.to_string())
             } else {
                 None
@@ -263,17 +277,20 @@ impl RuntimeTool for SendMessageRuntimeTool {
 
             record_diagnostic(
                 &ws,
-                DiagnosticEvent::new("tool.send_message.broadcast.completed", DiagnosticSource::Backend)
-                    .conversation_id(ctx.session_id.as_str())
-                    .run_id(ctx.run_id.as_str())
-                    .tool_call_id(ctx.tool_call_id.as_str())
-                    .team_name(team_name)
-                    .ok(missing.is_empty())
-                    .payload(serde_json::json!({
-                        "delivered": delivered,
-                        "skipped_count": missing.len(),
-                        "variant": message.variant_name(),
-                    })),
+                DiagnosticEvent::new(
+                    "tool.send_message.broadcast.completed",
+                    DiagnosticSource::Backend,
+                )
+                .conversation_id(ctx.session_id.as_str())
+                .run_id(ctx.run_id.as_str())
+                .tool_call_id(ctx.tool_call_id.as_str())
+                .team_name(team_name)
+                .ok(missing.is_empty())
+                .payload(serde_json::json!({
+                    "delivered": delivered,
+                    "skipped_count": missing.len(),
+                    "variant": message.variant_name(),
+                })),
             );
             return Ok(ToolResult::new(
                 "SendMessage",
@@ -355,8 +372,7 @@ impl RuntimeTool for SendMessageRuntimeTool {
         // tokio::spawns a continuation turn.  This tool just logs the
         // outcome — no further work needed here.
         if to == LEAD_NAME {
-            if let (Some(sup), Some(names_reg)) =
-                (ctx.lead_idle.as_ref(), ctx.agent_names.as_ref())
+            if let (Some(sup), Some(names_reg)) = (ctx.lead_idle.as_ref(), ctx.agent_names.as_ref())
             {
                 if let Some(lead_id) = names_reg.resolve(&session, team_name, LEAD_NAME).await {
                     let key = (session.clone(), lead_id.clone());

@@ -122,6 +122,7 @@ impl RuntimeLlmExecutor for SessionTestExecutor {
         _tool_calls: &[Value],
         _generated_file_ids: &[String],
         _file_metas: &[Value],
+        _thinking_blocks: &[Value],
     ) -> Result<String, TurnError> {
         Ok("assistant-msg".to_string())
     }
@@ -206,6 +207,7 @@ async fn normal_turn_emits_complete_lifecycle_events_in_order() {
             tokens_out: 5,
             cache_creation_input_tokens: 0,
             cache_read_input_tokens: 0,
+            thinking_blocks: Vec::new(),
             stop_reason: Some("end_turn".to_string()),
         },
     ]));
@@ -246,6 +248,7 @@ async fn all_events_in_one_turn_share_the_same_run_id() {
             tokens_out: 1,
             cache_creation_input_tokens: 0,
             cache_read_input_tokens: 0,
+            thinking_blocks: Vec::new(),
             stop_reason: Some("end_turn".to_string()),
         },
     ]));
@@ -276,6 +279,7 @@ async fn run_chat_request_uses_request_run_id_as_authoritative_identity() {
             tokens_out: 1,
             cache_creation_input_tokens: 0,
             cache_read_input_tokens: 0,
+            thinking_blocks: Vec::new(),
             stop_reason: Some("end_turn".to_string()),
         },
     ]));
@@ -301,6 +305,7 @@ async fn tool_call_result_is_sent_to_next_llm_step_and_turn_completes() {
             tokens_out: 3,
             cache_creation_input_tokens: 0,
             cache_read_input_tokens: 0,
+            thinking_blocks: Vec::new(),
         },
         LlmStepResult::ContentComplete {
             content: "分析完成".to_string(),
@@ -308,6 +313,7 @@ async fn tool_call_result_is_sent_to_next_llm_step_and_turn_completes() {
             tokens_out: 5,
             cache_creation_input_tokens: 0,
             cache_read_input_tokens: 0,
+            thinking_blocks: Vec::new(),
             stop_reason: Some("end_turn".to_string()),
         },
     ]));
@@ -415,6 +421,7 @@ async fn max_iterations_reached_ends_turn_after_configured_limit() {
                 tokens_out: 1,
                 cache_creation_input_tokens: 0,
                 cache_read_input_tokens: 0,
+                thinking_blocks: Vec::new(),
             },
             LlmStepResult::ToolCalls {
                 assistant_content: "".to_string(),
@@ -423,6 +430,7 @@ async fn max_iterations_reached_ends_turn_after_configured_limit() {
                 tokens_out: 1,
                 cache_creation_input_tokens: 0,
                 cache_read_input_tokens: 0,
+                thinking_blocks: Vec::new(),
             },
         ])
         .with_overrides(TurnConfigOverrides {

@@ -33,7 +33,12 @@ async fn team_create_seeds_registry_and_registers_lead_name() {
     let team_registry = TeamRegistry::new();
     let name_registry = AgentNameRegistry::new();
     let session = "conv-create-happy";
-    let ctx = build_ctx(session, Some("lead-id-1"), team_registry.clone(), name_registry.clone());
+    let ctx = build_ctx(
+        session,
+        Some("lead-id-1"),
+        team_registry.clone(),
+        name_registry.clone(),
+    );
 
     let result = TeamCreateRuntimeTool
         .execute(json!({"team_name": "research-team"}), ctx)
@@ -70,12 +75,14 @@ async fn team_create_default_team_name_uses_session_prefix() {
     let team_registry = TeamRegistry::new();
     let name_registry = AgentNameRegistry::new();
     let session = "abcdef1234567890";
-    let ctx = build_ctx(session, Some("lead-x"), team_registry.clone(), name_registry);
+    let ctx = build_ctx(
+        session,
+        Some("lead-x"),
+        team_registry.clone(),
+        name_registry,
+    );
 
-    let result = TeamCreateRuntimeTool
-        .execute(json!({}), ctx)
-        .await
-        .unwrap();
+    let result = TeamCreateRuntimeTool.execute(json!({}), ctx).await.unwrap();
 
     let payload = result.data.as_ref().unwrap();
     assert_eq!(payload["team_name"], "team-abcdef12");
@@ -89,13 +96,23 @@ async fn team_create_twice_returns_already_exists_error() {
     let name_registry = AgentNameRegistry::new();
     let session = "conv-dup-team";
 
-    let ctx1 = build_ctx(session, Some("lead-1"), team_registry.clone(), name_registry.clone());
+    let ctx1 = build_ctx(
+        session,
+        Some("lead-1"),
+        team_registry.clone(),
+        name_registry.clone(),
+    );
     TeamCreateRuntimeTool
         .execute(json!({"team_name": "team-a"}), ctx1)
         .await
         .unwrap();
 
-    let ctx2 = build_ctx(session, Some("lead-2"), team_registry.clone(), name_registry.clone());
+    let ctx2 = build_ctx(
+        session,
+        Some("lead-2"),
+        team_registry.clone(),
+        name_registry.clone(),
+    );
     let err = TeamCreateRuntimeTool
         .execute(json!({"team_name": "team-a"}), ctx2)
         .await
@@ -120,7 +137,12 @@ async fn team_delete_removes_team_and_clears_names() {
     let team_name = "ephemeral";
 
     // Seed via TeamCreate so the name registry also gets populated.
-    let create_ctx = build_ctx(session, Some("lead-d"), team_registry.clone(), name_registry.clone());
+    let create_ctx = build_ctx(
+        session,
+        Some("lead-d"),
+        team_registry.clone(),
+        name_registry.clone(),
+    );
     TeamCreateRuntimeTool
         .execute(json!({"team_name": team_name}), create_ctx)
         .await
@@ -133,7 +155,12 @@ async fn team_delete_removes_team_and_clears_names() {
         .await
         .unwrap();
 
-    let delete_ctx = build_ctx(session, Some("lead-d"), team_registry.clone(), name_registry.clone());
+    let delete_ctx = build_ctx(
+        session,
+        Some("lead-d"),
+        team_registry.clone(),
+        name_registry.clone(),
+    );
     let result = TeamDeleteRuntimeTool
         .execute(json!({"team_name": team_name}), delete_ctx)
         .await
@@ -149,8 +176,14 @@ async fn team_delete_removes_team_and_clears_names() {
     // Note: TeamDelete in PR4 uses drop_session which clears the whole
     // session, not per-team unregister. Names are cleared at session level.
     // After drop_session, resolving either name should return None.
-    assert!(name_registry.resolve(&sid, team_name, LEAD_NAME).await.is_none());
-    assert!(name_registry.resolve(&sid, team_name, "researcher").await.is_none());
+    assert!(name_registry
+        .resolve(&sid, team_name, LEAD_NAME)
+        .await
+        .is_none());
+    assert!(name_registry
+        .resolve(&sid, team_name, "researcher")
+        .await
+        .is_none());
 }
 
 #[tokio::test]
@@ -158,7 +191,12 @@ async fn team_delete_without_team_is_idempotent_noop() {
     let team_registry = TeamRegistry::new();
     let name_registry = AgentNameRegistry::new();
     let session = "conv-no-team";
-    let ctx = build_ctx(session, Some("lead-n"), team_registry.clone(), name_registry);
+    let ctx = build_ctx(
+        session,
+        Some("lead-n"),
+        team_registry.clone(),
+        name_registry,
+    );
 
     let result = TeamDeleteRuntimeTool
         .execute(json!({"team_name": "ephemeral"}), ctx)
@@ -232,7 +270,12 @@ async fn team_create_succeeds_without_inbox_registry_for_legacy_paths() {
     let name_registry = AgentNameRegistry::new();
     let session = "conv-no-inbox-reg";
     let team_name = "legacy-team";
-    let ctx = build_ctx(session, Some("lead-legacy"), team_registry, name_registry.clone());
+    let ctx = build_ctx(
+        session,
+        Some("lead-legacy"),
+        team_registry,
+        name_registry.clone(),
+    );
 
     TeamCreateRuntimeTool
         .execute(json!({"team_name": team_name}), ctx)
@@ -242,5 +285,8 @@ async fn team_create_succeeds_without_inbox_registry_for_legacy_paths() {
     // The Lead name is still registered — that part is independent of
     // the inbox path.
     let sid = SessionId::new(session);
-    assert!(name_registry.resolve(&sid, team_name, LEAD_NAME).await.is_some());
+    assert!(name_registry
+        .resolve(&sid, team_name, LEAD_NAME)
+        .await
+        .is_some());
 }

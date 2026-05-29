@@ -274,10 +274,7 @@ impl CapabilityContext {
         self
     }
 
-    pub fn with_tool_progress_sink(
-        mut self,
-        sink: Arc<dyn ToolProgressSink>,
-    ) -> Self {
+    pub fn with_tool_progress_sink(mut self, sink: Arc<dyn ToolProgressSink>) -> Self {
         self.tool_progress_sink = Some(sink);
         self
     }

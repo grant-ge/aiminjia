@@ -348,7 +348,7 @@ describe('useStreaming integration review', () => {
     expect(tauriEventMock.listeners.has('turn:completed')).toBe(true)
   })
 
-  it('pushes warning toast and clears busy state for MaxIterationsReached', async () => {
+  it('clears busy state for MaxIterationsReached (no toast, PR2: error rendered as in-bubble callout)', async () => {
     useChatStore.setState({
       activeConversationId: 'conv-turn',
       busyConversations: new Set(['conv-turn']),
@@ -387,10 +387,11 @@ describe('useStreaming integration review', () => {
     const notifications = useNotificationStore.getState().notifications
     expect(chatState.busyConversations.has('conv-turn')).toBe(false)
     expect(chatState.streamStates['conv-turn']?.isStreaming).toBe(false)
-    expect(notifications.some((n) => n.level === 'warning' && n.title === 'turnOutcome.maxIterationsTitle')).toBe(true)
+    // PR2 D' 原则：toast 已删，错误由 AiBubble ErrorCallout 在会话流中渲染
+    expect(notifications.some((n) => n.title === 'turnOutcome.maxIterationsTitle')).toBe(false)
   })
 
-  it('pushes warning toast for BudgetExceeded', async () => {
+  it('clears busy state for BudgetExceeded (no toast, PR2: error rendered as in-bubble callout)', async () => {
     render(<HookHarness />)
     await waitForListeners()
 
@@ -410,14 +411,15 @@ describe('useStreaming integration review', () => {
       })
     })
 
+    // PR2 D' 原则：toast 已删，错误由 AiBubble ErrorCallout 在会话流中渲染
     expect(
       useNotificationStore.getState().notifications.some(
-        (n) => n.level === 'warning' && n.title === 'turnOutcome.budgetExceededTitle',
+        (n) => n.title === 'turnOutcome.budgetExceededTitle',
       ),
-    ).toBe(true)
+    ).toBe(false)
   })
 
-  it('pushes error toast for ExecutionError', async () => {
+  it('clears busy state for ExecutionError (no toast, PR2: error rendered as in-bubble callout)', async () => {
     render(<HookHarness />)
     await waitForListeners()
 
@@ -437,11 +439,12 @@ describe('useStreaming integration review', () => {
       })
     })
 
+    // PR2 D' 原则：toast 已删，错误由 AiBubble ErrorCallout 在会话流中渲染
     expect(
       useNotificationStore.getState().notifications.some(
-        (n) => n.level === 'error' && n.title === 'turnOutcome.executionErrorTitle',
+        (n) => n.title === 'turnOutcome.executionErrorTitle',
       ),
-    ).toBe(true)
+    ).toBe(false)
   })
 
   it('pushes info toast for Success when cost is present', async () => {

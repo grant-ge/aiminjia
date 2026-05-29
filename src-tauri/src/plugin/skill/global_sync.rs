@@ -41,7 +41,9 @@ pub struct SkillPackageItem {
     pub display_i18n: Option<Value>,
 }
 
-fn deserialize_optional_nonempty_string<'de, D>(d: D) -> std::result::Result<Option<String>, D::Error>
+fn deserialize_optional_nonempty_string<'de, D>(
+    d: D,
+) -> std::result::Result<Option<String>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
@@ -471,7 +473,11 @@ async fn install_one_skill_package(
     //    Gateway emits `"tenant"` for tenant-private skills and `"public"` for
     //    platform/OPS skills (default `"tenant"` for legacy rows without scope).
     let installed = config.global_skills_dir.join(&item.plugin_id);
-    let scope_marker = if item.scope == "public" { "public" } else { "tenant" };
+    let scope_marker = if item.scope == "public" {
+        "public"
+    } else {
+        "tenant"
+    };
     let scope_path = installed.join(".scope");
     if let Err(error) = fs::write(&scope_path, scope_marker) {
         log::warn!(
@@ -529,7 +535,11 @@ pub async fn sync_skill_packages_from_server(
     // 1. Fetch the published skill list from lotus-server
     let list = fetch_skill_list(&client, &server_base_url, &session_key).await?;
     let (n_tenant, n_public) = list.data.iter().fold((0usize, 0usize), |(t, p), it| {
-        if it.scope == "tenant" { (t + 1, p) } else { (t, p + 1) }
+        if it.scope == "tenant" {
+            (t + 1, p)
+        } else {
+            (t, p + 1)
+        }
     });
     log::info!(
         "[skill-sync] fetched {} skills from server ({} tenant + {} public): {:?}",

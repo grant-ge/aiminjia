@@ -23,11 +23,15 @@ fn scan(root: &Path, needles: &[&'static str], allow_paths: &[&str]) -> Vec<Hit>
         if allow_paths.iter().any(|p| path_str.contains(p)) {
             return;
         }
-        let Some(ext) = path.extension().and_then(|e| e.to_str()) else { return };
+        let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
+            return;
+        };
         if ext != "rs" {
             return;
         }
-        let Ok(content) = fs::read_to_string(path) else { return };
+        let Ok(content) = fs::read_to_string(path) else {
+            return;
+        };
         for (i, line) in content.lines().enumerate() {
             let trimmed = line.trim_start();
             // Skip comment-only lines.
@@ -54,7 +58,9 @@ fn walk(dir: &Path, action: &mut dyn FnMut(&Path)) {
         action(dir);
         return;
     }
-    let Ok(entries) = fs::read_dir(dir) else { return };
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {

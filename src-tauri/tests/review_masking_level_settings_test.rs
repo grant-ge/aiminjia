@@ -136,6 +136,7 @@ impl RuntimeLlmExecutor for MaskingProbeExecutor {
         _tool_calls: &[serde_json::Value],
         _generated_file_ids: &[String],
         _file_metas: &[serde_json::Value],
+        _thinking_blocks: &[serde_json::Value],
     ) -> Result<String, TurnError> {
         Ok("msg-mask".to_string())
     }
@@ -163,6 +164,7 @@ fn content_complete() -> LlmStepResult {
         tokens_out: 1,
         cache_creation_input_tokens: 0,
         cache_read_input_tokens: 0,
+        thinking_blocks: Vec::new(),
         stop_reason: Some("end_turn".to_string()),
     }
 }
@@ -384,6 +386,7 @@ async fn masking_level_snapshot_is_reused_across_multi_step_turn() {
                 tokens_out: 1,
                 cache_creation_input_tokens: 0,
                 cache_read_input_tokens: 0,
+                thinking_blocks: Vec::new(),
             },
             LlmStepResult::ToolCalls {
                 assistant_content: "thinking-2".to_string(),
@@ -392,6 +395,7 @@ async fn masking_level_snapshot_is_reused_across_multi_step_turn() {
                 tokens_out: 1,
                 cache_creation_input_tokens: 0,
                 cache_read_input_tokens: 0,
+                thinking_blocks: Vec::new(),
             },
             LlmStepResult::ToolCalls {
                 assistant_content: "thinking-3".to_string(),
@@ -400,6 +404,7 @@ async fn masking_level_snapshot_is_reused_across_multi_step_turn() {
                 tokens_out: 1,
                 cache_creation_input_tokens: 0,
                 cache_read_input_tokens: 0,
+                thinking_blocks: Vec::new(),
             },
             content_complete(),
         ],

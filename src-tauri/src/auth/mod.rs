@@ -422,10 +422,7 @@ impl AuthManager {
                     // token is irrecoverable; everything else is transient
                     // (network blip, 5xx, etc) and we must NOT wipe state.
                     if is_auth_unauthorized(&e) {
-                        log::warn!(
-                            "refresh_auth_info: refresh_token revoked (HTTP 401): {}",
-                            e
-                        );
+                        log::warn!("refresh_auth_info: refresh_token revoked (HTTP 401): {}", e);
                     } else if session_key.is_some() {
                         log::debug!(
                             "refresh_auth_info: refresh_token failed (transient, will fall back to session_key): {}",
@@ -593,7 +590,10 @@ impl AuthManager {
                 }
                 Err(e) => {
                     if is_auth_unauthorized(&e) {
-                        log::warn!("create_session_key returned 401 (access_token rejected): {}", e);
+                        log::warn!(
+                            "create_session_key returned 401 (access_token rejected): {}",
+                            e
+                        );
                         auth_revoked_by_server = true;
                     } else {
                         log::warn!("Failed to create session key (transient): {}", e);
@@ -654,7 +654,10 @@ impl AuthManager {
                 }
                 Err(e) => {
                     if is_auth_unauthorized(&e) {
-                        log::warn!("Token refresh returned HTTP 401 (refresh_token revoked): {}", e);
+                        log::warn!(
+                            "Token refresh returned HTTP 401 (refresh_token revoked): {}",
+                            e
+                        );
                         auth_revoked_by_server = true;
                     } else {
                         log::warn!("Token refresh failed (transient, keeping state): {}", e);

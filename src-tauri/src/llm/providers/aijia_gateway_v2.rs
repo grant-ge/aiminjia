@@ -11,7 +11,7 @@ use crate::llm::canonical::{
 use crate::llm::providers::LlmProviderTrait;
 use crate::llm::streaming::{
     AnthropicContentBlock, AnthropicImageSource, ChatMessage, LlmRequest, LlmResponse, StopReason,
-    StreamBox, StreamEvent, TokenUsage,
+    StreamBox, StreamEvent, ThinkingConfig, TokenUsage,
 };
 
 const AIJIA_GATEWAY_V2_RESPONSES_URL: &str = "https://ai-tenant.renlijia.com/aijia/v2/ai/responses";
@@ -59,6 +59,13 @@ impl LlmProviderTrait for AijiaGatewayV2Provider {
 
     async fn stream(&self, request: LlmRequest) -> Result<StreamBox> {
         let body = build_aijia_request_for_route(request, &self.model_type, self.use_tools);
+        let gate_log_id = crate::llm::gate_log::next_request_id();
+        crate::llm::gate_log::record_request(
+            &gate_log_id,
+            self.name(),
+            AIJIA_GATEWAY_V2_RESPONSES_URL,
+            &body,
+        );
         let response = self
             .client
             .post(AIJIA_GATEWAY_V2_RESPONSES_URL)
@@ -68,12 +75,27 @@ impl LlmProviderTrait for AijiaGatewayV2Provider {
             .await?;
 
         let status = response.status();
+        let gateway_request_id = response
+            .headers()
+            .get("x-lotus-request-id")
+            .or_else(|| response.headers().get("x-request-id"))
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_string);
+        crate::llm::gate_log::record_response_status(
+            &gate_log_id,
+            status.as_u16(),
+            gateway_request_id.as_deref(),
+        );
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
+            crate::llm::gate_log::record_response_body(&gate_log_id, status.as_u16(), &body);
             return Err(anyhow!("AIjia v2 stream error ({}): {}", status, body));
         }
 
-        Ok(Box::pin(sse_bytes_to_events(response.bytes_stream())))
+        Ok(Box::pin(sse_bytes_to_events(
+            response.bytes_stream(),
+            Some(gate_log_id),
+        )))
     }
 
     async fn validate_key(&self) -> Result<bool> {
@@ -90,18 +112,7 @@ pub(crate) fn build_aijia_request_for_route(
     model_type: &str,
     use_tools: bool,
 ) -> AijiaResponseRequest {
-    let is_reasoner = model_type == "reasoner";
-    let intent = if is_reasoner { "reasoning" } else { "chat" };
-    let logical_model = if is_reasoner {
-        "default-reasoner"
-    } else {
-        "default-chat"
-    };
-    let tools_enabled = use_tools && !is_reasoner;
-    let mut allowed_capabilities = vec!["text".to_string()];
-    if tools_enabled {
-        allowed_capabilities.push("tool_calling".to_string());
-    }
+    let plan = resolve_v2_model_plan(&request, model_type, use_tools);
 
     let mut system: Vec<SystemSegment> = request
         .system_segments
@@ -132,7 +143,7 @@ pub(crate) fn build_aijia_request_for_route(
         messages.push(to_canonical_message(message));
     }
 
-    let tools = if tools_enabled {
+    let tools = if plan.use_tools {
         request
             .tools
             .into_iter()
@@ -151,13 +162,13 @@ pub(crate) fn build_aijia_request_for_route(
         conversation_id: request.conversation_id,
         run_id: request.run_id,
         trace_id: request.trace_id,
-        intent: intent.to_string(),
+        intent: plan.intent,
         stream: true,
         model_policy: ModelPolicy {
             mode: "auto".to_string(),
-            logical_model: logical_model.to_string(),
-            allowed_capabilities,
-            reasoning: Some("medium".to_string()),
+            logical_model: plan.logical_model,
+            allowed_capabilities: plan.allowed_capabilities,
+            reasoning: Some(plan.reasoning),
             provider_affinity: Some("conversation".to_string()),
         },
         context: CanonicalContext { system, messages },
@@ -172,6 +183,115 @@ pub(crate) fn build_aijia_request_for_route(
             platform: std::env::consts::ARCH.to_string(),
         },
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct V2ModelPlan {
+    intent: String,
+    logical_model: String,
+    allowed_capabilities: Vec<String>,
+    reasoning: String,
+    use_tools: bool,
+}
+
+fn resolve_v2_model_plan(request: &LlmRequest, model_type: &str, use_tools: bool) -> V2ModelPlan {
+    let is_reasoner = model_type == "reasoner";
+    let intent = if is_reasoner {
+        "reasoning".to_string()
+    } else {
+        "chat".to_string()
+    };
+    let logical_model = if is_reasoner {
+        "default-reasoner".to_string()
+    } else {
+        "default-chat".to_string()
+    };
+    let requires_opaque_replay = request_requires_opaque_replay(request);
+    let has_image_input = request_has_image_input(request);
+    let tools_enabled = use_tools && !is_reasoner && !request.tools.is_empty();
+    let reasoning = v2_reasoning_level(
+        request.thinking_config.as_ref(),
+        is_reasoner,
+        requires_opaque_replay,
+    );
+
+    let mut allowed_capabilities = vec!["text".to_string()];
+    if tools_enabled {
+        allowed_capabilities.push("tool_calling".to_string());
+    }
+    if reasoning != "off" {
+        allowed_capabilities.push("reasoning".to_string());
+    }
+    if has_image_input {
+        allowed_capabilities.push("image_input".to_string());
+    }
+    if requires_opaque_replay {
+        allowed_capabilities.push("opaque_state_replay".to_string());
+        if !allowed_capabilities.iter().any(|cap| cap == "reasoning") {
+            allowed_capabilities.push("reasoning".to_string());
+        }
+    }
+
+    V2ModelPlan {
+        intent,
+        logical_model,
+        allowed_capabilities,
+        reasoning,
+        use_tools: tools_enabled,
+    }
+}
+
+fn v2_reasoning_level(
+    thinking_config: Option<&ThinkingConfig>,
+    is_reasoner: bool,
+    requires_opaque_replay: bool,
+) -> String {
+    if is_reasoner {
+        return "high".to_string();
+    }
+    if requires_opaque_replay {
+        return "medium".to_string();
+    }
+    match thinking_config {
+        Some(ThinkingConfig::Adaptive) => "medium".to_string(),
+        Some(ThinkingConfig::Enabled { budget_tokens }) => {
+            reasoning_level_for_budget(*budget_tokens).to_string()
+        }
+        Some(ThinkingConfig::Disabled) | None => "off".to_string(),
+    }
+}
+
+fn reasoning_level_for_budget(budget_tokens: u32) -> &'static str {
+    match budget_tokens {
+        0..=1023 => "minimal",
+        1024..=2047 => "minimal",
+        2048..=4095 => "low",
+        4096..=8191 => "medium",
+        8192..=16383 => "high",
+        _ => "xhigh",
+    }
+}
+
+fn request_requires_opaque_replay(request: &LlmRequest) -> bool {
+    request.messages.iter().any(|message| {
+        message
+            .thinking_blocks
+            .as_ref()
+            .is_some_and(|blocks| !blocks.is_empty())
+    })
+}
+
+fn request_has_image_input(request: &LlmRequest) -> bool {
+    request
+        .anthropic_multimodal_turn
+        .as_ref()
+        .is_some_and(|turn| !turn.image_blocks.is_empty())
+        || request.messages.iter().any(|message| {
+            message
+                .anthropic_multimodal_turn
+                .as_ref()
+                .is_some_and(|turn| !turn.image_blocks.is_empty())
+        })
 }
 
 fn to_canonical_message(message: ChatMessage) -> CanonicalMessage {
@@ -332,36 +452,51 @@ fn sse_bytes_to_events(
     byte_stream: impl futures::Stream<Item = std::result::Result<bytes::Bytes, reqwest::Error>>
         + Send
         + 'static,
+    gate_log_id: Option<String>,
 ) -> impl futures::Stream<Item = StreamEvent> + Send {
     stream::unfold(
-        (Box::pin(byte_stream), String::new(), VecDeque::new()),
-        |(mut byte_stream, mut buffer, mut pending)| async move {
+        (
+            Box::pin(byte_stream),
+            String::new(),
+            VecDeque::new(),
+            gate_log_id,
+        ),
+        |(mut byte_stream, mut buffer, mut pending, gate_log_id)| async move {
             loop {
                 if let Some(event) = pending.pop_front() {
-                    return Some((event, (byte_stream, buffer, pending)));
+                    return Some((event, (byte_stream, buffer, pending, gate_log_id)));
                 }
 
                 match byte_stream.as_mut().next().await {
                     Some(Ok(bytes)) => {
+                        if let Some(request_id) = gate_log_id.as_deref() {
+                            crate::llm::gate_log::record_response_chunk(request_id, &bytes);
+                        }
                         buffer.push_str(&String::from_utf8_lossy(&bytes));
                         drain_sse_frames(&mut buffer, &mut pending);
                     }
                     Some(Err(err)) => {
+                        if let Some(request_id) = gate_log_id.as_deref() {
+                            crate::llm::gate_log::record_stream_error(request_id, &err.to_string());
+                        }
                         return Some((
                             StreamEvent::Error {
                                 error: err.to_string(),
                             },
-                            (byte_stream, buffer, pending),
+                            (byte_stream, buffer, pending, gate_log_id),
                         ));
                     }
                     None => {
                         if buffer.trim().is_empty() {
+                            if let Some(request_id) = gate_log_id.as_deref() {
+                                crate::llm::gate_log::record_stream_end(request_id);
+                            }
                             return None;
                         }
                         let frame = std::mem::take(&mut buffer);
                         return Some((
                             chunk_to_stream_event(&frame),
-                            (byte_stream, buffer, pending),
+                            (byte_stream, buffer, pending, gate_log_id),
                         ));
                     }
                 }
@@ -572,8 +707,74 @@ mod tests {
 
         assert_eq!(canonical.intent, "reasoning");
         assert_eq!(canonical.model_policy.logical_model, "default-reasoner");
+        assert_eq!(
+            canonical.model_policy.allowed_capabilities,
+            vec!["text", "reasoning"]
+        );
+        assert_eq!(canonical.model_policy.reasoning.as_deref(), Some("high"));
+        assert!(canonical.tools.is_empty());
+    }
+
+    #[test]
+    fn build_request_defaults_chat_reasoning_off_without_tool_capability_when_no_tools() {
+        let canonical = build_aijia_request_for_route(
+            LlmRequest {
+                messages: vec![ChatMessage::text("user", "hello")],
+                ..Default::default()
+            },
+            "chat",
+            true,
+        );
+
+        assert_eq!(canonical.intent, "chat");
+        assert_eq!(canonical.model_policy.logical_model, "default-chat");
+        assert_eq!(canonical.model_policy.reasoning.as_deref(), Some("off"));
         assert_eq!(canonical.model_policy.allowed_capabilities, vec!["text"]);
         assert!(canonical.tools.is_empty());
+    }
+
+    #[test]
+    fn build_request_maps_v2_thinking_budget_to_reasoning_level() {
+        let canonical = build_aijia_request_for_route(
+            LlmRequest {
+                messages: vec![ChatMessage::text("user", "think carefully")],
+                thinking_config: Some(crate::llm::streaming::ThinkingConfig::Enabled {
+                    budget_tokens: 8192,
+                }),
+                ..Default::default()
+            },
+            "chat",
+            true,
+        );
+
+        assert_eq!(canonical.model_policy.reasoning.as_deref(), Some("high"));
+        assert_eq!(
+            canonical.model_policy.allowed_capabilities,
+            vec!["text", "reasoning"]
+        );
+    }
+
+    #[test]
+    fn build_request_declares_tool_capability_only_when_tools_are_sent() {
+        let canonical = build_aijia_request_for_route(
+            LlmRequest {
+                messages: vec![ChatMessage::text("user", "call a tool")],
+                tools: vec![crate::llm::streaming::ToolDefinition {
+                    name: "lookup".to_string(),
+                    description: "Lookup".to_string(),
+                    parameters: json!({"type":"object"}),
+                }],
+                ..Default::default()
+            },
+            "chat",
+            true,
+        );
+
+        assert_eq!(
+            canonical.model_policy.allowed_capabilities,
+            vec!["text", "tool_calling"]
+        );
+        assert_eq!(canonical.tools.len(), 1);
     }
 
     #[test]
@@ -612,6 +813,14 @@ mod tests {
         assert!(blocks.iter().any(|block| block.kind == "image"
             && block.mime_type.as_deref() == Some("image/png")
             && block.data.as_deref() == Some("aGVsbG8=")));
+        assert!(canonical
+            .model_policy
+            .allowed_capabilities
+            .contains(&"image_input".to_string()));
+        assert!(canonical
+            .model_policy
+            .allowed_capabilities
+            .contains(&"opaque_state_replay".to_string()));
     }
 
     #[test]

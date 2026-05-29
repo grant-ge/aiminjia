@@ -48,7 +48,12 @@ impl AgentNameRegistry {
         Ok(())
     }
 
-    pub async fn resolve(&self, session: &SessionId, team_name: &str, name: &str) -> Option<AgentId> {
+    pub async fn resolve(
+        &self,
+        session: &SessionId,
+        team_name: &str,
+        name: &str,
+    ) -> Option<AgentId> {
         self.by_session
             .lock()
             .await
@@ -86,11 +91,7 @@ impl AgentNameRegistry {
         n
     }
 
-    pub async fn names_in_team(
-        &self,
-        session: &SessionId,
-        team_name: &str,
-    ) -> Vec<String> {
+    pub async fn names_in_team(&self, session: &SessionId, team_name: &str) -> Vec<String> {
         self.by_session
             .lock()
             .await

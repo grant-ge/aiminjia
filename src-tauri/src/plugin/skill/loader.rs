@@ -60,7 +60,11 @@ pub fn load_skill_roots(roots: &[PathBuf]) -> Result<HashMap<String, DiskSkill>>
         .iter()
         .enumerate()
         .map(|(idx, root)| {
-            let src = if idx == 0 { SkillSource::User } else { SkillSource::Global };
+            let src = if idx == 0 {
+                SkillSource::User
+            } else {
+                SkillSource::Global
+            };
             (root.clone(), src)
         })
         .collect();
@@ -70,7 +74,9 @@ pub fn load_skill_roots(roots: &[PathBuf]) -> Result<HashMap<String, DiskSkill>>
 /// Load skills from `(root, source)` pairs in priority order. Earlier entries
 /// win on id collisions, with a warn-level log naming the loser so operators
 /// can detect when a local upload shadows a tenant-pushed skill.
-pub fn load_skill_roots_tagged(roots: &[(PathBuf, SkillSource)]) -> Result<HashMap<String, DiskSkill>> {
+pub fn load_skill_roots_tagged(
+    roots: &[(PathBuf, SkillSource)],
+) -> Result<HashMap<String, DiskSkill>> {
     let mut loaded = HashMap::new();
     for (root, source) in roots {
         load_one_root(root, *source, &mut loaded)?;
@@ -121,7 +127,12 @@ fn load_one_root(
         let mut parsed = match parse_skill_md(&content) {
             Ok(parsed) => parsed,
             Err(err) => {
-                log::error!("Failed to parse skill {} at {}: {}", name, skill_md.display(), err);
+                log::error!(
+                    "Failed to parse skill {} at {}: {}",
+                    name,
+                    skill_md.display(),
+                    err
+                );
                 continue;
             }
         };
@@ -184,13 +195,20 @@ mod tests {
         }
     }
 
-    const MD_WITH_CATEGORY: &str = "---\nname: explicit\ndescription: x\nversion: \"1.0\"\ncategory: hr\n---\nbody\n";
-    const MD_WITHOUT_CATEGORY: &str = "---\nname: legacy\ndescription: x\nversion: \"1.0\"\n---\nbody\n";
+    const MD_WITH_CATEGORY: &str =
+        "---\nname: explicit\ndescription: x\nversion: \"1.0\"\ncategory: hr\n---\nbody\n";
+    const MD_WITHOUT_CATEGORY: &str =
+        "---\nname: legacy\ndescription: x\nversion: \"1.0\"\n---\nbody\n";
 
     #[test]
     fn sidecar_fills_missing_category() {
         let tmp = TempDir::new().unwrap();
-        write_skill(tmp.path(), "legacy-skill", MD_WITHOUT_CATEGORY, Some(r#"{"category":"hr"}"#));
+        write_skill(
+            tmp.path(),
+            "legacy-skill",
+            MD_WITHOUT_CATEGORY,
+            Some(r#"{"category":"hr"}"#),
+        );
         let loaded =
             load_skill_roots_tagged(&[(tmp.path().to_path_buf(), SkillSource::Global)]).unwrap();
         let skill = loaded.get("legacy-skill").expect("loaded");
@@ -204,7 +222,9 @@ mod tests {
             tmp.path(),
             "legacy-skill",
             MD_WITHOUT_CATEGORY,
-            Some(r#"{"displayI18n":{"en-US":{"name":"Budget Analysis","description":"Analyze budget execution"}}}"#),
+            Some(
+                r#"{"displayI18n":{"en-US":{"name":"Budget Analysis","description":"Analyze budget execution"}}}"#,
+            ),
         );
         let loaded =
             load_skill_roots_tagged(&[(tmp.path().to_path_buf(), SkillSource::Global)]).unwrap();
@@ -226,7 +246,9 @@ mod tests {
             tmp.path(),
             "legacy-skill",
             MD_WITHOUT_CATEGORY,
-            Some(r#"{"displayI18n":{"en-US":{"Name":"Budget Analysis","Description":"Analyze budget execution"}}}"#),
+            Some(
+                r#"{"displayI18n":{"en-US":{"Name":"Budget Analysis","Description":"Analyze budget execution"}}}"#,
+            ),
         );
         let loaded =
             load_skill_roots_tagged(&[(tmp.path().to_path_buf(), SkillSource::Global)]).unwrap();
@@ -270,10 +292,17 @@ mod tests {
     #[test]
     fn malformed_sidecar_does_not_break_load() {
         let tmp = TempDir::new().unwrap();
-        write_skill(tmp.path(), "bad-sidecar", MD_WITHOUT_CATEGORY, Some("not json"));
+        write_skill(
+            tmp.path(),
+            "bad-sidecar",
+            MD_WITHOUT_CATEGORY,
+            Some("not json"),
+        );
         let loaded =
             load_skill_roots_tagged(&[(tmp.path().to_path_buf(), SkillSource::Global)]).unwrap();
-        let skill = loaded.get("bad-sidecar").expect("still loads despite bad sidecar");
+        let skill = loaded
+            .get("bad-sidecar")
+            .expect("still loads despite bad sidecar");
         assert!(skill.frontmatter.category.is_none());
     }
 

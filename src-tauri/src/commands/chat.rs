@@ -351,10 +351,7 @@ pub async fn rename_conversation(
 pub async fn get_conversation_meta(
     adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
     conversation_id: String,
-) -> Result<
-    Option<crate::runtime::conversation_service::ConversationMetaDto>,
-    String,
-> {
+) -> Result<Option<crate::runtime::conversation_service::ConversationMetaDto>, String> {
     adapter.get_conversation_meta(conversation_id).await
 }
 
@@ -372,7 +369,9 @@ pub async fn set_conversation_pinned(
     conversation_id: String,
     pinned: bool,
 ) -> Result<(), String> {
-    adapter.set_conversation_pinned(conversation_id, pinned).await
+    adapter
+        .set_conversation_pinned(conversation_id, pinned)
+        .await
 }
 
 #[tauri::command]
@@ -515,9 +514,9 @@ pub mod testsupport {
 
         let facade = RuntimeRepositoryFacade::for_test();
         let session_id = crate::runtime::ids::SessionId::new(session_id.to_string());
-        facade
-            .authorized_workspace_store()
-            .replace_for_session(session_id.as_str(), &AuthorizedWorkspace {
+        facade.authorized_workspace_store().replace_for_session(
+            session_id.as_str(),
+            &AuthorizedWorkspace {
                 id: "aw-test".to_string(),
                 session_id: session_id.clone(),
                 root_path: authorized_root.to_path_buf(),
@@ -527,7 +526,8 @@ pub mod testsupport {
                     .filter(|name| !name.is_empty())
                     .unwrap_or_else(|| authorized_root.display().to_string()),
                 authorized_at: chrono::Utc::now().to_rfc3339(),
-            })?;
+            },
+        )?;
 
         let authorized_workspace = facade
             .authorized_workspace_store()

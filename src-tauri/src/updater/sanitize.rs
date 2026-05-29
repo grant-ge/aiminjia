@@ -123,9 +123,7 @@ mod tests {
 
     #[test]
     fn preserves_content_bytes() {
-        let input = make_tar_with(&[
-            ("AIjia.app/Contents/Info.plist", b"original-content"),
-        ]);
+        let input = make_tar_with(&[("AIjia.app/Contents/Info.plist", b"original-content")]);
         let output = strip_macos_metadata(&input).unwrap();
         let cursor = Cursor::new(&output);
         let dec = GzDecoder::new(cursor);

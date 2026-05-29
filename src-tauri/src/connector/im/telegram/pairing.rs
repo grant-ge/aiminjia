@@ -154,7 +154,8 @@ impl PairingCodeStore {
 
             let created_elapsed_ms = (now_ms - p.created_at_unix_millis).max(0) as u64;
             // created_at 在 Instant 上尽量还原（可能略偏，但仅用于 list_pending 排序）
-            let created_at = now_instant.checked_sub(Duration::from_millis(created_elapsed_ms))
+            let created_at = now_instant
+                .checked_sub(Duration::from_millis(created_elapsed_ms))
                 .unwrap_or(now_instant);
 
             let pairer = p.attached_user.map(|a| PairerInfo {
@@ -274,7 +275,9 @@ impl PairingCodeStore {
             entry_out = found;
         } // guard dropped here
         self.persist().await;
-        entry_out.ok_or_else(|| anyhow::anyhow!("failed to generate unique pairing code after 80 attempts"))
+        entry_out.ok_or_else(|| {
+            anyhow::anyhow!("failed to generate unique pairing code after 80 attempts")
+        })
     }
 
     /// bot 收到 /start <code> 时调。
@@ -295,7 +298,9 @@ impl PairingCodeStore {
                     entry.pairer = Some(pairer);
                     AttachOutcome::Attached
                 }
-                Some(existing) if existing.user_id == pairer.user_id => AttachOutcome::AlreadyAttached,
+                Some(existing) if existing.user_id == pairer.user_id => {
+                    AttachOutcome::AlreadyAttached
+                }
                 Some(_) => AttachOutcome::Conflict,
             };
         } // guard dropped here
@@ -462,7 +467,11 @@ mod tests {
         // 从磁盘重新加载
         let store2 = PairingCodeStore::load_from_disk(&path).await;
         let list = store2.list_pending().await;
-        assert_eq!(list.len(), 1, "reloaded store should have 1 pending pairing");
+        assert_eq!(
+            list.len(),
+            1,
+            "reloaded store should have 1 pending pairing"
+        );
         assert_eq!(list[0].code, pending.code);
         assert_eq!(list[0].pairer.as_ref().unwrap().user_id, 99);
     }
@@ -503,11 +512,16 @@ mod tests {
                 }
             ]
         });
-        tokio::fs::write(&path, expired_file.to_string().as_bytes()).await.unwrap();
+        tokio::fs::write(&path, expired_file.to_string().as_bytes())
+            .await
+            .unwrap();
 
         let store = PairingCodeStore::load_from_disk(&path).await;
         // 过期 entry 应该被过滤掉，inner HashMap 为空
         let list = store.list_pending().await;
-        assert!(list.is_empty(), "expired entries should be filtered on load");
+        assert!(
+            list.is_empty(),
+            "expired entries should be filtered on load"
+        );
     }
 }

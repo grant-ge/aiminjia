@@ -53,8 +53,8 @@ describe('TurnSummaryBadge', () => {
     )
   })
 
-  it('renders nothing for cancelled turns', () => {
-    const { container } = render(
+  it('renders a cancelled badge for cancelled turns', () => {
+    render(
       <TurnSummaryBadge
         summary={buildSummary({
           outcome: 'Cancelled',
@@ -63,6 +63,8 @@ describe('TurnSummaryBadge', () => {
       />,
     )
 
-    expect(container.firstChild).toBeNull()
+    expect(screen.getByLabelText('turn summary')).toHaveTextContent(
+      'turnOutcome.cancelledTitle',
+    )
   })
 })

@@ -452,6 +452,7 @@ async fn u3_driver_prompt_too_long_retries_once_with_compacted_messages() {
                 tokens_out: 1,
                 cache_creation_input_tokens: 0,
                 cache_read_input_tokens: 0,
+                thinking_blocks: Vec::new(),
                 stop_reason: Some("end_turn".to_string()),
             }),
         ],

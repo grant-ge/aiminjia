@@ -155,7 +155,8 @@ pub async fn run(p: Params) {
                             message_id: _,
                             kind,
                         } => {
-                            handle_unsupported(chat_id, user_id, kind, &p.config_store, &p.sender).await;
+                            handle_unsupported(chat_id, user_id, kind, &p.config_store, &p.sender)
+                                .await;
                         }
                     }
                     offset = u.update_id + 1;
@@ -361,9 +362,7 @@ async fn handle_unsupported(
         return;
     }
     if let Err(e) = sender.send_plain(chat_id, kind.hint_text()).await {
-        log::warn!(
-            "[telegram] send unsupported hint failed (chat={chat_id}): {e:?}"
-        );
+        log::warn!("[telegram] send unsupported hint failed (chat={chat_id}): {e:?}");
     }
 }
 
@@ -405,7 +404,10 @@ pub async fn run_watchdog(p: WatchdogParams) {
                 Some("watchdog: long-poll stalled".into()),
             );
             if let Err(e) = p.api.rebuild_client().await {
-                log::error!("[telegram-{}] watchdog rebuild_client failed: {e}", p.bot_id);
+                log::error!(
+                    "[telegram-{}] watchdog rebuild_client failed: {e}",
+                    p.bot_id
+                );
             }
             p.last_get_updates_at
                 .store(chrono::Utc::now().timestamp_millis(), Ordering::SeqCst);
@@ -464,11 +466,8 @@ mod watchdog_tests {
     #[tokio::test(start_paused = true)]
     async fn watchdog_does_not_fire_when_activity_recent() {
         let api = Arc::new(
-            TelegramApi::new_with_api_base_for_tests(
-                "BOT".into(),
-                "http://127.0.0.1:1".into(),
-            )
-            .unwrap(),
+            TelegramApi::new_with_api_base_for_tests("BOT".into(), "http://127.0.0.1:1".into())
+                .unwrap(),
         );
         let last = Arc::new(AtomicI64::new(chrono::Utc::now().timestamp_millis()));
         let status_calls = Arc::new(AtomicUsize::new(0));
@@ -503,11 +502,8 @@ mod watchdog_tests {
     #[tokio::test(start_paused = true)]
     async fn watchdog_exits_on_cancel() {
         let api = Arc::new(
-            TelegramApi::new_with_api_base_for_tests(
-                "BOT".into(),
-                "http://127.0.0.1:1".into(),
-            )
-            .unwrap(),
+            TelegramApi::new_with_api_base_for_tests("BOT".into(), "http://127.0.0.1:1".into())
+                .unwrap(),
         );
         let last = Arc::new(AtomicI64::new(0));
         let on_status: Arc<dyn Fn(ChannelConnectionState, Option<String>) + Send + Sync> =

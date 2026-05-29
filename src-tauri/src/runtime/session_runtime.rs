@@ -895,6 +895,7 @@ mod tests {
             _generated_file_ids: &[String],
             _file_metas: &[serde_json::Value],
             _thinking_blocks: &[serde_json::Value],
+            _error: Option<&crate::storage::file_store::types::MessageError>,
         ) -> anyhow::Result<String, TurnError> {
             Ok("assistant-msg".to_string())
         }
@@ -1440,9 +1441,10 @@ mod tests {
 
         let count = Arc::new(Mutex::new(0usize));
         let runtime = SessionRuntime::new(QueryEngine::new(), RuntimeEventBus::new());
-        runtime.subscribe_event_listener(Arc::new(CounterSubscriber {
+        let subscriber = Arc::new(CounterSubscriber {
             count: count.clone(),
-        }));
+        });
+        runtime.subscribe_event_listener(subscriber.clone());
 
         tokio::runtime::Runtime::new().unwrap().block_on(async {
             let event = RuntimeEvent::new(

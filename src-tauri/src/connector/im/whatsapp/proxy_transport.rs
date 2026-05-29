@@ -15,8 +15,8 @@ use bytes::Bytes;
 use futures::{SinkExt, StreamExt};
 use http::Uri;
 use tokio::net::TcpStream;
-use tokio_rustls::TlsConnector;
 use tokio_rustls::client::TlsStream;
+use tokio_rustls::TlsConnector;
 use tokio_socks::tcp::Socks5Stream;
 use tokio_websockets::{ClientBuilder, Message, WebSocketStream};
 use wa_rs::http::{HttpClient, HttpRequest, HttpResponse};
@@ -75,13 +75,10 @@ async fn http_connect_tunnel(
     target_port: u16,
 ) -> anyhow::Result<TcpStream> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    let mut stream = tokio::time::timeout(
-        Duration::from_secs(15),
-        TcpStream::connect(proxy_addr),
-    )
-    .await
-    .map_err(|_| anyhow::anyhow!("connect to proxy {proxy_addr} timed out"))?
-    .map_err(|e| anyhow::anyhow!("connect to proxy {proxy_addr} failed: {e}"))?;
+    let mut stream = tokio::time::timeout(Duration::from_secs(15), TcpStream::connect(proxy_addr))
+        .await
+        .map_err(|_| anyhow::anyhow!("connect to proxy {proxy_addr} timed out"))?
+        .map_err(|e| anyhow::anyhow!("connect to proxy {proxy_addr} failed: {e}"))?;
     let req = format!(
         "CONNECT {target_host}:{target_port} HTTP/1.1\r\nHost: {target_host}:{target_port}\r\n\r\n"
     );
@@ -118,12 +115,8 @@ fn build_tls_connector() -> anyhow::Result<TlsConnector> {
 // WebSocket transport — wa_rs::Transport impl
 // =============================================================================
 
-type WsSink = futures::stream::SplitSink<
-    WebSocketStream<TlsStream<TcpStream>>,
-    Message,
->;
-type WsStream =
-    futures::stream::SplitStream<WebSocketStream<TlsStream<TcpStream>>>;
+type WsSink = futures::stream::SplitSink<WebSocketStream<TlsStream<TcpStream>>, Message>;
+type WsStream = futures::stream::SplitStream<WebSocketStream<TlsStream<TcpStream>>>;
 
 pub struct ProxyWebSocketTransport {
     ws_sink: Arc<tokio::sync::Mutex<Option<WsSink>>>,
@@ -149,10 +142,7 @@ impl Transport for ProxyWebSocketTransport {
     }
 }
 
-async fn read_pump(
-    mut stream: WsStream,
-    event_tx: async_channel::Sender<TransportEvent>,
-) {
+async fn read_pump(mut stream: WsStream, event_tx: async_channel::Sender<TransportEvent>) {
     loop {
         match stream.next().await {
             Some(Ok(msg)) => {
@@ -205,13 +195,7 @@ impl Default for ProxyWebSocketTransportFactory {
 impl TransportFactory for ProxyWebSocketTransportFactory {
     async fn create_transport(
         &self,
-    ) -> Result<
-        (
-            Arc<dyn Transport>,
-            async_channel::Receiver<TransportEvent>,
-        ),
-        anyhow::Error,
-    > {
+    ) -> Result<(Arc<dyn Transport>, async_channel::Receiver<TransportEvent>), anyhow::Error> {
         let uri: Uri = self
             .url
             .parse()
@@ -269,10 +253,7 @@ impl ProxyHttpClient {
         // 跟 dial_tcp 用同一份 shared::proxy resolver,保证 WebSocket 和 HTTP
         // 都走同一个代理出口。target_host 用 web.whatsapp.com:`no_proxy`
         // 规则判定相对 WhatsApp 域。
-        let client = build_reqwest_client_with_proxy(
-            Duration::from_secs(60),
-            "web.whatsapp.com",
-        )?;
+        let client = build_reqwest_client_with_proxy(Duration::from_secs(60), "web.whatsapp.com")?;
         Ok(Self { client })
     }
 }
@@ -292,19 +273,17 @@ impl HttpClient for ProxyHttpClient {
         if let Some(body) = request.body {
             builder = builder.body(body);
         }
-        let resp = builder.send().await.map_err(|e| {
-            anyhow::anyhow!("HTTP request to {} failed: {e}", request.url)
-        })?;
+        let resp = builder
+            .send()
+            .await
+            .map_err(|e| anyhow::anyhow!("HTTP request to {} failed: {e}", request.url))?;
         let status_code = resp.status().as_u16();
         let body = resp
             .bytes()
             .await
             .map_err(|e| anyhow::anyhow!("read response body failed: {e}"))?
             .to_vec();
-        Ok(HttpResponse {
-            status_code,
-            body,
-        })
+        Ok(HttpResponse { status_code, body })
     }
 }
 

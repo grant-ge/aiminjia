@@ -114,15 +114,22 @@ mod tests {
         let team = "alpha";
         let agent = AgentId::new("a1");
         let token = CancellationToken::new();
-        reg.register(&session, team, agent.clone(), token.clone()).await;
+        reg.register(&session, team, agent.clone(), token.clone())
+            .await;
 
         let resolved = reg
             .get(&session, team, &agent)
             .await
             .expect("token should resolve");
-        assert!(!resolved.is_cancelled(), "fresh token should not be cancelled");
+        assert!(
+            !resolved.is_cancelled(),
+            "fresh token should not be cancelled"
+        );
         resolved.cancel_with_reason(CancellationReason::UserCancel);
-        assert!(token.is_cancelled(), "tokens share state — original is cancelled");
+        assert!(
+            token.is_cancelled(),
+            "tokens share state — original is cancelled"
+        );
     }
 
     #[tokio::test]
@@ -132,8 +139,10 @@ mod tests {
         let team = "alpha";
         let a = AgentId::new("a");
         let b = AgentId::new("b");
-        reg.register(&s, team, a.clone(), CancellationToken::new()).await;
-        reg.register(&s, team, b.clone(), CancellationToken::new()).await;
+        reg.register(&s, team, a.clone(), CancellationToken::new())
+            .await;
+        reg.register(&s, team, b.clone(), CancellationToken::new())
+            .await;
         reg.unregister(&s, team, &a).await;
         assert!(reg.get(&s, team, &a).await.is_none());
         assert!(reg.get(&s, team, &b).await.is_some());
@@ -145,11 +154,14 @@ mod tests {
         let s = SessionId::new("s");
         let tok_a = CancellationToken::new();
         let tok_b = CancellationToken::new();
-        reg.register(&s, "team-x", AgentId::new("a"), tok_a.clone()).await;
-        reg.register(&s, "team-x", AgentId::new("b"), tok_b.clone()).await;
+        reg.register(&s, "team-x", AgentId::new("a"), tok_a.clone())
+            .await;
+        reg.register(&s, "team-x", AgentId::new("b"), tok_b.clone())
+            .await;
         // A token in a different team — must not be cancelled.
         let tok_c = CancellationToken::new();
-        reg.register(&s, "team-y", AgentId::new("c"), tok_c.clone()).await;
+        reg.register(&s, "team-y", AgentId::new("c"), tok_c.clone())
+            .await;
 
         let count = reg.cancel_team(&s, "team-x").await;
         assert_eq!(count, 2);

@@ -71,6 +71,7 @@ impl RuntimeLlmExecutor for SingleStepExecutor {
         _tool_calls: &[serde_json::Value],
         _generated_file_ids: &[String],
         _file_metas: &[serde_json::Value],
+        _thinking_blocks: &[serde_json::Value],
     ) -> Result<String, TurnError> {
         Ok("msg-b2".to_string())
     }
@@ -92,6 +93,7 @@ async fn review_session_state_b2_driver_turn_accumulates_step_tokens_into_query_
             tokens_out: 21,
             cache_creation_input_tokens: 0,
             cache_read_input_tokens: 0,
+            thinking_blocks: Vec::new(),
             stop_reason: Some("end_turn".to_string()),
         })),
     });

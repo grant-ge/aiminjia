@@ -35,6 +35,7 @@ impl RuntimeLlmExecutor for CapturingExecutor {
             tokens_out: 0,
             cache_creation_input_tokens: 0,
             cache_read_input_tokens: 0,
+            thinking_blocks: Vec::new(),
             stop_reason: Some("end_turn".into()),
         })
     }
@@ -60,6 +61,7 @@ impl RuntimeLlmExecutor for CapturingExecutor {
         _tool_calls: &[serde_json::Value],
         _generated_file_ids: &[String],
         _file_metas: &[serde_json::Value],
+        _thinking_blocks: &[serde_json::Value],
     ) -> Result<String, TurnError> {
         Ok("mock-msg".into())
     }

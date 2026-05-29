@@ -119,7 +119,8 @@ impl UserScopedPaths {
         self.base.join("turn_stages")
     }
     pub fn turn_stage_path(&self, conversation_id: &str) -> PathBuf {
-        self.turn_stages_dir().join(format!("{conversation_id}.json"))
+        self.turn_stages_dir()
+            .join(format!("{conversation_id}.json"))
     }
 }
 

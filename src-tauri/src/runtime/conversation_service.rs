@@ -255,8 +255,15 @@ fn take_by_visual_width(s: &str, cap: usize) -> String {
 /// "标题：" / "标题如下：" that prefix the actual title.
 fn first_meaningful_line(raw: &str) -> &str {
     const LEAD_INS: &[&str] = &[
-        "好的，", "好的:", "好的：", "标题：", "标题:", "标题如下：", "标题如下:",
-        "Title:", "title:",
+        "好的，",
+        "好的:",
+        "好的：",
+        "标题：",
+        "标题:",
+        "标题如下：",
+        "标题如下:",
+        "Title:",
+        "title:",
     ];
     for line in raw.lines() {
         let trimmed = line.trim();
@@ -291,8 +298,21 @@ pub fn title_from_user_text(user_text: &str) -> String {
     }
     // 剥礼貌前缀
     let polite_prefixes = [
-        "请帮我", "请帮", "请", "麻烦", "你好", "帮我", "帮忙", "可以", "能否",
-        "Please ", "please ", "Can you ", "can you ", "Could you ", "could you ",
+        "请帮我",
+        "请帮",
+        "请",
+        "麻烦",
+        "你好",
+        "帮我",
+        "帮忙",
+        "可以",
+        "能否",
+        "Please ",
+        "please ",
+        "Can you ",
+        "can you ",
+        "Could you ",
+        "could you ",
     ];
     let mut s = first_sentence.to_string();
     for p in polite_prefixes {
@@ -549,10 +569,12 @@ async fn try_llm_title(
     let llm_messages = vec![ChatMessage::text("user", first_user)];
 
     let system_prompt =
-        "你是一个对话标题生成器。根据下面的用户消息，生成一个能完整概括主题的简洁标题：\
-         中文标题 6-16 字、英文标题 2-6 个单词，必须语义完整，不要在词语中间截断。\
+        "你是一个对话标题生成器。根据下面的用户消息，生成一个能完整概括主题的简洁标题。\
+         **标题语言必须与用户消息的自然语言一致**：用户用中文 → 用中文标题；user writes in English → English title; \
+         其他语言同理。即使用户消息只有一个词（如 \"hello\"），也按该词的语言出标题。\
+         长度：中文标题 6-16 字、英文标题 2-6 个单词，必须语义完整，不要在词语中间截断。\
          只输出纯文本标题本身，禁止使用任何 Markdown 语法（不要 #、*、_、`、链接、引号或括号），\
-         不加结尾标点、不加解释、不加前缀（如\"标题：\"）。";
+         不加结尾标点、不加解释、不加前缀（如\"标题：\"或\"Title:\"）。";
 
     let response = gateway
         .send_message(
@@ -691,16 +713,24 @@ mod title_tests {
     fn title_from_user_text_takes_first_sentence() {
         // 你那个例子：长 user 句子取首句作为标题
         assert_eq!(
-            title_from_user_text("这个文件夹内有啥, 可以作为我的年中总结的资料吗, 不够的话, 我再去找资料"),
+            title_from_user_text(
+                "这个文件夹内有啥, 可以作为我的年中总结的资料吗, 不够的话, 我再去找资料"
+            ),
             "这个文件夹内有啥"
         );
     }
 
     #[test]
     fn title_from_user_text_strips_polite_prefix() {
-        assert_eq!(title_from_user_text("请帮我分析一下销售数据"), "分析一下销售数据");
+        assert_eq!(
+            title_from_user_text("请帮我分析一下销售数据"),
+            "分析一下销售数据"
+        );
         assert_eq!(title_from_user_text("麻烦你看下这个 bug"), "你看下这个 bug");
-        assert_eq!(title_from_user_text("Please review the design"), "review the design");
+        assert_eq!(
+            title_from_user_text("Please review the design"),
+            "review the design"
+        );
     }
 
     #[test]
@@ -742,7 +772,10 @@ mod title_tests {
     #[test]
     fn sanitize_title_strips_lead_in_prefix() {
         // 模型偶尔输出 "好的，标题如下：\n实际标题"
-        assert_eq!(sanitize_title("标题：\nReact 19 新特性详解"), "React 19 新特性详解");
+        assert_eq!(
+            sanitize_title("标题：\nReact 19 新特性详解"),
+            "React 19 新特性详解"
+        );
         assert_eq!(sanitize_title("好的，\n实际标题"), "实际标题");
     }
 
@@ -769,7 +802,10 @@ mod title_tests {
     #[test]
     fn sanitize_title_strips_markdown_decoration() {
         // # heading marker stripped; 16 字内全部保留（不再硬截 10 char）
-        assert_eq!(sanitize_title("# React 19 新特性详解"), "React 19 新特性详解");
+        assert_eq!(
+            sanitize_title("# React 19 新特性详解"),
+            "React 19 新特性详解"
+        );
         assert_eq!(sanitize_title("**重要标题**"), "重要标题");
         // bold/italic mid-string and inline code
         assert_eq!(

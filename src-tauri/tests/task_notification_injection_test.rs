@@ -84,6 +84,7 @@ impl RuntimeLlmExecutor for RecordingExecutor {
             tokens_out: 0,
             cache_creation_input_tokens: 0,
             cache_read_input_tokens: 0,
+            thinking_blocks: Vec::new(),
             stop_reason: Some("end_turn".to_string()),
         })
     }
@@ -197,6 +198,7 @@ impl RuntimeLlmExecutor for IterationDrainExecutor {
                 tokens_out: 0,
                 cache_creation_input_tokens: 0,
                 cache_read_input_tokens: 0,
+                thinking_blocks: Vec::new(),
             });
         }
 
@@ -206,6 +208,7 @@ impl RuntimeLlmExecutor for IterationDrainExecutor {
             tokens_out: 0,
             cache_creation_input_tokens: 0,
             cache_read_input_tokens: 0,
+            thinking_blocks: Vec::new(),
             stop_reason: Some("end_turn".to_string()),
         })
     }
@@ -235,7 +238,9 @@ impl RuntimeLlmExecutor for IterationDrainExecutor {
     async fn persist_iteration_assistant_message(
         &self,
         _conversation_id: &str,
+        _assistant_content: &str,
         _tool_calls: &[Value],
+        _thinking_blocks: &[Value],
     ) -> Result<Option<String>, TurnError> {
         Ok(Some("iteration-assistant-msg".to_string()))
     }

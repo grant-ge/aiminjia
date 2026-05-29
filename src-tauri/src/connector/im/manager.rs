@@ -131,7 +131,8 @@ pub struct ChannelManager {
     /// Strong references to event bus subscribers owned by this instance.
     /// The bus stores `Weak` refs, so when this CM is dropped the subscribers
     /// become unreachable and are pruned on next emit — no unsubscribe needed.
-    subscriber_anchors: std::sync::Mutex<Vec<Arc<dyn crate::runtime::event_bus::RuntimeEventSubscriber>>>,
+    subscriber_anchors:
+        std::sync::Mutex<Vec<Arc<dyn crate::runtime::event_bus::RuntimeEventSubscriber>>>,
     /// Set to `true` by `shutdown()`. Once inactive, mutating entry points
     /// (`set_enabled`, `begin_*_registration`) and worker session-id inserts
     /// become no-ops. Guards against a zombie worker polluting a new user's
@@ -699,8 +700,11 @@ impl ChannelManager {
                 let sender_nick_for_ensure = sender_nick.clone();
                 let conv_key_for_create = conv_key.clone();
                 let conv_type_for_create = conv_type.clone();
-                let session_id =
-                    match router.get_or_create_session_with_ensure(&conv_type, &router_key, &conv_key, || {
+                let session_id = match router.get_or_create_session_with_ensure(
+                    &conv_type,
+                    &router_key,
+                    &conv_key,
+                    || {
                         let title = match &conv_type_for_create {
                             ConversationType::Group => format!(
                                 "Telegram 群 {}",
@@ -717,17 +721,23 @@ impl ChannelManager {
                             )
                             .map_err(|e| anyhow::anyhow!(e))?;
                         Ok(id)
-                    }, |existing_id| {
+                    },
+                    |existing_id| {
                         ensure_store_ref
-                            .create_conversation_with_im_source(existing_id, &sender_nick_for_ensure, Platform::Telegram.as_str())
+                            .create_conversation_with_im_source(
+                                existing_id,
+                                &sender_nick_for_ensure,
+                                Platform::Telegram.as_str(),
+                            )
                             .map_err(|e| anyhow::anyhow!(e))
-                    }) {
-                        Ok(s) => s,
-                        Err(e) => {
-                            log::error!("[channel/telegram] get_or_create_session failed: {:#}", e);
-                            continue;
-                        }
-                    };
+                    },
+                ) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        log::error!("[channel/telegram] get_or_create_session failed: {:#}", e);
+                        continue;
+                    }
+                };
 
                 // Register the session in the channel_session_ids set.
                 {
@@ -1091,52 +1101,56 @@ impl ChannelManager {
         let app_handle = self.app_handle.clone();
         let config_store = self.config_store.clone();
         let platform_state = Arc::clone(&self.platform_state);
-        Arc::new(move |state: ChannelConnectionState, last_error: Option<String>| {
-            // 1) Update the manager's own PerPlatformState[Whatsapp] so that
-            //    a subsequent channel_get_platforms() returns the correct
-            //    connection state. Without this, the slot stays at the
-            //    initial Unconfigured even after Connected fires, and any
-            //    React listener that mounts after the initial emit reads
-            //    stale state from loadPlatforms().
-            //
-            //    Mirrors what telegram / wecom / dingtalk callbacks do.
-            let platform_state_for_write = platform_state.clone();
-            let connection_for_write = state.clone();
-            let last_error_for_write = last_error.clone();
-            tokio::spawn(async move {
-                let mut map = platform_state_for_write.write().await;
-                let slot = map
-                    .entry(Platform::Whatsapp)
-                    .or_insert_with(PerPlatformState::unconfigured);
-                slot.connection = connection_for_write;
-                slot.last_error = last_error_for_write;
-            });
+        Arc::new(
+            move |state: ChannelConnectionState, last_error: Option<String>| {
+                // 1) Update the manager's own PerPlatformState[Whatsapp] so that
+                //    a subsequent channel_get_platforms() returns the correct
+                //    connection state. Without this, the slot stays at the
+                //    initial Unconfigured even after Connected fires, and any
+                //    React listener that mounts after the initial emit reads
+                //    stale state from loadPlatforms().
+                //
+                //    Mirrors what telegram / wecom / dingtalk callbacks do.
+                let platform_state_for_write = platform_state.clone();
+                let connection_for_write = state.clone();
+                let last_error_for_write = last_error.clone();
+                tokio::spawn(async move {
+                    let mut map = platform_state_for_write.write().await;
+                    let slot = map
+                        .entry(Platform::Whatsapp)
+                        .or_insert_with(PerPlatformState::unconfigured);
+                    slot.connection = connection_for_write;
+                    slot.last_error = last_error_for_write;
+                });
 
-            // 2) Surface to the frontend via channel:platform-state.
-            //    走 config_store.whatsapp_state() 得到稳定的 configured/enabled
-            //    （来自 config.json 是否存在），不再用 connection 状态推断。否则
-            //    一旦网络抖动 / 主端手机 离线 → connection 掉到 Reconnecting →
-            //    configured=false → 前端徽章显示"未配置"误导用户重新扫码。
-            match config_store.whatsapp_state(state, last_error) {
-                Ok(channel_state) => {
-                    log::info!(
+                // 2) Surface to the frontend via channel:platform-state.
+                //    走 config_store.whatsapp_state() 得到稳定的 configured/enabled
+                //    （来自 config.json 是否存在），不再用 connection 状态推断。否则
+                //    一旦网络抖动 / 主端手机 离线 → connection 掉到 Reconnecting →
+                //    configured=false → 前端徽章显示"未配置"误导用户重新扫码。
+                match config_store.whatsapp_state(state, last_error) {
+                    Ok(channel_state) => {
+                        log::info!(
                         "[channel/whatsapp] emit channel:platform-state connection={:?} configured={} enabled={} capability={:?}",
                         channel_state.connection,
                         channel_state.configured,
                         channel_state.enabled,
                         channel_state.capability,
                     );
-                    let _ = app_handle.emit(
-                        "channel:platform-state",
-                        &ChannelPlatformStatePayload { state: channel_state },
-                    );
+                        let _ = app_handle.emit(
+                            "channel:platform-state",
+                            &ChannelPlatformStatePayload {
+                                state: channel_state,
+                            },
+                        );
+                    }
+                    Err(err) => log::warn!(
+                        "[channel/whatsapp] failed to build platform state: {:#}",
+                        err
+                    ),
                 }
-                Err(err) => log::warn!(
-                    "[channel/whatsapp] failed to build platform state: {:#}",
-                    err
-                ),
-            }
-        })
+            },
+        )
     }
 
     /// Set WhatsApp's per-platform connection state and surface it through
@@ -1159,10 +1173,7 @@ impl ChannelManager {
         // 同 make_whatsapp_status_callback：走 config_store.whatsapp_state()
         // 让 configured/enabled 来自 config.json 是否存在，不被瞬时 connection
         // 状态翻转。否则网络抖动会让前端显示"未配置"。
-        match self
-            .config_store
-            .whatsapp_state(connection, last_error)
-        {
+        match self.config_store.whatsapp_state(connection, last_error) {
             Ok(state) => {
                 let _ = self.app_handle.emit(
                     "channel:platform-state",
@@ -1419,8 +1430,11 @@ impl ChannelManager {
                 let sender_nick_for_ensure = sender_nick.clone();
                 let conv_key_for_create = conv_key.clone();
                 let conv_type_for_create = conv_type.clone();
-                let session_id =
-                    match router.get_or_create_session_with_ensure(&conv_type, &router_key, &conv_key, || {
+                let session_id = match router.get_or_create_session_with_ensure(
+                    &conv_type,
+                    &router_key,
+                    &conv_key,
+                    || {
                         let title = match &conv_type_for_create {
                             ConversationType::Group => format!(
                                 "企微群 {}",
@@ -1437,17 +1451,23 @@ impl ChannelManager {
                             )
                             .map_err(|e| anyhow::anyhow!(e))?;
                         Ok(id)
-                    }, |existing_id| {
+                    },
+                    |existing_id| {
                         ensure_store_ref
-                            .create_conversation_with_im_source(existing_id, &sender_nick_for_ensure, Platform::Wecom.as_str())
+                            .create_conversation_with_im_source(
+                                existing_id,
+                                &sender_nick_for_ensure,
+                                Platform::Wecom.as_str(),
+                            )
                             .map_err(|e| anyhow::anyhow!(e))
-                    }) {
-                        Ok(id) => id,
-                        Err(e) => {
-                            log::error!("[channel/wecom] session routing failed: {:#}", e);
-                            continue;
-                        }
-                    };
+                    },
+                ) {
+                    Ok(id) => id,
+                    Err(e) => {
+                        log::error!("[channel/wecom] session routing failed: {:#}", e);
+                        continue;
+                    }
+                };
 
                 // Cache the per-session reply target on the concrete connector
                 // so WecomReplyForwarder can address future assistant messages
@@ -2801,7 +2821,9 @@ impl ChannelManager {
         // the user toggled the channel off; don't auto-reconnect.
         match super::whatsapp::config::read(&paths.config_path()) {
             Ok(Some(cfg)) if !cfg.enabled => {
-                log::info!("[whatsapp] config.json present but enabled=false — skipping auto-connect");
+                log::info!(
+                    "[whatsapp] config.json present but enabled=false — skipping auto-connect"
+                );
                 return Ok(());
             }
             Ok(_) => {}
@@ -2914,8 +2936,11 @@ impl ChannelManager {
                 let ensure_store_ref = Arc::clone(&conv_store);
                 let sender_nick_for_create = sender_nick.clone();
                 let sender_nick_for_ensure = sender_nick.clone();
-                let session_id =
-                    match router.get_or_create_session_with_ensure(&conv_type, ROUTER_KEY, &conv_key, || {
+                let session_id = match router.get_or_create_session_with_ensure(
+                    &conv_type,
+                    ROUTER_KEY,
+                    &conv_key,
+                    || {
                         let title = sender_nick_for_create.clone();
                         let id = uuid::Uuid::new_v4().to_string();
                         store_ref
@@ -2926,17 +2951,23 @@ impl ChannelManager {
                             )
                             .map_err(|e| anyhow::anyhow!(e))?;
                         Ok(id)
-                    }, |existing_id| {
+                    },
+                    |existing_id| {
                         ensure_store_ref
-                            .create_conversation_with_im_source(existing_id, &sender_nick_for_ensure, Platform::Whatsapp.as_str())
+                            .create_conversation_with_im_source(
+                                existing_id,
+                                &sender_nick_for_ensure,
+                                Platform::Whatsapp.as_str(),
+                            )
                             .map_err(|e| anyhow::anyhow!(e))
-                    }) {
-                        Ok(s) => s,
-                        Err(e) => {
-                            log::error!("[channel/whatsapp] get_or_create_session failed: {:#}", e);
-                            continue;
-                        }
-                    };
+                    },
+                ) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        log::error!("[channel/whatsapp] get_or_create_session failed: {:#}", e);
+                        continue;
+                    }
+                };
 
                 {
                     if inactive_ref.load(std::sync::atomic::Ordering::SeqCst) {
@@ -3080,7 +3111,9 @@ impl ChannelManager {
         // (保留聊天历史)。如果用户接着点"配置"想重新扫码，wa-rs 启动时会发现
         // session.db 里还有旧凭证 → 直接 Authenticated 跳过 PairingQrCode →
         // 前端永远等不到 QR (空白卡片)。所以 begin 路径必须无条件清 session。
-        log::info!("[whatsapp] begin_registration — clearing any prior session for fresh QR pairing");
+        log::info!(
+            "[whatsapp] begin_registration — clearing any prior session for fresh QR pairing"
+        );
         if let Some(conn) = self
             .connectors
             .read()
@@ -3466,8 +3499,11 @@ impl ChannelManager {
                 let sender_nick_for_ensure = sender_nick.clone();
                 let conv_key_for_create = conv_key.clone();
                 let conv_type_for_create = conv_type.clone();
-                let session_id =
-                    match router.get_or_create_session_with_ensure(&conv_type, &router_key, &conv_key, || {
+                let session_id = match router.get_or_create_session_with_ensure(
+                    &conv_type,
+                    &router_key,
+                    &conv_key,
+                    || {
                         let title = match &conv_type_for_create {
                             ConversationType::Group => format!(
                                 "飞书群 {}",
@@ -3484,17 +3520,23 @@ impl ChannelManager {
                             )
                             .map_err(|e| anyhow::anyhow!(e))?;
                         Ok(id)
-                    }, |existing_id| {
+                    },
+                    |existing_id| {
                         ensure_store_ref
-                            .create_conversation_with_im_source(existing_id, &sender_nick_for_ensure, Platform::Feishu.as_str())
+                            .create_conversation_with_im_source(
+                                existing_id,
+                                &sender_nick_for_ensure,
+                                Platform::Feishu.as_str(),
+                            )
                             .map_err(|e| anyhow::anyhow!(e))
-                    }) {
-                        Ok(id) => id,
-                        Err(e) => {
-                            log::error!("[channel/feishu] session routing failed: {:#}", e);
-                            continue;
-                        }
-                    };
+                    },
+                ) {
+                    Ok(id) => id,
+                    Err(e) => {
+                        log::error!("[channel/feishu] session routing failed: {:#}", e);
+                        continue;
+                    }
+                };
 
                 // Cache the per-session reply target on the concrete connector
                 // so PR4's send() can dispatch by session_id alone. Per the
@@ -3957,8 +3999,11 @@ impl ChannelManager {
                 let sender_nick_for_create = sender_nick.clone();
                 let sender_nick_for_ensure = sender_nick.clone();
                 let conv_type_for_create = conv_type.clone();
-                let session_id =
-                    match router.get_or_create_session_with_ensure(&conv_type, &router_key, &conv_key, || {
+                let session_id = match router.get_or_create_session_with_ensure(
+                    &conv_type,
+                    &router_key,
+                    &conv_key,
+                    || {
                         let title = match &conv_type_for_create {
                             ConversationType::Group => {
                                 format!("微信群 {}", &sender_nick_for_create)
@@ -3974,17 +4019,23 @@ impl ChannelManager {
                             )
                             .map_err(|e| anyhow::anyhow!(e))?;
                         Ok(id)
-                    }, |existing_id| {
+                    },
+                    |existing_id| {
                         ensure_store_ref
-                            .create_conversation_with_im_source(existing_id, &sender_nick_for_ensure, Platform::Wechat.as_str())
+                            .create_conversation_with_im_source(
+                                existing_id,
+                                &sender_nick_for_ensure,
+                                Platform::Wechat.as_str(),
+                            )
                             .map_err(|e| anyhow::anyhow!(e))
-                    }) {
-                        Ok(id) => id,
-                        Err(e) => {
-                            log::error!("[channel/wechat] session routing failed: {:#}", e);
-                            continue;
-                        }
-                    };
+                    },
+                ) {
+                    Ok(id) => id,
+                    Err(e) => {
+                        log::error!("[channel/wechat] session routing failed: {:#}", e);
+                        continue;
+                    }
+                };
 
                 // 缓存回信目标到 connector。`context_token` 由 connector 内部的
                 // latest_context_tokens 旁路自动注入（remember_session 看到 None
@@ -4343,7 +4394,8 @@ impl ChannelManager {
         if claim_first_subscription(&self.reply_subscribed) {
             let reply_sub = Arc::clone(&self.reply_manager)
                 as Arc<dyn crate::runtime::event_bus::RuntimeEventSubscriber>;
-            self.chat_adapter.subscribe_event_listener(reply_sub.clone());
+            self.chat_adapter
+                .subscribe_event_listener(reply_sub.clone());
             self.anchor_subscriber(reply_sub);
         }
 
@@ -5839,7 +5891,10 @@ mod tests {
         assert!(feishu_token.is_cancelled(), "feishu token cancelled");
         assert!(dt_done_rx.try_recv().is_ok(), "dingtalk worker finished");
         assert!(fs_done_rx.try_recv().is_ok(), "feishu worker finished");
-        assert!(inactive.load(Ordering::SeqCst), "inactive flag is true after shutdown");
+        assert!(
+            inactive.load(Ordering::SeqCst),
+            "inactive flag is true after shutdown"
+        );
 
         // Slots are cleared.
         let guard = platform_state.read().await;
@@ -5883,7 +5938,9 @@ mod tests {
         {
             let is_inactive = inactive.load(Ordering::SeqCst);
             if !is_inactive {
-                ids.write().expect("poisoned").insert("session-before".into());
+                ids.write()
+                    .expect("poisoned")
+                    .insert("session-before".into());
             }
         }
         assert!(ids.read().expect("poisoned").contains("session-before"));
@@ -5895,14 +5952,20 @@ mod tests {
         {
             let is_inactive = inactive.load(Ordering::SeqCst);
             if !is_inactive {
-                ids.write().expect("poisoned").insert("session-after".into());
+                ids.write()
+                    .expect("poisoned")
+                    .insert("session-after".into());
             }
         }
         assert!(
             !ids.read().expect("poisoned").contains("session-after"),
             "insert after shutdown must be blocked by inactive gate"
         );
-        assert_eq!(ids.read().expect("poisoned").len(), 1, "only the before-shutdown entry");
+        assert_eq!(
+            ids.read().expect("poisoned").len(),
+            1,
+            "only the before-shutdown entry"
+        );
     }
 }
 

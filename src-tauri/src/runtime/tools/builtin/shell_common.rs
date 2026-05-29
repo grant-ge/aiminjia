@@ -116,10 +116,7 @@ pub fn content_from_output(output: &str, semantic_message: Option<&str>) -> Stri
     }
 }
 
-pub async fn read_merged_streams<R1, R2>(
-    stdout: R1,
-    stderr: R2,
-) -> std::io::Result<(Vec<u8>, bool)>
+pub async fn read_merged_streams<R1, R2>(stdout: R1, stderr: R2) -> std::io::Result<(Vec<u8>, bool)>
 where
     R1: tokio::io::AsyncRead + Unpin,
     R2: tokio::io::AsyncRead + Unpin,
@@ -455,11 +452,12 @@ mod progress_helpers_tests {
         let observed: Arc<Mutex<Vec<(usize, u64)>>> = Arc::new(Mutex::new(vec![]));
         let observed_clone = observed.clone();
 
-        let (bytes, truncated) = read_merged_streams_with_progress(stdout, stderr, move |buf, total| {
-            observed_clone.lock().unwrap().push((buf.len(), total));
-        })
-        .await
-        .unwrap();
+        let (bytes, truncated) =
+            read_merged_streams_with_progress(stdout, stderr, move |buf, total| {
+                observed_clone.lock().unwrap().push((buf.len(), total));
+            })
+            .await
+            .unwrap();
 
         assert!(!truncated);
         // Captured bytes contain both streams (order indeterminate).

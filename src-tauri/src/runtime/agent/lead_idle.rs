@@ -87,9 +87,7 @@ impl LeadIdleSupervisor {
                 true
             }
             Err(_) => {
-                log::debug!(
-                    "[LeadIdleSupervisor] set_wake_fn called twice; second call ignored"
-                );
+                log::debug!("[LeadIdleSupervisor] set_wake_fn called twice; second call ignored");
                 false
             }
         }
@@ -101,7 +99,10 @@ impl LeadIdleSupervisor {
         let mut s = self.state.lock().await;
         s.insert(k.clone(), LeadState::Running);
         drop(s);
-        self.pending_during_run.lock().await.insert(k.clone(), false);
+        self.pending_during_run
+            .lock()
+            .await
+            .insert(k.clone(), false);
         log::info!(
             "[LeadIdleSupervisor] mark_running session={} agent={}",
             k.0.as_str(),
@@ -173,7 +174,10 @@ impl LeadIdleSupervisor {
             None | Some(LeadState::Idle { .. }) => {
                 s.insert(k.clone(), LeadState::Running);
                 drop(s);
-                self.pending_during_run.lock().await.insert(k.clone(), false);
+                self.pending_during_run
+                    .lock()
+                    .await
+                    .insert(k.clone(), false);
                 log::info!(
                     "[LeadIdleSupervisor] enqueue idle->running session={} agent={} team={}",
                     k.0.as_str(),
@@ -314,15 +318,20 @@ mod tests {
             Arc::new(StdMutex::new(Vec::new()));
         let captured_for_fn = captured.clone();
         sup.set_wake_fn(Arc::new(move |key: LeadKey, team: String| {
-            captured_for_fn
-                .lock()
-                .unwrap()
-                .push((key.0.as_str().to_string(), key.1.as_str().to_string(), team));
+            captured_for_fn.lock().unwrap().push((
+                key.0.as_str().to_string(),
+                key.1.as_str().to_string(),
+                team,
+            ));
         }));
         // Lead is fresh → first enqueue treated as Idle→Running and fires wake_fn.
         assert!(sup.enqueue(&k, "team-alpha".to_string()).await);
         let snapshot = captured.lock().unwrap().clone();
-        assert_eq!(snapshot.len(), 1, "wake_fn fires exactly once on Idle→Running");
+        assert_eq!(
+            snapshot.len(),
+            1,
+            "wake_fn fires exactly once on Idle→Running"
+        );
         assert_eq!(snapshot[0].0, "s1");
         assert_eq!(snapshot[0].1, "lead-x");
         assert_eq!(snapshot[0].2, "team-alpha", "team_name forwarded verbatim");

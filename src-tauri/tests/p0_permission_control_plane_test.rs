@@ -137,6 +137,7 @@ impl RuntimeLlmExecutor for ToolCallExecutor {
         _tool_calls: &[serde_json::Value],
         _generated_file_ids: &[String],
         _file_metas: &[serde_json::Value],
+        _thinking_blocks: &[serde_json::Value],
     ) -> Result<String, TurnError> {
         Ok("mock-msg-id".to_string())
     }
@@ -167,6 +168,7 @@ async fn ask_request_is_recorded_without_completed_error_event() {
             tokens_out: 7,
             cache_creation_input_tokens: 0,
             cache_read_input_tokens: 0,
+            thinking_blocks: Vec::new(),
         },
         LlmStepResult::ContentComplete {
             content: "done".to_string(),
@@ -174,6 +176,7 @@ async fn ask_request_is_recorded_without_completed_error_event() {
             tokens_out: 1,
             cache_creation_input_tokens: 0,
             cache_read_input_tokens: 0,
+            thinking_blocks: Vec::new(),
             stop_reason: Some("end_turn".to_string()),
         },
     ]));
@@ -279,6 +282,7 @@ async fn approve_replays_original_tool_call_with_updated_input() {
             tokens_out: 5,
             cache_creation_input_tokens: 0,
             cache_read_input_tokens: 0,
+            thinking_blocks: Vec::new(),
         },
         LlmStepResult::ContentComplete {
             content: "done".to_string(),
@@ -286,6 +290,7 @@ async fn approve_replays_original_tool_call_with_updated_input() {
             tokens_out: 1,
             cache_creation_input_tokens: 0,
             cache_read_input_tokens: 0,
+            thinking_blocks: Vec::new(),
             stop_reason: Some("end_turn".to_string()),
         },
     ]));
@@ -366,6 +371,7 @@ async fn cancel_clears_pending_request_and_resumes_with_cancelled_outcome() {
             tokens_out: 5,
             cache_creation_input_tokens: 0,
             cache_read_input_tokens: 0,
+            thinking_blocks: Vec::new(),
         },
         LlmStepResult::ContentComplete {
             content: "done".to_string(),
@@ -373,6 +379,7 @@ async fn cancel_clears_pending_request_and_resumes_with_cancelled_outcome() {
             tokens_out: 1,
             cache_creation_input_tokens: 0,
             cache_read_input_tokens: 0,
+            thinking_blocks: Vec::new(),
             stop_reason: Some("end_turn".to_string()),
         },
     ]));
@@ -486,6 +493,7 @@ async fn driver_without_permission_control_plane_fails_fast_on_ask_required() {
         tokens_out: 3,
         cache_creation_input_tokens: 0,
         cache_read_input_tokens: 0,
+        thinking_blocks: Vec::new(),
     }]));
 
     let driver = RuntimeChatTurnDriver::with_llm_executor(

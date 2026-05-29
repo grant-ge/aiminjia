@@ -108,6 +108,8 @@ pub struct TurnIterationState {
     pub max_output_tokens_recovery_count: usize,
     pub orphaned_permission_count: usize,
     pub preprocess_state: PreprocessRuntimeState,
+    pub last_thinking_blocks: Vec<serde_json::Value>,
+    pub final_only_content: String,
 }
 
 impl TurnIterationState {
@@ -133,6 +135,8 @@ impl TurnIterationState {
             max_output_tokens_recovery_count: 0,
             orphaned_permission_count: 0,
             preprocess_state: PreprocessRuntimeState::default(),
+            last_thinking_blocks: Vec::new(),
+            final_only_content: String::new(),
         }
     }
 

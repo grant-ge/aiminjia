@@ -25,47 +25,16 @@
     "comingSoon": "Coming soon"
   },
   "common": {
-    "save": "Save",
     "cancel": "Cancel",
-    "delete": "Delete",
-    "export": "Export",
-    "edit": "Edit",
     "confirm": "Confirm",
-    "show": "Show",
-    "hide": "Hide",
     "copied": "Copied",
     "copy": "Copy",
-    "copyTable": "Copy Table",
     "copyFailed": "Copy failed",
     "close": "Close",
     "loading": "Loading...",
-    "unknownError": "Unknown error"
+    "openFile": "Open file"
   },
   "sidebar": {
-    "newChat": "New Chat",
-    "noConversations": "No conversations yet",
-    "searchPlaceholder": "Search conversations...",
-    "noSearchResults": "No conversations match",
-    "conversationActions": "Conversation actions",
-    "deleteConversation": "Delete conversation",
-    "selectPersona": "Select persona",
-    "settings": "Settings",
-    "switchToLocal": "Switch to local mode",
-    "switchToCloud": "Switch to cloud mode",
-    "cloud": "☁ Cloud",
-    "local": "⚡ Local",
-    "maxConcurrent": "Max concurrent chats reached, please wait",
-    "useGlobalModel": "Use global setting",
-    "timeGroup": {
-      "today": "Today",
-      "yesterday": "Yesterday",
-      "thisWeek": "This Week",
-      "earlier": "Earlier"
-    },
-    "home": "New Task",
-    "skillCenter": "Skill Center",
-    "schedules": "Schedules",
-    "tasks": "Tasks",
     "archiveChat": "Archive chat",
     "archiveChatTooltip": "Archive conversation",
     "archiveChatConfirmTooltip": "Click again to confirm",
@@ -75,88 +44,30 @@
     "allPinnedHint": "All conversations are pinned",
     "renameChat": "Rename chat",
     "copyConversationId": "Copy conversation ID",
-    "chatMoreActions": "More chat actions",
     "noHistory": "No tasks yet",
     "defaultFolder": "Default project",
     "project": "Projects",
-    "employee": "Employees",
     "employeeTab": "Staff",
-    "expertTeam": "Expert Teams",
     "expertTeamTab": "Experts",
     "channel": "Channels"
   },
   "inputBar": {
-    "attachData": "Add file or local directory",
-    "uploadFile": "Upload file (Excel/Word/PDF)",
-    "placeholderWithFile": "Add a note (optional), then press Enter to send...",
-    "placeholder": "Ask anything, or upload a file for analysis...",
-    "analyzeFile": "Please analyze this file",
-    "slashEmpty": "No matching skills",
-    "slashFiltered": "{{count}} skill(s)",
-    "slashNav": "navigate",
-    "slashSelect": "select",
-    "slashClose": "close"
+    "placeholder": "Ask anything, or upload a file for analysis..."
   },
   "chatArea": {
     "fileNotFound": "File not found",
     "cannotOpenFile": "Cannot open file \"{{fileName}}\". It may not have been generated yet or has been moved."
   },
   "welcome": {
-    "greeting": "Hi! I'm {{productName}}",
-    "greetingWithPersona": "Hi! I'm {{productName}} · {{personaName}}",
     "defaultSubtitle": "Your intelligent work assistant",
     "generalMode": "General Mode",
     "generalModeDesc": "Chat directly without specialized skills",
     "askAnything": "Or ask me any work-related question",
-    "hello": "Hello"
-  },
-  "skillSmith": {
-    "banner": {
-      "title": "You have {{count}} unfinished skill drafts",
-      "title_one": "You have 1 unfinished skill draft",
-      "unnamed": "Unnamed",
-      "resume": "Resume",
-      "discard": "Discard",
-      "discardTitle": "Discard skill draft",
-      "discardConfirm": "Discard the draft \"{{name}}\"? This cannot be undone.",
-      "justNow": "just now",
-      "minutesAgo": "{{n}} min ago",
-      "hoursAgo": "{{n}} h ago",
-      "daysAgo": "{{n}} d ago"
-    }
-  },
-  "aiBubble": {
-    "sendFailed": "Send failed",
-    "sendFailedDesc": "Failed to send reply. Please try again.",
-    "openFileFailed": "Failed to open file",
-    "openFileFailedDesc": "Cannot open file. It may have been moved or deleted.",
-    "revealFileFailed": "Failed to locate file",
-    "revealFileFailedDesc": "Cannot show file in file manager.",
-    "selectAction": "[Select]",
-    "confirmAction": "[Confirm]",
-    "rejectAction": "[Reject]"
+    "hello": "Hello",
+    "defaultGreeting": "Hello! I'm {{productName}}"
   },
   "userBubble": {
     "me": "Me"
-  },
-  "streaming": {
-    "tools": {
-      "execute_python": "Analyzing data...",
-      "load_file": "Loading file...",
-      "save_analysis_note": "Saving analysis notes...",
-      "update_progress": "Updating analysis progress...",
-      "WebSearch": "Searching for information...",
-      "generate_report": "Generating report...",
-      "export_data": "Exporting data...",
-      "hypothesis_test": "Running statistical tests...",
-      "detect_anomalies": "Detecting anomalies...",
-      "generate_chart": "Generating chart..."
-    },
-    "phases": {
-      "think": "Thinking...",
-      "act": "Executing...",
-      "observe": "Summarizing..."
-    }
   },
   "turnStage": {
     "fallback": "Thinking…",
@@ -164,8 +75,6 @@
     "waitingLlm": "Waiting for model",
     "streaming": "Thinking…",
     "toolsPreparing": "Preparing tools…",
-    "toolSingle": "Running {{name}}",
-    "toolsMulti": "Running {{count}} tools in parallel",
     "waitingPermission": "Waiting for your approval: {{name}}",
     "waitingInteraction": "Waiting for your reply…",
     "compacting": "Compacting context…",
@@ -177,13 +86,6 @@
     "updatedAt": "updated {{time}}"
   },
   "messageList": {
-    "steps": {
-      "1": "Data Cleaning & Understanding",
-      "2": "Job Structure",
-      "3": "Grade Framework",
-      "4": "Equity Diagnosis & Root Cause Analysis",
-      "5": "Action Plan & Executive Materials"
-    },
     "cannotPreview": "Cannot preview this file",
     "cannotOpen": "Cannot open file",
     "cannotReveal": "Cannot reveal in folder"
@@ -436,6 +338,8 @@
       "checking": "Checking...",
       "recheck": "Re-check",
       "lastChecked": "Last checked: ",
+      "gatewayV2Title": "Try the new gateway",
+      "gatewayV2Description": "Off by default. When off, AI requests use the stable gateway. When on, all AI requests use the new gateway and will not automatically fall back.",
       "justNow": "just now",
       "secondsAgo": "{{count}}s ago",
       "minutesAgo": "{{count}}m ago",
@@ -472,6 +376,37 @@
         "outputTokens": "Output Tokens",
         "cost": "Cost"
       }
+    },
+    "loadingVersion": "Loading...",
+    "localCacheCleared": "Local cache cleared",
+    "logsUploaded": "Logs uploaded",
+    "notLoggedIn": "Not logged in",
+    "reset": "Reset",
+    "resetDescription": "All local data will be cleared and the app will restart",
+    "unknown": "Unknown",
+    "uploadId": "Upload ID",
+    "appLogLines": "App log lines",
+    "badMetricsLines": "Bad metrics lines",
+    "chunks": "Chunks",
+    "diagnosticEvents": "Diagnostic events",
+    "usage": {
+      "details": "Usage details"
+    },
+    "dingtalk": {
+      "title": "DingTalk",
+      "description": "Connect DingTalk to sync contacts, messages, and tasks",
+      "capabilities": "Enabled capabilities",
+      "connectButton": "Connect",
+      "connecting": "Connecting...",
+      "disconnectButton": "Disconnect",
+      "refreshButton": "Refresh",
+      "connected": "Connected",
+      "disconnected": "Disconnected",
+      "connectSuccess": "Connected successfully",
+      "connectFailed": "Failed to connect",
+      "disconnectSuccess": "Disconnected successfully",
+      "corpName": "Organization",
+      "userName": "User"
     }
   },
   "composer": {
@@ -482,7 +417,15 @@
     "skillLoaded": "Skill loaded",
     "openSkillPicker": "Pick a skill",
     "openSkillPickerWithSkill": "Current skill: {{name}}",
-    "removeSkill": "Remove skill {{name}}"
+    "removeSkill": "Remove skill {{name}}",
+    "paste": {
+      "cannotPaste": "Cannot paste",
+      "clipboardImageFailed": "Failed to read image from clipboard",
+      "fileTypeUnsupported": "Unsupported file type",
+      "ignoredCount": "{{count}} item(s) ignored",
+      "selectedItemsUnsupported": "Selected items are not supported",
+      "someItemsIgnored": "Some items were ignored"
+    }
   },
   "skillPopover": {
     "searchPlaceholder": "Search",
@@ -585,22 +528,9 @@
     "codeRequired": "Please enter the verification code",
     "personalRegisterOnly": "Only personal accounts can be created here. For enterprise accounts, contact your admin."
   },
-  "onboarding": {
-    "welcome": "Welcome to {{productName}}",
-    "selectPersona": "Choose a persona to get started. AI will adjust its expertise based on your role.",
-    "settingUp": "Setting up...",
-    "startUsing": "Get Started",
-    "canSwitchLater": "You can switch or customize your persona anytime in Settings"
-  },
   "updater": {
-    "linkAvailable": "v{{version}} available",
-    "linkAvailableTooltip": "New version available — click to view",
-    "linkDownloading": "v{{version}} downloading {{pct}}%",
-    "linkDownloadingTooltip": "Downloading update — click to view progress",
     "linkReady": "v{{version}} ready to install",
     "linkReadyTooltip": "Download complete — click to install",
-    "linkFailed": "Update failed — tap to retry",
-    "linkFailedTooltip": "Download failed — click to retry",
     "dialogTitleAvailable": "Update available v{{version}}",
     "dialogTitleDownloading": "Downloading update v{{version}}",
     "dialogTitleReady": "Update downloaded v{{version}}",
@@ -620,19 +550,11 @@
     "installSuccessTitle": "Update installed",
     "relaunchFailedHint": "Installation complete, but automatic restart failed. Please close and reopen the app to use the new version.",
     "notReadyMessage": "Update not ready yet. Please wait or restart the app.",
-    "offlineHint": "Network unavailable, cannot install update. Please try again later.",
-    "downloadFailed": "Update download failed",
-    "downloadFailedDesc": "Please try again later or download the new version manually",
-    "updateAvailable": "New version available",
-    "downloadNow": "Download now",
-    "retried3Times": "Retried 3 times, still failing"
+    "offlineHint": "Network unavailable, cannot install update. Please try again later."
   },
   "auth": {
     "expired": "Session expired",
     "expiredDesc": "Please log in again to continue.",
-    "login": "Login",
-    "username": "Username",
-    "password": "Password",
     "restoringSession": "Restoring session..."
   },
   "dispatch": {
@@ -658,13 +580,24 @@
     "live": "Live output",
     "liveBytes": "Received {{bytes}}"
   },
-  "toolGroup": {
-    "title": "Tool calls",
-    "running": "Running {{done}} / {{total}}",
-    "done": "Completed {{done}} step(s)",
-    "doneCompact": "Done in {{duration}}",
-    "durationMinSec": "{{min}}m {{sec}}s",
-    "durationSec": "{{sec}}s"
+  "toolGroupSummary": {
+    "bucket": {
+      "command_one": "ran {{count}} command",
+      "command_other": "ran {{count}} commands",
+      "file_read_one": "read {{count}} file",
+      "file_read_other": "read {{count}} files",
+      "file_edit_one": "edited {{count}} file",
+      "file_edit_other": "edited {{count}} files",
+      "search_one": "searched {{count}} time",
+      "search_other": "searched {{count}} times",
+      "mcp_one": "called {{count}} MCP tool",
+      "mcp_other": "called {{count}} MCP tools",
+      "other_one": "used {{count}} tool",
+      "other_other": "used {{count}} tools"
+    },
+    "separator": ", ",
+    "failedSuffix": "{{count}} failed",
+    "runningSuffix": "…"
   },
   "homeComposer": {
     "placeholder": "Describe your task, type / or click Skill to pick...",
@@ -702,22 +635,6 @@
     "monthsAgo": "{{count}} months ago",
     "yearsAgo": "{{count}} years ago"
   },
-  "providers": {
-    "deepseek-v3": "DeepSeek",
-    "qwen-plus": "Qwen Plus",
-    "volcano": "Volcano Engine",
-    "openai": "GPT-4o",
-    "claude": "Claude",
-    "custom": "Custom Model",
-    "capabilities": {
-      "deepseek-v3": "Default: deepseek-chat | Reasoning: deepseek-reasoner",
-      "qwen-plus": "Default: qwen-plus",
-      "openai": "Default: GPT-4o",
-      "claude": "Default: Claude Sonnet",
-      "volcano": "Default: ByteDance LLM",
-      "custom": "Custom OpenAI-compatible model"
-    }
-  },
   "turnOutcome": {
     "maxIterationsTitle": "Max iterations reached",
     "maxIterationsDesc": "The agent reached its maximum iteration limit for this turn. Send a new message to continue.",
@@ -725,6 +642,8 @@
     "budgetExceededDesc": "This turn exceeded the configured token budget and was stopped automatically.",
     "executionErrorTitle": "Execution error",
     "executionErrorDesc": "The agent encountered an error and this turn was aborted. Please retry or check settings.",
+    "cancelledTitle": "Cancelled",
+    "cancelledDesc": "This turn was cancelled by the user.",
     "successSummaryTitle": "Turn complete",
     "successSummaryDesc": "Used {{tokens}} tokens, estimated cost ${{cost}}."
   },
@@ -858,7 +777,8 @@
       "singleHint": "1 message pending",
       "batchHint": "{{count}} messages pending",
       "removeAria": "Remove this pending message",
-      "attachmentsCount": "{{count}} attachment(s)"
+      "attachmentsCount": "{{count}} attachment(s)",
+      "attachmentOnly": "Attachment"
     }
   },
   "ExpertTeams": {
@@ -922,9 +842,6 @@
     "myEmployees": "My Employees",
     "syncServer": "Sync server",
     "syncing": "Syncing...",
-    "syncDone": "Sync complete, updated {{count}} template(s)",
-    "syncUpToDate": "Up to date",
-    "syncFailed": "Sync failed",
     "templateMarket": "Employee Market",
     "todayFeed": "Today's Activity",
     "viewAll": "View all",
@@ -1076,7 +993,6 @@
     "noMatchDesc": "No skills found for \"{{query}}\". Try switching to \"All\" or using a different keyword.",
     "noSkillsInCategory": "No skills in this category",
     "noSkillsInCategoryDesc": "Try the \"All\" or \"Local\" categories, or click \"+ Import Skill\" to upload a local skill directory.",
-    "builtin": "Built-in",
     "custom": "Custom",
     "sourceUser": "Custom",
     "sourceTenant": "Org",
@@ -1582,6 +1498,131 @@
       }
     },
     "itemCount": "{{count}} items",
-    "newButton": "New"
+    "newButton": "New",
+    "template": {
+      "useThis": "Use this template"
+    },
+    "row": {
+      "nextFireLabel": "Next: ",
+      "status": {
+        "active": "Active",
+        "paused": "Paused",
+        "completed": "Completed",
+        "orphaned": "Organizer missing",
+        "cancelled": "Cancelled"
+      },
+      "actions": {
+        "restore": "Restore",
+        "purge": "Delete permanently",
+        "runNow": "Run now",
+        "resume": "Resume",
+        "pause": "Pause",
+        "edit": "Edit",
+        "cancel": "Cancel",
+        "restoreAria": "Restore {{title}}",
+        "purgeAria": "Delete {{title}} permanently",
+        "runNowAria": "Run {{title}} now",
+        "resumeAria": "Resume {{title}}",
+        "pauseAria": "Pause {{title}}",
+        "editAria": "Edit {{title}}",
+        "cancelAria": "Cancel {{title}}"
+      }
+    },
+    "frequency": {
+      "noun": {
+        "daily": "day(s)",
+        "weekly": "week(s)",
+        "monthly": "month(s)",
+        "yearly": "year(s)"
+      },
+      "intervalOne": {
+        "daily": "Daily",
+        "weekly": "Weekly",
+        "monthly": "Monthly",
+        "yearly": "Yearly"
+      },
+      "intervalN": "Every {{n}} {{unit}}",
+      "endCount": ", {{n}} time(s) total",
+      "endUntil": ", until {{date}}",
+      "withTime": "{{interval}} at {{time}}"
+    },
+    "editor": {
+      "titleNew": "New schedule",
+      "titleEdit": "Edit schedule",
+      "fields": {
+        "title": "Title",
+        "promptPlaceholder": "What to do when triggered?",
+        "promptAria": "Prompt",
+        "frequency": "Frequency",
+        "intervalEvery": "Every N {{unit}}",
+        "intervalAria": "Interval",
+        "endCondition": "End condition",
+        "endCountAria": "End count",
+        "endUntilAria": "End date",
+        "startTime": "Start time",
+        "workspace": "Workspace",
+        "workspaceDefault": "Use current workspace",
+        "workspaceHint": "The folder will be authorized to the new conversation when triggered. Leave empty to follow the current workspace.",
+        "pickWorkspaceAria": "Pick workspace",
+        "pick": "Pick",
+        "pickDialogTitle": "Choose workspace for this schedule"
+      },
+      "freqOptions": {
+        "oneShot": "One-shot",
+        "daily": "Daily",
+        "weekly": "Weekly",
+        "monthly": "Monthly",
+        "yearly": "Yearly"
+      },
+      "endOptions": {
+        "never": "Never",
+        "count": "After N occurrences",
+        "until": "Until date"
+      },
+      "actions": {
+        "cancel": "Cancel",
+        "save": "Save"
+      }
+    },
+    "detail": {
+      "tabs": {
+        "overview": "Overview",
+        "history": "History",
+        "settings": "Settings"
+      },
+      "labels": {
+        "organizer": "Organizer",
+        "frequency": "Frequency",
+        "nextFire": "Next fire",
+        "status": "Status",
+        "workspace": "Workspace"
+      },
+      "workspaceDefault": "Use current workspace",
+      "historyEmpty": "No execution records",
+      "editButton": "Edit"
+    }
+  },
+  "changelog": {
+    "whatsNew": "What's new in v{{version}}",
+    "noChanges": "No changes",
+    "ok": "OK"
+  },
+  "dataTable": {
+    "truncatedFooter": "Showing {{shown}} of {{total}} rows",
+    "expandedFooter": "Showing all {{total}} rows",
+    "empty": "No data",
+    "collapse": "Collapse",
+    "expandAll": "Expand all",
+    "copyCsv": "Copy as CSV (hold Shift for TSV)",
+    "copyTsv": "Copy as TSV"
+  },
+  "legal": {
+    "terms": {
+      "title": "AIjia Software License and Service Agreement"
+    },
+    "privacy": {
+      "title": "AIjia Privacy Policy"
+    },
+    "dialogTitleFallback": "Legal document"
   }
 }

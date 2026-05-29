@@ -262,6 +262,20 @@ impl AppStorage {
         role: &str,
         content_json: &str,
     ) -> Result<()> {
+        self.insert_message_with_error(id, conversation_id, role, content_json, None)
+    }
+
+    /// 与 [`insert_message`] 相同，但允许携带结构化 error 字段（PR2 收尾：
+    /// 让 emit_terminal_error 的错误占位 message 在 disk 上保留 error，下次
+    /// reload 仍能渲染红色 callout + 让 history.rs 过滤不进 LLM context）.
+    pub fn insert_message_with_error(
+        &self,
+        id: &str,
+        conversation_id: &str,
+        role: &str,
+        content_json: &str,
+        error: Option<&types::MessageError>,
+    ) -> Result<()> {
         let _lock = self.write_lock.lock().unwrap();
         let content: serde_json::Value = serde_json::from_str(content_json)?;
         let msg = types::StoredMessage {
@@ -278,6 +292,7 @@ impl AppStorage {
             run_id: None,
             schema_version: Some(2),
             sequence: None,
+            error: error.cloned(),
         };
         messages::insert_message_v2(&self.base_dir, &msg)?;
         Ok(())
@@ -843,6 +858,13 @@ impl RuntimeRepositoryFacade {
     }
 
     pub fn from_storage(storage: std::sync::Arc<AppStorage>) -> Self {
+        Self::from_storage_with_cus(storage, None)
+    }
+
+    pub fn from_storage_with_cus(
+        storage: std::sync::Arc<AppStorage>,
+        cus: Option<std::sync::Arc<crate::storage::CurrentUserStorage>>,
+    ) -> Self {
         Self {
             session_store: std::sync::Arc::new(FileSessionStore {
                 storage: storage.clone(),
@@ -865,6 +887,7 @@ impl RuntimeRepositoryFacade {
             authorized_workspace_store: std::sync::Arc::new(
                 crate::runtime::store::ConvJsonAuthorizedWorkspaceStore {
                     storage: storage.clone(),
+                    cus,
                 },
             ),
         }

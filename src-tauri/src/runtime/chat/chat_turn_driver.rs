@@ -244,6 +244,10 @@ pub trait RuntimeLlmExecutor: Send + Sync {
     }
 
     /// 持久化 assistant message 到存储。纯 I/O，不含事件发射。
+    ///
+    /// `error` 为 `Some` 时表示这是一条终止错误占位（emit_terminal_error_message_and_idle
+    /// 路径用），生产 impl 必须把 error 字段一并写入 StoredMessage 才能让下次 reload
+    /// 时前端拿到 error 渲染红色 callout，并让 history.rs 过滤这条不进 LLM context。
     async fn persist_assistant_message(
         &self,
         conversation_id: &str,
@@ -252,6 +256,7 @@ pub trait RuntimeLlmExecutor: Send + Sync {
         generated_file_ids: &[String],
         file_metas: &[serde_json::Value],
         thinking_blocks: &[serde_json::Value],
+        error: Option<&crate::storage::file_store::types::MessageError>,
     ) -> Result<String, TurnError>;
 
     /// 持久化 user message 到存储。纯 I/O，不含事件发射。
@@ -277,12 +282,13 @@ pub trait RuntimeLlmExecutor: Send + Sync {
         Ok(())
     }
 
-    /// 持久化单次 iteration 的 assistant[toolCalls] 消息（无文字内容，无生成文件）。
+    /// 持久化单次 iteration 的 assistant 消息（文字内容 + toolCalls，无生成文件）。
     /// 在工具执行前调用，使存储顺序正确反映 assistant → tools 穿插结构。
     /// 返回新建消息的 id（无 tool_calls 时返回 None）。默认 no-op。
     async fn persist_iteration_assistant_message(
         &self,
         _conversation_id: &str,
+        _assistant_content: &str,
         _tool_calls: &[serde_json::Value],
         _thinking_blocks: &[serde_json::Value],
     ) -> Result<Option<String>, TurnError> {
@@ -1632,6 +1638,7 @@ impl RuntimeChatTurnDriver {
                                 content: build_user_content_json(&notification.xml, &[]),
                                 client_message_id: None,
                                 tool_calls: None,
+                                error: None,
                             },
                         ))
                         .await
@@ -1680,6 +1687,7 @@ impl RuntimeChatTurnDriver {
                                 content: build_user_content_json(&xml, &[]),
                                 client_message_id: None,
                                 tool_calls: None,
+                                error: None,
                             },
                         ))
                         .await
@@ -1785,6 +1793,7 @@ impl RuntimeChatTurnDriver {
                         content: pending_user_content,
                         client_message_id: pending_client_msg_id.clone(),
                         tool_calls: None,
+                        error: None,
                     },
                 ))
                 .await?;
@@ -1986,6 +1995,18 @@ impl RuntimeChatTurnDriver {
             }
 
             // ── Step 5b: single LLM step ─────────────────────────────────────
+            // Emit a paragraph separator before streaming the next iteration,
+            // so the frontend's streamingContent shows distinct paragraphs.
+            if iteration > 0 && !state.full_content.is_empty() {
+                let _ = self
+                    .event_bus
+                    .emit(RuntimeEvent::stream_delta(
+                        session_id.clone(),
+                        run_id.clone(),
+                        "\n\n".to_string(),
+                    ))
+                    .await;
+            }
             stage_emitter.waiting_llm(iteration as u32).await;
             let step_result = match executor
                 .run_llm_step(&input, &self.event_bus, &cancel)
@@ -2070,6 +2091,32 @@ impl RuntimeChatTurnDriver {
                         &mut state.messages,
                         cancel.reason(),
                     );
+
+                    // PR2: PromptTooLong 用专用 kind 让 UI 显示"压缩历史/新建会话"指引
+                    let error_text =
+                        "对话上下文已超出模型限制。请新建会话或精简历史后再试。".to_string();
+                    let error = crate::storage::file_store::types::MessageError {
+                        kind: crate::storage::file_store::types::ErrorKind::PromptTooLong,
+                        message: error_text.clone(),
+                        raw: Some(sanitize_error_raw(&message)),
+                    };
+                    if let Err(emit_err) = self
+                        .emit_terminal_error_message_and_idle(
+                            executor,
+                            &session_id,
+                            &run_id,
+                            conversation_id.as_str(),
+                            &error_text,
+                            error,
+                        )
+                        .await
+                    {
+                        log::error!(
+                            "[chat_turn_driver] failed to emit terminal error events on PromptTooLong: {}",
+                            emit_err
+                        );
+                    }
+
                     return Err(anyhow::anyhow!(message));
                 }
                 Err(err) => {
@@ -2081,6 +2128,35 @@ impl RuntimeChatTurnDriver {
                         &mut state.messages,
                         cancel.reason(),
                     );
+
+                    // PR2: 构造结构化 MessageError 替代 PR1 纯字符串占位。
+                    // 通用 LLM 错误归 kind=Unknown（PR3 fallback 后这里基本不会触达）。
+                    // spec: docs/superpowers/specs/2026-05-28-streaming-error-handling-design.md §3.1
+                    let error_text =
+                        "抱歉，AI 服务暂时无法响应（已自动尝试多次）。请稍后再试，或换个方式提问。"
+                            .to_string();
+                    let error = crate::storage::file_store::types::MessageError {
+                        kind: crate::storage::file_store::types::ErrorKind::Unknown,
+                        message: error_text.clone(),
+                        raw: Some(sanitize_error_raw(&err.to_string())),
+                    };
+                    if let Err(emit_err) = self
+                        .emit_terminal_error_message_and_idle(
+                            executor,
+                            &session_id,
+                            &run_id,
+                            conversation_id.as_str(),
+                            &error_text,
+                            error,
+                        )
+                        .await
+                    {
+                        log::error!(
+                            "[chat_turn_driver] failed to emit terminal error events on stream Err: {}",
+                            emit_err
+                        );
+                    }
+
                     return Err(anyhow::anyhow!("{}", err));
                 }
             };
@@ -2096,10 +2172,15 @@ impl RuntimeChatTurnDriver {
                     cache_read_input_tokens,
                     stop_reason,
                 } => {
-                    state.full_content.push_str(&content);
                     if !thinking_blocks.is_empty() {
-                        state.final_thinking_blocks = thinking_blocks;
+                        state.last_thinking_blocks = thinking_blocks.clone();
+                        state.final_thinking_blocks = thinking_blocks.clone();
                     }
+                    state.final_only_content = content.clone();
+                    if !content.is_empty() && !state.full_content.is_empty() {
+                        state.full_content.push_str("\n\n");
+                    }
+                    state.full_content.push_str(&content);
                     state.step_tokens_in += tokens_in;
                     state.step_tokens_out += tokens_out;
                     state.step_cache_creation_input_tokens += cache_creation_input_tokens;
@@ -2195,7 +2276,13 @@ impl RuntimeChatTurnDriver {
                     cache_creation_input_tokens,
                     cache_read_input_tokens,
                 } => {
+                    if !thinking_blocks.is_empty() {
+                        state.last_thinking_blocks = thinking_blocks.clone();
+                    }
                     if !assistant_content.is_empty() {
+                        if !state.full_content.is_empty() {
+                            state.full_content.push_str("\n\n");
+                        }
                         state.full_content.push_str(&assistant_content);
                     }
                     let normalized_tool_calls: Vec<serde_json::Value> = tool_calls
@@ -2243,6 +2330,60 @@ impl RuntimeChatTurnDriver {
                             })
                             .collect();
                         stage_emitter.tools_started(iteration as u32, running).await;
+                    }
+
+                    // 先持久化 + emit iter assistant message（含 toolCalls），
+                    // 再 execute_round。这样前端的 messages 在 tool 执行**之前**
+                    // 就已经多了这条 iter，buildTurnsFromMessages 把 toolStep
+                    // 推进 blocks 的 persistedBlockCount 段（status='running'），
+                    // 后续 tool:executing / tool:completed 事件通过 existing
+                    // 分支只更新 status——React key 和位置全程不变，避免了
+                    // "live tool block → persisted tool block" 接力导致 React
+                    // unmount/mount、loading 跳到 done 时页面跳动。
+                    //
+                    // ⚠️ cancel 副作用：若用户在 execute_round 中途 cancel，
+                    // iter assistant message 已经落盘但部分 tool 没产 tool_result，
+                    // 刷新会话后这些 step 会一直显示 running 态。turn 已 finalize
+                    // 时 streaming bubble 已消失，视觉上的歧义可接受；如要根治
+                    // 需要 cancel 路径把 synthesized tool_result 也 persist。
+                    if !normalized_tool_calls.is_empty() {
+                        match executor
+                            .persist_iteration_assistant_message(
+                                config.conversation_id.as_str(),
+                                &assistant_content,
+                                &normalized_tool_calls,
+                                &state.last_thinking_blocks,
+                            )
+                            .await
+                        {
+                            Ok(Some(iter_msg_id)) => {
+                                if let Err(emit_err) = self
+                                    .event_bus
+                                    .emit(RuntimeEvent::new(
+                                        session_id.clone(),
+                                        run_id.clone(),
+                                        RuntimeEventKind::MessagePersisted {
+                                            message_id: iter_msg_id,
+                                            role: "assistant".to_string(),
+                                            content: serde_json::json!({ "text": assistant_content }),
+                                            client_message_id: None,
+                                            tool_calls: Some(normalized_tool_calls.clone()),
+                                            error: None,
+                                        },
+                                    ))
+                                    .await
+                                {
+                                    log::warn!(
+                                        "[chat_turn_driver] Failed to emit MessagePersisted for iteration assistant: {}",
+                                        emit_err
+                                    );
+                                }
+                            }
+                            Ok(None) => {}
+                            Err(e) => {
+                                log::warn!("[chat_turn_driver] Failed to persist iteration assistant message: {}", e);
+                            }
+                        }
                     }
 
                     // Execute the tool round.
@@ -2297,54 +2438,8 @@ impl RuntimeChatTurnDriver {
                     }
                     state.append_messages_batch(history_batch);
 
-                    // 先持久化本次 iteration 的 assistant[toolCalls]，再持久化 tool results，
-                    // 保证存储顺序与执行顺序一致（assistant → tools 穿插）。
-                    if !normalized_tool_calls.is_empty() {
-                        match executor
-                            .persist_iteration_assistant_message(
-                                config.conversation_id.as_str(),
-                                &normalized_tool_calls,
-                                &thinking_blocks,
-                            )
-                            .await
-                        {
-                            Ok(Some(iter_msg_id)) => {
-                                // 推送给前端，让流式 UI 立即拿到 toolCalls.arguments
-                                // 而不必等到刷新会话。
-                                if let Err(emit_err) = self
-                                    .event_bus
-                                    .emit(RuntimeEvent::new(
-                                        session_id.clone(),
-                                        run_id.clone(),
-                                        RuntimeEventKind::MessagePersisted {
-                                            message_id: iter_msg_id,
-                                            role: "assistant".to_string(),
-                                            content: if thinking_blocks.is_empty() {
-                                                serde_json::json!({ "text": "" })
-                                            } else {
-                                                serde_json::json!({
-                                                    "text": "",
-                                                    "thinkingBlocks": thinking_blocks.clone(),
-                                                })
-                                            },
-                                            client_message_id: None,
-                                            tool_calls: Some(normalized_tool_calls.clone()),
-                                        },
-                                    ))
-                                    .await
-                                {
-                                    log::warn!(
-                                        "[chat_turn_driver] Failed to emit MessagePersisted for iteration assistant: {}",
-                                        emit_err
-                                    );
-                                }
-                            }
-                            Ok(None) => {}
-                            Err(e) => {
-                                log::warn!("[chat_turn_driver] Failed to persist iteration assistant message: {}", e);
-                            }
-                        }
-                    }
+                    // iter assistant message 已在 execute_round 之前提前持久化 +
+                    // emit（见上方），这里只需把 tool_result 落盘。
                     // 持久化本轮 tool 消息（忽略错误，不阻断流程）
                     if !tool_msgs_for_persist.is_empty() {
                         if let Err(e) = executor
@@ -2395,9 +2490,22 @@ impl RuntimeChatTurnDriver {
         }
 
         // ── Step 6: Post-process content ──────────────────────────────────────
+        // 直接对 `final_only_content` 跑 post-process。这里的三件事（max_iter
+        // 通知 / empty fallback / strip_hallucinated_xml）语义上都是针对"最终
+        // 总结"的处理，而不是跨 iter 累积内容。
+        //
+        // 历史背景：旧实现把 post-process 跑在 `full_content`（跨 iter 拼接的
+        // 累积流）上，再用 "前后长度差" 反推回 `final_only_content`。这套反推
+        // 在 strip 遇到未闭合 `<function_calls>` 半标签时翻车——strip 会从那
+        // 个位置 truncate 到末尾，导致 full_content 变短，进而触发"empty
+        // fallback 替换"分支，把整段累积内容（包含前面已落盘的 iter 文字）
+        // 当成 final message 复读一遍存盘。
+        //
+        // 现在 `full_content` 退化为 safeguard 检查 / Stop hook 输入的旁路缓
+        // 冲，不再参与最终回答的组装。
         stage_emitter.completing().await;
         post_process::finalize_content(
-            &mut state.full_content,
+            &mut state.final_only_content,
             state.iteration_count,
             config.max_iterations,
             state.stream_cancelled,
@@ -2463,14 +2571,21 @@ impl RuntimeChatTurnDriver {
         // ── Step 7: Persist assistant message ─────────────────────────────────
         // tool_calls 已在每次 iteration 通过 persist_iteration_assistant_message 存入，
         // 这里只需存最终文字总结和 generatedFiles。
+        // 取消场景下 final_only_content 通常为空（cancel 发生在 ContentComplete 之前），
+        // 写一条 "（已取消）" 占位文字保证用户刷新页面后能看到本轮被取消，而不是
+        // 看到一个工具卡片后就空白。
+        if state.stream_cancelled && state.final_only_content.trim().is_empty() {
+            state.final_only_content = "（已取消）".to_string();
+        }
         let message_id = executor
             .persist_assistant_message(
                 config.conversation_id.as_str(),
-                &state.full_content,
+                &state.final_only_content,
                 &[],
                 &state.generated_file_ids,
                 &state.all_file_metas,
-                &state.final_thinking_blocks,
+                &state.last_thinking_blocks,
+                None,
             )
             .await
             .map_err(|e| anyhow::anyhow!("{}", e))?;
@@ -2499,15 +2614,69 @@ impl RuntimeChatTurnDriver {
         // content must be a MessageContent object (matching the frontend Message type),
         // not a raw string.  The legacy finish_agent path always emitted {"text": "..."},
         // so we must do the same here or the frontend will discard the message.
-        self.event_bus
-            .emit(RuntimeEvent::message_persisted(
+        //
+        // 必须 emit final_only_content（与磁盘上 persist_assistant_message 一致），
+        // 而不是 full_content。每个 iter 都已通过 iteration assistant message 单独 emit
+        // 了自己的 text + toolCalls，如果这里再发 full_content（累积全部 iter 文字），
+        // 前端 store 里前面 iter 的文字会被这条 final message 再重复一遍。
+        // ⚠️ 已知隐患（不在本次范围）：max_output_tokens recovery 路径下，多次
+        // ContentComplete 的 partial 内容只在 state.full_content 内存里，从未通过
+        // persist_iteration_assistant_message 落盘——改 emit 后这部分内容刷新前与
+        // 刷新后都会消失，前后行为一致；但 disk 丢数据本身是个独立 bug。
+        //
+        // PR2: 业务终止 outcome 也带 MessageError（让 UI 显红色 callout，让 history 过滤）.
+        let outcome_error: Option<crate::storage::file_store::types::MessageError> =
+            match &final_outcome {
+                ChatTurnOutcome::MaxIterationsReached { iterations } => {
+                    Some(crate::storage::file_store::types::MessageError {
+                        kind: crate::storage::file_store::types::ErrorKind::MaxIterations,
+                        message: format!(
+                            "分析步骤超过上限 ({} 次)，已停止。可继续追问深入。",
+                            iterations
+                        ),
+                        raw: None,
+                    })
+                }
+                ChatTurnOutcome::BudgetExceeded {
+                    reason,
+                    total_cost_usd,
+                } => Some(crate::storage::file_store::types::MessageError {
+                    kind: crate::storage::file_store::types::ErrorKind::BudgetExceeded,
+                    message: format!(
+                        "已超出预算（约 ${:.4}），请调整预算或新建会话。",
+                        total_cost_usd
+                    ),
+                    raw: Some(reason.clone()),
+                }),
+                ChatTurnOutcome::ExecutionError { message } => {
+                    Some(crate::storage::file_store::types::MessageError {
+                        kind: crate::storage::file_store::types::ErrorKind::ExecutionError,
+                        message: "处理过程中发生错误，请重试或换个方式提问。".to_string(),
+                        raw: Some(sanitize_error_raw(message)),
+                    })
+                }
+                _ => None,
+            };
+
+        let persisted_event = if let Some(err) = outcome_error.clone() {
+            RuntimeEvent::message_persisted_with_error(
                 session_id.clone(),
                 run_id.clone(),
                 message_id,
                 "assistant",
-                serde_json::json!({ "text": state.full_content }),
-            ))
-            .await?;
+                serde_json::json!({ "text": state.final_only_content }),
+                err,
+            )
+        } else {
+            RuntimeEvent::message_persisted(
+                session_id.clone(),
+                run_id.clone(),
+                message_id,
+                "assistant",
+                serde_json::json!({ "text": state.final_only_content }),
+            )
+        };
+        self.event_bus.emit(persisted_event).await?;
         self.event_bus
             .emit(RuntimeEvent::stream_done(
                 session_id.clone(),
@@ -2599,6 +2768,108 @@ impl RuntimeChatTurnDriver {
         self.event_bus
             .emit(RuntimeEvent::new(
                 session_id,
+                run_id.clone(),
+                RuntimeEventKind::AgentIdle {
+                    agent_id: AgentId::new(format!("agent-{}", run_id.as_str())),
+                    scope: AgentIdleScope::Primary,
+                },
+            ))
+            .await?;
+
+        Ok(())
+    }
+
+    /// 在错误终态（stream error / PromptTooLong）下补发 Step 6-8 的三件套
+    /// 事件，避免前端 chat 区白屏。
+    ///
+    /// 行为对齐 `run_chat_turn_s4` 主路径的 Step 8（行 2502-2510）+
+    /// Step 8 末尾的 AgentIdle emit（行 2596-2604）：
+    ///
+    /// 1. `MessagePersisted` — 让前端把错误占位文本作为 assistant 消息渲染
+    /// 2. `StreamDone`        — 让前端 streamingState.isStreaming 复位
+    /// 3. `AgentIdle`         — 让前端解锁输入框，agent 不再"思考中"
+    ///
+    /// PR1 范围内 `error_text` 是纯字符串占位，直接写入 `MessagePersisted`
+    /// 的 `content.text`。PR2 会扩为结构化 `error: Option<MessageError>`
+    /// 字段（spec §3.1）。
+    ///
+    /// `message_id` 通过 `executor.persist_assistant_message` 落盘后取得 —
+    /// 与正常路径完全一致，保证 messages.jsonl 不丢条。
+    /// 在错误终态（stream error / PromptTooLong / 业务终止）下补发 Step 6-8
+    /// 三件套事件，避免前端 chat 区白屏（PR1）+ 携带结构化错误信息（PR2）。
+    ///
+    /// 行为对齐 `run_chat_turn_s4` 主路径的 Step 8 三件套。
+    /// `error` 字段会写到 StoredMessage 顶层 + MessagePersisted event，让前端
+    /// 识别后渲染红色 callout；`history.rs::build_chat_history` 装载下一轮
+    /// LLM 历史时会过滤掉它，避免错误回灌（spec §3.2）。
+    async fn emit_terminal_error_message_and_idle(
+        &self,
+        executor: &dyn RuntimeLlmExecutor,
+        session_id: &SessionId,
+        run_id: &RunId,
+        conversation_id: &str,
+        error_text: &str,
+        error: crate::storage::file_store::types::MessageError,
+    ) -> anyhow::Result<()> {
+        // Step 7：持久化 error 占位为一条 assistant message（含 error 字段落盘 — PR2 收尾）.
+        // 这样下次 reload 时前端从 disk 拿到 error 仍能显示红色 callout；
+        // history.rs 也能用 stored.error 过滤掉这条不进 LLM context.
+        let message_id = executor
+            .persist_assistant_message(
+                conversation_id,
+                error_text,
+                &[],
+                &[],
+                &[],
+                &[],
+                Some(&error),
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
+
+        // Step 8a：MessagePersisted（前端 message:updated 渲染气泡 + error callout）
+        // PR4 Layer 2 诊断：先 clone 出 kind 字符串和 message_id（emit 会消耗 error / message_id）.
+        let error_kind_for_diag = serde_json::to_value(&error.kind)
+            .ok()
+            .and_then(|v| v.as_str().map(|s| s.to_string()));
+        let message_id_for_diag = message_id.clone();
+        self.event_bus
+            .emit(RuntimeEvent::message_persisted_with_error(
+                session_id.clone(),
+                run_id.clone(),
+                message_id,
+                "assistant",
+                serde_json::json!({ "text": error_text }),
+                error,
+            ))
+            .await?;
+        record_diagnostic(
+            &crate::telemetry::diagnostics_workspace(),
+            DiagnosticEvent::new(
+                "streaming.error_message.persisted",
+                DiagnosticSource::Backend,
+            )
+            .conversation_id(session_id.as_str())
+            .run_id(run_id.as_str())
+            .message_id(message_id_for_diag)
+            .ok(false)
+            .payload(serde_json::json!({
+                "kind": error_kind_for_diag,
+            })),
+        );
+
+        // Step 8b：StreamDone
+        self.event_bus
+            .emit(RuntimeEvent::stream_done(
+                session_id.clone(),
+                run_id.clone(),
+            ))
+            .await?;
+
+        // Step 8c：AgentIdle
+        self.event_bus
+            .emit(RuntimeEvent::new(
+                session_id.clone(),
                 run_id.clone(),
                 RuntimeEventKind::AgentIdle {
                     agent_id: AgentId::new(format!("agent-{}", run_id.as_str())),
@@ -2775,6 +3046,87 @@ fn stable_allowed_tools_vec(allowed_tools: &Option<HashSet<String>>) -> Option<V
         names.sort();
         names
     })
+}
+
+/// 脱敏原始错误文案，避免敏感信息（token / api_key / session）落盘到 messages.jsonl。
+/// PR2: 截断 ≤500 字符 + 移除已知敏感 query string 参数。
+/// 参考 spec §3.1 raw 字段脱敏约定。
+fn sanitize_error_raw(raw: &str) -> String {
+    const MAX_LEN: usize = 500;
+    const REDACTED: &str = "REDACTED";
+    let mut s = raw.to_string();
+    // 粗粒度替换：对 known sensitive keys 做 prefix 匹配
+    // 使用显式偏移量避免替换后再次匹配 REDACTED 占位符造成无限循环
+    for key in &[
+        "token=",
+        "api_key=",
+        "apiKey=",
+        "session=",
+        "session_key=",
+        "sessionKey=",
+    ] {
+        let mut search_from: usize = 0;
+        while let Some(rel_start) = s[search_from..].find(key) {
+            let start = search_from + rel_start;
+            let value_start = start + key.len();
+            let value_end = s[value_start..]
+                .find(|c: char| c == '&' || c == ' ' || c == '"' || c == '\\' || c == '\n')
+                .map(|i| value_start + i)
+                .unwrap_or(s.len());
+            s.replace_range(value_start..value_end, REDACTED);
+            // 下次搜索从 REDACTED 结尾之后开始，跳过已替换区域
+            search_from = value_start + REDACTED.len();
+        }
+    }
+    if s.chars().count() > MAX_LEN {
+        s = s.chars().take(MAX_LEN).collect::<String>() + "…";
+    }
+    s
+}
+
+#[cfg(test)]
+mod sanitize_error_raw_tests {
+    use super::sanitize_error_raw;
+
+    #[test]
+    fn truncates_overlong_input() {
+        let input = "x".repeat(600);
+        let out = sanitize_error_raw(&input);
+        assert!(out.chars().count() <= 501); // 500 + 省略号
+        assert!(out.ends_with('…'));
+    }
+
+    #[test]
+    fn redacts_token_query_param() {
+        let input = "https://api.example.com/v1/chat?token=abc123&model=claude";
+        let out = sanitize_error_raw(input);
+        assert!(out.contains("token=REDACTED"));
+        assert!(!out.contains("abc123"));
+        assert!(
+            out.contains("model=claude"),
+            "non-sensitive params should be kept: {}",
+            out
+        );
+    }
+
+    #[test]
+    fn redacts_api_key_camel_and_snake() {
+        let input1 = "Authorization failed: api_key=sk-abc123";
+        let out1 = sanitize_error_raw(input1);
+        assert!(out1.contains("api_key=REDACTED"));
+        assert!(!out1.contains("sk-abc123"));
+
+        let input2 = "?apiKey=sk-xyz789&foo=bar";
+        let out2 = sanitize_error_raw(input2);
+        assert!(out2.contains("apiKey=REDACTED"));
+        assert!(!out2.contains("sk-xyz789"));
+    }
+
+    #[test]
+    fn keeps_normal_error_text_unchanged() {
+        let input = "Chunk timeout (90s) after 10 retries";
+        assert_eq!(sanitize_error_raw(input), input);
+    }
 }
 
 #[cfg(test)]
@@ -3206,6 +3558,7 @@ mod tests {
             _generated_file_ids: &[String],
             _file_metas: &[serde_json::Value],
             _thinking_blocks: &[serde_json::Value],
+            _error: Option<&crate::storage::file_store::types::MessageError>,
         ) -> Result<String, TurnError> {
             Ok("assistant-msg".to_string())
         }

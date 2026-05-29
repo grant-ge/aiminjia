@@ -267,11 +267,8 @@ impl RuntimeTool for BashTool {
             let tool_call_id = tool_call_id_for_progress.clone();
             Some(tokio::spawn(async move {
                 let mut last_sent_bytes: u64 = 0;
-                let mut ticker =
-                    tokio::time::interval(Duration::from_millis(PROGRESS_TICK_MS));
-                ticker.set_missed_tick_behavior(
-                    tokio::time::MissedTickBehavior::Skip,
-                );
+                let mut ticker = tokio::time::interval(Duration::from_millis(PROGRESS_TICK_MS));
+                ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
                 loop {
                     tokio::select! {
                         // watch sender drop → command finished, exit the loop.
@@ -289,9 +286,7 @@ impl RuntimeTool for BashTool {
                     last_sent_bytes = total_bytes;
                     // Decode for tail extraction only; the original bytes are
                     // already kept in `captured` for the final tool result.
-                    let decoded = crate::storage::console_decode::decode_console_bytes(
-                        &captured,
-                    );
+                    let decoded = crate::storage::console_decode::decode_console_bytes(&captured);
                     let mut tail = tail_n_lines(&decoded, PROGRESS_TAIL_LINES);
                     if tail.len() > PROGRESS_TAIL_MAX_BYTES {
                         // UTF-8 safe truncation: walk back to a char boundary.
@@ -465,9 +460,7 @@ mod progress_tests {
             storage: Some(StorageCapability {
                 workspace_path: workspace,
                 authorized_workspace: None,
-                permission_ctx: Arc::new(
-                    crate::runtime::path_auth::ToolPermissionContext::empty(),
-                ),
+                permission_ctx: Arc::new(crate::runtime::path_auth::ToolPermissionContext::empty()),
             }),
             workspace_id: Some("ws-test".to_string()),
             runtime_resolver: None,

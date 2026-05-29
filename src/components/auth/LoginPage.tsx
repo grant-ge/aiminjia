@@ -8,7 +8,7 @@ import { LoginLogoStack } from '@/components/auth/LoginLogoStack'
 import { LoginOptionsRow } from '@/components/auth/LoginOptionsRow'
 import { RegisterCard } from '@/components/auth/RegisterCard'
 import { LegalDocumentDialog } from '@/components/legal/LegalDocumentDialog'
-import { LEGAL_DOCUMENTS, type LegalDocumentKey } from '@/components/legal/legalDocuments'
+import { getLegalDocument, type LegalDocumentKey } from '@/components/legal/legalDocuments'
 import { TitleBar } from '@/components/layout/TitleBar'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -23,7 +23,7 @@ function getSavedUsername() {
 }
 
 export function LoginPage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const login = useAuthStore((s) => s.login)
   const isAuthPending = useAuthStore((s) => s.isAuthPending)
   const productName = useBrandingStore((s) => s.productName)
@@ -91,7 +91,9 @@ export function LoginPage() {
     })()
   }
 
-  const legalDocument = activeLegalDocument ? LEGAL_DOCUMENTS[activeLegalDocument] : null
+  const legalDocument = activeLegalDocument
+    ? getLegalDocument(activeLegalDocument, i18n.language)
+    : null
   const footerText = appVersion
     ? `${productName} ${t('login.version', { version: appVersion })} · ${t('login.footerCopyright')}`
     : `${productName} · ${t('login.footerCopyright')}`

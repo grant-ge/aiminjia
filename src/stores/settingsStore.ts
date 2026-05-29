@@ -8,7 +8,14 @@ import {
   normalizeFontScale,
   persistFontScale,
 } from '@/styles/fontScale'
-import type { Settings, LlmProvider, FontScale, DataMaskingLevel, ChatWidthMode } from '@/types/settings'
+import type {
+  Settings,
+  LlmProvider,
+  FontScale,
+  DataMaskingLevel,
+  ChatWidthMode,
+  CloudGatewayMode,
+} from '@/types/settings'
 import { DEFAULT_SETTINGS } from '@/types/settings'
 
 interface SettingsState extends Settings {
@@ -26,6 +33,7 @@ interface SettingsState extends Settings {
   setFontScale: (scale: FontScale) => void
   setChatWidthMode: (mode: ChatWidthMode) => void
   setDataMaskingLevel: (level: DataMaskingLevel) => void
+  setCloudGatewayMode: (mode: CloudGatewayMode) => void
   markLoaded: () => void
 }
 
@@ -72,5 +80,6 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   },
   setChatWidthMode: (chatWidthMode) => set({ chatWidthMode }),
   setDataMaskingLevel: (dataMaskingLevel) => set({ dataMaskingLevel }),
+  setCloudGatewayMode: (cloudGatewayMode) => set({ cloudGatewayMode }),
   markLoaded: () => set({ isLoaded: true }),
 }))

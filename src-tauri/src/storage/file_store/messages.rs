@@ -140,6 +140,7 @@ pub fn insert_message(
         run_id: None,
         schema_version: None,
         sequence: None,
+        error: None,
         id: id.to_string(),
         conversation_id: conversation_id.to_string(),
         role: role.to_string(),
@@ -386,6 +387,7 @@ pub fn update_message_content(
         run_id: original.run_id.clone(),
         schema_version: original.schema_version,
         sequence: original.sequence,
+        error: original.error.clone(),
         id: original.id.clone(),
         conversation_id: original.conversation_id.clone(),
         role: original.role.clone(),
@@ -514,6 +516,12 @@ fn message_to_json(msg: StoredMessage) -> serde_json::Value {
     if let Some(tcs) = tool_calls {
         if tcs.as_array().map_or(false, |a| !a.is_empty()) {
             out["toolCalls"] = tcs;
+        }
+    }
+    // PR2 收尾：透传 error 字段，让 reload 后前端 AiBubble 仍能渲染红色 callout.
+    if let Some(err) = msg.error {
+        if let Ok(err_value) = serde_json::to_value(&err) {
+            out["error"] = err_value;
         }
     }
     out

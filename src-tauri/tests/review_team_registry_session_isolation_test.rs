@@ -39,7 +39,10 @@ async fn different_session_ids_have_isolated_teams() {
     reg.create(s1.clone(), mk_lead("team-lead"), "t1".into())
         .await
         .unwrap();
-    assert!(reg.get(&s2, "t1").await.is_none(), "s2 must not see s1's team");
+    assert!(
+        reg.get(&s2, "t1").await.is_none(),
+        "s2 must not see s1's team"
+    );
 }
 
 #[tokio::test]

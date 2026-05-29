@@ -427,15 +427,25 @@ mod tests {
     }
 
     mod unsupported_tests {
+        use super::super::super::api::{
+            TgAnimation, TgAudio, TgSticker, TgVideo, TgVideoNote, TgVoice,
+        };
         use super::*;
-        use super::super::super::api::{TgAnimation, TgAudio, TgSticker, TgVideo, TgVideoNote, TgVoice};
 
         #[test]
         fn voice_message_returns_unsupported_voice() {
             let mut msg = empty_msg(30, user(42, "Alice", false), chat(42, "private"));
-            msg.voice = Some(TgVoice { duration: Some(5), file_size: Some(2048) });
+            msg.voice = Some(TgVoice {
+                duration: Some(5),
+                file_size: Some(2048),
+            });
             match parse_update(&update_with_msg(200, msg), "BOT") {
-                ParsedInbound::Unsupported { kind, chat_id, user_id, message_id } => {
+                ParsedInbound::Unsupported {
+                    kind,
+                    chat_id,
+                    user_id,
+                    message_id,
+                } => {
                     assert_eq!(kind, UnsupportedKind::Voice);
                     assert_eq!(chat_id, 42);
                     assert_eq!(user_id, 42);
@@ -448,50 +458,80 @@ mod tests {
         #[test]
         fn audio_returns_unsupported_audio() {
             let mut msg = empty_msg(31, user(42, "Alice", false), chat(42, "private"));
-            msg.audio = Some(TgAudio { duration: Some(180), file_size: Some(1024) });
+            msg.audio = Some(TgAudio {
+                duration: Some(180),
+                file_size: Some(1024),
+            });
             assert!(matches!(
                 parse_update(&update_with_msg(201, msg), "BOT"),
-                ParsedInbound::Unsupported { kind: UnsupportedKind::Audio, .. }
+                ParsedInbound::Unsupported {
+                    kind: UnsupportedKind::Audio,
+                    ..
+                }
             ));
         }
 
         #[test]
         fn video_returns_unsupported_video() {
             let mut msg = empty_msg(32, user(42, "Alice", false), chat(42, "private"));
-            msg.video = Some(TgVideo { duration: Some(10), file_size: None });
+            msg.video = Some(TgVideo {
+                duration: Some(10),
+                file_size: None,
+            });
             assert!(matches!(
                 parse_update(&update_with_msg(202, msg), "BOT"),
-                ParsedInbound::Unsupported { kind: UnsupportedKind::Video, .. }
+                ParsedInbound::Unsupported {
+                    kind: UnsupportedKind::Video,
+                    ..
+                }
             ));
         }
 
         #[test]
         fn video_note_returns_unsupported_video_note() {
             let mut msg = empty_msg(33, user(42, "Alice", false), chat(42, "private"));
-            msg.video_note = Some(TgVideoNote { duration: Some(3), file_size: None });
+            msg.video_note = Some(TgVideoNote {
+                duration: Some(3),
+                file_size: None,
+            });
             assert!(matches!(
                 parse_update(&update_with_msg(203, msg), "BOT"),
-                ParsedInbound::Unsupported { kind: UnsupportedKind::VideoNote, .. }
+                ParsedInbound::Unsupported {
+                    kind: UnsupportedKind::VideoNote,
+                    ..
+                }
             ));
         }
 
         #[test]
         fn sticker_returns_unsupported_sticker() {
             let mut msg = empty_msg(34, user(42, "Alice", false), chat(42, "private"));
-            msg.sticker = Some(TgSticker { emoji: Some("😀".into()), set_name: None });
+            msg.sticker = Some(TgSticker {
+                emoji: Some("😀".into()),
+                set_name: None,
+            });
             assert!(matches!(
                 parse_update(&update_with_msg(204, msg), "BOT"),
-                ParsedInbound::Unsupported { kind: UnsupportedKind::Sticker, .. }
+                ParsedInbound::Unsupported {
+                    kind: UnsupportedKind::Sticker,
+                    ..
+                }
             ));
         }
 
         #[test]
         fn animation_returns_unsupported_animation() {
             let mut msg = empty_msg(35, user(42, "Alice", false), chat(42, "private"));
-            msg.animation = Some(TgAnimation { duration: Some(2), file_size: None });
+            msg.animation = Some(TgAnimation {
+                duration: Some(2),
+                file_size: None,
+            });
             assert!(matches!(
                 parse_update(&update_with_msg(205, msg), "BOT"),
-                ParsedInbound::Unsupported { kind: UnsupportedKind::Animation, .. }
+                ParsedInbound::Unsupported {
+                    kind: UnsupportedKind::Animation,
+                    ..
+                }
             ));
         }
 

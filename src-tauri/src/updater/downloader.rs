@@ -33,7 +33,10 @@ pub async fn download_with_resume(
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     let lock = LOCK.get_or_init(|| Mutex::new(()));
     let _guard = lock.lock().await;
-    info!("[updater] download_with_resume acquired lock for version={}", params.version);
+    info!(
+        "[updater] download_with_resume acquired lock for version={}",
+        params.version
+    );
 
     cache.ensure_dir()?;
     let pkg_path = cache.package_path(&params.version);
@@ -56,7 +59,10 @@ pub async fn download_with_resume(
     // instead of 416, which our code would interpret as "Range not supported"
     // and *delete* the complete file to restart from 0.
     if params.expected_size > 0 && start == params.expected_size {
-        info!("[updater] file already complete on disk ({} bytes), skipping download", start);
+        info!(
+            "[updater] file already complete on disk ({} bytes), skipping download",
+            start
+        );
         progress.on_progress(start, params.expected_size);
         let meta = CacheMeta {
             version: params.version.clone(),
@@ -90,12 +96,21 @@ pub async fn download_with_resume(
     });
 
     let mut last_err: Option<anyhow::Error> = None;
-    for (attempt, delay) in std::iter::once(0).chain(RETRY_DELAYS_SECS.iter().copied()).enumerate() {
+    for (attempt, delay) in std::iter::once(0)
+        .chain(RETRY_DELAYS_SECS.iter().copied())
+        .enumerate()
+    {
         if delay > 0 {
-            info!("[updater] sleeping {}s before retry attempt {}", delay, attempt);
+            info!(
+                "[updater] sleeping {}s before retry attempt {}",
+                delay, attempt
+            );
             tokio::time::sleep(Duration::from_secs(delay)).await;
         }
-        info!("[updater] download attempt {} starting from byte {}", attempt, start);
+        info!(
+            "[updater] download attempt {} starting from byte {}",
+            attempt, start
+        );
         match do_download(&client, cache, params, &pkg_path, start, progress).await {
             Ok(()) => {
                 let final_size = std::fs::metadata(&pkg_path).map(|m| m.len()).unwrap_or(0);
@@ -103,7 +118,11 @@ pub async fn download_with_resume(
                 let meta = CacheMeta {
                     version: params.version.clone(),
                     url: params.url.clone(),
-                    expected_size: if params.expected_size > 0 { params.expected_size } else { final_size },
+                    expected_size: if params.expected_size > 0 {
+                        params.expected_size
+                    } else {
+                        final_size
+                    },
                     downloaded_size: final_size,
                     complete: true,
                     etag: params.etag.clone(),
@@ -112,14 +131,22 @@ pub async fn download_with_resume(
                 return Ok(());
             }
             Err(e) => {
-                warn!("[updater] download attempt {} failed at byte {}: {:#}", attempt, start, e);
+                warn!(
+                    "[updater] download attempt {} failed at byte {}: {:#}",
+                    attempt, start, e
+                );
                 if !is_transient(&e) {
                     warn!("[updater] error is NOT transient, giving up");
                     return Err(e);
                 }
                 // Update start for next attempt based on what's on disk now
-                let new_start = std::fs::metadata(&pkg_path).map(|m| m.len()).unwrap_or(start);
-                info!("[updater] resuming next attempt from byte {} (was {})", new_start, start);
+                let new_start = std::fs::metadata(&pkg_path)
+                    .map(|m| m.len())
+                    .unwrap_or(start);
+                info!(
+                    "[updater] resuming next attempt from byte {} (was {})",
+                    new_start, start
+                );
                 start = new_start;
                 // Persist progress to meta so a later session can resume
                 let _ = cache.save_meta(&CacheMeta {
@@ -153,8 +180,12 @@ async fn do_download(
     let resp = req.send().await.context("send http request")?;
     let status = resp.status();
     let resp_content_length = resp.content_length();
-    info!("[updater] response: status={} content-length={:?} start={}",
-        status.as_u16(), resp_content_length, start);
+    info!(
+        "[updater] response: status={} content-length={:?} start={}",
+        status.as_u16(),
+        resp_content_length,
+        start
+    );
     if start > 0 && status.as_u16() != 206 {
         // Server returned 200 + full body instead of 206 partial. Two cases:
         //   (a) start equals (or exceeds) full file length → our local file is
@@ -167,7 +198,10 @@ async fn do_download(
                 return Ok(());
             }
         }
-        warn!("[updater] server returned {} (not 206) with Range request — restarting from 0", status.as_u16());
+        warn!(
+            "[updater] server returned {} (not 206) with Range request — restarting from 0",
+            status.as_u16()
+        );
         std::fs::remove_file(pkg_path).ok();
         return Box::pin(do_download(client, cache, params, pkg_path, 0, progress)).await;
     }
@@ -280,11 +314,12 @@ mod tests {
         let result = tokio::time::timeout(
             Duration::from_secs(5),
             download_with_resume(&cache, &params, &NullSink),
-        ).await;
+        )
+        .await;
         // Either the download errors out OR the test timeout fires - both are OK
         match result {
-            Ok(Err(_)) => {}  // download errored as expected
-            Err(_) => {}       // test timeout — also acceptable since we're testing error path
+            Ok(Err(_)) => {} // download errored as expected
+            Err(_) => {}     // test timeout — also acceptable since we're testing error path
             Ok(Ok(())) => panic!("download should not succeed for unreachable URL"),
         }
     }

@@ -118,7 +118,11 @@ pub async fn emit_to_lead(
         return EmitOutcome::SkippedSelfActor;
     }
 
-    let lead_id = match deps.agent_names.resolve(session, team_name, LEAD_NAME).await {
+    let lead_id = match deps
+        .agent_names
+        .resolve(session, team_name, LEAD_NAME)
+        .await
+    {
         Some(id) => id,
         None => return EmitOutcome::LeadNotResolved,
     };

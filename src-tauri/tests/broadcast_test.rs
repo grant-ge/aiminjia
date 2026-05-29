@@ -77,7 +77,11 @@ impl Fixture {
         self.inbox_registry
             .register(&self.session, TEAM_NAME, id.clone(), inbox.clone())
             .await;
-        let team = self.team_registry.get(&self.session, TEAM_NAME).await.unwrap();
+        let team = self
+            .team_registry
+            .get(&self.session, TEAM_NAME)
+            .await
+            .unwrap();
         let mut t = team.lock().await;
         t.add_teammate(Member {
             agent_id: id,

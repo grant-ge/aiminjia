@@ -33,12 +33,11 @@ pub enum DataMaskingLevel {
 pub enum CloudGatewayMode {
     Legacy,
     V2,
-    Auto,
 }
 
 impl Default for CloudGatewayMode {
     fn default() -> Self {
-        CloudGatewayMode::Auto
+        CloudGatewayMode::Legacy
     }
 }
 
@@ -64,7 +63,7 @@ pub struct AppSettings {
     /// Cloud mode: model type ("chat" or "reasoner") for the selected cloud model.
     #[serde(default)]
     pub cloud_model_type: String,
-    /// Cloud gateway rollout mode. Defaults to auto (v2 gateway with legacy fallback).
+    /// Cloud gateway mode. Defaults to legacy; users opt in to V2 explicitly.
     #[serde(default)]
     pub cloud_gateway_mode: CloudGatewayMode,
     /// Whether persona onboarding has been completed.
@@ -119,7 +118,7 @@ impl Default for AppSettings {
             custom_model_name: String::new(),
             cloud_model: String::new(),
             cloud_model_type: String::new(),
-            cloud_gateway_mode: CloudGatewayMode::Auto,
+            cloud_gateway_mode: CloudGatewayMode::Legacy,
             persona_onboarding_done: false,
             thinking_type: "disabled".to_string(),
             thinking_budget_tokens: default_thinking_budget_tokens(),
@@ -209,11 +208,11 @@ mod tests {
     use std::collections::HashMap;
 
     #[test]
-    fn cloud_gateway_mode_defaults_to_auto() {
-        assert_eq!(CloudGatewayMode::default(), CloudGatewayMode::Auto);
+    fn cloud_gateway_mode_defaults_to_legacy() {
+        assert_eq!(CloudGatewayMode::default(), CloudGatewayMode::Legacy);
         assert_eq!(
             AppSettings::default().cloud_gateway_mode,
-            CloudGatewayMode::Auto
+            CloudGatewayMode::Legacy
         );
     }
 
@@ -254,6 +253,9 @@ mod tests {
             parsed.ui_home_selected_workspace,
             s.ui_home_selected_workspace
         );
-        assert_eq!(parsed.ui_home_recent_workspaces, s.ui_home_recent_workspaces);
+        assert_eq!(
+            parsed.ui_home_recent_workspaces,
+            s.ui_home_recent_workspaces
+        );
     }
 }

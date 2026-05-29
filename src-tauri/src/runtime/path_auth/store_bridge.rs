@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::runtime::store::permission_store::{PermissionSource, PermissionStore};
 use super::context::{PermissionRule, RuleSource};
 use super::op::PathOp;
+use crate::runtime::store::permission_store::{PermissionSource, PermissionStore};
 
 pub struct PathAuthEntries {
     pub working_dirs: HashMap<PathBuf, RuleSource>,
@@ -27,8 +27,14 @@ pub fn load_path_auth_entries(store: &PermissionStore) -> PathAuthEntries {
     // working_dirs: process user → workspace → session so that more ephemeral layers win.
     for (entries, source) in &[
         (path_auth_data.user_working_dirs, PermissionSource::User),
-        (path_auth_data.workspace_working_dirs, PermissionSource::Workspace),
-        (path_auth_data.session_working_dirs, PermissionSource::Session),
+        (
+            path_auth_data.workspace_working_dirs,
+            PermissionSource::Workspace,
+        ),
+        (
+            path_auth_data.session_working_dirs,
+            PermissionSource::Session,
+        ),
     ] {
         let rule_source = source_to_rule_source(*source);
         for entry in entries {
@@ -38,8 +44,14 @@ pub fn load_path_auth_entries(store: &PermissionStore) -> PathAuthEntries {
 
     // allow_rules: session → workspace → user to match step-5 precedence in decide.rs.
     for (entries, source) in &[
-        (path_auth_data.session_allow_rules, PermissionSource::Session),
-        (path_auth_data.workspace_allow_rules, PermissionSource::Workspace),
+        (
+            path_auth_data.session_allow_rules,
+            PermissionSource::Session,
+        ),
+        (
+            path_auth_data.workspace_allow_rules,
+            PermissionSource::Workspace,
+        ),
         (path_auth_data.user_allow_rules, PermissionSource::User),
     ] {
         let rule_source = source_to_rule_source(*source);
@@ -52,7 +64,10 @@ pub fn load_path_auth_entries(store: &PermissionStore) -> PathAuthEntries {
         }
     }
 
-    PathAuthEntries { working_dirs, allow_rules }
+    PathAuthEntries {
+        working_dirs,
+        allow_rules,
+    }
 }
 
 #[cfg(test)]
@@ -66,7 +81,9 @@ mod tests {
     fn bridge_maps_session_source_to_session() {
         let store = PermissionStore::in_memory();
         let p = PathBuf::from("/tmp/session-dir");
-        store.append_working_dir(PermissionDestination::Session, p.clone()).unwrap();
+        store
+            .append_working_dir(PermissionDestination::Session, p.clone())
+            .unwrap();
 
         let entries = load_path_auth_entries(&store);
         assert_eq!(entries.working_dirs.get(&p), Some(&RuleSource::Session));
@@ -76,20 +93,30 @@ mod tests {
     fn bridge_maps_workspace_to_user_settings() {
         let store = PermissionStore::in_memory();
         let p = PathBuf::from("/tmp/workspace-dir");
-        store.append_working_dir(PermissionDestination::Workspace, p.clone()).unwrap();
+        store
+            .append_working_dir(PermissionDestination::Workspace, p.clone())
+            .unwrap();
 
         let entries = load_path_auth_entries(&store);
-        assert_eq!(entries.working_dirs.get(&p), Some(&RuleSource::UserSettings));
+        assert_eq!(
+            entries.working_dirs.get(&p),
+            Some(&RuleSource::UserSettings)
+        );
     }
 
     #[test]
     fn bridge_maps_user_to_user_settings() {
         let store = PermissionStore::in_memory();
         let p = PathBuf::from("/tmp/user-dir");
-        store.append_working_dir(PermissionDestination::User, p.clone()).unwrap();
+        store
+            .append_working_dir(PermissionDestination::User, p.clone())
+            .unwrap();
 
         let entries = load_path_auth_entries(&store);
-        assert_eq!(entries.working_dirs.get(&p), Some(&RuleSource::UserSettings));
+        assert_eq!(
+            entries.working_dirs.get(&p),
+            Some(&RuleSource::UserSettings)
+        );
     }
 
     #[test]
@@ -98,9 +125,15 @@ mod tests {
         let p_session = PathBuf::from("/tmp/bridge-session");
         let p_workspace = PathBuf::from("/tmp/bridge-workspace");
         let p_user = PathBuf::from("/tmp/bridge-user");
-        store.append_working_dir(PermissionDestination::Session, p_session.clone()).unwrap();
-        store.append_working_dir(PermissionDestination::Workspace, p_workspace.clone()).unwrap();
-        store.append_working_dir(PermissionDestination::User, p_user.clone()).unwrap();
+        store
+            .append_working_dir(PermissionDestination::Session, p_session.clone())
+            .unwrap();
+        store
+            .append_working_dir(PermissionDestination::Workspace, p_workspace.clone())
+            .unwrap();
+        store
+            .append_working_dir(PermissionDestination::User, p_user.clone())
+            .unwrap();
 
         let entries = load_path_auth_entries(&store);
         assert!(entries.working_dirs.contains_key(&p_session));
@@ -112,8 +145,12 @@ mod tests {
     fn bridge_session_layer_wins_over_workspace_for_duplicate_path() {
         let store = PermissionStore::in_memory();
         let p = PathBuf::from("/tmp/dup-path");
-        store.append_working_dir(PermissionDestination::Workspace, p.clone()).unwrap();
-        store.append_working_dir(PermissionDestination::Session, p.clone()).unwrap();
+        store
+            .append_working_dir(PermissionDestination::Workspace, p.clone())
+            .unwrap();
+        store
+            .append_working_dir(PermissionDestination::Session, p.clone())
+            .unwrap();
 
         let entries = load_path_auth_entries(&store);
         assert_eq!(entries.working_dirs.get(&p), Some(&RuleSource::Session));

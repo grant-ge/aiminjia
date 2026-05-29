@@ -217,9 +217,7 @@ impl ToolDispatcher {
         let session_id = ctx.session_id.as_str().to_string();
         let run_id = ctx.run_id.as_str().to_string();
         let tool_call_id = ctx.tool_call_id.as_str().to_string();
-        let result = self
-            .dispatch_inner(tool_name, input, ctx)
-            .await;
+        let result = self.dispatch_inner(tool_name, input, ctx).await;
         if let Err(ref err) = result {
             // Ask / InteractionRequired are not really "failures" — the inner
             // function returns them as Err(ToolError::AskRequired/...) only as
@@ -591,6 +589,10 @@ mod failure_metric_tests {
         // 400 char chars cap from record_tool_failure_metric, plus the
         // "tool execution failed: " prefix from the Display impl. Stay loose
         // — we only care it's bounded, not exact.
-        assert!(stored.chars().count() <= 450, "got {} chars", stored.chars().count());
+        assert!(
+            stored.chars().count() <= 450,
+            "got {} chars",
+            stored.chars().count()
+        );
     }
 }

@@ -2,8 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::runtime::chat::ChatTurnRequest;
 use crate::runtime::chat::chat_turn_driver::SkillCommandRef;
+use crate::runtime::chat::ChatTurnRequest;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]

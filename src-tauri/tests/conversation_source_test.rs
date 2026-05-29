@@ -3,8 +3,8 @@
 use std::path::PathBuf;
 
 use app_lib::storage::file_store::conversations::{
-    create_conversation, set_conversation_source, set_conversation_workspace,
-    read_conversation_workspace,
+    create_conversation, read_conversation_workspace, set_conversation_source,
+    set_conversation_workspace,
 };
 use app_lib::storage::file_store::types::{ConversationSource, PersistedAuthorizedWorkspace};
 use tempfile::TempDir;
@@ -36,10 +36,7 @@ fn set_to_expert_team_updates_both_conv_and_index() {
     .unwrap();
 
     // Verify conv.json
-    let conv_path = base
-        .join("conversations")
-        .join(conv_id)
-        .join("conv.json");
+    let conv_path = base.join("conversations").join(conv_id).join("conv.json");
     let conv_content = std::fs::read_to_string(&conv_path).unwrap();
     let conv: serde_json::Value = serde_json::from_str(&conv_content).unwrap();
     assert_eq!(conv["source"]["kind"], "expertTeam");
@@ -191,7 +188,9 @@ fn clear_workspace_removes_mirror() {
     // Clear
     set_conversation_workspace(&base, conv_id, None).unwrap();
 
-    assert!(read_conversation_workspace(&base, conv_id).unwrap().is_none());
+    assert!(read_conversation_workspace(&base, conv_id)
+        .unwrap()
+        .is_none());
 
     let index_path = base.join("index.json");
     let index: serde_json::Value =

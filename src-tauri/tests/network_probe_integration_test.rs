@@ -46,7 +46,10 @@ impl CapturingHost {
 
 impl RuntimeHost for CapturingHost {
     fn emit_legacy_event(&self, name: &str, payload: serde_json::Value) -> Result<()> {
-        self.events.lock().unwrap().push((name.to_string(), payload));
+        self.events
+            .lock()
+            .unwrap()
+            .push((name.to_string(), payload));
         Ok(())
     }
 
@@ -84,7 +87,9 @@ async fn start_stub_server(status_code: u16) -> String {
     tokio::spawn(async move {
         // Handle up to 10 connections — covers the dedup test's 3 probes.
         for _ in 0..10 {
-            let Ok((mut stream, _)) = listener.accept().await else { break };
+            let Ok((mut stream, _)) = listener.accept().await else {
+                break;
+            };
             let mut buf = [0u8; 1024];
             let _ = stream.read(&mut buf).await;
             let reason = match status_code {
@@ -105,7 +110,11 @@ async fn start_stub_server(status_code: u16) -> String {
 // ── helpers ────────────────────────────────────────────────────────────────
 
 fn status_of(event: &(String, Value)) -> &str {
-    event.1.get("status").and_then(Value::as_str).unwrap_or("<missing>")
+    event
+        .1
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or("<missing>")
 }
 
 // ── tests ──────────────────────────────────────────────────────────────────
@@ -148,7 +157,11 @@ async fn probe_connect_refused_emits_offline() {
     probe.probe_once_for_test().await;
 
     let events = host.events.lock().unwrap();
-    assert_eq!(events.len(), 1, "connect-refused probe must emit exactly one event");
+    assert_eq!(
+        events.len(),
+        1,
+        "connect-refused probe must emit exactly one event"
+    );
     assert_eq!(events[0].0, "network:status");
     assert_eq!(status_of(&events[0]), "offline");
     // errorKind must be present (camelCase per NetworkSnapshot serialization).

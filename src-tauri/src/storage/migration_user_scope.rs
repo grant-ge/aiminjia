@@ -207,10 +207,7 @@ pub fn migrate_legacy_config_if_needed(
 ///    directory.  If non-empty (e.g. a stale lock), leave it for a later run.
 ///
 /// Idempotent and safe to call every startup.
-pub fn migrate_legacy_turn_stages_if_needed(
-    root: &Path,
-    user_dir: &Path,
-) -> std::io::Result<()> {
+pub fn migrate_legacy_turn_stages_if_needed(root: &Path, user_dir: &Path) -> std::io::Result<()> {
     let legacy_dir = root.join("turn_stages");
     if !legacy_dir.is_dir() {
         return Ok(());
@@ -407,8 +404,7 @@ mod bootstrap_cloud_auth_tests {
         // Legacy key must be gone — otherwise a later loss of `target`
         // (logout-then-crash, partial write, etc.) would revive the fossil.
         let legacy_text = fs::read_to_string(root.join("config.json")).unwrap();
-        let legacy_map: HashMap<String, String> =
-            serde_json::from_str(&legacy_text).unwrap();
+        let legacy_map: HashMap<String, String> = serde_json::from_str(&legacy_text).unwrap();
         assert!(!legacy_map.contains_key("cloud_auth"));
         // Unrelated keys are preserved.
         assert_eq!(legacy_map.get("theme").map(String::as_str), Some("dark"));
@@ -433,8 +429,10 @@ mod bootstrap_cloud_auth_tests {
         // Next launch's bootstrap — legacy key is gone, so target stays
         // absent and `restore()` correctly sees "no cloud auth, log in".
         bootstrap_cloud_auth_if_needed(root, &global).unwrap();
-        assert!(!target.exists(),
-            "fossil cloud_auth revived after target loss — bug from SLS incident user_id=87");
+        assert!(
+            !target.exists(),
+            "fossil cloud_auth revived after target loss — bug from SLS incident user_id=87"
+        );
     }
 
     #[test]
@@ -456,8 +454,7 @@ mod bootstrap_cloud_auth_tests {
         );
         // Legacy key untouched too — bootstrap short-circuited.
         let legacy_text = fs::read_to_string(root.join("config.json")).unwrap();
-        let legacy_map: HashMap<String, String> =
-            serde_json::from_str(&legacy_text).unwrap();
+        let legacy_map: HashMap<String, String> = serde_json::from_str(&legacy_text).unwrap();
         assert!(legacy_map.contains_key("cloud_auth"));
     }
 
