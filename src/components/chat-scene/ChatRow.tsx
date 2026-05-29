@@ -36,10 +36,17 @@ interface ChatRowProps {
    * 同一个 turn 内的连续消息只在第一条传入，避免视觉噪音。
    */
   timestamp?: string | null
+  /**
+   * Suppress the avatar + name header. The gutter is preserved with an
+   * invisible placeholder so child bubbles stay aligned with the previous
+   * (header-bearing) row. Used in interleaved mode for the 2nd+ assistant
+   * "runs" that follow a tool card — the avatar already stamped above.
+   */
+  hideHeader?: boolean
   children: ReactNode
 }
 
-export function ChatRow({ role, name, avatarUrl, avatarVariant, colorSeed, timestamp, children }: ChatRowProps) {
+export function ChatRow({ role, name, avatarUrl, avatarVariant, colorSeed, timestamp, hideHeader, children }: ChatRowProps) {
   const isUser = role === 'user'
   // We anchor the header (avatar+name) at the top so multi-line bubbles
   // don't drift the avatar to the middle. `items-start` does that.
@@ -52,33 +59,41 @@ export function ChatRow({ role, name, avatarUrl, avatarVariant, colorSeed, times
       data-role={role}
       className={`flex w-full items-start gap-2 ${rowDir} ${rowInset}`.trim()}
     >
-      <div className="flex shrink-0 flex-col items-center gap-1 pt-1">
-        <ChatAvatar
-          name={name}
-          src={avatarUrl ?? null}
-          variant={avatarVariant}
-          colorSeed={colorSeed}
-        />
+      <div className="flex shrink-0 flex-col items-center gap-1 pt-1" aria-hidden={hideHeader || undefined}>
+        {hideHeader ? (
+          // Invisible spacer keeps the bubble aligned with the previous
+          // header-bearing row. Matches ChatAvatar's intrinsic size (32px).
+          <div className="h-8 w-8" />
+        ) : (
+          <ChatAvatar
+            name={name}
+            src={avatarUrl ?? null}
+            variant={avatarVariant}
+            colorSeed={colorSeed}
+          />
+        )}
       </div>
       <div data-testid="chat-row-content" className="flex min-w-0 flex-1 flex-col gap-1">
-        <div
-          data-testid="chat-row-name"
-          className={`flex items-baseline gap-2 text-xs font-medium text-muted-foreground ${
-            isUser ? 'flex-row-reverse justify-start' : 'justify-start'
-          }`}
-        >
-          <span className={nameAlign}>{name}</span>
-          {timestamp ? (
-            <time
-              data-testid="chat-row-time"
-              dateTime={timestamp}
-              title={formatFullDateTime(timestamp)}
-              className="font-normal text-muted-foreground/70 tabular-nums"
-            >
-              {formatChatTime(timestamp)}
-            </time>
-          ) : null}
-        </div>
+        {hideHeader ? null : (
+          <div
+            data-testid="chat-row-name"
+            className={`flex items-baseline gap-2 text-xs font-medium text-muted-foreground ${
+              isUser ? 'flex-row-reverse justify-start' : 'justify-start'
+            }`}
+          >
+            <span className={nameAlign}>{name}</span>
+            {timestamp ? (
+              <time
+                data-testid="chat-row-time"
+                dateTime={timestamp}
+                title={formatFullDateTime(timestamp)}
+                className="font-normal text-muted-foreground/70 tabular-nums"
+              >
+                {formatChatTime(timestamp)}
+              </time>
+            ) : null}
+          </div>
+        )}
         <div
           className={
             isUser

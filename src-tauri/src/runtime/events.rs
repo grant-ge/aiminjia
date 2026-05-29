@@ -22,6 +22,9 @@ pub enum RetryReason {
     /// Local-side network issue: timeout, connection reset, broken pipe, chunk stall.
     #[default]
     NetworkFlap,
+    /// Stream retries exhausted; switching to non-streaming send fallback (PR3).
+    /// Frontend should show "切换备用通道" instead of "重连中".
+    FallbackToNonStream,
 }
 
 /// One tool that the agent is currently executing as part of a `TurnStage::Tools`
@@ -179,6 +182,12 @@ pub enum RuntimeEventKind {
         /// frontend so streaming UI can render tool-call inputs without waiting
         /// for the conversation history to be reloaded.
         tool_calls: Option<Vec<serde_json::Value>>,
+        /// Optional structured error for assistant messages that surfaced a
+        /// terminal error to the user (PR2). When present, the transport
+        /// layer forwards it as the `error` field on `message:updated`, and
+        /// `history.rs::build_chat_history` filters this message out before
+        /// sending history back to the LLM.
+        error: Option<crate::storage::file_store::types::MessageError>,
     },
     PendingSnapshot {
         items: Vec<crate::runtime::pending::PendingItem>,
@@ -284,6 +293,30 @@ impl RuntimeEvent {
                 content,
                 client_message_id: None,
                 tool_calls: None,
+                error: None,
+            },
+        )
+    }
+
+    /// 与 [`message_persisted`] 同模式，但携带结构化错误（PR2）。
+    pub fn message_persisted_with_error(
+        session_id: SessionId,
+        run_id: RunId,
+        message_id: impl Into<String>,
+        role: impl Into<String>,
+        content: serde_json::Value,
+        error: crate::storage::file_store::types::MessageError,
+    ) -> Self {
+        Self::new(
+            session_id,
+            run_id,
+            RuntimeEventKind::MessagePersisted {
+                message_id: message_id.into(),
+                role: role.into(),
+                content,
+                client_message_id: None,
+                tool_calls: None,
+                error: Some(error),
             },
         )
     }

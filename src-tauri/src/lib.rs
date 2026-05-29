@@ -651,8 +651,9 @@ pub fn run() {
             // IMPORTANT: facade must be managed before TauriChatCommandAdapter::new() is
             // called, because new() calls try_state::<RuntimeRepositoryFacade>() to wire
             // authorized_workspace_store. Registering it here ensures try_state succeeds.
-            let facade = Arc::new(storage::file_store::RuntimeRepositoryFacade::from_storage(
+            let facade = Arc::new(storage::file_store::RuntimeRepositoryFacade::from_storage_with_cus(
                 db.clone(),
+                Some(current_user_storage.clone()),
             ));
             app.manage(facade);
 

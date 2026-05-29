@@ -32,7 +32,15 @@ pub fn build_chat_history(
 ) -> Result<Vec<ChatMessage>> {
     let relevant = apply_boundary(stored, boundary);
 
-    let mut messages: Vec<ChatMessage> = relevant
+    // PR2: 过滤掉 error.is_some() 的消息（避免错误气泡回灌给 LLM）。
+    // 守卫规则等价 claude-code-best `isApiErrorMessage:true` 过滤。
+    // spec §3.2。
+    let filtered: Vec<&StoredMessage> = relevant
+        .iter()
+        .filter(|m| m.error.is_none())
+        .collect();
+
+    let mut messages: Vec<ChatMessage> = filtered
         .iter()
         .map(|message| stored_to_chat(message, config))
         .collect();

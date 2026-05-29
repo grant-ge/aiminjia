@@ -21,32 +21,19 @@ import { stripHallucinatedXml } from '@/lib/sanitize'
 
 interface StreamingBubbleProps {
   content: string
+  /** 关掉 typing/spin indicator，只渲染 markdown。inline 路径用这个 prop
+   *  避免和末尾独立挂载的 indicator-only placeholder 重复。 */
+  suppressIndicator?: boolean
+  /** 外部告诉 StreamingBubble "这个 turn 已经有内容了"，让 derive 走
+   *  hasContent=true 分支（不显示"等待模型响应/正在生成"这类初始 label）。
+   *  末尾 placeholder StreamingBubble 自身 content="" 但所处 turn 已经有
+   *  persisted blocks，必须传 true，否则会误显示初始 label。 */
+  treatAsHasContent?: boolean
 }
 
 interface StatusDescriptor {
   icon: 'spin' | 'breath'
   label: string
-}
-
-/** When stage hasn't arrived yet, fall back to the existing tool-name /
- *  generic "思考中…" derivation so PR1 with the flag off behaves identically
- *  to pre-PR1. */
-function legacyDerive(
-  toolExecutions: Array<{ toolName: string; status: string }>,
-  hasContent: boolean,
-  t: TFunction,
-): StatusDescriptor {
-  const activeTool = toolExecutions.find((tool) => tool.status === 'executing')
-  if (activeTool) {
-    return {
-      icon: 'spin',
-      label: t('streaming.tools.' + activeTool.toolName, activeTool.toolName),
-    }
-  }
-  return {
-    icon: 'breath',
-    label: hasContent ? '' : t('turnStage.fallback'),
-  }
 }
 
 function deriveStageStatus(
@@ -59,7 +46,9 @@ function deriveStageStatus(
   toolExecutions: Array<{ toolName: string; status: string }>,
 ): StatusDescriptor {
   if (!stage) {
-    return legacyDerive(toolExecutions, hasContent, t)
+    // Stage 未到达：流式刚开始 / 旧会话。任何正在执行的工具都不在这里渲染
+    // spinner——下方 ToolStepGroupBlock 已经独占运行态展示。
+    return { icon: 'breath', label: hasContent ? '' : t('turnStage.fallback') }
   }
 
   // 30s without a heartbeat → degrade label to "stalled" (warning tone).
@@ -93,25 +82,13 @@ function deriveStageStatus(
         label: hasContent ? '' : t('turnStage.streaming'),
       }
     case 'tools': {
-      // Prefer the live executing-tool count from toolExecutions[] over the
-      // batch-snapshot in stage.running.  As individual tools complete, the
-      // live count shrinks naturally without needing per-tool stage updates.
+      // 交错模式（唯一渲染模式）下，下方 ToolStepGroupBlock 已显示 spinner +
+      // 工具名/计数，这里只展示"思考中…" typing 占位避免视觉重复。
       const liveRunning = toolExecutions.filter((tool) => tool.status === 'executing')
-      const n = liveRunning.length > 0 ? liveRunning.length : stage.running.length
-      const firstName = liveRunning[0]?.toolName ?? stage.running[0]?.toolName
-      if (n === 0) {
+      if (liveRunning.length === 0 && stage.running.length === 0) {
         return { icon: 'breath', label: t('turnStage.toolsPreparing') }
       }
-      if (n === 1 && firstName) {
-        return {
-          icon: 'spin',
-          label: t('turnStage.toolSingle', { name: firstName }) + elapsedSuffix,
-        }
-      }
-      return {
-        icon: 'spin',
-        label: t('turnStage.toolsMulti', { count: n }) + elapsedSuffix,
-      }
+      return { icon: 'breath', label: hasContent ? '' : t('turnStage.fallback') }
     }
     case 'waitingPermission':
       return {
@@ -143,7 +120,11 @@ function useTick(intervalMs: number): number {
 // to detect a "changed" snapshot every tick and recurse into Maximum-update-depth).
 const EMPTY_TOOL_EXECUTIONS: never[] = []
 
-export function StreamingBubble({ content }: StreamingBubbleProps) {
+export function StreamingBubble({
+  content,
+  suppressIndicator = false,
+  treatAsHasContent = false,
+}: StreamingBubbleProps) {
   const { t } = useTranslation()
   const toolExecutions = useChatStore((s) => {
     const activeId = s.activeConversationId
@@ -161,9 +142,8 @@ export function StreamingBubble({ content }: StreamingBubbleProps) {
     const activeId = s.activeConversationId
     return activeId ? (s.streamStates[activeId]?.lastHeartbeatAt ?? null) : null
   })
-
   const cleanContent = stripHallucinatedXml(content)
-  const hasContent = cleanContent.length > 0
+  const hasContent = cleanContent.length > 0 || treatAsHasContent
   const now = useTick(1_000)
 
   const status = deriveStageStatus(
@@ -176,13 +156,21 @@ export function StreamingBubble({ content }: StreamingBubbleProps) {
     toolExecutions,
   )
 
+  // typing/spin loading 块用 absolute 脱离文档流：
+  // - hasContent=true：top-full + mt-2 锚到 markdown 末尾下方 8px（跟原 inline
+  //   时同位）；layout 高度不再算 indicator，流式 delta 只按真实文字增量长高，
+  //   避免 stick-to-bottom 来回追 indicator 高度产生的"撑开 + 闪"。
+  // - hasContent=false：top-0 顶到容器起点（跟原 mt-0 同位）。indicator-only
+  //   placeholder（末尾追加的 content="" StreamingBubble）走这条。
+  // 父层 mb-7 给 indicator 预留视觉空间，不会跟下一个 sibling 紧贴。
+  const indicatorPositionClass = hasContent ? 'top-full mt-2' : 'top-0'
   return (
     <div className="mb-7" data-aijia-streaming-bubble>
-      <div>
+      <div className="relative">
         {hasContent ? <AssistantMarkdown text={cleanContent} disableCodeHighlight /> : null}
-        {status.icon === 'spin' ? (
+        {suppressIndicator ? null : status.icon === 'spin' ? (
           <div
-            className="mt-2 flex items-center gap-2 text-xs"
+            className={`absolute left-0 ${indicatorPositionClass} flex items-center gap-2 text-xs`}
             style={{ color: 'var(--color-text-muted)' }}
           >
             <svg
@@ -204,7 +192,7 @@ export function StreamingBubble({ content }: StreamingBubbleProps) {
             <span>{status.label}</span>
           </div>
         ) : (
-          <div className={hasContent ? 'mt-2' : ''}>
+          <div className={`absolute left-0 ${indicatorPositionClass}`}>
             <TypingIndicator variant="default" label={status.label || undefined} />
             {status.label && hasContent ? (
               <span className="sr-only">{status.label}</span>

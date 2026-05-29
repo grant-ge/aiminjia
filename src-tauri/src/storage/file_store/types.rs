@@ -187,6 +187,38 @@ pub struct GlobalIndex {
 
 // ─── Message ─────────────────────────────────────────────────────────────────
 
+/// 错误信息（PR2 引入；与 claude-code-best `isApiErrorMessage:true` 守卫位等价）。
+///
+/// 守卫规则（spec §3.2）：
+/// - UI 渲染：永远显示（红色 callout）
+/// - 持久化：写盘保留
+/// - 发给 LLM 下一轮：`history.rs::build_chat_history` 过滤掉
+/// - session 恢复找上轮终点：跳过
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageError {
+    pub kind: ErrorKind,
+    /// UI 兜底渲染文案；i18n 标题由前端按 kind 查表
+    pub message: String,
+    /// 原始错误（脱敏后）；UI 默认不显示，仅 dev / 客户主动复制时透出
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum ErrorKind {
+    ChunkTimeout,
+    Network,
+    PromptTooLong,
+    AuthFailed,
+    RateLimited,
+    MaxIterations,
+    BudgetExceeded,
+    ExecutionError,
+    Unknown,
+}
+
 /// A single message stored in `messages.{N}.jsonl`.
 ///
 /// Messages support append-only updates: to update content, a new record with
@@ -217,6 +249,12 @@ pub struct StoredMessage {
     pub schema_version: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sequence: Option<u64>,
+    /// 错误信息（PR2 引入；spec §3.1）。
+    /// - 顶层字段，与 `content` 同级（不塞进 content）
+    /// - `serde(default)` 保证旧 messages.jsonl 反序列化时 `None`
+    /// - `skip_serializing_if = "Option::is_none"` 保证正常消息不写这字段
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<MessageError>,
 }
 
 impl StoredMessage {
@@ -541,6 +579,77 @@ mod conversation_meta_migration_tests {
         ));
         assert_eq!(parsed.source_label.as_deref(), Some("小销"));
         assert!(parsed.authorized_workspace.is_some());
+    }
+}
+
+#[cfg(test)]
+mod stored_message_error_tests {
+    use super::*;
+
+    #[test]
+    fn stored_message_deserialize_without_error_field_yields_none() {
+        // 旧 messages.jsonl 不含 error 字段，反序列化必须成功且 error=None
+        let json = r#"{
+            "id": "msg-1",
+            "conversationId": "conv-1",
+            "role": "assistant",
+            "content": {"text": "hi"},
+            "createdAt": "2026-05-28T00:00:00Z"
+        }"#;
+        let m: StoredMessage = serde_json::from_str(json).unwrap();
+        assert_eq!(m.error, None);
+    }
+
+    #[test]
+    fn stored_message_serialize_omits_error_when_none() {
+        // 正常消息不应写 error 字段（保持 messages.jsonl 紧凑）
+        let m = StoredMessage {
+            seq: None,
+            rev: None,
+            id: "msg-1".to_string(),
+            conversation_id: "conv-1".to_string(),
+            role: "assistant".to_string(),
+            content: serde_json::json!({"text": "hi"}),
+            created_at: "2026-05-28T00:00:00Z".to_string(),
+            tool_calls: None,
+            tool_call_id: None,
+            name: None,
+            run_id: None,
+            schema_version: None,
+            sequence: None,
+            error: None,
+        };
+        let s = serde_json::to_string(&m).unwrap();
+        assert!(!s.contains("error"), "serialized form must not contain 'error' field when None: {}", s);
+    }
+
+    #[test]
+    fn stored_message_error_roundtrip_camelcase() {
+        // error 字段往返序列化保持 snake_case kind
+        let m = StoredMessage {
+            seq: None,
+            rev: None,
+            id: "msg-1".to_string(),
+            conversation_id: "conv-1".to_string(),
+            role: "assistant".to_string(),
+            content: serde_json::json!({"text": ""}),
+            created_at: "2026-05-28T00:00:00Z".to_string(),
+            tool_calls: None,
+            tool_call_id: None,
+            name: None,
+            run_id: None,
+            schema_version: None,
+            sequence: None,
+            error: Some(MessageError {
+                kind: ErrorKind::ChunkTimeout,
+                message: "AI 服务暂时无法响应".to_string(),
+                raw: Some("Chunk timeout (90s)".to_string()),
+            }),
+        };
+        let s = serde_json::to_string(&m).unwrap();
+        assert!(s.contains(r#""kind":"chunk_timeout""#), "kind must be snake_case: {}", s);
+        let back: StoredMessage = serde_json::from_str(&s).unwrap();
+        assert_eq!(back.error, m.error);
     }
 }
 

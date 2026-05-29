@@ -9,7 +9,7 @@ interface TurnSummaryBadgeProps {
 export function TurnSummaryBadge({ summary }: TurnSummaryBadgeProps) {
   const { t } = useTranslation()
 
-  if (!summary || summary.outcome === 'Cancelled') {
+  if (!summary) {
     return null
   }
 
@@ -25,6 +25,14 @@ export function TurnSummaryBadge({ summary }: TurnSummaryBadgeProps) {
   let style: { backgroundColor: string; color: string; borderColor: string }
 
   switch (summary.outcome) {
+    case 'Cancelled':
+      label = t('turnOutcome.cancelledTitle')
+      style = {
+        backgroundColor: 'rgba(148, 163, 184, 0.18)',
+        color: 'var(--color-text-secondary)',
+        borderColor: 'rgba(148, 163, 184, 0.32)',
+      }
+      break
     case 'MaxIterationsReached':
       label = t('turnOutcome.maxIterationsTitle')
       style = {

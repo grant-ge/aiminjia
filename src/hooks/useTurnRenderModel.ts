@@ -68,10 +68,40 @@ export interface RenderPeerBanner {
   status?: string
 }
 
+/**
+ * Interleaved render mode block. Walks messages in their original order and
+ * produces a flat sequence of text / tool / file blocks. Consumers iterate
+ * `blocks` and render each in place, preserving the natural "assistant text
+ * → tool → tool result → assistant text → ..." flow that messages.jsonl
+ * already records.
+ *
+ * `toolStep` blocks reference the same `RenderToolStep` object stored in
+ * `toolGroup.steps`, so streaming updates that mutate the step (progressTail,
+ * status, output) are reflected in both rendering modes without re-derivation.
+ */
+export type RenderTurnBlock =
+  | { kind: 'assistantText'; id: string; segment: RenderAiSegment }
+  | { kind: 'toolStep'; toolCallId: string; step: RenderToolStep }
+  | { kind: 'generatedFile'; id: string; file: RenderGeneratedFile }
+  | { kind: 'suggestions'; suggestions: string[] }
+  | { kind: 'teamMarker'; markerKind: 'create' | 'delete'; toolCallId: string }
+
 export interface RenderTurn {
   userMessage?: { id: string; text: string; createdAt: string; commandText?: string; skillCommand?: SkillCommandBreadcrumb; files?: FileAttachment[] }
   aiSegments: RenderAiSegment[]
   toolGroup?: RenderToolGroup
+  /** Flat ordered sequence for interleaved rendering. Built from messages
+   *  in their persistence order; mirrors the same data as
+   *  `toolGroup` + `aiSegments` + `generatedFiles` + `suggestions`, just
+   *  arranged sequentially. */
+  blocks: RenderTurnBlock[]
+  /** Number of blocks at the start of `blocks` that come from persisted
+   *  messages.jsonl. Blocks at indices >= this value are live
+   *  toolExecutions added during streaming. MessageList uses this to
+   *  position the streaming text bubble BETWEEN persisted blocks and live
+   *  tool blocks (so the natural "text → tool" order is preserved during
+   *  the current iter's streaming). */
+  persistedBlockCount: number
   generatedFiles: RenderGeneratedFile[]
   suggestions: string[]
   peerBanners: RenderPeerBanner[]
@@ -81,6 +111,14 @@ export interface RenderTurn {
    * instead of the raw TeamCreate tool call card.
    */
   teamMarker?: { kind: 'create' | 'delete'; toolCallId: string }
+  /**
+   * 这个 turn 是否包含 final assistant message（toolCalls 为空的 assistant
+   * message——chat_turn_driver Step 8 用 message_persisted helper emit、
+   * tool_calls=None）。流式期间只有 iter messages（toolCalls 非空），
+   * isComplete=false；最终消息到达后 isComplete=true，MessageList 在 interleaved
+   * 模式下据此把已完成 turn 折叠成聚合视图，只保留最终结果。
+   */
+  isComplete: boolean
 }
 
 function toolExecStatusToStep(s: ToolExecution['status']): RenderToolStep['status'] {
@@ -261,6 +299,21 @@ export function buildTurnsFromMessages(
   messages: Message[],
   toolExecutions: ToolExecution[],
 ): RenderTurn[] {
+  // 关键：先把所有 tool result 按 toolCallId 索引一遍。
+  // 流式过程中 tool:completed 事件比 MessagePersisted(iter assistant) 早到，
+  // 而前者会把 tool result 消息推到 messages 数组末尾，后者也是 append——
+  // 导致 store 里 tool result 排在 assistant 前。若直接顺序 walk，会先走
+  // tool result 的 orphan 分支把工具 block 推进 blocks，然后 assistant 的 text
+  // 才补在工具后面，渲染成 [tool, text, tool, text, ...] 反序。
+  // 改为：tool result 不再产生独立 block，只作为"输出内容"查询表，由 assistant
+  // 的 toolCalls 决定 block 顺序（text → tool → text → tool）。
+  const toolResultByCallId = new Map<string, NonNullable<Message['toolResult']>>()
+  for (const m of messages) {
+    if (m.role === 'tool' && m.toolResult?.toolCallId) {
+      toolResultByCallId.set(m.toolResult.toolCallId, m.toolResult)
+    }
+  }
+
   const turns: RenderTurn[] = []
   let current: RenderTurn | null = null
 
@@ -281,9 +334,12 @@ export function buildTurnsFromMessages(
           userMessage: undefined,
           aiSegments: [],
           toolGroup: undefined,
+          blocks: [],
+          persistedBlockCount: 0,
           generatedFiles: [],
           suggestions: [],
           peerBanners: classified,
+          isComplete: false,
         }
         turns.push(current)
         continue
@@ -293,9 +349,12 @@ export function buildTurnsFromMessages(
         userMessage: normalizeUserMessageForRender(m),
         aiSegments: [],
         toolGroup: undefined,
+        blocks: [],
+        persistedBlockCount: 0,
         generatedFiles: [],
         suggestions: [],
         peerBanners: [],
+        isComplete: false,
       }
       turns.push(current)
       continue
@@ -306,18 +365,46 @@ export function buildTurnsFromMessages(
         userMessage: undefined,
         aiSegments: [],
         toolGroup: undefined,
+        blocks: [],
+        persistedBlockCount: 0,
         generatedFiles: [],
         suggestions: [],
         peerBanners: [],
+        isComplete: false,
       }
       turns.push(current)
     }
 
     if (m.role === 'assistant') {
+      // Order in blocks: assistant text first (matches natural narration flow),
+      // then tool calls below it.
+      const hasToolCalls = (m.toolCalls?.length ?? 0) > 0
+      // 一旦遇到 toolCalls 为空的 assistant message，即说明本 turn 已收到
+      // chat_turn_driver Step 8 emit 的最终消息——MessageList 据此把交错模式
+      // 下已完成的 turn 折叠成聚合视图，只保留这段最终文字。
+      if (!hasToolCalls) {
+        current.isComplete = true
+      }
+      if (m.content.text) {
+        const segment: RenderAiSegment = { id: m.id, text: m.content.text, message: m }
+        current.aiSegments.push(segment)
+        current.blocks.push({ kind: 'assistantText', id: m.id, segment })
+      }
       if (m.toolCalls?.length) {
         for (const tc of m.toolCalls) {
           // TeamCreate produces an inline anchor block instead of a tool card.
+          // teamMarker 字段仍然保留（聚合模式用它把 TeamProgressBlock 渲染在
+          // ToolGroupCard 之后），同时 push 一个 teamMarker block，让交错模式
+          // 按 message 自然顺序渲染——TeamCreate 通常出现在 turn 早期，
+          // 自然位置就比聚合模式强制的"turn 末尾"更贴近时序。
           if (tc.name === 'TeamCreate') {
+            // 每个 turn 只展示一个团队卡——遇到第一条 TeamCreate 就锚定，
+            // 后续重试（比如 #1 失败、#3 成功）不再产生新卡片。
+            // teamMarker block 的实际 push 推迟到 turn finalize 阶段，
+            // 位置定在"首条无 toolCalls 的 assistant text 紧贴之前"——
+            // 这条 text 通常是 LLM 在团队全部就绪后写的"团队已创建，现在
+            // 同时召唤..."这类总结性文字，团队卡贴在它前面作为视觉锚点
+            // 最合理（早期失败重试 / Agent 调用等 iter 都在折叠块里）。
             if (!current.teamMarker) {
               current.teamMarker = { kind: 'create', toolCallId: tc.id }
             }
@@ -329,55 +416,89 @@ export function buildTurnsFromMessages(
             continue
           }
           const group = ensureToolGroup(current)
-          const existing = group.steps.find((s) => s.toolCallId === tc.id)
-          if (!existing) {
-            group.steps.push({
+          let step = group.steps.find((s) => s.toolCallId === tc.id)
+          if (!step) {
+            step = {
               index: group.steps.length + 1,
               toolCallId: tc.id,
               name: tc.name,
               status: 'running',
               inputJson: stringifyInput(tc.arguments),
-            })
-          } else if (!existing.inputJson) {
-            existing.inputJson = stringifyInput(tc.arguments)
+            }
+            // 从 tool result 索引里捞输出内容/状态/耗时（如果已经到达）。
+            const result = toolResultByCallId.get(tc.id)
+            if (result) {
+              step.status = result.isError ? 'error' : 'done'
+              step.output = result.content ? truncateOutput(result.content, result.isError) : undefined
+              step.durationMs = result.durationMs
+            }
+            group.steps.push(step)
+          } else {
+            if (!step.inputJson) {
+              step.inputJson = stringifyInput(tc.arguments)
+            }
+            // 已有 step（比如来自 live toolExecutions），用 tool result 补/覆盖输出。
+            const result = toolResultByCallId.get(tc.id)
+            if (result) {
+              step.status = result.isError ? 'error' : 'done'
+              if (result.content) {
+                step.output = truncateOutput(result.content, result.isError)
+              }
+              if (result.durationMs != null) {
+                step.durationMs = result.durationMs
+              }
+            }
+          }
+          // blocks reference the same step object; status/output updates from
+          // tool results or live toolExecutions propagate automatically.
+          if (!current.blocks.some((b) => b.kind === 'toolStep' && b.toolCallId === tc.id)) {
+            current.blocks.push({ kind: 'toolStep', toolCallId: tc.id, step })
           }
         }
       }
-      if (m.content.text) {
-        current.aiSegments.push({ id: m.id, text: m.content.text, message: m })
-      }
       if (m.content.generatedFiles?.length) {
         for (const f of m.content.generatedFiles) {
-          current.generatedFiles.push(normalizeGeneratedFile(f, m.conversationId))
+          const file = normalizeGeneratedFile(f, m.conversationId)
+          current.generatedFiles.push(file)
+          current.blocks.push({ kind: 'generatedFile', id: file.id, file })
         }
       }
       continue
     }
 
-    if (m.role === 'tool' && m.toolResult) {
-      const result = m.toolResult
-      // Hide tool results for team-substrate tools — they're visible in drawer.
-      if (TEAM_HIDDEN_TOOLS.has(result.name)) {
-        continue
-      }
-      const group = ensureToolGroup(current)
-      const existing = group.steps.find((s) => s.toolCallId === result.toolCallId)
-      const output = result.content ? truncateOutput(result.content, result.isError) : undefined
-      if (existing) {
-        existing.status = result.isError ? 'error' : 'done'
-        existing.output = output
-        existing.durationMs = result.durationMs
-      } else {
-        group.steps.push({
-          index: group.steps.length + 1,
-          toolCallId: result.toolCallId,
-          name: result.name,
-          status: result.isError ? 'error' : 'done',
-          output,
-          durationMs: result.durationMs,
-        })
-      }
+    // m.role === 'tool' 的消息不再单独产生 block——它们的内容已经通过
+    // toolResultByCallId 映射在 assistant toolCalls 处合入对应 step。
+    // 这避免了事件到达顺序（tool:completed 早于 MessagePersisted）导致的
+    // tool→text 反序问题。
+  }
+
+  // 把 teamMarker block 插到"首条无 toolCalls 的 assistant text 紧贴
+  // 之前"。这条 text 通常是团队就绪后 LLM 写的"团队已创建..."这类总结，
+  // 团队卡作为它的视觉锚点最合理；找不到（流式中 / 无 final text）就
+  // append 到 blocks 末尾，避免丢失。
+  for (const turn of turns) {
+    if (!turn.teamMarker) continue
+    if (turn.blocks.some((b) => b.kind === 'teamMarker')) continue
+    const markerBlock: RenderTurnBlock = {
+      kind: 'teamMarker',
+      markerKind: turn.teamMarker.kind,
+      toolCallId: turn.teamMarker.toolCallId,
     }
+    const anchorIdx = turn.blocks.findIndex(
+      (b) => b.kind === 'assistantText' && !(b.segment.message.toolCalls?.length),
+    )
+    if (anchorIdx >= 0) {
+      turn.blocks.splice(anchorIdx, 0, markerBlock)
+    } else {
+      turn.blocks.push(markerBlock)
+    }
+  }
+
+  // Snapshot persisted block counts before live toolExecutions append.
+  // MessageList uses this to place streamingContent BETWEEN persisted blocks
+  // and live tool blocks for the active iteration.
+  for (const turn of turns) {
+    turn.persistedBlockCount = turn.blocks.length
   }
 
   if (toolExecutions.length > 0 && turns.length > 0) {
@@ -399,19 +520,13 @@ export function buildTurnsFromMessages(
         if (output && !existing.output) existing.output = output
         existing.progressTail = progressTail
         existing.progressTotalBytes = progressTotalBytes
-      } else {
-        group.steps.push({
-          index: group.steps.length + 1,
-          toolCallId: t.toolId,
-          name: t.toolName,
-          status: toolExecStatusToStep(t.status),
-          durationMs: t.durationMs,
-          inputJson: stringifyInput(t.input),
-          output,
-          progressTail,
-          progressTotalBytes,
-        })
       }
+      // 注意：不再走 orphan push 分支。chat_turn_driver 已经在 execute_round
+      // 之前 persist + emit 了 iter assistant message，所以 message:updated 一定
+      // 先于 tool:executing 到达，buildTurnsFromMessages 在 walk persisted
+      // messages 时已经把这个 toolCallId 推进 group.steps + blocks（status='running'），
+      // 接下来 toolExecutions 事件一定走 existing 分支只更新 status。React key
+      // 全程稳定，避免了 live tool → persisted tool 接力导致 unmount/mount。
     }
   }
 
@@ -433,5 +548,8 @@ export function useTurnRenderModel(): RenderTurn[] {
     if (!activeId) return EMPTY_TOOL_EXECUTIONS
     return s.streamStates[activeId]?.toolExecutions ?? EMPTY_TOOL_EXECUTIONS
   })
-  return useMemo(() => buildTurnsFromMessages(messages, toolExecutions), [messages, toolExecutions])
+  return useMemo(
+    () => buildTurnsFromMessages(messages, toolExecutions),
+    [messages, toolExecutions],
+  )
 }

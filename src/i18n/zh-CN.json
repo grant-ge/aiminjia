@@ -69,33 +69,12 @@
   "userBubble": {
     "me": "我"
   },
-  "streaming": {
-    "tools": {
-      "execute_python": "正在分析数据...",
-      "load_file": "正在加载文件...",
-      "save_analysis_note": "正在保存分析记录...",
-      "update_progress": "正在更新分析进度...",
-      "WebSearch": "正在搜索相关信息...",
-      "generate_report": "正在生成报告...",
-      "export_data": "正在导出数据...",
-      "hypothesis_test": "正在进行统计检验...",
-      "detect_anomalies": "正在检测异常数据...",
-      "generate_chart": "正在生成图表..."
-    },
-    "phases": {
-      "think": "正在思考...",
-      "act": "正在执行...",
-      "observe": "正在整理..."
-    }
-  },
   "turnStage": {
     "fallback": "思考中…",
     "submitted": "准备中…",
     "waitingLlm": "等待模型响应",
     "streaming": "思考中…",
     "toolsPreparing": "正在准备工具…",
-    "toolSingle": "正在执行 {{name}}",
-    "toolsMulti": "正在并行运行 {{count}} 个工具",
     "waitingPermission": "等待你审批：{{name}}",
     "waitingInteraction": "等待你回答…",
     "compacting": "整理上下文中…",
@@ -599,13 +578,18 @@
     "live": "实时输出",
     "liveBytes": "已收到 {{bytes}}"
   },
-  "toolGroup": {
-    "title": "工具调用",
-    "running": "执行中 {{done}} / {{total}}",
-    "done": "已完成 {{done}} 步",
-    "doneCompact": "已完成 {{duration}}",
-    "durationMinSec": "{{min}}分{{sec}}秒",
-    "durationSec": "{{sec}}秒"
+  "toolGroupSummary": {
+    "bucket": {
+      "command": "运行了 {{count}} 个命令",
+      "file_read": "读取了 {{count}} 个文件",
+      "file_edit": "编辑了 {{count}} 个文件",
+      "search": "搜索了 {{count}} 次",
+      "mcp": "调用了 {{count}} 个 MCP 工具",
+      "other": "使用了 {{count}} 个工具"
+    },
+    "separator": "、",
+    "failedSuffix": "{{count}} 个失败",
+    "runningSuffix": "…"
   },
   "homeComposer": {
     "placeholder": "描述你的任务，输入 / 或点「技能」选择技能...",
@@ -650,6 +634,8 @@
     "budgetExceededDesc": "本轮 Token 用量已超出预设预算，已自动停止。",
     "executionErrorTitle": "执行出现错误",
     "executionErrorDesc": "Agent 执行过程中出现错误，本轮已中止。请重试或检查设置。",
+    "cancelledTitle": "已取消",
+    "cancelledDesc": "本轮已被用户取消。",
     "successSummaryTitle": "Turn 完成",
     "successSummaryDesc": "共消耗 {{tokens}} tokens，估算费用 ${{cost}}。"
   },

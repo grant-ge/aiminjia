@@ -5,6 +5,35 @@
 
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool'
 
+/**
+ * 后端 ErrorKind 枚举的镜像。Rust 端 #[serde(rename_all = "snake_case")]，
+ * 所以字面量是 snake_case。
+ *
+ * Spec: docs/superpowers/specs/2026-05-28-streaming-error-handling-design.md §3.1
+ */
+export type ErrorKind =
+  | 'chunk_timeout'
+  | 'network'
+  | 'prompt_too_long'
+  | 'auth_failed'
+  | 'rate_limited'
+  | 'max_iterations'
+  | 'budget_exceeded'
+  | 'execution_error'
+  | 'unknown'
+
+/**
+ * 后端 MessageError 的镜像。当 Message.error 存在时，AiBubble 渲染红色
+ * callout 而非普通气泡（PR2）。
+ */
+export interface MessageError {
+  kind: ErrorKind
+  /** UI 兜底渲染文案；i18n 标题由前端按 kind 查表 */
+  message: string
+  /** 原始错误（已脱敏）；UI 默认不显示 */
+  raw?: string
+}
+
 export interface Message {
   id: string
   conversationId: string
@@ -21,6 +50,11 @@ export interface Message {
   toolResult?: ToolResultContent
   /** 后端 echo 回的 optimistic id，仅出现在 message:updated role=user 时 */
   clientMessageId?: string
+  /**
+   * 错误信息（PR2 引入）。当存在时，AiBubble 渲染红色 callout 而非普通气泡。
+   * 顶层字段（与 content 同级），不塞进 content。
+   */
+  error?: MessageError
 }
 
 /** Information about the message sender (for user messages) */

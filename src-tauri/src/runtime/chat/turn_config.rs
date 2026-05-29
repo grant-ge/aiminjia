@@ -107,6 +107,8 @@ pub struct TurnIterationState {
     pub max_output_tokens_recovery_count: usize,
     pub orphaned_permission_count: usize,
     pub preprocess_state: PreprocessRuntimeState,
+    pub last_thinking_blocks: Vec<serde_json::Value>,
+    pub final_only_content: String,
 }
 
 impl TurnIterationState {
@@ -131,6 +133,8 @@ impl TurnIterationState {
             max_output_tokens_recovery_count: 0,
             orphaned_permission_count: 0,
             preprocess_state: PreprocessRuntimeState::default(),
+            last_thinking_blocks: Vec::new(),
+            final_only_content: String::new(),
         }
     }
 
@@ -178,6 +182,7 @@ pub enum LlmStepResult {
         tokens_out: u64,
         cache_creation_input_tokens: u64,
         cache_read_input_tokens: u64,
+        thinking_blocks: Vec<serde_json::Value>,
     },
     /// LLM 返回纯文本，无工具调用
     ContentComplete {
@@ -187,6 +192,7 @@ pub enum LlmStepResult {
         cache_creation_input_tokens: u64,
         cache_read_input_tokens: u64,
         stop_reason: Option<String>,
+        thinking_blocks: Vec<serde_json::Value>,
     },
     /// 用户取消
     Cancelled,

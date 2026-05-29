@@ -387,51 +387,10 @@ export function useStreaming() {
         void resyncCloudModelsOnRouteError()
       }
 
-      // Show longer auto-hide for timeout errors (user needs time to read)
-      const autoHideSecs = rawError === 'chunk_timeout' || rawError === 'agent_timeout' ? 15 : 8
-
-      const suffix = ''
-
-      // Offer a "重发" button only for network-class errors. Auth/route/4xx
-      // errors all need a different fix (re-login, switch model, edit the
-      // prompt) — replaying the same IPC verbatim won't help and would just
-      // burn another retry budget. We piggy-back on the existing chunk_timeout
-      // check + a broad message-substring scan for network keywords.
-      const isNetworkClass = (() => {
-        if (rawError === 'chunk_timeout' || rawError === 'agent_timeout') return true
-        const blob = `${error ?? ''} ${rawError ?? ''}`.toLowerCase()
-        return (
-          blob.includes('timeout')
-          || blob.includes('timed out')
-          || blob.includes('connection reset')
-          || blob.includes('connection refused')
-          || blob.includes('broken pipe')
-          || blob.includes('network')
-          || /\b(500|502|503|504)\b/.test(blob)
-        )
-      })()
-      const isAuthOrRoute =
-        looksLikeRouteError(error) || looksLikeRouteError(rawError)
-      const actions: Array<{ label: string; action: () => void; primary?: boolean }> =
-        isNetworkClass && !isAuthOrRoute
-          ? [{
-            label: i18n.t('errors.resend', '重发'),
-            primary: true,
-            action: () => {
-              void resendLastUserMessage(conversationId)
-            },
-          }]
-          : []
-
-      useNotificationStore.getState().push({
-        level: 'error',
-        title: i18n.t('errors.streamingError'),
-        message: (error ?? i18n.t('errors.unknownRetry')) + suffix,
-        actions,
-        dismissible: true,
-        autoHide: autoHideSecs,
-        context: 'toast',
-      })
+      // Error is now rendered as an in-bubble ErrorCallout (PR2 D' 原则).
+      // streaming:error fires when the backend emits a StreamingError event
+      // BEFORE message:updated; the persisted message with error field will
+      // arrive via message:updated and AiBubble will render the callout.
     }),
   )
 
@@ -490,32 +449,33 @@ export function useStreaming() {
         )
       }
 
-      // When we receive a persisted assistant message, clear the streaming
-      // state IN THE SAME callback so React batches both updates into one
-      // render. This prevents the visual "flash" where StreamingBubble
-      // unmounts (streaming:done) before the persisted assistant bubble appears.
-      //
-      // Skip iteration-only messages: assistant messages that carry toolCalls
-      // but no text are mid-turn snapshots (one per tool-call batch). Clearing
-      // streaming state here would kill the loading indicator while more tool
-      // calls are still in flight.
+      // Assistant message 持久化时分两种情况：
+      //  - iter 中间消息：有 toolCalls（不管 text 是否为空）。需要清掉
+      //    streamingContent（该 iter 的文本已落到 messages，下个 iter 的 streaming:delta
+      //    不能再 append 到旧文本上），但 isStreaming/busyConversations/toolExecutions
+      //    都要保留——turn 还在进行，loading 指示器、正在执行的工具卡必须继续显示。
+      //  - 最终消息：无 toolCalls（chat_turn_driver Step 8 用 message_persisted helper
+      //    emit，tool_calls=None）。turn 完成，整体清空 stream state + remove busy。
       const isIterationToolCallsMessage =
-        message.role === 'assistant' &&
-        !message.content.text &&
-        (message.toolCalls?.length ?? 0) > 0
-      if (message.role === 'assistant' && !isIterationToolCallsMessage) {
+        message.role === 'assistant' && (message.toolCalls?.length ?? 0) > 0
+      if (message.role === 'assistant') {
         const streamState = store.streamStates[message.conversationId]
         if (streamState?.isStreaming) {
-          console.log('[message:updated] Clearing streaming state for %s (assistant message persisted)', message.conversationId)
-          recordDiagnostic({
-            event: 'streaming.done.received',
-            conversationId: message.conversationId,
-            payload: { source: 'assistant.message.persisted' },
-          })
           flushConversationDeltas(message.conversationId)
-          delete lastActivityRef.current[message.conversationId]
-          store.clearConversationStreamState(message.conversationId)
-          store.removeBusyConversation(message.conversationId)
+          if (isIterationToolCallsMessage) {
+            // iter 中间：仅清 streamingContent，loading 状态保留
+            store.clearConversationStreamingTextOnly(message.conversationId)
+          } else {
+            console.log('[message:updated] Clearing streaming state for %s (final assistant message persisted)', message.conversationId)
+            recordDiagnostic({
+              event: 'streaming.done.received',
+              conversationId: message.conversationId,
+              payload: { source: 'assistant.message.persisted' },
+            })
+            delete lastActivityRef.current[message.conversationId]
+            store.clearConversationStreamState(message.conversationId)
+            store.removeBusyConversation(message.conversationId)
+          }
         }
       }
     }),
@@ -533,7 +493,9 @@ export function useStreaming() {
           ? 'AI 服务繁忙，正在重试...'
           : reason === 'rate_limited'
             ? '请求过于频繁，正在重试...'
-            : '网络抖动，正在重新连接...'
+            : reason === 'fallback_to_non_stream'
+              ? 'AI 服务超时，切换备用通道...'
+              : '网络抖动，正在重新连接...'
       useNotificationStore.getState().push({
         level: 'info',
         title,
@@ -780,39 +742,13 @@ export function useStreaming() {
 
       useStreamingStore.getState().clearConversationPendingAsks(conversationId)
 
+      // MaxIterationsReached / BudgetExceeded / ExecutionError toasts removed (PR2 D' 原则):
+      // these outcomes produce a persisted message with an error field that
+      // AiBubble renders as a red ErrorCallout in the conversation stream.
       switch (outcome) {
         case 'MaxIterationsReached':
-          useNotificationStore.getState().push({
-            level: 'warning',
-            title: i18n.t('turnOutcome.maxIterationsTitle'),
-            message: i18n.t('turnOutcome.maxIterationsDesc'),
-            actions: [],
-            dismissible: true,
-            autoHide: 12,
-            context: 'toast',
-          })
-          break
         case 'BudgetExceeded':
-          useNotificationStore.getState().push({
-            level: 'warning',
-            title: i18n.t('turnOutcome.budgetExceededTitle'),
-            message: i18n.t('turnOutcome.budgetExceededDesc'),
-            actions: [],
-            dismissible: true,
-            autoHide: 12,
-            context: 'toast',
-          })
-          break
         case 'ExecutionError':
-          useNotificationStore.getState().push({
-            level: 'error',
-            title: i18n.t('turnOutcome.executionErrorTitle'),
-            message: i18n.t('turnOutcome.executionErrorDesc'),
-            actions: [],
-            dismissible: true,
-            autoHide: 10,
-            context: 'toast',
-          })
           break
         case 'Success':
           if (totalCostUsd != null && totalCostUsd > 0) {
@@ -988,16 +924,9 @@ export function useStreaming() {
           store.clearConversationStreamState(convId)
           store.removeBusyConversation(convId)
 
-          // Show user-friendly notification
-          useNotificationStore.getState().push({
-            level: 'warning',
-            title: i18n.t('errors.streamTimeout'),
-            message: i18n.t('errors.streamTimeoutDesc', { seconds: STALE_STREAM_TIMEOUT_MS / 1000 }),
-            actions: [],
-            dismissible: true,
-            autoHide: 10,
-            context: 'toast',
-          })
+          // Watchdog streamTimeout toast removed (PR2 D' 原则): the backend
+          // has already persisted a message with error.kind='chunk_timeout' which
+          // AiBubble renders as an ErrorCallout. No additional toast needed.
         }
       }
     }, WATCHDOG_INTERVAL_MS)

@@ -69,33 +69,12 @@
   "userBubble": {
     "me": "Me"
   },
-  "streaming": {
-    "tools": {
-      "execute_python": "Analyzing data...",
-      "load_file": "Loading file...",
-      "save_analysis_note": "Saving analysis notes...",
-      "update_progress": "Updating analysis progress...",
-      "WebSearch": "Searching for information...",
-      "generate_report": "Generating report...",
-      "export_data": "Exporting data...",
-      "hypothesis_test": "Running statistical tests...",
-      "detect_anomalies": "Detecting anomalies...",
-      "generate_chart": "Generating chart..."
-    },
-    "phases": {
-      "think": "Thinking...",
-      "act": "Executing...",
-      "observe": "Summarizing..."
-    }
-  },
   "turnStage": {
     "fallback": "Thinking…",
     "submitted": "Preparing…",
     "waitingLlm": "Waiting for model",
     "streaming": "Thinking…",
     "toolsPreparing": "Preparing tools…",
-    "toolSingle": "Running {{name}}",
-    "toolsMulti": "Running {{count}} tools in parallel",
     "waitingPermission": "Waiting for your approval: {{name}}",
     "waitingInteraction": "Waiting for your reply…",
     "compacting": "Compacting context…",
@@ -599,13 +578,24 @@
     "live": "Live output",
     "liveBytes": "Received {{bytes}}"
   },
-  "toolGroup": {
-    "title": "Tool calls",
-    "running": "Running {{done}} / {{total}}",
-    "done": "Completed {{done}} step(s)",
-    "doneCompact": "Done in {{duration}}",
-    "durationMinSec": "{{min}}m {{sec}}s",
-    "durationSec": "{{sec}}s"
+  "toolGroupSummary": {
+    "bucket": {
+      "command_one": "ran {{count}} command",
+      "command_other": "ran {{count}} commands",
+      "file_read_one": "read {{count}} file",
+      "file_read_other": "read {{count}} files",
+      "file_edit_one": "edited {{count}} file",
+      "file_edit_other": "edited {{count}} files",
+      "search_one": "searched {{count}} time",
+      "search_other": "searched {{count}} times",
+      "mcp_one": "called {{count}} MCP tool",
+      "mcp_other": "called {{count}} MCP tools",
+      "other_one": "used {{count}} tool",
+      "other_other": "used {{count}} tools"
+    },
+    "separator": ", ",
+    "failedSuffix": "{{count}} failed",
+    "runningSuffix": "…"
   },
   "homeComposer": {
     "placeholder": "Describe your task, type / or click Skill to pick...",
@@ -650,6 +640,8 @@
     "budgetExceededDesc": "This turn exceeded the configured token budget and was stopped automatically.",
     "executionErrorTitle": "Execution error",
     "executionErrorDesc": "The agent encountered an error and this turn was aborted. Please retry or check settings.",
+    "cancelledTitle": "Cancelled",
+    "cancelledDesc": "This turn was cancelled by the user.",
     "successSummaryTitle": "Turn complete",
     "successSummaryDesc": "Used {{tokens}} tokens, estimated cost ${{cost}}."
   },

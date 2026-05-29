@@ -61,6 +61,7 @@ pub fn make_user(id: &str, text: &str) -> StoredMessage {
         sequence: None,
         seq: None,
         rev: None,
+        error: None,
     }
 }
 
@@ -84,6 +85,7 @@ pub fn make_assistant_with_tc(id: &str, tc_id: &str, tool: &str) -> StoredMessag
         sequence: None,
         seq: None,
         rev: None,
+        error: None,
     }
 }
 
@@ -103,6 +105,7 @@ pub fn make_tool_result(id: &str, tc_id: &str, tool: &str, content: &str) -> Sto
         sequence: None,
         seq: None,
         rev: None,
+        error: None,
     }
 }
 
@@ -122,6 +125,7 @@ pub fn make_assistant(id: &str, text: &str) -> StoredMessage {
         sequence: None,
         seq: None,
         rev: None,
+        error: None,
     }
 }
 

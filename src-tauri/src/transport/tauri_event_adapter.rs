@@ -178,6 +178,7 @@ pub fn map_runtime_event(event: &RuntimeEvent) -> Option<LegacyEvent> {
             content,
             client_message_id,
             tool_calls,
+            error,
         } => {
             let skill_command = content.get("skillCommand");
             let command_text = content.get("commandText").and_then(|value| value.as_str());
@@ -208,6 +209,9 @@ pub fn map_runtime_event(event: &RuntimeEvent) -> Option<LegacyEvent> {
             }
             if let Some(tool_calls) = tool_calls {
                 payload["toolCalls"] = json!(tool_calls);
+            }
+            if let Some(error) = error {
+                payload["error"] = json!(error);
             }
             Some(LegacyEvent {
                 name: "message:updated".to_string(),
