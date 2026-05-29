@@ -473,7 +473,7 @@ fn sse_bytes_to_events(
                             crate::llm::gate_log::record_response_chunk(request_id, &bytes);
                         }
                         buffer.push_str(&String::from_utf8_lossy(&bytes));
-                        drain_sse_frames(&mut buffer, &mut pending);
+                        drain_sse_frames(&mut buffer, &mut pending, gate_log_id.as_deref());
                     }
                     Some(Err(err)) => {
                         if let Some(request_id) = gate_log_id.as_deref() {
@@ -494,6 +494,7 @@ fn sse_bytes_to_events(
                             return None;
                         }
                         let frame = std::mem::take(&mut buffer);
+                        record_gateway_route_from_frame(&frame, gate_log_id.as_deref());
                         return Some((
                             chunk_to_stream_event(&frame),
                             (byte_stream, buffer, pending, gate_log_id),
@@ -505,14 +506,39 @@ fn sse_bytes_to_events(
     )
 }
 
-fn drain_sse_frames(buffer: &mut String, pending: &mut VecDeque<StreamEvent>) {
+fn drain_sse_frames(
+    buffer: &mut String,
+    pending: &mut VecDeque<StreamEvent>,
+    gate_log_id: Option<&str>,
+) {
     while let Some((idx, len)) = next_sse_frame_boundary(buffer) {
         let frame = buffer[..idx].to_string();
         buffer.drain(..idx + len);
         if !frame.trim().is_empty() {
+            record_gateway_route_from_frame(&frame, gate_log_id);
             pending.push_back(chunk_to_stream_event(&frame));
         }
     }
+}
+
+fn record_gateway_route_from_frame(frame: &str, gate_log_id: Option<&str>) {
+    if !frame.contains("event: response.started") {
+        return;
+    }
+    let Some(request_id) = gate_log_id else {
+        return;
+    };
+    let Some(data) = extract_sse_json(frame) else {
+        return;
+    };
+    let Some(route) = data.get("route") else {
+        return;
+    };
+    crate::llm::gate_log::record_route(
+        request_id,
+        data.get("response_id").and_then(Value::as_str),
+        route,
+    );
 }
 
 fn next_sse_frame_boundary(buffer: &str) -> Option<(usize, usize)> {
@@ -865,7 +891,7 @@ mod tests {
         .to_string();
         let mut pending = VecDeque::new();
 
-        drain_sse_frames(&mut buffer, &mut pending);
+        drain_sse_frames(&mut buffer, &mut pending, None);
 
         assert!(buffer.is_empty());
         match pending.pop_front() {

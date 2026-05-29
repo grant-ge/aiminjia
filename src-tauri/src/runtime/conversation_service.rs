@@ -411,6 +411,20 @@ fn looks_like_refusal(s: &str) -> bool {
     REFUSAL_PREFIXES.iter().any(|p| s.starts_with(p))
 }
 
+pub fn is_generic_auto_title(title: &str) -> bool {
+    let normalized = title.trim().to_lowercase();
+    matches!(
+        normalized.as_str(),
+        "new conversation"
+            | "conversation"
+            | "untitled"
+            | "untitled conversation"
+            | "新对话"
+            | "无标题"
+            | "新的对话"
+    )
+}
+
 pub fn should_auto_title(
     db: &dyn crate::runtime::store::conversation_store::ConversationStore,
     conversation_id: &str,
@@ -522,11 +536,12 @@ async fn generate_and_set_title_inner(
 
     // 先尝试 LLM 总结，失败/空 → fallback 到 user 首句截断
     let title = match try_llm_title(&gateway, &settings, &first_user, &conversation_id).await {
-        Ok(t) if !t.is_empty() => t,
-        Ok(_) => {
+        Ok(t) if !t.is_empty() && !is_generic_auto_title(&t) => t,
+        Ok(t) => {
             log::warn!(
-                "[auto-title] LLM returned empty title; falling back to user-text. conv={}",
-                conversation_id
+                "[auto-title] LLM returned empty/generic title; falling back to user-text. conv={} title={:?}",
+                conversation_id,
+                t
             );
             title_from_user_text(&first_user)
         }
@@ -540,8 +555,13 @@ async fn generate_and_set_title_inner(
         }
     };
 
-    if title.is_empty() {
-        anyhow::bail!("derived title is empty");
+    if title.is_empty() || is_generic_auto_title(&title) {
+        log::info!(
+            "[auto-title] skipped title update: derived title is empty/generic. conv={} title={:?}",
+            conversation_id,
+            title
+        );
+        return Ok(None);
     }
 
     let outcome = rename_conversation(db, conversation_id, title)
@@ -819,6 +839,15 @@ mod title_tests {
         );
         // underscore italic + tilde strikethrough
         assert_eq!(sanitize_title("_emphasis_ ~strike~"), "emphasis strike");
+    }
+
+    #[test]
+    fn generic_auto_titles_are_rejected() {
+        assert!(is_generic_auto_title("New Conversation"));
+        assert!(is_generic_auto_title(" new conversation "));
+        assert!(is_generic_auto_title("新对话"));
+        assert!(is_generic_auto_title("Untitled"));
+        assert!(!is_generic_auto_title("分析销售数据"));
     }
 
     #[test]

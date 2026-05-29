@@ -20,6 +20,8 @@ use std::sync::Arc;
 use storage::UserScopedPathResolver;
 use tauri::Manager;
 
+const APP_LOG_RETENTION_DAYS: u64 = 3;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default()
@@ -191,8 +193,9 @@ pub fn run() {
                 std::thread::sleep(std::time::Duration::from_millis(200));
             }));
 
-            // Auto-cleanup old log files (> 7 days)
-            cleanup_old_logs(&logs_dir, 7);
+            // Auto-cleanup old local logs. Desktop logs can grow quickly when
+            // stream diagnostics are enabled, so keep only the recent window.
+            cleanup_old_logs(&logs_dir, APP_LOG_RETENTION_DAYS);
 
             // Cleanup stale temp files from previous sessions (code_*.py)
             cleanup_temp_dir(&aijia_home.root().join("temp"));
@@ -1201,11 +1204,18 @@ async fn scan_external_plugins(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn scan_external_plugins_is_intentional_noop() {
         // scan_external_plugins is a no-op in Phase B.
         // SKILL.md disk loading is implemented in Phase C/D via plugin::skill module.
         // This test documents the intentional state.
+    }
+
+    #[test]
+    fn app_log_retention_defaults_to_three_days() {
+        assert_eq!(APP_LOG_RETENTION_DAYS, 3);
     }
 }
 

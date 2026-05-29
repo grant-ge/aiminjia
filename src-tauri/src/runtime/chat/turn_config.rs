@@ -7,6 +7,7 @@ use std::sync::Arc;
 use serde_json::Value as JsonValue;
 
 use crate::llm::streaming::AnthropicMultimodalTurn;
+use crate::models::settings::CloudGatewayMode;
 use crate::runtime::chat::compaction::AutoCompactState;
 use crate::runtime::chat::preprocess::PreprocessRuntimeState;
 use crate::runtime::chat::tool_round_types::RuntimeToolCallRequest;
@@ -27,6 +28,7 @@ pub struct ResolvedLlmSettings {
     pub custom_model_name: String,
     pub cloud_model: String,
     pub cloud_model_type: String,
+    pub cloud_gateway_mode: CloudGatewayMode,
     pub thinking_type: String,
     pub thinking_budget_tokens: u32,
     pub masking_level: String,
@@ -42,6 +44,7 @@ impl Default for ResolvedLlmSettings {
             custom_model_name: String::new(),
             cloud_model: String::new(),
             cloud_model_type: String::new(),
+            cloud_gateway_mode: CloudGatewayMode::Legacy,
             thinking_type: "disabled".to_string(),
             thinking_budget_tokens: 8000,
             masking_level: "strict".to_string(),

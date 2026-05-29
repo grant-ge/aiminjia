@@ -52,13 +52,33 @@ pub fn record_response_body(request_id: &str, status: u16, body: &str) {
     );
 }
 
+pub fn record_route(request_id: &str, response_id: Option<&str>, route: &Value) {
+    record_event(
+        "gateway.route",
+        request_id,
+        json!({
+            "response_id": response_id,
+            "logical_model": route.get("logical_model").cloned().unwrap_or(Value::Null),
+            "provider": route.get("provider").cloned().unwrap_or(Value::Null),
+            "api": route.get("api").cloned().unwrap_or(Value::Null),
+            "model": route.get("model").cloned().unwrap_or(Value::Null),
+            "endpoint_id": route.get("endpoint_id").cloned().unwrap_or(Value::Null),
+            "route": route,
+        }),
+    );
+}
+
 pub fn record_response_chunk(request_id: &str, bytes: &[u8]) {
+    let text = String::from_utf8_lossy(bytes);
     record_event(
         "gateway.response_chunk",
         request_id,
         json!({
             "bytes": bytes.len(),
-            "chunk_utf8_lossy": String::from_utf8_lossy(bytes).to_string(),
+            "events": sse_event_names_from_chunk(&text),
+            "content_delta_count": text.matches("event: content.delta").count(),
+            "tool_call_count": text.matches("event: tool_call").count(),
+            "keepalive_count": text.matches("event: keepalive").count(),
         }),
     );
 }
@@ -125,6 +145,18 @@ fn append_event_to_path(path: &Path, row: Value) -> std::io::Result<()> {
     )
 }
 
+fn sse_event_names_from_chunk(chunk: &str) -> Vec<String> {
+    let mut events = Vec::new();
+    for line in chunk.lines() {
+        if let Some(event) = line.strip_prefix("event: ") {
+            if !events.iter().any(|seen| seen == event) {
+                events.push(event.to_string());
+            }
+        }
+    }
+    events
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::{json, Value};
@@ -154,11 +186,37 @@ mod tests {
         super::append_event_to_path(
             &path,
             super::event_row(
+                "gateway.route",
+                request_id,
+                json!({
+                    "response_id": "lreq_1",
+                    "logical_model": "default-chat",
+                    "provider": "anthropic",
+                    "api": "anthropic-messages",
+                    "model": "claude-sonnet-4-5",
+                    "endpoint_id": 1,
+                    "route": {
+                        "logical_model": "default-chat",
+                        "provider": "anthropic",
+                        "api": "anthropic-messages",
+                        "model": "claude-sonnet-4-5",
+                        "endpoint_id": 1
+                    }
+                }),
+            ),
+        )
+        .expect("append route");
+        super::append_event_to_path(
+            &path,
+            super::event_row(
                 "gateway.response_chunk",
                 request_id,
                 json!({
                     "bytes": 37,
-                    "chunk_utf8_lossy": "event: content.delta\ndata: {\"delta\":\"好\"}\n\n"
+                    "events": ["content.delta"],
+                    "content_delta_count": 1,
+                    "tool_call_count": 0,
+                    "keepalive_count": 0
                 }),
             ),
         )
@@ -170,16 +228,19 @@ mod tests {
             .map(|line| serde_json::from_str(line).expect("jsonl row"))
             .collect();
 
-        assert_eq!(rows.len(), 2);
+        assert_eq!(rows.len(), 3);
         assert_eq!(rows[0]["event"], "gateway.request");
         assert_eq!(rows[0]["request_id"], request_id);
         assert_eq!(rows[0]["provider"], "aijia-v2");
         assert_eq!(rows[0]["body"]["messages"][0]["content"], "完整请求");
-        assert_eq!(rows[1]["event"], "gateway.response_chunk");
-        assert_eq!(
-            rows[1]["chunk_utf8_lossy"],
-            "event: content.delta\ndata: {\"delta\":\"好\"}\n\n"
-        );
+        assert_eq!(rows[1]["event"], "gateway.route");
+        assert_eq!(rows[1]["provider"], "anthropic");
+        assert_eq!(rows[1]["model"], "claude-sonnet-4-5");
+        assert_eq!(rows[1]["endpoint_id"], 1);
+        assert_eq!(rows[2]["event"], "gateway.response_chunk");
+        assert!(rows[2].get("chunk_utf8_lossy").is_none());
+        assert_eq!(rows[2]["events"], json!(["content.delta"]));
+        assert_eq!(rows[2]["content_delta_count"], 1);
         assert!(rows[0]["ts"].as_str().unwrap().ends_with('Z'));
     }
 }

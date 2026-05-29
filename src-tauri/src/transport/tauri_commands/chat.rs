@@ -3,18 +3,20 @@
 // Tauri commands and the legacy PluginContext-based tool chain.
 // Migrate to CapabilityContext when the command layer is refactored.
 #![allow(deprecated)]
-use std::sync::Arc;
+use std::collections::HashSet;
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use once_cell::sync::Lazy;
 use tauri::{Emitter, Manager};
 
 use crate::auth::AuthManager;
-use crate::llm::gateway::LlmGateway;
+use crate::llm::gateway::{format_llm_error_diagnostics, LlmGateway};
 use crate::llm::prompt_guard;
 use crate::llm::prompts;
 use crate::models::message::SubAgentTranscriptEntryFrontend;
-use crate::models::settings::AppSettings;
+use crate::models::settings::{AppSettings, CloudGatewayMode};
 use crate::plugin::ToolRegistry;
 use crate::runtime::agent::AgentRuntime;
 use crate::runtime::cancellation::CancellationToken;
@@ -41,6 +43,9 @@ pub mod chat_runtime_impl;
 
 pub(crate) use chat_runtime_impl::build_visible_tool_defs;
 
+static AUTO_TITLE_IN_FLIGHT: Lazy<Mutex<HashSet<String>>> =
+    Lazy::new(|| Mutex::new(HashSet::new()));
+
 /// Maximum number of stream-level retries within the agent loop.
 /// When a stream error or gateway error is retryable (5xx, timeout, connection),
 /// the current iteration is retried instead of aborting the entire agent loop.
@@ -65,6 +70,43 @@ const STREAM_RETRY_MAX_BACKOFF_SECS: u64 = 60;
 fn stream_retry_backoff_secs(attempt: u32) -> u64 {
     let raw = STREAM_RETRY_DELAY_SECS.saturating_mul(1u64 << attempt.min(10).saturating_sub(1));
     raw.min(STREAM_RETRY_MAX_BACKOFF_SECS)
+}
+
+fn normalize_stop_reason_for_tool_calls(
+    stop_reason: crate::llm::streaming::StopReason,
+    has_tool_calls: bool,
+) -> (
+    crate::llm::streaming::StopReason,
+    Option<crate::llm::streaming::StopReason>,
+) {
+    if has_tool_calls && stop_reason != crate::llm::streaming::StopReason::ToolUse {
+        (
+            crate::llm::streaming::StopReason::ToolUse,
+            Some(stop_reason),
+        )
+    } else {
+        (stop_reason, None)
+    }
+}
+
+fn try_mark_auto_title_inflight(conversation_id: &str) -> bool {
+    let mut guard = AUTO_TITLE_IN_FLIGHT
+        .lock()
+        .expect("auto-title in-flight mutex poisoned");
+    if !guard.insert(conversation_id.to_string()) {
+        log::info!(
+            "[auto-title] already_inflight=true conv={}",
+            conversation_id
+        );
+        return false;
+    }
+    true
+}
+
+fn clear_auto_title_inflight(conversation_id: &str) {
+    if let Ok(mut guard) = AUTO_TITLE_IN_FLIGHT.lock() {
+        guard.remove(conversation_id);
+    }
 }
 
 fn attachment_refs_from_json_array(
@@ -656,9 +698,12 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                 }
                 Err(e) => {
                     let err_str = e.to_string();
+                    let err_diagnostics = format_llm_error_diagnostics(&e);
                     log::error!(
-                        "[run_llm_step] gateway.stream_message() FAILED: {}",
-                        err_str
+                        "[run_llm_step] gateway.stream_message() FAILED conv={} run={}: {}",
+                        input.conversation_id,
+                        input.run_id,
+                        err_diagnostics
                     );
 
                     // Retry transient errors
@@ -1120,12 +1165,14 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                 });
             }
 
-            // Block 20: warn if stop_reason mismatch
-            if stop_reason != StopReason::ToolUse {
-                log::warn!(
-                    "[run_llm_step] stop_reason={:?} but {} tool calls received — \
-                     proceeding with tool execution (possible SSE chunk loss) conv={}",
-                    stop_reason,
+            let (normalized_stop_reason, raw_stop_reason) =
+                normalize_stop_reason_for_tool_calls(stop_reason.clone(), true);
+            if let Some(raw) = raw_stop_reason {
+                log::info!(
+                    "[run_llm_step] normalized stop_reason={:?} raw_stop_reason={:?} \
+                     tool_calls={} conv={}",
+                    normalized_stop_reason,
+                    raw,
                     tool_calls.len(),
                     input.conversation_id
                 );
@@ -1201,6 +1248,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             custom_model_name: settings.custom_model_name,
             cloud_model: settings.cloud_model,
             cloud_model_type: settings.cloud_model_type,
+            cloud_gateway_mode: settings.cloud_gateway_mode,
             thinking_type: settings.thinking_type,
             thinking_budget_tokens: settings.thinking_budget_tokens,
             masking_level: crate::llm::masking::MaskingLevel::from_str_or_strict(
@@ -1953,6 +2001,18 @@ mod tests {
         (storage, dir)
     }
 
+    #[test]
+    fn build_gateway_settings_preserves_cloud_gateway_mode() {
+        let resolved = ResolvedLlmSettings {
+            cloud_gateway_mode: CloudGatewayMode::V2,
+            ..ResolvedLlmSettings::default()
+        };
+
+        let settings = build_gateway_settings(&resolved);
+
+        assert_eq!(settings.cloud_gateway_mode, CloudGatewayMode::V2);
+    }
+
     struct Gate {
         open: Mutex<bool>,
         cv: Condvar,
@@ -2346,6 +2406,7 @@ fn build_gateway_settings(settings: &ResolvedLlmSettings) -> AppSettings {
         custom_model_name: settings.custom_model_name.clone(),
         cloud_model: settings.cloud_model.clone(),
         cloud_model_type: settings.cloud_model_type.clone(),
+        cloud_gateway_mode: settings.cloud_gateway_mode.clone(),
         thinking_type: settings.thinking_type.clone(),
         thinking_budget_tokens: settings.thinking_budget_tokens,
         ..AppSettings::default()
@@ -3496,12 +3557,17 @@ impl TauriChatCommandAdapter {
     /// 失败则兜底到 user 首句字面截断。idempotent guard 由 should_auto_title
     /// + generate_and_set_title 内部 title=="新对话" 双重检查保证。
     async fn spawn_auto_title(&self, conversation_id: String, delay_ms: u64) {
+        if !try_mark_auto_title_inflight(&conversation_id) {
+            return;
+        }
+
         // 提前加载 settings —— spawn 内部跨线程 self 不安全
         let dummy_request = ChatTurnRequest::new(conversation_id.clone(), String::new(), vec![]);
         let settings = match self.load_llm_settings_for_turn(&dummy_request).await {
             Ok(r) => build_gateway_settings(&r),
             Err(e) => {
                 log::warn!("[auto-title] load_llm_settings_for_turn failed: {:?}", e);
+                clear_auto_title_inflight(&conversation_id);
                 return;
             }
         };
@@ -3516,16 +3582,18 @@ impl TauriChatCommandAdapter {
             let needs =
                 conversation_service::should_auto_title(&*db, &conversation_id).unwrap_or(false);
             if !needs {
+                clear_auto_title_inflight(&conversation_id);
                 return;
             }
             conversation_service::generate_and_set_title(
                 db,
                 gateway,
                 host,
-                conversation_id,
+                conversation_id.clone(),
                 settings,
             )
             .await;
+            clear_auto_title_inflight(&conversation_id);
         });
     }
 
@@ -4553,5 +4621,43 @@ mod retry_backoff_tests {
             .sum();
         // 2+4+8+16+32+60*5 = 362
         assert_eq!(total, 362);
+    }
+}
+
+#[cfg(test)]
+mod stop_reason_tests {
+    use super::{
+        clear_auto_title_inflight, normalize_stop_reason_for_tool_calls,
+        try_mark_auto_title_inflight,
+    };
+    use crate::llm::streaming::StopReason;
+
+    #[test]
+    fn tool_calls_normalize_end_turn_to_tool_use() {
+        let (normalized, raw) = normalize_stop_reason_for_tool_calls(StopReason::EndTurn, true);
+
+        assert_eq!(normalized, StopReason::ToolUse);
+        assert_eq!(raw, Some(StopReason::EndTurn));
+    }
+
+    #[test]
+    fn no_tool_calls_keep_original_stop_reason() {
+        let (normalized, raw) = normalize_stop_reason_for_tool_calls(StopReason::EndTurn, false);
+
+        assert_eq!(normalized, StopReason::EndTurn);
+        assert_eq!(raw, None);
+    }
+
+    #[test]
+    fn auto_title_inflight_guard_allows_only_one_runner_per_conversation() {
+        let conversation_id = "auto-title-test-conv";
+        clear_auto_title_inflight(conversation_id);
+
+        assert!(try_mark_auto_title_inflight(conversation_id));
+        assert!(!try_mark_auto_title_inflight(conversation_id));
+
+        clear_auto_title_inflight(conversation_id);
+        assert!(try_mark_auto_title_inflight(conversation_id));
+        clear_auto_title_inflight(conversation_id);
     }
 }
