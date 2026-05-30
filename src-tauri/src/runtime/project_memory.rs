@@ -4,8 +4,6 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
-use crate::storage::process_ext::NoWindowExt;
-
 const ENTRYPOINT_NAME: &str = "MEMORY.md";
 const ENTRIES_DIR: &str = "entries";
 const LEGACY_CORE_MEMORY_REL_PATH: &str = "shared/cognitive/mem.md";
@@ -413,31 +411,9 @@ fn query_tokens(query: &str) -> Vec<String> {
 }
 
 fn canonical_workspace_key_path(workspace_path: &Path) -> PathBuf {
-    resolve_git_toplevel(workspace_path)
-        .or_else(|| workspace_path.canonicalize().ok())
-        .unwrap_or_else(|| workspace_path.to_path_buf())
-}
-
-fn resolve_git_toplevel(workspace_path: &Path) -> Option<PathBuf> {
-    let output = std::process::Command::new("git")
-        .arg("-c")
-        .arg("core.quotepath=false")
-        .arg("-C")
-        .arg(workspace_path)
-        .arg("rev-parse")
-        .arg("--show-toplevel")
-        .no_window()
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let root = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if root.is_empty() {
-        return None;
-    }
-    let root_path = PathBuf::from(&root);
-    root_path.canonicalize().ok().or(Some(root_path))
+    workspace_path
+        .canonicalize()
+        .unwrap_or_else(|_| workspace_path.to_path_buf())
 }
 
 fn slugify_path_tail(path: &Path) -> String {

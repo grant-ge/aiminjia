@@ -56,6 +56,50 @@ describe('StreamingBubble', () => {
     expect(container.querySelector('.pl-9')).toBeNull()
   })
 
+  it('inline 模式（suppressIndicator）下 content 被 sanitize 剃光时不渲染空壳', () => {
+    // 复现：LLM 流式吐到 `<function_calls>` 开始标签但还没闭合时，
+    // stripHallucinatedXml 会把整段砍掉。如果 inline StreamingBubble
+    // 还渲染 wrapper，ChatRow 会把它当 flex item 占 gap-3 + mb-7 空位，
+    // 在"运行了 X 个命令"和"思考中…"之间撑出一块空白。
+    useChatStore.setState({
+      activeConversationId: 'conv-1',
+      streamStates: {
+        'conv-1': {
+          isStreaming: true,
+          streamingContent: '\n<function_calls>',
+          toolExecutions: [],
+        },
+      },
+    })
+
+    const { container } = render(
+      <StreamingBubble content={'\n<function_calls>'} suppressIndicator />,
+    )
+
+    expect(container.querySelector('[data-aijia-streaming-bubble]')).toBeNull()
+  })
+
+  it('placeholder 模式（content="" + treatAsHasContent）仍然渲染 indicator', () => {
+    // 末尾 indicator-only placeholder：上面已经有 persisted blocks，
+    // content="" 但 turn 没结束，必须挂 indicator 给用户"还在思考"的反馈。
+    useChatStore.setState({
+      activeConversationId: 'conv-1',
+      streamStates: {
+        'conv-1': {
+          isStreaming: true,
+          streamingContent: '',
+          toolExecutions: [],
+        },
+      },
+    })
+
+    const { container, getByText } = render(
+      <StreamingBubble content="" treatAsHasContent />,
+    )
+    expect(container.querySelector('[data-aijia-streaming-bubble]')).not.toBeNull()
+    expect(getByText('思考中…')).toBeInTheDocument()
+  })
+
   it('streaming 内容的代码块不含 hljs 高亮 className', () => {
     useChatStore.setState({
       activeConversationId: 'conv-1',

@@ -6,7 +6,6 @@
 /// The concatenation order and separators intentionally mirror Block 13 of `chat_runtime_impl.rs`
 /// (lines ~2230-2291) so that the LLM sees an identical context layout regardless of which code
 /// path produces the string.
-use crate::storage::process_ext::NoWindowExt;
 pub fn build_iteration_context(
     core_memory: &str,
     project_memory: &str,
@@ -82,9 +81,8 @@ pub fn build_iteration_context(
 
 /// 构建会话级环境信息段落，注入到 dynamic context。
 ///
-/// 对齐 claude-code-best 的 `computeSimpleEnvInfo`：
+/// 输出内容：
 /// - 当前工作目录 / 已授权目录
-/// - git 状态摘要（失败时静默跳过）
 /// - 操作系统平台
 /// - Runtime 工具绝对路径（可选）
 ///
@@ -93,9 +91,7 @@ pub fn build_iteration_context(
 ///   LLM 应看到的“当前工作目录”的权威来源。
 /// - 在该场景下，输出只展示 `authorized` 对应的目录信息；`workspace_path` 仅作为
 ///   fallback 输入保留，不出现在输出里。
-/// - git status 也基于 `authorized` 路径执行，而不是 `workspace_path`。
-/// - 当 `authorized = None` 时，退回使用 `workspace_path` 作为工作目录展示和 git
-///   status 的执行路径。
+/// - 当 `authorized = None` 时，退回使用 `workspace_path` 作为工作目录展示。
 pub async fn build_env_info(
     workspace_path: &std::path::PathBuf,
     authorized: Option<(&str, &str)>,
@@ -113,33 +109,7 @@ pub async fn build_env_info(
         }
     }
 
-    // 2. Git 状态（静默失败）
-    let effective_path = authorized
-        .map(|(p, _)| std::path::PathBuf::from(p))
-        .unwrap_or_else(|| workspace_path.clone());
-
-    if let Ok(output) = tokio::process::Command::new("git")
-        .arg("-c")
-        .arg("core.quotepath=false")
-        .arg("-C")
-        .arg(&effective_path)
-        .arg("status")
-        .arg("--short")
-        .arg("--branch")
-        .no_window()
-        .output()
-        .await
-    {
-        if output.status.success() {
-            let status_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !status_str.is_empty() {
-                let lines: Vec<&str> = status_str.lines().take(10).collect();
-                parts.push(format!("Git: {}", lines.join(" | ")));
-            }
-        }
-    }
-
-    // 3. 平台信息
+    // 2. 平台信息
     let platform = if cfg!(target_os = "macos") {
         "darwin"
     } else if cfg!(target_os = "windows") {
@@ -348,62 +318,6 @@ mod tests {
         let has_platform =
             result.contains("darwin") || result.contains("windows") || result.contains("linux");
         assert!(has_platform, "must include OS type, got: {}", result);
-    }
-
-    #[tokio::test]
-    async fn test_build_env_info_non_git_directory_skips_git_quietly() {
-        let temp_dir = tempfile::tempdir().expect("create temp dir");
-        let workspace_path = temp_dir.path().to_path_buf();
-
-        let result = build_env_info(&workspace_path, None, None).await;
-
-        assert!(
-            result.contains("[当前环境]"),
-            "must have env section header"
-        );
-        assert!(result.contains("工作目录:"), "must include working dir");
-        assert!(
-            !result.contains("Git:"),
-            "must skip git section in non-git dir"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_build_env_info_authorized_path_prefers_git_status() {
-        let workspace_dir = tempfile::tempdir().expect("create workspace temp dir");
-        let authorized_dir = tempfile::tempdir().expect("create authorized temp dir");
-        let workspace_path = workspace_dir.path().to_path_buf();
-        let authorized_root = authorized_dir.path().to_path_buf();
-
-        let git_init = std::process::Command::new("git")
-            .args(["init", authorized_root.to_string_lossy().as_ref()])
-            .output()
-            .expect("run git init");
-        assert!(git_init.status.success(), "git init must succeed");
-
-        std::fs::write(authorized_root.join("untracked.txt"), "hello")
-            .expect("write untracked file");
-
-        let result = build_env_info(
-            &workspace_path,
-            Some((authorized_root.to_string_lossy().as_ref(), "授权目录")),
-            None,
-        )
-        .await;
-
-        assert!(
-            result.contains("已连接目录: 授权目录 ("),
-            "must include authorized dir header"
-        );
-        assert!(
-            result.contains("Git:"),
-            "must include git status from authorized dir"
-        );
-        assert!(
-            result.contains("untracked.txt") || result.contains("##"),
-            "must reflect authorized git repo status, got: {}",
-            result
-        );
     }
 
     #[tokio::test]
