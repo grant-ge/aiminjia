@@ -469,6 +469,7 @@
     "loggingIn": "登录中…",
     "loginButton": "登录",
     "loginFailed": "登录失败，请重试",
+    "loginFailedTitle": "登录失败",
     "loginTo": "登录到 {{name}}",
     "language": "界面语言",
     "continueWithEnterprise": "使用企业账号继续",

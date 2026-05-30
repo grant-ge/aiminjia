@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useAuthStore } from '@/stores/authStore'
 import { useBrandingStore } from '@/stores/brandingStore'
+import { useNotificationStore } from '@/stores/notificationStore'
 
 const REMEMBER_KEY = 'login_remembered_username'
 const PHONE_LIKE_REGEX = /^\+?[1-9]\d{1,14}$/
@@ -28,6 +29,7 @@ export function LoginPage() {
   const { t, i18n } = useTranslation()
   const login = useAuthStore((s) => s.login)
   const isAuthPending = useAuthStore((s) => s.isAuthPending)
+  const pushNotification = useNotificationStore((s) => s.push)
   const productName = useBrandingStore((s) => s.productName)
   const logoUrl = useBrandingStore((s) => s.logoUrl)
   const [mode, setMode] = useState<'login' | 'register' | 'resetPassword'>('login')
@@ -73,7 +75,17 @@ export function LoginPage() {
     } catch (err) {
       setPassword('')
       const message = err instanceof Error ? err.message : t('login.loginFailed')
-      setError(PHONE_LIKE_REGEX.test(username) ? t('login.phoneLoginFailedHint') : message)
+      const nextError = PHONE_LIKE_REGEX.test(username) ? t('login.phoneLoginFailedHint') : message
+      setError(nextError)
+      pushNotification({
+        level: 'error',
+        title: t('login.loginFailedTitle'),
+        message: nextError,
+        actions: [],
+        dismissible: true,
+        autoHide: 5,
+        context: 'toast',
+      })
     }
   }
 
@@ -202,7 +214,14 @@ export function LoginPage() {
               <div className="text-sm text-primary">{info}</div>
             ) : null}
             {error ? (
-              <div data-aijia-login-error className="text-sm text-destructive">{error}</div>
+              <div
+                role="alert"
+                aria-live="assertive"
+                data-aijia-login-error
+                className="text-sm text-destructive"
+              >
+                {error}
+              </div>
             ) : null}
             <Button
               type="submit"

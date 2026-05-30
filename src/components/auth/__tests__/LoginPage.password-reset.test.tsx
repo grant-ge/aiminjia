@@ -30,6 +30,7 @@ vi.mock('@/lib/tauri', () => ({
   cloudResetPassword: mocks.resetPassword,
 }))
 
+import { useNotificationStore } from '@/stores/notificationStore'
 import { LoginPage } from '../LoginPage'
 
 describe('LoginPage password reset', () => {
@@ -38,7 +39,26 @@ describe('LoginPage password reset', () => {
     mocks.sendSmsCode.mockResolvedValue(undefined)
     mocks.sendEmailCode.mockResolvedValue(undefined)
     mocks.resetPassword.mockResolvedValue(undefined)
+    useNotificationStore.getState().dismissAll()
     localStorage.clear()
+  })
+
+  it('shows an alert and toast when login rejects invalid password', async () => {
+    mocks.login.mockRejectedValueOnce(new Error('用户名或密码错误'))
+
+    render(<LoginPage />)
+
+    fireEvent.change(screen.getByLabelText('账号'), { target: { value: 'alice@acme' } })
+    fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'wrong-password' } })
+    fireEvent.click(screen.getByRole('button', { name: '登录' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('用户名或密码错误')
+    expect(useNotificationStore.getState().notifications.at(-1)).toMatchObject({
+      level: 'error',
+      title: '登录失败',
+      message: '用户名或密码错误',
+      context: 'toast',
+    })
   })
 
   it('resets a personal password with phone verification and returns to login', async () => {

@@ -469,6 +469,7 @@
     "loggingIn": "Logging in...",
     "loginButton": "Log In",
     "loginFailed": "Login failed, please try again",
+    "loginFailedTitle": "Login failed",
     "loginTo": "Sign in to {{name}}",
     "language": "Language",
     "continueWithEnterprise": "Continue with enterprise account",
