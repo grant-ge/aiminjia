@@ -1,15 +1,20 @@
-# AIjia — 代码仓库
+# AIjia — 桌面端代码仓库
 
-企业 AI 工作台 Tauri 2.x 桌面应用（React/TS 前端 + Rust 后端 + RuntimeManager 管理的本地运行环境）。
+> 最后梳理：2026-05-29
+> 当前仓库：`/Users/gezhigang/work-codeup/aijia/code`
+> 服务端仓库：`/Users/gezhigang/lotus`
+
+企业 AI 工作台 Tauri 2.x 桌面应用（React 19/TypeScript 前端 + Rust Runtime + RuntimeManager 管理的本地运行环境）。
 
 产品名：**AIjia**（元数据/文件名）/ **AI小家**（UI 面向用户）。标识符：`com.aijia.app`。
 
-设计文档统一在 `~/lotus/docs/desktop/`。架构权威在 `~/lotus/docs/desktop/agent-architecture.md`。
+日常编码约束以本文件为准；当前架构参考以 `docs/architecture-blueprint.md` 和 `docs/decisions/*.md` 为准。`~/lotus/docs/desktop/` 保留跨仓长期参考和服务端仓库需要维护的桌面端文档，其中存储规范 `~/lotus/docs/desktop/storage-conventions.md` 仍是写盘路径权威。
 
 ## 仓库结构（关键部分）
 
 ```
-├── CLAUDE.md
+├── CLAUDE.md                  # 本文件，日常编码必读约束
+├── AGENTS.md                  # agent 执行约束
 ├── package.json               # 前端 + version
 ├── src/                       # React/TS 前端
 ├── src-tauri/
@@ -36,6 +41,10 @@
 │   ├── setup-runner-macos.sh       # macOS 签名机环境检查
 │   ├── setup-runner-windows.ps1    # Windows 签名机环境检查
 │   └── bump-homebrew.py
+├── docs/
+│   ├── architecture-blueprint.md
+│   ├── decisions/
+│   └── release-playbook.md
 └── .github/workflows/
     └── build-desktop.yml      # Windows-only CI：构建未签名 exe → 上传 OSS staging + 下载页生成
 ```
