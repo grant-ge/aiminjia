@@ -244,6 +244,45 @@ pub async fn cloud_register(
         .map_err(format_auth_error)
 }
 
+/// Reset a personal account password via phone or email + verification code.
+#[tauri::command]
+pub async fn cloud_reset_password(
+    auth: State<'_, Arc<AuthManager>>,
+    method: String,
+    phone: Option<String>,
+    email: Option<String>,
+    code: String,
+    password: String,
+) -> Result<(), String> {
+    let method = method.trim();
+    let phone = phone.unwrap_or_default();
+    let phone = phone.trim();
+    let email = email.unwrap_or_default();
+    let email = email.trim();
+    let code = code.trim();
+
+    match method {
+        "phone" => {
+            if phone.is_empty() || code.is_empty() || password.is_empty() {
+                return Err("请填写手机号、验证码和新密码".to_string());
+            }
+        }
+        "email" => {
+            if email.is_empty() || code.is_empty() || password.is_empty() {
+                return Err("请填写邮箱、验证码和新密码".to_string());
+            }
+        }
+        _ => return Err("重置方式无效".to_string()),
+    }
+    if password.len() < 8 {
+        return Err("密码至少 8 个字符".to_string());
+    }
+
+    auth.reset_password(method, phone, email, code, &password)
+        .await
+        .map_err(format_auth_error)
+}
+
 /// Cached tenant branding snapshot persisted to `~/.renlijia/users/{scope}/brand.json`.
 /// Lets the login page pre-apply the previous tenant's brand after logout.
 /// All fields are optional — missing means "use built-in default".

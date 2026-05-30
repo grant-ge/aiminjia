@@ -7,6 +7,7 @@ import { LoginLanguageSwitch } from '@/components/auth/LoginLanguageSwitch'
 import { LoginLogoStack } from '@/components/auth/LoginLogoStack'
 import { LoginOptionsRow } from '@/components/auth/LoginOptionsRow'
 import { RegisterCard } from '@/components/auth/RegisterCard'
+import { ResetPasswordCard } from '@/components/auth/ResetPasswordCard'
 import { LegalDocumentDialog } from '@/components/legal/LegalDocumentDialog'
 import { getLegalDocument, type LegalDocumentKey } from '@/components/legal/legalDocuments'
 import { TitleBar } from '@/components/layout/TitleBar'
@@ -17,6 +18,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useBrandingStore } from '@/stores/brandingStore'
 
 const REMEMBER_KEY = 'login_remembered_username'
+const PHONE_LIKE_REGEX = /^\+?[1-9]\d{1,14}$/
 
 function getSavedUsername() {
   return localStorage.getItem(REMEMBER_KEY) ?? ''
@@ -28,11 +30,12 @@ export function LoginPage() {
   const isAuthPending = useAuthStore((s) => s.isAuthPending)
   const productName = useBrandingStore((s) => s.productName)
   const logoUrl = useBrandingStore((s) => s.logoUrl)
-  const [mode, setMode] = useState<'login' | 'register'>('login')
+  const [mode, setMode] = useState<'login' | 'register' | 'resetPassword'>('login')
   const [account, setAccount] = useState(getSavedUsername())
   const [password, setPassword] = useState('')
   const [remember, setRemember] = useState(() => !!localStorage.getItem(REMEMBER_KEY))
   const [error, setError] = useState('')
+  const [info, setInfo] = useState('')
   const [activeLegalDocument, setActiveLegalDocument] = useState<LegalDocumentKey | null>(null)
   const [appVersion, setAppVersion] = useState('')
 
@@ -60,6 +63,7 @@ export function LoginPage() {
     }
     try {
       setError('')
+      setInfo('')
       await login(username, password)
       if (remember) {
         localStorage.setItem(REMEMBER_KEY, username)
@@ -68,7 +72,8 @@ export function LoginPage() {
       }
     } catch (err) {
       setPassword('')
-      setError(err instanceof Error ? err.message : t('login.loginFailed'))
+      const message = err instanceof Error ? err.message : t('login.loginFailed')
+      setError(PHONE_LIKE_REGEX.test(username) ? t('login.phoneLoginFailedHint') : message)
     }
   }
 
@@ -77,6 +82,7 @@ export function LoginPage() {
     setPassword(pwd)
     setMode('login')
     setError('')
+    setInfo('')
     // Auto-login with the freshly registered credentials.
     void (async () => {
       try {
@@ -91,12 +97,23 @@ export function LoginPage() {
     })()
   }
 
+  function handleResetPasswordSuccess(identifier: string) {
+    setAccount(identifier)
+    setPassword('')
+    setMode('login')
+    setError('')
+    setInfo(t('resetPassword.resetSuccess'))
+  }
+
   const legalDocument = activeLegalDocument
     ? getLegalDocument(activeLegalDocument, i18n.language)
     : null
   const footerText = appVersion
     ? `${productName} ${t('login.version', { version: appVersion })} · ${t('login.footerCopyright')}`
     : `${productName} · ${t('login.footerCopyright')}`
+  const accountHint = PHONE_LIKE_REGEX.test(account.trim())
+    ? t('login.phoneLoginHint')
+    : t('login.accountHint')
 
   return (
     <div
@@ -140,7 +157,7 @@ export function LoginPage() {
                 onChange={(e) => setAccount(e.target.value)}
                 autoComplete="username"
               />
-              <div className="text-xs text-muted-foreground">{t('login.accountHint')}</div>
+              <div className="text-xs text-muted-foreground">{accountHint}</div>
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="password">{t('login.password')}</Label>
@@ -175,8 +192,15 @@ export function LoginPage() {
                   {t('login.rememberMe')}
                 </label>
               }
-              onForget={() => {}}
+              onForget={() => {
+                setMode('resetPassword')
+                setError('')
+                setInfo('')
+              }}
             />
+            {info ? (
+              <div className="text-sm text-primary">{info}</div>
+            ) : null}
             {error ? (
               <div data-aijia-login-error className="text-sm text-destructive">{error}</div>
             ) : null}
@@ -204,6 +228,7 @@ export function LoginPage() {
                 onClick={() => {
                   setMode('register')
                   setError('')
+                  setInfo('')
                 }}
               >
                 {t('login.registerNow')}
@@ -229,14 +254,24 @@ export function LoginPage() {
             </div>
           </form>
         </LoginCard>
-      ) : (
+      ) : mode === 'register' ? (
         <RegisterCard
           productName={productName}
           onBack={() => {
             setMode('login')
             setError('')
+            setInfo('')
           }}
           onSuccess={handleRegisterSuccess}
+        />
+      ) : (
+        <ResetPasswordCard
+          onBack={() => {
+            setMode('login')
+            setError('')
+            setInfo('')
+          }}
+          onSuccess={handleResetPasswordSuccess}
         />
       )}
         <LoginFooter text={footerText} />

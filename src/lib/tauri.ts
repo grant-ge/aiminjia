@@ -1625,6 +1625,17 @@ export function cloudRegister(args: {
   return invoke<void>('cloud_register', args)
 }
 
+/** Reset a personal account password via phone or email verification code. */
+export function cloudResetPassword(args: {
+  method: 'phone' | 'email'
+  phone?: string
+  email?: string
+  code: string
+  password: string
+}): Promise<void> {
+  return invoke<void>('cloud_reset_password', args)
+}
+
 // ---------------------------------------------------------------------------
 // Persona Commands
 //

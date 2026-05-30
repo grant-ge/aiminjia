@@ -410,6 +410,37 @@ impl AuthClient {
         Ok(())
     }
 
+    /// Reset a personal account password via phone or email verification code.
+    /// Hits tenant-portal `/api/auth/reset-password`.
+    pub async fn reset_password(
+        &self,
+        method: &str,
+        phone: &str,
+        email: &str,
+        code: &str,
+        password: &str,
+    ) -> Result<()> {
+        let url = format!("{}/api/auth/reset-password", BASE_URL);
+        let resp = self
+            .client
+            .post(&url)
+            .json(&json!({
+                "method": method,
+                "phone": phone,
+                "email": email,
+                "code": code,
+                "password": password,
+            }))
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(parse_api_error(status.as_u16(), &body));
+        }
+        Ok(())
+    }
+
     /// Get current user + tenant profile (including latest branding).
     /// Uses session_key auth (Bearer), no token rotation.
     pub async fn get_profile(&self, session_key: &str) -> Result<(AuthUserInfo, AuthTenantInfo)> {

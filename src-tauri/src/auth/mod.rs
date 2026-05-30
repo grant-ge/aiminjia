@@ -226,6 +226,20 @@ impl AuthManager {
             .await
     }
 
+    /// Reset a personal account password via phone or email verification code.
+    pub async fn reset_password(
+        &self,
+        method: &str,
+        phone: &str,
+        email: &str,
+        code: &str,
+        password: &str,
+    ) -> Result<()> {
+        self.client
+            .reset_password(method, phone, email, code, password)
+            .await
+    }
+
     /// Logout — call server API then clear local state and persisted data.
     pub async fn logout(&self) {
         // Best-effort server-side logout

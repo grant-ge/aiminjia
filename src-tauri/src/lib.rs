@@ -1077,6 +1077,7 @@ pub fn run() {
             commands::auth::cloud_send_sms_code,
             commands::auth::cloud_send_email_code,
             commands::auth::cloud_register,
+            commands::auth::cloud_reset_password,
             commands::auth::get_last_brand,
             // Billing commands (personal tenant)
             crate::transport::tauri_commands::billing::billing_summary,
