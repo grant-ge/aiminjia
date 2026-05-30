@@ -143,7 +143,14 @@ export function StreamingBubble({
     return activeId ? (s.streamStates[activeId]?.lastHeartbeatAt ?? null) : null
   })
   const cleanContent = stripHallucinatedXml(content)
-  const hasContent = cleanContent.length > 0 || treatAsHasContent
+  // 两个独立信号：
+  // - hasMarkdown：实际有可见文本要画。决定是否渲染 <AssistantMarkdown> 和
+  //   indicator 的定位分支（top-full mt-2 锚 markdown 末尾 / top-0 贴容器顶）。
+  // - hasContent：传给 deriveStageStatus 压初始 label（"等待模型响应"等）。
+  //   treatAsHasContent=true 的占位场景仍然算作"已有内容"——上方有 persisted
+  //   blocks 在撑场子，不该再喊"等待模型响应"。
+  const hasMarkdown = cleanContent.length > 0
+  const hasContent = hasMarkdown || treatAsHasContent
   const now = useTick(1_000)
 
   const status = deriveStageStatus(
@@ -156,18 +163,26 @@ export function StreamingBubble({
     toolExecutions,
   )
 
+  // 全空快路径：既没 markdown 又把 indicator 也 suppress 掉，wrapper 是个 0
+  // 内容的 <div class="mb-7"><div class="relative"></div></div>，但仍然在父
+  // ChatRow 里占一个 flex item，触发 gap-3 + mb-7 撑出空气块。流式 inline
+  // bubble 在 stripHallucinatedXml 把整段 <function_calls>… 砍光、且本身就是
+  // suppressIndicator 模式时会走到这里——直接 return null 让 layout 闭合。
+  if (!hasMarkdown && suppressIndicator) return null
+
   // typing/spin loading 块用 absolute 脱离文档流：
-  // - hasContent=true：top-full + mt-2 锚到 markdown 末尾下方 8px（跟原 inline
+  // - hasMarkdown=true：top-full + mt-2 锚到 markdown 末尾下方 8px（跟原 inline
   //   时同位）；layout 高度不再算 indicator，流式 delta 只按真实文字增量长高，
   //   避免 stick-to-bottom 来回追 indicator 高度产生的"撑开 + 闪"。
-  // - hasContent=false：top-0 顶到容器起点（跟原 mt-0 同位）。indicator-only
-  //   placeholder（末尾追加的 content="" StreamingBubble）走这条。
+  // - hasMarkdown=false：top-0 顶到容器起点（跟原 mt-0 同位）。indicator-only
+  //   placeholder（末尾追加的 content="" StreamingBubble）走这条——即便
+  //   treatAsHasContent=true 也走 top-0，因为容器内没有真实 markdown 内容。
   // 父层 mb-7 给 indicator 预留视觉空间，不会跟下一个 sibling 紧贴。
-  const indicatorPositionClass = hasContent ? 'top-full mt-2' : 'top-0'
+  const indicatorPositionClass = hasMarkdown ? 'top-full mt-2' : 'top-0'
   return (
     <div className="mb-7" data-aijia-streaming-bubble>
       <div className="relative">
-        {hasContent ? <AssistantMarkdown text={cleanContent} disableCodeHighlight /> : null}
+        {hasMarkdown ? <AssistantMarkdown text={cleanContent} disableCodeHighlight /> : null}
         {suppressIndicator ? null : status.icon === 'spin' ? (
           <div
             className={`absolute left-0 ${indicatorPositionClass} flex items-center gap-2 text-xs`}
@@ -194,7 +209,7 @@ export function StreamingBubble({
         ) : (
           <div className={`absolute left-0 ${indicatorPositionClass}`}>
             <TypingIndicator variant="default" label={status.label || undefined} />
-            {status.label && hasContent ? (
+            {status.label && hasMarkdown ? (
               <span className="sr-only">{status.label}</span>
             ) : null}
           </div>
