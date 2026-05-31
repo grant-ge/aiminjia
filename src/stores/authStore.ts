@@ -9,8 +9,12 @@ import {
   type CloudModel,
 } from '@/lib/tauri'
 import { useBrandingStore } from '@/stores/brandingStore'
+import { useBillingStore } from '@/stores/billingStore'
+import { useChannelStore } from '@/stores/channelStore'
 import { useChatStore } from '@/stores/chatStore'
+import { useHomeStore } from '@/stores/homeStore'
 import { useNotificationStore } from '@/stores/notificationStore'
+import { useSkillStore } from '@/stores/skillStore'
 import { useUiStore, type Route } from '@/stores/uiStore'
 
 /**
@@ -99,6 +103,16 @@ async function applyTenantBranding(info: CloudAuthInfo): Promise<void> {
   useBrandingStore.getState().applyBranding(tenant)
 }
 
+function resetUserScopedFrontendState() {
+  useChatStore.getState().resetAll()
+  useChatStore.getState().resetStreaming()
+  useChannelStore.getState().reset()
+  useBillingStore.getState().reset()
+  useSkillStore.getState().reset()
+  useHomeStore.getState().reset()
+  useNotificationStore.getState().dismissAll()
+}
+
 // Note: there used to be a `syncCloudModelSelection` here that wrote
 // `models[0].id` back to settings.cloudModel. That was the source of the
 // "user pinned to whichever model they happened to start with" bug —
@@ -179,8 +193,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   async login(username, password) {
     set({ isAuthPending: true })
-    useChatStore.getState().resetAll()
-    useChatStore.getState().resetStreaming()
+    resetUserScopedFrontendState()
     try {
       const info = await cloudLogin(username.trim(), password)
       await applyTenantBranding(info)
@@ -225,8 +238,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ isAuthPending: true })
     try {
       await cloudLogout()
-      useChatStore.getState().resetAll()
-      useChatStore.getState().resetStreaming()
+      resetUserScopedFrontendState()
       useBrandingStore.getState().reset()
       // Re-apply the persisted brand so the login page stays on the user's
       // custom tenant skin instead of flashing back to defaults after logout.
@@ -248,6 +260,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   clearAuth() {
+    resetUserScopedFrontendState()
     set({ ...EMPTY_AUTH_STATE, isAuthPending: false })
   },
 }))

@@ -30,17 +30,23 @@ interface BillingState {
   fetchSummary: () => Promise<void>
   fetchRecords: (page: number) => Promise<void>
   refresh: () => Promise<void>
+  reset: () => void
 }
 
 const DEFAULT_PAGE_SIZE = 20
-
-export const useBillingStore = create<BillingState>((set, get) => ({
+const EMPTY_BILLING_STATE = {
   summary: null,
-  records: [],
+  records: [] as UsageRecord[],
   pagination: { page: 1, size: DEFAULT_PAGE_SIZE, total: 0 },
   loadingSummary: false,
   loadingRecords: false,
   error: null,
+}
+
+export const useBillingStore = create<BillingState>((set, get) => ({
+  ...EMPTY_BILLING_STATE,
+
+  reset: () => set({ ...EMPTY_BILLING_STATE }),
 
   fetchSummary: async () => {
     set({ loadingSummary: true, error: null })

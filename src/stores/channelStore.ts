@@ -37,11 +37,14 @@ interface ChannelState {
   removePlatform: (platform: ChannelPlatform) => Promise<ChannelPlatformState>
   revealSecret: (platform: ChannelPlatform) => Promise<string>
   loadConversations: (platform?: ChannelPlatform) => Promise<void>
+  reset: () => void
 }
 
 export const useChannelStore = create<ChannelState>((set, get) => ({
   platforms: {},
   conversations: [],
+
+  reset: () => set({ platforms: {}, conversations: [] }),
 
   setPlatformState: (state) => {
     set((s) => ({
@@ -142,7 +145,11 @@ let listenersInitialized = false
 
 /** App 启动时调用一次，订阅后端事件并拉取初始状态 */
 export async function initChannelListeners() {
-  if (listenersInitialized) return
+  if (listenersInitialized) {
+    await useChannelStore.getState().loadPlatforms()
+    await useChannelStore.getState().loadConversations()
+    return
+  }
   listenersInitialized = true
 
   await onChannelPlatformState(({ state }) => {

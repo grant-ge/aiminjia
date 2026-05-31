@@ -75,7 +75,9 @@ export function LoginPage() {
     } catch (err) {
       setPassword('')
       const message = err instanceof Error ? err.message : t('login.loginFailed')
-      const nextError = PHONE_LIKE_REGEX.test(username) ? t('login.phoneLoginFailedHint') : message
+      const nextError = PHONE_LIKE_REGEX.test(username)
+        ? `${message}。${t('login.phoneLoginHint')}`
+        : message
       setError(nextError)
       pushNotification({
         level: 'error',

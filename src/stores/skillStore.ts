@@ -84,12 +84,14 @@ interface SkillState {
   install: (id: string) => Promise<void>
   uninstall: (id: string) => Promise<void>
   upload: (sourcePath: string, force?: boolean) => Promise<void>
+  reset: () => void
 }
 
 export const useSkillStore = create<SkillState>((set, get) => ({
   skills: [],
   recommendedIds: RECOMMENDED_SKILL_IDS,
   isLoading: false,
+  reset: () => set({ skills: [], isLoading: false }),
   listByCategory(id) {
     const { skills, recommendedIds } = get()
     if (id == 'recommended') {

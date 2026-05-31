@@ -11,6 +11,7 @@ interface HomeState {
   recentWorkspaces: AuthorizedWorkspaceRef[]
   setSelectedWorkspace: (ws: AuthorizedWorkspaceRef | null) => void
   removeRecentWorkspace: (rootPath: string) => void
+  reset: () => void
 }
 
 function tryParse<T>(raw: string | undefined, fallback: T): T {
@@ -58,6 +59,7 @@ function withWorkspaceFirst(
 export const useHomeStore = create<HomeState>((set, get) => ({
   selectedWorkspace: null,
   recentWorkspaces: [],
+  reset: () => set({ selectedWorkspace: null, recentWorkspaces: [] }),
   setSelectedWorkspace: (ws) => {
     if (!ws) {
       void persist(null, get().recentWorkspaces)

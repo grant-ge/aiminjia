@@ -1,4 +1,4 @@
-import { type PropsWithChildren, useEffect, useRef } from 'react'
+import { type PropsWithChildren, useEffect, useRef, useState } from 'react'
 
 import { useAuthStore } from '@/stores/authStore'
 import { useBrandingStore } from '@/stores/brandingStore'
@@ -18,6 +18,7 @@ export function AuthGate({ children }: PropsWithChildren) {
   const setRoute = useUiStore((state) => state.setRoute)
   const { loadConversations } = useChat()
   const hasRestored = useRef(false)
+  const [isRestoringAuth, setIsRestoringAuth] = useState(true)
 
   useEffect(() => {
     if (hasRestored.current) {
@@ -30,6 +31,12 @@ export function AuthGate({ children }: PropsWithChildren) {
     // tenant info if a session is still valid.
     void useBrandingStore.getState().restoreFromDisk()
     void restoreFromStorage()
+      .catch((err) => {
+        console.warn('[auth] restore from storage failed:', err)
+      })
+      .finally(() => {
+        setIsRestoringAuth(false)
+      })
   }, [restoreFromStorage])
 
   // Load conversation history once the user is authenticated
@@ -60,7 +67,7 @@ export function AuthGate({ children }: PropsWithChildren) {
     }
   }, [isLoggedIn, redirectFrom, setRoute])
 
-  if (isAuthPending) {
+  if (isRestoringAuth && isAuthPending) {
     return <FullscreenLoader />
   }
 

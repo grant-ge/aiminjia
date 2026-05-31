@@ -19,6 +19,10 @@ import { useChannelStore } from './channelStore'
 import { useUiStore } from './uiStore'
 import type { ChannelPlatformState } from '@/lib/tauri'
 
+interface PlatformStatePayload {
+  state: ChannelPlatformState
+}
+
 function platformState(overrides: Partial<ChannelPlatformState> = {}): ChannelPlatformState {
   return {
     platform: 'dingtalk',
@@ -202,14 +206,37 @@ describe('channelStore platform domain', () => {
     expect(channelGetConversationsMock).toHaveBeenCalled()
   })
 
+  it('initChannelListeners refreshes snapshots when listeners already exist after account switch', async () => {
+    const { initChannelListeners } = await import('./channelStore')
+    const tauriMod = await import('@/lib/tauri')
+    const channelGetPlatformsMock = tauriMod.channelGetPlatforms as ReturnType<typeof vi.fn>
+    const channelGetConversationsMock = tauriMod.channelGetConversations as ReturnType<typeof vi.fn>
+
+    channelGetPlatformsMock.mockResolvedValueOnce([platformState()])
+    channelGetConversationsMock.mockResolvedValueOnce([])
+    await initChannelListeners()
+
+    channelGetPlatformsMock.mockClear()
+    channelGetConversationsMock.mockClear()
+    channelGetPlatformsMock.mockResolvedValueOnce([
+      platformState({ connection: 'disconnected', enabled: false }),
+    ])
+    channelGetConversationsMock.mockResolvedValueOnce([])
+
+    await initChannelListeners()
+
+    expect(channelGetPlatformsMock).toHaveBeenCalled()
+    expect(channelGetConversationsMock).toHaveBeenCalled()
+  })
+
   it('platform-state event triggers loadConversations refresh', async () => {
     const tauriMod = await import('@/lib/tauri')
     const onChannelPlatformStateMock = tauriMod.onChannelPlatformState as ReturnType<typeof vi.fn>
     const channelGetConversationsMock = tauriMod.channelGetConversations as ReturnType<typeof vi.fn>
 
-    let capturedHandler: ((p: any) => void) | null = null
-    onChannelPlatformStateMock.mockImplementation((handler: (p: any) => void) => {
-      capturedHandler = handler
+    const capturedHandlers: Array<(p: PlatformStatePayload) => void> = []
+    onChannelPlatformStateMock.mockImplementation((handler: (p: PlatformStatePayload) => void) => {
+      capturedHandlers.push(handler)
       return Promise.resolve(() => {})
     })
     channelGetConversationsMock.mockResolvedValue([])
@@ -218,7 +245,11 @@ describe('channelStore platform domain', () => {
     await initChannelListeners()
 
     channelGetConversationsMock.mockClear()
-    ;(capturedHandler as ((payload: any) => void) | null)?.({
+    const handler = capturedHandlers[0]
+    if (!handler) {
+      throw new Error('platform-state handler was not registered')
+    }
+    handler({
       state: {
         platform: 'dingtalk',
         capability: 'available',

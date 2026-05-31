@@ -61,6 +61,20 @@ describe('LoginPage password reset', () => {
     })
   })
 
+  it('keeps backend error details when phone login fails', async () => {
+    mocks.login.mockRejectedValueOnce(new Error('Personal account not registered'))
+
+    render(<LoginPage />)
+
+    fireEvent.change(screen.getByLabelText('账号'), { target: { value: '13800138000' } })
+    fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'wrong-password' } })
+    fireEvent.click(screen.getByRole('button', { name: '登录' }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Personal account not registered')
+    expect(alert).toHaveTextContent('手机号登录仅支持个人账号；企业成员请使用 用户名@企业编号 登录')
+  })
+
   it('resets a personal password with phone verification and returns to login', async () => {
     render(<LoginPage />)
 

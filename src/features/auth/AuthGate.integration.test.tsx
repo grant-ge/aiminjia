@@ -35,6 +35,10 @@ const tauriMock = vi.hoisted(() => ({
   getConversations: vi.fn().mockResolvedValue([]),
   isAgentBusy: vi.fn().mockResolvedValue([]),
   cloudLogout: vi.fn().mockResolvedValue(undefined),
+  cloudSendSmsCode: vi.fn().mockResolvedValue(undefined),
+  cloudSendEmailCode: vi.fn().mockResolvedValue(undefined),
+  cloudRegister: vi.fn().mockResolvedValue(undefined),
+  cloudResetPassword: vi.fn().mockResolvedValue(undefined),
   syncBuiltinSkills: vi.fn().mockResolvedValue({ installed: [], skipped: [] }),
   getLastBrand: vi.fn().mockResolvedValue(null),
   saveLastBrand: vi.fn().mockResolvedValue(undefined),
@@ -73,6 +77,10 @@ describe('AuthGate', () => {
     tauriMock.updateSettings.mockResolvedValue(undefined)
     tauriMock.getConversations.mockResolvedValue([])
     tauriMock.isAgentBusy.mockResolvedValue([])
+    tauriMock.cloudSendSmsCode.mockResolvedValue(undefined)
+    tauriMock.cloudSendEmailCode.mockResolvedValue(undefined)
+    tauriMock.cloudRegister.mockResolvedValue(undefined)
+    tauriMock.cloudResetPassword.mockResolvedValue(undefined)
 
     useAuthStore.setState({
       isLoggedIn: false,
@@ -110,6 +118,94 @@ describe('AuthGate', () => {
 
     await waitFor(() => {
       expect(useUiStore.getState().route).toEqual({ kind: 'skill-center' })
+    })
+  })
+
+  it('登录密码错误时留在登录页并展示错误提示', async () => {
+    tauriMock.cloudLogin.mockRejectedValueOnce(new Error('用户名或密码错误'))
+
+    render(
+      <AuthGate>
+        <div>APP SHELL</div>
+      </AuthGate>,
+    )
+
+    fireEvent.change(await screen.findByLabelText('账号'), { target: { value: 'demo@org' } })
+    fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'wrong-password' } })
+    fireEvent.click(screen.getByRole('button', { name: '登录' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('用户名或密码错误')
+    expect(screen.queryByTestId('fullscreen-loader')).not.toBeInTheDocument()
+    expect(screen.queryByText('APP SHELL')).not.toBeInTheDocument()
+  })
+
+  it('个人手机号注册完成后使用同一凭证自动登录', async () => {
+    render(
+      <AuthGate>
+        <div>APP SHELL</div>
+      </AuthGate>,
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: '立即注册' }))
+    fireEvent.change(screen.getByLabelText('手机号'), { target: { value: '13800138000' } })
+    fireEvent.click(screen.getByRole('button', { name: '获取验证码' }))
+
+    await waitFor(() => {
+      expect(tauriMock.cloudSendSmsCode).toHaveBeenCalledWith('13800138000')
+    })
+
+    fireEvent.change(screen.getByLabelText('验证码'), { target: { value: '123456' } })
+    fireEvent.change(screen.getByLabelText('昵称（可选）'), { target: { value: 'Tester' } })
+    fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'newpass123' } })
+    fireEvent.click(screen.getByRole('button', { name: '注册' }))
+
+    await waitFor(() => {
+      expect(tauriMock.cloudRegister).toHaveBeenCalledWith({
+        method: 'phone',
+        phone: '13800138000',
+        email: '',
+        code: '123456',
+        password: 'newpass123',
+        name: 'Tester',
+      })
+      expect(tauriMock.cloudLogin).toHaveBeenCalledWith('13800138000', 'newpass123')
+    })
+  })
+
+  it('找回密码完成后可用新密码登录', async () => {
+    render(
+      <AuthGate>
+        <div>APP SHELL</div>
+      </AuthGate>,
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: '忘记密码？' }))
+    fireEvent.change(screen.getByLabelText('手机号'), { target: { value: '13800138000' } })
+    fireEvent.click(screen.getByRole('button', { name: '获取验证码' }))
+
+    await waitFor(() => {
+      expect(tauriMock.cloudSendSmsCode).toHaveBeenCalledWith('13800138000')
+    })
+
+    fireEvent.change(screen.getByLabelText('验证码'), { target: { value: '654321' } })
+    fireEvent.change(screen.getByLabelText('新密码'), { target: { value: 'newpass456' } })
+    fireEvent.click(screen.getByRole('button', { name: '重置密码' }))
+
+    await waitFor(() => {
+      expect(tauriMock.cloudResetPassword).toHaveBeenCalledWith({
+        method: 'phone',
+        phone: '13800138000',
+        email: '',
+        code: '654321',
+        password: 'newpass456',
+      })
+    })
+
+    fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'newpass456' } })
+    fireEvent.click(screen.getByRole('button', { name: '登录' }))
+
+    await waitFor(() => {
+      expect(tauriMock.cloudLogin).toHaveBeenCalledWith('13800138000', 'newpass456')
     })
   })
 
