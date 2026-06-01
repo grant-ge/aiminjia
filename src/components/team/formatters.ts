@@ -33,10 +33,10 @@ export function formatShortDateTime(iso: string): string {
   return DATE_TIME_FORMATTER.format(d)
 }
 
-/** "11:24 – 11:38" or "11:24 – 进行中" */
-export function formatDuration(start: string, end: string | null): string {
+/** "11:24 – 11:38" or "11:24 – Live" */
+export function formatDuration(start: string, end: string | null, liveLabel = 'Live'): string {
   const s = formatClock(start)
-  if (!end) return `${s} – 进行中`
+  if (!end) return `${s} – ${liveLabel}`
   return `${s} – ${formatClock(end)}`
 }
 

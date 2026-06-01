@@ -607,7 +607,15 @@
     "input": "Input",
     "output": "Output",
     "live": "Live output",
-    "liveBytes": "Received {{bytes}}"
+    "liveBytes": "Received {{bytes}}",
+    "showMore": "Show more",
+    "showMoreLines_one": "Show {{count}} more line",
+    "showMoreLines_other": "Show {{count}} more lines",
+    "collapse": "Collapse"
+  },
+  "userMessage": {
+    "expandAll": "Expand all",
+    "collapse": "Collapse"
   },
   "toolGroupSummary": {
     "bucket": {
@@ -818,6 +826,8 @@
     "syncUpToDate": "Up to date",
     "syncFailed": "Sync failed",
     "conversationTitle": "Expert Team: {{name}}",
+    "startFailed": "Could not start expert team",
+    "createConversationFailed": "Could not create the conversation. Please try again.",
     "startTeam": "Start {{name}}",
     "openTableHint": "Director invites experts by topic",
     "members": "Members",
@@ -1044,6 +1054,42 @@
       "live": "Live",
       "dismissed": "Dismissed",
       "dismissedAt": "Dismissed at {{time}}"
+    },
+    "process": {
+      "title": "Team process",
+      "emptySubtitle": "No team records",
+      "emptyBody": "No team has been created in this conversation yet.",
+      "sessionCount_one": "{{count}} team session",
+      "sessionCount_other": "{{count}} team sessions",
+      "jumpToBottom": "Jump to bottom",
+      "close": "Close team panel",
+      "viewMemberProcess": "View {{name}} process",
+      "viewMemberFullProcess": "View {{name}} full process",
+      "noMemberTranscript": "{{name}} (no drill-down record)"
+    },
+    "progress": {
+      "memberCount_one": "{{count}} member",
+      "memberCount_other": "{{count}} members",
+      "messageCount_one": "{{count}} message",
+      "messageCount_other": "{{count}} messages",
+      "viewProcess": "View process →"
+    },
+    "detail": {
+      "back": "← Back",
+      "subtitle": "Full internal process",
+      "loading": "Loading…",
+      "empty": "No visible records for this member",
+      "systemReminder": "Role instructions",
+      "received": "Received",
+      "receivedFrom": "Received from {{name}}",
+      "sentTo": "Sent to {{name}}",
+      "parseHint": "Parse note",
+      "rawData": "Raw data",
+      "parseWarnings": {
+        "emptyJsonText": "JSON has type=text but text/content is empty",
+        "jsonLikeFailed": "JSON-like string could not be parsed; showing original string",
+        "unknownStructure": "Unknown structure; showing JSON"
+      }
     },
     "chat": {
       "empty": "No team chat yet",

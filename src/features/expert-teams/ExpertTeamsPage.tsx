@@ -69,8 +69,8 @@ export function ExpertTeamsPage() {
     } catch (err) {
       pushNotification({
         level: 'error',
-        title: '无法启动专家团',
-        message: err instanceof Error ? err.message : '创建会话失败，请重试。',
+        title: t('ExpertTeams.startFailed'),
+        message: err instanceof Error ? err.message : t('ExpertTeams.createConversationFailed'),
         actions: [],
         dismissible: true,
         context: 'toast',

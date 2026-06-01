@@ -1,4 +1,6 @@
 import { useMemo, useState } from 'react'
+import type { TFunction } from 'i18next'
+import { useTranslation } from 'react-i18next'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 
 import { AssistantMarkdown } from '@/components/chat-scene/AssistantMarkdown'
@@ -87,6 +89,7 @@ export function TeammateDetailPanel({
   agentName,
   onBack,
 }: TeammateDetailPanelProps) {
+  const { t } = useTranslation()
   const { entries, loading } = useTeammateTranscript(conversationId, agentId)
   const groups = useMemo(() => groupEntries(entries ?? []), [entries])
   const chatWidthMode = useSettingsStore((s) => s.chatWidthMode ?? 'full')
@@ -95,12 +98,12 @@ export function TeammateDetailPanel({
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2 border-b border-border px-4 py-3">
         <Button variant="ghost" size="sm" onClick={onBack} className="h-7 px-2 text-xs">
-          ← 返回
+          {t('team.detail.back')}
         </Button>
         <AgentAvatar name={agentName} size="md" />
         <div className="flex min-w-0 flex-col">
           <span className="truncate text-sm font-medium text-foreground">{agentName}</span>
-          <span className="text-[11px] text-muted-foreground">完整内部过程</span>
+          <span className="text-[11px] text-muted-foreground">{t('team.detail.subtitle')}</span>
         </div>
       </div>
 
@@ -108,12 +111,12 @@ export function TeammateDetailPanel({
         <div className={chatWidthMode === 'centered' ? 'mx-auto w-full max-w-[736px]' : 'w-full'}>
           {loading && (
             <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
-              加载中…
+              {t('team.detail.loading')}
             </div>
           )}
           {!loading && groups.length === 0 && (
             <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
-              该成员没有可见记录
+              {t('team.detail.empty')}
             </div>
           )}
           {!loading && groups.length > 0 && (
@@ -137,6 +140,7 @@ function GroupView({ group }: { group: Group }) {
 }
 
 function SystemReminderBlock({ text }: { text: string }) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   return (
     <div className="rounded-md border border-border bg-muted/40">
@@ -146,7 +150,7 @@ function SystemReminderBlock({ text }: { text: string }) {
         className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted-foreground hover:bg-muted/60"
       >
         {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-        <span>角色说明</span>
+        <span>{t('team.detail.systemReminder')}</span>
         <span className="ml-auto opacity-60">system</span>
       </button>
       {open && (
@@ -159,8 +163,11 @@ function SystemReminderBlock({ text }: { text: string }) {
 }
 
 function IncomingBubble({ text, from, raw }: { text: string; from: string | null; raw: unknown }) {
-  const header = from ? `接收到 ${from}` : '接收到'
-  const parsed = parseMessage(text)
+  const { t } = useTranslation()
+  const header = from
+    ? t('team.detail.receivedFrom', { name: from })
+    : t('team.detail.received')
+  const parsed = parseMessage(text, t)
   return (
     <MessageCard
       header={header}
@@ -246,12 +253,13 @@ function ToolChip({ call }: { call: ToolCallView }) {
 }
 
 function OutgoingBubble({ call }: { call: ToolCallView }) {
+  const { t } = useTranslation()
   const args = (call.args ?? {}) as { to?: unknown; message?: unknown }
   const to = typeof args.to === 'string' ? args.to : '?'
-  const parsed = parseMessage(args.message)
+  const parsed = parseMessage(args.message, t)
   return (
     <MessageCard
-      header={`发送给 ${to}`}
+      header={t('team.detail.sentTo', { name: to })}
       tone="outgoing"
       parsed={parsed}
       raw={args.message}
@@ -273,7 +281,7 @@ interface ParsedMessage {
   warning: string | null
 }
 
-function parseMessage(v: unknown): ParsedMessage {
+function parseMessage(v: unknown, t: TFunction): ParsedMessage {
   if (v == null) return { text: '', empty: true, warning: null }
   if (typeof v === 'string') {
     // Try one layer of "looks-like-JSON" unwrap so a stringified content block
@@ -284,11 +292,11 @@ function parseMessage(v: unknown): ParsedMessage {
         const parsed = JSON.parse(trimmed) as unknown
         const inner = stringify(parsed)
         if (inner.trim().length === 0) {
-          return { text: '', empty: true, warning: 'JSON 内含 type=text 但 text/content 为空' }
+          return { text: '', empty: true, warning: t('team.detail.parseWarnings.emptyJsonText') }
         }
         return { text: inner, empty: false, warning: null }
       } catch {
-        return { text: v, empty: false, warning: 'JSON-like 字符串解析失败，回退到原字符串' }
+        return { text: v, empty: false, warning: t('team.detail.parseWarnings.jsonLikeFailed') }
       }
     }
     return v.length === 0
@@ -299,7 +307,7 @@ function parseMessage(v: unknown): ParsedMessage {
   if (out.trim().length === 0) return { text: '', empty: true, warning: null }
   // stringify fell through to JSON.stringify ⇒ unknown shape, flag it.
   if (out.startsWith('{') || out.startsWith('[')) {
-    return { text: out, empty: false, warning: '未识别的结构，按 JSON 显示' }
+    return { text: out, empty: false, warning: t('team.detail.parseWarnings.unknownStructure') }
   }
   return { text: out, empty: false, warning: null }
 }
@@ -312,6 +320,7 @@ interface MessageCardProps {
 }
 
 function MessageCard({ header, tone, parsed, raw }: MessageCardProps) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const bodyClass =
     tone === 'incoming'
@@ -326,13 +335,13 @@ function MessageCard({ header, tone, parsed, raw }: MessageCardProps) {
             className="rounded bg-warning/15 px-1.5 py-0.5 text-[10px] font-medium normal-case tracking-normal text-warning"
             title={parsed.warning}
           >
-            解析提示
+            {t('team.detail.parseHint')}
           </span>
         )}
       </div>
       <div className="px-3 py-2 text-sm">
         {parsed.empty ? (
-          <span className="text-xs italic text-muted-foreground">（空消息）</span>
+          <span className="text-xs italic text-muted-foreground">{t('team.chat.emptyText')}</span>
         ) : (
           <AssistantMarkdown text={parsed.text} />
         )}
@@ -347,7 +356,7 @@ function MessageCard({ header, tone, parsed, raw }: MessageCardProps) {
         ) : (
           <ChevronRight className="h-3.5 w-3.5" />
         )}
-        <span>原始数据</span>
+        <span>{t('team.detail.rawData')}</span>
         {parsed.warning && (
           <span className="ml-auto text-[10px] font-medium normal-case tracking-normal text-warning">
             {parsed.warning}
