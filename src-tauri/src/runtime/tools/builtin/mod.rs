@@ -13,6 +13,7 @@ pub mod network;
 pub mod powershell;
 #[cfg(windows)]
 pub mod powershell_detect;
+pub mod refresh_skills;
 pub mod send_message;
 pub mod shell_common;
 pub mod spawn_subagent;

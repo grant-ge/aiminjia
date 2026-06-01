@@ -104,3 +104,52 @@ fn miss_retry_throttle_prevents_rapid_repeat_refresh() {
     // 5 次连续调用应该只触发 1 次实际 refresh（throttle 生效）
     assert_eq!(probe.count(), 1, "throttle should suppress rapid retries");
 }
+
+/// 验证 refresh_skill_registry 函数确实把磁盘新增的 SKILL.md
+/// 同步到 registry（这是 RefreshSkillsTool 内部调用的核心 fn）。
+#[test]
+fn refresh_registry_picks_up_disk_changes() {
+    let tmp = TempDir::new().unwrap();
+    let user_dir = tmp.path().join("users").join("scope_x").join("skills");
+    let global_dir = tmp.path().join("skills");
+    fs::create_dir_all(&user_dir).unwrap();
+    fs::create_dir_all(&global_dir).unwrap();
+
+    let registry = Arc::new(Mutex::new(SkillRegistry::new()));
+    let roots: Vec<PathBuf> = vec![user_dir.clone(), global_dir.clone()];
+
+    // 初始空
+    let loaded = load_skill_roots(&roots).unwrap();
+    registry
+        .lock()
+        .unwrap()
+        .replace_all(loaded.into_values().collect());
+    assert_eq!(registry.lock().unwrap().skill_ids().len(), 0);
+
+    // 写 3 个 skill
+    for id in &["alpha", "beta", "gamma"] {
+        let d = user_dir.join(id);
+        fs::create_dir_all(&d).unwrap();
+        fs::write(
+            d.join("SKILL.md"),
+            format!(
+                "---\nname: {}\ndescription: test {}\n---\n# {}\n\nbody\n",
+                id, id, id
+            ),
+        )
+        .unwrap();
+    }
+
+    // 模拟 refresh
+    let loaded = load_skill_roots(&roots).unwrap();
+    registry
+        .lock()
+        .unwrap()
+        .replace_all(loaded.into_values().collect());
+
+    let ids = registry.lock().unwrap().skill_ids();
+    assert_eq!(ids.len(), 3, "should see all 3 skills after refresh");
+    for id in &["alpha", "beta", "gamma"] {
+        assert!(ids.iter().any(|s| s == id), "missing skill {}", id);
+    }
+}

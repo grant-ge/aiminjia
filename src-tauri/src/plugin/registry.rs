@@ -124,6 +124,8 @@ const REQUEST_SCOPED_RUNTIME_TOOL_NAMES: &[&str] = &[
     "cancel_agenda_item",
     "skip_occurrence",
     "list_agenda_occurrences",
+    // refresh_skills — request-scoped because it needs AppHandle from ctx
+    "refresh_skills",
 ];
 
 /// Info about a registered tool (for management UI).
@@ -1029,6 +1031,13 @@ impl ToolRegistry {
             | "list_agenda_occurrences" => {
                 let deps = Self::try_build_agenda_deps(ctx)?;
                 Some(Self::make_agenda_tool(name, deps))
+            }
+            "refresh_skills" => {
+                let app = ctx.app_handle.as_ref()?;
+                Some(Arc::new(builtin::refresh_skills::RefreshSkillsTool::new(
+                    Arc::new(app.clone()),
+                ))
+                    as Arc<dyn crate::runtime::tools::RuntimeTool>)
             }
             _ => None,
         }
