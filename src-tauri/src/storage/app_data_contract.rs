@@ -416,6 +416,32 @@ mod tests {
     }
 
     #[test]
+    fn old_version_root_entries_left_in_place_are_non_blocking() {
+        let report = audit_root_entries([
+            "config.json",
+            "permissions.json",
+            "mcp_servers.json",
+            "agent_invocations.json",
+            "conversations",
+            "index.json",
+            "shared",
+            "api-data",
+            "audit",
+            "site-profiles",
+            "screenshots",
+            "subagent_transcripts",
+            "playwright-profile",
+            "tmpImage",
+            "temp",
+            "expert-team-templates",
+            "unknown-old-plugin-cache",
+        ]);
+
+        assert!(!report.has_blocking_violation());
+        assert_eq!(report.review_only, vec!["unknown-old-plugin-cache"]);
+    }
+
+    #[test]
     fn stable_root_whitelist_excludes_transitional_profile() {
         let stable: BTreeSet<_> = stable_root_entries().into_iter().collect();
 
