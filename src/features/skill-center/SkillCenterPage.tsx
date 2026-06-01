@@ -13,7 +13,7 @@ import { getSkillCategoryBg, getSkillIconComponent } from '@/components/skills/s
 import { Button } from '@/components/ui/button'
 import { SKILL_CATEGORIES, type SkillCategoryId } from '@/data/skill-categories'
 import { useChat } from '@/hooks/useChat'
-import { syncBuiltinSkills } from '@/lib/tauri'
+import { refreshSkillRegistry, syncBuiltinSkills } from '@/lib/tauri'
 import { localizeSkill } from '@/lib/skillLocalization'
 import { useAuthStore } from '@/stores/authStore'
 import { useNotificationStore } from '@/stores/notificationStore'
@@ -272,6 +272,14 @@ export function SkillCenterPage() {
       handleLoadError(error)
     }
   }, [reload])
+
+  useEffect(() => {
+    // SkillCenter 打开时主动刷一次 registry，让用户手动 cp 装的 skill
+    // 也能立刻可见。失败不影响 UI（registry 是上一次的状态）。
+    refreshSkillRegistry().catch((err) => {
+      console.warn('[SkillCenterPage] refresh skill registry failed:', err)
+    })
+  }, [])
 
   useEffect(() => {
     void reload().catch(handleLoadError)
