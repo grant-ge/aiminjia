@@ -7,6 +7,7 @@ use app_lib::runtime::cancellation::{CancellationReason, CancellationToken};
 use app_lib::runtime::ids::{RunId, SessionId};
 use app_lib::runtime::tools::builtin::bash::BashTool;
 use app_lib::runtime::tools::capability::CapabilityContext;
+use app_lib::runtime::tools::executor::ToolError;
 use app_lib::runtime::tools::permission::PermissionDecision;
 use app_lib::runtime::tools::{RuntimeTool, ToolExecutionContext};
 use serde_json::json;
@@ -53,6 +54,72 @@ async fn bash_returns_error_for_nonzero_exit_code() {
         err.contains("42") || err.contains("exit code"),
         "error should mention exit code: {err}"
     );
+}
+
+#[tokio::test]
+async fn bash_surfaces_dws_pat_no_permission_as_ask_required() {
+    let tmp = TempDir::new().unwrap();
+    let ctx = make_ctx(&tmp);
+
+    let tool = BashTool;
+    let result = tool
+        .execute(
+            json!({
+                "command": r#"dws() { return 0; }; dws chat message send; printf '%s\n' '{"success":false,"code":"PAT_HIGH_RISK_NO_PERMISSION","data":{"flowId":"flow-1","authorizationUrl":"https://example.test/auth?flow=flow-1","requiredScopes":["chat.message:send"]}}'; exit 4"#
+            }),
+            ctx,
+        )
+        .await;
+
+    let Err(ToolError::AskRequired(PermissionDecision::Ask {
+        message,
+        suggestions,
+        remember_options,
+        default_destination,
+        ..
+    })) = result
+    else {
+        panic!("expected DWS PAT failure to surface as AskRequired, got: {result:?}");
+    };
+
+    assert!(message.contains("chat.message:send"));
+    assert!(message.contains("https://example.test/auth?flow=flow-1"));
+    assert!(message.contains("flow-1"));
+    assert!(
+        suggestions
+            .iter()
+            .any(|suggestion| suggestion.contains("重放原命令")),
+        "suggestions should guide replay after auth: {suggestions:?}"
+    );
+    assert_eq!(
+        remember_options,
+        vec![app_lib::runtime::tools::permission::PermissionDestination::Session]
+    );
+    assert_eq!(
+        default_destination,
+        Some(app_lib::runtime::tools::permission::PermissionDestination::Session)
+    );
+}
+
+#[tokio::test]
+async fn bash_does_not_intercept_non_dws_pat_like_json() {
+    let tmp = TempDir::new().unwrap();
+    let ctx = make_ctx(&tmp);
+
+    let tool = BashTool;
+    let result = tool
+        .execute(
+            json!({
+                "command": r#"printf '%s\n' '{"success":false,"code":"PAT_HIGH_RISK_NO_PERMISSION","data":{"authorizationUrl":"https://example.test/auth","requiredScopes":["chat.message:send"]}}'; exit 4"#
+            }),
+            ctx,
+        )
+        .await;
+
+    let Err(ToolError::ExecutionFailed(message)) = result else {
+        panic!("expected non-DWS PAT-like output to remain ExecutionFailed, got: {result:?}");
+    };
+    assert!(message.contains("PAT_HIGH_RISK_NO_PERMISSION"));
 }
 
 #[tokio::test]

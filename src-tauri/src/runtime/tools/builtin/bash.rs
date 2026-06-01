@@ -109,6 +109,160 @@ fn command_with_merged_stderr(command: &str) -> String {
     format!("{{\n{command}\n}} 2>&1")
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DwsPatPermissionAsk {
+    authorization_url: String,
+    flow_id: Option<String>,
+    required_scopes: Vec<String>,
+}
+
+fn command_mentions_dws(command: &str) -> bool {
+    command
+        .split(|ch: char| {
+            ch.is_whitespace() || matches!(ch, ';' | '&' | '|' | '(' | ')' | '{' | '}')
+        })
+        .any(|token| token == "dws" || token.ends_with("/dws"))
+}
+
+fn string_field<'a>(value: &'a Value, names: &[&str]) -> Option<&'a str> {
+    names
+        .iter()
+        .find_map(|name| value.get(*name).and_then(Value::as_str))
+        .filter(|s| !s.trim().is_empty())
+}
+
+fn string_array_field(value: &Value, names: &[&str]) -> Vec<String> {
+    for name in names {
+        let Some(field) = value.get(*name) else {
+            continue;
+        };
+        if let Some(items) = field.as_array() {
+            return items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(ToOwned::to_owned)
+                .collect();
+        }
+        if let Some(single) = field.as_str() {
+            let single = single.trim();
+            if !single.is_empty() {
+                return vec![single.to_string()];
+            }
+        }
+    }
+    Vec::new()
+}
+
+fn parse_json_object_candidate(text: &str) -> Option<Value> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if let Ok(value) = serde_json::from_str::<Value>(trimmed) {
+        return Some(value);
+    }
+    let start = trimmed.find('{')?;
+    let end = trimmed.rfind('}')?;
+    if end <= start {
+        return None;
+    }
+    serde_json::from_str::<Value>(&trimmed[start..=end]).ok()
+}
+
+fn parse_dws_pat_permission_ask(output: &str) -> Option<DwsPatPermissionAsk> {
+    let mut candidates = Vec::new();
+    if let Some(value) = parse_json_object_candidate(output) {
+        candidates.push(value);
+    }
+    for line in output.lines() {
+        if let Some(value) = parse_json_object_candidate(line) {
+            candidates.push(value);
+        }
+    }
+
+    for value in candidates {
+        let code = string_field(&value, &["code", "errorCode"])?;
+        if code != "PAT_HIGH_RISK_NO_PERMISSION" {
+            continue;
+        }
+
+        let data = value.get("data").unwrap_or(&value);
+        let authorization_url = string_field(
+            data,
+            &[
+                "authorizationUrl",
+                "authorization_url",
+                "authUrl",
+                "url",
+                "uri",
+            ],
+        )
+        .or_else(|| {
+            string_field(
+                &value,
+                &[
+                    "authorizationUrl",
+                    "authorization_url",
+                    "authUrl",
+                    "url",
+                    "uri",
+                ],
+            )
+        })?
+        .to_string();
+        let flow_id = string_field(data, &["flowId", "flow_id"])
+            .or_else(|| string_field(&value, &["flowId", "flow_id"]))
+            .map(ToOwned::to_owned);
+        let required_scopes = string_array_field(
+            data,
+            &[
+                "requiredScopes",
+                "required_scopes",
+                "requiredScope",
+                "scope",
+            ],
+        );
+
+        return Some(DwsPatPermissionAsk {
+            authorization_url,
+            flow_id,
+            required_scopes,
+        });
+    }
+
+    None
+}
+
+fn dws_pat_permission_decision(ask: DwsPatPermissionAsk) -> PermissionDecision {
+    let scopes = if ask.required_scopes.is_empty() {
+        "未知高风险权限".to_string()
+    } else {
+        ask.required_scopes.join(", ")
+    };
+    let flow = ask
+        .flow_id
+        .as_deref()
+        .map(|flow_id| format!("\nFlow ID: {flow_id}"))
+        .unwrap_or_default();
+
+    PermissionDecision::Ask {
+        message: format!(
+            "钉钉 DWS 命令需要完成高风险权限授权后才能继续。\n\n需要权限: {scopes}\n授权链接: {url}{flow}\n\n请先在浏览器打开并完成这个授权链接，然后点击“允许”。AIjia 会重放同一个原始 Bash 命令，不会把该授权错误交给模型重新生成新流程。",
+            url = ask.authorization_url,
+        ),
+        suggestions: vec![
+            "先在浏览器完成钉钉授权".to_string(),
+            "授权后点击允许以重放原命令".to_string(),
+        ],
+        remember_options: vec![crate::runtime::tools::permission::PermissionDestination::Session],
+        default_destination: Some(crate::runtime::tools::permission::PermissionDestination::Session),
+        reason: PermissionReason::Other("dws_pat_high_risk_no_permission".to_string()),
+        path_auth_scope: None,
+    }
+}
+
 #[cfg(unix)]
 fn configure_child_process_group(command: &mut Command) {
     unsafe {
@@ -361,6 +515,11 @@ impl RuntimeTool for BashTool {
                     semantics.is_error,
                 );
                 if semantics.is_error {
+                    if command_mentions_dws(&command) {
+                        if let Some(ask) = parse_dws_pat_permission_ask(&combined_output) {
+                            return Err(ToolError::AskRequired(dws_pat_permission_decision(ask)));
+                        }
+                    }
                     return Err(ToolError::ExecutionFailed(format_command_failure(
                         &command,
                         exit_code,
