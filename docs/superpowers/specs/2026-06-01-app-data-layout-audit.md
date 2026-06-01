@@ -80,6 +80,7 @@
 | `playwright-profile/` | Playwright 当前仍使用 root profile；老用户升级必须保留可读 fallback | profile 写入和读取迁到 `users/{scope}/playwright-profile/`，确认 Chromium lock/crash recovery 语义不变 |
 | `site-profiles/` | 已有 user scope 迁移，但 root fallback 和 legacy cleanup 仍存在 | 确认所有 site profile 写入走 user scope |
 | `subagent_transcripts/` | 部分路径已有 user scope fallback，root 仍作为未登录/legacy 兜底 | 子代理输出在未登录态 no-op，不再 root fallback |
+| `config.json` | `data_version` 仍读取旧 `cloud_auth` blob 以修复 0.3/0.4 升级登录状态 | 所有旧 auth recovery 检查迁入 `global/` 后再移除 |
 | `api-data/`, `audit/`, `shared/`, `conversations/`, `index.json` | 老 root-flat 会话体系的兼容残留 | `legacyRootArchived` 覆盖完成并验证用户级数据完整 |
 
 ## Current Root Entries
@@ -263,9 +264,34 @@ IM channel downloads currently resolve to `~/.renlijia/tmp/{platform}_downloads/
 
 These are user-private by product semantics, but current fallback protects pre-auth and old-user startup. They should be moved only after the runtime has clear unauthenticated behavior: no-op for user-private writes, read-only legacy fallback for one version, then archive.
 
+### Legacy Auth Config Is Upgrade-Only
+
+`data_version` still references root `config.json` to detect and recover old `cloud_auth` blobs from 0.3/0.4-era installs. This is not a stable root entry; it is a transitional compatibility file. The contract keeps it registered so CI does not hide the fallback, while production startup can continue to recover old users without requiring manual cleanup.
+
+## Directory Contract And Strong Validation
+
+This audit now has a code-backed contract in `src-tauri/src/storage/app_data_contract.rs`.
+
+The contract is the single source of truth for root entries:
+
+- `StableRoot`: long-term allowed root entries such as `global/`, `users/`, `logs/`, `tmp/`.
+- `TransitionalRoot`: old-version compatibility entries that stay readable but need an exit condition, such as `playwright-profile/`, `permissions.json`, `config.json`, `screenshots/`.
+- `WorkspaceArtifact`: user-visible root artifacts that must move into workspace import folders.
+- `Temporary`: regenerable legacy temp data, such as `tmpImage/`.
+- `DeprecatedArchiveCandidate`: obsolete layouts such as `expert-team-templates/`.
+- `ReviewOnly`: unknown entries seen on a user's machine; never block startup.
+
+Strong validation is intentionally split by environment:
+
+1. Development / CI: hard fail if production code outside the storage gateway adds a direct root join that is not declared in the contract.
+2. Production startup: never hard fail on old user directories; classify unknown entries as `ReviewOnly` and emit audit evidence only.
+3. Migration PRs: can only move or archive entries whose contract declares owner, target, and upgrade policy.
+
+The current source scan covers direct root joins like `aijia_home.root().join("...")` and `get_aijia_home_dir().join("...")` outside `storage/aijia_home.rs`. This immediately prevents new untracked root entries while preserving old-version upgrade fallback.
+
 ## Proposed Iteration Sequence
 
-### PR 0: Audit Only
+### PR 0: Audit + Contract Guard
 
 Current scope.
 
@@ -273,6 +299,8 @@ Current scope.
 - Document every current root entry.
 - Document product owner and code owner.
 - Decide whether each entry is keep, migrate, archive, TTL, or review-only.
+- Add code-backed root entry contract.
+- Add CI-testable source scan for direct root joins outside the storage gateway.
 - No runtime behavior change.
 
 ### PR 1: Low-Risk Hygiene
@@ -317,6 +345,7 @@ Current scope.
 4. Any temporary file must live under `tmp/` and have TTL.
 5. Any root fallback must include an exit condition in docs.
 6. Any new root entry requires updating storage conventions and this audit class table.
+7. Any direct root path join outside the storage gateway must be declared in `app_data_contract`.
 
 ## Immediate Recommendation
 
@@ -327,4 +356,4 @@ Product decisions captured on 2026-06-01:
 - `logs/` remain app-global; implement size/retention governance, not user scoping.
 - `playwright-profile/` should be user-isolated; keep root as legacy fallback until a later migration PR handles Chromium profile safety.
 
-With these decisions, PR 1 can safely start with low-risk hygiene and updated whitelist checks, still without touching sensitive user business data.
+With these decisions and the contract guard, PR 1 can safely start with low-risk hygiene and updated whitelist checks, still without touching sensitive user business data.

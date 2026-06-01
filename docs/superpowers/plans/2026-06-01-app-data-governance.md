@@ -10,14 +10,29 @@
 
 ---
 
-## Scope Update: 2026-06-01 Audit-Only Slice
+## Scope Update: 2026-06-01 Audit + Contract Guard Slice
 
-The user approved the direction but narrowed today's work to directory audit report enhancement. Do not implement runtime cleanup or migration in this slice. First produce and review:
+The user approved the direction and expanded today's work from directory audit report enhancement to include a code-backed directory contract. Do not implement runtime cleanup or migration in this slice. First produce and review:
 
 - `docs/superpowers/specs/2026-06-01-app-data-layout-audit.md`
 - updated references in the design doc
+- `src-tauri/src/storage/app_data_contract.rs`
 
 Implementation tasks below remain the next phase after the audit matrix is accepted.
+
+## Completed Slice: Root Directory Contract
+
+**Files:**
+- Created: `src-tauri/src/storage/app_data_contract.rs`
+- Modified: `src-tauri/src/storage/mod.rs`
+
+Implemented behavior:
+
+- Classify known root entries into `StableRoot`, `TransitionalRoot`, `WorkspaceArtifact`, `Temporary`, `DeprecatedArchiveCandidate`, and `ReviewOnly`.
+- Keep `playwright-profile` as `TransitionalRoot`, with target `users/{scope}/playwright-profile`.
+- Keep unknown old-user entries non-blocking through runtime audit classification.
+- Hard-fail tests when production code outside `storage/aijia_home.rs` adds a direct root join not declared in the contract.
+- Register legacy `config.json` as `TransitionalRoot` because `data_version` still needs it for old-version `cloud_auth` recovery.
 
 ## File Structure
 

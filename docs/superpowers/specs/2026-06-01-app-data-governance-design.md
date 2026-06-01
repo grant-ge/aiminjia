@@ -32,7 +32,7 @@
 
 ## Scope Update: Audit First
 
-2026-06-01 收敛决定：先只做目录审计报告增强，不改启动治理逻辑，不迁移真实数据。原因是 root 目录混乱背后有多轮产品和架构迭代，必须先明确白名单、产品归属、代码 owner 和退出条件，再进入自动治理。
+2026-06-01 收敛决定：先做目录审计报告增强和代码契约强校验第一版，不改启动治理逻辑，不迁移真实数据。原因是 root 目录混乱背后有多轮产品和架构迭代，必须先明确白名单、产品归属、代码 owner 和退出条件，再进入自动治理。
 
 ## Target Root Layout
 
@@ -187,7 +187,14 @@
 
 ## Architecture
 
-新增 `storage::app_data_governance`，负责三件事：
+先新增 `storage::app_data_contract`，负责把 root 条目归属变成代码里的单一事实源：
+
+- 定义 `StableRoot`、`TransitionalRoot`、`WorkspaceArtifact`、`Temporary`、`DeprecatedArchiveCandidate`、`ReviewOnly`。
+- 声明每个已知 root 条目的 owner、目标路径和老用户升级策略。
+- 在单元测试里强校验非 storage gateway 的直接 root join 必须已登记。
+- 生产启动面对未知老目录只进入 `ReviewOnly` 审计，不阻塞、不删除。
+
+后续再新增 `storage::app_data_governance`，负责三件事：
 
 - 扫描 `AiJiaHome` 根级条目并分类。
 - 执行低风险治理：日志限制、临时文件 TTL、用户产物迁移。
@@ -214,6 +221,10 @@ app setup
 
 测试必须先写失败用例，再实现：
 
+- `app_data_contract::tests::classifies_root_entries_by_contract`
+- `app_data_contract::tests::runtime_audit_keeps_old_user_unknown_entries_non_blocking`
+- `app_data_contract::tests::stable_root_whitelist_excludes_transitional_profile`
+- `app_data_contract::tests::direct_root_joins_outside_storage_gateway_must_be_contract_entries`
 - `classifies_root_entries_without_touching_unknowns`
 - `cleans_temp_files_older_than_ttl_and_keeps_recent_files`
 - `bounds_metrics_logs_without_deleting_active_files`
