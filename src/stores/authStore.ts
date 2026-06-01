@@ -13,8 +13,12 @@ import { useBillingStore } from '@/stores/billingStore'
 import { useChannelStore } from '@/stores/channelStore'
 import { useChatStore } from '@/stores/chatStore'
 import { useHomeStore } from '@/stores/homeStore'
+import { useGeneratedFilePreviewStore } from '@/stores/generatedFilePreviewStore'
+import { useInteractionStore } from '@/stores/interactionStore'
 import { useNotificationStore } from '@/stores/notificationStore'
+import { usePendingStore } from '@/stores/pendingStore'
 import { useSkillStore } from '@/stores/skillStore'
+import { useTeamStore } from '@/stores/teamStore'
 import { useUiStore, type Route } from '@/stores/uiStore'
 
 /**
@@ -86,6 +90,12 @@ const EMPTY_AUTH_STATE = {
   selectedCloudModel: null,
 }
 
+function safeAuthRedirect(route?: Route): Route | null {
+  if (!route) return null
+  if (route.kind === 'chat' || route.kind === 'channel') return null
+  return route
+}
+
 function mapAuthState(info: CloudAuthInfo, models: CloudModel[]) {
   const selectedCloudModel = models[0]?.id ?? info.models[0]?.id ?? null
   return {
@@ -110,6 +120,10 @@ function resetUserScopedFrontendState() {
   useBillingStore.getState().reset()
   useSkillStore.getState().reset()
   useHomeStore.getState().reset()
+  usePendingStore.getState().reset()
+  useInteractionStore.getState().reset()
+  useTeamStore.getState().reset()
+  useGeneratedFilePreviewStore.getState().reset()
   useNotificationStore.getState().dismissAll()
 }
 
@@ -252,9 +266,10 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   clearAndRedirect(route) {
+    resetUserScopedFrontendState()
     set({
       ...EMPTY_AUTH_STATE,
-      redirectFrom: route ?? null,
+      redirectFrom: safeAuthRedirect(route),
       isAuthPending: false,
     })
   },

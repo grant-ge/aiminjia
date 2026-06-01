@@ -9,6 +9,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use tokio::task::JoinHandle;
 
+use crate::auth::AuthDeactivationHandler;
 use crate::runtime::chat::chat_turn_driver::ChatAttachmentRef;
 use crate::runtime::chat::ChatTurnRequest;
 use crate::runtime::event_bus::RuntimeEventBus;
@@ -86,6 +87,16 @@ impl PendingQueueManager {
             .get(session_id)
             .map(|sp| sp.items.clone())
             .unwrap_or_default()
+    }
+
+    pub fn clear_all(&self) {
+        let mut guard = self.inner.lock().expect("pending mutex poisoned");
+        for sp in guard.values_mut() {
+            if let Some(handle) = sp.drain_timer.take() {
+                handle.abort();
+            }
+        }
+        guard.clear();
     }
 
     /// Enqueue the item if the session is busy; otherwise return a ChatTurnRequest
@@ -357,6 +368,13 @@ impl PendingQueueManager {
                 sp.recently_drained.pop_front();
             }
         }
+    }
+}
+
+#[async_trait]
+impl AuthDeactivationHandler for PendingQueueManager {
+    async fn on_deactivated(&self) {
+        self.clear_all();
     }
 }
 

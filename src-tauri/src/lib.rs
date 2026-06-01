@@ -18,7 +18,7 @@ use commands::settings;
 use commands::workspace;
 use std::sync::Arc;
 use storage::UserScopedPathResolver;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 const APP_LOG_RETENTION_DAYS: u64 = 3;
 
@@ -754,27 +754,14 @@ pub fn run() {
                     .inner()
                     .clone();
 
-                // Build the resolver from the active user scope, or fall back to a
-                // guest-mode scope if the user is not yet authenticated. The resolver
-                // only needs a valid path — PendingQueueManager is safe to manage even
-                // when the scope is absent (enqueue_or_send handles missing dirs).
+                // Resolve pending paths from CurrentUserStorage dynamically so
+                // same-process account switches cannot keep writing to the
+                // scope that happened to be active at app startup.
                 let pending_resolver: std::sync::Arc<dyn crate::runtime::pending::ConvDirResolver> =
-                    if let Some(ref scope) = user_scope {
-                        std::sync::Arc::new(crate::runtime::pending::AiJiaPendingResolver::new(
-                            (*aijia_home).clone(),
-                            scope.clone(),
-                        ))
-                    } else {
-                        // No active user — create a resolver over the root conversations dir.
-                        // This path is unusual (app startup with no prior login) but must not
-                        // panic. We use a synthetic "guest" scope so AiJiaHome resolves the
-                        // right directory layout.
-                        let guest_scope = crate::storage::UserScope::new(0, 0);
-                        std::sync::Arc::new(crate::runtime::pending::AiJiaPendingResolver::new(
-                            (*aijia_home).clone(),
-                            guest_scope,
-                        ))
-                    };
+                    std::sync::Arc::new(crate::runtime::pending::CurrentUserPendingResolver::new(
+                        (*aijia_home).clone(),
+                        current_user_storage.clone(),
+                    ));
 
                 let pending_manager = crate::runtime::pending::PendingQueueManager::new(
                     run_registry_ref,
@@ -839,6 +826,10 @@ pub fn run() {
                     .state::<Arc<storage::file_manager::FileManager>>()
                     .inner()
                     .clone();
+                let pending_ref = app
+                    .state::<Arc<crate::runtime::pending::PendingQueueManager>>()
+                    .inner()
+                    .clone();
                 let home_ref = aijia_home.clone();
                 let am = app.state::<Arc<auth::AuthManager>>().inner().clone();
                 tauri::async_runtime::block_on(async {
@@ -853,6 +844,12 @@ pub fn run() {
                     am.register_deactivation_handler(Arc::new(FileManagerWorkspaceResetter {
                         file_mgr: file_mgr_ref,
                         home: home_ref,
+                    }))
+                    .await;
+                    am.register_deactivation_handler(pending_ref)
+                        .await;
+                    am.register_revoked_handler(Arc::new(AuthExpiredEmitter {
+                        app: app.handle().clone(),
                     }))
                     .await;
                 });
@@ -1289,6 +1286,22 @@ struct FileManagerWorkspaceResetter {
 impl auth::AuthDeactivationHandler for FileManagerWorkspaceResetter {
     async fn on_deactivated(&self) {
         self.file_mgr.update_workspace_path(self.home.root());
+    }
+}
+
+struct AuthExpiredEmitter {
+    app: tauri::AppHandle,
+}
+
+#[async_trait::async_trait]
+impl auth::AuthRevokedHandler for AuthExpiredEmitter {
+    async fn on_revoked(&self, message: &str) {
+        let _ = self.app.emit(
+            "auth:expired",
+            serde_json::json!({
+                "message": message,
+            }),
+        );
     }
 }
 

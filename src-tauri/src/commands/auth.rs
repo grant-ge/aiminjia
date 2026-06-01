@@ -33,6 +33,7 @@ pub async fn cloud_login(
     cus: State<'_, Arc<CurrentUserStorage>>,
     home: State<'_, Arc<AiJiaHome>>,
     file_mgr: State<'_, Arc<crate::storage::file_manager::FileManager>>,
+    pending_manager: State<'_, Arc<crate::runtime::pending::PendingQueueManager>>,
     username: String,
     password: String,
 ) -> Result<CloudAuthInfo, String> {
@@ -56,6 +57,7 @@ pub async fn cloud_login(
     );
 
     if let (Some(user), Some(tenant)) = (&result.user, &result.tenant) {
+        pending_manager.clear_all();
         let scope = crate::storage::UserScope::new(tenant.id, user.id);
         let user_dir = home.user_dir(&scope);
         if let Err(e) = crate::storage::migration_user_scope::migrate_legacy_to_user_scope_if_needed(
@@ -126,6 +128,9 @@ pub async fn cloud_login(
             home.active_account_path(),
             serde_json::to_string_pretty(&active).unwrap_or_default(),
         );
+        if let Err(e) = pending_manager.restore_from_disk().await {
+            log::warn!("[cloud_login] pending restore warning: {:#}", e);
+        }
     }
 
     log::info!("[cloud_login] calling ensure_channel_manager_registered");

@@ -10,6 +10,7 @@ export interface PendingState {
   applyDrained: (sessionId: string, drainedIds: string[]) => void
   applyRemoved: (sessionId: string, itemId: string) => void
   removeItem: (sessionId: string, itemId: string) => Promise<void>
+  reset: () => void
 }
 
 export const usePendingStore = create<PendingState>((set) => ({
@@ -58,4 +59,6 @@ export const usePendingStore = create<PendingState>((set) => ({
     // Single source of truth: backend emits pending:removed; applyRemoved fires from event.
     await pendingRemoveItem(sessionId, itemId)
   },
+
+  reset: () => set({ bySession: {} }),
 }))

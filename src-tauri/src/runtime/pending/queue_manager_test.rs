@@ -141,6 +141,25 @@ async fn enqueue_busy_session_queues_and_persists() {
 }
 
 #[tokio::test]
+async fn clear_all_removes_in_memory_pending_items() {
+    let tmp = TempDir::new().unwrap();
+    let (mgr, registry) = build_manager(&tmp);
+    let session = SessionId::new("conv-clear");
+
+    use crate::runtime::ids::RunId;
+    registry
+        .reserve(session.as_str(), RunId::new("run-1"))
+        .unwrap();
+    mgr.enqueue_or_send(session.clone(), sample_item("pend-clear"))
+        .await
+        .unwrap();
+
+    mgr.clear_all();
+
+    assert!(mgr.snapshot(&session).await.is_empty());
+}
+
+#[tokio::test]
 async fn enqueue_busy_full_queue_rejects() {
     let tmp = TempDir::new().unwrap();
     let registry = Arc::new(RuntimeRunRegistry::new());

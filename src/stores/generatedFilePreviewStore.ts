@@ -7,6 +7,7 @@ interface GeneratedFilePreviewState {
   openPreview: (target: PreviewTarget) => void
   closePreview: () => void
   clearIfConversationChanged: (conversationId: string) => void
+  reset: () => void
 }
 
 export const useGeneratedFilePreviewStore = create<GeneratedFilePreviewState>((set, get) => ({
@@ -17,4 +18,5 @@ export const useGeneratedFilePreviewStore = create<GeneratedFilePreviewState>((s
     const current = get().target
     if (current && current.conversationId !== conversationId) set({ target: null })
   },
+  reset: () => set({ target: null }),
 }))

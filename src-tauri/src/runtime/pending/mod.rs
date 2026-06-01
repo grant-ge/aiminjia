@@ -7,7 +7,7 @@ pub mod queue_manager;
 pub mod store;
 pub mod types;
 
-pub use aijia_resolver::AiJiaPendingResolver;
+pub use aijia_resolver::{AiJiaPendingResolver, CurrentUserPendingResolver};
 
 pub use types::{
     EnqueueOutcome, EnqueueRejection, PendingAttachment, PendingConfig, PendingFileFormat,

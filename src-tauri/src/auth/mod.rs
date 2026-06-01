@@ -13,7 +13,7 @@ pub mod deactivation;
 pub mod device_id;
 pub mod state;
 
-pub use deactivation::AuthDeactivationHandler;
+pub use deactivation::{AuthDeactivationHandler, AuthRevokedHandler};
 
 use anyhow::{anyhow, Result};
 use chrono::Utc;
@@ -63,6 +63,7 @@ pub struct AuthManager {
     /// Registered deactivation handlers — fired after state is cleared at
     /// any of the three deactivation sites (logout, change_password, auto-401).
     deactivation_handlers: RwLock<Vec<Arc<dyn AuthDeactivationHandler>>>,
+    revoked_handlers: RwLock<Vec<Arc<dyn AuthRevokedHandler>>>,
 }
 
 impl AuthManager {
@@ -83,6 +84,7 @@ impl AuthManager {
             device_id,
             last_session_create_at: RwLock::new(None),
             deactivation_handlers: RwLock::new(Vec::new()),
+            revoked_handlers: RwLock::new(Vec::new()),
         }
     }
 
@@ -92,6 +94,10 @@ impl AuthManager {
         self.deactivation_handlers.write().await.push(h);
     }
 
+    pub async fn register_revoked_handler(&self, h: Arc<dyn AuthRevokedHandler>) {
+        self.revoked_handlers.write().await.push(h);
+    }
+
     /// Internal: fire all handlers AFTER `state` write lock is released and
     /// persistence has been cleared. Each handler runs sequentially; handlers
     /// must be idempotent and must not panic (see trait docs).
@@ -99,6 +105,13 @@ impl AuthManager {
         let handlers = self.deactivation_handlers.read().await.clone();
         for h in handlers {
             h.on_deactivated().await;
+        }
+    }
+
+    async fn fire_revoked_handlers(&self, message: &str) {
+        let handlers = self.revoked_handlers.read().await.clone();
+        for h in handlers {
+            h.on_revoked(message).await;
         }
     }
 
@@ -690,7 +703,9 @@ impl AuthManager {
             *self.state.write().await = None;
             self.clear_persisted_auth();
             self.fire_deactivation_handlers().await;
-            Err(anyhow!("登录已过期，请重新登录"))
+            let message = "登录已过期，请重新登录";
+            self.fire_revoked_handlers(message).await;
+            Err(anyhow!(message))
         } else {
             Err(anyhow!(
                 "无法获取会话密钥，请稍后重试（网络或服务器暂时不可用）"
@@ -827,6 +842,7 @@ impl AuthManager {
             device_id,
             last_session_create_at: RwLock::new(None),
             deactivation_handlers: RwLock::new(Vec::new()),
+            revoked_handlers: RwLock::new(Vec::new()),
         }
     }
 
@@ -838,6 +854,13 @@ impl AuthManager {
         *self.state.write().await = None;
         self.clear_persisted_auth();
         self.fire_deactivation_handlers().await;
+    }
+
+    pub async fn clear_state_and_fire_revoked_for_test(&self, message: &str) {
+        *self.state.write().await = None;
+        self.clear_persisted_auth();
+        self.fire_deactivation_handlers().await;
+        self.fire_revoked_handlers(message).await;
     }
 }
 
@@ -886,6 +909,15 @@ mod deactivation_chain_tests {
         }
     }
 
+    struct RevokedCounting(Arc<AtomicUsize>);
+
+    #[async_trait::async_trait]
+    impl crate::auth::deactivation::AuthRevokedHandler for RevokedCounting {
+        async fn on_revoked(&self, _message: &str) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
     #[tokio::test]
     async fn logout_triggers_registered_handlers() {
         let am = AuthManager::for_test();
@@ -895,6 +927,28 @@ mod deactivation_chain_tests {
         // Pre-populate state so logout has something to clear
         am.set_state_for_test(test_cloud_auth());
         am.logout().await;
+        assert_eq!(counter.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn logout_does_not_trigger_revoked_handlers() {
+        let am = AuthManager::for_test();
+        let counter = Arc::new(AtomicUsize::new(0));
+        am.register_revoked_handler(Arc::new(RevokedCounting(counter.clone())))
+            .await;
+        am.set_state_for_test(test_cloud_auth());
+        am.logout().await;
+        assert_eq!(counter.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn server_revocation_triggers_revoked_handlers() {
+        let am = AuthManager::for_test();
+        let counter = Arc::new(AtomicUsize::new(0));
+        am.register_revoked_handler(Arc::new(RevokedCounting(counter.clone())))
+            .await;
+        am.clear_state_and_fire_revoked_for_test("登录已过期，请重新登录")
+            .await;
         assert_eq!(counter.load(Ordering::SeqCst), 1);
     }
 

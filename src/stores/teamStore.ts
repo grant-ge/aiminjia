@@ -58,6 +58,9 @@ interface TeamStoreState {
 
   /** Hard reset for a single conversation (e.g. on conversation delete). */
   resetConversation: (conversationId: string) => void
+
+  /** Hard reset for all transient team UI state (e.g. account switch). */
+  reset: () => void
 }
 
 const EMPTY_STATE: ConversationTeamState = {
@@ -119,6 +122,7 @@ export const useTeamStore = create<TeamStoreState>((set) => ({
       delete next[conversationId]
       return { byConversation: next }
     }),
+  reset: () => set({ byConversation: {} }),
 }))
 
 /** Convenience selector: read one conversation's slice with sensible defaults. */

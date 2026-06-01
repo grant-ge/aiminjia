@@ -18,6 +18,13 @@ pub trait AuthDeactivationHandler: Send + Sync {
     async fn on_deactivated(&self);
 }
 
+#[async_trait]
+pub trait AuthRevokedHandler: Send + Sync {
+    /// Called only when the server rejects the cached credentials and the
+    /// frontend must force a re-login. Manual logout must not call this hook.
+    async fn on_revoked(&self, message: &str);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

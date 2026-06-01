@@ -6,6 +6,7 @@ interface InteractionState {
   addInteraction: (payload: InteractionRequiredPayload) => void
   removeInteraction: (interactionId: string) => void
   clearForConversation: (conversationId: string) => void
+  reset: () => void
 }
 
 export const useInteractionStore = create<InteractionState>((set) => ({
@@ -34,5 +35,9 @@ export const useInteractionStore = create<InteractionState>((set) => ({
         (interaction) => interaction.conversationId !== conversationId,
       ),
     }))
+  },
+
+  reset() {
+    set({ pendingInteractions: [] })
   },
 }))
