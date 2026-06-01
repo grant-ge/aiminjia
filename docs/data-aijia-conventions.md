@@ -30,7 +30,7 @@ e2e 脚本作者**不许**直接写：
 ```bash
 # ❌ 禁止
 tauri-pilot eval "document.querySelector('[data-aijia-conversation-row]')"
-tauri-pilot click '[data-aijia-confirm-action="confirm"]'
+tauri-pilot click '[data-aijia-dialog-action="confirm"]'
 ```
 
 这违反 e2e 铁则（见 `docs/e2e-org1-chat-mainline.md` 顶部）。脚本作者只能调 `tauri-pilot aijia <subcommand>`，selector 是子命令内部实现细节。
@@ -43,8 +43,8 @@ tauri-pilot click '[data-aijia-confirm-action="confirm"]'
 data-aijia-{业务名}[-{字段}]="{值}"
 ```
 
-- 业务名：单数 kebab-case，描述这是什么 UI 元素（`conversation-row` / `message-list` / `ai-bubble` / `streaming-bubble` / `confirm-dialog`）
-- 字段：可选，当需要额外信息时加（`conversation-id` / `message-id` / `streaming` / `confirm-action`）
+- 业务名：单数 kebab-case，描述这是什么 UI 元素（`conversation-row` / `message-list` / `ai-bubble` / `streaming-bubble` / `dialog`）
+- 字段：可选，当需要额外信息时加（`conversation-id` / `message-id` / `streaming` / `dialog-action`）
 - 值：稳定可读字符串，**不要**塞 React state（如 `data-aijia-hovered={hovered}`），那种瞬态信息应该走 DOM 树结构或 aria-* 表达
 
 ### 例子
@@ -58,9 +58,11 @@ data-aijia-{业务名}[-{字段}]="{值}"
 | `data-aijia-ai-bubble` | 标记一条 AI 消息气泡 |
 | `data-aijia-message-id="msg-xyz"` | 该气泡对应 message id |
 | `data-aijia-streaming-bubble` | 标记流式输出中的临时气泡 |
-| `data-aijia-confirm-dialog` | 标记确认弹窗 |
-| `data-aijia-confirm-action="confirm"` | 确认按钮 |
-| `data-aijia-confirm-action="cancel"` | 取消按钮 |
+| `data-aijia-dialog="permission-ask\|ask-user-question\|confirm"` | 标记一个等用户决策的弹窗，值是弹窗类型 |
+| `data-aijia-dialog-tool="WebSearch"` | 触发该弹窗的工具名（仅 permission-ask / ask-user-question 有） |
+| `data-aijia-dialog-title` / `-description` | 弹窗内的标题 / 描述节点 |
+| `data-aijia-dialog-action="allow\|deny\|cancel\|confirm\|option"` | 弹窗内的 action 按钮 |
+| `data-aijia-dialog-question-index` / `-option-index` / `-option-label` | 多 question 多 option 的 ask-user-question 用，定位具体 option |
 
 ---
 
@@ -101,7 +103,10 @@ data-aijia-{业务名}[-{字段}]="{值}"
 | `src/components/chat/MessageList.tsx` | `data-aijia-message-list` / `data-aijia-streaming` |
 | `src/components/chat/AiBubble.tsx` | `data-aijia-ai-bubble` / `data-aijia-message-id` |
 | `src/components/chat/StreamingBubble.tsx` | `data-aijia-streaming-bubble` |
-| `src/components/common/ConfirmDialog.tsx` | `data-aijia-confirm-dialog` / `data-aijia-confirm-action` |
+| `src/components/common/Modal.tsx` | `data-aijia-dialog` / `data-aijia-dialog-tool`（透传 props） |
+| `src/components/common/PermissionAskDialog.tsx` | `data-aijia-dialog="permission-ask"` / `-tool` / `-title` / `-description` / `-action="allow\|deny"` |
+| `src/components/interactions/AskUserQuestionDialog.tsx` | `data-aijia-dialog="ask-user-question"` / `-title` / `-description` / `-action="option\|cancel\|confirm"` / `-question-index` / `-option-index` / `-option-label` |
+| `src/components/common/ConfirmDialog.tsx` | `data-aijia-dialog="confirm"` / `-title` / `-description` / `-action="cancel\|confirm"` |
 
 后续追加请在本表登记一条，并说明对应的 `aijia <subcommand>`。
 
