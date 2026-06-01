@@ -5,9 +5,10 @@
 //! - Templates are versioned, immutable JSON documents. The authoritative
 //!   catalog lives on lotus ops-portal (table `employee_templates`, OSS path
 //!   `ops/employee-templates/{template_id}/{version}.json`).
-//! - The desktop client carries an embedded **bootstrap** copy of every
-//!   template at version `1.0.0` so first-run / offline hire flows still
-//!   work.
+//! - The desktop client caches downloaded snapshots in
+//!   `~/.renlijia/employee-templates-cache/{tid}/{ver}.json`. No embedded
+//!   bootstrap fallback exists — without network the user can't run any
+//!   employee anyway (云端唯一架构), so faking offline catalog is misleading.
 //! - Each employee instance freezes the exact template snapshot it was hired
 //!   from into `<employees>/<id>/template/template.json` plus a sibling
 //!   `manifest.json` that records `{template_id, version, sha256, source}`.
@@ -16,8 +17,9 @@
 //!
 //! - `TemplateRef` — the small descriptor stored on `EmployeeRecord`.
 //! - `TemplateSnapshot` — the on-disk JSON shape that mirrors the OPS table.
-//! - `bootstrap_templates()` — embedded fallback registry (used until the
-//!   network loader lands in PR4 follow-up).
+//! - templates are loaded from the global cache dir
+//!   (`~/.renlijia/employee-templates-cache/{tid}/{ver}.json`), populated by
+//!   `employee_template_refresh` from lotus OPS.
 //! - `ensure_instance_snapshot()` — idempotently writes `template/` for an
 //!   instance directory.
 //!
@@ -132,36 +134,15 @@ pub struct TemplateManifest {
     pub downloaded_at: chrono::DateTime<chrono::Utc>,
 }
 
-/// Bootstrap template JSON. Compiled into the binary so first-run + offline
-/// hire works without the network. The text is a JSON array of
-/// `TemplateSnapshot` objects.
-const BOOTSTRAP_JSON: &str = include_str!("templates_bootstrap.json");
-
-/// Memoized parse of `BOOTSTRAP_JSON`. Lazily computed once per process and
-/// cloned to callers (the snapshot list is small — ~11 entries — so cloning
-/// is cheaper than wrestling with lifetimes through the public API).
-static BOOTSTRAP_CACHE: std::sync::OnceLock<Vec<TemplateSnapshot>> = std::sync::OnceLock::new();
-
-/// Returns the embedded bootstrap templates. Parsing happens at most once
-/// per process; subsequent calls clone from the cache.
-pub fn bootstrap_templates() -> Result<Vec<TemplateSnapshot>> {
-    if let Some(cached) = BOOTSTRAP_CACHE.get() {
-        return Ok(cached.clone());
-    }
-    let parsed: Vec<TemplateSnapshot> =
-        serde_json::from_str(BOOTSTRAP_JSON).context("parsing bootstrap template JSON")?;
-    let _ = BOOTSTRAP_CACHE.set(parsed.clone());
-    Ok(parsed)
-}
-
-/// Look up a single bootstrap template by id. Returns `None` if the embedded
-/// registry doesn't know this template_id (e.g. a custom org template that
-/// only exists in lotus).
-pub fn bootstrap_template(template_id: &str) -> Result<Option<TemplateSnapshot>> {
-    Ok(bootstrap_templates()?
-        .into_iter()
-        .find(|t| t.template_id == template_id))
-}
+// 历史的内置 bootstrap fallback (templates_bootstrap.json) 已于 2026-06 删除。
+//
+// 删除理由：AIjia 是云端唯一架构（CLAUDE.md 决策 11，所有 LLM 走 lotus 网关），
+// 没网 → 员工不能跑 → 给 hire wizard 一个"离线兜底员工列表"毫无意义。
+// 模板的唯一权威来源是服务端 (lotus ops `employee_templates` 表)，本地只缓存
+// 它推下来的 snapshot：`~/.renlijia/employee-templates-cache/{tid}/{ver}.json`。
+//
+// 影响：employee_template_catalog 在 cache 为空（首装 + 未触发 refresh）时返回 []。
+// HireWizard 自己决定怎么 UI 处理（loading / 重试），不再走前端 BUILTIN_TEMPLATES 兜底。
 
 /// Compute SHA-256 of canonical (pretty-printed) snapshot JSON. Hash matches
 /// what the OPS-side publish handler computes when uploading to OSS.
@@ -377,18 +358,16 @@ pub fn effective_requires_attachment(
     Some(s.requires_attachment)
 }
 
-/// PR-12: find the highest-version snapshot for `template_id` across
-/// (a) the embedded bootstrap registry and (b) the global cache dir.
-/// Returns `None` when neither source has the template.
+/// PR-12: find the highest-version snapshot for `template_id` from the
+/// global cache dir. Returns `None` when the cache has nothing for this id
+/// (caller should trigger `employee_template_refresh` first if catalog is
+/// expected to exist).
 ///
 /// Used by `employee_template_check_upgrade` / `employee_upgrade_template`
 /// to surface the "升级模板" affordance in the drawer when a newer
 /// version has landed than the one frozen into the employee's snapshot.
 pub fn find_latest_for_template(cache_dir: &Path, template_id: &str) -> Option<TemplateSnapshot> {
     let mut best: Option<TemplateSnapshot> = None;
-    if let Ok(Some(boot)) = bootstrap_template(template_id) {
-        best = Some(boot);
-    }
     let tid_dir = cache_dir.join(template_id);
     if let Ok(rd) = fs::read_dir(&tid_dir) {
         for entry in rd.flatten() {
@@ -671,33 +650,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn bootstrap_templates_parse() {
-        let list = bootstrap_templates().expect("bootstrap JSON should parse");
-        assert!(
-            !list.is_empty(),
-            "bootstrap registry must contain at least one template"
-        );
-        // Sanity: every id starts with a known namespace prefix.
-        for t in &list {
-            assert!(
-                t.template_id.starts_with("builtin:")
-                    || t.template_id.starts_with("org:")
-                    || t.template_id.starts_with("private:"),
-                "bad namespace: {}",
-                t.template_id
-            );
-        }
-    }
-
-    #[test]
-    fn bootstrap_lookup_known_id() {
-        let t = bootstrap_template("builtin:xiaoyuan")
-            .expect("call ok")
-            .expect("xiaoyuan should be in bootstrap");
-        assert_eq!(t.name, "小研");
-    }
-
-    #[test]
     fn ensure_snapshot_writes_then_idempotent() {
         let dir = tempfile::tempdir().unwrap();
         let inst = dir.path().to_path_buf();
@@ -938,16 +890,15 @@ mod tests {
     // ── PR-12: find_latest_for_template ─────────────────────────────────────
 
     #[test]
-    fn find_latest_returns_bootstrap_when_cache_empty() {
+    fn find_latest_returns_none_when_cache_empty() {
+        // bootstrap fallback 已删（2026-06）。空 cache 一定是 None。
         let tmp = tempfile::tempdir().unwrap();
-        // Use a builtin we know is in bootstrap.
         let s = find_latest_for_template(tmp.path(), "builtin:xiaoyuan");
-        assert!(s.is_some(), "bootstrap should provide a snapshot");
-        assert_eq!(s.unwrap().template_id, "builtin:xiaoyuan");
+        assert!(s.is_none());
     }
 
     #[test]
-    fn find_latest_picks_higher_version_from_cache_over_bootstrap() {
+    fn find_latest_picks_only_cache_entry() {
         use std::fs;
         let tmp = tempfile::tempdir().unwrap();
         // Drop a v9.9 cache entry for xiaoyuan
