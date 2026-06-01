@@ -10,6 +10,7 @@ archived under `docs/archive/`.
 - `runtime-manager.md`: runtime manager reference.
 - `prompt-architecture.md`: prompt architecture reference.
 - `release-playbook.md`: release process.
+- `releases/`: dated desktop beta and release summaries.
 - `test-intents/`: maintained intent-test assets and reports.
 - `skills-migration/`: source skill definitions and migration notes; do not archive
   `SKILL.md` files unless the skill is removed from the product.
