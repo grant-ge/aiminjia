@@ -125,7 +125,43 @@ function toolExecStatusToStep(s: ToolExecution['status']): RenderToolStep['statu
   return s === 'executing' ? 'running' : s === 'error' ? 'error' : 'done'
 }
 
-function formatFileSize(bytes: number | undefined): string | null {
+// ── Artifact mark parsing ─────────────────────────────────────────────────
+
+const ARTIFACT_RE = /!\[artifact\]\((.+?)\)/g
+
+const ARTIFACT_EXT_TO_TYPE: Record<string, GeneratedFile['fileType']> = {
+  md: 'markdown', markdown: 'markdown',
+  html: 'html',
+  json: 'json',
+  csv: 'csv',
+  txt: 'txt', text: 'txt',
+  png: 'image', jpg: 'image', jpeg: 'image', gif: 'image', webp: 'image', bmp: 'image', svg: 'image',
+  xlsx: 'excel', xls: 'excel',
+  docx: 'word', doc: 'word',
+  pptx: 'ppt', ppt: 'ppt',
+  pdf: 'pdf',
+}
+
+interface ParsedArtifactFile {
+  filePath: string
+  fileName: string
+  fileType: GeneratedFile['fileType']
+}
+
+function parseArtifactMarks(text: string): { cleanedText: string; files: ParsedArtifactFile[] } {
+  const files: ParsedArtifactFile[] = []
+  for (const m of text.matchAll(ARTIFACT_RE)) {
+    const filePath = m[1].trim()
+    const fileName = filePath.split(/[\\/]/).pop() || filePath
+    const ext = fileName.includes('.') ? fileName.split('.').pop()?.toLowerCase() : undefined
+    const fileType: GeneratedFile['fileType'] = (ext ? ARTIFACT_EXT_TO_TYPE[ext] : undefined) ?? 'file'
+    files.push({ filePath, fileName, fileType })
+  }
+  const cleanedText = text.replace(ARTIFACT_RE, '')
+  return { cleanedText, files }
+}
+
+// ── File size & metadata formatting ──────────────────────────────────────
   if (bytes == null || bytes <= 0) return null
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
@@ -456,6 +492,42 @@ export function buildTurnsFromMessages(
           }
         }
       }
+<<<<<<< HEAD
+      if (m.content.text) {
+        const { cleanedText, files } = parseArtifactMarks(m.content.text)
+        const displayText = cleanedText.trim()
+        if (displayText) {
+          const segment: RenderAiSegment = {
+            id: m.id,
+            text: displayText,
+            message: { ...m, content: { ...m.content, text: displayText } },
+          }
+          current.aiSegments.push(segment)
+          current.blocks.push({ kind: 'assistantText', segment })
+        }
+        for (const f of files) {
+          const file = normalizeGeneratedFile(
+            {
+              id: `artifact-${m.id}-${f.fileName}`,
+              fileName: f.fileName,
+              filePath: f.filePath,
+              fileType: f.fileType,
+              fileSize: 0,
+              category: 'report',
+              version: 1,
+              isLatest: true,
+              createdAt: m.createdAt || new Date().toISOString(),
+              description: '',
+              actions: [],
+            },
+            m.conversationId,
+          )
+          current.generatedFiles.push(file)
+          current.blocks.push({ kind: 'generatedFile', id: file.id, file })
+        }
+      }
+=======
+>>>>>>> f0b23570 (feat(artifact): 产物文件通过 GeneratedFileCard 卡片展示)
       if (m.content.generatedFiles?.length) {
         for (const f of m.content.generatedFiles) {
           const file = normalizeGeneratedFile(f, m.conversationId)
