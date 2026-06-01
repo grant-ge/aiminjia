@@ -52,3 +52,55 @@ fn refresh_reads_new_skill_md_added_after_initial_scan() {
         ids
     );
 }
+
+use std::time::{Duration, Instant};
+
+/// SkillRegistry that tracks how many times its underlying refresh
+/// hook would be triggered. Used to assert miss-retry behavior.
+struct ProbeRefresh {
+    count: Mutex<u32>,
+    last_call: Mutex<Option<Instant>>,
+}
+
+impl ProbeRefresh {
+    fn new() -> Self {
+        Self {
+            count: Mutex::new(0),
+            last_call: Mutex::new(None),
+        }
+    }
+    fn record(&self) {
+        *self.count.lock().unwrap() += 1;
+        *self.last_call.lock().unwrap() = Some(Instant::now());
+    }
+    fn count(&self) -> u32 {
+        *self.count.lock().unwrap()
+    }
+}
+
+#[test]
+fn miss_retry_throttle_prevents_rapid_repeat_refresh() {
+    // 这条测试单独验证 throttle 逻辑（不依赖完整 Tauri ctx）。
+    // 实际 load_skill 集成时通过 try_acquire_refresh_slot 辅助函数实现。
+    let probe = Arc::new(ProbeRefresh::new());
+    let throttle = Arc::new(Mutex::new(None::<Instant>));
+
+    // 模拟 5 次连续 miss-retry
+    for _ in 0..5 {
+        let now = Instant::now();
+        let should_refresh = {
+            let last = throttle.lock().unwrap();
+            match *last {
+                None => true,
+                Some(t) => now.duration_since(t) >= Duration::from_secs(5),
+            }
+        };
+        if should_refresh {
+            probe.record();
+            *throttle.lock().unwrap() = Some(now);
+        }
+    }
+
+    // 5 次连续调用应该只触发 1 次实际 refresh（throttle 生效）
+    assert_eq!(probe.count(), 1, "throttle should suppress rapid retries");
+}

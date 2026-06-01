@@ -983,10 +983,16 @@ impl ToolRegistry {
                 as Arc<dyn crate::runtime::tools::RuntimeTool>),
             "Skill" => {
                 let registry = ctx.skill_registry.clone()?;
-                Some(
-                    Arc::new(builtin::load_skill::LoadSkillRuntimeTool::new(registry))
-                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
-                )
+                // 注入 AppHandle 让 miss-retry 能调 refresh_skill_registry。
+                // ctx.app_handle 为 None 的 test/legacy 路径退回到无 refresh 的旧行为。
+                let tool = match ctx.app_handle.as_ref() {
+                    Some(app) => builtin::load_skill::LoadSkillRuntimeTool::with_app_handle(
+                        registry,
+                        Arc::new(app.clone()),
+                    ),
+                    None => builtin::load_skill::LoadSkillRuntimeTool::new(registry),
+                };
+                Some(Arc::new(tool) as Arc<dyn crate::runtime::tools::RuntimeTool>)
             }
             "TaskStop" => {
                 use tauri::Manager;
