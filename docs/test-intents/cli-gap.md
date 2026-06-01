@@ -939,3 +939,262 @@ aijia skill-cards --json | jq '.[] | select(.id == "demo-skill")'  # 验收
 2. tauri-pilot 加 4 条原子 CLI（`skill-import-queue` / `skill-import-open` / `skill-import-pick` / `skill-cards`）+ `employee-open-card --id` 改造 → 1 commit
 3. 技能 1/2/3 rules.md 重写为真路径（导入按钮 + 验收 cards 出现）→ 1 commit
 
+---
+
+## 2026-06-01 跑测追加
+
+> 来源：2026-06-01 全量 14 task 意图测试跑测（subagent OOM 翻车 + 主会话亲跑混合模式）
+> 重点：dialog query/click 统一方案 + 几条新发现的 CLI bug
+> 下次会话直接 grep `2026-06-01` 续做
+
+### 一、确认的 CLI bug（3 条 + 1 文档误导）
+
+#### CLI-bug-1: `workspace-open-picker` + `workspace-pick` 不能用
+
+**症状**：`workspace-open-picker` 返回 `ok:true`，紧接 `workspace-pick --variant other` 报 `ok:false, reason:"item_not_found", hint:"workspace dropdown 未打开?"`。
+
+**根因**：Radix Dropdown 内部 `.click()` 不触发 onSelect，需要完整的 PointerEvent + MouseEvent 序列（PointerDown → MouseDown → PointerUp → MouseUp）。
+
+**影响**：工作空间-1 意图整条 FAIL 主因 rules/CLI（无法跑通 workspace 切换流程）。
+
+**修复方向**：`bridge.js` 里凡是 click Radix Dropdown trigger 的地方都改成发完整 PointerEvent 序列；可以抽一个 helper `clickRadixDropdown(el)`。
+
+#### CLI-bug-2: `skill-import-open` 同类问题
+
+**症状**：subagent 在跑技能 task 时已经报过——`skill-import-open` 内部 `.click()` 无法触发 AppDropdown 渲染，需要先 dispatch PointerEvent + MouseEvent 序列。
+
+**根因**：同 CLI-bug-1（Radix Dropdown）。
+
+**关联**：跟 CLI-bug-1 共用一个 helper 修就够。
+
+#### CLI-bug-3: `agenda-set-employee --name` substring match 失败
+
+**症状**：`agenda-set-employee --name 小研` 返回 `ok:false, reason:"employee_select_missing_or_no_employees"`，即使账号下确实有 6 个名为"小研"（或"小研-测试002" / "小算"）的 active employee。
+
+**根因**：CLI help 写的"substring match against option text — `{avatar} {name} · {role}`"实际实现没匹配上"小研"。可能 native select 的 option text 编码有问题，或者 substring 算法把 `{avatar}` emoji 字符算错位。
+
+**影响**：日程 task 所有需要选员工的意图都触发不到正确员工。但**这个 CLI bug 不是日程-1 产品 bug 的根因**——主会话亲跑测过：完全跳过 `agenda-set-employee` 也能保存（前端无强制约束），落盘还是 `organizerEmployeeId="default"`。两者独立。
+
+**修复方向**：测一下 employees 下拉真实 option text 是什么格式（有没有 emoji / 全角空格），调整 substring 算法。
+
+#### CLI-doc-1: `restart-app` `--help` 文字过期
+
+**症状**：`tauri-pilot aijia restart-app --help` 写 "Restart the AIjia app and wait until ready"，实际调用返 `not implemented yet (would sever the pilot socket; needs reconnect protocol)`。
+
+**双重确认**：数字员工 subagent + 项目记忆主会话亲跑各自实测一次，都是 stub。
+
+**修复方向**：要么实现，要么把 `--help` 文字改回 "not implemented yet"。当前误导调用者。
+
+### 二、撤销之前的 CLI bug 误判（2 条）
+
+之前曾把 `tool-bubble` count=0 / `ui-message --json` 返回 tool text="" 当作 CLI bug 列在改进清单上。**2026-06-01 用户截图证实是误判**：
+
+- subagent 跑搜索 task 时**没注意到首次用 WebSearch 弹的权限对话框**（SKILL §5.12 已警告过）
+- 弹窗 block 住 turn，tool 没真执行完，tool bubble 当时确实是空 placeholder
+- `tool-bubble` 和 `ui-message --json` 抓到的 `text=""` 是**当时合理 DOM 状态**，不是 CLI bug
+- 用户后来手动同意权限 → turn 跑完 → tool bubble 正常渲染含完整内容
+
+**真问题**是 CLI 看不到权限弹窗存在 → 见 §三 dialog query/click 方案。
+
+### 三、Dialog Query / Click 统一原子 CLI 方案（与用户敲定，待实施）
+
+#### 背景
+
+应用端有 **三类等用户决策的弹窗**，CLI 对**所有三类都看不到**：
+
+| 弹窗 | 触发 | 前端组件 | store |
+|---|---|---|---|
+| `permission-ask` | 应用请求工具权限（WebSearch / Read 跨目录等首次用）| `src/components/common/PermissionAskDialog.tsx` | `streamingStore.pendingAsks` |
+| `ask-user-question` | AI 调用 `AskUserQuestion` 工具主动问用户多选 | `src/components/interactions/AskUserQuestionDialog.tsx` | `interactionStore.pendingInteractions` |
+| `confirm` | 普通确认弹窗（cancel agenda / fire employee 等）| `src/components/common/ConfirmDialog.tsx` | inline |
+
+三者共同问题：
+- DOM 上**无 data attribute** → CLI 抓不到内容
+- `where --json` 不暴露 dialog 状态 → agent 黑盒
+- 没有专门 query CLI → 只能 `screenshot` 截图，但 agent 读不懂图像
+
+**当前现有的 `aijia handle-dialog --action accept|dismiss`** 只能 click 现有 ConfirmDialog（依赖 `data-aijia-confirm-action`），且不能 query 内容。
+
+#### 设计原则
+
+- **不兼容旧的 `handle-dialog`** —— 跟用户敲定，整体重做，不保留 `data-aijia-confirm-action` / `data-aijia-confirm-dialog` 旧 attribute
+- **原子 CLI**：query 跟 click 拆两个命令，不混搭
+- **agent 能看到所有信息再决策**：弹窗类型 + 触发工具名 + 标题 + 描述 + 可选按钮列表
+
+#### 统一 data attribute（三类弹窗共用）
+
+```tsx
+<Container data-aijia-dialog="permission-ask|ask-user-question|confirm"
+           data-aijia-dialog-tool={toolName ?? null}>
+  <h2 data-aijia-dialog-title>{title}</h2>
+  <p data-aijia-dialog-description>{description}</p>
+
+  {/* 按钮：action 枚举 + 可选 option-index */}
+  <Button data-aijia-dialog-action="allow|deny|cancel|confirm|option"
+          data-aijia-dialog-option-index={i ?? null}
+          data-aijia-dialog-option-label={label ?? null}>
+    {labelText}
+  </Button>
+</Container>
+```
+
+action 词汇约定：
+- `allow` / `deny` — permission-ask 弹窗的允许/拒绝
+- `confirm` / `cancel` — confirm 弹窗的确认/取消（也用于 permission-ask 的 cancel）
+- `option` — ask-user-question 弹窗的多选项,必带 `--option-index N`
+
+#### 需要改的文件
+
+**lotus-app 仓**（前端 3 个文件）：
+
+1. `src/components/common/PermissionAskDialog.tsx`（line 130 区域）
+   - `<Modal>` 加 `data-aijia-dialog="permission-ask"` + `data-aijia-dialog-tool={ask.toolName}`
+   - 拒绝按钮加 `data-aijia-dialog-action="deny"`
+   - 允许按钮加 `data-aijia-dialog-action="allow"`
+   - cancel（如有）加 `data-aijia-dialog-action="cancel"`
+   - tool 名 / message 用 `data-aijia-dialog-title` / `data-aijia-dialog-description` 包装
+
+2. `src/components/interactions/AskUserQuestionDialog.tsx`
+   - 外层 div 加 `data-aijia-dialog="ask-user-question"` + `data-aijia-dialog-tool="AskUserQuestion"`
+   - 多个 question section,每个 option button 加 `data-aijia-dialog-action="option"` + `data-aijia-dialog-option-index={i}` + `data-aijia-dialog-option-label={label}`
+   - "其他" 按钮 + "取消" 按钮 + "提交回答" 按钮 也加对应 action attr
+   - 注：这个组件是 multi-question + multi-option,可能要扩 attr 包含 question index
+
+3. `src/components/common/ConfirmDialog.tsx`
+   - `<AlertDialogContent>` 加 `data-aijia-dialog="confirm"`,**移除** `data-aijia-confirm-dialog`
+   - `<AlertDialogCancel>` 把 `data-aijia-confirm-action="cancel"` **改成** `data-aijia-dialog-action="cancel"`
+   - `<AlertDialogAction>` 把 `data-aijia-confirm-action="confirm"` **改成** `data-aijia-dialog-action="confirm"`
+   - 标题用 `data-aijia-dialog-title`, 描述用 `data-aijia-dialog-description`
+
+**tauri-pilot 仓**（路径：`~/IdeaProjects/tauri-pilot/`）：
+
+4. `crates/tauri-plugin-pilot/js/bridge.js`
+   - `readState()` 函数加 `pendingDialog` 字段查询逻辑（约 25 行）：
+     ```js
+     const dialog = document.querySelector('[data-aijia-dialog]')
+     state.pendingDialog = dialog ? {
+       kind: dialog.dataset.aijiaDialog,
+       tool: dialog.dataset.aijiaDialogTool || null,
+       title: dialog.querySelector('[data-aijia-dialog-title]')?.textContent?.trim() || null,
+       description: dialog.querySelector('[data-aijia-dialog-description]')?.textContent?.trim() || null,
+       actions: Array.from(dialog.querySelectorAll('[data-aijia-dialog-action]'))
+         .map(el => ({
+           action: el.dataset.aijiaDialogAction,
+           label: el.textContent?.trim() || null,
+           optionIndex: el.dataset.aijiaDialogOptionIndex
+             ? Number(el.dataset.aijiaDialogOptionIndex) : null,
+           optionLabel: el.dataset.aijiaDialogOptionLabel || null,
+         })),
+     } : null
+     ```
+   - 新增 `aijia.dialogClick(action, optionIndex, timeoutSec)` 函数：
+     ```js
+     // 找到 [data-aijia-dialog]
+     // 找到 [data-aijia-dialog-action="${action}"]
+     // 如果 action="option",再按 data-aijia-dialog-option-index 过滤
+     // 触发完整 PointerEvent 序列 + click
+     // 返回 {ok, action, optionIndex}
+     ```
+   - **删除** 旧的 `handle-dialog` 实现 + `data-aijia-confirm-action` 相关代码
+
+5. `crates/tauri-plugin-pilot/src/aijia/dialog.rs`（新建,或加到 commands 模块）
+   - 注册 `dialog-snapshot --json` subcommand（直接读 `readState().pendingDialog`）
+   - 注册 `dialog-click --action <verb> [--option-index N] [--timeout 10]` subcommand
+   - **删除** `handle-dialog` subcommand 注册
+
+6. `crates/tauri-plugin-pilot/src/aijia/mod.rs`（或类似 CLI 注册中心）
+   - 删 `handle-dialog`
+   - 注册新的 `dialog-snapshot` + `dialog-click`
+
+#### 跨仓库需要同步更新的引用
+
+把旧 `handle-dialog` / `data-aijia-confirm-action` 改干净后,grep 这些位置全更新:
+
+```bash
+# lotus-app 仓
+grep -rn "handle-dialog\|data-aijia-confirm" .claude/ docs/ src/ 2>/dev/null
+# tauri-pilot 仓里 agenda-row-action / employee-drawer-action 等 help 文字
+grep -rn "handle-dialog\|data-aijia-confirm" ../tauri-pilot/ 2>/dev/null
+```
+
+预期需要更新:
+- `.claude/skills/test-intents-runner/SKILL.md` §4.2 (handle-dialog 描述删除/替换)
+- `docs/test-intents/spec/tasks/日程/rules.md` 意图 6 (handle-dialog 调用换成 dialog-click)
+- 其他 rules.md 里调用 handle-dialog 的地方 (grep)
+- tauri-pilot 各 CLI help 文字里提"chain handle-dialog"的全改
+
+#### Agent 端用法示例
+
+```bash
+# wait-reply 超时或 isStreaming 长时间不动 → query dialog
+W=$(tauri-pilot aijia where --json)
+KIND=$(echo "$W" | jq -r '.pendingDialog.kind // empty')
+
+case "$KIND" in
+  permission-ask)
+    # 跑测场景自动同意
+    tauri-pilot aijia dialog-click --action allow
+    tauri-pilot aijia wait-reply --timeout 60
+    ;;
+  ask-user-question)
+    # 按 rules.md 决策选第 0 个选项
+    tauri-pilot aijia dialog-click --action option --option-index 0
+    tauri-pilot aijia wait-reply --timeout 60
+    ;;
+  confirm)
+    tauri-pilot aijia dialog-click --action confirm  # 或 cancel
+    ;;
+  "")
+    # 真卡死,截图排查
+    tauri-pilot aijia screenshot --label real-timeout
+    ;;
+esac
+```
+
+#### 工作量估算
+
+- lotus-app 3 个前端文件：约 25 行改动 + 旧 attr 重命名
+- tauri-pilot bridge.js + CLI 注册：约 80 行（含 dialog-click 的 PointerEvent 完整序列）
+- 跨仓库引用更新：grep + 替换约 5-10 处
+- 测试：每类弹窗手动触发 + 跑 dialog-snapshot/click 验证
+- **总计** 1.5-2 小时
+
+#### 落地顺序建议
+
+1. lotus-app 加 3 个前端文件的 data attribute（含旧 attr 移除）→ 1 commit
+2. tauri-pilot bridge.js readState 加 pendingDialog 查询 + 新 dialog-snapshot/dialog-click CLI → 1 commit
+3. tauri-pilot CLI 删 handle-dialog + 各处 help 文字更新 → 1 commit  
+4. lotus-app `cargo install --path ../tauri-pilot/crates/tauri-pilot-cli --force` 装新 CLI
+5. SKILL.md §4.2 / 日程 rules.md 意图 6 / 其他引用 grep + 替换 → 1 commit
+6. 实测：触发权限弹窗 / AskUserQuestion / Confirm 各一次,跑 dialog-snapshot + dialog-click 验证
+
+### 四、其他 CLI 缺口（按解锁意图条数排）
+
+| 缺的 CLI | 解锁什么 | 优先 |
+|---|---|---|
+| `aijia composer-submit` / `press-key Enter` | streaming 中按 Enter 让消息进 pending（"发送"按钮被替换成"停止",无入口）| 高 — 解锁待办队列全 3 条 |
+| `aijia agenda-show-cancelled` 切「已取消」视图 | 日程-007（永久删除）| 中 |
+| `aijia pending-snapshot` / `where.pendingCount` | 暴露 pending 队列状态,避免 rules 用 raw IPC 违反铁则 | 高 — 跟 composer-submit 配对解锁待办队列 |
+| settings 增加 model / temperature 类型面板 + `aijia settings-fill` | 改 LLM 配置字段 | 低 — 当前桌面端无 model panel UI,要先产品决策做不做 |
+| `aijia expert-team-new` / `add-teammate` / `dispatch --teammate` | 手动建团 + 程序化派活 | 中 — 解锁专家团队-1（其他已亲跑 PASS） |
+| `aijia dingtalk-bind` / `unbind` / `simulate-receive` | 钉钉接入测试 | 低 — 环境依赖钉钉账号 + 网关,优先级最低 |
+
+### 五、SKILL.md §5 建议沉淀（新增 7 条）
+
+下次更新 `.claude/skills/test-intents-runner/SKILL.md` §5 时建议加：
+
+1. `tool-bubble` count=0 不代表工具未调用,要 jsonl 双重验证（`role=tool` + `name=X` + `toolCallId` 匹配）
+2. Radix Dropdown 内部 `.click()` 不触发 onSelect,需 PointerEvent+MouseEvent 完整序列。当前 `workspace-open-picker` / `skill-import-open` 都有此 bug,修一个 helper 就行
+3. subagent 跑全量 64 条会 OOM（166 tool uses / 45 min / "Prompt too long"）,必须 **one-task-per-subagent**
+4. subagent brief 必须显式禁用 `find /Users/...` 全局扫描（home 下 node_modules 海量会卡 10+ min)。需要查路径时限定到 `~/.cargo` / `~/IdeaProjects/lotus-app` / `~/IdeaProjects/tauri-pilot`
+5. subagent 必须**每条意图完成立刻 append progress log**（否则主会话会误判 subagent 卡死,实际它在跑下一条）
+6. `hire-open` 只能在 `route=employees` 下调用,"雇佣"意图必须先 `goto employees --wait`
+7. EmployeeDrawer 内部 stale state,`resource-save` 后需关 Drawer 重开才能看到最新状态。`restart-app` 未实现时,`goto home → goto employees` 是 store reload 的替代方案
+
+### 六、本次跑测过程中确认的「产品 bug」（非 CLI,放这里只是引用,产品 bug 应该单独开 issue）
+
+- 技能-13：html-ppt skill 多轮 PPT 第 1 轮一次性 Bash 写 37KB 大文件期间 LLM 189s 无 stream delta,UI 出现 2 次 ≥90s "看着像死了" 窗口
+- 日程-1：agenda editor 不强制选员工 + 后端 silently fallback `organizerEmployeeId="default"` (3 次复现确认)
+- 项目记忆 副产品：SearchMemory result 不返回 entry file_path,AI 想 Read 时拼相对路径 `entries/xxx.md` 失败（实际影响极低,因 SearchMemory result 已直接返回 content）
+- 待 triage：登录-5 `brand.json` 不存在 + 顶栏 product-name 节点缺失（需确认仁励家租户是否配置非默认品牌）
+
