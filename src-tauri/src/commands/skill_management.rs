@@ -246,6 +246,10 @@ pub fn refresh_skill_registry(app: &AppHandle) -> Result<(), String> {
         .lock()
         .map_err(|e| format!("registry lock poisoned: {}", e))?
         .replace_all(loaded.into_values().collect());
+    // 通知前端 registry 已刷新，让各处缓存（SkillPopover picker / 技能中心 / 派活 banner 等）
+    // 调用 useSkillStore.reload() 重新拉 list_skills。失败 silent — 事件发送失败不影响 refresh
+    // 这个写盘本身的成功。
+    let _ = app.emit("skill:registry-refreshed", ());
     Ok(())
 }
 

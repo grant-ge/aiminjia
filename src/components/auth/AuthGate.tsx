@@ -1,11 +1,12 @@
 import { type PropsWithChildren, useEffect, useRef, useState } from 'react'
+import { listen } from '@tauri-apps/api/event'
 
 import { useAuthStore } from '@/stores/authStore'
 import { useBrandingStore } from '@/stores/brandingStore'
 import { useChat } from '@/hooks/useChat'
 import { useUiStore } from '@/stores/uiStore'
 import { useSkillStore } from '@/stores/skillStore'
-import { syncBuiltinSkills } from '@/lib/tauri'
+import { syncBuiltinSkills, TAURI_EVENTS } from '@/lib/tauri'
 
 import { FullscreenLoader } from './FullscreenLoader'
 import { LoginPage } from './LoginPage'
@@ -66,6 +67,33 @@ export function AuthGate({ children }: PropsWithChildren) {
       useAuthStore.getState().setRedirectFrom(null)
     }
   }, [isLoggedIn, redirectFrom, setRoute])
+
+  // 监听后端 refresh_skill_registry 广播，自动刷新 skillStore。
+  // 触发源包括：install_custom_skill / import_skill_package / refresh_skills RuntimeTool /
+  // load_skill miss-retry / refresh_skill_registry_cmd —— 所有路径共用一个事件，
+  // 保证 SkillPopover picker / 技能中心 / 派活 banner 等任何依赖 skillStore 的位置
+  // 在 AI 装完技能后立即看到新技能，无需重启应用或重开对话。
+  useEffect(() => {
+    let unlisten: (() => void) | null = null
+    let cancelled = false
+    void (async () => {
+      try {
+        const handle = await listen(TAURI_EVENTS.SKILL_REGISTRY_REFRESHED, () => {
+          void useSkillStore.getState().reload().catch((err) => {
+            console.warn('[skill-registry-refreshed] skillStore reload failed:', err)
+          })
+        })
+        if (cancelled) handle()
+        else unlisten = handle
+      } catch (err) {
+        console.warn('[skill-registry-refreshed] listen failed:', err)
+      }
+    })()
+    return () => {
+      cancelled = true
+      if (unlisten) unlisten()
+    }
+  }, [])
 
   if (isRestoringAuth && isAuthPending) {
     return <FullscreenLoader />
