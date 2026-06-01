@@ -1082,9 +1082,6 @@ pub fn run() {
             // Skill package import/export (drag-drop zip / SkillCard export)
             commands::skill_draft::import_skill_package,
             commands::skill_draft::export_installed_skill,
-            commands::skill_management::reload_skill,
-            commands::skill_management::start_skill_watch,
-            commands::skill_management::stop_skill_watch,
             crate::plugin::skill::sync_command::sync_builtin_skills,
             // Marketplace commands
             commands::skill_management::list_marketplace_skills,

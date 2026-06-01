@@ -51,7 +51,6 @@ export const TAURI_EVENTS = {
   AGENT_IDLE: 'agent:idle',
   TASK_STATUS_CHANGED: 'task:status-changed',
   AUTH_EXPIRED: 'auth:expired',
-  SKILL_FILE_CHANGED: 'skill-file-changed',
   PERMISSION_ASK: 'permission:ask',
   INTERACTION_REQUIRED: 'interaction:required',
   INTERACTION_RESOLVED: 'interaction:resolved',
@@ -2101,21 +2100,6 @@ export async function initSkillTemplate(targetDir: string, skillId: string, skil
 /** Export a skill's SKILL.md to a destination file path. */
 export async function packSkill(skillDir: string, destPath: string): Promise<string> {
   return invoke<string>('pack_skill', { skillDir, destPath })
-}
-
-/** Reload a custom skill from disk (dev mode hot-reload). */
-export function reloadSkill(skillPath: string): Promise<string> {
-  return invoke<string>('reload_skill', { skillPath })
-}
-
-/** Start watching a skill directory for file changes (dev mode). */
-export function startSkillWatch(skillPath: string): Promise<string> {
-  return invoke<string>('start_skill_watch', { skillPath })
-}
-
-/** Stop watching the skill directory (dev mode). */
-export function stopSkillWatch(): Promise<string> {
-  return invoke<string>('stop_skill_watch')
 }
 
 // ---------------------------------------------------------------------------
