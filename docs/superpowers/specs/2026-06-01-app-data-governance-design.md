@@ -46,6 +46,8 @@
 ├── skills/
 ├── employee-templates-cache/
 ├── expert-team-templates-cache/
+├── logs/
+├── playwright-profile/
 ├── runtimes/
 ├── tmp/
 ├── defaultFolder/
@@ -74,6 +76,8 @@
 - `skills/`
 - `employee-templates-cache/`
 - `expert-team-templates-cache/`
+- `logs/`
+- `playwright-profile/`
 - `runtimes/`
 - `tmp/`
 - `defaultFolder/`
@@ -111,7 +115,7 @@
 - 跨设备或权限失败时使用 `copy + best-effort remove`。
 - 写入 `global/state.json::migrations.rootArtifactImport` 门闸。
 - 生成 manifest，记录源路径、目标路径、迁移时间、失败项。
-- 历史消息打开文件时保留旧路径 fallback；如果旧路径不存在，再尝试 legacy import 目标路径。
+- `generated/` 的历史 root 引用按产品决策忽略，不要求额外 fallback map。
 
 ### TTL Clean Temporary Data
 
@@ -136,18 +140,17 @@
 
 ### Bound Logs
 
-当前 `logs/` 仍由启动期 logger 使用，短期保留根级。治理策略：
+当前 `logs/` 仍由启动期 logger 和诊断上传使用，按产品决策保持 app-global，不 user-scoped。治理策略：
 
 - `renlijia.log` 继续由 Tauri log plugin 管。
 - `gate.log` 超过阈值时归档为 `gate.log.YYYYMMDDHHMMSS`，只保留最近 3 个归档。
 - `metrics*.jsonl` 保留最近 7 天或最近 20 个文件，取更保守者。
 - 不能删除当前正在写入的 `renlijia.log`、`metrics.jsonl`、`gate.log`。
 
-### Review Only In This PR
+### Review / Later PR Items
 
 这些条目和登录、权限、浏览器会话、历史对话有关，本 PR 只审计和文档标记，不自动迁移：
 
-- `playwright-profile/`
 - `permissions.json`
 - `permissions.json.bak`
 - `agent_invocations.json`
@@ -164,6 +167,11 @@
 - `audit/`
 
 这些后续要逐项做：新路径写入、新路径读取、旧路径 fallback、一次性迁移、归档。
+
+2026-06-01 产品决策补充：
+
+- `playwright-profile/` 保持应用级隔离，不迁入 `users/{scope}/`。
+- `expert-team-templates/` 是废弃的旧专家团模板目录，后续作为归档候选。
 
 ## Upgrade Safety
 

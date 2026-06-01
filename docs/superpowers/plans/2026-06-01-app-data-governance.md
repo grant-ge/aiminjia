@@ -59,7 +59,12 @@ mod tests {
         assert_eq!(classify_root_entry("charts"), RootEntryClass::WorkspaceArtifact);
         assert_eq!(classify_root_entry("temp"), RootEntryClass::TemporaryLegacy);
         assert_eq!(classify_root_entry("tmpImage"), RootEntryClass::TemporaryLegacy);
-        assert_eq!(classify_root_entry("playwright-profile"), RootEntryClass::ReviewOnly);
+        assert_eq!(classify_root_entry("logs"), RootEntryClass::KeepRoot);
+        assert_eq!(classify_root_entry("playwright-profile"), RootEntryClass::KeepRoot);
+        assert_eq!(
+            classify_root_entry("expert-team-templates"),
+            RootEntryClass::DeprecatedArchiveCandidate
+        );
         assert_eq!(classify_root_entry("unknown-new-dir"), RootEntryClass::ReviewOnly);
     }
 }
@@ -85,21 +90,23 @@ pub enum RootEntryClass {
     KeepRoot,
     WorkspaceArtifact,
     TemporaryLegacy,
-    Log,
+    DeprecatedArchiveCandidate,
     ReviewOnly,
 }
 
 pub fn classify_root_entry(name: &str) -> RootEntryClass {
     match name {
         "global" | "crypto" | "users" | "skills" | "employee-templates-cache"
-        | "expert-team-templates-cache" | "runtimes" | "tmp" | "defaultFolder"
-        | "device_id" | "data_version" | ".migrated" => RootEntryClass::KeepRoot,
+        | "expert-team-templates-cache" | "runtimes" | "tmp" | "defaultFolder" | "logs"
+        | "device_id" | "data_version" | ".migrated" | "playwright-profile" => {
+            RootEntryClass::KeepRoot
+        }
         name if name.starts_with(".archived-legacy-") => RootEntryClass::KeepRoot,
+        "expert-team-templates" => RootEntryClass::DeprecatedArchiveCandidate,
         "analysis" | "charts" | "generated" | "exports" | "reports" | "uploads" => {
             RootEntryClass::WorkspaceArtifact
         }
         "temp" | "tmpImage" => RootEntryClass::TemporaryLegacy,
-        "logs" => RootEntryClass::Log,
         _ => RootEntryClass::ReviewOnly,
     }
 }

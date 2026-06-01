@@ -43,8 +43,8 @@
 | 技能 | `skills/` + `users/{scope}/skills/` | `skills/` 是服务端同步的 global skill；用户上传走 user scope |
 | 用户生成文件 | workspace，默认 `defaultFolder/` | 用户可见产物，不应散落 root |
 | IM 附件临时下载 | `tmp/*_downloads/` | 可重生成，统一 TTL |
-| 浏览器自动化 profile | 当前 root `playwright-profile/`，目标 user scope | 当前仍被代码读写，不能本轮迁 |
-| 诊断日志 | 当前 root `logs/` | 短期保留 root，需容量治理 |
+| 浏览器自动化 profile | 当前 root `playwright-profile/`，目标应用级隔离 | profile 不按用户隔离；按 AIjia 应用隔离，避免与其它应用/环境共享 |
+| 诊断日志 | 当前 root `logs/` | 保持全局应用日志，做容量治理，不 user-scoped |
 
 ## Root Whitelist
 
@@ -62,6 +62,8 @@
 | `skills/` | 服务端同步的 global skill 包 |
 | `employee-templates-cache/` | 数字员工模板跨用户内容寻址缓存 |
 | `expert-team-templates-cache/` | 专家团模板跨用户内容寻址缓存 |
+| `logs/` | 应用级诊断和运行日志，保留 root 但必须容量治理 |
+| `playwright-profile/` | 浏览器自动化应用级 profile，按应用隔离而不是用户隔离 |
 | `tmp/` | 可重生成临时数据根 |
 | `defaultFolder/` | 默认 workspace，用户可见文件归宿 |
 | `device_id` | 旧装机级设备 ID，未来可进 `global/device.json` |
@@ -75,8 +77,6 @@
 
 | Entry | Current Reason | Exit Criteria |
 |---|---|---|
-| `logs/` | `lib.rs` 和诊断上传仍读 root `logs/renlijia.log` | 日志容量治理完成；如要 user scope，需要 diagnostics 同步迁 |
-| `playwright-profile/` | 浏览器自动化启动、重试擦除、SingletonLock 均直接读写 root | PlaywrightBrowser 注入 `UserScopedPaths` 并保留 root fallback 一个版本 |
 | `screenshots/` | Playwright screenshot 仍写 root；已有 user scope API 但调用未迁完 | 浏览器截图改写 user scope 或 conversation 附件 |
 | `site-profiles/` | 已有 user scope 迁移，但 root fallback 和 legacy cleanup 仍存在 | 确认所有 site profile 写入走 user scope |
 | `subagent_transcripts/` | 部分路径已有 user scope fallback，root 仍作为未登录/legacy 兜底 | 子代理输出在未登录态 no-op，不再 root fallback |
@@ -148,18 +148,18 @@ users
 | `defaultFolder/` | workspace | `AiJiaHome::default_folder()` | Keep root | Default user workspace |
 | `device_id` | auth device identity | `auth/device_id.rs` persists root file | Keep root transitional | Future move to `global/device.json` |
 | `employee-templates-cache/` | digital employees | `employee_template_store` content-addressed cache | Keep root | Cross-user immutable resource cache |
-| `expert-team-templates/` | expert teams | Present on disk, not in current whitelist | Review only | Looks like old pre-cache layout; need code search before migration |
+| `expert-team-templates/` | expert teams | Present on disk, not in current whitelist | Deprecated; archive candidate | Product decision: old pre-cache layout is废弃; current source is `expert-team-templates-cache/` |
 | `expert-team-templates-cache/` | expert teams | decision doc says server sync writes here | Keep root | Cross-user immutable resource cache |
 | `exports/` | workspace artifacts | `WorkspaceManager` defines `exports` | Migrate to workspace | User visible exported files |
-| `generated/` | workspace / file records | `file_store` conversation generated dirs exist; root copy is legacy | Migrate cautiously | Root files may be referenced by old messages; need fallback map |
+| `generated/` | workspace / file records | `file_store` conversation generated dirs exist; root copy is legacy | Migrate to workspace | Product decision: ignore historical root references; no fallback map required for root `generated/` |
 | `global/` | auth / config / updater | `AiJiaHome::global_dir()` | Keep root | Login-pre user-independent metadata |
 | `index.json` | chat legacy index | `migration_user_scope` copies; `migration_root_cleanup` archives | Archive after claim | User private legacy root |
 | `interrupted_turns/` | old runtime recovery | Mentioned as technical debt in storage conventions | Review only | Need confirm no active code reads it |
-| `logs/` | diagnostics / app log | `lib.rs` creates root logs; diagnostics reads `logs/renlijia.log` | Keep transitional + bound size | Do not break diagnostic upload |
+| `logs/` | diagnostics / app log | `lib.rs` creates root logs; diagnostics reads `logs/renlijia.log` | Keep root + bound size | Product decision: logs remain app-global, not user-scoped |
 | `permissions.json` | permissions | root fallback in `lib.rs` | Review only | User private; move only after no root fallback needed |
 | `permissions.json.bak` | permissions backup | Local backup | Review only | Need preserve until permissions migration verified |
 | `personas/` | chat persona | Root intentionally excluded from cleanup | Review only | Product still has personas; need inspect read/write before moving |
-| `playwright-profile/` | browser automation | `PlaywrightBrowser` launch/shutdown uses root | Keep transitional | High-risk: cookies/session/profile |
+| `playwright-profile/` | browser automation | `PlaywrightBrowser` launch/shutdown uses root | Keep root app-isolated | Product decision: profile should be app-isolated, not per-user; only clean crash/cache safely |
 | `reports/` | workspace artifacts | `WorkspaceManager` defines `reports` | Migrate to workspace | User visible reports |
 | `screenshots/` | browser automation / legacy user data | Playwright writes root screenshot; user scope path exists | Review only | Do not move until screenshot writer changes |
 | `shared/` | memory/cache | `migration_user_scope` copies; cleanup archives after claim | Archive after claim | User private legacy root |
@@ -217,19 +217,19 @@ There are two clipboard image paths:
 
 `save_clipboard_image_to_tmp()` still writes `tmpImage/`, while `save_clipboard_image_to_tmp_clipboard_impl()` writes the newer `tmp/clipboard/` path. Product-wise, clipboard paste is throwaway attachment staging, so target should be `tmp/clipboard/` with TTL. Root `tmpImage/` should become read-only legacy cleanup input.
 
-### Browser Automation Is Root-Coupled
+### Browser Automation Is App-Scoped
 
 `PlaywrightBrowser` directly uses:
 
 - `~/.renlijia/playwright-profile/`
 - `~/.renlijia/screenshots/`
 
-This is high-risk to move because it contains browser login/session state and Chromium lock/crash recovery behavior. Product-wise, browser automation is a user-private capability, but migration must be a separate PR with:
+Product decision: `playwright-profile/` should be application-isolated, not user-scoped. That means the current root location is acceptable as an app-level profile container. Future work should not migrate it into `users/{scope}/`; it should only:
 
-1. user-scoped profile path injection,
-2. root fallback,
-3. one-shot move only when no browser process is alive,
-4. corrupted-profile retry semantics preserved.
+1. keep it outside workspace and outside user-private business data,
+2. clean known Chromium crash/cache artifacts safely,
+3. preserve `SingletonLock` and corrupted-profile retry semantics,
+4. avoid sharing profile with other apps or another AIjia channel unless explicitly designed.
 
 ### Workspace Artifact Paths Are Product-Level, Not Cache
 
@@ -284,8 +284,8 @@ Current scope.
 ### PR 2: Workspace Artifact Import
 
 - Migrate root `analysis/charts/generated/exports/reports/uploads` into `defaultFolder/legacy-root-import-*`.
-- Preserve manifest for path fallback.
-- Add file-open fallback from old root relative paths to import location.
+- Preserve manifest for auditability.
+- No file-open fallback is required for root `generated/`; historical root references can be ignored by product decision.
 - Do not remove current workspace paths.
 
 ### PR 3: Root Legacy Archive Expansion
@@ -294,11 +294,11 @@ Current scope.
 - Re-check `api-data/audit/shared/conversations/index.json/site-profiles/screenshots/subagent_transcripts`.
 - Keep archive-before-delete behavior.
 
-### PR 4: Browser Automation User Scope
+### PR 4: Browser Automation App-Scope Hygiene
 
-- Move Playwright profile and screenshots behind a path resolver.
-- Preserve root fallback.
-- Migrate only when Chromium is not running.
+- Keep Playwright profile application-scoped.
+- Add bounded cleanup for Chromium cache/crash artifacts that are safe to regenerate.
+- Consider moving screenshots to `tmp/` or conversation artifacts, but do not move profile to user scope.
 - Keep corrupted-profile wipe semantics.
 
 ### PR 5: Permission / Task / Agent State User Scope
@@ -318,11 +318,11 @@ Current scope.
 
 ## Immediate Recommendation
 
-Do not implement migration today. First get agreement on the matrix above, especially:
+Product decisions captured on 2026-06-01:
 
-- Whether `expert-team-templates/` is an obsolete pre-cache layout or still needed.
-- Whether `generated/` root files are referenced by old message records.
-- Whether root `logs/` should stay global or eventually become user-scoped.
-- Whether root `playwright-profile/` should be per-user or intentionally shared on one machine.
+- `expert-team-templates/` is deprecated; archive it after confirming no current code writes it.
+- root `generated/` historical references can be ignored; migrate as workspace artifact without fallback map.
+- `logs/` remain app-global; implement size/retention governance, not user scoping.
+- `playwright-profile/` should be app-isolated, not user-scoped; do hygiene only.
 
-Once those four decisions are settled, PR 1 can safely proceed without touching sensitive user data.
+With these decisions, PR 1 can safely start with low-risk hygiene and updated whitelist checks, still without touching sensitive user business data.
