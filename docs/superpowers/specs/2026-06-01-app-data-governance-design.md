@@ -47,7 +47,6 @@
 ├── employee-templates-cache/
 ├── expert-team-templates-cache/
 ├── logs/
-├── playwright-profile/
 ├── runtimes/
 ├── tmp/
 ├── defaultFolder/
@@ -77,7 +76,6 @@
 - `employee-templates-cache/`
 - `expert-team-templates-cache/`
 - `logs/`
-- `playwright-profile/`
 - `runtimes/`
 - `tmp/`
 - `defaultFolder/`
@@ -170,7 +168,7 @@
 
 2026-06-01 产品决策补充：
 
-- `playwright-profile/` 保持应用级隔离，不迁入 `users/{scope}/`。
+- `playwright-profile/` 应该用户隔离；当前 root 目录只作为老版本升级过渡，后续单独迁到 `users/{scope}/playwright-profile/`。
 - `expert-team-templates/` 是废弃的旧专家团模板目录，后续作为归档候选。
 
 ## Upgrade Safety
@@ -229,6 +227,6 @@ app setup
 
 - 不删除真实用户数据。
 - 不清理代码仓库构建产物。
-- 不迁移 `playwright-profile/`。
+- 今天不迁移 `playwright-profile/`；后续单独做用户隔离迁移。
 - 不迁移权限、任务、对话主数据。
 - 不改变 workspace 默认路径策略。

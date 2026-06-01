@@ -60,7 +60,7 @@ mod tests {
         assert_eq!(classify_root_entry("temp"), RootEntryClass::TemporaryLegacy);
         assert_eq!(classify_root_entry("tmpImage"), RootEntryClass::TemporaryLegacy);
         assert_eq!(classify_root_entry("logs"), RootEntryClass::KeepRoot);
-        assert_eq!(classify_root_entry("playwright-profile"), RootEntryClass::KeepRoot);
+        assert_eq!(classify_root_entry("playwright-profile"), RootEntryClass::TransitionalRoot);
         assert_eq!(
             classify_root_entry("expert-team-templates"),
             RootEntryClass::DeprecatedArchiveCandidate
@@ -88,6 +88,7 @@ Create `src-tauri/src/storage/app_data_governance.rs`:
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RootEntryClass {
     KeepRoot,
+    TransitionalRoot,
     WorkspaceArtifact,
     TemporaryLegacy,
     DeprecatedArchiveCandidate,
@@ -98,10 +99,11 @@ pub fn classify_root_entry(name: &str) -> RootEntryClass {
     match name {
         "global" | "crypto" | "users" | "skills" | "employee-templates-cache"
         | "expert-team-templates-cache" | "runtimes" | "tmp" | "defaultFolder" | "logs"
-        | "device_id" | "data_version" | ".migrated" | "playwright-profile" => {
+        | "device_id" | "data_version" | ".migrated" => {
             RootEntryClass::KeepRoot
         }
         name if name.starts_with(".archived-legacy-") => RootEntryClass::KeepRoot,
+        "playwright-profile" => RootEntryClass::TransitionalRoot,
         "expert-team-templates" => RootEntryClass::DeprecatedArchiveCandidate,
         "analysis" | "charts" | "generated" | "exports" | "reports" | "uploads" => {
             RootEntryClass::WorkspaceArtifact

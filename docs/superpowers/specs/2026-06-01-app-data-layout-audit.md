@@ -43,7 +43,7 @@
 | 技能 | `skills/` + `users/{scope}/skills/` | `skills/` 是服务端同步的 global skill；用户上传走 user scope |
 | 用户生成文件 | workspace，默认 `defaultFolder/` | 用户可见产物，不应散落 root |
 | IM 附件临时下载 | `tmp/*_downloads/` | 可重生成，统一 TTL |
-| 浏览器自动化 profile | 当前 root `playwright-profile/`，目标应用级隔离 | profile 不按用户隔离；按 AIjia 应用隔离，避免与其它应用/环境共享 |
+| 浏览器自动化 profile | 当前 root `playwright-profile/`，目标 `users/{scope}/playwright-profile/` | profile 必须用户隔离；当前 root 位置只作为老版本升级过渡 |
 | 诊断日志 | 当前 root `logs/` | 保持全局应用日志，做容量治理，不 user-scoped |
 
 ## Root Whitelist
@@ -63,7 +63,6 @@
 | `employee-templates-cache/` | 数字员工模板跨用户内容寻址缓存 |
 | `expert-team-templates-cache/` | 专家团模板跨用户内容寻址缓存 |
 | `logs/` | 应用级诊断和运行日志，保留 root 但必须容量治理 |
-| `playwright-profile/` | 浏览器自动化应用级 profile，按应用隔离而不是用户隔离 |
 | `tmp/` | 可重生成临时数据根 |
 | `defaultFolder/` | 默认 workspace，用户可见文件归宿 |
 | `device_id` | 旧装机级设备 ID，未来可进 `global/device.json` |
@@ -78,6 +77,7 @@
 | Entry | Current Reason | Exit Criteria |
 |---|---|---|
 | `screenshots/` | Playwright screenshot 仍写 root；已有 user scope API 但调用未迁完 | 浏览器截图改写 user scope 或 conversation 附件 |
+| `playwright-profile/` | Playwright 当前仍使用 root profile；老用户升级必须保留可读 fallback | profile 写入和读取迁到 `users/{scope}/playwright-profile/`，确认 Chromium lock/crash recovery 语义不变 |
 | `site-profiles/` | 已有 user scope 迁移，但 root fallback 和 legacy cleanup 仍存在 | 确认所有 site profile 写入走 user scope |
 | `subagent_transcripts/` | 部分路径已有 user scope fallback，root 仍作为未登录/legacy 兜底 | 子代理输出在未登录态 no-op，不再 root fallback |
 | `api-data/`, `audit/`, `shared/`, `conversations/`, `index.json` | 老 root-flat 会话体系的兼容残留 | `legacyRootArchived` 覆盖完成并验证用户级数据完整 |
@@ -159,7 +159,7 @@ users
 | `permissions.json` | permissions | root fallback in `lib.rs` | Review only | User private; move only after no root fallback needed |
 | `permissions.json.bak` | permissions backup | Local backup | Review only | Need preserve until permissions migration verified |
 | `personas/` | chat persona | Root intentionally excluded from cleanup | Review only | Product still has personas; need inspect read/write before moving |
-| `playwright-profile/` | browser automation | `PlaywrightBrowser` launch/shutdown uses root | Keep root app-isolated | Product decision: profile should be app-isolated, not per-user; only clean crash/cache safely |
+| `playwright-profile/` | browser automation | `PlaywrightBrowser` launch/shutdown uses root | Keep transitional; migrate to user scope | Product correction: profile must be user-isolated; preserve Chromium lock/crash recovery during upgrade |
 | `reports/` | workspace artifacts | `WorkspaceManager` defines `reports` | Migrate to workspace | User visible reports |
 | `screenshots/` | browser automation / legacy user data | Playwright writes root screenshot; user scope path exists | Review only | Do not move until screenshot writer changes |
 | `shared/` | memory/cache | `migration_user_scope` copies; cleanup archives after claim | Archive after claim | User private legacy root |
@@ -217,19 +217,20 @@ There are two clipboard image paths:
 
 `save_clipboard_image_to_tmp()` still writes `tmpImage/`, while `save_clipboard_image_to_tmp_clipboard_impl()` writes the newer `tmp/clipboard/` path. Product-wise, clipboard paste is throwaway attachment staging, so target should be `tmp/clipboard/` with TTL. Root `tmpImage/` should become read-only legacy cleanup input.
 
-### Browser Automation Is App-Scoped
+### Browser Automation Should Become User-Scoped
 
 `PlaywrightBrowser` directly uses:
 
 - `~/.renlijia/playwright-profile/`
 - `~/.renlijia/screenshots/`
 
-Product decision: `playwright-profile/` should be application-isolated, not user-scoped. That means the current root location is acceptable as an app-level profile container. Future work should not migrate it into `users/{scope}/`; it should only:
+Product correction: `playwright-profile/` should be user-isolated, not app-global. The current root location is a legacy upgrade fallback only. Future work should migrate browser profile ownership into `users/{scope}/playwright-profile/` and:
 
-1. keep it outside workspace and outside user-private business data,
-2. clean known Chromium crash/cache artifacts safely,
+1. keep root profile readable for existing users until migration is proven,
+2. migrate only when no Playwright/Chromium process is using the profile,
 3. preserve `SingletonLock` and corrupted-profile retry semantics,
-4. avoid sharing profile with other apps or another AIjia channel unless explicitly designed.
+4. clean only known Chromium cache/crash artifacts that are safe to regenerate,
+5. avoid sharing profile across app users or another AIjia channel unless explicitly designed.
 
 ### Workspace Artifact Paths Are Product-Level, Not Cache
 
@@ -294,11 +295,12 @@ Current scope.
 - Re-check `api-data/audit/shared/conversations/index.json/site-profiles/screenshots/subagent_transcripts`.
 - Keep archive-before-delete behavior.
 
-### PR 4: Browser Automation App-Scope Hygiene
+### PR 4: Browser Automation User-Scope Migration
 
-- Keep Playwright profile application-scoped.
+- Move Playwright profile target to `users/{scope}/playwright-profile/`.
+- Keep root `playwright-profile/` as old-version fallback until migration succeeds.
 - Add bounded cleanup for Chromium cache/crash artifacts that are safe to regenerate.
-- Consider moving screenshots to `tmp/` or conversation artifacts, but do not move profile to user scope.
+- Consider moving screenshots to `tmp/` or conversation artifacts in the same browser automation pass.
 - Keep corrupted-profile wipe semantics.
 
 ### PR 5: Permission / Task / Agent State User Scope
@@ -323,6 +325,6 @@ Product decisions captured on 2026-06-01:
 - `expert-team-templates/` is deprecated; archive it after confirming no current code writes it.
 - root `generated/` historical references can be ignored; migrate as workspace artifact without fallback map.
 - `logs/` remain app-global; implement size/retention governance, not user scoping.
-- `playwright-profile/` should be app-isolated, not user-scoped; do hygiene only.
+- `playwright-profile/` should be user-isolated; keep root as legacy fallback until a later migration PR handles Chromium profile safety.
 
 With these decisions, PR 1 can safely start with low-risk hygiene and updated whitelist checks, still without touching sensitive user business data.
