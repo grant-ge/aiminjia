@@ -326,3 +326,89 @@
 - `toolCalls[].name == "Skill"` 的参数中 `skill_id` 出现非 `html-ppt` / `dingtalk-workspace` 字面（如 `ppt` / `dingtalk` / `钉钉` / `年度总结 PPT` 等错误字面 id）
 - AI 回复中出现「我没有 PPT 生成技能」「无法生成 PPT」「无法发送钉钉」等否认能力的措辞
 - 任一 `Skill` 调用对应的 tool record `content.text` 包含 `not found` / `does not exist` 等错误字样
+
+---
+
+## 意图 11：用 html-ppt 生成长 PPT 期间，UI 始终有可见反馈
+
+**场景**
+客户反馈："发送了一个很长的 PPT 制作要求，agent 执行了几次工具后，UI 上 90 秒看不到任何文字或工具状态更新，客户以为客户端无响应了。"本意图测的是**客户感知层面的"可见反馈"承诺**——不是测后端 stream 是否断、不是测客户端是否 retry。从用户点发送到 AI 整轮回复结束期间，UI 上"用户能看到的信号"（最后一条 assistant 文本长度 + `messageCount` 即气泡总数）任一在 90 秒滚动窗口内必须有变化；两个指标连续 90 秒同时不变 = 客户感知"看着像死了" = FAIL。
+
+**为什么不主动 cancel**：实验证明监测脚本在 90 秒主动 cancel 会截胡 LLM 正在算的长 tool args（一次性 generate 10000+ token 的 Edit / Bash args 是合理需求，可耗时 60-160 秒），导致测试 false positive。正确做法是**纯观察**：让 turn 自然跑完，从最终 `wait-reply` 返回 + 采样时间序列回头判定窗口内有没有真的"无可见信号"。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 推断 scope；从环境记下 `{scope}`
+3. 确认 `~/.renlijia/skills/html-ppt/SKILL.md` 存在且 frontmatter 中 `name: html-ppt`；若不存在，先按「技能」task 意图 1 的「导入目录」路径把它导入，**不通过手工 `cp` 落盘**
+4. 新建空对话：`tauri-pilot aijia new-task`
+5. 在对话输入框输入一段长 prompt：`请用 html-ppt 技能帮我生成一份 30 页的产品发布会演讲稿 PPT，主题是「2026 年新一代 AI 工作台正式发布」。结构如下：第 1 页封面（含主标题、副标题、日期、品牌 logo）；第 2 页目录；第 3-4 页公司简介与团队；第 5-6 页行业痛点与市场背景；第 7-8 页产品定位与差异化；第 9-13 页 5 个核心功能（每页 1 个，含 3 个亮点 + 1 张示意图）；第 14-15 页技术架构亮点；第 16-18 页 3 个标杆客户案例（每页 1 个，含背景 / 方案 / 量化收益）；第 19-20 页性能指标与对比图表；第 21-22 页商业化路径与定价方案；第 23-24 页 partner / 生态合作；第 25 页路线图；第 26-27 页风险与应对；第 28 页 Q&A 引导；第 29 页致谢；第 30 页结语 + 联系方式。主题用 sharp-mono，每页都要有 data-anim 入场动画。`
+6. 记下 `T0=$(date +%s)`
+7. 点发送：`tauri-pilot aijia send`
+8. **并发纯观察（不 cancel）**：主线程跑 `tauri-pilot aijia wait-reply --timeout 1800`（30 分钟上限——30 页 PPT 实测约 15 分钟，留 100% buffer 应对网络抖动）；副进程每 10 秒采样以下二元组并落到 `samples.log`：
+   - `text_len = tauri-pilot aijia ui-message --json | jq '[.[] | select(.role=="assistant")][-1].text | length'`
+   - `msg_count = tauri-pilot aijia where --json | jq '.messageCount'`（**用 `messageCount`，不用 `aijia tool-calls --json`——后者在 turn 进行中始终返回空数组**）
+   监测脚本**仅记录、不 cancel**；前 3 次采样作为 grace period 不计入静默窗口（AI 还没启动）；之后任一指标增长就重置静默计数
+9. `wait-reply` 返回后 `T1=$(date +%s)`
+10. 推断当前对话 id：`conv_id=$(tauri-pilot aijia where --json | jq -r .routeObj.conversationId)`
+
+**验收标准**
+
+✅ 应该看到
+- 步骤 8 的 `wait-reply --timeout 1800` 在 1800 秒内返回 `ok`（即 `T1 - T0 < 1800`）
+- 步骤 8 采样的 `(text_len, msg_count)` 时间序列中，**不存在**任何连续 9 次（≥ 90 秒）两个指标都未增长的窗口（从 grace period 之后算起）
+- `~/.renlijia/users/{scope}/conversations/{conv_id}/messages.jsonl` 中存在至少 1 条 `role == "assistant"` 的记录，其 `toolCalls` 中存在一项 `name == "Skill"` 且参数 JSON 中 `skill_id == "html-ppt"`
+- 该 `Skill` 调用紧随其后的 `role == "tool"` 记录的 `content.text` 长度 `!= 0` 且 `isError != true`
+- 最终一条 `role == "assistant"` 且 `toolCalls.length == 0` 的记录中 `content.text` 长度 `>= 200`（确保 AI 真的产出了 PPT 内容而不是只回了一句"好的"）
+- workspace 下出现至少 1 个 PPT 产物文件（如 `index.html` 或 `*.html`），大小 `>= 50 KB`（30 页 PPT 实测 100+ KB）
+- 跑完后 `tauri-pilot aijia health-check` 仍返回 ok
+
+❌ 不应该看到
+- 步骤 8 采样序列出现 ≥ 90 秒的"双指标同时零增长窗口"（这是客户感知"看着像死了"的硬证据）
+- 对话 UI 中本轮出现红色错误提示或「工具调用失败」类 toast
+- 应用日志中出现 `panic` 或 `Failed to write` 等致命错误字样
+- `wait-reply` 在 1800 秒超时返回错误（turn 真跑不完）
+
+---
+
+## 意图 13：多轮迭代修改 PPT 时，每轮 UI 始终有可见反馈
+
+**场景**
+用户先让 AI 用 `html-ppt` 生成一份基础 PPT，再连续两轮修改（换主题、加新页）。客户反馈第 2/3 轮迭代上下文累积时更容易让 UI 显得"卡死"。承诺同意图 11：每轮 turn 期间 UI 可见信号（最后一条 assistant 文本长度 + `messageCount`）任一在 90 秒滚动窗口内必须有变化；3 轮任一轮出现连续 90 秒双指标同时零增长 = 整条 FAIL。
+
+**为什么不主动 cancel**：同意图 11 — 实验已证明长 tool args 计算期间 90s cancel 会 false positive，采用纯观察模式。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 推断 scope；记下 `{scope}`
+3. 确认 `~/.renlijia/skills/html-ppt/SKILL.md` 存在；若不存在按「技能」task 意图 1 导入
+4. 新建空对话：`tauri-pilot aijia new-task`；首次 `send` 之后再推断 `conv_id=$(tauri-pilot aijia where --json | jq -r .routeObj.conversationId)`
+5. **轮 1（基础生成）**：
+   1. 输入：`请用 html-ppt 帮我生成一份 12 页的技术分享 PPT，主题是「Rust 异步编程入门」，包含封面、目录、5 个核心概念、3 个代码示例、总结、Q&A、结语，主题用 minimal-white`
+   2. 记 `T0_a=$(date +%s)`，`tauri-pilot aijia send`
+   3. 主线程跑 `wait-reply --timeout 1200`（20 分钟，12 页比 30 页更轻量），副进程每 10 秒采样 `(text_len, msg_count)` 落到 samples.log，**仅记录、不 cancel**
+   4. `wait-reply` 返回后 `T1_a=$(date +%s)`
+6. **轮 2（换主题）**：
+   1. 输入：`把整份 PPT 的主题换成 dracula，其他不变`
+   2. 记 `T0_b=$(date +%s)`，`tauri-pilot aijia send`
+   3. 同轮 1 步骤 c：纯观察 + `wait-reply --timeout 1200`
+   4. `wait-reply` 返回后 `T1_b=$(date +%s)`
+7. **轮 3（加新页）**：
+   1. 输入：`在结语前加一页「常见踩坑」，列 4 个常见错误及避免方法`
+   2. 记 `T0_c=$(date +%s)`，`tauri-pilot aijia send`
+   3. 同轮 1 步骤 c
+   4. `wait-reply` 返回后 `T1_c=$(date +%s)`
+
+**验收标准**
+
+✅ 应该看到（3 轮**每一轮都必须独立满足**，任一轮未满足即整条 FAIL）
+- 轮 1 / 轮 2 / 轮 3 的 `wait-reply --timeout 1200` 均返回 `ok`（即 `T1_a - T0_a < 1200`、`T1_b - T0_b < 1200`、`T1_c - T0_c < 1200`）
+- 轮 1 / 轮 2 / 轮 3 各自采样的 `(text_len, msg_count)` 时间序列中均**不存在**任何连续 9 次（≥ 90 秒）两个指标都未增长的窗口（从 grace period 之后算起）
+- `~/.renlijia/users/{scope}/conversations/{conv_id}/messages.jsonl` 中至少有 1 条 `role == "assistant"` 的记录 `toolCalls[].name == "Skill"` 且 `skill_id == "html-ppt"`（轮 1 必定触发；轮 2/3 是否复用 skill body 由 LLM 决定，不强约束）
+- 3 轮各自最后一条 `role == "assistant"` 且 `toolCalls.length == 0` 的记录中 `content.text` 长度均 `>= 100`
+- 跑完 3 轮后 `tauri-pilot aijia health-check` 仍返回 ok
+
+❌ 不应该看到
+- 任一轮采样序列出现 ≥ 90 秒的"双指标同时零增长窗口"
+- 任一轮 `wait-reply` 在 1200 秒超时返回错误
+- 同对话中出现 `role == "tool"` 记录的 `content.text` 包含 `context length exceeded` / `too many tokens` 字样（应当通过上下文压缩规避，而不是直接报错）
+- 应用日志中出现 `panic` / `Failed to write` 等致命错误字样

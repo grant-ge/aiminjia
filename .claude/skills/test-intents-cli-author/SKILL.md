@@ -68,7 +68,7 @@ aijia agenda-wait-row --title "测试" --timeout 5
 
 算。它做的是"提交登录表单"这一个用户动作——fill 两个字段 + 点按钮虽然技术上多步，但用户视角是一次"完成登录"。判断标准：**用户在 UI 上一次完成 / 一次失败的最小操作单元**。登录拆成 `fill account` + `fill password` + `click submit` 三步在用户视角没有��何意义（账号填一半的 UI 中间态没人验证）。
 
-类似豁免：`handle-dialog --action accept` 是"做一次确认决定"。
+类似豁免：`dialog-click --action confirm` 是"做一次确认决定"。
 
 ## 底层一定走 eval 操作 DOM
 
@@ -98,9 +98,10 @@ aijia agenda-wait-row --title "测试" --timeout 5
 
 | 模式 | 例子 | 用途 |
 |---|---|---|
-| `data-aijia-<noun>`（无值） | `data-aijia-conversation-row` / `data-aijia-confirm-dialog` / `data-aijia-agenda-editor` / `data-aijia-employee-drawer` | 标识元素本身，CLI 用 `[data-aijia-<noun>]` 选 |
+| `data-aijia-<noun>`（无值） | `data-aijia-conversation-row` / `data-aijia-agenda-editor` / `data-aijia-employee-drawer` | 标识元素本身，CLI 用 `[data-aijia-<noun>]` 选 |
+| `data-aijia-<noun>="<kind>"` | `data-aijia-dialog="permission-ask\|ask-user-question\|confirm"` | 标识元素本身，值是 kind 枚举（一组同名元素之间区分类型） |
 | `data-aijia-<noun>-id={id}` / `-name={name}` / `-title={title}` | `data-aijia-conversation-id="conv-123"` / `data-aijia-employee-name="小研"` / `data-aijia-agenda-title="早会提醒"` | 派生标识符，CLI 用属性选择器精确定位 |
-| `data-aijia-<noun>-action="<verb>"` | `data-aijia-confirm-action="cancel"` / `data-aijia-agenda-action="save"` / `data-aijia-employee-action="dispatch"` | 子元素角色枚举 |
+| `data-aijia-<noun>-action="<verb>"` | `data-aijia-dialog-action="confirm"` / `data-aijia-agenda-action="save"` / `data-aijia-employee-action="dispatch"` | 子元素角色枚举 |
 | `data-aijia-<noun>-field="<name>"` | `data-aijia-agenda-field="title"` / `data-aijia-agenda-field="prompt"` | 表单字段标识 |
 | `data-aijia-<noun>-status={enum}` / `-{prop}={value}` | `data-aijia-streaming="true"` / `data-aijia-agenda-status="active"` | 容器状态 |
 | `data-aijia-nav={key}` | nav key（已定义 enum） | 导航入口 |
@@ -142,7 +143,7 @@ aijia agenda-wait-row --title "测试" --timeout 5
 
 判断是不是真的 OS-level：在 webview console 试 `document.querySelector(...)` 能不能选到 dialog 元素。能选到 = DOM modal（不许 mock），选不到 = OS-level（允许 mock）。
 
-实战案例：`aijia composer-queue-files` + `aijia composer-click-plus`（OS file dialog mock）；`aijia handle-dialog`（Radix DOM modal，真点不 mock）。
+实战案例：`aijia composer-queue-files` + `aijia composer-click-plus`（OS file dialog mock）；`aijia dialog-click`（Radix DOM modal，真点不 mock）。
 
 ## 改动点（封装一条新 CLI 的完整路径）
 
@@ -371,8 +372,10 @@ tauri-pilot aijia <new-verb> --arg ...; tauri-pilot aijia <new-verb> --arg ...
 | 消息列表容器 | `[data-aijia-message-list]` | `MessageList.tsx` |
 | AI 气泡 | `[data-aijia-ai-bubble][data-aijia-message-id="<id>"]` | `AiBubble.tsx` |
 | 流式气泡 | `[data-aijia-streaming-bubble]` | `StreamingBubble.tsx` |
-| ConfirmDialog 容器 | `[data-aijia-confirm-dialog]` | `ConfirmDialog.tsx` |
-| ConfirmDialog 按钮 | `[data-aijia-confirm-action="cancel\|confirm"]` | `ConfirmDialog.tsx` |
+| Dialog 容器（三类合一） | `[data-aijia-dialog="permission-ask\|ask-user-question\|confirm"]` | `Modal.tsx` / `PermissionAskDialog.tsx` / `AskUserQuestionDialog.tsx` / `ConfirmDialog.tsx` |
+| Dialog 标题 / 描述 | `[data-aijia-dialog-title]` / `[data-aijia-dialog-description]` | 同上 |
+| Dialog 按钮 | `[data-aijia-dialog-action="allow\|deny\|cancel\|confirm\|option"]` | 同上 |
+| AskUserQuestion option 定位 | `[data-aijia-dialog-question-index="N"][data-aijia-dialog-option-index="M"]` | `AskUserQuestionDialog.tsx` |
 | LoginPage 账号 | `#account` | `LoginPage.tsx` |
 | LoginPage 密码 | `#password` | `LoginPage.tsx` |
 | LoginPage 提交 | `form (containing #account) button[type="submit"]` | `LoginPage.tsx` |
