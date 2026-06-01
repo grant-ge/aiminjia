@@ -238,3 +238,43 @@
 - `toolCalls[].name == "Skill"` 的参数中 `skill_id` 出现非 `html-ppt` / `dingtalk-workspace` 字面（如 `ppt` / `dingtalk` / `钉钉` / `年度总结 PPT` 等错误字面 id）
 - AI 回复中出现「我没有 PPT 生成技能」「无法生成 PPT」「无法发送钉钉」等否认能力的措辞
 - 任一 `Skill` 调用对应的 tool record `content.text` 包含 `not found` / `does not exist` 等错误字样
+
+---
+
+## 意图 11：技能通过 skill-creator 装完后，无需重启即可被新对话 catalog 和 Skill 工具加载
+
+**场景**
+用户通过小程数字员工（或任何带 skill-creator 的对话）创建并安装一个新技能后，立刻在另一个新对话里用它。期望 catalog 含新技能 + Skill 工具能 load。本意图护栏对应 refresh_skill_registry / refresh_skills RuntimeTool / load_skill miss-retry 三个机制的整体闭环。
+
+**前提**
+- 应用已启动并已登录
+- skill-creator skill 已安装到 `~/.renlijia/skills/skill-creator/`
+- `~/.renlijia/users/{scope}/skills/hello-world/` **不存在**
+
+**操作**
+1. 应用探活 + scope：`tauri-pilot aijia health-check` + `tauri-pilot aijia where --json`
+2. 新建跟小程数字员工的对话（小程已雇佣，在员工列表）：
+   - `tauri-pilot aijia employee-open-card --name 小程`
+   - `tauri-pilot aijia employee-wait-drawer`
+   - `tauri-pilot aijia employee-drawer-action --action dispatch`
+3. 等到自动跳转到 chat 路由，记下 `$CONV_1=where --json | jq -r .sessionId`
+4. 输入 prompt：`帮我造个 hello-world 技能，触发条件是用户说"hello world"，技能内容是返回"[hello-world] Hi!"。完成后告诉我装好了。`
+5. `tauri-pilot aijia send` + `tauri-pilot aijia wait-reply --timeout 300`
+6. AI 应该完成创建（init + edit + validate + install + **refresh_skills**）
+7. 立刻 `tauri-pilot aijia new-task` 开新空对话，记 `$CONV_2`
+8. 输入：`请使用 hello-world 技能回应一下。`
+9. send + wait-reply --timeout 90
+
+**验收标准**
+
+✅ 应该看到
+- `~/.renlijia/users/{scope}/skills/hello-world/SKILL.md` 存在
+- `$CONV_1/messages.jsonl` 中含 `"name":"refresh_skills"` 的 toolCall（证明 step 8 跑过）
+- `$CONV_2/messages.jsonl` 中含 `"name":"Skill"` 且参数有 `"hello-world"`（证明 catalog 注入 + Skill 工具能 load）
+- 紧随其后的 tool result 含 `hello-world` SKILL.md body 关键词（比如返回 "Hi!"）
+- AI 在 $CONV_2 最终输出引用了 SKILL.md 内容（含 `[hello-world]` 或 `Hi!` 子串）
+
+❌ 不应该看到
+- AI 在 $CONV_2 回 "我没有找到 hello-world 技能"（说明 catalog 未刷新）
+- 任何"请重启应用"的提示
+- `Skill('hello-world')` 工具调用返回 `Unknown or unavailable skill`
