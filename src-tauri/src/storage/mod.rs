@@ -14,7 +14,6 @@ pub mod migration_root_cleanup;
 pub mod migration_user_scope;
 pub mod process_ext;
 pub mod safe_filename;
-pub mod skill_draft_store;
 pub mod skill_package;
 pub mod text_io;
 pub mod upload_gc;

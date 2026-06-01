@@ -639,16 +639,6 @@ pub fn run() {
                 }
             }
 
-            match storage::skill_draft_store::gc_all_users(&aijia_home, 7) {
-                Ok(removed) if removed > 0 => {
-                    log::info!("Cleaned up {} stale skill drafts (>7d)", removed);
-                }
-                Ok(_) => {}
-                Err(err) => {
-                    log::warn!("Failed to gc skill drafts: {}", err);
-                }
-            }
-
             // Initialize runtime repository facade (routes settings/persona/file/export
             // commands through domain traits instead of direct AppStorage access).
             // IMPORTANT: facade must be managed before TauriChatCommandAdapter::new() is
@@ -1089,10 +1079,7 @@ pub fn run() {
             commands::skill_management::uninstall_custom_skill,
             commands::skill_management::init_skill_template,
             commands::skill_management::pack_skill,
-            // Skill-Smith (小程) draft commands
-            commands::skill_draft::list_skill_drafts,
-            commands::skill_draft::discard_skill_draft,
-            commands::skill_draft::get_skill_draft_meta,
+            // Skill package import/export (drag-drop zip / SkillCard export)
             commands::skill_draft::import_skill_package,
             commands::skill_draft::export_installed_skill,
             commands::skill_management::reload_skill,

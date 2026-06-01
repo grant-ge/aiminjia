@@ -20,7 +20,6 @@ import { useNotificationStore } from '@/stores/notificationStore'
 import { useSkillStore } from '@/stores/skillStore'
 import { useUiStore } from '@/stores/uiStore'
 
-import { SkillDraftBanner } from './SkillDraftBanner'
 import { SkillValidationResultDialog } from './SkillValidationResultDialog'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { SkillValidationError, type SkillValidationKind } from '@/stores/skillStore'
@@ -395,7 +394,6 @@ export function SkillCenterPage() {
         </header>
       }
     >
-      <SkillDraftBanner />
       <SkillOfficeSection
         categoryBar={
           <SkillCategoryBar
