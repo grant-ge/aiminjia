@@ -249,6 +249,14 @@ pub fn refresh_skill_registry(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Tauri command wrapper for `refresh_skill_registry`. Exposed so the
+/// frontend (SkillCenterPage) and runtime tools (refresh_skills) can
+/// trigger a registry refresh without restarting the app.
+#[tauri::command]
+pub async fn refresh_skill_registry_cmd(app: AppHandle) -> Result<(), String> {
+    refresh_skill_registry(&app)
+}
+
 /// List all installed custom skills.
 #[tauri::command]
 pub async fn list_custom_skills(app: AppHandle) -> Result<Vec<CustomSkillInfo>, String> {

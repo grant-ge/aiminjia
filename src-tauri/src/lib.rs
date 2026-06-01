@@ -1079,6 +1079,7 @@ pub fn run() {
             commands::skill_management::uninstall_custom_skill,
             commands::skill_management::init_skill_template,
             commands::skill_management::pack_skill,
+            commands::skill_management::refresh_skill_registry_cmd,
             // Skill package import/export (drag-drop zip / SkillCard export)
             commands::skill_draft::import_skill_package,
             commands::skill_draft::export_installed_skill,
