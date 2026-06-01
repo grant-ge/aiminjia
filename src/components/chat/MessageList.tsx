@@ -52,8 +52,8 @@ interface MessageListProps {
 }
 
 export function MessageList({ expertTeamId }: MessageListProps = {}) {
-  const { t } = useTranslation()
-  const expertTeam = expertTeamId ? getExpertTeam(expertTeamId) : undefined
+  const { t, i18n } = useTranslation()
+  const expertTeam = expertTeamId ? getExpertTeam(expertTeamId, i18n.language) : undefined
 
   const FILE_ACTION_ERROR_TITLES: Record<FileActionKind, string> = {
     preview: t('messageList.cannotPreview'),

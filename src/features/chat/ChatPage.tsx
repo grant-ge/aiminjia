@@ -50,6 +50,9 @@ export function ChatPage({ conversationId }: ChatPageProps) {
   const { overview: teamOverview } = useTeamOverview(activeConversationId)
   const expertTeamId = useExpertTeamForConversation(conversationId)
   const expertTeam = expertTeamId ? getExpertTeam(expertTeamId, i18n.language) : undefined
+  const sourceLabel = conv?.kind === 'expertTeam'
+    ? expertTeam?.name ?? conv?.sourceLabel
+    : conv?.sourceLabel
 
   const handleOpenPreviewTarget = async (target: PreviewTarget) => {
     try {
@@ -84,7 +87,7 @@ export function ChatPage({ conversationId }: ChatPageProps) {
           title={title}
           workspace={conv?.workspaceName}
           kind={conv?.kind}
-          sourceLabel={conv?.sourceLabel}
+          sourceLabel={sourceLabel}
           updatedAt={conv?.updatedAt}
           employee={
             employee
