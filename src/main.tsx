@@ -7,6 +7,7 @@ import '@/styles/globals.css'
 import App from './App'
 import { useAuthStore } from '@/stores/authStore'
 import { useChatStore } from '@/stores/chatStore'
+import { usePendingStore } from '@/stores/pendingStore'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useUiStore } from '@/stores/uiStore'
 
@@ -16,6 +17,7 @@ if (import.meta.env.DEV || import.meta.env.VITE_E2E_ENABLED === 'true') {
     sessionStore: useSessionStore,
     authStore: useAuthStore,
     uiStore: useUiStore,
+    pendingStore: usePendingStore,
     // E2E one-shot mock for `pickAttachments()` — CLI pushes a string[] of
     // absolute paths here; the next call to `pickAttachments()` in
     // `useChatAttachments.ts` shifts it instead of opening the OS dialog.
