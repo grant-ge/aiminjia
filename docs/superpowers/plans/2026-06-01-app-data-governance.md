@@ -10,6 +10,15 @@
 
 ---
 
+## Scope Update: 2026-06-01 Audit-Only Slice
+
+The user approved the direction but narrowed today's work to directory audit report enhancement. Do not implement runtime cleanup or migration in this slice. First produce and review:
+
+- `docs/superpowers/specs/2026-06-01-app-data-layout-audit.md`
+- updated references in the design doc
+
+Implementation tasks below remain the next phase after the audit matrix is accepted.
+
 ## File Structure
 
 - Create: `src-tauri/src/storage/app_data_governance.rs`
