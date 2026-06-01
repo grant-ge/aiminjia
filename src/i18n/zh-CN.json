@@ -811,6 +811,7 @@
     "syncDone": "同步完成，更新 {{count}} 个专家团",
     "syncUpToDate": "已是最新",
     "syncFailed": "同步失败",
+    "conversationTitle": "专家团: {{name}}",
     "startTeam": "启动 {{name}}",
     "openTableHint": "主持人按议题召集",
     "members": "团队成员",

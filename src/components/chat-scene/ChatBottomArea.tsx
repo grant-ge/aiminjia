@@ -130,9 +130,9 @@ export function ChatBottomArea({
     let markdownToSend = payload.markdown
     if (activeConversationId && messageCount === 0) {
       const teamId = await ensureExpertTeam(activeConversationId)
-      const team = teamId ? findTeam(teamId) : undefined
+      const team = teamId ? findTeam(teamId, i18n.language) : undefined
       if (team) {
-        markdownToSend = buildDirectorPrompt(team, markdownToSend)
+        markdownToSend = buildDirectorPrompt(team, markdownToSend, i18n.language)
       }
     }
     try {
@@ -145,7 +145,7 @@ export function ChatBottomArea({
       console.error('[ChatBottomArea] sendUserMessage failed:', err)
       throw err
     }
-  }, [sendUserMessage, activeConversationId, messageCount])
+  }, [sendUserMessage, activeConversationId, messageCount, i18n.language])
 
   const handlePickAttachments = useCallback(async () => {
     const results = await pickAttachments()

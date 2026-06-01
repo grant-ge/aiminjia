@@ -31,7 +31,7 @@ export function ExpertTeamsPage() {
     if (!team) return
     try {
       const conversationId = await createConversation()
-      const title = `专家团: ${team.name}`
+      const title = t('ExpertTeams.conversationTitle', { name: team.name })
       // Optimistically inject into chatStore FIRST so the sidebar shows the new
       // conversation immediately. The backend `conversation:created` event will
       // refresh the list anyway, but it can land after the user has navigated
@@ -62,7 +62,7 @@ export function ExpertTeamsPage() {
       // ExpertTeamBanner on the chat page would flash empty for a beat.
       // setExpertTeam also seeds the id cache so useExpertTeamForConversation
       // hits synchronously on the first render of ChatPage.
-      await setExpertTeam(conversationId, id)
+      await setExpertTeam(conversationId, id, team.name)
       // Switch sidebar to 专家团 tab so the user lands in the right section.
       setSidebarTab('expert-team')
       setRoute({ kind: 'chat', conversationId })

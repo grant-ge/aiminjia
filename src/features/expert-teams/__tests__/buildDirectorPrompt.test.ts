@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { EXPERT_TEAMS } from '../teams'
+import { EXPERT_TEAMS, getExpertTeam } from '../teams'
 import { buildDirectorPrompt } from '../buildDirectorPrompt'
 
 describe('buildDirectorPrompt', () => {
@@ -29,5 +29,24 @@ describe('buildDirectorPrompt', () => {
     expect(prompt).toMatch(/每位专家.*一轮观点/)
     expect(prompt).toMatch(/TeamCreate/)
     expect(prompt).toMatch(/战略推演团/)
+  })
+
+  it('keeps Chinese director prompt data localized when given an English team object', () => {
+    const team = getExpertTeam('strategy', 'en-US')!
+    const prompt = buildDirectorPrompt(team, '是否拓展东南亚市场', 'zh-CN')
+
+    expect(prompt).toContain('你现在的任务是为用户主持一场「战略推演团」圆桌讨论。')
+    expect(prompt).toContain('team_name = "expert-team-strategy"')
+    expect(prompt).not.toContain('Strategy Simulation Team')
+  })
+
+  it('renders English director prompts consistently for English locale', () => {
+    const team = getExpertTeam('strategy', 'en-US')!
+    const prompt = buildDirectorPrompt(team, 'Should we expand into Southeast Asia?', 'en-US')
+
+    expect(prompt).toContain('Your task is to host a "Strategy Simulation Team" roundtable discussion for the user.')
+    expect(prompt).toContain('Team members')
+    expect(prompt).toContain('team_name = "expert-team-strategy"')
+    expect(prompt).not.toContain('你现在的任务')
   })
 })

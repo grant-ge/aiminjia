@@ -72,8 +72,10 @@ async function fetchTeamId(conversationId: string): Promise<ExpertTeamId | null>
 export async function setExpertTeam(
   conversationId: string,
   teamId: ExpertTeamId,
+  sourceLabel?: string,
 ): Promise<void> {
   if (!VALID_IDS.has(teamId)) return
+  const label = sourceLabel ?? labelFor(teamId)
   // Seed cache so synchronous readers (getExpertTeam) see the id immediately.
   cache.set(conversationId, teamId)
   notify(conversationId, teamId)
@@ -81,12 +83,12 @@ export async function setExpertTeam(
   useChatStore.setState((state) => ({
     conversations: state.conversations.map((c) =>
       c.id === conversationId
-        ? { ...c, kind: 'expertTeam' as const, sourceLabel: labelFor(teamId) }
+        ? { ...c, kind: 'expertTeam' as const, sourceLabel: label }
         : c,
     ),
   }))
   try {
-    await setConversationExpertTeam(conversationId, teamId, labelFor(teamId))
+    await setConversationExpertTeam(conversationId, teamId, label)
   } catch (err) {
     console.warn('[expertTeamRegistry] setExpertTeam IPC failed:', err)
   }

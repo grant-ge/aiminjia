@@ -12,7 +12,7 @@ interface ExpertTeamWelcomeProps {
 }
 
 export function ExpertTeamWelcome({ team }: ExpertTeamWelcomeProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { sendUserMessage } = useChat()
   const [picking, setPicking] = useState<string | null>(null)
   const chatWidthMode = useSettingsStore((s) => s.chatWidthMode ?? 'full')
@@ -25,7 +25,7 @@ export function ExpertTeamWelcome({ team }: ExpertTeamWelcomeProps) {
     if (picking) return
     setPicking(example)
     try {
-      const prompt = buildDirectorPrompt(team, example)
+      const prompt = buildDirectorPrompt(team, example, i18n.language)
       const files: PendingFileInfo[] | undefined = undefined
       await sendUserMessage(prompt, files, null)
     } catch (err) {
@@ -33,7 +33,7 @@ export function ExpertTeamWelcome({ team }: ExpertTeamWelcomeProps) {
     } finally {
       setPicking(null)
     }
-  }, [picking, sendUserMessage, team])
+  }, [i18n.language, picking, sendUserMessage, team])
 
   return (
     <div

@@ -817,6 +817,7 @@
     "syncDone": "Sync complete, updated {{count}} expert team(s)",
     "syncUpToDate": "Up to date",
     "syncFailed": "Sync failed",
+    "conversationTitle": "Expert Team: {{name}}",
     "startTeam": "Start {{name}}",
     "openTableHint": "Director invites experts by topic",
     "members": "Members",
