@@ -2102,6 +2102,13 @@ export async function packSkill(skillDir: string, destPath: string): Promise<str
   return invoke<string>('pack_skill', { skillDir, destPath })
 }
 
+/** 触发后端重扫 user_skills_dir + global_skills_dir，把新增 SKILL.md 同步到内存 registry。
+ *  Used by SkillCenterPage on mount + 任何"装完想立刻看到"的场景。
+ *  调用 refresh_skill_registry_cmd Tauri command。 */
+export function refreshSkillRegistry(): Promise<void> {
+  return invoke<void>('refresh_skill_registry_cmd')
+}
+
 // ---------------------------------------------------------------------------
 // Marketplace Commands
 // ---------------------------------------------------------------------------
