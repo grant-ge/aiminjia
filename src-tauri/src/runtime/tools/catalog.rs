@@ -572,11 +572,6 @@ fn build_default_catalog() -> ToolCatalog {
         }),
     ));
 
-    // ── Power: skill-smith (小程) tools ────────────────────────────────
-    for (def, schema) in crate::runtime::tools::builtin::skill_smith::catalog_entries() {
-        c.insert(CatalogEntry::new(def, schema));
-    }
-
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
             "TeamCreate",
@@ -865,6 +860,21 @@ fn build_default_catalog() -> ToolCatalog {
         }),
     ));
 
+    c.insert(CatalogEntry::new(
+        ToolDefinition::new(
+            "RefreshSkills",
+            "通知 AIjia 重新扫描用户技能目录，让新装的技能立刻在对话和技能中心可见。\
+             用法：刚通过 lotus_skill.py install 或别的方式装完技能后调用一次。\
+             无参数。返回成功后下一 turn 的 catalog 含新技能。",
+        )
+        .with_kind(ToolKind::Support)
+        .with_read_only(false),
+        json!({
+            "type": "object",
+            "properties": {}
+        }),
+    ));
+
     c
 }
 
@@ -907,13 +917,7 @@ pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
     "cancel_agenda_item",
     "skip_occurrence",
     "list_agenda_occurrences",
-    "skill_create_draft",
-    "skill_write_md",
-    "skill_add_file",
-    "skill_validate",
-    "skill_dry_run",
-    "skill_install",
-    "skill_export",
+    "RefreshSkills",
 ];
 
 /// 全局默认 catalog（延迟初始化）。

@@ -15,6 +15,7 @@ interface GeneratedFileActionSource {
   id?: string
   title?: string
   fileName?: string
+  filePath?: string
   fileType?: string
 }
 
@@ -77,10 +78,12 @@ export function isPreviewActionEnabledForFile(
 }
 
 export function toPreviewTarget(file: GeneratedFileActionSource & { id: string }, conversationId: string): PreviewTarget {
+  const isArtifact = file.id.startsWith('artifact-')
   return {
     fileId: file.id,
     conversationId,
     fileName: file.fileName ?? file.title ?? '未命名文件',
     fileType: file.fileType,
+    localPath: isArtifact ? file.filePath : undefined,
   }
 }
