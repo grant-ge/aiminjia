@@ -1341,3 +1341,28 @@ mod tests {
         assert!(d2.as_millis() >= 4000 && d2.as_millis() <= 5000);
     }
 }
+
+#[cfg(test)]
+mod stability_tests {
+    use super::*;
+
+    #[test]
+    fn detects_aijia_v2_auth_error_envelope_as_revoked_session_key() {
+        let err = anyhow::anyhow!(
+            "{}",
+            r#"AIjia v2 stream error (401 Unauthorized): {"error":{"code":"auth_error","message":"Invalid session key"}}"#
+        );
+
+        assert!(is_auth_revoked_error(&err));
+    }
+
+    #[test]
+    fn does_not_treat_gateway_402_as_refreshable_session_key() {
+        let err = anyhow::anyhow!(
+            "{}",
+            r#"AIjia v2 stream error (402 Payment Required): {"error":{"code":"insufficient_balance","message":"Insufficient balance"}}"#
+        );
+
+        assert!(!is_auth_revoked_error(&err));
+    }
+}
