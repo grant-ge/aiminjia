@@ -128,6 +128,103 @@ CLI 端无明显缺口（聊天流复用 `type-message / send / wait-reply / whe
 3. 如果产品认为"用户连发"应该走前端 dedup / 节流而不入队，rules 整组应该改语义（pending 不是用户视角的概念）
 4. 都没着落前，把 task 标 `BLOCKED-PENDING-PRODUCT`，agent 跳过
 
+#### 场景 P：产物卡片交互（对话 task 意图 006/007/008）— ✅ 已实现（2026-06-02）
+
+意图-对话-006/007/008 三条原子意图覆盖「预览 / 用默认应用打开 / 在文件夹中显示」。`GeneratedFileCard` 渲染 3 个 action：「预览」（primary 按钮）/「用默认应用打开」（dropdown menuitem）/「在文件夹中显示」（dropdown menuitem）。`dropdown` 由 `AppDropdown`（Radix DropdownMenu）实现，CLI 用 `__aijia_radixDropdownClick(chevron)` helper 触发 dropdown 后 poll `[role="menuitem"]` 命中 textContent 子串。
+
+落地的 CLI：`aijia file-card-snapshot` / `aijia file-card-click --action <preview|open|reveal> [--file-path|--file-name|--card-index]` / `aijia file-preview-snapshot`。lotus-app 侧前置已加 `data-aijia-file-path` / `data-aijia-file-preview-{header,body}` 配套 selector。
+
+实战出处：跑完意图-002-005 后用户手点 dropdown 「在文件夹中显示」/「用 X 打开」复现"打开生成文件失败/定位生成文件失败"toast，根因是 Qoder commit `d8925b51` 加 artifact 解析时把 `file.id` 合成为 `artifact-${msgId}-${fileName}`，前端 handler 把这个合成 id 传给后端 `openGeneratedFile(id, convId)` / `revealFileInFolder(id, convId)`，后端 `resolve_stored_path` 在 db 里查不到 → 报错。已用 `@tauri-apps/plugin-shell.open(filePath)` 旁路修，但**没 CLI 跑意图自动验**。
+
+##### 待补 CLI（原子拆分清单）
+
+| CLI | 作用 | selector / 操作 |
+|---|---|---|
+| `aijia file-card-snapshot [--turn last\|N]` | 读 turn 内所有 generated-file-card 节点状态 | 扫 `[data-testid="generated-file-card"]`，返 `[{index, title, sub, appName, canPreview, canOpenExternal, canReveal, fileType, filePath?}]`。filePath 需要在 GeneratedFileCard 上加 `data-aijia-file-path={f.filePath}`（**lotus-app 侧改动**） |
+| `aijia file-card-click --action preview [--turn last\|N] [--card-index N \| --file-name <substring>]` | 点 primary 按钮（appName 那个） | 找到 card → `card.querySelectorAll("button")[0].click()` |
+| `aijia file-card-click --action open [--turn last\|N] [--card-index N \| --file-name <substring>]` | 通过 dropdown 触发 onOpenExternal | ① click `card.querySelectorAll("button")[last]`（chevron-down）② poll 至 `[role="menuitem"]` 出现 ③ click 含 textContent 子串 `"打开"` 的 menuitem |
+| `aijia file-card-click --action reveal [--turn last\|N] [--card-index N \| --file-name <substring>]` | 通过 dropdown 触发 onReveal | ① click chevron-down ② poll menuitem ③ click 含 textContent `"文件夹中显示"` 的 menuitem |
+
+##### bridge.js Radix dropdown probe 伪代码
+
+```js
+async function clickFileCardDropdownItem(card, itemLabel) {
+  const btns = card.querySelectorAll('button');
+  const chevron = btns[btns.length - 1];
+  chevron.click();
+  // Radix Popover 用 portal，menuitem 不在 card 子树内，要全局 query
+  for (let i = 0; i < 30; i++) {
+    const items = Array.from(document.querySelectorAll('[role="menuitem"]'));
+    const target = items.find(it => it.textContent.includes(itemLabel));
+    if (target) {
+      // 等 disabled 状态稳定（Radix focus/role state 异步）
+      await new Promise(r => setTimeout(r, 50));
+      if (target.getAttribute('aria-disabled') === 'true') {
+        return { ok: false, reason: 'menuitem_disabled', label: itemLabel };
+      }
+      target.click();
+      return { ok: true, label: target.textContent };
+    }
+    await new Promise(r => setTimeout(r, 100));
+  }
+  return { ok: false, reason: 'menuitem_not_found', label: itemLabel };
+}
+```
+
+##### Rust clap signature
+
+```rust
+#[derive(clap::Subcommand)]
+enum AijiaCmd {
+    // ... existing
+    FileCardSnapshot {
+        #[arg(long)] turn: Option<String>,  // "last" | "N"
+    },
+    FileCardClick {
+        #[arg(long, value_enum)] action: FileCardAction,  // preview | open | reveal
+        #[arg(long)] turn: Option<String>,
+        #[arg(long, conflicts_with = "file_name")] card_index: Option<usize>,
+        #[arg(long)] file_name: Option<String>,
+    },
+}
+
+#[derive(clap::ValueEnum, Clone, Copy)]
+enum FileCardAction { Preview, Open, Reveal }
+```
+
+##### lotus-app 侧前置改动（独立于 CLI 实现）
+
+在 `GeneratedFileCard.tsx` 给 card 根 div 加 `data-aijia-file-path={...}` 属性，方便 CLI 按 filePath 子串匹配。当前 props 已含 `title` / `sub`，没有 path——CLI 用 textContent 子串匹配只能命中 fileName（够用但语义弱）。建议 props 加 `filePath?: string`、根节点写 `data-aijia-file-path={filePath ?? ''}`。
+
+##### 验收 contract（用于 file-card-click 命令）
+
+返回 `{ok, action, reason?, label?}`：
+
+| reason | 含义 |
+|---|---|
+| `card_not_found` | 按 `--card-index` / `--file-name` 找不到匹配卡片 |
+| `dropdown_no_trigger` | card 内找不到 chevron button（DOM 结构异变） |
+| `menuitem_not_found` | dropdown 打开后 3 秒内没出现匹配文本的 menuitem |
+| `menuitem_disabled` | menuitem 处于 `aria-disabled="true"` 状态（产品上 canOpenExternal/canReveal=false） |
+
+##### 与意图-对话-006 的对接（rules.md 改写后）
+
+CLI 落地后，意图-006 改为可自动跑，操作步骤：
+
+```
+1. health-check
+2. 推断 scope $SCOPE
+3. cleanup /tmp/aijia-test-artifact-001.md
+4-9. 复用意图-002 步骤 4-9（造产物 + 等回复 + 推断 $CONV_ID）
+10. aijia file-card-snapshot --turn last  确认 count == 1
+11. aijia file-card-click --action open --turn last
+12. 等 2 秒，aijia eval 查 body.textContent 不含 "打开生成文件失败"
+13. aijia file-card-click --action reveal --turn last
+14. 等 2 秒，aijia eval 查 body.textContent 不含 "定位生成文件失败"
+```
+
+`aijia eval` 读 textContent 这步严格说违反 §4.3 铁则，**长期方案**应该补 `aijia notification-list --json` 命令读 `useNotificationStore` 状态——但 toast 也是 DOM 节点 `[data-aijia-toast]`，加 selector 后用 `tool-bubble` 类似套路 dump。
+
 ---
 
 ### 已实现但需要修复的 CLI 行为问题
