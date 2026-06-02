@@ -199,8 +199,8 @@ pub enum LlmStepResult {
         cache_read_input_tokens: u64,
         stop_reason: Option<String>,
     },
-    /// 用户取消
-    Cancelled,
+    /// 用户取消。`partial_content` 是取消前本轮已收到并发给前端的流式文本。
+    Cancelled { partial_content: String },
 }
 
 /// 结构化错误

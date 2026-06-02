@@ -2257,7 +2257,14 @@ impl RuntimeChatTurnDriver {
                 }
 
                 // ── 5d: user / token cancellation ────────────────────────────
-                LlmStepResult::Cancelled => {
+                LlmStepResult::Cancelled { partial_content } => {
+                    if !partial_content.is_empty() {
+                        state.final_only_content = partial_content.clone();
+                        if !state.full_content.is_empty() {
+                            state.full_content.push_str("\n\n");
+                        }
+                        state.full_content.push_str(&partial_content);
+                    }
                     re_enqueue_task_notifications(
                         &self.task_notification_queue,
                         std::mem::take(&mut pending_task_notifications),
@@ -2576,6 +2583,8 @@ impl RuntimeChatTurnDriver {
         // 看到一个工具卡片后就空白。
         if state.stream_cancelled && state.final_only_content.trim().is_empty() {
             state.final_only_content = "（已取消）".to_string();
+        } else if state.stream_cancelled && !state.final_only_content.contains("（已取消）") {
+            state.final_only_content.push_str("\n\n（已取消）");
         }
         let message_id = executor
             .persist_assistant_message(

@@ -123,6 +123,23 @@ describe('ChatBottomArea', () => {
     expect(mockStopCurrentStream).toHaveBeenCalledTimes(1)
     expect(mockSendUserMessage).not.toHaveBeenCalled()
   })
+
+  it('isStreaming → Escape calls stopCurrentStream', async () => {
+    mockIsStreaming = true
+    render(<ChatBottomArea />)
+
+    fireEvent.keyDown(window, { key: 'Escape', code: 'Escape' })
+
+    expect(mockStopCurrentStream).toHaveBeenCalledTimes(1)
+    expect(mockSendUserMessage).not.toHaveBeenCalled()
+  })
+
+  it('renders the Escape stop shortcut tip', () => {
+    render(<ChatBottomArea />)
+
+    expect(screen.getByText('bottomTips.escToStop')).toBeInTheDocument()
+  })
+
   it('picking a skill inserts inline token and submit passes skill metadata', async () => {
     const user = userEvent.setup()
     const { container } = render(<ChatBottomArea />)

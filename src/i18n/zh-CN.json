@@ -846,7 +846,8 @@
   "bottomTips": {
     "aiDisclaimer": "内容由 AI 生成，请仔细核实回答内容",
     "enterToSend": "Enter 发送",
-    "shiftEnterNewline": "Shift+Enter 换行"
+    "shiftEnterNewline": "Shift+Enter 换行",
+    "escToStop": "Esc 停止"
   },
   "typing": {
     "default": "思考中…",

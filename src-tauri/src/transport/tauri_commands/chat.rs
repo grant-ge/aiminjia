@@ -792,7 +792,9 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                         "[run_llm_step] Cancel signal detected conv={}",
                         input.conversation_id
                     );
-                    return Ok(LlmStepResult::Cancelled);
+                    return Ok(LlmStepResult::Cancelled {
+                        partial_content: iter_content,
+                    });
                 }
 
                 let chunk_timeout =
@@ -805,7 +807,9 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                                 "[run_llm_step] cancel_rx fired conv={}",
                                 input.conversation_id
                             );
-                            return Ok(LlmStepResult::Cancelled);
+                            return Ok(LlmStepResult::Cancelled {
+                                partial_content: iter_content,
+                            });
                         }
                     }
                     // Chunk timeout — treat as stalled stream

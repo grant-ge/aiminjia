@@ -853,7 +853,8 @@
   "bottomTips": {
     "aiDisclaimer": "Content is AI-generated. Please verify carefully.",
     "enterToSend": "Enter to send",
-    "shiftEnterNewline": "Shift+Enter for new line"
+    "shiftEnterNewline": "Shift+Enter for new line",
+    "escToStop": "Esc to stop"
   },
   "typing": {
     "default": "Thinking…",
