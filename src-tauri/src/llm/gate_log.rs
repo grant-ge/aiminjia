@@ -123,6 +123,39 @@ pub fn record_stream_error(request_id: &str, error: &str) {
     );
 }
 
+pub fn record_stream_started(request_id: &str) {
+    record_event("gateway.stream_started", request_id, json!({}));
+}
+
+pub fn record_first_event(request_id: &str, event_name: Option<&str>) {
+    record_event(
+        "gateway.first_event",
+        request_id,
+        json!({
+            "event_name": event_name,
+        }),
+    );
+}
+
+pub fn record_response_completed(request_id: &str, stop_reason: Option<&str>) {
+    record_event(
+        "gateway.response_completed",
+        request_id,
+        json!({
+            "lifecycle_event_name": "response.completed",
+            "stop_reason": stop_reason,
+        }),
+    );
+}
+
+pub fn record_stream_closed(request_id: &str, reason: &str, error: Option<&str>) {
+    let path = gate_log_path();
+    let row = stream_closed_event_row(request_id, reason, error);
+    if let Err(err) = append_event_to_path(&path, row) {
+        log::warn!("[gate-log] failed to append {}: {}", path.display(), err);
+    }
+}
+
 pub fn record_stream_end(request_id: &str) {
     record_event("gateway.stream_end", request_id, json!({}));
 }
@@ -261,6 +294,19 @@ fn event_row(event: &str, request_id: &str, mut payload: Value) -> Value {
         base.insert("payload".to_string(), payload);
     }
     Value::Object(base)
+}
+
+fn stream_closed_event_row(request_id: &str, reason: &str, error: Option<&str>) -> Value {
+    let row = event_row(
+        "gateway.stream_closed",
+        request_id,
+        json!({
+            "reason": reason,
+            "error": error,
+        }),
+    );
+    forget_request_context(request_id);
+    row
 }
 
 fn append_event_to_path(path: &Path, row: Value) -> std::io::Result<()> {
@@ -438,5 +484,45 @@ mod tests {
         assert_eq!(row["route_api"], "anthropic-messages");
         assert_eq!(row["route_model"], "deepseek-v4-pro");
         assert_eq!(row["endpoint_id"], 2);
+    }
+
+    #[test]
+    fn stream_closed_forgets_request_context() {
+        let request_id = "gate-test-stream-closed";
+        super::remember_request_context(
+            request_id,
+            "aijia-v2",
+            "https://ai-tenant.renlijia.com/aijia/v2/ai/responses",
+            &json!({
+                "conversation_id": "conv",
+                "run_id": "run",
+                "trace_id": "trace"
+            }),
+        );
+
+        let close_row = super::stream_closed_event_row(request_id, "eof", None);
+        let later_row = super::event_row("gateway.stream_end", request_id, json!({}));
+
+        assert_eq!(close_row["conversation_id"], "conv");
+        assert_eq!(close_row["reason"], "eof");
+        assert!(later_row.get("conversation_id").is_none());
+        assert!(later_row.get("run_id").is_none());
+        assert!(later_row.get("trace_id").is_none());
+    }
+
+    #[test]
+    fn response_completed_row_contains_lifecycle_event_name() {
+        let row = super::event_row(
+            "gateway.response_completed",
+            "gate-test-response-completed",
+            json!({
+                "lifecycle_event_name": "response.completed",
+                "stop_reason": "end_turn"
+            }),
+        );
+
+        assert_eq!(row["event"], "gateway.response_completed");
+        assert_eq!(row["lifecycle_event_name"], "response.completed");
+        assert_eq!(row["stop_reason"], "end_turn");
     }
 }
