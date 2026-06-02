@@ -167,13 +167,6 @@ pub fn list_skills_from_registry_with_resolver(
         .collect()
 }
 
-use notify::{RecommendedWatcher, RecursiveMode, Watcher};
-
-/// Global storage for the dev-mode file watcher.
-/// Only one skill can be watched at a time.
-static DEV_WATCHER: once_cell::sync::Lazy<std::sync::Mutex<Option<RecommendedWatcher>>> =
-    once_cell::sync::Lazy::new(|| std::sync::Mutex::new(None));
-
 #[derive(serde::Serialize)]
 pub struct CustomSkillInfo {
     pub id: String,
@@ -253,7 +246,19 @@ pub fn refresh_skill_registry(app: &AppHandle) -> Result<(), String> {
         .lock()
         .map_err(|e| format!("registry lock poisoned: {}", e))?
         .replace_all(loaded.into_values().collect());
+    // 通知前端 registry 已刷新，让各处缓存（SkillPopover picker / 技能中心 / 派活 banner 等）
+    // 调用 useSkillStore.reload() 重新拉 list_skills。失败 silent — 事件发送失败不影响 refresh
+    // 这个写盘本身的成功。
+    let _ = app.emit("skill:registry-refreshed", ());
     Ok(())
+}
+
+/// Tauri command wrapper for `refresh_skill_registry`. Exposed so the
+/// frontend (SkillCenterPage) and runtime tools (RefreshSkills) can
+/// trigger a registry refresh without restarting the app.
+#[tauri::command]
+pub async fn refresh_skill_registry_cmd(app: AppHandle) -> Result<(), String> {
+    refresh_skill_registry(&app)
 }
 
 /// List all installed custom skills.
@@ -492,56 +497,6 @@ pub async fn pack_skill(skill_dir: String, dest_path: String) -> Result<String, 
             .map_err(|e| e.to_string())?;
     }
     Ok(dest.to_string_lossy().to_string())
-}
-
-/// Reload a custom skill from disk (hot-reload for dev mode).
-/// Re-reads the skill manifest (`SKILL.md`), unregisters the
-/// old version, and registers the new one.
-#[tauri::command]
-pub async fn reload_skill(_app: AppHandle, _skill_path: String) -> Result<String, String> {
-    unimplemented!("Skill reload will be restored after Phase D SkillRegistry lands.")
-}
-
-/// Start watching a skill directory for file changes (dev mode).
-/// Emits `skill-file-changed` Tauri event when files are modified.
-#[tauri::command]
-pub async fn start_skill_watch(app: AppHandle, skill_path: String) -> Result<String, String> {
-    let path = PathBuf::from(&skill_path);
-    if !path.is_dir() {
-        return Err("Not a valid directory".to_string());
-    }
-
-    let app_clone = app.clone();
-    let path_str = skill_path.clone();
-
-    let mut watcher =
-        notify::recommended_watcher(move |res: Result<notify::Event, notify::Error>| {
-            if let Ok(event) = res {
-                // Only emit on content changes (modify/create), not on access or removal
-                if event.kind.is_modify() || event.kind.is_create() {
-                    let _ = app_clone.emit("skill-file-changed", &path_str);
-                }
-            }
-        })
-        .map_err(|e| e.to_string())?;
-
-    watcher
-        .watch(&path, RecursiveMode::Recursive)
-        .map_err(|e| e.to_string())?;
-
-    // Store the watcher (drops any previous watcher, stopping its watch)
-    *DEV_WATCHER.lock().unwrap_or_else(|e| e.into_inner()) = Some(watcher);
-
-    log::info!("Dev mode: watching skill directory '{}'", path.display());
-    Ok(format!("Watching '{}'", path.display()))
-}
-
-/// Stop watching the skill directory (dev mode).
-#[tauri::command]
-pub async fn stop_skill_watch() -> Result<String, String> {
-    *DEV_WATCHER.lock().unwrap_or_else(|e| e.into_inner()) = None;
-    log::info!("Dev mode: stopped watching skill directory");
-    Ok("Stopped watching".to_string())
 }
 
 // ---------------------------------------------------------------------------

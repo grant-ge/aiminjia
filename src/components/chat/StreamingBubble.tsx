@@ -177,10 +177,19 @@ export function StreamingBubble({
   // - hasMarkdown=false：top-0 顶到容器起点（跟原 mt-0 同位）。indicator-only
   //   placeholder（末尾追加的 content="" StreamingBubble）走这条——即便
   //   treatAsHasContent=true 也走 top-0，因为容器内没有真实 markdown 内容。
-  // 父层 mb-7 给 indicator 预留视觉空间，不会跟下一个 sibling 紧贴。
   const indicatorPositionClass = hasMarkdown ? 'top-full mt-2' : 'top-0'
+  // mb-7 只在 case 3（markdown + 渲 indicator）需要：indicator 是 absolute
+  // 脱离文档流，必须靠父 mb-7 给它在文档流里挖 28px 占位防撞下一 sibling。
+  // - case 1 inline + suppressIndicator: 无 indicator → mb-0，父级 ChatRow gap-1
+  //   接管间距，跟 AiBubble 落盘后对齐，stream→persisted 不抖动
+  // - case 2 末尾 placeholder (content="" + dots): dots 下方由父级 turn gap-5
+  //   兜底 → mb-0，避免 dots 下方 28px 拖尾
+  const needsBottomReserve = hasMarkdown && !suppressIndicator
   return (
-    <div className="mb-7" data-aijia-streaming-bubble>
+    <div
+      className={needsBottomReserve ? 'mb-7' : ''}
+      data-aijia-streaming-bubble
+    >
       <div className="relative">
         {hasMarkdown ? <AssistantMarkdown text={cleanContent} disableCodeHighlight /> : null}
         {suppressIndicator ? null : status.icon === 'spin' ? (

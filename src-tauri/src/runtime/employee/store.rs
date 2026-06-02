@@ -779,7 +779,7 @@ mod tests {
     }
 
     #[test]
-    fn latest_snapshot_for_template_prefers_newer_cache_over_bootstrap() {
+    fn latest_snapshot_for_template_reads_cache_only() {
         let dir = TempDir::new().unwrap();
         let cache_dir = dir.path().join("cache");
         crate::runtime::employee::template_store::write_cache(
@@ -792,6 +792,14 @@ mod tests {
 
         assert_eq!(snap.version, "9.9.9");
         assert_eq!(source, "cache");
+    }
+
+    #[test]
+    fn latest_snapshot_for_template_returns_none_when_cache_empty() {
+        let dir = TempDir::new().unwrap();
+        let cache_dir = dir.path().join("cache");
+        // 没写过任何 cache → bootstrap 已删 → 应该返回 None
+        assert!(latest_snapshot_for_template("builtin:xiaoyuan", &cache_dir).is_none());
     }
 
     #[test]
@@ -1185,14 +1193,8 @@ fn latest_snapshot_for_template(
 )> {
     use crate::runtime::employee::template_store as ts;
 
-    let mut best: Option<(ts::TemplateSnapshot, &'static str)> = match ts::bootstrap_template(tid) {
-        Ok(Some(s)) => Some((s, "bootstrap")),
-        Ok(None) => None,
-        Err(e) => {
-            log::warn!("[EmployeeStore] bootstrap lookup failed for {tid}: {e}");
-            None
-        }
-    };
+    // 缓存为唯一来源（已移除 embedded bootstrap fallback，参见 template_store.rs 模块注释）
+    let mut best: Option<(ts::TemplateSnapshot, &'static str)> = None;
 
     let tid_dir = cache_dir.join(tid);
     if let Ok(rd) = std::fs::read_dir(&tid_dir) {
