@@ -413,7 +413,7 @@ fn to_canonical_message(message: ChatMessage) -> CanonicalMessage {
         content,
         tool_call_id: message.tool_call_id,
         tool_name: message.name,
-        is_error: false,
+        is_error: message.is_error,
         provider: None,
         usage: None,
         stop_reason: None,
@@ -715,6 +715,36 @@ mod tests {
         assert_eq!(tool_result.role, "tool_result");
         assert_eq!(tool_result.tool_call_id.as_deref(), Some("call_1"));
         assert_eq!(tool_result.tool_name.as_deref(), Some("lookup"));
+    }
+
+    #[test]
+    fn build_request_preserves_tool_result_error_status() {
+        let req = LlmRequest {
+            messages: vec![ChatMessage::tool_result_with_status(
+                "call_1",
+                "Bash",
+                "permission denied".to_string(),
+                true,
+            )],
+            tools: vec![],
+            max_tokens: 1000,
+            temperature: 0.7,
+            stream: true,
+            thinking_config: None,
+            anthropic_multimodal_turn: None,
+            system_segments: None,
+            conversation_id: Some("conv".to_string()),
+            trace_id: Some("trace".to_string()),
+            run_id: Some("run".to_string()),
+        };
+
+        let canonical = build_aijia_request(req);
+        let tool_result = &canonical.context.messages[0];
+
+        assert_eq!(tool_result.role, "tool_result");
+        assert_eq!(tool_result.tool_call_id.as_deref(), Some("call_1"));
+        assert_eq!(tool_result.tool_name.as_deref(), Some("Bash"));
+        assert!(tool_result.is_error);
     }
 
     #[test]
