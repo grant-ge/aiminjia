@@ -341,7 +341,7 @@ describe('useStreaming integration review', () => {
     expect(useChatStore.getState().messages.map((m) => m.id)).toEqual(['client-active'])
   })
 
-  it('clears busy and preserves partial text when streaming:error arrives', async () => {
+  it('clears busy and records prior content when streaming:error arrives', async () => {
     useChatStore.setState({
       activeConversationId: 'conv-error',
       busyConversations: new Set(['conv-error']),
@@ -372,8 +372,14 @@ describe('useStreaming integration review', () => {
     })
 
     const state = useChatStore.getState()
+    const clearDiagnostic = useDiagnosticsStore.getState().events.find((event) =>
+      event.event === 'store.streaming.clear' &&
+      event.conversationId === 'conv-error'
+    )
     expect(state.busyConversations.has('conv-error')).toBe(false)
     expect(state.streamStates['conv-error']?.isStreaming).toBe(false)
+    expect(state.streamStates['conv-error']?.streamingContent).toBe('')
+    expect(clearDiagnostic?.payload).toMatchObject({ hadContent: true })
     expect(useDiagnosticsStore.getState().events.some((event) => event.event === 'streaming.error.received')).toBe(true)
   })
 
