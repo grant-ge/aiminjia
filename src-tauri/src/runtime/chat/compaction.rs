@@ -48,6 +48,24 @@ pub struct CompactBoundaryRecord {
     pub summary_text: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tail_message_id: Option<String>,
+    /// Metadata about the message segment preserved by this compaction.
+    /// Records head/anchor message IDs and estimated token count of the
+    /// preserved tail. Deserializes to `None` for legacy records.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preserved_segment: Option<PreservedSegment>,
+}
+
+/// Metadata about the segment of messages preserved after compaction.
+///
+/// Mirrors claude-code-best's `preservedSegment` (headUuid / anchorUuid).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PreservedSegment {
+    /// UUID of the first message kept in the preserved tail.
+    pub first_preserved_message_id: String,
+    /// UUID of the last message before the compact boundary.
+    pub anchor_message_id: String,
+    /// Estimated token count of the preserved segment.
+    pub preserved_token_count: u64,
 }
 
 pub fn build_compact_boundary_record(
@@ -67,6 +85,7 @@ pub fn build_compact_boundary_record(
         created_at: chrono::Utc::now().to_rfc3339(),
         summary_text: String::new(),
         tail_message_id: None,
+        preserved_segment: None,
     }
 }
 
@@ -219,17 +238,41 @@ pub fn microcompact(
 
 #[derive(Debug, Clone)]
 pub struct AutoCompactConfig {
+    /// Fixed-character threshold (deprecated in favour of dynamic).
+    /// When `custom_context_window` is set, this is computed from
+    /// `effective_auto_compact_threshold()` instead of hardcoded.
     pub threshold_chars: usize,
     pub max_output_chars: usize,
     pub consecutive_failure_limit: u32,
+    /// Manual context window override for dynamic threshold computation.
+    /// When `Some`, `threshold_chars` is set to
+    /// `effective_auto_compact_threshold(Some(window))`. When `None`,
+    /// the conservative fallback (64K) is used.
+    pub custom_context_window: Option<usize>,
 }
 
 impl Default for AutoCompactConfig {
     fn default() -> Self {
+        let threshold = crate::llm::context_decay::effective_auto_compact_threshold(None);
         Self {
-            threshold_chars: 480_000,
+            threshold_chars: threshold,
             max_output_chars: 80_000,
             consecutive_failure_limit: 3,
+            custom_context_window: None,
+        }
+    }
+}
+
+impl AutoCompactConfig {
+    /// Build an `AutoCompactConfig` with a context-window-aware threshold.
+    pub fn with_context_window(context_window: usize) -> Self {
+        let threshold =
+            crate::llm::context_decay::effective_auto_compact_threshold(Some(context_window));
+        Self {
+            threshold_chars: threshold,
+            max_output_chars: 80_000,
+            consecutive_failure_limit: 3,
+            custom_context_window: Some(context_window),
         }
     }
 }

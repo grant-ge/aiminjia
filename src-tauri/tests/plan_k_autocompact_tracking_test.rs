@@ -15,6 +15,7 @@ fn k4_auto_compact_state_circuit_breaker() {
         threshold_chars: 1,
         max_output_chars: 80_000,
         consecutive_failure_limit: 3,
+        custom_context_window: None,
     };
     state.consecutive_failures = 2;
     assert!(!state.is_circuit_broken(&config));

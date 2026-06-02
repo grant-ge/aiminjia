@@ -13,6 +13,7 @@ use tauri::{Emitter, Manager};
 
 use crate::auth::AuthManager;
 use crate::llm::gateway::{format_llm_error_diagnostics, LlmGateway};
+use crate::llm::compact_summary_client::LlmCompactSummaryClient;
 use crate::llm::prompt_guard;
 use crate::llm::prompts;
 use crate::models::message::SubAgentTranscriptEntryFrontend;
@@ -365,6 +366,7 @@ pub fn load_history_via_runtime_history(
         &stored,
         latest_boundary.as_ref(),
         &config,
+        None, // claude_md_content: injected at post-compact time, not history load
     )
     .map_err(|e| TurnError::PersistenceError(e.to_string()))?;
 
@@ -1888,6 +1890,19 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             })
     }
 
+    async fn latest_compact_boundary(
+        &self,
+        conversation_id: &str,
+    ) -> Result<Option<crate::runtime::chat::compaction::CompactBoundaryRecord>, TurnError> {
+        self.services
+            .db()
+            .list_compact_boundaries(conversation_id)
+            .map(|records| records.into_iter().last())
+            .map_err(|e| {
+                TurnError::PersistenceError(format!("Failed to load compact boundary: {}", e))
+            })
+    }
+
     async fn get_env_info(&self, conversation_id: &str) -> Result<String, TurnError> {
         use crate::runtime::chat::context_builder::{build_env_info, ManagedRuntimeEnvInfo};
 
@@ -2794,6 +2809,15 @@ impl TauriChatCommandAdapter {
         {
             runtime = runtime.with_cancellation_registry(reg.inner().clone());
         }
+        // Phase R1.1: wire production CompactSummaryClient backed by LlmGateway.
+        // Uses AppSettings::default() — the gateway will route via lotus
+        // sticky routing (conversation_id) which preserves the user's active model.
+        let compact_client: Arc<dyn crate::runtime::chat::compact_client::CompactSummaryClient> =
+            Arc::new(LlmCompactSummaryClient::new(
+                services.gateway.clone(),
+                AppSettings::default(),
+            ));
+        runtime = runtime.with_compact_client(compact_client);
         runtime = runtime.with_host(host as Arc<dyn crate::transport::runtime_host::RuntimeHost>);
         runtime.anchor_subscriber(adapter);
         // Path C wake (LTR B-gap1) is now wired by `wire_path_c_wake_to_self`

@@ -28,6 +28,7 @@ fn k3_should_auto_compact_false_below_threshold() {
         threshold_chars: 200_000,
         max_output_chars: 80_000,
         consecutive_failure_limit: 3,
+        custom_context_window: None,
     };
     assert!(!should_auto_compact(&messages, &config));
 }
@@ -39,6 +40,7 @@ fn k3_should_auto_compact_true_above_threshold() {
         threshold_chars: 100_000,
         max_output_chars: 80_000,
         consecutive_failure_limit: 3,
+        custom_context_window: None,
     };
     assert!(should_auto_compact(&messages, &config));
 }

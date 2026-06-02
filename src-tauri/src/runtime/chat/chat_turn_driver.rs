@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use std::collections::HashSet;
 use std::time::Duration;
 
-use crate::llm::context_decay::{context_window_for_provider, CONTEXT_OVERFLOW_THRESHOLD};
+use crate::llm::context_decay::{resolve_context_window, CONTEXT_OVERFLOW_THRESHOLD};
 use crate::runtime::agent::task_notification::{QueuedNotification, TaskNotificationQueue};
 use crate::runtime::cancellation::{CancellationReason, CancellationToken};
 use crate::runtime::chat::compact_client::CompactSummaryClient;
@@ -411,6 +411,19 @@ pub trait RuntimeLlmExecutor: Send + Sync {
         _record: crate::runtime::chat::compaction::CompactBoundaryRecord,
     ) -> Result<(), TurnError> {
         Ok(())
+    }
+
+    /// Load the most recent compact boundary for a conversation, if any.
+    ///
+    /// Driver passes this into `PreprocessConfig.compact_boundary` so each
+    /// preprocess pass can operate on the post-boundary message slice (R3.2
+    /// "boundary view isolation").  Default is `None` for test executors that
+    /// don't persist boundaries.
+    async fn latest_compact_boundary(
+        &self,
+        _conversation_id: &str,
+    ) -> Result<Option<crate::runtime::chat::compaction::CompactBoundaryRecord>, TurnError> {
+        Ok(None)
     }
 }
 // NOTE: this marker is load-bearing for tests/review_compact_summary_trait_isolation_test.rs — do not remove.
@@ -1844,7 +1857,19 @@ impl RuntimeChatTurnDriver {
         let project_memory_prompt = project_memory_ctx.render_for_prompt();
 
         'turn: for iteration in 0..config.max_iterations {
-            let preprocess_config = PreprocessConfig::default();
+            let mut preprocess_config = PreprocessConfig::default();
+            // R3.2 boundary view isolation: load latest compact boundary so
+            // preprocess only operates on the post-boundary slice.
+            preprocess_config.compact_boundary = executor
+                .latest_compact_boundary(config.conversation_id.as_str())
+                .await
+                .unwrap_or_else(|err| {
+                    log::warn!(
+                        "[run_chat_turn_s4] latest_compact_boundary failed: {}",
+                        err
+                    );
+                    None
+                });
             let conversation_id = config.conversation_id.as_str().to_string();
             let compact_client_ref = self.compact_client.clone();
             // Captures for the Compacting stage emit inside the summary closure.
@@ -1904,8 +1929,21 @@ impl RuntimeChatTurnDriver {
             // into state.messages but not yet seen by the LLM. Track them so we can
             // re-enqueue them if the step fails before the LLM consumes them.
             pending_task_notifications.extend(newly_drained_notifications);
-            if let Some(boundary_record) = prepared.compact_boundary {
-                if let Err(err) = executor.save_compact_boundary(boundary_record).await {
+            if let Some(ref boundary_record) = prepared.compact_boundary {
+                // R5.1: Emit CompactCompleted event so the frontend can show
+                // a compact summary (e.g. "保存了 X 个 token").
+                let _ = self
+                    .event_bus
+                    .emit(RuntimeEvent::compact_completed(
+                        turn.session_id().clone(),
+                        turn.run_id().clone(),
+                        boundary_record.conversation_id.clone(),
+                        boundary_record.pre_tokens,
+                        boundary_record.post_tokens,
+                        boundary_record.messages_summarized,
+                    ))
+                    .await;
+                if let Err(err) = executor.save_compact_boundary(boundary_record.clone()).await {
                     log::warn!(
                         "[run_chat_turn_s4] failed to persist compact boundary: {}",
                         err
@@ -1950,14 +1988,17 @@ impl RuntimeChatTurnDriver {
                     "estimated_input_tokens": estimated_tokens,
                 })),
             );
-            let context_window = context_window_for_provider(&config.llm_settings.primary_model);
+            let context_window = resolve_context_window(
+                None, // settings override — not wired yet, future AppSettings.context_window
+                Some(&config.llm_settings.cloud_model),
+            );
             if (estimated_tokens as f64) > (context_window as f64 * CONTEXT_OVERFLOW_THRESHOLD) {
                 log::warn!(
-                    "[AD2] Context overflow risk: estimated {} tokens > {}% of {} window for provider {}",
+                    "[AD2] Context overflow risk: estimated {} tokens > {}% of {} window (cloud_model: {})",
                     estimated_tokens,
                     (CONTEXT_OVERFLOW_THRESHOLD * 100.0) as u32,
                     context_window,
-                    config.llm_settings.primary_model
+                    config.llm_settings.cloud_model,
                 );
             }
 
@@ -2017,11 +2058,23 @@ impl RuntimeChatTurnDriver {
                     let recovery_stage_bus = self.event_bus.clone();
                     let recovery_stage_session = turn.session_id().clone();
                     let recovery_stage_run = turn.run_id().clone();
+                    let mut recovery_preprocess_config = PreprocessConfig::default();
+                    // R3.2 boundary view isolation: same as the main loop.
+                    recovery_preprocess_config.compact_boundary = executor
+                        .latest_compact_boundary(conversation_id.as_str())
+                        .await
+                        .unwrap_or_else(|err| {
+                            log::warn!(
+                                "[run_chat_turn_s4 ptl-recovery] latest_compact_boundary failed: {}",
+                                err
+                            );
+                            None
+                        });
                     let prepared = prepare_messages_for_llm(
                         std::mem::take(&mut state.messages),
                         conversation_id.as_str(),
                         PreprocessTrigger::PromptTooLongRecovery,
-                        &PreprocessConfig::default(),
+                        &recovery_preprocess_config,
                         &mut state.compact_state,
                         &mut state.preprocess_state,
                         state.stop_hook_active,

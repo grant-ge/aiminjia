@@ -295,6 +295,7 @@ mod tests {
                 created_at: "2026-04-19T00:00:00Z".to_string(),
                 summary_text: String::new(),
                 tail_message_id: None,
+                preserved_segment: None,
             })
             .unwrap();
 

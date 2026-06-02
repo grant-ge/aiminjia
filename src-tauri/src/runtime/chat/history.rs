@@ -29,6 +29,7 @@ pub fn build_chat_history(
     stored: &[StoredMessage],
     boundary: Option<&CompactBoundaryRecord>,
     config: &HistoryConfig,
+    claude_md_content: Option<&str>,
 ) -> Result<Vec<ChatMessage>> {
     let relevant = apply_boundary(stored, boundary);
 
@@ -49,20 +50,28 @@ pub fn build_chat_history(
 
     if let Some(boundary) = boundary {
         if !boundary.summary_text.is_empty() {
-            messages.insert(
-                0,
-                ChatMessage::text(
-                    "user",
-                    format!("<context>\n{}\n</context>", boundary.summary_text),
-                ),
-            );
+            let context_text = if let Some(claude_md) = claude_md_content {
+                format!(
+                    "<context>\n{}\n</context>\n\n<project_context>\n{}\n</project_context>",
+                    boundary.summary_text, claude_md
+                )
+            } else {
+                format!("<context>\n{}\n</context>", boundary.summary_text)
+            };
+            messages.insert(0, ChatMessage::text("user", context_text));
         }
     }
 
     Ok(messages)
 }
 
-fn apply_boundary<'a>(
+/// Return the slice of stored messages after the compact boundary.
+///
+/// When a boundary exists and its `tail_message_id` matches a stored message,
+/// returns `stored[index..]` (inclusive of the tail message). Falls back to
+/// the full `stored` slice when the boundary is missing or the tail ID doesn't
+/// match any stored message.
+pub fn apply_boundary<'a>(
     stored: &'a [StoredMessage],
     boundary: Option<&CompactBoundaryRecord>,
 ) -> &'a [StoredMessage] {

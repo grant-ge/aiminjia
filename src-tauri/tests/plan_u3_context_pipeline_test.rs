@@ -172,7 +172,9 @@ async fn u3_prepare_messages_orders_budget_microcompact_collapse_before_auto_com
             threshold_chars: 40,
             max_output_chars: 80_000,
             consecutive_failure_limit: 3,
+            custom_context_window: None,
         },
+        context_window: 64_000,
     };
 
     let mut compact_state = AutoCompactState::new();
@@ -237,7 +239,9 @@ async fn u3_prepare_messages_reuses_same_shape_for_normal_and_prompt_too_long() 
             threshold_chars: 40,
             max_output_chars: 80_000,
             consecutive_failure_limit: 3,
+            custom_context_window: None,
         },
+        context_window: 64_000,
     };
 
     let mut normal_compact_state = AutoCompactState::new();
@@ -311,7 +315,9 @@ async fn u3_prepare_messages_is_idempotent_after_compact_output() {
             threshold_chars: 40,
             max_output_chars: 80_000,
             consecutive_failure_limit: 3,
+            custom_context_window: None,
         },
+        context_window: 64_000,
     };
 
     let mut compact_state = AutoCompactState::new();

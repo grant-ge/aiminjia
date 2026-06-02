@@ -92,6 +92,10 @@ pub struct AppSettings {
     /// 空字符串或 "[]" 视为空列表。**前端限定最多 10 条**：超出时 LRU 截断（新加入的在前，超过 10 截断）。
     #[serde(default)]
     pub ui_home_recent_workspaces: String,
+    /// Manual context window override (in tokens). When set, takes priority
+    /// over model-name-based context window resolution.
+    #[serde(default)]
+    pub context_window: Option<usize>,
 }
 
 fn default_font_scale() -> String {
@@ -127,6 +131,7 @@ impl Default for AppSettings {
             chat_width_mode: default_chat_width_mode(),
             ui_home_selected_workspace: String::new(),
             ui_home_recent_workspaces: String::new(),
+            context_window: None,
         }
     }
 }
@@ -198,6 +203,7 @@ impl AppSettings {
                 "uiHomeRecentWorkspaces",
                 &defaults.ui_home_recent_workspaces,
             ),
+            context_window: None,
         }
     }
 }

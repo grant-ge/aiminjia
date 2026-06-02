@@ -94,12 +94,32 @@ pub struct CollapseResult {
     pub collapsed_count: usize,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct PreprocessConfig {
     pub budget: ToolResultBudgetConfig,
     pub microcompact: MicrocompactConfig,
     pub collapse: CollapseConfig,
     pub auto_compact: AutoCompactConfig,
+    /// Context window in tokens for the current session model.
+    /// Used for dynamic threshold calculation in auto-compact.
+    pub context_window: usize,
+    /// The latest compact boundary for this conversation.
+    /// When set, only messages after the boundary are processed.
+    pub compact_boundary: Option<CompactBoundaryRecord>,
+}
+
+impl Default for PreprocessConfig {
+    fn default() -> Self {
+        let context_window = crate::llm::context_decay::CONSERVATIVE_CONTEXT_WINDOW;
+        Self {
+            budget: ToolResultBudgetConfig::default(),
+            microcompact: MicrocompactConfig::default(),
+            collapse: CollapseConfig::default(),
+            auto_compact: AutoCompactConfig::with_context_window(context_window),
+            context_window,
+            compact_boundary: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -311,6 +331,89 @@ pub fn collapse_tool_results(messages: &[Value], config: &CollapseConfig) -> Col
     }
 }
 
+/// Strip large image content from messages to reduce token count during
+/// compaction. Replaces base64 image data and image content blocks with
+/// `[image]` placeholder text.
+///
+/// This is called unconditionally at the start of the preprocess pipeline
+/// to prevent images from inflating character counts and triggering
+/// false-positive compact thresholds.
+pub fn strip_images_from_messages(messages: &[Value]) -> (Vec<Value>, bool) {
+    let mut stripped = false;
+    let result: Vec<Value> = messages
+        .iter()
+        .map(|msg| {
+            let mut msg = msg.clone();
+            if let Some(content) = msg.get("content") {
+                if let Some(content_str) = content.as_str() {
+                    // Single string content — replace if it looks like base64 image data
+                    if content_str.len() > 5000 && looks_like_base64(content_str) {
+                        msg["content"] = Value::String("[image]".to_string());
+                        stripped = true;
+                    }
+                } else if let Some(arr) = content.as_array() {
+                    // Multi-part content (OpenAI format) — replace image blocks
+                    let new_blocks: Vec<Value> = arr
+                        .iter()
+                        .map(|block| {
+                            let block_type = block
+                                .get("type")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("");
+                            if block_type == "image_url" || block_type == "image" {
+                                stripped = true;
+                                serde_json::json!({"type": "text", "text": "[image]"})
+                            } else {
+                                block.clone()
+                            }
+                        })
+                        .collect();
+                    msg["content"] = Value::Array(new_blocks);
+                }
+            }
+            msg
+        })
+        .collect();
+    (result, stripped)
+}
+
+/// Quick heuristic: check if a string looks like base64 encoded data.
+fn looks_like_base64(s: &str) -> bool {
+    let trimmed = s.trim();
+    if trimmed.len() < 100 {
+        return false;
+    }
+    let valid_chars = trimmed
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=');
+    valid_chars && trimmed.chars().filter(|c| c.is_ascii_uppercase()).count() > 10
+}
+
+/// Build a `PreservedSegment` from the compacted output messages.
+///
+/// Scans for the first real message after the compact boundary + summary
+/// (which are always the first two messages in `compact_messages_via_llm`
+/// output). The first preserved message is the head, and the last is the
+/// anchor.
+fn build_preserved_segment(
+    new_messages: &[Value],
+) -> Option<crate::runtime::chat::compaction::PreservedSegment> {
+    if new_messages.len() < 3 {
+        return None;
+    }
+    // Messages 0 and 1 are always boundary + summary
+    let tail = &new_messages[2..];
+    let first = tail.first()?.get("id")?.as_str()?.to_string();
+    let anchor = tail.last()?.get("id")?.as_str()?.to_string();
+    let token_count = (crate::llm::context_decay::estimate_tokens_from_json(tail)
+        / 4) as u64;
+    Some(crate::runtime::chat::compaction::PreservedSegment {
+        first_preserved_message_id: first,
+        anchor_message_id: anchor,
+        preserved_token_count: token_count,
+    })
+}
+
 fn has_existing_compact_artifacts(messages: &[Value]) -> bool {
     messages.iter().any(|message| {
         message.get("isCompactSummary").and_then(Value::as_bool) == Some(true)
@@ -391,6 +494,29 @@ where
     let mut executed_stages = Vec::new();
     let mut current_messages = messages;
 
+    // R3.2: Boundary 视图隔离 — only process messages after the last compact boundary.
+    // This prevents re-processing already-compacted history and aligns with
+    // claude-code-best's `getMessagesAfterCompactBoundary()` pattern.
+    if let Some(ref boundary) = config.compact_boundary {
+        if let Some(ref tail_id) = boundary.tail_message_id {
+            if !tail_id.is_empty() {
+                if let Some(pos) = current_messages
+                    .iter()
+                    .position(|m| m.get("id").and_then(|v| v.as_str()) == Some(tail_id))
+                {
+                    current_messages = current_messages[pos..].to_vec();
+                }
+            }
+        }
+    }
+
+    // Stage 0: Strip image content before any char counting.
+    // Prevents large base64 image data from inflating thresholds.
+    let (stripped_messages, images_stripped) = strip_images_from_messages(&current_messages);
+    if images_stripped {
+        current_messages = stripped_messages;
+    }
+
     let budget_result = apply_tool_result_budget(&current_messages, &config.budget);
     if budget_result.executed {
         current_messages = budget_result.messages;
@@ -435,6 +561,7 @@ where
                 );
                 boundary_record.summary_text = summary_text;
                 boundary_record.tail_message_id = tail_message_id;
+                boundary_record.preserved_segment = build_preserved_segment(&output.new_messages);
                 current_messages = output.new_messages;
                 compact_boundary = Some(boundary_record);
                 compact_state.record_success();
