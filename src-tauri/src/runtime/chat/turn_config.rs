@@ -44,7 +44,7 @@ impl Default for ResolvedLlmSettings {
             custom_model_name: String::new(),
             cloud_model: String::new(),
             cloud_model_type: String::new(),
-            cloud_gateway_mode: CloudGatewayMode::Legacy,
+            cloud_gateway_mode: CloudGatewayMode::V2,
             thinking_type: "disabled".to_string(),
             thinking_budget_tokens: 8000,
             masking_level: "strict".to_string(),

@@ -16,7 +16,7 @@ use crate::llm::gateway::{format_llm_error_diagnostics, LlmGateway};
 use crate::llm::prompt_guard;
 use crate::llm::prompts;
 use crate::models::message::SubAgentTranscriptEntryFrontend;
-use crate::models::settings::{AppSettings, CloudGatewayMode};
+use crate::models::settings::AppSettings;
 use crate::plugin::ToolRegistry;
 use crate::runtime::agent::AgentRuntime;
 use crate::runtime::cancellation::CancellationToken;
@@ -2017,6 +2017,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::settings::CloudGatewayMode;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Condvar, Mutex};
 
@@ -2030,9 +2031,9 @@ mod tests {
     }
 
     #[test]
-    fn build_gateway_settings_preserves_cloud_gateway_mode() {
+    fn build_gateway_settings_forces_cloud_gateway_mode_v2() {
         let resolved = ResolvedLlmSettings {
-            cloud_gateway_mode: CloudGatewayMode::V2,
+            cloud_gateway_mode: CloudGatewayMode::Legacy,
             ..ResolvedLlmSettings::default()
         };
 
@@ -2434,7 +2435,7 @@ fn build_gateway_settings(settings: &ResolvedLlmSettings) -> AppSettings {
         custom_model_name: settings.custom_model_name.clone(),
         cloud_model: settings.cloud_model.clone(),
         cloud_model_type: settings.cloud_model_type.clone(),
-        cloud_gateway_mode: settings.cloud_gateway_mode.clone(),
+        cloud_gateway_mode: crate::models::settings::CloudGatewayMode::V2,
         thinking_type: settings.thinking_type.clone(),
         thinking_budget_tokens: settings.thinking_budget_tokens,
         ..AppSettings::default()

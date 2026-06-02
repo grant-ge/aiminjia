@@ -338,8 +338,6 @@
       "checking": "检测中...",
       "recheck": "重新检测",
       "lastChecked": "上次检测：",
-      "gatewayV2Title": "体验新网关",
-      "gatewayV2Description": "默认关闭，关闭时继续使用稳定网关。开启后所有 AI 请求都会走新网关，不会自动降级到旧网关。",
       "justNow": "刚刚",
       "secondsAgo": "{{count}} 秒前",
       "minutesAgo": "{{count}} 分钟前",

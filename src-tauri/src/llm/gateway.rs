@@ -24,7 +24,7 @@ use crate::llm::providers::LlmProviderTrait;
 use crate::llm::router::{self, RouteResult};
 use crate::llm::streaming::*;
 use crate::llm::tools;
-use crate::models::settings::{AppSettings, CloudGatewayMode};
+use crate::models::settings::AppSettings;
 use crate::runtime::ids::RunId;
 use crate::runtime::run_registry::RuntimeRunRegistry;
 use crate::storage::file_store::AppStorage;
@@ -162,14 +162,12 @@ fn provider_resolves_to_lotus(provider: &str) -> bool {
     !matches!(provider, "openai" | "claude" | "custom")
 }
 
-fn apply_cloud_gateway_mode(route: &mut RouteResult, settings: &AppSettings) {
+fn apply_cloud_gateway_mode(route: &mut RouteResult, _settings: &AppSettings) {
     if !provider_resolves_to_lotus(&route.provider) {
         return;
     }
 
-    if settings.cloud_gateway_mode == CloudGatewayMode::V2 {
-        route.provider = "aijia-v2".to_string();
-    }
+    route.provider = "aijia-v2".to_string();
 }
 
 fn gate_log_expected_for_route(route: &RouteResult) -> bool {
@@ -1058,6 +1056,7 @@ async fn dispatch_send(route: &RouteResult, request: LlmRequest) -> Result<LlmRe
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::settings::CloudGatewayMode;
 
     #[test]
     fn test_extract_status_code_standard() {
@@ -1227,9 +1226,9 @@ mod tests {
     }
 
     #[test]
-    fn cloud_gateway_mode_v2_rewrites_lotus_route_only() {
+    fn cloud_gateway_mode_rewrites_lotus_route_to_v2() {
         let settings = AppSettings {
-            cloud_gateway_mode: CloudGatewayMode::V2,
+            cloud_gateway_mode: CloudGatewayMode::Legacy,
             ..AppSettings::default()
         };
         let mut lotus_route = RouteResult {
