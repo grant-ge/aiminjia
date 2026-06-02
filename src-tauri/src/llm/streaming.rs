@@ -5,6 +5,10 @@ use futures::Stream;
 use serde::{Deserialize, Serialize};
 use std::pin::Pin;
 
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
 /// Token usage from an LLM response.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -99,6 +103,9 @@ pub struct ChatMessage {
     /// Tool name (only for role="tool").
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// Whether a tool result represents a tool-level error.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub is_error: bool,
     /// Thinking/reasoning content from the model (e.g. Claude extended thinking,
     /// DeepSeek R1 reasoning). Must be passed back to the API on subsequent turns
     /// for providers that require it (Anthropic thinking mode).
@@ -124,6 +131,7 @@ impl ChatMessage {
             tool_calls: None,
             tool_call_id: None,
             name: None,
+            is_error: false,
             thinking: None,
             thinking_blocks: None,
             anthropic_multimodal_turn: None,
@@ -143,6 +151,7 @@ impl ChatMessage {
             tool_calls: Some(tool_calls),
             tool_call_id: None,
             name: None,
+            is_error: false,
             thinking,
             thinking_blocks,
             anthropic_multimodal_turn: None,
@@ -151,12 +160,22 @@ impl ChatMessage {
 
     /// Create a tool result message.
     pub fn tool_result(tool_call_id: &str, tool_name: &str, content: String) -> Self {
+        Self::tool_result_with_status(tool_call_id, tool_name, content, false)
+    }
+
+    pub fn tool_result_with_status(
+        tool_call_id: &str,
+        tool_name: &str,
+        content: String,
+        is_error: bool,
+    ) -> Self {
         Self {
             role: "tool".to_string(),
             content,
             tool_calls: None,
             tool_call_id: Some(tool_call_id.to_string()),
             name: Some(tool_name.to_string()),
+            is_error,
             thinking: None,
             thinking_blocks: None,
             anthropic_multimodal_turn: None,
@@ -398,5 +417,44 @@ mod tests {
         assert_eq!(resp.usage.input_tokens, 10);
         assert_eq!(resp.usage.output_tokens, 20);
         assert!(resp.tool_calls.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod chat_message_error_status_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn missing_is_error_defaults_false() {
+        let message: ChatMessage = serde_json::from_value(json!({
+            "role": "tool",
+            "content": "ok",
+            "toolCallId": "call_1",
+            "name": "Bash"
+        }))
+        .expect("deserialize chat message");
+
+        assert!(!message.is_error);
+    }
+
+    #[test]
+    fn tool_result_with_status_serializes_camel_case_is_error() {
+        let message =
+            ChatMessage::tool_result_with_status("call_1", "Bash", "failed".to_string(), true);
+        let value = serde_json::to_value(message).expect("serialize chat message");
+
+        assert_eq!(value["role"], "tool");
+        assert_eq!(value["toolCallId"], "call_1");
+        assert_eq!(value["name"], "Bash");
+        assert_eq!(value["isError"], true);
+    }
+
+    #[test]
+    fn success_tool_result_omits_is_error() {
+        let message = ChatMessage::tool_result("call_1", "Bash", "ok".to_string());
+        let value = serde_json::to_value(message).expect("serialize chat message");
+
+        assert!(value.get("isError").is_none());
     }
 }
