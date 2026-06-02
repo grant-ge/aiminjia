@@ -66,16 +66,20 @@ export function AskUserQuestionDialog({ interactionId, questions, onClose }: Pro
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/35 px-4 backdrop-blur-sm">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/35 px-4 backdrop-blur-sm"
+      data-aijia-dialog="ask-user-question"
+      data-aijia-dialog-tool="AskUserQuestion"
+    >
       <div className="w-full max-w-xl rounded-lg border border-border bg-background p-6 shadow-[var(--shadow-modal)]">
         <div className="mb-5">
           <div className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">AI needs your input</div>
-          <h2 className="mt-1 text-lg font-semibold text-foreground">AI 向你提问</h2>
-          <p className="mt-1 text-sm text-muted-foreground">选择最贴近你意图的答案，或使用“其他”补充说明。</p>
+          <h2 className="mt-1 text-lg font-semibold text-foreground" data-aijia-dialog-title>AI 向你提问</h2>
+          <p className="mt-1 text-sm text-muted-foreground" data-aijia-dialog-description>选择最贴近你意图的答案，或使用“其他”补充说明。</p>
         </div>
 
         <div className="max-h-[62vh] space-y-5 overflow-y-auto pr-1">
-          {questions.map((question) => {
+          {questions.map((question, qIdx) => {
             const selectedValues = answers[question.question] ?? []
             const hasOther = selectedValues.includes(OTHER_VALUE)
             return (
@@ -86,7 +90,7 @@ export function AskUserQuestionDialog({ interactionId, questions, onClose }: Pro
                 </div>
 
                 <div className="grid gap-2 sm:grid-cols-2">
-                  {question.options.map((option) => {
+                  {question.options.map((option, optIdx) => {
                     const selected = selectedValues.includes(option.label)
                     return (
                       <button
@@ -98,6 +102,10 @@ export function AskUserQuestionDialog({ interactionId, questions, onClose }: Pro
                             ? 'border-primary bg-primary/10 text-primary'
                             : 'border-border bg-background text-foreground hover:bg-muted'
                         }`}
+                        data-aijia-dialog-action="option"
+                        data-aijia-dialog-question-index={qIdx}
+                        data-aijia-dialog-option-index={optIdx}
+                        data-aijia-dialog-option-label={option.label}
                       >
                         <div className="font-medium">{option.label}</div>
                         <div className="mt-1 text-xs text-muted-foreground">{option.description}</div>
@@ -115,6 +123,10 @@ export function AskUserQuestionDialog({ interactionId, questions, onClose }: Pro
                         ? 'border-primary bg-primary/10 text-primary'
                         : 'border-border bg-background text-foreground hover:bg-muted'
                     }`}
+                    data-aijia-dialog-action="option"
+                    data-aijia-dialog-question-index={qIdx}
+                    data-aijia-dialog-option-index={question.options.length}
+                    data-aijia-dialog-option-label="__other__"
                   >
                     <div className="font-medium">其他</div>
                     <div className="mt-1 text-xs text-muted-foreground">输入自定义回答</div>
@@ -143,6 +155,7 @@ export function AskUserQuestionDialog({ interactionId, questions, onClose }: Pro
             onClick={handleCancel}
             disabled={submitting}
             className="rounded-lg border border-border px-4 py-2 text-sm text-muted-foreground hover:bg-muted disabled:opacity-60"
+            data-aijia-dialog-action="cancel"
           >
             取消
           </button>
@@ -151,6 +164,7 @@ export function AskUserQuestionDialog({ interactionId, questions, onClose }: Pro
             onClick={handleSubmit}
             disabled={!canSubmit || submitting}
             className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+            data-aijia-dialog-action="confirm"
           >
             提交回答
           </button>

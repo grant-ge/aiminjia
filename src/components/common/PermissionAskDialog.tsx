@@ -131,17 +131,21 @@ export function PermissionAskDialog({
       onClose={onCancel}
       title="工具执行请求"
       size="sm"
+      dialogKind="permission-ask"
+      dialogTool={ask.toolName}
       footer={(
         <>
           <Button
             variant="secondary"
             onClick={() => onDeny(buildDenyDecision())}
+            data-aijia-dialog-action="deny"
           >
             拒绝
           </Button>
           <Button
             variant="primary"
             onClick={() => onAllow(buildDecision(selectedDestination))}
+            data-aijia-dialog-action="allow"
           >
             允许
           </Button>
@@ -152,6 +156,7 @@ export function PermissionAskDialog({
         <div
           className="text-sm font-semibold"
           style={{ color: 'var(--color-text-primary)' }}
+          data-aijia-dialog-title
         >
           {ask.toolName}
         </div>
@@ -159,6 +164,7 @@ export function PermissionAskDialog({
         <p
           className="text-sm leading-relaxed"
           style={{ color: 'var(--color-text-secondary)' }}
+          data-aijia-dialog-description
         >
           {ask.message}
         </p>

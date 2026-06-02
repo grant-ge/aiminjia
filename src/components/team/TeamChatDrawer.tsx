@@ -12,6 +12,7 @@ import { TeamChatEvents } from './TeamChatEvents'
 import { TeammateDetailPanel } from './TeammateDetailPanel'
 import { formatDuration, formatShortDateTime } from './formatters'
 import { isLeadName } from './agentIdentity'
+import { useTeamVisualContext } from './TeamVisualContext'
 
 interface TeamChatDrawerProps {
   conversationId: string
@@ -74,6 +75,7 @@ interface DrawerOverviewProps {
 }
 
 function DrawerOverview({ conversationId, overview, onDrill, onClose }: DrawerOverviewProps) {
+  const { t } = useTranslation()
   const focusedTeamId = useConversationTeamState(conversationId).focusedTeamId
   const clearFocusedTeam = useTeamStore((s) => s.clearFocusedTeam)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -153,9 +155,14 @@ function DrawerOverview({ conversationId, overview, onDrill, onClose }: DrawerOv
   if (!overview || overview.teams.length === 0) {
     return (
       <div className="flex h-full flex-col">
-        <DrawerHeader title="团队过程" subtitle="没有团队记录" memberCount={0} onClose={onClose} />
+        <DrawerHeader
+          title={t('team.process.title')}
+          subtitle={t('team.process.emptySubtitle')}
+          memberCount={0}
+          onClose={onClose}
+        />
         <div className="flex flex-1 items-center justify-center px-6 text-sm text-muted-foreground">
-          这个会话还没有创建团队。
+          {t('team.process.emptyBody')}
         </div>
       </div>
     )
@@ -164,8 +171,8 @@ function DrawerOverview({ conversationId, overview, onDrill, onClose }: DrawerOv
   return (
     <div className="relative flex h-full flex-col">
       <DrawerHeader
-        title="团队过程"
-        subtitle={`${overview.teams.length} 个团队会话`}
+        title={t('team.process.title')}
+        subtitle={t('team.process.sessionCount', { count: overview.teams.length })}
         memberCount={overview.teams.reduce((sum, t) => sum + t.members.filter((m) => !isLeadName(m.agentName)).length, 0)}
         onClose={onClose}
       />
@@ -193,7 +200,7 @@ function DrawerOverview({ conversationId, overview, onDrill, onClose }: DrawerOv
       {showJumpToBottom ? (
         <button
           type="button"
-          aria-label="回到底部"
+          aria-label={t('team.process.jumpToBottom')}
           onClick={jumpToBottom}
           className="absolute bottom-4 left-1/2 z-20 flex h-9 w-9 -translate-x-1/2 items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-[var(--shadow-card)] transition-colors hover:bg-muted hover:text-foreground"
         >
@@ -212,16 +219,19 @@ interface DrawerHeaderProps {
 }
 
 function DrawerHeader({ title, subtitle, memberCount, onClose }: DrawerHeaderProps) {
+  const { t } = useTranslation()
   return (
     <div className="flex items-center gap-3 border-b border-border bg-muted/30 px-4 py-3">
       <h2 className="text-base font-medium text-foreground">{title}</h2>
       <span className="text-xs text-muted-foreground">{subtitle}</span>
-      <span className="ml-auto shrink-0 text-xs text-muted-foreground">{memberCount} 位成员</span>
+      <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+        {t('team.progress.memberCount', { count: memberCount })}
+      </span>
       <Button
         type="button"
         variant="ghost"
         size="icon"
-        aria-label="关闭团队面板"
+        aria-label={t('team.process.close')}
         onClick={onClose}
         className="h-7 w-7"
       >
@@ -238,16 +248,18 @@ interface TeamSessionSectionProps {
 
 function TeamSessionSection({ session, onDrill }: TeamSessionSectionProps) {
   const { t } = useTranslation()
+  const teamVisual = useTeamVisualContext()
   const chatWidthMode = useSettingsStore((s) => s.chatWidthMode ?? 'full')
   const visibleMembers = session.members.filter((m) => !isLeadName(m.agentName))
   const isLive = session.deletedAt === null
+  const title = teamVisual?.name ?? session.teamName ?? t('team.session.untitled')
   return (
     <section data-team-id={session.teamId} className="border-b border-border last:border-b-0">
       <div className="sticky top-0 z-10 -mx-4 border-b border-border bg-background/95 px-4 py-2 backdrop-blur">
         <div className="flex items-center justify-between gap-2 text-xs">
           <div className="flex min-w-0 items-center gap-2">
             <span className="truncate font-medium text-foreground">
-              {session.teamName ?? t('team.session.untitled')}
+              {title}
             </span>
             {isLive ? (
               <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
@@ -265,7 +277,7 @@ function TeamSessionSection({ session, onDrill }: TeamSessionSectionProps) {
             )}
           </div>
           <span className="shrink-0 text-muted-foreground">
-            {formatDuration(session.createdAt, session.deletedAt)}
+            {formatDuration(session.createdAt, session.deletedAt, t('team.session.live'))}
           </span>
         </div>
         {visibleMembers.length > 0 && (
@@ -279,7 +291,9 @@ function TeamSessionSection({ session, onDrill }: TeamSessionSectionProps) {
                 disabled={!member.hasTranscript}
                 onClick={() => onDrill(member.agentName)}
                 className="h-7 gap-1.5 rounded-full px-2"
-                title={member.hasTranscript ? `查看 ${member.agentName} 的过程` : `${member.agentName}（无可下钻记录）`}
+                title={member.hasTranscript
+                  ? t('team.process.viewMemberProcess', { name: member.agentName })
+                  : t('team.process.noMemberTranscript', { name: member.agentName })}
               >
                 <AgentAvatar name={member.agentName} size="sm" />
                 <span className="text-xs">{member.agentName}</span>

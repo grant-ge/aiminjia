@@ -12,7 +12,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { localizeBuiltinTemplates, snapshotToTemplate, type EmployeeTemplate } from './templates'
+import { snapshotToTemplate, type EmployeeTemplate } from './templates'
 import { MonitoringUrlsForm } from './forms/MonitoringUrlsForm'
 import { SalesTableConfigForm } from './forms/SalesTableConfigForm'
 import { WeeklyReportConfigForm } from './forms/WeeklyReportConfigForm'
@@ -47,11 +47,14 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
   const { t, i18n } = useTranslation()
   const [step, setStep] = useState<1 | 2 | 3>(1)
   const [selected, setSelected] = useState<EmployeeTemplate | null>(null)
-  // Catalog: backend (`employee_template_catalog` = bootstrap ∪ cache) when
-  // available, falls back to the legacy hardcoded `BUILTIN_TEMPLATES` if
-  // the IPC call fails (e.g. dev server with mismatched binary). The
-  // wizard renders this list directly; we don't update it after open.
-  const [catalog, setCatalog] = useState<EmployeeTemplate[]>(() => localizeBuiltinTemplates(i18n.language))
+  // Catalog 来源（按时间顺序）：
+  // 1. 弹窗打开 → 触发 employee_template_refresh 拉服务端最新到 cache
+  // 2. 读 employee_template_catalog —— 后端读 cache 目录
+  // 3. cache 为空 → catalog 为空 → UI 显示"加载/重试"，不再 fallback 到
+  //    硬编码 BUILTIN_TEMPLATES（云端唯一架构，没网员工跑不了，离线伪兜底无意义）
+  const [catalog, setCatalog] = useState<EmployeeTemplate[]>([])
+  const [catalogLoading, setCatalogLoading] = useState(false)
+  const [catalogLoadError, setCatalogLoadError] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [enableCron, setEnableCron] = useState(true)
   const [cron, setCron] = useState('')
@@ -60,34 +63,32 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
   const [syncingTemplates, setSyncingTemplates] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // When the dialog opens: best-effort refresh the local template cache
-  // from lotus ops-portal, then load the merged catalog. Cache refresh
-  // failures don't block the user — they just see whatever's already
-  // local (bootstrap + any previously-downloaded versions).
-  //
-  // Why refresh on open and not on mount: the wizard is mounted with the
-  // parent page and we don't want a network call on every app launch.
-  // Opening the wizard is a deliberate user action where a 1-2s delay is
-  // acceptable for the side effect of getting freshest content.
+  // 弹窗打开时：先 refresh cache 再读 catalog。
+  // 之前 refresh 失败会 fallback 到 BUILTIN_TEMPLATES，现在必须显式 surface 错误，
+  // 让用户知道"没拉到模板"，然后可以走"再次同步"按钮重试。
   useEffect(() => {
     if (!open) return
     let cancelled = false
     void (async () => {
+      setCatalogLoading(true)
+      setCatalogLoadError(null)
       try {
-        // Fire-and-forget refresh; if it fails we just use whatever the
-        // backend already has cached + bootstrap.
+        // refresh 失败不阻塞——可能是网络瞬断或服务端 5xx；后续 catalog 调用
+        // 仍能返回 cache 已有的内容。但如果 cache 本身是空的，UI 会显示空态。
         await employeeTemplateRefresh().catch((e) => {
           console.warn('[HireWizard] employee_template_refresh failed:', e)
           return 0
         })
         const snapshots: EmployeeTemplateSnapshot[] = await employeeTemplateCatalog()
         if (cancelled) return
-        if (snapshots.length > 0) {
-          setCatalog(snapshots.map((snap) => snapshotToTemplate(snap, i18n.language)))
-        }
+        setCatalog(snapshots.map((snap) => snapshotToTemplate(snap, i18n.language)))
       } catch (e) {
-        console.error('[HireWizard] employee_template_catalog failed, using builtin templates:', e)
-        setCatalog(localizeBuiltinTemplates(i18n.language))
+        if (cancelled) return
+        console.error('[HireWizard] employee_template_catalog failed:', e)
+        setCatalog([])
+        setCatalogLoadError(e instanceof Error ? e.message : String(e))
+      } finally {
+        if (!cancelled) setCatalogLoading(false)
       }
     })()
     return () => {
@@ -117,11 +118,7 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
 
   async function reloadCatalog() {
     const snapshots: EmployeeTemplateSnapshot[] = await employeeTemplateCatalog()
-    if (snapshots.length > 0) {
-      setCatalog(snapshots.map((snap) => snapshotToTemplate(snap, i18n.language)))
-    } else {
-      setCatalog(localizeBuiltinTemplates(i18n.language))
-    }
+    setCatalog(snapshots.map((snap) => snapshotToTemplate(snap, i18n.language)))
   }
 
   async function handleSyncTemplates() {
@@ -237,6 +234,44 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
           <div className="grid grid-cols-2 gap-3 p-6 sm:grid-cols-3">
             {error && (
               <p className="col-span-full rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</p>
+            )}
+            {catalogLoading && catalog.length === 0 && (
+              <div
+                className="col-span-full flex flex-col items-center gap-2 rounded-lg border border-dashed border-border bg-muted/30 py-12 text-sm text-muted-foreground"
+                data-aijia-hire-template-loading
+              >
+                <RefreshCw className="h-4 w-4 animate-spin" />
+                <span>{t('employee.config.wizard.catalogLoading', '正在从服务端拉取员工模板…')}</span>
+              </div>
+            )}
+            {!catalogLoading && catalog.length === 0 && (
+              <div
+                className="col-span-full flex flex-col items-center gap-3 rounded-lg border border-dashed border-border bg-muted/30 px-4 py-12 text-center text-sm text-muted-foreground"
+                data-aijia-hire-template-empty
+              >
+                <p>
+                  {catalogLoadError
+                    ? t(
+                        'employee.config.wizard.catalogLoadError',
+                        '没拉到员工模板：{{err}}。网络恢复后点"再次同步"重试。',
+                        { err: catalogLoadError },
+                      )
+                    : t(
+                        'employee.config.wizard.catalogEmpty',
+                        '本地还没有员工模板缓存。请确认网络后点"再次同步"。',
+                      )}
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleSyncTemplates}
+                  disabled={syncingTemplates}
+                  data-aijia-hire-action="catalog-retry"
+                >
+                  <RefreshCw className={syncingTemplates ? 'mr-1.5 h-3.5 w-3.5 animate-spin' : 'mr-1.5 h-3.5 w-3.5'} />
+                  {syncingTemplates ? t('employee.config.wizard.syncing', '同步中…') : t('employee.config.wizard.syncRetry', '再次同步')}
+                </Button>
+              </div>
             )}
             {catalog.map((t) => (
               <button

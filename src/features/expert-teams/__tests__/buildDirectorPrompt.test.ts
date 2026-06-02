@@ -36,8 +36,18 @@ describe('buildDirectorPrompt', () => {
     const prompt = buildDirectorPrompt(team, '是否拓展东南亚市场', 'zh-CN')
 
     expect(prompt).toContain('你现在的任务是为用户主持一场「战略推演团」圆桌讨论。')
+    expect(prompt).toContain('必须全程使用中文回复用户')
     expect(prompt).toContain('team_name = "expert-team-strategy"')
     expect(prompt).not.toContain('Strategy Simulation Team')
+  })
+
+  it('keeps Business Decision Team out of Chinese operations prompts', () => {
+    const team = getExpertTeam('operations', 'en-US')!
+    const prompt = buildDirectorPrompt(team, 'Q2指标为何下滑', 'zh-CN')
+
+    expect(prompt).toContain('「经营决策团」圆桌讨论')
+    expect(prompt).toContain('必须全程使用中文回复用户')
+    expect(prompt).not.toContain('Business Decision Team')
   })
 
   it('renders English director prompts consistently for English locale', () => {
@@ -46,6 +56,7 @@ describe('buildDirectorPrompt', () => {
 
     expect(prompt).toContain('Your task is to host a "Strategy Simulation Team" roundtable discussion for the user.')
     expect(prompt).toContain('Team members')
+    expect(prompt).toContain('Reply to the user in English throughout')
     expect(prompt).toContain('team_name = "expert-team-strategy"')
     expect(prompt).not.toContain('你现在的任务')
   })

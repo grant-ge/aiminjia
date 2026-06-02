@@ -48,8 +48,9 @@ ${topic}
 1. 调用 TeamCreate 创建团队（team_name = "${runtimeTeamName(team)}"，这是工具内部稳定名称；对用户展示仍使用「${team.name}」）
 2. 为以上每位专家分别用 Agent 工具 spawn 子代理，把名字与 persona 注入到他们的 system prompt
 3. ${spawnNameRule('zh-CN')}
-4. 让每位专家就议题发表一轮观点（每人 200-400 字），互相点评后给出共识 / 分歧
-5. 你作为主持人（Lead）整理最终决策建议，呈现给用户`
+4. 必须全程使用中文回复用户；团队名称、阶段说明、总结句都使用中文，不要夹带英文团队名
+5. 让每位专家就议题发表一轮观点（每人 200-400 字），互相点评后给出共识 / 分歧
+6. 你作为主持人（Lead）整理最终决策建议，呈现给用户`
 }
 
 function debateZh(team: ExpertTeam, topic: string): string {
@@ -65,11 +66,12 @@ ${topic}
 1. 调用 TeamCreate 创建团队（team_name = "${runtimeTeamName(team)}"，这是工具内部稳定名称；对用户展示仍使用「${team.name}」）
 2. 用 Agent 工具 spawn 正方、反方、观察员三个子代理，把 persona 注入 system prompt
 3. ${spawnNameRule('zh-CN')}
-4. 按以下流程进行 2-3 轮：
+4. 必须全程使用中文回复用户；团队名称、阶段说明、总结句都使用中文，不要夹带英文团队名
+5. 按以下流程进行 2-3 轮：
    - 正方陈述 → 反方陈述
    - 反方质询正方 → 正方反驳
    - 观察员点评双方论点强弱
-5. 你作为主持人（Lead）做最终裁决，给出建议立场与理由`
+6. 你作为主持人（Lead）做最终裁决，给出建议立场与理由`
 }
 
 function openTableZh(team: ExpertTeam, topic: string): string {
@@ -86,7 +88,8 @@ ${topic}
 3. 调用 TeamCreate 创建团队（team_name = "${runtimeTeamName(team)}"，这是工具内部稳定名称；对用户展示仍使用「${team.name}」）
 4. 用 Agent 工具为每位专家 spawn 子代理，注入 name + persona
 5. spawn 时给每位专家一个稳定的 name（小写英文 / kebab-case，如 ceo、growth-hacker），并保持后续轮次复用同一 name
-6. 让每位专家就议题发言一轮（每人 200-400 字），你串场并最终汇总观点`
+6. 必须全程使用中文回复用户；团队名称、阶段说明、总结句都使用中文，不要夹带英文团队名
+7. 让每位专家就议题发言一轮（每人 200-400 字），你串场并最终汇总观点`
 }
 
 function roundsEn(team: ExpertTeam, topic: string): string {
@@ -102,8 +105,9 @@ ${topic}
 1. Call TeamCreate to create the team (team_name = "${runtimeTeamName(team)}"; this is the stable internal tool name. Display "${team.name}" to the user.)
 2. Spawn one sub-agent for each expert above with the Agent tool, injecting the expert name and persona into each system prompt.
 3. ${spawnNameRule('en-US')}
-4. Let every expert give one round of views on the topic (200-400 words each), respond to each other, then identify consensus and disagreement.
-5. As the Lead, summarize the final decision recommendation for the user.`
+4. Reply to the user in English throughout; team names, progress narration, and final summaries must be English.
+5. Let every expert give one round of views on the topic (200-400 words each), respond to each other, then identify consensus and disagreement.
+6. As the Lead, summarize the final decision recommendation for the user.`
 }
 
 function debateEn(team: ExpertTeam, topic: string): string {
@@ -119,11 +123,12 @@ ${topic}
 1. Call TeamCreate to create the team (team_name = "${runtimeTeamName(team)}"; this is the stable internal tool name. Display "${team.name}" to the user.)
 2. Spawn the affirmative, negative, and observer sub-agents with the Agent tool, injecting each persona into the system prompt.
 3. ${spawnNameRule('en-US')}
-4. Run 2-3 rounds:
+4. Reply to the user in English throughout; team names, progress narration, and final summaries must be English.
+5. Run 2-3 rounds:
    - Affirmative statement -> negative statement
    - Negative cross-examines affirmative -> affirmative responds
    - Observer critiques the strength of both sides
-5. As the Lead, make the final call and give the recommended position with reasons.`
+6. As the Lead, make the final call and give the recommended position with reasons.`
 }
 
 function openTableEn(team: ExpertTeam, topic: string): string {
@@ -140,7 +145,8 @@ ${topic}
 3. Call TeamCreate to create the team (team_name = "${runtimeTeamName(team)}"; this is the stable internal tool name. Display "${team.name}" to the user.)
 4. Spawn one sub-agent for each expert with the Agent tool, injecting name + persona.
 5. Give every expert a stable spawn name (lowercase English / kebab-case, such as ceo or growth-hacker), and reuse the same name in later rounds.
-6. Let every expert speak once on the topic (200-400 words each), connect the discussion as Lead, and summarize the final views.`
+6. Reply to the user in English throughout; team names, progress narration, and final summaries must be English.
+7. Let every expert speak once on the topic (200-400 words each), connect the discussion as Lead, and summarize the final views.`
 }
 
 export function buildDirectorPrompt(

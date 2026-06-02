@@ -2,6 +2,7 @@ import '@testing-library/jest-dom'
 import { render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import i18n from '@/i18n'
 import { useChatStore } from '@/stores/chatStore'
 import { setExpertTeam, clearExpertTeam } from '@/features/expert-teams/expertTeamRegistry'
 import { ChatPage } from './ChatPage'
@@ -13,7 +14,12 @@ vi.mock('@/hooks/useChat', () => ({
 }))
 
 vi.mock('@/components/shell/ChatTopBar', () => ({
-  ChatTopBar: ({ title }: { title: string }) => <header data-testid="chat-header">{title}</header>,
+  ChatTopBar: ({ title, sourceLabel }: { title: string; sourceLabel?: string }) => (
+    <header data-testid="chat-header">
+      {title}
+      {sourceLabel ? <span data-testid="chat-source-label">{sourceLabel}</span> : null}
+    </header>
+  ),
 }))
 
 vi.mock('@/components/layout/ChatArea', () => ({
@@ -31,8 +37,10 @@ vi.mock('@/components/chat/RightPanel', () => ({
 describe('ChatPage layout', () => {
   beforeEach(async () => {
     switchConversationMock.mockClear()
+    await i18n.changeLanguage('zh-CN')
     await clearExpertTeam('conv-layout')
     await clearExpertTeam('conv-team')
+    await clearExpertTeam('conv-retro')
     useChatStore.setState({ activeConversationId: null, conversations: [], messages: [] })
   })
 
@@ -64,7 +72,28 @@ describe('ChatPage layout', () => {
     render(<ChatPage conversationId="conv-team" />)
 
     expect(screen.queryByLabelText('关闭专家团')).not.toBeInTheDocument()
-    expect(screen.queryByText('市场营销策划团')).not.toBeInTheDocument()
+  })
+
+  it('uses the localized expert team name for the conversation source chip', async () => {
+    useChatStore.setState({
+      activeConversationId: 'conv-retro',
+      conversations: [{
+        id: 'conv-retro',
+        title: '专家团会话',
+        createdAt: '',
+        updatedAt: '',
+        isArchived: false,
+        kind: 'expertTeam',
+        sourceLabel: 'Retrospective Diagnosis Team',
+      }],
+      messages: [{ id: 'm1', conversationId: 'conv-retro', role: 'assistant', content: { text: '已有消息' }, createdAt: '' }],
+    })
+    await setExpertTeam('conv-retro', 'retrospective', 'Retrospective Diagnosis Team')
+
+    render(<ChatPage conversationId="conv-retro" />)
+
+    expect(screen.getByTestId('chat-source-label')).toHaveTextContent('复盘归因团')
+    expect(screen.queryByText('Retrospective Diagnosis Team')).not.toBeInTheDocument()
   })
 
   it('composes the chat column as header, content, and footer using flex layout', () => {

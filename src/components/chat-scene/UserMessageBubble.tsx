@@ -4,6 +4,7 @@
  */
 import { Blocks } from 'lucide-react'
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { UserBubbleMarkdown } from './markdown/UserBubbleMarkdown'
 import { DispatchBanner } from './DispatchBanner'
 import { parseDispatchHeader } from './parseDispatchHeader'
@@ -27,6 +28,7 @@ export function UserMessageBubble({
   files,
   conversationId,
 }: UserMessageBubbleProps) {
+  const { t } = useTranslation()
   const [expanded, setExpanded] = useState(false)
 
   // If this is a team event XML message, skip rendering (PeerMessageBanner handles it)
@@ -96,7 +98,7 @@ export function UserMessageBubble({
             onClick={() => setExpanded((next) => !next)}
             className="mt-1 text-xs font-semibold text-primary-foreground/80 underline-offset-2 hover:text-primary-foreground hover:underline"
           >
-            {expanded ? '收起' : '展开全部'}
+            {expanded ? t('userMessage.collapse') : t('userMessage.expandAll')}
           </button>
         ) : null}
       </div>

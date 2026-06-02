@@ -8,6 +8,7 @@ import { AssistantMarkdown } from '@/components/chat-scene/AssistantMarkdown'
 import { AgentAvatar } from './AgentAvatar'
 import { getAgentIdentity, formatLeadDisplayName, isLeadName } from './agentIdentity'
 import { formatClock, formatTimestampForGroup } from './formatters'
+import { useTeamVisualContext } from './TeamVisualContext'
 
 interface TeamChatEventsProps {
   events: TeamEvent[]
@@ -87,14 +88,15 @@ interface TeamEventRowProps {
 
 function TeamEventRow({ event, onDrillAgent }: TeamEventRowProps) {
   const { t } = useTranslation()
+  const teamVisual = useTeamVisualContext()
   switch (event.kind) {
     case 'team_create':
       return (
         <SystemDivider
           icon="●"
           label={
-            event.teamName
-              ? t('team.chat.lifecycle.teamCreatedWithName', { teamName: event.teamName })
+            event.teamName || teamVisual?.name
+              ? t('team.chat.lifecycle.teamCreatedWithName', { teamName: teamVisual?.name ?? event.teamName })
               : t('team.chat.lifecycle.teamCreated')
           }
           ts={event.ts}
@@ -286,7 +288,11 @@ function MessageBubble({ side, from, to, text, ts, isError, onDrillAgent }: Mess
     />
   )
   const wrappedAvatar = isDrillable ? (
-    <button type="button" onClick={() => onDrillAgent?.(from)} title={`查看 ${from} 的完整过程`}>
+    <button
+      type="button"
+      onClick={() => onDrillAgent?.(from)}
+      title={t('team.process.viewMemberFullProcess', { name: from })}
+    >
       {avatarNode}
     </button>
   ) : (

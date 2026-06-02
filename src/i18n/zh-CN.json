@@ -607,7 +607,14 @@
     "input": "输入",
     "output": "输出",
     "live": "实时输出",
-    "liveBytes": "已收到 {{bytes}}"
+    "liveBytes": "已收到 {{bytes}}",
+    "showMore": "显示更多",
+    "showMoreLines": "显示更多（剩 {{count}} 行）",
+    "collapse": "收起"
+  },
+  "userMessage": {
+    "expandAll": "展开全部",
+    "collapse": "收起"
   },
   "toolGroupSummary": {
     "bucket": {
@@ -812,6 +819,8 @@
     "syncUpToDate": "已是最新",
     "syncFailed": "同步失败",
     "conversationTitle": "专家团: {{name}}",
+    "startFailed": "无法启动专家团",
+    "createConversationFailed": "创建会话失败，请重试。",
     "startTeam": "启动 {{name}}",
     "openTableHint": "主持人按议题召集",
     "members": "团队成员",
@@ -978,7 +987,10 @@
     "installedCount": "已安装 {{count}} 个技能",
     "searchPlaceholder": "搜索技能名称或场景",
     "syncBuiltin": "同步内置技能",
+    "syncLocal": "同步本地技能",
+    "syncSkills": "同步技能",
     "syncing": "同步中...",
+    "syncLocalDone": "本地技能已刷新",
     "importSkill": "+ 导入技能",
     "importDirectory": "导入技能目录",
     "importArchive": "导入压缩包 (.zip)",
@@ -1038,6 +1050,39 @@
       "live": "进行中",
       "dismissed": "已解散",
       "dismissedAt": "{{time}} 解散"
+    },
+    "process": {
+      "title": "团队过程",
+      "emptySubtitle": "没有团队记录",
+      "emptyBody": "这个会话还没有创建团队。",
+      "sessionCount": "{{count}} 个团队会话",
+      "jumpToBottom": "回到底部",
+      "close": "关闭团队面板",
+      "viewMemberProcess": "查看 {{name}} 的过程",
+      "viewMemberFullProcess": "查看 {{name}} 的完整过程",
+      "noMemberTranscript": "{{name}}（无可下钻记录）"
+    },
+    "progress": {
+      "memberCount": "{{count}} 位成员",
+      "messageCount": "{{count}} 条消息",
+      "viewProcess": "查看过程 →"
+    },
+    "detail": {
+      "back": "← 返回",
+      "subtitle": "完整内部过程",
+      "loading": "加载中…",
+      "empty": "该成员没有可见记录",
+      "systemReminder": "角色说明",
+      "received": "接收到",
+      "receivedFrom": "接收到 {{name}}",
+      "sentTo": "发送给 {{name}}",
+      "parseHint": "解析提示",
+      "rawData": "原始数据",
+      "parseWarnings": {
+        "emptyJsonText": "JSON 内含 type=text 但 text/content 为空",
+        "jsonLikeFailed": "JSON-like 字符串解析失败，回退到原字符串",
+        "unknownStructure": "未识别的结构，按 JSON 显示"
+      }
     },
     "chat": {
       "empty": "该团队还没有内部消息",

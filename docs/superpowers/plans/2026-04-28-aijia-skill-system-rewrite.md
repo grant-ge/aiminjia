@@ -1,5 +1,9 @@
 # AIjia SKILL.md System Rewrite Implementation Plan
 
+> **状态：已完成 + 后续追加的 `skill_smith` 运行时也已删除 (2026-06)。**
+> 文中提及的 `commands/skill_smith/*` 和 `plugin/builtin/tools/skill_smith_*.rs` 都是**更早期**的实现，已先于本计划被替换/删除。本计划落地后又一次性引入过 `runtime/tools/builtin/skill_smith.rs`（"小程"5 件套草稿工具），那一版也在 2026-06 删除——因为产品上 LLM 实际走的是 `Skill` → load `skill-creator` 这条路径，从未真正调用 skill_smith 工具。
+> 历史归档，**不要再用本文件指导新工作**。当前 skill 系统状态以 `CLAUDE.md`「Skill 系统（新）」段为准。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Completely replace AIjia's legacy stateful skill/workflow system with a Claude Code-aligned, disk-based SKILL.md system loaded from `~/.renlijia/skills/` and per-user `~/.renlijia/users/{scope}/skills/`.

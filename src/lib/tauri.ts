@@ -51,7 +51,6 @@ export const TAURI_EVENTS = {
   AGENT_IDLE: 'agent:idle',
   TASK_STATUS_CHANGED: 'task:status-changed',
   AUTH_EXPIRED: 'auth:expired',
-  SKILL_FILE_CHANGED: 'skill-file-changed',
   PERMISSION_ASK: 'permission:ask',
   INTERACTION_REQUIRED: 'interaction:required',
   INTERACTION_RESOLVED: 'interaction:resolved',
@@ -72,6 +71,9 @@ export const TAURI_EVENTS = {
   TURN_HEARTBEAT: 'turn:heartbeat',
   /** Spec 2026-05-26 §5.2 — Network probe result broadcast. */
   NETWORK_STATUS: 'network:status',
+  /** Skill registry refreshed (any path: install_custom_skill / import / RefreshSkills tool /
+   *  load_skill miss-retry). Frontend stores subscribe to reload their cached skill list. */
+  SKILL_REGISTRY_REFRESHED: 'skill:registry-refreshed',
 } as const
 
 // ---------------------------------------------------------------------------
@@ -2103,19 +2105,11 @@ export async function packSkill(skillDir: string, destPath: string): Promise<str
   return invoke<string>('pack_skill', { skillDir, destPath })
 }
 
-/** Reload a custom skill from disk (dev mode hot-reload). */
-export function reloadSkill(skillPath: string): Promise<string> {
-  return invoke<string>('reload_skill', { skillPath })
-}
-
-/** Start watching a skill directory for file changes (dev mode). */
-export function startSkillWatch(skillPath: string): Promise<string> {
-  return invoke<string>('start_skill_watch', { skillPath })
-}
-
-/** Stop watching the skill directory (dev mode). */
-export function stopSkillWatch(): Promise<string> {
-  return invoke<string>('stop_skill_watch')
+/** 触发后端重扫 user_skills_dir + global_skills_dir，把新增 SKILL.md 同步到内存 registry。
+ *  Used by SkillCenterPage on mount + 任何"装完想立刻看到"的场景。
+ *  调用 refresh_skill_registry_cmd Tauri command。 */
+export function refreshSkillRegistry(): Promise<void> {
+  return invoke<void>('refresh_skill_registry_cmd')
 }
 
 // ---------------------------------------------------------------------------

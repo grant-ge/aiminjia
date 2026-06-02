@@ -3,6 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 
 import { useSettingsStore } from '@/stores/settingsStore'
+import i18n from '@/i18n'
 import { GeneralPanel } from '../panels/GeneralPanel'
 
 const mockUser = { name: '姚域权', tenantName: '仁励家网络科技(杭州)有限公司', avatarUrl: '' }
@@ -10,6 +11,7 @@ const mockUser = { name: '姚域权', tenantName: '仁励家网络科技(杭州)
 describe('GeneralPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    void i18n.changeLanguage('zh-CN')
   })
 
   it('renders user info card with name, tenant, and logout button', () => {
@@ -76,5 +78,15 @@ describe('GeneralPanel', () => {
     render(<GeneralPanel user={mockUser} onLogout={() => {}} />)
     expect(screen.queryByRole('combobox', { name: '语言' })).not.toBeInTheDocument()
     expect(setAppLanguage).not.toHaveBeenCalled()
+  })
+
+  it('marks the live UI language as selected even when the settings store is stale', async () => {
+    await i18n.changeLanguage('en-US')
+    useSettingsStore.setState({ appLanguage: 'zh-CN' } as never)
+
+    render(<GeneralPanel user={mockUser} onLogout={() => {}} />)
+
+    expect(screen.getByRole('radio', { name: 'English' })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('radio', { name: '中文' })).toHaveAttribute('aria-checked', 'false')
   })
 })

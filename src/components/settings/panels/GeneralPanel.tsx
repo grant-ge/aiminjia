@@ -11,12 +11,12 @@ interface GeneralPanelProps {
 }
 
 export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const fontScale = useSettingsStore((s) => s.fontScale ?? 'medium')
   const setFontScale = useSettingsStore((s) => s.setFontScale)
   const chatWidthMode = useSettingsStore((s) => s.chatWidthMode ?? 'full')
   const setChatWidthMode = useSettingsStore((s) => s.setChatWidthMode)
-  const appLanguage = useSettingsStore((s) => s.appLanguage ?? 'zh-CN')
+  const appLanguage: AppLanguage = i18n.language === 'en-US' ? 'en-US' : 'zh-CN'
   const setAppLanguage = useSettingsStore((s) => s.setAppLanguage)
 
   const persistToBackend = async (patch: {

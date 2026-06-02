@@ -14,7 +14,7 @@
 //!    almost all those cases.
 //!
 //! These were originally private helpers in `runtime::employee::store`. Hoisted
-//! here so skill_smith / skill_package / draft commands can reuse — see CLAUDE.md
+//! here so skill_package / import commands can reuse — see CLAUDE.md
 //! decision 41 (\"任何写到磁盘的状态文件优先 tmp + rename 原子写；目录删除走
 //! `remove_dir_all_retry` 3×150–300ms backoff\").
 

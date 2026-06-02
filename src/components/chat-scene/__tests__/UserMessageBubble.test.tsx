@@ -1,10 +1,15 @@
 import '@testing-library/jest-dom'
 import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 
+import i18n from '@/i18n'
 import { UserMessageBubble } from '../UserMessageBubble'
 
 describe('UserMessageBubble', () => {
+  beforeEach(async () => {
+    await i18n.changeLanguage('zh-CN')
+  })
+
   it('renders text on a primary-colored bubble', () => {
     render(<UserMessageBubble text="Hello" />)
     expect(screen.getByText('Hello')).toBeInTheDocument()
@@ -84,6 +89,16 @@ describe('UserMessageBubble', () => {
     // sanity check：超过 320 chars，旧策略下会触发折叠
     expect(longUrl.length).toBeGreaterThan(320)
     render(<UserMessageBubble text={longUrl} />)
+    expect(screen.queryByRole('button', { name: '展开全部' })).not.toBeInTheDocument()
+  })
+
+  it('localizes collapse controls in English', async () => {
+    await i18n.changeLanguage('en-US')
+    const longText = Array.from({ length: 20 }, (_, i) => `line ${i + 1}`).join('\n\n')
+    render(<UserMessageBubble text={longText} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand all' }))
+    expect(screen.getByRole('button', { name: 'Collapse' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '展开全部' })).not.toBeInTheDocument()
   })
 })

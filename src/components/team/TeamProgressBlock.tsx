@@ -3,6 +3,8 @@ import { cn } from '@/lib/utils'
 import { AgentAvatar } from './AgentAvatar'
 import { formatDuration } from './formatters'
 import { isLeadName } from './agentIdentity'
+import { useTeamVisualContext } from './TeamVisualContext'
+import { useTranslation } from 'react-i18next'
 
 interface TeamProgressBlockProps {
   session: TeamSession
@@ -19,7 +21,9 @@ interface TeamProgressBlockProps {
  * narrating progress.
  */
 export function TeamProgressBlock({ session, onOpen }: TeamProgressBlockProps) {
-  const title = session.teamName ?? '团队对话'
+  const { t } = useTranslation()
+  const teamVisual = useTeamVisualContext()
+  const title = teamVisual?.name ?? session.teamName ?? t('team.session.untitled')
   // Don't show team-lead as an avatar — it's the conversation itself.
   const visibleMembers = session.members.filter((m) => !isLeadName(m.agentName))
   const memberCount = visibleMembers.length
@@ -57,17 +61,17 @@ export function TeamProgressBlock({ session, onOpen }: TeamProgressBlockProps) {
           {session.deletedAt === null && (
             <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
               <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-              进行中
+              {t('team.session.live')}
             </span>
           )}
         </div>
         <div className="truncate text-xs text-muted-foreground">
-          {memberCount} 位成员 · {messageCount} 条消息 · {formatDuration(session.createdAt, session.deletedAt)}
+          {t('team.progress.memberCount', { count: memberCount })} · {t('team.progress.messageCount', { count: messageCount })} · {formatDuration(session.createdAt, session.deletedAt, t('team.session.live'))}
         </div>
       </div>
 
       <span className="shrink-0 text-xs text-muted-foreground transition-colors group-hover:text-primary">
-        查看过程 →
+        {t('team.progress.viewProcess')}
       </span>
     </button>
   )

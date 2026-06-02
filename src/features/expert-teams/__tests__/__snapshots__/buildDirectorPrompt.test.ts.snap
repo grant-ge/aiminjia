@@ -16,11 +16,12 @@ exports[`buildDirectorPrompt > renders debate prompt 1`] = `
 1. 调用 TeamCreate 创建团队（team_name = "expert-team-debate"，这是工具内部稳定名称；对用户展示仍使用「辩论团」）
 2. 用 Agent 工具 spawn 正方、反方、观察员三个子代理，把 persona 注入 system prompt
 3. **spawn 子代理时，name 参数必须严格使用 \`[name="..."]\` 中给定的值（如 ceo、cfo、analyst），不要自创翻译或缩写**。这是前端识别每位专家的依据；不一致会导致头像、消息归属错乱。
-4. 按以下流程进行 2-3 轮：
+4. 必须全程使用中文回复用户；团队名称、阶段说明、总结句都使用中文，不要夹带英文团队名
+5. 按以下流程进行 2-3 轮：
    - 正方陈述 → 反方陈述
    - 反方质询正方 → 正方反驳
    - 观察员点评双方论点强弱
-5. 你作为主持人（Lead）做最终裁决，给出建议立场与理由"
+6. 你作为主持人（Lead）做最终裁决，给出建议立场与理由"
 `;
 
 exports[`buildDirectorPrompt > renders investment prompt 1`] = `
@@ -39,8 +40,9 @@ exports[`buildDirectorPrompt > renders investment prompt 1`] = `
 1. 调用 TeamCreate 创建团队（team_name = "expert-team-investment"，这是工具内部稳定名称；对用户展示仍使用「投资评估团」）
 2. 为以上每位专家分别用 Agent 工具 spawn 子代理，把名字与 persona 注入到他们的 system prompt
 3. **spawn 子代理时，name 参数必须严格使用 \`[name="..."]\` 中给定的值（如 ceo、cfo、analyst），不要自创翻译或缩写**。这是前端识别每位专家的依据；不一致会导致头像、消息归属错乱。
-4. 让每位专家就议题发表一轮观点（每人 200-400 字），互相点评后给出共识 / 分歧
-5. 你作为主持人（Lead）整理最终决策建议，呈现给用户"
+4. 必须全程使用中文回复用户；团队名称、阶段说明、总结句都使用中文，不要夹带英文团队名
+5. 让每位专家就议题发表一轮观点（每人 200-400 字），互相点评后给出共识 / 分歧
+6. 你作为主持人（Lead）整理最终决策建议，呈现给用户"
 `;
 
 exports[`buildDirectorPrompt > renders marketing prompt 1`] = `
@@ -59,8 +61,9 @@ exports[`buildDirectorPrompt > renders marketing prompt 1`] = `
 1. 调用 TeamCreate 创建团队（team_name = "expert-team-marketing"，这是工具内部稳定名称；对用户展示仍使用「市场营销策划团」）
 2. 为以上每位专家分别用 Agent 工具 spawn 子代理，把名字与 persona 注入到他们的 system prompt
 3. **spawn 子代理时，name 参数必须严格使用 \`[name="..."]\` 中给定的值（如 ceo、cfo、analyst），不要自创翻译或缩写**。这是前端识别每位专家的依据；不一致会导致头像、消息归属错乱。
-4. 让每位专家就议题发表一轮观点（每人 200-400 字），互相点评后给出共识 / 分歧
-5. 你作为主持人（Lead）整理最终决策建议，呈现给用户"
+4. 必须全程使用中文回复用户；团队名称、阶段说明、总结句都使用中文，不要夹带英文团队名
+5. 让每位专家就议题发表一轮观点（每人 200-400 字），互相点评后给出共识 / 分歧
+6. 你作为主持人（Lead）整理最终决策建议，呈现给用户"
 `;
 
 exports[`buildDirectorPrompt > renders negotiation prompt 1`] = `
@@ -79,8 +82,9 @@ exports[`buildDirectorPrompt > renders negotiation prompt 1`] = `
 1. 调用 TeamCreate 创建团队（team_name = "expert-team-negotiation"，这是工具内部稳定名称；对用户展示仍使用「沟通/谈判预演团」）
 2. 为以上每位专家分别用 Agent 工具 spawn 子代理，把名字与 persona 注入到他们的 system prompt
 3. **spawn 子代理时，name 参数必须严格使用 \`[name="..."]\` 中给定的值（如 ceo、cfo、analyst），不要自创翻译或缩写**。这是前端识别每位专家的依据；不一致会导致头像、消息归属错乱。
-4. 让每位专家就议题发表一轮观点（每人 200-400 字），互相点评后给出共识 / 分歧
-5. 你作为主持人（Lead）整理最终决策建议，呈现给用户"
+4. 必须全程使用中文回复用户；团队名称、阶段说明、总结句都使用中文，不要夹带英文团队名
+5. 让每位专家就议题发表一轮观点（每人 200-400 字），互相点评后给出共识 / 分歧
+6. 你作为主持人（Lead）整理最终决策建议，呈现给用户"
 `;
 
 exports[`buildDirectorPrompt > renders operations prompt 1`] = `
@@ -99,8 +103,9 @@ exports[`buildDirectorPrompt > renders operations prompt 1`] = `
 1. 调用 TeamCreate 创建团队（team_name = "expert-team-operations"，这是工具内部稳定名称；对用户展示仍使用「经营决策团」）
 2. 为以上每位专家分别用 Agent 工具 spawn 子代理，把名字与 persona 注入到他们的 system prompt
 3. **spawn 子代理时，name 参数必须严格使用 \`[name="..."]\` 中给定的值（如 ceo、cfo、analyst），不要自创翻译或缩写**。这是前端识别每位专家的依据；不一致会导致头像、消息归属错乱。
-4. 让每位专家就议题发表一轮观点（每人 200-400 字），互相点评后给出共识 / 分歧
-5. 你作为主持人（Lead）整理最终决策建议，呈现给用户"
+4. 必须全程使用中文回复用户；团队名称、阶段说明、总结句都使用中文，不要夹带英文团队名
+5. 让每位专家就议题发表一轮观点（每人 200-400 字），互相点评后给出共识 / 分歧
+6. 你作为主持人（Lead）整理最终决策建议，呈现给用户"
 `;
 
 exports[`buildDirectorPrompt > renders retrospective prompt 1`] = `
@@ -119,8 +124,9 @@ exports[`buildDirectorPrompt > renders retrospective prompt 1`] = `
 1. 调用 TeamCreate 创建团队（team_name = "expert-team-retrospective"，这是工具内部稳定名称；对用户展示仍使用「复盘归因团」）
 2. 为以上每位专家分别用 Agent 工具 spawn 子代理，把名字与 persona 注入到他们的 system prompt
 3. **spawn 子代理时，name 参数必须严格使用 \`[name="..."]\` 中给定的值（如 ceo、cfo、analyst），不要自创翻译或缩写**。这是前端识别每位专家的依据；不一致会导致头像、消息归属错乱。
-4. 让每位专家就议题发表一轮观点（每人 200-400 字），互相点评后给出共识 / 分歧
-5. 你作为主持人（Lead）整理最终决策建议，呈现给用户"
+4. 必须全程使用中文回复用户；团队名称、阶段说明、总结句都使用中文，不要夹带英文团队名
+5. 让每位专家就议题发表一轮观点（每人 200-400 字），互相点评后给出共识 / 分歧
+6. 你作为主持人（Lead）整理最终决策建议，呈现给用户"
 `;
 
 exports[`buildDirectorPrompt > renders roundtable prompt 1`] = `
@@ -137,7 +143,8 @@ exports[`buildDirectorPrompt > renders roundtable prompt 1`] = `
 3. 调用 TeamCreate 创建团队（team_name = "expert-team-roundtable"，这是工具内部稳定名称；对用户展示仍使用「圆桌讨论团」）
 4. 用 Agent 工具为每位专家 spawn 子代理，注入 name + persona
 5. spawn 时给每位专家一个稳定的 name（小写英文 / kebab-case，如 ceo、growth-hacker），并保持后续轮次复用同一 name
-6. 让每位专家就议题发言一轮（每人 200-400 字），你串场并最终汇总观点"
+6. 必须全程使用中文回复用户；团队名称、阶段说明、总结句都使用中文，不要夹带英文团队名
+7. 让每位专家就议题发言一轮（每人 200-400 字），你串场并最终汇总观点"
 `;
 
 exports[`buildDirectorPrompt > renders strategy prompt 1`] = `
@@ -156,6 +163,7 @@ exports[`buildDirectorPrompt > renders strategy prompt 1`] = `
 1. 调用 TeamCreate 创建团队（team_name = "expert-team-strategy"，这是工具内部稳定名称；对用户展示仍使用「战略推演团」）
 2. 为以上每位专家分别用 Agent 工具 spawn 子代理，把名字与 persona 注入到他们的 system prompt
 3. **spawn 子代理时，name 参数必须严格使用 \`[name="..."]\` 中给定的值（如 ceo、cfo、analyst），不要自创翻译或缩写**。这是前端识别每位专家的依据；不一致会导致头像、消息归属错乱。
-4. 让每位专家就议题发表一轮观点（每人 200-400 字），互相点评后给出共识 / 分歧
-5. 你作为主持人（Lead）整理最终决策建议，呈现给用户"
+4. 必须全程使用中文回复用户；团队名称、阶段说明、总结句都使用中文，不要夹带英文团队名
+5. 让每位专家就议题发表一轮观点（每人 200-400 字），互相点评后给出共识 / 分歧
+6. 你作为主持人（Lead）整理最终决策建议，呈现给用户"
 `;

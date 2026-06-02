@@ -59,7 +59,7 @@ describe('StreamingBubble', () => {
   it('inline 模式（suppressIndicator）下 content 被 sanitize 剃光时不渲染空壳', () => {
     // 复现：LLM 流式吐到 `<function_calls>` 开始标签但还没闭合时，
     // stripHallucinatedXml 会把整段砍掉。如果 inline StreamingBubble
-    // 还渲染 wrapper，ChatRow 会把它当 flex item 占 gap-3 + mb-7 空位，
+    // 还渲染 wrapper，ChatRow 会把它当 flex item 占 gap-3 空位，
     // 在"运行了 X 个命令"和"思考中…"之间撑出一块空白。
     useChatStore.setState({
       activeConversationId: 'conv-1',

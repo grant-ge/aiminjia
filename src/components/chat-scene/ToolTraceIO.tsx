@@ -77,6 +77,7 @@ function CollapsiblePre({
   className: string
   style: CSSProperties
 }) {
+  const { t } = useTranslation()
   const [expanded, setExpanded] = useState(false)
   const lines = text.split('\n')
   const lineOverflow = lines.length > DEFAULT_VISIBLE_LINES
@@ -108,10 +109,10 @@ function CollapsiblePre({
           className="mt-1 text-xs text-muted-foreground hover:text-foreground"
         >
           {expanded
-            ? '收起'
+            ? t('toolTrace.collapse')
             : lineOverflow
-              ? `显示更多（剩 ${lines.length - DEFAULT_VISIBLE_LINES} 行）`
-              : '显示更多'}
+              ? t('toolTrace.showMoreLines', { count: lines.length - DEFAULT_VISIBLE_LINES })
+              : t('toolTrace.showMore')}
         </button>
       ) : null}
     </div>
@@ -161,10 +162,10 @@ export function ToolTraceIO({
             className="flex items-baseline justify-between gap-2 text-xs font-semibold"
             style={{ color: 'var(--color-text-muted)' }}
           >
-            <span>{t('toolTrace.live', '实时输出')}</span>
+            <span>{t('toolTrace.live')}</span>
             {typeof progressTotalBytes === 'number' && progressTotalBytes > 0 ? (
               <span className="font-normal">
-                {t('toolTrace.liveBytes', { bytes: formatBytes(progressTotalBytes), defaultValue: '已收到 {{bytes}}' })}
+                {t('toolTrace.liveBytes', { bytes: formatBytes(progressTotalBytes) })}
               </span>
             ) : null}
           </div>

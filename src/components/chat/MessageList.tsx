@@ -30,7 +30,7 @@ import { useNotificationStore } from '@/stores/notificationStore'
 import { useChat } from '@/hooks/useChat'
 import { useTeamOverview } from '@/hooks/useTeamOverview'
 import { useTurnRenderModel, type RenderGeneratedFile, type RenderTurnBlock } from '@/hooks/useTurnRenderModel'
-import { openGeneratedFile, revealFileInFolder } from '@/lib/tauri'
+import { openGeneratedFile, openLocalFile, revealFileInFolder } from '@/lib/tauri'
 import { useConversationTeamState, useTeamStore } from '@/stores/teamStore'
 
 type FileActionKind = 'preview' | 'open' | 'reveal'
@@ -52,8 +52,8 @@ interface MessageListProps {
 }
 
 export function MessageList({ expertTeamId }: MessageListProps = {}) {
-  const { t } = useTranslation()
-  const expertTeam = expertTeamId ? getExpertTeam(expertTeamId) : undefined
+  const { t, i18n } = useTranslation()
+  const expertTeam = expertTeamId ? getExpertTeam(expertTeamId, i18n.language) : undefined
 
   const FILE_ACTION_ERROR_TITLES: Record<FileActionKind, string> = {
     preview: t('messageList.cannotPreview'),
@@ -203,11 +203,15 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
   }
 
   const handleOpenExternal = async (file: RenderGeneratedFile) => {
-    if (!file.conversationId) {
-      notifyFileError('open', '生成文件缺少所属对话，无法打开。')
-      return
-    }
     try {
+      if (file.id.startsWith('artifact-') && file.filePath) {
+        await openLocalFile(file.filePath)
+        return
+      }
+      if (!file.conversationId) {
+        notifyFileError('open', '生成文件缺少所属对话，无法打开。')
+        return
+      }
       await openGeneratedFile(file.id, file.conversationId)
     } catch (err) {
       notifyFileError('open', err instanceof Error ? err.message : '打开生成文件失败。')
@@ -215,11 +219,16 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
   }
 
   const handleReveal = async (file: RenderGeneratedFile) => {
-    if (!file.conversationId) {
-      notifyFileError('reveal', '生成文件缺少所属对话，无法定位。')
-      return
-    }
     try {
+      if (file.id.startsWith('artifact-') && file.filePath) {
+        const parent = file.filePath.replace(/\/[^/]+$/, '') || '/'
+        await openLocalFile(parent)
+        return
+      }
+      if (!file.conversationId) {
+        notifyFileError('reveal', '生成文件缺少所属对话，无法定位。')
+        return
+      }
       await revealFileInFolder(file.id, file.conversationId)
     } catch (err) {
       notifyFileError('reveal', err instanceof Error ? err.message : '定位生成文件失败。')
@@ -354,6 +363,7 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
                         canPreview={f.canPreview}
                         canOpenExternal={f.canOpenExternal}
                         canReveal={f.canReveal}
+                        filePath={f.filePath}
                         onPreview={() => handlePreview(f)}
                         onOpenExternal={() => void handleOpenExternal(f)}
                         onReveal={() => void handleReveal(f)}
@@ -444,6 +454,7 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
             canPreview={f.canPreview}
             canOpenExternal={f.canOpenExternal}
             canReveal={f.canReveal}
+            filePath={f.filePath}
             onPreview={() => ctx.onPreview(f)}
             onOpenExternal={() => void ctx.onOpenExternal(f)}
             onReveal={() => void ctx.onReveal(f)}

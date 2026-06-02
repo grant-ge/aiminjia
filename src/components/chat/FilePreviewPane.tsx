@@ -94,7 +94,7 @@ export function FilePreviewPane({ target, onOpenExternal, onClosePreview }: File
 
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col bg-background">
-      <div data-testid="file-preview-header" className="flex items-center justify-between gap-3 border-b border-border px-4 py-2">
+      <div data-testid="file-preview-header" data-aijia-file-preview-header className="flex items-center justify-between gap-3 border-b border-border px-4 py-2">
         <div className="flex min-w-0 items-center gap-2">
           <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
           <h2 className="truncate text-sm font-semibold text-foreground">{target.fileName}</h2>
@@ -124,7 +124,7 @@ export function FilePreviewPane({ target, onOpenExternal, onClosePreview }: File
           )}
         </div>
       </div>
-      <div className={previewState?.status === 'success' && previewState.preview.kind === 'html'
+      <div data-aijia-file-preview-body className={previewState?.status === 'success' && previewState.preview.kind === 'html'
         ? 'flex-1 overflow-auto'
         : 'flex-1 overflow-auto p-6'}
       >

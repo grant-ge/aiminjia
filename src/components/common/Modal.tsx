@@ -19,15 +19,19 @@ interface ModalProps {
   children: ReactNode
   footer?: ReactNode
   size?: ModalSize
+  dialogKind?: string
+  dialogTool?: string
 }
 
-export function Modal({ open, onClose, title, children, footer, size = 'md' }: ModalProps) {
+export function Modal({ open, onClose, title, children, footer, size = 'md', dialogKind, dialogTool }: ModalProps) {
   if (!open) return null
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center"
       style={{ background: 'var(--color-overlay)' }}
+      {...(dialogKind ? { 'data-aijia-dialog': dialogKind } : {})}
+      {...(dialogTool ? { 'data-aijia-dialog-tool': dialogTool } : {})}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose()
       }}
