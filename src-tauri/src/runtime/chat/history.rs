@@ -99,7 +99,11 @@ fn stored_to_chat(message: &StoredMessage, config: &HistoryConfig) -> ChatMessag
                 .and_then(|v| v.as_str())
                 .map(String::from)
         }),
-        is_error: false,
+        is_error: message
+            .content
+            .get("isError")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false),
         thinking: None,
         thinking_blocks: extract_thinking_blocks(message),
         anthropic_multimodal_turn: None,
@@ -573,5 +577,44 @@ mod collapse_trailing_tests {
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0]["thinking"], "hidden");
         assert_eq!(blocks[0]["signature"], "sig-1");
+    }
+}
+
+#[cfg(test)]
+mod tool_error_status_history_tests {
+    use super::*;
+    use crate::storage::file_store::types::StoredMessage;
+    use serde_json::json;
+
+    #[test]
+    fn stored_tool_message_preserves_is_error() {
+        let stored = StoredMessage {
+            seq: None,
+            rev: None,
+            id: "tool-1".to_string(),
+            conversation_id: "conv".to_string(),
+            role: "tool".to_string(),
+            content: json!({
+                "content": "permission denied",
+                "toolCallId": "call_1",
+                "name": "Bash",
+                "isError": true
+            }),
+            created_at: "2026-06-02T00:00:00Z".to_string(),
+            tool_calls: None,
+            tool_call_id: None,
+            name: None,
+            run_id: Some("run".to_string()),
+            schema_version: None,
+            sequence: None,
+            error: None,
+        };
+
+        let message = stored_to_chat(&stored, &HistoryConfig::default());
+
+        assert_eq!(message.role, "tool");
+        assert_eq!(message.tool_call_id.as_deref(), Some("call_1"));
+        assert_eq!(message.name.as_deref(), Some("Bash"));
+        assert!(message.is_error);
     }
 }
