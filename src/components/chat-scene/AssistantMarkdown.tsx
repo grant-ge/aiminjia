@@ -1,10 +1,14 @@
 import ReactMarkdown from 'react-markdown'
 import rehypeHighlight from 'rehype-highlight'
 import remarkGfm from 'remark-gfm'
-import { markdownComponents } from './markdown/markdownComponents'
+import { useMemo } from 'react'
+import { createMarkdownComponents } from './markdown/markdownComponents'
+import { allowMarkdownUrl } from './markdown/FileLink'
+import { useAuthorizedWorkspace } from '@/hooks/useAuthorizedWorkspace'
 
 interface AssistantMarkdownProps {
   text: string
+  conversationId?: string
   /**
    * Disable rehype-highlight (syntax highlighting).
    *
@@ -20,7 +24,16 @@ const REHYPE_PLUGINS_WITH_HIGHLIGHT: Parameters<typeof ReactMarkdown>[0]['rehype
 ]
 const REHYPE_PLUGINS_NO_HIGHLIGHT: Parameters<typeof ReactMarkdown>[0]['rehypePlugins'] = []
 
-export function AssistantMarkdown({ text, disableCodeHighlight = false }: AssistantMarkdownProps) {
+export function AssistantMarkdown({ text, conversationId, disableCodeHighlight = false }: AssistantMarkdownProps) {
+  const { workspace } = useAuthorizedWorkspace(conversationId ?? null)
+  const markdownComponents = useMemo(
+    () => createMarkdownComponents({
+      conversationId,
+      workspaceRoot: workspace?.rootPath,
+    }),
+    [conversationId, workspace?.rootPath],
+  )
+
   if (!text.trim()) return null
 
   return (
@@ -31,6 +44,7 @@ export function AssistantMarkdown({ text, disableCodeHighlight = false }: Assist
           disableCodeHighlight ? REHYPE_PLUGINS_NO_HIGHLIGHT : REHYPE_PLUGINS_WITH_HIGHLIGHT
         }
         skipHtml
+        urlTransform={allowMarkdownUrl}
         components={markdownComponents}
       >
         {text}

@@ -49,7 +49,12 @@ const TOOL_PREFERENCE_SECTION: &str = r#"
 - 当你通过任何方式（Write工具、Bash、脚本、MCP工具等）创建了最终产物文件时，在回复中用标记声明：`![artifact](文件绝对路径)`
   示例：`![artifact](/Users/xxx/workspace/reports/销售报告.xlsx)`
 - 每个产物文件单独一行标记，放在回复末尾。只有最终产物标记，中间临时文件不标记
-- 标记会被系统自动识别并渲染为可交互的产物卡片，无需在正文中重复描述产物内容"#;
+- 标记会被系统自动识别并渲染为可交互的产物卡片，无需在正文中重复描述产物内容
+
+【引用链接】
+- 当回复中提到已使用的本地文件、网络地址、参考文档或依据来源时，优先用 Markdown 链接格式 `[名称](路径或URL)`，不要仅用行内代码展示路径。
+- 本地文件可使用相对路径、绝对路径或 file:// URL；网络地址使用 http/https URL。
+- 只有在强调命令、代码片段、字段名或路径本身作为纯文本说明时，才使用行内代码。"#;
 
 /// Memory mechanics section — 对标 claude-code-best 的记忆写回/召回指导。
 const MEMORY_MECHANICS_SECTION: &str = r#"
@@ -672,6 +677,14 @@ mod tests {
         assert!(
             parts.static_section.contains("长期记忆能力"),
             "must mention memory capability limits in context"
+        );
+        assert!(
+            parts.static_section.contains("【引用链接】"),
+            "must include markdown link guidance for referenced files and URLs"
+        );
+        assert!(
+            parts.static_section.contains("[名称](路径或URL)"),
+            "must prefer Markdown links when referencing local files, URLs, or source documents"
         );
     }
 
