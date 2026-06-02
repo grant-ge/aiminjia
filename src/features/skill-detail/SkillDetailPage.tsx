@@ -1,4 +1,4 @@
-import { ArrowLeft, Sparkles } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 
 import { PageSectionShell } from '@/components/shell/PageSectionShell'
 import { PageTopBar } from '@/components/shell/PageTopBar'
@@ -80,7 +80,6 @@ export function SkillDetailPage({ skillId }: SkillDetailPageProps) {
       }
     >
       <SkillDetailHero
-        iconNode={<Sparkles className="h-9 w-9 text-primary" />}
         title={localized?.name ?? skill.id}
         subtitle={localized?.description || `通过命令 ${skill.triggerText?.trim() || `/${skill.id}`} 快速调用`}
         actionBar={

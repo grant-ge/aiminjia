@@ -212,6 +212,41 @@
 
 ---
 
+## 意图 9：在技能详情页点击「使用」后，首页只预置一个技能 chip
+
+**场景**
+用户在技能中心进入某个技能详情页，点击右上角「使用」按钮。产品承诺不是立刻创建对话并自动运行该技能，而是回到首页，把该技能作为用户下一轮输入的显式意图预置到输入框中。这个预置动作必须是一次性的：即使前端在 React StrictMode / dev 环境下重放 mount effect，首页输入框也只能出现一个 skill chip。
+
+**前提**
+- 应用已启动并已登录。
+- 技能中心至少存在一个可见技能，例如 `biz-proposal`；若本机没有该技能，可换成任意已安装技能，并在报告中记录实际 skill id / label mapping。
+- 首页输入框当前为空；若已有草稿，先手动清空（不删除任何本地文件或技能目录）。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 切到技能中心：`tauri-pilot aijia goto skill-center`
+3. 找到目标技能卡片：DOM 中应存在 `[data-aijia-skill-card][data-aijia-skill-id="{skill_id}"]`
+4. 点击目标技能卡片进入详情页；确认页面显示该技能名称与「使用」按钮
+5. 点击「使用」按钮
+6. 等待路由回到首页；读取当前路由和首页输入框 DOM
+
+**验收标准**
+
+应该看到：
+- 点击「使用」后当前路由为 `home`，没有自动新建 chat 路由
+- 首页输入框 `.ProseMirror` 中存在且仅存在 1 个 `[data-rich-composer-skill-token]` 节点
+- 该节点的 `data-id == "{skill_id}"`，`data-label` 等于该技能 UI label，`data-command` 等于该技能 trigger（如 `/biz-proposal`）
+- `~/.renlijia/users/{scope}/conversations/` 中没有因为本次点击新增空对话；换言之，「使用」按钮只表达下一轮输入意图，不应立即触发 LLM turn
+- 如果随后在该 chip 后补充文本并发送，消息发送 payload 中只携带 1 个 skill token（同一技能不得重复进入本轮 payload.skills）
+
+不应该看到：
+- 首页输入框出现 2 个或更多相同 `data-id` 的 `[data-rich-composer-skill-token]`
+- 点击「使用」后仍停留在技能详情页，或跳到 chat 路由并自动发送消息
+- UI 上同时出现 pending skill chip 和一段裸露的 `/skill-id` 文本（同一意图被重复序列化）
+- 因重复 chip 导致发送时同一技能被重复加载、重复出现在用户消息附件/技能列表中
+
+---
+
 ## 意图 10：用户一句话涉及多个技能时，AI 同对话加载全部
 
 **场景**
