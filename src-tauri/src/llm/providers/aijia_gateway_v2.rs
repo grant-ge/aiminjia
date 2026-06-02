@@ -534,11 +534,24 @@ fn sse_bytes_to_events(
                     }
                     None => {
                         if buffer.trim().is_empty() {
+                            if lifecycle.closed {
+                                return None;
+                            }
                             if let Some(request_id) = lifecycle.request_id() {
                                 crate::llm::gate_log::record_stream_end(request_id);
                             }
+                            let completed = lifecycle.response_completed;
                             lifecycle.close_eof();
-                            return None;
+                            if completed {
+                                return None;
+                            }
+                            return Some((
+                                StreamEvent::Error {
+                                    error: "AIjia v2 stream ended without response.completed"
+                                        .to_string(),
+                                },
+                                (byte_stream, buffer, pending, lifecycle),
+                            ));
                         }
                         let frame = std::mem::take(&mut buffer);
                         record_gateway_route_from_frame(&frame, lifecycle.request_id());
@@ -1193,6 +1206,43 @@ mod tests {
             }
             other => panic!("expected done, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn eof_without_response_completed_maps_to_stream_error() {
+        let chunks = stream::iter(vec![Ok(bytes::Bytes::from_static(
+            b"event: content.delta\ndata: {\"delta\":\"partial\"}\n\n",
+        ))]);
+        let mut events = Box::pin(sse_bytes_to_events(chunks, None));
+
+        match events.next().await {
+            Some(StreamEvent::ContentDelta { delta }) => assert_eq!(delta, "partial"),
+            other => panic!("expected content delta, got {other:?}"),
+        }
+        match events.next().await {
+            Some(StreamEvent::Error { error }) => {
+                assert!(error.contains("without response.completed"))
+            }
+            other => panic!("expected terminal error for incomplete stream, got {other:?}"),
+        }
+        assert!(events.next().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn eof_after_response_completed_ends_cleanly() {
+        let chunks = stream::iter(vec![Ok(bytes::Bytes::from_static(
+            b"event: response.completed\ndata: {\"usage\":{\"input\":1,\"output\":2,\"cache_read\":0,\"cache_write\":0}}\n\n",
+        ))]);
+        let mut events = Box::pin(sse_bytes_to_events(chunks, None));
+
+        match events.next().await {
+            Some(StreamEvent::Done { usage, .. }) => {
+                assert_eq!(usage.input_tokens, 1);
+                assert_eq!(usage.output_tokens, 2);
+            }
+            other => panic!("expected done, got {other:?}"),
+        }
+        assert!(events.next().await.is_none());
     }
 
     #[test]
