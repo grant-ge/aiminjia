@@ -30,7 +30,7 @@ import { useNotificationStore } from '@/stores/notificationStore'
 import { useChat } from '@/hooks/useChat'
 import { useTeamOverview } from '@/hooks/useTeamOverview'
 import { useTurnRenderModel, type RenderGeneratedFile, type RenderTurnBlock } from '@/hooks/useTurnRenderModel'
-import { openGeneratedFile, revealFileInFolder } from '@/lib/tauri'
+import { openGeneratedFile, openLocalFile, revealFileInFolder } from '@/lib/tauri'
 import { useConversationTeamState, useTeamStore } from '@/stores/teamStore'
 
 type FileActionKind = 'preview' | 'open' | 'reveal'
@@ -205,8 +205,7 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
   const handleOpenExternal = async (file: RenderGeneratedFile) => {
     try {
       if (file.id.startsWith('artifact-') && file.filePath) {
-        const { open } = await import('@tauri-apps/plugin-shell')
-        await open(file.filePath)
+        await openLocalFile(file.filePath)
         return
       }
       if (!file.conversationId) {
@@ -222,9 +221,8 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
   const handleReveal = async (file: RenderGeneratedFile) => {
     try {
       if (file.id.startsWith('artifact-') && file.filePath) {
-        const { open } = await import('@tauri-apps/plugin-shell')
         const parent = file.filePath.replace(/\/[^/]+$/, '') || '/'
-        await open(parent)
+        await openLocalFile(parent)
         return
       }
       if (!file.conversationId) {

@@ -398,10 +398,10 @@ UI 文案对应：应用启动后的默认对话界面、底部对话输入框�
 
 ---
 
-## 意图-对话-009: AI 生成 pdf 文件时，预览面板显示中文兜底文案
+## 意图-对话-009: PDF 卡片主按钮显示「打开」，不进入预览面板
 
 **场景**
-PDF / Office 系列扩展名（pdf / pptx / docx / xlsx）的内联预览未实现，后端 `normalize_preview_kind` 只支持 markdown/html/txt/json/csv/图片 6 类。用户点 pdf 卡片「预览」时，期望右侧侧边栏显示**中文兜底文案**告诉用户「暂不支持预览，请改走『用默认应用打开』」——而不是显示英文 `File type 'pdf' is not supported`。本意图护栏后端 `unsupported_preview` 文案中文化 + 前端 FilePreviewPane `unsupported` 分支正确渲染 reason 字符串。
+PDF 不在前端 `generatedFileActions.PREVIEWABLE_FILE_TYPES` 白名单（同后端 `normalize_preview_kind` 对齐：只支持 md/html/txt/json/csv/图片）。期望前端 `useTurnRenderModel` 据此判 `canPreview = false` → `primaryAction = 'open'`，卡片主按钮文案变成「打开」（不是「预览」）；用户清楚 PDF 不能内联预览、要走默认应用。本意图护栏「PDF 不能误进预览路径」——若某次改动把 pdf 加进 PREVIEWABLE_FILE_TYPES 或 useTurnRenderModel 路由错，主按钮会变成「预览」、点击后调到 `get_local_file_preview` 拉文件字节，违背产品「PDF 走外部应用打开」的承诺。
 
 **操作步骤**
 1. 应用探活：`tauri-pilot aijia health-check`
@@ -419,28 +419,24 @@ PDF / Office 系列扩展名（pdf / pptx / docx / xlsx）的内联预览未实�
 8. 持续观察对话界面，等待 AI 完整结束（最长允许等待 3 分钟）
 9. 等结束后，找到本轮新建的对话 ID，记为 `$CONV_ID`
 10. 等本轮 assistant 气泡下方 `[data-testid="generated-file-card"]` 数量 `>= 1`
-11. 触发卡片预览：`tauri-pilot aijia file-card-click --action preview --file-path /tmp/aijia-test-artifact.pdf`
-12. 等 2 秒让 `FilePreviewPane` 异步加载
+11. 执行 `tauri-pilot aijia file-card-snapshot --json`
 
 **验收标准**
 
 应该看到：
 - 模型自然结束（流式光标消失）
 - 文件 `/tmp/aijia-test-artifact.pdf` 存在
-- 本轮 assistant 气泡下方 `[data-testid="generated-file-card"]` 数量 `>= 1`
-- 至少一张卡片标题包含字面值 `aijia-test-artifact.pdf`
-- 至少一张卡片的可视文本内容包含字面值 `PDF`（左侧文件图标 label 区域）
-- 步骤 11 命令返回 JSON 中 `ok == true`
-- 步骤 12 后 `[data-aijia-file-preview-body]` 出现
-- `[data-aijia-file-preview-body]` 内 `textContent` 包含字面值 `暂不支持预览`
-- `[data-aijia-file-preview-body]` 内 `textContent` 包含字面值 `.pdf`
-- `[data-aijia-file-preview-body]` 内 `textContent` 包含字面值 `用默认应用打开`
+- 末条 assistant 记录 `content.text` 包含字面值 `![artifact](/tmp/aijia-test-artifact.pdf)`
+- 步骤 11 命令返回 JSON 中 `count >= 1`
+- 至少一张卡片 `title` 包含字面值 `aijia-test-artifact.pdf`
+- 至少一张卡片 `filePath == "/tmp/aijia-test-artifact.pdf"`
+- 至少一张卡片 `appName == "打开"`（主按钮文案）
+- 至少一张卡片的可视文本内容包含字面值 `PDF`（左侧 TiltedFileIcon 的 label 区域）
 
 不应该看到：
-- `[data-aijia-file-preview-body]` 内出现字面值 `File type`（英文兜底未中文化）
-- `[data-aijia-file-preview-body]` 内出现字面值 `not supported`
-- 应用通知区出现 toast 标题字面值 `无法预览此文件`
+- 任一卡片 `appName == "预览"`（若 PDF 被加进 PREVIEWABLE_FILE_TYPES 或路由错，主按钮会变预览——回归信号）
 - 卡片可视文本中出现字面值 `FILE`（扩展名识别失败、走兜底）
+- 步骤 11 命令返回 JSON 中 `count == 0`
 
 ---
 
