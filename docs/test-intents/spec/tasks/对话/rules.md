@@ -515,3 +515,64 @@ PDF 不在前端 `generatedFileActions.PREVIEWABLE_FILE_TYPES` 白名单（同�
 - 卡片可视文本中出现字面值 `WORD`（normalizeFileLabel 未生效，alias 直接透出）
 - 卡片可视文本中出现字面值 `FILE`（扩展名识别失败、走兜底）
 - 本轮 assistant 气泡下方文件卡片数量 `== 0`
+
+---
+
+## 意图-对话-012: 回复引用文件，链接图片可点击
+
+**场景**
+用户让 AI 基于本地工作区文件输出一段说明，并要求回复里同时包含普通 Markdown 链接、引用式链接、带 title 的链接、图片语法。期望普通引用来源使用 `[名称](路径或URL)` 渲染为可点击链接；可预览的本地文件点击后打开右侧预览；不可预览文件交给系统默认打开；图片语法指向真实图片时显示缩略图，指向非图片本地文件时不能显示破图，而是退回为可点击文件链接。本意图护栏 assistant Markdown 的 link/image 渲染、相对路径解析、文件预览和外部打开分流。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
+3. 准备测试工作区：`mkdir -p /tmp/aijia-md-link-workspace/docs /tmp/aijia-md-link-workspace/assets`
+4. 写入测试文件：
+   - `/tmp/aijia-md-link-workspace/docs/storage.md`，内容包含 `存储方案`
+   - `/tmp/aijia-md-link-workspace/docs/backend.md`，内容包含 `Rust 方案`
+   - `/tmp/aijia-md-link-workspace/docs/test.txt`，内容包含 `测试文本`
+   - `/tmp/aijia-md-link-workspace/docs/contract.docx`，可用 `touch` 创建占位文件
+   - `/tmp/aijia-md-link-workspace/assets/sample.png`，写入一个最小有效 PNG
+5. 新建空对话：`tauri-pilot aijia new-task`
+6. 授权 `/tmp/aijia-md-link-workspace` 作为当前对话工作区；若弹出权限确认，选择允许并记住到用户级
+7. 在对话输入框输入以下 Prompt（一次性粘贴，不要分批）：
+   ```
+   请基于当前工作区里的 docs/storage.md 和 docs/backend.md 输出一段 Markdown 测试内容。
+
+   要求：
+   1. 提到 storage.md 时使用普通链接 `[存储方案](docs/storage.md)`。
+   2. 提到 backend.md 时使用引用式链接 `[后端 Rust 方案][backend]`，并在回复末尾写 `[backend]: docs/backend.md "后端说明"`。
+   3. 提到 test.txt 时使用带 title 的链接 `[测试文件](docs/test.txt "这是一个测试文本文件")`。
+   4. 提到 contract.docx 时使用普通链接 `[合同模板](docs/contract.docx)`。
+   5. 输出一张真实图片：`![真实图片](assets/sample.png "真实图片")`。
+   6. 输出一张非图片文件路径的图片语法：`![文本占位图](docs/test.txt "非图片路径")`。
+   7. 不要使用行内代码展示这些文件路径。
+   ```
+8. 点击「发送」按钮
+9. 持续观察对话界面，等待 AI 完整结束（最长允许等待 3 分钟）
+10. 等结束后，找到本轮新建的对话 ID，记为 `$CONV_ID`
+11. 读取 `~/.renlijia/users/{scope}/conversations/{conv_id}/messages.jsonl` 中最后一条 assistant 文本
+12. 用 tauri-pilot 的 Markdown 链接快照能力读取当前 assistant 气泡内链接和图片状态，记为 `$SNAPSHOT`（CLI 待补：返回每个 link 的 text、href、resolvedPath、openMode，以及每个 image 的 alt、src、broken）
+13. 依次点击「存储方案」「测试文件」「合同模板」「真实图片」「文本占位图」
+
+**验收标准**
+
+应该看到：
+- 末条 assistant 记录 `content.text` 包含字面值 `[存储方案](docs/storage.md)`
+- 末条 assistant 记录 `content.text` 包含字面值 `[后端 Rust 方案][backend]`
+- 末条 assistant 记录 `content.text` 包含字面值 `[backend]: docs/backend.md`
+- 末条 assistant 记录 `content.text` 包含字面值 `[测试文件](docs/test.txt "这是一个测试文本文件")`
+- 末条 assistant 记录 `content.text` 包含字面值 `![真实图片](assets/sample.png "真实图片")`
+- `$SNAPSHOT.links` 中存在 `text == "存储方案"` 且 `href == "docs/storage.md"` 且 `openMode == "preview"`
+- `$SNAPSHOT.links` 中存在 `text == "后端 Rust 方案"` 且 `href == "docs/backend.md"` 且 `openMode == "preview"`
+- `$SNAPSHOT.links` 中存在 `text == "测试文件"` 且 `href == "docs/test.txt"` 且 `openMode == "preview"`
+- 点击「存储方案」或「测试文件」后，右侧文件预览面板标题分别包含 `storage.md` 或 `test.txt`
+- 点击「合同模板」后系统打开本地文件，UI 不出现「无法打开文件」或「预览失败」错误 toast
+- `$SNAPSHOT.images` 中存在 `alt == "真实图片"` 且 `broken != true`
+- `$SNAPSHOT.links` 中存在 `text == "文本占位图"` 且 `href == "docs/test.txt"`（非图片路径退回为普通文件链接）
+
+不应该看到：
+- assistant 可视正文中这些本地路径只以行内代码形态出现，而没有对应 Markdown 链接
+- 相对路径链接被渲染成纯文本，无法点击
+- `![文本占位图](docs/test.txt "非图片路径")` 在 UI 中显示为破图图标
+- 点击任一相对路径本地链接时出现 `href is not supported`、`无法解析路径`、`Unknown local file` 类错误
