@@ -395,3 +395,127 @@ UI 文案对应：应用启动后的默认对话界面、底部对话输入框�
 - 应用通知区出现 toast 字面值 `定位生成文件失败`（旧错误字面，防回归）
 - 步骤 12 命令返回 JSON 中 `reason == "card_not_found"` 或 `reason == "menuitem_disabled"`
 - dev server 日志中出现字面值 `Failed to resolve stored path`
+
+---
+
+## 意图-对话-009: AI 生成 pdf 文件时，预览面板显示中文兜底文案
+
+**场景**
+PDF / Office 系列扩展名（pdf / pptx / docx / xlsx）的内联预览未实现，后端 `normalize_preview_kind` 只支持 markdown/html/txt/json/csv/图片 6 类。用户点 pdf 卡片「预览」时，期望右侧侧边栏显示**中文兜底文案**告诉用户「暂不支持预览，请改走『用默认应用打开』」——而不是显示英文 `File type 'pdf' is not supported`。本意图护栏后端 `unsupported_preview` 文案中文化 + 前端 FilePreviewPane `unsupported` 分支正确渲染 reason 字符串。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
+3. 清理可能残留的测试产物文件：`rm -f /tmp/aijia-test-artifact.pdf`
+4. 记录现有所有对话 ID（`ls ~/.renlijia/users/{scope}/conversations/`），记为集合 `$S_BEFORE`
+5. 点击底部对话输入框
+6. 输入以下 Prompt（一次性粘贴，不要分批）：
+   ```
+   请用 Bash 工具创建一个空文件 `/tmp/aijia-test-artifact.pdf`，命令用 `touch /tmp/aijia-test-artifact.pdf` 即可，**不要**往里写任何内容（占位文件即可，本次测试不关心 pdf 内容）。
+
+   完成后按 AIjia 系统的产物声明规则在回复中标记该文件。
+   ```
+7. 点击「发送」按钮
+8. 持续观察对话界面，等待 AI 完整结束（最长允许等待 3 分钟）
+9. 等结束后，找到本轮新建的对话 ID，记为 `$CONV_ID`
+10. 等本轮 assistant 气泡下方 `[data-testid="generated-file-card"]` 数量 `>= 1`
+11. 触发卡片预览：`tauri-pilot aijia file-card-click --action preview --file-path /tmp/aijia-test-artifact.pdf`
+12. 等 2 秒让 `FilePreviewPane` 异步加载
+
+**验收标准**
+
+应该看到：
+- 模型自然结束（流式光标消失）
+- 文件 `/tmp/aijia-test-artifact.pdf` 存在
+- 本轮 assistant 气泡下方 `[data-testid="generated-file-card"]` 数量 `>= 1`
+- 至少一张卡片标题包含字面值 `aijia-test-artifact.pdf`
+- 至少一张卡片的可视文本内容包含字面值 `PDF`（左侧文件图标 label 区域）
+- 步骤 11 命令返回 JSON 中 `ok == true`
+- 步骤 12 后 `[data-aijia-file-preview-body]` 出现
+- `[data-aijia-file-preview-body]` 内 `textContent` 包含字面值 `暂不支持预览`
+- `[data-aijia-file-preview-body]` 内 `textContent` 包含字面值 `.pdf`
+- `[data-aijia-file-preview-body]` 内 `textContent` 包含字面值 `用默认应用打开`
+
+不应该看到：
+- `[data-aijia-file-preview-body]` 内出现字面值 `File type`（英文兜底未中文化）
+- `[data-aijia-file-preview-body]` 内出现字面值 `not supported`
+- 应用通知区出现 toast 标题字面值 `无法预览此文件`
+- 卡片可视文本中出现字面值 `FILE`（扩展名识别失败、走兜底）
+
+---
+
+## 意图-对话-010: AI 生成 pptx 文件时，卡片显示 PPT 类型标签
+
+**场景**
+用户让 AI 生成一个 `.pptx` 扩展名的产物文件。期望前端 `useTurnRenderModel.ARTIFACT_EXT_TO_TYPE` 把 `pptx` 映射为 `ppt` 类型，再经 `GeneratedFileCard.normalizeFileLabel` 把 `PPTX`/`POWERPOINT` 规范化为 `PPT` 显示在卡片左侧文件图标上。本意图护栏扩展名映射表 + label 规范化两段逻辑——直接关掉任一段都会让卡片显示成 `PPTX`/`POWERPOINT`/`FILE`，意图就 FAIL。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
+3. 清理可能残留的测试产物文件：`rm -f /tmp/aijia-test-artifact.pptx`
+4. 记录现有所有对话 ID（`ls ~/.renlijia/users/{scope}/conversations/`），记为集合 `$S_BEFORE`
+5. 点击底部对话输入框
+6. 输入以下 Prompt（一次性粘贴，不要分批）：
+   ```
+   请用 Bash 工具创建一个空文件 `/tmp/aijia-test-artifact.pptx`，命令用 `touch /tmp/aijia-test-artifact.pptx` 即可，**不要**往里写任何内容（占位文件即可，本次测试不关心 pptx 内容）。
+
+   完成后按 AIjia 系统的产物声明规则在回复中标记该文件。
+   ```
+7. 点击「发送」按钮
+8. 持续观察对话界面，等待 AI 完整结束（最长允许等待 3 分钟）
+9. 等结束后，找到本轮新建的对话 ID，记为 `$CONV_ID`
+
+**验收标准**
+
+应该看到：
+- 模型自然结束（流式光标消失）
+- 文件 `/tmp/aijia-test-artifact.pptx` 存在
+- 末条 assistant 记录 `content.text` 包含字面值 `![artifact](/tmp/aijia-test-artifact.pptx)`
+- 本轮 assistant 气泡下方 `[data-testid="generated-file-card"]` 数量 `>= 1`
+- 至少一张卡片标题包含字面值 `aijia-test-artifact.pptx`
+- 至少一张卡片的可视文本内容包含字面值 `PPT`（左侧文件图标 label 区域）
+
+不应该看到：
+- 卡片可视文本中出现字面值 `PPTX`（normalizeFileLabel 未生效，原扩展名直接透出）
+- 卡片可视文本中出现字面值 `POWERPOINT`（normalizeFileLabel 未生效，alias 直接透出）
+- 卡片可视文本中出现字面值 `FILE`（扩展名识别失败、走兜底）
+- 本轮 assistant 气泡下方文件卡片数量 `== 0`
+
+---
+
+## 意图-对话-011: AI 生成 docx 文件时，卡片显示 DOC 类型标签
+
+**场景**
+用户让 AI 生成一个 `.docx` 扩展名的产物文件。期望前端 `useTurnRenderModel.ARTIFACT_EXT_TO_TYPE` 把 `docx` 映射为对应类型，再经 `GeneratedFileCard.normalizeFileLabel` 把 `DOCX`/`WORD` 规范化为 `DOC` 显示在卡片左侧文件图标上。本意图护栏 office 系列扩展名标签统一化——若 normalize 漏了 docx 分支，卡片会显示成 `DOCX`/`WORD`，跟 XLS/PPT 系列不对称。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
+3. 清理可能残留的测试产物文件：`rm -f /tmp/aijia-test-artifact.docx`
+4. 记录现有所有对话 ID（`ls ~/.renlijia/users/{scope}/conversations/`），记为集合 `$S_BEFORE`
+5. 点击底部对话输入框
+6. 输入以下 Prompt（一次性粘贴，不要分批）：
+   ```
+   请用 Bash 工具创建一个空文件 `/tmp/aijia-test-artifact.docx`，命令用 `touch /tmp/aijia-test-artifact.docx` 即可，**不要**往里写任何内容（占位文件即可，本次测试不关心 docx 内容）。
+
+   完成后按 AIjia 系统的产物声明规则在回复中标记该文件。
+   ```
+7. 点击「发送」按钮
+8. 持续观察对话界面，等待 AI 完整结束（最长允许等待 3 分钟）
+9. 等结束后，找到本轮新建的对话 ID，记为 `$CONV_ID`
+
+**验收标准**
+
+应该看到：
+- 模型自然结束（流式光标消失）
+- 文件 `/tmp/aijia-test-artifact.docx` 存在
+- 末条 assistant 记录 `content.text` 包含字面值 `![artifact](/tmp/aijia-test-artifact.docx)`
+- 本轮 assistant 气泡下方 `[data-testid="generated-file-card"]` 数量 `>= 1`
+- 至少一张卡片标题包含字面值 `aijia-test-artifact.docx`
+- 至少一张卡片的可视文本内容包含字面值 `DOC`（左侧文件图标 label 区域）
+
+不应该看到：
+- 卡片可视文本中出现字面值 `DOCX`（normalizeFileLabel 未生效，原扩展名直接透出）
+- 卡片可视文本中出现字面值 `WORD`（normalizeFileLabel 未生效，alias 直接透出）
+- 卡片可视文本中出现字面值 `FILE`（扩展名识别失败、走兜底）
+- 本轮 assistant 气泡下方文件卡片数量 `== 0`
