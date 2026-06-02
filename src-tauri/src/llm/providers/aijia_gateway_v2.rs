@@ -91,6 +91,7 @@ impl LlmProviderTrait for AijiaGatewayV2Provider {
             crate::llm::gate_log::record_response_body(&gate_log_id, status.as_u16(), &body);
             return Err(anyhow!("AIjia v2 stream error ({}): {}", status, body));
         }
+        crate::llm::gate_log::record_stream_started(&gate_log_id);
 
         Ok(Box::pin(sse_bytes_to_events(
             response.bytes_stream(),
@@ -183,6 +184,12 @@ pub(crate) fn build_aijia_request_for_route(
             name: "aijia-desktop".to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
             platform: std::env::consts::ARCH.to_string(),
+            os: Some(std::env::consts::OS.to_string()),
+            arch: Some(std::env::consts::ARCH.to_string()),
+            locale: None,
+            timezone: None,
+            device_id_hash: None,
+            scope_key_hash: None,
         },
     }
 }
@@ -447,7 +454,7 @@ fn to_canonical_message(message: ChatMessage) -> Option<CanonicalMessage> {
         content,
         tool_call_id: message.tool_call_id.map(|id| id.trim().to_string()),
         tool_name: message.name.map(|name| name.trim().to_string()),
-        is_error: false,
+        is_error: message.is_error,
         provider: None,
         usage: None,
         stop_reason: None,
@@ -488,50 +495,51 @@ fn sse_bytes_to_events(
         + 'static,
     gate_log_id: Option<String>,
 ) -> impl futures::Stream<Item = StreamEvent> + Send {
+    let lifecycle = GatewayStreamLifecycle::new(gate_log_id);
     stream::unfold(
         (
             Box::pin(byte_stream),
             String::new(),
             VecDeque::new(),
-            gate_log_id,
+            lifecycle,
         ),
-        |(mut byte_stream, mut buffer, mut pending, gate_log_id)| async move {
+        |(mut byte_stream, mut buffer, mut pending, mut lifecycle)| async move {
             loop {
                 if let Some(event) = pending.pop_front() {
-                    return Some((event, (byte_stream, buffer, pending, gate_log_id)));
+                    return Some((event, (byte_stream, buffer, pending, lifecycle)));
                 }
 
                 match byte_stream.as_mut().next().await {
                     Some(Ok(bytes)) => {
-                        if let Some(request_id) = gate_log_id.as_deref() {
+                        if let Some(request_id) = lifecycle.request_id() {
                             crate::llm::gate_log::record_response_chunk(request_id, &bytes);
                         }
                         buffer.push_str(&String::from_utf8_lossy(&bytes));
-                        drain_sse_frames(&mut buffer, &mut pending, gate_log_id.as_deref());
+                        drain_sse_frames(&mut buffer, &mut pending, &mut lifecycle);
                     }
                     Some(Err(err)) => {
-                        if let Some(request_id) = gate_log_id.as_deref() {
-                            crate::llm::gate_log::record_stream_error(request_id, &err.to_string());
-                        }
+                        lifecycle.close_error(&err.to_string());
                         return Some((
                             StreamEvent::Error {
                                 error: err.to_string(),
                             },
-                            (byte_stream, buffer, pending, gate_log_id),
+                            (byte_stream, buffer, pending, lifecycle),
                         ));
                     }
                     None => {
                         if buffer.trim().is_empty() {
-                            if let Some(request_id) = gate_log_id.as_deref() {
+                            if let Some(request_id) = lifecycle.request_id() {
                                 crate::llm::gate_log::record_stream_end(request_id);
                             }
+                            lifecycle.close_eof();
                             return None;
                         }
                         let frame = std::mem::take(&mut buffer);
-                        record_gateway_route_from_frame(&frame, gate_log_id.as_deref());
+                        record_gateway_route_from_frame(&frame, lifecycle.request_id());
+                        lifecycle.record_frame(&frame);
                         return Some((
                             chunk_to_stream_event(&frame),
-                            (byte_stream, buffer, pending, gate_log_id),
+                            (byte_stream, buffer, pending, lifecycle),
                         ));
                     }
                 }
@@ -540,23 +548,104 @@ fn sse_bytes_to_events(
     )
 }
 
+struct GatewayStreamLifecycle {
+    request_id: Option<String>,
+    first_event_recorded: bool,
+    response_completed: bool,
+    closed: bool,
+}
+
+impl GatewayStreamLifecycle {
+    fn new(request_id: Option<String>) -> Self {
+        Self {
+            request_id,
+            first_event_recorded: false,
+            response_completed: false,
+            closed: false,
+        }
+    }
+
+    fn request_id(&self) -> Option<&str> {
+        self.request_id.as_deref()
+    }
+
+    fn record_frame(&mut self, frame: &str) {
+        if let Some(request_id) = self.request_id() {
+            if !self.first_event_recorded {
+                let event_name = sse_event_name(frame);
+                crate::llm::gate_log::record_first_event(request_id, event_name.as_deref());
+            }
+            if !self.response_completed && frame_has_event(frame, "response.completed") {
+                let stop_reason = response_completed_stop_reason(frame);
+                crate::llm::gate_log::record_response_completed(request_id, stop_reason.as_deref());
+            }
+        }
+        self.first_event_recorded = true;
+        if frame_has_event(frame, "response.completed") {
+            self.response_completed = true;
+        }
+    }
+
+    fn close_eof(&mut self) {
+        let reason = if self.response_completed {
+            "response_completed"
+        } else {
+            "eof"
+        };
+        self.close(reason, None);
+    }
+
+    fn close_error(&mut self, error: &str) {
+        if let Some(request_id) = self.request_id() {
+            crate::llm::gate_log::record_stream_error(request_id, error);
+        }
+        self.close("error", Some(error));
+    }
+
+    fn close_dropped(&mut self) {
+        let reason = if self.response_completed {
+            "response_completed"
+        } else {
+            "dropped"
+        };
+        self.close(reason, None);
+    }
+
+    fn close(&mut self, reason: &str, error: Option<&str>) {
+        if self.closed {
+            return;
+        }
+        self.closed = true;
+        if let Some(request_id) = self.request_id() {
+            crate::llm::gate_log::record_stream_closed(request_id, reason, error);
+        }
+    }
+}
+
+impl Drop for GatewayStreamLifecycle {
+    fn drop(&mut self) {
+        self.close_dropped();
+    }
+}
+
 fn drain_sse_frames(
     buffer: &mut String,
     pending: &mut VecDeque<StreamEvent>,
-    gate_log_id: Option<&str>,
+    lifecycle: &mut GatewayStreamLifecycle,
 ) {
     while let Some((idx, len)) = next_sse_frame_boundary(buffer) {
         let frame = buffer[..idx].to_string();
         buffer.drain(..idx + len);
         if !frame.trim().is_empty() {
-            record_gateway_route_from_frame(&frame, gate_log_id);
+            record_gateway_route_from_frame(&frame, lifecycle.request_id());
+            lifecycle.record_frame(&frame);
             pending.push_back(chunk_to_stream_event(&frame));
         }
     }
 }
 
 fn record_gateway_route_from_frame(frame: &str, gate_log_id: Option<&str>) {
-    if !frame.contains("event: response.started") {
+    if !frame_has_event(frame, "response.started") {
         return;
     }
     let Some(request_id) = gate_log_id else {
@@ -587,20 +676,20 @@ fn next_sse_frame_boundary(buffer: &str) -> Option<(usize, usize)> {
 }
 
 fn chunk_to_stream_event(frame: &str) -> StreamEvent {
-    if frame.contains("event: content.delta") {
+    if frame_has_event(frame, "content.delta") {
         StreamEvent::ContentDelta {
             delta: extract_sse_data_field(frame, "delta").unwrap_or_default(),
         }
-    } else if frame.contains("event: thinking.delta") {
+    } else if frame_has_event(frame, "thinking.delta") {
         StreamEvent::ThinkingDelta {
             delta: extract_sse_data_field(frame, "delta").unwrap_or_default(),
         }
-    } else if frame.contains("event: thinking.block") {
+    } else if frame_has_event(frame, "thinking.block") {
         match extract_sse_json(frame).and_then(|v| v.get("block").cloned()) {
             Some(block) if block.is_object() => StreamEvent::ThinkingBlock { block },
             _ => StreamEvent::Keepalive,
         }
-    } else if frame.contains("event: tool_call.completed") {
+    } else if frame_has_event(frame, "tool_call.completed") {
         let Some(raw_tool_call) = extract_sse_json(frame).and_then(|v| v.get("tool_call").cloned())
         else {
             return StreamEvent::Error {
@@ -621,18 +710,32 @@ fn chunk_to_stream_event(frame: &str) -> StreamEvent {
                 error: format!("malformed tool_call.completed: {err}"),
             },
         }
-    } else if frame.contains("event: response.completed") {
+    } else if frame_has_event(frame, "response.completed") {
         StreamEvent::Done {
             stop_reason: StopReason::EndTurn,
             usage: extract_token_usage(frame).unwrap_or_default(),
         }
-    } else if frame.contains("event: response.error") {
+    } else if frame_has_event(frame, "response.error") {
         StreamEvent::Error {
             error: extract_sse_data(frame).unwrap_or_else(|| frame.to_string()),
         }
     } else {
         StreamEvent::Keepalive
     }
+}
+
+fn frame_has_event(frame: &str, event_name: &str) -> bool {
+    sse_event_name(frame).as_deref() == Some(event_name)
+}
+
+fn sse_event_name(frame: &str) -> Option<String> {
+    frame.lines().find_map(|line| {
+        line.trim_end_matches('\r')
+            .strip_prefix("event:")
+            .map(str::trim)
+            .filter(|event| !event.is_empty())
+            .map(str::to_string)
+    })
 }
 
 fn extract_sse_data(chunk: &str) -> Option<String> {
@@ -651,6 +754,14 @@ fn extract_sse_data_field(chunk: &str, field: &str) -> Option<String> {
     extract_sse_json(chunk)?
         .get(field)?
         .as_str()
+        .map(str::to_string)
+}
+
+fn response_completed_stop_reason(chunk: &str) -> Option<String> {
+    let data = extract_sse_json(chunk)?;
+    data.get("stop_reason")
+        .or_else(|| data.get("stopReason"))
+        .and_then(Value::as_str)
         .map(str::to_string)
 }
 
@@ -677,6 +788,32 @@ mod tests {
     use serde_json::json;
 
     use crate::llm::streaming::{ChatMessage, LlmRequest, SystemPromptSegment, ToolCall};
+
+    #[test]
+    fn build_request_populates_basic_client_metadata() {
+        let req = LlmRequest {
+            messages: vec![ChatMessage::text("user", "hello")],
+            tools: vec![],
+            max_tokens: 1000,
+            temperature: 0.7,
+            stream: true,
+            thinking_config: None,
+            anthropic_multimodal_turn: None,
+            system_segments: None,
+            conversation_id: Some("conv".to_string()),
+            trace_id: Some("trace".to_string()),
+            run_id: Some("run".to_string()),
+        };
+
+        let canonical = build_aijia_request(req);
+
+        assert_eq!(canonical.client.os.as_deref(), Some(std::env::consts::OS));
+        assert_eq!(
+            canonical.client.arch.as_deref(),
+            Some(std::env::consts::ARCH)
+        );
+        assert_eq!(canonical.client.platform, std::env::consts::ARCH);
+    }
 
     #[test]
     fn build_request_promotes_system_messages_and_excludes_them_from_messages() {
@@ -760,6 +897,36 @@ mod tests {
         assert_eq!(tool_result.role, "tool_result");
         assert_eq!(tool_result.tool_call_id.as_deref(), Some("call_1"));
         assert_eq!(tool_result.tool_name.as_deref(), Some("lookup"));
+    }
+
+    #[test]
+    fn build_request_preserves_tool_result_error_status() {
+        let req = LlmRequest {
+            messages: vec![ChatMessage::tool_result_with_status(
+                "call_1",
+                "Bash",
+                "permission denied".to_string(),
+                true,
+            )],
+            tools: vec![],
+            max_tokens: 1000,
+            temperature: 0.7,
+            stream: true,
+            thinking_config: None,
+            anthropic_multimodal_turn: None,
+            system_segments: None,
+            conversation_id: Some("conv".to_string()),
+            trace_id: Some("trace".to_string()),
+            run_id: Some("run".to_string()),
+        };
+
+        let canonical = build_aijia_request(req);
+        let tool_result = &canonical.context.messages[0];
+
+        assert_eq!(tool_result.role, "tool_result");
+        assert_eq!(tool_result.tool_call_id.as_deref(), Some("call_1"));
+        assert_eq!(tool_result.tool_name.as_deref(), Some("Bash"));
+        assert!(tool_result.is_error);
     }
 
     #[test]
@@ -982,8 +1149,9 @@ mod tests {
         )
         .to_string();
         let mut pending = VecDeque::new();
+        let mut lifecycle = GatewayStreamLifecycle::new(None);
 
-        drain_sse_frames(&mut buffer, &mut pending, None);
+        drain_sse_frames(&mut buffer, &mut pending, &mut lifecycle);
 
         assert!(buffer.is_empty());
         match pending.pop_front() {
@@ -997,5 +1165,21 @@ mod tests {
             }
             other => panic!("expected done, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn frame_lifecycle_detects_response_completed() {
+        let frame = concat!(
+            "event: response.completed\r\n",
+            "data: {\"stop_reason\":\"end_turn\"}\r\n\r\n"
+        );
+
+        assert_eq!(sse_event_name(frame).as_deref(), Some("response.completed"));
+        assert!(frame_has_event(frame, "response.completed"));
+        assert!(!frame_has_event(frame, "response.error"));
+        assert_eq!(
+            response_completed_stop_reason(frame).as_deref(),
+            Some("end_turn")
+        );
     }
 }
