@@ -181,6 +181,12 @@ pub(crate) fn build_aijia_request_for_route(
             name: "aijia-desktop".to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
             platform: std::env::consts::ARCH.to_string(),
+            os: Some(std::env::consts::OS.to_string()),
+            arch: Some(std::env::consts::ARCH.to_string()),
+            locale: None,
+            timezone: None,
+            device_id_hash: None,
+            scope_key_hash: None,
         },
     }
 }
@@ -632,6 +638,32 @@ mod tests {
     use serde_json::json;
 
     use crate::llm::streaming::{ChatMessage, LlmRequest, SystemPromptSegment, ToolCall};
+
+    #[test]
+    fn build_request_populates_basic_client_metadata() {
+        let req = LlmRequest {
+            messages: vec![ChatMessage::text("user", "hello")],
+            tools: vec![],
+            max_tokens: 1000,
+            temperature: 0.7,
+            stream: true,
+            thinking_config: None,
+            anthropic_multimodal_turn: None,
+            system_segments: None,
+            conversation_id: Some("conv".to_string()),
+            trace_id: Some("trace".to_string()),
+            run_id: Some("run".to_string()),
+        };
+
+        let canonical = build_aijia_request(req);
+
+        assert_eq!(canonical.client.os.as_deref(), Some(std::env::consts::OS));
+        assert_eq!(
+            canonical.client.arch.as_deref(),
+            Some(std::env::consts::ARCH)
+        );
+        assert_eq!(canonical.client.platform, std::env::consts::ARCH);
+    }
 
     #[test]
     fn build_request_promotes_system_messages_and_excludes_them_from_messages() {
