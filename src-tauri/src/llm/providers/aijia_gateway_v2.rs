@@ -562,6 +562,9 @@ impl GatewayStreamLifecycle {
     }
 
     fn close_error(&mut self, error: &str) {
+        if let Some(request_id) = self.request_id() {
+            crate::llm::gate_log::record_stream_error(request_id, error);
+        }
         self.close("error", Some(error));
     }
 
