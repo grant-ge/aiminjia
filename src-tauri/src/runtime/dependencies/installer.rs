@@ -299,7 +299,10 @@ impl RuntimeInstaller {
         plan: RuntimeInstallPlan,
         archive_path: &Path,
     ) -> Result<RuntimeInstallResult, RuntimeInstallError> {
-        let bundle_version = plan.bundle_version;
+        let RuntimeInstallPlan {
+            bundle_version,
+            force,
+        } = plan;
         let version_dir = self
             .paths
             .version_dir(&bundle_version)
@@ -311,6 +314,15 @@ impl RuntimeInstaller {
         self.assert_within_bundle_root(&version_dir)?;
         self.assert_within_bundle_root(&staging_dir)?;
         self.assert_within_bundle_root(&current_path)?;
+
+        if !force && self.is_already_local(&bundle_version, &version_dir, &current_path)? {
+            self.validate_runtime_payload(&version_dir)?;
+            return Ok(RuntimeInstallResult {
+                bundle_version,
+                install_dir: version_dir,
+                skipped: true,
+            });
+        }
 
         fs::create_dir_all(&bundle_root).map_err(io_error)?;
         fs::create_dir_all(self.paths.downloads_dir()).map_err(io_error)?;
@@ -334,6 +346,105 @@ impl RuntimeInstaller {
             return Err(error);
         }
         if let Err(error) = self.write_install_manifest(&staging_dir, &bundle_version) {
+            let _ = fs::remove_dir_all(&staging_dir);
+            return Err(error);
+        }
+        if let Err(error) = self.ensure_compatibility_directories(&staging_dir) {
+            let _ = fs::remove_dir_all(&staging_dir);
+            return Err(error);
+        }
+        if let Err(error) = self.validate_runtime_payload(&staging_dir) {
+            let _ = fs::remove_dir_all(&staging_dir);
+            return Err(error);
+        }
+        if self.should_smoke_test_runtime_payload() {
+            if let Err(error) = self.smoke_test_runtime_payload(&staging_dir) {
+                let _ = fs::remove_dir_all(&staging_dir);
+                return Err(error);
+            }
+        }
+
+        let replaced_backup = self.replace_staging_with_version_dir(&staging_dir, &version_dir)?;
+        if let Err(error) = self.write_current_pointer(&current_path, &bundle_version) {
+            let _ = fs::remove_dir_all(&version_dir);
+            if let Some(backup) = replaced_backup {
+                let _ = fs::rename(&backup, &version_dir);
+            }
+            return Err(error);
+        }
+        if let Some(backup) = replaced_backup {
+            let _ = fs::remove_dir_all(backup);
+        }
+
+        Ok(RuntimeInstallResult {
+            bundle_version,
+            install_dir: version_dir,
+            skipped: false,
+        })
+    }
+
+    pub fn install_from_directory(
+        &self,
+        plan: RuntimeInstallPlan,
+        source_dir: &Path,
+    ) -> Result<RuntimeInstallResult, RuntimeInstallError> {
+        let RuntimeInstallPlan {
+            bundle_version,
+            force,
+        } = plan;
+        if !source_dir.is_dir() {
+            return Err(RuntimeInstallError::MissingPayload(
+                source_dir.display().to_string(),
+            ));
+        }
+
+        let version_dir = self
+            .paths
+            .version_dir(&bundle_version)
+            .map_err(|_| RuntimeInstallError::InvalidPath(bundle_version.clone()))?;
+        let staging_dir = self.safe_staging_dir(&bundle_version)?;
+        let bundle_root = self.paths.bundle_root();
+        let current_path = self.paths.current_dir();
+
+        self.assert_within_bundle_root(&version_dir)?;
+        self.assert_within_bundle_root(&staging_dir)?;
+        self.assert_within_bundle_root(&current_path)?;
+
+        if !force && self.is_already_local(&bundle_version, &version_dir, &current_path)? {
+            self.validate_runtime_payload(&version_dir)?;
+            return Ok(RuntimeInstallResult {
+                bundle_version,
+                install_dir: version_dir,
+                skipped: true,
+            });
+        }
+
+        fs::create_dir_all(&bundle_root).map_err(io_error)?;
+        fs::create_dir_all(self.paths.downloads_dir()).map_err(io_error)?;
+        fs::create_dir_all(self.paths.staging_dir()).map_err(io_error)?;
+        fs::create_dir_all(self.paths.versions_dir()).map_err(io_error)?;
+
+        if staging_dir.exists() {
+            if staging_dir.is_dir() {
+                fs::remove_dir_all(&staging_dir).map_err(io_error)?;
+            } else {
+                return Err(RuntimeInstallError::Io(format!(
+                    "staging path is not a directory: {}",
+                    staging_dir.display()
+                )));
+            }
+        }
+        fs::create_dir_all(&staging_dir).map_err(io_error)?;
+
+        if let Err(error) = self.copy_runtime_directory(source_dir, &staging_dir) {
+            let _ = fs::remove_dir_all(&staging_dir);
+            return Err(error);
+        }
+        if let Err(error) = self.write_install_manifest(&staging_dir, &bundle_version) {
+            let _ = fs::remove_dir_all(&staging_dir);
+            return Err(error);
+        }
+        if let Err(error) = self.ensure_compatibility_directories(&staging_dir) {
             let _ = fs::remove_dir_all(&staging_dir);
             return Err(error);
         }
@@ -663,19 +774,67 @@ echo {tool_name} managed-runtime-stub
         Ok(())
     }
 
+    fn ensure_compatibility_directories(
+        &self,
+        install_dir: &Path,
+    ) -> Result<(), RuntimeInstallError> {
+        let layout = self.current_layout()?;
+        for relative in layout.directory_paths() {
+            fs::create_dir_all(install_dir.join(relative)).map_err(io_error)?;
+        }
+        Ok(())
+    }
+
+    fn copy_runtime_directory(
+        &self,
+        source: &Path,
+        dest: &Path,
+    ) -> Result<(), RuntimeInstallError> {
+        self.copy_runtime_directory_into(source, dest, dest)
+    }
+
+    fn copy_runtime_directory_into(
+        &self,
+        source: &Path,
+        dest: &Path,
+        root: &Path,
+    ) -> Result<(), RuntimeInstallError> {
+        for entry in fs::read_dir(source).map_err(io_error)? {
+            let entry = entry.map_err(io_error)?;
+            let source_path = entry.path();
+            let dest_path = dest.join(entry.file_name());
+            let file_type = entry.file_type().map_err(io_error)?;
+
+            if file_type.is_dir() {
+                fs::create_dir_all(&dest_path).map_err(io_error)?;
+                self.copy_runtime_directory_into(&source_path, &dest_path, root)?;
+                continue;
+            }
+
+            if let Some(parent) = dest_path.parent() {
+                fs::create_dir_all(parent).map_err(io_error)?;
+            }
+
+            if file_type.is_symlink() {
+                let target = fs::read_link(&source_path).map_err(io_error)?;
+                self.create_safe_symlink(root, &dest_path, &target)?;
+                continue;
+            }
+
+            if file_type.is_file() {
+                fs::copy(&source_path, &dest_path).map_err(io_error)?;
+                let permissions = fs::metadata(&source_path).map_err(io_error)?.permissions();
+                fs::set_permissions(&dest_path, permissions).map_err(io_error)?;
+            }
+        }
+        Ok(())
+    }
+
     fn validate_runtime_payload(&self, install_dir: &Path) -> Result<(), RuntimeInstallError> {
         let layout = self.current_layout()?;
         for relative in layout.executable_paths() {
             let path = install_dir.join(relative);
             if !path.is_file() {
-                return Err(RuntimeInstallError::MissingPayload(
-                    path.display().to_string(),
-                ));
-            }
-        }
-        for relative in layout.directory_paths() {
-            let path = install_dir.join(relative);
-            if !path.is_dir() {
                 return Err(RuntimeInstallError::MissingPayload(
                     path.display().to_string(),
                 ));

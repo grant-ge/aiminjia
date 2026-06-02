@@ -18,9 +18,9 @@ use crate::runtime::tools::RuntimeTool;
 
 use super::shell_common::{
     collect_reader, content_from_output, emit_shell_failure_diagnostic, format_cancel_message,
-    format_command_failure, inject_bundled_runtime_path, interpret_command_result,
-    kill_child_process_tree, read_merged_streams_with_progress, tail_n_lines,
-    truncated_to_max_bytes, ExitKind, MAX_OUTPUT_BYTES,
+    format_command_failure, interpret_command_result, kill_child_process_tree,
+    read_merged_streams_with_progress, tail_n_lines, truncated_to_max_bytes, ExitKind,
+    MAX_OUTPUT_BYTES,
 };
 use super::workspace::require_workspace_root;
 use crate::runtime::cancellation::wait_for_cancellation;
@@ -374,7 +374,6 @@ impl RuntimeTool for BashTool {
 
         let mut shell = Command::new("/bin/sh");
         configure_child_process_group(&mut shell);
-        inject_bundled_runtime_path(&ctx, &mut shell);
 
         let mut child = shell
             .arg("-c")

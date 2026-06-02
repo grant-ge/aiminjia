@@ -47,6 +47,46 @@ fn bundled_resolver_finds_runtime_for_current_platform() {
 }
 
 #[test]
+fn bundled_resolver_accepts_release_app_runtime_without_package_dirs() {
+    let tmp = TempDir::new().unwrap();
+    let resource_dir = tmp.path();
+    let platform = RuntimePlatform::current().expect("platform detection");
+    let runtime_dir = resource_dir.join("runtime").join(platform.manifest_key());
+    let layout = app_lib::runtime::dependencies::RuntimeLayout::for_platform(platform);
+    let deps = layout.workspace_dependencies(&runtime_dir);
+
+    for path in [
+        &deps.python,
+        &deps.node,
+        &deps.npm,
+        &deps.npx,
+        &deps.uv,
+        &deps.uvx,
+    ] {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        fs::write(path, b"").unwrap();
+    }
+
+    fs::create_dir_all(runtime_dir.join("node/lib/node_modules")).unwrap();
+    fs::create_dir_all(runtime_dir.join("python/lib/python3.12/site-packages")).unwrap();
+    fs::write(
+        runtime_dir.join("bundled-version.json"),
+        br#"{"bundleVersion":"test-1","platform":"placeholder"}"#,
+    )
+    .unwrap();
+
+    let resolver = BundledRuntimeResolver::new(resource_dir.to_path_buf());
+    let resolved = resolver
+        .workspace_dependencies()
+        .expect("release app runtime should resolve without compatibility package dirs");
+
+    assert_eq!(resolved.node, deps.node);
+    assert_eq!(resolved.python, deps.python);
+}
+
+#[test]
 fn bundled_resolver_errors_when_runtime_dir_missing() {
     let tmp = TempDir::new().unwrap();
     let resolver = BundledRuntimeResolver::new(tmp.path().to_path_buf());

@@ -96,9 +96,8 @@ pub fn run() {
                 .path()
                 .resource_dir()
                 .unwrap_or_else(|_| aijia_home.root().to_path_buf());
-            let bundled_resolver = std::sync::Arc::new(
-                runtime::dependencies::BundledRuntimeResolver::new(resource_dir.clone()),
-            );
+            let bundled_resolver =
+                runtime::dependencies::BundledRuntimeResolver::new(resource_dir.clone());
             let bundled_version = bundled_resolver.bundled_version();
             log::info!(
                 "[runtime] bundled resolver mounted at {} (version={:?})",
@@ -111,7 +110,7 @@ pub fn run() {
                     runtime_paths.clone(),
                     env!("CARGO_PKG_VERSION"),
                 )
-                .with_primary_resolver(bundled_resolver.clone())
+                .with_bundled_fallback(bundled_resolver.clone())
                 .with_manifest_source(
                     runtime::dependencies::RuntimeManifestSource::Url(manifest_url),
                     "primary",
@@ -121,22 +120,27 @@ pub fn run() {
             let runtime_resolver: runtime::dependencies::ManagedRuntimeResolver =
                 runtime_manager.clone();
 
-            // Probe the bundled resolver synchronously: if it satisfies, we skip
-            // the OSS background ensure entirely. Only when bundled is missing or
-            // corrupted do we fall back to the network path.
-            use runtime::dependencies::RuntimeResolver as _;
-            let bundled_ok = bundled_resolver.workspace_dependencies().is_ok();
-            if bundled_ok {
-                log::info!("[runtime] bundled runtime ready; OSS ensure skipped on this launch");
-            } else {
-                log::warn!("[runtime] bundled runtime unavailable; falling back to OSS ensure");
-                let runtime_manager_bg = runtime_manager.clone();
-                tauri::async_runtime::spawn(async move {
-                    if let Err(error) = runtime_manager_bg.ensure_managed().await {
+            let runtime_manager_bg = runtime_manager.clone();
+            tauri::async_runtime::spawn(async move {
+                match runtime_manager_bg.ensure_managed().await {
+                    Ok(result) if result.skipped => {
+                        log::info!(
+                            "[runtime] cache runtime ready; ensure skipped version={}",
+                            result.bundle_version
+                        );
+                    }
+                    Ok(result) => {
+                        log::info!(
+                            "[runtime] cache runtime initialized version={} path={}",
+                            result.bundle_version,
+                            result.install_dir.display()
+                        );
+                    }
+                    Err(error) => {
                         log::warn!("[runtime] background ensure failed: {}", error);
                     }
-                });
-            }
+                }
+            });
 
             app.manage(runtime_manager.clone());
             app.manage(runtime_resolver.clone());

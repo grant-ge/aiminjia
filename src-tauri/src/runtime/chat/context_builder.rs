@@ -139,20 +139,74 @@ pub struct ManagedRuntimeEnvInfo {
 
 impl ManagedRuntimeEnvInfo {
     pub fn format_for_env_info(&self) -> String {
+        let node_prefix = self
+            .npm_path
+            .parent()
+            .and_then(|bin| bin.parent())
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_else(|| self.runtime_root.join("node"));
+        let node_bin_dir = self
+            .npm_path
+            .parent()
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_else(|| node_prefix.join("bin"));
+        let node_global_modules = if cfg!(target_os = "windows") {
+            node_prefix.join("node_modules")
+        } else {
+            node_prefix.join("lib").join("node_modules")
+        };
+
         // Shell 语法因平台而异：Windows 走 powershell，需要 `& "exe"` call operator；
         // macOS / Linux 走 /bin/sh，必须裸命令（路径用引号包住即可）。
         // 给 LLM 的模板写错平台 → 工具执行直接 syntax error。
-        let install_template = if cfg!(target_os = "windows") {
-            format!(
-                r#"& "{uv}" pip install <包名> --python "{python}" --quiet"#,
-                uv = self.uv_path.display(),
-                python = self.python_path.display(),
+        let (
+            python_install_template,
+            node_install_template,
+            node_require_template,
+            node_cli_template,
+        ) = if cfg!(target_os = "windows") {
+            (
+                format!(
+                    r#"& "{uv}" pip install <包名> --python "{python}" --quiet"#,
+                    uv = self.uv_path.display(),
+                    python = self.python_path.display(),
+                ),
+                format!(
+                    r#"& "{npm}" install -g <包名> --prefix "{node_prefix}" --silent"#,
+                    npm = self.npm_path.display(),
+                    node_prefix = node_prefix.display(),
+                ),
+                format!(
+                    r#"$env:NODE_PATH="{node_global_modules}"; & "{node}" -e "require('<包名>'); console.log('ok')""#,
+                    node_global_modules = node_global_modules.display(),
+                    node = self.node_path.display(),
+                ),
+                format!(
+                    r#"& "{node_bin_dir}\命令名.cmd" <参数>"#,
+                    node_bin_dir = node_bin_dir.display(),
+                ),
             )
         } else {
-            format!(
-                r#""{uv}" pip install <包名> --python "{python}" --quiet"#,
-                uv = self.uv_path.display(),
-                python = self.python_path.display(),
+            (
+                format!(
+                    r#""{uv}" pip install <包名> --python "{python}" --quiet"#,
+                    uv = self.uv_path.display(),
+                    python = self.python_path.display(),
+                ),
+                format!(
+                    r#""{npm}" install -g <包名> --prefix "{node_prefix}" --silent"#,
+                    npm = self.npm_path.display(),
+                    node_prefix = node_prefix.display(),
+                ),
+                format!(
+                    r#"NODE_PATH="{node_global_modules}" "{node}" -e "require('<包名>'); console.log('ok')""#,
+                    node_global_modules = node_global_modules.display(),
+                    node = self.node_path.display(),
+                ),
+                format!(
+                    r#""{node_bin_dir}/命令名" <参数>"#,
+                    node_bin_dir = node_bin_dir.display(),
+                ),
             )
         };
 
@@ -165,15 +219,30 @@ npm: {npm}
 npx: {npx}
 uv: {uv}
 uvx: {uvx}
+Node 全局包目录: {node_global_modules}
+Node 命令目录: {node_bin_dir}
 
 规则:
 1. 运行 Python / Node / npm / npx / uv 命令时，默认使用上面列出的绝对路径；只有用户明确要求系统环境时，才使用系统 PATH 中的命令。
 2. 安装第三方 Python 包必须使用以下模板（替换包名即可），禁止任何变体：
 
-   {install_template}
+   {python_install_template}
 
 3. 禁止使用 --system / 裸 pip / python -m pip / pip install 后省略 --python。
-4. uv 装包是幂等的：已安装的包会秒过（< 1s），不会重复下载，所以可以放心在每次需要时直接调用上述模板。"#,
+4. uv 装包是幂等的：已安装的包会秒过（< 1s），不会重复下载，所以可以放心在每次需要时直接调用上述模板。
+5. 安装第三方 Node 包必须使用以下模板（替换包名即可），禁止安装到当前工作目录：
+
+   {node_install_template}
+
+6. 检查或 require Runtime Node 全局包时，必须带 NODE_PATH：
+
+   {node_require_template}
+
+7. 已安装的 Node CLI 要从 Node 命令目录用绝对路径执行，例如：
+
+   {node_cli_template}
+
+   不要用 npx 运行已安装的包；npx 可能触发临时下载或重复安装。"#,
             runtime_root = self.runtime_root.display(),
             python = self.python_path.display(),
             node = self.node_path.display(),
@@ -181,7 +250,12 @@ uvx: {uvx}
             npx = self.npx_path.display(),
             uv = self.uv_path.display(),
             uvx = self.uvx_path.display(),
-            install_template = install_template,
+            node_global_modules = node_global_modules.display(),
+            node_bin_dir = node_bin_dir.display(),
+            python_install_template = python_install_template,
+            node_install_template = node_install_template,
+            node_require_template = node_require_template,
+            node_cli_template = node_cli_template,
         )
     }
 }
@@ -343,17 +417,37 @@ mod tests {
         assert!(result.contains("npx: /cache/renlijia/node/bin/npx"));
         assert!(result.contains("uv: /cache/renlijia/uv/bin/uv"));
         assert!(result.contains("uvx: /cache/renlijia/uv/bin/uvx"));
+        assert!(result.contains("Node 全局包目录: /cache/renlijia/node/lib/node_modules"));
+        assert!(result.contains("Node 命令目录: /cache/renlijia/node/bin"));
         assert!(result.contains("默认使用上面列出的绝对路径"));
         assert!(result.contains("只有用户明确要求系统环境时"));
-        let expected_template = if cfg!(target_os = "windows") {
+        let expected_python_template = if cfg!(target_os = "windows") {
             r#"& "/cache/renlijia/uv/bin/uv" pip install <包名> --python "/cache/renlijia/python/bin/python3" --quiet"#
         } else {
             r#""/cache/renlijia/uv/bin/uv" pip install <包名> --python "/cache/renlijia/python/bin/python3" --quiet"#
         };
         assert!(
-            result.contains(expected_template),
+            result.contains(expected_python_template),
             "must include uv pip install template with concrete absolute paths, got:\n{result}"
         );
+        let expected_node_template = if cfg!(target_os = "windows") {
+            r#"& "/cache/renlijia/node/bin/npm" install -g <包名> --prefix "/cache/renlijia/node" --silent"#
+        } else {
+            r#""/cache/renlijia/node/bin/npm" install -g <包名> --prefix "/cache/renlijia/node" --silent"#
+        };
+        assert!(
+            result.contains(expected_node_template),
+            "must include npm install template with concrete absolute paths, got:\n{result}"
+        );
+        assert!(
+            result.contains(r#"NODE_PATH="/cache/renlijia/node/lib/node_modules""#),
+            "must teach Node global package resolution, got:\n{result}"
+        );
+        assert!(
+            result.contains(r#""/cache/renlijia/node/bin/命令名" <参数>"#),
+            "must teach absolute CLI execution instead of npx, got:\n{result}"
+        );
+        assert!(result.contains("不要用 npx 运行已安装的包"));
         assert!(result.contains("禁止使用 --system"));
         assert!(result.contains("uv 装包是幂等的"));
         assert!(!result.contains("仁励家 Runtime"));
