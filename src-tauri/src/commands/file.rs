@@ -225,13 +225,13 @@ fn unsupported_preview(file_name: &str, reason: impl Into<String>) -> FilePrevie
 
 fn preview_from_bytes(file_name: &str, file_type: &str, bytes: Vec<u8>) -> FilePreview {
     if bytes.len() as u64 > MAX_PREVIEW_BYTES {
-        return unsupported_preview(file_name, "文件过大，暂不支持预览");
+        return unsupported_preview(file_name, "File is too large to preview");
     }
 
     let Some(kind) = normalize_preview_kind(file_name, file_type) else {
         return unsupported_preview(
             file_name,
-            format!("暂不支持预览 .{} 文件，请点「用默认应用打开」", file_type),
+            format!("File type '{}' is not supported", file_type),
         );
     };
 
@@ -308,14 +308,14 @@ fn preview_from_record_with_reader(
 ) -> FilePreview {
     let full_path = match file_mgr.resolve_existing_file(&record.stored_path) {
         Ok(path) => path,
-        Err(_) => return unsupported_preview(&record.file_name, "文件读取失败"),
+        Err(_) => return unsupported_preview(&record.file_name, "File is unavailable"),
     };
     let bytes = if record.file_size > MAX_PREVIEW_BYTES {
         vec![0; (MAX_PREVIEW_BYTES as usize) + 1]
     } else {
         match read_file(&full_path) {
             Ok(bytes) => bytes,
-            Err(_) => return unsupported_preview(&record.file_name, "文件读取失败"),
+            Err(_) => return unsupported_preview(&record.file_name, "File is unavailable"),
         }
     };
 
@@ -625,14 +625,14 @@ pub async fn get_file_preview(
     if record.file_size > MAX_PREVIEW_BYTES {
         return Ok(unsupported_preview(
             &record.file_name,
-            "文件过大，暂不支持预览",
+            "File is too large to preview",
         ));
     }
 
     if normalize_preview_kind(&record.file_name, &record.file_type).is_none() {
         return Ok(unsupported_preview(
             &record.file_name,
-            format!("暂不支持预览 .{} 文件，请点「用默认应用打开」", record.file_type),
+            format!("File type '{}' is not supported", record.file_type),
         ));
     }
 
@@ -655,17 +655,17 @@ pub async fn get_local_file_preview(path: String) -> Result<FilePreview, String>
         Err(e) => {
             return Ok(unsupported_preview(
                 &file_name,
-                format!("文件读取失败：{}", e),
+                format!("File is unavailable: {}", e),
             ))
         }
     };
     if !metadata.is_file() {
-        return Ok(unsupported_preview(&file_name, "不是常规文件"));
+        return Ok(unsupported_preview(&file_name, "Not a regular file"));
     }
     if metadata.len() > MAX_PREVIEW_BYTES {
         return Ok(unsupported_preview(
             &file_name,
-            "文件过大，暂不支持预览",
+            "File is too large to preview",
         ));
     }
 
@@ -678,7 +678,7 @@ pub async fn get_local_file_preview(path: String) -> Result<FilePreview, String>
     if normalize_preview_kind(&file_name, &file_type).is_none() {
         return Ok(unsupported_preview(
             &file_name,
-            format!("暂不支持预览 .{} 文件，请点「用默认应用打开」", file_type),
+            format!("File type '{}' is not supported", file_type),
         ));
     }
 
@@ -687,7 +687,7 @@ pub async fn get_local_file_preview(path: String) -> Result<FilePreview, String>
         Err(e) => {
             return Ok(unsupported_preview(
                 &file_name,
-                format!("文件读取失败：{}", e),
+                format!("File is unavailable: {}", e),
             ))
         }
     };
@@ -976,7 +976,7 @@ mod preview_tests {
         match preview {
             FilePreview::Unsupported { reason, .. } => {
                 assert!(
-                    reason.contains("暂不支持预览"),
+                    reason.contains("not supported"),
                     "unexpected reason: {reason}"
                 );
             }
@@ -991,7 +991,7 @@ mod preview_tests {
         match preview {
             FilePreview::Unsupported { reason, .. } => {
                 assert!(
-                    reason.contains("暂不支持预览"),
+                    reason.contains("not supported"),
                     "unexpected reason: {reason}"
                 );
             }
@@ -1009,7 +1009,7 @@ mod preview_tests {
 
         match preview {
             FilePreview::Unsupported { reason, .. } => {
-                assert!(reason.contains("文件过大"), "unexpected reason: {reason}");
+                assert!(reason.contains("too large"), "unexpected reason: {reason}");
             }
             other => panic!("expected unsupported preview, got {:?}", other),
         }
@@ -1046,7 +1046,7 @@ mod preview_tests {
 
         match preview {
             FilePreview::Unsupported { reason, .. } => {
-                assert_eq!(reason, "文件读取失败");
+                assert_eq!(reason, "File is unavailable");
                 assert!(!reason.contains(stored_path), "reason leaked stored path");
                 assert!(
                     !reason.contains(&tmp.path().display().to_string()),
@@ -1073,7 +1073,7 @@ mod preview_tests {
 
         match preview {
             FilePreview::Unsupported { reason, .. } => {
-                assert_eq!(reason, "文件读取失败");
+                assert_eq!(reason, "File is unavailable");
                 assert!(!reason.contains(stored_path), "reason leaked stored path");
                 assert!(
                     !reason.contains(&tmp.path().display().to_string()),
@@ -1108,7 +1108,7 @@ mod preview_tests {
 
         match preview {
             FilePreview::Unsupported { reason, .. } => {
-                assert_eq!(reason, "文件读取失败");
+                assert_eq!(reason, "File is unavailable");
                 assert!(!reason.contains(stored_path), "reason leaked stored path");
                 assert!(
                     !reason.contains(&tmp.path().display().to_string()),
@@ -1140,7 +1140,7 @@ mod preview_tests {
 
         match preview {
             FilePreview::Unsupported { reason, .. } => {
-                assert!(reason.contains("文件过大"), "unexpected reason: {reason}");
+                assert!(reason.contains("too large"), "unexpected reason: {reason}");
             }
             other => panic!("expected unsupported preview, got {:?}", other),
         }

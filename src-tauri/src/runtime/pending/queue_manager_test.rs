@@ -311,6 +311,39 @@ async fn drain_dispatches_after_debounce() {
 }
 
 #[tokio::test]
+async fn immediate_drain_bypasses_debounce_window() {
+    let tmp = TempDir::new().unwrap();
+    let registry = Arc::new(RuntimeRunRegistry::new());
+    let bus = Arc::new(RuntimeEventBus::new());
+    let resolver = Arc::new(TempConvDirResolver(tmp.path().to_path_buf()));
+    let mut config = PendingConfig::default();
+    config.debounce_window = std::time::Duration::from_secs(60);
+    let dispatcher = Arc::new(CountingDispatcher {
+        count: AtomicUsize::new(0),
+        last_text: tokio::sync::Mutex::new(None),
+        last_skill_id: tokio::sync::Mutex::new(None),
+    });
+    let mgr = PendingQueueManager::new(registry.clone(), bus, resolver, config);
+    mgr.set_dispatcher(dispatcher.clone()).await;
+
+    let session = SessionId::new("conv-immediate-drain");
+    use crate::runtime::ids::RunId;
+    registry
+        .reserve(session.as_str(), RunId::new("run-1"))
+        .unwrap();
+    mgr.enqueue_or_send(session.clone(), sample_item("a"))
+        .await
+        .unwrap();
+
+    registry.clear(session.as_str());
+    mgr.schedule_drain_immediate(session.clone()).await;
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    assert_eq!(dispatcher.count.load(Ordering::SeqCst), 1);
+    assert!(mgr.snapshot(&session).await.is_empty());
+}
+
+#[tokio::test]
 async fn drain_preserves_skill_command_on_dispatched_request() {
     let tmp = TempDir::new().unwrap();
     let registry = Arc::new(RuntimeRunRegistry::new());
