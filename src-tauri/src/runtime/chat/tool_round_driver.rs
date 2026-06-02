@@ -115,6 +115,22 @@ impl ToolRoundDriver {
         let mut permitted: Vec<(usize, RuntimeToolCallRequest)> = Vec::new();
 
         for (idx, call) in calls.into_iter().enumerate() {
+            let call = match call.into_valid() {
+                Ok(call) => call,
+                Err(err) => {
+                    log::warn!("[ToolRoundDriver] dropping invalid tool call: {err}");
+                    record_tool_round_diagnostic(
+                        turn,
+                        "tool.round.invalid_call",
+                        "",
+                        "",
+                        Some(false),
+                        Some(err),
+                        Some(serde_json::json!({ "index": idx })),
+                    );
+                    continue;
+                }
+            };
             if let Some(blocked) = self.check_blocked(&call) {
                 results.push((idx, ToolRoundResult::Blocked(blocked)));
             } else {
@@ -447,6 +463,31 @@ mod tests {
             }
             other => panic!("expected Blocked, got {:?}", other),
         }
+    }
+
+    #[tokio::test]
+    async fn invalid_tool_call_is_dropped_before_allowed_tools_filter() {
+        let dispatcher = Arc::new(ToolDispatcher::new(Arc::new(AllowAllPermissionPipeline)));
+        let engine = QueryEngine::with_dispatcher(dispatcher);
+        let driver =
+            ToolRoundDriver::new(engine).with_allowed_tools(vec!["allowed_tool".to_string()]);
+        let bus = RuntimeEventBus::new();
+        let turn = make_turn();
+
+        let results = driver
+            .execute_round(
+                &turn,
+                &bus,
+                vec![RuntimeToolCallRequest {
+                    tool_call_id: String::new(),
+                    tool_name: String::new(),
+                    args: Value::Null,
+                    purpose: None,
+                }],
+            )
+            .await;
+
+        assert!(results.is_empty());
     }
 
     #[tokio::test]

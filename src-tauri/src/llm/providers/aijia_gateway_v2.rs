@@ -11,7 +11,7 @@ use crate::llm::canonical::{
 use crate::llm::providers::LlmProviderTrait;
 use crate::llm::streaming::{
     AnthropicContentBlock, AnthropicImageSource, ChatMessage, LlmRequest, LlmResponse, StopReason,
-    StreamBox, StreamEvent, ThinkingConfig, TokenUsage,
+    StreamBox, StreamEvent, ThinkingConfig, TokenUsage, ToolCall,
 };
 
 const AIJIA_GATEWAY_V2_RESPONSES_URL: &str = "https://ai-tenant.renlijia.com/aijia/v2/ai/responses";
@@ -140,7 +140,9 @@ pub(crate) fn build_aijia_request_for_route(
             }
             continue;
         }
-        messages.push(to_canonical_message(message));
+        if let Some(message) = to_canonical_message(message) {
+            messages.push(message);
+        }
     }
 
     let tools = if plan.use_tools {
@@ -294,11 +296,32 @@ fn request_has_image_input(request: &LlmRequest) -> bool {
         })
 }
 
-fn to_canonical_message(message: ChatMessage) -> CanonicalMessage {
+fn to_canonical_message(message: ChatMessage) -> Option<CanonicalMessage> {
+    if message.role == "tool" {
+        let valid_id = message
+            .tool_call_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|id| !id.is_empty());
+        let valid_name = message
+            .name
+            .as_deref()
+            .map(str::trim)
+            .filter(|name| !name.is_empty());
+        if valid_id.is_none() || valid_name.is_none() {
+            log::warn!(
+                "[aijia-v2] dropping invalid tool_result message: tool_call_id={:?} name={:?}",
+                message.tool_call_id,
+                message.name
+            );
+            return None;
+        }
+    }
+
     let role = if message.role == "tool" {
         "tool_result".to_string()
     } else {
-        message.role
+        message.role.clone()
     };
 
     let mut content = Vec::new();
@@ -334,7 +357,11 @@ fn to_canonical_message(message: ChatMessage) -> CanonicalMessage {
     }
     if let Some(thinking_blocks) = message.thinking_blocks {
         for block in thinking_blocks {
-            content.push(thinking_block_to_content(block));
+            if block.is_object() {
+                content.push(thinking_block_to_content(block));
+            } else {
+                log::warn!("[aijia-v2] dropping invalid non-object thinking block");
+            }
         }
     }
     if let Some(turn) = message.anthropic_multimodal_turn {
@@ -377,6 +404,13 @@ fn to_canonical_message(message: ChatMessage) -> CanonicalMessage {
     }
     if let Some(tool_calls) = message.tool_calls {
         for tool_call in tool_calls {
+            let tool_call = match tool_call.into_valid() {
+                Ok(tool_call) => tool_call,
+                Err(err) => {
+                    log::warn!("[aijia-v2] dropping invalid assistant tool_call: {err}");
+                    continue;
+                }
+            };
             content.push(ContentBlock {
                 kind: "tool_call".to_string(),
                 text: None,
@@ -408,17 +442,17 @@ fn to_canonical_message(message: ChatMessage) -> CanonicalMessage {
         });
     }
 
-    CanonicalMessage {
+    Some(CanonicalMessage {
         role,
         content,
-        tool_call_id: message.tool_call_id,
-        tool_name: message.name,
+        tool_call_id: message.tool_call_id.map(|id| id.trim().to_string()),
+        tool_name: message.name.map(|name| name.trim().to_string()),
         is_error: false,
         provider: None,
         usage: None,
         stop_reason: None,
         created_at: None,
-    }
+    })
 }
 
 fn thinking_block_to_content(block: Value) -> ContentBlock {
@@ -562,20 +596,31 @@ fn chunk_to_stream_event(frame: &str) -> StreamEvent {
             delta: extract_sse_data_field(frame, "delta").unwrap_or_default(),
         }
     } else if frame.contains("event: thinking.block") {
-        let block = extract_sse_json(frame)
-            .and_then(|v| v.get("block").cloned())
-            .unwrap_or(Value::Null);
-        StreamEvent::ThinkingBlock { block }
+        match extract_sse_json(frame).and_then(|v| v.get("block").cloned()) {
+            Some(block) if block.is_object() => StreamEvent::ThinkingBlock { block },
+            _ => StreamEvent::Keepalive,
+        }
     } else if frame.contains("event: tool_call.completed") {
-        let tool_call = extract_sse_json(frame)
-            .and_then(|v| v.get("tool_call").cloned())
-            .and_then(|v| serde_json::from_value(v).ok())
-            .unwrap_or_else(|| crate::llm::streaming::ToolCall {
-                id: String::new(),
-                name: String::new(),
-                arguments: Value::Null,
-            });
-        StreamEvent::ToolCallStart { tool_call }
+        let Some(raw_tool_call) = extract_sse_json(frame).and_then(|v| v.get("tool_call").cloned())
+        else {
+            return StreamEvent::Error {
+                error: "malformed tool_call.completed: missing tool_call".to_string(),
+            };
+        };
+        let tool_call = match serde_json::from_value::<ToolCall>(raw_tool_call) {
+            Ok(tool_call) => tool_call,
+            Err(err) => {
+                return StreamEvent::Error {
+                    error: format!("malformed tool_call.completed: {err}"),
+                };
+            }
+        };
+        match tool_call.into_valid() {
+            Ok(tool_call) => StreamEvent::ToolCallStart { tool_call },
+            Err(err) => StreamEvent::Error {
+                error: format!("malformed tool_call.completed: {err}"),
+            },
+        }
     } else if frame.contains("event: response.completed") {
         StreamEvent::Done {
             stop_reason: StopReason::EndTurn,
@@ -878,6 +923,53 @@ mod tests {
             }
             other => panic!("expected thinking block event, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn malformed_tool_call_completed_maps_to_stream_error() {
+        let event = chunk_to_stream_event(
+            "event: tool_call.completed\ndata: {\"index\":0,\"tool_call\":{\"id\":\"\",\"name\":\"\",\"arguments\":null}}\n\n",
+        );
+
+        match event {
+            StreamEvent::Error { error } => {
+                assert!(error.contains("malformed tool_call.completed"));
+                assert!(error.contains("id"));
+            }
+            other => panic!("expected stream error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn build_request_drops_invalid_tool_call_and_tool_result_blocks() {
+        let req = LlmRequest {
+            messages: vec![
+                ChatMessage::assistant_with_tool_calls(
+                    "checking".to_string(),
+                    vec![ToolCall {
+                        id: String::new(),
+                        name: String::new(),
+                        arguments: Value::Null,
+                    }],
+                    None,
+                    None,
+                ),
+                ChatMessage::tool_result("", "", "bad result".to_string()),
+            ],
+            ..Default::default()
+        };
+
+        let canonical = build_aijia_request(req);
+
+        assert_eq!(canonical.context.messages.len(), 1);
+        let assistant = &canonical.context.messages[0];
+        assert_eq!(assistant.role, "assistant");
+        assert_eq!(assistant.content.len(), 1);
+        assert_eq!(assistant.content[0].kind, "text");
+        assert!(!assistant
+            .content
+            .iter()
+            .any(|block| block.kind == "tool_call"));
     }
 
     #[test]

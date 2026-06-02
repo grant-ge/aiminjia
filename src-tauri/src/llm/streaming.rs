@@ -40,6 +40,32 @@ pub struct ToolCall {
     pub arguments: serde_json::Value,
 }
 
+impl ToolCall {
+    pub fn into_valid(self) -> Result<Self, String> {
+        let id = self.id.trim().to_string();
+        if id.is_empty() {
+            return Err("tool_call id is empty".to_string());
+        }
+
+        let name = self.name.trim().to_string();
+        if name.is_empty() {
+            return Err(format!("tool_call name is empty for id {id}"));
+        }
+
+        if !self.arguments.is_object() {
+            return Err(format!(
+                "tool_call arguments must be a JSON object for id {id} name {name}"
+            ));
+        }
+
+        Ok(Self {
+            id,
+            name,
+            arguments: self.arguments,
+        })
+    }
+}
+
 /// Events emitted during streaming.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]

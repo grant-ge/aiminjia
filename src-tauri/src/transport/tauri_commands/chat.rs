@@ -496,23 +496,32 @@ fn llm_response_to_step_result(
         let tool_calls: Vec<RuntimeToolCallRequest> = response
             .tool_calls
             .into_iter()
-            .map(|tc| RuntimeToolCallRequest {
-                tool_call_id: tc.id,
-                tool_name: tc.name,
-                args: tc.arguments,
-                purpose: None,
-            })
+            .filter_map(
+                |tc| match RuntimeToolCallRequest::from_tool_call(tc, None) {
+                    Ok(call) => Some(call),
+                    Err(err) => {
+                        log::error!(
+                            "[llm_response_to_step_result] dropping invalid tool_call: {err}"
+                        );
+                        None
+                    }
+                },
+            )
             .collect();
-        LlmStepResult::ToolCalls {
-            assistant_content: response.content,
-            tool_calls,
-            tokens_in,
-            tokens_out,
-            cache_creation_input_tokens: cache_creation,
-            cache_read_input_tokens: cache_read,
-            thinking_blocks: Vec::new(),
+        if !tool_calls.is_empty() {
+            return LlmStepResult::ToolCalls {
+                assistant_content: response.content,
+                tool_calls,
+                tokens_in,
+                tokens_out,
+                cache_creation_input_tokens: cache_creation,
+                cache_read_input_tokens: cache_read,
+                thinking_blocks: Vec::new(),
+            };
         }
-    } else {
+    }
+
+    {
         let stop_reason_str = match response.stop_reason {
             StopReason::EndTurn => "end_turn",
             StopReason::ToolUse => "tool_use",
@@ -1020,6 +1029,16 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                                 // tool-argument streaming and ping-only thinking windows.
                             }
                             Some(StreamEvent::ToolCallStart { tool_call }) => {
+                                let tool_call = match tool_call.into_valid() {
+                                    Ok(tool_call) => tool_call,
+                                    Err(err) => {
+                                        let error = format!("malformed stream tool_call: {err}");
+                                        log::error!("[run_llm_step] {error}");
+                                        return Err(TurnError::LlmError(
+                                            "AI 服务返回了无效工具调用，请重试。".to_string(),
+                                        ));
+                                    }
+                                };
                                 log::info!(
                                     "[run_llm_step] Tool call received: name='{}' id='{}'",
                                     tool_call.name, tool_call.id
@@ -1182,15 +1201,24 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             let requests: Vec<crate::runtime::chat::tool_round_types::RuntimeToolCallRequest> =
                 tool_calls
                     .into_iter()
-                    .map(
-                        |tc| crate::runtime::chat::tool_round_types::RuntimeToolCallRequest {
-                            tool_call_id: tc.id,
-                            tool_name: tc.name,
-                            args: tc.arguments,
-                            purpose: None,
-                        },
-                    )
+                    .filter_map(|tc| {
+                        match crate::runtime::chat::tool_round_types::RuntimeToolCallRequest::from_tool_call(tc, None) {
+                            Ok(call) => Some(call),
+                            Err(err) => {
+                                log::error!(
+                                    "[run_llm_step] dropping invalid tool_call before runtime conversion: {err}"
+                                );
+                                None
+                            }
+                        }
+                    })
                     .collect();
+
+            if requests.is_empty() {
+                return Err(TurnError::LlmError(
+                    "AI 服务返回了无效工具调用，请重试。".to_string(),
+                ));
+            }
 
             return Ok(LlmStepResult::ToolCalls {
                 assistant_content: iter_content,

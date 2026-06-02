@@ -358,9 +358,14 @@ impl<'a> SubagentWorkerRuntime<'a> {
                     StreamEvent::ContentDelta { delta } => {
                         iter_content.push_str(&delta);
                     }
-                    StreamEvent::ToolCallStart { tool_call } => {
-                        tool_calls.push(tool_call);
-                    }
+                    StreamEvent::ToolCallStart { tool_call } => match tool_call.into_valid() {
+                        Ok(tool_call) => tool_calls.push(tool_call),
+                        Err(err) => {
+                            warn!("[SubAgent] Dropping invalid stream tool_call: {err}");
+                            output = "Sub-agent stream error: invalid tool call".to_string();
+                            break 'agent_loop;
+                        }
+                    },
                     StreamEvent::Done {
                         stop_reason: sr, ..
                     } => {
@@ -461,11 +466,15 @@ impl<'a> SubagentWorkerRuntime<'a> {
 
             let runtime_tool_calls: Vec<RuntimeToolCallRequest> = tool_calls
                 .into_iter()
-                .map(|tool_call| RuntimeToolCallRequest {
-                    tool_call_id: tool_call.id,
-                    tool_name: tool_call.name.clone(),
-                    args: tool_call.arguments,
-                    purpose: Some(format!("[Browser Agent] {}", tool_call.name)),
+                .filter_map(|tool_call| {
+                    let purpose = Some(format!("[Browser Agent] {}", tool_call.name));
+                    match RuntimeToolCallRequest::from_tool_call(tool_call, purpose) {
+                        Ok(call) => Some(call),
+                        Err(err) => {
+                            warn!("[SubAgent] Dropping invalid runtime tool_call: {err}");
+                            None
+                        }
+                    }
                 })
                 .collect();
 
@@ -1725,7 +1734,17 @@ async fn teammate_real_turn(
             }
             match event {
                 StreamEvent::ContentDelta { delta } => iter_content.push_str(&delta),
-                StreamEvent::ToolCallStart { tool_call } => tool_calls.push(tool_call),
+                StreamEvent::ToolCallStart { tool_call } => match tool_call.into_valid() {
+                    Ok(tool_call) => tool_calls.push(tool_call),
+                    Err(err) => {
+                        warn!(
+                            "[TeammateIdle] agent={} dropping invalid stream tool_call: {}",
+                            ctx.agent_id.as_str(),
+                            err
+                        );
+                        break;
+                    }
+                },
                 StreamEvent::Done {
                     stop_reason: sr, ..
                 } => {
@@ -1790,11 +1809,19 @@ async fn teammate_real_turn(
 
         let runtime_tool_calls: Vec<RuntimeToolCallRequest> = tool_calls
             .into_iter()
-            .map(|tc| RuntimeToolCallRequest {
-                tool_call_id: tc.id,
-                tool_name: tc.name.clone(),
-                args: tc.arguments,
-                purpose: Some(format!("[Teammate {}] {}", agent_name, tc.name)),
+            .filter_map(|tc| {
+                let purpose = Some(format!("[Teammate {}] {}", agent_name, tc.name));
+                match RuntimeToolCallRequest::from_tool_call(tc, purpose) {
+                    Ok(call) => Some(call),
+                    Err(err) => {
+                        warn!(
+                            "[TeammateIdle] agent={} dropping invalid runtime tool_call: {}",
+                            ctx.agent_id.as_str(),
+                            err
+                        );
+                        None
+                    }
+                }
             })
             .collect();
 
