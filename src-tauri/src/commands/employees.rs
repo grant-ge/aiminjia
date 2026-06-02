@@ -7,8 +7,8 @@ use crate::runtime::employee::store::{
     CreateEmployeeRequest, EmployeeLifecycle, EmployeeRecord, EmployeeStore, UpdateEmployeeRequest,
 };
 use crate::runtime::employee::template_store::{
-    bootstrap_templates, ensure_cached, ensure_instance_snapshot, fetch_catalog,
-    find_latest_for_template, merge_catalog, read_instance_snapshot, TemplateSnapshot,
+    ensure_cached, ensure_instance_snapshot, fetch_catalog, find_latest_for_template,
+    merge_catalog, read_instance_snapshot, TemplateSnapshot,
 };
 use crate::storage::file_store::AppStorage;
 use crate::storage::{AiJiaHome, CurrentUserStorage, UserScopedPathResolver};
@@ -49,19 +49,17 @@ fn agenda_store_for(app: &AppHandle) -> Option<crate::runtime::agenda::AgendaSto
 
 /// Returns the catalog of templates the new-hire wizard should display.
 ///
-/// Sources merged (last write wins on `template_id`, by version string):
-///   1. Embedded bootstrap (always available, ~11 entries at v1.0.0)
-///   2. `~/.renlijia/employee-templates-cache/` — versions previously
-///      downloaded from lotus OPS via `employee_template_refresh` or
-///      `ensure_cached`.
+/// 来源：`~/.renlijia/employee-templates-cache/` —— 由 `employee_template_refresh`
+/// 从 lotus OPS 推下来的 snapshot。**没有 embedded bootstrap 兜底**——参见
+/// `runtime/employee/template_store.rs` 模块注释里的删除理由。
 ///
-/// This command never hits the network. Call `employee_template_refresh`
-/// to update the cache.
+/// 这个命令不发网络请求。Cache 为空时返回 []；前端应先调
+/// `employee_template_refresh` 触发一次拉取。
 #[tauri::command]
 pub async fn employee_template_catalog() -> Result<Vec<TemplateSnapshot>, String> {
-    let bootstrap = bootstrap_templates().map_err(|e| e.to_string())?;
     let cache_dir = AiJiaHome::from_home().employee_templates_cache_dir();
-    Ok(merge_catalog(bootstrap, &cache_dir))
+    // merge_catalog 用空 Vec 作为起点：等同于"只读 cache 目录"。
+    Ok(merge_catalog(Vec::new(), &cache_dir))
 }
 
 /// Sync the local template cache from lotus ops-portal.

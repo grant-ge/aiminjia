@@ -124,6 +124,8 @@ const REQUEST_SCOPED_RUNTIME_TOOL_NAMES: &[&str] = &[
     "cancel_agenda_item",
     "skip_occurrence",
     "list_agenda_occurrences",
+    // RefreshSkills — request-scoped because it needs AppHandle from ctx
+    "RefreshSkills",
 ];
 
 /// Info about a registered tool (for management UI).
@@ -983,10 +985,16 @@ impl ToolRegistry {
                 as Arc<dyn crate::runtime::tools::RuntimeTool>),
             "Skill" => {
                 let registry = ctx.skill_registry.clone()?;
-                Some(
-                    Arc::new(builtin::load_skill::LoadSkillRuntimeTool::new(registry))
-                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
-                )
+                // 注入 AppHandle 让 miss-retry 能调 refresh_skill_registry。
+                // ctx.app_handle 为 None 的 test/legacy 路径退回到无 refresh 的旧行为。
+                let tool = match ctx.app_handle.as_ref() {
+                    Some(app) => builtin::load_skill::LoadSkillRuntimeTool::with_app_handle(
+                        registry,
+                        Arc::new(app.clone()),
+                    ),
+                    None => builtin::load_skill::LoadSkillRuntimeTool::new(registry),
+                };
+                Some(Arc::new(tool) as Arc<dyn crate::runtime::tools::RuntimeTool>)
             }
             "TaskStop" => {
                 use tauri::Manager;
@@ -1024,48 +1032,12 @@ impl ToolRegistry {
                 let deps = Self::try_build_agenda_deps(ctx)?;
                 Some(Self::make_agenda_tool(name, deps))
             }
-            "skill_create_draft" | "skill_write_md" | "skill_add_file" | "skill_validate"
-            | "skill_dry_run" | "skill_install" | "skill_export" => {
-                use tauri::Manager;
+            "RefreshSkills" => {
                 let app = ctx.app_handle.as_ref()?;
-                let cus = app
-                    .try_state::<Arc<crate::storage::CurrentUserStorage>>()
-                    .map(|s| s.inner().clone())?;
-                let scope = cus.scope()?;
-                let home = std::sync::Arc::new(cus.home().clone());
-                let store = std::sync::Arc::new(
-                    crate::storage::skill_draft_store::SkillDraftStore::new(home.clone()),
-                );
-                let mut deps = builtin::skill_smith::SkillSmithDeps::new(
-                    store,
-                    home,
-                    scope,
-                    ctx.conversation_id.clone(),
-                );
-                if let Some(reg) = ctx.skill_registry.clone() {
-                    deps = deps.with_skill_registry(reg);
-                }
-                Some(match name {
-                    "skill_create_draft" => {
-                        Arc::new(builtin::skill_smith::SkillCreateDraftTool::new(deps))
-                            as Arc<dyn crate::runtime::tools::RuntimeTool>
-                    }
-                    "skill_write_md" => Arc::new(builtin::skill_smith::SkillWriteMdTool::new(deps))
-                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
-                    "skill_add_file" => Arc::new(builtin::skill_smith::SkillAddFileTool::new(deps))
-                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
-                    "skill_validate" => {
-                        Arc::new(builtin::skill_smith::SkillValidateTool::new(deps))
-                            as Arc<dyn crate::runtime::tools::RuntimeTool>
-                    }
-                    "skill_dry_run" => Arc::new(builtin::skill_smith::SkillDryRunTool::new(deps))
-                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
-                    "skill_install" => Arc::new(builtin::skill_smith::SkillInstallTool::new(deps))
-                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
-                    "skill_export" => Arc::new(builtin::skill_smith::SkillExportTool::new(deps))
-                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
-                    _ => unreachable!(),
-                })
+                Some(Arc::new(builtin::refresh_skills::RefreshSkillsTool::new(
+                    Arc::new(app.clone()),
+                ))
+                    as Arc<dyn crate::runtime::tools::RuntimeTool>)
             }
             _ => None,
         }

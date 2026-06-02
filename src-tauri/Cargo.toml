@@ -100,8 +100,6 @@ zip = "2"
 tar = "0.4"
 flate2 = "1"
 
-# File watching (skill dev mode hot-reload)
-notify = "7"
 lru = "0.12"
 regex = "1"
 fastrand = "2"

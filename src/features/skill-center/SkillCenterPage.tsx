@@ -13,19 +13,18 @@ import { getSkillCategoryBg, getSkillIconComponent } from '@/components/skills/s
 import { Button } from '@/components/ui/button'
 import { SKILL_CATEGORIES, type SkillCategoryId } from '@/data/skill-categories'
 import { useChat } from '@/hooks/useChat'
-import { syncBuiltinSkills } from '@/lib/tauri'
+import { refreshSkillRegistry, syncBuiltinSkills } from '@/lib/tauri'
 import { localizeSkill } from '@/lib/skillLocalization'
 import { useAuthStore } from '@/stores/authStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { useSkillStore } from '@/stores/skillStore'
 import { useUiStore } from '@/stores/uiStore'
 
-import { SkillDraftBanner } from './SkillDraftBanner'
 import { SkillValidationResultDialog } from './SkillValidationResultDialog'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { SkillValidationError, type SkillValidationKind } from '@/stores/skillStore'
 import { uploadWithOverwriteConfirm } from './uploadWithOverwriteConfirm'
-import { ChevronDown, FolderOpen, Package } from 'lucide-react'
+import { ChevronDown, Cloud, FolderOpen, HardDrive, Package } from 'lucide-react'
 
 function getSkillIcon(icon: string) {
   const Icon = getSkillIconComponent(icon)
@@ -176,6 +175,41 @@ export function SkillCenterPage() {
           result.installed.length > 0
             ? t('skillCenter.syncDone', { count: result.installed.length })
             : t('skillCenter.syncUpToDate'),
+        message: '',
+        actions: [],
+        dismissible: true,
+        autoHide: 4,
+        context: 'toast',
+      })
+    } catch (err) {
+      pushNotification({
+        level: 'error',
+        title: t('skillCenter.syncFailed'),
+        message: err instanceof Error ? err.message : String(err),
+        actions: [],
+        dismissible: true,
+        autoHide: 6,
+        context: 'toast',
+      })
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  /** 同步本地技能：让后端重扫 user/global skills 目录，把新装但内存 registry
+   *  还不知道的技能同步上来。用于"AI 用 lotus_skill.py 装完技能，但 registry 没刷新"
+   *  这种 disk-app 不同步的兜底场景。后端 refresh_skill_registry 内部会发
+   *  TAURI_EVENTS.SKILL_REGISTRY_REFRESHED 事件，AuthGate 监听后会自动 reload，
+   *  这里再显式 reload 一次防止网络抖动遗漏。 */
+  const handleSyncLocal = async () => {
+    if (syncing) return
+    setSyncing(true)
+    try {
+      await refreshSkillRegistry()
+      await reload()
+      pushNotification({
+        level: 'success',
+        title: t('skillCenter.syncLocalDone'),
         message: '',
         actions: [],
         dismissible: true,
@@ -356,15 +390,36 @@ export function SkillCenterPage() {
               />
             </div>
             {isLoggedIn && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => void handleSyncBuiltin()}
-                disabled={syncing}
-                data-testid="skills-sync-builtin"
-              >
-                {syncing ? t('skillCenter.syncing') : t('skillCenter.syncBuiltin')}
-              </Button>
+              <AppDropdown
+                ariaLabel={t('skillCenter.syncSkills')}
+                trigger={
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={syncing}
+                    data-testid="skills-sync-builtin"
+                  >
+                    {syncing ? t('skillCenter.syncing') : t('skillCenter.syncSkills')}
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  </Button>
+                }
+                items={[
+                  {
+                    id: 'sync-builtin',
+                    label: t('skillCenter.syncBuiltin'),
+                    icon: <Cloud className="h-4 w-4" />,
+                    onSelect: () => void handleSyncBuiltin(),
+                    dataAttrs: { 'data-aijia-skill-sync-action': 'builtin' },
+                  },
+                  {
+                    id: 'sync-local',
+                    label: t('skillCenter.syncLocal'),
+                    icon: <HardDrive className="h-4 w-4" />,
+                    onSelect: () => void handleSyncLocal(),
+                    dataAttrs: { 'data-aijia-skill-sync-action': 'local' },
+                  },
+                ]}
+              />
             )}
             <AppDropdown
               ariaLabel={t('skillCenter.importSkill')}
@@ -395,7 +450,6 @@ export function SkillCenterPage() {
         </header>
       }
     >
-      <SkillDraftBanner />
       <SkillOfficeSection
         categoryBar={
           <SkillCategoryBar
