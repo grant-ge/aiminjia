@@ -2616,6 +2616,7 @@ fn strip_thinking_tag(text: &str) -> String {
 pub struct TauriChatCommandAdapter {
     runtime: SessionRuntime,
     services: TauriChatServices,
+    stopped_conversations_pending_drain: Arc<Mutex<HashSet<String>>>,
 }
 
 fn infer_runtime_root(path: &std::path::Path) -> std::path::PathBuf {
@@ -2803,7 +2804,46 @@ impl TauriChatCommandAdapter {
         // (which constructs a per-request ToolDispatcher with all services);
         // we don't have an `Arc<Self>` until the caller wraps us.  See
         // `wire_path_c_wake_to_self` for details and rationale.
-        Self { runtime, services }
+        Self {
+            runtime,
+            services,
+            stopped_conversations_pending_drain: Arc::new(Mutex::new(HashSet::new())),
+        }
+    }
+
+    fn request_immediate_pending_drain_after_stop(&self, conversation_id: &str) {
+        if !self.services.gateway.is_conversation_busy(conversation_id) {
+            return;
+        }
+        if let Ok(mut stopped) = self.stopped_conversations_pending_drain.lock() {
+            stopped.insert(conversation_id.to_string());
+        }
+    }
+
+    fn consume_immediate_pending_drain_after_stop(&self, conversation_id: &str) -> bool {
+        self.stopped_conversations_pending_drain
+            .lock()
+            .map(|mut stopped| stopped.remove(conversation_id))
+            .unwrap_or(false)
+    }
+
+    async fn schedule_pending_drain_after_turn(&self, conversation_id: &str) {
+        if let Some(mgr) = self
+            .services
+            .app
+            .try_state::<Arc<crate::runtime::pending::PendingQueueManager>>()
+        {
+            let immediate = self.consume_immediate_pending_drain_after_stop(conversation_id);
+            let mgr_clone = mgr.inner().clone();
+            let session_id = crate::runtime::ids::SessionId::new(conversation_id.to_string());
+            tauri::async_runtime::spawn(async move {
+                if immediate {
+                    mgr_clone.schedule_drain_immediate(session_id).await;
+                } else {
+                    mgr_clone.schedule_drain(session_id).await;
+                }
+            });
+        }
     }
 
     async fn load_llm_settings_for_turn(
@@ -3028,17 +3068,8 @@ impl TauriChatCommandAdapter {
         // After this turn ends (success or otherwise), let the PendingQueueManager
         // schedule a debounced drain so any items buffered while we were busy
         // get merged into the next turn.
-        if let Some(mgr) = self
-            .services
-            .app
-            .try_state::<Arc<crate::runtime::pending::PendingQueueManager>>()
-        {
-            let mgr_clone = mgr.inner().clone();
-            let session_id = crate::runtime::ids::SessionId::new(conversation_id.clone());
-            tauri::async_runtime::spawn(async move {
-                mgr_clone.schedule_drain(session_id).await;
-            });
-        }
+        self.schedule_pending_drain_after_turn(&conversation_id)
+            .await;
 
         result
     }
@@ -3303,17 +3334,8 @@ impl TauriChatCommandAdapter {
         // merged into the next one. Mirrors the same hook at the tail of
         // `send_chat_request` (IM path) — without this, app-side pending items
         // sit in the queue forever after the SentDirectly turn finishes.
-        if let Some(mgr) = self
-            .services
-            .app
-            .try_state::<Arc<crate::runtime::pending::PendingQueueManager>>()
-        {
-            let mgr_clone = mgr.inner().clone();
-            let session_id = crate::runtime::ids::SessionId::new(conversation_id.clone());
-            tauri::async_runtime::spawn(async move {
-                mgr_clone.schedule_drain(session_id).await;
-            });
-        }
+        self.schedule_pending_drain_after_turn(&conversation_id)
+            .await;
 
         result
     }
@@ -3330,6 +3352,7 @@ impl TauriChatCommandAdapter {
     }
 
     pub async fn stop_streaming(&self, conversation_id: String) -> Result<(), String> {
+        self.request_immediate_pending_drain_after_stop(&conversation_id);
         let session_id = SessionId::new(conversation_id.clone());
         self.runtime.cancel_session(
             &session_id,

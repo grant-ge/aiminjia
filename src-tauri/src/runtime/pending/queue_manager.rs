@@ -196,7 +196,19 @@ impl PendingQueueManager {
     /// Start (or reset) the debounce timer for a session. Called after StreamDone
     /// and after busy-path enqueue.
     pub async fn schedule_drain(&self, session_id: SessionId) {
-        let debounce = self.config.debounce_window;
+        self.schedule_drain_after(session_id, self.config.debounce_window)
+            .await;
+    }
+
+    /// Start (or reset) the drain timer without the normal debounce. Used after
+    /// an explicit user stop so queued follow-up messages can run as soon as the
+    /// cancelled turn has actually released the busy slot.
+    pub async fn schedule_drain_immediate(&self, session_id: SessionId) {
+        self.schedule_drain_after(session_id, std::time::Duration::ZERO)
+            .await;
+    }
+
+    async fn schedule_drain_after(&self, session_id: SessionId, delay: std::time::Duration) {
         let weak = self.self_arc.get().cloned().unwrap_or_default();
 
         let mut guard = self.inner.lock().expect("pending mutex poisoned");
@@ -211,7 +223,7 @@ impl PendingQueueManager {
         }
         let sid_clone = session_id.clone();
         let handle = tokio::spawn(async move {
-            tokio::time::sleep(debounce).await;
+            tokio::time::sleep(delay).await;
             if let Some(mgr) = weak.upgrade() {
                 mgr.drain_and_dispatch(sid_clone).await;
             }

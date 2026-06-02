@@ -663,6 +663,31 @@ describe('useStreaming integration review', () => {
     expect(useDiagnosticsStore.getState().events.some((e) => e.event === 'turn.stage.received')).toBe(true)
   })
 
+  it('marks conversation busy and streaming when a drained pending turn starts', async () => {
+    useChatStore.setState({ activeConversationId: 'conv-drain-start' })
+    render(<HookHarness />)
+    await waitForListeners()
+
+    const handler = tauriEventMock.listeners.get('turn:stage')
+    expect(handler).toBeTypeOf('function')
+
+    act(() => {
+      handler?.({
+        payload: {
+          conversationId: 'conv-drain-start',
+          runId: 'run-drain',
+          stage: { kind: 'submitted' },
+          stageStartedAtMs: 1_700_000_000_001,
+        },
+      })
+    })
+
+    const state = useChatStore.getState()
+    expect(state.busyConversations.has('conv-drain-start')).toBe(true)
+    expect(state.streamStates['conv-drain-start']?.isStreaming).toBe(true)
+    expect(state.isStreaming).toBe(true)
+  })
+
   it('refreshes lastHeartbeatAt on turn:heartbeat event', async () => {
     useChatStore.setState({
       streamStates: {
