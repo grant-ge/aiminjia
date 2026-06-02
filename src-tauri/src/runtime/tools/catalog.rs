@@ -862,7 +862,7 @@ fn build_default_catalog() -> ToolCatalog {
 
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
-            "refresh_skills",
+            "RefreshSkills",
             "通知 AIjia 重新扫描用户技能目录，让新装的技能立刻在对话和技能中心可见。\
              用法：刚通过 lotus_skill.py install 或别的方式装完技能后调用一次。\
              无参数。返回成功后下一 turn 的 catalog 含新技能。",
@@ -917,7 +917,7 @@ pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
     "cancel_agenda_item",
     "skip_occurrence",
     "list_agenda_occurrences",
-    "refresh_skills",
+    "RefreshSkills",
 ];
 
 /// 全局默认 catalog（延迟初始化）。

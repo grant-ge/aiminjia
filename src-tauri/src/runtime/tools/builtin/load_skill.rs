@@ -5,7 +5,7 @@
 //!
 //! On registry miss it transparently retries once after a refresh — covers
 //! the "same-turn install then use" case (LLM runs lotus_skill.py install
-//! → immediately calls Skill('new-skill') before refresh_skills RuntimeTool
+//! → immediately calls Skill('new-skill') before RefreshSkills RuntimeTool
 //! runs). Throttled to at most one refresh per 5 seconds to avoid abuse.
 
 use anyhow::Result;

@@ -71,7 +71,7 @@ export const TAURI_EVENTS = {
   TURN_HEARTBEAT: 'turn:heartbeat',
   /** Spec 2026-05-26 §5.2 — Network probe result broadcast. */
   NETWORK_STATUS: 'network:status',
-  /** Skill registry refreshed (any path: install_custom_skill / import / refresh_skills tool /
+  /** Skill registry refreshed (any path: install_custom_skill / import / RefreshSkills tool /
    *  load_skill miss-retry). Frontend stores subscribe to reload their cached skill list. */
   SKILL_REGISTRY_REFRESHED: 'skill:registry-refreshed',
 } as const

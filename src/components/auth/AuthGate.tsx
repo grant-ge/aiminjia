@@ -69,7 +69,7 @@ export function AuthGate({ children }: PropsWithChildren) {
   }, [isLoggedIn, redirectFrom, setRoute])
 
   // 监听后端 refresh_skill_registry 广播，自动刷新 skillStore。
-  // 触发源包括：install_custom_skill / import_skill_package / refresh_skills RuntimeTool /
+  // 触发源包括：install_custom_skill / import_skill_package / RefreshSkills RuntimeTool /
   // load_skill miss-retry / refresh_skill_registry_cmd —— 所有路径共用一个事件，
   // 保证 SkillPopover picker / 技能中心 / 派活 banner 等任何依赖 skillStore 的位置
   // 在 AI 装完技能后立即看到新技能，无需重启应用或重开对话。
