@@ -48,6 +48,7 @@ export interface RenderGeneratedFile {
   conversationId: string
   title: string
   fileName: string
+  filePath?: string
   sub: string
   appName: string
   fileType?: string
@@ -162,6 +163,8 @@ function parseArtifactMarks(text: string): { cleanedText: string; files: ParsedA
 }
 
 // ── File size & metadata formatting ──────────────────────────────────────
+
+function formatFileSize(bytes: number | undefined): string | null {
   if (bytes == null || bytes <= 0) return null
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
@@ -204,7 +207,7 @@ function buildGeneratedFileMeta(f: GeneratedFile, format?: string, subtitle?: st
 
 function normalizeGeneratedFile(f: GeneratedFile, conversationId: string): RenderGeneratedFile {
   const anyF = f as unknown as {
-    id: string; title?: string; fileName?: string;
+    id: string; title?: string; fileName?: string; filePath?: string;
     subtitle?: string; appName?: string; format?: string;
     fileType?: string; actions?: FileAction[];
   }
@@ -221,6 +224,7 @@ function normalizeGeneratedFile(f: GeneratedFile, conversationId: string): Rende
     conversationId,
     title,
     fileName,
+    filePath: anyF.filePath,
     sub: buildGeneratedFileMeta(f, anyF.format, anyF.subtitle),
     appName: anyF.appName || '打开',
     fileType,
@@ -422,9 +426,37 @@ export function buildTurnsFromMessages(
         current.isComplete = true
       }
       if (m.content.text) {
-        const segment: RenderAiSegment = { id: m.id, text: m.content.text, message: m }
-        current.aiSegments.push(segment)
-        current.blocks.push({ kind: 'assistantText', id: m.id, segment })
+        const { cleanedText, files } = parseArtifactMarks(m.content.text)
+        const displayText = cleanedText.trim()
+        if (displayText) {
+          const segment: RenderAiSegment = {
+            id: m.id,
+            text: displayText,
+            message: { ...m, content: { ...m.content, text: displayText } },
+          }
+          current.aiSegments.push(segment)
+          current.blocks.push({ kind: 'assistantText', id: m.id, segment })
+        }
+        for (const f of files) {
+          const file = normalizeGeneratedFile(
+            {
+              id: `artifact-${m.id}-${f.fileName}`,
+              fileName: f.fileName,
+              filePath: f.filePath,
+              fileType: f.fileType,
+              fileSize: 0,
+              category: 'report',
+              version: 1,
+              isLatest: true,
+              createdAt: m.createdAt || new Date().toISOString(),
+              description: '',
+              actions: [],
+            },
+            m.conversationId,
+          )
+          current.generatedFiles.push(file)
+          current.blocks.push({ kind: 'generatedFile', id: file.id, file })
+        }
       }
       if (m.toolCalls?.length) {
         for (const tc of m.toolCalls) {
@@ -492,42 +524,6 @@ export function buildTurnsFromMessages(
           }
         }
       }
-<<<<<<< HEAD
-      if (m.content.text) {
-        const { cleanedText, files } = parseArtifactMarks(m.content.text)
-        const displayText = cleanedText.trim()
-        if (displayText) {
-          const segment: RenderAiSegment = {
-            id: m.id,
-            text: displayText,
-            message: { ...m, content: { ...m.content, text: displayText } },
-          }
-          current.aiSegments.push(segment)
-          current.blocks.push({ kind: 'assistantText', segment })
-        }
-        for (const f of files) {
-          const file = normalizeGeneratedFile(
-            {
-              id: `artifact-${m.id}-${f.fileName}`,
-              fileName: f.fileName,
-              filePath: f.filePath,
-              fileType: f.fileType,
-              fileSize: 0,
-              category: 'report',
-              version: 1,
-              isLatest: true,
-              createdAt: m.createdAt || new Date().toISOString(),
-              description: '',
-              actions: [],
-            },
-            m.conversationId,
-          )
-          current.generatedFiles.push(file)
-          current.blocks.push({ kind: 'generatedFile', id: file.id, file })
-        }
-      }
-=======
->>>>>>> f0b23570 (feat(artifact): 产物文件通过 GeneratedFileCard 卡片展示)
       if (m.content.generatedFiles?.length) {
         for (const f of m.content.generatedFiles) {
           const file = normalizeGeneratedFile(f, m.conversationId)

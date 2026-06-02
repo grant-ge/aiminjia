@@ -18,6 +18,8 @@ interface GeneratedFileCardProps {
   canPreview?: boolean
   canOpenExternal?: boolean
   canReveal?: boolean
+  /** 文件绝对路径，用于 e2e CLI 按 filePath 子串定位卡片 */
+  filePath?: string
   onOpen?: () => void
   onPreview?: () => void
   onOpenExternal?: () => void
@@ -94,6 +96,7 @@ export function GeneratedFileCard({
   canPreview = false,
   canOpenExternal = true,
   canReveal = true,
+  filePath,
   onOpen,
   onPreview,
   onOpenExternal,
@@ -144,7 +147,7 @@ export function GeneratedFileCard({
   ]
 
   return (
-    <div data-testid="generated-file-card" className="flex h-16 items-center justify-between gap-4 overflow-hidden rounded-lg border border-border bg-card px-4">
+    <div data-testid="generated-file-card" data-aijia-file-path={filePath ?? ''} className="flex h-16 items-center justify-between gap-4 overflow-hidden rounded-lg border border-border bg-card px-4">
       <div className="flex min-w-0 items-center gap-2">
         <div className="flex h-16 w-12 shrink-0 items-center justify-center">
           <TiltedFileIcon title={title} sub={sub} />
