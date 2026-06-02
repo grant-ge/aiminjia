@@ -59,6 +59,7 @@ export function EmployeesPage() {
   const greetingText = useGreeting()
   const timeLabel = useTimeLabel()
   const setRoute = useUiStore((s) => s.setRoute)
+  const setSidebarTab = useUiStore((s) => s.setSidebarTab)
   const { employees, activeRuns, loading: empLoading, refresh: refreshEmp } = useEmployees()
   const { entries, refresh: refreshInbox, markRead } = useInbox()
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
@@ -200,6 +201,7 @@ export function EmployeesPage() {
                   void markRead(entry.employeeId, entry.id)
                 }
                 if (entry.conversationId) {
+                  setSidebarTab('employee')
                   setRoute({ kind: 'chat', conversationId: entry.conversationId })
                 }
               }

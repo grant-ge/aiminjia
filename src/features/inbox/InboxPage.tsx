@@ -51,6 +51,7 @@ export function InboxPage() {
   const { employees } = useEmployees()
   const { entries, markAllRead, markRead } = useInbox()
   const setRoute = useUiStore((s) => s.setRoute)
+  const setSidebarTab = useUiStore((s) => s.setSidebarTab)
 
   const [kindFilter, setKindFilter] = useState<KindFilter>('all')
   const [empFilter, setEmpFilter] = useState<string>('all')
@@ -157,6 +158,7 @@ export function InboxPage() {
                 void markRead(entry.employeeId, entry.id)
               }
               if (entry.conversationId) {
+                setSidebarTab('employee')
                 setRoute({ kind: 'chat', conversationId: entry.conversationId })
               }
             }
