@@ -3,6 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 
 import { useSettingsStore } from '@/stores/settingsStore'
+import { useBrandingStore } from '@/stores/brandingStore'
 import i18n from '@/i18n'
 import { GeneralPanel } from '../panels/GeneralPanel'
 
@@ -12,12 +13,14 @@ describe('GeneralPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     void i18n.changeLanguage('zh-CN')
+    useBrandingStore.setState({ productName: 'AI猫' })
   })
 
-  it('renders user info card with name, tenant, and logout button', () => {
+  it('renders user info card with name, backend product name, and logout button', () => {
     render(<GeneralPanel user={mockUser} onLogout={() => {}} />)
     expect(screen.getByText('姚域权')).toBeInTheDocument()
-    expect(screen.getByText(/仁励家网络科技/)).toBeInTheDocument()
+    expect(screen.getByText('AI猫')).toBeInTheDocument()
+    expect(screen.queryByText(/仁励家网络科技/)).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '退出登录' })).toBeInTheDocument()
   })
 
