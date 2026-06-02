@@ -30,6 +30,8 @@ function normalizeFileLabel(raw: string | undefined): string | null {
   const value = raw?.trim().toUpperCase()
   if (!value) return null
   if (value === 'XLSX' || value === 'EXCEL') return 'XLS'
+  if (value === 'PPTX' || value === 'POWERPOINT') return 'PPT'
+  if (value === 'DOCX' || value === 'WORD') return 'DOC'
   if (value === 'JPEG') return 'JPG'
   return value.slice(0, 4)
 }
