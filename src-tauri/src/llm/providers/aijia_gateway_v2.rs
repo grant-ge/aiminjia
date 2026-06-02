@@ -183,15 +183,21 @@ pub(crate) fn build_aijia_request_for_route(
         client: ClientInfo {
             name: "aijia-desktop".to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
-            platform: std::env::consts::ARCH.to_string(),
-            os: Some(std::env::consts::OS.to_string()),
-            arch: Some(std::env::consts::ARCH.to_string()),
-            locale: None,
-            timezone: None,
-            device_id_hash: None,
-            scope_key_hash: None,
+            platform: client_platform(),
         },
     }
+}
+
+fn client_platform() -> String {
+    let os = match std::env::consts::OS {
+        "macos" => "darwin",
+        other => other,
+    };
+    let arch = match std::env::consts::ARCH {
+        "aarch64" => "arm64",
+        other => other,
+    };
+    format!("{os}-{arch}")
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -807,12 +813,12 @@ mod tests {
 
         let canonical = build_aijia_request(req);
 
-        assert_eq!(canonical.client.os.as_deref(), Some(std::env::consts::OS));
-        assert_eq!(
-            canonical.client.arch.as_deref(),
-            Some(std::env::consts::ARCH)
-        );
-        assert_eq!(canonical.client.platform, std::env::consts::ARCH);
+        let client = serde_json::to_value(&canonical.client).expect("serialize client metadata");
+        assert!(client.get("os").is_none());
+        assert!(client.get("arch").is_none());
+        assert_eq!(canonical.client.name, "aijia-desktop");
+        assert_eq!(canonical.client.platform, client_platform());
+        assert!(canonical.client.platform.contains('-'));
     }
 
     #[test]

@@ -111,18 +111,6 @@ pub struct ClientInfo {
     pub name: String,
     pub version: String,
     pub platform: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub os: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub arch: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub locale: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub timezone: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub device_id_hash: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub scope_key_hash: Option<String>,
 }
 
 #[cfg(test)]
@@ -130,47 +118,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn client_info_omits_unavailable_optional_metadata() {
+    fn client_info_matches_v2_contract() {
         let client = ClientInfo {
             name: "aijia-desktop".to_string(),
             version: "0.5.32".to_string(),
-            platform: "aarch64".to_string(),
-            os: None,
-            arch: None,
-            locale: None,
-            timezone: None,
-            device_id_hash: None,
-            scope_key_hash: None,
+            platform: "darwin-arm64".to_string(),
         };
 
         let value = serde_json::to_value(client).expect("serialize client");
         assert_eq!(value["name"], "aijia-desktop");
-        assert_eq!(value["platform"], "aarch64");
+        assert_eq!(value["version"], "0.5.32");
+        assert_eq!(value["platform"], "darwin-arm64");
         assert!(value.get("os").is_none());
+        assert!(value.get("arch").is_none());
+        assert!(value.get("locale").is_none());
+        assert!(value.get("timezone").is_none());
+        assert!(value.get("device_id_hash").is_none());
         assert!(value.get("scope_key_hash").is_none());
-    }
-
-    #[test]
-    fn client_info_serializes_available_optional_metadata() {
-        let client = ClientInfo {
-            name: "aijia-desktop".to_string(),
-            version: "0.5.32".to_string(),
-            platform: "aarch64".to_string(),
-            os: Some("macos".to_string()),
-            arch: Some("aarch64".to_string()),
-            locale: Some("zh-CN".to_string()),
-            timezone: Some("America/New_York".to_string()),
-            device_id_hash: Some("devhash".to_string()),
-            scope_key_hash: Some("scopehash".to_string()),
-        };
-
-        let value = serde_json::to_value(client).expect("serialize client");
-        assert_eq!(value["os"], "macos");
-        assert_eq!(value["arch"], "aarch64");
-        assert_eq!(value["locale"], "zh-CN");
-        assert_eq!(value["timezone"], "America/New_York");
-        assert_eq!(value["device_id_hash"], "devhash");
-        assert_eq!(value["scope_key_hash"], "scopehash");
     }
 
     #[test]
@@ -224,12 +188,6 @@ mod tests {
                 name: "aijia-desktop".to_string(),
                 version: "test".to_string(),
                 platform: "test".to_string(),
-                os: None,
-                arch: None,
-                locale: None,
-                timezone: None,
-                device_id_hash: None,
-                scope_key_hash: None,
             },
         };
 
