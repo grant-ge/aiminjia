@@ -341,6 +341,42 @@ describe('useStreaming integration review', () => {
     expect(useChatStore.getState().messages.map((m) => m.id)).toEqual(['client-active'])
   })
 
+  it('clears busy and preserves partial text when streaming:error arrives', async () => {
+    useChatStore.setState({
+      activeConversationId: 'conv-error',
+      busyConversations: new Set(['conv-error']),
+      streamStates: {
+        'conv-error': {
+          isStreaming: true,
+          streamingContent: 'partial answer',
+          toolExecutions: [],
+        },
+      },
+      isStreaming: true,
+      streamingContent: 'partial answer',
+      toolExecutions: [],
+    })
+
+    render(<HookHarness />)
+    await waitForListeners()
+
+    const errorHandler = tauriEventMock.listeners.get('streaming:error')
+    act(() => {
+      errorHandler?.({
+        payload: {
+          conversationId: 'conv-error',
+          error: 'AIjia v2 stream ended without response.completed',
+          rawError: 'AIjia v2 stream ended without response.completed',
+        },
+      })
+    })
+
+    const state = useChatStore.getState()
+    expect(state.busyConversations.has('conv-error')).toBe(false)
+    expect(state.streamStates['conv-error']?.isStreaming).toBe(false)
+    expect(useDiagnosticsStore.getState().events.some((event) => event.event === 'streaming.error.received')).toBe(true)
+  })
+
   it('registers a listener for turn:completed events', async () => {
     render(<HookHarness />)
     await waitForListeners()
