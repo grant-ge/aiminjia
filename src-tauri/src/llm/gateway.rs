@@ -1357,6 +1357,16 @@ mod stability_tests {
     }
 
     #[test]
+    fn detects_aijia_v2_auth_error_code_with_neutral_message() {
+        let err = anyhow::anyhow!(
+            "{}",
+            r#"AIjia v2 stream error (401 Unauthorized): {"error":{"code":"auth_error","message":"Token rejected"}}"#
+        );
+
+        assert!(is_auth_revoked_error(&err));
+    }
+
+    #[test]
     fn does_not_treat_gateway_402_as_refreshable_session_key() {
         let err = anyhow::anyhow!(
             "{}",
