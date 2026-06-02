@@ -99,6 +99,7 @@ fn stored_to_chat(message: &StoredMessage, config: &HistoryConfig) -> ChatMessag
                 .and_then(|v| v.as_str())
                 .map(String::from)
         }),
+        is_error: false,
         thinking: None,
         thinking_blocks: extract_thinking_blocks(message),
         anthropic_multimodal_turn: None,
