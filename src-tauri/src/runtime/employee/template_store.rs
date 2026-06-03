@@ -368,7 +368,7 @@ pub fn effective_requires_attachment(
 /// version has landed than the one frozen into the employee's snapshot.
 pub fn find_latest_for_template(cache_dir: &Path, template_id: &str) -> Option<TemplateSnapshot> {
     let mut best: Option<TemplateSnapshot> = None;
-    let tid_dir = cache_dir.join(template_id);
+    let tid_dir = tid_cache_dir(cache_dir, template_id);
     if let Ok(rd) = fs::read_dir(&tid_dir) {
         for entry in rd.flatten() {
             let p = entry.path();
@@ -450,8 +450,28 @@ struct OpsEnvelope<T> {
     data: Option<T>,
 }
 
+/// Map a `template_id` to its cache subdirectory under `cache_dir`.
+///
+/// Template ids use a `<namespace>:<name>` scheme (e.g. `builtin:xiaogong`).
+/// `:` is legal on macOS/Linux but ILLEGAL in a Windows directory name, so
+/// using the id verbatim as a folder name silently works on the dev Mac and
+/// then `create_dir` fails on Windows — the employee-template marketplace then
+/// caches nothing and shows an empty list. We sanitize the id for the *local
+/// directory name only*.
+///
+/// The logical `template_id` is unchanged everywhere else (server API, OSS
+/// path, snapshot JSON content, dispatch matching); only this on-disk folder
+/// name is encoded. ALL local cache path construction MUST go through this one
+/// function (never `cache_dir.join(template_id)` directly) so the read / write
+/// / scan paths agree on the same folder name on every platform.
+pub fn tid_cache_dir(cache_dir: &Path, template_id: &str) -> PathBuf {
+    cache_dir.join(crate::storage::safe_filename::sanitize_path_component(
+        template_id,
+    ))
+}
+
 fn cache_path_for(cache_dir: &Path, template_id: &str, version: &str) -> PathBuf {
-    cache_dir.join(template_id).join(format!("{version}.json"))
+    tid_cache_dir(cache_dir, template_id).join(format!("{version}.json"))
 }
 
 /// Read a cached template snapshot if present + valid. Any parse/IO error
@@ -465,7 +485,7 @@ pub fn read_cache(cache_dir: &Path, template_id: &str, version: &str) -> Option<
 
 /// Persist `snapshot` to the cache directory. Atomic (tmp + rename).
 pub fn write_cache(cache_dir: &Path, snapshot: &TemplateSnapshot) -> Result<PathBuf> {
-    let dir = cache_dir.join(&snapshot.template_id);
+    let dir = tid_cache_dir(cache_dir, &snapshot.template_id);
     fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
     let p = dir.join(format!("{}.json", snapshot.version));
     let json = serde_json::to_string_pretty(snapshot)?;
@@ -899,12 +919,11 @@ mod tests {
 
     #[test]
     fn find_latest_picks_only_cache_entry() {
-        use std::fs;
         let tmp = tempfile::tempdir().unwrap();
-        // Drop a v9.9 cache entry for xiaoyuan
+        // Drop a v9.9 cache entry for xiaoyuan via write_cache (the production
+        // path), so the `:` in the id is sanitized into a Windows-safe folder
+        // name. Creating `builtin:xiaoyuan/` by hand would panic on Windows.
         let cache_dir = tmp.path();
-        let tid_dir = cache_dir.join("builtin:xiaoyuan");
-        fs::create_dir_all(&tid_dir).unwrap();
         let cached = TemplateSnapshot {
             template_id: "builtin:xiaoyuan".into(),
             version: "9.9".into(),
@@ -926,8 +945,7 @@ mod tests {
             resource_config_schema: serde_json::Value::Null,
             resource_config_ui: serde_json::Value::Null,
         };
-        let path = tid_dir.join("9.9.json");
-        fs::write(&path, serde_json::to_string_pretty(&cached).unwrap()).unwrap();
+        write_cache(cache_dir, &cached).unwrap();
         let s = find_latest_for_template(cache_dir, "builtin:xiaoyuan").unwrap();
         assert_eq!(s.version, "9.9");
         assert_eq!(s.role, "from-cache");
@@ -938,5 +956,35 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let s = find_latest_for_template(tmp.path(), "builtin:nope-not-real");
         assert!(s.is_none());
+    }
+
+    #[test]
+    fn colon_id_caches_under_windows_safe_dir_and_roundtrips() {
+        // Regression (Windows): `builtin:xiaogong` was used verbatim as a
+        // directory name; `:` is illegal on Windows so create_dir failed and
+        // the template cache stayed empty. The on-disk folder must be
+        // sanitized while the logical template_id round-trips unchanged.
+        let tmp = tempfile::tempdir().unwrap();
+        let cache_dir = tmp.path();
+        let snap = make_snap("builtin:xiaogong", "1.2");
+
+        // Must succeed on every platform (no `:` ever reaches the filesystem).
+        write_cache(cache_dir, &snap).unwrap();
+
+        // The created subdir carries no Windows-forbidden character.
+        let sub = std::fs::read_dir(cache_dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .find(|n| !n.is_empty())
+            .expect("a cache subdir should have been created");
+        assert!(!sub.contains(':'), "dir name must not contain ':', got {sub}");
+        assert_eq!(sub, "builtin_xiaogong");
+
+        // The logical id round-trips through both read paths unchanged.
+        let back = read_cache(cache_dir, "builtin:xiaogong", "1.2").unwrap();
+        assert_eq!(back.template_id, "builtin:xiaogong");
+        let latest = find_latest_for_template(cache_dir, "builtin:xiaogong").unwrap();
+        assert_eq!(latest.template_id, "builtin:xiaogong");
     }
 }
