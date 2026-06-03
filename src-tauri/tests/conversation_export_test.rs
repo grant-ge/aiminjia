@@ -117,6 +117,8 @@ fn export_zip_contains_readable_html_manifest_raw_messages_and_full_logs() {
         result.file_name,
         result.zip_path.file_name().unwrap().to_string_lossy()
     );
+    assert!(result.file_name.starts_with("aijia-export-"));
+    assert!(!result.file_name.contains("Rust"));
     assert!(result.size_bytes > 0);
 
     let names = zip_names(&result.zip_path);

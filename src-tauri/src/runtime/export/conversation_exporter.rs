@@ -66,8 +66,7 @@ impl ConversationExporter {
             Ok(()) => {
                 let short_export_id = export_id.chars().take(8).collect::<String>();
                 let file_name = format!(
-                    "aijia-conversation-export-{}-{}-{}.zip",
-                    safe_file_stem(&conversation.title),
+                    "aijia-export-{}-{}.zip",
                     Local::now().format("%Y%m%d-%H%M%S"),
                     short_export_id
                 );
@@ -322,22 +321,6 @@ fn escape_html(input: &str) -> String {
         .replace('>', "&gt;")
         .replace('"', "&quot;")
         .replace('\'', "&#39;")
-}
-
-fn safe_file_stem(input: &str) -> String {
-    let mut out = input
-        .chars()
-        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '-' })
-        .collect::<String>();
-    while out.contains("--") {
-        out = out.replace("--", "-");
-    }
-    let trimmed = out.trim_matches('-').chars().take(48).collect::<String>();
-    if trimmed.is_empty() {
-        "conversation".to_string()
-    } else {
-        trimmed
-    }
 }
 
 fn join_jsonl(lines: &[String]) -> String {
