@@ -328,3 +328,50 @@ fn export_succeeds_when_logs_are_missing_and_marks_manifest_entries() {
         .iter()
         .any(|entry| entry["name"] == "raw/gate.log" && entry["included"] == false));
 }
+
+#[test]
+fn export_result_serializes_for_tauri_with_camel_case_path_fields() {
+    let value = serde_json::to_value(
+        app_lib::runtime::export::conversation_exporter::ConversationExportResult {
+            zip_path: std::path::PathBuf::from("/tmp/export.zip"),
+            file_name: "export.zip".to_string(),
+            size_bytes: 42,
+        },
+    )
+    .unwrap();
+
+    assert_eq!(value["zipPath"], "/tmp/export.zip");
+    assert_eq!(value["fileName"], "export.zip");
+    assert_eq!(value["sizeBytes"], 42);
+}
+
+#[test]
+fn conversation_export_commands_are_registered_and_exposed_to_typescript() {
+    let command_source =
+        std::fs::read_to_string("src/transport/tauri_commands/conversation_export.rs").unwrap();
+    assert!(command_source.contains("pub async fn export_conversation"));
+    assert!(command_source.contains("ConversationExporter::new"));
+    assert!(command_source.contains("pub async fn reveal_export_in_folder"));
+    assert!(command_source.contains("导出文件不存在"));
+
+    let command_mod = std::fs::read_to_string("src/transport/tauri_commands/mod.rs").unwrap();
+    assert!(command_mod.contains("pub mod conversation_export;"));
+
+    let lib_source = std::fs::read_to_string("src/lib.rs").unwrap();
+    assert!(lib_source.contains(
+        "transport::tauri_commands::conversation_export::export_conversation"
+    ));
+    assert!(lib_source.contains(
+        "transport::tauri_commands::conversation_export::reveal_export_in_folder"
+    ));
+
+    let tauri_ts = std::fs::read_to_string("../src/lib/tauri.ts").unwrap();
+    assert!(tauri_ts.contains("export interface ExportConversationResult"));
+    assert!(tauri_ts.contains("zipPath: string"));
+    assert!(tauri_ts.contains("fileName: string"));
+    assert!(tauri_ts.contains("sizeBytes: number"));
+    assert!(tauri_ts.contains("export function exportConversation"));
+    assert!(tauri_ts.contains("invoke<ExportConversationResult>('export_conversation'"));
+    assert!(tauri_ts.contains("export function revealExportInFolder"));
+    assert!(tauri_ts.contains("invoke<void>('reveal_export_in_folder'"));
+}
