@@ -8,23 +8,20 @@ import { TeamChatDrawer } from '@/components/team/TeamChatDrawer'
 import { TeamVisualProvider } from '@/components/team/TeamVisualContext'
 import {
   ConversationExportDialog,
-  type ConversationExportStatus,
 } from '@/features/chat/ConversationExportDialog'
 import { useExpertTeamForConversation } from '@/features/expert-teams/expertTeamRegistry'
 import { getExpertTeam } from '@/features/expert-teams/teams'
 import { useChat } from '@/hooks/useChat'
+import { useConversationExport } from '@/hooks/useConversationExport'
 import { useTeamOverview } from '@/hooks/useTeamOverview'
 import { useChatStore } from '@/stores/chatStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { useGeneratedFilePreviewStore } from '@/stores/generatedFilePreviewStore'
 import {
-  exportConversation,
   getConversationSource,
   openGeneratedFile,
-  revealExportInFolder,
-  type ExportConversationResult,
 } from '@/lib/tauri'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useEmployeeById } from '@/features/employees/useEmployeeById'
 
@@ -43,13 +40,7 @@ export function ChatPage({ conversationId }: ChatPageProps) {
   const previewOpen = previewTarget?.conversationId === conversationId
   const conv = conversations.find((c) => c.id === conversationId)
   const title = conv?.title ?? ''
-  const [exportDialogOpen, setExportDialogOpen] = useState(false)
-  const [exportStatus, setExportStatus] = useState<ConversationExportStatus>('idle')
-  const [exportProgressStep, setExportProgressStep] = useState(0)
-  const [exportResult, setExportResult] = useState<ExportConversationResult | null>(null)
-  const [exportError, setExportError] = useState<string | null>(null)
-  const currentConversationIdRef = useRef(conversationId)
-  const exportRequestSeqRef = useRef(0)
+  const conversationExport = useConversationExport(conversationId)
 
   // employee_id lives in conv.json (not the index); read it lazily when this
   // conversation is an employee dispatch session.
@@ -86,91 +77,7 @@ export function ChatPage({ conversationId }: ChatPageProps) {
     }
   }
 
-  const handleOpenExportDialog = () => {
-    if (exportStatus === 'exporting') return
-    setExportDialogOpen(true)
-    setExportStatus('idle')
-    setExportProgressStep(0)
-    setExportResult(null)
-    setExportError(null)
-  }
-
-  const handleExportConversation = async () => {
-    if (exportStatus === 'exporting') return
-    const requestSeq = exportRequestSeqRef.current + 1
-    exportRequestSeqRef.current = requestSeq
-    const requestConversationId = conversationId
-    setExportDialogOpen(true)
-    setExportStatus('exporting')
-    setExportProgressStep(0)
-    setExportResult(null)
-    setExportError(null)
-
-    try {
-      const result = await exportConversation(requestConversationId)
-      if (
-        exportRequestSeqRef.current !== requestSeq ||
-        currentConversationIdRef.current !== requestConversationId
-      ) {
-        return
-      }
-      setExportProgressStep(2)
-      setExportResult(result)
-      setExportStatus('success')
-    } catch (err) {
-      if (
-        exportRequestSeqRef.current !== requestSeq ||
-        currentConversationIdRef.current !== requestConversationId
-      ) {
-        return
-      }
-      const message = err instanceof Error ? err.message : '导出失败。'
-      setExportError(message)
-      setExportStatus('error')
-      pushNotification({
-        level: 'error',
-        title: '导出失败',
-        message,
-        actions: [],
-        dismissible: true,
-        context: 'toast',
-      })
-    }
-  }
-
-  const handleRevealExport = async () => {
-    if (!exportResult) return
-    try {
-      await revealExportInFolder(exportResult.zipPath)
-    } catch (err) {
-      pushNotification({
-        level: 'error',
-        title: '无法打开文件夹',
-        message: err instanceof Error ? err.message : '打开导出文件夹失败。',
-        actions: [],
-        dismissible: true,
-        context: 'toast',
-      })
-    }
-  }
-
   useEffect(() => {
-    if (exportStatus !== 'exporting') return undefined
-    const timers = [
-      window.setTimeout(() => setExportProgressStep(1), 300),
-      window.setTimeout(() => setExportProgressStep(2), 900),
-    ]
-    return () => timers.forEach(window.clearTimeout)
-  }, [exportStatus])
-
-  useEffect(() => {
-    currentConversationIdRef.current = conversationId
-    exportRequestSeqRef.current += 1
-    setExportDialogOpen(false)
-    setExportStatus('idle')
-    setExportProgressStep(0)
-    setExportResult(null)
-    setExportError(null)
     // Always load messages when conversationId changes — this covers:
     //   1. Full reload (persisted route, messages not yet loaded)
     //   2. Navigation from non-chat pages (expert-teams / employees) where
@@ -199,7 +106,7 @@ export function ChatPage({ conversationId }: ChatPageProps) {
                 }
               : undefined
           }
-          onShare={handleOpenExportDialog}
+          onShare={conversationExport.openExportDialog}
           shareLabel="导出对话"
         />
       ) : null}
@@ -227,14 +134,7 @@ export function ChatPage({ conversationId }: ChatPageProps) {
         ) : null}
       </div>
       <ConversationExportDialog
-        open={exportDialogOpen}
-        status={exportStatus}
-        progressStep={exportProgressStep}
-        result={exportResult}
-        error={exportError}
-        onOpenChange={setExportDialogOpen}
-        onStart={() => void handleExportConversation()}
-        onReveal={() => void handleRevealExport()}
+        {...conversationExport.dialogProps}
       />
     </div>
   )
