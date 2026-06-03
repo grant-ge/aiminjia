@@ -69,7 +69,13 @@ export function ConversationExportDialog({
 
   return (
     <Dialog open={open} onOpenChange={isExporting ? undefined : onOpenChange}>
-      <DialogContent className="w-[calc(100vw-2rem)] max-w-md overflow-hidden rounded-xl border border-border bg-background p-0 shadow-[var(--shadow-modal)]">
+      <DialogContent
+        className="overflow-hidden rounded-xl border border-border bg-background p-0 shadow-[var(--shadow-modal)]"
+        style={{
+          width: 'min(28rem, calc(100vw - 2rem))',
+          maxWidth: 'calc(100vw - 2rem)',
+        }}
+      >
         <DialogHeader className="px-6 pt-6 text-left">
           <DialogTitle>导出对话</DialogTitle>
           <DialogDescription>
@@ -83,10 +89,19 @@ export function ConversationExportDialog({
 
         <div className="space-y-4 px-6 py-5">
           {isSuccess ? (
-            <div className="flex max-w-full items-start gap-3 overflow-hidden rounded-md border border-border bg-muted/40 p-3">
+            <div className="flex items-start gap-3 overflow-hidden rounded-md border border-border bg-muted/40 p-3">
               <Package className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden />
               <div className="min-w-0 flex-1 overflow-hidden">
-                <div className="block max-w-full truncate text-sm font-medium text-foreground" title={result.fileName}>
+                <div
+                  className="text-sm font-medium text-foreground"
+                  style={{
+                    maxWidth: '100%',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                  title={result.fileName}
+                >
                   {result.fileName}
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">{formatBytes(result.sizeBytes)}</div>
@@ -106,7 +121,10 @@ export function ConversationExportDialog({
           )}
         </div>
 
-        <DialogFooter className="flex-wrap gap-2 border-t border-border bg-muted/20 px-6 py-4 sm:space-x-0">
+        <DialogFooter
+          className="gap-2 border-t border-border bg-muted/20 px-6 py-4 sm:space-x-0"
+          style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end' }}
+        >
           {isSuccess ? (
             <>
               <Button variant="secondary" onClick={() => onOpenChange(false)}>
