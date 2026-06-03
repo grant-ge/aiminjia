@@ -3,10 +3,15 @@ use app_lib::runtime::export::conversation_exporter::{
 };
 use app_lib::storage::file_store::types::StoredMessage;
 use app_lib::storage::file_store::AppStorage;
+use app_lib::storage::{AiJiaHome, CurrentUserStorage, UserScope};
+use app_lib::transport::tauri_commands::conversation_export::{
+    active_export_storage, conversation_export_root, validate_export_zip_path,
+};
 use chrono::{Duration, Utc};
 use std::io::Read;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
+use std::sync::Arc;
 use tempfile::TempDir;
 use zip::ZipArchive;
 
@@ -346,6 +351,63 @@ fn export_result_serializes_for_tauri_with_camel_case_path_fields() {
 }
 
 #[test]
+fn command_helpers_use_current_user_storage_but_global_export_root() {
+    let dir = TempDir::new().unwrap();
+    let home = Arc::new(AiJiaHome::from_path(dir.path().join("home")));
+    home.ensure_dirs().unwrap();
+    home.ensure_global_dirs().unwrap();
+
+    let root_storage = Arc::new(AppStorage::new(home.root()).unwrap());
+    let current_user_storage = Arc::new(CurrentUserStorage::new(home.clone()));
+    let scope = UserScope::new(10, 20);
+    current_user_storage.activate_scope(scope.clone()).unwrap();
+
+    let selected_storage = active_export_storage(&current_user_storage, &root_storage);
+    assert_eq!(selected_storage.base_dir(), home.user_dir(&scope));
+    assert_eq!(
+        conversation_export_root(&home),
+        home.root().join("exports").join("conversations")
+    );
+}
+
+#[test]
+fn command_helpers_fall_back_to_root_storage_when_no_user_is_active() {
+    let dir = TempDir::new().unwrap();
+    let home = Arc::new(AiJiaHome::from_path(dir.path().join("home")));
+    home.ensure_dirs().unwrap();
+    home.ensure_global_dirs().unwrap();
+
+    let root_storage = Arc::new(AppStorage::new(home.root()).unwrap());
+    let current_user_storage = Arc::new(CurrentUserStorage::new(home));
+
+    let selected_storage = active_export_storage(&current_user_storage, &root_storage);
+    assert_eq!(selected_storage.base_dir(), root_storage.base_dir());
+}
+
+#[test]
+fn reveal_path_validation_only_accepts_zip_inside_global_export_root() {
+    let dir = TempDir::new().unwrap();
+    let home = AiJiaHome::from_path(dir.path().join("home"));
+    let export_root = conversation_export_root(&home);
+    std::fs::create_dir_all(&export_root).unwrap();
+
+    let allowed_zip = export_root.join("conversation.zip");
+    write_file(&allowed_zip, "zip body");
+    let outside_zip = dir.path().join("outside.zip");
+    write_file(&outside_zip, "zip body");
+    let text_file = export_root.join("conversation.txt");
+    write_file(&text_file, "text body");
+
+    assert_eq!(
+        validate_export_zip_path(&home, &allowed_zip).unwrap(),
+        allowed_zip.canonicalize().unwrap()
+    );
+    assert!(validate_export_zip_path(&home, &outside_zip).is_err());
+    assert!(validate_export_zip_path(&home, &text_file).is_err());
+    assert!(validate_export_zip_path(&home, &export_root.join("missing.zip")).is_err());
+}
+
+#[test]
 fn conversation_export_commands_are_registered_and_exposed_to_typescript() {
     let command_source =
         std::fs::read_to_string("src/transport/tauri_commands/conversation_export.rs").unwrap();
@@ -358,12 +420,11 @@ fn conversation_export_commands_are_registered_and_exposed_to_typescript() {
     assert!(command_mod.contains("pub mod conversation_export;"));
 
     let lib_source = std::fs::read_to_string("src/lib.rs").unwrap();
-    assert!(lib_source.contains(
-        "transport::tauri_commands::conversation_export::export_conversation"
-    ));
-    assert!(lib_source.contains(
-        "transport::tauri_commands::conversation_export::reveal_export_in_folder"
-    ));
+    assert!(
+        lib_source.contains("transport::tauri_commands::conversation_export::export_conversation")
+    );
+    assert!(lib_source
+        .contains("transport::tauri_commands::conversation_export::reveal_export_in_folder"));
 
     let tauri_ts = std::fs::read_to_string("../src/lib/tauri.ts").unwrap();
     assert!(tauri_ts.contains("export interface ExportConversationResult"));
