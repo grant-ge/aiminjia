@@ -117,6 +117,10 @@ const REQUEST_SCOPED_RUNTIME_TOOL_NAMES: &[&str] = &[
     "Skill",
     "TaskOutput",
     "TaskStop",
+    #[cfg(not(windows))]
+    "Bash",
+    #[cfg(windows)]
+    "PowerShell",
     // Agenda tools (request-scoped — built per-turn from RequestScopedRuntimeDeps.current_persona_id)
     "create_agenda_item",
     "list_agenda_items",
@@ -1020,6 +1024,68 @@ impl ToolRegistry {
                 };
                 Some(
                     Arc::new(builtin::task_stop::TaskStopRuntimeTool { store: task_store })
+                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
+                )
+            }
+            #[cfg(not(windows))]
+            "Bash" => {
+                use tauri::Manager;
+                let app = ctx.app_handle.as_ref()?;
+                let task_store = match app
+                    .try_state::<Arc<crate::runtime::agent::async_task_store::AsyncAgentTaskStore>>(
+                    ) {
+                    Some(s) => s.inner().clone(),
+                    None => {
+                        log::error!(
+                            "[bash registry] AsyncAgentTaskStore not in app state — refusing to register tool"
+                        );
+                        return None;
+                    }
+                };
+                let notif_queue = match app
+                    .try_state::<Arc<crate::runtime::agent::task_notification::TaskNotificationQueue>>(
+                    ) {
+                    Some(s) => s.inner().clone(),
+                    None => {
+                        log::error!(
+                            "[bash registry] TaskNotificationQueue not in app state — refusing to register tool"
+                        );
+                        return None;
+                    }
+                };
+                Some(
+                    Arc::new(builtin::bash::BashTool::new(task_store, notif_queue))
+                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
+                )
+            }
+            #[cfg(windows)]
+            "PowerShell" => {
+                use tauri::Manager;
+                let app = ctx.app_handle.as_ref()?;
+                let task_store = match app
+                    .try_state::<Arc<crate::runtime::agent::async_task_store::AsyncAgentTaskStore>>(
+                    ) {
+                    Some(s) => s.inner().clone(),
+                    None => {
+                        log::error!(
+                            "[powershell registry] AsyncAgentTaskStore not in app state — refusing to register tool"
+                        );
+                        return None;
+                    }
+                };
+                let notif_queue = match app
+                    .try_state::<Arc<crate::runtime::agent::task_notification::TaskNotificationQueue>>(
+                    ) {
+                    Some(s) => s.inner().clone(),
+                    None => {
+                        log::error!(
+                            "[powershell registry] TaskNotificationQueue not in app state — refusing to register tool"
+                        );
+                        return None;
+                    }
+                };
+                Some(
+                    Arc::new(builtin::powershell::PowerShellTool::new(task_store, notif_queue))
                         as Arc<dyn crate::runtime::tools::RuntimeTool>,
                 )
             }

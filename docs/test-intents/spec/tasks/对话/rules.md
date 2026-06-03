@@ -576,3 +576,709 @@ PDF 不在前端 `generatedFileActions.PREVIEWABLE_FILE_TYPES` 白名单（同�
 - 相对路径链接被渲染成纯文本，无法点击
 - `![文本占位图](docs/test.txt "非图片路径")` 在 UI 中显示为破图图标
 - 点击任一相对路径本地链接时出现 `href is not supported`、`无法解析路径`、`Unknown local file` 类错误
+## 意图-对话-013: 后台命令完成后，输出可被读取
+
+**场景**
+用户让 AI 启动一个耗时命令，但不希望当前对话一直卡在命令执行上。期望 AI 用当前平台的命令工具把任务放到后台，立即拿到后台任务 ID；命令完成后，AI 能用同一个后台任务读取入口拿到输出内容。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
+3. 清理可能残留的测试产物文件：`rm -f /tmp/aijia-shell-background-done.txt`
+4. 记录现有所有对话 ID（`ls ~/.renlijia/users/{scope}/conversations/`），记为集合 `$S_BEFORE`
+5. 点击底部对话输入框
+6. 输入以下 Prompt（一次性粘贴，不要分批）：
+   ```
+   请使用当前平台的命令执行工具启动一个后台命令，不要前台等待。
+
+   要求：
+   - macOS/Linux 请使用 Bash 工具
+   - Windows 请使用 PowerShell 工具
+   - 工具参数必须设置 run_in_background=true
+   - 命令先等待 5 秒，然后把 `aijia-bg-finished-013` 写入 `/tmp/aijia-shell-background-done.txt`
+   - 命令标准输出打印 `aijia-bg-output-013`
+   - 后台任务启动后，请在回复里告诉我 task_id
+   ```
+7. 点击「发送」按钮
+8. 等待本轮 assistant 回复完成（最长允许等待 1 分钟）
+9. 等待 8 秒，让后台命令自然结束
+10. 在同一个对话输入框输入以下 Prompt：
+    ```
+    请使用 TaskOutput 读取刚才后台任务的输出，并告诉我读到了什么。
+    ```
+11. 点击「发送」按钮
+12. 等待本轮 assistant 回复完成（最长允许等待 1 分钟）
+13. 找到本轮新建的对话 ID（在 `~/.renlijia/users/{scope}/conversations/` 下取 `mtime` 最新且不在 `$S_BEFORE` 里的子目录名），记为 `$CONV_ID`
+14. 从 `~/.renlijia/users/{scope}/conversations/$CONV_ID/messages.jsonl` 中读取第一次后台命令工具结果里的 `task_id`，记为 `$TASK_ID`
+
+**验收标准**
+
+应该看到：
+- 第一次 assistant 回复在点击发送后 10 秒内自然结束（流式光标消失）
+- 文件 `/tmp/aijia-shell-background-done.txt` 存在
+- 文件 `/tmp/aijia-shell-background-done.txt` 内容包含字面值 `aijia-bg-finished-013`
+- 文件 `~/.renlijia/users/{scope}/conversations/$CONV_ID/messages.jsonl` 存在
+- `messages.jsonl` 中至少一条 assistant 记录的 `toolCalls` 数组里有一个元素 `name == "Bash"` 或 `name == "PowerShell"`
+- 该 `toolCalls` 元素的 `arguments.run_in_background == true`
+- 第一次后台命令工具结果包含字段 `task_id == "$TASK_ID"`
+- 第一次后台命令工具结果包含字段 `task_type == "local_bash"`
+- `$TASK_ID` 以字母 `b` 开头
+- 第二轮 assistant 记录的 `toolCalls` 数组里有一个元素 `name == "TaskOutput"`
+- 该 `TaskOutput` 调用的 `arguments.task_id == "$TASK_ID"`
+- 第二轮末条 assistant 记录 `content.text` 包含字面值 `aijia-bg-output-013`
+
+不应该看到：
+- 第一次 assistant 回复持续超过 10 秒仍未结束（说明命令没有进入后台）
+- 第一次后台命令工具结果包含字段 `task_type == "local_agent"`
+- 第二轮末条 assistant 记录 `content.text` 包含字面值 `No task found`
+- 第二轮末条 assistant 记录 `content.text` 包含字面值 `missing required field`
+- `messages.jsonl` 中没有任何 `name == "TaskOutput"` 的 tool call
+
+---
+
+## 意图-对话-014: 后台命令停止后，不再继续输出
+
+**场景**
+用户启动了一个持续运行的后台命令，后来发现不需要了。期望 AI 能用后台任务停止入口终止该命令；停止结果明确指向 shell 后台任务，且停止后命令不再继续往测试文件追加新输出。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
+3. 清理可能残留的测试产物文件：`rm -f /tmp/aijia-shell-background-stop.txt`
+4. 记录现有所有对话 ID（`ls ~/.renlijia/users/{scope}/conversations/`），记为集合 `$S_BEFORE`
+5. 点击底部对话输入框
+6. 输入以下 Prompt（一次性粘贴，不要分批）：
+   ```
+   请使用当前平台的命令执行工具启动一个后台命令，不要前台等待。
+
+   要求：
+   - macOS/Linux 请使用 Bash 工具
+   - Windows 请使用 PowerShell 工具
+   - 工具参数必须设置 run_in_background=true
+   - 命令每 1 秒向 `/tmp/aijia-shell-background-stop.txt` 追加一行 `tick-014`
+   - 命令持续 120 秒
+   - 后台任务启动后，请在回复里告诉我 task_id
+   ```
+7. 点击「发送」按钮
+8. 等待本轮 assistant 回复完成（最长允许等待 1 分钟）
+9. 等待 4 秒，记录 `/tmp/aijia-shell-background-stop.txt` 当前行数，记为 `$LINES_BEFORE_STOP`
+10. 在同一个对话输入框输入以下 Prompt：
+    ```
+    请使用 TaskStop 停止刚才的后台任务。
+    ```
+11. 点击「发送」按钮
+12. 等待本轮 assistant 回复完成（最长允许等待 1 分钟）
+13. 等待 4 秒，记录 `/tmp/aijia-shell-background-stop.txt` 当前行数，记为 `$LINES_AFTER_STOP`
+14. 再等待 4 秒，重新记录 `/tmp/aijia-shell-background-stop.txt` 当前行数，记为 `$LINES_RECHECK`
+15. 找到本轮新建的对话 ID（在 `~/.renlijia/users/{scope}/conversations/` 下取 `mtime` 最新且不在 `$S_BEFORE` 里的子目录名），记为 `$CONV_ID`
+16. 从 `~/.renlijia/users/{scope}/conversations/$CONV_ID/messages.jsonl` 中读取第一次后台命令工具结果里的 `task_id`，记为 `$TASK_ID`
+
+**验收标准**
+
+应该看到：
+- 第一次 assistant 回复在点击发送后 10 秒内自然结束（流式光标消失）
+- 文件 `/tmp/aijia-shell-background-stop.txt` 存在
+- `$LINES_BEFORE_STOP >= 1`
+- `$LINES_AFTER_STOP >= $LINES_BEFORE_STOP`
+- `$LINES_RECHECK == $LINES_AFTER_STOP`
+- 文件 `~/.renlijia/users/{scope}/conversations/$CONV_ID/messages.jsonl` 存在
+- `messages.jsonl` 中至少一条 assistant 记录的 `toolCalls` 数组里有一个元素 `name == "Bash"` 或 `name == "PowerShell"`
+- 该 `toolCalls` 元素的 `arguments.run_in_background == true`
+- 第一次后台命令工具结果包含字段 `task_id == "$TASK_ID"`
+- 第一次后台命令工具结果包含字段 `task_type == "local_bash"`
+- 第二轮 assistant 记录的 `toolCalls` 数组里有一个元素 `name == "TaskStop"`
+- 该 `TaskStop` 调用的 `arguments.task_id == "$TASK_ID"`
+- `TaskStop` 工具结果包含字段 `task_type == "local_bash"`
+
+不应该看到：
+- 第一次 assistant 回复持续超过 10 秒仍未结束（说明命令没有进入后台）
+- 第一次后台命令工具结果包含字段 `task_type == "local_agent"`
+- `TaskStop` 工具结果包含字段 `task_type == "local_agent"`
+- 第二轮末条 assistant 记录 `content.text` 包含字面值 `No task found`
+- `$LINES_RECHECK > $LINES_AFTER_STOP`（说明停止后命令仍在继续追加输出）
+
+---
+
+## 意图-对话-015: 前台长命令运行中，回复提示转后台
+
+**场景**
+用户让 AI 直接运行一个会持续几十秒的脚本任务，但没有主动要求后台运行。期望系统在前台命令超过阻塞预算后自动把任务转到后台，让当前对话恢复响应；AI 能感知到任务已转后台，回复里给出后台任务 ID，并且后续能用后台任务读取入口拿到脚本输出。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
+3. 清理可能残留的测试产物文件：`rm -f /tmp/aijia-shell-auto-background.txt`
+4. 记录现有所有对话 ID（`ls ~/.renlijia/users/{scope}/conversations/`），记为集合 `$S_BEFORE`
+5. 点击底部对话输入框
+6. 输入以下 Prompt（一次性粘贴，不要分批）：
+   ```
+   请使用当前平台的命令执行工具运行一个前台脚本任务，不要主动把它放到后台。
+
+   要求：
+   - macOS/Linux 请使用 Bash 工具
+   - Windows 请使用 PowerShell 工具
+   - 工具参数不要包含 run_in_background，或把 run_in_background 设置为 false
+   - 命令每 5 秒向标准输出打印一行 `aijia-auto-bg-output-015`
+   - 命令持续 45 秒
+   - 命令结束前不要再调用其它工具
+   - 如果系统提示这个命令已自动转到后台，请在回复里告诉我 task_id，并说明任务已在后台继续运行
+   ```
+7. 点击「发送」按钮
+8. 等待本轮 assistant 回复完成（最长允许等待 30 秒）
+9. 等待 12 秒，让后台任务继续产生输出
+10. 在同一个对话输入框输入以下 Prompt：
+    ```
+    请使用 TaskOutput 读取刚才自动转后台任务的输出，并告诉我读到了什么。
+    ```
+11. 点击「发送」按钮
+12. 等待本轮 assistant 回复完成（最长允许等待 1 分钟）
+13. 找到本轮新建的对话 ID（在 `~/.renlijia/users/{scope}/conversations/` 下取 `mtime` 最新且不在 `$S_BEFORE` 里的子目录名），记为 `$CONV_ID`
+14. 从 `~/.renlijia/users/{scope}/conversations/$CONV_ID/messages.jsonl` 中读取第一次命令工具结果里的 `task_id`，记为 `$TASK_ID`
+
+**验收标准**
+
+应该看到：
+- 第一次 assistant 回复在点击发送后 30 秒内自然结束（流式光标消失）
+- 文件 `~/.renlijia/users/{scope}/conversations/$CONV_ID/messages.jsonl` 存在
+- `messages.jsonl` 中至少一条 assistant 记录的 `toolCalls` 数组里有一个元素 `name == "Bash"` 或 `name == "PowerShell"`
+- 该 `toolCalls` 元素的 `arguments.run_in_background` 字段不存在，或 `arguments.run_in_background == false`
+- 第一次命令工具结果包含字段 `task_id == "$TASK_ID"`
+- 第一次命令工具结果包含字段 `task_type == "local_bash"`
+- 第一次命令工具结果包含字段 `assistant_auto_backgrounded == true`
+- `$TASK_ID` 以字母 `b` 开头
+- 第一次 assistant 回复 `content.text` 包含字面值 `$TASK_ID`
+- 第一次 assistant 回复 `content.text` 包含字面值 `后台`
+- 第二轮 assistant 记录的 `toolCalls` 数组里有一个元素 `name == "TaskOutput"`
+- 该 `TaskOutput` 调用的 `arguments.task_id == "$TASK_ID"`
+- 第二轮末条 assistant 记录 `content.text` 包含字面值 `aijia-auto-bg-output-015`
+
+不应该看到：
+- 第一次 assistant 回复持续超过 30 秒仍未结束（说明前台长命令阻塞了对话）
+- 第一次命令工具调用的 `arguments.run_in_background == true`（这会变成显式后台，不是自动转后台）
+- 第一次命令工具结果包含字段 `task_type == "local_agent"`
+- 第一次命令工具结果不含 `task_id` 字段
+- 第一次 assistant 回复 `content.text` 不含 `$TASK_ID`
+- 第二轮末条 assistant 记录 `content.text` 包含字面值 `No task found`
+- 第二轮末条 assistant 记录 `content.text` 包含字面值 `missing required field`
+
+---
+
+## 意图-对话-016: 自动后台完成后，下轮收到通知
+
+**场景**
+前台长命令被系统自动转到后台后，用户没有主动轮询。期望后台命令完成时，下一轮对话能注入完成通知；AI 能基于通知告诉用户该后台任务已经结束，并指出对应 task_id。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
+3. 清理可能残留的测试产物文件：`rm -f /tmp/aijia-shell-auto-background-notify.txt`
+4. 记录现有所有对话 ID（`ls ~/.renlijia/users/{scope}/conversations/`），记为集合 `$S_BEFORE`
+5. 点击底部对话输入框
+6. 输入以下 Prompt（一次性粘贴，不要分批）：
+   ```
+   请使用当前平台的命令执行工具运行一个前台脚本任务，不要主动把它放到后台。
+
+   要求：
+   - macOS/Linux 请使用 Bash 工具
+   - Windows 请使用 PowerShell 工具
+   - 工具参数不要包含 run_in_background
+   - 命令等待 25 秒，然后把 `aijia-auto-bg-notify-016` 写入 `/tmp/aijia-shell-auto-background-notify.txt`
+   - 命令标准输出打印 `aijia-auto-bg-output-016`
+   - 如果系统提示这个命令已自动转到后台，请在回复里告诉我 task_id
+   ```
+7. 点击「发送」按钮
+8. 等待本轮 assistant 回复完成（最长允许等待 30 秒）
+9. 等待 35 秒，让后台任务自然完成
+10. 在同一个对话输入框输入以下 Prompt：
+    ```
+    请告诉我刚才自动转后台的任务现在有没有完成。不要重新运行命令。
+    ```
+11. 点击「发送」按钮
+12. 等待本轮 assistant 回复完成（最长允许等待 1 分钟）
+13. 找到本轮新建的对话 ID（在 `~/.renlijia/users/{scope}/conversations/` 下取 `mtime` 最新且不在 `$S_BEFORE` 里的子目录名），记为 `$CONV_ID`
+14. 从 `~/.renlijia/users/{scope}/conversations/$CONV_ID/messages.jsonl` 中读取第一次命令工具结果里的 `task_id`，记为 `$TASK_ID`
+
+**验收标准**
+
+应该看到：
+- 第一次 assistant 回复在点击发送后 30 秒内自然结束（流式光标消失）
+- 文件 `/tmp/aijia-shell-auto-background-notify.txt` 存在
+- 文件 `/tmp/aijia-shell-auto-background-notify.txt` 内容包含字面值 `aijia-auto-bg-notify-016`
+- 文件 `~/.renlijia/users/{scope}/conversations/$CONV_ID/messages.jsonl` 存在
+- 第一次命令工具调用的 `arguments` JSON 中不含 `run_in_background` 字段
+- 第一次命令工具结果包含字段 `task_id == "$TASK_ID"`
+- 第一次命令工具结果包含字段 `task_type == "local_bash"`
+- 第一次命令工具结果包含字段 `assistant_auto_backgrounded == true`
+- 第二轮末条 assistant 记录 `content.text` 包含字面值 `$TASK_ID`
+- 第二轮末条 assistant 记录 `content.text` 包含字面值 `完成`
+- 第二轮末条 assistant 记录 `content.text` 包含字面值 `aijia-auto-bg-output-016`
+
+不应该看到：
+- 第一次命令工具调用的 `arguments.run_in_background == true`
+- 第一次命令工具结果包含字段 `task_type == "local_agent"`
+- 第二轮 assistant 记录的 `toolCalls` 数组里有命令执行工具调用（说明 AI 重新运行了命令）
+- 第二轮末条 assistant 记录 `content.text` 包含字面值 `No task found`
+- 第二轮末条 assistant 记录 `content.text` 包含字面值 `没有找到`
+
+---
+
+## 意图-对话-017: 自动后台任务停止后，不再追加输出
+
+**场景**
+前台长命令被系统自动转到后台后，用户决定终止它。期望 AI 用 TaskStop 停止这个自动后台任务；停止结果仍然标识为 shell 后台任务，且停止后测试文件行数不再增长。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
+3. 清理可能残留的测试产物文件：`rm -f /tmp/aijia-shell-auto-background-stop.txt`
+4. 记录现有所有对话 ID（`ls ~/.renlijia/users/{scope}/conversations/`），记为集合 `$S_BEFORE`
+5. 点击底部对话输入框
+6. 输入以下 Prompt（一次性粘贴，不要分批）：
+   ```
+   请使用当前平台的命令执行工具运行一个前台脚本任务，不要主动把它放到后台。
+
+   要求：
+   - macOS/Linux 请使用 Bash 工具
+   - Windows 请使用 PowerShell 工具
+   - 工具参数不要包含 run_in_background
+   - 命令每 1 秒向 `/tmp/aijia-shell-auto-background-stop.txt` 追加一行 `tick-017`
+   - 命令持续 120 秒
+   - 如果系统提示这个命令已自动转到后台，请在回复里告诉我 task_id
+   ```
+7. 点击「发送」按钮
+8. 等待本轮 assistant 回复完成（最长允许等待 30 秒）
+9. 等待 4 秒，记录 `/tmp/aijia-shell-auto-background-stop.txt` 当前行数，记为 `$LINES_BEFORE_STOP`
+10. 在同一个对话输入框输入以下 Prompt：
+    ```
+    请使用 TaskStop 停止刚才自动转后台的任务。
+    ```
+11. 点击「发送」按钮
+12. 等待本轮 assistant 回复完成（最长允许等待 1 分钟）
+13. 等待 4 秒，记录 `/tmp/aijia-shell-auto-background-stop.txt` 当前行数，记为 `$LINES_AFTER_STOP`
+14. 再等待 4 秒，重新记录 `/tmp/aijia-shell-auto-background-stop.txt` 当前行数，记为 `$LINES_RECHECK`
+15. 找到本轮新建的对话 ID（在 `~/.renlijia/users/{scope}/conversations/` 下取 `mtime` 最新且不在 `$S_BEFORE` 里的子目录名），记为 `$CONV_ID`
+16. 从 `~/.renlijia/users/{scope}/conversations/$CONV_ID/messages.jsonl` 中读取第一次命令工具结果里的 `task_id`，记为 `$TASK_ID`
+
+**验收标准**
+
+应该看到：
+- 第一次 assistant 回复在点击发送后 30 秒内自然结束（流式光标消失）
+- 文件 `/tmp/aijia-shell-auto-background-stop.txt` 存在
+- `$LINES_BEFORE_STOP >= 1`
+- `$LINES_AFTER_STOP >= $LINES_BEFORE_STOP`
+- `$LINES_RECHECK == $LINES_AFTER_STOP`
+- 文件 `~/.renlijia/users/{scope}/conversations/$CONV_ID/messages.jsonl` 存在
+- 第一次命令工具调用的 `arguments` JSON 中不含 `run_in_background` 字段
+- 第一次命令工具结果包含字段 `task_id == "$TASK_ID"`
+- 第一次命令工具结果包含字段 `task_type == "local_bash"`
+- 第一次命令工具结果包含字段 `assistant_auto_backgrounded == true`
+- 第二轮 assistant 记录的 `toolCalls` 数组里有一个元素 `name == "TaskStop"`
+- 该 `TaskStop` 调用的 `arguments.task_id == "$TASK_ID"`
+- `TaskStop` 工具结果包含字段 `task_type == "local_bash"`
+
+不应该看到：
+- 第一次命令工具调用的 `arguments.run_in_background == true`
+- 第一次命令工具结果包含字段 `task_type == "local_agent"`
+- `TaskStop` 工具结果包含字段 `task_type == "local_agent"`
+- 第二轮末条 assistant 记录 `content.text` 包含字面值 `No task found`
+- `$LINES_RECHECK > $LINES_AFTER_STOP`（说明停止后命令仍在继续追加输出）
+
+---
+
+## 意图-对话-018: 短前台命令结束后，不转后台
+
+**场景**
+用户让 AI 运行一个很短的前台命令。期望系统不要误把短命令注册成后台任务；AI 直接拿到命令输出并完成回复，工具结果里没有后台 task_id。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
+3. 记录现有所有对话 ID（`ls ~/.renlijia/users/{scope}/conversations/`），记为集合 `$S_BEFORE`
+4. 点击底部对话输入框
+5. 输入以下 Prompt（一次性粘贴，不要分批）：
+   ```
+   请使用当前平台的命令执行工具运行一个短前台命令。
+
+   要求：
+   - macOS/Linux 请使用 Bash 工具
+   - Windows 请使用 PowerShell 工具
+   - 工具参数不要包含 run_in_background
+   - 命令只打印一行 `aijia-short-foreground-018`
+   - 不要使用 TaskOutput 或 TaskStop
+   ```
+6. 点击「发送」按钮
+7. 等待本轮 assistant 回复完成（最长允许等待 30 秒）
+8. 找到本轮新建的对话 ID（在 `~/.renlijia/users/{scope}/conversations/` 下取 `mtime` 最新且不在 `$S_BEFORE` 里的子目录名），记为 `$CONV_ID`
+
+**验收标准**
+
+应该看到：
+- assistant 回复在点击发送后 30 秒内自然结束（流式光标消失）
+- 文件 `~/.renlijia/users/{scope}/conversations/$CONV_ID/messages.jsonl` 存在
+- 命令工具调用的 `arguments` JSON 中不含 `run_in_background` 字段
+- 命令工具结果的输出包含字面值 `aijia-short-foreground-018`
+- 末条 assistant 记录 `content.text` 包含字面值 `aijia-short-foreground-018`
+
+不应该看到：
+- 命令工具结果包含字段 `task_id`
+- 命令工具结果包含字段 `assistant_auto_backgrounded == true`
+- 末条 assistant 记录 `content.text` 包含字面值 `后台`
+- `messages.jsonl` 中出现 `name == "TaskOutput"` 的 tool call
+- `messages.jsonl` 中出现 `name == "TaskStop"` 的 tool call
+
+---
+
+## 意图-对话-019: 转后台后，同轮继续执行后续动作
+
+**场景**
+前台长命令被自动转到后台后，AI 不应该停在“命令还在跑”的状态。期望 AI 感知到任务已经转后台，并在同一轮继续执行用户要求的下一步动作，证明 agentic loop 没被长脚本卡死。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
+3. 清理可能残留的测试产物文件：`rm -f /tmp/aijia-shell-auto-background-continue.txt /tmp/aijia-shell-auto-background-running-019.txt`
+4. 记录现有所有对话 ID（`ls ~/.renlijia/users/{scope}/conversations/`），记为集合 `$S_BEFORE`
+5. 点击底部对话输入框
+6. 输入以下 Prompt（一次性粘贴，不要分批）：
+   ```
+   请按顺序完成两件事：
+
+   第一件事：使用当前平台的命令执行工具运行一个前台脚本任务，不要主动把它放到后台。
+   - macOS/Linux 请使用 Bash 工具
+   - Windows 请使用 PowerShell 工具
+   - 工具参数不要包含 run_in_background
+   - 命令每 5 秒向标准输出打印一行 `aijia-auto-bg-running-019`
+   - 命令持续 45 秒
+
+   第二件事：如果系统提示第一件事已经自动转到后台，请立刻创建文件 `/tmp/aijia-shell-auto-background-continue.txt`，文件内容写 `aijia-continue-after-bg-019`，然后在回复里告诉我第一件事的 task_id。
+   ```
+7. 点击「发送」按钮
+8. 等待本轮 assistant 回复完成（最长允许等待 45 秒）
+9. 找到本轮新建的对话 ID（在 `~/.renlijia/users/{scope}/conversations/` 下取 `mtime` 最新且不在 `$S_BEFORE` 里的子目录名），记为 `$CONV_ID`
+10. 从 `~/.renlijia/users/{scope}/conversations/$CONV_ID/messages.jsonl` 中读取第一次命令工具结果里的 `task_id`，记为 `$TASK_ID`
+
+**验收标准**
+
+应该看到：
+- assistant 回复在点击发送后 45 秒内自然结束（流式光标消失）
+- 文件 `/tmp/aijia-shell-auto-background-continue.txt` 存在
+- 文件 `/tmp/aijia-shell-auto-background-continue.txt` 内容包含字面值 `aijia-continue-after-bg-019`
+- 文件 `~/.renlijia/users/{scope}/conversations/$CONV_ID/messages.jsonl` 存在
+- 第一次命令工具调用的 `arguments` JSON 中不含 `run_in_background` 字段
+- 第一次命令工具结果包含字段 `task_id == "$TASK_ID"`
+- 第一次命令工具结果包含字段 `task_type == "local_bash"`
+- 第一次命令工具结果包含字段 `assistant_auto_backgrounded == true`
+- `$TASK_ID` 以字母 `b` 开头
+- 本轮 assistant 记录的 `toolCalls` 数组里至少有两个元素
+- 第一个命令工具调用之后，后续 tool call 创建了 `/tmp/aijia-shell-auto-background-continue.txt`
+- 末条 assistant 记录 `content.text` 包含字面值 `$TASK_ID`
+
+不应该看到：
+- assistant 回复持续超过 45 秒仍未结束（说明 agentic loop 被前台长脚本卡住）
+- 第一次命令工具调用的 `arguments.run_in_background == true`
+- 第一次命令工具结果包含字段 `task_type == "local_agent"`
+- 文件 `/tmp/aijia-shell-auto-background-continue.txt` 不存在
+- 末条 assistant 记录 `content.text` 不含 `$TASK_ID`
+
+## 意图-对话-020: 前台任务输出错误流，后台读取包含错误
+
+### 场景
+
+用户让 agent 运行一个前台长脚本，脚本同时写 stdout 和 stderr。任务自动转后台后，用户继续读取任务输出，错误流不能因为后台切换而丢失。
+
+### 操作步骤
+
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 开启一条新对话：`tauri-pilot aijia new-task`。
+3. 通过 `tauri-pilot aijia where --json` 记录 `{scope}` 和 `{conversationId}`。
+4. 发送消息：请使用当前平台的命令执行工具运行一个前台脚本任务，不要主动放到后台；macOS/Linux 使用 Bash，Windows 使用 PowerShell；命令持续 25 秒，每 5 秒向 stdout 输出一行 `aijia-stdout-020`，每 5 秒向 stderr 输出一行 `aijia-stderr-020`；工具参数不要包含 `run_in_background`，或设置为 `false`。
+5. 等 agent 回复任务已自动转后台。
+6. 从对话消息文件 `~/.renlijia/users/{scope}/conversations/{conversationId}/messages.jsonl` 中记录自动后台任务的 `{taskId}` 和 `{outputFile}`。
+7. 发送消息：请使用 TaskOutput 读取刚才自动转后台任务的输出，并告诉我读到了哪些 stdout 和 stderr 内容。
+8. 等 agent 回复。
+
+### 验收标准
+
+应该看到：
+
+- Bash 或 PowerShell 工具结果 JSON 中 `assistant_auto_backgrounded == true`
+- Bash 或 PowerShell 工具结果 JSON 中 `status == "backgrounded"`
+- Bash 或 PowerShell 工具结果 JSON 中 `task_id == "{taskId}"`
+- 文件 `{outputFile}` 存在
+- TaskOutput 工具结果中包含字符串 `aijia-stdout-020`
+- TaskOutput 工具结果中包含字符串 `aijia-stderr-020`
+
+不应该看到：
+
+- TaskOutput 工具结果中不含 `No task found`
+- TaskOutput 工具结果中不含 `missing required field`
+- TaskOutput 工具结果中不含只有 `aijia-stdout-020` 而没有 `aijia-stderr-020` 的读取结果
+
+## 意图-对话-021: 后台任务失败退出，通知包含失败状态
+
+### 场景
+
+用户运行一个前台长脚本，脚本自动转后台后以非零退出码结束。agent 下一轮必须能从系统任务通知感知失败状态和退出码，而不是误报任务完成。
+
+### 操作步骤
+
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 开启一条新对话：`tauri-pilot aijia new-task`。
+3. 通过 `tauri-pilot aijia where --json` 记录 `{scope}` 和 `{conversationId}`。
+4. 发送消息：请使用当前平台的命令执行工具运行一个前台脚本任务，不要主动放到后台；macOS/Linux 使用 Bash，Windows 使用 PowerShell；命令先输出 `aijia-fail-before-021`，等待 12 秒，再输出 `aijia-fail-after-021`，然后以退出码 42 结束；工具参数不要包含 `run_in_background`，或设置为 `false`。
+5. 等 agent 回复任务已自动转后台。
+6. 从对话消息文件 `~/.renlijia/users/{scope}/conversations/{conversationId}/messages.jsonl` 中记录自动后台任务的 `{taskId}`。
+7. 等待 8 秒。
+8. 发送消息：刚才自动转后台的任务现在应该已经失败退出了。请不要调用 TaskOutput，直接根据系统任务通知告诉我任务状态、退出码和 task_id。
+9. 等 agent 回复。
+
+### 验收标准
+
+应该看到：
+
+- Bash 或 PowerShell 工具结果 JSON 中 `assistant_auto_backgrounded == true`
+- Bash 或 PowerShell 工具结果 JSON 中 `task_id == "{taskId}"`
+- 对话消息文件中出现 `<task-id>{taskId}</task-id>`
+- 对话消息文件中出现 `<status>failed</status>`
+- 对话消息文件中出现 `exit code 42`
+- assistant 最终回复中包含 `{taskId}`
+- assistant 最终回复中包含 `failed` 或 `失败`
+- assistant 最终回复中包含 `42`
+
+不应该看到：
+
+- 对话消息文件中不含 `<status>completed</status>` 作为 `{taskId}` 的最终状态
+- assistant 最终回复中不含 `completed` 或 `完成` 作为 `{taskId}` 的最终状态
+- assistant 最终回复中不含 `TaskOutput` 工具调用结果摘要
+
+## 意图-对话-022: 后台切换前已有输出，读取不丢行
+
+### 场景
+
+前台长脚本在自动转后台之前已经输出多行内容。后台切换后，TaskOutput 读取到的 transcript 必须包含切换前和切换后的输出。
+
+### 操作步骤
+
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 开启一条新对话：`tauri-pilot aijia new-task`。
+3. 通过 `tauri-pilot aijia where --json` 记录 `{scope}` 和 `{conversationId}`。
+4. 发送消息：请使用当前平台的命令执行工具运行一个前台脚本任务，不要主动放到后台；macOS/Linux 使用 Bash，Windows 使用 PowerShell；命令每 1 秒输出一行，内容依次为 `aijia-pre-bg-022-1` 到 `aijia-pre-bg-022-15`，总持续约 15 秒；工具参数不要包含 `run_in_background`，或设置为 `false`。
+5. 等 agent 回复任务已自动转后台。
+6. 从对话消息文件 `~/.renlijia/users/{scope}/conversations/{conversationId}/messages.jsonl` 中记录自动后台任务的 `{taskId}`。
+7. 等待 8 秒。
+8. 发送消息：请使用 TaskOutput 从 offset 0 读取刚才自动转后台任务的全部输出，并告诉我第一行和最后一行分别是什么。
+9. 等 agent 回复。
+
+### 验收标准
+
+应该看到：
+
+- Bash 或 PowerShell 工具结果 JSON 中 `assistant_auto_backgrounded == true`
+- TaskOutput 工具结果中包含 `aijia-pre-bg-022-1`
+- TaskOutput 工具结果中包含 `aijia-pre-bg-022-2`
+- TaskOutput 工具结果中包含 `aijia-pre-bg-022-10`
+- TaskOutput 工具结果中包含 `aijia-pre-bg-022-15`
+- assistant 最终回复中包含 `aijia-pre-bg-022-1`
+- assistant 最终回复中包含 `aijia-pre-bg-022-15`
+
+不应该看到：
+
+- TaskOutput 工具结果中不含缺失 `aijia-pre-bg-022-1` 的读取结果
+- TaskOutput 工具结果中不含缺失 `aijia-pre-bg-022-10` 的读取结果
+- TaskOutput 工具结果中不含 `No task found`
+
+## 意图-对话-023: 连续读取后台输出，偏移不重复
+
+### 场景
+
+用户分两次读取同一个自动后台任务的输出。第二次读取使用第一次返回的 offset，结果不能重复返回第一批行，也不能漏掉新产生的行。
+
+### 操作步骤
+
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 开启一条新对话：`tauri-pilot aijia new-task`。
+3. 通过 `tauri-pilot aijia where --json` 记录 `{scope}` 和 `{conversationId}`。
+4. 发送消息：请使用当前平台的命令执行工具运行一个前台脚本任务，不要主动放到后台；macOS/Linux 使用 Bash，Windows 使用 PowerShell；命令每 2 秒输出一行，内容依次为 `aijia-offset-023-1` 到 `aijia-offset-023-30`；工具参数不要包含 `run_in_background`，或设置为 `false`。
+5. 等 agent 回复任务已自动转后台。
+6. 从对话消息文件 `~/.renlijia/users/{scope}/conversations/{conversationId}/messages.jsonl` 中记录自动后台任务的 `{taskId}`。
+7. 发送消息：请使用 TaskOutput 从 offset 0 读取刚才自动转后台任务的输出，并告诉我返回的 new_offset。
+8. 等 agent 回复，并记录 `{offset1}`。
+9. 等待 6 秒。
+10. 发送消息：请使用 TaskOutput 从 offset `{offset1}` 继续读取同一个任务的输出，并告诉我这次新增了哪些行。
+11. 等 agent 回复。
+
+### 验收标准
+
+应该看到：
+
+- 第一次 TaskOutput 工具调用参数中 `task_id == "{taskId}"`
+- 第一次 TaskOutput 工具调用参数中 `offset == 0`
+- 第一次 TaskOutput 工具结果中 `new_offset == {offset1}`
+- 第二次 TaskOutput 工具调用参数中 `task_id == "{taskId}"`
+- 第二次 TaskOutput 工具调用参数中 `offset == {offset1}`
+- 第二次 TaskOutput 工具结果中至少包含一行 `aijia-offset-023-` 前缀的新增输出
+
+不应该看到：
+
+- 第二次 TaskOutput 工具结果中不含第一次 TaskOutput 已经返回过的完整行
+- 第二次 TaskOutput 工具调用参数中不含 `offset == 0`
+- 第二次 TaskOutput 工具结果中不含 `No task found`
+
+## 意图-对话-024: 多个长任务转后台，输出互不串线
+
+### 场景
+
+同一轮对话中连续启动两个前台长脚本。两个脚本都自动转后台后，用户分别读取两个 task_id 的输出，输出内容必须按 task_id 隔离。
+
+### 操作步骤
+
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 开启一条新对话：`tauri-pilot aijia new-task`。
+3. 通过 `tauri-pilot aijia where --json` 记录 `{scope}` 和 `{conversationId}`。
+4. 发送消息：请在同一轮中连续完成两步。第一步使用当前平台的命令执行工具运行前台长脚本 A，不要主动放到后台，命令每 5 秒输出一行 `aijia-multi-024-A`，持续 45 秒。系统提示 A 自动转后台后，不要等待 A 结束，继续运行前台长脚本 B，不要主动放到后台，命令每 5 秒输出一行 `aijia-multi-024-B`，持续 45 秒。最终回复请告诉我两个自动后台任务的 task_id。
+5. 等 agent 回复。
+6. 从对话消息文件 `~/.renlijia/users/{scope}/conversations/{conversationId}/messages.jsonl` 中记录任务 A 的 `{taskIdA}` 和任务 B 的 `{taskIdB}`。
+7. 等待 12 秒。
+8. 发送消息：请分别使用 TaskOutput 读取 task A 和 task B 的输出，并告诉我每个 task 里读到的标记。
+9. 等 agent 回复。
+
+### 验收标准
+
+应该看到：
+
+- 对话消息文件中出现两个不同的 Bash 或 PowerShell 自动后台工具结果
+- 第一个自动后台工具结果中 `task_id == "{taskIdA}"`
+- 第二个自动后台工具结果中 `task_id == "{taskIdB}"`
+- `{taskIdA} != {taskIdB}`
+- `{taskIdA}` 的 TaskOutput 工具结果中包含 `aijia-multi-024-A`
+- `{taskIdB}` 的 TaskOutput 工具结果中包含 `aijia-multi-024-B`
+
+不应该看到：
+
+- `{taskIdA}` 的 TaskOutput 工具结果中不含 `aijia-multi-024-B`
+- `{taskIdB}` 的 TaskOutput 工具结果中不含 `aijia-multi-024-A`
+- 两个自动后台工具结果不使用相同的 `task_id`
+
+## 意图-对话-025: 已完成任务再停止，返回已结束状态
+
+### 场景
+
+自动后台任务已经自然完成后，用户再请求停止它。系统不能把已完成任务误报成刚刚被成功杀掉，必须返回已结束或不可停止的明确状态。
+
+### 操作步骤
+
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 开启一条新对话：`tauri-pilot aijia new-task`。
+3. 通过 `tauri-pilot aijia where --json` 记录 `{scope}` 和 `{conversationId}`。
+4. 发送消息：请使用当前平台的命令执行工具运行一个前台脚本任务，不要主动放到后台；macOS/Linux 使用 Bash，Windows 使用 PowerShell；命令每 5 秒输出一行 `aijia-completed-stop-025`，持续 15 秒；工具参数不要包含 `run_in_background`，或设置为 `false`。
+5. 等 agent 回复任务已自动转后台。
+6. 从对话消息文件 `~/.renlijia/users/{scope}/conversations/{conversationId}/messages.jsonl` 中记录自动后台任务的 `{taskId}`。
+7. 等待 12 秒。
+8. 确认对话消息文件中出现 `{taskId}` 对应的 `<status>completed</status>` 通知。
+9. 发送消息：请使用 TaskStop 停止刚才已经自然完成的任务，并告诉我停止结果。
+10. 等 agent 回复。
+
+### 验收标准
+
+应该看到：
+
+- 对话消息文件中出现 `<task-id>{taskId}</task-id>`
+- 对话消息文件中出现 `<status>completed</status>`
+- TaskStop 工具调用参数中 `task_id == "{taskId}"`
+- TaskStop 工具结果中包含 `completed`、`already finished`、`already completed`、`已完成` 或 `已结束` 中任一明确状态
+- assistant 最终回复中包含 `{taskId}`
+
+不应该看到：
+
+- TaskStop 工具结果中不含 `Successfully stopped task` 作为 `{taskId}` 的停止结果
+- assistant 最终回复中不含 `成功停止` 作为 `{taskId}` 的停止结果
+- 对话消息文件中不含 `{taskId}` 对应的第二个 `<status>completed</status>` 通知
+
+## 意图-对话-026: 九秒前台任务运行，不自动转后台
+
+### 场景
+
+用户运行接近自动后台阈值但未超过阈值的前台命令。该命令应该保持前台完成，不能被错误转为后台任务。
+
+### 操作步骤
+
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 开启一条新对话：`tauri-pilot aijia new-task`。
+3. 通过 `tauri-pilot aijia where --json` 记录 `{scope}` 和 `{conversationId}`。
+4. 发送消息：请使用当前平台的命令执行工具运行一个 9 秒前台脚本任务，不要主动放到后台；macOS/Linux 使用 Bash，Windows 使用 PowerShell；命令先输出 `aijia-nine-sec-start-026`，等待 9 秒，再输出 `aijia-nine-sec-end-026`；工具参数不要包含 `run_in_background`，或设置为 `false`。
+5. 等 agent 回复。
+6. 检查对话消息文件 `~/.renlijia/users/{scope}/conversations/{conversationId}/messages.jsonl`。
+
+### 验收标准
+
+应该看到：
+
+- Bash 或 PowerShell 工具结果文本中包含 `aijia-nine-sec-start-026`
+- Bash 或 PowerShell 工具结果文本中包含 `aijia-nine-sec-end-026`
+- assistant 最终回复中包含 `aijia-nine-sec-end-026`
+
+不应该看到：
+
+- Bash 或 PowerShell 工具结果 JSON 中不含 `assistant_auto_backgrounded == true`
+- Bash 或 PowerShell 工具结果 JSON 中不含 `status == "backgrounded"`
+- 对话消息文件中不含 `task_id` 指向本次 9 秒任务
+
+## 意图-对话-027: 十一秒前台任务运行，自动转后台
+
+### 场景
+
+用户运行超过自动后台阈值的前台命令。命令不需要等到自然结束，系统应自动转后台并让 agent 感知 task_id。
+
+### 操作步骤
+
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 开启一条新对话：`tauri-pilot aijia new-task`。
+3. 通过 `tauri-pilot aijia where --json` 记录 `{scope}` 和 `{conversationId}`。
+4. 发送消息：请使用当前平台的命令执行工具运行一个 11 秒前台脚本任务，不要主动放到后台；macOS/Linux 使用 Bash，Windows 使用 PowerShell；命令先输出 `aijia-eleven-sec-start-027`，等待 11 秒，再输出 `aijia-eleven-sec-end-027`；工具参数不要包含 `run_in_background`，或设置为 `false`。
+5. 等 agent 在 30 秒内回复。
+6. 从对话消息文件 `~/.renlijia/users/{scope}/conversations/{conversationId}/messages.jsonl` 中记录自动后台任务的 `{taskId}`。
+
+### 验收标准
+
+应该看到：
+
+- Bash 或 PowerShell 工具结果 JSON 中 `assistant_auto_backgrounded == true`
+- Bash 或 PowerShell 工具结果 JSON 中 `status == "backgrounded"`
+- Bash 或 PowerShell 工具结果 JSON 中 `task_id == "{taskId}"`
+- assistant 最终回复中包含 `{taskId}`
+- assistant 最终回复中包含 `后台` 或 `background`
+
+不应该看到：
+
+- Bash 或 PowerShell 工具结果不以纯前台文本形式只返回 `aijia-eleven-sec-start-027` 和 `aijia-eleven-sec-end-027`
+- assistant 最终回复中不含 `我等命令结束后再继续` 这类等待结束表述
+- 对话消息文件中不含 `{taskId}` 对应的 `No task found`
+
+## 意图-对话-028: 短超时前台任务运行，按超时报错
+
+### 场景
+
+用户显式要求前台命令使用短 timeout，而命令运行时间超过 timeout 且短于自动后台阈值。系统应按前台超时处理，不能把它转成后台任务逃避 timeout。
+
+### 操作步骤
+
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 开启一条新对话：`tauri-pilot aijia new-task`。
+3. 通过 `tauri-pilot aijia where --json` 记录 `{scope}` 和 `{conversationId}`。
+4. 发送消息：请使用当前平台的命令执行工具运行一个前台脚本任务，不要主动放到后台；macOS/Linux 使用 Bash，Windows 使用 PowerShell；命令先输出 `aijia-timeout-start-028`，等待 8 秒，再输出 `aijia-timeout-end-028`；请把工具 timeout 设置为 5 秒；工具参数不要包含 `run_in_background`，或设置为 `false`。
+5. 等 agent 回复。
+6. 检查对话消息文件 `~/.renlijia/users/{scope}/conversations/{conversationId}/messages.jsonl`。
+
+### 验收标准
+
+应该看到：
+
+- Bash 或 PowerShell 工具调用参数中 timeout 为 5 秒或等价毫秒值
+- Bash 或 PowerShell 工具结果中包含 `timeout`、`timed out`、`超时` 中任一超时状态
+- assistant 最终回复中包含 `timeout`、`timed out`、`超时` 中任一超时描述
+
+不应该看到：
+
+- Bash 或 PowerShell 工具结果 JSON 中不含 `assistant_auto_backgrounded == true`
+- Bash 或 PowerShell 工具结果 JSON 中不含 `status == "backgrounded"`
+- Bash 或 PowerShell 工具结果中不含 `aijia-timeout-end-028`
