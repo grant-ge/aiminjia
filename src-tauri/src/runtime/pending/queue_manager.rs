@@ -10,13 +10,13 @@ use async_trait::async_trait;
 use tokio::task::JoinHandle;
 
 use crate::auth::AuthDeactivationHandler;
-use crate::runtime::chat::chat_turn_driver::ChatAttachmentRef;
+use crate::runtime::chat::chat_turn_driver::{ChatAttachmentRef, IM_MOBILE_CHANNEL_CONTEXT};
 use crate::runtime::chat::ChatTurnRequest;
 use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::ids::SessionId;
 use crate::runtime::run_registry::RuntimeRunRegistry;
 
-use super::types::{EnqueueOutcome, EnqueueRejection, PendingConfig, PendingItem};
+use super::types::{EnqueueOutcome, EnqueueRejection, PendingConfig, PendingItem, PendingSource};
 
 /// Per-host abstraction over conversation directory layout.
 pub trait ConvDirResolver: Send + Sync {
@@ -408,6 +408,7 @@ fn build_request_from_single(session_id: &SessionId, item: PendingItem) -> ChatT
         })
         .collect();
     let mut req = ChatTurnRequest::new(session_id.clone(), item.text, attachments);
+    req.channel_context = channel_context_for_pending_source(item.source);
     req.skill_command = item.skill_command;
     req
 }
@@ -446,9 +447,20 @@ fn build_request_from_batch(session_id: &SessionId, items: Vec<PendingItem>) -> 
         })
         .collect();
     let mut req = ChatTurnRequest::new(session_id.clone(), last_text, last_attachments);
+    req.channel_context = channel_context_for_pending_source(last.source);
     req.skill_command = last.skill_command.clone();
     req.pending_batch = Some(items);
     req
+}
+
+fn channel_context_for_pending_source(source: PendingSource) -> Option<String> {
+    match source {
+        PendingSource::ImDingtalk
+        | PendingSource::ImFeishu
+        | PendingSource::ImWecom
+        | PendingSource::ImTelegram => Some(IM_MOBILE_CHANNEL_CONTEXT.to_string()),
+        PendingSource::App => None,
+    }
 }
 
 fn file_name_of(path: &str) -> String {

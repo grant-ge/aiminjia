@@ -124,6 +124,8 @@ pub fn selected_skill_instruction(skill_command: Option<&SkillCommandRef>) -> Op
     ))
 }
 
+pub const IM_MOBILE_CHANNEL_CONTEXT: &str = "当前请求来自 IM/移动端渠道。用户通常只能看到 IM 回复，看不到本机桌面弹出的浏览器或 127.0.0.1 回调页面。若后续技能或工具需要用户完成浏览器授权，请优先使用可在移动端访问的授权方式，并把完整授权链接和必要验证码直接回复给用户；不要只说“浏览器已打开”。";
+
 /// The chat turn request type.  Defined here to avoid circular imports between
 /// `session_runtime` and `chat`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -132,6 +134,10 @@ pub struct ChatTurnRequest {
     pub content: String,
     pub attachments: Vec<ChatAttachmentRef>,
     pub skill_command: Option<SkillCommandRef>,
+    /// Optional per-turn channel context from transports such as IM connectors.
+    /// This is injected into dynamic context only; it must not be persisted as
+    /// user-visible message content.
+    pub channel_context: Option<String>,
     pub agent_name: Option<String>,
     pub permission_mode: PermissionMode,
     /// The authoritative run_id for this turn.
@@ -188,6 +194,7 @@ impl ChatTurnRequest {
             content: content.into(),
             attachments,
             skill_command: None,
+            channel_context: None,
             agent_name: None,
             permission_mode: PermissionMode::Default,
             run_id: RunId::new(uuid::Uuid::new_v4().to_string()),
@@ -1822,6 +1829,17 @@ impl RuntimeChatTurnDriver {
             }
             Some(instruction) => instruction,
             None => skill_catalog,
+        };
+        let skill_context = match request.channel_context.as_deref() {
+            Some(channel_context)
+                if !channel_context.trim().is_empty() && !skill_context.is_empty() =>
+            {
+                format!("{channel_context}\n\n{skill_context}")
+            }
+            Some(channel_context) if !channel_context.trim().is_empty() => {
+                channel_context.to_string()
+            }
+            _ => skill_context,
         };
         let project_memory_ctx = executor
             .load_project_memory(&config.workspace_path, request.content.as_str())
@@ -3709,6 +3727,32 @@ mod tests {
         assert_eq!(dynamic_contexts.len(), 1);
         assert!(dynamic_contexts[0].contains("可用专项技能"));
         assert!(dynamic_contexts[0].contains("biz-writing"));
+    }
+
+    #[tokio::test]
+    async fn driver_injects_channel_context_into_dynamic_context() {
+        let executor = Arc::new(SnapshotPromptExecutor::new());
+        let bus = RuntimeEventBus::new();
+        let driver =
+            RuntimeChatTurnDriver::with_llm_executor(QueryEngine::new(), bus, executor.clone());
+        let mut turn = TurnState::new(
+            IdentityMapping::from_legacy_conversation_id("conv-driver-channel-context".to_string()),
+            RunId::new("run-driver-channel-context"),
+            "需要授权".to_string(),
+        );
+        let mut request = ChatTurnRequest::new("conv-driver-channel-context", "需要授权", vec![]);
+        request.channel_context =
+            Some("当前请求来自 IM/移动端渠道。请输出完整授权链接。".to_string());
+
+        driver
+            .run_chat_turn(&mut turn, &request)
+            .await
+            .expect("driver should run with channel context");
+
+        let dynamic_contexts = executor.seen_dynamic_contexts.lock().unwrap().clone();
+        assert_eq!(dynamic_contexts.len(), 1);
+        assert!(dynamic_contexts[0].contains("IM/移动端渠道"));
+        assert!(dynamic_contexts[0].contains("完整授权链接"));
     }
 
     #[tokio::test]
