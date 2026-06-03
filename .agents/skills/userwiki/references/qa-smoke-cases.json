@@ -1,0 +1,226 @@
+[
+  {
+    "id": "runtime-permission-impact",
+    "default": false,
+    "question": "wiki 我想新增一个 Runtime 工具权限模式，会影响哪些模块？",
+    "requiredTerms": [
+      "可能涉及的模块",
+      "关键文件",
+      "上游入口",
+      "下游影响",
+      "相关测试",
+      "图谱不确定点",
+      "src-tauri/src/runtime/tools/permission.rs",
+      "src-tauri/src/runtime/tools/dispatcher.rs",
+      "src/lib/tauri.ts",
+      "docs/repo-wiki/runtime-map.md",
+      "PermissionMode"
+    ],
+    "requiredAnyTerms": [
+      [
+        "src-tauri/src/runtime/query_engine.rs",
+        "QueryEngine"
+      ],
+      [
+        "src-tauri/src/runtime/store/permission_store.rs",
+        "PermissionStore",
+        "pending_permission_request_store.rs",
+        "pending ask"
+      ],
+      [
+        "需要同步更新",
+        "文档/RepoWiki",
+        "docs/wiki"
+      ],
+      [
+        "PermissionDecision",
+        "Ask/Deny/Allow",
+        "Allow/Deny"
+      ]
+    ],
+    "forbiddenTerms": [
+      "legacy llm/tool_executor 是新工具入口",
+      "我已经打开 dashboard"
+    ]
+  },
+  {
+    "id": "skill-pending-impact",
+    "default": false,
+    "question": "我要给技能中心新增 pending 校验状态，wiki 看看影响哪些点？",
+    "requiredTerms": [
+      "可能涉及的模块",
+      "关键文件",
+      "src/features/skill-center/SkillCenterPage.tsx",
+      "src/stores/skillStore.ts",
+      "src/stores/pendingStore.ts",
+      "src/lib/tauri.ts",
+      "src-tauri/src/commands/skills.rs",
+      ".understand-anything/enhancements/frontend-skill-pending.json"
+    ],
+    "forbiddenTerms": [
+      "只需要改 UI 卡片"
+    ]
+  },
+  {
+    "id": "userwiki-skill-explain",
+    "default": true,
+    "question": "这个文件 .agents/skills/userwiki/SKILL.md 是干什么的？",
+    "requiredTerms": [
+      "文件职责",
+      "所属 layer",
+      "重要入边",
+      "重要出边",
+      "相关测试",
+      ".agents/skills/userwiki/SKILL.md",
+      ".agents/skills/userwiki/references/qa-playbook.md",
+      "install.md",
+      "usage.md",
+      "maintenance-routing.md",
+      "scripts/check-repowiki.mjs",
+      "用户入口",
+      "wiki-maintainer"
+    ],
+    "requiredAnyTerms": [
+      [
+        "不要主动打开浏览器",
+        "没有打开浏览器",
+        "不打开浏览器"
+      ]
+    ],
+    "forbiddenTerms": [
+      "test-intents-* 是无用的",
+      "建议删除 test-intents"
+    ]
+  },
+  {
+    "id": "runtime-panel-explain",
+    "default": false,
+    "question": "wiki explain src/components/settings/panels/RuntimePanel.tsx",
+    "requiredTerms": [
+      "文件职责",
+      "RuntimePanel.tsx",
+      "src/lib/tauri.ts",
+      "src/stores/runtimeStore.ts",
+      "src/stores/settingsStore.ts",
+      "src/components/settings/SettingsModal.tsx",
+      "src/lib/tauri.runtime.test.ts",
+      "bundled",
+      "installed",
+      "current"
+    ],
+    "forbiddenTerms": [
+      "只是一个普通 React UI"
+    ]
+  },
+  {
+    "id": "settings-impact",
+    "default": false,
+    "question": "userwiki 我想新增一个设置项，会影响哪些点？",
+    "requiredTerms": [
+      "可能涉及的模块",
+      "关键文件",
+      "上游入口",
+      "下游影响",
+      "相关测试",
+      "需要同步更新",
+      "图谱不确定点",
+      "src/types/settings.ts",
+      "src/stores/settingsStore.ts",
+      "src/components/settings",
+      "src/lib/tauri.ts",
+      "src-tauri/src/models/settings.rs",
+      "src-tauri/src/commands/settings.rs"
+    ],
+    "forbiddenTerms": [
+      "我会打开浏览器",
+      "我已经打开 dashboard"
+    ]
+  },
+  {
+    "id": "file-explain-turn-config",
+    "default": false,
+    "question": "userwiki 这个文件是干什么的：src-tauri/src/runtime/chat/turn_config.rs？",
+    "requiredTerms": [
+      "文件职责",
+      "所属 layer",
+      "重要入边",
+      "重要出边",
+      "相关测试",
+      "什么时候应该改",
+      "不确定点",
+      "src-tauri/src/runtime/chat/turn_config.rs",
+      "TurnConfig",
+      "ResolvedLlmSettings"
+    ],
+    "forbiddenTerms": [
+      "我会打开浏览器",
+      "我已经打开 dashboard"
+    ]
+  },
+  {
+    "id": "graph-completeness",
+    "default": false,
+    "question": "userwiki 当前图谱完整了吗？",
+    "requiredTerms": [
+      "完整",
+      ".understand-anything/knowledge-graph.json",
+      ".understand-anything/config.json",
+      "zh",
+      "node scripts/check-repowiki.mjs",
+      "自动风险审计",
+      "完整测试覆盖",
+      "函数级全链路"
+    ],
+    "forbiddenTerms": [
+      "完全覆盖所有函数",
+      "已经证明所有测试覆盖"
+    ]
+  },
+  {
+    "id": "install-zh",
+    "default": true,
+    "question": "userwiki 怎么安装 Understand-Anything，并用中文生成图谱？",
+    "requiredTerms": [
+      "curl -fsSL https://raw.githubusercontent.com/Lum1104/Understand-Anything/main/install.sh | bash",
+      "bash -s codex",
+      "~/.understand-anything/repo",
+      "--language zh",
+      "node scripts/check-repowiki.mjs"
+    ],
+    "forbiddenTerms": [
+      "/Users/a20250311/github/Understand-Anything 是标准安装路径"
+    ]
+  },
+  {
+    "id": "onboarding-path",
+    "default": true,
+    "question": "userwiki 新人应该先看什么？",
+    "requiredTerms": [
+      "docs/repo-wiki/index.md",
+      "docs/repo-wiki/architecture-map.md",
+      "docs/repo-wiki/runtime-map.md",
+      "docs/repo-wiki/frontend-map.md",
+      "docs/repo-wiki/testing-and-commands.md",
+      "guided tour"
+    ],
+    "forbiddenTerms": [
+      "先读完所有文件"
+    ]
+  },
+  {
+    "id": "diff-impact-current",
+    "default": false,
+    "question": "userwiki 当前改动影响哪些模块？",
+    "requiredTerms": [
+      "changed files",
+      "git diff --name-only",
+      "untracked",
+      ".understand-anything/knowledge-graph.json",
+      "docs/repo-wiki",
+      "图谱缺口"
+    ],
+    "forbiddenTerms": [
+      "不需要看 git diff"
+    ]
+  }
+]

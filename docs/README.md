@@ -7,6 +7,7 @@ archived under `docs/archive/`.
 ## Current References
 
 - `architecture-blueprint.md`: current architecture overview.
+- `repo-wiki/`: Understand-Anything graph-derived repository wiki and onboarding map.
 - `runtime-manager.md`: runtime manager reference.
 - `prompt-architecture.md`: prompt architecture reference.
 - `release-playbook.md`: release process.

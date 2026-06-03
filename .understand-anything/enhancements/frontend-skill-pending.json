@@ -1,0 +1,177 @@
+{
+  "module": "frontend-skill-pending-chain",
+  "coverage": "仅覆盖前端 skill/pending 链路：SkillCenter、SkillDetail、skillStore、pendingStore、skillLocalization、相关测试与 tauri IPC 类型。",
+  "key_nodes": [
+    {
+      "filePath": "src/lib/tauri.ts",
+      "summary": "skill/pending 的前端契约面，定义 skill registry 与 pending 事件常量，并暴露技能安装、卸载、刷新、同步和 pending snapshot/remove/listener API。",
+      "tags": ["ipc-contract", "skill", "pending", "event-source-of-truth"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src/stores/skillStore.ts",
+      "summary": "轻量 Zustand store，只管理技能列表缓存、分类过滤、reload、uninstall 和 upload，并把后端结构化安装错误映射为前端错误类型。",
+      "tags": ["zustand", "skill", "error-mapping", "cache"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "src/stores/pendingStore.ts",
+      "summary": "pending 队列状态机，applySnapshot/Queued/Drained/Removed 只做 immutable reducer；removeItem 只发 IPC，不做本地删除，等待后端事件确认。",
+      "tags": ["zustand", "pending", "event-driven", "immutable"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "src/features/skill-center/SkillCenterPage.tsx",
+      "summary": "技能中心主编排页，负责导入目录/压缩包、覆盖确认、校验失败弹窗、删除、导出、同步内置技能、同步本地 registry、过滤搜索和详情跳转。",
+      "tags": ["skill-center", "page-orchestrator", "import", "sync", "routing"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src/features/skill-center/uploadWithOverwriteConfirm.ts",
+      "summary": "技能上传二阶段流程：先按非覆盖安装尝试，遇到 already exists 后弹确认，再按覆盖模式重试。",
+      "tags": ["skill", "overwrite", "flow-control"],
+      "complexity": "low"
+    },
+    {
+      "filePath": "src/features/skill-center/SkillValidationResultDialog.tsx",
+      "summary": "把技能校验失败类型映射为用户可见规则清单与详情文案，覆盖名称、SKILL.md 缺失、解析失败和 IO 错误。",
+      "tags": ["skill", "validation", "dialog"],
+      "complexity": "low"
+    },
+    {
+      "filePath": "src/features/skill-detail/SkillDetailPage.tsx",
+      "summary": "技能详情页不直接执行技能；点击使用时本地化 skill 信息，写入 pending skill chip，再路由回首页。",
+      "tags": ["skill-detail", "pending-skill-chip", "routing"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "src/lib/skillLocalization.ts",
+      "summary": "技能名称和简介本地化适配层，中文直接取展示字段，英文优先英文显示字段，再回退内置翻译键或原字段。",
+      "tags": ["skill", "i18n", "presentation"],
+      "complexity": "low"
+    },
+    {
+      "filePath": "src/features/skill-center/SkillCenterPage.integration.test.tsx",
+      "summary": "覆盖技能中心的导入、分类、搜索、reload、校验失败和覆盖确认等 UI 主分支。",
+      "tags": ["test", "skill-center", "integration"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src/stores/pendingStore.test.ts",
+      "summary": "验证 pending reducer 语义与 removeItem 只发 IPC、不立即本地删除的后端事件权威约束。",
+      "tags": ["test", "pending", "store-contract"],
+      "complexity": "moderate"
+    }
+  ],
+  "semantic_edges": [
+    {
+      "sourceFilePath": "src/features/skill-center/SkillCenterPage.tsx",
+      "targetFilePath": "src/stores/skillStore.ts",
+      "type": "depends_on",
+      "weight": 0.97,
+      "reason": "页面通过 skills、reload、upload、uninstall 和 listByCategory 读取并驱动技能状态。"
+    },
+    {
+      "sourceFilePath": "src/features/skill-center/SkillCenterPage.tsx",
+      "targetFilePath": "src/lib/tauri.ts",
+      "type": "depends_on",
+      "weight": 0.9,
+      "reason": "页面直接调用 refreshSkillRegistry、syncBuiltinSkills 以及导出相关 IPC。"
+    },
+    {
+      "sourceFilePath": "src/features/skill-center/SkillCenterPage.tsx",
+      "targetFilePath": "src/features/skill-center/uploadWithOverwriteConfirm.ts",
+      "type": "calls",
+      "weight": 0.89,
+      "reason": "导入目录和压缩包最终汇入 helper，由 helper 统一处理重复技能覆盖分支。"
+    },
+    {
+      "sourceFilePath": "src/features/skill-center/SkillCenterPage.tsx",
+      "targetFilePath": "src/features/skill-center/SkillValidationResultDialog.tsx",
+      "type": "calls",
+      "weight": 0.84,
+      "reason": "upload 抛出 SkillValidationError 时，页面打开校验结果弹窗展示 kind/detail。"
+    },
+    {
+      "sourceFilePath": "src/stores/skillStore.ts",
+      "targetFilePath": "src/lib/tauri.ts",
+      "type": "depends_on",
+      "weight": 0.95,
+      "reason": "store 的 reload、upload、uninstall 只是对 tauri 技能 API 的包装。"
+    },
+    {
+      "sourceFilePath": "src/stores/pendingStore.ts",
+      "targetFilePath": "src/lib/tauri.ts",
+      "type": "depends_on",
+      "weight": 0.92,
+      "reason": "removeItem 的唯一副作用是调用 pendingRemoveItem(sessionId, itemId)。"
+    },
+    {
+      "sourceFilePath": "src/features/skill-detail/SkillDetailPage.tsx",
+      "targetFilePath": "src/stores/skillStore.ts",
+      "type": "depends_on",
+      "weight": 0.83,
+      "reason": "详情页通过 getById 获取当前 skill 的 trigger、name、description、source 和 updatedAt。"
+    },
+    {
+      "sourceFilePath": "src/features/skill-detail/SkillDetailPage.tsx",
+      "targetFilePath": "src/lib/skillLocalization.ts",
+      "type": "depends_on",
+      "weight": 0.8,
+      "reason": "详情页显示文案与使用动作中的 chip label 都经过 localizeSkill。"
+    },
+    {
+      "sourceFilePath": "src/features/skill-center/SkillCenterPage.integration.test.tsx",
+      "targetFilePath": "src/features/skill-center/SkillCenterPage.tsx",
+      "type": "validates",
+      "weight": 0.91,
+      "reason": "集成测试覆盖导入、分类、搜索、reload、校验失败与覆盖确认等页面关键分支。"
+    },
+    {
+      "sourceFilePath": "src/stores/pendingStore.test.ts",
+      "targetFilePath": "src/stores/pendingStore.ts",
+      "type": "validates",
+      "weight": 0.8,
+      "reason": "测试明确要求 removeItem 后本地状态不能立即删除，必须等事件。"
+    }
+  ],
+  "architecture_findings": [
+    {
+      "title": "skill 链路是页面重编排 store 轻封装 IPC 真相源集中的结构",
+      "description": "SkillCenterPage 承担用户动作分支，skillStore 只保留缓存、筛选和错误归一化，真正的操作契约集中在 tauri.ts。",
+      "evidence": ["src/features/skill-center/SkillCenterPage.tsx", "src/stores/skillStore.ts", "src/lib/tauri.ts"]
+    },
+    {
+      "title": "pending 链路采用后端事件权威设计",
+      "description": "pendingStore.removeItem 不本地删除，测试也锁定了等待 pending:removed 事件的语义。",
+      "evidence": ["src/stores/pendingStore.ts", "src/stores/pendingStore.test.ts"]
+    },
+    {
+      "title": "SkillDetail 使用动作已变成 pending skill chip 注入",
+      "description": "技能详情页的使用按钮不直接运行技能，而是写入 pending skill chip 并回到首页。",
+      "evidence": ["src/features/skill-detail/SkillDetailPage.tsx", "src/features/skill-detail/SkillDetailPage.test.tsx"]
+    }
+  ],
+  "tour_steps": [
+    {
+      "title": "先看 skill 和 pending 契约面",
+      "description": "先读 tauri.ts 中 SkillInfo、安装卸载刷新同步和 pending 事件/API，确定前端能发出与能接收的最小协议。",
+      "filePaths": ["src/lib/tauri.ts"]
+    },
+    {
+      "title": "再走技能中心主链路",
+      "description": "从 SkillCenterPage 进入，顺着导入、覆盖确认、校验失败弹窗、同步和删除动作看 store/helper 分层。",
+      "filePaths": ["src/features/skill-center/SkillCenterPage.tsx", "src/features/skill-center/uploadWithOverwriteConfirm.ts", "src/features/skill-center/SkillValidationResultDialog.tsx", "src/stores/skillStore.ts"]
+    },
+    {
+      "title": "最后看 skill 与 pending 的交点",
+      "description": "读 SkillDetailPage 的使用动作，再对照 pendingStore 与测试，确认 skill 选择结果落成 pending chip。",
+      "filePaths": ["src/features/skill-detail/SkillDetailPage.tsx", "src/stores/pendingStore.ts", "src/stores/pendingStore.test.ts"]
+    }
+  ],
+  "risks_or_gaps": [
+    "本轮限定范围内没有确认 pending 事件真正订阅点和 UI 落点。",
+    "SkillCenterPage 页面职责偏重，导入、同步、删除、导出、过滤、路由、toast 都集中在一个文件。",
+    "SkillMarketModal 仍是未接入主链路的空壳弹窗。"
+  ]
+}

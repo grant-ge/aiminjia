@@ -1,0 +1,235 @@
+{
+  "module": "frontend-employee-settings-generated-file-preview",
+  "coverage": "代码/测试来源：settings modal/store/types、employee list/hire/drawer/resource forms、generated file preview actions/store/surface，以及相关前端测试。",
+  "key_nodes": [
+    {
+      "filePath": "src/components/sidebar/SidebarFooterSettings.tsx",
+      "summary": "侧边栏底部设置入口，固定通过 uiStore 打开 account 设置 tab，是设置模态路由的 UI 触发点。",
+      "tags": ["settings", "sidebar", "entrypoint"],
+      "complexity": "low"
+    },
+    {
+      "filePath": "src/stores/uiStore.ts",
+      "summary": "维护 settingsModal 与 route 等全局 UI 状态，负责设置页 tab 归一化、不可用 tab 兜底以及员工派活后的路由切换。",
+      "tags": ["zustand", "ui-route", "settings", "employee"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src/components/settings/SettingsModal.tsx",
+      "summary": "设置页总装配器，按 settingsModal 选择 account、about、runtime、archived 等右侧内容；无 active key 时不渲染。",
+      "tags": ["settings", "modal", "shell"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "src/components/settings/panels/GeneralPanel.tsx",
+      "summary": "通用设置业务面板，字体、语言、聊天宽度等设置先写本地 store，再异步调用后端更新持久化。",
+      "tags": ["settings", "general-panel", "persistence"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "src/stores/settingsStore.ts",
+      "summary": "设置状态单源，维护字体、语言、聊天宽度、数据脱敏等本地 UI 状态，并与 settings 类型约束协同。",
+      "tags": ["zustand", "settings", "ui-state"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "src/features/employees/useEmployees.ts",
+      "summary": "员工列表数据 hook，轮询员工与 active run 状态，为员工卡片提供 running、has-report、needs-setup、idle 等聚合输入。",
+      "tags": ["employee", "hook", "polling", "status"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "src/features/employees/EmployeeCard.tsx",
+      "summary": "员工卡片展示列表状态机，用聚合状态呈现员工运行、报告、待配置或空闲状态，并把具体动作下沉到详情侧栏。",
+      "tags": ["employee", "card", "status-ui"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "src/features/employees/HireWizard.tsx",
+      "summary": "招募员工三步流：拉取模板目录、录入基础信息、配置资源或 schema 表单，最后调用 employeeCreate。",
+      "tags": ["employee", "hire-wizard", "template", "resource-config"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src/features/employees/triggerPrechecks.ts",
+      "summary": "员工派活前置检查器，当前只拦截 hard-required resource 与 knowledge-indexing，不再拦附件或钉钉鉴权。",
+      "tags": ["employee", "dispatch", "precheck"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "src/features/employees/EmployeeDrawer.tsx",
+      "summary": "员工详情侧栏，承载派活、资源配置、cron、模板升级和删除员工；派活成功后 seed conversation 并切换路由。",
+      "tags": ["employee", "drawer", "dispatch", "route"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src/features/employees/ResourceConfigForm.tsx",
+      "summary": "员工资源配置 UI 路由层，内置模板走 kind-specific form，服务端 schema 模板交给 SchemaForm 渲染。",
+      "tags": ["employee", "resource-config", "form-router"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src/features/employees/forms/SchemaForm.tsx",
+      "summary": "服务端 resourceConfigSchema 的前端渲染器，让 org/private employee 模板能以 schema 形式扩展配置 UI。",
+      "tags": ["employee", "schema-form", "dynamic-ui"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src/components/chat/generatedFileActions.ts",
+      "summary": "生成文件动作判定层，按 fileType 和扩展名决定 preview 或 open，并构造 PreviewTarget。",
+      "tags": ["generated-file", "preview", "action-model"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "src/stores/generatedFilePreviewStore.ts",
+      "summary": "生成文件预览全局状态，只保存当前 PreviewTarget，并在会话切换时按 conversationId 清空。",
+      "tags": ["generated-file", "preview-store", "conversation-scoped"],
+      "complexity": "low"
+    },
+    {
+      "filePath": "src/components/chat/FilePreviewPane.tsx",
+      "summary": "文件预览承载面，根据 PreviewTarget 拉取并渲染实际内容，并支持用默认应用打开本地附件或生成文件。",
+      "tags": ["generated-file", "preview-pane", "surface"],
+      "complexity": "moderate"
+    }
+  ],
+  "semantic_edges": [
+    {
+      "sourceFilePath": "src/components/sidebar/SidebarFooterSettings.tsx",
+      "targetFilePath": "src/stores/uiStore.ts",
+      "type": "calls",
+      "weight": 0.86,
+      "reason": "点击设置入口后通过 uiStore 打开 account 设置 tab。"
+    },
+    {
+      "sourceFilePath": "src/stores/uiStore.ts",
+      "targetFilePath": "src/components/settings/SettingsModal.tsx",
+      "type": "configures",
+      "weight": 0.86,
+      "reason": "SettingsModal 订阅 settingsModal 状态，有值时装配完整设置模态框。"
+    },
+    {
+      "sourceFilePath": "src/components/settings/SettingsModal.tsx",
+      "targetFilePath": "src/components/settings/panels/GeneralPanel.tsx",
+      "type": "contains_flow",
+      "weight": 0.78,
+      "reason": "account active key 对应右侧 GeneralPanel。"
+    },
+    {
+      "sourceFilePath": "src/components/settings/panels/GeneralPanel.tsx",
+      "targetFilePath": "src/stores/settingsStore.ts",
+      "type": "writes_to",
+      "weight": 0.88,
+      "reason": "字体、语言、聊天宽度先写本地 settings store，再异步持久化。"
+    },
+    {
+      "sourceFilePath": "src/features/employees/useEmployees.ts",
+      "targetFilePath": "src/features/employees/EmployeeCard.tsx",
+      "type": "configures",
+      "weight": 0.78,
+      "reason": "员工列表 hook 提供 employee 和 active run 状态，卡片展示聚合状态。"
+    },
+    {
+      "sourceFilePath": "src/features/employees/HireWizard.tsx",
+      "targetFilePath": "src/features/employees/ResourceConfigForm.tsx",
+      "type": "calls",
+      "weight": 0.8,
+      "reason": "招募第三步按模板资源配置要求进入资源配置表单。"
+    },
+    {
+      "sourceFilePath": "src/features/employees/ResourceConfigForm.tsx",
+      "targetFilePath": "src/features/employees/forms/SchemaForm.tsx",
+      "type": "routes",
+      "weight": 0.82,
+      "reason": "服务端 schema 模板由 ResourceConfigForm 路由到 SchemaForm 渲染。"
+    },
+    {
+      "sourceFilePath": "src/features/employees/EmployeeDrawer.tsx",
+      "targetFilePath": "src/features/employees/triggerPrechecks.ts",
+      "type": "calls",
+      "weight": 0.9,
+      "reason": "点击派活后先跑 precheck，决定 ready/resource/knowledge-indexing 分支。"
+    },
+    {
+      "sourceFilePath": "src/features/employees/EmployeeDrawer.tsx",
+      "targetFilePath": "src/stores/uiStore.ts",
+      "type": "writes_to",
+      "weight": 0.74,
+      "reason": "派活成功后 seed 会话并切换 sidebarTab/route 到 chat。"
+    },
+    {
+      "sourceFilePath": "src/components/chat/generatedFileActions.ts",
+      "targetFilePath": "src/stores/generatedFilePreviewStore.ts",
+      "type": "writes_to",
+      "weight": 0.86,
+      "reason": "预览入口先把 GeneratedFile/FileAttachment 规范化为 PreviewTarget，再写入 preview store。"
+    },
+    {
+      "sourceFilePath": "src/components/chat/MessageList.tsx",
+      "targetFilePath": "src/stores/generatedFilePreviewStore.ts",
+      "type": "writes_to",
+      "weight": 0.7,
+      "reason": "生成文件卡片入口可以写入预览目标。"
+    },
+    {
+      "sourceFilePath": "src/components/chat/RightPanel.tsx",
+      "targetFilePath": "src/stores/generatedFilePreviewStore.ts",
+      "type": "depends_on",
+      "weight": 0.76,
+      "reason": "右侧面板按当前 preview target 显示预览面。"
+    },
+    {
+      "sourceFilePath": "src/components/chat-scene/markdown/UserBubbleMarkdown.tsx",
+      "targetFilePath": "src/stores/generatedFilePreviewStore.ts",
+      "type": "writes_to",
+      "weight": 0.72,
+      "reason": "本地附件 markdown chip 可写入 preview store 打开本地可预览附件。"
+    },
+    {
+      "sourceFilePath": "src/features/chat/ChatPage.tsx",
+      "targetFilePath": "src/components/chat/FilePreviewPane.tsx",
+      "type": "contains_flow",
+      "weight": 0.8,
+      "reason": "ChatPage 只在 target 属于当前 conversation 时挂载右侧预览承载面。"
+    }
+  ],
+  "architecture_findings": [
+    {
+      "title": "设置页是 uiStore 驱动的模态路由",
+      "description": "设置开关、tab 切换和未开放 tab 兜底集中在 uiStore，SettingsModal 作为被动渲染器，与主路由解耦。",
+      "evidence": ["src/stores/uiStore.ts", "src/components/settings/SettingsModal.tsx", "src/components/sidebar/SidebarFooterSettings.tsx"]
+    },
+    {
+      "title": "员工派活链路先建立会话锚点再切路由",
+      "description": "EmployeeDrawer 派活成功后先 seedDispatchConversation，再 setRoute 到 chat，避免后端异步创建事件未落地时出现空白聊天页。",
+      "evidence": ["src/features/employees/EmployeeDrawer.tsx", "src/stores/uiStore.ts"]
+    },
+    {
+      "title": "生成文件预览是会话作用域状态机",
+      "description": "PreviewTarget 存在独立 store，入口组件只负责写入目标，ChatPage/RightPanel/FilePreviewPane 按 conversationId 消费目标。",
+      "evidence": ["src/components/chat/generatedFileActions.ts", "src/stores/generatedFilePreviewStore.ts", "src/features/chat/ChatPage.tsx", "src/components/chat/FilePreviewPane.tsx"]
+    }
+  ],
+  "tour_steps": [
+    {
+      "title": "设置链路",
+      "description": "从侧边栏设置入口到 uiStore.openSettings，再到 SettingsModal、GeneralPanel 和 settingsStore。",
+      "filePaths": ["src/components/sidebar/SidebarFooterSettings.tsx", "src/stores/uiStore.ts", "src/components/settings/SettingsModal.tsx", "src/components/settings/panels/GeneralPanel.tsx", "src/stores/settingsStore.ts"]
+    },
+    {
+      "title": "员工链路",
+      "description": "从员工列表和卡片到 EmployeeDrawer、precheck、ResourceConfigForm/SchemaForm、seed conversation 和 route=chat。",
+      "filePaths": ["src/features/employees/useEmployees.ts", "src/features/employees/EmployeeCard.tsx", "src/features/employees/EmployeeDrawer.tsx", "src/features/employees/triggerPrechecks.ts", "src/features/employees/ResourceConfigForm.tsx", "src/features/employees/forms/SchemaForm.tsx"]
+    },
+    {
+      "title": "文件预览链路",
+      "description": "从 MessageList/RightPanel/UserBubbleMarkdown 写入 PreviewTarget，到 generatedFilePreviewStore、ChatPage 和 FilePreviewPane 消费。",
+      "filePaths": ["src/components/chat/generatedFileActions.ts", "src/stores/generatedFilePreviewStore.ts", "src/components/chat/MessageList.tsx", "src/components/chat/RightPanel.tsx", "src/components/chat/FilePreviewPane.tsx"]
+    }
+  ],
+  "risks_or_gaps": [
+    "GeneralPanel 实现与部分测试口径存在语言切换显示不一致的信号。",
+    "EmployeeDrawer 的 ready/resource/knowledge-indexing 分支组件级回归覆盖不足。",
+    "RightPanel 产物列表相关测试部分被 skip，有效覆盖更偏向 preview target 显示。"
+  ]
+}
