@@ -409,19 +409,20 @@ fn filter_current_conversation_diagnostics(
 }
 
 fn filter_recent_warn_error(records: &[MetricRecord]) -> Vec<String> {
-    let reference_time = records
-        .iter()
-        .filter_map(|record| record.timestamp)
-        .max()
-        .unwrap_or_else(Utc::now);
-    let since = reference_time - Duration::hours(24);
+    let now = Utc::now();
+    let since = now - Duration::hours(24);
 
     records
         .iter()
         .filter(|record| {
             record.value.get("category").and_then(|v| v.as_str()) == Some("diagnostics")
         })
-        .filter(|record| record.timestamp.map(|ts| ts >= since).unwrap_or(true))
+        .filter(|record| {
+            record
+                .timestamp
+                .map(|ts| ts >= since && ts <= now)
+                .unwrap_or(false)
+        })
         .filter(|record| {
             matches!(
                 record.value.get("level").and_then(|v| v.as_str()),

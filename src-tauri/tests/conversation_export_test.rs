@@ -3,6 +3,7 @@ use app_lib::runtime::export::conversation_exporter::{
 };
 use app_lib::storage::file_store::types::StoredMessage;
 use app_lib::storage::file_store::AppStorage;
+use chrono::{Duration, Utc};
 use std::io::Read;
 use tempfile::TempDir;
 use zip::ZipArchive;
@@ -80,7 +81,10 @@ fn export_zip_contains_readable_html_manifest_raw_messages_and_full_logs() {
     );
     write_file(
         &logs_dir.join("metrics.1.jsonl"),
-        r#"{"category":"diagnostics","ts":"2026-06-03T00:00:01Z","source":"backend","level":"error","event":"tool.execute.failed","conversationId":"other-conv","runId":"run-2","ok":false,"error":"boom"}"#,
+        &format!(
+            r#"{{"category":"diagnostics","ts":"{}","source":"backend","level":"error","event":"tool.execute.failed","conversationId":"other-conv","runId":"run-2","ok":false,"error":"boom"}}"#,
+            Utc::now().to_rfc3339()
+        ),
     );
     write_file(&logs_dir.join("renlijia.log"), "runtime log body\n");
     write_file(&logs_dir.join("gate.log"), "gate log body\n");
@@ -150,6 +154,52 @@ fn export_zip_contains_readable_html_manifest_raw_messages_and_full_logs() {
     assert_eq!(manifest["conversation"]["id"], "conv-1");
     assert_eq!(manifest["app"]["version"], "0.5.test");
     assert_eq!(manifest["logs"][0]["included"], true);
+}
+
+#[test]
+fn export_recent_warn_error_excludes_records_older_than_24h_or_without_parseable_ts() {
+    let dir = TempDir::new().unwrap();
+    let app_home = dir.path().join("home");
+    let export_root = dir.path().join("exports");
+    let storage = AppStorage::new(&app_home).unwrap();
+
+    storage
+        .create_conversation("conv-old-warn", "Old warn")
+        .unwrap();
+    insert_message(&storage, "m1", "conv-old-warn", "user", "hello");
+
+    let logs_dir = app_home.join("logs");
+    let old_ts = (Utc::now() - Duration::hours(48)).to_rfc3339();
+    write_file(
+        &logs_dir.join("metrics.jsonl"),
+        &format!(
+            r#"{{"category":"diagnostics","ts":"{}","source":"backend","level":"error","event":"stale.error","conversationId":"conv-old-warn","ok":false}}
+{{"category":"diagnostics","source":"backend","level":"warn","event":"missing.ts","conversationId":"conv-old-warn","ok":false}}
+{{"category":"diagnostics","ts":"not-a-date","source":"backend","level":"warn","event":"bad.ts","conversationId":"conv-old-warn","ok":false}}"#,
+            old_ts
+        ),
+    );
+
+    let exporter = ConversationExporter::new(ExportPaths {
+        app_home,
+        export_root,
+    });
+    let result = exporter
+        .export(
+            &storage,
+            ConversationExportRequest {
+                conversation_id: "conv-old-warn".to_string(),
+                app_version: "0.5.test".to_string(),
+                platform: "test-os".to_string(),
+                arch: "test-arch".to_string(),
+            },
+        )
+        .unwrap();
+
+    let recent = read_zip_entry(&result.zip_path, "raw/recent-warn-error.jsonl");
+    assert!(!recent.contains("stale.error"));
+    assert!(!recent.contains("missing.ts"));
+    assert!(!recent.contains("bad.ts"));
 }
 
 #[test]
