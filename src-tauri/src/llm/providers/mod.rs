@@ -4,16 +4,18 @@
 // Provider inventory
 // ============================================================================
 //
-// **In active use:**
-//   - `lotus.rs`   Lotus gateway via anthropic-native ingress
-//                  (`/anthropic/v1/messages`). Phase C (2026-05-09) shifted
-//                  it from OpenAI ingress to a thin shell over
-//                  `ClaudeProvider::with_url(... is_direct=false)`. The
-//                  body builder, SSE state machine, and tool/thinking
-//                  handling are shared with the direct anthropic.com
-//                  path. Retry policy on `send` is local to lotus.rs.
-//   - `claude.rs`  Anthropic protocol implementation (used by lotus.rs +
-//                  by direct anthropic.com calls via `ClaudeProvider::new`).
+// **Production cloud path:**
+//   - `aijia_gateway_v2.rs`
+//                  Canonical AIjia v2 responses ingress. Main desktop chat
+//                  routing is forced here after session-key injection.
+//
+// **Compatibility/fallback paths:**
+//   - `lotus.rs`   Legacy Lotus anthropic-native ingress
+//                  (`/anthropic/v1/messages`). Kept for non-stream fallback
+//                  and defensive direct dispatch while v2 non-stream `send`
+//                  remains disabled.
+//   - `claude.rs`  Anthropic protocol implementation (used by lotus.rs and
+//                  direct anthropic.com calls via `ClaudeProvider::new`).
 //                  Parameterized by URL + `is_direct` so the same code
 //                  drives both endpoints.
 //   - `custom.rs`  User-supplied OpenAI-compatible endpoint.
@@ -24,10 +26,9 @@
 //
 // Removed in 2026-05-10 cleanup (Phase C dead code):
 //   - deepseek_v3.rs / deepseek_r1.rs / qwen.rs / volcano.rs — direct
-//     providers superseded by Lotus anthropic ingress. Routing / gateway
-//     / settings / router capabilities references all removed in the
-//     same commit. `AppSettings.cloud_model_type` retained as a no-op
-//     for persisted-setting compat (anthropic ingress has one endpoint).
+//     providers superseded by the cloud gateway. `AppSettings.cloud_model`
+//     remains a persisted model hint, and `cloud_model_type` remains the
+//     chat/reasoner route hint; neither should gate v2 image packaging.
 // ============================================================================
 
 pub mod aijia_gateway_v2;

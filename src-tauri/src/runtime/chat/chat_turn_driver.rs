@@ -222,6 +222,21 @@ impl ChatTurnRequest {
     }
 }
 
+fn should_build_image_blocks_for_turn(
+    llm_settings: &ResolvedLlmSettings,
+    is_resume_for_task_notification: bool,
+) -> bool {
+    if is_resume_for_task_notification {
+        return false;
+    }
+
+    if llm_settings.cloud_gateway_mode == crate::models::settings::CloudGatewayMode::V2 {
+        return true;
+    }
+
+    crate::llm::vision_support::supports_lotus_anthropic_vision(&llm_settings.cloud_model)
+}
+
 /// S4 新 trait：executor 只做 provider streaming adapter。
 /// Driver 拥有 query loop 和状态变更，executor 不修改外部状态。
 #[async_trait]
@@ -1536,16 +1551,14 @@ impl RuntimeChatTurnDriver {
             == "__resume_from_task_notification__"
             && request.attachments.is_empty();
 
-        let should_try_anthropic_images =
-            crate::llm::vision_support::supports_lotus_anthropic_vision(
-                &config.llm_settings.cloud_model,
-            );
-        let anthropic_image_result =
-            if !is_resume_for_task_notification && should_try_anthropic_images {
-                build_anthropic_image_blocks(&request.attachments)
-            } else {
-                crate::runtime::chat::multimodal::AnthropicImageBuildResult::empty()
-            };
+        let anthropic_image_result = if should_build_image_blocks_for_turn(
+            &config.llm_settings,
+            is_resume_for_task_notification,
+        ) {
+            build_anthropic_image_blocks(&request.attachments)
+        } else {
+            crate::runtime::chat::multimodal::AnthropicImageBuildResult::empty()
+        };
         let attachments_for_text = retain_text_fallback_attachments(
             &request.attachments,
             &anthropic_image_result.converted_attachment_ids,
@@ -3176,6 +3189,48 @@ mod tests {
             req.skill_command.is_none(),
             "ChatTurnRequest::new must not imply a selected skill"
         );
+    }
+
+    #[test]
+    fn v2_image_packaging_ignores_legacy_cloud_model_hint() {
+        let settings = ResolvedLlmSettings {
+            cloud_gateway_mode: crate::models::settings::CloudGatewayMode::V2,
+            cloud_model: "deepseek-v4-pro".to_string(),
+            ..ResolvedLlmSettings::default()
+        };
+
+        assert!(should_build_image_blocks_for_turn(&settings, false));
+    }
+
+    #[test]
+    fn resume_turns_never_build_image_blocks() {
+        let settings = ResolvedLlmSettings {
+            cloud_gateway_mode: crate::models::settings::CloudGatewayMode::V2,
+            cloud_model: "claude-sonnet-4-5".to_string(),
+            ..ResolvedLlmSettings::default()
+        };
+
+        assert!(!should_build_image_blocks_for_turn(&settings, true));
+    }
+
+    #[test]
+    fn legacy_image_packaging_still_uses_anthropic_vision_allowlist() {
+        let deepseek_settings = ResolvedLlmSettings {
+            cloud_gateway_mode: crate::models::settings::CloudGatewayMode::Legacy,
+            cloud_model: "deepseek-v4-pro".to_string(),
+            ..ResolvedLlmSettings::default()
+        };
+        let claude_settings = ResolvedLlmSettings {
+            cloud_gateway_mode: crate::models::settings::CloudGatewayMode::Legacy,
+            cloud_model: "claude-sonnet-4-5".to_string(),
+            ..ResolvedLlmSettings::default()
+        };
+
+        assert!(!should_build_image_blocks_for_turn(
+            &deepseek_settings,
+            false
+        ));
+        assert!(should_build_image_blocks_for_turn(&claude_settings, false));
     }
 
     #[test]

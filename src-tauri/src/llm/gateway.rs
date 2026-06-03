@@ -149,21 +149,15 @@ fn is_auth_revoked_error(err: &anyhow::Error) -> bool {
         || lower.contains("authorization")
 }
 
-/// Whether a route's provider string will actually be dispatched to the lotus
-/// cloud gateway. `dispatch_stream` / `dispatch` route any provider that is not
-/// a known local one (`openai` / `claude` / `custom`) to lotus via the
-/// `other =>` fallback arm. The session_key injection keys off this same
-/// predicate — not the literal string `"lotus"` — so that any provider which
-/// resolves to lotus (e.g. a legacy cloud model name like `"deepseek-v3"`)
-/// gets the session_key attached. Without this, such a request would dispatch
-/// to lotus with an empty Authorization header → 401 "Missing Authorization
-/// header". Routing now always yields `"lotus"`, so this is defensive depth.
-fn provider_resolves_to_lotus(provider: &str) -> bool {
+/// Whether a provider string belongs to the authenticated cloud gateway path.
+/// Routing now forces this path to `aijia-v2`, but old provider names may still
+/// appear in persisted settings or defensive route fallbacks.
+fn provider_uses_cloud_gateway(provider: &str) -> bool {
     !matches!(provider, "openai" | "claude" | "custom")
 }
 
-fn apply_cloud_gateway_mode(route: &mut RouteResult, _settings: &AppSettings) {
-    if !provider_resolves_to_lotus(&route.provider) {
+fn force_cloud_route_to_v2(route: &mut RouteResult) {
+    if !provider_uses_cloud_gateway(&route.provider) {
         return;
     }
 
@@ -493,12 +487,11 @@ impl LlmGateway {
         let mut route = router::select_route(&task_type, settings);
 
         // Cloud mode: replace api_key with a fresh session_key from AuthManager.
-        // primary_api_key in settings is for non-cloud providers; Lotus needs the
+        // primary_api_key in settings is for non-cloud providers; cloud gateway needs the
         // login-issued session_key which may have been refreshed since last save.
-        // Keyed on `provider_resolves_to_lotus` (not the literal "lotus") so that
-        // an unknown provider that falls back to lotus inside `dispatch_stream`
-        // still gets the session_key — otherwise it dispatches with an empty key.
-        if provider_resolves_to_lotus(&route.provider) {
+        // Keyed on the cloud-route predicate so that an old provider name
+        // carried in settings still gets the session_key before being forced to V2.
+        if provider_uses_cloud_gateway(&route.provider) {
             if let Some(auth) = &self.auth_manager {
                 match auth.get_session_key().await {
                     Ok(sk) => route.api_key = sk,
@@ -511,7 +504,7 @@ impl LlmGateway {
                 }
             }
         }
-        apply_cloud_gateway_mode(&mut route, settings);
+        force_cloud_route_to_v2(&mut route);
 
         log::info!(
             "{}",
@@ -521,7 +514,7 @@ impl LlmGateway {
         // 2. Apply data masking
         let mut mask_ctx = MaskingContext::new(masking_level.clone());
         let mut masked_messages = mask_ctx.mask_messages(&messages);
-        if provider_resolves_to_lotus(&route.provider) {
+        if provider_uses_cloud_gateway(&route.provider) {
             attach_anthropic_multimodal_turn(
                 &mut masked_messages,
                 anthropic_multimodal_turn.clone(),
@@ -579,7 +572,7 @@ impl LlmGateway {
         );
         let stream = match retry_dispatch_stream(&route, request.clone()).await {
             Ok(s) => s,
-            Err(e) if provider_resolves_to_lotus(&route.provider) && is_auth_revoked_error(&e) => {
+            Err(e) if provider_uses_cloud_gateway(&route.provider) && is_auth_revoked_error(&e) => {
                 // 401 + "Session key revoked" from lotus → the local cache
                 // wallclock can't be trusted (clock skew, server-side revoke,
                 // tz mismatch — see auth/mod.rs invalidate_session_key).
@@ -598,7 +591,7 @@ impl LlmGateway {
                             // stale key in Authorization header).
                             let mut mask_ctx_retry = MaskingContext::new(masking_level);
                             let mut masked_retry = mask_ctx_retry.mask_messages(&messages);
-                            if provider_resolves_to_lotus(&route.provider) {
+                            if provider_uses_cloud_gateway(&route.provider) {
                                 attach_anthropic_multimodal_turn(
                                     &mut masked_retry,
                                     anthropic_multimodal_turn,
@@ -673,10 +666,8 @@ impl LlmGateway {
         let task_type = router::infer_task_type(&messages);
         let mut route = router::select_route(&task_type, settings);
 
-        // Cloud mode: same session_key injection as stream_message — keyed on
-        // `provider_resolves_to_lotus` so an unknown provider that falls back to
-        // lotus also gets the session_key.
-        if provider_resolves_to_lotus(&route.provider) {
+        // Cloud mode: same session_key injection as stream_message.
+        if provider_uses_cloud_gateway(&route.provider) {
             if let Some(auth) = &self.auth_manager {
                 match auth.get_session_key().await {
                     Ok(sk) => route.api_key = sk,
@@ -757,7 +748,7 @@ impl LlmGateway {
         let task_type = router::infer_task_type(&messages);
         let mut route = router::select_route(&task_type, settings);
 
-        if provider_resolves_to_lotus(&route.provider) {
+        if provider_uses_cloud_gateway(&route.provider) {
             if let Some(auth) = &self.auth_manager {
                 match auth.get_session_key().await {
                     Ok(sk) => route.api_key = sk,
@@ -780,7 +771,7 @@ impl LlmGateway {
 
         let mut mask_ctx = MaskingContext::new(masking_level);
         let mut masked_messages = mask_ctx.mask_messages(&messages);
-        if provider_resolves_to_lotus(&route.provider) {
+        if provider_uses_cloud_gateway(&route.provider) {
             attach_anthropic_multimodal_turn(
                 &mut masked_messages,
                 anthropic_multimodal_turn.clone(),
@@ -1226,11 +1217,7 @@ mod tests {
     }
 
     #[test]
-    fn cloud_gateway_mode_rewrites_lotus_route_to_v2() {
-        let settings = AppSettings {
-            cloud_gateway_mode: CloudGatewayMode::Legacy,
-            ..AppSettings::default()
-        };
+    fn force_cloud_route_to_v2_rewrites_cloud_routes() {
         let mut lotus_route = RouteResult {
             provider: "lotus".to_string(),
             api_key: "session".to_string(),
@@ -1248,8 +1235,8 @@ mod tests {
             model_type: "chat".to_string(),
         };
 
-        apply_cloud_gateway_mode(&mut lotus_route, &settings);
-        apply_cloud_gateway_mode(&mut custom_route, &settings);
+        force_cloud_route_to_v2(&mut lotus_route);
+        force_cloud_route_to_v2(&mut custom_route);
 
         assert_eq!(lotus_route.provider, "aijia-v2");
         assert_eq!(custom_route.provider, "custom");
