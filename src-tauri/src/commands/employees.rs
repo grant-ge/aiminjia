@@ -68,7 +68,7 @@ pub async fn employee_template_catalog() -> Result<Vec<TemplateSnapshot>, String
 ///    templates (latest version per `template_id`, `tenant_scope=global`).
 /// 2. For each entry whose version is newer than the cache (or missing),
 ///    fetch its manifest, download the snapshot, verify sha256, and write
-///    to `~/.renlijia/employee-templates-cache/{tid}/{version}.json`.
+///    to `~/.renlijia/employee-templates-cache/{encoded_tid}/{encoded_version}.json`.
 ///
 /// Returns the count of templates downloaded this call.
 ///
