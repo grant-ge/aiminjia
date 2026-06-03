@@ -64,23 +64,43 @@ impl ConversationExporter {
         let result = self.write_export_dir(&temp_dir, &conversation, &messages, &request);
         let result = match result {
             Ok(()) => {
+                let short_export_id = export_id.chars().take(8).collect::<String>();
                 let file_name = format!(
-                    "aijia-conversation-export-{}-{}.zip",
+                    "aijia-conversation-export-{}-{}-{}.zip",
                     safe_file_stem(&conversation.title),
-                    Local::now().format("%Y%m%d-%H%M%S")
+                    Local::now().format("%Y%m%d-%H%M%S"),
+                    short_export_id
                 );
                 let zip_path = self.paths.export_root.join(file_name);
-                zip_directory(&temp_dir, &zip_path)?;
-                let size_bytes = fs::metadata(&zip_path)?.len();
-                let file_name = zip_path
-                    .file_name()
-                    .map(|name| name.to_string_lossy().to_string())
-                    .unwrap_or_else(|| "conversation-export.zip".to_string());
-                Ok(ConversationExportResult {
-                    zip_path,
-                    file_name,
-                    size_bytes,
-                })
+                let temp_zip_path = self
+                    .paths
+                    .export_root
+                    .join("tmp")
+                    .join(format!("{export_id}.zip"));
+                let zip_result = zip_directory(&temp_dir, &temp_zip_path).and_then(|()| {
+                    fs::rename(&temp_zip_path, &zip_path).with_context(|| {
+                        format!(
+                            "rename temp zip {} to {}",
+                            temp_zip_path.display(),
+                            zip_path.display()
+                        )
+                    })
+                });
+                if let Err(error) = zip_result {
+                    fs::remove_file(&temp_zip_path).ok();
+                    Err(error)
+                } else {
+                    let size_bytes = fs::metadata(&zip_path)?.len();
+                    let file_name = zip_path
+                        .file_name()
+                        .map(|name| name.to_string_lossy().to_string())
+                        .unwrap_or_else(|| "conversation-export.zip".to_string());
+                    Ok(ConversationExportResult {
+                        zip_path,
+                        file_name,
+                        size_bytes,
+                    })
+                }
             }
             Err(error) => Err(error),
         };
@@ -142,7 +162,7 @@ impl ConversationExporter {
             &render_diagnostics_summary_html(conversation, &current_diag, &recent_warn_error),
         )?;
 
-        let manifest = Manifest {
+        let mut manifest = Manifest {
             schema_version: 1,
             exported_at: Local::now().to_rfc3339(),
             app: ManifestApp {
@@ -165,12 +185,9 @@ impl ConversationExporter {
                 updated_at: conversation.updated_at.clone(),
             },
             logs: log_entries,
-            files: collect_manifest_files(temp_dir)?,
+            files: Vec::new(),
         };
-        write_string(
-            &temp_dir.join("manifest.json"),
-            &serde_json::to_string_pretty(&manifest)?,
-        )?;
+        write_manifest_with_file_index(temp_dir, &mut manifest)?;
 
         Ok(())
     }
@@ -336,9 +353,16 @@ fn read_metric_records(logs_dir: &Path) -> Result<Vec<MetricRecord>> {
     paths.sort_by(|a, b| metric_sort_key(a).cmp(&metric_sort_key(b)));
     let mut records = Vec::new();
     for path in paths {
-        let file = File::open(&path).with_context(|| format!("open {}", path.display()))?;
+        if !path.is_file() {
+            continue;
+        }
+        let Ok(file) = File::open(&path) else {
+            continue;
+        };
         for line in BufReader::new(file).lines() {
-            let raw_line = line?;
+            let Ok(raw_line) = line else {
+                continue;
+            };
             let json = raw_line
                 .split_once('\t')
                 .map_or(raw_line.as_str(), |(json, _)| json);
@@ -365,8 +389,14 @@ fn list_metric_paths(logs_dir: &Path) -> Result<Vec<PathBuf>> {
         return Ok(Vec::new());
     }
     let mut paths = Vec::new();
-    for entry in fs::read_dir(logs_dir)? {
-        let path = entry?.path();
+    let Ok(entries) = fs::read_dir(logs_dir) else {
+        return Ok(paths);
+    };
+    for entry in entries {
+        let Ok(entry) = entry else {
+            continue;
+        };
+        let path = entry.path();
         let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
             continue;
         };
@@ -493,6 +523,21 @@ fn collect_manifest_files(root: &Path) -> Result<Vec<ManifestFile>> {
     Ok(files)
 }
 
+fn write_manifest_with_file_index(root: &Path, manifest: &mut Manifest) -> Result<()> {
+    let manifest_path = root.join("manifest.json");
+    let mut previous = String::new();
+    for _ in 0..8 {
+        manifest.files = collect_manifest_files(root)?;
+        let content = serde_json::to_string_pretty(manifest)?;
+        if content == previous {
+            return Ok(());
+        }
+        write_string(&manifest_path, &content)?;
+        previous = content;
+    }
+    Ok(())
+}
+
 fn collect_manifest_files_rec(
     root: &Path,
     dir: &Path,
@@ -519,7 +564,11 @@ fn zip_directory(source_dir: &Path, zip_path: &Path) -> Result<()> {
     if let Some(parent) = zip_path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let file = File::create(zip_path)?;
+    let file = File::options()
+        .write(true)
+        .create_new(true)
+        .open(zip_path)
+        .with_context(|| format!("create temp zip {}", zip_path.display()))?;
     let mut zip = zip::ZipWriter::new(file);
     let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
     add_dir_to_zip(source_dir, source_dir, &mut zip, options)?;

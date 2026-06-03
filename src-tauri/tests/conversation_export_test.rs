@@ -5,6 +5,8 @@ use app_lib::storage::file_store::types::StoredMessage;
 use app_lib::storage::file_store::AppStorage;
 use chrono::{Duration, Utc};
 use std::io::Read;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use tempfile::TempDir;
 use zip::ZipArchive;
 
@@ -154,6 +156,87 @@ fn export_zip_contains_readable_html_manifest_raw_messages_and_full_logs() {
     assert_eq!(manifest["conversation"]["id"], "conv-1");
     assert_eq!(manifest["app"]["version"], "0.5.test");
     assert_eq!(manifest["logs"][0]["included"], true);
+    assert!(manifest["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|entry| entry["name"] == "manifest.json"));
+}
+
+#[test]
+fn export_uses_unique_zip_paths_for_same_title_within_same_second() {
+    let dir = TempDir::new().unwrap();
+    let app_home = dir.path().join("home");
+    let export_root = dir.path().join("exports");
+    let storage = AppStorage::new(&app_home).unwrap();
+
+    storage
+        .create_conversation("conv-unique", "Repeated")
+        .unwrap();
+    insert_message(&storage, "m1", "conv-unique", "user", "hello");
+
+    let exporter = ConversationExporter::new(ExportPaths {
+        app_home,
+        export_root,
+    });
+    let request = ConversationExportRequest {
+        conversation_id: "conv-unique".to_string(),
+        app_version: "0.5.test".to_string(),
+        platform: "test-os".to_string(),
+        arch: "test-arch".to_string(),
+    };
+
+    let first = exporter.export(&storage, request.clone()).unwrap();
+    let second = exporter.export(&storage, request).unwrap();
+
+    assert_ne!(first.zip_path, second.zip_path);
+    assert!(first.zip_path.exists());
+    assert!(second.zip_path.exists());
+}
+
+#[test]
+fn export_skips_unreadable_metrics_entries_and_still_succeeds() {
+    let dir = TempDir::new().unwrap();
+    let app_home = dir.path().join("home");
+    let export_root = dir.path().join("exports");
+    let storage = AppStorage::new(&app_home).unwrap();
+
+    storage
+        .create_conversation("conv-metrics-best-effort", "Metrics best effort")
+        .unwrap();
+    insert_message(&storage, "m1", "conv-metrics-best-effort", "user", "hello");
+
+    let logs_dir = app_home.join("logs");
+    write_file(
+        &logs_dir.join("metrics.jsonl"),
+        &format!(
+            r#"{{"category":"diagnostics","ts":"{}","source":"backend","level":"error","event":"kept.error","conversationId":"conv-metrics-best-effort","ok":false}}"#,
+            Utc::now().to_rfc3339()
+        ),
+    );
+    let unreadable = logs_dir.join("metrics.unreadable.jsonl");
+    write_file(&unreadable, "not readable\n");
+    #[cfg(unix)]
+    std::fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+    let exporter = ConversationExporter::new(ExportPaths {
+        app_home,
+        export_root,
+    });
+    let result = exporter
+        .export(
+            &storage,
+            ConversationExportRequest {
+                conversation_id: "conv-metrics-best-effort".to_string(),
+                app_version: "0.5.test".to_string(),
+                platform: "test-os".to_string(),
+                arch: "test-arch".to_string(),
+            },
+        )
+        .unwrap();
+
+    let recent = read_zip_entry(&result.zip_path, "raw/recent-warn-error.jsonl");
+    assert!(recent.contains("kept.error"));
 }
 
 #[test]
