@@ -24,7 +24,7 @@ import {
   revealExportInFolder,
   type ExportConversationResult,
 } from '@/lib/tauri'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useEmployeeById } from '@/features/employees/useEmployeeById'
 
@@ -48,6 +48,8 @@ export function ChatPage({ conversationId }: ChatPageProps) {
   const [exportProgressStep, setExportProgressStep] = useState(0)
   const [exportResult, setExportResult] = useState<ExportConversationResult | null>(null)
   const [exportError, setExportError] = useState<string | null>(null)
+  const currentConversationIdRef = useRef(conversationId)
+  const exportRequestSeqRef = useRef(0)
 
   // employee_id lives in conv.json (not the index); read it lazily when this
   // conversation is an employee dispatch session.
@@ -86,6 +88,9 @@ export function ChatPage({ conversationId }: ChatPageProps) {
 
   const handleExportConversation = async () => {
     if (exportStatus === 'exporting') return
+    const requestSeq = exportRequestSeqRef.current + 1
+    exportRequestSeqRef.current = requestSeq
+    const requestConversationId = conversationId
     setExportDialogOpen(true)
     setExportStatus('exporting')
     setExportProgressStep(0)
@@ -93,11 +98,23 @@ export function ChatPage({ conversationId }: ChatPageProps) {
     setExportError(null)
 
     try {
-      const result = await exportConversation(conversationId)
+      const result = await exportConversation(requestConversationId)
+      if (
+        exportRequestSeqRef.current !== requestSeq ||
+        currentConversationIdRef.current !== requestConversationId
+      ) {
+        return
+      }
       setExportProgressStep(2)
       setExportResult(result)
       setExportStatus('success')
     } catch (err) {
+      if (
+        exportRequestSeqRef.current !== requestSeq ||
+        currentConversationIdRef.current !== requestConversationId
+      ) {
+        return
+      }
       const message = err instanceof Error ? err.message : '导出失败。'
       setExportError(message)
       setExportStatus('error')
@@ -138,6 +155,13 @@ export function ChatPage({ conversationId }: ChatPageProps) {
   }, [exportStatus])
 
   useEffect(() => {
+    currentConversationIdRef.current = conversationId
+    exportRequestSeqRef.current += 1
+    setExportDialogOpen(false)
+    setExportStatus('idle')
+    setExportProgressStep(0)
+    setExportResult(null)
+    setExportError(null)
     // Always load messages when conversationId changes — this covers:
     //   1. Full reload (persisted route, messages not yet loaded)
     //   2. Navigation from non-chat pages (expert-teams / employees) where

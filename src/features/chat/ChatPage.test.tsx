@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '@/i18n'
@@ -196,5 +196,55 @@ describe('ChatPage layout', () => {
     await waitFor(() => {
       expect(tauriMocks.revealExportInFolder).toHaveBeenCalledWith('/tmp/aijia-export.zip')
     })
+  })
+
+  it('drops stale export results after switching conversations', async () => {
+    let resolveFirstExport!: (result: { zipPath: string; fileName: string; sizeBytes: number }) => void
+    const firstExport = new Promise<{ zipPath: string; fileName: string; sizeBytes: number }>((resolve) => {
+      resolveFirstExport = resolve
+    })
+    tauriMocks.exportConversation
+      .mockReturnValueOnce(firstExport)
+      .mockResolvedValueOnce({
+        zipPath: '/tmp/conv-b.zip',
+        fileName: 'conv-b.zip',
+        sizeBytes: 4096,
+      })
+    useChatStore.setState({
+      activeConversationId: 'conv-a',
+      conversations: [
+        { id: 'conv-a', title: '会话 A', createdAt: '', updatedAt: '', isArchived: false },
+        { id: 'conv-b', title: '会话 B', createdAt: '', updatedAt: '', isArchived: false },
+      ],
+      messages: [],
+    })
+
+    const { rerender } = render(<ChatPage conversationId="conv-a" />)
+    fireEvent.click(screen.getByRole('button', { name: '导出对话' }))
+    await waitFor(() => {
+      expect(tauriMocks.exportConversation).toHaveBeenCalledWith('conv-a')
+    })
+
+    await act(async () => {
+      useChatStore.setState({ activeConversationId: 'conv-b' })
+      rerender(<ChatPage conversationId="conv-b" />)
+    })
+
+    await act(async () => {
+      resolveFirstExport({
+        zipPath: '/tmp/conv-a.zip',
+        fileName: 'conv-a.zip',
+        sizeBytes: 2048,
+      })
+      await firstExport
+    })
+
+    expect(screen.queryByText('conv-a.zip')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '导出对话' }))
+    await waitFor(() => {
+      expect(tauriMocks.exportConversation).toHaveBeenCalledWith('conv-b')
+    })
+    expect(await screen.findByText('conv-b.zip')).toBeInTheDocument()
   })
 })
