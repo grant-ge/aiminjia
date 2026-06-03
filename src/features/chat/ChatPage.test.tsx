@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '@/i18n'
@@ -8,16 +8,54 @@ import { setExpertTeam, clearExpertTeam } from '@/features/expert-teams/expertTe
 import { ChatPage } from './ChatPage'
 
 const switchConversationMock = vi.hoisted(() => vi.fn())
+const tauriMocks = vi.hoisted(() => ({
+  exportConversation: vi.fn(),
+  revealExportInFolder: vi.fn(),
+  getConversationSource: vi.fn(),
+  openGeneratedFile: vi.fn(),
+  clearConversationSource: vi.fn(),
+  setConversationExpertTeam: vi.fn(),
+  getTeamOverview: vi.fn(),
+  onMessageUpdated: vi.fn(),
+  onToolCompleted: vi.fn(),
+}))
 
 vi.mock('@/hooks/useChat', () => ({
   useChat: () => ({ switchConversation: switchConversationMock }),
 }))
 
+vi.mock('@/hooks/useTeamOverview', () => ({
+  useTeamOverview: () => ({ overview: null, loaded: true, refetch: vi.fn() }),
+}))
+
+vi.mock('@/lib/tauri', () => ({
+  exportConversation: tauriMocks.exportConversation,
+  revealExportInFolder: tauriMocks.revealExportInFolder,
+  getConversationSource: tauriMocks.getConversationSource,
+  openGeneratedFile: tauriMocks.openGeneratedFile,
+  clearConversationSource: tauriMocks.clearConversationSource,
+  setConversationExpertTeam: tauriMocks.setConversationExpertTeam,
+  getTeamOverview: tauriMocks.getTeamOverview,
+  onMessageUpdated: tauriMocks.onMessageUpdated,
+  onToolCompleted: tauriMocks.onToolCompleted,
+}))
+
 vi.mock('@/components/shell/ChatTopBar', () => ({
-  ChatTopBar: ({ title, sourceLabel }: { title: string; sourceLabel?: string }) => (
+  ChatTopBar: ({
+    title,
+    sourceLabel,
+    onShare,
+    shareLabel,
+  }: {
+    title: string
+    sourceLabel?: string
+    onShare?: () => void
+    shareLabel?: string
+  }) => (
     <header data-testid="chat-header">
       {title}
       {sourceLabel ? <span data-testid="chat-source-label">{sourceLabel}</span> : null}
+      {onShare ? <button onClick={onShare}>{shareLabel ?? '分享'}</button> : null}
     </header>
   ),
 }))
@@ -34,9 +72,27 @@ vi.mock('@/components/chat/RightPanel', () => ({
   RightPanel: () => <div data-testid="right-panel" />,
 }))
 
+vi.mock('@/components/team/TeamChatDrawer', () => ({
+  TeamChatDrawer: () => <aside data-testid="team-chat-drawer" />,
+}))
+
 describe('ChatPage layout', () => {
   beforeEach(async () => {
     switchConversationMock.mockClear()
+    tauriMocks.exportConversation.mockReset()
+    tauriMocks.revealExportInFolder.mockReset()
+    tauriMocks.getConversationSource.mockReset()
+    tauriMocks.openGeneratedFile.mockReset()
+    tauriMocks.clearConversationSource.mockReset()
+    tauriMocks.setConversationExpertTeam.mockReset()
+    tauriMocks.getTeamOverview.mockReset()
+    tauriMocks.onMessageUpdated.mockReset()
+    tauriMocks.onToolCompleted.mockReset()
+    tauriMocks.clearConversationSource.mockResolvedValue(undefined)
+    tauriMocks.setConversationExpertTeam.mockResolvedValue(undefined)
+    tauriMocks.getTeamOverview.mockResolvedValue(null)
+    tauriMocks.onMessageUpdated.mockResolvedValue(() => undefined)
+    tauriMocks.onToolCompleted.mockResolvedValue(() => undefined)
     await i18n.changeLanguage('zh-CN')
     await clearExpertTeam('conv-layout')
     await clearExpertTeam('conv-team')
@@ -113,5 +169,32 @@ describe('ChatPage layout', () => {
     expect(screen.getByTestId('chat-content')).toBeInTheDocument()
     expect(screen.getByTestId('chat-footer-input')).toBeInTheDocument()
     expect(screen.queryByTestId('right-panel')).not.toBeInTheDocument()
+  })
+
+  it('exports the current conversation and can reveal the zip in folder', async () => {
+    tauriMocks.exportConversation.mockResolvedValue({
+      zipPath: '/tmp/aijia-export.zip',
+      fileName: 'aijia-export.zip',
+      sizeBytes: 2048,
+    })
+    tauriMocks.revealExportInFolder.mockResolvedValue(undefined)
+    useChatStore.setState({
+      activeConversationId: 'conv-export',
+      conversations: [{ id: 'conv-export', title: '导出测试', createdAt: '', updatedAt: '', isArchived: false }],
+      messages: [],
+    })
+
+    render(<ChatPage conversationId="conv-export" />)
+    fireEvent.click(screen.getByRole('button', { name: '导出对话' }))
+
+    await waitFor(() => {
+      expect(tauriMocks.exportConversation).toHaveBeenCalledWith('conv-export')
+    })
+    expect(await screen.findByText('aijia-export.zip')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '打开所在文件夹' }))
+    await waitFor(() => {
+      expect(tauriMocks.revealExportInFolder).toHaveBeenCalledWith('/tmp/aijia-export.zip')
+    })
   })
 })
