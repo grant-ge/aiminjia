@@ -20,6 +20,7 @@ interface ConversationExportDialogProps {
   result: ExportConversationResult | null
   error: string | null
   onOpenChange: (open: boolean) => void
+  onStart: () => void
   onReveal: () => void
 }
 
@@ -61,8 +62,10 @@ export function ConversationExportDialog({
   result,
   error,
   onOpenChange,
+  onStart,
   onReveal,
 }: ConversationExportDialogProps) {
+  const isIdle = status === 'idle'
   const isExporting = status === 'exporting'
   const isSuccess = status === 'success' && result
   const isError = status === 'error'
@@ -83,7 +86,9 @@ export function ConversationExportDialog({
               ? '已生成一个对话文件，可以在文件夹中查看。'
               : isError
                 ? '导出时遇到问题，可以稍后再试。'
-                : '正在整理当前对话内容，请稍等。'}
+                : isIdle
+                  ? '将生成一个本地 zip 文件，包含当前对话和运行信息。文件只会保存在本机。'
+                  : '正在整理当前对话内容，请稍等。'}
           </DialogDescription>
         </DialogHeader>
 
@@ -112,6 +117,14 @@ export function ConversationExportDialog({
               <XCircle className="mt-0.5 h-5 w-5 shrink-0 text-destructive" aria-hidden />
               <div className="text-sm text-foreground">{error || '导出失败。'}</div>
             </div>
+          ) : isIdle ? (
+            <div className="flex items-start gap-3 rounded-md border border-border bg-muted/30 p-3">
+              <Package className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden />
+              <div className="space-y-1 text-sm">
+                <div className="font-medium text-foreground">准备生成对话文件</div>
+                <div className="text-muted-foreground">开始后会自动整理内容并生成 zip 文件。</div>
+              </div>
+            </div>
           ) : (
             <div className="space-y-3 rounded-md border border-border bg-muted/30 p-3">
               <StepRow done={progressStep > 0} active={progressStep === 0} label="整理对话内容" />
@@ -137,6 +150,13 @@ export function ConversationExportDialog({
             </>
           ) : isError ? (
             <Button onClick={() => onOpenChange(false)}>知道了</Button>
+          ) : isIdle ? (
+            <>
+              <Button variant="secondary" onClick={() => onOpenChange(false)}>
+                取消
+              </Button>
+              <Button onClick={onStart}>开始导出</Button>
+            </>
           ) : (
             <Button disabled>
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden />

@@ -86,6 +86,15 @@ export function ChatPage({ conversationId }: ChatPageProps) {
     }
   }
 
+  const handleOpenExportDialog = () => {
+    if (exportStatus === 'exporting') return
+    setExportDialogOpen(true)
+    setExportStatus('idle')
+    setExportProgressStep(0)
+    setExportResult(null)
+    setExportError(null)
+  }
+
   const handleExportConversation = async () => {
     if (exportStatus === 'exporting') return
     const requestSeq = exportRequestSeqRef.current + 1
@@ -190,7 +199,7 @@ export function ChatPage({ conversationId }: ChatPageProps) {
                 }
               : undefined
           }
-          onShare={() => void handleExportConversation()}
+          onShare={handleOpenExportDialog}
           shareLabel="导出对话"
         />
       ) : null}
@@ -224,6 +233,7 @@ export function ChatPage({ conversationId }: ChatPageProps) {
         result={exportResult}
         error={exportError}
         onOpenChange={setExportDialogOpen}
+        onStart={() => void handleExportConversation()}
         onReveal={() => void handleRevealExport()}
       />
     </div>

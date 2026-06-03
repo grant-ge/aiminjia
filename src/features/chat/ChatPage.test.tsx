@@ -171,7 +171,7 @@ describe('ChatPage layout', () => {
     expect(screen.queryByTestId('right-panel')).not.toBeInTheDocument()
   })
 
-  it('exports the current conversation and can reveal the zip in folder', async () => {
+  it('asks for confirmation before exporting the current conversation', async () => {
     tauriMocks.exportConversation.mockResolvedValue({
       zipPath: '/tmp/aijia-export.zip',
       fileName: 'aijia-export.zip',
@@ -186,6 +186,11 @@ describe('ChatPage layout', () => {
 
     render(<ChatPage conversationId="conv-export" />)
     fireEvent.click(screen.getByRole('button', { name: '导出对话' }))
+
+    expect(tauriMocks.exportConversation).not.toHaveBeenCalled()
+    expect(screen.getByText('将生成一个本地 zip 文件，包含当前对话和运行信息。文件只会保存在本机。')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '开始导出' }))
 
     await waitFor(() => {
       expect(tauriMocks.exportConversation).toHaveBeenCalledWith('conv-export')
@@ -221,6 +226,7 @@ describe('ChatPage layout', () => {
 
     const { rerender } = render(<ChatPage conversationId="conv-a" />)
     fireEvent.click(screen.getByRole('button', { name: '导出对话' }))
+    fireEvent.click(screen.getByRole('button', { name: '开始导出' }))
     await waitFor(() => {
       expect(tauriMocks.exportConversation).toHaveBeenCalledWith('conv-a')
     })
@@ -242,6 +248,7 @@ describe('ChatPage layout', () => {
     expect(screen.queryByText('conv-a.zip')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '导出对话' }))
+    fireEvent.click(screen.getByRole('button', { name: '开始导出' }))
     await waitFor(() => {
       expect(tauriMocks.exportConversation).toHaveBeenCalledWith('conv-b')
     })
