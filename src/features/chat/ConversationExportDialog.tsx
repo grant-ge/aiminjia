@@ -69,7 +69,7 @@ export function ConversationExportDialog({
 
   return (
     <Dialog open={open} onOpenChange={isExporting ? undefined : onOpenChange}>
-      <DialogContent className="max-w-md overflow-hidden rounded-xl border border-border bg-background p-0 shadow-[var(--shadow-modal)]">
+      <DialogContent className="w-[calc(100vw-2rem)] max-w-md overflow-hidden rounded-xl border border-border bg-background p-0 shadow-[var(--shadow-modal)]">
         <DialogHeader className="px-6 pt-6 text-left">
           <DialogTitle>导出对话</DialogTitle>
           <DialogDescription>
@@ -83,10 +83,10 @@ export function ConversationExportDialog({
 
         <div className="space-y-4 px-6 py-5">
           {isSuccess ? (
-            <div className="flex items-start gap-3 rounded-md border border-border bg-muted/40 p-3">
+            <div className="flex max-w-full items-start gap-3 overflow-hidden rounded-md border border-border bg-muted/40 p-3">
               <Package className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden />
-              <div className="min-w-0">
-                <div className="truncate text-sm font-medium text-foreground" title={result.fileName}>
+              <div className="min-w-0 flex-1 overflow-hidden">
+                <div className="block max-w-full truncate text-sm font-medium text-foreground" title={result.fileName}>
                   {result.fileName}
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">{formatBytes(result.sizeBytes)}</div>
@@ -106,15 +106,15 @@ export function ConversationExportDialog({
           )}
         </div>
 
-        <DialogFooter className="border-t border-border bg-muted/20 px-6 py-4">
+        <DialogFooter className="flex-wrap gap-2 border-t border-border bg-muted/20 px-6 py-4 sm:space-x-0">
           {isSuccess ? (
             <>
               <Button variant="secondary" onClick={() => onOpenChange(false)}>
                 完成
               </Button>
-              <Button onClick={onReveal}>
+              <Button className="min-w-0" onClick={onReveal}>
                 <FolderOpen className="h-4 w-4" aria-hidden />
-                打开所在文件夹
+                <span className="truncate">打开所在文件夹</span>
               </Button>
             </>
           ) : isError ? (
