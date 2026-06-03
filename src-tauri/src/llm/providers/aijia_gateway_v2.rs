@@ -696,12 +696,18 @@ fn chunk_to_stream_event(frame: &str) -> StreamEvent {
             _ => StreamEvent::Keepalive,
         }
     } else if frame_has_event(frame, "tool_call.completed") {
-        let Some(raw_tool_call) = extract_sse_json(frame).and_then(|v| v.get("tool_call").cloned())
+        let Some(mut raw_tool_call) =
+            extract_sse_json(frame).and_then(|v| v.get("tool_call").cloned())
         else {
             return StreamEvent::Error {
                 error: "malformed tool_call.completed: missing tool_call".to_string(),
             };
         };
+        if let Some(tool_call) = raw_tool_call.as_object_mut() {
+            tool_call
+                .entry("arguments".to_string())
+                .or_insert_with(|| Value::Object(serde_json::Map::new()));
+        }
         let tool_call = match serde_json::from_value::<ToolCall>(raw_tool_call) {
             Ok(tool_call) => tool_call,
             Err(err) => {
@@ -1095,6 +1101,22 @@ mod tests {
                 assert_eq!(block["opaque"], true);
             }
             other => panic!("expected thinking block event, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tool_call_completed_without_arguments_defaults_to_empty_object() {
+        let event = chunk_to_stream_event(
+            "event: tool_call.completed\ndata: {\"index\":0,\"tool_call\":{\"id\":\"toolu_refresh\",\"name\":\"RefreshSkills\"}}\n\n",
+        );
+
+        match event {
+            StreamEvent::ToolCallStart { tool_call } => {
+                assert_eq!(tool_call.id, "toolu_refresh");
+                assert_eq!(tool_call.name, "RefreshSkills");
+                assert_eq!(tool_call.arguments, json!({}));
+            }
+            other => panic!("expected tool call event, got {other:?}"),
         }
     }
 

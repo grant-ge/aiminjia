@@ -40,8 +40,6 @@ const TOOL_PREFERENCE_SECTION: &str = r#"
 【工具调用沟通】
 - 每次调用工具之前，必须先用一句话告诉用户你要做什么。无一例外。即使是单步、简单的调用也要说。
 - 不要用冒号引出工具调用；应使用句号，因为工具调用本身可能以独立状态展示。
-- 每次调用工具之前，必须先用一句话告诉用户你要做什么。无一例外。即使是单步、简单的调用也要说。
-- 不要用冒号引出工具调用；应使用句号，因为工具调用本身可能以独立状态展示。
 - 多步操作时，每一步开始前也要用一句话说明这一步要做什么。
 - 解释一句话即可，不要长篇大论；用户更看重知道你在做什么，而不是细节描述。
 
@@ -685,6 +683,32 @@ mod tests {
         assert!(
             parts.static_section.contains("[名称](路径或URL)"),
             "must prefer Markdown links when referencing local files, URLs, or source documents"
+        );
+    }
+
+    #[test]
+    fn test_tool_call_communication_guidance_is_not_duplicated() {
+        let _guard = PROMPT_TEST_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let bundled = tmp.path().join("bundled");
+        let user = tmp.path().join("user");
+        setup_prompts(&bundled, &[("base", "AI小家"), ("daily", "")]);
+        fs::create_dir_all(&user).unwrap();
+        init_prompts(&bundled, &user);
+
+        let parts = build_system_prompt_parts(PromptMode::Daily, None, None);
+        let must_announce = "每次调用工具之前，必须先用一句话告诉用户你要做什么。无一例外。即使是单步、简单的调用也要说。";
+        let no_colon = "不要用冒号引出工具调用；应使用句号，因为工具调用本身可能以独立状态展示。";
+
+        assert_eq!(
+            parts.static_section.matches(must_announce).count(),
+            1,
+            "tool-call announcement guidance must appear once"
+        );
+        assert_eq!(
+            parts.static_section.matches(no_colon).count(),
+            1,
+            "tool-call colon guidance must appear once"
         );
     }
 
