@@ -171,6 +171,56 @@ fn export_zip_contains_readable_html_manifest_raw_messages_and_full_logs() {
 }
 
 #[test]
+fn export_conversation_html_renders_markdown_with_raw_toggle_and_escapes_html() {
+    let dir = TempDir::new().unwrap();
+    let app_home = dir.path().join("home");
+    let export_root = dir.path().join("exports");
+    let storage = AppStorage::new(&app_home).unwrap();
+
+    storage
+        .create_conversation("conv-markdown", "Markdown export")
+        .unwrap();
+    insert_message(
+        &storage,
+        "m-markdown",
+        "conv-markdown",
+        "assistant",
+        "# Markdown 标题\n\n**重点**\n\n- 第一项\n\n`inline`\n\n[链接](https://example.com)\n\n<script>alert(1)</script>",
+    );
+
+    let exporter = ConversationExporter::new(ExportPaths {
+        app_home,
+        export_root,
+    });
+    let result = exporter
+        .export(
+            &storage,
+            ConversationExportRequest {
+                conversation_id: "conv-markdown".to_string(),
+                app_version: "0.5.test".to_string(),
+                platform: "test-os".to_string(),
+                arch: "test-arch".to_string(),
+            },
+        )
+        .unwrap();
+
+    let html = read_zip_entry(&result.zip_path, "conversation.html");
+    assert!(html.contains("data-view-toggle"));
+    assert!(html.contains("data-view-panel=\"markdown\""));
+    assert!(html.contains("data-view-panel=\"raw\""));
+    assert!(html.contains("<h1>Markdown 标题</h1>"));
+    assert!(html.contains("<strong>重点</strong>"));
+    assert!(html.contains("<li>第一项</li>"));
+    assert!(html.contains("<code>inline</code>"));
+    assert!(html.contains(
+        "<a href=\"https://example.com\" target=\"_blank\" rel=\"noreferrer noopener\">链接</a>"
+    ));
+    assert!(html.contains("# Markdown 标题"));
+    assert!(html.contains("&lt;script&gt;alert(1)&lt;/script&gt;"));
+    assert!(!html.contains("<script>alert(1)</script>"));
+}
+
+#[test]
 fn export_uses_unique_zip_paths_for_same_title_within_same_second() {
     let dir = TempDir::new().unwrap();
     let app_home = dir.path().join("home");

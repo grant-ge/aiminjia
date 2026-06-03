@@ -277,20 +277,22 @@ fn render_conversation_html(
         .iter()
         .map(|msg| {
             let error_class = if msg.error.is_some() { " error" } else { "" };
+            let text = msg.text();
             format!(
-                "<article class=\"msg{}\"><div class=\"meta\">{} · {} · {}</div><pre>{}</pre></article>",
+                "<article class=\"msg{}\"><div class=\"meta\">{} · {} · {}</div><div class=\"rendered\" data-view-panel=\"markdown\">{}</div><pre class=\"raw\" data-view-panel=\"raw\">{}</pre></article>",
                 error_class,
                 escape_html(&msg.role),
                 escape_html(&msg.created_at),
                 escape_html(msg.run_id.as_deref().unwrap_or("")),
-                escape_html(msg.text())
+                render_markdown(&text),
+                escape_html(&text)
             )
         })
         .collect::<Vec<_>>()
         .join("\n");
 
     format!(
-        "<!doctype html><html><head><meta charset=\"utf-8\"><title>{}</title><style>body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:32px;color:#172033}}.msg{{border-bottom:1px solid #d8dee9;padding:14px 0}}.msg.error{{background:#fff5f5}}.meta{{color:#687386;font-size:12px;margin-bottom:8px}}pre{{white-space:pre-wrap;font:inherit}}</style></head><body><h1>{}</h1><p>conversationId: {} · workspace: {} · app: {} · exportedAt: {}</p>{}</body></html>",
+        "<!doctype html><html><head><meta charset=\"utf-8\"><title>{}</title><style>body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:32px;color:#172033;line-height:1.58}}.top{{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:12px}}.meta-line{{color:#687386}}button{{border:1px solid #b8c2d4;background:#fff;border-radius:6px;padding:7px 12px;color:#172033;cursor:pointer}}button:hover{{background:#f5f7fb}}.msg{{border-bottom:1px solid #d8dee9;padding:14px 0}}.msg.error{{background:#fff5f5}}.meta{{color:#687386;font-size:12px;margin-bottom:8px}}.rendered>*:first-child{{margin-top:0}}.rendered>*:last-child{{margin-bottom:0}}.rendered pre,.raw{{white-space:pre-wrap;background:#f6f8fa;border:1px solid #d8dee9;border-radius:6px;padding:12px;overflow:auto}}.rendered code{{background:#eef2f7;border-radius:4px;padding:1px 4px}}.rendered pre code{{background:transparent;padding:0}}.raw{{display:none;font:inherit}}body.raw-mode .rendered{{display:none}}body.raw-mode .raw{{display:block}}</style></head><body><div class=\"top\"><h1>{}</h1><button type=\"button\" data-view-toggle aria-pressed=\"false\">查看原始文本</button></div><p class=\"meta-line\">conversationId: {} · workspace: {} · app: {} · exportedAt: {}</p>{}<script>(()=>{{const button=document.querySelector('[data-view-toggle]');if(!button)return;button.addEventListener('click',()=>{{const raw=document.body.classList.toggle('raw-mode');button.textContent=raw?'查看 Markdown 渲染':'查看原始文本';button.setAttribute('aria-pressed',raw?'true':'false');}});}})();</script></body></html>",
         escape_html(&conversation.title),
         escape_html(&conversation.title),
         escape_html(&request.conversation_id),
@@ -299,6 +301,173 @@ fn render_conversation_html(
         escape_html(&Local::now().to_rfc3339()),
         rows
     )
+}
+
+fn render_markdown(input: &str) -> String {
+    let mut out = String::new();
+    let mut in_list = false;
+    let mut in_code = false;
+    let mut code = String::new();
+
+    for line in input.lines() {
+        if line.trim_start().starts_with("```") {
+            if in_code {
+                out.push_str("<pre><code>");
+                out.push_str(&escape_html(code.trim_end_matches('\n')));
+                out.push_str("</code></pre>");
+                code.clear();
+                in_code = false;
+            } else {
+                close_list(&mut out, &mut in_list);
+                in_code = true;
+            }
+            continue;
+        }
+
+        if in_code {
+            code.push_str(line);
+            code.push('\n');
+            continue;
+        }
+
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            close_list(&mut out, &mut in_list);
+            continue;
+        }
+
+        if let Some((level, title)) = markdown_heading(trimmed) {
+            close_list(&mut out, &mut in_list);
+            out.push_str(&format!(
+                "<h{level}>{}</h{level}>",
+                render_inline_markdown(title)
+            ));
+            continue;
+        }
+
+        if let Some(item) = trimmed
+            .strip_prefix("- ")
+            .or_else(|| trimmed.strip_prefix("* "))
+        {
+            if !in_list {
+                out.push_str("<ul>");
+                in_list = true;
+            }
+            out.push_str("<li>");
+            out.push_str(&render_inline_markdown(item));
+            out.push_str("</li>");
+            continue;
+        }
+
+        if let Some(quote) = trimmed.strip_prefix("> ") {
+            close_list(&mut out, &mut in_list);
+            out.push_str("<blockquote><p>");
+            out.push_str(&render_inline_markdown(quote));
+            out.push_str("</p></blockquote>");
+            continue;
+        }
+
+        close_list(&mut out, &mut in_list);
+        out.push_str("<p>");
+        out.push_str(&render_inline_markdown(trimmed));
+        out.push_str("</p>");
+    }
+
+    if in_code {
+        out.push_str("<pre><code>");
+        out.push_str(&escape_html(code.trim_end_matches('\n')));
+        out.push_str("</code></pre>");
+    }
+    close_list(&mut out, &mut in_list);
+
+    out
+}
+
+fn close_list(out: &mut String, in_list: &mut bool) {
+    if *in_list {
+        out.push_str("</ul>");
+        *in_list = false;
+    }
+}
+
+fn markdown_heading(line: &str) -> Option<(usize, &str)> {
+    let level = line.chars().take_while(|ch| *ch == '#').count();
+    if (1..=6).contains(&level) && line.chars().nth(level) == Some(' ') {
+        Some((level, &line[level + 1..]))
+    } else {
+        None
+    }
+}
+
+fn render_inline_markdown(input: &str) -> String {
+    let mut out = String::new();
+    let mut index = 0;
+
+    while index < input.len() {
+        let rest = &input[index..];
+
+        if let Some(after_tick) = rest.strip_prefix('`') {
+            if let Some(end) = after_tick.find('`') {
+                out.push_str("<code>");
+                out.push_str(&escape_html(&after_tick[..end]));
+                out.push_str("</code>");
+                index += end + 2;
+                continue;
+            }
+        }
+
+        if let Some(after_marker) = rest.strip_prefix("**") {
+            if let Some(end) = after_marker.find("**") {
+                out.push_str("<strong>");
+                out.push_str(&render_inline_markdown(&after_marker[..end]));
+                out.push_str("</strong>");
+                index += end + 4;
+                continue;
+            }
+        }
+
+        if let Some((html, consumed)) = render_link(rest) {
+            out.push_str(&html);
+            index += consumed;
+            continue;
+        }
+
+        let ch = rest.chars().next().expect("index is inside string");
+        out.push_str(&escape_html(&ch.to_string()));
+        index += ch.len_utf8();
+    }
+
+    out
+}
+
+fn render_link(input: &str) -> Option<(String, usize)> {
+    let after_open = input.strip_prefix('[')?;
+    let label_end = after_open.find("](")?;
+    let url_start = label_end + 2;
+    let url_end = after_open[url_start..].find(')')? + url_start;
+    let label = &after_open[..label_end];
+    let url = &after_open[url_start..url_end];
+    let consumed = url_end + 2;
+
+    if !is_safe_link_url(url) {
+        return Some((
+            format!("{} ({})", render_inline_markdown(label), escape_html(url)),
+            consumed,
+        ));
+    }
+
+    Some((
+        format!(
+            "<a href=\"{}\" target=\"_blank\" rel=\"noreferrer noopener\">{}</a>",
+            escape_html(url),
+            render_inline_markdown(label)
+        ),
+        consumed,
+    ))
+}
+
+fn is_safe_link_url(url: &str) -> bool {
+    url.starts_with("https://") || url.starts_with("http://") || url.starts_with("mailto:")
 }
 
 fn render_diagnostics_summary_html(
