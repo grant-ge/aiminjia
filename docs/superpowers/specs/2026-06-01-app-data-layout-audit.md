@@ -85,7 +85,7 @@
 
 ## Current Root Entries
 
-当前机器实际 root 条目 40 个：
+样本审计中实际 root 条目 40 个：
 
 ```text
 .DS_Store

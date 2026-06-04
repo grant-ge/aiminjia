@@ -48,7 +48,7 @@ Implemented behavior:
   - Call the best-effort governance pass during startup.
 - Modify: `docs/superpowers/specs/2026-06-01-app-data-governance-design.md`
   - Keep design current if implementation changes.
-- Modify: `/Users/gezhigang/lotus/docs/desktop/storage-conventions.md`
+- Modify: Lotus 服务端仓库 `docs/desktop/storage-conventions.md`
   - Add the new root artifact import and governance rules after implementation.
 
 ## Task 1: Root Entry Classification
@@ -511,7 +511,7 @@ git commit -m "feat(storage): run app data governance at startup"
 
 **Files:**
 - Modify: `docs/superpowers/specs/2026-06-01-app-data-governance-design.md`
-- Modify: `/Users/gezhigang/lotus/docs/desktop/storage-conventions.md`
+- Modify: Lotus 服务端仓库 `docs/desktop/storage-conventions.md`
 
 - [ ] **Step 1: Update docs**
 
@@ -556,7 +556,9 @@ Expected: Diff only touches app data governance, startup hook, and docs.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add docs/superpowers/specs/2026-06-01-app-data-governance-design.md /Users/gezhigang/lotus/docs/desktop/storage-conventions.md
+git add docs/superpowers/specs/2026-06-01-app-data-governance-design.md
+# In the Lotus server repo:
+git add docs/desktop/storage-conventions.md
 git commit -m "docs(storage): document app data governance"
 ```
 

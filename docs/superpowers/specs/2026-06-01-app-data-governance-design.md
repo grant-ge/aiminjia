@@ -1,7 +1,6 @@
 # App Data Governance Design
 
 > Date: 2026-06-01
-> Worktree: `/Users/gezhigang/work-codeup/aijia/code/.worktrees/app-data-governance`
 > Branch: `feat/app-data-governance`
 
 ## Goal
@@ -12,7 +11,7 @@
 
 ## Current Findings
 
-当前机器 `~/.renlijia/` 的只读审计结果：
+一次只读样本审计中的 `~/.renlijia/` root 结果：
 
 - 根级条目：40 个。
 - 总文件数：约 6944 个。

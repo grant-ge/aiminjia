@@ -1,14 +1,14 @@
 # AIjia — 桌面端代码仓库
 
 > 最后梳理：2026-05-29
-> 当前仓库：`/Users/gezhigang/work-codeup/aijia/code`
-> 服务端仓库：`/Users/gezhigang/lotus`
+> 当前仓库：AIjia 桌面端仓库（本文件所在仓库）
+> 服务端仓库：Lotus 服务端仓库（网关、租户端、运营端、官网和服务端文档）
 
 企业 AI 工作台 Tauri 2.x 桌面应用（React 19/TypeScript 前端 + Rust Runtime + RuntimeManager 管理的本地运行环境）。
 
 产品名：**AIjia**（元数据/文件名）/ **AI小家**（UI 面向用户）。标识符：`com.aijia.app`。
 
-日常编码约束以本文件为准；当前架构参考以 `docs/architecture-blueprint.md` 和 `docs/decisions/*.md` 为准。`~/lotus/docs/desktop/` 保留跨仓长期参考和服务端仓库需要维护的桌面端文档，其中存储规范 `~/lotus/docs/desktop/storage-conventions.md` 仍是写盘路径权威。
+日常编码约束以本文件为准；当前架构参考以 `docs/architecture-blueprint.md` 和 `docs/decisions/*.md` 为准。Lotus 服务端仓库的 `docs/desktop/` 保留跨仓长期参考和服务端仓库需要维护的桌面端文档，其中 `docs/desktop/storage-conventions.md` 仍是写盘路径权威。
 
 ## 仓库结构（关键部分）
 
@@ -240,7 +240,7 @@ Skill 系统采用无状态架构，仅加载 `~/.renlijia/users/{scope}/skills/
 
 ## 存储结构
 
-**权威规范在 `~/lotus/docs/desktop/storage-conventions.md`**。本节只给一句话指引 + 入口；任何写盘改动以规范文档为准。
+**权威规范在 Lotus 服务端仓库的 `docs/desktop/storage-conventions.md`**。本节只给一句话指引 + 入口；任何写盘改动以规范文档为准。
 
 ### 五个域
 
