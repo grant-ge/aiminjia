@@ -20,7 +20,7 @@ Writeback queue 的目标是让“还没补完”有明确状态，而不是在�
 | ID | Domain | Priority | State | Agent / Model | Expected Artifact | Close Criteria |
 |---|---|---:|---|---|---|---|
 | WB-2026-06-04-001 | Auth / user scope / account / billing boundary | P1 | validated | Fermat + James / gpt-5.3-codex-spark + gpt-5.4 | `.understand-anything/enhancements/user-scope-auth-storage-boundary.json`, `.understand-anything/enhancements/billing-subscription-account-network.json` | 两个 enhancement 已合并，runtime/frontend 入口已更新，coverage 已升级 |
-| WB-2026-06-04-002 | Prompt / context / compaction / cost accounting | P1 | validated | Halley / gpt-5.4 | `.understand-anything/enhancements/prompt-context-compaction-cost.json` | enhancement 已合并，runtime/frontend 入口已更新，coverage 已升级 |
+| WB-2026-06-04-002 | Prompt / context / compaction / cost accounting | P1 | validated | Halley + Noether + Aristotle + Averroes + Bohr / gpt-5.4 + gpt-5.3-codex-spark + gpt-5.4-mini | `.understand-anything/enhancements/prompt-context-compaction-cost.json`, `.understand-anything/enhancements/context-budget-truncation-matrix.json` | prompt/context enhancement 与上下文预算矩阵已合并，runtime/frontend 入口已更新，coverage 已升级 |
 | WB-2026-06-04-003 | Tauri command / event contract surface | P2 | validated | McClintock / gpt-5.3-codex-spark | `.understand-anything/enhancements/tauri-command-event-contracts.json` | enhancement 已合并，跨前后端契约入口已更新，coverage 已升级 |
 | WB-2026-06-04-004 | test-intents / AEIT / `aijia` CLI | P2 | validated | Kant + Descartes / gpt-5.3-codex-spark | `.understand-anything/enhancements/test-intents-aijia-cli.json` | enhancement 已合并，`testing-and-commands.md` 有入口，coverage 已升级 |
 | WB-2026-06-04-005 | Release / signing pipeline | P3 | deferred | 未派发 | `.understand-anything/enhancements/release-signing-pipeline.json` | P1/P2 完成后再补，避免本轮过宽 |
@@ -39,6 +39,8 @@ Writeback queue 的目标是让“还没补完”有明确状态，而不是在�
 - Trigger: coverage audit found LLM gateway streaming 已覆盖，但 prompt/context/compaction/cost accounting 尚未单独成链。
 - Engineering question: 修改 prompt 构造、上下文裁剪、压缩或费用统计时，会影响 runtime、gateway、前端消息语义和测试锚点。
 - Current boundary: 不把 provider streaming enhancement 直接等同于完整 prompt/cost coverage。
+- Follow-up trigger: 用户用 UserWiki 排查“长对话里模型忘记前文”时暴露上下文预算硬编码表、生效性标注、旧 compact boundary 排障和 QueryEngine budget gap 口径不足。
+- Execution note: Noether 校验普通 chat 主路径，Aristotle 校验工具/记忆/附件预算，Averroes 校验生效/半生效/未接入分类；Bohr 校验写回位置。
 
 ### WB-2026-06-04-003
 

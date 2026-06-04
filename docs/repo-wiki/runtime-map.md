@@ -60,7 +60,52 @@ Prompt/context/cost 链路由 `prompt-context-compaction-cost` 增强：
 5. `src-tauri/src/runtime/chat/preprocess.rs`、`compaction.rs`、`compact_client.rs` 和 `history.rs` 共同处理 compact 触发、summary 生成、boundary 持久化和 synthetic user context 回放。
 6. `src-tauri/src/llm/providers/claude.rs`、`aijia_gateway_v2.rs`、`llm/streaming.rs`、`runtime/query_engine.rs`、`runtime/events.rs` 和 `transport/tauri_event_adapter.rs` 把 provider usage 统一为 session 级 token/cache/cost 统计并发布给前端。
 
-已知缺口：`QueryEngine` 预算阈值的生产注入点尚未确认；cache token 已到 `TurnCompleted`、Tauri adapter、TS payload 和 store 类型，但 `src/hooks/useStreaming.ts` 写 `lastTurnSummary` 时尚未完整落 cache token 字段。
+已知缺口：`QueryEngine` 预算阈值在普通 chat 主链未见生产注入点；cache token 已到 `TurnCompleted`、Tauri adapter、TS payload 和 store 类型，但 `src/hooks/useStreaming.ts` 写 `lastTurnSummary` 时尚未完整落 cache token 字段。
+
+### Context Budget / Truncation Matrix
+
+长对话“模型忘记前文”排障不要只看模型能力。当前生产路径里，上下文进入 LLM 前会经过多层本地预算和截断。生效性词典：
+
+- 生效：当前普通 chat 生产主路径会读这个值，并会改写、裁剪、降级或限制 LLM 可见上下文。
+- 半生效/仅日志：当前普通 chat 主路径会经过这个逻辑，但只做告警、触发尝试或依赖未配置组件，不直接改写上下文。
+- 未接入/死字段：当前主 chat 请求链没有读取或调用，不能作为用户反馈的直接原因。
+- 测试专用：当前明确证据主要来自测试构造或验证，不能推断生产路径生效。
+
+按生效性分为：
+
+| 层 | 硬编码/规则 | 生效性 | 影响 |
+|---|---|---|---|
+| 历史回放 | `HistoryConfig::default`: `char_budget=120_000`, `max_rounds=30` | 生效 | `load_history_via_runtime_history` 会使用默认配置，`trim_to_budget` 超限后从最老 round 开始移除。 |
+| compact boundary | `tail_message_id` 后回放 + `summary_text` synthetic user context | 有 boundary 时生效 | 本地 `compact_boundaries.jsonl` 存在时，旧 transcript 主要依赖 summary；旧 summary 差会表现为忘前文。 |
+| 错误消息 | `error.is_none()` 过滤 | 生效 | UI red callout 会保留，但错误历史不进入下一轮 LLM context。 |
+| LLM 前预处理 | `PreprocessConfig::default()` | 生效 | 每轮 LLM step 前执行 tool budget、microcompact、collapse、auto compact 触发判断。 |
+| tool 总预算 | `aggregate_char_budget=64_000`, `keep_recent_tool_results=2`, preview `160` chars | 生效 | 工具结果总量过大时，旧工具结果被改写为 `[budget-trimmed]`。 |
+| tool collapse | `long_result_chars=8_000`, `keep_recent_tool_results=2`, preview `200` chars | 生效 | 长结果或重复结果被折叠成短 preview。 |
+| microcompact | `trigger_chars=120_000`, `keep_recent_tool_results=2` | 生效 | 总上下文过大时，更早的非保留工具结果变成 `[microcompacted]`。 |
+| auto compact | `threshold_chars=480_000`, failure limit `3` | 半生效 | 触发逻辑在主路径；默认 `CompactSummaryClient` 未配置时 warn 并返回空 summary，不会产生有效新 boundary。 |
+| compact 保尾 | 从最后一个非 summary `user` message 起保留 tail | 生效 | compact 后不是保最近 N 轮，而是保最后一个用户消息起的 tail，其余依赖 summary。 |
+| 工具结果默认 | `default_max_result_size_chars=8_000` | 生效 | 大多数工具最终注入 LLM 的 tool message 最多 8k chars。 |
+| Read/Glob/Skill | Read `16_000`, Glob `4_000`, Skill `16_000` | 生效 | 工具目录覆盖默认结果预算。 |
+| Read 源头 | 默认 `max_bytes=1_048_576`, offset 模式默认 `limit=2000` 行 | 生效 | 文件读取源头先受 1 MiB/2000 行限制，再进入工具结果预算。 |
+| Shell 源头 | `MAX_OUTPUT_BYTES=512 * 1024` | 生效 | Bash/PowerShell stdout/stderr 超过 512 KiB 会先被截断。 |
+| Grep 源头 | `MAX_RESULTS=1000`, `MAX_FILE_SIZE_BYTES=2 MiB` | 生效 | 搜索结果最多 1000 条，超过 2 MiB 文件会跳过。 |
+| Skill catalog | `format_full_catalog(200_000)`, 3% budget, 4 chars/token, desc `80` chars | 生效 | skill catalog 固定按 200k window 估算，不按真实模型上下文窗口动态调整。 |
+| AGENTS.md | `MAX_BYTES=65_536` | 生效 | workspace 指令超 64 KiB 会被截断后注入。 |
+| Project memory | `MAX_RECALLED_ENTRIES=5` | 生效 | 每次动态上下文只召回 5 条项目记忆。 |
+| Cognitive memory | `CONTENT_MAX_LEN=4000`, `CORE_MAX_LINES=200` | 间接生效 | 限制长期记忆单条长度和 core memory 容量。 |
+| 图片附件 | 最多 4 张、单张 3 MiB、总计 6 MiB | 生效 | 超限图片降级，不进入当轮多模态上下文。 |
+| context window | Claude 200k、DeepSeek 128k、默认 100k，80% warn | 仅日志/半生效 | 主路径只用于 overflow warning，不会裁剪或拦截请求。 |
+| `context_decay.apply_decay` | recent 2000 / old 500 | 未接入主 chat | 当前只见定义和测试，不能作为忘前文的直接原因。 |
+| `AutoCompactConfig.max_output_chars=80_000` | 字段存在 | 未接入/死字段 | 当前生产代码未读取该字段限制 summary 或输出长度。 |
+| QueryEngine budget | `with_max_budget_usd`, `with_cost_per_1k_tokens` | 普通 chat 主链未接入 | 当前主要由测试覆盖；普通 chat 构造链未见生产预算阈值注入。 |
+
+排障顺序：
+
+1. 先检查当前对话是否超过 30 round 或 120000 字符，确认 `history.rs::trim_to_budget` 是否会裁掉早期 round。
+2. 再检查用户本地 `<aijia_home>/users/{scope}/conversations/{conversation_id}/compact_boundaries.jsonl` 是否存在旧 boundary；旧版本或旧 summary 质量会影响后续回放。
+3. 如果“忘记”的内容来自工具结果、文件读取、搜索或 shell 输出，检查 tool source budget 与 `tool_result_collector` 的二次截断。
+4. 如果内容来自 workspace 指令、skill catalog、memory 或图片附件，检查各自动态上下文预算。
+5. 不要把 `context_decay.apply_decay`、`max_output_chars` 或 context overflow warn 当成当前主 chat 裁剪来源，除非后续代码接入。
 
 ## Tool Runtime
 

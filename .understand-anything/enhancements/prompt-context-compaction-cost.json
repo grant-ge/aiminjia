@@ -342,9 +342,9 @@
   ],
   "risks_or_gaps": [
     {
-      "title": "生产预算阈值注入点未确认",
-      "description": "QueryEngine::with_max_budget_usd 和 with_cost_per_1k_tokens 的生产注入点尚未在已读链路中确认，当前明确证据主要来自测试。",
-      "evidence": ["src-tauri/src/runtime/query_engine.rs", "src-tauri/tests/plan_o_queryengine_session_state_test.rs"]
+      "title": "QueryEngine 预算阈值普通 chat 主链未接入",
+      "description": "QueryEngine::with_max_budget_usd 和 with_cost_per_1k_tokens 当前主要由测试覆盖；已读普通 chat 构造链未发现生产预算阈值注入点，因此不应再标成待确认。",
+      "evidence": ["src-tauri/src/runtime/query_engine.rs", "src-tauri/src/runtime/session_runtime.rs", "src-tauri/tests/plan_o_queryengine_session_state_test.rs"]
     },
     {
       "title": "cache token 前端 summary 写入存在断点",

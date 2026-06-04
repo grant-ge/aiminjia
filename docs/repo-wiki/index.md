@@ -6,13 +6,13 @@ AIjia / lotus-app 是一个 Tauri 2 桌面端应用，前端使用 React、TypeS
 
 当前 Understand-Anything 图谱覆盖：
 
-- 9337 个节点
-- 10232 条边
+- 9343 个节点
+- 10274 条边
 - 25 个 architecture layers
-- 100 个 guided tour steps
-- 367 个 LLM-enhanced 节点
-- 110 个代码/维护架构评审概念节点
-- 22 份当前源码/测试/skill 来源 enhancement JSON
+- 105 个 guided tour steps
+- 382 个 LLM-enhanced 节点
+- 116 个代码/维护架构评审概念节点
+- 23 份当前源码/测试/skill 来源 enhancement JSON
 
 ## Architecture Layers
 
@@ -42,7 +42,7 @@ AIjia / lotus-app 是一个 Tauri 2 桌面端应用，前端使用 React、TypeS
 | 本地存储与文件系统能力 | workspace-first、file_store、path_auth 和本地路径安全 | 37 |
 | 遗留插件桥接 | 旧插件系统与 RuntimeTool 的过渡桥 | 18 |
 | Rust 集成测试 | runtime、transport、tools、storage 和 review_ 架构护栏 | 302 |
-| 代码架构评审 | 当前源码、测试和 repo-local skill 来源的增强材料生成的 architecture review 概念节点 | 110 |
+| 代码架构评审 | 当前源码、测试和 repo-local skill 来源的增强材料生成的 architecture review 概念节点 | 116 |
 
 ## Guided Tour
 
@@ -70,6 +70,7 @@ AIjia / lotus-app 是一个 Tauri 2 桌面端应用，前端使用 React、TypeS
 - `.understand-anything/enhancements/frontend-chat-state-rendering.json`
 - `.understand-anything/enhancements/app-shell-settings-updater-billing.json`
 - `.understand-anything/enhancements/billing-subscription-account-network.json`
+- `.understand-anything/enhancements/context-budget-truncation-matrix.json`
 - `.understand-anything/enhancements/frontend-employee-settings-file-preview.json`
 - `.understand-anything/enhancements/frontend-skill-pending.json`
 - `.understand-anything/enhancements/im-channel-core-manager.json`
