@@ -32,6 +32,7 @@ license: Internal
 
 - 安装和初始化：读 `references/install.md`。
 - 使用命令：读 `references/usage.md`。
+- 理解 UserWiki / LLM Wiki 的工作心智：读 `references/llm-wiki-principles.md`。
 - 日常问答、功能影响面、文件解释、diff 影响、新人路径：读 `references/qa-playbook.md`。
 - 测试问答效果、做真实问答验收：读 `references/qa-examples.md`，CLI 用例在 `references/qa-smoke-cases.json`。
 - 需要判断是否转维护流程：读 `references/maintenance-routing.md`。
@@ -56,9 +57,10 @@ license: Internal
 1. 先用图谱和 RepoWiki 做导航。
 2. 架构事实不清楚时，再读当前源码和测试确认。
 3. 用户问当前改动时，用 graph-based diff impact 分析。
-4. 如果图谱缺节点、缺边或明显过期，要明确说明，并转 `wiki-maintainer`。
-5. 不要主动操作浏览器；除非用户明确要求 dashboard 或浏览器验证。
-6. 回答要落到模块、文件、测试、文档、疑点和下一步。
+4. 把 UserWiki 理解为 LLM 维护的知识中间层：先读 wiki/enhancement 复用已有理解，必要时回到 raw source 校验，新缺口要沉淀为维护任务。
+5. 如果图谱缺节点、缺边或明显过期，要明确说明，并转 `wiki-maintainer`。
+6. 不要主动操作浏览器；除非用户明确要求 dashboard 或浏览器验证。
+7. 回答要落到模块、文件、测试、文档、疑点和下一步。
 
 ## 路由
 
@@ -68,6 +70,7 @@ license: Internal
 | 功能影响面预估 | 本 skill，读 `qa-playbook.md` |
 | 当前 diff 影响面 | 本 skill，读 `qa-playbook.md` |
 | 文件或模块解释 | 本 skill，读 `qa-playbook.md` |
+| LLM Wiki / UserWiki 方法论解释 | 本 skill，读 `llm-wiki-principles.md` |
 | 生成、补充、修复图谱 | 切到 `wiki-maintainer` |
 | enhancement JSON、schema、校验脚本 | 切到 `wiki-maintainer` |
 

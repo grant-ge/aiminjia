@@ -1,0 +1,367 @@
+{
+  "module": "im-channel-core-manager",
+  "source_basis": "code-tests-only",
+  "key_nodes": [
+    {
+      "filePath": "src-tauri/src/connector/im/trait_def.rs",
+      "summary": "定义 IMConnector 抽象边界、ReplyContent/ReplyTarget、ConnectorContext 注入面，以及 start/stop/registration/cancel 的统一契约，是 manager 与各平台实现解耦的第一层。",
+      "tags": ["im", "trait", "connector", "lifecycle"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src-tauri/src/connector/im/types.rs",
+      "summary": "承载平台枚举、连接状态、配置视图、会话快照、注册返回值和统一 ChannelMessage 结构，是 manager、config_store、router 和 IPC 的共享数据面。",
+      "tags": ["im", "types", "state", "ipc"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/connector/im/factory.rs",
+      "summary": "集中构造各平台 connector，并把具体类型擦除成 Arc<dyn IMConnector>；同时保留少量 concrete handle 给 remember_session 等尚未 trait 化的能力。",
+      "tags": ["im", "factory", "trait", "platform"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src-tauri/src/connector/im/manager.rs",
+      "summary": "实现 ChannelManager 核心编排：per-platform slot、generation/cancel/shutdown、hydrate、worker loop、ask coordinator、pending enqueue 和 reply manager 协作都在这里收口。",
+      "tags": ["im", "manager", "state-machine", "pending", "ask"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src-tauri/src/connector/im/channel_manager_slot.rs",
+      "summary": "提供可替换的 ChannelManager 容器，让 Tauri app state 保持稳定注册类型，同时支持登录后初始化和切账号时原子替换实例。",
+      "tags": ["im", "manager", "slot", "lifecycle"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/connector/im/shared/router.rs",
+      "summary": "维护每个平台自己的 sessions.json，按 conversation_type/robot_code/external_id 路由到内部 session，并负责 v1 清空迁移与旧版共享 dingtalk sessions 拆分。",
+      "tags": ["im", "router", "sessions", "migration"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src-tauri/src/connector/im/shared/config_store.rs",
+      "summary": "负责 channels/<platform>/config.json 与 sessions.json 路径、配置读写、secret 加解密/脱敏、schema 校验和平台状态组装，是持久化配置边界。",
+      "tags": ["im", "config", "storage", "security"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src-tauri/src/connector/im/shared/pending_adapter.rs",
+      "summary": "把入站 IM 文本、附件和下载失败尾注规整成 PendingItem，并只在 source tag 上区分平台，保证 manager 不必直接拼 pending 结构细节。",
+      "tags": ["im", "pending", "adapter", "attachments"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/connector/im/shared/ask_coordinator.rs",
+      "summary": "把 RuntimeEventBus 的 PermissionAskRequired/UserInteractionRequired 映射成 IM ask 卡片，并负责 reply judge、超时、abandon、ambiguous 和 reroute 分支。",
+      "tags": ["im", "ask", "event-bus", "judge"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src-tauri/src/connector/im/shared/reply_manager.rs",
+      "summary": "当前 shared 层里的 DingtalkReplyManager 仍然直接维护钉钉 AI Card 生命周期、session 凭证缓存和 AskOutputSink 实现，是阶段性平台泄漏点。",
+      "tags": ["im", "reply", "dingtalk", "aicard"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src-tauri/src/commands/channel.rs",
+      "summary": "Tauri IPC 入口通过 ChannelManagerSlot 取当前 manager，并把平台查询、启停、注册、移除和特定平台命令全部转发到 manager。",
+      "tags": ["im", "commands", "tauri", "ipc"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/tests/review_im_layering.rs",
+      "summary": "架构回归测试，锁定平台 connector 不得直接依赖 shared orchestration helper、manager 必须走 factory，并把 reply_manager 标记为已知的 Dingtalk 阶段性 leak。",
+      "tags": ["im", "tests", "layering", "architecture"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/tests/review_pending_im_decoupling.rs",
+      "summary": "锁定 runtime/pending 不得使用 tauri，且 manager 只能依赖 PendingQueueManager 的公共 API，不能摸 queue/store 内部实现。",
+      "tags": ["im", "tests", "pending", "decoupling"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/tests/review_im_ask_coordinator.rs",
+      "summary": "锁定 ask_coordinator 不得依赖 tauri 或直接触碰 dingtalk_card，只能通过 AskOutputSink 把提问输出交给外部实现。",
+      "tags": ["im", "tests", "ask", "transport-neutral"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/tests/channel_hydrate_test.rs",
+      "summary": "覆盖 router v1 清空、v2 hydrate、current robot active 标记，以及旧版共享 dingtalk sessions 拆分到 feishu/wecom 文件的启动期协作契约。",
+      "tags": ["im", "tests", "hydrate", "router"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/tests/pending_im_integration_test.rs",
+      "summary": "验证 PendingQueueManager 的 busy/idle 行为：忙时多条 IM 入队并在 drain 后只派发一次，闲时返回 SentDirectly，构成 manager 入站路径依赖的队列语义契约。",
+      "tags": ["im", "tests", "pending", "integration"],
+      "complexity": "medium"
+    }
+  ],
+  "semantic_edges": [
+    {
+      "sourceFilePath": "src-tauri/src/connector/im/manager.rs",
+      "targetFilePath": "src-tauri/src/connector/im/trait_def.rs",
+      "type": "depends_on",
+      "reason": "ChannelManager 通过 IMConnector 和 ConnectorContext 与各平台交互，worker 启动、send、cancel 和 registration 都依赖 trait 面而不是直接绑具体 connector。",
+      "weight": 0.99
+    },
+    {
+      "sourceFilePath": "src-tauri/src/connector/im/factory.rs",
+      "targetFilePath": "src-tauri/src/connector/im/trait_def.rs",
+      "type": "configures",
+      "reason": "factory 负责把具体平台对象装配成 Arc<dyn IMConnector>，同时保留 concrete handle 给当前还没抽进 trait 的 remember_session 等能力。",
+      "weight": 0.95
+    },
+    {
+      "sourceFilePath": "src-tauri/src/connector/im/manager.rs",
+      "targetFilePath": "src-tauri/src/connector/im/factory.rs",
+      "type": "calls",
+      "reason": "manager 通过 build_<platform>_connector/register_<platform>_connector 创建或替换平台实例，避免在 manager 里直接 new 平台类型。",
+      "weight": 0.97
+    },
+    {
+      "sourceFilePath": "src-tauri/src/commands/channel.rs",
+      "targetFilePath": "src-tauri/src/connector/im/channel_manager_slot.rs",
+      "type": "calls",
+      "reason": "IPC 先从 ChannelManagerSlot 取当前实例，才能在登录后初始化或切账号后继续把命令路由到正确的 manager。",
+      "weight": 0.88
+    },
+    {
+      "sourceFilePath": "src-tauri/src/commands/channel.rs",
+      "targetFilePath": "src-tauri/src/connector/im/manager.rs",
+      "type": "calls",
+      "reason": "channel_get_platforms、set_enabled、remove_platform、registration 等命令最终都委托给 ChannelManager。",
+      "weight": 0.93
+    },
+    {
+      "sourceFilePath": "src-tauri/src/connector/im/manager.rs",
+      "targetFilePath": "src-tauri/src/connector/im/shared/config_store.rs",
+      "type": "reads_from",
+      "reason": "manager 在 auto-connect、hydrate、连接状态刷新和 remove/set_enabled 流程里持续读取并更新平台配置与状态视图。",
+      "weight": 0.95
+    },
+    {
+      "sourceFilePath": "src-tauri/src/connector/im/manager.rs",
+      "targetFilePath": "src-tauri/src/connector/im/shared/router.rs",
+      "type": "routes",
+      "reason": "worker 用 ChannelSessionRouter 把外部会话键映射到内部 session_id，hydrate 也依赖它加载每个平台的 sessions.json 并做旧数据迁移。",
+      "weight": 0.98
+    },
+    {
+      "sourceFilePath": "src-tauri/src/connector/im/shared/router.rs",
+      "targetFilePath": "src-tauri/src/connector/im/shared/ask_coordinator.rs",
+      "type": "depends_on",
+      "reason": "router 和共享的 channel_session_ids 集合都实现了 ChannelSessionRegistry，让 ask_coordinator 能判断某个 SessionId 是否属于 IM 频道会话。",
+      "weight": 0.82
+    },
+    {
+      "sourceFilePath": "src-tauri/src/connector/im/manager.rs",
+      "targetFilePath": "src-tauri/src/connector/im/shared/pending_adapter.rs",
+      "type": "calls",
+      "reason": "manager 在入站 worker 中先构造 ChatTurnRequest，再用 pending_adapter 生成 PendingItem 交给 PendingQueueManager 决定直发还是入队。",
+      "weight": 0.9
+    },
+    {
+      "sourceFilePath": "src-tauri/src/connector/im/manager.rs",
+      "targetFilePath": "src-tauri/src/connector/im/shared/ask_coordinator.rs",
+      "type": "calls",
+      "reason": "manager 订阅 ask_coordinator 到 event bus，并在收到 IM 文本时先调用 try_handle_reply，让 pending ask 可以 consume 或 reroute 当前消息。",
+      "weight": 0.94
+    },
+    {
+      "sourceFilePath": "src-tauri/src/connector/im/shared/reply_manager.rs",
+      "targetFilePath": "src-tauri/src/connector/im/shared/ask_coordinator.rs",
+      "type": "depends_on",
+      "reason": "DingtalkReplyManager 实现 AskOutputSink，把 ask_coordinator 的提问输出映射成钉钉 AI Card 的 finish/create 行为。",
+      "weight": 0.89
+    },
+    {
+      "sourceFilePath": "src-tauri/src/connector/im/manager.rs",
+      "targetFilePath": "src-tauri/src/connector/im/shared/reply_manager.rs",
+      "type": "calls",
+      "reason": "manager 在直发前 register AI Card、在 drain 路径前 remember_credentials，并依赖 reply_manager 处理 StreamDelta/StreamDone 的钉钉回写。",
+      "weight": 0.96
+    },
+    {
+      "sourceFilePath": "src-tauri/src/connector/im/manager.rs",
+      "targetFilePath": "src-tauri/tests/review_im_layering.rs",
+      "type": "tested_by",
+      "reason": "review_im_layering 锁定 manager 不得直接构造平台 connector，并记录 reply_manager 仍是已知的 Dingtalk 泄漏点。",
+      "weight": 0.9
+    },
+    {
+      "sourceFilePath": "src-tauri/src/connector/im/factory.rs",
+      "targetFilePath": "src-tauri/tests/review_im_layering.rs",
+      "type": "tested_by",
+      "reason": "架构测试要求新增平台通过 sibling factory 接入，而不是继续把平台构造逻辑塞回 manager。",
+      "weight": 0.86
+    },
+    {
+      "sourceFilePath": "src-tauri/src/connector/im/shared/ask_coordinator.rs",
+      "targetFilePath": "src-tauri/tests/review_im_ask_coordinator.rs",
+      "type": "tested_by",
+      "reason": "review_im_ask_coordinator 锁定 ask_coordinator 只能通过 AskOutputSink 输出，不得直接依赖 tauri 或 dingtalk_card。",
+      "weight": 0.9
+    },
+    {
+      "sourceFilePath": "src-tauri/src/connector/im/manager.rs",
+      "targetFilePath": "src-tauri/tests/review_pending_im_decoupling.rs",
+      "type": "tested_by",
+      "reason": "review_pending_im_decoupling 限制 manager 只能碰 runtime::pending 的公共 API，维持 IM 入站逻辑与 pending 内部实现解耦。",
+      "weight": 0.84
+    },
+    {
+      "sourceFilePath": "src-tauri/src/connector/im/shared/router.rs",
+      "targetFilePath": "src-tauri/tests/channel_hydrate_test.rs",
+      "type": "tested_by",
+      "reason": "channel_hydrate_test 覆盖 v1 wipe、v2 hydrate、current robot active 标记与旧版共享 sessions 拆分，是 router/manager 协作的启动期契约。",
+      "weight": 0.91
+    },
+    {
+      "sourceFilePath": "src-tauri/src/connector/im/shared/pending_adapter.rs",
+      "targetFilePath": "src-tauri/tests/pending_im_integration_test.rs",
+      "type": "related",
+      "reason": "pending_adapter 生成的 PendingItem 最终走向 PendingQueueManager，而 pending_im_integration_test 锁定了 busy/idle 队列语义，说明 manager 依赖的 pending contract 是什么样子。",
+      "weight": 0.68
+    }
+  ],
+  "architecture_findings": [
+    {
+      "title": "IMConnector 把平台实现压到统一 trait 面，manager 只拿注入能力和流式消息",
+      "description": "trait_def 把平台差异收敛到 platform/capabilities/start/send/registration 上，ConnectorContext 只注入 config_store、ask_coordinator、pending_manager、secure_storage 和 cancel_token，明确禁止 tauri 类型进入 connector。factory 再把具体平台对象擦除成 Arc<dyn IMConnector>，使 manager 的主路径围绕 trait 和 ChannelMessage/ReplyContent 运转。",
+      "evidence": [
+        "src-tauri/src/connector/im/trait_def.rs",
+        "src-tauri/src/connector/im/factory.rs",
+        "src-tauri/src/connector/im/manager.rs"
+      ]
+    },
+    {
+      "title": "ChannelManager 的核心状态机是 per-platform slot，而不是全局单槽",
+      "description": "manager 把 connection、last_error、cancel token、worker handle 和 stream_generation 放进 Platform 索引的 PerPlatformState；set_enabled/stop_stream 只动目标平台；测试还专门回归了旧 bug：关闭 Feishu 不能误杀 Dingtalk。这个设计让多平台连接可以并存，且一个平台重连/失败不会污染其它平台。",
+      "evidence": [
+        "src-tauri/src/connector/im/manager.rs",
+        "src-tauri/src/connector/im/types.rs"
+      ]
+    },
+    {
+      "title": "generation、cancel 和 shutdown 共同构成连接生命周期防陈旧机制",
+      "description": "stop_stream 会先 bump 目标平台的 stream_generation，再取走 cancel token 和 worker handle；recv_current_generation_message_stream 在收消息前后都检查 generation 漂移并响应 cancel；shutdown 再把 inactive 置位、批量取消所有平台、在 3 秒预算内 join worker、清理本实例拥有的 session id 与 subscriber anchor。这样 stale callback、旧 worker 和切账号后的 zombie manager 都会被压住。",
+      "evidence": [
+        "src-tauri/src/connector/im/manager.rs",
+        "src-tauri/src/connector/im/channel_manager_slot.rs"
+      ]
+    },
+    {
+      "title": "router 把外部会话键持久化为每个平台独立 sessions.json，并承担启动期迁移",
+      "description": "router 的 key 结构固定为 conversation_type + robot_code + external_id，既能区分同一 external_id 下的多机器人历史会话，也能实现 get_or_create_session_with_ensure。启动期先把旧版共享 dingtalk/sessions.json 按 robot_code 规则拆给 Feishu/Wecom，再加载每个平台自己的 sessions 文件；manager hydrate 后还会把这些 session id 全部灌进共享 registry，让 ask_coordinator 从启动瞬间就能识别老会话。",
+      "evidence": [
+        "src-tauri/src/connector/im/shared/router.rs",
+        "src-tauri/src/connector/im/manager.rs",
+        "src-tauri/tests/channel_hydrate_test.rs"
+      ]
+    },
+    {
+      "title": "config_store 是平台配置与 secret 边界，manager 只消费状态和明文凭证结果",
+      "description": "config_store 统一定义 channels/<platform>/config.json 与 sessions.json 路径、schema 校验、enabled 开关、secret 掩码和 SecureStorage/PlaintextFallback 解密逻辑。manager 通过它组装 ChannelPlatformState、决定 auto-connect 和 remove/set_enabled 的状态演进，而不会把 app_secret 等明文直接塞进 UI state。",
+      "evidence": [
+        "src-tauri/src/connector/im/shared/config_store.rs",
+        "src-tauri/src/connector/im/types.rs",
+        "src-tauri/src/connector/im/manager.rs"
+      ]
+    },
+    {
+      "title": "入站主路径先过 ask coordinator，再落到 pending enqueue_or_send",
+      "description": "Dingtalk worker 先用 try_handle_reply 检查这条 IM 文本是不是某个 pending ask 的回答：Consumed 就不再发 turn，Reroute 就立刻起新 turn；只有普通消息才继续下载附件、生成 ChatTurnRequest 和 PendingItem，然后交给 PendingQueueManager 决定 SentDirectly、Queued 还是 QueueFull reject。review_pending_im_decoupling 和 pending_im_integration_test 进一步锁定 manager 只能依赖公共 pending API，以及 busy/idle 的直发/入队语义。",
+      "evidence": [
+        "src-tauri/src/connector/im/manager.rs",
+        "src-tauri/src/connector/im/shared/pending_adapter.rs",
+        "src-tauri/tests/review_pending_im_decoupling.rs",
+        "src-tauri/tests/pending_im_integration_test.rs"
+      ]
+    },
+    {
+      "title": "IMAskCoordinator 自身保持 transport-neutral，但生产输出面当前仍靠外部 sink 实现",
+      "description": "ask_coordinator 只知道 ChannelSessionRegistry、AskOutputSink、PendingPermissionControlPlane、PendingInteractionControlPlane 和 AskReplyJudge；它订阅 RuntimeEventBus，把 ask 变成 markdown 卡片，并在 timeout、ambiguous、abandon、answered 之间决策。review_im_ask_coordinator 明确禁止它直连 tauri 或 dingtalk_card，这保证了 ask 逻辑仍是可替换的共享模块。",
+      "evidence": [
+        "src-tauri/src/connector/im/shared/ask_coordinator.rs",
+        "src-tauri/tests/review_im_ask_coordinator.rs",
+        "src-tauri/src/connector/im/manager.rs"
+      ]
+    },
+    {
+      "title": "reply_manager 仍是阶段性 Dingtalk leak，shared 目录下并未真正平台中立",
+      "description": "DingtalkReplyManager 直接依赖钉钉 card/token 细节，并实现 AskOutputSink；factory 还需要把 Arc<DingtalkConnector> concrete handle 回传给 manager，让 worker 调 remember_session。review_im_layering 已把 shared::reply_manager 明确标注为已知 Phase 0 leak：AI Card 生命周期虽然对外借由 ReplyContent::AiCardChunk 表达，但真正的 session target、credential cache 和 card register/finish 仍是钉钉形状。",
+      "evidence": [
+        "src-tauri/src/connector/im/shared/reply_manager.rs",
+        "src-tauri/src/connector/im/factory.rs",
+        "src-tauri/tests/review_im_layering.rs",
+        "src-tauri/src/connector/im/manager.rs"
+      ]
+    },
+    {
+      "title": "测试已经锁住核心 layering/pending/ask/hydrate 契约，但平台扫描仍有覆盖空洞",
+      "description": "review_im_layering 把 banned shared import 扫描写死在 dingtalk/feishu/wecom，另加一条 whatsapp 存在性断言；这意味着 Telegram 和 Wechat 目前不在同一个 banned-import 扫描列表内。也就是说，核心模块的架构约束已经有守卫，但平台矩阵上的静态审计还没完全跟上 manager/factory 已支持的平台范围。",
+      "evidence": [
+        "src-tauri/tests/review_im_layering.rs",
+        "src-tauri/src/connector/im/factory.rs",
+        "src-tauri/src/connector/im/manager.rs"
+      ]
+    }
+  ],
+  "tour_steps": [
+    {
+      "title": "先看抽象和状态面",
+      "description": "从 IMConnector、ConnectorContext、ReplyContent 和 Platform/ChannelConnectionState 入手，先建立这个模块的抽象边界、入站/出站语义和平台状态词汇表。",
+      "filePaths": [
+        "src-tauri/src/connector/im/trait_def.rs",
+        "src-tauri/src/connector/im/types.rs"
+      ]
+    },
+    {
+      "title": "再看实例如何被装配和替换",
+      "description": "factory 展示了 concrete connector 如何被擦除成 trait handle，以及为什么 manager 仍要拿到少量 concrete handle；slot 则解释了为什么登录后和切账号时 manager 需要可热替换。",
+      "filePaths": [
+        "src-tauri/src/connector/im/factory.rs",
+        "src-tauri/src/connector/im/channel_manager_slot.rs",
+        "src-tauri/src/commands/channel.rs"
+      ]
+    },
+    {
+      "title": "看持久化配置与 session 路由",
+      "description": "config_store 负责配置与 secret，router 负责 sessions.json 和迁移；这两者 together 解释了 manager 为何能在启动时 hydrate 历史会话并区分当前机器人与旧机器人。",
+      "filePaths": [
+        "src-tauri/src/connector/im/shared/config_store.rs",
+        "src-tauri/src/connector/im/shared/router.rs",
+        "src-tauri/tests/channel_hydrate_test.rs"
+      ]
+    },
+    {
+      "title": "读 manager 的生命周期状态机",
+      "description": "重点看 PerPlatformState、set_enabled、stop_stream、recv_current_generation_message_stream 和 shutdown，理解 per-platform generation、cancel、inactive gate 如何共同防止串平台和陈旧 worker 污染。",
+      "filePaths": [
+        "src-tauri/src/connector/im/manager.rs"
+      ]
+    },
+    {
+      "title": "沿着 Dingtalk worker 走一遍入站链路",
+      "description": "这一段最能代表 core manager 的职责：路由 session、注册 channel_session_ids、发 channel:message、先过 ask_coordinator，再做附件下载、pending enqueue_or_send、reply_manager register 和记忆 session target。",
+      "filePaths": [
+        "src-tauri/src/connector/im/manager.rs",
+        "src-tauri/src/connector/im/shared/pending_adapter.rs",
+        "src-tauri/tests/pending_im_integration_test.rs"
+      ]
+    },
+    {
+      "title": "最后看 ask/reply 的共享编排与现阶段缺口",
+      "description": "ask_coordinator 解释共享 ask 流程，reply_manager 解释为什么 shared 目录里还留着 Dingtalk AI Card 细节；review 测试则把这个 leak 和 transport-neutral 约束一起写死成架构契约。",
+      "filePaths": [
+        "src-tauri/src/connector/im/shared/ask_coordinator.rs",
+        "src-tauri/src/connector/im/shared/reply_manager.rs",
+        "src-tauri/tests/review_im_ask_coordinator.rs",
+        "src-tauri/tests/review_im_layering.rs"
+      ]
+    }
+  ]
+}

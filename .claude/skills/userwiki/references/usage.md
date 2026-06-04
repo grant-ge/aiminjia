@@ -102,11 +102,27 @@ node scripts/run-userwiki-qa-smoke.mjs --list
 node scripts/run-userwiki-qa-smoke.mjs --case settings-impact
 ```
 
+如果当前环境里的 `codex` 来自 WindowsApps/AppX alias 并报 `EPERM` 或 `Access is denied`，先导出同一题 prompt：
+
+```bash
+node scripts/run-userwiki-qa-smoke.mjs --case settings-impact --prompt-out /tmp/userwiki-prompt.md
+```
+
 复核某次已生成的回答文件：
 
 ```bash
 node scripts/run-userwiki-qa-smoke.mjs --case settings-impact --answer /tmp/userwiki-answer.md
 ```
+
+也可以从 stdin 评分：
+
+```bash
+cat /tmp/userwiki-answer.md | node scripts/run-userwiki-qa-smoke.mjs --case settings-impact --answer -
+```
+
+`--answer -` 需要 UTF-8 stdin；Windows PowerShell 管道中文可能被转成 `?`，不确定时优先用 `--answer <path>`。
+
+如果本机有另一个可执行的 Codex CLI，用 `USERWIKI_QA_CODEX_COMMAND` 指向它后再跑真实问答。
 
 跑默认问答集：
 

@@ -12,6 +12,7 @@ lotus-app 图谱满足下面条件时，可以说“完整到可用于代码理�
 6. 每个 enhancement 都有非空 `key_nodes`、`semantic_edges`、`architecture_findings`、`tour_steps`。
 7. `node scripts/apply-understand-enhancements.mjs` 可重复运行，不重复增加边或 tour。
 8. `node scripts/check-repowiki.mjs` 通过。
+9. `coverage-manifest.md` 与 `writeback-queue.md` 记录高价值 domain 覆盖等级、待写回缺口和关闭标准。
 
 ## 完整性的边界
 
@@ -55,6 +56,7 @@ node --input-type=module -e "import fs from 'node:fs'; import { validateGraph } 
 - Frontend chat rendering chain
 - Storage/path auth/file preview chain
 - UserWiki skill system
+- Coverage manifest / writeback queue maintenance loop
 
 一条链路通过，需要图谱能回答：
 

@@ -22,6 +22,45 @@ node --input-type=module -e "import fs from 'node:fs'; import { validateGraph } 
 
 通过标准：`bad` 为 `0`。
 
+## UserWiki QA Smoke
+
+只校验问答案例结构和 `.agents` / `.claude` 镜像：
+
+```bash
+node scripts/run-userwiki-qa-smoke.mjs --validate-only
+```
+
+列出可验收的问题：
+
+```bash
+node scripts/run-userwiki-qa-smoke.mjs --list
+```
+
+有可执行 Codex CLI 时，跑真实只读问答：
+
+```bash
+node scripts/run-userwiki-qa-smoke.mjs --case auth-billing-user-scope-impact --timeout-ms 180000
+```
+
+如果当前环境里的 `codex` 是 WindowsApps/AppX alias 并报 `EPERM` 或 `Access is denied`，先导出同一题 prompt，再评分回答文件。PowerShell 示例：
+
+```powershell
+node scripts/run-userwiki-qa-smoke.mjs --case auth-billing-user-scope-impact --prompt-out $env:TEMP\userwiki-prompt.md
+node scripts/run-userwiki-qa-smoke.mjs --case auth-billing-user-scope-impact --answer $env:TEMP\userwiki-answer.md
+```
+
+也可以从 stdin 评分，适合把另一个 Codex surface 的回答直接管道传入。PowerShell 需要先固定 UTF-8 输出编码：
+
+```powershell
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+$OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+Get-Content -Raw -Encoding UTF8 $env:TEMP\userwiki-answer.md | node scripts/run-userwiki-qa-smoke.mjs --case auth-billing-user-scope-impact --answer -
+```
+
+`--answer -` 需要 UTF-8 stdin；Windows PowerShell 管道中文可能被转成 `?`，不确定时优先用 `--answer <path>`。在 cmd.exe 里把 `$env:TEMP` 换成 `%TEMP%`。
+
+如果本机有另一个可执行的 Codex CLI，用 `USERWIKI_QA_CODEX_COMMAND` 指向它后再跑真实问答。
+
 ## Frontend Checks
 
 常用命令：
@@ -66,3 +105,13 @@ AEIT/test-intents 是真实账号 L4 验收，不等同于 CI 单测。
 - `docs/test-intents/spec/tasks/<task>/rules.md`
 
 跑意图或写意图时必须走对应 skill，不直接凭经验改 rules。
+
+`test-intents-aijia-cli` 增强补充了测试体系链路：
+
+- `package.json` 定义 `dev:with-pilot`、`build:with-pilot` 和 `ensure:e2e-prereq` 等 E2E/pilot scripts。
+- `scripts/ensure-e2e-prereq.sh` 检查 cargo git-fetch-with-cli、jq 和 ssh-agent，但当前 `package.json` 的 `predev:with-pilot` 实际是 `pnpm ensure:runtime`，不能直接声称它一定自动执行。
+- `.agents/skills/usertest-intents/SKILL.md` 是用户级入口，负责解释 AEIT 和路由跑/写意图。
+- `.agents/skills/test-intents-cli-author/SKILL.md` 约束 `aijia <verb>` 子命令必须封装原子 UI 操作，复杂流程由 rules.md 串联。
+- `docs/test-intents/cli-gap.md` 是 CLI 缺口清单；`tauri-pilot aijia` 的实现不在当前仓库，实际可用命令以 sibling `tauri-pilot` 仓库和 PATH 上安装版本为准。
+
+已知缺口：`docs/test-intents/README.md` 和 `usertest-intents` skill 仍写 13 个 task，但当前 `docs/test-intents/spec/tasks/*/rules.md` 有 14 个目录；维护 rules 或回答 task 覆盖时要先说明这个口径漂移。

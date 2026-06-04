@@ -51,6 +51,8 @@ RepoWiki 页面：
 - `docs/repo-wiki/frontend-map.md`
 - `docs/repo-wiki/testing-and-commands.md`
 - `docs/repo-wiki/decision-index.md`
+- `docs/repo-wiki/coverage-manifest.md`
+- `docs/repo-wiki/writeback-queue.md`
 - `docs/repo-wiki/log.md`
 
 项目 skill：
@@ -66,13 +68,14 @@ RepoWiki 页面：
 
 1. 确认 `.understand-anything/config.json` 的 `outputLanguage` 是 `zh`。
 2. 读取 `.understand-anything/knowledge-graph.json` 的 project metadata、layers、tour。
-3. 如果是架构或模块增强，按模块派子 agent；不要从旧 docs 推断架构。
-4. 写当前来源 enhancement JSON 到 `.understand-anything/enhancements/`。
+3. 读取 `docs/repo-wiki/coverage-manifest.md` 和 `docs/repo-wiki/writeback-queue.md`，先确认覆盖缺口和关闭标准。
+4. 如果是架构或模块增强，按模块派子 agent；不要从旧 docs 推断架构。
+5. 写当前来源 enhancement JSON 到 `.understand-anything/enhancements/`。
    - 产品架构：必须来自源码/测试。
    - wiki 工具链：可以来自 repo-local skill/script。
-5. 运行 `node scripts/apply-understand-enhancements.mjs`。
-6. 更新受影响的 RepoWiki 页面，并追加 `docs/repo-wiki/log.md`。
-7. 运行校验：
+6. 运行 `node scripts/apply-understand-enhancements.mjs`。
+7. 更新受影响的 RepoWiki 页面、`coverage-manifest.md`、`writeback-queue.md`，并追加 `docs/repo-wiki/log.md`。
+8. 运行校验：
 
 ```bash
 node scripts/check-repowiki.mjs
@@ -90,6 +93,7 @@ node --input-type=module -e "import fs from 'node:fs'; import { validateGraph } 
 - 输出语言是中文。
 - 核心代码文件、RepoWiki 页面和 repo-local wiki skills 有图谱节点。
 - 高价值模块有当前来源 enhancement。
+- 高价值模块覆盖等级和待写回缺口记录在 `coverage-manifest.md` 与 `writeback-queue.md`。
 - enhancement JSON 有非空 `key_nodes`、`semantic_edges`、`architecture_findings`、`tour_steps`。
 - `scripts/apply-understand-enhancements.mjs` 可幂等运行。
 - `node scripts/check-repowiki.mjs` 通过。
@@ -114,4 +118,5 @@ node --input-type=module -e "import fs from 'node:fs'; import { validateGraph } 
 - 用户要求子 agent 时，主线程绕过子 agent 去读窄范围代码。
 - 把 docs-only 输出放进 `.understand-anything/enhancements/`。
 - 更新 map 页面但不更新 `docs/repo-wiki/log.md`。
+- 关闭 UserWiki 缺口但不更新 `coverage-manifest.md` 或 `writeback-queue.md`。
 - 只改 `.agents` 不同步 `.claude`。

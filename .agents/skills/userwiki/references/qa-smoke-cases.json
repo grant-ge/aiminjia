@@ -222,5 +222,164 @@
     "forbiddenTerms": [
       "不需要看 git diff"
     ]
+  },
+  {
+    "id": "llm-wiki-principles",
+    "default": false,
+    "question": "userwiki 卡帕西的 LLM Wiki 概念对我们当前项目 wiki 有什么借鉴意义？",
+    "requiredTerms": [
+      "LLM 维护",
+      "知识中间层",
+      "raw source",
+      "compiled wiki",
+      "writeback",
+      "lint/QA",
+      "wiki-maintainer",
+      ".agents/skills/userwiki/references/llm-wiki-principles.md",
+      ".understand-anything/enhancements",
+      "docs/repo-wiki"
+    ],
+    "requiredAnyTerms": [
+      [
+        "子 agent",
+        "compiler pass",
+        "知识编译"
+      ],
+      [
+        "源码",
+        "测试",
+        "权威 docs"
+      ]
+    ],
+    "forbiddenTerms": [
+      "只是普通 RAG",
+      "只需要向量库"
+    ]
+  },
+  {
+    "id": "prompt-context-cost-impact",
+    "default": false,
+    "question": "userwiki 我想改 prompt、上下文压缩或 cost 统计，会影响哪些模块？",
+    "requiredTerms": [
+      "可能涉及的模块",
+      "关键文件",
+      "上游入口",
+      "下游影响",
+      "相关测试",
+      "图谱不确定点",
+      ".understand-anything/enhancements/prompt-context-compaction-cost.json",
+      "src-tauri/src/runtime/chat/chat_turn_driver.rs",
+      "src-tauri/src/runtime/chat/context_builder.rs",
+      "src-tauri/src/runtime/chat/preprocess.rs",
+      "src-tauri/src/runtime/chat/history.rs",
+      "src-tauri/src/runtime/query_engine.rs",
+      "src/hooks/useStreaming.ts",
+      "docs/repo-wiki/runtime-map.md"
+    ],
+    "requiredAnyTerms": [
+      [
+        "cache token",
+        "lastTurnSummary",
+        "已知缺口"
+      ],
+      [
+        "compaction",
+        "compact boundary",
+        "summary"
+      ],
+      [
+        "TokenUsage",
+        "estimated cost",
+        "成本"
+      ]
+    ],
+    "forbiddenTerms": [
+      "只需要改前端展示",
+      "预算阈值生产注入点已经确认"
+    ]
+  },
+  {
+    "id": "auth-billing-user-scope-impact",
+    "default": false,
+    "question": "userwiki 我想改登录、用户作用域或计费展示，会影响哪些模块？",
+    "requiredTerms": [
+      "可能涉及的模块",
+      "关键文件",
+      "上游入口",
+      "下游影响",
+      "相关测试",
+      "图谱不确定点",
+      ".understand-anything/enhancements/user-scope-auth-storage-boundary.json",
+      ".understand-anything/enhancements/billing-subscription-account-network.json",
+      "src-tauri/src/storage/current_user_storage.rs",
+      "src-tauri/src/commands/auth.rs",
+      "src-tauri/src/auth/mod.rs",
+      "src/components/settings/panels/AccountBillingPanel.tsx",
+      "src/stores/billingStore.ts",
+      "docs/repo-wiki/runtime-map.md"
+    ],
+    "requiredAnyTerms": [
+      [
+        "tenant_id",
+        "user_id",
+        "scope key"
+      ],
+      [
+        "Bearer",
+        "session_key",
+        "AuthManager"
+      ],
+      [
+        "personal",
+        "tenantType",
+        "已知缺口"
+      ]
+    ],
+    "forbiddenTerms": [
+      "前端直接请求 billing API",
+      "已经证明 enterprise 服务端行为"
+    ]
+  },
+  {
+    "id": "tauri-command-event-contract-impact",
+    "default": false,
+    "question": "userwiki 我想改 Tauri command、invoke 参数或事件 payload，会影响哪些模块？",
+    "requiredTerms": [
+      "可能涉及的模块",
+      "关键文件",
+      "上游入口",
+      "下游影响",
+      "相关测试",
+      "图谱不确定点",
+      ".understand-anything/enhancements/tauri-command-event-contracts.json",
+      "src-tauri/src/lib.rs",
+      "src-tauri/src/commands/chat.rs",
+      "src-tauri/src/transport/tauri_commands/chat.rs",
+      "src-tauri/src/transport/tauri_event_adapter.rs",
+      "src-tauri/src/runtime/event_bus.rs",
+      "src/lib/tauri.ts",
+      "docs/repo-wiki/runtime-map.md"
+    ],
+    "requiredAnyTerms": [
+      [
+        "legacy wrapper",
+        "transport adapter",
+        "mixed"
+      ],
+      [
+        "RuntimeEventBus",
+        "TauriEventAdapter",
+        "legacy event"
+      ],
+      [
+        "network:status",
+        "onNetworkStatus",
+        "监听"
+      ]
+    ],
+    "forbiddenTerms": [
+      "只有一个 command 层",
+      "所有事件都走同一个 adapter"
+    ]
   }
 ]

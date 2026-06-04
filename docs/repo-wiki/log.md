@@ -1,5 +1,21 @@
 # RepoWiki Log
 
+## 2026-06-04
+
+- Updated the repo-local `userwiki` skill with a Karpathy-style LLM Wiki mental model.
+- Added `coverage-manifest.md` and `writeback-queue.md` so UserWiki coverage and writeback gaps are tracked explicitly before continuing module supplementation.
+- Added `references/llm-wiki-principles.md` to both `.agents/skills/userwiki/` and `.claude/skills/userwiki/`.
+- Clarified that UserWiki should be treated as an LLM-maintained knowledge intermediate layer: raw source -> compiled wiki/enhancement -> query -> writeback -> lint/QA.
+- Updated `scripts/check-repowiki.mjs` so the new userwiki reference is validated in both skill mirrors.
+- Merged 7 new enhancement files into `.understand-anything/knowledge-graph.json`: employee dispatch, agenda scheduler, task tools, team mode/subagent, IM channel core, skill registry/sync and UserWiki LLM Wiki principles.
+- Added a UserWiki QA smoke case for the LLM Wiki method question.
+- Graph snapshot after merge: 9299 nodes, 9975 edges, 25 layers, 77 guided tour steps, 274 LLM-enhanced nodes, 73 architecture review nodes and 16 enhancement files.
+- Added `app-shell-settings-updater-billing.json` for App shell, settings, updater, billing and network boundaries.
+- Final graph snapshot after app shell merge: 9307 nodes, 10056 edges, 25 layers, 83 guided tour steps, 299 LLM-enhanced nodes, 81 architecture review nodes and 17 enhancement files.
+- Added `prompt-context-compaction-cost.json` for prompt assembly, dynamic context, compaction, usage and cost accounting. Graph snapshot after merge: 9314 nodes, 10099 edges, 25 layers, 87 guided tour steps, 314 LLM-enhanced nodes, 88 architecture review nodes and 18 enhancement files.
+- Added `test-intents-aijia-cli.json` for AEIT/test-intents, `aijia` CLI entrypoints, repo-local intent skills and rules/report navigation. Graph snapshot after merge: 9320 nodes, 10121 edges, 25 layers, 90 guided tour steps, 329 LLM-enhanced nodes, 93 architecture review nodes and 19 enhancement files.
+- Added `billing-subscription-account-network.json`, `tauri-command-event-contracts.json` and `user-scope-auth-storage-boundary.json` for billing/account/network, cross-layer IPC/event contracts and user-scope auth/storage boundaries. Graph snapshot after merge: 9337 nodes, 10232 edges, 25 layers, 100 guided tour steps, 367 LLM-enhanced nodes, 110 architecture review nodes and 22 enhancement files.
+
 ## 2026-06-03
 
 - Initialized `docs/repo-wiki/` from `.understand-anything/knowledge-graph.json`.

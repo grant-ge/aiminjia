@@ -21,6 +21,8 @@ RepoWiki 只做导航、索引、摘要和链接，不替代原始文档。架�
 - `frontend-map.md`: 前端启动、事件、状态、聊天渲染、技能/pending/员工 UI。
 - `testing-and-commands.md`: 常用验证命令和测试分层。
 - `decision-index.md`: 当前决策文档索引。
+- `coverage-manifest.md`: UserWiki 当前覆盖等级、证据和下一批补图谱优先级。
+- `writeback-queue.md`: 问答、审计和子 agent 暴露出的待写回缺口队列。
 - `log.md`: RepoWiki 更新日志。
 
 ## 更新规则
@@ -29,7 +31,8 @@ RepoWiki 只做导航、索引、摘要和链接，不替代原始文档。架�
 2. 按 `index.md` 的 layer/tour 更新对应页面。
 3. 新增页面必须在本 `README.md` 和 `index.md` 中挂入口。
 4. 不能把 archive、run report 或历史 plan 提升为当前真相源。
-5. 更新后运行：
+5. 覆盖缺口先进入 `writeback-queue.md`，再通过 enhancement、RepoWiki 和 QA smoke 关闭。
+6. 更新后运行：
 
 ```bash
 node scripts/check-repowiki.mjs

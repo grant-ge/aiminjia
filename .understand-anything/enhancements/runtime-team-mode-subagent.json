@@ -1,0 +1,426 @@
+{
+  "module": "runtime-team-mode-subagent",
+  "source_basis": "code-tests-only",
+  "key_nodes": [
+    {
+      "filePath": "src-tauri/src/runtime/tools/builtin/team_tools.rs",
+      "summary": "TeamCreate、TeamDelete、TeamSwitch 的主入口。负责创建/删除 Team、注册 team-lead、写入与清理 conv.json 的 active_team_name，并在删除时做整队取消、软删除和 registry sweep。",
+      "tags": ["runtime", "team-mode", "tools", "active-team"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/tools/builtin/spawn_subagent.rs",
+      "summary": "把普通 Agent 派发升级为 Team Teammate 的分叉点。它解析 team_name 或 active_team，要求 name，先注册名字并加入 Team，再补注册 inbox 和 cancellation，最后异步启动 teammate idle worker。",
+      "tags": ["runtime", "team-mode", "subagent", "dispatch"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/tools/builtin/send_message.rs",
+      "summary": "Team 内部消息路由器。按名字解析目标 AgentId 和 inbox，支持单播与广播，附带 team-chat.jsonl 镜像写入，并在目标是 team-lead 时触发 lead idle supervisor 的双路径唤醒。",
+      "tags": ["runtime", "messaging", "team-mode", "lead-idle"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/tools/builtin/teammate_stop.rs",
+      "summary": "按名字强停单个 teammate 的工具。先经 NameRegistry 解析名字，再去 CancellationRegistry 取 token 取消；缺名字、缺 token 都按幂等 noop 处理。",
+      "tags": ["runtime", "team-mode", "cancellation", "tools"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/agent/team.rs",
+      "summary": "Team 实体与 TeamRegistry。维护每会话多 Team 映射、active team 单一 owner、成员上限与重名校验，以及 teams/<team>/config.json 的持久化、软删除与冷启动 hydrate。",
+      "tags": ["runtime", "team-mode", "registry", "persistence"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/agent/name_registry.rs",
+      "summary": "按 session + team_name + friendly name 做名字寻址的核心索引。既支持 SendMessage/TeammateStop 的正向解析，也支持 SendMessage 推断消息来源的反向 name_for 查询。",
+      "tags": ["runtime", "registry", "naming", "routing"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/agent/inbox_registry.rs",
+      "summary": "按 session + team_name + AgentId 维护 in-process teammate inbox。它把 friendly name 寻址与真正的收件箱对象连接起来，并提供 team/session 级 sweep。",
+      "tags": ["runtime", "registry", "inbox", "routing"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/agent/cancellation_registry.rs",
+      "summary": "按 session + team_name + AgentId 维护取消 token。SpawnSubagent 和 TeammateStop/TeamDelete 之间通过它交接停止控制权。",
+      "tags": ["runtime", "registry", "cancellation", "team-mode"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/agent/inbox.rs",
+      "summary": "Teammate 的 in-process AgentInbox 定义。它承载 ChatMessage、Shutdown、TaskNotification 三类消息，并提供 drain_pending 以支持 Lead 在下一轮折叠待处理消息。",
+      "tags": ["runtime", "inbox", "teammate", "messaging"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/agent/lead_idle.rs",
+      "summary": "LeadIdleSupervisor 的原子状态机。通过 Running/Idle{pending} 协调 Path A 的 turn-end 自检与 Path C 的 SendMessage 直接唤醒，确保同一唤醒窗口只触发一次 continuation。",
+      "tags": ["runtime", "lead-idle", "state-machine", "coordination"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/agent/team_context.rs",
+      "summary": "渲染 teammate 首轮一次性注入的 TEAM_CONTEXT 提示。它把 team 配置路径、tasks 路径和 team-lead 命名约定编码为 boot-time system-reminder。",
+      "tags": ["runtime", "team-context", "prompt", "teammate"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/employee/inbox.rs",
+      "summary": "员工侧 inbox.jsonl 的持久化存储，与 Team mode 的 AgentInbox 不是同一层。这个文件是 UI 可见、跨进程持久的员工通知中心，不参与 Team 内即时消息路由。",
+      "tags": ["runtime", "employee", "persistence", "inbox"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/tests/team_tools_test.rs",
+      "summary": "锁定 TeamCreate/TeamDelete 的工具级合同：Lead 注册、默认 team 名、重复 team 拒绝、Lead inbox 注册与 TeamDelete 幂等行为。",
+      "tags": ["tests", "team-mode", "contracts", "tools"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/tests/lead_idle_trigger_test.rs",
+      "summary": "直接验证 lead idle 双路径状态机的五个行为合同：Running 时记录 pending、Idle 时立即唤醒、并发只唤醒一次、多次消息折叠、无消息时 clean idle。",
+      "tags": ["tests", "lead-idle", "state-machine", "contracts"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/tests/spawn_teammate_via_employee_test.rs",
+      "summary": "锁定 teammate 派发的入口语义：没 Team 不可派发、同 team 重名被拒、Employee 投影到 AgentRegistry 后能完成 name 注册与 Team 加入前置副作用。",
+      "tags": ["tests", "subagent", "team-mode", "contracts"],
+      "complexity": "medium"
+    }
+  ],
+  "semantic_edges": [
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/team_tools.rs",
+      "targetFilePath": "src-tauri/src/runtime/agent/team.rs",
+      "type": "calls",
+      "reason": "TeamCreate/TeamDelete/TeamSwitch 通过 TeamRegistry 创建、删除、设置 active team 并落盘 Team 配置。",
+      "weight": 0.98
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/team_tools.rs",
+      "targetFilePath": "src-tauri/src/runtime/agent/name_registry.rs",
+      "type": "calls",
+      "reason": "TeamCreate 注册 team-lead 名字；TeamDelete 对整队做 unregister_team sweep。",
+      "weight": 0.94
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/team_tools.rs",
+      "targetFilePath": "src-tauri/src/runtime/agent/inbox_registry.rs",
+      "type": "calls",
+      "reason": "TeamCreate 在可用时为 Lead 建立 inbox；TeamDelete 清理整队 inbox 映射。",
+      "weight": 0.86
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/team_tools.rs",
+      "targetFilePath": "src-tauri/src/runtime/agent/cancellation_registry.rs",
+      "type": "calls",
+      "reason": "TeamDelete 先 cancel_team 再删除 Team，确保运行中的 teammate worker 先收到取消信号。",
+      "weight": 0.89
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/team_tools.rs",
+      "targetFilePath": "src-tauri/src/runtime/agent/lead_idle.rs",
+      "type": "calls",
+      "reason": "TeamCreate 会 mark_running(team-lead) 以避免同一用户 turn 内首次 teammate SendMessage 误触发重复 continuation。",
+      "weight": 0.83
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/spawn_subagent.rs",
+      "targetFilePath": "src-tauri/src/runtime/agent/team.rs",
+      "type": "calls",
+      "reason": "teammate 派发会先解析 team_handle，再把新成员 add_teammate 到 Team，并在加入后触发持久化。",
+      "weight": 0.97
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/spawn_subagent.rs",
+      "targetFilePath": "src-tauri/src/runtime/agent/name_registry.rs",
+      "type": "calls",
+      "reason": "SpawnSubagent 为 teammate 预生成 AgentId 并注册 friendly name，失败时用同一 team key 回滚注销。",
+      "weight": 0.95
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/spawn_subagent.rs",
+      "targetFilePath": "src-tauri/src/runtime/agent/inbox_registry.rs",
+      "type": "calls",
+      "reason": "teammate 启动前会异步注册自己的 inbox，供 SendMessage(to:name) 做定向投递。",
+      "weight": 0.9
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/spawn_subagent.rs",
+      "targetFilePath": "src-tauri/src/runtime/agent/cancellation_registry.rs",
+      "type": "calls",
+      "reason": "teammate 启动前会把 child cancellation token 注册进去，供 TeammateStop 和 TeamDelete 反向停止。",
+      "weight": 0.92
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/spawn_subagent.rs",
+      "targetFilePath": "src-tauri/src/runtime/agent/team_context.rs",
+      "type": "depends_on",
+      "reason": "teammate idle worker 的首轮 boot prompt 约定依赖 TEAM_CONTEXT 与 boot addendum 的团队命名和路径合同。",
+      "weight": 0.69
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/send_message.rs",
+      "targetFilePath": "src-tauri/src/runtime/agent/name_registry.rs",
+      "type": "depends_on",
+      "reason": "SendMessage 先 resolve(to) 找目标 AgentId，再用 name_for 反推 caller 名字与 MessageSource。",
+      "weight": 0.98
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/send_message.rs",
+      "targetFilePath": "src-tauri/src/runtime/agent/inbox_registry.rs",
+      "type": "depends_on",
+      "reason": "名字解析后，SendMessage 继续通过 InboxRegistry 拿 inbox 并投递 ChatMessage。",
+      "weight": 0.98
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/send_message.rs",
+      "targetFilePath": "src-tauri/src/runtime/agent/inbox.rs",
+      "type": "calls",
+      "reason": "SendMessage 实际写入的是 AgentInbox 的 ChatMessage 项，广播场景也逐个复用同一 inbox 接口。",
+      "weight": 0.9
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/send_message.rs",
+      "targetFilePath": "src-tauri/src/runtime/agent/lead_idle.rs",
+      "type": "calls",
+      "reason": "当目标是 team-lead 时，SendMessage 调用 supervisor.enqueue 在 Path A 与 Path C 之间协调 continuation。",
+      "weight": 0.93
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/teammate_stop.rs",
+      "targetFilePath": "src-tauri/src/runtime/agent/name_registry.rs",
+      "type": "depends_on",
+      "reason": "TeammateStop 先按 friendly name 解析目标 AgentId，缺名字时按已停止处理。",
+      "weight": 0.94
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/teammate_stop.rs",
+      "targetFilePath": "src-tauri/src/runtime/agent/cancellation_registry.rs",
+      "type": "depends_on",
+      "reason": "TeammateStop 通过 CancellationRegistry 取 token 并触发 UserCancel；缺 token 也返回幂等 noop。",
+      "weight": 0.96
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/agent/inbox_registry.rs",
+      "targetFilePath": "src-tauri/src/runtime/agent/inbox.rs",
+      "type": "contains",
+      "reason": "InboxRegistry 保存的值就是 Arc<AgentInbox>，因此只是 inbox 对象的 team-scoped 索引层。",
+      "weight": 0.84
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/agent/inbox.rs",
+      "targetFilePath": "src-tauri/src/runtime/employee/inbox.rs",
+      "type": "related",
+      "reason": "两者都叫 inbox，但前者是 Team mode 的内存消息队列，后者是员工通知中心的持久化 JSONL，职责和生命周期完全不同。",
+      "weight": 0.62
+    },
+    {
+      "sourceFilePath": "src-tauri/tests/team_tools_test.rs",
+      "targetFilePath": "src-tauri/src/runtime/tools/builtin/team_tools.rs",
+      "type": "tested_by",
+      "reason": "该测试文件验证 TeamCreate/TeamDelete 的工具合同、Lead 注册和幂等删除语义。",
+      "weight": 0.95
+    },
+    {
+      "sourceFilePath": "src-tauri/tests/spawn_teammate_via_employee_test.rs",
+      "targetFilePath": "src-tauri/src/runtime/tools/builtin/spawn_subagent.rs",
+      "type": "tested_by",
+      "reason": "该测试文件覆盖 teammate 派发的入口校验、名字冲突和 employee 投影后的 name 注册行为。",
+      "weight": 0.93
+    },
+    {
+      "sourceFilePath": "src-tauri/tests/teammate_stop_test.rs",
+      "targetFilePath": "src-tauri/src/runtime/tools/builtin/teammate_stop.rs",
+      "type": "tested_by",
+      "reason": "该测试文件锁定按名字停止 teammate 的成功、not_found、no_cancel_token 与缺字段分支。",
+      "weight": 0.95
+    },
+    {
+      "sourceFilePath": "src-tauri/tests/lead_idle_trigger_test.rs",
+      "targetFilePath": "src-tauri/src/runtime/agent/lead_idle.rs",
+      "type": "tested_by",
+      "reason": "该测试文件直接验证 dual-path supervisor 的五个状态机场景与 CAS 唤醒约束。",
+      "weight": 0.97
+    },
+    {
+      "sourceFilePath": "src-tauri/tests/team_json_persistence_test.rs",
+      "targetFilePath": "src-tauri/src/runtime/agent/team.rs",
+      "type": "tested_by",
+      "reason": "该测试文件验证 config.json 的持久化、成员删改后的覆盖写入，以及 delete_persisted_team 的幂等性。",
+      "weight": 0.92
+    },
+    {
+      "sourceFilePath": "src-tauri/tests/team_context_attachment_test.rs",
+      "targetFilePath": "src-tauri/src/runtime/agent/team_context.rs",
+      "type": "tested_by",
+      "reason": "该测试文件锁定 TEAM_CONTEXT 的路径推导、team-lead 寻址示例和首轮 system-reminder 形态。",
+      "weight": 0.9
+    },
+    {
+      "sourceFilePath": "src-tauri/tests/review_team_registry_session_isolation_test.rs",
+      "targetFilePath": "src-tauri/src/runtime/agent/team.rs",
+      "type": "tested_by",
+      "reason": "该 review 测试锁定 TeamRegistry 的 session 隔离、重复 team 拒绝、MAX_TEAMMATES 上限和队内重名约束。",
+      "weight": 0.88
+    }
+  ],
+  "architecture_findings": [
+    {
+      "title": "TeamRegistry 是 Team mode 与 active team 的单一内存 owner",
+      "description": "每个会话可以并存多个 Team，但当前激活 Team 只存放在 TeamRegistry.active。TeamCreate 立即 set_active，TeamDelete 仅在删除的就是 active team 时 clear_active，TeamSwitch 则显式切换；conv.json::active_team_name 只是重启/恢复用的磁盘镜像，而不是运行时真相源。",
+      "evidence": [
+        "src-tauri/src/runtime/tools/builtin/team_tools.rs",
+        "src-tauri/src/runtime/agent/team.rs",
+        "src-tauri/tests/team_tools_test.rs"
+      ]
+    },
+    {
+      "title": "TeamCreate 不只是建 Team，还要把 Lead 接入可寻址消息总线",
+      "description": "TeamCreate 创建 Team 后，会把调用者注册成固定名字 team-lead，条件允许时再补注册 Lead inbox，并把 lead idle supervisor 标成 Running。这样 teammate 才能用 SendMessage(to:\"team-lead\") 投递，且不会在同一用户 turn 内误触发重复 continuation。",
+      "evidence": [
+        "src-tauri/src/runtime/tools/builtin/team_tools.rs",
+        "src-tauri/tests/team_tools_test.rs",
+        "src-tauri/src/runtime/agent/lead_idle.rs"
+      ]
+    },
+    {
+      "title": "SpawnSubagent 的 teammate 分支把名字、成员名册、inbox、cancel token 四套状态一次性串起来",
+      "description": "当 team_name 或 active team 命中时，SpawnSubagent 会要求 name，先生成最终 AgentId 并注册名字，再加入 Team 名册，然后异步注册 inbox 和 child cancel token，最后启动 teammate idle worker。也就是说 Team mode 下的 subagent 不是普通后台任务，而是一个被多 registry 共同索引的可协作成员。",
+      "evidence": [
+        "src-tauri/src/runtime/tools/builtin/spawn_subagent.rs",
+        "src-tauri/src/runtime/agent/team.rs",
+        "src-tauri/src/runtime/agent/name_registry.rs",
+        "src-tauri/src/runtime/agent/inbox_registry.rs",
+        "src-tauri/src/runtime/agent/cancellation_registry.rs"
+      ]
+    },
+    {
+      "title": "SendMessage 采用名字路由，team-lead 是唯一硬编码协作锚点",
+      "description": "单播路径按 `to -> AgentId -> inbox` 走完整解析链，消息来源则通过 name_for 反向解析 caller 名字，只有 team-lead 会被归类为 Lead 源。广播路径对每个 teammate 做 best-effort 投递并跳过发送者本人，不保证事务性成功，失败只记录 skipped 列表。",
+      "evidence": [
+        "src-tauri/src/runtime/tools/builtin/send_message.rs",
+        "src-tauri/src/runtime/agent/name_registry.rs",
+        "src-tauri/src/runtime/agent/inbox_registry.rs",
+        "src-tauri/src/runtime/agent/inbox.rs"
+      ]
+    },
+    {
+      "title": "停止与删除分成两个层级：TeammateStop 管单成员，TeamDelete 管整队拆除",
+      "description": "TeammateStop 通过名字定位单个 teammate 的 cancel token 并触发 UserCancel；TeamDelete 则先 cancel_team，等待 worker 在下一次 select 检查到取消后自清理，再 delete_team、标记 deleted_at、清扫名字和 inbox，并在需要时清除 active team。删除后的 teams/<name>/ 目录仍保留，便于回看 team-chat 和历史名册。",
+      "evidence": [
+        "src-tauri/src/runtime/tools/builtin/teammate_stop.rs",
+        "src-tauri/src/runtime/tools/builtin/team_tools.rs",
+        "src-tauri/src/runtime/agent/cancellation_registry.rs",
+        "src-tauri/src/runtime/agent/team.rs",
+        "src-tauri/tests/teammate_stop_test.rs"
+      ]
+    },
+    {
+      "title": "Lead idle 是明确的双路径状态机，而不是消息到达即直接跑 turn",
+      "description": "Path A 在用户 turn 结束前调用 mark_idle，如果运行窗口内收到了 teammate 消息则返回 pending=true 让 driver 继续下一轮；Path C 则由 SendMessage(to: team-lead) 调用 enqueue，在 Lead 已 Idle 时通过 CAS 抢占一次唤醒权并触发 wake_fn。两条路径共享同一 supervisor，避免了并发重复 continuation。",
+      "evidence": [
+        "src-tauri/src/runtime/agent/lead_idle.rs",
+        "src-tauri/src/runtime/tools/builtin/send_message.rs",
+        "src-tauri/tests/lead_idle_trigger_test.rs"
+      ]
+    },
+    {
+      "title": "TEAM_CONTEXT 与 teammate addendum 共同构成 teammate 首轮协作提示合同",
+      "description": "TEAM_CONTEXT 只在 teammate 首轮注入一次，告诉它团队配置路径、tasks 路径、team-lead 固定名字和按名字发消息的 JSON 形状；teammate addendum 则是每轮 boot prompt 的补充约束。这样 Team mode 把寻址规则和协作资源变成了 prompt 协议的一部分，而不是仅靠实现约定。",
+      "evidence": [
+        "src-tauri/src/runtime/agent/team_context.rs",
+        "src-tauri/tests/team_context_attachment_test.rs",
+        "src-tauri/tests/teammate_addendum_present_test.rs",
+        "src-tauri/src/runtime/tools/builtin/spawn_subagent.rs"
+      ]
+    },
+    {
+      "title": "Team inbox 与 employee inbox 同名不同层，不能混为一个通知系统",
+      "description": "runtime/agent/inbox.rs 是纯内存的 teammate 收件箱，生命周期跟 worker 进程内任务一致；runtime/employee/inbox.rs 则是员工通知中心的 inbox.jsonl 持久化层，供 UI 聚合已读/未读状态。Team mode 的即时协作完全依赖前者，不走后者。",
+      "evidence": [
+        "src-tauri/src/runtime/agent/inbox.rs",
+        "src-tauri/src/runtime/agent/inbox_registry.rs",
+        "src-tauri/src/runtime/employee/inbox.rs"
+      ]
+    },
+    {
+      "title": "当前测试合同覆盖了关键状态机，但仍留下几处明确缺口",
+      "description": "取证范围内的测试已经锁定 TeamCreate/Delete、teammate name 注册、Lead idle supervisor、Team 持久化与 session 隔离；但它们也显式表明仍有边界未端到端覆盖：lead idle 测试直接打 supervisor 而不是完整 turn driver，teammate idle skeleton 的 inbox-close 用 cancel 近似退出，spawn teammate happy-path 主要验证前置 registry 副作用而非真实 LLM idle loop。此外，当前未见专门覆盖多 Team 广播和 conv.json active_team_name 镜像恢复的测试。",
+      "evidence": [
+        "src-tauri/tests/lead_idle_trigger_test.rs",
+        "src-tauri/tests/teammate_idle_loop_skeleton_test.rs",
+        "src-tauri/tests/spawn_teammate_via_employee_test.rs",
+        "src-tauri/tests/team_tools_test.rs",
+        "src-tauri/src/runtime/tools/builtin/send_message.rs"
+      ]
+    }
+  ],
+  "tour_steps": [
+    {
+      "title": "先看 Team mode 的入口与 active team 生命周期",
+      "description": "从 TeamCreate/TeamDelete/TeamSwitch 看 Team mode 如何进入、退出和切换，再对照 TeamRegistry 的 active owner 设计理解为什么后续工具都依赖 session + team_name 命名空间。",
+      "filePaths": [
+        "src-tauri/src/runtime/tools/builtin/team_tools.rs",
+        "src-tauri/src/runtime/agent/team.rs",
+        "src-tauri/tests/team_tools_test.rs"
+      ]
+    },
+    {
+      "title": "再看 SpawnSubagent 如何把普通 Agent 变成 teammate",
+      "description": "这一步最关键的是注册顺序：先找 Team，再注册名字，加入 Team 名册，随后补上 inbox 和 cancellation token，并把 worker 以 teammate idle 模式拉起来。",
+      "filePaths": [
+        "src-tauri/src/runtime/tools/builtin/spawn_subagent.rs",
+        "src-tauri/src/runtime/agent/name_registry.rs",
+        "src-tauri/src/runtime/agent/inbox_registry.rs",
+        "src-tauri/src/runtime/agent/cancellation_registry.rs",
+        "src-tauri/tests/spawn_teammate_via_employee_test.rs"
+      ]
+    },
+    {
+      "title": "理解 teammate 首轮 prompt 合同",
+      "description": "TEAM_CONTEXT 告诉 teammate 团队配置、任务目录和按名字发消息的格式；相关测试把这些路径和 team-lead 约定钉成了可回归的提示层合同。",
+      "filePaths": [
+        "src-tauri/src/runtime/agent/team_context.rs",
+        "src-tauri/tests/team_context_attachment_test.rs",
+        "src-tauri/tests/teammate_addendum_present_test.rs"
+      ]
+    },
+    {
+      "title": "顺着 SendMessage 看单播、广播和 Lead 唤醒",
+      "description": "这里能看到 Team mode 真正的协作总线：名字解析、inbox 投递、team-chat 镜像，以及 team-lead 目标下如何把消息交给 lead idle supervisor 的 Path A/Path C。",
+      "filePaths": [
+        "src-tauri/src/runtime/tools/builtin/send_message.rs",
+        "src-tauri/src/runtime/agent/inbox.rs",
+        "src-tauri/src/runtime/agent/lead_idle.rs",
+        "src-tauri/tests/lead_idle_trigger_test.rs"
+      ]
+    },
+    {
+      "title": "最后看停止与清理链路",
+      "description": "单个 teammate 的强停与整队删除是两层机制：TeammateStop 走名字到 cancel token，TeamDelete 走 team 级别 cancel、删除、deleted_at 封存和 registry sweep，worker 侧测试则保证取消后成员名册与名字映射会收尾。",
+      "filePaths": [
+        "src-tauri/src/runtime/tools/builtin/teammate_stop.rs",
+        "src-tauri/src/runtime/tools/builtin/team_tools.rs",
+        "src-tauri/src/runtime/agent/cancellation_registry.rs",
+        "src-tauri/tests/teammate_stop_test.rs",
+        "src-tauri/tests/teammate_idle_loop_skeleton_test.rs"
+      ]
+    },
+    {
+      "title": "补看持久化与隔离测试，收束边界",
+      "description": "持久化测试说明 Team 配置写入、成员变更覆盖和软删除目录保留；review 测试说明 session 隔离、重名限制和 TeamPaths 约束，从而给这个模块的运行时边界和磁盘边界都画了线。",
+      "filePaths": [
+        "src-tauri/src/runtime/agent/team.rs",
+        "src-tauri/tests/team_json_persistence_test.rs",
+        "src-tauri/tests/review_team_registry_session_isolation_test.rs",
+        "src-tauri/tests/review_team_paths.rs"
+      ]
+    }
+  ]
+}

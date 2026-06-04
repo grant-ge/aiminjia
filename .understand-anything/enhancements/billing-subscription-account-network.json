@@ -1,0 +1,359 @@
+{
+  "module": "billing-subscription-account-network",
+  "source_basis": "code-tests-only",
+  "coverage": "代码/测试来源：settings menu/modal/panels、billing/auth/network/updater stores、Tauri billing/network commands、Rust AuthManager/AuthClient、network probe/updater commands 以及相关前端/Rust 测试。",
+  "key_nodes": [
+    {
+      "filePath": "src/components/settings/SettingsMenu.tsx",
+      "summary": "设置侧栏入口，account-billing 仅在 personal tenant 下显示，usage 等部分入口当前 disabled。",
+      "tags": ["settings", "ui", "billing-gate"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src/components/settings/SettingsModal.tsx",
+      "summary": "设置页路由壳，挂载 GeneralPanel、AccountBillingPanel、AboutPanel 等活跃面板，更新检查从 about 入口触发。",
+      "tags": ["settings", "panel-router", "updater-entry"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src/components/settings/panels/GeneralPanel.tsx",
+      "summary": "账户页当前承载用户/租户展示、退出登录和外观设置，不包含订阅、充值或 customer portal 动作。",
+      "tags": ["account-ui", "settings"],
+      "complexity": "low"
+    },
+    {
+      "filePath": "src/components/settings/panels/AccountBillingPanel.tsx",
+      "summary": "计费页 UI，挂载时刷新，展示余额、本月消耗、本月请求数、流水表格、分页和错误重试。",
+      "tags": ["billing-ui", "settings", "zustand"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src/components/settings/panels/UsagePanel.tsx",
+      "summary": "套餐/配额展示组件当前存在但未接入 SettingsModal 活跃路由，属于 dormant 展示层。",
+      "tags": ["subscription-ui", "dormant"],
+      "complexity": "low"
+    },
+    {
+      "filePath": "src/stores/billingStore.ts",
+      "summary": "Billing Zustand 状态与动作中心，并发拉 summary 和 usage records，第 1 页是默认刷新入口。",
+      "tags": ["billing-store", "zustand", "async"],
+      "complexity": "low"
+    },
+    {
+      "filePath": "src/lib/tauri.ts",
+      "summary": "前端 Tauri transport 边界，定义 billing/network/updater DTO 与 invoke wrapper。",
+      "tags": ["transport", "tauri", "billing", "network"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/transport/tauri_commands/billing.rs",
+      "summary": "Rust billing command 边界，定义返回结构并把 billing summary/usage records 转调 AuthManager。",
+      "tags": ["rust", "tauri-command", "billing"],
+      "complexity": "low"
+    },
+    {
+      "filePath": "src-tauri/src/auth/mod.rs",
+      "summary": "AuthManager 负责 session_key 生命周期和刷新单飞，billing/profile 请求先经过这里拿有效 session_key。",
+      "tags": ["auth", "session-key", "billing-boundary"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src-tauri/src/auth/client.rs",
+      "summary": "Lotus HTTP client，对 /v1/profile 和 /v1/billing/* 发请求，并使用 Authorization: Bearer <session_key>。",
+      "tags": ["http-client", "gateway", "billing", "profile"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/network/probe.rs",
+      "summary": "独立网络探测模块，发 HEAD 探测，区分在线、离线和服务降级，并发布网络状态事件。",
+      "tags": ["network", "probe", "event-boundary"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src/lib/updaterStore.ts",
+      "summary": "Updater 前端状态机，与 billing 同在 settings/about 周边，但走独立 updater_* 命令链路。",
+      "tags": ["updater", "settings-about", "separate-path"],
+      "complexity": "medium"
+    }
+  ],
+  "semantic_edges": [
+    {
+      "sourceFilePath": "src/components/settings/SettingsModal.tsx",
+      "targetFilePath": "src/components/settings/SettingsMenu.tsx",
+      "type": "depends_on",
+      "reason": "设置弹窗把侧栏菜单作为 panel 选择入口。",
+      "weight": 0.95
+    },
+    {
+      "sourceFilePath": "src/components/settings/SettingsModal.tsx",
+      "targetFilePath": "src/components/settings/panels/GeneralPanel.tsx",
+      "type": "calls",
+      "reason": "account 面板分支挂载 GeneralPanel。",
+      "weight": 0.95
+    },
+    {
+      "sourceFilePath": "src/components/settings/SettingsModal.tsx",
+      "targetFilePath": "src/components/settings/panels/AccountBillingPanel.tsx",
+      "type": "calls",
+      "reason": "account-billing 分支挂载计费面板。",
+      "weight": 0.98
+    },
+    {
+      "sourceFilePath": "src/components/settings/SettingsModal.tsx",
+      "targetFilePath": "src/lib/updaterStore.ts",
+      "type": "depends_on",
+      "reason": "about 面板里的检查更新走 updater store。",
+      "weight": 0.88
+    },
+    {
+      "sourceFilePath": "src/components/settings/SettingsMenu.tsx",
+      "targetFilePath": "src/stores/authStore.ts",
+      "type": "reads_from",
+      "reason": "菜单按 tenantType 决定是否显示 account-billing。",
+      "weight": 0.93
+    },
+    {
+      "sourceFilePath": "src/components/settings/panels/AccountBillingPanel.tsx",
+      "targetFilePath": "src/stores/billingStore.ts",
+      "type": "reads_from",
+      "reason": "面板读取 summary、records、loading、error，并触发 refresh/fetchRecords。",
+      "weight": 0.99
+    },
+    {
+      "sourceFilePath": "src/stores/billingStore.ts",
+      "targetFilePath": "src/lib/tauri.ts",
+      "type": "calls",
+      "reason": "billing store 通过 billingSummary 和 billingUsageRecords wrapper 访问后端。",
+      "weight": 0.99
+    },
+    {
+      "sourceFilePath": "src/lib/tauri.ts",
+      "targetFilePath": "src-tauri/src/transport/tauri_commands/billing.rs",
+      "type": "calls",
+      "reason": "TS invoke 名称映射到 Rust billing_summary 和 billing_usage_records commands。",
+      "weight": 0.97
+    },
+    {
+      "sourceFilePath": "src-tauri/src/lib.rs",
+      "targetFilePath": "src-tauri/src/transport/tauri_commands/billing.rs",
+      "type": "configures",
+      "reason": "Tauri builder 注册 billing commands。",
+      "weight": 0.96
+    },
+    {
+      "sourceFilePath": "src-tauri/src/transport/tauri_commands/billing.rs",
+      "targetFilePath": "src-tauri/src/auth/mod.rs",
+      "type": "calls",
+      "reason": "command 层直接委托 AuthManager 获取计费数据。",
+      "weight": 0.98
+    },
+    {
+      "sourceFilePath": "src-tauri/src/auth/mod.rs",
+      "targetFilePath": "src-tauri/src/auth/client.rs",
+      "type": "calls",
+      "reason": "AuthManager 先取有效 session_key，再调 HTTP client 请求 billing/profile。",
+      "weight": 0.99
+    },
+    {
+      "sourceFilePath": "src-tauri/src/auth/client.rs",
+      "targetFilePath": "src-tauri/src/auth/state.rs",
+      "type": "transforms",
+      "reason": "AuthTenantInfo 到 TenantInfo 的映射把 tenant_type 带到前端可见状态。",
+      "weight": 0.9
+    },
+    {
+      "sourceFilePath": "src/stores/networkStore.ts",
+      "targetFilePath": "src/lib/tauri.ts",
+      "type": "calls",
+      "reason": "forceProbe 通过 Tauri command 触发网络探测。",
+      "weight": 0.86
+    },
+    {
+      "sourceFilePath": "src-tauri/src/transport/tauri_commands/network.rs",
+      "targetFilePath": "src-tauri/src/runtime/network/probe.rs",
+      "type": "depends_on",
+      "reason": "network_get_status 和 network_force_probe 只暴露 probe 状态与触发器。",
+      "weight": 0.95
+    },
+    {
+      "sourceFilePath": "src-tauri/src/lib.rs",
+      "targetFilePath": "src-tauri/src/transport/tauri_commands/network.rs",
+      "type": "configures",
+      "reason": "Tauri builder 注册 network commands。",
+      "weight": 0.94
+    },
+    {
+      "sourceFilePath": "src/lib/updaterStore.ts",
+      "targetFilePath": "src/lib/tauri.ts",
+      "type": "calls",
+      "reason": "updater store 通过 updater_* commands 走独立下载和安装链路。",
+      "weight": 0.9
+    },
+    {
+      "sourceFilePath": "src/components/settings/SettingsMenu.tsx",
+      "targetFilePath": "src/components/settings/__tests__/SettingsMenu.test.tsx",
+      "type": "tested_by",
+      "reason": "测试验证菜单可见项、active 样式和点击回调。",
+      "weight": 0.82
+    },
+    {
+      "sourceFilePath": "src/components/settings/panels/AccountBillingPanel.tsx",
+      "targetFilePath": "src/components/settings/panels/AccountBillingPanel.test.tsx",
+      "type": "tested_by",
+      "reason": "测试验证挂载后刷新并显示余额/空态。",
+      "weight": 0.8
+    },
+    {
+      "sourceFilePath": "src/stores/billingStore.ts",
+      "targetFilePath": "src/stores/billingStore.test.ts",
+      "type": "tested_by",
+      "reason": "测试验证 summary、records、错误路径与并发 refresh。",
+      "weight": 0.92
+    },
+    {
+      "sourceFilePath": "src/lib/updaterStore.ts",
+      "targetFilePath": "src/lib/updaterStore.test.ts",
+      "type": "tested_by",
+      "reason": "测试验证 updater 状态机、平台 URL 选择和安装命令调用。",
+      "weight": 0.87
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/network/probe.rs",
+      "targetFilePath": "src-tauri/tests/network_probe_integration_test.rs",
+      "type": "tested_by",
+      "reason": "测试验证 200、503、拒连和去重四类探测行为。",
+      "weight": 0.9
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/network/probe.rs",
+      "targetFilePath": "src-tauri/tests/review_network_module.rs",
+      "type": "tested_by",
+      "reason": "review test 守住 runtime/network 不直接依赖 tauri。",
+      "weight": 0.78
+    }
+  ],
+  "architecture_findings": [
+    {
+      "title": "设置页中的账户和计费是两个入口，usage 仍未启用",
+      "description": "当前 settings 里活跃的账户相关入口是 General account 和 AccountBilling account-billing；UsagePanel 存在但未接入 SettingsModal 活跃路由，未见 checkout、portal、recharge 或 invoice 的本地接线。",
+      "evidence": [
+        "src/components/settings/SettingsMenu.tsx",
+        "src/components/settings/SettingsModal.tsx",
+        "src/components/settings/panels/UsagePanel.tsx"
+      ]
+    },
+    {
+      "title": "计费 UI 是面板到 AuthManager 的直链",
+      "description": "AccountBillingPanel 挂载即 refresh，billingStore 并发拉 summary 和第一页 records，前端经 Tauri invoke 到 Rust billing command，再由 AuthManager 和 AuthClient 请求服务端。",
+      "evidence": [
+        "src/components/settings/panels/AccountBillingPanel.tsx",
+        "src/stores/billingStore.ts",
+        "src/lib/tauri.ts",
+        "src-tauri/src/transport/tauri_commands/billing.rs",
+        "src-tauri/src/auth/mod.rs",
+        "src-tauri/src/auth/client.rs"
+      ]
+    },
+    {
+      "title": "tenantType gating 当前主要在前端菜单层",
+      "description": "菜单显示由 tenant.tenantType 是否为 personal 决定；Rust billing command 转调 AuthManager，当前仓库没有本地 command 层 enterprise/personal 二次校验测试，最终服务端行为不能只凭本仓库下结论。",
+      "evidence": [
+        "src/components/settings/SettingsMenu.tsx",
+        "src-tauri/src/auth/state.rs",
+        "src-tauri/src/transport/tauri_commands/billing.rs"
+      ]
+    },
+    {
+      "title": "billing 和 profile 请求走 Bearer session_key",
+      "description": "AuthManager 负责 get_session_key、刷新与单飞；billing 和 profile 拿到 session_key 后经 AuthClient 发起 Bearer 请求，区别于模型列表等可能使用 x-api-key 的路径。",
+      "evidence": [
+        "src-tauri/src/auth/mod.rs",
+        "src-tauri/src/auth/client.rs"
+      ]
+    },
+    {
+      "title": "updater 与 billing 相邻但链路独立",
+      "description": "updater 入口在 about/titlebar 附近，前后端命令是独立的 updater_* 链路；当前 scoped 源码未见本地 entitlement 模块或计费额度控制 updater/功能解锁的实现。",
+      "evidence": [
+        "src/components/settings/SettingsModal.tsx",
+        "src/lib/updaterStore.ts",
+        "src-tauri/src/updater/commands.rs"
+      ]
+    },
+    {
+      "title": "network health 是独立 runtime 子系统",
+      "description": "network probe 有自己的 Rust runtime module、Tauri commands、frontend store 和 integration tests；billingStore 只记录请求错误字符串，未消费 networkStore/probe 状态。",
+      "evidence": [
+        "src-tauri/src/runtime/network/state.rs",
+        "src-tauri/src/runtime/network/probe.rs",
+        "src-tauri/src/transport/tauri_commands/network.rs",
+        "src/stores/networkStore.ts",
+        "src/stores/billingStore.ts"
+      ]
+    }
+  ],
+  "tour_steps": [
+    {
+      "title": "先看 settings 中账户和计费入口",
+      "description": "从 SettingsMenu 和 SettingsModal 确认哪些面板真实启用，特别是 account-billing 的 personal gating 和 usage disabled 状态。",
+      "filePaths": [
+        "src/components/settings/SettingsMenu.tsx",
+        "src/components/settings/SettingsModal.tsx",
+        "src/components/settings/panels/GeneralPanel.tsx",
+        "src/components/settings/panels/AccountBillingPanel.tsx",
+        "src/components/settings/panels/UsagePanel.tsx"
+      ]
+    },
+    {
+      "title": "追踪 billing 从 UI 到服务端请求的边界",
+      "description": "从 AccountBillingPanel 到 billingStore、src/lib/tauri.ts、Rust billing command、AuthManager 和 AuthClient，确认桌面端不直接 fetch billing API。",
+      "filePaths": [
+        "src/components/settings/panels/AccountBillingPanel.tsx",
+        "src/stores/billingStore.ts",
+        "src/lib/tauri.ts",
+        "src-tauri/src/transport/tauri_commands/billing.rs",
+        "src-tauri/src/auth/mod.rs",
+        "src-tauri/src/auth/client.rs"
+      ]
+    },
+    {
+      "title": "区分 billing、network 和 updater 三条相邻链路",
+      "description": "对照 billing store、network probe 和 updater store，说明它们同在设置/状态周边但各自走独立命令和状态机。",
+      "filePaths": [
+        "src/stores/billingStore.ts",
+        "src/stores/networkStore.ts",
+        "src-tauri/src/runtime/network/probe.rs",
+        "src/lib/updaterStore.ts",
+        "src-tauri/src/updater/commands.rs"
+      ]
+    }
+  ],
+  "risks_or_gaps": [
+    {
+      "title": "本仓库未证明 enterprise 调 billing API 的最终服务端行为",
+      "description": "本地能证明 personal gating 在前端菜单层；Rust command 没有本地二次租户校验，是否 403 或隐藏由服务端承担需要服务端证据。",
+      "evidence": [
+        "src/components/settings/SettingsMenu.tsx",
+        "src-tauri/src/transport/tauri_commands/billing.rs"
+      ]
+    },
+    {
+      "title": "未见本地 checkout、recharge、customer portal 或 invoice 接线",
+      "description": "当前桌面端工作树能证明计费展示链路，不能证明完整订阅购买或充值闭环。",
+      "evidence": [
+        "src/components/settings/panels/AccountBillingPanel.tsx",
+        "src/components/settings/panels/UsagePanel.tsx"
+      ]
+    },
+    {
+      "title": "测试存在覆盖缺口",
+      "description": "现有测试覆盖 billingStore 和 AccountBillingPanel 基础行为，但未见 personal tenant 正向显示 account-billing、bonusHint/分页和 Rust billing command/auth client 专门测试。",
+      "evidence": [
+        "src/components/settings/__tests__/SettingsMenu.test.tsx",
+        "src/components/settings/panels/AccountBillingPanel.test.tsx",
+        "src/stores/billingStore.test.ts",
+        "src-tauri/src/transport/tauri_commands/billing.rs"
+      ]
+    }
+  ]
+}

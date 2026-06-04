@@ -16,10 +16,16 @@ function usage() {
   node scripts/run-userwiki-qa-smoke.mjs --list
   node scripts/run-userwiki-qa-smoke.mjs --case <id>
   node scripts/run-userwiki-qa-smoke.mjs --case <id> --answer <path>
+  node scripts/run-userwiki-qa-smoke.mjs --case <id> --answer -
+  node scripts/run-userwiki-qa-smoke.mjs --case <id> --prompt-out <path>
   node scripts/run-userwiki-qa-smoke.mjs --default [--timeout-ms 180000]
   node scripts/run-userwiki-qa-smoke.mjs --all
 
-Default without flags validates the QA fixture schema only.`);
+Default without flags validates the QA fixture schema only.
+
+Environment:
+  USERWIKI_QA_TIMEOUT_MS      Override codex exec timeout.
+  USERWIKI_QA_CODEX_COMMAND   Override the Codex CLI executable used for live QA.`);
 }
 
 function readJson(filePath) {
@@ -85,6 +91,31 @@ function timeoutMs() {
   return Number.isFinite(value) && value > 0 ? value : 180000;
 }
 
+function buildPrompt(testCase) {
+  return [
+    testCase.question,
+    '',
+    '只读验证，不要修改文件，不要打开浏览器。',
+    '请按 userwiki 规则回答，并尽量给出可点击的本地文件路径。'
+  ].join('\n');
+}
+
+function codexCommand() {
+  return process.env.USERWIKI_QA_CODEX_COMMAND || 'codex';
+}
+
+function codexExecutionHint(command) {
+  return [
+    `提示：当前环境无法直接执行 ${command} 时，先用 --prompt-out <path> 导出同一题 prompt，`,
+    '再用 --answer <path> 或 --answer - 评分；如果有可执行的 Codex CLI，',
+    '请通过 USERWIKI_QA_CODEX_COMMAND 指向它。'
+  ].join('');
+}
+
+function isAccessDeniedText(text) {
+  return /Access is denied|EPERM|EACCES/i.test(text);
+}
+
 function evaluateAnswer(testCase, answer, outputPath) {
   const missing = testCase.requiredTerms.filter((term) => !answer.includes(term));
   const missingAny = (testCase.requiredAnyTerms || [])
@@ -107,14 +138,10 @@ function evaluateAnswer(testCase, answer, outputPath) {
 function runCase(testCase) {
   const outputPath = path.join(os.tmpdir(), `userwiki-qa-${testCase.id}-${Date.now()}.md`);
   const limit = timeoutMs();
-  const prompt = [
-    testCase.question,
-    '',
-    '只读验证，不要修改文件，不要打开浏览器。',
-    '请按 userwiki 规则回答，并尽量给出可点击的本地文件路径。'
-  ].join('\n');
+  const command = codexCommand();
+  const prompt = buildPrompt(testCase);
 
-  const result = spawnSync('codex', [
+  const result = spawnSync(command, [
     'exec',
     '--cd',
     root,
@@ -136,20 +163,44 @@ function runCase(testCase) {
       id: testCase.id,
       ok: false,
       outputPath,
-      errors: [`codex exec timed out after ${limit}ms`]
+      errors: [`${command} exec timed out after ${limit}ms`]
     };
   }
 
-  if (result.status !== 0) {
+  if (result.error) {
+    const errors = [
+      `${command} exec failed: ${result.error.code || result.error.name || 'unknown error'}`,
+      result.error.message
+    ].filter(Boolean);
+    if (result.error.code === 'EPERM' || result.error.code === 'EACCES') {
+      errors.push(codexExecutionHint(command));
+    }
+
     return {
       id: testCase.id,
       ok: false,
       outputPath,
-      errors: [
-        `codex exec exited with status ${result.status}`,
-        result.stderr.trim(),
-        result.stdout.trim()
-      ].filter(Boolean)
+      errors
+    };
+  }
+
+  if (result.status !== 0) {
+    const stderr = String(result.stderr || '').trim();
+    const stdout = String(result.stdout || '').trim();
+    const errors = [
+      `${command} exec exited with status ${result.status}`,
+      stderr,
+      stdout
+    ].filter(Boolean);
+    if (isAccessDeniedText(`${stderr}\n${stdout}`)) {
+      errors.push(codexExecutionHint(command));
+    }
+
+    return {
+      id: testCase.id,
+      ok: false,
+      outputPath,
+      errors
     };
   }
 
@@ -196,13 +247,31 @@ if (args.length === 0 || args.includes('--validate-only')) {
 
 const selected = selectCases(cases);
 const answerIndex = args.indexOf('--answer');
+const promptOutIndex = args.indexOf('--prompt-out');
 let results;
+
+if (answerIndex !== -1 && promptOutIndex !== -1) {
+  throw new Error('--answer and --prompt-out cannot be used together');
+}
+
+if (promptOutIndex !== -1) {
+  const promptPath = args[promptOutIndex + 1];
+  if (!promptPath) throw new Error('--prompt-out requires a path');
+  if (selected.length !== 1) throw new Error('--prompt-out requires exactly one selected case');
+  const resolvedPromptPath = path.resolve(root, promptPath);
+  fs.mkdirSync(path.dirname(resolvedPromptPath), { recursive: true });
+  fs.writeFileSync(resolvedPromptPath, buildPrompt(selected[0]), 'utf8');
+  console.log(`WROTE ${selected[0].id} prompt=${resolvedPromptPath}`);
+  process.exit(0);
+}
 
 if (answerIndex !== -1) {
   const answerPath = args[answerIndex + 1];
   if (!answerPath) throw new Error('--answer requires a path');
   if (selected.length !== 1) throw new Error('--answer requires exactly one selected case');
-  const answer = fs.readFileSync(path.resolve(root, answerPath), 'utf8');
+  const answer = answerPath === '-'
+    ? fs.readFileSync(0, 'utf8')
+    : fs.readFileSync(path.resolve(root, answerPath), 'utf8');
   results = [evaluateAnswer(selected[0], answer, answerPath)];
 } else {
   results = [];

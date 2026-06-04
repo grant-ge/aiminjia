@@ -2,6 +2,18 @@
 
 真实问答验收样例见 `references/qa-examples.md`。需要跑 CLI smoke 时，使用 `scripts/run-userwiki-qa-smoke.mjs`。
 
+## UserWiki 的 LLM Wiki 口径
+
+UserWiki 不是一次性 RAG 问答，也不是静态说明书。回答时把它理解为 LLM 维护的知识中间层：
+
+1. raw source 是当前源码、测试、权威 docs 和 repo-local skill/script。
+2. compiled wiki 是 `.understand-anything/knowledge-graph.json`、`.understand-anything/enhancements/*.json` 和 `docs/repo-wiki/`。
+3. query 先复用 compiled wiki；架构事实不清楚时再回 raw source 校验。
+4. writeback 是关键：如果问答暴露出缺节点、缺边、过期结论或新决策，转 `wiki-maintainer` 形成 enhancement、RepoWiki 更新或 QA smoke。
+5. lint/QA 让 wiki 不腐烂：用 `check-repowiki`、`run-userwiki-qa-smoke` 和真实问答样例检查质量。
+
+详细心智见 `references/llm-wiki-principles.md`。
+
 ## 问：我想增加一个功能，会影响哪些点？
 
 适用问法：
