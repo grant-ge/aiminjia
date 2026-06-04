@@ -1,5 +1,6 @@
 use app_lib::runtime::dependencies::{
-    RuntimeManager, RuntimeManifestSource, RuntimePaths, RuntimePlatform, RuntimeResolver,
+    BundledRuntimeResolver, RuntimeInstallPlan, RuntimeInstaller, RuntimeManager,
+    RuntimeManifestSource, RuntimePaths, RuntimePlatform, RuntimeResolver,
 };
 use sha2::{Digest, Sha256};
 use tempfile::tempdir;
@@ -79,6 +80,181 @@ fn manager_ensure_rejects_corrupt_already_current_payload() {
         .expect_err("ensure should not skip corrupt current payload");
 
     assert!(error.to_string().contains("payload is missing"));
+}
+
+#[tokio::test]
+async fn manager_ensure_managed_keeps_valid_cache_without_reading_manifest() {
+    let tempdir = tempdir().expect("tempdir");
+    let paths = RuntimePaths::new(
+        tempdir.path().join("cache-root"),
+        "renlijia-primary-runtime",
+    )
+    .expect("valid paths");
+
+    RuntimeInstaller::new(paths.clone())
+        .ensure(RuntimeInstallPlan::already_local("2026.04.26-runtime.1"))
+        .expect("install cache runtime");
+    let layout = app_lib::runtime::dependencies::RuntimeLayout::current().expect("current layout");
+    let sentinel = paths
+        .version_dir("2026.04.26-runtime.1")
+        .unwrap()
+        .join(layout.node_modules())
+        .join("customer-package");
+    std::fs::write(&sentinel, "installed by user").expect("write sentinel package");
+
+    let manager = RuntimeManager::new(paths.clone(), "placeholder-version").with_manifest_source(
+        RuntimeManifestSource::File(tempdir.path().join("missing-manifest.json")),
+        "primary",
+        RuntimePlatform::DarwinArm64,
+    );
+
+    let result = manager
+        .ensure_managed()
+        .await
+        .expect("valid cache runtime should skip manifest ensure");
+
+    assert!(result.skipped);
+    assert_eq!(result.bundle_version, "2026.04.26-runtime.1");
+    assert_eq!(
+        std::fs::read_to_string(paths.current_dir()).expect("current pointer"),
+        "versions/2026.04.26-runtime.1"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&sentinel).expect("sentinel package"),
+        "installed by user"
+    );
+    assert!(
+        !paths.version_dir("placeholder-version").unwrap().exists(),
+        "ensure must not replace valid cache runtime with manifest/dev payload"
+    );
+}
+
+#[tokio::test]
+async fn manager_ensure_managed_bootstraps_cache_from_bundled_fallback() {
+    let tempdir = tempdir().expect("tempdir");
+    let paths = RuntimePaths::new(
+        tempdir.path().join("cache-root"),
+        "renlijia-primary-runtime",
+    )
+    .expect("valid paths");
+    let resource_dir = tempdir.path().join("app-resources");
+    let platform = RuntimePlatform::current().expect("current platform");
+    let runtime_dir = resource_dir.join("runtime").join(platform.manifest_key());
+    let layout = app_lib::runtime::dependencies::RuntimeLayout::for_platform(platform);
+    let deps = layout.workspace_dependencies(&runtime_dir);
+    for path in [
+        &deps.python,
+        &deps.node,
+        &deps.npm,
+        &deps.npx,
+        &deps.uv,
+        &deps.uvx,
+    ] {
+        write_test_runtime_executable(path);
+    }
+    std::fs::create_dir_all(runtime_dir.join("node/lib/node_modules")).unwrap();
+    std::fs::create_dir_all(runtime_dir.join("python/lib/python3.12/site-packages")).unwrap();
+    std::fs::write(
+        runtime_dir.join("bundled-version.json"),
+        br#"{"bundleVersion":"2026.05.13-runtime.1","platform":"placeholder"}"#,
+    )
+    .expect("write bundled version");
+
+    let manager = RuntimeManager::new(paths.clone(), "placeholder-version")
+        .with_bundled_fallback(BundledRuntimeResolver::new(resource_dir))
+        .with_manifest_source(
+            RuntimeManifestSource::File(tempdir.path().join("missing-manifest.json")),
+            "primary",
+            platform,
+        );
+
+    let result = manager
+        .ensure_managed()
+        .await
+        .expect("manifest failure should fall back to bundled runtime");
+
+    assert!(!result.skipped);
+    assert_eq!(result.bundle_version, "2026.05.13-runtime.1");
+    assert_eq!(
+        std::fs::read_to_string(paths.current_dir()).expect("current pointer"),
+        "versions/2026.05.13-runtime.1"
+    );
+    let cache_deps = manager
+        .resolver()
+        .workspace_dependencies()
+        .expect("installed cache runtime should resolve after bundled fallback");
+    assert!(
+        cache_deps
+            .node
+            .starts_with(paths.version_dir("2026.05.13-runtime.1").unwrap()),
+        "resolver must return Cache runtime path, got {}",
+        cache_deps.node.display()
+    );
+}
+
+#[test]
+fn manager_resolver_bootstraps_cache_from_bundled_fallback_on_first_dependency_lookup() {
+    let tempdir = tempdir().expect("tempdir");
+    let paths = RuntimePaths::new(
+        tempdir.path().join("cache-root"),
+        "renlijia-primary-runtime",
+    )
+    .expect("valid paths");
+    let resource_dir = tempdir.path().join("app-resources");
+    let platform = RuntimePlatform::current().expect("current platform");
+    let runtime_dir = resource_dir.join("runtime").join(platform.manifest_key());
+    let layout = app_lib::runtime::dependencies::RuntimeLayout::for_platform(platform);
+    let deps = layout.workspace_dependencies(&runtime_dir);
+    for path in [
+        &deps.python,
+        &deps.node,
+        &deps.npm,
+        &deps.npx,
+        &deps.uv,
+        &deps.uvx,
+    ] {
+        write_test_runtime_executable(path);
+    }
+    std::fs::write(
+        runtime_dir.join("bundled-version.json"),
+        br#"{"bundleVersion":"2026.05.13-runtime.1","platform":"placeholder"}"#,
+    )
+    .expect("write bundled version");
+
+    let manager = RuntimeManager::new(paths.clone(), "placeholder-version")
+        .with_bundled_fallback(BundledRuntimeResolver::new(resource_dir))
+        .with_manifest_source(
+            RuntimeManifestSource::File(tempdir.path().join("missing-manifest.json")),
+            "primary",
+            platform,
+        );
+
+    let cache_deps = manager
+        .workspace_dependencies()
+        .expect("first dependency lookup should initialize cache from bundled fallback");
+
+    assert!(
+        cache_deps
+            .node
+            .starts_with(paths.version_dir("2026.05.13-runtime.1").unwrap()),
+        "resolver must return Cache runtime path, got {}",
+        cache_deps.node.display()
+    );
+}
+
+fn write_test_runtime_executable(path: &std::path::Path) {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).expect("create executable parent");
+    }
+    std::fs::write(path, b"#!/usr/bin/env sh\necho test-runtime\n")
+        .expect("write test runtime executable");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut permissions = std::fs::metadata(path).expect("metadata").permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(path, permissions).expect("chmod executable");
+    }
 }
 
 fn write_manager_runtime_zip(path: &std::path::Path) {
@@ -358,6 +534,7 @@ fn manager_installs_runtime_from_file_manifest_source() {
             RuntimeManifestSource::File(manifest),
             "primary",
             RuntimePlatform::DarwinArm64,
+            true,
         )
         .expect("manager should fetch and install artifact from manifest");
 
@@ -410,6 +587,7 @@ fn manager_manifest_install_checksum_failure_does_not_switch_current() {
             RuntimeManifestSource::File(manifest),
             "primary",
             RuntimePlatform::DarwinArm64,
+            true,
         )
         .expect_err("checksum mismatch should fail");
 
@@ -432,6 +610,7 @@ async fn manager_manifest_url_install_rejects_untrusted_manifest_before_network(
             "https://localhost/runtime-manifest.json",
             "primary",
             RuntimePlatform::DarwinArm64,
+            true,
         )
         .await
         .expect_err("localhost manifest should be rejected before network");

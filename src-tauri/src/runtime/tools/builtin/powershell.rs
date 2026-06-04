@@ -6,28 +6,27 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::process::Command;
 
 use crate::runtime::agent::async_task_store::AsyncAgentTaskStore;
 use crate::runtime::agent::task_notification::TaskNotificationQueue;
+use crate::runtime::tools::RuntimeTool;
 use crate::runtime::tools::catalog::TOOL_CATALOG;
 use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::ToolDefinition;
 use crate::runtime::tools::executor::{ToolError, ToolResult};
 use crate::runtime::tools::permission::{PermissionDecision, PermissionReason};
-use crate::runtime::tools::RuntimeTool;
 use crate::storage::process_ext::NoWindowExt;
 
-use super::powershell_detect::{detect, PowerShellLocation};
+use super::powershell_detect::{PowerShellLocation, detect};
 use super::shell_common::{
-    collect_reader, content_from_output, emit_shell_failure_diagnostic, format_cancel_message,
-    format_command_failure, inject_bundled_runtime_path, interpret_command_result,
+    ExitKind, MAX_OUTPUT_BYTES, collect_reader, content_from_output, emit_shell_failure_diagnostic,
+    format_cancel_message, format_command_failure, interpret_command_result,
     kill_child_process_tree, optional_transcript_path,
-    read_merged_streams_with_progress_and_optional_transcript, truncated_to_max_bytes, ExitKind,
-    MAX_OUTPUT_BYTES,
+    read_merged_streams_with_progress_and_optional_transcript, truncated_to_max_bytes,
 };
 use super::workspace::require_workspace_root;
 use crate::runtime::cancellation::wait_for_cancellation;
@@ -118,7 +117,10 @@ fn resolve_timeout_secs(input: &Value) -> u64 {
 fn resolve_auto_background_after_secs(input: &Value, timeout_secs: u64) -> Option<u64> {
     let secs = AUTO_BACKGROUND_AFTER_SECS;
     #[cfg(test)]
-    let secs = if let Some(ms) = input.get("_auto_background_after_ms").and_then(Value::as_u64) {
+    let secs = if let Some(ms) = input
+        .get("_auto_background_after_ms")
+        .and_then(Value::as_u64)
+    {
         ms.div_ceil(1000).max(1)
     } else {
         secs
@@ -272,7 +274,6 @@ impl RuntimeTool for PowerShellTool {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .no_window();
-        inject_bundled_runtime_path(&ctx, &mut shell);
         let mut child = shell
             .spawn()
             .map_err(|e| ToolError::ExecutionFailed(format!("Failed to spawn PowerShell: {e}")))?;
@@ -309,16 +310,17 @@ impl RuntimeTool for PowerShellTool {
         let transcript_switch_for_reader = transcript_switch.clone();
         let captured_snapshot = Arc::new(Mutex::new(Vec::new()));
         let captured_snapshot_for_reader = captured_snapshot.clone();
-        let merged_handle = tokio::spawn(read_merged_streams_with_progress_and_optional_transcript(
-            stdout,
-            stderr,
-            move |captured, _| {
-                *captured_snapshot_for_reader
-                    .lock()
-                    .expect("powershell captured snapshot poisoned") = captured.to_vec();
-            },
-            Some(transcript_switch_for_reader),
-        ));
+        let merged_handle =
+            tokio::spawn(read_merged_streams_with_progress_and_optional_transcript(
+                stdout,
+                stderr,
+                move |captured, _| {
+                    *captured_snapshot_for_reader
+                        .lock()
+                        .expect("powershell captured snapshot poisoned") = captured.to_vec();
+                },
+                Some(transcript_switch_for_reader),
+            ));
 
         enum ForegroundControl {
             Exit(ExitKind),
@@ -327,8 +329,9 @@ impl RuntimeTool for PowerShellTool {
 
         let auto_background_after_secs = resolve_auto_background_after_secs(&input, timeout_secs);
         let auto_background_delay_secs = auto_background_after_secs.unwrap_or(timeout_secs);
-        let auto_background_enabled =
-            auto_background_after_secs.is_some() && self.background.is_some() && ctx.conv_dir.is_some();
+        let auto_background_enabled = auto_background_after_secs.is_some()
+            && self.background.is_some()
+            && ctx.conv_dir.is_some();
 
         let foreground_control = tokio::select! {
             status = child.wait() => {

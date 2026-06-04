@@ -1,12 +1,14 @@
+use std::fs;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use super::{
-    ChainResolver, InstalledRuntimeResolver, RuntimeArtifactFetchError, RuntimeArtifactFetcher,
-    RuntimeDependencyResult, RuntimeDownloadCancellation, RuntimeDownloadOptions,
-    RuntimeHealthChecker, RuntimeHealthError, RuntimeHealthReport, RuntimeInstallError,
-    RuntimeInstallPlan, RuntimeInstallResult, RuntimeInstaller, RuntimeManifestSource,
-    RuntimePaths, RuntimePlatform, RuntimeResolver, RuntimeToolProbe, WorkspaceDependencies,
+    BundledRuntimeResolver, ChainResolver, InstalledRuntimeResolver, RuntimeArtifactFetchError,
+    RuntimeArtifactFetcher, RuntimeDependencyResult, RuntimeDownloadCancellation,
+    RuntimeDownloadOptions, RuntimeHealthChecker, RuntimeHealthError, RuntimeHealthReport,
+    RuntimeInstallError, RuntimeInstallPlan, RuntimeInstallResult, RuntimeInstaller,
+    RuntimeManifestSource, RuntimePaths, RuntimePlatform, RuntimeResolver, RuntimeToolProbe,
+    WorkspaceDependencies,
 };
 
 pub type ManagedRuntimeManager = Arc<RuntimeManager>;
@@ -22,6 +24,7 @@ pub struct RuntimeManager {
     /// Kept around so the OSS install path keeps a stable handle to the
     /// on-disk-installed runtime even after a primary resolver is chained on top.
     installed_resolver: InstalledRuntimeResolver,
+    bundled_fallback: Option<BundledRuntimeResolver>,
     health_checker: RuntimeHealthChecker,
     manifest_install: Option<RuntimeManifestInstallConfig>,
     active_operation: Arc<Mutex<Option<RuntimeActiveOperation>>>,
@@ -33,6 +36,7 @@ impl std::fmt::Debug for RuntimeManager {
             .field("paths", &self.paths)
             .field("bundle_version", &self.bundle_version)
             .field("installed_resolver", &self.installed_resolver)
+            .field("has_bundled_fallback", &self.bundled_fallback.is_some())
             .field("has_primary_chain", &true)
             .finish_non_exhaustive()
     }
@@ -137,6 +141,7 @@ impl RuntimeManager {
             installer: RuntimeInstaller::new(paths.clone()),
             resolver: Arc::new(installed.clone()),
             installed_resolver: installed,
+            bundled_fallback: None,
             paths,
             bundle_version: bundle_version.into(),
             health_checker: RuntimeHealthChecker::default(),
@@ -165,6 +170,11 @@ impl RuntimeManager {
         self
     }
 
+    pub fn with_bundled_fallback(mut self, bundled: BundledRuntimeResolver) -> Self {
+        self.bundled_fallback = Some(bundled);
+        self
+    }
+
     /// Chain a primary resolver in front of the default installed resolver.
     /// The chain tries `primary` first; only on miss does it fall back to the
     /// on-disk installed runtime. Useful for installer-bundled runtimes where
@@ -178,6 +188,83 @@ impl RuntimeManager {
 
     pub fn has_manifest_source(&self) -> bool {
         self.manifest_install.is_some()
+    }
+
+    fn current_cache_result_if_available(
+        &self,
+    ) -> Result<Option<RuntimeInstallResult>, RuntimeManagerError> {
+        match self.installed_resolver.workspace_dependencies() {
+            Ok(_) => {
+                let Some(version) = self.current_cache_version()? else {
+                    return Ok(None);
+                };
+                let install_dir = self.paths.version_dir(&version).map_err(|error| {
+                    RuntimeManagerError::Dependency(
+                        super::RuntimeDependencyError::ResolverUnavailable(error.to_string()),
+                    )
+                })?;
+                log::info!(
+                    "[runtime] cache probe ok version={} path={}",
+                    version,
+                    install_dir.display()
+                );
+                Ok(Some(RuntimeInstallResult {
+                    bundle_version: version,
+                    install_dir,
+                    skipped: true,
+                }))
+            }
+            Err(error) => {
+                log::info!("[runtime] cache probe miss reason={}", error);
+                Ok(None)
+            }
+        }
+    }
+
+    fn current_cache_version(&self) -> Result<Option<String>, RuntimeManagerError> {
+        let content = match fs::read_to_string(self.paths.current_dir()) {
+            Ok(content) => content,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => {
+                return Err(RuntimeManagerError::Dependency(
+                    super::RuntimeDependencyError::ResolverUnavailable(format!(
+                        "failed to read runtime current pointer: {error}"
+                    )),
+                ))
+            }
+        };
+        let pointer = content.trim();
+        let Some(version) = pointer.strip_prefix("versions/") else {
+            return Ok(None);
+        };
+        if version.is_empty()
+            || version.contains('/')
+            || version.contains('\\')
+            || version.contains("..")
+        {
+            return Ok(None);
+        }
+        Ok(Some(version.to_string()))
+    }
+
+    fn install_from_bundled_fallback(&self) -> Result<RuntimeInstallResult, RuntimeManagerError> {
+        let bundled = self
+            .bundled_fallback
+            .as_ref()
+            .ok_or(RuntimeManagerError::ManifestNotConfigured)?;
+        let runtime_dir = bundled.runtime_dir()?;
+        let version = bundled
+            .bundled_version()
+            .unwrap_or_else(|| self.bundle_version.clone());
+        log::info!(
+            "[runtime] bundled fallback install start version={} path={}",
+            version,
+            runtime_dir.display()
+        );
+        bundled.workspace_dependencies()?;
+        self.installer
+            .install_from_directory(RuntimeInstallPlan::reinstall(version), &runtime_dir)
+            .map_err(RuntimeManagerError::from)
     }
 
     pub fn begin_operation(
@@ -238,8 +325,22 @@ impl RuntimeManager {
     }
 
     pub fn ensure(&self) -> Result<RuntimeInstallResult, RuntimeManagerError> {
+        if let Some(result) = self.current_cache_result_if_available()? {
+            return Ok(result);
+        }
+
         if let Some(config) = &self.manifest_install {
-            return self.install_from_configured_manifest_blocking(config);
+            return match self.install_from_configured_manifest_blocking(config, true) {
+                Ok(result) => Ok(result),
+                Err(error) if self.bundled_fallback.is_some() => {
+                    log::warn!(
+                        "[runtime] manifest ensure failed; trying bundled fallback: {}",
+                        error
+                    );
+                    self.install_from_bundled_fallback()
+                }
+                Err(error) => Err(error),
+            };
         }
 
         self.installer
@@ -251,7 +352,7 @@ impl RuntimeManager {
 
     pub fn reinstall(&self) -> Result<RuntimeInstallResult, RuntimeManagerError> {
         if let Some(config) = &self.manifest_install {
-            return self.install_from_configured_manifest_blocking(config);
+            return self.install_from_configured_manifest_blocking(config, true);
         }
 
         self.installer
@@ -262,11 +363,25 @@ impl RuntimeManager {
     }
 
     pub async fn ensure_managed(&self) -> Result<RuntimeInstallResult, RuntimeManagerError> {
+        if let Some(result) = self.current_cache_result_if_available()? {
+            return Ok(result);
+        }
+
         let config = self
             .manifest_install
             .as_ref()
             .ok_or(RuntimeManagerError::ManifestNotConfigured)?;
-        self.install_from_configured_manifest(config).await
+        match self.install_from_configured_manifest(config, true).await {
+            Ok(result) => Ok(result),
+            Err(error) if self.bundled_fallback.is_some() => {
+                log::warn!(
+                    "[runtime] manifest ensure failed; trying bundled fallback: {}",
+                    error
+                );
+                self.install_from_bundled_fallback()
+            }
+            Err(error) => Err(error),
+        }
     }
 
     pub async fn reinstall_managed(&self) -> Result<RuntimeInstallResult, RuntimeManagerError> {
@@ -274,19 +389,35 @@ impl RuntimeManager {
             .manifest_install
             .as_ref()
             .ok_or(RuntimeManagerError::ManifestNotConfigured)?;
-        self.install_from_configured_manifest(config).await
+        self.install_from_configured_manifest(config, true).await
     }
 
     pub async fn ensure_managed_with_download_options(
         &self,
         options: RuntimeDownloadOptions,
     ) -> Result<RuntimeInstallResult, RuntimeManagerError> {
+        if let Some(result) = self.current_cache_result_if_available()? {
+            return Ok(result);
+        }
+
         let config = self
             .manifest_install
             .as_ref()
             .ok_or(RuntimeManagerError::ManifestNotConfigured)?;
-        self.install_from_configured_manifest_with_options(config, options)
+        match self
+            .install_from_configured_manifest_with_options(config, options, true)
             .await
+        {
+            Ok(result) => Ok(result),
+            Err(error) if self.bundled_fallback.is_some() => {
+                log::warn!(
+                    "[runtime] manifest ensure failed; trying bundled fallback: {}",
+                    error
+                );
+                self.install_from_bundled_fallback()
+            }
+            Err(error) => Err(error),
+        }
     }
 
     pub async fn reinstall_managed_with_download_options(
@@ -297,19 +428,21 @@ impl RuntimeManager {
             .manifest_install
             .as_ref()
             .ok_or(RuntimeManagerError::ManifestNotConfigured)?;
-        self.install_from_configured_manifest_with_options(config, options)
+        self.install_from_configured_manifest_with_options(config, options, true)
             .await
     }
 
     fn install_from_configured_manifest_blocking(
         &self,
         config: &RuntimeManifestInstallConfig,
+        force: bool,
     ) -> Result<RuntimeInstallResult, RuntimeManagerError> {
         match &config.source {
             RuntimeManifestSource::File(path) => self.install_from_manifest_source(
                 RuntimeManifestSource::File(path.clone()),
                 &config.runtime_name,
                 config.platform,
+                force,
             ),
             RuntimeManifestSource::Url(url) => {
                 log::info!(
@@ -337,6 +470,7 @@ impl RuntimeManager {
                                 url,
                                 &config.runtime_name,
                                 config.platform,
+                                force,
                             ))
                         })
                     }
@@ -350,6 +484,7 @@ impl RuntimeManager {
                             url,
                             &config.runtime_name,
                             config.platform,
+                            force,
                         ))
                     }
                 }
@@ -360,15 +495,17 @@ impl RuntimeManager {
     async fn install_from_configured_manifest(
         &self,
         config: &RuntimeManifestInstallConfig,
+        force: bool,
     ) -> Result<RuntimeInstallResult, RuntimeManagerError> {
         match &config.source {
             RuntimeManifestSource::File(path) => self.install_from_manifest_source(
                 RuntimeManifestSource::File(path.clone()),
                 &config.runtime_name,
                 config.platform,
+                force,
             ),
             RuntimeManifestSource::Url(url) => {
-                self.install_from_manifest_url(url, &config.runtime_name, config.platform)
+                self.install_from_manifest_url(url, &config.runtime_name, config.platform, force)
                     .await
             }
         }
@@ -378,12 +515,14 @@ impl RuntimeManager {
         &self,
         config: &RuntimeManifestInstallConfig,
         options: RuntimeDownloadOptions,
+        force: bool,
     ) -> Result<RuntimeInstallResult, RuntimeManagerError> {
         match &config.source {
             RuntimeManifestSource::File(path) => self.install_from_manifest_source(
                 RuntimeManifestSource::File(path.clone()),
                 &config.runtime_name,
                 config.platform,
+                force,
             ),
             RuntimeManifestSource::Url(url) => {
                 let fetched = RuntimeArtifactFetcher::new()
@@ -395,7 +534,7 @@ impl RuntimeManager {
                         options,
                     )
                     .await?;
-                self.install_fetched_artifact(fetched)
+                self.install_fetched_artifact(fetched, force)
             }
         }
     }
@@ -419,6 +558,7 @@ impl RuntimeManager {
         manifest_source: RuntimeManifestSource,
         runtime_name: &str,
         platform: RuntimePlatform,
+        force: bool,
     ) -> Result<RuntimeInstallResult, RuntimeManagerError> {
         let fetched = RuntimeArtifactFetcher::new().fetch_from_manifest_source(
             manifest_source,
@@ -426,7 +566,7 @@ impl RuntimeManager {
             platform,
             &self.paths.downloads_dir(),
         )?;
-        self.install_fetched_artifact(fetched)
+        self.install_fetched_artifact(fetched, force)
     }
 
     pub async fn install_from_manifest_url(
@@ -434,6 +574,7 @@ impl RuntimeManager {
         manifest_url: &str,
         runtime_name: &str,
         platform: RuntimePlatform,
+        force: bool,
     ) -> Result<RuntimeInstallResult, RuntimeManagerError> {
         let fetched = RuntimeArtifactFetcher::new()
             .fetch_from_manifest_url(
@@ -443,19 +584,21 @@ impl RuntimeManager {
                 &self.paths.downloads_dir(),
             )
             .await?;
-        self.install_fetched_artifact(fetched)
+        self.install_fetched_artifact(fetched, force)
     }
 
     fn install_fetched_artifact(
         &self,
         fetched: super::FetchedRuntimeArtifact,
+        force: bool,
     ) -> Result<RuntimeInstallResult, RuntimeManagerError> {
+        let plan = if force {
+            RuntimeInstallPlan::reinstall(fetched.bundle_version)
+        } else {
+            RuntimeInstallPlan::already_local(fetched.bundle_version)
+        };
         self.installer
-            .install_from_verified_archive(
-                RuntimeInstallPlan::reinstall(fetched.bundle_version),
-                &fetched.archive_path,
-                &fetched.sha256,
-            )
+            .install_from_verified_archive(plan, &fetched.archive_path, &fetched.sha256)
             .map_err(RuntimeManagerError::from)
     }
 

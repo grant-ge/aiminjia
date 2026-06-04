@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use tokio::io::AsyncReadExt;
-use tokio::process::{Child, Command};
+use tokio::process::Child;
 use tokio::task::JoinHandle;
 
 use crate::runtime::agent::output_writer::{self, TranscriptLine};
@@ -363,28 +363,6 @@ pub async fn collect_reader(
         crate::storage::console_decode::decode_console_bytes(&bytes),
         truncated,
     ))
-}
-
-/// Inject the bundled runtime bin dir into a child shell's PATH so that
-/// shebang scripts like `npm`/`npx`/`uvx` (`#!/usr/bin/env node` /
-/// `python3`) can locate the interpreter we ship. Without this every
-/// `npm install -g …` emitted by the LLM dies with
-/// `env: node: No such file or directory` (observed on real customer
-/// machines, see screenshots in the 2026-05-21 review).
-///
-/// No-op for legacy/test paths whose `ToolExecutionContext` does not carry
-/// a runtime resolver.
-pub fn inject_bundled_runtime_path(ctx: &ToolExecutionContext, command: &mut Command) {
-    let Some(cap) = ctx.capability.as_ref() else {
-        return;
-    };
-    let Some(resolver) = cap.runtime_resolver.as_ref() else {
-        return;
-    };
-    let Ok(deps) = resolver.workspace_dependencies() else {
-        return;
-    };
-    crate::runtime::dependencies::prepend_bundle_bin_to_path_tokio(command, &deps.node);
 }
 
 /// Classify a shell exit code + stderr into a category we can route on the

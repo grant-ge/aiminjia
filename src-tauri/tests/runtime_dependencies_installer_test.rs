@@ -3,7 +3,7 @@ use std::path::Path;
 
 use app_lib::runtime::dependencies::{
     InstalledRuntimeResolver, RuntimeDependencyError, RuntimeInstallError, RuntimeInstallPlan,
-    RuntimeInstaller, RuntimePaths, RuntimeResolver,
+    RuntimeInstaller, RuntimeLayout, RuntimePaths, RuntimeResolver,
 };
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -292,10 +292,11 @@ fn install_manifest_contains_relative_runtime_paths_and_metadata() {
     assert_eq!(manifest["paths"]["python"], "python/bin/python3");
     assert_eq!(manifest["paths"]["uv"], "uv/bin/uv");
     assert_eq!(manifest["paths"]["uvx"], "uv/bin/uvx");
-    assert_eq!(manifest["paths"]["nodeModules"], "node/node_modules");
+    let layout = RuntimeLayout::current().expect("current layout");
+    assert_eq!(manifest["paths"]["nodeModules"], layout.node_modules());
     assert_eq!(
         manifest["paths"]["pythonSitePackages"],
-        "python/lib/site-packages"
+        layout.python_site_packages()
     );
     assert_eq!(manifest["runtimes"]["node"]["path"], "node");
     assert_eq!(manifest["runtimes"]["python"]["path"], "python");
@@ -426,6 +427,29 @@ fn write_runtime_tar_gz(path: &Path) {
     tar.finish().expect("finish tar");
 }
 
+fn write_runtime_tar_gz_without_package_dirs(path: &Path) {
+    let file = fs::File::create(path).expect("create runtime tar.gz");
+    let encoder = flate2::write::GzEncoder::new(file, flate2::Compression::default());
+    let mut tar = tar::Builder::new(encoder);
+    for entry in [
+        "python/bin/python3",
+        "node/bin/node",
+        "node/bin/npm",
+        "node/bin/npx",
+        "uv/bin/uv",
+        "uv/bin/uvx",
+    ] {
+        let script = format!("#!/usr/bin/env sh\necho {entry} tar-artifact\n");
+        let mut header = tar::Header::new_gnu();
+        header.set_size(script.len() as u64);
+        header.set_mode(0o755);
+        header.set_cksum();
+        tar.append_data(&mut header, entry, script.as_bytes())
+            .expect("append executable");
+    }
+    tar.finish().expect("finish tar");
+}
+
 fn write_runtime_tar_gz_with_symlinked_bins(path: &Path) {
     let file = fs::File::create(path).expect("create runtime tar.gz");
     let encoder = flate2::write::GzEncoder::new(file, flate2::Compression::default());
@@ -523,6 +547,32 @@ fn installs_from_tar_gz_artifact_and_updates_current_pointer() {
 }
 
 #[test]
+fn archive_install_creates_runtime_package_directories_when_missing() {
+    let tempdir = tempdir().expect("tempdir");
+    let paths = RuntimePaths::new(
+        tempdir.path().join("cache-root"),
+        "renlijia-primary-runtime",
+    )
+    .expect("valid paths");
+    let artifact = tempdir.path().join("runtime-no-package-dirs.tar.gz");
+    write_runtime_tar_gz_without_package_dirs(&artifact);
+
+    let result = RuntimeInstaller::new(paths.clone())
+        .install_from_local_archive(RuntimeInstallPlan::already_local("2026.05.20"), &artifact)
+        .expect("installer should not depend on archive package dirs");
+
+    let layout = RuntimeLayout::current().expect("current layout");
+    assert!(result.install_dir.join(layout.node_modules()).is_dir());
+    assert!(result
+        .install_dir
+        .join(layout.python_site_packages())
+        .is_dir());
+    InstalledRuntimeResolver::new(paths.bundle_root())
+        .workspace_dependencies()
+        .expect("installed archive should resolve after package dirs are created");
+}
+
+#[test]
 fn rejects_invalid_tar_gz_artifact_before_switching_current() {
     let tempdir = tempdir().expect("tempdir");
     let paths = RuntimePaths::new(
@@ -560,7 +610,11 @@ fn installs_from_verified_zip_artifact_and_updates_current_pointer() {
         "versions/2026.05.07"
     );
     assert!(result.install_dir.join("node/bin/node").is_file());
-    assert!(result.install_dir.join("python/lib/site-packages").is_dir());
+    let layout = RuntimeLayout::current().expect("current layout");
+    assert!(result
+        .install_dir
+        .join(layout.python_site_packages())
+        .is_dir());
 }
 
 fn write_runtime_zip_with_failing_tool(path: &Path, failing_entry: &str) {

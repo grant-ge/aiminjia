@@ -322,7 +322,7 @@ pub fn runtime_health_payload_from_dependencies(
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeDiagnosticsPayload {
-    /// "bundled" | "installed" | "none"
+    /// "cache" | "bundled" | "none"
     pub active_resolver: String,
     pub bundled_version: Option<String>,
     pub installed_version: Option<String>,
@@ -354,10 +354,10 @@ pub async fn runtime_diagnostics(
         .workspace_dependencies()
         .map_err(|e| format!("resolve failed: {e}"))?;
 
-    let active = if bundled.workspace_dependencies().is_ok() {
+    let active = if mgr.resolver().workspace_dependencies().is_ok() {
+        "cache"
+    } else if bundled.workspace_dependencies().is_ok() {
         "bundled"
-    } else if mgr.resolver().workspace_dependencies().is_ok() {
-        "installed"
     } else {
         "none"
     };

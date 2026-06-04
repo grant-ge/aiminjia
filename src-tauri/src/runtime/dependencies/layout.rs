@@ -75,7 +75,12 @@ impl RuntimeLayout {
     }
 
     pub fn node_modules(self) -> &'static str {
-        "node/node_modules"
+        match self.platform {
+            RuntimePlatform::WindowsX64 => "node/node_modules",
+            RuntimePlatform::DarwinArm64
+            | RuntimePlatform::DarwinX64
+            | RuntimePlatform::LinuxX64 => "node/lib/node_modules",
+        }
     }
 
     pub fn python_site_packages(self) -> &'static str {
@@ -83,7 +88,7 @@ impl RuntimeLayout {
             RuntimePlatform::WindowsX64 => "python/Lib/site-packages",
             RuntimePlatform::DarwinArm64
             | RuntimePlatform::DarwinX64
-            | RuntimePlatform::LinuxX64 => "python/lib/site-packages",
+            | RuntimePlatform::LinuxX64 => "python/lib/python3.12/site-packages",
         }
     }
 
