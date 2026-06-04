@@ -15,6 +15,7 @@ pub mod powershell;
 pub mod powershell_detect;
 pub mod refresh_skills;
 pub mod send_message;
+pub mod shell_task;
 pub mod shell_common;
 pub mod spawn_subagent;
 pub mod task_output;

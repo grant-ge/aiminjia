@@ -1,10 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { getSettings, runtimeDiagnostics, type RuntimeDiagnostics, updateSettings } from '@/lib/tauri'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { runtimeDiagnostics, type RuntimeDiagnostics } from '@/lib/tauri'
 
-import { Switch } from '@/components/common/Switch'
 import { Button } from '@/components/ui/button'
 
 function useResolverLabel(): Record<RuntimeDiagnostics['activeResolver'], string> {
@@ -37,11 +35,8 @@ export function RuntimePanel() {
   const [data, setData] = useState<RuntimeDiagnostics | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const [savingGatewayMode, setSavingGatewayMode] = useState(false)
   const [lastCheckedAt, setLastCheckedAt] = useState<number | null>(null)
   const [now, setNow] = useState(() => Date.now())
-  const cloudGatewayMode = useSettingsStore((s) => s.cloudGatewayMode ?? 'legacy')
-  const setCloudGatewayMode = useSettingsStore((s) => s.setCloudGatewayMode)
 
   const load = async () => {
     setLoading(true)
@@ -66,22 +61,6 @@ export function RuntimePanel() {
     return () => window.clearInterval(id)
   }, [lastCheckedAt])
 
-  const onToggleGatewayV2 = async (enabled: boolean) => {
-    const nextMode = enabled ? 'v2' : 'legacy'
-    const previousMode = cloudGatewayMode
-    setCloudGatewayMode(nextMode)
-    setSavingGatewayMode(true)
-    try {
-      const current = await getSettings()
-      await updateSettings({ ...current, cloudGatewayMode: nextMode })
-    } catch (e) {
-      setCloudGatewayMode(previousMode)
-      setError(String(e))
-    } finally {
-      setSavingGatewayMode(false)
-    }
-  }
-
   return (
     <section className="flex flex-col gap-4">
       <header>
@@ -96,23 +75,6 @@ export function RuntimePanel() {
           {error}
         </div>
       )}
-
-      <div className="flex items-start justify-between gap-4 rounded-md border border-border bg-card p-4">
-        <div>
-          <div className="text-sm font-medium text-foreground">
-            {t('settings.runtime.gatewayV2Title')}
-          </div>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            {t('settings.runtime.gatewayV2Description')}
-          </p>
-        </div>
-        <Switch
-          aria-label={t('settings.runtime.gatewayV2Title')}
-          checked={cloudGatewayMode === 'v2'}
-          disabled={savingGatewayMode}
-          onCheckedChange={(checked) => void onToggleGatewayV2(checked)}
-        />
-      </div>
 
       {data && (
         <dl className="grid grid-cols-[120px_1fr] gap-x-4 gap-y-2 rounded-md border border-border bg-muted/30 p-4 text-sm">

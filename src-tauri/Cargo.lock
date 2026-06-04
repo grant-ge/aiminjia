@@ -86,7 +86,7 @@ dependencies = [
 
 [[package]]
 name = "aijia"
-version = "0.5.32-beta.3"
+version = "0.5.33"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -5822,7 +5822,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-pilot"
 version = "0.5.2"
-source = "git+https://github.com/panzhenchao/tauri-pilot.git?branch=main#bc7cb7c98c904f4b9411e423298d03eb187f9b16"
+source = "git+https://github.com/panzhenchao/tauri-pilot.git?branch=main#5c7b55e8313da4ad99da851c0bd849e660d3214a"
 dependencies = [
  "enigo",
  "libc",

@@ -39,6 +39,13 @@ describe('ChatTopBar', () => {
     expect(onToggleSidebar).toHaveBeenCalled()
   })
 
+  it('allows the share action to be labeled as conversation export', () => {
+    const onShare = vi.fn()
+    render(<ChatTopBar title="X" onShare={onShare} shareLabel="导出对话" />)
+    screen.getByRole('button', { name: '导出对话' }).click()
+    expect(onShare).toHaveBeenCalledTimes(1)
+  })
+
   it('header has h-10, px-6 and bottom border', () => {
     const { container } = render(<ChatTopBar title="X" workspace="Y" />)
     const header = container.querySelector('header')

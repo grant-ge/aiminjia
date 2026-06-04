@@ -402,6 +402,48 @@ describe('useStreaming integration review', () => {
     expect(useChatStore.getState().messages.map((m) => m.id)).toEqual(['client-active'])
   })
 
+  it('clears busy and records prior content when streaming:error arrives', async () => {
+    useChatStore.setState({
+      activeConversationId: 'conv-error',
+      busyConversations: new Set(['conv-error']),
+      streamStates: {
+        'conv-error': {
+          isStreaming: true,
+          streamingContent: 'partial answer',
+          toolExecutions: [],
+        },
+      },
+      isStreaming: true,
+      streamingContent: 'partial answer',
+      toolExecutions: [],
+    })
+
+    render(<HookHarness />)
+    await waitForListeners()
+
+    const errorHandler = tauriEventMock.listeners.get('streaming:error')
+    act(() => {
+      errorHandler?.({
+        payload: {
+          conversationId: 'conv-error',
+          error: 'AIjia v2 stream ended without response.completed',
+          rawError: 'AIjia v2 stream ended without response.completed',
+        },
+      })
+    })
+
+    const state = useChatStore.getState()
+    const clearDiagnostic = useDiagnosticsStore.getState().events.find((event) =>
+      event.event === 'store.streaming.clear' &&
+      event.conversationId === 'conv-error'
+    )
+    expect(state.busyConversations.has('conv-error')).toBe(false)
+    expect(state.streamStates['conv-error']?.isStreaming).toBe(false)
+    expect(state.streamStates['conv-error']?.streamingContent).toBe('')
+    expect(clearDiagnostic?.payload).toMatchObject({ hadContent: true })
+    expect(useDiagnosticsStore.getState().events.some((event) => event.event === 'streaming.error.received')).toBe(true)
+  })
+
   it('registers a listener for turn:completed events', async () => {
     render(<HookHarness />)
     await waitForListeners()
@@ -722,6 +764,31 @@ describe('useStreaming integration review', () => {
     expect(state?.stageStartedAt).toBe(1_700_000_000_000)
     expect(state?.turnStartedAt).toBeGreaterThan(0)
     expect(useDiagnosticsStore.getState().events.some((e) => e.event === 'turn.stage.received')).toBe(true)
+  })
+
+  it('marks conversation busy and streaming when a drained pending turn starts', async () => {
+    useChatStore.setState({ activeConversationId: 'conv-drain-start' })
+    render(<HookHarness />)
+    await waitForListeners()
+
+    const handler = tauriEventMock.listeners.get('turn:stage')
+    expect(handler).toBeTypeOf('function')
+
+    act(() => {
+      handler?.({
+        payload: {
+          conversationId: 'conv-drain-start',
+          runId: 'run-drain',
+          stage: { kind: 'submitted' },
+          stageStartedAtMs: 1_700_000_000_001,
+        },
+      })
+    })
+
+    const state = useChatStore.getState()
+    expect(state.busyConversations.has('conv-drain-start')).toBe(true)
+    expect(state.streamStates['conv-drain-start']?.isStreaming).toBe(true)
+    expect(state.isStreaming).toBe(true)
   })
 
   it('refreshes lastHeartbeatAt on turn:heartbeat event', async () => {

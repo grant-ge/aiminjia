@@ -1150,6 +1150,20 @@ export function revealFileInFolder(fileId: string, conversationId: string): Prom
   })
 }
 
+export interface ExportConversationResult {
+  zipPath: string
+  fileName: string
+  sizeBytes: number
+}
+
+export function exportConversation(conversationId: string): Promise<ExportConversationResult> {
+  return invoke<ExportConversationResult>('export_conversation', { conversationId })
+}
+
+export function revealExportInFolder(path: string): Promise<void> {
+  return invoke<void>('reveal_export_in_folder', { path })
+}
+
 /**
  * Generate a preview (e.g. HTML string or base64 image) for a file.
  *

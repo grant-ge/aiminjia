@@ -300,13 +300,22 @@ fn stored_to_chat(message: &StoredMessage, config: &HistoryConfig) -> ChatMessag
         tool_calls: normalize_tool_calls(message.tool_calls.as_ref())
             .or_else(|| extract_content_tool_calls(message)),
         tool_call_id: extract_tool_call_id(message),
-        name: message.name.clone().or_else(|| {
-            message
-                .content
-                .get("name")
-                .and_then(|v| v.as_str())
-                .map(String::from)
-        }),
+        name: message
+            .name
+            .as_deref()
+            .and_then(non_empty_trimmed)
+            .or_else(|| {
+                message
+                    .content
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .and_then(non_empty_trimmed)
+            }),
+        is_error: message
+            .content
+            .get("isError")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false),
         thinking: None,
         thinking_blocks: extract_thinking_blocks(message),
         anthropic_multimodal_turn: None,
@@ -393,15 +402,14 @@ fn extract_thinking_blocks(message: &StoredMessage) -> Option<Vec<serde_json::Va
 fn extract_tool_call_id(message: &StoredMessage) -> Option<String> {
     message
         .tool_call_id
-        .clone()
-        .filter(|s| !s.is_empty())
+        .as_deref()
+        .and_then(non_empty_trimmed)
         .or_else(|| {
             message
                 .content
                 .get("toolCallId")
                 .and_then(|v| v.as_str())
-                .filter(|s| !s.is_empty())
-                .map(String::from)
+                .and_then(non_empty_trimmed)
         })
 }
 
@@ -499,21 +507,26 @@ fn normalize_tool_calls(tool_calls: Option<&Vec<serde_json::Value>>) -> Option<V
 }
 
 fn normalize_tool_call(value: &serde_json::Value) -> Option<ToolCall> {
-    let id = value.get("id").and_then(|v| v.as_str())?.to_string();
+    let id = non_empty_trimmed(value.get("id").and_then(|v| v.as_str())?)?;
 
     if let (Some(name), Some(arguments)) = (
-        value.get("name").and_then(|v| v.as_str()),
+        value
+            .get("name")
+            .and_then(|v| v.as_str())
+            .and_then(non_empty_trimmed),
         value.get("arguments"),
     ) {
-        return Some(ToolCall {
+        return ToolCall {
             id,
-            name: name.to_string(),
+            name,
             arguments: arguments.clone(),
-        });
+        }
+        .into_valid()
+        .ok();
     }
 
     let function = value.get("function")?;
-    let name = function.get("name").and_then(|v| v.as_str())?;
+    let name = non_empty_trimmed(function.get("name").and_then(|v| v.as_str())?)?;
     let arguments = function
         .get("arguments")
         .cloned()
@@ -526,11 +539,18 @@ fn normalize_tool_call(value: &serde_json::Value) -> Option<ToolCall> {
         other => other,
     };
 
-    Some(ToolCall {
+    ToolCall {
         id,
-        name: name.to_string(),
+        name,
         arguments,
-    })
+    }
+    .into_valid()
+    .ok()
+}
+
+fn non_empty_trimmed(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
 }
 
 #[allow(dead_code)]
@@ -569,7 +589,7 @@ fn filter_invalid_tool_pairs(messages: Vec<ChatMessage>) -> Vec<ChatMessage> {
                 return message
                     .tool_call_id
                     .as_ref()
-                    .map(|id| declared_ids.contains(id))
+                    .map(|id| !id.trim().is_empty() && declared_ids.contains(id))
                     .unwrap_or(false);
             }
             true
@@ -577,9 +597,9 @@ fn filter_invalid_tool_pairs(messages: Vec<ChatMessage>) -> Vec<ChatMessage> {
         .map(|mut message| {
             if message.role == "assistant" {
                 if let Some(tool_calls) = message.tool_calls.clone() {
-                    let all_responded = tool_calls
-                        .iter()
-                        .all(|tool_call| responded_ids.contains(&tool_call.id));
+                    let all_responded = tool_calls.iter().all(|tool_call| {
+                        !tool_call.id.trim().is_empty() && responded_ids.contains(&tool_call.id)
+                    });
                     if !all_responded {
                         message.tool_calls = None;
                     }
@@ -1034,5 +1054,92 @@ mod collapse_trailing_tests {
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0]["thinking"], "hidden");
         assert_eq!(blocks[0]["signature"], "sig-1");
+    }
+
+    #[test]
+    fn build_history_drops_empty_tool_call_and_matching_empty_tool_result() {
+        let stored = vec![
+            StoredMessage {
+                id: "m1".to_string(),
+                conversation_id: "c1".to_string(),
+                role: "assistant".to_string(),
+                content: serde_json::json!({"text": "checking"}),
+                created_at: "2026-06-02T00:00:00Z".to_string(),
+                tool_calls: Some(vec![serde_json::json!({
+                    "id": "",
+                    "name": "",
+                    "arguments": null
+                })]),
+                tool_call_id: None,
+                name: None,
+                run_id: None,
+                schema_version: Some(2),
+                sequence: None,
+                seq: None,
+                rev: None,
+                error: None,
+            },
+            StoredMessage {
+                id: "m2".to_string(),
+                conversation_id: "c1".to_string(),
+                role: "tool".to_string(),
+                content: serde_json::json!({"text": "bad result", "toolCallId": ""}),
+                created_at: "2026-06-02T00:00:01Z".to_string(),
+                tool_calls: None,
+                tool_call_id: Some(String::new()),
+                name: Some(String::new()),
+                run_id: None,
+                schema_version: Some(2),
+                sequence: None,
+                seq: None,
+                rev: None,
+                error: None,
+            },
+        ];
+
+        let history = build_chat_history(&stored, None, &HistoryConfig::default()).unwrap();
+
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].role, "assistant");
+        assert!(history[0].tool_calls.is_none());
+    }
+}
+
+#[cfg(test)]
+mod tool_error_status_history_tests {
+    use super::*;
+    use crate::storage::file_store::types::StoredMessage;
+    use serde_json::json;
+
+    #[test]
+    fn stored_tool_message_preserves_is_error() {
+        let stored = StoredMessage {
+            seq: None,
+            rev: None,
+            id: "tool-1".to_string(),
+            conversation_id: "conv".to_string(),
+            role: "tool".to_string(),
+            content: json!({
+                "content": "permission denied",
+                "toolCallId": "call_1",
+                "name": "Bash",
+                "isError": true
+            }),
+            created_at: "2026-06-02T00:00:00Z".to_string(),
+            tool_calls: None,
+            tool_call_id: None,
+            name: None,
+            run_id: Some("run".to_string()),
+            schema_version: None,
+            sequence: None,
+            error: None,
+        };
+
+        let message = stored_to_chat(&stored, &HistoryConfig::default());
+
+        assert_eq!(message.role, "tool");
+        assert_eq!(message.tool_call_id.as_deref(), Some("call_1"));
+        assert_eq!(message.name.as_deref(), Some("Bash"));
+        assert!(message.is_error);
     }
 }

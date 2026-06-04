@@ -12,7 +12,7 @@ describe('AssistantMarkdown', () => {
     expect(container.querySelector('strong')).toBeInTheDocument()
     expect(container.firstElementChild?.className).toContain('assistant-markdown')
     expect(container.firstElementChild?.className).toContain('text-[15px]')
-    expect(container.firstElementChild?.className).toContain('leading-7')
+    expect(container.firstElementChild?.className).toContain('leading-[1.65]')
   })
 
   it('renders nothing for blank text', () => {

@@ -13,6 +13,8 @@ import { ChatArea } from '@/components/layout/ChatArea'
 import { ChatTopBar } from '@/components/shell/ChatTopBar'
 import { TeamChatDrawer } from '@/components/team/TeamChatDrawer'
 import { Button } from '@/components/ui/button'
+import { ConversationExportDialog } from '@/features/chat/ConversationExportDialog'
+import { useConversationExport } from '@/hooks/useConversationExport'
 import {
   Dialog,
   DialogContent,
@@ -385,6 +387,7 @@ function ChannelChatView({ sessionId }: { sessionId: string }) {
     : ''
   const isInactiveSession = !!activeConv && !activeConv.isActiveRobot
   const { overview: teamOverview } = useTeamOverview(sessionId)
+  const conversationExport = useConversationExport(sessionId)
 
   const handleOpenPreviewTarget = async (target: PreviewTarget) => {
     try {
@@ -403,7 +406,12 @@ function ChannelChatView({ sessionId }: { sessionId: string }) {
 
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden bg-background">
-      <ChatTopBar title={platformTitle} workspace={workspaceLabel} />
+      <ChatTopBar
+        title={platformTitle}
+        workspace={workspaceLabel}
+        onShare={conversationExport.openExportDialog}
+        shareLabel="导出对话"
+      />
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         <div data-testid="channel-chat-layout-column" className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
           <ChatArea />
@@ -419,6 +427,7 @@ function ChannelChatView({ sessionId }: { sessionId: string }) {
         <TeamChatDrawer conversationId={sessionId} overview={teamOverview} />
         <RightPanel conversationId={sessionId} onOpenExternal={(target) => void handleOpenPreviewTarget(target)} />
       </div>
+      <ConversationExportDialog {...conversationExport.dialogProps} />
     </div>
   )
 }

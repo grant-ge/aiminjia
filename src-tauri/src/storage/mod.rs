@@ -1,4 +1,5 @@
 pub mod aijia_home;
+pub mod app_data_contract;
 pub mod console_decode;
 pub mod crypto;
 pub mod current_user_storage;

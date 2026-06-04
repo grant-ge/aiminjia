@@ -40,6 +40,29 @@ impl AsyncTaskState {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AsyncTaskType {
+    LocalAgent,
+    LocalBash,
+}
+
+impl AsyncTaskType {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::LocalAgent => "local_agent",
+            Self::LocalBash => "local_bash",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "local_agent" => Some(Self::LocalAgent),
+            "local_bash" | "local_shell" => Some(Self::LocalBash),
+            _ => None,
+        }
+    }
+}
+
 /// A snapshot of a registered async agent task.
 #[derive(Clone, Debug)]
 pub struct AsyncTaskHandle {
@@ -64,6 +87,8 @@ struct Inner {
     by_name: HashMap<String, AgentId>,
     /// AgentId → handle (includes state)
     by_id: HashMap<AgentId, AsyncTaskHandle>,
+    /// AgentId/taskId -> task type. Existing agent callers use LocalAgent by default.
+    task_types: HashMap<AgentId, AsyncTaskType>,
     /// AgentId → pending messages from parent
     pending: HashMap<AgentId, Vec<String>>,
 }
@@ -88,13 +113,20 @@ impl AsyncAgentTaskStore {
     pub fn register(&self, name: &str, handle: AsyncTaskHandle) {
         let mut g = self.inner.lock().expect("async_task_store: lock poisoned");
         g.by_name.insert(name.to_owned(), handle.agent_id.clone());
+        g.task_types
+            .insert(handle.agent_id.clone(), AsyncTaskType::LocalAgent);
         g.by_id.insert(handle.agent_id.clone(), handle);
     }
 
     /// Register a handle by AgentId only, without a name index.
     /// Used by spawn_subagent when LLM doesn't provide a name.
     pub fn register_anonymous(&self, handle: AsyncTaskHandle) {
+        self.register_anonymous_with_type(handle, AsyncTaskType::LocalAgent);
+    }
+
+    pub fn register_anonymous_with_type(&self, handle: AsyncTaskHandle, task_type: AsyncTaskType) {
         let mut g = self.inner.lock().expect("async_task_store: lock poisoned");
+        g.task_types.insert(handle.agent_id.clone(), task_type);
         g.by_id.insert(handle.agent_id.clone(), handle);
     }
 
@@ -109,6 +141,19 @@ impl AsyncAgentTaskStore {
     pub fn find_by_id(&self, id: &AgentId) -> Option<AsyncTaskHandle> {
         let g = self.inner.lock().expect("async_task_store: lock poisoned");
         g.by_id.get(id).cloned()
+    }
+
+    pub fn task_type_for_id(&self, id: &AgentId) -> Option<AsyncTaskType> {
+        let g = self.inner.lock().expect("async_task_store: lock poisoned");
+        if !g.by_id.contains_key(id) {
+            return None;
+        }
+        Some(
+            g.task_types
+                .get(id)
+                .copied()
+                .unwrap_or(AsyncTaskType::LocalAgent),
+        )
     }
 
     /// Update the state of a registered task.

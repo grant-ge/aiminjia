@@ -118,6 +118,26 @@ mod tests {
     use super::*;
 
     #[test]
+    fn client_info_matches_v2_contract() {
+        let client = ClientInfo {
+            name: "aijia-desktop".to_string(),
+            version: "0.5.32".to_string(),
+            platform: "darwin-arm64".to_string(),
+        };
+
+        let value = serde_json::to_value(client).expect("serialize client");
+        assert_eq!(value["name"], "aijia-desktop");
+        assert_eq!(value["version"], "0.5.32");
+        assert_eq!(value["platform"], "darwin-arm64");
+        assert!(value.get("os").is_none());
+        assert!(value.get("arch").is_none());
+        assert!(value.get("locale").is_none());
+        assert!(value.get("timezone").is_none());
+        assert!(value.get("device_id_hash").is_none());
+        assert!(value.get("scope_key_hash").is_none());
+    }
+
+    #[test]
     fn serializes_schema_version() {
         let req = AijiaResponseRequest {
             schema_version: "aijia.ai.response.v1".to_string(),

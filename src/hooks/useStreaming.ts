@@ -826,7 +826,10 @@ export function useStreaming() {
         conversationId,
         payload: { kind: stage.kind, stageStartedAtMs },
       })
-      useChatStore.getState().setConversationTurnStage(
+      const store = useChatStore.getState()
+      store.setConversationStreaming(conversationId, true)
+      store.addBusyConversation(conversationId)
+      store.setConversationTurnStage(
         conversationId,
         stage,
         stageStartedAtMs,

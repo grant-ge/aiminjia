@@ -71,11 +71,15 @@ impl RuntimeLlmExecutor for SessionTestExecutor {
         if self.wait_for_cancel {
             for _ in 0..100 {
                 if cancel.is_cancelled() {
-                    return Ok(LlmStepResult::Cancelled);
+                    return Ok(LlmStepResult::Cancelled {
+                        partial_content: String::new(),
+                    });
                 }
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
-            return Ok(LlmStepResult::Cancelled);
+            return Ok(LlmStepResult::Cancelled {
+                partial_content: String::new(),
+            });
         }
         let response = {
             let mut responses = self.responses.lock().unwrap();

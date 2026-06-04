@@ -47,6 +47,13 @@ fn sample_item(id: &str) -> PendingItem {
     }
 }
 
+fn sample_im_item(id: &str) -> PendingItem {
+    PendingItem {
+        source: PendingSource::ImDingtalk,
+        ..sample_item(id)
+    }
+}
+
 #[tokio::test]
 async fn enqueue_idle_session_returns_sent_directly() {
     let tmp = TempDir::new().unwrap();
@@ -65,6 +72,26 @@ async fn enqueue_idle_session_returns_sent_directly() {
         other => panic!("expected SentDirectly, got {:?}", other),
     }
     assert!(mgr.snapshot(&session).await.is_empty());
+}
+
+#[tokio::test]
+async fn enqueue_idle_im_session_sets_mobile_channel_context() {
+    let tmp = TempDir::new().unwrap();
+    let (mgr, _registry) = build_manager(&tmp);
+    let session = SessionId::new("conv-im-idle");
+    let outcome = mgr
+        .enqueue_or_send(session.clone(), sample_im_item("im-a"))
+        .await
+        .unwrap();
+    match outcome {
+        EnqueueOutcome::SentDirectly { request } => {
+            assert_eq!(request.content, "text for im-a");
+            let channel_context = request.channel_context.as_deref().unwrap_or_default();
+            assert!(channel_context.contains("IM/移动端渠道"));
+            assert!(channel_context.contains("完整授权链接"));
+        }
+        other => panic!("expected SentDirectly, got {:?}", other),
+    }
 }
 
 #[tokio::test]
@@ -234,6 +261,7 @@ struct CountingDispatcher {
     pub count: AtomicUsize,
     pub last_text: tokio::sync::Mutex<Option<String>>,
     pub last_skill_id: tokio::sync::Mutex<Option<String>>,
+    pub last_channel_context: tokio::sync::Mutex<Option<String>>,
 }
 
 #[async_trait::async_trait]
@@ -242,6 +270,7 @@ impl ChatTurnDispatcher for CountingDispatcher {
         self.count.fetch_add(1, Ordering::SeqCst);
         *self.last_skill_id.lock().await =
             request.skill_command.as_ref().map(|skill| skill.id.clone());
+        *self.last_channel_context.lock().await = request.channel_context.clone();
         *self.last_text.lock().await = Some(request.content);
         Ok(())
     }
@@ -259,6 +288,7 @@ async fn drain_dispatches_after_debounce() {
         count: AtomicUsize::new(0),
         last_text: tokio::sync::Mutex::new(None),
         last_skill_id: tokio::sync::Mutex::new(None),
+        last_channel_context: tokio::sync::Mutex::new(None),
     });
     let mgr = PendingQueueManager::new(registry.clone(), bus, resolver, config);
     mgr.set_dispatcher(dispatcher.clone()).await;
@@ -311,6 +341,81 @@ async fn drain_dispatches_after_debounce() {
 }
 
 #[tokio::test]
+async fn drain_im_item_sets_mobile_channel_context_on_dispatched_request() {
+    let tmp = TempDir::new().unwrap();
+    let registry = Arc::new(RuntimeRunRegistry::new());
+    let bus = Arc::new(RuntimeEventBus::new());
+    let resolver = Arc::new(TempConvDirResolver(tmp.path().to_path_buf()));
+    let mut config = PendingConfig::default();
+    config.debounce_window = std::time::Duration::from_millis(50);
+    let dispatcher = Arc::new(CountingDispatcher {
+        count: AtomicUsize::new(0),
+        last_text: tokio::sync::Mutex::new(None),
+        last_skill_id: tokio::sync::Mutex::new(None),
+        last_channel_context: tokio::sync::Mutex::new(None),
+    });
+    let mgr = PendingQueueManager::new(registry.clone(), bus, resolver, config);
+    mgr.set_dispatcher(dispatcher.clone()).await;
+
+    let session = SessionId::new("conv-im-drain");
+    use crate::runtime::ids::RunId;
+    registry
+        .reserve(session.as_str(), RunId::new("run-1"))
+        .unwrap();
+    mgr.enqueue_or_send(session.clone(), sample_im_item("im-drain"))
+        .await
+        .unwrap();
+
+    registry.clear(session.as_str());
+    mgr.schedule_drain(session.clone()).await;
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+    assert_eq!(dispatcher.count.load(Ordering::SeqCst), 1);
+    let channel_context = dispatcher
+        .last_channel_context
+        .lock()
+        .await
+        .clone()
+        .unwrap_or_default();
+    assert!(channel_context.contains("IM/移动端渠道"));
+    assert!(channel_context.contains("完整授权链接"));
+}
+
+#[tokio::test]
+async fn immediate_drain_bypasses_debounce_window() {
+    let tmp = TempDir::new().unwrap();
+    let registry = Arc::new(RuntimeRunRegistry::new());
+    let bus = Arc::new(RuntimeEventBus::new());
+    let resolver = Arc::new(TempConvDirResolver(tmp.path().to_path_buf()));
+    let mut config = PendingConfig::default();
+    config.debounce_window = std::time::Duration::from_secs(60);
+    let dispatcher = Arc::new(CountingDispatcher {
+        count: AtomicUsize::new(0),
+        last_text: tokio::sync::Mutex::new(None),
+        last_skill_id: tokio::sync::Mutex::new(None),
+        last_channel_context: tokio::sync::Mutex::new(None),
+    });
+    let mgr = PendingQueueManager::new(registry.clone(), bus, resolver, config);
+    mgr.set_dispatcher(dispatcher.clone()).await;
+
+    let session = SessionId::new("conv-immediate-drain");
+    use crate::runtime::ids::RunId;
+    registry
+        .reserve(session.as_str(), RunId::new("run-1"))
+        .unwrap();
+    mgr.enqueue_or_send(session.clone(), sample_item("a"))
+        .await
+        .unwrap();
+
+    registry.clear(session.as_str());
+    mgr.schedule_drain_immediate(session.clone()).await;
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    assert_eq!(dispatcher.count.load(Ordering::SeqCst), 1);
+    assert!(mgr.snapshot(&session).await.is_empty());
+}
+
+#[tokio::test]
 async fn drain_preserves_skill_command_on_dispatched_request() {
     let tmp = TempDir::new().unwrap();
     let registry = Arc::new(RuntimeRunRegistry::new());
@@ -322,6 +427,7 @@ async fn drain_preserves_skill_command_on_dispatched_request() {
         count: AtomicUsize::new(0),
         last_text: tokio::sync::Mutex::new(None),
         last_skill_id: tokio::sync::Mutex::new(None),
+        last_channel_context: tokio::sync::Mutex::new(None),
     });
     let mgr = PendingQueueManager::new(registry.clone(), bus, resolver, config);
     mgr.set_dispatcher(dispatcher.clone()).await;
@@ -363,6 +469,7 @@ async fn drain_skipped_when_session_busy() {
         count: AtomicUsize::new(0),
         last_text: tokio::sync::Mutex::new(None),
         last_skill_id: tokio::sync::Mutex::new(None),
+        last_channel_context: tokio::sync::Mutex::new(None),
     });
     let mgr = PendingQueueManager::new(registry.clone(), bus, resolver, config);
     mgr.set_dispatcher(dispatcher.clone()).await;
@@ -457,6 +564,7 @@ async fn drain_recently_drained_blocks_replay_after_restore() {
         count: AtomicUsize::new(0),
         last_text: tokio::sync::Mutex::new(None),
         last_skill_id: tokio::sync::Mutex::new(None),
+        last_channel_context: tokio::sync::Mutex::new(None),
     });
     let mgr = PendingQueueManager::new(registry.clone(), bus, resolver, config);
     mgr.set_dispatcher(dispatcher.clone()).await;

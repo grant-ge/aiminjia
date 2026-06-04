@@ -279,7 +279,9 @@ fn injects_reason_specific_synthetic_tool_result_for_sibling_error() {
 #[tokio::test]
 async fn cancelled_turn_still_emits_stream_done() {
     let executor = Arc::new(RecordingExecutor::new(
-        vec![LlmStepResult::Cancelled],
+        vec![LlmStepResult::Cancelled {
+            partial_content: String::new(),
+        }],
         vec![json!({
             "role": "assistant",
             "content": "",

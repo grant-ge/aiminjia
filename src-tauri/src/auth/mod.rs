@@ -721,7 +721,19 @@ impl AuthManager {
     /// Fetch available models from the server.
     pub async fn get_available_models(&self) -> Result<Vec<CloudModelInfo>> {
         let session_key = self.get_session_key().await?;
-        self.client.list_models(&session_key).await
+        match self.client.list_models(&session_key).await {
+            Ok(models) => Ok(models),
+            Err(e) if is_auth_unauthorized(&e) => {
+                log::warn!(
+                    "[get_available_models] list_models returned 401; refreshing session_key and retrying once: {}",
+                    e
+                );
+                self.invalidate_session_key().await;
+                let refreshed_session_key = self.get_session_key().await?;
+                self.client.list_models(&refreshed_session_key).await
+            }
+            Err(e) => Err(e),
+        }
     }
 
     /// Fetch personal-tenant billing summary.

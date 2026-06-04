@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom'
 import * as React from 'react'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -132,6 +132,11 @@ describe('AppSidebar', () => {
     if (typeof localStorage !== 'undefined') localStorage.removeItem('aijia-sidebar-tab')
     chatState.activeConversationId = null
     chatState.conversations = []
+    Object.assign(navigator, {
+      clipboard: {
+        writeText: vi.fn(),
+      },
+    })
     await clearExpertTeam('normal-conv')
     await clearExpertTeam('expert-conv')
   })
@@ -246,6 +251,21 @@ describe('AppSidebar', () => {
     // push name) per the 2026-05-21 channel label redesign.
     expect(screen.getByText('钉钉')).toBeInTheDocument()
     expect(screen.getByText('钉钉私聊')).toBeInTheDocument()
+  })
+
+  it('copies only the channel conversation id from the channel row context menu', async () => {
+    localStorage.setItem('aijia-sidebar-tab', 'channel')
+    render(<AppSidebar />)
+
+    fireEvent.contextMenu(screen.getByRole('button', { name: '钉钉私聊' }))
+
+    const copyItem = await screen.findByRole('menuitem', { name: '复制对话 ID' })
+    expect(screen.queryByRole('menuitem', { name: '重命名聊天' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: '归档聊天' })).not.toBeInTheDocument()
+
+    await userEvent.click(copyItem)
+
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith('dt-session-1')
   })
 
 })

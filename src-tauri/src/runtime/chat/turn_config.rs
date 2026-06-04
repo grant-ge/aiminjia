@@ -45,7 +45,7 @@ impl Default for ResolvedLlmSettings {
             custom_model_name: String::new(),
             cloud_model: String::new(),
             cloud_model_type: String::new(),
-            cloud_gateway_mode: CloudGatewayMode::Legacy,
+            cloud_gateway_mode: CloudGatewayMode::V2,
             thinking_type: "disabled".to_string(),
             thinking_budget_tokens: 8000,
             masking_level: "strict".to_string(),
@@ -221,8 +221,8 @@ pub enum LlmStepResult {
         cache_read_input_tokens: u64,
         stop_reason: Option<String>,
     },
-    /// 用户取消
-    Cancelled,
+    /// 用户取消。`partial_content` 是取消前本轮已收到并发给前端的流式文本。
+    Cancelled { partial_content: String },
 }
 
 /// 结构化错误

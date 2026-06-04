@@ -96,7 +96,7 @@ impl RuntimeLlmExecutor for RecordingExecutor {
         _tool_calls: &[Value],
         _generated_file_ids: &[String],
         _file_metas: &[Value],
-        _thinking_blocks: &[serde_json::Value],
+        _thinking_blocks: &[Value],
         _error: Option<&app_lib::storage::file_store::types::MessageError>,
     ) -> Result<String, TurnError> {
         Ok("assistant-msg".to_string())
@@ -134,7 +134,9 @@ impl RuntimeLlmExecutor for CancelingExecutor {
             .lock()
             .unwrap()
             .push(input.messages.clone());
-        Ok(LlmStepResult::Cancelled)
+        Ok(LlmStepResult::Cancelled {
+            partial_content: String::new(),
+        })
     }
 
     async fn persist_assistant_message(
@@ -144,7 +146,7 @@ impl RuntimeLlmExecutor for CancelingExecutor {
         _tool_calls: &[Value],
         _generated_file_ids: &[String],
         _file_metas: &[Value],
-        _thinking_blocks: &[serde_json::Value],
+        _thinking_blocks: &[Value],
         _error: Option<&app_lib::storage::file_store::types::MessageError>,
     ) -> Result<String, TurnError> {
         Ok("assistant-msg".to_string())
@@ -224,7 +226,7 @@ impl RuntimeLlmExecutor for IterationDrainExecutor {
         _tool_calls: &[Value],
         _generated_file_ids: &[String],
         _file_metas: &[Value],
-        _thinking_blocks: &[serde_json::Value],
+        _thinking_blocks: &[Value],
         _error: Option<&app_lib::storage::file_store::types::MessageError>,
     ) -> Result<String, TurnError> {
         Ok("assistant-msg".to_string())

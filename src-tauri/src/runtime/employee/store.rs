@@ -1196,7 +1196,9 @@ fn latest_snapshot_for_template(
     // 缓存为唯一来源（已移除 embedded bootstrap fallback，参见 template_store.rs 模块注释）
     let mut best: Option<(ts::TemplateSnapshot, &'static str)> = None;
 
-    let tid_dir = cache_dir.join(tid);
+    // 必须走 template_store 的统一入口做本地目录名编码（`:` 在 Windows 非法），
+    // 否则会去 `cache_dir/builtin:xxx` 找、而 write_cache 写在编码目录。
+    let tid_dir = ts::tid_cache_dir(cache_dir, tid);
     if let Ok(rd) = std::fs::read_dir(&tid_dir) {
         for entry in rd.flatten() {
             let p = entry.path();

@@ -578,23 +578,32 @@ fn llm_response_to_step_result(
         let tool_calls: Vec<RuntimeToolCallRequest> = response
             .tool_calls
             .into_iter()
-            .map(|tc| RuntimeToolCallRequest {
-                tool_call_id: tc.id,
-                tool_name: tc.name,
-                args: tc.arguments,
-                purpose: None,
-            })
+            .filter_map(
+                |tc| match RuntimeToolCallRequest::from_tool_call(tc, None) {
+                    Ok(call) => Some(call),
+                    Err(err) => {
+                        log::error!(
+                            "[llm_response_to_step_result] dropping invalid tool_call: {err}"
+                        );
+                        None
+                    }
+                },
+            )
             .collect();
-        LlmStepResult::ToolCalls {
-            assistant_content: response.content,
-            tool_calls,
-            tokens_in,
-            tokens_out,
-            cache_creation_input_tokens: cache_creation,
-            cache_read_input_tokens: cache_read,
-            thinking_blocks,
+        if !tool_calls.is_empty() {
+            return LlmStepResult::ToolCalls {
+                assistant_content: response.content,
+                tool_calls,
+                tokens_in,
+                tokens_out,
+                cache_creation_input_tokens: cache_creation,
+                cache_read_input_tokens: cache_read,
+                thinking_blocks,
+            };
         }
-    } else {
+    }
+
+    {
         let stop_reason_str = match response.stop_reason {
             StopReason::EndTurn => "end_turn",
             StopReason::ToolUse => "tool_use",
@@ -866,7 +875,9 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                         "[run_llm_step] Cancel signal detected conv={}",
                         input.conversation_id
                     );
-                    return Ok(LlmStepResult::Cancelled);
+                    return Ok(LlmStepResult::Cancelled {
+                        partial_content: iter_content,
+                    });
                 }
 
                 let chunk_timeout =
@@ -879,7 +890,9 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                                 "[run_llm_step] cancel_rx fired conv={}",
                                 input.conversation_id
                             );
-                            return Ok(LlmStepResult::Cancelled);
+                            return Ok(LlmStepResult::Cancelled {
+                                partial_content: iter_content,
+                            });
                         }
                     }
                     // Chunk timeout — treat as stalled stream
@@ -1103,6 +1116,16 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                                 // tool-argument streaming and ping-only thinking windows.
                             }
                             Some(StreamEvent::ToolCallStart { tool_call }) => {
+                                let tool_call = match tool_call.into_valid() {
+                                    Ok(tool_call) => tool_call,
+                                    Err(err) => {
+                                        let error = format!("malformed stream tool_call: {err}");
+                                        log::error!("[run_llm_step] {error}");
+                                        return Err(TurnError::LlmError(
+                                            "AI 服务返回了无效工具调用，请重试。".to_string(),
+                                        ));
+                                    }
+                                };
                                 log::info!(
                                     "[run_llm_step] Tool call received: name='{}' id='{}'",
                                     tool_call.name, tool_call.id
@@ -1265,15 +1288,24 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             let requests: Vec<crate::runtime::chat::tool_round_types::RuntimeToolCallRequest> =
                 tool_calls
                     .into_iter()
-                    .map(
-                        |tc| crate::runtime::chat::tool_round_types::RuntimeToolCallRequest {
-                            tool_call_id: tc.id,
-                            tool_name: tc.name,
-                            args: tc.arguments,
-                            purpose: None,
-                        },
-                    )
+                    .filter_map(|tc| {
+                        match crate::runtime::chat::tool_round_types::RuntimeToolCallRequest::from_tool_call(tc, None) {
+                            Ok(call) => Some(call),
+                            Err(err) => {
+                                log::error!(
+                                    "[run_llm_step] dropping invalid tool_call before runtime conversion: {err}"
+                                );
+                                None
+                            }
+                        }
+                    })
                     .collect();
+
+            if requests.is_empty() {
+                return Err(TurnError::LlmError(
+                    "AI 服务返回了无效工具调用，请重试。".to_string(),
+                ));
+            }
 
             return Ok(LlmStepResult::ToolCalls {
                 assistant_content: iter_content,
@@ -2120,10 +2152,10 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::settings::CloudGatewayMode;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Condvar, Mutex};
 
-    use crate::models::settings::CloudGatewayMode;
     use crate::storage::message_write_queue::{MessageWriteQueue, MessageWriteTarget};
     use tempfile::TempDir;
 
@@ -2134,9 +2166,9 @@ mod tests {
     }
 
     #[test]
-    fn build_gateway_settings_preserves_cloud_gateway_mode() {
+    fn build_gateway_settings_forces_cloud_gateway_mode_v2() {
         let resolved = ResolvedLlmSettings {
-            cloud_gateway_mode: CloudGatewayMode::V2,
+            cloud_gateway_mode: CloudGatewayMode::Legacy,
             ..ResolvedLlmSettings::default()
         };
 
@@ -2530,7 +2562,9 @@ fn decrypt_api_key(ss: &SecureStorage, value: &str) -> String {
 }
 
 fn build_gateway_settings(settings: &ResolvedLlmSettings) -> AppSettings {
-    settings.to_app_settings()
+    let mut app_settings = settings.to_app_settings();
+    app_settings.cloud_gateway_mode = crate::models::settings::CloudGatewayMode::V2;
+    app_settings
 }
 
 fn system_prompt_content(value: Option<serde_json::Value>, fallback: &str) -> Option<String> {
@@ -2736,6 +2770,7 @@ fn strip_thinking_tag(text: &str) -> String {
 pub struct TauriChatCommandAdapter {
     runtime: SessionRuntime,
     services: TauriChatServices,
+    stopped_conversations_pending_drain: Arc<Mutex<HashSet<String>>>,
 }
 
 fn infer_runtime_root(path: &std::path::Path) -> std::path::PathBuf {
@@ -2929,7 +2964,46 @@ impl TauriChatCommandAdapter {
         // (which constructs a per-request ToolDispatcher with all services);
         // we don't have an `Arc<Self>` until the caller wraps us.  See
         // `wire_path_c_wake_to_self` for details and rationale.
-        Self { runtime, services }
+        Self {
+            runtime,
+            services,
+            stopped_conversations_pending_drain: Arc::new(Mutex::new(HashSet::new())),
+        }
+    }
+
+    fn request_immediate_pending_drain_after_stop(&self, conversation_id: &str) {
+        if !self.services.gateway.is_conversation_busy(conversation_id) {
+            return;
+        }
+        if let Ok(mut stopped) = self.stopped_conversations_pending_drain.lock() {
+            stopped.insert(conversation_id.to_string());
+        }
+    }
+
+    fn consume_immediate_pending_drain_after_stop(&self, conversation_id: &str) -> bool {
+        self.stopped_conversations_pending_drain
+            .lock()
+            .map(|mut stopped| stopped.remove(conversation_id))
+            .unwrap_or(false)
+    }
+
+    async fn schedule_pending_drain_after_turn(&self, conversation_id: &str) {
+        if let Some(mgr) = self
+            .services
+            .app
+            .try_state::<Arc<crate::runtime::pending::PendingQueueManager>>()
+        {
+            let immediate = self.consume_immediate_pending_drain_after_stop(conversation_id);
+            let mgr_clone = mgr.inner().clone();
+            let session_id = crate::runtime::ids::SessionId::new(conversation_id.to_string());
+            tauri::async_runtime::spawn(async move {
+                if immediate {
+                    mgr_clone.schedule_drain_immediate(session_id).await;
+                } else {
+                    mgr_clone.schedule_drain(session_id).await;
+                }
+            });
+        }
     }
 
     async fn load_llm_settings_for_turn(
@@ -3299,17 +3373,8 @@ impl TauriChatCommandAdapter {
         // After this turn ends (success or otherwise), let the PendingQueueManager
         // schedule a debounced drain so any items buffered while we were busy
         // get merged into the next turn.
-        if let Some(mgr) = self
-            .services
-            .app
-            .try_state::<Arc<crate::runtime::pending::PendingQueueManager>>()
-        {
-            let mgr_clone = mgr.inner().clone();
-            let session_id = crate::runtime::ids::SessionId::new(conversation_id.clone());
-            tauri::async_runtime::spawn(async move {
-                mgr_clone.schedule_drain(session_id).await;
-            });
-        }
+        self.schedule_pending_drain_after_turn(&conversation_id)
+            .await;
 
         result
     }
@@ -3574,17 +3639,8 @@ impl TauriChatCommandAdapter {
         // merged into the next one. Mirrors the same hook at the tail of
         // `send_chat_request` (IM path) — without this, app-side pending items
         // sit in the queue forever after the SentDirectly turn finishes.
-        if let Some(mgr) = self
-            .services
-            .app
-            .try_state::<Arc<crate::runtime::pending::PendingQueueManager>>()
-        {
-            let mgr_clone = mgr.inner().clone();
-            let session_id = crate::runtime::ids::SessionId::new(conversation_id.clone());
-            tauri::async_runtime::spawn(async move {
-                mgr_clone.schedule_drain(session_id).await;
-            });
-        }
+        self.schedule_pending_drain_after_turn(&conversation_id)
+            .await;
 
         result
     }
@@ -3601,6 +3657,7 @@ impl TauriChatCommandAdapter {
     }
 
     pub async fn stop_streaming(&self, conversation_id: String) -> Result<(), String> {
+        self.request_immediate_pending_drain_after_stop(&conversation_id);
         let session_id = SessionId::new(conversation_id.clone());
         self.runtime.cancel_session(
             &session_id,

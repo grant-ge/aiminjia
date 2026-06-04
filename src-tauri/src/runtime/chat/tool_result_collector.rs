@@ -299,6 +299,18 @@ mod tests {
     }
 
     #[test]
+    fn collected_error_tool_result_deserializes_to_chat_message_with_error_status() {
+        let out = collect_results(vec![completed("call_1", "Bash", "permission denied", true)]);
+        let message: crate::llm::streaming::ChatMessage =
+            serde_json::from_value(out.tool_result_messages[0].clone())
+                .expect("tool result json should deserialize as ChatMessage");
+
+        assert_eq!(message.tool_call_id.as_deref(), Some("call_1"));
+        assert_eq!(message.name.as_deref(), Some("Bash"));
+        assert!(message.is_error);
+    }
+
+    #[test]
     fn context_modifier_messages_are_collected() {
         let results = vec![ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
             tool_call_id: "tc1".to_string(),

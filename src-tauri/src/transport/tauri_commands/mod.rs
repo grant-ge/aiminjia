@@ -8,6 +8,7 @@ pub mod agents;
 pub mod auth;
 pub mod billing;
 pub mod chat;
+pub mod conversation_export;
 pub mod file;
 pub mod mcp;
 pub mod network;

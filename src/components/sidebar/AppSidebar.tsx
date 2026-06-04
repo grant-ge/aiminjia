@@ -4,7 +4,8 @@
  */
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { CheckSquare, GraduationCap, MessageSquare, Users } from 'lucide-react'
+import { CheckSquare, Copy, GraduationCap, MessageSquare, Users } from 'lucide-react'
+import * as ContextMenuPrimitive from '@radix-ui/react-context-menu'
 
 import { useChat } from '@/hooks/useChat'
 import { useBrandingStore } from '@/stores/brandingStore'
@@ -22,6 +23,7 @@ import { groupConversationsByProject } from './conversationProjects'
 import { SidebarFooterSettings } from './SidebarFooterSettings'
 import { SidebarNav, type SidebarNavKey } from './SidebarNav'
 import { TenantHeader } from './TenantHeader'
+import type { ChannelConversation } from '@/lib/tauri'
 
 function channelConversationLabel(
   conversation: {
@@ -38,6 +40,60 @@ function channelConversationLabel(
     if (trimmed) return trimmed
   }
   return `${platform}${kind}`
+}
+
+interface ChannelConversationRowProps {
+  active: boolean
+  conversation: ChannelConversation
+  label: string
+  copyLabel: string
+  onSelect: () => void
+}
+
+function ChannelConversationRow({
+  active,
+  conversation,
+  label,
+  copyLabel,
+  onSelect,
+}: ChannelConversationRowProps) {
+  const rowClassName = active
+    ? 'flex w-full items-center justify-between rounded-lg bg-sidebar-accent px-3 py-2 text-left text-sm font-semibold text-sidebar-foreground'
+    : 'flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
+
+  return (
+    <ContextMenuPrimitive.Root>
+      <ContextMenuPrimitive.Trigger asChild>
+        <button
+          type="button"
+          onClick={onSelect}
+          className={rowClassName}
+          data-aijia-channel-conversation-row
+          data-aijia-conversation-id={conversation.sessionId}
+        >
+          <span className="truncate">{label}</span>
+          {conversation.unreadCount > 0 && (
+            <span className="ml-2 rounded-full bg-primary px-1.5 text-xs text-primary-foreground">
+              {conversation.unreadCount}
+            </span>
+          )}
+        </button>
+      </ContextMenuPrimitive.Trigger>
+      <ContextMenuPrimitive.Portal>
+        <ContextMenuPrimitive.Content
+          className="z-50 min-w-[10rem] overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-[var(--shadow-popover)]"
+        >
+          <ContextMenuPrimitive.Item
+            onSelect={() => void navigator.clipboard.writeText(conversation.sessionId)}
+            className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground"
+          >
+            <Copy className="h-3.5 w-3.5 shrink-0" />
+            <span>{copyLabel}</span>
+          </ContextMenuPrimitive.Item>
+        </ContextMenuPrimitive.Content>
+      </ContextMenuPrimitive.Portal>
+    </ContextMenuPrimitive.Root>
+  )
 }
 
 export function AppSidebar() {
@@ -215,6 +271,18 @@ export function AppSidebar() {
     setRoute({ kind: 'channel', sessionId })
   }
 
+  const renderChannelRows = (items: ChannelConversation[]) =>
+    items.map((conversation) => (
+      <ChannelConversationRow
+        key={conversation.sessionId}
+        active={channelActiveSessionId === conversation.sessionId}
+        conversation={conversation}
+        label={channelConversationLabel(conversation, t)}
+        copyLabel={t('sidebar.copyConversationId')}
+        onSelect={() => selectChannelSession(conversation.sessionId)}
+      />
+    ))
+
   return (
     <>
     <aside className="flex h-full w-[256px] shrink-0 flex-col overflow-hidden bg-sidebar px-2 pt-2 text-sidebar-foreground">
@@ -333,25 +401,7 @@ export function AppSidebar() {
                       {channelEmptyHint(dingtalkState)}
                     </button>
                   ) : (
-                    activeConversations.map((conversation) => (
-                      <button
-                        key={conversation.sessionId}
-                        type="button"
-                        onClick={() => selectChannelSession(conversation.sessionId)}
-                        className={
-                          channelActiveSessionId === conversation.sessionId
-                            ? 'flex w-full items-center justify-between rounded-lg bg-sidebar-accent px-3 py-2 text-left text-sm font-semibold text-sidebar-foreground'
-                            : 'flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
-                        }
-                      >
-                        <span className="truncate">{channelConversationLabel(conversation, t)}</span>
-                        {conversation.unreadCount > 0 && (
-                          <span className="ml-2 rounded-full bg-primary px-1.5 text-xs text-primary-foreground">
-                            {conversation.unreadCount}
-                          </span>
-                        )}
-                      </button>
-                    ))
+                    renderChannelRows(activeConversations)
                   )}
                 </div>
               </div>
@@ -374,25 +424,7 @@ export function AppSidebar() {
                       {channelEmptyHint(feishuState)}
                     </button>
                   ) : (
-                    activeFeishuConversations.map((conversation) => (
-                      <button
-                        key={conversation.sessionId}
-                        type="button"
-                        onClick={() => selectChannelSession(conversation.sessionId)}
-                        className={
-                          channelActiveSessionId === conversation.sessionId
-                            ? 'flex w-full items-center justify-between rounded-lg bg-sidebar-accent px-3 py-2 text-left text-sm font-semibold text-sidebar-foreground'
-                            : 'flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
-                        }
-                      >
-                        <span className="truncate">{channelConversationLabel(conversation, t)}</span>
-                        {conversation.unreadCount > 0 && (
-                          <span className="ml-2 rounded-full bg-primary px-1.5 text-xs text-primary-foreground">
-                            {conversation.unreadCount}
-                          </span>
-                        )}
-                      </button>
-                    ))
+                    renderChannelRows(activeFeishuConversations)
                   )}
                 </div>
               </div>
@@ -415,25 +447,7 @@ export function AppSidebar() {
                       {channelEmptyHint(wecomState)}
                     </button>
                   ) : (
-                    activeWecomConversations.map((conversation) => (
-                      <button
-                        key={conversation.sessionId}
-                        type="button"
-                        onClick={() => selectChannelSession(conversation.sessionId)}
-                        className={
-                          channelActiveSessionId === conversation.sessionId
-                            ? 'flex w-full items-center justify-between rounded-lg bg-sidebar-accent px-3 py-2 text-left text-sm font-semibold text-sidebar-foreground'
-                            : 'flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
-                        }
-                      >
-                        <span className="truncate">{channelConversationLabel(conversation, t)}</span>
-                        {conversation.unreadCount > 0 && (
-                          <span className="ml-2 rounded-full bg-primary px-1.5 text-xs text-primary-foreground">
-                            {conversation.unreadCount}
-                          </span>
-                        )}
-                      </button>
-                    ))
+                    renderChannelRows(activeWecomConversations)
                   )}
                 </div>
               </div>
@@ -456,25 +470,7 @@ export function AppSidebar() {
                       {channelEmptyHint(wechatState)}
                     </button>
                   ) : (
-                    activeWechatConversations.map((conversation) => (
-                      <button
-                        key={conversation.sessionId}
-                        type="button"
-                        onClick={() => selectChannelSession(conversation.sessionId)}
-                        className={
-                          channelActiveSessionId === conversation.sessionId
-                            ? 'flex w-full items-center justify-between rounded-lg bg-sidebar-accent px-3 py-2 text-left text-sm font-semibold text-sidebar-foreground'
-                            : 'flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
-                        }
-                      >
-                        <span className="truncate">{channelConversationLabel(conversation, t)}</span>
-                        {conversation.unreadCount > 0 && (
-                          <span className="ml-2 rounded-full bg-primary px-1.5 text-xs text-primary-foreground">
-                            {conversation.unreadCount}
-                          </span>
-                        )}
-                      </button>
-                    ))
+                    renderChannelRows(activeWechatConversations)
                   )}
                 </div>
               </div>
@@ -497,25 +493,7 @@ export function AppSidebar() {
                       {channelEmptyHint(telegramState)}
                     </button>
                   ) : (
-                    activeTelegramConversations.map((conversation) => (
-                      <button
-                        key={conversation.sessionId}
-                        type="button"
-                        onClick={() => selectChannelSession(conversation.sessionId)}
-                        className={
-                          channelActiveSessionId === conversation.sessionId
-                            ? 'flex w-full items-center justify-between rounded-lg bg-sidebar-accent px-3 py-2 text-left text-sm font-semibold text-sidebar-foreground'
-                            : 'flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
-                        }
-                      >
-                        <span className="truncate">{channelConversationLabel(conversation, t)}</span>
-                        {conversation.unreadCount > 0 && (
-                          <span className="ml-2 rounded-full bg-primary px-1.5 text-xs text-primary-foreground">
-                            {conversation.unreadCount}
-                          </span>
-                        )}
-                      </button>
-                    ))
+                    renderChannelRows(activeTelegramConversations)
                   )}
                 </div>
               </div>
@@ -538,25 +516,7 @@ export function AppSidebar() {
                       {channelEmptyHint(whatsappState)}
                     </button>
                   ) : (
-                    activeWhatsappConversations.map((conversation) => (
-                      <button
-                        key={conversation.sessionId}
-                        type="button"
-                        onClick={() => selectChannelSession(conversation.sessionId)}
-                        className={
-                          channelActiveSessionId === conversation.sessionId
-                            ? 'flex w-full items-center justify-between rounded-lg bg-sidebar-accent px-3 py-2 text-left text-sm font-semibold text-sidebar-foreground'
-                            : 'flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
-                        }
-                      >
-                        <span className="truncate">{channelConversationLabel(conversation, t)}</span>
-                        {conversation.unreadCount > 0 && (
-                          <span className="ml-2 rounded-full bg-primary px-1.5 text-xs text-primary-foreground">
-                            {conversation.unreadCount}
-                          </span>
-                        )}
-                      </button>
-                    ))
+                    renderChannelRows(activeWhatsappConversations)
                   )}
                 </div>
               </div>

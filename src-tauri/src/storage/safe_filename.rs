@@ -54,6 +54,43 @@ pub fn ensure_safe_filename(name: &str) -> Result<()> {
     Ok(())
 }
 
+/// Transform an arbitrary identifier into a single path component that is safe
+/// on every platform, by replacing each Windows-forbidden / control character
+/// with `_` and trimming trailing dots/spaces. Unlike [`ensure_safe_filename`]
+/// (which *validates* and may reject), this never fails — it always yields a
+/// usable directory/file name.
+///
+/// IMPORTANT: this is lossy (e.g. `builtin:xiaogong` → `builtin_xiaogong`), so
+/// the mapping is not reversible and two distinct inputs *could* collapse to
+/// the same output. Callers must therefore keep the original identifier inside
+/// the file *content* (the employee-template cache stores `template_id` in the
+/// snapshot JSON) rather than recovering it from the directory name.
+///
+/// Motivation: ids like `builtin:xiaogong` contain `:`, which is legal on
+/// macOS/Linux but illegal on Windows — using such an id verbatim as a
+/// directory name silently works on the dev Mac and then `create_dir` fails
+/// on Windows. See `docs/decisions/ui-platform-decisions.md` (Windows file
+/// name compatibility).
+pub fn sanitize_path_component(name: &str) -> String {
+    let mut out: String = name
+        .chars()
+        .map(|ch| {
+            if (ch as u32) < 0x20 || FORBIDDEN_CHARS.contains(&ch) {
+                '_'
+            } else {
+                ch
+            }
+        })
+        .collect();
+    while out.ends_with('.') || out.ends_with(' ') {
+        out.pop();
+    }
+    if out.is_empty() {
+        out.push('_');
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -146,6 +146,7 @@ impl LlmProviderTrait for AijiaGatewayV2Provider {
             crate::llm::gate_log::record_response_body(&gate_log_id, status.as_u16(), &body);
             return Err(anyhow!("AIjia v2 stream error ({}): {}", status, body));
         }
+        crate::llm::gate_log::record_stream_started(&gate_log_id);
 
         Ok(Box::pin(sse_bytes_to_events(
             response.bytes_stream(),
@@ -319,7 +320,9 @@ fn build_aijia_request_for_route_with_stream(
             }
             continue;
         }
-        messages.push(to_canonical_message(message));
+        if let Some(message) = to_canonical_message(message) {
+            messages.push(message);
+        }
     }
 
     let tools = if plan.use_tools {
@@ -359,9 +362,21 @@ fn build_aijia_request_for_route_with_stream(
         client: ClientInfo {
             name: "aijia-desktop".to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
-            platform: std::env::consts::ARCH.to_string(),
+            platform: client_platform(),
         },
     }
+}
+
+fn client_platform() -> String {
+    let os = match std::env::consts::OS {
+        "macos" => "darwin",
+        other => other,
+    };
+    let arch = match std::env::consts::ARCH {
+        "aarch64" => "arm64",
+        other => other,
+    };
+    format!("{os}-{arch}")
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -473,11 +488,32 @@ fn request_has_image_input(request: &LlmRequest) -> bool {
         })
 }
 
-fn to_canonical_message(message: ChatMessage) -> CanonicalMessage {
+fn to_canonical_message(message: ChatMessage) -> Option<CanonicalMessage> {
+    if message.role == "tool" {
+        let valid_id = message
+            .tool_call_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|id| !id.is_empty());
+        let valid_name = message
+            .name
+            .as_deref()
+            .map(str::trim)
+            .filter(|name| !name.is_empty());
+        if valid_id.is_none() || valid_name.is_none() {
+            log::warn!(
+                "[aijia-v2] dropping invalid tool_result message: tool_call_id={:?} name={:?}",
+                message.tool_call_id,
+                message.name
+            );
+            return None;
+        }
+    }
+
     let role = if message.role == "tool" {
         "tool_result".to_string()
     } else {
-        message.role
+        message.role.clone()
     };
 
     let mut content = Vec::new();
@@ -513,7 +549,11 @@ fn to_canonical_message(message: ChatMessage) -> CanonicalMessage {
     }
     if let Some(thinking_blocks) = message.thinking_blocks {
         for block in thinking_blocks {
-            content.push(thinking_block_to_content(block));
+            if block.is_object() {
+                content.push(thinking_block_to_content(block));
+            } else {
+                log::warn!("[aijia-v2] dropping invalid non-object thinking block");
+            }
         }
     }
     if let Some(turn) = message.anthropic_multimodal_turn {
@@ -556,6 +596,13 @@ fn to_canonical_message(message: ChatMessage) -> CanonicalMessage {
     }
     if let Some(tool_calls) = message.tool_calls {
         for tool_call in tool_calls {
+            let tool_call = match tool_call.into_valid() {
+                Ok(tool_call) => tool_call,
+                Err(err) => {
+                    log::warn!("[aijia-v2] dropping invalid assistant tool_call: {err}");
+                    continue;
+                }
+            };
             content.push(ContentBlock {
                 kind: "tool_call".to_string(),
                 text: None,
@@ -587,17 +634,17 @@ fn to_canonical_message(message: ChatMessage) -> CanonicalMessage {
         });
     }
 
-    CanonicalMessage {
+    Some(CanonicalMessage {
         role,
         content,
-        tool_call_id: message.tool_call_id,
-        tool_name: message.name,
-        is_error: false,
+        tool_call_id: message.tool_call_id.map(|id| id.trim().to_string()),
+        tool_name: message.name.map(|name| name.trim().to_string()),
+        is_error: message.is_error,
         provider: None,
         usage: None,
         stop_reason: None,
         created_at: None,
-    }
+    })
 }
 
 fn thinking_block_to_content(block: Value) -> ContentBlock {
@@ -633,50 +680,64 @@ fn sse_bytes_to_events(
         + 'static,
     gate_log_id: Option<String>,
 ) -> impl futures::Stream<Item = StreamEvent> + Send {
+    let lifecycle = GatewayStreamLifecycle::new(gate_log_id);
     stream::unfold(
         (
             Box::pin(byte_stream),
             String::new(),
             VecDeque::new(),
-            gate_log_id,
+            lifecycle,
         ),
-        |(mut byte_stream, mut buffer, mut pending, gate_log_id)| async move {
+        |(mut byte_stream, mut buffer, mut pending, mut lifecycle)| async move {
             loop {
                 if let Some(event) = pending.pop_front() {
-                    return Some((event, (byte_stream, buffer, pending, gate_log_id)));
+                    return Some((event, (byte_stream, buffer, pending, lifecycle)));
                 }
 
                 match byte_stream.as_mut().next().await {
                     Some(Ok(bytes)) => {
-                        if let Some(request_id) = gate_log_id.as_deref() {
+                        if let Some(request_id) = lifecycle.request_id() {
                             crate::llm::gate_log::record_response_chunk(request_id, &bytes);
                         }
                         buffer.push_str(&String::from_utf8_lossy(&bytes));
-                        drain_sse_frames(&mut buffer, &mut pending, gate_log_id.as_deref());
+                        drain_sse_frames(&mut buffer, &mut pending, &mut lifecycle);
                     }
                     Some(Err(err)) => {
-                        if let Some(request_id) = gate_log_id.as_deref() {
-                            crate::llm::gate_log::record_stream_error(request_id, &err.to_string());
-                        }
+                        lifecycle.close_error(&err.to_string());
                         return Some((
                             StreamEvent::Error {
                                 error: err.to_string(),
                             },
-                            (byte_stream, buffer, pending, gate_log_id),
+                            (byte_stream, buffer, pending, lifecycle),
                         ));
                     }
                     None => {
                         if buffer.trim().is_empty() {
-                            if let Some(request_id) = gate_log_id.as_deref() {
+                            if lifecycle.closed {
+                                return None;
+                            }
+                            if let Some(request_id) = lifecycle.request_id() {
                                 crate::llm::gate_log::record_stream_end(request_id);
                             }
-                            return None;
+                            let completed = lifecycle.response_completed;
+                            lifecycle.close_eof();
+                            if completed {
+                                return None;
+                            }
+                            return Some((
+                                StreamEvent::Error {
+                                    error: "AIjia v2 stream ended without response.completed"
+                                        .to_string(),
+                                },
+                                (byte_stream, buffer, pending, lifecycle),
+                            ));
                         }
                         let frame = std::mem::take(&mut buffer);
-                        record_gateway_route_from_frame(&frame, gate_log_id.as_deref());
+                        record_gateway_route_from_frame(&frame, lifecycle.request_id());
+                        lifecycle.record_frame(&frame);
                         return Some((
                             chunk_to_stream_event(&frame),
-                            (byte_stream, buffer, pending, gate_log_id),
+                            (byte_stream, buffer, pending, lifecycle),
                         ));
                     }
                 }
@@ -685,23 +746,104 @@ fn sse_bytes_to_events(
     )
 }
 
+struct GatewayStreamLifecycle {
+    request_id: Option<String>,
+    first_event_recorded: bool,
+    response_completed: bool,
+    closed: bool,
+}
+
+impl GatewayStreamLifecycle {
+    fn new(request_id: Option<String>) -> Self {
+        Self {
+            request_id,
+            first_event_recorded: false,
+            response_completed: false,
+            closed: false,
+        }
+    }
+
+    fn request_id(&self) -> Option<&str> {
+        self.request_id.as_deref()
+    }
+
+    fn record_frame(&mut self, frame: &str) {
+        if let Some(request_id) = self.request_id() {
+            if !self.first_event_recorded {
+                let event_name = sse_event_name(frame);
+                crate::llm::gate_log::record_first_event(request_id, event_name.as_deref());
+            }
+            if !self.response_completed && frame_has_event(frame, "response.completed") {
+                let stop_reason = response_completed_stop_reason(frame);
+                crate::llm::gate_log::record_response_completed(request_id, stop_reason.as_deref());
+            }
+        }
+        self.first_event_recorded = true;
+        if frame_has_event(frame, "response.completed") {
+            self.response_completed = true;
+        }
+    }
+
+    fn close_eof(&mut self) {
+        let reason = if self.response_completed {
+            "response_completed"
+        } else {
+            "eof"
+        };
+        self.close(reason, None);
+    }
+
+    fn close_error(&mut self, error: &str) {
+        if let Some(request_id) = self.request_id() {
+            crate::llm::gate_log::record_stream_error(request_id, error);
+        }
+        self.close("error", Some(error));
+    }
+
+    fn close_dropped(&mut self) {
+        let reason = if self.response_completed {
+            "response_completed"
+        } else {
+            "dropped"
+        };
+        self.close(reason, None);
+    }
+
+    fn close(&mut self, reason: &str, error: Option<&str>) {
+        if self.closed {
+            return;
+        }
+        self.closed = true;
+        if let Some(request_id) = self.request_id() {
+            crate::llm::gate_log::record_stream_closed(request_id, reason, error);
+        }
+    }
+}
+
+impl Drop for GatewayStreamLifecycle {
+    fn drop(&mut self) {
+        self.close_dropped();
+    }
+}
+
 fn drain_sse_frames(
     buffer: &mut String,
     pending: &mut VecDeque<StreamEvent>,
-    gate_log_id: Option<&str>,
+    lifecycle: &mut GatewayStreamLifecycle,
 ) {
     while let Some((idx, len)) = next_sse_frame_boundary(buffer) {
         let frame = buffer[..idx].to_string();
         buffer.drain(..idx + len);
         if !frame.trim().is_empty() {
-            record_gateway_route_from_frame(&frame, gate_log_id);
+            record_gateway_route_from_frame(&frame, lifecycle.request_id());
+            lifecycle.record_frame(&frame);
             pending.push_back(chunk_to_stream_event(&frame));
         }
     }
 }
 
 fn record_gateway_route_from_frame(frame: &str, gate_log_id: Option<&str>) {
-    if !frame.contains("event: response.started") {
+    if !frame_has_event(frame, "response.started") {
         return;
     }
     let Some(request_id) = gate_log_id else {
@@ -732,41 +874,72 @@ fn next_sse_frame_boundary(buffer: &str) -> Option<(usize, usize)> {
 }
 
 fn chunk_to_stream_event(frame: &str) -> StreamEvent {
-    if frame.contains("event: content.delta") {
+    if frame_has_event(frame, "content.delta") {
         StreamEvent::ContentDelta {
             delta: extract_sse_data_field(frame, "delta").unwrap_or_default(),
         }
-    } else if frame.contains("event: thinking.delta") {
+    } else if frame_has_event(frame, "thinking.delta") {
         StreamEvent::ThinkingDelta {
             delta: extract_sse_data_field(frame, "delta").unwrap_or_default(),
         }
-    } else if frame.contains("event: thinking.block") {
-        let block = extract_sse_json(frame)
-            .and_then(|v| v.get("block").cloned())
-            .unwrap_or(Value::Null);
-        StreamEvent::ThinkingBlock { block }
-    } else if frame.contains("event: tool_call.completed") {
-        let tool_call = extract_sse_json(frame)
-            .and_then(|v| v.get("tool_call").cloned())
-            .and_then(|v| serde_json::from_value(v).ok())
-            .unwrap_or_else(|| crate::llm::streaming::ToolCall {
-                id: String::new(),
-                name: String::new(),
-                arguments: Value::Null,
-            });
-        StreamEvent::ToolCallStart { tool_call }
-    } else if frame.contains("event: response.completed") {
+    } else if frame_has_event(frame, "thinking.block") {
+        match extract_sse_json(frame).and_then(|v| v.get("block").cloned()) {
+            Some(block) if block.is_object() => StreamEvent::ThinkingBlock { block },
+            _ => StreamEvent::Keepalive,
+        }
+    } else if frame_has_event(frame, "tool_call.completed") {
+        let Some(mut raw_tool_call) =
+            extract_sse_json(frame).and_then(|v| v.get("tool_call").cloned())
+        else {
+            return StreamEvent::Error {
+                error: "malformed tool_call.completed: missing tool_call".to_string(),
+            };
+        };
+        if let Some(tool_call) = raw_tool_call.as_object_mut() {
+            tool_call
+                .entry("arguments".to_string())
+                .or_insert_with(|| Value::Object(serde_json::Map::new()));
+        }
+        let tool_call = match serde_json::from_value::<ToolCall>(raw_tool_call) {
+            Ok(tool_call) => tool_call,
+            Err(err) => {
+                return StreamEvent::Error {
+                    error: format!("malformed tool_call.completed: {err}"),
+                };
+            }
+        };
+        match tool_call.into_valid() {
+            Ok(tool_call) => StreamEvent::ToolCallStart { tool_call },
+            Err(err) => StreamEvent::Error {
+                error: format!("malformed tool_call.completed: {err}"),
+            },
+        }
+    } else if frame_has_event(frame, "response.completed") {
         StreamEvent::Done {
             stop_reason: StopReason::EndTurn,
             usage: extract_token_usage(frame).unwrap_or_default(),
         }
-    } else if frame.contains("event: response.error") {
+    } else if frame_has_event(frame, "response.error") {
         StreamEvent::Error {
             error: extract_sse_data(frame).unwrap_or_else(|| frame.to_string()),
         }
     } else {
         StreamEvent::Keepalive
     }
+}
+
+fn frame_has_event(frame: &str, event_name: &str) -> bool {
+    sse_event_name(frame).as_deref() == Some(event_name)
+}
+
+fn sse_event_name(frame: &str) -> Option<String> {
+    frame.lines().find_map(|line| {
+        line.trim_end_matches('\r')
+            .strip_prefix("event:")
+            .map(str::trim)
+            .filter(|event| !event.is_empty())
+            .map(str::to_string)
+    })
 }
 
 fn extract_sse_data(chunk: &str) -> Option<String> {
@@ -785,6 +958,14 @@ fn extract_sse_data_field(chunk: &str, field: &str) -> Option<String> {
     extract_sse_json(chunk)?
         .get(field)?
         .as_str()
+        .map(str::to_string)
+}
+
+fn response_completed_stop_reason(chunk: &str) -> Option<String> {
+    let data = extract_sse_json(chunk)?;
+    data.get("stop_reason")
+        .or_else(|| data.get("stopReason"))
+        .and_then(Value::as_str)
         .map(str::to_string)
 }
 
@@ -811,6 +992,32 @@ mod tests {
     use serde_json::json;
 
     use crate::llm::streaming::{ChatMessage, LlmRequest, SystemPromptSegment, ToolCall};
+
+    #[test]
+    fn build_request_populates_basic_client_metadata() {
+        let req = LlmRequest {
+            messages: vec![ChatMessage::text("user", "hello")],
+            tools: vec![],
+            max_tokens: 1000,
+            temperature: 0.7,
+            stream: true,
+            thinking_config: None,
+            anthropic_multimodal_turn: None,
+            system_segments: None,
+            conversation_id: Some("conv".to_string()),
+            trace_id: Some("trace".to_string()),
+            run_id: Some("run".to_string()),
+        };
+
+        let canonical = build_aijia_request(req);
+
+        let client = serde_json::to_value(&canonical.client).expect("serialize client metadata");
+        assert!(client.get("os").is_none());
+        assert!(client.get("arch").is_none());
+        assert_eq!(canonical.client.name, "aijia-desktop");
+        assert_eq!(canonical.client.platform, client_platform());
+        assert!(canonical.client.platform.contains('-'));
+    }
 
     #[test]
     fn build_request_promotes_system_messages_and_excludes_them_from_messages() {
@@ -918,6 +1125,36 @@ mod tests {
         assert_eq!(tool_result.role, "tool_result");
         assert_eq!(tool_result.tool_call_id.as_deref(), Some("call_1"));
         assert_eq!(tool_result.tool_name.as_deref(), Some("lookup"));
+    }
+
+    #[test]
+    fn build_request_preserves_tool_result_error_status() {
+        let req = LlmRequest {
+            messages: vec![ChatMessage::tool_result_with_status(
+                "call_1",
+                "Bash",
+                "permission denied".to_string(),
+                true,
+            )],
+            tools: vec![],
+            max_tokens: 1000,
+            temperature: 0.7,
+            stream: true,
+            thinking_config: None,
+            anthropic_multimodal_turn: None,
+            system_segments: None,
+            conversation_id: Some("conv".to_string()),
+            trace_id: Some("trace".to_string()),
+            run_id: Some("run".to_string()),
+        };
+
+        let canonical = build_aijia_request(req);
+        let tool_result = &canonical.context.messages[0];
+
+        assert_eq!(tool_result.role, "tool_result");
+        assert_eq!(tool_result.tool_call_id.as_deref(), Some("call_1"));
+        assert_eq!(tool_result.tool_name.as_deref(), Some("Bash"));
+        assert!(tool_result.is_error);
     }
 
     #[test]
@@ -1084,6 +1321,69 @@ mod tests {
     }
 
     #[test]
+    fn tool_call_completed_without_arguments_defaults_to_empty_object() {
+        let event = chunk_to_stream_event(
+            "event: tool_call.completed\ndata: {\"index\":0,\"tool_call\":{\"id\":\"toolu_refresh\",\"name\":\"RefreshSkills\"}}\n\n",
+        );
+
+        match event {
+            StreamEvent::ToolCallStart { tool_call } => {
+                assert_eq!(tool_call.id, "toolu_refresh");
+                assert_eq!(tool_call.name, "RefreshSkills");
+                assert_eq!(tool_call.arguments, json!({}));
+            }
+            other => panic!("expected tool call event, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn malformed_tool_call_completed_maps_to_stream_error() {
+        let event = chunk_to_stream_event(
+            "event: tool_call.completed\ndata: {\"index\":0,\"tool_call\":{\"id\":\"\",\"name\":\"\",\"arguments\":null}}\n\n",
+        );
+
+        match event {
+            StreamEvent::Error { error } => {
+                assert!(error.contains("malformed tool_call.completed"));
+                assert!(error.contains("id"));
+            }
+            other => panic!("expected stream error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn build_request_drops_invalid_tool_call_and_tool_result_blocks() {
+        let req = LlmRequest {
+            messages: vec![
+                ChatMessage::assistant_with_tool_calls(
+                    "checking".to_string(),
+                    vec![ToolCall {
+                        id: String::new(),
+                        name: String::new(),
+                        arguments: Value::Null,
+                    }],
+                    None,
+                    None,
+                ),
+                ChatMessage::tool_result("", "", "bad result".to_string()),
+            ],
+            ..Default::default()
+        };
+
+        let canonical = build_aijia_request(req);
+
+        assert_eq!(canonical.context.messages.len(), 1);
+        let assistant = &canonical.context.messages[0];
+        assert_eq!(assistant.role, "assistant");
+        assert_eq!(assistant.content.len(), 1);
+        assert_eq!(assistant.content[0].kind, "text");
+        assert!(!assistant
+            .content
+            .iter()
+            .any(|block| block.kind == "tool_call"));
+    }
+
+    #[test]
     fn drains_complete_sse_frames_without_chunk_boundaries() {
         let mut buffer = concat!(
             "event: content.delta\n",
@@ -1093,8 +1393,9 @@ mod tests {
         )
         .to_string();
         let mut pending = VecDeque::new();
+        let mut lifecycle = GatewayStreamLifecycle::new(None);
 
-        drain_sse_frames(&mut buffer, &mut pending, None);
+        drain_sse_frames(&mut buffer, &mut pending, &mut lifecycle);
 
         assert!(buffer.is_empty());
         match pending.pop_front() {
@@ -1192,5 +1493,58 @@ mod tests {
         assert_eq!(response.tool_calls[0].arguments["path"], "README.md");
         assert_eq!(response.thinking_blocks.len(), 1);
         assert_eq!(response.thinking_blocks[0]["signature"], "sig-1");
+    }
+
+    #[tokio::test]
+    async fn eof_without_response_completed_maps_to_stream_error() {
+        let chunks = stream::iter(vec![Ok(bytes::Bytes::from_static(
+            b"event: content.delta\ndata: {\"delta\":\"partial\"}\n\n",
+        ))]);
+        let mut events = Box::pin(sse_bytes_to_events(chunks, None));
+
+        match events.next().await {
+            Some(StreamEvent::ContentDelta { delta }) => assert_eq!(delta, "partial"),
+            other => panic!("expected content delta, got {other:?}"),
+        }
+        match events.next().await {
+            Some(StreamEvent::Error { error }) => {
+                assert!(error.contains("without response.completed"))
+            }
+            other => panic!("expected terminal error for incomplete stream, got {other:?}"),
+        }
+        assert!(events.next().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn eof_after_response_completed_ends_cleanly() {
+        let chunks = stream::iter(vec![Ok(bytes::Bytes::from_static(
+            b"event: response.completed\ndata: {\"usage\":{\"input\":1,\"output\":2,\"cache_read\":0,\"cache_write\":0}}\n\n",
+        ))]);
+        let mut events = Box::pin(sse_bytes_to_events(chunks, None));
+
+        match events.next().await {
+            Some(StreamEvent::Done { usage, .. }) => {
+                assert_eq!(usage.input_tokens, 1);
+                assert_eq!(usage.output_tokens, 2);
+            }
+            other => panic!("expected done, got {other:?}"),
+        }
+        assert!(events.next().await.is_none());
+    }
+
+    #[test]
+    fn frame_lifecycle_detects_response_completed() {
+        let frame = concat!(
+            "event: response.completed\r\n",
+            "data: {\"stop_reason\":\"end_turn\"}\r\n\r\n"
+        );
+
+        assert_eq!(sse_event_name(frame).as_deref(), Some("response.completed"));
+        assert!(frame_has_event(frame, "response.completed"));
+        assert!(!frame_has_event(frame, "response.error"));
+        assert_eq!(
+            response_completed_stop_reason(frame).as_deref(),
+            Some("end_turn")
+        );
     }
 }

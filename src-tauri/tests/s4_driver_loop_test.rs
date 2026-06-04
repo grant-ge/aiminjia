@@ -94,6 +94,63 @@ impl RuntimeLlmExecutor for MockLlmExecutor {
     }
 }
 
+struct PartialCancelExecutor {
+    partial: String,
+    persisted: std::sync::Mutex<Vec<String>>,
+}
+
+impl PartialCancelExecutor {
+    fn new(partial: impl Into<String>) -> Self {
+        Self {
+            partial: partial.into(),
+            persisted: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+
+    fn persisted_contents(&self) -> Vec<String> {
+        self.persisted.lock().unwrap().clone()
+    }
+}
+
+#[async_trait]
+impl RuntimeLlmExecutor for PartialCancelExecutor {
+    async fn run_llm_step(
+        &self,
+        input: &LlmStepInput<'_>,
+        bus: &RuntimeEventBus,
+        _cancel: &CancellationToken,
+    ) -> Result<LlmStepResult, TurnError> {
+        let _ = bus
+            .emit(RuntimeEvent::stream_delta(
+                input.conversation_id.into(),
+                input.run_id.into(),
+                self.partial.clone(),
+            ))
+            .await;
+        Ok(LlmStepResult::Cancelled {
+            partial_content: self.partial.clone(),
+        })
+    }
+
+    async fn persist_assistant_message(
+        &self,
+        _conversation_id: &str,
+        content: &str,
+        _tool_calls: &[serde_json::Value],
+        _generated_file_ids: &[String],
+        _file_metas: &[serde_json::Value],
+        _thinking_blocks: &[serde_json::Value],
+        _error: Option<&app_lib::storage::file_store::types::MessageError>,
+    ) -> Result<String, TurnError> {
+        self.persisted.lock().unwrap().push(content.to_string());
+        Ok("partial-cancel-msg".to_string())
+    }
+
+    async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
+        Ok(vec![])
+    }
+}
+
 #[test]
 fn mock_executor_implements_trait() {
     let executor = MockLlmExecutor::new(vec![LlmStepResult::ContentComplete {
@@ -360,7 +417,9 @@ async fn driver_s4_loop_content_complete() {
 #[tokio::test]
 async fn driver_s4_loop_cancelled() {
     // Cancelled result: driver should still emit StreamStarted and StreamDone.
-    let executor = Arc::new(MockLlmExecutor::new(vec![LlmStepResult::Cancelled]));
+    let executor = Arc::new(MockLlmExecutor::new(vec![LlmStepResult::Cancelled {
+        partial_content: String::new(),
+    }]));
 
     let bus = RuntimeEventBus::new();
     let qe = QueryEngine::default();
@@ -396,6 +455,26 @@ async fn driver_s4_loop_cancelled() {
             }
         )),
         "missing cancelled TurnCompleted"
+    );
+}
+
+#[tokio::test]
+async fn driver_s4_cancelled_preserves_streamed_partial_content() {
+    let executor = Arc::new(PartialCancelExecutor::new("partial before cancel"));
+
+    let bus = RuntimeEventBus::new();
+    let qe = QueryEngine::default();
+    let driver = RuntimeChatTurnDriver::with_llm_executor(qe, bus, executor.clone());
+
+    let mut turn = make_test_turn("conv-cancel-partial");
+    let request = ChatTurnRequest::new("conv-cancel-partial", "cancel after partial", vec![]);
+
+    driver.run_chat_turn(&mut turn, &request).await.unwrap();
+
+    assert_eq!(
+        executor.persisted_contents(),
+        vec!["partial before cancel\n\n（已取消）".to_string()],
+        "cancel should persist already-streamed assistant text and keep a visible cancelled marker"
     );
 }
 

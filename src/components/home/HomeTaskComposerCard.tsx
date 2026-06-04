@@ -82,8 +82,11 @@ export function HomeTaskComposerCard() {
   // and got routed to home). Insert as an inline editor token after mount, so
   // it shows up as a chip in the composer body — same as ChatBottomArea.
   const [pendingSkill] = useState(() => useUiStore.getState().consumePendingSkill())
+  const pendingSkillInsertedRef = useRef(false)
   useEffect(() => {
     if (!pendingSkill) return
+    if (pendingSkillInsertedRef.current) return
+    pendingSkillInsertedRef.current = true
     const skill = getSkillById(pendingSkill.id)
     composerRef.current?.insertSkillToken({
       id: pendingSkill.id,
