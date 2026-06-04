@@ -508,7 +508,7 @@ impl LlmGateway {
                         return Err(anyhow::anyhow!(
                             "API 密钥无效或已过期，请在设置中检查 API Key 配置。({})",
                             e
-                        ))
+                        ));
                     }
                 }
             }
@@ -686,7 +686,7 @@ impl LlmGateway {
                         return Err(anyhow::anyhow!(
                             "API 密钥无效或已过期，请在设置中检查 API Key 配置。({})",
                             e
-                        ))
+                        ));
                     }
                 }
             }
@@ -767,11 +767,12 @@ impl LlmGateway {
                         return Err(anyhow::anyhow!(
                             "API 密钥无效或已过期，请在设置中检查 API Key 配置。({})",
                             e
-                        ))
+                        ));
                     }
                 }
             }
         }
+        apply_cloud_gateway_mode(&mut route, settings);
 
         log::info!(
             "Sending (non-stream fallback) task {:?} to provider '{}' conv={:?}",
@@ -1045,6 +1046,14 @@ async fn dispatch_send(route: &RouteResult, request: LlmRequest) -> Result<LlmRe
         }
         "lotus" => {
             let p = lotus::LotusProvider::new(route.api_key.clone());
+            p.send(request).await
+        }
+        "aijia-v2" => {
+            let p = aijia_gateway_v2::AijiaGatewayV2Provider::with_route(
+                route.api_key.clone(),
+                route.model_type.clone(),
+                route.use_tools,
+            );
             p.send(request).await
         }
         other => {

@@ -11,7 +11,7 @@ use crate::llm::canonical::{
 use crate::llm::providers::LlmProviderTrait;
 use crate::llm::streaming::{
     AnthropicContentBlock, AnthropicImageSource, ChatMessage, LlmRequest, LlmResponse, StopReason,
-    StreamBox, StreamEvent, ThinkingConfig, TokenUsage,
+    StreamBox, StreamEvent, ThinkingConfig, TokenUsage, ToolCall,
 };
 
 const AIJIA_GATEWAY_V2_RESPONSES_URL: &str = "https://ai-tenant.renlijia.com/aijia/v2/ai/responses";
@@ -51,10 +51,65 @@ impl LlmProviderTrait for AijiaGatewayV2Provider {
         true
     }
 
-    async fn send(&self, _request: LlmRequest) -> Result<LlmResponse> {
-        Err(anyhow!(
-            "AIjia v2 non-streaming send is not enabled in desktop MVP"
-        ))
+    async fn send(&self, request: LlmRequest) -> Result<LlmResponse> {
+        let body = build_aijia_request_for_route_with_stream(
+            request,
+            &self.model_type,
+            self.use_tools,
+            false,
+        );
+        let gate_log_id = crate::llm::gate_log::next_request_id();
+        crate::llm::gate_log::record_request(
+            &gate_log_id,
+            self.name(),
+            AIJIA_GATEWAY_V2_RESPONSES_URL,
+            &body,
+        );
+        let response = self
+            .client
+            .post(AIJIA_GATEWAY_V2_RESPONSES_URL)
+            .bearer_auth(&self.session_key)
+            .json(&body)
+            .send()
+            .await?;
+
+        let status = response.status();
+        let gateway_request_id = response
+            .headers()
+            .get("x-lotus-request-id")
+            .or_else(|| response.headers().get("x-request-id"))
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_string);
+        let content_type = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default()
+            .to_string();
+        crate::llm::gate_log::record_response_status(
+            &gate_log_id,
+            status.as_u16(),
+            gateway_request_id.as_deref(),
+        );
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            crate::llm::gate_log::record_response_body(&gate_log_id, status.as_u16(), &body);
+            return Err(anyhow!("AIjia v2 non-stream error ({}): {}", status, body));
+        }
+
+        if content_type.contains("text/event-stream") {
+            return collect_stream_response(Box::pin(sse_bytes_to_events(
+                response.bytes_stream(),
+                Some(gate_log_id),
+            )))
+            .await;
+        }
+
+        let response_body = response.text().await?;
+        crate::llm::gate_log::record_response_body(&gate_log_id, status.as_u16(), &response_body);
+        let payload: Value = serde_json::from_str(&response_body)
+            .map_err(|err| anyhow!("AIjia v2 non-stream response is not JSON: {err}"))?;
+        parse_non_stream_response(&payload)
     }
 
     async fn stream(&self, request: LlmRequest) -> Result<StreamBox> {
@@ -103,6 +158,121 @@ impl LlmProviderTrait for AijiaGatewayV2Provider {
     }
 }
 
+async fn collect_stream_response(mut stream: StreamBox) -> Result<LlmResponse> {
+    let mut content = String::new();
+    let mut stop_reason = StopReason::EndTurn;
+    let mut usage = TokenUsage::default();
+    let mut tool_calls = Vec::new();
+    let mut thinking_blocks = Vec::new();
+
+    while let Some(event) = stream.next().await {
+        match event {
+            StreamEvent::ContentDelta { delta } => content.push_str(&delta),
+            StreamEvent::ToolCallStart { tool_call } => tool_calls.push(tool_call),
+            StreamEvent::ThinkingBlock { block } => thinking_blocks.push(block),
+            StreamEvent::Done {
+                stop_reason: reason,
+                usage: done_usage,
+            } => {
+                stop_reason = reason;
+                usage = done_usage;
+                break;
+            }
+            StreamEvent::Error { error } => return Err(anyhow!(error)),
+            StreamEvent::ThinkingDelta { .. } | StreamEvent::Keepalive => {}
+        }
+    }
+
+    Ok(LlmResponse {
+        content,
+        stop_reason,
+        usage,
+        tool_calls,
+        thinking_blocks,
+    })
+}
+
+fn parse_non_stream_response(payload: &Value) -> Result<LlmResponse> {
+    let content = payload
+        .get("content")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let stop_reason = parse_aijia_v2_stop_reason(
+        payload
+            .get("stop_reason")
+            .and_then(Value::as_str)
+            .unwrap_or("stop"),
+    );
+    let usage_value = payload.get("usage").unwrap_or(&Value::Null);
+    let usage = TokenUsage {
+        input_tokens: usage_value
+            .get("input")
+            .and_then(Value::as_u64)
+            .unwrap_or(0) as u32,
+        output_tokens: usage_value
+            .get("output")
+            .and_then(Value::as_u64)
+            .unwrap_or(0) as u32,
+        cache_creation_input_tokens: usage_value
+            .get("cache_write")
+            .and_then(Value::as_u64)
+            .map(|value| value as u32),
+        cache_read_input_tokens: usage_value
+            .get("cache_read")
+            .and_then(Value::as_u64)
+            .map(|value| value as u32),
+    };
+    let tool_calls = payload
+        .get("tool_calls")
+        .and_then(Value::as_array)
+        .map(|calls| {
+            calls
+                .iter()
+                .map(|call| ToolCall {
+                    id: call
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string(),
+                    name: call
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string(),
+                    arguments: call
+                        .get("arguments")
+                        .cloned()
+                        .unwrap_or_else(|| serde_json::json!({})),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let thinking_blocks = payload
+        .get("thinking_blocks")
+        .or_else(|| payload.get("thinkingBlocks"))
+        .and_then(Value::as_array)
+        .map(|blocks| blocks.to_vec())
+        .unwrap_or_default();
+
+    Ok(LlmResponse {
+        content,
+        stop_reason,
+        usage,
+        tool_calls,
+        thinking_blocks,
+    })
+}
+
+fn parse_aijia_v2_stop_reason(reason: &str) -> StopReason {
+    match reason {
+        "toolUse" | "tool_use" => StopReason::ToolUse,
+        "length" | "max_tokens" => StopReason::MaxTokens,
+        "stop_sequence" => StopReason::StopSequence,
+        _ => StopReason::EndTurn,
+    }
+}
+
 pub(crate) fn build_aijia_request(request: LlmRequest) -> AijiaResponseRequest {
     build_aijia_request_for_route(request, "chat", true)
 }
@@ -111,6 +281,15 @@ pub(crate) fn build_aijia_request_for_route(
     request: LlmRequest,
     model_type: &str,
     use_tools: bool,
+) -> AijiaResponseRequest {
+    build_aijia_request_for_route_with_stream(request, model_type, use_tools, true)
+}
+
+fn build_aijia_request_for_route_with_stream(
+    request: LlmRequest,
+    model_type: &str,
+    use_tools: bool,
+    stream: bool,
 ) -> AijiaResponseRequest {
     let plan = resolve_v2_model_plan(&request, model_type, use_tools);
 
@@ -163,7 +342,7 @@ pub(crate) fn build_aijia_request_for_route(
         run_id: request.run_id,
         trace_id: request.trace_id,
         intent: plan.intent,
-        stream: true,
+        stream,
         model_policy: ModelPolicy {
             mode: "auto".to_string(),
             logical_model: plan.logical_model,
@@ -652,6 +831,30 @@ mod tests {
     }
 
     #[test]
+    fn build_request_with_stream_flag_preserves_non_streaming_mode() {
+        let req = LlmRequest {
+            messages: vec![ChatMessage::text("user", "hello")],
+            ..Default::default()
+        };
+
+        let canonical = build_aijia_request_for_route_with_stream(req, "chat", true, false);
+
+        assert!(!canonical.stream);
+    }
+
+    #[test]
+    fn build_request_keeps_streaming_mode_by_default() {
+        let req = LlmRequest {
+            messages: vec![ChatMessage::text("user", "hello")],
+            ..Default::default()
+        };
+
+        let canonical = build_aijia_request(req);
+
+        assert!(canonical.stream);
+    }
+
+    #[test]
     fn build_request_prefers_system_segments_over_system_messages() {
         let req = LlmRequest {
             messages: vec![
@@ -905,5 +1108,89 @@ mod tests {
             }
             other => panic!("expected done, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn collect_stream_response_concatenates_content_and_usage() {
+        let stream: StreamBox = Box::pin(stream::iter(vec![
+            StreamEvent::ContentDelta {
+                delta: "hello ".to_string(),
+            },
+            StreamEvent::ThinkingDelta {
+                delta: "internal".to_string(),
+            },
+            StreamEvent::ContentDelta {
+                delta: "summary".to_string(),
+            },
+            StreamEvent::Done {
+                stop_reason: StopReason::EndTurn,
+                usage: TokenUsage {
+                    input_tokens: 12,
+                    output_tokens: 3,
+                    cache_creation_input_tokens: Some(1),
+                    cache_read_input_tokens: Some(2),
+                },
+            },
+        ]));
+
+        let response = collect_stream_response(stream).await.unwrap();
+
+        assert_eq!(response.content, "hello summary");
+        assert_eq!(response.stop_reason, StopReason::EndTurn);
+        assert_eq!(response.usage.input_tokens, 12);
+        assert_eq!(response.usage.output_tokens, 3);
+        assert!(response.tool_calls.is_empty());
+    }
+
+    #[tokio::test]
+    async fn collect_stream_response_returns_error_events() {
+        let stream: StreamBox = Box::pin(stream::iter(vec![StreamEvent::Error {
+            error: "provider failed".to_string(),
+        }]));
+
+        let err = collect_stream_response(stream).await.unwrap_err();
+
+        assert!(err.to_string().contains("provider failed"));
+    }
+
+    #[test]
+    fn parse_non_stream_response_preserves_tool_calls_and_thinking_blocks() {
+        let payload = serde_json::json!({
+            "content": "I will inspect the file.",
+            "stop_reason": "toolUse",
+            "usage": {
+                "input": 17,
+                "output": 7,
+                "cache_read": 3,
+                "cache_write": 2
+            },
+            "tool_calls": [{
+                "type": "tool_call",
+                "id": "toolu_1",
+                "name": "read_file",
+                "arguments": {"path": "README.md"}
+            }],
+            "thinking_blocks": [{
+                "type": "thinking",
+                "text": "hidden",
+                "signature": "sig-1",
+                "opaque": true
+            }]
+        });
+
+        let response = parse_non_stream_response(&payload).unwrap();
+
+        assert_eq!(response.content, "I will inspect the file.");
+        assert_eq!(response.stop_reason, StopReason::ToolUse);
+        assert_eq!(response.usage.input_tokens, 17);
+        assert_eq!(response.usage.output_tokens, 7);
+        assert_eq!(response.usage.cache_read_input_tokens, Some(3));
+        assert_eq!(response.usage.cache_creation_input_tokens, Some(2));
+        assert_eq!(response.tool_calls.len(), 1);
+        assert_eq!(response.tool_calls[0].id, "toolu_1");
+        assert_eq!(response.tool_calls[0].name, "read_file");
+        assert_eq!(response.tool_calls[0].arguments["path"], "README.md");
+        assert_eq!(response.thinking_blocks.len(), 1);
+        assert_eq!(response.thinking_blocks[0]["signature"], "sig-1");
     }
 }

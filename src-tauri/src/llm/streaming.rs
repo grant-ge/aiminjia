@@ -77,6 +77,8 @@ pub struct LlmResponse {
     pub stop_reason: StopReason,
     pub usage: TokenUsage,
     pub tool_calls: Vec<ToolCall>,
+    #[serde(default)]
+    pub thinking_blocks: Vec<serde_json::Value>,
 }
 
 /// Messages sent to the LLM.

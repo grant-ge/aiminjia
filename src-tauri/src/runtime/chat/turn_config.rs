@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 use serde_json::Value as JsonValue;
 
-use crate::llm::streaming::AnthropicMultimodalTurn;
-use crate::models::settings::CloudGatewayMode;
+use crate::llm::streaming::{AnthropicMultimodalTurn, SystemPromptSegment};
+use crate::models::settings::{AppSettings, CloudGatewayMode};
 use crate::runtime::chat::compaction::AutoCompactState;
 use crate::runtime::chat::preprocess::PreprocessRuntimeState;
 use crate::runtime::chat::tool_round_types::RuntimeToolCallRequest;
@@ -32,6 +32,7 @@ pub struct ResolvedLlmSettings {
     pub thinking_type: String,
     pub thinking_budget_tokens: u32,
     pub masking_level: String,
+    pub context_window: Option<usize>,
 }
 
 impl Default for ResolvedLlmSettings {
@@ -48,6 +49,26 @@ impl Default for ResolvedLlmSettings {
             thinking_type: "disabled".to_string(),
             thinking_budget_tokens: 8000,
             masking_level: "strict".to_string(),
+            context_window: None,
+        }
+    }
+}
+
+impl ResolvedLlmSettings {
+    pub fn to_app_settings(&self) -> AppSettings {
+        AppSettings {
+            primary_model: self.primary_model.clone(),
+            primary_api_key: self.primary_api_key.clone(),
+            auto_model_routing: self.auto_model_routing,
+            custom_model_endpoint: self.custom_model_endpoint.clone(),
+            custom_model_name: self.custom_model_name.clone(),
+            cloud_model: self.cloud_model.clone(),
+            cloud_model_type: self.cloud_model_type.clone(),
+            cloud_gateway_mode: self.cloud_gateway_mode.clone(),
+            thinking_type: self.thinking_type.clone(),
+            thinking_budget_tokens: self.thinking_budget_tokens,
+            context_window: self.context_window,
+            ..AppSettings::default()
         }
     }
 }
@@ -157,6 +178,7 @@ impl TurnIterationState {
 pub struct LlmStepInput<'a> {
     pub system_prompt: &'a str,
     pub system_message: Option<serde_json::Value>,
+    pub extra_system_segments: Vec<SystemPromptSegment>,
     pub dynamic_context: &'a str,
     pub messages: Vec<JsonValue>, // decayed 副本，非原始 messages 引用
     pub tool_defs: &'a [JsonValue],

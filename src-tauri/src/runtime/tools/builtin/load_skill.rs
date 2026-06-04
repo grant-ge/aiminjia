@@ -13,10 +13,10 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tauri::AppHandle;
 
 use crate::plugin::skill::registry::SkillRegistry;
 use crate::plugin::skill::substitution::{substitute_skill_body, SkillSubstitutionContext};
+use crate::runtime::tools::builtin::refresh_skills::SkillRegistryRefresher;
 use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::{ToolDefinition, ToolKind};
 use crate::runtime::tools::executor::{ToolError, ToolResult};
@@ -35,9 +35,9 @@ const REFRESH_THROTTLE: Duration = Duration::from_secs(5);
 
 pub struct LoadSkillRuntimeTool {
     skill_registry: Arc<Mutex<SkillRegistry>>,
-    /// 用于触发 refresh_skill_registry 的 AppHandle。test / legacy 路径
-    /// 可以传 None，此时 miss-retry 会跳过 refresh，直接走原 "not found" 路径。
-    app_handle: Option<Arc<AppHandle>>,
+    /// Optional refresh hook. test / legacy 路径可以传 None，此时 miss-retry
+    /// 会跳过 refresh，直接走原 "not found" 路径。
+    refresher: Option<Arc<dyn SkillRegistryRefresher>>,
     /// 最近一次因 miss 触发的 refresh 时间。throttle 用。
     last_refresh: Arc<Mutex<Option<Instant>>>,
 }
@@ -46,18 +46,18 @@ impl LoadSkillRuntimeTool {
     pub fn new(skill_registry: Arc<Mutex<SkillRegistry>>) -> Self {
         Self {
             skill_registry,
-            app_handle: None,
+            refresher: None,
             last_refresh: Arc::new(Mutex::new(None)),
         }
     }
 
-    pub fn with_app_handle(
+    pub fn with_refresher(
         skill_registry: Arc<Mutex<SkillRegistry>>,
-        app_handle: Arc<AppHandle>,
+        refresher: Arc<dyn SkillRegistryRefresher>,
     ) -> Self {
         Self {
             skill_registry,
-            app_handle: Some(app_handle),
+            refresher: Some(refresher),
             last_refresh: Arc::new(Mutex::new(None)),
         }
     }
@@ -145,8 +145,8 @@ impl RuntimeTool for LoadSkillRuntimeTool {
             Some(s) => s,
             None => {
                 if self.try_acquire_refresh_slot() {
-                    if let Some(app) = self.app_handle.as_ref() {
-                        let _ = crate::commands::skill_management::refresh_skill_registry(app);
+                    if let Some(refresher) = self.refresher.as_ref() {
+                        let _ = refresher.refresh_skill_registry();
                     }
                 }
                 // 重查

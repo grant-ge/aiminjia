@@ -69,6 +69,15 @@ export interface RenderPeerBanner {
   status?: string
 }
 
+export interface RenderCompactBoundary {
+  id: string
+  createdAt: string
+  preTokens?: number
+  postTokens?: number
+  tokensSaved?: number
+  messagesSummarized?: number
+}
+
 /**
  * Interleaved render mode block. Walks messages in their original order and
  * produces a flat sequence of text / tool / file blocks. Consumers iterate
@@ -88,6 +97,7 @@ export type RenderTurnBlock =
   | { kind: 'teamMarker'; markerKind: 'create' | 'delete'; toolCallId: string }
 
 export interface RenderTurn {
+  compactBoundary?: RenderCompactBoundary
   userMessage?: { id: string; text: string; createdAt: string; commandText?: string; skillCommand?: SkillCommandBreadcrumb; files?: FileAttachment[] }
   aiSegments: RenderAiSegment[]
   toolGroup?: RenderToolGroup
@@ -120,6 +130,27 @@ export interface RenderTurn {
    * 模式下据此把已完成 turn 折叠成聚合视图，只保留最终结果。
    */
   isComplete: boolean
+}
+
+function isCompactBoundaryMessage(message: Message): boolean {
+  return message.role === 'system' && message.subtype === 'compact_boundary'
+}
+
+function normalizeCompactBoundaryForRender(message: Message): RenderCompactBoundary {
+  const meta = message.compactMetadata ?? {}
+  const tokensSaved =
+    meta.tokensSaved ??
+    (typeof meta.preTokens === 'number' && typeof meta.postTokens === 'number'
+      ? Math.max(0, meta.preTokens - meta.postTokens)
+      : undefined)
+  return {
+    id: message.id,
+    createdAt: message.createdAt,
+    preTokens: meta.preTokens,
+    postTokens: meta.postTokens,
+    tokensSaved,
+    messagesSummarized: meta.messagesSummarized,
+  }
 }
 
 function toolExecStatusToStep(s: ToolExecution['status']): RenderToolStep['status'] {
@@ -358,7 +389,27 @@ export function buildTurnsFromMessages(
   let current: RenderTurn | null = null
 
   for (const m of messages) {
+    if (isCompactBoundaryMessage(m)) {
+      turns.push({
+        compactBoundary: normalizeCompactBoundaryForRender(m),
+        userMessage: undefined,
+        aiSegments: [],
+        toolGroup: undefined,
+        blocks: [],
+        persistedBlockCount: 0,
+        generatedFiles: [],
+        suggestions: [],
+        peerBanners: [],
+        isComplete: true,
+      })
+      current = null
+      continue
+    }
+
     if (m.role === 'user') {
+      if (m.isCompactSummary) {
+        continue
+      }
       const text = m.content.text ?? ''
       // <peer-messages> user XML is an internal artifact of how the runtime
       // delivers teammate replies to the lead. It must NEVER appear in the
@@ -432,7 +483,7 @@ export function buildTurnsFromMessages(
           const segment: RenderAiSegment = {
             id: m.id,
             text: displayText,
-            message: { ...m, content: { ...m.content, text: displayText } },
+            message: displayText === m.content.text ? m : { ...m, content: { ...m.content, text: displayText } },
           }
           current.aiSegments.push(segment)
           current.blocks.push({ kind: 'assistantText', id: m.id, segment })

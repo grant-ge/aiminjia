@@ -26,8 +26,7 @@ use serde_json::json;
 
 use app_lib::runtime::employee::store::{CreateEmployeeRequest, EmployeeStore};
 use app_lib::runtime::employee::template_store::{
-    bootstrap_template, ensure_instance_snapshot, merge_catalog, read_instance_snapshot,
-    write_cache, TemplateSnapshot,
+    ensure_instance_snapshot, merge_catalog, read_instance_snapshot, write_cache, TemplateSnapshot,
 };
 
 /// Helper: produce a stand-in snapshot for tests not relying on bootstrap.
@@ -40,6 +39,9 @@ fn synthetic_snap(template_id: &str, version: &str, name: &str) -> TemplateSnaps
         role: "test".into(),
         description: "".into(),
         badge: "".into(),
+        display_i18n: serde_json::Value::Null,
+        prompt_i18n: serde_json::Value::Null,
+        schema_i18n: serde_json::Value::Null,
         system_prompt_extra: "".into(),
         tool_whitelist: vec![],
         cron: "".into(),
@@ -50,6 +52,21 @@ fn synthetic_snap(template_id: &str, version: &str, name: &str) -> TemplateSnaps
         resource_config_schema: serde_json::Value::Null,
         resource_config_ui: serde_json::Value::Null,
     }
+}
+
+/// Local stand-in for historical bootstrap fixtures.
+///
+/// Product code no longer exposes embedded bootstrap templates; these tests keep
+/// the old merge-catalog scenarios compileable without reintroducing bootstrap
+/// fallback into `template_store`.
+fn bootstrap_template(template_id: &str) -> anyhow::Result<Option<TemplateSnapshot>> {
+    Ok(match template_id {
+        "builtin:xiaoyuan" => Some(TemplateSnapshot {
+            system_prompt_extra: "调研员，负责竞品调研".into(),
+            ..synthetic_snap("builtin:xiaoyuan", "1.0", "小研")
+        }),
+        _ => None,
+    })
 }
 
 // ─── Scenario 1: first-load hire stamps snapshot from bootstrap ──────────

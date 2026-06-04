@@ -123,6 +123,7 @@ impl RuntimeLlmExecutor for SessionTestExecutor {
         _generated_file_ids: &[String],
         _file_metas: &[Value],
         _thinking_blocks: &[Value],
+        _error: Option<&app_lib::storage::file_store::types::MessageError>,
     ) -> Result<String, TurnError> {
         Ok("assistant-msg".to_string())
     }

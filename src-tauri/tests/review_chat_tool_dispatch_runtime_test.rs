@@ -19,6 +19,7 @@ mod common;
 use std::sync::{Arc, Mutex};
 
 use app_lib::runtime::chat::tool_round_types::RuntimeToolCallRequest;
+use app_lib::runtime::event_bus::RuntimeEventSubscriber;
 use app_lib::runtime::tools::description_context::ToolDescriptionContext;
 use app_lib::runtime::tools::{
     AllowAllPermissionPipeline, RuntimeTool, ToolDefinition, ToolDispatcher, ToolError,
@@ -137,7 +138,8 @@ async fn review_tool_round_driver_emits_tool_events_via_runtime_bus() {
 
     let host = RecordingRuntimeHost::new();
     let bus = RuntimeEventBus::new();
-    bus.subscribe(Arc::new(TauriEventAdapter::new(host.clone())));
+    let _adapter: Arc<dyn RuntimeEventSubscriber> = Arc::new(TauriEventAdapter::new(host.clone()));
+    bus.subscribe(_adapter.clone());
 
     let mapping = IdentityMapping::from_legacy_conversation_id("conv-t5".to_string());
     let turn = TurnState::new(mapping, RunId::new("run-t5"), "call spy_t5".to_string());

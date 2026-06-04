@@ -57,14 +57,21 @@ pub struct CompactBoundaryRecord {
 
 /// Metadata about the segment of messages preserved after compaction.
 ///
-/// Mirrors claude-code-best's `preservedSegment` (headUuid / anchorUuid).
+/// Mirrors claude-code-best's `preservedSegment`:
+/// head = first kept message, anchor = summary message, tail = last kept message.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PreservedSegment {
     /// UUID of the first message kept in the preserved tail.
+    #[serde(default)]
     pub first_preserved_message_id: String,
-    /// UUID of the last message before the compact boundary.
+    /// UUID of the summary message the preserved tail is attached after.
+    #[serde(default)]
     pub anchor_message_id: String,
+    /// UUID of the last message kept in the preserved tail.
+    #[serde(default)]
+    pub tail_message_id: String,
     /// Estimated token count of the preserved segment.
+    #[serde(default)]
     pub preserved_token_count: u64,
 }
 
@@ -320,6 +327,139 @@ pub fn should_auto_compact(messages: &[serde_json::Value], config: &AutoCompactC
     estimate_total_chars(messages) >= config.threshold_chars
 }
 
+fn is_ptl_retry_context_message(message: &serde_json::Value) -> bool {
+    message.get("role").and_then(|value| value.as_str()) == Some("system")
+        || message
+            .get("isMeta")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false)
+        || message
+            .get("content")
+            .and_then(|value| value.as_str())
+            .map(|content| content.contains("protocol_path_anthropic"))
+            .unwrap_or(false)
+}
+
+fn truncate_string_at_char_boundary(text: &str, keep_chars: usize) -> String {
+    text.chars().take(keep_chars).collect()
+}
+
+fn reduce_message_content_for_ptl(message: &serde_json::Value) -> Option<serde_json::Value> {
+    let content = message.get("content")?;
+    let text = content.as_str()?;
+    let char_count = text.chars().count();
+    if char_count <= 256 {
+        return None;
+    }
+
+    let keep_chars = ((char_count * 4) / 5).max(128).min(char_count - 1);
+    let mut rewritten = message.clone();
+    if let Some(object) = rewritten.as_object_mut() {
+        let preview = truncate_string_at_char_boundary(text, keep_chars);
+        object.insert(
+            "content".to_string(),
+            serde_json::Value::String(format!(
+                "{}\n[truncated for prompt-too-long retry: original chars={}]",
+                preview, char_count
+            )),
+        );
+        Some(rewritten)
+    } else {
+        None
+    }
+}
+
+fn truncate_single_round_for_ptl(
+    prefix: &[serde_json::Value],
+    body: &[serde_json::Value],
+    original_len: usize,
+) -> Vec<serde_json::Value> {
+    let Some((index, reduced)) = body
+        .iter()
+        .enumerate()
+        .filter_map(|(index, message)| reduce_message_content_for_ptl(message).map(|m| (index, m)))
+        .max_by_key(|(_, message)| message.to_string().len())
+    else {
+        return prefix
+            .iter()
+            .cloned()
+            .chain(std::iter::once(serde_json::json!({
+                "role": "user",
+                "content": "[conversation content truncated for prompt-too-long retry]"
+            })))
+            .collect();
+    };
+
+    let mut truncated = prefix.to_vec();
+    truncated.extend(body.iter().enumerate().map(|(i, message)| {
+        if i == index {
+            reduced.clone()
+        } else {
+            message.clone()
+        }
+    }));
+
+    if truncated
+        .iter()
+        .map(|message| message.to_string().len())
+        .sum::<usize>()
+        < original_len
+    {
+        truncated
+    } else {
+        prefix
+            .iter()
+            .cloned()
+            .chain(std::iter::once(serde_json::json!({
+                "role": "user",
+                "content": "[conversation content truncated for prompt-too-long retry]"
+            })))
+            .collect()
+    }
+}
+
+pub fn truncate_messages_for_ptl_retry(messages: &[serde_json::Value]) -> Vec<serde_json::Value> {
+    if messages.len() <= 1 {
+        return messages.to_vec();
+    }
+    let original_len = messages
+        .iter()
+        .map(|message| message.to_string().len())
+        .sum();
+
+    let prefix_len = messages
+        .iter()
+        .take_while(|message| is_ptl_retry_context_message(message))
+        .count();
+    let body = &messages[prefix_len..];
+    if body.len() <= 1 {
+        return messages.to_vec();
+    }
+
+    let mut rounds: Vec<Vec<serde_json::Value>> = Vec::new();
+    for message in body {
+        let starts_round = message.get("role").and_then(|value| value.as_str()) == Some("user");
+        if starts_round || rounds.is_empty() {
+            rounds.push(Vec::new());
+        }
+        rounds
+            .last_mut()
+            .expect("round exists")
+            .push(message.clone());
+    }
+
+    if rounds.len() <= 1 {
+        return truncate_single_round_for_ptl(&messages[..prefix_len], body, original_len);
+    }
+
+    let drop_rounds = rounds.len().div_ceil(5).clamp(1, rounds.len() - 1);
+    let mut truncated = messages[..prefix_len].to_vec();
+    for round in rounds.into_iter().skip(drop_rounds) {
+        truncated.extend(round);
+    }
+    truncated
+}
+
 pub fn compact_messages_via_llm(
     messages: Vec<serde_json::Value>,
     summary_text: String,
@@ -335,6 +475,7 @@ pub fn compact_messages_via_llm(
                     != Some(true)
         })
         .unwrap_or_else(|| messages.len().saturating_sub(1));
+    let messages_summarized = tail_start;
     let tail_round = messages[tail_start..].to_vec();
 
     let boundary = serde_json::json!({
@@ -344,12 +485,13 @@ pub fn compact_messages_via_llm(
         "compactMetadata": {
             "trigger": "auto",
             "preTokens": pre_tokens,
-            "messagesSummarized": messages.len(),
+            "messagesSummarized": messages_summarized,
         },
         "createdAt": chrono::Utc::now().to_rfc3339(),
     });
 
     let summary_message = serde_json::json!({
+        "id": format!("compact-summary-{}", uuid::Uuid::new_v4()),
         "role": "user",
         "content": format!("<context>\n{}\n</context>", summary_text),
         "isCompactSummary": true,
@@ -364,7 +506,7 @@ pub fn compact_messages_via_llm(
         new_messages,
         pre_tokens,
         post_tokens,
-        messages_summarized: messages.len(),
+        messages_summarized,
     }
 }
 

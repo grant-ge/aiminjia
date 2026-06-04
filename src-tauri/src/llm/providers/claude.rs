@@ -539,6 +539,7 @@ impl ClaudeProvider {
             stop_reason,
             usage,
             tool_calls,
+            thinking_blocks: Vec::new(),
         })
     }
 

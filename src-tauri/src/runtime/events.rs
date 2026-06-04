@@ -220,6 +220,10 @@ pub enum RuntimeEventKind {
     /// frontend can show a compaction summary (e.g. "保存了 X 个 token").
     CompactCompleted {
         conversation_id: String,
+        boundary_id: String,
+        trigger: String,
+        created_at: String,
+        tail_message_id: Option<String>,
         pre_tokens: u64,
         post_tokens: u64,
         messages_summarized: usize,
@@ -369,6 +373,10 @@ impl RuntimeEvent {
         session_id: SessionId,
         run_id: RunId,
         conversation_id: String,
+        boundary_id: String,
+        trigger: String,
+        created_at: String,
+        tail_message_id: Option<String>,
         pre_tokens: u64,
         post_tokens: u64,
         messages_summarized: usize,
@@ -378,6 +386,10 @@ impl RuntimeEvent {
             run_id,
             RuntimeEventKind::CompactCompleted {
                 conversation_id,
+                boundary_id,
+                trigger,
+                created_at,
+                tail_message_id,
                 pre_tokens,
                 post_tokens,
                 messages_summarized,

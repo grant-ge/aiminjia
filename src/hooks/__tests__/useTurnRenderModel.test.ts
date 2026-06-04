@@ -20,6 +20,23 @@ function toolResultMsg(id: string, toolResult: ToolResultContent): Message {
   return { id, conversationId: 'c1', role: 'tool', createdAt: new Date().toISOString(), content: { text: '' }, toolResult }
 }
 
+function compactBoundaryMsg(id: string): Message {
+  return {
+    id,
+    conversationId: 'c1',
+    role: 'system',
+    createdAt: new Date().toISOString(),
+    content: { text: 'Conversation compacted' },
+    subtype: 'compact_boundary',
+    compactMetadata: {
+      preTokens: 12000,
+      postTokens: 4500,
+      tokensSaved: 7500,
+      messagesSummarized: 18,
+    },
+  } as Message
+}
+
 describe('buildTurnsFromMessages', () => {
   it('groups messages into turns starting at each user message', () => {
     const msgs = [userMsg('u1', 'hi'), aiMsg('a1', 'hello'), userMsg('u2', 'again'), aiMsg('a2', 'hi!')]
@@ -29,8 +46,47 @@ describe('buildTurnsFromMessages', () => {
     expect(turns[1].aiSegments.map((s) => s.id)).toEqual(['a2'])
   })
 
+  it('renders compact boundary system messages as boundary blocks', () => {
+    const turns = buildTurnsFromMessages([
+      compactBoundaryMsg('compact-1'),
+      userMsg('u1', 'next question'),
+    ], [])
+
+    expect(turns[0]?.compactBoundary).toMatchObject({
+      id: 'compact-1',
+      preTokens: 12000,
+      postTokens: 4500,
+      tokensSaved: 7500,
+      messagesSummarized: 18,
+    })
+    expect(turns[1]?.userMessage?.id).toBe('u1')
+  })
+
+  it('hides compact summary user artifacts after compact boundaries', () => {
+    const summary = userMsg('summary-1', '<context>\nold history summary\n</context>')
+    summary.isCompactSummary = true
+
+    const turns = buildTurnsFromMessages([
+      compactBoundaryMsg('compact-1'),
+      summary,
+      userMsg('u1', 'next question'),
+      aiMsg('a1', 'next answer'),
+    ], [])
+
+    expect(turns.map((turn) => turn.userMessage?.id).filter(Boolean)).toEqual(['u1'])
+    expect(turns.some((turn) => turn.userMessage?.id === 'summary-1')).toBe(false)
+    expect(turns[0]?.compactBoundary?.id).toBe('compact-1')
+    expect(turns[1]?.aiSegments.map((segment) => segment.id)).toEqual(['a1'])
+  })
+
   it('attaches tool executions to the last turn as a single ToolGroup', () => {
-    const msgs = [userMsg('u1', 'x'), aiMsg('a1', 'done')]
+    const msgs = [
+      userMsg('u1', 'x'),
+      assistantMsgWithToolCalls('a1', [
+        { id: 't1', name: 'fetch_feedback', arguments: {} },
+        { id: 't2', name: 'cluster_topics', arguments: {} },
+      ]),
+    ]
     const tools: ToolExecution[] = [
       { toolId: 't1', toolName: 'fetch_feedback', status: 'completed' },
       { toolId: 't2', toolName: 'cluster_topics', status: 'completed' },
@@ -44,11 +100,18 @@ describe('buildTurnsFromMessages', () => {
   })
 
   it('marks toolGroup as running when any tool is executing', () => {
+    const msgs = [
+      userMsg('u1', 'x'),
+      assistantMsgWithToolCalls('a1', [
+        { id: 't1', name: 'fetch', arguments: {} },
+        { id: 't2', name: 'run', arguments: {} },
+      ]),
+    ]
     const tools: ToolExecution[] = [
       { toolId: 't1', toolName: 'fetch', status: 'completed' },
       { toolId: 't2', toolName: 'run', status: 'executing' },
     ]
-    const turns = buildTurnsFromMessages([userMsg('u1', 'x')], tools)
+    const turns = buildTurnsFromMessages(msgs, tools)
     expect(turns[0].toolGroup?.status).toBe('running')
   })
 

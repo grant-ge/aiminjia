@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use app_lib::runtime::event_bus::RuntimeEventBus;
+use app_lib::runtime::event_bus::RuntimeEventSubscriber;
 use app_lib::runtime::events::{RuntimeEvent, RuntimeEventKind};
 use app_lib::runtime::ids::{RunId, SessionId, TaskId, ToolCallId};
 use app_lib::runtime::store::InMemoryTaskStore;
@@ -8,16 +9,21 @@ use app_lib::runtime::task::{TaskRecord, TaskRuntime, TaskStatus};
 use app_lib::transport::tauri_event_adapter::TauriEventAdapter;
 use app_lib::transport::testing::RecordingRuntimeHost;
 
-fn make_bus_with_host() -> (RuntimeEventBus, Arc<RecordingRuntimeHost>) {
+fn make_bus_with_host() -> (
+    RuntimeEventBus,
+    Arc<RecordingRuntimeHost>,
+    Arc<dyn RuntimeEventSubscriber>,
+) {
     let host = RecordingRuntimeHost::new();
     let bus = RuntimeEventBus::new();
-    bus.subscribe(Arc::new(TauriEventAdapter::new(host.clone())));
-    (bus, host)
+    let adapter: Arc<dyn RuntimeEventSubscriber> = Arc::new(TauriEventAdapter::new(host.clone()));
+    bus.subscribe(adapter.clone());
+    (bus, host, adapter)
 }
 
 #[tokio::test]
 async fn review_tool_executing_payload_includes_input() {
-    let (bus, host) = make_bus_with_host();
+    let (bus, host, _adapter) = make_bus_with_host();
     let session_id = SessionId::new("s1");
     let run_id = RunId::new("r1");
 
@@ -50,7 +56,7 @@ async fn review_tool_executing_payload_includes_input() {
 
 #[tokio::test]
 async fn review_tool_completed_payload_is_full_message() {
-    let (bus, host) = make_bus_with_host();
+    let (bus, host, _adapter) = make_bus_with_host();
     let session_id = SessionId::new("s2");
     let run_id = RunId::new("r2");
 
@@ -109,7 +115,8 @@ async fn review_tool_completed_payload_is_full_message() {
 fn review_task_status_changed_payload_includes_subject_and_active_form() {
     let host = RecordingRuntimeHost::new();
     let bus = RuntimeEventBus::new();
-    bus.subscribe(Arc::new(TauriEventAdapter::new(host.clone())));
+    let _adapter: Arc<dyn RuntimeEventSubscriber> = Arc::new(TauriEventAdapter::new(host.clone()));
+    bus.subscribe(_adapter.clone());
 
     let store = Arc::new(InMemoryTaskStore::new());
     let runtime = TaskRuntime::with_event_bus(store.clone(), bus);
@@ -158,7 +165,7 @@ fn review_task_status_changed_payload_includes_subject_and_active_form() {
 
 #[tokio::test]
 async fn review_user_message_persisted_includes_client_message_id() {
-    let (bus, host) = make_bus_with_host();
+    let (bus, host, _adapter) = make_bus_with_host();
     let session_id = SessionId::new("s-user-1");
     let run_id = RunId::new("r-user-1");
 
@@ -171,6 +178,7 @@ async fn review_user_message_persisted_includes_client_message_id() {
             content: serde_json::json!({ "text": "hello" }),
             client_message_id: Some("client-uuid-123".to_string()),
             tool_calls: None,
+            error: None,
         },
     ))
     .await

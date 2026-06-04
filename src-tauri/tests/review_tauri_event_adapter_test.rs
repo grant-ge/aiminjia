@@ -244,6 +244,32 @@ fn turn_completed_maps_to_turn_completed_with_outcome_tokens_cost_and_denial_cou
 }
 
 #[test]
+fn compact_completed_maps_to_compact_completed_with_token_savings() {
+    let legacy = mapped(RuntimeEventKind::CompactCompleted {
+        conversation_id: "conv-compact".to_string(),
+        boundary_id: "boundary-123".to_string(),
+        trigger: "manual".to_string(),
+        created_at: "2026-06-02T00:00:00Z".to_string(),
+        tail_message_id: Some("tail-789".to_string()),
+        pre_tokens: 12_000,
+        post_tokens: 4_500,
+        messages_summarized: 18,
+    });
+
+    assert_eq!(legacy.name, "compact:completed");
+    assert_eq!(legacy.payload["conversationId"], "conv-compact");
+    assert_eq!(legacy.payload["runId"], "run-456");
+    assert_eq!(legacy.payload["boundaryId"], "boundary-123");
+    assert_eq!(legacy.payload["trigger"], "manual");
+    assert_eq!(legacy.payload["createdAt"], "2026-06-02T00:00:00Z");
+    assert_eq!(legacy.payload["tailMessageId"], "tail-789");
+    assert_eq!(legacy.payload["preTokens"], 12_000);
+    assert_eq!(legacy.payload["postTokens"], 4_500);
+    assert_eq!(legacy.payload["tokensSaved"], 7_500);
+    assert_eq!(legacy.payload["messagesSummarized"], 18);
+}
+
+#[test]
 fn task_status_changed_maps_to_task_status_changed_with_task_status_and_context() {
     let legacy = mapped(RuntimeEventKind::TaskStatusChanged {
         task_id: TaskId::new("task-001"),

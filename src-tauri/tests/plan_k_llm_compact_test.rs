@@ -121,3 +121,24 @@ fn compact_preserves_tail_tool_round() {
     assert_eq!(output.new_messages[4]["role"], "tool");
     assert_eq!(output.new_messages[4]["toolCallId"], "tc_1");
 }
+
+#[test]
+fn compact_messages_summarized_excludes_preserved_tail_round() {
+    let messages = vec![
+        json!({ "role": "user", "id": "u1", "content": "old question" }),
+        json!({ "role": "assistant", "id": "a1", "content": "old answer" }),
+        json!({ "role": "user", "id": "u2", "content": "latest question" }),
+        json!({ "role": "assistant", "id": "a2", "content": "latest answer" }),
+    ];
+
+    let output = compact_messages_via_llm_stub(messages, "摘要".to_string());
+
+    assert_eq!(
+        output.messages_summarized, 2,
+        "messagesSummarized should count messages replaced by the summary, not the preserved tail"
+    );
+    assert_eq!(
+        output.new_messages[0]["compactMetadata"]["messagesSummarized"],
+        2
+    );
+}

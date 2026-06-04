@@ -9,9 +9,9 @@ use async_trait::async_trait;
 use crate::llm::gateway::LlmGateway;
 use crate::llm::masking::MaskingLevel;
 use crate::llm::streaming::{ChatMessage, SystemPromptSegment};
-use crate::models::settings::AppSettings;
 use crate::runtime::chat::compact_client::CompactSummaryClient;
-use crate::runtime::chat::turn_config::TurnError;
+use crate::runtime::chat::compaction::truncate_messages_for_ptl_retry;
+use crate::runtime::chat::turn_config::{ResolvedLlmSettings, TurnError};
 
 const COMPACT_SYSTEM_PROMPT: &str = r#"你是一个对话摘要助手。请用中文生成对话历史的结构化摘要。
 要求：
@@ -35,70 +35,173 @@ const COMPACT_SYSTEM_PROMPT: &str = r#"你是一个对话摘要助手。请用�
 /// conversation's cache state.
 pub struct LlmCompactSummaryClient {
     gateway: Arc<LlmGateway>,
-    settings: AppSettings,
 }
 
 impl LlmCompactSummaryClient {
-    pub fn new(gateway: Arc<LlmGateway>, settings: AppSettings) -> Self {
-        Self { gateway, settings }
+    pub fn new(gateway: Arc<LlmGateway>) -> Self {
+        Self { gateway }
     }
 }
 
 /// Convert raw JSON messages to `Vec<ChatMessage>` for the gateway.
 ///
-/// Only keeps `user` and `assistant` roles. Tool result messages and
-/// compact boundary messages are stripped — the LLM doesn't need raw
-/// tool outputs to generate a summary.
+/// The compact request itself has no tools, so tool-use/result structures are
+/// serialized into bounded plain-text markers instead of being sent as tool
+/// role messages. This preserves continuity for the summary without violating
+/// provider tool-pair invariants.
+fn message_content_text(msg: &serde_json::Value) -> String {
+    let Some(content) = msg.get("content") else {
+        return String::new();
+    };
+    if let Some(text) = content.as_str() {
+        return text.to_string();
+    }
+    if let Some(text) = content.get("text").and_then(|value| value.as_str()) {
+        return text.to_string();
+    }
+    if let Some(blocks) = content.as_array() {
+        return blocks
+            .iter()
+            .filter_map(|block| {
+                if block.get("type").and_then(|value| value.as_str()) == Some("text") {
+                    block.get("text").and_then(|value| value.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+    }
+    String::new()
+}
+
+fn compact_preview(text: &str, max_chars: usize) -> String {
+    let mut preview: String = text.chars().take(max_chars).collect();
+    if text.chars().count() > max_chars {
+        preview.push_str("...");
+    }
+    preview
+}
+
+fn tool_call_id(call: &serde_json::Value) -> String {
+    call.get("id")
+        .or_else(|| call.get("toolCallId"))
+        .or_else(|| call.get("tool_call_id"))
+        .and_then(|value| value.as_str())
+        .unwrap_or("unknown")
+        .to_string()
+}
+
+fn tool_call_name(call: &serde_json::Value) -> String {
+    call.get("name")
+        .or_else(|| call.get("toolName"))
+        .and_then(|value| value.as_str())
+        .or_else(|| {
+            call.get("function")
+                .and_then(|function| function.get("name"))
+                .and_then(|value| value.as_str())
+        })
+        .unwrap_or("unknown")
+        .to_string()
+}
+
+fn tool_call_arguments(call: &serde_json::Value) -> String {
+    let arguments = call
+        .get("arguments")
+        .or_else(|| call.get("input"))
+        .or_else(|| call.get("args"))
+        .or_else(|| {
+            call.get("function")
+                .and_then(|function| function.get("arguments"))
+        });
+    arguments
+        .and_then(|value| serde_json::to_string(value).ok())
+        .map(|value| compact_preview(&value, 600))
+        .unwrap_or_default()
+}
+
+fn tool_use_markers(msg: &serde_json::Value) -> Vec<String> {
+    let Some(calls) = msg
+        .get("toolCalls")
+        .or_else(|| msg.get("tool_calls"))
+        .and_then(|value| value.as_array())
+    else {
+        return Vec::new();
+    };
+
+    calls
+        .iter()
+        .map(|call| {
+            let id = tool_call_id(call);
+            let name = tool_call_name(call);
+            let arguments = tool_call_arguments(call);
+            if arguments.is_empty() {
+                format!("[tool_use id={} name={}]", id, name)
+            } else {
+                format!("[tool_use id={} name={} arguments={}]", id, name, arguments)
+            }
+        })
+        .collect()
+}
+
+fn tool_result_marker(msg: &serde_json::Value) -> Option<String> {
+    let id = msg
+        .get("toolCallId")
+        .or_else(|| msg.get("tool_call_id"))
+        .and_then(|value| value.as_str())?;
+    let name = msg
+        .get("name")
+        .or_else(|| msg.get("toolName"))
+        .and_then(|value| value.as_str())
+        .unwrap_or("unknown");
+    let content = compact_preview(&message_content_text(msg), 1200);
+    Some(format!(
+        "[tool_result id={} name={}]\n{}",
+        id, name, content
+    ))
+}
+
 fn convert_to_chat_messages(messages: &[serde_json::Value]) -> Vec<ChatMessage> {
     messages
         .iter()
         .filter_map(|msg| {
             let role = msg.get("role")?.as_str()?;
+            if msg.get("subtype").and_then(|v| v.as_str()) == Some("compact_boundary") {
+                return None;
+            }
+            if msg.get("isCompactSummary").and_then(|v| v.as_bool()) == Some(true) {
+                return None;
+            }
             match role {
                 "user" | "assistant" => {
-                    let content = msg
-                        .get("content")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    // Skip compact boundary and summary messages
-                    if msg.get("subtype").and_then(|v| v.as_str()) == Some("compact_boundary") {
-                        return None;
+                    let mut parts = Vec::new();
+                    let content = message_content_text(msg);
+                    if !content.trim().is_empty() {
+                        parts.push(content);
                     }
-                    if msg.get("isCompactSummary").and_then(|v| v.as_bool()) == Some(true) {
-                        return None;
-                    }
-                    Some(ChatMessage::text(role, content))
+                    parts.extend(tool_use_markers(msg));
+                    (!parts.is_empty()).then(|| ChatMessage::text(role, parts.join("\n")))
                 }
+                "tool" => tool_result_marker(msg).map(|marker| ChatMessage::text("user", marker)),
                 _ => None,
             }
         })
         .collect()
 }
 
-/// Truncate messages if there are too many, keeping the first N and last N.
-/// This prevents the compact LLM call itself from hitting PromptTooLong.
-fn truncate_messages_for_compact(messages: Vec<ChatMessage>) -> Vec<ChatMessage> {
-    // Keep at most 100 messages: first 10 (context) + last 90 (recent)
-    const MAX_COMPACT_MESSAGES: usize = 100;
-    const HEAD_KEEP: usize = 10;
+fn is_prompt_too_long_error(err: &anyhow::Error) -> bool {
+    let lower = err.to_string().to_lowercase();
+    lower.contains("prompt too long")
+        || lower.contains("too many tokens")
+        || lower.contains("context length")
+        || lower.contains("context_length_exceeded")
+}
 
-    if messages.len() <= MAX_COMPACT_MESSAGES {
-        return messages;
-    }
-
-    let tail_keep = MAX_COMPACT_MESSAGES - HEAD_KEEP - 1;
-    let mut result: Vec<ChatMessage> = Vec::with_capacity(MAX_COMPACT_MESSAGES);
-    result.extend(messages[..HEAD_KEEP].iter().cloned());
-    result.push(ChatMessage::text(
-        "user",
-        format!(
-            "[中间省略 {} 条消息]",
-            messages.len() - HEAD_KEEP - tail_keep
-        ),
-    ));
-    result.extend(messages[messages.len() - tail_keep..].iter().cloned());
-    result
+fn serialized_message_len(messages: &[serde_json::Value]) -> usize {
+    messages
+        .iter()
+        .map(|message| message.to_string().len())
+        .sum()
 }
 
 #[async_trait]
@@ -107,13 +210,15 @@ impl CompactSummaryClient for LlmCompactSummaryClient {
         &self,
         conversation_id: &str,
         messages: &[serde_json::Value],
+        llm_settings: &ResolvedLlmSettings,
+        trace_id: Option<&str>,
+        run_id: Option<&str>,
     ) -> Result<String, TurnError> {
-        let chat_messages = convert_to_chat_messages(messages);
-        let mut chat_messages = truncate_messages_for_compact(chat_messages);
-
-        if chat_messages.is_empty() {
+        let mut retry_messages = messages.to_vec();
+        if convert_to_chat_messages(&retry_messages).is_empty() {
             return Ok(String::new());
         }
+        let settings = llm_settings.to_app_settings();
 
         let system_segments = vec![SystemPromptSegment {
             text: COMPACT_SYSTEM_PROMPT.to_string(),
@@ -123,59 +228,80 @@ impl CompactSummaryClient for LlmCompactSummaryClient {
         // R3.3: PTL retry — if the compact LLM call itself triggers
         // PromptTooLong, truncate further and retry (max 3 attempts).
         const MAX_PTL_RETRIES: usize = 3;
-        let mut last_error = None;
+        let mut last_error: Option<TurnError> = None;
 
         for attempt in 0..=MAX_PTL_RETRIES {
+            let chat_messages = convert_to_chat_messages(&retry_messages);
+            log::debug!(
+                "[compact] summary attempt={} conv={} raw_messages={} chat_messages={}",
+                attempt + 1,
+                conversation_id,
+                retry_messages.len(),
+                chat_messages.len()
+            );
             let result = self
                 .gateway
                 .send_message_with_segments(
-                    &self.settings,
+                    &settings,
                     chat_messages.clone(),
                     MaskingLevel::Relaxed,
-                    None, // system_prompt
-                    None, // context_message
-                    None, // tool_defs_override
+                    None,         // system_prompt
+                    None,         // context_message
+                    Some(vec![]), // tool_defs_override
                     8_000,
-                    Some(conversation_id),
+                    None, // conversation_id: compact summary must not use sticky routing
                     None, // anthropic_multimodal_turn
                     system_segments.clone(),
-                    None, // trace_id
-                    None, // run_id
+                    trace_id,
+                    run_id,
                 )
                 .await;
 
             match result {
-                Ok(response) => return Ok(response.content),
+                Ok(response) => {
+                    if response.content.trim().is_empty() {
+                        return Err(TurnError::LlmError(
+                            "compact_summary returned empty summary".to_string(),
+                        ));
+                    }
+                    return Ok(response.content);
+                }
                 Err(e) => {
-                    let err_str = e.to_string();
-                    // Check if this is a PromptTooLong error
-                    if err_str.contains("prompt too long")
-                        || err_str.contains("too many tokens")
-                        || err_str.contains("context length")
-                    {
-                        // Truncate 30% more aggressively and retry
-                        let new_len = (chat_messages.len() * 7) / 10;
-                        if new_len < 20 || attempt >= MAX_PTL_RETRIES {
-                            last_error = Some(TurnError::LlmError(format!(
+                    let err_text = e.to_string();
+                    if is_prompt_too_long_error(&e) {
+                        if attempt >= MAX_PTL_RETRIES {
+                            last_error = Some(TurnError::PromptTooLong(format!(
                                 "compact_summary PTL exhausted after {} retries: {}",
-                                attempt, err_str
+                                MAX_PTL_RETRIES, err_text
                             )));
                             break;
                         }
-                        chat_messages = chat_messages[chat_messages.len() - new_len..].to_vec();
+                        let truncated = truncate_messages_for_ptl_retry(&retry_messages);
+                        if serialized_message_len(&truncated)
+                            >= serialized_message_len(&retry_messages)
+                        {
+                            last_error = Some(TurnError::PromptTooLong(format!(
+                                "compact_summary PTL retry could not reduce messages: {}",
+                                err_text
+                            )));
+                            break;
+                        }
+                        retry_messages = truncated;
                         log::warn!(
-                            "[compact] PTL retry {}/{}: truncated to {} messages",
+                            "[compact] PTL retry {}/{}: truncated to {} raw messages",
                             attempt + 1,
                             MAX_PTL_RETRIES,
-                            chat_messages.len()
+                            retry_messages.len()
                         );
-                        last_error =
-                            Some(TurnError::LlmError(format!("compact_summary retry: {}", err_str)));
+                        last_error = Some(TurnError::PromptTooLong(format!(
+                            "compact_summary retry: {}",
+                            err_text
+                        )));
                         continue;
                     }
                     last_error = Some(TurnError::LlmError(format!(
                         "compact_summary failed: {}",
-                        err_str
+                        err_text
                     )));
                     break;
                 }
@@ -199,19 +325,27 @@ mod tests {
     }
 
     #[test]
-    fn test_convert_strips_tool_messages() {
+    fn test_convert_serializes_tool_messages_as_text_markers() {
         let messages = vec![
             serde_json::json!({"role": "user", "content": "hello"}),
-            serde_json::json!({"role": "assistant", "content": "thinking", "toolCalls": []}),
-            serde_json::json!({"role": "tool", "toolCallId": "tc1", "content": "result"}),
+            serde_json::json!({
+                "role": "assistant",
+                "content": "thinking",
+                "toolCalls": [{ "id": "tc1", "name": "Read", "arguments": { "path": "/tmp/a.txt" } }]
+            }),
+            serde_json::json!({"role": "tool", "toolCallId": "tc1", "name": "Read", "content": "result"}),
             serde_json::json!({"role": "assistant", "content": "done"}),
         ];
         let result = convert_to_chat_messages(&messages);
-        // tool message should be stripped, 3 messages remain
-        assert_eq!(result.len(), 3);
+        assert_eq!(result.len(), 4);
         assert_eq!(result[0].role, "user");
         assert_eq!(result[1].role, "assistant");
-        assert_eq!(result[2].role, "assistant");
+        assert!(result[1].content.contains("[tool_use id=tc1 name=Read"));
+        assert!(result[1].content.contains("/tmp/a.txt"));
+        assert_eq!(result[2].role, "user");
+        assert!(result[2].content.contains("[tool_result id=tc1 name=Read]"));
+        assert!(result[2].content.contains("result"));
+        assert_eq!(result[3].role, "assistant");
     }
 
     #[test]
@@ -224,27 +358,5 @@ mod tests {
         let result = convert_to_chat_messages(&messages);
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].content, "real question");
-    }
-
-    #[test]
-    fn test_truncate_under_limit() {
-        let messages: Vec<ChatMessage> = (0..50)
-            .map(|i| ChatMessage::text("user", format!("msg {}", i)))
-            .collect();
-        let result = truncate_messages_for_compact(messages.clone());
-        assert_eq!(result.len(), 50);
-    }
-
-    #[test]
-    fn test_truncate_over_limit() {
-        let messages: Vec<ChatMessage> = (0..200)
-            .map(|i| ChatMessage::text("user", format!("msg {}", i)))
-            .collect();
-        let result = truncate_messages_for_compact(messages);
-        // 10 head + 1 truncation marker + 89 tail = 100
-        assert_eq!(result.len(), 100);
-        assert_eq!(result[0].content, "msg 0");
-        assert_eq!(result[10].content, "[中间省略 101 条消息]");
-        assert_eq!(result.last().unwrap().content, "msg 199");
     }
 }

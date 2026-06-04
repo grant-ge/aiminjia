@@ -6,7 +6,7 @@
 
 use async_trait::async_trait;
 
-use crate::runtime::chat::turn_config::TurnError;
+use crate::runtime::chat::turn_config::{ResolvedLlmSettings, TurnError};
 
 /// A compaction backend that can summarise a conversation slice into a
 /// replacement "compact summary" message.
@@ -21,5 +21,8 @@ pub trait CompactSummaryClient: Send + Sync {
         &self,
         conversation_id: &str,
         messages: &[serde_json::Value],
+        llm_settings: &ResolvedLlmSettings,
+        trace_id: Option<&str>,
+        run_id: Option<&str>,
     ) -> Result<String, TurnError>;
 }

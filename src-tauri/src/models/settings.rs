@@ -161,6 +161,11 @@ impl AppSettings {
                 .and_then(|v| v.parse::<u32>().ok())
                 .unwrap_or(default)
         };
+        let get_usize_option = |key: &str| -> Option<usize> {
+            map.get(key)
+                .and_then(|v| v.parse::<usize>().ok())
+                .filter(|v| *v > 0)
+        };
 
         Self {
             primary_model: get_str("primaryModel", &defaults.primary_model),
@@ -203,7 +208,7 @@ impl AppSettings {
                 "uiHomeRecentWorkspaces",
                 &defaults.ui_home_recent_workspaces,
             ),
-            context_window: None,
+            context_window: get_usize_option("contextWindow"),
         }
     }
 }
@@ -263,5 +268,25 @@ mod tests {
             parsed.ui_home_recent_workspaces,
             s.ui_home_recent_workspaces
         );
+    }
+
+    #[test]
+    fn reads_context_window_from_string_map() {
+        let mut map = HashMap::new();
+        map.insert("contextWindow".to_string(), "32000".to_string());
+
+        let settings = AppSettings::from_string_map(&map);
+
+        assert_eq!(settings.context_window, Some(32_000));
+    }
+
+    #[test]
+    fn ignores_invalid_context_window_from_string_map() {
+        let mut map = HashMap::new();
+        map.insert("contextWindow".to_string(), "0".to_string());
+
+        let settings = AppSettings::from_string_map(&map);
+
+        assert_eq!(settings.context_window, None);
     }
 }

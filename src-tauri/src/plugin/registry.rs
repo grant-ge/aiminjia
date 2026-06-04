@@ -109,6 +109,19 @@ impl RequestScopedRuntimeDeps {
     }
 }
 
+#[derive(Debug)]
+struct AppSkillRegistryRefresher {
+    app: tauri::AppHandle,
+}
+
+impl crate::runtime::tools::builtin::refresh_skills::SkillRegistryRefresher
+    for AppSkillRegistryRefresher
+{
+    fn refresh_skill_registry(&self) -> Result<(), String> {
+        crate::commands::skill_management::refresh_skill_registry(&self.app)
+    }
+}
+
 const REQUEST_SCOPED_RUNTIME_TOOL_NAMES: &[&str] = &[
     "WebSearch",
     "Agent",
@@ -985,12 +998,12 @@ impl ToolRegistry {
                 as Arc<dyn crate::runtime::tools::RuntimeTool>),
             "Skill" => {
                 let registry = ctx.skill_registry.clone()?;
-                // 注入 AppHandle 让 miss-retry 能调 refresh_skill_registry。
+                // 注入 transport 层 refresher，让 runtime tool 不直接依赖 Tauri。
                 // ctx.app_handle 为 None 的 test/legacy 路径退回到无 refresh 的旧行为。
                 let tool = match ctx.app_handle.as_ref() {
-                    Some(app) => builtin::load_skill::LoadSkillRuntimeTool::with_app_handle(
+                    Some(app) => builtin::load_skill::LoadSkillRuntimeTool::with_refresher(
                         registry,
-                        Arc::new(app.clone()),
+                        Arc::new(AppSkillRegistryRefresher { app: app.clone() }),
                     ),
                     None => builtin::load_skill::LoadSkillRuntimeTool::new(registry),
                 };
@@ -1034,10 +1047,11 @@ impl ToolRegistry {
             }
             "RefreshSkills" => {
                 let app = ctx.app_handle.as_ref()?;
-                Some(Arc::new(builtin::refresh_skills::RefreshSkillsTool::new(
-                    Arc::new(app.clone()),
-                ))
-                    as Arc<dyn crate::runtime::tools::RuntimeTool>)
+                Some(
+                    Arc::new(builtin::refresh_skills::RefreshSkillsTool::new(Arc::new(
+                        AppSkillRegistryRefresher { app: app.clone() },
+                    ))) as Arc<dyn crate::runtime::tools::RuntimeTool>,
+                )
             }
             _ => None,
         }

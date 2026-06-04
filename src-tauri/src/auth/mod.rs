@@ -408,11 +408,16 @@ impl AuthManager {
                                     cloud_auth.session_key_expires_at = sk_expires;
                                     *self.last_session_create_at.write().await = Some(Utc::now());
                                 } else {
-                                    log::warn!("refresh_auth_info: server returned expired session key, keeping existing");
+                                    log::warn!(
+                                        "refresh_auth_info: server returned expired session key, keeping existing"
+                                    );
                                 }
                             }
                             Err(e) => {
-                                log::warn!("refresh_auth_info: create_session_key failed: {}, keeping existing", e);
+                                log::warn!(
+                                    "refresh_auth_info: create_session_key failed: {}, keeping existing",
+                                    e
+                                );
                             }
                         }
                     } else {

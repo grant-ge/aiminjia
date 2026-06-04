@@ -16,6 +16,8 @@
 //! Run with:
 //!   cargo test --test network_probe_integration_test --features test-support -- --nocapture
 
+#![cfg(feature = "test-support")]
+
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;

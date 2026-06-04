@@ -12,22 +12,29 @@ use once_cell::sync::Lazy;
 use tauri::{Emitter, Manager};
 
 use crate::auth::AuthManager;
-use crate::llm::gateway::{format_llm_error_diagnostics, LlmGateway};
 use crate::llm::compact_summary_client::LlmCompactSummaryClient;
+use crate::llm::context_decay::resolve_context_window;
+use crate::llm::gateway::{format_llm_error_diagnostics, LlmGateway};
 use crate::llm::prompt_guard;
 use crate::llm::prompts;
 use crate::models::message::SubAgentTranscriptEntryFrontend;
-use crate::models::settings::{AppSettings, CloudGatewayMode};
+use crate::models::settings::AppSettings;
 use crate::plugin::ToolRegistry;
 use crate::runtime::agent::AgentRuntime;
 use crate::runtime::cancellation::CancellationToken;
+use crate::runtime::chat::compact_client::CompactSummaryClient;
+use crate::runtime::chat::compaction::{AutoCompactConfig, AutoCompactState, CompactTrigger};
+use crate::runtime::chat::preprocess::{
+    prepare_messages_for_llm, PreprocessConfig, PreprocessRuntimeState, PreprocessTrigger,
+};
 use crate::runtime::chat::prompt::{PromptAssembler, PromptBuildContext, TurnPromptSnapshot};
 use crate::runtime::chat::{
     LlmStepInput, LlmStepResult, ResolvedLlmSettings, RuntimeLlmExecutor, TurnConfig,
     TurnConfigOverrides, TurnError, TurnIterationState,
 };
 use crate::runtime::conversation_service;
-use crate::runtime::ids::{SessionId, ToolCallId};
+use crate::runtime::events::RuntimeEvent;
+use crate::runtime::ids::{RunId, SessionId, ToolCallId};
 use crate::runtime::store::conversation_store::ConversationStore;
 use crate::runtime::store::PendingPermissionResolution;
 use crate::runtime::tools::permission::PermissionDestination;
@@ -333,7 +340,11 @@ pub fn deserialize_chat_messages_for_gateway(
                     .unwrap_or_default();
                 log::warn!(
                     "[run_llm_step] Failed to deserialize message for conv={}: {} — role={} content_chars={} fields=[{}]",
-                    conversation_id, error, role, content_chars, fields
+                    conversation_id,
+                    error,
+                    role,
+                    content_chars,
+                    fields
                 );
             }
         }
@@ -360,40 +371,108 @@ pub fn load_history_via_runtime_history(
         .last();
     let config = crate::runtime::chat::history::HistoryConfig {
         has_authorized_workspace,
+        trim_to_budget: false,
         ..crate::runtime::chat::history::HistoryConfig::default()
     };
-    let chat_messages = crate::runtime::chat::history::build_chat_history(
+    crate::runtime::chat::history::build_chat_history_values(
         &stored,
         latest_boundary.as_ref(),
         &config,
-        None, // claude_md_content: injected at post-compact time, not history load
+        None, // project instructions are restored during post-compact preprocess
     )
-    .map_err(|e| TurnError::PersistenceError(e.to_string()))?;
+    .map_err(|e| TurnError::PersistenceError(e.to_string()))
+}
 
-    Ok(chat_messages
+fn compact_artifact_to_stored_message(
+    conversation_id: &str,
+    message: &serde_json::Value,
+) -> Option<crate::storage::file_store::types::StoredMessage> {
+    let role = message.get("role").and_then(|value| value.as_str())?;
+    let content_value = message.get("content")?;
+    let subtype = message
+        .get("subtype")
+        .and_then(|value| value.as_str())
+        .map(ToString::to_string);
+    let is_compact_summary = message
+        .get("isCompactSummary")
+        .and_then(|value| value.as_bool());
+    let id_prefix = if subtype.as_deref() == Some("compact_boundary") {
+        "compact-boundary"
+    } else if is_compact_summary == Some(true) {
+        "compact-summary"
+    } else {
+        "compact-artifact"
+    };
+    let id = message
+        .get("id")
+        .and_then(|value| value.as_str())
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+        .unwrap_or_else(|| format!("{}-{}", id_prefix, uuid::Uuid::new_v4()));
+    let content = if let Some(text) = content_value.as_str() {
+        serde_json::json!({ "text": text })
+    } else if content_value.is_object() {
+        content_value.clone()
+    } else {
+        serde_json::json!({ "text": content_value.to_string() })
+    };
+    let compact_metadata = message
+        .get("compactMetadata")
+        .filter(|value| !value.is_null())
+        .cloned();
+    let created_at = message
+        .get("createdAt")
+        .and_then(|value| value.as_str())
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+        .unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
+
+    Some(crate::storage::file_store::types::StoredMessage {
+        id,
+        conversation_id: conversation_id.to_string(),
+        role: role.to_string(),
+        content,
+        created_at,
+        tool_calls: None,
+        tool_call_id: None,
+        name: None,
+        subtype,
+        compact_metadata,
+        is_compact_summary,
+        run_id: None,
+        schema_version: Some(2),
+        sequence: None,
+        seq: None,
+        rev: None,
+        error: None,
+    })
+}
+
+fn compact_artifact_messages_for_transcript(
+    messages: &[serde_json::Value],
+) -> Vec<serde_json::Value> {
+    messages
         .iter()
-        .map(|message| {
-            let mut value = serde_json::json!({
-                "role": message.role,
-                "content": message.content,
-            });
-            if let Some(tool_calls) = &message.tool_calls {
-                if let Ok(serialized) = serde_json::to_value(tool_calls) {
-                    value["toolCalls"] = serialized;
-                }
-            }
-            if let Some(thinking_blocks) = &message.thinking_blocks {
-                value["thinkingBlocks"] = serde_json::Value::Array(thinking_blocks.clone());
-            }
-            if let Some(tool_call_id) = &message.tool_call_id {
-                value["toolCallId"] = tool_call_id.clone().into();
-            }
-            if let Some(name) = &message.name {
-                value["name"] = name.clone().into();
-            }
-            value
+        .take_while(|message| {
+            let is_boundary = message.get("role").and_then(|value| value.as_str())
+                == Some("system")
+                && message.get("subtype").and_then(|value| value.as_str())
+                    == Some("compact_boundary");
+            let is_summary = message
+                .get("isCompactSummary")
+                .and_then(|value| value.as_bool())
+                == Some(true);
+            is_boundary || is_summary
         })
-        .collect())
+        .cloned()
+        .collect()
+}
+
+fn compact_trigger_event_value(trigger: &CompactTrigger) -> &'static str {
+    match trigger {
+        CompactTrigger::Auto => "auto",
+        CompactTrigger::Manual => "manual",
+    }
 }
 
 /// Per-conversation overrides injected by `dispatch_employee_run`.
@@ -478,8 +557,8 @@ struct TauriLegacyTurnExecutor {
 ///
 /// 拿到非流式响应后按 tool_calls / stop_reason 分发到 ToolCalls / ContentComplete。
 /// 拼回字段必须完整（含 cache_creation_input_tokens / cache_read_input_tokens），
-/// 否则会丢 token 计费。LlmResponse 当前不携带 thinking_blocks（仅 stream 路径
-/// 暴露），fallback 路径设为空 Vec。
+/// 否则会丢 token 计费。V2 非流式 envelope 可携带 thinking_blocks，fallback
+/// 必须透传，避免后续 Anthropic reasoning replay 断链。
 ///
 /// Spec: docs/superpowers/specs/2026-05-28-streaming-error-handling-design.md §五.9.2
 fn llm_response_to_step_result(
@@ -493,6 +572,7 @@ fn llm_response_to_step_result(
     let tokens_out = response.usage.output_tokens as u64;
     let cache_creation = response.usage.cache_creation_input_tokens.unwrap_or(0) as u64;
     let cache_read = response.usage.cache_read_input_tokens.unwrap_or(0) as u64;
+    let thinking_blocks = response.thinking_blocks;
 
     if !response.tool_calls.is_empty() {
         let tool_calls: Vec<RuntimeToolCallRequest> = response
@@ -512,7 +592,7 @@ fn llm_response_to_step_result(
             tokens_out,
             cache_creation_input_tokens: cache_creation,
             cache_read_input_tokens: cache_read,
-            thinking_blocks: Vec::new(),
+            thinking_blocks,
         }
     } else {
         let stop_reason_str = match response.stop_reason {
@@ -528,7 +608,7 @@ fn llm_response_to_step_result(
             cache_creation_input_tokens: cache_creation,
             cache_read_input_tokens: cache_read,
             stop_reason: Some(stop_reason_str.to_string()),
-            thinking_blocks: Vec::new(),
+            thinking_blocks,
         }
     }
 }
@@ -621,7 +701,8 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         }
         let system_prompt_for_gateway =
             system_prompt_content(input.system_message.clone(), input.system_prompt);
-        let system_prompt_segments = system_prompt_segments(&input.system_message);
+        let mut system_prompt_segments = system_prompt_segments(&input.system_message);
+        system_prompt_segments.extend(input.extra_system_segments.clone());
 
         // --- Resolve masking level (always Strict; field kept for forward compat) ---
         let masking_level = match input.masking_level.to_lowercase().as_str() {
@@ -1253,6 +1334,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             cloud_gateway_mode: settings.cloud_gateway_mode,
             thinking_type: settings.thinking_type,
             thinking_budget_tokens: settings.thinking_budget_tokens,
+            context_window: settings.context_window,
             masking_level: crate::llm::masking::MaskingLevel::from_str_or_strict(
                 &settings.data_masking_level,
             )
@@ -1331,6 +1413,9 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             tool_calls: Some(tool_calls.to_vec()),
             tool_call_id: None,
             name: None,
+            subtype: None,
+            compact_metadata: None,
+            is_compact_summary: None,
             run_id: None,
             schema_version: Some(2),
             sequence: None,
@@ -1387,6 +1472,9 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                 tool_call_id: Some(tool_call_id),
                 name: Some(name),
                 tool_calls: None,
+                subtype: None,
+                compact_metadata: None,
+                is_compact_summary: None,
                 run_id: None,
                 schema_version: Some(2),
                 sequence: None,
@@ -1878,6 +1966,32 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         Ok(chat_messages)
     }
 
+    async fn persist_compact_messages(
+        &self,
+        conversation_id: &str,
+        messages: &[serde_json::Value],
+    ) -> Result<(), TurnError> {
+        for message in messages {
+            let Some(stored) = compact_artifact_to_stored_message(conversation_id, message) else {
+                log::warn!(
+                    "[persist_compact_messages] skipping malformed compact artifact conv={}",
+                    conversation_id
+                );
+                continue;
+            };
+            self.services
+                .db()
+                .insert_chat_message_record(&stored)
+                .map_err(|e| {
+                    TurnError::PersistenceError(format!(
+                        "Failed to persist compact transcript message: {}",
+                        e
+                    ))
+                })?;
+        }
+        Ok(())
+    }
+
     async fn save_compact_boundary(
         &self,
         record: crate::runtime::chat::compaction::CompactBoundaryRecord,
@@ -1992,7 +2106,9 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         // (returns Some(json_defs)), so the driver overrides this empty default.
         // This impl exists only to satisfy the trait — it should never be the value
         // actually used in a turn.
-        log::info!("[tool-desc-trace] entered get_tool_defs (fallback path — should be overridden by load_turn_config_overrides)");
+        log::info!(
+            "[tool-desc-trace] entered get_tool_defs (fallback path — should be overridden by load_turn_config_overrides)"
+        );
         Ok(vec![])
     }
 
@@ -2007,6 +2123,7 @@ mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Condvar, Mutex};
 
+    use crate::models::settings::CloudGatewayMode;
     use crate::storage::message_write_queue::{MessageWriteQueue, MessageWriteTarget};
     use tempfile::TempDir;
 
@@ -2413,19 +2530,7 @@ fn decrypt_api_key(ss: &SecureStorage, value: &str) -> String {
 }
 
 fn build_gateway_settings(settings: &ResolvedLlmSettings) -> AppSettings {
-    AppSettings {
-        primary_model: settings.primary_model.clone(),
-        primary_api_key: settings.primary_api_key.clone(),
-        auto_model_routing: settings.auto_model_routing,
-        custom_model_endpoint: settings.custom_model_endpoint.clone(),
-        custom_model_name: settings.custom_model_name.clone(),
-        cloud_model: settings.cloud_model.clone(),
-        cloud_model_type: settings.cloud_model_type.clone(),
-        cloud_gateway_mode: settings.cloud_gateway_mode.clone(),
-        thinking_type: settings.thinking_type.clone(),
-        thinking_budget_tokens: settings.thinking_budget_tokens,
-        ..AppSettings::default()
-    }
+    settings.to_app_settings()
 }
 
 fn system_prompt_content(value: Option<serde_json::Value>, fallback: &str) -> Option<String> {
@@ -2810,13 +2915,10 @@ impl TauriChatCommandAdapter {
             runtime = runtime.with_cancellation_registry(reg.inner().clone());
         }
         // Phase R1.1: wire production CompactSummaryClient backed by LlmGateway.
-        // Uses AppSettings::default() — the gateway will route via lotus
-        // sticky routing (conversation_id) which preserves the user's active model.
+        // The client is stateless; each compact request receives the turn's
+        // resolved LLM settings from RuntimeChatTurnDriver.
         let compact_client: Arc<dyn crate::runtime::chat::compact_client::CompactSummaryClient> =
-            Arc::new(LlmCompactSummaryClient::new(
-                services.gateway.clone(),
-                AppSettings::default(),
-            ));
+            Arc::new(LlmCompactSummaryClient::new(services.gateway.clone()));
         runtime = runtime.with_compact_client(compact_client);
         runtime = runtime.with_host(host as Arc<dyn crate::transport::runtime_host::RuntimeHost>);
         runtime.anchor_subscriber(adapter);
@@ -2834,14 +2936,159 @@ impl TauriChatCommandAdapter {
         &self,
         request: &ChatTurnRequest,
     ) -> Result<ResolvedLlmSettings, TurnError> {
+        self.legacy_turn_executor()
+            .load_llm_settings_for_turn(request)
+            .await
+    }
+
+    fn legacy_turn_executor(&self) -> TauriLegacyTurnExecutor {
         TauriLegacyTurnExecutor {
             services: self.services.clone(),
             agents_md_loader: Arc::new(tokio::sync::Mutex::new(
                 crate::runtime::agents_md::AgentsMdLoader::new(),
             )),
         }
-        .load_llm_settings_for_turn(request)
+    }
+
+    pub async fn compact_conversation(
+        &self,
+        conversation_id: String,
+        custom_instructions: Option<String>,
+    ) -> Result<(), String> {
+        let run_id = RunId::new(format!("manual-compact-{}", uuid::Uuid::new_v4()));
+        self.services
+            .gateway
+            .set_busy_for_run(&conversation_id, run_id.clone())?;
+
+        let result = self
+            .compact_conversation_inner(
+                conversation_id.clone(),
+                run_id.clone(),
+                custom_instructions,
+            )
+            .await;
+        self.services
+            .gateway
+            .clear_task_for_run(&conversation_id, &run_id);
+        result
+    }
+
+    async fn compact_conversation_inner(
+        &self,
+        conversation_id: String,
+        run_id: RunId,
+        custom_instructions: Option<String>,
+    ) -> Result<(), String> {
+        let executor = self.legacy_turn_executor();
+        let history = executor
+            .load_history(&conversation_id)
+            .await
+            .map_err(|err| err.to_string())?;
+        if history.is_empty() {
+            return Err("当前会话没有可压缩的历史".to_string());
+        }
+
+        let request =
+            ChatTurnRequest::new(conversation_id.clone(), "/compact".to_string(), Vec::new());
+        let llm_settings = self
+            .load_llm_settings_for_turn(&request)
+            .await
+            .map_err(|err| err.to_string())?;
+        let resolved_context_window =
+            resolve_context_window(llm_settings.context_window, Some(&llm_settings.cloud_model));
+        let mut preprocess_config = PreprocessConfig::default();
+        preprocess_config.context_window = resolved_context_window;
+        preprocess_config.auto_compact =
+            AutoCompactConfig::with_context_window(resolved_context_window);
+        preprocess_config.compact_boundary = executor
+            .latest_compact_boundary(&conversation_id)
+            .await
+            .map_err(|err| err.to_string())?;
+
+        let compact_client = Arc::new(LlmCompactSummaryClient::new(self.services.gateway.clone()));
+        let compact_llm_settings = llm_settings.clone();
+        let compact_run_id = run_id.as_str().to_string();
+        let manual_instructions = custom_instructions
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+        let mut compact_state = AutoCompactState::new();
+        let mut preprocess_state = PreprocessRuntimeState::default();
+        let prepared = prepare_messages_for_llm(
+            history,
+            conversation_id.as_str(),
+            PreprocessTrigger::ManualCompact,
+            &preprocess_config,
+            &mut compact_state,
+            &mut preprocess_state,
+            false,
+            |messages| {
+                let compact_client = compact_client.clone();
+                let compact_llm_settings = compact_llm_settings.clone();
+                let conversation_id = conversation_id.clone();
+                let compact_run_id = compact_run_id.clone();
+                let manual_instructions = manual_instructions.clone();
+                async move {
+                    let mut summary_messages = messages;
+                    if let Some(instructions) = manual_instructions {
+                        summary_messages.push(serde_json::json!({
+                            "role": "user",
+                            "content": format!(
+                                "Manual compact instructions:\n{}",
+                                instructions
+                            ),
+                        }));
+                    }
+                    compact_client
+                        .compact_summary(
+                            conversation_id.as_str(),
+                            &summary_messages,
+                            &compact_llm_settings,
+                            Some("manual-compact"),
+                            Some(compact_run_id.as_str()),
+                        )
+                        .await
+                }
+            },
+        )
         .await
+        .map_err(|err| err.to_string())?;
+
+        let Some(boundary_record) = prepared.compact_boundary.clone() else {
+            return Err("当前会话没有产生新的压缩边界".to_string());
+        };
+        let compact_messages = compact_artifact_messages_for_transcript(&prepared.messages);
+        if compact_messages.is_empty() {
+            return Err("压缩结果缺少 transcript 边界记录".to_string());
+        }
+
+        executor
+            .persist_compact_messages(boundary_record.conversation_id.as_str(), &compact_messages)
+            .await
+            .map_err(|err| err.to_string())?;
+        executor
+            .save_compact_boundary(boundary_record.clone())
+            .await
+            .map_err(|err| err.to_string())?;
+
+        let session_id = SessionId::new(conversation_id.clone());
+        let _ = self
+            .runtime
+            .event_bus()
+            .emit(RuntimeEvent::compact_completed(
+                session_id,
+                run_id,
+                boundary_record.conversation_id.clone(),
+                boundary_record.id.clone(),
+                compact_trigger_event_value(&boundary_record.trigger).to_string(),
+                boundary_record.created_at.clone(),
+                boundary_record.tail_message_id.clone(),
+                boundary_record.pre_tokens,
+                boundary_record.post_tokens,
+                boundary_record.messages_summarized,
+            ))
+            .await;
+
+        Ok(())
     }
 
     fn agenda_store_for_current_user(&self) -> anyhow::Result<crate::runtime::agenda::AgendaStore> {

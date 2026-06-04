@@ -8,9 +8,9 @@ use anyhow::Result;
 // they now live in `runtime::chat` to avoid circular imports.
 use crate::runtime::agent::task_notification::TaskNotificationQueue;
 use crate::runtime::cancellation::{CancellationReason, CancellationToken};
+use crate::runtime::chat::compact_client::CompactSummaryClient;
 pub use crate::runtime::chat::ChatTurnRequest;
 use crate::runtime::chat::{RuntimeChatTurnDriver, RuntimeLlmExecutor};
-use crate::runtime::chat::compact_client::CompactSummaryClient;
 use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::events::{RuntimeEvent, RuntimeEventKind};
 use crate::runtime::identity::IdentityMapping;

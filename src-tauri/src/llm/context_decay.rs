@@ -461,18 +461,12 @@ mod resolve_context_window_tests {
     #[test]
     fn effective_threshold_with_claude() {
         // (200_000 - 20_000 - 13_000) * 4 = 668_000
-        assert_eq!(
-            effective_auto_compact_threshold(Some(200_000)),
-            668_000
-        );
+        assert_eq!(effective_auto_compact_threshold(Some(200_000)), 668_000);
     }
 
     #[test]
     fn effective_threshold_conservative_fallback() {
         // (64_000 - 20_000 - 13_000) * 4 = 124_000
-        assert_eq!(
-            effective_auto_compact_threshold(None),
-            124_000
-        );
+        assert_eq!(effective_auto_compact_threshold(None), 124_000);
     }
 }

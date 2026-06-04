@@ -237,6 +237,7 @@ pub(super) fn parse_response(data: &Value) -> Result<LlmResponse> {
         stop_reason: finish_reason,
         usage,
         tool_calls,
+        thinking_blocks: Vec::new(),
     })
 }
 
@@ -490,7 +491,14 @@ fn sse_bytes_to_events(
                                 e,
                                 json_str.len(),
                                 json_str.chars().take(200).collect::<String>(),
-                                json_str.chars().rev().take(200).collect::<Vec<_>>().into_iter().rev().collect::<String>(),
+                                json_str
+                                    .chars()
+                                    .rev()
+                                    .take(200)
+                                    .collect::<Vec<_>>()
+                                    .into_iter()
+                                    .rev()
+                                    .collect::<String>(),
                             );
                             // Best-effort: try to extract finish_reason from malformed JSON
                             // so we don't lose the stop signal when the chunk is partially valid.
@@ -770,7 +778,10 @@ fn flush_pending_tool<S>(st: &mut SseState<S>) {
                     .collect();
                 log::error!(
                     "[SSE] Failed to parse tool args as JSON: err={} args_len={} first_500='{}' last_200='{}'",
-                    e, st.tool_args.len(), st.tool_args.chars().take(500).collect::<String>(), tail
+                    e,
+                    st.tool_args.len(),
+                    st.tool_args.chars().take(500).collect::<String>(),
+                    tail
                 );
                 // Log hex dump of first 100 bytes to detect invisible control chars
                 let hex: String = st

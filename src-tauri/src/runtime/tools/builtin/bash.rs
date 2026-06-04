@@ -257,7 +257,9 @@ fn dws_pat_permission_decision(ask: DwsPatPermissionAsk) -> PermissionDecision {
             "授权后点击允许以重放原命令".to_string(),
         ],
         remember_options: vec![crate::runtime::tools::permission::PermissionDestination::Session],
-        default_destination: Some(crate::runtime::tools::permission::PermissionDestination::Session),
+        default_destination: Some(
+            crate::runtime::tools::permission::PermissionDestination::Session,
+        ),
         reason: PermissionReason::Other("dws_pat_high_risk_no_permission".to_string()),
         path_auth_scope: None,
     }

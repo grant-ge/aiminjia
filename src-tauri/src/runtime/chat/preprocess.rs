@@ -4,6 +4,7 @@ use std::hash::{Hash, Hasher};
 
 use serde_json::Value;
 
+use crate::llm::streaming::SystemPromptSegment;
 use crate::runtime::chat::compaction::{
     build_compact_boundary_record, compact_messages_via_llm, microcompact, AutoCompactConfig,
     AutoCompactState, CompactBoundaryRecord, CompactTrigger, MicrocompactConfig,
@@ -13,6 +14,7 @@ use crate::runtime::chat::turn_config::TurnError;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PreprocessTrigger {
     Normal,
+    ManualCompact,
     PromptTooLongRecovery,
 }
 
@@ -106,6 +108,11 @@ pub struct PreprocessConfig {
     /// The latest compact boundary for this conversation.
     /// When set, only messages after the boundary are processed.
     pub compact_boundary: Option<CompactBoundaryRecord>,
+    /// Project instruction content to restore after compact. In lotus-app this
+    /// is the loaded AGENTS.md context, equivalent to cc-best's CLAUDE.md
+    /// project-instruction semantics. File cache, skills, and MCP discovery
+    /// are out of scope.
+    pub project_instruction_content: Option<String>,
 }
 
 impl Default for PreprocessConfig {
@@ -118,7 +125,21 @@ impl Default for PreprocessConfig {
             auto_compact: AutoCompactConfig::with_context_window(context_window),
             context_window,
             compact_boundary: None,
+            project_instruction_content: None,
         }
+    }
+}
+
+impl PreprocessConfig {
+    pub fn project_instruction_system_segment(&self) -> Option<SystemPromptSegment> {
+        let content = self.project_instruction_content.as_deref()?.trim();
+        if content.is_empty() {
+            return None;
+        }
+        Some(SystemPromptSegment {
+            text: format!("<project_context>\n{}\n</project_context>", content),
+            cache: false,
+        })
     }
 }
 
@@ -128,6 +149,7 @@ pub struct PreprocessResult {
     pub executed_stages: Vec<PreprocessStage>,
     pub compact_boundary: Option<CompactBoundaryRecord>,
     pub retry: PreprocessRetryAction,
+    pub post_compact_system_segments: Vec<SystemPromptSegment>,
 }
 
 #[derive(Debug, Clone)]
@@ -331,9 +353,9 @@ pub fn collapse_tool_results(messages: &[Value], config: &CollapseConfig) -> Col
     }
 }
 
-/// Strip large image content from messages to reduce token count during
-/// compaction. Replaces base64 image data and image content blocks with
-/// `[image]` placeholder text.
+/// Strip user-provided image blocks from messages to reduce token count during
+/// compaction. Only user messages are rewritten; assistant/tool content is left
+/// intact so transcript and protocol state stay auditable.
 ///
 /// This is called unconditionally at the start of the preprocess pipeline
 /// to prevent images from inflating character counts and triggering
@@ -344,32 +366,34 @@ pub fn strip_images_from_messages(messages: &[Value]) -> (Vec<Value>, bool) {
         .iter()
         .map(|msg| {
             let mut msg = msg.clone();
-            if let Some(content) = msg.get("content") {
-                if let Some(content_str) = content.as_str() {
-                    // Single string content — replace if it looks like base64 image data
-                    if content_str.len() > 5000 && looks_like_base64(content_str) {
-                        msg["content"] = Value::String("[image]".to_string());
-                        stripped = true;
-                    }
-                } else if let Some(arr) = content.as_array() {
-                    // Multi-part content (OpenAI format) — replace image blocks
-                    let new_blocks: Vec<Value> = arr
-                        .iter()
-                        .map(|block| {
-                            let block_type = block
-                                .get("type")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("");
-                            if block_type == "image_url" || block_type == "image" {
-                                stripped = true;
-                                serde_json::json!({"type": "text", "text": "[image]"})
-                            } else {
-                                block.clone()
-                            }
-                        })
-                        .collect();
-                    msg["content"] = Value::Array(new_blocks);
-                }
+            if msg.get("role").and_then(Value::as_str) != Some("user") {
+                return msg;
+            }
+
+            if msg
+                .get("content")
+                .and_then(Value::as_str)
+                .map(is_image_data_url)
+                .unwrap_or(false)
+            {
+                msg["content"] = Value::String("[image]".to_string());
+                stripped = true;
+                return msg;
+            }
+
+            if let Some(arr) = msg.get("content").and_then(Value::as_array) {
+                let new_blocks: Vec<Value> = arr
+                    .iter()
+                    .map(|block| {
+                        if is_user_image_block(block) {
+                            stripped = true;
+                            serde_json::json!({"type": "text", "text": "[image]"})
+                        } else {
+                            block.clone()
+                        }
+                    })
+                    .collect();
+                msg["content"] = Value::Array(new_blocks);
             }
             msg
         })
@@ -377,24 +401,36 @@ pub fn strip_images_from_messages(messages: &[Value]) -> (Vec<Value>, bool) {
     (result, stripped)
 }
 
-/// Quick heuristic: check if a string looks like base64 encoded data.
-fn looks_like_base64(s: &str) -> bool {
-    let trimmed = s.trim();
-    if trimmed.len() < 100 {
-        return false;
-    }
-    let valid_chars = trimmed
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=');
-    valid_chars && trimmed.chars().filter(|c| c.is_ascii_uppercase()).count() > 10
+fn is_user_image_block(block: &Value) -> bool {
+    matches!(
+        block.get("type").and_then(Value::as_str),
+        Some("image" | "image_url" | "input_image")
+    ) || block.get("image_url").is_some()
+        || block
+            .get("source")
+            .and_then(|source| source.get("media_type").or_else(|| source.get("mediaType")))
+            .and_then(Value::as_str)
+            .map(|media_type| media_type.starts_with("image/"))
+            .unwrap_or(false)
+        || block
+            .get("text")
+            .and_then(Value::as_str)
+            .map(is_image_data_url)
+            .unwrap_or(false)
+}
+
+fn is_image_data_url(text: &str) -> bool {
+    text.trim_start()
+        .to_ascii_lowercase()
+        .starts_with("data:image/")
 }
 
 /// Build a `PreservedSegment` from the compacted output messages.
 ///
 /// Scans for the first real message after the compact boundary + summary
 /// (which are always the first two messages in `compact_messages_via_llm`
-/// output). The first preserved message is the head, and the last is the
-/// anchor.
+/// output). The first preserved message is the head, the summary is the
+/// anchor, and the last preserved message is the tail.
 fn build_preserved_segment(
     new_messages: &[Value],
 ) -> Option<crate::runtime::chat::compaction::PreservedSegment> {
@@ -402,16 +438,89 @@ fn build_preserved_segment(
         return None;
     }
     // Messages 0 and 1 are always boundary + summary
+    let summary_id = new_messages[1].get("id")?.as_str()?.to_string();
     let tail = &new_messages[2..];
     let first = tail.first()?.get("id")?.as_str()?.to_string();
-    let anchor = tail.last()?.get("id")?.as_str()?.to_string();
-    let token_count = (crate::llm::context_decay::estimate_tokens_from_json(tail)
-        / 4) as u64;
+    let last = tail.last()?.get("id")?.as_str()?.to_string();
+    let token_count = crate::llm::context_decay::estimate_tokens_from_json(tail) as u64;
     Some(crate::runtime::chat::compaction::PreservedSegment {
         first_preserved_message_id: first,
-        anchor_message_id: anchor,
+        anchor_message_id: summary_id,
+        tail_message_id: last,
         preserved_token_count: token_count,
     })
+}
+
+fn ensure_preserved_messages_have_ids(messages: &mut [Value]) {
+    for message in messages.iter_mut().skip(2) {
+        if message.get("id").and_then(Value::as_str).is_some() {
+            continue;
+        }
+        if let Some(object) = message.as_object_mut() {
+            object.insert(
+                "id".to_string(),
+                Value::String(uuid::Uuid::new_v4().to_string()),
+            );
+        }
+    }
+}
+
+fn compact_trigger_metadata_value(trigger: &CompactTrigger) -> &'static str {
+    match trigger {
+        CompactTrigger::Auto => "auto",
+        CompactTrigger::Manual => "manual",
+    }
+}
+
+fn sync_boundary_message_with_record(messages: &mut [Value], record: &CompactBoundaryRecord) {
+    let Some(boundary) = messages.iter_mut().find(|message| {
+        message.get("role").and_then(Value::as_str) == Some("system")
+            && message.get("subtype").and_then(Value::as_str) == Some("compact_boundary")
+    }) else {
+        return;
+    };
+
+    let Some(object) = boundary.as_object_mut() else {
+        return;
+    };
+
+    object.insert("id".to_string(), Value::String(record.id.clone()));
+    object.insert(
+        "conversationId".to_string(),
+        Value::String(record.conversation_id.clone()),
+    );
+    object.insert(
+        "createdAt".to_string(),
+        Value::String(record.created_at.clone()),
+    );
+
+    let mut metadata = serde_json::json!({
+        "trigger": compact_trigger_metadata_value(&record.trigger),
+        "preTokens": record.pre_tokens,
+        "postTokens": record.post_tokens,
+        "tokensSaved": record.pre_tokens.saturating_sub(record.post_tokens),
+        "messagesSummarized": record.messages_summarized,
+    });
+    if let Some(tail_message_id) = record
+        .tail_message_id
+        .as_deref()
+        .filter(|value| !value.is_empty())
+    {
+        metadata["tailMessageId"] = Value::String(tail_message_id.to_string());
+    }
+    if let Some(preserved) = &record.preserved_segment {
+        metadata["preservedSegment"] = serde_json::json!({
+            "firstPreservedMessageId": preserved.first_preserved_message_id,
+            "anchorMessageId": preserved.anchor_message_id,
+            "tailMessageId": preserved.tail_message_id,
+            "preservedTokenCount": preserved.preserved_token_count,
+            "headUuid": preserved.first_preserved_message_id,
+            "anchorUuid": preserved.anchor_message_id,
+            "tailUuid": preserved.tail_message_id,
+        });
+    }
+
+    object.insert("compactMetadata".to_string(), metadata);
 }
 
 fn has_existing_compact_artifacts(messages: &[Value]) -> bool {
@@ -420,6 +529,61 @@ fn has_existing_compact_artifacts(messages: &[Value]) -> bool {
             || (message.get("role").and_then(Value::as_str) == Some("system")
                 && message.get("subtype").and_then(Value::as_str) == Some("compact_boundary"))
     })
+}
+
+fn latest_compact_boundary_index(messages: &[Value]) -> Option<usize> {
+    messages.iter().rposition(|message| {
+        message.get("role").and_then(Value::as_str) == Some("system")
+            && message.get("subtype").and_then(Value::as_str) == Some("compact_boundary")
+    })
+}
+
+fn compact_boundary_tail_message_id(boundary: &Value) -> Option<&str> {
+    boundary
+        .get("compactMetadata")
+        .and_then(|metadata| {
+            metadata
+                .get("tailMessageId")
+                .or_else(|| metadata.get("tail_message_id"))
+        })
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+}
+
+fn compact_artifacts_end_at_preserved_tail(messages: &[Value]) -> bool {
+    let Some(boundary_index) = latest_compact_boundary_index(messages) else {
+        return false;
+    };
+    let Some(tail_id) = compact_boundary_tail_message_id(&messages[boundary_index]) else {
+        return false;
+    };
+    messages
+        .iter()
+        .position(|message| message.get("id").and_then(Value::as_str) == Some(tail_id))
+        .map(|tail_index| tail_index + 1 == messages.len())
+        .unwrap_or(false)
+}
+
+fn is_compact_summary_context_message(message: &Value) -> bool {
+    if message.get("isCompactSummary").and_then(Value::as_bool) == Some(true) {
+        return true;
+    }
+    if message.get("role").and_then(Value::as_str) != Some("user") {
+        return false;
+    }
+    message
+        .get("content")
+        .and_then(Value::as_str)
+        .map(|content| content.trim_start().starts_with("<context>"))
+        .unwrap_or(false)
+}
+
+fn boundary_slice_start_for_tail(messages: &[Value], tail_pos: usize) -> usize {
+    messages
+        .iter()
+        .take(tail_pos)
+        .rposition(is_compact_summary_context_message)
+        .unwrap_or(tail_pos)
 }
 
 fn latest_non_summary_message_id(messages: &[Value]) -> Option<String> {
@@ -457,12 +621,14 @@ where
     Fut: Future<Output = Result<String, TurnError>>,
 {
     let input_signature = message_signature(&messages);
-    if has_existing_compact_artifacts(&messages) {
+    let input_has_compact_artifacts = has_existing_compact_artifacts(&messages);
+    if input_has_compact_artifacts && compact_artifacts_end_at_preserved_tail(&messages) {
         let result = PreprocessResult {
             messages,
             executed_stages: Vec::new(),
             compact_boundary: None,
             retry: PreprocessRetryAction::None,
+            post_compact_system_segments: Vec::new(),
         };
         runtime_state.last_transition = Some(PreprocessTransition {
             trigger,
@@ -481,6 +647,7 @@ where
             executed_stages: Vec::new(),
             compact_boundary: None,
             retry: PreprocessRetryAction::None,
+            post_compact_system_segments: Vec::new(),
         };
         runtime_state.last_transition = Some(PreprocessTransition {
             trigger,
@@ -492,19 +659,28 @@ where
     }
 
     let mut executed_stages = Vec::new();
-    let mut current_messages = messages;
+    let mut current_messages = if input_has_compact_artifacts {
+        latest_compact_boundary_index(&messages)
+            .map(|index| messages[index..].to_vec())
+            .unwrap_or(messages)
+    } else {
+        messages
+    };
 
     // R3.2: Boundary 视图隔离 — only process messages after the last compact boundary.
     // This prevents re-processing already-compacted history and aligns with
     // claude-code-best's `getMessagesAfterCompactBoundary()` pattern.
-    if let Some(ref boundary) = config.compact_boundary {
-        if let Some(ref tail_id) = boundary.tail_message_id {
-            if !tail_id.is_empty() {
-                if let Some(pos) = current_messages
-                    .iter()
-                    .position(|m| m.get("id").and_then(|v| v.as_str()) == Some(tail_id))
-                {
-                    current_messages = current_messages[pos..].to_vec();
+    if !input_has_compact_artifacts {
+        if let Some(ref boundary) = config.compact_boundary {
+            if let Some(ref tail_id) = boundary.tail_message_id {
+                if !tail_id.is_empty() {
+                    if let Some(pos) = current_messages
+                        .iter()
+                        .position(|m| m.get("id").and_then(|v| v.as_str()) == Some(tail_id))
+                    {
+                        let start = boundary_slice_start_for_tail(&current_messages, pos);
+                        current_messages = current_messages[start..].to_vec();
+                    }
                 }
             }
         }
@@ -542,27 +718,45 @@ where
             PreprocessTrigger::Normal => {
                 estimate_total_chars(&current_messages) >= config.auto_compact.threshold_chars
             }
+            PreprocessTrigger::ManualCompact => true,
             PreprocessTrigger::PromptTooLongRecovery => true,
         };
 
     let mut compact_boundary = None;
+    let mut post_compact_system_segments = Vec::new();
     let mut retry = PreprocessRetryAction::None;
     if should_run_auto_compact {
         match summary_fn(current_messages.clone()).await {
-            Ok(summary_text) if !summary_text.is_empty() => {
+            Ok(summary_text) if !summary_text.trim().is_empty() => {
                 let tail_message_id = latest_non_summary_message_id(&current_messages);
                 let output = compact_messages_via_llm(current_messages, summary_text.clone());
+                let mut output_messages = output.new_messages;
+                ensure_preserved_messages_have_ids(&mut output_messages);
+                let preserved_segment = build_preserved_segment(&output_messages);
                 let mut boundary_record = build_compact_boundary_record(
                     conversation_id,
-                    CompactTrigger::Auto,
+                    match trigger {
+                        PreprocessTrigger::ManualCompact => CompactTrigger::Manual,
+                        PreprocessTrigger::Normal | PreprocessTrigger::PromptTooLongRecovery => {
+                            CompactTrigger::Auto
+                        }
+                    },
                     output.pre_tokens,
                     output.post_tokens,
                     output.messages_summarized,
                 );
                 boundary_record.summary_text = summary_text;
-                boundary_record.tail_message_id = tail_message_id;
-                boundary_record.preserved_segment = build_preserved_segment(&output.new_messages);
-                current_messages = output.new_messages;
+                boundary_record.tail_message_id = tail_message_id.or_else(|| {
+                    preserved_segment
+                        .as_ref()
+                        .map(|segment| segment.tail_message_id.clone())
+                });
+                boundary_record.preserved_segment = preserved_segment;
+                current_messages = output_messages;
+                sync_boundary_message_with_record(&mut current_messages, &boundary_record);
+                if let Some(segment) = config.project_instruction_system_segment() {
+                    post_compact_system_segments.push(segment);
+                }
                 compact_boundary = Some(boundary_record);
                 compact_state.record_success();
                 executed_stages.push(PreprocessStage::AutoCompact);
@@ -571,9 +765,19 @@ where
                     runtime_state.last_prompt_too_long_signature = Some(input_signature);
                 }
             }
-            Ok(_) => {}
-            Err(_) => {
+            Ok(_) => {
                 compact_state.record_failure();
+                if trigger == PreprocessTrigger::ManualCompact {
+                    return Err(TurnError::LlmError(
+                        "manual compact summary was empty".to_string(),
+                    ));
+                }
+            }
+            Err(err) => {
+                compact_state.record_failure();
+                if trigger == PreprocessTrigger::ManualCompact {
+                    return Err(err);
+                }
             }
         }
     }
@@ -583,6 +787,7 @@ where
         executed_stages,
         compact_boundary,
         retry,
+        post_compact_system_segments,
     };
     runtime_state.last_transition = Some(PreprocessTransition {
         trigger,

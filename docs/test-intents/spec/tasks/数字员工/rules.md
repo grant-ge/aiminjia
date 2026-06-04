@@ -115,7 +115,6 @@
 
 **验收标准**
 
-应该看到：
 - 派活后 UI 自动跳转到新对话页，URL/路由的 `conversationId` 为新生成的 ID
 - 跳转后 EmployeeDrawer 不再可见（自动关闭）
 - 对话页 assistant 气泡 `content.text` 不为空（AI 真的产生了回复）
@@ -124,7 +123,6 @@
 - 该卡片节点的可见文本中包含 `"有新汇报"` 子串
 - `EventBus` 中存在 `TurnCompleted` 事件，`outcome` 字段值为 `"Success"`
 
-不应该看到：
 - 派活后 drawer 仍然停留在原页面（产品行为是自动跳转 + 关 drawer）
 - 跳转后回员工页，「小研」卡片 `data-aijia-employee-status` 仍为 `"running"`（说明 ActiveRunGuard Drop 时未清理）
 - `employee.json` 中 `lastError` 字段非 null（执行有错误）
@@ -204,14 +202,12 @@ PR-7 起 `employee_delete` 改为硬删除，正常用户操作不再产生 arch
 
 **验收标准**
 
-应该看到：
 - 主页员工网格中**没有** `[data-aijia-employee-id="$ARCHIVED_ID"]` 节点（卡片被前端 filter 掉）
 - 收件箱发件人列表中**没有** `$ARCHIVED_NAME` 这一项
 - `T0 + 3 分钟` 时该员工 `employee.json` 中 `lastRunAt` 字段值仍等于构造前的旧值（scheduler 未触发新一轮）
 - `T0 + 3 分钟` 时 `~/.renlijia/users/{scope}/conversations/` 下没有新增以该员工 id 派��的对话目录
 - `~/.renlijia/users/{scope}/employees/$ARCHIVED_ID/employee.json` 文件**仍存在**（数据没被删除，只是 UI 隐藏 + scheduler 跳过），其中 `lifecycle == "archived"`
 
-不应该看到：
 - 主页或收件箱里出现 archived 员工的卡片 / 发件人入口
 - archived 员工目录下出现新的 `conv-*.json` / `dispatch-*.json` 等调度产物
 - 应用日志中出现包含 `$ARCHIVED_ID` 的 `dispatch_employee_run` / `cron tick fire` 行

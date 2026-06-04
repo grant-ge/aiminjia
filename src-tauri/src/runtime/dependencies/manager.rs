@@ -73,7 +73,10 @@ impl std::fmt::Display for RuntimeManagerError {
                 "managed runtime manifest is not configured; set RENLIJIA_RUNTIME_MANIFEST_URL or inject a manifest source"
             ),
             Self::OperationInProgress { operation_id } => {
-                write!(f, "managed runtime operation is already in progress: {operation_id}")
+                write!(
+                    f,
+                    "managed runtime operation is already in progress: {operation_id}"
+                )
             }
         }
     }
@@ -314,7 +317,8 @@ impl RuntimeManager {
             RuntimeManifestSource::Url(url) => {
                 log::info!(
                     "[runtime-manager] install_from_configured_manifest_blocking entering for runtime={} platform={:?}",
-                    config.runtime_name, config.platform
+                    config.runtime_name,
+                    config.platform
                 );
                 // We may be called from inside a tokio multi-thread runtime
                 // (e.g. when ensure() is invoked lazily during chat handling).
@@ -341,7 +345,9 @@ impl RuntimeManager {
                         })
                     }
                     Err(_) => {
-                        log::info!("[runtime-manager] no current tokio runtime, building current-thread runtime");
+                        log::info!(
+                            "[runtime-manager] no current tokio runtime, building current-thread runtime"
+                        );
                         let rt = tokio::runtime::Builder::new_current_thread()
                             .enable_all()
                             .build()

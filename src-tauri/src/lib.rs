@@ -926,6 +926,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             // Chat commands
             chat::send_message,
+            chat::compact_conversation,
             chat::stop_streaming,
             chat::approve_permission_request,
             chat::deny_permission_request,

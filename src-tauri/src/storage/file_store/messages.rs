@@ -137,6 +137,9 @@ pub fn insert_message(
         tool_calls: None,
         tool_call_id: None,
         name: None,
+        subtype: None,
+        compact_metadata: None,
+        is_compact_summary: None,
         run_id: None,
         schema_version: None,
         sequence: None,
@@ -384,6 +387,9 @@ pub fn update_message_content(
         tool_calls: original.tool_calls.clone(),
         tool_call_id: original.tool_call_id.clone(),
         name: original.name.clone(),
+        subtype: original.subtype.clone(),
+        compact_metadata: original.compact_metadata.clone(),
+        is_compact_summary: original.is_compact_summary,
         run_id: original.run_id.clone(),
         schema_version: original.schema_version,
         sequence: original.sequence,
@@ -517,6 +523,15 @@ fn message_to_json(msg: StoredMessage) -> serde_json::Value {
         if tcs.as_array().map_or(false, |a| !a.is_empty()) {
             out["toolCalls"] = tcs;
         }
+    }
+    if let Some(subtype) = msg.subtype {
+        out["subtype"] = subtype.into();
+    }
+    if let Some(compact_metadata) = msg.compact_metadata {
+        out["compactMetadata"] = compact_metadata;
+    }
+    if let Some(is_compact_summary) = msg.is_compact_summary {
+        out["isCompactSummary"] = is_compact_summary.into();
     }
     // PR2 收尾：透传 error 字段，让 reload 后前端 AiBubble 仍能渲染红色 callout.
     if let Some(err) = msg.error {

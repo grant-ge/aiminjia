@@ -588,8 +588,7 @@ async fn try_llm_title(
 ) -> anyhow::Result<String> {
     let llm_messages = vec![ChatMessage::text("user", first_user)];
 
-    let system_prompt =
-        "你是一个对话标题生成器。根据下面的用户消息，生成一个能完整概括主题的简洁标题。\
+    let system_prompt = "你是一个对话标题生成器。根据下面的用户消息，生成一个能完整概括主题的简洁标题。\
          **标题语言必须与用户消息的自然语言一致**：用户用中文 → 用中文标题；user writes in English → English title; \
          其他语言同理。即使用户消息只有一个词（如 \"hello\"），也按该词的语言出标题。\
          长度：中文标题 6-16 字、英文标题 2-6 个单词，必须语义完整，不要在词语中间截断。\

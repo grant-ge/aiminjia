@@ -51,7 +51,6 @@ UI 文案对应：应用启动后的默认对话界面、底部对话输入框�
 
 **验收标准**
 
-应该看到：
 - 发送后界面立即出现一条 assistant 流式气泡（光标动效）
 - 等待期间气泡内文本持续增加（每 30 秒能观察到字数变多）
 - 模型自然结束（流式光标消失），结束时刻在 `T0 + 2 分钟` 到 `T0 + 8 分钟` 之间
@@ -64,7 +63,6 @@ UI 文案对应：应用启动后的默认对话界面、底部对话输入框�
 - 该末条记录 `content.text` 包含字面值 `Paxos`
 - 该末条记录 `toolCalls` 字段不存在或为空数组（主 LLM 自己处理、没委派给任何工具）
 
-不应该看到：
 - 该末条记录 `content.text` 包含字面值 `模型未能生成回复`
 - 该末条记录 `content.text` 包含字面值 `请尝试换一种方式提问`
 - `messages.jsonl` 中**任何一条**记录 `role == "tool"`（出现 tool 记录 = 主 LLM 委派给某个工具，本意图要求"自己处理"）
@@ -106,7 +104,6 @@ UI 文案对应：应用启动后的默认对话界面、底部对话输入框�
 
 **验收标准**
 
-应该看到：
 - 模型自然结束（流式光标消失）
 - 文件 `/tmp/aijia-test-artifact-001.md` 存在
 - 文件 `/tmp/aijia-test-artifact-001.md` 内容包含字面值 `测试笔记`
@@ -117,7 +114,6 @@ UI 文案对应：应用启动后的默认对话界面、底部对话输入框�
 - `messages.jsonl` 末条 JSON 记录 `role == "assistant"`
 - 该末条记录 `content.text` 包含字面值 `![artifact](/tmp/aijia-test-artifact-001.md)`（原始标记保留在存储里）
 
-不应该看到：
 - assistant 气泡正文中直接渲染出字面值 `![artifact]`
 - 本轮 assistant 气泡下方文件卡片数量 `>= 2`（本意图只让生成 1 个产物）
 - 任一文件卡片的标题显示为字面值 `artifact`（说明把标记名当成了文件名）
@@ -150,7 +146,6 @@ UI 文案对应：应用启动后的默认对话界面、底部对话输入框�
 
 **验收标准**
 
-应该看到：
 - 模型自然结束（流式光标消失）
 - 文件 `/tmp/aijia-test-artifact-multi-1.md` 存在
 - 文件 `/tmp/aijia-test-artifact-multi-2.md` 存在
@@ -162,7 +157,6 @@ UI 文案对应：应用启动后的默认对话界面、底部对话输入框�
 - 该末条记录 `content.text` 包含字面值 `![artifact](/tmp/aijia-test-artifact-multi-1.md)`
 - 该末条记录 `content.text` 包含字面值 `![artifact](/tmp/aijia-test-artifact-multi-2.md)`
 
-不应该看到：
 - 本轮 assistant 气泡下方文件卡片数量 `== 1`（说明 2 条 artifact 标记里只解析出 1 条）
 - 本轮 assistant 气泡下方文件卡片数量 `>= 3`（多解析出意外卡片）
 - 第 1 个卡片标题反而包含 `aijia-test-artifact-multi-2.md`（顺序倒置）
@@ -194,7 +188,6 @@ UI 文案对应：应用启动后的默认对话界面、底部对话输入框�
 
 **验收标准**
 
-应该看到：
 - 模型自然结束（流式光标消失）
 - 文件 `/tmp/aijia-test-artifact-bash.txt` 存在
 - 文件 `/tmp/aijia-test-artifact-bash.txt` 内容包含字面值 `测试笔记 Bash 版`
@@ -205,7 +198,6 @@ UI 文案对应：应用启动后的默认对话界面、底部对话输入框�
 - 至少一张卡片标题包含字面值 `aijia-test-artifact-bash.txt`
 - 渲染中的 assistant 气泡正文**不含**字面值 `![artifact](`
 
-不应该看到：
 - 文件 `/tmp/aijia-test-artifact-bash.txt` 存在但末条 assistant `content.text` 不含 `![artifact](` 字面值（Bash 路径下漏加标记）
 - `messages.jsonl` 中所有 assistant 记录的 `toolCalls` 全部为空数组（根本没调工具）
 - `messages.jsonl` 中所有 assistant 记录的 `toolCalls` 元素 `name` 全是 `"Write"`（LLM 没按要求走 Bash 路径，本意图在该环境不构成有效验证，需复跑）
@@ -236,7 +228,6 @@ UI 文案对应：应用启动后的默认对话界面、底部对话输入框�
 
 **验收标准**
 
-应该看到：
 - 模型自然结束（流式光标消失）
 - 文件 `/tmp/aijia-test-artifact.xlsx` 存在
 - 末条 assistant 记录 `content.text` 包含字面值 `![artifact](/tmp/aijia-test-artifact.xlsx)`
@@ -245,7 +236,6 @@ UI 文案对应：应用启动后的默认对话界面、底部对话输入框�
 - 至少一张卡片的可视文本内容包含字面值 `XLS`（左侧文件图标 label 区域）
 - 渲染中的 assistant 气泡正文**不含**字面值 `![artifact](`
 
-不应该看到：
 - 卡片可视文本中出现字面值 `XLSX`（normalizeFileLabel 未生效，原扩展名直接透出）
 - 卡片可视文本中出现字面值 `EXCEL`（normalizeFileLabel 未生效，alias 直接透出）
 - 卡片可视文本中出现字面值 `FILE`（扩展名识别失败、走兜底）
@@ -285,7 +275,6 @@ UI 文案对应：应用启动后的默认对话界面、底部对话输入框�
 
 **验收标准**
 
-应该看到：
 - 模型自然结束（流式光标消失）
 - 文件 `/tmp/aijia-test-preview.md` 存在
 - 本轮 assistant 气泡下方 `[data-testid="generated-file-card"]` 数量 `>= 1`
@@ -296,7 +285,6 @@ UI 文案对应：应用启动后的默认对话界面、底部对话输入框�
 - `[data-aijia-file-preview-body]` 内 `textContent` 包含字面值 `预览测试`
 - `[data-aijia-file-preview-body]` 内 `textContent` 包含字面值 `条目甲`
 
-不应该看到：
 - 应用通知区出现 toast 标题字面值 `无法预览此文件`
 - `[data-aijia-file-preview-body]` 内出现字面值 `加载预览失败`
 - 步骤 11 命令返回 JSON 中 `reason == "card_not_found"` 或 `reason == "menuitem_disabled"`
@@ -335,7 +323,6 @@ UI 文案对应：应用启动后的默认对话界面、底部对话输入框�
 
 **验收标准**
 
-应该看到：
 - 模型自然结束（流式光标消失）
 - 文件 `/tmp/aijia-test-open.md` 存在
 - 本轮 assistant 气泡下方 `[data-testid="generated-file-card"]` 数量 `>= 1`
@@ -343,7 +330,6 @@ UI 文案对应：应用启动后的默认对话界面、底部对话输入框�
 - 步骤 12 命令返回 JSON 中无 `reason` 字段
 - `/tmp/aijia-test-open.md` 的 `mtime` 与 `M_BEFORE` 一致（点击只读不改文件）
 
-不应该看到：
 - 应用通知区出现 toast 标题字面值 `无法打开文件`
 - 应用通知区出现 toast 字面值 `打开生成文件失败`（旧错误字面，防回归）
 - 步骤 12 命令返回 JSON 中 `reason == "card_not_found"` 或 `reason == "menuitem_disabled"`
@@ -382,7 +368,6 @@ UI 文案对应：应用启动后的默认对话界面、底部对话输入框�
 
 **验收标准**
 
-应该看到：
 - 模型自然结束（流式光标消失）
 - 文件 `/tmp/aijia-test-reveal.md` 存在
 - 本轮 assistant 气泡下方 `[data-testid="generated-file-card"]` 数量 `>= 1`
@@ -390,7 +375,6 @@ UI 文案对应：应用启动后的默认对话界面、底部对话输入框�
 - 步骤 12 命令返回 JSON 中无 `reason` 字段
 - `/tmp/aijia-test-reveal.md` 的 `mtime` 与 `M_BEFORE` 一致（点击只读不改文件）
 
-不应该看到：
 - 应用通知区出现 toast 标题字面值 `无法在文件夹中显示`
 - 应用通知区出现 toast 字面值 `定位生成文件失败`（旧错误字面，防回归）
 - 步骤 12 命令返回 JSON 中 `reason == "card_not_found"` 或 `reason == "menuitem_disabled"`
@@ -423,7 +407,6 @@ PDF 不在前端 `generatedFileActions.PREVIEWABLE_FILE_TYPES` 白名单（同�
 
 **验收标准**
 
-应该看到：
 - 模型自然结束（流式光标消失）
 - 文件 `/tmp/aijia-test-artifact.pdf` 存在
 - 末条 assistant 记录 `content.text` 包含字面值 `![artifact](/tmp/aijia-test-artifact.pdf)`
@@ -433,7 +416,6 @@ PDF 不在前端 `generatedFileActions.PREVIEWABLE_FILE_TYPES` 白名单（同�
 - 至少一张卡片 `appName == "打开"`（主按钮文案）
 - 至少一张卡片的可视文本内容包含字面值 `PDF`（左侧 TiltedFileIcon 的 label 区域）
 
-不应该看到：
 - 任一卡片 `appName == "预览"`（若 PDF 被加进 PREVIEWABLE_FILE_TYPES 或路由错，主按钮会变预览——回归信号）
 - 卡片可视文本中出现字面值 `FILE`（扩展名识别失败、走兜底）
 - 步骤 11 命令返回 JSON 中 `count == 0`
@@ -463,7 +445,6 @@ PDF 不在前端 `generatedFileActions.PREVIEWABLE_FILE_TYPES` 白名单（同�
 
 **验收标准**
 
-应该看到：
 - 模型自然结束（流式光标消失）
 - 文件 `/tmp/aijia-test-artifact.pptx` 存在
 - 末条 assistant 记录 `content.text` 包含字面值 `![artifact](/tmp/aijia-test-artifact.pptx)`
@@ -471,7 +452,6 @@ PDF 不在前端 `generatedFileActions.PREVIEWABLE_FILE_TYPES` 白名单（同�
 - 至少一张卡片标题包含字面值 `aijia-test-artifact.pptx`
 - 至少一张卡片的可视文本内容包含字面值 `PPT`（左侧文件图标 label 区域）
 
-不应该看到：
 - 卡片可视文本中出现字面值 `PPTX`（normalizeFileLabel 未生效，原扩展名直接透出）
 - 卡片可视文本中出现字面值 `POWERPOINT`（normalizeFileLabel 未生效，alias 直接透出）
 - 卡片可视文本中出现字面值 `FILE`（扩展名识别失败、走兜底）
@@ -502,7 +482,6 @@ PDF 不在前端 `generatedFileActions.PREVIEWABLE_FILE_TYPES` 白名单（同�
 
 **验收标准**
 
-应该看到：
 - 模型自然结束（流式光标消失）
 - 文件 `/tmp/aijia-test-artifact.docx` 存在
 - 末条 assistant 记录 `content.text` 包含字面值 `![artifact](/tmp/aijia-test-artifact.docx)`
@@ -510,7 +489,6 @@ PDF 不在前端 `generatedFileActions.PREVIEWABLE_FILE_TYPES` 白名单（同�
 - 至少一张卡片标题包含字面值 `aijia-test-artifact.docx`
 - 至少一张卡片的可视文本内容包含字面值 `DOC`（左侧文件图标 label 区域）
 
-不应该看到：
 - 卡片可视文本中出现字面值 `DOCX`（normalizeFileLabel 未生效，原扩展名直接透出）
 - 卡片可视文本中出现字面值 `WORD`（normalizeFileLabel 未生效，alias 直接透出）
 - 卡片可视文本中出现字面值 `FILE`（扩展名识别失败、走兜底）

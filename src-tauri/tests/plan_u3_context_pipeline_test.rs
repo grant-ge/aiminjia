@@ -11,11 +11,13 @@ use app_lib::runtime::chat::preprocess::{
 };
 use app_lib::runtime::chat::turn_config::{LlmStepInput, LlmStepResult, TurnError};
 use app_lib::runtime::chat::{ChatTurnRequest, RuntimeChatTurnDriver, RuntimeLlmExecutor};
-use app_lib::runtime::event_bus::RuntimeEventBus;
+use app_lib::runtime::event_bus::{RuntimeEventBus, RuntimeEventSubscriber};
 use app_lib::runtime::identity::IdentityMapping;
 use app_lib::runtime::ids::RunId;
 use app_lib::runtime::query_engine::QueryEngine;
 use app_lib::runtime::state::TurnState;
+use app_lib::transport::tauri_event_adapter::TauriEventAdapter;
+use app_lib::transport::testing::RecordingRuntimeHost;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
@@ -54,10 +56,52 @@ fn normalize_created_at(messages: &[Value]) -> Vec<Value> {
             let mut message = message.clone();
             if let Some(object) = message.as_object_mut() {
                 if object.get("subtype").and_then(Value::as_str) == Some("compact_boundary") {
+                    object.insert("id".to_string(), Value::String("<boundary-id>".to_string()));
                     object.insert(
                         "createdAt".to_string(),
                         Value::String("<normalized>".to_string()),
                     );
+                    if let Some(metadata) = object
+                        .get_mut("compactMetadata")
+                        .and_then(Value::as_object_mut)
+                    {
+                        if metadata.contains_key("tailMessageId") {
+                            metadata.insert(
+                                "tailMessageId".to_string(),
+                                Value::String("<message-id>".to_string()),
+                            );
+                        }
+                        if let Some(preserved) = metadata
+                            .get_mut("preservedSegment")
+                            .and_then(Value::as_object_mut)
+                        {
+                            for key in [
+                                "firstPreservedMessageId",
+                                "headUuid",
+                                "tailMessageId",
+                                "tailUuid",
+                            ] {
+                                if preserved.contains_key(key) {
+                                    preserved.insert(
+                                        key.to_string(),
+                                        Value::String("<message-id>".to_string()),
+                                    );
+                                }
+                            }
+                            for key in ["anchorMessageId", "anchorUuid"] {
+                                if preserved.contains_key(key) {
+                                    preserved.insert(
+                                        key.to_string(),
+                                        Value::String("<summary-id>".to_string()),
+                                    );
+                                }
+                            }
+                        }
+                    }
+                } else if object.get("isCompactSummary").and_then(Value::as_bool) == Some(true) {
+                    object.insert("id".to_string(), Value::String("<summary-id>".to_string()));
+                } else if object.contains_key("id") {
+                    object.insert("id".to_string(), Value::String("<message-id>".to_string()));
                 }
             }
             message
@@ -175,6 +219,8 @@ async fn u3_prepare_messages_orders_budget_microcompact_collapse_before_auto_com
             custom_context_window: None,
         },
         context_window: 64_000,
+        compact_boundary: None,
+        project_instruction_content: None,
     };
 
     let mut compact_state = AutoCompactState::new();
@@ -242,6 +288,8 @@ async fn u3_prepare_messages_reuses_same_shape_for_normal_and_prompt_too_long() 
             custom_context_window: None,
         },
         context_window: 64_000,
+        compact_boundary: None,
+        project_instruction_content: None,
     };
 
     let mut normal_compact_state = AutoCompactState::new();
@@ -318,6 +366,8 @@ async fn u3_prepare_messages_is_idempotent_after_compact_output() {
             custom_context_window: None,
         },
         context_window: 64_000,
+        compact_boundary: None,
+        project_instruction_content: None,
     };
 
     let mut compact_state = AutoCompactState::new();
@@ -354,6 +404,92 @@ async fn u3_prepare_messages_is_idempotent_after_compact_output() {
         "prepared messages must not be rewritten again"
     );
     assert!(second.compact_boundary.is_none());
+}
+
+#[tokio::test]
+async fn u3_prepare_messages_processes_new_messages_after_compact_artifacts() {
+    let messages = vec![
+        json!({
+            "id": "boundary-1",
+            "role": "system",
+            "subtype": "compact_boundary",
+            "content": "Conversation compacted",
+            "compactMetadata": {
+                "trigger": "auto",
+                "preTokens": 1000,
+                "postTokens": 300,
+                "messagesSummarized": 5,
+                "tailMessageId": "tail-user"
+            }
+        }),
+        json!({
+            "id": "summary-1",
+            "role": "user",
+            "content": "<context>\nsummary\n</context>",
+            "isCompactSummary": true
+        }),
+        json!({"id": "tail-user", "role": "user", "content": "latest question"}),
+        assistant_tool_call("tc-after", "read_file"),
+        tool_message("tc-after", "read_file", "Z".repeat(10_000)),
+    ];
+
+    let config = PreprocessConfig {
+        budget: ToolResultBudgetConfig {
+            aggregate_char_budget: 500,
+            keep_recent_tool_results: 0,
+            preserved_tool_names: HashSet::new(),
+            replacement_preview_chars: 16,
+        },
+        microcompact: MicrocompactConfig {
+            trigger_chars: usize::MAX,
+            keep_recent_tool_results: 0,
+            preserved_tool_names: HashSet::new(),
+        },
+        collapse: CollapseConfig {
+            long_result_chars: usize::MAX,
+            keep_recent_tool_results: 0,
+            replacement_preview_chars: 16,
+        },
+        auto_compact: AutoCompactConfig {
+            threshold_chars: usize::MAX,
+            max_output_chars: 80_000,
+            consecutive_failure_limit: 3,
+            custom_context_window: None,
+        },
+        context_window: 64_000,
+        compact_boundary: None,
+        project_instruction_content: None,
+    };
+
+    let mut compact_state = AutoCompactState::new();
+    let mut runtime_state = PreprocessRuntimeState::default();
+    let prepared = prepare_messages_for_llm(
+        messages,
+        "conv-u3-after-compact",
+        PreprocessTrigger::Normal,
+        &config,
+        &mut compact_state,
+        &mut runtime_state,
+        false,
+        |_messages: Vec<Value>| async { Ok("should not compact".to_string()) },
+    )
+    .await
+    .expect("prepare should process post-compact tail");
+
+    assert!(
+        prepared
+            .executed_stages
+            .contains(&PreprocessStage::ToolResultBudget),
+        "new tool output after compact artifacts must still go through budget"
+    );
+    let tool_content = prepared
+        .messages
+        .iter()
+        .find(|message| message.get("role").and_then(Value::as_str) == Some("tool"))
+        .and_then(|message| message.get("content").and_then(Value::as_str))
+        .unwrap_or_default();
+    assert!(tool_content.starts_with("[budget-trimmed]"));
+    assert!(prepared.compact_boundary.is_none());
 }
 
 struct PromptTooLongRecoveryExecutor {
@@ -401,6 +537,9 @@ impl CompactSummaryClient for CountingCompactSummaryClient {
         &self,
         _conversation_id: &str,
         _messages: &[serde_json::Value],
+        _llm_settings: &app_lib::runtime::chat::turn_config::ResolvedLlmSettings,
+        _trace_id: Option<&str>,
+        _run_id: Option<&str>,
     ) -> Result<String, TurnError> {
         *self.calls.lock().unwrap() += 1;
         Ok("reactive compact summary".to_string())
@@ -419,7 +558,13 @@ impl RuntimeLlmExecutor for PromptTooLongRecoveryExecutor {
             .lock()
             .unwrap()
             .push(input.messages.clone());
-        self.results.lock().unwrap().remove(0)
+        let mut results = self.results.lock().unwrap();
+        if results.is_empty() {
+            return Err(TurnError::PromptTooLong(
+                "prompt too long after configured retries".to_string(),
+            ));
+        }
+        results.remove(0)
     }
 
     async fn load_history(&self, _conversation_id: &str) -> Result<Vec<Value>, TurnError> {
@@ -433,6 +578,8 @@ impl RuntimeLlmExecutor for PromptTooLongRecoveryExecutor {
         _tool_calls: &[serde_json::Value],
         _generated_file_ids: &[String],
         _file_metas: &[Value],
+        _thinking_blocks: &[serde_json::Value],
+        _error: Option<&app_lib::storage::file_store::types::MessageError>,
     ) -> Result<String, TurnError> {
         Ok("assistant-msg".to_string())
     }
@@ -464,10 +611,17 @@ async fn u3_driver_prompt_too_long_retries_once_with_compacted_messages() {
         ],
     ));
     let compact_client = Arc::new(CountingCompactSummaryClient::new());
+    let host = RecordingRuntimeHost::new();
     let bus = RuntimeEventBus::new();
-    let driver =
-        RuntimeChatTurnDriver::with_llm_executor(QueryEngine::default(), bus, executor.clone())
-            .with_compact_client(compact_client.clone());
+    let adapter: Arc<dyn RuntimeEventSubscriber> = Arc::new(TauriEventAdapter::new(host.clone()));
+    bus.subscribe(adapter.clone());
+    let _adapter = adapter;
+    let driver = RuntimeChatTurnDriver::with_llm_executor(
+        QueryEngine::default(),
+        bus.clone(),
+        executor.clone(),
+    )
+    .with_compact_client(compact_client.clone());
     let mut turn = make_test_turn("conv-u3-recovery");
     let request = ChatTurnRequest::new("conv-u3-recovery", "latest question", vec![]);
 
@@ -481,6 +635,20 @@ async fn u3_driver_prompt_too_long_retries_once_with_compacted_messages() {
             .iter()
             .any(|msg| msg.get("isCompactSummary").and_then(|v| v.as_bool()) == Some(true)),
         "retry call must use compacted summary view"
+    );
+    let trace = host.trace();
+    let event = trace
+        .events
+        .iter()
+        .find(|event| event.name == "compact:completed")
+        .expect("PromptTooLong recovery compact should emit compact:completed");
+    assert_eq!(
+        event.payload["conversationId"].as_str(),
+        Some("conv-u3-recovery")
+    );
+    assert!(
+        event.payload["messagesSummarized"].as_u64().unwrap_or(0) >= 3,
+        "history messages plus current user should be summarized"
     );
 }
 
