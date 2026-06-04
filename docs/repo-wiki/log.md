@@ -16,6 +16,7 @@
 - Added `test-intents-aijia-cli.json` for AEIT/test-intents, `aijia` CLI entrypoints, repo-local intent skills and rules/report navigation. Graph snapshot after merge: 9320 nodes, 10121 edges, 25 layers, 90 guided tour steps, 329 LLM-enhanced nodes, 93 architecture review nodes and 19 enhancement files.
 - Added `billing-subscription-account-network.json`, `tauri-command-event-contracts.json` and `user-scope-auth-storage-boundary.json` for billing/account/network, cross-layer IPC/event contracts and user-scope auth/storage boundaries. Graph snapshot after merge: 9337 nodes, 10232 edges, 25 layers, 100 guided tour steps, 367 LLM-enhanced nodes, 110 architecture review nodes and 22 enhancement files.
 - Added `context-budget-truncation-matrix.json` for long-dialogue forgetting, hardcoded context budgets, effectiveness labels and local compact-boundary troubleshooting. Updated UserWiki troubleshooting mirrors and corrected QueryEngine budget wording from unconfirmed to ordinary chat main chain not wired. Graph snapshot after merge: 9343 nodes, 10274 edges, 25 layers, 105 guided tour steps, 382 LLM-enhanced nodes, 116 architecture review nodes and 23 enhancement files.
+- Added a tag/commit intake rule to `wiki-maintainer` and queued two main-delta writebacks from `v0.5.33..main` / `v0.5.33..origin/main`: app data root contract and runtime cache reinstall / bundled fallback. These remain candidate items until the target main source tree is used for current-source enhancement and validation.
 
 ## 2026-06-03
 

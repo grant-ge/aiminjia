@@ -21,8 +21,8 @@ Coverage manifest 不是产品事实源。它只用于维护 compiled wiki：把
 | Runtime turn / tool / permission | strong | `.understand-anything/enhancements/rust-runtime-turn-tool-permission.json`, `docs/repo-wiki/runtime-map.md` | 仅在权限策略或 tool schema 变化时补 |
 | LLM gateway / provider / streaming | strong | `.understand-anything/enhancements/llm-gateway-provider-streaming.json`, `docs/repo-wiki/runtime-map.md` | prompt/context/cost 链路需要单独补 |
 | MCP dynamic tools | strong | `.understand-anything/enhancements/rust-mcp-dynamic-tools.json`, `docs/repo-wiki/runtime-map.md` | 新 MCP 配置或动态工具注册变化时补 |
-| Storage / workspace / path auth / file preview | strong | `.understand-anything/enhancements/storage-workspace-pathauth.json`, `docs/repo-wiki/runtime-map.md` | 账户作用域进入存储路径时补 account boundary |
-| Managed runtime supply chain | strong | `.understand-anything/enhancements/managed-runtime-supply-chain.json`, `docs/repo-wiki/runtime-map.md` | 发布链路补签名/打包时再关联 |
+| Storage / workspace / path auth / file preview | strong | `.understand-anything/enhancements/storage-workspace-pathauth.json`, `docs/repo-wiki/runtime-map.md` | tag-intake 已发现 `origin/main` 的 app data root contract 候选，待在目标 main 上补 `.understand-anything/enhancements/storage-app-data-contract.json` |
+| Managed runtime supply chain | strong | `.understand-anything/enhancements/managed-runtime-supply-chain.json`, `docs/repo-wiki/runtime-map.md` | tag-intake 已发现 local `main` 的 runtime cache reinstall / bundled fallback 候选，待在目标 main 上补 `.understand-anything/enhancements/managed-runtime-cache-reinstall.json` |
 | Frontend chat state and rendering | strong | `.understand-anything/enhancements/frontend-chat-state-rendering.json`, `docs/repo-wiki/frontend-map.md` | prompt/context 变化影响消息语义时补 |
 | Frontend employee / settings / file preview | strong | `.understand-anything/enhancements/frontend-employee-settings-file-preview.json`, `docs/repo-wiki/frontend-map.md` | settings 与模型消费链路需补跨层边 |
 | Skill / pending / registry / sync | strong | `.understand-anything/enhancements/frontend-skill-pending.json`, `.understand-anything/enhancements/skill-management-registry-sync.json`, `docs/repo-wiki/frontend-map.md` | 技能安装/同步协议变化时补 |

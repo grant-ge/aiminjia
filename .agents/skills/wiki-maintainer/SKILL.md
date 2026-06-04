@@ -66,6 +66,16 @@ RepoWiki 页面：
 
 ## 标准流程
 
+### Tag / Commit Intake
+
+当用户要求“按 main 改动”“按 tag 排查”“从 commit 里发现重要补 wiki”时，先把 commit/tag 当作变更雷达，而不是事实本身：
+
+1. 确认目标分支和 tag 边界，优先看 `vX..main`、`vX..origin/main`、`git diff --name-status` 和 `git log --first-parent`。
+2. 如果 local `main`、`origin/main` 或当前 wiki 工作树分叉，必须在 writeback queue 里标出来源分支；不要在当前工作树不存在源码文件时，把它写成已合并的 current-source enhancement。
+3. commit message 只用于分流优先级；产品/架构事实必须回到目标分支上的源码或测试，用 `git show <ref>:<path>`、`git grep <ref>` 或切到目标分支后读取。
+4. 按影响域拆分候选：存储/权限/运行时/LLM/前端/发布/测试分别进入对应 coverage domain，不要把一个 tag delta 混成泛化 changelog。
+5. 只有当目标分支源码、enhancement JSON、RepoWiki 入口、coverage/writeback/log 和校验都完成后，queue 才能从 `candidate` 或 `enhancement-draft` 升到 `validated`。
+
 1. 确认 `.understand-anything/config.json` 的 `outputLanguage` 是 `zh`。
 2. 读取 `.understand-anything/knowledge-graph.json` 的 project metadata、layers、tour。
 3. 读取 `docs/repo-wiki/coverage-manifest.md` 和 `docs/repo-wiki/writeback-queue.md`，先确认覆盖缺口和关闭标准。

@@ -24,6 +24,8 @@ Writeback queue 的目标是让“还没补完”有明确状态，而不是在�
 | WB-2026-06-04-003 | Tauri command / event contract surface | P2 | validated | McClintock / gpt-5.3-codex-spark | `.understand-anything/enhancements/tauri-command-event-contracts.json` | enhancement 已合并，跨前后端契约入口已更新，coverage 已升级 |
 | WB-2026-06-04-004 | test-intents / AEIT / `aijia` CLI | P2 | validated | Kant + Descartes / gpt-5.3-codex-spark | `.understand-anything/enhancements/test-intents-aijia-cli.json` | enhancement 已合并，`testing-and-commands.md` 有入口，coverage 已升级 |
 | WB-2026-06-04-005 | Release / signing pipeline | P3 | deferred | 未派发 | `.understand-anything/enhancements/release-signing-pipeline.json` | P1/P2 完成后再补，避免本轮过宽 |
+| WB-2026-06-04-006 | Storage / workspace / path auth / file preview | P1 | candidate | 未派发 / tag-intake | `.understand-anything/enhancements/storage-app-data-contract.json` | 基于目标 main 源码补 app data root contract enhancement，更新 runtime/source/coverage/log 并通过校验 |
+| WB-2026-06-04-007 | Managed runtime supply chain | P1 | candidate | 未派发 / tag-intake | `.understand-anything/enhancements/managed-runtime-cache-reinstall.json` | 基于目标 main 源码补 runtime cache reinstall / bundled fallback 行为，更新 runtime-map/coverage/log 并通过校验 |
 
 ## Active Queue Details
 
@@ -60,6 +62,20 @@ Writeback queue 的目标是让“还没补完”有明确状态，而不是在�
 - Trigger: coverage audit identified release/signing as important but lower-frequency than runtime/account/prompt/test-intents。
 - Engineering question: 修改发布、签名、updater 或 staging pipeline 时，如何定位 release playbook、CI workflow、脚本和验证闸门。
 - Current boundary: deferred until P1/P2 queue items are closed or user explicitly asks for release wiki supplementation.
+
+### WB-2026-06-04-006
+
+- Trigger: user指出可以从 main/tag/commit 里发现重要 wiki 补充点；按 `v0.5.33..origin/main` 排查后发现 app data governance 进入源码契约。
+- Engineering question: 修改 app data 根目录、legacy root 迁移、workspace artifacts 或用户级存储时，哪些 root entry 是 stable/transitional/workspace artifact/temporary/deprecated/review-only，哪些直接 root join 必须登记进 contract。
+- Current boundary: 当前 wiki 工作树不在 `origin/main`，`src-tauri/src/storage/app_data_contract.rs` 只在目标分支对象中确认；补 enhancement 前应切到或合并目标 main，避免把当前工作树不存在的文件写成 validated current-source fact。
+- Evidence from tag intake: `git show origin/main:src-tauri/src/storage/app_data_contract.rs`、`git grep origin/main app_data_contract -- src-tauri/src src-tauri/tests`。
+
+### WB-2026-06-04-007
+
+- Trigger: user指出可以从 main/tag/commit 里发现重要 wiki 补充点；按 `v0.5.33..main` 排查后发现 runtime cache reinstall / bundled fallback 行为超出现有 managed runtime wiki 颗粒度。
+- Engineering question: 运行时依赖缺失、缓存损坏、用户安装过的 runtime package 被误覆盖、manifest 下载失败或 bundled fallback 触发时，`RuntimeManager` 如何决定保留现有 cache、从 bundled runtime bootstrap、还是执行 reinstall。
+- Current boundary: 当前 wiki 工作树不在 local `main`；补 enhancement 前应在目标 main 上读取源码和测试，确认 `current_cache_result_if_available`、`install_from_bundled_fallback`、`ensure_managed`、`reinstall_managed` 与 runtime Tauri commands 的真实链路。
+- Evidence from tag intake: `git grep main current_cache_result_if_available -- src-tauri/src/runtime/dependencies src-tauri/tests`、`git show main:src-tauri/tests/runtime_dependencies_manager_test.rs`。
 
 ## Intake Rule
 
