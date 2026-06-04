@@ -5,28 +5,33 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::process::Command;
 
+use crate::runtime::agent::async_task_store::AsyncAgentTaskStore;
+use crate::runtime::agent::task_notification::TaskNotificationQueue;
+use crate::runtime::tools::RuntimeTool;
 use crate::runtime::tools::catalog::TOOL_CATALOG;
 use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::ToolDefinition;
 use crate::runtime::tools::executor::{ToolError, ToolResult};
 use crate::runtime::tools::permission::{PermissionDecision, PermissionReason};
-use crate::runtime::tools::RuntimeTool;
 
 use super::shell_common::{
-    collect_reader, content_from_output, emit_shell_failure_diagnostic, format_cancel_message,
-    format_command_failure, interpret_command_result, kill_child_process_tree,
-    read_merged_streams_with_progress, tail_n_lines, truncated_to_max_bytes, ExitKind,
-    MAX_OUTPUT_BYTES,
+    ExitKind, MAX_OUTPUT_BYTES, collect_reader, content_from_output, emit_shell_failure_diagnostic,
+    format_cancel_message, format_command_failure, interpret_command_result,
+    kill_child_process_tree, optional_transcript_path,
+    read_merged_streams_with_progress_and_optional_transcript, tail_n_lines,
+    truncated_to_max_bytes,
 };
 use super::workspace::require_workspace_root;
 use crate::runtime::cancellation::wait_for_cancellation;
 
 const DEFAULT_TIMEOUT_SECS: u64 = 120;
 const MAX_TIMEOUT_SECS: u64 = 600;
+const AUTO_BACKGROUND_AFTER_SECS: u64 = 10;
 
 static DANGEROUS_PATTERNS: &[(&str, &str)] = &[
     (
@@ -74,7 +79,24 @@ static DANGEROUS_PATTERNS: &[(&str, &str)] = &[
     ),
 ];
 
-pub struct BashTool;
+#[derive(Clone, Default)]
+pub struct BashTool {
+    background: Option<super::shell_task::ShellBackgroundDeps>,
+}
+
+impl BashTool {
+    pub fn new(
+        task_store: Arc<AsyncAgentTaskStore>,
+        notifications: Arc<TaskNotificationQueue>,
+    ) -> Self {
+        Self {
+            background: Some(super::shell_task::ShellBackgroundDeps::new(
+                task_store,
+                notifications,
+            )),
+        }
+    }
+}
 
 fn default_bash_timeout_secs() -> u64 {
     TOOL_CATALOG
@@ -92,6 +114,24 @@ fn resolve_timeout_secs(input: &Value) -> u64 {
         .unwrap_or_else(|| default_bash_timeout_secs() * 1000);
     let secs = ms.div_ceil(1000);
     secs.min(MAX_TIMEOUT_SECS)
+}
+
+fn resolve_auto_background_after_secs(input: &Value, timeout_secs: u64) -> Option<u64> {
+    let secs = AUTO_BACKGROUND_AFTER_SECS;
+    #[cfg(test)]
+    let secs = if let Some(ms) = input
+        .get("_auto_background_after_ms")
+        .and_then(Value::as_u64)
+    {
+        ms.div_ceil(1000).max(1)
+    } else {
+        secs
+    };
+    #[cfg(not(test))]
+    {
+        let _ = input;
+    }
+    (secs < timeout_secs).then_some(secs)
 }
 
 fn tool_result_bash(content: String, data: Value) -> ToolResult {
@@ -257,7 +297,9 @@ fn dws_pat_permission_decision(ask: DwsPatPermissionAsk) -> PermissionDecision {
             "授权后点击允许以重放原命令".to_string(),
         ],
         remember_options: vec![crate::runtime::tools::permission::PermissionDestination::Session],
-        default_destination: Some(crate::runtime::tools::permission::PermissionDestination::Session),
+        default_destination: Some(
+            crate::runtime::tools::permission::PermissionDestination::Session,
+        ),
         reason: PermissionReason::Other("dws_pat_high_risk_no_permission".to_string()),
         path_auth_scope: None,
     }
@@ -371,6 +413,16 @@ impl RuntimeTool for BashTool {
             .to_string();
         let timeout_secs = resolve_timeout_secs(&input);
         let shell_command = command_with_merged_stderr(&command);
+        let run_in_background = input
+            .get("run_in_background")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let description = input
+            .get("description")
+            .and_then(Value::as_str)
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or(&command)
+            .to_string();
 
         let mut shell = Command::new("/bin/sh");
         configure_child_process_group(&mut shell);
@@ -392,6 +444,26 @@ impl RuntimeTool for BashTool {
             .stderr
             .take()
             .ok_or_else(|| ToolError::ExecutionFailed("stderr pipe missing".into()))?;
+
+        if run_in_background {
+            let background = self.background.clone().ok_or_else(|| {
+                ToolError::ExecutionFailed(
+                    "Bash background execution is unavailable in this context".into(),
+                )
+            })?;
+            return super::shell_task::launch_background_shell_task(
+                "Bash",
+                "bash",
+                command,
+                description,
+                timeout_secs,
+                ctx,
+                background,
+                child,
+                stdout,
+                stderr,
+            );
+        }
 
         // Live progress wiring. The IO loop writes the latest (captured,
         // total_bytes) tuple into a tokio::sync::watch channel; a separate
@@ -415,8 +487,9 @@ impl RuntimeTool for BashTool {
 
         let (progress_tx, mut progress_rx) =
             tokio::sync::watch::channel::<(Vec<u8>, u64)>((Vec::new(), 0));
+        let progress_snapshot_rx = progress_rx.clone();
 
-        let progress_task = if let Some(sink) = progress_sink.clone() {
+        let mut progress_task = if let Some(sink) = progress_sink.clone() {
             let tool_call_id = tool_call_id_for_progress.clone();
             Some(tokio::spawn(async move {
                 let mut last_sent_bytes: u64 = 0;
@@ -461,31 +534,83 @@ impl RuntimeTool for BashTool {
         // The IO task writes into the watch channel on every appended chunk.
         // We move `progress_tx` into it so dropping the task naturally signals
         // the throttler to stop (Err on `changed()`).
+        let transcript_switch = optional_transcript_path();
+        let transcript_switch_for_reader = transcript_switch.clone();
         let merged_handle = tokio::spawn(async move {
-            read_merged_streams_with_progress(stdout, stderr, |captured, total| {
-                // try_send-equivalent for watch: send() never blocks; receivers
-                // see the latest value on their next poll. We clone the buffer
-                // because the read loop owns it — keeping a borrow alive across
-                // an await point is not possible inside the callback.
-                let _ = progress_tx.send((captured.to_vec(), total));
-            })
+            read_merged_streams_with_progress_and_optional_transcript(
+                stdout,
+                stderr,
+                |captured, total| {
+                    // try_send-equivalent for watch: send() never blocks; receivers
+                    // see the latest value on their next poll. We clone the buffer
+                    // because the read loop owns it — keeping a borrow alive across
+                    // an await point is not possible inside the callback.
+                    let _ = progress_tx.send((captured.to_vec(), total));
+                },
+                Some(transcript_switch_for_reader),
+            )
             .await
         });
 
-        let exit_kind = tokio::select! {
+        enum ForegroundControl {
+            Exit(ExitKind),
+            AutoBackground,
+        }
+
+        let auto_background_after_secs = resolve_auto_background_after_secs(&input, timeout_secs);
+        let auto_background_delay_secs = auto_background_after_secs.unwrap_or(timeout_secs);
+        let auto_background_enabled = auto_background_after_secs.is_some()
+            && self.background.is_some()
+            && ctx.conv_dir.is_some();
+
+        let foreground_control = tokio::select! {
             status = child.wait() => {
-                ExitKind::Completed(
+                ForegroundControl::Exit(ExitKind::Completed(
                     status.map_err(|e| ToolError::ExecutionFailed(format!("Failed waiting for process: {e}")))?
-                )
+                ))
+            }
+            _ = tokio::time::sleep(Duration::from_secs(auto_background_delay_secs)), if auto_background_enabled => {
+                ForegroundControl::AutoBackground
             }
             _ = tokio::time::sleep(Duration::from_secs(timeout_secs)) => {
                 kill_child_process_tree(&mut child).await;
-                ExitKind::TimedOut
+                ForegroundControl::Exit(ExitKind::TimedOut)
             }
             reason = wait_for_cancellation(ctx.cancellation.clone()) => {
                 kill_child_process_tree(&mut child).await;
-                ExitKind::Cancelled(reason)
+                ForegroundControl::Exit(ExitKind::Cancelled(reason))
             }
+        };
+
+        let exit_kind = match foreground_control {
+            ForegroundControl::AutoBackground => {
+                if let Some(handle) = progress_task.take() {
+                    handle.abort();
+                }
+                let background = self.background.clone().ok_or_else(|| {
+                    ToolError::ExecutionFailed(
+                        "Bash background execution is unavailable in this context".into(),
+                    )
+                })?;
+                let remaining_timeout_secs = timeout_secs
+                    .saturating_sub(auto_background_after_secs.unwrap_or(timeout_secs))
+                    .max(1);
+                let (pre_background_output, _) = progress_snapshot_rx.borrow().clone();
+                return super::shell_task::launch_auto_backgrounded_shell_task(
+                    "Bash",
+                    "bash",
+                    command,
+                    description,
+                    remaining_timeout_secs,
+                    ctx,
+                    background,
+                    child,
+                    merged_handle,
+                    transcript_switch,
+                    pre_background_output,
+                );
+            }
+            ForegroundControl::Exit(exit_kind) => exit_kind,
         };
 
         let (combined_output, stream_truncated) = collect_reader(merged_handle).await?;
@@ -585,6 +710,17 @@ mod tests {
         // 1500ms should round up to 2s (don't truncate to 1s)
         assert_eq!(resolve_timeout_secs(&json!({ "timeout": 1500 })), 2);
     }
+
+    #[test]
+    fn resolve_auto_background_after_secs_uses_test_override() {
+        assert_eq!(
+            resolve_auto_background_after_secs(
+                &json!({ "_auto_background_after_ms": 100, "timeout": 5000 }),
+                5
+            ),
+            Some(1)
+        );
+    }
 }
 
 #[cfg(test)]
@@ -641,7 +777,7 @@ mod progress_tests {
         let sink = Arc::new(RecordingSink::default());
         let ctx = ToolExecutionContext::for_test("conv-bp", "run-bp", "tc-bp")
             .with_capability(cap_with_sink(tmp.path().to_path_buf(), sink.clone()));
-        let tool = super::BashTool;
+        let tool = super::BashTool::default();
         let cmd = "for i in 1 2 3; do echo line-$i; sleep 0.6; done";
         RuntimeTool::execute(&tool, json!({ "command": cmd }), ctx)
             .await
@@ -679,7 +815,7 @@ mod progress_tests {
         let sink = Arc::new(RecordingSink::default());
         let ctx = ToolExecutionContext::for_test("conv-fast", "run-fast", "tc-fast")
             .with_capability(cap_with_sink(tmp.path().to_path_buf(), sink.clone()));
-        let tool = super::BashTool;
+        let tool = super::BashTool::default();
         let result = RuntimeTool::execute(&tool, json!({ "command": "echo hi" }), ctx)
             .await
             .expect("fast bash should succeed");
@@ -690,5 +826,170 @@ mod progress_tests {
         for (tcid, _, _) in sink.events.lock().unwrap().iter() {
             assert_eq!(tcid, "tc-fast");
         }
+    }
+}
+
+#[cfg(test)]
+mod auto_background_tests {
+    use crate::runtime::agent::async_task_store::{AsyncAgentTaskStore, AsyncTaskType};
+    use crate::runtime::agent::task_notification::TaskNotificationQueue;
+    use crate::runtime::ids::AgentId;
+    use crate::runtime::tools::{
+        CapabilityContext, RuntimeTool, StorageCapability, ToolExecutionContext,
+    };
+    use serde_json::json;
+    use std::path::PathBuf;
+    use std::sync::Arc;
+    use std::time::Duration;
+    use tempfile::TempDir;
+
+    fn cap_with_workspace(workspace: PathBuf) -> Arc<CapabilityContext> {
+        Arc::new(CapabilityContext {
+            storage: Some(StorageCapability {
+                workspace_path: workspace,
+                authorized_workspace: None,
+                permission_ctx: Arc::new(crate::runtime::path_auth::ToolPermissionContext::empty()),
+            }),
+            workspace_id: Some("ws-auto-bg".to_string()),
+            runtime_resolver: None,
+            file_ops: None,
+            read_file_state: None,
+            file_reading_limits: None,
+            notification_sink: None,
+            tool_progress_sink: None,
+            is_subagent: false,
+        })
+    }
+
+    #[tokio::test]
+    async fn foreground_command_auto_backgrounds_after_blocking_budget() {
+        let tmp = TempDir::new().unwrap();
+        let workspace = tmp.path().join("workspace");
+        let conv_dir = tmp.path().join("conversations").join("conv-auto-bg");
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::create_dir_all(&conv_dir).unwrap();
+
+        let store = Arc::new(AsyncAgentTaskStore::new());
+        let notifications = Arc::new(TaskNotificationQueue::new());
+        let tool = super::BashTool::new(store.clone(), notifications.clone());
+        let ctx = ToolExecutionContext::for_test("conv-auto-bg", "run-auto-bg", "tc-auto-bg")
+            .with_capability(cap_with_workspace(workspace))
+            .with_conv_dir(conv_dir);
+
+        let result = RuntimeTool::execute(
+            &tool,
+            json!({
+                "command": "sleep 2; echo auto-bg-test",
+                "timeout": 5000,
+                "_auto_background_after_ms": 100
+            }),
+            ctx,
+        )
+        .await
+        .expect("foreground shell should auto-background instead of waiting for completion");
+
+        let data = result
+            .data
+            .as_ref()
+            .expect("background result should include data");
+        let task_id = data
+            .get("task_id")
+            .and_then(serde_json::Value::as_str)
+            .expect("task_id should be present");
+        assert!(task_id.starts_with('b'));
+        assert_eq!(
+            data.get("task_type").and_then(serde_json::Value::as_str),
+            Some("local_bash")
+        );
+        assert_eq!(
+            data.get("assistant_auto_backgrounded")
+                .and_then(serde_json::Value::as_bool),
+            Some(true)
+        );
+
+        let agent_id = AgentId::new(task_id);
+        assert_eq!(
+            store.task_type_for_id(&agent_id),
+            Some(AsyncTaskType::LocalBash)
+        );
+        assert!(
+            store.find_by_id(&agent_id).is_some(),
+            "auto-backgrounded shell task should be registered"
+        );
+
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        let output_file = data
+            .get("output_file")
+            .and_then(serde_json::Value::as_str)
+            .expect("output_file should be present");
+        let transcript = std::fs::read_to_string(output_file).unwrap();
+        assert!(transcript.contains("auto-bg-test"));
+        assert_eq!(notifications.pending_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn auto_background_transcript_does_not_append_full_final_aggregate() {
+        let tmp = TempDir::new().unwrap();
+        let workspace = tmp.path().join("workspace");
+        let conv_dir = tmp.path().join("conversations").join("conv-auto-bg-offset");
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::create_dir_all(&conv_dir).unwrap();
+
+        let store = Arc::new(AsyncAgentTaskStore::new());
+        let notifications = Arc::new(TaskNotificationQueue::new());
+        let tool = super::BashTool::new(store, notifications);
+        let ctx =
+            ToolExecutionContext::for_test("conv-auto-bg-offset", "run-auto-bg", "tc-auto-bg")
+                .with_capability(cap_with_workspace(workspace))
+                .with_conv_dir(conv_dir);
+
+        let result = RuntimeTool::execute(
+            &tool,
+            json!({
+                "command": "for i in $(seq 1 4); do echo auto-bg-offset-$i; sleep 1; done",
+                "timeout": 10000,
+                "_auto_background_after_ms": 100
+            }),
+            ctx,
+        )
+        .await
+        .expect("foreground shell should auto-background");
+
+        let data = result
+            .data
+            .as_ref()
+            .expect("background result should include data");
+        let output_file = data
+            .get("output_file")
+            .and_then(serde_json::Value::as_str)
+            .expect("output_file should be present");
+
+        tokio::time::sleep(Duration::from_secs(6)).await;
+        let transcript = std::fs::read_to_string(output_file).unwrap();
+        let contents: Vec<String> = transcript
+            .lines()
+            .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+            .filter_map(|value| {
+                value
+                    .get("content")
+                    .and_then(serde_json::Value::as_str)
+                    .map(ToOwned::to_owned)
+            })
+            .collect();
+
+        for i in 1..=4 {
+            let needle = format!("auto-bg-offset-{i}");
+            assert!(
+                contents.iter().any(|content| content.contains(&needle)),
+                "transcript should preserve {needle}; contents={contents:?}"
+            );
+        }
+
+        assert!(
+            !contents
+                .iter()
+                .any(|content| (1..=4).all(|i| content.contains(&format!("auto-bg-offset-{i}")))),
+            "transcript should not append one final aggregate containing all historical output; contents={contents:?}"
+        );
     }
 }

@@ -6,14 +6,21 @@ import { ChatArea } from '@/components/layout/ChatArea'
 import { ChatTopBar } from '@/components/shell/ChatTopBar'
 import { TeamChatDrawer } from '@/components/team/TeamChatDrawer'
 import { TeamVisualProvider } from '@/components/team/TeamVisualContext'
+import {
+  ConversationExportDialog,
+} from '@/features/chat/ConversationExportDialog'
 import { useExpertTeamForConversation } from '@/features/expert-teams/expertTeamRegistry'
 import { getExpertTeam } from '@/features/expert-teams/teams'
 import { useChat } from '@/hooks/useChat'
+import { useConversationExport } from '@/hooks/useConversationExport'
 import { useTeamOverview } from '@/hooks/useTeamOverview'
 import { useChatStore } from '@/stores/chatStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { useGeneratedFilePreviewStore } from '@/stores/generatedFilePreviewStore'
-import { getConversationSource, openGeneratedFile } from '@/lib/tauri'
+import {
+  getConversationSource,
+  openGeneratedFile,
+} from '@/lib/tauri'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useEmployeeById } from '@/features/employees/useEmployeeById'
@@ -33,6 +40,7 @@ export function ChatPage({ conversationId }: ChatPageProps) {
   const previewOpen = previewTarget?.conversationId === conversationId
   const conv = conversations.find((c) => c.id === conversationId)
   const title = conv?.title ?? ''
+  const conversationExport = useConversationExport(conversationId)
 
   // employee_id lives in conv.json (not the index); read it lazily when this
   // conversation is an employee dispatch session.
@@ -98,6 +106,8 @@ export function ChatPage({ conversationId }: ChatPageProps) {
                 }
               : undefined
           }
+          onShare={conversationExport.openExportDialog}
+          shareLabel="导出对话"
         />
       ) : null}
       <div className="relative flex flex-1 overflow-hidden">
@@ -123,6 +133,9 @@ export function ChatPage({ conversationId }: ChatPageProps) {
           />
         ) : null}
       </div>
+      <ConversationExportDialog
+        {...conversationExport.dialogProps}
+      />
     </div>
   )
 }

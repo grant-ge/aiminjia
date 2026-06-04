@@ -6,9 +6,11 @@
 //!   catalog lives on lotus ops-portal (table `employee_templates`, OSS path
 //!   `ops/employee-templates/{template_id}/{version}.json`).
 //! - The desktop client caches downloaded snapshots in
-//!   `~/.renlijia/employee-templates-cache/{tid}/{ver}.json`. No embedded
-//!   bootstrap fallback exists — without network the user can't run any
-//!   employee anyway (云端唯一架构), so faking offline catalog is misleading.
+//!   `~/.renlijia/employee-templates-cache/{encoded_tid}/{encoded_ver}.json`.
+//!   Cache path components are percent-encoded because OPS template IDs such as
+//!   `builtin:xiaobiao` are valid business IDs but invalid Windows file names.
+//!   No embedded bootstrap fallback exists — without network the user can't run
+//!   any employee anyway (云端唯一架构), so faking offline catalog is misleading.
 //! - Each employee instance freezes the exact template snapshot it was hired
 //!   from into `<employees>/<id>/template/template.json` plus a sibling
 //!   `manifest.json` that records `{template_id, version, sha256, source}`.
@@ -18,8 +20,8 @@
 //! - `TemplateRef` — the small descriptor stored on `EmployeeRecord`.
 //! - `TemplateSnapshot` — the on-disk JSON shape that mirrors the OPS table.
 //! - templates are loaded from the global cache dir
-//!   (`~/.renlijia/employee-templates-cache/{tid}/{ver}.json`), populated by
-//!   `employee_template_refresh` from lotus OPS.
+//!   (`~/.renlijia/employee-templates-cache/{encoded_tid}/{encoded_ver}.json`),
+//!   populated by `employee_template_refresh` from lotus OPS.
 //! - `ensure_instance_snapshot()` — idempotently writes `template/` for an
 //!   instance directory.
 //!
@@ -368,19 +370,20 @@ pub fn effective_requires_attachment(
 /// version has landed than the one frozen into the employee's snapshot.
 pub fn find_latest_for_template(cache_dir: &Path, template_id: &str) -> Option<TemplateSnapshot> {
     let mut best: Option<TemplateSnapshot> = None;
-    let tid_dir = cache_dir.join(template_id);
-    if let Ok(rd) = fs::read_dir(&tid_dir) {
-        for entry in rd.flatten() {
-            let p = entry.path();
-            if p.extension().and_then(|e| e.to_str()) != Some("json") {
-                continue;
-            }
-            if let Ok(content) = fs::read_to_string(&p) {
-                if let Ok(s) = serde_json::from_str::<TemplateSnapshot>(&content) {
-                    match best.as_ref() {
-                        None => best = Some(s),
-                        Some(prev) if s.version > prev.version => best = Some(s),
-                        _ => {}
+    for tid_dir in cache_dirs_for_template(cache_dir, template_id) {
+        if let Ok(rd) = fs::read_dir(&tid_dir) {
+            for entry in rd.flatten() {
+                let p = entry.path();
+                if p.extension().and_then(|e| e.to_str()) != Some("json") {
+                    continue;
+                }
+                if let Ok(content) = fs::read_to_string(&p) {
+                    if let Ok(s) = serde_json::from_str::<TemplateSnapshot>(&content) {
+                        match best.as_ref() {
+                            None => best = Some(s),
+                            Some(prev) if s.version > prev.version => best = Some(s),
+                            _ => {}
+                        }
                     }
                 }
             }
@@ -407,7 +410,7 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
 // Fetch published template versions from lotus ops-portal's public catalog
 // and cache them on disk. Layout at `~/.renlijia/employee-templates-cache/`:
 //
-//   {template_id}/{version}.json       — the canonical snapshot JSON
+//   {encoded_template_id}/{encoded_version}.json       — the canonical snapshot JSON
 //
 // The cache is content-addressed (the sha256 from the OPS manifest must
 // match) and immutable per `(template_id, version)`. Callers always go
@@ -450,24 +453,138 @@ struct OpsEnvelope<T> {
     data: Option<T>,
 }
 
+/// Map a `template_id` to its cache subdirectory under `cache_dir`.
+///
+/// Template ids use a `<namespace>:<name>` scheme (e.g. `builtin:xiaogong`).
+/// `:` is legal on macOS/Linux but ILLEGAL in a Windows directory name, so
+/// using the id verbatim as a folder name silently works on the dev Mac and
+/// then `create_dir` fails on Windows — the employee-template marketplace then
+/// caches nothing and shows an empty list. We encode the id for the *local
+/// directory name only*.
+///
+/// The logical `template_id` is unchanged everywhere else (server API, OSS
+/// path, snapshot JSON content, dispatch matching); only this on-disk folder
+/// name is encoded. ALL local cache path construction MUST go through this one
+/// function (never `cache_dir.join(template_id)` directly) so the read / write
+/// / scan paths agree on the same folder name on every platform.
+pub fn tid_cache_dir(cache_dir: &Path, template_id: &str) -> PathBuf {
+    cache_dir.join(cache_path_component(template_id))
+}
+
 fn cache_path_for(cache_dir: &Path, template_id: &str, version: &str) -> PathBuf {
-    cache_dir.join(template_id).join(format!("{version}.json"))
+    tid_cache_dir(cache_dir, template_id).join(format!("{}.json", cache_path_component(version)))
+}
+
+fn legacy_cache_path_for(cache_dir: &Path, template_id: &str, version: &str) -> Option<PathBuf> {
+    if !legacy_cache_component_is_safe(template_id) || !legacy_cache_component_is_safe(version) {
+        return None;
+    }
+    Some(cache_dir.join(template_id).join(format!("{version}.json")))
+}
+
+fn cache_dirs_for_template(cache_dir: &Path, template_id: &str) -> Vec<PathBuf> {
+    let encoded = cache_dir.join(cache_path_component(template_id));
+    let Some(legacy) = legacy_cache_dir_for_template(cache_dir, template_id) else {
+        return vec![encoded];
+    };
+    if encoded != legacy {
+        return vec![encoded, legacy];
+    }
+    vec![encoded]
+}
+
+fn cache_path_component(raw: &str) -> String {
+    let encoded = url_path_segment(raw);
+    if is_windows_reserved_component(&encoded)
+        || encoded.is_empty()
+        || encoded == "."
+        || encoded == ".."
+        || encoded.ends_with('.')
+        || encoded.ends_with(' ')
+    {
+        format!("_{encoded}")
+    } else {
+        encoded
+    }
+}
+
+fn is_windows_reserved_component(component: &str) -> bool {
+    let stem = component
+        .split('.')
+        .next()
+        .unwrap_or(component)
+        .to_ascii_uppercase();
+    matches!(
+        stem.as_str(),
+        "CON"
+            | "PRN"
+            | "AUX"
+            | "NUL"
+            | "COM1"
+            | "COM2"
+            | "COM3"
+            | "COM4"
+            | "COM5"
+            | "COM6"
+            | "COM7"
+            | "COM8"
+            | "COM9"
+            | "LPT1"
+            | "LPT2"
+            | "LPT3"
+            | "LPT4"
+            | "LPT5"
+            | "LPT6"
+            | "LPT7"
+            | "LPT8"
+            | "LPT9"
+    )
+}
+
+fn url_path_segment(raw: &str) -> String {
+    urlencoding::encode(raw).into_owned()
+}
+
+fn legacy_cache_dir_for_template(cache_dir: &Path, template_id: &str) -> Option<PathBuf> {
+    if legacy_cache_component_is_safe(template_id) {
+        Some(cache_dir.join(template_id))
+    } else {
+        None
+    }
+}
+
+fn legacy_cache_component_is_safe(raw: &str) -> bool {
+    !raw.is_empty() && raw != "." && raw != ".." && !raw.contains('/') && !raw.contains('\\')
+}
+
+fn read_cache_file(path: &Path) -> Option<TemplateSnapshot> {
+    let content = fs::read_to_string(path).ok()?;
+    serde_json::from_str(&content).ok()
 }
 
 /// Read a cached template snapshot if present + valid. Any parse/IO error
 /// is swallowed (returns `None`) so a corrupted cache file is just
 /// re-fetched, not a hard failure.
 pub fn read_cache(cache_dir: &Path, template_id: &str, version: &str) -> Option<TemplateSnapshot> {
-    let p = cache_path_for(cache_dir, template_id, version);
-    let content = fs::read_to_string(&p).ok()?;
-    serde_json::from_str(&content).ok()
+    let encoded_path = cache_path_for(cache_dir, template_id, version);
+    if let Some(snapshot) = read_cache_file(&encoded_path) {
+        return Some(snapshot);
+    }
+    if let Some(legacy_path) = legacy_cache_path_for(cache_dir, template_id, version) {
+        if legacy_path != encoded_path {
+            return read_cache_file(&legacy_path);
+        }
+    }
+    None
 }
 
 /// Persist `snapshot` to the cache directory. Atomic (tmp + rename).
 pub fn write_cache(cache_dir: &Path, snapshot: &TemplateSnapshot) -> Result<PathBuf> {
-    let dir = cache_dir.join(&snapshot.template_id);
-    fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
-    let p = dir.join(format!("{}.json", snapshot.version));
+    let p = cache_path_for(cache_dir, &snapshot.template_id, &snapshot.version);
+    let dir = p
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("invalid cache path {}", p.display()))?;
+    fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
     let json = serde_json::to_string_pretty(snapshot)?;
     write_atomic(&p, json.as_bytes())?;
     Ok(p)
@@ -480,7 +597,7 @@ pub async fn fetch_manifest(client: &reqwest::Client, template_id: &str) -> Resu
     let url = format!(
         "{}/api/public/employee-templates/{}/manifest",
         ops_base_url(),
-        template_id
+        url_path_segment(template_id)
     );
     let resp = client
         .get(&url)
@@ -753,6 +870,65 @@ mod tests {
     }
 
     #[test]
+    fn cache_paths_encode_windows_unsafe_components() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = dir.path();
+        let snap = make_snap("builtin:xiao/biao\\win", "2026-06-03T01:02:03+08:00");
+
+        let path = write_cache(cache, &snap).unwrap();
+        assert_eq!(
+            path.parent()
+                .and_then(|p| p.file_name())
+                .and_then(|s| s.to_str()),
+            Some("builtin%3Axiao%2Fbiao%5Cwin")
+        );
+        assert_eq!(
+            path.file_name().and_then(|s| s.to_str()),
+            Some("2026-06-03T01%3A02%3A03%2B08%3A00.json")
+        );
+
+        let back =
+            read_cache(cache, "builtin:xiao/biao\\win", "2026-06-03T01:02:03+08:00").unwrap();
+        assert_eq!(back.template_id, "builtin:xiao/biao\\win");
+        assert_eq!(back.version, "2026-06-03T01:02:03+08:00");
+    }
+
+    #[test]
+    fn cache_paths_prefix_windows_device_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = dir.path();
+        let snap = make_snap("CON", "NUL");
+
+        let path = write_cache(cache, &snap).unwrap();
+        assert_eq!(
+            path.parent()
+                .and_then(|p| p.file_name())
+                .and_then(|s| s.to_str()),
+            Some("_CON")
+        );
+        assert_eq!(path.file_name().and_then(|s| s.to_str()), Some("_NUL.json"));
+        assert!(read_cache(cache, "CON", "NUL").is_some());
+    }
+
+    #[test]
+    fn read_cache_accepts_legacy_raw_cache_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = dir.path();
+        let snap = make_snap("builtin%legacy", "1.0.0");
+        let legacy_dir = cache.join("builtin%legacy");
+        fs::create_dir_all(&legacy_dir).unwrap();
+        fs::write(
+            legacy_dir.join("1.0.0.json"),
+            serde_json::to_string_pretty(&snap).unwrap(),
+        )
+        .unwrap();
+
+        let back = read_cache(cache, "builtin%legacy", "1.0.0").unwrap();
+        assert_eq!(back.template_id, "builtin%legacy");
+        assert_eq!(back.version, "1.0.0");
+    }
+
+    #[test]
     fn merge_catalog_cache_wins_when_newer() {
         let dir = tempfile::tempdir().unwrap();
         let cache = dir.path();
@@ -899,35 +1075,21 @@ mod tests {
 
     #[test]
     fn find_latest_picks_only_cache_entry() {
-        use std::fs;
         let tmp = tempfile::tempdir().unwrap();
-        // Drop a v9.9 cache entry for xiaoyuan
+        // Drop a v9.9 cache entry for xiaoyuan via write_cache (the production
+        // path), so the `:` in the id is encoded into a Windows-safe folder
+        // name. Creating `builtin:xiaoyuan/` by hand would panic on Windows.
         let cache_dir = tmp.path();
-        let tid_dir = cache_dir.join("builtin:xiaoyuan");
-        fs::create_dir_all(&tid_dir).unwrap();
-        let cached = TemplateSnapshot {
-            template_id: "builtin:xiaoyuan".into(),
-            version: "9.9".into(),
-            name: "x".into(),
-            avatar: "".into(),
-            role: "from-cache".into(),
-            description: "".into(),
-            badge: "".into(),
-            display_i18n: serde_json::Value::Null,
-            prompt_i18n: serde_json::Value::Null,
-            schema_i18n: serde_json::Value::Null,
-            system_prompt_extra: "".into(),
-            tool_whitelist: vec![],
-            cron: "".into(),
-            default_skill_id: "".into(),
-            skill_ids: vec![],
-            requires_dingtalk: false,
-            requires_attachment: serde_json::Value::Null,
-            resource_config_schema: serde_json::Value::Null,
-            resource_config_ui: serde_json::Value::Null,
-        };
-        let path = tid_dir.join("9.9.json");
-        fs::write(&path, serde_json::to_string_pretty(&cached).unwrap()).unwrap();
+        let mut cached = make_snap("builtin:xiaoyuan", "9.9");
+        cached.role = "from-cache".into();
+        let path = write_cache(cache_dir, &cached).unwrap();
+        assert_eq!(
+            path.parent()
+                .and_then(|p| p.file_name())
+                .and_then(|s| s.to_str()),
+            Some("builtin%3Axiaoyuan")
+        );
+
         let s = find_latest_for_template(cache_dir, "builtin:xiaoyuan").unwrap();
         assert_eq!(s.version, "9.9");
         assert_eq!(s.role, "from-cache");
@@ -938,5 +1100,38 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let s = find_latest_for_template(tmp.path(), "builtin:nope-not-real");
         assert!(s.is_none());
+    }
+
+    #[test]
+    fn colon_id_caches_under_windows_safe_dir_and_roundtrips() {
+        // Regression (Windows): `builtin:xiaogong` was used verbatim as a
+        // directory name; `:` is illegal on Windows so create_dir failed and
+        // the template cache stayed empty. The on-disk folder must be
+        // encoded while the logical template_id round-trips unchanged.
+        let tmp = tempfile::tempdir().unwrap();
+        let cache_dir = tmp.path();
+        let snap = make_snap("builtin:xiaogong", "1.2");
+
+        // Must succeed on every platform (no `:` ever reaches the filesystem).
+        write_cache(cache_dir, &snap).unwrap();
+
+        // The created subdir carries no Windows-forbidden character.
+        let sub = std::fs::read_dir(cache_dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .find(|n| !n.is_empty())
+            .expect("a cache subdir should have been created");
+        assert!(
+            !sub.contains(':'),
+            "dir name must not contain ':', got {sub}"
+        );
+        assert_eq!(sub, "builtin%3Axiaogong");
+
+        // The logical id round-trips through both read paths unchanged.
+        let back = read_cache(cache_dir, "builtin:xiaogong", "1.2").unwrap();
+        assert_eq!(back.template_id, "builtin:xiaogong");
+        let latest = find_latest_for_template(cache_dir, "builtin:xiaogong").unwrap();
+        assert_eq!(latest.template_id, "builtin:xiaogong");
     }
 }

@@ -24,6 +24,8 @@ const APP_LOG_RETENTION_DAYS: u64 = 3;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
@@ -970,6 +972,8 @@ pub fn run() {
             file::delete_file,
             file::open_file_by_name,
             file::reveal_file_by_name,
+            transport::tauri_commands::conversation_export::export_conversation,
+            transport::tauri_commands::conversation_export::reveal_export_in_folder,
             // Settings commands
             settings::get_settings,
             settings::update_settings,

@@ -80,7 +80,7 @@ export function AboutPanel({
   return (
     <div className="flex flex-col gap-4 text-foreground">
       <section className="flex items-center justify-between gap-6">
-        <div className="flex min-w-0 items-start gap-4">
+        <div className="flex min-w-0 items-center justify-center gap-4">
           <img
             src={logoUrl}
             alt={`${appName} ${t('settings.about.icon')}`}

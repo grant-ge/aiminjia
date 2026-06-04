@@ -3,11 +3,6 @@
 /target/
 /gen/schemas
 
-# Bundled Python runtime (downloaded by scripts/setup-python.sh)
-# Ignore contents but keep the directory (Tauri needs it for bundle.resources validation)
-/python-runtime/*
-!/python-runtime/.gitkeep
-
 # Bundled Playwright runtime (downloaded at runtime; chrome / node binaries
 # are 200MB+ each and got accidentally committed in 00d781c3 — keep them
 # out of git history forever).

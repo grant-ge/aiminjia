@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { getSettings, updateSettings } from '@/lib/tauri'
+import { useBrandingStore } from '@/stores/brandingStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import type { ChatWidthMode, FontScale } from '@/types/settings'
 import type { AppLanguage } from '@/i18n'
@@ -16,8 +17,10 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
   const setFontScale = useSettingsStore((s) => s.setFontScale)
   const chatWidthMode = useSettingsStore((s) => s.chatWidthMode ?? 'full')
   const setChatWidthMode = useSettingsStore((s) => s.setChatWidthMode)
+  const productName = useBrandingStore((s) => s.productName)
   const appLanguage: AppLanguage = i18n.language === 'en-US' ? 'en-US' : 'zh-CN'
   const setAppLanguage = useSettingsStore((s) => s.setAppLanguage)
+  const accountSubtitle = productName.trim() || user.tenantName
 
   const persistToBackend = async (patch: {
     fontScale?: FontScale
@@ -78,7 +81,7 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
           </div>
           <div className="flex min-w-0 flex-col gap-2">
             <div className="text-base font-bold leading-none text-foreground">{user.name}</div>
-            <div className="truncate text-sm leading-none text-muted-foreground">{user.tenantName}</div>
+            <div className="truncate text-sm leading-none text-muted-foreground">{accountSubtitle}</div>
           </div>
         </div>
         <Button variant="outline" data-aijia-logout-button className="h-9 rounded-lg px-5 text-sm font-semibold" onClick={onLogout}>

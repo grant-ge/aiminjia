@@ -5,6 +5,10 @@ import { beforeEach, describe, it, expect, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { AssistantMarkdown } from '../../AssistantMarkdown'
 
+const mockOpenLocalFile = vi.fn()
+const mockOpenPreview = vi.fn()
+const mockGetLocalFilePreview = vi.fn()
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (_key: string, fallback?: unknown) => {
@@ -19,16 +23,43 @@ vi.mock('react-i18next', () => ({
 
 vi.mock('@/lib/tauri', () => ({
   openFileByName: vi.fn().mockResolvedValue(undefined),
+  openLocalFile: (...args: unknown[]) => mockOpenLocalFile(...args),
+  getLocalFilePreview: (...args: unknown[]) => mockGetLocalFilePreview(...args),
 }))
 
 vi.mock('@/stores/notificationStore', () => ({
   useNotificationStore: { getState: () => ({ push: vi.fn() }) },
 }))
 
+vi.mock('@/stores/generatedFilePreviewStore', () => ({
+  useGeneratedFilePreviewStore: (selector: (s: { openPreview: typeof mockOpenPreview }) => unknown) =>
+    selector({ openPreview: mockOpenPreview }),
+}))
+
+vi.mock('@/hooks/useAuthorizedWorkspace', () => ({
+  useAuthorizedWorkspace: () => ({
+    workspace: {
+      id: 'ws-1',
+      rootPath: '/Users/oayzz/Desktop/aijia-test',
+      displayName: 'aijia-test',
+    },
+    loading: false,
+    refresh: vi.fn(),
+  }),
+}))
+
 describe('AssistantMarkdown', () => {
   beforeEach(() => {
     Object.assign(navigator, {
       clipboard: { writeText: vi.fn().mockResolvedValue(undefined) },
+    })
+    mockOpenLocalFile.mockReset()
+    mockOpenPreview.mockReset()
+    mockGetLocalFilePreview.mockReset()
+    mockGetLocalFilePreview.mockResolvedValue({
+      kind: 'unsupported',
+      fileName: '',
+      reason: 'unsupported',
     })
   })
 
@@ -99,6 +130,70 @@ describe('AssistantMarkdown', () => {
     const link = screen.getByText('Click').closest('a') as HTMLAnchorElement
     expect(link).toBeTruthy()
     expect(link.href).toBe('https://example.com/')
+  })
+
+  it('keeps relative workspace links as anchors and previews previewable local files', () => {
+    render(
+      <AssistantMarkdown
+        text={'[测试文件](测试.txt "这是一个测试文本文件")'}
+        conversationId="conv-1"
+      />,
+    )
+
+    const link = screen.getByRole('link', { name: '测试文件' })
+    fireEvent.click(link)
+
+    expect(mockOpenPreview).toHaveBeenCalledWith({
+      fileId: 'local:/Users/oayzz/Desktop/aijia-test/测试.txt',
+      conversationId: 'conv-1',
+      fileName: '测试.txt',
+      fileType: undefined,
+      localPath: '/Users/oayzz/Desktop/aijia-test/测试.txt',
+    })
+    expect(mockOpenLocalFile).not.toHaveBeenCalled()
+  })
+
+  it('resolves reference-style workspace links through the same local preview path', () => {
+    render(
+      <AssistantMarkdown
+        text={'这里引用了[存储方案][storage]。\n\n[storage]: docs/superpowers/plans/team-session-storage.md'}
+        conversationId="conv-1"
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('link', { name: '存储方案' }))
+
+    expect(mockOpenPreview).toHaveBeenCalledWith(expect.objectContaining({
+      fileName: 'team-session-storage.md',
+      localPath: '/Users/oayzz/Desktop/aijia-test/docs/superpowers/plans/team-session-storage.md',
+    }))
+  })
+
+  it('opens non-previewable relative workspace links with the default app', () => {
+    render(
+      <AssistantMarkdown
+        text={'[合同模板](合同模板.docx)'}
+        conversationId="conv-1"
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('link', { name: '合同模板' }))
+
+    expect(mockOpenLocalFile).toHaveBeenCalledWith('/Users/oayzz/Desktop/aijia-test/合同模板.docx')
+    expect(mockOpenPreview).not.toHaveBeenCalled()
+  })
+
+  it('does not render a broken image when local image markdown points at a non-image file', async () => {
+    const { container } = render(
+      <AssistantMarkdown
+        text={'![工作空间示意图](示例文档.md "用 md 文件路径占位演示图片语法")'}
+        conversationId="conv-1"
+      />,
+    )
+
+    await waitFor(() => expect(mockGetLocalFilePreview).toHaveBeenCalledWith('/Users/oayzz/Desktop/aijia-test/示例文档.md'))
+    expect(container.querySelector('img')).toBeNull()
+    expect(screen.getByRole('link', { name: '工作空间示意图' })).toBeInTheDocument()
   })
 
   it('renders empty GFM table header without the structured TableView empty state', () => {

@@ -34,7 +34,7 @@ use super::types::{
 
 use super::dingtalk::download::{DingtalkFileDownloader, DownloadedFile};
 use super::types::AttachmentKind;
-use crate::runtime::chat::chat_turn_driver::ChatAttachmentRef;
+use crate::runtime::chat::chat_turn_driver::{ChatAttachmentRef, IM_MOBILE_CHANNEL_CONTEXT};
 
 /// Per-platform runtime state. Each platform (dingtalk / feishu / ...) owns its
 /// own slot — disabling or reconnecting one MUST NOT touch another's slot.
@@ -5239,6 +5239,7 @@ fn build_channel_chat_request(
         download_failures,
     );
     let mut request = ChatTurnRequest::new(session_id, content, attachments);
+    request.channel_context = Some(IM_MOBILE_CHANNEL_CONTEXT.to_string());
     request.session_attachment_dirs =
         crate::runtime::path_auth::derive_working_dirs_from_attachments(
             &request
@@ -6354,6 +6355,44 @@ mod hydrate_tests {
             content,
             "请看\n\n![ok.png](<file:///tmp/ok.png>)\n\n[注意：以下附件下载失败，未能加载：broken.zip]"
         );
+    }
+
+    #[test]
+    fn im_request_sets_mobile_channel_context_without_polluting_content() {
+        let request = build_channel_chat_request(
+            "sess-im".to_string(),
+            &ConversationType::Private,
+            "Alice",
+            "帮我处理一下 AI 表格",
+            vec![],
+            &[],
+        );
+
+        assert_eq!(request.content, "帮我处理一下 AI 表格");
+        assert!(request.skill_command.is_none());
+        let channel_context = request.channel_context.as_deref().unwrap_or_default();
+        assert!(channel_context.contains("IM/移动端渠道"));
+        assert!(channel_context.contains("完整授权链接"));
+        assert!(!request.content.contains("浏览器已打开"));
+    }
+
+    #[test]
+    fn im_request_sets_mobile_channel_context_for_unrelated_text_too() {
+        let request = build_channel_chat_request(
+            "sess-normal".to_string(),
+            &ConversationType::Private,
+            "Alice",
+            "帮我总结一下这个文件",
+            vec![],
+            &[],
+        );
+
+        assert!(request.skill_command.is_none());
+        assert!(request
+            .channel_context
+            .as_deref()
+            .unwrap_or_default()
+            .contains("IM/移动端渠道"));
     }
 
     #[test]

@@ -377,7 +377,8 @@ notarize_dmg() {
                 --apple-id "$APPLE_ID" \
                 --password "$APPLE_PASSWORD" \
                 --team-id "$APPLE_TEAM_ID" \
-                --wait --timeout 60m
+                --wait --timeout 60m \
+                --no-s3-acceleration
             rc=$?
             if [ $rc -eq 0 ]; then
                 xcrun stapler staple "$DMG"
@@ -388,7 +389,7 @@ notarize_dmg() {
             # rejections (Invalid/Rejected) should fail fast.
             if [ $attempt -ge $max ] \
                || ! tail -50 "$DMG_LOG" 2>/dev/null | \
-                  grep -qE 'abortedUpload|connectTimeout|HTTPClient|connection.*reset|EOF' ; then
+                  grep -qE 'abortedUpload|connectTimeout|HTTPClient|connection.*reset|EOF|TLS error|secure connection' ; then
                 echo "$rc" > "$DMG_RC_FILE"
                 return
             fi
@@ -421,7 +422,8 @@ notarize_app() {
                 --apple-id "$APPLE_ID" \
                 --password "$APPLE_PASSWORD" \
                 --team-id "$APPLE_TEAM_ID" \
-                --wait --timeout 60m
+                --wait --timeout 60m \
+                --no-s3-acceleration
             rc=$?
             if [ $rc -eq 0 ]; then
                 xcrun stapler staple "$APP"
@@ -431,7 +433,7 @@ notarize_app() {
             fi
             if [ $attempt -ge $max ] \
                || ! tail -50 "$APP_LOG" 2>/dev/null | \
-                  grep -qE 'abortedUpload|connectTimeout|HTTPClient|connection.*reset|EOF' ; then
+                  grep -qE 'abortedUpload|connectTimeout|HTTPClient|connection.*reset|EOF|TLS error|secure connection' ; then
                 echo "$rc" > "$APP_RC_FILE"
                 rm -f "$APP_ZIP"
                 return

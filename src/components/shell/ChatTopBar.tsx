@@ -33,6 +33,7 @@ interface ChatTopBarProps {
    */
   employee?: ChatTopBarEmployee
   onShare?: () => void
+  shareLabel?: string
   onMore?: () => void
   onToggleSidebar?: () => void
   /** extra node rendered at the right edge */
@@ -60,6 +61,7 @@ export function ChatTopBar({
   updatedAt,
   employee,
   onShare,
+  shareLabel = '分享',
   onMore,
   onToggleSidebar,
   trailing,
@@ -123,7 +125,8 @@ export function ChatTopBar({
         {onShare ? (
           <button
             type="button"
-            aria-label="分享"
+            aria-label={shareLabel}
+            title={shareLabel}
             onClick={onShare}
             className="text-muted-foreground transition-colors hover:text-foreground"
           >

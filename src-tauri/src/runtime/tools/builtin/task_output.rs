@@ -10,6 +10,7 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 
 use crate::runtime::agent::output_writer;
+use crate::runtime::agent::async_task_store::AsyncTaskType;
 use crate::runtime::tools::catalog::TOOL_CATALOG;
 use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::{ToolDefinition, ToolKind};
@@ -77,6 +78,10 @@ impl RuntimeTool for TaskOutputRuntimeTool {
         let task_id = validate_task_id(task_id_raw)?;
 
         let offset = input.get("offset").and_then(Value::as_u64).unwrap_or(0) as usize;
+        let requested_task_type = input
+            .get("task_type")
+            .and_then(Value::as_str)
+            .and_then(AsyncTaskType::parse);
 
         let paths = self
             .paths
@@ -94,6 +99,9 @@ impl RuntimeTool for TaskOutputRuntimeTool {
         // working with no behavior change.
         let mut candidates: Vec<std::path::PathBuf> = Vec::new();
         if let Some(conv_dir) = ctx.conv_dir.as_ref() {
+            if requested_task_type != Some(AsyncTaskType::LocalAgent) {
+                candidates.push(super::shell_task::shell_transcript_path(conv_dir, task_id));
+            }
             if let Ok(entries) = std::fs::read_dir(conv_dir.join("teams")) {
                 for entry in entries.flatten() {
                     if let Some(team_name) = entry.file_name().to_str() {
@@ -105,12 +113,22 @@ impl RuntimeTool for TaskOutputRuntimeTool {
                     }
                 }
             }
-            candidates.push(conv_dir.join("subagents").join(format!("{task_id}.jsonl")));
+            if requested_task_type != Some(AsyncTaskType::LocalBash) {
+                candidates.push(conv_dir.join("subagents").join(format!("{task_id}.jsonl")));
+            }
         }
-        candidates.push(output_writer::transcript_path(
-            &paths.subagent_transcripts_dir(),
-            task_id,
-        ));
+        if requested_task_type != Some(AsyncTaskType::LocalBash) {
+            candidates.push(output_writer::transcript_path(
+                &paths.subagent_transcripts_dir(),
+                task_id,
+            ));
+        }
+        if candidates.is_empty() {
+            candidates.push(output_writer::transcript_path(
+                &paths.subagent_transcripts_dir(),
+                task_id,
+            ));
+        }
 
         let path = candidates
             .iter()
@@ -124,6 +142,7 @@ impl RuntimeTool for TaskOutputRuntimeTool {
         let body = json!({
             "lines": lines,
             "new_offset": new_offset,
+            "task_type": requested_task_type.map(AsyncTaskType::as_str),
         });
         Ok(ToolResult::new("TaskOutput", body.to_string(), None))
     }
@@ -266,5 +285,30 @@ mod tests {
         let body2: Value = serde_json::from_str(&r2.content).unwrap();
         assert_eq!(body2["lines"].as_array().unwrap().len(), 0);
         assert_eq!(body2["new_offset"].as_u64().unwrap(), 3);
+    }
+
+    #[tokio::test]
+    async fn reads_local_bash_transcript_from_conversation_tasks_dir() {
+        let tmp = TempDir::new().unwrap();
+        let tool = build_tool(&tmp);
+        let conv_dir = tmp.path().join("conversations").join("conv-shell");
+        let path = super::super::shell_task::shell_transcript_path(&conv_dir, "b12345678");
+        output_writer::append_line(&path, &output_writer::TranscriptLine::tool("line-1"))
+            .unwrap();
+        output_writer::append_line(&path, &output_writer::TranscriptLine::tool("line-2"))
+            .unwrap();
+
+        let ctx = ToolExecutionContext::for_test("conv-shell", "r", "tc").with_conv_dir(conv_dir);
+        let result = tool
+            .execute(
+                json!({"task_id": "b12345678", "task_type": "local_bash", "offset": 1}),
+                ctx,
+            )
+            .await
+            .unwrap();
+        let body: Value = serde_json::from_str(&result.content).unwrap();
+        assert_eq!(body["lines"].as_array().unwrap().len(), 1);
+        assert_eq!(body["new_offset"].as_u64().unwrap(), 2);
+        assert_eq!(body["task_type"].as_str(), Some("local_bash"));
     }
 }

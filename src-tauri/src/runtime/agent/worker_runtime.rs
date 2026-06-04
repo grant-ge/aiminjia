@@ -358,9 +358,14 @@ impl<'a> SubagentWorkerRuntime<'a> {
                     StreamEvent::ContentDelta { delta } => {
                         iter_content.push_str(&delta);
                     }
-                    StreamEvent::ToolCallStart { tool_call } => {
-                        tool_calls.push(tool_call);
-                    }
+                    StreamEvent::ToolCallStart { tool_call } => match tool_call.into_valid() {
+                        Ok(tool_call) => tool_calls.push(tool_call),
+                        Err(err) => {
+                            warn!("[SubAgent] Dropping invalid stream tool_call: {err}");
+                            output = "Sub-agent stream error: invalid tool call".to_string();
+                            break 'agent_loop;
+                        }
+                    },
                     StreamEvent::Done {
                         stop_reason: sr, ..
                     } => {
@@ -461,11 +466,15 @@ impl<'a> SubagentWorkerRuntime<'a> {
 
             let runtime_tool_calls: Vec<RuntimeToolCallRequest> = tool_calls
                 .into_iter()
-                .map(|tool_call| RuntimeToolCallRequest {
-                    tool_call_id: tool_call.id,
-                    tool_name: tool_call.name.clone(),
-                    args: tool_call.arguments,
-                    purpose: Some(format!("[Browser Agent] {}", tool_call.name)),
+                .filter_map(|tool_call| {
+                    let purpose = Some(format!("[Browser Agent] {}", tool_call.name));
+                    match RuntimeToolCallRequest::from_tool_call(tool_call, purpose) {
+                        Ok(call) => Some(call),
+                        Err(err) => {
+                            warn!("[SubAgent] Dropping invalid runtime tool_call: {err}");
+                            None
+                        }
+                    }
                 })
                 .collect();
 
@@ -516,10 +525,11 @@ impl<'a> SubagentWorkerRuntime<'a> {
                             config.parent_tool_use_id.as_deref(),
                         );
                         if pushed_tool_call_ids.insert(blocked.tool_call_id.clone()) {
-                            request.messages.push(ChatMessage::tool_result(
+                            request.messages.push(ChatMessage::tool_result_with_status(
                                 &blocked.tool_call_id,
                                 &blocked.tool_name,
                                 blocked.reason,
+                                true,
                             ));
                         } else {
                             log::warn!(
@@ -565,10 +575,11 @@ impl<'a> SubagentWorkerRuntime<'a> {
                         );
                         files.extend(generated_files);
                         if pushed_tool_call_ids.insert(tool_call_id.clone()) {
-                            request.messages.push(ChatMessage::tool_result(
+                            request.messages.push(ChatMessage::tool_result_with_status(
                                 &tool_call_id,
                                 &tool_name,
                                 content_for_message,
+                                is_error,
                             ));
                             if let Some(modifier) = context_modifier_message
                                 .as_ref()
@@ -608,10 +619,11 @@ impl<'a> SubagentWorkerRuntime<'a> {
                             config.parent_tool_use_id.as_deref(),
                         );
                         if pushed_tool_call_ids.insert(tool_call_id.clone()) {
-                            request.messages.push(ChatMessage::tool_result(
+                            request.messages.push(ChatMessage::tool_result_with_status(
                                 &tool_call_id,
                                 &tool_name,
                                 "Permission Ask required".to_string(),
+                                true,
                             ));
                         } else {
                             log::warn!(
@@ -648,11 +660,12 @@ impl<'a> SubagentWorkerRuntime<'a> {
                             config.parent_tool_use_id.as_deref(),
                         );
                         if pushed_tool_call_ids.insert(tool_call_id.clone()) {
-                            request.messages.push(ChatMessage::tool_result(
+                            request.messages.push(ChatMessage::tool_result_with_status(
                                 &tool_call_id,
                                 &tool_name,
                                 "User interaction required; sub-agents cannot ask the user directly."
                                     .to_string(),
+                                true,
                             ));
                         } else {
                             log::warn!(
@@ -1725,7 +1738,17 @@ async fn teammate_real_turn(
             }
             match event {
                 StreamEvent::ContentDelta { delta } => iter_content.push_str(&delta),
-                StreamEvent::ToolCallStart { tool_call } => tool_calls.push(tool_call),
+                StreamEvent::ToolCallStart { tool_call } => match tool_call.into_valid() {
+                    Ok(tool_call) => tool_calls.push(tool_call),
+                    Err(err) => {
+                        warn!(
+                            "[TeammateIdle] agent={} dropping invalid stream tool_call: {}",
+                            ctx.agent_id.as_str(),
+                            err
+                        );
+                        break;
+                    }
+                },
                 StreamEvent::Done {
                     stop_reason: sr, ..
                 } => {
@@ -1790,11 +1813,19 @@ async fn teammate_real_turn(
 
         let runtime_tool_calls: Vec<RuntimeToolCallRequest> = tool_calls
             .into_iter()
-            .map(|tc| RuntimeToolCallRequest {
-                tool_call_id: tc.id,
-                tool_name: tc.name.clone(),
-                args: tc.arguments,
-                purpose: Some(format!("[Teammate {}] {}", agent_name, tc.name)),
+            .filter_map(|tc| {
+                let purpose = Some(format!("[Teammate {}] {}", agent_name, tc.name));
+                match RuntimeToolCallRequest::from_tool_call(tc, purpose) {
+                    Ok(call) => Some(call),
+                    Err(err) => {
+                        warn!(
+                            "[TeammateIdle] agent={} dropping invalid runtime tool_call: {}",
+                            ctx.agent_id.as_str(),
+                            err
+                        );
+                        None
+                    }
+                }
             })
             .collect();
 
@@ -1807,23 +1838,26 @@ async fn teammate_real_turn(
         // Dedup tool_results by tool_call_id (Anthropic rejects duplicates).
         let mut pushed_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
         for round_result in round_results {
-            let (tcid, tname, content_str, ask_required) = match round_result {
+            let (tcid, tname, content_str, is_error, ask_required) = match round_result {
                 ToolRoundResult::Blocked(blocked) => (
                     blocked.tool_call_id,
                     blocked.tool_name,
                     blocked.reason,
+                    true,
                     false,
                 ),
                 ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
                     tool_call_id,
                     tool_name,
                     content,
+                    is_error,
                     max_result_size_chars,
                     ..
                 }) => (
                     tool_call_id,
                     tool_name,
                     truncate_tool_content(&content, max_result_size_chars),
+                    is_error,
                     false,
                 ),
                 ToolRoundResult::Ok(RuntimeToolCallOutcome::AskRequired {
@@ -1835,6 +1869,7 @@ async fn teammate_real_turn(
                     tool_name,
                     "Permission Ask required (Teammate is async — request auto-denied)".to_string(),
                     true,
+                    true,
                 ),
                 ToolRoundResult::Ok(RuntimeToolCallOutcome::InteractionRequired {
                     tool_call_id,
@@ -1844,6 +1879,7 @@ async fn teammate_real_turn(
                     tool_call_id,
                     tool_name,
                     "User interaction required; Teammate cannot ask the user directly.".to_string(),
+                    true,
                     false,
                 ),
             };
@@ -1858,7 +1894,8 @@ async fn teammate_real_turn(
                 continue;
             }
 
-            let tool_result_msg = ChatMessage::tool_result(&tcid, &tname, content_str.clone());
+            let tool_result_msg =
+                ChatMessage::tool_result_with_status(&tcid, &tname, content_str.clone(), is_error);
             messages.push(tool_result_msg.clone());
             if let Some(ref path) = jl_path {
                 let _ = append_line(path, &TranscriptLine::from_chat_message(&tool_result_msg));
@@ -2127,5 +2164,21 @@ mod tests {
             .messages
             .iter()
             .all(|message| message.role != "system"));
+    }
+
+    #[test]
+    fn status_aware_tool_result_marks_error() {
+        let message =
+            ChatMessage::tool_result_with_status("call_1", "Bash", "failed".to_string(), true);
+
+        assert!(message.is_error);
+        assert_eq!(message.role, "tool");
+    }
+
+    #[test]
+    fn default_tool_result_remains_success() {
+        let message = ChatMessage::tool_result("call_1", "Bash", "ok".to_string());
+
+        assert!(!message.is_error);
     }
 }

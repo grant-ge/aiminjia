@@ -222,6 +222,7 @@ fn build_default_catalog() -> ToolCatalog {
         ToolDefinition::new(
             "Bash",
             "在授权工作目录中执行 shell 命令。默认 timeout 120000ms；当前前台路径在 timeout/cancel 时终止进程并返回错误。\
+            \n\n后台路径：设置 run_in_background=true 时立即返回 task_id（task_type=local_bash），命令继续在后台运行；后续用 TaskOutput(task_id=...) 读取 transcript，用 TaskStop(task_id=...) 停止。完成后父对话会收到 <task-notification>。\
             \n\n安全约束：仅对明显危险 pattern（`rm -rf /`、向 /etc/ 写入等）做 hard deny。\
             \n\nstdout + stderr 合并返回；非零 exit code 默认按错误处理，grep/rg/find/diff/test 等遵循 claude-code-best 的语义豁免。",
         )
@@ -238,6 +239,15 @@ fn build_default_catalog() -> ToolCatalog {
                     "type": "integer",
                     "description": "超时毫秒数，默认 120000（120 秒），最大 600000（10 分钟）",
                     "default": 120000
+                },
+                "description": {
+                    "type": "string",
+                    "description": "命令用途的简短描述，用于后台任务列表和完成通知"
+                },
+                "run_in_background": {
+                    "type": "boolean",
+                    "description": "true 时后台运行并立即返回 task_id；后续用 TaskOutput 读取，用 TaskStop 停止",
+                    "default": false
                 }
             }
         }),
@@ -254,6 +264,7 @@ fn build_default_catalog() -> ToolCatalog {
             \n- 调用 .exe：直接写程序名即可，如 `python script.py`、`node app.js`\
             \n- **不要**使用 Unix 专属命令（grep/find/rm/cat/ls -la 等不存在或行为不同）\
             \n\n默认 timeout 120000ms；timeout/cancel 时终止进程并返回错误。\
+            \n\n后台路径：设置 run_in_background=true 时立即返回 task_id（task_type=local_bash），命令继续在后台运行；后续用 TaskOutput(task_id=...) 读取 transcript，用 TaskStop(task_id=...) 停止。完成后父对话会收到 <task-notification>。\
             \n\n安全约束：拒绝 `Remove-Item C:\\Windows`、`Format-Volume`、`Stop-Computer`、`iwr ... | iex` 等危险模式。\
             \n\nstdout + stderr 合并返回；非零 exit code 默认按错误处理。",
         )
@@ -270,6 +281,15 @@ fn build_default_catalog() -> ToolCatalog {
                     "type": "integer",
                     "description": "超时毫秒数，默认 120000（120 秒），最大 600000（10 分钟）",
                     "default": 120000
+                },
+                "description": {
+                    "type": "string",
+                    "description": "命令用途的简短描述，用于后台任务列表和完成通知"
+                },
+                "run_in_background": {
+                    "type": "boolean",
+                    "description": "true 时后台运行并立即返回 task_id；后续用 TaskOutput 读取，用 TaskStop 停止",
+                    "default": false
                 }
             }
         }),
@@ -377,10 +397,11 @@ fn build_default_catalog() -> ToolCatalog {
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
             "TaskOutput",
-            "【Support 工具】读取异步子 Agent 的 transcript 增量。\
+            "【Support 工具】读取后台任务的 transcript 增量，支持 Agent(run_in_background=true) 与 Bash/PowerShell(run_in_background=true)。\
             \n\n用法：Agent({run_in_background: true, name: \"w1\"}) 立即返回 agent_id。\
+            Bash/PowerShell({run_in_background: true}) 立即返回 task_id（task_type=local_bash）。\
             子 Agent 完成时通过 <task-notification> XML 通知（含 <output-file> 路径）。\
-            期间或之后用 TaskOutput(task_id=agent_id, offset=N) 读取产出。\
+            期间或之后用 TaskOutput(task_id=..., offset=N) 读取产出。\
             \n\n返回 {lines: [string], new_offset: number}。下次调用传 offset=new_offset 拉取增量。",
         )
         .with_kind(ToolKind::Support)
@@ -391,7 +412,7 @@ fn build_default_catalog() -> ToolCatalog {
             "properties": {
                 "task_id": {
                     "type": "string",
-                    "description": "异步 Agent 的 ID（Agent 工具 run_in_background=true 时返回的 agent_id）"
+                    "description": "后台任务 ID（Agent 返回 agent_id；Bash/PowerShell 返回 task_id）"
                 },
                 "offset": {
                     "type": "integer",
@@ -560,14 +581,19 @@ fn build_default_catalog() -> ToolCatalog {
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
             "TaskStop",
-            "终止一个正在后台运行的 Agent 任务（按 task_id，即 Agent(run_in_background=true) 返回的 agent_id 同值）。",
+            "终止一个正在后台运行的任务（Agent/Bash/PowerShell 均使用 task_id）。",
         )
         .with_kind(ToolKind::Support),
         json!({
             "type": "object",
             "required": ["task_id"],
             "properties": {
-                "task_id": { "type": "string", "description": "后台 Agent 任务 ID，与 agent_id 值相同" }
+                "task_id": { "type": "string", "description": "后台任务 ID（Agent 返回 agent_id；Bash/PowerShell 返回 task_id）" },
+                "task_type": {
+                    "type": "string",
+                    "enum": ["local_agent", "local_bash", "local_shell"],
+                    "description": "可选任务类型。通常无需传；local_shell 是 local_bash 的兼容别名。"
+                }
             }
         }),
     ));

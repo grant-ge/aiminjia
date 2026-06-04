@@ -43,7 +43,7 @@
     "pinnedSection": "置顶",
     "allPinnedHint": "所有对话都已置顶",
     "renameChat": "重命名聊天",
-    "copyConversationId": "复制会话 ID",
+    "copyConversationId": "复制对话 ID",
     "noHistory": "还没有历史任务",
     "defaultFolder": "默认项目",
     "project": "项目",
@@ -338,8 +338,6 @@
       "checking": "检测中...",
       "recheck": "重新检测",
       "lastChecked": "上次检测：",
-      "gatewayV2Title": "体验新网关",
-      "gatewayV2Description": "默认关闭，关闭时继续使用稳定网关。开启后所有 AI 请求都会走新网关，不会自动降级到旧网关。",
       "justNow": "刚刚",
       "secondsAgo": "{{count}} 秒前",
       "minutesAgo": "{{count}} 分钟前",
@@ -848,7 +846,8 @@
   "bottomTips": {
     "aiDisclaimer": "内容由 AI 生成，请仔细核实回答内容",
     "enterToSend": "Enter 发送",
-    "shiftEnterNewline": "Shift+Enter 换行"
+    "shiftEnterNewline": "Shift+Enter 换行",
+    "escToStop": "Esc 停止"
   },
   "typing": {
     "default": "思考中…",

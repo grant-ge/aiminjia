@@ -35,6 +35,7 @@ function BottomTips() {
       <div className="flex items-center gap-3">
         <span>{t('bottomTips.enterToSend')}</span>
         <span>{t('bottomTips.shiftEnterNewline')}</span>
+        <span>{t('bottomTips.escToStop')}</span>
       </div>
     </>
   )
@@ -94,6 +95,17 @@ export function ChatBottomArea({
       })
     }
   }, [activeConversationId, isStreaming])
+
+  useEffect(() => {
+    if (!isStreaming) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      stopCurrentStream()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isStreaming, stopCurrentStream])
 
   const handleSkillPick = useCallback((skillId: string) => {
     const skill = getSkillById(skillId)

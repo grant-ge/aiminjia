@@ -37,7 +37,7 @@ pub enum CloudGatewayMode {
 
 impl Default for CloudGatewayMode {
     fn default() -> Self {
-        CloudGatewayMode::Legacy
+        CloudGatewayMode::V2
     }
 }
 
@@ -63,7 +63,7 @@ pub struct AppSettings {
     /// Cloud mode: model type ("chat" or "reasoner") for the selected cloud model.
     #[serde(default)]
     pub cloud_model_type: String,
-    /// Cloud gateway mode. Defaults to legacy; users opt in to V2 explicitly.
+    /// Cloud gateway mode. Kept for settings-file compatibility; desktop always uses V2.
     #[serde(default)]
     pub cloud_gateway_mode: CloudGatewayMode,
     /// Whether persona onboarding has been completed.
@@ -118,7 +118,7 @@ impl Default for AppSettings {
             custom_model_name: String::new(),
             cloud_model: String::new(),
             cloud_model_type: String::new(),
-            cloud_gateway_mode: CloudGatewayMode::Legacy,
+            cloud_gateway_mode: CloudGatewayMode::V2,
             persona_onboarding_done: false,
             thinking_type: "disabled".to_string(),
             thinking_budget_tokens: default_thinking_budget_tokens(),
@@ -174,10 +174,7 @@ impl AppSettings {
             custom_model_name: get_str("customModelName", &defaults.custom_model_name),
             cloud_model: get_str("cloudModel", &defaults.cloud_model),
             cloud_model_type: get_str("cloudModelType", &defaults.cloud_model_type),
-            cloud_gateway_mode: map
-                .get("cloudGatewayMode")
-                .and_then(|value| serde_json::from_str(&format!("\"{}\"", value)).ok())
-                .unwrap_or_else(|| defaults.cloud_gateway_mode.clone()),
+            cloud_gateway_mode: CloudGatewayMode::V2,
             persona_onboarding_done: get_bool(
                 "personaOnboardingDone",
                 defaults.persona_onboarding_done,
@@ -208,12 +205,22 @@ mod tests {
     use std::collections::HashMap;
 
     #[test]
-    fn cloud_gateway_mode_defaults_to_legacy() {
-        assert_eq!(CloudGatewayMode::default(), CloudGatewayMode::Legacy);
+    fn cloud_gateway_mode_defaults_to_v2() {
+        assert_eq!(CloudGatewayMode::default(), CloudGatewayMode::V2);
         assert_eq!(
             AppSettings::default().cloud_gateway_mode,
-            CloudGatewayMode::Legacy
+            CloudGatewayMode::V2
         );
+    }
+
+    #[test]
+    fn cloud_gateway_mode_from_string_map_ignores_legacy_value() {
+        let mut map = HashMap::new();
+        map.insert("cloudGatewayMode".to_string(), "legacy".to_string());
+
+        let settings = AppSettings::from_string_map(&map);
+
+        assert_eq!(settings.cloud_gateway_mode, CloudGatewayMode::V2);
     }
 
     #[test]

@@ -49,7 +49,7 @@ export const DEFAULT_SETTINGS: Settings = {
   customModelName: '',
   cloudModel: '',
   cloudModelType: '',
-  cloudGatewayMode: 'legacy',
+  cloudGatewayMode: 'v2',
   personaOnboardingDone: false,
   appLanguage: 'zh-CN',
   fontScale: 'medium',

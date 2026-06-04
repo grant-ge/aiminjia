@@ -29,6 +29,23 @@ describe('buildTurnsFromMessages', () => {
     expect(turns[1].aiSegments.map((s) => s.id)).toEqual(['a2'])
   })
 
+  it('filters task notification XML user messages from the chat turns', () => {
+    const notification = userMsg('task-notification', [
+      '<task-notification>',
+      '  <task-id>b7a56f590</task-id>',
+      '  <status>completed</status>',
+      '  <summary>Background command completed</summary>',
+      '</task-notification>',
+    ].join('\n'))
+    const msgs = [notification, userMsg('u1', '好了'), aiMsg('a1', '登录成功')]
+
+    const turns = buildTurnsFromMessages(msgs, [])
+
+    expect(turns.map((t) => t.userMessage?.id)).toEqual(['u1'])
+    expect(turns[0].userMessage?.text).toBe('好了')
+    expect(turns[0].aiSegments.map((s) => s.id)).toEqual(['a1'])
+  })
+
   it('attaches tool executions to the last turn as a single ToolGroup', () => {
     const msgs = [userMsg('u1', 'x'), aiMsg('a1', 'done')]
     const tools: ToolExecution[] = [

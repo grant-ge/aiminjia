@@ -6,29 +6,34 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::process::Command;
 
+use crate::runtime::agent::async_task_store::AsyncAgentTaskStore;
+use crate::runtime::agent::task_notification::TaskNotificationQueue;
+use crate::runtime::tools::RuntimeTool;
 use crate::runtime::tools::catalog::TOOL_CATALOG;
 use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::ToolDefinition;
 use crate::runtime::tools::executor::{ToolError, ToolResult};
 use crate::runtime::tools::permission::{PermissionDecision, PermissionReason};
-use crate::runtime::tools::RuntimeTool;
 use crate::storage::process_ext::NoWindowExt;
 
-use super::powershell_detect::{detect, PowerShellLocation};
+use super::powershell_detect::{PowerShellLocation, detect};
 use super::shell_common::{
-    collect_reader, content_from_output, emit_shell_failure_diagnostic, format_cancel_message,
-    format_command_failure, interpret_command_result, kill_child_process_tree, read_merged_streams,
-    truncated_to_max_bytes, ExitKind, MAX_OUTPUT_BYTES,
+    ExitKind, MAX_OUTPUT_BYTES, collect_reader, content_from_output, emit_shell_failure_diagnostic,
+    format_cancel_message, format_command_failure, interpret_command_result,
+    kill_child_process_tree, optional_transcript_path,
+    read_merged_streams_with_progress_and_optional_transcript, truncated_to_max_bytes,
 };
 use super::workspace::require_workspace_root;
 use crate::runtime::cancellation::wait_for_cancellation;
 
 const DEFAULT_TIMEOUT_SECS: u64 = 120;
 const MAX_TIMEOUT_SECS: u64 = 600;
+const AUTO_BACKGROUND_AFTER_SECS: u64 = 10;
 
 /// Case-insensitive substring patterns. The match logic is
 /// `command.to_lowercase().contains(pattern_lc)`. Patterns are stored already
@@ -72,7 +77,24 @@ static DANGEROUS_PATTERNS: &[(&str, &str)] = &[
     ),
 ];
 
-pub struct PowerShellTool;
+#[derive(Clone, Default)]
+pub struct PowerShellTool {
+    background: Option<super::shell_task::ShellBackgroundDeps>,
+}
+
+impl PowerShellTool {
+    pub fn new(
+        task_store: Arc<AsyncAgentTaskStore>,
+        notifications: Arc<TaskNotificationQueue>,
+    ) -> Self {
+        Self {
+            background: Some(super::shell_task::ShellBackgroundDeps::new(
+                task_store,
+                notifications,
+            )),
+        }
+    }
+}
 
 fn default_powershell_timeout_secs() -> u64 {
     TOOL_CATALOG
@@ -90,6 +112,24 @@ fn resolve_timeout_secs(input: &Value) -> u64 {
         .unwrap_or_else(|| default_powershell_timeout_secs() * 1000);
     let secs = ms.div_ceil(1000);
     secs.min(MAX_TIMEOUT_SECS)
+}
+
+fn resolve_auto_background_after_secs(input: &Value, timeout_secs: u64) -> Option<u64> {
+    let secs = AUTO_BACKGROUND_AFTER_SECS;
+    #[cfg(test)]
+    let secs = if let Some(ms) = input
+        .get("_auto_background_after_ms")
+        .and_then(Value::as_u64)
+    {
+        ms.div_ceil(1000).max(1)
+    } else {
+        secs
+    };
+    #[cfg(not(test))]
+    {
+        let _ = input;
+    }
+    (secs < timeout_secs).then_some(secs)
 }
 
 fn tool_result_powershell(content: String, data: Value) -> ToolResult {
@@ -196,6 +236,16 @@ impl RuntimeTool for PowerShellTool {
             .ok_or_else(|| ToolError::ExecutionFailed("Missing required: command".into()))?
             .to_string();
         let timeout_secs = resolve_timeout_secs(&input);
+        let run_in_background = input
+            .get("run_in_background")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let description = input
+            .get("description")
+            .and_then(Value::as_str)
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or(&command)
+            .to_string();
 
         let location: PowerShellLocation = detect().ok_or_else(|| {
             ToolError::ExecutionFailed(
@@ -236,22 +286,101 @@ impl RuntimeTool for PowerShellTool {
             .stderr
             .take()
             .ok_or_else(|| ToolError::ExecutionFailed("stderr pipe missing".into()))?;
-        let merged_handle = tokio::spawn(read_merged_streams(stdout, stderr));
 
-        let exit_kind = tokio::select! {
-            status = child.wait() => {
-                ExitKind::Completed(
-                    status.map_err(|e| ToolError::ExecutionFailed(format!("Failed waiting for process: {e}")))?
+        if run_in_background {
+            let background = self.background.clone().ok_or_else(|| {
+                ToolError::ExecutionFailed(
+                    "PowerShell background execution is unavailable in this context".into(),
                 )
+            })?;
+            return super::shell_task::launch_background_shell_task(
+                "PowerShell",
+                "powershell",
+                command,
+                description,
+                timeout_secs,
+                ctx,
+                background,
+                child,
+                stdout,
+                stderr,
+            );
+        }
+        let transcript_switch = optional_transcript_path();
+        let transcript_switch_for_reader = transcript_switch.clone();
+        let captured_snapshot = Arc::new(Mutex::new(Vec::new()));
+        let captured_snapshot_for_reader = captured_snapshot.clone();
+        let merged_handle =
+            tokio::spawn(read_merged_streams_with_progress_and_optional_transcript(
+                stdout,
+                stderr,
+                move |captured, _| {
+                    *captured_snapshot_for_reader
+                        .lock()
+                        .expect("powershell captured snapshot poisoned") = captured.to_vec();
+                },
+                Some(transcript_switch_for_reader),
+            ));
+
+        enum ForegroundControl {
+            Exit(ExitKind),
+            AutoBackground,
+        }
+
+        let auto_background_after_secs = resolve_auto_background_after_secs(&input, timeout_secs);
+        let auto_background_delay_secs = auto_background_after_secs.unwrap_or(timeout_secs);
+        let auto_background_enabled = auto_background_after_secs.is_some()
+            && self.background.is_some()
+            && ctx.conv_dir.is_some();
+
+        let foreground_control = tokio::select! {
+            status = child.wait() => {
+                ForegroundControl::Exit(ExitKind::Completed(
+                    status.map_err(|e| ToolError::ExecutionFailed(format!("Failed waiting for process: {e}")))?
+                ))
+            }
+            _ = tokio::time::sleep(Duration::from_secs(auto_background_delay_secs)), if auto_background_enabled => {
+                ForegroundControl::AutoBackground
             }
             _ = tokio::time::sleep(Duration::from_secs(timeout_secs)) => {
                 kill_child_process_tree(&mut child).await;
-                ExitKind::TimedOut
+                ForegroundControl::Exit(ExitKind::TimedOut)
             }
             reason = wait_for_cancellation(ctx.cancellation.clone()) => {
                 kill_child_process_tree(&mut child).await;
-                ExitKind::Cancelled(reason)
+                ForegroundControl::Exit(ExitKind::Cancelled(reason))
             }
+        };
+
+        let exit_kind = match foreground_control {
+            ForegroundControl::AutoBackground => {
+                let background = self.background.clone().ok_or_else(|| {
+                    ToolError::ExecutionFailed(
+                        "PowerShell background execution is unavailable in this context".into(),
+                    )
+                })?;
+                let remaining_timeout_secs = timeout_secs
+                    .saturating_sub(auto_background_after_secs.unwrap_or(timeout_secs))
+                    .max(1);
+                let pre_background_output = captured_snapshot
+                    .lock()
+                    .expect("powershell captured snapshot poisoned")
+                    .clone();
+                return super::shell_task::launch_auto_backgrounded_shell_task(
+                    "PowerShell",
+                    "powershell",
+                    command,
+                    description,
+                    remaining_timeout_secs,
+                    ctx,
+                    background,
+                    child,
+                    merged_handle,
+                    transcript_switch,
+                    pre_background_output,
+                );
+            }
+            ForegroundControl::Exit(exit_kind) => exit_kind,
         };
 
         let (combined_output, stream_truncated) = collect_reader(merged_handle).await?;
@@ -322,6 +451,17 @@ mod tests {
     fn resolve_timeout_secs_caps_large_values() {
         // 9_999_000ms would be 9999s, capped to MAX (600s)
         assert_eq!(resolve_timeout_secs(&json!({ "timeout": 9_999_000 })), 600);
+    }
+
+    #[test]
+    fn resolve_auto_background_after_secs_uses_test_override() {
+        assert_eq!(
+            resolve_auto_background_after_secs(
+                &json!({ "_auto_background_after_ms": 100, "timeout": 5000 }),
+                5
+            ),
+            Some(1)
+        );
     }
 
     #[test]

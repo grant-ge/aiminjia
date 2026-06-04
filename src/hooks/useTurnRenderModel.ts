@@ -302,24 +302,12 @@ function normalizeUserMessageForRender(message: Message): NonNullable<RenderTurn
   }
 }
 
-// peer-messages XML is filtered earlier in buildTurnsFromMessages (those
-// messages are not rendered in the main conversation at all). Only the
-// task-notification regex is still in use here.
-const TASK_NOTIFICATION_RE = /^<task-notification\s+agent="([^"]*)"\s+status="([^"]*)">([\s\S]*?)<\/task-notification>$/
+const PEER_MESSAGES_XML_RE = /^<peer-messages\b[\s\S]*<\/peer-messages>$/
+const TASK_NOTIFICATION_XML_RE = /^<task-notification\b[\s\S]*<\/task-notification>$/
 
-function classifyTeamEventMessage(text: string): RenderPeerBanner[] | null {
+function isInternalEventMessage(text: string): boolean {
   const trimmed = text.trim()
-  const taskMatch = trimmed.match(TASK_NOTIFICATION_RE)
-  if (taskMatch) {
-    return [{
-      kind: 'task',
-      from: 'system',
-      agent: taskMatch[1],
-      status: taskMatch[2],
-      body: taskMatch[3].trim(),
-    }]
-  }
-  return null
+  return PEER_MESSAGES_XML_RE.test(trimmed) || TASK_NOTIFICATION_XML_RE.test(trimmed)
 }
 
 /**
@@ -360,28 +348,9 @@ export function buildTurnsFromMessages(
   for (const m of messages) {
     if (m.role === 'user') {
       const text = m.content.text ?? ''
-      // <peer-messages> user XML is an internal artifact of how the runtime
-      // delivers teammate replies to the lead. It must NEVER appear in the
-      // main conversation — the TeamChatDrawer is the canonical view.
-      if (text.trim().startsWith('<peer-messages>')) {
-        continue
-      }
-      // <task-notification> still surfaces as a per-turn banner because it
-      // represents a sub-agent (TaskCreate) completion, not a team message.
-      const classified = classifyTeamEventMessage(text)
-      if (classified) {
-        current = {
-          userMessage: undefined,
-          aiSegments: [],
-          toolGroup: undefined,
-          blocks: [],
-          persistedBlockCount: 0,
-          generatedFiles: [],
-          suggestions: [],
-          peerBanners: classified,
-          isComplete: false,
-        }
-        turns.push(current)
+      // Runtime XML is injected as user-role context for the LLM, but it is
+      // not user-authored chat content and should not render a visible row.
+      if (isInternalEventMessage(text)) {
         continue
       }
       // Normal user message — original logic.

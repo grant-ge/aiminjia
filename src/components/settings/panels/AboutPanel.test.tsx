@@ -50,6 +50,18 @@ describe('AboutPanel', () => {
     expect(screen.getByRole('button', { name: '上传日志' })).toBeInTheDocument()
   })
 
+  it('vertically aligns the app logo with the metadata text', () => {
+    const { container } = render(<AboutPanel {...baseProps} />)
+
+    const metadataSection = container.querySelector('section')
+    expect(metadataSection).toHaveClass('items-center')
+    expect(metadataSection).toHaveClass('justify-between')
+
+    const metadataRow = metadataSection?.querySelector('div')
+    expect(metadataRow).toHaveClass('items-center')
+    expect(metadataRow).not.toHaveClass('items-start')
+  })
+
   it('uses the shared Button component for about page action buttons', () => {
     render(<AboutPanel {...baseProps} />)
 

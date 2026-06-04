@@ -1,4 +1,5 @@
 import '@testing-library/jest-dom'
+import { StrictMode } from 'react'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -18,6 +19,8 @@ const mockAuthorizeLocalDirectory = vi.fn()
 const mockGetDefaultFolder = vi.fn()
 const mockPickLocalDirectory = vi.fn()
 const mockPickAttachments = vi.fn()
+const mockGetSettings = vi.fn()
+const mockUpdateSettings = vi.fn()
 
 vi.mock('@/hooks/useChat', () => ({
   useChat: () => ({ sendUserMessage: mockSendUserMessage, isStreaming: false, stopCurrentStream: vi.fn() }),
@@ -36,9 +39,11 @@ vi.mock('@/lib/tauri', () => ({
   authorizeLocalDirectory: (...args: unknown[]) => mockAuthorizeLocalDirectory(...args),
   createConversation: () => mockCreateConversation(),
   getDefaultFolder: () => mockGetDefaultFolder(),
+  getSettings: () => mockGetSettings(),
   pickLocalDirectory: (opts: unknown) => mockPickLocalDirectory(opts),
   readClipboardFilePaths: vi.fn().mockResolvedValue([]),
   saveClipboardImageToWorkspaceStaging: vi.fn(),
+  updateSettings: (settings: unknown) => mockUpdateSettings(settings),
 }))
 
 beforeEach(() => {
@@ -48,6 +53,8 @@ beforeEach(() => {
   mockGetDefaultFolder.mockReset().mockResolvedValue({ id: 'default', rootPath: '/home', displayName: '默认' })
   mockPickLocalDirectory.mockReset()
   mockPickAttachments.mockReset().mockResolvedValue([])
+  mockGetSettings.mockReset().mockResolvedValue({})
+  mockUpdateSettings.mockReset().mockResolvedValue(undefined)
   useChatStore.setState({ activeConversationId: null, conversations: [], messages: [] })
   useUiStore.setState({ route: { kind: 'home' }, prefillText: undefined })
   useHomeStore.setState({ selectedWorkspace: null, recentWorkspaces: [] })
@@ -57,6 +64,26 @@ describe('HomeTaskComposerCard', () => {
   it('renders RichComposer', async () => {
     render(<HomeTaskComposerCard />)
     await waitFor(() => expect(document.querySelector('.ProseMirror')).toBeTruthy())
+  })
+
+  it('inserts a pending skill chip only once under StrictMode', async () => {
+    useUiStore.setState({
+      pendingSkill: {
+        id: 'biz-proposal',
+        label: '商业方案撰写',
+        trigger: '/biz-proposal',
+      },
+    })
+
+    render(
+      <StrictMode>
+        <HomeTaskComposerCard />
+      </StrictMode>,
+    )
+
+    await waitFor(() => {
+      expect(document.querySelectorAll('[data-rich-composer-skill-token]')).toHaveLength(1)
+    })
   })
 
   it('Enter with text → creates conversation, switches route, sends message', async () => {

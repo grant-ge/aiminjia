@@ -10,13 +10,13 @@ use async_trait::async_trait;
 use tokio::task::JoinHandle;
 
 use crate::auth::AuthDeactivationHandler;
-use crate::runtime::chat::chat_turn_driver::ChatAttachmentRef;
+use crate::runtime::chat::chat_turn_driver::{ChatAttachmentRef, IM_MOBILE_CHANNEL_CONTEXT};
 use crate::runtime::chat::ChatTurnRequest;
 use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::ids::SessionId;
 use crate::runtime::run_registry::RuntimeRunRegistry;
 
-use super::types::{EnqueueOutcome, EnqueueRejection, PendingConfig, PendingItem};
+use super::types::{EnqueueOutcome, EnqueueRejection, PendingConfig, PendingItem, PendingSource};
 
 /// Per-host abstraction over conversation directory layout.
 pub trait ConvDirResolver: Send + Sync {
@@ -196,7 +196,19 @@ impl PendingQueueManager {
     /// Start (or reset) the debounce timer for a session. Called after StreamDone
     /// and after busy-path enqueue.
     pub async fn schedule_drain(&self, session_id: SessionId) {
-        let debounce = self.config.debounce_window;
+        self.schedule_drain_after(session_id, self.config.debounce_window)
+            .await;
+    }
+
+    /// Start (or reset) the drain timer without the normal debounce. Used after
+    /// an explicit user stop so queued follow-up messages can run as soon as the
+    /// cancelled turn has actually released the busy slot.
+    pub async fn schedule_drain_immediate(&self, session_id: SessionId) {
+        self.schedule_drain_after(session_id, std::time::Duration::ZERO)
+            .await;
+    }
+
+    async fn schedule_drain_after(&self, session_id: SessionId, delay: std::time::Duration) {
         let weak = self.self_arc.get().cloned().unwrap_or_default();
 
         let mut guard = self.inner.lock().expect("pending mutex poisoned");
@@ -211,7 +223,7 @@ impl PendingQueueManager {
         }
         let sid_clone = session_id.clone();
         let handle = tokio::spawn(async move {
-            tokio::time::sleep(debounce).await;
+            tokio::time::sleep(delay).await;
             if let Some(mgr) = weak.upgrade() {
                 mgr.drain_and_dispatch(sid_clone).await;
             }
@@ -396,6 +408,7 @@ fn build_request_from_single(session_id: &SessionId, item: PendingItem) -> ChatT
         })
         .collect();
     let mut req = ChatTurnRequest::new(session_id.clone(), item.text, attachments);
+    req.channel_context = channel_context_for_pending_source(item.source);
     req.skill_command = item.skill_command;
     req
 }
@@ -434,9 +447,20 @@ fn build_request_from_batch(session_id: &SessionId, items: Vec<PendingItem>) -> 
         })
         .collect();
     let mut req = ChatTurnRequest::new(session_id.clone(), last_text, last_attachments);
+    req.channel_context = channel_context_for_pending_source(last.source);
     req.skill_command = last.skill_command.clone();
     req.pending_batch = Some(items);
     req
+}
+
+fn channel_context_for_pending_source(source: PendingSource) -> Option<String> {
+    match source {
+        PendingSource::ImDingtalk
+        | PendingSource::ImFeishu
+        | PendingSource::ImWecom
+        | PendingSource::ImTelegram => Some(IM_MOBILE_CHANNEL_CONTEXT.to_string()),
+        PendingSource::App => None,
+    }
 }
 
 fn file_name_of(path: &str) -> String {

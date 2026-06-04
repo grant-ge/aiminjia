@@ -1,3 +1,4 @@
+use crate::llm::streaming::ToolCall;
 use crate::plugin::tool_trait::FileMeta;
 
 /// A single tool call request coming from the LLM.
@@ -16,6 +17,43 @@ pub struct RuntimeToolCallRequest {
     pub args: serde_json::Value,
     /// Optional human-readable annotation for audit / UI purposes.
     pub purpose: Option<String>,
+}
+
+impl RuntimeToolCallRequest {
+    pub fn from_tool_call(tool_call: ToolCall, purpose: Option<String>) -> Result<Self, String> {
+        let tool_call = tool_call.into_valid()?;
+        Ok(Self {
+            tool_call_id: tool_call.id,
+            tool_name: tool_call.name,
+            args: tool_call.arguments,
+            purpose,
+        })
+    }
+
+    pub fn into_valid(self) -> Result<Self, String> {
+        let tool_call_id = self.tool_call_id.trim().to_string();
+        if tool_call_id.is_empty() {
+            return Err("tool_call_id is empty".to_string());
+        }
+
+        let tool_name = self.tool_name.trim().to_string();
+        if tool_name.is_empty() {
+            return Err(format!("tool_name is empty for id {tool_call_id}"));
+        }
+
+        if !self.args.is_object() {
+            return Err(format!(
+                "tool args must be a JSON object for id {tool_call_id} name {tool_name}"
+            ));
+        }
+
+        Ok(Self {
+            tool_call_id,
+            tool_name,
+            args: self.args,
+            purpose: self.purpose,
+        })
+    }
 }
 
 /// Outcome of executing a single runtime tool call.

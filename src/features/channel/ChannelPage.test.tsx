@@ -9,6 +9,8 @@ import { ChannelPage } from './ChannelPage'
 
 const getMessagesMock = vi.hoisted(() => vi.fn())
 const getTasksMock = vi.hoisted(() => vi.fn())
+const exportConversationMock = vi.hoisted(() => vi.fn())
+const revealExportInFolderMock = vi.hoisted(() => vi.fn())
 
 vi.mock('@/components/layout/ChatArea', () => ({ ChatArea: () => <main data-testid="channel-chat-content" /> }))
 vi.mock('@/components/chat-scene/ChatBottomArea', () => ({ ChatBottomArea: () => <footer data-testid="channel-chat-input" /> }))
@@ -21,11 +23,16 @@ vi.mock('@/lib/tauri', async () => {
     ...actual,
     getMessages: getMessagesMock,
     getTasks: getTasksMock,
+    exportConversation: exportConversationMock,
+    revealExportInFolder: revealExportInFolderMock,
     openGeneratedFile: vi.fn(),
     onChannelPlatformState: vi.fn().mockResolvedValue(() => {}),
     onChannelMessage: vi.fn().mockResolvedValue(() => {}),
   }
 })
+vi.mock('@/hooks/useTeamOverview', () => ({
+  useTeamOverview: () => ({ overview: null, loaded: true, refetch: vi.fn() }),
+}))
 
 const unconfigured = {
   platform: 'dingtalk' as const,
@@ -104,6 +111,8 @@ describe('ChannelPage domain UI', () => {
     })
     getMessagesMock.mockResolvedValue([])
     getTasksMock.mockResolvedValue([])
+    exportConversationMock.mockReset()
+    revealExportInFolderMock.mockReset()
   })
 
   it('unconfigured DingTalk shows only the config button', () => {
@@ -238,5 +247,46 @@ describe('ChannelPage domain UI', () => {
     expect(
       screen.queryByText(/已下线的机器人，无法发送新消息/),
     ).not.toBeInTheDocument()
+  })
+
+  it('IM 会话可以从顶栏导出当前频道对话', async () => {
+    exportConversationMock.mockResolvedValue({
+      zipPath: '/tmp/im-session.zip',
+      fileName: 'im-session.zip',
+      sizeBytes: 2048,
+    })
+    revealExportInFolderMock.mockResolvedValue(undefined)
+    useChannelStore.setState({
+      conversations: [
+        {
+          sessionId: 'im-session-1',
+          platform: 'dingtalk',
+          conversationType: 'private',
+          externalId: 'u',
+          displayName: '姚斌权',
+          unreadCount: 0,
+          robotCode: 'current-robot',
+          isActiveRobot: true,
+        },
+      ],
+    })
+
+    renderPage(<ChannelPage sessionId="im-session-1" />)
+    await userEvent.click(screen.getByRole('button', { name: '导出对话' }))
+
+    expect(exportConversationMock).not.toHaveBeenCalled()
+    expect(screen.getByText('将生成一个本地 zip 文件，包含当前对话和运行信息。文件只会保存在本机。')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: '开始导出' }))
+
+    await waitFor(() => {
+      expect(exportConversationMock).toHaveBeenCalledWith('im-session-1')
+    })
+    expect(await screen.findByText('im-session.zip')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: '打开所在文件夹' }))
+    await waitFor(() => {
+      expect(revealExportInFolderMock).toHaveBeenCalledWith('/tmp/im-session.zip')
+    })
   })
 })

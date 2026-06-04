@@ -59,6 +59,7 @@ function AiBubbleImpl({ message, isStreaming }: AiBubbleProps) {
                 key={field}
                 field={field}
                 value={value}
+                message={message}
               />
             )
           })}
@@ -79,13 +80,15 @@ export const AiBubble = memo(AiBubbleImpl)
 function ContentRenderer({
   field,
   value,
+  message,
 }: {
   field: keyof MessageContent
   value: NonNullable<MessageContent[keyof MessageContent]>
+  message: Message
 }) {
   switch (field) {
     case 'text':
-      return <AssistantMarkdown text={value as string} />
+      return <AssistantMarkdown text={value as string} conversationId={message.conversationId} />
 
     case 'tables':
       return (

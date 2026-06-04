@@ -75,6 +75,7 @@ impl RuntimeLlmExecutor for RecordingExecutor {
         _generated_file_ids: &[String],
         _file_metas: &[serde_json::Value],
         _thinking_blocks: &[serde_json::Value],
+        _error: Option<&app_lib::storage::file_store::types::MessageError>,
     ) -> Result<String, TurnError> {
         Ok("mock-msg-id".to_string())
     }
@@ -278,7 +279,9 @@ fn injects_reason_specific_synthetic_tool_result_for_sibling_error() {
 #[tokio::test]
 async fn cancelled_turn_still_emits_stream_done() {
     let executor = Arc::new(RecordingExecutor::new(
-        vec![LlmStepResult::Cancelled],
+        vec![LlmStepResult::Cancelled {
+            partial_content: String::new(),
+        }],
         vec![json!({
             "role": "assistant",
             "content": "",

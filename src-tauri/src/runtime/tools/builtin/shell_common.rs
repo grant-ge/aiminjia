@@ -2,10 +2,14 @@
 //! BashTool（Unix）和 PowerShellTool（Windows）都使用这些函数，确保两种 shell
 //! 在输出截断、cancellation、stderr 合并、grep/find 等命令的语义豁免上行为一致。
 
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+
 use tokio::io::AsyncReadExt;
 use tokio::process::Child;
 use tokio::task::JoinHandle;
 
+use crate::runtime::agent::output_writer::{self, TranscriptLine};
 use crate::runtime::cancellation::CancellationReason;
 use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::executor::ToolError;
@@ -14,6 +18,46 @@ use crate::telemetry::{
 };
 
 pub const MAX_OUTPUT_BYTES: usize = 512 * 1024;
+
+pub struct OptionalTranscriptTarget {
+    path: PathBuf,
+    flushed_bytes: usize,
+}
+
+pub type OptionalTranscriptPath = Arc<Mutex<Option<OptionalTranscriptTarget>>>;
+
+pub fn optional_transcript_path() -> OptionalTranscriptPath {
+    Arc::new(Mutex::new(None))
+}
+
+pub fn enable_optional_transcript_path(
+    target: &OptionalTranscriptPath,
+    path: PathBuf,
+    flushed_bytes: usize,
+) {
+    *target.lock().expect("optional transcript path poisoned") =
+        Some(OptionalTranscriptTarget {
+            path,
+            flushed_bytes,
+        });
+}
+
+pub fn append_transcript_bytes(path: &Path, bytes: &[u8], context: &str) -> bool {
+    if bytes.is_empty() {
+        return true;
+    }
+    let decoded = crate::storage::console_decode::decode_console_bytes(bytes);
+    if decoded.is_empty() {
+        return true;
+    }
+    match output_writer::append_line(path, &TranscriptLine::tool(decoded)) {
+        Ok(()) => true,
+        Err(e) => {
+            log::warn!("[{context}] transcript append failed: {e}");
+            false
+        }
+    }
+}
 
 pub struct CommandSemantics {
     pub is_error: bool,
@@ -123,7 +167,8 @@ where
 {
     // Delegate to the with-progress variant with a no-op callback so old
     // callers (PowerShell, tests) keep the existing signature.
-    read_merged_streams_with_progress(stdout, stderr, |_, _| {}).await
+    read_merged_streams_with_progress_and_optional_transcript(stdout, stderr, |_, _| {}, None)
+        .await
 }
 
 /// Same as [`read_merged_streams`] but invokes `on_chunk` synchronously
@@ -140,9 +185,29 @@ where
 ///   (e.g. update a `tokio::sync::watch` sender) and let a separate
 ///   throttling task do the actual emit.
 pub async fn read_merged_streams_with_progress<R1, R2, F>(
+    stdout: R1,
+    stderr: R2,
+    on_chunk: F,
+) -> std::io::Result<(Vec<u8>, bool)>
+where
+    R1: tokio::io::AsyncRead + Unpin,
+    R2: tokio::io::AsyncRead + Unpin,
+    F: FnMut(&[u8], u64) + Send,
+{
+    read_merged_streams_with_progress_and_optional_transcript(
+        stdout,
+        stderr,
+        on_chunk,
+        None,
+    )
+    .await
+}
+
+pub async fn read_merged_streams_with_progress_and_optional_transcript<R1, R2, F>(
     mut stdout: R1,
     mut stderr: R2,
     mut on_chunk: F,
+    transcript_path: Option<OptionalTranscriptPath>,
 ) -> std::io::Result<(Vec<u8>, bool)>
 where
     R1: tokio::io::AsyncRead + Unpin,
@@ -164,9 +229,16 @@ where
                 if read == 0 {
                     stdout_open = false;
                 } else {
+                    let captured_len_before = captured.len();
                     append_capped_bytes(&mut captured, &stdout_buf[..read], &mut truncated);
                     total_received_bytes = total_received_bytes.saturating_add(read as u64);
                     on_chunk(&captured, total_received_bytes);
+                    append_optional_transcript_progress(
+                        transcript_path.as_ref(),
+                        &captured,
+                        captured_len_before,
+                        &stdout_buf[..read],
+                    );
                 }
             }
             read = stderr.read(&mut stderr_buf), if stderr_open => {
@@ -174,15 +246,82 @@ where
                 if read == 0 {
                     stderr_open = false;
                 } else {
+                    let captured_len_before = captured.len();
                     append_capped_bytes(&mut captured, &stderr_buf[..read], &mut truncated);
                     total_received_bytes = total_received_bytes.saturating_add(read as u64);
                     on_chunk(&captured, total_received_bytes);
+                    append_optional_transcript_progress(
+                        transcript_path.as_ref(),
+                        &captured,
+                        captured_len_before,
+                        &stderr_buf[..read],
+                    );
                 }
             }
         }
     }
 
+    flush_optional_transcript_captured(transcript_path.as_ref(), &captured);
+
     Ok((captured, truncated))
+}
+
+fn append_optional_transcript_progress(
+    target: Option<&OptionalTranscriptPath>,
+    captured: &[u8],
+    captured_len_before: usize,
+    chunk: &[u8],
+) {
+    let Some(target) = target else {
+        return;
+    };
+    let mut guard = target.lock().expect("optional transcript path poisoned");
+    let Some(state) = guard.as_mut() else {
+        return;
+    };
+
+    let start = state.flushed_bytes.min(captured.len());
+    if start < captured.len()
+        && append_transcript_bytes(
+            &state.path,
+            &captured[start..],
+            "shell foreground->background",
+        )
+    {
+        state.flushed_bytes = captured.len();
+    }
+
+    let captured_from_current = captured
+        .len()
+        .saturating_sub(captured_len_before)
+        .min(chunk.len());
+    if captured_from_current < chunk.len() {
+        let _ = append_transcript_bytes(
+            &state.path,
+            &chunk[captured_from_current..],
+            "shell foreground->background",
+        );
+    }
+}
+
+fn flush_optional_transcript_captured(target: Option<&OptionalTranscriptPath>, captured: &[u8]) {
+    let Some(target) = target else {
+        return;
+    };
+    let mut guard = target.lock().expect("optional transcript path poisoned");
+    let Some(state) = guard.as_mut() else {
+        return;
+    };
+    let start = state.flushed_bytes.min(captured.len());
+    if start < captured.len()
+        && append_transcript_bytes(
+            &state.path,
+            &captured[start..],
+            "shell foreground->background final flush",
+        )
+    {
+        state.flushed_bytes = captured.len();
+    }
 }
 
 /// Returns the last `n` lines of `s`, ASCII-byte counted. Used to build a
