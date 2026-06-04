@@ -150,6 +150,13 @@ impl ManagedRuntimeEnvInfo {
             .parent()
             .map(std::path::Path::to_path_buf)
             .unwrap_or_else(|| node_prefix.join("bin"));
+        let node_cli_dir = if cfg!(target_os = "windows") {
+            // npm global shims are written to the prefix root on Windows when
+            // installing with `npm install -g --prefix <prefix>`.
+            node_prefix.clone()
+        } else {
+            node_bin_dir.clone()
+        };
         let node_global_modules = if cfg!(target_os = "windows") {
             node_prefix.join("node_modules")
         } else {
@@ -182,8 +189,8 @@ impl ManagedRuntimeEnvInfo {
                     node = self.node_path.display(),
                 ),
                 format!(
-                    r#"& "{node_bin_dir}\命令名.cmd" <参数>"#,
-                    node_bin_dir = node_bin_dir.display(),
+                    r#"& "{node_cli_dir}\命令名.cmd" <参数>"#,
+                    node_cli_dir = node_cli_dir.display(),
                 ),
             )
         } else {
@@ -204,8 +211,8 @@ impl ManagedRuntimeEnvInfo {
                     node = self.node_path.display(),
                 ),
                 format!(
-                    r#""{node_bin_dir}/命令名" <参数>"#,
-                    node_bin_dir = node_bin_dir.display(),
+                    r#""{node_cli_dir}/命令名" <参数>"#,
+                    node_cli_dir = node_cli_dir.display(),
                 ),
             )
         };
@@ -220,7 +227,7 @@ npx: {npx}
 uv: {uv}
 uvx: {uvx}
 Node 全局包目录: {node_global_modules}
-Node 命令目录: {node_bin_dir}
+Node 命令目录: {node_cli_dir}
 
 规则:
 1. 运行 Python / Node / npm / npx / uv 命令时，默认使用上面列出的绝对路径；只有用户明确要求系统环境时，才使用系统 PATH 中的命令。
@@ -251,7 +258,7 @@ Node 命令目录: {node_bin_dir}
             uv = self.uv_path.display(),
             uvx = self.uvx_path.display(),
             node_global_modules = node_global_modules.display(),
-            node_bin_dir = node_bin_dir.display(),
+            node_cli_dir = node_cli_dir.display(),
             python_install_template = python_install_template,
             node_install_template = node_install_template,
             node_require_template = node_require_template,
@@ -418,7 +425,15 @@ mod tests {
         assert!(result.contains("uv: /cache/renlijia/uv/bin/uv"));
         assert!(result.contains("uvx: /cache/renlijia/uv/bin/uvx"));
         assert!(result.contains("Node 全局包目录: /cache/renlijia/node/lib/node_modules"));
-        assert!(result.contains("Node 命令目录: /cache/renlijia/node/bin"));
+        let expected_node_command_dir = if cfg!(target_os = "windows") {
+            "Node 命令目录: /cache/renlijia/node"
+        } else {
+            "Node 命令目录: /cache/renlijia/node/bin"
+        };
+        assert!(
+            result.contains(expected_node_command_dir),
+            "must include the platform-correct Node command dir, got:\n{result}"
+        );
         assert!(result.contains("默认使用上面列出的绝对路径"));
         assert!(result.contains("只有用户明确要求系统环境时"));
         let expected_python_template = if cfg!(target_os = "windows") {
@@ -443,8 +458,13 @@ mod tests {
             result.contains(r#"NODE_PATH="/cache/renlijia/node/lib/node_modules""#),
             "must teach Node global package resolution, got:\n{result}"
         );
+        let expected_node_cli_template = if cfg!(target_os = "windows") {
+            r#"& "/cache/renlijia/node\命令名.cmd" <参数>"#
+        } else {
+            r#""/cache/renlijia/node/bin/命令名" <参数>"#
+        };
         assert!(
-            result.contains(r#""/cache/renlijia/node/bin/命令名" <参数>"#),
+            result.contains(expected_node_cli_template),
             "must teach absolute CLI execution instead of npx, got:\n{result}"
         );
         assert!(result.contains("不要用 npx 运行已安装的包"));
