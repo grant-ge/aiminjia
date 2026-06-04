@@ -1,12 +1,12 @@
 # rules.md — Runtime
 
-本 task 测的产品承诺：**AIjia 管理的本地 Runtime（Node / npm / Python / uv）在对话工具中稳定可用，第三方包安装状态能跨新对话复用，不因为新建会话就重复下载或重复安装**。
+本 task 测的产品承诺：**AIjia 管理的本地 Runtime（Node / npm / Python / uv）在新设备首次安装后能自动下载并安装，对话工具中稳定可用，第三方包安装状态能跨新对话复用，不因为新建会话就重复下载或重复安装**。
 
 UI 文案对应：设置里的「Runtime」面板，以及对话动态上下文中注入的 Runtime 工具路径。
 
 ## 测试范围
 
-覆盖 Managed Runtime 的诊断、对话中 Runtime 路径注入、Bash 工具使用 Runtime Node/Python 执行命令、以及 npm / Python 包安装后的跨新对话复用。关注 `src-tauri/src/runtime/dependencies/`、`src-tauri/src/runtime/chat/context_builder.rs`、`src-tauri/src/runtime/tools/builtin/bash.rs`、`src/components/settings/panels/RuntimePanel.tsx`。
+覆盖 Managed Runtime 的首次下载/安装、诊断、对话中 Runtime 路径注入、Bash 工具使用 Runtime Node/Python 执行命令、以及 npm / Python 包安装后的跨新对话复用。关注 `src-tauri/src/runtime/dependencies/`、`src-tauri/src/runtime/chat/context_builder.rs`、`src-tauri/src/runtime/tools/builtin/bash.rs`、`src/components/settings/panels/RuntimePanel.tsx`。
 
 本 task 的包复用意图只覆盖**同一应用进程内**的新对话复用。关闭应用后再打开是否仍复用，是跨进程持久化维度，后续应单独写意图；不能混在同一条里。
 
@@ -132,3 +132,55 @@ UI 文案对应：设置里的「Runtime」面板，以及对话动态上下文�
 - 轮 B 的工具输出文本包含 `command not found`
 - 轮 B 的工具输出文本包含 `npm error` 或 `npm ERR!`
 - 任一轮对话 UI 中出现红色错误提示或「工具调用失败」类 toast
+
+---
+
+## 意图-Runtime-003: 首次安装后，环境下载完成
+
+**场景**
+用户在一台从未运行过 AIjia 的新电脑或全新系统用户里安装 AIjia。首次启动后，应用应从默认运行期 manifest 下载 Runtime 压缩包，解压出 Node / Python / uv，并写入当前版本指针；不能把旧机器 cache 或 bundled fallback 当作下载成功。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 记录 `T0`；本意图只允许在刚完成干净安装并首次启动的测试机器或全新系统用户中执行
+3. 推断 `{runtime_root}`：
+   1. Windows：`%LOCALAPPDATA%\renlijia-runtimes\renlijia-primary-runtime`
+   2. macOS：`~/Library/Caches/renlijia-runtimes/renlijia-primary-runtime`
+   3. Linux：`~/.cache/renlijia-runtimes/renlijia-primary-runtime`
+4. 从测试记录确认首次启动前 `{runtime_root}/current` 不存在；如果首次启动前已经存在，本意图记为 SKIPPED，换新电脑或全新系统用户重跑，不要删除当前用户的 runtime 目录硬造环境
+5. 打开设置：`tauri-pilot aijia open-settings`
+6. 等设置弹窗出现：`tauri-pilot aijia settings-wait`
+7. 切到「Runtime」面板：`tauri-pilot aijia settings-select-panel --key runtime`
+8. 等待「Runtime」面板不再显示加载态，并能看到 Node / Python / uv 诊断信息
+9. 检查 `{runtime_root}/downloads/`
+10. 读取 `{runtime_root}/current` 的文本内容，记为 `{current_pointer}`
+11. 从 `{current_pointer}` 中去掉 `versions/` 前缀，记为 `{bundle_version}`
+12. 检查 `{runtime_root}/{current_pointer}`
+13. 检查 `~/.renlijia/logs/renlijia.log`
+
+**验收标准**
+
+应该看到：
+- 文件 `{runtime_root}/current` 存在
+- `{runtime_root}/current` 的文本内容不为空
+- `{current_pointer}` 以 `versions/` 开头
+- 目录 `{runtime_root}/{current_pointer}` 存在
+- 目录 `{runtime_root}/downloads/` 存在
+- `{runtime_root}/downloads/` 下存在文件名包含 `renlijia-primary-runtime` 的压缩包
+- 该压缩包的 mtime 在 `T0 ± 5 分钟` 内
+- 该压缩包的 size `> 0`
+- `{runtime_root}/{current_pointer}/node/` 目录存在
+- `{runtime_root}/{current_pointer}/python/` 目录存在
+- `{runtime_root}/{current_pointer}/uv/` 目录存在
+- 使用 `{runtime_root}/{current_pointer}` 下的 Node 可执行文件运行 `--version` 时，stdout 不为空
+- 使用 `{runtime_root}/{current_pointer}` 下的 Python 可执行文件运行 `--version` 时，stdout 不为空
+- 使用 `{runtime_root}/{current_pointer}` 下的 uv 可执行文件运行 `--version` 时，stdout 不为空
+- `~/.renlijia/logs/renlijia.log` 中存在 `cache runtime initialized version={bundle_version}`
+
+不应该看到：
+- 测试记录中首次启动前 `{runtime_root}/current` 已存在
+- `{runtime_root}/downloads/` 下没有 `renlijia-primary-runtime` 压缩包
+- `~/.renlijia/logs/renlijia.log` 中出现 `manifest ensure failed; trying bundled fallback`
+- `~/.renlijia/logs/renlijia.log` 中出现 `bundled fallback install start`
+- Node / Python / uv 任一版本命令输出为空
+- 任一检查步骤中出现 `checksum`、`extract`、`smoke test`、`network error`
