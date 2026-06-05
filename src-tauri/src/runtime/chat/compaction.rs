@@ -269,6 +269,245 @@ pub struct AutoCompactConfig {
     pub custom_context_window: Option<usize>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AutoCompactTriggerKind {
+    Normal,
+    ManualCompact,
+    PromptTooLongRecovery,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AutoCompactDecisionReason {
+    Manual,
+    PromptTooLongRecovery,
+    AboveThreshold,
+    PredictiveGrowth,
+    BelowThreshold,
+    CircuitBroken,
+    StopHookActive,
+    RecursiveSource,
+    ContextCollapseSuppressed,
+}
+
+impl AutoCompactDecisionReason {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Manual => "manual",
+            Self::PromptTooLongRecovery => "ptl_recovery",
+            Self::AboveThreshold => "above_threshold",
+            Self::PredictiveGrowth => "predictive_growth",
+            Self::BelowThreshold => "below_threshold",
+            Self::CircuitBroken => "circuit_broken",
+            Self::StopHookActive => "stop_hook_active",
+            Self::RecursiveSource => "recursive_source",
+            Self::ContextCollapseSuppressed => "context_collapse_suppressed",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AutoCompactDecision {
+    pub should_run: bool,
+    pub reason: AutoCompactDecisionReason,
+    pub trigger: AutoCompactTriggerKind,
+    pub query_source: Option<String>,
+    pub estimated_tokens: usize,
+    pub freed_tokens_estimate: usize,
+    pub adjusted_tokens: usize,
+    pub threshold_tokens: usize,
+    pub threshold_chars: usize,
+    pub context_window_tokens: usize,
+    pub buffer_tokens: usize,
+    pub max_turn_growth_tokens: usize,
+    pub predictive_threshold_tokens: usize,
+    pub circuit_broken: bool,
+    pub recursive_source_blocked: bool,
+    pub context_collapse_suppressed: bool,
+    pub turns_since_previous_compact: u32,
+    pub previous_compacted: bool,
+    pub consecutive_failures: u32,
+    pub consecutive_failure_limit: u32,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct AutoCompactDecisionInput<'a> {
+    pub messages: &'a [serde_json::Value],
+    pub config: &'a AutoCompactConfig,
+    pub state: &'a AutoCompactState,
+    pub trigger: AutoCompactTriggerKind,
+    pub query_source: Option<&'a str>,
+    pub freed_tokens_estimate: usize,
+    pub stop_hook_active: bool,
+    pub context_collapse_suppressed: bool,
+}
+
+const TOOL_RESULT_GROWTH_ESTIMATE_TOKENS: usize = 15_000;
+
+pub fn autocompact_buffer_tokens(context_window_tokens: usize) -> usize {
+    if context_window_tokens >= 800_000 {
+        return 50_000;
+    }
+    if context_window_tokens >= 400_000 {
+        return 30_000;
+    }
+    crate::llm::context_decay::AUTOCOMPACT_BUFFER_TOKENS
+}
+
+pub fn estimate_max_turn_growth_tokens(config: &AutoCompactConfig) -> usize {
+    let max_output_tokens = (config.max_output_chars / 4)
+        .max(1)
+        .min(crate::llm::context_decay::MAX_OUTPUT_TOKENS_FOR_SUMMARY);
+    max_output_tokens + TOOL_RESULT_GROWTH_ESTIMATE_TOKENS
+}
+
+fn is_recursive_auto_compact_source(query_source: Option<&str>) -> bool {
+    matches!(
+        query_source,
+        Some("compact" | "compact_summary" | "session_memory")
+    )
+}
+
+fn auto_compact_context_window_tokens(config: &AutoCompactConfig) -> usize {
+    config
+        .custom_context_window
+        .unwrap_or(crate::llm::context_decay::CONSERVATIVE_CONTEXT_WINDOW)
+}
+
+fn auto_compact_threshold_tokens(config: &AutoCompactConfig) -> usize {
+    (config.threshold_chars / 4).max(1)
+}
+
+fn build_auto_compact_decision(
+    input: &AutoCompactDecisionInput<'_>,
+    should_run: bool,
+    reason: AutoCompactDecisionReason,
+    estimated_tokens: usize,
+    adjusted_tokens: usize,
+) -> AutoCompactDecision {
+    let context_window_tokens = auto_compact_context_window_tokens(input.config);
+    let max_turn_growth_tokens = estimate_max_turn_growth_tokens(input.config);
+    AutoCompactDecision {
+        should_run,
+        reason,
+        trigger: input.trigger,
+        query_source: input.query_source.map(str::to_string),
+        estimated_tokens,
+        freed_tokens_estimate: input.freed_tokens_estimate,
+        adjusted_tokens,
+        threshold_tokens: auto_compact_threshold_tokens(input.config),
+        threshold_chars: input.config.threshold_chars,
+        context_window_tokens,
+        buffer_tokens: autocompact_buffer_tokens(context_window_tokens),
+        max_turn_growth_tokens,
+        predictive_threshold_tokens: context_window_tokens.saturating_sub(max_turn_growth_tokens),
+        circuit_broken: input.state.is_circuit_broken(input.config),
+        recursive_source_blocked: is_recursive_auto_compact_source(input.query_source),
+        context_collapse_suppressed: input.context_collapse_suppressed,
+        turns_since_previous_compact: input.state.turn_counter,
+        previous_compacted: input.state.compacted,
+        consecutive_failures: input.state.consecutive_failures,
+        consecutive_failure_limit: input.config.consecutive_failure_limit,
+    }
+}
+
+pub fn evaluate_auto_compact(input: AutoCompactDecisionInput<'_>) -> AutoCompactDecision {
+    let estimated_tokens = estimate_total_chars(input.messages) / 4;
+    let adjusted_tokens = estimated_tokens.saturating_sub(input.freed_tokens_estimate);
+
+    if input.trigger == AutoCompactTriggerKind::ManualCompact {
+        return build_auto_compact_decision(
+            &input,
+            true,
+            AutoCompactDecisionReason::Manual,
+            estimated_tokens,
+            adjusted_tokens,
+        );
+    }
+
+    let circuit_broken = input.state.is_circuit_broken(input.config);
+    if circuit_broken {
+        return build_auto_compact_decision(
+            &input,
+            false,
+            AutoCompactDecisionReason::CircuitBroken,
+            estimated_tokens,
+            adjusted_tokens,
+        );
+    }
+
+    if input.trigger == AutoCompactTriggerKind::PromptTooLongRecovery && input.stop_hook_active {
+        return build_auto_compact_decision(
+            &input,
+            false,
+            AutoCompactDecisionReason::StopHookActive,
+            estimated_tokens,
+            adjusted_tokens,
+        );
+    }
+
+    if is_recursive_auto_compact_source(input.query_source) {
+        return build_auto_compact_decision(
+            &input,
+            false,
+            AutoCompactDecisionReason::RecursiveSource,
+            estimated_tokens,
+            adjusted_tokens,
+        );
+    }
+
+    if input.trigger == AutoCompactTriggerKind::PromptTooLongRecovery {
+        return build_auto_compact_decision(
+            &input,
+            true,
+            AutoCompactDecisionReason::PromptTooLongRecovery,
+            estimated_tokens,
+            adjusted_tokens,
+        );
+    }
+
+    if input.context_collapse_suppressed {
+        return build_auto_compact_decision(
+            &input,
+            false,
+            AutoCompactDecisionReason::ContextCollapseSuppressed,
+            estimated_tokens,
+            adjusted_tokens,
+        );
+    }
+
+    let threshold_tokens = auto_compact_threshold_tokens(input.config);
+    if adjusted_tokens >= threshold_tokens {
+        return build_auto_compact_decision(
+            &input,
+            true,
+            AutoCompactDecisionReason::AboveThreshold,
+            estimated_tokens,
+            adjusted_tokens,
+        );
+    }
+
+    let context_window_tokens = auto_compact_context_window_tokens(input.config);
+    let max_turn_growth_tokens = estimate_max_turn_growth_tokens(input.config);
+    let predictive_threshold = context_window_tokens.saturating_sub(max_turn_growth_tokens);
+    if adjusted_tokens > predictive_threshold {
+        return build_auto_compact_decision(
+            &input,
+            true,
+            AutoCompactDecisionReason::PredictiveGrowth,
+            estimated_tokens,
+            adjusted_tokens,
+        );
+    }
+
+    build_auto_compact_decision(
+        &input,
+        false,
+        AutoCompactDecisionReason::BelowThreshold,
+        estimated_tokens,
+        adjusted_tokens,
+    )
+}
+
 impl Default for AutoCompactConfig {
     fn default() -> Self {
         let threshold = crate::llm::context_decay::effective_auto_compact_threshold(None);
@@ -335,7 +574,18 @@ impl AutoCompactState {
 }
 
 pub fn should_auto_compact(messages: &[serde_json::Value], config: &AutoCompactConfig) -> bool {
-    estimate_total_chars(messages) >= config.threshold_chars
+    let state = AutoCompactState::new();
+    evaluate_auto_compact(AutoCompactDecisionInput {
+        messages,
+        config,
+        state: &state,
+        trigger: AutoCompactTriggerKind::Normal,
+        query_source: None,
+        freed_tokens_estimate: 0,
+        stop_hook_active: false,
+        context_collapse_suppressed: false,
+    })
+    .should_run
 }
 
 pub fn append_transcript_path_hint(summary_text: String, transcript_path: Option<&str>) -> String {
@@ -354,6 +604,110 @@ pub fn append_transcript_path_hint(summary_text: String, transcript_path: Option
         summary_text.trim_end(),
         path
     )
+}
+
+pub fn append_literal_anchor_hints(summary_text: String, messages: &[serde_json::Value]) -> String {
+    let anchors = literal_anchor_lines(messages);
+    if anchors.is_empty() {
+        return summary_text;
+    }
+
+    let missing = anchors
+        .into_iter()
+        .filter(|anchor| !summary_text.contains(anchor))
+        .collect::<Vec<_>>();
+    if missing.is_empty() {
+        return summary_text;
+    }
+
+    let mut output = summary_text.trim_end().to_string();
+    output.push_str("\n\n用户声明的关键字面标记（必须原样保留）：");
+    for anchor in missing {
+        output.push_str("\n- ");
+        output.push_str(&anchor);
+    }
+    output
+}
+
+fn literal_anchor_lines(messages: &[serde_json::Value]) -> Vec<String> {
+    const MAX_ANCHORS: usize = 24;
+    const MAX_ANCHOR_CHARS: usize = 420;
+    const ANCHOR_NEEDLES: [&str; 8] = [
+        "关键事实=",
+        "已排除误判=",
+        "核验标记=",
+        "工具证据",
+        "验证对象=",
+        "继续标记=",
+        "案例=",
+        "尾部决定=",
+    ];
+
+    let mut anchors = Vec::new();
+    for message in messages {
+        if message.get("role").and_then(|value| value.as_str()) != Some("user") {
+            continue;
+        }
+        if message
+            .get("isCompactSummary")
+            .and_then(|value| value.as_bool())
+            == Some(true)
+        {
+            continue;
+        }
+        let text = message_text(message);
+        for line in text.lines() {
+            let line = line.trim();
+            if line.is_empty()
+                || line.contains("CTX-COMPACT-")
+                || !ANCHOR_NEEDLES.iter().any(|needle| line.contains(needle))
+            {
+                continue;
+            }
+            let anchor = truncate_anchor_line(line, MAX_ANCHOR_CHARS);
+            if !anchors.contains(&anchor) {
+                anchors.push(anchor);
+            }
+            if anchors.len() >= MAX_ANCHORS {
+                return anchors;
+            }
+        }
+    }
+    anchors
+}
+
+fn message_text(message: &serde_json::Value) -> String {
+    let Some(content) = message.get("content") else {
+        return String::new();
+    };
+    if let Some(text) = content.as_str() {
+        return text.to_string();
+    }
+    if let Some(text) = content.get("text").and_then(|value| value.as_str()) {
+        return text.to_string();
+    }
+    if let Some(blocks) = content.as_array() {
+        return blocks
+            .iter()
+            .filter_map(|block| {
+                if block.get("type").and_then(|value| value.as_str()) == Some("text") {
+                    block.get("text").and_then(|value| value.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+    }
+    String::new()
+}
+
+fn truncate_anchor_line(line: &str, max_chars: usize) -> String {
+    let mut output = line.chars().take(max_chars).collect::<String>();
+    if line.chars().count() > max_chars {
+        output.push_str("...");
+    }
+    output
 }
 
 pub fn compact_transcript_path_for_conversation_dir(conversation_dir: &Path) -> String {

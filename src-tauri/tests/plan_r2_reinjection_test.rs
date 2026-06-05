@@ -51,6 +51,8 @@ async fn r2_prepare_messages_returns_project_instruction_system_segment_after_au
             custom_context_window: None,
         },
         context_window: 64_000,
+        query_source: None,
+        context_collapse_owns_context: false,
         compact_boundary: None,
         project_instruction_content: Some("# AGENTS.md\nKeep this context".to_string()),
     };

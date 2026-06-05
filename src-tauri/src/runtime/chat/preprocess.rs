@@ -6,8 +6,9 @@ use serde_json::Value;
 
 use crate::llm::streaming::SystemPromptSegment;
 use crate::runtime::chat::compaction::{
-    build_compact_boundary_record, compact_messages_via_llm, microcompact, AutoCompactConfig,
-    AutoCompactState, CompactBoundaryRecord, CompactTrigger, MicrocompactConfig,
+    build_compact_boundary_record, compact_messages_via_llm, evaluate_auto_compact, microcompact,
+    AutoCompactConfig, AutoCompactDecisionInput, AutoCompactState, AutoCompactTriggerKind,
+    CompactBoundaryRecord, CompactTrigger, MicrocompactConfig,
 };
 use crate::runtime::chat::tool_result_artifact::{
     build_compaction_evidence_messages, is_persisted_tool_result_message, CompactionEvidenceConfig,
@@ -108,6 +109,11 @@ pub struct PreprocessConfig {
     /// Context window in tokens for the current session model.
     /// Used for dynamic threshold calculation in auto-compact.
     pub context_window: usize,
+    /// Caller/source identifier used to prevent recursive auto-compact calls.
+    pub query_source: Option<String>,
+    /// When a richer context-collapse subsystem owns context pressure handling,
+    /// normal auto-compact should not race it.
+    pub context_collapse_owns_context: bool,
     /// The latest compact boundary for this conversation.
     /// When set, only messages after the boundary are processed.
     pub compact_boundary: Option<CompactBoundaryRecord>,
@@ -127,6 +133,8 @@ impl Default for PreprocessConfig {
             collapse: CollapseConfig::default(),
             auto_compact: AutoCompactConfig::with_context_window(context_window),
             context_window,
+            query_source: None,
+            context_collapse_owns_context: false,
             compact_boundary: None,
             project_instruction_content: None,
         }
@@ -757,38 +765,38 @@ where
         executed_stages.push(PreprocessStage::Collapse);
     }
     let after_collapse_chars = estimate_total_chars(&current_messages);
-
-    let circuit_broken = compact_state.is_circuit_broken(&config.auto_compact);
+    let collapse_tokens_freed_estimate =
+        after_microcompact_chars.saturating_sub(after_collapse_chars) / 4;
+    let freed_tokens_estimate = budget_tokens_freed_estimate
+        .saturating_add(microcompact_tokens_freed_estimate)
+        .saturating_add(collapse_tokens_freed_estimate);
     let ptl_stop_hook_blocked =
         trigger == PreprocessTrigger::PromptTooLongRecovery && stop_hook_active;
-    let auto_compact_allowed = !circuit_broken && !ptl_stop_hook_blocked;
-    let should_run_auto_compact = auto_compact_allowed
-        && match trigger {
-            PreprocessTrigger::Normal => {
-                after_collapse_chars >= config.auto_compact.threshold_chars
-            }
-            PreprocessTrigger::ManualCompact => true,
-            PreprocessTrigger::PromptTooLongRecovery => true,
-        };
-    let decision_reason = if should_run_auto_compact {
-        "will_run"
-    } else if circuit_broken {
-        "circuit_broken"
-    } else if ptl_stop_hook_blocked {
-        "ptl_stop_hook_active"
-    } else if trigger == PreprocessTrigger::Normal
-        && after_collapse_chars < config.auto_compact.threshold_chars
-    {
-        "below_threshold"
-    } else {
-        "not_required"
+    let decision_trigger = match trigger {
+        PreprocessTrigger::Normal => AutoCompactTriggerKind::Normal,
+        PreprocessTrigger::ManualCompact => AutoCompactTriggerKind::ManualCompact,
+        PreprocessTrigger::PromptTooLongRecovery => AutoCompactTriggerKind::PromptTooLongRecovery,
     };
+    let context_collapse_suppressed =
+        trigger == PreprocessTrigger::Normal && config.context_collapse_owns_context;
+    let auto_compact_decision = evaluate_auto_compact(AutoCompactDecisionInput {
+        messages: &compact_evidence_source_messages,
+        config: &config.auto_compact,
+        state: compact_state,
+        trigger: decision_trigger,
+        query_source: config.query_source.as_deref(),
+        freed_tokens_estimate,
+        stop_hook_active,
+        context_collapse_suppressed,
+    });
+    let should_run_auto_compact = auto_compact_decision.should_run;
     log::info!(
-        "[auto-compact][decision] conv={} trigger={:?} should_run={} reason={} input_messages={} input_chars={} active_messages={} active_chars={} boundary_view_messages={} boundary_view_chars={} images_stripped={} after_strip_chars={} evidence_messages={} evidence_chars={} budget_executed={} budget_tokens_freed_estimate={} after_budget_chars={} microcompact_executed={} microcompact_tokens_freed_estimate={} after_microcompact_chars={} collapse_executed={} collapsed_count={} after_collapse_chars={} threshold_chars={} context_window={} circuit_broken={} failures={}/{} stop_hook_active={} input_has_compact_artifacts={} loaded_boundary={} stages={:?}",
+        "[auto-compact][decision-v2] conv={} trigger={:?} should_run={} reason={} query_source={:?} input_messages={} input_chars={} active_messages={} active_chars={} boundary_view_messages={} boundary_view_chars={} images_stripped={} after_strip_chars={} evidence_messages={} evidence_chars={} estimated_tokens={} freed_tokens_estimate={} adjusted_tokens={} budget_executed={} budget_tokens_freed_estimate={} after_budget_chars={} microcompact_executed={} microcompact_tokens_freed_estimate={} after_microcompact_chars={} collapse_executed={} collapsed_count={} collapse_tokens_freed_estimate={} after_collapse_chars={} post_pipeline_tokens={} threshold_tokens={} threshold_chars={} context_window_tokens={} buffer_tokens={} max_turn_growth_tokens={} predictive_threshold_tokens={} circuit_broken={} recursive_source_blocked={} context_collapse_suppressed={} previous_compacted={} turns_since_previous_compact={} failures={}/{} stop_hook_active={} ptl_stop_hook_blocked={} input_has_compact_artifacts={} loaded_boundary={} stages={:?}",
         conversation_id,
         trigger,
         should_run_auto_compact,
-        decision_reason,
+        auto_compact_decision.reason.as_str(),
+        auto_compact_decision.query_source.as_deref(),
         input_message_count,
         input_chars,
         active_message_count,
@@ -799,6 +807,9 @@ where
         after_strip_chars,
         evidence_source_message_count,
         evidence_source_chars,
+        auto_compact_decision.estimated_tokens,
+        auto_compact_decision.freed_tokens_estimate,
+        auto_compact_decision.adjusted_tokens,
         budget_executed,
         budget_tokens_freed_estimate,
         after_budget_chars,
@@ -807,13 +818,24 @@ where
         after_microcompact_chars,
         collapse_executed,
         collapsed_count,
+        collapse_tokens_freed_estimate,
         after_collapse_chars,
+        after_collapse_chars / 4,
+        auto_compact_decision.threshold_tokens,
         config.auto_compact.threshold_chars,
-        config.context_window,
-        circuit_broken,
-        compact_state.consecutive_failures,
-        config.auto_compact.consecutive_failure_limit,
+        auto_compact_decision.context_window_tokens,
+        auto_compact_decision.buffer_tokens,
+        auto_compact_decision.max_turn_growth_tokens,
+        auto_compact_decision.predictive_threshold_tokens,
+        auto_compact_decision.circuit_broken,
+        auto_compact_decision.recursive_source_blocked,
+        auto_compact_decision.context_collapse_suppressed,
+        auto_compact_decision.previous_compacted,
+        auto_compact_decision.turns_since_previous_compact,
+        auto_compact_decision.consecutive_failures,
+        auto_compact_decision.consecutive_failure_limit,
         stop_hook_active,
+        ptl_stop_hook_blocked,
         input_has_compact_artifacts,
         config.compact_boundary.is_some(),
         executed_stages,
@@ -830,17 +852,25 @@ where
         let summary_input_message_count = compaction_input.len();
         let summary_input_chars = estimate_total_chars(&compaction_input);
         log::info!(
-            "[auto-compact][summary-start] conv={} trigger={:?} summary_input_messages={} summary_input_chars={} evidence_messages={} evidence_chars={} post_pipeline_messages={} post_pipeline_chars={} threshold_chars={} context_window={}",
+            "[auto-compact][summary-start] conv={} trigger={:?} reason={} summary_input_messages={} summary_input_chars={} evidence_messages={} evidence_chars={} estimated_tokens={} adjusted_tokens={} freed_tokens_estimate={} post_pipeline_messages={} post_pipeline_chars={} post_pipeline_tokens={} threshold_tokens={} threshold_chars={} context_window_tokens={} max_turn_growth_tokens={} predictive_threshold_tokens={}",
             conversation_id,
             trigger,
+            auto_compact_decision.reason.as_str(),
             summary_input_message_count,
             summary_input_chars,
             evidence_source_message_count,
             evidence_source_chars,
+            auto_compact_decision.estimated_tokens,
+            auto_compact_decision.adjusted_tokens,
+            auto_compact_decision.freed_tokens_estimate,
             current_messages.len(),
             after_collapse_chars,
+            after_collapse_chars / 4,
+            auto_compact_decision.threshold_tokens,
             config.auto_compact.threshold_chars,
-            config.context_window,
+            auto_compact_decision.context_window_tokens,
+            auto_compact_decision.max_turn_growth_tokens,
+            auto_compact_decision.predictive_threshold_tokens,
         );
         match summary_fn(compaction_input).await {
             Ok(summary_text) if !summary_text.trim().is_empty() => {

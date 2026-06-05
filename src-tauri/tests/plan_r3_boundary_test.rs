@@ -95,6 +95,8 @@ async fn r3_preserved_segment_token_count_uses_json_token_estimate_once() {
             custom_context_window: None,
         },
         context_window: 64_000,
+        query_source: None,
+        context_collapse_owns_context: false,
         compact_boundary: None,
         project_instruction_content: None,
     };
@@ -169,6 +171,8 @@ async fn r3_manual_compact_runs_below_auto_threshold_and_marks_manual_trigger() 
             custom_context_window: None,
         },
         context_window: 64_000,
+        query_source: None,
+        context_collapse_owns_context: false,
         compact_boundary: None,
         project_instruction_content: None,
     };
@@ -234,6 +238,8 @@ async fn r3_manual_compact_surfaces_summary_errors() {
             custom_context_window: None,
         },
         context_window: 64_000,
+        query_source: None,
+        context_collapse_owns_context: false,
         compact_boundary: None,
         project_instruction_content: None,
     };
@@ -287,6 +293,8 @@ async fn r3_manual_compact_surfaces_empty_summary() {
             custom_context_window: None,
         },
         context_window: 64_000,
+        query_source: None,
+        context_collapse_owns_context: false,
         compact_boundary: None,
         project_instruction_content: None,
     };

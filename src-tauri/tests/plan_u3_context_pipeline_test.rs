@@ -309,6 +309,8 @@ async fn u3_prepare_messages_orders_budget_microcompact_collapse_before_auto_com
             custom_context_window: None,
         },
         context_window: 64_000,
+        query_source: None,
+        context_collapse_owns_context: false,
         compact_boundary: None,
         project_instruction_content: None,
     };
@@ -387,6 +389,8 @@ async fn u3_auto_compact_summary_receives_expanded_tool_artifact_evidence() {
             custom_context_window: None,
         },
         context_window: 64_000,
+        query_source: None,
+        context_collapse_owns_context: false,
         compact_boundary: None,
         project_instruction_content: None,
     };
@@ -469,6 +473,8 @@ async fn u3_auto_compact_summary_uses_pre_budget_evidence_snapshot() {
             custom_context_window: None,
         },
         context_window: 64_000,
+        query_source: None,
+        context_collapse_owns_context: false,
         compact_boundary: None,
         project_instruction_content: None,
     };
@@ -548,6 +554,8 @@ async fn u3_prepare_messages_reuses_same_shape_for_normal_and_prompt_too_long() 
             custom_context_window: None,
         },
         context_window: 64_000,
+        query_source: None,
+        context_collapse_owns_context: false,
         compact_boundary: None,
         project_instruction_content: None,
     };
@@ -626,6 +634,8 @@ async fn u3_prepare_messages_is_idempotent_after_compact_output() {
             custom_context_window: None,
         },
         context_window: 64_000,
+        query_source: None,
+        context_collapse_owns_context: false,
         compact_boundary: None,
         project_instruction_content: None,
     };
@@ -717,6 +727,8 @@ async fn u3_prepare_messages_processes_new_messages_after_compact_artifacts() {
             custom_context_window: None,
         },
         context_window: 64_000,
+        query_source: None,
+        context_collapse_owns_context: false,
         compact_boundary: None,
         project_instruction_content: None,
     };

@@ -14,8 +14,9 @@ cc-best 对齐矩阵：
 
 | 能力面 | 本 task 意图 | 证据口径 |
 |---|---|---|
-| 自动压缩 auto compact | 001、002、003、005、006、007、011、012、013、014 | UI 边界条 + `messages.jsonl` 的 `system/compact_boundary` + compact summary |
-| 摘要质量与早期事实保留 | 002、011、012、013 | summary 与压缩后追问都保留关键事实、已排除误判、工具证据和下一步 |
+| 自动压缩 auto compact | 001、002、003、005、006、007、011、012、013、014、015 | UI 边界条 + `messages.jsonl` 的 `system/compact_boundary` + compact summary |
+| 摘要质量与早期事实保留 | 002、011、012、013、015 | summary 与压缩后追问都保留关键事实、已排除误判、工具证据和下一步 |
+| 触发决策可解释 | 015 | 当前会话对应的 `[auto-compact][decision-v2]` 日志包含 `reason`、token 预算、释放量和 predictive 阈值 |
 | reload 恢复 | 003 | 重开会话后 boundary 仍来自 transcript，不依赖内存态 |
 | tool pairing / tool artifact | 007、013 | assistant toolCall 与 tool result 之间不被 boundary 切断；长工具输出落到 `tool-results/manifest.jsonl` 后，summary 仍能引用 artifact 全量证据 |
 | 项目指令重注入 | 004 | compact 后下一轮仍遵守 `AGENTS.md` |
@@ -100,7 +101,7 @@ transcript 解析口径：`messages.jsonl` 和 `compact_boundaries.jsonl` 的一
 7. 每轮发送后等待 AI 完整回复：`tauri-pilot aijia wait-reply --timeout 600`
 8. 找到本轮新建的对话 ID：在 `~/.renlijia/users/$SCOPE/conversations/` 下取 `mtime` 最新且不在 `$S_BEFORE` 里的子目录名，记为 `$CONV_ID`
 9. 如果 `~/.renlijia/users/$SCOPE/conversations/$CONV_ID/messages.jsonl` 中还没有 `subtype == "compact_boundary"` 的记录，最多追加 2 轮与第 6 步相同格式的压力消息；每轮后等待 `tauri-pilot aijia wait-reply --timeout 600`
-10. 发送追问消息：`请根据前文只回复三行：客户=；已排除=；继续标记=FOLLOWUP-COMPACT-ANSWER-OK`
+10. 发送追问消息：`请根据前文只回复三行：客户=（必须包含原始标记 FOLLOWUP-COMPACT-FACT-ALPHA）；已排除=（必须包含原始标记 FOLLOWUP-COMPACT-EXCLUDE-PRESSURE）；继续标记=FOLLOWUP-COMPACT-ANSWER-OK`
 11. 等待 AI 完整回复：`tauri-pilot aijia wait-reply --timeout 600`
 12. 打开 `~/.renlijia/users/$SCOPE/conversations/$CONV_ID/messages.jsonl`
 13. 在 `messages.jsonl` 中定位最新一条 `subtype == "compact_boundary"` 的记录，记为 `$MSG_BOUNDARY`
@@ -516,7 +517,7 @@ transcript 解析口径：`messages.jsonl` 和 `compact_boundaries.jsonl` 的一
 9. 每轮发送后等待 AI 完整回复：`tauri-pilot aijia wait-reply --timeout 600`
 10. 找到本轮新建的对话 ID：在 `~/.renlijia/users/$SCOPE/conversations/` 下取 `mtime` 最新且不在 `$S_BEFORE` 里的子目录名，记为 `$CONV_ID`
 11. 如果 `~/.renlijia/users/$SCOPE/conversations/$CONV_ID/messages.jsonl` 中还没有 `subtype == "compact_boundary"` 的记录，最多追加 2 轮与第 8 步相同格式的压力消息；每轮后等待 `tauri-pilot aijia wait-reply --timeout 600`
-12. 发送追问消息：`请根据前文输出压缩质量验收报告，只回复以下字段：目标=；已确认事实=；已排除误判=；下一步=；质量判断=QUALITY-COMPACT-FOLLOWUP-OK`
+12. 发送追问消息：`请根据前文输出压缩质量验收报告，只回复以下字段：目标=（必须包含 QUALITY-COMPACT-GOAL-AUTO-ONLY）；已确认事实=（必须包含 QUALITY-COMPACT-EVIDENCE-V2-NONSTREAM 和 QUALITY-COMPACT-MERGE-80F32CAE）；已排除误判=（必须包含 QUALITY-COMPACT-EXCLUDE-MANUAL-PATH）；下一步=（必须包含 QUALITY-COMPACT-NEXT-TRIGGER-FIRST）；质量判断=QUALITY-COMPACT-FOLLOWUP-OK`
 13. 等待 AI 完整回复：`tauri-pilot aijia wait-reply --timeout 600`
 14. 打开 `~/.renlijia/users/$SCOPE/conversations/$CONV_ID/messages.jsonl`
 15. 在 `messages.jsonl` 中定位最新一条 `subtype == "compact_boundary"` 的记录，记为 `$MSG_BOUNDARY`
@@ -595,7 +596,7 @@ transcript 解析口径：`messages.jsonl` 和 `compact_boundaries.jsonl` 的一
    ```
 15. 每轮发送后等待 AI 完整回复：`tauri-pilot aijia wait-reply --timeout 600`
 16. 如果 `~/.renlijia/users/$SCOPE/conversations/$CONV_ID/messages.jsonl` 中还没有 `subtype == "compact_boundary"` 的记录，最多追加 2 轮与第 14 步相同格式的压力消息；每轮后等待 `tauri-pilot aijia wait-reply --timeout 600`
-17. 发送追问消息：`请根据前文只回复四行：早期事实=；验证对象=；已排除误判=；质量判断=ROUND30-COMPACT-FOLLOWUP-OK`
+17. 发送追问消息：`请根据前文只回复四行：早期事实=（必须包含 ROUND30-COMPACT-EARLY-EXCLUSION）；验证对象=（必须包含 ROUND30-COMPACT-AUTO-ONLY）；已排除误判=登录页白屏已排除；质量判断=ROUND30-COMPACT-FOLLOWUP-OK`
 18. 等待 AI 完整回复：`tauri-pilot aijia wait-reply --timeout 600`
 19. 打开 `~/.renlijia/users/$SCOPE/conversations/$CONV_ID/messages.jsonl`
 20. 在 `messages.jsonl` 中定位最新一条 `subtype == "compact_boundary"` 的记录，记为 `$MSG_BOUNDARY`
@@ -673,7 +674,7 @@ transcript 解析口径：`messages.jsonl` 和 `compact_boundaries.jsonl` 的一
    ```
 21. 每轮发送后等待 AI 完整回复：`tauri-pilot aijia wait-reply --timeout 600`
 22. 如果 `~/.renlijia/users/$SCOPE/conversations/$CONV_ID/messages.jsonl` 中还没有 `subtype == "compact_boundary"` 的记录，最多追加 2 轮与第 20 步相同格式的压力消息；每轮后等待 `tauri-pilot aijia wait-reply --timeout 600`
-23. 发送追问消息：`请根据前文和工具读取证据，只回复三行：案例=；尾部决定=；质量判断=TOOL-ARTIFACT-FOLLOWUP-OK`
+23. 发送追问消息：`请根据前文和工具读取证据，只回复三行：案例=（必须包含 TOOL-ARTIFACT-CASE-ID=TA-2026-0604）；尾部决定=（必须包含 TOOL-ARTIFACT-TAIL-DECISION=KEEP-REMOTE-LOGS）；质量判断=TOOL-ARTIFACT-FOLLOWUP-OK`
 24. 等待 AI 完整回复：`tauri-pilot aijia wait-reply --timeout 600`
 25. 打开 `~/.renlijia/users/$SCOPE/conversations/$CONV_ID/messages.jsonl`
 26. 在 `messages.jsonl` 中定位最新一条 `subtype == "compact_boundary"` 的记录，记为 `$MSG_BOUNDARY`
@@ -782,6 +783,77 @@ transcript 解析口径：`messages.jsonl` 和 `compact_boundaries.jsonl` 的一
 - `$SUMMARY_TRANSCRIPT_PATH` 字符串不以 `$CONV_ID/messages.jsonl` 开头
 - 如果 `$BOUNDARY_INDEX` 存在，`$BOUNDARY_INDEX.summary_text` 字段 JSON 序列化字符串包含字面值 `完整的对话记录在：`
 - 如果 `$BOUNDARY_INDEX` 存在，`$BOUNDARY_INDEX.summary_text` 字段 JSON 序列化字符串包含 `$SUMMARY_TRANSCRIPT_PATH`
+- 如果 `$CONFIG_CONTEXT_WINDOW_WAS_PRESENT == true`，`~/.renlijia/users/$SCOPE/config.json` 的 `contextWindow == $CONTEXT_WINDOW_BEFORE`
+- 如果 `$CONFIG_CONTEXT_WINDOW_WAS_PRESENT == false`，`~/.renlijia/users/$SCOPE/config.json` 中不存在字段 `contextWindow`
+
+---
+
+## 意图-上下文压缩-015: 接近窗口，提前压缩可解释
+
+**场景**
+用户在同一会话里逐步堆积长历史，历史尚未明显超过普通自动压缩阈值，但下一轮输出和工具增长已经可能把上下文推爆。应用应提前自动压缩，并在日志里留下可解释的 `predictive_growth` 决策证据；压缩后继续追问时，摘要仍保留用户声明的关键事实。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 确认当前应用日志可读取：如果 runner 启动应用时把 `pnpm dev:with-pilot` 输出重定向到 `/tmp/aijia-tauri-dev.log`，记为 `$APP_LOG=/tmp/aijia-tauri-dev.log`；如果没有任何可读取的当前应用日志文件，本意图记录为 `SKIPPED`
+3. 推断当前 scope：从 `tauri-pilot aijia where --json` 取当前登录用户 scope，记为 `$SCOPE`
+4. 记录现有所有对话 ID：读取 `~/.renlijia/users/$SCOPE/conversations/` 下已有子目录名，记为集合 `$S_BEFORE`
+5. 读取 `~/.renlijia/users/$SCOPE/config.json` 的 `contextWindow` 原值；如果字段存在，记 `$CONFIG_CONTEXT_WINDOW_WAS_PRESENT == true` 且原值为 `$CONTEXT_WINDOW_BEFORE`；如果字段不存在，记 `$CONFIG_CONTEXT_WINDOW_WAS_PRESENT == false`
+6. 临时把 `~/.renlijia/users/$SCOPE/config.json` 的 `contextWindow` 写为字符串 `"64000"`
+7. 记录 `$APP_LOG` 当前文件大小，记为 `$LOG_OFFSET_BEFORE`
+8. 新建空对话：`tauri-pilot aijia new-task`
+9. 准备压力文本 `/tmp/aijia-context-compact-predictive-block.txt`：写入固定句子，文件大小控制在 `38 KB` 到 `39 KB` 之间，每 1 KB 至少包含一次字面量 `CTX-COMPACT-PREDICTIVE-PRESSURE`
+10. 连续执行 3 轮发送；第 N 轮先把下面这段文字输入到输入框，再将 `/tmp/aijia-context-compact-predictive-block.txt` 的完整内容按 `<= 20 KB` 分块追加到同一个输入框，全部追加完成后点击发送：
+   ```
+   这是上下文压缩预测触发压力轮 N。
+   关键事实=PREDICTIVE-COMPACT-FACT=下一步只允许走灰度发布。
+   已排除误判=PREDICTIVE-COMPACT-EXCLUDE=压力文本不是用户需求。
+   请只回复：已收到 PREDICTIVE-COMPACT-ROUND-N。不要调用工具，不要总结压力文本。
+   ```
+11. 每轮发送后等待 AI 完整回复：`tauri-pilot aijia wait-reply --timeout 600`
+12. 找到本轮新建的对话 ID：在 `~/.renlijia/users/$SCOPE/conversations/` 下取 `mtime` 最新且不在 `$S_BEFORE` 里的子目录名，记为 `$CONV_ID`
+13. 打开 `~/.renlijia/users/$SCOPE/conversations/$CONV_ID/messages.jsonl`
+14. 在 `messages.jsonl` 中定位最新一条 `subtype == "compact_boundary"` 的记录，记为 `$MSG_BOUNDARY`
+15. 在 `$MSG_BOUNDARY` 之后定位第一条 `isCompactSummary == true` 的 user 记录，记为 `$SUMMARY_MSG`
+16. 从 `$APP_LOG` 的 `$LOG_OFFSET_BEFORE` 之后读取日志，定位包含 `[auto-compact][decision-v2]` 且包含 `conv=$CONV_ID` 的最后一行，记为 `$DECISION_LOG`
+17. 发送追问消息：`请根据前文只回复三行：发布策略=（必须包含原始标记 PREDICTIVE-COMPACT-FACT）；已排除=（必须包含原始标记 PREDICTIVE-COMPACT-EXCLUDE）；质量标记=PREDICTIVE-COMPACT-FOLLOWUP-OK`
+18. 等待 AI 完整回复：`tauri-pilot aijia wait-reply --timeout 600`
+19. 在 `messages.jsonl` 中定位第 17 步追问对应的 user 记录，记为 `$FOLLOWUP_USER`
+20. 在 `$FOLLOWUP_USER` 之后定位第一条 assistant 记录，记为 `$FOLLOWUP_ASSISTANT`
+21. 恢复 `~/.renlijia/users/$SCOPE/config.json`：如果 `$CONFIG_CONTEXT_WINDOW_WAS_PRESENT == true`，把 `contextWindow` 恢复为 `$CONTEXT_WINDOW_BEFORE`；如果 `$CONFIG_CONTEXT_WINDOW_WAS_PRESENT == false`，移除 `contextWindow` 字段
+
+**验收标准**
+
+- 文件 `/tmp/aijia-context-compact-predictive-block.txt` 存在
+- 文件 `/tmp/aijia-context-compact-predictive-block.txt` 大小在 `38 KB` 到 `39 KB` 之间
+- 文件 `~/.renlijia/users/$SCOPE/conversations/$CONV_ID/messages.jsonl` 存在
+- `messages.jsonl` 每条记录都是可解析 JSON
+- `$MSG_BOUNDARY.role == "system"`
+- `$MSG_BOUNDARY.subtype == "compact_boundary"`
+- `$MSG_BOUNDARY.compactMetadata.trigger == "auto"`
+- `$SUMMARY_MSG.role == "user"`
+- `$SUMMARY_MSG.isCompactSummary == true`
+- `$SUMMARY_MSG.content` 字段 JSON 序列化字符串包含字面量 `<context>`
+- `$SUMMARY_MSG.content` 字段 JSON 序列化字符串包含字面量 `PREDICTIVE-COMPACT-FACT`
+- `$SUMMARY_MSG.content` 字段 JSON 序列化字符串包含字面量 `PREDICTIVE-COMPACT-EXCLUDE`
+- `$DECISION_LOG` 包含字面量 `[auto-compact][decision-v2]`
+- `$DECISION_LOG` 包含字面量 `conv=$CONV_ID`
+- `$DECISION_LOG` 包含字面量 `should_run=true`
+- `$DECISION_LOG` 包含字面量 `reason=predictive_growth`
+- `$DECISION_LOG` 包含字面量 `estimated_tokens=`
+- `$DECISION_LOG` 包含字面量 `freed_tokens_estimate=`
+- `$DECISION_LOG` 包含字面量 `adjusted_tokens=`
+- `$DECISION_LOG` 包含字面量 `threshold_tokens=`
+- `$DECISION_LOG` 包含字面量 `predictive_threshold_tokens=`
+- `$FOLLOWUP_USER` 位于 `$MSG_BOUNDARY` 之后
+- `$FOLLOWUP_ASSISTANT.role == "assistant"`
+- `$FOLLOWUP_ASSISTANT` 位于 `$FOLLOWUP_USER` 之后
+- `$FOLLOWUP_ASSISTANT.content` 字段 JSON 序列化字符串包含字面量 `PREDICTIVE-COMPACT-FOLLOWUP-OK`
+- `$FOLLOWUP_ASSISTANT.content` 字段 JSON 序列化字符串包含字面量 `PREDICTIVE-COMPACT-FACT`
+- `$FOLLOWUP_ASSISTANT.content` 字段 JSON 序列化字符串包含字面量 `PREDICTIVE-COMPACT-EXCLUDE`
+- `$FOLLOWUP_ASSISTANT.content` 字段 JSON 序列化字符串不包含字面量 `CTX-COMPACT-PREDICTIVE-PRESSURE`
+- `$FOLLOWUP_ASSISTANT.content` 字段 JSON 序列化字符串不包含字面量 `请重新提供前文`
+- `$FOLLOWUP_ASSISTANT.content` 字段 JSON 序列化字符串不包含字面量 `我不记得`
 - 如果 `$CONFIG_CONTEXT_WINDOW_WAS_PRESENT == true`，`~/.renlijia/users/$SCOPE/config.json` 的 `contextWindow == $CONTEXT_WINDOW_BEFORE`
 - 如果 `$CONFIG_CONTEXT_WINDOW_WAS_PRESENT == false`，`~/.renlijia/users/$SCOPE/config.json` 中不存在字段 `contextWindow`
 

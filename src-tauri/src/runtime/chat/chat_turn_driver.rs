@@ -12,8 +12,8 @@ use crate::runtime::agent::task_notification::{QueuedNotification, TaskNotificat
 use crate::runtime::cancellation::{CancellationReason, CancellationToken};
 use crate::runtime::chat::compact_client::CompactSummaryClient;
 use crate::runtime::chat::compaction::{
-    append_transcript_path_hint, compact_transcript_path_for_conversation_dir, AutoCompactConfig,
-    CompactTrigger,
+    append_literal_anchor_hints, append_transcript_path_hint,
+    compact_transcript_path_for_conversation_dir, AutoCompactConfig, CompactTrigger,
 };
 use crate::runtime::chat::context_builder::build_iteration_context;
 use crate::runtime::chat::multimodal::{
@@ -2019,6 +2019,7 @@ impl RuntimeChatTurnDriver {
         'turn: for iteration in 0..config.max_iterations {
             let mut preprocess_config = PreprocessConfig::default();
             preprocess_config.context_window = resolved_context_window;
+            preprocess_config.query_source = Some("chat_turn".to_string());
             preprocess_config.auto_compact =
                 AutoCompactConfig::with_context_window(resolved_context_window);
             // R3.2 boundary view isolation: load latest compact boundary so
@@ -2085,6 +2086,7 @@ impl RuntimeChatTurnDriver {
                                         Some(compact_run_id.as_str()),
                                     )
                                     .await?;
+                                let summary = append_literal_anchor_hints(summary, &messages);
                                 Ok(append_transcript_path_hint(
                                     summary,
                                     compact_transcript_path.as_deref(),
@@ -2316,6 +2318,7 @@ impl RuntimeChatTurnDriver {
                     let recovery_stage_run = turn.run_id().clone();
                     let mut recovery_preprocess_config = PreprocessConfig::default();
                     recovery_preprocess_config.context_window = resolved_context_window;
+                    recovery_preprocess_config.query_source = Some("ptl_recovery".to_string());
                     recovery_preprocess_config.auto_compact =
                         AutoCompactConfig::with_context_window(resolved_context_window);
                     recovery_preprocess_config.project_instruction_content =
@@ -2368,6 +2371,8 @@ impl RuntimeChatTurnDriver {
                                                 Some(compact_run_id.as_str()),
                                             )
                                             .await?;
+                                        let summary =
+                                            append_literal_anchor_hints(summary, &messages);
                                         Ok(append_transcript_path_hint(
                                             summary,
                                             compact_transcript_path.as_deref(),

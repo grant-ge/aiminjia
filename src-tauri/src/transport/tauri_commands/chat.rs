@@ -24,8 +24,9 @@ use crate::runtime::agent::AgentRuntime;
 use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::chat::compact_client::CompactSummaryClient;
 use crate::runtime::chat::compaction::{
-    append_transcript_path_hint, compact_transcript_path_for_conversation_dir, AutoCompactConfig,
-    AutoCompactState, CompactTrigger,
+    append_literal_anchor_hints, append_transcript_path_hint,
+    compact_transcript_path_for_conversation_dir, AutoCompactConfig, AutoCompactState,
+    CompactTrigger,
 };
 use crate::runtime::chat::preprocess::{
     prepare_messages_for_llm, PreprocessConfig, PreprocessRuntimeState, PreprocessTrigger,
@@ -3081,6 +3082,7 @@ impl TauriChatCommandAdapter {
             resolve_context_window(llm_settings.context_window, Some(&llm_settings.cloud_model));
         let mut preprocess_config = PreprocessConfig::default();
         preprocess_config.context_window = resolved_context_window;
+        preprocess_config.query_source = Some("manual_compact".to_string());
         preprocess_config.auto_compact =
             AutoCompactConfig::with_context_window(resolved_context_window);
         preprocess_config.compact_boundary = executor
@@ -3135,6 +3137,7 @@ impl TauriChatCommandAdapter {
                         )
                         .await
                         .map(|summary| {
+                            let summary = append_literal_anchor_hints(summary, &summary_messages);
                             append_transcript_path_hint(summary, compact_transcript_path.as_deref())
                         })
                 }
