@@ -343,6 +343,19 @@
       "minutesAgo": "{{count}}m ago",
       "hoursAgo": "{{count}}h ago"
     },
+    "devGateway": {
+      "title": "Environment",
+      "custom": "Custom",
+      "customTitle": "Custom environment host",
+      "customHint": "Enter a gateway origin (e.g. https://host:port, no path). Switching logs you out and requires re-login.",
+      "customPlaceholder": "https://custom-host",
+      "invalidHost": "Invalid host. Enter an origin like https://host (no path).",
+      "switchTarget": "Switches to",
+      "switchFailed": "Failed to switch environment",
+      "confirmTitle": "Switch environment",
+      "confirmRelogin": "Switching to \"{{env}}\" ({{host}}) will log you out and require re-login. Continue?",
+      "confirmButton": "Switch"
+    },
     "about": {
       "icon": "icon",
       "version": "Version",

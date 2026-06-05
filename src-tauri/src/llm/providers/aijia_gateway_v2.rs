@@ -14,7 +14,10 @@ use crate::llm::streaming::{
     StreamBox, StreamEvent, ThinkingConfig, TokenUsage, ToolCall,
 };
 
-const AIJIA_GATEWAY_V2_RESPONSES_URL: &str = "https://ai-tenant.renlijia.com/aijia/v2/ai/responses";
+/// Path of the v2 responses route. The origin is resolved per-request via
+/// [`crate::gateway::gateway_host`] so the dev gateway switch takes effect
+/// (production host in release builds).
+const AIJIA_GATEWAY_V2_RESPONSES_PATH: &str = "/aijia/v2/ai/responses";
 
 pub struct AijiaGatewayV2Provider {
     client: Client,
@@ -58,17 +61,17 @@ impl LlmProviderTrait for AijiaGatewayV2Provider {
     }
 
     async fn stream(&self, request: LlmRequest) -> Result<StreamBox> {
+        let url = format!(
+            "{}{}",
+            crate::gateway::gateway_host(),
+            AIJIA_GATEWAY_V2_RESPONSES_PATH
+        );
         let body = build_aijia_request_for_route(request, &self.model_type, self.use_tools);
         let gate_log_id = crate::llm::gate_log::next_request_id();
-        crate::llm::gate_log::record_request(
-            &gate_log_id,
-            self.name(),
-            AIJIA_GATEWAY_V2_RESPONSES_URL,
-            &body,
-        );
+        crate::llm::gate_log::record_request(&gate_log_id, self.name(), &url, &body);
         let response = self
             .client
-            .post(AIJIA_GATEWAY_V2_RESPONSES_URL)
+            .post(&url)
             .bearer_auth(&self.session_key)
             .json(&body)
             .send()

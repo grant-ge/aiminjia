@@ -2343,6 +2343,34 @@ export function runtimeDiagnostics(): Promise<RuntimeDiagnostics> {
 }
 
 // ---------------------------------------------------------------------------
+// Dev-only gateway switcher
+//
+// These commands exist only in debug builds (the Rust side gates them on
+// `#[cfg(debug_assertions)]`). Callers must guard on `import.meta.env.DEV`;
+// invoking them in a release build rejects with "command not found".
+// ---------------------------------------------------------------------------
+
+export interface GatewayPreset {
+  label: string
+  host: string
+}
+
+export interface DevGatewayState {
+  currentHost: string
+  isOverride: boolean
+  presets: GatewayPreset[]
+}
+
+export function getDevGateway(): Promise<DevGatewayState> {
+  return invoke<DevGatewayState>('get_dev_gateway')
+}
+
+/** Switch the gateway host. An empty string resets to production. */
+export function setDevGateway(host: string): Promise<DevGatewayState> {
+  return invoke<DevGatewayState>('set_dev_gateway', { host })
+}
+
+// ---------------------------------------------------------------------------
 // DingTalk Commands
 // ---------------------------------------------------------------------------
 

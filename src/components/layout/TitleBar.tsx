@@ -1,6 +1,7 @@
 import React from 'react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { UpdateAvailableLink } from './UpdateAvailableLink'
+import { TitleBarEnvSwitcher } from './TitleBarEnvSwitcher'
 import { useUpdaterStore } from '@/lib/updaterStore'
 
 function handleDragStart(e: React.MouseEvent) {
@@ -98,6 +99,7 @@ export function TitleBar() {
             <UpdateAvailableLink />
           </div>
         ) : null}
+        {isDev ? <TitleBarEnvSwitcher /> : null}
         {isDev ? <DevBadge /> : null}
       </div>
     )
@@ -114,6 +116,7 @@ export function TitleBar() {
       <div onMouseDown={(e) => e.stopPropagation()}>
         <UpdateAvailableLink />
       </div>
+      {isDev ? <TitleBarEnvSwitcher /> : null}
       {isDev ? <DevBadge /> : null}
       <WindowControls />
     </div>

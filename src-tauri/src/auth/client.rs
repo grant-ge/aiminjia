@@ -18,7 +18,12 @@ use serde_json::json;
 
 use super::state::{CloudModelInfo, TenantInfo, UserInfo};
 
-pub const BASE_URL: &str = "https://ai-tenant.renlijia.com";
+/// Gateway origin for all auth/billing endpoints. Resolves to the production
+/// host in release builds; in debug builds it honors the dev gateway override.
+/// See [`crate::gateway`].
+pub fn base_url() -> String {
+    crate::gateway::gateway_host()
+}
 
 /// Raw login/refresh response from the API (snake_case fields).
 #[derive(Debug, Deserialize)]
@@ -140,7 +145,7 @@ impl AuthClient {
 
     /// Login with username and password.
     pub async fn login(&self, username: &str, password: &str) -> Result<AuthResponse> {
-        let url = format!("{}/auth/login", BASE_URL);
+        let url = format!("{}/auth/login", base_url());
         let resp = self
             .client
             .post(&url)
@@ -161,7 +166,7 @@ impl AuthClient {
 
     /// Refresh access token using refresh token.
     pub async fn refresh_token(&self, refresh_token: &str) -> Result<AuthResponse> {
-        let url = format!("{}/auth/refresh", BASE_URL);
+        let url = format!("{}/auth/refresh", base_url());
         let resp = self
             .client
             .post(&url)
@@ -189,7 +194,7 @@ impl AuthClient {
         access_token: &str,
         device_id: Option<&str>,
     ) -> Result<SessionKeyResponse> {
-        let url = format!("{}/auth/session-keys", BASE_URL);
+        let url = format!("{}/auth/session-keys", base_url());
         let mut req = self
             .client
             .post(&url)
@@ -228,7 +233,7 @@ impl AuthClient {
     /// goes to a single endpoint, so all entries get `model_type =
     /// "chat"` as a future-proof default.
     pub async fn list_models(&self, session_key: &str) -> Result<Vec<CloudModelInfo>> {
-        let url = format!("{}/anthropic/v1/models", BASE_URL);
+        let url = format!("{}/anthropic/v1/models", base_url());
         log::info!(
             "[list_models] GET {} session_key_len={}",
             url,
@@ -300,7 +305,7 @@ impl AuthClient {
         old_password: &str,
         new_password: &str,
     ) -> Result<()> {
-        let url = format!("{}/auth/password", BASE_URL);
+        let url = format!("{}/auth/password", base_url());
         let resp = self
             .client
             .put(&url)
@@ -320,7 +325,7 @@ impl AuthClient {
 
     /// Logout from the server (revoke all refresh tokens).
     pub async fn logout(&self, access_token: &str) -> Result<()> {
-        let url = format!("{}/auth/logout", BASE_URL);
+        let url = format!("{}/auth/logout", base_url());
         let resp = self
             .client
             .post(&url)
@@ -340,7 +345,7 @@ impl AuthClient {
     /// Request a verification code via SMS for registration.
     /// Hits tenant-portal `/api/auth/send-code`.
     pub async fn send_sms_code(&self, phone: &str) -> Result<()> {
-        let url = format!("{}/api/auth/send-code", BASE_URL);
+        let url = format!("{}/api/auth/send-code", base_url());
         let resp = self
             .client
             .post(&url)
@@ -358,7 +363,7 @@ impl AuthClient {
     /// Request a verification code via email for registration.
     /// Hits tenant-portal `/api/auth/send-email-code`.
     pub async fn send_email_code(&self, email: &str) -> Result<()> {
-        let url = format!("{}/api/auth/send-email-code", BASE_URL);
+        let url = format!("{}/api/auth/send-email-code", base_url());
         let resp = self
             .client
             .post(&url)
@@ -388,7 +393,7 @@ impl AuthClient {
         password: &str,
         name: &str,
     ) -> Result<()> {
-        let url = format!("{}/api/auth/register", BASE_URL);
+        let url = format!("{}/api/auth/register", base_url());
         let resp = self
             .client
             .post(&url)
@@ -420,7 +425,7 @@ impl AuthClient {
         code: &str,
         password: &str,
     ) -> Result<()> {
-        let url = format!("{}/api/auth/reset-password", BASE_URL);
+        let url = format!("{}/api/auth/reset-password", base_url());
         let resp = self
             .client
             .post(&url)
@@ -444,7 +449,7 @@ impl AuthClient {
     /// Get current user + tenant profile (including latest branding).
     /// Uses session_key auth (Bearer), no token rotation.
     pub async fn get_profile(&self, session_key: &str) -> Result<(AuthUserInfo, AuthTenantInfo)> {
-        let url = format!("{}/v1/profile", BASE_URL);
+        let url = format!("{}/v1/profile", base_url());
         let resp = self
             .client
             .get(&url)
@@ -471,7 +476,7 @@ impl AuthClient {
         &self,
         session_key: &str,
     ) -> Result<crate::transport::tauri_commands::billing::BillingSummary> {
-        let url = format!("{}/v1/billing/summary", BASE_URL);
+        let url = format!("{}/v1/billing/summary", base_url());
         let resp = self
             .client
             .get(&url)
@@ -495,7 +500,7 @@ impl AuthClient {
     ) -> Result<crate::transport::tauri_commands::billing::UsageRecordsPage> {
         let url = format!(
             "{}/v1/billing/usage-records?page={}&size={}",
-            BASE_URL, page, size
+            base_url(), page, size
         );
         let resp = self
             .client
