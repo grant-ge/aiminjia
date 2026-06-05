@@ -15,7 +15,10 @@
 //!   moves or re-exports the implementation through an appropriate seam (e.g.
 //!   `RuntimeLlmExecutor`).
 
+use std::path::{Path, PathBuf};
+
 use crate::llm::streaming::ChatMessage;
+use crate::runtime::chat::tool_result_artifact::is_persisted_tool_result_message;
 use serde::{Deserialize, Serialize};
 
 /// Non-destructive context decay: reduce token weight of older tool outputs.
@@ -223,6 +226,14 @@ pub fn microcompact(
                 .and_then(|value| value.as_str())
                 .map(str::len)
                 .unwrap_or(0);
+            if message
+                .get("content")
+                .and_then(|value| value.as_str())
+                .map(is_persisted_tool_result_message)
+                .unwrap_or(false)
+            {
+                return message.clone();
+            }
             freed_chars += original_len;
 
             let mut cleared = message.clone();
@@ -325,6 +336,41 @@ impl AutoCompactState {
 
 pub fn should_auto_compact(messages: &[serde_json::Value], config: &AutoCompactConfig) -> bool {
     estimate_total_chars(messages) >= config.threshold_chars
+}
+
+pub fn append_transcript_path_hint(summary_text: String, transcript_path: Option<&str>) -> String {
+    let Some(path) = transcript_path
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+    else {
+        return summary_text;
+    };
+    if summary_text.contains(path) {
+        return summary_text;
+    }
+
+    format!(
+        "{}\n\n如果需要对摘要中的某个信息查证原文，完整的对话记录在：{}",
+        summary_text.trim_end(),
+        path
+    )
+}
+
+pub fn compact_transcript_path_for_conversation_dir(conversation_dir: &Path) -> String {
+    absolute_path(conversation_dir.join("messages.jsonl"))
+        .to_string_lossy()
+        .to_string()
+}
+
+fn absolute_path(path: PathBuf) -> PathBuf {
+    if path.is_absolute() {
+        return path;
+    }
+
+    match std::env::current_dir() {
+        Ok(current_dir) => current_dir.join(path),
+        Err(_) => path,
+    }
 }
 
 fn is_ptl_retry_context_message(message: &serde_json::Value) -> bool {

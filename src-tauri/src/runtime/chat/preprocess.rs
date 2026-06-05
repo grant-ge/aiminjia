@@ -9,6 +9,9 @@ use crate::runtime::chat::compaction::{
     build_compact_boundary_record, compact_messages_via_llm, microcompact, AutoCompactConfig,
     AutoCompactState, CompactBoundaryRecord, CompactTrigger, MicrocompactConfig,
 };
+use crate::runtime::chat::tool_result_artifact::{
+    build_compaction_evidence_messages, is_persisted_tool_result_message, CompactionEvidenceConfig,
+};
 use crate::runtime::chat::turn_config::TurnError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -255,6 +258,9 @@ fn collect_tool_message_meta_with_recent(
 
 fn can_trim_or_collapse(meta: &ToolMessageMeta, preserved_tool_names: &HashSet<String>) -> bool {
     if meta.is_error || meta.has_generated_file || meta.is_recent {
+        return false;
+    }
+    if is_persisted_tool_result_message(&meta.content) {
         return false;
     }
     if meta.content.starts_with("[collapsed]") {
@@ -620,9 +626,22 @@ where
     F: FnMut(Vec<Value>) -> Fut,
     Fut: Future<Output = Result<String, TurnError>>,
 {
+    let input_message_count = messages.len();
+    let input_chars = estimate_total_chars(&messages);
     let input_signature = message_signature(&messages);
     let input_has_compact_artifacts = has_existing_compact_artifacts(&messages);
     if input_has_compact_artifacts && compact_artifacts_end_at_preserved_tail(&messages) {
+        log::info!(
+            "[auto-compact][skip] conv={} trigger={:?} reason=existing_artifacts_at_preserved_tail input_messages={} input_chars={} threshold_chars={} context_window={} failures={}/{}",
+            conversation_id,
+            trigger,
+            input_message_count,
+            input_chars,
+            config.auto_compact.threshold_chars,
+            config.context_window,
+            compact_state.consecutive_failures,
+            config.auto_compact.consecutive_failure_limit,
+        );
         let result = PreprocessResult {
             messages,
             executed_stages: Vec::new(),
@@ -642,6 +661,17 @@ where
     if trigger == PreprocessTrigger::PromptTooLongRecovery
         && runtime_state.last_prompt_too_long_signature == Some(input_signature)
     {
+        log::warn!(
+            "[auto-compact][skip] conv={} trigger={:?} reason=repeated_prompt_too_long_signature input_messages={} input_chars={} threshold_chars={} context_window={} failures={}/{}",
+            conversation_id,
+            trigger,
+            input_message_count,
+            input_chars,
+            config.auto_compact.threshold_chars,
+            config.context_window,
+            compact_state.consecutive_failures,
+            config.auto_compact.consecutive_failure_limit,
+        );
         let result = PreprocessResult {
             messages,
             executed_stages: Vec::new(),
@@ -666,6 +696,8 @@ where
     } else {
         messages
     };
+    let active_message_count = current_messages.len();
+    let active_chars = estimate_total_chars(&current_messages);
 
     // R3.2: Boundary 视图隔离 — only process messages after the last compact boundary.
     // This prevents re-processing already-compacted history and aligns with
@@ -685,6 +717,8 @@ where
             }
         }
     }
+    let boundary_view_message_count = current_messages.len();
+    let boundary_view_chars = estimate_total_chars(&current_messages);
 
     // Stage 0: Strip image content before any char counting.
     // Prevents large base64 image data from inflating thresholds.
@@ -692,44 +726,130 @@ where
     if images_stripped {
         current_messages = stripped_messages;
     }
+    let after_strip_chars = estimate_total_chars(&current_messages);
+    let compact_evidence_source_messages = current_messages.clone();
+    let evidence_source_message_count = compact_evidence_source_messages.len();
+    let evidence_source_chars = estimate_total_chars(&compact_evidence_source_messages);
 
     let budget_result = apply_tool_result_budget(&current_messages, &config.budget);
+    let budget_executed = budget_result.executed;
+    let budget_tokens_freed_estimate = budget_result.tokens_freed_estimate;
     if budget_result.executed {
         current_messages = budget_result.messages;
         executed_stages.push(PreprocessStage::ToolResultBudget);
     }
+    let after_budget_chars = estimate_total_chars(&current_messages);
 
     let microcompact_result = microcompact(&current_messages, &config.microcompact);
+    let microcompact_executed = microcompact_result.executed;
+    let microcompact_tokens_freed_estimate = microcompact_result.tokens_freed_estimate;
     if microcompact_result.executed {
         current_messages = microcompact_result.messages;
         executed_stages.push(PreprocessStage::Microcompact);
     }
+    let after_microcompact_chars = estimate_total_chars(&current_messages);
 
     let collapse_result = collapse_tool_results(&current_messages, &config.collapse);
+    let collapse_executed = collapse_result.executed;
+    let collapsed_count = collapse_result.collapsed_count;
     if collapse_result.executed {
         current_messages = collapse_result.messages;
         executed_stages.push(PreprocessStage::Collapse);
     }
+    let after_collapse_chars = estimate_total_chars(&current_messages);
 
-    let auto_compact_allowed = !compact_state.is_circuit_broken(&config.auto_compact)
-        && !(trigger == PreprocessTrigger::PromptTooLongRecovery && stop_hook_active);
+    let circuit_broken = compact_state.is_circuit_broken(&config.auto_compact);
+    let ptl_stop_hook_blocked =
+        trigger == PreprocessTrigger::PromptTooLongRecovery && stop_hook_active;
+    let auto_compact_allowed = !circuit_broken && !ptl_stop_hook_blocked;
     let should_run_auto_compact = auto_compact_allowed
         && match trigger {
             PreprocessTrigger::Normal => {
-                estimate_total_chars(&current_messages) >= config.auto_compact.threshold_chars
+                after_collapse_chars >= config.auto_compact.threshold_chars
             }
             PreprocessTrigger::ManualCompact => true,
             PreprocessTrigger::PromptTooLongRecovery => true,
         };
+    let decision_reason = if should_run_auto_compact {
+        "will_run"
+    } else if circuit_broken {
+        "circuit_broken"
+    } else if ptl_stop_hook_blocked {
+        "ptl_stop_hook_active"
+    } else if trigger == PreprocessTrigger::Normal
+        && after_collapse_chars < config.auto_compact.threshold_chars
+    {
+        "below_threshold"
+    } else {
+        "not_required"
+    };
+    log::info!(
+        "[auto-compact][decision] conv={} trigger={:?} should_run={} reason={} input_messages={} input_chars={} active_messages={} active_chars={} boundary_view_messages={} boundary_view_chars={} images_stripped={} after_strip_chars={} evidence_messages={} evidence_chars={} budget_executed={} budget_tokens_freed_estimate={} after_budget_chars={} microcompact_executed={} microcompact_tokens_freed_estimate={} after_microcompact_chars={} collapse_executed={} collapsed_count={} after_collapse_chars={} threshold_chars={} context_window={} circuit_broken={} failures={}/{} stop_hook_active={} input_has_compact_artifacts={} loaded_boundary={} stages={:?}",
+        conversation_id,
+        trigger,
+        should_run_auto_compact,
+        decision_reason,
+        input_message_count,
+        input_chars,
+        active_message_count,
+        active_chars,
+        boundary_view_message_count,
+        boundary_view_chars,
+        images_stripped,
+        after_strip_chars,
+        evidence_source_message_count,
+        evidence_source_chars,
+        budget_executed,
+        budget_tokens_freed_estimate,
+        after_budget_chars,
+        microcompact_executed,
+        microcompact_tokens_freed_estimate,
+        after_microcompact_chars,
+        collapse_executed,
+        collapsed_count,
+        after_collapse_chars,
+        config.auto_compact.threshold_chars,
+        config.context_window,
+        circuit_broken,
+        compact_state.consecutive_failures,
+        config.auto_compact.consecutive_failure_limit,
+        stop_hook_active,
+        input_has_compact_artifacts,
+        config.compact_boundary.is_some(),
+        executed_stages,
+    );
 
     let mut compact_boundary = None;
     let mut post_compact_system_segments = Vec::new();
     let mut retry = PreprocessRetryAction::None;
     if should_run_auto_compact {
-        match summary_fn(current_messages.clone()).await {
+        let compaction_input = build_compaction_evidence_messages(
+            &compact_evidence_source_messages,
+            &CompactionEvidenceConfig::default(),
+        );
+        let summary_input_message_count = compaction_input.len();
+        let summary_input_chars = estimate_total_chars(&compaction_input);
+        log::info!(
+            "[auto-compact][summary-start] conv={} trigger={:?} summary_input_messages={} summary_input_chars={} evidence_messages={} evidence_chars={} post_pipeline_messages={} post_pipeline_chars={} threshold_chars={} context_window={}",
+            conversation_id,
+            trigger,
+            summary_input_message_count,
+            summary_input_chars,
+            evidence_source_message_count,
+            evidence_source_chars,
+            current_messages.len(),
+            after_collapse_chars,
+            config.auto_compact.threshold_chars,
+            config.context_window,
+        );
+        match summary_fn(compaction_input).await {
             Ok(summary_text) if !summary_text.trim().is_empty() => {
+                let summary_chars = summary_text.len();
                 let tail_message_id = latest_non_summary_message_id(&current_messages);
                 let output = compact_messages_via_llm(current_messages, summary_text.clone());
+                let pre_tokens = output.pre_tokens;
+                let post_tokens = output.post_tokens;
+                let messages_summarized = output.messages_summarized;
                 let mut output_messages = output.new_messages;
                 ensure_preserved_messages_have_ids(&mut output_messages);
                 let preserved_segment = build_preserved_segment(&output_messages);
@@ -757,6 +877,8 @@ where
                 if let Some(segment) = config.project_instruction_system_segment() {
                     post_compact_system_segments.push(segment);
                 }
+                let boundary_id = boundary_record.id.clone();
+                let boundary_tail_message_id = boundary_record.tail_message_id.clone();
                 compact_boundary = Some(boundary_record);
                 compact_state.record_success();
                 executed_stages.push(PreprocessStage::AutoCompact);
@@ -764,9 +886,59 @@ where
                     retry = PreprocessRetryAction::RetryTurn;
                     runtime_state.last_prompt_too_long_signature = Some(input_signature);
                 }
+                log::info!(
+                    "[auto-compact][summary-ok] conv={} trigger={:?} boundary_id={} summary_chars={} pre_tokens={} post_tokens={} messages_summarized={} output_messages={} tail_message_id={:?} failures_after={} retry={:?}",
+                    conversation_id,
+                    trigger,
+                    boundary_id,
+                    summary_chars,
+                    pre_tokens,
+                    post_tokens,
+                    messages_summarized,
+                    current_messages.len(),
+                    boundary_tail_message_id,
+                    compact_state.consecutive_failures,
+                    retry,
+                );
+                if trigger == PreprocessTrigger::PromptTooLongRecovery {
+                    log::info!(
+                        "[auto-compact][ptl-retry-ready] conv={} trigger={:?} boundary_id={} retry={:?}",
+                        conversation_id,
+                        trigger,
+                        boundary_id,
+                        retry,
+                    );
+                }
             }
             Ok(_) => {
                 compact_state.record_failure();
+                let circuit_now = compact_state.is_circuit_broken(&config.auto_compact);
+                log::warn!(
+                    "[auto-compact][summary-empty] conv={} trigger={:?} summary_input_messages={} summary_input_chars={} post_pipeline_chars={} threshold_chars={} failures={}/{} circuit_broken={} action={}",
+                    conversation_id,
+                    trigger,
+                    summary_input_message_count,
+                    summary_input_chars,
+                    after_collapse_chars,
+                    config.auto_compact.threshold_chars,
+                    compact_state.consecutive_failures,
+                    config.auto_compact.consecutive_failure_limit,
+                    circuit_now,
+                    if trigger == PreprocessTrigger::ManualCompact {
+                        "return_error"
+                    } else {
+                        "continue_without_boundary"
+                    },
+                );
+                if circuit_now {
+                    log::warn!(
+                        "[auto-compact][circuit-open] conv={} trigger={:?} reason=summary_empty failures={}/{}",
+                        conversation_id,
+                        trigger,
+                        compact_state.consecutive_failures,
+                        config.auto_compact.consecutive_failure_limit,
+                    );
+                }
                 if trigger == PreprocessTrigger::ManualCompact {
                     return Err(TurnError::LlmError(
                         "manual compact summary was empty".to_string(),
@@ -774,7 +946,37 @@ where
                 }
             }
             Err(err) => {
+                let err_text = err.to_string();
                 compact_state.record_failure();
+                let circuit_now = compact_state.is_circuit_broken(&config.auto_compact);
+                log::warn!(
+                    "[auto-compact][summary-error] conv={} trigger={:?} summary_input_messages={} summary_input_chars={} post_pipeline_chars={} threshold_chars={} failures={}/{} circuit_broken={} action={} error={}",
+                    conversation_id,
+                    trigger,
+                    summary_input_message_count,
+                    summary_input_chars,
+                    after_collapse_chars,
+                    config.auto_compact.threshold_chars,
+                    compact_state.consecutive_failures,
+                    config.auto_compact.consecutive_failure_limit,
+                    circuit_now,
+                    if trigger == PreprocessTrigger::ManualCompact {
+                        "return_error"
+                    } else {
+                        "continue_without_boundary"
+                    },
+                    preview_at_char_boundary(&err_text, 2_000),
+                );
+                if circuit_now {
+                    log::warn!(
+                        "[auto-compact][circuit-open] conv={} trigger={:?} reason=summary_error failures={}/{} error={}",
+                        conversation_id,
+                        trigger,
+                        compact_state.consecutive_failures,
+                        config.auto_compact.consecutive_failure_limit,
+                        preview_at_char_boundary(&err_text, 2_000),
+                    );
+                }
                 if trigger == PreprocessTrigger::ManualCompact {
                     return Err(err);
                 }

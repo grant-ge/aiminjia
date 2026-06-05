@@ -5,9 +5,12 @@ use app_lib::runtime::cancellation::CancellationToken;
 use app_lib::runtime::chat::compact_client::CompactSummaryClient;
 use app_lib::runtime::chat::compaction::{AutoCompactConfig, AutoCompactState, MicrocompactConfig};
 use app_lib::runtime::chat::preprocess::{
-    apply_tool_result_budget, prepare_messages_for_llm, CollapseConfig, PreprocessConfig,
-    PreprocessRetryAction, PreprocessRuntimeState, PreprocessStage, PreprocessTrigger,
-    ToolResultBudgetConfig,
+    apply_tool_result_budget, collapse_tool_results, prepare_messages_for_llm, CollapseConfig,
+    PreprocessConfig, PreprocessRetryAction, PreprocessRuntimeState, PreprocessStage,
+    PreprocessTrigger, ToolResultBudgetConfig,
+};
+use app_lib::runtime::chat::tool_result_artifact::{
+    build_persisted_tool_result_message, persist_tool_result_artifact,
 };
 use app_lib::runtime::chat::turn_config::{LlmStepInput, LlmStepResult, TurnError};
 use app_lib::runtime::chat::{ChatTurnRequest, RuntimeChatTurnDriver, RuntimeLlmExecutor};
@@ -49,6 +52,25 @@ fn tool_message(id: &str, name: &str, content: String) -> Value {
     })
 }
 
+fn persisted_tool_result_ref(id: &str, name: &str) -> String {
+    format!(
+        concat!(
+            "<persisted-tool-result tool_call_id=\"{}\" tool_name=\"{}\">\n",
+            "Full output saved to: /tmp/{}.txt\n",
+            "Original chars: 90000\n",
+            "Sha256: {}\n",
+            "Preview:\n",
+            "{}\n",
+            "</persisted-tool-result>"
+        ),
+        id,
+        name,
+        id,
+        "b".repeat(64),
+        "preview ".repeat(80)
+    )
+}
+
 fn normalize_created_at(messages: &[Value]) -> Vec<Value> {
     messages
         .iter()
@@ -70,6 +92,11 @@ fn normalize_created_at(messages: &[Value]) -> Vec<Value> {
                                 "tailMessageId".to_string(),
                                 Value::String("<message-id>".to_string()),
                             );
+                        }
+                        for key in ["postTokens", "tokensSaved"] {
+                            if metadata.contains_key(key) {
+                                metadata.insert(key.to_string(), Value::Number(0.into()));
+                            }
                         }
                         if let Some(preserved) = metadata
                             .get_mut("preservedSegment")
@@ -182,6 +209,69 @@ fn u3_budget_preserves_recent_error_and_generated_file_results() {
     );
 }
 
+#[test]
+fn u3_budget_preserves_persisted_tool_result_references() {
+    let artifact_ref = persisted_tool_result_ref("tc-artifact", "Bash");
+    let messages = vec![
+        assistant_tool_call("tc-artifact", "Bash"),
+        tool_message("tc-artifact", "Bash", artifact_ref.clone()),
+        assistant_tool_call("tc-plain", "Bash"),
+        tool_message("tc-plain", "Bash", "A".repeat(500)),
+    ];
+    let config = ToolResultBudgetConfig {
+        aggregate_char_budget: 700,
+        keep_recent_tool_results: 0,
+        preserved_tool_names: HashSet::new(),
+        replacement_preview_chars: 16,
+    };
+
+    let result = apply_tool_result_budget(&messages, &config);
+    assert!(result.executed);
+
+    let artifact_content = result.messages[1]["content"].as_str().unwrap_or_default();
+    assert_eq!(
+        artifact_content, artifact_ref,
+        "persisted refs must retain path/hash metadata under tool budget pressure"
+    );
+
+    let plain_content = result.messages[3]["content"].as_str().unwrap_or_default();
+    assert!(
+        plain_content.starts_with("[budget-trimmed]"),
+        "ordinary old tool result should still be trimmed"
+    );
+}
+
+#[test]
+fn u3_collapse_preserves_persisted_tool_result_references() {
+    let artifact_ref = persisted_tool_result_ref("tc-artifact", "Bash");
+    let messages = vec![
+        assistant_tool_call("tc-artifact", "Bash"),
+        tool_message("tc-artifact", "Bash", artifact_ref.clone()),
+        assistant_tool_call("tc-plain", "Bash"),
+        tool_message("tc-plain", "Bash", "A".repeat(500)),
+    ];
+    let config = CollapseConfig {
+        long_result_chars: 80,
+        keep_recent_tool_results: 0,
+        replacement_preview_chars: 16,
+    };
+
+    let result = collapse_tool_results(&messages, &config);
+    assert!(result.executed);
+
+    let artifact_content = result.messages[1]["content"].as_str().unwrap_or_default();
+    assert_eq!(
+        artifact_content, artifact_ref,
+        "collapse must not hide recoverable artifact metadata"
+    );
+
+    let plain_content = result.messages[3]["content"].as_str().unwrap_or_default();
+    assert!(
+        plain_content.starts_with("[collapsed]"),
+        "ordinary long tool result should still be collapsed"
+    );
+}
+
 #[tokio::test]
 async fn u3_prepare_messages_orders_budget_microcompact_collapse_before_auto_compact() {
     let messages = vec![
@@ -249,6 +339,176 @@ async fn u3_prepare_messages_orders_budget_microcompact_collapse_before_auto_com
     );
     assert!(prepared.compact_boundary.is_some());
     assert_eq!(prepared.retry, PreprocessRetryAction::None);
+}
+
+#[tokio::test]
+async fn u3_auto_compact_summary_receives_expanded_tool_artifact_evidence() {
+    let tmp = tempfile::tempdir().unwrap();
+    let tail_fact = "TOOL-ARTIFACT-TAIL-DECISION=keep-remote-logs";
+    let raw_content = format!("{}{}", "x".repeat(3_000), tail_fact);
+    let record = persist_tool_result_artifact(
+        tmp.path(),
+        "tc-artifact",
+        "Bash",
+        &raw_content,
+        "text/plain",
+    )
+    .expect("persist artifact");
+    let persisted_ref = build_persisted_tool_result_message(&record);
+    assert!(!persisted_ref.contains(tail_fact));
+
+    let messages = vec![
+        user_message("summarize the tool evidence later"),
+        assistant_tool_call("tc-artifact", "Bash"),
+        tool_message("tc-artifact", "Bash", persisted_ref.clone()),
+        user_message("latest question"),
+    ];
+    let config = PreprocessConfig {
+        budget: ToolResultBudgetConfig {
+            aggregate_char_budget: usize::MAX,
+            keep_recent_tool_results: 10,
+            preserved_tool_names: HashSet::new(),
+            replacement_preview_chars: 16,
+        },
+        microcompact: MicrocompactConfig {
+            trigger_chars: usize::MAX,
+            keep_recent_tool_results: 10,
+            preserved_tool_names: HashSet::new(),
+        },
+        collapse: CollapseConfig {
+            long_result_chars: usize::MAX,
+            keep_recent_tool_results: 10,
+            replacement_preview_chars: 16,
+        },
+        auto_compact: AutoCompactConfig {
+            threshold_chars: 1,
+            max_output_chars: 80_000,
+            consecutive_failure_limit: 3,
+            custom_context_window: None,
+        },
+        context_window: 64_000,
+        compact_boundary: None,
+        project_instruction_content: None,
+    };
+
+    let mut compact_state = AutoCompactState::new();
+    let mut runtime_state = PreprocessRuntimeState::default();
+    let prepared = prepare_messages_for_llm(
+        messages,
+        "conv-u3-artifact-evidence",
+        PreprocessTrigger::Normal,
+        &config,
+        &mut compact_state,
+        &mut runtime_state,
+        false,
+        |summary_input: Vec<Value>| async move {
+            let tool_content = summary_input
+                .iter()
+                .find(|message| message.get("role").and_then(Value::as_str) == Some("tool"))
+                .and_then(|message| message.get("content").and_then(Value::as_str))
+                .unwrap_or_default();
+            assert!(
+                tool_content.contains(tail_fact),
+                "summary input must recover full artifact evidence"
+            );
+            Ok(format!("summary captured {tail_fact}"))
+        },
+    )
+    .await
+    .expect("prepare should compact");
+
+    let summary = prepared
+        .messages
+        .iter()
+        .find(|message| message.get("isCompactSummary").and_then(Value::as_bool) == Some(true))
+        .and_then(|message| message.get("content").and_then(Value::as_str))
+        .unwrap_or_default();
+    assert!(summary.contains(tail_fact));
+
+    let serialized_output = serde_json::to_string(&prepared.messages).unwrap();
+    assert!(
+        !serialized_output.contains("<persisted-tool-result-evidence>"),
+        "expanded evidence is only for the summary call, not transcript storage"
+    );
+}
+
+#[tokio::test]
+async fn u3_auto_compact_summary_uses_pre_budget_evidence_snapshot() {
+    let small_tool_fact = "SMALL-TOOL-FACT=manual-path-excluded";
+    let messages = vec![
+        user_message("remember tool evidence"),
+        assistant_tool_call("tc-small", "Bash"),
+        tool_message(
+            "tc-small",
+            "Bash",
+            format!("{small_tool_fact} {}", "x".repeat(400)),
+        ),
+        user_message("latest question"),
+    ];
+    let config = PreprocessConfig {
+        budget: ToolResultBudgetConfig {
+            aggregate_char_budget: 120,
+            keep_recent_tool_results: 0,
+            preserved_tool_names: HashSet::new(),
+            replacement_preview_chars: 8,
+        },
+        microcompact: MicrocompactConfig {
+            trigger_chars: usize::MAX,
+            keep_recent_tool_results: 10,
+            preserved_tool_names: HashSet::new(),
+        },
+        collapse: CollapseConfig {
+            long_result_chars: usize::MAX,
+            keep_recent_tool_results: 10,
+            replacement_preview_chars: 16,
+        },
+        auto_compact: AutoCompactConfig {
+            threshold_chars: 1,
+            max_output_chars: 80_000,
+            consecutive_failure_limit: 3,
+            custom_context_window: None,
+        },
+        context_window: 64_000,
+        compact_boundary: None,
+        project_instruction_content: None,
+    };
+
+    let mut compact_state = AutoCompactState::new();
+    let mut runtime_state = PreprocessRuntimeState::default();
+    let prepared = prepare_messages_for_llm(
+        messages,
+        "conv-u3-pre-budget-evidence",
+        PreprocessTrigger::Normal,
+        &config,
+        &mut compact_state,
+        &mut runtime_state,
+        false,
+        |summary_input: Vec<Value>| async move {
+            let serialized = serde_json::to_string(&summary_input).unwrap();
+            assert!(serialized.contains(small_tool_fact));
+            assert!(
+                !serialized.contains("[budget-trimmed]"),
+                "summary input must not be based on lossy budget projection"
+            );
+            Ok(format!("summary captured {small_tool_fact}"))
+        },
+    )
+    .await
+    .expect("prepare should compact");
+
+    assert!(
+        prepared
+            .executed_stages
+            .contains(&PreprocessStage::ToolResultBudget),
+        "normal request projection still applies the tool budget"
+    );
+    let summary = prepared
+        .messages
+        .iter()
+        .find(|message| message.get("isCompactSummary").and_then(Value::as_bool) == Some(true))
+        .and_then(|message| message.get("content").and_then(Value::as_str))
+        .unwrap_or_default();
+    assert!(summary.contains(small_tool_fact));
 }
 
 #[tokio::test]

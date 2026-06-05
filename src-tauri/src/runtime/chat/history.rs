@@ -8,21 +8,15 @@ use crate::storage::file_store::types::StoredMessage;
 
 #[derive(Debug, Clone)]
 pub struct HistoryConfig {
-    pub char_budget: usize,
-    pub max_rounds: usize,
     pub include_uploaded_file_hints: bool,
     pub has_authorized_workspace: bool,
-    pub trim_to_budget: bool,
 }
 
 impl Default for HistoryConfig {
     fn default() -> Self {
         Self {
-            char_budget: 120_000,
-            max_rounds: 30,
             include_uploaded_file_hints: true,
             has_authorized_workspace: false,
-            trim_to_budget: true,
         }
     }
 }
@@ -97,9 +91,6 @@ fn build_history_messages(
 
     messages = filter_invalid_tool_pairs_history(messages);
     messages = reorder_tool_results_after_assistant_history(messages);
-    if config.trim_to_budget {
-        messages = trim_to_budget_history(messages, config);
-    }
     messages = collapse_trailing_consecutive_user_history(messages);
 
     if let Some(boundary) = effective_boundary {
@@ -657,51 +648,6 @@ fn reorder_tool_results_after_assistant(messages: Vec<ChatMessage>) -> Vec<ChatM
     out
 }
 
-#[allow(dead_code)]
-fn trim_to_budget(messages: Vec<ChatMessage>, config: &HistoryConfig) -> Vec<ChatMessage> {
-    let rounds = split_into_rounds(&messages);
-    let mut kept: Vec<&[ChatMessage]> = rounds.iter().map(|round| round.as_slice()).collect();
-
-    loop {
-        let total_chars: usize = kept
-            .iter()
-            .flat_map(|round| round.iter())
-            .map(|message| message.content.len())
-            .sum();
-        if kept.len() <= config.max_rounds && total_chars <= config.char_budget {
-            break;
-        }
-        if kept.is_empty() {
-            break;
-        }
-        kept.remove(0);
-    }
-
-    kept.into_iter()
-        .flat_map(|round| round.iter().cloned())
-        .collect()
-}
-
-#[allow(dead_code)]
-fn split_into_rounds(messages: &[ChatMessage]) -> Vec<Vec<ChatMessage>> {
-    let mut rounds = Vec::new();
-    let mut current = Vec::new();
-
-    for message in messages {
-        if message.role == "user" && !current.is_empty() {
-            rounds.push(current);
-            current = Vec::new();
-        }
-        current.push(message.clone());
-    }
-
-    if !current.is_empty() {
-        rounds.push(current);
-    }
-
-    rounds
-}
-
 /// Defensive: collapse trailing consecutive `user` messages into a single one.
 ///
 /// Why: when a turn fails (LLM 4xx/5xx) the user message has already been
@@ -843,53 +789,6 @@ fn reorder_tool_results_after_assistant_history(
     }
 
     out
-}
-
-fn trim_to_budget_history(
-    messages: Vec<HistoryChatMessage>,
-    config: &HistoryConfig,
-) -> Vec<HistoryChatMessage> {
-    let rounds = split_into_rounds_history(&messages);
-    let mut kept: Vec<&[HistoryChatMessage]> =
-        rounds.iter().map(|round| round.as_slice()).collect();
-
-    loop {
-        let total_chars: usize = kept
-            .iter()
-            .flat_map(|round| round.iter())
-            .map(|message| message.chat.content.len())
-            .sum();
-        if kept.len() <= config.max_rounds && total_chars <= config.char_budget {
-            break;
-        }
-        if kept.is_empty() {
-            break;
-        }
-        kept.remove(0);
-    }
-
-    kept.into_iter()
-        .flat_map(|round| round.iter().cloned())
-        .collect()
-}
-
-fn split_into_rounds_history(messages: &[HistoryChatMessage]) -> Vec<Vec<HistoryChatMessage>> {
-    let mut rounds = Vec::new();
-    let mut current = Vec::new();
-
-    for message in messages {
-        if message.chat.role == "user" && !current.is_empty() {
-            rounds.push(current);
-            current = Vec::new();
-        }
-        current.push(message.clone());
-    }
-
-    if !current.is_empty() {
-        rounds.push(current);
-    }
-
-    rounds
 }
 
 fn collapse_trailing_consecutive_user_history(
@@ -1072,6 +971,9 @@ mod collapse_trailing_tests {
                 })]),
                 tool_call_id: None,
                 name: None,
+                subtype: None,
+                compact_metadata: None,
+                is_compact_summary: None,
                 run_id: None,
                 schema_version: Some(2),
                 sequence: None,
@@ -1088,6 +990,9 @@ mod collapse_trailing_tests {
                 tool_calls: None,
                 tool_call_id: Some(String::new()),
                 name: Some(String::new()),
+                subtype: None,
+                compact_metadata: None,
+                is_compact_summary: None,
                 run_id: None,
                 schema_version: Some(2),
                 sequence: None,
@@ -1097,7 +1002,7 @@ mod collapse_trailing_tests {
             },
         ];
 
-        let history = build_chat_history(&stored, None, &HistoryConfig::default()).unwrap();
+        let history = build_chat_history(&stored, None, &HistoryConfig::default(), None).unwrap();
 
         assert_eq!(history.len(), 1);
         assert_eq!(history[0].role, "assistant");
@@ -1129,6 +1034,9 @@ mod tool_error_status_history_tests {
             tool_calls: None,
             tool_call_id: None,
             name: None,
+            subtype: None,
+            compact_metadata: None,
+            is_compact_summary: None,
             run_id: Some("run".to_string()),
             schema_version: None,
             sequence: None,

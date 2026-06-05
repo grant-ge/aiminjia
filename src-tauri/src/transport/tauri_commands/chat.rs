@@ -23,7 +23,10 @@ use crate::plugin::ToolRegistry;
 use crate::runtime::agent::AgentRuntime;
 use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::chat::compact_client::CompactSummaryClient;
-use crate::runtime::chat::compaction::{AutoCompactConfig, AutoCompactState, CompactTrigger};
+use crate::runtime::chat::compaction::{
+    append_transcript_path_hint, compact_transcript_path_for_conversation_dir, AutoCompactConfig,
+    AutoCompactState, CompactTrigger,
+};
 use crate::runtime::chat::preprocess::{
     prepare_messages_for_llm, PreprocessConfig, PreprocessRuntimeState, PreprocessTrigger,
 };
@@ -371,7 +374,6 @@ pub fn load_history_via_runtime_history(
         .last();
     let config = crate::runtime::chat::history::HistoryConfig {
         has_authorized_workspace,
-        trim_to_budget: false,
         ..crate::runtime::chat::history::HistoryConfig::default()
     };
     crate::runtime::chat::history::build_chat_history_values(
@@ -679,6 +681,13 @@ async fn persist_assistant_content_json(
 
 #[async_trait]
 impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
+    fn conversation_dir(&self, conversation_id: &str) -> Option<std::path::PathBuf> {
+        Some(crate::storage::file_store::conversations::conv_dir(
+            self.services.db().base_dir(),
+            conversation_id,
+        ))
+    }
+
     async fn run_llm_step(
         &self,
         input: &LlmStepInput<'_>,
@@ -3078,6 +3087,9 @@ impl TauriChatCommandAdapter {
             .latest_compact_boundary(&conversation_id)
             .await
             .map_err(|err| err.to_string())?;
+        let compact_transcript_path = executor
+            .conversation_dir(&conversation_id)
+            .map(|dir| compact_transcript_path_for_conversation_dir(&dir));
 
         let compact_client = Arc::new(LlmCompactSummaryClient::new(self.services.gateway.clone()));
         let compact_llm_settings = llm_settings.clone();
@@ -3101,6 +3113,7 @@ impl TauriChatCommandAdapter {
                 let conversation_id = conversation_id.clone();
                 let compact_run_id = compact_run_id.clone();
                 let manual_instructions = manual_instructions.clone();
+                let compact_transcript_path = compact_transcript_path.clone();
                 async move {
                     let mut summary_messages = messages;
                     if let Some(instructions) = manual_instructions {
@@ -3121,6 +3134,9 @@ impl TauriChatCommandAdapter {
                             Some(compact_run_id.as_str()),
                         )
                         .await
+                        .map(|summary| {
+                            append_transcript_path_hint(summary, compact_transcript_path.as_deref())
+                        })
                 }
             },
         )

@@ -11,7 +11,10 @@ use crate::llm::streaming::SystemPromptSegment;
 use crate::runtime::agent::task_notification::{QueuedNotification, TaskNotificationQueue};
 use crate::runtime::cancellation::{CancellationReason, CancellationToken};
 use crate::runtime::chat::compact_client::CompactSummaryClient;
-use crate::runtime::chat::compaction::{AutoCompactConfig, CompactTrigger};
+use crate::runtime::chat::compaction::{
+    append_transcript_path_hint, compact_transcript_path_for_conversation_dir, AutoCompactConfig,
+    CompactTrigger,
+};
 use crate::runtime::chat::context_builder::build_iteration_context;
 use crate::runtime::chat::multimodal::{
     build_anthropic_image_blocks, retain_text_fallback_attachments,
@@ -21,6 +24,10 @@ use crate::runtime::chat::preprocess::{
     prepare_messages_for_llm, PreprocessConfig, PreprocessRetryAction, PreprocessTrigger,
 };
 use crate::runtime::chat::safeguard::{self, SafeguardAction};
+use crate::runtime::chat::tool_result_artifact::{
+    apply_tool_result_artifact_replacements,
+    build_tool_result_artifact_replacements_from_round_results,
+};
 use crate::runtime::chat::tool_result_collector;
 use crate::runtime::chat::tool_round_driver::{ToolRoundDriver, ToolRoundResult};
 use crate::runtime::chat::tool_round_types::RuntimeToolCallOutcome;
@@ -404,6 +411,10 @@ pub trait RuntimeLlmExecutor: Send + Sync {
     /// 加载 turn 对应的 workspace 路径。
     async fn load_workspace_path(&self) -> Result<PathBuf, TurnError> {
         Ok(PathBuf::new())
+    }
+
+    fn conversation_dir(&self, _conversation_id: &str) -> Option<PathBuf> {
+        None
     }
 
     /// Resolve optional per-turn overrides after transport/runtime state has
@@ -2001,6 +2012,9 @@ impl RuntimeChatTurnDriver {
             Some(&config.llm_settings.cloud_model),
         );
         let mut post_compact_system_segments: Vec<SystemPromptSegment> = Vec::new();
+        let compact_transcript_path = executor
+            .conversation_dir(config.conversation_id.as_str())
+            .map(|dir| compact_transcript_path_for_conversation_dir(&dir));
 
         'turn: for iteration in 0..config.max_iterations {
             let mut preprocess_config = PreprocessConfig::default();
@@ -2051,6 +2065,7 @@ impl RuntimeChatTurnDriver {
                     let bus = stage_bus.clone();
                     let session_id = stage_session.clone();
                     let run_id = stage_run.clone();
+                    let compact_transcript_path = compact_transcript_path.clone();
                     async move {
                         crate::runtime::chat::turn_stage::emit_oneshot(
                             &bus,
@@ -2061,7 +2076,7 @@ impl RuntimeChatTurnDriver {
                         .await;
                         match compact_client.as_ref() {
                             Some(client) => {
-                                client
+                                let summary = client
                                     .compact_summary(
                                         conversation_id.as_str(),
                                         &messages,
@@ -2069,7 +2084,11 @@ impl RuntimeChatTurnDriver {
                                         Some(compact_trace_id.as_str()),
                                         Some(compact_run_id.as_str()),
                                     )
-                                    .await
+                                    .await?;
+                                Ok(append_transcript_path_hint(
+                                    summary,
+                                    compact_transcript_path.as_deref(),
+                                ))
                             }
                             None => {
                                 warn_no_compact_client();
@@ -2101,23 +2120,49 @@ impl RuntimeChatTurnDriver {
             pending_task_notifications.extend(newly_drained_notifications);
             if let Some(ref boundary_record) = prepared.compact_boundary {
                 let compact_messages = compact_artifact_messages(&state.messages);
+                log::info!(
+                    "[auto-compact][boundary-ready] conv={} boundary_id={} trigger={:?} compact_messages={} pre_tokens={} post_tokens={} messages_summarized={} tail_message_id={:?}",
+                    boundary_record.conversation_id,
+                    boundary_record.id,
+                    boundary_record.trigger,
+                    compact_messages.len(),
+                    boundary_record.pre_tokens,
+                    boundary_record.post_tokens,
+                    boundary_record.messages_summarized,
+                    boundary_record.tail_message_id,
+                );
                 if !compact_messages.is_empty() {
-                    if let Err(err) = executor
+                    match executor
                         .persist_compact_messages(
                             boundary_record.conversation_id.as_str(),
                             &compact_messages,
                         )
                         .await
                     {
-                        log::warn!(
-                            "[run_chat_turn_s4] failed to persist compact transcript messages: {}",
+                        Ok(()) => log::info!(
+                            "[auto-compact][persist-transcript-ok] conv={} boundary_id={} compact_messages={}",
+                            boundary_record.conversation_id,
+                            boundary_record.id,
+                            compact_messages.len(),
+                        ),
+                        Err(err) => log::warn!(
+                            "[auto-compact][persist-transcript-error] conv={} boundary_id={} compact_messages={} error={}",
+                            boundary_record.conversation_id,
+                            boundary_record.id,
+                            compact_messages.len(),
                             err
-                        );
+                        ),
                     }
+                } else {
+                    log::warn!(
+                        "[auto-compact][persist-transcript-skip] conv={} boundary_id={} reason=no_compact_artifact_messages",
+                        boundary_record.conversation_id,
+                        boundary_record.id,
+                    );
                 }
                 // R5.1: Emit CompactCompleted event so the frontend can show
                 // a compact summary (e.g. "保存了 X 个 token").
-                let _ = self
+                match self
                     .event_bus
                     .emit(RuntimeEvent::compact_completed(
                         turn.session_id().clone(),
@@ -2131,15 +2176,35 @@ impl RuntimeChatTurnDriver {
                         boundary_record.post_tokens,
                         boundary_record.messages_summarized,
                     ))
-                    .await;
-                if let Err(err) = executor
+                    .await
+                {
+                    Ok(()) => log::info!(
+                        "[auto-compact][event-ok] conv={} boundary_id={} event=compact_completed",
+                        boundary_record.conversation_id,
+                        boundary_record.id,
+                    ),
+                    Err(err) => log::warn!(
+                        "[auto-compact][event-error] conv={} boundary_id={} event=compact_completed error={}",
+                        boundary_record.conversation_id,
+                        boundary_record.id,
+                        err
+                    ),
+                }
+                match executor
                     .save_compact_boundary(boundary_record.clone())
                     .await
                 {
-                    log::warn!(
-                        "[run_chat_turn_s4] failed to persist compact boundary: {}",
+                    Ok(()) => log::info!(
+                        "[auto-compact][persist-boundary-ok] conv={} boundary_id={}",
+                        boundary_record.conversation_id,
+                        boundary_record.id,
+                    ),
+                    Err(err) => log::warn!(
+                        "[auto-compact][persist-boundary-error] conv={} boundary_id={} error={}",
+                        boundary_record.conversation_id,
+                        boundary_record.id,
                         err
-                    );
+                    ),
                 }
             }
 
@@ -2283,6 +2348,7 @@ impl RuntimeChatTurnDriver {
                             let bus = recovery_stage_bus.clone();
                             let session_id = recovery_stage_session.clone();
                             let run_id = recovery_stage_run.clone();
+                            let compact_transcript_path = compact_transcript_path.clone();
                             async move {
                                 crate::runtime::chat::turn_stage::emit_oneshot(
                                     &bus,
@@ -2293,7 +2359,7 @@ impl RuntimeChatTurnDriver {
                                 .await;
                                 match compact_client.as_ref() {
                                     Some(client) => {
-                                        client
+                                        let summary = client
                                             .compact_summary(
                                                 conversation_id.as_str(),
                                                 &messages,
@@ -2301,7 +2367,11 @@ impl RuntimeChatTurnDriver {
                                                 Some(compact_trace_id.as_str()),
                                                 Some(compact_run_id.as_str()),
                                             )
-                                            .await
+                                            .await?;
+                                        Ok(append_transcript_path_hint(
+                                            summary,
+                                            compact_transcript_path.as_deref(),
+                                        ))
                                     }
                                     None => {
                                         warn_no_compact_client();
@@ -2321,21 +2391,47 @@ impl RuntimeChatTurnDriver {
                     state.messages = prepared.messages;
                     if let Some(boundary_record) = prepared.compact_boundary {
                         let compact_messages = compact_artifact_messages(&state.messages);
+                        log::info!(
+                            "[auto-compact][boundary-ready] conv={} boundary_id={} trigger={:?} path=ptl_recovery compact_messages={} pre_tokens={} post_tokens={} messages_summarized={} tail_message_id={:?}",
+                            boundary_record.conversation_id,
+                            boundary_record.id,
+                            boundary_record.trigger,
+                            compact_messages.len(),
+                            boundary_record.pre_tokens,
+                            boundary_record.post_tokens,
+                            boundary_record.messages_summarized,
+                            boundary_record.tail_message_id,
+                        );
                         if !compact_messages.is_empty() {
-                            if let Err(err) = executor
+                            match executor
                                 .persist_compact_messages(
                                     boundary_record.conversation_id.as_str(),
                                     &compact_messages,
                                 )
                                 .await
                             {
-                                log::warn!(
-                                    "[run_chat_turn_s4] failed to persist compact transcript messages: {}",
+                                Ok(()) => log::info!(
+                                    "[auto-compact][persist-transcript-ok] conv={} boundary_id={} path=ptl_recovery compact_messages={}",
+                                    boundary_record.conversation_id,
+                                    boundary_record.id,
+                                    compact_messages.len(),
+                                ),
+                                Err(err) => log::warn!(
+                                    "[auto-compact][persist-transcript-error] conv={} boundary_id={} path=ptl_recovery compact_messages={} error={}",
+                                    boundary_record.conversation_id,
+                                    boundary_record.id,
+                                    compact_messages.len(),
                                     err
-                                );
+                                ),
                             }
+                        } else {
+                            log::warn!(
+                                "[auto-compact][persist-transcript-skip] conv={} boundary_id={} path=ptl_recovery reason=no_compact_artifact_messages",
+                                boundary_record.conversation_id,
+                                boundary_record.id,
+                            );
                         }
-                        let _ = self
+                        match self
                             .event_bus
                             .emit(RuntimeEvent::compact_completed(
                                 turn.session_id().clone(),
@@ -2349,12 +2445,32 @@ impl RuntimeChatTurnDriver {
                                 boundary_record.post_tokens,
                                 boundary_record.messages_summarized,
                             ))
-                            .await;
-                        if let Err(err) = executor.save_compact_boundary(boundary_record).await {
-                            log::warn!(
-                                "[run_chat_turn_s4] failed to persist compact boundary: {}",
+                            .await
+                        {
+                            Ok(()) => log::info!(
+                                "[auto-compact][event-ok] conv={} boundary_id={} path=ptl_recovery event=compact_completed",
+                                boundary_record.conversation_id,
+                                boundary_record.id,
+                            ),
+                            Err(err) => log::warn!(
+                                "[auto-compact][event-error] conv={} boundary_id={} path=ptl_recovery event=compact_completed error={}",
+                                boundary_record.conversation_id,
+                                boundary_record.id,
                                 err
-                            );
+                            ),
+                        }
+                        match executor.save_compact_boundary(boundary_record.clone()).await {
+                            Ok(()) => log::info!(
+                                "[auto-compact][persist-boundary-ok] conv={} boundary_id={} path=ptl_recovery",
+                                boundary_record.conversation_id,
+                                boundary_record.id,
+                            ),
+                            Err(err) => log::warn!(
+                                "[auto-compact][persist-boundary-error] conv={} boundary_id={} path=ptl_recovery error={}",
+                                boundary_record.conversation_id,
+                                boundary_record.id,
+                                err
+                            ),
                         }
                     }
                     if prepared.retry == PreprocessRetryAction::RetryTurn {
@@ -2712,8 +2828,22 @@ impl RuntimeChatTurnDriver {
                         .resolve_interaction_requests(turn, &cancel, round_results)
                         .await?;
 
+                    let artifact_replacements = executor
+                        .conversation_dir(config.conversation_id.as_str())
+                        .map(|conv_dir| {
+                            build_tool_result_artifact_replacements_from_round_results(
+                                &conv_dir,
+                                &round_results,
+                            )
+                        })
+                        .unwrap_or_default();
+
                     // Collect and merge results into state.
-                    let results = tool_result_collector::collect_results(round_results);
+                    let mut results = tool_result_collector::collect_results(round_results);
+                    apply_tool_result_artifact_replacements(
+                        &mut results.tool_result_messages,
+                        &artifact_replacements,
+                    );
                     let mut history_batch = Vec::with_capacity(
                         1 + results.tool_result_messages.len()
                             + results.context_modifier_messages.len(),

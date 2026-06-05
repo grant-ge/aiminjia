@@ -1,10 +1,12 @@
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use app_lib::runtime::cancellation::CancellationToken;
 use app_lib::runtime::chat::chat_turn_driver::inject_synthetic_tool_results_for_missing_calls;
 use app_lib::runtime::chat::compact_client::CompactSummaryClient;
 use app_lib::runtime::chat::compaction::{
-    build_compact_boundary_record, CompactBoundaryRecord, CompactTrigger,
+    build_compact_boundary_record, compact_transcript_path_for_conversation_dir,
+    CompactBoundaryRecord, CompactTrigger,
 };
 use app_lib::runtime::chat::turn_config::{LlmStepInput, LlmStepResult, TurnError};
 use app_lib::runtime::chat::{ChatTurnRequest, RuntimeChatTurnDriver, RuntimeLlmExecutor};
@@ -95,6 +97,7 @@ struct CompactingExecutor {
     compact_messages: Mutex<Vec<JsonValue>>,
     llm_calls: Mutex<usize>,
     user_message_ids: Mutex<Vec<String>>,
+    conversation_dir: PathBuf,
 }
 
 /// A CompactSummaryClient that returns a fixed summary string — used by
@@ -132,6 +135,7 @@ impl CompactingExecutor {
             compact_messages: Mutex::new(Vec::new()),
             llm_calls: Mutex::new(0),
             user_message_ids: Mutex::new(Vec::new()),
+            conversation_dir: std::env::temp_dir().join("aijia-compact-transcript-path-test"),
         }
     }
 
@@ -167,6 +171,10 @@ impl RuntimeLlmExecutor for CompactingExecutor {
             thinking_blocks: Vec::new(),
             stop_reason: Some("end_turn".to_string()),
         })
+    }
+
+    fn conversation_dir(&self, _conversation_id: &str) -> Option<PathBuf> {
+        Some(self.conversation_dir.clone())
     }
 
     async fn persist_assistant_message(
@@ -307,6 +315,17 @@ async fn u3_compact_success_persists_boundary_record_with_anchor() {
         "suffix-preserving compact should anchor the kept segment after the summary message"
     );
     assert!(boundary.summary_text.contains("压缩摘要"));
+    let expected_transcript_dir = executor.conversation_dir("conv-u3").unwrap();
+    let expected_transcript_path =
+        compact_transcript_path_for_conversation_dir(&expected_transcript_dir);
+    assert!(
+        PathBuf::from(&expected_transcript_path).is_absolute(),
+        "compact boundary transcript hint should be an absolute path"
+    );
+    assert!(
+        boundary.summary_text.contains(&expected_transcript_path),
+        "compact boundary summary should include the original transcript path"
+    );
 
     let compact_messages = executor.saved_compact_messages();
     let boundary_message = compact_messages
@@ -320,6 +339,23 @@ async fn u3_compact_success_persists_boundary_record_with_anchor() {
     assert_eq!(
         boundary_message["compactMetadata"]["tailMessageId"],
         "current-user"
+    );
+    let summary_message = compact_messages
+        .iter()
+        .find(|message| {
+            message
+                .get("isCompactSummary")
+                .and_then(|value| value.as_bool())
+                == Some(true)
+        })
+        .expect("compact success should persist the compact summary message");
+    assert!(
+        summary_message
+            .get("content")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default()
+            .contains(&expected_transcript_path),
+        "compact summary message should include the original transcript path"
     );
     assert_eq!(
         boundary_message["compactMetadata"]["preservedSegment"]["headUuid"],

@@ -1,7 +1,10 @@
 use app_lib::runtime::chat::compaction::{
-    compact_messages_via_llm, should_auto_compact, AutoCompactConfig, CompactLlmOutput,
+    append_transcript_path_hint, compact_messages_via_llm,
+    compact_transcript_path_for_conversation_dir, should_auto_compact, AutoCompactConfig,
+    CompactLlmOutput,
 };
 use serde_json::json;
+use std::path::PathBuf;
 
 fn make_messages(n: usize, tool_result_chars: usize) -> Vec<serde_json::Value> {
     let mut msgs = vec![json!({ "role": "user", "content": "start" })];
@@ -141,4 +144,35 @@ fn compact_messages_summarized_excludes_preserved_tail_round() {
         output.new_messages[0]["compactMetadata"]["messagesSummarized"],
         2
     );
+}
+
+#[test]
+fn compact_summary_hint_appends_transcript_path_once() {
+    let transcript_path =
+        r"C:\Users\Administrator\.renlijia\users\t_1__u_2\conversations\conv-1\messages.jsonl";
+    let summary = append_transcript_path_hint("摘要正文".to_string(), Some(transcript_path));
+
+    assert!(summary.starts_with("摘要正文"));
+    assert!(summary.contains("完整的对话记录在"));
+    assert!(summary.contains(transcript_path));
+
+    let repeated = append_transcript_path_hint(summary.clone(), Some(transcript_path));
+    assert_eq!(repeated, summary);
+    assert_eq!(
+        append_transcript_path_hint("摘要正文".to_string(), None),
+        "摘要正文"
+    );
+}
+
+#[test]
+fn compact_transcript_path_hint_is_absolute() {
+    let path =
+        compact_transcript_path_for_conversation_dir(&PathBuf::from("relative-conversation-dir"));
+    let path_buf = PathBuf::from(path);
+
+    assert!(
+        path_buf.is_absolute(),
+        "compact transcript hint must use an absolute path"
+    );
+    assert!(path_buf.ends_with(PathBuf::from("relative-conversation-dir").join("messages.jsonl")));
 }

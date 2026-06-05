@@ -22,6 +22,24 @@ fn make_tool_result(tool_call_id: &str, content: &str) -> serde_json::Value {
     })
 }
 
+fn persisted_tool_result_ref(tool_call_id: &str) -> String {
+    format!(
+        concat!(
+            "<persisted-tool-result tool_call_id=\"{}\" tool_name=\"Bash\">\n",
+            "Full output saved to: /tmp/{}.txt\n",
+            "Original chars: 90000\n",
+            "Sha256: {}\n",
+            "Preview:\n",
+            "{}\n",
+            "</persisted-tool-result>"
+        ),
+        tool_call_id,
+        tool_call_id,
+        "a".repeat(64),
+        "preview ".repeat(80)
+    )
+}
+
 #[test]
 fn k2_microcompact_noop_when_below_threshold() {
     let messages = vec![
@@ -81,6 +99,57 @@ fn k2_microcompact_clears_old_tool_results_above_threshold() {
         .and_then(|v| v.as_str())
         .unwrap_or("");
     assert_eq!(new_content, "short result");
+}
+
+#[test]
+fn k2_microcompact_preserves_persisted_tool_result_references() {
+    let artifact_ref = persisted_tool_result_ref("tc-artifact");
+    let big_content = "z".repeat(50_000);
+    let messages = vec![
+        make_user("analyze"),
+        make_assistant_with_tools("iter0", &["tc-artifact"]),
+        make_tool_result("tc-artifact", &artifact_ref),
+        make_assistant_with_tools("iter1", &["tc-plain"]),
+        make_tool_result("tc-plain", &big_content),
+        make_assistant_with_tools("iter2", &["tc-recent"]),
+        make_tool_result("tc-recent", "short result"),
+    ];
+    let config = MicrocompactConfig {
+        trigger_chars: 1,
+        keep_recent_tool_results: 1,
+        preserved_tool_names: std::collections::HashSet::new(),
+    };
+
+    let result = microcompact(&messages, &config);
+    assert!(result.executed);
+
+    let artifact = result
+        .messages
+        .iter()
+        .find(|m| m.get("toolCallId").and_then(|v| v.as_str()) == Some("tc-artifact"))
+        .expect("artifact ref should exist");
+    assert_eq!(
+        artifact
+            .get("content")
+            .and_then(|v| v.as_str())
+            .unwrap_or(""),
+        artifact_ref,
+        "persisted tool-result refs must stay recoverable"
+    );
+
+    let plain = result
+        .messages
+        .iter()
+        .find(|m| m.get("toolCallId").and_then(|v| v.as_str()) == Some("tc-plain"))
+        .expect("plain old result should exist");
+    assert!(
+        plain
+            .get("content")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .contains("[microcompacted]"),
+        "ordinary old tool results should still be compacted"
+    );
 }
 
 #[test]

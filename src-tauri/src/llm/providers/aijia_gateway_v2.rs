@@ -193,12 +193,188 @@ async fn collect_stream_response(mut stream: StreamBox) -> Result<LlmResponse> {
     })
 }
 
+fn content_block_texts(value: Option<&Value>) -> Vec<String> {
+    let Some(value) = value else {
+        return Vec::new();
+    };
+    if let Some(text) = value.as_str() {
+        return vec![text.to_string()];
+    }
+    let Some(blocks) = value.as_array() else {
+        return Vec::new();
+    };
+
+    blocks
+        .iter()
+        .filter_map(|block| {
+            let block_type = block
+                .get("type")
+                .or_else(|| block.get("kind"))
+                .and_then(Value::as_str);
+            let is_text = match block_type {
+                Some("text" | "output_text") => true,
+                Some("thinking" | "reasoning" | "tool_call" | "tool_use") => false,
+                Some(_) => false,
+                None => true,
+            };
+            if !is_text {
+                return None;
+            }
+            block
+                .get("text")
+                .or_else(|| block.get("content"))
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
+        .collect()
+}
+
+fn response_text_parts(payload: &Value) -> Vec<String> {
+    let mut parts = Vec::new();
+
+    parts.extend(content_block_texts(payload.get("content")));
+    if let Some(text) = payload.get("output_text").and_then(Value::as_str) {
+        parts.push(text.to_string());
+    }
+    parts.extend(content_block_texts(
+        payload
+            .get("message")
+            .and_then(|message| message.get("content")),
+    ));
+
+    if let Some(output) = payload.get("output").and_then(Value::as_array) {
+        for item in output {
+            parts.extend(content_block_texts(item.get("content")));
+            if let Some(text) = item.get("text").and_then(Value::as_str) {
+                parts.push(text.to_string());
+            }
+        }
+    }
+
+    if let Some(choices) = payload.get("choices").and_then(Value::as_array) {
+        for choice in choices {
+            let message = choice.get("message");
+            if let Some(text) = message
+                .and_then(|message| message.get("content"))
+                .and_then(Value::as_str)
+            {
+                parts.push(text.to_string());
+            }
+            parts.extend(content_block_texts(
+                message.and_then(|message| message.get("content")),
+            ));
+        }
+    }
+
+    parts
+}
+
+fn parse_tool_call_value(call: &Value) -> ToolCall {
+    ToolCall {
+        id: call
+            .get("id")
+            .or_else(|| call.get("tool_call_id"))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        name: call
+            .get("name")
+            .or_else(|| {
+                call.get("function")
+                    .and_then(|function| function.get("name"))
+            })
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        arguments: call
+            .get("arguments")
+            .or_else(|| call.get("input"))
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({})),
+    }
+}
+
+fn content_block_tool_calls(value: Option<&Value>) -> Vec<ToolCall> {
+    let Some(blocks) = value.and_then(Value::as_array) else {
+        return Vec::new();
+    };
+
+    blocks
+        .iter()
+        .filter(|block| {
+            matches!(
+                block.get("type").and_then(Value::as_str),
+                Some("tool_call" | "tool_use")
+            )
+        })
+        .map(parse_tool_call_value)
+        .collect()
+}
+
+fn response_tool_calls(payload: &Value) -> Vec<ToolCall> {
+    let mut calls = payload
+        .get("tool_calls")
+        .and_then(Value::as_array)
+        .map(|calls| calls.iter().map(parse_tool_call_value).collect::<Vec<_>>())
+        .unwrap_or_default();
+
+    calls.extend(content_block_tool_calls(
+        payload
+            .get("message")
+            .and_then(|message| message.get("content")),
+    ));
+    if let Some(output) = payload.get("output").and_then(Value::as_array) {
+        for item in output {
+            calls.extend(content_block_tool_calls(item.get("content")));
+        }
+    }
+    calls
+}
+
+fn thinking_blocks_from_content(value: Option<&Value>) -> Vec<Value> {
+    let Some(blocks) = value.and_then(Value::as_array) else {
+        return Vec::new();
+    };
+
+    blocks
+        .iter()
+        .filter(|block| {
+            matches!(
+                block.get("type").and_then(Value::as_str),
+                Some("thinking" | "reasoning")
+            )
+        })
+        .cloned()
+        .collect()
+}
+
+fn response_thinking_blocks(payload: &Value) -> Vec<Value> {
+    let mut blocks = payload
+        .get("thinking_blocks")
+        .or_else(|| payload.get("thinkingBlocks"))
+        .and_then(Value::as_array)
+        .map(|blocks| blocks.to_vec())
+        .unwrap_or_default();
+
+    blocks.extend(thinking_blocks_from_content(
+        payload
+            .get("message")
+            .and_then(|message| message.get("content")),
+    ));
+    if let Some(output) = payload.get("output").and_then(Value::as_array) {
+        for item in output {
+            blocks.extend(thinking_blocks_from_content(item.get("content")));
+        }
+    }
+    blocks
+}
+
 fn parse_non_stream_response(payload: &Value) -> Result<LlmResponse> {
-    let content = payload
-        .get("content")
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_string();
+    let content = response_text_parts(payload)
+        .into_iter()
+        .filter(|text| !text.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
     let stop_reason = parse_aijia_v2_stop_reason(
         payload
             .get("stop_reason")
@@ -224,37 +400,8 @@ fn parse_non_stream_response(payload: &Value) -> Result<LlmResponse> {
             .and_then(Value::as_u64)
             .map(|value| value as u32),
     };
-    let tool_calls = payload
-        .get("tool_calls")
-        .and_then(Value::as_array)
-        .map(|calls| {
-            calls
-                .iter()
-                .map(|call| ToolCall {
-                    id: call
-                        .get("id")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default()
-                        .to_string(),
-                    name: call
-                        .get("name")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default()
-                        .to_string(),
-                    arguments: call
-                        .get("arguments")
-                        .cloned()
-                        .unwrap_or_else(|| serde_json::json!({})),
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    let thinking_blocks = payload
-        .get("thinking_blocks")
-        .or_else(|| payload.get("thinkingBlocks"))
-        .and_then(Value::as_array)
-        .map(|blocks| blocks.to_vec())
-        .unwrap_or_default();
+    let tool_calls = response_tool_calls(payload);
+    let thinking_blocks = response_thinking_blocks(payload);
 
     Ok(LlmResponse {
         content,
@@ -1493,6 +1640,46 @@ mod tests {
         assert_eq!(response.tool_calls[0].arguments["path"], "README.md");
         assert_eq!(response.thinking_blocks.len(), 1);
         assert_eq!(response.thinking_blocks[0]["signature"], "sig-1");
+    }
+
+    #[test]
+    fn parse_non_stream_response_reads_v2_message_content_blocks() {
+        let payload = serde_json::json!({
+            "id": "lreq_test",
+            "object": "aijia.response",
+            "message": {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "thinking",
+                        "text": "internal reasoning",
+                        "signature": "sig-v2",
+                        "opaque": true
+                    },
+                    {
+                        "type": "text",
+                        "text": "compact summary text"
+                    }
+                ]
+            },
+            "stop_reason": "stop",
+            "usage": {
+                "input": 101,
+                "output": 9,
+                "cache_read": 7,
+                "cache_write": 0
+            }
+        });
+
+        let response = parse_non_stream_response(&payload).unwrap();
+
+        assert_eq!(response.content, "compact summary text");
+        assert_eq!(response.stop_reason, StopReason::EndTurn);
+        assert_eq!(response.usage.input_tokens, 101);
+        assert_eq!(response.usage.output_tokens, 9);
+        assert_eq!(response.usage.cache_read_input_tokens, Some(7));
+        assert_eq!(response.thinking_blocks.len(), 1);
+        assert_eq!(response.thinking_blocks[0]["signature"], "sig-v2");
     }
 
     #[tokio::test]
