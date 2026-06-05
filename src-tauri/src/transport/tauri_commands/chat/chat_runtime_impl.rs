@@ -202,6 +202,36 @@ pub async fn build_request_scoped_tool_overrides(
     out
 }
 
+pub async fn build_request_scoped_tool_overrides_from_registry(
+    agent_registry: Arc<crate::runtime::agent::registry::AgentRegistry>,
+    ctx: &crate::runtime::tools::ToolDescriptionContext,
+) -> std::collections::HashMap<String, crate::llm::streaming::ToolDefinition> {
+    use crate::runtime::tools::RuntimeTool;
+
+    let mut out = std::collections::HashMap::new();
+    let stub_launcher = Arc::new(StubLauncher);
+    let tool: Arc<dyn RuntimeTool> = Arc::new(
+        crate::runtime::tools::builtin::spawn_subagent::SpawnSubagentRuntimeTool::new(
+            stub_launcher,
+            agent_registry,
+        ),
+    );
+    let rendered = tool.definition(ctx).await;
+    let parameters = crate::runtime::tools::TOOL_CATALOG
+        .get_entry("Agent")
+        .map(|e| e.json_schema.clone())
+        .unwrap_or_else(|| serde_json::json!({"type": "object"}));
+    out.insert(
+        "Agent".to_string(),
+        crate::llm::streaming::ToolDefinition {
+            name: rendered.id,
+            description: rendered.description,
+            parameters,
+        },
+    );
+    out
+}
+
 /// Stub launcher: never actually invoked (the description-rendering tool
 /// instance is thrown away after `definition()`).
 struct StubLauncher;
@@ -227,7 +257,7 @@ impl crate::runtime::tools::builtin::spawn_subagent::SpawnSubagentLauncher for S
 
 /// Trim a description to its first sentence (or `max_chars` whichever is
 /// shorter), without breaking at a UTF-8 char boundary.
-fn first_sentence(s: &str, max_chars: usize) -> String {
+pub(crate) fn first_sentence(s: &str, max_chars: usize) -> String {
     let s = s.trim();
     if s.is_empty() {
         return String::new();

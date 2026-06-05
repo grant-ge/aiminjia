@@ -8,9 +8,8 @@ use anyhow::Result;
 // they now live in `runtime::chat` to avoid circular imports.
 use crate::runtime::agent::task_notification::TaskNotificationQueue;
 use crate::runtime::cancellation::{CancellationReason, CancellationToken};
-use crate::runtime::chat::compact_client::CompactSummaryClient;
 pub use crate::runtime::chat::ChatTurnRequest;
-use crate::runtime::chat::{RuntimeChatTurnDriver, RuntimeLlmExecutor};
+use crate::runtime::chat::{CompactSummaryClient, RuntimeChatTurnDriver, RuntimeLlmExecutor};
 use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::events::{RuntimeEvent, RuntimeEventKind};
 use crate::runtime::identity::IdentityMapping;
@@ -42,6 +41,7 @@ pub struct SessionRuntime {
     pending_permission_store: Arc<PendingPermissionRequestStore>,
     pending_interaction_store: Arc<InMemoryInteractionControlPlane>,
     permission_store: Option<Arc<PermissionStore>>,
+    base_permission_ctx: Option<Arc<ToolPermissionContext>>,
     default_folder: Option<PathBuf>,
     task_notification_queue: Option<Arc<TaskNotificationQueue>>,
     /// LTR (P1.8): per-session Team registry; cleared on cancel_session.
@@ -83,6 +83,7 @@ impl SessionRuntime {
             pending_permission_store: Arc::new(PendingPermissionRequestStore::new()),
             pending_interaction_store: Arc::new(InMemoryInteractionControlPlane::new()),
             permission_store: None,
+            base_permission_ctx: None,
             default_folder: None,
             task_notification_queue: None,
             team_registry: None,
@@ -116,6 +117,7 @@ impl SessionRuntime {
             pending_permission_store: Arc::new(PendingPermissionRequestStore::new()),
             pending_interaction_store: Arc::new(InMemoryInteractionControlPlane::new()),
             permission_store: None,
+            base_permission_ctx: None,
             default_folder: None,
             task_notification_queue: None,
             team_registry: None,
@@ -155,6 +157,11 @@ impl SessionRuntime {
 
     pub fn with_permission_store(mut self, permission_store: Arc<PermissionStore>) -> Self {
         self.permission_store = Some(permission_store);
+        self
+    }
+
+    pub fn with_permission_ctx(mut self, ctx: Arc<ToolPermissionContext>) -> Self {
+        self.base_permission_ctx = Some(ctx);
         self
     }
 
@@ -557,7 +564,9 @@ impl SessionRuntime {
             ctx.allow_rules = entries.allow_rules;
             Arc::new(ctx)
         } else {
-            Arc::new(ToolPermissionContext::empty())
+            self.base_permission_ctx
+                .clone()
+                .unwrap_or_else(|| Arc::new(ToolPermissionContext::empty()))
         };
 
         let mut engine = session_engine

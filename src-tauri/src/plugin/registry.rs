@@ -39,6 +39,13 @@ pub struct RequestScopedRuntimeDeps {
     pub tool_registry: Option<Arc<crate::plugin::registry::ToolRegistry>>,
     pub app_settings: Option<Arc<crate::models::settings::AppSettings>>,
     pub agent_runtime: Option<Arc<crate::runtime::agent::AgentRuntime>>,
+    pub async_agent_task_store:
+        Option<Arc<crate::runtime::agent::async_task_store::AsyncAgentTaskStore>>,
+    pub task_notification_queue:
+        Option<Arc<crate::runtime::agent::task_notification::TaskNotificationQueue>>,
+    pub agent_registry: Option<Arc<crate::runtime::agent::registry::AgentRegistry>>,
+    pub user_scoped_path_resolver:
+        Option<Arc<dyn crate::storage::user_scoped_paths::UserScopedPathResolver>>,
     pub event_bus: Option<crate::runtime::event_bus::RuntimeEventBus>,
     pub skill_registry:
         Option<Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>>,
@@ -76,6 +83,10 @@ impl RequestScopedRuntimeDeps {
             tool_registry: ctx.tool_registry.clone(),
             app_settings: ctx.app_settings.clone(),
             agent_runtime: ctx.agent_runtime.clone(),
+            async_agent_task_store: None,
+            task_notification_queue: None,
+            agent_registry: None,
+            user_scoped_path_resolver: None,
             event_bus: ctx.event_bus.clone(),
             skill_registry: ctx.skill_registry.clone(),
             authorized_workspace: ctx.authorized_workspace.clone(),
@@ -868,6 +879,65 @@ impl ToolRegistry {
         use crate::runtime::tools::builtin;
         use std::sync::Arc;
 
+        if ctx.app_handle.is_none() {
+            match name {
+                "Agent" => {
+                    let agent_registry = ctx.agent_registry.clone()?;
+                    let task_store = ctx.async_agent_task_store.clone()?;
+                    let notif_queue = ctx.task_notification_queue.clone()?;
+                    let path_resolver = ctx.user_scoped_path_resolver.clone()?;
+                    return Some(Arc::new(
+                        builtin::spawn_subagent::SpawnSubagentRuntimeTool::new(
+                            Arc::new(
+                                crate::llm::tool_executor::DefaultSpawnSubagentLauncher::from_runtime_deps(
+                                    ctx.clone(),
+                                    agent_registry.clone(),
+                                    task_store,
+                                    notif_queue,
+                                    path_resolver,
+                                ),
+                            ),
+                            agent_registry,
+                        ),
+                    ) as Arc<dyn crate::runtime::tools::RuntimeTool>);
+                }
+                "TaskOutput" => {
+                    let resolver = ctx.user_scoped_path_resolver.clone()?;
+                    return Some(
+                        Arc::new(builtin::task_output::TaskOutputRuntimeTool::new(resolver))
+                            as Arc<dyn crate::runtime::tools::RuntimeTool>,
+                    );
+                }
+                "TaskStop" => {
+                    let task_store = ctx.async_agent_task_store.clone()?;
+                    return Some(Arc::new(builtin::task_stop::TaskStopRuntimeTool {
+                        store: task_store,
+                    })
+                        as Arc<dyn crate::runtime::tools::RuntimeTool>);
+                }
+                #[cfg(not(windows))]
+                "Bash" => {
+                    let task_store = ctx.async_agent_task_store.clone()?;
+                    let notif_queue = ctx.task_notification_queue.clone()?;
+                    return Some(
+                        Arc::new(builtin::bash::BashTool::new(task_store, notif_queue))
+                            as Arc<dyn crate::runtime::tools::RuntimeTool>,
+                    );
+                }
+                #[cfg(windows)]
+                "PowerShell" => {
+                    let task_store = ctx.async_agent_task_store.clone()?;
+                    let notif_queue = ctx.task_notification_queue.clone()?;
+                    return Some(Arc::new(builtin::powershell::PowerShellTool::new(
+                        task_store,
+                        notif_queue,
+                    ))
+                        as Arc<dyn crate::runtime::tools::RuntimeTool>);
+                }
+                _ => {}
+            }
+        }
+
         match name {
             "WebSearch" => {
                 let deps = builtin::network::SearchDeps {
@@ -878,7 +948,7 @@ impl ToolRegistry {
             "Agent" => {
                 use tauri::Manager;
 
-                // Fail-closed: if app state is missing any of the three Arcs,
+                // Fail-closed: if runtime deps/app state are missing any of the Arcs,
                 // we MUST NOT silently fall back to fresh instances — async
                 // sub-agent updates would write to orphan stores/queues that
                 // nobody else holds, leaving notifications lost and the
@@ -1097,10 +1167,11 @@ impl ToolRegistry {
                         return None;
                     }
                 };
-                Some(
-                    Arc::new(builtin::powershell::PowerShellTool::new(task_store, notif_queue))
-                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
-                )
+                Some(Arc::new(builtin::powershell::PowerShellTool::new(
+                    task_store,
+                    notif_queue,
+                ))
+                    as Arc<dyn crate::runtime::tools::RuntimeTool>)
             }
             "create_agenda_item"
             | "list_agenda_items"

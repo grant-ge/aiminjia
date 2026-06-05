@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod cli;
 pub mod commands;
 pub mod connector;
 pub mod llm;
