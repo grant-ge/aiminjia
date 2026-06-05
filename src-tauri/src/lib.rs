@@ -1,7 +1,7 @@
 pub mod auth;
 pub mod commands;
 pub mod connector;
-pub mod gateway;
+pub mod environment;
 pub mod llm;
 pub mod models;
 pub mod plugin;
@@ -231,10 +231,10 @@ pub fn run() {
             #[cfg(debug_assertions)]
             {
                 let persisted = global_store
-                    .get_setting(gateway::dev::CONFIG_KEY)
+                    .get_setting(environment::dev::CONFIG_KEY)
                     .ok()
                     .flatten();
-                gateway::dev::load(persisted.as_deref());
+                environment::dev::load(persisted.as_deref());
             }
             // Data-layout compatibility gate: if the on-disk layout predates a
             // breaking storage / encryption change, the legacy `cloud_auth`
@@ -1141,11 +1141,11 @@ pub fn run() {
             // Network status commands (spec docs/superpowers/specs/2026-05-26-network-detection-design.md)
             transport::tauri_commands::network::network_get_status,
             transport::tauri_commands::network::network_force_probe,
-            // Dev-only gateway switcher (not compiled in release builds)
+            // Dev-only environment switcher (not compiled in release builds)
             #[cfg(debug_assertions)]
-            commands::dev_gateway::get_dev_gateway,
+            commands::dev_environment::get_dev_environment,
             #[cfg(debug_assertions)]
-            commands::dev_gateway::set_dev_gateway,
+            commands::dev_environment::set_dev_environment,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

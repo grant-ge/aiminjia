@@ -418,14 +418,13 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
 // trigger one HTTP GET. The cache is shared across users on the same
 // machine — templates are not user data.
 
-/// Default lotus ops-portal base URL. Can be overridden via the
-/// `LOTUS_OPS_BASE_URL` env var (useful for local dev pointing at
-/// `http://localhost:8082`).
-const DEFAULT_OPS_BASE_URL: &str = "https://ai-ops.renlijia.com";
-
+/// Resolve the lotus ops-portal base URL. The `LOTUS_OPS_BASE_URL` env var wins
+/// when set (useful for local dev pointing at `http://localhost:8082`);
+/// otherwise it follows the active environment (production in release builds,
+/// the dev override in debug builds). See [`crate::environment`].
 fn ops_base_url() -> String {
     std::env::var("LOTUS_OPS_BASE_URL")
-        .unwrap_or_else(|_| DEFAULT_OPS_BASE_URL.to_string())
+        .unwrap_or_else(|_| crate::environment::ops_host())
         .trim_end_matches('/')
         .to_string()
 }

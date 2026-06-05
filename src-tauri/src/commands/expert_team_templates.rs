@@ -28,7 +28,10 @@ pub async fn expert_team_template_refresh(
 ) -> Result<u32, String> {
     let session_key = auth.get_session_key().await.map_err(|e| e.to_string())?;
     let client = reqwest::Client::new();
-    let url = "https://ai-tenant.renlijia.com/v1/desktop-resources?types=expert_team_template";
+    let url = format!(
+        "{}/v1/desktop-resources?types=expert_team_template",
+        crate::environment::tenant_host()
+    );
 
     let resp = client
         .get(url)

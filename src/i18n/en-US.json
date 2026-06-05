@@ -343,17 +343,25 @@
       "minutesAgo": "{{count}}m ago",
       "hoursAgo": "{{count}}h ago"
     },
-    "devGateway": {
+    "environment": {
       "title": "Environment",
+      "env": {
+        "test": "Test",
+        "pre": "Pre-release",
+        "prod": "Production"
+      },
       "custom": "Custom",
-      "customTitle": "Custom environment host",
-      "customHint": "Enter a gateway origin (e.g. https://host:port, no path). Switching logs you out and requires re-login.",
-      "customPlaceholder": "https://custom-host",
+      "customTitle": "Custom environment hosts",
+      "customHint": "Enter the tenant and ops origins (e.g. https://host:port, no path). Switching logs you out and requires re-login.",
+      "tenantLabel": "Tenant gateway origin",
+      "opsLabel": "Ops portal origin",
+      "tenantPlaceholder": "https://ai-tenant.example.com",
+      "opsPlaceholder": "https://ai-ops.example.com",
       "invalidHost": "Invalid host. Enter an origin like https://host (no path).",
       "switchTarget": "Switches to",
       "switchFailed": "Failed to switch environment",
       "confirmTitle": "Switch environment",
-      "confirmRelogin": "Switching to \"{{env}}\" ({{host}}) will log you out and require re-login. Continue?",
+      "confirmRelogin": "Switching to \"{{env}}\" will log you out and require re-login. Continue?",
       "confirmButton": "Switch"
     },
     "about": {

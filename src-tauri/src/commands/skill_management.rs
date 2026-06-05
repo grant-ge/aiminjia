@@ -549,8 +549,10 @@ pub async fn list_marketplace_skills(
     // page; do not pass scope=public or tenant private skills are filtered out
     // server-side (see plugin/skill/global_sync.rs note).
     let mut url = format!(
-        "https://ai-tenant.renlijia.com/v1/skill-packages?page={}&size={}",
-        page, size
+        "{}/v1/skill-packages?page={}&size={}",
+        crate::environment::tenant_host(),
+        page,
+        size
     );
     if let Some(cat) = &category {
         if !cat.is_empty() {
@@ -623,7 +625,8 @@ pub async fn install_marketplace_skill(
 
     // Step 1: Get the download URL
     let download_url = format!(
-        "https://ai-tenant.renlijia.com/v1/skill-packages/{}/download",
+        "{}/v1/skill-packages/{}/download",
+        crate::environment::tenant_host(),
         package_id
     );
     let resp = client

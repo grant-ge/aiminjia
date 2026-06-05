@@ -104,7 +104,7 @@ async fn cloud_search(
 ) -> Result<String> {
     let session_key = auth_mgr.get_session_key().await?;
 
-    let url = "https://ai-tenant.renlijia.com/v1/search";
+    let url = format!("{}/v1/search", crate::environment::tenant_host());
     let resp = CLOUD_SEARCH_CLIENT
         .post(url)
         .header("Authorization", format!("Bearer {}", session_key))

@@ -1,7 +1,7 @@
 pub mod auth;
 pub mod chat;
 #[cfg(debug_assertions)]
-pub mod dev_gateway;
+pub mod dev_environment;
 pub mod diagnostics;
 pub mod dingtalk;
 pub mod employees;

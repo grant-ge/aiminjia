@@ -19,10 +19,10 @@ use serde_json::json;
 use super::state::{CloudModelInfo, TenantInfo, UserInfo};
 
 /// Gateway origin for all auth/billing endpoints. Resolves to the production
-/// host in release builds; in debug builds it honors the dev gateway override.
-/// See [`crate::gateway`].
+/// host in release builds; in debug builds it honors the dev environment
+/// override. See [`crate::environment`].
 pub fn base_url() -> String {
-    crate::gateway::gateway_host()
+    crate::environment::tenant_host()
 }
 
 /// Raw login/refresh response from the API (snake_case fields).

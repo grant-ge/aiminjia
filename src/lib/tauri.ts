@@ -2343,31 +2343,34 @@ export function runtimeDiagnostics(): Promise<RuntimeDiagnostics> {
 }
 
 // ---------------------------------------------------------------------------
-// Dev-only gateway switcher
+// Dev-only environment switcher
 //
 // These commands exist only in debug builds (the Rust side gates them on
 // `#[cfg(debug_assertions)]`). Callers must guard on `import.meta.env.DEV`;
 // invoking them in a release build rejects with "command not found".
 // ---------------------------------------------------------------------------
 
-export interface GatewayPreset {
-  label: string
-  host: string
+export interface EnvironmentPreset {
+  /** Stable, language-neutral id (`test` / `pre` / `prod`); translate for display. */
+  key: string
+  tenant: string
+  ops: string
 }
 
-export interface DevGatewayState {
-  currentHost: string
+export interface DevEnvironmentState {
+  currentTenant: string
+  currentOps: string
   isOverride: boolean
-  presets: GatewayPreset[]
+  presets: EnvironmentPreset[]
 }
 
-export function getDevGateway(): Promise<DevGatewayState> {
-  return invoke<DevGatewayState>('get_dev_gateway')
+export function getDevEnvironment(): Promise<DevEnvironmentState> {
+  return invoke<DevEnvironmentState>('get_dev_environment')
 }
 
-/** Switch the gateway host. An empty string resets to production. */
-export function setDevGateway(host: string): Promise<DevGatewayState> {
-  return invoke<DevGatewayState>('set_dev_gateway', { host })
+/** Switch the environment. Empty origins (or the production pair) reset to production. */
+export function setDevEnvironment(tenant: string, ops: string): Promise<DevEnvironmentState> {
+  return invoke<DevEnvironmentState>('set_dev_environment', { tenant, ops })
 }
 
 // ---------------------------------------------------------------------------

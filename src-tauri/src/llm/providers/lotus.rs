@@ -32,8 +32,8 @@ use crate::llm::providers::LlmProviderTrait;
 use crate::llm::streaming::{LlmRequest, LlmResponse, StreamBox};
 
 /// Path of the anthropic-native ingress on the lotus gateway. The origin is
-/// resolved at construction time via [`crate::gateway::gateway_host`] so the
-/// dev gateway switch takes effect (production host in release builds).
+/// resolved at construction time via [`crate::environment::tenant_host`] so the
+/// dev environment switch takes effect (production host in release builds).
 const LOTUS_ANTHROPIC_PATH: &str = "/anthropic/v1/messages";
 
 /// Maximum extra attempts on `send` for network-class errors. The first
@@ -60,7 +60,7 @@ impl LotusProvider {
             inner: ClaudeProvider::with_url_opts(
                 session_key,
                 None, // model unused (gateway decides)
-                format!("{}{}", crate::gateway::gateway_host(), LOTUS_ANTHROPIC_PATH),
+                format!("{}{}", crate::environment::tenant_host(), LOTUS_ANTHROPIC_PATH),
                 false, // is_direct=false → no beta headers
                 true,  // omit_model in request body
             ),

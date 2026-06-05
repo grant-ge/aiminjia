@@ -15,7 +15,7 @@ use crate::llm::streaming::{
 };
 
 /// Path of the v2 responses route. The origin is resolved per-request via
-/// [`crate::gateway::gateway_host`] so the dev gateway switch takes effect
+/// [`crate::environment::tenant_host`] so the dev environment switch takes effect
 /// (production host in release builds).
 const AIJIA_GATEWAY_V2_RESPONSES_PATH: &str = "/aijia/v2/ai/responses";
 
@@ -63,7 +63,7 @@ impl LlmProviderTrait for AijiaGatewayV2Provider {
     async fn stream(&self, request: LlmRequest) -> Result<StreamBox> {
         let url = format!(
             "{}{}",
-            crate::gateway::gateway_host(),
+            crate::environment::tenant_host(),
             AIJIA_GATEWAY_V2_RESPONSES_PATH
         );
         let body = build_aijia_request_for_route(request, &self.model_type, self.use_tools);
