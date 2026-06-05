@@ -16,20 +16,23 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 use std::sync::Arc;
-use tauri::AppHandle;
 
 use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::{ToolDefinition, ToolKind};
 use crate::runtime::tools::executor::{ToolError, ToolResult};
 use crate::runtime::tools::RuntimeTool;
 
+pub trait SkillRegistryRefresher: Send + Sync + std::fmt::Debug {
+    fn refresh_skill_registry(&self) -> Result<(), String>;
+}
+
 pub struct RefreshSkillsTool {
-    app: Arc<AppHandle>,
+    refresher: Arc<dyn SkillRegistryRefresher>,
 }
 
 impl RefreshSkillsTool {
-    pub fn new(app: Arc<AppHandle>) -> Self {
-        Self { app }
+    pub fn new(refresher: Arc<dyn SkillRegistryRefresher>) -> Self {
+        Self { refresher }
     }
 }
 
@@ -58,7 +61,7 @@ impl RuntimeTool for RefreshSkillsTool {
         _input: Value,
         _ctx: ToolExecutionContext,
     ) -> Result<ToolResult, ToolError> {
-        match crate::commands::skill_management::refresh_skill_registry(&self.app) {
+        match self.refresher.refresh_skill_registry() {
             Ok(()) => Ok(ToolResult::new(
                 "RefreshSkills",
                 "✅ Skill registry refreshed. 新装的技能下一 turn 可用。".to_string(),

@@ -46,6 +46,14 @@ export interface TurnSummary {
   completedAt: number
 }
 
+export interface CompactSummary {
+  preTokens: number
+  postTokens: number
+  tokensSaved: number
+  messagesSummarized: number
+  completedAt: number
+}
+
 export interface PendingAsk {
   conversationId: string
   runId: string
@@ -63,6 +71,7 @@ export interface ConversationStreamState {
   streamingContent: string
   toolExecutions: ToolExecution[]
   lastTurnSummary?: TurnSummary
+  lastCompactSummary?: CompactSummary
   /**
    * Backend-driven macro-state of the current turn (spec
    * 2026-05-17-turn-stages §3).  null when no stage has arrived yet
@@ -108,6 +117,7 @@ export interface StreamingState {
   removePendingAsk: (toolCallId: string) => void
   clearConversationPendingAsks: (conversationId: string) => void
   setLastTurnSummary: (convId: string, summary: TurnSummary) => void
+  setLastCompactSummary: (convId: string, summary: CompactSummary) => void
   setConversationTurnStage: (
     convId: string,
     stage: TurnStageKind,
@@ -268,6 +278,7 @@ export function createStreamingSlice<T extends StreamingState & StreamingSliceBr
             streamingContent: '',
             toolExecutions: [],
             lastTurnSummary: previous.lastTurnSummary,
+            lastCompactSummary: previous.lastCompactSummary,
             turnStage: null,
             stageStartedAt: null,
             lastHeartbeatAt: null,
@@ -386,6 +397,17 @@ export function createStreamingSlice<T extends StreamingState & StreamingSliceBr
         const streamStates = {
           ...state.streamStates,
           [convId]: { ...previous, lastTurnSummary: summary },
+        }
+        const legacy = deriveLegacy(state.activeConversationId, streamStates)
+        return { streamStates, ...legacy } as Partial<T>
+      }),
+
+    setLastCompactSummary: (convId, summary) =>
+      apply((state) => {
+        const previous = getStreamState(state.streamStates, convId)
+        const streamStates = {
+          ...state.streamStates,
+          [convId]: { ...previous, lastCompactSummary: summary },
         }
         const legacy = deriveLegacy(state.activeConversationId, streamStates)
         return { streamStates, ...legacy } as Partial<T>

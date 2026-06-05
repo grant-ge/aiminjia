@@ -1,4 +1,5 @@
 pub mod canonical;
+pub mod compact_summary_client;
 pub mod content_filter;
 pub mod context_decay;
 pub mod gate_log;

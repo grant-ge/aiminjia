@@ -25,7 +25,7 @@ pub(crate) fn canonicalize_or_ancestor(p: &Path) -> std::io::Result<PathBuf> {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::NotFound,
                     "no existing ancestor",
-                ))
+                ));
             }
             Some(parent) => {
                 if let Some(component) = ancestor.file_name() {

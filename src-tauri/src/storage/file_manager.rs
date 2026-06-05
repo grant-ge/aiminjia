@@ -188,7 +188,10 @@ impl FileManager {
             Err(_) => {
                 // Log the rejection but return workspace root join (not the raw stored_path join)
                 // This is a defensive fallback: callers should use safe_resolve directly for security-critical paths
-                log::warn!("[FileManager::full_path] path traversal rejected for '{}', returning workspace root", stored_path);
+                log::warn!(
+                    "[FileManager::full_path] path traversal rejected for '{}', returning workspace root",
+                    stored_path
+                );
                 self.workspace_path()
             }
         }

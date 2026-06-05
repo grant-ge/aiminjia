@@ -216,6 +216,18 @@ pub enum RuntimeEventKind {
     },
     RunCancelled,
     RunCompleted,
+    /// Auto-compact completed successfully.  Carries token savings so the
+    /// frontend can show a compaction summary (e.g. "保存了 X 个 token").
+    CompactCompleted {
+        conversation_id: String,
+        boundary_id: String,
+        trigger: String,
+        created_at: String,
+        tail_message_id: Option<String>,
+        pre_tokens: u64,
+        post_tokens: u64,
+        messages_summarized: usize,
+    },
     /// Macro-state of the current turn changed.  Always emitted alongside the
     /// existing fine-grained events; UI uses this as the single source of truth
     /// for the "what is the agent doing right now" indicator (see
@@ -353,6 +365,34 @@ impl RuntimeEvent {
             RuntimeEventKind::TurnHeartbeat {
                 stage_elapsed_ms,
                 turn_elapsed_ms,
+            },
+        )
+    }
+
+    pub fn compact_completed(
+        session_id: SessionId,
+        run_id: RunId,
+        conversation_id: String,
+        boundary_id: String,
+        trigger: String,
+        created_at: String,
+        tail_message_id: Option<String>,
+        pre_tokens: u64,
+        post_tokens: u64,
+        messages_summarized: usize,
+    ) -> Self {
+        Self::new(
+            session_id,
+            run_id,
+            RuntimeEventKind::CompactCompleted {
+                conversation_id,
+                boundary_id,
+                trigger,
+                created_at,
+                tail_message_id,
+                pre_tokens,
+                post_tokens,
+                messages_summarized,
             },
         )
     }

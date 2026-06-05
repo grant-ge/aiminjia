@@ -1178,7 +1178,10 @@ pub async fn run_worker(
         WorkerMode::AsyncOneShot => {
             // Legacy path is handled by SubagentWorkerRuntime; this variant is
             // here for API completeness and future unification.
-            log::info!("[TeammateIdle] agent={} WorkerMode::AsyncOneShot — delegating to SubagentWorkerRuntime", ctx.agent_id.as_str());
+            log::info!(
+                "[TeammateIdle] agent={} WorkerMode::AsyncOneShot — delegating to SubagentWorkerRuntime",
+                ctx.agent_id.as_str()
+            );
             Ok(())
         }
         WorkerMode::TeammateIdle {
@@ -1372,14 +1375,17 @@ fn render_inbox_message_as_user_text(
             "<plan-approval-request id=\"{}\">\n  <plan>{}</plan>\n  <instructions>请用 SendMessage plan_approval_response (相同 request_id) 表态：approve=true 通过，approve=false 并附 feedback 拒绝。</instructions>\n</plan-approval-request>",
             request_id, plan
         ),
-        M::PlanApprovalResponse { request_id, approve, feedback } => format!(
+        M::PlanApprovalResponse {
+            request_id,
+            approve,
+            feedback,
+        } => format!(
             "<plan-approval-response id=\"{}\" approve=\"{}\">\n  <feedback>{}</feedback>\n</plan-approval-response>",
             request_id,
             approve,
             feedback.as_deref().unwrap_or("")
         ),
-        _ => serde_json::to_string(message)
-            .unwrap_or_else(|_| message.variant_name().to_string()),
+        _ => serde_json::to_string(message).unwrap_or_else(|_| message.variant_name().to_string()),
     }
 }
 
@@ -1636,7 +1642,10 @@ async fn teammate_real_turn(
         "[TeammateIdle][permission-trace] agent={} name={} pctx.dirs={:?} pctx.allow={} pctx.deny={}",
         ctx.agent_id.as_str(),
         agent_name,
-        teammate_pctx.additional_working_dirs.keys().collect::<Vec<_>>(),
+        teammate_pctx
+            .additional_working_dirs
+            .keys()
+            .collect::<Vec<_>>(),
         teammate_pctx.allow_rules.len(),
         teammate_pctx.deny_rules.len(),
     );

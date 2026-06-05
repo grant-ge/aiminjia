@@ -58,7 +58,7 @@ impl RuntimeArtifactFetcher {
             RuntimeManifestSource::Url(url) => {
                 return Err(RuntimeArtifactFetchError::UnsupportedSource(format!(
                     "manifest url requires async fetcher: {url}"
-                )))
+                )));
             }
         };
         self.fetch_from_manifest_text(&manifest_text, runtime_name, platform, downloads_dir)

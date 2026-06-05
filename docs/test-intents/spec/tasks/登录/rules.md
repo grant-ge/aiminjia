@@ -132,7 +132,6 @@
 
 **验收标准**
 
-应该看到：
 - 文件 `~/.renlijia/users/t_{tenantId}__u_{userId}/brand.json` 存在
 - 该文件为合法 JSON，至少包含 `productName`、`accentColor`、`primaryColor`、`bgColor`、`sidebarBgColor` 五个字段
 - `productName` 字段值等于 `$PRODUCT_NAME`；`accentColor` 字段值等于 `$ACCENT_COLOR`（大小写不敏感比较）
@@ -140,7 +139,6 @@
 - 顶栏节点 `[data-aijia-product-name]` 的可见文本等于 `$PRODUCT_NAME`，不显示默认的 `"AI小家"`
 - 登出（按意图 3 操作）后再回到登录页，登录页 logo 区域使用 `brand.json` 中保存的 `logoUrl`（即不闪回默认 logo）
 
-不应该看到：
 - `~/.renlijia/` 下完全找不到任何包含 `brand` 的文件（说明 brandingStore 没把品牌信息持久化）
 - 顶栏 `[data-aijia-product-name]` 节点缺失（说明 selector 还没加到 LoginCard / 顶栏）
 - `brand.json` 字段值与 lotus 后台配置不一致（写盘错位）

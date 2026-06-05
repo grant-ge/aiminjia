@@ -1,10 +1,12 @@
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use app_lib::runtime::cancellation::CancellationToken;
 use app_lib::runtime::chat::chat_turn_driver::inject_synthetic_tool_results_for_missing_calls;
 use app_lib::runtime::chat::compact_client::CompactSummaryClient;
 use app_lib::runtime::chat::compaction::{
-    build_compact_boundary_record, CompactBoundaryRecord, CompactTrigger,
+    build_compact_boundary_record, compact_transcript_path_for_conversation_dir,
+    CompactBoundaryRecord, CompactTrigger,
 };
 use app_lib::runtime::chat::turn_config::{LlmStepInput, LlmStepResult, TurnError};
 use app_lib::runtime::chat::{ChatTurnRequest, RuntimeChatTurnDriver, RuntimeLlmExecutor};
@@ -76,6 +78,7 @@ impl RuntimeLlmExecutor for ErrorAfterHistoryExecutor {
         _generated_file_ids: &[String],
         _file_metas: &[serde_json::Value],
         _thinking_blocks: &[serde_json::Value],
+        _error: Option<&app_lib::storage::file_store::types::MessageError>,
     ) -> Result<String, TurnError> {
         Ok("assistant-msg".to_string())
     }
@@ -91,7 +94,10 @@ impl RuntimeLlmExecutor for ErrorAfterHistoryExecutor {
 
 struct CompactingExecutor {
     boundaries: Mutex<Vec<CompactBoundaryRecord>>,
+    compact_messages: Mutex<Vec<JsonValue>>,
     llm_calls: Mutex<usize>,
+    user_message_ids: Mutex<Vec<String>>,
+    conversation_dir: PathBuf,
 }
 
 /// A CompactSummaryClient that returns a fixed summary string — used by
@@ -114,6 +120,9 @@ impl CompactSummaryClient for StaticCompactSummaryClient {
         &self,
         _conversation_id: &str,
         _messages: &[serde_json::Value],
+        _llm_settings: &app_lib::runtime::chat::turn_config::ResolvedLlmSettings,
+        _trace_id: Option<&str>,
+        _run_id: Option<&str>,
     ) -> Result<String, TurnError> {
         Ok(self.summary.clone())
     }
@@ -123,12 +132,23 @@ impl CompactingExecutor {
     fn new() -> Self {
         Self {
             boundaries: Mutex::new(Vec::new()),
+            compact_messages: Mutex::new(Vec::new()),
             llm_calls: Mutex::new(0),
+            user_message_ids: Mutex::new(Vec::new()),
+            conversation_dir: std::env::temp_dir().join("aijia-compact-transcript-path-test"),
         }
     }
 
     fn saved_boundaries(&self) -> Vec<CompactBoundaryRecord> {
         self.boundaries.lock().unwrap().clone()
+    }
+
+    fn saved_compact_messages(&self) -> Vec<JsonValue> {
+        self.compact_messages.lock().unwrap().clone()
+    }
+
+    fn persisted_user_ids(&self) -> Vec<String> {
+        self.user_message_ids.lock().unwrap().clone()
     }
 }
 
@@ -153,6 +173,10 @@ impl RuntimeLlmExecutor for CompactingExecutor {
         })
     }
 
+    fn conversation_dir(&self, _conversation_id: &str) -> Option<PathBuf> {
+        Some(self.conversation_dir.clone())
+    }
+
     async fn persist_assistant_message(
         &self,
         _conversation_id: &str,
@@ -161,6 +185,7 @@ impl RuntimeLlmExecutor for CompactingExecutor {
         _generated_file_ids: &[String],
         _file_metas: &[serde_json::Value],
         _thinking_blocks: &[serde_json::Value],
+        _error: Option<&app_lib::storage::file_store::types::MessageError>,
     ) -> Result<String, TurnError> {
         Ok("assistant-msg".to_string())
     }
@@ -181,8 +206,33 @@ impl RuntimeLlmExecutor for CompactingExecutor {
         Ok(history)
     }
 
+    async fn persist_user_message(
+        &self,
+        _conversation_id: &str,
+        _content: &str,
+        _attachments: &[app_lib::runtime::chat::chat_turn_driver::ChatAttachmentRef],
+        _skill_command: Option<&app_lib::runtime::chat::chat_turn_driver::SkillCommandRef>,
+        _client_message_id: Option<&str>,
+    ) -> Result<String, TurnError> {
+        let id = "current-user".to_string();
+        self.user_message_ids.lock().unwrap().push(id.clone());
+        Ok(id)
+    }
+
     async fn save_compact_boundary(&self, record: CompactBoundaryRecord) -> Result<(), TurnError> {
         self.boundaries.lock().unwrap().push(record);
+        Ok(())
+    }
+
+    async fn persist_compact_messages(
+        &self,
+        _conversation_id: &str,
+        messages: &[JsonValue],
+    ) -> Result<(), TurnError> {
+        self.compact_messages
+            .lock()
+            .unwrap()
+            .extend(messages.iter().cloned());
         Ok(())
     }
 
@@ -253,8 +303,90 @@ async fn u3_compact_success_persists_boundary_record_with_anchor() {
     assert_eq!(boundary.conversation_id, "conv-u3");
     assert_eq!(boundary.trigger, CompactTrigger::Auto);
     assert!(boundary.pre_tokens > boundary.post_tokens);
-    assert_eq!(boundary.tail_message_id.as_deref(), Some("tail-user"));
+    assert_eq!(boundary.tail_message_id.as_deref(), Some("current-user"));
+    let preserved = boundary
+        .preserved_segment
+        .as_ref()
+        .expect("compact should record the preserved tail segment");
+    assert_eq!(preserved.first_preserved_message_id, "current-user");
+    assert_eq!(preserved.tail_message_id, "current-user");
+    assert!(
+        preserved.anchor_message_id.starts_with("compact-summary-"),
+        "suffix-preserving compact should anchor the kept segment after the summary message"
+    );
     assert!(boundary.summary_text.contains("压缩摘要"));
+    let expected_transcript_dir = executor.conversation_dir("conv-u3").unwrap();
+    let expected_transcript_path =
+        compact_transcript_path_for_conversation_dir(&expected_transcript_dir);
+    assert!(
+        PathBuf::from(&expected_transcript_path).is_absolute(),
+        "compact boundary transcript hint should be an absolute path"
+    );
+    assert!(
+        boundary.summary_text.contains(&expected_transcript_path),
+        "compact boundary summary should include the original transcript path"
+    );
+
+    let compact_messages = executor.saved_compact_messages();
+    let boundary_message = compact_messages
+        .iter()
+        .find(|message| {
+            message.get("role").and_then(|value| value.as_str()) == Some("system")
+                && message.get("subtype").and_then(|value| value.as_str())
+                    == Some("compact_boundary")
+        })
+        .expect("compact success should persist a system compact_boundary message");
+    assert_eq!(
+        boundary_message["compactMetadata"]["tailMessageId"],
+        "current-user"
+    );
+    let summary_message = compact_messages
+        .iter()
+        .find(|message| {
+            message
+                .get("isCompactSummary")
+                .and_then(|value| value.as_bool())
+                == Some(true)
+        })
+        .expect("compact success should persist the compact summary message");
+    assert!(
+        summary_message
+            .get("content")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default()
+            .contains(&expected_transcript_path),
+        "compact summary message should include the original transcript path"
+    );
+    assert_eq!(
+        boundary_message["compactMetadata"]["preservedSegment"]["headUuid"],
+        "current-user"
+    );
+    assert_eq!(
+        boundary_message["compactMetadata"]["preservedSegment"]["anchorUuid"],
+        preserved.anchor_message_id
+    );
+    assert_eq!(
+        boundary_message["compactMetadata"]["preservedSegment"]["tailUuid"],
+        "current-user"
+    );
+    assert_eq!(
+        boundary_message["compactMetadata"]["postTokens"],
+        boundary.post_tokens
+    );
+    assert_eq!(
+        boundary_message["compactMetadata"]["tokensSaved"],
+        boundary.pre_tokens.saturating_sub(boundary.post_tokens)
+    );
+    assert!(
+        compact_messages.iter().any(|message| {
+            message
+                .get("isCompactSummary")
+                .and_then(|value| value.as_bool())
+                == Some(true)
+        }),
+        "compact success should persist the compact summary message into the transcript"
+    );
+    assert_eq!(executor.persisted_user_ids(), vec!["current-user"]);
 }
 
 #[test]

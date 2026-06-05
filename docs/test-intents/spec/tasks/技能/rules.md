@@ -44,14 +44,12 @@
 
 **验收标准**
 
-应该看到：
 - 文件 `~/.renlijia/users/{scope}/skills/demo-skill/SKILL.md` 存在
 - 该文件首行为 `---`、内容含 `name: demo-skill` 与 `演示用：一个最小可加载技能`
 - 技能中心 DOM 中存在 `[data-aijia-skill-card][data-aijia-skill-id="demo-skill"]` 节点（CLI 待补 `aijia skill-cards --json`，详见 `cli-gap.md`）
 - 该卡片节点的 `data-aijia-skill-source` 属性值为 `"user"`（导入路径下沉到 user scope，不是 global）
 - 技能中心 UI 上该卡片的可见文本含 `demo-skill` 与 `演示用：一个最小可加载技能`
 
-不应该看到：
 - 应用日志中含 `Failed to parse skill demo-skill` 字样
 - 技能中心出现重复的 `demo-skill` 卡片（多次 mock 入队 + click 不能造成多份导入）
 
@@ -73,12 +71,10 @@
 
 **验收标准**
 
-应该看到：
 - 在该对话目录 `~/.renlijia/users/{scope}/conversations/{conv_id}/` 下，`messages.jsonl` 中出现至少一条 `role` 为 `"assistant"` 的消息，其顶层 `toolCalls[].name` 字段值为 `"Skill"`，且参数中包含 `"demo-skill"`
 - 同一对话的消息文件中紧随其后出现一条 `role` 为 `"tool"` 的消息，其 `content` 字段（经 `\t✓\n` 分隔后取记录）的文本中包含 `本技能用于意图测试`
 - 对话界面最终展示的 AI 回复文本中**引用了** `demo-skill` SKILL.md body 的内容（包含 `本技能用于意图测试` 子串，或对该 body 描述的功能做出回应）
 
-不应该看到：
 - 对话 UI 中该轮出现红色错误提示
 - 「工具调用失败」之类的 toast
 - AI 回复"我没有找到 demo-skill 技能"（说明 catalog 没注入或 skill 未导入成功）
@@ -120,13 +116,11 @@
 
 **验收标准**
 
-应该看到：
 - 第 3 步成功（toast 提示导入成功 / 技能中心出现 good-skill 卡片）
 - 第 4 步**失败**（toast 提示导入失败 / 错误提示含 "name" 必填校验信息）
 - 技能中心 DOM 含 `[data-aijia-skill-card][data-aijia-skill-id="good-skill"]` 节点
 - `~/.renlijia/users/{scope}/skills/good-skill/SKILL.md` 存在
 
-不应该看到：
 - 技能中心 DOM 出现 `[data-aijia-skill-card][data-aijia-skill-id="bad-skill"]` 节点
 - `~/.renlijia/users/{scope}/skills/bad-skill/` 目录被创建（产品在导入校验失败时不应落盘）
 - good-skill 同批被错误退回（一个失败影响另一个）
@@ -170,7 +164,7 @@
 
 **验收标准**
 
-应该看到：（3 轮**每一轮都必须独立满足**，任一轮未满足即整条 FAIL）
+- 轮 A / 轮 B / 轮 C 每一轮都必须独立满足以下判定项，任一轮未满足即整条 FAIL
 - 轮 A 的 `~/.renlijia/users/{scope}/conversations/{conv_a}/messages.jsonl` 中存在一条 `role == "assistant"` 的记录，其顶层 `toolCalls` 数组中存在一项 `name == "Skill"` 且参数 JSON 中 `skill_id == "dingtalk-workspace"`
 - 轮 A 紧随其后存在一条 `role == "tool"` 的记录，其 `toolCallId` 等于上一条对应 `toolCalls[N].id`，且 `content.text` 中包含字符串 `dingtalk-workspace-cli`
 - 轮 B 的 `~/.renlijia/users/{scope}/conversations/{conv_b}/messages.jsonl` 中存在一条 `role == "assistant"` 的记录，其 `toolCalls` 中存在一项 `name == "Skill"` 且参数 JSON 中 `skill_id == "dingtalk-workspace"`
@@ -178,7 +172,6 @@
 - 轮 C 的 `~/.renlijia/users/{scope}/conversations/{conv_c}/messages.jsonl` 中存在一条 `role == "assistant"` 的记录，其 `toolCalls` 中存在一项 `name == "Skill"` 且参数 JSON 中 `skill_id == "dingtalk-workspace"`
 - 轮 C 紧随其后存在一条 `role == "tool"` 的记录，`content.text` 中包含字符串 `dingtalk-workspace-cli`
 
-不应该看到：
 - 任何一轮中出现红色错误提示或「工具调用失败」类 toast
 - 任何一轮 `toolCalls[].name == "Skill"` 的参数中 `skill_id` 为 `钉钉`、`dingtalk`、`dws`、`钉钉日历`（这些都不是 skill 真 id，传错会 not found）
 - 任何一轮 AI 回复文本中出现「我不知道怎么操作钉钉」「我没有相关技能」等否认有能力的措辞
@@ -200,12 +193,10 @@
 
 **验收标准**
 
-应该看到：
 - `~/.renlijia/users/{scope}/conversations/{conv_id}/messages.jsonl` 中存在一条 `role == "assistant"` 的记录，其 `toolCalls` 中存在一项 `name == "Skill"`
 - 该 `Skill` 调用参数 JSON 中 `skill_id == "dingtalk-workspace"`
 - 该 `Skill` 调用对应的 `role == "tool"` 记录的 `content.text` 中包含字符串 `dingtalk-workspace-cli`
 
-不应该看到：
 - `toolCalls[].name == "Skill"` 的参数中 `skill_id == "玩转钉钉"`（按 label 字面找会 not found）
 - 该 turn 出现「skill not found」类错误 tool result
 - AI 回复中出现「没有名叫玩转钉钉的技能」「找不到对应技能」等措辞
@@ -263,12 +254,11 @@
 
 **验收标准**
 
-应该看到：（双分支任一满足即 PASS）
+- 以下两个分支任一满足即 PASS
 - **分支 A（同对话双技能均加载）**：`~/.renlijia/users/{scope}/conversations/{conv_id}/messages.jsonl` 中 `toolCalls[].name == "Skill"` 调用的 `skill_id` 去重集合 == `{"html-ppt", "dingtalk-workspace"}`
 - **分支 B（先主后副、AI 在 reply 中预告第二个技能）**：jsonl 中至少存在 1 条 `toolCalls[].name == "Skill"` 调用，且 `skill_id` ∈ `{"html-ppt", "dingtalk-workspace"}`；并且 jsonl 中最后一条 `role == "assistant"` 且 `toolCalls.length == 0` 的记录，其 `content.text` 中同时包含字符串 `钉钉` 和 `PPT`（说明 LLM 在文本里 acknowledge 了两个领域、把第二个技能留给后续轮处理）
 - 任一被加载的 `Skill` 调用紧随其后的 `role == "tool"` 记录 `isError != true` 且 `content.text` 长度 `!= 0`
 
-不应该看到：
 - jsonl 中**无任何** `toolCalls[].name == "Skill"` 调用（一个技能都没加载 = 完全没理解需求）
 - `toolCalls[].name == "Skill"` 的参数中 `skill_id` 出现非 `html-ppt` / `dingtalk-workspace` 字面（如 `ppt` / `dingtalk` / `钉钉` / `年度总结 PPT` 等错误字面 id）
 - AI 回复中出现「我没有 PPT 生成技能」「无法生成 PPT」「无法发送钉钉」等否认能力的措辞
@@ -300,7 +290,6 @@
 
 **验收标准**
 
-应该看到：
 - 步骤 8 的 `wait-reply --timeout 1800` 在 1800 秒内返回 `ok`（即 `T1 - T0 < 1800`）
 - 步骤 8 采样的 `(text_len, msg_count)` 时间序列中，**不存在**任何连续 9 次（≥ 90 秒）两个指标都未增长的窗口（从 grace period 之后算起）
 - `~/.renlijia/users/{scope}/conversations/{conv_id}/messages.jsonl` 中存在至少 1 条 `role == "assistant"` 的记录，其 `toolCalls` 中存在一项 `name == "Skill"` 且参数 JSON 中 `skill_id == "html-ppt"`
@@ -309,7 +298,6 @@
 - workspace 下出现至少 1 个 PPT 产物文件（如 `index.html` 或 `*.html`），大小 `>= 50 KB`（30 页 PPT 实测 100+ KB）
 - 跑完后 `tauri-pilot aijia health-check` 仍返回 ok
 
-不应该看到：
 - 步骤 8 采样序列出现 ≥ 90 秒的"双指标同时零增长窗口"（这是客户感知"看着像死了"的硬证据）
 - 对话 UI 中本轮出现红色错误提示或「工具调用失败」类 toast
 - 应用日志中出现 `panic` 或 `Failed to write` 等致命错误字样
@@ -343,14 +331,12 @@
 
 **验收标准**
 
-✅ 应该看到
 - `~/.renlijia/users/{scope}/skills/hello-world/SKILL.md` 存在
 - `$CONV_1/messages.jsonl` 中含 `"name":"RefreshSkills"` 的 toolCall（证明 step 8 跑过）
 - `$CONV_2/messages.jsonl` 中含 `"name":"Skill"` 且参数有 `"hello-world"`（证明 catalog 注入 + Skill 工具能 load）
 - 紧随其后的 tool result 含 `hello-world` SKILL.md body 关键词（比如返回 "Hi!"）
 - AI 在 $CONV_2 最终输出引用了 SKILL.md 内容（含 `[hello-world]` 或 `Hi!` 子串）
 
-❌ 不应该看到
 - AI 在 $CONV_2 回 "我没有找到 hello-world 技能"（说明 catalog 未刷新）
 - 任何"请重启应用"的提示
 - `Skill('hello-world')` 工具调用返回 `Unknown or unavailable skill`
@@ -388,14 +374,13 @@
 
 **验收标准**
 
-应该看到：（3 轮**每一轮都必须独立满足**，任一轮未满足即整条 FAIL）
+- 轮 1 / 轮 2 / 轮 3 每一轮都必须独立满足以下判定项，任一轮未满足即整条 FAIL
 - 轮 1 / 轮 2 / 轮 3 的 `wait-reply --timeout 1200` 均返回 `ok`（即 `T1_a - T0_a < 1200`、`T1_b - T0_b < 1200`、`T1_c - T0_c < 1200`）
 - 轮 1 / 轮 2 / 轮 3 各自采样的 `(text_len, msg_count)` 时间序列中均**不存在**任何连续 9 次（≥ 90 秒）两个指标都未增长的窗口（从 grace period 之后算起）
 - `~/.renlijia/users/{scope}/conversations/{conv_id}/messages.jsonl` 中至少有 1 条 `role == "assistant"` 的记录 `toolCalls[].name == "Skill"` 且 `skill_id == "html-ppt"`（轮 1 必定触发；轮 2/3 是否复用 skill body 由 LLM 决定，不强约束）
 - 3 轮各自最后一条 `role == "assistant"` 且 `toolCalls.length == 0` 的记录中 `content.text` 长度均 `>= 100`
 - 跑完 3 轮后 `tauri-pilot aijia health-check` 仍返回 ok
 
-不应该看到：
 - 任一轮采样序列出现 ≥ 90 秒的"双指标同时零增长窗口"
 - 任一轮 `wait-reply` 在 1200 秒超时返回错误
 - 同对话中出现 `role == "tool"` 记录的 `content.text` 包含 `context length exceeded` / `too many tokens` 字样（应当通过上下文压缩规避，而不是直接报错）

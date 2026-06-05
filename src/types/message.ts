@@ -40,6 +40,9 @@ export interface Message {
   role: MessageRole
   createdAt: string
   content: MessageContent
+  subtype?: string
+  compactMetadata?: CompactMetadata
+  isCompactSummary?: boolean
   /** Sender information (only present for user messages) */
   sender?: MessageSender
   /** assistant 消息专用：工具调用入参列表，来自磁盘 toolCalls 字段 */
@@ -55,6 +58,26 @@ export interface Message {
    * 顶层字段（与 content 同级），不塞进 content。
    */
   error?: MessageError
+}
+
+export interface CompactMetadata {
+  trigger?: 'manual' | 'auto'
+  preTokens?: number
+  postTokens?: number
+  tokensSaved?: number
+  messagesSummarized?: number
+  tailMessageId?: string
+  preservedSegment?: CompactPreservedSegment
+}
+
+export interface CompactPreservedSegment {
+  firstPreservedMessageId?: string
+  anchorMessageId?: string
+  tailMessageId?: string
+  preservedTokenCount?: number
+  headUuid?: string
+  anchorUuid?: string
+  tailUuid?: string
 }
 
 /** Information about the message sender (for user messages) */

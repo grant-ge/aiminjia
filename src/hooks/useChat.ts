@@ -18,6 +18,7 @@ import i18n from '@/i18n'
 import { recordDiagnostic, recordDiagnosticError } from '@/lib/diagnostics'
 import {
   sendMessage,
+  compactConversation,
   stopStreaming,
   getMessages,
   getTasks,
@@ -40,6 +41,13 @@ const MAX_CONCURRENT_AGENTS = 99
 /** Generate a unique ID without requiring the `uuid` package. */
 function generateId(): string {
   return crypto.randomUUID?.() ?? `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`
+}
+
+function parseManualCompactCommand(text: string): string | undefined | null {
+  const match = text.match(/^\/compact(?:\s+([\s\S]*))?$/)
+  if (!match) return undefined
+  const instructions = match[1]?.trim()
+  return instructions ? instructions : null
 }
 
 /** File info passed from chat input UI to sendUserMessage. */
@@ -289,6 +297,7 @@ export function useChat() {
   ): Promise<boolean> => {
     let store = useChatStore.getState()
     let conversationId = store.activeConversationId
+    const manualCompactInstructions = skill ? undefined : parseManualCompactCommand(text)
     console.log('[useChat] sendUserMessage, conversationId:', conversationId, 'text:', text.slice(0, 50))
 
     if (
@@ -320,6 +329,68 @@ export function useChat() {
         context: 'toast',
       })
       return false
+    }
+
+    if (manualCompactInstructions !== undefined) {
+      if (!conversationId) {
+        useNotificationStore.getState().push({
+          level: 'warning',
+          title: i18n.t('errors.pleaseWait'),
+          message: '当前没有可压缩的对话',
+          actions: [],
+          dismissible: true,
+          autoHide: 5,
+          context: 'toast',
+        })
+        return false
+      }
+      if (store.busyConversations.has(conversationId)) {
+        useNotificationStore.getState().push({
+          level: 'warning',
+          title: i18n.t('errors.pleaseWait'),
+          message: i18n.t('errors.pleaseWait'),
+          actions: [],
+          dismissible: true,
+          autoHide: 5,
+          context: 'toast',
+        })
+        return false
+      }
+
+      recordDiagnostic({
+        event: 'compact.manual.started',
+        conversationId,
+        payload: { hasCustomInstructions: Boolean(manualCompactInstructions) },
+      })
+      store.setConversationStreaming(conversationId, true)
+      store.addBusyConversation(conversationId)
+
+      try {
+        await compactConversation(conversationId, manualCompactInstructions)
+        recordDiagnostic({
+          event: 'compact.manual.completed',
+          ok: true,
+          conversationId,
+        })
+        return true
+      } catch (err) {
+        console.error('[useChat] compactConversation IPC failed:', err)
+        recordDiagnosticError('compact.manual.failed', err, { conversationId })
+        useNotificationStore.getState().push({
+          level: 'error',
+          title: i18n.t('errors.sendFailed'),
+          message: String(err) || i18n.t('errors.sendFailedDesc'),
+          actions: [],
+          dismissible: true,
+          autoHide: 8,
+          context: 'toast',
+        })
+        return false
+      } finally {
+        const current = useChatStore.getState()
+        current.clearConversationStreamState(conversationId)
+        current.removeBusyConversation(conversationId)
+      }
     }
 
     // Auto-create a conversation if none is active

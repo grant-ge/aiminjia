@@ -139,7 +139,7 @@ impl RuntimeDownloader {
             {
                 Ok(path) => return Ok(path),
                 Err(RuntimeDownloadError::Cancelled) => {
-                    return Err(RuntimeDownloadError::Cancelled)
+                    return Err(RuntimeDownloadError::Cancelled);
                 }
                 Err(RuntimeDownloadError::InvalidStatus(status)) if status < 500 => {
                     return Err(RuntimeDownloadError::InvalidStatus(status));

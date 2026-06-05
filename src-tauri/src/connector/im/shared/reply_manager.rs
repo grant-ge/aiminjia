@@ -280,7 +280,8 @@ impl RuntimeEventSubscriber for DingtalkReplyManager {
                             });
                             log::info!(
                                 "[reply-manager] lazy-registered context for session {} run {} (drain path)",
-                                session_id, run_id
+                                session_id,
+                                run_id
                             );
                         } else {
                             log::warn!(

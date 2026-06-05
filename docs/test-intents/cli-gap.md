@@ -193,7 +193,7 @@ cur=$(aijia where --json | jq -r .messageCount)
 2. **selector 优先级**：`data-aijia-*` > id > aria-label > textContent
 3. **每个可被 CLI 操作的元素，lotus-app 侧加 `data-aijia-<noun>`**（详见 skill 的命名约定表）
 4. **永远不能模拟"靠 React store 推 state"绕过 UI**——CLI 是 UI 操作打包器，不是 IPC / store 替身
-5. **失败信号必须结构化**：`{ok: bool, reason?: snake_case, ...诊断字段}`，不抛非零退出码（除 socket 断连等 infra 故障）
+5. **错误返回必须结构化**：`{ok: bool, reason?: snake_case, ...诊断字段}`，不抛非零退出码（除 socket 断连等 infra 故障）
 
 ## ⚠️ rules.md 不应让 agent 删盘上数据来"满足前提"（2026-05-20）
 
@@ -221,4 +221,3 @@ cur=$(aijia where --json | jq -r .messageCount)
 **追加项**：runner skill §6 环境契约里补一条「rules 写的前提不准要求 agent 删除现有文件 / 目录；agent 看到这种前提应记录为 `FAIL 主因 = rules/CLI 问题` 并跳过破坏性步骤」。
 
 实战出处：登录 task 意图 1，2026-05-20 跑测。用户原话「为什么要删除啊 我操了 这个肯定是 rule 有问题」。
-

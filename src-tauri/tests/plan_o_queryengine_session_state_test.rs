@@ -241,6 +241,7 @@ impl RuntimeLlmExecutor for ImmediateContentExecutor {
         _generated_file_ids: &[String],
         _file_metas: &[serde_json::Value],
         _thinking_blocks: &[serde_json::Value],
+        _error: Option<&app_lib::storage::file_store::types::MessageError>,
     ) -> Result<String, TurnError> {
         Ok("msg-test".to_string())
     }

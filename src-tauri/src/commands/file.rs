@@ -656,7 +656,7 @@ pub async fn get_local_file_preview(path: String) -> Result<FilePreview, String>
             return Ok(unsupported_preview(
                 &file_name,
                 format!("File is unavailable: {}", e),
-            ))
+            ));
         }
     };
     if !metadata.is_file() {
@@ -688,7 +688,7 @@ pub async fn get_local_file_preview(path: String) -> Result<FilePreview, String>
             return Ok(unsupported_preview(
                 &file_name,
                 format!("File is unavailable: {}", e),
-            ))
+            ));
         }
     };
 

@@ -73,7 +73,10 @@ impl MemoryCategory {
             "learning" => Ok(Self::Learning),
             "pattern" => Ok(Self::Pattern),
             "observation" => Ok(Self::Observation),
-            _ => bail!("Invalid memory category: '{}'. Must be one of: preference, fact, learning, pattern, observation", s),
+            _ => bail!(
+                "Invalid memory category: '{}'. Must be one of: preference, fact, learning, pattern, observation",
+                s
+            ),
         }
     }
 

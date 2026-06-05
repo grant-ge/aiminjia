@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use app_lib::runtime::chat::tool_round_types::RuntimeToolCallRequest;
-use app_lib::runtime::event_bus::RuntimeEventBus;
+use app_lib::runtime::event_bus::{RuntimeEventBus, RuntimeEventSubscriber};
 use app_lib::runtime::identity::IdentityMapping;
 use app_lib::runtime::ids::RunId;
 use app_lib::runtime::query_engine::QueryEngine;
@@ -66,7 +66,8 @@ async fn review_runtime_tool_failure_maps_tool_completed_success_false() {
     let engine = QueryEngine::with_dispatcher(dispatcher);
     let host = RecordingRuntimeHost::new();
     let bus = RuntimeEventBus::new();
-    bus.subscribe(Arc::new(TauriEventAdapter::new(host.clone())));
+    let _adapter: Arc<dyn RuntimeEventSubscriber> = Arc::new(TauriEventAdapter::new(host.clone()));
+    bus.subscribe(_adapter.clone());
 
     let mapping = IdentityMapping::from_legacy_conversation_id("conv-tool-error".to_string());
     let turn = TurnState::new(mapping, RunId::new("run-tool-error"), "fail".to_string());

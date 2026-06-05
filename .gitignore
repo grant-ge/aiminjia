@@ -74,3 +74,8 @@ src-tauri/resources/runtime/
 # Build outputs / artifacts
 build/
 build-logs/
+
+# LongMemEval 评测数据集（大文件，不进版本控制；用 tools/longmemeval/download.ps1 下载）
+tools/longmemeval/data/
+# 评测逐条明细产出
+lme_eval_details.jsonl

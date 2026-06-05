@@ -8,6 +8,7 @@ use anyhow::Result;
 // they now live in `runtime::chat` to avoid circular imports.
 use crate::runtime::agent::task_notification::TaskNotificationQueue;
 use crate::runtime::cancellation::{CancellationReason, CancellationToken};
+use crate::runtime::chat::compact_client::CompactSummaryClient;
 pub use crate::runtime::chat::ChatTurnRequest;
 use crate::runtime::chat::{RuntimeChatTurnDriver, RuntimeLlmExecutor};
 use crate::runtime::event_bus::RuntimeEventBus;
@@ -60,6 +61,9 @@ pub struct SessionRuntime {
     /// (`<aijia_home>/users/{scope}/conversations/{conv_id}`) when building
     /// the per-session QueryEngine.  Optional so tests can omit it.
     host: Option<Arc<dyn RuntimeHost>>,
+    /// Compaction backend for auto-compact (P0.2). When `None`, compaction
+    /// requests warn-log and return an empty summary.
+    compact_client: Option<Arc<dyn CompactSummaryClient>>,
     /// Strong references to event bus subscribers. The bus itself stores `Weak`
     /// refs, so subscribers stay alive only as long as their owner holds the Arc.
     /// When this runtime (or the adapter that wraps it) is dropped, subscribers
@@ -87,6 +91,7 @@ impl SessionRuntime {
             lead_idle: None,
             cancellation_registry: None,
             host: None,
+            compact_client: None,
             _subscriber_anchors: Vec::new(),
         }
     }
@@ -119,6 +124,7 @@ impl SessionRuntime {
             lead_idle: None,
             cancellation_registry: None,
             host: None,
+            compact_client: None,
             _subscriber_anchors: Vec::new(),
         }
     }
@@ -227,6 +233,13 @@ impl SessionRuntime {
     /// resolve their conv_dir via `host.resolve_conv_dir(conv_id)`.
     pub fn with_host(mut self, host: Arc<dyn RuntimeHost>) -> Self {
         self.host = Some(host);
+        self
+    }
+
+    /// Attach a compaction backend for auto-compact (P0.2 / Phase R1.1).
+    /// When `None`, compaction requests warn-log and return an empty summary.
+    pub fn with_compact_client(mut self, client: Arc<dyn CompactSummaryClient>) -> Self {
+        self.compact_client = Some(client);
         self
     }
 
@@ -638,6 +651,12 @@ impl SessionRuntime {
             driver = driver.with_turn_stage_path_resolver(Arc::new(move |conv_id: &str| {
                 host.resolve_turn_stage_path(conv_id)
             }));
+        }
+        // Inject compaction backend (Phase R1.1). When None, the driver
+        // warns and returns empty summary — auto-compact is effectively
+        // a no-op.
+        if let Some(ref compact_client) = self.compact_client {
+            driver = driver.with_compact_client(compact_client.clone());
         }
         driver
     }

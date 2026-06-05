@@ -742,7 +742,9 @@ impl ChannelManager {
                 // Register the session in the channel_session_ids set.
                 {
                     if inactive_ref.load(std::sync::atomic::Ordering::SeqCst) {
-                        log::debug!("[channel/telegram] worker observed inactive flag, dropping session id insert");
+                        log::debug!(
+                            "[channel/telegram] worker observed inactive flag, dropping session id insert"
+                        );
                         continue;
                     }
                     let mut ids = channel_session_ids_ref
@@ -925,7 +927,8 @@ impl ChannelManager {
                                 {
                                     log::warn!(
                                         "[channel/telegram] queue-full reject text send failed session={}: {:#}",
-                                        session_for_log, e
+                                        session_for_log,
+                                        e
                                     );
                                 }
                             }
@@ -1131,12 +1134,12 @@ impl ChannelManager {
                 match config_store.whatsapp_state(state, last_error) {
                     Ok(channel_state) => {
                         log::info!(
-                        "[channel/whatsapp] emit channel:platform-state connection={:?} configured={} enabled={} capability={:?}",
-                        channel_state.connection,
-                        channel_state.configured,
-                        channel_state.enabled,
-                        channel_state.capability,
-                    );
+                            "[channel/whatsapp] emit channel:platform-state connection={:?} configured={} enabled={} capability={:?}",
+                            channel_state.connection,
+                            channel_state.configured,
+                            channel_state.enabled,
+                            channel_state.capability,
+                        );
                         let _ = app_handle.emit(
                             "channel:platform-state",
                             &ChannelPlatformStatePayload {
@@ -1486,7 +1489,9 @@ impl ChannelManager {
                 // Register the session id with the shared channel registry.
                 {
                     if inactive_ref.load(std::sync::atomic::Ordering::SeqCst) {
-                        log::debug!("[channel/wecom] worker observed inactive flag, dropping session id insert");
+                        log::debug!(
+                            "[channel/wecom] worker observed inactive flag, dropping session id insert"
+                        );
                         continue;
                     }
                     let mut ids = channel_session_ids_ref
@@ -1675,7 +1680,8 @@ impl ChannelManager {
                                 {
                                     log::warn!(
                                         "[channel/wecom] queue-full reject text send failed session={}: {:#}",
-                                        session_for_log, e
+                                        session_for_log,
+                                        e
                                     );
                                 }
                             }
@@ -2030,7 +2036,9 @@ impl ChannelManager {
             Ok(state) => {
                 log::info!(
                     "[channel/feishu] emit channel:platform-state connection={:?} configured={} enabled={}",
-                    state.connection, state.configured, state.enabled
+                    state.connection,
+                    state.configured,
+                    state.enabled
                 );
                 let _ = self.app_handle.emit(
                     "channel:platform-state",
@@ -2971,7 +2979,9 @@ impl ChannelManager {
 
                 {
                     if inactive_ref.load(std::sync::atomic::Ordering::SeqCst) {
-                        log::debug!("[channel/whatsapp] worker observed inactive flag, dropping session id insert");
+                        log::debug!(
+                            "[channel/whatsapp] worker observed inactive flag, dropping session id insert"
+                        );
                         continue;
                     }
                     let mut ids = channel_session_ids_ref
@@ -3560,7 +3570,9 @@ impl ChannelManager {
                 // ask_coordinator (when wired in PR4) can identify it.
                 {
                     if inactive_ref.load(std::sync::atomic::Ordering::SeqCst) {
-                        log::debug!("[channel/feishu] worker observed inactive flag, dropping session id insert");
+                        log::debug!(
+                            "[channel/feishu] worker observed inactive flag, dropping session id insert"
+                        );
                         continue;
                     }
                     let mut ids = channel_session_ids_ref
@@ -3760,7 +3772,8 @@ impl ChannelManager {
                                 {
                                     log::warn!(
                                         "[channel/feishu] queue-full reject text send failed session={}: {:#}",
-                                        session_for_log, e
+                                        session_for_log,
+                                        e
                                     );
                                 }
                             }
@@ -4052,7 +4065,9 @@ impl ChannelManager {
 
                 {
                     if inactive_ref.load(std::sync::atomic::Ordering::SeqCst) {
-                        log::debug!("[channel/wechat] worker observed inactive flag, dropping session id insert");
+                        log::debug!(
+                            "[channel/wechat] worker observed inactive flag, dropping session id insert"
+                        );
                         continue;
                     }
                     let mut ids = channel_session_ids_ref
@@ -4227,7 +4242,8 @@ impl ChannelManager {
                                 {
                                     log::warn!(
                                         "[channel/wechat] queue-full reject text send failed session={}: {:#}",
-                                        session_for_log, e
+                                        session_for_log,
+                                        e
                                     );
                                 }
                             }
@@ -4532,7 +4548,9 @@ impl ChannelManager {
                 // （std::sync::RwLock write lock 极短，不会阻塞 async reactor）
                 {
                     if inactive_ref.load(std::sync::atomic::Ordering::SeqCst) {
-                        log::debug!("[channel/dingtalk] worker observed inactive flag, dropping session id insert");
+                        log::debug!(
+                            "[channel/dingtalk] worker observed inactive flag, dropping session id insert"
+                        );
                         continue;
                     }
                     let mut ids = channel_session_ids_ref
@@ -4665,13 +4683,20 @@ impl ChannelManager {
                             tokio::spawn(async move {
                                 if let Err(e) = adapter_for_reroute.send_chat_request(request).await
                                 {
-                                    log::error!("[channel] rerouted send_chat_request failed session={}: {}", session_for_log, e);
+                                    log::error!(
+                                        "[channel] rerouted send_chat_request failed session={}: {}",
+                                        session_for_log,
+                                        e
+                                    );
                                 }
                             });
                             continue;
                         }
                         Err(error) => {
-                            log::warn!("[channel] IM ask coordinator failed, falling back to normal turn: {:#}", error);
+                            log::warn!(
+                                "[channel] IM ask coordinator failed, falling back to normal turn: {:#}",
+                                error
+                            );
                         }
                     }
                 }
@@ -4886,7 +4911,8 @@ impl ChannelManager {
                                 {
                                     log::warn!(
                                         "[channel] queue-full reject text send failed session={}: {:#}",
-                                        session_for_log, e
+                                        session_for_log,
+                                        e
                                     );
                                 }
                             }
@@ -5077,7 +5103,9 @@ async fn recv_current_generation_message(
     if current_gen != generation {
         log::warn!(
             "[channel] worker post-recv: generation drift my_gen={} current_gen={} msg_id={}, dropping message",
-            generation, current_gen, msg.msg_id
+            generation,
+            current_gen,
+            msg.msg_id
         );
         return None;
     }
@@ -5116,7 +5144,9 @@ async fn recv_current_generation_message_stream(
     if current_gen != generation {
         log::warn!(
             "[channel] worker post-recv: generation drift my_gen={} current_gen={} msg_id={}, dropping message",
-            generation, current_gen, msg.msg_id
+            generation,
+            current_gen,
+            msg.msg_id
         );
         return None;
     }

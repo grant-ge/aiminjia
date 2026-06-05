@@ -243,6 +243,12 @@ pub struct StoredMessage {
     pub tool_call_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subtype: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compact_metadata: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_compact_summary: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub run_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -626,6 +632,9 @@ mod stored_message_error_tests {
             tool_calls: None,
             tool_call_id: None,
             name: None,
+            subtype: None,
+            compact_metadata: None,
+            is_compact_summary: None,
             run_id: None,
             schema_version: None,
             sequence: None,
@@ -653,6 +662,9 @@ mod stored_message_error_tests {
             tool_calls: None,
             tool_call_id: None,
             name: None,
+            subtype: None,
+            compact_metadata: None,
+            is_compact_summary: None,
             run_id: None,
             schema_version: None,
             sequence: None,

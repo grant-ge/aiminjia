@@ -240,7 +240,7 @@ aijia new-task && aijia type-message "你好" && aijia send && sleep 5 && aijia 
 ```bash
 aijia new-task && aijia type-message "你好" && aijia send && aijia wait-reply
 aijia ui-message
-# 应该看到 user + assistant 两条
+# 输出包含 user + assistant 两条
 ```
 
 #### Round D：会话管理（1.5 小时）

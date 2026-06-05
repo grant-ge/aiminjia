@@ -242,6 +242,67 @@ describe('useStreaming integration review', () => {
     expect(useDiagnosticsStore.getState().events.some((event) => event.event === 'streaming.done.received')).toBe(true)
   })
 
+  it('stores compact completion token savings from compact:completed', async () => {
+    useChatStore.setState({
+      activeConversationId: 'conv-compact',
+      streamStates: {
+        'conv-compact': {
+          isStreaming: true,
+          streamingContent: '',
+          toolExecutions: [],
+        },
+      },
+    })
+
+    render(<HookHarness />)
+    await waitForListeners()
+
+    const handler = tauriEventMock.listeners.get('compact:completed')
+    expect(handler).toBeTypeOf('function')
+
+    act(() => {
+      handler?.({
+        payload: {
+          conversationId: 'conv-compact',
+          runId: 'run-1',
+          boundaryId: 'boundary-1',
+          trigger: 'manual',
+          createdAt: '2026-06-02T00:00:00.000Z',
+          tailMessageId: 'tail-1',
+          preTokens: 12000,
+          postTokens: 4500,
+          tokensSaved: 7500,
+          messagesSummarized: 18,
+        },
+      })
+    })
+
+    expect(useChatStore.getState().streamStates['conv-compact']?.lastCompactSummary).toMatchObject({
+      preTokens: 12000,
+      postTokens: 4500,
+      tokensSaved: 7500,
+      messagesSummarized: 18,
+    })
+    expect(useChatStore.getState().messages).toEqual([
+      expect.objectContaining({
+        id: 'boundary-1',
+        conversationId: 'conv-compact',
+        role: 'system',
+        createdAt: '2026-06-02T00:00:00.000Z',
+        subtype: 'compact_boundary',
+        content: { text: 'Conversation compacted' },
+        compactMetadata: expect.objectContaining({
+          trigger: 'manual',
+          tailMessageId: 'tail-1',
+          preTokens: 12000,
+          postTokens: 4500,
+          tokensSaved: 7500,
+          messagesSummarized: 18,
+        }),
+      }),
+    ])
+  })
+
   it('preserves optimistic user message sender when persisted echo replaces client id', async () => {
     useChatStore.setState({
       activeConversationId: 'conv-1',
