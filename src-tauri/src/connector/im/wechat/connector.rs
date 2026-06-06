@@ -110,25 +110,6 @@ impl WechatConnector {
         self.session_targets.read().await.contains_key(session_id)
     }
 
-    /// 由 start() 的 stream pipeline 在每条入站消息上调一次：更新
-    /// `from_user_id → context_token` 旁路缓存 + 如果对应 session_id 已被
-    /// `remember_session` 建好，也同步刷新 session_targets 那条。
-    async fn record_context_token(&self, from_user_id: &str, context_token: Option<String>) {
-        if let Some(ref tok) = context_token {
-            self.latest_context_tokens
-                .write()
-                .await
-                .insert(from_user_id.to_string(), tok.clone());
-        }
-        // 反向找已存在的 session（同一个 from_user_id 通常只有 1 个 session）
-        let mut guard = self.session_targets.write().await;
-        for target in guard.values_mut() {
-            if target.to_user_id == from_user_id {
-                target.context_token = context_token.clone();
-            }
-        }
-    }
-
     async fn resolve_target(&self, mut target: ReplyTarget) -> ReplyTarget {
         if target.external_conversation_key.is_empty() {
             if let Some(t) = self.session_targets.read().await.get(&target.session_id) {
@@ -349,8 +330,10 @@ mod tests {
     async fn remember_session_pulls_latest_context_token_from_sidecar() {
         let c = make_connector();
         // First simulate a stream event with context_token for wxid_alice.
-        c.record_context_token("wxid_alice", Some("ctx-1".into()))
-            .await;
+        c.latest_context_tokens
+            .write()
+            .await
+            .insert("wxid_alice".into(), "ctx-1".into());
         // Now manager-side remember_session WITHOUT context_token — should be
         // filled from latest_context_tokens automatically.
         c.remember_session(
@@ -368,23 +351,4 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn record_context_token_refreshes_existing_session() {
-        let c = make_connector();
-        c.remember_session(
-            "sess-1".into(),
-            WechatSessionTarget {
-                to_user_id: "wxid_alice".into(),
-                context_token: Some("ctx-old".into()),
-            },
-        )
-        .await;
-        c.record_context_token("wxid_alice", Some("ctx-new".into()))
-            .await;
-        let guard = c.session_targets.read().await;
-        assert_eq!(
-            guard.get("sess-1").unwrap().context_token.as_deref(),
-            Some("ctx-new")
-        );
-    }
 }

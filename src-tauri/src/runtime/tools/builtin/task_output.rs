@@ -118,12 +118,14 @@ impl RuntimeTool for TaskOutputRuntimeTool {
             }
         }
         if requested_task_type != Some(AsyncTaskType::LocalBash) {
+            #[allow(deprecated)]
             candidates.push(output_writer::transcript_path(
                 &paths.subagent_transcripts_dir(),
                 task_id,
             ));
         }
         if candidates.is_empty() {
+            #[allow(deprecated)]
             candidates.push(output_writer::transcript_path(
                 &paths.subagent_transcripts_dir(),
                 task_id,
@@ -256,6 +258,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let tool = build_tool(&tmp);
         let resolver_paths = UserScopedPaths::new(tmp.path(), "t_test__u_test");
+        #[allow(deprecated)]
         let path =
             output_writer::transcript_path(&resolver_paths.subagent_transcripts_dir(), "agent-x");
         for i in 0..3 {

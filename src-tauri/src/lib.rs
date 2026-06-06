@@ -27,7 +27,7 @@ const APP_LOG_RETENTION_DAYS: u64 = 3;
 pub fn run() {
     let _ = rustls::crypto::ring::default_provider().install_default();
 
-    let mut builder = tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
@@ -325,6 +325,7 @@ pub fn run() {
                 }
             }
 
+            #[allow(deprecated)]
             let (agent_store_path, subagent_transcript_store_dir) = current_user_storage
                 .resolve_paths()
                 .map(|paths| {

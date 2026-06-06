@@ -26,7 +26,7 @@ use super::shared::reply_manager::DingtalkReplyManager;
 use super::shared::router::ChannelSessionRouter;
 use super::trait_def::{ConnectorContext, IMConnector};
 use super::types::{
-    ChannelCapability, ChannelConnectionState, ChannelConversation, ChannelMessage,
+    ChannelConnectionState, ChannelConversation, ChannelMessage,
     ChannelMessagePayload, ChannelPlatformState, ChannelPlatformStatePayload,
     ChannelRegistrationBeginResult, ChannelRegistrationPollResult, ChannelRegistrationPollState,
     ConversationType, DingtalkStoredConfig, Platform,
@@ -2365,7 +2365,6 @@ impl ChannelManager {
                     .unwrap_or((ChannelConnectionState::Unconfigured, None));
                 self.config_store.whatsapp_state(connection, last_error)
             }
-            other => anyhow::bail!("{} channel is not available yet", other.as_str()),
         }
     }
 
@@ -2428,7 +2427,6 @@ impl ChannelManager {
                     .await;
                 Ok(state)
             }
-            other => anyhow::bail!("{} channel is not available yet", other.as_str()),
         }
     }
 
@@ -5031,61 +5029,7 @@ fn claim_first_subscription(flag: &AtomicBool) -> bool {
         .is_ok()
 }
 
-async fn stop_stream_components(
-    stream_generation: &Arc<AtomicU64>,
-    stream_cancel: &Arc<RwLock<Option<CancellationToken>>>,
-    message_task: &Arc<RwLock<Option<JoinHandle<()>>>>,
-) {
-    stream_generation.fetch_add(1, Ordering::SeqCst);
-    let token = stream_cancel.write().await.take();
-    if let Some(token) = token {
-        log::info!("[channel] cancelling previous stream connection");
-        token.cancel();
-    }
-    if let Some(handle) = message_task.write().await.take() {
-        if let Err(error) = handle.await {
-            log::warn!("[channel] message worker join failed: {}", error);
-        }
-    }
-}
-
-async fn recv_current_generation_message(
-    msg_rx: &mut tokio::sync::mpsc::Receiver<ChannelMessage>,
-    stream_generation: &Arc<AtomicU64>,
-    generation: u64,
-    cancel_token: &CancellationToken,
-) -> Option<ChannelMessage> {
-    let current_gen = stream_generation.load(Ordering::SeqCst);
-    if current_gen != generation {
-        log::warn!(
-            "[channel] worker pre-recv: generation drift my_gen={} current_gen={}, exiting",
-            generation,
-            current_gen
-        );
-        return None;
-    }
-
-    let msg = tokio::select! {
-        biased;
-        _ = cancel_token.cancelled() => {
-            log::info!("[channel] worker recv: cancel token fired, exiting");
-            return None;
-        },
-        msg = msg_rx.recv() => msg?,
-    };
-    let current_gen = stream_generation.load(Ordering::SeqCst);
-    if current_gen != generation {
-        log::warn!(
-            "[channel] worker post-recv: generation drift my_gen={} current_gen={} msg_id={}, dropping message",
-            generation, current_gen, msg.msg_id
-        );
-        return None;
-    }
-
-    Some(msg)
-}
-
-/// Stream-based variant of `recv_current_generation_message` used after the
+/// Stream-based variant of the legacy `recv_current_generation_message`, used after the
 /// PR5 trait rewire. Same generation/cancel semantics, but the source is now
 /// the `BoxStream<ChannelMessage>` returned by `IMConnector::start`.
 async fn recv_current_generation_message_stream(
@@ -5581,59 +5525,6 @@ fn whatsapp_specs_to_chat_attachments(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::sync::mpsc;
-
-    fn test_message() -> ChannelMessage {
-        ChannelMessage {
-            msg_id: "msg-1".into(),
-            conversation_type: ConversationType::Private,
-            conversation_key: "user-1".into(),
-            sender_id: "user-1".into(),
-            sender_nick: "User 1".into(),
-            text: "hello".into(),
-            robot_code: "robot-1".into(),
-            reply_group_id: "user-1".into(),
-            attachments: Vec::new(),
-            session_webhook: None,
-            created_at_ms: None,
-        }
-    }
-
-    #[tokio::test]
-    async fn queued_messages_from_stale_generation_are_dropped() {
-        let stream_generation = Arc::new(AtomicU64::new(1));
-        let cancel_token = CancellationToken::new();
-        let (tx, mut rx) = mpsc::channel(1);
-        tx.send(test_message()).await.expect("queue message");
-        stream_generation.fetch_add(1, Ordering::SeqCst);
-
-        let msg =
-            recv_current_generation_message(&mut rx, &stream_generation, 1, &cancel_token).await;
-
-        assert!(msg.is_none());
-    }
-
-    #[tokio::test]
-    async fn stop_stream_components_cancels_and_awaits_message_worker_before_returning() {
-        let stream_generation = Arc::new(AtomicU64::new(0));
-        let stream_cancel = Arc::new(RwLock::new(None));
-        let message_task = Arc::new(RwLock::new(None));
-        let cancel_token = CancellationToken::new();
-        let (done_tx, mut done_rx) = mpsc::channel(1);
-
-        *stream_cancel.write().await = Some(cancel_token.clone());
-        *message_task.write().await = Some(tokio::spawn(async move {
-            cancel_token.cancelled().await;
-            done_tx.send(()).await.expect("send done");
-        }));
-
-        stop_stream_components(&stream_generation, &stream_cancel, &message_task).await;
-
-        assert_eq!(stream_generation.load(Ordering::SeqCst), 1);
-        assert!(stream_cancel.read().await.is_none());
-        assert!(message_task.read().await.is_none());
-        assert!(done_rx.try_recv().is_ok());
-    }
 
     #[test]
     fn claim_first_subscription_returns_true_only_once() {

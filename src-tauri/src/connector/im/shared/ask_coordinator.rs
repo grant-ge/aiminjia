@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -9,7 +9,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::runtime::event_bus::RuntimeEventSubscriber;
 use crate::runtime::events::{RuntimeEvent, RuntimeEventKind};
-use crate::runtime::ids::{RunId, SessionId, ToolCallId};
+use crate::runtime::ids::{SessionId, ToolCallId};
 use crate::runtime::interaction::{
     InteractionId, InteractionResolution, PendingInteractionControlPlane,
 };
@@ -92,10 +92,7 @@ pub enum PendingAskKind {
 
 #[derive(Debug)]
 struct PendingAsk {
-    session_id: SessionId,
-    run_id: RunId,
     kind: PendingAskKind,
-    deadline_at: Instant,
     cancel: CancellationToken,
     primary_model: String,
 }
@@ -365,10 +362,7 @@ impl IMAskCoordinator {
             .await?;
         let cancel = CancellationToken::new();
         let pending = PendingAsk {
-            session_id: event.session_id.clone(),
-            run_id: event.run_id.clone(),
             kind,
-            deadline_at: Instant::now() + ASK_DEADLINE,
             cancel: cancel.clone(),
             primary_model,
         };
@@ -899,15 +893,12 @@ mod tests {
         coordinator.pending.lock().await.insert(
             "sess-im".into(),
             PendingAsk {
-                session_id: SessionId::new("sess-im"),
-                run_id: RunId::new("run-1"),
                 kind: PendingAskKind::Permission {
                     tool_call_id: ToolCallId::new("tool-1"),
                     tool_name: "bash".into(),
                     message: "run ls".into(),
                     suggestions: vec![],
                 },
-                deadline_at: Instant::now() + ASK_DEADLINE,
                 cancel: CancellationToken::new(),
                 primary_model: "deepseek-v3".into(),
             },
@@ -929,14 +920,11 @@ mod tests {
         coordinator.pending.lock().await.insert(
             "sess-im".into(),
             PendingAsk {
-                session_id: SessionId::new("sess-im"),
-                run_id: RunId::new("run-1"),
                 kind: PendingAskKind::UserQuestion {
                     interaction_id: InteractionId::new("ask-1"),
                     tool_call_id: ToolCallId::new("tool-1"),
                     questions: serde_json::json!({"questions": []}),
                 },
-                deadline_at: Instant::now() + ASK_DEADLINE,
                 cancel: CancellationToken::new(),
                 primary_model: "deepseek-v3".into(),
             },
