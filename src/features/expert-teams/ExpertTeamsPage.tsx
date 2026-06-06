@@ -8,7 +8,6 @@ import { SkillCategoryBar } from '@/components/skills/SkillCategoryBar'
 import { Button } from '@/components/ui/button'
 import {
   createConversation,
-  expertTeamTemplateRefresh,
   renameConversation,
   workplaceDirectoryCatalog,
   type WorkplaceDirectoryCategory,
@@ -300,22 +299,18 @@ export function ExpertTeamsPage() {
     if (syncing) return
     setSyncing(true)
     try {
-      const count = await expertTeamTemplateRefresh()
-      try {
-        const loaded = await loadDirectoryTeams(i18n.language)
-        if (loaded.teams.length > 0) {
-          setRemoteExpertTeams(loaded.teams)
-          setDirectoryTeams(loaded.teams)
-          setDirectoryCategories(loaded.categories)
-        }
-      } catch (err) {
-        console.warn('[ExpertTeamsPage] workplace_directory_catalog after sync failed:', err)
+      const loaded = await loadDirectoryTeams(i18n.language)
+      if (loaded.teams.length > 0) {
+        setRemoteExpertTeams(loaded.teams)
+        setDirectoryTeams(loaded.teams)
+        setDirectoryCategories(loaded.categories)
+      } else {
+        setDirectoryTeams(null)
+        setDirectoryCategories([])
       }
       pushNotification({
         level: 'success',
-        title: count > 0
-          ? t('ExpertTeams.syncDone', { count })
-          : t('ExpertTeams.syncUpToDate'),
+        title: t('ExpertTeams.syncDone'),
         message: '',
         actions: [],
         dismissible: true,

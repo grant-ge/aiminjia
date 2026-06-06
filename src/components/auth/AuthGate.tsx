@@ -6,7 +6,8 @@ import { useBrandingStore } from '@/stores/brandingStore'
 import { useChat } from '@/hooks/useChat'
 import { useUiStore } from '@/stores/uiStore'
 import { useSkillStore } from '@/stores/skillStore'
-import { syncBuiltinSkills, TAURI_EVENTS } from '@/lib/tauri'
+import { syncBuiltinSkills, TAURI_EVENTS, workplaceDirectoryCatalog } from '@/lib/tauri'
+import i18n from '@/i18n'
 
 import { FullscreenLoader } from './FullscreenLoader'
 import { LoginPage } from './LoginPage'
@@ -57,6 +58,17 @@ export function AuthGate({ children }: PropsWithChildren) {
         })
         .catch((err) => {
           console.warn('[builtin-skills] sync failed:', err)
+        })
+
+      workplaceDirectoryCatalog(i18n.language)
+        .then((directory) => {
+          console.info('[workplace-directory] synced:', {
+            categories: directory.categories.length,
+            items: directory.items.length,
+          })
+        })
+        .catch((err) => {
+          console.warn('[workplace-directory] sync failed:', err)
         })
     }
   }, [isLoggedIn, loadConversations])

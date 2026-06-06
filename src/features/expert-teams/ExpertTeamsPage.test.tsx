@@ -7,7 +7,6 @@ import type { WorkplaceDirectoryResponse } from '@/lib/tauri'
 const mocks = vi.hoisted(() => ({
   createConversation: vi.fn(async () => 'conv-team'),
   renameConversation: vi.fn(),
-  expertTeamTemplateRefresh: vi.fn(async () => 0),
   workplaceDirectoryCatalog: vi.fn<() => Promise<WorkplaceDirectoryResponse>>(
     async () => ({ schemaVersion: 1, categories: [], items: [] }),
   ),
@@ -17,7 +16,6 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/lib/tauri', () => ({
   createConversation: mocks.createConversation,
   renameConversation: mocks.renameConversation,
-  expertTeamTemplateRefresh: mocks.expertTeamTemplateRefresh,
   workplaceDirectoryCatalog: mocks.workplaceDirectoryCatalog,
 }))
 
@@ -49,25 +47,27 @@ describe('ExpertTeamsPage', () => {
     mocks.createConversation.mockReset()
     mocks.createConversation.mockResolvedValue('conv-team')
     mocks.renameConversation.mockClear()
-    mocks.expertTeamTemplateRefresh.mockClear()
-    mocks.expertTeamTemplateRefresh.mockResolvedValue(0)
     mocks.workplaceDirectoryCatalog.mockClear()
     mocks.workplaceDirectoryCatalog.mockResolvedValue({ schemaVersion: 1, categories: [], items: [] })
     mocks.pushNotification.mockClear()
   })
 
-  it('lets users manually sync expert teams from the server', async () => {
-    mocks.expertTeamTemplateRefresh.mockResolvedValueOnce(2)
+  it('lets users manually refresh expert teams', async () => {
     render(<ExpertTeamsPage />)
 
-    fireEvent.click(screen.getByRole('button', { name: '同步服务端' }))
+    await waitFor(() => {
+      expect(mocks.workplaceDirectoryCatalog).toHaveBeenCalledTimes(1)
+    })
+    mocks.workplaceDirectoryCatalog.mockClear()
+
+    fireEvent.click(screen.getByRole('button', { name: '更新内容' }))
 
     await waitFor(() => {
-      expect(mocks.expertTeamTemplateRefresh).toHaveBeenCalledTimes(1)
+      expect(mocks.workplaceDirectoryCatalog).toHaveBeenCalledTimes(1)
     })
     expect(mocks.pushNotification).toHaveBeenCalledWith(expect.objectContaining({
       level: 'success',
-      title: '同步完成，更新 2 个专家团',
+      title: '内容已更新',
     }))
   })
 

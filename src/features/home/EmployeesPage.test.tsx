@@ -223,7 +223,7 @@ describe('EmployeesPage', () => {
     expect(screen.getByText('程砚舟')).toBeInTheDocument()
     expect(screen.getByText('流程设计')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '员工市场' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '同步服务端' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '更新内容' })).toBeInTheDocument()
   })
 
   it('filters employee templates with horizontal category tabs', async () => {

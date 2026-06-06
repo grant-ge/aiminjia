@@ -63,7 +63,7 @@ describe('HireWizard', () => {
     mocks.employeeTemplateCatalog.mockClear()
     mocks.workplaceDirectoryCatalog.mockClear()
 
-    fireEvent.click(screen.getByRole('button', { name: '同步服务端' }))
+    fireEvent.click(screen.getByRole('button', { name: '更新内容' }))
 
     await waitFor(() => {
       expect(mocks.employeeTemplateRefresh).toHaveBeenCalledTimes(1)

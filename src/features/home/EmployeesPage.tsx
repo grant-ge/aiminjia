@@ -23,6 +23,7 @@ import {
   loadEmployeeTemplateCatalog,
   requiredSkillNames,
   type EmployeeCatalogCategory,
+  type EmployeeTemplateCatalogResult,
 } from '@/features/employees/employeeCatalog'
 import type { EmployeeTemplate } from '@/features/employees/templates'
 import { EmployeeTemplateDetailDialog } from '@/features/employees/EmployeeTemplateDetailDialog'
@@ -185,7 +186,7 @@ export function EmployeesPage() {
     await Promise.all([refreshEmp(), refreshInbox()])
   }
 
-  const loadCatalog = useCallback(async () => {
+  const loadCatalog = useCallback(async (): Promise<EmployeeTemplateCatalogResult> => {
     setCatalogLoading(true)
     setCatalogLoadError(null)
     try {
@@ -195,11 +196,13 @@ export function EmployeesPage() {
       setCatalogLoadError(
         result.error ? (result.error instanceof Error ? result.error.message : String(result.error)) : null,
       )
+      return result
     } catch (err) {
       console.error('[EmployeesPage] employee catalog load failed:', err)
       setCatalog([])
       setCatalogCategories([])
       setCatalogLoadError(err instanceof Error ? err.message : String(err))
+      throw err
     } finally {
       setCatalogLoading(false)
     }
@@ -285,6 +288,25 @@ export function EmployeesPage() {
     try {
       await loadCatalog()
       await refreshEmp()
+      pushNotification({
+        level: 'success',
+        title: t('employeesPage.refreshDone'),
+        message: '',
+        actions: [],
+        dismissible: true,
+        autoHide: 4,
+        context: 'toast',
+      })
+    } catch (err) {
+      pushNotification({
+        level: 'error',
+        title: t('employeesPage.refreshFailed'),
+        message: err instanceof Error ? err.message : String(err),
+        actions: [],
+        dismissible: true,
+        autoHide: 6,
+        context: 'toast',
+      })
     } finally {
       setSyncingCatalog(false)
     }

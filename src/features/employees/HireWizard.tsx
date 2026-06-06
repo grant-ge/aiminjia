@@ -240,7 +240,7 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
                 data-aijia-hire-template-loading
               >
                 <RefreshCw className="h-4 w-4 animate-spin" />
-                <span>{t('employee.config.wizard.catalogLoading', '正在从服务端拉取员工模板…')}</span>
+                <span>{t('employee.config.wizard.catalogLoading', '正在加载员工模板…')}</span>
               </div>
             )}
             {!catalogLoading && catalog.length === 0 && (
@@ -252,12 +252,12 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
                   {catalogLoadError
                     ? t(
                         'employee.config.wizard.catalogLoadError',
-                        '没拉到员工模板：{{err}}。网络恢复后点"再次同步"重试。',
+                        '没拉到员工模板：{{err}}。网络恢复后点"重新加载"重试。',
                         { err: catalogLoadError },
                       )
                     : t(
                         'employee.config.wizard.catalogEmpty',
-                        '本地还没有员工模板缓存。请确认网络后点"再次同步"。',
+                        '本地还没有员工模板缓存。请确认网络后点"重新加载"。',
                       )}
                 </p>
                 <Button
@@ -268,7 +268,7 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
                   data-aijia-hire-action="catalog-retry"
                 >
                   <RefreshCw className={syncingTemplates ? 'mr-1.5 h-3.5 w-3.5 animate-spin' : 'mr-1.5 h-3.5 w-3.5'} />
-                  {syncingTemplates ? t('employee.config.wizard.syncing', '同步中…') : t('employee.config.wizard.syncRetry', '再次同步')}
+                  {syncingTemplates ? t('employee.config.wizard.syncing', '更新中…') : t('employee.config.wizard.syncRetry', '重新加载')}
                 </Button>
               </div>
             )}
