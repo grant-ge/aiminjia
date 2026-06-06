@@ -2,6 +2,7 @@ import {
   expertTeamTemplateCatalog,
   expertTeamTemplateRefresh,
   workplaceDirectoryCatalog,
+  type ExpertTeamTemplateAvatar,
   type ExpertTeamTemplateExpert,
   type ExpertTeamTemplatePromptText,
   type ExpertTeamTemplateSnapshot,
@@ -50,6 +51,11 @@ function iconEmoji(icon?: string): string {
   return Array.from(icon).length <= 2 ? icon : '👥'
 }
 
+function avatarText(avatar: ExpertTeamTemplateAvatar | undefined, fallback: string): string {
+  if (typeof avatar === 'string' && avatar.trim()) return avatar.trim()
+  return Array.from(fallback.trim())[0] ?? '专'
+}
+
 function normalizeFacilitationStyle(style: string | undefined, expertCount: number): FacilitationStyle {
   if (style === 'rounds' || style === 'debate' || style === 'open') return style
   return expertCount > 0 ? 'rounds' : 'open'
@@ -92,8 +98,10 @@ function snapshotExpertsToRoster(snapshot: ExpertTeamTemplateSnapshot, language?
         name,
         avatarName: expert.avatarName || expert.name || name,
         agentName: expert.agentName || expert.stableName,
+        avatar: expert.avatar ?? null,
+        avatarText: avatarText(expert.avatar, name),
         persona,
-        emoji: expert.emoji || iconEmoji(expert.avatar),
+        emoji: expert.emoji || (typeof expert.avatar === 'string' ? iconEmoji(expert.avatar) : '👤'),
       }
     })
     .filter((expert) => expert.name.trim().length > 0)

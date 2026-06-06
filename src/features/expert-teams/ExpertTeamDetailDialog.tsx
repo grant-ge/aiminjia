@@ -8,7 +8,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { getExpertAvatarUrl } from './expertAvatar'
+import { ExpertAvatarView } from './ExpertAvatarView'
+import { getExpertAvatarVisual } from './expertAvatar'
 import { getExpertTeamLogo } from './teamLogo'
 import type { ExpertTeam, ExpertTeamId } from './teams'
 
@@ -83,15 +84,15 @@ export function ExpertTeamDetailDialog({
               {team.experts.length > 0 ? (
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   {team.experts.map((expert) => {
-                    const avatarUrl = getExpertAvatarUrl(team.id, expert.avatarName ?? expert.name)
+                    const avatarVisual = getExpertAvatarVisual(team.id, expert)
                     return (
                       <div key={expert.name} className="flex items-start gap-3 rounded-lg border border-border bg-card px-3 py-3">
                         <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-muted/40">
-                          {avatarUrl ? (
-                            <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
-                          ) : (
-                            <span className="text-lg leading-none">{expert.emoji || Array.from(expert.name)[0]}</span>
-                          )}
+                          <ExpertAvatarView
+                            visual={avatarVisual}
+                            fallback={expert.emoji || Array.from(expert.name)[0]}
+                            className="text-lg leading-none"
+                          />
                         </span>
                         <span className="min-w-0">
                           <span className="block truncate text-sm font-medium text-foreground">{expert.name}</span>

@@ -35,6 +35,8 @@ vi.mock('@/components/chat-scene/AssistantMarkdown', () => ({
 
 import { TeamChatEvents } from './TeamChatEvents'
 import type { TeamEvent } from '@/types/team'
+import type { ExpertTeam } from '@/features/expert-teams/teams'
+import { TeamVisualProvider } from './TeamVisualContext'
 
 function textMessage(text: string): TeamEvent {
   return {
@@ -47,6 +49,26 @@ function textMessage(text: string): TeamEvent {
     toolCallId: '',
     variant: 'text',
   }
+}
+
+const remoteHrTeam: ExpertTeam = {
+  id: 'performance-compensation',
+  name: '薪酬绩效评审团',
+  emoji: '⚖️',
+  tagline: '绩效校准 / 调薪方案 / 公平性复核',
+  examples: [],
+  composerPlaceholder: '告诉他们你要评审的绩效或薪酬方案...',
+  facilitationStyle: 'rounds',
+  experts: [
+    {
+      name: '薪酬专家',
+      agentName: 'compensation-expert',
+      avatar: '薪',
+      avatarText: '薪',
+      persona: '关注薪酬结构、分位对标和内部公平性',
+      emoji: '💰',
+    },
+  ],
 }
 
 describe('TeamChatEvents – send_message variant 分流', () => {
@@ -125,5 +147,33 @@ describe('TeamChatEvents – send_message variant 分流', () => {
     expect(container.textContent).toContain('team.chat.emptyText')
     // 仍是 MessageBubble，不应误触协议 SystemDivider 的 icon。
     expect(container.textContent).not.toMatch(/[⊙✗≪]/)
+  })
+
+  it('renders remote expert display names instead of stable agent ids', () => {
+    const events: TeamEvent[] = [
+      {
+        kind: 'agent_spawn',
+        ts: '2026-05-15T15:00:00Z',
+        agentId: 'compensation-expert',
+        agentName: 'compensation-expert',
+      },
+      {
+        kind: 'send_message',
+        ts: '2026-05-15T15:01:00Z',
+        from: 'compensation-expert',
+        to: 'team-lead',
+        text: '建议先看薪酬分位。',
+        isError: false,
+        toolCallId: '',
+        variant: 'text',
+      },
+    ]
+    const { container } = render(
+      <TeamVisualProvider value={remoteHrTeam}>
+        <TeamChatEvents events={events} />
+      </TeamVisualProvider>,
+    )
+    expect(container.textContent).toContain('薪酬专家')
+    expect(container.textContent).not.toContain('compensation-expert')
   })
 })

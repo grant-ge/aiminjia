@@ -7,6 +7,19 @@ export type ExpertTeamId = string
 
 export type FacilitationStyle = 'rounds' | 'debate' | 'open'
 
+export interface ExpertAvatarAtlas {
+  kind: 'atlas'
+  url: string
+  x: number
+  y: number
+  w: number
+  h: number
+  atlasWidth: number
+  atlasHeight: number
+}
+
+export type ExpertAvatarSource = string | ExpertAvatarAtlas
+
 export interface ExpertPersona {
   /** 角色名，会被注入 sub-agent system prompt */
   name: string
@@ -14,6 +27,10 @@ export interface ExpertPersona {
   avatarName?: string
   /** Runtime teammate name emitted by Team events. UI keeps this name visible but can use it for avatar lookup. */
   agentName?: string
+  /** Server-provided avatar. Existing remote teams use an OSS atlas; newer rows may provide avatar text. */
+  avatar?: ExpertAvatarSource | null
+  /** Short text fallback when no image avatar is available. */
+  avatarText?: string | null
   /** 简短 persona，描述风格 / 关注点 */
   persona: string
   /**
@@ -327,6 +344,35 @@ export function setRemoteExpertTeams(teams: ExpertTeam[]) {
   for (const team of teams) {
     remoteExpertTeams.set(team.id, team)
   }
+}
+
+function normalizeExpertKey(value: string): string {
+  return value.toLowerCase().replace(/[\s\-_]+/g, '')
+}
+
+export function findExpertByAgentName(
+  team: ExpertTeam | null | undefined,
+  agentName: string,
+): ExpertPersona | null {
+  if (!team) return null
+  let expert = team.experts.find((e) => e.agentName === agentName || e.name === agentName)
+  if (expert) return expert
+
+  const target = normalizeExpertKey(agentName)
+  expert = team.experts.find((e) => {
+    const byName = normalizeExpertKey(e.name) === target
+    const byAgent = e.agentName ? normalizeExpertKey(e.agentName) === target : false
+    const byAvatarName = e.avatarName ? normalizeExpertKey(e.avatarName) === target : false
+    return byName || byAgent || byAvatarName
+  })
+  return expert ?? null
+}
+
+export function getExpertDisplayName(
+  team: ExpertTeam | null | undefined,
+  agentName: string,
+): string {
+  return findExpertByAgentName(team, agentName)?.name ?? agentName
 }
 
 /**

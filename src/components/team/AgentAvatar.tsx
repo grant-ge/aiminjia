@@ -1,5 +1,7 @@
 import { cn } from '@/lib/utils'
-import { getExpertAvatarUrlForAgent } from '@/features/expert-teams/expertAvatar'
+import { ExpertAvatarView } from '@/features/expert-teams/ExpertAvatarView'
+import { getExpertAvatarVisualForAgent } from '@/features/expert-teams/expertAvatar'
+import { getExpertDisplayName } from '@/features/expert-teams/teams'
 import { getAgentIdentity } from './agentIdentity'
 import { useTeamVisualContext } from './TeamVisualContext'
 
@@ -16,9 +18,10 @@ const SIZE_CLASS = {
 } as const
 
 export function AgentAvatar({ name, size = 'md', className }: AgentAvatarProps) {
-  const id = getAgentIdentity(name)
   const team = useTeamVisualContext()
-  const expertAvatarUrl = getExpertAvatarUrlForAgent(team, name)
+  const displayName = getExpertDisplayName(team, name)
+  const id = getAgentIdentity(displayName)
+  const expertAvatarVisual = getExpertAvatarVisualForAgent(team, name)
   return (
     <span
       className={cn(
@@ -27,14 +30,14 @@ export function AgentAvatar({ name, size = 'md', className }: AgentAvatarProps) 
         id.avatarClass,
         className,
       )}
-      aria-label={name}
-      title={name}
+      aria-label={displayName}
+      title={displayName}
     >
-      {expertAvatarUrl ? (
-        <img src={expertAvatarUrl} alt="" className="h-full w-full rounded-full object-cover" />
-      ) : (
-        id.initials
-      )}
+      <ExpertAvatarView
+        visual={expertAvatarVisual}
+        fallback={id.initials}
+        className={expertAvatarVisual?.kind === 'text' ? undefined : 'rounded-full'}
+      />
     </span>
   )
 }

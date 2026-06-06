@@ -1,7 +1,8 @@
 // code/src/features/expert-teams/ExpertTeamCard.tsx
 import { useTranslation } from 'react-i18next'
 import type { ExpertTeam, ExpertTeamId } from './teams'
-import { getExpertAvatarUrl } from './expertAvatar'
+import { ExpertAvatarView } from './ExpertAvatarView'
+import { getExpertAvatarVisual } from './expertAvatar'
 import { getExpertTeamLogo } from './teamLogo'
 
 interface ExpertTeamCardProps {
@@ -42,7 +43,7 @@ export function ExpertTeamCard({ team, onStart }: ExpertTeamCardProps) {
       {team.experts.length > 0 ? (
         <div className="flex flex-wrap gap-2.5" data-testid="expert-team-roster">
           {team.experts.map((expert) => {
-            const avatarUrl = getExpertAvatarUrl(team.id, expert.avatarName ?? expert.name)
+            const avatarVisual = getExpertAvatarVisual(team.id, expert)
             return (
               <div
                 key={expert.name}
@@ -50,17 +51,7 @@ export function ExpertTeamCard({ team, onStart }: ExpertTeamCardProps) {
                 className="flex flex-col items-center gap-0.5"
               >
                 <span className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-border bg-muted/40">
-                  {avatarUrl ? (
-                    <img
-                      src={avatarUrl}
-                      alt=""
-                      className="h-full w-full object-cover"
-                    />
-                  ) : (
-                    <span aria-hidden className="text-lg">
-                      {expert.emoji}
-                    </span>
-                  )}
+                  <ExpertAvatarView visual={avatarVisual} fallback={expert.emoji} className="text-lg" />
                 </span>
                 <span className="max-w-[64px] truncate text-[10px] leading-tight text-muted-foreground">
                   {expert.name}

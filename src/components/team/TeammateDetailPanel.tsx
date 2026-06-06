@@ -5,10 +5,13 @@ import { ChevronDown, ChevronRight } from 'lucide-react'
 
 import { AssistantMarkdown } from '@/components/chat-scene/AssistantMarkdown'
 import { Button } from '@/components/ui/button'
+import { getExpertDisplayName } from '@/features/expert-teams/teams'
 import { useTeammateTranscript } from '@/hooks/useTeamOverview'
 import { useSettingsStore } from '@/stores/settingsStore'
 
 import { AgentAvatar } from './AgentAvatar'
+import { formatLeadDisplayName, isLeadName } from './agentIdentity'
+import { useTeamVisualContext } from './TeamVisualContext'
 
 interface TeammateDetailPanelProps {
   conversationId: string
@@ -37,6 +40,11 @@ type Group =
   | { kind: 'system-reminder'; text: string }
   | { kind: 'incoming'; text: string; from: string | null; raw: unknown }
   | { kind: 'turn'; thought: string; toolCalls: ToolCallView[] }
+
+function formatAgentDisplayName(teamVisual: ReturnType<typeof useTeamVisualContext>, agentName: string): string {
+  if (isLeadName(agentName)) return formatLeadDisplayName(agentName)
+  return getExpertDisplayName(teamVisual, agentName)
+}
 
 function groupEntries(entries: unknown[]): Group[] {
   const list = entries.map((e) => (e ?? {}) as RawEntry)
@@ -90,9 +98,11 @@ export function TeammateDetailPanel({
   onBack,
 }: TeammateDetailPanelProps) {
   const { t } = useTranslation()
+  const teamVisual = useTeamVisualContext()
   const { entries, loading } = useTeammateTranscript(conversationId, agentId)
   const groups = useMemo(() => groupEntries(entries ?? []), [entries])
   const chatWidthMode = useSettingsStore((s) => s.chatWidthMode ?? 'full')
+  const displayName = formatAgentDisplayName(teamVisual, agentName)
 
   return (
     <div className="flex h-full flex-col">
@@ -102,7 +112,7 @@ export function TeammateDetailPanel({
         </Button>
         <AgentAvatar name={agentName} size="md" />
         <div className="flex min-w-0 flex-col">
-          <span className="truncate text-sm font-medium text-foreground">{agentName}</span>
+          <span className="truncate text-sm font-medium text-foreground">{displayName}</span>
           <span className="text-[11px] text-muted-foreground">{t('team.detail.subtitle')}</span>
         </div>
       </div>
@@ -164,8 +174,9 @@ function SystemReminderBlock({ text }: { text: string }) {
 
 function IncomingBubble({ text, from, raw }: { text: string; from: string | null; raw: unknown }) {
   const { t } = useTranslation()
+  const teamVisual = useTeamVisualContext()
   const header = from
-    ? t('team.detail.receivedFrom', { name: from })
+    ? t('team.detail.receivedFrom', { name: formatAgentDisplayName(teamVisual, from) })
     : t('team.detail.received')
   const parsed = parseMessage(text, t)
   return (
@@ -254,12 +265,13 @@ function ToolChip({ call }: { call: ToolCallView }) {
 
 function OutgoingBubble({ call }: { call: ToolCallView }) {
   const { t } = useTranslation()
+  const teamVisual = useTeamVisualContext()
   const args = (call.args ?? {}) as { to?: unknown; message?: unknown }
   const to = typeof args.to === 'string' ? args.to : '?'
   const parsed = parseMessage(args.message, t)
   return (
     <MessageCard
-      header={t('team.detail.sentTo', { name: to })}
+      header={t('team.detail.sentTo', { name: formatAgentDisplayName(teamVisual, to) })}
       tone="outgoing"
       parsed={parsed}
       raw={args.message}

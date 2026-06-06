@@ -4,9 +4,21 @@
 // `public/expert-avatars/<teamId>/<safeName>.svg` — committed to git so
 // runtime never needs network or @dicebear at all.
 
-import { EXPERT_TEAMS, type ExpertTeam } from './teams'
+import {
+  EXPERT_TEAMS,
+  findExpertByAgentName,
+  type ExpertAvatarAtlas,
+  type ExpertAvatarSource,
+  type ExpertPersona,
+  type ExpertTeam,
+} from './teams'
 
 const SAFE_RE = /[\\/<>:"|?*\s]/g
+
+export type ExpertAvatarVisual =
+  | { kind: 'image'; url: string }
+  | ExpertAvatarAtlas
+  | { kind: 'text'; text: string }
 
 /** Mirrors the `safe()` helper in scripts/generate-expert-avatars.mjs. */
 function safeName(name: string): string {
@@ -39,26 +51,53 @@ export function getExpertAvatarUrl(teamId: string, expertName: string): string |
   return `/expert-avatars/${teamId}/${safeName(expertName)}.svg`
 }
 
-/** Loose normalization: lower-case + strip spaces / hyphens / underscores so
- * 'CEO' matches 'ceo'，'CEO 教练' matches 'ceo-coach'，etc. */
-function normalize(s: string): string {
-  return s.toLowerCase().replace(/[\s\-_]+/g, '')
+function isAtlasAvatar(value: ExpertAvatarSource | null | undefined): value is ExpertAvatarAtlas {
+  return Boolean(
+    value &&
+      typeof value === 'object' &&
+      value.kind === 'atlas' &&
+      typeof value.url === 'string' &&
+      typeof value.x === 'number' &&
+      typeof value.y === 'number' &&
+      typeof value.w === 'number' &&
+      typeof value.h === 'number' &&
+      typeof value.atlasWidth === 'number' &&
+      typeof value.atlasHeight === 'number',
+  )
+}
+
+function textAvatar(value: ExpertAvatarSource | null | undefined, fallback: string): string {
+  if (typeof value === 'string' && value.trim()) return value.trim()
+  return Array.from(fallback.trim())[0] ?? '?'
+}
+
+export function getExpertAvatarVisual(
+  teamId: string,
+  expert: ExpertPersona,
+): ExpertAvatarVisual {
+  if (isAtlasAvatar(expert.avatar)) return expert.avatar
+
+  const localAvatarUrl = getExpertAvatarUrl(teamId, expert.avatarName ?? expert.name)
+  if (localAvatarUrl) return { kind: 'image', url: localAvatarUrl }
+
+  return {
+    kind: 'text',
+    text: expert.avatarText?.trim() || textAvatar(expert.avatar, expert.name) || expert.emoji,
+  }
 }
 
 export function getExpertAvatarUrlForAgent(team: ExpertTeam | null | undefined, agentName: string): string | null {
   if (!team) return null
-  const target = normalize(agentName)
-  // Try strict match first (cheapest, exact UI display name).
-  let expert = team.experts.find((e) => e.agentName === agentName || e.name === agentName)
-  if (!expert) {
-    // Fuzzy: LLM 经常把"CEO" spawn 成 "ceo"，把"数据分析师" spawn 成 "analyst"。
-    // 同时比较 normalize(name) / normalize(agentName)，宽松地兜底。
-    expert = team.experts.find((e) => {
-      const nName = normalize(e.name)
-      const nAgent = e.agentName ? normalize(e.agentName) : ''
-      return nName === target || nAgent === target
-    })
-  }
+  const expert = findExpertByAgentName(team, agentName)
   if (!expert) return null
   return getExpertAvatarUrl(team.id, expert.name)
+}
+
+export function getExpertAvatarVisualForAgent(
+  team: ExpertTeam | null | undefined,
+  agentName: string,
+): ExpertAvatarVisual | null {
+  const expert = findExpertByAgentName(team, agentName)
+  if (!team || !expert) return null
+  return getExpertAvatarVisual(team.id, expert)
 }

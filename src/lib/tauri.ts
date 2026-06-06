@@ -2705,13 +2705,26 @@ export interface ExpertTeamTemplateExpertDisplayText {
   persona?: string
 }
 
+export interface ExpertTeamTemplateAvatarAtlas {
+  kind: 'atlas'
+  url: string
+  x: number
+  y: number
+  w: number
+  h: number
+  atlasWidth: number
+  atlasHeight: number
+}
+
+export type ExpertTeamTemplateAvatar = string | ExpertTeamTemplateAvatarAtlas
+
 export interface ExpertTeamTemplateExpert {
   stableName?: string
   name?: string
   title?: string
   agentName?: string
   persona?: string
-  avatar?: string
+  avatar?: ExpertTeamTemplateAvatar
   avatarName?: string
   emoji?: string
   displayI18n?: Record<string, ExpertTeamTemplateExpertDisplayText> | null
