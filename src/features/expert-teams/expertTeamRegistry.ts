@@ -24,8 +24,6 @@ import {
 import { useChatStore } from '@/stores/chatStore'
 import { EXPERT_TEAMS, type ExpertTeamId } from './teams'
 
-const VALID_IDS = new Set<ExpertTeamId>(EXPERT_TEAMS.map((t) => t.id))
-
 // convId → ExpertTeamId | null (null = 已查过，不是专家团；undefined = 还没查)
 const cache = new Map<string, ExpertTeamId | null>()
 const inflight = new Map<string, Promise<ExpertTeamId | null>>()
@@ -49,7 +47,7 @@ async function fetchTeamId(conversationId: string): Promise<ExpertTeamId | null>
     try {
       const src = await getConversationSource(conversationId)
       const id = src.kind === 'expertTeam' ? (src.expertTeamId as ExpertTeamId) : null
-      const resolved = id && VALID_IDS.has(id) ? id : null
+      const resolved = id && id.trim() ? id : null
       cache.set(conversationId, resolved)
       notify(conversationId, resolved)
       return resolved
@@ -74,7 +72,7 @@ export async function setExpertTeam(
   teamId: ExpertTeamId,
   sourceLabel?: string,
 ): Promise<void> {
-  if (!VALID_IDS.has(teamId)) return
+  if (!teamId.trim()) return
   const label = sourceLabel ?? labelFor(teamId)
   // Seed cache so synchronous readers (getExpertTeam) see the id immediately.
   cache.set(conversationId, teamId)

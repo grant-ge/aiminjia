@@ -7,12 +7,13 @@ import {
   RotateCcw,
   Scale,
   SearchCheck,
+  UsersRound,
   type LucideIcon,
 } from 'lucide-react'
 
 import type { ExpertTeamId } from './teams'
 
-export const TEAM_LOGOS: Record<ExpertTeamId, { icon: LucideIcon; className: string }> = {
+export const TEAM_LOGOS: Record<string, { icon: LucideIcon; className: string }> = {
   marketing: {
     icon: Megaphone,
     className: 'bg-rose-50 text-rose-600',
@@ -48,5 +49,8 @@ export const TEAM_LOGOS: Record<ExpertTeamId, { icon: LucideIcon; className: str
 }
 
 export function getExpertTeamLogo(teamId: ExpertTeamId) {
-  return TEAM_LOGOS[teamId]
+  return TEAM_LOGOS[teamId] ?? {
+    icon: UsersRound,
+    className: 'bg-indigo-50 text-indigo-600',
+  }
 }

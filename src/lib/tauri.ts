@@ -2413,6 +2413,65 @@ export async function syncBuiltinSkills(): Promise<SyncBuiltinSkillsResult> {
 }
 
 // ---------------------------------------------------------------------------
+// Workplace Directory Commands
+// ---------------------------------------------------------------------------
+
+export interface WorkplaceDirectoryDisplayText {
+  name: string
+  description?: string
+  tagline?: string
+  examples?: string[]
+}
+
+export interface WorkplaceDirectoryCategory {
+  categoryId: string
+  display: WorkplaceDirectoryDisplayText
+  icon?: string
+  color?: string
+  sortOrder: number
+  resourceCount: number
+}
+
+export interface WorkplaceDirectoryRequiredSkill {
+  skillId: string
+  source: string
+  scope: string
+  display: WorkplaceDirectoryDisplayText
+  versionRange?: string
+}
+
+export interface WorkplaceDirectoryItem {
+  resourceType: 'employee_template' | 'expert_team_template' | string
+  resourceId: string
+  version: string
+  scope?: string
+  category?: string
+  workplaceCategoryId?: string
+  featured?: boolean
+  sortOrder?: number
+  display: WorkplaceDirectoryDisplayText
+  icon?: string
+  manifestUrl?: string
+  manifestSha256?: string
+  manifestSize?: number
+  minDesktopVersion?: string
+  requiredSkills?: WorkplaceDirectoryRequiredSkill[]
+}
+
+export interface WorkplaceDirectoryResponse {
+  schemaVersion: number
+  categories: WorkplaceDirectoryCategory[]
+  items: WorkplaceDirectoryItem[]
+}
+
+export function workplaceDirectoryCatalog(lang?: string): Promise<WorkplaceDirectoryResponse> {
+  return invoke<WorkplaceDirectoryResponse>(
+    'workplace_directory_catalog',
+    lang ? { lang } : {},
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Employee Commands
 // ---------------------------------------------------------------------------
 
@@ -2604,14 +2663,9 @@ export function employeeActiveRun(id: string): Promise<EmployeeActiveRunInfo | n
 /**
  * Returns the catalog of templates the new-hire wizard should display.
  *
- * Sources merged in the backend (last write wins on `template_id`, by
- * version string):
- *   1. Embedded bootstrap registry (always available)
- *   2. `~/.renlijia/employee-templates-cache/` (downloaded via
- *      `employeeTemplateRefresh()`)
- *
- * Never hits the network. Call `employeeTemplateRefresh()` to update the
- * cache from lotus ops-portal.
+ * Never hits the network. Reads `~/.renlijia/employee-templates-cache/`,
+ * which is populated by `employeeTemplateRefresh()` or
+ * `workplaceDirectoryCatalog()`.
  */
 export function employeeTemplateCatalog(): Promise<EmployeeTemplateSnapshot[]> {
   return invoke<EmployeeTemplateSnapshot[]>('employee_template_catalog')

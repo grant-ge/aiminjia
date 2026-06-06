@@ -4,15 +4,13 @@ import { RefreshCw } from 'lucide-react'
 import {
   employeeCreate,
   employeeIndexKnowledgeAsync,
-  employeeTemplateCatalog,
-  employeeTemplateRefresh,
-  type EmployeeTemplateSnapshot,
   type PendingKnowledgeSource,
 } from '@/lib/tauri'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { snapshotToTemplate, type EmployeeTemplate } from './templates'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import type { EmployeeTemplate } from './templates'
+import { loadEmployeeTemplateCatalog, requiredSkillNames } from './employeeCatalog'
 import { MonitoringUrlsForm } from './forms/MonitoringUrlsForm'
 import { SalesTableConfigForm } from './forms/SalesTableConfigForm'
 import { WeeklyReportConfigForm } from './forms/WeeklyReportConfigForm'
@@ -48,10 +46,10 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
   const [step, setStep] = useState<1 | 2 | 3>(1)
   const [selected, setSelected] = useState<EmployeeTemplate | null>(null)
   // Catalog 来源（按时间顺序）：
-  // 1. 弹窗打开 → 触发 employee_template_refresh 拉服务端最新到 cache
+  // 1. 弹窗打开 → 触发 workplace_directory_catalog 拉目录并预热 snapshot cache
   // 2. 读 employee_template_catalog —— 后端读 cache 目录
-  // 3. cache 为空 → catalog 为空 → UI 显示"加载/重试"，不再 fallback 到
-  //    硬编码 BUILTIN_TEMPLATES（云端唯一架构，没网员工跑不了，离线伪兜底无意义）
+  // 3. 目录不可用时回退 employee_template_refresh + 本地 cache
+  // 4. cache 仍为空 → UI 显示"加载/重试"，不再 fallback 到硬编码 BUILTIN_TEMPLATES
   const [catalog, setCatalog] = useState<EmployeeTemplate[]>([])
   const [catalogLoading, setCatalogLoading] = useState(false)
   const [catalogLoadError, setCatalogLoadError] = useState<string | null>(null)
@@ -63,9 +61,8 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
   const [syncingTemplates, setSyncingTemplates] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // 弹窗打开时：先 refresh cache 再读 catalog。
-  // 之前 refresh 失败会 fallback 到 BUILTIN_TEMPLATES，现在必须显式 surface 错误，
-  // 让用户知道"没拉到模板"，然后可以走"再次同步"按钮重试。
+  // 弹窗打开时：先走 workplace directory，失败再回退老模板缓存。
+  // 两条路径都拿不到内容时显式 surface 错误，让用户点"再次同步"重试。
   useEffect(() => {
     if (!open) return
     let cancelled = false
@@ -73,15 +70,12 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
       setCatalogLoading(true)
       setCatalogLoadError(null)
       try {
-        // refresh 失败不阻塞——可能是网络瞬断或服务端 5xx；后续 catalog 调用
-        // 仍能返回 cache 已有的内容。但如果 cache 本身是空的，UI 会显示空态。
-        await employeeTemplateRefresh().catch((e) => {
-          console.warn('[HireWizard] employee_template_refresh failed:', e)
-          return 0
-        })
-        const snapshots: EmployeeTemplateSnapshot[] = await employeeTemplateCatalog()
+        const result = await loadEmployeeTemplateCatalog(i18n.language)
         if (cancelled) return
-        setCatalog(snapshots.map((snap) => snapshotToTemplate(snap, i18n.language)))
+        setCatalog(result.catalog)
+        setCatalogLoadError(
+          result.error ? (result.error instanceof Error ? result.error.message : String(result.error)) : null,
+        )
       } catch (e) {
         if (cancelled) return
         console.error('[HireWizard] employee_template_catalog failed:', e)
@@ -117,8 +111,11 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
   }
 
   async function reloadCatalog() {
-    const snapshots: EmployeeTemplateSnapshot[] = await employeeTemplateCatalog()
-    setCatalog(snapshots.map((snap) => snapshotToTemplate(snap, i18n.language)))
+    const result = await loadEmployeeTemplateCatalog(i18n.language)
+    setCatalog(result.catalog)
+    setCatalogLoadError(
+      result.error ? (result.error instanceof Error ? result.error.message : String(result.error)) : null,
+    )
   }
 
   async function handleSyncTemplates() {
@@ -126,7 +123,6 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
     setSyncingTemplates(true)
     setError(null)
     try {
-      await employeeTemplateRefresh()
       await reloadCatalog()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -191,6 +187,9 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) handleClose() }}>
       <DialogContent data-aijia-hire-wizard data-aijia-hire-step={step} className="max-w-2xl p-0">
+        <DialogDescription className="sr-only">
+          {t('employee.config.wizard.description', '选择数字员工模板并完成必要配置。')}
+        </DialogDescription>
         <DialogHeader className="border-b border-border px-6 py-4">
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
@@ -273,38 +272,58 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
                 </Button>
               </div>
             )}
-            {catalog.map((t) => (
-              <button
-                key={t.templateId}
-                type="button"
-                data-aijia-hire-template
-                data-aijia-hire-template-id={t.templateId}
-                data-aijia-hire-template-name={t.name}
-                onClick={() => handleSelectTemplate(t)}
-                className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4 text-left transition-all hover:border-border/70 hover:shadow-sm"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-2xl">{t.avatar}</span>
-                  <div className="flex items-center gap-1">
-                    {t.version && (
-                      <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                        v{t.version}
+            {catalog.map((template) => {
+              const skills = requiredSkillNames(template)
+              return (
+                <button
+                  key={template.templateId}
+                  type="button"
+                  data-aijia-hire-template
+                  data-aijia-hire-template-id={template.templateId}
+                  data-aijia-hire-template-name={template.name}
+                  onClick={() => handleSelectTemplate(template)}
+                  className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4 text-left transition-all hover:border-border/70 hover:shadow-sm"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="text-2xl">{template.avatar}</span>
+                    <div className="flex min-w-0 flex-wrap justify-end gap-1">
+                      {template.workplaceCategoryName && (
+                        <span className="max-w-[96px] truncate rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">
+                          {template.workplaceCategoryName}
+                        </span>
+                      )}
+                      {template.version && (
+                        <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                          v{template.version}
+                        </span>
+                      )}
+                      <span className="max-w-[96px] truncate rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                        {template.badge}
                       </span>
-                    )}
-                    <span className="rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-                      {t.badge}
-                    </span>
+                    </div>
                   </div>
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-foreground">{t.name}</p>
-                  <p className="text-xs text-muted-foreground">{t.role}</p>
-                </div>
-                <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
-                  {t.description}
-                </p>
-              </button>
-            ))}
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">{template.name}</p>
+                    <p className="text-xs text-muted-foreground">{template.role}</p>
+                  </div>
+                  <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+                    {template.description}
+                  </p>
+                  {skills.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {skills.slice(0, 3).map((skill) => (
+                        <span
+                          key={skill}
+                          className="max-w-full truncate rounded-full bg-accent px-1.5 py-0.5 text-[10px] text-accent-foreground"
+                        >
+                          {skill}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </button>
+              )
+            })}
           </div>
         )}
 
@@ -314,9 +333,21 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
             {/* Preview */}
             <div className="flex items-center gap-3 rounded-xl bg-accent/40 p-3">
               <span className="text-3xl">{selected.avatar}</span>
-              <div>
+              <div className="min-w-0">
                 <p className="text-sm font-medium text-foreground">{selected.role}</p>
                 <p className="text-xs text-muted-foreground line-clamp-2">{selected.description}</p>
+                {requiredSkillNames(selected).length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {requiredSkillNames(selected).slice(0, 4).map((skill) => (
+                      <span
+                        key={skill}
+                        className="max-w-full truncate rounded-full bg-background/80 px-1.5 py-0.5 text-[10px] text-muted-foreground"
+                      >
+                        {skill}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 

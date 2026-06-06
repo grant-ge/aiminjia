@@ -21,7 +21,7 @@ export function ExpertTeamCard({ team, onStart }: ExpertTeamCardProps) {
       data-aijia-expert-team-id={team.id}
       data-aijia-expert-team-name={team.name}
       onClick={() => onStart(team.id)}
-      aria-label={t('ExpertTeams.startTeam', { name: team.name })}
+      aria-label={t('ExpertTeams.openTeamDetail', { name: team.name })}
       className="flex h-full w-full flex-col gap-3 rounded-lg border border-border bg-card p-4 text-left text-card-foreground transition-colors hover:border-primary/50 hover:bg-accent/30"
     >
       <div className="flex items-center gap-2">
@@ -82,6 +82,9 @@ export function ExpertTeamCard({ team, onStart }: ExpertTeamCardProps) {
             {ex}
           </span>
         ))}
+        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+          {t('ExpertTeams.viewDetail')}
+        </span>
       </div>
     </button>
   )

@@ -2,15 +2,7 @@
 // 内置专家团 — 单一真相源。任何 UI / prompt 渲染从此读取。
 // MVP 仅中文；不做 i18n，prompt 也是中文。
 
-export type ExpertTeamId =
-  | 'marketing'
-  | 'operations'
-  | 'strategy'
-  | 'negotiation'
-  | 'retrospective'
-  | 'investment'
-  | 'debate'
-  | 'roundtable'
+export type ExpertTeamId = string
 
 export type FacilitationStyle = 'rounds' | 'debate' | 'open'
 
@@ -44,6 +36,14 @@ export interface ExpertTeam {
   composerPlaceholder: string
   /** 决定 buildDirectorPrompt 的模板分支 */
   facilitationStyle: FacilitationStyle
+  /** Server-side workplace directory category metadata. */
+  workplaceCategoryId?: string | null
+  workplaceCategoryName?: string | null
+  workplaceCategoryDescription?: string | null
+  workplaceCategoryIcon?: string | null
+  workplaceCategoryColor?: string | null
+  workplaceCategorySortOrder?: number | null
+  sortOrder?: number | null
 }
 
 export const EXPERT_TEAMS: ExpertTeam[] = [
@@ -169,7 +169,7 @@ type ExpertTeamText = Pick<ExpertTeam, 'name' | 'tagline' | 'examples' | 'compos
   experts?: Array<Pick<ExpertPersona, 'name' | 'persona'>>
 }
 
-const EXPERT_TEAM_I18N: Record<ExpertTeamId, Partial<Record<ExpertTeamLocale, ExpertTeamText>>> = {
+const EXPERT_TEAM_I18N: Record<string, Partial<Record<ExpertTeamLocale, ExpertTeamText>>> = {
   marketing: {
     'en-US': {
       name: 'Marketing Planning Team',
@@ -279,6 +279,8 @@ const EXPERT_TEAM_I18N: Record<ExpertTeamId, Partial<Record<ExpertTeamLocale, Ex
   },
 }
 
+const remoteExpertTeams = new Map<ExpertTeamId, ExpertTeam>()
+
 function normalizeLocale(language?: string): ExpertTeamLocale {
   return language?.toLowerCase().startsWith('en') ? 'en-US' : 'zh-CN'
 }
@@ -311,8 +313,17 @@ export function getExpertTeams(language?: string): ExpertTeam[] {
 }
 
 export function getExpertTeam(id: ExpertTeamId, language?: string): ExpertTeam | undefined {
+  const remote = remoteExpertTeams.get(id)
+  if (remote) return remote
   const team = EXPERT_TEAMS.find((t) => t.id === id)
   return team ? localizeExpertTeam(team, language) : undefined
+}
+
+export function setRemoteExpertTeams(teams: ExpertTeam[]) {
+  remoteExpertTeams.clear()
+  for (const team of teams) {
+    remoteExpertTeams.set(team.id, team)
+  }
 }
 
 /**

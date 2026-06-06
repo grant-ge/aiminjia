@@ -22,6 +22,8 @@ describe('seedDispatchConversation', () => {
       title: '派活: 小工',
       isArchived: false,
       createdAt: '2026-05-15T14:30:00Z',
+      kind: 'employee',
+      sourceLabel: '小工',
     })
     expect(result[1].id).toBe('a')
   })

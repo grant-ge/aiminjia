@@ -12,7 +12,11 @@
 //   ② localizeEmployeeDisplay 查 base zh-CN 值用于已招员工的 i18n 翻译
 //   两者都不依赖运行时大字段，所以这里只留身份元数据。
 
-import type { EmployeeTemplateSnapshot } from '@/lib/tauri'
+import type {
+  EmployeeTemplateSnapshot,
+  WorkplaceDirectoryItem,
+  WorkplaceDirectoryRequiredSkill,
+} from '@/lib/tauri'
 
 export type ResourceConfigKind = 'monitoring-urls' | 'sales-table' | 'weekly-report' | 'tech-support' | 'customer-support' | 'none'
 
@@ -42,6 +46,13 @@ export interface EmployeeTemplate {
   resourceConfigKind: ResourceConfigKind
   /** True when an employee with this templateId requires `dingtalk_status().connected === true` before dispatch. */
   requiresDingtalk: boolean
+  /** Server-localized platform skills this digital employee expects to use. */
+  requiredSkills?: WorkplaceDirectoryRequiredSkill[]
+  /** Server-side example assignments surfaced in the rich detail view. */
+  examples?: string[]
+  /** Server-side workplace directory category metadata, used for catalog grouping/display. */
+  workplaceCategoryId?: string | null
+  workplaceCategoryName?: string | null
   /**
    * JSON Schema for instance config (PR6, 2026-05-10). When present and
    * non-empty, HireWizard step 3 renders a SchemaForm against this schema
@@ -340,15 +351,21 @@ const RESOURCE_CONFIG_KIND_BY_ID: Record<string, ResourceConfigKind> = {
  * hand-tuned forms, but all user-facing template fields come from the
  * backend snapshot so server sync updates the visible catalog immediately.
  */
-export function snapshotToTemplate(snap: EmployeeTemplateSnapshot, language?: string): EmployeeTemplate {
+export function snapshotToTemplate(
+  snap: EmployeeTemplateSnapshot,
+  language?: string,
+  directoryItem?: WorkplaceDirectoryItem,
+  workplaceCategoryName?: string | null,
+): EmployeeTemplate {
   const display = selectTemplateDisplay(snap, language)
+  const directoryDisplay = directoryItem?.display
   return {
     templateId: snap.templateId,
     version: snap.version,
-    avatar: snap.avatar,
-    name: display.name ?? snap.name,
+    avatar: directoryItem?.icon || snap.avatar,
+    name: directoryDisplay?.name || display.name || snap.name,
     role: display.role ?? snap.role,
-    description: display.description ?? snap.description,
+    description: directoryDisplay?.description || display.description || snap.description,
     toolWhitelist: snap.toolWhitelist,
     cron: snap.cron === '' ? null : snap.cron,
     systemPromptExtra: selectTemplatePrompt(snap, language) ?? snap.systemPromptExtra,
@@ -357,6 +374,10 @@ export function snapshotToTemplate(snap: EmployeeTemplateSnapshot, language?: st
     requiresAttachment: snap.requiresAttachment,
     resourceConfigKind: RESOURCE_CONFIG_KIND_BY_ID[snap.templateId] ?? 'none',
     requiresDingtalk: snap.requiresDingtalk,
+    requiredSkills: directoryItem?.requiredSkills,
+    examples: directoryDisplay?.examples?.filter(Boolean),
+    workplaceCategoryId: directoryItem?.workplaceCategoryId ?? null,
+    workplaceCategoryName: workplaceCategoryName ?? null,
     resourceConfigSchema: snap.resourceConfigSchema,
   }
 }

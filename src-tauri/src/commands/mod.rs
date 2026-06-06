@@ -8,6 +8,7 @@ pub mod employees;
 pub mod expert_team_templates;
 pub mod file;
 pub mod plugin;
+pub mod workplace_directory;
 
 pub mod channel;
 pub mod persona;

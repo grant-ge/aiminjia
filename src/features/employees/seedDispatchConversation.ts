@@ -26,6 +26,7 @@ export function seedDispatchConversation(
     updatedAt: now,
     isArchived: false,
     kind: 'employee',
+    sourceLabel: employeeName,
   }
   return [placeholder, ...conversations]
 }
