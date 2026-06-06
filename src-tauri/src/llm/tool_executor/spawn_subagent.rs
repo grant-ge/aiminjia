@@ -312,7 +312,15 @@ impl SpawnSubagentLauncher for DefaultSpawnSubagentLauncher {
             // Without this, a panic would drop the JoinHandle silently and
             // the parent would observe Running forever.
             use futures::FutureExt;
-            let body = std::panic::AssertUnwindSafe(async {
+            // `tokio::spawn` does not inherit the parent turn's task-local
+            // correlation context, so re-bind it here (parent ids + agent id)
+            // to keep sub-agent logs greppable under the same request.
+            let log_ctx = crate::log_context::LogContext::new(
+                parent_session_id.as_str(),
+                parent_run_id.as_ref().map(|r| r.as_str()).unwrap_or(""),
+            )
+            .with_agent(id_for_task.as_str());
+            let body = std::panic::AssertUnwindSafe(crate::log_context::scoped(log_ctx, async {
                 crate::llm::sub_agent::run_sub_agent(
                     &gateway,
                     &tool_registry,
@@ -321,7 +329,7 @@ impl SpawnSubagentLauncher for DefaultSpawnSubagentLauncher {
                     &app_settings,
                 )
                 .await
-            });
+            }));
             let outcome = body.catch_unwind().await;
 
             match outcome {
