@@ -27,7 +27,7 @@ import {
 } from '@/features/employees/employeeCatalog'
 import type { EmployeeTemplate } from '@/features/employees/templates'
 import { EmployeeTemplateDetailDialog } from '@/features/employees/EmployeeTemplateDetailDialog'
-import { employeeInitial, getEmployeeVisual } from '@/features/employees/employeeVisual'
+import { getEmployeeVisual } from '@/features/employees/employeeVisual'
 
 // ─── daily feed ──────────────────────────────────────────────────────────────
 
@@ -113,7 +113,7 @@ function EmployeeDirectoryCard({
             {visual.avatarUrl ? (
               <img src={visual.avatarUrl} alt="" className="h-full w-full object-cover" />
             ) : (
-              <span className="text-sm font-semibold">{employeeInitial(visual.name)}</span>
+              <span className="text-xl font-semibold leading-none">{visual.avatarText}</span>
             )}
           </span>
           <div className="min-w-0">

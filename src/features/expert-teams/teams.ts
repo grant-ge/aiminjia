@@ -1,6 +1,7 @@
 // code/src/features/expert-teams/teams.ts
-// 内置专家团 — 单一真相源。任何 UI / prompt 渲染从此读取。
-// MVP 仅中文；不做 i18n，prompt 也是中文。
+// Legacy expert-team definitions.
+// The expert-team marketplace is server-authoritative; this file remains only
+// for existing conversations and tests that reference the original built-ins.
 
 export type ExpertTeamId = string
 
@@ -36,6 +37,8 @@ export interface ExpertTeam {
   composerPlaceholder: string
   /** 决定 buildDirectorPrompt 的模板分支 */
   facilitationStyle: FacilitationStyle
+  /** Optional server-authored director prompt template with {{teamName}} style variables. */
+  directorPromptTemplate?: string | null
   /** Server-side workplace directory category metadata. */
   workplaceCategoryId?: string | null
   workplaceCategoryName?: string | null

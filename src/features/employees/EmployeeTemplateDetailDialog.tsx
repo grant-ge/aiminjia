@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button'
 import type { EmployeeRecord } from '@/lib/tauri'
 import type { EmployeeTemplate } from './templates'
 import { requiredSkillNames } from './employeeCatalog'
-import { employeeInitial, getEmployeeVisual } from './employeeVisual'
+import { getEmployeeVisual } from './employeeVisual'
 
 interface EmployeeTemplateDetailDialogProps {
   template: EmployeeTemplate | null
@@ -76,7 +76,7 @@ export function EmployeeTemplateDetailDialog({
               {visual.avatarUrl ? (
                 <img src={visual.avatarUrl} alt="" className="h-full w-full object-cover" />
               ) : (
-                <span className="text-3xl font-semibold">{employeeInitial(visual.name)}</span>
+                <span className="text-3xl font-semibold leading-none">{visual.avatarText}</span>
               )}
             </div>
             <div className="min-w-0 flex-1">

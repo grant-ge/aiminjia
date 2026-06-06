@@ -11,6 +11,7 @@ function runtimeTeamName(team: ExpertTeam): string {
 }
 
 function teamForPrompt(team: ExpertTeam, language?: string): ExpertTeam {
+  if (team.directorPromptTemplate) return team
   return getExpertTeam(team.id, normalizePromptLocale(language)) ?? team
 }
 
@@ -26,6 +27,25 @@ function renderRoster(team: ExpertTeam, locale: PromptLocale): string {
       return `- ${e.emoji} ${e.name}${tag}：${e.persona}`
     })
     .join('\n')
+}
+
+function renderDirectorPromptTemplate(
+  template: string,
+  team: ExpertTeam,
+  topic: string,
+  locale: PromptLocale,
+): string {
+  const values: Record<string, string> = {
+    teamName: team.name,
+    runtimeTeamName: runtimeTeamName(team),
+    roster: renderRoster(team, locale),
+    topic,
+    spawnNameRule: spawnNameRule(locale),
+  }
+  return Object.entries(values).reduce(
+    (out, [key, value]) => out.split(`{{${key}}}`).join(value),
+    template,
+  )
 }
 
 /** Common spawn convention reminder shared by all facilitation styles. */
@@ -157,6 +177,10 @@ export function buildDirectorPrompt(
   const locale = normalizePromptLocale(language)
   const promptTeam = teamForPrompt(team, locale)
   const topic = userTopic.trim()
+  const template = promptTeam.directorPromptTemplate?.trim()
+  if (template) {
+    return renderDirectorPromptTemplate(template, promptTeam, topic, locale)
+  }
   if (locale === 'en-US') {
     switch (promptTeam.facilitationStyle) {
       case 'debate':

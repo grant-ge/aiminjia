@@ -3,6 +3,33 @@ import { EXPERT_TEAMS, getExpertTeam } from '../teams'
 import { buildDirectorPrompt } from '../buildDirectorPrompt'
 
 describe('buildDirectorPrompt', () => {
+  it('renders server-authored director prompt templates when provided', () => {
+    const prompt = buildDirectorPrompt({
+      id: 'talent-acquisition',
+      name: '招聘评审团',
+      emoji: '🎯',
+      tagline: '岗位画像 / 候选人评审 / 面试设计',
+      experts: [
+        {
+          name: '招聘负责人',
+          agentName: 'recruiting-lead',
+          persona: '关注招聘漏斗',
+          emoji: '🎯',
+        },
+      ],
+      examples: [],
+      composerPlaceholder: '',
+      facilitationStyle: 'rounds',
+      directorPromptTemplate: '团队={{teamName}}\n运行名={{runtimeTeamName}}\n成员={{roster}}\n议题={{topic}}\n规则={{spawnNameRule}}',
+    }, '设计销售总监岗位面试方案', 'zh-CN')
+
+    expect(prompt).toContain('团队=招聘评审团')
+    expect(prompt).toContain('运行名=expert-team-talent-acquisition')
+    expect(prompt).toContain('招聘负责人 [name="recruiting-lead"]')
+    expect(prompt).toContain('议题=设计销售总监岗位面试方案')
+    expect(prompt).toContain('spawn 子代理时')
+  })
+
   it.each(EXPERT_TEAMS.map((t) => [t.id, t]))('renders %s prompt', (_id, team) => {
     const prompt = buildDirectorPrompt(team, '示例议题：是否拓展东南亚市场')
     expect(prompt).toMatchSnapshot()

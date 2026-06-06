@@ -22,7 +22,7 @@ import {
   setConversationExpertTeam,
 } from '@/lib/tauri'
 import { useChatStore } from '@/stores/chatStore'
-import { EXPERT_TEAMS, type ExpertTeamId } from './teams'
+import { getExpertTeam as getKnownExpertTeam, type ExpertTeamId } from './teams'
 
 // convId → ExpertTeamId | null (null = 已查过，不是专家团；undefined = 还没查)
 const cache = new Map<string, ExpertTeamId | null>()
@@ -31,7 +31,7 @@ type Subscriber = (teamId: ExpertTeamId | null) => void
 const subscribers = new Map<string, Set<Subscriber>>()
 
 function labelFor(teamId: ExpertTeamId): string {
-  return EXPERT_TEAMS.find((t) => t.id === teamId)?.name ?? teamId
+  return getKnownExpertTeam(teamId)?.name ?? teamId
 }
 
 function notify(convId: string, teamId: ExpertTeamId | null) {

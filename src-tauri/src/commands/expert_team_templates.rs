@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::Context;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::storage::AiJiaHome;
@@ -20,6 +20,27 @@ struct DesktopResourceItem {
 #[derive(Debug, Deserialize)]
 struct DesktopResourceResponse {
     data: Vec<DesktopResourceItem>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExpertTeamTemplateSnapshot {
+    pub team_id: String,
+    pub version: String,
+    #[serde(default)]
+    pub facilitation_style: String,
+    #[serde(default)]
+    pub display_i18n: serde_json::Value,
+    #[serde(default)]
+    pub experts: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub director_prompt_i18n: serde_json::Value,
+}
+
+#[tauri::command]
+pub async fn expert_team_template_catalog() -> Result<Vec<ExpertTeamTemplateSnapshot>, String> {
+    let cache_dir = expert_team_templates_cache_dir();
+    Ok(read_cached_snapshots(&cache_dir))
 }
 
 #[tauri::command]
@@ -47,9 +68,7 @@ pub async fn expert_team_template_refresh(
     }
 
     let catalog: DesktopResourceResponse = resp.json().await.map_err(|e| e.to_string())?;
-    let cache_dir = AiJiaHome::from_home()
-        .root()
-        .join("expert-team-templates-cache");
+    let cache_dir = expert_team_templates_cache_dir();
     let mut downloaded = 0u32;
 
     for item in catalog.data {
@@ -76,8 +95,55 @@ pub async fn expert_team_template_refresh(
     Ok(downloaded)
 }
 
+fn expert_team_templates_cache_dir() -> PathBuf {
+    AiJiaHome::from_home()
+        .root()
+        .join("expert-team-templates-cache")
+}
+
 fn cache_path_for(cache_dir: &Path, team_id: &str, version: &str) -> PathBuf {
     cache_dir.join(team_id).join(format!("{version}.json"))
+}
+
+fn read_cached_snapshots(cache_dir: &Path) -> Vec<ExpertTeamTemplateSnapshot> {
+    let Ok(team_dirs) = std::fs::read_dir(cache_dir) else {
+        return Vec::new();
+    };
+
+    let mut snapshots = Vec::new();
+    for team_dir in team_dirs.flatten() {
+        let Ok(file_type) = team_dir.file_type() else {
+            continue;
+        };
+        if !file_type.is_dir() {
+            continue;
+        }
+        let Ok(version_files) = std::fs::read_dir(team_dir.path()) else {
+            continue;
+        };
+        for entry in version_files.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+                continue;
+            }
+            match std::fs::read_to_string(&path)
+                .with_context(|| format!("reading {}", path.display()))
+                .and_then(|content| {
+                    serde_json::from_str::<ExpertTeamTemplateSnapshot>(&content)
+                        .with_context(|| format!("parsing {}", path.display()))
+                }) {
+                Ok(snapshot) => snapshots.push(snapshot),
+                Err(e) => log::warn!("[expert_team_template_catalog] {e}"),
+            }
+        }
+    }
+
+    snapshots.sort_by(|a, b| {
+        a.team_id
+            .cmp(&b.team_id)
+            .then_with(|| a.version.cmp(&b.version))
+    });
+    snapshots
 }
 
 async fn download_and_cache(

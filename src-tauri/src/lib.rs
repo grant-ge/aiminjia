@@ -1061,6 +1061,7 @@ pub fn run() {
             commands::employees::employee_index_knowledge_async,
             commands::employees::employee_template_catalog,
             commands::employees::employee_template_refresh,
+            commands::expert_team_templates::expert_team_template_catalog,
             commands::expert_team_templates::expert_team_template_refresh,
             commands::workplace_directory::workplace_directory_catalog,
             commands::employees::inbox_list,

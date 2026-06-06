@@ -90,7 +90,7 @@ export function ExpertTeamDetailDialog({
                           {avatarUrl ? (
                             <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
                           ) : (
-                            <span className="text-sm font-semibold">{Array.from(expert.name)[0]}</span>
+                            <span className="text-lg leading-none">{expert.emoji || Array.from(expert.name)[0]}</span>
                           )}
                         </span>
                         <span className="min-w-0">

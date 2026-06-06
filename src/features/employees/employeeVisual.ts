@@ -14,6 +14,7 @@ export interface EmployeeVisual {
   name: string
   title: string
   avatarUrl: string | null
+  avatarText: string
   accent: string
   strengths: string[]
   examples: string[]
@@ -112,10 +113,12 @@ function fallbackExamples(template: EmployeeTemplate): string[] {
 export function getEmployeeVisual(template: EmployeeTemplate): EmployeeVisual {
   const persona = EMPLOYEE_PERSONAS[template.templateId]
   if (!persona) {
+    const avatarText = template.avatar.trim() || employeeInitial(template.name)
     return {
       name: template.name,
       title: template.role,
       avatarUrl: null,
+      avatarText,
       accent: 'bg-muted text-muted-foreground',
       strengths: [],
       examples: fallbackExamples(template),
@@ -125,6 +128,7 @@ export function getEmployeeVisual(template: EmployeeTemplate): EmployeeVisual {
     name: persona.name,
     title: persona.title || template.role,
     avatarUrl: `/employee-avatars/${safeName(persona.name)}.svg`,
+    avatarText: '',
     accent: persona.accent,
     strengths: persona.strengths,
     examples: template.examples && template.examples.length > 0 ? template.examples : persona.examples,

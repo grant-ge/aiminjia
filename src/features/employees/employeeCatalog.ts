@@ -29,6 +29,12 @@ export interface EmployeeTemplateCatalogResult {
   error: unknown | null
 }
 
+interface DirectoryEmployeeTemplateCatalog {
+  catalog: EmployeeTemplate[]
+  categories: EmployeeCatalogCategory[]
+  itemCount: number
+}
+
 function templateVersionKey(templateId: string, version: string): string {
   return `${templateId}@@${version}`
 }
@@ -73,23 +79,33 @@ function sortDirectoryItems(
   })
 }
 
-async function loadDirectoryEmployeeTemplates(language?: string): Promise<{
-  catalog: EmployeeTemplate[]
-  categories: EmployeeCatalogCategory[]
-}> {
+function snapshotsByVersion(snapshots: EmployeeTemplateSnapshot[]) {
+  return new Map(
+    snapshots.map((snap) => [templateVersionKey(snap.templateId, snap.version), snap]),
+  )
+}
+
+async function loadDirectoryEmployeeTemplates(language?: string): Promise<DirectoryEmployeeTemplateCatalog> {
   const directory = await workplaceDirectoryCatalog(language)
   const employeeItems = directory.items.filter((item) => item.resourceType === 'employee_template')
-  if (employeeItems.length === 0) return { catalog: [], categories: [] }
+  if (employeeItems.length === 0) return { catalog: [], categories: [], itemCount: 0 }
 
   const categories = directory.categories.map(toCatalogCategory)
   const categoryNames = categoryNameById(employeeItems, directory.categories)
-  const snapshots: EmployeeTemplateSnapshot[] = await employeeTemplateCatalog()
-  const snapshotsByVersion = new Map(
-    snapshots.map((snap) => [templateVersionKey(snap.templateId, snap.version), snap]),
-  )
+  let snapshots: EmployeeTemplateSnapshot[] = await employeeTemplateCatalog()
+  let snapshotMap = snapshotsByVersion(snapshots)
+  const hasMissingSnapshot = employeeItems.some((item) => !snapshotMap.has(templateVersionKey(item.resourceId, item.version)))
+  if (hasMissingSnapshot) {
+    await employeeTemplateRefresh().catch((e) => {
+      console.warn('[employeeCatalog] employee_template_refresh after directory sync failed:', e)
+      return 0
+    })
+    snapshots = await employeeTemplateCatalog()
+    snapshotMap = snapshotsByVersion(snapshots)
+  }
   const templates: EmployeeTemplate[] = []
   for (const item of sortDirectoryItems(employeeItems, categories)) {
-    const snapshot = snapshotsByVersion.get(templateVersionKey(item.resourceId, item.version))
+    const snapshot = snapshotMap.get(templateVersionKey(item.resourceId, item.version))
     if (!snapshot) continue
     templates.push(snapshotToTemplate(
       snapshot,
@@ -98,7 +114,7 @@ async function loadDirectoryEmployeeTemplates(language?: string): Promise<{
       item.workplaceCategoryId ? categoryNames.get(item.workplaceCategoryId) : null,
     ))
   }
-  return { catalog: templates, categories }
+  return { catalog: templates, categories, itemCount: employeeItems.length }
 }
 
 async function loadCachedEmployeeTemplates(language?: string): Promise<EmployeeTemplate[]> {
@@ -115,7 +131,18 @@ export async function loadEmployeeTemplateCatalog(language?: string): Promise<Em
   try {
     const directoryCatalog = await loadDirectoryEmployeeTemplates(language)
     if (directoryCatalog.catalog.length > 0) {
-      return { ...directoryCatalog, error: null }
+      return {
+        catalog: directoryCatalog.catalog,
+        categories: directoryCatalog.categories,
+        error: null,
+      }
+    }
+    if (directoryCatalog.itemCount > 0) {
+      return {
+        catalog: [],
+        categories: directoryCatalog.categories,
+        error: new Error('workplace directory returned employee templates but their snapshots are not cached'),
+      }
     }
   } catch (e) {
     directoryError = e

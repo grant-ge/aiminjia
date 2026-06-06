@@ -2687,6 +2687,49 @@ export function employeeTemplateRefresh(): Promise<number> {
   return invoke<number>('employee_template_refresh')
 }
 
+export interface ExpertTeamTemplateDisplayText {
+  name?: string
+  description?: string
+  tagline?: string
+  examples?: string[]
+  composerPlaceholder?: string
+}
+
+export interface ExpertTeamTemplatePromptText {
+  template?: string
+  summary?: string
+}
+
+export interface ExpertTeamTemplateExpertDisplayText {
+  name?: string
+  persona?: string
+}
+
+export interface ExpertTeamTemplateExpert {
+  stableName?: string
+  name?: string
+  title?: string
+  agentName?: string
+  persona?: string
+  avatar?: string
+  avatarName?: string
+  emoji?: string
+  displayI18n?: Record<string, ExpertTeamTemplateExpertDisplayText> | null
+}
+
+export interface ExpertTeamTemplateSnapshot {
+  teamId: string
+  version: string
+  facilitationStyle?: string
+  displayI18n?: Record<string, ExpertTeamTemplateDisplayText> | null
+  experts?: ExpertTeamTemplateExpert[]
+  directorPromptI18n?: Record<string, ExpertTeamTemplatePromptText> | null
+}
+
+export function expertTeamTemplateCatalog(): Promise<ExpertTeamTemplateSnapshot[]> {
+  return invoke<ExpertTeamTemplateSnapshot[]>('expert_team_template_catalog')
+}
+
 export function expertTeamTemplateRefresh(): Promise<number> {
   return invoke<number>('expert_team_template_refresh')
 }
