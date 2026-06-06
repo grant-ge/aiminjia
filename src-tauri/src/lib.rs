@@ -3,6 +3,7 @@ pub mod commands;
 pub mod connector;
 pub mod environment;
 pub mod llm;
+pub mod log_context;
 pub mod models;
 pub mod plugin;
 pub mod runtime;
@@ -163,6 +164,19 @@ pub fn run() {
                 tauri_plugin_log::Builder::default()
                     .level(log::LevelFilter::Info)
                     .timezone_strategy(tauri_plugin_log::TimezoneStrategy::UseLocal)
+                    // Inject the per-request correlation prefix (`[s=.. r=..]`)
+                    // so a single turn can be grepped end-to-end. See log_context.
+                    .format(|out, message, record| {
+                        let ts = chrono::Local::now().format("[%Y-%m-%d][%H:%M:%S]");
+                        out.finish(format_args!(
+                            "{}[{}][{}]{} {}",
+                            ts,
+                            record.level(),
+                            record.target(),
+                            crate::log_context::prefix(),
+                            message
+                        ))
+                    })
                     .target(tauri_plugin_log::Target::new(
                         tauri_plugin_log::TargetKind::Folder {
                             path: logs_dir.clone(),

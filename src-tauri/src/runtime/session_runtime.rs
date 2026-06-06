@@ -297,55 +297,65 @@ impl SessionRuntime {
         &self,
         request: ChatTurnRequest,
     ) -> std::result::Result<(), String> {
-        log::info!(
-            "[session_runtime] run_chat_request enter conv={} run={}",
-            request.conversation_id.as_str(),
-            request.run_id.as_str()
-        );
         let mapping = IdentityMapping::from_legacy_conversation_id(request.conversation_id.clone());
         // `ChatTurnRequest::new` creates the authoritative RunId for the turn.
         // Transport code may reserve per-run resources before entering runtime,
         // so do not replace it here.
         let run_id = request.run_id.clone();
 
-        // Emit RunStarted before handing off to the driver.
-        let run_started = RuntimeEvent::new(
-            mapping.session_id.clone(),
-            run_id.clone(),
-            RuntimeEventKind::RunStarted,
-        );
-        let _ = self.event_bus.emit(run_started).await;
+        // Bind the correlation context so every `log::*` line emitted during
+        // this turn carries `[s=<session> r=<run>]`. The turn is awaited inline
+        // (no spawn), so the scope covers the whole chain; sub-agents re-bind it
+        // inside their own spawned task.
+        let log_ctx =
+            crate::log_context::LogContext::new(mapping.session_id.as_str(), run_id.as_str());
+        crate::log_context::scoped(log_ctx, async move {
+            log::info!(
+                "[session_runtime] run_chat_request enter conv={} run={}",
+                request.conversation_id.as_str(),
+                request.run_id.as_str()
+            );
 
-        let mut turn = TurnState::new(mapping, run_id, request.content.clone());
-        let session_root = self.ensure_active_session_cancel_root(turn.session_id());
-        turn = turn
-            .with_cancellation(session_root.child_token())
-            .with_permission_mode(request.permission_mode);
+            // Emit RunStarted before handing off to the driver.
+            let run_started = RuntimeEvent::new(
+                mapping.session_id.clone(),
+                run_id.clone(),
+                RuntimeEventKind::RunStarted,
+            );
+            let _ = self.event_bus.emit(run_started).await;
 
-        // Build a driver for this session and drive the full turn lifecycle.
-        // The driver remains the only chat-turn entry and may invoke the legacy
-        // executor helper internally on production paths.
-        log::info!(
-            "[session_runtime] build_driver_for_turn conv={}",
-            turn.session_id().as_str()
-        );
-        let driver = self
-            .build_driver_for_turn(&turn, request.active_team_name_override.clone())
-            .await;
-        log::info!(
-            "[session_runtime] run_chat_turn starting conv={}",
-            turn.session_id().as_str()
-        );
-        let result = driver
-            .run_chat_turn(&mut turn, &request)
-            .await
-            .map_err(|e| e.to_string());
-        log::info!(
-            "[session_runtime] run_chat_turn finished conv={} ok={}",
-            turn.session_id().as_str(),
-            result.is_ok()
-        );
-        result
+            let mut turn = TurnState::new(mapping, run_id, request.content.clone());
+            let session_root = self.ensure_active_session_cancel_root(turn.session_id());
+            turn = turn
+                .with_cancellation(session_root.child_token())
+                .with_permission_mode(request.permission_mode);
+
+            // Build a driver for this session and drive the full turn lifecycle.
+            // The driver remains the only chat-turn entry and may invoke the legacy
+            // executor helper internally on production paths.
+            log::info!(
+                "[session_runtime] build_driver_for_turn conv={}",
+                turn.session_id().as_str()
+            );
+            let driver = self
+                .build_driver_for_turn(&turn, request.active_team_name_override.clone())
+                .await;
+            log::info!(
+                "[session_runtime] run_chat_turn starting conv={}",
+                turn.session_id().as_str()
+            );
+            let result = driver
+                .run_chat_turn(&mut turn, &request)
+                .await
+                .map_err(|e| e.to_string());
+            log::info!(
+                "[session_runtime] run_chat_turn finished conv={} ok={}",
+                turn.session_id().as_str(),
+                result.is_ok()
+            );
+            result
+        })
+        .await
     }
 
     pub async fn run_for_test(
