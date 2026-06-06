@@ -79,7 +79,7 @@ pub async fn expert_team_template_refresh(
             continue;
         }
         let path = cache_path_for(&cache_dir, &item.resource_id, &item.version);
-        if path.exists() {
+        if cache_file_matches_sha256(&path, &item.manifest_sha256) {
             continue;
         }
         match download_and_cache(&client, &cache_dir, &item).await {
@@ -103,6 +103,22 @@ fn expert_team_templates_cache_dir() -> PathBuf {
 
 fn cache_path_for(cache_dir: &Path, team_id: &str, version: &str) -> PathBuf {
     cache_dir.join(team_id).join(format!("{version}.json"))
+}
+
+fn cache_file_matches_sha256(path: &Path, expected_sha256: &str) -> bool {
+    if !path.exists() {
+        return false;
+    }
+    if expected_sha256.trim().is_empty() {
+        return true;
+    }
+    let Ok(bytes) = std::fs::read(path) else {
+        return false;
+    };
+    let mut h = Sha256::new();
+    h.update(&bytes);
+    let got = hex_lower(&h.finalize());
+    expected_sha256.eq_ignore_ascii_case(&got)
 }
 
 fn read_cached_snapshots(cache_dir: &Path) -> Vec<ExpertTeamTemplateSnapshot> {

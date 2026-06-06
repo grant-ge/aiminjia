@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::runtime::employee::template_store::{
-    download_snapshot, read_cache, write_cache, TemplateSnapshot,
+    cached_snapshot_matches_sha256, download_snapshot, write_cache, TemplateSnapshot,
 };
 use crate::storage::{fs_atomic::write_atomic, AiJiaHome};
 
@@ -220,7 +220,12 @@ async fn cache_employee_template_item(
         return Ok(false);
     }
     let cache_dir = AiJiaHome::from_home().employee_templates_cache_dir();
-    if read_cache(&cache_dir, &item.resource_id, &item.version).is_some() {
+    if cached_snapshot_matches_sha256(
+        &cache_dir,
+        &item.resource_id,
+        &item.version,
+        &item.manifest_sha256,
+    ) {
         return Ok(false);
     }
     let snapshot = download_snapshot(client, &item.manifest_url, &item.manifest_sha256).await?;
@@ -259,7 +264,7 @@ async fn cache_expert_team_template_item(
         .root()
         .join("expert-team-templates-cache");
     let path = expert_cache_path_for(&cache_dir, &item.resource_id, &item.version);
-    if path.exists() {
+    if cache_file_matches_sha256(&path, &item.manifest_sha256) {
         return Ok(false);
     }
     let bytes = download_bytes(client, &item.manifest_url, &item.manifest_sha256).await?;
@@ -285,6 +290,22 @@ fn directory_cache_path_for(cache_dir: &Path, language: &str) -> PathBuf {
 
 fn expert_cache_path_for(cache_dir: &Path, team_id: &str, version: &str) -> PathBuf {
     cache_dir.join(team_id).join(format!("{version}.json"))
+}
+
+fn cache_file_matches_sha256(path: &Path, expected_sha256: &str) -> bool {
+    if !path.exists() {
+        return false;
+    }
+    if expected_sha256.trim().is_empty() {
+        return true;
+    }
+    let Ok(bytes) = std::fs::read(path) else {
+        return false;
+    };
+    let mut h = Sha256::new();
+    h.update(&bytes);
+    let got = hex_lower(&h.finalize());
+    expected_sha256.eq_ignore_ascii_case(&got)
 }
 
 fn read_directory_cache(cache_dir: &Path, language: &str) -> Option<WorkplaceDirectoryResponse> {
