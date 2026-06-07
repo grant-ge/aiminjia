@@ -99,7 +99,7 @@ function snapshotExpertsToRoster(snapshot: ExpertTeamTemplateSnapshot, language?
         avatarName: expert.avatarName || expert.name || name,
         agentName: expert.agentName || expert.stableName,
         avatar: expert.avatar ?? null,
-        avatarText: avatarText(expert.avatar, name),
+        avatarText: expert.avatarText?.trim() || avatarText(expert.avatar, name),
         persona,
         emoji: expert.emoji || (typeof expert.avatar === 'string' ? iconEmoji(expert.avatar) : '👤'),
       }

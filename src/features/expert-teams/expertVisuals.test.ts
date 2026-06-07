@@ -54,6 +54,29 @@ describe('expert visuals', () => {
     })
   })
 
+  it('uses atlas avatars supplied by remote expert team templates', () => {
+    const atlasAvatar = {
+      kind: 'atlas' as const,
+      url: 'https://lotus-releases.oss-cn-beijing.aliyuncs.com/desktop-resources/expert-team-avatars/hr-v1/avatar-atlas.svg',
+      x: 0,
+      y: 96,
+      w: 96,
+      h: 96,
+      atlasWidth: 384,
+      atlasHeight: 288,
+    }
+    const team: ExpertTeam = {
+      ...remoteHrTeam,
+      experts: [{
+        ...remoteHrTeam.experts[0],
+        avatar: atlasAvatar,
+        avatarText: '薪',
+      }],
+    }
+
+    expect(getExpertAvatarVisualForAgent(team, 'compensation-expert')).toEqual(atlasAvatar)
+  })
+
   it('has a committed avatar asset for every fixed-roster expert', () => {
     for (const team of EXPERT_TEAMS.filter((t) => t.experts.length > 0)) {
       for (const expert of team.experts) {

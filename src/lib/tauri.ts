@@ -2521,6 +2521,8 @@ export interface EmployeeTemplateSnapshot {
   version: string
   name: string
   avatar: string
+  avatarAssetKey?: string | null
+  avatarUrl?: string | null
   role: string
   description: string
   badge: string
@@ -2529,6 +2531,8 @@ export interface EmployeeTemplateSnapshot {
     role?: string
     description?: string
     badge?: string
+    avatarAssetKey?: string | null
+    avatarUrl?: string | null
   }> | null
   promptI18n?: Record<string, {
     systemPromptExtra?: string
@@ -2726,6 +2730,7 @@ export interface ExpertTeamTemplateExpert {
   persona?: string
   avatar?: ExpertTeamTemplateAvatar
   avatarName?: string
+  avatarText?: string
   emoji?: string
   displayI18n?: Record<string, ExpertTeamTemplateExpertDisplayText> | null
 }
