@@ -43,7 +43,7 @@ export function ExpertTeamWelcome({ team }: ExpertTeamWelcomeProps) {
     >
       <div
         data-testid="expert-team-welcome-logo"
-        className={`flex h-16 w-16 items-center justify-center rounded-2xl ${logo.className}`}
+        className={`flex h-16 w-16 items-center justify-center rounded-lg ${logo.className}`}
         aria-hidden
       >
         <TeamLogo className="h-8 w-8" />

@@ -117,7 +117,7 @@ export function RegistrationModal(props: RegistrationModalProps) {
   return (
     <div className="flex max-h-[78vh] w-full flex-col overflow-hidden bg-background">
       <div className="flex flex-col items-center px-10 pb-5 pt-8 text-center">
-        <h2 className="text-2xl font-bold tracking-tight text-foreground">{props.title}</h2>
+        <h2 className="text-2xl font-bold text-foreground">{props.title}</h2>
         <p data-testid="registration-countdown" className="mt-2 text-xs font-medium text-muted-foreground">
           剩余 {mm}:{ss}
         </p>

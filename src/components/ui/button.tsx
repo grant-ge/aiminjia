@@ -5,29 +5,25 @@ import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from '@/lib/utils'
 
 const buttonVariants = cva(
-  // spec §7.1 — controls use rounded-md (8px), text-sm
-  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+  'inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-[var(--radius)] text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0',
   {
     variants: {
       variant: {
         default:
-          'bg-primary text-primary-foreground hover:brightness-110 active:brightness-95',
+          'border border-primary bg-primary text-primary-foreground hover:bg-[var(--color-primary-hover)] hover:border-[var(--color-primary-hover)] active:bg-[var(--color-primary-active)]',
         secondary:
-          'bg-secondary text-secondary-foreground hover:bg-muted active:bg-muted/80',
+          'border border-transparent bg-secondary text-secondary-foreground hover:bg-sidebar-accent active:bg-sidebar-accent/80',
         ghost:
-          'text-foreground hover:bg-accent hover:text-accent-foreground active:bg-accent/80',
+          'border border-transparent text-muted-foreground hover:bg-accent hover:text-foreground active:bg-accent/80',
         destructive:
-          'bg-destructive text-destructive-foreground hover:brightness-110 active:brightness-95',
-        outline: 'border border-input bg-background hover:bg-accent hover:text-accent-foreground',
+          'border border-destructive bg-destructive text-destructive-foreground hover:brightness-95 active:brightness-90',
+        outline: 'border border-input bg-card text-foreground hover:bg-accent hover:text-accent-foreground',
         link: 'text-primary underline-offset-4 hover:underline',
       },
       size: {
-        // spec §7.1
         default: 'h-9 px-3.5 py-2',
-        sm: 'h-7 px-2.5 text-xs',
-        // lg — page-level CTA (login submit, paywall confirm). Pill radius
-        // intentional: large primary buttons read as "go" affordances.
-        lg: 'h-11 px-8 text-md font-semibold rounded-full',
+        sm: 'h-8 px-3 text-xs',
+        lg: 'h-10 px-5 text-sm font-semibold',
         icon: 'h-9 w-9',
       },
     },

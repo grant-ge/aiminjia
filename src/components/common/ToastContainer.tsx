@@ -31,18 +31,18 @@ function Toast({ notification }: { notification: Notification }) {
 
   return (
     <div
-      className="animate-[fadeUp_0.25s_ease] flex max-w-[380px] items-start gap-2.5 rounded-lg border border-l-[3px] px-4 py-3"
+      className="animate-[fadeUp_0.25s_ease] flex w-[360px] max-w-[calc(100vw-32px)] items-start gap-2.5 rounded-md border border-l-[3px] px-4 py-3"
       style={{
         background: 'var(--color-bg-card)',
         borderColor: 'var(--color-border)',
         borderLeftColor: style.accent,
-        boxShadow: 'var(--shadow-md)',
+        boxShadow: 'var(--shadow-popover)',
       }}
     >
       {/* Icon */}
       {/* level 图标 chip：背景是 style.accent（success/error/info 的实色），白字保持对比度 */}
       <div
-        className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
+        className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
         style={{ background: style.accent }}
       >
         {style.icon}
@@ -67,7 +67,7 @@ function Toast({ notification }: { notification: Notification }) {
       {/* Dismiss */}
       {notification.dismissible && (
         <button
-          className="flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded border-none bg-transparent"
+          className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-[var(--radius)] border-none bg-transparent transition-colors hover:bg-muted"
           style={{ color: 'var(--color-text-muted)' }}
           onClick={() => dismiss(notification.id)}
         >

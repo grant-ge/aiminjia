@@ -60,7 +60,7 @@ function QrCodePanel({ value, loading, qrAlt }: { value: string | null; loading:
 
   return (
     // QR 容器固定白底：保证扫码相机/企微客户端可识别，不随主题切换
-    <div className="relative flex h-60 w-60 items-center justify-center rounded-3xl border border-border bg-white p-4">
+    <div className="relative flex h-60 w-60 items-center justify-center rounded-lg border border-border bg-white p-4">
       {qrDataUrl ? (
         <img src={qrDataUrl} alt={qrAlt} className="h-full w-full" />
       ) : (
@@ -359,7 +359,7 @@ export function WecomChannelConfig({ onSaved, onClose }: WecomChannelConfigProps
   return (
     <div className="flex max-h-[78vh] w-full flex-col overflow-hidden bg-background">
       <div className="flex flex-col items-center px-10 pb-5 pt-8 text-center">
-        <h2 className="text-2xl font-bold tracking-tight text-foreground">{t('channel.wecom.config.title')}</h2>
+        <h2 className="text-2xl font-bold text-foreground">{t('channel.wecom.config.title')}</h2>
         <p className="mt-3 text-sm font-medium text-muted-foreground">
           {t('channel.wecom.config.subtitle')}
         </p>

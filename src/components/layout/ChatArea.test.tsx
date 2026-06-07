@@ -28,7 +28,7 @@ describe('ChatArea', () => {
     expect(scrollRegion).not.toHaveStyle({ bottom: '144px' })
 
     const gutter = scrollRegion.firstElementChild
-    expect(gutter).toHaveClass('px-6')
+    expect(gutter).toHaveClass('px-8')
     expect(gutter?.firstElementChild).toHaveClass('w-full')
     expect(gutter?.firstElementChild).toHaveClass('mx-auto')
     expect(gutter?.firstElementChild).toHaveClass('max-w-[736px]')

@@ -27,7 +27,7 @@ export function SkillTokenView({ node, deleteNode }: SkillTokenViewProps) {
         className="h-3.5 w-3.5 shrink-0"
         style={{ filter: 'drop-shadow(0 0 4px rgba(var(--primary-rgb), 0.45))' }}
       />
-      <span className="truncate tracking-tight">{attrs.label}</span>
+      <span className="truncate">{attrs.label}</span>
       <button
         type="button"
         aria-label={`remove skill ${attrs.label}`}

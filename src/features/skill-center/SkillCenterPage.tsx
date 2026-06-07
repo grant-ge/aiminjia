@@ -6,6 +6,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { AppDropdown } from '@/components/common/AppDropdown'
 import { requestConfirm } from '@/components/common/ConfirmDialogHost'
 import { PageSectionShell } from '@/components/shell/PageSectionShell'
+import { PageTopBar } from '@/components/shell/PageTopBar'
 import { SkillCard } from '@/components/skills/SkillCard'
 import { SkillCategoryBar } from '@/components/skills/SkillCategoryBar'
 import { SkillOfficeSection } from '@/components/skills/SkillOfficeSection'
@@ -372,82 +373,87 @@ export function SkillCenterPage() {
     <>
     <PageSectionShell
       topBar={
-        <header data-tauri-drag-region className="flex h-10 shrink-0 items-center justify-between border-b border-border bg-background px-6">
-          <div className="flex items-center gap-3">
-            <span className="text-base font-semibold text-foreground">{t('skillCenter.title')}</span>
-            <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-muted-foreground">
+        <PageTopBar
+          variant="title"
+          title={(
+            <div className="flex min-w-0 items-center gap-2.5">
+              <span className="truncate text-[15px] font-semibold leading-[22px] text-foreground">{t('skillCenter.title')}</span>
+              <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-muted-foreground">
               {t('skillCenter.installedCount', { count: skills.length })}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="flex h-7 w-[180px] items-center gap-1.5 rounded-full bg-secondary px-2.5">
-              <Search className="h-3 w-3 shrink-0 text-muted-foreground" />
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                className="flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground"
-                placeholder={t('skillCenter.searchPlaceholder')}
-              />
+              </span>
             </div>
-            {isLoggedIn && (
+          )}
+          trailing={(
+            <>
+              <div className="flex h-9 w-[240px] items-center gap-2 rounded-[var(--radius)] border border-input bg-card px-3">
+                <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+                  placeholder={t('skillCenter.searchPlaceholder')}
+                />
+              </div>
+              {isLoggedIn && (
+                <AppDropdown
+                  ariaLabel={t('skillCenter.syncSkills')}
+                  trigger={
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={syncing}
+                      data-testid="skills-sync-builtin"
+                    >
+                      {syncing ? t('skillCenter.syncing') : t('skillCenter.syncSkills')}
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    </Button>
+                  }
+                  items={[
+                    {
+                      id: 'sync-builtin',
+                      label: t('skillCenter.syncBuiltin'),
+                      icon: <Cloud className="h-4 w-4" />,
+                      onSelect: () => void handleSyncBuiltin(),
+                      dataAttrs: { 'data-aijia-skill-sync-action': 'builtin' },
+                    },
+                    {
+                      id: 'sync-local',
+                      label: t('skillCenter.syncLocal'),
+                      icon: <HardDrive className="h-4 w-4" />,
+                      onSelect: () => void handleSyncLocal(),
+                      dataAttrs: { 'data-aijia-skill-sync-action': 'local' },
+                    },
+                  ]}
+                />
+              )}
               <AppDropdown
-                ariaLabel={t('skillCenter.syncSkills')}
+                ariaLabel={t('skillCenter.importSkill')}
                 trigger={
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={syncing}
-                    data-testid="skills-sync-builtin"
-                  >
-                    {syncing ? t('skillCenter.syncing') : t('skillCenter.syncSkills')}
+                  <Button size="sm" data-aijia-skill-import-trigger>
+                    {t('skillCenter.importSkill')}
                     <ChevronDown className="h-3.5 w-3.5" />
                   </Button>
                 }
                 items={[
                   {
-                    id: 'sync-builtin',
-                    label: t('skillCenter.syncBuiltin'),
-                    icon: <Cloud className="h-4 w-4" />,
-                    onSelect: () => void handleSyncBuiltin(),
-                    dataAttrs: { 'data-aijia-skill-sync-action': 'builtin' },
+                    id: 'import-dir',
+                    label: t('skillCenter.importDirectory'),
+                    icon: <FolderOpen className="h-4 w-4" />,
+                    onSelect: () => void handleImportDirectory(),
+                    dataAttrs: { 'data-aijia-skill-import-action': 'directory' },
                   },
                   {
-                    id: 'sync-local',
-                    label: t('skillCenter.syncLocal'),
-                    icon: <HardDrive className="h-4 w-4" />,
-                    onSelect: () => void handleSyncLocal(),
-                    dataAttrs: { 'data-aijia-skill-sync-action': 'local' },
+                    id: 'import-archive',
+                    label: t('skillCenter.importArchive'),
+                    icon: <Package className="h-4 w-4" />,
+                    onSelect: () => void handleImportArchive(),
+                    dataAttrs: { 'data-aijia-skill-import-action': 'archive' },
                   },
                 ]}
               />
-            )}
-            <AppDropdown
-              ariaLabel={t('skillCenter.importSkill')}
-              trigger={
-                <Button size="sm" data-aijia-skill-import-trigger>
-                  {t('skillCenter.importSkill')}
-                  <ChevronDown className="h-3.5 w-3.5" />
-                </Button>
-              }
-              items={[
-                {
-                  id: 'import-dir',
-                  label: t('skillCenter.importDirectory'),
-                  icon: <FolderOpen className="h-4 w-4" />,
-                  onSelect: () => void handleImportDirectory(),
-                  dataAttrs: { 'data-aijia-skill-import-action': 'directory' },
-                },
-                {
-                  id: 'import-archive',
-                  label: t('skillCenter.importArchive'),
-                  icon: <Package className="h-4 w-4" />,
-                  onSelect: () => void handleImportArchive(),
-                  dataAttrs: { 'data-aijia-skill-import-action': 'archive' },
-                },
-              ]}
-            />
-          </div>
-        </header>
+            </>
+          )}
+        />
       }
     >
       <SkillOfficeSection
@@ -529,14 +535,14 @@ export function SkillCenterPage() {
                 onClick={() => setRoute({ kind: 'skill-detail', skillId: skill.id })}
                 actionsSlot={
                   menuItems.length === 0 ? (
-                    <div aria-hidden="true" className="h-7 w-7" />
+                    <div aria-hidden="true" className="h-8 w-8" />
                   ) : (
                     <AppDropdown
                       ariaLabel={`${localized.name} ${t('skillCenter.moreActions')}`}
                       trigger={
                         <button
                           type="button"
-                          className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                          className="flex h-8 w-8 items-center justify-center rounded-[var(--radius)] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                         >
                           <MoreHorizontal className="h-4 w-4" />
                         </button>
@@ -578,7 +584,7 @@ function SkillCenterState({
   onAction?: () => void
 }) {
   return (
-    <div className="col-span-full rounded-lg border border-dashed border-border bg-card/60 p-6 text-sm">
+    <div className="col-span-full rounded-md border border-dashed border-border bg-card p-6 text-sm shadow-[var(--shadow-card)]">
       <div className="font-semibold text-foreground">{title}</div>
       {desc ? <p className="mt-1 text-muted-foreground">{desc}</p> : null}
       {actionLabel && onAction ? (

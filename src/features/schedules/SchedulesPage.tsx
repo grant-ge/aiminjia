@@ -173,7 +173,7 @@ export function SchedulesPage() {
     <PageSectionShell
       topBar={<PageTopBar variant="title" title={t('schedules.pageTitle')} />}
     >
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
         {TEMPLATES.map((tmpl) => (
           <ScheduleTemplateCard
             key={tmpl.title}
@@ -183,7 +183,7 @@ export function SchedulesPage() {
         ))}
       </div>
       {displayedError ? (
-        <div className="rounded-[12px] border border-destructive/30 bg-destructive/5 px-4 py-3 text-[0.8125rem] text-destructive">
+        <div className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-[0.8125rem] text-destructive">
           {displayedError}
         </div>
       ) : null}

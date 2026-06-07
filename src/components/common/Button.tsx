@@ -17,7 +17,7 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const SIZE_CLASSES: Record<ButtonSize, string> = {
-  sm: 'h-7 px-2.5 text-xs',
+  sm: 'h-8 px-3 text-xs',
   md: 'h-9 px-3.5 text-sm',
 }
 
@@ -32,18 +32,18 @@ export function Button({
   const [hovered, setHovered] = useState(false)
 
   const baseClasses =
-    'inline-flex items-center justify-center gap-1.5 rounded-md font-medium cursor-pointer transition-all duration-150 whitespace-nowrap'
+    'inline-flex items-center justify-center gap-1.5 rounded-[var(--radius)] font-medium cursor-pointer transition-colors duration-150 whitespace-nowrap disabled:pointer-events-none disabled:opacity-50'
 
   const variantStyles: Record<string, React.CSSProperties> = {
     primary: {
-      background: hovered ? 'var(--color-primary-hover)' : 'var(--color-primary)',
-      borderColor: hovered ? 'var(--color-primary-hover)' : 'var(--color-primary)',
-      color: 'var(--color-text-on-primary)',
+      background: hovered ? 'var(--color-primary-hover)' : 'var(--primary)',
+      borderColor: hovered ? 'var(--color-primary-hover)' : 'var(--primary)',
+      color: 'var(--primary-foreground)',
     },
     secondary: {
-      background: 'var(--color-bg-card)',
-      borderColor: 'var(--color-border)',
-      color: 'var(--color-text-primary)',
+      background: hovered ? 'var(--muted)' : 'var(--card)',
+      borderColor: 'var(--input)',
+      color: 'var(--foreground)',
     },
     ghost: {
       background: 'transparent',

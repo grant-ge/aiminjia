@@ -137,7 +137,7 @@ function PlatformIcon({ platform }: { platform: PlatformCardModel }) {
     <img
       src={platform.logoSrc}
       alt=""
-      className="h-10 w-10 shrink-0 rounded-lg shadow-[var(--shadow-md)]"
+      className="h-10 w-10 shrink-0 rounded-md border border-border bg-card"
       draggable={false}
     />
   )
@@ -158,7 +158,7 @@ function PlatformCard({
 }) {
   const { t } = useTranslation()
   return (
-    <div className="flex min-h-[64px] items-center justify-between rounded-lg border border-border bg-card px-4 py-3">
+    <div className="flex min-h-[72px] items-center justify-between rounded-md border border-border bg-card px-4 py-3 shadow-[var(--shadow-card)] transition-shadow hover:shadow-[var(--shadow-card-hover)]">
       <div className="flex min-w-0 items-center gap-3">
         <PlatformIcon platform={platform} />
         <div className="min-w-0">
@@ -179,7 +179,7 @@ function PlatformCard({
           <AppDropdown
             ariaLabel={t('channel.actions.morePlatformConfig', { name: platform.name })}
             trigger={
-              <button type="button" className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
+              <button type="button" className="flex h-8 w-8 items-center justify-center rounded-[var(--radius)] text-muted-foreground hover:bg-muted hover:text-foreground">
                 <MoreHorizontal className="h-4 w-4" />
               </button>
             }
@@ -199,14 +199,14 @@ function PlatformCard({
           <Button
             type="button"
             size="sm"
-            className="rounded-full px-4"
+            className="px-4"
             onClick={onRegister}
             aria-label={t('channel.actions.configureWith', { name: platform.name })}
           >
             {t('channel.actions.configure')}
           </Button>
         ) : (
-          <Button type="button" size="sm" className="rounded-full px-4" disabled>
+          <Button type="button" size="sm" className="px-4" disabled>
             {t('channel.actions.configure')}
           </Button>
         )}
@@ -218,11 +218,10 @@ function PlatformCard({
 function ChannelHero() {
   const { t } = useTranslation()
   return (
-    <div className="flex flex-col items-center text-center">
-      <h1 className="text-4xl font-extrabold tracking-tight text-foreground">{t('channel.heroTitle')}</h1>
-      <p className="mt-5 max-w-2xl text-lg font-semibold leading-8 text-muted-foreground">
-        {t('channel.heroDesc')}
-        <br />{t('channel.heroPrivacy')}
+    <div className="flex flex-col">
+      <h1 className="text-[22px] font-bold leading-7 text-foreground">{t('channel.heroTitle')}</h1>
+      <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
+        {t('channel.heroDesc')} {t('channel.heroPrivacy')}
       </p>
     </div>
   )
@@ -283,15 +282,19 @@ function ChannelOverview({
   onRemoveWhatsapp: () => void
   onToggleWhatsapp: (enabled: boolean) => void
 }) {
+  const { t } = useTranslation()
   const noop = () => {}
   const noopToggle = () => {}
   return (
-    <div className="flex min-h-full flex-col">
-      <div data-tauri-drag-region className="h-10 shrink-0" />
-      <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col justify-center gap-8 px-6 pb-24 pt-6">
+    <div className="flex h-full min-h-0 flex-col bg-background">
+      <div data-tauri-drag-region className="flex h-14 shrink-0 items-center border-b border-border px-8">
+        <span className="text-[15px] font-semibold leading-[22px] text-foreground">{t('nav.channel')}</span>
+      </div>
+      <div className="min-h-0 flex-1 overflow-auto">
+        <div className="mx-auto flex w-full max-w-[960px] flex-col gap-6 px-8 py-7">
         <ChannelHero />
 
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3">
           {platforms.map((platform) => (
             <PlatformCard
               key={platform.key}
@@ -358,6 +361,7 @@ function ChannelOverview({
               }
             />
           ))}
+        </div>
         </div>
       </div>
     </div>

@@ -5,11 +5,11 @@ import { describe, expect, it } from 'vitest'
 import { PageTopBar } from '../PageTopBar'
 
 describe('PageTopBar', () => {
-  it('default variant: empty bar with bottom border, h-10, px-6', () => {
+  it('default variant: empty bar with bottom border, h-14, px-8', () => {
     const { container } = render(<PageTopBar variant="default" />)
     const header = container.querySelector('header')
-    expect(header?.className).toMatch(/h-10/)
-    expect(header?.className).toMatch(/px-6/)
+    expect(header?.className).toMatch(/h-14/)
+    expect(header?.className).toMatch(/px-8/)
     expect(header?.className).toMatch(/border-b/)
   })
 

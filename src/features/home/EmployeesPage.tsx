@@ -105,11 +105,11 @@ function EmployeeDirectoryCard({
       aria-busy={busy}
       disabled={busy}
       onClick={() => onOpen(template)}
-      className="group flex min-h-[188px] w-full flex-col gap-3 rounded-lg border border-border bg-card p-4 text-left text-card-foreground transition-colors hover:border-primary/50 hover:bg-accent/30 disabled:cursor-wait disabled:opacity-70"
+      className="group flex min-h-[212px] w-full flex-col gap-3 rounded-md border border-border bg-card p-4 text-left text-card-foreground shadow-[var(--shadow-card)] transition-all hover:border-primary/50 hover:shadow-[var(--shadow-card-hover)] disabled:cursor-wait disabled:opacity-70"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
-          <span className={`flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg ${visual.accent}`}>
+          <span className={`flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-md ${visual.accent}`}>
             {visual.avatarUrl ? (
               <img src={visual.avatarUrl} alt="" className="h-full w-full object-cover" />
             ) : (
@@ -117,11 +117,11 @@ function EmployeeDirectoryCard({
             )}
           </span>
           <div className="min-w-0">
-            <p className="truncate text-base font-semibold text-foreground">{visual.name}</p>
-            <p className="truncate text-xs text-muted-foreground">{visual.title}</p>
+            <p className="truncate text-[15px] font-semibold leading-[22px] text-foreground">{visual.name}</p>
+            <p className="truncate text-xs leading-4 text-muted-foreground">{visual.title}</p>
           </div>
         </div>
-        <span className="flex shrink-0 items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-xs font-medium text-primary">
+        <span className="flex h-7 shrink-0 items-center gap-1 rounded-[var(--radius)] bg-brand-primary-subtle px-2 text-xs font-medium text-primary">
           {busy ? (
             <RefreshCw className="h-3 w-3 animate-spin" />
           ) : (
@@ -131,7 +131,7 @@ function EmployeeDirectoryCard({
         </span>
       </div>
 
-      <p className="line-clamp-3 text-sm leading-relaxed text-muted-foreground">
+      <p className="line-clamp-3 text-[13px] leading-5 text-muted-foreground">
         {template.description}
       </p>
 
@@ -384,13 +384,14 @@ export function EmployeesPage() {
     <PageSectionShell
       topBar={(
         <PageTopBar
-          variant="default"
+          variant="title"
+          title={t('nav.employees')}
           trailing={(
             <Button
               type="button"
               variant="outline"
               size="sm"
-              className="h-7 gap-1.5 px-2 text-xs"
+              className="gap-1.5"
               disabled={syncingCatalog || catalogLoading}
               onClick={() => void handleSyncCatalog()}
             >
@@ -400,12 +401,11 @@ export function EmployeesPage() {
           )}
         />
       )}
-      maxWidthClass="max-w-[1024px]"
     >
       {/* ── 顶部 greeting ── */}
       <div>
-        <h1 className="text-xl font-bold text-foreground">{greetingText}{t('employeesPage.greetingToday')}</h1>
-        <p className="mt-0.5 text-sm text-muted-foreground">
+        <h1 className="text-[22px] font-bold leading-7 text-foreground">{greetingText}{t('employeesPage.greetingToday')}</h1>
+        <p className="mt-1 text-sm leading-6 text-muted-foreground">
           {runningCount > 0 ? `${t('employeesPage.workingCount', { count: runningCount })} · ` : ''}
           {reportCount > 0 ? t('employeesPage.reportCount', { count: reportCount }) : t('employeesPage.allIdle')}
         </p>
@@ -420,14 +420,14 @@ export function EmployeesPage() {
         )}
 
         {catalogLoading && catalog.length === 0 ? (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {[...Array(6)].map((_, i) => (
-              <div key={i} className="h-[188px] animate-pulse rounded-lg bg-muted/60" />
+              <div key={i} className="h-[212px] animate-pulse rounded-md border border-border bg-card" />
             ))}
           </div>
         ) : catalog.length === 0 ? (
           <div
-            className="flex min-h-[180px] flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-muted/20 px-4 text-center"
+            className="flex min-h-[180px] flex-col items-center justify-center gap-3 rounded-md border border-dashed border-border bg-card px-4 text-center shadow-[var(--shadow-card)]"
             data-aijia-employee-directory-empty
           >
             <p className="text-sm text-muted-foreground">
@@ -439,7 +439,7 @@ export function EmployeesPage() {
               type="button"
               variant="outline"
               size="sm"
-              className="h-8 gap-1.5 px-3 text-xs"
+              className="gap-1.5"
               disabled={syncingCatalog}
               onClick={() => void handleSyncCatalog()}
             >
@@ -459,7 +459,7 @@ export function EmployeesPage() {
                 {categoryDescription(activeCatalogGroup.category)}
               </p>
             )}
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {visibleCatalogTemplates.map((template) => (
                 <EmployeeDirectoryCard
                   key={`${template.templateId}:${template.version ?? ''}`}
@@ -503,7 +503,7 @@ export function EmployeesPage() {
           {entries.length > todayEntries.length && (
             <button
               type="button"
-              className="text-xs text-muted-foreground hover:text-foreground"
+              className="rounded-[var(--radius)] px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
               onClick={() => setRoute({ kind: 'inbox' })}
             >
               {t('employeesPage.viewAll')}
@@ -512,11 +512,11 @@ export function EmployeesPage() {
         </div>
 
         {todayEntries.length === 0 ? (
-          <div className="flex h-[120px] items-center justify-center rounded-xl border border-dashed border-border">
+          <div className="flex h-[120px] items-center justify-center rounded-md border border-dashed border-border bg-card">
             <p className="text-sm text-muted-foreground">{t('employeesPage.noFeedToday')}</p>
           </div>
         ) : (
-          <div className="flex flex-col divide-y divide-border overflow-hidden rounded-xl border border-border">
+          <div className="flex flex-col divide-y divide-border overflow-hidden rounded-md border border-border bg-card shadow-[var(--shadow-card)]">
             {todayEntries.slice(0, 8).map((entry) => {
               const emp = employees.find((e) => e.id === entry.employeeId)
               const clickable = !!entry.conversationId
@@ -535,7 +535,7 @@ export function EmployeesPage() {
                   type="button"
                   onClick={handleClick}
                   disabled={!clickable}
-                  className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/30 disabled:cursor-default disabled:hover:bg-transparent"
+                  className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-muted disabled:cursor-default disabled:hover:bg-transparent"
                 >
                   <span className="mt-0.5 text-base">{kindIcon(entry.kind)}</span>
                   <div className="min-w-0 flex-1">
