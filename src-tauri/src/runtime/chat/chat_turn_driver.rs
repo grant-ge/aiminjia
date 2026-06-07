@@ -2115,6 +2115,12 @@ impl RuntimeChatTurnDriver {
                             RuntimeEventKind::StreamError {
                                 error: message.clone(),
                                 raw_error: Some("prompt_too_long".to_string()),
+                                code: None,
+                                retryable: None,
+                                handling: None,
+                                request_phase: None,
+                                current_route: None,
+                                alternatives: None,
                             },
                         ))
                         .await?;

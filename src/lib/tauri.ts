@@ -37,6 +37,7 @@ export const TAURI_EVENTS = {
   STREAMING_DONE: 'streaming:done',
   STREAMING_ERROR: 'streaming:error',
   STREAMING_RETRY_RESET: 'streaming:retry-reset',
+  STREAMING_NOTICE: 'streaming:notice',
   MESSAGE_UPDATED: 'message:updated',
   STOP_PREVENTED_CONTINUATION: 'stop:prevented-continuation',
   /** @deprecated 后端不发送此事件 */
@@ -93,12 +94,28 @@ export interface StreamingErrorPayload {
   conversationId: string
   error: string
   rawError?: string
+  code?: string
+  retryable?: boolean
+  handling?: 'auto_retrying' | 'auto_failed_over' | 'manual_decision_required' | 'terminal_error' | string
+  requestPhase?: 'pre_first_byte' | 'streaming' | 'post_stream_pre_settlement' | string
+  currentRoute?: Record<string, unknown> | null
+  alternatives?: Array<Record<string, unknown>> | null
 }
 
 export interface StreamingRetryResetPayload {
   conversationId: string
   runId?: string
   reason?: 'upstream_busy' | 'rate_limited' | 'network_flap' | 'fallback_to_non_stream'
+}
+
+export interface StreamingNoticePayload {
+  conversationId: string
+  runId?: string
+  level: 'info' | 'warning' | 'error' | string
+  code?: string
+  message: string
+  fromRoute?: Record<string, unknown> | null
+  toRoute?: Record<string, unknown> | null
 }
 
 export interface AgentIdlePayload {
@@ -1815,6 +1832,14 @@ export function onStreamingRetryReset(
   handler: (payload: StreamingRetryResetPayload) => void,
 ): Promise<() => void> {
   return listen<StreamingRetryResetPayload>(TAURI_EVENTS.STREAMING_RETRY_RESET, createInstrumentedEventHandler(TAURI_EVENTS.STREAMING_RETRY_RESET, (event) => {
+    handler(event.payload)
+  }))
+}
+
+export function onStreamingNotice(
+  handler: (payload: StreamingNoticePayload) => void,
+): Promise<() => void> {
+  return listen<StreamingNoticePayload>(TAURI_EVENTS.STREAMING_NOTICE, createInstrumentedEventHandler(TAURI_EVENTS.STREAMING_NOTICE, (event) => {
     handler(event.payload)
   }))
 }

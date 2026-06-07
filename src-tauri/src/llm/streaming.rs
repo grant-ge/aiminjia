@@ -33,6 +33,7 @@ pub enum StopReason {
     ToolUse,
     MaxTokens,
     StopSequence,
+    Aborted,
 }
 
 /// A tool call requested by the model.
@@ -87,6 +88,8 @@ pub enum StreamEvent {
         stop_reason: StopReason,
         usage: TokenUsage,
     },
+    /// Gateway notice such as auto-failover success.
+    Notice { notice: serde_json::Value },
     /// Error occurred
     Error { error: String },
     /// Liveness tick — emitted when a real SSE `data:` event arrived on the

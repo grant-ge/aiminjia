@@ -44,6 +44,7 @@ import {
   onStreamingDelta,
   onStreamingDone,
   onStreamingError,
+  onStreamingNotice,
   onStreamingRetryReset,
   onMessageUpdated,
   onToolExecuting,
@@ -66,6 +67,7 @@ import type {
   StreamingDeltaPayload,
   StreamingDonePayload,
   StreamingErrorPayload,
+  StreamingNoticePayload,
   StreamingRetryResetPayload,
   AgentIdlePayload,
   ToolExecutingPayload,
@@ -354,7 +356,17 @@ export function useStreaming() {
 
   // --- streaming:error -------------------------------------------------
   useTauriEvent(() =>
-    onStreamingError(({ conversationId, error, rawError }: StreamingErrorPayload) => {
+    onStreamingError(({
+      conversationId,
+      error,
+      rawError,
+      code,
+      retryable,
+      handling,
+      requestPhase,
+      currentRoute,
+      alternatives,
+    }: StreamingErrorPayload) => {
       console.error('[streaming:error]', conversationId, rawError ?? 'unknown', error)
       recordDiagnostic({
         event: 'streaming.error.received',
@@ -362,7 +374,7 @@ export function useStreaming() {
         ok: false,
         conversationId,
         error,
-        payload: { rawError },
+        payload: { rawError, code, retryable, handling, requestPhase, currentRoute, alternatives },
       })
       // Flush buffered deltas so partial content is preserved before clearing
       flushConversationDeltas(conversationId)
@@ -390,6 +402,26 @@ export function useStreaming() {
       // streaming:error fires when the backend emits a StreamingError event
       // BEFORE message:updated; the persisted message with error field will
       // arrive via message:updated and AiBubble will render the callout.
+    }),
+  )
+
+  // --- streaming:notice ------------------------------------------------
+  useTauriEvent(() =>
+    onStreamingNotice(({ conversationId, level, message, code }: StreamingNoticePayload) => {
+      recordDiagnostic({
+        event: 'streaming.notice.received',
+        conversationId,
+        payload: { level, code, message },
+      })
+      useNotificationStore.getState().push({
+        level: level === 'error' ? 'error' : level === 'warning' ? 'warning' : 'info',
+        title: '',
+        message,
+        actions: [],
+        dismissible: true,
+        autoHide: 6,
+        context: 'toast',
+      })
     }),
   )
 
