@@ -416,7 +416,7 @@ impl AuthManager {
                             }
                         }
                     } else {
-                        log::info!(
+                        log::debug!(
                             "[refresh_auth_info] keeping existing session_key (expires_at={}); skipping create",
                             cloud_auth.session_key_expires_at
                         );
@@ -533,7 +533,7 @@ impl AuthManager {
             let state = self.state.read().await;
             if let Some(auth) = state.as_ref() {
                 if auth.session_key_expires_at > now + buffer {
-                    log::info!(
+                    log::debug!(
                         "[get_session_key] using cached session_key (len={}, expires_at={})",
                         auth.session_key.len(),
                         auth.session_key_expires_at

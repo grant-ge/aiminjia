@@ -24,7 +24,7 @@ use crate::storage::process_ext::NoWindowExt;
 use super::powershell_detect::{detect, PowerShellLocation};
 use super::shell_common::{
     collect_reader, content_from_output, emit_shell_failure_diagnostic, format_cancel_message,
-    format_command_failure, inject_bundled_runtime_path, interpret_command_result,
+    format_command_failure, inject_bundled_runtime_path, inject_trace_env, interpret_command_result,
     kill_child_process_tree, optional_transcript_path,
     read_merged_streams_with_progress_and_optional_transcript, truncated_to_max_bytes, ExitKind,
     MAX_OUTPUT_BYTES,
@@ -273,6 +273,7 @@ impl RuntimeTool for PowerShellTool {
             .stderr(std::process::Stdio::piped())
             .no_window();
         inject_bundled_runtime_path(&ctx, &mut shell);
+        inject_trace_env(&mut shell);
         let mut child = shell
             .spawn()
             .map_err(|e| ToolError::ExecutionFailed(format!("Failed to spawn PowerShell: {e}")))?;

@@ -19,7 +19,9 @@ tauri-build = { version = "2.5.4", features = [] }
 tauri = { version = "2.10.0", features = ["devtools"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
-tauri-plugin-log = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["registry", "fmt", "env-filter"] }
+tracing-appender = "0.2"
 tauri-plugin-shell = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
@@ -53,6 +55,7 @@ ecb = { version = "0.1", features = ["std"] }
 
 # Logging
 log = "0.4"
+reqwest-middleware = { version = "0.4", features = ["json"] }
 
 # Home directory resolution
 dirs = "6"

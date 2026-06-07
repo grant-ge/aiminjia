@@ -377,7 +377,13 @@
       "logUpload": "Upload logs",
       "logUploadDesc": "When something goes wrong, send local logs to the team for diagnostics.",
       "uploadLogs": "Upload logs",
-      "uploading": "Uploading..."
+      "uploading": "Uploading...",
+      "logLevel": "Log level",
+      "logLevelDesc": "Adjust runtime log verbosity to cut down on noise.",
+      "logLevelError": "Error only",
+      "logLevelWarn": "Warn",
+      "logLevelInfo": "Info",
+      "logLevelDebug": "Debug"
     },
     "billing": {
       "title": "My Account",

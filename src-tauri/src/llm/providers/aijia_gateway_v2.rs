@@ -1,6 +1,5 @@
 use anyhow::{anyhow, Result};
 use futures::{stream, StreamExt};
-use reqwest::Client;
 use serde_json::Value;
 use std::collections::VecDeque;
 
@@ -20,7 +19,7 @@ use crate::llm::streaming::{
 const AIJIA_GATEWAY_V2_RESPONSES_PATH: &str = "/aijia/v2/ai/responses";
 
 pub struct AijiaGatewayV2Provider {
-    client: Client,
+    client: reqwest_middleware::ClientWithMiddleware,
     session_key: String,
     model_type: String,
     use_tools: bool,
@@ -33,7 +32,7 @@ impl AijiaGatewayV2Provider {
 
     pub fn with_route(session_key: String, model_type: String, use_tools: bool) -> Self {
         Self {
-            client: super::build_http_client(),
+            client: crate::tracing_setup::traced_client(super::build_http_client()),
             session_key,
             model_type,
             use_tools,

@@ -387,6 +387,18 @@ pub fn inject_bundled_runtime_path(ctx: &ToolExecutionContext, command: &mut Com
     crate::runtime::dependencies::prepend_bundle_bin_to_path_tokio(command, &deps.node);
 }
 
+/// Inject the current tracing span's trace/span IDs as environment variables
+/// so child processes (Bash, Python, Node) can propagate them further.
+///
+/// Variables set:
+///   TRACE_ID  — the full trace ID (`instance.ms.seq`)
+///   SPAN_ID   — the current span's seq (5-digit)
+pub fn inject_trace_env(command: &mut Command) {
+    if let Some((trace_id, span_id)) = crate::tracing_setup::current_span_context() {
+        command.env("TRACE_ID", trace_id).env("SPAN_ID", span_id);
+    }
+}
+
 /// Classify a shell exit code + stderr into a category we can route on the
 /// server side. Mirrors the logic the lotus diagnostics handler uses to
 /// elevate signals to Error level for DingTalk alerting.

@@ -4,6 +4,7 @@ pub mod connector;
 pub mod environment;
 pub mod llm;
 pub mod log_context;
+pub mod log_level;
 pub mod models;
 pub mod plugin;
 pub mod runtime;
@@ -12,6 +13,7 @@ pub mod search;
 pub mod storage;
 pub mod telemetry;
 pub mod transport;
+pub mod tracing_setup;
 pub mod updater;
 
 use commands::chat;
@@ -27,6 +29,20 @@ const APP_LOG_RETENTION_DAYS: u64 = 3;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let _ = rustls::crypto::ring::default_provider().install_default();
+
+    // Initialize tracing BEFORE the Tauri builder so we call log::set_logger()
+    // first — Tauri's devtools feature also tries to set a global logger and
+    // would otherwise win the race, causing SetLoggerError on LogTracer::init().
+    {
+        let renlijia_root = dirs::home_dir()
+            .unwrap_or_default()
+            .join(".renlijia");
+        let logs_dir = renlijia_root.join("logs");
+        std::fs::create_dir_all(&logs_dir).ok();
+        crate::tracing_setup::init(&logs_dir);
+        let level = crate::log_level::read_persisted(&renlijia_root.join("global"));
+        log::set_max_level(crate::log_level::to_log_filter(&level));
+    }
 
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -157,36 +173,9 @@ pub fn run() {
             // Initialize file manager with root as default; will be updated after user scope activates.
             let file_mgr = Arc::new(storage::file_manager::FileManager::new(aijia_home.root()));
 
-            // Configure logging — write to root logs/ initially (before user scope is known)
+            // Logging was initialized in run() before the Tauri builder.
+            // Retain the variable for cleanup below.
             let logs_dir = aijia_home.root().join("logs");
-            std::fs::create_dir_all(&logs_dir).ok();
-            app.handle().plugin(
-                tauri_plugin_log::Builder::default()
-                    .level(log::LevelFilter::Info)
-                    .timezone_strategy(tauri_plugin_log::TimezoneStrategy::UseLocal)
-                    // Inject the per-request correlation prefix (`[s=.. r=..]`)
-                    // so a single turn can be grepped end-to-end. See log_context.
-                    .format(|out, message, record| {
-                        let ts = chrono::Local::now().format("[%Y-%m-%d][%H:%M:%S]");
-                        out.finish(format_args!(
-                            "{}[{}][{}]{} {}",
-                            ts,
-                            record.level(),
-                            record.target(),
-                            crate::log_context::prefix(),
-                            message
-                        ))
-                    })
-                    .target(tauri_plugin_log::Target::new(
-                        tauri_plugin_log::TargetKind::Folder {
-                            path: logs_dir.clone(),
-                            file_name: Some("renlijia".into()),
-                        },
-                    ))
-                    .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepOne)
-                    .max_file_size(5_000_000) // 5MB per file
-                    .build(),
-            )?;
 
             // Install global panic hook — captures panic message + backtrace into the log
             // file BEFORE the default abort handler runs (panic = "abort" in release).
@@ -1020,6 +1009,9 @@ pub fn run() {
             workspace::revoke_authorized_workspace,
             workspace::get_default_folder,
             commands::diagnostics::upload_diagnostic_logs,
+            // Log level commands
+            transport::tauri_commands::logging::get_log_level,
+            transport::tauri_commands::logging::set_log_level,
             // Plugin commands
             commands::plugin::list_tools,
             commands::plugin::list_skills,

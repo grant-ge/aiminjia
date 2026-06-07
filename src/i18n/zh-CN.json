@@ -377,7 +377,13 @@
       "logUpload": "上传日志",
       "logUploadDesc": "出现问题时，将本地日志上传给开发团队协助排查。",
       "uploadLogs": "上传日志",
-      "uploading": "上传中..."
+      "uploading": "上传中...",
+      "logLevel": "日志级别",
+      "logLevelDesc": "调整运行时日志详细程度，减少不必要的噪音。",
+      "logLevelError": "仅错误",
+      "logLevelWarn": "警告",
+      "logLevelInfo": "标准",
+      "logLevelDebug": "调试"
     },
     "billing": {
       "title": "我的账户",

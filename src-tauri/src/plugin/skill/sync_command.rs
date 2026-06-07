@@ -1,6 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
+use tracing::Instrument;
 
 use crate::auth::client::base_url;
 use crate::auth::AuthManager;
@@ -30,9 +31,14 @@ pub async fn sync_builtin_skills(
     let registry_arc: Arc<Mutex<SkillRegistry>> = registry.inner().clone();
     let skill_roots = cfg.skill_roots_for_reload.clone();
 
-    let report = sync_skill_packages_from_server(cfg, base_url(), session_key)
-        .await
-        .map_err(|e| e.to_string())?;
+    let span = tracing::info_span!("skill_sync");
+    let report = async {
+        sync_skill_packages_from_server(cfg, base_url(), session_key)
+            .await
+            .map_err(|e| e.to_string())
+    }
+    .instrument(span)
+    .await?;
 
     if !report.installed.is_empty() {
         reload_skill_registry(&skill_roots, &registry_arc);

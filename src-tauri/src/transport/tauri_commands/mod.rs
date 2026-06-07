@@ -10,6 +10,7 @@ pub mod billing;
 pub mod chat;
 pub mod conversation_export;
 pub mod file;
+pub mod logging;
 pub mod mcp;
 pub mod network;
 pub mod pending;
