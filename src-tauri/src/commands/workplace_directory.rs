@@ -10,8 +10,6 @@ use crate::runtime::employee::template_store::{
 };
 use crate::storage::{fs_atomic::write_atomic, AiJiaHome};
 
-const DEFAULT_TENANT_BASE_URL: &str = "https://ai-tenant.renlijia.com";
-
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkplaceDirectoryDisplayText {
@@ -140,9 +138,14 @@ fn normalize_lang(lang: Option<String>) -> String {
     }
 }
 
+/// Resolve the lotus tenant base URL. The `LOTUS_TENANT_BASE_URL` env var wins
+/// when set; otherwise it follows the active environment (production in release
+/// builds, the dev override in debug builds). See [`crate::environment`].
+/// Must stay aligned with auth/session-key minting so workplace queries hit the
+/// same tenant the session key was issued for. See [`crate::auth::client::base_url`].
 fn tenant_base_url() -> String {
     std::env::var("LOTUS_TENANT_BASE_URL")
-        .unwrap_or_else(|_| DEFAULT_TENANT_BASE_URL.to_string())
+        .unwrap_or_else(|_| crate::environment::tenant_host())
         .trim_end_matches('/')
         .to_string()
 }
