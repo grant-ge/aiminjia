@@ -10,8 +10,6 @@ use crate::runtime::employee::template_store::{
 };
 use crate::storage::{fs_atomic::write_atomic, AiJiaHome};
 
-const DEFAULT_TENANT_BASE_URL: &str = "https://ai-tenant.renlijia.com";
-
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkplaceDirectoryDisplayText {
@@ -140,13 +138,6 @@ fn normalize_lang(lang: Option<String>) -> String {
     }
 }
 
-fn tenant_base_url() -> String {
-    std::env::var("LOTUS_TENANT_BASE_URL")
-        .unwrap_or_else(|_| DEFAULT_TENANT_BASE_URL.to_string())
-        .trim_end_matches('/')
-        .to_string()
-}
-
 async fn fetch_workplace_directory(
     client: &reqwest::Client,
     session_key: &str,
@@ -154,7 +145,7 @@ async fn fetch_workplace_directory(
 ) -> anyhow::Result<WorkplaceDirectoryResponse> {
     let url = format!(
         "{}/v1/workplace-directory?types=employee_template,expert_team_template&lang={}",
-        tenant_base_url(),
+        crate::environment::tenant_host(),
         urlencoding::encode(language)
     );
     let resp = client

@@ -419,17 +419,6 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
 // cached JSON. The cache is shared across users on the same machine —
 // templates are not user data.
 
-/// Resolve the lotus ops-portal base URL. The `LOTUS_OPS_BASE_URL` env var wins
-/// when set (useful for local dev pointing at `http://localhost:8082`);
-/// otherwise it follows the active environment (production in release builds,
-/// the dev override in debug builds). See [`crate::environment`].
-fn ops_base_url() -> String {
-    std::env::var("LOTUS_OPS_BASE_URL")
-        .unwrap_or_else(|_| crate::environment::ops_host())
-        .trim_end_matches('/')
-        .to_string()
-}
-
 /// Shape of `GET /api/public/employee-templates/:tid/manifest`. Only the
 /// fields we actually use are declared — extra fields are ignored by serde.
 #[derive(Clone, Debug, Deserialize)]
@@ -630,7 +619,7 @@ pub fn write_cache(cache_dir: &Path, snapshot: &TemplateSnapshot) -> Result<Path
 pub async fn fetch_manifest(client: &reqwest::Client, template_id: &str) -> Result<RemoteManifest> {
     let url = format!(
         "{}/api/public/employee-templates/{}/manifest",
-        ops_base_url(),
+        crate::environment::ops_host(),
         url_path_segment(template_id)
     );
     let resp = client
@@ -660,7 +649,7 @@ pub async fn fetch_manifest(client: &reqwest::Client, template_id: &str) -> Resu
 /// Fetch the full published catalog `GET {base}/api/public/employee-templates`.
 /// Returns the latest published version per `template_id`, `tenant_scope=global`.
 pub async fn fetch_catalog(client: &reqwest::Client) -> Result<Vec<serde_json::Value>> {
-    let url = format!("{}/api/public/employee-templates", ops_base_url());
+    let url = format!("{}/api/public/employee-templates", crate::environment::ops_host());
     let resp = client
         .get(&url)
         .timeout(std::time::Duration::from_secs(10))
