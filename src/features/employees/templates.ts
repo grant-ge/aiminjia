@@ -31,6 +31,8 @@ export interface EmployeeTemplate {
   templateId: string
   version?: string | null
   avatar: string
+  avatarAssetKey?: string | null
+  avatarUrl?: string | null
   name: string
   role: string
   description: string
@@ -163,7 +165,12 @@ export function findTemplate(templateId: string | null | undefined): EmployeeTem
 }
 
 type TemplateLocale = 'zh-CN' | 'en-US'
-type EmployeeTemplateDisplay = Pick<EmployeeTemplate, 'name' | 'role' | 'description' | 'badge'>
+type EmployeeTemplateDisplay = Pick<
+  EmployeeTemplate,
+  'name' | 'role' | 'description' | 'badge' | 'avatarAssetKey' | 'avatarUrl'
+>
+
+const RELEASE_RESOURCE_BASE_URL = 'https://lotus-releases.oss-cn-beijing.aliyuncs.com/'
 
 const BUILTIN_TEMPLATE_I18N: Record<string, Partial<Record<TemplateLocale, Partial<EmployeeTemplateDisplay>>>> = {
   'builtin:xiaoyuan': {
@@ -278,6 +285,19 @@ function selectTemplatePrompt(snap: EmployeeTemplateSnapshot, language?: string)
   return snap.promptI18n?.[locale]?.systemPromptExtra ?? snap.promptI18n?.['zh-CN']?.systemPromptExtra
 }
 
+function normalizeTemplateAvatarUrl(
+  avatarUrl: string | null | undefined,
+  avatarAssetKey: string | null | undefined,
+): string | null {
+  const explicitUrl = avatarUrl?.trim()
+  if (explicitUrl) return explicitUrl
+
+  const key = avatarAssetKey?.trim().replace(/^\/+/, '')
+  if (!key) return null
+  if (/^https?:\/\//i.test(key) || key.startsWith('/')) return key
+  return `${RELEASE_RESOURCE_BASE_URL}${key}`
+}
+
 function matchesKnownTemplateValue(
   current: string,
   baseValue: string,
@@ -359,10 +379,14 @@ export function snapshotToTemplate(
 ): EmployeeTemplate {
   const display = selectTemplateDisplay(snap, language)
   const directoryDisplay = directoryItem?.display
+  const avatarAssetKey = display.avatarAssetKey ?? snap.avatarAssetKey ?? null
+  const avatarUrl = normalizeTemplateAvatarUrl(display.avatarUrl ?? snap.avatarUrl, avatarAssetKey)
   return {
     templateId: snap.templateId,
     version: snap.version,
     avatar: directoryItem?.icon || snap.avatar,
+    avatarAssetKey,
+    avatarUrl,
     name: directoryDisplay?.name || display.name || snap.name,
     role: display.role ?? snap.role,
     description: directoryDisplay?.description || display.description || snap.description,

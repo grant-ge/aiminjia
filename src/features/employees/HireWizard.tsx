@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import type { EmployeeTemplate } from './templates'
 import { loadEmployeeTemplateCatalog, requiredSkillNames } from './employeeCatalog'
+import { getEmployeeVisual } from './employeeVisual'
 import { MonitoringUrlsForm } from './forms/MonitoringUrlsForm'
 import { SalesTableConfigForm } from './forms/SalesTableConfigForm'
 import { WeeklyReportConfigForm } from './forms/WeeklyReportConfigForm'
@@ -274,6 +275,7 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
             )}
             {catalog.map((template) => {
               const skills = requiredSkillNames(template)
+              const visual = getEmployeeVisual(template)
               return (
                 <button
                   key={template.templateId}
@@ -285,7 +287,13 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
                   className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4 text-left transition-all hover:border-border/70 hover:shadow-sm"
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <span className="text-2xl">{template.avatar}</span>
+                    <div className={`flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl ${visual.accent}`}>
+                      {visual.avatarUrl ? (
+                        <img src={visual.avatarUrl} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        <span className="text-base font-semibold leading-none">{visual.avatarText}</span>
+                      )}
+                    </div>
                     <div className="flex min-w-0 flex-wrap justify-end gap-1">
                       {template.workplaceCategoryName && (
                         <span className="max-w-[96px] truncate rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">

@@ -1,6 +1,7 @@
 import type { EmployeeTemplate } from './templates'
 
 const SAFE_RE = /[\\/<>:"|?*\s]/g
+const RELEASE_RESOURCE_BASE_URL = 'https://lotus-releases.oss-cn-beijing.aliyuncs.com/'
 
 interface EmployeePersona {
   name: string
@@ -110,6 +111,16 @@ function fallbackExamples(template: EmployeeTemplate): string[] {
   return base ? [`围绕「${template.role}」安排一项具体任务`, base] : ['描述目标和上下文，让 TA 开始处理']
 }
 
+function templateAvatarUrl(template: EmployeeTemplate): string | null {
+  const explicitUrl = template.avatarUrl?.trim()
+  if (explicitUrl) return explicitUrl
+
+  const key = template.avatarAssetKey?.trim().replace(/^\/+/, '')
+  if (!key) return null
+  if (/^https?:\/\//i.test(key) || key.startsWith('/')) return key
+  return `${RELEASE_RESOURCE_BASE_URL}${key}`
+}
+
 export function getEmployeeVisual(template: EmployeeTemplate): EmployeeVisual {
   const persona = EMPLOYEE_PERSONAS[template.templateId]
   if (!persona) {
@@ -117,7 +128,7 @@ export function getEmployeeVisual(template: EmployeeTemplate): EmployeeVisual {
     return {
       name: template.name,
       title: template.role,
-      avatarUrl: null,
+      avatarUrl: templateAvatarUrl(template),
       avatarText,
       accent: 'bg-muted text-muted-foreground',
       strengths: [],
