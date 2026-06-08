@@ -26,14 +26,18 @@ async fn run() -> Result<()> {
         print_usage();
         return Ok(());
     }
+    if args.version {
+        println!("{}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
     if args.output_format == OutputFormat::StreamJson && !args.verbose {
-        anyhow::bail!("When using --print, --output-format=stream-json requires --verbose");
+        anyhow::bail!("--output-format=stream-json requires --verbose");
     }
 
     let prompt = resolve_prompt(&args)?;
     if prompt.trim().is_empty() {
         anyhow::bail!(
-            "Input must be provided either through stdin or as a prompt argument when using --print"
+            "Input must be provided via --prompt / --input-file / positional arg or stdin"
         );
     }
 
@@ -103,6 +107,10 @@ fn sdk_result_message(output: &HeadlessRunOutput) -> serde_json::Value {
         .unwrap_or("success")
         .to_string();
     let mut result = json!({
+        "answer": output.answer,
+        "tool_calls": output.tool_calls,
+        "iterations": output.iterations,
+        "tokens": sdk_usage(output),
         "type": "result",
         "subtype": subtype,
         "is_error": output.is_error,
@@ -200,6 +208,7 @@ struct CliArgs {
     verbose: bool,
     continue_latest: bool,
     help: bool,
+    version: bool,
 }
 
 impl Default for OutputFormat {
@@ -220,6 +229,7 @@ fn parse_args(raw: Vec<String>) -> Result<CliArgs> {
     while i < raw.len() {
         match raw[i].as_str() {
             "--help" | "-h" => args.help = true,
+            "--version" | "-v" => args.version = true,
             "--json" => args.output_format = OutputFormat::Json,
             "--prompt" => {
                 i += 1;
@@ -347,6 +357,6 @@ fn parse_permission_mode(value: &str) -> Result<PermissionMode> {
 
 fn print_usage() {
     eprintln!(
-        "Usage: aijia agent --prompt <text> [--workspace <dir>] [--session-id <id>] [--system-prompt <text>] [--max-iterations <n>] [--json]\n       aijia -p <text> [--output-format text|json|stream-json] [--add-dir <dirs...>] [--model <model>] [--verbose] [-c, --continue]"
+        "Usage: aijia agent --prompt <text> [--workspace <dir>] [--session-id <id>] [--system-prompt <text>] [--max-iterations <n>] [--json]\n       aijia -p <text> [--output-format text|json|stream-json] [--add-dir <dirs...>] [--model <model>] [--verbose] [-c, --continue]\n       aijia --version | -v"
     );
 }
