@@ -578,15 +578,26 @@ impl HeadlessDriver {
             return output;
         };
 
-        if let Some(message) = latest_assistant_message(&messages) {
-            if output.answer.trim().is_empty() {
+        let hit_max_iterations = output.error_subtype.as_deref() == Some("error_max_turns")
+            || latest_assistant_message(&messages)
+                .and_then(|message| message.error.as_ref())
+                .map(is_max_iterations_error)
+                .unwrap_or(false);
+
+        if let Some(message) = answer_assistant_message(&messages, hit_max_iterations) {
+            if output.answer.trim().is_empty() || hit_max_iterations {
                 let text = message.text().trim();
                 if !text.is_empty() {
                     output.answer = text.to_string();
                 }
             }
+        }
 
-            if let Some(model) = extract_model_from_thinking_blocks(&message.content) {
+        if let Some(message) = latest_assistant_message(&messages) {
+            let model = extract_model_from_thinking_blocks(&message.content)
+                .or_else(|| latest_assistant_model(&messages));
+
+            if let Some(model) = model {
                 output.execution_model = model.clone();
                 output.model = model;
             }
@@ -607,8 +618,9 @@ impl HeadlessDriver {
                 if last_message.role == "tool" && !output.is_error {
                     output.is_error = true;
                     output.error_subtype = Some("error_incomplete_turn".to_string());
-                    output.execution_error =
-                        Some("turn ended before a final assistant message was produced".to_string());
+                    output.execution_error = Some(
+                        "turn ended before a final assistant message was produced".to_string(),
+                    );
                 }
             }
         }
@@ -637,6 +649,51 @@ fn latest_assistant_message(messages: &[StoredMessage]) -> Option<&StoredMessage
         .iter()
         .rev()
         .find(|message| message.role == "assistant")
+}
+
+fn answer_assistant_message(
+    messages: &[StoredMessage],
+    hit_max_iterations: bool,
+) -> Option<&StoredMessage> {
+    let latest = latest_assistant_message(messages)?;
+    if hit_max_iterations {
+        return messages
+            .iter()
+            .rev()
+            .find(|message| {
+                let text = message.text();
+                let text = text.trim();
+                message.role == "assistant"
+                    && !text.is_empty()
+                    && !is_max_iterations_notice_text(text)
+                    && !message
+                        .error
+                        .as_ref()
+                        .map(is_max_iterations_error)
+                        .unwrap_or(false)
+            })
+            .or(Some(latest));
+    }
+    Some(latest)
+}
+
+fn latest_assistant_model(messages: &[StoredMessage]) -> Option<String> {
+    messages
+        .iter()
+        .rev()
+        .filter(|message| message.role == "assistant")
+        .find_map(|message| extract_model_from_thinking_blocks(&message.content))
+}
+
+fn is_max_iterations_error(error: &MessageError) -> bool {
+    matches!(&error.kind, ErrorKind::MaxIterations)
+}
+
+fn is_max_iterations_notice_text(text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    text.contains("处理上限")
+        || lower.contains("max_iterations")
+        || lower.contains("max iterations")
 }
 
 fn readable_message_error(error: &MessageError) -> String {
@@ -672,6 +729,100 @@ fn error_subtype_from_message_error(error: &MessageError) -> String {
         ErrorKind::ExecutionError | ErrorKind::Unknown => "error_during_execution",
     }
     .to_string()
+}
+
+#[cfg(test)]
+mod headless_output_tests {
+    use super::*;
+
+    fn stored_message(role: &str, text: &str, error: Option<MessageError>) -> StoredMessage {
+        StoredMessage {
+            seq: None,
+            rev: None,
+            id: format!("msg-{}", uuid::Uuid::new_v4()),
+            conversation_id: "cli-test".to_string(),
+            role: role.to_string(),
+            content: serde_json::json!({ "text": text }),
+            created_at: "2026-06-08T00:00:00Z".to_string(),
+            tool_calls: None,
+            tool_call_id: None,
+            name: None,
+            subtype: None,
+            compact_metadata: None,
+            is_compact_summary: None,
+            run_id: None,
+            schema_version: Some(2),
+            sequence: None,
+            error,
+        }
+    }
+
+    #[test]
+    fn max_iterations_prefers_last_real_assistant_answer() {
+        let messages = vec![
+            stored_message("user", "question", None),
+            stored_message("assistant", "FINAL ANSWER: 17000", None),
+            stored_message(
+                "assistant",
+                "analysis reached max iterations template",
+                Some(MessageError {
+                    kind: ErrorKind::MaxIterations,
+                    message: "max iterations reached".to_string(),
+                    raw: None,
+                }),
+            ),
+        ];
+
+        let answer = answer_assistant_message(&messages, true)
+            .expect("answer message")
+            .text()
+            .to_string();
+
+        assert_eq!(answer, "FINAL ANSWER: 17000");
+    }
+
+    #[test]
+    fn max_iterations_falls_back_to_template_when_no_real_answer_exists() {
+        let messages = vec![
+            stored_message("user", "question", None),
+            stored_message(
+                "assistant",
+                "analysis reached max iterations template",
+                Some(MessageError {
+                    kind: ErrorKind::MaxIterations,
+                    message: "max iterations reached".to_string(),
+                    raw: None,
+                }),
+            ),
+        ];
+
+        let answer = answer_assistant_message(&messages, true)
+            .expect("answer message")
+            .text()
+            .to_string();
+
+        assert_eq!(answer, "analysis reached max iterations template");
+    }
+
+    #[test]
+    fn max_iterations_skips_notice_text_without_message_error() {
+        let messages = vec![
+            stored_message("user", "question", None),
+            stored_message("assistant", "FINAL ANSWER: 3", None),
+            stored_message(
+                "assistant",
+                "⚠️ 本步分析较为复杂,已达处理上限(15 次迭代)。",
+                None,
+            ),
+        ];
+
+        let answer = answer_assistant_message(&messages, true)
+            .expect("answer message")
+            .text()
+            .to_string();
+
+        assert_eq!(answer, "FINAL ANSWER: 3");
+    }
 }
 
 pub async fn run_headless_agent(
