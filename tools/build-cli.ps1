@@ -11,6 +11,11 @@ $TauriDir = Join-Path $RepoRoot "src-tauri"
 Push-Location $TauriDir
 try {
     cargo build --release --bin aijia-cli
+    $runningProcesses = Get-Process -Name aijia -ErrorAction SilentlyContinue
+    if ($runningProcesses) {
+        Write-Host "Stopping running aijia.exe instances to release output lock."
+        $runningProcesses | ForEach-Object { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }
+    }
 } finally {
     Pop-Location
 }
