@@ -249,7 +249,7 @@ export function ExpertTeamsPage() {
           </Button>
         </div>
       ) : (
-        <div className="flex flex-col gap-3">
+        <div className="flex min-w-0 flex-col gap-3">
           {catalogLoadError && (
             <p className="text-xs text-muted-foreground">
               {t('ExpertTeams.directoryPartialError', { err: catalogLoadError })}
@@ -265,7 +265,7 @@ export function ExpertTeamsPage() {
               {categoryDescription(activeGroup.category)}
             </p>
           )}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {visibleTeams.map((team) => (
               <ExpertTeamCard
                 key={team.id}

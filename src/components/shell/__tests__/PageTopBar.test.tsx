@@ -47,6 +47,20 @@ describe('PageTopBar', () => {
     expect(screen.getByText('extra')).toBeInTheDocument()
   })
 
+  it('keeps crowded trailing actions inside a horizontal scroll region', () => {
+    render(
+      <PageTopBar
+        variant="title"
+        title="技能中心"
+        trailing={<span>extra</span>}
+      />,
+    )
+    const trailingRegion = screen.getByText('extra').parentElement
+    expect(trailingRegion?.className).toMatch(/max-w-\[70%\]/)
+    expect(trailingRegion?.className).toMatch(/overflow-x-auto/)
+    expect(trailingRegion?.className).toMatch(/min-w-0/)
+  })
+
   it('header has data-tauri-drag-region', () => {
     const { container } = render(<PageTopBar variant="default" />)
     expect(container.querySelector('header')?.hasAttribute('data-tauri-drag-region')).toBe(true)

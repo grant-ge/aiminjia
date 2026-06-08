@@ -310,6 +310,7 @@ body {
 
 /* ===== Scrollbar Styles ===== */
 ::-webkit-scrollbar {
+  height: 6px;
   width: 6px;
 }
 

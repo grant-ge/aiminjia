@@ -46,4 +46,23 @@ describe('SkillCategoryBar', () => {
     fireEvent.click(screen.getByRole('button', { name: 'B' }))
     expect(onSelect).toHaveBeenCalledWith('b')
   })
+
+  it('keeps overflow discoverable when categories grow', () => {
+    const { container } = render(
+      <SkillCategoryBar
+        items={[
+          { key: 'a', label: 'A very long category name that should not stretch the page' },
+          { key: 'b', label: 'B' },
+        ]}
+        activeKey="a"
+        onSelect={() => {}}
+      />,
+    )
+    const bar = container.firstElementChild
+    expect(bar?.className).toMatch(/min-w-0/)
+    expect(bar?.className).toMatch(/overflow-x-auto/)
+    expect(bar?.className).not.toMatch(/scrollbar-width:none/)
+    expect(bar?.className).not.toMatch(/webkit-scrollbar.*hidden/)
+    expect(screen.getByRole('button', { name: /A very long category/ }).className).toMatch(/max-w-\[220px\]/)
+  })
 })

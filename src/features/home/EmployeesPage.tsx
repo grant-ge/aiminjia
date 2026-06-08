@@ -412,7 +412,7 @@ export function EmployeesPage() {
       </div>
 
       {/* ── 服务端员工目录 ── */}
-      <section>
+      <section className="min-w-0">
         {catalogLoadError && catalog.length > 0 && (
           <p className="mb-3 text-xs text-muted-foreground">
             {t('employeesPage.directoryPartialError', { err: catalogLoadError })}
@@ -448,7 +448,7 @@ export function EmployeesPage() {
             </Button>
           </div>
         ) : (
-          <div className="flex flex-col gap-3">
+          <div className="flex min-w-0 flex-col gap-3">
             <SkillCategoryBar
               items={catalogCategoryItems}
               activeKey={activeCatalogGroupKey}
@@ -459,7 +459,7 @@ export function EmployeesPage() {
                 {categoryDescription(activeCatalogGroup.category)}
               </p>
             )}
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {visibleCatalogTemplates.map((template) => (
                 <EmployeeDirectoryCard
                   key={`${template.templateId}:${template.version ?? ''}`}
@@ -497,7 +497,7 @@ export function EmployeesPage() {
       />
 
       {/* ── 今日动态 ── */}
-      <section>
+      <section className="min-w-0">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-foreground">{t('employeesPage.todayFeed')}</h2>
           {entries.length > todayEntries.length && (

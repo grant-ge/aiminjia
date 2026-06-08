@@ -55,17 +55,17 @@ export function ExpertTeamDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[86vh] max-w-[820px] overflow-hidden p-0" data-aijia-expert-team-detail>
+      <DialogContent className="max-h-[min(86vh,calc(100vh-32px))] w-[calc(100vw-32px)] max-w-[820px] overflow-hidden p-0" data-aijia-expert-team-detail>
         <DialogTitle className="sr-only">{team.name}</DialogTitle>
         <DialogDescription className="sr-only">{team.tagline}</DialogDescription>
-        <div className="flex max-h-[86vh] flex-col overflow-hidden">
+        <div className="flex max-h-[min(86vh,calc(100vh-32px))] flex-col overflow-hidden">
           <div className="flex items-start gap-5 border-b border-border bg-card px-6 py-5 pr-16">
             <div className={`flex h-20 w-20 shrink-0 items-center justify-center rounded-lg ${logo.className}`}>
               <TeamLogo className="h-9 w-9" />
             </div>
             <div className="min-w-0 flex-1">
               <h2 className="truncate text-[22px] font-bold leading-7 text-foreground">{team.name}</h2>
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">{team.tagline}</p>
+              <p className="mt-2 line-clamp-3 text-sm leading-6 text-muted-foreground">{team.tagline}</p>
             </div>
           </div>
 
