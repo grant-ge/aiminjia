@@ -57,7 +57,7 @@ describe('HomePage', () => {
 
   it('vertically centers the main home content column', () => {
     const { container } = render(<HomePage />)
-    const pageWrapper = container.querySelector('.mx-auto.max-w-\\[1032px\\]')
+    const pageWrapper = container.querySelector('.mx-auto.max-w-\\[1280px\\]')
     expect(pageWrapper?.className).toMatch(/justify-center/)
   })
 

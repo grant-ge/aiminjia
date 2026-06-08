@@ -493,7 +493,40 @@ fn thinking_block_to_content(block: Value) -> ContentBlock {
         arguments: None,
         signature,
         opaque: Some(true),
-        source: Some(block),
+        source: extract_provider_source(&block),
+    }
+}
+
+fn extract_provider_source(block: &Value) -> Option<Value> {
+    if let Some(source) = block.get("source") {
+        if source.is_object() {
+            if let Some(nested_source) = source.get("source") {
+                if nested_source.is_object() {
+                    if let Some(meta) = provider_meta_from_object(nested_source) {
+                        return Some(meta);
+                    }
+                }
+            }
+            if let Some(meta) = provider_meta_from_object(source) {
+                return Some(meta);
+            }
+        }
+    }
+
+    provider_meta_from_object(block)
+}
+
+fn provider_meta_from_object(value: &Value) -> Option<Value> {
+    let mut provider_source = serde_json::Map::new();
+    for key in ["api", "provider", "model", "response_id", "response_model"] {
+        if let Some(field_value) = value.get(key) {
+            provider_source.insert(key.to_string(), field_value.clone());
+        }
+    }
+    if provider_source.is_empty() {
+        None
+    } else {
+        Some(Value::Object(provider_source))
     }
 }
 
@@ -737,9 +770,13 @@ fn chunk_to_stream_event(frame: &str) -> StreamEvent {
                 error: format!("malformed tool_call.completed: {err}"),
             },
         }
+    } else if frame_has_event(frame, "response.notice") {
+        StreamEvent::Notice {
+            notice: extract_sse_json(frame).unwrap_or(Value::Null),
+        }
     } else if frame_has_event(frame, "response.completed") {
         StreamEvent::Done {
-            stop_reason: StopReason::EndTurn,
+            stop_reason: extract_stop_reason(frame).unwrap_or(StopReason::EndTurn),
             usage: extract_token_usage(frame).unwrap_or_default(),
         }
     } else if frame_has_event(frame, "response.error") {
@@ -790,6 +827,21 @@ fn response_completed_stop_reason(chunk: &str) -> Option<String> {
         .or_else(|| data.get("stopReason"))
         .and_then(Value::as_str)
         .map(str::to_string)
+}
+
+fn extract_stop_reason(chunk: &str) -> Option<StopReason> {
+    let data = extract_sse_json(chunk)?;
+    let reason = data
+        .get("stop_reason")
+        .or_else(|| data.get("stopReason"))?
+        .as_str()?;
+    Some(match reason {
+        "tool_use" => StopReason::ToolUse,
+        "max_tokens" => StopReason::MaxTokens,
+        "stop_sequence" => StopReason::StopSequence,
+        "aborted" => StopReason::Aborted,
+        _ => StopReason::EndTurn,
+    })
 }
 
 fn extract_token_usage(chunk: &str) -> Option<TokenUsage> {
@@ -1089,6 +1141,66 @@ mod tests {
     }
 
     #[test]
+    fn thinking_block_content_keeps_only_provider_source_metadata() {
+        let content = thinking_block_to_content(json!({
+            "type": "thinking",
+            "thinking": "hidden",
+            "signature": "sig-1",
+            "opaque": true,
+            "source": {
+                "api": "anthropic-messages",
+                "provider": "anthropic",
+                "model": "claude-3-7-sonnet",
+                "response_id": "resp_123"
+            }
+        }));
+
+        assert_eq!(content.kind, "thinking");
+        assert_eq!(content.signature.as_deref(), Some("sig-1"));
+        assert_eq!(content.opaque, Some(true));
+        assert_eq!(
+            content.source,
+            Some(json!({
+                "api": "anthropic-messages",
+                "provider": "anthropic",
+                "model": "claude-3-7-sonnet",
+                "response_id": "resp_123"
+            }))
+        );
+    }
+
+    #[test]
+    fn thinking_block_content_filters_legacy_noisy_source() {
+        let content = thinking_block_to_content(json!({
+            "type": "thinking",
+            "thinking": "hidden",
+            "signature": "sig-1",
+            "opaque": true,
+            "source": {
+                "type": "thinking",
+                "thinking": "must-not-leak",
+                "signature": "sig-old",
+                "source": {
+                    "api": "anthropic-messages",
+                    "provider": "anthropic",
+                    "model": "claude-3-7-sonnet",
+                    "response_id": "resp_123"
+                }
+            }
+        }));
+
+        assert_eq!(
+            content.source,
+            Some(json!({
+                "api": "anthropic-messages",
+                "provider": "anthropic",
+                "model": "claude-3-7-sonnet",
+                "response_id": "resp_123"
+            }))
+        );
+    }
+
+    #[test]
     fn maps_response_error_chunks_to_stream_errors() {
         let event = chunk_to_stream_event(
             "event: response.error\ndata: {\"code\":\"provider_stream_error\",\"message\":\"bad\"}\n\n",
@@ -1099,6 +1211,39 @@ mod tests {
                 assert!(error.contains("provider_stream_error"));
             }
             other => panic!("expected error event, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn maps_response_notice_chunks_to_notice_events() {
+        let event = chunk_to_stream_event(
+            "event: response.notice\ndata: {\"level\":\"info\",\"code\":\"auto_failed_over\",\"message\":\"switched to backup\",\"from_route\":{\"provider\":\"anthropic\"},\"to_route\":{\"provider\":\"openai\"}}\n\n",
+        );
+
+        match event {
+            StreamEvent::Notice { notice } => {
+                assert_eq!(notice["code"], "auto_failed_over");
+                assert_eq!(notice["message"], "switched to backup");
+                assert_eq!(notice["from_route"]["provider"], "anthropic");
+                assert_eq!(notice["to_route"]["provider"], "openai");
+            }
+            other => panic!("expected notice event, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn maps_response_completed_stop_reason_from_gateway() {
+        let event = chunk_to_stream_event(
+            "event: response.completed\ndata: {\"stop_reason\":\"aborted\",\"usage\":{\"input\":1,\"output\":2,\"cache_read\":0,\"cache_write\":0}}\n\n",
+        );
+
+        match event {
+            StreamEvent::Done { stop_reason, usage } => {
+                assert_eq!(stop_reason, StopReason::Aborted);
+                assert_eq!(usage.input_tokens, 1);
+                assert_eq!(usage.output_tokens, 2);
+            }
+            other => panic!("expected done event, got {other:?}"),
         }
     }
 

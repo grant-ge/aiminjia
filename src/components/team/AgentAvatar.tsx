@@ -25,7 +25,7 @@ export function AgentAvatar({ name, size = 'md', className }: AgentAvatarProps) 
   return (
     <span
       className={cn(
-        'inline-flex shrink-0 items-center justify-center rounded-full font-semibold tracking-tight',
+        'inline-flex shrink-0 items-center justify-center rounded-full font-semibold',
         SIZE_CLASS[size],
         id.avatarClass,
         className,

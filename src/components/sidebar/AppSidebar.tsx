@@ -58,8 +58,8 @@ function ChannelConversationRow({
   onSelect,
 }: ChannelConversationRowProps) {
   const rowClassName = active
-    ? 'flex w-full items-center justify-between rounded-lg bg-sidebar-accent px-3 py-2 text-left text-sm font-semibold text-sidebar-foreground'
-    : 'flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
+    ? 'flex h-8 w-full items-center justify-between rounded-md bg-sidebar-accent px-2.5 text-left text-sm font-semibold text-sidebar-foreground'
+    : 'flex h-8 w-full items-center justify-between rounded-md px-2.5 text-left text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground'
 
   return (
     <ContextMenuPrimitive.Root>
@@ -285,7 +285,7 @@ export function AppSidebar() {
 
   return (
     <>
-    <aside className="flex h-full w-[256px] shrink-0 flex-col overflow-hidden bg-sidebar px-2 pt-2 text-sidebar-foreground">
+    <aside className="flex h-full w-[256px] shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar px-2 pt-3 text-sidebar-foreground">
       <TenantHeader name={tenantDisplay} logoUrl={logoUrl} />
 
       <SidebarNav
@@ -326,10 +326,10 @@ export function AppSidebar() {
           ]
           const activeIndex = TABS.findIndex((tab) => tab.key === sidebarTab)
           return (
-            <div className="relative grid grid-cols-4 rounded-md bg-sidebar-accent py-0.5 px-1 text-xs font-medium text-muted-foreground">
+            <div className="relative grid h-8 grid-cols-4 rounded-md border border-sidebar-border bg-sidebar-accent/70 px-1 py-0.5 text-xs font-medium text-muted-foreground">
               {/* Sliding indicator — left/width account for px-1 (4px) horizontal padding */}
               <div
-                className="absolute rounded-[5px] bg-background shadow-sm"
+                className="absolute rounded-[5px] bg-card shadow-sm"
                 style={{
                   top: '2px',
                   bottom: '2px',
@@ -347,7 +347,7 @@ export function AppSidebar() {
                         type="button"
                         aria-label={t(labelKey)}
                         onClick={() => switchTab(key)}
-                        className={`relative z-10 flex items-center justify-center py-1.5 transition-colors duration-200 ${
+                        className={`relative z-10 flex items-center justify-center rounded-[5px] transition-colors duration-200 ${
                           sidebarTab === key ? 'text-foreground' : ''
                         }`}
                       >
@@ -384,10 +384,10 @@ export function AppSidebar() {
           <div className="-mr-2 flex-1 overflow-auto pr-2">
             <div className="mt-2 flex flex-col gap-3">
               <div>
-                <div className="mb-2 flex items-center gap-2 px-2 text-sm font-semibold text-sidebar-foreground">
+                <div className="mb-1.5 flex items-center gap-2 px-2 text-sm font-semibold text-sidebar-foreground">
                   <img src="/logos/dingtalk.png" alt="" className="h-5 w-5 rounded" draggable={false} />
                   {t('channel.platforms.dingtalk.name')}
-                  <span className="ml-auto rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                  <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
                     {channelStatusLabel(dingtalkState)}
                   </span>
                 </div>
@@ -396,7 +396,7 @@ export function AppSidebar() {
                     <button
                       type="button"
                       onClick={openChannelOverview}
-                      className="w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                      className="w-full rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
                     >
                       {channelEmptyHint(dingtalkState)}
                     </button>
@@ -407,10 +407,10 @@ export function AppSidebar() {
               </div>
 
               <div>
-                <div className="mb-2 flex items-center gap-2 px-2 text-sm font-semibold text-sidebar-foreground">
+                <div className="mb-1.5 flex items-center gap-2 px-2 text-sm font-semibold text-sidebar-foreground">
                   <img src="/logos/feishu.png" alt="" className="h-5 w-5 rounded" draggable={false} />
                   {t('channel.platforms.feishu.name')}
-                  <span className="ml-auto rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                  <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
                     {channelStatusLabel(feishuState)}
                   </span>
                 </div>
@@ -419,7 +419,7 @@ export function AppSidebar() {
                     <button
                       type="button"
                       onClick={openChannelOverview}
-                      className="w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                      className="w-full rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
                     >
                       {channelEmptyHint(feishuState)}
                     </button>
@@ -430,10 +430,10 @@ export function AppSidebar() {
               </div>
 
               <div>
-                <div className="mb-2 flex items-center gap-2 px-2 text-sm font-semibold text-sidebar-foreground">
+                <div className="mb-1.5 flex items-center gap-2 px-2 text-sm font-semibold text-sidebar-foreground">
                   <img src="/logos/wecom.png" alt="" className="h-5 w-5 rounded" draggable={false} />
                   {t('channel.platforms.wecom.name')}
-                  <span className="ml-auto rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                  <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
                     {channelStatusLabel(wecomState)}
                   </span>
                 </div>
@@ -442,7 +442,7 @@ export function AppSidebar() {
                     <button
                       type="button"
                       onClick={openChannelOverview}
-                      className="w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                      className="w-full rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
                     >
                       {channelEmptyHint(wecomState)}
                     </button>
@@ -453,10 +453,10 @@ export function AppSidebar() {
               </div>
 
               <div>
-                <div className="mb-2 flex items-center gap-2 px-2 text-sm font-semibold text-sidebar-foreground">
+                <div className="mb-1.5 flex items-center gap-2 px-2 text-sm font-semibold text-sidebar-foreground">
                   <img src="/logos/wechat.png" alt="" className="h-5 w-5 rounded" draggable={false} />
                   {t('channel.platforms.wechat.name')}
-                  <span className="ml-auto rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                  <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
                     {channelStatusLabel(wechatState)}
                   </span>
                 </div>
@@ -465,7 +465,7 @@ export function AppSidebar() {
                     <button
                       type="button"
                       onClick={openChannelOverview}
-                      className="w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                      className="w-full rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
                     >
                       {channelEmptyHint(wechatState)}
                     </button>
@@ -476,10 +476,10 @@ export function AppSidebar() {
               </div>
 
               <div>
-                <div className="mb-2 flex items-center gap-2 px-2 text-sm font-semibold text-sidebar-foreground">
+                <div className="mb-1.5 flex items-center gap-2 px-2 text-sm font-semibold text-sidebar-foreground">
                   <img src="/logos/telegram.png" alt="" className="h-5 w-5 rounded" draggable={false} />
                   {t('channel.platforms.telegram.name')}
-                  <span className="ml-auto rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                  <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
                     {channelStatusLabel(telegramState)}
                   </span>
                 </div>
@@ -488,7 +488,7 @@ export function AppSidebar() {
                     <button
                       type="button"
                       onClick={openChannelOverview}
-                      className="w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                      className="w-full rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
                     >
                       {channelEmptyHint(telegramState)}
                     </button>
@@ -499,10 +499,10 @@ export function AppSidebar() {
               </div>
 
               <div>
-                <div className="mb-2 flex items-center gap-2 px-2 text-sm font-semibold text-sidebar-foreground">
+                <div className="mb-1.5 flex items-center gap-2 px-2 text-sm font-semibold text-sidebar-foreground">
                   <img src="/logos/whatsapp.png" alt="" className="h-5 w-5 rounded" draggable={false} />
                   {t('channel.platforms.whatsapp.name')}
-                  <span className="ml-auto rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                  <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
                     {channelStatusLabel(whatsappState)}
                   </span>
                 </div>
@@ -511,7 +511,7 @@ export function AppSidebar() {
                     <button
                       type="button"
                       onClick={openChannelOverview}
-                      className="w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                      className="w-full rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
                     >
                       {channelEmptyHint(whatsappState)}
                     </button>

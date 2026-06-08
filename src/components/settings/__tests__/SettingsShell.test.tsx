@@ -37,14 +37,14 @@ describe('SettingsShell', () => {
     expect(onClose).toHaveBeenCalled()
   })
 
-  it('modal box uses spec §8.2 Modal xl size (980×720) with rounded-xl per §3.2', () => {
+  it('modal box uses the desktop visual standard xl size (980×720) with rounded-lg', () => {
     const { container } = render(
       <SettingsShell open menu={<div />} content={<div />} onClose={() => {}} />,
     )
     const modal = container.querySelector('[data-testid="settings-modal-box"]')
     expect(modal?.className).toMatch(/w-\[980px\]/)
     expect(modal?.className).toMatch(/h-\[720px\]/)
-    expect(modal?.className).toMatch(/rounded-xl/)
+    expect(modal?.className).toMatch(/rounded-lg/)
   })
 
   it('pressing Escape invokes onClose', () => {

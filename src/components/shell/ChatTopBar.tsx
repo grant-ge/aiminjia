@@ -68,7 +68,7 @@ export function ChatTopBar({
 }: ChatTopBarProps) {
   const { t } = useTranslation()
   return (
-    <header data-tauri-drag-region className="flex h-10 shrink-0 items-center justify-between border-b border-border bg-background px-6">
+    <header data-tauri-drag-region className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-background px-6">
       <div className="flex min-w-0 items-center gap-3">
         {employee ? (
           <button
@@ -76,7 +76,7 @@ export function ChatTopBar({
             data-testid="chat-topbar-employee"
             onClick={employee.onClick}
             disabled={!employee.onClick}
-            className="flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-0.5 text-md font-semibold text-foreground transition-colors hover:bg-accent/40 disabled:cursor-default disabled:hover:bg-transparent"
+            className="flex min-w-0 items-center gap-1.5 rounded-[var(--radius)] px-2 py-1 text-[15px] font-semibold text-foreground transition-colors hover:bg-accent disabled:cursor-default disabled:hover:bg-transparent"
           >
             <span aria-hidden className="text-base leading-none">
               {employee.avatar}
@@ -92,7 +92,7 @@ export function ChatTopBar({
             ) : null}
           </button>
         ) : (
-          <div className="truncate text-base font-semibold tracking-tight text-foreground">
+          <div className="truncate text-[15px] font-semibold leading-[22px] tracking-normal text-foreground">
             {title}
           </div>
         )}
@@ -120,7 +120,7 @@ export function ChatTopBar({
           </>
         ) : null}
       </div>
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-1.5">
         {trailing}
         {onShare ? (
           <button
@@ -128,7 +128,7 @@ export function ChatTopBar({
             aria-label={shareLabel}
             title={shareLabel}
             onClick={onShare}
-            className="text-muted-foreground transition-colors hover:text-foreground"
+            className="flex h-8 w-8 items-center justify-center rounded-[var(--radius)] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             <Share2 className="h-4 w-4" />
           </button>
@@ -138,7 +138,7 @@ export function ChatTopBar({
             type="button"
             aria-label="更多"
             onClick={onMore}
-            className="text-muted-foreground transition-colors hover:text-foreground"
+            className="flex h-8 w-8 items-center justify-center rounded-[var(--radius)] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             <Ellipsis className="h-4 w-4" />
           </button>
@@ -148,7 +148,7 @@ export function ChatTopBar({
             type="button"
             aria-label="折叠侧栏"
             onClick={onToggleSidebar}
-            className="text-muted-foreground transition-colors hover:text-foreground"
+            className="flex h-8 w-8 items-center justify-center rounded-[var(--radius)] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             <PanelLeft className="h-4 w-4" />
           </button>

@@ -229,7 +229,7 @@ export function HomeTaskComposerCard() {
   return (
     <div
       data-testid="home-composer-shell"
-      className="home-composer-large relative isolate overflow-visible rounded-[28px] shadow-[var(--shadow-card)] [&_[data-testid=composer-root]]:relative [&_[data-testid=composer-root]]:z-10 [&_[data-testid=composer-root]]:rounded-[28px] [&_[data-testid=composer-root]]:border-border [&_[data-testid=composer-root]]:px-6 [&_[data-testid=composer-root]]:pb-4 [&_[data-testid=composer-root]]:pt-6 [&_[data-testid=composer-root]]:shadow-none [&_[data-testid=composer-root]>div:has(.ProseMirror)]:min-h-[60px] [&_[data-testid=composer-root]_.ProseMirror]:min-h-[60px]"
+      className="home-composer-large relative isolate overflow-visible rounded-md shadow-[var(--shadow-card)] [&_[data-testid=composer-root]]:relative [&_[data-testid=composer-root]]:z-10 [&_[data-testid=composer-root]]:rounded-md [&_[data-testid=composer-root]]:border-border [&_[data-testid=composer-root]]:px-5 [&_[data-testid=composer-root]]:pb-4 [&_[data-testid=composer-root]]:pt-5 [&_[data-testid=composer-root]]:shadow-none [&_[data-testid=composer-root]>div:has(.ProseMirror)]:min-h-[60px] [&_[data-testid=composer-root]_.ProseMirror]:min-h-[60px]"
     >
       <div className="absolute bottom-full left-1/2 z-30 mb-1 -translate-x-1/2">
         <SkillPopover
@@ -256,7 +256,7 @@ export function HomeTaskComposerCard() {
 
       <div
         data-testid="home-workspace-bar"
-        className="absolute inset-x-0 top-full z-0 flex min-h-[78px] -translate-y-[28px] items-center justify-between rounded-b-[28px] border-x border-b border-border bg-sidebar px-6 pt-[28px]"
+        className="absolute inset-x-0 top-full z-0 flex min-h-[58px] -translate-y-2 items-center justify-between rounded-b-md border-x border-b border-border bg-sidebar px-5 pt-2"
       >
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -266,7 +266,7 @@ export function HomeTaskComposerCard() {
               disabled={isSubmitting}
               aria-label={t('homeComposer.selectWorkDirAria', { name: workspaceLabel })}
               title={workspacePath}
-              className="inline-flex max-w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-[15px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+              className="inline-flex max-w-full items-center gap-2 rounded-[var(--radius)] px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
             >
               <BriefcaseBusiness className="h-5 w-5 shrink-0" />
               <span className="truncate">{t('homeComposer.workingIn', { name: workspaceLabel })}</span>
@@ -277,7 +277,7 @@ export function HomeTaskComposerCard() {
             align="start"
             side="bottom"
             sideOffset={8}
-            className="w-[300px] max-w-[calc(100vw-32px)] rounded-2xl border-border bg-card p-1 shadow-[var(--shadow-popover)]"
+            className="w-[300px] max-w-[calc(100vw-32px)] rounded-md border-border bg-card p-1 shadow-[var(--shadow-popover)]"
           >
             {recentWorkspaces.filter((ws) => ws.id !== 'default').length > 0 ? (
               <div className="max-h-[200px] overflow-y-auto">
@@ -288,7 +288,7 @@ export function HomeTaskComposerCard() {
                     data-aijia-workspace-path={ws.rootPath}
                     onSelect={() => selectWorkspace(ws)}
                     title={ws.rootPath}
-                    className="group flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium outline-none focus:bg-muted"
+                    className="group flex cursor-pointer items-center gap-3 rounded-[var(--radius)] px-3 py-2 text-sm font-medium outline-none focus:bg-muted"
                   >
                     <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
                     <span className="flex-1 truncate text-foreground">{ws.displayName}</span>
@@ -313,7 +313,7 @@ export function HomeTaskComposerCard() {
             <DropdownMenuItem
               data-aijia-workspace-action="pick-default"
               onSelect={() => void handleSelectDefaultFolder()}
-              className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium outline-none focus:bg-muted"
+              className="flex cursor-pointer items-center gap-3 rounded-[var(--radius)] px-3 py-2 text-sm font-medium outline-none focus:bg-muted"
             >
               <House className="h-4 w-4 shrink-0 text-muted-foreground" />
               <span>{t('homeComposer.useDefaultFolder')}</span>
@@ -321,7 +321,7 @@ export function HomeTaskComposerCard() {
             <DropdownMenuItem
               data-aijia-workspace-action="pick-other"
               onSelect={() => void handlePickProject()}
-              className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium outline-none focus:bg-muted"
+              className="flex cursor-pointer items-center gap-3 rounded-[var(--radius)] px-3 py-2 text-sm font-medium outline-none focus:bg-muted"
             >
               <FolderPlus className="h-4 w-4 shrink-0 text-muted-foreground" />
               <span>{t('homeComposer.selectOtherDir')}</span>

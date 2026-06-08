@@ -88,9 +88,22 @@ pub enum RuntimeEventKind {
         #[serde(default)]
         reason: RetryReason,
     },
+    StreamNotice {
+        level: String,
+        code: Option<String>,
+        message: String,
+        from_route: Option<serde_json::Value>,
+        to_route: Option<serde_json::Value>,
+    },
     StreamError {
         error: String,
         raw_error: Option<String>,
+        code: Option<String>,
+        retryable: Option<bool>,
+        handling: Option<String>,
+        request_phase: Option<String>,
+        current_route: Option<serde_json::Value>,
+        alternatives: Option<Vec<serde_json::Value>>,
     },
     ToolCallExecuting {
         tool_call_id: ToolCallId,

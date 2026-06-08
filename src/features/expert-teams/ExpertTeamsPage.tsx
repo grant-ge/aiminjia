@@ -209,7 +209,7 @@ export function ExpertTeamsPage() {
               type="button"
               variant="outline"
               size="sm"
-              className="h-7 gap-1.5 px-2 text-xs"
+              className="gap-1.5"
               disabled={syncing || catalogLoading}
               onClick={() => void handleSync()}
             >
@@ -219,10 +219,9 @@ export function ExpertTeamsPage() {
           )}
         />
       )}
-      maxWidthClass="max-w-[1024px]"
     >
       {catalogLoading && teams.length === 0 ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {[...Array(4)].map((_, i) => (
             <div key={i} className="h-[220px] animate-pulse rounded-lg border border-border bg-card" />
           ))}
@@ -250,7 +249,7 @@ export function ExpertTeamsPage() {
           </Button>
         </div>
       ) : (
-        <div className="flex flex-col gap-3">
+        <div className="flex min-w-0 flex-col gap-3">
           {catalogLoadError && (
             <p className="text-xs text-muted-foreground">
               {t('ExpertTeams.directoryPartialError', { err: catalogLoadError })}
@@ -266,7 +265,7 @@ export function ExpertTeamsPage() {
               {categoryDescription(activeGroup.category)}
             </p>
           )}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {visibleTeams.map((team) => (
               <ExpertTeamCard
                 key={team.id}

@@ -65,28 +65,28 @@ export function EmployeeTemplateDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[86vh] max-w-3xl overflow-hidden p-0" data-aijia-employee-detail>
+      <DialogContent className="max-h-[min(86vh,calc(100vh-32px))] w-[calc(100vw-32px)] max-w-[820px] overflow-hidden p-0" data-aijia-employee-detail>
         <DialogTitle className="sr-only">{visual.name}</DialogTitle>
         <DialogDescription className="sr-only">
           {template.description}
         </DialogDescription>
-        <div className="flex max-h-[86vh] flex-col overflow-hidden">
-          <div className="flex items-start gap-5 border-b border-border px-6 py-5 pr-12">
-            <div className={`flex h-[88px] w-[88px] shrink-0 items-center justify-center overflow-hidden rounded-[22px] ${visual.accent}`}>
+        <div className="flex max-h-[min(86vh,calc(100vh-32px))] flex-col overflow-hidden">
+          <div className="flex items-start gap-5 border-b border-border bg-card px-6 py-5 pr-16">
+            <div className={`flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg ${visual.accent}`}>
               {visual.avatarUrl ? (
                 <img src={visual.avatarUrl} alt="" className="h-full w-full object-cover" />
               ) : (
-                <span className="text-3xl font-semibold leading-none">{visual.avatarText}</span>
+                <span className="text-2xl font-semibold leading-none">{visual.avatarText}</span>
               )}
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="truncate text-2xl font-bold leading-tight text-foreground">{visual.name}</h2>
-                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                <h2 className="truncate text-[22px] font-bold leading-7 text-foreground">{visual.name}</h2>
+                <span className="rounded-[var(--radius)] bg-brand-primary-subtle px-2 py-0.5 text-xs font-medium text-primary">
                   {visual.title}
                 </span>
               </div>
-              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{template.description}</p>
+              <p className="mt-2 line-clamp-3 text-sm leading-6 text-muted-foreground">{template.description}</p>
             </div>
           </div>
 
@@ -104,7 +104,7 @@ export function EmployeeTemplateDetailDialog({
               <h3 className="text-sm font-semibold text-foreground">{t('employeesPage.detail.strengths')}</h3>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 {strengths.slice(0, 3).map((strength) => (
-                  <div key={strength} className="rounded-lg border border-border bg-card px-3 py-3">
+                  <div key={strength} className="rounded-md border border-border bg-card px-3 py-3 shadow-[var(--shadow-card)]">
                     <div className="flex items-start gap-2">
                       <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
                       <span className="text-sm text-foreground">{strength}</span>
@@ -118,7 +118,7 @@ export function EmployeeTemplateDetailDialog({
               <h3 className="text-sm font-semibold text-foreground">{t('employeesPage.detail.examples')}</h3>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {visual.examples.slice(0, 4).map((example) => (
-                  <div key={example} className="rounded-lg border border-border bg-muted/20 px-4 py-3 text-sm leading-relaxed text-foreground">
+                  <div key={example} className="rounded-md border border-border bg-muted/30 px-4 py-3 text-sm leading-6 text-foreground">
                     {example}
                   </div>
                 ))}
@@ -138,10 +138,10 @@ export function EmployeeTemplateDetailDialog({
               </section>
             )}
           </div>
-          <div className="flex shrink-0 justify-end border-t border-border bg-card px-6 py-4">
+          <div className="flex shrink-0 justify-end gap-2 border-t border-border bg-card px-6 py-4">
             <Button
               type="button"
-              className="min-w-[128px] gap-1.5 rounded-full px-5"
+              className="min-w-[128px] gap-1.5 px-5"
               disabled={busy}
               onClick={() => onStart(template)}
             >

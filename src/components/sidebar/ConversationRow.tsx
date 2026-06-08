@@ -82,8 +82,8 @@ export function ConversationRow({
 
   const paddingCls = indent ? 'pl-[32px] pr-2' : 'pl-2 pr-2'
   const wrapperCls = active
-    ? `flex items-center rounded-md ${paddingCls} bg-sidebar-accent text-sidebar-foreground`
-    : `flex items-center rounded-md ${paddingCls} text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/40`
+    ? `flex h-8 items-center rounded-md ${paddingCls} bg-sidebar-accent text-sidebar-foreground`
+    : `flex h-8 items-center rounded-md ${paddingCls} text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground`
 
   return (
     <ContextMenuPrimitive.Root>
@@ -102,7 +102,7 @@ export function ConversationRow({
             <button
               type="button"
               onClick={onClick}
-              className="group flex flex-1 min-w-0 items-center py-1.5 pr-2 text-left text-sm"
+              className="group flex min-w-0 flex-1 items-center pr-2 text-left text-sm"
               data-aijia-conversation-row
               data-aijia-conversation-id={id}
             >

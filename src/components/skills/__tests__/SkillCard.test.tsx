@@ -24,20 +24,20 @@ describe('SkillCard', () => {
     expect(onClick).toHaveBeenCalled()
   })
 
-  it('hot size applies h-[140px] class', () => {
+  it('hot size applies min-h-[156px] class', () => {
     const { container } = render(
       <SkillCard title="t" meta="m" desc="d" iconNode={null} onClick={() => {}} size="hot" />,
     )
     const card = container.querySelector('[data-testid="skill-card"]')
-    expect(card?.className).toMatch(/h-\[140px\]/)
+    expect(card?.className).toMatch(/min-h-\[156px\]/)
   })
 
-  it('office size (default) applies h-[120px] class', () => {
+  it('office size (default) applies min-h-[140px] class', () => {
     const { container } = render(
       <SkillCard title="t" meta="m" desc="d" iconNode={null} onClick={() => {}} />,
     )
     const card = container.querySelector('[data-testid="skill-card"]')
-    expect(card?.className).toMatch(/h-\[120px\]/)
+    expect(card?.className).toMatch(/min-h-\[140px\]/)
   })
 
   it('has no 详情 or 使用 buttons', () => {

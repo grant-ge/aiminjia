@@ -46,10 +46,10 @@ describe('ChatTopBar', () => {
     expect(onShare).toHaveBeenCalledTimes(1)
   })
 
-  it('header has h-10, px-6 and bottom border', () => {
+  it('header has h-14, px-6 and bottom border', () => {
     const { container } = render(<ChatTopBar title="X" workspace="Y" />)
     const header = container.querySelector('header')
-    expect(header?.className).toMatch(/h-10/)
+    expect(header?.className).toMatch(/h-14/)
     expect(header?.className).toMatch(/px-6/)
     expect(header?.className).toMatch(/border-b/)
   })

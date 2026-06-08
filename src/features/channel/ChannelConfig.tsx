@@ -93,7 +93,7 @@ export function ChannelConfig({ onSaved, onClose }: ChannelConfigProps) {
     return (
       <div className="flex max-h-[78vh] w-full flex-col overflow-hidden bg-background">
         <div className="flex flex-col items-center px-10 pb-5 pt-8 text-center">
-          <h2 className="text-2xl font-bold tracking-tight text-foreground">{t('channel.dingtalk.config.title')}</h2>
+          <h2 className="text-2xl font-bold text-foreground">{t('channel.dingtalk.config.title')}</h2>
         </div>
         <div className="flex-1 overflow-y-auto px-10 pb-6">
           <div className="flex w-full flex-col items-center gap-5">

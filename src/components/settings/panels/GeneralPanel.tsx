@@ -92,7 +92,7 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
       <div className="h-px bg-border mb-2" />
 
       <section className="flex flex-col gap-4 pb-2">
-        <div className="text-xl font-bold tracking-tight text-foreground">{t('settings.general.appearance')}</div>
+        <div className="text-xl font-bold text-foreground">{t('settings.general.appearance')}</div>
 
         <div className="flex items-center justify-between gap-8">
           <div className="flex min-w-0 flex-col gap-1">
