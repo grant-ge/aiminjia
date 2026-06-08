@@ -37,9 +37,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init());
 
     #[cfg(feature = "e2e")]
-    {
-        builder = builder.plugin(tauri_plugin_pilot::init());
-    }
+    let builder = builder.plugin(tauri_plugin_pilot::init());
 
     builder
         .setup(|app| {

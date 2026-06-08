@@ -2719,7 +2719,10 @@ fn classify_llm_error(error: &str) -> TurnError {
         }
     }
     let lower = error.to_lowercase();
-    if lower.contains("prompt too long")
+    if error.contains("登录已过期") || error.contains("请重新登录") || error.contains("未登录")
+    {
+        TurnError::LlmError("登录已过期，请重新登录".to_string())
+    } else if lower.contains("prompt too long")
         || lower.contains("prompt is too long")
         || lower.contains("context length")
         || lower.contains("maximum context length")
@@ -4824,6 +4827,16 @@ mod retry_reason_tests {
             TurnError::LlmError(message) => {
                 assert!(message.contains("当前模型暂不可用"));
                 assert!(message.contains("深度思考"));
+            }
+            other => panic!("expected llm error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn auth_expired_error_is_not_wrapped_as_generic_service_error() {
+        match classify_llm_error("登录已过期，请重新登录") {
+            TurnError::LlmError(message) => {
+                assert_eq!(message, "登录已过期，请重新登录");
             }
             other => panic!("expected llm error, got {other:?}"),
         }
