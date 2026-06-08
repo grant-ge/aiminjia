@@ -156,7 +156,11 @@ impl AuthManager {
     /// Login with username and password.
     /// Returns auth info for the frontend.
     pub async fn login(&self, username: &str, password: &str) -> Result<CloudAuthInfo> {
-        let auth_resp = self.client.login(username, password).await?;
+        log::info!("[login] attempting login for user={}", username);
+        let auth_resp = self.client.login(username, password).await.map_err(|e| {
+            log::warn!("[login] failed for user={}: {:#}", username, e);
+            e
+        })?;
 
         let now = Utc::now();
         if auth_resp.access_expires_at <= now || auth_resp.refresh_expires_at <= now {
@@ -202,6 +206,7 @@ impl AuthManager {
         self.persist_auth(&cloud_auth)?;
         *self.state.write().await = Some(cloud_auth);
 
+        log::info!("[login] success user={} tenant={}", user.username, tenant.name);
         Ok(CloudAuthInfo {
             logged_in: true,
             user: Some(user),
