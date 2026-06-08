@@ -43,6 +43,18 @@ impl ProgressSink for EmitSink {
     }
 }
 
+fn emit_install_progress(app: &AppHandle, version: &str, stage: &str, current: u8, total: u8) {
+    let _ = app.emit(
+        "updater:install-progress",
+        serde_json::json!({
+            "version": version,
+            "stage": stage,
+            "current": current,
+            "total": total,
+        }),
+    );
+}
+
 #[tauri::command]
 pub async fn updater_download(
     app: AppHandle,
@@ -106,6 +118,7 @@ pub async fn updater_install_cached(
     version: String,
 ) -> Result<(), String> {
     log::info!("[updater_install_cached] start, version={}", version);
+    emit_install_progress(&app, &version, "preparing", 1, 4);
     let cache = cache_for(&home);
     let bytes = cache.read_complete(&version).map_err(|e| {
         log::error!("[updater_install_cached] read_complete failed: {}", e);
@@ -120,6 +133,7 @@ pub async fn updater_install_cached(
     // bundler embeds into the tarball. The Rust tar crate that
     // tauri-plugin-updater uses for installation doesn't understand AppleDouble
     // and fails with "failed to unpack `._AIjia.app`" otherwise.
+    emit_install_progress(&app, &version, "verifying", 2, 4);
     #[cfg(target_os = "macos")]
     let bytes = match strip_macos_metadata(&bytes) {
         Ok(clean) => {
@@ -160,6 +174,7 @@ pub async fn updater_install_cached(
         ));
     }
 
+    emit_install_progress(&app, &version, "installing", 3, 4);
     log::info!(
         "[updater_install_cached] calling update.install() with {} bytes",
         bytes.len()
@@ -168,6 +183,7 @@ pub async fn updater_install_cached(
         log::error!("[updater_install_cached] install() failed: {:#}", e);
         format!("{:#}", e)
     })?;
+    emit_install_progress(&app, &version, "finishing", 4, 4);
     log::info!("[updater_install_cached] install() returned successfully");
     Ok(())
 }

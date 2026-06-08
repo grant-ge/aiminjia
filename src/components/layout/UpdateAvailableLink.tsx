@@ -13,6 +13,8 @@ export function UpdateAvailableLink() {
 
   return (
     <button
+      data-aijia-updater-link
+      data-aijia-updater-version={version}
       type="button"
       onClick={openPanel}
       onMouseDown={(e) => e.stopPropagation()}

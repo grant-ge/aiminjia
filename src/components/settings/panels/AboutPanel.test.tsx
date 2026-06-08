@@ -73,7 +73,10 @@ describe('AboutPanel', () => {
   it('wires the check-update button to its handler', () => {
     render(<AboutPanel {...baseProps} />)
 
-    fireEvent.click(screen.getByRole('button', { name: '检查更新' }))
+    const button = screen.getByRole('button', { name: '检查更新' })
+    expect(button).toHaveAttribute('data-aijia-settings-action', 'check-update')
+
+    fireEvent.click(button)
 
     expect(baseProps.onCheckUpdate).toHaveBeenCalledTimes(1)
   })

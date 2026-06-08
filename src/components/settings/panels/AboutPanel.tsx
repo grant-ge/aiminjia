@@ -2,6 +2,7 @@
  * @designSource copied from Wukong about settings page, adapted to AI 小家 branding.
  */
 import { useState } from 'react'
+import type { ComponentProps } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -28,19 +29,23 @@ interface AboutPanelProps {
   links: AboutPanelLinks
 }
 
+type PillButtonProps = Omit<ComponentProps<typeof Button>, 'type' | 'variant' | 'className' | 'children'> & {
+  children: string
+  onClick: () => void
+  danger?: boolean
+  disabled?: boolean
+}
+
 function PillButton({
   children,
   onClick,
   danger = false,
   disabled = false,
-}: {
-  children: string
-  onClick: () => void
-  danger?: boolean
-  disabled?: boolean
-}) {
+  ...buttonProps
+}: PillButtonProps) {
   return (
     <Button
+      {...buttonProps}
       type="button"
       onClick={onClick}
       disabled={disabled}
@@ -91,7 +96,11 @@ export function AboutPanel({
             <div className="text-sm leading-none text-muted-foreground">{t('settings.about.version')} {version}</div>
           </div>
         </div>
-        <PillButton onClick={onCheckUpdate} disabled={checkingUpdate}>
+        <PillButton
+          onClick={onCheckUpdate}
+          disabled={checkingUpdate}
+          data-aijia-settings-action="check-update"
+        >
           {checkingUpdate ? t('settings.about.checkingUpdate') : t('settings.about.checkUpdate')}
         </PillButton>
       </section>

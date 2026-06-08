@@ -583,6 +583,7 @@
     "dialogTitleDownloading": "正在下载更新 v{{version}}",
     "dialogTitleReady": "更新下载完成 v{{version}}",
     "dialogTitleFailed": "更新失败",
+    "dialogTitleInstalling": "正在安装更新 v{{version}}",
     "versionLine": "当前 {{current}} → 新版本 {{next}}",
     "releaseNotesHeader": "本次更新内容",
     "updateAvailableDesc": "有新版本可用，是否现在更新？",
@@ -592,6 +593,12 @@
     "downloadComplete": "下载完成 · {{size}}",
     "installAndRestart": "立即安装并重启",
     "installing": "正在安装...",
+    "installStage": {
+      "preparing": "正在准备安装包...",
+      "verifying": "正在校验更新版本...",
+      "installing": "正在安装更新...",
+      "finishing": "正在完成安装..."
+    },
     "retry": "重试",
     "downloadFailedMessage": "下载失败：{{error}}",
     "installFailedTitle": "更新安装失败",

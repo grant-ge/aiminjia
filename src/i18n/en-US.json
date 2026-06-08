@@ -583,6 +583,7 @@
     "dialogTitleDownloading": "Downloading update v{{version}}",
     "dialogTitleReady": "Update downloaded v{{version}}",
     "dialogTitleFailed": "Update failed",
+    "dialogTitleInstalling": "Installing update v{{version}}",
     "versionLine": "{{current}} → {{next}}",
     "releaseNotesHeader": "What's new",
     "updateAvailableDesc": "A new version is available. Would you like to update now?",
@@ -592,6 +593,12 @@
     "downloadComplete": "Download complete · {{size}}",
     "installAndRestart": "Install & Restart",
     "installing": "Installing...",
+    "installStage": {
+      "preparing": "Preparing update package...",
+      "verifying": "Verifying update version...",
+      "installing": "Installing update...",
+      "finishing": "Finishing installation..."
+    },
     "retry": "Retry",
     "downloadFailedMessage": "Download failed: {{error}}",
     "installFailedTitle": "Update install failed",
