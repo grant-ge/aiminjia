@@ -26,6 +26,7 @@ use crate::runtime::tools::permission::PermissionMode;
 use crate::runtime::RuntimeRunRegistry;
 use crate::storage::crypto::SecureStorage;
 use crate::storage::file_manager::FileManager;
+use crate::storage::file_store::types::{ErrorKind, MessageError, StoredMessage};
 use crate::storage::file_store::AppStorage;
 use crate::storage::{AiJiaHome, CurrentUserStorage, GlobalConfigStore, UserScope};
 use crate::storage::{UserScopedPathResolver, UserScopedPaths};
@@ -391,11 +392,17 @@ impl RuntimeEventSubscriber for HeadlessEventCollector {
                 role,
                 content,
                 tool_calls,
+                error,
                 ..
             } if role == "assistant" => {
                 if let Some(text) = content.get("text").and_then(|v| v.as_str()) {
                     let mut guard = self.inner.lock().unwrap_or_else(|p| p.into_inner());
                     guard.last_assistant_text = Some(text.to_string());
+                }
+                if let Some(error) = error {
+                    let mut guard = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+                    guard.execution_error = Some(readable_message_error(error));
+                    guard.outcome = Some(outcome_from_message_error(error));
                 }
                 self.push_assistant_message(
                     event.session_id.as_str(),
@@ -517,18 +524,14 @@ impl HeadlessDriver {
             .map_err(anyhow::Error::msg)?;
 
         let mut output = self.decorate_output(self.collector.output());
+        output = self.enrich_output_from_db(output);
         output.duration_ms = started_at.elapsed().as_millis() as u64;
-        if let Some(model) = extract_assistant_execution_model_from_db(&self.db, &self.session_id) {
-            output.execution_model = model.clone();
-            if output.model.trim().is_empty() || output.model == self.model {
-                output.model = model;
-            }
-        }
         Ok(output)
     }
 
     pub fn collect_output(&self) -> HeadlessRunOutput {
-        self.decorate_output(self.collector.output())
+        let output = self.decorate_output(self.collector.output());
+        self.enrich_output_from_db(output)
     }
 
     fn decorate_output(&self, mut output: HeadlessRunOutput) -> HeadlessRunOutput {
@@ -570,6 +573,49 @@ impl HeadlessDriver {
         output
     }
 
+    fn enrich_output_from_db(&self, mut output: HeadlessRunOutput) -> HeadlessRunOutput {
+        let Ok(messages) = self.db.get_messages_v2(self.session_id.as_str()) else {
+            return output;
+        };
+
+        if let Some(message) = latest_assistant_message(&messages) {
+            if output.answer.trim().is_empty() {
+                let text = message.text().trim();
+                if !text.is_empty() {
+                    output.answer = text.to_string();
+                }
+            }
+
+            if let Some(model) = extract_model_from_thinking_blocks(&message.content) {
+                output.execution_model = model.clone();
+                output.model = model;
+            }
+
+            if let Some(error) = message.error.as_ref() {
+                output.is_error = true;
+                output.error_subtype = Some(error_subtype_from_message_error(error));
+                output.execution_error = Some(readable_message_error(error));
+            }
+        }
+
+        if output.answer.trim().is_empty() {
+            if let Some(last_message) = messages.iter().rev().find(|message| {
+                matches!(message.role.as_str(), "assistant" | "tool")
+                    && !message.text().trim().is_empty()
+            }) {
+                output.answer = last_message.text().trim().to_string();
+                if last_message.role == "tool" && !output.is_error {
+                    output.is_error = true;
+                    output.error_subtype = Some("error_incomplete_turn".to_string());
+                    output.execution_error =
+                        Some("turn ended before a final assistant message was produced".to_string());
+                }
+            }
+        }
+
+        output
+    }
+
     fn ensure_conversation(&self) -> Result<()> {
         match self.db.get_conversation(self.session_id.as_str()) {
             Ok(_) => Ok(()),
@@ -586,26 +632,46 @@ impl HeadlessDriver {
     }
 }
 
-fn extract_assistant_execution_model_from_db(
-    db: &AppStorage,
-    session_id: &SessionId,
-) -> Option<String> {
-    db.get_messages_v2(session_id.as_str())
-        .ok()?
-        .into_iter()
+fn latest_assistant_message(messages: &[StoredMessage]) -> Option<&StoredMessage> {
+    messages
+        .iter()
         .rev()
         .find(|message| message.role == "assistant")
-        .and_then(|message| {
-            extract_model_from_thinking_blocks(&message.content).or_else(|| {
-                message
-                    .content
-                    .get("model")
-                    .and_then(|value| value.as_str())
-                    .map(str::trim)
-                    .filter(|model| !model.is_empty())
-                    .map(str::to_string)
-            })
-        })
+}
+
+fn readable_message_error(error: &MessageError) -> String {
+    error
+        .raw
+        .as_deref()
+        .filter(|raw| !raw.trim().is_empty())
+        .unwrap_or(error.message.as_str())
+        .to_string()
+}
+
+fn outcome_from_message_error(error: &MessageError) -> ChatTurnOutcome {
+    match &error.kind {
+        ErrorKind::MaxIterations => ChatTurnOutcome::MaxIterationsReached { iterations: 0 },
+        ErrorKind::BudgetExceeded => ChatTurnOutcome::BudgetExceeded {
+            reason: readable_message_error(error),
+            total_cost_usd: 0.0,
+        },
+        _ => ChatTurnOutcome::ExecutionError {
+            message: readable_message_error(error),
+        },
+    }
+}
+
+fn error_subtype_from_message_error(error: &MessageError) -> String {
+    match &error.kind {
+        ErrorKind::MaxIterations => "error_max_turns",
+        ErrorKind::BudgetExceeded => "error_max_budget_usd",
+        ErrorKind::PromptTooLong => "error_prompt_too_long",
+        ErrorKind::AuthFailed => "error_auth_failed",
+        ErrorKind::RateLimited => "error_rate_limited",
+        ErrorKind::ChunkTimeout | ErrorKind::Network => "error_network",
+        ErrorKind::ExecutionError | ErrorKind::Unknown => "error_during_execution",
+    }
+    .to_string()
 }
 
 pub async fn run_headless_agent(

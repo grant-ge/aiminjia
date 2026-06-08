@@ -12,6 +12,8 @@ use app_lib::runtime::ids::SessionId;
 use app_lib::runtime::tools::permission::PermissionMode;
 use serde_json::json;
 
+const DEFAULT_MAX_ITERATIONS: usize = 15;
+
 #[tokio::main]
 async fn main() {
     match run().await {
@@ -346,6 +348,7 @@ impl Default for OutputFormat {
 fn parse_args(raw: Vec<String>) -> Result<CliArgs> {
     let mut args = CliArgs {
         permission_mode: PermissionMode::AcceptEdits,
+        max_turns: Some(DEFAULT_MAX_ITERATIONS),
         ..CliArgs::default()
     };
     let mut i = 0usize;

@@ -11,11 +11,6 @@ $TauriDir = Join-Path $RepoRoot "src-tauri"
 Push-Location $TauriDir
 try {
     cargo build --release --bin aijia-cli
-    $runningProcesses = Get-Process -Name aijia -ErrorAction SilentlyContinue
-    if ($runningProcesses) {
-        Write-Host "Stopping running aijia.exe instances to release output lock."
-        $runningProcesses | ForEach-Object { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }
-    }
 } finally {
     Pop-Location
 }
@@ -23,6 +18,13 @@ try {
 $ExePath = Join-Path $TauriDir "target\release\aijia-cli.exe"
 $ShortExePath = Join-Path $InstallDir "aijia.exe"
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
+$runningCliProcesses = Get-Process -Name aijia -ErrorAction SilentlyContinue | Where-Object {
+    $_.Path -and ($_.Path.TrimEnd('\') -ieq $ShortExePath.TrimEnd('\'))
+}
+if ($runningCliProcesses) {
+    Write-Host "Stopping running CLI aijia.exe instances to release output lock."
+    $runningCliProcesses | ForEach-Object { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }
+}
 Copy-Item -LiteralPath $ExePath -Destination $ShortExePath -Force
 
 $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
