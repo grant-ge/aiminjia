@@ -66,6 +66,8 @@ pub struct HeadlessRunOutput {
     pub stop_reason: Option<String>,
     pub total_cost_usd: f64,
     pub model: String,
+    pub requested_model: String,
+    pub execution_model: String,
     pub permission_mode: String,
     pub workspace: String,
     pub uuid: String,
@@ -226,9 +228,10 @@ impl HeadlessEventCollector {
             return;
         }
         for block in thinking_blocks {
-            let model = block.get("model").and_then(|value| value.as_str()).or_else(|| {
-                block.get("modelName").and_then(|value| value.as_str())
-            });
+            let model = block
+                .get("model")
+                .and_then(|value| value.as_str())
+                .or_else(|| block.get("modelName").and_then(|value| value.as_str()));
             if let Some(model) = model {
                 let model = model.trim();
                 if !model.is_empty() {
@@ -291,13 +294,15 @@ impl HeadlessEventCollector {
             "uuid": message_id,
             "session_id": session_id,
         }));
-        self.emit_stream_message(guard.stream_messages.last().cloned().unwrap_or_else(|| serde_json::json!({
-            "type": "assistant",
-            "message": { "role": "assistant", "content": blocks },
-            "parent_tool_use_id": null,
-            "uuid": message_id,
-            "session_id": session_id,
-        })));
+        self.emit_stream_message(guard.stream_messages.last().cloned().unwrap_or_else(|| {
+            serde_json::json!({
+                "type": "assistant",
+                "message": { "role": "assistant", "content": blocks },
+                "parent_tool_use_id": null,
+                "uuid": message_id,
+                "session_id": session_id,
+            })
+        }));
     }
 
     fn push_tool_result_message(
@@ -324,21 +329,23 @@ impl HeadlessEventCollector {
             "uuid": msg_id,
             "session_id": session_id,
         }));
-        self.emit_stream_message(guard.stream_messages.last().cloned().unwrap_or_else(|| serde_json::json!({
-            "type": "user",
-            "message": {
-                "role": "user",
-                "content": [{
-                    "type": "tool_result",
-                    "tool_use_id": tool_call_id,
-                    "content": content,
-                    "is_error": is_error,
-                }],
-            },
-            "parent_tool_use_id": null,
-            "uuid": msg_id,
-            "session_id": session_id,
-        })));
+        self.emit_stream_message(guard.stream_messages.last().cloned().unwrap_or_else(|| {
+            serde_json::json!({
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [{
+                        "type": "tool_result",
+                        "tool_use_id": tool_call_id,
+                        "content": content,
+                        "is_error": is_error,
+                    }],
+                },
+                "parent_tool_use_id": null,
+                "uuid": msg_id,
+                "session_id": session_id,
+            })
+        }));
     }
 }
 
@@ -452,6 +459,7 @@ pub struct HeadlessDriver {
     authorized_workspace_store: Arc<dyn AuthorizedWorkspaceStore>,
     authorized_workspace: AuthorizedWorkspace,
     permission_mode: PermissionMode,
+    requested_model: String,
     model: String,
     workspace: PathBuf,
     tools: Vec<String>,
@@ -483,16 +491,44 @@ impl HeadlessDriver {
             .await
             .map_err(anyhow::Error::msg)?;
 
-        let mut output = self.collector.output();
-        if output.model.trim().is_empty() {
-            output.model = output
-                .streamed_model
-                .clone()
-                .or_else(|| Some(self.model.clone()))
-                .unwrap_or_default();
-        }
-        output.session_id = self.session_id.as_str().to_string();
+        let mut output = self.decorate_output(self.collector.output());
         output.duration_ms = started_at.elapsed().as_millis() as u64;
+        Ok(output)
+    }
+
+    pub fn collect_output(&self) -> HeadlessRunOutput {
+        self.decorate_output(self.collector.output())
+    }
+
+    fn decorate_output(&self, mut output: HeadlessRunOutput) -> HeadlessRunOutput {
+        let execution_model = output
+            .streamed_model
+            .as_ref()
+            .filter(|model| !model.trim().is_empty())
+            .cloned()
+            .or_else(|| {
+                if self.model.trim().is_empty() {
+                    None
+                } else {
+                    Some(self.model.clone())
+                }
+            })
+            .unwrap_or_default();
+
+        if output.model.trim().is_empty() {
+            output.model = execution_model.clone();
+        }
+        output.requested_model = if output.requested_model.trim().is_empty() {
+            self.requested_model.clone()
+        } else {
+            output.requested_model.clone()
+        };
+        output.execution_model = if output.execution_model.trim().is_empty() {
+            output.model.clone()
+        } else {
+            output.execution_model.clone()
+        };
+        output.session_id = self.session_id.as_str().to_string();
         output.permission_mode = permission_mode_to_external(self.permission_mode).to_string();
         output.workspace = self.workspace.to_string_lossy().into_owned();
         output.tools = self.tools.clone();
@@ -500,11 +536,7 @@ impl HeadlessDriver {
             output.execution_error = Some(error);
             output.is_error = true;
         }
-        Ok(output)
-    }
-
-    pub fn collect_output(&self) -> HeadlessRunOutput {
-        self.collector.output()
+        output
     }
 
     fn ensure_conversation(&self) -> Result<()> {
@@ -691,8 +723,22 @@ pub async fn build_headless_driver(options: HeadlessBuildOptions) -> Result<Head
         .context("failed to initialize CLI authorized workspace")?;
 
     let mut app_settings_value = load_app_settings(&db, secure_storage.as_deref());
+    let requested_model = options
+        .model
+        .as_deref()
+        .filter(|model| !model.trim().is_empty())
+        .map(ToString::to_string)
+        .or_else(|| {
+            let configured_model = effective_model_name(&app_settings_value);
+            if configured_model.trim().is_empty() {
+                None
+            } else {
+                Some(configured_model)
+            }
+        });
     apply_model_override(&mut app_settings_value, options.model.as_deref());
     let model = effective_model_name(&app_settings_value);
+    let requested_model = requested_model.unwrap_or_else(|| model.clone());
     let permission_ctx = Arc::new(build_headless_permission_ctx(&add_dirs));
     let bus = RuntimeEventBus::new();
     let collector = Arc::new(HeadlessEventCollector {
@@ -739,6 +785,7 @@ pub async fn build_headless_driver(options: HeadlessBuildOptions) -> Result<Head
         authorized_workspace_store,
         authorized_workspace,
         permission_mode: options.permission_mode,
+        requested_model,
         model,
         workspace,
         tools,
