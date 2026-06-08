@@ -1,9 +1,11 @@
-use std::io::{self, IsTerminal, Read};
+use std::io::{self, IsTerminal, Read, Write};
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
 use app_lib::cli::{
     build_headless_driver, HeadlessAgentRequest, HeadlessBuildOptions, HeadlessRunOutput,
+    HeadlessStreamEventSink,
 };
 use app_lib::runtime::ids::SessionId;
 use app_lib::runtime::tools::permission::PermissionMode;
@@ -30,9 +32,18 @@ async fn run() -> Result<()> {
         println!("{}", env!("CARGO_PKG_VERSION"));
         return Ok(());
     }
-    if args.output_format == OutputFormat::StreamJson && !args.verbose {
-        anyhow::bail!("--output-format=stream-json requires --verbose");
-    }
+    let stream_output = args.output_format == OutputFormat::StreamJson;
+    let stream_event_sink: Option<HeadlessStreamEventSink> = if stream_output {
+        let stdout = Arc::new(Mutex::new(io::stdout()));
+        Some(Arc::new(move |event| {
+            let line = serde_json::to_string(&event).unwrap_or_else(|_| "{}".to_string());
+            if let Ok(mut out) = stdout.lock() {
+                let _ = writeln!(out, "{line}");
+            }
+        }))
+    } else {
+        None
+    };
 
     let prompt = resolve_prompt(&args)?;
     if prompt.trim().is_empty() {
@@ -50,6 +61,7 @@ async fn run() -> Result<()> {
         permission_mode: args.permission_mode,
         model: args.model.clone(),
         verbose: args.verbose,
+        stream_event_sink,
     })
     .await?;
     let output = driver
@@ -91,9 +103,6 @@ fn write_output(output: &HeadlessRunOutput, format: OutputFormat) -> Result<()> 
         }
         OutputFormat::StreamJson => {
             println!("{}", serde_json::to_string(&system_init_message(output))?);
-            for message in &output.stream_messages {
-                println!("{}", serde_json::to_string(message)?);
-            }
             println!("{}", serde_json::to_string(&sdk_result_message(output))?);
         }
     }

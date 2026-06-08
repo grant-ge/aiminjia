@@ -33,7 +33,9 @@ use crate::transport::tauri_commands::chat::{
     build_headless_chat_runtime, HeadlessChatRuntime, HeadlessChatRuntimeConfig,
 };
 
-#[derive(Debug, Clone)]
+pub type HeadlessStreamEventSink = Arc<dyn Fn(serde_json::Value) + Send + Sync>;
+
+#[derive(Clone)]
 pub struct HeadlessBuildOptions {
     pub add_dirs: Vec<PathBuf>,
     pub session_id: Option<SessionId>,
@@ -43,6 +45,7 @@ pub struct HeadlessBuildOptions {
     pub permission_mode: PermissionMode,
     pub model: Option<String>,
     pub verbose: bool,
+    pub stream_event_sink: Option<HeadlessStreamEventSink>,
 }
 
 #[derive(Debug, Clone)]
@@ -69,6 +72,10 @@ pub struct HeadlessRunOutput {
     pub is_error: bool,
     pub error_subtype: Option<String>,
     pub permission_denials: Vec<serde_json::Value>,
+    #[serde(skip)]
+    pub streamed_model: Option<String>,
+    #[serde(skip)]
+    pub execution_error: Option<String>,
     #[serde(skip)]
     pub tools: Vec<String>,
     #[serde(skip)]
@@ -105,12 +112,15 @@ struct CollectorInner {
     outcome: Option<ChatTurnOutcome>,
     total_cost_usd: f64,
     permission_denial_count: usize,
+    streamed_model: Option<String>,
+    execution_error: Option<String>,
     stream_messages: Vec<serde_json::Value>,
 }
 
 #[derive(Default)]
 struct HeadlessEventCollector {
     inner: Mutex<CollectorInner>,
+    stream_event_sink: Option<HeadlessStreamEventSink>,
 }
 
 impl HeadlessEventCollector {
@@ -134,6 +144,8 @@ impl HeadlessEventCollector {
             iterations: guard.max_iteration_seen,
             tokens: guard.tokens.clone(),
             total_cost_usd: guard.total_cost_usd,
+            streamed_model: guard.streamed_model.clone(),
+            execution_error: guard.execution_error.clone(),
             is_error: guard
                 .outcome
                 .as_ref()
@@ -194,6 +206,39 @@ impl HeadlessEventCollector {
         guard.max_iteration_seen = guard.max_iteration_seen.max(iteration as usize + 1);
     }
 
+    fn emit_stream_message(&self, message: serde_json::Value) {
+        if let Some(sink) = &self.stream_event_sink {
+            sink(message);
+        }
+    }
+
+    fn update_streamed_model_from_content(&self, content: &serde_json::Value) {
+        let Some(thinking_blocks) = content
+            .get("_thinking_blocks")
+            .or_else(|| content.get("thinkingBlocks"))
+            .and_then(|value| value.as_array())
+        else {
+            return;
+        };
+
+        let mut guard = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        if guard.streamed_model.is_some() {
+            return;
+        }
+        for block in thinking_blocks {
+            let model = block.get("model").and_then(|value| value.as_str()).or_else(|| {
+                block.get("modelName").and_then(|value| value.as_str())
+            });
+            if let Some(model) = model {
+                let model = model.trim();
+                if !model.is_empty() {
+                    guard.streamed_model = Some(model.to_string());
+                    break;
+                }
+            }
+        }
+    }
+
     fn push_assistant_message(
         &self,
         session_id: &str,
@@ -201,6 +246,7 @@ impl HeadlessEventCollector {
         content: &serde_json::Value,
         tool_calls: Option<&[serde_json::Value]>,
     ) {
+        self.update_streamed_model_from_content(content);
         let text = content
             .get("text")
             .and_then(|v| v.as_str())
@@ -245,6 +291,13 @@ impl HeadlessEventCollector {
             "uuid": message_id,
             "session_id": session_id,
         }));
+        self.emit_stream_message(guard.stream_messages.last().cloned().unwrap_or_else(|| serde_json::json!({
+            "type": "assistant",
+            "message": { "role": "assistant", "content": blocks },
+            "parent_tool_use_id": null,
+            "uuid": message_id,
+            "session_id": session_id,
+        })));
     }
 
     fn push_tool_result_message(
@@ -271,6 +324,21 @@ impl HeadlessEventCollector {
             "uuid": msg_id,
             "session_id": session_id,
         }));
+        self.emit_stream_message(guard.stream_messages.last().cloned().unwrap_or_else(|| serde_json::json!({
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": [{
+                    "type": "tool_result",
+                    "tool_use_id": tool_call_id,
+                    "content": content,
+                    "is_error": is_error,
+                }],
+            },
+            "parent_tool_use_id": null,
+            "uuid": msg_id,
+            "session_id": session_id,
+        })));
     }
 }
 
@@ -278,6 +346,10 @@ impl HeadlessEventCollector {
 impl RuntimeEventSubscriber for HeadlessEventCollector {
     async fn on_event(&self, event: &RuntimeEvent) -> anyhow::Result<()> {
         match &event.kind {
+            RuntimeEventKind::StreamDone => {
+                let mut guard = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+                guard.execution_error = None;
+            }
             RuntimeEventKind::StreamDelta { content } => {
                 let mut guard = self.inner.lock().unwrap_or_else(|p| p.into_inner());
                 guard.stream_buffer.push_str(content);
@@ -357,6 +429,14 @@ impl RuntimeEventSubscriber for HeadlessEventCollector {
                 };
                 guard.total_cost_usd = total_cost_usd.unwrap_or(0.0);
                 guard.permission_denial_count = *permission_denial_count;
+                guard.execution_error = None;
+            }
+            RuntimeEventKind::StreamError { error, .. } => {
+                let mut guard = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+                guard.execution_error = Some(error.clone());
+                guard.outcome = Some(ChatTurnOutcome::ExecutionError {
+                    message: error.clone(),
+                });
             }
             _ => {}
         }
@@ -404,13 +484,27 @@ impl HeadlessDriver {
             .map_err(anyhow::Error::msg)?;
 
         let mut output = self.collector.output();
+        if output.model.trim().is_empty() {
+            output.model = output
+                .streamed_model
+                .clone()
+                .or_else(|| Some(self.model.clone()))
+                .unwrap_or_default();
+        }
         output.session_id = self.session_id.as_str().to_string();
         output.duration_ms = started_at.elapsed().as_millis() as u64;
-        output.model = self.model.clone();
         output.permission_mode = permission_mode_to_external(self.permission_mode).to_string();
         output.workspace = self.workspace.to_string_lossy().into_owned();
         output.tools = self.tools.clone();
+        if let Some(error) = output.execution_error.clone() {
+            output.execution_error = Some(error);
+            output.is_error = true;
+        }
         Ok(output)
+    }
+
+    pub fn collect_output(&self) -> HeadlessRunOutput {
+        self.collector.output()
     }
 
     fn ensure_conversation(&self) -> Result<()> {
@@ -601,7 +695,10 @@ pub async fn build_headless_driver(options: HeadlessBuildOptions) -> Result<Head
     let model = effective_model_name(&app_settings_value);
     let permission_ctx = Arc::new(build_headless_permission_ctx(&add_dirs));
     let bus = RuntimeEventBus::new();
-    let collector = Arc::new(HeadlessEventCollector::default());
+    let collector = Arc::new(HeadlessEventCollector {
+        inner: Mutex::new(CollectorInner::default()),
+        stream_event_sink: options.stream_event_sink.clone(),
+    });
     bus.subscribe(collector.clone());
 
     let chat_runtime = build_headless_chat_runtime(HeadlessChatRuntimeConfig {
