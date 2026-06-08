@@ -119,6 +119,50 @@ struct CollectorInner {
     stream_messages: Vec<serde_json::Value>,
 }
 
+fn extract_model_from_thinking_blocks(content: &serde_json::Value) -> Option<String> {
+    let thinking_blocks = content
+        .get("_thinking_blocks")
+        .or_else(|| content.get("thinkingBlocks"))
+        .and_then(|value| value.as_array())
+        .or_else(|| content.get("thinking").and_then(|value| value.as_array()))?;
+
+    for block in thinking_blocks {
+        let model = block
+            .get("model")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|model| !model.is_empty())
+            .or_else(|| {
+                block
+                    .get("modelName")
+                    .and_then(|value| value.as_str())
+                    .map(str::trim)
+                    .filter(|model| !model.is_empty())
+            })
+            .or_else(|| {
+                block
+                    .get("source")
+                    .and_then(|source| source.get("model"))
+                    .and_then(|value| value.as_str())
+                    .map(str::trim)
+                    .filter(|model| !model.is_empty())
+            })
+            .or_else(|| {
+                block
+                    .get("source")
+                    .and_then(|source| source.get("modelName"))
+                    .and_then(|value| value.as_str())
+                    .map(str::trim)
+                    .filter(|model| !model.is_empty())
+            });
+        if let Some(model) = model {
+            return Some(model.to_string());
+        }
+    }
+
+    None
+}
+
 #[derive(Default)]
 struct HeadlessEventCollector {
     inner: Mutex<CollectorInner>,
@@ -215,29 +259,10 @@ impl HeadlessEventCollector {
     }
 
     fn update_streamed_model_from_content(&self, content: &serde_json::Value) {
-        let Some(thinking_blocks) = content
-            .get("_thinking_blocks")
-            .or_else(|| content.get("thinkingBlocks"))
-            .and_then(|value| value.as_array())
-        else {
-            return;
-        };
-
-        let mut guard = self.inner.lock().unwrap_or_else(|p| p.into_inner());
-        if guard.streamed_model.is_some() {
-            return;
-        }
-        for block in thinking_blocks {
-            let model = block
-                .get("model")
-                .and_then(|value| value.as_str())
-                .or_else(|| block.get("modelName").and_then(|value| value.as_str()));
-            if let Some(model) = model {
-                let model = model.trim();
-                if !model.is_empty() {
-                    guard.streamed_model = Some(model.to_string());
-                    break;
-                }
+        if let Some(model) = extract_model_from_thinking_blocks(content) {
+            let mut guard = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+            if guard.streamed_model.is_none() {
+                guard.streamed_model = Some(model);
             }
         }
     }
@@ -493,6 +518,12 @@ impl HeadlessDriver {
 
         let mut output = self.decorate_output(self.collector.output());
         output.duration_ms = started_at.elapsed().as_millis() as u64;
+        if let Some(model) = extract_assistant_execution_model_from_db(&self.db, &self.session_id) {
+            output.execution_model = model.clone();
+            if output.model.trim().is_empty() || output.model == self.model {
+                output.model = model;
+            }
+        }
         Ok(output)
     }
 
@@ -553,6 +584,28 @@ impl HeadlessDriver {
                 }),
         }
     }
+}
+
+fn extract_assistant_execution_model_from_db(
+    db: &AppStorage,
+    session_id: &SessionId,
+) -> Option<String> {
+    db.get_messages_v2(session_id.as_str())
+        .ok()?
+        .into_iter()
+        .rev()
+        .find(|message| message.role == "assistant")
+        .and_then(|message| {
+            extract_model_from_thinking_blocks(&message.content).or_else(|| {
+                message
+                    .content
+                    .get("model")
+                    .and_then(|value| value.as_str())
+                    .map(str::trim)
+                    .filter(|model| !model.is_empty())
+                    .map(str::to_string)
+            })
+        })
 }
 
 pub async fn run_headless_agent(
