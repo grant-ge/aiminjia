@@ -1,6 +1,14 @@
 import '@testing-library/jest-dom'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
+
+const tauriMock = vi.hoisted(() => ({
+  getLogLevel: vi.fn(),
+  setLogLevel: vi.fn(),
+  getSettings: vi.fn(),
+  updateSettings: vi.fn(),
+  uploadDiagnosticLogs: vi.fn(),
+}))
 
 vi.mock('@/stores/authStore', () => ({
   useAuthStore: (sel: (s: unknown) => unknown) =>
@@ -11,11 +19,20 @@ vi.mock('@/stores/authStore', () => ({
     }),
 }))
 
+vi.mock('@/lib/tauri', () => tauriMock)
+
 import { useUiStore } from '@/stores/uiStore'
 import { SettingsModal } from '../SettingsModal'
 
 describe('SettingsModal', () => {
-  beforeEach(() => useUiStore.getState().closeSettings())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    useUiStore.getState().closeSettings()
+    tauriMock.getLogLevel.mockResolvedValue('info')
+    tauriMock.setLogLevel.mockResolvedValue(undefined)
+    tauriMock.getSettings.mockResolvedValue({})
+    tauriMock.updateSettings.mockResolvedValue(undefined)
+  })
 
   it('renders nothing when closed', () => {
     const { container } = render(<SettingsModal />)
@@ -37,6 +54,21 @@ describe('SettingsModal', () => {
     render(<SettingsModal />)
     fireEvent.click(screen.getByRole('button', { name: '关于' }))
     expect(screen.getByRole('button', { name: '检查更新' })).toBeInTheDocument()
+  })
+
+  it('loads and persists the log level from the about panel', async () => {
+    tauriMock.getLogLevel.mockResolvedValue('debug')
+    useUiStore.getState().openSettings('about')
+    render(<SettingsModal />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('radio', { name: '调试' })).toHaveAttribute('aria-checked', 'true')
+    })
+
+    fireEvent.click(screen.getByRole('radio', { name: '警告' }))
+
+    expect(tauriMock.getLogLevel).toHaveBeenCalledTimes(1)
+    expect(tauriMock.setLogLevel).toHaveBeenCalledWith('warn')
   })
 
   it('does not render unavailable settings', () => {

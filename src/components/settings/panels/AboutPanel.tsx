@@ -8,7 +8,7 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { getLogLevel, setLogLevel } from '@/lib/tauri'
 import { cn } from '@/lib/utils'
-import type { DataMaskingLevel } from '@/types/settings'
+import type { AppLogLevel, DataMaskingLevel } from '@/types/settings'
 
 interface AboutPanelLinks {
   customerService: () => void
@@ -82,6 +82,13 @@ export function AboutPanel({
     setLogLevelState(level)
     setLogLevel(level).catch(() => {})
   }
+
+  const LOG_LEVEL_OPTIONS: Array<{ value: AppLogLevel; labelKey: string }> = [
+    { value: 'error', labelKey: 'settings.about.logLevelError' },
+    { value: 'warn', labelKey: 'settings.about.logLevelWarn' },
+    { value: 'info', labelKey: 'settings.about.logLevelInfo' },
+    { value: 'debug', labelKey: 'settings.about.logLevelDebug' },
+  ]
 
   const handleUploadLogs = async () => {
     if (uploadingLogs) return
@@ -163,23 +170,27 @@ export function AboutPanel({
           </PillButton>
         </div>
 
-        <div className="flex items-center justify-between gap-8">
-          <div className="flex flex-col gap-1">
+        <div className="flex items-center justify-between gap-6">
+          <div className="flex min-w-0 flex-col gap-1">
             <span className="text-base font-semibold text-foreground">{t('settings.about.logLevel')}</span>
             <div className="text-sm text-muted-foreground">{t('settings.about.logLevelDesc')}</div>
           </div>
-          <div className="inline-flex rounded-lg bg-muted p-1" role="radiogroup" aria-label={t('settings.about.logLevel')}>
-            {(['error', 'warn', 'info', 'debug'] as const).map((level) => {
-              const selected = logLevel === level
-              const label = t(`settings.about.logLevel${level.charAt(0).toUpperCase()}${level.slice(1)}` as never)
+          <div
+            className="inline-flex shrink-0 rounded-lg bg-muted p-1"
+            role="radiogroup"
+            aria-label={t('settings.about.logLevel')}
+          >
+            {LOG_LEVEL_OPTIONS.map((option) => {
+              const selected = logLevel === option.value
+              const label = t(option.labelKey)
               return (
                 <button
-                  key={level}
+                  key={option.value}
                   type="button"
                   role="radio"
                   aria-checked={selected}
                   aria-label={label}
-                  onClick={() => handleLogLevelChange(level)}
+                  onClick={() => handleLogLevelChange(option.value)}
                   className={
                     selected
                       ? 'rounded-md bg-card px-3 py-1.5 text-sm font-semibold text-foreground shadow-sm'

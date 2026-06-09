@@ -10,6 +10,7 @@ export type DataMaskingLevel = 'strict' | 'standard' | 'relaxed'
 export type FontScale = 'small' | 'medium' | 'large'
 export type ChatWidthMode = 'centered' | 'full'
 export type CloudGatewayMode = 'legacy' | 'v2'
+export type AppLogLevel = 'error' | 'warn' | 'info' | 'debug'
 
 export interface Settings {
   primaryModel: LlmProvider

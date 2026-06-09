@@ -199,6 +199,18 @@ fn normalize_lang(lang: Option<String>) -> String {
     }
 }
 
+/// Resolve the lotus tenant base URL. The `LOTUS_TENANT_BASE_URL` env var wins
+/// when set; otherwise it follows the active environment (production in release
+/// builds, the dev override in debug builds). See [`crate::environment`].
+/// Must stay aligned with auth/session-key minting so workplace queries hit the
+/// same tenant the session key was issued for. See [`crate::auth::client::base_url`].
+fn tenant_base_url() -> String {
+    std::env::var("LOTUS_TENANT_BASE_URL")
+        .unwrap_or_else(|_| crate::environment::tenant_host())
+        .trim_end_matches('/')
+        .to_string()
+}
+
 async fn fetch_workplace_directory(
     client: &reqwest::Client,
     session_key: &str,
@@ -206,7 +218,7 @@ async fn fetch_workplace_directory(
 ) -> anyhow::Result<WorkplaceDirectoryResponse> {
     let url = format!(
         "{}/v1/workplace-directory?types=employee_template,expert_team_template&lang={}",
-        crate::environment::tenant_host(),
+        tenant_base_url(),
         urlencoding::encode(language)
     );
     let resp = client

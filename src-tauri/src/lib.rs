@@ -68,6 +68,7 @@ pub fn run() {
             aijia_home
                 .ensure_global_dirs()
                 .expect("Failed to create global dirs");
+            let global_store = Arc::new(storage::GlobalConfigStore::new(aijia_home.global_dir()));
             telemetry::set_diagnostics_workspace(aijia_home.root().to_path_buf());
             commands::file::cleanup_workspace_clipboard_staging(&aijia_home.tmp_clipboard_dir(), 7);
             // GC expired legacy-root archives (30d retention).  Independent
@@ -229,7 +230,6 @@ pub fn run() {
             let task_store = Arc::new(runtime::store::InMemoryTaskStore::new());
 
             // Initialize cloud auth manager
-            let global_store = Arc::new(storage::GlobalConfigStore::new(aijia_home.global_dir()));
             // Dev-only: seed the gateway-host override from persisted config so
             // auth/LLM paths (which have no app handle) see it. No-op / not
             // compiled in release builds.
