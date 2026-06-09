@@ -1,11 +1,12 @@
 /**
  * @designSource copied from Wukong about settings page, adapted to AI 小家 branding.
  */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ComponentProps } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
+import { getLogLevel, setLogLevel } from '@/lib/tauri'
 import { cn } from '@/lib/utils'
 import type { DataMaskingLevel } from '@/types/settings'
 
@@ -71,6 +72,16 @@ export function AboutPanel({
 }: AboutPanelProps) {
   const { t } = useTranslation()
   const [uploadingLogs, setUploadingLogs] = useState(false)
+  const [logLevel, setLogLevelState] = useState('info')
+
+  useEffect(() => {
+    getLogLevel().then(setLogLevelState).catch(() => {})
+  }, [])
+
+  const handleLogLevelChange = (level: string) => {
+    setLogLevelState(level)
+    setLogLevel(level).catch(() => {})
+  }
 
   const handleUploadLogs = async () => {
     if (uploadingLogs) return
@@ -150,6 +161,36 @@ export function AboutPanel({
           <PillButton onClick={handleUploadLogs} disabled={uploadingLogs}>
             {uploadingLogs ? t('settings.about.uploading') : t('settings.about.uploadLogs')}
           </PillButton>
+        </div>
+
+        <div className="flex items-center justify-between gap-8">
+          <div className="flex flex-col gap-1">
+            <span className="text-base font-semibold text-foreground">{t('settings.about.logLevel')}</span>
+            <div className="text-sm text-muted-foreground">{t('settings.about.logLevelDesc')}</div>
+          </div>
+          <div className="inline-flex rounded-lg bg-muted p-1" role="radiogroup" aria-label={t('settings.about.logLevel')}>
+            {(['error', 'warn', 'info', 'debug'] as const).map((level) => {
+              const selected = logLevel === level
+              const label = t(`settings.about.logLevel${level.charAt(0).toUpperCase()}${level.slice(1)}` as never)
+              return (
+                <button
+                  key={level}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  aria-label={label}
+                  onClick={() => handleLogLevelChange(level)}
+                  className={
+                    selected
+                      ? 'rounded-md bg-card px-3 py-1.5 text-sm font-semibold text-foreground shadow-sm'
+                      : 'rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground'
+                  }
+                >
+                  {label}
+                </button>
+              )
+            })}
+          </div>
         </div>
       </section>
     </div>

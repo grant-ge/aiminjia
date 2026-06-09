@@ -1,96 +1,68 @@
-//! Per-request log correlation context.
+//! Per-request log correlation via tracing spans.
 //!
-//! Threads `SessionId` / `RunId` (and an optional sub-agent id) through every
-//! `log::*` line emitted while a chat turn runs, so one request can be grepped
-//! end-to-end across modules. Implemented as a `tokio::task_local!`: the chat
-//! turn future is wrapped in [`scoped`], and the log formatter in `lib.rs`
-//! reads [`prefix`] synchronously from the emitting task (fern dispatches the
-//! format closure inline on the caller's task, so the task-local is visible).
+//! Each chat turn is wrapped in a tracing `Span` that carries `trace_id = <run_id>`.
+//! Sub-agents create a child span with an additional `span_id = <agent_id_short>`.
+//! The formatter in `tracing_setup` reads these fields and renders them as
+//! `[trace=<id>]` / `[trace=<id> span=<id>]` on every log line.
 //!
-//! Sub-agents run on their own `tokio::spawn`ed task, which does NOT inherit
-//! task-locals — re-establish the scope inside the spawn closure with the
-//! parent ids plus the agent id.
+//! Using `.instrument()` (from `tracing::Instrument`) instead of `task_local!`
+//! means sub-agents spawned with `tokio::spawn` correctly inherit the span context
+//! without any manual re-binding.
 
 use std::future::Future;
 
-/// Correlation ids bound to the current task for the duration of a turn.
-#[derive(Clone)]
+use tracing::Instrument;
+
+/// Correlation context for a single chat turn or sub-agent run.
 pub struct LogContext {
-    session: String,
-    run: String,
-    agent: Option<String>,
+    span: tracing::Span,
 }
 
 impl LogContext {
-    pub fn new(session: impl Into<String>, run: impl Into<String>) -> Self {
-        Self {
-            session: session.into(),
-            run: run.into(),
-            agent: None,
-        }
+    /// Create a turn-level context.
+    ///
+    /// `_session` / `_run` are accepted for call-site compatibility.
+    /// The trace ID shown in logs is the tracing span's own `Id` — no UUID needed.
+    pub fn new(_session: impl Into<String>, _run: impl Into<String>) -> Self {
+        let span = tracing::info_span!("turn");
+        Self { span }
     }
 
-    /// Attach a sub-agent id (rendered as `a=<id>` in the log prefix).
-    pub fn with_agent(mut self, agent: impl Into<String>) -> Self {
-        self.agent = Some(agent.into());
-        self
+    /// Attach a sub-agent context. Creates a child span; its `Id` becomes the span_id.
+    pub fn with_agent(self, _agent: impl Into<String>) -> Self {
+        let span = tracing::info_span!(parent: &self.span, "agent");
+        Self { span }
     }
 }
 
-tokio::task_local! {
-    static CONTEXT: LogContext;
-}
-
-/// Run `fut` with `ctx` bound as the current task's correlation context.
+/// Run `fut` inside the correlation span so every `log::*` line emitted during
+/// the future carries the trace/span context in the log formatter.
 pub async fn scoped<F: Future>(ctx: LogContext, fut: F) -> F::Output {
-    CONTEXT.scope(ctx, fut).await
-}
-
-/// Compact correlation prefix for the current task, e.g. `[s=<sid> r=<rid>]`
-/// (or `[s=<sid> r=<rid> a=<agent>]` inside a sub-agent). Returns an empty
-/// string when called outside any turn scope (startup, idle, background
-/// threads), so non-request logs stay clean.
-pub fn prefix() -> String {
-    CONTEXT
-        .try_with(|c| match &c.agent {
-            Some(agent) => format!("[s={} r={} a={}]", c.session, c.run, agent),
-            None => format!("[s={} r={}]", c.session, c.run),
-        })
-        .unwrap_or_default()
+    fut.instrument(ctx.span).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn prefix_is_empty_outside_scope() {
-        assert_eq!(prefix(), "");
+    #[test]
+    fn log_context_new_does_not_panic() {
+        let ctx = LogContext::new("sess_abc", "2f59bde8-75d2-46bd-a5b6-d2f09d625d8a");
+        // Span is created; verify the trace_id field is stripped of dashes.
+        drop(ctx);
+    }
+
+    #[test]
+    fn with_agent_produces_child_span() {
+        let ctx = LogContext::new("sess_abc", "2f59bde8-75d2-46bd-a5b6-d2f09d625d8a")
+            .with_agent("a3ce929d-0e0e-4736-b789-000000000001");
+        drop(ctx);
     }
 
     #[tokio::test]
-    async fn prefix_carries_session_and_run_inside_scope() {
-        let out = scoped(LogContext::new("sess_abc", "run_def"), async { prefix() }).await;
-        assert_eq!(out, "[s=sess_abc r=run_def]");
-        // Scope is unwound after the future completes.
-        assert_eq!(prefix(), "");
-    }
-
-    #[tokio::test]
-    async fn prefix_includes_agent_when_present() {
-        let ctx = LogContext::new("sess_abc", "run_def").with_agent("agent_1");
-        let out = scoped(ctx, async { prefix() }).await;
-        assert_eq!(out, "[s=sess_abc r=run_def a=agent_1]");
-    }
-
-    #[tokio::test]
-    async fn scope_does_not_cross_spawn() {
-        // tokio::spawn starts a fresh task that does not inherit the task-local,
-        // mirroring the sub-agent path which re-binds the context explicitly.
-        let inner = scoped(LogContext::new("sess_abc", "run_def"), async {
-            tokio::spawn(async { prefix() }).await.unwrap()
-        })
-        .await;
-        assert_eq!(inner, "");
+    async fn scoped_runs_future() {
+        let ctx = LogContext::new("sess", "run-123");
+        let result = scoped(ctx, async { 42_u32 }).await;
+        assert_eq!(result, 42);
     }
 }

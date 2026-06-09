@@ -11,6 +11,7 @@ use chrono::{DateTime, Utc};
 use once_cell::sync::Lazy;
 use serde::Deserialize;
 use tauri::{Emitter, Manager};
+use tracing::Instrument;
 
 use crate::auth::AuthManager;
 use crate::llm::compact_summary_client::LlmCompactSummaryClient;
@@ -757,7 +758,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
 
         // --- Build effective tool defs (empty when force_no_tools) ---
         let effective_tools: Option<Vec<ToolDefinition>> = if input.force_no_tools {
-            log::info!(
+            log::debug!(
                 "[run_llm_step] force_no_tools=true — sending empty tool_defs (conv={})",
                 input.conversation_id
             );
@@ -782,7 +783,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         // --- Retry loop: up to MAX_STREAM_RETRIES for gateway / stream errors ---
         let mut stream_retry_count: u32 = 0;
         loop {
-            log::info!(
+            log::debug!(
                 "[run_llm_step] Calling gateway.stream_message() messages={} tools={} \
                  force_no_tools={} conv={} run={}",
                 chat_messages.len(),
@@ -820,7 +821,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
 
             let (_task_id, mut stream, _mask_ctx, mut cancel_rx) = match stream_result {
                 Ok(r) => {
-                    log::info!("[run_llm_step] gateway.stream_message() OK task_id={}", r.0);
+                    log::debug!("[run_llm_step] gateway.stream_message() OK task_id={}", r.0);
                     r
                 }
                 Err(e) => {
@@ -1136,7 +1137,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                                 let clean = strip_thinking_tag(&delta);
                                 if !clean.is_empty() {
                                     iter_content.push_str(&clean);
-                                    log::info!(
+                                    log::debug!(
                                         "[stream-timing-be] delta len={} total={} run={}",
                                         clean.len(), iter_content.len(), run_id.as_str(),
                                     );
@@ -1304,7 +1305,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                                 return Err(classified);
                             }
                             None => {
-                                log::info!(
+                                log::debug!(
                                     "[run_llm_step] Stream ended (None) conv={}",
                                     input.conversation_id
                                 );
@@ -1372,7 +1373,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             let (normalized_stop_reason, raw_stop_reason) =
                 normalize_stop_reason_for_tool_calls(stop_reason.clone(), true);
             if let Some(raw) = raw_stop_reason {
-                log::info!(
+                log::debug!(
                     "[run_llm_step] normalized stop_reason={:?} raw_stop_reason={:?} \
                      tool_calls={} conv={}",
                     normalized_stop_reason,
@@ -1505,7 +1506,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                 e
             )));
         }
-        log::info!(
+        log::debug!(
             "[persist_user_message] Saved user message id={} conv={}",
             msg_id,
             conversation_id
@@ -1524,7 +1525,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             return Ok(None);
         }
         let msg_id = uuid::Uuid::new_v4().to_string();
-        log::info!(
+        log::debug!(
             "[persist_iteration_assistant_message] Saving assistant[toolCalls] id={} conv={} content_len={}",
             msg_id,
             conversation_id,
@@ -1652,7 +1653,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
 
         // Skip persisting empty messages (tool-call-only iterations produce no visible text).
         if trimmed.is_empty() {
-            log::info!(
+            log::debug!(
                 "[persist_assistant_message] Skipping empty assistant message for conv={} id={}",
                 conversation_id,
                 message_id
@@ -1882,7 +1883,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             format!("{}\n\n{}", parts.static_section, parts.dynamic_section)
         };
 
-        log::info!(
+        log::debug!(
             "[build_system_prompt] mode=daily len={} persona={} product_name={}",
             prompt.len(),
             persona
@@ -1922,7 +1923,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             persona: persona.as_ref(),
             product_name: product_name.as_deref(),
         });
-        log::info!(
+        log::debug!(
             "[build_prompt_snapshot] mode=daily len={} persona={} product_name={}",
             assembly.flatten().len(),
             persona
@@ -2037,7 +2038,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                 .keys()
                 .map(|k| k.as_str())
                 .collect();
-            log::info!("[tool-desc-trace] built overrides: keys={:?}", keys);
+            log::debug!("[tool-desc-trace] built overrides: keys={:?}", keys);
         }
 
         let visible_tool_defs = chat_runtime_impl::build_visible_tool_defs(
@@ -2087,7 +2088,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             authorized_workspace.is_some(),
         )?;
 
-        log::info!(
+        log::debug!(
             "[load_history] conv={} loaded {} messages via history.rs",
             conversation_id,
             chat_messages.len(),
@@ -2185,7 +2186,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
 
         let env_info = build_env_info(&workspace_path, authorized_ref, runtime_info.as_ref()).await;
 
-        log::info!(
+        log::debug!(
             "[get_env_info] conv={} workspace={} authorized={} env_info_len={}",
             conversation_id,
             workspace_path.display(),
@@ -2236,7 +2237,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         // (returns Some(json_defs)), so the driver overrides this empty default.
         // This impl exists only to satisfy the trait — it should never be the value
         // actually used in a turn.
-        log::info!(
+        log::debug!(
             "[tool-desc-trace] entered get_tool_defs (fallback path — should be overridden by load_turn_config_overrides)"
         );
         Ok(vec![])
@@ -3508,6 +3509,7 @@ impl TauriChatCommandAdapter {
 
     /// 与 `send_message` 相同，但接受调用方已预构造的 `ChatTurnRequest`，
     /// 保留其中的 `run_id`，用于外部需要在发送前注册 run_id 的场景（如 DingtalkReplyManager）。
+    #[tracing::instrument(skip_all)]
     pub async fn send_chat_request(&self, request: ChatTurnRequest) -> Result<(), String> {
         let conversation_id = request.conversation_id.as_str().to_string();
         let run_id = request.run_id.clone();
@@ -3593,7 +3595,7 @@ impl TauriChatCommandAdapter {
             attachments.len()
         );
         for att in &attachments {
-            log::info!(
+            log::debug!(
                 "[send_message] attachment: name={} path={} kind={} type={}",
                 att.file_name,
                 att.file_path,
@@ -3716,6 +3718,7 @@ impl TauriChatCommandAdapter {
         Ok(captured_run_id)
     }
 
+    #[tracing::instrument(skip_all)]
     async fn run_chat_request_internal(&self, request: ChatTurnRequest) -> Result<(), String> {
         let conversation_id = request.conversation_id.as_str().to_string();
         let run_id = request.run_id.clone();
@@ -4099,6 +4102,8 @@ impl TauriChatCommandAdapter {
         let gateway = self.services.gateway.clone();
         let host: Arc<dyn crate::transport::runtime_host::RuntimeHost> =
             Arc::new(TauriRuntimeHost::new(self.services.app.clone()));
+        // Capture the current span so auto-title logs share the same trace ID as the chat turn.
+        let span = tracing::Span::current();
         tauri::async_runtime::spawn(async move {
             if delay_ms > 0 {
                 tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
@@ -4118,7 +4123,7 @@ impl TauriChatCommandAdapter {
             )
             .await;
             clear_auto_title_inflight(&conversation_id);
-        });
+        }.instrument(span));
     }
 
     pub async fn create_conversation(&self) -> Result<String, String> {

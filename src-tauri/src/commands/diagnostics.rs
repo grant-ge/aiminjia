@@ -131,8 +131,8 @@ pub async fn upload_diagnostic_logs(
         .await
         .map_err(|e| format!("无法获取登录凭证: {e}"))?;
 
-    // Read the active tauri-plugin-log file (KeepOne rotation, single file).
-    let app_log_path = aijia_home.root().join("logs").join("renlijia.log");
+    // Read today's active log file (daily rotation: renlijia.YYYY-MM-DD).
+    let app_log_path = crate::tracing_setup::current_log_file(&aijia_home.root().join("logs"));
     let app_log_raw = std::fs::read_to_string(&app_log_path).unwrap_or_default();
 
     // Read metrics.jsonl (active shard only — rotated `metrics.{N}.jsonl`

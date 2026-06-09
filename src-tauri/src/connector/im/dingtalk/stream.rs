@@ -229,7 +229,7 @@ impl DingtalkStreamClient {
             .json()
             .await
             .context("Failed to parse stream open response")?;
-        log::info!("[dingtalk-stream] open response parsed");
+        log::debug!("[dingtalk-stream] open response parsed");
         Ok((data.endpoint, data.ticket))
     }
 
@@ -262,7 +262,7 @@ impl DingtalkStreamClient {
         );
 
         let (mut write, mut read) = ws_stream.split();
-        log::info!("[dingtalk-stream] entering ws read loop");
+        log::debug!("[dingtalk-stream] entering ws read loop");
 
         // 每 8 秒发一次 WebSocket Ping 保活
         let mut heartbeat = tokio::time::interval(Duration::from_secs(8));
@@ -319,7 +319,7 @@ impl DingtalkStreamClient {
                                     write.send(Message::Text(ack.to_string().into())).await.ok();
 
                                     if let Some(data_str) = &frame.data {
-                                        log::info!(
+                                        log::debug!(
                                             "[dingtalk-stream] EVENT/CALLBACK topic={:?} payload={}",
                                             frame.headers.topic,
                                             data_str
@@ -328,7 +328,7 @@ impl DingtalkStreamClient {
                                             ParseResult::Forward(channel_msg) => {
                                                 let msg_id = channel_msg.msg_id.clone();
                                                 let send_result = self.message_tx.send(channel_msg).await;
-                                                log::info!(
+                                                log::debug!(
                                                     "[dingtalk-stream] forwarded msg_id={} send_ok={}",
                                                     msg_id,
                                                     send_result.is_ok()

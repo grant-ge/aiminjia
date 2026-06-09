@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use tokio::io::AsyncReadExt;
-use tokio::process::Child;
+use tokio::process::{Child, Command};
 use tokio::task::JoinHandle;
 
 use crate::runtime::agent::output_writer::{self, TranscriptLine};
@@ -363,6 +363,40 @@ pub async fn collect_reader(
         crate::storage::console_decode::decode_console_bytes(&bytes),
         truncated,
     ))
+}
+
+/// Inject the bundled runtime bin dir into a child shell's PATH so that
+/// shebang scripts like `npm`/`npx`/`uvx` (`#!/usr/bin/env node` /
+/// `python3`) can locate the interpreter we ship. Without this every
+/// `npm install -g …` emitted by the LLM dies with
+/// `env: node: No such file or directory` (observed on real customer
+/// machines, see screenshots in the 2026-05-21 review).
+///
+/// No-op for legacy/test paths whose `ToolExecutionContext` does not carry
+/// a runtime resolver.
+pub fn inject_bundled_runtime_path(ctx: &ToolExecutionContext, command: &mut Command) {
+    let Some(cap) = ctx.capability.as_ref() else {
+        return;
+    };
+    let Some(resolver) = cap.runtime_resolver.as_ref() else {
+        return;
+    };
+    let Ok(deps) = resolver.workspace_dependencies() else {
+        return;
+    };
+    crate::runtime::dependencies::prepend_bundle_bin_to_path_tokio(command, &deps.node);
+}
+
+/// Inject the current tracing span's trace/span IDs as environment variables
+/// so child processes (Bash, Python, Node) can propagate them further.
+///
+/// Variables set:
+///   TRACE_ID  — the full trace ID (`instance.ms.seq`)
+///   SPAN_ID   — the current span's seq (5-digit)
+pub fn inject_trace_env(command: &mut Command) {
+    if let Some((trace_id, span_id)) = crate::tracing_setup::current_span_context() {
+        command.env("TRACE_ID", trace_id).env("SPAN_ID", span_id);
+    }
 }
 
 /// Classify a shell exit code + stderr into a category we can route on the

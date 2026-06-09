@@ -469,7 +469,7 @@ impl ClaudeProvider {
                 }
             }
         } else {
-            log::info!("[tool-desc-trace] LLM request: no tools in body");
+            log::debug!("[tool-desc-trace] LLM request: no tools in body");
         }
 
         body

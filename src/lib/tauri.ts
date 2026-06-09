@@ -1455,6 +1455,16 @@ export function uploadDiagnosticLogs(): Promise<UploadDiagnosticsResult> {
   return invoke<UploadDiagnosticsResult>('upload_diagnostic_logs')
 }
 
+/** Return the currently active log level (error | warn | info | debug | trace). */
+export function getLogLevel(): Promise<string> {
+  return invoke<string>('get_log_level')
+}
+
+/** Change the active log level and persist it to global/config.json. */
+export function setLogLevel(level: string): Promise<void> {
+  return invoke<void>('set_log_level', { level })
+}
+
 /**
  * Open the workspace root directory in the system file manager.
  */

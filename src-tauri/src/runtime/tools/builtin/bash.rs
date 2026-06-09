@@ -21,8 +21,8 @@ use crate::runtime::tools::permission::{PermissionDecision, PermissionReason};
 
 use super::shell_common::{
     ExitKind, MAX_OUTPUT_BYTES, collect_reader, content_from_output, emit_shell_failure_diagnostic,
-    format_cancel_message, format_command_failure, interpret_command_result,
-    kill_child_process_tree, optional_transcript_path,
+    format_cancel_message, format_command_failure, inject_bundled_runtime_path, inject_trace_env,
+    interpret_command_result, kill_child_process_tree, optional_transcript_path,
     read_merged_streams_with_progress_and_optional_transcript, tail_n_lines,
     truncated_to_max_bytes,
 };
@@ -426,6 +426,8 @@ impl RuntimeTool for BashTool {
 
         let mut shell = Command::new("/bin/sh");
         configure_child_process_group(&mut shell);
+        inject_bundled_runtime_path(&ctx, &mut shell);
+        inject_trace_env(&mut shell);
 
         let mut child = shell
             .arg("-c")

@@ -129,17 +129,18 @@ impl SessionKeyResponse {
 
 /// HTTP client for Lotus tenant portal.
 pub struct AuthClient {
-    client: Client,
+    client: reqwest_middleware::ClientWithMiddleware,
 }
 
 impl AuthClient {
     pub fn new() -> Self {
+        let inner = Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(15))
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .unwrap_or_else(|_| Client::new());
         Self {
-            client: Client::builder()
-                .connect_timeout(std::time::Duration::from_secs(15))
-                .timeout(std::time::Duration::from_secs(30))
-                .build()
-                .unwrap_or_else(|_| Client::new()),
+            client: crate::tracing_setup::traced_client(inner),
         }
     }
 

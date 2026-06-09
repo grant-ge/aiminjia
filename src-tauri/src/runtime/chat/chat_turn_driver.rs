@@ -1536,7 +1536,7 @@ impl RuntimeChatTurnDriver {
                 .and_then(|v| v.get("description").and_then(|d| d.as_str()))
                 .map(|d| d.contains("<available_subagent_types>"))
                 .unwrap_or(false);
-            log::info!(
+            log::debug!(
                 "[tool-desc-trace] get_tool_defs returned: count={} agent_desc_has_emp_section={}",
                 tool_defs.len(),
                 agent_has_emp,
@@ -1574,7 +1574,7 @@ impl RuntimeChatTurnDriver {
         {
             let default_count = tool_defs.len();
             let overrides_has = overrides.tool_defs.is_some();
-            log::info!(
+            log::debug!(
                 "[tool-desc-trace] merge: overrides.tool_defs.is_some={} default_count={}",
                 overrides_has,
                 default_count,
@@ -1588,7 +1588,7 @@ impl RuntimeChatTurnDriver {
                 .and_then(|v| v.get("description").and_then(|d| d.as_str()))
                 .map(|d| d.contains("<available_subagent_types>"))
                 .unwrap_or(false);
-            log::info!(
+            log::debug!(
                 "[tool-desc-trace] final tool_defs: count={} agent_desc_has_emp_section={}",
                 final_tool_defs.len(),
                 agent_has_emp,

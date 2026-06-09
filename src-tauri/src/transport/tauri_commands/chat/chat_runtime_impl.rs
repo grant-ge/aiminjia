@@ -198,7 +198,7 @@ pub async fn build_request_scoped_tool_overrides(
         },
     );
 
-    log::info!("[tool-desc-trace] returning {} overrides", out.len());
+    log::debug!("[tool-desc-trace] returning {} overrides", out.len());
     out
 }
 
