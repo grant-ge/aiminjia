@@ -143,6 +143,11 @@ wiremock = "0.6"
 tokio = { version = "1", features = ["test-util"] }
 mockito = "1"
 
+[[test]]
+name = "network_probe_integration_test"
+path = "tests/network_probe_integration_test.rs"
+required-features = ["test-support"]
+
 [features]
 default = []
 # Enable E2E UI automation. Activates the optional `tauri-plugin-pilot` dep,

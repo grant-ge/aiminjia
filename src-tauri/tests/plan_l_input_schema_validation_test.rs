@@ -306,7 +306,7 @@ mod l5_builtin_tool_validation {
 
     #[test]
     fn l5_bash_validates_missing_command_field() {
-        let tool = BashTool;
+        let tool = BashTool::default();
         let bad = json!({"timeout": 30000});
         let result = tool.validate_input(&bad);
         assert!(result.is_some());
@@ -318,7 +318,7 @@ mod l5_builtin_tool_validation {
 
     #[test]
     fn l5_bash_validates_command_must_be_string() {
-        let tool = BashTool;
+        let tool = BashTool::default();
         let bad = json!({"command": 42});
         let result = tool.validate_input(&bad);
         assert!(result.is_some());
@@ -326,14 +326,14 @@ mod l5_builtin_tool_validation {
 
     #[test]
     fn l5_bash_accepts_valid_input() {
-        let tool = BashTool;
+        let tool = BashTool::default();
         let good = json!({"command": "ls -la"});
         assert!(tool.validate_input(&good).is_none());
     }
 
     #[test]
     fn l5_bash_accepts_valid_input_with_timeout() {
-        let tool = BashTool;
+        let tool = BashTool::default();
         let good = json!({"command": "sleep 1", "timeout": 5000});
         assert!(tool.validate_input(&good).is_none());
     }

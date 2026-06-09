@@ -41,7 +41,10 @@ impl FeishuTokenSource {
             app_id,
             app_secret,
             api_base,
-            http: reqwest::Client::new(),
+            http: reqwest::Client::builder()
+                .no_proxy()
+                .build()
+                .expect("build reqwest test client"),
         }
     }
 }

@@ -897,6 +897,7 @@ fn build_default_catalog() -> ToolCatalog {
         .with_read_only(false),
         json!({
             "type": "object",
+            "required": [],
             "properties": {}
         }),
     ));

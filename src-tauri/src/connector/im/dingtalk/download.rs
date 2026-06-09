@@ -72,11 +72,20 @@ impl DingtalkFileDownloader {
         dest_dir: PathBuf,
         api_base: String,
     ) -> Self {
+        let client = {
+            let builder = Client::builder().timeout(DOWNLOAD_TIMEOUT);
+            #[cfg(test)]
+            let builder = if api_base.starts_with("http://127.0.0.1")
+                || api_base.starts_with("http://localhost")
+            {
+                builder.no_proxy()
+            } else {
+                builder
+            };
+            builder.build().expect("build reqwest client")
+        };
         Self {
-            client: Client::builder()
-                .timeout(DOWNLOAD_TIMEOUT)
-                .build()
-                .expect("build reqwest client"),
+            client,
             token_cache,
             app_key,
             app_secret,

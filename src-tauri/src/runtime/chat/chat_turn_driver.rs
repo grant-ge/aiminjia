@@ -2242,11 +2242,10 @@ impl RuntimeChatTurnDriver {
                             continue 'turn;
                         }
 
-                        state.full_content.push_str(
-                            "
-
-[输出 token 上限已达到，系统已停止自动续写；以上为当前已生成内容。]",
-                        );
+                        let max_tokens_notice =
+                            "\n\n[输出 token 上限已达到，系统已停止自动续写；以上为当前已生成内容。]";
+                        state.full_content.push_str(max_tokens_notice);
+                        state.final_only_content.push_str(max_tokens_notice);
                         turn_completed_normally = true;
                         break 'turn;
                     }

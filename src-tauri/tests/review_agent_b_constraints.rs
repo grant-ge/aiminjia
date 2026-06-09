@@ -15,6 +15,10 @@ const LEGACY_TAURI_ALLOWED: &[&str] = &[
     // worker_runtime currently holds a tauri::AppHandle and emits stream deltas
     // via tauri::Emitter directly. Pending P-runtime-host-trait refactor.
     "runtime/agent/worker_runtime.rs",
+    // Skill refresh bridges still need AppHandle to request frontend-side plugin
+    // refresh work. Keep the exception narrow to these two bridge tools.
+    "runtime/tools/builtin/load_skill.rs",
+    "runtime/tools/builtin/refresh_skills.rs",
 ];
 
 fn collect_rs_files(root: &Path, out: &mut Vec<PathBuf>) {

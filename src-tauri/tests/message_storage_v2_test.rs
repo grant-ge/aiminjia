@@ -206,6 +206,7 @@ fn top_level_tool_fields_survive_get_messages_read_path() {
         sequence: Some(1),
         seq: Some(1),
         rev: Some(1),
+        error: None,
     };
     let tool = StoredMessage {
         id: "tool-1".into(),
@@ -221,6 +222,7 @@ fn top_level_tool_fields_survive_get_messages_read_path() {
         sequence: Some(2),
         seq: Some(2),
         rev: Some(1),
+        error: None,
     };
     fs::write(
         &shard,

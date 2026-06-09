@@ -41,6 +41,12 @@ fn stream_error_maps_to_streaming_error_with_error_and_raw_error() {
     let legacy = mapped(RuntimeEventKind::StreamError {
         error: "LLM 超时".to_string(),
         raw_error: Some("upstream timeout".to_string()),
+        code: None,
+        retryable: None,
+        handling: None,
+        request_phase: None,
+        current_route: None,
+        alternatives: None,
     });
 
     assert_eq!(legacy.name, "streaming:error");

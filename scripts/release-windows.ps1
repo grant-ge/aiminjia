@@ -4,8 +4,9 @@
 # generates the Tauri updater .sig, uploads everything to the public OSS path,
 # and cleans up staging. Zero Python dependency - uses Node (ali-oss) for OSS.
 #
-# Credentials are stored in Windows Credential Manager after the first run,
-# so subsequent runs only need -Version and -Type.
+# Credentials are read from environment variables or the local
+# .env.release-windows.local file first. On FullLanguage PowerShell, values can
+# also be read from Windows Credential Manager after the first run.
 #
 # Usage:
 #   .\scripts\release-windows.ps1 -Version 0.5.23-beta.1 -Type beta
@@ -16,7 +17,15 @@
 #   - OSS access key id + secret
 #   - Tauri signing key password
 #
-# Override stored creds: -Reconfigure
+# Local credential file (ignored by git):
+#   .env.release-windows.local
+#
+#   AIJIA_WINDOWS_CERT_THUMBPRINT=<sha1 thumbprint>
+#   OSS_ACCESS_KEY_ID=<oss key id>
+#   OSS_ACCESS_KEY_SECRET=<oss key secret>
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD=<tauri key password>
+#
+# Override env/stored creds: -Reconfigure
 # Skip cleanup of staging:  -KeepStaging
 #
 # Prereqs:
@@ -52,6 +61,7 @@ $SigPath  = "$ExePath.sig"
 $TauriKey = Join-Path $HOME '.tauri\aijia.key'
 
 $StagingBase = "https://lotus.renlijia.com/aijia/staging/unsigned/v$Version"
+$ReleaseEnvPath = Join-Path $RepoRoot '.env.release-windows.local'
 
 # -- helpers --------------------------------------------------------------
 function Write-Section($title) {
@@ -87,6 +97,10 @@ function Get-Signtool {
 # credential under target name AIjia.<key>.
 function Save-Credential {
     param([string]$Name, [string]$Value)
+    if (-not $CanUseCredentialManager) {
+        Write-Warn "Credential Manager write skipped for $Name; save it in $ReleaseEnvPath to avoid prompting next run."
+        return
+    }
     cmdkey /generic:"AIjia.$Name" /user:aijia /pass:"$Value" | Out-Null
 }
 
@@ -128,18 +142,70 @@ $credSource = @(
     '    }',
     '}'
 ) -join "`n"
-if (-not ('AIjiaCred' -as [type])) {
+$CanUseCredentialManager = $ExecutionContext.SessionState.LanguageMode -eq 'FullLanguage'
+if ($CanUseCredentialManager -and -not ('AIjiaCred' -as [type])) {
     Add-Type -TypeDefinition $credSource -ErrorAction Stop
+} elseif (-not $CanUseCredentialManager) {
+    Write-Warn "PowerShell LanguageMode is $($ExecutionContext.SessionState.LanguageMode); Credential Manager reads are disabled."
 }
 
 function Load-Credential {
     param([string]$Name)
+    if (-not $CanUseCredentialManager) { return $null }
     return [AIjiaCred]::Read("AIjia.$Name")
+}
+
+function Import-ReleaseEnvFile {
+    param([string]$Path)
+    if (-not (Test-Path $Path)) { return }
+
+    $loaded = 0
+    foreach ($line in Get-Content -Path $Path -ErrorAction Stop) {
+        $trimmed = $line.Trim()
+        if (-not $trimmed -or $trimmed.StartsWith('#')) { continue }
+        if ($trimmed -notmatch '^([A-Za-z_][A-Za-z0-9_]*)=(.*)$') { continue }
+
+        $key = $Matches[1]
+        $value = $Matches[2].Trim()
+        if (
+            ($value.StartsWith('"') -and $value.EndsWith('"')) -or
+            ($value.StartsWith("'") -and $value.EndsWith("'"))
+        ) {
+            $value = $value.Substring(1, $value.Length - 2)
+        }
+
+        $existing = Get-Item -Path "Env:$key" -ErrorAction SilentlyContinue
+        if ($existing -and $existing.Value) { continue }
+        Set-Item -Path "Env:$key" -Value $value
+        $loaded += 1
+    }
+
+    if ($loaded -gt 0) {
+        Write-Ok "loaded $loaded values from $Path"
+    }
+}
+
+function Load-EnvCredential {
+    param([string]$Name)
+    $keys = switch ($Name) {
+        'Thumbprint'   { @('AIJIA_WINDOWS_CERT_THUMBPRINT', 'WINDOWS_CERT_THUMBPRINT', 'AUTHENTICODE_CERT_SHA1_THUMBPRINT') }
+        'OssKeyId'     { @('OSS_ACCESS_KEY_ID') }
+        'OssKeySecret' { @('OSS_ACCESS_KEY_SECRET') }
+        'TauriKeyPwd'  { @('TAURI_SIGNING_PRIVATE_KEY_PASSWORD', 'TAURI_PRIVATE_KEY_PASSWORD') }
+        default        { @() }
+    }
+    foreach ($key in $keys) {
+        $item = Get-Item -Path "Env:$key" -ErrorAction SilentlyContinue
+        if ($item -and $item.Value) { return $item.Value }
+    }
+    return $null
 }
 
 function Get-OrPrompt {
     param([string]$Name, [string]$Prompt, [switch]$Secret)
     if (-not $Reconfigure) {
+        $envValue = Load-EnvCredential -Name $Name
+        if ($envValue) { return (Sanitize-Input $envValue) }
         $existing = Load-Credential -Name $Name
         if ($existing) { return (Sanitize-Input $existing) }
     }
@@ -159,14 +225,11 @@ function Get-OrPrompt {
 function Sanitize-Input {
     param([string]$s)
     if ($null -eq $s) { return '' }
-    $sb = New-Object System.Text.StringBuilder
-    foreach ($ch in $s.ToCharArray()) {
-        $code = [int]$ch
-        # Keep only printable ASCII (0x21-0x7E).
-        if ($code -ge 0x21 -and $code -le 0x7E) { [void]$sb.Append($ch) }
-    }
-    return $sb.ToString()
+    # Keep only printable ASCII (0x21-0x7E).
+    return ($s -replace '[^\x21-\x7E]', '')
 }
+
+Import-ReleaseEnvFile -Path $ReleaseEnvPath
 
 # -- 0. Sanity: tauri key file present ------------------------------------
 if (-not (Test-Path $TauriKey)) {

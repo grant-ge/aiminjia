@@ -27,7 +27,7 @@ async fn bash_executes_echo_command() {
     let tmp = TempDir::new().unwrap();
     let ctx = make_ctx(&tmp);
 
-    let tool = BashTool;
+    let tool = BashTool::default();
     let result = tool
         .execute(json!({ "command": "echo hello" }), ctx)
         .await
@@ -45,7 +45,7 @@ async fn bash_returns_error_for_nonzero_exit_code() {
     let tmp = TempDir::new().unwrap();
     let ctx = make_ctx(&tmp);
 
-    let tool = BashTool;
+    let tool = BashTool::default();
     let result = tool.execute(json!({ "command": "exit 42" }), ctx).await;
 
     assert!(result.is_err(), "exit 42 should surface as tool error");
@@ -61,7 +61,7 @@ async fn bash_surfaces_dws_pat_no_permission_as_ask_required() {
     let tmp = TempDir::new().unwrap();
     let ctx = make_ctx(&tmp);
 
-    let tool = BashTool;
+    let tool = BashTool::default();
     let result = tool
         .execute(
             json!({
@@ -106,7 +106,7 @@ async fn bash_does_not_intercept_non_dws_pat_like_json() {
     let tmp = TempDir::new().unwrap();
     let ctx = make_ctx(&tmp);
 
-    let tool = BashTool;
+    let tool = BashTool::default();
     let result = tool
         .execute(
             json!({
@@ -128,7 +128,7 @@ async fn bash_allows_grep_exit_one_as_non_error() {
     std::fs::write(tmp.path().join("sample.txt"), "hello world\n").unwrap();
     let ctx = make_ctx(&tmp);
 
-    let tool = BashTool;
+    let tool = BashTool::default();
     let result = tool
         .execute(json!({ "command": "grep needle sample.txt" }), ctx)
         .await
@@ -145,7 +145,7 @@ async fn bash_runs_in_workspace_root() {
     std::fs::write(tmp.path().join("sentinel.txt"), b"marker").unwrap();
     let ctx = make_ctx(&tmp);
 
-    let tool = BashTool;
+    let tool = BashTool::default();
     let result = tool
         .execute(json!({ "command": "ls sentinel.txt" }), ctx)
         .await
@@ -163,7 +163,7 @@ async fn bash_merges_stdout_and_stderr() {
     let tmp = TempDir::new().unwrap();
     let ctx = make_ctx(&tmp);
 
-    let tool = BashTool;
+    let tool = BashTool::default();
     let result = tool
         .execute(
             json!({
@@ -197,7 +197,7 @@ async fn bash_returns_error_on_timeout() {
     let tmp = TempDir::new().unwrap();
     let ctx = make_ctx(&tmp);
 
-    let tool = BashTool;
+    let tool = BashTool::default();
     let result = tool
         .execute(json!({ "command": "sleep 10", "timeout": 1000 }), ctx)
         .await;
@@ -219,7 +219,7 @@ async fn bash_timeout_kills_descendant_processes() {
     let tmp = TempDir::new().unwrap();
     let ctx = make_ctx(&tmp);
 
-    let tool = BashTool;
+    let tool = BashTool::default();
     let result = tool
         .execute(
             json!({
@@ -261,7 +261,7 @@ async fn bash_returns_error_when_cancelled() {
         token_clone.cancel();
     });
 
-    let tool = BashTool;
+    let tool = BashTool::default();
     let result = tool.execute(json!({ "command": "sleep 10" }), ctx).await;
 
     assert!(result.is_err(), "cancelled command should return error");
@@ -295,7 +295,7 @@ async fn bash_cancel_kills_descendant_processes() {
         token_clone.cancel();
     });
 
-    let tool = BashTool;
+    let tool = BashTool::default();
     let result = tool
         .execute(
             json!({ "command": "sh -c 'sleep 2; echo orphan > cancel-child.txt' & wait" }),
@@ -337,7 +337,7 @@ async fn bash_cancel_does_not_report_background_stop_reason() {
         token_clone.cancel_with_reason(CancellationReason::BackgroundStop);
     });
 
-    let tool = BashTool;
+    let tool = BashTool::default();
     let result = tool.execute(json!({ "command": "sleep 10" }), ctx).await;
 
     assert!(result.is_err(), "cancelled command should return error");
@@ -353,7 +353,7 @@ async fn bash_denies_rm_rf_slash() {
     let tmp = TempDir::new().unwrap();
     let ctx = make_ctx(&tmp);
 
-    let tool = BashTool;
+    let tool = BashTool::default();
     let input = json!({ "command": "rm -rf /" });
     let decision = tool.check_permissions(&input, &ctx).await;
 
@@ -368,7 +368,7 @@ async fn bash_denies_write_to_etc() {
     let tmp = TempDir::new().unwrap();
     let ctx = make_ctx(&tmp);
 
-    let tool = BashTool;
+    let tool = BashTool::default();
     let input = json!({ "command": "echo evil > /etc/passwd" });
     let decision = tool.check_permissions(&input, &ctx).await;
 
@@ -380,7 +380,7 @@ async fn bash_denies_write_to_etc() {
 
 #[tokio::test]
 async fn bash_fails_without_capability_context() {
-    let tool = BashTool;
+    let tool = BashTool::default();
     let ctx = ToolExecutionContext::for_test("conv-1", "run-1", "tc-1");
 
     let result = tool.execute(json!({ "command": "echo hi" }), ctx).await;
