@@ -26,6 +26,10 @@ export interface ExpertTeamCatalogResult {
   error: unknown | null
 }
 
+export interface ExpertTeamCatalogOptions {
+  forceRefresh?: boolean
+}
+
 export interface ExpertTeamGroup {
   key: string
   category: ExpertTeamCategory | null
@@ -169,8 +173,11 @@ function directoryItemToTeam(
   }
 }
 
-export async function loadExpertTeamCatalog(language?: string): Promise<ExpertTeamCatalogResult> {
-  const directory = await workplaceDirectoryCatalog(language)
+export async function loadExpertTeamCatalog(
+  language?: string,
+  options: ExpertTeamCatalogOptions = {},
+): Promise<ExpertTeamCatalogResult> {
+  const directory = await workplaceDirectoryCatalog(language, { forceRefresh: options.forceRefresh })
   const teamItems = directory.items.filter((item) => item.resourceType === 'expert_team_template')
   if (teamItems.length === 0) return { teams: [], categories: [], error: null }
 

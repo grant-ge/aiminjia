@@ -6,7 +6,10 @@ import type { EmployeeTemplateSnapshot, WorkplaceDirectoryResponse } from '@/lib
 const mocks = vi.hoisted(() => ({
   employeeTemplateCatalog: vi.fn<() => Promise<EmployeeTemplateSnapshot[]>>(async () => []),
   employeeTemplateRefresh: vi.fn<() => Promise<number>>(async () => 0),
-  workplaceDirectoryCatalog: vi.fn<() => Promise<WorkplaceDirectoryResponse>>(
+  workplaceDirectoryCatalog: vi.fn<(
+    lang?: string,
+    options?: { forceRefresh?: boolean },
+  ) => Promise<WorkplaceDirectoryResponse>>(
     async () => ({ schemaVersion: 1, categories: [], items: [] }),
   ),
 }))
@@ -59,6 +62,10 @@ describe('HireWizard', () => {
     await waitFor(() => {
       expect(mocks.employeeTemplateRefresh).toHaveBeenCalledTimes(1)
     })
+    expect(mocks.workplaceDirectoryCatalog).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ forceRefresh: true }),
+    )
     mocks.employeeTemplateRefresh.mockClear()
     mocks.employeeTemplateCatalog.mockClear()
     mocks.workplaceDirectoryCatalog.mockClear()
@@ -68,6 +75,10 @@ describe('HireWizard', () => {
     await waitFor(() => {
       expect(mocks.employeeTemplateRefresh).toHaveBeenCalledTimes(1)
     })
+    expect(mocks.workplaceDirectoryCatalog).toHaveBeenCalledWith(
+      expect.any(String),
+      { forceRefresh: true },
+    )
     expect(mocks.employeeTemplateCatalog).toHaveBeenCalled()
   })
 

@@ -2489,10 +2489,20 @@ export interface WorkplaceDirectoryResponse {
   items: WorkplaceDirectoryItem[]
 }
 
-export function workplaceDirectoryCatalog(lang?: string): Promise<WorkplaceDirectoryResponse> {
+export interface WorkplaceDirectoryCatalogOptions {
+  forceRefresh?: boolean
+}
+
+export function workplaceDirectoryCatalog(
+  lang?: string,
+  options: WorkplaceDirectoryCatalogOptions = {},
+): Promise<WorkplaceDirectoryResponse> {
+  const args: { lang?: string; forceRefresh?: boolean } = {}
+  if (lang) args.lang = lang
+  if (options.forceRefresh) args.forceRefresh = true
   return invoke<WorkplaceDirectoryResponse>(
     'workplace_directory_catalog',
-    lang ? { lang } : {},
+    args,
   )
 }
 

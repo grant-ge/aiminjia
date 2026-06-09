@@ -72,11 +72,11 @@ export function ExpertTeamsPage() {
     ? teams.find((item) => item.id === selectedTeamId) ?? null
     : null
 
-  const loadCatalog = useCallback(async () => {
+  const loadCatalog = useCallback(async (options: { forceRefresh?: boolean } = {}) => {
     setCatalogLoading(true)
     setCatalogLoadError(null)
     try {
-      const loaded = await loadExpertTeamCatalog(i18n.language)
+      const loaded = await loadExpertTeamCatalog(i18n.language, options)
       setTeams(loaded.teams)
       setDirectoryCategories(loaded.categories)
       setRemoteExpertTeams(loaded.teams)
@@ -173,7 +173,7 @@ export function ExpertTeamsPage() {
     if (syncing) return
     setSyncing(true)
     try {
-      await loadCatalog()
+      await loadCatalog({ forceRefresh: true })
       pushNotification({
         level: 'success',
         title: t('ExpertTeams.syncDone'),

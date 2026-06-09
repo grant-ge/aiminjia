@@ -14,7 +14,10 @@ const mocks = vi.hoisted(() => ({
   markRead: vi.fn(async () => undefined),
   employeeTemplateCatalog: vi.fn<() => Promise<EmployeeTemplateSnapshot[]>>(async () => []),
   employeeTemplateRefresh: vi.fn(async () => 0),
-  workplaceDirectoryCatalog: vi.fn<() => Promise<WorkplaceDirectoryResponse>>(
+  workplaceDirectoryCatalog: vi.fn<(
+    lang?: string,
+    options?: { forceRefresh?: boolean },
+  ) => Promise<WorkplaceDirectoryResponse>>(
     async () => ({ schemaVersion: 1, categories: [], items: [] }),
   ),
   employeeCreate: vi.fn(),
@@ -211,9 +214,31 @@ describe('EmployeesPage', () => {
     await waitFor(() => {
       expect(mocks.workplaceDirectoryCatalog).toHaveBeenCalled()
     })
+    expect(mocks.workplaceDirectoryCatalog).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ forceRefresh: true }),
+    )
     expect(mocks.employeeTemplateCatalog).toHaveBeenCalled()
     expect(mocks.employeeTemplateRefresh).not.toHaveBeenCalled()
     expect(mocks.refreshEmployees).toHaveBeenCalled()
+  })
+
+  it('forces a server refresh when users click update content', async () => {
+    render(<EmployeesPage />)
+
+    await waitFor(() => {
+      expect(mocks.workplaceDirectoryCatalog).toHaveBeenCalled()
+    })
+    mocks.workplaceDirectoryCatalog.mockClear()
+
+    fireEvent.click(screen.getByRole('button', { name: '更新内容' }))
+
+    await waitFor(() => {
+      expect(mocks.workplaceDirectoryCatalog).toHaveBeenCalledWith(
+        expect.any(String),
+        { forceRefresh: true },
+      )
+    })
   })
 
   it('renders server-side employee categories directly on the page', async () => {

@@ -29,6 +29,10 @@ export interface EmployeeTemplateCatalogResult {
   error: unknown | null
 }
 
+export interface EmployeeTemplateCatalogOptions {
+  forceRefresh?: boolean
+}
+
 interface DirectoryEmployeeTemplateCatalog {
   catalog: EmployeeTemplate[]
   categories: EmployeeCatalogCategory[]
@@ -85,8 +89,11 @@ function snapshotsByVersion(snapshots: EmployeeTemplateSnapshot[]) {
   )
 }
 
-async function loadDirectoryEmployeeTemplates(language?: string): Promise<DirectoryEmployeeTemplateCatalog> {
-  const directory = await workplaceDirectoryCatalog(language)
+async function loadDirectoryEmployeeTemplates(
+  language?: string,
+  options: EmployeeTemplateCatalogOptions = {},
+): Promise<DirectoryEmployeeTemplateCatalog> {
+  const directory = await workplaceDirectoryCatalog(language, { forceRefresh: options.forceRefresh })
   const employeeItems = directory.items.filter((item) => item.resourceType === 'employee_template')
   if (employeeItems.length === 0) return { catalog: [], categories: [], itemCount: 0 }
 
@@ -126,10 +133,13 @@ async function loadCachedEmployeeTemplates(language?: string): Promise<EmployeeT
   return snapshots.map((snap) => snapshotToTemplate(snap, language))
 }
 
-export async function loadEmployeeTemplateCatalog(language?: string): Promise<EmployeeTemplateCatalogResult> {
+export async function loadEmployeeTemplateCatalog(
+  language?: string,
+  options: EmployeeTemplateCatalogOptions = {},
+): Promise<EmployeeTemplateCatalogResult> {
   let directoryError: unknown = null
   try {
-    const directoryCatalog = await loadDirectoryEmployeeTemplates(language)
+    const directoryCatalog = await loadDirectoryEmployeeTemplates(language, options)
     if (directoryCatalog.catalog.length > 0) {
       return {
         catalog: directoryCatalog.catalog,
@@ -147,6 +157,9 @@ export async function loadEmployeeTemplateCatalog(language?: string): Promise<Em
   } catch (e) {
     directoryError = e
     console.warn('[employeeCatalog] workplace_directory_catalog failed:', e)
+    if (options.forceRefresh) {
+      throw e
+    }
   }
 
   const cachedCatalog = await loadCachedEmployeeTemplates(language)

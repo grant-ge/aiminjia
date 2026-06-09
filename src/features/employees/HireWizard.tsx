@@ -111,8 +111,8 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
     setStep(2)
   }
 
-  async function reloadCatalog() {
-    const result = await loadEmployeeTemplateCatalog(i18n.language)
+  async function reloadCatalog(options: { forceRefresh?: boolean } = {}) {
+    const result = await loadEmployeeTemplateCatalog(i18n.language, options)
     setCatalog(result.catalog)
     setCatalogLoadError(
       result.error ? (result.error instanceof Error ? result.error.message : String(result.error)) : null,
@@ -124,7 +124,7 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
     setSyncingTemplates(true)
     setError(null)
     try {
-      await reloadCatalog()
+      await reloadCatalog({ forceRefresh: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {

@@ -7,7 +7,10 @@ import type { ExpertTeamTemplateSnapshot, WorkplaceDirectoryResponse } from '@/l
 const mocks = vi.hoisted(() => ({
   createConversation: vi.fn(async () => 'conv-team'),
   renameConversation: vi.fn(),
-  workplaceDirectoryCatalog: vi.fn<() => Promise<WorkplaceDirectoryResponse>>(
+  workplaceDirectoryCatalog: vi.fn<(
+    lang?: string,
+    options?: { forceRefresh?: boolean },
+  ) => Promise<WorkplaceDirectoryResponse>>(
     async () => ({ schemaVersion: 1, categories: [], items: [] }),
   ),
   expertTeamTemplateCatalog: vi.fn<() => Promise<ExpertTeamTemplateSnapshot[]>>(async () => []),
@@ -133,12 +136,19 @@ describe('ExpertTeamsPage', () => {
     await waitFor(() => {
       expect(mocks.workplaceDirectoryCatalog).toHaveBeenCalledTimes(1)
     })
+    expect(mocks.workplaceDirectoryCatalog).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ forceRefresh: true }),
+    )
     mocks.workplaceDirectoryCatalog.mockClear()
 
     fireEvent.click(screen.getByRole('button', { name: '更新内容' }))
 
     await waitFor(() => {
-      expect(mocks.workplaceDirectoryCatalog).toHaveBeenCalledTimes(1)
+      expect(mocks.workplaceDirectoryCatalog).toHaveBeenCalledWith(
+        expect.any(String),
+        { forceRefresh: true },
+      )
     })
     expect(mocks.pushNotification).toHaveBeenCalledWith(expect.objectContaining({
       level: 'success',

@@ -186,11 +186,13 @@ export function EmployeesPage() {
     await Promise.all([refreshEmp(), refreshInbox()])
   }
 
-  const loadCatalog = useCallback(async (): Promise<EmployeeTemplateCatalogResult> => {
+  const loadCatalog = useCallback(async (
+    options: { forceRefresh?: boolean } = {},
+  ): Promise<EmployeeTemplateCatalogResult> => {
     setCatalogLoading(true)
     setCatalogLoadError(null)
     try {
-      const result = await loadEmployeeTemplateCatalog(i18n.language)
+      const result = await loadEmployeeTemplateCatalog(i18n.language, options)
       setCatalog(result.catalog)
       setCatalogCategories(result.categories)
       setCatalogLoadError(
@@ -286,7 +288,7 @@ export function EmployeesPage() {
     if (syncingCatalog) return
     setSyncingCatalog(true)
     try {
-      await loadCatalog()
+      await loadCatalog({ forceRefresh: true })
       await refreshEmp()
       pushNotification({
         level: 'success',

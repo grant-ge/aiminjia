@@ -1,5 +1,7 @@
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, SystemTime};
 
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
@@ -9,6 +11,8 @@ use crate::runtime::employee::template_store::{
     cached_snapshot_matches_sha256, download_snapshot, write_cache, TemplateSnapshot,
 };
 use crate::storage::{fs_atomic::write_atomic, AiJiaHome};
+
+const WORKPLACE_DIRECTORY_CACHE_TTL: Duration = Duration::from_secs(30 * 60);
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -104,24 +108,81 @@ pub struct WorkplaceDirectoryResponse {
 #[tauri::command]
 pub async fn workplace_directory_catalog(
     lang: Option<String>,
+    force_refresh: Option<bool>,
     auth: tauri::State<'_, Arc<crate::auth::AuthManager>>,
 ) -> Result<WorkplaceDirectoryResponse, String> {
     let language = normalize_lang(lang);
+    let cache_dir = workplace_directory_cache_dir();
+    let force_refresh = force_refresh.unwrap_or(false);
+
+    if !force_refresh {
+        if let Some(directory) =
+            read_fresh_directory_cache(&cache_dir, &language, WORKPLACE_DIRECTORY_CACHE_TTL)
+        {
+            return Ok(directory);
+        }
+        if let Some(directory) = read_directory_cache(&cache_dir, &language) {
+            spawn_workplace_directory_refresh(language.clone(), auth.inner().clone());
+            return Ok(directory);
+        }
+    }
+
+    refresh_workplace_directory(&language, auth.inner().clone(), !force_refresh).await
+}
+
+fn spawn_workplace_directory_refresh(language: String, auth: Arc<crate::auth::AuthManager>) {
+    if !mark_background_refresh_started(&language) {
+        return;
+    }
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = refresh_workplace_directory(&language, auth, true).await {
+            log::warn!("[workplace_directory_catalog] background refresh failed: {e}");
+        }
+        mark_background_refresh_done(&language);
+    });
+}
+
+fn background_refresh_keys() -> &'static Mutex<HashSet<String>> {
+    static KEYS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    KEYS.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+fn mark_background_refresh_started(language: &str) -> bool {
+    let mut keys = background_refresh_keys().lock().unwrap();
+    keys.insert(language.to_string())
+}
+
+fn mark_background_refresh_done(language: &str) {
+    let mut keys = background_refresh_keys().lock().unwrap();
+    keys.remove(language);
+}
+
+async fn refresh_workplace_directory(
+    language: &str,
+    auth: Arc<crate::auth::AuthManager>,
+    allow_cache_fallback: bool,
+) -> Result<WorkplaceDirectoryResponse, String> {
     let cache_dir = workplace_directory_cache_dir();
     let client = reqwest::Client::builder()
         .build()
         .map_err(|e| e.to_string())?;
     let session_key = match auth.get_session_key().await {
         Ok(session_key) => session_key,
-        Err(e) => return cached_directory_or_error(&cache_dir, &language, e),
+        Err(e) if allow_cache_fallback => {
+            return cached_directory_or_error(&cache_dir, language, e)
+        }
+        Err(e) => return Err(e.to_string()),
     };
 
-    let directory = match fetch_workplace_directory(&client, &session_key, &language).await {
+    let directory = match fetch_workplace_directory(&client, &session_key, language).await {
         Ok(directory) => directory,
-        Err(e) => return cached_directory_or_error(&cache_dir, &language, e),
+        Err(e) if allow_cache_fallback => {
+            return cached_directory_or_error(&cache_dir, language, e)
+        }
+        Err(e) => return Err(e.to_string()),
     };
 
-    if let Err(e) = write_directory_cache(&cache_dir, &language, &directory) {
+    if let Err(e) = write_directory_cache(&cache_dir, language, &directory) {
         log::warn!("[workplace_directory_catalog] cache write failed: {e}");
     }
     prewarm_resource_snapshots(&client, &directory).await;
@@ -305,6 +366,31 @@ fn read_directory_cache(cache_dir: &Path, language: &str) -> Option<WorkplaceDir
     serde_json::from_str(&content).ok()
 }
 
+fn read_fresh_directory_cache(
+    cache_dir: &Path,
+    language: &str,
+    ttl: Duration,
+) -> Option<WorkplaceDirectoryResponse> {
+    let path = directory_cache_path_for(cache_dir, language);
+    if !directory_cache_is_fresh(&path, ttl) {
+        return None;
+    }
+    read_directory_cache(cache_dir, language)
+}
+
+fn directory_cache_is_fresh(path: &Path, ttl: Duration) -> bool {
+    let Ok(metadata) = std::fs::metadata(path) else {
+        return false;
+    };
+    let Ok(modified) = metadata.modified() else {
+        return false;
+    };
+    let Ok(age) = SystemTime::now().duration_since(modified) else {
+        return false;
+    };
+    age < ttl
+}
+
 fn write_directory_cache(
     cache_dir: &Path,
     language: &str,
@@ -354,4 +440,56 @@ fn hex_lower(bytes: &[u8]) -> String {
         out.push(HEX[(b & 0x0f) as usize] as char);
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_directory() -> WorkplaceDirectoryResponse {
+        WorkplaceDirectoryResponse {
+            schema_version: 1,
+            categories: vec![WorkplaceDirectoryCategory {
+                category_id: "delivery".to_string(),
+                display: WorkplaceDirectoryDisplayText {
+                    name: "研发交付".to_string(),
+                    description: "交付目录".to_string(),
+                    ..Default::default()
+                },
+                sort_order: 10,
+                resource_count: 1,
+                ..Default::default()
+            }],
+            items: vec![WorkplaceDirectoryItem {
+                resource_type: "employee_template".to_string(),
+                resource_id: "builtin:xiaocheng".to_string(),
+                version: "1.0.0".to_string(),
+                workplace_category_id: "delivery".to_string(),
+                ..Default::default()
+            }],
+        }
+    }
+
+    #[test]
+    fn fresh_directory_cache_is_returned_within_ttl() {
+        let tmp = tempfile::tempdir().unwrap();
+        let directory = sample_directory();
+        write_directory_cache(tmp.path(), "zh-CN", &directory).unwrap();
+
+        let cached = read_fresh_directory_cache(tmp.path(), "zh-CN", Duration::from_secs(30 * 60))
+            .expect("fresh cache should be readable");
+
+        assert_eq!(cached.categories[0].category_id, "delivery");
+        assert_eq!(cached.items[0].resource_id, "builtin:xiaocheng");
+    }
+
+    #[test]
+    fn zero_ttl_treats_directory_cache_as_stale() {
+        let tmp = tempfile::tempdir().unwrap();
+        write_directory_cache(tmp.path(), "zh-CN", &sample_directory()).unwrap();
+
+        let cached = read_fresh_directory_cache(tmp.path(), "zh-CN", Duration::ZERO);
+
+        assert!(cached.is_none());
+    }
 }
