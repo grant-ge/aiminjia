@@ -265,7 +265,7 @@ pub struct AutoCompactConfig {
     /// Manual context window override for dynamic threshold computation.
     /// When `Some`, `threshold_chars` is set to
     /// `effective_auto_compact_threshold(Some(window))`. When `None`,
-    /// the conservative fallback (64K) is used.
+    /// the fallback window (200K) is used.
     pub custom_context_window: Option<usize>,
 }
 
@@ -370,7 +370,7 @@ fn is_recursive_auto_compact_source(query_source: Option<&str>) -> bool {
 fn auto_compact_context_window_tokens(config: &AutoCompactConfig) -> usize {
     config
         .custom_context_window
-        .unwrap_or(crate::llm::context_decay::CONSERVATIVE_CONTEXT_WINDOW)
+        .unwrap_or(crate::llm::context_decay::FALLBACK_CONTEXT_WINDOW)
 }
 
 fn auto_compact_threshold_tokens(config: &AutoCompactConfig) -> usize {

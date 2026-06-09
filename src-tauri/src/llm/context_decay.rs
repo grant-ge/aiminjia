@@ -19,8 +19,8 @@ pub const CONTEXT_WINDOW_DEEPSEEK: usize = 128_000;
 pub const CONTEXT_WINDOW_DEFAULT: usize = 100_000;
 pub const CONTEXT_OVERFLOW_THRESHOLD: f64 = 0.8;
 
-/// Conservative context window when no model info is available.
-pub const CONSERVATIVE_CONTEXT_WINDOW: usize = 64_000;
+/// Fallback context window when no model info is available.
+pub const FALLBACK_CONTEXT_WINDOW: usize = 200_000;
 
 /// Buffer tokens subtracted from context window for auto-compact threshold calculation.
 pub const AUTOCOMPACT_BUFFER_TOKENS: usize = 13_000;
@@ -67,10 +67,10 @@ pub fn context_window_for_provider(provider: &str) -> usize {
 /// Resolve the context window size for a specific model name.
 ///
 /// Uses substring matching on the model identifier to determine the window.
-/// Falls back to CONSERVATIVE_CONTEXT_WINDOW for unknown models.
+/// Falls back to FALLBACK_CONTEXT_WINDOW for unknown models.
 pub fn context_window_for_model(model: &str) -> usize {
     if model.is_empty() {
-        return CONSERVATIVE_CONTEXT_WINDOW;
+        return FALLBACK_CONTEXT_WINDOW;
     }
     let lower = model.to_lowercase();
     if lower.contains("claude") {
@@ -82,7 +82,7 @@ pub fn context_window_for_model(model: &str) -> usize {
     if lower.contains("gpt") {
         return 128_000;
     }
-    CONSERVATIVE_CONTEXT_WINDOW
+    FALLBACK_CONTEXT_WINDOW
 }
 
 /// Resolve the context window for the current conversation.
@@ -90,14 +90,14 @@ pub fn context_window_for_model(model: &str) -> usize {
 /// Priority:
 /// 1. `settings_override` — manual override from AppSettings.context_window
 /// 2. `cloud_model` — model name returned by the gateway /v1/models, matched via context_window_for_model()
-/// 3. CONSERVATIVE_CONTEXT_WINDOW (64K) — fallback when no info is available
+/// 3. FALLBACK_CONTEXT_WINDOW (200K) — fallback when no info is available
 pub fn resolve_context_window(
     settings_override: Option<usize>,
     cloud_model: Option<&str>,
 ) -> usize {
     settings_override
         .or_else(|| cloud_model.map(|m| context_window_for_model(m)))
-        .unwrap_or(CONSERVATIVE_CONTEXT_WINDOW)
+        .unwrap_or(FALLBACK_CONTEXT_WINDOW)
 }
 
 /// Compute the effective auto-compact threshold in **chars**.
@@ -441,21 +441,21 @@ mod resolve_context_window_tests {
     }
 
     #[test]
-    fn falls_back_to_conservative() {
+    fn falls_back_to_default_window() {
         let w = resolve_context_window(None, None);
-        assert_eq!(w, 64_000);
+        assert_eq!(w, 200_000);
     }
 
     #[test]
     fn empty_model_falls_back() {
         let w = resolve_context_window(None, Some(""));
-        assert_eq!(w, 64_000);
+        assert_eq!(w, 200_000);
     }
 
     #[test]
     fn unknown_model_falls_back() {
         let w = resolve_context_window(None, Some("unknown-model-v1"));
-        assert_eq!(w, 64_000);
+        assert_eq!(w, 200_000);
     }
 
     #[test]
@@ -465,8 +465,8 @@ mod resolve_context_window_tests {
     }
 
     #[test]
-    fn effective_threshold_conservative_fallback() {
-        // (64_000 - 20_000 - 13_000) * 4 = 124_000
-        assert_eq!(effective_auto_compact_threshold(None), 124_000);
+    fn effective_threshold_default_fallback() {
+        // (200_000 - 20_000 - 13_000) * 4 = 668_000
+        assert_eq!(effective_auto_compact_threshold(None), 668_000);
     }
 }
