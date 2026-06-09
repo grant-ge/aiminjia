@@ -11,6 +11,7 @@ pub mod preprocess;
 pub mod prompt;
 pub mod provider_merge;
 pub mod safeguard;
+pub mod tool_result_artifact;
 pub mod tool_result_collector;
 pub mod tool_round_driver;
 pub mod tool_round_types;

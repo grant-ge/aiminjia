@@ -12,6 +12,9 @@ use std::sync::{Arc, Mutex};
 
 use app_lib::runtime::agents_md::AgentsMdFile;
 use app_lib::runtime::cancellation::CancellationToken;
+use app_lib::runtime::chat::compaction::{
+    build_compact_boundary_record, CompactBoundaryRecord, CompactTrigger,
+};
 use app_lib::runtime::chat::{
     ChatTurnRequest, LlmStepInput, LlmStepResult, RuntimeChatTurnDriver, RuntimeLlmExecutor,
     TurnError,
@@ -230,7 +233,9 @@ fn review_agents_md_loader_has_no_tauri_dependency() {
 struct AgentsMdContextExecutor {
     workspace_path: PathBuf,
     agents_md_files: Vec<AgentsMdFile>,
+    latest_boundary: Option<CompactBoundaryRecord>,
     received_messages: Mutex<Vec<Vec<serde_json::Value>>>,
+    received_extra_system_segments: Mutex<Vec<Vec<String>>>,
 }
 
 impl AgentsMdContextExecutor {
@@ -238,12 +243,23 @@ impl AgentsMdContextExecutor {
         Self {
             workspace_path,
             agents_md_files,
+            latest_boundary: None,
             received_messages: Mutex::new(Vec::new()),
+            received_extra_system_segments: Mutex::new(Vec::new()),
         }
+    }
+
+    fn with_latest_boundary(mut self, boundary: CompactBoundaryRecord) -> Self {
+        self.latest_boundary = Some(boundary);
+        self
     }
 
     fn all_messages(&self) -> Vec<Vec<serde_json::Value>> {
         self.received_messages.lock().unwrap().clone()
+    }
+
+    fn all_extra_system_segments(&self) -> Vec<Vec<String>> {
+        self.received_extra_system_segments.lock().unwrap().clone()
     }
 }
 
@@ -259,6 +275,13 @@ impl RuntimeLlmExecutor for AgentsMdContextExecutor {
             .lock()
             .unwrap()
             .push(input.messages.clone());
+        self.received_extra_system_segments.lock().unwrap().push(
+            input
+                .extra_system_segments
+                .iter()
+                .map(|segment| segment.text.clone())
+                .collect(),
+        );
         Ok(LlmStepResult::ContentComplete {
             content: "ok".to_string(),
             tokens_in: 0,
@@ -296,6 +319,13 @@ impl RuntimeLlmExecutor for AgentsMdContextExecutor {
 
     async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
         Ok(vec![])
+    }
+
+    async fn latest_compact_boundary(
+        &self,
+        _conversation_id: &str,
+    ) -> Result<Option<CompactBoundaryRecord>, TurnError> {
+        Ok(self.latest_boundary.clone())
     }
 }
 
@@ -354,4 +384,49 @@ async fn ac3_driver_inserts_separate_agents_md_context_message_after_system_remi
     assert!(context_message.contains(renlijia_path.to_string_lossy().as_ref()));
     assert!(context_message.contains(renlijia_content));
     assert_eq!(first_call_messages[2]["content"], "hello");
+}
+
+#[tokio::test]
+async fn ac4_driver_reinjects_agents_md_system_segment_after_compact_boundary() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let workspace = tmp.path().join("project");
+    std::fs::create_dir_all(&workspace).expect("create workspace");
+    let renlijia_path = workspace.join("AGENTS.md");
+    let renlijia_content = "project instructions after compact";
+    let executor = Arc::new(
+        AgentsMdContextExecutor::new(
+            workspace,
+            vec![AgentsMdFile {
+                path: renlijia_path,
+                content: renlijia_content.to_string(),
+            }],
+        )
+        .with_latest_boundary(build_compact_boundary_record(
+            "conv-renlijia-md-after-compact",
+            CompactTrigger::Auto,
+            100,
+            50,
+            2,
+        )),
+    );
+
+    let bus = RuntimeEventBus::new();
+    let qe = QueryEngine::default();
+    let driver = RuntimeChatTurnDriver::with_llm_executor(qe, bus, executor.clone());
+    let mut turn = make_test_turn("conv-renlijia-md-after-compact");
+    let request = ChatTurnRequest::new("conv-renlijia-md-after-compact", "hello again", vec![]);
+
+    driver.run_chat_turn(&mut turn, &request).await.unwrap();
+
+    let segment_batches = executor.all_extra_system_segments();
+    let first_batch = segment_batches
+        .first()
+        .expect("executor must receive one LLM step");
+    assert!(
+        first_batch.iter().any(|segment| {
+            segment.contains("<project_context>") && segment.contains(renlijia_content)
+        }),
+        "existing compact boundary should reinject AGENTS.md as system segment: {:?}",
+        first_batch
+    );
 }

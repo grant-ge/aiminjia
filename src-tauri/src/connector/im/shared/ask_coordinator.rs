@@ -500,8 +500,7 @@ pub fn format_pending_ask_markdown(kind: &PendingAskKind) -> String {
         } => {
             let mut text = format!(
                 "🔒 我需要你的确认才能继续\n\n打算执行：**{}**\n\n> {}\n\n是否允许？请直接回复，例如\u{201c}可以\u{201d}或\u{201c}不要\u{201d}。",
-                tool_name,
-                message
+                tool_name, message
             );
             if !suggestions.is_empty() {
                 text.push_str("\n\n建议参数：\n");
@@ -668,8 +667,7 @@ impl AskReplyJudge for GatewayAskReplyJudge {
         settings.primary_model = model.to_string();
         let prompt = format!(
             "你是一个分诊器。AI 助手刚通过 AskUserQuestion 工具向用户问了一组问题。只输出 JSON。\n\nAI 提的问题：\n{}\n\n用户回复：\n\"\"\"{}\"\"\"\n\n输出 JSON：\n- verdict 是 \"answered\"|\"abandoned\"|\"ambiguous\" 之一\n- 当 verdict=answered 时：answers 是一个对象，key 是问题原文（与 AI 提问中的 question 字段完全一致），value 是用户的答案文本（如果是从 options 选了一个或多个，把选的 label 用逗号拼起来；如果是自由回答，用用户原话）\n- reason 是一句话解释判断\n\n例：{{\"verdict\":\"answered\",\"answers\":{{\"用哪个数据源？\":\"A, B\"}},\"reason\":\"用户明确选了 A 和 B\"}}",
-            questions,
-            user_reply
+            questions, user_reply
         );
         let response = tokio::time::timeout(
             Duration::from_secs(30),

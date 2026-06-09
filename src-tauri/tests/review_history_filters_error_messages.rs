@@ -18,6 +18,9 @@ fn make_user_msg(id: &str, text: &str) -> StoredMessage {
         tool_calls: None,
         tool_call_id: None,
         name: None,
+        subtype: None,
+        compact_metadata: None,
+        is_compact_summary: None,
         run_id: None,
         schema_version: None,
         sequence: None,
@@ -37,6 +40,9 @@ fn make_assistant_msg(id: &str, text: &str, error: Option<MessageError>) -> Stor
         tool_calls: None,
         tool_call_id: None,
         name: None,
+        subtype: None,
+        compact_metadata: None,
+        is_compact_summary: None,
         run_id: None,
         schema_version: None,
         sequence: None,
@@ -61,7 +67,7 @@ fn build_chat_history_skips_messages_with_error() {
         make_assistant_msg("a2", "好的，这是回复", None),
     ];
 
-    let messages = build_chat_history(&stored, None, &HistoryConfig::default()).unwrap();
+    let messages = build_chat_history(&stored, None, &HistoryConfig::default(), None).unwrap();
 
     // 错误气泡（a1）必须被过滤掉
     let texts: Vec<String> = messages.iter().map(|m| m.content.clone()).collect();
@@ -108,7 +114,7 @@ fn build_chat_history_with_only_errors_returns_empty() {
         ),
     ];
 
-    let messages = build_chat_history(&stored, None, &HistoryConfig::default()).unwrap();
+    let messages = build_chat_history(&stored, None, &HistoryConfig::default(), None).unwrap();
     assert_eq!(messages.len(), 1, "只应留下 user u1");
     assert!(messages[0].content.contains("hi"));
 }
@@ -120,6 +126,6 @@ fn build_chat_history_no_error_field_compat() {
         make_user_msg("u1", "hi"),
         make_assistant_msg("a1", "回复", None),
     ];
-    let messages = build_chat_history(&stored, None, &HistoryConfig::default()).unwrap();
+    let messages = build_chat_history(&stored, None, &HistoryConfig::default(), None).unwrap();
     assert_eq!(messages.len(), 2);
 }

@@ -212,7 +212,7 @@ impl IMConnector for WhatsAppConnector {
             None => {
                 return Err(ConnectorError::Transient(
                     "whatsapp: bot not running, cannot send".into(),
-                ))
+                ));
             }
         };
 

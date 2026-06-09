@@ -729,7 +729,7 @@ EOF
 
 Run: `grep -n "init_skill_template\|skill_management" src/lib/tauri.ts | head -5`
 
-应该看到几条 export function，比如 `initSkillTemplate`。
+输出包含几条 export function，比如 `initSkillTemplate`。
 
 - [ ] **Step 2: 加 refreshSkillRegistry 封装**
 
@@ -918,7 +918,7 @@ Expected：看到 1-9 共 9 个 step 标题，其中 8 是新加的 refresh_skil
 
 Run: `grep "^## 意图" docs/test-intents/spec/tasks/技能/rules.md`
 
-应该看到 1/2/3/7/8/10（4/5/6 是注释删的）。意图 11 可用。
+输出包含 1/2/3/7/8/10（4/5/6 是注释删的）。意图 11 可用。
 
 - [ ] **Step 2: 追加意图 11**
 
@@ -954,14 +954,11 @@ Run: `grep "^## 意图" docs/test-intents/spec/tasks/技能/rules.md`
 
 **验收标准**
 
-✅ 应该看到
 - `~/.renlijia/users/{scope}/skills/hello-world/SKILL.md` 存在
 - `$CONV_1/messages.jsonl` 中含 `"name":"refresh_skills"` 的 toolCall（证明 step 8 跑过）
 - `$CONV_2/messages.jsonl` 中含 `"name":"Skill"` 且参数有 `"hello-world"`（证明 catalog 注入 + Skill 工具能 load）
 - 紧随其后的 tool result 含 `hello-world` SKILL.md body 关键词（比如返回 "Hi!"）
 - AI 在 $CONV_2 最终输出引用了 SKILL.md 内容（含 `[hello-world]` 或 `Hi!` 子串）
-
-❌ 不应该看到
 - AI 在 $CONV_2 回 "我没有找到 hello-world 技能"（说明 catalog 未刷新）
 - 任何"请重启应用"的提示
 - `Skill('hello-world')` 工具调用返回 `Unknown or unavailable skill`

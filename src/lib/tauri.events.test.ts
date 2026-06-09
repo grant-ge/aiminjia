@@ -17,6 +17,7 @@ import {
   approvePermissionRequest,
   denyPermissionRequest,
   onDiagnosticsEvent,
+  onCompactCompleted,
   onPermissionAsk,
   onStreamingNotice,
   onTurnCompleted,
@@ -25,6 +26,7 @@ import {
   type AgentIdlePayload,
   type StreamingNoticePayload,
   type TurnCompletedPayload,
+  type CompactCompletedPayload,
 } from './tauri'
 
 describe('tauri event contract', () => {
@@ -188,6 +190,31 @@ describe('tauri event contract', () => {
 
     expect(tauriEventMock.listen).toHaveBeenCalledWith(
       'streaming:notice',
+      expect.any(Function),
+    )
+  })
+
+  it('exposes compact completed event and payload shape', async () => {
+    const payload: CompactCompletedPayload = {
+      conversationId: 'conv-1',
+      runId: 'run-1',
+      boundaryId: 'boundary-1',
+      trigger: 'manual',
+      createdAt: '2026-06-02T00:00:00.000Z',
+      tailMessageId: 'tail-1',
+      preTokens: 12000,
+      postTokens: 4500,
+      tokensSaved: 7500,
+      messagesSummarized: 18,
+    }
+    expect(TAURI_EVENTS.COMPACT_COMPLETED).toBe('compact:completed')
+    expect(payload.tokensSaved).toBe(7500)
+
+    const handler = vi.fn()
+    await onCompactCompleted(handler)
+
+    expect(tauriEventMock.listen).toHaveBeenCalledWith(
+      'compact:completed',
       expect.any(Function),
     )
   })

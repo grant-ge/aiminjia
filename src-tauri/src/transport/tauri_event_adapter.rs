@@ -214,7 +214,9 @@ pub fn map_runtime_event(event: &RuntimeEvent) -> Option<LegacyEvent> {
             let command_text = content.get("commandText").and_then(|value| value.as_str());
             log::info!(
                 "[skill-command][message-persisted-event] trace_id={} conversation_id={} run_id={} message_id={} role={} client_message_id={:?} has_skill_command={} command_text_len={}",
-                client_message_id.as_deref().unwrap_or(event.run_id.as_str()),
+                client_message_id
+                    .as_deref()
+                    .unwrap_or(event.run_id.as_str()),
                 conversation_id,
                 event.run_id.as_str(),
                 message_id,
@@ -342,6 +344,30 @@ pub fn map_runtime_event(event: &RuntimeEvent) -> Option<LegacyEvent> {
                 payload,
             })
         }
+        RuntimeEventKind::CompactCompleted {
+            conversation_id,
+            boundary_id,
+            trigger,
+            created_at,
+            tail_message_id,
+            pre_tokens,
+            post_tokens,
+            messages_summarized,
+        } => Some(LegacyEvent {
+            name: "compact:completed".to_string(),
+            payload: json!({
+                "conversationId": conversation_id,
+                "runId": event.run_id.as_str(),
+                "boundaryId": boundary_id,
+                "trigger": trigger,
+                "createdAt": created_at,
+                "tailMessageId": tail_message_id,
+                "preTokens": pre_tokens,
+                "postTokens": post_tokens,
+                "tokensSaved": pre_tokens.saturating_sub(*post_tokens),
+                "messagesSummarized": messages_summarized,
+            }),
+        }),
         RuntimeEventKind::PendingSnapshot { items } => Some(LegacyEvent {
             name: "pending:snapshot".to_string(),
             payload: json!({

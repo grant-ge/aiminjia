@@ -201,6 +201,9 @@ fn top_level_tool_fields_survive_get_messages_read_path() {
         })]),
         tool_call_id: None,
         name: None,
+        subtype: None,
+        compact_metadata: None,
+        is_compact_summary: None,
         run_id: None,
         schema_version: Some(2),
         sequence: Some(1),
@@ -217,6 +220,9 @@ fn top_level_tool_fields_survive_get_messages_read_path() {
         tool_calls: None,
         tool_call_id: Some("tc-top".into()),
         name: Some("Bash".into()),
+        subtype: None,
+        compact_metadata: None,
+        is_compact_summary: None,
         run_id: None,
         schema_version: Some(2),
         sequence: Some(2),
@@ -242,6 +248,66 @@ fn top_level_tool_fields_survive_get_messages_read_path() {
     assert_eq!(messages[1]["toolResult"]["toolCallId"], "tc-top");
     assert_eq!(messages[1]["toolResult"]["name"], "Bash");
     assert_eq!(messages[1]["toolResult"]["content"], "tool result");
+}
+
+#[test]
+fn compact_artifact_fields_survive_get_messages_read_path() {
+    let (storage, _dir) = setup_storage();
+    let boundary = StoredMessage {
+        id: "compact-boundary-1".into(),
+        conversation_id: "c1".into(),
+        role: "system".into(),
+        content: serde_json::json!({"text": "Conversation compacted"}),
+        created_at: "2026-04-24T00:00:03Z".into(),
+        tool_calls: None,
+        tool_call_id: None,
+        name: None,
+        subtype: Some("compact_boundary".into()),
+        compact_metadata: Some(serde_json::json!({
+            "trigger": "auto",
+            "preTokens": 100,
+            "messagesSummarized": 2
+        })),
+        is_compact_summary: None,
+        run_id: None,
+        schema_version: Some(2),
+        sequence: None,
+        seq: None,
+        rev: None,
+        error: None,
+    };
+    let summary = StoredMessage {
+        id: "compact-summary-1".into(),
+        conversation_id: "c1".into(),
+        role: "user".into(),
+        content: serde_json::json!({"text": "<context>\nsummary\n</context>"}),
+        created_at: "2026-04-24T00:00:04Z".into(),
+        tool_calls: None,
+        tool_call_id: None,
+        name: None,
+        subtype: None,
+        compact_metadata: None,
+        is_compact_summary: Some(true),
+        run_id: None,
+        schema_version: Some(2),
+        sequence: None,
+        seq: None,
+        rev: None,
+        error: None,
+    };
+
+    storage
+        .insert_chat_message_record(&boundary)
+        .expect("insert boundary");
+    storage
+        .insert_chat_message_record(&summary)
+        .expect("insert summary");
+
+    let messages = storage.get_messages("c1").expect("read messages");
+    assert_eq!(messages.len(), 2);
+    assert_eq!(messages[0]["subtype"], "compact_boundary");
+    assert_eq!(messages[0]["compactMetadata"]["trigger"], "auto");
+    assert_eq!(messages[1]["isCompactSummary"], true);
 }
 
 #[test]

@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { AiBubble } from '@/components/chat/AiBubble'
+import { CompactBoundaryBar } from '@/components/chat/CompactBoundaryBar'
 import { DayDivider } from '@/components/chat/DayDivider'
 import { StreamingBubble } from '@/components/chat/StreamingBubble'
 import { isSameDay } from '@/lib/chatTime'
@@ -77,6 +78,10 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
   const streamingContent = useChatStore((s) => {
     const activeId = s.activeConversationId
     return activeId ? (s.streamStates[activeId]?.streamingContent ?? '') : ''
+  })
+  const lastCompactSummary = useChatStore((s) => {
+    const activeId = s.activeConversationId
+    return activeId ? s.streamStates[activeId]?.lastCompactSummary : undefined
   })
   const openPreview = useGeneratedFilePreviewStore((s) => s.openPreview)
   const clearIfConversationChanged = useGeneratedFilePreviewStore((s) => s.clearIfConversationChanged)
@@ -252,6 +257,7 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
     }
     return flags
   }, [turns])
+  const hasRenderedCompactBoundary = turns.some((turn) => turn.compactBoundary)
   return (
     <div
       className="flex flex-col gap-5 px-2 py-3"
@@ -259,6 +265,17 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
       data-aijia-streaming={isStreaming ? 'true' : 'false'}
     >
       {turns.map((t, i) => {
+        if (t.compactBoundary) {
+          return (
+            <CompactBoundaryBar
+              key={t.compactBoundary.id}
+              preTokens={t.compactBoundary.preTokens}
+              postTokens={t.compactBoundary.postTokens}
+              tokensSaved={t.compactBoundary.tokensSaved}
+              messagesSummarized={t.compactBoundary.messagesSummarized}
+            />
+          )
+        }
         const teamSession = teamSessionForTurnIdx[i]
         // Dispatch-prompt user turns render as a centered system banner
         // (handled inside UserMessageBubble). For those, skip the chat-row
@@ -381,6 +398,14 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
           </div>
         )
       })}
+      {!hasRenderedCompactBoundary && lastCompactSummary ? (
+        <CompactBoundaryBar
+          preTokens={lastCompactSummary.preTokens}
+          postTokens={lastCompactSummary.postTokens}
+          tokensSaved={lastCompactSummary.tokensSaved}
+          messagesSummarized={lastCompactSummary.messagesSummarized}
+        />
+      ) : null}
       {(() => {
         if (!showStreamingBubble) return null
         // Stream bubble 通常作为 inline 渲染在 last turn 的 ChatRow 内（紧贴
