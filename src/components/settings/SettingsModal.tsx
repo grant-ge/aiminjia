@@ -8,12 +8,13 @@ import { message } from '@tauri-apps/plugin-dialog'
 import { requestConfirm } from '@/components/common/ConfirmDialogHost'
 import { LegalDocumentDialog } from '@/components/legal/LegalDocumentDialog'
 import { getLegalDocument, type LegalDocumentKey } from '@/components/legal/legalDocuments'
-import { getSettings, updateSettings } from '@/lib/tauri'
+import { getAppLogLevel, getSettings, updateAppLogLevel, updateSettings } from '@/lib/tauri'
 import { useUpdaterStore } from '@/lib/updaterStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useBrandingStore } from '@/stores/brandingStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useUiStore } from '@/stores/uiStore'
+import type { AppLogLevel } from '@/types/settings'
 
 import { SettingsContentBody } from './SettingsContentBody'
 import { SettingsMenu } from './SettingsMenu'
@@ -40,6 +41,7 @@ export function SettingsModal() {
   const [appVersion, setAppVersion] = useState(t('settings.loadingVersion'))
   const [checkingUpdate, setCheckingUpdate] = useState(false)
   const [activeLegalDocument, setActiveLegalDocument] = useState<LegalDocumentKey | null>(null)
+  const [appLogLevel, setAppLogLevel] = useState<AppLogLevel>('info')
 
   useEffect(() => {
     if (settingsModal !== 'about') return
@@ -54,6 +56,21 @@ export function SettingsModal() {
         if (!cancelled) setAppVersion(t('settings.unknown'))
       })
 
+    return () => {
+      cancelled = true
+    }
+  }, [settingsModal])
+
+  useEffect(() => {
+    if (settingsModal !== 'about') return
+    let cancelled = false
+    getAppLogLevel()
+      .then((level) => {
+        if (!cancelled) setAppLogLevel(level)
+      })
+      .catch((err) => {
+        console.error('Failed to load app log level:', err)
+      })
     return () => {
       cancelled = true
     }
@@ -180,6 +197,13 @@ export function SettingsModal() {
                   onUploadLogs={() => void onUploadLogs()}
                   onResetData={() => void onResetData()}
                   dataMaskingLevel={dataMaskingLevel}
+                  appLogLevel={appLogLevel}
+                  onAppLogLevelChange={(level) => {
+                    setAppLogLevel(level)
+                    updateAppLogLevel(level).catch((err) => {
+                      console.error('Failed to persist app log level:', err)
+                    })
+                  }}
                   onDataMaskingChange={async (level) => {
                     setDataMaskingLevel(level)
                     try {

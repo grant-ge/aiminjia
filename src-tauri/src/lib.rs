@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod app_log_level;
 pub mod commands;
 pub mod connector;
 pub mod environment;
@@ -54,6 +55,7 @@ pub fn run() {
             aijia_home
                 .ensure_global_dirs()
                 .expect("Failed to create global dirs");
+            let global_store = Arc::new(storage::GlobalConfigStore::new(aijia_home.global_dir()));
             telemetry::set_diagnostics_workspace(aijia_home.root().to_path_buf());
             commands::file::cleanup_workspace_clipboard_staging(&aijia_home.tmp_clipboard_dir(), 7);
             // GC expired legacy-root archives (30d retention).  Independent
@@ -162,7 +164,7 @@ pub fn run() {
             std::fs::create_dir_all(&logs_dir).ok();
             app.handle().plugin(
                 tauri_plugin_log::Builder::default()
-                    .level(log::LevelFilter::Info)
+                    .level(app_log_level::read_app_log_level(&global_store).to_level_filter())
                     .timezone_strategy(tauri_plugin_log::TimezoneStrategy::UseLocal)
                     // Inject the per-request correlation prefix (`[s=.. r=..]`)
                     // so a single turn can be grepped end-to-end. See log_context.
@@ -238,7 +240,6 @@ pub fn run() {
             let task_store = Arc::new(runtime::store::InMemoryTaskStore::new());
 
             // Initialize cloud auth manager
-            let global_store = Arc::new(storage::GlobalConfigStore::new(aijia_home.global_dir()));
             // Dev-only: seed the gateway-host override from persisted config so
             // auth/LLM paths (which have no app handle) see it. No-op / not
             // compiled in release builds.
@@ -1000,6 +1001,8 @@ pub fn run() {
             // Settings commands
             settings::get_settings,
             settings::update_settings,
+            settings::get_app_log_level,
+            settings::update_app_log_level,
             settings::validate_api_key,
             settings::get_configured_providers,
             settings::switch_provider,

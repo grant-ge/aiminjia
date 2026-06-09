@@ -22,6 +22,8 @@ const baseProps = {
   onResetData: vi.fn(),
   dataMaskingLevel: 'relaxed' as const,
   onDataMaskingChange: vi.fn(),
+  appLogLevel: 'info' as const,
+  onAppLogLevelChange: vi.fn(),
   links: {
     customerService: vi.fn(),
     productSuggestion: vi.fn(),
@@ -33,7 +35,9 @@ const baseProps = {
 describe('AboutPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    localStorage.clear()
+    if (typeof localStorage.clear === 'function') {
+      localStorage.clear()
+    }
   })
 
   it('renders the copied about page sections and app metadata', () => {
@@ -47,6 +51,8 @@ describe('AboutPanel', () => {
     expect(screen.queryByRole('button', { name: '隐私权政策' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '隐私政策' })).toBeInTheDocument()
     expect(screen.getByText('开发者')).toBeInTheDocument()
+    expect(screen.getByText('日志级别')).toBeInTheDocument()
+    expect(screen.getByText('控制本地运行日志的详细程度，重启后生效。')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '上传日志' })).toBeInTheDocument()
   })
 
@@ -68,6 +74,25 @@ describe('AboutPanel', () => {
     expect(screen.getByRole('button', { name: '检查更新' })).toHaveAttribute('data-ui-button', 'true')
     expect(screen.getByRole('button', { name: '上传日志' })).toHaveAttribute('data-ui-button', 'true')
     expect(screen.queryByRole('button', { name: '重置' })).not.toBeInTheDocument()
+  })
+
+  it('renders app log level options and marks the current level', () => {
+    render(<AboutPanel {...baseProps} appLogLevel="warn" />)
+
+    expect(screen.getByRole('radiogroup', { name: '日志级别' })).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: '错误' })).toHaveAttribute('aria-checked', 'false')
+    expect(screen.getByRole('radio', { name: '警告' })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('radio', { name: '信息' })).toHaveAttribute('aria-checked', 'false')
+    expect(screen.getByRole('radio', { name: '调试' })).toHaveAttribute('aria-checked', 'false')
+  })
+
+  it('fires app log level change when a level is selected', () => {
+    const onAppLogLevelChange = vi.fn()
+    render(<AboutPanel {...baseProps} appLogLevel="info" onAppLogLevelChange={onAppLogLevelChange} />)
+
+    fireEvent.click(screen.getByRole('radio', { name: '调试' }))
+
+    expect(onAppLogLevelChange).toHaveBeenCalledWith('debug')
   })
 
   it('wires the check-update button to its handler', () => {

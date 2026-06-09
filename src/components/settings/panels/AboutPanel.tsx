@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import type { DataMaskingLevel } from '@/types/settings'
+import type { AppLogLevel, DataMaskingLevel } from '@/types/settings'
 
 interface AboutPanelLinks {
   customerService: () => void
@@ -25,6 +25,8 @@ interface AboutPanelProps {
   onResetData: () => void
   dataMaskingLevel: DataMaskingLevel
   onDataMaskingChange: (level: DataMaskingLevel) => void
+  appLogLevel: AppLogLevel
+  onAppLogLevelChange: (level: AppLogLevel) => void
   links: AboutPanelLinks
 }
 
@@ -62,10 +64,19 @@ export function AboutPanel({
   checkingUpdate = false,
   onCheckUpdate,
   onUploadLogs,
+  appLogLevel,
+  onAppLogLevelChange,
   links,
 }: AboutPanelProps) {
   const { t } = useTranslation()
   const [uploadingLogs, setUploadingLogs] = useState(false)
+
+  const LOG_LEVEL_OPTIONS: Array<{ value: AppLogLevel; labelKey: string }> = [
+    { value: 'error', labelKey: 'settings.about.logLevelError' },
+    { value: 'warn', labelKey: 'settings.about.logLevelWarn' },
+    { value: 'info', labelKey: 'settings.about.logLevelInfo' },
+    { value: 'debug', labelKey: 'settings.about.logLevelDebug' },
+  ]
 
   const handleUploadLogs = async () => {
     if (uploadingLogs) return
@@ -141,6 +152,40 @@ export function AboutPanel({
           <PillButton onClick={handleUploadLogs} disabled={uploadingLogs}>
             {uploadingLogs ? t('settings.about.uploading') : t('settings.about.uploadLogs')}
           </PillButton>
+        </div>
+
+        <div className="flex items-center justify-between gap-6">
+          <div className="flex min-w-0 flex-col gap-1">
+            <span className="text-base font-semibold text-foreground">{t('settings.about.logLevel')}</span>
+            <div className="text-sm text-muted-foreground">{t('settings.about.logLevelDesc')}</div>
+          </div>
+          <div
+            className="inline-flex shrink-0 rounded-lg bg-muted p-1"
+            role="radiogroup"
+            aria-label={t('settings.about.logLevel')}
+          >
+            {LOG_LEVEL_OPTIONS.map((option) => {
+              const selected = appLogLevel === option.value
+              const label = t(option.labelKey)
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  aria-label={label}
+                  onClick={() => onAppLogLevelChange(option.value)}
+                  className={
+                    selected
+                      ? 'rounded-md bg-card px-3 py-1.5 text-sm font-semibold text-foreground shadow-sm'
+                      : 'rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground'
+                  }
+                >
+                  {label}
+                </button>
+              )
+            })}
+          </div>
         </div>
       </section>
     </div>

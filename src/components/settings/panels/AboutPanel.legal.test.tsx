@@ -22,6 +22,8 @@ const baseProps = {
   onResetData: vi.fn(),
   dataMaskingLevel: 'relaxed' as const,
   onDataMaskingChange: vi.fn(),
+  appLogLevel: 'info' as const,
+  onAppLogLevelChange: vi.fn(),
   links: {
     customerService: vi.fn(),
     productSuggestion: vi.fn(),

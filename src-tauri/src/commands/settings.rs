@@ -3,6 +3,7 @@ use crate::llm::providers::{
     claude::ClaudeProvider, custom::CustomProvider, openai::OpenAiProvider,
 };
 use crate::models::settings::AppSettings;
+use crate::storage::GlobalConfigStore;
 use crate::storage::crypto::SecureStorage;
 use crate::storage::current_user_storage::CurrentUserStorage;
 use crate::storage::file_store::AppStorage;
@@ -115,6 +116,24 @@ pub async fn update_settings(
     }
 
     Ok(())
+}
+
+#[tauri::command]
+pub async fn get_app_log_level(
+    global_store: State<'_, Arc<GlobalConfigStore>>,
+) -> Result<String, String> {
+    Ok(crate::app_log_level::read_app_log_level_string(&global_store))
+}
+
+#[tauri::command]
+pub async fn update_app_log_level(
+    global_store: State<'_, Arc<GlobalConfigStore>>,
+    level: String,
+) -> Result<(), String> {
+    let normalized = crate::app_log_level::normalize_app_log_level(&level)?;
+    global_store
+        .set_setting(crate::app_log_level::APP_LOG_LEVEL_KEY, normalized)
+        .map_err(|e| e.to_string())
 }
 
 /// Get the list of providers that have a saved API key.

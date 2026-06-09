@@ -26,7 +26,7 @@ import type {
   PendingDrainedPayload,
   PendingRemovedPayload,
 } from '@/types/pending'
-import type { Settings } from '@/types/settings'
+import type { AppLogLevel, Settings } from '@/types/settings'
 
 // ---------------------------------------------------------------------------
 // Tauri Event Constants
@@ -1224,6 +1224,14 @@ export function getSettings(): Promise<Settings> {
  */
 export function updateSettings(settings: Settings): Promise<void> {
   return invoke<void>('update_settings', { settings })
+}
+
+export function getAppLogLevel(): Promise<AppLogLevel> {
+  return invoke<AppLogLevel>('get_app_log_level')
+}
+
+export function updateAppLogLevel(level: AppLogLevel): Promise<void> {
+  return invoke<void>('update_app_log_level', { level })
 }
 
 /**
