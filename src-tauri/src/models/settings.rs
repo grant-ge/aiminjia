@@ -99,7 +99,7 @@ pub struct AppSettings {
 }
 
 fn default_font_scale() -> String {
-    "medium".to_string()
+    "small".to_string()
 }
 
 impl Default for AppSettings {
@@ -237,6 +237,11 @@ mod tests {
     #[test]
     fn defaults_chat_width_mode_to_full() {
         assert_eq!(AppSettings::default().chat_width_mode, "full");
+    }
+
+    #[test]
+    fn defaults_font_scale_to_small() {
+        assert_eq!(AppSettings::default().font_scale, "small");
     }
 
     #[test]

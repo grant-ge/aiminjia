@@ -7,9 +7,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
-use crate::runtime::agent::async_task_store::{
-    AsyncAgentTaskStore, AsyncTaskState, AsyncTaskType,
-};
+use crate::runtime::agent::async_task_store::{AsyncAgentTaskStore, AsyncTaskState, AsyncTaskType};
 use crate::runtime::cancellation::CancellationReason;
 use crate::runtime::ids::AgentId;
 use crate::runtime::tools::catalog::TOOL_CATALOG;
@@ -149,10 +147,7 @@ mod tests {
         let data = result.data.unwrap();
         assert_eq!(data["task_type"].as_str(), Some("local_bash"));
         assert_eq!(
-            store
-                .find_by_id(&AgentId::new("btest123"))
-                .unwrap()
-                .state,
+            store.find_by_id(&AgentId::new("btest123")).unwrap().state,
             AsyncTaskState::Killed
         );
     }

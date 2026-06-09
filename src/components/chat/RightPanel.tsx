@@ -36,9 +36,10 @@ const SHOW_TASK_MONITOR = false
 interface RightPanelProps {
   conversationId: string
   onOpenExternal?: (target: PreviewTarget) => void
+  onDownload?: (target: PreviewTarget) => void
 }
 
-export function RightPanel({ conversationId, onOpenExternal }: RightPanelProps) {
+export function RightPanel({ conversationId, onOpenExternal, onDownload }: RightPanelProps) {
   const target = useGeneratedFilePreviewStore((s) => s.target)
   const closePreview = useGeneratedFilePreviewStore((s) => s.closePreview)
   const previewOpen = target?.conversationId === conversationId
@@ -53,6 +54,7 @@ export function RightPanel({ conversationId, onOpenExternal }: RightPanelProps) 
           <FilePreviewPane
             target={target}
             onOpenExternal={onOpenExternal}
+            onDownload={onDownload}
             onClosePreview={closePreview}
           />
         </div>

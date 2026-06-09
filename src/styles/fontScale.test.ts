@@ -26,17 +26,19 @@ describe('fontScale', () => {
     expect(document.documentElement.style.fontSize).toBe('14px')
   })
 
-  it('falls back to medium for unknown persisted values', () => {
+  it('falls back to small for unknown persisted values', () => {
     applyFontScale('huge' as never)
-    expect(document.documentElement.style.fontSize).toBe('16px')
+    expect(document.documentElement.style.fontSize).toBe('14px')
   })
 
   it('persists and loads the selected font scale', () => {
+    expect(loadPersistedFontScale()).toBe('small')
+
     persistFontScale('small')
     expect(localStorage.getItem(FONT_SCALE_STORAGE_KEY)).toBe('small')
     expect(loadPersistedFontScale()).toBe('small')
 
     localStorage.setItem(FONT_SCALE_STORAGE_KEY, 'giant')
-    expect(loadPersistedFontScale()).toBe('medium')
+    expect(loadPersistedFontScale()).toBe('small')
   })
 })

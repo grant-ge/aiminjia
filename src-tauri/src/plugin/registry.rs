@@ -128,6 +128,7 @@ const REQUEST_SCOPED_RUNTIME_TOOL_NAMES: &[&str] = &[
     "WriteMemory",
     "SearchMemory",
     "Skill",
+    "ImageTask",
     "TaskOutput",
     "TaskStop",
     #[cfg(not(windows))]
@@ -997,6 +998,21 @@ impl ToolRegistry {
                 builtin::memory::MemoryDeps {
                     app_data_dir: ctx.storage.base_dir().to_path_buf(),
                     workspace_path: ctx.workspace_path.clone(),
+                },
+            ))
+                as Arc<dyn crate::runtime::tools::RuntimeTool>),
+            "ImageTask" => Some(Arc::new(builtin::image_task::ImageTaskRuntimeTool::new(
+                builtin::image_task::ImageTaskDeps {
+                    auth_manager: ctx.auth_manager.clone(),
+                    storage: ctx.storage.clone(),
+                    file_manager: ctx.file_manager.clone(),
+                    workspace_path: ctx.workspace_path.clone(),
+                    conversation_id: ctx.conversation_id.clone(),
+                    run_id: ctx
+                        .run_id
+                        .as_ref()
+                        .map(|run_id| run_id.as_str().to_string()),
+                    gateway_base_url: None,
                 },
             ))
                 as Arc<dyn crate::runtime::tools::RuntimeTool>),

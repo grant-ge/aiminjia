@@ -4,7 +4,7 @@
  */
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronDown, ExternalLink, Eye, FolderOpen } from 'lucide-react'
+import { ChevronDown, Download, ExternalLink, Eye, FolderOpen } from 'lucide-react'
 
 import type { GeneratedFilePrimaryAction } from '@/components/chat/generatedFileActions'
 import { AppDropdown, type AppDropdownItem } from '@/components/common/AppDropdown'
@@ -17,12 +17,14 @@ interface GeneratedFileCardProps {
   primaryAction?: GeneratedFilePrimaryAction
   canPreview?: boolean
   canOpenExternal?: boolean
+  canDownload?: boolean
   canReveal?: boolean
   /** 文件绝对路径，用于 e2e CLI 按 filePath 子串定位卡片 */
   filePath?: string
   onOpen?: () => void
   onPreview?: () => void
   onOpenExternal?: () => void
+  onDownload?: () => void
   onReveal?: () => void
 }
 
@@ -51,6 +53,7 @@ function useActionLabels() {
     previewInside: t('fileCard.previewInside'),
     previewUnavailable: t('fileCard.previewUnavailable'),
     openExternal: t('fileCard.openExternal'),
+    download: t('fileCard.download'),
     reveal: t('fileCard.reveal'),
   }
 }
@@ -97,20 +100,24 @@ export function GeneratedFileCard({
   primaryAction = 'open',
   canPreview = false,
   canOpenExternal = true,
+  canDownload = true,
   canReveal = true,
   filePath,
   onOpen,
   onPreview,
   onOpenExternal,
+  onDownload,
   onReveal,
 }: GeneratedFileCardProps) {
   const ACTION_LABELS = useActionLabels()
   const openExternalAction = onOpenExternal ?? onOpen
   const previewAction = canPreview ? onPreview : undefined
   const enabledOpenExternalAction = canOpenExternal !== false ? openExternalAction : undefined
+  const downloadAction = canDownload !== false ? onDownload : undefined
   const revealAction = canReveal !== false ? onReveal : undefined
   const previewEnabled = Boolean(previewAction)
   const openEnabled = Boolean(enabledOpenExternalAction)
+  const downloadEnabled = Boolean(downloadAction)
   const revealEnabled = Boolean(revealAction)
   const isPreviewPrimary = primaryAction === 'preview'
   const primaryLabel = isPreviewPrimary ? ACTION_LABELS.preview : ACTION_LABELS.open
@@ -138,6 +145,13 @@ export function GeneratedFileCard({
       icon: <ExternalLink className="h-4 w-4" />,
       disabled: !openEnabled,
       onSelect: () => enabledOpenExternalAction?.(),
+    },
+    {
+      id: 'download',
+      label: ACTION_LABELS.download,
+      icon: <Download className="h-4 w-4" />,
+      disabled: !downloadEnabled,
+      onSelect: () => downloadAction?.(),
     },
     {
       id: 'reveal',

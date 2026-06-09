@@ -1167,6 +1167,14 @@ export function revealFileInFolder(fileId: string, conversationId: string): Prom
   })
 }
 
+export function saveGeneratedFileAs(fileId: string, conversationId: string, destinationPath: string): Promise<string> {
+  return invoke<string>('save_generated_file_as', {
+    fileId,
+    conversationId,
+    destinationPath,
+  })
+}
+
 export interface ExportConversationResult {
   zipPath: string
   fileName: string
@@ -1211,6 +1219,10 @@ export function getLocalFilePreview(path: string): Promise<FilePreview> {
 
 export function openLocalFile(path: string): Promise<void> {
   return invoke<void>('open_local_file', { path })
+}
+
+export function saveLocalFileAs(path: string, destinationPath: string): Promise<string> {
+  return invoke<string>('save_local_file_as', { path, destinationPath })
 }
 
 /**

@@ -6,6 +6,7 @@ pub mod ask_user_question;
 #[cfg(not(windows))]
 pub mod bash;
 pub mod grep;
+pub mod image_task;
 pub mod load_skill;
 pub mod memory;
 pub mod network;
@@ -15,8 +16,8 @@ pub mod powershell;
 pub mod powershell_detect;
 pub mod refresh_skills;
 pub mod send_message;
-pub mod shell_task;
 pub mod shell_common;
+pub mod shell_task;
 pub mod spawn_subagent;
 pub mod task_output;
 pub mod task_stop;

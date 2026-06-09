@@ -88,7 +88,9 @@
   "messageList": {
     "cannotPreview": "无法预览此文件",
     "cannotOpen": "无法打开文件",
-    "cannotReveal": "无法在文件夹中显示"
+    "cannotDownload": "无法下载文件",
+    "cannotReveal": "无法在文件夹中显示",
+    "fileDownloaded": "已下载文件"
   },
   "subagent": {
     "resultCard": {
@@ -1041,10 +1043,12 @@
     "previewInside": "在侧边栏预览",
     "previewUnavailable": "暂不支持预览",
     "openExternal": "用默认应用打开",
+    "download": "下载到...",
     "reveal": "在文件夹中显示"
   },
   "filePreview": {
     "openWithDefault": "用默认应用打开",
+    "download": "下载到...",
     "selectArtifact": "选择左侧文件以预览",
     "loadingPreview": "正在加载预览...",
     "cannotPreview": "无法预览此文件",

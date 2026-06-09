@@ -649,7 +649,10 @@ pub async fn fetch_manifest(client: &reqwest::Client, template_id: &str) -> Resu
 /// Fetch the full published catalog `GET {base}/api/public/employee-templates`.
 /// Returns the latest published version per `template_id`, `tenant_scope=global`.
 pub async fn fetch_catalog(client: &reqwest::Client) -> Result<Vec<serde_json::Value>> {
-    let url = format!("{}/api/public/employee-templates", crate::environment::ops_host());
+    let url = format!(
+        "{}/api/public/employee-templates",
+        crate::environment::ops_host()
+    );
     let resp = client
         .get(&url)
         .timeout(std::time::Duration::from_secs(10))

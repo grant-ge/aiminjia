@@ -114,6 +114,30 @@ describe('FilePreviewPane', () => {
     expect(image).toHaveAttribute('src', 'data:image/png;base64,iVBORw==')
   })
 
+  it('offers download from the image preview context menu', async () => {
+    const onDownload = vi.fn()
+    previewMock.getFilePreview.mockResolvedValue({
+      kind: 'image',
+      fileName: 'mock-status-chart.png',
+      mimeType: 'image/png',
+      dataUrl: 'data:image/png;base64,iVBORw==',
+    })
+
+    render(
+      <FilePreviewPane
+        target={{ ...target, fileName: 'mock-status-chart.png', fileType: 'png' }}
+        onOpenExternal={() => {}}
+        onDownload={onDownload}
+      />,
+    )
+
+    const image = await screen.findByRole('img', { name: 'mock-status-chart.png' })
+    fireEvent.contextMenu(image)
+    fireEvent.click(await screen.findByRole('menuitem', { name: '下载到...' }))
+
+    expect(onDownload).toHaveBeenCalledWith({ ...target, fileName: 'mock-status-chart.png', fileType: 'png' })
+  })
+
   it('renders html preview responses in a sandboxed iframe', async () => {
     previewMock.getFilePreview.mockResolvedValue({
       kind: 'html',

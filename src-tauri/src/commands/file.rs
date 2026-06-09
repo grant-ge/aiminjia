@@ -237,7 +237,10 @@ fn preview_from_bytes(file_name: &str, file_type: &str, bytes: Vec<u8>) -> FileP
 
     if matches!(kind, "png" | "jpeg" | "webp" | "gif" | "bmp" | "svg") {
         let file_name = file_name.to_string();
-        let mime_type = preview_mime_type(kind).to_string();
+        let mime_type = sniff_preview_image_kind(&bytes)
+            .map(preview_mime_type)
+            .unwrap_or_else(|| preview_mime_type(kind))
+            .to_string();
         let data_url = format!("data:{};base64,{}", mime_type, STANDARD.encode(bytes));
         return FilePreview::Image {
             file_name,
@@ -283,6 +286,25 @@ fn preview_from_bytes(file_name: &str, file_type: &str, bytes: Vec<u8>) -> FileP
     }
 }
 
+fn sniff_preview_image_kind(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(&[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a]) {
+        return Some("png");
+    }
+    if bytes.starts_with(&[0xff, 0xd8, 0xff]) {
+        return Some("jpeg");
+    }
+    if bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        return Some("webp");
+    }
+    if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
+        return Some("gif");
+    }
+    if bytes.starts_with(b"BM") {
+        return Some("bmp");
+    }
+    None
+}
+
 fn preview_from_record(file_mgr: &FileManager, record: ResolvedFileRecord) -> FilePreview {
     preview_from_record_with_reader(file_mgr, record, read_preview_file_bounded)
 }
@@ -320,6 +342,38 @@ fn preview_from_record_with_reader(
     };
 
     preview_from_bytes(&record.file_name, &record.file_type, bytes)
+}
+
+fn copy_existing_file_to(source: &Path, destination: &Path) -> Result<String, String> {
+    if !source.is_file() {
+        return Err(format!(
+            "Source is not a regular file: {}",
+            source.display()
+        ));
+    }
+
+    if destination.exists() && destination.is_dir() {
+        return Err(format!(
+            "Destination is a directory: {}",
+            destination.display()
+        ));
+    }
+
+    let source_canonical = source.canonicalize().map_err(|e| e.to_string())?;
+    if let Ok(destination_canonical) = destination.canonicalize() {
+        if source_canonical == destination_canonical {
+            return Ok(destination.to_string_lossy().to_string());
+        }
+    }
+
+    if let Some(parent) = destination.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+    }
+
+    std::fs::copy(&source_canonical, destination).map_err(|e| e.to_string())?;
+    Ok(destination.to_string_lossy().to_string())
 }
 
 /// Maximum upload file size: 200 MB
@@ -613,6 +667,23 @@ pub async fn reveal_file_in_folder(
     Ok(())
 }
 
+/// Save a generated/uploaded conversation file to a user-selected destination.
+/// Searches both uploaded_files and generated_files tables.
+#[tauri::command]
+pub async fn save_generated_file_as(
+    facade: State<'_, Arc<RuntimeRepositoryFacade>>,
+    file_mgr: State<'_, Arc<FileManager>>,
+    file_id: String,
+    conversation_id: String,
+    destination_path: String,
+) -> Result<String, String> {
+    let stored_path = resolve_stored_path(&facade, &file_id, &conversation_id)?;
+    let full_path = file_mgr
+        .resolve_existing_file(&stored_path)
+        .map_err(|e| e.to_string())?;
+    copy_existing_file_to(&full_path, Path::new(&destination_path))
+}
+
 #[tauri::command]
 pub async fn get_file_preview(
     facade: State<'_, Arc<RuntimeRepositoryFacade>>,
@@ -718,6 +789,16 @@ pub async fn open_local_file(path: String) -> Result<(), String> {
         .spawn()
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// Save a local absolute file path to a user-selected destination.
+#[tauri::command]
+pub async fn save_local_file_as(path: String, destination_path: String) -> Result<String, String> {
+    let source = Path::new(&path);
+    if !source.exists() {
+        return Err(format!("Path does not exist: {}", path));
+    }
+    copy_existing_file_to(source, Path::new(&destination_path))
 }
 
 /// Preview a file (returns preview content as string).
@@ -914,6 +995,19 @@ mod tests {
         let parent = std::path::Path::new(&saved.path).parent().expect("parent");
         assert_eq!(parent, home.root().join("tmpImage").as_path());
     }
+
+    #[test]
+    fn copy_existing_file_to_copies_bytes_to_destination() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let source = tmp.path().join("source.png");
+        let destination = tmp.path().join("nested").join("copy.png");
+        std::fs::write(&source, [1_u8, 2, 3, 4]).expect("write source");
+
+        let saved_path = copy_existing_file_to(&source, &destination).expect("copy file");
+
+        assert_eq!(saved_path, destination.to_string_lossy().to_string());
+        assert_eq!(std::fs::read(destination).unwrap(), vec![1_u8, 2, 3, 4]);
+    }
 }
 
 #[cfg(test)]
@@ -967,6 +1061,23 @@ mod preview_tests {
         assert_eq!(json["kind"], "image");
         assert_eq!(json["mimeType"], "image/webp");
         assert_eq!(json["dataUrl"], "data:image/webp;base64,AQID");
+    }
+
+    #[test]
+    fn image_preview_prefers_detected_mime_over_record_type() {
+        let preview = preview_from_bytes(
+            "chart.png",
+            "png",
+            vec![0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, b'J', b'F', b'I', b'F'],
+        );
+        let json = serde_json::to_value(preview).expect("serialize preview");
+
+        assert_eq!(json["kind"], "image");
+        assert_eq!(json["mimeType"], "image/jpeg");
+        assert!(json["dataUrl"]
+            .as_str()
+            .unwrap()
+            .starts_with("data:image/jpeg;base64,"));
     }
 
     #[test]

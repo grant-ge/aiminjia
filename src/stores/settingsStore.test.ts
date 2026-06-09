@@ -25,6 +25,7 @@ describe('settingsStore — defaults', () => {
     expect(state.keepOldVersions).toBe(1)
     expect(state.cloudModel).toBe('')
     expect(state.cloudModelType).toBe('')
+    expect(state.fontScale).toBe('small')
     expect(state.chatWidthMode).toBe('full')
     expect(state.isLoaded).toBe(false)
   })

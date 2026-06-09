@@ -9,8 +9,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
-use crate::runtime::agent::output_writer;
 use crate::runtime::agent::async_task_store::AsyncTaskType;
+use crate::runtime::agent::output_writer;
 use crate::runtime::tools::catalog::TOOL_CATALOG;
 use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::{ToolDefinition, ToolKind};
@@ -296,10 +296,8 @@ mod tests {
         let tool = build_tool(&tmp);
         let conv_dir = tmp.path().join("conversations").join("conv-shell");
         let path = super::super::shell_task::shell_transcript_path(&conv_dir, "b12345678");
-        output_writer::append_line(&path, &output_writer::TranscriptLine::tool("line-1"))
-            .unwrap();
-        output_writer::append_line(&path, &output_writer::TranscriptLine::tool("line-2"))
-            .unwrap();
+        output_writer::append_line(&path, &output_writer::TranscriptLine::tool("line-1")).unwrap();
+        output_writer::append_line(&path, &output_writer::TranscriptLine::tool("line-2")).unwrap();
 
         let ctx = ToolExecutionContext::for_test("conv-shell", "r", "tc").with_conv_dir(conv_dir);
         let result = tool

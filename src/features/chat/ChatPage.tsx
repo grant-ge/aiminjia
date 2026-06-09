@@ -1,6 +1,7 @@
 import { ChatBottomArea } from '@/components/chat-scene/ChatBottomArea'
 import { ExpertTeamWelcome } from '@/components/chat-scene/ExpertTeamWelcome'
 import { RightPanel } from '@/components/chat/RightPanel'
+import { savePreviewTargetToDisk } from '@/components/chat/fileDownload'
 import type { PreviewTarget } from '@/components/chat/generatedFileActions'
 import { ChatArea } from '@/components/layout/ChatArea'
 import { ChatTopBar } from '@/components/shell/ChatTopBar'
@@ -30,7 +31,7 @@ interface ChatPageProps {
 }
 
 export function ChatPage({ conversationId }: ChatPageProps) {
-  const { i18n } = useTranslation()
+  const { i18n, t } = useTranslation()
   const { switchConversation } = useChat()
   const conversations = useChatStore((s) => s.conversations)
   const activeConversationId = useChatStore((s) => s.activeConversationId)
@@ -70,6 +71,31 @@ export function ChatPage({ conversationId }: ChatPageProps) {
         level: 'error',
         title: '无法打开文件',
         message: err instanceof Error ? err.message : '打开生成文件失败。',
+        actions: [],
+        dismissible: true,
+        context: 'toast',
+      })
+    }
+  }
+
+  const handleDownloadPreviewTarget = async (target: PreviewTarget) => {
+    try {
+      const savedPath = await savePreviewTargetToDisk(target)
+      if (!savedPath) return
+      pushNotification({
+        level: 'success',
+        title: t('messageList.fileDownloaded', '已下载文件'),
+        message: savedPath,
+        actions: [],
+        dismissible: true,
+        autoHide: 3,
+        context: 'toast',
+      })
+    } catch (err) {
+      pushNotification({
+        level: 'error',
+        title: t('messageList.cannotDownload', '无法下载文件'),
+        message: err instanceof Error ? err.message : '下载生成文件失败。',
         actions: [],
         dismissible: true,
         context: 'toast',
@@ -130,6 +156,7 @@ export function ChatPage({ conversationId }: ChatPageProps) {
           <RightPanel
             conversationId={conversationId}
             onOpenExternal={(target) => void handleOpenPreviewTarget(target)}
+            onDownload={(target) => void handleDownloadPreviewTarget(target)}
           />
         ) : null}
       </div>

@@ -8,6 +8,7 @@ import { initChannelListeners, useChannelStore } from '@/stores/channelStore'
 import { useChatStore } from '@/stores/chatStore'
 import { ChatBottomArea } from '@/components/chat-scene/ChatBottomArea'
 import { RightPanel } from '@/components/chat/RightPanel'
+import { savePreviewTargetToDisk } from '@/components/chat/fileDownload'
 import type { PreviewTarget } from '@/components/chat/generatedFileActions'
 import { ChatArea } from '@/components/layout/ChatArea'
 import { ChatTopBar } from '@/components/shell/ChatTopBar'
@@ -408,6 +409,31 @@ function ChannelChatView({ sessionId }: { sessionId: string }) {
     }
   }
 
+  const handleDownloadPreviewTarget = async (target: PreviewTarget) => {
+    try {
+      const savedPath = await savePreviewTargetToDisk(target)
+      if (!savedPath) return
+      pushNotification({
+        level: 'success',
+        title: t('messageList.fileDownloaded', '已下载文件'),
+        message: savedPath,
+        actions: [],
+        dismissible: true,
+        autoHide: 3,
+        context: 'toast',
+      })
+    } catch (err) {
+      pushNotification({
+        level: 'error',
+        title: t('messageList.cannotDownload', '无法下载文件'),
+        message: err instanceof Error ? err.message : t('channel.errors.openFileMessage'),
+        actions: [],
+        dismissible: true,
+        context: 'toast',
+      })
+    }
+  }
+
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden bg-background">
       <ChatTopBar
@@ -429,7 +455,11 @@ function ChannelChatView({ sessionId }: { sessionId: string }) {
           <ChatBottomArea disabled={isInactiveSession} sessionIdOverride={sessionId} />
         </div>
         <TeamChatDrawer conversationId={sessionId} overview={teamOverview} />
-        <RightPanel conversationId={sessionId} onOpenExternal={(target) => void handleOpenPreviewTarget(target)} />
+        <RightPanel
+          conversationId={sessionId}
+          onOpenExternal={(target) => void handleOpenPreviewTarget(target)}
+          onDownload={(target) => void handleDownloadPreviewTarget(target)}
+        />
       </div>
       <ConversationExportDialog {...conversationExport.dialogProps} />
     </div>

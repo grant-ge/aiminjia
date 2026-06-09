@@ -9,6 +9,7 @@ import { AiBubble } from '@/components/chat/AiBubble'
 import { CompactBoundaryBar } from '@/components/chat/CompactBoundaryBar'
 import { DayDivider } from '@/components/chat/DayDivider'
 import { StreamingBubble } from '@/components/chat/StreamingBubble'
+import { savePreviewTargetToDisk } from '@/components/chat/fileDownload'
 import { isSameDay } from '@/lib/chatTime'
 import { ChatRow } from '@/components/chat-scene/ChatRow'
 import { GeneratedFileCard } from '@/components/chat-scene/GeneratedFileCard'
@@ -34,7 +35,7 @@ import { useTurnRenderModel, type RenderGeneratedFile, type RenderTurnBlock } fr
 import { openGeneratedFile, openLocalFile, revealFileInFolder } from '@/lib/tauri'
 import { useConversationTeamState, useTeamStore } from '@/stores/teamStore'
 
-type FileActionKind = 'preview' | 'open' | 'reveal'
+type FileActionKind = 'preview' | 'open' | 'download' | 'reveal'
 
 // Display name for IM platforms when the inbound conversation's sender is
 // rendered as the user-side identity. Keep in sync with AppSidebar's
@@ -59,6 +60,7 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
   const FILE_ACTION_ERROR_TITLES: Record<FileActionKind, string> = {
     preview: t('messageList.cannotPreview'),
     open: t('messageList.cannotOpen'),
+    download: t('messageList.cannotDownload', '无法下载文件'),
     reveal: t('messageList.cannotReveal'),
   }
 
@@ -223,6 +225,28 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
     }
   }
 
+  const handleDownload = async (file: RenderGeneratedFile) => {
+    try {
+      if (!file.conversationId) {
+        notifyFileError('download', '生成文件缺少所属对话，无法下载。')
+        return
+      }
+      const savedPath = await savePreviewTargetToDisk(toPreviewTarget(file, file.conversationId))
+      if (!savedPath) return
+      pushNotification({
+        level: 'success',
+        title: t('messageList.fileDownloaded', '已下载文件'),
+        message: savedPath,
+        actions: [],
+        dismissible: true,
+        autoHide: 3,
+        context: 'toast',
+      })
+    } catch (err) {
+      notifyFileError('download', err instanceof Error ? err.message : '下载生成文件失败。')
+    }
+  }
+
   const handleReveal = async (file: RenderGeneratedFile) => {
     try {
       if (file.id.startsWith('artifact-') && file.filePath) {
@@ -329,6 +353,7 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
                   onOpenTeamDrawer: handleOpenTeamDrawer,
                   onPreview: handlePreview,
                   onOpenExternal: handleOpenExternal,
+                  onDownload: handleDownload,
                   onReveal: handleReveal,
                   // Inline streamingContent only for the last turn while
                   // active streaming is happening, so the bottom
@@ -379,10 +404,12 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
                         primaryAction={f.primaryAction}
                         canPreview={f.canPreview}
                         canOpenExternal={f.canOpenExternal}
+                        canDownload
                         canReveal={f.canReveal}
                         filePath={f.filePath}
                         onPreview={() => handlePreview(f)}
                         onOpenExternal={() => void handleOpenExternal(f)}
+                        onDownload={() => void handleDownload(f)}
                         onReveal={() => void handleReveal(f)}
                       />
                     ))}
@@ -446,6 +473,7 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
       onOpenTeamDrawer: typeof handleOpenTeamDrawer
       onPreview: (file: RenderGeneratedFile) => void | Promise<void>
       onOpenExternal: (file: RenderGeneratedFile) => Promise<void>
+      onDownload: (file: RenderGeneratedFile) => Promise<void>
       onReveal: (file: RenderGeneratedFile) => Promise<void>
       /** Live text being streamed for the current iter (the next assistantText
        *  block that will be persisted). Rendered between persisted blocks
@@ -478,10 +506,12 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
             primaryAction={f.primaryAction}
             canPreview={f.canPreview}
             canOpenExternal={f.canOpenExternal}
+            canDownload
             canReveal={f.canReveal}
             filePath={f.filePath}
             onPreview={() => ctx.onPreview(f)}
             onOpenExternal={() => void ctx.onOpenExternal(f)}
+            onDownload={() => void ctx.onDownload(f)}
             onReveal={() => void ctx.onReveal(f)}
           />
         )

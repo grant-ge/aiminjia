@@ -35,11 +35,10 @@ pub fn enable_optional_transcript_path(
     path: PathBuf,
     flushed_bytes: usize,
 ) {
-    *target.lock().expect("optional transcript path poisoned") =
-        Some(OptionalTranscriptTarget {
-            path,
-            flushed_bytes,
-        });
+    *target.lock().expect("optional transcript path poisoned") = Some(OptionalTranscriptTarget {
+        path,
+        flushed_bytes,
+    });
 }
 
 pub fn append_transcript_bytes(path: &Path, bytes: &[u8], context: &str) -> bool {
@@ -167,8 +166,7 @@ where
 {
     // Delegate to the with-progress variant with a no-op callback so old
     // callers (PowerShell, tests) keep the existing signature.
-    read_merged_streams_with_progress_and_optional_transcript(stdout, stderr, |_, _| {}, None)
-        .await
+    read_merged_streams_with_progress_and_optional_transcript(stdout, stderr, |_, _| {}, None).await
 }
 
 /// Same as [`read_merged_streams`] but invokes `on_chunk` synchronously
@@ -194,13 +192,7 @@ where
     R2: tokio::io::AsyncRead + Unpin,
     F: FnMut(&[u8], u64) + Send,
 {
-    read_merged_streams_with_progress_and_optional_transcript(
-        stdout,
-        stderr,
-        on_chunk,
-        None,
-    )
-    .await
+    read_merged_streams_with_progress_and_optional_transcript(stdout, stderr, on_chunk, None).await
 }
 
 pub async fn read_merged_streams_with_progress_and_optional_transcript<R1, R2, F>(

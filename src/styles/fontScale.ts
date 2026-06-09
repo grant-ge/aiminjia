@@ -7,9 +7,10 @@ export const FONT_SCALE_ROOT_PX: Record<FontScale, number> = {
 }
 
 export const FONT_SCALE_STORAGE_KEY = 'aijia-font-scale'
+export const DEFAULT_FONT_SCALE: FontScale = 'small'
 
 export function normalizeFontScale(value: unknown): FontScale {
-  return value === 'small' || value === 'large' || value === 'medium' ? value : 'medium'
+  return value === 'small' || value === 'large' || value === 'medium' ? value : DEFAULT_FONT_SCALE
 }
 
 export function applyFontScale(value: FontScale) {
@@ -19,11 +20,11 @@ export function applyFontScale(value: FontScale) {
 }
 
 export function loadPersistedFontScale(): FontScale {
-  if (typeof localStorage === 'undefined') return 'medium'
+  if (typeof localStorage === 'undefined') return DEFAULT_FONT_SCALE
   try {
     return normalizeFontScale(localStorage.getItem(FONT_SCALE_STORAGE_KEY))
   } catch {
-    return 'medium'
+    return DEFAULT_FONT_SCALE
   }
 }
 

@@ -501,7 +501,9 @@ impl AuthClient {
     ) -> Result<crate::transport::tauri_commands::billing::UsageRecordsPage> {
         let url = format!(
             "{}/v1/billing/usage-records?page={}&size={}",
-            base_url(), page, size
+            base_url(),
+            page,
+            size
         );
         let resp = self
             .client

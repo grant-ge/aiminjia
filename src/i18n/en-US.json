@@ -88,7 +88,9 @@
   "messageList": {
     "cannotPreview": "Cannot preview this file",
     "cannotOpen": "Cannot open file",
-    "cannotReveal": "Cannot reveal in folder"
+    "cannotDownload": "Cannot download file",
+    "cannotReveal": "Cannot reveal in folder",
+    "fileDownloaded": "File downloaded"
   },
   "subagent": {
     "resultCard": {
@@ -1048,10 +1050,12 @@
     "previewInside": "Preview in sidebar",
     "previewUnavailable": "Preview not available",
     "openExternal": "Open with default app",
+    "download": "Download...",
     "reveal": "Show in folder"
   },
   "filePreview": {
     "openWithDefault": "Open with default app",
+    "download": "Download...",
     "selectArtifact": "Select a file to preview",
     "loadingPreview": "Loading preview...",
     "cannotPreview": "Cannot preview this file",
