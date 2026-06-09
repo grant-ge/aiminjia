@@ -28,10 +28,12 @@ export function UpdaterPanel() {
   const version = useUpdaterStore((s) => s.version)
   const notes = useUpdaterStore((s) => s.notes)
   const progress = useUpdaterStore((s) => s.progress)
+  const installProgress = useUpdaterStore((s) => s.installProgress)
   const error = useUpdaterStore((s) => s.error)
   const online = useUpdaterStore((s) => s.online)
   const closePanel = useUpdaterStore((s) => s.closePanel)
   const startDownload = useUpdaterStore((s) => s.startDownload)
+  const retryDownload = useUpdaterStore((s) => s.retryDownload)
   const installNow = useUpdaterStore((s) => s.installNow)
 
   const [currentVersion, setCurrentVersion] = useState('')
@@ -44,6 +46,9 @@ export function UpdaterPanel() {
   const pct = progress && progress.total > 0
     ? Math.round((progress.downloaded / progress.total) * 100)
     : 0
+  const installPct = installProgress && installProgress.total > 0
+    ? Math.round((installProgress.current / installProgress.total) * 100)
+    : 0
 
   const bullets = notes
     .split(/\r?\n/)
@@ -54,11 +59,15 @@ export function UpdaterPanel() {
     phase === 'downloading' ? t('updater.dialogTitleDownloading', { version })
     : phase === 'ready' ? t('updater.dialogTitleReady', { version })
     : phase === 'failed' ? t('updater.dialogTitleFailed')
+    : phase === 'installing' ? t('updater.dialogTitleInstalling', { version })
     : t('updater.dialogTitleAvailable', { version })
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) closePanel() }}>
       <DialogContent
+        data-aijia-updater-panel
+        data-aijia-updater-phase={phase}
+        data-aijia-updater-version={version}
         className="max-w-md overflow-hidden"
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
@@ -94,6 +103,8 @@ export function UpdaterPanel() {
           <div className="space-y-3 py-2">
             <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
               <div
+                data-aijia-updater-progress
+                data-aijia-updater-progress-percent={pct}
                 className="h-full rounded-full bg-primary transition-all duration-300"
                 style={{ width: `${pct}%` }}
               />
@@ -135,7 +146,10 @@ export function UpdaterPanel() {
         {/* Phase: failed — error message */}
         {phase === 'failed' && (
           <div className="py-4 text-center">
-            <p className="text-sm text-destructive">
+            <p
+              data-aijia-updater-error
+              className="text-sm text-destructive"
+            >
               {t('updater.downloadFailedMessage', { error: error ?? '' })}
             </p>
           </div>
@@ -143,22 +157,51 @@ export function UpdaterPanel() {
 
         {/* Phase: installing — spinner */}
         {phase === 'installing' && (
-          <div className="flex items-center justify-center py-6">
-            <p className="text-sm text-muted-foreground">{t('updater.installing')}</p>
+          <div className="space-y-3 py-3">
+            <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+              <div
+                data-testid="updater-install-progress"
+                data-aijia-updater-install-progress
+                data-aijia-updater-install-percent={installPct}
+                className="h-full rounded-full bg-primary transition-all duration-300"
+                style={{ width: `${installPct}%` }}
+              />
+            </div>
+            <p className="text-center text-sm text-muted-foreground">
+              {t(`updater.installStage.${installProgress?.stage ?? 'preparing'}`)}
+            </p>
           </div>
         )}
 
         <DialogFooter>
           {phase === 'available' && (
             <>
-              <Button variant="outline" onClick={closePanel}>{t('updater.updateLater')}</Button>
-              <Button onClick={() => void startDownload()}>{t('updater.updateNow')}</Button>
+              <Button
+                data-aijia-updater-action="later"
+                variant="outline"
+                onClick={closePanel}
+              >
+                {t('updater.updateLater')}
+              </Button>
+              <Button
+                data-aijia-updater-action="download"
+                onClick={() => void startDownload()}
+              >
+                {t('updater.updateNow')}
+              </Button>
             </>
           )}
           {phase === 'ready' && (
             <>
-              <Button variant="outline" onClick={closePanel}>{t('updater.updateLater')}</Button>
               <Button
+                data-aijia-updater-action="later"
+                variant="outline"
+                onClick={closePanel}
+              >
+                {t('updater.updateLater')}
+              </Button>
+              <Button
+                data-aijia-updater-action="install"
                 onClick={() => void installNow()}
                 disabled={!online}
                 title={!online ? t('updater.offlineHint') : undefined}
@@ -168,7 +211,12 @@ export function UpdaterPanel() {
             </>
           )}
           {phase === 'failed' && (
-            <Button onClick={() => void startDownload()}>{t('updater.retry')}</Button>
+            <Button
+              data-aijia-updater-action="retry"
+              onClick={() => void retryDownload()}
+            >
+              {t('updater.retry')}
+            </Button>
           )}
         </DialogFooter>
       </DialogContent>

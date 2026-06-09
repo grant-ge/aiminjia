@@ -3,6 +3,9 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const tauriMock = vi.hoisted(() => ({
+  TAURI_EVENTS: {
+    SKILL_REGISTRY_REFRESHED: 'skill:registry-refreshed',
+  },
   cloudLogin: vi.fn().mockResolvedValue({
     loggedIn: true,
     user: { id: 1, name: 'Test', username: 'test' },
@@ -32,6 +35,16 @@ const tauriMock = vi.hoisted(() => ({
     cloudModelType: '',
   }),
   updateSettings: vi.fn().mockResolvedValue(undefined),
+  getDevGateway: vi.fn().mockResolvedValue({
+    currentHost: 'https://ai.renlijia.com',
+    isOverride: false,
+    presets: [],
+  }),
+  setDevGateway: vi.fn().mockResolvedValue({
+    currentHost: 'https://ai.renlijia.com',
+    isOverride: false,
+    presets: [],
+  }),
   getConversations: vi.fn().mockResolvedValue([]),
   isAgentBusy: vi.fn().mockResolvedValue([]),
   cloudLogout: vi.fn().mockResolvedValue(undefined),
@@ -40,6 +53,7 @@ const tauriMock = vi.hoisted(() => ({
   cloudRegister: vi.fn().mockResolvedValue(undefined),
   cloudResetPassword: vi.fn().mockResolvedValue(undefined),
   syncBuiltinSkills: vi.fn().mockResolvedValue({ installed: [], skipped: [] }),
+  workplaceDirectoryCatalog: vi.fn().mockResolvedValue({ schemaVersion: 1, categories: [], items: [] }),
   getLastBrand: vi.fn().mockResolvedValue(null),
   saveLastBrand: vi.fn().mockResolvedValue(undefined),
 }))
@@ -81,6 +95,9 @@ describe('AuthGate', () => {
     tauriMock.cloudSendEmailCode.mockResolvedValue(undefined)
     tauriMock.cloudRegister.mockResolvedValue(undefined)
     tauriMock.cloudResetPassword.mockResolvedValue(undefined)
+    tauriMock.syncBuiltinSkills.mockResolvedValue({ installed: [], skipped: [] })
+    tauriMock.workplaceDirectoryCatalog.mockResolvedValue({ schemaVersion: 1, categories: [], items: [] })
+    tauriMock.workplaceDirectoryCatalog.mockClear()
 
     useAuthStore.setState({
       isLoggedIn: false,
@@ -269,5 +286,26 @@ describe('AuthGate', () => {
     // 关键回归点：不再把 cloudModel 写回 settings —— 网关按协议+优先级
     // 路由，桌面端不该再固化用户的"第一次选择"。
     expect(tauriMock.updateSettings).not.toHaveBeenCalled()
+  })
+
+  it('恢复登录后自动同步工作台资源目录', async () => {
+    tauriMock.getCloudAuth.mockResolvedValue({
+      loggedIn: true,
+      user: { id: 1, name: 'Test', username: 'test' },
+      tenant: { id: 2, name: 'Tenant', balance: '0' },
+      models: [],
+    })
+
+    render(
+      <AuthGate>
+        <div>APP SHELL</div>
+      </AuthGate>,
+    )
+
+    await screen.findByText('APP SHELL')
+
+    await waitFor(() => {
+      expect(tauriMock.workplaceDirectoryCatalog).toHaveBeenCalled()
+    })
   })
 })

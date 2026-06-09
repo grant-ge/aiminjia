@@ -3,7 +3,8 @@ import { useTranslation } from 'react-i18next'
 import { useChat, type PendingFileInfo } from '@/hooks/useChat'
 import { buildDirectorPrompt } from '@/features/expert-teams/buildDirectorPrompt'
 import type { ExpertTeam } from '@/features/expert-teams/teams'
-import { getExpertAvatarUrl } from '@/features/expert-teams/expertAvatar'
+import { ExpertAvatarView } from '@/features/expert-teams/ExpertAvatarView'
+import { getExpertAvatarVisual } from '@/features/expert-teams/expertAvatar'
 import { getExpertTeamLogo } from '@/features/expert-teams/teamLogo'
 import { useSettingsStore } from '@/stores/settingsStore'
 
@@ -42,7 +43,7 @@ export function ExpertTeamWelcome({ team }: ExpertTeamWelcomeProps) {
     >
       <div
         data-testid="expert-team-welcome-logo"
-        className={`flex h-16 w-16 items-center justify-center rounded-2xl ${logo.className}`}
+        className={`flex h-16 w-16 items-center justify-center rounded-lg ${logo.className}`}
         aria-hidden
       >
         <TeamLogo className="h-8 w-8" />
@@ -57,7 +58,7 @@ export function ExpertTeamWelcome({ team }: ExpertTeamWelcomeProps) {
         {team.experts.length > 0 ? (
           <div className="mt-2 flex flex-wrap gap-2">
             {team.experts.map((expert) => {
-              const avatarUrl = getExpertAvatarUrl(team.id, expert.avatarName ?? expert.name)
+              const avatarVisual = getExpertAvatarVisual(team.id, expert)
               return (
                 <span
                   key={expert.name}
@@ -65,7 +66,7 @@ export function ExpertTeamWelcome({ team }: ExpertTeamWelcomeProps) {
                   title={expert.persona}
                 >
                   <span className="flex h-5 w-5 items-center justify-center overflow-hidden rounded-full bg-muted text-xs">
-                    {avatarUrl ? <img src={avatarUrl} alt="" className="h-full w-full object-cover" /> : expert.emoji}
+                    <ExpertAvatarView visual={avatarVisual} fallback={expert.emoji} />
                   </span>
                   {expert.name}
                 </span>

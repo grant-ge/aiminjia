@@ -186,7 +186,7 @@ export function ChatBottomArea({
       className="relative shrink-0"
     >
       <div
-        className="px-6 pt-4 pb-5"
+        className="px-6 pb-4 pt-3"
       >
         <div
           data-testid="chat-composer-width-shell"
@@ -217,7 +217,7 @@ export function ChatBottomArea({
               skillTokens={skillTokens}
               onOpenAttachment={isPickingAttachments ? undefined : () => void handlePickAttachments()}
               tips={<BottomTips />}
-              containerClassName="shadow-[var(--shadow-md)]"
+              containerClassName="shadow-[var(--shadow-card)]"
               limitEditorHeight
             />
           </div>

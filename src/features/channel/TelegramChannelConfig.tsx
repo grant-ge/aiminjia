@@ -214,7 +214,7 @@ export function TelegramChannelConfig({ onSaved, onClose }: TelegramChannelConfi
     return (
       <div className="flex max-h-[78vh] w-full flex-col overflow-hidden bg-background">
         <div className="flex flex-col items-center px-10 pb-5 pt-8 text-center">
-          <h2 className="text-2xl font-bold tracking-tight text-foreground">{t('channel.telegram.config.title')}</h2>
+          <h2 className="text-2xl font-bold text-foreground">{t('channel.telegram.config.title')}</h2>
           <p className="mt-3 text-sm font-medium text-muted-foreground">
             {t('channel.telegram.config.tokenSubtitle')}
           </p>
@@ -256,11 +256,11 @@ export function TelegramChannelConfig({ onSaved, onClose }: TelegramChannelConfi
           </div>
         </div>
         <div className="flex gap-3 border-t border-border bg-background px-10 py-4">
-          <Button variant="ghost" className="flex-1 rounded-full" onClick={onClose}>
+          <Button variant="ghost" className="flex-1" onClick={onClose}>
             {t('channel.actions.cancel')}
           </Button>
           <Button
-            className="flex-1 rounded-full"
+            className="flex-1"
             disabled={!token.trim() || saving}
             onClick={() => void handleSaveToken()}
           >
@@ -279,7 +279,7 @@ export function TelegramChannelConfig({ onSaved, onClose }: TelegramChannelConfi
   return (
     <div className="flex max-h-[78vh] w-full flex-col overflow-hidden bg-background">
       <div className="flex flex-col items-center px-10 pb-5 pt-8 text-center">
-        <h2 className="text-2xl font-bold tracking-tight text-foreground">{t('channel.telegram.config.pairingTitle')}</h2>
+        <h2 className="text-2xl font-bold text-foreground">{t('channel.telegram.config.pairingTitle')}</h2>
         <p className="mt-3 text-sm font-medium text-muted-foreground">
           {tgState?.config ? `@${tgState.config.appKey}` : 'Telegram bot'}
         </p>

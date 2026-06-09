@@ -9,7 +9,7 @@ export function HomePage() {
   const logoUrl = useBrandingStore((s) => s.logoUrl)
   return (
     <PageSectionShell className="min-h-full justify-center">
-      <div className="mx-auto flex w-[820px] flex-col items-center gap-10 -mt-6">
+      <div className="mx-auto -mt-4 flex w-[760px] max-w-full flex-col items-center gap-8">
         <HomeMascotHero
           mascotUrl={logoUrl}
           title={t('homePage.heroTitle')}

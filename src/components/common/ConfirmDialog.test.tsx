@@ -65,7 +65,7 @@ describe('ConfirmDialog', () => {
     expect(onConfirm).toHaveBeenCalledTimes(1)
   })
 
-  it('uses a soft content border instead of the default dark border', () => {
+  it('uses the standard modal content border', () => {
     render(
       <ConfirmDialog
         open
@@ -77,7 +77,7 @@ describe('ConfirmDialog', () => {
       />,
     )
 
-    expect(screen.getByRole('alertdialog')).toHaveClass('border-border/60')
+    expect(screen.getByRole('alertdialog')).toHaveClass('border-border')
   })
 
 })

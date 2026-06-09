@@ -1,7 +1,9 @@
 pub mod auth;
 pub mod commands;
 pub mod connector;
+pub mod environment;
 pub mod llm;
+pub mod log_context;
 pub mod models;
 pub mod plugin;
 pub mod runtime;
@@ -26,7 +28,7 @@ const APP_LOG_RETENTION_DAYS: u64 = 3;
 pub fn run() {
     let _ = rustls::crypto::ring::default_provider().install_default();
 
-    let mut builder = tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
@@ -35,9 +37,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init());
 
     #[cfg(feature = "e2e")]
-    {
-        builder = builder.plugin(tauri_plugin_pilot::init());
-    }
+    let builder = builder.plugin(tauri_plugin_pilot::init());
 
     builder
         .setup(|app| {
@@ -166,6 +166,19 @@ pub fn run() {
                 tauri_plugin_log::Builder::default()
                     .level(log::LevelFilter::Info)
                     .timezone_strategy(tauri_plugin_log::TimezoneStrategy::UseLocal)
+                    // Inject the per-request correlation prefix (`[s=.. r=..]`)
+                    // so a single turn can be grepped end-to-end. See log_context.
+                    .format(|out, message, record| {
+                        let ts = chrono::Local::now().format("[%Y-%m-%d][%H:%M:%S]");
+                        out.finish(format_args!(
+                            "{}[{}][{}]{} {}",
+                            ts,
+                            record.level(),
+                            record.target(),
+                            crate::log_context::prefix(),
+                            message
+                        ))
+                    })
                     .target(tauri_plugin_log::Target::new(
                         tauri_plugin_log::TargetKind::Folder {
                             path: logs_dir.clone(),
@@ -228,6 +241,17 @@ pub fn run() {
 
             // Initialize cloud auth manager
             let global_store = Arc::new(storage::GlobalConfigStore::new(aijia_home.global_dir()));
+            // Dev-only: seed the gateway-host override from persisted config so
+            // auth/LLM paths (which have no app handle) see it. No-op / not
+            // compiled in release builds.
+            #[cfg(debug_assertions)]
+            {
+                let persisted = global_store
+                    .get_setting(environment::dev::CONFIG_KEY)
+                    .ok()
+                    .flatten();
+                environment::dev::load(persisted.as_deref());
+            }
             // Data-layout compatibility gate: if the on-disk layout predates a
             // breaking storage / encryption change, the legacy `cloud_auth`
             // blob is purged so the user is forced to re-login cleanly.  Must
@@ -317,6 +341,7 @@ pub fn run() {
                 }
             }
 
+            #[allow(deprecated)]
             let (agent_store_path, subagent_transcript_store_dir) = current_user_storage
                 .resolve_paths()
                 .map(|paths| {
@@ -1053,7 +1078,9 @@ pub fn run() {
             commands::employees::employee_index_knowledge_async,
             commands::employees::employee_template_catalog,
             commands::employees::employee_template_refresh,
+            commands::expert_team_templates::expert_team_template_catalog,
             commands::expert_team_templates::expert_team_template_refresh,
+            commands::workplace_directory::workplace_directory_catalog,
             commands::employees::inbox_list,
             commands::employees::inbox_mark_read,
             commands::employees::inbox_mark_all_read,
@@ -1133,6 +1160,11 @@ pub fn run() {
             // Network status commands (spec docs/superpowers/specs/2026-05-26-network-detection-design.md)
             transport::tauri_commands::network::network_get_status,
             transport::tauri_commands::network::network_force_probe,
+            // Dev-only environment switcher (not compiled in release builds)
+            #[cfg(debug_assertions)]
+            commands::dev_environment::get_dev_environment,
+            #[cfg(debug_assertions)]
+            commands::dev_environment::set_dev_environment,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

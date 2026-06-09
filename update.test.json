@@ -1,0 +1,5 @@
+{
+  "oldVersion": "0.5.34-test.1",
+  "newVersion": "0.5.35-test.1",
+  "notes": "[测试] 本地 mock 更新源: 安装包继承线上正式 update.json,仅切换 manifest 版本和下载状态。"
+}

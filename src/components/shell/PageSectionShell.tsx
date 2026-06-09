@@ -1,9 +1,8 @@
 /**
  * @designSource design.pen#PqcAk / canvas* family
  *
- * 把"max-w + padding"分离：max-w 固定 1032，padding/gap 由 padding/gap props 传入。
- * 这样 home / skills / schedules 各页可保留自己的稿子 padding 节奏，
- * 而页面层不需要写颜色/边框。
+ * Page shell owns the common desktop workbench rhythm: 1280px content width,
+ * 32px horizontal padding, and stable section gaps.
  */
 import type { PropsWithChildren, ReactNode } from 'react'
 
@@ -11,11 +10,11 @@ interface PageSectionShellProps extends PropsWithChildren {
   topBar?: ReactNode
   /** @deprecated alias of topBar; will be removed in plan-B */
   header?: ReactNode
-  /** Tailwind padding classes; default "px-8 pt-6 pb-8" — keep pages consistent unless there's a real design reason to override */
+  /** Tailwind padding classes; default keeps pages aligned to the desktop workbench grid. */
   padding?: string
-  /** Tailwind gap class; default "gap-5" */
+  /** Tailwind gap class; default "gap-6" */
   gap?: string
-  /** override max width if needed (default 1032) */
+  /** override max width if needed (default 1280) */
   maxWidthClass?: string
   /** @deprecated alias of (padding + gap); will be removed in plan-B */
   className?: string
@@ -24,9 +23,9 @@ interface PageSectionShellProps extends PropsWithChildren {
 export function PageSectionShell({
   topBar,
   header,
-  padding = 'px-8 pt-6 pb-8',
-  gap = 'gap-5',
-  maxWidthClass = 'max-w-[1032px]',
+  padding = 'px-8 pt-7 pb-10',
+  gap = 'gap-6',
+  maxWidthClass = 'max-w-[1280px]',
   className = '',
   children,
 }: PageSectionShellProps) {

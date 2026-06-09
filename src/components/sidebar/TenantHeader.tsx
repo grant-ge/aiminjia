@@ -18,12 +18,12 @@ export function TenantHeader({
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-center justify-between gap-2 rounded-md p-2 text-left transition-colors"
+      className="flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-sidebar-accent/60"
     >
-      <div className="flex min-w-0 items-center gap-1.5">
+      <div className="flex min-w-0 items-center gap-2">
         <div
           data-testid="tenant-logo"
-          className="h-6 w-6 shrink-0 overflow-hidden rounded-md"
+          className="h-7 w-7 shrink-0 overflow-hidden rounded-md border border-sidebar-border bg-card"
         >
           <img
             src={logoUrl}

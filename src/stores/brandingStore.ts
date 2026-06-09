@@ -14,6 +14,7 @@
 import i18n from '@/i18n'
 import { create } from 'zustand'
 
+import { tenantHost } from '@/lib/environment'
 import { getLastBrand, saveLastBrand, type BrandSnapshot } from '@/lib/tauri'
 import { darken, hexToRgb, isDarkColor, lighten, mixColors, rgba } from '@/lib/themeUtils'
 
@@ -259,7 +260,7 @@ function resolveLogoUrl(raw: string): string {
   try {
     const u = new URL(raw)
     if (u.protocol === 'http:' || u.protocol === 'https:') {
-      return `https://ai-tenant.renlijia.com/api/file?url=${encodeURIComponent(raw)}`
+      return `${tenantHost()}/api/file?url=${encodeURIComponent(raw)}`
     }
   } catch {
     /* ignore */

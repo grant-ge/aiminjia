@@ -11,6 +11,24 @@ import { usePendingStore } from '@/stores/pendingStore'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useUiStore } from '@/stores/uiStore'
 
+if (import.meta.env.DEV) {
+  // Seed the synchronous environment cache from the backend's persisted dev
+  // override so render-path callers (e.g. the branding logo proxy) use the
+  // right origin. Fire-and-forget: the host self-corrects on the next branding
+  // fetch if this resolves after first paint. Stripped from release builds.
+  void import('@/lib/tauri').then(({ getDevEnvironment }) =>
+    getDevEnvironment()
+      .then(({ currentTenant, currentOps }) =>
+        import('@/lib/environment').then(({ setEnvironmentCache }) =>
+          setEnvironmentCache({ tenant: currentTenant, ops: currentOps }),
+        ),
+      )
+      .catch(() => {
+        // Outside Tauri (vitest/jsdom) the command is unavailable.
+      }),
+  )
+}
+
 if (import.meta.env.DEV || import.meta.env.VITE_E2E_ENABLED === 'true') {
   ;(window as unknown as { __aijia?: unknown }).__aijia = {
     chatStore: useChatStore,

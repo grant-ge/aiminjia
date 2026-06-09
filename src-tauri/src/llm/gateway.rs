@@ -90,6 +90,15 @@ pub(crate) fn format_llm_error_diagnostics(err: &anyhow::Error) -> String {
     parts.join("; ")
 }
 
+fn cloud_session_error_message(err: &anyhow::Error) -> String {
+    let message = err.to_string();
+    if message.contains("登录已过期") || message.contains("未登录") {
+        message
+    } else {
+        format!("登录状态异常：{message}")
+    }
+}
+
 fn attach_anthropic_multimodal_turn(
     messages: &mut [ChatMessage],
     anthropic_multimodal_turn: Option<AnthropicMultimodalTurn>,
@@ -495,12 +504,7 @@ impl LlmGateway {
             if let Some(auth) = &self.auth_manager {
                 match auth.get_session_key().await {
                     Ok(sk) => route.api_key = sk,
-                    Err(e) => {
-                        return Err(anyhow::anyhow!(
-                            "API 密钥无效或已过期，请在设置中检查 API Key 配置。({})",
-                            e
-                        ))
-                    }
+                    Err(e) => return Err(anyhow::anyhow!(cloud_session_error_message(&e))),
                 }
             }
         }
@@ -671,12 +675,7 @@ impl LlmGateway {
             if let Some(auth) = &self.auth_manager {
                 match auth.get_session_key().await {
                     Ok(sk) => route.api_key = sk,
-                    Err(e) => {
-                        return Err(anyhow::anyhow!(
-                            "API 密钥无效或已过期，请在设置中检查 API Key 配置。({})",
-                            e
-                        ))
-                    }
+                    Err(e) => return Err(anyhow::anyhow!(cloud_session_error_message(&e))),
                 }
             }
         }
@@ -752,12 +751,7 @@ impl LlmGateway {
             if let Some(auth) = &self.auth_manager {
                 match auth.get_session_key().await {
                     Ok(sk) => route.api_key = sk,
-                    Err(e) => {
-                        return Err(anyhow::anyhow!(
-                            "API 密钥无效或已过期，请在设置中检查 API Key 配置。({})",
-                            e
-                        ))
-                    }
+                    Err(e) => return Err(anyhow::anyhow!(cloud_session_error_message(&e))),
                 }
             }
         }
@@ -1361,5 +1355,12 @@ mod stability_tests {
         );
 
         assert!(!is_auth_revoked_error(&err));
+    }
+
+    #[test]
+    fn cloud_session_error_message_does_not_mention_api_key() {
+        let err = anyhow::anyhow!("登录已过期，请重新登录");
+
+        assert_eq!(cloud_session_error_message(&err), "登录已过期，请重新登录");
     }
 }

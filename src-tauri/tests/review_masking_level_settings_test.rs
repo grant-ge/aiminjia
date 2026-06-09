@@ -96,6 +96,7 @@ impl RuntimeLlmExecutor for MaskingProbeExecutor {
             custom_model_name: String::new(),
             cloud_model: String::new(),
             cloud_model_type: String::new(),
+            cloud_gateway_mode: app_lib::models::settings::CloudGatewayMode::V2,
             thinking_type: "disabled".to_string(),
             thinking_budget_tokens: 8000,
             masking_level,
@@ -137,6 +138,7 @@ impl RuntimeLlmExecutor for MaskingProbeExecutor {
         _generated_file_ids: &[String],
         _file_metas: &[serde_json::Value],
         _thinking_blocks: &[serde_json::Value],
+        _error: Option<&app_lib::storage::file_store::types::MessageError>,
     ) -> Result<String, TurnError> {
         Ok("msg-mask".to_string())
     }

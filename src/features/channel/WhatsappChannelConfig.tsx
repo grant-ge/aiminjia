@@ -494,7 +494,7 @@ export function WhatsappChannelConfig({ onSaved, onClose, connected }: Props) {
   return (
     <div className="flex max-h-[78vh] w-full flex-col overflow-hidden bg-background">
       <div className="flex flex-col items-center px-10 pb-5 pt-8 text-center">
-        <h2 className="text-2xl font-bold tracking-tight text-foreground">
+        <h2 className="text-2xl font-bold text-foreground">
           {isConfigured ? t('channel.whatsapp.config.titleConfigured') : t('channel.whatsapp.config.titleNew')}
         </h2>
         <p className="mt-3 text-sm font-medium text-muted-foreground">

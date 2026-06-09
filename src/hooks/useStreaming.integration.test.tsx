@@ -242,6 +242,34 @@ describe('useStreaming integration review', () => {
     expect(useDiagnosticsStore.getState().events.some((event) => event.event === 'streaming.done.received')).toBe(true)
   })
 
+  it('surfaces streaming notices as informational notifications', async () => {
+    render(<HookHarness />)
+    await waitForListeners()
+
+    const handler = tauriEventMock.listeners.get('streaming:notice')
+    expect(handler).toBeTypeOf('function')
+
+    act(() => {
+      handler?.({
+        payload: {
+          conversationId: 'conv-notice',
+          runId: 'run-notice',
+          level: 'info',
+          code: 'auto_failed_over',
+          message: '当前模型服务不稳定，已自动切换到备选模型继续。',
+          fromRoute: { provider: 'anthropic' },
+          toRoute: { provider: 'openai' },
+        },
+      })
+    })
+
+    expect(useNotificationStore.getState().notifications.at(-1)).toMatchObject({
+      level: 'info',
+      message: '当前模型服务不稳定，已自动切换到备选模型继续。',
+    })
+    expect(useDiagnosticsStore.getState().events.some((event) => event.event === 'streaming.notice.received')).toBe(true)
+  })
+
   it('preserves optimistic user message sender when persisted echo replaces client id', async () => {
     useChatStore.setState({
       activeConversationId: 'conv-1',

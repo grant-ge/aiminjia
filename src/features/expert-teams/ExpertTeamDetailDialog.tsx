@@ -1,0 +1,141 @@
+import { RefreshCw, SendHorizontal, UsersRound } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
+import { ExpertAvatarView } from './ExpertAvatarView'
+import { getExpertAvatarVisual } from './expertAvatar'
+import { getExpertTeamLogo } from './teamLogo'
+import type { ExpertTeam, ExpertTeamId } from './teams'
+
+interface ExpertTeamDetailDialogProps {
+  team: ExpertTeam | null
+  open: boolean
+  busy: boolean
+  onOpenChange: (open: boolean) => void
+  onStart: (id: ExpertTeamId) => void
+}
+
+function styleLabel(style: ExpertTeam['facilitationStyle'], language: string): string {
+  const en = language.toLowerCase().startsWith('en')
+  if (style === 'debate') return en ? 'Debate' : '辩论推演'
+  if (style === 'open') return en ? 'Dynamic roundtable' : '动态圆桌'
+  return en ? 'Round-robin discussion' : '多角色轮询'
+}
+
+export function ExpertTeamDetailDialog({
+  team,
+  open,
+  busy,
+  onOpenChange,
+  onStart,
+}: ExpertTeamDetailDialogProps) {
+  const { t, i18n } = useTranslation()
+  if (!team) return null
+
+  const logo = getExpertTeamLogo(team.id)
+  const TeamLogo = logo.icon
+  const meta = [
+    ...(team.workplaceCategoryName
+      ? [{ label: t('ExpertTeams.detail.category'), value: team.workplaceCategoryName }]
+      : []),
+    {
+      label: t('ExpertTeams.detail.members'),
+      value: team.experts.length > 0
+        ? t('ExpertTeams.detail.memberCount', { count: team.experts.length })
+        : t('ExpertTeams.directorInvites'),
+    },
+    { label: t('ExpertTeams.detail.mode'), value: styleLabel(team.facilitationStyle, i18n.language) },
+  ]
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[min(86vh,calc(100vh-32px))] w-[calc(100vw-32px)] max-w-[820px] overflow-hidden p-0" data-aijia-expert-team-detail>
+        <DialogTitle className="sr-only">{team.name}</DialogTitle>
+        <DialogDescription className="sr-only">{team.tagline}</DialogDescription>
+        <div className="flex max-h-[min(86vh,calc(100vh-32px))] flex-col overflow-hidden">
+          <div className="flex items-start gap-5 border-b border-border bg-card px-6 py-5 pr-16">
+            <div className={`flex h-20 w-20 shrink-0 items-center justify-center rounded-lg ${logo.className}`}>
+              <TeamLogo className="h-9 w-9" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <h2 className="truncate text-[22px] font-bold leading-7 text-foreground">{team.name}</h2>
+              <p className="mt-2 line-clamp-3 text-sm leading-6 text-muted-foreground">{team.tagline}</p>
+            </div>
+          </div>
+
+          <div className="min-h-0 overflow-auto px-6 py-5">
+            <div className="flex flex-wrap gap-x-12 gap-y-4">
+              {meta.map((item) => (
+                <div key={item.label} className="flex min-w-[120px] flex-col gap-1.5">
+                  <span className="text-xs font-medium text-muted-foreground">{item.label}</span>
+                  <span className="text-sm text-foreground">{item.value}</span>
+                </div>
+              ))}
+            </div>
+
+            <section className="mt-6 flex flex-col gap-3">
+              <h3 className="text-sm font-semibold text-foreground">{t('ExpertTeams.members')}</h3>
+              {team.experts.length > 0 ? (
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {team.experts.map((expert) => {
+                    const avatarVisual = getExpertAvatarVisual(team.id, expert)
+                    return (
+                      <div key={expert.name} className="flex items-start gap-3 rounded-lg border border-border bg-card px-3 py-3">
+                        <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-muted/40">
+                          <ExpertAvatarView
+                            visual={avatarVisual}
+                            fallback={expert.emoji || Array.from(expert.name)[0]}
+                            className="text-lg leading-none"
+                          />
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-medium text-foreground">{expert.name}</span>
+                        <span className="mt-0.5 line-clamp-2 block text-xs leading-5 text-muted-foreground">
+                            {expert.persona}
+                          </span>
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/20 px-4 py-4 text-sm text-muted-foreground">
+                  <UsersRound className="h-4 w-4 text-primary" />
+                  {t('ExpertTeams.directorInvites')}
+                </div>
+              )}
+            </section>
+
+            <section className="mt-6 flex flex-col gap-3">
+              <h3 className="text-sm font-semibold text-foreground">{t('ExpertTeams.detail.examples')}</h3>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {team.examples.map((example) => (
+                  <div key={example} className="rounded-md border border-border bg-muted/30 px-4 py-3 text-sm leading-6 text-foreground">
+                    {example}
+                  </div>
+                ))}
+              </div>
+            </section>
+          </div>
+          <div className="flex shrink-0 justify-end gap-2 border-t border-border bg-card px-6 py-4">
+            <Button
+              type="button"
+              className="min-w-[128px] gap-1.5 px-5"
+              disabled={busy}
+              onClick={() => onStart(team.id)}
+            >
+              {busy ? <RefreshCw className="h-4 w-4 animate-spin" /> : <SendHorizontal className="h-4 w-4" />}
+              {busy ? t('ExpertTeams.starting') : t('ExpertTeams.summon')}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}

@@ -24,8 +24,8 @@ interface SkillCardProps {
 
 export function SkillCard({ title, meta, desc, iconNode, iconBg = 'bg-brand-primary-subtle', onClick, size = 'office', actionsSlot, version, skillId, skillSource }: SkillCardProps) {
   const isHot = size === 'hot'
-  const height = isHot ? 'h-[140px]' : 'h-[120px]'
-  const iconSize = isHot ? 'h-9 w-9' : 'h-[34px] w-[34px]'
+  const height = isHot ? 'min-h-[156px]' : 'min-h-[140px]'
+  const iconSize = isHot ? 'h-11 w-11' : 'h-10 w-10'
 
   const interactiveProps = onClick
     ? {
@@ -38,7 +38,7 @@ export function SkillCard({ title, meta, desc, iconNode, iconBg = 'bg-brand-prim
       }
     : {}
   const interactiveClass = onClick
-    ? 'cursor-pointer hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+    ? 'cursor-pointer hover:border-primary/50 hover:shadow-[var(--shadow-card-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
     : ''
 
   return (
@@ -48,7 +48,7 @@ export function SkillCard({ title, meta, desc, iconNode, iconBg = 'bg-brand-prim
       data-aijia-skill-id={skillId}
       data-aijia-skill-source={skillSource}
       {...interactiveProps}
-      className={`group relative flex ${height} flex-col rounded-lg border border-border bg-card p-4 transition-all duration-150 ${interactiveClass}`}
+      className={`group relative flex ${height} flex-col rounded-md border border-border bg-card p-4 shadow-[var(--shadow-card)] transition-all duration-150 ${interactiveClass}`}
     >
       <div className="flex items-center gap-2.5">
         <div className={`flex ${iconSize} shrink-0 items-center justify-center rounded-md ${iconBg}`}>
@@ -56,7 +56,7 @@ export function SkillCard({ title, meta, desc, iconNode, iconBg = 'bg-brand-prim
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <div className="flex min-w-0 items-center gap-1.5">
-            <span className="truncate text-sm font-semibold text-foreground">{title}</span>
+            <span className="truncate text-[15px] font-semibold leading-[22px] text-foreground">{title}</span>
             {version ? (
               <span
                 data-testid="skill-card-version"
@@ -67,10 +67,10 @@ export function SkillCard({ title, meta, desc, iconNode, iconBg = 'bg-brand-prim
               </span>
             ) : null}
           </div>
-          <span className="text-xs font-medium text-brand-secondary">{meta}</span>
+          <span className="text-xs font-medium text-muted-foreground">{meta}</span>
         </div>
       </div>
-      <p className="mt-2.5 line-clamp-2 text-xs text-muted-foreground">{desc}</p>
+      <p className="mt-3 line-clamp-2 text-[13px] leading-5 text-muted-foreground">{desc}</p>
       {actionsSlot ? (
         <div
           className="absolute right-4 top-4"

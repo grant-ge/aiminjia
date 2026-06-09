@@ -89,7 +89,7 @@ export function InboxPage() {
             <Button
               variant="ghost"
               size="sm"
-              className="gap-1.5 text-xs"
+              className="gap-1.5"
               disabled={markingAll || unread === 0}
               onClick={handleMarkAll}
             >
@@ -103,16 +103,16 @@ export function InboxPage() {
       {/* Filter bar */}
       <div className="flex items-center gap-3">
         {/* Kind tabs */}
-        <div className="flex items-center gap-0.5 rounded-lg bg-muted/50 p-0.5">
+        <div className="flex items-center gap-1 rounded-md border border-border bg-card p-1">
           {KIND_TAB_KEYS.map((tab) => (
             <button
               key={tab.key}
               type="button"
               onClick={() => setKindFilter(tab.key)}
-              className={`rounded-md px-2.5 py-1 text-xs transition-colors ${
+              className={`h-8 rounded-[var(--radius)] px-3 text-xs font-medium transition-colors ${
                 kindFilter === tab.key
-                  ? 'bg-background font-medium text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
+                  ? 'bg-brand-primary-subtle text-primary'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
               }`}
             >
               {t(tab.i18nKey)}
@@ -124,7 +124,7 @@ export function InboxPage() {
         <select
           value={empFilter}
           onChange={(e) => setEmpFilter(e.target.value)}
-          className="rounded-lg border border-border bg-background px-2.5 py-1 text-xs text-foreground"
+          className="h-9 rounded-[var(--radius)] border border-input bg-card px-2.5 text-xs text-foreground"
         >
           <option value="all">{t('inbox.allEmployees')}</option>
           {employees
@@ -137,7 +137,7 @@ export function InboxPage() {
         </select>
 
         {unread > 0 && (
-          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+          <span className="rounded-full bg-brand-primary-subtle px-2 py-0.5 text-xs font-medium text-primary">
             {t('inbox.unreadCount', { count: unread })}
           </span>
         )}
@@ -145,11 +145,11 @@ export function InboxPage() {
 
       {/* Entry list */}
       {filtered.length === 0 ? (
-        <div className="flex h-[240px] items-center justify-center rounded-xl border border-dashed border-border">
+        <div className="flex h-[240px] items-center justify-center rounded-md border border-dashed border-border bg-card shadow-[var(--shadow-card)]">
           <p className="text-sm text-muted-foreground">{t('inbox.noRecords')}</p>
         </div>
       ) : (
-        <div className="flex flex-col divide-y divide-border overflow-hidden rounded-xl border border-border">
+        <div className="flex flex-col divide-y divide-border overflow-hidden rounded-md border border-border bg-card shadow-[var(--shadow-card)]">
           {filtered.map((entry) => {
             const emp = employees.find((e) => e.id === entry.employeeId)
             const clickable = !!entry.conversationId
@@ -168,8 +168,8 @@ export function InboxPage() {
                 type="button"
                 onClick={handleClick}
                 disabled={!clickable}
-                className={`flex w-full items-start gap-3 px-5 py-4 text-left transition-colors hover:bg-accent/30 disabled:cursor-default disabled:hover:bg-transparent ${
-                  !entry.read ? 'bg-blue-50/20' : ''
+                className={`flex w-full items-start gap-3 px-5 py-4 text-left transition-colors hover:bg-muted disabled:cursor-default disabled:hover:bg-transparent ${
+                  !entry.read ? 'bg-brand-primary-subtle/45' : ''
                 }`}
               >
                 <span className="mt-0.5 text-lg">{kindIcon(entry.kind)}</span>

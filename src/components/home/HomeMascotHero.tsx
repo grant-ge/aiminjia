@@ -1,6 +1,6 @@
 /**
  * @designSource design.pen#PqcAk > mascot+hello
- * @sizing mascot 64×64, title 30/700, gap 16
+ * @sizing mascot 40×40, title 24/700, gap 12
  */
 interface HomeMascotHeroProps {
   mascotUrl: string
@@ -9,11 +9,11 @@ interface HomeMascotHeroProps {
 
 export function HomeMascotHero({ mascotUrl, title }: HomeMascotHeroProps) {
   return (
-    <div className="flex items-center gap-4">
-      <div data-testid="home-mascot" className="h-12 w-12 rounded-md overflow-hidden">
+    <div className="flex items-center gap-3">
+      <div data-testid="home-mascot" className="h-10 w-10 overflow-hidden rounded-md border border-border bg-card">
         <img src={mascotUrl} alt="" className="w-full" />
       </div>
-      <div className="text-3xl font-bold leading-tight text-foreground">
+      <div className="text-2xl font-bold leading-8 text-foreground">
         {title}
       </div>
     </div>

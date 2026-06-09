@@ -137,7 +137,8 @@ async fn review_tool_round_driver_emits_tool_events_via_runtime_bus() {
 
     let host = RecordingRuntimeHost::new();
     let bus = RuntimeEventBus::new();
-    bus.subscribe(Arc::new(TauriEventAdapter::new(host.clone())));
+    let _adapter = Arc::new(TauriEventAdapter::new(host.clone()));
+    bus.subscribe(_adapter.clone());
 
     let mapping = IdentityMapping::from_legacy_conversation_id("conv-t5".to_string());
     let turn = TurnState::new(mapping, RunId::new("run-t5"), "call spy_t5".to_string());

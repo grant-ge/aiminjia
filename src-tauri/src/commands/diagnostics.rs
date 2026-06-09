@@ -18,9 +18,6 @@ use crate::storage::{file_manager::FileManager, AiJiaHome};
 const MAX_APP_LOG_BYTES_PER_CHUNK: usize = 256 * 1024;
 const MAX_EVENTS_PER_CHUNK: usize = 500;
 
-/// Default upload destination. Same gateway used for chat/search etc.
-const DIAGNOSTICS_URL: &str = "https://ai-tenant.renlijia.com/v1/diagnostics";
-
 /// Split a raw app-log string into UTF-8-safe, line-aligned chunks no larger
 /// than `max_bytes` each. A single logical line is never split across chunks
 /// even if it exceeds `max_bytes` (oversize lines stay in their own chunk).
@@ -265,8 +262,10 @@ async fn post_chunk(
     session_key: &str,
     payload: &DiagnosticsChunkPayload<'_>,
 ) -> Result<String, String> {
+    // Same gateway used for chat/search etc.; follows the active dev override.
+    let url = format!("{}/v1/diagnostics", crate::environment::tenant_host());
     let resp = client
-        .post(DIAGNOSTICS_URL)
+        .post(url)
         .bearer_auth(session_key)
         .json(payload)
         .send()

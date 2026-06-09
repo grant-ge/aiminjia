@@ -37,6 +37,7 @@ export const TAURI_EVENTS = {
   STREAMING_DONE: 'streaming:done',
   STREAMING_ERROR: 'streaming:error',
   STREAMING_RETRY_RESET: 'streaming:retry-reset',
+  STREAMING_NOTICE: 'streaming:notice',
   MESSAGE_UPDATED: 'message:updated',
   STOP_PREVENTED_CONTINUATION: 'stop:prevented-continuation',
   /** @deprecated 后端不发送此事件 */
@@ -93,12 +94,28 @@ export interface StreamingErrorPayload {
   conversationId: string
   error: string
   rawError?: string
+  code?: string
+  retryable?: boolean
+  handling?: 'auto_retrying' | 'auto_failed_over' | 'manual_decision_required' | 'terminal_error' | string
+  requestPhase?: 'pre_first_byte' | 'streaming' | 'post_stream_pre_settlement' | string
+  currentRoute?: Record<string, unknown> | null
+  alternatives?: Array<Record<string, unknown>> | null
 }
 
 export interface StreamingRetryResetPayload {
   conversationId: string
   runId?: string
   reason?: 'upstream_busy' | 'rate_limited' | 'network_flap' | 'fallback_to_non_stream'
+}
+
+export interface StreamingNoticePayload {
+  conversationId: string
+  runId?: string
+  level: 'info' | 'warning' | 'error' | string
+  code?: string
+  message: string
+  fromRoute?: Record<string, unknown> | null
+  toRoute?: Record<string, unknown> | null
 }
 
 export interface AgentIdlePayload {
@@ -1819,6 +1836,14 @@ export function onStreamingRetryReset(
   }))
 }
 
+export function onStreamingNotice(
+  handler: (payload: StreamingNoticePayload) => void,
+): Promise<() => void> {
+  return listen<StreamingNoticePayload>(TAURI_EVENTS.STREAMING_NOTICE, createInstrumentedEventHandler(TAURI_EVENTS.STREAMING_NOTICE, (event) => {
+    handler(event.payload)
+  }))
+}
+
 /**
  * Listen for message update events (e.g. when a message's content is enriched
  * with additional blocks like tables, code results, or generated files).
@@ -2343,6 +2368,37 @@ export function runtimeDiagnostics(): Promise<RuntimeDiagnostics> {
 }
 
 // ---------------------------------------------------------------------------
+// Dev-only environment switcher
+//
+// These commands exist only in debug builds (the Rust side gates them on
+// `#[cfg(debug_assertions)]`). Callers must guard on `import.meta.env.DEV`;
+// invoking them in a release build rejects with "command not found".
+// ---------------------------------------------------------------------------
+
+export interface EnvironmentPreset {
+  /** Stable, language-neutral id (`test` / `pre` / `prod`); translate for display. */
+  key: string
+  tenant: string
+  ops: string
+}
+
+export interface DevEnvironmentState {
+  currentTenant: string
+  currentOps: string
+  isOverride: boolean
+  presets: EnvironmentPreset[]
+}
+
+export function getDevEnvironment(): Promise<DevEnvironmentState> {
+  return invoke<DevEnvironmentState>('get_dev_environment')
+}
+
+/** Switch the environment. Empty origins (or the production pair) reset to production. */
+export function setDevEnvironment(tenant: string, ops: string): Promise<DevEnvironmentState> {
+  return invoke<DevEnvironmentState>('set_dev_environment', { tenant, ops })
+}
+
+// ---------------------------------------------------------------------------
 // DingTalk Commands
 // ---------------------------------------------------------------------------
 
@@ -2379,6 +2435,75 @@ export interface SyncBuiltinSkillsResult {
 
 export async function syncBuiltinSkills(): Promise<SyncBuiltinSkillsResult> {
   return invoke<SyncBuiltinSkillsResult>('sync_builtin_skills')
+}
+
+// ---------------------------------------------------------------------------
+// Workplace Directory Commands
+// ---------------------------------------------------------------------------
+
+export interface WorkplaceDirectoryDisplayText {
+  name: string
+  description?: string
+  tagline?: string
+  examples?: string[]
+}
+
+export interface WorkplaceDirectoryCategory {
+  categoryId: string
+  display: WorkplaceDirectoryDisplayText
+  icon?: string
+  color?: string
+  sortOrder: number
+  resourceCount: number
+}
+
+export interface WorkplaceDirectoryRequiredSkill {
+  skillId: string
+  source: string
+  scope: string
+  display: WorkplaceDirectoryDisplayText
+  versionRange?: string
+}
+
+export interface WorkplaceDirectoryItem {
+  resourceType: 'employee_template' | 'expert_team_template' | string
+  resourceId: string
+  version: string
+  scope?: string
+  category?: string
+  workplaceCategoryId?: string
+  featured?: boolean
+  sortOrder?: number
+  display: WorkplaceDirectoryDisplayText
+  icon?: string
+  manifestUrl?: string
+  manifestSha256?: string
+  manifestSize?: number
+  minDesktopVersion?: string
+  requiredSkills?: WorkplaceDirectoryRequiredSkill[]
+}
+
+export interface WorkplaceDirectoryResponse {
+  schemaVersion: number
+  categories: WorkplaceDirectoryCategory[]
+  items: WorkplaceDirectoryItem[]
+}
+
+export interface WorkplaceDirectoryCatalogOptions {
+  forceRefresh?: boolean
+}
+
+export function workplaceDirectoryCatalog(
+  lang?: string,
+  options: WorkplaceDirectoryCatalogOptions = {},
+): Promise<WorkplaceDirectoryResponse> {
+  const args: { lang?: string; forceRefresh?: boolean } = {}
+  if (lang) args.lang = lang
+  if (options.forceRefresh) args.forceRefresh = true
+  return invoke<WorkplaceDirectoryResponse>(
+    'workplace_directory_catalog',
+    args,
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -2431,6 +2556,8 @@ export interface EmployeeTemplateSnapshot {
   version: string
   name: string
   avatar: string
+  avatarAssetKey?: string | null
+  avatarUrl?: string | null
   role: string
   description: string
   badge: string
@@ -2439,6 +2566,8 @@ export interface EmployeeTemplateSnapshot {
     role?: string
     description?: string
     badge?: string
+    avatarAssetKey?: string | null
+    avatarUrl?: string | null
   }> | null
   promptI18n?: Record<string, {
     systemPromptExtra?: string
@@ -2573,14 +2702,9 @@ export function employeeActiveRun(id: string): Promise<EmployeeActiveRunInfo | n
 /**
  * Returns the catalog of templates the new-hire wizard should display.
  *
- * Sources merged in the backend (last write wins on `template_id`, by
- * version string):
- *   1. Embedded bootstrap registry (always available)
- *   2. `~/.renlijia/employee-templates-cache/` (downloaded via
- *      `employeeTemplateRefresh()`)
- *
- * Never hits the network. Call `employeeTemplateRefresh()` to update the
- * cache from lotus ops-portal.
+ * Never hits the network. Reads `~/.renlijia/employee-templates-cache/`,
+ * which is populated by `employeeTemplateRefresh()` or
+ * `workplaceDirectoryCatalog()`.
  */
 export function employeeTemplateCatalog(): Promise<EmployeeTemplateSnapshot[]> {
   return invoke<EmployeeTemplateSnapshot[]>('employee_template_catalog')
@@ -2600,6 +2724,63 @@ export function employeeTemplateCatalog(): Promise<EmployeeTemplateSnapshot[]> {
  */
 export function employeeTemplateRefresh(): Promise<number> {
   return invoke<number>('employee_template_refresh')
+}
+
+export interface ExpertTeamTemplateDisplayText {
+  name?: string
+  description?: string
+  tagline?: string
+  examples?: string[]
+  composerPlaceholder?: string
+}
+
+export interface ExpertTeamTemplatePromptText {
+  template?: string
+  summary?: string
+}
+
+export interface ExpertTeamTemplateExpertDisplayText {
+  name?: string
+  persona?: string
+}
+
+export interface ExpertTeamTemplateAvatarAtlas {
+  kind: 'atlas'
+  url: string
+  x: number
+  y: number
+  w: number
+  h: number
+  atlasWidth: number
+  atlasHeight: number
+}
+
+export type ExpertTeamTemplateAvatar = string | ExpertTeamTemplateAvatarAtlas
+
+export interface ExpertTeamTemplateExpert {
+  stableName?: string
+  name?: string
+  title?: string
+  agentName?: string
+  persona?: string
+  avatar?: ExpertTeamTemplateAvatar
+  avatarName?: string
+  avatarText?: string
+  emoji?: string
+  displayI18n?: Record<string, ExpertTeamTemplateExpertDisplayText> | null
+}
+
+export interface ExpertTeamTemplateSnapshot {
+  teamId: string
+  version: string
+  facilitationStyle?: string
+  displayI18n?: Record<string, ExpertTeamTemplateDisplayText> | null
+  experts?: ExpertTeamTemplateExpert[]
+  directorPromptI18n?: Record<string, ExpertTeamTemplatePromptText> | null
+}
+
+export function expertTeamTemplateCatalog(): Promise<ExpertTeamTemplateSnapshot[]> {
+  return invoke<ExpertTeamTemplateSnapshot[]>('expert_team_template_catalog')
 }
 
 export function expertTeamTemplateRefresh(): Promise<number> {

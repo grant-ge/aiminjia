@@ -1,0 +1,104 @@
+{
+  "tile": 96,
+  "columns": 4,
+  "atlasWidth": 384,
+  "atlasHeight": 288,
+  "avatars": [
+    {
+      "stableName": "recruiting-lead",
+      "name": "宋知澜",
+      "x": 0,
+      "y": 0,
+      "w": 96,
+      "h": 96
+    },
+    {
+      "stableName": "hiring-manager",
+      "name": "陆承川",
+      "x": 96,
+      "y": 0,
+      "w": 96,
+      "h": 96
+    },
+    {
+      "stableName": "interview-coach",
+      "name": "唐砚宁",
+      "x": 192,
+      "y": 0,
+      "w": 96,
+      "h": 96
+    },
+    {
+      "stableName": "talent-researcher",
+      "name": "赵明川",
+      "x": 288,
+      "y": 0,
+      "w": 96,
+      "h": 96
+    },
+    {
+      "stableName": "compensation-expert",
+      "name": "方予衡",
+      "x": 0,
+      "y": 96,
+      "w": 96,
+      "h": 96
+    },
+    {
+      "stableName": "performance-advisor",
+      "name": "秦砚知",
+      "x": 96,
+      "y": 96,
+      "w": 96,
+      "h": 96
+    },
+    {
+      "stableName": "hrbp-care",
+      "name": "温嘉言",
+      "x": 192,
+      "y": 96,
+      "w": 96,
+      "h": 96
+    },
+    {
+      "stableName": "legal-advisor",
+      "name": "陈景律",
+      "x": 288,
+      "y": 96,
+      "w": 96,
+      "h": 96
+    },
+    {
+      "stableName": "od-advisor",
+      "name": "梁承序",
+      "x": 0,
+      "y": 192,
+      "w": 96,
+      "h": 96
+    },
+    {
+      "stableName": "hrbp-planning",
+      "name": "何远策",
+      "x": 96,
+      "y": 192,
+      "w": 96,
+      "h": 96
+    },
+    {
+      "stableName": "talent-reviewer",
+      "name": "唐识衡",
+      "x": 192,
+      "y": 192,
+      "w": 96,
+      "h": 96
+    },
+    {
+      "stableName": "people-analyst",
+      "name": "周思齐",
+      "x": 288,
+      "y": 192,
+      "w": 96,
+      "h": 96
+    }
+  ]
+}

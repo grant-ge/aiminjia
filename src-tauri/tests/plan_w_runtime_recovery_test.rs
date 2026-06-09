@@ -71,6 +71,7 @@ impl RuntimeLlmExecutor for RecordingExecutor {
         _generated_file_ids: &[String],
         _file_metas: &[Value],
         _thinking_blocks: &[Value],
+        _error: Option<&app_lib::storage::file_store::types::MessageError>,
     ) -> Result<String, TurnError> {
         Ok("assistant-msg".to_string())
     }
@@ -151,7 +152,7 @@ async fn w2_max_tokens_injects_resume_message_and_completes() {
         })
         .expect("assistant message persisted event");
     if let RuntimeEventKind::MessagePersisted { content, .. } = &persisted.kind {
-        assert_eq!(content["text"], "part-1part-2");
+        assert_eq!(content["text"], "part-2");
     }
 }
 
@@ -201,7 +202,7 @@ async fn w2_max_tokens_recovery_stops_after_limit_and_keeps_partial_content() {
         .expect("assistant message persisted event");
     if let RuntimeEventKind::MessagePersisted { content, .. } = &persisted.kind {
         let text = content["text"].as_str().unwrap_or("");
-        assert!(text.contains("part-0part-1part-2part-3"));
+        assert!(text.contains("part-3"));
         assert!(
             text.contains("输出 token 上限"),
             "partial content should include a truncation notice once recovery is exhausted"

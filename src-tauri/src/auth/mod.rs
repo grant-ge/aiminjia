@@ -566,6 +566,18 @@ impl AuthManager {
 
         log::info!("Session key expired, attempting renewal...");
 
+        if snapshot.session_key_expires_at <= now + buffer
+            && snapshot.access_expires_at <= now + buffer
+            && snapshot.refresh_expires_at <= now + buffer
+        {
+            *self.state.write().await = None;
+            self.clear_persisted_auth();
+            self.fire_deactivation_handlers().await;
+            let message = "登录已过期，请重新登录";
+            self.fire_revoked_handlers(message).await;
+            return Err(anyhow!(message));
+        }
+
         // B-fix: throttle session_key creation to avoid retry loops where a
         // 401 retry triggers a fresh key, which in turn revokes another
         // device's key, which 401-retries, etc. Only allow one create per
@@ -962,6 +974,34 @@ mod deactivation_chain_tests {
         am.clear_state_and_fire_revoked_for_test("登录已过期，请重新登录")
             .await;
         assert_eq!(counter.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn all_locally_expired_credentials_force_relogin() {
+        let am = AuthManager::for_test();
+        let revoked_counter = Arc::new(AtomicUsize::new(0));
+        let deactivated_counter = Arc::new(AtomicUsize::new(0));
+        am.register_revoked_handler(Arc::new(RevokedCounting(revoked_counter.clone())))
+            .await;
+        am.register_deactivation_handler(Arc::new(Counting(deactivated_counter.clone())))
+            .await;
+
+        let mut auth = test_cloud_auth();
+        let expired_at = chrono::Utc::now() - chrono::Duration::days(7);
+        auth.access_expires_at = expired_at;
+        auth.refresh_expires_at = expired_at;
+        auth.session_key_expires_at = expired_at;
+        am.set_state_for_test(auth);
+
+        let err = am
+            .get_session_key()
+            .await
+            .expect_err("must require relogin");
+
+        assert_eq!(err.to_string(), "登录已过期，请重新登录");
+        assert_eq!(revoked_counter.load(Ordering::SeqCst), 1);
+        assert_eq!(deactivated_counter.load(Ordering::SeqCst), 1);
+        assert!(!am.get_auth_info().await.logged_in);
     }
 
     #[tokio::test]

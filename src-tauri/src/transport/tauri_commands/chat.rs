@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use once_cell::sync::Lazy;
+use serde::Deserialize;
 use tauri::{Emitter, Manager};
 
 use crate::auth::AuthManager;
@@ -45,6 +46,29 @@ pub(crate) use chat_runtime_impl::build_visible_tool_defs;
 
 static AUTO_TITLE_IN_FLIGHT: Lazy<Mutex<HashSet<String>>> =
     Lazy::new(|| Mutex::new(HashSet::new()));
+
+#[derive(Debug, Clone, Deserialize)]
+struct GatewayStructuredErrorEnvelope {
+    error: GatewayStructuredError,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct GatewayStructuredError {
+    #[serde(default)]
+    code: Option<String>,
+    #[serde(default)]
+    message: Option<String>,
+    #[serde(default)]
+    retryable: Option<bool>,
+    #[serde(default)]
+    handling: Option<String>,
+    #[serde(default)]
+    request_phase: Option<String>,
+    #[serde(default)]
+    current_route: Option<serde_json::Value>,
+    #[serde(default)]
+    alternatives: Option<Vec<serde_json::Value>>,
+}
 
 /// Maximum number of stream-level retries within the agent loop.
 /// When a stream error or gateway error is retryable (5xx, timeout, connection),
@@ -527,6 +551,7 @@ fn llm_response_to_step_result(
             StopReason::ToolUse => "tool_use",
             StopReason::MaxTokens => "max_tokens",
             StopReason::StopSequence => "stop_sequence",
+            StopReason::Aborted => "aborted",
         };
         LlmStepResult::ContentComplete {
             content: response.content,
@@ -758,6 +783,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                     }
 
                     let classified = classify_llm_error(&err_str);
+                    let structured = parse_gateway_structured_error(&err_str);
                     if let TurnError::LlmError(user_error) = &classified {
                         let _ = bus
                             .emit(RuntimeEvent::new(
@@ -766,6 +792,18 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                                 RuntimeEventKind::StreamError {
                                     error: user_error.clone(),
                                     raw_error: Some(truncate_str(&err_str, 200)),
+                                    code: structured.as_ref().and_then(|e| e.code.clone()),
+                                    retryable: structured.as_ref().and_then(|e| e.retryable),
+                                    handling: structured.as_ref().and_then(|e| e.handling.clone()),
+                                    request_phase: structured
+                                        .as_ref()
+                                        .and_then(|e| e.request_phase.clone()),
+                                    current_route: structured
+                                        .as_ref()
+                                        .and_then(|e| e.current_route.clone()),
+                                    alternatives: structured
+                                        .as_ref()
+                                        .and_then(|e| e.alternatives.clone()),
                                 },
                             ))
                             .await;
@@ -986,6 +1024,12 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                                 RuntimeEventKind::StreamError {
                                     error: error_msg.clone(),
                                     raw_error: Some("chunk_timeout".to_string()),
+                                    code: None,
+                                    retryable: None,
+                                    handling: None,
+                                    request_phase: None,
+                                    current_route: None,
+                                    alternatives: None,
                                 },
                             ))
                             .await;
@@ -1031,6 +1075,32 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                                 // at the top of the loop) is effectively reset. This is the
                                 // fix for false "响应超时（90秒无数据）" aborts during long
                                 // tool-argument streaming and ping-only thinking windows.
+                            }
+                            Some(StreamEvent::Notice { notice }) => {
+                                let _ = bus
+                                    .emit(RuntimeEvent::new(
+                                        session_id.clone(),
+                                        run_id.clone(),
+                                        RuntimeEventKind::StreamNotice {
+                                            level: notice
+                                                .get("level")
+                                                .and_then(|v| v.as_str())
+                                                .unwrap_or("info")
+                                                .to_string(),
+                                            code: notice
+                                                .get("code")
+                                                .and_then(|v| v.as_str())
+                                                .map(str::to_string),
+                                            message: notice
+                                                .get("message")
+                                                .and_then(|v| v.as_str())
+                                                .unwrap_or_default()
+                                                .to_string(),
+                                            from_route: notice.get("from_route").cloned(),
+                                            to_route: notice.get("to_route").cloned(),
+                                        },
+                                    ))
+                                    .await;
                             }
                             Some(StreamEvent::ToolCallStart { tool_call }) => {
                                 let tool_call = match tool_call.into_valid() {
@@ -1109,6 +1179,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                                     break;
                                 }
                                 let classified = classify_llm_error(&error);
+                                let structured = parse_gateway_structured_error(&error);
                                 if let TurnError::LlmError(user_error) = &classified {
                                     let _ = bus
                                         .emit(RuntimeEvent::new(
@@ -1117,6 +1188,22 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                                             RuntimeEventKind::StreamError {
                                                 error: user_error.clone(),
                                                 raw_error: Some(truncate_str(&error, 200)),
+                                                code: structured.as_ref().and_then(|e| e.code.clone()),
+                                                retryable: structured
+                                                    .as_ref()
+                                                    .and_then(|e| e.retryable),
+                                                handling: structured
+                                                    .as_ref()
+                                                    .and_then(|e| e.handling.clone()),
+                                                request_phase: structured
+                                                    .as_ref()
+                                                    .and_then(|e| e.request_phase.clone()),
+                                                current_route: structured
+                                                    .as_ref()
+                                                    .and_then(|e| e.current_route.clone()),
+                                                alternatives: structured
+                                                    .as_ref()
+                                                    .and_then(|e| e.alternatives.clone()),
                                             },
                                         ))
                                         .await;
@@ -1182,6 +1269,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                             StopReason::ToolUse => "tool_use",
                             StopReason::MaxTokens => "max_tokens",
                             StopReason::StopSequence => "stop_sequence",
+                            StopReason::Aborted => "aborted",
                         }
                         .to_string(),
                     ),
@@ -2520,6 +2608,14 @@ fn flatten_system_message_value(value: &serde_json::Value) -> Option<String> {
 
 /// Check if an LLM / stream error string is transient and worth retrying.
 fn is_retryable_stream_error_str(error: &str) -> bool {
+    if let Some(structured) = parse_gateway_structured_error(error) {
+        if structured.handling.as_deref() == Some("manual_decision_required") {
+            return false;
+        }
+        if let Some(retryable) = structured.retryable {
+            return retryable;
+        }
+    }
     let lower = error.to_lowercase();
     lower.contains("500")
         || lower.contains("502")
@@ -2539,6 +2635,14 @@ fn is_retryable_stream_error_str(error: &str) -> bool {
 /// the right toast (upstream busy vs local network flap vs rate limit).
 fn classify_retry_reason(error: &str) -> crate::runtime::events::RetryReason {
     use crate::runtime::events::RetryReason;
+    if let Some(structured) = parse_gateway_structured_error(error) {
+        if matches!(structured.code.as_deref(), Some("rate_limited")) {
+            return RetryReason::RateLimited;
+        }
+        if structured.retryable == Some(true) {
+            return RetryReason::UpstreamBusy;
+        }
+    }
     let lower = error.to_lowercase();
     // Local-side signals win over status codes — a "timeout" wrapping a 5xx
     // response is still a real timeout on our side worth flagging as network.
@@ -2591,8 +2695,34 @@ mod openai_system_prompt_tests {
 
 /// Classify an LLM error into a user-friendly Chinese message.
 fn classify_llm_error(error: &str) -> TurnError {
+    if let Some(structured) = parse_gateway_structured_error(error) {
+        if structured.handling.as_deref() == Some("manual_decision_required") {
+            let mut message = structured
+                .message
+                .unwrap_or_else(|| "当前模型暂不可用，自动切换会丢失部分能力。".to_string());
+            if let Some(alternatives) = structured.alternatives.as_ref() {
+                if let Some(loss) = first_capability_loss(alternatives) {
+                    message.push(' ');
+                    message.push_str(&loss);
+                }
+            }
+            return TurnError::LlmError(message);
+        }
+        if matches!(structured.code.as_deref(), Some("insufficient_balance")) {
+            return TurnError::LlmError("API 额度不足，请检查账户余额。".to_string());
+        }
+        if matches!(structured.code.as_deref(), Some("rate_limited")) {
+            return TurnError::LlmError("AI 服务请求频率超限，请稍等片刻后重试。".to_string());
+        }
+        if let Some(message) = structured.message {
+            return TurnError::LlmError(message);
+        }
+    }
     let lower = error.to_lowercase();
-    if lower.contains("prompt too long")
+    if error.contains("登录已过期") || error.contains("请重新登录") || error.contains("未登录")
+    {
+        TurnError::LlmError("登录已过期，请重新登录".to_string())
+    } else if lower.contains("prompt too long")
         || lower.contains("prompt is too long")
         || lower.contains("context length")
         || lower.contains("maximum context length")
@@ -2623,6 +2753,53 @@ fn classify_llm_error(error: &str) -> TurnError {
         TurnError::LlmError("AI 服务暂时不可用，请稍后重试。".to_string())
     } else {
         TurnError::LlmError(format!("服务异常：{}。请重试。", truncate_str(error, 100)))
+    }
+}
+
+fn parse_gateway_structured_error(error: &str) -> Option<GatewayStructuredError> {
+    serde_json::from_str::<GatewayStructuredErrorEnvelope>(error)
+        .ok()
+        .map(|env| env.error)
+        .or_else(|| {
+            let start = error.find('{')?;
+            serde_json::from_str::<GatewayStructuredErrorEnvelope>(&error[start..])
+                .ok()
+                .map(|env| env.error)
+        })
+}
+
+fn first_capability_loss(alternatives: &[serde_json::Value]) -> Option<String> {
+    let first = alternatives.first()?;
+    let loss = first
+        .get("capability_loss")
+        .or_else(|| first.get("capabilityLoss"))?
+        .as_array()?;
+    if loss.iter().any(|item| item.as_str() == Some("reasoning")) {
+        return Some("自动切换会丢失深度思考能力。".to_string());
+    }
+    if loss
+        .iter()
+        .any(|item| item.as_str() == Some("tool_calling"))
+    {
+        return Some("自动切换会丢失工具调用能力。".to_string());
+    }
+    if loss
+        .iter()
+        .any(|item| item.as_str() == Some("opaque_state_replay"))
+    {
+        return Some("自动切换会丢失多轮思考回放能力。".to_string());
+    }
+    let flattened: Vec<String> = loss
+        .iter()
+        .filter_map(|item| item.as_str().map(str::to_string))
+        .collect();
+    if flattened.is_empty() {
+        None
+    } else {
+        Some(format!(
+            "自动切换会丢失以下能力：{}。",
+            flattened.join("、")
+        ))
     }
 }
 
@@ -4578,7 +4755,8 @@ fn emit_conversation_created(
 
 #[cfg(test)]
 mod retry_reason_tests {
-    use super::classify_retry_reason;
+    use super::{classify_llm_error, classify_retry_reason, is_retryable_stream_error_str};
+    use crate::runtime::chat::TurnError;
     use crate::runtime::events::RetryReason;
 
     #[test]
@@ -4638,6 +4816,30 @@ mod retry_reason_tests {
             classify_retry_reason("some weird unclassified blip"),
             RetryReason::NetworkFlap
         );
+    }
+
+    #[test]
+    fn manual_decision_gateway_errors_are_not_retryable() {
+        let payload = r#"{"error":{"code":"manual_decision_required","message":"当前模型暂不可用。","retryable":false,"handling":"manual_decision_required","alternatives":[{"capability_loss":["reasoning"]}]}}"#;
+
+        assert!(!is_retryable_stream_error_str(payload));
+        match classify_llm_error(payload) {
+            TurnError::LlmError(message) => {
+                assert!(message.contains("当前模型暂不可用"));
+                assert!(message.contains("深度思考"));
+            }
+            other => panic!("expected llm error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn auth_expired_error_is_not_wrapped_as_generic_service_error() {
+        match classify_llm_error("登录已过期，请重新登录") {
+            TurnError::LlmError(message) => {
+                assert_eq!(message, "登录已过期，请重新登录");
+            }
+            other => panic!("expected llm error, got {other:?}"),
+        }
     }
 }
 

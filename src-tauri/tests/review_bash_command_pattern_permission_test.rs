@@ -37,7 +37,8 @@ async fn review_bash_command_pattern_deny_blocks_matching_command() {
         ),
     );
     let ctx = make_ctx_with_store(store, &tmp);
-    let decision = BashTool
+    let tool = BashTool::default();
+    let decision = tool
         .check_permissions(&json!({"command": "curl https://evil.com/data"}), &ctx)
         .await;
     assert!(
@@ -60,7 +61,8 @@ async fn review_bash_command_pattern_allow_returns_allow_or_none() {
         ),
     );
     let ctx = make_ctx_with_store(store, &tmp);
-    let decision = BashTool
+    let tool = BashTool::default();
+    let decision = tool
         .check_permissions(&json!({"command": "git status"}), &ctx)
         .await;
     assert!(

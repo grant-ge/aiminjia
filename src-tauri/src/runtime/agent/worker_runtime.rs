@@ -841,8 +841,6 @@ impl<'a> SubagentWorkerRuntime<'a> {
                 (std::path::PathBuf::from("__managed_runtime_resolver_missing__"), None)
             });
         let file_ops = Arc::new(DefaultFileOperations {
-            storage: self.runtime_deps.storage.clone(),
-            file_manager: self.runtime_deps.file_manager.clone(),
             workspace_path: self.runtime_deps.workspace_path.clone(),
             conversation_id: self.runtime_deps.conversation_id.clone(),
             run_id: Some(child_run_id),
@@ -1566,8 +1564,6 @@ async fn teammate_real_turn(
             (std::path::PathBuf::from("__managed_runtime_resolver_missing__"), None)
         });
     let file_ops = Arc::new(DefaultFileOperations {
-        storage: engine.runtime_deps.storage.clone(),
-        file_manager: engine.runtime_deps.file_manager.clone(),
         workspace_path: engine.runtime_deps.workspace_path.clone(),
         conversation_id: engine.runtime_deps.conversation_id.clone(),
         run_id: Some(crate::runtime::ids::RunId::new(format!(

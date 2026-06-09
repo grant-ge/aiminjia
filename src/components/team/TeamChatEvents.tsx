@@ -5,6 +5,8 @@ import { useTranslation } from 'react-i18next'
 import type { TeamEvent } from '@/types/team'
 import { cn } from '@/lib/utils'
 import { AssistantMarkdown } from '@/components/chat-scene/AssistantMarkdown'
+import { getExpertDisplayName } from '@/features/expert-teams/teams'
+import type { ExpertTeam } from '@/features/expert-teams/teams'
 import { AgentAvatar } from './AgentAvatar'
 import { getAgentIdentity, formatLeadDisplayName, isLeadName } from './agentIdentity'
 import { formatClock, formatTimestampForGroup } from './formatters'
@@ -81,6 +83,14 @@ function speakerKey(event: TeamEvent): string | null {
   return null
 }
 
+function formatAgentDisplayName(
+  teamVisual: ExpertTeam | null,
+  agentName: string,
+): string {
+  if (isLeadName(agentName)) return formatLeadDisplayName(agentName)
+  return getExpertDisplayName(teamVisual, agentName)
+}
+
 interface TeamEventRowProps {
   event: TeamEvent
   onDrillAgent?: (agentName: string) => void
@@ -108,7 +118,9 @@ function TeamEventRow({ event, onDrillAgent }: TeamEventRowProps) {
       return (
         <SystemDivider
           icon="＋"
-          label={t('team.chat.lifecycle.agentJoined', { agentName: formatLeadDisplayName(event.agentName) })}
+          label={t('team.chat.lifecycle.agentJoined', {
+            agentName: formatAgentDisplayName(teamVisual, event.agentName),
+          })}
           ts={event.ts}
         />
       )
@@ -116,7 +128,9 @@ function TeamEventRow({ event, onDrillAgent }: TeamEventRowProps) {
       return (
         <SystemDivider
           icon="－"
-          label={t('team.chat.lifecycle.agentLeft', { agentName: formatLeadDisplayName(event.agentName) })}
+          label={t('team.chat.lifecycle.agentLeft', {
+            agentName: formatAgentDisplayName(teamVisual, event.agentName),
+          })}
           ts={event.ts}
         />
       )
@@ -133,7 +147,7 @@ function TeamEventRow({ event, onDrillAgent }: TeamEventRowProps) {
           approve: event.approve,
           reason: event.reason,
           feedback: event.feedback,
-        })
+        }, teamVisual)
         if (divider) return divider
       }
       return (
@@ -182,9 +196,13 @@ interface ProtocolDividerInput {
  * 把 4 个协议握手 variant 映射到 SystemDivider 输入。返回 null 表示遇到
  * 未识别 variant —— 调用方会回退到 MessageBubble。
  */
-function renderProtocolDivider(t: TFunction, input: ProtocolDividerInput): JSX.Element | null {
-  const fromDisplay = formatLeadDisplayName(input.from)
-  const toDisplay = formatLeadDisplayName(input.to)
+function renderProtocolDivider(
+  t: TFunction,
+  input: ProtocolDividerInput,
+  teamVisual: ExpertTeam | null,
+): JSX.Element | null {
+  const fromDisplay = formatAgentDisplayName(teamVisual, input.from)
+  const toDisplay = formatAgentDisplayName(teamVisual, input.to)
   switch (input.variant) {
     case 'shutdown_request': {
       const label = input.reason
@@ -275,9 +293,10 @@ interface MessageBubbleProps {
 
 function MessageBubble({ side, from, to, text, ts, isError, onDrillAgent }: MessageBubbleProps) {
   const { t } = useTranslation()
-  const fromIdentity = getAgentIdentity(from)
-  const displayFromName = formatLeadDisplayName(from)
-  const displayToName = formatLeadDisplayName(to)
+  const teamVisual = useTeamVisualContext()
+  const displayFromName = formatAgentDisplayName(teamVisual, from)
+  const displayToName = formatAgentDisplayName(teamVisual, to)
+  const fromIdentity = getAgentIdentity(displayFromName)
   const isDrillable = !isLeadName(from) && Boolean(onDrillAgent)
 
   const avatarNode = (

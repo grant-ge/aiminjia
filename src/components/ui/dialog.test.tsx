@@ -22,7 +22,7 @@ describe('Dialog', () => {
     )
   })
 
-  it('uses a soft content border instead of the default dark border', () => {
+  it('uses the standard modal content border', () => {
     render(
       <Dialog open>
         <DialogContent>
@@ -32,7 +32,7 @@ describe('Dialog', () => {
       </Dialog>,
     )
 
-    expect(screen.getByRole('dialog')).toHaveClass('border-border/60')
+    expect(screen.getByRole('dialog')).toHaveClass('border-border')
   })
 
 })

@@ -40,6 +40,8 @@ describe('UpdateAvailableLink', () => {
     render(<UpdateAvailableLink />)
 
     const button = screen.getByRole('button', { name: /v0\.5\.22 ready/ })
+    expect(button).toHaveAttribute('data-aijia-updater-link')
+    expect(button).toHaveAttribute('data-aijia-updater-version', '0.5.22')
     expect(button).toHaveClass('text-primary-foreground/95')
     expect(button).toHaveClass('hover:bg-white/10')
     expect(button).not.toHaveClass('bg-white/95')

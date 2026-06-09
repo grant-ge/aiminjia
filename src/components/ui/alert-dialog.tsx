@@ -13,7 +13,6 @@ const AlertDialogOverlay = React.forwardRef<
   <AlertDialogPrimitive.Overlay
     ref={ref}
     data-slot="confirm-dialog-overlay"
-    // spec §7.3 — modal overlay = --color-overlay
     className={cn('fixed inset-0 z-50 bg-[var(--color-overlay)]', className)}
     {...props}
   />
@@ -28,9 +27,8 @@ const AlertDialogContent = React.forwardRef<
     <AlertDialogOverlay />
     <AlertDialogPrimitive.Content
       ref={ref}
-      // spec §7.3 — modal: rounded-lg, --shadow-modal, bg-card
       className={cn(
-        'fixed left-1/2 top-1/2 z-50 grid w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border border-border/60 bg-card p-6 shadow-[var(--shadow-modal)] duration-200',
+        'fixed left-1/2 top-1/2 z-50 grid w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 overflow-hidden rounded-lg border border-border bg-card p-6 shadow-[var(--shadow-modal)] duration-200',
         className,
       )}
       {...props}
@@ -40,12 +38,12 @@ const AlertDialogContent = React.forwardRef<
 AlertDialogContent.displayName = AlertDialogPrimitive.Content.displayName
 
 const AlertDialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn('flex flex-col space-y-2 text-center sm:text-left', className)} {...props} />
+  <div className={cn('flex flex-col space-y-2 text-left', className)} {...props} />
 )
 AlertDialogHeader.displayName = 'AlertDialogHeader'
 
 const AlertDialogFooter = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn('flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2', className)} {...props} />
+  <div className={cn('flex flex-col-reverse gap-2 sm:flex-row sm:justify-end', className)} {...props} />
 )
 AlertDialogFooter.displayName = 'AlertDialogFooter'
 
@@ -71,7 +69,7 @@ const AlertDialogAction = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <AlertDialogPrimitive.Action
     ref={ref}
-    className={cn('inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:brightness-110', className)}
+    className={cn('inline-flex h-9 items-center justify-center rounded-[var(--radius)] border border-primary bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-[var(--color-primary-hover)] hover:border-[var(--color-primary-hover)]', className)}
     {...props}
   />
 ))
@@ -83,7 +81,7 @@ const AlertDialogCancel = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <AlertDialogPrimitive.Cancel
     ref={ref}
-    className={cn('mt-2 inline-flex h-9 items-center justify-center rounded-md border bg-background px-4 py-2 text-sm font-medium hover:bg-accent sm:mt-0 border-border', className)}
+    className={cn('inline-flex h-9 items-center justify-center rounded-[var(--radius)] border border-input bg-card px-4 py-2 text-sm font-medium hover:bg-accent', className)}
     {...props}
   />
 ))

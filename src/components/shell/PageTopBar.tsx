@@ -29,23 +29,23 @@ export function PageTopBar({
   trailing,
 }: PageTopBarProps) {
   return (
-    <header data-tauri-drag-region className="flex h-10 shrink-0 items-center justify-between border-b border-border bg-background px-6">
+    <header data-tauri-drag-region className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background px-8">
       {variant === 'compact' ? (
-        <div className="flex min-w-0 items-center gap-3 text-sm font-semibold text-foreground">
+        <div className="flex min-w-0 flex-1 items-center gap-3 text-sm font-semibold text-foreground">
           {leading}
           <span className="truncate">{title}</span>
         </div>
       ) : variant === 'title' ? (
-        <div className="flex min-w-0 items-center gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
           {leading}
           {typeof title === 'string' ? (
-            <span className="truncate text-base font-semibold text-foreground">{title}</span>
+            <span className="truncate text-[15px] font-semibold leading-[22px] text-foreground">{title}</span>
           ) : (
             title
           )}
         </div>
       ) : variant === 'breadcrumb' ? (
-        <div className="flex min-w-0 items-center gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
           {leading}
           {breadcrumbs ? (
             <ol className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
@@ -70,13 +70,15 @@ export function PageTopBar({
         </div>
       ) : (
         /* default variant: empty bar */
-        <div className="flex min-w-0 items-center gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
           {leading}
         </div>
       )}
-      <div className="flex items-center gap-2">
-        {trailing ? <div className="flex items-center gap-2">{trailing}</div> : null}
-      </div>
+      {trailing ? (
+        <div className="ml-auto flex min-w-0 max-w-[70%] items-center justify-end gap-2 overflow-x-auto overflow-y-hidden">
+          {trailing}
+        </div>
+      ) : null}
     </header>
   )
 }

@@ -8,6 +8,7 @@ import { LoginLogoStack } from '@/components/auth/LoginLogoStack'
 import { LoginOptionsRow } from '@/components/auth/LoginOptionsRow'
 import { RegisterCard } from '@/components/auth/RegisterCard'
 import { ResetPasswordCard } from '@/components/auth/ResetPasswordCard'
+import { ConfirmDialogHost } from '@/components/common/ConfirmDialogHost'
 import { LegalDocumentDialog } from '@/components/legal/LegalDocumentDialog'
 import { getLegalDocument, type LegalDocumentKey } from '@/components/legal/legalDocuments'
 import { TitleBar } from '@/components/layout/TitleBar'
@@ -143,7 +144,8 @@ export function LoginPage() {
           this the login/register screen has no way to close or minimize. */}
       <TitleBar />
       {/* Pre-auth language toggle: pinned top-right under the title bar so it
-          stays in place for both the login and register cards. */}
+          stays in place for both the login and register cards. The dev-only
+          environment switcher lives in the title bar (TitleBarEnvSwitcher). */}
       <div className="absolute right-4 top-11 z-10">
         <LoginLanguageSwitch />
       </div>
@@ -304,6 +306,10 @@ export function LoginPage() {
           if (!open) setActiveLegalDocument(null)
         }}
       />
+      {/* Dev-only pre-auth confirm host: AppShell's ConfirmDialogHost isn't
+          mounted yet, so the title-bar environment switcher's requestConfirm()
+          needs its own here. Stripped from production builds. */}
+      {import.meta.env.DEV ? <ConfirmDialogHost /> : null}
     </div>
   )
 }

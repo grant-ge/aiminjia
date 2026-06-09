@@ -127,7 +127,7 @@ function AppShell() {
       <div className="flex min-h-0 flex-1">
         <AppSidebar />
         <main
-          className="min-w-0 flex-1 overflow-hidden border-l border-border"
+          className="min-w-0 flex-1 overflow-hidden"
           style={{ boxShadow: 'var(--shadow-sidebar-edge)' }}
         >
           <RouteSwitch />

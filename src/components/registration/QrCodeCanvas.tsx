@@ -49,7 +49,7 @@ export function QrCodeCanvas({ value, loading, alt = '注册二维码' }: QrCode
   }, [value])
 
   return (
-    <div className="relative flex h-60 w-60 items-center justify-center rounded-3xl border border-border bg-white p-4">
+    <div className="relative flex h-60 w-60 items-center justify-center rounded-lg border border-border bg-white p-4">
       {qrDataUrl ? (
         <img src={qrDataUrl} alt={alt} className="h-full w-full" />
       ) : (

@@ -11,7 +11,8 @@ use app_lib::transport::testing::RecordingRuntimeHost;
 fn review_task_terminal_notification_should_use_real_parent_run_context() {
     let host = RecordingRuntimeHost::new();
     let bus = RuntimeEventBus::new();
-    bus.subscribe(Arc::new(TauriEventAdapter::new(host.clone())));
+    let _adapter = Arc::new(TauriEventAdapter::new(host.clone()));
+    bus.subscribe(_adapter.clone());
 
     let store = Arc::new(InMemoryTaskStore::new());
     let runtime = TaskRuntime::with_event_bus(store.clone(), bus);

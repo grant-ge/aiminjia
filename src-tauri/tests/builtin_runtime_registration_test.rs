@@ -226,6 +226,11 @@ async fn request_scoped_memory_runtime_tools_are_visible_and_executable() {
 async fn bash_runtime_tool_executes_via_registry() {
     let registry = ToolRegistry::new();
     register_builtin_tools(&registry).await;
+    registry
+        .register_runtime(Arc::new(
+            app_lib::runtime::tools::builtin::bash::BashTool::default(),
+        ))
+        .await;
 
     let tmp = TempDir::new().unwrap();
     let ctx = build_test_plugin_ctx(tmp.path().to_path_buf());

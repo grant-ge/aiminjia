@@ -2,6 +2,7 @@
  * @designSource copied from Wukong about settings page, adapted to AI 小家 branding.
  */
 import { useState } from 'react'
+import type { ComponentProps } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -28,19 +29,23 @@ interface AboutPanelProps {
   links: AboutPanelLinks
 }
 
+type PillButtonProps = Omit<ComponentProps<typeof Button>, 'type' | 'variant' | 'className' | 'children'> & {
+  children: string
+  onClick: () => void
+  danger?: boolean
+  disabled?: boolean
+}
+
 function PillButton({
   children,
   onClick,
   danger = false,
   disabled = false,
-}: {
-  children: string
-  onClick: () => void
-  danger?: boolean
-  disabled?: boolean
-}) {
+  ...buttonProps
+}: PillButtonProps) {
   return (
     <Button
+      {...buttonProps}
       type="button"
       onClick={onClick}
       disabled={disabled}
@@ -91,7 +96,11 @@ export function AboutPanel({
             <div className="text-sm leading-none text-muted-foreground">{t('settings.about.version')} {version}</div>
           </div>
         </div>
-        <PillButton onClick={onCheckUpdate} disabled={checkingUpdate}>
+        <PillButton
+          onClick={onCheckUpdate}
+          disabled={checkingUpdate}
+          data-aijia-settings-action="check-update"
+        >
           {checkingUpdate ? t('settings.about.checkingUpdate') : t('settings.about.checkUpdate')}
         </PillButton>
       </section>
@@ -100,7 +109,7 @@ export function AboutPanel({
 
       {/*
       <section className="flex flex-col gap-4">
-        <div className="text-xl font-bold tracking-tight text-foreground">隐私</div>
+        <div className="text-xl font-bold text-foreground">隐私</div>
         <div className="flex items-center justify-between gap-8">
           <div className="flex min-w-0 flex-col gap-1">
             <div className="text-base font-semibold text-foreground">隐私保护增强</div>
@@ -120,7 +129,7 @@ export function AboutPanel({
       */}
 
       <section className="flex flex-col gap-3">
-        <div className="text-xl font-bold tracking-tight text-foreground">{t('settings.about.policiesTitle')}</div>
+        <div className="text-xl font-bold text-foreground">{t('settings.about.policiesTitle')}</div>
 
         <div className="flex flex-wrap gap-2">
           <PillButton onClick={links.terms}>{t('settings.about.terms')}</PillButton>
@@ -131,7 +140,7 @@ export function AboutPanel({
       <div className="mb-2 h-px bg-border" />
 
       <section className="flex flex-col gap-3 pb-2">
-        <div className="text-xl font-bold tracking-tight text-foreground">{t('settings.about.devMode')}</div>
+        <div className="text-xl font-bold text-foreground">{t('settings.about.devMode')}</div>
 
         <div className="flex items-center justify-between gap-6">
           <div className="flex flex-col gap-1">

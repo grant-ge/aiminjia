@@ -187,7 +187,8 @@ async fn runtime_chat_mainline_emits_tool_events_once() {
 
     let host = RecordingRuntimeHost::new();
     let bus = RuntimeEventBus::new();
-    bus.subscribe(Arc::new(TauriEventAdapter::new(host.clone())));
+    let _adapter = Arc::new(TauriEventAdapter::new(host.clone()));
+    bus.subscribe(_adapter.clone());
 
     let mapping = IdentityMapping::from_legacy_conversation_id("conv-event-count".to_string());
     let turn = TurnState::new(

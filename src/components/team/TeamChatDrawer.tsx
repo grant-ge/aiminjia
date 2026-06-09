@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { useSettingsStore } from '@/stores/settingsStore'
 import type { TeamOverview, TeamSession } from '@/types/team'
 import { useConversationTeamState, useTeamStore } from '@/stores/teamStore'
+import { getExpertDisplayName } from '@/features/expert-teams/teams'
 
 import { AgentAvatar } from './AgentAvatar'
 import { TeamChatEvents } from './TeamChatEvents'
@@ -283,21 +284,12 @@ function TeamSessionSection({ session, onDrill }: TeamSessionSectionProps) {
         {visibleMembers.length > 0 && (
           <div className="mt-2 flex flex-wrap items-center gap-2">
             {visibleMembers.map((member) => (
-              <Button
+              <MemberButton
                 key={member.agentId}
-                type="button"
-                variant="ghost"
-                size="sm"
-                disabled={!member.hasTranscript}
+                agentName={member.agentName}
+                hasTranscript={member.hasTranscript}
                 onClick={() => onDrill(member.agentName)}
-                className="h-7 gap-1.5 rounded-full px-2"
-                title={member.hasTranscript
-                  ? t('team.process.viewMemberProcess', { name: member.agentName })
-                  : t('team.process.noMemberTranscript', { name: member.agentName })}
-              >
-                <AgentAvatar name={member.agentName} size="sm" />
-                <span className="text-xs">{member.agentName}</span>
-              </Button>
+              />
             ))}
           </div>
         )}
@@ -307,5 +299,33 @@ function TeamSessionSection({ session, onDrill }: TeamSessionSectionProps) {
         <TeamChatEvents events={session.events} onDrillAgent={onDrill} />
       </div>
     </section>
+  )
+}
+
+interface MemberButtonProps {
+  agentName: string
+  hasTranscript: boolean
+  onClick: () => void
+}
+
+function MemberButton({ agentName, hasTranscript, onClick }: MemberButtonProps) {
+  const { t } = useTranslation()
+  const teamVisual = useTeamVisualContext()
+  const displayName = getExpertDisplayName(teamVisual, agentName)
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      disabled={!hasTranscript}
+      onClick={onClick}
+      className="h-7 gap-1.5 rounded-full px-2"
+      title={hasTranscript
+        ? t('team.process.viewMemberProcess', { name: displayName })
+        : t('team.process.noMemberTranscript', { name: displayName })}
+    >
+      <AgentAvatar name={agentName} size="sm" />
+      <span className="text-xs">{displayName}</span>
+    </Button>
   )
 }

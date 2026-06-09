@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 
-use crate::auth::client::BASE_URL;
+use crate::auth::client::base_url;
 use crate::auth::AuthManager;
 use crate::plugin::skill::global_sync::{
     reload_skill_registry, sync_skill_packages_from_server, GlobalSkillSyncConfig,
@@ -30,7 +30,7 @@ pub async fn sync_builtin_skills(
     let registry_arc: Arc<Mutex<SkillRegistry>> = registry.inner().clone();
     let skill_roots = cfg.skill_roots_for_reload.clone();
 
-    let report = sync_skill_packages_from_server(cfg, BASE_URL.to_string(), session_key)
+    let report = sync_skill_packages_from_server(cfg, base_url(), session_key)
         .await
         .map_err(|e| e.to_string())?;
 

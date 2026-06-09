@@ -18,10 +18,12 @@ import {
   denyPermissionRequest,
   onDiagnosticsEvent,
   onPermissionAsk,
+  onStreamingNotice,
   onTurnCompleted,
   onTaskStatusChanged,
   type DiagnosticsEventPayload,
   type AgentIdlePayload,
+  type StreamingNoticePayload,
   type TurnCompletedPayload,
 } from './tauri'
 
@@ -155,6 +157,37 @@ describe('tauri event contract', () => {
 
     expect(tauriEventMock.listen).toHaveBeenCalledWith(
       'turn:completed',
+      expect.any(Function),
+    )
+  })
+
+  it('exposes STREAMING_NOTICE event constant with correct value', () => {
+    expect(TAURI_EVENTS.STREAMING_NOTICE).toBe('streaming:notice')
+  })
+
+  it('StreamingNoticePayload keeps failover fields stable', () => {
+    const payload: StreamingNoticePayload = {
+      conversationId: 'conv-1',
+      runId: 'run-1',
+      level: 'info',
+      code: 'auto_failed_over',
+      message: 'switched to backup',
+      fromRoute: { provider: 'anthropic' },
+      toRoute: { provider: 'openai' },
+    }
+
+    expect(payload.code).toBe('auto_failed_over')
+    expect(payload.fromRoute?.provider).toBe('anthropic')
+    expect(payload.toRoute?.provider).toBe('openai')
+  })
+
+  it('onStreamingNotice registers listener with correct event name', async () => {
+    const handler = vi.fn()
+
+    await onStreamingNotice(handler)
+
+    expect(tauriEventMock.listen).toHaveBeenCalledWith(
+      'streaming:notice',
       expect.any(Function),
     )
   })

@@ -308,8 +308,6 @@ pub type SharedCapabilityContext = Arc<CapabilityContext>;
 /// This struct is retained as a no-op stub so that existing construction sites
 /// (worker_runtime.rs, legacy registry) continue to compile.
 pub struct DefaultFileOperations {
-    pub(crate) storage: Arc<crate::storage::file_store::AppStorage>,
-    pub(crate) file_manager: Arc<crate::storage::file_manager::FileManager>,
     pub(crate) workspace_path: PathBuf,
     pub(crate) conversation_id: String,
     pub(crate) run_id: Option<crate::runtime::ids::RunId>,
@@ -319,15 +317,11 @@ pub struct DefaultFileOperations {
 
 impl DefaultFileOperations {
     pub fn new(
-        storage: Arc<crate::storage::file_store::AppStorage>,
-        file_manager: Arc<crate::storage::file_manager::FileManager>,
         workspace_path: PathBuf,
         conversation_id: impl Into<String>,
         run_id: Option<crate::runtime::ids::RunId>,
     ) -> Self {
         Self {
-            storage,
-            file_manager,
             workspace_path,
             conversation_id: conversation_id.into(),
             run_id,

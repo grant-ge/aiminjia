@@ -12,12 +12,12 @@ describe('TenantHeader', () => {
     expect(screen.getByText('仁励家网络科技(杭州)')).toBeInTheDocument()
   })
 
-  it('logo box has 24x24 sizing classes', () => {
+  it('logo box has 28x28 sizing classes', () => {
     const { container } = render(
       <TenantHeader name="X" logoUrl="/app-icon.png" />,
     )
     const logoWrap = container.querySelector('[data-testid="tenant-logo"]')
-    expect(logoWrap?.className).toMatch(/h-6/)
-    expect(logoWrap?.className).toMatch(/w-6/)
+    expect(logoWrap?.className).toMatch(/h-7/)
+    expect(logoWrap?.className).toMatch(/w-7/)
   })
 })
