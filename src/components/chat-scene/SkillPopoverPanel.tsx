@@ -117,7 +117,7 @@ export function SkillPopoverPanel({ items, onPick, onClose }: SkillPopoverPanelP
     <div
       ref={panelRef}
       onKeyDown={handleKeyDown}
-      className="w-[420px] overflow-hidden rounded-xl border border-border bg-popover shadow-[var(--shadow-popover)]"
+      className="w-[420px] overflow-hidden rounded-md border border-border bg-popover shadow-[var(--shadow-popover)]"
     >
       <header className="flex items-center gap-2 px-3 py-2.5">
         <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -189,7 +189,7 @@ export function SkillPopoverPanel({ items, onPick, onClose }: SkillPopoverPanelP
                     {isActive ? (
                       <span
                         aria-hidden
-                        className="flex h-5 w-5 shrink-0 items-center justify-center rounded border border-border text-muted-foreground"
+                        className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground"
                       >
                         <CornerDownLeft className="h-3 w-3" />
                       </span>

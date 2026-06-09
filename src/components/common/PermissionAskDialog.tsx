@@ -185,7 +185,7 @@ export function PermissionAskDialog({
             {ask.suggestions.map((suggestion) => (
               <span
                 key={suggestion}
-                className="rounded px-2 py-0.5 text-xs"
+                className="rounded-md px-2 py-0.5 text-xs"
                 style={{
                   background: 'var(--color-bg-subtle)',
                   color: 'var(--color-text-muted)',

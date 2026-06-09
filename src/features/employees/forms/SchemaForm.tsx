@@ -311,7 +311,7 @@ function Widget({ prop, value, onChange, placeholder }: WidgetProps) {
           type="checkbox"
           checked={!!value}
           onChange={(e) => onChange(e.target.checked)}
-          className="h-4 w-4 rounded border-border"
+          className="h-4 w-4 rounded-md border-border"
         />
         <span className="text-sm text-foreground">
           {value ? '开启' : '关闭'}
@@ -415,7 +415,7 @@ function ArrayWidget({ prop, value, onChange, placeholder }: ArrayWidgetProps) {
                 else next.delete(opt)
                 onChange(Array.from(next))
               }}
-              className="h-4 w-4 rounded border-border"
+              className="h-4 w-4 rounded-md border-border"
             />
             <span>{opt}</span>
           </label>
@@ -440,7 +440,7 @@ function ArrayWidget({ prop, value, onChange, placeholder }: ArrayWidgetProps) {
         {(value as string[]).map((tag, i) => (
           <span
             key={`${tag}-${i}`}
-            className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs"
+            className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-xs"
           >
             {tag}
             <button

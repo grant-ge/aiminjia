@@ -51,7 +51,7 @@ export function SettingsShell({
       <div
         data-aijia-settings-shell
         data-testid="settings-modal-box"
-        className="relative z-10 grid h-[720px] w-[980px] max-h-[calc(100vh-48px)] max-w-[calc(100vw-48px)] grid-cols-[220px_minmax(0,1fr)] overflow-hidden rounded-lg border border-border bg-card shadow-[var(--shadow-modal)]"
+        className="relative z-10 grid h-[720px] w-[980px] max-h-[calc(100vh-48px)] max-w-[calc(100vw-48px)] grid-cols-[220px_minmax(0,1fr)] overflow-hidden rounded-md border border-border bg-card shadow-[var(--shadow-modal)]"
         style={{ height }}
       >
         {menu}
@@ -62,7 +62,7 @@ export function SettingsShell({
           data-aijia-settings-action="close"
           data-testid="settings-close-button"
           onClick={onClose}
-          className="absolute right-3 top-3 z-20 inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius)] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="absolute right-3 top-3 z-20 inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <X className="h-4 w-4" />
         </button>

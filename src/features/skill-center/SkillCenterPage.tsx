@@ -378,14 +378,14 @@ export function SkillCenterPage() {
           title={(
             <div className="flex min-w-0 items-center gap-2.5">
               <span className="truncate text-[15px] font-semibold leading-[22px] text-foreground">{t('skillCenter.title')}</span>
-              <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-muted-foreground">
+              <span className="rounded-md bg-secondary px-2 py-0.5 text-xs font-medium text-muted-foreground">
               {t('skillCenter.installedCount', { count: skills.length })}
               </span>
             </div>
           )}
           trailing={(
             <>
-              <div className="flex h-9 w-[240px] items-center gap-2 rounded-[var(--radius)] border border-input bg-card px-3">
+              <div className="flex h-9 w-[240px] items-center gap-2 rounded-md border border-input bg-card px-3">
                 <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
                 <input
                   value={query}
@@ -542,7 +542,7 @@ export function SkillCenterPage() {
                       trigger={
                         <button
                           type="button"
-                          className="flex h-8 w-8 items-center justify-center rounded-[var(--radius)] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                          className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                         >
                           <MoreHorizontal className="h-4 w-4" />
                         </button>

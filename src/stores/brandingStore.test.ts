@@ -22,13 +22,15 @@ describe('brandingStore', () => {
     expect(style.getPropertyValue('--ring')).toBe('#2563EB')
     expect(style.getPropertyValue('--sidebar-primary')).toBe('#2563EB')
     expect(style.getPropertyValue('--foreground')).toBe('#1E293B')
-    expect(style.getPropertyValue('--background')).toBe('#F7F9FE')
+    expect(style.getPropertyValue('--background')).toBe('#FFFFFF')
+    expect(style.getPropertyValue('--card')).toBe('#FFFFFF')
+    expect(style.getPropertyValue('--popover')).toBe('#FFFFFF')
     expect(style.getPropertyValue('--sidebar')).toBe('#EEF2FA')
 
     const state = useBrandingStore.getState()
     expect(state.accentColor).toBe('#2563EB')
     expect(state.primaryColor).toBe('#1E293B')
-    expect(state.bgColor).toBe('#F7F9FE')
+    expect(state.bgColor).toBe(DEFAULTS.bgColor)
     expect(state.sidebarBgColor).toBe('#EEF2FA')
     expect(state.isCustom).toBe(true)
   })
@@ -60,20 +62,33 @@ describe('brandingStore', () => {
     expect(style.getPropertyValue('--color-text-on-accent')).toBe('#FFFFFF')
   })
 
-  it('暗夜模式（深色 bg）时 muted/border 仍按 fg 反向派生', () => {
+  it('租户 bgColor 只作为侧边栏底色来源，不影响主内容 bg-background', () => {
     useBrandingStore.getState().applyBranding({
       accentColor: '#818CF8',
       primaryColor: '#E2E8F0',
       bgColor: '#0F172A',
-      sidebarBgColor: '#1E293B',
     })
     const style = document.documentElement.style
-    expect(style.getPropertyValue('--background')).toBe('#0F172A')
+    expect(style.getPropertyValue('--background')).toBe('#FFFFFF')
+    expect(style.getPropertyValue('--card')).toBe('#FFFFFF')
+    expect(style.getPropertyValue('--popover')).toBe('#FFFFFF')
+    expect(style.getPropertyValue('--sidebar')).toBe('#0F172A')
     expect(style.getPropertyValue('--foreground')).toBe('#E2E8F0')
-    // muted 是 bg 与 fg 混合的中间值，不应为纯 bg 或纯 fg
+    // muted 是主内容白底与 fg 混合的中间值，不应为纯白或纯 fg
     const muted = style.getPropertyValue('--muted')
-    expect(muted).not.toBe('#0F172A')
+    expect(muted).not.toBe('#FFFFFF')
     expect(muted).not.toBe('#E2E8F0')
+  })
+
+  it('租户 sidebarBgColor 优先于兼容的 bgColor 作为侧边栏底色', () => {
+    useBrandingStore.getState().applyBranding({
+      bgColor: '#F7F9FE',
+      sidebarBgColor: '#EEF2FA',
+    })
+
+    const style = document.documentElement.style
+    expect(style.getPropertyValue('--background')).toBe('#FFFFFF')
+    expect(style.getPropertyValue('--sidebar')).toBe('#EEF2FA')
   })
 
   it('非法 hex 回退默认值', () => {
@@ -131,16 +146,16 @@ describe('brandingStore', () => {
     // RGB companion vars — exact values
     expect(style.getPropertyValue('--primary-rgb')).toBe('37, 99, 235')
     expect(style.getPropertyValue('--foreground-rgb')).toBe('30, 41, 59')
-    expect(style.getPropertyValue('--card-rgb')).toBe('247, 249, 254')
-    expect(style.getPropertyValue('--color-bg-base-rgb')).toBe('238, 241, 246')
-    expect(style.getPropertyValue('--muted-foreground-rgb')).toBe('128, 135, 147')
+    expect(style.getPropertyValue('--card-rgb')).toBe('255, 255, 255')
+    expect(style.getPropertyValue('--color-bg-base-rgb')).toBe('246, 246, 247')
+    expect(style.getPropertyValue('--muted-foreground-rgb')).toBe('131, 137, 147')
     // cross-palette vars — exact values
-    expect(style.getPropertyValue('--primary-on-bg-10')).toBe('#e2eafc')
-    expect(style.getPropertyValue('--primary-on-bg-24')).toBe('#c5d5f9')
-    expect(style.getPropertyValue('--primary-on-bg-72')).toBe('#608df0')
+    expect(style.getPropertyValue('--primary-on-bg-10')).toBe('#e9effd')
+    expect(style.getPropertyValue('--primary-on-bg-24')).toBe('#cbdafa')
+    expect(style.getPropertyValue('--primary-on-bg-72')).toBe('#628ff1')
     expect(style.getPropertyValue('--primary-darken-10')).toBe('#2159d4')
-    expect(style.getPropertyValue('--primary-mix-scrollbar')).toBe('#93aee9')
-    expect(style.getPropertyValue('--primary-mix-blockquote')).toBe('#97b1e9')
+    expect(style.getPropertyValue('--primary-mix-scrollbar')).toBe('#98b1e9')
+    expect(style.getPropertyValue('--primary-mix-blockquote')).toBe('#9bb4e9')
   })
 
   it('reset 清除所有 RGB 和跨 palette 派生变量', () => {

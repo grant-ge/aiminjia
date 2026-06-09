@@ -44,7 +44,7 @@ export function ExecutionTraceCard({
 
   return (
     <div
-      className="overflow-hidden rounded-lg border border-border"
+      className="overflow-hidden rounded-md border border-border"
       style={{
         background: 'var(--color-bg-card)',
         borderColor: 'var(--color-border)',
@@ -55,7 +55,7 @@ export function ExecutionTraceCard({
           type="button"
           aria-expanded={headerExpanded}
           onClick={() => setHeaderExpanded((prev) => !prev)}
-          className={`flex w-full items-center justify-between px-4 py-2.5 text-left transition-colors hover:bg-[var(--color-bg-hover)] ${headerExpanded ? 'rounded-t-lg border-b border-border' : 'rounded-lg'}`}
+          className={`flex w-full items-center justify-between px-4 py-2.5 text-left transition-colors hover:bg-[var(--color-bg-hover)] ${headerExpanded ? 'rounded-t-md border-b border-border' : 'rounded-md'}`}
           style={{
             background: 'var(--color-bg-elevated)',
             borderColor: 'var(--color-border)',
@@ -90,7 +90,7 @@ export function ExecutionTraceCard({
             </span>
           </span>
           <span
-            className="rounded-full px-2 py-0.5 text-xs font-medium"
+            className="rounded-md px-2 py-0.5 text-xs font-medium"
             style={{
               background: 'var(--color-bg-neutral)',
               color: 'var(--color-text-muted)',
@@ -101,7 +101,7 @@ export function ExecutionTraceCard({
         </button>
       ) : (
         <div
-          className="flex items-center justify-between rounded-t-lg border-b px-4 py-2.5 border-border"
+          className="flex items-center justify-between rounded-t-md border-b px-4 py-2.5 border-border"
           style={{
             background: 'var(--color-bg-elevated)',
             borderColor: 'var(--color-border)',
@@ -114,7 +114,7 @@ export function ExecutionTraceCard({
             {title}
           </span>
           <span
-            className="rounded-full px-2 py-0.5 text-xs font-medium"
+            className="rounded-md px-2 py-0.5 text-xs font-medium"
             style={{
               background: 'var(--color-bg-neutral)',
               color: 'var(--color-text-muted)',

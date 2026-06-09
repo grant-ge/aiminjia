@@ -55,12 +55,10 @@ export function UserMessageBubble({
     <div className="flex w-full flex-col items-end gap-1.5">
       <div
         data-testid="user-bubble"
-        // 头像在右上方紧挨着 bubble，bubble 右上角去尖（rounded-tr-none）能形
-        // 成一个"指向头像"的小切角，让 user / avatar 是一组的视觉关系更明确。
         // px-3 = 12px:之前是 16px(走 --user-bubble-padding-x 变量),气泡里
         // 只夹一个附件 chip 时显得空,12px 视觉更紧凑且对纯文字也够呼吸。
         // 该变量只此一处使用,已从 globals.css 移除。
-        className="max-w-[80%] overflow-hidden rounded-xl rounded-tr-none bg-primary px-3 py-2 text-sm leading-relaxed text-primary-foreground"
+        className="max-w-[80%] overflow-hidden rounded-md bg-primary px-3 py-2 text-sm leading-relaxed text-primary-foreground"
       >
         <div
           data-testid="user-bubble-content"
@@ -74,7 +72,7 @@ export function UserMessageBubble({
             <span
               data-testid="user-skill-token"
               // bubble 外层是 bg-primary，内嵌 token 用半透明 primary-foreground 维持文字/图标对比度
-              className="mr-2 inline-flex translate-y-[1px] items-center gap-1.5 rounded-lg bg-primary-foreground/20 px-2 py-1 text-xs font-semibold leading-none text-primary-foreground shadow-[inset_0_0_0_1px_rgba(255,255,255,0.24)]"
+              className="mr-2 inline-flex translate-y-[1px] items-center gap-1.5 rounded-md bg-primary-foreground/20 px-2 py-1 text-xs font-semibold leading-none text-primary-foreground shadow-[inset_0_0_0_1px_rgba(255,255,255,0.24)]"
               title={command}
             >
               <Blocks

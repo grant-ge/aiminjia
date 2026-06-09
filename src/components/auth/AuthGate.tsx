@@ -4,7 +4,7 @@ import { listen } from '@tauri-apps/api/event'
 import { useAuthStore } from '@/stores/authStore'
 import { useBrandingStore } from '@/stores/brandingStore'
 import { useChat } from '@/hooks/useChat'
-import { useUiStore } from '@/stores/uiStore'
+import { useUiStore, type Route } from '@/stores/uiStore'
 import { useSkillStore } from '@/stores/skillStore'
 import { syncBuiltinSkills, TAURI_EVENTS, workplaceDirectoryCatalog } from '@/lib/tauri'
 import i18n from '@/i18n'
@@ -27,6 +27,23 @@ export function AuthGate({ children }: PropsWithChildren) {
       return
     }
     hasRestored.current = true
+    const devRoute = getDevForcedRoute()
+    if (devRoute) {
+      useAuthStore.getState().setAuth({
+        loggedIn: true,
+        user: { id: 0, name: 'Dev User', username: 'dev' },
+        tenant: {
+          id: 0,
+          name: 'AIjia Dev',
+          balance: '0',
+          productName: 'AI小家',
+        },
+        models: [],
+      })
+      setRoute(devRoute)
+      queueMicrotask(() => setIsRestoringAuth(false))
+      return
+    }
     // Apply cached brand first so the login page shows the previous tenant's
     // logo / colors / product name even when auth restore turns up empty
     // (logged out). authStore.restoreFromStorage will override with fresh
@@ -39,7 +56,7 @@ export function AuthGate({ children }: PropsWithChildren) {
       .finally(() => {
         setIsRestoringAuth(false)
       })
-  }, [restoreFromStorage])
+  }, [restoreFromStorage, setRoute])
 
   // Load conversation history once the user is authenticated
   useEffect(() => {
@@ -116,4 +133,25 @@ export function AuthGate({ children }: PropsWithChildren) {
   }
 
   return <>{children}</>
+}
+
+function getDevForcedRoute(): Route | null {
+  if (!import.meta.env.DEV || typeof window === 'undefined') return null
+  const route = new URLSearchParams(window.location.search).get('aijiaDevRoute')
+  switch (route) {
+    case 'schedules':
+      return { kind: 'schedules' }
+    case 'home':
+      return { kind: 'home' }
+    case 'employees':
+      return { kind: 'employees' }
+    case 'skill-center':
+      return { kind: 'skill-center' }
+    case 'expert-teams':
+      return { kind: 'expert-teams' }
+    case 'channel':
+      return { kind: 'channel' }
+    default:
+      return null
+  }
 }

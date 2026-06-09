@@ -59,7 +59,7 @@ export function AccountBillingPanel() {
       )}
 
       <section className="grid grid-cols-3 gap-3">
-        <div className="rounded-lg border border-border bg-card p-4">
+        <div className="rounded-md border border-border bg-card p-4">
           <div className="text-xs text-muted-foreground">
             {t('settings.billing.balance')}
           </div>
@@ -76,7 +76,7 @@ export function AccountBillingPanel() {
             </div>
           )}
         </div>
-        <div className="rounded-lg border border-border bg-card p-4">
+        <div className="rounded-md border border-border bg-card p-4">
           <div className="text-xs text-muted-foreground">
             {t('settings.billing.monthCost')}
           </div>
@@ -84,7 +84,7 @@ export function AccountBillingPanel() {
             ¥{summary?.this_month.cost ?? '0.00'}
           </div>
         </div>
-        <div className="rounded-lg border border-border bg-card p-4">
+        <div className="rounded-md border border-border bg-card p-4">
           <div className="text-xs text-muted-foreground">
             {t('settings.billing.monthRequests')}
           </div>

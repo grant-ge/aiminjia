@@ -22,28 +22,28 @@ describe('design.pen token alignment', () => {
   })
 
   it.each([
-    ['--background', '#FAFAF8'],
-    ['--foreground', '#111111'],
+    ['--background', '#FFFFFF'],
+    ['--foreground', '#0d0d0d'],
     ['--card', '#FFFFFF'],
-    ['--border', '#E6E6E3'],
-    ['--input', '#E1E1DE'],
-    ['--muted', '#F3F3F1'],
-    ['--muted-foreground', '#71717A'],
+    ['--border', '#e2e2e2'],
+    ['--input', '#e2e2e2'],
+    ['--muted', '#f0f0f0'],
+    ['--muted-foreground', '#636363'],
     ['--popover', '#FFFFFF'],
-    ['--secondary', '#F3F3F1'],
+    ['--secondary', '#f3f3f3'],
     ['--primary', '#D4A843'],
     ['--primary-foreground', '#FFFFFF'],
-    ['--brand-primary-subtle', '#F8F1DF'],
+    ['--brand-primary-subtle', '#F9F3E5'],
     ['--brand-secondary', '#3F3F46'],
     ['--brand-secondary-subtle', '#F3F4F6'],
     ['--ring', '#D4A843'],
-    ['--sidebar', '#F4F4F1'],
-    ['--sidebar-accent', '#E9E9E5'],
-    ['--sidebar-border', '#E1E1DE'],
+    ['--sidebar', '#FAFAF8'],
+    ['--sidebar-accent', '#ebebeb'],
+    ['--sidebar-border', '#ebebeb'],
     ['--sidebar-primary', '#D4A843'],
     ['--sidebar-primary-foreground', '#FFFFFF'],
     ['--sidebar-accent-foreground', '#18181b'],
-    ['--destructive', '#D92D20'],
+    ['--destructive', '#e7000b'],
   ])('token %s equals %s (design.pen)', (name, expected) => {
     const value = tokenValue(name)
     expect(value?.toLowerCase()).toBe(expected.toLowerCase())
@@ -51,6 +51,12 @@ describe('design.pen token alignment', () => {
 
   it('sets pointer cursor for enabled buttons globally', () => {
     expect(CSS).toMatch(/button:not\(\s*:disabled\s*\)\s*\{[^}]*cursor:\s*pointer;/s)
+  })
+
+  it('maps Tailwind text size utilities to the compact app scale', () => {
+    expect(tokenValue('--text-xs')).toBe('0.75rem')
+    expect(tokenValue('--text-sm')).toBe('0.8125rem')
+    expect(tokenValue('--text-base')).toBe('0.875rem')
   })
 
   it('keeps font sizing on rem-compatible scales instead of fixed px rules', () => {
@@ -68,7 +74,7 @@ describe('assistant markdown typography', () => {
     expect(CSS).toMatch(/\.assistant-markdown ol\s*\{[\s\S]*list-style-type:\s*decimal;/)
     expect(CSS).toMatch(/\.assistant-markdown blockquote\s*\{[\s\S]*border-left:/)
     expect(CSS).toMatch(/\.assistant-markdown :not\(pre\) > code\s*\{[\s\S]*background:\s*var\(--color-bg-code\);/)
-    expect(CSS).toMatch(/\.assistant-markdown \.markdown-table-wrap,[\s\S]*margin-top:\s*0\.875rem;[\s\S]*margin-bottom:\s*0\.5rem;/)
+    expect(CSS).toMatch(/\.assistant-markdown \.markdown-table-wrap,[\s\S]*margin-top:\s*0\.625rem;[\s\S]*margin-bottom:\s*0\.375rem;/)
     expect(CSS).toMatch(/\.assistant-markdown \.markdown-table-copy\s*\{[\s\S]*display:\s*inline-flex;/)
     expect(CSS).toMatch(/\.assistant-markdown \.markdown-table-copy\s*\{[\s\S]*font-size:\s*inherit;/)
     expect(CSS).not.toMatch(/\.assistant-markdown \.markdown-table-copy\s*\{[\s\S]*font-size:\s*15px;/)

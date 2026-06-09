@@ -25,7 +25,7 @@ function sleep(ms: number) {
 
 function CredentialRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-border bg-muted/25 px-4 py-3">
+    <div className="rounded-md border border-border bg-muted/25 px-4 py-3">
       <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground">{label}</div>
       <div className="mt-1 break-all font-mono text-sm font-semibold text-foreground">{value}</div>
     </div>
@@ -63,22 +63,22 @@ function QrCodePanel({ value, loading, qrAlt }: { value: string | null; loading:
 
   return (
     // QR 容器固定白底：保证扫码相机/飞书客户端可识别，不随主题切换
-    <div className="relative flex h-60 w-60 items-center justify-center rounded-lg border border-border bg-white p-4">
+    <div className="relative flex h-60 w-60 items-center justify-center rounded-md border border-border bg-white p-4">
       {qrDataUrl ? (
         <img src={qrDataUrl} alt={qrAlt} className="h-full w-full" />
       ) : (
         // 占位 QR pattern：和外层一致保持白底，黑点是结构性占位
-        <div aria-label={qrAlt} className="grid h-full w-full grid-cols-7 grid-rows-7 gap-1 rounded bg-white p-2">
+        <div aria-label={qrAlt} className="grid h-full w-full grid-cols-7 grid-rows-7 gap-1 rounded-md bg-white p-2">
           {Array.from({ length: 49 }).map((_, index) => (
             <span
               key={index}
-              className={`rounded-[2px] ${[0, 1, 2, 7, 14, 42, 43, 44, 48, 34, 24, 18, 12, 31, 39, 5, 10, 29, 36, 46].includes(index) ? 'bg-black' : 'bg-zinc-100'}`}
+              className={`rounded-md ${[0, 1, 2, 7, 14, 42, 43, 44, 48, 34, 24, 18, 12, 31, 39, 5, 10, 29, 36, 46].includes(index) ? 'bg-black' : 'bg-zinc-100'}`}
             />
           ))}
         </div>
       )}
       {loading && (
-        <div className="absolute inset-4 flex items-center justify-center rounded-xl bg-background/75 backdrop-blur-[1px]">
+        <div className="absolute inset-4 flex items-center justify-center rounded-md bg-background/75 backdrop-blur-[1px]">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
       )}
@@ -189,12 +189,12 @@ export function FeishuChannelConfig({ onSaved, onClose }: FeishuChannelConfigPro
         <div className="flex flex-col items-center gap-5">
           {registrationDone && credentials ? (
             <div className="flex w-full flex-col items-center gap-5">
-              <div className="flex w-64 flex-col items-center rounded-xl bg-emerald-50 px-8 py-5 text-emerald-500">
+              <div className="flex w-64 flex-col items-center rounded-md bg-emerald-50 px-8 py-5 text-emerald-500">
                 <CheckCircle2 className="h-8 w-8" />
                 <div className="mt-3 text-xl font-bold">{t('channel.feishu.config.scanSuccess')}</div>
                 <div className="mt-1 text-sm font-semibold">{t('channel.feishu.config.appCreated')}</div>
               </div>
-              <div className="grid w-full gap-3 rounded-xl border border-border bg-card p-4 text-left">
+              <div className="grid w-full gap-3 rounded-md border border-border bg-card p-4 text-left">
                 <CredentialRow label="AppID" value={credentials.config.appKey} />
                 <CredentialRow label="AppSecret" value={credentials.config.appSecretMasked} />
               </div>
@@ -208,7 +208,7 @@ export function FeishuChannelConfig({ onSaved, onClose }: FeishuChannelConfigPro
               {registrationStatus === 'error' && (
                 <Button
                   onClick={handleStartRegistration}
-                  className="h-10 w-64 rounded-full"
+                  className="h-10 w-64 rounded-md"
                 >
                   {t('channel.feishu.config.retryQr')}
                 </Button>
@@ -228,7 +228,7 @@ export function FeishuChannelConfig({ onSaved, onClose }: FeishuChannelConfigPro
 
           {registrationMessage && (
             <div
-              className={`flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold ${
+              className={`flex items-center gap-2 rounded-md px-5 py-3 text-sm font-semibold ${
                 registrationStatus === 'error'
                   ? 'bg-red-50 text-red-500'
                   : registrationDone
@@ -247,7 +247,7 @@ export function FeishuChannelConfig({ onSaved, onClose }: FeishuChannelConfigPro
       {registrationDone && (
         <div className="border-t border-border bg-background px-10 py-4">
           <Button
-            className="h-10 w-full rounded-full"
+            className="h-10 w-full rounded-md"
             onClick={() => {
               onSaved?.()
               onClose?.()

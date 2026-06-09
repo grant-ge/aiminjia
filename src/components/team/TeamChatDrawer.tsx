@@ -203,7 +203,7 @@ function DrawerOverview({ conversationId, overview, onDrill, onClose }: DrawerOv
           type="button"
           aria-label={t('team.process.jumpToBottom')}
           onClick={jumpToBottom}
-          className="absolute bottom-4 left-1/2 z-20 flex h-9 w-9 -translate-x-1/2 items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-[var(--shadow-card)] transition-colors hover:bg-muted hover:text-foreground"
+          className="absolute bottom-4 left-1/2 z-20 flex h-9 w-9 -translate-x-1/2 items-center justify-center rounded-md border border-border bg-card text-muted-foreground shadow-[var(--shadow-card)] transition-colors hover:bg-muted hover:text-foreground"
         >
           <ArrowDown className="h-4 w-4" />
         </button>
@@ -263,16 +263,16 @@ function TeamSessionSection({ session, onDrill }: TeamSessionSectionProps) {
               {title}
             </span>
             {isLive ? (
-              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-                <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+              <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                <span className="h-1.5 w-1.5 rounded-md bg-primary" />
                 {t('team.session.live')}
               </span>
             ) : (
               <span
-                className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+                className="inline-flex shrink-0 items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
                 title={t('team.session.dismissedAt', { time: formatShortDateTime(session.deletedAt!) })}
               >
-                <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60" />
+                <span className="h-1.5 w-1.5 rounded-md bg-muted-foreground/60" />
                 {t('team.session.dismissed')}
               </span>
             )}
@@ -319,7 +319,7 @@ function MemberButton({ agentName, hasTranscript, onClick }: MemberButtonProps) 
       size="sm"
       disabled={!hasTranscript}
       onClick={onClick}
-      className="h-7 gap-1.5 rounded-full px-2"
+      className="h-7 gap-1.5 rounded-md px-2"
       title={hasTranscript
         ? t('team.process.viewMemberProcess', { name: displayName })
         : t('team.process.noMemberTranscript', { name: displayName })}

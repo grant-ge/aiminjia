@@ -84,7 +84,7 @@ export function ScheduleTaskRow({
       {/* Column 3: status */}
       <div className="min-w-0">
         <span
-          className={`rounded-full px-2 py-1 text-xs font-medium ${STATUS_BADGE[item.status]}`}
+          className={`rounded-md px-2 py-1 text-xs font-medium ${STATUS_BADGE[item.status]}`}
         >
           {t(`schedules.row.status.${item.status}`)}
         </span>

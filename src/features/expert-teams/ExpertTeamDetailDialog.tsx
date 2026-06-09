@@ -60,7 +60,7 @@ export function ExpertTeamDetailDialog({
         <DialogDescription className="sr-only">{team.tagline}</DialogDescription>
         <div className="flex max-h-[min(86vh,calc(100vh-32px))] flex-col overflow-hidden">
           <div className="flex items-start gap-5 border-b border-border bg-card px-6 py-5 pr-16">
-            <div className={`flex h-20 w-20 shrink-0 items-center justify-center rounded-lg ${logo.className}`}>
+            <div className={`flex h-20 w-20 shrink-0 items-center justify-center rounded-md ${logo.className}`}>
               <TeamLogo className="h-9 w-9" />
             </div>
             <div className="min-w-0 flex-1">
@@ -86,8 +86,8 @@ export function ExpertTeamDetailDialog({
                   {team.experts.map((expert) => {
                     const avatarVisual = getExpertAvatarVisual(team.id, expert)
                     return (
-                      <div key={expert.name} className="flex items-start gap-3 rounded-lg border border-border bg-card px-3 py-3">
-                        <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-muted/40">
+                      <div key={expert.name} className="flex items-start gap-3 rounded-md border border-border bg-card px-3 py-3">
+                        <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40">
                           <ExpertAvatarView
                             visual={avatarVisual}
                             fallback={expert.emoji || Array.from(expert.name)[0]}
@@ -105,7 +105,7 @@ export function ExpertTeamDetailDialog({
                   })}
                 </div>
               ) : (
-                <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/20 px-4 py-4 text-sm text-muted-foreground">
+                <div className="flex items-center gap-3 rounded-md border border-border bg-muted/20 px-4 py-4 text-sm text-muted-foreground">
                   <UsersRound className="h-4 w-4 text-primary" />
                   {t('ExpertTeams.directorInvites')}
                 </div>

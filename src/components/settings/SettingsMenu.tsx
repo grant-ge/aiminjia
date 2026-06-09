@@ -43,7 +43,7 @@ export function SettingsMenu({ activeKey, onSelect }: SettingsMenuProps) {
   const tenant = useAuthStore((s) => s.tenant)
   const isPersonal = tenant?.tenantType === 'personal'
   return (
-    <aside className="flex min-h-0 flex-col rounded-l-xl bg-secondary px-4 py-6">
+    <aside className="flex min-h-0 flex-col rounded-l-md bg-secondary px-4 py-6">
       <div className="mb-2 shrink-0 text-lg font-bold text-foreground">{t('settings.tabs.title')}</div>
       <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pr-1">
         {SETTINGS_MENU_ITEMS

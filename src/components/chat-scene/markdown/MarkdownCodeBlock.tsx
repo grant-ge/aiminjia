@@ -23,9 +23,9 @@ function InlineCode({ children }: { children?: React.ReactNode }) {
       style={{
         background: 'var(--color-bg-base)',
         padding: '1px 5px',
-        borderRadius: 3,
+        borderRadius: 'var(--radius-md)',
         fontFamily: 'var(--font-mono)',
-        fontSize: '0.82em',
+        fontSize: '0.928571em',
         color: 'var(--color-text-primary)',
       }}
     >
@@ -59,7 +59,7 @@ function FencedCodeBlock({ className, children }: { className?: string; children
     <div
       style={{
         margin: '12px 0',
-        borderRadius: 8,
+        borderRadius: 'var(--radius-md)',
         overflow: 'hidden',
         border: '1px solid var(--color-border-subtle)',
       }}
@@ -95,7 +95,7 @@ function FencedCodeBlock({ className, children }: { className?: string; children
                   : 'var(--color-text-muted)',
             fontFamily: 'var(--font-mono)',
             padding: '2px 6px',
-            borderRadius: 3,
+            borderRadius: 'var(--radius-md)',
           }}
         >
           {copied === 'ok'
@@ -111,7 +111,7 @@ function FencedCodeBlock({ className, children }: { className?: string; children
           padding: '12px 14px',
           overflowX: 'auto',
           background: 'var(--color-bg-elevated, var(--color-bg-card))',
-          fontSize: '0.82rem',
+          fontSize: '0.928571em',
           lineHeight: 1.55,
           fontFamily: 'var(--font-mono)',
           color: 'var(--color-text-primary)',

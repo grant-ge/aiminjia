@@ -85,7 +85,7 @@ export function TableView({
         style={{
           background: 'var(--table-bg)',
           border: '1px solid var(--table-border)',
-          borderRadius: 'var(--table-radius)',
+          borderRadius: 'var(--radius-md)',
           fontSize: 'var(--table-font-size)',
           lineHeight: 'var(--table-line-height)',
         }}

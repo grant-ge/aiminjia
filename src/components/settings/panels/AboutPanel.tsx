@@ -52,7 +52,7 @@ function PillButton({
       disabled={disabled}
       variant={danger ? 'destructive' : 'outline'}
       className={cn(
-        'h-9 rounded-lg px-5 text-sm font-semibold',
+        'h-9 rounded-md px-5 text-sm font-semibold',
         disabled && 'cursor-not-allowed opacity-60',
       )}
     >
@@ -100,7 +100,7 @@ export function AboutPanel({
           <img
             src={logoUrl}
             alt={`${appName} ${t('settings.about.icon')}`}
-            className="h-16 w-16 shrink-0 rounded-lg border-border bg-card object-cover"
+            className="h-16 w-16 shrink-0 rounded-md border-border bg-card object-cover"
           />
           <div className="flex min-w-0 flex-col gap-1.5 pt-1">
             <div className="text-base font-bold leading-none text-foreground">{appName}</div>

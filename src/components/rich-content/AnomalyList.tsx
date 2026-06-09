@@ -23,7 +23,7 @@ const PRIORITY_TEXT_COLOR: Record<AnomalyItem['priority'], string> = {
 export function AnomalyList({ anomalies }: AnomalyListProps) {
   return (
     <div
-      className="my-3 overflow-hidden rounded-lg border border-border"
+      className="my-3 overflow-hidden rounded-md border border-border"
       style={{
         background: 'var(--color-bg-card)',
         borderColor: 'var(--color-border)',
@@ -37,7 +37,7 @@ export function AnomalyList({ anomalies }: AnomalyListProps) {
         >
           {/* Priority dot */}
           <div
-            className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full"
+            className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-md"
             style={{ background: PRIORITY_COLOR[a.priority] }}
           />
 

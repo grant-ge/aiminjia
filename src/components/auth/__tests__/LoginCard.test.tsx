@@ -10,12 +10,11 @@ describe('LoginCard', () => {
     expect(screen.getByText('form-slot')).toBeInTheDocument()
   })
 
-  it('uses width 460 with spec §3.1/§3.3 rounded-xl page-level container', () => {
+  it('uses width 460 with spec §3.1/§3.3 rounded-md page-level container', () => {
     const { container } = render(<LoginCard><div /></LoginCard>)
     const card = container.querySelector('[data-testid="login-card"]')
     expect(card?.className).toMatch(/w-\[460px\]/)
-    // spec §3.2 — rounded-[18px] deprecated, use rounded-xl
-    expect(card?.className).toMatch(/rounded-xl/)
+    expect(card?.className).toMatch(/rounded-md/)
     expect(card?.className).toMatch(/border/)
   })
 })

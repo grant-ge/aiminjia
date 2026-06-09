@@ -27,7 +27,7 @@ export function PendingChips({ sessionId }: Props) {
       : t('chat.pending.batchHint', { count: items.length })
 
   return (
-    <div className="absolute bottom-full left-0 right-0 mx-3 flex h-12 min-w-0 items-center gap-1.5 overflow-x-auto overflow-y-hidden rounded-t-xl border border-b-0 border-border bg-card px-3 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div className="absolute bottom-full left-0 right-0 mx-3 flex h-12 min-w-0 items-center gap-1.5 overflow-x-auto overflow-y-hidden rounded-t-md border border-b-0 border-border bg-card px-3 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">{hint}</span>
       {items.map((item) => (
         <PendingChip

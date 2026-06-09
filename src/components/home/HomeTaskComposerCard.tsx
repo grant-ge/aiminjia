@@ -266,7 +266,7 @@ export function HomeTaskComposerCard() {
               disabled={isSubmitting}
               aria-label={t('homeComposer.selectWorkDirAria', { name: workspaceLabel })}
               title={workspacePath}
-              className="inline-flex max-w-full items-center gap-2 rounded-[var(--radius)] px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+              className="inline-flex max-w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
             >
               <BriefcaseBusiness className="h-5 w-5 shrink-0" />
               <span className="truncate">{t('homeComposer.workingIn', { name: workspaceLabel })}</span>
@@ -288,7 +288,7 @@ export function HomeTaskComposerCard() {
                     data-aijia-workspace-path={ws.rootPath}
                     onSelect={() => selectWorkspace(ws)}
                     title={ws.rootPath}
-                    className="group flex cursor-pointer items-center gap-3 rounded-[var(--radius)] px-3 py-2 text-sm font-medium outline-none focus:bg-muted"
+                    className="group flex cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-sm font-medium outline-none focus:bg-muted"
                   >
                     <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
                     <span className="flex-1 truncate text-foreground">{ws.displayName}</span>
@@ -301,7 +301,7 @@ export function HomeTaskComposerCard() {
                         removeRecentWorkspace(ws.rootPath)
                       }}
                       onPointerDown={(e) => e.stopPropagation()}
-                      className="hidden h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted-foreground/10 hover:text-foreground group-hover:flex group-data-[highlighted]:flex"
+                      className="hidden h-5 w-5 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted-foreground/10 hover:text-foreground group-hover:flex group-data-[highlighted]:flex"
                     >
                       <X className="h-3.5 w-3.5" />
                     </button>
@@ -313,7 +313,7 @@ export function HomeTaskComposerCard() {
             <DropdownMenuItem
               data-aijia-workspace-action="pick-default"
               onSelect={() => void handleSelectDefaultFolder()}
-              className="flex cursor-pointer items-center gap-3 rounded-[var(--radius)] px-3 py-2 text-sm font-medium outline-none focus:bg-muted"
+              className="flex cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-sm font-medium outline-none focus:bg-muted"
             >
               <House className="h-4 w-4 shrink-0 text-muted-foreground" />
               <span>{t('homeComposer.useDefaultFolder')}</span>
@@ -321,7 +321,7 @@ export function HomeTaskComposerCard() {
             <DropdownMenuItem
               data-aijia-workspace-action="pick-other"
               onSelect={() => void handlePickProject()}
-              className="flex cursor-pointer items-center gap-3 rounded-[var(--radius)] px-3 py-2 text-sm font-medium outline-none focus:bg-muted"
+              className="flex cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-sm font-medium outline-none focus:bg-muted"
             >
               <FolderPlus className="h-4 w-4 shrink-0 text-muted-foreground" />
               <span>{t('homeComposer.selectOtherDir')}</span>

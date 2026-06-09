@@ -245,14 +245,14 @@ function ToolChip({ call }: { call: ToolCallView }) {
         <div className="space-y-2 border-t border-border px-2.5 py-2">
           <div>
             <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">args</div>
-            <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded bg-muted/40 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-foreground/85">
+            <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-md bg-muted/40 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-foreground/85">
               {prettyJson(call.args)}
             </pre>
           </div>
           {call.result && (
             <div>
               <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">result</div>
-              <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded bg-muted/40 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-foreground/85">
+              <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-md bg-muted/40 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-foreground/85">
                 {stringify(call.result.content)}
               </pre>
             </div>
@@ -339,12 +339,12 @@ function MessageCard({ header, tone, parsed, raw }: MessageCardProps) {
       ? 'border-border bg-muted/40'
       : 'border-primary/30 bg-primary/10'
   return (
-    <div className={`w-fit max-w-[85%] overflow-hidden rounded-lg border ${bodyClass}`}>
+    <div className={`w-fit max-w-[85%] overflow-hidden rounded-md border ${bodyClass}`}>
       <div className="flex items-center gap-2 border-b border-current/15 bg-foreground/5 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-foreground/80">
         <span>{header}</span>
         {parsed.warning && (
           <span
-            className="rounded bg-warning/15 px-1.5 py-0.5 text-[10px] font-medium normal-case tracking-normal text-warning"
+            className="rounded-md bg-warning/15 px-1.5 py-0.5 text-[10px] font-medium normal-case tracking-normal text-warning"
             title={parsed.warning}
           >
             {t('team.detail.parseHint')}

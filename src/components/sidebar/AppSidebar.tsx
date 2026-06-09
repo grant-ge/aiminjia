@@ -73,7 +73,7 @@ function ChannelConversationRow({
         >
           <span className="truncate">{label}</span>
           {conversation.unreadCount > 0 && (
-            <span className="ml-2 rounded-full bg-primary px-1.5 text-xs text-primary-foreground">
+            <span className="ml-2 rounded-md bg-primary px-1.5 text-xs text-primary-foreground">
               {conversation.unreadCount}
             </span>
           )}
@@ -85,7 +85,7 @@ function ChannelConversationRow({
         >
           <ContextMenuPrimitive.Item
             onSelect={() => void navigator.clipboard.writeText(conversation.sessionId)}
-            className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground"
+            className="flex cursor-default select-none items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground"
           >
             <Copy className="h-3.5 w-3.5 shrink-0" />
             <span>{copyLabel}</span>
@@ -329,7 +329,7 @@ export function AppSidebar() {
             <div className="relative grid h-8 grid-cols-4 rounded-md border border-sidebar-border bg-sidebar-accent/70 px-1 py-0.5 text-xs font-medium text-muted-foreground">
               {/* Sliding indicator — left/width account for px-1 (4px) horizontal padding */}
               <div
-                className="absolute rounded-[5px] bg-card shadow-sm"
+                className="absolute rounded-md bg-card shadow-sm"
                 style={{
                   top: '2px',
                   bottom: '2px',
@@ -347,7 +347,7 @@ export function AppSidebar() {
                         type="button"
                         aria-label={t(labelKey)}
                         onClick={() => switchTab(key)}
-                        className={`relative z-10 flex items-center justify-center rounded-[5px] transition-colors duration-200 ${
+                        className={`relative z-10 flex items-center justify-center rounded-md transition-colors duration-200 ${
                           sidebarTab === key ? 'text-foreground' : ''
                         }`}
                       >
@@ -385,9 +385,9 @@ export function AppSidebar() {
             <div className="mt-2 flex flex-col gap-3">
               <div>
                 <div className="mb-1.5 flex items-center gap-2 px-2 text-sm font-semibold text-sidebar-foreground">
-                  <img src="/logos/dingtalk.png" alt="" className="h-5 w-5 rounded" draggable={false} />
+                  <img src="/logos/dingtalk.png" alt="" className="h-5 w-5 rounded-md" draggable={false} />
                   {t('channel.platforms.dingtalk.name')}
-                  <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                  <span className="ml-auto rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
                     {channelStatusLabel(dingtalkState)}
                   </span>
                 </div>
@@ -408,9 +408,9 @@ export function AppSidebar() {
 
               <div>
                 <div className="mb-1.5 flex items-center gap-2 px-2 text-sm font-semibold text-sidebar-foreground">
-                  <img src="/logos/feishu.png" alt="" className="h-5 w-5 rounded" draggable={false} />
+                  <img src="/logos/feishu.png" alt="" className="h-5 w-5 rounded-md" draggable={false} />
                   {t('channel.platforms.feishu.name')}
-                  <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                  <span className="ml-auto rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
                     {channelStatusLabel(feishuState)}
                   </span>
                 </div>
@@ -431,9 +431,9 @@ export function AppSidebar() {
 
               <div>
                 <div className="mb-1.5 flex items-center gap-2 px-2 text-sm font-semibold text-sidebar-foreground">
-                  <img src="/logos/wecom.png" alt="" className="h-5 w-5 rounded" draggable={false} />
+                  <img src="/logos/wecom.png" alt="" className="h-5 w-5 rounded-md" draggable={false} />
                   {t('channel.platforms.wecom.name')}
-                  <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                  <span className="ml-auto rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
                     {channelStatusLabel(wecomState)}
                   </span>
                 </div>
@@ -454,9 +454,9 @@ export function AppSidebar() {
 
               <div>
                 <div className="mb-1.5 flex items-center gap-2 px-2 text-sm font-semibold text-sidebar-foreground">
-                  <img src="/logos/wechat.png" alt="" className="h-5 w-5 rounded" draggable={false} />
+                  <img src="/logos/wechat.png" alt="" className="h-5 w-5 rounded-md" draggable={false} />
                   {t('channel.platforms.wechat.name')}
-                  <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                  <span className="ml-auto rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
                     {channelStatusLabel(wechatState)}
                   </span>
                 </div>
@@ -477,9 +477,9 @@ export function AppSidebar() {
 
               <div>
                 <div className="mb-1.5 flex items-center gap-2 px-2 text-sm font-semibold text-sidebar-foreground">
-                  <img src="/logos/telegram.png" alt="" className="h-5 w-5 rounded" draggable={false} />
+                  <img src="/logos/telegram.png" alt="" className="h-5 w-5 rounded-md" draggable={false} />
                   {t('channel.platforms.telegram.name')}
-                  <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                  <span className="ml-auto rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
                     {channelStatusLabel(telegramState)}
                   </span>
                 </div>
@@ -500,9 +500,9 @@ export function AppSidebar() {
 
               <div>
                 <div className="mb-1.5 flex items-center gap-2 px-2 text-sm font-semibold text-sidebar-foreground">
-                  <img src="/logos/whatsapp.png" alt="" className="h-5 w-5 rounded" draggable={false} />
+                  <img src="/logos/whatsapp.png" alt="" className="h-5 w-5 rounded-md" draggable={false} />
                   {t('channel.platforms.whatsapp.name')}
-                  <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                  <span className="ml-auto rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
                     {channelStatusLabel(whatsappState)}
                   </span>
                 </div>

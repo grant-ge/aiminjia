@@ -101,11 +101,11 @@ export function UpdaterPanel() {
         {/* Phase: downloading — progress bar */}
         {phase === 'downloading' && (
           <div className="space-y-3 py-2">
-            <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+            <div className="h-2 w-full overflow-hidden rounded-md bg-muted">
               <div
                 data-aijia-updater-progress
                 data-aijia-updater-progress-percent={pct}
-                className="h-full rounded-full bg-primary transition-all duration-300"
+                className="h-full rounded-md bg-primary transition-all duration-300"
                 style={{ width: `${pct}%` }}
               />
             </div>
@@ -121,7 +121,7 @@ export function UpdaterPanel() {
         {/* Phase: ready — download complete, show release notes for context */}
         {phase === 'ready' && (
           <div className="space-y-4">
-            <div className="flex items-center gap-3 rounded-lg bg-[var(--color-semantic-green)]/8 px-4 py-3">
+            <div className="flex items-center gap-3 rounded-md bg-[var(--color-semantic-green)]/8 px-4 py-3">
               <CheckCircle2
                 className="h-5 w-5 shrink-0 text-[var(--color-semantic-green)]"
                 strokeWidth={2.25}
@@ -158,12 +158,12 @@ export function UpdaterPanel() {
         {/* Phase: installing — spinner */}
         {phase === 'installing' && (
           <div className="space-y-3 py-3">
-            <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+            <div className="h-2 w-full overflow-hidden rounded-md bg-muted">
               <div
                 data-testid="updater-install-progress"
                 data-aijia-updater-install-progress
                 data-aijia-updater-install-percent={installPct}
-                className="h-full rounded-full bg-primary transition-all duration-300"
+                className="h-full rounded-md bg-primary transition-all duration-300"
                 style={{ width: `${installPct}%` }}
               />
             </div>

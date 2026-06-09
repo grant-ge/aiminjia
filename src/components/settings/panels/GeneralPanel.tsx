@@ -70,7 +70,7 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
     <div className="flex flex-col gap-5 text-foreground">
       <section className="flex items-center justify-between gap-8">
         <div className="flex min-w-0 items-center gap-4">
-          <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-primary">
+          <div className="h-12 w-12 shrink-0 overflow-hidden rounded-md bg-primary">
             {user.avatarUrl ? (
               <img src={user.avatarUrl} alt="" className="h-full w-full object-cover" />
             ) : (
@@ -84,7 +84,7 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
             <div className="truncate text-sm leading-none text-muted-foreground">{accountSubtitle}</div>
           </div>
         </div>
-        <Button variant="outline" data-aijia-logout-button className="h-9 rounded-lg px-5 text-sm font-semibold" onClick={onLogout}>
+        <Button variant="outline" data-aijia-logout-button className="h-9 rounded-md px-5 text-sm font-semibold" onClick={onLogout}>
           {t('settings.general.logout')}
         </Button>
       </section>
@@ -100,7 +100,7 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
             <div className="text-sm text-muted-foreground">{t('settings.general.fontSizeDesc')}</div>
           </div>
           <div
-            className="inline-flex rounded-lg bg-muted p-1"
+            className="inline-flex rounded-md bg-muted p-1"
             role="radiogroup"
             aria-label={t('settings.general.fontSize')}
           >
@@ -135,7 +135,7 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
             <div className="text-sm text-muted-foreground">{t('settings.general.chatWidthDesc')}</div>
           </div>
           <div
-            className="inline-flex rounded-lg bg-muted p-1"
+            className="inline-flex rounded-md bg-muted p-1"
             role="radiogroup"
             aria-label={t('settings.general.chatWidth')}
           >
@@ -173,7 +173,7 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
             </div>
           </div>
           <div
-            className="inline-flex rounded-lg bg-muted p-1"
+            className="inline-flex rounded-md bg-muted p-1"
             role="radiogroup"
             aria-label={t('settings.general.language')}
             data-testid="settings-language-switch"

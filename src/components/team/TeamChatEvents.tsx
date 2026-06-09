@@ -62,7 +62,7 @@ export function TeamChatEvents({ events, onDrillAgent }: TeamChatEventsProps) {
           >
             {groupLabel && (
               <div className="flex justify-center">
-                <span className="rounded-full bg-muted px-2.5 py-0.5 text-[11px] text-muted-foreground">
+                <span className="rounded-md bg-muted px-2.5 py-0.5 text-[11px] text-muted-foreground">
                   {groupLabel}
                 </span>
               </div>
@@ -337,7 +337,7 @@ function MessageBubble({ side, from, to, text, ts, isError, onDrillAgent }: Mess
       </div>
       <div
         className={cn(
-          'w-fit max-w-[85%] break-words rounded-lg px-3 py-2 text-sm',
+          'w-fit max-w-[85%] break-words rounded-md px-3 py-2 text-sm',
           isError
             ? 'border border-destructive/40 bg-destructive/10 text-destructive'
             : fromIdentity.bubbleClass,

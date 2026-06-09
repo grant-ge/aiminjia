@@ -223,7 +223,7 @@ export function ExpertTeamsPage() {
       {catalogLoading && teams.length === 0 ? (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {[...Array(4)].map((_, i) => (
-            <div key={i} className="h-[220px] animate-pulse rounded-lg border border-border bg-card" />
+            <div key={i} className="h-[220px] animate-pulse rounded-md border border-border bg-card" />
           ))}
         </div>
       ) : teams.length === 0 ? (

@@ -15,15 +15,14 @@ describe('UserMessageBubble', () => {
     expect(screen.getByText('Hello')).toBeInTheDocument()
   })
 
-  it('bubble uses bg-primary; right-top corner is squared to point at the avatar', () => {
+  it('bubble uses bg-primary and the global md radius', () => {
     const { container } = render(<UserMessageBubble text="X" />)
     const bubble = container.querySelector('[data-testid="user-bubble"]')
     expect(bubble?.className).toMatch(/bg-primary/)
-    expect(bubble?.className).toMatch(/rounded-xl/)
-    // 头像在 bubble 右上角外侧，bubble 右上角应为直角 (rounded-tr-none)
-    expect(bubble?.className).toMatch(/rounded-tr-none/)
-    // 仍保持下角对称，未引入 rounded-bl / rounded-br 这类形变
-    expect(bubble?.className).not.toMatch(/rounded-b[lr]-/)
+    expect(bubble?.className).toMatch(/rounded-md/)
+    expect(bubble?.className).not.toMatch(/rounded-tr-md/)
+    // 仍保持下角对称，未引入 rounded-bl-md / rounded-br-md 这类形变
+    expect(bubble?.className).not.toMatch(/rounded-b-md[lr]-/)
   })
 
   it('bubble max width is 80% of the row', () => {

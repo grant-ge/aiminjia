@@ -180,7 +180,7 @@ function PlatformCard({
           <AppDropdown
             ariaLabel={t('channel.actions.morePlatformConfig', { name: platform.name })}
             trigger={
-              <button type="button" className="flex h-8 w-8 items-center justify-center rounded-[var(--radius)] text-muted-foreground hover:bg-muted hover:text-foreground">
+              <button type="button" className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground">
                 <MoreHorizontal className="h-4 w-4" />
               </button>
             }
@@ -802,7 +802,7 @@ export function ChannelPage({ sessionId }: ChannelPageProps) {
       )}
 
       <Dialog open={registrationOpen} onOpenChange={setRegistrationOpen}>
-        <DialogContent className="max-w-xl overflow-hidden rounded-xl border border-border bg-background p-0 shadow-[var(--shadow-modal)]">
+        <DialogContent className="max-w-xl overflow-hidden rounded-md border border-border bg-background p-0 shadow-[var(--shadow-modal)]">
           <DialogHeader className="sr-only">
             <DialogTitle>{t('channel.dialog.dingtalk.title')}</DialogTitle>
             <DialogDescription>{t('channel.dialog.dingtalk.description')}</DialogDescription>
@@ -817,7 +817,7 @@ export function ChannelPage({ sessionId }: ChannelPageProps) {
       </Dialog>
 
       <Dialog open={feishuRegistrationOpen} onOpenChange={setFeishuRegistrationOpen}>
-        <DialogContent className="max-w-xl overflow-hidden rounded-xl border border-border bg-background p-0 shadow-[var(--shadow-modal)]">
+        <DialogContent className="max-w-xl overflow-hidden rounded-md border border-border bg-background p-0 shadow-[var(--shadow-modal)]">
           <DialogHeader className="sr-only">
             <DialogTitle>{t('channel.dialog.feishu.title')}</DialogTitle>
             <DialogDescription>{t('channel.dialog.feishu.description')}</DialogDescription>
@@ -832,7 +832,7 @@ export function ChannelPage({ sessionId }: ChannelPageProps) {
       </Dialog>
 
       <Dialog open={wecomRegistrationOpen} onOpenChange={setWecomRegistrationOpen}>
-        <DialogContent className="max-w-xl overflow-hidden rounded-xl border border-border bg-background p-0 shadow-[var(--shadow-modal)]">
+        <DialogContent className="max-w-xl overflow-hidden rounded-md border border-border bg-background p-0 shadow-[var(--shadow-modal)]">
           <DialogHeader className="sr-only">
             <DialogTitle>{t('channel.dialog.wecom.title')}</DialogTitle>
             <DialogDescription>{t('channel.dialog.wecom.description')}</DialogDescription>
@@ -847,7 +847,7 @@ export function ChannelPage({ sessionId }: ChannelPageProps) {
       </Dialog>
 
       <Dialog open={wechatRegistrationOpen} onOpenChange={setWechatRegistrationOpen}>
-        <DialogContent className="max-w-xl overflow-hidden rounded-xl border border-border bg-background p-0 shadow-[var(--shadow-modal)]">
+        <DialogContent className="max-w-xl overflow-hidden rounded-md border border-border bg-background p-0 shadow-[var(--shadow-modal)]">
           <DialogHeader className="sr-only">
             <DialogTitle>{t('channel.dialog.wechat.title')}</DialogTitle>
             <DialogDescription>{t('channel.dialog.wechat.description')}</DialogDescription>
@@ -862,7 +862,7 @@ export function ChannelPage({ sessionId }: ChannelPageProps) {
       </Dialog>
 
       <Dialog open={telegramRegistrationOpen} onOpenChange={setTelegramRegistrationOpen}>
-        <DialogContent className="max-w-xl overflow-hidden rounded-xl border border-border bg-background p-0 shadow-[var(--shadow-modal)]">
+        <DialogContent className="max-w-xl overflow-hidden rounded-md border border-border bg-background p-0 shadow-[var(--shadow-modal)]">
           <DialogHeader className="sr-only">
             <DialogTitle>{t('channel.dialog.telegram.title')}</DialogTitle>
             <DialogDescription>{t('channel.dialog.telegram.description')}</DialogDescription>
@@ -877,7 +877,7 @@ export function ChannelPage({ sessionId }: ChannelPageProps) {
       </Dialog>
 
       <Dialog open={whatsappRegistrationOpen} onOpenChange={setWhatsappRegistrationOpen}>
-        <DialogContent className="max-w-xl overflow-hidden rounded-xl border border-border bg-background p-0 shadow-[var(--shadow-modal)]">
+        <DialogContent className="max-w-xl overflow-hidden rounded-md border border-border bg-background p-0 shadow-[var(--shadow-modal)]">
           <DialogHeader className="sr-only">
             <DialogTitle>{t('channel.dialog.whatsapp.title')}</DialogTitle>
             <DialogDescription>{t('channel.dialog.whatsapp.description')}</DialogDescription>

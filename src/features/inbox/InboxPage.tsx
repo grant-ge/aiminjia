@@ -109,7 +109,7 @@ export function InboxPage() {
               key={tab.key}
               type="button"
               onClick={() => setKindFilter(tab.key)}
-              className={`h-8 rounded-[var(--radius)] px-3 text-xs font-medium transition-colors ${
+              className={`h-8 rounded-md px-3 text-xs font-medium transition-colors ${
                 kindFilter === tab.key
                   ? 'bg-brand-primary-subtle text-primary'
                   : 'text-muted-foreground hover:bg-muted hover:text-foreground'
@@ -124,7 +124,7 @@ export function InboxPage() {
         <select
           value={empFilter}
           onChange={(e) => setEmpFilter(e.target.value)}
-          className="h-9 rounded-[var(--radius)] border border-input bg-card px-2.5 text-xs text-foreground"
+          className="h-9 rounded-md border border-input bg-card px-2.5 text-xs text-foreground"
         >
           <option value="all">{t('inbox.allEmployees')}</option>
           {employees
@@ -137,7 +137,7 @@ export function InboxPage() {
         </select>
 
         {unread > 0 && (
-          <span className="rounded-full bg-brand-primary-subtle px-2 py-0.5 text-xs font-medium text-primary">
+          <span className="rounded-md bg-brand-primary-subtle px-2 py-0.5 text-xs font-medium text-primary">
             {t('inbox.unreadCount', { count: unread })}
           </span>
         )}
@@ -192,7 +192,7 @@ export function InboxPage() {
                 <div className="flex shrink-0 items-center gap-2">
                   <span className="text-xs text-muted-foreground/60">{timeLabel(entry.createdAt)}</span>
                   {!entry.read && (
-                    <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+                    <span className="h-1.5 w-1.5 rounded-md bg-blue-500" />
                   )}
                 </div>
               </button>

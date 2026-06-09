@@ -71,7 +71,7 @@ export function AskUserQuestionDialog({ interactionId, questions, onClose }: Pro
       data-aijia-dialog="ask-user-question"
       data-aijia-dialog-tool="AskUserQuestion"
     >
-      <div className="w-full max-w-xl rounded-lg border border-border bg-background p-6 shadow-[var(--shadow-modal)]">
+      <div className="w-full max-w-xl rounded-md border border-border bg-background p-6 shadow-[var(--shadow-modal)]">
         <div className="mb-5">
           <div className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">AI needs your input</div>
           <h2 className="mt-1 text-lg font-semibold text-foreground" data-aijia-dialog-title>AI 向你提问</h2>
@@ -83,7 +83,7 @@ export function AskUserQuestionDialog({ interactionId, questions, onClose }: Pro
             const selectedValues = answers[question.question] ?? []
             const hasOther = selectedValues.includes(OTHER_VALUE)
             return (
-              <section key={question.question} className="space-y-3 rounded-xl border border-border/80 bg-muted/20 p-4">
+              <section key={question.question} className="space-y-3 rounded-md border border-border/80 bg-muted/20 p-4">
                 <div>
                   <div className="text-xs font-medium text-muted-foreground">{question.header}</div>
                   <div className="mt-1 text-sm font-semibold text-foreground">{question.question}</div>
@@ -97,7 +97,7 @@ export function AskUserQuestionDialog({ interactionId, questions, onClose }: Pro
                         key={option.label}
                         type="button"
                         onClick={() => toggleOption(question.question, option.label, !!question.multiSelect)}
-                        className={`rounded-xl border px-3 py-2 text-left text-sm transition-colors ${
+                        className={`rounded-md border px-3 py-2 text-left text-sm transition-colors ${
                           selected
                             ? 'border-primary bg-primary/10 text-primary'
                             : 'border-border bg-background text-foreground hover:bg-muted'
@@ -118,7 +118,7 @@ export function AskUserQuestionDialog({ interactionId, questions, onClose }: Pro
                   <button
                     type="button"
                     onClick={() => toggleOption(question.question, OTHER_VALUE, !!question.multiSelect)}
-                    className={`rounded-xl border px-3 py-2 text-left text-sm transition-colors ${
+                    className={`rounded-md border px-3 py-2 text-left text-sm transition-colors ${
                       hasOther
                         ? 'border-primary bg-primary/10 text-primary'
                         : 'border-border bg-background text-foreground hover:bg-muted'
@@ -141,7 +141,7 @@ export function AskUserQuestionDialog({ interactionId, questions, onClose }: Pro
                       setCustomInputs((prev) => ({ ...prev, [question.question]: event.target.value }))
                     }
                     placeholder="请输入你的自定义回答"
-                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
                   />
                 ) : null}
               </section>
@@ -154,7 +154,7 @@ export function AskUserQuestionDialog({ interactionId, questions, onClose }: Pro
             type="button"
             onClick={handleCancel}
             disabled={submitting}
-            className="rounded-lg border border-border px-4 py-2 text-sm text-muted-foreground hover:bg-muted disabled:opacity-60"
+            className="rounded-md border border-border px-4 py-2 text-sm text-muted-foreground hover:bg-muted disabled:opacity-60"
             data-aijia-dialog-action="cancel"
           >
             取消
@@ -163,7 +163,7 @@ export function AskUserQuestionDialog({ interactionId, questions, onClose }: Pro
             type="button"
             onClick={handleSubmit}
             disabled={!canSubmit || submitting}
-            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+            className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
             data-aijia-dialog-action="confirm"
           >
             提交回答

@@ -33,7 +33,7 @@ export function WelcomeScreen() {
     <div className="animate-[fadeUp_0.3s_ease] flex flex-col items-center pt-12">
       {/* Avatar */}
       <div
-        className="mb-1.5 flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold"
+        className="mb-1.5 flex h-8 w-8 items-center justify-center rounded-md text-sm font-bold"
         style={{
           background: 'var(--color-accent)',
           color: 'var(--color-text-on-accent)',
@@ -59,7 +59,7 @@ export function WelcomeScreen() {
       <div className="w-full max-w-[640px] px-4">
         <button
           type="button"
-          className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left transition-all duration-150 cursor-pointer hover:-translate-y-0.5 active:scale-[0.98]"
+          className="flex w-full items-center gap-3 rounded-md px-4 py-3 text-left transition-all duration-150 cursor-pointer hover:-translate-y-0.5 active:scale-[0.98]"
           style={{
             background: 'var(--color-bg-elevated)',
             border: '1px solid var(--color-border-subtle)',
@@ -108,7 +108,7 @@ export function WelcomeScreen() {
                 <button
                   key={skill.id}
                   type="button"
-                  className="flex flex-col items-center gap-1.5 rounded-lg px-3 py-3.5 text-center transition-all duration-150 hover:-translate-y-0.5 cursor-pointer"
+                  className="flex flex-col items-center gap-1.5 rounded-md px-3 py-3.5 text-center transition-all duration-150 hover:-translate-y-0.5 cursor-pointer"
                   style={{
                     background: 'var(--color-bg-elevated)',
                     border: '1px solid var(--color-border-subtle)',

@@ -331,6 +331,70 @@ describe('EmployeesPage', () => {
     expect(screen.queryByText('其他员工')).not.toBeInTheDocument()
   })
 
+  it('only reveals the employee template detail action on card hover or focus', async () => {
+    render(<EmployeesPage />)
+
+    const action = await screen.findByText('查看详情')
+    expect(action).toHaveClass('opacity-0')
+    expect(action).toHaveClass('group-hover:opacity-100')
+    expect(action).toHaveClass('group-focus-visible:opacity-100')
+  })
+
+  it('renders employee template cards in a four-column desktop grid', async () => {
+    render(<EmployeesPage />)
+
+    const card = await screen.findByRole('button', { name: '查看 程砚舟 详情' })
+    expect(card).toHaveClass('w-full')
+    expect(card).toHaveClass('h-[154px]')
+    expect(card.closest('.grid')).toHaveClass('xl:grid-cols-4')
+    expect(card.querySelector('.h-9.w-9')).toBeInTheDocument()
+    expect(card.querySelector('.line-clamp-2')).toHaveClass('mt-1')
+  })
+
+  it('strips emoji from employee template chips', async () => {
+    const directory = makeDirectory()
+    directory.items[0] = {
+      ...directory.items[0],
+      requiredSkills: [{
+        skillId: 'workflow-design',
+        source: 'platform',
+        scope: 'public',
+        display: { name: '⚙️ 自动巡检' },
+        versionRange: '',
+      }],
+    }
+    mocks.workplaceDirectoryCatalog.mockResolvedValueOnce(directory)
+    mocks.employeeTemplateCatalog.mockResolvedValueOnce([
+      makeSnapshot({ badge: '🟢 开箱即用' }),
+    ])
+
+    render(<EmployeesPage />)
+
+    expect(await screen.findByText('开箱即用')).toBeInTheDocument()
+    expect(screen.getByText('自动巡检')).toBeInTheDocument()
+    expect(screen.queryByText('🟢 开箱即用')).not.toBeInTheDocument()
+    expect(screen.queryByText('⚙️ 自动巡检')).not.toBeInTheDocument()
+  })
+
+  it('renders employee template chips with a unified muted style', async () => {
+    render(<EmployeesPage />)
+
+    const chips = [
+      await screen.findByText('开箱即用'),
+      screen.getByText('v1.0.0'),
+      screen.getByText('流程设计'),
+    ]
+
+    for (const chip of chips) {
+      expect(chip).toHaveClass('rounded-md')
+      expect(chip).toHaveClass('bg-muted')
+      expect(chip).toHaveClass('text-muted-foreground')
+      expect(chip).not.toHaveClass('bg-accent')
+      expect(chip).not.toHaveClass('bg-secondary')
+      expect(chip).not.toHaveClass('text-accent-foreground')
+    }
+  })
+
   it('opens employee details first, then creates and dispatches from the detail action', async () => {
     render(<EmployeesPage />)
 

@@ -61,7 +61,7 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
     return (
       <div className="space-y-4">
         <div
-          className="rounded-lg border p-4 border-border"
+          className="rounded-md border p-4 border-border"
           style={{
             background: 'var(--color-bg-main)',
             borderColor: 'var(--color-border)',
@@ -70,7 +70,7 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
           <div className="mb-3 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div
-                className="flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold"
+                className="flex h-8 w-8 items-center justify-center rounded-md text-sm font-semibold"
                 style={{
                   background: 'var(--color-primary-subtle)',
                   color: 'var(--color-primary)',
@@ -102,7 +102,7 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
   return (
     <div>
       <div
-        className="rounded-lg border p-4 border-border"
+        className="rounded-md border p-4 border-border"
         style={{
           background: 'var(--color-bg-main)',
           borderColor: 'var(--color-border)',

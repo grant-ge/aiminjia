@@ -96,6 +96,18 @@ describe('ChatRow', () => {
     expect(screen.getByTestId('chat-row-name')).toHaveTextContent('AI小家')
   })
 
+  it('uses a compact gap between stacked assistant content blocks', () => {
+    render(
+      <ChatRow role="assistant" name="AI小家">
+        <div>one</div>
+        <div>two</div>
+      </ChatRow>,
+    )
+    const content = screen.getByText('one').parentElement
+    expect(content).toHaveClass('gap-1')
+    expect(content).not.toHaveClass('gap-3')
+  })
+
   it('renders an avatar with the provided src for the brand logo', () => {
     render(
       <ChatRow role="assistant" name="AI小家" avatarUrl="/brand-avatar-gold.svg">

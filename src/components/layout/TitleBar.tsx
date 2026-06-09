@@ -63,7 +63,7 @@ export function getDevBadgeLabel(port?: string): string {
 function DevBadge() {
   return (
     <span
-      className="pointer-events-none mr-2 rounded-sm bg-[var(--color-semantic-purple)] px-1.5 py-0.5 text-[11px] font-semibold tracking-widest text-primary-foreground shadow-[var(--shadow-sm)]"
+      className="pointer-events-none mr-2 rounded-md bg-[var(--color-semantic-purple)] px-1.5 py-0.5 text-[11px] font-semibold tracking-widest text-primary-foreground shadow-[var(--shadow-sm)]"
     >
       {getDevBadgeLabel()}
     </span>

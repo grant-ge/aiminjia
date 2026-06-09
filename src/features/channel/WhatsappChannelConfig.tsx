@@ -175,14 +175,14 @@ function ModeRadio({
         role="radio"
         aria-checked={active}
         onClick={() => onChange(kind)}
-        className="group flex w-full items-start gap-3 rounded-lg border border-border bg-card p-3 text-left transition hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="group flex w-full items-start gap-3 rounded-md border border-border bg-card p-3 text-left transition hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <span
-          className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 ${
+          className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-md border-2 ${
             active ? 'border-primary' : 'border-muted-foreground/50'
           }`}
         >
-          {active && <span className="h-2 w-2 rounded-full bg-primary" />}
+          {active && <span className="h-2 w-2 rounded-md bg-primary" />}
         </span>
         <span className="flex flex-col gap-0.5">
           <span className="text-sm font-semibold text-foreground">{label}</span>
@@ -509,14 +509,14 @@ export function WhatsappChannelConfig({ onSaved, onClose, connected }: Props) {
       <div className="flex-1 space-y-6 overflow-y-auto px-10 pb-6">
         {!isConfigured && (
           <div className="flex justify-center">
-            <Button onClick={handleAddOrRescan} className="rounded-full px-6">
+            <Button onClick={handleAddOrRescan} className="rounded-md px-6">
               {t('channel.whatsapp.config.addAccount')}
             </Button>
           </div>
         )}
 
         {isConfigured && needsReauth && (
-          <div className="flex items-start gap-3 rounded-xl border border-border bg-card p-4">
+          <div className="flex items-start gap-3 rounded-md border border-border bg-card p-4">
             <div className="flex-1">
               <div className="text-sm font-semibold text-destructive">{t('channel.whatsapp.config.sessionExpired')}</div>
               <div className="mt-1 text-xs text-muted-foreground">
@@ -526,7 +526,7 @@ export function WhatsappChannelConfig({ onSaved, onClose, connected }: Props) {
             <Button
               size="sm"
               variant="secondary"
-              className="rounded-full"
+              className="rounded-md"
               onClick={handleAddOrRescan}
             >
               <RefreshCcw className="mr-1.5 h-3.5 w-3.5" />
@@ -606,7 +606,7 @@ export function WhatsappChannelConfig({ onSaved, onClose, connected }: Props) {
           <>
             <Button
               variant="destructive"
-              className="flex-1 rounded-full"
+              className="flex-1 rounded-md"
               onClick={() => void handleRemove()}
               disabled={removing || saving}
             >
@@ -614,7 +614,7 @@ export function WhatsappChannelConfig({ onSaved, onClose, connected }: Props) {
               {t('channel.actions.removeChannel')}
             </Button>
             <Button
-              className="flex-1 rounded-full"
+              className="flex-1 rounded-md"
               onClick={() => void handleSave()}
               disabled={saving || removing || allowLoading}
             >
@@ -623,7 +623,7 @@ export function WhatsappChannelConfig({ onSaved, onClose, connected }: Props) {
             </Button>
           </>
         ) : (
-          <Button variant="ghost" className="w-full rounded-full" onClick={onClose}>
+          <Button variant="ghost" className="w-full rounded-md" onClick={onClose}>
             {t('channel.actions.cancel')}
           </Button>
         )}

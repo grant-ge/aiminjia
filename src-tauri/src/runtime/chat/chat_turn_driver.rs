@@ -1646,11 +1646,15 @@ impl RuntimeChatTurnDriver {
 
         // ── Step 2: Initialize iteration state ───────────────────────────────
         // messages 顺序：[system-reminder, agents-md-meta?, ...history, current-user-content]
+        use chrono::Datelike;
+
         let now = chrono::Local::now();
         let today = now.format("%Y年%m月%d日").to_string();
         let today_iso = now.format("%Y-%m-%d").to_string();
-        let system_reminder_message =
-            crate::runtime::chat::prompt::ReminderBuilder::date_message(&today, &today_iso);
+        let weekday_cn = crate::runtime::chat::prompt::ReminderBuilder::weekday_cn(now.weekday());
+        let system_reminder_message = crate::runtime::chat::prompt::ReminderBuilder::date_message(
+            &today, &today_iso, weekday_cn,
+        );
         let agents_md_files = executor
             .load_agents_md(config.authorized_workspace.as_ref())
             .await

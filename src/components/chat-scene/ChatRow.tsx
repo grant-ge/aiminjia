@@ -99,9 +99,9 @@ export function ChatRow({ role, name, avatarUrl, avatarVariant, colorSeed, times
             isUser
               ? 'flex w-full justify-end'
               // assistant rows can stack multiple children (tool trace + AI
-              // bubble + …). gap-3 keeps the trace card and the bubble from
-              // glueing visually so the row still reads as one "AI turn".
-              : 'flex flex-col gap-3'
+              // bubble + …). Keep them compact so one assistant turn still
+              // reads as a continuous response.
+              : 'flex flex-col gap-1'
           }
         >{children}</div>
       </div>

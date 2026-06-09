@@ -126,15 +126,15 @@ export function RegistrationModal(props: RegistrationModalProps) {
       <div className="flex-1 overflow-y-auto px-10 pb-6">
         <div className="flex flex-col items-center gap-4">
           {localState === 'expired' ? (
-            <div className="rounded-xl bg-red-50 px-5 py-3 text-sm font-semibold text-red-500">
+            <div className="rounded-md bg-red-50 px-5 py-3 text-sm font-semibold text-red-500">
               二维码已过期，请重新发起
             </div>
           ) : localState === 'cancelled' ? (
-            <div className="rounded-xl bg-muted px-5 py-3 text-sm font-semibold text-muted-foreground">
+            <div className="rounded-md bg-muted px-5 py-3 text-sm font-semibold text-muted-foreground">
               扫码已取消
             </div>
           ) : localState === 'confirmed' ? (
-            <div className="rounded-xl bg-emerald-50 px-5 py-3 text-sm font-semibold text-emerald-500">
+            <div className="rounded-md bg-emerald-50 px-5 py-3 text-sm font-semibold text-emerald-500">
               扫码成功，正在完成配置…
             </div>
           ) : (
@@ -144,7 +144,7 @@ export function RegistrationModal(props: RegistrationModalProps) {
               {props.mode === 'url' && (
                 <>
                   {props.userCode && (
-                    <div className="rounded-xl border border-border bg-muted/25 px-4 py-3 text-center">
+                    <div className="rounded-md border border-border bg-muted/25 px-4 py-3 text-center">
                       <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground">用户码</div>
                       <div className="mt-1 font-mono text-lg font-semibold text-foreground">{props.userCode}</div>
                     </div>

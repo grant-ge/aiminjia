@@ -32,7 +32,7 @@ export function Button({
   const [hovered, setHovered] = useState(false)
 
   const baseClasses =
-    'inline-flex items-center justify-center gap-1.5 rounded-[var(--radius)] font-medium cursor-pointer transition-colors duration-150 whitespace-nowrap disabled:pointer-events-none disabled:opacity-50'
+    'inline-flex items-center justify-center gap-1.5 rounded-md font-medium cursor-pointer transition-colors duration-150 whitespace-nowrap disabled:pointer-events-none disabled:opacity-50'
 
   const variantStyles: Record<string, React.CSSProperties> = {
     primary: {

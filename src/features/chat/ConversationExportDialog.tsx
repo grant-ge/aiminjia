@@ -41,13 +41,13 @@ function StepRow({
 }) {
   return (
     <div className="flex items-center gap-3 text-sm">
-      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
         {done ? (
           <CheckCircle2 className="h-4 w-4 text-primary" aria-hidden />
         ) : active ? (
           <Loader2 className="h-4 w-4 animate-spin text-primary" aria-hidden />
         ) : (
-          <span className="h-2 w-2 rounded-full bg-muted-foreground/40" />
+          <span className="h-2 w-2 rounded-md bg-muted-foreground/40" />
         )}
       </span>
       <span className={done || active ? 'text-foreground' : 'text-muted-foreground'}>{label}</span>
@@ -73,7 +73,7 @@ export function ConversationExportDialog({
   return (
     <Dialog open={open} onOpenChange={isExporting ? undefined : onOpenChange}>
       <DialogContent
-        className="overflow-hidden rounded-xl border border-border bg-background p-0 shadow-[var(--shadow-modal)]"
+        className="overflow-hidden rounded-md border border-border bg-background p-0 shadow-[var(--shadow-modal)]"
         style={{
           width: 'min(28rem, calc(100vw - 2rem))',
           maxWidth: 'calc(100vw - 2rem)',

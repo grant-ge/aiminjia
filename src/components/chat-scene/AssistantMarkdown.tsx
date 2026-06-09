@@ -37,7 +37,7 @@ export function AssistantMarkdown({ text, conversationId, disableCodeHighlight =
   if (!text.trim()) return null
 
   return (
-    <div className="assistant-markdown text-[15px] leading-[1.65]">
+    <div className="assistant-markdown text-sm leading-[1.58] tracking-normal">
       <ReactMarkdown
         remarkPlugins={REMARK_PLUGINS}
         rehypePlugins={

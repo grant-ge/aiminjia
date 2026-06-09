@@ -87,7 +87,7 @@ export function ModelPickerPopover({ open, value, onChange, onClose }: ModelPick
   return (
     <div
       // spec §5 — popover-level shadow token; was hardcoded slate-color dropshadow.
-      className="absolute right-0 bottom-[calc(100%+10px)] z-50 flex h-[400px] w-[min(620px,calc(100vw-48px))] flex-col overflow-hidden rounded-full border border-border bg-card shadow-[var(--shadow-popover)]"
+      className="absolute right-0 bottom-[calc(100%+10px)] z-50 flex h-[400px] w-[min(620px,calc(100vw-48px))] flex-col overflow-hidden rounded-md border border-border bg-card shadow-[var(--shadow-popover)]"
       onMouseDown={(event) => {
         event.preventDefault()
       }}
@@ -106,7 +106,7 @@ export function ModelPickerPopover({ open, value, onChange, onClose }: ModelPick
           type="button"
           aria-label="关闭模型弹窗"
           onClick={onClose}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           <X className="h-4 w-4" />
         </button>
@@ -127,7 +127,7 @@ export function ModelPickerPopover({ open, value, onChange, onClose }: ModelPick
                   onChange(option.value)
                   onClose()
                 }}
-                className="relative flex h-[132px] flex-col rounded-xl border p-4 text-left transition-colors border-border"
+                className="relative flex h-[132px] flex-col rounded-md border p-4 text-left transition-colors border-border"
                 style={{
                   background: option.tone.bg,
                   borderColor: selected ? 'var(--color-accent)' : option.tone.border,
@@ -139,12 +139,12 @@ export function ModelPickerPopover({ open, value, onChange, onClose }: ModelPick
                     <div className="text-md font-semibold" style={{ color: option.tone.text }}>
                       {LLM_PROVIDER_LABELS[option.value]}
                     </div>
-                    <div className="mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-medium" style={{ background: 'rgba(255,255,255,0.74)', color: option.tone.muted }}>
+                    <div className="mt-1 inline-flex rounded-md px-2 py-0.5 text-xs font-medium" style={{ background: 'rgba(255,255,255,0.74)', color: option.tone.muted }}>
                       {option.badge}
                     </div>
                   </div>
                   <span
-                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border"
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-border"
                     style={{
                       borderColor: selected ? 'var(--color-accent)' : 'rgba(255,255,255,0.72)',
                       background: selected ? 'var(--color-accent)' : 'rgba(255,255,255,0.62)',

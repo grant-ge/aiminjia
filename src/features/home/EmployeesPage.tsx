@@ -77,6 +77,14 @@ function categoryDescription(category: EmployeeCatalogCategory | null): string |
 
 const ALL_CATALOG_GROUP_KEY = '__all__'
 
+const CHIP_EMOJI_RE = /[\p{Emoji_Presentation}\p{Extended_Pictographic}\uFE0F]/gu
+const EMPLOYEE_TEMPLATE_CHIP_CLASS =
+  'max-w-full truncate rounded-md bg-muted px-2 py-0.5 text-xs text-muted-foreground'
+
+function stripChipEmoji(value: string): string {
+  return value.replace(CHIP_EMOJI_RE, '').replace(/\s+/g, ' ').trim()
+}
+
 interface EmployeeDirectoryCardProps {
   template: EmployeeTemplate
   busy: boolean
@@ -90,10 +98,16 @@ function EmployeeDirectoryCard({
 }: EmployeeDirectoryCardProps) {
   const { t } = useTranslation()
   const skills = requiredSkillNames(template)
+    .map((skill) => ({ raw: skill, label: stripChipEmoji(skill) }))
+    .filter((skill) => skill.label.length > 0)
+  const badgeLabel = stripChipEmoji(template.badge)
   const visual = getEmployeeVisual(template)
   const actionLabel = busy
     ? t('employeesPage.summoning')
     : t('employeesPage.viewDetail')
+  const actionVisibilityClass = busy
+    ? 'opacity-100'
+    : 'opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100'
 
   return (
     <button
@@ -105,11 +119,11 @@ function EmployeeDirectoryCard({
       aria-busy={busy}
       disabled={busy}
       onClick={() => onOpen(template)}
-      className="group flex min-h-[212px] w-full flex-col gap-3 rounded-md border border-border bg-card p-4 text-left text-card-foreground shadow-[var(--shadow-card)] transition-all hover:border-primary/50 hover:shadow-[var(--shadow-card-hover)] disabled:cursor-wait disabled:opacity-70"
+      className="group flex h-[154px] w-full flex-col gap-2 rounded-md border border-border bg-card p-3 text-left text-card-foreground shadow-[var(--shadow-card)] transition-all hover:border-primary/50 hover:shadow-[var(--shadow-card-hover)] disabled:cursor-wait disabled:opacity-70"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
-          <span className={`flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-md ${visual.accent}`}>
+          <span className={`flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md ${visual.accent}`}>
             {visual.avatarUrl ? (
               <img src={visual.avatarUrl} alt="" className="h-full w-full object-cover" />
             ) : (
@@ -117,11 +131,13 @@ function EmployeeDirectoryCard({
             )}
           </span>
           <div className="min-w-0">
-            <p className="truncate text-[15px] font-semibold leading-[22px] text-foreground">{visual.name}</p>
-            <p className="truncate text-xs leading-4 text-muted-foreground">{visual.title}</p>
+            <p className="truncate text-[15px] font-semibold leading-[22px] text-foreground">{visual.title}</p>
+            <p className="truncate text-xs leading-4 text-muted-foreground">{visual.name}</p>
           </div>
         </div>
-        <span className="flex h-7 shrink-0 items-center gap-1 rounded-[var(--radius)] bg-brand-primary-subtle px-2 text-xs font-medium text-primary">
+        <span
+          className={`flex h-7 shrink-0 items-center gap-1 rounded-md bg-brand-primary-subtle px-2 text-xs font-medium text-primary transition-opacity duration-150 ${actionVisibilityClass}`}
+        >
           {busy ? (
             <RefreshCw className="h-3 w-3 animate-spin" />
           ) : (
@@ -131,27 +147,27 @@ function EmployeeDirectoryCard({
         </span>
       </div>
 
-      <p className="line-clamp-3 text-[13px] leading-5 text-muted-foreground">
+      <p className="mt-1 line-clamp-2 text-[13px] leading-5 text-muted-foreground">
         {template.description}
       </p>
 
-      <div className="mt-auto flex flex-wrap gap-1.5">
-        {template.badge && (
-          <span className="max-w-full truncate rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-            {template.badge}
+      <div className="mt-auto flex max-h-6 flex-wrap gap-1.5 overflow-hidden">
+        {badgeLabel && (
+          <span className={EMPLOYEE_TEMPLATE_CHIP_CLASS}>
+            {badgeLabel}
           </span>
         )}
         {template.version && (
-          <span className="rounded-full bg-secondary px-2 py-0.5 text-xs text-muted-foreground">
+          <span className={EMPLOYEE_TEMPLATE_CHIP_CLASS}>
             v{template.version}
           </span>
         )}
         {skills.slice(0, 3).map((skill) => (
           <span
-            key={skill}
-            className="max-w-full truncate rounded-full bg-accent px-2 py-0.5 text-xs text-accent-foreground"
+            key={skill.raw}
+            className={EMPLOYEE_TEMPLATE_CHIP_CLASS}
           >
-            {skill}
+            {skill.label}
           </span>
         ))}
       </div>
@@ -505,7 +521,7 @@ export function EmployeesPage() {
           {entries.length > todayEntries.length && (
             <button
               type="button"
-              className="rounded-[var(--radius)] px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+              className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
               onClick={() => setRoute({ kind: 'inbox' })}
             >
               {t('employeesPage.viewAll')}
@@ -556,7 +572,7 @@ export function EmployeesPage() {
                   <div className="flex shrink-0 items-center gap-2">
                     <span className="text-xs text-muted-foreground/60">{timeLabel(entry.createdAt)}</span>
                     {!entry.read && (
-                      <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+                      <span className="h-1.5 w-1.5 rounded-md bg-blue-500" />
                     )}
                   </div>
                 </button>

@@ -22,7 +22,7 @@ export function UpdateAvailableLink() {
       className="mr-2 flex h-6 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-primary-foreground/95 transition-colors hover:bg-white/10"
     >
       <span
-        className="inline-block h-1.5 w-1.5 rounded-full ring-1 ring-white/75"
+        className="inline-block h-1.5 w-1.5 rounded-md ring-1 ring-white/75"
         style={{ background: READY_DOT_COLOR }}
         aria-hidden
       />

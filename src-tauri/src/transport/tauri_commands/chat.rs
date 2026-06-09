@@ -7,7 +7,7 @@ use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Datelike, Local, Utc};
 use once_cell::sync::Lazy;
 use serde::Deserialize;
 use tauri::{Emitter, Manager};
@@ -59,6 +59,21 @@ pub(crate) use chat_runtime_impl::build_visible_tool_defs;
 
 static AUTO_TITLE_IN_FLIGHT: Lazy<Mutex<HashSet<String>>> =
     Lazy::new(|| Mutex::new(HashSet::new()));
+
+fn format_agenda_trigger_label(title: &str, planned_fire_at: DateTime<Utc>) -> String {
+    let local_fire_at = planned_fire_at.with_timezone(&Local);
+    let weekday_cn =
+        crate::runtime::chat::prompt::ReminderBuilder::weekday_cn(local_fire_at.weekday());
+
+    format!(
+        "[日程触发] {title}\n\
+         计划触发时间（UTC）：{}\n\
+         计划触发时间（本地）：{} {weekday_cn}\n\
+         注意：任务描述中的每周几是规则描述，不代表本次触发当天星期；涉及日期和星期时，以计划触发时间为准。",
+        planned_fire_at.format("%Y-%m-%d %H:%M:%S UTC"),
+        local_fire_at.format("%Y-%m-%d %H:%M:%S")
+    )
+}
 
 #[derive(Debug, Clone, Deserialize)]
 struct GatewayStructuredErrorEnvelope {
@@ -4441,7 +4456,7 @@ impl crate::runtime::agenda::AgendaRunDispatcher for TauriChatCommandAdapter {
 
         // 没有匹配的员工（比如老 agenda 写的是 persona id "default"）就用 agenda 自己的 prompt 兜底，
         // 不阻塞触发。
-        let trigger_label = format!("[日程触发] {}\n计划触发时间：{planned_fire_at}", item.title);
+        let trigger_label = format_agenda_trigger_label(&item.title, planned_fire_at);
         let employees_dir = {
             use crate::storage::{CurrentUserStorage, UserScopedPathResolver};
             self.services
@@ -4491,6 +4506,21 @@ impl crate::runtime::agenda::AgendaRunDispatcher for TauriChatCommandAdapter {
         store.append_occurrence(&final_occ)?;
 
         Ok(occurrence_id)
+    }
+}
+
+#[cfg(test)]
+mod agenda_dispatch_prompt_tests {
+    use chrono::{TimeZone, Utc};
+
+    #[test]
+    fn agenda_trigger_label_includes_local_planned_weekday() {
+        let planned = Utc.with_ymd_and_hms(2026, 6, 9, 1, 43, 38).unwrap();
+        let label = super::format_agenda_trigger_label("门店巡检", planned);
+
+        assert!(label.contains("计划触发时间（UTC）：2026-06-09 01:43:38 UTC"));
+        assert!(label.contains("计划触发时间（本地）：2026-06-09 09:43:38 星期二"));
+        assert!(label.contains("任务描述中的每周几是规则描述，不代表本次触发当天星期"));
     }
 }
 

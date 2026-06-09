@@ -15,14 +15,14 @@ describe('HomeMascotHero', () => {
     expect(screen.getByText('创建你的下一条任务')).toBeInTheDocument()
   })
 
-  it('mascot is 40x40 without forced full rounding', () => {
+  it('mascot is 40x40 with the global md radius', () => {
     const { container } = render(
       <HomeMascotHero mascotUrl="/x.png" title="t" />,
     )
     const mascot = container.querySelector('[data-testid="home-mascot"]')
     expect(mascot?.className).toMatch(/h-10/)
     expect(mascot?.className).toMatch(/w-10/)
-    expect(mascot?.className).not.toMatch(/rounded-full/)
+    expect(mascot?.className).toMatch(/rounded-md/)
   })
 
   it('renders mascot image with width-only sizing to avoid cropping', () => {

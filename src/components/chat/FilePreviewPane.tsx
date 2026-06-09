@@ -153,7 +153,7 @@ export function FilePreviewPane({ target, onOpenExternal, onDownload, onClosePre
             {t('filePreview.loadingPreview')}
           </div>
         ) : previewState.status === 'error' ? (
-          <div className="space-y-3 rounded-xl border border-destructive/20 bg-destructive/5 p-4 text-sm text-destructive">
+          <div className="space-y-3 rounded-md border border-destructive/20 bg-destructive/5 p-4 text-sm text-destructive">
             <p>{previewState.error}</p>
             <Button type="button" variant="outline" size="sm" onClick={retryPreview}>
               {t('filePreview.retry')}
@@ -194,7 +194,7 @@ function PreviewContent({
       )
     case 'image':
       const imagePreview = (
-        <div className="flex h-full min-h-[520px] items-center justify-center rounded-xl bg-muted/30 p-4">
+        <div className="flex h-full min-h-[520px] items-center justify-center rounded-md bg-muted/30 p-4">
           <img
             src={preview.dataUrl}
             alt={preview.fileName}
@@ -223,13 +223,13 @@ function PreviewContent({
     case 'csv':
     case 'text':
       return (
-        <pre className="whitespace-pre-wrap rounded-xl bg-muted p-4 text-xs leading-6 text-foreground">
+        <pre className="whitespace-pre-wrap rounded-md bg-muted p-4 text-xs leading-6 text-foreground">
           {preview.content}
         </pre>
       )
     case 'unsupported':
       return (
-        <div className="rounded-xl border border-border bg-muted/40 p-4 text-sm text-muted-foreground">
+        <div className="rounded-md border border-border bg-muted/40 p-4 text-sm text-muted-foreground">
           {preview.reason}
         </div>
       )

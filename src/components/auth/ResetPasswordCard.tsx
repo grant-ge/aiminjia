@@ -143,11 +143,11 @@ export function ResetPasswordCard({ onBack, onSuccess }: ResetPasswordCardProps)
         <div className="text-xl font-semibold text-foreground">{t('resetPassword.title')}</div>
         <div className="text-sm text-muted-foreground">{t('resetPassword.subtitle')}</div>
       </div>
-      <div className="flex w-full gap-2 rounded-full bg-muted p-1">
+      <div className="flex w-full gap-2 rounded-md bg-muted p-1">
         <button
           type="button"
           onClick={() => switchMethod('phone')}
-          className={`flex-1 rounded-full py-1.5 text-sm font-medium transition-colors ${
+          className={`flex-1 rounded-md py-1.5 text-sm font-medium transition-colors ${
             method === 'phone' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
           }`}
         >
@@ -156,7 +156,7 @@ export function ResetPasswordCard({ onBack, onSuccess }: ResetPasswordCardProps)
         <button
           type="button"
           onClick={() => switchMethod('email')}
-          className={`flex-1 rounded-full py-1.5 text-sm font-medium transition-colors ${
+          className={`flex-1 rounded-md py-1.5 text-sm font-medium transition-colors ${
             method === 'email' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
           }`}
         >

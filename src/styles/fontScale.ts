@@ -1,9 +1,9 @@
 import type { FontScale } from '@/types/settings'
 
 export const FONT_SCALE_ROOT_PX: Record<FontScale, number> = {
-  small: 14,
+  small: 14.7692307692,
   medium: 16,
-  large: 18,
+  large: 17.2307692308,
 }
 
 export const FONT_SCALE_STORAGE_KEY = 'aijia-font-scale'

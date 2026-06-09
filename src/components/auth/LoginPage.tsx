@@ -151,9 +151,9 @@ export function LoginPage() {
       </div>
       <div className="relative flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-6 overflow-y-auto px-6">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -left-32 -top-32 h-[500px] w-[500px] rounded-full opacity-30" style={{ background: 'radial-gradient(circle, var(--primary) 0%, transparent 70%)', filter: 'blur(80px)' }} />
-        <div className="absolute -bottom-40 -right-40 h-[600px] w-[600px] rounded-full opacity-20" style={{ background: 'radial-gradient(circle, var(--primary-on-bg-72) 0%, transparent 70%)', filter: 'blur(100px)' }} />
-        <div className="absolute left-1/3 top-1/2 h-[400px] w-[400px] -translate-y-1/2 rounded-full opacity-15" style={{ background: 'radial-gradient(circle, var(--primary-on-bg-24) 0%, transparent 70%)', filter: 'blur(90px)' }} />
+        <div className="absolute -left-32 -top-32 h-[500px] w-[500px] rounded-md opacity-30" style={{ background: 'radial-gradient(circle, var(--primary) 0%, transparent 70%)', filter: 'blur(80px)' }} />
+        <div className="absolute -bottom-40 -right-40 h-[600px] w-[600px] rounded-md opacity-20" style={{ background: 'radial-gradient(circle, var(--primary-on-bg-72) 0%, transparent 70%)', filter: 'blur(100px)' }} />
+        <div className="absolute left-1/3 top-1/2 h-[400px] w-[400px] -translate-y-1/2 rounded-md opacity-15" style={{ background: 'radial-gradient(circle, var(--primary-on-bg-24) 0%, transparent 70%)', filter: 'blur(90px)' }} />
       </div>
       <LoginLogoStack logoUrl={logoUrl} brandName={productName} />
       {mode === 'login' ? (
@@ -193,7 +193,7 @@ export function LoginPage() {
                     type="checkbox"
                     checked={remember}
                     onChange={(e) => setRemember(e.target.checked)}
-                    className="h-4 w-4 shrink-0 cursor-pointer appearance-none rounded border border-border bg-background transition-colors checked:border-primary checked:bg-primary"
+                    className="h-4 w-4 shrink-0 cursor-pointer appearance-none rounded-md border border-border bg-background transition-colors checked:border-primary checked:bg-primary"
                     ref={(el) => {
                       if (!el) return
                       const update = () => {

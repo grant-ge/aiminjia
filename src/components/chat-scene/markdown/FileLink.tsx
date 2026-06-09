@@ -210,7 +210,7 @@ export function FileImage({
       className="my-1 inline-block align-middle"
       onClick={() => openMarkdownFile(target)}
     >
-      <img src={dataUrl} alt={alt} className="h-40 max-w-[240px] rounded-lg object-cover" />
+      <img src={dataUrl} alt={alt} className="h-40 max-w-[240px] rounded-md object-cover" />
     </button>
   )
 }

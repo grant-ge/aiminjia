@@ -37,7 +37,7 @@ export function Modal({ open, onClose, title, children, footer, size = 'md', dia
       }}
     >
       <div
-        className="flex flex-col rounded-lg border animate-[modalIn_0.2s_ease-out] border-border"
+        className="flex flex-col rounded-md border animate-[modalIn_0.2s_ease-out] border-border"
         style={{
           width: WIDTH_MAP[size],
           height: '70vh',

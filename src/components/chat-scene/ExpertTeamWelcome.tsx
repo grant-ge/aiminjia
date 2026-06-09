@@ -43,7 +43,7 @@ export function ExpertTeamWelcome({ team }: ExpertTeamWelcomeProps) {
     >
       <div
         data-testid="expert-team-welcome-logo"
-        className={`flex h-16 w-16 items-center justify-center rounded-lg ${logo.className}`}
+        className={`flex h-16 w-16 items-center justify-center rounded-md ${logo.className}`}
         aria-hidden
       >
         <TeamLogo className="h-8 w-8" />
@@ -53,7 +53,7 @@ export function ExpertTeamWelcome({ team }: ExpertTeamWelcomeProps) {
         <p className="text-sm text-muted-foreground">{team.tagline}</p>
       </div>
 
-      <div className="w-full rounded-lg border border-border bg-card px-4 py-3 text-left">
+      <div className="w-full rounded-md border border-border bg-card px-4 py-3 text-left">
         <div className="text-xs text-muted-foreground">{t('ExpertTeams.members')}</div>
         {team.experts.length > 0 ? (
           <div className="mt-2 flex flex-wrap gap-2">
@@ -62,10 +62,10 @@ export function ExpertTeamWelcome({ team }: ExpertTeamWelcomeProps) {
               return (
                 <span
                   key={expert.name}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-2 py-1 text-sm text-foreground"
+                  className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1 text-sm text-foreground"
                   title={expert.persona}
                 >
-                  <span className="flex h-5 w-5 items-center justify-center overflow-hidden rounded-full bg-muted text-xs">
+                  <span className="flex h-5 w-5 items-center justify-center overflow-hidden rounded-md bg-muted text-xs">
                     <ExpertAvatarView visual={avatarVisual} fallback={expert.emoji} />
                   </span>
                   {expert.name}

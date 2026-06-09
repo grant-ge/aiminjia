@@ -22,7 +22,7 @@ interface ChannelConfigDetailsProps {
 
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-border bg-muted/25 px-4 py-3">
+    <div className="rounded-md border border-border bg-muted/25 px-4 py-3">
       <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground">{label}</div>
       <div className="mt-1 break-all font-mono text-sm font-semibold text-foreground">{value}</div>
     </div>
@@ -142,7 +142,7 @@ export function ChannelConfigDetails({ config, open, onOpenChange }: ChannelConf
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl rounded-xl border border-border bg-background p-0 shadow-[var(--shadow-modal)]">
+      <DialogContent className="max-w-xl rounded-md border border-border bg-background p-0 shadow-[var(--shadow-modal)]">
         <DialogHeader className="px-8 pt-8 text-left">
           <DialogTitle className="text-2xl font-bold">{copy.title}</DialogTitle>
           <DialogDescription>{t('channel.details.readonly')}</DialogDescription>
@@ -150,7 +150,7 @@ export function ChannelConfigDetails({ config, open, onOpenChange }: ChannelConf
 
         <div className="grid gap-3 px-8 pb-8 pt-4">
           <DetailRow label={copy.appKeyLabel} value={config.appKey} />
-          <div className="rounded-xl border border-border bg-muted/25 px-4 py-3">
+          <div className="rounded-md border border-border bg-muted/25 px-4 py-3">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground">{copy.secretLabel}</div>
@@ -167,7 +167,7 @@ export function ChannelConfigDetails({ config, open, onOpenChange }: ChannelConf
           <DetailRow label="Source" value={config.source} />
           <DetailRow label={t('channel.details.createdAt')} value={config.createdAt} />
           <DetailRow label={t('channel.details.updatedAt')} value={config.updatedAt} />
-          {error && <div className="rounded-xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-500">{error}</div>}
+          {error && <div className="rounded-md bg-red-50 px-4 py-3 text-sm font-semibold text-red-500">{error}</div>}
         </div>
       </DialogContent>
     </Dialog>

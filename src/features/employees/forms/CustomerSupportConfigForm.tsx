@@ -81,7 +81,7 @@ function InlineTagEditor({ label, hint, tags, onChange }: { label: string; hint:
             }
           }}
           placeholder="+"
-          className="h-6 w-16 rounded border border-input bg-background px-1 text-xs"
+          className="h-6 w-16 rounded-md border border-input bg-background px-1 text-xs"
         />
       </div>
       <p className="text-xs text-muted-foreground/70">{hint}</p>

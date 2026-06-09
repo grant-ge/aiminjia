@@ -81,7 +81,7 @@ export function KnowledgeSourcesField({ value, onChange, onRetry }: Props) {
       </p>
       <div className="flex flex-col gap-1">
         {value.map((s, i) => (
-          <div key={`${s.path}-${i}`} className="flex items-center gap-2 rounded border border-input bg-background px-2 py-1 text-xs">
+          <div key={`${s.path}-${i}`} className="flex items-center gap-2 rounded-md border border-input bg-background px-2 py-1 text-xs">
             {/* TODO: 标准 §10 禁用 emoji 图标，待改为文字标签 */}
             <span className="flex-1 truncate">📄 {s.originalName}</span>
             <span

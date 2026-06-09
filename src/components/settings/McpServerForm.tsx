@@ -71,7 +71,7 @@ function McpServerFormContent({
 
   return (
     <div
-      className="mb-4 rounded-lg border p-4 border-border"
+      className="mb-4 rounded-md border p-4 border-border"
       style={{
         borderColor: 'var(--color-border)',
         background: 'var(--color-bg-main)',

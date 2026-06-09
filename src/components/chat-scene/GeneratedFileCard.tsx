@@ -163,7 +163,7 @@ export function GeneratedFileCard({
   ]
 
   return (
-    <div data-testid="generated-file-card" data-aijia-file-path={filePath ?? ''} className="flex h-16 items-center justify-between gap-4 overflow-hidden rounded-lg border border-border bg-card px-4">
+    <div data-testid="generated-file-card" data-aijia-file-path={filePath ?? ''} className="flex h-16 items-center justify-between gap-4 overflow-hidden rounded-md border border-border bg-card px-4">
       <div className="flex min-w-0 items-center gap-2">
         <div className="flex h-16 w-12 shrink-0 items-center justify-center">
           <TiltedFileIcon title={title} sub={sub} />
@@ -173,13 +173,13 @@ export function GeneratedFileCard({
           <div className="truncate text-xs leading-4 text-muted-foreground">{sub}</div>
         </div>
       </div>
-      <div className="flex shrink-0 items-center rounded-full border border-border bg-background text-sm text-foreground">
+      <div className="flex shrink-0 items-center rounded-md border border-border bg-background text-sm text-foreground">
         <button
           type="button"
           onClick={handlePrimaryAction}
           disabled={isPrimaryDisabled}
           aria-label={`${primaryLabel} ${title}`}
-          className="flex items-center gap-2 rounded-l-full py-1.5 pl-3 pr-2 transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
+          className="flex items-center gap-2 rounded-l-md py-1.5 pl-3 pr-2 transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
         >
           {appIcon}
           <span>{appName}</span>
@@ -191,7 +191,7 @@ export function GeneratedFileCard({
           trigger={
             <button
               type="button"
-              className="flex items-center rounded-r-full py-1.5 pl-2 pr-2 transition-colors hover:bg-muted"
+              className="flex items-center rounded-r-md py-1.5 pl-2 pr-2 transition-colors hover:bg-muted"
             >
               <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
             </button>

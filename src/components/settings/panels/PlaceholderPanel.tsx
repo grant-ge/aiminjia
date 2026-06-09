@@ -9,7 +9,7 @@ interface PlaceholderPanelProps {
 
 export function PlaceholderPanel({ title }: PlaceholderPanelProps) {
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-3 rounded-lg bg-secondary py-12 text-center">
+    <div className="flex flex-1 flex-col items-center justify-center gap-3 rounded-md bg-secondary py-12 text-center">
       <Sparkles className="h-5 w-5 text-muted-foreground" />
       <div className="text-sm font-semibold text-foreground">{title} · 即将上线</div>
       <div className="max-w-[420px] text-sm text-muted-foreground">

@@ -13,6 +13,8 @@ describe('FullscreenLoader', () => {
     expect(loader).toHaveStyle({ color: 'var(--color-text-primary)' })
 
     const spinner = screen.getByLabelText('正在恢复登录状态...')
+    expect(spinner).toHaveClass('rounded-full')
+    expect(spinner).not.toHaveClass('rounded-md')
     expect(spinner).toHaveAttribute('style', expect.stringContaining('border-right-color: var(--color-border)'))
     expect(spinner).toHaveAttribute('style', expect.stringContaining('border-top-color: var(--primary)'))
   })

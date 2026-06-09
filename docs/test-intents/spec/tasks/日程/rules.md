@@ -246,3 +246,52 @@ UI 文案对应：侧边栏入口「定时任务」，列表表头「执行频�
 - items 文件被删但 occurrences 目录仍残留
 - 任何「确认弹窗」自动 accept 没有用户实际确认
 - 该任务又出现在主列表 / 已取消列表里
+
+---
+
+## 意图-日程-008: 选择时分后，保存字段落盘
+
+**场景**
+用户在「定时任务」页打开「新建日程」表单，填写标题和到点执行内容，并把开始时间精确选到分钟。保存后表单收起，列表出现该任务，磁盘中的日程文件保留用户填写的标题、Prompt 和开始时间。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 推断当前 scope：从 `tauri-pilot aijia where --json` 取，记为 `$SCOPE`
+3. 记录当前时间 `T0`；生成本轮唯一标题 `$TITLE = 组件化日程-$(date +%Y%m%d%H%M%S)`；生成本地开始时间 `$START_LOCAL = $(date -v+30M +%Y-%m-%dT%H:%M)`，并拆出 `$START_DATE = $(date -v+30M +%Y-%m-%d)`、`$START_HOUR = $(date -v+30M +%H)`、`$START_MINUTE = $(date -v+30M +%M)`
+4. 点击主侧边栏「定时任务」入口：`tauri-pilot aijia goto schedules --wait`
+5. 点击页面右上角「新建」按钮：`tauri-pilot aijia agenda-open-new`
+6. 等新建表单展开：`tauri-pilot aijia agenda-wait-editor`
+7. 在「标题」输入 `$TITLE`：`tauri-pilot aijia agenda-fill --field title --value "$TITLE"`
+8. 在「到点要做什么？」输入 `检查标题和描述输入框`：`tauri-pilot aijia agenda-fill --field prompt --value "检查标题和描述输入框"`
+9. 在「频率」选择「一次性」：`tauri-pilot aijia agenda-set-frequency --value once`
+10. 打开「开始时间」日期时间选择器：`tauri-pilot aijia agenda-open-start-at`
+11. 在「开始时间」选择日期 `$START_DATE`：`tauri-pilot aijia agenda-pick-start-day --value "$START_DATE"`
+12. 在「开始时间」选择小时 `$START_HOUR`：`tauri-pilot aijia agenda-pick-start-time --unit hour --value "$START_HOUR"`
+13. 在「开始时间」选择分钟 `$START_MINUTE`：`tauri-pilot aijia agenda-pick-start-time --unit minute --value "$START_MINUTE"`
+14. 确认「开始时间」选择：`tauri-pilot aijia agenda-apply-start-at`
+15. 「工作目录」保持默认
+16. 点击「保存」按钮：`tauri-pilot aijia agenda-save`
+17. 等新建表单收起：`tauri-pilot aijia agenda-wait-editor-closed`
+18. 等列表出现标题为 `$TITLE` 的任务行：`tauri-pilot aijia agenda-wait-row --title "$TITLE"`
+19. 在 `~/.renlijia/users/$SCOPE/agenda/items/` 中查找 `title == "$TITLE"` 的 `agenda-*.json` 文件，记为 `$AGENDA_FILE`
+
+**验收标准**
+
+应该看到：
+- 「新建日程」表单收起
+- 日程列表出现一行标题为 `$TITLE` 的条目
+- 文件 `$AGENDA_FILE` 存在
+- JSON 中 `title == "$TITLE"`
+- JSON 中 `prompt == "检查标题和描述输入框"`
+- JSON 中 `timezone == "Asia/Shanghai"`
+- JSON 中 `rule == null`
+- JSON 中 `status == "active"`
+- JSON 中 `occurrenceCount == 0`
+- JSON 中 `startAt` 对应的 Asia/Shanghai 本地时间精确到分钟后 `== "$START_LOCAL"`
+- JSON 中 `nextFireAt == startAt`
+- JSON 中 `createdAt` 在 `T0 ± 1 分钟` 内
+
+不应该看到：
+- 「保存」后表单仍停留在屏幕上
+- 日程列表出现第二行标题为 `$TITLE` 的条目
+- JSON 中含 `personaId` / `organizerPersonaId` 旧字段名

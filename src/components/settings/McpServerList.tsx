@@ -25,7 +25,7 @@ export function McpServerList({
   if (loading) {
     return (
       <div
-        className="rounded-lg border p-4 text-sm border-border"
+        className="rounded-md border p-4 text-sm border-border"
         style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-secondary)' }}
       >
         {t('common.loading')}
@@ -36,7 +36,7 @@ export function McpServerList({
   if (!servers || servers.length === 0) {
     return (
       <div
-        className="rounded-lg border p-6 text-center border-border"
+        className="rounded-md border p-6 text-center border-border"
         style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-secondary)' }}
       >
         <p className="mb-1">{t('settings.mcp.list.empty')}</p>
@@ -53,7 +53,7 @@ export function McpServerList({
         return (
           <div
             key={server.name}
-            className="flex flex-col gap-3 rounded-lg border px-4 py-3 md:flex-row md:items-center md:justify-between border-border"
+            className="flex flex-col gap-3 rounded-md border px-4 py-3 md:flex-row md:items-center md:justify-between border-border"
             style={{
               borderColor: 'var(--color-border)',
               background: 'var(--color-bg-main)',
@@ -65,7 +65,7 @@ export function McpServerList({
                   {server.name}
                 </span>
                 <span
-                  className="rounded-full px-2 py-0.5 text-xs uppercase tracking-[0.08em]"
+                  className="rounded-md px-2 py-0.5 text-xs uppercase tracking-[0.08em]"
                   style={{
                     background: 'var(--color-bg-card)',
                     color: 'var(--color-text-muted)',
@@ -164,14 +164,14 @@ function StatusBadge({ state }: { state: McpServerStatus['state'] }) {
 
   return (
     <span
-      className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs"
+      className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs"
       style={{
         background: status.bg,
         color: status.fg,
       }}
     >
       <span
-        className="inline-block h-1.5 w-1.5 rounded-full"
+        className="inline-block h-1.5 w-1.5 rounded-md"
         style={{ background: status.fg }}
       />
       {status.text}

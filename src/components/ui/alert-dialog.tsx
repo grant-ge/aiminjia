@@ -28,7 +28,7 @@ const AlertDialogContent = React.forwardRef<
     <AlertDialogPrimitive.Content
       ref={ref}
       className={cn(
-        'fixed left-1/2 top-1/2 z-50 grid w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 overflow-hidden rounded-lg border border-border bg-card p-6 shadow-[var(--shadow-modal)] duration-200',
+        'fixed left-1/2 top-1/2 z-50 grid w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 overflow-hidden rounded-md border border-border bg-card p-6 shadow-[var(--shadow-modal)] duration-200',
         className,
       )}
       {...props}
@@ -69,7 +69,7 @@ const AlertDialogAction = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <AlertDialogPrimitive.Action
     ref={ref}
-    className={cn('inline-flex h-9 items-center justify-center rounded-[var(--radius)] border border-primary bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-[var(--color-primary-hover)] hover:border-[var(--color-primary-hover)]', className)}
+    className={cn('inline-flex h-9 items-center justify-center rounded-md border border-primary bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-[var(--color-primary-hover)] hover:border-[var(--color-primary-hover)]', className)}
     {...props}
   />
 ))
@@ -81,7 +81,7 @@ const AlertDialogCancel = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <AlertDialogPrimitive.Cancel
     ref={ref}
-    className={cn('inline-flex h-9 items-center justify-center rounded-[var(--radius)] border border-input bg-card px-4 py-2 text-sm font-medium hover:bg-accent', className)}
+    className={cn('inline-flex h-9 items-center justify-center rounded-md border border-input bg-card px-4 py-2 text-sm font-medium hover:bg-accent', className)}
     {...props}
   />
 ))

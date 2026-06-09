@@ -32,8 +32,8 @@ export function UsagePanel({ planName, planRenewLabel, quota, detail }: UsagePan
                 <span>{q.label}</span>
                 <span className="text-muted-foreground">{q.used} / {q.total}</span>
               </div>
-              <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
+              <div className="h-1.5 w-full overflow-hidden rounded-md bg-muted">
+                <div className="h-full rounded-md bg-primary" style={{ width: `${pct}%` }} />
               </div>
             </div>
           )

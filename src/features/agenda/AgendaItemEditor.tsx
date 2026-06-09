@@ -16,11 +16,22 @@ import {
 import {
   Sheet,
   SheetContent,
+  SheetFooter,
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
+import { DateTimePicker } from '@/components/ui/date-time-picker'
+import { FormField } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { NumberInput } from '@/components/ui/number-input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useHomeStore } from '@/stores/homeStore'
 
@@ -45,7 +56,7 @@ export function AgendaItemEditor({
   onClose,
   onSaved,
 }: AgendaItemEditorProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [title, setTitle] = useState('')
   const [prompt, setPrompt] = useState('')
   const [startAtLocal, setStartAtLocal] = useState('')
@@ -83,7 +94,7 @@ export function AgendaItemEditor({
     } else {
       setTitle(initialDraft?.title ?? '')
       setPrompt(initialDraft?.prompt ?? '')
-      setStartAtLocal('')
+      setStartAtLocal(initialDraft?.startAt ? toLocalInput(initialDraft.startAt) : defaultStartAtLocal())
       setTimezone(initialDraft?.timezone ?? 'Asia/Shanghai')
       const draftRule = initialDraft?.rule ?? null
       setFrequency(draftRule?.freq ?? 'one_shot')
@@ -187,147 +198,162 @@ export function AgendaItemEditor({
     <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
       <SheetContent
         data-aijia-agenda-editor
-        className="w-[480px] flex flex-col gap-4 overflow-y-auto"
+        className="w-[480px] flex flex-col gap-0 overflow-hidden p-0"
       >
-        <SheetHeader>
-          <SheetTitle>
+        <SheetHeader data-aijia-agenda-header className="h-[3.5rem] shrink-0 justify-center border-b border-border px-6 py-0">
+          <SheetTitle className="text-md">
             {initial ? t('schedules.editor.titleEdit') : t('schedules.editor.titleNew')}
           </SheetTitle>
         </SheetHeader>
 
-        <Input
-          placeholder={t('schedules.editor.fields.title')}
-          aria-label={t('schedules.editor.fields.title')}
-          data-aijia-agenda-field="title"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-        />
-        <Textarea
-          placeholder={t('schedules.editor.fields.promptPlaceholder')}
-          aria-label={t('schedules.editor.fields.promptAria')}
-          data-aijia-agenda-field="prompt"
-          rows={4}
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-        />
-
-        <div className="space-y-2">
-          <label className="text-xs text-muted-foreground">
-            {t('schedules.editor.fields.frequency')}
-          </label>
-          <select
-            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
-            value={frequency}
-            onChange={(e) => setFrequency(e.target.value as Frequency)}
-            aria-label={t('schedules.editor.fields.frequency')}
-          >
-            <option value="one_shot">{t('schedules.editor.freqOptions.oneShot')}</option>
-            <option value="daily">{t('schedules.editor.freqOptions.daily')}</option>
-            <option value="weekly">{t('schedules.editor.freqOptions.weekly')}</option>
-            <option value="monthly">{t('schedules.editor.freqOptions.monthly')}</option>
-            <option value="yearly">{t('schedules.editor.freqOptions.yearly')}</option>
-          </select>
-        </div>
-
-        {frequency !== 'one_shot' ? (
-          <div className="space-y-2">
-            <label className="text-xs text-muted-foreground">
-              {t('schedules.editor.fields.intervalEvery', {
-                unit: t(`schedules.frequency.noun.${frequency}`),
-              })}
-            </label>
+        <div data-aijia-agenda-form-body className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
+          <FormField htmlFor="agenda-editor-title" label={t('schedules.editor.fields.title')}>
             <Input
-              type="number"
-              min={1}
-              value={intervalCount}
-              onChange={(e) => setIntervalCount(Math.max(1, Number(e.target.value) || 1))}
-              aria-label={t('schedules.editor.fields.intervalAria')}
+              id="agenda-editor-title"
+              placeholder={t('schedules.editor.fields.title')}
+              data-aijia-agenda-field="title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
             />
+          </FormField>
+          <FormField htmlFor="agenda-editor-prompt" label={t('schedules.editor.fields.promptPlaceholder')}>
+            <Textarea
+              id="agenda-editor-prompt"
+              placeholder={t('schedules.editor.fields.promptPlaceholder')}
+              data-aijia-agenda-field="prompt"
+              rows={4}
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+            />
+          </FormField>
 
-            <label className="text-xs text-muted-foreground mt-2 block">
-              {t('schedules.editor.fields.endCondition')}
-            </label>
-            <select
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
-              value={endKind}
-              onChange={(e) => setEndKind(e.target.value as 'never' | 'count' | 'until')}
-              aria-label={t('schedules.editor.fields.endCondition')}
+          <FormField label={t('schedules.editor.fields.frequency')}>
+            <Select
+              value={frequency}
+              onValueChange={(value) => setFrequency(value as Frequency)}
             >
-              <option value="never">{t('schedules.editor.endOptions.never')}</option>
-              <option value="count">{t('schedules.editor.endOptions.count')}</option>
-              <option value="until">{t('schedules.editor.endOptions.until')}</option>
-            </select>
-            {endKind === 'count' ? (
-              <Input
-                type="number"
-                min={1}
-                value={endCount}
-                onChange={(e) => setEndCount(Math.max(1, Number(e.target.value) || 1))}
-                aria-label={t('schedules.editor.fields.endCountAria')}
-              />
-            ) : null}
-            {endKind === 'until' ? (
-              <Input
-                type="datetime-local"
-                value={endUntilLocal}
-                onChange={(e) => setEndUntilLocal(e.target.value)}
-                aria-label={t('schedules.editor.fields.endUntilAria')}
-              />
-            ) : null}
-          </div>
-        ) : null}
+              <SelectTrigger
+                aria-label={t('schedules.editor.fields.frequency')}
+                data-aijia-agenda-field="frequency"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="one_shot" data-aijia-agenda-option="one_shot">{t('schedules.editor.freqOptions.oneShot')}</SelectItem>
+                <SelectItem value="daily" data-aijia-agenda-option="daily">{t('schedules.editor.freqOptions.daily')}</SelectItem>
+                <SelectItem value="weekly" data-aijia-agenda-option="weekly">{t('schedules.editor.freqOptions.weekly')}</SelectItem>
+                <SelectItem value="monthly" data-aijia-agenda-option="monthly">{t('schedules.editor.freqOptions.monthly')}</SelectItem>
+                <SelectItem value="yearly" data-aijia-agenda-option="yearly">{t('schedules.editor.freqOptions.yearly')}</SelectItem>
+              </SelectContent>
+            </Select>
+          </FormField>
 
-        <div className="space-y-2">
-          <label className="text-xs text-muted-foreground" htmlFor="agenda-editor-start">
-            {t('schedules.editor.fields.startTime')}
-          </label>
-          <Input
-            id="agenda-editor-start"
-            type="datetime-local"
-            value={startAtLocal}
-            onChange={(e) => setStartAtLocal(e.target.value)}
-          />
-        </div>
+          {frequency !== 'one_shot' ? (
+            <div className="space-y-4">
+              <FormField
+                label={t('schedules.editor.fields.intervalEvery', {
+                  unit: t(`schedules.frequency.noun.${frequency}`),
+                })}
+              >
+                <NumberInput
+                  min={1}
+                  value={intervalCount}
+                  onValueChange={setIntervalCount}
+                  aria-label={t('schedules.editor.fields.intervalAria')}
+                />
+              </FormField>
 
-        <div className="space-y-2">
-          <label className="text-xs text-muted-foreground">
-            {t('schedules.editor.fields.workspace')}
-          </label>
-          <div className="flex items-center gap-2">
-            <div
-              className="flex-1 truncate rounded-md border border-input bg-transparent px-3 py-1.5 text-sm"
-              title={workspacePath ?? undefined}
-            >
-              {workspacePath ?? t('schedules.editor.fields.workspaceDefault')}
+              <FormField label={t('schedules.editor.fields.endCondition')}>
+                <Select
+                  value={endKind}
+                  onValueChange={(value) => setEndKind(value as 'never' | 'count' | 'until')}
+                >
+                  <SelectTrigger aria-label={t('schedules.editor.fields.endCondition')}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="never">{t('schedules.editor.endOptions.never')}</SelectItem>
+                    <SelectItem value="count">{t('schedules.editor.endOptions.count')}</SelectItem>
+                    <SelectItem value="until">{t('schedules.editor.endOptions.until')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </FormField>
+              {endKind === 'count' ? (
+                <NumberInput
+                  min={1}
+                  value={endCount}
+                  onValueChange={setEndCount}
+                  aria-label={t('schedules.editor.fields.endCountAria')}
+                />
+              ) : null}
+              {endKind === 'until' ? (
+                <DateTimePicker
+                  value={endUntilLocal}
+                  onChange={setEndUntilLocal}
+                  label={t('schedules.editor.fields.endUntilAria')}
+                  placeholder={t('schedules.editor.fields.endUntilAria')}
+                  level="minute"
+                  locale={i18n.language}
+                />
+              ) : null}
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handlePickWorkspace}
-              aria-label={t('schedules.editor.fields.pickWorkspaceAria')}
-            >
-              <Folder className="h-4 w-4" />
-              {t('schedules.editor.fields.pick')}
-            </Button>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            {t('schedules.editor.fields.workspaceHint')}
-          </p>
+          ) : null}
+
+          <FormField
+            htmlFor="agenda-editor-start"
+            label={t('schedules.editor.fields.startTime')}
+          >
+            <DateTimePicker
+              id="agenda-editor-start"
+              value={startAtLocal}
+              onChange={setStartAtLocal}
+              label={t('schedules.editor.fields.startTime')}
+              placeholder={t('schedules.editor.fields.startTime')}
+              level="minute"
+              locale={i18n.language}
+            />
+          </FormField>
+
+          <FormField
+            label={t('schedules.editor.fields.workspace')}
+            description={t('schedules.editor.fields.workspaceHint')}
+          >
+            <div className="flex items-center gap-2">
+              <div
+                className="flex h-9 flex-1 items-center truncate rounded-md border border-input bg-card px-3 py-2 text-sm"
+                title={workspacePath ?? undefined}
+              >
+                {workspacePath ?? t('schedules.editor.fields.workspaceDefault')}
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handlePickWorkspace}
+                aria-label={t('schedules.editor.fields.pickWorkspaceAria')}
+              >
+                <Folder className="h-4 w-4" />
+                {t('schedules.editor.fields.pick')}
+              </Button>
+            </div>
+          </FormField>
+
+          {error ? (
+            <div className="text-xs text-destructive">{error}</div>
+          ) : null}
         </div>
 
-        {error ? (
-          <div className="text-xs text-destructive">{error}</div>
-        ) : null}
-
-        <div className="mt-auto flex gap-2">
+        <SheetFooter
+          data-aijia-agenda-footer
+          className="h-[4.0625rem] shrink-0 flex-row items-center justify-end gap-2 border-t border-border px-6 py-0 sm:justify-end sm:space-x-0"
+        >
           <Button variant="outline" onClick={onClose} disabled={saving} data-aijia-agenda-action="cancel">
             {t('schedules.editor.actions.cancel')}
           </Button>
           <Button onClick={handleSave} disabled={!canSave} data-aijia-agenda-action="save">
             {t('schedules.editor.actions.save')}
           </Button>
-        </div>
+        </SheetFooter>
       </SheetContent>
     </Sheet>
   )
@@ -336,6 +362,16 @@ export function AgendaItemEditor({
 function toLocalInput(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+function defaultStartAtLocal(): string {
+  const d = new Date()
+  if (d.getSeconds() > 0 || d.getMilliseconds() > 0) {
+    d.setMinutes(d.getMinutes() + 1)
+  }
+  d.setSeconds(0, 0)
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }

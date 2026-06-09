@@ -48,4 +48,25 @@ describe('EmployeeCard', () => {
 
     expect(screen.getByText('v1.2.0')).toBeInTheDocument()
   })
+
+  it('renders the running status dot as a circle', () => {
+    const { container } = render(
+      <EmployeeCard
+        employee={makeEmployee()}
+        inboxEntries={[]}
+        activeRun={{
+          employeeId: 'emp-1',
+          conversationId: 'conv-1',
+          startedAt: '2026-05-27T00:00:00Z',
+          triggerKind: 'on_demand',
+        }}
+        onClick={() => {}}
+        onRefresh={vi.fn()}
+      />,
+    )
+
+    const dot = container.querySelector('.animate-pulse')
+    expect(dot).toHaveClass('rounded-full')
+    expect(dot).not.toHaveClass('rounded-md')
+  })
 })

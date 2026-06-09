@@ -72,7 +72,7 @@ export function EmployeeTemplateDetailDialog({
         </DialogDescription>
         <div className="flex max-h-[min(86vh,calc(100vh-32px))] flex-col overflow-hidden">
           <div className="flex items-start gap-5 border-b border-border bg-card px-6 py-5 pr-16">
-            <div className={`flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg ${visual.accent}`}>
+            <div className={`flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-md ${visual.accent}`}>
               {visual.avatarUrl ? (
                 <img src={visual.avatarUrl} alt="" className="h-full w-full object-cover" />
               ) : (
@@ -82,7 +82,7 @@ export function EmployeeTemplateDetailDialog({
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="truncate text-[22px] font-bold leading-7 text-foreground">{visual.name}</h2>
-                <span className="rounded-[var(--radius)] bg-brand-primary-subtle px-2 py-0.5 text-xs font-medium text-primary">
+                <span className="rounded-md bg-brand-primary-subtle px-2 py-0.5 text-xs font-medium text-primary">
                   {visual.title}
                 </span>
               </div>
@@ -130,7 +130,7 @@ export function EmployeeTemplateDetailDialog({
                 <h3 className="text-sm font-semibold text-foreground">{t('employeesPage.detail.skillSet')}</h3>
                 <div className="flex flex-wrap gap-2">
                   {skills.map((skill) => (
-                    <span key={skill} className="rounded-full bg-accent px-2.5 py-1 text-xs text-accent-foreground">
+                    <span key={skill} className="rounded-md bg-accent px-2.5 py-1 text-xs text-accent-foreground">
                       {skill}
                     </span>
                   ))}

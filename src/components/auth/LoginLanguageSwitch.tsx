@@ -25,7 +25,7 @@ export function LoginLanguageSwitch() {
 
   return (
     <div
-      className="inline-flex rounded-lg bg-muted p-1"
+      className="inline-flex rounded-md bg-muted p-1"
       role="radiogroup"
       aria-label={t('login.language')}
     >

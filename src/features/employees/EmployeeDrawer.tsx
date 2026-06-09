@@ -316,7 +316,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${statusBadgeClass(status)}`}>
+            <span className={`rounded-md px-2.5 py-0.5 text-xs font-medium ${statusBadgeClass(status)}`}>
               {t(STATUS_TEXT_KEY[status])}
             </span>
             <button type="button" onClick={onClose} data-aijia-employee-action="close" className="rounded-md p-1 hover:bg-accent">
@@ -333,7 +333,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
             {upgradeCheck?.hasUpgrade ? (
               <section
                 data-testid="template-upgrade-banner"
-                className="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50/40 px-3 py-2.5 text-sm dark:border-blue-900 dark:bg-blue-950/40"
+                className="flex items-start gap-3 rounded-md border border-blue-200 bg-blue-50/40 px-3 py-2.5 text-sm dark:border-blue-900 dark:bg-blue-950/40"
               >
                 <RefreshCw className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" aria-hidden />
                 <div className="min-w-0 flex-1">
@@ -367,7 +367,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
             {templateVersion ? (
               <section>
                 <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('employeeDrawer.templateVersion')}</h3>
-                <span className="inline-flex rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                <span className="inline-flex rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
                   v{templateVersion}
                 </span>
               </section>
@@ -392,7 +392,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
                       data-aijia-employee-action="toggle-cron-badge"
                       onClick={handleToggleCron}
                       disabled={busy}
-                      className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
+                      className={`rounded-md px-2.5 py-0.5 text-xs font-medium transition-colors ${
                         emp.cronEnabled
                           ? 'bg-green-100 text-green-700 hover:bg-green-200'
                           : 'bg-muted text-muted-foreground hover:bg-accent'
@@ -445,7 +445,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
                   {empInbox.map((entry) => (
                     <div
                       key={entry.id}
-                      className="flex items-start gap-2 rounded-lg border border-border/50 bg-card/60 px-3 py-2"
+                      className="flex items-start gap-2 rounded-md border border-border/50 bg-card/60 px-3 py-2"
                     >
                       <span className="mt-0.5 text-sm">
                         {entry.kind === 'report' ? '📄' : entry.kind === 'signal' ? '💡' : entry.kind === 'running' ? '⚙️' : '⚠️'}
@@ -460,7 +460,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
                         </p>
                       </div>
                       {!entry.read && (
-                        <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-blue-500" />
+                        <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-md bg-blue-500" />
                       )}
                     </div>
                   ))}
@@ -472,13 +472,13 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
             <section>
               <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('employeeDrawer.monthlyRuns')}</h3>
               <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-lg bg-accent/50 px-3 py-2.5">
+                <div className="rounded-md bg-accent/50 px-3 py-2.5">
                   <p className="text-xl font-bold text-foreground">
                     {inboxEntries.filter((e) => e.employeeId === emp.id && e.kind === 'report').length}
                   </p>
                   <p className="text-xs text-muted-foreground">{t('employeeDrawer.reportCountLabel')}</p>
                 </div>
-                <div className="rounded-lg bg-accent/50 px-3 py-2.5">
+                <div className="rounded-md bg-accent/50 px-3 py-2.5">
                   <p className="text-xl font-bold text-foreground">
                     {emp.lastRunAt ? new Date(emp.lastRunAt).toLocaleDateString(i18n.language, { month: 'numeric', day: 'numeric' }) : '—'}
                   </p>
@@ -494,7 +494,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
           {activeRun ? (
             /* Running state — replaces all idle controls */
             <div className="flex flex-col gap-2">
-              <div className="rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-900 dark:bg-blue-950 dark:text-blue-100">
+              <div className="rounded-md bg-blue-50 px-3 py-2 text-xs text-blue-900 dark:bg-blue-950 dark:text-blue-100">
                 {t('employeeDrawer.runningElapsed', { time: formatElapsed(activeRun.startedAt) })}
               </div>
               <div className="flex items-center gap-2">

@@ -69,7 +69,7 @@ function TranscriptBody({
             return (
               <div key={`${entry.role}-${index}`} className="flex items-center gap-2.5">
                 <span
-                  className="mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-xs font-semibold"
+                  className="mt-0.5 shrink-0 rounded-md px-1.5 py-0.5 text-xs font-semibold"
                   style={{
                     background: badgeStyle.bg,
                     color: badgeStyle.color,
@@ -186,7 +186,7 @@ export function SubAgentTranscriptViewer({
 
         {loadState === 'loaded' && (
           <span
-            className="rounded-full px-1.5 py-0.5 font-medium"
+            className="rounded-md px-1.5 py-0.5 font-medium"
             style={{
               background: 'var(--color-bg-neutral)',
               color: 'var(--color-text-muted)',

@@ -100,7 +100,7 @@ export function ChatArea({ expertTeamId }: ChatAreaProps = {}) {
           type="button"
           aria-label="回到底部"
           onClick={jumpToBottom}
-          className="absolute bottom-4 left-1/2 z-20 flex h-9 w-9 -translate-x-1/2 items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-[var(--shadow-card)] transition-colors hover:bg-muted hover:text-foreground"
+          className="absolute bottom-4 left-1/2 z-20 flex h-9 w-9 -translate-x-1/2 items-center justify-center rounded-md border border-border bg-card text-muted-foreground shadow-[var(--shadow-card)] transition-colors hover:bg-muted hover:text-foreground"
         >
           <ArrowDown className="h-4 w-4" />
         </button>

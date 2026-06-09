@@ -20,7 +20,7 @@ export function DayDivider({ iso }: DayDividerProps) {
       <span className="h-px flex-1 bg-border" aria-hidden />
       <span
         title={formatFullDateTime(iso)}
-        className="rounded-full bg-muted px-2.5 py-0.5 font-medium"
+        className="rounded-md bg-muted px-2.5 py-0.5 font-medium"
       >
         {label}
       </span>

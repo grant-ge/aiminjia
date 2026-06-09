@@ -68,7 +68,7 @@ export function FileAttachmentChip({ file }: FileAttachmentChipProps) {
 
   return (
     <div
-      className="mb-1.5 inline-flex max-w-[360px] items-center gap-2.5 rounded-lg border px-3.5 py-2.5 border-border"
+      className="mb-1.5 inline-flex max-w-[360px] items-center gap-2.5 rounded-md border px-3.5 py-2.5 border-border"
       style={{
         background: 'var(--color-bg-card)',
         borderColor: 'var(--color-border)',
@@ -76,7 +76,7 @@ export function FileAttachmentChip({ file }: FileAttachmentChipProps) {
     >
       {/* File type icon */}
       <div
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-xs font-bold"
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-xs font-bold"
         style={{ background: config.bg, color: config.color }}
       >
         {config.label}

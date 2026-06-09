@@ -20,7 +20,7 @@ export function Avatar({ variant, isLoggedIn = false }: AvatarProps) {
       <img
         src={logoUrl}
         alt={productName}
-        className="h-7 w-7 shrink-0 rounded-full"
+        className="h-7 w-7 shrink-0 rounded-md"
         onError={(e) => {
           if (e.currentTarget.src !== window.location.origin + '/brand-avatar-gold.svg') {
             e.currentTarget.src = '/brand-avatar-gold.svg'
@@ -35,7 +35,7 @@ export function Avatar({ variant, isLoggedIn = false }: AvatarProps) {
 
   return (
     <div
-      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
+      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md"
       style={{ background: bgColor }}
     >
       <svg

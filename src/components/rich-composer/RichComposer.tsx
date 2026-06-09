@@ -60,7 +60,7 @@ export interface RichComposerProps {
 
   onOpenAttachment?: () => void
   skillTokens?: ComposerSkillToken[]
-  /** Extra classes appended to the outer rounded-xl container. Caller-controlled
+  /** Extra classes appended to the outer rounded-md container. Caller-controlled
    * styling (e.g. shadow for the in-chat composer vs. flat for home composer). */
   containerClassName?: string
   /** When true, caps the editor content area at 200px and enables internal scrolling. */
@@ -234,13 +234,13 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
     <div className="relative z-10 flex w-full flex-col gap-2">
       <div
         data-testid="composer-root"
-        className={`flex w-full flex-col rounded-xl border border-border bg-card px-4 pb-1 pt-4${containerClassName ? ` ${containerClassName}` : ''}`}
+        className={`flex w-full flex-col rounded-md border border-border bg-card px-4 pb-1 pt-4${containerClassName ? ` ${containerClassName}` : ''}`}
       >
         {topSlot}
         {skillCommand ? (
           <div className="-mt-2 mb-1 flex items-center">
             <div
-              className="inline-flex max-w-full items-center gap-1.5 rounded-full border px-2 py-1 text-xs"
+              className="inline-flex max-w-full items-center gap-1.5 rounded-md border px-2 py-1 text-xs"
               style={{
                 borderColor: 'var(--color-accent-border)',
                 background: 'var(--color-accent-subtle)',
@@ -253,7 +253,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
               />
               <span className="truncate font-medium">{skillCommand.label}</span>
               <span
-                className="shrink-0 rounded px-1 text-[11px]"
+                className="shrink-0 rounded-md px-1 text-[11px]"
                 style={{
                   background: 'var(--color-accent-muted)',
                   color: 'var(--color-accent-600)',
@@ -266,7 +266,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
                   type="button"
                   aria-label={t('composer.removeSkill', { name: skillCommand.label })}
                   onClick={onClearSkillCommand}
-                  className="ml-0.5 shrink-0 rounded p-0.5 transition-colors hover:bg-[var(--color-accent-muted)]"
+                  className="ml-0.5 shrink-0 rounded-md p-0.5 transition-colors hover:bg-[var(--color-accent-muted)]"
                   style={{ color: 'var(--color-accent-700)' }}
                 >
                   <X className="h-3 w-3" />
@@ -277,7 +277,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
         ) : null}
         <EditorContent
           editor={editor}
-          className={`min-h-[40px] w-full text-sm text-foreground [&_.ProseMirror_a]:text-primary [&_.ProseMirror_a]:underline [&_.ProseMirror_a]:underline-offset-2 [&_.ProseMirror_a]:cursor-pointer [&_.ProseMirror_strong]:font-semibold [&_.ProseMirror_em]:italic [&_.ProseMirror_code]:rounded [&_.ProseMirror_code]:bg-muted [&_.ProseMirror_code]:px-1 [&_.ProseMirror_code]:text-[0.85em] [&_.ProseMirror_pre]:overflow-x-auto [&_.ProseMirror_pre]:rounded [&_.ProseMirror_pre]:bg-muted [&_.ProseMirror_pre]:p-2 [&_.ProseMirror_pre]:text-xs [&_.ProseMirror_pre_code]:bg-transparent [&_.ProseMirror_pre_code]:p-0 [&_.ProseMirror_ul]:list-disc [&_.ProseMirror_ul]:pl-5 [&_.ProseMirror_ol]:list-decimal [&_.ProseMirror_ol]:pl-5 [&_.ProseMirror_blockquote]:border-l-2 [&_.ProseMirror_blockquote]:border-border [&_.ProseMirror_blockquote]:pl-3 [&_.ProseMirror_blockquote]:opacity-90${limitEditorHeight ? ' [&_.ProseMirror]:max-h-[200px] [&_.ProseMirror]:overflow-y-auto [&_.ProseMirror]:overscroll-contain' : ''}`}
+          className={`min-h-[40px] w-full text-sm text-foreground [&_.ProseMirror_a]:text-primary [&_.ProseMirror_a]:underline [&_.ProseMirror_a]:underline-offset-2 [&_.ProseMirror_a]:cursor-pointer [&_.ProseMirror_strong]:font-semibold [&_.ProseMirror_em]:italic [&_.ProseMirror_code]:rounded-md [&_.ProseMirror_code]:bg-muted [&_.ProseMirror_code]:px-1 [&_.ProseMirror_code]:text-[0.85em] [&_.ProseMirror_pre]:overflow-x-auto [&_.ProseMirror_pre]:rounded-md [&_.ProseMirror_pre]:bg-muted [&_.ProseMirror_pre]:p-2 [&_.ProseMirror_pre]:text-xs [&_.ProseMirror_pre_code]:bg-transparent [&_.ProseMirror_pre_code]:p-0 [&_.ProseMirror_ul]:list-disc [&_.ProseMirror_ul]:pl-5 [&_.ProseMirror_ol]:list-decimal [&_.ProseMirror_ol]:pl-5 [&_.ProseMirror_blockquote]:border-l-2 [&_.ProseMirror_blockquote]:border-border [&_.ProseMirror_blockquote]:pl-3 [&_.ProseMirror_blockquote]:opacity-90${limitEditorHeight ? ' [&_.ProseMirror]:max-h-[200px] [&_.ProseMirror]:overflow-y-auto [&_.ProseMirror]:overscroll-contain' : ''}`}
         />
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-0">
@@ -340,9 +340,9 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
                 type="button"
                 aria-label={t('composer.stop')}
                 onClick={() => onStop?.()}
-                className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:opacity-90"
+                className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground transition-colors hover:opacity-90"
               >
-                <span className="block h-3 w-3 rounded-[2px] bg-current" />
+                <span className="block h-3 w-3 rounded-md bg-current" />
               </button>
             ) : (
               <button
@@ -354,8 +354,8 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
                 disabled={sendDisabled}
                 className={
                   sendDisabled
-                    ? 'flex h-7 w-7 items-center justify-center rounded-full bg-muted text-muted-foreground'
-                    : 'flex h-7 w-7 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:opacity-90'
+                    ? 'flex h-7 w-7 items-center justify-center rounded-md bg-muted text-muted-foreground'
+                    : 'flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground transition-colors hover:opacity-90'
                 }
               >
                 <ArrowUp className="h-4 w-4" />

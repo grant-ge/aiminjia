@@ -27,7 +27,7 @@ export function Switch({
       disabled={disabled}
       onClick={handleClick}
       className={cn(
-        'relative h-6 w-11 shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+        'relative h-6 w-11 shrink-0 rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
         checked ? 'bg-primary' : 'bg-muted-foreground/30',
         disabled && 'cursor-not-allowed bg-muted-foreground/20',
         className,
@@ -37,7 +37,7 @@ export function Switch({
       <span
         className={cn(
           // Switch thumb 固定白色：在主题色 / 灰底轨道上保证对比度，跨 light/dark 都成立
-          'absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform',
+          'absolute left-0.5 top-0.5 h-5 w-5 rounded-md bg-white shadow transition-transform',
           checked ? 'translate-x-5' : 'translate-x-0',
           disabled && 'bg-card',
         )}

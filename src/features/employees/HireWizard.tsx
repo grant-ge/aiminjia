@@ -233,11 +233,11 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
         {step === 1 && (
           <div className="grid grid-cols-2 gap-3 p-6 sm:grid-cols-3">
             {error && (
-              <p className="col-span-full rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</p>
+              <p className="col-span-full rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</p>
             )}
             {catalogLoading && catalog.length === 0 && (
               <div
-                className="col-span-full flex flex-col items-center gap-2 rounded-lg border border-dashed border-border bg-muted/30 py-12 text-sm text-muted-foreground"
+                className="col-span-full flex flex-col items-center gap-2 rounded-md border border-dashed border-border bg-muted/30 py-12 text-sm text-muted-foreground"
                 data-aijia-hire-template-loading
               >
                 <RefreshCw className="h-4 w-4 animate-spin" />
@@ -246,7 +246,7 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
             )}
             {!catalogLoading && catalog.length === 0 && (
               <div
-                className="col-span-full flex flex-col items-center gap-3 rounded-lg border border-dashed border-border bg-muted/30 px-4 py-12 text-center text-sm text-muted-foreground"
+                className="col-span-full flex flex-col items-center gap-3 rounded-md border border-dashed border-border bg-muted/30 px-4 py-12 text-center text-sm text-muted-foreground"
                 data-aijia-hire-template-empty
               >
                 <p>
@@ -284,10 +284,10 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
                   data-aijia-hire-template-id={template.templateId}
                   data-aijia-hire-template-name={template.name}
                   onClick={() => handleSelectTemplate(template)}
-                  className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4 text-left transition-all hover:border-border/70 hover:shadow-sm"
+                  className="flex flex-col gap-2 rounded-md border border-border bg-card p-4 text-left transition-all hover:border-border/70 hover:shadow-sm"
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <div className={`flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl ${visual.accent}`}>
+                    <div className={`flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md ${visual.accent}`}>
                       {visual.avatarUrl ? (
                         <img src={visual.avatarUrl} alt="" className="h-full w-full object-cover" />
                       ) : (
@@ -296,16 +296,16 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
                     </div>
                     <div className="flex min-w-0 flex-wrap justify-end gap-1">
                       {template.workplaceCategoryName && (
-                        <span className="max-w-[96px] truncate rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">
+                        <span className="max-w-[96px] truncate rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">
                           {template.workplaceCategoryName}
                         </span>
                       )}
                       {template.version && (
-                        <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                        <span className="rounded-md bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground">
                           v{template.version}
                         </span>
                       )}
-                      <span className="max-w-[96px] truncate rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                      <span className="max-w-[96px] truncate rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
                         {template.badge}
                       </span>
                     </div>
@@ -322,7 +322,7 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
                       {skills.slice(0, 3).map((skill) => (
                         <span
                           key={skill}
-                          className="max-w-full truncate rounded-full bg-accent px-1.5 py-0.5 text-[10px] text-accent-foreground"
+                          className="max-w-full truncate rounded-md bg-accent px-1.5 py-0.5 text-[10px] text-accent-foreground"
                         >
                           {skill}
                         </span>
@@ -339,7 +339,7 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
         {step === 2 && selected && (
           <div className="flex flex-col gap-5 p-6">
             {/* Preview */}
-            <div className="flex items-center gap-3 rounded-xl bg-accent/40 p-3">
+            <div className="flex items-center gap-3 rounded-md bg-accent/40 p-3">
               <span className="text-3xl">{selected.avatar}</span>
               <div className="min-w-0">
                 <p className="text-sm font-medium text-foreground">{selected.role}</p>
@@ -349,7 +349,7 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
                     {requiredSkillNames(selected).slice(0, 4).map((skill) => (
                       <span
                         key={skill}
-                        className="max-w-full truncate rounded-full bg-background/80 px-1.5 py-0.5 text-[10px] text-muted-foreground"
+                        className="max-w-full truncate rounded-md bg-background/80 px-1.5 py-0.5 text-[10px] text-muted-foreground"
                       >
                         {skill}
                       </span>
@@ -379,7 +379,7 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
                   <button
                     type="button"
                     onClick={() => setEnableCron((v) => !v)}
-                    className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
+                    className={`rounded-md px-2.5 py-0.5 text-xs font-medium transition-colors ${
                       enableCron
                         ? 'bg-green-100 text-green-700'
                         : 'bg-muted text-muted-foreground'
@@ -401,7 +401,7 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
             )}
 
             {error && (
-              <p className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</p>
+              <p className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</p>
             )}
 
             {/* Actions */}
@@ -467,7 +467,7 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
               />
             )}
             {error && (
-              <p className="mt-3 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</p>
+              <p className="mt-3 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</p>
             )}
           </div>
         )}

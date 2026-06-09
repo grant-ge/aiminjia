@@ -50,7 +50,7 @@ export function ExpertTeamCard({ team, onStart }: ExpertTeamCardProps) {
                 title={`${expert.name} — ${expert.persona}`}
                 className="flex min-w-0 flex-col items-center gap-0.5"
               >
-                <span className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-border bg-muted/40">
+                <span className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40">
                   <ExpertAvatarView visual={avatarVisual} fallback={expert.emoji} className="text-lg" />
                 </span>
                 <span className="max-w-[58px] truncate text-[10px] leading-tight text-muted-foreground">
@@ -61,7 +61,7 @@ export function ExpertTeamCard({ team, onStart }: ExpertTeamCardProps) {
           })}
           {team.experts.length > 4 ? (
             <div className="flex flex-col items-center gap-0.5">
-              <span className="flex h-9 w-9 items-center justify-center rounded-full border border-border bg-muted text-xs font-medium text-muted-foreground">
+              <span className="flex h-9 w-9 items-center justify-center rounded-md border border-border bg-muted text-xs font-medium text-muted-foreground">
                 +{team.experts.length - 4}
               </span>
               <span className="text-[10px] leading-tight text-muted-foreground">{t('ExpertTeams.moreMembers')}</span>
@@ -76,12 +76,12 @@ export function ExpertTeamCard({ team, onStart }: ExpertTeamCardProps) {
         {team.examples.map((ex) => (
           <span
             key={ex}
-            className="max-w-full truncate rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+            className="max-w-full truncate rounded-md bg-muted px-2 py-0.5 text-xs text-muted-foreground"
           >
             {ex}
           </span>
         ))}
-        <span className="rounded-[var(--radius)] bg-brand-primary-subtle px-2 py-0.5 text-xs font-medium text-primary">
+        <span className="rounded-md bg-brand-primary-subtle px-2 py-0.5 text-xs font-medium text-primary">
           {t('ExpertTeams.viewDetail')}
         </span>
       </div>

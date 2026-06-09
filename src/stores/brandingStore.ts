@@ -5,11 +5,12 @@
  *   - tenant.accentColor   → --primary, --ring, --sidebar-primary, --brand-primary-subtle
  *                            (+ legacy --color-accent-* 全套，兼容旧组件)
  *   - tenant.primaryColor  → --foreground, --sidebar-foreground (+ legacy --color-primary-*)
- *   - tenant.bgColor       → --background, --card, --popover    (+ legacy --color-bg-main)
+ *   - tenant.bgColor       → --sidebar fallback only, for legacy tenant configs
  *   - tenant.sidebarBgColor→ --sidebar                          (+ legacy --color-bg-sidebar)
+ *   - main background      → --background / --card / --popover stay white
  *
  * 派生：基于 4 色用 themeUtils 算 hover/active/subtle/muted 等状态色。
- * 默认值：和 lotus 后台 PRESET_THEMES[0]「默认（暖金）」完全对齐。
+ * 默认值：主内容固定白底；侧栏沿用后台默认暖底。
  */
 import i18n from '@/i18n'
 import { create } from 'zustand'
@@ -24,8 +25,8 @@ export const DEFAULTS = {
   logoUrl: '/brand-avatar-gold.svg',
   accentColor: '#D4A843',
   primaryColor: '#1D1D1F',
-  bgColor: '#FAFAF8',
-  sidebarBgColor: '#F5F4F1',
+  bgColor: '#FFFFFF',
+  sidebarBgColor: '#FAFAF8',
   fontFamily: '',
 }
 
@@ -160,7 +161,9 @@ function derivePrimaryPalette(primary: string) {
 }
 
 /**
- * Background → 主页面 + 卡片 + popover 底色
+ * Background → 主页面 + 卡片 + popover 底色。主内容区域固定白底，
+ * 租户下发的背景色只进入侧边栏 palette，避免 bg-background 在内容区
+ * 变成带色底而污染输入框、工具详情、topbar 等通用组件。
  * 派生 muted / border / input：在 bg 与 fg 之间按比例混合。
  */
 function deriveBackgroundPalette(bg: string, fg: string) {
@@ -299,8 +302,8 @@ export const useBrandingStore = create<BrandingState>((set) => ({
 
     const accentColor = normalizeHex(tenant.accentColor, DEFAULTS.accentColor)
     const primaryColor = normalizeHex(tenant.primaryColor, DEFAULTS.primaryColor)
-    const bgColor = normalizeHex(tenant.bgColor, DEFAULTS.bgColor)
-    const sidebarBgColor = normalizeHex(tenant.sidebarBgColor, DEFAULTS.sidebarBgColor)
+    const bgColor = DEFAULTS.bgColor
+    const sidebarBgColor = normalizeHex(tenant.sidebarBgColor ?? tenant.bgColor, DEFAULTS.sidebarBgColor)
 
     deriveAccentPalette(accentColor)
     derivePrimaryPalette(primaryColor)

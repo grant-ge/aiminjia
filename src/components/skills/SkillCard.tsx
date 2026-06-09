@@ -61,7 +61,7 @@ export function SkillCard({ title, meta, desc, iconNode, iconBg = 'bg-brand-prim
               <span
                 data-testid="skill-card-version"
                 title={version}
-                className="shrink-0 rounded-full border border-border bg-muted px-1.5 py-0 font-mono text-[10px] leading-relaxed text-muted-foreground"
+                className="shrink-0 rounded-md border border-border bg-muted px-1.5 py-0 font-mono text-[10px] leading-relaxed text-muted-foreground"
               >
                 {version}
               </span>

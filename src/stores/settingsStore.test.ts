@@ -59,10 +59,10 @@ describe('settingsStore — setters', () => {
   it('sets font scale and applies the root font size immediately', () => {
     useSettingsStore.getState().setFontScale('large')
     expect(useSettingsStore.getState().fontScale).toBe('large')
-    expect(document.documentElement.style.fontSize).toBe('18px')
+    expect(document.documentElement.style.fontSize).toBe('17.2307692308px')
 
     useSettingsStore.getState().setFontScale('small')
-    expect(document.documentElement.style.fontSize).toBe('14px')
+    expect(document.documentElement.style.fontSize).toBe('14.7692307692px')
   })
 
   it('sets chat width mode', () => {

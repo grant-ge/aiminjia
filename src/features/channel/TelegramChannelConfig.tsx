@@ -304,20 +304,20 @@ export function TelegramChannelConfig({ onSaved, onClose }: TelegramChannelConfi
           )}
 
           {pending.length > 0 && (
-            <div className="flex w-full flex-col gap-2 rounded-xl border border-border bg-card p-3">
+            <div className="flex w-full flex-col gap-2 rounded-md border border-border bg-card p-3">
               <div className="text-xs font-semibold text-foreground">{t('channel.telegram.config.pendingTitle')}</div>
               {pending.map((p) => (
-                <div key={p.code} className="flex items-center justify-between gap-2 rounded-lg bg-muted px-3 py-2 text-sm">
+                <div key={p.code} className="flex items-center justify-between gap-2 rounded-md bg-muted px-3 py-2 text-sm">
                   <span className="font-semibold text-foreground">
                     {p.firstName}
                     {p.username && <span className="ml-1 text-muted-foreground">@{p.username}</span>}
                   </span>
                   <div className="flex gap-2">
-                    <Button size="sm" className="rounded-full" onClick={() => void handleApprove(p.code)}>
+                    <Button size="sm" className="rounded-md" onClick={() => void handleApprove(p.code)}>
                       <CheckCircle2 className="mr-1 h-4 w-4" />
                       {t('channel.telegram.config.approve')}
                     </Button>
-                    <Button size="sm" variant="ghost" className="rounded-full" onClick={() => void handleReject(p.code)}>
+                    <Button size="sm" variant="ghost" className="rounded-md" onClick={() => void handleReject(p.code)}>
                       <X className="h-4 w-4" />
                     </Button>
                   </div>
@@ -327,12 +327,12 @@ export function TelegramChannelConfig({ onSaved, onClose }: TelegramChannelConfi
           )}
 
           {paired.length > 0 && (
-            <div className="flex w-full flex-col gap-2 rounded-xl border border-border bg-card p-3">
+            <div className="flex w-full flex-col gap-2 rounded-md border border-border bg-card p-3">
               <div className="text-xs font-semibold text-foreground">{t('channel.telegram.config.pairedUsersTitle')}</div>
               {paired.map((u) => (
-                <div key={u.userId} className="flex items-center justify-between gap-2 rounded-lg bg-muted px-3 py-2 text-sm">
+                <div key={u.userId} className="flex items-center justify-between gap-2 rounded-md bg-muted px-3 py-2 text-sm">
                   <span className="font-semibold text-foreground">{u.firstName}</span>
-                  <Button size="sm" variant="ghost" className="rounded-full" onClick={() => void handleRevokeUser(u.userId)}>
+                  <Button size="sm" variant="ghost" className="rounded-md" onClick={() => void handleRevokeUser(u.userId)}>
                     {t('channel.actions.remove')}
                   </Button>
                 </div>
@@ -343,11 +343,11 @@ export function TelegramChannelConfig({ onSaved, onClose }: TelegramChannelConfi
       </div>
       <div className="flex gap-3 border-t border-border bg-background px-10 py-4">
         {alreadyConfigured && (
-          <Button variant="destructive" className="flex-1 rounded-full" onClick={() => void handleRemove()}>
+          <Button variant="destructive" className="flex-1 rounded-md" onClick={() => void handleRemove()}>
             {t('channel.actions.removeChannel')}
           </Button>
         )}
-        <Button className={`rounded-full ${alreadyConfigured ? 'flex-1' : 'w-full'}`} onClick={onClose}>
+        <Button className={`rounded-md ${alreadyConfigured ? 'flex-1' : 'w-full'}`} onClick={onClose}>
           {t('channel.actions.done')}
         </Button>
       </div>

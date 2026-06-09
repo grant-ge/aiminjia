@@ -130,7 +130,7 @@ export function ConversationRow({
                         e.stopPropagation()
                         onTogglePin?.()
                       }}
-                      className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                      className="flex h-5 w-5 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
                     >
                       {pinned ? (
                         <PinOff className="h-3.5 w-3.5" />
@@ -152,7 +152,7 @@ export function ConversationRow({
                       aria-label={t('sidebar.archiveChat')}
                       onClick={handleArchiveClick}
                       className={cn(
-                        'flex h-5 items-center justify-center rounded transition-colors',
+                        'flex h-5 items-center justify-center rounded-md transition-colors',
                         armed
                           ? 'w-auto bg-destructive px-1.5 text-[10px] font-semibold leading-none text-destructive-foreground'
                           : 'w-5 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground',
@@ -182,7 +182,7 @@ export function ConversationRow({
         >
           <ContextMenuPrimitive.Item
             onSelect={() => onTogglePin?.()}
-            className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground"
+            className="flex cursor-default select-none items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground"
           >
             {pinned ? (
               <PinOff className="h-3.5 w-3.5 shrink-0" />
@@ -193,21 +193,21 @@ export function ConversationRow({
           </ContextMenuPrimitive.Item>
           <ContextMenuPrimitive.Item
             onSelect={() => onArchive?.()}
-            className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground"
+            className="flex cursor-default select-none items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground"
           >
             <Archive className="h-3.5 w-3.5 shrink-0" />
             <span>{t('sidebar.archiveChat')}</span>
           </ContextMenuPrimitive.Item>
           <ContextMenuPrimitive.Item
             onSelect={() => onRename?.()}
-            className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground"
+            className="flex cursor-default select-none items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground"
           >
             <Pencil className="h-3.5 w-3.5 shrink-0" />
             <span>{t('sidebar.renameChat')}</span>
           </ContextMenuPrimitive.Item>
           <ContextMenuPrimitive.Item
             onSelect={() => void navigator.clipboard.writeText(id)}
-            className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground"
+            className="flex cursor-default select-none items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground"
           >
             <Copy className="h-3.5 w-3.5 shrink-0" />
             <span>{t('sidebar.copyConversationId')}</span>
