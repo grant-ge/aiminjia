@@ -1,6 +1,6 @@
 ---
 name: test-intents-runner
-description: Use when running, executing, or troubleshooting AIjia intent tests. Triggers from inside usertest-intents skill routing: "跑一下 X 这个 task", "跑 意图-XXX-NNN", "跑全部意图测试", "意图测试 FAIL 怎么处理", "tauri-pilot aijia ..." commands.
+description: 'Use when running, executing, or troubleshooting AIjia intent tests. Triggers from inside usertest-intents skill routing: "跑一下 X 这个 task", "跑 意图-XXX-NNN", "跑全部意图测试", "意图测试 FAIL 怎么处理", "tauri-pilot aijia ..." commands.'
 license: Internal
 ---
 

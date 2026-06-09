@@ -1,6 +1,6 @@
 ---
 name: test-intents-author
-description: Use when writing, modifying, or deleting intent test specs (rules.md) for the AIjia app. Triggers from inside test-intents skill routing: "加一条意图", "改 X task 的 rules", "拆这条复合意图", "删 意图-XXX-NNN", "新建 X task".
+description: 'Use when writing, modifying, or deleting intent test specs (rules.md) for the AIjia app. Triggers from inside test-intents skill routing: "加一条意图", "改 X task 的 rules", "拆这条复合意图", "删 意图-XXX-NNN", "新建 X task".'
 license: Internal
 ---
 
