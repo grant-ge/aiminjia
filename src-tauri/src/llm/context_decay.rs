@@ -19,6 +19,15 @@ pub const CONTEXT_WINDOW_DEEPSEEK: usize = 128_000;
 pub const CONTEXT_WINDOW_DEFAULT: usize = 100_000;
 pub const CONTEXT_OVERFLOW_THRESHOLD: f64 = 0.8;
 
+/// Fallback context window when no model info is available.
+pub const FALLBACK_CONTEXT_WINDOW: usize = 200_000;
+
+/// Buffer tokens subtracted from context window for auto-compact threshold calculation.
+pub const AUTOCOMPACT_BUFFER_TOKENS: usize = 13_000;
+
+/// Max output tokens reserved for compact summary generation.
+pub const MAX_OUTPUT_TOKENS_FOR_SUMMARY: usize = 20_000;
+
 pub fn estimate_tokens(messages: &[ChatMessage]) -> usize {
     messages
         .iter()
@@ -53,6 +62,54 @@ pub fn context_window_for_provider(provider: &str) -> usize {
         "deepseek-v3" | "deepseek-r1" => CONTEXT_WINDOW_DEEPSEEK,
         _ => CONTEXT_WINDOW_DEFAULT,
     }
+}
+
+/// Resolve the context window size for a specific model name.
+///
+/// Uses substring matching on the model identifier to determine the window.
+/// Falls back to FALLBACK_CONTEXT_WINDOW for unknown models.
+pub fn context_window_for_model(model: &str) -> usize {
+    if model.is_empty() {
+        return FALLBACK_CONTEXT_WINDOW;
+    }
+    let lower = model.to_lowercase();
+    if lower.contains("claude") {
+        return CONTEXT_WINDOW_CLAUDE;
+    }
+    if lower.contains("deepseek") {
+        return CONTEXT_WINDOW_DEEPSEEK;
+    }
+    if lower.contains("gpt") {
+        return 128_000;
+    }
+    FALLBACK_CONTEXT_WINDOW
+}
+
+/// Resolve the context window for the current conversation.
+///
+/// Priority:
+/// 1. `settings_override` — manual override from AppSettings.context_window
+/// 2. `cloud_model` — model name returned by the gateway /v1/models, matched via context_window_for_model()
+/// 3. FALLBACK_CONTEXT_WINDOW (200K) — fallback when no info is available
+pub fn resolve_context_window(
+    settings_override: Option<usize>,
+    cloud_model: Option<&str>,
+) -> usize {
+    settings_override
+        .or_else(|| cloud_model.map(|m| context_window_for_model(m)))
+        .unwrap_or(FALLBACK_CONTEXT_WINDOW)
+}
+
+/// Compute the effective auto-compact threshold in **chars**.
+///
+/// Formula: (context_window - MAX_OUTPUT_TOKENS_FOR_SUMMARY - AUTOCOMPACT_BUFFER_TOKENS) * 4
+///
+/// The *4 converts token count to char estimate (consistent with the chars/4 convention).
+pub fn effective_auto_compact_threshold(custom_window: Option<usize>) -> usize {
+    let raw_window = resolve_context_window(custom_window, None);
+    let effective = raw_window.saturating_sub(MAX_OUTPUT_TOKENS_FOR_SUMMARY);
+    let threshold_tokens = effective.saturating_sub(AUTOCOMPACT_BUFFER_TOKENS);
+    threshold_tokens.saturating_mul(4)
 }
 
 /// Max chars for tool results in the second-most-recent iteration.
@@ -352,5 +409,64 @@ mod tests {
         assert_eq!(iters.len(), 1); // phantom should be filtered out
         assert_eq!(iters[0].start, 2);
         assert_eq!(iters[0].end, 4);
+    }
+}
+
+#[cfg(test)]
+mod resolve_context_window_tests {
+    use super::*;
+
+    #[test]
+    fn resolves_claude_model() {
+        let w = resolve_context_window(None, Some("claude-sonnet-4-6"));
+        assert_eq!(w, 200_000);
+    }
+
+    #[test]
+    fn resolves_deepseek_model() {
+        let w = resolve_context_window(None, Some("deepseek-v3-0324"));
+        assert_eq!(w, 128_000);
+    }
+
+    #[test]
+    fn resolves_gpt_model() {
+        let w = resolve_context_window(None, Some("gpt-4o"));
+        assert_eq!(w, 128_000);
+    }
+
+    #[test]
+    fn settings_override_wins() {
+        let w = resolve_context_window(Some(300_000), Some("claude-sonnet-4-6"));
+        assert_eq!(w, 300_000);
+    }
+
+    #[test]
+    fn falls_back_to_default_window() {
+        let w = resolve_context_window(None, None);
+        assert_eq!(w, 200_000);
+    }
+
+    #[test]
+    fn empty_model_falls_back() {
+        let w = resolve_context_window(None, Some(""));
+        assert_eq!(w, 200_000);
+    }
+
+    #[test]
+    fn unknown_model_falls_back() {
+        let w = resolve_context_window(None, Some("unknown-model-v1"));
+        assert_eq!(w, 200_000);
+    }
+
+    #[test]
+    fn effective_threshold_with_claude() {
+        // (200_000 - 20_000 - 13_000) * 4 = 668_000
+        assert_eq!(effective_auto_compact_threshold(Some(200_000)), 668_000);
+    }
+
+    #[test]
+    fn effective_threshold_default_fallback() {
+        // (200_000 - 20_000 - 13_000) * 4 = 668_000
+        assert_eq!(effective_auto_compact_threshold(None), 668_000);
     }
 }

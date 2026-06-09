@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use app_lib::llm::masking::{MaskingContext, MaskingLevel};
 use app_lib::llm::streaming::ChatMessage;
-use app_lib::models::settings::AppSettings;
+use app_lib::models::settings::{AppSettings, CloudGatewayMode};
 use app_lib::runtime::cancellation::CancellationToken;
 use app_lib::runtime::chat::{
     ChatTurnRequest, LlmStepInput, LlmStepResult, ResolvedLlmSettings, RuntimeChatTurnDriver,
@@ -96,9 +96,10 @@ impl RuntimeLlmExecutor for MaskingProbeExecutor {
             custom_model_name: String::new(),
             cloud_model: String::new(),
             cloud_model_type: String::new(),
-            cloud_gateway_mode: app_lib::models::settings::CloudGatewayMode::V2,
+            cloud_gateway_mode: CloudGatewayMode::V2,
             thinking_type: "disabled".to_string(),
             thinking_budget_tokens: 8000,
+            context_window: None,
             masking_level,
         })
     }

@@ -92,6 +92,44 @@ pub async fn send_message(
     }
     result
 }
+
+#[tauri::command]
+pub async fn compact_conversation(
+    adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
+    file_mgr: State<'_, Arc<FileManager>>,
+    conversation_id: String,
+    custom_instructions: Option<String>,
+) -> Result<(), String> {
+    let diagnostic_conversation_id = conversation_id.clone();
+    record_command_event(
+        &file_mgr.workspace_path(),
+        "backend.command.started",
+        Some(&conversation_id),
+        None,
+        Some("chat.compact_conversation"),
+    );
+    let result = adapter
+        .compact_conversation(conversation_id, custom_instructions)
+        .await;
+    match &result {
+        Ok(()) => record_command_event(
+            &file_mgr.workspace_path(),
+            "backend.command.completed",
+            Some(&diagnostic_conversation_id),
+            Some(true),
+            Some("chat.compact_conversation"),
+        ),
+        Err(_) => record_command_event(
+            &file_mgr.workspace_path(),
+            "backend.command.failed",
+            Some(&diagnostic_conversation_id),
+            Some(false),
+            Some("chat.compact_conversation"),
+        ),
+    }
+    result
+}
+
 #[tauri::command]
 pub async fn stop_streaming(
     adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,

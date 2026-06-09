@@ -33,6 +33,7 @@ export interface Settings {
   accentColor?: string
   uiHomeSelectedWorkspace?: string
   uiHomeRecentWorkspaces?: string
+  contextWindow?: number | null
 }
 
 export const DEFAULT_SETTINGS: Settings = {

@@ -1,6 +1,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
+use app_lib::models::settings::CloudGatewayMode;
 use app_lib::runtime::cancellation::CancellationToken;
 use app_lib::runtime::chat::{
     ChatTurnRequest, LlmStepInput, LlmStepResult, ResolvedLlmSettings, RuntimeChatTurnDriver,
@@ -41,9 +42,10 @@ impl RuntimeLlmExecutor for CountingSettingsExecutor {
             custom_model_name: String::new(),
             cloud_model: String::new(),
             cloud_model_type: String::new(),
-            cloud_gateway_mode: app_lib::models::settings::CloudGatewayMode::V2,
+            cloud_gateway_mode: CloudGatewayMode::V2,
             thinking_type: "disabled".to_string(),
             thinking_budget_tokens: 8000,
+            context_window: None,
             masking_level: "strict".to_string(),
         })
     }

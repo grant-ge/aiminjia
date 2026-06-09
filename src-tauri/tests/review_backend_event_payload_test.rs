@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use app_lib::runtime::event_bus::RuntimeEventBus;
+use app_lib::runtime::event_bus::RuntimeEventSubscriber;
 use app_lib::runtime::events::{RuntimeEvent, RuntimeEventKind};
 use app_lib::runtime::ids::{RunId, SessionId, TaskId, ToolCallId};
 use app_lib::runtime::store::InMemoryTaskStore;
@@ -11,11 +12,11 @@ use app_lib::transport::testing::RecordingRuntimeHost;
 fn make_bus_with_host() -> (
     RuntimeEventBus,
     Arc<RecordingRuntimeHost>,
-    Arc<TauriEventAdapter>,
+    Arc<dyn RuntimeEventSubscriber>,
 ) {
     let host = RecordingRuntimeHost::new();
     let bus = RuntimeEventBus::new();
-    let adapter = Arc::new(TauriEventAdapter::new(host.clone()));
+    let adapter: Arc<dyn RuntimeEventSubscriber> = Arc::new(TauriEventAdapter::new(host.clone()));
     bus.subscribe(adapter.clone());
     (bus, host, adapter)
 }
@@ -114,7 +115,7 @@ async fn review_tool_completed_payload_is_full_message() {
 fn review_task_status_changed_payload_includes_subject_and_active_form() {
     let host = RecordingRuntimeHost::new();
     let bus = RuntimeEventBus::new();
-    let _adapter = Arc::new(TauriEventAdapter::new(host.clone()));
+    let _adapter: Arc<dyn RuntimeEventSubscriber> = Arc::new(TauriEventAdapter::new(host.clone()));
     bus.subscribe(_adapter.clone());
 
     let store = Arc::new(InMemoryTaskStore::new());

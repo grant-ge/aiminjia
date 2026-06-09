@@ -630,7 +630,8 @@ impl QueryEngine {
                 // S1 transition: Ask→error at QueryEngine boundary (not at Dispatcher).
                 log::warn!(
                     "run_single_tool_turn: tool '{}' returned Ask — error fallback (S1). Decision: {:?}",
-                    tool_name, decision
+                    tool_name,
+                    decision
                 );
                 return Err(anyhow::anyhow!(
                     "Tool '{}' requires user confirmation before it can run.",
@@ -854,7 +855,8 @@ impl QueryEngine {
                 log::warn!(
                     "run_tool_call_with_bus: tool '{}' returned Ask — \
                      surfacing as AskRequired outcome for pending permission routing. Decision: {:?}",
-                    call.tool_name, decision
+                    call.tool_name,
+                    decision
                 );
 
                 Ok(RuntimeToolCallOutcome::AskRequired {
@@ -980,7 +982,8 @@ impl QueryEngine {
                 // S1 transition: Ask→error at QueryEngine boundary (not at Dispatcher).
                 log::warn!(
                     "run_tool_with_bus: tool '{}' returned Ask — error fallback (S1). Decision: {:?}",
-                    tool_name, decision
+                    tool_name,
+                    decision
                 );
                 return Err(anyhow::anyhow!(
                     "Tool '{}' requires user confirmation before it can run.",

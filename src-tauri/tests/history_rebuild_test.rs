@@ -2,6 +2,7 @@ mod common;
 
 use app_lib::runtime::chat::compaction::{CompactBoundaryRecord, CompactTrigger};
 use app_lib::runtime::chat::history::{build_chat_history, HistoryConfig};
+use app_lib::storage::file_store::types::StoredMessage;
 use app_lib::storage::file_store::AppStorage;
 use app_lib::transport::tauri_commands::chat::{
     deserialize_chat_messages_for_gateway, load_history_via_runtime_history,
@@ -27,7 +28,7 @@ fn valid_tool_pair_passes_through() {
     ];
 
     let history =
-        build_chat_history(&stored, None, &HistoryConfig::default()).expect("build history");
+        build_chat_history(&stored, None, &HistoryConfig::default(), None).expect("build history");
     assert_eq!(history.len(), 4);
     assert_eq!(history[1].role, "assistant");
     assert!(history[1]
@@ -47,7 +48,7 @@ fn orphan_tool_dropped() {
     ];
 
     let history =
-        build_chat_history(&stored, None, &HistoryConfig::default()).expect("build history");
+        build_chat_history(&stored, None, &HistoryConfig::default(), None).expect("build history");
     assert!(!history.iter().any(|m| m.role == "tool"));
 }
 
@@ -60,7 +61,7 @@ fn assistant_without_result_tool_calls_cleared() {
     ];
 
     let history =
-        build_chat_history(&stored, None, &HistoryConfig::default()).expect("build history");
+        build_chat_history(&stored, None, &HistoryConfig::default(), None).expect("build history");
     let assistant_with_tool_calls = history
         .iter()
         .find(|m| m.role == "assistant" && m.tool_calls.is_some());
@@ -68,30 +69,6 @@ fn assistant_without_result_tool_calls_cleared() {
         assistant_with_tool_calls.is_none(),
         "assistant tool_calls without corresponding tool result should be cleared"
     );
-}
-
-#[test]
-fn round_based_trim_respects_max_rounds() {
-    let mut stored = Vec::new();
-    for i in 0..5u64 {
-        stored.push(common::make_user(&(i * 2).to_string(), &format!("q{}", i)));
-        stored.push(common::make_assistant(
-            &(i * 2 + 1).to_string(),
-            &format!("a{}", i),
-        ));
-    }
-
-    let config = HistoryConfig {
-        char_budget: usize::MAX,
-        max_rounds: 2,
-        include_uploaded_file_hints: true,
-        has_authorized_workspace: false,
-    };
-    let history = build_chat_history(&stored, None, &config).expect("build history");
-
-    assert_eq!(history.iter().filter(|m| m.role == "user").count(), 2);
-    assert_eq!(history.first().map(|m| m.content.as_str()), Some("q3"));
-    assert_eq!(history.last().map(|m| m.content.as_str()), Some("a4"));
 }
 
 #[test]
@@ -112,9 +89,10 @@ fn boundary_summary_and_tail_slice_are_applied() {
         created_at: "2026-04-24T00:00:00Z".into(),
         summary_text: "summary text".into(),
         tail_message_id: Some("3".into()),
+        preserved_segment: None,
     };
 
-    let history = build_chat_history(&stored, Some(&boundary), &HistoryConfig::default())
+    let history = build_chat_history(&stored, Some(&boundary), &HistoryConfig::default(), None)
         .expect("build history");
     assert_eq!(history.len(), 3);
     assert_eq!(history[0].role, "user");
@@ -141,7 +119,7 @@ fn user_history_with_uploaded_files_preserves_file_hints() {
     });
 
     let history =
-        build_chat_history(&[user], None, &HistoryConfig::default()).expect("build history");
+        build_chat_history(&[user], None, &HistoryConfig::default(), None).expect("build history");
     assert_eq!(history.len(), 1);
     assert!(history[0].content.contains("[当前消息附件]"));
     assert!(history[0].content.contains("/tmp/sales.csv"));
@@ -166,12 +144,10 @@ fn user_history_with_authorized_workspace_uses_workspace_hint() {
     });
 
     let config = HistoryConfig {
-        char_budget: usize::MAX,
-        max_rounds: 30,
         include_uploaded_file_hints: true,
         has_authorized_workspace: true,
     };
-    let history = build_chat_history(&[user], None, &config).expect("build history");
+    let history = build_chat_history(&[user], None, &config, None).expect("build history");
     assert_eq!(history.len(), 1);
     assert!(history[0].content.contains("Read"));
 }
@@ -209,6 +185,7 @@ fn load_history_via_runtime_history_uses_v2_storage_and_boundary() {
             created_at: "2026-04-24T00:00:00Z".into(),
             summary_text: "summary text".into(),
             tail_message_id: Some("3".into()),
+            preserved_segment: None,
         })
         .expect("append boundary");
 
@@ -221,6 +198,222 @@ fn load_history_via_runtime_history_uses_v2_storage_and_boundary() {
         .contains("summary text"));
     assert_eq!(history[1]["content"], "new question");
     assert_eq!(history[2]["content"], "new answer");
+}
+
+#[test]
+fn load_history_via_runtime_history_can_recover_boundary_from_transcript_artifact() {
+    let (storage, _dir) = setup_storage();
+    storage
+        .insert_chat_message_record(&common::make_user("1", "old question"))
+        .expect("insert old user");
+    storage
+        .insert_chat_message_record(&common::make_assistant("2", "old answer"))
+        .expect("insert old assistant");
+    storage
+        .insert_chat_message_record(&common::make_user("3", "current question"))
+        .expect("insert current user");
+
+    let boundary = StoredMessage {
+        id: "4".to_string(),
+        conversation_id: "c1".to_string(),
+        role: "system".to_string(),
+        content: serde_json::json!({"text": "Conversation compacted"}),
+        created_at: "2026-04-24T00:00:04Z".to_string(),
+        tool_calls: None,
+        tool_call_id: None,
+        name: None,
+        subtype: Some("compact_boundary".to_string()),
+        compact_metadata: Some(serde_json::json!({
+            "trigger": "auto",
+            "preTokens": 1000,
+            "postTokens": 200,
+            "messagesSummarized": 3,
+            "tailMessageId": "3"
+        })),
+        is_compact_summary: None,
+        run_id: None,
+        schema_version: Some(2),
+        sequence: None,
+        seq: None,
+        rev: None,
+        error: None,
+    };
+    storage
+        .insert_chat_message_record(&boundary)
+        .expect("insert compact boundary transcript artifact");
+
+    let mut summary = common::make_user("5", "<context>\nsummary body\n</context>");
+    summary.is_compact_summary = Some(true);
+    storage
+        .insert_chat_message_record(&summary)
+        .expect("insert compact summary transcript artifact");
+    storage
+        .insert_chat_message_record(&common::make_assistant("6", "current answer"))
+        .expect("insert current assistant");
+
+    let history = load_history_via_runtime_history(&storage, "c1", false).expect("load history");
+
+    assert_eq!(history.len(), 3);
+    assert_eq!(history[0]["role"], "user");
+    assert!(history[0]["content"]
+        .as_str()
+        .unwrap_or("")
+        .contains("summary body"));
+    assert_eq!(history[1]["id"], "3");
+    assert_eq!(history[1]["content"], "current question");
+    assert_eq!(history[2]["content"], "current answer");
+    assert!(!history.iter().any(|message| {
+        message.get("subtype").and_then(|value| value.as_str()) == Some("compact_boundary")
+            || message
+                .get("isCompactSummary")
+                .and_then(|value| value.as_bool())
+                == Some(true)
+    }));
+}
+
+#[test]
+fn load_history_via_runtime_history_merges_incomplete_sidecar_from_transcript_artifact() {
+    let (storage, _dir) = setup_storage();
+    storage
+        .insert_chat_message_record(&common::make_user("1", "old question"))
+        .expect("insert old user");
+    storage
+        .insert_chat_message_record(&common::make_assistant("2", "old answer"))
+        .expect("insert old assistant");
+    storage
+        .insert_chat_message_record(&common::make_user("3", "current question"))
+        .expect("insert current user");
+
+    let boundary_artifact = StoredMessage {
+        id: "b-transcript".to_string(),
+        conversation_id: "c1".to_string(),
+        role: "system".to_string(),
+        content: serde_json::json!({"text": "Conversation compacted"}),
+        created_at: "2026-04-24T00:00:04Z".to_string(),
+        tool_calls: None,
+        tool_call_id: None,
+        name: None,
+        subtype: Some("compact_boundary".to_string()),
+        compact_metadata: Some(serde_json::json!({
+            "trigger": "auto",
+            "preTokens": 1000,
+            "postTokens": 200,
+            "messagesSummarized": 2,
+            "tailMessageId": "3"
+        })),
+        is_compact_summary: None,
+        run_id: None,
+        schema_version: Some(2),
+        sequence: None,
+        seq: None,
+        rev: None,
+        error: None,
+    };
+    storage
+        .insert_chat_message_record(&boundary_artifact)
+        .expect("insert boundary transcript artifact");
+    let mut summary = common::make_user("5", "<context>\ntranscript summary\n</context>");
+    summary.is_compact_summary = Some(true);
+    storage
+        .insert_chat_message_record(&summary)
+        .expect("insert summary transcript artifact");
+    storage
+        .insert_chat_message_record(&common::make_assistant("6", "current answer"))
+        .expect("insert current assistant");
+
+    storage
+        .append_compact_boundary(&CompactBoundaryRecord {
+            id: "b-sidecar".into(),
+            conversation_id: "c1".into(),
+            trigger: CompactTrigger::Auto,
+            pre_tokens: 1000,
+            post_tokens: 200,
+            messages_summarized: 2,
+            created_at: "2026-04-24T00:00:04Z".into(),
+            summary_text: String::new(),
+            tail_message_id: None,
+            preserved_segment: None,
+        })
+        .expect("append incomplete sidecar boundary");
+
+    let history = load_history_via_runtime_history(&storage, "c1", false).expect("load history");
+
+    assert_eq!(history.len(), 3);
+    assert_eq!(history[0]["role"], "user");
+    assert!(history[0]["content"]
+        .as_str()
+        .unwrap_or("")
+        .contains("transcript summary"));
+    assert_eq!(history[1]["id"], "3");
+    assert_eq!(history[1]["content"], "current question");
+    assert_eq!(history[2]["content"], "current answer");
+}
+
+#[test]
+fn load_history_via_runtime_history_keeps_over_budget_history_for_compaction() {
+    let (storage, _dir) = setup_storage();
+    let large_prompt = "x".repeat(166_000);
+    storage
+        .insert_chat_message_record(&common::make_user("1", &large_prompt))
+        .expect("insert large user message");
+    storage
+        .insert_chat_message_record(&common::make_assistant("2", "ack"))
+        .expect("insert assistant message");
+
+    let history = load_history_via_runtime_history(&storage, "c1", false).expect("load history");
+
+    assert_eq!(
+        history.len(),
+        2,
+        "production history loading must not pre-trim before auto-compact can inspect pressure"
+    );
+    assert_eq!(history[0]["id"], "1");
+    assert!(
+        history[0]["content"]
+            .as_str()
+            .expect("history content should be string")
+            .len()
+            > 120_000
+    );
+}
+
+#[test]
+fn load_history_via_runtime_history_keeps_more_than_30_rounds_for_compaction() {
+    let (storage, _dir) = setup_storage();
+
+    for i in 0..35u64 {
+        let mut user = common::make_user(
+            &(i * 2 + 1).to_string(),
+            &format!("round-{i} 已排除误判=QUALITY-COMPACT-EXCLUDE-MANUAL-PATH"),
+        );
+        user.sequence = Some(i * 2 + 1);
+        storage
+            .insert_chat_message_record(&user)
+            .expect("insert user");
+
+        let mut assistant =
+            common::make_assistant(&(i * 2 + 2).to_string(), &format!("round-{i} ack"));
+        assistant.sequence = Some(i * 2 + 2);
+        storage
+            .insert_chat_message_record(&assistant)
+            .expect("insert assistant");
+    }
+
+    let history = load_history_via_runtime_history(&storage, "c1", false).expect("load history");
+
+    assert_eq!(
+        history.len(),
+        70,
+        "production history loading must not drop early rounds before auto-compact can summarize them"
+    );
+    assert_eq!(history[0]["role"], "user");
+    assert!(
+        history[0]["content"]
+            .as_str()
+            .expect("history content should be string")
+            .contains("QUALITY-COMPACT-EXCLUDE-MANUAL-PATH"),
+        "early exclusion facts must survive into the compaction input so later LLM turns do not reinterpret them"
+    );
 }
 
 #[test]
@@ -270,7 +463,7 @@ fn user_history_with_file_path_round_trips_attachment_path() {
     });
 
     let history =
-        build_chat_history(&[user], None, &HistoryConfig::default()).expect("build history");
+        build_chat_history(&[user], None, &HistoryConfig::default(), None).expect("build history");
     assert_eq!(history.len(), 1);
     assert!(history[0].content.contains("/tmp/clipboard-1.png"));
     assert!(history[0].content.contains("clipboard-1.png"));

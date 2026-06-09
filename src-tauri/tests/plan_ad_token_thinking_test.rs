@@ -66,6 +66,16 @@ fn ad2_context_window_for_provider_matches_expected_defaults() {
 }
 
 #[test]
+fn ad2_resolved_settings_preserve_context_window_override() {
+    let settings = ResolvedLlmSettings {
+        context_window: Some(32_000),
+        ..ResolvedLlmSettings::default()
+    };
+
+    assert_eq!(settings.to_app_settings().context_window, Some(32_000));
+}
+
+#[test]
 fn ad4_gateway_only_enables_thinking_for_claude_route() {
     let settings = AppSettings {
         thinking_type: "enabled".to_string(),
@@ -216,6 +226,7 @@ fn ad3_llm_step_input_exposes_estimated_tokens() {
     let input = LlmStepInput {
         system_prompt: "sys",
         system_message: None,
+        extra_system_segments: vec![],
         dynamic_context: "",
         messages: vec![],
         tool_defs: &[],

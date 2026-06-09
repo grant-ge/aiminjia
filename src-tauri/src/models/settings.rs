@@ -92,6 +92,10 @@ pub struct AppSettings {
     /// 空字符串或 "[]" 视为空列表。**前端限定最多 10 条**：超出时 LRU 截断（新加入的在前，超过 10 截断）。
     #[serde(default)]
     pub ui_home_recent_workspaces: String,
+    /// Manual context window override (in tokens). When set, takes priority
+    /// over model-name-based context window resolution.
+    #[serde(default)]
+    pub context_window: Option<usize>,
 }
 
 fn default_font_scale() -> String {
@@ -127,6 +131,7 @@ impl Default for AppSettings {
             chat_width_mode: default_chat_width_mode(),
             ui_home_selected_workspace: String::new(),
             ui_home_recent_workspaces: String::new(),
+            context_window: None,
         }
     }
 }
@@ -155,6 +160,11 @@ impl AppSettings {
             map.get(key)
                 .and_then(|v| v.parse::<u32>().ok())
                 .unwrap_or(default)
+        };
+        let get_usize_option = |key: &str| -> Option<usize> {
+            map.get(key)
+                .and_then(|v| v.parse::<usize>().ok())
+                .filter(|v| *v > 0)
         };
 
         Self {
@@ -195,6 +205,7 @@ impl AppSettings {
                 "uiHomeRecentWorkspaces",
                 &defaults.ui_home_recent_workspaces,
             ),
+            context_window: get_usize_option("contextWindow"),
         }
     }
 }
@@ -264,5 +275,25 @@ mod tests {
             parsed.ui_home_recent_workspaces,
             s.ui_home_recent_workspaces
         );
+    }
+
+    #[test]
+    fn reads_context_window_from_string_map() {
+        let mut map = HashMap::new();
+        map.insert("contextWindow".to_string(), "32000".to_string());
+
+        let settings = AppSettings::from_string_map(&map);
+
+        assert_eq!(settings.context_window, Some(32_000));
+    }
+
+    #[test]
+    fn ignores_invalid_context_window_from_string_map() {
+        let mut map = HashMap::new();
+        map.insert("contextWindow".to_string(), "0".to_string());
+
+        let settings = AppSettings::from_string_map(&map);
+
+        assert_eq!(settings.context_window, None);
     }
 }

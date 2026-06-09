@@ -5,17 +5,22 @@ use app_lib::runtime::cancellation::CancellationToken;
 use app_lib::runtime::chat::compact_client::CompactSummaryClient;
 use app_lib::runtime::chat::compaction::{AutoCompactConfig, AutoCompactState, MicrocompactConfig};
 use app_lib::runtime::chat::preprocess::{
-    apply_tool_result_budget, prepare_messages_for_llm, CollapseConfig, PreprocessConfig,
-    PreprocessRetryAction, PreprocessRuntimeState, PreprocessStage, PreprocessTrigger,
-    ToolResultBudgetConfig,
+    apply_tool_result_budget, collapse_tool_results, prepare_messages_for_llm, CollapseConfig,
+    PreprocessConfig, PreprocessRetryAction, PreprocessRuntimeState, PreprocessStage,
+    PreprocessTrigger, ToolResultBudgetConfig,
+};
+use app_lib::runtime::chat::tool_result_artifact::{
+    build_persisted_tool_result_message, persist_tool_result_artifact,
 };
 use app_lib::runtime::chat::turn_config::{LlmStepInput, LlmStepResult, TurnError};
 use app_lib::runtime::chat::{ChatTurnRequest, RuntimeChatTurnDriver, RuntimeLlmExecutor};
-use app_lib::runtime::event_bus::RuntimeEventBus;
+use app_lib::runtime::event_bus::{RuntimeEventBus, RuntimeEventSubscriber};
 use app_lib::runtime::identity::IdentityMapping;
 use app_lib::runtime::ids::RunId;
 use app_lib::runtime::query_engine::QueryEngine;
 use app_lib::runtime::state::TurnState;
+use app_lib::transport::tauri_event_adapter::TauriEventAdapter;
+use app_lib::transport::testing::RecordingRuntimeHost;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
@@ -47,6 +52,25 @@ fn tool_message(id: &str, name: &str, content: String) -> Value {
     })
 }
 
+fn persisted_tool_result_ref(id: &str, name: &str) -> String {
+    format!(
+        concat!(
+            "<persisted-tool-result tool_call_id=\"{}\" tool_name=\"{}\">\n",
+            "Full output saved to: /tmp/{}.txt\n",
+            "Original chars: 90000\n",
+            "Sha256: {}\n",
+            "Preview:\n",
+            "{}\n",
+            "</persisted-tool-result>"
+        ),
+        id,
+        name,
+        id,
+        "b".repeat(64),
+        "preview ".repeat(80)
+    )
+}
+
 fn normalize_created_at(messages: &[Value]) -> Vec<Value> {
     messages
         .iter()
@@ -54,10 +78,57 @@ fn normalize_created_at(messages: &[Value]) -> Vec<Value> {
             let mut message = message.clone();
             if let Some(object) = message.as_object_mut() {
                 if object.get("subtype").and_then(Value::as_str) == Some("compact_boundary") {
+                    object.insert("id".to_string(), Value::String("<boundary-id>".to_string()));
                     object.insert(
                         "createdAt".to_string(),
                         Value::String("<normalized>".to_string()),
                     );
+                    if let Some(metadata) = object
+                        .get_mut("compactMetadata")
+                        .and_then(Value::as_object_mut)
+                    {
+                        if metadata.contains_key("tailMessageId") {
+                            metadata.insert(
+                                "tailMessageId".to_string(),
+                                Value::String("<message-id>".to_string()),
+                            );
+                        }
+                        for key in ["postTokens", "tokensSaved"] {
+                            if metadata.contains_key(key) {
+                                metadata.insert(key.to_string(), Value::Number(0.into()));
+                            }
+                        }
+                        if let Some(preserved) = metadata
+                            .get_mut("preservedSegment")
+                            .and_then(Value::as_object_mut)
+                        {
+                            for key in [
+                                "firstPreservedMessageId",
+                                "headUuid",
+                                "tailMessageId",
+                                "tailUuid",
+                            ] {
+                                if preserved.contains_key(key) {
+                                    preserved.insert(
+                                        key.to_string(),
+                                        Value::String("<message-id>".to_string()),
+                                    );
+                                }
+                            }
+                            for key in ["anchorMessageId", "anchorUuid"] {
+                                if preserved.contains_key(key) {
+                                    preserved.insert(
+                                        key.to_string(),
+                                        Value::String("<summary-id>".to_string()),
+                                    );
+                                }
+                            }
+                        }
+                    }
+                } else if object.get("isCompactSummary").and_then(Value::as_bool) == Some(true) {
+                    object.insert("id".to_string(), Value::String("<summary-id>".to_string()));
+                } else if object.contains_key("id") {
+                    object.insert("id".to_string(), Value::String("<message-id>".to_string()));
                 }
             }
             message
@@ -138,6 +209,69 @@ fn u3_budget_preserves_recent_error_and_generated_file_results() {
     );
 }
 
+#[test]
+fn u3_budget_preserves_persisted_tool_result_references() {
+    let artifact_ref = persisted_tool_result_ref("tc-artifact", "Bash");
+    let messages = vec![
+        assistant_tool_call("tc-artifact", "Bash"),
+        tool_message("tc-artifact", "Bash", artifact_ref.clone()),
+        assistant_tool_call("tc-plain", "Bash"),
+        tool_message("tc-plain", "Bash", "A".repeat(500)),
+    ];
+    let config = ToolResultBudgetConfig {
+        aggregate_char_budget: 700,
+        keep_recent_tool_results: 0,
+        preserved_tool_names: HashSet::new(),
+        replacement_preview_chars: 16,
+    };
+
+    let result = apply_tool_result_budget(&messages, &config);
+    assert!(result.executed);
+
+    let artifact_content = result.messages[1]["content"].as_str().unwrap_or_default();
+    assert_eq!(
+        artifact_content, artifact_ref,
+        "persisted refs must retain path/hash metadata under tool budget pressure"
+    );
+
+    let plain_content = result.messages[3]["content"].as_str().unwrap_or_default();
+    assert!(
+        plain_content.starts_with("[budget-trimmed]"),
+        "ordinary old tool result should still be trimmed"
+    );
+}
+
+#[test]
+fn u3_collapse_preserves_persisted_tool_result_references() {
+    let artifact_ref = persisted_tool_result_ref("tc-artifact", "Bash");
+    let messages = vec![
+        assistant_tool_call("tc-artifact", "Bash"),
+        tool_message("tc-artifact", "Bash", artifact_ref.clone()),
+        assistant_tool_call("tc-plain", "Bash"),
+        tool_message("tc-plain", "Bash", "A".repeat(500)),
+    ];
+    let config = CollapseConfig {
+        long_result_chars: 80,
+        keep_recent_tool_results: 0,
+        replacement_preview_chars: 16,
+    };
+
+    let result = collapse_tool_results(&messages, &config);
+    assert!(result.executed);
+
+    let artifact_content = result.messages[1]["content"].as_str().unwrap_or_default();
+    assert_eq!(
+        artifact_content, artifact_ref,
+        "collapse must not hide recoverable artifact metadata"
+    );
+
+    let plain_content = result.messages[3]["content"].as_str().unwrap_or_default();
+    assert!(
+        plain_content.starts_with("[collapsed]"),
+        "ordinary long tool result should still be collapsed"
+    );
+}
+
 #[tokio::test]
 async fn u3_prepare_messages_orders_budget_microcompact_collapse_before_auto_compact() {
     let messages = vec![
@@ -172,7 +306,13 @@ async fn u3_prepare_messages_orders_budget_microcompact_collapse_before_auto_com
             threshold_chars: 40,
             max_output_chars: 80_000,
             consecutive_failure_limit: 3,
+            custom_context_window: None,
         },
+        context_window: 64_000,
+        query_source: None,
+        context_collapse_owns_context: false,
+        compact_boundary: None,
+        project_instruction_content: None,
     };
 
     let mut compact_state = AutoCompactState::new();
@@ -201,6 +341,180 @@ async fn u3_prepare_messages_orders_budget_microcompact_collapse_before_auto_com
     );
     assert!(prepared.compact_boundary.is_some());
     assert_eq!(prepared.retry, PreprocessRetryAction::None);
+}
+
+#[tokio::test]
+async fn u3_auto_compact_summary_receives_expanded_tool_artifact_evidence() {
+    let tmp = tempfile::tempdir().unwrap();
+    let tail_fact = "TOOL-ARTIFACT-TAIL-DECISION=keep-remote-logs";
+    let raw_content = format!("{}{}", "x".repeat(3_000), tail_fact);
+    let record = persist_tool_result_artifact(
+        tmp.path(),
+        "tc-artifact",
+        "Bash",
+        &raw_content,
+        "text/plain",
+    )
+    .expect("persist artifact");
+    let persisted_ref = build_persisted_tool_result_message(&record);
+    assert!(!persisted_ref.contains(tail_fact));
+
+    let messages = vec![
+        user_message("summarize the tool evidence later"),
+        assistant_tool_call("tc-artifact", "Bash"),
+        tool_message("tc-artifact", "Bash", persisted_ref.clone()),
+        user_message("latest question"),
+    ];
+    let config = PreprocessConfig {
+        budget: ToolResultBudgetConfig {
+            aggregate_char_budget: usize::MAX,
+            keep_recent_tool_results: 10,
+            preserved_tool_names: HashSet::new(),
+            replacement_preview_chars: 16,
+        },
+        microcompact: MicrocompactConfig {
+            trigger_chars: usize::MAX,
+            keep_recent_tool_results: 10,
+            preserved_tool_names: HashSet::new(),
+        },
+        collapse: CollapseConfig {
+            long_result_chars: usize::MAX,
+            keep_recent_tool_results: 10,
+            replacement_preview_chars: 16,
+        },
+        auto_compact: AutoCompactConfig {
+            threshold_chars: 1,
+            max_output_chars: 80_000,
+            consecutive_failure_limit: 3,
+            custom_context_window: None,
+        },
+        context_window: 64_000,
+        query_source: None,
+        context_collapse_owns_context: false,
+        compact_boundary: None,
+        project_instruction_content: None,
+    };
+
+    let mut compact_state = AutoCompactState::new();
+    let mut runtime_state = PreprocessRuntimeState::default();
+    let prepared = prepare_messages_for_llm(
+        messages,
+        "conv-u3-artifact-evidence",
+        PreprocessTrigger::Normal,
+        &config,
+        &mut compact_state,
+        &mut runtime_state,
+        false,
+        |summary_input: Vec<Value>| async move {
+            let tool_content = summary_input
+                .iter()
+                .find(|message| message.get("role").and_then(Value::as_str) == Some("tool"))
+                .and_then(|message| message.get("content").and_then(Value::as_str))
+                .unwrap_or_default();
+            assert!(
+                tool_content.contains(tail_fact),
+                "summary input must recover full artifact evidence"
+            );
+            Ok(format!("summary captured {tail_fact}"))
+        },
+    )
+    .await
+    .expect("prepare should compact");
+
+    let summary = prepared
+        .messages
+        .iter()
+        .find(|message| message.get("isCompactSummary").and_then(Value::as_bool) == Some(true))
+        .and_then(|message| message.get("content").and_then(Value::as_str))
+        .unwrap_or_default();
+    assert!(summary.contains(tail_fact));
+
+    let serialized_output = serde_json::to_string(&prepared.messages).unwrap();
+    assert!(
+        !serialized_output.contains("<persisted-tool-result-evidence>"),
+        "expanded evidence is only for the summary call, not transcript storage"
+    );
+}
+
+#[tokio::test]
+async fn u3_auto_compact_summary_uses_pre_budget_evidence_snapshot() {
+    let small_tool_fact = "SMALL-TOOL-FACT=manual-path-excluded";
+    let messages = vec![
+        user_message("remember tool evidence"),
+        assistant_tool_call("tc-small", "Bash"),
+        tool_message(
+            "tc-small",
+            "Bash",
+            format!("{small_tool_fact} {}", "x".repeat(400)),
+        ),
+        user_message("latest question"),
+    ];
+    let config = PreprocessConfig {
+        budget: ToolResultBudgetConfig {
+            aggregate_char_budget: 120,
+            keep_recent_tool_results: 0,
+            preserved_tool_names: HashSet::new(),
+            replacement_preview_chars: 8,
+        },
+        microcompact: MicrocompactConfig {
+            trigger_chars: usize::MAX,
+            keep_recent_tool_results: 10,
+            preserved_tool_names: HashSet::new(),
+        },
+        collapse: CollapseConfig {
+            long_result_chars: usize::MAX,
+            keep_recent_tool_results: 10,
+            replacement_preview_chars: 16,
+        },
+        auto_compact: AutoCompactConfig {
+            threshold_chars: 1,
+            max_output_chars: 80_000,
+            consecutive_failure_limit: 3,
+            custom_context_window: None,
+        },
+        context_window: 64_000,
+        query_source: None,
+        context_collapse_owns_context: false,
+        compact_boundary: None,
+        project_instruction_content: None,
+    };
+
+    let mut compact_state = AutoCompactState::new();
+    let mut runtime_state = PreprocessRuntimeState::default();
+    let prepared = prepare_messages_for_llm(
+        messages,
+        "conv-u3-pre-budget-evidence",
+        PreprocessTrigger::Normal,
+        &config,
+        &mut compact_state,
+        &mut runtime_state,
+        false,
+        |summary_input: Vec<Value>| async move {
+            let serialized = serde_json::to_string(&summary_input).unwrap();
+            assert!(serialized.contains(small_tool_fact));
+            assert!(
+                !serialized.contains("[budget-trimmed]"),
+                "summary input must not be based on lossy budget projection"
+            );
+            Ok(format!("summary captured {small_tool_fact}"))
+        },
+    )
+    .await
+    .expect("prepare should compact");
+
+    assert!(
+        prepared
+            .executed_stages
+            .contains(&PreprocessStage::ToolResultBudget),
+        "normal request projection still applies the tool budget"
+    );
+    let summary = prepared
+        .messages
+        .iter()
+        .find(|message| message.get("isCompactSummary").and_then(Value::as_bool) == Some(true))
+        .and_then(|message| message.get("content").and_then(Value::as_str))
+        .unwrap_or_default();
+    assert!(summary.contains(small_tool_fact));
 }
 
 #[tokio::test]
@@ -237,7 +551,13 @@ async fn u3_prepare_messages_reuses_same_shape_for_normal_and_prompt_too_long() 
             threshold_chars: 40,
             max_output_chars: 80_000,
             consecutive_failure_limit: 3,
+            custom_context_window: None,
         },
+        context_window: 64_000,
+        query_source: None,
+        context_collapse_owns_context: false,
+        compact_boundary: None,
+        project_instruction_content: None,
     };
 
     let mut normal_compact_state = AutoCompactState::new();
@@ -311,7 +631,13 @@ async fn u3_prepare_messages_is_idempotent_after_compact_output() {
             threshold_chars: 40,
             max_output_chars: 80_000,
             consecutive_failure_limit: 3,
+            custom_context_window: None,
         },
+        context_window: 64_000,
+        query_source: None,
+        context_collapse_owns_context: false,
+        compact_boundary: None,
+        project_instruction_content: None,
     };
 
     let mut compact_state = AutoCompactState::new();
@@ -348,6 +674,94 @@ async fn u3_prepare_messages_is_idempotent_after_compact_output() {
         "prepared messages must not be rewritten again"
     );
     assert!(second.compact_boundary.is_none());
+}
+
+#[tokio::test]
+async fn u3_prepare_messages_processes_new_messages_after_compact_artifacts() {
+    let messages = vec![
+        json!({
+            "id": "boundary-1",
+            "role": "system",
+            "subtype": "compact_boundary",
+            "content": "Conversation compacted",
+            "compactMetadata": {
+                "trigger": "auto",
+                "preTokens": 1000,
+                "postTokens": 300,
+                "messagesSummarized": 5,
+                "tailMessageId": "tail-user"
+            }
+        }),
+        json!({
+            "id": "summary-1",
+            "role": "user",
+            "content": "<context>\nsummary\n</context>",
+            "isCompactSummary": true
+        }),
+        json!({"id": "tail-user", "role": "user", "content": "latest question"}),
+        assistant_tool_call("tc-after", "read_file"),
+        tool_message("tc-after", "read_file", "Z".repeat(10_000)),
+    ];
+
+    let config = PreprocessConfig {
+        budget: ToolResultBudgetConfig {
+            aggregate_char_budget: 500,
+            keep_recent_tool_results: 0,
+            preserved_tool_names: HashSet::new(),
+            replacement_preview_chars: 16,
+        },
+        microcompact: MicrocompactConfig {
+            trigger_chars: usize::MAX,
+            keep_recent_tool_results: 0,
+            preserved_tool_names: HashSet::new(),
+        },
+        collapse: CollapseConfig {
+            long_result_chars: usize::MAX,
+            keep_recent_tool_results: 0,
+            replacement_preview_chars: 16,
+        },
+        auto_compact: AutoCompactConfig {
+            threshold_chars: usize::MAX,
+            max_output_chars: 80_000,
+            consecutive_failure_limit: 3,
+            custom_context_window: None,
+        },
+        context_window: 64_000,
+        query_source: None,
+        context_collapse_owns_context: false,
+        compact_boundary: None,
+        project_instruction_content: None,
+    };
+
+    let mut compact_state = AutoCompactState::new();
+    let mut runtime_state = PreprocessRuntimeState::default();
+    let prepared = prepare_messages_for_llm(
+        messages,
+        "conv-u3-after-compact",
+        PreprocessTrigger::Normal,
+        &config,
+        &mut compact_state,
+        &mut runtime_state,
+        false,
+        |_messages: Vec<Value>| async { Ok("should not compact".to_string()) },
+    )
+    .await
+    .expect("prepare should process post-compact tail");
+
+    assert!(
+        prepared
+            .executed_stages
+            .contains(&PreprocessStage::ToolResultBudget),
+        "new tool output after compact artifacts must still go through budget"
+    );
+    let tool_content = prepared
+        .messages
+        .iter()
+        .find(|message| message.get("role").and_then(Value::as_str) == Some("tool"))
+        .and_then(|message| message.get("content").and_then(Value::as_str))
+        .unwrap_or_default();
+    assert!(tool_content.starts_with("[budget-trimmed]"));
+    assert!(prepared.compact_boundary.is_none());
 }
 
 struct PromptTooLongRecoveryExecutor {
@@ -395,6 +809,9 @@ impl CompactSummaryClient for CountingCompactSummaryClient {
         &self,
         _conversation_id: &str,
         _messages: &[serde_json::Value],
+        _llm_settings: &app_lib::runtime::chat::turn_config::ResolvedLlmSettings,
+        _trace_id: Option<&str>,
+        _run_id: Option<&str>,
     ) -> Result<String, TurnError> {
         *self.calls.lock().unwrap() += 1;
         Ok("reactive compact summary".to_string())
@@ -413,7 +830,13 @@ impl RuntimeLlmExecutor for PromptTooLongRecoveryExecutor {
             .lock()
             .unwrap()
             .push(input.messages.clone());
-        self.results.lock().unwrap().remove(0)
+        let mut results = self.results.lock().unwrap();
+        if results.is_empty() {
+            return Err(TurnError::PromptTooLong(
+                "prompt too long after configured retries".to_string(),
+            ));
+        }
+        results.remove(0)
     }
 
     async fn load_history(&self, _conversation_id: &str) -> Result<Vec<Value>, TurnError> {
@@ -460,10 +883,17 @@ async fn u3_driver_prompt_too_long_retries_once_with_compacted_messages() {
         ],
     ));
     let compact_client = Arc::new(CountingCompactSummaryClient::new());
+    let host = RecordingRuntimeHost::new();
     let bus = RuntimeEventBus::new();
-    let driver =
-        RuntimeChatTurnDriver::with_llm_executor(QueryEngine::default(), bus, executor.clone())
-            .with_compact_client(compact_client.clone());
+    let adapter: Arc<dyn RuntimeEventSubscriber> = Arc::new(TauriEventAdapter::new(host.clone()));
+    bus.subscribe(adapter.clone());
+    let _adapter = adapter;
+    let driver = RuntimeChatTurnDriver::with_llm_executor(
+        QueryEngine::default(),
+        bus.clone(),
+        executor.clone(),
+    )
+    .with_compact_client(compact_client.clone());
     let mut turn = make_test_turn("conv-u3-recovery");
     let request = ChatTurnRequest::new("conv-u3-recovery", "latest question", vec![]);
 
@@ -477,6 +907,20 @@ async fn u3_driver_prompt_too_long_retries_once_with_compacted_messages() {
             .iter()
             .any(|msg| msg.get("isCompactSummary").and_then(|v| v.as_bool()) == Some(true)),
         "retry call must use compacted summary view"
+    );
+    let trace = host.trace();
+    let event = trace
+        .events
+        .iter()
+        .find(|event| event.name == "compact:completed")
+        .expect("PromptTooLong recovery compact should emit compact:completed");
+    assert_eq!(
+        event.payload["conversationId"].as_str(),
+        Some("conv-u3-recovery")
+    );
+    assert!(
+        event.payload["messagesSummarized"].as_u64().unwrap_or(0) >= 3,
+        "history messages plus current user should be summarized"
     );
 }
 

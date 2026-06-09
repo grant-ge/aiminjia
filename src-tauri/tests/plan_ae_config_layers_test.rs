@@ -2,6 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use app_lib::models::settings::CloudGatewayMode;
 use app_lib::runtime::cancellation::CancellationToken;
 use app_lib::runtime::chat::{
     ChatTurnRequest, LlmStepInput, LlmStepResult, ResolvedLlmSettings, RuntimeChatTurnDriver,
@@ -236,9 +237,10 @@ async fn ae2_model_override_applied_to_resolved_settings() {
         custom_model_name: String::new(),
         cloud_model: String::new(),
         cloud_model_type: String::new(),
-        cloud_gateway_mode: app_lib::models::settings::CloudGatewayMode::V2,
+        cloud_gateway_mode: CloudGatewayMode::V2,
         thinking_type: "disabled".to_string(),
         thinking_budget_tokens: 8000,
+        context_window: None,
         masking_level: "strict".to_string(),
     }));
     let driver = RuntimeChatTurnDriver::with_llm_executor(
@@ -274,9 +276,10 @@ async fn ae2_no_override_falls_back_to_effective_settings() {
         custom_model_name: String::new(),
         cloud_model: String::new(),
         cloud_model_type: String::new(),
-        cloud_gateway_mode: app_lib::models::settings::CloudGatewayMode::V2,
+        cloud_gateway_mode: CloudGatewayMode::V2,
         thinking_type: "disabled".to_string(),
         thinking_budget_tokens: 8000,
+        context_window: None,
         masking_level: "strict".to_string(),
     }));
     let driver = RuntimeChatTurnDriver::with_llm_executor(
@@ -312,9 +315,10 @@ async fn ae2_empty_override_treated_as_none() {
         custom_model_name: String::new(),
         cloud_model: String::new(),
         cloud_model_type: String::new(),
-        cloud_gateway_mode: app_lib::models::settings::CloudGatewayMode::V2,
+        cloud_gateway_mode: CloudGatewayMode::V2,
         thinking_type: "disabled".to_string(),
         thinking_budget_tokens: 8000,
+        context_window: None,
         masking_level: "strict".to_string(),
     }));
     let driver = RuntimeChatTurnDriver::with_llm_executor(

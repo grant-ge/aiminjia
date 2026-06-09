@@ -3,6 +3,7 @@ import { act, renderHook } from '@testing-library/react'
 
 const tauriMock = vi.hoisted(() => ({
   sendMessage: vi.fn().mockResolvedValue(undefined),
+  compactConversation: vi.fn().mockResolvedValue(undefined),
   stopStreaming: vi.fn().mockResolvedValue(undefined),
   getMessages: vi.fn(),
   getTasks: vi.fn(),
@@ -51,6 +52,22 @@ describe('useChat sendUserMessage', () => {
       expect.any(String),
       null,
     )
+  })
+
+  it('routes /compact as a manual compact control command without adding a user bubble', async () => {
+    const { result } = renderHook(() => useChat())
+
+    await act(async () => {
+      await result.current.sendUserMessage('/compact 保留本次排查结论')
+    })
+
+    expect(tauriMock.compactConversation).toHaveBeenCalledWith(
+      'conv-test',
+      '保留本次排查结论',
+    )
+    expect(tauriMock.sendMessage).not.toHaveBeenCalled()
+    expect(useChatStore.getState().messages).toHaveLength(0)
+    expect(useChatStore.getState().busyConversations.has('conv-test')).toBe(false)
   })
 
   it('passes explicit skill metadata and keeps it on the optimistic user message', async () => {

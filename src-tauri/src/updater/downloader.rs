@@ -193,7 +193,10 @@ async fn do_download(
         //   (b) start < full body → server truly doesn't support Range. Restart.
         if let Some(full_len) = resp_content_length {
             if start >= full_len {
-                info!("[updater] server returned 200 but local file already has {} bytes (full={}), treating as complete", start, full_len);
+                info!(
+                    "[updater] server returned 200 but local file already has {} bytes (full={}), treating as complete",
+                    start, full_len
+                );
                 progress.on_progress(start, full_len);
                 return Ok(());
             }

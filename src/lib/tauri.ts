@@ -68,6 +68,7 @@ export const TAURI_EVENTS = {
   PENDING_REMOVED: 'pending:removed',
   /** Spec 2026-05-17 §4.1 — TurnStage transitions. */
   TURN_STAGE: 'turn:stage',
+  COMPACT_COMPLETED: 'compact:completed',
   /** Spec 2026-05-17 §4.1 — ~2s keep-alive while a turn is in progress. */
   TURN_HEARTBEAT: 'turn:heartbeat',
   /** Spec 2026-05-26 §5.2 — Network probe result broadcast. */
@@ -287,6 +288,19 @@ export interface TurnCompletedPayload {
   message?: string
 }
 
+export interface CompactCompletedPayload {
+  conversationId: string
+  runId: string
+  boundaryId?: string
+  trigger?: 'auto' | 'manual'
+  createdAt?: string
+  tailMessageId?: string | null
+  preTokens: number
+  postTokens: number
+  tokensSaved: number
+  messagesSummarized: number
+}
+
 // ---------------------------------------------------------------------------
 // Turn-stage events (spec docs/superpowers/specs/2026-05-17-turn-stages.md)
 // ---------------------------------------------------------------------------
@@ -408,6 +422,16 @@ export function sendMessage(
     agentName: agentName ?? null,
     clientMessageId: clientMessageId ?? null,
     skillCommand: skillCommand ?? null,
+  })
+}
+
+export function compactConversation(
+  conversationId: string,
+  customInstructions?: string | null,
+): Promise<void> {
+  return invoke<void>('compact_conversation', {
+    conversationId,
+    customInstructions: customInstructions ?? null,
   })
 }
 
@@ -2036,6 +2060,17 @@ export function onTurnStage(
   return listen<TurnStagePayload>(TAURI_EVENTS.TURN_STAGE, createInstrumentedEventHandler(TAURI_EVENTS.TURN_STAGE, (event) => {
     handler(event.payload)
   }))
+}
+
+export function onCompactCompleted(
+  handler: (payload: CompactCompletedPayload) => void,
+): Promise<() => void> {
+  return listen<CompactCompletedPayload>(
+    TAURI_EVENTS.COMPACT_COMPLETED,
+    createInstrumentedEventHandler(TAURI_EVENTS.COMPACT_COMPLETED, (event) => {
+      handler(event.payload)
+    }),
+  )
 }
 
 export function onTurnHeartbeat(

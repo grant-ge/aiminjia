@@ -3,13 +3,11 @@ use std::collections::HashSet;
 use anyhow::Result;
 
 use crate::llm::streaming::{ChatMessage, ToolCall};
-use crate::runtime::chat::compaction::CompactBoundaryRecord;
+use crate::runtime::chat::compaction::{CompactBoundaryRecord, CompactTrigger, PreservedSegment};
 use crate::storage::file_store::types::StoredMessage;
 
 #[derive(Debug, Clone)]
 pub struct HistoryConfig {
-    pub char_budget: usize,
-    pub max_rounds: usize,
     pub include_uploaded_file_hints: bool,
     pub has_authorized_workspace: bool,
 }
@@ -17,44 +15,105 @@ pub struct HistoryConfig {
 impl Default for HistoryConfig {
     fn default() -> Self {
         Self {
-            char_budget: 120_000,
-            max_rounds: 30,
             include_uploaded_file_hints: true,
             has_authorized_workspace: false,
         }
     }
 }
 
+#[derive(Debug, Clone)]
+struct HistoryChatMessage {
+    id: Option<String>,
+    conversation_id: Option<String>,
+    created_at: Option<String>,
+    chat: ChatMessage,
+    subtype: Option<String>,
+    compact_metadata: Option<serde_json::Value>,
+    is_compact_summary: Option<bool>,
+}
+
 pub fn build_chat_history(
     stored: &[StoredMessage],
     boundary: Option<&CompactBoundaryRecord>,
     config: &HistoryConfig,
+    claude_md_content: Option<&str>,
 ) -> Result<Vec<ChatMessage>> {
-    let relevant = apply_boundary(stored, boundary);
+    let messages = build_history_messages(stored, boundary, config, claude_md_content)?;
+    Ok(messages.into_iter().map(|message| message.chat).collect())
+}
+
+/// Build model-facing JSON messages while retaining transcript metadata.
+///
+/// The driver needs `id`/`conversationId`/`createdAt` during auto-compact so a
+/// successful boundary can anchor to a real tail message. The LLM gateway later
+/// deserializes these values into `ChatMessage`, which ignores the metadata.
+pub fn build_chat_history_values(
+    stored: &[StoredMessage],
+    boundary: Option<&CompactBoundaryRecord>,
+    config: &HistoryConfig,
+    claude_md_content: Option<&str>,
+) -> Result<Vec<serde_json::Value>> {
+    let messages = build_history_messages(stored, boundary, config, claude_md_content)?;
+    Ok(messages.into_iter().map(history_message_to_value).collect())
+}
+
+fn build_history_messages(
+    stored: &[StoredMessage],
+    boundary: Option<&CompactBoundaryRecord>,
+    config: &HistoryConfig,
+    claude_md_content: Option<&str>,
+) -> Result<Vec<HistoryChatMessage>> {
+    let transcript_boundary = compact_boundary_from_transcript(stored);
+    let merged_boundary = boundary.and_then(|sidecar| {
+        transcript_boundary
+            .as_ref()
+            .map(|t| merge_boundary(sidecar, t, stored))
+    });
+    let effective_boundary = merged_boundary
+        .as_ref()
+        .or(boundary)
+        .or(transcript_boundary.as_ref());
+    let relevant = apply_boundary(stored, effective_boundary);
 
     // PR2: 过滤掉 error.is_some() 的消息（避免错误气泡回灌给 LLM）。
     // 守卫规则等价 claude-code-best `isApiErrorMessage:true` 过滤。
     // spec §3.2。
-    let filtered: Vec<&StoredMessage> = relevant.iter().filter(|m| m.error.is_none()).collect();
-
-    let mut messages: Vec<ChatMessage> = filtered
+    let filtered: Vec<&StoredMessage> = relevant
         .iter()
-        .map(|message| stored_to_chat(message, config))
+        .filter(|m| m.error.is_none())
+        .filter(|m| effective_boundary.is_none() || !is_stored_compact_artifact(m))
         .collect();
 
-    messages = filter_invalid_tool_pairs(messages);
-    messages = reorder_tool_results_after_assistant(messages);
-    messages = trim_to_budget(messages, config);
-    messages = collapse_trailing_consecutive_user(messages);
+    let mut messages: Vec<HistoryChatMessage> = filtered
+        .iter()
+        .map(|message| stored_to_history_chat(message, config))
+        .collect();
 
-    if let Some(boundary) = boundary {
+    messages = filter_invalid_tool_pairs_history(messages);
+    messages = reorder_tool_results_after_assistant_history(messages);
+    messages = collapse_trailing_consecutive_user_history(messages);
+
+    if let Some(boundary) = effective_boundary {
         if !boundary.summary_text.is_empty() {
+            let context_text = if let Some(claude_md) = claude_md_content {
+                format!(
+                    "<context>\n{}\n</context>\n\n<project_context>\n{}\n</project_context>",
+                    boundary.summary_text, claude_md
+                )
+            } else {
+                format!("<context>\n{}\n</context>", boundary.summary_text)
+            };
             messages.insert(
                 0,
-                ChatMessage::text(
-                    "user",
-                    format!("<context>\n{}\n</context>", boundary.summary_text),
-                ),
+                HistoryChatMessage {
+                    id: None,
+                    conversation_id: Some(boundary.conversation_id.clone()),
+                    created_at: Some(boundary.created_at.clone()),
+                    chat: ChatMessage::text("user", context_text),
+                    subtype: None,
+                    compact_metadata: None,
+                    is_compact_summary: None,
+                },
             );
         }
     }
@@ -62,7 +121,147 @@ pub fn build_chat_history(
     Ok(messages)
 }
 
-fn apply_boundary<'a>(
+fn merge_boundary(
+    sidecar: &CompactBoundaryRecord,
+    transcript: &CompactBoundaryRecord,
+    stored: &[StoredMessage],
+) -> CompactBoundaryRecord {
+    let mut merged = sidecar.clone();
+
+    if merged.summary_text.trim().is_empty() {
+        merged.summary_text = transcript.summary_text.clone();
+    }
+    if merged
+        .tail_message_id
+        .as_deref()
+        .map_or(true, str::is_empty)
+        || !boundary_tail_exists(stored, merged.tail_message_id.as_deref())
+    {
+        merged.tail_message_id = transcript.tail_message_id.clone();
+    }
+    if merged.preserved_segment.is_none() {
+        merged.preserved_segment = transcript.preserved_segment.clone();
+    }
+    if merged.pre_tokens == 0 {
+        merged.pre_tokens = transcript.pre_tokens;
+    }
+    if merged.post_tokens == 0 {
+        merged.post_tokens = transcript.post_tokens;
+    }
+    if merged.messages_summarized == 0 {
+        merged.messages_summarized = transcript.messages_summarized;
+    }
+
+    merged
+}
+
+fn boundary_tail_exists(stored: &[StoredMessage], tail_id: Option<&str>) -> bool {
+    let Some(tail_id) = tail_id.filter(|value| !value.is_empty()) else {
+        return false;
+    };
+    stored.iter().any(|message| message.id == tail_id)
+}
+
+fn compact_boundary_from_transcript(stored: &[StoredMessage]) -> Option<CompactBoundaryRecord> {
+    let (index, boundary) = stored.iter().enumerate().rev().find(|(_, message)| {
+        message.role == "system" && message.subtype.as_deref() == Some("compact_boundary")
+    })?;
+
+    let metadata = boundary.compact_metadata.as_ref();
+    let trigger = metadata
+        .and_then(|value| metadata_str(value, &["trigger"]))
+        .map(|value| {
+            if value.eq_ignore_ascii_case("manual") {
+                CompactTrigger::Manual
+            } else {
+                CompactTrigger::Auto
+            }
+        })
+        .unwrap_or(CompactTrigger::Auto);
+
+    Some(CompactBoundaryRecord {
+        id: boundary.id.clone(),
+        conversation_id: boundary.conversation_id.clone(),
+        trigger,
+        pre_tokens: metadata
+            .and_then(|value| metadata_u64(value, &["preTokens", "pre_tokens"]))
+            .unwrap_or(0),
+        post_tokens: metadata
+            .and_then(|value| metadata_u64(value, &["postTokens", "post_tokens"]))
+            .unwrap_or(0),
+        messages_summarized: metadata
+            .and_then(|value| metadata_u64(value, &["messagesSummarized", "messages_summarized"]))
+            .unwrap_or(0) as usize,
+        created_at: boundary.created_at.clone(),
+        summary_text: compact_summary_text_after(stored, index),
+        tail_message_id: metadata
+            .and_then(|value| metadata_str(value, &["tailMessageId", "tail_message_id"]))
+            .filter(|value| !value.is_empty()),
+        preserved_segment: metadata.and_then(preserved_segment_from_metadata),
+    })
+}
+
+fn metadata_u64(metadata: &serde_json::Value, keys: &[&str]) -> Option<u64> {
+    keys.iter()
+        .find_map(|key| metadata.get(*key).and_then(serde_json::Value::as_u64))
+}
+
+fn metadata_str(metadata: &serde_json::Value, keys: &[&str]) -> Option<String> {
+    keys.iter().find_map(|key| {
+        metadata
+            .get(*key)
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string)
+    })
+}
+
+fn preserved_segment_from_metadata(metadata: &serde_json::Value) -> Option<PreservedSegment> {
+    let preserved = metadata.get("preservedSegment")?;
+    let first_preserved_message_id =
+        metadata_str(preserved, &["firstPreservedMessageId", "headUuid"])?;
+    let anchor_message_id = metadata_str(preserved, &["anchorMessageId", "anchorUuid"])?;
+    let tail_message_id =
+        metadata_str(preserved, &["tailMessageId", "tailUuid"]).unwrap_or_else(|| {
+            // Legacy lotus-app records used anchor_message_id as the tail.
+            anchor_message_id.clone()
+        });
+    let preserved_token_count =
+        metadata_u64(preserved, &["preservedTokenCount", "preserved_token_count"]).unwrap_or(0);
+
+    Some(PreservedSegment {
+        first_preserved_message_id,
+        anchor_message_id,
+        tail_message_id,
+        preserved_token_count,
+    })
+}
+
+fn compact_summary_text_after(stored: &[StoredMessage], boundary_index: usize) -> String {
+    stored
+        .iter()
+        .skip(boundary_index + 1)
+        .find(|message| message.is_compact_summary == Some(true))
+        .map(|message| unwrap_context_envelope(message.text()))
+        .unwrap_or_default()
+}
+
+fn unwrap_context_envelope(text: &str) -> String {
+    let trimmed = text.trim();
+    if let Some(rest) = trimmed.strip_prefix("<context>") {
+        if let Some((inner, _)) = rest.split_once("</context>") {
+            return inner.trim().to_string();
+        }
+    }
+    trimmed.to_string()
+}
+
+/// Return the slice of stored messages after the compact boundary.
+///
+/// When a boundary exists and its `tail_message_id` matches a stored message,
+/// returns `stored[index..]` (inclusive of the tail message). Falls back to
+/// the full `stored` slice when the boundary is missing or the tail ID doesn't
+/// match any stored message.
+pub fn apply_boundary<'a>(
     stored: &'a [StoredMessage],
     boundary: Option<&CompactBoundaryRecord>,
 ) -> &'a [StoredMessage] {
@@ -112,6 +311,63 @@ fn stored_to_chat(message: &StoredMessage, config: &HistoryConfig) -> ChatMessag
         thinking_blocks: extract_thinking_blocks(message),
         anthropic_multimodal_turn: None,
     }
+}
+
+fn is_stored_compact_artifact(message: &StoredMessage) -> bool {
+    message.is_compact_summary == Some(true)
+        || (message.role == "system" && message.subtype.as_deref() == Some("compact_boundary"))
+}
+
+fn stored_to_history_chat(message: &StoredMessage, config: &HistoryConfig) -> HistoryChatMessage {
+    HistoryChatMessage {
+        id: Some(message.id.clone()),
+        conversation_id: Some(message.conversation_id.clone()),
+        created_at: Some(message.created_at.clone()),
+        chat: stored_to_chat(message, config),
+        subtype: message.subtype.clone(),
+        compact_metadata: message.compact_metadata.clone(),
+        is_compact_summary: message.is_compact_summary,
+    }
+}
+
+fn history_message_to_value(message: HistoryChatMessage) -> serde_json::Value {
+    let mut value = serde_json::json!({
+        "role": message.chat.role,
+        "content": message.chat.content,
+    });
+    if let Some(id) = message.id {
+        value["id"] = id.into();
+    }
+    if let Some(conversation_id) = message.conversation_id {
+        value["conversationId"] = conversation_id.into();
+    }
+    if let Some(created_at) = message.created_at {
+        value["createdAt"] = created_at.into();
+    }
+    if let Some(tool_calls) = message.chat.tool_calls {
+        if let Ok(serialized) = serde_json::to_value(tool_calls) {
+            value["toolCalls"] = serialized;
+        }
+    }
+    if let Some(thinking_blocks) = message.chat.thinking_blocks {
+        value["thinkingBlocks"] = serde_json::Value::Array(thinking_blocks);
+    }
+    if let Some(tool_call_id) = message.chat.tool_call_id {
+        value["toolCallId"] = tool_call_id.into();
+    }
+    if let Some(name) = message.chat.name {
+        value["name"] = name.into();
+    }
+    if let Some(subtype) = message.subtype {
+        value["subtype"] = subtype.into();
+    }
+    if let Some(compact_metadata) = message.compact_metadata {
+        value["compactMetadata"] = compact_metadata;
+    }
+    if let Some(is_compact_summary) = message.is_compact_summary {
+        value["isCompactSummary"] = is_compact_summary.into();
+    }
+    value
 }
 
 fn extract_thinking_blocks(message: &StoredMessage) -> Option<Vec<serde_json::Value>> {
@@ -288,6 +544,7 @@ fn non_empty_trimmed(value: &str) -> Option<String> {
     (!trimmed.is_empty()).then(|| trimmed.to_string())
 }
 
+#[allow(dead_code)]
 fn filter_invalid_tool_pairs(messages: Vec<ChatMessage>) -> Vec<ChatMessage> {
     // Legacy messages (pre-schemaVersion) have toolCallId=None on tool messages.
     // Skip filtering entirely for such conversations to keep them visible.
@@ -353,6 +610,7 @@ fn filter_invalid_tool_pairs(messages: Vec<ChatMessage>) -> Vec<ChatMessage> {
 /// When we see an assistant message with tool_calls, emit it followed by the
 /// matching tools (preserving the assistant's tool_call order). Drop tools
 /// whose owning assistant cannot be found.
+#[allow(dead_code)]
 fn reorder_tool_results_after_assistant(messages: Vec<ChatMessage>) -> Vec<ChatMessage> {
     use std::collections::HashMap;
 
@@ -390,49 +648,6 @@ fn reorder_tool_results_after_assistant(messages: Vec<ChatMessage>) -> Vec<ChatM
     out
 }
 
-fn trim_to_budget(messages: Vec<ChatMessage>, config: &HistoryConfig) -> Vec<ChatMessage> {
-    let rounds = split_into_rounds(&messages);
-    let mut kept: Vec<&[ChatMessage]> = rounds.iter().map(|round| round.as_slice()).collect();
-
-    loop {
-        let total_chars: usize = kept
-            .iter()
-            .flat_map(|round| round.iter())
-            .map(|message| message.content.len())
-            .sum();
-        if kept.len() <= config.max_rounds && total_chars <= config.char_budget {
-            break;
-        }
-        if kept.is_empty() {
-            break;
-        }
-        kept.remove(0);
-    }
-
-    kept.into_iter()
-        .flat_map(|round| round.iter().cloned())
-        .collect()
-}
-
-fn split_into_rounds(messages: &[ChatMessage]) -> Vec<Vec<ChatMessage>> {
-    let mut rounds = Vec::new();
-    let mut current = Vec::new();
-
-    for message in messages {
-        if message.role == "user" && !current.is_empty() {
-            rounds.push(current);
-            current = Vec::new();
-        }
-        current.push(message.clone());
-    }
-
-    if !current.is_empty() {
-        rounds.push(current);
-    }
-
-    rounds
-}
-
 /// Defensive: collapse trailing consecutive `user` messages into a single one.
 ///
 /// Why: when a turn fails (LLM 4xx/5xx) the user message has already been
@@ -447,6 +662,7 @@ fn split_into_rounds(messages: &[ChatMessage]) -> Vec<Vec<ChatMessage>> {
 /// the model (it sees the same content); it just collapses N tail messages
 /// into one separated by "\n\n". Only TRAILING consecutive users are merged
 /// — earlier stretches are left intact.
+#[allow(dead_code)]
 fn collapse_trailing_consecutive_user(mut messages: Vec<ChatMessage>) -> Vec<ChatMessage> {
     if messages.len() < 2 {
         return messages;
@@ -474,6 +690,148 @@ fn collapse_trailing_consecutive_user(mut messages: Vec<ChatMessage>) -> Vec<Cha
         combined.push_str(&m.content);
     }
     messages.push(ChatMessage::text("user", combined));
+    messages
+}
+
+fn filter_invalid_tool_pairs_history(messages: Vec<HistoryChatMessage>) -> Vec<HistoryChatMessage> {
+    let has_legacy_tool_messages = messages
+        .iter()
+        .any(|m| m.chat.role == "tool" && m.chat.tool_call_id.is_none());
+    if has_legacy_tool_messages {
+        return messages;
+    }
+
+    let responded_ids: HashSet<String> = messages
+        .iter()
+        .filter(|message| message.chat.role == "tool")
+        .filter_map(|message| message.chat.tool_call_id.clone())
+        .collect();
+
+    let declared_ids: HashSet<String> = messages
+        .iter()
+        .filter(|message| message.chat.role == "assistant")
+        .flat_map(|message| {
+            message
+                .chat
+                .tool_calls
+                .iter()
+                .flatten()
+                .map(|tool_call| tool_call.id.clone())
+        })
+        .collect();
+
+    messages
+        .into_iter()
+        .filter(|message| {
+            if message.chat.role == "tool" {
+                return message
+                    .chat
+                    .tool_call_id
+                    .as_ref()
+                    .map(|id| declared_ids.contains(id))
+                    .unwrap_or(false);
+            }
+            true
+        })
+        .map(|mut message| {
+            if message.chat.role == "assistant" {
+                if let Some(tool_calls) = message.chat.tool_calls.clone() {
+                    let all_responded = tool_calls
+                        .iter()
+                        .all(|tool_call| responded_ids.contains(&tool_call.id));
+                    if !all_responded {
+                        message.chat.tool_calls = None;
+                    }
+                }
+            }
+            message
+        })
+        .collect()
+}
+
+fn reorder_tool_results_after_assistant_history(
+    messages: Vec<HistoryChatMessage>,
+) -> Vec<HistoryChatMessage> {
+    use std::collections::HashMap;
+
+    let mut tool_pool: HashMap<String, HistoryChatMessage> = HashMap::new();
+    let mut non_tool: Vec<HistoryChatMessage> = Vec::with_capacity(messages.len());
+
+    for message in messages {
+        if message.chat.role == "tool" {
+            if let Some(id) = message
+                .chat
+                .tool_call_id
+                .clone()
+                .filter(|value| !value.is_empty())
+            {
+                tool_pool.insert(id, message);
+            }
+            continue;
+        }
+        non_tool.push(message);
+    }
+
+    let mut out: Vec<HistoryChatMessage> = Vec::with_capacity(non_tool.len() + tool_pool.len());
+    for message in non_tool {
+        let tool_call_ids: Vec<String> = message
+            .chat
+            .tool_calls
+            .as_ref()
+            .map(|calls| calls.iter().map(|call| call.id.clone()).collect())
+            .unwrap_or_default();
+        out.push(message);
+        for id in tool_call_ids {
+            if let Some(tool_msg) = tool_pool.remove(&id) {
+                out.push(tool_msg);
+            }
+        }
+    }
+
+    out
+}
+
+fn collapse_trailing_consecutive_user_history(
+    mut messages: Vec<HistoryChatMessage>,
+) -> Vec<HistoryChatMessage> {
+    if messages.len() < 2 {
+        return messages;
+    }
+
+    let mut start = messages.len();
+    for (index, message) in messages.iter().enumerate().rev() {
+        if message.chat.role == "user" {
+            start = index;
+        } else {
+            break;
+        }
+    }
+
+    let run_len = messages.len() - start;
+    if run_len < 2 {
+        return messages;
+    }
+
+    let tail = messages.split_off(start);
+    let mut combined = String::new();
+    for (index, message) in tail.iter().enumerate() {
+        if index > 0 {
+            combined.push_str("\n\n");
+        }
+        combined.push_str(&message.chat.content);
+    }
+
+    let mut collapsed = tail.last().cloned().unwrap_or_else(|| HistoryChatMessage {
+        id: None,
+        conversation_id: None,
+        created_at: None,
+        chat: ChatMessage::text("user", ""),
+        subtype: None,
+        compact_metadata: None,
+        is_compact_summary: None,
+    });
+    collapsed.chat = ChatMessage::text("user", combined);
+    messages.push(collapsed);
     messages
 }
 
@@ -578,6 +936,9 @@ mod collapse_trailing_tests {
             })]),
             tool_call_id: None,
             name: None,
+            subtype: None,
+            compact_metadata: None,
+            is_compact_summary: None,
             run_id: None,
             schema_version: Some(2),
             sequence: None,
@@ -610,6 +971,9 @@ mod collapse_trailing_tests {
                 })]),
                 tool_call_id: None,
                 name: None,
+                subtype: None,
+                compact_metadata: None,
+                is_compact_summary: None,
                 run_id: None,
                 schema_version: Some(2),
                 sequence: None,
@@ -626,6 +990,9 @@ mod collapse_trailing_tests {
                 tool_calls: None,
                 tool_call_id: Some(String::new()),
                 name: Some(String::new()),
+                subtype: None,
+                compact_metadata: None,
+                is_compact_summary: None,
                 run_id: None,
                 schema_version: Some(2),
                 sequence: None,
@@ -635,7 +1002,7 @@ mod collapse_trailing_tests {
             },
         ];
 
-        let history = build_chat_history(&stored, None, &HistoryConfig::default()).unwrap();
+        let history = build_chat_history(&stored, None, &HistoryConfig::default(), None).unwrap();
 
         assert_eq!(history.len(), 1);
         assert_eq!(history[0].role, "assistant");
@@ -667,6 +1034,9 @@ mod tool_error_status_history_tests {
             tool_calls: None,
             tool_call_id: None,
             name: None,
+            subtype: None,
+            compact_metadata: None,
+            is_compact_summary: None,
             run_id: Some("run".to_string()),
             schema_version: None,
             sequence: None,

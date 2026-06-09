@@ -29,7 +29,6 @@ UI 文案对应：侧边栏入口「定时任务」，列表表头「执行频�
 
 **验收标准**
 
-应该看到：
 - Sheet 收起后，任务列表出现一行 `[data-aijia-agenda-row][data-aijia-agenda-title="早会提醒"]`
 - 目录 `~/.renlijia/users/$SCOPE/agenda/items/` 存在
 - 该目录下有恰好 1 个文件，文件名形如 `agenda-{uuid}.json`
@@ -47,7 +46,6 @@ UI 文案对应：侧边栏入口「定时任务」，列表表头「执行频�
 - 该任务行 `data-aijia-agenda-status` 属性值为 `"active"`
 - 跑测过程中**没有**新对话目录被创建（保存语义：到点才派活）
 
-不应该看到：
 - JSON 含 `personaId` / `organizerPersonaId` 旧字段名
 - 任务列表出现 2 条 `[data-aijia-agenda-title="早会提醒"]`
 - `agenda/items/` 目录下出现多个文件
@@ -73,7 +71,6 @@ UI 文案对应：侧边栏入口「定时任务」，列表表头「执行频�
 
 **验收标准**
 
-应该看到：
 - 「执行历史」Tab 至少 1 条记录
 - 目录 `~/.renlijia/users/$SCOPE/agenda/occurrences/$AGENDA/` 存在
 - 该目录下至少 1 个 `YYYY-MM.jsonl` 文件
@@ -89,7 +86,6 @@ UI 文案对应：侧边栏入口「定时任务」，列表表头「执行频�
   - `nextFireAt == null`
   - `status == "completed"`
 
-不应该看到：
 - `triggerSource == "manual_run_now"`（说明不是自然触发）
 - 出现 2 条以上 occurrence（一次性任务只该跑 1 次）
 - 任务 `status` 仍停在 `"active"`
@@ -115,7 +111,6 @@ UI 文案对应：侧边栏入口「定时任务」，列表表头「执行频�
 
 **验收标准**
 
-应该看到：
 - 「执行历史」Tab 至少 1 条记录
 - 目录 `~/.renlijia/users/$SCOPE/agenda/occurrences/$AGENDA/` 存在
 - 该目录下 `YYYY-MM.jsonl` 末条记录：
@@ -126,7 +121,6 @@ UI 文案对应：侧边栏入口「定时任务」，列表表头「执行频�
   - `nextFireAt == "$T_NEXT_BEFORE"`（手动触发不消耗自然调度）
   - `occurrenceCount == 0`（手动 run-now 不计入循环计数器）
 
-不应该看到：
 - `triggerSource == "scheduled"`
 - `nextFireAt` 字段值改变
 - `occurrenceCount` 增加
@@ -151,14 +145,12 @@ UI 文案对应：侧边栏入口「定时任务」，列表表头「执行频�
 
 **验收标准**
 
-应该看到：
 - 任务文件 `~/.renlijia/users/$SCOPE/agenda/items/$AGENDA` 中 `status == "paused"`
 - 目录 `~/.renlijia/users/$SCOPE/agenda/occurrences/$AGENDA/` 不存在 **或** 存在但其下任一 `YYYY-MM.jsonl` 的 occurrence 总条数 == 0
 - 「执行历史」Tab 显示「暂无执行记录」或对应空状态
 - 该任务文件 `occurrenceCount == 0`
 - 列表行 `[data-aijia-agenda-id="$AGENDA"]` 的 `data-aijia-agenda-status` 属性值为 `"paused"`
 
-不应该看到：
 - 任务 `status` 仍是 `"active"`
 - occurrences 目录下出现新 jsonl 记录
 - 「执行历史」Tab 显示有任何记录
@@ -184,14 +176,12 @@ UI 文案对应：侧边栏入口「定时任务」，列表表头「执行频�
 
 **验收标准**
 
-应该看到：
 - 任务文件 `status == "active"`、`nextFireAt` 不为 null
 - 目录 `~/.renlijia/users/$SCOPE/agenda/occurrences/$AGENDA/` 存在
 - 「执行历史」Tab 至少 1 条 `triggerSource == "scheduled"` 的记录
 - 最新一条 occurrence 的 `firedAt` 在「步骤 8 启用」之后
 - 该 occurrence 的 `status` 在 30 秒内收敛为 `"succeeded"` 或 `"failed"`
 
-不应该看到：
 - 暂停期间错过的那次触发被「补跑」——表现为出现 2 条以上 occurrence 且其中有 `firedAt` 在「步骤 8 启用」之前的
 - 任务 `status` 还停在 `"paused"`
 
@@ -216,7 +206,6 @@ UI 文案对应：侧边栏入口「定时任务」，列表表头「执行频�
 
 **验收标准**
 
-应该看到：
 - 主列表中没有 `[data-aijia-agenda-title="测试取消"]` 行
 - 任务文件 `~/.renlijia/users/$SCOPE/agenda/items/$AGENDA` **依然存在**（软删除不删盘）
 - 任务文件 `status == "cancelled"`，`nextFireAt == null`
@@ -224,7 +213,6 @@ UI 文案对应：侧边栏入口「定时任务」，列表表头「执行频�
 - 在原 jsonl 文件中没有任何 `firedAt` 在「步骤 7 取消」之后的新 occurrence
 - 「已取消」列表中出现 `[data-aijia-agenda-title="测试取消"]` 行，该行 `data-aijia-agenda-status` 属性值为 `"cancelled"`
 
-不应该看到：
 - 取消任务后 occurrences 目录被一起删了（应该等"永久删除"才删历史）
 - 取消后又出现了新的 occurrence 记录（说明 runner 没拦住）
 - 主列表里该任务没消失
@@ -250,13 +238,11 @@ UI 文案对应：侧边栏入口「定时任务」，列表表头「执行频�
 
 **验收标准**
 
-应该看到：
 - 「已取消」列表中**没有** `[data-aijia-agenda-title="测试永久删除"]` 行
 - 文件 `~/.renlijia/users/$SCOPE/agenda/items/$AGENDA` 不存在
 - 目录 / 文件 `~/.renlijia/users/$SCOPE/agenda/occurrences/$AGENDA`（或 `.../$AGENDA/`）不存在
 - 主列表中也不存在该任务
 
-不应该看到：
 - items 文件被删但 occurrences 目录仍残留
 - 任何「确认弹窗」自动 accept 没有用户实际确认
 - 该任务又出现在主列表 / 已取消列表里

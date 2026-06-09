@@ -19,7 +19,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use app_lib::runtime::event_bus::RuntimeEventBus;
+use app_lib::runtime::event_bus::{RuntimeEventBus, RuntimeEventSubscriber};
 use app_lib::runtime::identity::IdentityMapping;
 use app_lib::runtime::ids::RunId;
 use app_lib::runtime::query_engine::QueryEngine;
@@ -187,7 +187,7 @@ async fn runtime_chat_mainline_emits_tool_events_once() {
 
     let host = RecordingRuntimeHost::new();
     let bus = RuntimeEventBus::new();
-    let _adapter = Arc::new(TauriEventAdapter::new(host.clone()));
+    let _adapter: Arc<dyn RuntimeEventSubscriber> = Arc::new(TauriEventAdapter::new(host.clone()));
     bus.subscribe(_adapter.clone());
 
     let mapping = IdentityMapping::from_legacy_conversation_id("conv-event-count".to_string());

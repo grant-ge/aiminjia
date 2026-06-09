@@ -63,16 +63,24 @@ fn review_chat_transport_no_longer_reexports_legacy_chat_support() {
 #[test]
 fn review_send_message_clears_gateway_task_after_runtime_turn_before_title_generation() {
     let source = include_str!("../src/transport/tauri_commands/chat.rs");
-    let run_call = source
+    let start = source
+        .find("async fn run_chat_request_internal")
+        .expect("send_message should reserve and clear runs inside run_chat_request_internal");
+    let end = source[start..]
+        .find("pub fn flush_pending_message_writes")
+        .map(|offset| start + offset)
+        .expect("run_chat_request_internal should end before flush_pending_message_writes");
+    let body = &source[start..end];
+    let run_call = body
         .find("runtime.run_chat_request(request).await")
         .expect("send_message should run the runtime chat request");
-    let title_guard = source
+    let title_guard = body
         .find("if result.is_ok()")
         .expect("send_message should keep title generation behind result.is_ok()");
-    let reserve_call = source
+    let reserve_call = body
         .find(".set_busy_for_run(&conversation_id, run_id.clone())")
         .expect("send_message must reserve the gateway run before the turn starts");
-    let cleanup_call = source
+    let cleanup_call = body
         .find(".clear_task_for_run(&conversation_id, &run_id)")
         .expect("send_message must clear only the gateway run it owns after the turn exits");
 

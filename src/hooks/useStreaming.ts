@@ -58,6 +58,7 @@ import {
   onTaskStatusChanged,
   onTurnCompleted,
   onTurnStage,
+  onCompactCompleted,
   onTurnHeartbeat,
   onDiagnosticsEvent,
   uploadDiagnosticLogs,
@@ -79,6 +80,7 @@ import type {
   TaskStatusChangedPayload,
   TurnCompletedPayload,
   TurnStagePayload,
+  CompactCompletedPayload,
   TurnHeartbeatPayload,
   DiagnosticsEventPayload,
 } from '@/lib/tauri'
@@ -124,6 +126,37 @@ function looksLikeRouteError(text: string | undefined | null): boolean {
   if (!text) return false
   const lower = text.toLowerCase()
   return ROUTE_ERROR_HINTS.some((h) => lower.includes(h))
+}
+
+function compactBoundaryMessageFromEvent(payload: CompactCompletedPayload): Message {
+  const {
+    conversationId,
+    runId,
+    boundaryId,
+    trigger,
+    createdAt,
+    tailMessageId,
+    preTokens,
+    postTokens,
+    tokensSaved,
+    messagesSummarized,
+  } = payload
+  return {
+    id: boundaryId || `compact-boundary-${runId}`,
+    conversationId,
+    role: 'system',
+    createdAt: createdAt || new Date().toISOString(),
+    content: { text: 'Conversation compacted' },
+    subtype: 'compact_boundary',
+    compactMetadata: {
+      trigger: trigger ?? 'auto',
+      preTokens,
+      postTokens,
+      tokensSaved,
+      messagesSummarized,
+      ...(tailMessageId ? { tailMessageId } : {}),
+    },
+  }
 }
 
 /** Cooldown to prevent a thrashing model list reload if the user
@@ -833,6 +866,33 @@ export function useStreaming() {
         stage,
         stageStartedAtMs,
       )
+    }),
+  )
+
+  // --- compact:completed -------------------------------------------------
+  useTauriEvent(() =>
+    onCompactCompleted((payload: CompactCompletedPayload) => {
+      const { conversationId, trigger, preTokens, postTokens, tokensSaved, messagesSummarized } = payload
+      touchActivity(conversationId)
+      recordDiagnostic({
+        event: 'compact.completed.received',
+        conversationId,
+        payload: { trigger, preTokens, postTokens, tokensSaved, messagesSummarized },
+      })
+      useChatStore.getState().setLastCompactSummary(conversationId, {
+        preTokens,
+        postTokens,
+        tokensSaved,
+        messagesSummarized,
+        completedAt: Date.now(),
+      })
+      const store = useChatStore.getState()
+      if (conversationId === store.activeConversationId) {
+        const boundaryMessage = compactBoundaryMessageFromEvent(payload)
+        if (!store.messages.some((message) => message.id === boundaryMessage.id)) {
+          store.addMessage(boundaryMessage)
+        }
+      }
     }),
   )
 
