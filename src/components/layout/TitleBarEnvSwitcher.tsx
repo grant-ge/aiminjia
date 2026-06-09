@@ -12,18 +12,10 @@ import { useNotificationStore } from '@/stores/notificationStore'
 import { useUiStore } from '@/stores/uiStore'
 
 /**
- * Dev-only environment switcher living in the title bar (the green badge). The
- * single in-app entry for switching environments — there is no settings panel
- * for it. Each environment carries a `tenant` and an `ops` origin that move
- * together. Behavior depends on auth state:
- *
- * - Logged in: shown only off-production (production switches happen from the
- *   login screen). Switching logs the user out and bounces to login.
- * - Login screen: always shown, listing every environment including
- *   production, so the user can pick any. Switching just repoints the hosts.
- *
- * Rendered behind the title bar's `isDev` guard, so it's stripped from
- * production builds.
+ * Dev-only environment switcher living in the title bar (the green badge).
+ * Always visible in debug builds regardless of login state. Switching while
+ * logged in logs the user out and bounces to login. Stripped from release
+ * builds by the title bar's `isDev` guard.
  */
 export function TitleBarEnvSwitcher() {
   const { t } = useTranslation()
@@ -45,11 +37,7 @@ export function TitleBarEnvSwitcher() {
       })
   }, [])
 
-  // Not loaded → nothing. Once logged in, hide on production (switch it from
-  // the login screen). On the login screen, always show so production can be
-  // picked again.
   if (!state) return null
-  if (isLoggedIn && !state.isOverride) return null
 
   // Preset labels come from a stable backend key (test/pre/prod); translate
   // here so the switcher follows the UI language.
@@ -71,7 +59,6 @@ export function TitleBarEnvSwitcher() {
         closeSettings()
         void logout()
       } else {
-        // Login screen: already logged out, just repoint and refresh the badge.
         setState(next)
       }
     } catch (e) {
