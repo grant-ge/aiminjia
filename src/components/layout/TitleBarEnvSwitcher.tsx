@@ -32,8 +32,11 @@ export function TitleBarEnvSwitcher() {
         setEnvironmentCache({ tenant: s.currentTenant, ops: s.currentOps })
         setState(s)
       })
-      .catch(() => {
-        // Outside Tauri (vitest/jsdom) the command is unavailable.
+      .catch((e) => {
+        // Outside Tauri (vitest/jsdom) the command is unavailable; in a dev
+        // build a failure here is a real bug (e.g. command not registered),
+        // so surface it instead of swallowing it.
+        console.error('[TitleBarEnvSwitcher] getDevEnvironment failed:', e)
       })
   }, [])
 
