@@ -87,6 +87,7 @@ license: Internal
 | 项目记忆 | memory 工具 read / write / 注入 |
 | 搜索 | 全文搜索 / 文件搜索 |
 | 设置 | 应用设置项的优先级与持久化 |
+| Runtime | Runtime 诊断 / Node 与 Python 包复用 |
 | 技能 | 技能导入 / 启用 / 中心 |
 | 工作空间 | workspace 选择 / 切换 / 文件可见 |
 

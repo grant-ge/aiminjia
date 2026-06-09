@@ -71,16 +71,5 @@ fn validate_existing(deps: &WorkspaceDependencies) -> RuntimeDependencyResult<()
             });
         }
     }
-    for (field, path) in [
-        ("node_modules", &deps.node_modules),
-        ("python_site_packages", &deps.python_site_packages),
-    ] {
-        if !path.is_dir() {
-            return Err(RuntimeDependencyError::MissingExecutable {
-                field,
-                path: path.clone(),
-            });
-        }
-    }
     Ok(())
 }
