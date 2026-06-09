@@ -7,15 +7,25 @@ use app_lib::runtime::dependencies::{
 
 #[test]
 fn static_runtime_resolver_returns_absolute_workspace_dependencies() {
+    let tempdir = tempfile::tempdir().expect("tempdir");
+    let root = tempdir.path().join("renlijia");
+    let python = root.join("python/bin/python3");
+    let node = root.join("node/bin/node");
+    let npm = root.join("node/bin/npm");
+    let npx = root.join("node/bin/npx");
+    let uv = root.join("uv");
+    let uvx = root.join("uvx");
+    let node_modules = root.join("node/node_modules");
+    let python_site_packages = root.join("python/lib/python3.12/site-packages");
     let resolver = StaticRuntimeResolver::new(
-        PathBuf::from("/tmp/renlijia/python/bin/python3"),
-        PathBuf::from("/tmp/renlijia/node/bin/node"),
-        PathBuf::from("/tmp/renlijia/node/bin/npm"),
-        PathBuf::from("/tmp/renlijia/node/bin/npx"),
-        PathBuf::from("/tmp/renlijia/uv"),
-        PathBuf::from("/tmp/renlijia/uvx"),
-        PathBuf::from("/tmp/renlijia/node/node_modules"),
-        PathBuf::from("/tmp/renlijia/python/lib/python3.12/site-packages"),
+        python.clone(),
+        node.clone(),
+        npm.clone(),
+        npx.clone(),
+        uv.clone(),
+        uvx.clone(),
+        node_modules.clone(),
+        python_site_packages.clone(),
     );
 
     let dependencies = resolver
@@ -28,47 +38,31 @@ fn static_runtime_resolver_returns_absolute_workspace_dependencies() {
     assert!(dependencies.npx.is_absolute());
     assert!(dependencies.uv.is_absolute());
     assert!(dependencies.uvx.is_absolute());
-    assert_eq!(
-        dependencies.python,
-        PathBuf::from("/tmp/renlijia/python/bin/python3")
-    );
-    assert_eq!(
-        dependencies.node,
-        PathBuf::from("/tmp/renlijia/node/bin/node")
-    );
-    assert_eq!(
-        dependencies.npm,
-        PathBuf::from("/tmp/renlijia/node/bin/npm")
-    );
-    assert_eq!(
-        dependencies.npx,
-        PathBuf::from("/tmp/renlijia/node/bin/npx")
-    );
-    assert_eq!(dependencies.uv, PathBuf::from("/tmp/renlijia/uv"));
-    assert_eq!(dependencies.uvx, PathBuf::from("/tmp/renlijia/uvx"));
+    assert_eq!(dependencies.python, python);
+    assert_eq!(dependencies.node, node);
+    assert_eq!(dependencies.npm, npm);
+    assert_eq!(dependencies.npx, npx);
+    assert_eq!(dependencies.uv, uv);
+    assert_eq!(dependencies.uvx, uvx);
     assert!(dependencies.node_modules.is_absolute());
     assert!(dependencies.python_site_packages.is_absolute());
-    assert_eq!(
-        dependencies.node_modules,
-        PathBuf::from("/tmp/renlijia/node/node_modules")
-    );
-    assert_eq!(
-        dependencies.python_site_packages,
-        PathBuf::from("/tmp/renlijia/python/lib/python3.12/site-packages")
-    );
+    assert_eq!(dependencies.node_modules, node_modules);
+    assert_eq!(dependencies.python_site_packages, python_site_packages);
 }
 
 #[test]
 fn static_runtime_resolver_rejects_relative_workspace_dependency_paths() {
+    let tempdir = tempfile::tempdir().expect("tempdir");
+    let root = tempdir.path().join("renlijia");
     let resolver = StaticRuntimeResolver::new(
         PathBuf::from("python/bin/python3"),
-        PathBuf::from("/tmp/renlijia/node/bin/node"),
-        PathBuf::from("/tmp/renlijia/node/bin/npm"),
-        PathBuf::from("/tmp/renlijia/node/bin/npx"),
-        PathBuf::from("/tmp/renlijia/uv"),
-        PathBuf::from("/tmp/renlijia/uvx"),
-        PathBuf::from("/tmp/renlijia/node/node_modules"),
-        PathBuf::from("/tmp/renlijia/python/lib/python3.12/site-packages"),
+        root.join("node/bin/node"),
+        root.join("node/bin/npm"),
+        root.join("node/bin/npx"),
+        root.join("uv"),
+        root.join("uvx"),
+        root.join("node/node_modules"),
+        root.join("python/lib/python3.12/site-packages"),
     );
 
     let error = resolver.workspace_dependencies().unwrap_err();
@@ -84,15 +78,17 @@ fn static_runtime_resolver_rejects_relative_workspace_dependency_paths() {
 
 #[test]
 fn static_runtime_resolver_rejects_relative_node_modules_path() {
+    let tempdir = tempfile::tempdir().expect("tempdir");
+    let root = tempdir.path().join("renlijia");
     let resolver = StaticRuntimeResolver::new(
-        PathBuf::from("/tmp/renlijia/python/bin/python3"),
-        PathBuf::from("/tmp/renlijia/node/bin/node"),
-        PathBuf::from("/tmp/renlijia/node/bin/npm"),
-        PathBuf::from("/tmp/renlijia/node/bin/npx"),
-        PathBuf::from("/tmp/renlijia/uv"),
-        PathBuf::from("/tmp/renlijia/uvx"),
+        root.join("python/bin/python3"),
+        root.join("node/bin/node"),
+        root.join("node/bin/npm"),
+        root.join("node/bin/npx"),
+        root.join("uv"),
+        root.join("uvx"),
         PathBuf::from("node/node_modules"),
-        PathBuf::from("/tmp/renlijia/python/lib/python3.12/site-packages"),
+        root.join("python/lib/python3.12/site-packages"),
     );
 
     let error = resolver.workspace_dependencies().unwrap_err();
@@ -108,14 +104,16 @@ fn static_runtime_resolver_rejects_relative_node_modules_path() {
 
 #[test]
 fn static_runtime_resolver_rejects_relative_python_site_packages_path() {
+    let tempdir = tempfile::tempdir().expect("tempdir");
+    let root = tempdir.path().join("renlijia");
     let resolver = StaticRuntimeResolver::new(
-        PathBuf::from("/tmp/renlijia/python/bin/python3"),
-        PathBuf::from("/tmp/renlijia/node/bin/node"),
-        PathBuf::from("/tmp/renlijia/node/bin/npm"),
-        PathBuf::from("/tmp/renlijia/node/bin/npx"),
-        PathBuf::from("/tmp/renlijia/uv"),
-        PathBuf::from("/tmp/renlijia/uvx"),
-        PathBuf::from("/tmp/renlijia/node/node_modules"),
+        root.join("python/bin/python3"),
+        root.join("node/bin/node"),
+        root.join("node/bin/npm"),
+        root.join("node/bin/npx"),
+        root.join("uv"),
+        root.join("uvx"),
+        root.join("node/node_modules"),
         PathBuf::from("python/lib/python3.12/site-packages"),
     );
 
@@ -132,9 +130,10 @@ fn static_runtime_resolver_rejects_relative_python_site_packages_path() {
 
 #[test]
 fn workspace_dependencies_support_windows_runtime_layout() {
-    let install_dir = PathBuf::from(
-        "/tmp/renlijia-runtimes/renlijia-primary-runtime/versions/2026.04.26-runtime.1",
-    );
+    let tempdir = tempfile::tempdir().expect("tempdir");
+    let install_dir = tempdir
+        .path()
+        .join("renlijia-runtimes/renlijia-primary-runtime/versions/2026.04.26-runtime.1");
 
     let dependencies =
         app_lib::runtime::dependencies::WorkspaceDependencies::from_install_dir_for_platform(
@@ -161,9 +160,10 @@ fn workspace_dependencies_support_windows_runtime_layout() {
 
 #[test]
 fn workspace_dependencies_use_real_unix_package_directories() {
-    let install_dir = PathBuf::from(
-        "/tmp/renlijia-runtimes/renlijia-primary-runtime/versions/2026.04.26-runtime.1",
-    );
+    let tempdir = tempfile::tempdir().expect("tempdir");
+    let install_dir = tempdir
+        .path()
+        .join("renlijia-runtimes/renlijia-primary-runtime/versions/2026.04.26-runtime.1");
 
     let dependencies =
         app_lib::runtime::dependencies::WorkspaceDependencies::from_install_dir_for_platform(

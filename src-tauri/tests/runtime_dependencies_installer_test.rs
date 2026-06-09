@@ -3,7 +3,7 @@ use std::path::Path;
 
 use app_lib::runtime::dependencies::{
     InstalledRuntimeResolver, RuntimeDependencyError, RuntimeInstallError, RuntimeInstallPlan,
-    RuntimeInstaller, RuntimeLayout, RuntimePaths, RuntimeResolver,
+    RuntimeInstaller, RuntimeLayout, RuntimePaths, RuntimePlatform, RuntimeResolver,
 };
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -13,6 +13,14 @@ use zip::write::SimpleFileOptions;
 fn read_json(path: &Path) -> Value {
     let content = fs::read_to_string(path).expect("read json file");
     serde_json::from_str(&content).expect("valid json")
+}
+
+fn unix_fixture_installer(paths: RuntimePaths) -> RuntimeInstaller {
+    RuntimeInstaller::new_for_platform(paths, RuntimePlatform::LinuxX64)
+}
+
+fn unix_fixture_layout() -> RuntimeLayout {
+    RuntimeLayout::for_platform(RuntimePlatform::LinuxX64)
 }
 
 #[test]
@@ -286,13 +294,13 @@ fn install_manifest_contains_relative_runtime_paths_and_metadata() {
             .unwrap()
             .manifest_key()
     );
-    assert_eq!(manifest["paths"]["node"], "node/bin/node");
-    assert_eq!(manifest["paths"]["npm"], "node/bin/npm");
-    assert_eq!(manifest["paths"]["npx"], "node/bin/npx");
-    assert_eq!(manifest["paths"]["python"], "python/bin/python3");
-    assert_eq!(manifest["paths"]["uv"], "uv/bin/uv");
-    assert_eq!(manifest["paths"]["uvx"], "uv/bin/uvx");
     let layout = RuntimeLayout::current().expect("current layout");
+    assert_eq!(manifest["paths"]["node"], layout.node());
+    assert_eq!(manifest["paths"]["npm"], layout.npm());
+    assert_eq!(manifest["paths"]["npx"], layout.npx());
+    assert_eq!(manifest["paths"]["python"], layout.python());
+    assert_eq!(manifest["paths"]["uv"], layout.uv());
+    assert_eq!(manifest["paths"]["uvx"], layout.uvx());
     assert_eq!(manifest["paths"]["nodeModules"], layout.node_modules());
     assert_eq!(
         manifest["paths"]["pythonSitePackages"],
@@ -510,7 +518,7 @@ fn installs_tar_gz_artifact_with_symlinked_runtime_bins() {
     let artifact = tempdir.path().join("runtime-symlinked.tar.gz");
     write_runtime_tar_gz_with_symlinked_bins(&artifact);
 
-    let result = RuntimeInstaller::new(paths.clone())
+    let result = unix_fixture_installer(paths.clone())
         .install_from_local_archive(RuntimeInstallPlan::already_local("2026.05.19"), &artifact)
         .expect("installer should preserve symlinked runtime bins");
 
@@ -534,7 +542,7 @@ fn installs_from_tar_gz_artifact_and_updates_current_pointer() {
     let artifact = tempdir.path().join("runtime.tar.gz");
     write_runtime_tar_gz(&artifact);
 
-    let result = RuntimeInstaller::new(paths.clone())
+    let result = unix_fixture_installer(paths.clone())
         .install_from_local_archive(RuntimeInstallPlan::already_local("2026.05.17"), &artifact)
         .expect("installer should extract tar.gz artifact");
 
@@ -557,19 +565,19 @@ fn archive_install_creates_runtime_package_directories_when_missing() {
     let artifact = tempdir.path().join("runtime-no-package-dirs.tar.gz");
     write_runtime_tar_gz_without_package_dirs(&artifact);
 
-    let result = RuntimeInstaller::new(paths.clone())
+    let result = unix_fixture_installer(paths.clone())
         .install_from_local_archive(RuntimeInstallPlan::already_local("2026.05.20"), &artifact)
         .expect("installer should not depend on archive package dirs");
 
-    let layout = RuntimeLayout::current().expect("current layout");
+    let layout = unix_fixture_layout();
     assert!(result.install_dir.join(layout.node_modules()).is_dir());
     assert!(result
         .install_dir
         .join(layout.python_site_packages())
         .is_dir());
-    InstalledRuntimeResolver::new(paths.bundle_root())
-        .workspace_dependencies()
-        .expect("installed archive should resolve after package dirs are created");
+    for relative in unix_fixture_layout().executable_paths() {
+        assert!(result.install_dir.join(relative).is_file());
+    }
 }
 
 #[test]
@@ -599,7 +607,7 @@ fn installs_from_verified_zip_artifact_and_updates_current_pointer() {
     let artifact = tempdir.path().join("runtime.zip");
     write_runtime_zip(&artifact);
 
-    let installer = RuntimeInstaller::new(paths.clone());
+    let installer = unix_fixture_installer(paths.clone());
     let result = installer
         .install_from_local_archive(RuntimeInstallPlan::already_local("2026.05.07"), &artifact)
         .expect("installer should extract verified artifact");
@@ -610,13 +618,14 @@ fn installs_from_verified_zip_artifact_and_updates_current_pointer() {
         "versions/2026.05.07"
     );
     assert!(result.install_dir.join("node/bin/node").is_file());
-    let layout = RuntimeLayout::current().expect("current layout");
+    let layout = unix_fixture_layout();
     assert!(result
         .install_dir
         .join(layout.python_site_packages())
         .is_dir());
 }
 
+#[cfg(not(windows))]
 fn write_runtime_zip_with_failing_tool(path: &Path, failing_entry: &str) {
     let file = fs::File::create(path).expect("create runtime zip");
     let mut zip = zip::ZipWriter::new(file);
@@ -644,6 +653,7 @@ fn write_runtime_zip_with_failing_tool(path: &Path, failing_entry: &str) {
     zip.finish().expect("finish zip");
 }
 
+#[cfg(not(windows))]
 #[test]
 fn rejects_zip_artifact_when_staging_smoke_test_fails_before_switching_current() {
     let tempdir = tempdir().expect("tempdir");
@@ -702,6 +712,7 @@ fn rejects_zip_artifact_with_path_traversal_entry() {
     assert!(!paths.current_dir().exists());
 }
 
+#[cfg(not(windows))]
 fn write_windows_runtime_zip(path: &Path) {
     let file = fs::File::create(path).expect("create windows runtime zip");
     let mut zip = zip::ZipWriter::new(file);
@@ -728,6 +739,7 @@ fn write_windows_runtime_zip(path: &Path) {
     zip.finish().expect("finish zip");
 }
 
+#[cfg(not(windows))]
 #[test]
 fn installs_windows_zip_artifact_with_platform_layout_without_cross_platform_smoke() {
     let tempdir = tempdir().expect("tempdir");
@@ -793,7 +805,7 @@ fn installs_from_zip_artifact_only_when_sha256_matches() {
     write_runtime_zip(&artifact);
     let expected = sha256_hex(&artifact);
 
-    RuntimeInstaller::new(paths.clone())
+    unix_fixture_installer(paths.clone())
         .install_from_verified_archive(
             RuntimeInstallPlan::already_local("2026.05.09"),
             &artifact,
