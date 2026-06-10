@@ -99,7 +99,7 @@ pub struct AppSettings {
 }
 
 fn default_font_scale() -> String {
-    "small".to_string()
+    "medium".to_string()
 }
 
 impl Default for AppSettings {
@@ -240,8 +240,8 @@ mod tests {
     }
 
     #[test]
-    fn defaults_font_scale_to_small() {
-        assert_eq!(AppSettings::default().font_scale, "small");
+    fn defaults_font_scale_to_medium() {
+        assert_eq!(AppSettings::default().font_scale, "medium");
     }
 
     #[test]
