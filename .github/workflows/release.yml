@@ -3,9 +3,14 @@ name: Release
 # Official Tauri cross-platform build, per
 # https://www.tauri.net.cn/53.html (跨平台编译).
 #
-# Builds the app for macOS (universal: Intel + Apple Silicon) and
-# Windows in one matrix run via tauri-apps/tauri-action, and creates
-# a draft GitHub Release with the installers attached.
+# Three parallel runners (no universal — split for speed):
+#   macos-14         -> Apple Silicon (darwin-arm64)
+#   macos-13         -> Intel         (darwin-x64)
+#   windows-latest   -> Windows x64
+#
+# Each runner builds its NATIVE arch (no --target / cross-compile), so
+# each only needs the single matching bundled runtime. macOS min system
+# version pinned to 10.15.
 
 on:
   workflow_dispatch:
@@ -20,19 +25,24 @@ permissions:
 
 jobs:
   release:
-    name: Build (${{ matrix.platform }})
+    name: Build (${{ matrix.label }})
     runs-on: ${{ matrix.platform }}
     timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: macos-latest
-            args: '--target universal-apple-darwin'
-            rust_targets: 'aarch64-apple-darwin,x86_64-apple-darwin'
+          - platform: macos-14
+            label: macos-arm64
+            os: macos
+            runtime_plat: darwin-arm64
+          - platform: macos-13
+            label: macos-x64
+            os: macos
+            runtime_plat: darwin-x64
           - platform: windows-latest
-            args: ''
-            rust_targets: ''
+            label: windows-x64
+            os: windows
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -50,13 +60,12 @@ jobs:
 
       - name: Rust setup
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.rust_targets }}
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
           workspaces: './src-tauri -> target'
+          key: ${{ matrix.label }}
 
       - name: Install frontend dependencies
         run: pnpm install
@@ -68,28 +77,26 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .runtime-cache
-          key: runtime-sources-v1-${{ runner.os }}-${{ hashFiles('scripts/runtime-sources.json') }}
-          restore-keys: runtime-sources-v1-${{ runner.os }}-
+          key: runtime-sources-v1-${{ matrix.label }}-${{ hashFiles('scripts/runtime-sources.json') }}
+          restore-keys: runtime-sources-v1-${{ matrix.label }}-
 
-      - name: Prepare bundled runtime (macOS — both arches for universal)
-        if: matrix.platform == 'macos-latest'
-        run: |
-          PLATFORM=darwin-arm64 bash scripts/prepare-bundled-runtime.sh
-          PLATFORM=darwin-x64  bash scripts/prepare-bundled-runtime.sh
+      - name: Prepare bundled runtime (macOS)
+        if: matrix.os == 'macos'
+        run: PLATFORM=${{ matrix.runtime_plat }} bash scripts/prepare-bundled-runtime.sh
 
       - name: Prepare bundled runtime (Windows)
-        if: matrix.platform == 'windows-latest'
+        if: matrix.os == 'windows'
         shell: pwsh
         run: .\scripts\prepare-bundled-runtime.ps1
 
       - name: Setup dws CLI (macOS)
-        if: matrix.platform == 'macos-latest'
+        if: matrix.os == 'macos'
         env:
           DWS_NONINTERACTIVE: '1'
         run: bash scripts/setup-dws.sh
 
       - name: Setup dws CLI (Windows)
-        if: matrix.platform == 'windows-latest'
+        if: matrix.os == 'windows'
         shell: pwsh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -114,4 +121,3 @@ jobs:
           releaseBody: 'See the assets to download and install this version.'
           releaseDraft: true
           prerelease: false
-          args: ${{ matrix.args }}
