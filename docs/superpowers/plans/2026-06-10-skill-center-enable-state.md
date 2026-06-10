@@ -1173,7 +1173,28 @@ When `local_state.installed` is empty on first login, only required builtin pack
 
 Do not call `clear_override` for required builtin sync installs or updates. Required builtins are default enabled because absent disabled override means enabled; if the user previously disabled `dingtalk-workspace`, sync must preserve that local choice.
 
-- [ ] **Step 6: Ensure marketplace install refreshes registry and enables the skill**
+- [ ] **Step 6: Define sync result and missing-required behavior**
+
+Keep `sync_builtin_skills` as the login-time command name for compatibility with `AuthGate`, but document and implement the new semantics:
+
+- `installed`: required builtin packages installed for the first time, plus already-installed packages that were updated.
+- `skipped`: targeted packages that could not be installed or updated. This can include a required builtin id that the server did not return or failed to download.
+- Non-required remote packages that are merely visible in the market are not counted as skipped; otherwise first login would log hundreds of harmless skips.
+
+If a required builtin id is not present in `/v1/skill-packages`, append that id to `skipped` and log a warning:
+
+```rust
+for required_id in &required_builtin_ids {
+    if !list.data.iter().any(|item| item.plugin_id == *required_id) {
+        report.skipped.push(required_id.clone());
+        log::warn!("[skill-sync] required builtin '{}' missing from remote package list", required_id);
+    }
+}
+```
+
+Do not block login if a required builtin is missing or fails to download. The next login sync or manual update can retry.
+
+- [ ] **Step 7: Ensure marketplace install refreshes registry and enables the skill**
 
 In `install_marketplace_skill`, after extraction succeeds:
 
@@ -1190,7 +1211,7 @@ Return a message that no longer says restart is required:
 Ok(format!("Installed '{}'", plugin_id))
 ```
 
-- [ ] **Step 7: Run Task 4 tests**
+- [ ] **Step 8: Run Task 4 tests**
 
 Run:
 
@@ -1204,7 +1225,7 @@ cargo check
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit Task 4**
+- [ ] **Step 9: Commit Task 4**
 
 ```powershell
 git add src-tauri/src/plugin/skill/global_sync.rs src-tauri/src/plugin/skill/sync_command.rs src-tauri/src/plugin/skill/required_builtin.rs src-tauri/src/plugin/skill/mod.rs src-tauri/src/commands/skill_management.rs

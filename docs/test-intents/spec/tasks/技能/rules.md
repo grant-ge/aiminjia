@@ -17,6 +17,7 @@
 - 场景 7：登录同步只自动安装必需内置技能，必需内置技能默认开启
 - 场景 8：用户关闭必需内置技能后，后续同步不能自动重新开启
 - 场景 9：市场技能未手动添加前，不进入聊天入口、catalog 或 `Skill` 工具可用集合
+- 场景 10：市场技能手动添加后，默认开启并进入聊天入口、catalog 和 `Skill` 工具可用集合
 
 ---
 
@@ -673,3 +674,33 @@
 - `~/.renlijia/users/{scope}/skills/$MARKET_ONLY_ID/SKILL.md` 不存在
 - `$CONV_ID/messages.jsonl` 中不存在 `role == "tool"` 且内容包含 `$MARKET_ONLY_ID` 的 SKILL.md body 文本
 - 如果 `$CONV_ID/messages.jsonl` 中出现参数包含 `$MARKET_ONLY_ID` 的 `Skill` 调用，紧随其后的 tool record `isError == true`
+
+---
+
+## 意图 22：添加市场技能后，聊天可使用
+
+**场景**
+市场里的企业/平台技能默认不可用。用户点击某个市场技能卡片右上角「+」完成添加后，该技能进入已安装集合并默认开启，随后聊天输入框可以选择它，新对话也可以通过 `Skill` 工具加载它。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
+3. 打开技能中心：`tauri-pilot aijia skill-center-open`
+4. 切到「市场」页，读取市场列表快照：`tauri-pilot aijia skill-market-list --json`，选择一个 `installed == false` 的技能，记为 `$MARKET_INSTALL_ID`
+5. 点击 `$MARKET_INSTALL_ID` 卡片右上角「+」，等待安装完成
+6. 读取技能中心列表快照：`tauri-pilot aijia skill-center-list --json`，记为 `$SKILL_LIST`
+7. 返回首页并新建空对话：`tauri-pilot aijia new-task`，记当前会话为 `$CONV_ID`
+8. 打开聊天输入框的技能选择入口，读取可选技能快照，记为 `$CHAT_SKILLS`
+9. 在输入框输入：`请使用 $MARKET_INSTALL_ID 技能回应一下。`
+10. `tauri-pilot aijia send` + `tauri-pilot aijia wait-reply --timeout 90`
+11. 读取 `$CONV_ID/messages.jsonl`
+
+**验收标准**
+- 市场页 `$MARKET_INSTALL_ID` 卡片展示「已添加」
+- `~/.renlijia/users/{scope}/skills/$MARKET_INSTALL_ID/SKILL.md` 存在
+- `$SKILL_LIST` 中存在 `id == $MARKET_INSTALL_ID` 的技能项
+- `$SKILL_LIST` 中 `$MARKET_INSTALL_ID.enabled == true`
+- 如果 `~/.renlijia/users/{scope}/skillsConfig.json` 存在，文件中 `disabledSkillIds` 不包含 `$MARKET_INSTALL_ID`
+- `$CHAT_SKILLS` 中存在 `id == $MARKET_INSTALL_ID` 的技能项
+- `$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "Skill"` 且参数包含 `$MARKET_INSTALL_ID` 的调用
+- `$CONV_ID/messages.jsonl` 中不存在 `Skill($MARKET_INSTALL_ID)` 返回 `Unknown or unavailable skill` / `not found` / `已关闭`

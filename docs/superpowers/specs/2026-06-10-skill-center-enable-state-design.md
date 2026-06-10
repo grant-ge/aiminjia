@@ -69,6 +69,17 @@
 4. 安装或更新后刷新 `SkillRegistry`。
 5. 不改写用户的 disabled override。
 
+第一阶段的官方包来源沿用现有远端技能包链路：`sync_builtin_skills` 调用 `/v1/skill-packages`，只从返回列表中筛选 `plugin_id` 命中 allowlist 的包进行自动安装。前端不硬编码安装逻辑，`AuthGate` 只负责登录后触发同步命令。
+
+如果远端列表没有返回某个必需内置技能，或下载失败：
+
+- 不安装同名以外的替代包，避免把市场技能误当内置。
+- 不阻塞登录和主应用启动。
+- 在同步结果和日志里记录该 id 为 skipped / missing，下一次登录同步或用户点击“更新技能”时重试。
+- 该技能不会进入内置列表、聊天入口或 model catalog，直到真正安装成功。
+
+后续如果产品要求离线首次登录也具备这些技能，可以增加 `src-tauri/resources/required-skills/<id>/` 作为 bundled fallback。但 fallback 也必须遵守同一套规则：只安装 allowlist id，不清除用户 disabled override。
+
 因此新用户第一次初始化时，这些必需内置技能会自动安装并默认开启；如果用户后来手动关闭，后续登录、同步、更新都不能偷偷重新打开。
 
 关闭内置技能后：
