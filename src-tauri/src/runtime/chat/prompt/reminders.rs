@@ -19,6 +19,16 @@ impl ReminderBuilder {
         }
     }
 
+    pub fn date_time_message(
+        today_cn: &str,
+        today_iso: &str,
+        local_time_hms: &str,
+    ) -> serde_json::Value {
+        Self::system_reminder_user_message(format!(
+            "当前本地时间是 {today_cn} {local_time_hms}（{today_iso} {local_time_hms}）。"
+        ))
+    }
+
     pub fn system_reminder_user_message(content: impl AsRef<str>) -> serde_json::Value {
         serde_json::json!({
             "role": "user",

@@ -748,8 +748,13 @@ async fn driver_s4_injects_system_reminder_as_first_user_message() {
         content
     );
     assert!(
-        content.contains("今天是"),
-        "system-reminder must contain date info, got: {}",
+        content.contains("当前本地时间是"),
+        "system-reminder must contain local date/time info, got: {}",
+        content
+    );
+    assert!(
+        content.matches(':').count() >= 2,
+        "system-reminder must include HH:MM:SS style time, got: {}",
         content
     );
     assert!(
