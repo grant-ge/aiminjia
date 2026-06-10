@@ -285,6 +285,12 @@ export interface GeneratedFile {
   title?: string
   fileName: string
   filePath: string
+  storageScope?: 'conversation' | 'workspace' | string
+  storageRoot?: {
+    kind: string
+    path: string
+    displayName?: string
+  }
   fileType?: GeneratedFileType
   fileSize: number
   category: 'report' | 'chart' | 'data' | 'analysis' | 'script' | 'temp' | string

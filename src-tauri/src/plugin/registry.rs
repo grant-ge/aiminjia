@@ -1007,6 +1007,7 @@ impl ToolRegistry {
                     storage: ctx.storage.clone(),
                     file_manager: ctx.file_manager.clone(),
                     workspace_path: ctx.workspace_path.clone(),
+                    authorized_workspace: ctx.authorized_workspace.clone(),
                     conversation_id: ctx.conversation_id.clone(),
                     run_id: ctx
                         .run_id

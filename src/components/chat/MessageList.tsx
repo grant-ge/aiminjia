@@ -39,6 +39,8 @@ import {
   type RenderTurnBlock,
 } from "@/hooks/useTurnRenderModel";
 import {
+  isGeneratedFileAvailable,
+  isLocalFileAvailable,
   openGeneratedFile,
   openLocalFile,
   revealFileInFolder,
@@ -46,6 +48,41 @@ import {
 import { useConversationTeamState, useTeamStore } from "@/stores/teamStore";
 
 type FileActionKind = "preview" | "open" | "download" | "reveal";
+
+type GeneratedFileCardProps = Parameters<typeof GeneratedFileCard>[0];
+
+function AvailableGeneratedFileCard({
+  file,
+  ...cardProps
+}: GeneratedFileCardProps & { file: RenderGeneratedFile }) {
+  const [isAvailable, setIsAvailable] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setIsAvailable(false);
+    const availability = file.id.startsWith("artifact-")
+      ? (file.filePath ? isLocalFileAvailable(file.filePath) : Promise.resolve(false))
+      : (
+          file.conversationId
+            ? isGeneratedFileAvailable(file.id, file.conversationId)
+            : Promise.resolve(false)
+        );
+
+    void availability
+      .then((available) => {
+        if (!cancelled) setIsAvailable(available);
+      })
+      .catch(() => {
+        if (!cancelled) setIsAvailable(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [file.id, file.conversationId, file.filePath]);
+
+  if (!isAvailable) return null;
+  return <GeneratedFileCard {...cardProps} />;
+}
 
 // Display name for IM platforms when the inbound conversation's sender is
 // rendered as the user-side identity. Keep in sync with AppSidebar's
@@ -433,7 +470,7 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
   const handleReveal = async (file: RenderGeneratedFile) => {
     try {
       if (file.id.startsWith("artifact-") && file.filePath) {
-        const parent = file.filePath.replace(/\/[^/]+$/, "") || "/";
+        const parent = file.filePath.replace(/[/\\][^/\\]+$/, "") || "/";
         await openLocalFile(parent);
         return;
       }
@@ -570,8 +607,9 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
                       <AiBubble key={s.id} message={s.message} />
                     ))}
                     {t.generatedFiles.map((f) => (
-                      <GeneratedFileCard
+                      <AvailableGeneratedFileCard
                         key={f.id}
+                        file={f}
                         title={f.title}
                         sub={f.sub}
                         appName={
@@ -683,8 +721,9 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
       if (b.kind === "generatedFile") {
         const f = b.file;
         return (
-          <GeneratedFileCard
+          <AvailableGeneratedFileCard
             key={f.id}
+            file={f}
             title={f.title}
             sub={f.sub}
             appName={f.primaryAction === "preview" ? "预览" : f.appName}

@@ -9,6 +9,8 @@ vi.mock('@/lib/tauri', async () => {
   const actual = await vi.importActual<typeof import('@/lib/tauri')>('@/lib/tauri')
   return {
     ...actual,
+    isGeneratedFileAvailable: vi.fn().mockResolvedValue(true),
+    isLocalFileAvailable: vi.fn().mockResolvedValue(true),
     openGeneratedFile: openGeneratedFileMock,
     revealFileInFolder: vi.fn().mockResolvedValue(undefined),
     getTeamOverview: vi.fn().mockResolvedValue({ conversationId: '', teams: [] }),
@@ -82,10 +84,10 @@ describe('MessageList generated files', () => {
     vi.clearAllMocks()
   })
 
-  it('opens generated files using the file id and owning conversation id', () => {
+  it('opens generated files using the file id and owning conversation id', async () => {
     render(<MessageList />)
 
-    fireEvent.click(screen.getByRole('button', { name: '打开 mock-coverage-report.html' }))
+    fireEvent.click(await screen.findByRole('button', { name: '打开 mock-coverage-report.html' }))
 
     expect(openGeneratedFileMock).toHaveBeenCalledWith(
       'gf-report-html-001',
@@ -93,10 +95,10 @@ describe('MessageList generated files', () => {
     )
   })
 
-  it('previews markdown generated files from the primary action', () => {
+  it('previews markdown generated files from the primary action', async () => {
     render(<MessageList />)
 
-    fireEvent.click(screen.getByRole('button', { name: '预览 mock-markdown-brief.md' }))
+    fireEvent.click(await screen.findByRole('button', { name: '预览 mock-markdown-brief.md' }))
 
     expect(openPreviewMock).toHaveBeenCalledWith({
       fileId: 'gf-report-md-001',
@@ -106,10 +108,10 @@ describe('MessageList generated files', () => {
     })
   })
 
-  it('previews image generated files from the primary action without opening externally', () => {
+  it('previews image generated files from the primary action without opening externally', async () => {
     render(<MessageList />)
 
-    fireEvent.click(screen.getByRole('button', { name: '预览 mock-status-chart.png' }))
+    fireEvent.click(await screen.findByRole('button', { name: '预览 mock-status-chart.png' }))
 
     expect(openPreviewMock).toHaveBeenCalledWith({
       fileId: 'gf-chart-png-001',

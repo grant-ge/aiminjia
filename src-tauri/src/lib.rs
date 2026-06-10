@@ -997,6 +997,8 @@ pub fn run() {
             file::save_clipboard_image_to_workspace_staging,
             file::open_generated_file,
             file::reveal_file_in_folder,
+            file::is_generated_file_available,
+            file::is_local_file_available,
             file::save_generated_file_as,
             file::get_file_preview,
             file::get_local_file_preview,

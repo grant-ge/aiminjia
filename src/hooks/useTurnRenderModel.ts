@@ -730,6 +730,7 @@ export function buildTurnsFromMessages(
       }
       if (m.content.text) {
         const { cleanedText, files } = parseArtifactMarks(m.content.text);
+        const artifactFiles = m.content.generatedFiles?.length ? [] : files;
         const displayText = cleanedText.trim();
         if (displayText) {
           const segment: RenderAiSegment = {
@@ -743,7 +744,7 @@ export function buildTurnsFromMessages(
           current.aiSegments.push(segment);
           current.blocks.push({ kind: "assistantText", id: m.id, segment });
         }
-        for (const f of files) {
+        for (const f of artifactFiles) {
           const file = normalizeGeneratedFile(
             {
               id: `artifact-${m.id}-${f.fileName}`,
