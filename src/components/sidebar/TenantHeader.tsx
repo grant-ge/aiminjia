@@ -28,7 +28,7 @@ export function TenantHeader({
       tabIndex={0}
       onClick={onClick}
       onKeyDown={handleKeyDown}
-      className="mb-2 flex w-full items-center justify-between gap-2 rounded-md px-2.5 text-left transition-colors"
+      className="my-2 flex w-full items-center justify-between gap-2 rounded-md px-2.5 text-left transition-colors"
     >
       <div className="flex min-w-0 items-center gap-2">
         <div
