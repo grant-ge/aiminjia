@@ -12,10 +12,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 20
 
@@ -42,7 +42,7 @@ jobs:
       # `resource path 'resources/runtime' doesn't exist`. Mirror what
       # build-desktop.yml does so PR check matches release build.
       - name: Cache bundled runtime sources
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .runtime-cache
           key: runtime-sources-v1-${{ hashFiles('scripts/runtime-sources.json') }}

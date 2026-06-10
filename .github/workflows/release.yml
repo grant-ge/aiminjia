@@ -45,7 +45,7 @@ jobs:
             os: windows
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -53,7 +53,7 @@ jobs:
           version: 9
 
       - name: Sync node version and setup cache
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 20
           cache: pnpm
@@ -79,7 +79,7 @@ jobs:
       # bundle resources, so src-tauri/build.rs FAILS AT COMPILE TIME if these
       # don't exist on disk. These prep steps must run BEFORE tauri-action.
       - name: Cache bundled runtime sources
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .runtime-cache
           key: runtime-sources-v1-${{ matrix.label }}-${{ hashFiles('scripts/runtime-sources.json') }}
@@ -132,7 +132,7 @@ jobs:
       # get a draft GitHub Release via tauri-action above.
       - name: Upload macOS artifacts
         if: matrix.os == 'macos' && always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.label }}-app
           path: |
@@ -143,7 +143,7 @@ jobs:
 
       - name: Upload Windows artifacts
         if: matrix.os == 'windows' && always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.label }}-installer
           path: src-tauri/target/release/bundle/nsis/*.exe
