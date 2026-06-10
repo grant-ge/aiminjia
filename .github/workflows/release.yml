@@ -137,24 +137,42 @@ jobs:
         if: env.HAS_TAURI_KEY != 'true'
         run: node scripts/ci-disable-updater-signing.mjs
 
-      - name: Build the app
+      # Two build variants. The Apple signing env vars must be COMPLETELY
+      # ABSENT (not just empty) when no cert is configured: the tauri bundler
+      # triggers codesign whenever APPLE_CERTIFICATE *exists* in the env, even
+      # as an empty string, then fails on `security import` of an empty cert.
+      # GitHub Actions can't unset an env via expression, so we split steps.
+      - name: Build the app (signed)
+        if: env.HAS_APPLE_CERT == 'true'
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MACOSX_DEPLOYMENT_TARGET: '10.15'
-          # Tauri updater (Ed25519) signing key. Empty when not configured.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # Apple codesign + notarization. Only injected when APPLE_CERTIFICATE
-          # is configured; otherwise all empty so tauri-action skips signing
-          # entirely (a half-set with APPLE_ID but no cert makes it try to
-          # codesign an empty cert and fail the whole build).
-          APPLE_CERTIFICATE: ${{ env.HAS_APPLE_CERT == 'true' && secrets.APPLE_CERTIFICATE || '' }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ env.HAS_APPLE_CERT == 'true' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
-          APPLE_SIGNING_IDENTITY: ${{ env.HAS_APPLE_CERT == 'true' && secrets.APPLE_SIGNING_IDENTITY || '' }}
-          APPLE_ID: ${{ env.HAS_APPLE_CERT == 'true' && secrets.APPLE_ID || '' }}
-          APPLE_PASSWORD: ${{ env.HAS_APPLE_CERT == 'true' && secrets.APPLE_PASSWORD || '' }}
-          APPLE_TEAM_ID: ${{ env.HAS_APPLE_CERT == 'true' && secrets.APPLE_TEAM_ID || '' }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          releaseName: ${{ github.ref_type == 'tag' && 'AIjia v__VERSION__' || '' }}
+          releaseBody: 'See the assets to download and install this version.'
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
+
+      - name: Build the app (unsigned)
+        if: env.HAS_APPLE_CERT != 'true'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MACOSX_DEPLOYMENT_TARGET: '10.15'
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # No APPLE_* vars at all -> bundler skips codesign entirely.
         with:
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
           releaseName: ${{ github.ref_type == 'tag' && 'AIjia v__VERSION__' || '' }}
