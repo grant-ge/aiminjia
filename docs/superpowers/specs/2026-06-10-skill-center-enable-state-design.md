@@ -122,7 +122,7 @@
 - `enabled: boolean`
 - 可选 `installed?: boolean`，用于市场视图识别已添加状态。
 
-如果市场数据与已安装数据暂时来自同一个来源，可以先通过已安装列表判断 `installed`，但 UI 语义要保持清晰。
+如果第一阶段市场数据与已安装数据来自同一个来源，可以先通过已安装列表判断 `installed`，但 UI 语义要保持清晰。
 
 ### `skillStore`
 
@@ -166,48 +166,156 @@
 
 已关闭状态下禁止直接 `setPendingSkill`，必须先开启。
 
-## 后端改造
+## 后端详细设计
 
-### list skills
+后端要解决两个不同问题：
 
-`src-tauri/src/commands/skill_management.rs` 的 `SkillInfo` 返回 `enabled`。
+1. 企业/平台技能不应该因为“登录后同步”就全部进入本地可用集合。
+2. 已存在本地的技能可以被用户关闭，并且关闭后不能再进入对话入口、模型 catalog 或 `Skill` tool。
 
-`list_skills_from_registry` 需要读取用户本地 disabled 配置，并把 enabled 合并到返回值。
+这两个问题不能只靠前端隐藏解决。前端只负责展示和发起动作，真正的可用集合必须由 Rust 端统一裁剪。
 
-### registry/catalog
+### 本地启用状态存储
 
-当前 `SkillRegistry::format_full_catalog(200_000)` 会格式化全部 registry skill。改造后必须只格式化 enabled 技能。
+新增 `src-tauri/src/plugin/skill/enablement.rs`，集中管理技能启用状态。建议结构：
 
-推荐做法：
+```rust
+pub struct SkillEnablementStore {
+    current_user: Arc<CurrentUserStorage>,
+    home: Arc<AiJiaHome>,
+}
 
-- `SkillRegistry` 保留全量技能。
-- 增加 enabled filter，或在 registry replace/load 后附加 enabled 状态。
-- 保留全量枚举能力，供 `list_skills` 和管理页使用。
-- 新增 enabled 专用枚举/格式化能力，供模型 catalog 和 `Skill` tool 描述使用。
-- `format_full_catalog` 的聊天路径必须只输出 enabled 技能；如果保留原方法名，需要确认所有管理页调用都不依赖它展示全量。
-- `list_skills` 走全量接口并附带 enabled，确保关闭技能仍能在已安装/内置管理页可见。
+#[derive(Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillEnablementState {
+    #[serde(default)]
+    pub disabled_skill_ids: BTreeSet<String>,
+}
+```
 
-关闭技能后要刷新小家内存中的可使用技能列表，至少触发：
+存储路径：
 
-- 前端 `useSkillStore.reload()`。
-- 后端 skill registry/catalog 可用集合刷新。
-- `skill:registry-refreshed` 或新增更明确事件。
+- 已登录：`~/.renlijia/users/{scope}/skill_enablement.json`。
+- 未登录或开发强制路由：`~/.renlijia/global/skill_enablement.json` 作为兜底，避免无登录态时无法关闭本机技能。
 
-### Skill tool
+`UserScopedPaths` 增加 `skill_enablement_path()`；全局兜底路径可由 `AiJiaHome::root().join("global").join("skill_enablement.json")` 得到。
 
-`src-tauri/src/runtime/tools/builtin/load_skill.rs` 的 tool definition 和 execute 都要尊重 enabled 状态。
+写入必须使用 `src-tauri/src/storage/fs_atomic.rs::write_atomic`，不能用裸 `fs::write`。读取失败或文件不存在时视为全开启，并记录 warn；不能因为状态文件损坏导致聊天不可用。
 
-要求：
+状态模型采用“默认开启，只记录 disabled ids”。原因是当前大多数用户已有大量技能，如果迁移时默认关闭会改变存量行为；同时关闭列表更小，便于回滚和排查。
 
-- Tool description 中的可用 skill ids 只列 enabled。
-- 执行 disabled skill 时返回 unavailable，不自动 refresh 后绕过。
-- 错误信息区分 unknown 和 disabled/unavailable，便于测试和排查。
+### IPC 命令
 
-### 聊天上下文
+新增命令：
 
-`src-tauri/src/transport/tauri_commands/chat.rs` 中获取 skill catalog 的链路必须只拿 enabled 技能。
+```rust
+#[tauri::command]
+pub async fn set_skill_enabled(
+    app: AppHandle,
+    skill_id: String,
+    enabled: bool,
+) -> Result<SkillInfo, String>
+```
 
-`src-tauri/src/runtime/chat/context_builder.rs` 不需要知道 disabled 细节，只接收已过滤后的 skill catalog。
+行为：
+
+- 先检查 `skill_id` 是否存在于当前 `SkillRegistry`，不存在则尝试 `refresh_skill_registry` 后再查一次。
+- 仍不存在返回 unknown，不写状态文件。
+- `enabled = true`：从 `disabled_skill_ids` 删除该 id。
+- `enabled = false`：加入 `disabled_skill_ids`。
+- 写入成功后发事件 `skill:enablement-changed`，payload 至少包含 `{ skillId, enabled }`。
+- 同时也可以复用现有 `skill:registry-refreshed` 让旧监听链路 reload，但推荐新增更语义化事件，前端监听两个事件都触发 `useSkillStore.reload()`。
+- 返回合并了最新 `enabled` 字段的 `SkillInfo`，方便详情页和列表页乐观更新失败时回滚。
+
+`list_skills` 和 `get_plugin_info` 也要读取 `SkillEnablementStore`，返回全量技能，并给每个 `SkillInfo` 合并 `enabled` 字段。这里必须是全量列表，不能过滤 disabled，否则“已安装/内置”管理页会看不到被关闭的技能。
+
+### 市场与安装拆分
+
+当前代码已经有 `list_marketplace_skills` 和 `install_marketplace_skill`，但登录后的 `sync_builtin_skills` 会走 `global_sync::sync_skill_packages_from_server`，把服务端列表批量安装到本地。这是上下文膨胀的根因。
+
+改造后语义调整为：
+
+- `list_marketplace_skills`：只拉企业/平台可添加目录，不安装、不刷新 registry。
+- `install_marketplace_skill`：用户点击市场卡片 `+` 时才下载安装。安装成功后默认 enabled，即从 disabled 列表移除该 id，然后 refresh registry 并发刷新事件。
+- `sync_builtin_skills`：不再在登录后安装所有远端包。改为“刷新市场目录缓存 + 更新已安装技能的新版本”。它只更新本机已经安装过的 `plugin_id`，不会把新发布技能自动装进 `~/.renlijia/skills` 或用户 skills 目录。
+- `AuthGate` 登录后可以继续调用同步命令，但这个命令不能增加新的已安装技能数量；只允许刷新目录缓存、更新已安装版本、清理远端已下架且本地由该同步链路安装的包。
+- Skill Center 的“更新技能”操作文案和行为要拆清：`刷新市场` 只更新可添加列表，`更新已安装` 才检查本地已有技能的新版本。
+
+如果第一阶段不做持久化市场缓存，也可以让市场页实时调用 `list_marketplace_skills`。但无论是否缓存，都不能把远端列表直接落到 registry。
+
+### Registry 与 catalog
+
+`SkillRegistry` 继续只表示“磁盘上已安装且解析成功的技能”，不混入用户启用状态。这样 registry 仍然可以服务管理页、导出、删除和更新检查。
+
+需要新增 enabled 专用方法或辅助函数：
+
+```rust
+impl SkillRegistry {
+    pub fn enabled_skill_ids(&self, state: &SkillEnablementState) -> Vec<String>;
+    pub fn get_enabled(&self, id: &str, state: &SkillEnablementState) -> Option<&DiskSkill>;
+    pub fn format_enabled_catalog(
+        &self,
+        state: &SkillEnablementState,
+        context_window_tokens: usize,
+    ) -> String;
+}
+```
+
+`skill_ids()`、`get()`、`format_full_catalog()` 保持全量语义，避免管理路径误用被过滤后的集合。聊天路径必须显式改为 `format_enabled_catalog(...)`，这样代码审查时能一眼看出这是“模型可见集合”。
+
+`catalog_delta_for_agent` 如果后续恢复使用，也必须有 enabled 版本；否则不要把它接回主聊天路径。
+
+### Chat catalog 注入链路
+
+`src-tauri/src/transport/tauri_commands/chat.rs` 中的 `get_skill_catalog` 不能再直接调用 `reg.format_full_catalog(200_000)`，需要：
+
+1. 读取当前用户的 `SkillEnablementState`。
+2. 锁 registry。
+3. 调用 `format_enabled_catalog(&state, 200_000)`。
+
+`src-tauri/src/runtime/chat/context_builder.rs` 不需要知道 disabled 细节，只接收过滤后的 catalog。这样 context builder 仍保持纯拼装职责。
+
+### `Skill` runtime tool
+
+`src-tauri/src/runtime/tools/builtin/load_skill.rs` 需要持有或能访问 `SkillEnablementStore`。
+
+`definition()`：
+
+- 读取启用状态。
+- `可用 skill_id` 只列 enabled ids。
+- 如果 enabled ids 为空，显示无可用技能。
+
+`execute()`：
+
+- 先解析 `skill_id`。
+- 读取启用状态；如果 id 在 disabled 集合中，直接返回 unavailable，不做 refresh，也不加载 body。
+- 如果 registry miss，可以按现有逻辑 throttle refresh 一次。
+- refresh 后再次检查：存在但 disabled 仍返回 unavailable；不存在返回 unknown。
+
+这样可以防止模型通过手写 `Skill({"skill_id":"disabled-id"})` 绕过前端选择器。
+
+### 安装、卸载、更新的状态规则
+
+- 市场点击 `+` 安装：安装成功后默认开启，删除 disabled override。
+- 本地导入：默认开启；如果是 force 覆盖同 id，也删除 disabled override，因为用户明确重新导入。
+- 更新已安装技能：保留原 enabled/disabled 状态，不因为版本更新自动开启。
+- 卸载技能：从 disabled 列表移除该 id，避免残留状态污染未来同名新技能。
+- 同 id 用户技能 shadow 企业/平台技能：enabled 状态按 skill id 生效，作用于当前有效技能。这个行为简单且符合用户认知：“我关的是这个名字的技能”。
+
+### 事件刷新与小家内存
+
+关闭或开启技能后，必须同时刷新三处：
+
+- 前端 `useSkillStore.reload()`：刷新技能中心、详情页、聊天输入框技能选择器。
+- 后端 model catalog：下一次 `get_skill_catalog` 读取最新 enablement state，不依赖旧缓存。
+- `Skill` tool definition：下一次工具定义生成读取最新 enablement state。
+
+推荐事件：
+
+- `skill:enablement-changed`：启用状态变化。
+- `skill:registry-refreshed`：磁盘技能集合变化。
+
+`AuthGate` 统一监听两个事件，触发 `useSkillStore.reload()`。这样“关闭后小家内存中的可使用技能列表刷新”不是 UI 层假象，而是前后端入口都切到同一个 enabled 集合。
 
 ## 关键行为
 
@@ -226,8 +334,7 @@
 本次不做：
 
 - 企业管理员强制启用/禁用策略。
-- 技能评分、下载量、热门排序。
-- 独立远程技能广场完整市场系统。
+- 完整技能广场运营系统，例如评分、排行榜、复杂推荐和下载量排序。
 - 技能权限模型重构。
 - 技能文件格式改造。
 
@@ -243,11 +350,13 @@
 后端：
 
 - `list_skills` 返回全量技能和 enabled 状态。
-- disabled 配置持久化到 user-scoped 本地文件。
-- `format_full_catalog` 不包含 disabled 技能。
+- disabled 配置持久化到 user-scoped 本地文件，未登录兜底写入 global enablement 文件。
+- `format_full_catalog` 仍保持全量语义；新增 `format_enabled_catalog` 且不包含 disabled 技能。
 - `Skill` tool definition 不包含 disabled id。
 - `Skill` tool execute disabled id 返回 unavailable。
-- refresh/install/sync/toggle 后 registry 与前端 store 都刷新。
+- `sync_builtin_skills` 不再自动安装服务端新增技能，只更新已安装技能或市场目录缓存。
+- `install_marketplace_skill` 安装成功后默认 enabled，并刷新 registry 与前端 store。
+- refresh/install/sync/toggle 后 registry、enabled 集合与前端 store 都刷新。
 
 建议验证命令：
 
