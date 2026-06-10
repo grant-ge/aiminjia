@@ -65,9 +65,7 @@ pub async fn build_visible_tool_defs(
     match schema_filter {
         ToolSchemaFilter::DailyWhitelist => {
             let allowed: std::collections::HashSet<&str> =
-                crate::runtime::tools::catalog::DAILY_ALLOWED_TOOLS
-                    .iter()
-                    .copied()
+                crate::runtime::tools::catalog::daily_allowed_tools_for_current_platform()
                     .collect();
             defs.into_iter()
                 .filter(|d| allowed.contains(d.name.as_str()))
@@ -75,9 +73,19 @@ pub async fn build_visible_tool_defs(
         }
         ToolSchemaFilter::EmployeeWhitelist(allowed) => defs
             .into_iter()
-            .filter(|d| allowed.contains(d.name.as_str()))
+            .filter(|d| {
+                allowed.contains(d.name.as_str())
+                    && crate::runtime::tools::catalog::tool_available_on_current_platform(
+                        d.name.as_str(),
+                    )
+            })
             .collect(),
-        ToolSchemaFilter::None => defs,
+        ToolSchemaFilter::None => defs
+            .into_iter()
+            .filter(|d| {
+                crate::runtime::tools::catalog::tool_available_on_current_platform(d.name.as_str())
+            })
+            .collect(),
     }
 }
 
@@ -357,6 +365,36 @@ mod tests {
                 tool_name,
                 names
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_daily_whitelist_excludes_unavailable_platform_shell() {
+        let registry = ToolRegistry::new();
+        register_builtin_tools(&registry).await;
+
+        let defs = build_visible_tool_defs(
+            &registry,
+            true,
+            ToolSchemaFilter::DailyWhitelist,
+            &crate::runtime::tools::ToolDescriptionContext::empty(),
+            &std::collections::HashMap::new(),
+        )
+        .await;
+        let names: Vec<&str> = defs.iter().map(|def| def.name.as_str()).collect();
+
+        if cfg!(windows) {
+            assert!(!names.contains(&"Bash"), "Windows must not expose Bash");
+            assert!(
+                names.contains(&"PowerShell"),
+                "Windows should expose PowerShell"
+            );
+        } else {
+            assert!(
+                !names.contains(&"PowerShell"),
+                "Unix must not expose PowerShell"
+            );
+            assert!(names.contains(&"Bash"), "Unix should expose Bash");
         }
     }
 

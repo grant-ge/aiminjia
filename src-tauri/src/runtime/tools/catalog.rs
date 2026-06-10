@@ -258,10 +258,17 @@ fn build_default_catalog() -> ToolCatalog {
             "PowerShell",
             "在授权工作目录中执行 PowerShell 命令（Windows 平台专用）。\
             优先使用 pwsh.exe（PowerShell 7+，支持 `&&` `||`），否则回退 powershell.exe（5.1，**不支持 `&&`/`||`**，请用 `;` 分隔或显式判断 `$LASTEXITCODE`）。\
+            \n\nPowerShell 语法要点：\
+            \n- 环境变量读取/设置使用 `$env:NAME` / `$env:NAME = \"value\"`，不要使用 bash 的 `export`。\
+            \n- 调用原生 exe/cmd/ps1 或路径含空格的程序时，用 call operator：`& \"C:\\Program Files\\App\\app.exe\" arg1 arg2`。\
+            \n- 已安装的 `.cmd` CLI 直接用 `& \"C:\\path\\tool.cmd\" ...` 调用；除非用户明确需要 cmd.exe 语义，不要包 `cmd /c`。\
+            \n- `command` 默认必须是单行字符串；不要用 CR/LF 换行分隔命令，顺序执行用 `;`。PowerShell 7+ 可用 `&&`/`||`，5.1 用 `A; if ($?) { B }`。\
+            \n- 不要把可执行路径或普通参数拆成多行，绝不要把 `C:\\path\\tool.cmd` 这种路径切到下一行；需要传递多行文本时才使用 here-string（如 `@' ... '@`，结束标记必须顶格）。\
+            \n- 原生命令参数被 PowerShell 误解析时，可使用 stop-parsing token `--%`。\
             \n\n用法说明：\
             \n- 文件操作：`Get-ChildItem`、`Get-Content`、`Remove-Item -Recurse -Force`\
             \n- 文本搜索：`Select-String -Pattern 'foo' -Path *.txt`（grep 等价）\
-            \n- 调用 .exe：直接写程序名即可，如 `python script.py`、`node app.js`\
+            \n- 调用 .exe/.cmd：优先用上面的 PowerShell call operator 格式，尤其是绝对路径或路径含空格时\
             \n- **不要**使用 Unix 专属命令（grep/find/rm/cat/ls -la 等不存在或行为不同）\
             \n\n默认 timeout 120000ms；timeout/cancel 时终止进程并返回错误。\
             \n\n后台路径：设置 run_in_background=true 时立即返回 task_id（task_type=local_bash），命令继续在后台运行；后续用 TaskOutput(task_id=...) 读取 transcript，用 TaskStop(task_id=...) 停止。完成后父对话会收到 <task-notification>。\
@@ -276,7 +283,7 @@ fn build_default_catalog() -> ToolCatalog {
             "type": "object",
             "required": ["command"],
             "properties": {
-                "command": { "type": "string", "description": "要执行的 PowerShell 命令" },
+                "command": { "type": "string", "description": "要执行的 PowerShell 命令；默认必须是单行字符串，顺序执行用 ;，不要把可执行路径或普通参数拆成多行" },
                 "timeout": {
                     "type": "integer",
                     "description": "超时毫秒数，默认 120000（120 秒），最大 600000（10 分钟）",
@@ -1008,13 +1015,15 @@ fn build_default_catalog() -> ToolCatalog {
     c
 }
 
-/// daily 模式允许 LLM 直接调用的工具集（Primitive + 必要 Support 工具）。
+/// daily 模式允许 LLM 直接调用的跨平台逻辑工具集（Primitive + 必要 Support 工具）。
 ///
 /// 对齐原子工具模型；register_runtime 注册的工具默认走 ToolDispatcher。
 /// `Skill` 是例外：它需要 request-scoped SkillRegistry，但必须在 daily 模式可见。
+///
+/// 注意：Shell 工具需要按当前平台二次过滤。调用方给 LLM 或执行白名单使用时，
+/// 必须走 [`daily_allowed_tools_for_current_platform`]，不能直接使用本常量。
 pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
-    // 以下 10 个工具均在 register_builtin_tools() 中 register_runtime 注册，走 ToolDispatcher
-    // Shell：每平台只注册其中一个（Unix=bash, Windows=powershell），过滤层会自动隐藏不可达的那个
+    // Shell：每平台只注册其中一个（Unix=Bash, Windows=PowerShell）。
     "Bash",
     "PowerShell",
     "Read",
@@ -1051,6 +1060,41 @@ pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
     "RefreshSkills",
 ];
 
+/// 某个工具在当前编译平台是否可执行。
+pub fn tool_available_on_current_platform(tool_name: &str) -> bool {
+    match tool_name {
+        "Bash" => !cfg!(windows),
+        "PowerShell" => cfg!(windows),
+        _ => true,
+    }
+}
+
+/// daily 模式当前平台真正允许暴露/执行的工具集。
+pub fn daily_allowed_tools_for_current_platform() -> impl Iterator<Item = &'static str> {
+    DAILY_ALLOWED_TOOLS
+        .iter()
+        .copied()
+        .filter(|tool_name| tool_available_on_current_platform(tool_name))
+}
+
 /// 全局默认 catalog（延迟初始化）。
 pub static TOOL_CATALOG: LazyLock<DynamicToolCatalog> =
     LazyLock::new(DynamicToolCatalog::new_with_defaults);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn daily_allowed_tools_are_filtered_by_current_platform() {
+        let allowed: Vec<&str> = daily_allowed_tools_for_current_platform().collect();
+
+        if cfg!(windows) {
+            assert!(!allowed.contains(&"Bash"));
+            assert!(allowed.contains(&"PowerShell"));
+        } else {
+            assert!(allowed.contains(&"Bash"));
+            assert!(!allowed.contains(&"PowerShell"));
+        }
+    }
+}
