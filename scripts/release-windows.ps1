@@ -96,10 +96,10 @@ function Get-Signtool {
 # ConstrainedLanguage can execute external commands, but npm's ps1 shim may
 # fail with "Cannot invoke method..." before node is even started.
 function Get-NpxCommand {
-    $cmd = Get-Command npx.cmd -CommandType Application -ErrorAction SilentlyContinue
+    $cmd = Get-Command npx.cmd -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($cmd) { return $cmd.Source }
 
-    $cmd = Get-Command npx -CommandType Application -ErrorAction SilentlyContinue
+    $cmd = Get-Command npx -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($cmd) { return $cmd.Source }
 
     throw 'npx.cmd not found - install Node.js/npm and make sure npx.cmd is in PATH'
