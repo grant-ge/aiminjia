@@ -46,8 +46,10 @@ Backend IPC and runtime:
   - Injects `SkillEnablementStore` into `list_skills` and `get_plugin_info`.
 - Modify `src-tauri/src/plugin/skill/sync_command.rs`
   - Changes login sync semantics so only required builtins auto-install and other new remote packages are not auto-installed.
+  - Threads current user paths into official-skill update so user-installed market packages update in the user directory.
 - Modify `src-tauri/src/plugin/skill/global_sync.rs`
   - Splits remote list fetch from required-builtin install and installed-package update.
+  - Selects update targets by install root: global required/global installed/user installed.
 - Create `src-tauri/src/plugin/skill/required_builtin.rs`
   - Defines required builtin skill ids, display aliases, and helper predicates.
 - Modify `src-tauri/src/runtime/tools/builtin/load_skill.rs`
@@ -973,9 +975,9 @@ git commit -m "feat: filter disabled skills from runtime"
 - Test: `src-tauri/src/plugin/skill/global_sync.rs`
 - Test: `src-tauri/src/plugin/skill/required_builtin.rs`
 
-- [ ] **Step 1: Add sync filtering tests**
+- [ ] **Step 1: Add sync target selection tests**
 
-In `src-tauri/src/plugin/skill/global_sync.rs`, add pure tests for deciding which remote packages are installable during sync:
+In `src-tauri/src/plugin/skill/global_sync.rs`, add pure tests for deciding which remote packages are installable during sync and which local root they update:
 
 ```rust
 #[cfg(test)]
@@ -998,36 +1000,61 @@ mod sync_filter_tests {
     }
 
     #[test]
-    fn sync_targets_include_already_installed_and_required_builtin_packages() {
+    fn sync_targets_include_global_user_and_required_builtin_packages() {
         let local_state = GlobalSkillsState {
             installed: HashMap::from([("already-installed".to_string(), "1.0".to_string())]),
             updated_at_unix_seconds: 0,
         };
-        let disk_installed = HashSet::from(["manual-local".to_string()]);
+        let global_installed = HashSet::from(["manual-global".to_string()]);
+        let user_installed = HashSet::from(["user-market".to_string()]);
         let required_builtin = HashSet::from(["skill-creator".to_string(), "dingtalk-workspace".to_string()]);
         let remote = vec![
             item("already-installed", "1.1"),
+            item("manual-global", "1.1"),
+            item("user-market", "1.1"),
             item("skill-creator", "1.0"),
             item("dingtalk-workspace", "1.0"),
             item("brand-new", "1.0"),
         ];
 
-        let targets = select_packages_for_update(&remote, &local_state, &disk_installed, &required_builtin);
+        let targets = select_packages_for_update(
+            &remote,
+            &local_state,
+            &global_installed,
+            &user_installed,
+            &required_builtin,
+        );
 
         assert_eq!(
-            targets.iter().map(|i| i.plugin_id.as_str()).collect::<Vec<_>>(),
-            vec!["already-installed", "skill-creator", "dingtalk-workspace"]
+            targets
+                .iter()
+                .map(|target| (target.item.plugin_id.as_str(), target.install_root))
+                .collect::<Vec<_>>(),
+            vec![
+                ("already-installed", SkillPackageInstallRoot::Global),
+                ("manual-global", SkillPackageInstallRoot::Global),
+                ("user-market", SkillPackageInstallRoot::User),
+                ("skill-creator", SkillPackageInstallRoot::Global),
+                ("dingtalk-workspace", SkillPackageInstallRoot::Global),
+            ]
         );
     }
 
     #[test]
     fn first_login_with_no_local_state_does_not_auto_install_non_required_remote_packages() {
         let local_state = GlobalSkillsState::default();
-        let disk_installed = HashSet::new();
+        let global_installed = HashSet::new();
+        let user_installed = HashSet::new();
         let required_builtin = HashSet::from(["skill-creator".to_string(), "dingtalk-workspace".to_string()]);
         let remote = vec![item("remote-default", "1.0")];
 
-        let targets = select_packages_for_update(&remote, &local_state, &disk_installed, &required_builtin);
+        let targets = select_packages_for_update(
+            &remote,
+            &local_state,
+            &global_installed,
+            &user_installed,
+            &required_builtin,
+        );
 
         assert!(targets.is_empty());
     }
@@ -1035,7 +1062,8 @@ mod sync_filter_tests {
     #[test]
     fn first_login_installs_required_builtin_packages_only() {
         let local_state = GlobalSkillsState::default();
-        let disk_installed = HashSet::new();
+        let global_installed = HashSet::new();
+        let user_installed = HashSet::new();
         let required_builtin = HashSet::from(["skill-creator".to_string(), "dingtalk-workspace".to_string()]);
         let remote = vec![
             item("skill-creator", "1.0"),
@@ -1043,11 +1071,51 @@ mod sync_filter_tests {
             item("tenant-workflow", "1.0"),
         ];
 
-        let targets = select_packages_for_update(&remote, &local_state, &disk_installed, &required_builtin);
+        let targets = select_packages_for_update(
+            &remote,
+            &local_state,
+            &global_installed,
+            &user_installed,
+            &required_builtin,
+        );
 
         assert_eq!(
-            targets.iter().map(|i| i.plugin_id.as_str()).collect::<Vec<_>>(),
-            vec!["skill-creator", "dingtalk-workspace"]
+            targets
+                .iter()
+                .map(|target| (target.item.plugin_id.as_str(), target.install_root))
+                .collect::<Vec<_>>(),
+            vec![
+                ("skill-creator", SkillPackageInstallRoot::Global),
+                ("dingtalk-workspace", SkillPackageInstallRoot::Global),
+            ]
+        );
+    }
+
+    #[test]
+    fn same_package_existing_in_user_and_global_updates_both_roots() {
+        let local_state = GlobalSkillsState::default();
+        let global_installed = HashSet::from(["shared-official".to_string()]);
+        let user_installed = HashSet::from(["shared-official".to_string()]);
+        let required_builtin = HashSet::new();
+        let remote = vec![item("shared-official", "2.0")];
+
+        let targets = select_packages_for_update(
+            &remote,
+            &local_state,
+            &global_installed,
+            &user_installed,
+            &required_builtin,
+        );
+
+        assert_eq!(
+            targets
+                .iter()
+                .map(|target| (target.item.plugin_id.as_str(), target.install_root))
+                .collect::<Vec<_>>(),
+            vec![
+                ("shared-official", SkillPackageInstallRoot::Global),
+                ("shared-official", SkillPackageInstallRoot::User),
+            ]
         );
     }
 }
@@ -1059,12 +1127,13 @@ Run:
 
 ```powershell
 cd src-tauri
-cargo test sync_targets_include_already_installed_and_required_builtin_packages --lib
+cargo test sync_targets_include_global_user_and_required_builtin_packages --lib
 cargo test first_login_with_no_local_state_does_not_auto_install_non_required_remote_packages --lib
 cargo test first_login_installs_required_builtin_packages_only --lib
+cargo test same_package_existing_in_user_and_global_updates_both_roots --lib
 ```
 
-Expected: FAIL because `select_packages_for_update` does not exist.
+Expected: FAIL because `select_packages_for_update`, `SkillPackageInstallRoot`, and `SkillPackageUpdateTarget` do not exist.
 
 - [ ] **Step 3: Add required builtin allowlist**
 
@@ -1112,24 +1181,49 @@ Export it from `src-tauri/src/plugin/skill/mod.rs`.
 In `global_sync.rs`, add:
 
 ```rust
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SkillPackageInstallRoot {
+    Global,
+    User,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SkillPackageUpdateTarget<'a> {
+    pub item: &'a SkillPackageItem,
+    pub install_root: SkillPackageInstallRoot,
+}
+
 pub fn select_packages_for_update<'a>(
     remote: &'a [SkillPackageItem],
     local_state: &GlobalSkillsState,
-    disk_installed_ids: &HashSet<String>,
+    global_installed_ids: &HashSet<String>,
+    user_installed_ids: &HashSet<String>,
     required_builtin_ids: &HashSet<String>,
-) -> Vec<&'a SkillPackageItem> {
-    remote
-        .iter()
-        .filter(|item| {
-            local_state.installed.contains_key(&item.plugin_id)
-                || disk_installed_ids.contains(&item.plugin_id)
-                || required_builtin_ids.contains(&item.plugin_id)
-        })
-        .collect()
+) -> Vec<SkillPackageUpdateTarget<'a>> {
+    let mut targets = Vec::new();
+    for item in remote {
+        let id = &item.plugin_id;
+        if local_state.installed.contains_key(id)
+            || global_installed_ids.contains(id)
+            || required_builtin_ids.contains(id)
+        {
+            targets.push(SkillPackageUpdateTarget {
+                item,
+                install_root: SkillPackageInstallRoot::Global,
+            });
+        }
+        if user_installed_ids.contains(id) {
+            targets.push(SkillPackageUpdateTarget {
+                item,
+                install_root: SkillPackageInstallRoot::User,
+            });
+        }
+    }
+    targets
 }
 ```
 
-Add a helper to read installed ids from disk:
+Add a helper to read installed ids from either disk root:
 
 ```rust
 fn installed_skill_ids_in_dir(dir: &Path) -> Result<HashSet<String>> {
@@ -1152,20 +1246,45 @@ fn installed_skill_ids_in_dir(dir: &Path) -> Result<HashSet<String>> {
 
 - [ ] **Step 5: Change `sync_skill_packages_from_server` loop**
 
+Thread the current user skills directory into the sync command before calling `sync_skill_packages_from_server`.
+
+Recommended shape:
+
+- In `sync_command.rs`, add `State<'_, Arc<CurrentUserStorage>>` or `AppHandle` to `sync_builtin_skills`.
+- Resolve `current_user.resolve_paths().map(|paths| paths.skills_dir())`.
+- Pass that path into `global_sync` as an optional user root. If no active user scope exists, user-root updates are skipped, but required builtin/global updates can still run.
+
 After fetching remote list and reading local state, compute:
 
 ```rust
-let disk_installed_ids = installed_skill_ids_in_dir(&config.global_skills_dir)?;
+let global_installed_ids = installed_skill_ids_in_dir(&config.global_skills_dir)?;
+let user_installed_ids = match user_skills_dir.as_deref() {
+    Some(dir) => installed_skill_ids_in_dir(dir)?,
+    None => HashSet::new(),
+};
 let required_builtin_ids = crate::plugin::skill::required_builtin::required_builtin_ids();
 let update_targets = select_packages_for_update(
     &list.data,
     &local_state,
-    &disk_installed_ids,
+    &global_installed_ids,
+    &user_installed_ids,
     &required_builtin_ids,
 );
 ```
 
-Iterate `for item in update_targets` instead of `for item in &list.data`.
+Iterate `for target in update_targets` instead of `for item in &list.data`.
+
+Resolve the extraction directory from `target.install_root`:
+
+```rust
+let install_dir = match target.install_root {
+    SkillPackageInstallRoot::Global => &config.global_skills_dir,
+    SkillPackageInstallRoot::User => user_skills_dir
+        .as_ref()
+        .context("user install target selected without active user skills dir")?,
+};
+install_one_skill_package(client, target.item, install_dir).await?;
+```
 
 Keep `remote_ids` based on the full remote list so cleanup still knows which tracked packages disappeared.
 
@@ -1173,13 +1292,16 @@ When `local_state.installed` is empty on first login, only required builtin pack
 
 Do not call `clear_override` for required builtin sync installs or updates. Required builtins are default enabled because absent disabled override means enabled; if the user previously disabled `dingtalk-workspace`, sync must preserve that local choice.
 
+When a user manually installed an official/tenant package from the market, it already lives under `~/.renlijia/users/{scope}/skills/<id>/`; official update must update that same directory and must not promote it into `~/.renlijia/skills/<id>/`.
+
 - [ ] **Step 6: Define sync result and missing-required behavior**
 
 Keep `sync_builtin_skills` as the login-time command name for compatibility with `AuthGate`, but document and implement the new semantics:
 
-- `installed`: required builtin packages installed for the first time, plus already-installed packages that were updated.
+- `installed`: required builtin packages installed for the first time, plus already-installed packages that were updated in either global or user root.
 - `skipped`: targeted packages that could not be installed or updated. This can include a required builtin id that the server did not return or failed to download.
 - Non-required remote packages that are merely visible in the market are not counted as skipped; otherwise first login would log hundreds of harmless skips.
+- If a card-level “检查更新” still checks `result.installed.includes(skillId)`, include user-root updates in `installed` too; otherwise the UI would say “no update” even though the user-installed package was refreshed.
 
 If a required builtin id is not present in `/v1/skill-packages`, append that id to `skipped` and log a warning:
 
@@ -1217,9 +1339,10 @@ Run:
 
 ```powershell
 cd src-tauri
-cargo test sync_targets_include_already_installed_and_required_builtin_packages --lib
+cargo test sync_targets_include_global_user_and_required_builtin_packages --lib
 cargo test first_login_with_no_local_state_does_not_auto_install_non_required_remote_packages --lib
 cargo test first_login_installs_required_builtin_packages_only --lib
+cargo test same_package_existing_in_user_and_global_updates_both_roots --lib
 cargo check
 ```
 
@@ -1837,9 +1960,10 @@ cargo test skill_enablement --lib
 cargo test enabled_skill_ids_excludes_disabled_ids --lib
 cargo test format_enabled_catalog_excludes_disabled_skills_but_full_catalog_keeps_all --lib
 cargo test load_skill_rejects_disabled_skill --test load_skill_skill_md_test -- --nocapture
-cargo test sync_targets_include_already_installed_and_required_builtin_packages --lib
+cargo test sync_targets_include_global_user_and_required_builtin_packages --lib
 cargo test first_login_with_no_local_state_does_not_auto_install_non_required_remote_packages --lib
 cargo test first_login_installs_required_builtin_packages_only --lib
+cargo test same_package_existing_in_user_and_global_updates_both_roots --lib
 cargo check
 ```
 

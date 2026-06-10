@@ -269,6 +269,15 @@ pub async fn set_skill_enabled(
 - `AuthGate` 登录后可以继续调用同步命令，但这个命令不能增加非 allowlist 的已安装技能数量；只允许安装/更新必需内置技能、刷新目录缓存、更新已安装版本、清理远端已下架且本地由该同步链路安装的包。
 - Skill Center 的“更新技能”操作文案和行为要拆清：`刷新市场` 只更新可添加列表，`更新已安装` 才检查本地已有技能的新版本。
 
+“更新官方技能”需要按本地安装位置更新，不能只按远端 id 粗暴覆盖：
+
+- 必需内置技能，例如 `skill-creator`、`dingtalk-workspace`，初始化和更新目标都是全局目录 `~/.renlijia/skills/<id>/`。
+- 已经存在于全局目录的官方/企业技能，继续在全局目录原地更新。
+- 用户从市场手动添加的官方/企业技能，已经安装在 `~/.renlijia/users/{scope}/skills/<id>/`，更新时也必须留在用户目录原地更新，不能提升到全局目录。
+- 如果同一个 id 同时存在全局目录和用户目录，更新命令可以分别更新两个目录；运行时仍按现有 registry 规则决定哪个副本生效，通常用户目录副本会 shadow 全局副本。
+- 未安装的市场技能只刷新市场目录状态，不写入全局目录、不写入用户目录、不进入 registry，也不进入聊天入口。
+- 任何更新都不能清理 `skillsConfig.json` 里的 `disabledSkillIds`。版本更新只改变技能文件，不改变用户是否开启该技能。
+
 如果第一阶段不做持久化市场缓存，也可以让市场页实时调用 `list_marketplace_skills`。但无论是否缓存，都不能把远端列表直接落到 registry。
 
 ### Registry 与 catalog
@@ -328,6 +337,7 @@ impl SkillRegistry {
 - 必需内置技能初始化安装：默认开启，但仅在用户没有 disabled override 时生效；如果用户曾关闭该 id，安装/更新后仍保持关闭。
 - 本地导入：默认开启；如果是 force 覆盖同 id，也删除 disabled override，因为用户明确重新导入。
 - 更新已安装技能：保留原 enabled/disabled 状态，不因为版本更新自动开启。
+- 更新官方技能：只更新必需内置、已全局安装、已用户安装这三类本地存在或必须存在的技能；未添加的市场技能不因更新动作变成已安装。
 - 卸载技能：从 disabled 列表移除该 id，避免残留状态污染未来同名新技能。
 - 同 id 用户技能 shadow 企业/平台技能：enabled 状态按 skill id 生效，作用于当前有效技能。这个行为简单且符合用户认知：“我关的是这个名字的技能”。
 
@@ -386,6 +396,8 @@ impl SkillRegistry {
 - 登录同步只自动安装 allowlist 内的必需内置技能，例如 `skill-creator` / `dingtalk-workspace`；其他服务端新增技能只进入市场，不自动安装。
 - 必需内置技能默认开启，但用户关闭后同步不能重新开启。
 - `sync_builtin_skills` 不再自动安装非 allowlist 服务端新增技能，只更新已安装技能或市场目录缓存。
+- `sync_builtin_skills` 更新用户目录中手动添加的官方/企业技能时，仍写回 `~/.renlijia/users/{scope}/skills/<id>/`，并保留关闭状态。
+- “更新官方技能”后，未添加的市场技能仍不进入 `SkillRegistry`、聊天技能入口或 model catalog。
 - `install_marketplace_skill` 安装成功后默认 enabled，并刷新 registry 与前端 store。
 - refresh/install/sync/toggle 后 registry、enabled 集合与前端 store 都刷新。
 
