@@ -71,38 +71,6 @@ struct ResolvedFileRecord {
     file_size: u64,
 }
 
-/// Look up a file's stored_path from both uploaded_files and generated_files tables.
-/// Returns the stored_path string if found.
-fn resolve_stored_path(
-    facade: &RuntimeRepositoryFacade,
-    file_id: &str,
-    conversation_id: &str,
-) -> Result<String, String> {
-    let store = facade.file_record_store();
-
-    // Try uploaded_files first
-    if let Some(record) = store
-        .get_uploaded_file_for_conversation(file_id, conversation_id)
-        .map_err(|e| e.to_string())?
-    {
-        if let Some(path) = record.get("storedPath").and_then(|v| v.as_str()) {
-            return Ok(path.to_string());
-        }
-    }
-
-    // Fall back to generated_files
-    if let Some(record) = store
-        .get_generated_file_for_conversation(file_id, conversation_id)
-        .map_err(|e| e.to_string())?
-    {
-        if let Some(path) = record.get("storedPath").and_then(|v| v.as_str()) {
-            return Ok(path.to_string());
-        }
-    }
-
-    Err("File not found or does not belong to this conversation".to_string())
-}
-
 fn resolve_file_record(
     facade: &RuntimeRepositoryFacade,
     file_id: &str,
@@ -305,6 +273,27 @@ fn sniff_preview_image_kind(bytes: &[u8]) -> Option<&'static str> {
     None
 }
 
+fn resolve_record_full_path(
+    facade: &RuntimeRepositoryFacade,
+    file_mgr: &FileManager,
+    conversation_id: &str,
+    record: &ResolvedFileRecord,
+) -> Result<std::path::PathBuf, String> {
+    if let Some(base_dir) = facade.storage_base_dir() {
+        let conv_dir = base_dir.join("conversations").join(conversation_id);
+        if let Ok(path) =
+            FileManager::resolve_existing_file_under_root(&conv_dir, &record.stored_path)
+        {
+            return Ok(path);
+        }
+    }
+
+    file_mgr
+        .resolve_existing_file(&record.stored_path)
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
 fn preview_from_record(file_mgr: &FileManager, record: ResolvedFileRecord) -> FilePreview {
     preview_from_record_with_reader(file_mgr, record, read_preview_file_bounded)
 }
@@ -323,6 +312,7 @@ fn read_preview_file_bounded(path: &Path) -> std::io::Result<Vec<u8>> {
     Ok(bytes)
 }
 
+#[cfg(test)]
 fn preview_from_record_with_reader(
     file_mgr: &FileManager,
     record: ResolvedFileRecord,
@@ -342,6 +332,27 @@ fn preview_from_record_with_reader(
     };
 
     preview_from_bytes(&record.file_name, &record.file_type, bytes)
+}
+
+fn preview_from_resolved_path_with_reader(
+    record: ResolvedFileRecord,
+    full_path: &Path,
+    read_file: impl FnOnce(&Path) -> std::io::Result<Vec<u8>>,
+) -> FilePreview {
+    let bytes = if record.file_size > MAX_PREVIEW_BYTES {
+        vec![0; (MAX_PREVIEW_BYTES as usize) + 1]
+    } else {
+        match read_file(full_path) {
+            Ok(bytes) => bytes,
+            Err(_) => return unsupported_preview(&record.file_name, "File is unavailable"),
+        }
+    };
+
+    preview_from_bytes(&record.file_name, &record.file_type, bytes)
+}
+
+fn preview_from_resolved_path(record: ResolvedFileRecord, full_path: &Path) -> FilePreview {
+    preview_from_resolved_path_with_reader(record, full_path, read_preview_file_bounded)
 }
 
 fn copy_existing_file_to(source: &Path, destination: &Path) -> Result<String, String> {
@@ -602,10 +613,8 @@ pub async fn open_generated_file(
     file_id: String,
     conversation_id: String,
 ) -> Result<(), String> {
-    let stored_path = resolve_stored_path(&facade, &file_id, &conversation_id)?;
-    let full_path = file_mgr
-        .resolve_existing_file(&stored_path)
-        .map_err(|e| e.to_string())?;
+    let record = resolve_file_record(&facade, &file_id, &conversation_id)?;
+    let full_path = resolve_record_full_path(&facade, &file_mgr, &conversation_id, &record)?;
 
     // Open with system default application
     #[cfg(target_os = "macos")]
@@ -636,10 +645,8 @@ pub async fn reveal_file_in_folder(
     file_id: String,
     conversation_id: String,
 ) -> Result<(), String> {
-    let stored_path = resolve_stored_path(&facade, &file_id, &conversation_id)?;
-    let full_path = file_mgr
-        .resolve_existing_file(&stored_path)
-        .map_err(|e| e.to_string())?;
+    let record = resolve_file_record(&facade, &file_id, &conversation_id)?;
+    let full_path = resolve_record_full_path(&facade, &file_mgr, &conversation_id, &record)?;
 
     // Reveal in OS file manager
     #[cfg(target_os = "macos")]
@@ -677,10 +684,8 @@ pub async fn save_generated_file_as(
     conversation_id: String,
     destination_path: String,
 ) -> Result<String, String> {
-    let stored_path = resolve_stored_path(&facade, &file_id, &conversation_id)?;
-    let full_path = file_mgr
-        .resolve_existing_file(&stored_path)
-        .map_err(|e| e.to_string())?;
+    let record = resolve_file_record(&facade, &file_id, &conversation_id)?;
+    let full_path = resolve_record_full_path(&facade, &file_mgr, &conversation_id, &record)?;
     copy_existing_file_to(&full_path, Path::new(&destination_path))
 }
 
@@ -707,7 +712,17 @@ pub async fn get_file_preview(
         ));
     }
 
-    Ok(preview_from_record(&file_mgr, record))
+    let full_path = match resolve_record_full_path(&facade, &file_mgr, &conversation_id, &record) {
+        Ok(path) => path,
+        Err(_) => {
+            return Ok(unsupported_preview(
+                &record.file_name,
+                "File is unavailable",
+            ))
+        }
+    };
+
+    Ok(preview_from_resolved_path(record, &full_path))
 }
 
 /// Preview a local file by absolute path (used for user-attached files that
@@ -1013,6 +1028,7 @@ mod tests {
 #[cfg(test)]
 mod preview_tests {
     use super::*;
+    use crate::storage::file_store::AppStorage;
     use tempfile::TempDir;
 
     #[test]
@@ -1193,6 +1209,44 @@ mod preview_tests {
             }
             other => panic!("expected unsupported preview, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn record_path_prefers_conversation_generated_file_over_workspace_legacy_file() {
+        let storage_dir = TempDir::new().expect("storage tempdir");
+        let workspace_dir = TempDir::new().expect("workspace tempdir");
+        let storage = Arc::new(AppStorage::new(storage_dir.path()).expect("storage"));
+        storage
+            .create_conversation("conv-1", "Path test")
+            .expect("create conversation");
+        let facade = RuntimeRepositoryFacade::from_storage(storage);
+        let file_mgr = FileManager::new(workspace_dir.path());
+        let stored_path = "generated/images/result.jpg";
+        let conv_file = storage_dir
+            .path()
+            .join("conversations")
+            .join("conv-1")
+            .join(stored_path);
+        std::fs::create_dir_all(conv_file.parent().expect("parent")).expect("create conv parent");
+        std::fs::write(&conv_file, b"conversation").expect("write conv file");
+        let legacy_file = workspace_dir.path().join(stored_path);
+        std::fs::create_dir_all(legacy_file.parent().expect("parent"))
+            .expect("create workspace parent");
+        std::fs::write(&legacy_file, b"legacy").expect("write legacy file");
+        let record = ResolvedFileRecord {
+            file_name: "result.jpg".to_string(),
+            stored_path: stored_path.to_string(),
+            file_type: "jpeg".to_string(),
+            file_size: 12,
+        };
+
+        let resolved =
+            resolve_record_full_path(&facade, &file_mgr, "conv-1", &record).expect("resolve");
+
+        assert_eq!(
+            std::fs::read(resolved).expect("read resolved"),
+            b"conversation"
+        );
     }
 
     #[test]

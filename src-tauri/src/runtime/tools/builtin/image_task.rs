@@ -156,7 +156,7 @@ impl ImageTaskRuntimeTool {
                 "input image file_id not found in this conversation: {file_id}"
             ))
         })?;
-        resolve_and_authorize_path(ctx, &stored_path, PathOp::Read).await
+        self.resolve_stored_path_to_existing_file(&stored_path)
     }
 
     fn resolve_file_id_stored_path(&self, file_id: &str) -> Result<Option<String>, ToolError> {
@@ -176,6 +176,28 @@ impl ImageTaskRuntimeTool {
             .get_generated_file_for_conversation(file_id, conversation_id)
             .map_err(|err| ToolError::ExecutionFailed(format!("file lookup failed: {err}")))?;
         Ok(generated.as_ref().and_then(stored_path_from_record))
+    }
+
+    fn conversation_dir(&self) -> std::path::PathBuf {
+        self.deps
+            .storage
+            .base_dir()
+            .join("conversations")
+            .join(&self.deps.conversation_id)
+    }
+
+    fn resolve_stored_path_to_existing_file(
+        &self,
+        stored_path: &str,
+    ) -> Result<std::path::PathBuf, ToolError> {
+        let conv_dir = self.conversation_dir();
+        if let Ok(path) = FileManager::resolve_existing_file_under_root(&conv_dir, stored_path) {
+            return Ok(path);
+        }
+        self.deps
+            .file_manager
+            .resolve_existing_file(stored_path)
+            .map_err(|err| ToolError::ExecutionFailed(format!("stored file unavailable: {err}")))
     }
 
     async fn post_image_task(
@@ -251,13 +273,15 @@ impl ImageTaskRuntimeTool {
                 input.output.format.as_deref(),
             );
             let file_name = generated_file_name(response.task_id.as_deref(), idx, &ext);
-            let info = self
-                .deps
-                .file_manager
-                .write_file("generated/images", &file_name, &bytes)
-                .map_err(|err| {
-                    ToolError::ExecutionFailed(format!("failed to write generated image: {err}"))
-                })?;
+            let info = FileManager::write_file_under_root(
+                self.conversation_dir(),
+                "generated/images",
+                &file_name,
+                &bytes,
+            )
+            .map_err(|err| {
+                ToolError::ExecutionFailed(format!("failed to write generated image: {err}"))
+            })?;
 
             let file_id = uuid::Uuid::new_v4().to_string();
             let description = truncate_chars(
@@ -1042,8 +1066,16 @@ mod tests {
         let files = tool.persist_output_assets(&input, &response).await.unwrap();
 
         assert_eq!(files.len(), 1);
-        let full_path = workspace_dir.path().join(&files[0].stored_path);
+        let full_path = storage_dir
+            .path()
+            .join("conversations")
+            .join("conv-1")
+            .join(&files[0].stored_path);
         assert_eq!(std::fs::read(full_path).unwrap(), vec![1_u8, 2, 3]);
+        assert!(
+            !workspace_dir.path().join(&files[0].stored_path).exists(),
+            "new ImageTask outputs should not be written to the workspace root"
+        );
         let record = storage
             .get_generated_file_for_conversation(&files[0].file_id, "conv-1")
             .unwrap()

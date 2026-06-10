@@ -830,6 +830,7 @@ impl AppStorage {
 }
 
 pub struct RuntimeRepositoryFacade {
+    storage_base_dir: Option<PathBuf>,
     session_store: std::sync::Arc<dyn crate::runtime::store::SessionStore>,
     settings_store: std::sync::Arc<dyn crate::runtime::store::SettingsStore>,
     audit_store: std::sync::Arc<dyn crate::runtime::store::AuditStore>,
@@ -842,6 +843,7 @@ pub struct RuntimeRepositoryFacade {
 impl RuntimeRepositoryFacade {
     pub fn for_test() -> Self {
         Self {
+            storage_base_dir: None,
             session_store: std::sync::Arc::new(
                 crate::runtime::store::InMemorySessionStore::default(),
             ),
@@ -869,6 +871,7 @@ impl RuntimeRepositoryFacade {
         cus: Option<std::sync::Arc<crate::storage::CurrentUserStorage>>,
     ) -> Self {
         Self {
+            storage_base_dir: Some(storage.base_dir().to_path_buf()),
             session_store: std::sync::Arc::new(FileSessionStore {
                 storage: storage.clone(),
             }),
@@ -924,6 +927,10 @@ impl RuntimeRepositoryFacade {
 
     pub fn file_record_store(&self) -> &dyn crate::runtime::store::FileRecordStore {
         self.file_record_store.as_ref()
+    }
+
+    pub fn storage_base_dir(&self) -> Option<&Path> {
+        self.storage_base_dir.as_deref()
     }
 
     pub fn authorized_workspace_store(

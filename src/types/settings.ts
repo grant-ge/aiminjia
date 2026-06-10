@@ -54,7 +54,7 @@ export const DEFAULT_SETTINGS: Settings = {
   cloudGatewayMode: 'v2',
   personaOnboardingDone: false,
   appLanguage: 'zh-CN',
-  fontScale: 'small',
+  fontScale: 'medium',
   chatWidthMode: 'full',
   accentColor: '',
   uiHomeSelectedWorkspace: '',
