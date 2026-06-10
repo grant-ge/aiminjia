@@ -1,0 +1,415 @@
+{
+  "module": "skill-management-registry-sync",
+  "source_basis": "code-tests-only",
+  "key_nodes": [
+    {
+      "filePath": "src-tauri/src/storage/aijia_home.rs",
+      "summary": "定义 `~/.renlijia/skills/` 全局技能根与 `~/.renlijia/users/{scope}/skills/` 用户技能根，是 loader、导入导出和同步链路共享的路径真相源。",
+      "tags": ["storage", "skill", "paths", "roots"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/lib.rs",
+      "summary": "启动时组装双根 skill roots、初始加载磁盘技能、把 `SkillRegistry` 和 `GlobalSkillSyncConfig` 注册进 Tauri state，并暴露相关 command。",
+      "tags": ["bootstrap", "tauri", "skill", "registry"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src-tauri/src/plugin/skill/frontmatter.rs",
+      "summary": "解析 `SKILL.md` 的 YAML frontmatter，兼容 BOM/CRLF，并把 `name`/`description` 视为必填契约。",
+      "tags": ["skill", "frontmatter", "parser", "windows"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/plugin/skill/types.rs",
+      "summary": "定义 `SkillFrontmatter`、`DiskSkill` 和 `SkillSource`，把 User/Tenant/Global 来源和展示字段收口为 registry 与 UI 共享结构。",
+      "tags": ["skill", "types", "frontmatter", "source"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/plugin/skill/loader.rs",
+      "summary": "扫描技能目录、过滤非法目录名、读取 `SKILL.md`、叠加 `.lotus-meta.json`/`.scope`，并按 roots 优先级处理同名覆盖。",
+      "tags": ["skill", "loader", "overlay", "precedence"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src-tauri/src/plugin/skill/registry.rs",
+      "summary": "维护内存态技能表，支持 `replace_all` 全量替换、全量 catalog 渲染，以及按 agent 追踪增量 catalog delta。",
+      "tags": ["skill", "registry", "catalog", "hot-reload"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src-tauri/src/plugin/skill/global_sync.rs",
+      "summary": "负责从服务端获取 tenant/public 技能包、下载解压校验、原子安装、写入 `.scope`/`.lotus-meta.json`、删除失效技能，并提供 registry reload 辅助函数。",
+      "tags": ["skill", "sync", "global", "tenant", "install"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src-tauri/src/plugin/skill/sync_command.rs",
+      "summary": "把全局技能同步暴露为 Tauri command，依赖登录态 session_key，并在部分成功场景后触发 registry reload。",
+      "tags": ["tauri", "skill", "sync", "command"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/commands/skill_management.rs",
+      "summary": "承载本地技能安装、卸载、列举、registry 刷新与 marketplace 安装逻辑，是用户侧 skill management 的主要命令面。",
+      "tags": ["command", "skill", "install", "refresh"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src-tauri/src/commands/skill_draft.rs",
+      "summary": "处理 zip 包导入导出，区分用户目录冲突与对 tenant/public 技能的 shadow 风险，并在导入后热刷新 registry。",
+      "tags": ["command", "skill", "import", "shadow"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/tools/builtin/load_skill.rs",
+      "summary": "`Skill` RuntimeTool 以无状态方式返回技能正文，registry miss 时会节流触发一次 refresh-then-retry，覆盖同 turn 安装后立即使用的边缘场景。",
+      "tags": ["runtime-tool", "skill", "miss-retry", "stateless"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/tools/builtin/refresh_skills.rs",
+      "summary": "`RefreshSkills` RuntimeTool 把重新扫盘 user/global skill roots 的能力暴露给模型侧，依赖 `refresh_skill_registry` 完成内存更新。",
+      "tags": ["runtime-tool", "skill", "refresh", "hot-reload"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/commands/plugin.rs",
+      "summary": "通过 `list_skills` / `get_plugin_info` 把 `SkillRegistry` 中的 SKILL.md 技能暴露给前端插件视图。",
+      "tags": ["plugin", "skill", "listing", "ui"],
+      "complexity": "simple"
+    },
+    {
+      "filePath": "src-tauri/tests/skill_hot_reload_test.rs",
+      "summary": "验证重新扫盘后新增技能可见，以及 miss-retry 的 5 秒节流语义，是热刷新行为的核心测试契约。",
+      "tags": ["tests", "skill", "hot-reload", "throttle"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/tests/skill_install_refresh_test.rs",
+      "summary": "验证安装后经 `replace_all` 刷新即可让技能出现在列表中，并确认 user root 对同名 global root 的覆盖优先级。",
+      "tags": ["tests", "skill", "install", "precedence"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/tests/skill_install_validation_test.rs",
+      "summary": "钉住目录名、`SKILL.md` 存在性、frontmatter 可解析性与 force overwrite 行为，是本地安装入口的最小校验合同。",
+      "tags": ["tests", "skill", "validation", "install"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/tests/skill_md_loader_test.rs",
+      "summary": "覆盖 loader 只读取合法技能目录、忽略隐藏/草稿/非法目录名，以及 user 对 global 的优先覆盖。",
+      "tags": ["tests", "skill", "loader", "precedence"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/tests/skill_md_frontmatter_test.rs",
+      "summary": "验证 `SKILL.md` frontmatter 的必填字段与 Claude Code 兼容字段，保证 parser 与类型定义的契约不漂移。",
+      "tags": ["tests", "skill", "frontmatter", "compatibility"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/tests/skill_md_catalog_test.rs",
+      "summary": "验证 registry 的 catalog budget 裁剪与增量发送逻辑，说明 `sent_skill_names` 只服务于 delta 优化而非真相源。",
+      "tags": ["tests", "skill", "registry", "catalog"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/tests/list_skills_returns_skill_md_only_test.rs",
+      "summary": "验证前端列表只暴露 SKILL.md 技能，且 user scope 的同名技能能覆盖 global 显示。",
+      "tags": ["tests", "skill", "listing", "ui"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/tests/review_skill_system_no_legacy_test.rs",
+      "summary": "回归测试禁止旧的 stateful skill/runtime patch 标记回流到生产代码，强化当前无状态 SKILL.md 体系边界。",
+      "tags": ["tests", "skill", "legacy-cleanup", "architecture"],
+      "complexity": "medium"
+    }
+  ],
+  "semantic_edges": [
+    {
+      "sourceFilePath": "src-tauri/src/lib.rs",
+      "targetFilePath": "src-tauri/src/storage/aijia_home.rs",
+      "type": "reads_from",
+      "reason": "`lib.rs` 在启动阶段通过 `AiJiaHome` 计算全局技能根，并在登录态下拼接用户 scope 技能根。",
+      "weight": 0.97
+    },
+    {
+      "sourceFilePath": "src-tauri/src/lib.rs",
+      "targetFilePath": "src-tauri/src/plugin/skill/loader.rs",
+      "type": "calls",
+      "reason": "启动阶段调用 `load_skill_roots_tagged` 初始加载磁盘技能，形成应用内第一份 `SkillRegistry` 内容。",
+      "weight": 0.96
+    },
+    {
+      "sourceFilePath": "src-tauri/src/plugin/skill/loader.rs",
+      "targetFilePath": "src-tauri/src/plugin/skill/frontmatter.rs",
+      "type": "calls",
+      "reason": "loader 读取 `SKILL.md` 后交给 frontmatter parser，只有解析成功的目录才会进入 registry。",
+      "weight": 0.98
+    },
+    {
+      "sourceFilePath": "src-tauri/src/plugin/skill/loader.rs",
+      "targetFilePath": "src-tauri/src/plugin/skill/types.rs",
+      "type": "depends_on",
+      "reason": "loader 产出 `DiskSkill` 并根据 `.scope` 或 root 来源打上 `SkillSource` 标签。",
+      "weight": 0.95
+    },
+    {
+      "sourceFilePath": "src-tauri/src/plugin/skill/registry.rs",
+      "targetFilePath": "src-tauri/src/plugin/skill/types.rs",
+      "type": "depends_on",
+      "reason": "registry 以 `DiskSkill` 为内存真相源，catalog 渲染、列表展示和 invoked 记录都围绕该结构运作。",
+      "weight": 0.92
+    },
+    {
+      "sourceFilePath": "src-tauri/src/commands/skill_management.rs",
+      "targetFilePath": "src-tauri/src/plugin/skill/loader.rs",
+      "type": "calls",
+      "reason": "`refresh_skill_registry` 重新扫描 user/global 两个 roots，并让新装或新删的磁盘技能重新映射进内存。",
+      "weight": 0.97
+    },
+    {
+      "sourceFilePath": "src-tauri/src/commands/skill_management.rs",
+      "targetFilePath": "src-tauri/src/plugin/skill/registry.rs",
+      "type": "calls",
+      "reason": "`refresh_skill_registry` 使用 `replace_all` 整表替换 registry，并通过事件通知前端重新拉取列表。",
+      "weight": 0.96
+    },
+    {
+      "sourceFilePath": "src-tauri/src/commands/plugin.rs",
+      "targetFilePath": "src-tauri/src/commands/skill_management.rs",
+      "type": "routes",
+      "reason": "`list_skills` / `get_plugin_info` 复用 `list_skills_from_registry`，把磁盘技能转换成前端消费的 `SkillInfo`。",
+      "weight": 0.9
+    },
+    {
+      "sourceFilePath": "src-tauri/src/plugin/skill/global_sync.rs",
+      "targetFilePath": "src-tauri/src/plugin/skill/frontmatter.rs",
+      "type": "validates",
+      "reason": "全局同步在安装前后都用 `validate_skill_md` 复用 frontmatter 解析，确保从服务端来的技能包符合当前 SKILL.md 契约。",
+      "weight": 0.95
+    },
+    {
+      "sourceFilePath": "src-tauri/src/plugin/skill/global_sync.rs",
+      "targetFilePath": "src-tauri/src/plugin/skill/loader.rs",
+      "type": "calls",
+      "reason": "`reload_skill_registry` 通过 `load_skill_roots` 重新装载磁盘技能，让同步结果回流到内存 registry。",
+      "weight": 0.93
+    },
+    {
+      "sourceFilePath": "src-tauri/src/plugin/skill/sync_command.rs",
+      "targetFilePath": "src-tauri/src/plugin/skill/global_sync.rs",
+      "type": "calls",
+      "reason": "Tauri command 调用服务端同步主链路，并在条件满足时再调用 registry reload。",
+      "weight": 0.97
+    },
+    {
+      "sourceFilePath": "src-tauri/src/commands/skill_draft.rs",
+      "targetFilePath": "src-tauri/src/plugin/skill/global_sync.rs",
+      "type": "calls",
+      "reason": "zip 包导入完成后直接复用 `reload_skill_registry`，避免等待下一次应用重启或手动刷新。",
+      "weight": 0.91
+    },
+    {
+      "sourceFilePath": "src-tauri/src/commands/skill_draft.rs",
+      "targetFilePath": "src-tauri/src/storage/aijia_home.rs",
+      "type": "reads_from",
+      "reason": "导入逻辑依赖 `AiJiaHome` 同时查看 user skills dir 与 global skills dir，以给出冲突或 shadow 提示。",
+      "weight": 0.9
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/load_skill.rs",
+      "targetFilePath": "src-tauri/src/plugin/skill/registry.rs",
+      "type": "reads_from",
+      "reason": "`Skill` RuntimeTool 从共享 registry 取 `DiskSkill`，并在成功调用后记录 invoked skill。",
+      "weight": 0.97
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/load_skill.rs",
+      "targetFilePath": "src-tauri/src/commands/skill_management.rs",
+      "type": "calls",
+      "reason": "registry miss 时，`Skill` 工具会节流调用 `refresh_skill_registry` 再重查一次，覆盖同 turn 安装后立即使用的场景。",
+      "weight": 0.94
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/refresh_skills.rs",
+      "targetFilePath": "src-tauri/src/commands/skill_management.rs",
+      "type": "calls",
+      "reason": "`RefreshSkills` 只是模型侧入口，真正的扫盘和 registry 替换都下沉到 `refresh_skill_registry`。",
+      "weight": 0.98
+    },
+    {
+      "sourceFilePath": "src-tauri/tests/skill_md_loader_test.rs",
+      "targetFilePath": "src-tauri/src/plugin/skill/loader.rs",
+      "type": "validates",
+      "reason": "测试明确约束 loader 的合法目录过滤规则，以及 user root 覆盖 global root 的同名技能。",
+      "weight": 0.95
+    },
+    {
+      "sourceFilePath": "src-tauri/tests/skill_md_frontmatter_test.rs",
+      "targetFilePath": "src-tauri/src/plugin/skill/frontmatter.rs",
+      "type": "validates",
+      "reason": "测试覆盖 frontmatter 必填项与扩展字段，防止 parser 与技能格式契约发生漂移。",
+      "weight": 0.95
+    },
+    {
+      "sourceFilePath": "src-tauri/tests/skill_install_validation_test.rs",
+      "targetFilePath": "src-tauri/src/commands/skill_management.rs",
+      "type": "validates",
+      "reason": "测试校验本地安装入口对目录名、SKILL.md 和 force overwrite 的行为约束。",
+      "weight": 0.93
+    },
+    {
+      "sourceFilePath": "src-tauri/tests/skill_install_refresh_test.rs",
+      "targetFilePath": "src-tauri/src/plugin/skill/registry.rs",
+      "type": "validates",
+      "reason": "测试说明安装后通过 `replace_all` 刷新即可让 registry 和列表视图立刻看见新技能。",
+      "weight": 0.92
+    },
+    {
+      "sourceFilePath": "src-tauri/tests/skill_hot_reload_test.rs",
+      "targetFilePath": "src-tauri/src/runtime/tools/builtin/load_skill.rs",
+      "type": "validates",
+      "reason": "热加载测试覆盖新增技能重扫可见与 miss-retry 节流语义，是 `Skill` 工具兜底设计的直接合同。",
+      "weight": 0.9
+    },
+    {
+      "sourceFilePath": "src-tauri/tests/list_skills_returns_skill_md_only_test.rs",
+      "targetFilePath": "src-tauri/src/commands/plugin.rs",
+      "type": "validates",
+      "reason": "测试保证前端层看到的是 SKILL.md 技能投影，而不是旧内置 daily skill 或其他遗留条目。",
+      "weight": 0.89
+    },
+    {
+      "sourceFilePath": "src-tauri/tests/review_skill_system_no_legacy_test.rs",
+      "targetFilePath": "src-tauri/src/runtime/tools/builtin/load_skill.rs",
+      "type": "validates",
+      "reason": "回归测试从全局上禁止旧 stateful skill 机制回流，间接守护 `Skill` 工具的无状态模型。",
+      "weight": 0.84
+    }
+  ],
+  "architecture_findings": [
+    {
+      "title": "Skill 系统以 user/global 双根为真相源，user root 永远先于 global root",
+      "description": "`AiJiaHome` 同时暴露 `~/.renlijia/skills/` 与 `~/.renlijia/users/{scope}/skills/`，`lib.rs` 启动时按 `(user, global)` 顺序构造 roots 并加载；`loader.rs` 采用先到先得策略，同名 skill 只保留高优先级条目并记录 collision 日志。这让本地导入自然 shadow tenant/public 推送，而不需要额外的覆盖表。",
+      "evidence": [
+        "src-tauri/src/storage/aijia_home.rs",
+        "src-tauri/src/lib.rs",
+        "src-tauri/src/plugin/skill/loader.rs",
+        "src-tauri/tests/skill_install_refresh_test.rs",
+        "src-tauri/tests/skill_md_loader_test.rs"
+      ]
+    },
+    {
+      "title": "SKILL.md frontmatter 是技能契约主源，sidecar 只补缺口不改正文",
+      "description": "`frontmatter.rs` 把 `name`/`description` 作为必填，并兼容 Windows BOM/CRLF；`loader.rs` 只在 frontmatter 缺失 `category` 或展示文案时，才用 `.lotus-meta.json` 覆盖缺失字段，同时保留 `SKILL.md` 正文与 hash 不变；`.scope` 仅用于把全局目录里的 skill 区分为 Tenant 或 Global 来源。",
+      "evidence": [
+        "src-tauri/src/plugin/skill/frontmatter.rs",
+        "src-tauri/src/plugin/skill/types.rs",
+        "src-tauri/src/plugin/skill/loader.rs",
+        "src-tauri/src/plugin/skill/global_sync.rs",
+        "src-tauri/tests/skill_md_frontmatter_test.rs"
+      ]
+    },
+    {
+      "title": "Registry 的刷新语义是 replace_all 整表替换，catalog delta 只是发送优化",
+      "description": "`SkillRegistry` 的内存真相源只有 `skills` map；刷新路径通过 `replace_all` 整体替换并清空 `sent_skill_names`，保证下一次 catalog 能重新发全量。`format_full_catalog` 始终可重放，`catalog_delta_for_agent` 只做按 agent 的增量发送优化，不可当作跨会话持久状态。",
+      "evidence": [
+        "src-tauri/src/plugin/skill/registry.rs",
+        "src-tauri/src/commands/skill_management.rs",
+        "src-tauri/tests/skill_md_catalog_test.rs",
+        "src-tauri/tests/skill_install_refresh_test.rs"
+      ]
+    },
+    {
+      "title": "Global sync 把 tenant/public 同步到同一全局目录，并用 sidecar 标注来源",
+      "description": "`global_sync.rs` 从 `/v1/skill-packages` 一次拉回 tenant + public 技能，只有版本变化才下载 zip；安装前后都会校验 `SKILL.md`，解压后写入 `.scope` 与 `.lotus-meta.json`，并移除远端已消失的本地技能。由于 tenant/public 当前都落到 `~/.renlijia/skills/<id>/`，来源区分依赖 sidecar 而不是目录层级。",
+      "evidence": [
+        "src-tauri/src/plugin/skill/global_sync.rs",
+        "src-tauri/src/plugin/skill/sync_command.rs",
+        "src-tauri/src/plugin/skill/loader.rs",
+        "src-tauri/src/storage/aijia_home.rs"
+      ]
+    },
+    {
+      "title": "本地安装与 zip 导入都走热刷新，但冲突与 shadow 处理分成两条命令面",
+      "description": "`skill_management.rs` 的本地安装强调目录/MD/zip 解析与 force overwrite，成功后总是 `refresh_skill_registry`；`skill_draft.rs` 的 zip 导入额外检测 global 同名技能并返回 `Conflict` 或 `ShadowWarning`，让前端在“会覆盖用户目录已有技能”和“会 shadow tenant/public 技能”之间做不同确认。两条路径最后都回到双根 reload，因此 UI 与 runtime 看到的都是同一份 registry。",
+      "evidence": [
+        "src-tauri/src/commands/skill_management.rs",
+        "src-tauri/src/commands/skill_draft.rs",
+        "src-tauri/src/plugin/skill/global_sync.rs",
+        "src-tauri/tests/skill_install_validation_test.rs",
+        "src-tauri/tests/skill_install_refresh_test.rs"
+      ]
+    },
+    {
+      "title": "RuntimeTool 侧已补上 miss-refresh 兜底，但同步删除与 shadow 分支测试仍有缺口",
+      "description": "`load_skill.rs` 的 `Skill` 工具在 registry miss 时会节流触发一次 refresh-then-retry，`RefreshSkills` 则提供显式手动刷新入口；`skill_hot_reload_test.rs` 也覆盖了新增技能热刷新与 5 秒节流。不过从当前已读 `src-tauri/tests/*skill*` 集合看，没有直接覆盖 `ImportSkillOutcome::ShadowWarning`/`Conflict.shadows` 分支，也没有覆盖 `sync_builtin_skills` 仅发生远端删除、`report.installed` 为空时 registry 不会 reload 的场景，因此“全局技能被远端撤下后 UI/运行时立即失效”仍存在刷新缺口风险。",
+      "evidence": [
+        "src-tauri/src/runtime/tools/builtin/load_skill.rs",
+        "src-tauri/src/runtime/tools/builtin/refresh_skills.rs",
+        "src-tauri/src/plugin/skill/sync_command.rs",
+        "src-tauri/src/commands/skill_draft.rs",
+        "src-tauri/tests/skill_hot_reload_test.rs",
+        "src-tauri/tests/skill_install_validation_test.rs",
+        "src-tauri/tests/skill_install_refresh_test.rs"
+      ]
+    }
+  ],
+  "tour_steps": [
+    {
+      "title": "先看 skill roots 如何进入应用启动链路",
+      "description": "从 `AiJiaHome` 的 `skills_dir` / `user_skills_dir` 开始，再看 `lib.rs` 如何根据当前用户 scope 构造 `(user, global)` roots、初始化 `SkillRegistry` 并把同步配置托管到 Tauri state。这里能建立整个模块的存储边界与启动时装载顺序。",
+      "filePaths": [
+        "src-tauri/src/storage/aijia_home.rs",
+        "src-tauri/src/lib.rs"
+      ]
+    },
+    {
+      "title": "再看 SKILL.md 契约与 loader 覆盖规则",
+      "description": "读 `frontmatter.rs` 了解允许哪些 frontmatter 字段、Windows 文本兼容点和必填项，再读 `types.rs` / `loader.rs` 看 `DiskSkill` 结构、非法目录过滤、user 覆盖 global、`.lotus-meta.json` 与 `.scope` 的补丁逻辑。",
+      "filePaths": [
+        "src-tauri/src/plugin/skill/frontmatter.rs",
+        "src-tauri/src/plugin/skill/types.rs",
+        "src-tauri/src/plugin/skill/loader.rs",
+        "src-tauri/tests/skill_md_frontmatter_test.rs",
+        "src-tauri/tests/skill_md_loader_test.rs"
+      ]
+    },
+    {
+      "title": "理解 registry 为什么用整表替换而不是增量写",
+      "description": "读 `registry.rs` 的 `replace_all`、`format_full_catalog` 和 `catalog_delta_for_agent`，再对照相关测试看哪些状态是内存真相源、哪些只是按 agent 的发送缓存。这样能避免把 delta 优化误当成持久状态。",
+      "filePaths": [
+        "src-tauri/src/plugin/skill/registry.rs",
+        "src-tauri/tests/skill_md_catalog_test.rs",
+        "src-tauri/tests/skill_install_refresh_test.rs"
+      ]
+    },
+    {
+      "title": "顺着 global sync 看 tenant/public 如何落到磁盘并回灌 registry",
+      "description": "先读 `global_sync.rs` 的下载、解压、校验、原子安装、sidecar 写入与本地删除逻辑，再读 `sync_command.rs` 看登录态入口与 reload 条件。这里也能看出 tenant/public 目前共用全局目录，来源由 `.scope` 标记而不是目录分层。",
+      "filePaths": [
+        "src-tauri/src/plugin/skill/global_sync.rs",
+        "src-tauri/src/plugin/skill/sync_command.rs",
+        "src-tauri/src/plugin/skill/loader.rs"
+      ]
+    },
+    {
+      "title": "最后看用户命令面、RuntimeTool 与当前测试缺口",
+      "description": "读 `skill_management.rs` / `skill_draft.rs` 看 install、import、conflict、shadow、manual refresh；再读 `load_skill.rs` / `refresh_skills.rs` 看模型侧的 stateless load 与 miss-refresh 兜底。最后回到热刷新、列表和 no-legacy 测试，确认现有契约，同时留意当前未覆盖的 shadow 警告与 sync 删除后不 reload 风险。",
+      "filePaths": [
+        "src-tauri/src/commands/skill_management.rs",
+        "src-tauri/src/commands/skill_draft.rs",
+        "src-tauri/src/runtime/tools/builtin/load_skill.rs",
+        "src-tauri/src/runtime/tools/builtin/refresh_skills.rs",
+        "src-tauri/tests/skill_hot_reload_test.rs",
+        "src-tauri/tests/list_skills_returns_skill_md_only_test.rs",
+        "src-tauri/tests/review_skill_system_no_legacy_test.rs"
+      ]
+    }
+  ]
+}

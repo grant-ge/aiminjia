@@ -1,0 +1,252 @@
+{
+  "module": "runtime-task-tools",
+  "source_basis": "code-tests-only",
+  "key_nodes": [
+    {
+      "filePath": "src-tauri/src/runtime/task/task_models.rs",
+      "summary": "定义 TaskStatus 与 TaskRecord。TaskRecord 持久化字段覆盖任务元信息与运行时上下文（session_id、parent_run_id、owner_agent_id），是任务功能链的共享领域模型。",
+      "tags": ["task", "runtime-models"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/task/task_v2_store.rs",
+      "summary": "FileTaskV2Store 负责任务文件化持久化：按会话会话目录写入 `{id}.json`，维护 `.highwatermark` 作为递增 ID，并通过临时文件+重命名实现原子更新。",
+      "tags": ["runtime", "storage", "persistence"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/task/task_runtime.rs",
+      "summary": "TaskRuntime 封装任务运行态能力：创建/查询列表与 set_status。更新状态时先读原始记录，再通过 RuntimeEventBus 异步发布 TaskStatusChanged 事件。",
+      "tags": ["runtime", "events", "state"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/tools/builtin/task_tools.rs",
+      "summary": "TaskCreate/TaskUpdate/TaskList/TaskGet/TaskClaim 五个 runtime tool 直连 FileTaskV2Store 执行会话级任务 CRUD、锁定与状态变更，包含任务依赖图的 cycle 检测与前置通知钩子。",
+      "tags": ["runtime", "tools", "task-tools"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/tools/builtin/task_stop.rs",
+      "summary": "TaskStop tool 独立于 Task V2：按 task_id 映射 agent_id 查找异步任务句柄，触发取消 token 并置状态为 Killed，返回终止结果。",
+      "tags": ["runtime", "tools", "task-stop", "cancel"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/tools/builtin/task_output.rs",
+      "summary": "TaskOutput tool 独立于任务状态模型，读取异步子代理 transcript 文件（多路径兜底）并按 offset 增量返回 lines 与 new_offset。",
+      "tags": ["runtime", "tools", "task-output", "io"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/tests/task_tools_test.rs",
+      "summary": "覆盖 TaskCreate/TaskUpdate/List 的目录落盘、列表可见、更新、删除以及前端 TaskRecordFrontend 的读取；同时包含老全局任务目录兼容读路径测试。",
+      "tags": ["tests", "task-tools", "storage"],
+      "complexity": "low"
+    },
+    {
+      "filePath": "src-tauri/tests/task_get_tool_test.rs",
+      "summary": "覆盖 TaskGet 的完整返回、缺失返回 null、缺少 taskId 校验、read-only 标记，绑定到 per-conv 会话路径。",
+      "tags": ["tests", "task-tools", "read-model"],
+      "complexity": "low"
+    },
+    {
+      "filePath": "src-tauri/tests/task_claim_test.rs",
+      "summary": "覆盖 TaskClaim 的 owner 断言：未认领可认领、他人已认领失败、\"*\" 开放槽位可认领、幂等认领。",
+      "tags": ["tests", "task-tools", "ownership"],
+      "complexity": "low"
+    },
+    {
+      "filePath": "src-tauri/tests/task_stop_tool_test.rs",
+      "summary": "覆盖 TaskStop 的核心失败与成功链路：未知 id、已终态、缺失/空参数、成功后的响应字段与状态变化。",
+      "tags": ["tests", "tool-stop", "async-task-store"],
+      "complexity": "low"
+    },
+    {
+      "filePath": "src-tauri/tests/review_task_storage_per_conv_test.rs",
+      "summary": "架构约束测试：验证任务文件写入 `<root>/conversations/<conv_id>/tasks`，不写入全局 `tasks/`，并保证不同会话目录隔离。",
+      "tags": ["tests", "storage-scope", "architecture"],
+      "complexity": "low"
+    }
+  ],
+  "semantic_edges": [
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/task_tools.rs",
+      "targetFilePath": "src-tauri/src/runtime/task/task_models.rs",
+      "type": "contains",
+      "reason": "工具直接构建并读写 TaskRecord/TaskStatus 与其序列化字段，成为任务 DSL 与持久化内容之间的边界。",
+      "weight": 0.91
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/task_tools.rs",
+      "targetFilePath": "src-tauri/src/runtime/task/task_v2_store.rs",
+      "type": "calls",
+      "reason": "TaskCreate/TaskUpdate/TaskList/TaskGet/TaskClaim 通过 store_for() 获取 FileTaskV2Store 并调用 create/list/get/update/delete 实现会话级持久化。",
+      "weight": 0.98
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/task_tools.rs",
+      "targetFilePath": "src-tauri/src/runtime/task/task_runtime.rs",
+      "type": "related",
+      "reason": "两者共同处理任务状态含义：工具层负责 CRUD 与 claim，不直接替代 set_status 事件化更新，而是共享 TaskRecord 的状态模型形成状态语义一致性。",
+      "weight": 0.74
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/task/task_runtime.rs",
+      "targetFilePath": "src-tauri/src/runtime/task/task_v2_store.rs",
+      "type": "depends_on",
+      "reason": "TaskRuntime 通过 Arc<dyn TaskStore> 与 store 接口交互，set_status 要求持久化可读写并基于存量记录拼装事件上下文。",
+      "weight": 0.82
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/task_stop.rs",
+      "targetFilePath": "src-tauri/src/runtime/tools/builtin/task_output.rs",
+      "type": "related",
+      "reason": "两者都是异步子代理生命周期链路组件：TaskStop 负责终止，TaskOutput 负责读取产物转储，属于运行态分离的读写子图。",
+      "weight": 0.84
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/task_output.rs",
+      "targetFilePath": "src-tauri/src/runtime/tools/builtin/task_output.rs",
+      "type": "validates",
+      "reason": "模块内置了针对 task_id 校验、用户路径缺失、offset 读取行为与 transcript 读取偏移的单测，用于验证 TaskOutput 的读文件与输入校验边界。",
+      "weight": 0.66
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/task_tools.rs",
+      "targetFilePath": "src-tauri/tests/review_task_storage_per_conv_test.rs",
+      "type": "tested_by",
+      "reason": "该测试显式验证 TaskCreate 写入会话级目录、避免全局旧目录、以及多会话隔离，直接约束 task_tools 的 store_for() 路径策略。",
+      "weight": 0.97
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/task_tools.rs",
+      "targetFilePath": "src-tauri/tests/task_get_tool_test.rs",
+      "type": "tested_by",
+      "reason": "验证 TaskGet 的边界返回和参数校验，支撑 task_tools 的读取模型语义。",
+      "weight": 0.93
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/task_tools.rs",
+      "targetFilePath": "src-tauri/tests/task_claim_test.rs",
+      "type": "tested_by",
+      "reason": "验证 TaskClaim 的 owner 规则（None、\"*\"、本人、他人）是否按代码实现稳定工作。",
+      "weight": 0.93
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/task_stop.rs",
+      "targetFilePath": "src-tauri/tests/task_stop_tool_test.rs",
+      "type": "tested_by",
+      "reason": "验证 TaskStop 的成功与失败路径（缺参、空参、未知 id、终态拒绝、返回字段）完整覆盖。",
+      "weight": 0.95
+    }
+  ],
+  "architecture_findings": [
+    {
+      "title": "Task V2 任务模型承担持久化与事件链路的统一事实依据",
+      "description": "TaskRecord 不仅保存展示字段，还内嵌 session_id 与 parent_run_id、owner_agent_id，任务创建、读取和状态变更都围绕该模型展开，避免了额外映射层。",
+      "evidence": [
+        "src-tauri/src/runtime/task/task_models.rs",
+        "src-tauri/src/runtime/task/task_runtime.rs",
+        "src-tauri/src/runtime/tools/builtin/task_tools.rs",
+        "src-tauri/tests/task_tools_test.rs"
+      ]
+    },
+    {
+      "title": "任务持久化采用会话目录化约束，禁止回退全局任务目录",
+      "description": "FileTaskV2Store 明确由 `tasks_root` 初始化，Task工具层在缺省路径中使用 `<home>/conversations/<conv_id>/tasks`，并在 review 测试中硬性约束不会创建旧版 `<home>/tasks`。",
+      "evidence": [
+        "src-tauri/src/runtime/task/task_v2_store.rs",
+        "src-tauri/src/runtime/tools/builtin/task_tools.rs",
+        "src-tauri/tests/review_task_storage_per_conv_test.rs",
+        "src-tauri/tests/task_tools_test.rs"
+      ]
+    },
+    {
+      "title": "任务状态更新链路与事件广播分离于工具 CRUD 链路",
+      "description": "TaskRuntime 提供 set_status 与事件发布，是运行时状态语义中心；Tool 层主要做存储 CRUD，不直接调用该状态事件函数，形成控制/读取路径与事件路径分离。",
+      "evidence": [
+        "src-tauri/src/runtime/task/task_runtime.rs",
+        "src-tauri/src/runtime/task/task_models.rs",
+        "src-tauri/src/runtime/tools/builtin/task_tools.rs"
+      ]
+    },
+    {
+      "title": "TaskStop 与 TaskOutput 属于异步 Agent 子系统独立链路",
+      "description": "两个工具并未依赖 FileTaskV2Store，而是直接操作异步任务句柄或 transcript 文件读取，说明系统把任务状态数据与子代理运行/输出观察解耦。",
+      "evidence": [
+        "src-tauri/src/runtime/tools/builtin/task_stop.rs",
+        "src-tauri/src/runtime/tools/builtin/task_output.rs",
+        "src-tauri/tests/task_stop_tool_test.rs"
+      ]
+    },
+    {
+      "title": "测试覆盖形成清晰责任边界",
+      "description": "测试文件按模块功能分片：Create/Update/List/Claim/Get 各有独立验证，且 P1.5 存储位置约束有专门 review 测试，能够定位行为回归。",
+      "evidence": [
+        "src-tauri/tests/task_tools_test.rs",
+        "src-tauri/tests/task_get_tool_test.rs",
+        "src-tauri/tests/task_claim_test.rs",
+        "src-tauri/tests/task_stop_tool_test.rs",
+        "src-tauri/tests/review_task_storage_per_conv_test.rs",
+        "src-tauri/src/runtime/tools/builtin/task_tools.rs",
+        "src-tauri/src/runtime/tools/builtin/task_stop.rs",
+        "src-tauri/src/runtime/tools/builtin/task_output.rs"
+      ]
+    }
+  ],
+  "tour_steps": [
+    {
+      "title": "任务模型与状态语义定义",
+      "description": "从 TaskStatus 与 TaskRecord 定义任务生命周期（Pending/InProgress/Completed/Failed/Cancelled）和运行时上下文字段，建立后续存储与事件链路的公共语言。",
+      "filePaths": [
+        "src-tauri/src/runtime/task/task_models.rs"
+      ]
+    },
+    {
+      "title": "会话级任务存储落盘机制",
+      "description": "查看 FileTaskV2Store 的目录策略、next_id、create/list/update/get/delete 与 `.highwatermark` 更新机制，并结合测试确认会话目录隔离。",
+      "filePaths": [
+        "src-tauri/src/runtime/task/task_v2_store.rs",
+        "src-tauri/tests/review_task_storage_per_conv_test.rs",
+        "src-tauri/tests/task_tools_test.rs"
+      ]
+    },
+    {
+      "title": "Task 工具链的直接 store 操作",
+      "description": "遍历 TaskCreate/Update/List/Get/Claim 的 execute 流程：选择 store 根路径、执行 CRUD，处理 owner/状态更新/删除/cycle 检测与可见性返回。",
+      "filePaths": [
+        "src-tauri/src/runtime/tools/builtin/task_tools.rs",
+        "src-tauri/tests/task_tools_test.rs",
+        "src-tauri/tests/task_get_tool_test.rs",
+        "src-tauri/tests/task_claim_test.rs"
+      ]
+    },
+    {
+      "title": "TaskRuntime 运行时事件链",
+      "description": "查看 set_status 流程如何先读取 task record 再更新状态，并异步 emit `TaskStatusChanged`，建立任务状态的 runtime 传播路径。",
+      "filePaths": [
+        "src-tauri/src/runtime/task/task_runtime.rs"
+      ]
+    },
+    {
+      "title": "异步子代理独立链路：停止与输出",
+      "description": "分别阅读 TaskStop 与 TaskOutput 的实现，理解它们如何基于 async task 句柄/ transcript 文件完成终止与日志增量读取，彼此与 V2 存储解耦。",
+      "filePaths": [
+        "src-tauri/src/runtime/tools/builtin/task_stop.rs",
+        "src-tauri/src/runtime/tools/builtin/task_output.rs",
+        "src-tauri/tests/task_stop_tool_test.rs"
+      ]
+    },
+    {
+      "title": "关键验收与回归点",
+      "description": "用 review 测试验证路径约束，其次按工具测试逐项复核边界行为：TaskGet 空值/缺参，TaskClaim 所有权规则，TaskStop 终态拒绝和返回结构。",
+      "filePaths": [
+        "src-tauri/tests/review_task_storage_per_conv_test.rs",
+        "src-tauri/tests/task_get_tool_test.rs",
+        "src-tauri/tests/task_claim_test.rs",
+        "src-tauri/tests/task_stop_tool_test.rs"
+      ]
+    }
+  ]
+}

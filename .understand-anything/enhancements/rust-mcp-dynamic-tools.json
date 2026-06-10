@@ -1,0 +1,191 @@
+{
+  "module": "rust-mcp-dynamic-tool-registration",
+  "coverage": "代码/测试来源：MCP Tauri commands、McpServerManager、McpConnection、McpRuntimeTool、MCP types、ToolRegistry、TOOL_CATALOG、ToolDefinition、McpConfigStore 与 MCP 相关测试扫描。",
+  "key_nodes": [
+    {
+      "filePath": "src-tauri/src/lib.rs",
+      "summary": "应用启动时构建 ToolRegistry、McpServerManager 和 McpConfigStore，加载持久化 MCP 配置并进行 pre-register，不自动连接远端。",
+      "tags": ["bootstrap", "mcp", "tool-registry", "state"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "src-tauri/src/transport/tauri_commands/mcp.rs",
+      "summary": "前端可调用的 MCP 管理入口，提供 list/add/remove/connect/disconnect；add 负责落盘和注册连接，connect/disconnect 负责动态工具上线和下线。",
+      "tags": ["tauri-command", "mcp", "lifecycle"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/mcp/manager.rs",
+      "summary": "MCP server 生命周期中枢，维护 server 状态和 registered_tool_ids，并在 connect/refresh/disconnect/unregister 时协调 ToolRegistry。",
+      "tags": ["mcp", "manager", "dynamic-registration", "state-machine"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/mcp/connection.rs",
+      "summary": "McpConnection 抽象与 stdio 实现，负责 JSON-RPC 初始化、tools/list、tools/call、断开和 runtime placeholder 解析。",
+      "tags": ["mcp", "connection", "stdio", "json-rpc"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/mcp/runtime_tool.rs",
+      "summary": "把单个 MCP tool 适配成 RuntimeTool；执行时将 fully-qualified id 映射回远端原始 tool 名，并处理取消时断连。",
+      "tags": ["runtime-tool", "mcp", "adapter", "cancellation"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/mcp/types.rs",
+      "summary": "定义 MCP server config、tool definition、mcp__<server>__<tool> 命名规则，以及 catalog/tool-definition 转换。",
+      "tags": ["mcp", "types", "naming", "catalog"],
+      "complexity": "low"
+    },
+    {
+      "filePath": "src-tauri/src/plugin/registry.rs",
+      "summary": "动态工具真正挂载点，runtime_tools 与 TOOL_CATALOG 双写；MCP 工具在 schema 暴露、dispatcher 注入、refresh/disconnect 清理都经过这里。",
+      "tags": ["tool-registry", "runtime-tools", "catalog", "dispatcher"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/tools/catalog.rs",
+      "summary": "动态可变 TOOL_CATALOG，MCP 工具注册时写入 CatalogEntry，断开或刷新时 remove_entry 清理 schema 单一真相源。",
+      "tags": ["tool-catalog", "schema", "dynamic-registration"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/tools/definition.rs",
+      "summary": "Runtime ToolDefinition 元数据模型，MCP tool 被标记为 Primitive 且 capability_scope 包含 mcp。",
+      "tags": ["tool-definition", "metadata", "permission-scope"],
+      "complexity": "low"
+    },
+    {
+      "filePath": "src-tauri/src/storage/mcp_config_store.rs",
+      "summary": "MCP server 配置持久化层，只存 server config，不保存已注册动态工具快照。",
+      "tags": ["storage", "mcp", "persistence"],
+      "complexity": "low"
+    },
+    {
+      "filePath": "src-tauri/tests/mcp_runtime_tool_test.rs",
+      "summary": "MCP runtime tool 相关测试，覆盖 MCP tool 作为 RuntimeTool 的执行适配边界。",
+      "tags": ["test", "mcp", "runtime-tool"],
+      "complexity": "moderate"
+    }
+  ],
+  "semantic_edges": [
+    {
+      "sourceFilePath": "src-tauri/src/lib.rs",
+      "targetFilePath": "src-tauri/src/runtime/mcp/manager.rs",
+      "type": "configures",
+      "weight": 0.95,
+      "reason": "启动时创建 McpServerManager，并注入共享 ToolRegistry。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/lib.rs",
+      "targetFilePath": "src-tauri/src/storage/mcp_config_store.rs",
+      "type": "reads_from",
+      "weight": 0.88,
+      "reason": "启动时通过 McpConfigStore 恢复持久化 server 配置。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/transport/tauri_commands/mcp.rs",
+      "targetFilePath": "src-tauri/src/storage/mcp_config_store.rs",
+      "type": "writes_to",
+      "weight": 0.91,
+      "reason": "add/remove 命令维护 MCP server 配置落盘。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/transport/tauri_commands/mcp.rs",
+      "targetFilePath": "src-tauri/src/runtime/mcp/manager.rs",
+      "type": "calls",
+      "weight": 0.97,
+      "reason": "list/connect/disconnect/remove 的生命周期语义委托给 manager。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/mcp/manager.rs",
+      "targetFilePath": "src-tauri/src/runtime/mcp/connection.rs",
+      "type": "calls",
+      "weight": 0.94,
+      "reason": "connect/disconnect/get_connection 围绕 SharedMcpConnection 生命周期。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/mcp/manager.rs",
+      "targetFilePath": "src-tauri/src/plugin/registry.rs",
+      "type": "calls",
+      "weight": 0.99,
+      "reason": "connect/refresh 调 register_mcp_server，disconnect/fail 调 unregister_runtime_tools。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/plugin/registry.rs",
+      "targetFilePath": "src-tauri/src/runtime/mcp/runtime_tool.rs",
+      "type": "configures",
+      "weight": 0.95,
+      "reason": "每个远端 MCP tool 被包装成 McpRuntimeTool 注入 runtime_tools。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/mcp/types.rs",
+      "targetFilePath": "src-tauri/src/runtime/tools/definition.rs",
+      "type": "transforms",
+      "weight": 0.84,
+      "reason": "McpToolDefinition.to_tool_definition 产出 Runtime ToolDefinition。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/mcp/types.rs",
+      "targetFilePath": "src-tauri/src/runtime/tools/catalog.rs",
+      "type": "transforms",
+      "weight": 0.9,
+      "reason": "McpToolDefinition.to_catalog_entry 将远端 input_schema 转成本地 catalog schema。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/plugin/registry.rs",
+      "targetFilePath": "src-tauri/src/runtime/tools/catalog.rs",
+      "type": "writes_to",
+      "weight": 0.96,
+      "reason": "register_mcp_server/unregister_runtime_tools 向 TOOL_CATALOG 注册或移除动态条目。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/plugin/registry.rs",
+      "targetFilePath": "src-tauri/src/runtime/tools/dispatcher.rs",
+      "type": "configures",
+      "weight": 0.87,
+      "reason": "runtime_tools 被收集进 runtime dispatcher，MCP 动态工具因此进入实际执行路径。"
+    }
+  ],
+  "architecture_findings": [
+    {
+      "title": "MCP server 生命周期和 tool 生命周期被明确拆开",
+      "description": "启动和添加阶段只注册 server 配置与 connection；只有 connect/refresh 才远端 tools/list 并挂载 runtime_tools 与 TOOL_CATALOG。",
+      "evidence": ["src-tauri/src/lib.rs", "src-tauri/src/transport/tauri_commands/mcp.rs", "src-tauri/src/runtime/mcp/manager.rs"]
+    },
+    {
+      "title": "动态 MCP 工具走 runtime-first 路径",
+      "description": "MCP 工具不走 legacy ToolPlugin，而是通过 ToolRegistry.runtime_tools 与 TOOL_CATALOG 双结构同步进入 schema、dispatcher 和执行面。",
+      "evidence": ["src-tauri/src/plugin/registry.rs", "src-tauri/src/runtime/tools/catalog.rs", "src-tauri/src/runtime/mcp/runtime_tool.rs"]
+    },
+    {
+      "title": "refresh 语义接近 reconnect 和 rehydrate",
+      "description": "refresh 复用 connect，会先摘除旧 registered_tool_ids，再重新 list_tools 和注册；不是增量 diff。",
+      "evidence": ["src-tauri/src/runtime/mcp/manager.rs"]
+    }
+  ],
+  "tour_steps": [
+    {
+      "title": "MCP 管理入口",
+      "description": "从 Tauri MCP commands 到 McpServerManager，看 add/connect/disconnect 如何触发配置落盘和动态工具生命周期。",
+      "filePaths": ["src-tauri/src/transport/tauri_commands/mcp.rs", "src-tauri/src/runtime/mcp/manager.rs", "src-tauri/src/storage/mcp_config_store.rs"]
+    },
+    {
+      "title": "动态工具注册",
+      "description": "看 ToolRegistry 和 TOOL_CATALOG 如何双写 MCP runtime tools，并把 schema 暴露给 dispatcher/LLM。",
+      "filePaths": ["src-tauri/src/plugin/registry.rs", "src-tauri/src/runtime/tools/catalog.rs", "src-tauri/src/runtime/tools/definition.rs"]
+    },
+    {
+      "title": "远端执行适配",
+      "description": "看 stdio JSON-RPC 建连、tools/list 缓存、McpRuntimeTool tools/call 和取消断连策略。",
+      "filePaths": ["src-tauri/src/runtime/mcp/connection.rs", "src-tauri/src/runtime/mcp/runtime_tool.rs", "src-tauri/src/runtime/mcp/types.rs"]
+    }
+  ],
+  "risks_or_gaps": [
+    "MCP 动态注册相关测试覆盖偏弱，commands、manager、config store 的直接测试不足。",
+    "manager.connect 在 register 前后存在 list_tools 语义重复，虽然 stdio connection 缓存通常会降低远端重复请求。",
+    "refresh/connect 先删旧工具再重建，失败后会 fail-closed 导致工具集消失。",
+    "当前动态工具链路实际只有 stdio transport 可用。"
+  ]
+}

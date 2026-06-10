@@ -1,0 +1,313 @@
+{
+  "module": "tauri-command-event-contracts",
+  "source_basis": "code-tests-only",
+  "coverage": "代码/测试来源：Tauri app 入口、chat legacy command wrapper、transport command adapters、RuntimeEventBus、TauriEventAdapter、RuntimeHost、network probe、conversation/skill direct emit、前端 tauri.ts 和相关 TS/Rust tests。",
+  "key_nodes": [
+    {
+      "filePath": "src-tauri/src/lib.rs",
+      "summary": "Tauri app 入口与 IPC 注册主入口，负责 setup 状态注入、TauriChatCommandAdapter 构造、ChannelSessionRegistry 注入和 generate_handler command 注册。",
+      "tags": ["tauri-init", "command-registration", "state-lifecycle", "runtime-bootstrap"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src-tauri/src/commands/chat.rs",
+      "summary": "当前 generate_handler 使用的 chat 命令 legacy facade，多数命令只做参数透传并委托给 TauriChatCommandAdapter。",
+      "tags": ["command-wrapper", "adapter-delegate", "chat-ipc"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/transport/tauri_commands/chat.rs",
+      "summary": "Transport chat 适配层核心，构造 TauriChatCommandAdapter，维护 RuntimeEventBus，并处理 Agenda/Employee/pending 调度和 legacy direct emit 边界。",
+      "tags": ["transport", "runtime-bus", "event-bridge", "chat-core"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/event_bus.rs",
+      "summary": "运行时事件总线，提供订阅和广播，把 RuntimeEvent 推给实现 RuntimeEventSubscriber 的监听器。",
+      "tags": ["event-bus", "pubsub", "runtime"],
+      "complexity": "low"
+    },
+    {
+      "filePath": "src-tauri/src/transport/tauri_event_adapter.rs",
+      "summary": "Runtime 事件到 legacy 前端事件名的映射器，map_runtime_event 把 streaming/tool/permission/turn/pending 等事件转成 Tauri event payload。",
+      "tags": ["event-mapping", "legacy-compat", "runtime-event"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/transport/runtime_host.rs",
+      "summary": "RuntimeHost trait 边界，定义 runtime/transport 向宿主发 legacy event 的抽象接口。",
+      "tags": ["runtime-host", "event-emitter", "transport"],
+      "complexity": "low"
+    },
+    {
+      "filePath": "src-tauri/src/transport/tauri_runtime_host.rs",
+      "summary": "RuntimeHost 的 Tauri 实现，把 legacy event payload 通过 app.emit 写到 Tauri 事件总线。",
+      "tags": ["runtime-host", "tauri", "event-emitter"],
+      "complexity": "low"
+    },
+    {
+      "filePath": "src-tauri/src/transport/tauri_commands/network.rs",
+      "summary": "Network Tauri command 边界，暴露 network_get_status 和 network_force_probe。",
+      "tags": ["tauri-command", "network", "status"],
+      "complexity": "low"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/network/probe.rs",
+      "summary": "网络状态探测器，状态变化时通过 RuntimeHost 发 network:status。",
+      "tags": ["network", "event-producer", "diagnostic"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/conversation_service.rs",
+      "summary": "会话服务在 auto-title 更新后发 conversation:title-updated，是 adapter 外 direct emit 的业务事件来源之一。",
+      "tags": ["business-event", "conversation", "auto-title"],
+      "complexity": "low"
+    },
+    {
+      "filePath": "src-tauri/src/commands/skill_management.rs",
+      "summary": "技能管理 command，refresh_skill_registry_cmd 扫描技能并发 skill:registry-refreshed。",
+      "tags": ["command", "skill", "registry-refresh", "event"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src/lib/tauri.ts",
+      "summary": "前端 IPC 封装层，集中维护 invoke wrapper、TAURI_EVENTS 常量和 listen helper，与 Rust 端 command/event 名形成契约。",
+      "tags": ["frontend-ipc", "event-contract", "adapter"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src/lib/tauri.events.test.ts",
+      "summary": "前端 Tauri event 契约测试，固定事件名和 listener wrapper 行为。",
+      "tags": ["test", "frontend-ipc", "event-contract"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src/lib/tauri.runtime.test.ts",
+      "summary": "前端 runtime command wrapper 测试，固定 runtime_* invoke 名称和参数契约。",
+      "tags": ["test", "runtime", "invoke-contract"],
+      "complexity": "medium"
+    }
+  ],
+  "semantic_edges": [
+    {
+      "sourceFilePath": "src-tauri/src/lib.rs",
+      "targetFilePath": "src-tauri/src/commands/chat.rs",
+      "type": "configures",
+      "reason": "tauri::generate_handler 在入口处注册 chat::send_message 等 legacy wrapper 命令。",
+      "weight": 0.95
+    },
+    {
+      "sourceFilePath": "src-tauri/src/lib.rs",
+      "targetFilePath": "src-tauri/src/transport/tauri_commands/chat.rs",
+      "type": "configures",
+      "reason": "setup 阶段构造 TauriChatCommandAdapter 并放入 app.manage，agenda/employee/pending 等调度也引用该 adapter。",
+      "weight": 0.95
+    },
+    {
+      "sourceFilePath": "src-tauri/src/commands/chat.rs",
+      "targetFilePath": "src-tauri/src/transport/tauri_commands/chat.rs",
+      "type": "calls",
+      "reason": "chat command wrapper 将 send/stop/permission/interaction 等请求透传给 adapter 方法。",
+      "weight": 0.95
+    },
+    {
+      "sourceFilePath": "src-tauri/src/transport/tauri_commands/chat.rs",
+      "targetFilePath": "src-tauri/src/runtime/event_bus.rs",
+      "type": "configures",
+      "reason": "TauriChatCommandAdapter 创建 RuntimeEventBus 并订阅 TauriEventAdapter。",
+      "weight": 0.93
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/event_bus.rs",
+      "targetFilePath": "src-tauri/src/transport/tauri_event_adapter.rs",
+      "type": "publishes",
+      "reason": "RuntimeEventBus emit 时通知 RuntimeEventSubscriber，TauriEventAdapter 实现该订阅接口。",
+      "weight": 0.88
+    },
+    {
+      "sourceFilePath": "src-tauri/src/transport/tauri_event_adapter.rs",
+      "targetFilePath": "src-tauri/src/transport/runtime_host.rs",
+      "type": "calls",
+      "reason": "map_runtime_event 后的 legacy event 通过 RuntimeHost.emit_legacy_event 写回宿主事件流。",
+      "weight": 0.88
+    },
+    {
+      "sourceFilePath": "src-tauri/src/transport/tauri_runtime_host.rs",
+      "targetFilePath": "src-tauri/src/transport/runtime_host.rs",
+      "type": "depends_on",
+      "reason": "TauriRuntimeHost 是 RuntimeHost trait 的 Tauri app.emit 实现。",
+      "weight": 0.84
+    },
+    {
+      "sourceFilePath": "src-tauri/src/transport/tauri_runtime_host.rs",
+      "targetFilePath": "src/lib/tauri.ts",
+      "type": "publishes",
+      "reason": "TauriRuntimeHost 发出的 legacy event 名需要与前端 TAURI_EVENTS/listen wrapper 对齐。",
+      "weight": 0.84
+    },
+    {
+      "sourceFilePath": "src-tauri/src/transport/tauri_commands/network.rs",
+      "targetFilePath": "src-tauri/src/runtime/network/probe.rs",
+      "type": "reads_from",
+      "reason": "network_get_status 读取 NetworkProbe 快照，network_force_probe 触发 probe 请求。",
+      "weight": 0.86
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/network/probe.rs",
+      "targetFilePath": "src-tauri/src/transport/runtime_host.rs",
+      "type": "publishes",
+      "reason": "NetworkProbe 状态变化时通过 RuntimeHost 发 network:status。",
+      "weight": 0.78
+    },
+    {
+      "sourceFilePath": "src/lib/tauri.ts",
+      "targetFilePath": "src-tauri/src/transport/tauri_commands/runtime.rs",
+      "type": "calls",
+      "reason": "前端 runtime_* wrapper 调用 runtime_get_health、ensure、reinstall、cleanup、cancel 等 Tauri commands。",
+      "weight": 0.82
+    },
+    {
+      "sourceFilePath": "src/lib/tauri.ts",
+      "targetFilePath": "src-tauri/src/transport/tauri_commands/pending.rs",
+      "type": "calls",
+      "reason": "pending snapshot/remove commands 与 pending:* listener wrapper 成对出现在前端 IPC 层。",
+      "weight": 0.82
+    },
+    {
+      "sourceFilePath": "src-tauri/src/commands/skill_management.rs",
+      "targetFilePath": "src/lib/tauri.ts",
+      "type": "publishes",
+      "reason": "refresh_skill_registry_cmd 发 skill:registry-refreshed，前端 TAURI_EVENTS 中有对应常量和监听入口。",
+      "weight": 0.76
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/conversation_service.rs",
+      "targetFilePath": "src/lib/tauri.ts",
+      "type": "publishes",
+      "reason": "conversation service 发 conversation:title-updated，前端 tauri.ts 暴露对应 listener。",
+      "weight": 0.76
+    },
+    {
+      "sourceFilePath": "src/lib/tauri.ts",
+      "targetFilePath": "src/lib/tauri.events.test.ts",
+      "type": "tested_by",
+      "reason": "tauri.events.test 固定事件名和 listener wrapper 契约。",
+      "weight": 0.82
+    },
+    {
+      "sourceFilePath": "src/lib/tauri.ts",
+      "targetFilePath": "src/lib/tauri.runtime.test.ts",
+      "type": "tested_by",
+      "reason": "tauri.runtime.test 固定 runtime command wrapper 的 invoke 名称。",
+      "weight": 0.82
+    }
+  ],
+  "architecture_findings": [
+    {
+      "title": "chat 命令入口是 legacy wrapper 加 transport adapter 双层结构",
+      "description": "generate_handler 注册的是 commands::chat 的 Tauri command wrapper，而不是直接注册 transport chat adapter；wrapper 保持前端可见命令名稳定，内部实现集中委托到 TauriChatCommandAdapter。",
+      "evidence": [
+        "src-tauri/src/lib.rs",
+        "src-tauri/src/commands/chat.rs",
+        "src-tauri/src/transport/tauri_commands/chat.rs"
+      ]
+    },
+    {
+      "title": "runtime 事件先总线化再映射为 legacy 前端事件名",
+      "description": "runtime 写入 RuntimeEventBus，TauriEventAdapter 把 RuntimeEventKind 映射为 streaming/tool/permission/turn/pending 等 legacy event，再通过 RuntimeHost emit 给前端。",
+      "evidence": [
+        "src-tauri/src/runtime/event_bus.rs",
+        "src-tauri/src/transport/tauri_event_adapter.rs",
+        "src-tauri/src/transport/runtime_host.rs",
+        "src/lib/tauri.ts"
+      ]
+    },
+    {
+      "title": "chat event adapter 会过滤 IM 会话的 ask/interaction",
+      "description": "TauriEventAdapter.with_channel_sessions 接收 ChannelSessionRegistry；ask 或 interaction 事件属于 IM channel session 时不会转发到桌面 UI 弹窗事件。",
+      "evidence": [
+        "src-tauri/src/transport/tauri_event_adapter.rs",
+        "src-tauri/src/lib.rs"
+      ]
+    },
+    {
+      "title": "network:status 有生产端和事件常量但缺少标准监听 helper",
+      "description": "NetworkProbe 会发 network:status，前端 TAURI_EVENTS 也有 NETWORK_STATUS 常量和 network_get_status/network_force_probe wrapper；但当前 tauri.ts 的事件 listener helper 列表未见 onNetworkStatus 风格封装。",
+      "evidence": [
+        "src-tauri/src/runtime/network/probe.rs",
+        "src-tauri/src/transport/tauri_commands/network.rs",
+        "src/lib/tauri.ts"
+      ]
+    },
+    {
+      "title": "部分事件仍是 adapter 外 direct emit",
+      "description": "除 runtime event bus 映射外，chat adapter、conversation service 和 skill management commands 仍会直接 emit conversation:created、conversation:title-updated、message:updated、skill:registry-refreshed 等 legacy event。",
+      "evidence": [
+        "src-tauri/src/transport/tauri_commands/chat.rs",
+        "src-tauri/src/runtime/conversation_service.rs",
+        "src-tauri/src/commands/skill_management.rs"
+      ]
+    },
+    {
+      "title": "command 注册处于 mixed migration 状态",
+      "description": "lib.rs 注释和注册列表显示命令层仍混合 commands::* wrapper 与 transport::tauri_commands::* 直接注册；UserWiki 回答 IPC 影响面时不能简单说项目只有单一 command 层。",
+      "evidence": [
+        "src-tauri/src/lib.rs",
+        "src-tauri/src/commands/chat.rs",
+        "src-tauri/src/transport/tauri_commands/mod.rs"
+      ]
+    }
+  ],
+  "tour_steps": [
+    {
+      "title": "从 Tauri app 入口看命令注册和 state 注入",
+      "description": "先扫 lib.rs 的 setup 顺序、TauriChatCommandAdapter 构造、ChannelSessionRegistry 注入和 generate_handler 注册列表。",
+      "filePaths": [
+        "src-tauri/src/lib.rs",
+        "src-tauri/src/commands/chat.rs",
+        "src-tauri/src/transport/tauri_commands/chat.rs"
+      ]
+    },
+    {
+      "title": "追踪 runtime event bus 到前端 legacy event",
+      "description": "从 RuntimeEventBus 到 TauriEventAdapter、RuntimeHost 和 src/lib/tauri.ts，确认事件名、payload 和 listener wrapper 的契约。",
+      "filePaths": [
+        "src-tauri/src/runtime/event_bus.rs",
+        "src-tauri/src/transport/tauri_event_adapter.rs",
+        "src-tauri/src/transport/runtime_host.rs",
+        "src-tauri/src/transport/tauri_runtime_host.rs",
+        "src/lib/tauri.ts"
+      ]
+    },
+    {
+      "title": "检查 network 与 direct emit 的例外边界",
+      "description": "对照 network probe 的 network:status、conversation/skill direct emit 和前端 tauri events tests，定位尚未完全标准化的事件入口。",
+      "filePaths": [
+        "src-tauri/src/transport/tauri_commands/network.rs",
+        "src-tauri/src/runtime/network/probe.rs",
+        "src-tauri/src/runtime/conversation_service.rs",
+        "src-tauri/src/commands/skill_management.rs",
+        "src/lib/tauri.events.test.ts"
+      ]
+    }
+  ],
+  "risks_or_gaps": [
+    {
+      "title": "network:status 缺少标准前端监听封装",
+      "description": "事件常量和发射源存在，但 src/lib/tauri.ts 未见 onNetworkStatus 风格 helper；如有订阅需求，应补齐契约。",
+      "evidence": [
+        "src-tauri/src/runtime/network/probe.rs",
+        "src/lib/tauri.ts"
+      ]
+    },
+    {
+      "title": "command layer 迁移边界仍混合",
+      "description": "chat 走 commands wrapper 委托 adapter，部分 runtime/network/billing 等直接注册 transport commands；影响面分析要同时查两层。",
+      "evidence": [
+        "src-tauri/src/lib.rs",
+        "src-tauri/src/commands/chat.rs",
+        "src-tauri/src/transport/tauri_commands/mod.rs"
+      ]
+    }
+  ]
+}

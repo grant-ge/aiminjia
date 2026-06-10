@@ -1,0 +1,268 @@
+{
+  "module": "userwiki-skill-system",
+  "source_basis": "repo-local-skills-and-maintenance-scripts",
+  "key_nodes": [
+    {
+      "filePath": ".agents/skills/userwiki/SKILL.md",
+      "summary": "UserWiki 用户入口 skill，负责安装、使用、日常 wiki 问答、功能影响面分析、文件解释、diff 影响和 onboarding 路由。",
+      "tags": ["userwiki", "skill", "wiki-entry", "qa"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": ".agents/skills/userwiki/references/qa-playbook.md",
+      "summary": "UserWiki 问答手册，固化功能影响面、文件解释、diff 影响、图谱完整性和新人阅读路径的回答结构。",
+      "tags": ["userwiki", "qa-playbook", "impact-analysis"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": ".agents/skills/userwiki/references/qa-examples.md",
+      "summary": "UserWiki 真实问答验收集，定义 Runtime 权限、技能中心 pending、文件解释、当前 diff、图谱完整性、安装使用和新人路径的效果检查点。",
+      "tags": ["userwiki", "qa-examples", "qa-validation"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": ".agents/skills/userwiki/references/qa-smoke-cases.json",
+      "summary": "UserWiki CLI smoke fixture，给 run-userwiki-qa-smoke 脚本提供真实问答、必需命中词和失败判据。",
+      "tags": ["userwiki", "qa-fixture", "smoke-test"],
+      "complexity": "simple"
+    },
+    {
+      "filePath": ".agents/skills/userwiki/references/install.md",
+      "summary": "UserWiki 安装和初始化指南，说明 Understand-Anything、中文图谱、提交策略和增量更新方式。",
+      "tags": ["userwiki", "install", "understand-anything"],
+      "complexity": "simple"
+    },
+    {
+      "filePath": ".agents/skills/userwiki/references/usage.md",
+      "summary": "UserWiki 使用指南，列出 understand、dashboard、chat、diff、explain、onboard、domain 和 knowledge 的使用场景。",
+      "tags": ["userwiki", "usage", "commands"],
+      "complexity": "simple"
+    },
+    {
+      "filePath": ".agents/skills/userwiki/references/maintenance-routing.md",
+      "summary": "UserWiki 到 wiki-maintainer 的路由规则，区分普通问答和图谱/RepoWiki 维护工作。",
+      "tags": ["userwiki", "routing", "wiki-maintainer"],
+      "complexity": "simple"
+    },
+    {
+      "filePath": ".agents/skills/wiki-maintainer/SKILL.md",
+      "summary": "Wiki 维护 skill，负责 RepoWiki、Understand-Anything 图谱、enhancement JSON、schema、子 agent 分工和校验规则。",
+      "tags": ["wiki-maintainer", "skill", "repo-wiki", "graph-maintenance"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": ".agents/skills/wiki-maintainer/references/enhancement-schema.md",
+      "summary": "图谱增强 JSON schema，定义 key_nodes、semantic_edges、architecture_findings、tour_steps 和可选未来字段。",
+      "tags": ["wiki-maintainer", "schema", "enhancements"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": ".agents/skills/wiki-maintainer/references/validation-rubric.md",
+      "summary": "图谱完整性和效果验收规则，定义当前项目里什么叫完整、边界是什么、要跑哪些命令。",
+      "tags": ["wiki-maintainer", "validation", "graph-completeness"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": ".claude/skills/userwiki/SKILL.md",
+      "summary": "UserWiki 用户入口 skill 的 Claude 镜像，必须与 .agents 版本保持一致。",
+      "tags": ["userwiki", "skill-mirror", "claude"],
+      "complexity": "simple"
+    },
+    {
+      "filePath": ".claude/skills/wiki-maintainer/SKILL.md",
+      "summary": "Wiki 维护 skill 的 Claude 镜像，必须与 .agents 版本保持一致。",
+      "tags": ["wiki-maintainer", "skill-mirror", "claude"],
+      "complexity": "simple"
+    },
+    {
+      "filePath": "scripts/check-repowiki.mjs",
+      "summary": "RepoWiki/UserWiki 确定性校验脚本，检查 required pages、双 skill 文件、镜像一致性、中文图谱配置、enhancement schema 和本地链接。",
+      "tags": ["repo-wiki", "userwiki", "validation", "script"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "scripts/run-userwiki-qa-smoke.mjs",
+      "summary": "UserWiki 问答效果 smoke 脚本，校验 QA fixture，可用 codex exec 在只读 ephemeral 模式下跑真实问答，也可用 --answer 复核已有回答文件。",
+      "tags": ["userwiki", "qa-smoke", "validation", "script"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "scripts/apply-understand-enhancements.mjs",
+      "summary": "Understand-Anything enhancement 合并脚本，将 code/test/skill-sourced enhancement JSON 合入主图谱，更新节点摘要、语义边、架构概念和 guided tour。",
+      "tags": ["understand-anything", "enhancements", "script"],
+      "complexity": "complex"
+    }
+  ],
+  "semantic_edges": [
+    {
+      "sourceFilePath": ".agents/skills/userwiki/SKILL.md",
+      "targetFilePath": ".agents/skills/userwiki/references/qa-playbook.md",
+      "type": "documents",
+      "reason": "userwiki 把功能影响面、文件解释、diff 影响和图谱完整性问答委托给 qa-playbook。",
+      "weight": 0.9
+    },
+    {
+      "sourceFilePath": ".agents/skills/userwiki/SKILL.md",
+      "targetFilePath": ".agents/skills/userwiki/references/qa-examples.md",
+      "type": "documents",
+      "reason": "userwiki 把测试问答效果和真实验收样例委托给 qa-examples。",
+      "weight": 0.8
+    },
+    {
+      "sourceFilePath": ".agents/skills/userwiki/references/qa-examples.md",
+      "targetFilePath": ".agents/skills/userwiki/references/qa-smoke-cases.json",
+      "type": "exemplifies",
+      "reason": "qa-examples 的真实问答验收点被 qa-smoke-cases.json 结构化为 CLI smoke fixture。",
+      "weight": 0.8
+    },
+    {
+      "sourceFilePath": ".agents/skills/userwiki/SKILL.md",
+      "targetFilePath": ".agents/skills/userwiki/references/install.md",
+      "type": "documents",
+      "reason": "userwiki 通过 install reference 说明 Understand-Anything 安装、初始化、中文参数和提交策略。",
+      "weight": 0.8
+    },
+    {
+      "sourceFilePath": ".agents/skills/userwiki/SKILL.md",
+      "targetFilePath": ".agents/skills/userwiki/references/usage.md",
+      "type": "documents",
+      "reason": "userwiki 通过 usage reference 固化 dashboard/chat/diff/explain/onboard/domain/knowledge 等日常使用方式。",
+      "weight": 0.8
+    },
+    {
+      "sourceFilePath": ".agents/skills/userwiki/SKILL.md",
+      "targetFilePath": ".agents/skills/userwiki/references/maintenance-routing.md",
+      "type": "routes",
+      "reason": "普通 wiki 问答留在 userwiki，生成、维护、schema 和校验工作路由到 wiki-maintainer。",
+      "weight": 0.9
+    },
+    {
+      "sourceFilePath": ".agents/skills/userwiki/references/maintenance-routing.md",
+      "targetFilePath": ".agents/skills/wiki-maintainer/SKILL.md",
+      "type": "routes",
+      "reason": "maintenance-routing 明确 userwiki 遇到图谱维护、enhancement、RepoWiki 更新时切到 wiki-maintainer。",
+      "weight": 0.9
+    },
+    {
+      "sourceFilePath": ".agents/skills/wiki-maintainer/SKILL.md",
+      "targetFilePath": ".agents/skills/wiki-maintainer/references/enhancement-schema.md",
+      "type": "documents",
+      "reason": "wiki-maintainer 用 enhancement-schema 固化图谱增强 JSON 的字段、命名和边类型。",
+      "weight": 0.9
+    },
+    {
+      "sourceFilePath": ".agents/skills/wiki-maintainer/SKILL.md",
+      "targetFilePath": ".agents/skills/wiki-maintainer/references/validation-rubric.md",
+      "type": "documents",
+      "reason": "wiki-maintainer 用 validation-rubric 定义当前图谱完整性的验收口径和命令。",
+      "weight": 0.9
+    },
+    {
+      "sourceFilePath": "scripts/check-repowiki.mjs",
+      "targetFilePath": ".agents/skills/userwiki/SKILL.md",
+      "type": "validates",
+      "reason": "check-repowiki 校验 userwiki 的 required references 和 .agents/.claude 镜像一致性。",
+      "weight": 0.9
+    },
+    {
+      "sourceFilePath": "scripts/check-repowiki.mjs",
+      "targetFilePath": ".agents/skills/userwiki/references/qa-smoke-cases.json",
+      "type": "validates",
+      "reason": "check-repowiki 校验 UserWiki 问答 fixture 的数量、id、触发词和 requiredTerms。",
+      "weight": 0.8
+    },
+    {
+      "sourceFilePath": "scripts/run-userwiki-qa-smoke.mjs",
+      "targetFilePath": ".agents/skills/userwiki/references/qa-smoke-cases.json",
+      "type": "reads_from",
+      "reason": "run-userwiki-qa-smoke 读取 qa-smoke-cases.json，并用 codex exec 只读运行真实问答 smoke。",
+      "weight": 0.9
+    },
+    {
+      "sourceFilePath": "scripts/check-repowiki.mjs",
+      "targetFilePath": ".agents/skills/wiki-maintainer/SKILL.md",
+      "type": "validates",
+      "reason": "check-repowiki 校验 wiki-maintainer 的 required references 和 .agents/.claude 镜像一致性。",
+      "weight": 0.9
+    },
+    {
+      "sourceFilePath": "scripts/apply-understand-enhancements.mjs",
+      "targetFilePath": ".understand-anything/enhancements/userwiki-skill-system.json",
+      "type": "reads_from",
+      "reason": "apply-understand-enhancements 会读取 userwiki-skill-system enhancement 并合入主图谱。",
+      "weight": 0.8
+    }
+  ],
+  "architecture_findings": [
+    {
+      "title": "UserWiki 拆成用户入口和维护入口",
+      "description": "userwiki 只负责安装、使用和 wiki 问答；wiki-maintainer 负责图谱、RepoWiki、schema、子 agent 和校验维护，避免普通问答误触发维护流程。",
+      "evidence": [
+        ".agents/skills/userwiki/SKILL.md",
+        ".agents/skills/wiki-maintainer/SKILL.md"
+      ]
+    },
+    {
+      "title": "功能影响面问答被固化为 playbook",
+      "description": "qa-playbook 要求影响面回答包含模块/layer、关键文件、上下游、测试、文档、图谱不确定点和下一步，覆盖用户提出的“增加功能会影响哪些点”。",
+      "evidence": [
+        ".agents/skills/userwiki/references/qa-playbook.md"
+      ]
+    },
+    {
+      "title": "UserWiki 问答效果有真实 smoke 用例",
+      "description": "qa-examples 和 qa-smoke-cases 把 Runtime 权限、技能中心 pending、文件解释、当前 diff、图谱完整性、安装使用和新人路径变成可复核的真实问答验收集。",
+      "evidence": [
+        ".agents/skills/userwiki/references/qa-examples.md",
+        ".agents/skills/userwiki/references/qa-smoke-cases.json",
+        "scripts/run-userwiki-qa-smoke.mjs"
+      ]
+    },
+    {
+      "title": "双平台 skill 镜像进入确定性校验",
+      "description": "check-repowiki 会校验 userwiki 和 wiki-maintainer 在 .agents 与 .claude 两侧文件完全一致，并把旧 repo-wiki-maintainer 目录标为废弃。",
+      "evidence": [
+        "scripts/check-repowiki.mjs"
+      ]
+    }
+  ],
+  "tour_steps": [
+    {
+      "title": "先用 userwiki 做日常问答",
+      "description": "用户只需要记住 userwiki：安装、使用、功能影响面、文件解释、diff 影响、onboarding 和图谱完整性都从这里进入。",
+      "filePaths": [
+        ".agents/skills/userwiki/SKILL.md",
+        ".agents/skills/userwiki/references/qa-playbook.md",
+        ".agents/skills/userwiki/references/usage.md"
+      ]
+    },
+    {
+      "title": "需要维护时切到 wiki-maintainer",
+      "description": "当问题变成补图谱、写 enhancement、更新 RepoWiki 或改校验时，从 userwiki 路由到 wiki-maintainer。",
+      "filePaths": [
+        ".agents/skills/userwiki/references/maintenance-routing.md",
+        ".agents/skills/wiki-maintainer/SKILL.md",
+        ".agents/skills/wiki-maintainer/references/enhancement-schema.md"
+      ]
+    },
+    {
+      "title": "最后用脚本验证 UserWiki 体系",
+      "description": "check-repowiki 校验两个 skill 的文件、镜像、图谱配置、enhancement 和 RepoWiki 链接；run-userwiki-qa-smoke 校验真实问答 fixture 并可运行 CLI smoke；apply 脚本把 skill enhancement 合入知识图谱。",
+      "filePaths": [
+        "scripts/check-repowiki.mjs",
+        "scripts/run-userwiki-qa-smoke.mjs",
+        "scripts/apply-understand-enhancements.mjs",
+        ".understand-anything/enhancements/userwiki-skill-system.json"
+      ]
+    },
+    {
+      "title": "用真实问答验收 userwiki",
+      "description": "qa-examples 记录人工和子 agent 可读的真实问答检查点，qa-smoke-cases.json 让 CLI smoke 能验证回答是否命中文件、模块、测试和边界条件。",
+      "filePaths": [
+        ".agents/skills/userwiki/references/qa-examples.md",
+        ".agents/skills/userwiki/references/qa-smoke-cases.json",
+        "scripts/run-userwiki-qa-smoke.mjs"
+      ]
+    }
+  ]
+}

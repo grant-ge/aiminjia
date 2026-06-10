@@ -1,0 +1,196 @@
+{
+  "module": "storage-workspace-pathauth-file-manager",
+  "coverage": "覆盖 Rust storage/workspace/file/path_auth、authorized workspace、permission store、workspace tool、session/query 权限注入，以及前端最小 file preview IPC/store。",
+  "key_nodes": [
+    {
+      "filePath": "src-tauri/src/storage/file_manager.rs",
+      "summary": "维护当前 workspace 根目录，负责 upload、write、delete 和路径解析；safe_resolve 做 workspace containment，resolve_local_reference 将 containment 下沉给 path_auth。",
+      "tags": ["storage", "workspace", "file", "path-resolution"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src-tauri/src/storage/workspace.rs",
+      "summary": "WorkspaceManager 处理目录结构、可写性和统计信息，不参与授权判断。",
+      "tags": ["workspace", "structure", "stats"],
+      "complexity": "low"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/path_auth/decide.rs",
+      "summary": "路径授权核心决策器，按 deny_rules、primary_root、additional_working_dirs、allow_rules 和 mode 默认分支决定 Allow/Ask/Deny。",
+      "tags": ["path-auth", "policy", "decision"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/tools/builtin/workspace.rs",
+      "summary": "Runtime workspace 工具授权入口，把 authorized workspace 或 workspace_path 注入 primary_root，再调用 path_auth；Ask 会编码为 path/pathwrite scope。",
+      "tags": ["runtime-tool", "workspace", "authorization"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/store/permission_store.rs",
+      "summary": "三层权限存储，持久化 session/workspace/user 级 additional_working_dirs 和 path allow rules，并兼容 legacy PathGlob 查询。",
+      "tags": ["permission-store", "path-auth", "persistence"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/store/authorized_workspace_store.rs",
+      "summary": "会话级 authorized workspace 存储，生产实现把目录绑定写入 conversations/{id}/conv.json 的 authorizedWorkspace 字段，并同步 index.json workspace_name。",
+      "tags": ["authorized-workspace", "conversation", "storage"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "src-tauri/src/storage/file_store/files.rs",
+      "summary": "每个 conversation 的 file_index.json，记录 uploaded/generated 文件元数据，文件操作先按 conversation 和 file_id 解析 stored_path。",
+      "tags": ["file-index", "conversation", "metadata"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "src-tauri/src/commands/workspace.rs",
+      "summary": "Tauri workspace IPC 入口，负责选择 workspace、目录挑选、authorize/get/revoke local directory 和打开 workspace。",
+      "tags": ["ipc", "workspace", "authorize"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "src-tauri/src/commands/file.rs",
+      "summary": "Tauri file IPC 入口，负责 upload/open/reveal/preview/delete；新 get_file_preview 通过 file record 与 FileManager.resolve_existing_file 返回 typed preview。",
+      "tags": ["ipc", "file", "preview"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/query_engine.rs",
+      "summary": "构造每 turn 的 ToolPermissionContext，从 PermissionStore 重载持久化 working dirs 和 allow rules，设置 primary_root 并合并附件派生目录。",
+      "tags": ["query-engine", "permission-context", "turn-state"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/session_runtime.rs",
+      "summary": "每次 turn 从 AuthorizedWorkspaceStore 取授权目录并注入 QueryEngine；用户永久允许 path/pathwrite 时回写 PermissionStore。",
+      "tags": ["session-runtime", "authorization", "persistence"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src/stores/generatedFilePreviewStore.ts",
+      "summary": "前端仅保存当前 generated file preview target，会在 conversation 切换时清空，不承载路径或权限逻辑。",
+      "tags": ["frontend", "file-preview", "store"],
+      "complexity": "low"
+    }
+  ],
+  "semantic_edges": [
+    {
+      "sourceFilePath": "src/lib/tauri.ts",
+      "targetFilePath": "src-tauri/src/commands/file.rs",
+      "type": "calls",
+      "weight": 0.89,
+      "reason": "前端 preview/open/reveal/delete/upload/getFilePreview 等 API 通过 invoke 对接 file commands。"
+    },
+    {
+      "sourceFilePath": "src/lib/tauri.ts",
+      "targetFilePath": "src-tauri/src/commands/workspace.rs",
+      "type": "calls",
+      "weight": 0.91,
+      "reason": "前端 selectWorkspace、authorizeLocalDirectory、getAuthorizedWorkspace 等 API 映射到 workspace commands。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/commands/file.rs",
+      "targetFilePath": "src-tauri/src/storage/file_store/files.rs",
+      "type": "reads_from",
+      "weight": 0.92,
+      "reason": "文件 open/reveal/preview 先按 conversation_id 和 file_id 查询 file record，再解析 stored_path。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/commands/file.rs",
+      "targetFilePath": "src-tauri/src/storage/file_manager.rs",
+      "type": "calls",
+      "weight": 0.94,
+      "reason": "upload 调 store_upload，open/reveal/get_file_preview 调 resolve_existing_file，legacy preview_file 调 full_path。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/commands/workspace.rs",
+      "targetFilePath": "src-tauri/src/runtime/store/authorized_workspace_store.rs",
+      "type": "writes_to",
+      "weight": 0.95,
+      "reason": "authorize/get/revoke local directory 全部通过 AuthorizedWorkspaceStore 管理。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/store/authorized_workspace_store.rs",
+      "targetFilePath": "src-tauri/src/storage/file_store/conversations.rs",
+      "type": "writes_to",
+      "weight": 0.93,
+      "reason": "授权目录最终写入 conv.json 的 authorizedWorkspace，并同步 index.json workspace_name。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/session_runtime.rs",
+      "targetFilePath": "src-tauri/src/runtime/query_engine.rs",
+      "type": "configures",
+      "weight": 0.96,
+      "reason": "每 turn 加载 authorized workspace 和 base permission context 后注入 QueryEngine。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/query_engine.rs",
+      "targetFilePath": "src-tauri/src/runtime/path_auth/store_bridge.rs",
+      "type": "reads_from",
+      "weight": 0.87,
+      "reason": "build_turn_permission_ctx 从 PermissionStore 重载 working dirs 和 allow rules。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/path_auth/store_bridge.rs",
+      "targetFilePath": "src-tauri/src/runtime/store/permission_store.rs",
+      "type": "transforms",
+      "weight": 0.86,
+      "reason": "store bridge 把 PermissionStore 三层快照翻译成 path_auth 可用结构。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/workspace.rs",
+      "targetFilePath": "src-tauri/src/runtime/path_auth/decide.rs",
+      "type": "validates",
+      "weight": 0.98,
+      "reason": "workspace 工具读写路径的最终授权决策委托给 is_path_allowed。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/session_runtime.rs",
+      "targetFilePath": "src-tauri/src/runtime/store/permission_store.rs",
+      "type": "writes_to",
+      "weight": 0.9,
+      "reason": "path_auth Ask 的永久允许会转成 append_working_dir 或 append_path_allow_rule。"
+    }
+  ],
+  "architecture_findings": [
+    {
+      "title": "元数据存储和物理文件根目录是两套系统",
+      "description": "会话、文件索引和授权目录落在 AppStorage，实际上传、生成、打开和预览依赖 FileManager 当前 workspace_path。",
+      "evidence": ["src-tauri/src/storage/file_manager.rs", "src-tauri/src/storage/file_store/files.rs", "src-tauri/src/runtime/store/authorized_workspace_store.rs"]
+    },
+    {
+      "title": "authorized workspace 是 conversation 级持久绑定",
+      "description": "authorize_local_directory 写入 conv.json，SessionRuntime 每 turn 重新取出并作为 QueryEngine/path_auth 的 primary_root。",
+      "evidence": ["src-tauri/src/commands/workspace.rs", "src-tauri/src/runtime/store/authorized_workspace_store.rs", "src-tauri/src/runtime/session_runtime.rs"]
+    },
+    {
+      "title": "path_auth 的规则源来自 PermissionStore 和 turn 级附件目录",
+      "description": "workspace 工具不直接信任 FileManager，而是 canonicalize 后按 primary_root、additional_working_dirs、allow_rules 与 mode 判定。",
+      "evidence": ["src-tauri/src/runtime/path_auth/decide.rs", "src-tauri/src/runtime/query_engine.rs", "src-tauri/src/runtime/tools/builtin/workspace.rs"]
+    }
+  ],
+  "tour_steps": [
+    {
+      "title": "从前端文件与 workspace IPC 入口看链路",
+      "description": "先看 tauri.ts 如何发文件预览、打开和授权目录 IPC；preview store 只持有 UI target，不参与授权。",
+      "filePaths": ["src/lib/tauri.ts", "src/stores/generatedFilePreviewStore.ts"]
+    },
+    {
+      "title": "看文件和工作目录如何落盘",
+      "description": "从 commands/file.rs 和 commands/workspace.rs 追踪 file_index、conv.json 与 authorized workspace 的写入关系。",
+      "filePaths": ["src-tauri/src/commands/file.rs", "src-tauri/src/commands/workspace.rs", "src-tauri/src/storage/file_store/files.rs", "src-tauri/src/runtime/store/authorized_workspace_store.rs"]
+    },
+    {
+      "title": "看 runtime 如何做路径授权",
+      "description": "从 SessionRuntime/QueryEngine/workspace tools/path_auth 看授权目录、持久规则和附件目录如何汇成 ToolPermissionContext。",
+      "filePaths": ["src-tauri/src/runtime/session_runtime.rs", "src-tauri/src/runtime/query_engine.rs", "src-tauri/src/runtime/tools/builtin/workspace.rs", "src-tauri/src/runtime/path_auth/decide.rs"]
+    }
+  ],
+  "risks_or_gaps": [
+    "legacy preview_file 与 typed get_file_preview 能力边界不一致。",
+    "open_file_by_name/reveal_file_by_name 通过 workspace 下固定子目录和模糊文件名搜索打开文件，未体现 conversation ownership 与 path_auth 判定。",
+    "get_local_file_preview/open_local_file 接受绝对路径，代码只做存在性、大小和类型检查，未接入 session 级 authorized workspace。"
+  ]
+}

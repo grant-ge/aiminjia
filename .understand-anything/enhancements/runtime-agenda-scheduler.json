@@ -1,0 +1,315 @@
+{
+  "module": "runtime-agenda-scheduler",
+  "source_basis": "code-tests-only",
+  "key_nodes": [
+    {
+      "filePath": "src-tauri/src/runtime/agenda/runner.rs",
+      "summary": "Agenda 后台调度器在 tick 循环中按 scope 重新解析路径并重建 AgendaStore（`resolve_paths` + `AgendaStore::new(paths.base_dir())`），驱动 take_due 与 dispatcher.dispatch 的执行循环。",
+      "tags": ["runtime", "scheduler", "scope"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/agenda/store.rs",
+      "summary": "AgendaStore 承载核心状态机：加载/持久化、按状态与触发时间筛选 due 项目，执行 take_due、advance_after_fire、skip/unskip、cancel/restore 等状态更新；通过目录分片持久化 item 与 occurrence。",
+      "tags": ["runtime", "storage", "state-machine"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/agenda/trigger_eval.rs",
+      "summary": "触发时间评估器计算下一次 `next_fire_at`，覆盖一次性、间隔、按日/周/月/年递归规则，支持 Count/Until 终止条件与 skip_dates 过滤，并含循环上限防护。",
+      "tags": ["runtime", "recurrence", "scheduling"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/agenda/dispatcher.rs",
+      "summary": "定义 `AgendaRunDispatcher` 抽象能力（`dispatch`），将 scheduled/manual 两类调度事件统一注入执行器入口。",
+      "tags": ["runtime", "dispatcher", "interface"],
+      "complexity": "low"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/tools/builtin/agenda/deps.rs",
+      "summary": "Tool 依赖结构注入当前 persona 与 store，`create/update/skip/list` 等工具通过该依赖构建上下文，确保组织者与调度状态约束来自运行态身份。",
+      "tags": ["runtime", "tools", "dependency"],
+      "complexity": "low"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/tools/builtin/agenda/create.rs",
+      "summary": "创建议程项工具：强制 organizer/participants 与 `current_persona_id` 一致，设置初始 next_fire_at（含 `compute_next_fire_at` 的入参处理）并持久化。",
+      "tags": ["runtime", "tools", "agenda-create"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/tools/builtin/agenda/update.rs",
+      "summary": "更新议程工具：进行组织者权限校验、字段级更新、覆盖组织者约束例外分支（Orphaned），并按规则重算下一触发时间。",
+      "tags": ["runtime", "tools", "agenda-update"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/tools/builtin/agenda/cancel.rs",
+      "summary": "取消工具的语义为软状态变更（status=Cancelled，next_fire_at=None），并保留历史以供后续查询。",
+      "tags": ["runtime", "tools", "agenda-cancel"],
+      "complexity": "low"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/tools/builtin/agenda/skip.rs",
+      "summary": "Skip/Unskip 通过 `set_skip/unset_skip` 仅允许 organizer 操作单次触发点，配套状态机约束避免越界。",
+      "tags": ["runtime", "tools", "agenda-skip", "state-machine"],
+      "complexity": "low"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/tools/builtin/agenda/list.rs",
+      "summary": "列表工具围绕当前 persona 做过滤查询，支持 status_in 与 limit，并用于前端/测试验证可见范围控制。",
+      "tags": ["runtime", "tools", "agenda-list"],
+      "complexity": "low"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/tools/builtin/agenda/list_occurrences.rs",
+      "summary": "Occurrence 列表工具通过 item ownership 校验，按时间线读取月度分片 occurrence，体现执行结果可追溯。",
+      "tags": ["runtime", "tools", "agenda-occurrence", "observability"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/transport/tauri_commands/agenda.rs",
+      "summary": "Command 入口提供同样功能面：create/update/delete/cancel/run_now/list_occurrences/skip/unskip，作为 UI/外部调用路径，内部仍转发工具式 store/dispatcher 流程，体现双入口薄封装。",
+      "tags": ["transport", "commands", "agenda"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/agenda/item.rs",
+      "summary": "定义 AgendaItem 与枚举类型（ItemStatus、RecurrenceRule、TriggerSource 等），并包含迁移兼容字段别名与字段默认值策略，是调度判断和展示的统一数据契约。",
+      "tags": ["runtime", "model", "agenda"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/agenda/occurrence.rs",
+      "summary": "Occurrence 数据模型承载单次执行记录（session_id/run_id/employee/状态/error_summary/trigger_source），用于 scheduled/manual 两类执行审计。",
+      "tags": ["runtime", "model", "occurrence"],
+      "complexity": "low"
+    },
+    {
+      "filePath": "src-tauri/src/transport/tauri_commands/chat.rs",
+      "summary": "实现 `AgendaRunDispatcher` 的会话端执行器：创建/标记会话、写入 occurrence Running，按 scheduled 分支调用 advance_after_fire，并在 send_message 后写入最终 occurrence 状态。",
+      "tags": ["transport", "dispatcher", "runtime-exec"],
+      "complexity": "complex"
+    }
+  ],
+  "semantic_edges": [
+    {
+      "sourceFilePath": "src-tauri/src/runtime/agenda/runner.rs",
+      "targetFilePath": "src-tauri/src/runtime/agenda/store.rs",
+      "type": "calls",
+      "reason": "runner 在每轮 tick 中先按 scope 解析路径并重建 store，再通过 take_due 拉取可执行项，驱动状态机读取与执行。",
+      "weight": 0.98
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/agenda/runner.rs",
+      "targetFilePath": "src-tauri/src/runtime/tools/builtin/agenda/deps.rs",
+      "type": "routes",
+      "reason": "runner 获得 dispatcher 依赖后只负责调度动作；实际调度动作由工具层/command 层共享的 store/deps 上下文承载并执行。",
+      "weight": 0.66
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/agenda/runner.rs",
+      "targetFilePath": "src-tauri/src/runtime/agenda/dispatcher.rs",
+      "type": "calls",
+      "reason": "runner 通过泛型调度接口 `AgendaRunDispatcher::dispatch` 触发执行，避免与具体聊天执行实现耦合。",
+      "weight": 0.97
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/agenda/store.rs",
+      "targetFilePath": "src-tauri/src/runtime/agenda/trigger_eval.rs",
+      "type": "depends_on",
+      "reason": "状态推进（advance_after_fire）和取下一次触发时间依赖 trigger_eval，决定 recurring agenda 的 `next_fire_at` 与周期终止。",
+      "weight": 0.95
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/agenda/create.rs",
+      "targetFilePath": "src-tauri/src/runtime/tools/builtin/agenda/deps.rs",
+      "type": "contains",
+      "reason": "create 工具持有 AgendaToolDeps，读取当前 persona 做 organizer 鉴权约束并通过该 deps 访问 store。",
+      "weight": 0.93
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/agenda/update.rs",
+      "targetFilePath": "src-tauri/src/runtime/agenda/store.rs",
+      "type": "calls",
+      "reason": "update 工具在权限校验后调用 store.update 更新字段、重算 next_fire_at，保持阶段1约束与状态一致性。",
+      "weight": 0.94
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/agenda/cancel.rs",
+      "targetFilePath": "src-tauri/src/runtime/agenda/store.rs",
+      "type": "calls",
+      "reason": "取消命令不直接删数据，而是调用 store.cancel 修改 status 并清空下一次执行时间。",
+      "weight": 0.92
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/agenda/skip.rs",
+      "targetFilePath": "src-tauri/src/runtime/agenda/store.rs",
+      "type": "calls",
+      "reason": "skip/unskip 通过 store 的 set_skip/unset_skip 改写 occurrence-level 排除时间点。",
+      "weight": 0.9
+    },
+    {
+      "sourceFilePath": "src-tauri/src/transport/tauri_commands/agenda.rs",
+      "targetFilePath": "src-tauri/src/runtime/agenda/runner.rs",
+      "type": "related",
+      "reason": "run_agenda_item_now 直接走 dispatcher.dispatch 并用 TriggerSource::ManualRunNow，补齐 command 与 runner 的执行入口对齐。",
+      "weight": 0.82
+    },
+    {
+      "sourceFilePath": "src-tauri/src/transport/tauri_commands/agenda.rs",
+      "targetFilePath": "src-tauri/src/runtime/tools/builtin/agenda/update.rs",
+      "type": "related",
+      "reason": "命令入口对外部输入做轻封装，内部复用与工具同样的更新策略以避免两套逻辑偏离。",
+      "weight": 0.88
+    },
+    {
+      "sourceFilePath": "src-tauri/src/transport/tauri_commands/agenda.rs",
+      "targetFilePath": "src-tauri/src/runtime/tools/builtin/agenda/list.rs",
+      "type": "related",
+      "reason": "命令层 list/cancel/skip 都保持薄封装，映射到工具域语义与 store 查询约束。",
+      "weight": 0.78
+    },
+    {
+      "sourceFilePath": "src-tauri/src/transport/tauri_commands/chat.rs",
+      "targetFilePath": "src-tauri/src/runtime/agenda/occurrence.rs",
+      "type": "writes_to",
+      "reason": "chat dispatch 在执行前写入 Running occurrence，并在成功/失败后更新为 Succeeded/Failed，形成完整生命周期埋点。",
+      "weight": 0.99
+    },
+    {
+      "sourceFilePath": "src-tauri/src/transport/tauri_commands/chat.rs",
+      "targetFilePath": "src-tauri/src/runtime/agenda/dispatcher.rs",
+      "type": "implements",
+      "reason": "该文件为 `AgendaRunDispatcher` 提供实现，连接 runner/command 的抽象执行回调与真实会话发送链路。",
+      "weight": 0.96
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/agenda/store.rs",
+      "targetFilePath": "src-tauri/src/runtime/agenda/item.rs",
+      "type": "contains",
+      "reason": "store 持久化与校验使用 ItemStatus、RecurrenceRule、AgendaItem 的数据结构定义。",
+      "weight": 0.84
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/agenda/list_occurrences.rs",
+      "targetFilePath": "src-tauri/src/runtime/agenda/occurrence.rs",
+      "type": "calls",
+      "reason": "occurrence 列表读取、过滤、反序列化基于 occurrence 文件结构与字段定义。",
+      "weight": 0.86
+    }
+  ],
+  "architecture_findings": [
+    {
+      "title": "Agenda 调度器按 scope 重建 store，避免跨会话/工作区状态污染",
+      "description": "runner 在每次 tick 周期会重新 `resolve_paths`，再 `AgendaStore::new(paths.base_dir())` 形成 scope 绑定的 store；这是调度器处理多会话/多工作区并行运行时的隔离机制。该行为也导致重建 store 成为每次轮询的幂等重载点，必须依赖路径来源正确。",
+      "evidence": [
+        "src-tauri/src/runtime/agenda/runner.rs",
+        "src-tauri/tests/agenda_runner_scope_test.rs",
+        "src-tauri/tests/review_agenda_runner_scope.rs"
+      ]
+    },
+    {
+      "title": "AgendaStore 兼顾状态机与持久化一致性的双职责",
+      "description": "store 对 ItemStatus、overrides、skip_dates、恢复/取消等状态进行统一约束写入，take_due 只返回 Active 且到期项，并在执行后交给 dispatcher 处理结果或推进下次触发时间，形成单点状态来源。",
+      "evidence": [
+        "src-tauri/src/runtime/agenda/store.rs",
+        "src-tauri/tests/review_agenda_phase1_constraints.rs",
+        "src-tauri/tests/review_agenda_base_test.rs"
+      ]
+    },
+    {
+      "title": "触发时间计算是 recurrence 语义的核心，决定状态转移边界",
+      "description": "trigger_eval 与 store 的 `advance_after_fire` 紧耦合：每次执行后由 trigger_eval 产生 next_fire_at，直到 Count/Until/skip_dates 的终止条件关闭，避免重复运行无限循环。",
+      "evidence": [
+        "src-tauri/src/runtime/agenda/trigger_eval.rs",
+        "src-tauri/src/runtime/agenda/store.rs",
+        "src-tauri/tests/review_agenda_base_test.rs"
+      ]
+    },
+    {
+      "title": "工具与命令形成双入口但保持同源逻辑",
+      "description": "create/update/cancel/skip/list 等 tool 与 command 在功能上高度对应；command 层主要做 DTO 构造与最小参数映射，核心校验与执行仍落在 store 与依赖层，降低了重复校验分支并统一错误边界。",
+      "evidence": [
+        "src-tauri/src/runtime/tools/builtin/agenda/create.rs",
+        "src-tauri/src/runtime/tools/builtin/agenda/update.rs",
+        "src-tauri/src/transport/tauri_commands/agenda.rs",
+        "src-tauri/tests/review_agenda_command_thinness.rs",
+        "src-tauri/tests/agenda_commands_test.rs"
+      ]
+    },
+    {
+      "title": "Dispatcher 在 chat.rs 统一了执行生命周期并持久化 session/run 证据链",
+      "description": "chat 的 dispatcher 实现负责创建会话、写入 Running occurrence、按触发源选择是否 advance_after_fire、发消息、并回写最终状态与 error_summary。scheduled 执行与手动执行共享同一链路，仅在 scheduled 分支推进下一次触发。",
+      "evidence": [
+        "src-tauri/src/transport/tauri_commands/chat.rs",
+        "src-tauri/src/runtime/agenda/dispatcher.rs",
+        "src-tauri/src/runtime/agenda/occurrence.rs",
+        "src-tauri/tests/agenda_employee_dispatch_integration_test.rs",
+        "src-tauri/tests/review_agenda_session_id.rs"
+      ]
+    },
+    {
+      "title": "测试矩阵聚焦 scope、状态机边界与执行证据",
+      "description": "专项 review 测试覆盖 runner 重解析路径、phase1 约束、命令层薄封装、session_id/run_id 传递与员工调度链路，形成了状态机关键路径的回归保护。",
+      "evidence": [
+        "src-tauri/tests/agenda_runner_scope_test.rs",
+        "src-tauri/tests/agenda_orphaned_by_employee_test.rs",
+        "src-tauri/tests/agenda_employee_dispatch_integration_test.rs",
+        "src-tauri/tests/review_agenda_phase1_constraints.rs",
+        "src-tauri/tests/review_agenda_command_thinness.rs",
+        "src-tauri/tests/review_agenda_session_id.rs"
+      ]
+    }
+  ],
+  "tour_steps": [
+    {
+      "title": "从 runner 到 store：scope 触发扫描主链路",
+      "description": "按 tick 路径观察 runner 先解析路径再创建 store，通过 take_due 形成执行候选，并把候选交给 dispatcher；可用于审视多 scope 间是否有状态泄漏。",
+      "filePaths": [
+        "src-tauri/src/runtime/agenda/runner.rs",
+        "src-tauri/src/runtime/agenda/store.rs",
+        "src-tauri/src/runtime/agenda/dispatcher.rs",
+        "src-tauri/tests/review_agenda_runner_scope.rs"
+      ]
+    },
+    {
+      "title": "AgendaStore 状态机与 recurrence 递进",
+      "description": "从 create/update/cancel/skip 到 take_due、advance_after_fire，结合 trigger_eval 的 next_fire 规则，逐步理解 AgendaItem 生命周期与触发策略。",
+      "filePaths": [
+        "src-tauri/src/runtime/agenda/store.rs",
+        "src-tauri/src/runtime/agenda/trigger_eval.rs",
+        "src-tauri/src/runtime/tools/builtin/agenda/create.rs",
+        "src-tauri/src/runtime/tools/builtin/agenda/update.rs",
+        "src-tauri/tests/review_agenda_phase1_constraints.rs",
+        "src-tauri/tests/review_agenda_base_test.rs"
+      ]
+    },
+    {
+      "title": "双入口对比：tools 与 tauri commands",
+      "description": "沿着 create/list/update/cancel/skip 的两条入口路径确认参数校验边界和业务执行是否一致，重点校验 command 层是否保持薄封装。",
+      "filePaths": [
+        "src-tauri/src/runtime/tools/builtin/agenda/create.rs",
+        "src-tauri/src/runtime/tools/builtin/agenda/update.rs",
+        "src-tauri/src/runtime/tools/builtin/agenda/cancel.rs",
+        "src-tauri/src/runtime/tools/builtin/agenda/skip.rs",
+        "src-tauri/src/transport/tauri_commands/agenda.rs",
+        "src-tauri/tests/review_agenda_command_thinness.rs",
+        "src-tauri/tests/agenda_commands_test.rs"
+      ]
+    },
+    {
+      "title": "聊天执行与 occurrence 追踪",
+      "description": "查看 chat.rs 的 dispatch 实现如何创建会话与 run/session id，分别在 Running/Succeeded/Failed 之间更新 occurrence，并验证仅 scheduled 执行会调用 advance_after_fire。",
+      "filePaths": [
+        "src-tauri/src/transport/tauri_commands/chat.rs",
+        "src-tauri/src/runtime/agenda/occurrence.rs",
+        "src-tauri/src/runtime/agenda/trigger_eval.rs",
+        "src-tauri/src/runtime/tools/builtin/agenda/list_occurrences.rs",
+        "src-tauri/tests/review_agenda_session_id.rs",
+        "src-tauri/tests/agenda_employee_dispatch_integration_test.rs"
+      ]
+    }
+  ]
+}

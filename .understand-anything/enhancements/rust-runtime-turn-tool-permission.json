@@ -1,0 +1,242 @@
+{
+  "module": "rust-runtime-turn-session-tool-permission-chain",
+  "coverage": "代码/测试来源：SessionRuntime、QueryEngine、runtime tools dispatcher/permission/context/capability、workspace/bash tools、permission/pending stores、run/tool/session stores 与权限/工具相关 review tests。",
+  "key_nodes": [
+    {
+      "filePath": "src-tauri/src/runtime/session_runtime.rs",
+      "summary": "session 级总入口，持有 per-session QueryEngine cache、session cancel root、pending permission/interaction control plane，并在 resolve_permission_request 后持久化 remember 决策。",
+      "tags": ["runtime", "session-owner", "lifecycle", "permission-control-plane"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/query_engine.rs",
+      "summary": "turn 级编排核心，为每个 tool call 构造 ToolExecutionContext/CapabilityContext，执行 dispatcher，并把 Completed/AskRequired/InteractionRequired 映射为 RuntimeToolCallOutcome。",
+      "tags": ["runtime", "turn-owner", "tool-call", "event-bridge"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/tools/dispatcher.rs",
+      "summary": "统一 dispatch 边界，顺序是 pre-tool hook、permission override、tool-specific check、pipeline、mode/async 归一化、validate、execute、post-tool hook。",
+      "tags": ["runtime-tools", "dispatcher", "permission-normalization", "execution-gate"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/tools/permission.rs",
+      "summary": "定义 PermissionDecision 三态、PermissionMode、CapabilityPermissionPipeline、StorePolicyPipeline，以及 Ask 到 Deny 的 mode/async 变换。",
+      "tags": ["runtime-tools", "permission-model", "policy"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/tools/context.rs",
+      "summary": "每次工具调用的执行上下文，把 capability、permission_override、permission_mode、permission_store、interaction_resolution 和 registries 串进一次 dispatch。",
+      "tags": ["runtime-tools", "execution-context", "injection-point"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/tools/capability.rs",
+      "summary": "能力裁剪层，StorageCapability 携带 workspace 与 per-turn permission_ctx，CapabilityContext 是 runtime 工具可见的窄接口。",
+      "tags": ["runtime-tools", "capability", "path-auth"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/tools/builtin/workspace.rs",
+      "summary": "workspace 工具的细粒度路径授权入口，check_path_permission 同时查旧 PathGlob 规则和新的 path_auth 决策，并能生成 path/pathwrite ask。",
+      "tags": ["runtime-tools", "workspace", "path-auth", "ask-source"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/tools/builtin/bash.rs",
+      "summary": "Bash 工具在 pipeline 外做命令级拦截，危险 pattern 直接拒绝，CommandPattern 规则从 PermissionStore 查询并优先返回 allow/deny。",
+      "tags": ["runtime-tools", "bash", "command-pattern", "destructive-tool"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/store/pending_permission_request_store.rs",
+      "summary": "Ask 阶段临时事实源，按 tool_call_id 保存 PendingPermissionRequest，并用 oneshot 把 allow/deny/cancel resolution 回送给等待中的 turn。",
+      "tags": ["runtime-store", "pending-ask", "control-plane"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/store/permission_store.rs",
+      "summary": "持久规则源，支持 session/workspace/user 三层、scope/path glob/command pattern 三类规则，以及 working_dir/path_allow_rule 的 path_auth 数据。",
+      "tags": ["runtime-store", "permission", "persistent-policy", "three-layer"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/store/run_store.rs",
+      "summary": "run 状态存储接口，提供 create/get/update；当前权限执行热路径中更像契约型状态容器。",
+      "tags": ["runtime-store", "run-lifecycle", "contract"],
+      "complexity": "low"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/store/tool_call_store.rs",
+      "summary": "tool_call 状态存储接口，提供 create/get/update；当前 QueryEngine/Dispatcher 热路径没有直接把它作为权限执行事实源。",
+      "tags": ["runtime-store", "tool-call-lifecycle", "contract"],
+      "complexity": "low"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/store/mod.rs",
+      "summary": "RuntimeStoresBuilder 默认组装 in-memory stores，说明 run/task/tool_call/agent_invocation 是并列状态容器，permission/pending_permission 走专用链路。",
+      "tags": ["runtime-store", "composition", "state-topology"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "src-tauri/tests/review_permission_ask_flow_test.rs",
+      "summary": "锁定权限 Ask flow：Ask 在新主路径上是结构化生命周期，不应被伪造成普通工具错误。",
+      "tags": ["test", "permission", "ask-flow"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "src-tauri/tests/tool_permission_pipeline_test.rs",
+      "summary": "覆盖 tool permission pipeline 的 allow/deny/ask 行为，固定 dispatcher 权限归一化边界。",
+      "tags": ["test", "permission", "tool-pipeline"],
+      "complexity": "moderate"
+    }
+  ],
+  "semantic_edges": [
+    {
+      "sourceFilePath": "src-tauri/src/runtime/session_runtime.rs",
+      "targetFilePath": "src-tauri/src/runtime/query_engine.rs",
+      "type": "configures",
+      "weight": 0.95,
+      "reason": "SessionRuntime 为每个 session clone fresh QueryEngine，并注入 authorized workspace、permission context、registries 和 conversation dir。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/session_runtime.rs",
+      "targetFilePath": "src-tauri/src/runtime/store/pending_permission_request_store.rs",
+      "type": "writes_to",
+      "weight": 0.95,
+      "reason": "SessionRuntime 暴露 permission control plane，并 resolve/cancel session 级 pending permission。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/session_runtime.rs",
+      "targetFilePath": "src-tauri/src/runtime/store/permission_store.rs",
+      "type": "writes_to",
+      "weight": 0.9,
+      "reason": "resolve_permission_request 后按 destination 写入 scope 规则或 path_auth grant。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/query_engine.rs",
+      "targetFilePath": "src-tauri/src/runtime/tools/context.rs",
+      "type": "configures",
+      "weight": 0.92,
+      "reason": "QueryEngine 为每个 tool call 构造 ToolExecutionContext。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/query_engine.rs",
+      "targetFilePath": "src-tauri/src/runtime/tools/capability.rs",
+      "type": "configures",
+      "weight": 0.92,
+      "reason": "tool call 前构造 CapabilityContext/StorageCapability，把 workspace、permission_ctx 和 progress sink 注入。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/query_engine.rs",
+      "targetFilePath": "src-tauri/src/runtime/tools/dispatcher.rs",
+      "type": "calls",
+      "weight": 0.96,
+      "reason": "权限判定与 execute 发生在 dispatcher.dispatch，QueryEngine 做 outcome 映射和 runtime event 发射。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/dispatcher.rs",
+      "targetFilePath": "src-tauri/src/runtime/tools/permission.rs",
+      "type": "depends_on",
+      "weight": 0.95,
+      "reason": "dispatcher 调用 permission pipeline 并执行 mode/async 归一化，把 Ask 在 plan/dontAsk/async 场景下转为 Deny。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/dispatcher.rs",
+      "targetFilePath": "src-tauri/src/runtime/tools/builtin/workspace.rs",
+      "type": "calls",
+      "weight": 0.86,
+      "reason": "tool-specific check 优先于 generic pipeline，workspace path 级规则可覆盖通用 capability_scope 判定。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/dispatcher.rs",
+      "targetFilePath": "src-tauri/src/runtime/tools/builtin/bash.rs",
+      "type": "calls",
+      "weight": 0.84,
+      "reason": "Bash 的危险命令与 CommandPattern 查询在 dispatcher 中先于 pipeline 生效。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/permission.rs",
+      "targetFilePath": "src-tauri/src/runtime/store/permission_store.rs",
+      "type": "reads_from",
+      "weight": 0.9,
+      "reason": "StorePolicyPipeline 读取 get_for_scope，remember 决策再写回 PermissionStore。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/workspace.rs",
+      "targetFilePath": "src-tauri/src/runtime/store/permission_store.rs",
+      "type": "reads_from",
+      "weight": 0.9,
+      "reason": "check_path_permission 兼容查询 PathGlob allow/deny，并编码 path_auth ask 粒度。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/bash.rs",
+      "targetFilePath": "src-tauri/src/runtime/store/permission_store.rs",
+      "type": "reads_from",
+      "weight": 0.86,
+      "reason": "Bash.check_permissions 调用 get_for_command 获取 CommandPattern allow/deny。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/store/mod.rs",
+      "targetFilePath": "src-tauri/src/runtime/store/run_store.rs",
+      "type": "configures",
+      "weight": 0.5,
+      "reason": "RuntimeStoresBuilder 默认装配 InMemoryRunStore，但 run store 不在当前权限执行热路径。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/store/mod.rs",
+      "targetFilePath": "src-tauri/src/runtime/store/tool_call_store.rs",
+      "type": "configures",
+      "weight": 0.5,
+      "reason": "ToolCallStore 是并列状态容器，当前 QueryEngine/Dispatcher 热路径没有直接写入它。"
+    },
+    {
+      "sourceFilePath": "src-tauri/tests/review_permission_ask_flow_test.rs",
+      "targetFilePath": "src-tauri/src/runtime/query_engine.rs",
+      "type": "tested_by",
+      "weight": 0.82,
+      "reason": "测试锁定 AskRequired 在新主路径上结构化透传的行为。"
+    }
+  ],
+  "architecture_findings": [
+    {
+      "title": "SessionRuntime 是 session 级权限与取消 owner",
+      "description": "SessionRuntime 集中持有 session 生命周期、cancel root、per-session QueryEngine、pending permission/interaction resolve 与 remember 持久化。",
+      "evidence": ["src-tauri/src/runtime/session_runtime.rs", "src-tauri/tests/review_session_runtime_test.rs"]
+    },
+    {
+      "title": "权限判定是 tool-specific check 在前 generic pipeline 在后的双层模型",
+      "description": "dispatcher 顺序让 workspace/bash 这类工具能用 path/command 细粒度规则先行拦截，MCP/unknown scope 等通用语义再走 capability/store pipeline。",
+      "evidence": ["src-tauri/src/runtime/tools/dispatcher.rs", "src-tauri/src/runtime/tools/builtin/workspace.rs", "src-tauri/src/runtime/tools/builtin/bash.rs", "src-tauri/src/runtime/tools/permission.rs"]
+    },
+    {
+      "title": "Ask 在新主路径上是结构化生命周期",
+      "description": "QueryEngine 将 AskRequired 映射为 RuntimeToolCallOutcome::AskRequired，等待 pending store resolution；legacy 路径仍有扁平化为错误文本的语义差异。",
+      "evidence": ["src-tauri/src/runtime/query_engine.rs", "src-tauri/src/runtime/store/pending_permission_request_store.rs", "src-tauri/tests/review_permission_ask_flow_test.rs"]
+    }
+  ],
+  "tour_steps": [
+    {
+      "title": "先看 session 级 owner",
+      "description": "确认谁创建 turn、谁持有 cancel root、谁负责 pending permission/interaction 的 resolve 和 cancel。",
+      "filePaths": ["src-tauri/src/runtime/session_runtime.rs", "src-tauri/tests/review_session_runtime_test.rs"]
+    },
+    {
+      "title": "再看 turn 内工具执行与权限归一化",
+      "description": "从 QueryEngine 到 dispatcher/context/permission，确认 Ask/Deny/Allow 如何被构造、转换和透传。",
+      "filePaths": ["src-tauri/src/runtime/query_engine.rs", "src-tauri/src/runtime/tools/dispatcher.rs", "src-tauri/src/runtime/tools/context.rs", "src-tauri/src/runtime/tools/permission.rs"]
+    },
+    {
+      "title": "最后看具体规则源与工具级特化",
+      "description": "把 PermissionStore、PendingPermissionRequestStore、workspace path_auth 和 bash command pattern 对齐。",
+      "filePaths": ["src-tauri/src/runtime/store/permission_store.rs", "src-tauri/src/runtime/store/pending_permission_request_store.rs", "src-tauri/src/runtime/tools/builtin/workspace.rs", "src-tauri/src/runtime/tools/builtin/bash.rs"]
+    }
+  ],
+  "risks_or_gaps": [
+    "legacy run_tool_with_bus/run_single_tool_turn 仍把 Ask 扁平化为错误文本，新旧语义没有完全统一。",
+    "path_auth_scope 的 deny remember 只记录日志，不会持久化 deny path 规则。",
+    "RunStore/ToolCallStore/SessionStore 当前不是权限执行热路径事实源，外部若依赖它们观察实时 tool lifecycle 可能读不到完整事实。"
+  ]
+}

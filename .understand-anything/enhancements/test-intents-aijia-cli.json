@@ -1,0 +1,231 @@
+{
+  "module": "test-intents-aijia-cli",
+  "source_basis": "repo-current-docs-scripts-skills",
+  "coverage": "当前仓库来源：package scripts、E2E 前置脚本、test-intents 文档、rules.md、run reports、repo-local usertest-intents 与 test-intents-cli-author skills。tauri-pilot aijia CLI 的实现不在本仓库，只记录接口和缺口。",
+  "key_nodes": [
+    {
+      "filePath": "package.json",
+      "summary": "定义 E2E/pilot 相关 npm scripts：ensure:e2e-prereq、dev:with-pilot、build:with-pilot 等；当前 predev:with-pilot 实际指向 ensure:runtime。",
+      "tags": ["scripts", "e2e", "tauri-pilot", "test-intents"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "scripts/ensure-e2e-prereq.sh",
+      "summary": "E2E 前置检查脚本，处理 cargo git-fetch-with-cli、jq 和 ssh-agent 软检查，并支持 SKIP_E2E_PREREQ 跳过。",
+      "tags": ["script", "e2e", "prereq", "tauri-pilot"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": ".agents/skills/usertest-intents/SKILL.md",
+      "summary": "意图测试用户级入口 skill，定义 AEIT、触发词、13 个 task 的用户口径，以及跑/写意图时的 skill 路由。",
+      "tags": ["skill", "test-intents", "AEIT", "routing"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": ".agents/skills/test-intents-cli-author/SKILL.md",
+      "summary": "aijia CLI 子命令作者 skill，规定每个子命令应封装一个原子 UI 操作，复杂流程由 rules.md 或 runner 串联。",
+      "tags": ["skill", "aijia-cli", "intent-tests", "authoring"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "docs/test-intents/README.md",
+      "summary": "test-intents/AEIT 的仓库文档入口，说明意图测试是 L4 真实账号验收，并指向 rules.md、设计 spec 和 CLI 缺口清单。",
+      "tags": ["docs", "test-intents", "AEIT"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "docs/test-intents/cli-gap.md",
+      "summary": "tauri-pilot aijia CLI 缺口清单，记录跑测暴露的原子 UI 子命令缺口和不应补 CLI 的场景。",
+      "tags": ["docs", "aijia-cli", "gap-list"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "docs/e2e-aijia-subcommands.md",
+      "summary": "aijia 子命令说明文档，补充 E2E/CLI 的使用和子命令口径。",
+      "tags": ["docs", "aijia-cli", "e2e"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "docs/superpowers/specs/2026-05-20-intent-test-redefinition-design.md",
+      "summary": "意图测试重新定义设计文档，是 AEIT 概念、L4 验收定位和任务规则体系的设计权威。",
+      "tags": ["docs", "design", "AEIT", "test-intents"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "docs/test-intents/spec/tasks/对话/rules.md",
+      "summary": "对话 task 的 intent rules 示例，代表 spec/tasks/<task>/rules.md 这一任务承诺入口。",
+      "tags": ["docs", "rules", "intent-task"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "docs/test-intents/spec/tasks/登录/rules.md",
+      "summary": "登录 task 的 intent rules 示例，用于定位账号登录/退出/切租户等真实账号验收规则。",
+      "tags": ["docs", "rules", "login", "intent-task"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "docs/test-intents/run-reports/2026-06-02-handoff.md",
+      "summary": "test-intents 运行交接报告，记录近期规则、CLI 和跑测状态的 handoff 背景。",
+      "tags": ["docs", "run-report", "handoff", "test-intents"],
+      "complexity": "medium"
+    }
+  ],
+  "semantic_edges": [
+    {
+      "sourceFilePath": "package.json",
+      "targetFilePath": "scripts/ensure-e2e-prereq.sh",
+      "type": "calls",
+      "reason": "package.json 定义 ensure:e2e-prereq 脚本，直接调用 scripts/ensure-e2e-prereq.sh。",
+      "weight": 0.82
+    },
+    {
+      "sourceFilePath": "docs/test-intents/README.md",
+      "targetFilePath": ".agents/skills/usertest-intents/SKILL.md",
+      "type": "documents",
+      "reason": "README 与 usertest-intents skill 共同定义 AEIT 的用户入口、触发词和路由。",
+      "weight": 0.84
+    },
+    {
+      "sourceFilePath": ".agents/skills/usertest-intents/SKILL.md",
+      "targetFilePath": "docs/test-intents/spec/tasks/对话/rules.md",
+      "type": "routes",
+      "reason": "usertest-intents 将跑/写意图请求路由到具体 task 的 rules.md。",
+      "weight": 0.78
+    },
+    {
+      "sourceFilePath": ".agents/skills/usertest-intents/SKILL.md",
+      "targetFilePath": "docs/test-intents/spec/tasks/登录/rules.md",
+      "type": "routes",
+      "reason": "登录 task 是 usertest-intents 列出的任务之一，规则入口位于 spec/tasks/<task>/rules.md。",
+      "weight": 0.78
+    },
+    {
+      "sourceFilePath": "docs/test-intents/README.md",
+      "targetFilePath": "docs/superpowers/specs/2026-05-20-intent-test-redefinition-design.md",
+      "type": "documents",
+      "reason": "README 指向 2026-05-20 设计文档作为意图测试设计权威。",
+      "weight": 0.86
+    },
+    {
+      "sourceFilePath": "docs/test-intents/README.md",
+      "targetFilePath": "docs/test-intents/cli-gap.md",
+      "type": "documents",
+      "reason": "README 把 cli-gap.md 标为 CLI 缺失清单入口。",
+      "weight": 0.82
+    },
+    {
+      "sourceFilePath": ".agents/skills/test-intents-cli-author/SKILL.md",
+      "targetFilePath": "docs/test-intents/cli-gap.md",
+      "type": "depends_on",
+      "reason": "test-intents-cli-author 明确要求新增 aijia 子命令前先读 cli-gap.md，不凭想象补 CLI。",
+      "weight": 0.9
+    },
+    {
+      "sourceFilePath": "docs/e2e-aijia-subcommands.md",
+      "targetFilePath": "docs/test-intents/cli-gap.md",
+      "type": "related",
+      "reason": "aijia 子命令说明和 CLI gap 清单共同维护 tauri-pilot aijia 的可用命令口径。",
+      "weight": 0.74
+    },
+    {
+      "sourceFilePath": "docs/test-intents/spec/tasks/对话/rules.md",
+      "targetFilePath": "docs/test-intents/run-reports/2026-06-02-handoff.md",
+      "type": "tested_by",
+      "reason": "rules.md 是任务承诺入口，run report / handoff 记录近期执行和修订状态。",
+      "weight": 0.7
+    }
+  ],
+  "architecture_findings": [
+    {
+      "title": "AEIT 是真实账号 L4 验收而不是普通单测",
+      "description": "test-intents 文档和 usertest-intents skill 都把意图测试定义为 agent 在真实开发机、真实账号、真实磁盘上执行的 L4 验收，结果在对话中报告，不在仓库内沉淀 progress 文件。",
+      "evidence": [
+        "docs/test-intents/README.md",
+        ".agents/skills/usertest-intents/SKILL.md"
+      ]
+    },
+    {
+      "title": "aijia CLI 是原子 UI 操作封装，复杂流程留给 rules.md 串联",
+      "description": "test-intents-cli-author 要求每条 aijia 子命令封装一个原子 UI 动作；cli-gap.md 也强调底层走 webview DOM 操作，不通过内部 IPC 绕过真实 UI。",
+      "evidence": [
+        ".agents/skills/test-intents-cli-author/SKILL.md",
+        "docs/test-intents/cli-gap.md"
+      ]
+    },
+    {
+      "title": "tauri-pilot aijia 实现不在当前仓库",
+      "description": "当前仓库保存 aijia CLI 的文档、缺口、使用入口和 E2E 启动脚本；真正的 tauri-pilot CLI 实现需要 sibling tauri-pilot 仓库安装到 PATH，因此 UserWiki 回答可用命令时要提示外部实现可能漂移。",
+      "evidence": [
+        "docs/test-intents/cli-gap.md",
+        "docs/e2e-aijia-subcommands.md",
+        "package.json"
+      ]
+    },
+    {
+      "title": "test-intents task 口径存在 13 与 14 的漂移",
+      "description": "README 和 usertest-intents skill 仍写 13 个 task，但当前 spec/tasks 下可见 14 个 rules.md 目录；后续维护应先确认是否有归档或新增 task 未同步文档。",
+      "evidence": [
+        "docs/test-intents/README.md",
+        ".agents/skills/usertest-intents/SKILL.md",
+        "docs/test-intents/spec/tasks/专家团队/rules.md",
+        "docs/test-intents/spec/tasks/钉钉频道/rules.md"
+      ]
+    },
+    {
+      "title": "E2E prerequisite 脚本存在但当前 dev:with-pilot 前置并未调用它",
+      "description": "scripts/ensure-e2e-prereq.sh 注释称它是 pnpm dev:with-pilot 的前置检查，但当前 package.json 的 predev:with-pilot 是 pnpm ensure:runtime；ensure:e2e-prereq 仍是独立脚本。UserWiki 回答启动链路时不能声称它一定自动执行。",
+      "evidence": [
+        "package.json",
+        "scripts/ensure-e2e-prereq.sh"
+      ]
+    }
+  ],
+  "tour_steps": [
+    {
+      "title": "先确认 test-intents 的用户入口和 L4 定义",
+      "description": "从 README 和 usertest-intents skill 理解 AEIT 触发词、task 口径、真实账号环境约束和跑/写意图路由。",
+      "filePaths": [
+        "docs/test-intents/README.md",
+        ".agents/skills/usertest-intents/SKILL.md",
+        "docs/superpowers/specs/2026-05-20-intent-test-redefinition-design.md"
+      ]
+    },
+    {
+      "title": "再看 aijia CLI 缺口和原子命令原则",
+      "description": "从 cli-gap 和 test-intents-cli-author skill 确认哪些 CLI 缺口来自真实跑测，以及为什么每条 aijia 子命令只封装一个原子 UI 动作。",
+      "filePaths": [
+        "docs/test-intents/cli-gap.md",
+        ".agents/skills/test-intents-cli-author/SKILL.md",
+        "docs/e2e-aijia-subcommands.md"
+      ]
+    },
+    {
+      "title": "最后回到 scripts 和 rules 入口",
+      "description": "用 package scripts 和 ensure-e2e-prereq.sh 定位 E2E 启动前置，再从 spec/tasks/<task>/rules.md 与 run reports 判断当前规则和执行状态。",
+      "filePaths": [
+        "package.json",
+        "scripts/ensure-e2e-prereq.sh",
+        "docs/test-intents/spec/tasks/对话/rules.md",
+        "docs/test-intents/spec/tasks/登录/rules.md",
+        "docs/test-intents/run-reports/2026-06-02-handoff.md"
+      ]
+    }
+  ],
+  "risks_or_gaps": [
+    {
+      "title": "CLI 实现外置导致命令清单可能漂移",
+      "description": "本仓库文档引用 tauri-pilot aijia，但实现和实际 help 输出取决于 sibling tauri-pilot 仓库及 PATH 上安装的版本。",
+      "evidence": ["docs/test-intents/cli-gap.md", "docs/e2e-aijia-subcommands.md"]
+    },
+    {
+      "title": "task 数量口径需要同步",
+      "description": "README 和 usertest-intents skill 写 13 个 task，而当前 rules.md 目录为 14 个。",
+      "evidence": ["docs/test-intents/README.md", ".agents/skills/usertest-intents/SKILL.md", "docs/test-intents/spec/tasks/专家团队/rules.md"]
+    },
+    {
+      "title": "dev:with-pilot 前置脚本说明与 package.json 不完全一致",
+      "description": "ensure-e2e-prereq.sh 自称由 predev:with-pilot 自动触发，但当前 package.json 的 predev:with-pilot 指向 ensure:runtime。",
+      "evidence": ["scripts/ensure-e2e-prereq.sh", "package.json"]
+    }
+  ]
+}

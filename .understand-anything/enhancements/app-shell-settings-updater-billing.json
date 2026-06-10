@@ -1,0 +1,549 @@
+{
+  "module": "app-shell-settings-updater-billing",
+  "source_basis": "code-tests-only",
+  "key_nodes": [
+    {
+      "filePath": "src/App.tsx",
+      "summary": "应用入口先在模块求值阶段应用本地字体缩放，再在渲染后挂载标题栏、网络状态条、设置弹窗、权限对话框、交互问答弹窗和更新面板，并在多个 useEffect 中拉取插件信息、设置、homeStore 数据、鉴权过期事件、会话标题事件与新会话事件。",
+      "tags": ["frontend", "app-shell", "startup", "settings", "updater", "network"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src/components/settings/SettingsModal.tsx",
+      "summary": "设置弹窗负责根据 uiStore 的 settingsModal key 在 General、Billing、About、Runtime、Archived 面板之间切换，并把检查更新、日志上传、隐私文档、登出和 dataMaskingLevel 持久化这些动作集中接入。",
+      "tags": ["frontend", "settings", "modal", "routing"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src/components/settings/SettingsMenu.tsx",
+      "summary": "设置菜单定义了面板顺序与启用状态，并额外用 tenant.tenantType === personal 控制 account-billing 入口是否对当前租户可见。",
+      "tags": ["frontend", "settings", "menu", "billing"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "src/components/settings/panels/GeneralPanel.tsx",
+      "summary": "通用面板直接写 settingsStore 的字体、语言和聊天宽度等本地状态，再通过 getSettings + updateSettings 做整份设置对象的远端回写。",
+      "tags": ["frontend", "settings", "general", "persistence"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "src/components/settings/panels/RuntimePanel.tsx",
+      "summary": "运行时面板一边调用 runtimeDiagnostics 读取 Bundled/Installed Runtime 的诊断信息，一边把 cloudGatewayMode 的切换先乐观写入 settingsStore，再回写后端设置；失败时会回滚本地模式。",
+      "tags": ["frontend", "settings", "runtime", "diagnostics"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "src/components/settings/panels/AccountBillingPanel.tsx",
+      "summary": "账单面板首次挂载即 refresh，展示余额、当月花费、当月请求数和分页消费记录，并把重试、分页和空态都绑定到 billingStore。",
+      "tags": ["frontend", "settings", "billing", "panel"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "src/components/settings/panels/AboutPanel.tsx",
+      "summary": "关于面板只保留版本、检查更新、隐私文档和日志上传等动作入口；隐私增强与重置本地缓存 UI 仍保留为注释或隐藏能力，没有实际渲染出来。",
+      "tags": ["frontend", "settings", "about", "updater", "gaps"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "src/components/layout/TitleBar.tsx",
+      "summary": "标题栏根据平台分别渲染 macOS/Windows 的拖拽与窗口控制逻辑，并在有更新时把 UpdateAvailableLink 嵌进最顶层 app shell 入口。",
+      "tags": ["frontend", "app-shell", "titlebar", "updater"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "src/components/layout/UpdateAvailableLink.tsx",
+      "summary": "标题栏更新入口只在 updaterStore 进入 ready 且带有 version 时显示，点击后只负责打开更新面板，不重启下载流程。",
+      "tags": ["frontend", "titlebar", "updater", "entrypoint"],
+      "complexity": "simple"
+    },
+    {
+      "filePath": "src/components/common/UpdaterPanel.tsx",
+      "summary": "更新面板按 available、downloading、ready、failed、installing 五种主要阶段切换展示 release notes、进度条、错误提示与安装动作，是 updaterStore 状态机的主要可视化出口。",
+      "tags": ["frontend", "updater", "dialog", "state-machine"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src/stores/settingsStore.ts",
+      "summary": "settingsStore 持有前端当前设置快照，负责把 fontScale 立即应用到 DOM、把 appLanguage 写入 i18n 与本地持久化，并故意让后端加载回来的 appLanguage 服从当前 live UI 语言。",
+      "tags": ["frontend", "store", "settings", "persistence"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src/stores/billingStore.ts",
+      "summary": "billingStore 把 summary、records、分页、加载中状态和错误聚合到一处，并在 refresh 中并行拉取 summary 与第一页 records。",
+      "tags": ["frontend", "store", "billing"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "src/stores/networkStore.ts",
+      "summary": "networkStore 保存最近一次网络快照，特殊处理 lastOnlineAt 以便离线或 server-degraded 时仍保留最后在线时间，并提供 forceProbe 主动触发后端探针。",
+      "tags": ["frontend", "store", "network"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "src/lib/updaterStore.ts",
+      "summary": "updaterStore 是完整的前端更新状态机：它处理 check、平台 key 解析、缓存检查、断点续传下载、进度与失败事件订阅、安装前在线校验，以及安装完成后的 relaunch。",
+      "tags": ["frontend", "store", "updater", "state-machine", "events"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src/lib/tauri.ts",
+      "summary": "类型化 Tauri IPC 层定义了 NETWORK_STATUS 事件名、billing/settings/runtime/updater/network 命令包装器和 payload 类型，是前端访问 Rust 命令边界的唯一显式协议层。",
+      "tags": ["frontend", "ipc", "tauri", "settings", "billing", "updater", "network"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src-tauri/src/commands/settings.rs",
+      "summary": "settings 命令层负责在当前用户作用域存储与 root 存储之间切换，按字段写入 AppSettings，并对 primaryApiKey 与 apiKey:* 前缀做加密存储和迁移兼容处理。",
+      "tags": ["rust", "commands", "settings", "storage", "security"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src-tauri/src/transport/tauri_commands/billing.rs",
+      "summary": "billing transport 命令只做参数接收和 AuthManager 转发，把 summary 与 usage-records 结果直接透传给前端，不在命令层掺入额外业务逻辑。",
+      "tags": ["rust", "transport", "billing", "tauri"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "src-tauri/src/transport/tauri_commands/network.rs",
+      "summary": "network transport 命令只暴露当前快照读取和强制探针触发两个薄边界，真正的探针状态与广播由 runtime/network 模块维护。",
+      "tags": ["rust", "transport", "network", "tauri"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "src-tauri/src/transport/tauri_commands/runtime.rs",
+      "summary": "runtime transport 命令负责暴露 runtime health、ensure/reinstall 进度广播和 diagnostics 结果，其中 runtime_diagnostics 被设置面板直接用于展示 Bundled/Installed Runtime 实况。",
+      "tags": ["rust", "transport", "runtime", "diagnostics", "tauri"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src-tauri/src/updater/commands.rs",
+      "summary": "updater 命令把缓存检查、断点续传下载、缓存读取、缓存清理、平台 key 解析和缓存安装拆成独立 Tauri 命令，并用 updater:download-progress / updater:download-failed 事件把下载状态回传给前端。",
+      "tags": ["rust", "updater", "commands", "events", "tauri"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src-tauri/src/updater/cache.rs",
+      "summary": "UpdaterCache 用 meta.json + 版本包文件管理 complete/partial/none 三态缓存，并在版本、ETag 或 expected_size 不匹配时主动清空陈旧缓存。",
+      "tags": ["rust", "updater", "cache", "storage"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src-tauri/src/updater/downloader.rs",
+      "summary": "下载器通过全局互斥锁、Range 续传、重试退避和 size mismatch 校验实现串行的断点续传下载，并把 partial meta 持续写回缓存供后续 session 恢复。",
+      "tags": ["rust", "updater", "download", "retry", "resume"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src-tauri/src/lib.rs",
+      "summary": "Rust 应用入口在 setup 中注册 updater 插件、启动后台 NetworkProbe、manage 共享状态，并在 invoke_handler 中把 settings、runtime、billing、updater、network 命令统一暴露给前端。",
+      "tags": ["rust", "bootstrap", "tauri", "network", "updater", "registration"],
+      "complexity": "complex"
+    }
+  ],
+  "semantic_edges": [
+    {
+      "sourceFilePath": "src/App.tsx",
+      "targetFilePath": "src/components/layout/TitleBar.tsx",
+      "type": "contains",
+      "reason": "AppShell 把 TitleBar 作为最顶层壳的一部分挂载，用来承接窗口拖拽和更新入口。"
+    },
+    {
+      "sourceFilePath": "src/App.tsx",
+      "targetFilePath": "src/components/settings/SettingsModal.tsx",
+      "type": "contains",
+      "reason": "设置弹窗由 AppShell 常驻挂载，再由 uiStore 控制是否实际渲染。"
+    },
+    {
+      "sourceFilePath": "src/App.tsx",
+      "targetFilePath": "src/components/common/UpdaterPanel.tsx",
+      "type": "contains",
+      "reason": "更新面板是 app shell 的全局弹层，和设置弹窗、权限弹窗一样在根部位统一挂载。"
+    },
+    {
+      "sourceFilePath": "src/App.tsx",
+      "targetFilePath": "src/lib/tauri.ts",
+      "type": "calls",
+      "reason": "App 启动时通过 tauri wrapper 拉取插件信息、设置，并订阅 auth/conversation 相关后端事件。"
+    },
+    {
+      "sourceFilePath": "src/App.tsx",
+      "targetFilePath": "src/stores/settingsStore.ts",
+      "type": "calls",
+      "reason": "App 把 getSettings 的返回值写入 settingsStore，作为前端当前设置快照的初始化入口。"
+    },
+    {
+      "sourceFilePath": "src/components/settings/SettingsModal.tsx",
+      "targetFilePath": "src/components/settings/SettingsMenu.tsx",
+      "type": "contains",
+      "reason": "SettingsModal 把左侧菜单作为壳层 slot 传入，菜单只负责面板 key 切换。"
+    },
+    {
+      "sourceFilePath": "src/components/settings/SettingsModal.tsx",
+      "targetFilePath": "src/components/settings/panels/GeneralPanel.tsx",
+      "type": "contains",
+      "reason": "当 settingsModal === account 时，SettingsModal 渲染 GeneralPanel。"
+    },
+    {
+      "sourceFilePath": "src/components/settings/SettingsModal.tsx",
+      "targetFilePath": "src/components/settings/panels/AccountBillingPanel.tsx",
+      "type": "contains",
+      "reason": "当 settingsModal === account-billing 时，SettingsModal 渲染账单面板。"
+    },
+    {
+      "sourceFilePath": "src/components/settings/SettingsModal.tsx",
+      "targetFilePath": "src/components/settings/panels/RuntimePanel.tsx",
+      "type": "contains",
+      "reason": "当 settingsModal === runtime 时，SettingsModal 渲染运行时诊断与 gateway 模式面板。"
+    },
+    {
+      "sourceFilePath": "src/components/settings/SettingsModal.tsx",
+      "targetFilePath": "src/components/settings/panels/AboutPanel.tsx",
+      "type": "contains",
+      "reason": "当 settingsModal === about 时，SettingsModal 渲染关于面板，并把检查更新、日志上传和文档链接动作传入。"
+    },
+    {
+      "sourceFilePath": "src/components/settings/SettingsModal.tsx",
+      "targetFilePath": "src/lib/updaterStore.ts",
+      "type": "calls",
+      "reason": "关于面板中的手动检查更新会调用 updaterStore.bootstrap({ triggeredBy: 'manual' })，必要时直接打开更新面板。"
+    },
+    {
+      "sourceFilePath": "src/components/settings/SettingsModal.tsx",
+      "targetFilePath": "src/lib/tauri.ts",
+      "type": "calls",
+      "reason": "SettingsModal 通过 tauri wrapper 获取当前设置并回写 dataMaskingLevel，也通过动态导入触发日志上传命令。"
+    },
+    {
+      "sourceFilePath": "src/components/settings/panels/GeneralPanel.tsx",
+      "targetFilePath": "src/stores/settingsStore.ts",
+      "type": "calls",
+      "reason": "GeneralPanel 先更新 settingsStore 的字体、语言和聊天宽度，让 UI 立即生效。"
+    },
+    {
+      "sourceFilePath": "src/components/settings/panels/GeneralPanel.tsx",
+      "targetFilePath": "src/lib/tauri.ts",
+      "type": "calls",
+      "reason": "GeneralPanel 再用 getSettings + updateSettings 做 read-modify-write 持久化。"
+    },
+    {
+      "sourceFilePath": "src/components/settings/panels/RuntimePanel.tsx",
+      "targetFilePath": "src/stores/settingsStore.ts",
+      "type": "calls",
+      "reason": "RuntimePanel 先把 cloudGatewayMode 乐观写入 settingsStore，并在回写失败时回滚。"
+    },
+    {
+      "sourceFilePath": "src/components/settings/panels/RuntimePanel.tsx",
+      "targetFilePath": "src/lib/tauri.ts",
+      "type": "calls",
+      "reason": "RuntimePanel 通过 runtimeDiagnostics 拉诊断信息，并通过 getSettings + updateSettings 持久化 gateway 模式。"
+    },
+    {
+      "sourceFilePath": "src/components/settings/panels/AccountBillingPanel.tsx",
+      "targetFilePath": "src/stores/billingStore.ts",
+      "type": "calls",
+      "reason": "账单面板的初次刷新、重试和分页全都通过 billingStore 的 refresh/fetchRecords 驱动。"
+    },
+    {
+      "sourceFilePath": "src/stores/billingStore.ts",
+      "targetFilePath": "src/lib/tauri.ts",
+      "type": "calls",
+      "reason": "billingStore 用 billingSummary 与 billingUsageRecords 访问后端账单接口，并在 refresh 中并行调用两者。"
+    },
+    {
+      "sourceFilePath": "src/stores/networkStore.ts",
+      "targetFilePath": "src/lib/tauri.ts",
+      "type": "calls",
+      "reason": "networkStore 通过 networkForceProbe 主动触发后端探针，NetworkStatusPayload 形状也直接来自 tauri.ts。"
+    },
+    {
+      "sourceFilePath": "src/lib/updaterStore.ts",
+      "targetFilePath": "src/lib/tauri.ts",
+      "type": "calls",
+      "reason": "updaterStore 通过 tauri wrapper 访问 updaterPlatformKey、updaterCheckCache、updaterDownload、updaterReadCachedBytes、updaterInstallCached 和 updaterClearCache。"
+    },
+    {
+      "sourceFilePath": "src/components/common/UpdaterPanel.tsx",
+      "targetFilePath": "src/lib/updaterStore.ts",
+      "type": "reads_from",
+      "reason": "UpdaterPanel 读取 updaterStore 的 phase/progress/error/version，并把下载与安装按钮绑定到 startDownload 和 installNow。"
+    },
+    {
+      "sourceFilePath": "src/components/layout/UpdateAvailableLink.tsx",
+      "targetFilePath": "src/lib/updaterStore.ts",
+      "type": "reads_from",
+      "reason": "标题栏更新入口只读取 updaterStore 的 ready 状态和 version，并调用 openPanel 打开更新面板。"
+    },
+    {
+      "sourceFilePath": "src/components/layout/TitleBar.tsx",
+      "targetFilePath": "src/components/layout/UpdateAvailableLink.tsx",
+      "type": "contains",
+      "reason": "TitleBar 把 UpdateAvailableLink 作为更新提示的轻量入口嵌进不同平台的标题栏布局。"
+    },
+    {
+      "sourceFilePath": "src/lib/tauri.ts",
+      "targetFilePath": "src-tauri/src/commands/settings.rs",
+      "type": "routes",
+      "reason": "前端的 getSettings/updateSettings wrapper 最终路由到 Rust settings 命令层。"
+    },
+    {
+      "sourceFilePath": "src/lib/tauri.ts",
+      "targetFilePath": "src-tauri/src/transport/tauri_commands/billing.rs",
+      "type": "routes",
+      "reason": "billingSummary 与 billingUsageRecords wrapper 直接命中 billing transport 命令。"
+    },
+    {
+      "sourceFilePath": "src/lib/tauri.ts",
+      "targetFilePath": "src-tauri/src/transport/tauri_commands/network.rs",
+      "type": "routes",
+      "reason": "networkGetStatus 与 networkForceProbe 是 network transport 的前端入口。"
+    },
+    {
+      "sourceFilePath": "src/lib/tauri.ts",
+      "targetFilePath": "src-tauri/src/transport/tauri_commands/runtime.rs",
+      "type": "routes",
+      "reason": "runtimeDiagnostics wrapper 把运行时诊断请求路由到 Rust runtime transport。"
+    },
+    {
+      "sourceFilePath": "src/lib/tauri.ts",
+      "targetFilePath": "src-tauri/src/updater/commands.rs",
+      "type": "routes",
+      "reason": "前端 updater wrapper 把缓存检查、下载、安装和平台 key 解析路由到 Rust updater 命令。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/updater/commands.rs",
+      "targetFilePath": "src-tauri/src/updater/cache.rs",
+      "type": "depends_on",
+      "reason": "updater commands 通过 UpdaterCache 决定 complete/partial/none 三态、读取缓存包并清理缓存。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/updater/commands.rs",
+      "targetFilePath": "src-tauri/src/updater/downloader.rs",
+      "type": "calls",
+      "reason": "updater_download 命令把真实下载工作委托给 download_with_resume，并把进度封装成 Tauri 事件。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/lib.rs",
+      "targetFilePath": "src-tauri/src/transport/tauri_commands/billing.rs",
+      "type": "routes",
+      "reason": "invoke_handler 在应用启动时注册 billing_summary 和 billing_usage_records 命令。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/lib.rs",
+      "targetFilePath": "src-tauri/src/transport/tauri_commands/network.rs",
+      "type": "routes",
+      "reason": "invoke_handler 在应用启动时注册 network_get_status 和 network_force_probe 命令。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/lib.rs",
+      "targetFilePath": "src-tauri/src/transport/tauri_commands/runtime.rs",
+      "type": "routes",
+      "reason": "invoke_handler 在应用启动时注册 runtime_diagnostics 与 runtime 维护命令。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/lib.rs",
+      "targetFilePath": "src-tauri/src/updater/commands.rs",
+      "type": "routes",
+      "reason": "invoke_handler 在应用启动时注册 updater cache/download/install/platform-key 一组命令。"
+    },
+    {
+      "sourceFilePath": "src/lib/updaterStore.ts",
+      "targetFilePath": "src/lib/updaterStore.test.ts",
+      "type": "tested_by",
+      "reason": "updaterStore 的手动/自动下载、失败重试、平台 key 选路和安装命令调用都由专门测试覆盖。"
+    },
+    {
+      "sourceFilePath": "src/stores/settingsStore.ts",
+      "targetFilePath": "src/stores/settingsStore.test.ts",
+      "type": "tested_by",
+      "reason": "settingsStore 的默认值、setter、字体即时应用和 appLanguage 一致性由 store 测试验证。"
+    },
+    {
+      "sourceFilePath": "src/stores/billingStore.ts",
+      "targetFilePath": "src/stores/billingStore.test.ts",
+      "type": "tested_by",
+      "reason": "billingStore 的 summary、records、错误处理和并行 refresh 语义由测试固定。"
+    },
+    {
+      "sourceFilePath": "src/stores/networkStore.ts",
+      "targetFilePath": "src/stores/networkStore.test.ts",
+      "type": "tested_by",
+      "reason": "networkStore 的 lastOnlineAt 保留逻辑和三种状态更新由测试固定。"
+    },
+    {
+      "sourceFilePath": "src/components/common/UpdaterPanel.tsx",
+      "targetFilePath": "src/components/common/UpdaterPanel.test.tsx",
+      "type": "tested_by",
+      "reason": "UpdaterPanel 的 downloading 阶段不展示安装按钮这一关键防误触行为由测试固定。"
+    },
+    {
+      "sourceFilePath": "src/components/layout/TitleBar.tsx",
+      "targetFilePath": "src/components/layout/TitleBar.test.tsx",
+      "type": "tested_by",
+      "reason": "TitleBar 的平台分支、DEV 标识和 Windows 拖拽/双击最大化行为都有单测约束。"
+    }
+  ],
+  "architecture_findings": [
+    {
+      "title": "App shell 启动先做本地 UI 恢复，再做多路异步初始化",
+      "description": "App 在模块加载时就执行 applyFontScale(loadPersistedFontScale())，确保首帧前字体已恢复；随后在渲染阶段常驻挂载 TitleBar、NetworkStatusIndicator、SettingsModal、PermissionAskDialog 和 UpdaterPanel，并在多个 useEffect 中分别拉插件信息、设置、homeStore 数据和后端事件。这让 app shell 既是布局容器，也是启动副作用的汇合点。",
+      "evidence": [
+        "src/App.tsx"
+      ]
+    },
+    {
+      "title": "Settings 后端边界优先遵守当前用户作用域，并在命令层处理敏感字段加密",
+      "description": "Rust 的 settings_store() 会在已登录时落到 CurrentUserStorage，对未登录用户退回 root 存储；update_settings 按字段写入 AppSettings，并对 primaryApiKey 与 apiKey:* 前缀做加密和兼容迁移。这说明设置持久化的真正权威边界在 Rust 命令层，而不是前端 store。",
+      "evidence": [
+        "src-tauri/src/commands/settings.rs",
+        "src-tauri/src/lib.rs"
+      ]
+    },
+    {
+      "title": "设置面板采用“先本地生效，再整对象回写后端”的统一模式",
+      "description": "GeneralPanel、RuntimePanel 和 SettingsModal 里的 dataMaskingLevel 都先更新 settingsStore 的本地状态，再调用 getSettings + updateSettings 做 read-modify-write 回写；其中 RuntimePanel 在失败时会回滚 cloudGatewayMode。这个模式让字体、语言、布局等体验立即响应，但也意味着回写依赖读到的当前全量设置快照。",
+      "evidence": [
+        "src/components/settings/SettingsModal.tsx",
+        "src/components/settings/panels/GeneralPanel.tsx",
+        "src/components/settings/panels/RuntimePanel.tsx",
+        "src/stores/settingsStore.ts",
+        "src/stores/settingsStore.test.ts"
+      ]
+    },
+    {
+      "title": "Billing 链路被建模为 personal tenant 专属设置子模块",
+      "description": "SettingsMenu 只在 tenantType === personal 时暴露 account-billing，AccountBillingPanel 则在挂载时触发 refresh，billingStore 用 Promise.all 并行拉 summary 与第一页 records。Rust transport 命令层保持极薄，只转发到 AuthManager 读取 gateway 账单接口。",
+      "evidence": [
+        "src/components/settings/SettingsMenu.tsx",
+        "src/components/settings/panels/AccountBillingPanel.tsx",
+        "src/stores/billingStore.ts",
+        "src/stores/billingStore.test.ts",
+        "src-tauri/src/transport/tauri_commands/billing.rs"
+      ]
+    },
+    {
+      "title": "Updater 入口分散在 about、title bar 和全局弹窗，但状态机集中在 updaterStore",
+      "description": "手动检查更新来自 SettingsModal/about，轻量提示来自 TitleBar/UpdateAvailableLink，完整交互来自 UpdaterPanel；真正的阶段切换都收口到 updaterStore：idle/checking/available/downloading/ready/failed/installing。manual 与 auto 的差别也只体现在 bootstrap 对“无缓存时是否直接开始下载”的决策上。",
+      "evidence": [
+        "src/components/settings/SettingsModal.tsx",
+        "src/components/layout/TitleBar.tsx",
+        "src/components/layout/UpdateAvailableLink.tsx",
+        "src/components/common/UpdaterPanel.tsx",
+        "src/lib/updaterStore.ts",
+        "src/lib/updaterStore.test.ts",
+        "src/components/common/UpdaterPanel.test.tsx",
+        "src/components/layout/UpdateAvailableLink.test.tsx"
+      ]
+    },
+    {
+      "title": "Updater Rust 侧把缓存、续传下载和安装拆成独立层次",
+      "description": "updater commands 只负责对外命令、事件发射和插件安装桥接；UpdaterCache 管理 meta.json 与包文件三态；downloader 负责全局串行锁、Range 续传、重试退避和 size mismatch 校验。前端 installNow 之所以绕过 JS plugin 的 install()，正是因为 Rust 侧单独暴露了从缓存字节直接安装的命令。",
+      "evidence": [
+        "src-tauri/src/updater/commands.rs",
+        "src-tauri/src/updater/cache.rs",
+        "src-tauri/src/updater/downloader.rs",
+        "src/lib/updaterStore.ts",
+        "src/lib/updaterStore.test.ts"
+      ]
+    },
+    {
+      "title": "Network 模块走后台探针 + 快照命令 + legacy event 三段式",
+      "description": "lib.rs 在 setup 中创建并后台运行 NetworkProbe；network transport 只提供 network_get_status 与 network_force_probe；前端 networkStore 只消费快照并保留 lastOnlineAt。integration test 证明 200/5xx/connect-refused 会分别映射到 online/server-degraded/offline，并且未变化状态不会重复发 network:status 事件；review test 还守住 runtime/network 不得直接 use tauri::* 的层级约束。",
+      "evidence": [
+        "src-tauri/src/lib.rs",
+        "src-tauri/src/transport/tauri_commands/network.rs",
+        "src/stores/networkStore.ts",
+        "src/stores/networkStore.test.ts",
+        "src/lib/tauri.ts",
+        "src-tauri/tests/network_probe_integration_test.rs",
+        "src-tauri/tests/review_network_module.rs"
+      ]
+    },
+    {
+      "title": "当前链路仍有三个显式缺口：隐藏设置项、更新元数据不完整、账单租户约束主要在前端",
+      "description": "AboutPanel 仍接收 dataMaskingLevel/onDataMaskingChange/onResetData，但对应 UI 被注释或隐藏；updaterStore.extractUpdateMeta 目前只取 URL，expectedSize 固定为 0、etag 固定为空字符串，导致缓存验证和下载总量更多依赖下载时动态推断；billing transport 命令本身只代理 AuthManager，现有证据里 personal tenant 约束主要体现在 SettingsMenu 的入口隐藏而不是命令层校验。",
+      "evidence": [
+        "src/components/settings/SettingsModal.tsx",
+        "src/components/settings/panels/AboutPanel.tsx",
+        "src/components/settings/panels/AboutPanel.test.tsx",
+        "src/lib/updaterStore.ts",
+        "src-tauri/src/updater/commands.rs",
+        "src-tauri/src/updater/cache.rs",
+        "src/components/settings/SettingsMenu.tsx",
+        "src-tauri/src/transport/tauri_commands/billing.rs"
+      ]
+    }
+  ],
+  "tour_steps": [
+    {
+      "title": "先看 app shell 的启动副作用和全局挂载",
+      "description": "从 App.tsx 开始，先确认首帧前的字体恢复，再看 AppShell 如何把标题栏、网络状态、设置、权限与更新面板统一挂到根布局。",
+      "filePaths": [
+        "src/App.tsx",
+        "src/components/layout/TitleBar.tsx",
+        "src/components/common/UpdaterPanel.tsx"
+      ]
+    },
+    {
+      "title": "再看 SettingsModal 如何路由菜单和子面板",
+      "description": "SettingsModal 是设置模块的控制器；配合 SettingsMenu 可以快速看清 personal tenant gating、about/runtime/account-billing 的入口分流，以及哪些能力目前仍被隐藏。",
+      "filePaths": [
+        "src/components/settings/SettingsModal.tsx",
+        "src/components/settings/SettingsMenu.tsx",
+        "src/components/settings/panels/GeneralPanel.tsx",
+        "src/components/settings/panels/RuntimePanel.tsx",
+        "src/components/settings/panels/AccountBillingPanel.tsx",
+        "src/components/settings/panels/AboutPanel.tsx"
+      ]
+    },
+    {
+      "title": "把前端 settingsStore 和 Rust settings 命令连起来看",
+      "description": "先理解 settingsStore 怎样即时修改语言、字体和聊天宽度，再看 commands/settings.rs 怎样选 user-scoped/root store、加密敏感字段并承接 updateSettings 的最终写盘。",
+      "filePaths": [
+        "src/stores/settingsStore.ts",
+        "src/stores/settingsStore.test.ts",
+        "src/lib/tauri.ts",
+        "src-tauri/src/commands/settings.rs"
+      ]
+    },
+    {
+      "title": "顺着 account-billing 走完整的账单链路",
+      "description": "从 SettingsMenu 的 personal tenant 入口限制出发，再看 AccountBillingPanel 的 refresh 触发、billingStore 的并行抓取，以及 billing transport 的 AuthManager 转发边界。",
+      "filePaths": [
+        "src/components/settings/SettingsMenu.tsx",
+        "src/components/settings/panels/AccountBillingPanel.tsx",
+        "src/stores/billingStore.ts",
+        "src/stores/billingStore.test.ts",
+        "src-tauri/src/transport/tauri_commands/billing.rs"
+      ]
+    },
+    {
+      "title": "沿 updaterStore 追更新状态机到 Rust 缓存与安装",
+      "description": "先看 updaterStore 如何从 check 到 cache-check 到 download/install，再对照 UpdaterPanel 和 TitleBar 的两个 UI 出口，最后落到 tauri wrapper、updater commands、cache 与 downloader 的职责分层。",
+      "filePaths": [
+        "src/lib/updaterStore.ts",
+        "src/lib/updaterStore.test.ts",
+        "src/components/common/UpdaterPanel.tsx",
+        "src/components/layout/TitleBar.tsx",
+        "src/components/layout/UpdateAvailableLink.tsx",
+        "src/lib/tauri.ts",
+        "src-tauri/src/updater/commands.rs",
+        "src-tauri/src/updater/cache.rs",
+        "src-tauri/src/updater/downloader.rs"
+      ]
+    },
+    {
+      "title": "最后补上 network snapshot 与事件广播边界",
+      "description": "从 lib.rs 中后台启动的 NetworkProbe 出发，查看 network transport 的 snapshot/forceProbe 命令、networkStore 的 lastOnlineAt 语义，以及 integration test 对状态映射和去重行为的约束。",
+      "filePaths": [
+        "src-tauri/src/lib.rs",
+        "src-tauri/src/transport/tauri_commands/network.rs",
+        "src/lib/tauri.ts",
+        "src/stores/networkStore.ts",
+        "src/stores/networkStore.test.ts",
+        "src-tauri/tests/network_probe_integration_test.rs",
+        "src-tauri/tests/review_network_module.rs"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,198 @@
+{
+  "module": "frontend-chat-state-rendering",
+  "coverage": "覆盖 src/lib/tauri.ts、useStreaming/useChat/useTurnRenderModel、session/streaming/chat store，以及聊天列表、流式气泡、工具步骤和聊天布局组件。",
+  "key_nodes": [
+    {
+      "filePath": "src/lib/tauri.ts",
+      "summary": "定义前端与桌面运行时通信的聊天相关命令与事件常量，包括消息发送、停止流式、任务与流事件监听入口；是前端事件总线的边界适配层。",
+      "tags": ["tauri", "ipc", "chat-events", "runtime-boundary"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src/hooks/useStreaming.ts",
+      "summary": "订阅并归一化流式、工具、任务和权限事件，维护会话级流式缓存、心跳与超时清理策略，并把运行时事件写入 streaming store。",
+      "tags": ["streaming", "event-handler", "watchdog", "state-sync"],
+      "complexity": "critical"
+    },
+    {
+      "filePath": "src/hooks/useChat.ts",
+      "summary": "负责聊天主流程：发送消息、切换会话、停止流式、任务同步与 busy 状态管理；与 session/streaming store 形成发送前后置配合。",
+      "tags": ["chat-actions", "session", "send-flow"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src/hooks/useTurnRenderModel.ts",
+      "summary": "把消息与工具执行历史重组为可渲染 turn 模型，处理 tool call 与工具结果匹配、顺序稳定性和 block 级渲染输入。",
+      "tags": ["render-model", "turn", "tool-results"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src/stores/streamingStore.ts",
+      "summary": "维护 isStreaming、streamingContent、toolExecutions、turnStage、心跳等流式状态，并暴露 legacy 派生字段供展示层兼容。",
+      "tags": ["zustand", "streaming-state", "legacy-compat"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src/stores/sessionStore.ts",
+      "summary": "维护会话、消息列表与活动会话元信息，并在会话切换时同步活跃流式派生字段，是持久会话与流式状态的连接点。",
+      "tags": ["zustand", "session", "messages"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "src/stores/chatStore.ts",
+      "summary": "组合 session 与 streaming slice，向 hooks 与组件暴露统一聊天 store 视图，桥接会话路由与流式视图更新。",
+      "tags": ["zustand", "store-composition", "chat"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "src/types/message.ts",
+      "summary": "定义前端消息与内容结构、工具结果和渲染顺序，是流式解析与 UI 渲染保持一致的基础类型约束。",
+      "tags": ["types", "message-model", "tool-result"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "src/components/chat/MessageList.tsx",
+      "summary": "聊天消息列表渲染入口：消费 turn render model，并在流式内容存在时混入流式块，承担消息顺序与分组展示责任。",
+      "tags": ["chat-ui", "message-list", "streaming-render"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src/components/chat/StreamingBubble.tsx",
+      "summary": "展示进行中的 assistant 流式气泡状态，依赖心跳、turnStage 和超时信号显示进行中、暂停或错误提示。",
+      "tags": ["chat-ui", "streaming-bubble", "heartbeat"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "src/components/chat-scene/ToolStepGroupBlock.tsx",
+      "summary": "将连续工具步骤分组并处理工具运行态展示，承担工具执行过程的时序与归并展示策略。",
+      "tags": ["tool-ui", "tool-steps", "grouping"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "src/components/layout/ChatArea.tsx",
+      "summary": "聊天区域布局容器，组织导航、消息列表和输入区域，并处理滚动锚定行为，连接会话状态与内容列表。",
+      "tags": ["layout", "chat-shell", "scroll"],
+      "complexity": "moderate"
+    }
+  ],
+  "semantic_edges": [
+    {
+      "sourceFilePath": "src/hooks/useChat.ts",
+      "targetFilePath": "src/lib/tauri.ts",
+      "type": "calls",
+      "weight": 0.93,
+      "reason": "发送用户消息时调用 Tauri sendMessage 命令，由此触发运行时侧流式流程。"
+    },
+    {
+      "sourceFilePath": "src/hooks/useStreaming.ts",
+      "targetFilePath": "src/lib/tauri.ts",
+      "type": "depends_on",
+      "weight": 0.97,
+      "reason": "useStreaming 注册并消费 delta/done/error/turn/tool 等事件监听，事件定义来源于 tauri 适配层。"
+    },
+    {
+      "sourceFilePath": "src/hooks/useStreaming.ts",
+      "targetFilePath": "src/stores/streamingStore.ts",
+      "type": "calls",
+      "weight": 1,
+      "reason": "实时增量、完成、异常、工具执行状态和心跳均通过 streamingStore 更新为会话级流式状态。"
+    },
+    {
+      "sourceFilePath": "src/hooks/useChat.ts",
+      "targetFilePath": "src/stores/sessionStore.ts",
+      "type": "calls",
+      "weight": 0.9,
+      "reason": "会话列表加载、切换、重排序与激活会话管理集中在 sessionStore。"
+    },
+    {
+      "sourceFilePath": "src/hooks/useChat.ts",
+      "targetFilePath": "src/stores/streamingStore.ts",
+      "type": "calls",
+      "weight": 0.82,
+      "reason": "发送前预置、停止流式、切换会话和 busy 信息刷新都会更新 streaming store。"
+    },
+    {
+      "sourceFilePath": "src/stores/chatStore.ts",
+      "targetFilePath": "src/stores/sessionStore.ts",
+      "type": "contains_flow",
+      "weight": 0.68,
+      "reason": "chatStore 组合会话 slice，向上层统一暴露状态与 action。"
+    },
+    {
+      "sourceFilePath": "src/stores/chatStore.ts",
+      "targetFilePath": "src/stores/streamingStore.ts",
+      "type": "contains_flow",
+      "weight": 0.68,
+      "reason": "chatStore 组合流式 slice，供 hooks 和组件按会话读取流式状态。"
+    },
+    {
+      "sourceFilePath": "src/hooks/useTurnRenderModel.ts",
+      "targetFilePath": "src/types/message.ts",
+      "type": "depends_on",
+      "weight": 0.85,
+      "reason": "turn 模型构建依赖 Message/MessageContent/ToolResult 的类型定义与内容顺序规则。"
+    },
+    {
+      "sourceFilePath": "src/components/chat/MessageList.tsx",
+      "targetFilePath": "src/hooks/useTurnRenderModel.ts",
+      "type": "calls",
+      "weight": 0.96,
+      "reason": "消息列表直接消费 turn 模型，并将 block 转换成具体 UI。"
+    },
+    {
+      "sourceFilePath": "src/components/chat/MessageList.tsx",
+      "targetFilePath": "src/stores/streamingStore.ts",
+      "type": "depends_on",
+      "weight": 0.78,
+      "reason": "列表读取流式内容与流状态以决定是否插入内联流式块。"
+    },
+    {
+      "sourceFilePath": "src/components/chat/StreamingBubble.tsx",
+      "targetFilePath": "src/stores/streamingStore.ts",
+      "type": "depends_on",
+      "weight": 0.88,
+      "reason": "流式气泡显示依赖 turnStage、heartbeat、streamingContent 等字段。"
+    },
+    {
+      "sourceFilePath": "src/components/layout/ChatArea.tsx",
+      "targetFilePath": "src/components/chat/MessageList.tsx",
+      "type": "contains_flow",
+      "weight": 0.89,
+      "reason": "聊天区域把消息列表作为核心内容区域并维护显示上下文与滚动行为。"
+    }
+  ],
+  "architecture_findings": [
+    {
+      "title": "前端流式链路采用事件到状态再到模型和视图的推进方式",
+      "description": "Tauri 事件先进入 useStreaming，再写入 streamingStore，随后由 useTurnRenderModel 构建可渲染 turn blocks，最后由 MessageList 和 StreamingBubble 呈现。",
+      "evidence": ["src/lib/tauri.ts", "src/hooks/useStreaming.ts", "src/stores/streamingStore.ts", "src/hooks/useTurnRenderModel.ts", "src/components/chat/MessageList.tsx"]
+    },
+    {
+      "title": "消息持久化与流式内容保持两套数据路径",
+      "description": "流式正文保存在独立 streamingContent 与 toolExecutions 中参与展示，避免直接污染持久 message 历史。",
+      "evidence": ["CLAUDE.md", "src/stores/streamingStore.ts", "src/hooks/useStreaming.ts", "src/components/chat/MessageList.tsx"]
+    },
+    {
+      "title": "turn 渲染模型通过 toolCallId 降低工具结果乱序风险",
+      "description": "useTurnRenderModel 对工具结果建立索引并回填，减少后入消息导致的展示错位。",
+      "evidence": ["src/hooks/useTurnRenderModel.ts"]
+    }
+  ],
+  "tour_steps": [
+    {
+      "title": "发送与初始化流式状态",
+      "description": "从 useChat 的发送入口到 tauri.sendMessage，再看 useStreaming 的事件监听和 streamingStore 的状态预热。",
+      "filePaths": ["src/hooks/useChat.ts", "src/lib/tauri.ts", "src/hooks/useStreaming.ts", "src/stores/streamingStore.ts"]
+    },
+    {
+      "title": "从模型到 UI 的最终呈现",
+      "description": "从 useTurnRenderModel 到 MessageList、StreamingBubble 和工具步骤块，确认流式内容、工具执行与错误态如何进入 UI。",
+      "filePaths": ["src/hooks/useTurnRenderModel.ts", "src/components/chat/MessageList.tsx", "src/components/chat/StreamingBubble.tsx", "src/components/chat-scene/ToolStepGroupBlock.tsx"]
+    }
+  ],
+  "risks_or_gaps": [
+    "legacy 与新事件语义并存，后续若缺少事件契约测试，容易产生重复处理或状态抖动。",
+    "流式超时与清理策略依赖固定阈值，网络抖动下可能误判暂停。",
+    "持久 message 与 streamingContent 的交接仍需要持续关注重复渲染风险。"
+  ]
+}
