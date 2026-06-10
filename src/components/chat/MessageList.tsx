@@ -8,10 +8,8 @@ import { ChevronDown, ChevronRight, MessageCircleQuestion } from "lucide-react";
 
 import { AiBubble } from "@/components/chat/AiBubble";
 import { CompactBoundaryBar } from "@/components/chat/CompactBoundaryBar";
-import { DayDivider } from "@/components/chat/DayDivider";
 import { StreamingBubble } from "@/components/chat/StreamingBubble";
 import { savePreviewTargetToDisk } from "@/components/chat/fileDownload";
-import { isSameDay } from "@/lib/chatTime";
 import { ChatRow } from "@/components/chat-scene/ChatRow";
 import { GeneratedFileCard } from "@/components/chat-scene/GeneratedFileCard";
 import { PeerMessageBanner } from "@/components/chat-scene/PeerMessageBanner";
@@ -456,21 +454,6 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
     if (activeConversationId) openDrawer(activeConversationId, teamId);
   };
 
-  // 同一天内只在第一条之前显示分隔条；跨天再插一条。
-  const dayDividerFlags = useMemo(() => {
-    const flags: boolean[] = [];
-    let prevIso: string | null = null;
-    for (const t of turns) {
-      const anchor =
-        t.userMessage?.createdAt ?? t.aiSegments[0]?.message.createdAt ?? null;
-      const show =
-        !!anchor &&
-        (!prevIso || !isSameDay(new Date(prevIso), new Date(anchor)));
-      flags.push(show);
-      if (anchor) prevIso = anchor;
-    }
-    return flags;
-  }, [turns]);
   const hasRenderedCompactBoundary = turns.some((turn) => turn.compactBoundary);
   return (
     <div
@@ -498,12 +481,8 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
           t.userMessage && parseDispatchHeader(t.userMessage.text)
         );
         const aiAnchorIso = t.aiSegments[0]?.message.createdAt ?? null;
-        const dividerIso = t.userMessage?.createdAt ?? aiAnchorIso;
         return (
           <div key={i} className="flex flex-col gap-5">
-            {dayDividerFlags[i] && dividerIso ? (
-              <DayDivider iso={dividerIso} />
-            ) : null}
             {t.peerBanners.length > 0 ? (
               <PeerMessageBanner banners={t.peerBanners} />
             ) : null}

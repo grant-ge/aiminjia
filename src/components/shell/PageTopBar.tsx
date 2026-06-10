@@ -1,6 +1,6 @@
 /**
  * @designSource design.pen#BixkY/aAO2u/tCYsE/WgoHO
- * @sizing height 56, padding [0,24], bottom border 1
+ * @sizing height 48, padding [0,24], bottom border 1
  */
 import type { ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
@@ -31,7 +31,7 @@ export function PageTopBar({
   return (
     <header
       data-tauri-drag-region
-      className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background px-8"
+      className="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-background px-8"
     >
       {variant === "compact" ? (
         <div className="flex min-w-0 flex-1 items-center gap-3 text-sm font-semibold text-foreground">

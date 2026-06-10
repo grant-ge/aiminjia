@@ -136,6 +136,13 @@ describe('ChannelPage domain UI', () => {
     expect(screen.queryByRole('switch', { name: /钉钉/ })).not.toBeInTheDocument()
   })
 
+  it('overview header uses the compact 48px top bar height', () => {
+    const { container } = renderPage()
+    const header = container.querySelector('[data-tauri-drag-region]')
+    expect(header).toHaveClass('h-12')
+    expect(header).not.toHaveClass('h-14')
+  })
+
   it('uses tenant product name in the hero description', () => {
     useBrandingStore.setState({ productName: '仁励猫' })
 

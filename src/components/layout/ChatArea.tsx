@@ -86,7 +86,7 @@ export function ChatArea({ expertTeamId }: ChatAreaProps = {}) {
         // selection silently miss their targets.
         className="flex-1 overflow-y-auto overscroll-contain"
       >
-        <div className="px-8 pb-12 pt-7">
+        <div className="px-6 pb-12 pt-7">
           <div
             ref={contentRef}
             className={chatWidthMode === 'full' ? 'w-full' : 'mx-auto w-full max-w-[736px]'}

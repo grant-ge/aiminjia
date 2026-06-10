@@ -1,7 +1,9 @@
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, within } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { getDevBadgeLabel, TitleBar } from './TitleBar'
+import { useBrandingStore } from '@/stores/brandingStore'
+import { useUiStore } from '@/stores/uiStore'
 
 // Shared spies so window-control / drag wiring can be asserted. The inner
 // closure dereferences these lazily (on getCurrentWindow() call), so they are
@@ -25,6 +27,12 @@ describe('TitleBar', () => {
 
   beforeEach(() => {
     vi.stubEnv('DEV', false)
+    localStorage.removeItem('aijia-sidebar-hidden')
+    useBrandingStore.setState({
+      productName: 'AI 猫',
+      logoUrl: '/app-icon.png',
+    })
+    useUiStore.setState({ sidebarHidden: false })
     startDragging.mockClear()
     toggleMaximize.mockClear()
   })
@@ -60,6 +68,33 @@ describe('TitleBar', () => {
     Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Macintosh)', configurable: true })
     render(<TitleBar />)
     expect(screen.getByText(getDevBadgeLabel())).toBeInTheDocument()
+  })
+
+  it('places sidebar toggle on the left side of the macOS title bar', () => {
+    vi.stubEnv('DEV', true)
+    Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Macintosh)', configurable: true })
+    const { container } = render(<TitleBar />)
+
+    const titleBar = container.firstElementChild as HTMLElement
+    const leftGroup = titleBar.firstElementChild as HTMLElement
+    const toggle = screen.getByLabelText('隐藏侧栏')
+
+    expect(leftGroup).toContainElement(toggle)
+    expect(leftGroup).toHaveClass('pl-20')
+    expect(toggle).toHaveAttribute('data-aijia-sidebar-toggle', 'true')
+    expect(container.querySelector('.lucide-panel-left')).toBeInTheDocument()
+    expect(titleBar.lastElementChild).toHaveTextContent(getDevBadgeLabel())
+  })
+
+  it('switches to the collapsed sidebar icon after clicking the toggle', () => {
+    Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Macintosh)', configurable: true })
+    const { container } = render(<TitleBar />)
+
+    fireEvent.click(screen.getByLabelText('隐藏侧栏'))
+
+    expect(screen.getByLabelText('显示侧栏')).toBeInTheDocument()
+    expect(useUiStore.getState().sidebarHidden).toBe(true)
+    expect(container.querySelector('.lucide-panel-right')).toBeInTheDocument()
   })
 
   it('does not render the old diagonal stripe background in DEV', () => {
@@ -105,6 +140,30 @@ describe('TitleBar', () => {
       render(<TitleBar />)
       fireEvent.mouseDown(screen.getByLabelText('Close'), { buttons: 1, detail: 1 })
       expect(startDragging).not.toHaveBeenCalled()
+    })
+
+    it('shows sidebar toggle from the visible left edge without starting drag', () => {
+      const { container } = render(<TitleBar />)
+      const titleBar = container.firstElementChild as HTMLElement
+      const toggle = screen.getByLabelText('隐藏侧栏')
+
+      expect(titleBar.children[1]).toBe(toggle)
+      expect(toggle).toHaveClass('ml-2')
+
+      fireEvent.mouseDown(toggle, { buttons: 1, detail: 1 })
+      expect(startDragging).not.toHaveBeenCalled()
+    })
+
+    it('shows a compact tenant brand before the sidebar toggle on Windows', () => {
+      const { container } = render(<TitleBar />)
+      const titleBar = container.firstElementChild as HTMLElement
+      const brand = screen.getByTestId('titlebar-tenant-brand')
+      const toggle = screen.getByLabelText('隐藏侧栏')
+
+      expect(titleBar.firstElementChild).toBe(brand)
+      expect(titleBar.children[1]).toBe(toggle)
+      expect(screen.getByText('AI 猫')).toBeInTheDocument()
+      expect(within(brand).getByRole('img', { name: /brand logo/i })).toHaveAttribute('src', '/app-icon.png')
     })
   })
 })

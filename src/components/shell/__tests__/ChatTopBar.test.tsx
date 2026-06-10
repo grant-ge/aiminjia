@@ -18,6 +18,20 @@ describe('ChatTopBar', () => {
     expect(screen.getByText('Desktop')).toBeInTheDocument()
   })
 
+  it('does not render updated-at metadata in the header', () => {
+    const updatedAt = '2026-06-10T07:31:25.990007+00:00'
+    const { container } = render(
+      <ChatTopBar
+        title="打开 BI 看板导出绩效分析数据并总结"
+        workspace="Desktop"
+        updatedAt={updatedAt}
+      />,
+    )
+
+    expect(screen.queryByText(/更新于/)).not.toBeInTheDocument()
+    expect(container.querySelector(`[title="${updatedAt}"]`)).not.toBeInTheDocument()
+  })
+
   it('fires share/more/toggleSidebar callbacks', () => {
     const onShare = vi.fn()
     const onMore = vi.fn()
@@ -46,10 +60,11 @@ describe('ChatTopBar', () => {
     expect(onShare).toHaveBeenCalledTimes(1)
   })
 
-  it('header has h-14, px-6 and bottom border', () => {
+  it('header has 48px height, px-6 and bottom border', () => {
     const { container } = render(<ChatTopBar title="X" workspace="Y" />)
     const header = container.querySelector('header')
-    expect(header?.className).toMatch(/h-14/)
+    expect(header).toHaveClass('h-12')
+    expect(header).not.toHaveClass('h-14')
     expect(header?.className).toMatch(/px-6/)
     expect(header?.className).toMatch(/border-b/)
   })

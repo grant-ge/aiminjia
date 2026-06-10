@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom'
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
 
 import { TenantHeader } from '../TenantHeader'
 
@@ -21,9 +21,22 @@ describe('TenantHeader', () => {
     expect(logoWrap?.className).toMatch(/w-7/)
   })
 
-  it('uses the default cursor even when clickable as a hidden entry', () => {
-    render(<TenantHeader name="X" logoUrl="/app-icon.png" onClick={() => {}} />)
+  it('stays clickable without rendering a native button, padding, or hover treatment', () => {
+    const onClick = vi.fn()
+    render(<TenantHeader name="X" logoUrl="/app-icon.png" onClick={onClick} />)
 
-    expect(screen.getByRole('button', { name: /X/ }).className).toContain('!cursor-default')
+    const header = screen.getByRole('button', { name: /X/ })
+    expect(header.tagName).not.toBe('BUTTON')
+    expect(header).not.toHaveClass('py-2')
+    expect(header).not.toHaveClass('pt-2')
+    expect(header).not.toHaveClass('pb-2')
+    expect(header).toHaveClass('mb-2')
+    expect(header.className).not.toMatch(/hover:/)
+
+    fireEvent.click(header)
+    fireEvent.keyDown(header, { key: 'Enter' })
+    fireEvent.keyDown(header, { key: ' ' })
+
+    expect(onClick).toHaveBeenCalledTimes(3)
   })
 })

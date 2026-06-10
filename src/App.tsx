@@ -6,6 +6,7 @@ import { ConfirmDialogHost } from '@/components/common/ConfirmDialogHost'
 import { ToastContainer } from '@/components/common/ToastContainer'
 import { UpdaterPanel } from '@/components/common/UpdaterPanel'
 import { SettingsModal } from '@/components/settings/SettingsModal'
+import { SidebarCollapseFrame } from '@/components/layout/SidebarCollapseFrame'
 import { TitleBar } from '@/components/layout/TitleBar'
 import { NetworkStatusIndicator } from '@/components/shell/NetworkStatusIndicator'
 import { AppSidebar } from '@/components/sidebar/AppSidebar'
@@ -72,14 +73,21 @@ function RouteSwitch() {
 
 function AppShell() {
   useUpdater()
+  const sidebarHidden = useUiStore((state) => state.sidebarHidden)
 
   return (
     <div className="flex h-screen w-screen flex-col bg-background text-foreground">
       <TitleBar />
       <NetworkStatusIndicator />
       <div className="flex min-h-0 flex-1 bg-sidebar">
-        <AppSidebar />
-        <main className="min-w-0 flex-1 overflow-hidden rounded-l-lg border-l border-t border-border bg-background">
+        <SidebarCollapseFrame hidden={sidebarHidden}>
+          <AppSidebar />
+        </SidebarCollapseFrame>
+        <main
+          className={`min-w-0 flex-1 overflow-hidden border-t border-border bg-background ${
+            sidebarHidden ? '' : 'rounded-l-lg border-l'
+          }`}
+        >
           <RouteSwitch />
         </main>
       </div>

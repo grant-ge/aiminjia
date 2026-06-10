@@ -2,7 +2,7 @@ import "@testing-library/jest-dom";
 import * as React from "react";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const uiState = vi.hoisted(() => ({
   route: { kind: "home" } as {
@@ -196,6 +196,8 @@ import { useInteractionStore } from "@/stores/interactionStore";
 import { AppSidebar } from "../AppSidebar";
 
 describe("AppSidebar", () => {
+  const originalUserAgent = navigator.userAgent;
+
   beforeEach(async () => {
     uiState.route = { kind: "home" };
     uiState.setRoute.mockClear();
@@ -230,16 +232,36 @@ describe("AppSidebar", () => {
     await clearExpertTeam("expert-conv");
   });
 
+  afterEach(() => {
+    Object.defineProperty(navigator, "userAgent", {
+      value: originalUserAgent,
+      configurable: true,
+    });
+  });
+
   it("has sidebar background and 256 px width", () => {
     const { container } = render(<AppSidebar />);
     const aside = container.querySelector("aside");
     expect(aside?.className).toMatch(/w-\[256px\]/);
     expect(aside?.className).toMatch(/bg-sidebar/);
+    expect(aside?.className).not.toMatch(/(^|\s)pt-3(\s|$)/);
   });
 
   it("renders TenantHeader name", () => {
     render(<AppSidebar />);
     expect(screen.getByText("仁励家网络科技(杭州)")).toBeInTheDocument();
+  });
+
+  it("does not render TenantHeader in the sidebar on Windows", () => {
+    Object.defineProperty(navigator, "userAgent", {
+      value: "Mozilla/5.0 (Windows NT 10.0)",
+      configurable: true,
+    });
+
+    render(<AppSidebar />);
+
+    expect(screen.queryByText("仁励家网络科技(杭州)")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("tenant-logo")).not.toBeInTheDocument();
   });
 
   it("opens the dev panel after seven tenant header clicks and persists the tool error diagnostics switch", async () => {

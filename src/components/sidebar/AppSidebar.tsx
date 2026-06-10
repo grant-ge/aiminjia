@@ -140,6 +140,8 @@ export function AppSidebar() {
   const { t } = useTranslation();
   const productName = useBrandingStore((s) => s.productName);
   const logoUrl = useBrandingStore((s) => s.logoUrl);
+  const isWindows =
+    typeof navigator !== "undefined" && navigator.userAgent.includes("Windows");
   const route = useUiStore((s) => s.route);
   const setRoute = useUiStore((s) => s.setRoute);
   const openSettings = useUiStore((s) => s.openSettings);
@@ -435,12 +437,14 @@ export function AppSidebar() {
 
   return (
     <>
-      <aside className="flex h-full w-[256px] shrink-0 flex-col overflow-hidden bg-sidebar px-2 pt-3 text-sidebar-foreground">
-        <TenantHeader
-          name={tenantDisplay}
-          logoUrl={logoUrl}
-          onClick={handleTenantHeaderClick}
-        />
+      <aside className="flex h-full w-[256px] shrink-0 flex-col overflow-hidden bg-sidebar px-2 text-sidebar-foreground">
+        {isWindows ? null : (
+          <TenantHeader
+            name={tenantDisplay}
+            logoUrl={logoUrl}
+            onClick={handleTenantHeaderClick}
+          />
+        )}
 
         <SidebarNav
           activeKey={activeKey}

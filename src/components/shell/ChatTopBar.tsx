@@ -1,6 +1,6 @@
 /**
  * @designSource design.pen#qLmzZ
- * @sizing height 56, padding [0,24], bottom border 1, left gap 12, right gap 14
+ * @sizing height 48, padding [0,24], bottom border 1, left gap 12, right gap 14
  */
 import {
   Ellipsis,
@@ -11,9 +11,6 @@ import {
   Share2,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { useTranslation } from "react-i18next";
-
-import { formatRelativeTime } from "@/lib/format";
 
 export interface ChatTopBarEmployee {
   avatar: string;
@@ -31,7 +28,7 @@ interface ChatTopBarProps {
   kind?: ChatTopBarKind;
   /** 来源副标题: 员工 display name / 团名 / 渠道名. */
   sourceLabel?: string;
-  /** Updated-at ISO string. Renders a small relative-time chip ("4 天前"). */
+  /** Updated-at ISO string kept for callers; no longer rendered in the top bar. */
   updatedAt?: string;
   /**
    * When set, replaces the plain title with an employee identity card
@@ -69,7 +66,6 @@ export function ChatTopBar({
   workspace,
   kind,
   sourceLabel,
-  updatedAt,
   employee,
   onShare,
   shareLabel = "分享",
@@ -77,11 +73,10 @@ export function ChatTopBar({
   onToggleSidebar,
   trailing,
 }: ChatTopBarProps) {
-  const { t } = useTranslation();
   return (
     <header
       data-tauri-drag-region
-      className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-background px-6"
+      className="flex h-12 shrink-0 items-center justify-between border-b border-border bg-background px-6"
     >
       <div className="flex min-w-0 items-center gap-3">
         {employee ? (
@@ -112,7 +107,7 @@ export function ChatTopBar({
             {title}
           </div>
         )}
-        {/* Meta chips — workspace / source / pinned / updatedAt. Each chip
+        {/* Meta chips — workspace / source. Each chip
             owns a leading separator so the visual rhythm stays consistent
             even when individual chips are missing. */}
         {workspace ? (
@@ -127,21 +122,6 @@ export function ChatTopBar({
               ·
             </span>
             <SourceChip kind={kind} label={sourceLabel} />
-          </>
-        ) : null}
-        {updatedAt ? (
-          <>
-            <span aria-hidden className="text-xs text-muted-foreground/40">
-              ·
-            </span>
-            <span
-              className="truncate text-xs text-muted-foreground"
-              title={updatedAt}
-            >
-              {t("chatTopBar.updatedAt", {
-                time: formatRelativeTime(updatedAt),
-              })}
-            </span>
           </>
         ) : null}
       </div>
