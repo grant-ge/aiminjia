@@ -54,6 +54,23 @@
 
 内置展示系统能力。这里可以展示启用/关闭开关。
 
+“内置”不是企业/平台远端技能的全量列表，而是一组产品必须自带的基础技能 allowlist。第一版建议包含：
+
+- `skill-creator`：UI 可展示为 `create-skill`，用于引导用户创建新技能。
+- `dingtalk-workspace`：UI 可展示为 `dws` 或“玩转钉钉”，用于把用户口语里的钉钉需求映射到 DWS 能力；注意它不是 `src-tauri/resources/dws` 二进制本身，二进制仍走现有 bundled resource / connector 逻辑。
+
+实际落地时以远端包或 SKILL.md 的 `name` / `plugin_id` 为准。如果正式发布包 id 不是上面的字符串，需要在 allowlist 中使用真实 id，UI 再做展示名映射。
+
+登录后当前用户 scope 已经激活时，后端执行 `ensure_required_builtin_skills`：
+
+1. 读取必需内置技能 allowlist。
+2. 对每个 id 检查本地 `~/.renlijia/skills/<id>/SKILL.md` 是否存在。
+3. 不存在或版本需要更新时，只安装 allowlist 内的官方包。
+4. 安装或更新后刷新 `SkillRegistry`。
+5. 不改写用户的 disabled override。
+
+因此新用户第一次初始化时，这些必需内置技能会自动安装并默认开启；如果用户后来手动关闭，后续登录、同步、更新都不能偷偷重新打开。
+
 关闭内置技能后：
 
 - 仍保留在内置列表。
@@ -237,8 +254,8 @@ pub async fn set_skill_enabled(
 
 - `list_marketplace_skills`：只拉企业/平台可添加目录，不安装、不刷新 registry。
 - `install_marketplace_skill`：用户点击市场卡片 `+` 时才下载安装。安装成功后默认 enabled，即从 disabled 列表移除该 id，然后 refresh registry 并发刷新事件。
-- `sync_builtin_skills`：不再在登录后安装所有远端包。改为“刷新市场目录缓存 + 更新已安装技能的新版本”。它只更新本机已经安装过的 `plugin_id`，不会把新发布技能自动装进 `~/.renlijia/skills` 或用户 skills 目录。
-- `AuthGate` 登录后可以继续调用同步命令，但这个命令不能增加新的已安装技能数量；只允许刷新目录缓存、更新已安装版本、清理远端已下架且本地由该同步链路安装的包。
+- `sync_builtin_skills`：不再在登录后安装所有远端包。改为“确保必需内置技能 + 刷新市场目录缓存 + 更新已安装技能的新版本”。它只能自动安装 allowlist 内的必需内置技能；其他远端新发布技能不会自动装进 `~/.renlijia/skills` 或用户 skills 目录。
+- `AuthGate` 登录后可以继续调用同步命令，但这个命令不能增加非 allowlist 的已安装技能数量；只允许安装/更新必需内置技能、刷新目录缓存、更新已安装版本、清理远端已下架且本地由该同步链路安装的包。
 - Skill Center 的“更新技能”操作文案和行为要拆清：`刷新市场` 只更新可添加列表，`更新已安装` 才检查本地已有技能的新版本。
 
 如果第一阶段不做持久化市场缓存，也可以让市场页实时调用 `list_marketplace_skills`。但无论是否缓存，都不能把远端列表直接落到 registry。
@@ -297,6 +314,7 @@ impl SkillRegistry {
 ### 安装、卸载、更新的状态规则
 
 - 市场点击 `+` 安装：安装成功后默认开启，删除 disabled override。
+- 必需内置技能初始化安装：默认开启，但仅在用户没有 disabled override 时生效；如果用户曾关闭该 id，安装/更新后仍保持关闭。
 - 本地导入：默认开启；如果是 force 覆盖同 id，也删除 disabled override，因为用户明确重新导入。
 - 更新已安装技能：保留原 enabled/disabled 状态，不因为版本更新自动开启。
 - 卸载技能：从 disabled 列表移除该 id，避免残留状态污染未来同名新技能。
@@ -354,7 +372,9 @@ impl SkillRegistry {
 - `format_full_catalog` 仍保持全量语义；新增 `format_enabled_catalog` 且不包含 disabled 技能。
 - `Skill` tool definition 不包含 disabled id。
 - `Skill` tool execute disabled id 返回 unavailable。
-- `sync_builtin_skills` 不再自动安装服务端新增技能，只更新已安装技能或市场目录缓存。
+- 登录同步只自动安装 allowlist 内的必需内置技能，例如 `skill-creator` / `dingtalk-workspace`；其他服务端新增技能只进入市场，不自动安装。
+- 必需内置技能默认开启，但用户关闭后同步不能重新开启。
+- `sync_builtin_skills` 不再自动安装非 allowlist 服务端新增技能，只更新已安装技能或市场目录缓存。
 - `install_marketplace_skill` 安装成功后默认 enabled，并刷新 registry 与前端 store。
 - refresh/install/sync/toggle 后 registry、enabled 集合与前端 store 都刷新。
 

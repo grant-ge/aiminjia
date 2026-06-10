@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 把“技能已安装”和“技能后续对话可用”拆开，让用户关闭技能后，该技能不再出现在聊天入口、模型 skill catalog 或 `Skill` runtime tool 中，同时市场/企业目录不再登录后自动全量安装。
+**Goal:** 把“技能已安装”和“技能后续对话可用”拆开，让用户关闭技能后，该技能不再出现在聊天入口、模型 skill catalog 或 `Skill` runtime tool 中，同时市场/企业目录不再登录后自动全量安装；登录初始化只自动安装 allowlist 内的必需内置技能。
 
-**Architecture:** 后端新增 user-scoped enablement store，`SkillRegistry` 继续保留全量已安装技能，聊天 catalog 和 `Skill` tool 显式消费 enabled 视图。前端 `skillStore` 保留全量 `skills`，同时提供 `enabledSkills` 给聊天入口，技能中心按 `市场 / 内置 / 已安装` 管理展示。
+**Architecture:** 后端新增 user-scoped enablement store 和 required builtin allowlist，`SkillRegistry` 继续保留全量已安装技能，聊天 catalog 和 `Skill` tool 显式消费 enabled 视图。前端 `skillStore` 保留全量 `skills`，同时提供 `enabledSkills` 给聊天入口，技能中心按 `市场 / 内置 / 已安装` 管理展示。
 
 **Tech Stack:** Tauri IPC, Rust, serde JSON, Zustand, React, Vitest, Cargo tests, existing SkillRegistry/SKILL.md runtime.
 
@@ -45,9 +45,11 @@ Backend IPC and runtime:
 - Modify `src-tauri/src/commands/plugin.rs`
   - Injects `SkillEnablementStore` into `list_skills` and `get_plugin_info`.
 - Modify `src-tauri/src/plugin/skill/sync_command.rs`
-  - Changes login sync semantics so new remote packages are not auto-installed.
+  - Changes login sync semantics so only required builtins auto-install and other new remote packages are not auto-installed.
 - Modify `src-tauri/src/plugin/skill/global_sync.rs`
-  - Splits remote list fetch from installed-package update.
+  - Splits remote list fetch from required-builtin install and installed-package update.
+- Create `src-tauri/src/plugin/skill/required_builtin.rs`
+  - Defines required builtin skill ids, display aliases, and helper predicates.
 - Modify `src-tauri/src/runtime/tools/builtin/load_skill.rs`
   - Filters tool definition and execute by enabled state.
 - Modify `src-tauri/src/plugin/context.rs` and `src-tauri/src/plugin/registry.rs`
@@ -959,14 +961,17 @@ git commit -m "feat: filter disabled skills from runtime"
 
 ---
 
-### Task 4: Split Marketplace Directory From Auto Install Sync
+### Task 4: Ensure Required Builtins And Split Marketplace Directory From Auto Install Sync
 
 **Files:**
 
+- Create: `src-tauri/src/plugin/skill/required_builtin.rs`
 - Modify: `src-tauri/src/plugin/skill/global_sync.rs`
 - Modify: `src-tauri/src/plugin/skill/sync_command.rs`
 - Modify: `src-tauri/src/commands/skill_management.rs`
+- Modify: `src-tauri/src/plugin/skill/mod.rs`
 - Test: `src-tauri/src/plugin/skill/global_sync.rs`
+- Test: `src-tauri/src/plugin/skill/required_builtin.rs`
 
 - [ ] **Step 1: Add sync filtering tests**
 
@@ -993,31 +998,57 @@ mod sync_filter_tests {
     }
 
     #[test]
-    fn sync_targets_only_already_installed_remote_packages() {
+    fn sync_targets_include_already_installed_and_required_builtin_packages() {
         let local_state = GlobalSkillsState {
             installed: HashMap::from([("already-installed".to_string(), "1.0".to_string())]),
             updated_at_unix_seconds: 0,
         };
         let disk_installed = HashSet::from(["manual-local".to_string()]);
+        let required_builtin = HashSet::from(["skill-creator".to_string(), "dingtalk-workspace".to_string()]);
         let remote = vec![
             item("already-installed", "1.1"),
+            item("skill-creator", "1.0"),
+            item("dingtalk-workspace", "1.0"),
             item("brand-new", "1.0"),
         ];
 
-        let targets = select_packages_for_update(&remote, &local_state, &disk_installed);
+        let targets = select_packages_for_update(&remote, &local_state, &disk_installed, &required_builtin);
 
-        assert_eq!(targets.iter().map(|i| i.plugin_id.as_str()).collect::<Vec<_>>(), vec!["already-installed"]);
+        assert_eq!(
+            targets.iter().map(|i| i.plugin_id.as_str()).collect::<Vec<_>>(),
+            vec!["already-installed", "skill-creator", "dingtalk-workspace"]
+        );
     }
 
     #[test]
-    fn first_login_with_no_local_state_does_not_auto_install_remote_packages() {
+    fn first_login_with_no_local_state_does_not_auto_install_non_required_remote_packages() {
         let local_state = GlobalSkillsState::default();
         let disk_installed = HashSet::new();
+        let required_builtin = HashSet::from(["skill-creator".to_string(), "dingtalk-workspace".to_string()]);
         let remote = vec![item("remote-default", "1.0")];
 
-        let targets = select_packages_for_update(&remote, &local_state, &disk_installed);
+        let targets = select_packages_for_update(&remote, &local_state, &disk_installed, &required_builtin);
 
         assert!(targets.is_empty());
+    }
+
+    #[test]
+    fn first_login_installs_required_builtin_packages_only() {
+        let local_state = GlobalSkillsState::default();
+        let disk_installed = HashSet::new();
+        let required_builtin = HashSet::from(["skill-creator".to_string(), "dingtalk-workspace".to_string()]);
+        let remote = vec![
+            item("skill-creator", "1.0"),
+            item("dingtalk-workspace", "1.0"),
+            item("tenant-workflow", "1.0"),
+        ];
+
+        let targets = select_packages_for_update(&remote, &local_state, &disk_installed, &required_builtin);
+
+        assert_eq!(
+            targets.iter().map(|i| i.plugin_id.as_str()).collect::<Vec<_>>(),
+            vec!["skill-creator", "dingtalk-workspace"]
+        );
     }
 }
 ```
@@ -1028,13 +1059,55 @@ Run:
 
 ```powershell
 cd src-tauri
-cargo test sync_targets_only_already_installed_remote_packages --lib
-cargo test first_login_with_no_local_state_does_not_auto_install_remote_packages --lib
+cargo test sync_targets_include_already_installed_and_required_builtin_packages --lib
+cargo test first_login_with_no_local_state_does_not_auto_install_non_required_remote_packages --lib
+cargo test first_login_installs_required_builtin_packages_only --lib
 ```
 
 Expected: FAIL because `select_packages_for_update` does not exist.
 
-- [ ] **Step 3: Implement package update selector**
+- [ ] **Step 3: Add required builtin allowlist**
+
+Create `src-tauri/src/plugin/skill/required_builtin.rs`:
+
+```rust
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RequiredBuiltinSkill {
+    pub id: &'static str,
+    pub display_alias: &'static str,
+    pub default_enabled: bool,
+}
+
+pub const REQUIRED_BUILTIN_SKILLS: &[RequiredBuiltinSkill] = &[
+    RequiredBuiltinSkill {
+        id: "skill-creator",
+        display_alias: "create-skill",
+        default_enabled: true,
+    },
+    RequiredBuiltinSkill {
+        id: "dingtalk-workspace",
+        display_alias: "dws",
+        default_enabled: true,
+    },
+];
+
+pub fn required_builtin_ids() -> std::collections::HashSet<String> {
+    REQUIRED_BUILTIN_SKILLS
+        .iter()
+        .map(|skill| skill.id.to_string())
+        .collect()
+}
+
+pub fn is_required_builtin_skill(id: &str) -> bool {
+    REQUIRED_BUILTIN_SKILLS.iter().any(|skill| skill.id == id)
+}
+```
+
+Export it from `src-tauri/src/plugin/skill/mod.rs`.
+
+`dingtalk-workspace` is the SKILL.md wrapper id; `dws` is the CLI/display shorthand and `src-tauri/resources/dws` remains the bundled binary. If the published package id differs, update this allowlist to the real `plugin_id` and keep UI display mapping separate.
+
+- [ ] **Step 4: Implement package update selector**
 
 In `global_sync.rs`, add:
 
@@ -1043,12 +1116,14 @@ pub fn select_packages_for_update<'a>(
     remote: &'a [SkillPackageItem],
     local_state: &GlobalSkillsState,
     disk_installed_ids: &HashSet<String>,
+    required_builtin_ids: &HashSet<String>,
 ) -> Vec<&'a SkillPackageItem> {
     remote
         .iter()
         .filter(|item| {
             local_state.installed.contains_key(&item.plugin_id)
                 || disk_installed_ids.contains(&item.plugin_id)
+                || required_builtin_ids.contains(&item.plugin_id)
         })
         .collect()
 }
@@ -1075,22 +1150,30 @@ fn installed_skill_ids_in_dir(dir: &Path) -> Result<HashSet<String>> {
 }
 ```
 
-- [ ] **Step 4: Change `sync_skill_packages_from_server` loop**
+- [ ] **Step 5: Change `sync_skill_packages_from_server` loop**
 
 After fetching remote list and reading local state, compute:
 
 ```rust
 let disk_installed_ids = installed_skill_ids_in_dir(&config.global_skills_dir)?;
-let update_targets = select_packages_for_update(&list.data, &local_state, &disk_installed_ids);
+let required_builtin_ids = crate::plugin::skill::required_builtin::required_builtin_ids();
+let update_targets = select_packages_for_update(
+    &list.data,
+    &local_state,
+    &disk_installed_ids,
+    &required_builtin_ids,
+);
 ```
 
 Iterate `for item in update_targets` instead of `for item in &list.data`.
 
 Keep `remote_ids` based on the full remote list so cleanup still knows which tracked packages disappeared.
 
-When `local_state.installed` is empty on first login, this means no remote packages are installed automatically.
+When `local_state.installed` is empty on first login, only required builtin packages whose `plugin_id` is in `REQUIRED_BUILTIN_SKILLS` are installed automatically. All other remote packages remain market-only until the user clicks `+`.
 
-- [ ] **Step 5: Ensure marketplace install refreshes registry and enables the skill**
+Do not call `clear_override` for required builtin sync installs or updates. Required builtins are default enabled because absent disabled override means enabled; if the user previously disabled `dingtalk-workspace`, sync must preserve that local choice.
+
+- [ ] **Step 6: Ensure marketplace install refreshes registry and enables the skill**
 
 In `install_marketplace_skill`, after extraction succeeds:
 
@@ -1107,24 +1190,25 @@ Return a message that no longer says restart is required:
 Ok(format!("Installed '{}'", plugin_id))
 ```
 
-- [ ] **Step 6: Run Task 4 tests**
+- [ ] **Step 7: Run Task 4 tests**
 
 Run:
 
 ```powershell
 cd src-tauri
-cargo test sync_targets_only_already_installed_remote_packages --lib
-cargo test first_login_with_no_local_state_does_not_auto_install_remote_packages --lib
+cargo test sync_targets_include_already_installed_and_required_builtin_packages --lib
+cargo test first_login_with_no_local_state_does_not_auto_install_non_required_remote_packages --lib
+cargo test first_login_installs_required_builtin_packages_only --lib
 cargo check
 ```
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit Task 4**
+- [ ] **Step 8: Commit Task 4**
 
 ```powershell
-git add src-tauri/src/plugin/skill/global_sync.rs src-tauri/src/plugin/skill/sync_command.rs src-tauri/src/commands/skill_management.rs
-git commit -m "feat: stop auto-installing remote skills"
+git add src-tauri/src/plugin/skill/global_sync.rs src-tauri/src/plugin/skill/sync_command.rs src-tauri/src/plugin/skill/required_builtin.rs src-tauri/src/plugin/skill/mod.rs src-tauri/src/commands/skill_management.rs
+git commit -m "feat: install only required builtin skills by default"
 ```
 
 ---
@@ -1732,8 +1816,9 @@ cargo test skill_enablement --lib
 cargo test enabled_skill_ids_excludes_disabled_ids --lib
 cargo test format_enabled_catalog_excludes_disabled_skills_but_full_catalog_keeps_all --lib
 cargo test load_skill_rejects_disabled_skill --test load_skill_skill_md_test -- --nocapture
-cargo test sync_targets_only_already_installed_remote_packages --lib
-cargo test first_login_with_no_local_state_does_not_auto_install_remote_packages --lib
+cargo test sync_targets_include_already_installed_and_required_builtin_packages --lib
+cargo test first_login_with_no_local_state_does_not_auto_install_non_required_remote_packages --lib
+cargo test first_login_installs_required_builtin_packages_only --lib
 cargo check
 ```
 
