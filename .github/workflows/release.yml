@@ -37,6 +37,10 @@ jobs:
       # Mirror the secret to a job env so step `if:` can branch on whether
       # signing is configured (the `secrets` context isn't reliable in `if:`).
       HAS_TAURI_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+      # Apple codesign requires the cert itself. Only inject the full Apple
+      # env set when APPLE_CERTIFICATE is present — otherwise tauri-action
+      # tries to codesign with an empty cert and the whole build fails.
+      HAS_APPLE_CERT: ${{ secrets.APPLE_CERTIFICATE != '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -141,14 +145,16 @@ jobs:
           # Tauri updater (Ed25519) signing key. Empty when not configured.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # Apple codesign + notarization (macOS only). tauri-action skips
-          # signing automatically when APPLE_CERTIFICATE is empty.
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Apple codesign + notarization. Only injected when APPLE_CERTIFICATE
+          # is configured; otherwise all empty so tauri-action skips signing
+          # entirely (a half-set with APPLE_ID but no cert makes it try to
+          # codesign an empty cert and fail the whole build).
+          APPLE_CERTIFICATE: ${{ env.HAS_APPLE_CERT == 'true' && secrets.APPLE_CERTIFICATE || '' }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ env.HAS_APPLE_CERT == 'true' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
+          APPLE_SIGNING_IDENTITY: ${{ env.HAS_APPLE_CERT == 'true' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_ID: ${{ env.HAS_APPLE_CERT == 'true' && secrets.APPLE_ID || '' }}
+          APPLE_PASSWORD: ${{ env.HAS_APPLE_CERT == 'true' && secrets.APPLE_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ env.HAS_APPLE_CERT == 'true' && secrets.APPLE_TEAM_ID || '' }}
         with:
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
           releaseName: ${{ github.ref_type == 'tag' && 'AIjia v__VERSION__' || '' }}
