@@ -10,6 +10,8 @@ name: Release
 on:
   workflow_dispatch:
   push:
+    branches:
+      - chore/github-cross-platform-ci
     tags:
       - 'v*'
 
@@ -97,8 +99,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MACOSX_DEPLOYMENT_TARGET: '10.15'
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'AIjia v__VERSION__'
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          releaseName: ${{ github.ref_type == 'tag' && 'AIjia v__VERSION__' || '' }}
           releaseBody: 'See the assets to download and install this version.'
           releaseDraft: true
           prerelease: false
