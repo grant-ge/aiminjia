@@ -30,7 +30,7 @@ use crate::runtime::chat::tool_result_artifact::{
 };
 use crate::runtime::chat::tool_result_collector;
 use crate::runtime::chat::tool_round_driver::{ToolRoundDriver, ToolRoundResult};
-use crate::runtime::chat::tool_round_types::RuntimeToolCallOutcome;
+use crate::runtime::chat::tool_round_types::{RuntimeToolCallOutcome, RuntimeToolCallRequest};
 use crate::runtime::chat::turn_config::{
     LlmStepInput, LlmStepResult, ResolvedLlmSettings, TurnConfig, TurnConfigOverrides, TurnError,
     TurnIterationState, MAX_OUTPUT_TOKENS_RECOVERY_LIMIT,
@@ -41,6 +41,7 @@ use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::events::{AgentIdleScope, RunningTool, RuntimeEvent, RuntimeEventKind};
 use crate::runtime::hooks::config::{HookEvent, HookRegistry};
 use crate::runtime::hooks::HookRunner;
+use crate::runtime::human_interaction::{OutputBinding, TurnOrigin};
 use crate::runtime::ids::{AgentId, RunId, SessionId};
 use crate::runtime::interaction::{
     InteractionId, InteractionResolution, PendingInteractionControlPlane,
@@ -159,6 +160,8 @@ pub struct ChatTurnRequest {
     /// This is injected into dynamic context only; it must not be persisted as
     /// user-visible message content.
     pub channel_context: Option<String>,
+    pub turn_origin: TurnOrigin,
+    pub output_binding: OutputBinding,
     pub agent_name: Option<String>,
     pub permission_mode: PermissionMode,
     /// The authoritative run_id for this turn.
@@ -216,6 +219,8 @@ impl ChatTurnRequest {
             attachments,
             skill_command: None,
             channel_context: None,
+            turn_origin: TurnOrigin::App,
+            output_binding: OutputBinding::AppOnly,
             agent_name: None,
             permission_mode: PermissionMode::Default,
             run_id: RunId::new(uuid::Uuid::new_v4().to_string()),
@@ -583,6 +588,22 @@ fn attach_persisted_user_id_to_pending_message(
 /// from `CurrentUserStorage`.  Tests can leave it unset for pure in-memory.
 pub type TurnStagePathResolver = Arc<dyn Fn(&str) -> Option<std::path::PathBuf> + Send + Sync>;
 
+#[async_trait]
+pub trait RunActivityController: Send + Sync {
+    async fn suspend_for_user_interaction(
+        &self,
+        session_id: &SessionId,
+        run_id: &RunId,
+    ) -> Result<()>;
+
+    async fn resume_after_user_interaction(
+        &self,
+        session_id: &SessionId,
+        run_id: &RunId,
+        cancel: &CancellationToken,
+    ) -> Result<()>;
+}
+
 #[derive(Clone)]
 pub struct RuntimeChatTurnDriver {
     query_engine: QueryEngine,
@@ -597,6 +618,7 @@ pub struct RuntimeChatTurnDriver {
     /// User-scoped resolver for `turn_stage.json` write path.  None ⇒ emitter
     /// runs in-memory only (no persistence).  Spec §5.
     turn_stage_path_resolver: Option<TurnStagePathResolver>,
+    run_activity_controller: Option<Arc<dyn RunActivityController>>,
 }
 
 fn synthetic_cancelled_tool_result(reason: Option<CancellationReason>) -> &'static str {
@@ -920,6 +942,7 @@ impl RuntimeChatTurnDriver {
             task_notification_queue: None,
             compact_client: None,
             turn_stage_path_resolver: None,
+            run_activity_controller: None,
         }
     }
 
@@ -937,6 +960,7 @@ impl RuntimeChatTurnDriver {
             task_notification_queue: None,
             compact_client: None,
             turn_stage_path_resolver: None,
+            run_activity_controller: None,
         }
     }
 
@@ -955,6 +979,7 @@ impl RuntimeChatTurnDriver {
             task_notification_queue: None,
             compact_client: None,
             turn_stage_path_resolver: None,
+            run_activity_controller: None,
         }
     }
 
@@ -974,6 +999,7 @@ impl RuntimeChatTurnDriver {
             task_notification_queue: None,
             compact_client: None,
             turn_stage_path_resolver: None,
+            run_activity_controller: None,
         }
     }
 
@@ -995,6 +1021,44 @@ impl RuntimeChatTurnDriver {
     pub fn with_turn_stage_path_resolver(mut self, resolver: TurnStagePathResolver) -> Self {
         self.turn_stage_path_resolver = Some(resolver);
         self
+    }
+
+    pub fn with_run_activity_controller(
+        mut self,
+        controller: Arc<dyn RunActivityController>,
+    ) -> Self {
+        self.run_activity_controller = Some(controller);
+        self
+    }
+
+    async fn suspend_run_for_user_interaction(&self, turn: &TurnState) {
+        let Some(controller) = self.run_activity_controller.as_ref() else {
+            return;
+        };
+        if let Err(err) = controller
+            .suspend_for_user_interaction(turn.session_id(), turn.run_id())
+            .await
+        {
+            log::warn!(
+                "[chat_turn_driver] failed to suspend active run for user interaction session={} run={}: {:#}",
+                turn.session_id().as_str(),
+                turn.run_id().as_str(),
+                err
+            );
+        }
+    }
+
+    async fn resume_run_after_user_interaction(
+        &self,
+        turn: &TurnState,
+        cancel: &CancellationToken,
+    ) -> Result<()> {
+        let Some(controller) = self.run_activity_controller.as_ref() else {
+            return Ok(());
+        };
+        controller
+            .resume_after_user_interaction(turn.session_id(), turn.run_id(), cancel)
+            .await
     }
 
     async fn await_permission_resolution(
@@ -1059,8 +1123,25 @@ impl RuntimeChatTurnDriver {
         turn: &TurnState,
         cancel: &CancellationToken,
         round_results: Vec<ToolRoundResult>,
+        stage_emitter: Option<&TurnStageEmitter>,
     ) -> Result<Vec<ToolRoundResult>> {
+        struct PendingAskSlot {
+            tool_call_id: String,
+            tool_name: String,
+            original_request: RuntimeToolCallRequest,
+            path_auth_scope: Option<String>,
+            resolution_rx: Option<tokio::sync::oneshot::Receiver<PendingPermissionResolution>>,
+            resolution: Option<PendingPermissionResolution>,
+        }
+
+        enum PermissionSlot {
+            Original(ToolRoundResult),
+            Pending(PendingAskSlot),
+        }
+
+        let mut slots = Vec::with_capacity(round_results.len());
         let mut resolved_results = Vec::with_capacity(round_results.len());
+        let mut first_pending_stage: Option<(String, String)> = None;
 
         for round_result in round_results {
             let ToolRoundResult::Ok(RuntimeToolCallOutcome::AskRequired {
@@ -1069,9 +1150,9 @@ impl RuntimeChatTurnDriver {
                 capability_scopes,
                 original_request,
                 decision,
-            }) = &round_result
+            }) = round_result
             else {
-                resolved_results.push(round_result);
+                slots.push(PermissionSlot::Original(round_result));
                 continue;
             };
             let Some(control_plane) = self.pending_permission_control_plane.as_ref() else {
@@ -1089,7 +1170,15 @@ impl RuntimeChatTurnDriver {
                 ..
             } = decision
             else {
-                resolved_results.push(round_result);
+                slots.push(PermissionSlot::Original(ToolRoundResult::Ok(
+                    RuntimeToolCallOutcome::AskRequired {
+                        tool_call_id,
+                        tool_name,
+                        capability_scopes,
+                        original_request,
+                        decision,
+                    },
+                )));
                 continue;
             };
             let mode = turn.permission_mode();
@@ -1098,13 +1187,15 @@ impl RuntimeChatTurnDriver {
                 session_id: turn.session_id().clone(),
                 run_id: turn.run_id().clone(),
                 tool_name: tool_name.clone(),
-                capability_scopes: capability_scopes.clone(),
+                capability_scopes,
                 message: message.clone(),
                 suggestions: suggestions.clone(),
                 mode,
                 remember_options: remember_options.clone(),
-                default_destination: *default_destination,
+                default_destination,
                 original_request: original_request.clone(),
+                turn_origin: TurnOrigin::App,
+                output_binding: OutputBinding::AppOnly,
                 path_auth_scope: path_auth_scope.clone(),
             };
             let resolution_rx = control_plane.insert_pending_request(pending_request)?;
@@ -1120,32 +1211,95 @@ impl RuntimeChatTurnDriver {
                         suggestions: suggestions.clone(),
                         mode,
                         remember_options: remember_options.clone(),
-                        default_destination: *default_destination,
+                        default_destination,
+                        path_auth_scope: path_auth_scope.clone(),
                         primary_model: turn.primary_model().to_string(),
                     },
                 ))
                 .await?;
 
+            if first_pending_stage.is_none() {
+                first_pending_stage = Some((tool_name.clone(), tool_call_id.clone()));
+            }
+
+            slots.push(PermissionSlot::Pending(PendingAskSlot {
+                tool_call_id,
+                tool_name,
+                original_request,
+                path_auth_scope,
+                resolution_rx: Some(resolution_rx),
+                resolution: None,
+            }));
+        }
+
+        if let Some((tool_name, tool_call_id)) = first_pending_stage {
             // Stage: WaitingPermission — UI shows "等待你审批：<tool>" until the
             // user resolves the ask.  The next stage transition (Tools resume
             // or WaitingLlm continuation) is emitted by the main loop.
-            self.emit_stage_oneshot(
-                turn.session_id().clone(),
-                turn.run_id().clone(),
-                crate::runtime::events::TurnStage::WaitingPermission {
-                    tool_name: tool_name.clone(),
-                    tool_call_id: tool_call_id.clone(),
-                },
-            )
-            .await;
-
-            let resolution = self
-                .await_permission_resolution(cancel, tool_call_id, resolution_rx)
+            if let Some(stage_emitter) = stage_emitter {
+                stage_emitter
+                    .waiting_permission(tool_name.clone(), tool_call_id.clone())
+                    .await;
+            } else {
+                self.emit_stage_oneshot(
+                    turn.session_id().clone(),
+                    turn.run_id().clone(),
+                    crate::runtime::events::TurnStage::WaitingPermission {
+                        tool_name: tool_name.clone(),
+                        tool_call_id: tool_call_id.clone(),
+                    },
+                )
                 .await;
+            }
 
+            self.suspend_run_for_user_interaction(turn).await;
+
+            for slot in &mut slots {
+                let PermissionSlot::Pending(pending) = slot else {
+                    continue;
+                };
+                let resolution_rx = pending
+                    .resolution_rx
+                    .take()
+                    .expect("pending permission slot should retain its receiver");
+                pending.resolution = Some(
+                    self.await_permission_resolution(
+                        cancel,
+                        pending.tool_call_id.as_str(),
+                        resolution_rx,
+                    )
+                    .await,
+                );
+            }
+
+            self.resume_run_after_user_interaction(turn, cancel).await?;
+        }
+
+        for slot in slots {
+            let PendingAskSlot {
+                tool_call_id,
+                tool_name,
+                original_request,
+                path_auth_scope,
+                resolution,
+                ..
+            } = match slot {
+                PermissionSlot::Original(result) => {
+                    resolved_results.push(result);
+                    continue;
+                }
+                PermissionSlot::Pending(pending) => pending,
+            };
+            let resolution =
+                resolution.expect("pending permission slot should be resolved before replay");
             let resolved = match resolution {
-                PendingPermissionResolution::Allow { updated_input, .. } => ToolRoundResult::Ok(
-                    self.query_engine
+                PendingPermissionResolution::Allow {
+                    updated_input,
+                    message,
+                    ..
+                } => {
+                    let mut outcome = self
+                        .query_engine
                         .replay_tool_call_with_bus(
                             turn,
                             &self.event_bus,
@@ -1155,9 +1309,34 @@ impl RuntimeChatTurnDriver {
                         .await
                         .map_err(|err| {
                             anyhow::anyhow!("failed to replay approved tool call: {err}")
-                        })?,
-                ),
-                PendingPermissionResolution::Deny { message, .. } => {
+                        })?;
+                    if let (
+                        Some(message),
+                        RuntimeToolCallOutcome::Completed {
+                            context_modifier_message,
+                            ..
+                        },
+                    ) = (message, &mut outcome)
+                    {
+                        *context_modifier_message = Some(serde_json::json!({
+                            "role": "user",
+                            "content": message,
+                        }));
+                    }
+                    ToolRoundResult::Ok(outcome)
+                }
+                PendingPermissionResolution::Deny {
+                    message,
+                    path_auth_scope_override,
+                    ..
+                } => {
+                    let deny_scope = path_auth_scope_override
+                        .as_deref()
+                        .or(path_auth_scope.as_deref());
+                    if let Some(scope) = deny_scope {
+                        self.query_engine
+                            .record_run_path_deny_for_scope(turn.run_id(), scope);
+                    }
                     record_turn_diagnostic(
                         &crate::telemetry::diagnostics_workspace(),
                         "permission.resolve.completed",
@@ -1330,6 +1509,7 @@ impl RuntimeChatTurnDriver {
             )
             .await;
 
+            self.suspend_run_for_user_interaction(turn).await;
             let resolution = self
                 .await_interaction_resolution(
                     cancel,
@@ -1337,6 +1517,7 @@ impl RuntimeChatTurnDriver {
                     resolution_rx,
                 )
                 .await;
+            self.resume_run_after_user_interaction(turn, cancel).await?;
 
             let resolved = match resolution {
                 InteractionResolution::Submit { value } => {
@@ -1432,6 +1613,10 @@ impl RuntimeChatTurnDriver {
         turn: &mut TurnState,
         request: &ChatTurnRequest,
     ) -> Result<()> {
+        *turn = turn.clone().with_human_interaction_metadata(
+            request.turn_origin.clone(),
+            request.output_binding.clone(),
+        );
         // Merge this turn's attachment-derived directories into the session-scoped
         // accumulator so they remain available for all subsequent tool calls.
         // This must happen before any tool dispatching (both S4 and legacy paths).
@@ -2841,7 +3026,7 @@ impl RuntimeChatTurnDriver {
                     }
 
                     let round_results = self
-                        .resolve_permission_asks(turn, &cancel, round_results)
+                        .resolve_permission_asks(turn, &cancel, round_results, Some(&stage_emitter))
                         .await?;
                     let round_results = self
                         .resolve_interaction_requests(turn, &cancel, round_results)
@@ -3667,6 +3852,10 @@ mod tests {
             Some("dingtalk-workspace")
         );
     }
+    use crate::runtime::interaction::{
+        InteractionId, InteractionKind, InteractionRequest, InteractionResolution,
+        PendingInteractionControlPlane,
+    };
     use crate::runtime::store::{
         PendingPermissionControlPlane, PendingPermissionRequest, PendingPermissionResolution,
     };
@@ -3722,6 +3911,117 @@ mod tests {
         resolution: PendingPermissionResolution,
     }
 
+    struct BlockingPermissionControlPlane {
+        inserted: Mutex<Vec<PendingPermissionRequest>>,
+        senders: Mutex<Vec<oneshot::Sender<PendingPermissionResolution>>>,
+        notify: tokio::sync::Notify,
+    }
+
+    struct RecordingInteractionControlPlane {
+        inserted: Mutex<Vec<InteractionRequest>>,
+        resolution: InteractionResolution,
+    }
+
+    impl RecordingInteractionControlPlane {
+        fn new(resolution: InteractionResolution) -> Self {
+            Self {
+                inserted: Mutex::new(Vec::new()),
+                resolution,
+            }
+        }
+    }
+
+    impl PendingInteractionControlPlane for RecordingInteractionControlPlane {
+        fn insert_pending(
+            &self,
+            request: InteractionRequest,
+        ) -> anyhow::Result<oneshot::Receiver<InteractionResolution>> {
+            self.inserted.lock().unwrap().push(request);
+            let (tx, rx) = oneshot::channel();
+            let _ = tx.send(self.resolution.clone());
+            Ok(rx)
+        }
+
+        fn resolve(
+            &self,
+            _interaction_id: &InteractionId,
+            _resolution: InteractionResolution,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn cancel_for_session(&self, _session_id: &str, _message: &str) -> usize {
+            0
+        }
+
+        fn pending_count_for_session(&self, _session_id: &str) -> usize {
+            0
+        }
+
+        fn pending_for_session(&self, _session_id: &str) -> Vec<InteractionRequest> {
+            Vec::new()
+        }
+
+        fn get_pending(&self, interaction_id: &InteractionId) -> Option<InteractionRequest> {
+            self.inserted
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|request| request.interaction_id == *interaction_id)
+                .cloned()
+        }
+
+        fn is_pending(&self, _interaction_id: &InteractionId) -> bool {
+            false
+        }
+    }
+
+    struct RecordingRunActivityController {
+        calls: Mutex<Vec<String>>,
+    }
+
+    impl RecordingRunActivityController {
+        fn new() -> Self {
+            Self {
+                calls: Mutex::new(Vec::new()),
+            }
+        }
+
+        fn calls(&self) -> Vec<String> {
+            self.calls.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait]
+    impl RunActivityController for RecordingRunActivityController {
+        async fn suspend_for_user_interaction(
+            &self,
+            session_id: &SessionId,
+            run_id: &RunId,
+        ) -> anyhow::Result<()> {
+            self.calls.lock().unwrap().push(format!(
+                "suspend:{}:{}",
+                session_id.as_str(),
+                run_id.as_str()
+            ));
+            Ok(())
+        }
+
+        async fn resume_after_user_interaction(
+            &self,
+            session_id: &SessionId,
+            run_id: &RunId,
+            _cancel: &CancellationToken,
+        ) -> anyhow::Result<()> {
+            self.calls.lock().unwrap().push(format!(
+                "resume:{}:{}",
+                session_id.as_str(),
+                run_id.as_str()
+            ));
+            Ok(())
+        }
+    }
+
     impl RecordingPermissionControlPlane {
         fn new(resolution: PendingPermissionResolution) -> Self {
             Self {
@@ -3732,6 +4032,35 @@ mod tests {
 
         fn inserted_requests(&self) -> Vec<PendingPermissionRequest> {
             self.inserted.lock().unwrap().clone()
+        }
+    }
+
+    impl BlockingPermissionControlPlane {
+        fn new() -> Self {
+            Self {
+                inserted: Mutex::new(Vec::new()),
+                senders: Mutex::new(Vec::new()),
+                notify: tokio::sync::Notify::new(),
+            }
+        }
+
+        fn inserted_requests(&self) -> Vec<PendingPermissionRequest> {
+            self.inserted.lock().unwrap().clone()
+        }
+
+        async fn wait_for_inserted_count(&self, expected: usize) {
+            loop {
+                if self.inserted.lock().unwrap().len() >= expected {
+                    return;
+                }
+                self.notify.notified().await;
+            }
+        }
+
+        fn resolve_all(&self, resolution: PendingPermissionResolution) {
+            for sender in self.senders.lock().unwrap().drain(..) {
+                let _ = sender.send(resolution.clone());
+            }
         }
     }
 
@@ -3764,6 +4093,43 @@ mod tests {
 
         fn pending_count_for_session(&self, _session_id: &crate::runtime::ids::SessionId) -> usize {
             0
+        }
+
+        fn is_pending(&self, _tool_call_id: &ToolCallId) -> bool {
+            false
+        }
+    }
+
+    impl PendingPermissionControlPlane for BlockingPermissionControlPlane {
+        fn insert_pending_request(
+            &self,
+            request: PendingPermissionRequest,
+        ) -> anyhow::Result<oneshot::Receiver<PendingPermissionResolution>> {
+            self.inserted.lock().unwrap().push(request);
+            let (tx, rx) = oneshot::channel();
+            self.senders.lock().unwrap().push(tx);
+            self.notify.notify_waiters();
+            Ok(rx)
+        }
+
+        fn resolve_pending_request(
+            &self,
+            _tool_call_id: &ToolCallId,
+            _resolution: PendingPermissionResolution,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn cancel_for_session(
+            &self,
+            _session_id: &crate::runtime::ids::SessionId,
+            _message: &str,
+        ) -> usize {
+            0
+        }
+
+        fn pending_count_for_session(&self, _session_id: &crate::runtime::ids::SessionId) -> usize {
+            self.inserted.lock().unwrap().len()
         }
 
         fn is_pending(&self, _tool_call_id: &ToolCallId) -> bool {
@@ -3861,6 +4227,7 @@ mod tests {
                 message: "Denied by test".to_string(),
                 remember: false,
                 destination: None,
+                path_auth_scope_override: None,
             },
         ));
         let driver = RuntimeChatTurnDriver {
@@ -3872,6 +4239,7 @@ mod tests {
             task_notification_queue: None,
             compact_client: None,
             turn_stage_path_resolver: None,
+            run_activity_controller: None,
         };
         let turn = TurnState::new(
             IdentityMapping::from_legacy_conversation_id("conv-ask-mode".to_string()),
@@ -3900,7 +4268,7 @@ mod tests {
         })];
 
         let _resolved = driver
-            .resolve_permission_asks(&turn, &turn.cancellation(), round_results)
+            .resolve_permission_asks(&turn, &turn.cancellation(), round_results, None)
             .await
             .expect("ask resolution should succeed");
 
@@ -3917,6 +4285,299 @@ mod tests {
             })
             .expect("permission ask event should be recorded");
         assert_eq!(ask_mode, PermissionMode::Plan);
+    }
+
+    #[tokio::test]
+    async fn resolve_permission_asks_registers_same_round_asks_before_waiting() {
+        let bus = RuntimeEventBus::new();
+        let control_plane = Arc::new(BlockingPermissionControlPlane::new());
+        let driver = RuntimeChatTurnDriver {
+            query_engine: QueryEngine::new(),
+            event_bus: bus.clone(),
+            llm_executor: None,
+            pending_permission_control_plane: Some(control_plane.clone()),
+            pending_interaction_control_plane: None,
+            task_notification_queue: None,
+            compact_client: None,
+            turn_stage_path_resolver: None,
+            run_activity_controller: None,
+        };
+        let turn = TurnState::new(
+            IdentityMapping::from_legacy_conversation_id("conv-batch-ask".to_string()),
+            RunId::new("run-batch-ask"),
+            "hello".to_string(),
+        );
+        let make_ask = |tool_call_id: &str, pattern: &str| {
+            ToolRoundResult::Ok(RuntimeToolCallOutcome::AskRequired {
+                tool_call_id: tool_call_id.to_string(),
+                tool_name: "Glob".to_string(),
+                capability_scopes: vec!["fs:read".to_string()],
+                original_request: RuntimeToolCallRequest {
+                    tool_call_id: tool_call_id.to_string(),
+                    tool_name: "Glob".to_string(),
+                    args: json!({"path":"/tmp", "pattern": pattern}),
+                    purpose: None,
+                },
+                decision: PermissionDecision::Ask {
+                    message: "该路径未授权，需要用户确认：路径=/private/tmp".to_string(),
+                    suggestions: vec!["仅本次允许".to_string(), "拒绝".to_string()],
+                    remember_options: vec![],
+                    default_destination: None,
+                    reason: PermissionReason::Other("test".to_string()),
+                    path_auth_scope: Some("/private/tmp".to_string()),
+                },
+            })
+        };
+        let round_results = vec![
+            make_ask("tc-batch-1", "*claw"),
+            make_ask("tc-batch-2", "*opan"),
+        ];
+
+        let task = tokio::spawn(async move {
+            driver
+                .resolve_permission_asks(&turn, &turn.cancellation(), round_results, None)
+                .await
+        });
+
+        tokio::time::timeout(
+            std::time::Duration::from_millis(200),
+            control_plane.wait_for_inserted_count(2),
+        )
+        .await
+        .expect("all same-round permission asks should be registered before waiting for a reply");
+
+        let inserted = control_plane.inserted_requests();
+        assert_eq!(inserted.len(), 2);
+        let ask_events = bus
+            .recorded()
+            .into_iter()
+            .filter(|event| matches!(event.kind, RuntimeEventKind::PermissionAskRequired { .. }))
+            .count();
+        assert_eq!(ask_events, 2);
+
+        control_plane.resolve_all(PendingPermissionResolution::Deny {
+            message: "Denied by test".to_string(),
+            remember: false,
+            destination: None,
+            path_auth_scope_override: None,
+        });
+        let _ = task.await.expect("permission task should join");
+    }
+
+    #[tokio::test]
+    async fn resolve_permission_asks_suspends_active_run_while_waiting_for_user() {
+        let bus = RuntimeEventBus::new();
+        let control_plane = Arc::new(RecordingPermissionControlPlane::new(
+            PendingPermissionResolution::Deny {
+                message: "Denied by test".to_string(),
+                remember: false,
+                destination: None,
+                path_auth_scope_override: None,
+            },
+        ));
+        let activity = Arc::new(RecordingRunActivityController::new());
+        let driver = RuntimeChatTurnDriver {
+            query_engine: QueryEngine::new(),
+            event_bus: bus,
+            llm_executor: None,
+            pending_permission_control_plane: Some(control_plane),
+            pending_interaction_control_plane: None,
+            task_notification_queue: None,
+            compact_client: None,
+            turn_stage_path_resolver: None,
+            run_activity_controller: Some(activity.clone()),
+        };
+        let turn = TurnState::new(
+            IdentityMapping::from_legacy_conversation_id("conv-wait".to_string()),
+            RunId::new("run-wait"),
+            "hello".to_string(),
+        );
+        let round_results = vec![ToolRoundResult::Ok(RuntimeToolCallOutcome::AskRequired {
+            tool_call_id: "tc-wait".to_string(),
+            tool_name: "Read".to_string(),
+            capability_scopes: vec!["fs:read".to_string()],
+            original_request: RuntimeToolCallRequest {
+                tool_call_id: "tc-wait".to_string(),
+                tool_name: "Read".to_string(),
+                args: json!({"file_path":"/tmp/secret.txt"}),
+                purpose: None,
+            },
+            decision: PermissionDecision::Ask {
+                message: "need approval".to_string(),
+                suggestions: vec![],
+                remember_options: vec![],
+                default_destination: None,
+                reason: PermissionReason::Other("test".to_string()),
+                path_auth_scope: None,
+            },
+        })];
+
+        let _resolved = driver
+            .resolve_permission_asks(&turn, &turn.cancellation(), round_results, None)
+            .await
+            .expect("permission ask should resolve");
+
+        assert_eq!(
+            activity.calls(),
+            vec![
+                "suspend:conv-wait:run-wait".to_string(),
+                "resume:conv-wait:run-wait".to_string(),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn resolve_interaction_requests_suspends_active_run_while_waiting_for_user() {
+        let bus = RuntimeEventBus::new();
+        let control_plane = Arc::new(RecordingInteractionControlPlane::new(
+            InteractionResolution::Cancel {
+                message: "Cancelled by test".to_string(),
+            },
+        ));
+        let activity = Arc::new(RecordingRunActivityController::new());
+        let driver = RuntimeChatTurnDriver {
+            query_engine: QueryEngine::new(),
+            event_bus: bus,
+            llm_executor: None,
+            pending_permission_control_plane: None,
+            pending_interaction_control_plane: Some(control_plane),
+            task_notification_queue: None,
+            compact_client: None,
+            turn_stage_path_resolver: None,
+            run_activity_controller: Some(activity.clone()),
+        };
+        let turn = TurnState::new(
+            IdentityMapping::from_legacy_conversation_id("conv-question".to_string()),
+            RunId::new("run-question"),
+            "hello".to_string(),
+        );
+        let original_request = RuntimeToolCallRequest {
+            tool_call_id: "tool-question".to_string(),
+            tool_name: "AskUserQuestion".to_string(),
+            args: json!({"questions":[{"question":"看哪个文件？"}]}),
+            purpose: None,
+        };
+        let round_results = vec![ToolRoundResult::Ok(
+            RuntimeToolCallOutcome::InteractionRequired {
+                tool_call_id: "tool-question".to_string(),
+                tool_name: "AskUserQuestion".to_string(),
+                original_request: original_request.clone(),
+                interaction_request: InteractionRequest {
+                    interaction_id: InteractionId::new("ask-question"),
+                    session_id: turn.session_id().clone(),
+                    run_id: turn.run_id().clone(),
+                    tool_call_id: ToolCallId::new("tool-question"),
+                    tool_name: "AskUserQuestion".to_string(),
+                    kind: InteractionKind::AskUserQuestion,
+                    payload: json!({"questions":[{"question":"看哪个文件？"}]}),
+                    original_request,
+                    turn_origin: turn.turn_origin().clone(),
+                    output_binding: turn.output_binding().clone(),
+                },
+            },
+        )];
+
+        let _resolved = driver
+            .resolve_interaction_requests(&turn, &turn.cancellation(), round_results)
+            .await
+            .expect("interaction should resolve");
+
+        assert_eq!(
+            activity.calls(),
+            vec![
+                "suspend:conv-question:run-question".to_string(),
+                "resume:conv-question:run-question".to_string(),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn resolve_permission_asks_persists_waiting_permission_stage() {
+        let bus = RuntimeEventBus::new();
+        let control_plane = Arc::new(RecordingPermissionControlPlane::new(
+            PendingPermissionResolution::Deny {
+                message: "Denied by test".to_string(),
+                remember: false,
+                destination: None,
+                path_auth_scope_override: None,
+            },
+        ));
+        let driver = RuntimeChatTurnDriver {
+            query_engine: QueryEngine::new(),
+            event_bus: bus.clone(),
+            llm_executor: None,
+            pending_permission_control_plane: Some(control_plane),
+            pending_interaction_control_plane: None,
+            task_notification_queue: None,
+            compact_client: None,
+            turn_stage_path_resolver: None,
+            run_activity_controller: None,
+        };
+        let turn = TurnState::new(
+            IdentityMapping::from_legacy_conversation_id("conv-stage".to_string()),
+            RunId::new("run-stage"),
+            "hello".to_string(),
+        );
+        let tmp = tempfile::tempdir().unwrap();
+        let stage_path = tmp.path().join("turn_stages").join("conv-stage.json");
+        let stage_emitter =
+            TurnStageEmitter::new(bus, turn.session_id().clone(), turn.run_id().clone())
+                .with_enabled(true)
+                .with_persist_path(stage_path.clone());
+        stage_emitter
+            .tools_started(
+                0,
+                vec![RunningTool {
+                    tool_name: "Read".to_string(),
+                    tool_call_id: "tc-stage".to_string(),
+                    started_at_ms: 1,
+                }],
+            )
+            .await;
+
+        let round_results = vec![ToolRoundResult::Ok(RuntimeToolCallOutcome::AskRequired {
+            tool_call_id: "tc-stage".to_string(),
+            tool_name: "Read".to_string(),
+            capability_scopes: vec!["fs:read".to_string()],
+            original_request: RuntimeToolCallRequest {
+                tool_call_id: "tc-stage".to_string(),
+                tool_name: "Read".to_string(),
+                args: json!({"file_path":"/tmp/secret.txt"}),
+                purpose: None,
+            },
+            decision: PermissionDecision::Ask {
+                message: "need approval".to_string(),
+                suggestions: vec!["Allow once".to_string()],
+                remember_options: vec![],
+                default_destination: None,
+                reason: PermissionReason::Other("test".to_string()),
+                path_auth_scope: None,
+            },
+        })];
+
+        let _resolved = driver
+            .resolve_permission_asks(
+                &turn,
+                &turn.cancellation(),
+                round_results,
+                Some(&stage_emitter),
+            )
+            .await
+            .expect("ask resolution should succeed");
+
+        let raw = std::fs::read(&stage_path).expect("turn stage should be persisted");
+        let parsed: crate::runtime::chat::turn_stage::PersistedTurnStage =
+            serde_json::from_slice(&raw).expect("parse turn stage");
+        match parsed.stage {
+            crate::runtime::events::TurnStage::WaitingPermission {
+                tool_name,
+                tool_call_id,
+            } => {
+                assert_eq!(tool_name, "Read");
+                assert_eq!(tool_call_id, "tc-stage");
+            }
+            other => panic!("expected persisted waitingPermission, got {other:?}"),
+        }
     }
 
     #[test]

@@ -45,12 +45,15 @@ interface UiState {
   route: Route
   settingsModal: SettingsModalState
   sidebarTab: SidebarBodyTab
+  sidebarHidden: boolean
   prefillText: string | null
   pendingSkill: PendingSkillSelection | null
   setRoute: (route: Route) => void
   openSettings: (settingsModal: SettingsModalKey) => void
   closeSettings: () => void
   setSidebarTab: (tab: SidebarBodyTab) => void
+  setSidebarHidden: (hidden: boolean) => void
+  toggleSidebarHidden: () => void
   setPrefillText: (text: string) => void
   consumePrefillText: () => string | null
   setPendingSkill: (skill: PendingSkillSelection) => void
@@ -59,6 +62,7 @@ interface UiState {
 
 const ROUTE_STORAGE_KEY = 'aijia-ui-route'
 const SIDEBAR_TAB_STORAGE_KEY = 'aijia-sidebar-tab'
+const SIDEBAR_HIDDEN_STORAGE_KEY = 'aijia-sidebar-hidden'
 const DEFAULT_ROUTE: Route = { kind: 'home' }
 
 function isRoute(value: unknown): value is Route {
@@ -123,10 +127,29 @@ function persistSidebarTab(tab: SidebarBodyTab) {
   }
 }
 
+function loadPersistedSidebarHidden(): boolean {
+  if (typeof localStorage === 'undefined') return false
+  try {
+    return localStorage.getItem(SIDEBAR_HIDDEN_STORAGE_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+
+function persistSidebarHidden(hidden: boolean) {
+  if (typeof localStorage === 'undefined') return
+  try {
+    localStorage.setItem(SIDEBAR_HIDDEN_STORAGE_KEY, hidden ? 'true' : 'false')
+  } catch {
+    // Ignore storage failures; visibility still works in memory.
+  }
+}
+
 export const useUiStore = create<UiState>((set, get) => ({
   route: loadPersistedRoute(),
   settingsModal: null,
   sidebarTab: loadPersistedSidebarTab(),
+  sidebarHidden: loadPersistedSidebarHidden(),
   prefillText: null,
   pendingSkill: null,
   setRoute: (route) => {
@@ -142,6 +165,15 @@ export const useUiStore = create<UiState>((set, get) => ({
   setSidebarTab: (tab) => {
     persistSidebarTab(tab)
     set({ sidebarTab: tab })
+  },
+  setSidebarHidden: (hidden) => {
+    persistSidebarHidden(hidden)
+    set({ sidebarHidden: hidden })
+  },
+  toggleSidebarHidden: () => {
+    const hidden = !get().sidebarHidden
+    persistSidebarHidden(hidden)
+    set({ sidebarHidden: hidden })
   },
   setPrefillText: (text) => set({ prefillText: text }),
   consumePrefillText: () => {

@@ -45,9 +45,7 @@ use tracing_subscriber::{
 static APP_INSTANCE_ID: OnceLock<String> = OnceLock::new();
 
 fn app_instance_id() -> &'static str {
-    APP_INSTANCE_ID.get_or_init(|| {
-        uuid::Uuid::new_v4().simple().to_string()[..8].to_string()
-    })
+    APP_INSTANCE_ID.get_or_init(|| uuid::Uuid::new_v4().simple().to_string()[..8].to_string())
 }
 
 // ---------------------------------------------------------------------------
@@ -134,7 +132,11 @@ where
             .parent()
             .and_then(|pid| ctx.span(pid))
             .or_else(|| ctx.lookup_current())
-            .and_then(|p| p.extensions().get::<OtelContext>().map(|c| c.trace_id.clone()));
+            .and_then(|p| {
+                p.extensions()
+                    .get::<OtelContext>()
+                    .map(|c| c.trace_id.clone())
+            });
         let trace_id = parent_trace_id.unwrap_or_else(new_trace_id);
 
         span.extensions_mut().insert(OtelContext {
@@ -151,7 +153,10 @@ where
 static APP_TRACE_ID: OnceLock<String> = OnceLock::new();
 
 fn app_trace_id() -> &'static str {
-    APP_TRACE_ID.get().map(|s| s.as_str()).unwrap_or("0000000000000000")
+    APP_TRACE_ID
+        .get()
+        .map(|s| s.as_str())
+        .unwrap_or("0000000000000000")
 }
 
 // ---------------------------------------------------------------------------
@@ -188,7 +193,13 @@ where
             .and_then(|span| resolve_trace_prefix(&span))
             .unwrap_or_else(|| format!("[trace={}]", app_trace_id()));
 
-        write!(writer, "{}[{}][{}:{line}]{trace_prefix} ", ts, meta.level(), target)?;
+        write!(
+            writer,
+            "{}[{}][{}:{line}]{trace_prefix} ",
+            ts,
+            meta.level(),
+            target
+        )?;
         write!(writer, "{}", v.message)?;
         writeln!(writer)
     }
@@ -236,7 +247,8 @@ impl tracing::field::Visit for MessageVisitor {
                 if !self.message.is_empty() {
                     self.message.push(' ');
                 }
-                self.message.push_str(&format!("{}={}", field.name(), value));
+                self.message
+                    .push_str(&format!("{}={}", field.name(), value));
             }
         }
     }
@@ -254,7 +266,8 @@ impl tracing::field::Visit for MessageVisitor {
                 if !self.message.is_empty() {
                     self.message.push(' ');
                 }
-                self.message.push_str(&format!("{}={:?}", field.name(), value));
+                self.message
+                    .push_str(&format!("{}={:?}", field.name(), value));
             }
         }
     }
@@ -339,7 +352,10 @@ pub fn init(logs_dir: &Path) {
             sub.downcast_ref::<tracing_subscriber::Registry>()
                 .and_then(|reg| {
                     use tracing_subscriber::registry::LookupSpan;
-                    reg.span(id)?.extensions().get::<OtelContext>().map(|c| c.trace_id.clone())
+                    reg.span(id)?
+                        .extensions()
+                        .get::<OtelContext>()
+                        .map(|c| c.trace_id.clone())
                 })
         })
         .flatten()
@@ -407,7 +423,8 @@ impl reqwest_middleware::Middleware for TraceHeaderMiddleware {
 
         // Parse the server's span ID and advance our seq so the next local span
         // continues from max(local, remote), keeping the numbering monotonic.
-        let server_span_id = resp.headers()
+        let server_span_id = resp
+            .headers()
             .get("x-span-id")
             .or_else(|| resp.headers().get("x-request-id"))
             .or_else(|| resp.headers().get("x-lotus-request-id"))

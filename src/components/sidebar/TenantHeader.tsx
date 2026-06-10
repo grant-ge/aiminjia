@@ -3,22 +3,32 @@
  * @sizing width fluid, padding 8, gap 8
  */
 
+import type { KeyboardEvent } from "react";
+
 interface TenantHeaderProps {
-  name?: string
-  logoUrl?: string
-  onClick?: () => void
+  name?: string;
+  logoUrl?: string;
+  onClick?: () => void;
 }
 
 export function TenantHeader({
-  name = '',
-  logoUrl = '/brand-avatar-gold.svg',
+  name = "",
+  logoUrl = "/brand-avatar-gold.svg",
   onClick,
 }: TenantHeaderProps) {
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    onClick?.();
+  };
+
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
-      className="flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-sidebar-accent/60"
+      onKeyDown={handleKeyDown}
+      className="my-2 flex w-full items-center justify-between gap-2 rounded-md px-2.5 text-left transition-colors"
     >
       <div className="flex min-w-0 items-center gap-2">
         <div
@@ -31,7 +41,10 @@ export function TenantHeader({
             className="h-full w-full object-cover"
           />
         </div>
-        <div data-aijia-product-name className="min-w-0 truncate text-sm font-semibold text-sidebar-foreground">
+        <div
+          data-aijia-product-name
+          className="min-w-0 truncate text-sm font-semibold text-sidebar-foreground"
+        >
           {name}
         </div>
       </div>
@@ -39,6 +52,6 @@ export function TenantHeader({
         data-icon="chevrons-up-down"
         className="h-4 w-4 shrink-0 text-muted-foreground"
       /> */}
-    </button>
-  )
+    </div>
+  );
 }

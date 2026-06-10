@@ -27,6 +27,7 @@ describe('settingsStore — defaults', () => {
     expect(state.cloudModelType).toBe('')
     expect(state.fontScale).toBe('medium')
     expect(state.chatWidthMode).toBe('full')
+    expect(state.uiSidebarCollapsedProjects).toBe('')
     expect(state.isLoaded).toBe(false)
   })
 })

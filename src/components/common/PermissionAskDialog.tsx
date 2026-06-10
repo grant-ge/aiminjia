@@ -123,6 +123,7 @@ export function PermissionAskDialog({
     default: '默认模式',
     plan: '计划模式',
     dontAsk: '禁止询问模式',
+    acceptEdits: '自动编辑模式',
   }[ask.mode]
 
   return (

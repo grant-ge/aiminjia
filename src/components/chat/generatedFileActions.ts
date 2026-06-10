@@ -7,7 +7,7 @@ export interface PreviewTarget {
   conversationId: string
   fileName: string
   fileType?: string
-  /** When set, preview is sourced from a user-attached local absolute path. */
+  /** When set, preview is sourced from an explicit local absolute path. */
   localPath?: string
 }
 
@@ -78,12 +78,12 @@ export function isPreviewActionEnabledForFile(
 }
 
 export function toPreviewTarget(file: GeneratedFileActionSource & { id: string }, conversationId: string): PreviewTarget {
-  const isArtifact = file.id.startsWith('artifact-')
+  const localPath = file.id.startsWith('artifact-') ? file.filePath?.trim() : undefined
   return {
     fileId: file.id,
     conversationId,
     fileName: file.fileName ?? file.title ?? '未命名文件',
     fileType: file.fileType,
-    localPath: isArtifact ? file.filePath : undefined,
+    localPath: localPath || undefined,
   }
 }

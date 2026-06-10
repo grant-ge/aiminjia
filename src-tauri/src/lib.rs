@@ -12,8 +12,8 @@ pub mod runtime_audit;
 pub mod search;
 pub mod storage;
 pub mod telemetry;
-pub mod transport;
 pub mod tracing_setup;
+pub mod transport;
 pub mod updater;
 
 use commands::chat;
@@ -34,9 +34,7 @@ pub fn run() {
     // first — Tauri's devtools feature also tries to set a global logger and
     // would otherwise win the race, causing SetLoggerError on LogTracer::init().
     {
-        let renlijia_root = dirs::home_dir()
-            .unwrap_or_default()
-            .join(".renlijia");
+        let renlijia_root = dirs::home_dir().unwrap_or_default().join(".renlijia");
         let logs_dir = renlijia_root.join("logs");
         std::fs::create_dir_all(&logs_dir).ok();
         crate::tracing_setup::init(&logs_dir);
@@ -688,6 +686,11 @@ pub fn run() {
             // can use it to suppress desktop-dialog forwarding for IM-channel sessions.
             let channel_session_ids: Arc<std::sync::RwLock<std::collections::HashSet<String>>> =
                 Arc::new(std::sync::RwLock::new(std::collections::HashSet::new()));
+            let output_binding_registry =
+                Arc::new(runtime::human_interaction::RunOutputBindingRegistry::new());
+            let im_app_feedback =
+                connector::im::shared::app_feedback::IMAppFeedbackCoordinator::new();
+            app.manage(output_binding_registry);
 
             let chat_adapter = Arc::new(
                 transport::tauri_commands::chat::TauriChatCommandAdapter::new_with_channel_sessions(
@@ -703,7 +706,8 @@ pub fn run() {
                     app.handle().clone(),
                     Some(channel_session_ids.clone()
                         as Arc<dyn connector::im::ask_coordinator::ChannelSessionRegistry>),
-                ),
+                )
+                .with_im_app_feedback(im_app_feedback.clone()),
             );
             // LTR P2 follow-up: wire Path C wake (continuation turn triggered by
             // teammate SendMessage) AFTER the adapter is in an Arc, so the wake
@@ -737,6 +741,7 @@ pub fn run() {
             app.manage(skill_registry);
             app.manage(agent_runtime);
             app.manage(chat_adapter);
+            app.manage(im_app_feedback);
             app.manage(async_agent_task_store);
             app.manage(std::sync::Arc::new(
                 crate::runtime::employee::EmployeeActiveRuns::new(),
@@ -803,6 +808,16 @@ pub fn run() {
                             .set_dispatcher(chat_adapter_for_pending)
                             .await;
                     });
+                }
+                {
+                    let chat_adapter_for_events = app
+                        .state::<Arc<transport::tauri_commands::chat::TauriChatCommandAdapter>>()
+                        .inner()
+                        .clone();
+                    chat_adapter_for_events.subscribe_event_listener(
+                        pending_manager.clone()
+                            as Arc<dyn crate::runtime::event_bus::RuntimeEventSubscriber>,
+                    );
                 }
                 app.manage(pending_manager);
             }
@@ -951,6 +966,8 @@ pub fn run() {
             chat::approve_permission_request,
             chat::deny_permission_request,
             chat::cancel_permission_request,
+            chat::pending_permission_snapshot_for_session,
+            chat::pending_interaction_snapshot_for_session,
             chat::submit_user_interaction,
             chat::cancel_user_interaction,
             chat::get_messages,
@@ -980,6 +997,8 @@ pub fn run() {
             file::save_clipboard_image_to_workspace_staging,
             file::open_generated_file,
             file::reveal_file_in_folder,
+            file::is_generated_file_available,
+            file::is_local_file_available,
             file::save_generated_file_as,
             file::get_file_preview,
             file::get_local_file_preview,
@@ -1145,6 +1164,7 @@ pub fn run() {
             crate::transport::tauri_commands::pending::pending_remove_item,
             // Turn-stage persistence (spec 2026-05-17-turn-stages §5)
             crate::transport::tauri_commands::turn_stage::get_active_turn_stage,
+            crate::transport::tauri_commands::turn_stage::clear_active_turn_stage,
             // Updater cache/download commands
             updater::commands::updater_check_cache,
             updater::commands::updater_download,
@@ -1325,6 +1345,29 @@ impl auth::AuthRevokedHandler for AuthExpiredEmitter {
     }
 }
 
+struct ChannelJudgeSettingsProvider {
+    db: std::sync::Arc<storage::file_store::AppStorage>,
+    crypto: Option<std::sync::Arc<storage::crypto::SecureStorage>>,
+}
+
+impl connector::im::ask_coordinator::JudgeSettingsProvider for ChannelJudgeSettingsProvider {
+    fn load_settings(&self) -> models::settings::AppSettings {
+        let settings_map = self.db.get_all_settings().unwrap_or_default();
+        let mut settings = if settings_map.is_empty() {
+            models::settings::AppSettings::default()
+        } else {
+            models::settings::AppSettings::from_string_map(&settings_map)
+        };
+        if let Some(ss) = self.crypto.as_ref() {
+            settings.primary_api_key = transport::tauri_commands::settings::decrypt_if_encrypted(
+                ss,
+                &settings.primary_api_key,
+            );
+        }
+        settings
+    }
+}
+
 /// Idempotent helper: ensure an active `ChannelManager` exists in the slot
 /// matching the currently-active user scope. Safe to call from setup (when
 /// the user was already logged in at boot) and from `cloud_login` (post-
@@ -1361,25 +1404,64 @@ pub async fn ensure_channel_manager_registered(app: &tauri::AppHandle) {
         .state::<Arc<transport::tauri_commands::chat::TauriChatCommandAdapter>>()
         .inner()
         .clone();
-    let gateway_ref = app.state::<Arc<llm::gateway::LlmGateway>>().inner().clone();
+    let im_app_feedback = app
+        .state::<Arc<connector::im::shared::app_feedback::IMAppFeedbackCoordinator>>()
+        .inner()
+        .clone();
 
-    let reply_manager = Arc::new(connector::im::DingtalkReplyManager::new());
-    let judge = Arc::new(connector::im::ask_coordinator::GatewayAskReplyJudge::new(
-        gateway_ref,
-        models::settings::AppSettings::default(),
-    ));
+    let output_binding_registry = app
+        .state::<Arc<crate::runtime::human_interaction::RunOutputBindingRegistry>>()
+        .inner()
+        .clone();
+    let reply_manager = Arc::new(
+        connector::im::DingtalkReplyManager::new_with_output_binding_registry(
+            output_binding_registry,
+        ),
+    );
+    im_app_feedback.set_sink(
+        reply_manager.clone() as Arc<dyn connector::im::shared::app_feedback::AppFeedbackSink>
+    );
+    let gateway = app.state::<Arc<llm::gateway::LlmGateway>>().inner().clone();
+    let secure_storage = app
+        .state::<Option<Arc<storage::crypto::SecureStorage>>>()
+        .inner()
+        .clone();
+    let judge_settings_db = cus.get().unwrap_or_else(|| {
+        app.state::<Arc<storage::file_store::AppStorage>>()
+            .inner()
+            .clone()
+    });
+    let judge_settings_provider = Arc::new(ChannelJudgeSettingsProvider {
+        db: judge_settings_db,
+        crypto: secure_storage,
+    })
+        as Arc<dyn connector::im::ask_coordinator::JudgeSettingsProvider>;
+    let reply_judge = Arc::new(
+        connector::im::ask_coordinator::GatewayPendingReplyJudge::new(
+            gateway,
+            judge_settings_provider,
+        ),
+    ) as Arc<dyn connector::im::ask_coordinator::PendingReplyJudge>;
     let channel_session_ids = app
         .state::<Arc<std::sync::RwLock<std::collections::HashSet<String>>>>()
         .inner()
         .clone();
-    let ask_coordinator = Arc::new(connector::im::ask_coordinator::IMAskCoordinator::new(
-        channel_session_ids.clone()
-            as Arc<dyn connector::im::ask_coordinator::ChannelSessionRegistry>,
-        reply_manager.clone() as Arc<dyn connector::im::ask_coordinator::AskOutputSink>,
-        chat_adapter_ref.permission_control_plane(),
-        chat_adapter_ref.interaction_control_plane(),
-        judge,
-    ));
+    let pending_queue_manager = app
+        .state::<Arc<crate::runtime::pending::PendingQueueManager>>()
+        .inner()
+        .clone();
+    let ask_coordinator = Arc::new(
+        connector::im::ask_coordinator::IMAskCoordinator::new_with_judge(
+            channel_session_ids.clone()
+                as Arc<dyn connector::im::ask_coordinator::ChannelSessionRegistry>,
+            reply_manager.clone() as Arc<dyn connector::im::ask_coordinator::AskOutputSink>,
+            chat_adapter_ref.permission_control_plane(),
+            chat_adapter_ref.interaction_control_plane(),
+            reply_judge,
+        )
+        .with_app_feedback(im_app_feedback.clone())
+        .with_pending_queue(pending_queue_manager),
+    );
 
     let new_cm = Arc::new(connector::im::ChannelManager::new(
         app.clone(),

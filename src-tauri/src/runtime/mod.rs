@@ -10,6 +10,7 @@ pub mod event_bus;
 pub mod events;
 pub mod export;
 pub mod hooks;
+pub mod human_interaction;
 pub mod identity;
 pub mod ids;
 pub mod interaction;

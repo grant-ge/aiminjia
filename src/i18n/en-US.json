@@ -46,6 +46,15 @@
     "copyConversationId": "Copy conversation ID",
     "noHistory": "No tasks yet",
     "defaultFolder": "Default project",
+    "conversationLoading": "Conversation running",
+    "status": {
+      "permissionReviewChip": "Review",
+      "permissionReviewTooltip": "Waiting for your permission review",
+      "waitingReplyChip": "Waiting reply",
+      "waitingReplyTooltip": "Waiting for your reply"
+    },
+    "showMoreConversations": "Show {{count}} more",
+    "collapseConversations": "Collapse",
     "project": "Projects",
     "employeeTab": "Staff",
     "expertTeamTab": "Experts",
@@ -90,7 +99,16 @@
     "cannotOpen": "Cannot open file",
     "cannotDownload": "Cannot download file",
     "cannotReveal": "Cannot reveal in folder",
-    "fileDownloaded": "File downloaded"
+    "fileDownloaded": "File downloaded",
+    "toolReceipt": {
+      "interactionSubmitted": "Recorded your answer",
+      "interactionAsked": "Asked the user {{count}} questions",
+      "interactionReceived": "Received: {{summary}}",
+      "interactionCancelled": "Follow-up question ignored",
+      "permissionApproved": "Permission request approved",
+      "permissionDenied": "Permission request denied",
+      "permissionCancelled": "Permission request cancelled"
+    }
   },
   "subagent": {
     "resultCard": {
@@ -648,8 +666,59 @@
     "collapse": "Collapse"
   },
   "userMessage": {
+    "copy": "Copy user message",
     "expandAll": "Expand all",
     "collapse": "Collapse"
+  },
+  "pendingAction": {
+    "permission": {
+      "title": "I need your permission to use elevated access for a read-only check of whether {{target}} is accessible.",
+      "allowOnce": "Yes",
+      "allowRemember": "Yes, and do not ask again for similar operations",
+      "deny": "No, explain how to adjust",
+      "denyPlaceholder": "For example: do not read this directory; use the summary file in the workspace instead.",
+      "skip": "Reject",
+      "submit": "Submit",
+      "allowedFeedback": "The user approved this permission request ({{scope}}).",
+      "allowScopeSession": "this time only",
+      "allowScopeWorkspace": "do not ask again for similar operations in this workspace",
+      "allowScopeUser": "do not ask again for similar operations for this user",
+      "deniedFeedback": "The user denied this permission request.",
+      "deniedFeedbackWithUserInput": "The user denied this permission request and provided adjustment guidance: {{feedback}}",
+      "skippedFeedback": "The user skipped this permission request. The current task has been stopped.",
+      "denyLooksLikeAllow": "This looks like permission approval. Select an allow option above before submitting."
+    },
+    "interaction": {
+      "title": "More information needed",
+      "previous": "Previous question",
+      "next": "Next question",
+      "progress": "{{current}} of {{total}}",
+      "skip": "Ignore",
+      "continue": "Continue",
+      "stop": "Stop task",
+      "custom": "Other",
+      "customPlaceholder": "Enter your adjustment",
+      "validationRequired": "Answer this question first.",
+      "submittedFeedback": "The user answered the follow-up question: {{summary}}",
+      "cancelledFeedback": "The user ignored this follow-up question. Continue with the available information; do not output empty titles, empty quoted names, or empty placeholders. Use a generic name when a required name is missing."
+    },
+    "tabs": {
+      "label": "Pending actions",
+      "permission": "Permission {{name}}",
+      "question": "Question {{index}}"
+    },
+    "stalePermission": {
+      "title": "Task state needs recovery",
+      "messageBefore": "The previous task stopped at permission approval for ",
+      "messageAfter": ". The current runtime cannot find an active permission request to continue. Stop this task and send it again.",
+      "stop": "Stop task"
+    },
+    "staleInteraction": {
+      "title": "Task state needs recovery",
+      "messageBefore": "The previous task stopped at a follow-up question: ",
+      "messageAfter": ". The current runtime cannot find an active question to continue. Stop this task and send it again.",
+      "stop": "Stop task"
+    }
   },
   "toolGroupSummary": {
     "bucket": {
@@ -659,6 +728,8 @@
       "file_read_other": "read {{count}} files",
       "file_edit_one": "edited {{count}} file",
       "file_edit_other": "edited {{count}} files",
+      "interaction_one": "asked the user {{count}} question",
+      "interaction_other": "asked the user {{count}} questions",
       "search_one": "searched {{count}} time",
       "search_other": "searched {{count}} times",
       "mcp_one": "called {{count}} MCP tool",
@@ -995,15 +1066,7 @@
     "cronEveryDay": "Daily {{time}}",
     "cronWeekdays": "Weekdays {{time}}",
     "cronWeekly": "Weekly {{days}} {{time}}",
-    "dayNames": [
-      "Sun",
-      "Mon",
-      "Tue",
-      "Wed",
-      "Thu",
-      "Fri",
-      "Sat"
-    ],
+    "dayNames": ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
     "responsibility": "Responsibility",
     "templateVersion": "Template version",
     "triggerMethod": "Trigger",
@@ -1206,7 +1269,7 @@
   "channel": {
     "title": "IM Channels",
     "heroTitle": "IM Channels",
-    "heroDesc": "Configure IM channels so AI Home can receive and reply to messages from various platforms.",
+    "heroDesc": "Configure IM channels so {{productName}} can receive and reply to messages from various platforms.",
     "heroPrivacy": "Channel credentials are stored locally and never uploaded.",
     "status": {
       "unconfigured": "Not configured",

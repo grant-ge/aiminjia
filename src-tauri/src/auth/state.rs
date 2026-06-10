@@ -34,10 +34,10 @@ pub struct TenantInfo {
     /// Custom primary/foreground color hex (empty/None = default #1D1D1F).
     #[serde(default)]
     pub primary_color: Option<String>,
-    /// Custom main background color (empty/None = default #FAFAF8).
+    /// Custom sidebar background color for legacy tenant configs (empty/None = default #FAFAF8).
     #[serde(default)]
     pub bg_color: Option<String>,
-    /// Custom sidebar background color (empty/None = default #F5F4F1).
+    /// Custom sidebar background color (empty/None = fallback bg_color/default #FAFAF8).
     #[serde(default)]
     pub sidebar_bg_color: Option<String>,
     /// Custom font family identifier (empty/None = system default).

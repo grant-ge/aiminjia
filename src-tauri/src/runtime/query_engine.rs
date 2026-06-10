@@ -10,7 +10,7 @@ use crate::runtime::dependencies::ManagedRuntimeResolver;
 use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::events::{RuntimeEvent, RuntimeEventKind};
 use crate::runtime::ids::{RunId, SessionId, ToolCallId};
-use crate::runtime::path_auth::{RuleSource, ToolPermissionContext};
+use crate::runtime::path_auth::{PathOp, PermissionRule, RuleSource, ToolPermissionContext};
 use crate::runtime::state::TurnState;
 use crate::runtime::store::AuthorizedWorkspaceRef;
 use crate::runtime::tools::permission::{PermissionDecision, PermissionReason};
@@ -64,6 +64,38 @@ impl ToolProgressSink for BusBackedToolProgressSink {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runtime::identity::IdentityMapping;
+
+    #[test]
+    fn run_local_path_deny_scope_is_merged_into_turn_permission_context() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let denied_file = temp.path().join("secret.txt");
+        std::fs::write(&denied_file, "secret").expect("write test file");
+        let canonical = std::fs::canonicalize(&denied_file).expect("canonical denied file");
+        let run_id = RunId::new("run-deny");
+        let turn = TurnState::new(
+            IdentityMapping::from_legacy_conversation_id("session-deny".to_string()),
+            run_id.clone(),
+            "read secret".to_string(),
+        );
+        let engine = QueryEngine::new().with_workspace_path(temp.path().to_path_buf());
+
+        engine.record_run_path_deny_for_scope(&run_id, &format!("path:{}", canonical.display()));
+
+        let ctx = engine.build_turn_permission_ctx_for_test(&turn);
+        assert!(
+            ctx.deny_rules.iter().any(|rule| {
+                rule.pattern == canonical.to_string_lossy()
+                    && rule.op == Some(crate::runtime::path_auth::PathOp::Read)
+            }),
+            "permission deny should create a run-local read deny rule for subsequent tool calls"
+        );
+    }
+}
+
 #[derive(Clone, Default)]
 pub struct QueryEngine {
     tool_dispatcher: Option<Arc<ToolDispatcher>>,
@@ -104,6 +136,10 @@ pub struct QueryEngine {
     /// Wrapped in `Arc<Mutex<...>>` so the field survives the value-clone performed
     /// by `with_authorized_workspace` / `with_permission_ctx` builder calls.
     session_attachment_dirs: Arc<Mutex<HashMap<PathBuf, RuleSource>>>,
+    /// Run-scoped path denies created when a user rejects a path permission ask.
+    /// They prevent the same resumed run from accessing the denied path through
+    /// another tool, without making a one-time deny persistent for later turns.
+    run_path_deny_rules: Arc<Mutex<HashMap<String, Vec<PermissionRule>>>>,
     /// LTR registries injected by SessionRuntime — propagated into every
     /// ToolExecutionContext this engine builds.  `None` in legacy/test paths.
     team_registry: Option<Arc<crate::runtime::agent::TeamRegistry>>,
@@ -149,6 +185,7 @@ impl QueryEngine {
             base_permission_ctx: None,
             permission_store: None,
             session_attachment_dirs: Arc::new(Mutex::new(HashMap::new())),
+            run_path_deny_rules: Arc::new(Mutex::new(HashMap::new())),
             team_registry: None,
             agent_names: None,
             inbox_registry: None,
@@ -181,6 +218,7 @@ impl QueryEngine {
             base_permission_ctx: self.base_permission_ctx.clone(),
             permission_store: self.permission_store.clone(),
             session_attachment_dirs: Arc::new(Mutex::new(HashMap::new())),
+            run_path_deny_rules: Arc::new(Mutex::new(HashMap::new())),
             team_registry: self.team_registry.clone(),
             agent_names: self.agent_names.clone(),
             inbox_registry: self.inbox_registry.clone(),
@@ -378,6 +416,27 @@ impl QueryEngine {
         }
     }
 
+    pub fn record_run_path_deny_for_scope(&self, run_id: &RunId, scope: &str) {
+        let Some(rule) = path_auth_scope_to_deny_rule(scope) else {
+            log::warn!(
+                "[query_engine] skip malformed run-local path deny scope={}",
+                scope
+            );
+            return;
+        };
+        let mut guard = self
+            .run_path_deny_rules
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        let rules = guard.entry(run_id.as_str().to_string()).or_default();
+        if !rules
+            .iter()
+            .any(|existing| existing.pattern == rule.pattern && existing.op == rule.op)
+        {
+            rules.push(rule);
+        }
+    }
+
     /// Build the per-turn `ToolPermissionContext` by combining:
     /// 1. Clone the base context (UserSettings working_dirs + allow_rules from
     ///    PermissionStore).
@@ -428,6 +487,16 @@ impl QueryEngine {
                     .entry(dir.clone())
                     .or_insert_with(|| source.clone());
             }
+        }
+
+        if let Some(rules) = self
+            .run_path_deny_rules
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .get(turn.run_id().as_str())
+            .cloned()
+        {
+            ctx.deny_rules.extend(rules);
         }
 
         log::info!(
@@ -1042,4 +1111,21 @@ impl QueryEngine {
         .await?;
         Ok(())
     }
+}
+
+fn path_auth_scope_to_deny_rule(scope: &str) -> Option<PermissionRule> {
+    let (kind, path) = scope.split_once(':')?;
+    let op = match kind {
+        "path" => Some(PathOp::Read),
+        "pathwrite" => Some(PathOp::Write),
+        _ => return None,
+    };
+    if path.trim().is_empty() {
+        return None;
+    }
+    Some(PermissionRule {
+        pattern: path.to_string(),
+        op,
+        source: RuleSource::Session,
+    })
 }

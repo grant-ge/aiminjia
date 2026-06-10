@@ -19,6 +19,7 @@ import {
   onDiagnosticsEvent,
   onCompactCompleted,
   onPermissionAsk,
+  onPermissionResolved,
   onStreamingNotice,
   onTurnCompleted,
   onTaskStatusChanged,
@@ -62,6 +63,10 @@ describe('tauri event contract', () => {
     expect(TAURI_EVENTS.PERMISSION_ASK).toBe('permission:ask')
   })
 
+  it('exposes PERMISSION_RESOLVED event constant with correct value', () => {
+    expect(TAURI_EVENTS.PERMISSION_RESOLVED).toBe('permission:resolved')
+  })
+
   it('onPermissionAsk registers listener with correct event name', async () => {
     const handler = vi.fn()
 
@@ -69,6 +74,17 @@ describe('tauri event contract', () => {
 
     expect(tauriEventMock.listen).toHaveBeenCalledWith(
       'permission:ask',
+      expect.any(Function),
+    )
+  })
+
+  it('onPermissionResolved registers listener with correct event name', async () => {
+    const handler = vi.fn()
+
+    await onPermissionResolved(handler)
+
+    expect(tauriEventMock.listen).toHaveBeenCalledWith(
+      'permission:resolved',
       expect.any(Function),
     )
   })

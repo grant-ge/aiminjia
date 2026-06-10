@@ -140,6 +140,43 @@ fn build_deliver_body(
     }
 }
 
+fn normalize_markdown_for_card(content: &str) -> String {
+    let mut normalized = String::with_capacity(content.len());
+    let mut in_fenced_code = false;
+
+    for segment in content.split_inclusive('\n') {
+        let has_newline = segment.ends_with('\n');
+        let line = segment.strip_suffix('\n').unwrap_or(segment);
+        let trimmed = line.trim_start();
+
+        if trimmed.starts_with("```") {
+            normalized.push_str(line);
+            if has_newline {
+                normalized.push('\n');
+            }
+            in_fenced_code = !in_fenced_code;
+            continue;
+        }
+
+        if !in_fenced_code && looks_like_markdown_table_row(line) {
+            normalized.push_str(&line.replace('`', ""));
+        } else {
+            normalized.push_str(line);
+        }
+
+        if has_newline {
+            normalized.push('\n');
+        }
+    }
+
+    normalized
+}
+
+fn looks_like_markdown_table_row(line: &str) -> bool {
+    let trimmed = line.trim();
+    trimmed.starts_with('|') && trimmed.ends_with('|') && trimmed.matches('|').count() >= 2
+}
+
 /// 流式更新 AI Card 内容（PUT /v1.0/card/streaming）。
 /// 第一次调用时先将卡片切换到 INPUTING 状态（flowStatus=2）。
 pub async fn stream_card(
@@ -152,6 +189,7 @@ pub async fn stream_card(
 ) -> Result<()> {
     let token = get_access_token(cache, app_key, app_secret).await?;
     let client = reqwest::Client::new();
+    let card_content = normalize_markdown_for_card(content);
 
     // 首次调用：切换到 INPUTING 状态
     if !card.inputing_started {
@@ -160,7 +198,7 @@ pub async fn stream_card(
             "cardData": {
                 "cardParamMap": {
                     "flowStatus": "2",
-                    "msgContent": content,
+                    "msgContent": card_content,
                     "staticMsgContent": "",
                     "sys_full_json_obj": "{\"order\":[\"msgContent\"]}",
                     "config": "{\"autoLayout\":true}"
@@ -193,7 +231,7 @@ pub async fn stream_card(
         "outTrackId": card.card_instance_id,
         "guid": guid,
         "key": "msgContent",
-        "content": content,
+        "content": card_content,
         "isFull": true,
         "isFinalize": is_finalize,
         "isError": false
@@ -227,13 +265,14 @@ pub async fn finish_card(
 
     let token = get_access_token(cache, app_key, app_secret).await?;
     let client = reqwest::Client::new();
+    let card_content = normalize_markdown_for_card(content);
 
     let finish_body = json!({
         "outTrackId": card.card_instance_id,
         "cardData": {
             "cardParamMap": {
                 "flowStatus": "3",
-                "msgContent": content,
+                "msgContent": card_content,
                 "staticMsgContent": "",
                 "sys_full_json_obj": "{\"order\":[\"msgContent\"]}",
                 "config": "{\"autoLayout\":true}"
@@ -333,5 +372,37 @@ mod tests {
             inputing_started: false,
         };
         assert!(!card.inputing_started);
+    }
+
+    #[test]
+    fn normalize_card_markdown_strips_inline_code_backticks_in_table_rows() {
+        let content = "`/Users/oayzz/.openclaw` 目录结构如下：\n\n| 名称 | 类型 | 修改时间 | 说明 |\n|---|---|---|---|\n| `agents/` | 目录 | 3月20日 | 智能体配置 |\n| `openclaw.json` | 文件 | 3月20日 | 主配置文件 |";
+
+        let normalized = normalize_markdown_for_card(content);
+
+        assert!(normalized.contains("`/Users/oayzz/.openclaw` 目录结构如下："));
+        assert!(normalized.contains("| agents/ | 目录 | 3月20日 | 智能体配置 |"));
+        assert!(normalized.contains("| openclaw.json | 文件 | 3月20日 | 主配置文件 |"));
+        assert!(!normalized.contains("| `agents/` |"));
+    }
+
+    #[test]
+    fn normalize_card_markdown_preserves_non_table_inline_code() {
+        let content = "可以看 `/Users/oayzz/.openclaw/openclaw.json`。";
+
+        let normalized = normalize_markdown_for_card(content);
+
+        assert_eq!(normalized, content);
+    }
+
+    #[test]
+    fn normalize_card_markdown_preserves_fenced_code_blocks() {
+        let content =
+            "```markdown\n| `name` | `type` |\n|---|---|\n```\n\n| `name` | `type` |\n|---|---|";
+
+        let normalized = normalize_markdown_for_card(content);
+
+        assert!(normalized.contains("| `name` | `type` |\n|---|---|\n```"));
+        assert!(normalized.ends_with("| name | type |\n|---|---|"));
     }
 }

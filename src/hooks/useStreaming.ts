@@ -52,6 +52,7 @@ import {
   onToolProgress,
   onAgentIdle,
   onPermissionAsk,
+  onPermissionResolved,
   onInteractionRequired,
   onInteractionResolved,
   onFileGenerated,
@@ -74,6 +75,7 @@ import type {
   ToolExecutingPayload,
   ToolProgressPayload,
   PermissionAskPayload,
+  PermissionResolvedPayload,
   InteractionRequiredPayload,
   InteractionResolvedPayload,
   FileGeneratedPayload,
@@ -733,6 +735,28 @@ export function useStreaming() {
     }),
   )
 
+  // --- permission:resolved ----------------------------------------------
+  useTauriEvent(() =>
+    onPermissionResolved((payload: PermissionResolvedPayload) => {
+      console.log('[permission:resolved]', payload.conversationId, payload.toolCallId)
+      recordDiagnostic({
+        event: 'permission.resolved.received',
+        conversationId: payload.conversationId,
+        runId: payload.runId,
+        toolCallId: payload.toolCallId,
+      })
+      const store = useStreamingStore.getState()
+      store.removePendingAsk(payload.toolCallId)
+      const stage = useStreamingStore.getState().streamStates[payload.conversationId]?.turnStage
+      if (
+        stage?.kind === 'waitingPermission' &&
+        stage.toolCallId === payload.toolCallId
+      ) {
+        useStreamingStore.getState().clearConversationTurnStage(payload.conversationId)
+      }
+    }),
+  )
+
   // --- interaction:required / interaction:resolved ------------------------
   useTauriEvent(() =>
     onInteractionRequired((payload: InteractionRequiredPayload) => {
@@ -752,6 +776,13 @@ export function useStreaming() {
   useTauriEvent(() =>
     onInteractionResolved((payload: InteractionResolvedPayload) => {
       useInteractionStore.getState().removeInteraction(payload.interactionId)
+      const stage = useStreamingStore.getState().streamStates[payload.conversationId]?.turnStage
+      if (
+        stage?.kind === 'waitingInteraction' &&
+        stage.interactionId === payload.interactionId
+      ) {
+        useStreamingStore.getState().clearConversationTurnStage(payload.conversationId)
+      }
     }),
   )
 

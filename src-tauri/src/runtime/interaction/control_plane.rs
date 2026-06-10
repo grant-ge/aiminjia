@@ -31,6 +31,10 @@ pub trait PendingInteractionControlPlane: Send + Sync {
 
     fn pending_count_for_session(&self, session_id: &str) -> usize;
 
+    fn pending_for_session(&self, session_id: &str) -> Vec<InteractionRequest>;
+
+    fn get_pending(&self, interaction_id: &InteractionId) -> Option<InteractionRequest>;
+
     fn is_pending(&self, interaction_id: &InteractionId) -> bool;
 }
 
@@ -146,10 +150,63 @@ impl PendingInteractionControlPlane for InMemoryInteractionControlPlane {
             .count()
     }
 
+    fn pending_for_session(&self, session_id: &str) -> Vec<InteractionRequest> {
+        self.inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .values()
+            .filter(|entry| entry.request.session_id.as_str() == session_id)
+            .map(|entry| entry.request.clone())
+            .collect()
+    }
+
+    fn get_pending(&self, interaction_id: &InteractionId) -> Option<InteractionRequest> {
+        self.inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get(interaction_id.as_str())
+            .map(|entry| entry.request.clone())
+    }
+
     fn is_pending(&self, interaction_id: &InteractionId) -> bool {
         self.inner
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .contains_key(interaction_id.as_str())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runtime::chat::tool_round_types::RuntimeToolCallRequest;
+    use crate::runtime::ids::{RunId, SessionId, ToolCallId};
+    use crate::runtime::interaction::InteractionKind;
+
+    #[test]
+    fn get_pending_returns_cloned_interaction_request() {
+        let cp = InMemoryInteractionControlPlane::new();
+        let request = InteractionRequest {
+            interaction_id: InteractionId::new("ask-1"),
+            session_id: SessionId::new("sess-im"),
+            run_id: RunId::new("run-im"),
+            tool_call_id: ToolCallId::new("tool-1"),
+            tool_name: "AskUserQuestion".into(),
+            kind: InteractionKind::AskUserQuestion,
+            payload: serde_json::json!({"questions": []}),
+            original_request: RuntimeToolCallRequest {
+                tool_call_id: "tool-1".into(),
+                tool_name: "AskUserQuestion".into(),
+                args: serde_json::json!({}),
+                purpose: None,
+            },
+            turn_origin: crate::runtime::human_interaction::TurnOrigin::App,
+            output_binding: crate::runtime::human_interaction::OutputBinding::AppOnly,
+        };
+        let _rx = cp.insert_pending(request).unwrap();
+
+        let found = cp.get_pending(&InteractionId::new("ask-1")).unwrap();
+        assert_eq!(found.session_id.as_str(), "sess-im");
+        assert_eq!(found.run_id.as_str(), "run-im");
     }
 }

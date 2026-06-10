@@ -5,26 +5,27 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::process::Command;
 
 use crate::runtime::agent::async_task_store::AsyncAgentTaskStore;
 use crate::runtime::agent::task_notification::TaskNotificationQueue;
-use crate::runtime::tools::RuntimeTool;
 use crate::runtime::tools::catalog::TOOL_CATALOG;
 use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::ToolDefinition;
 use crate::runtime::tools::executor::{ToolError, ToolResult};
 use crate::runtime::tools::permission::{PermissionDecision, PermissionReason};
+use crate::runtime::tools::RuntimeTool;
 
 use super::shell_common::{
-    ExitKind, MAX_OUTPUT_BYTES, collect_reader, content_from_output, emit_shell_failure_diagnostic,
-    format_cancel_message, format_command_failure, inject_bundled_runtime_path, inject_trace_env,
+    collect_reader, content_from_output, emit_shell_failure_diagnostic, format_cancel_message,
+    format_command_failure, inject_bundled_runtime_path, inject_trace_env,
     interpret_command_result, kill_child_process_tree, optional_transcript_path,
     read_merged_streams_with_progress_and_optional_transcript, tail_n_lines,
-    truncated_to_max_bytes,
+    truncated_to_max_bytes, ExitKind, MAX_OUTPUT_BYTES,
 };
 use super::workspace::require_workspace_root;
 use crate::runtime::cancellation::wait_for_cancellation;
@@ -78,6 +79,65 @@ static DANGEROUS_PATTERNS: &[(&str, &str)] = &[
         "Refusing: dd with if= can be dangerous; use with caution",
     ),
 ];
+
+fn command_path_tokens(command: &str) -> Vec<String> {
+    let parsed = shell_words::split(command)
+        .unwrap_or_else(|_| command.split_whitespace().map(str::to_string).collect());
+    parsed
+        .into_iter()
+        .map(|token| {
+            token
+                .trim_matches(|ch: char| {
+                    matches!(ch, ';' | ',' | '"' | '\'' | '(' | ')' | '[' | ']')
+                })
+                .to_string()
+        })
+        .filter(|token| token.contains('/'))
+        .collect()
+}
+
+fn command_hits_denied_path(command: &str, ctx: &ToolExecutionContext) -> Option<String> {
+    let permission_ctx = ctx
+        .capability
+        .as_ref()
+        .and_then(|cap| cap.storage.as_ref())
+        .map(|storage| storage.permission_ctx.as_ref())?;
+    if permission_ctx.deny_rules.is_empty() {
+        return None;
+    }
+    let tokens = command_path_tokens(command);
+    for token in tokens {
+        let canonical = crate::runtime::path_auth::decide::canonicalize_or_ancestor(
+            PathBuf::from(&token).as_path(),
+        )
+        .unwrap_or_else(|_| PathBuf::from(&token));
+        for rule in &permission_ctx.deny_rules {
+            let matcher = match globset::Glob::new(&rule.pattern) {
+                Ok(glob) => glob.compile_matcher(),
+                Err(_) => continue,
+            };
+            if matcher.is_match(&canonical) || plain_path_rule_matches(&rule.pattern, &canonical) {
+                return Some(format!(
+                    "Command targets a path denied by the current run permission decision: {}",
+                    canonical.display()
+                ));
+            }
+        }
+    }
+    None
+}
+
+fn plain_path_rule_matches(pattern: &str, canonical: &Path) -> bool {
+    if pattern
+        .chars()
+        .any(|ch| matches!(ch, '*' | '?' | '[' | ']' | '{' | '}'))
+    {
+        return false;
+    }
+    let rule_path = crate::runtime::path_auth::decide::canonicalize_or_ancestor(Path::new(pattern))
+        .unwrap_or_else(|_| PathBuf::from(pattern));
+    canonical == rule_path || (rule_path.is_dir() && canonical.starts_with(&rule_path))
+}
 
 #[derive(Clone, Default)]
 pub struct BashTool {
@@ -375,6 +435,13 @@ impl RuntimeTool for BashTool {
                     reason: PermissionReason::Other("dangerous_pattern".to_string()),
                 });
             }
+        }
+
+        if let Some(message) = command_hits_denied_path(command, ctx) {
+            return Some(PermissionDecision::Deny {
+                message,
+                reason: PermissionReason::StoredPolicy,
+            });
         }
 
         if let Some(store) = ctx.permission_store.as_ref() {
@@ -722,6 +789,102 @@ mod tests {
             ),
             Some(1)
         );
+    }
+
+    #[tokio::test]
+    async fn check_permissions_denies_command_targeting_run_denied_path() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let denied_file = temp.path().join("secret.txt");
+        std::fs::write(&denied_file, "secret").expect("write test file");
+        let canonical = std::fs::canonicalize(&denied_file).expect("canonical denied file");
+        let mut permission_ctx = crate::runtime::path_auth::ToolPermissionContext::empty();
+        permission_ctx
+            .deny_rules
+            .push(crate::runtime::path_auth::PermissionRule {
+                pattern: canonical.to_string_lossy().to_string(),
+                op: Some(crate::runtime::path_auth::PathOp::Read),
+                source: crate::runtime::path_auth::RuleSource::Session,
+            });
+        let capability = Arc::new(crate::runtime::tools::CapabilityContext {
+            storage: Some(crate::runtime::tools::StorageCapability {
+                workspace_path: temp.path().to_path_buf(),
+                authorized_workspace: None,
+                permission_ctx: Arc::new(permission_ctx),
+            }),
+            workspace_id: Some("ws-bash-deny".to_string()),
+            runtime_resolver: None,
+            file_ops: None,
+            read_file_state: None,
+            file_reading_limits: None,
+            notification_sink: None,
+            tool_progress_sink: None,
+            is_subagent: false,
+        });
+        let ctx = crate::runtime::tools::ToolExecutionContext::for_test(
+            "conv-bash-deny",
+            "run-bash-deny",
+            "tc-bash-deny",
+        )
+        .with_capability(capability);
+        let tool = BashTool::default();
+
+        let decision = RuntimeTool::check_permissions(
+            &tool,
+            &json!({ "command": format!("cat {}", canonical.display()) }),
+            &ctx,
+        )
+        .await;
+
+        assert!(matches!(decision, Some(PermissionDecision::Deny { .. })));
+    }
+
+    #[tokio::test]
+    async fn check_permissions_denies_command_targeting_child_of_run_denied_directory() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let denied_dir = temp.path().join("secrets");
+        std::fs::create_dir_all(&denied_dir).expect("create denied dir");
+        let denied_file = denied_dir.join("secret.txt");
+        std::fs::write(&denied_file, "secret").expect("write test file");
+        let canonical_dir = std::fs::canonicalize(&denied_dir).expect("canonical denied dir");
+        let mut permission_ctx = crate::runtime::path_auth::ToolPermissionContext::empty();
+        permission_ctx
+            .deny_rules
+            .push(crate::runtime::path_auth::PermissionRule {
+                pattern: canonical_dir.to_string_lossy().to_string(),
+                op: Some(crate::runtime::path_auth::PathOp::Read),
+                source: crate::runtime::path_auth::RuleSource::Session,
+            });
+        let capability = Arc::new(crate::runtime::tools::CapabilityContext {
+            storage: Some(crate::runtime::tools::StorageCapability {
+                workspace_path: temp.path().to_path_buf(),
+                authorized_workspace: None,
+                permission_ctx: Arc::new(permission_ctx),
+            }),
+            workspace_id: Some("ws-bash-deny-dir".to_string()),
+            runtime_resolver: None,
+            file_ops: None,
+            read_file_state: None,
+            file_reading_limits: None,
+            notification_sink: None,
+            tool_progress_sink: None,
+            is_subagent: false,
+        });
+        let ctx = crate::runtime::tools::ToolExecutionContext::for_test(
+            "conv-bash-deny-dir",
+            "run-bash-deny-dir",
+            "tc-bash-deny-dir",
+        )
+        .with_capability(capability);
+        let tool = BashTool::default();
+
+        let decision = tool
+            .check_permissions(
+                &json!({"command": format!("cat {}", denied_file.display())}),
+                &ctx,
+            )
+            .await;
+
+        assert!(matches!(decision, Some(PermissionDecision::Deny { .. })));
     }
 }
 

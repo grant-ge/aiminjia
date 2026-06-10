@@ -29,7 +29,7 @@ describe('UpdateAvailableLink', () => {
     }))
   })
 
-  it('uses a low-profile title-bar treatment so the update text remains visible without a white pill', () => {
+  it('uses a low-profile sidebar-title-bar treatment so the update text remains visible without a white pill', () => {
     act(() => useUpdaterStore.setState({
       phase: 'ready',
       version: '0.5.22',
@@ -42,8 +42,8 @@ describe('UpdateAvailableLink', () => {
     const button = screen.getByRole('button', { name: /v0\.5\.22 ready/ })
     expect(button).toHaveAttribute('data-aijia-updater-link')
     expect(button).toHaveAttribute('data-aijia-updater-version', '0.5.22')
-    expect(button).toHaveClass('text-primary-foreground/95')
-    expect(button).toHaveClass('hover:bg-white/10')
+    expect(button).toHaveClass('text-sidebar-foreground/80')
+    expect(button).toHaveClass('hover:bg-sidebar-accent/70')
     expect(button).not.toHaveClass('bg-white/95')
   })
 })

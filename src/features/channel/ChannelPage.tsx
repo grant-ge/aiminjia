@@ -1,87 +1,121 @@
-import { useEffect, useMemo, useState } from 'react'
-import { useTranslation } from 'react-i18next'
-import type { TFunction } from 'i18next'
-import { MoreHorizontal } from 'lucide-react'
-import { AppDropdown } from '@/components/common/AppDropdown'
-import { requestConfirm } from '@/components/common/ConfirmDialogHost'
-import { initChannelListeners, useChannelStore } from '@/stores/channelStore'
-import { useChatStore } from '@/stores/chatStore'
-import { ChatBottomArea } from '@/components/chat-scene/ChatBottomArea'
-import { RightPanel } from '@/components/chat/RightPanel'
-import { savePreviewTargetToDisk } from '@/components/chat/fileDownload'
-import type { PreviewTarget } from '@/components/chat/generatedFileActions'
-import { ChatArea } from '@/components/layout/ChatArea'
-import { ChatTopBar } from '@/components/shell/ChatTopBar'
-import { TeamChatDrawer } from '@/components/team/TeamChatDrawer'
-import { Button } from '@/components/ui/button'
-import { ConversationExportDialog } from '@/features/chat/ConversationExportDialog'
-import { useConversationExport } from '@/hooks/useConversationExport'
+import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
+import { MoreHorizontal } from "lucide-react";
+import { AppDropdown } from "@/components/common/AppDropdown";
+import { requestConfirm } from "@/components/common/ConfirmDialogHost";
+import { initChannelListeners, useChannelStore } from "@/stores/channelStore";
+import { useChatStore } from "@/stores/chatStore";
+import { ChatBottomArea } from "@/components/chat-scene/ChatBottomArea";
+import { RightPanel } from "@/components/chat/RightPanel";
+import { savePreviewTargetToDisk } from "@/components/chat/fileDownload";
+import type { PreviewTarget } from "@/components/chat/generatedFileActions";
+import { ChatArea } from "@/components/layout/ChatArea";
+import { ChatTopBar } from "@/components/shell/ChatTopBar";
+import { TeamChatDrawer } from "@/components/team/TeamChatDrawer";
+import { Button } from "@/components/ui/button";
+import { ConversationExportDialog } from "@/features/chat/ConversationExportDialog";
+import { useConversationExport } from "@/hooks/useConversationExport";
+import { useProductName } from "@/hooks/useProductName";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog'
-import { Switch } from '@/components/common/Switch'
-import { getMessages, getTasks, openGeneratedFile } from '@/lib/tauri'
-import type { ChannelPlatform, ChannelPlatformState } from '@/lib/tauri'
-import { useNotificationStore } from '@/stores/notificationStore'
-import { useTeamOverview } from '@/hooks/useTeamOverview'
-import { ChannelConfig } from './ChannelConfig'
-import { ChannelConfigDetails } from './ChannelConfigDetails'
-import { FeishuChannelConfig } from './FeishuChannelConfig'
-import { TelegramChannelConfig } from './TelegramChannelConfig'
-import { WecomChannelConfig } from './WecomChannelConfig'
-import { WechatChannelConfig } from './WechatChannelConfig'
-import { WhatsappChannelConfig } from './WhatsappChannelConfig'
+} from "@/components/ui/dialog";
+import { Switch } from "@/components/common/Switch";
+import { getMessages, getTasks, openGeneratedFile } from "@/lib/tauri";
+import type { ChannelPlatform, ChannelPlatformState } from "@/lib/tauri";
+import { useNotificationStore } from "@/stores/notificationStore";
+import { useTeamOverview } from "@/hooks/useTeamOverview";
+import { ChannelConfig } from "./ChannelConfig";
+import { ChannelConfigDetails } from "./ChannelConfigDetails";
+import { FeishuChannelConfig } from "./FeishuChannelConfig";
+import { TelegramChannelConfig } from "./TelegramChannelConfig";
+import { WecomChannelConfig } from "./WecomChannelConfig";
+import { WechatChannelConfig } from "./WechatChannelConfig";
+import { WhatsappChannelConfig } from "./WhatsappChannelConfig";
 
 interface ChannelPageProps {
-  sessionId?: string
+  sessionId?: string;
 }
 
-type PlatformKey = ChannelPlatform
+type PlatformKey = ChannelPlatform;
 
 // eslint-disable-next-line react-refresh/only-export-components
 export const PLATFORM_LOGO_SRC: Record<PlatformKey, string> = {
-  dingtalk: '/logos/dingtalk.png',
-  feishu: '/logos/feishu.png',
-  wecom: '/logos/wecom.png',
-  wechat: '/logos/wechat.png',
-  telegram: '/logos/telegram.png',
-  whatsapp: '/logos/whatsapp.png',
-}
+  dingtalk: "/logos/dingtalk.png",
+  feishu: "/logos/feishu.png",
+  wecom: "/logos/wecom.png",
+  wechat: "/logos/wechat.png",
+  telegram: "/logos/telegram.png",
+  whatsapp: "/logos/whatsapp.png",
+};
 
 interface PlatformCardModel {
-  key: PlatformKey
-  name: string
-  description: string
-  logoSrc: string
-  state: ChannelPlatformState
-  statusLabel: string
-  statusTone: 'success' | 'muted' | 'error' | 'pending'
-  networkHint: string | null
+  key: PlatformKey;
+  name: string;
+  description: string;
+  logoSrc: string;
+  state: ChannelPlatformState;
+  statusLabel: string;
+  statusTone: "success" | "muted" | "error" | "pending";
+  networkHint: string | null;
 }
 
 function statusMeta(state: ChannelPlatformState, t: TFunction) {
-  if (state.capability === 'comingSoon') return { statusLabel: t('channel.status.unconfigured'), statusTone: 'muted' as const }
-  if (!state.configured) return { statusLabel: t('channel.status.unconfigured'), statusTone: 'muted' as const }
-  if (!state.enabled) return { statusLabel: t('channel.status.configuredOffline'), statusTone: 'muted' as const }
+  if (state.capability === "comingSoon")
+    return {
+      statusLabel: t("channel.status.unconfigured"),
+      statusTone: "muted" as const,
+    };
+  if (!state.configured)
+    return {
+      statusLabel: t("channel.status.unconfigured"),
+      statusTone: "muted" as const,
+    };
+  if (!state.enabled)
+    return {
+      statusLabel: t("channel.status.configuredOffline"),
+      statusTone: "muted" as const,
+    };
   switch (state.connection) {
-    case 'connected':
-      return { statusLabel: t('channel.status.connected'), statusTone: 'success' as const }
-    case 'connecting':
-      return { statusLabel: t('channel.status.connecting'), statusTone: 'pending' as const }
-    case 'reconnecting':
-      return { statusLabel: t('channel.status.reconnecting'), statusTone: 'pending' as const }
-    case 'configError':
-      return { statusLabel: t('channel.status.configError'), statusTone: 'error' as const }
-    case 'needsReauth':
-      return { statusLabel: t('channel.status.sessionExpired'), statusTone: 'error' as const }
-    case 'disconnected':
-      return { statusLabel: t('channel.status.disconnected'), statusTone: 'muted' as const }
+    case "connected":
+      return {
+        statusLabel: t("channel.status.connected"),
+        statusTone: "success" as const,
+      };
+    case "connecting":
+      return {
+        statusLabel: t("channel.status.connecting"),
+        statusTone: "pending" as const,
+      };
+    case "reconnecting":
+      return {
+        statusLabel: t("channel.status.reconnecting"),
+        statusTone: "pending" as const,
+      };
+    case "configError":
+      return {
+        statusLabel: t("channel.status.configError"),
+        statusTone: "error" as const,
+      };
+    case "needsReauth":
+      return {
+        statusLabel: t("channel.status.sessionExpired"),
+        statusTone: "error" as const,
+      };
+    case "disconnected":
+      return {
+        statusLabel: t("channel.status.disconnected"),
+        statusTone: "muted" as const,
+      };
     default:
-      return { statusLabel: t('channel.status.disconnected'), statusTone: 'muted' as const }
+      return {
+        statusLabel: t("channel.status.disconnected"),
+        statusTone: "muted" as const,
+      };
   }
 }
 
@@ -99,38 +133,49 @@ function statusMeta(state: ChannelPlatformState, t: TFunction) {
  * 可能的原因，不主观断言。
  */
 function networkHint(state: ChannelPlatformState, t: TFunction): string | null {
-  if (!state.configured || !state.enabled) return null
-  if (state.platform !== 'telegram' && state.platform !== 'whatsapp') return null
-  const platformName = state.platform === 'telegram' ? 'Telegram' : 'WhatsApp'
+  if (!state.configured || !state.enabled) return null;
+  if (state.platform !== "telegram" && state.platform !== "whatsapp")
+    return null;
+  const platformName = state.platform === "telegram" ? "Telegram" : "WhatsApp";
   switch (state.connection) {
-    case 'connecting':
-      return t('channel.networkHint.connecting', { name: platformName })
-    case 'reconnecting':
-      return t('channel.networkHint.reconnecting', { name: platformName })
-    case 'disconnected':
-      return state.platform === 'whatsapp'
-        ? t('channel.networkHint.whatsappDisconnected')
-        : t('channel.networkHint.telegramDisconnected')
-    case 'needsReauth':
-      return state.platform === 'whatsapp'
-        ? t('channel.networkHint.whatsappNeedsReauth')
-        : t('channel.networkHint.telegramNeedsReauth')
+    case "connecting":
+      return t("channel.networkHint.connecting", { name: platformName });
+    case "reconnecting":
+      return t("channel.networkHint.reconnecting", { name: platformName });
+    case "disconnected":
+      return state.platform === "whatsapp"
+        ? t("channel.networkHint.whatsappDisconnected")
+        : t("channel.networkHint.telegramDisconnected");
+    case "needsReauth":
+      return state.platform === "whatsapp"
+        ? t("channel.networkHint.whatsappNeedsReauth")
+        : t("channel.networkHint.telegramNeedsReauth");
     default:
-      return null
+      return null;
   }
 }
 
-function StatusBadge({ label, tone }: { label?: string; tone?: PlatformCardModel['statusTone'] }) {
-  if (!label) return null
+function StatusBadge({
+  label,
+  tone,
+}: {
+  label?: string;
+  tone?: PlatformCardModel["statusTone"];
+}) {
+  if (!label) return null;
   const className =
-    tone === 'success'
-      ? 'bg-emerald-50 text-emerald-600'
-      : tone === 'error'
-        ? 'bg-red-50 text-red-500'
-        : tone === 'pending'
-          ? 'bg-amber-50 text-amber-600'
-          : 'bg-muted text-muted-foreground'
-  return <span className={`rounded-md px-2 py-1 text-xs font-bold ${className}`}>{label}</span>
+    tone === "success"
+      ? "bg-emerald-50 text-emerald-600"
+      : tone === "error"
+        ? "bg-red-50 text-red-500"
+        : tone === "pending"
+          ? "bg-amber-50 text-amber-600"
+          : "bg-muted text-muted-foreground";
+  return (
+    <span className={`rounded-md px-2 py-1 text-xs font-bold ${className}`}>
+      {label}
+    </span>
+  );
 }
 
 function PlatformIcon({ platform }: { platform: PlatformCardModel }) {
@@ -141,7 +186,7 @@ function PlatformIcon({ platform }: { platform: PlatformCardModel }) {
       className="h-10 w-10 shrink-0 rounded-md border border-border bg-card"
       draggable={false}
     />
-  )
+  );
 }
 
 function PlatformCard({
@@ -151,26 +196,35 @@ function PlatformCard({
   onRemove,
   onToggle,
 }: {
-  platform: PlatformCardModel
-  onRegister: () => void
-  onShowDetails: () => void
-  onRemove: () => void
-  onToggle: (enabled: boolean) => void
+  platform: PlatformCardModel;
+  onRegister: () => void;
+  onShowDetails: () => void;
+  onRemove: () => void;
+  onToggle: (enabled: boolean) => void;
 }) {
-  const { t } = useTranslation()
+  const { t } = useTranslation();
   return (
     <div className="flex min-h-[72px] items-center justify-between rounded-md border border-border bg-card px-4 py-3 shadow-[var(--shadow-card)] transition-shadow hover:shadow-[var(--shadow-card-hover)]">
       <div className="flex min-w-0 items-center gap-3">
         <PlatformIcon platform={platform} />
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <h3 className="text-sm font-semibold text-foreground">{platform.name}</h3>
-            <StatusBadge label={platform.statusLabel} tone={platform.statusTone} />
+            <h3 className="text-sm font-semibold text-foreground">
+              {platform.name}
+            </h3>
+            <StatusBadge
+              label={platform.statusLabel}
+              tone={platform.statusTone}
+            />
           </div>
           {platform.networkHint ? (
-            <p className="mt-0.5 text-xs font-medium text-destructive">{platform.networkHint}</p>
+            <p className="mt-0.5 text-xs font-medium text-destructive">
+              {platform.networkHint}
+            </p>
           ) : (
-            <p className="mt-0.5 text-xs font-medium text-muted-foreground">{platform.description}</p>
+            <p className="mt-0.5 text-xs font-medium text-muted-foreground">
+              {platform.description}
+            </p>
           )}
         </div>
       </div>
@@ -178,54 +232,77 @@ function PlatformCard({
       <div className="ml-4 flex shrink-0 items-center gap-3">
         {platform.state.configured && (
           <AppDropdown
-            ariaLabel={t('channel.actions.morePlatformConfig', { name: platform.name })}
+            ariaLabel={t("channel.actions.morePlatformConfig", {
+              name: platform.name,
+            })}
             trigger={
-              <button type="button" className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground">
+              <button
+                type="button"
+                className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
                 <MoreHorizontal className="h-4 w-4" />
               </button>
             }
             items={[
-              { id: 'configure', label: t('channel.actions.configure'), onSelect: onShowDetails },
-              { id: 'remove', label: t('channel.actions.remove'), className: 'text-destructive', onSelect: onRemove },
+              {
+                id: "configure",
+                label: t("channel.actions.configure"),
+                onSelect: onShowDetails,
+              },
+              {
+                id: "remove",
+                label: t("channel.actions.remove"),
+                className: "text-destructive",
+                onSelect: onRemove,
+              },
             ]}
           />
         )}
         {platform.state.configured ? (
           <Switch
             checked={platform.state.enabled}
-            aria-label={platform.state.enabled ? t('channel.actions.enabledAria', { name: platform.name }) : t('channel.actions.disabledAria', { name: platform.name })}
+            aria-label={
+              platform.state.enabled
+                ? t("channel.actions.enabledAria", { name: platform.name })
+                : t("channel.actions.disabledAria", { name: platform.name })
+            }
             onCheckedChange={onToggle}
           />
-        ) : platform.state.capability === 'available' ? (
+        ) : platform.state.capability === "available" ? (
           <Button
             type="button"
             size="sm"
             className="px-4"
             onClick={onRegister}
-            aria-label={t('channel.actions.configureWith', { name: platform.name })}
+            aria-label={t("channel.actions.configureWith", {
+              name: platform.name,
+            })}
           >
-            {t('channel.actions.configure')}
+            {t("channel.actions.configure")}
           </Button>
         ) : (
           <Button type="button" size="sm" className="px-4" disabled>
-            {t('channel.actions.configure')}
+            {t("channel.actions.configure")}
           </Button>
         )}
       </div>
     </div>
-  )
+  );
 }
 
 function ChannelHero() {
-  const { t } = useTranslation()
+  const { t } = useTranslation();
+  const productName = useProductName();
   return (
     <div className="flex flex-col">
-      <h1 className="text-[22px] font-bold leading-7 text-foreground">{t('channel.heroTitle')}</h1>
+      <h1 className="text-[22px] font-bold leading-7 text-foreground">
+        {t("channel.heroTitle")}
+      </h1>
       <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
-        {t('channel.heroDesc')} {t('channel.heroPrivacy')}
+        {t("channel.heroDesc", { productName })} {t("channel.heroPrivacy")}
       </p>
     </div>
-  )
+  );
 }
 
 function ChannelOverview({
@@ -255,184 +332,198 @@ function ChannelOverview({
   onRemoveWhatsapp,
   onToggleWhatsapp,
 }: {
-  platforms: PlatformCardModel[]
-  onRegisterDingtalk: () => void
-  onShowDingtalkDetails: () => void
-  onRemoveDingtalk: () => void
-  onToggleDingtalk: (enabled: boolean) => void
-  onRegisterFeishu: () => void
-  onShowFeishuDetails: () => void
-  onRemoveFeishu: () => void
-  onToggleFeishu: (enabled: boolean) => void
-  onRegisterWecom: () => void
-  onShowWecomDetails: () => void
-  onRemoveWecom: () => void
-  onToggleWecom: (enabled: boolean) => void
-  onRegisterWechat: () => void
-  onShowWechatDetails: () => void
-  onRemoveWechat: () => void
-  onToggleWechat: (enabled: boolean) => void
-  onRegisterTelegram: () => void
+  platforms: PlatformCardModel[];
+  onRegisterDingtalk: () => void;
+  onShowDingtalkDetails: () => void;
+  onRemoveDingtalk: () => void;
+  onToggleDingtalk: (enabled: boolean) => void;
+  onRegisterFeishu: () => void;
+  onShowFeishuDetails: () => void;
+  onRemoveFeishu: () => void;
+  onToggleFeishu: (enabled: boolean) => void;
+  onRegisterWecom: () => void;
+  onShowWecomDetails: () => void;
+  onRemoveWecom: () => void;
+  onToggleWecom: (enabled: boolean) => void;
+  onRegisterWechat: () => void;
+  onShowWechatDetails: () => void;
+  onRemoveWechat: () => void;
+  onToggleWechat: (enabled: boolean) => void;
+  onRegisterTelegram: () => void;
   /** 已配对后 kebab "配置" 入口 —— 复用注册对话框,组件内部按 alreadyConfigured 渲染管理界面。 */
-  onShowTelegramDetails: () => void
-  onRemoveTelegram: () => void
-  onToggleTelegram: (enabled: boolean) => void
-  onRegisterWhatsapp: () => void
+  onShowTelegramDetails: () => void;
+  onRemoveTelegram: () => void;
+  onToggleTelegram: (enabled: boolean) => void;
+  onRegisterWhatsapp: () => void;
   /** 同上,WhatsApp 二次编辑入口,对话框按 connected 显示"允许列表"管理。 */
-  onShowWhatsappDetails: () => void
-  onRemoveWhatsapp: () => void
-  onToggleWhatsapp: (enabled: boolean) => void
+  onShowWhatsappDetails: () => void;
+  onRemoveWhatsapp: () => void;
+  onToggleWhatsapp: (enabled: boolean) => void;
 }) {
-  const { t } = useTranslation()
-  const noop = () => {}
-  const noopToggle = () => {}
+  const { t } = useTranslation();
+  const noop = () => {};
+  const noopToggle = () => {};
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
-      <div data-tauri-drag-region className="flex h-14 shrink-0 items-center border-b border-border px-8">
-        <span className="text-[15px] font-semibold leading-[22px] text-foreground">{t('nav.channel')}</span>
+      <div
+        data-tauri-drag-region
+        className="flex h-12 shrink-0 items-center border-b border-border px-8"
+      >
+        <span className="text-[15px] font-semibold leading-[22px] text-foreground">
+          {t("nav.channel")}
+        </span>
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
         <div className="mx-auto flex w-full max-w-[960px] flex-col gap-6 px-8 py-7">
-        <ChannelHero />
+          <ChannelHero />
 
-        <div className="flex flex-col gap-3">
-          {platforms.map((platform) => (
-            <PlatformCard
-              key={platform.key}
-              platform={platform}
-              onRegister={
-                platform.key === 'dingtalk'
-                  ? onRegisterDingtalk
-                  : platform.key === 'feishu'
-                    ? onRegisterFeishu
-                    : platform.key === 'wecom'
-                      ? onRegisterWecom
-                      : platform.key === 'wechat'
-                        ? onRegisterWechat
-                        : platform.key === 'telegram'
-                          ? onRegisterTelegram
-                          : platform.key === 'whatsapp'
-                            ? onRegisterWhatsapp
-                            : noop
-              }
-              onShowDetails={
-                platform.key === 'dingtalk'
-                  ? onShowDingtalkDetails
-                  : platform.key === 'feishu'
-                    ? onShowFeishuDetails
-                    : platform.key === 'wecom'
-                      ? onShowWecomDetails
-                      : platform.key === 'wechat'
-                        ? onShowWechatDetails
-                        : platform.key === 'telegram'
-                          ? onShowTelegramDetails
-                          : platform.key === 'whatsapp'
-                            ? onShowWhatsappDetails
-                            : noop
-              }
-              onRemove={
-                platform.key === 'dingtalk'
-                  ? onRemoveDingtalk
-                  : platform.key === 'feishu'
-                    ? onRemoveFeishu
-                    : platform.key === 'wecom'
-                      ? onRemoveWecom
-                      : platform.key === 'wechat'
-                        ? onRemoveWechat
-                        : platform.key === 'telegram'
-                          ? onRemoveTelegram
-                          : platform.key === 'whatsapp'
-                            ? onRemoveWhatsapp
-                            : noop
-              }
-              onToggle={
-                platform.key === 'dingtalk'
-                  ? onToggleDingtalk
-                  : platform.key === 'feishu'
-                    ? onToggleFeishu
-                    : platform.key === 'wecom'
-                      ? onToggleWecom
-                      : platform.key === 'wechat'
-                        ? onToggleWechat
-                        : platform.key === 'telegram'
-                          ? onToggleTelegram
-                          : platform.key === 'whatsapp'
-                            ? onToggleWhatsapp
-                            : noopToggle
-              }
-            />
-          ))}
-        </div>
+          <div className="flex flex-col gap-3">
+            {platforms.map((platform) => (
+              <PlatformCard
+                key={platform.key}
+                platform={platform}
+                onRegister={
+                  platform.key === "dingtalk"
+                    ? onRegisterDingtalk
+                    : platform.key === "feishu"
+                      ? onRegisterFeishu
+                      : platform.key === "wecom"
+                        ? onRegisterWecom
+                        : platform.key === "wechat"
+                          ? onRegisterWechat
+                          : platform.key === "telegram"
+                            ? onRegisterTelegram
+                            : platform.key === "whatsapp"
+                              ? onRegisterWhatsapp
+                              : noop
+                }
+                onShowDetails={
+                  platform.key === "dingtalk"
+                    ? onShowDingtalkDetails
+                    : platform.key === "feishu"
+                      ? onShowFeishuDetails
+                      : platform.key === "wecom"
+                        ? onShowWecomDetails
+                        : platform.key === "wechat"
+                          ? onShowWechatDetails
+                          : platform.key === "telegram"
+                            ? onShowTelegramDetails
+                            : platform.key === "whatsapp"
+                              ? onShowWhatsappDetails
+                              : noop
+                }
+                onRemove={
+                  platform.key === "dingtalk"
+                    ? onRemoveDingtalk
+                    : platform.key === "feishu"
+                      ? onRemoveFeishu
+                      : platform.key === "wecom"
+                        ? onRemoveWecom
+                        : platform.key === "wechat"
+                          ? onRemoveWechat
+                          : platform.key === "telegram"
+                            ? onRemoveTelegram
+                            : platform.key === "whatsapp"
+                              ? onRemoveWhatsapp
+                              : noop
+                }
+                onToggle={
+                  platform.key === "dingtalk"
+                    ? onToggleDingtalk
+                    : platform.key === "feishu"
+                      ? onToggleFeishu
+                      : platform.key === "wecom"
+                        ? onToggleWecom
+                        : platform.key === "wechat"
+                          ? onToggleWechat
+                          : platform.key === "telegram"
+                            ? onToggleTelegram
+                            : platform.key === "whatsapp"
+                              ? onToggleWhatsapp
+                              : noopToggle
+                }
+              />
+            ))}
+          </div>
         </div>
       </div>
     </div>
-  )
+  );
 }
 
 function ChannelChatView({ sessionId }: { sessionId: string }) {
-  const { t } = useTranslation()
-  const conversations = useChannelStore((s) => s.conversations)
-  const pushNotification = useNotificationStore((s) => s.push)
-  const activeConv = conversations.find((c) => c.sessionId === sessionId)
+  const { t } = useTranslation();
+  const conversations = useChannelStore((s) => s.conversations);
+  const pushNotification = useNotificationStore((s) => s.push);
+  const activeConv = conversations.find((c) => c.sessionId === sessionId);
   // 顶栏副标题：直接展示后端填的 displayName（= sender push_name / nick / userid）。
   // 飞书 / 个人微信目前后端拿不到真实用户名（飞书是 "飞书用户 ou_xxx" 占位，
   // 微信是裸 wxid_xxx 或 openid@im.wechat），展示无价值，整段 workspace 隐藏；
   // 等后端补上真实用户名时把 platform 从 HIDE_WORKSPACE_PLATFORMS 删掉即可。
-  const HIDE_WORKSPACE_PLATFORMS = new Set(['feishu', 'wechat'])
+  const HIDE_WORKSPACE_PLATFORMS = new Set(["feishu", "wechat"]);
   const title = activeConv
     ? activeConv.displayName?.trim() ||
-      (activeConv.conversationType === 'group' ? t('channel.chat.groupChat') : t('channel.chat.privateChat'))
-    : ''
+      (activeConv.conversationType === "group"
+        ? t("channel.chat.groupChat")
+        : t("channel.chat.privateChat"))
+    : "";
   const workspaceLabel =
     activeConv && HIDE_WORKSPACE_PLATFORMS.has(activeConv.platform)
       ? undefined
-      : title || sessionId
+      : title || sessionId;
   const platformTitle = activeConv
-    ? (t(`channel.platforms.${activeConv.platform}.name`) ?? activeConv.platform)
-    : ''
-  const isInactiveSession = !!activeConv && !activeConv.isActiveRobot
-  const { overview: teamOverview } = useTeamOverview(sessionId)
-  const conversationExport = useConversationExport(sessionId)
+    ? (t(`channel.platforms.${activeConv.platform}.name`) ??
+      activeConv.platform)
+    : "";
+  const isInactiveSession = !!activeConv && !activeConv.isActiveRobot;
+  const { overview: teamOverview } = useTeamOverview(sessionId);
+  const conversationExport = useConversationExport(sessionId);
 
   const handleOpenPreviewTarget = async (target: PreviewTarget) => {
     try {
-      await openGeneratedFile(target.fileId, target.conversationId)
+      await openGeneratedFile(target.fileId, target.conversationId);
     } catch (err) {
       pushNotification({
-        level: 'error',
-        title: t('channel.errors.openFileTitle'),
-        message: err instanceof Error ? err.message : t('channel.errors.openFileMessage'),
+        level: "error",
+        title: t("channel.errors.openFileTitle"),
+        message:
+          err instanceof Error
+            ? err.message
+            : t("channel.errors.openFileMessage"),
         actions: [],
         dismissible: true,
-        context: 'toast',
-      })
+        context: "toast",
+      });
     }
-  }
+  };
 
   const handleDownloadPreviewTarget = async (target: PreviewTarget) => {
     try {
-      const savedPath = await savePreviewTargetToDisk(target)
-      if (!savedPath) return
+      const savedPath = await savePreviewTargetToDisk(target);
+      if (!savedPath) return;
       pushNotification({
-        level: 'success',
-        title: t('messageList.fileDownloaded', '已下载文件'),
+        level: "success",
+        title: t("messageList.fileDownloaded", "已下载文件"),
         message: savedPath,
         actions: [],
         dismissible: true,
         autoHide: 3,
-        context: 'toast',
-      })
+        context: "toast",
+      });
     } catch (err) {
       pushNotification({
-        level: 'error',
-        title: t('messageList.cannotDownload', '无法下载文件'),
-        message: err instanceof Error ? err.message : t('channel.errors.openFileMessage'),
+        level: "error",
+        title: t("messageList.cannotDownload", "无法下载文件"),
+        message:
+          err instanceof Error
+            ? err.message
+            : t("channel.errors.openFileMessage"),
         actions: [],
         dismissible: true,
-        context: 'toast',
-      })
+        context: "toast",
+      });
     }
-  }
+  };
 
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden bg-background">
@@ -443,16 +534,22 @@ function ChannelChatView({ sessionId }: { sessionId: string }) {
         shareLabel="导出对话"
       />
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
-        <div data-testid="channel-chat-layout-column" className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+        <div
+          data-testid="channel-chat-layout-column"
+          className="relative flex min-w-0 flex-1 flex-col overflow-hidden"
+        >
           <ChatArea />
           {isInactiveSession && (
             <div className="px-6 pb-2">
               <div className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">
-                {t('channel.chat.inactiveBanner')}
+                {t("channel.chat.inactiveBanner")}
               </div>
             </div>
           )}
-          <ChatBottomArea disabled={isInactiveSession} sessionIdOverride={sessionId} />
+          <ChatBottomArea
+            disabled={isInactiveSession}
+            sessionIdOverride={sessionId}
+          />
         </div>
         <TeamChatDrawer conversationId={sessionId} overview={teamOverview} />
         <RightPanel
@@ -463,236 +560,251 @@ function ChannelChatView({ sessionId }: { sessionId: string }) {
       </div>
       <ConversationExportDialog {...conversationExport.dialogProps} />
     </div>
-  )
+  );
 }
 
 export function ChannelPage({ sessionId }: ChannelPageProps) {
-  const { t } = useTranslation()
-  const platformsByKey = useChannelStore((s) => s.platforms)
-  const loadConversations = useChannelStore((s) => s.loadConversations)
-  const setEnabled = useChannelStore((s) => s.setEnabled)
-  const removePlatform = useChannelStore((s) => s.removePlatform)
-  const [registrationOpen, setRegistrationOpen] = useState(false)
-  const [detailsOpen, setDetailsOpen] = useState(false)
-  const [feishuRegistrationOpen, setFeishuRegistrationOpen] = useState(false)
-  const [feishuDetailsOpen, setFeishuDetailsOpen] = useState(false)
-  const [wecomRegistrationOpen, setWecomRegistrationOpen] = useState(false)
-  const [wecomDetailsOpen, setWecomDetailsOpen] = useState(false)
-  const [wechatRegistrationOpen, setWechatRegistrationOpen] = useState(false)
-  const [wechatDetailsOpen, setWechatDetailsOpen] = useState(false)
-  const [telegramRegistrationOpen, setTelegramRegistrationOpen] = useState(false)
-  const [whatsappRegistrationOpen, setWhatsappRegistrationOpen] = useState(false)
+  const { t } = useTranslation();
+  const platformsByKey = useChannelStore((s) => s.platforms);
+  const loadConversations = useChannelStore((s) => s.loadConversations);
+  const setEnabled = useChannelStore((s) => s.setEnabled);
+  const removePlatform = useChannelStore((s) => s.removePlatform);
+  const [registrationOpen, setRegistrationOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [feishuRegistrationOpen, setFeishuRegistrationOpen] = useState(false);
+  const [feishuDetailsOpen, setFeishuDetailsOpen] = useState(false);
+  const [wecomRegistrationOpen, setWecomRegistrationOpen] = useState(false);
+  const [wecomDetailsOpen, setWecomDetailsOpen] = useState(false);
+  const [wechatRegistrationOpen, setWechatRegistrationOpen] = useState(false);
+  const [wechatDetailsOpen, setWechatDetailsOpen] = useState(false);
+  const [telegramRegistrationOpen, setTelegramRegistrationOpen] =
+    useState(false);
+  const [whatsappRegistrationOpen, setWhatsappRegistrationOpen] =
+    useState(false);
 
   useEffect(() => {
-    void initChannelListeners()
-    void loadConversations()
-  }, [loadConversations])
+    void initChannelListeners();
+    void loadConversations();
+  }, [loadConversations]);
 
   useEffect(() => {
-    const store = useChatStore.getState()
-    const activeId = sessionId ?? null
+    const store = useChatStore.getState();
+    const activeId = sessionId ?? null;
 
     if (!activeId) {
       if (store.activeConversationId !== null) {
-        store.setMessages([])
+        store.setMessages([]);
       }
-      return
+      return;
     }
 
     // Selecting a session = the user has seen the new messages → reset the
     // unread badge. `incrementUnread` fires on every `channel:message` event
     // when this session isn't the active one (see channelStore.ts:171),
     // so without this counter clear the badge would grow forever.
-    useChannelStore.getState().clearUnread(activeId)
+    useChannelStore.getState().clearUnread(activeId);
 
-    let cancelled = false
-    store.setMessages([])
+    let cancelled = false;
+    store.setMessages([]);
 
     void Promise.all([
       getMessages(activeId),
       getTasks(activeId).catch(() => []),
     ])
       .then(([messages, tasks]) => {
-        if (cancelled) return
-        const latest = useChatStore.getState()
-        latest.setMessages(messages)
+        if (cancelled) return;
+        const latest = useChatStore.getState();
+        latest.setMessages(messages);
         for (const task of tasks) {
-          latest.upsertConversationTaskState(activeId, task)
+          latest.upsertConversationTaskState(activeId, task);
         }
       })
       .catch((err) => {
-        if (!cancelled) console.error('[ChannelPage] load channel session failed', err)
-      })
+        if (!cancelled)
+          console.error("[ChannelPage] load channel session failed", err);
+      });
 
     return () => {
-      cancelled = true
-    }
-  }, [sessionId])
+      cancelled = true;
+    };
+  }, [sessionId]);
 
-  const dingtalkState = platformsByKey.dingtalk ?? {
-    platform: 'dingtalk',
-    capability: 'available',
-    configured: false,
-    enabled: false,
-    connection: 'unconfigured',
-    config: null,
-    lastConnectedAt: null,
-    lastError: null,
-  } satisfies ChannelPlatformState
+  const dingtalkState =
+    platformsByKey.dingtalk ??
+    ({
+      platform: "dingtalk",
+      capability: "available",
+      configured: false,
+      enabled: false,
+      connection: "unconfigured",
+      config: null,
+      lastConnectedAt: null,
+      lastError: null,
+    } satisfies ChannelPlatformState);
 
-  const feishuState = platformsByKey.feishu ?? {
-    platform: 'feishu',
-    capability: 'available',
-    configured: false,
-    enabled: false,
-    connection: 'unconfigured',
-    config: null,
-    lastConnectedAt: null,
-    lastError: null,
-  } satisfies ChannelPlatformState
+  const feishuState =
+    platformsByKey.feishu ??
+    ({
+      platform: "feishu",
+      capability: "available",
+      configured: false,
+      enabled: false,
+      connection: "unconfigured",
+      config: null,
+      lastConnectedAt: null,
+      lastError: null,
+    } satisfies ChannelPlatformState);
 
-  const wecomState = platformsByKey.wecom ?? {
-    platform: 'wecom',
-    capability: 'available',
-    configured: false,
-    enabled: false,
-    connection: 'unconfigured',
-    config: null,
-    lastConnectedAt: null,
-    lastError: null,
-  } satisfies ChannelPlatformState
+  const wecomState =
+    platformsByKey.wecom ??
+    ({
+      platform: "wecom",
+      capability: "available",
+      configured: false,
+      enabled: false,
+      connection: "unconfigured",
+      config: null,
+      lastConnectedAt: null,
+      lastError: null,
+    } satisfies ChannelPlatformState);
 
-  const wechatState = platformsByKey.wechat ?? {
-    platform: 'wechat',
-    // MVP: report as available so the user can click the button to drive a
-    // real scan flow. Backend persistence still lands in Phase 5 PR3, so the
-    // card never reaches "configured" state in this MVP cut.
-    capability: 'available',
-    configured: false,
-    enabled: false,
-    connection: 'unconfigured',
-    config: null,
-    lastConnectedAt: null,
-    lastError: null,
-  } satisfies ChannelPlatformState
+  const wechatState =
+    platformsByKey.wechat ??
+    ({
+      platform: "wechat",
+      // MVP: report as available so the user can click the button to drive a
+      // real scan flow. Backend persistence still lands in Phase 5 PR3, so the
+      // card never reaches "configured" state in this MVP cut.
+      capability: "available",
+      configured: false,
+      enabled: false,
+      connection: "unconfigured",
+      config: null,
+      lastConnectedAt: null,
+      lastError: null,
+    } satisfies ChannelPlatformState);
 
-  const telegramState = platformsByKey.telegram ?? {
-    platform: 'telegram',
-    capability: 'available',
-    configured: false,
-    enabled: false,
-    connection: 'unconfigured',
-    config: null,
-    lastConnectedAt: null,
-    lastError: null,
-  } satisfies ChannelPlatformState
+  const telegramState =
+    platformsByKey.telegram ??
+    ({
+      platform: "telegram",
+      capability: "available",
+      configured: false,
+      enabled: false,
+      connection: "unconfigured",
+      config: null,
+      lastConnectedAt: null,
+      lastError: null,
+    } satisfies ChannelPlatformState);
 
-  const whatsappState = platformsByKey.whatsapp ?? {
-    platform: 'whatsapp',
-    capability: 'comingSoon',
-    configured: false,
-    enabled: false,
-    connection: 'unconfigured',
-    config: null,
-    lastConnectedAt: null,
-    lastError: null,
-  } satisfies ChannelPlatformState
+  const whatsappState =
+    platformsByKey.whatsapp ??
+    ({
+      platform: "whatsapp",
+      capability: "comingSoon",
+      configured: false,
+      enabled: false,
+      connection: "unconfigured",
+      config: null,
+      lastConnectedAt: null,
+      lastError: null,
+    } satisfies ChannelPlatformState);
 
   const handleRemoveDingtalk = async () => {
     const confirmed = await requestConfirm({
-      title: t('channel.remove.dingtalk.title'),
-      description: t('channel.remove.dingtalk.description'),
-      confirmLabel: t('channel.actions.confirmRemove'),
-      cancelLabel: t('channel.actions.cancel'),
-      variant: 'destructive',
-    })
-    if (!confirmed) return
-    await removePlatform('dingtalk')
-  }
+      title: t("channel.remove.dingtalk.title"),
+      description: t("channel.remove.dingtalk.description"),
+      confirmLabel: t("channel.actions.confirmRemove"),
+      cancelLabel: t("channel.actions.cancel"),
+      variant: "destructive",
+    });
+    if (!confirmed) return;
+    await removePlatform("dingtalk");
+  };
 
   const handleToggleDingtalk = async (enabled: boolean) => {
-    await setEnabled('dingtalk', enabled)
-  }
+    await setEnabled("dingtalk", enabled);
+  };
 
   const handleRemoveFeishu = async () => {
     const confirmed = await requestConfirm({
-      title: t('channel.remove.feishu.title'),
-      description: t('channel.remove.feishu.description'),
-      confirmLabel: t('channel.actions.confirmRemove'),
-      cancelLabel: t('channel.actions.cancel'),
-      variant: 'destructive',
-    })
-    if (!confirmed) return
-    await removePlatform('feishu')
-  }
+      title: t("channel.remove.feishu.title"),
+      description: t("channel.remove.feishu.description"),
+      confirmLabel: t("channel.actions.confirmRemove"),
+      cancelLabel: t("channel.actions.cancel"),
+      variant: "destructive",
+    });
+    if (!confirmed) return;
+    await removePlatform("feishu");
+  };
 
   const handleToggleFeishu = async (enabled: boolean) => {
-    await setEnabled('feishu', enabled)
-  }
+    await setEnabled("feishu", enabled);
+  };
 
   const handleRemoveWecom = async () => {
     const confirmed = await requestConfirm({
-      title: t('channel.remove.wecom.title'),
-      description: t('channel.remove.wecom.description'),
-      confirmLabel: t('channel.actions.confirmRemove'),
-      cancelLabel: t('channel.actions.cancel'),
-      variant: 'destructive',
-    })
-    if (!confirmed) return
-    await removePlatform('wecom')
-  }
+      title: t("channel.remove.wecom.title"),
+      description: t("channel.remove.wecom.description"),
+      confirmLabel: t("channel.actions.confirmRemove"),
+      cancelLabel: t("channel.actions.cancel"),
+      variant: "destructive",
+    });
+    if (!confirmed) return;
+    await removePlatform("wecom");
+  };
 
   const handleToggleWecom = async (enabled: boolean) => {
-    await setEnabled('wecom', enabled)
-  }
+    await setEnabled("wecom", enabled);
+  };
 
   const handleRemoveWechat = async () => {
     const confirmed = await requestConfirm({
-      title: t('channel.remove.wechat.title'),
-      description: t('channel.remove.wechat.description'),
-      confirmLabel: t('channel.actions.confirmRemove'),
-      cancelLabel: t('channel.actions.cancel'),
-      variant: 'destructive',
-    })
-    if (!confirmed) return
-    await removePlatform('wechat')
-  }
+      title: t("channel.remove.wechat.title"),
+      description: t("channel.remove.wechat.description"),
+      confirmLabel: t("channel.actions.confirmRemove"),
+      cancelLabel: t("channel.actions.cancel"),
+      variant: "destructive",
+    });
+    if (!confirmed) return;
+    await removePlatform("wechat");
+  };
 
   const handleToggleWechat = async (enabled: boolean) => {
-    await setEnabled('wechat', enabled)
-  }
+    await setEnabled("wechat", enabled);
+  };
 
   const handleRemoveTelegram = async () => {
     const confirmed = await requestConfirm({
-      title: t('channel.remove.telegram.title'),
-      description: t('channel.remove.telegram.description'),
-      confirmLabel: t('channel.actions.confirmRemove'),
-      cancelLabel: t('channel.actions.cancel'),
-      variant: 'destructive',
-    })
-    if (!confirmed) return
-    await removePlatform('telegram')
-  }
+      title: t("channel.remove.telegram.title"),
+      description: t("channel.remove.telegram.description"),
+      confirmLabel: t("channel.actions.confirmRemove"),
+      cancelLabel: t("channel.actions.cancel"),
+      variant: "destructive",
+    });
+    if (!confirmed) return;
+    await removePlatform("telegram");
+  };
 
   const handleToggleTelegram = async (enabled: boolean) => {
-    await setEnabled('telegram', enabled)
-  }
+    await setEnabled("telegram", enabled);
+  };
 
   const handleRemoveWhatsapp = async () => {
     const confirmed = await requestConfirm({
-      title: t('channel.remove.whatsapp.title'),
-      description: t('channel.remove.whatsapp.description'),
-      confirmLabel: t('channel.actions.confirmRemove'),
-      cancelLabel: t('channel.actions.cancel'),
-      variant: 'destructive',
-    })
-    if (!confirmed) return
-    await removePlatform('whatsapp')
-  }
+      title: t("channel.remove.whatsapp.title"),
+      description: t("channel.remove.whatsapp.description"),
+      confirmLabel: t("channel.actions.confirmRemove"),
+      cancelLabel: t("channel.actions.cancel"),
+      variant: "destructive",
+    });
+    if (!confirmed) return;
+    await removePlatform("whatsapp");
+  };
 
   const handleToggleWhatsapp = async (enabled: boolean) => {
-    await setEnabled('whatsapp', enabled)
-  }
+    await setEnabled("whatsapp", enabled);
+  };
 
   const platforms = useMemo<PlatformCardModel[]>(() => {
     const states: Record<PlatformKey, ChannelPlatformState> = {
@@ -702,68 +814,82 @@ export function ChannelPage({ sessionId }: ChannelPageProps) {
       wechat: wechatState,
       telegram: telegramState,
       whatsapp: whatsappState,
-    }
+    };
 
     return [
       {
-        key: 'dingtalk',
-        name: t('channel.platforms.dingtalk.name'),
-        description: t('channel.platforms.dingtalk.description'),
+        key: "dingtalk",
+        name: t("channel.platforms.dingtalk.name"),
+        description: t("channel.platforms.dingtalk.description"),
         logoSrc: PLATFORM_LOGO_SRC.dingtalk,
         state: states.dingtalk,
         networkHint: networkHint(states.dingtalk, t),
         ...statusMeta(states.dingtalk, t),
       },
       {
-        key: 'feishu',
-        name: t('channel.platforms.feishu.name'),
-        description: t('channel.platforms.feishu.description'),
+        key: "feishu",
+        name: t("channel.platforms.feishu.name"),
+        description: t("channel.platforms.feishu.description"),
         logoSrc: PLATFORM_LOGO_SRC.feishu,
         state: states.feishu,
         networkHint: networkHint(states.feishu, t),
         ...statusMeta(states.feishu, t),
       },
       {
-        key: 'wecom',
-        name: t('channel.platforms.wecom.name'),
-        description: t('channel.platforms.wecom.description'),
+        key: "wecom",
+        name: t("channel.platforms.wecom.name"),
+        description: t("channel.platforms.wecom.description"),
         logoSrc: PLATFORM_LOGO_SRC.wecom,
         state: states.wecom,
         networkHint: networkHint(states.wecom, t),
         ...statusMeta(states.wecom, t),
       },
       {
-        key: 'wechat',
-        name: t('channel.platforms.wechat.name'),
-        description: t('channel.platforms.wechat.description'),
+        key: "wechat",
+        name: t("channel.platforms.wechat.name"),
+        description: t("channel.platforms.wechat.description"),
         logoSrc: PLATFORM_LOGO_SRC.wechat,
         state: states.wechat,
         networkHint: networkHint(states.wechat, t),
         ...statusMeta(states.wechat, t),
       },
       {
-        key: 'telegram',
-        name: t('channel.platforms.telegram.name'),
-        description: t('channel.platforms.telegram.description'),
+        key: "telegram",
+        name: t("channel.platforms.telegram.name"),
+        description: t("channel.platforms.telegram.description"),
         logoSrc: PLATFORM_LOGO_SRC.telegram,
         state: states.telegram,
         networkHint: networkHint(states.telegram, t),
         ...statusMeta(states.telegram, t),
       },
       {
-        key: 'whatsapp',
-        name: t('channel.platforms.whatsapp.name'),
-        description: t('channel.platforms.whatsapp.description'),
+        key: "whatsapp",
+        name: t("channel.platforms.whatsapp.name"),
+        description: t("channel.platforms.whatsapp.description"),
         logoSrc: PLATFORM_LOGO_SRC.whatsapp,
         state: states.whatsapp,
         networkHint: networkHint(states.whatsapp, t),
         ...statusMeta(states.whatsapp, t),
       },
-    ]
-  }, [dingtalkState, feishuState, wecomState, wechatState, telegramState, whatsappState, t])
+    ];
+  }, [
+    dingtalkState,
+    feishuState,
+    wecomState,
+    wechatState,
+    telegramState,
+    whatsappState,
+    t,
+  ]);
 
   return (
-    <div className={sessionId ? 'h-full overflow-hidden bg-background' : 'h-full overflow-y-auto bg-background'}>
+    <div
+      className={
+        sessionId
+          ? "h-full overflow-hidden bg-background"
+          : "h-full overflow-y-auto bg-background"
+      }
+    >
       {sessionId ? (
         <ChannelChatView sessionId={sessionId} />
       ) : (
@@ -804,109 +930,152 @@ export function ChannelPage({ sessionId }: ChannelPageProps) {
       <Dialog open={registrationOpen} onOpenChange={setRegistrationOpen}>
         <DialogContent className="max-w-xl overflow-hidden rounded-md border border-border bg-background p-0 shadow-[var(--shadow-modal)]">
           <DialogHeader className="sr-only">
-            <DialogTitle>{t('channel.dialog.dingtalk.title')}</DialogTitle>
-            <DialogDescription>{t('channel.dialog.dingtalk.description')}</DialogDescription>
+            <DialogTitle>{t("channel.dialog.dingtalk.title")}</DialogTitle>
+            <DialogDescription>
+              {t("channel.dialog.dingtalk.description")}
+            </DialogDescription>
           </DialogHeader>
           <ChannelConfig
             onSaved={() => {
-              void loadConversations()
+              void loadConversations();
             }}
             onClose={() => setRegistrationOpen(false)}
           />
         </DialogContent>
       </Dialog>
 
-      <Dialog open={feishuRegistrationOpen} onOpenChange={setFeishuRegistrationOpen}>
+      <Dialog
+        open={feishuRegistrationOpen}
+        onOpenChange={setFeishuRegistrationOpen}
+      >
         <DialogContent className="max-w-xl overflow-hidden rounded-md border border-border bg-background p-0 shadow-[var(--shadow-modal)]">
           <DialogHeader className="sr-only">
-            <DialogTitle>{t('channel.dialog.feishu.title')}</DialogTitle>
-            <DialogDescription>{t('channel.dialog.feishu.description')}</DialogDescription>
+            <DialogTitle>{t("channel.dialog.feishu.title")}</DialogTitle>
+            <DialogDescription>
+              {t("channel.dialog.feishu.description")}
+            </DialogDescription>
           </DialogHeader>
           <FeishuChannelConfig
             onSaved={() => {
-              void loadConversations()
+              void loadConversations();
             }}
             onClose={() => setFeishuRegistrationOpen(false)}
           />
         </DialogContent>
       </Dialog>
 
-      <Dialog open={wecomRegistrationOpen} onOpenChange={setWecomRegistrationOpen}>
+      <Dialog
+        open={wecomRegistrationOpen}
+        onOpenChange={setWecomRegistrationOpen}
+      >
         <DialogContent className="max-w-xl overflow-hidden rounded-md border border-border bg-background p-0 shadow-[var(--shadow-modal)]">
           <DialogHeader className="sr-only">
-            <DialogTitle>{t('channel.dialog.wecom.title')}</DialogTitle>
-            <DialogDescription>{t('channel.dialog.wecom.description')}</DialogDescription>
+            <DialogTitle>{t("channel.dialog.wecom.title")}</DialogTitle>
+            <DialogDescription>
+              {t("channel.dialog.wecom.description")}
+            </DialogDescription>
           </DialogHeader>
           <WecomChannelConfig
             onSaved={() => {
-              void loadConversations()
+              void loadConversations();
             }}
             onClose={() => setWecomRegistrationOpen(false)}
           />
         </DialogContent>
       </Dialog>
 
-      <Dialog open={wechatRegistrationOpen} onOpenChange={setWechatRegistrationOpen}>
+      <Dialog
+        open={wechatRegistrationOpen}
+        onOpenChange={setWechatRegistrationOpen}
+      >
         <DialogContent className="max-w-xl overflow-hidden rounded-md border border-border bg-background p-0 shadow-[var(--shadow-modal)]">
           <DialogHeader className="sr-only">
-            <DialogTitle>{t('channel.dialog.wechat.title')}</DialogTitle>
-            <DialogDescription>{t('channel.dialog.wechat.description')}</DialogDescription>
+            <DialogTitle>{t("channel.dialog.wechat.title")}</DialogTitle>
+            <DialogDescription>
+              {t("channel.dialog.wechat.description")}
+            </DialogDescription>
           </DialogHeader>
           <WechatChannelConfig
             onSaved={() => {
-              void loadConversations()
+              void loadConversations();
             }}
             onClose={() => setWechatRegistrationOpen(false)}
           />
         </DialogContent>
       </Dialog>
 
-      <Dialog open={telegramRegistrationOpen} onOpenChange={setTelegramRegistrationOpen}>
+      <Dialog
+        open={telegramRegistrationOpen}
+        onOpenChange={setTelegramRegistrationOpen}
+      >
         <DialogContent className="max-w-xl overflow-hidden rounded-md border border-border bg-background p-0 shadow-[var(--shadow-modal)]">
           <DialogHeader className="sr-only">
-            <DialogTitle>{t('channel.dialog.telegram.title')}</DialogTitle>
-            <DialogDescription>{t('channel.dialog.telegram.description')}</DialogDescription>
+            <DialogTitle>{t("channel.dialog.telegram.title")}</DialogTitle>
+            <DialogDescription>
+              {t("channel.dialog.telegram.description")}
+            </DialogDescription>
           </DialogHeader>
           <TelegramChannelConfig
             onSaved={() => {
-              void loadConversations()
+              void loadConversations();
             }}
             onClose={() => setTelegramRegistrationOpen(false)}
           />
         </DialogContent>
       </Dialog>
 
-      <Dialog open={whatsappRegistrationOpen} onOpenChange={setWhatsappRegistrationOpen}>
+      <Dialog
+        open={whatsappRegistrationOpen}
+        onOpenChange={setWhatsappRegistrationOpen}
+      >
         <DialogContent className="max-w-xl overflow-hidden rounded-md border border-border bg-background p-0 shadow-[var(--shadow-modal)]">
           <DialogHeader className="sr-only">
-            <DialogTitle>{t('channel.dialog.whatsapp.title')}</DialogTitle>
-            <DialogDescription>{t('channel.dialog.whatsapp.description')}</DialogDescription>
+            <DialogTitle>{t("channel.dialog.whatsapp.title")}</DialogTitle>
+            <DialogDescription>
+              {t("channel.dialog.whatsapp.description")}
+            </DialogDescription>
           </DialogHeader>
           <WhatsappChannelConfig
             onSaved={() => {
-              void loadConversations()
+              void loadConversations();
             }}
             onClose={() => setWhatsappRegistrationOpen(false)}
             connected={
-              whatsappState.connection === 'connected' ||
-              whatsappState.connection === 'reconnecting'
+              whatsappState.connection === "connected" ||
+              whatsappState.connection === "reconnecting"
             }
           />
         </DialogContent>
       </Dialog>
 
       {dingtalkState.config && (
-        <ChannelConfigDetails config={dingtalkState.config} open={detailsOpen} onOpenChange={setDetailsOpen} />
+        <ChannelConfigDetails
+          config={dingtalkState.config}
+          open={detailsOpen}
+          onOpenChange={setDetailsOpen}
+        />
       )}
       {feishuState.config && (
-        <ChannelConfigDetails config={feishuState.config} open={feishuDetailsOpen} onOpenChange={setFeishuDetailsOpen} />
+        <ChannelConfigDetails
+          config={feishuState.config}
+          open={feishuDetailsOpen}
+          onOpenChange={setFeishuDetailsOpen}
+        />
       )}
       {wecomState.config && (
-        <ChannelConfigDetails config={wecomState.config} open={wecomDetailsOpen} onOpenChange={setWecomDetailsOpen} />
+        <ChannelConfigDetails
+          config={wecomState.config}
+          open={wecomDetailsOpen}
+          onOpenChange={setWecomDetailsOpen}
+        />
       )}
       {wechatState.config && (
-        <ChannelConfigDetails config={wechatState.config} open={wechatDetailsOpen} onOpenChange={setWechatDetailsOpen} />
+        <ChannelConfigDetails
+          config={wechatState.config}
+          open={wechatDetailsOpen}
+          onOpenChange={setWechatDetailsOpen}
+        />
       )}
     </div>
-  )
+  );
 }
