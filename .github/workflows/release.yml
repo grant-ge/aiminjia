@@ -29,8 +29,10 @@ jobs:
         include:
           - platform: macos-latest
             args: '--target universal-apple-darwin'
+            rust_targets: 'aarch64-apple-darwin,x86_64-apple-darwin'
           - platform: windows-latest
             args: ''
+            rust_targets: ''
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -49,7 +51,7 @@ jobs:
       - name: Rust setup
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: ${{ matrix.rust_targets }}
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -92,6 +94,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: .\scripts\setup-dws.ps1
+
+      - name: Disable updater signing (no signing key in CI yet)
+        # tauri.conf.json ships an updater pubkey, which makes `tauri build`
+        # REQUIRE TAURI_SIGNING_PRIVATE_KEY. Until that secret is configured,
+        # strip the pubkey and skip updater artifacts so the build verifies
+        # cross-platform packaging without signing. node is available on all
+        # runners, so this stays cross-platform.
+        run: node scripts/ci-disable-updater-signing.mjs
 
       - name: Build the app
         uses: tauri-apps/tauri-action@v0
