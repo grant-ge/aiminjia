@@ -26,12 +26,12 @@ Backend core:
 
 - Create `src-tauri/src/plugin/skill/enablement.rs`
   - Owns `SkillEnablementStore` and `SkillEnablementState`.
-  - Resolves user-scoped or global fallback state path.
+  - Resolves the current user's `skillsConfig.json` path.
   - Reads/writes `disabledSkillIds` using atomic writes.
 - Modify `src-tauri/src/plugin/skill/mod.rs`
   - Exports the new module.
 - Modify `src-tauri/src/storage/user_scoped_paths.rs`
-  - Adds `skill_enablement_path()`.
+  - Adds `skills_config_path()`.
 - Modify `src-tauri/src/plugin/skill/registry.rs`
   - Keeps full registry methods.
   - Adds enabled-only ids/catalog/body access helpers.
@@ -111,10 +111,10 @@ mod tests {
     fn enablement_defaults_to_enabled_when_file_missing() {
         let tmp = TempDir::new().unwrap();
         let home = Arc::new(AiJiaHome::from_path(tmp.path().to_path_buf()));
-        let current_user = Arc::new(CurrentUserStorage::new(home.clone()));
+        let current_user = Arc::new(CurrentUserStorage::new(home));
         current_user.activate_scope(UserScope::new(1, 2)).unwrap();
 
-        let store = SkillEnablementStore::new(current_user, home);
+        let store = SkillEnablementStore::new(current_user);
         let state = store.load().unwrap();
 
         assert!(state.is_enabled("biz-plan"));
@@ -125,16 +125,16 @@ mod tests {
     fn enablement_persists_disabled_ids_under_user_scope() {
         let tmp = TempDir::new().unwrap();
         let home = Arc::new(AiJiaHome::from_path(tmp.path().to_path_buf()));
-        let current_user = Arc::new(CurrentUserStorage::new(home.clone()));
+        let current_user = Arc::new(CurrentUserStorage::new(home));
         current_user.activate_scope(UserScope::new(7, 9)).unwrap();
 
-        let store = SkillEnablementStore::new(current_user.clone(), home);
+        let store = SkillEnablementStore::new(current_user.clone());
         store.set_enabled("biz-plan", false).unwrap();
 
         let path = current_user
             .resolve_paths()
             .unwrap()
-            .skill_enablement_path();
+            .skills_config_path();
         let raw = std::fs::read_to_string(path).unwrap();
         assert!(raw.contains("disabledSkillIds"));
         assert!(raw.contains("biz-plan"));
@@ -145,26 +145,24 @@ mod tests {
     }
 
     #[test]
-    fn enablement_uses_global_fallback_without_login() {
+    fn enablement_requires_user_scope_for_writes() {
         let tmp = TempDir::new().unwrap();
         let home = Arc::new(AiJiaHome::from_path(tmp.path().to_path_buf()));
-        let current_user = Arc::new(CurrentUserStorage::new(home.clone()));
-        let store = SkillEnablementStore::new(current_user, home.clone());
+        let current_user = Arc::new(CurrentUserStorage::new(home));
+        let store = SkillEnablementStore::new(current_user);
 
-        store.set_enabled("local-only", false).unwrap();
+        let err = store.set_enabled("local-only", false).unwrap_err();
 
-        let path = home.root().join("global").join("skill_enablement.json");
-        assert!(path.is_file());
-        assert!(!store.load().unwrap().is_enabled("local-only"));
+        assert!(err.to_string().contains("未登录") || err.to_string().contains("not logged in"));
     }
 
     #[test]
     fn remove_override_re_enables_skill() {
         let tmp = TempDir::new().unwrap();
         let home = Arc::new(AiJiaHome::from_path(tmp.path().to_path_buf()));
-        let current_user = Arc::new(CurrentUserStorage::new(home.clone()));
+        let current_user = Arc::new(CurrentUserStorage::new(home));
         current_user.activate_scope(UserScope::new(3, 4)).unwrap();
-        let store = SkillEnablementStore::new(current_user, home);
+        let store = SkillEnablementStore::new(current_user);
 
         store.set_enabled("docx", false).unwrap();
         store.set_enabled("docx", true).unwrap();
@@ -183,15 +181,15 @@ cd src-tauri
 cargo test skill_enablement --lib
 ```
 
-Expected: FAIL because `SkillEnablementStore`, `SkillEnablementState`, and `skill_enablement_path()` do not exist.
+Expected: FAIL because `SkillEnablementStore`, `SkillEnablementState`, and `skills_config_path()` do not exist.
 
-- [ ] **Step 3: Implement `UserScopedPaths::skill_enablement_path`**
+- [ ] **Step 3: Implement `UserScopedPaths::skills_config_path`**
 
 Add this method in `src-tauri/src/storage/user_scoped_paths.rs` near the other per-user JSON paths:
 
 ```rust
-pub fn skill_enablement_path(&self) -> PathBuf {
-    self.base.join("skill_enablement.json")
+pub fn skills_config_path(&self) -> PathBuf {
+    self.base.join("skillsConfig.json")
 }
 ```
 
@@ -199,8 +197,8 @@ Extend the existing `paths_snapshot_all_directories` test with:
 
 ```rust
 assert_eq!(
-    paths.skill_enablement_path(),
-    base.join("skill_enablement.json")
+    paths.skills_config_path(),
+    base.join("skillsConfig.json")
 );
 ```
 
@@ -217,12 +215,11 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::storage::fs_atomic::write_atomic;
-use crate::storage::{AiJiaHome, CurrentUserStorage, UserScopedPathResolver};
+use crate::storage::{CurrentUserStorage, UserScopedPathResolver};
 
 #[derive(Debug, Clone)]
 pub struct SkillEnablementStore {
     current_user: Arc<CurrentUserStorage>,
-    home: Arc<AiJiaHome>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -239,12 +236,12 @@ impl SkillEnablementState {
 }
 
 impl SkillEnablementStore {
-    pub fn new(current_user: Arc<CurrentUserStorage>, home: Arc<AiJiaHome>) -> Self {
-        Self { current_user, home }
+    pub fn new(current_user: Arc<CurrentUserStorage>) -> Self {
+        Self { current_user }
     }
 
     pub fn load(&self) -> Result<SkillEnablementState> {
-        let path = self.state_path();
+        let path = self.state_path()?;
         if !path.is_file() {
             return Ok(SkillEnablementState::default());
         }
@@ -283,16 +280,16 @@ impl SkillEnablementStore {
     }
 
     fn save(&self, state: &SkillEnablementState) -> Result<()> {
-        let path = self.state_path();
+        let path = self.state_path()?;
         let bytes = serde_json::to_vec_pretty(state).context("encode skill enablement")?;
         write_atomic(&path, &bytes)
     }
 
-    fn state_path(&self) -> PathBuf {
+    fn state_path(&self) -> Result<PathBuf> {
         self.current_user
             .resolve_paths()
-            .map(|paths| paths.skill_enablement_path())
-            .unwrap_or_else(|| self.home.root().join("global").join("skill_enablement.json"))
+            .map(|paths| paths.skills_config_path())
+            .ok_or_else(|| anyhow::anyhow!("未登录，无法读取技能配置"))
     }
 }
 ```
@@ -630,12 +627,11 @@ pub async fn set_skill_enabled(
 
 - [ ] **Step 5: Manage store and register command**
 
-In `src-tauri/src/lib.rs`, after `current_user_storage` and `aijia_home` are available, manage:
+In `src-tauri/src/lib.rs`, after `current_user_storage` is available, manage:
 
 ```rust
 let skill_enablement_store = Arc::new(plugin::skill::enablement::SkillEnablementStore::new(
     current_user_storage.clone(),
-    aijia_home.clone(),
 ));
 app.manage(skill_enablement_store);
 ```

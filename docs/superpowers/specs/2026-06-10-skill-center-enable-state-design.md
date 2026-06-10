@@ -182,7 +182,6 @@
 ```rust
 pub struct SkillEnablementStore {
     current_user: Arc<CurrentUserStorage>,
-    home: Arc<AiJiaHome>,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -195,10 +194,11 @@ pub struct SkillEnablementState {
 
 存储路径：
 
-- 已登录：`~/.renlijia/users/{scope}/skill_enablement.json`。
-- 未登录或开发强制路由：`~/.renlijia/global/skill_enablement.json` 作为兜底，避免无登录态时无法关闭本机技能。
+- `~/.renlijia/users/{scope}/skillsConfig.json`。
 
-`UserScopedPaths` 增加 `skill_enablement_path()`；全局兜底路径可由 `AiJiaHome::root().join("global").join("skill_enablement.json")` 得到。
+当前产品没有登录态无法使用主应用，所以技能状态不需要全局兜底文件。`set_skill_enabled`、市场安装后的状态清理、聊天 catalog 读取都应基于当前 `CurrentUserStorage` 的用户 scope；如果没有用户 scope，管理类写操作直接返回未登录错误。
+
+`UserScopedPaths` 增加 `skills_config_path()`。
 
 写入必须使用 `src-tauri/src/storage/fs_atomic.rs::write_atomic`，不能用裸 `fs::write`。读取失败或文件不存在时视为全开启，并记录 warn；不能因为状态文件损坏导致聊天不可用。
 
@@ -350,7 +350,7 @@ impl SkillRegistry {
 后端：
 
 - `list_skills` 返回全量技能和 enabled 状态。
-- disabled 配置持久化到 user-scoped 本地文件，未登录兜底写入 global enablement 文件。
+- disabled 配置持久化到 user-scoped `skillsConfig.json` 本地文件。
 - `format_full_catalog` 仍保持全量语义；新增 `format_enabled_catalog` 且不包含 disabled 技能。
 - `Skill` tool definition 不包含 disabled id。
 - `Skill` tool execute disabled id 返回 unavailable。
