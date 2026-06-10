@@ -173,6 +173,6 @@ opt-level = 1
 [profile.release]
 strip = true
 opt-level = "s"
-lto = true
+lto = "thin"
 codegen-units = 1
 panic = "unwind" # TEMP v0.5.6: switched to unwind so panic hook can flush logs before abort

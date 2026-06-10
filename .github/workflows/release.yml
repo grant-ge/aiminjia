@@ -66,6 +66,11 @@ jobs:
         with:
           workspaces: './src-tauri -> target'
           key: ${{ matrix.label }}
+          cache-on-failure: true
+          # swatinem/rust-cache only SAVES cache on the default branch by
+          # default; this feature branch would never accumulate a cache and
+          # always full-rebuild. Allow saving here so incremental builds work.
+          save-if: 'true'
 
       - name: Install frontend dependencies
         run: pnpm install
