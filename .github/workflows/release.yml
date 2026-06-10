@@ -23,6 +23,12 @@ on:
 permissions:
   contents: write
 
+# Cancel an in-progress run when a newer commit is pushed to the same ref,
+# so stale builds don't pile up and waste runner minutes.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   release:
     name: Build (${{ matrix.label }})
