@@ -2,7 +2,6 @@ use crate::storage::file_manager::FileManager;
 use crate::storage::file_store::RuntimeRepositoryFacade;
 use crate::storage::AiJiaHome;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-use std::collections::HashSet;
 use std::io::Read;
 use std::path::Path;
 use std::sync::Arc;
@@ -562,6 +561,7 @@ pub fn cleanup_workspace_clipboard_staging(dir: &Path, max_age_days: u64) {
 fn read_clipboard_file_paths_platform() -> Result<Vec<String>, String> {
     use objc2_app_kit::{NSPasteboard, NSPasteboardItem, NSPasteboardTypeFileURL};
     use objc2_foundation::NSURL;
+    use std::collections::HashSet;
 
     let pasteboard = NSPasteboard::generalPasteboard();
     let mut paths = Vec::new();
