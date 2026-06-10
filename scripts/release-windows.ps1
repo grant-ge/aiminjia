@@ -92,6 +92,19 @@ function Get-Signtool {
     throw 'signtool.exe not found - install the Windows SDK or add it to PATH'
 }
 
+# Resolve npx as a .cmd/application, not the npm PowerShell shim (npx.ps1).
+# ConstrainedLanguage can execute external commands, but npm's ps1 shim may
+# fail with "Cannot invoke method..." before node is even started.
+function Get-NpxCommand {
+    $cmd = Get-Command npx.cmd -CommandType Application -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+
+    $cmd = Get-Command npx -CommandType Application -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+
+    throw 'npx.cmd not found - install Node.js/npm and make sure npx.cmd is in PATH'
+}
+
 # -- credential storage (Windows Credential Manager) ----------------------
 # Uses cmdkey.exe (no extra modules needed). Each value stored as a generic
 # credential under target name AIjia.<key>.
@@ -292,7 +305,9 @@ Write-Section "Step 4/5: Generate Tauri updater signature"
 # as base64, hence the "Invalid symbol" errors we hit before.)
 $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = $TauriKeyPwd
 $tauriCliPkg = '@tauri-apps/cli@latest'
-& npx --yes $tauriCliPkg signer sign -f $TauriKey $ExePath
+$npx = Get-NpxCommand
+Write-Host "  npx: $npx"
+& $npx --yes $tauriCliPkg signer sign -f $TauriKey $ExePath
 $signerExit = $LASTEXITCODE
 Remove-Item Env:\TAURI_SIGNING_PRIVATE_KEY_PASSWORD -ErrorAction SilentlyContinue
 if ($signerExit -ne 0) { throw "tauri signer failed (exit $signerExit)" }
