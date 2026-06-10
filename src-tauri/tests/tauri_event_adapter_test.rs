@@ -1,8 +1,21 @@
+use std::sync::Arc;
+
+use app_lib::connector::im::ask_coordinator::ChannelSessionRegistry;
 use app_lib::runtime::chat::ChatTurnOutcome;
+use app_lib::runtime::event_bus::RuntimeEventSubscriber;
 use app_lib::runtime::events::{AgentIdleScope, RuntimeEvent, RuntimeEventKind};
 use app_lib::runtime::ids::{AgentId, RunId, SessionId};
 use app_lib::runtime::tools::permission::{PermissionDestination, PermissionMode};
-use app_lib::transport::tauri_event_adapter::map_runtime_event;
+use app_lib::transport::tauri_event_adapter::{map_runtime_event, TauriEventAdapter};
+use app_lib::transport::testing::RecordingRuntimeHost;
+
+struct AlwaysChannelSessionRegistry;
+
+impl ChannelSessionRegistry for AlwaysChannelSessionRegistry {
+    fn is_channel_session(&self, _session_id: &SessionId) -> bool {
+        true
+    }
+}
 
 #[test]
 fn maps_runtime_stream_delta_to_legacy_streaming_delta() {
@@ -79,6 +92,7 @@ fn maps_permission_ask_runtime_event_to_legacy_permission_ask() {
                 PermissionDestination::User,
             ],
             default_destination: Some(PermissionDestination::Session),
+            path_auth_scope: None,
             primary_model: "deepseek-v3".into(),
         },
     );
@@ -134,6 +148,41 @@ fn maps_permission_ask_runtime_event_to_legacy_permission_ask() {
             .and_then(|v| v.as_str()),
         Some("session")
     );
+}
+
+#[tokio::test]
+async fn channel_session_permission_ask_still_emits_to_desktop_host() {
+    let host = RecordingRuntimeHost::new();
+    let adapter = TauriEventAdapter::with_channel_sessions(
+        host.clone(),
+        Arc::new(AlwaysChannelSessionRegistry),
+    );
+    let event = RuntimeEvent::new(
+        SessionId::new("conv-im"),
+        RunId::new("run-im"),
+        RuntimeEventKind::PermissionAskRequired {
+            tool_call_id: "tc-im-ask".into(),
+            tool_name: "Read".to_string(),
+            message: "need approval".to_string(),
+            suggestions: vec![],
+            mode: PermissionMode::Default,
+            remember_options: vec![PermissionDestination::Session],
+            default_destination: Some(PermissionDestination::Session),
+            path_auth_scope: None,
+            primary_model: "deepseek-v3".into(),
+        },
+    );
+
+    adapter.on_event(&event).await.unwrap();
+
+    let trace = host.trace();
+    let emitted = trace
+        .events
+        .iter()
+        .find(|event| event.name == "permission:ask")
+        .expect("IM channel permission ask must also reach the desktop UI");
+    assert_eq!(emitted.payload["conversationId"], "conv-im");
+    assert_eq!(emitted.payload["toolCallId"], "tc-im-ask");
 }
 
 #[test]

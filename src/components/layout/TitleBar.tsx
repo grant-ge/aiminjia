@@ -15,10 +15,10 @@ function handleDragStart(e: React.MouseEvent) {
 }
 
 function WindowControls() {
-  // hover bg uses primary-foreground/15 so it follows tenant theme; close
+  // Keep window controls readable on the sidebar-colored title bar; close
   // button hover routes to --destructive instead of hardcoded red.
   const btnClass =
-    'flex h-7 w-11 items-center justify-center text-primary-foreground/70 transition-colors hover:bg-primary-foreground/15 hover:text-primary-foreground'
+    'flex h-7 w-11 items-center justify-center text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/70 hover:text-sidebar-foreground'
   return (
     <div className="flex shrink-0 items-center" onMouseDown={(e) => e.stopPropagation()}>
       <button className={btnClass} onClick={() => getCurrentWindow().minimize()} aria-label="Minimize">
@@ -39,14 +39,11 @@ function WindowControls() {
 }
 
 /**
- * dev 模式下：底色 --primary，斜纹另一档用运行时派生的 --primary-darken-10
- * （暗 10%），两条都是实色（不透明），不论租户 accent 是什么颜色都自动协调。
- * 45° 斜纹 + 中央 DEV 标签。
+ * The native drag strip uses the same surface color as the left sidebar so the
+ * window chrome and app navigation read as one continuous shell.
  */
-const DEV_STRIPE_STYLE: React.CSSProperties = {
-  backgroundColor: 'var(--primary)',
-  backgroundImage:
-    'repeating-linear-gradient(45deg, var(--primary) 0 10px, var(--primary-darken-10) 10px 20px)',
+const TITLE_BAR_STYLE: React.CSSProperties = {
+  backgroundColor: 'var(--sidebar)',
 }
 
 // "DEV" or "DEV 5174" when a vite dev port is detectable.  Including the port
@@ -71,9 +68,8 @@ function DevBadge() {
 }
 
 /**
- * Both macOS (Overlay titleBarStyle) and Windows render a 28px accent strip
- * at the top so tenant-branded accent color is visible at the most prominent
- * area of the window. macOS draws native traffic lights over this strip.
+ * Both macOS (Overlay titleBarStyle) and Windows render a 28px shell strip at
+ * the top. macOS draws native traffic lights over this strip.
  */
 export function TitleBar() {
   const showUpdateLink = useUpdaterStore((s) =>
@@ -82,10 +78,8 @@ export function TitleBar() {
   const isWindows = navigator.userAgent.includes('Windows')
   const isDev = import.meta.env.DEV
 
-  const barClass = isDev
-    ? 'flex h-8 w-full shrink-0 items-center'
-    : 'flex h-8 w-full shrink-0 items-center bg-primary text-primary-foreground'
-  const barStyle = isDev ? DEV_STRIPE_STYLE : undefined
+  const barClass = 'flex h-8 w-full shrink-0 items-center text-sidebar-foreground'
+  const barStyle = TITLE_BAR_STYLE
 
   if (!isWindows) {
     return (
@@ -108,7 +102,7 @@ export function TitleBar() {
   return (
     <div
       data-tauri-drag-region
-      className={`${barClass} ${isDev ? '' : 'border-b border-primary-foreground/15'}`}
+      className={`${barClass} ${isDev ? '' : 'border-b border-sidebar-border'}`}
       style={barStyle}
       onMouseDown={handleDragStart}
     >

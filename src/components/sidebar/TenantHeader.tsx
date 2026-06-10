@@ -4,14 +4,14 @@
  */
 
 interface TenantHeaderProps {
-  name?: string
-  logoUrl?: string
-  onClick?: () => void
+  name?: string;
+  logoUrl?: string;
+  onClick?: () => void;
 }
 
 export function TenantHeader({
-  name = '',
-  logoUrl = '/brand-avatar-gold.svg',
+  name = "",
+  logoUrl = "/brand-avatar-gold.svg",
   onClick,
 }: TenantHeaderProps) {
   return (
@@ -31,7 +31,10 @@ export function TenantHeader({
             className="h-full w-full object-cover"
           />
         </div>
-        <div data-aijia-product-name className="min-w-0 truncate text-sm font-semibold text-sidebar-foreground">
+        <div
+          data-aijia-product-name
+          className="min-w-0 truncate text-sm font-semibold text-sidebar-foreground"
+        >
           {name}
         </div>
       </div>
@@ -40,5 +43,5 @@ export function TenantHeader({
         className="h-4 w-4 shrink-0 text-muted-foreground"
       /> */}
     </button>
-  )
+  );
 }

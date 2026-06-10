@@ -1,4 +1,5 @@
 use crate::runtime::cancellation::CancellationToken;
+use crate::runtime::human_interaction::{OutputBinding, TurnOrigin};
 use crate::runtime::identity::{IdentityMapping, RuntimeIdentity};
 use crate::runtime::ids::{AgentId, RunId, SessionId, ToolCallId};
 use crate::runtime::tools::permission::PermissionMode;
@@ -13,6 +14,8 @@ pub struct TurnState {
     active_tool_call: Option<ToolCallId>,
     cancellation: CancellationToken,
     permission_mode: PermissionMode,
+    turn_origin: TurnOrigin,
+    output_binding: OutputBinding,
     /// The primary LLM model name used for this turn (e.g. "deepseek-v3").
     /// Populated by the driver after TurnConfig is built; empty string until set.
     primary_model: String,
@@ -35,6 +38,8 @@ impl TurnState {
             active_tool_call: None,
             cancellation: CancellationToken::new(),
             permission_mode: PermissionMode::Default,
+            turn_origin: TurnOrigin::App,
+            output_binding: OutputBinding::AppOnly,
             primary_model: String::new(),
             is_async: false,
         }
@@ -70,6 +75,16 @@ impl TurnState {
         self
     }
 
+    pub fn with_human_interaction_metadata(
+        mut self,
+        turn_origin: TurnOrigin,
+        output_binding: OutputBinding,
+    ) -> Self {
+        self.turn_origin = turn_origin;
+        self.output_binding = output_binding;
+        self
+    }
+
     /// Build a [`crate::runtime::tools::context::ToolExecutionContext`] for a single tool call
     /// within this turn.
     ///
@@ -88,6 +103,7 @@ impl TurnState {
             self.cancellation.child_token(),
         )
         .with_permission_mode(self.permission_mode)
+        .with_human_interaction_metadata(self.turn_origin.clone(), self.output_binding.clone())
         .with_async(self.is_async)
     }
 
@@ -139,6 +155,14 @@ impl TurnState {
         self.permission_mode
     }
 
+    pub fn turn_origin(&self) -> &TurnOrigin {
+        &self.turn_origin
+    }
+
+    pub fn output_binding(&self) -> &OutputBinding {
+        &self.output_binding
+    }
+
     pub fn primary_model(&self) -> &str {
         &self.primary_model
     }
@@ -167,5 +191,34 @@ mod tests {
         let ctx = turn.build_execution_context("tool-call-state-mode");
 
         assert_eq!(ctx.permission_mode, PermissionMode::Plan);
+    }
+
+    #[test]
+    fn build_execution_context_inherits_human_interaction_metadata() {
+        let origin = crate::runtime::human_interaction::TurnOrigin::Im {
+            platform: crate::runtime::human_interaction::ImPlatform::Dingtalk,
+            external_conversation_key: "chat-1".to_string(),
+            sender_id: Some("sender-1".to_string()),
+            sender_label: Some("钉钉用户".to_string()),
+            account_id: Some("bot-1".to_string()),
+            thread_id: None,
+        };
+        let binding = crate::runtime::human_interaction::OutputBinding::im(
+            crate::runtime::human_interaction::ImPlatform::Dingtalk,
+            "sess",
+            "chat-1",
+            true,
+        );
+        let turn = TurnState::new(
+            IdentityMapping::from_legacy_conversation_id("conv-state-origin".to_string()),
+            RunId::new("run-state-origin"),
+            "hello".to_string(),
+        )
+        .with_human_interaction_metadata(origin.clone(), binding.clone());
+
+        let ctx = turn.build_execution_context("tool-call-state-origin");
+
+        assert_eq!(ctx.turn_origin, origin);
+        assert_eq!(ctx.output_binding, binding);
     }
 }

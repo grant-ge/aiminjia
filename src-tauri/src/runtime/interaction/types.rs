@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::runtime::chat::tool_round_types::RuntimeToolCallRequest;
+use crate::runtime::human_interaction::{OutputBinding, TurnOrigin};
 use crate::runtime::ids::{RunId, SessionId, ToolCallId};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -50,6 +51,8 @@ pub struct InteractionRequest {
     pub kind: InteractionKind,
     pub payload: Value,
     pub original_request: RuntimeToolCallRequest,
+    pub turn_origin: TurnOrigin,
+    pub output_binding: OutputBinding,
 }
 
 #[derive(Clone, Debug)]

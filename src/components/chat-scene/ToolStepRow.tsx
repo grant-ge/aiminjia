@@ -3,6 +3,7 @@ import { useState, type ReactNode } from 'react'
 
 import { ToolTraceIO } from './ToolTraceIO'
 import type { RenderToolStep } from '@/hooks/useTurnRenderModel'
+import { useDevSettingsStore } from '@/stores/devSettingsStore'
 
 interface ToolStepRowProps {
   step: RenderToolStep
@@ -14,6 +15,7 @@ interface ToolStepRowProps {
  * Auto-expand: running 且有 progressTail 时自动展开，方便跟踪长跑命令输出。
  */
 export function ToolStepRow({ step }: ToolStepRowProps) {
+  const showToolErrorIcon = useDevSettingsStore((s) => s.showToolErrorIcon)
   const autoExpand =
     step.status === 'running' && (step.progressTail ?? '').length > 0
   const [manualOpen, setManualOpen] = useState<boolean | null>(null)
@@ -25,8 +27,10 @@ export function ToolStepRow({ step }: ToolStepRowProps) {
   const statusIcon: ReactNode =
     step.status === 'running' ? (
       <Loader2 className="h-3 w-3 -translate-y-px animate-spin text-primary" />
+    ) : step.status === 'error' && showToolErrorIcon ? (
+      <AlertCircle data-testid="tool-step-row-error-icon" className="h-3 w-3 -translate-y-px text-destructive" />
     ) : step.status === 'error' ? (
-      <AlertCircle className="h-3 w-3 -translate-y-px text-destructive" />
+      null
     ) : (
       <CheckCircle2 className="h-3 w-3 -translate-y-px text-muted-foreground" />
     )

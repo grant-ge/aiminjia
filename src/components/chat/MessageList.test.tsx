@@ -61,6 +61,154 @@ function messageWithFile(file: GeneratedFile): Message[] {
   ]
 }
 
+function messagesAcrossDays(): Message[] {
+  return [
+    {
+      id: 'u-day-1',
+      conversationId: 'conv-1',
+      role: 'user',
+      createdAt: '2026-04-28T00:00:00Z',
+      content: { text: '第一天' },
+    },
+    {
+      id: 'a-day-1',
+      conversationId: 'conv-1',
+      role: 'assistant',
+      createdAt: '2026-04-28T00:00:01Z',
+      content: { text: '收到' },
+    },
+    {
+      id: 'u-day-2',
+      conversationId: 'conv-1',
+      role: 'user',
+      createdAt: '2026-04-29T00:00:00Z',
+      content: { text: '第二天' },
+    },
+    {
+      id: 'a-day-2',
+      conversationId: 'conv-1',
+      role: 'assistant',
+      createdAt: '2026-04-29T00:00:01Z',
+      content: { text: '继续' },
+    },
+  ]
+}
+
+function messagesWithToolReceipt(): Message[] {
+  return [
+    {
+      id: 'u-receipt',
+      conversationId: 'conv-1',
+      role: 'user',
+      createdAt: '2026-04-28T00:00:00Z',
+      content: { text: '帮我制定方案' },
+    },
+    {
+      id: 'a-receipt',
+      conversationId: 'conv-1',
+      role: 'assistant',
+      createdAt: '2026-04-28T00:00:01Z',
+      content: { text: '' },
+      toolCalls: [
+        { id: 'ask-receipt', name: 'AskUserQuestion', arguments: { questions: [{ question: '预算范围' }] } },
+      ],
+    },
+    {
+      id: 't-receipt',
+      conversationId: 'conv-1',
+      role: 'tool',
+      createdAt: '2026-04-28T00:00:02Z',
+      content: { text: '' },
+      toolResult: {
+        toolCallId: 'ask-receipt',
+        name: 'AskUserQuestion',
+        content: 'User has answered your questions: "预算范围"="3000-6000". You can now continue with the user\'s answers in mind.',
+        isError: false,
+      },
+    },
+  ]
+}
+
+function messagesWithLongQuestionToolReceipt(): Message[] {
+  const longQuestion = '你的科幻小说想要围绕哪个核心科学概念展开？三体用了「三体问题 + 黑暗森林法则」，你的故事想以什么样的科学点子或理论作为基石？'
+  return [
+    {
+      id: 'u-receipt-long',
+      conversationId: 'conv-1',
+      role: 'user',
+      createdAt: '2026-04-28T00:00:00Z',
+      content: { text: '帮我写科幻小说' },
+    },
+    {
+      id: 'a-receipt-long',
+      conversationId: 'conv-1',
+      role: 'assistant',
+      createdAt: '2026-04-28T00:00:01Z',
+      content: { text: '' },
+      toolCalls: [
+        {
+          id: 'ask-receipt-long',
+          name: 'AskUserQuestion',
+          arguments: {
+            questions: [
+              { question: longQuestion },
+              { question: '你的目标读者群体是谁？这会影响故事的科学深度和语言风格。' },
+            ],
+          },
+        },
+      ],
+    },
+    {
+      id: 't-receipt-long',
+      conversationId: 'conv-1',
+      role: 'tool',
+      createdAt: '2026-04-28T00:00:02Z',
+      content: { text: '' },
+      toolResult: {
+        toolCallId: 'ask-receipt-long',
+        name: 'AskUserQuestion',
+        content: `User has answered your questions: "${longQuestion}"="计算科学，AI 的边界", "你的目标读者群体是谁？这会影响故事的科学深度和语言风格。"="硬核科幻迷". You can now continue with the user's answers in mind.`,
+        isError: false,
+      },
+    },
+  ]
+}
+
+function messagesWithDeniedPermissionReceipt(): Message[] {
+  return [
+    {
+      id: 'u-permission',
+      conversationId: 'conv-1',
+      role: 'user',
+      createdAt: '2026-04-28T00:00:00Z',
+      content: { text: 'read a file' },
+    },
+    {
+      id: 'a-permission',
+      conversationId: 'conv-1',
+      role: 'assistant',
+      createdAt: '2026-04-28T00:00:01Z',
+      content: { text: '' },
+      toolCalls: [
+        { id: 'read-permission', name: 'Read', arguments: { file_path: '/private/tmp/secret.txt' } },
+      ],
+    },
+    {
+      id: 't-permission',
+      conversationId: 'conv-1',
+      role: 'tool',
+      createdAt: '2026-04-28T00:00:02Z',
+      content: { text: '' },
+      toolResult: {
+        toolCallId: 'read-permission',
+        name: 'Read',
+        content: '用户拒绝了这个权限申请，并给出调整说明：请改用工作区里的摘要文件。',
+        isError: true,
+      },
+    },
+  ]
+}
+
 function resetStores(activeConversationId: string | null = 'conv-1') {
   useChatStore.setState({
     conversations: [],
@@ -95,6 +243,73 @@ beforeEach(() => {
 })
 
 describe('MessageList generated file actions', () => {
+  it('does not render day divider bars in the message flow', () => {
+    resetStores('conv-1')
+    useChatStore.setState({ messages: messagesAcrossDays() })
+
+    render(<MessageList />)
+
+    expect(screen.queryByTestId('day-divider')).not.toBeInTheDocument()
+    expect(screen.getByText('第一天')).toBeInTheDocument()
+    expect(screen.getByText('第二天')).toBeInTheDocument()
+  })
+
+  it('renders answered AskUserQuestion inside the tool aggregation row', () => {
+    resetStores('conv-1')
+    useChatStore.setState({ messages: messagesWithToolReceipt() })
+
+    render(<MessageList />)
+
+    expect(screen.getByRole('button', { name: /询问了用户 1 个问题/ })).toBeInTheDocument()
+    expect(screen.getByText('收到：3000-6000')).toBeInTheDocument()
+    expect(screen.queryByText('输入')).not.toBeInTheDocument()
+    expect(screen.queryByText('输出')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /询问了用户 1 个问题/ }))
+
+    expect(screen.getByText('AskUserQuestion')).toBeInTheDocument()
+    expect(screen.queryByText('输入')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByText('AskUserQuestion'))
+
+    expect(screen.getByText('输入')).toBeInTheDocument()
+    expect(screen.getByText('输出')).toBeInTheDocument()
+    expect(screen.getAllByText(/预算范围/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/3000-6000/).length).toBeGreaterThan(0)
+  })
+
+  it('keeps long AskUserQuestion details hidden until the tool row is expanded', () => {
+    resetStores('conv-1')
+    useChatStore.setState({ messages: messagesWithLongQuestionToolReceipt() })
+
+    render(<MessageList />)
+
+    expect(screen.getByText('询问了用户 2 个问题')).toBeInTheDocument()
+    expect(screen.getByText('收到：计算科学，AI 的边界 / 硬核科幻迷')).toBeInTheDocument()
+    expect(screen.queryByText('输入')).not.toBeInTheDocument()
+    expect(screen.queryByText('输出')).not.toBeInTheDocument()
+    expect(screen.queryByText(/你的科幻小说想要围绕哪个核心科学概念展开/)).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /询问了用户 2 个问题/ }))
+
+    expect(screen.getByText('AskUserQuestion')).toBeInTheDocument()
+    expect(screen.getByText('收到：计算科学，AI 的边界 / 硬核科幻迷')).toBeInTheDocument()
+    expect(screen.queryByText(/你的科幻小说想要围绕哪个核心科学概念展开/)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByText('AskUserQuestion'))
+
+    expect(screen.getAllByText(/计算科学，AI 的边界/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/你的科幻小说想要围绕哪个核心科学概念展开/).length).toBeGreaterThan(0)
+  })
+
+  it('does not render denied permission receipts in the main chat flow', () => {
+    resetStores('conv-1')
+    useChatStore.setState({ messages: messagesWithDeniedPermissionReceipt() })
+
+    render(<MessageList />)
+
+    expect(screen.queryByText('用户拒绝了这个权限申请')).not.toBeInTheDocument()
+    expect(screen.queryByText(/请改用工作区里的摘要文件/)).not.toBeInTheDocument()
+    expect(screen.getByText('读取了 1 个文件')).toBeInTheDocument()
+  })
+
   it('uses the generated file owner conversation for preview/open/reveal when active conversation differs', async () => {
     renderWithFile(generatedFile(), 'conv-2')
 

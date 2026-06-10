@@ -34,10 +34,11 @@ describe('TitleBar', () => {
     vi.unstubAllEnvs()
   })
 
-  it('renders accent strip on macOS', () => {
+  it('renders sidebar-colored strip on macOS', () => {
     Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Macintosh)', configurable: true })
     const { container } = render(<TitleBar />)
-    expect(container.firstChild).toHaveClass('bg-primary')
+    expect(container.firstChild).toHaveStyle({ backgroundColor: 'var(--sidebar)' })
+    expect(container.firstChild).toHaveClass('text-sidebar-foreground')
   })
 
   it('renders window controls on Windows', () => {
@@ -51,7 +52,7 @@ describe('TitleBar', () => {
   it('has a bottom border on Windows in production', () => {
     Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Windows NT 10.0)', configurable: true })
     const { container } = render(<TitleBar />)
-    expect(container.firstChild).toHaveClass('border-b')
+    expect(container.firstChild).toHaveClass('border-b', 'border-sidebar-border')
   })
 
   it('shows DEV badge when import.meta.env.DEV is true', () => {
@@ -59,6 +60,15 @@ describe('TitleBar', () => {
     Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Macintosh)', configurable: true })
     render(<TitleBar />)
     expect(screen.getByText(getDevBadgeLabel())).toBeInTheDocument()
+  })
+
+  it('does not render the old diagonal stripe background in DEV', () => {
+    vi.stubEnv('DEV', true)
+    Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Macintosh)', configurable: true })
+    const { container } = render(<TitleBar />)
+    const style = (container.firstChild as HTMLElement).style
+    expect(style.backgroundColor).toBe('var(--sidebar)')
+    expect(style.backgroundImage).toBe('')
   })
 
   it('formats current dev server port in DEV badge', () => {

@@ -2,55 +2,66 @@
  * @designSource design.pen#qLmzZ
  * @sizing height 56, padding [0,24], bottom border 1, left gap 12, right gap 14
  */
-import { Ellipsis, Folder, GraduationCap, MessageSquare, PanelLeft, Share2 } from 'lucide-react'
-import type { ReactNode } from 'react'
-import { useTranslation } from 'react-i18next'
+import {
+  Ellipsis,
+  Folder,
+  GraduationCap,
+  MessageSquare,
+  PanelLeft,
+  Share2,
+} from "lucide-react";
+import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
-import { formatRelativeTime } from '@/lib/format'
+import { formatRelativeTime } from "@/lib/format";
 
 export interface ChatTopBarEmployee {
-  avatar: string
-  name: string
-  role: string
-  onClick?: () => void
+  avatar: string;
+  name: string;
+  role: string;
+  onClick?: () => void;
 }
 
-export type ChatTopBarKind = 'user' | 'employee' | 'expertTeam' | 'im'
+export type ChatTopBarKind = "user" | "employee" | "expertTeam" | "im";
 
 interface ChatTopBarProps {
-  title: string
-  workspace?: string
+  title: string;
+  workspace?: string;
   /** Conversation kind. Drives the source-label chip (expert team / IM channel). */
-  kind?: ChatTopBarKind
+  kind?: ChatTopBarKind;
   /** 来源副标题: 员工 display name / 团名 / 渠道名. */
-  sourceLabel?: string
+  sourceLabel?: string;
   /** Updated-at ISO string. Renders a small relative-time chip ("4 天前"). */
-  updatedAt?: string
+  updatedAt?: string;
   /**
    * When set, replaces the plain title with an employee identity card
    * (avatar · name · role). Used for conversations created by employee
    * dispatch. Click handler typically opens the employee drawer.
    */
-  employee?: ChatTopBarEmployee
-  onShare?: () => void
-  shareLabel?: string
-  onMore?: () => void
-  onToggleSidebar?: () => void
+  employee?: ChatTopBarEmployee;
+  onShare?: () => void;
+  shareLabel?: string;
+  onMore?: () => void;
+  onToggleSidebar?: () => void;
   /** extra node rendered at the right edge */
-  trailing?: ReactNode
+  trailing?: ReactNode;
 }
 
 /** Source-label chip — kind-specific icon plus the human-readable label. */
 function SourceChip({ kind, label }: { kind: ChatTopBarKind; label: string }) {
   const Icon =
-    kind === 'expertTeam' ? GraduationCap : kind === 'im' ? MessageSquare : null
-  if (!Icon) return null
+    kind === "expertTeam"
+      ? GraduationCap
+      : kind === "im"
+        ? MessageSquare
+        : null;
+  if (!Icon) return null;
   return (
     <span className="flex items-center gap-1 truncate text-xs text-muted-foreground">
       <Icon className="h-3 w-3 shrink-0" aria-hidden />
       <span className="truncate">{label}</span>
     </span>
-  )
+  );
 }
 
 export function ChatTopBar({
@@ -61,14 +72,17 @@ export function ChatTopBar({
   updatedAt,
   employee,
   onShare,
-  shareLabel = '分享',
+  shareLabel = "分享",
   onMore,
   onToggleSidebar,
   trailing,
 }: ChatTopBarProps) {
-  const { t } = useTranslation()
+  const { t } = useTranslation();
   return (
-    <header data-tauri-drag-region className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-background px-6">
+    <header
+      data-tauri-drag-region
+      className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-background px-6"
+    >
       <div className="flex min-w-0 items-center gap-3">
         {employee ? (
           <button
@@ -84,7 +98,9 @@ export function ChatTopBar({
             <span className="truncate">{employee.name}</span>
             {employee.role ? (
               <>
-                <span aria-hidden className="text-sm text-muted-foreground">·</span>
+                <span aria-hidden className="text-sm text-muted-foreground">
+                  ·
+                </span>
                 <span className="truncate text-sm font-normal text-muted-foreground">
                   {employee.role}
                 </span>
@@ -105,17 +121,26 @@ export function ChatTopBar({
             <span className="truncate">{workspace}</span>
           </span>
         ) : null}
-        {kind && kind !== 'user' && kind !== 'employee' && sourceLabel ? (
+        {kind && kind !== "user" && kind !== "employee" && sourceLabel ? (
           <>
-            <span aria-hidden className="text-xs text-muted-foreground/40">·</span>
+            <span aria-hidden className="text-xs text-muted-foreground/40">
+              ·
+            </span>
             <SourceChip kind={kind} label={sourceLabel} />
           </>
         ) : null}
         {updatedAt ? (
           <>
-            <span aria-hidden className="text-xs text-muted-foreground/40">·</span>
-            <span className="truncate text-xs text-muted-foreground" title={updatedAt}>
-              {t('chatTopBar.updatedAt', { time: formatRelativeTime(updatedAt) })}
+            <span aria-hidden className="text-xs text-muted-foreground/40">
+              ·
+            </span>
+            <span
+              className="truncate text-xs text-muted-foreground"
+              title={updatedAt}
+            >
+              {t("chatTopBar.updatedAt", {
+                time: formatRelativeTime(updatedAt),
+              })}
             </span>
           </>
         ) : null}
@@ -155,5 +180,5 @@ export function ChatTopBar({
         ) : null}
       </div>
     </header>
-  )
+  );
 }

@@ -2,8 +2,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tempfile::TempDir;
 
-use crate::runtime::event_bus::RuntimeEventBus;
-use crate::runtime::ids::SessionId;
+use crate::runtime::event_bus::{RuntimeEventBus, RuntimeEventSubscriber};
+use crate::runtime::events::{RuntimeEvent, RuntimeEventKind};
+use crate::runtime::ids::{RunId, SessionId, ToolCallId};
 use crate::runtime::pending::queue_manager::*;
 use crate::runtime::pending::types::*;
 use crate::runtime::run_registry::RuntimeRunRegistry;
@@ -44,14 +45,107 @@ fn sample_item(id: &str) -> PendingItem {
         attachments: vec![],
         skill_command: None,
         received_at: "2026-05-11T03:21:00Z".into(),
+        origin: Default::default(),
+        output_binding: Default::default(),
     }
 }
 
 fn sample_im_item(id: &str) -> PendingItem {
-    PendingItem {
-        source: PendingSource::ImDingtalk,
-        ..sample_item(id)
+    sample_im_item_with_source(id, PendingSource::ImDingtalk)
+}
+
+fn sample_im_item_with_source(id: &str, source: PendingSource) -> PendingItem {
+    let mut item =
+        PendingItem::im_text_for_test(source, format!("text for {id}"), format!("conv-{id}"));
+    item.id = id.into();
+    item
+}
+
+#[tokio::test]
+async fn suspended_session_consumes_im_message_without_queueing() {
+    let tmp = TempDir::new().unwrap();
+    let (mgr, registry) = build_manager(&tmp);
+    let session = SessionId::new("sess-human");
+    let run_id = RunId::new("run-human");
+
+    registry.reserve(session.as_str(), run_id).unwrap();
+    registry
+        .suspend_for_human(session.as_str(), "hi-1")
+        .unwrap();
+
+    let item = PendingItem::im_text_for_test(PendingSource::ImDingtalk, "hello", "conv-1");
+    let outcome = mgr.enqueue_or_send(session.clone(), item).await.unwrap();
+
+    match outcome {
+        EnqueueOutcome::HeldForHumanInteraction { interaction_id } => {
+            assert_eq!(interaction_id.as_deref(), Some("hi-1"));
+        }
+        other => panic!("expected HeldForHumanInteraction, got {other:?}"),
     }
+    assert!(mgr.snapshot(&session).await.is_empty());
+}
+
+#[tokio::test]
+async fn queued_item_can_be_taken_for_late_human_interaction() {
+    let tmp = TempDir::new().unwrap();
+    let (mgr, registry) = build_manager(&tmp);
+    let session = SessionId::new("sess-late-human");
+
+    registry
+        .reserve(session.as_str(), RunId::new("run-before-ask"))
+        .unwrap();
+    mgr.enqueue_or_send(session.clone(), sample_im_item("late-answer"))
+        .await
+        .unwrap();
+
+    let taken = mgr
+        .take_next_for_human_interaction(&session)
+        .await
+        .expect("late queued message should be available to the ask coordinator");
+
+    assert_eq!(taken.id, "late-answer");
+    assert!(mgr.snapshot(&session).await.is_empty());
+}
+
+#[tokio::test]
+async fn queued_item_taken_for_human_interaction_can_be_dispatched_as_new_turn() {
+    let tmp = TempDir::new().unwrap();
+    let registry = Arc::new(RuntimeRunRegistry::new());
+    let bus = Arc::new(RuntimeEventBus::new());
+    let resolver = Arc::new(TempConvDirResolver(tmp.path().to_path_buf()));
+    let dispatcher = Arc::new(CountingDispatcher {
+        count: AtomicUsize::new(0),
+        last_text: tokio::sync::Mutex::new(None),
+        last_skill_id: tokio::sync::Mutex::new(None),
+        last_channel_context: tokio::sync::Mutex::new(None),
+    });
+    let mgr = PendingQueueManager::new(registry.clone(), bus, resolver, PendingConfig::default());
+    mgr.set_dispatcher(dispatcher.clone()).await;
+
+    let session = SessionId::new("sess-late-human-new-turn");
+    let item = sample_im_item("new-topic");
+
+    mgr.dispatch_taken_human_interaction_item_as_new_turn(&session, item)
+        .await
+        .expect("taken item should be dispatched as a fresh turn when the ask is abandoned");
+
+    assert_eq!(dispatcher.count.load(Ordering::SeqCst), 1);
+    let text = dispatcher.last_text.lock().await.clone().unwrap();
+    assert_eq!(text, "text for new-topic");
+}
+
+#[tokio::test]
+async fn drained_im_batch_preserves_output_binding() {
+    let item = PendingItem::im_text_for_test(PendingSource::ImFeishu, "你好", "feishu-chat");
+    let request = crate::runtime::pending::build_request_from_batch_for_test(
+        &SessionId::new("sess-feishu"),
+        vec![item],
+    );
+
+    assert!(matches!(
+        request.output_binding,
+        crate::runtime::human_interaction::OutputBinding::Im { .. }
+    ));
 }
 
 #[tokio::test]
@@ -75,22 +169,163 @@ async fn enqueue_idle_session_returns_sent_directly() {
 }
 
 #[tokio::test]
-async fn enqueue_idle_im_session_sets_mobile_channel_context() {
+async fn second_enqueue_while_direct_dispatch_in_flight_queues() {
     let tmp = TempDir::new().unwrap();
     let (mgr, _registry) = build_manager(&tmp);
-    let session = SessionId::new("conv-im-idle");
-    let outcome = mgr
-        .enqueue_or_send(session.clone(), sample_im_item("im-a"))
+    let session = SessionId::new("conv-direct-in-flight");
+
+    let first = mgr
+        .enqueue_or_send(session.clone(), sample_item("first"))
         .await
         .unwrap();
-    match outcome {
-        EnqueueOutcome::SentDirectly { request } => {
-            assert_eq!(request.content, "text for im-a");
-            let channel_context = request.channel_context.as_deref().unwrap_or_default();
-            assert!(channel_context.contains("IM/移动端渠道"));
-            assert!(channel_context.contains("完整授权链接"));
+    assert!(matches!(first, EnqueueOutcome::SentDirectly { .. }));
+
+    let second = mgr
+        .enqueue_or_send(session.clone(), sample_item("second"))
+        .await
+        .unwrap();
+
+    match second {
+        EnqueueOutcome::Queued { snapshot } => {
+            assert_eq!(snapshot.len(), 1);
+            assert_eq!(snapshot[0].id, "second");
         }
-        other => panic!("expected SentDirectly, got {:?}", other),
+        other => panic!("expected second message to queue behind direct dispatch, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn waiting_permission_event_releases_direct_dispatch_marker() {
+    let tmp = TempDir::new().unwrap();
+    let (mgr, _registry) = build_manager(&tmp);
+    let session = SessionId::new("conv-waiting-permission");
+
+    let first = mgr
+        .enqueue_or_send(session.clone(), sample_item("first"))
+        .await
+        .unwrap();
+    assert!(matches!(first, EnqueueOutcome::SentDirectly { .. }));
+
+    mgr.on_event(&RuntimeEvent::new(
+        session.clone(),
+        RunId::new("run-waiting-permission"),
+        RuntimeEventKind::PermissionAskRequired {
+            tool_call_id: ToolCallId::new("tool-wait"),
+            tool_name: "Read".to_string(),
+            message: "need approval".to_string(),
+            suggestions: vec![],
+            mode: crate::runtime::tools::permission::PermissionMode::Default,
+            remember_options: vec![],
+            default_destination: None,
+            path_auth_scope: None,
+            primary_model: "deepseek-v3".to_string(),
+        },
+    ))
+    .await
+    .unwrap();
+
+    let second = mgr
+        .enqueue_or_send(session.clone(), sample_item("second"))
+        .await
+        .unwrap();
+    assert!(
+        matches!(second, EnqueueOutcome::SentDirectly { .. }),
+        "waiting for permission is not a direct-dispatch in-flight turn"
+    );
+}
+
+#[tokio::test]
+async fn turn_end_gap_keeps_direct_marker_until_drain_is_scheduled() {
+    let tmp = TempDir::new().unwrap();
+    let (mgr, registry) = build_manager(&tmp);
+    let session = SessionId::new("conv-turn-end-gap");
+
+    let first = mgr
+        .enqueue_or_send(session.clone(), sample_item("first"))
+        .await
+        .unwrap();
+    assert!(matches!(first, EnqueueOutcome::SentDirectly { .. }));
+
+    registry
+        .reserve(session.as_str(), RunId::new("run-direct"))
+        .unwrap();
+    registry.clear(session.as_str());
+
+    let second = mgr
+        .enqueue_or_send(session.clone(), sample_item("second"))
+        .await
+        .unwrap();
+    match second {
+        EnqueueOutcome::Queued { snapshot } => {
+            assert_eq!(snapshot.len(), 1);
+            assert_eq!(snapshot[0].id, "second");
+        }
+        other => panic!("expected second message to queue during turn-end gap, got {other:?}"),
+    }
+
+    mgr.schedule_drain(session.clone()).await;
+
+    let third = mgr
+        .enqueue_or_send(session.clone(), sample_item("third"))
+        .await
+        .unwrap();
+    match third {
+        EnqueueOutcome::Queued { snapshot } => {
+            assert_eq!(snapshot.len(), 2);
+            assert_eq!(snapshot[0].id, "second");
+            assert_eq!(snapshot[1].id, "third");
+        }
+        other => panic!("expected third message to queue behind existing queue, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn releasing_failed_direct_dispatch_allows_next_idle_send() {
+    let tmp = TempDir::new().unwrap();
+    let (mgr, _registry) = build_manager(&tmp);
+    let session = SessionId::new("conv-direct-failed");
+
+    let first = mgr
+        .enqueue_or_send(session.clone(), sample_item("first"))
+        .await
+        .unwrap();
+    assert!(matches!(first, EnqueueOutcome::SentDirectly { .. }));
+
+    mgr.release_direct_dispatch(&session).await;
+
+    let second = mgr
+        .enqueue_or_send(session.clone(), sample_item("second"))
+        .await
+        .unwrap();
+    assert!(matches!(second, EnqueueOutcome::SentDirectly { .. }));
+}
+
+#[tokio::test]
+async fn enqueue_idle_im_session_sets_mobile_channel_context() {
+    let tmp = TempDir::new().unwrap();
+    for source in [
+        PendingSource::ImDingtalk,
+        PendingSource::ImFeishu,
+        PendingSource::ImWecom,
+        PendingSource::ImTelegram,
+        PendingSource::ImWechat,
+        PendingSource::ImWhatsapp,
+    ] {
+        let (mgr, _registry) = build_manager(&tmp);
+        let session = SessionId::new(format!("conv-im-idle-{:?}", source));
+        let outcome = mgr
+            .enqueue_or_send(session.clone(), sample_im_item_with_source("im-a", source))
+            .await
+            .unwrap();
+        match outcome {
+            EnqueueOutcome::SentDirectly { request } => {
+                assert_eq!(request.content, "text for im-a");
+                let channel_context = request.channel_context.as_deref().unwrap_or_default();
+                assert!(channel_context.contains("IM/移动端渠道"));
+                assert!(channel_context.contains("完整授权链接"));
+            }
+            other => panic!("expected SentDirectly, got {:?}", other),
+        }
     }
 }
 
@@ -101,7 +336,6 @@ async fn enqueue_idle_but_queue_nonempty_still_queues() {
     let session = SessionId::new("conv-mix");
 
     // Mark busy, enqueue an item
-    use crate::runtime::ids::RunId;
     registry
         .reserve(session.as_str(), RunId::new("run-1"))
         .unwrap();

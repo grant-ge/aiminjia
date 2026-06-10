@@ -19,8 +19,7 @@ pub fn set_log_level(
     level: String,
     global_store: State<'_, Arc<GlobalConfigStore>>,
 ) -> Result<(), String> {
-    let valid = log_level::validate(&level)
-        .ok_or_else(|| format!("invalid log level: {level}"))?;
+    let valid = log_level::validate(&level).ok_or_else(|| format!("invalid log level: {level}"))?;
 
     // Gate log::* macro calls (tracing subscriber passes all levels through).
     log::set_max_level(log_level::to_log_filter(&valid));

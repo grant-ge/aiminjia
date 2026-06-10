@@ -22,11 +22,11 @@ export function ProjectAccordion({
       <button
         type="button"
         onClick={onToggle}
-        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent/40"
+        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm font-medium text-[#636363] transition-colors hover:bg-sidebar-accent/40"
       >
         {expanded
-          ? <FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground" />
-          : <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
+          ? <FolderOpen className="h-4 w-4 shrink-0 text-[#636363]" />
+          : <Folder className="h-4 w-4 shrink-0 text-[#636363]" />
         }
         <span className="truncate">{name}</span>
       </button>

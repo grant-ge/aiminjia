@@ -109,6 +109,8 @@ impl RuntimeTool for AskUserQuestionRuntimeTool {
                 "metadata": input.get("metadata").cloned().unwrap_or(Value::Null),
             }),
             original_request,
+            turn_origin: ctx.turn_origin.clone(),
+            output_binding: ctx.output_binding.clone(),
         };
 
         Err(ToolError::InteractionRequired(Box::new(

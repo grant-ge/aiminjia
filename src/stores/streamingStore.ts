@@ -61,7 +61,7 @@ export interface PendingAsk {
   toolName: string
   message: string
   suggestions: string[] | null
-  mode: 'default' | 'plan' | 'dontAsk'
+  mode: 'default' | 'plan' | 'dontAsk' | 'acceptEdits'
   rememberOptions: Array<'session' | 'workspace' | 'user'> | null
   defaultDestination: 'session' | 'workspace' | 'user' | null
 }
@@ -123,6 +123,7 @@ export interface StreamingState {
     stage: TurnStageKind,
     stageStartedAtMs: number,
   ) => void
+  clearConversationTurnStage: (convId: string) => void
   touchConversationHeartbeat: (convId: string, atMs: number) => void
   setStreaming: (isStreaming: boolean) => void
   setStreamingContent: (content: string) => void
@@ -425,6 +426,23 @@ export function createStreamingSlice<T extends StreamingState & StreamingSliceBr
             stageStartedAt: stageStartedAtMs,
             lastHeartbeatAt: Date.now(),
             turnStartedAt,
+          },
+        }
+        const legacy = deriveLegacy(state.activeConversationId, streamStates)
+        return { streamStates, ...legacy } as Partial<T>
+      }),
+
+    clearConversationTurnStage: (convId) =>
+      apply((state) => {
+        const previous = state.streamStates[convId]
+        if (!previous?.turnStage) return {} as Partial<T>
+        const streamStates = {
+          ...state.streamStates,
+          [convId]: {
+            ...previous,
+            turnStage: null,
+            stageStartedAt: null,
+            lastHeartbeatAt: null,
           },
         }
         const legacy = deriveLegacy(state.activeConversationId, streamStates)

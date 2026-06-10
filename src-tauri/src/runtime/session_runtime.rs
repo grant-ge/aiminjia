@@ -8,6 +8,7 @@ use anyhow::Result;
 // they now live in `runtime::chat` to avoid circular imports.
 use crate::runtime::agent::task_notification::TaskNotificationQueue;
 use crate::runtime::cancellation::{CancellationReason, CancellationToken};
+use crate::runtime::chat::chat_turn_driver::RunActivityController;
 use crate::runtime::chat::compact_client::CompactSummaryClient;
 pub use crate::runtime::chat::ChatTurnRequest;
 use crate::runtime::chat::{RuntimeChatTurnDriver, RuntimeLlmExecutor};
@@ -22,8 +23,9 @@ use crate::runtime::path_auth::{load_path_auth_entries, ToolPermissionContext};
 use crate::runtime::query_engine::QueryEngine;
 use crate::runtime::state::TurnState;
 use crate::runtime::store::{
-    AuthorizedWorkspaceRef, AuthorizedWorkspaceStore, PendingPermissionRequest,
-    PendingPermissionRequestStore, PendingPermissionResolution, PermissionStore, PolicyDecision,
+    AuthorizedWorkspaceRef, AuthorizedWorkspaceStore, PendingPermissionControlPlane,
+    PendingPermissionRequest, PendingPermissionRequestStore, PendingPermissionResolution,
+    PermissionStore, PolicyDecision,
 };
 use crate::runtime::tools::permission::{persist_permission_decision, PermissionDestination};
 use crate::transport::runtime_host::RuntimeHost;
@@ -61,6 +63,7 @@ pub struct SessionRuntime {
     /// (`<aijia_home>/users/{scope}/conversations/{conv_id}`) when building
     /// the per-session QueryEngine.  Optional so tests can omit it.
     host: Option<Arc<dyn RuntimeHost>>,
+    run_activity_controller: Option<Arc<dyn RunActivityController>>,
     /// Compaction backend for auto-compact (P0.2). When `None`, compaction
     /// requests warn-log and return an empty summary.
     compact_client: Option<Arc<dyn CompactSummaryClient>>,
@@ -69,6 +72,74 @@ pub struct SessionRuntime {
     /// When this runtime (or the adapter that wraps it) is dropped, subscribers
     /// automatically become unreachable and are pruned on next bus emit.
     _subscriber_anchors: Vec<Arc<dyn crate::runtime::event_bus::RuntimeEventSubscriber>>,
+}
+
+struct RuntimePermissionControlPlane {
+    pending_permission_store: Arc<PendingPermissionRequestStore>,
+    permission_store: Option<Arc<PermissionStore>>,
+    event_bus: RuntimeEventBus,
+}
+
+impl PendingPermissionControlPlane for RuntimePermissionControlPlane {
+    fn insert_pending_request(
+        &self,
+        request: PendingPermissionRequest,
+    ) -> Result<tokio::sync::oneshot::Receiver<PendingPermissionResolution>> {
+        self.pending_permission_store.insert(request)
+    }
+
+    fn get_pending_request(&self, tool_call_id: &ToolCallId) -> Option<PendingPermissionRequest> {
+        self.pending_permission_store.get(tool_call_id)
+    }
+
+    fn resolve_pending_request(
+        &self,
+        tool_call_id: &ToolCallId,
+        resolution: PendingPermissionResolution,
+    ) -> Result<()> {
+        let pending_request = self.pending_permission_store.get(tool_call_id);
+        self.pending_permission_store
+            .resolve(tool_call_id, resolution.clone())?;
+        if let Some(request) = pending_request.as_ref() {
+            persist_resolved_permission_to_store(
+                self.permission_store.as_deref(),
+                request,
+                &resolution,
+            );
+            let event = crate::runtime::events::RuntimeEvent::new(
+                request.session_id.clone(),
+                request.run_id.clone(),
+                crate::runtime::events::RuntimeEventKind::PermissionAskResolved {
+                    tool_call_id: tool_call_id.clone(),
+                },
+            );
+            let event_bus = self.event_bus.clone();
+            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                handle.spawn(async move {
+                    if let Err(err) = event_bus.emit(event).await {
+                        log::warn!("[permission-control-plane] failed to emit resolved event: {err:#}");
+                    }
+                });
+            } else {
+                self.event_bus.record_only(event);
+            }
+        }
+        Ok(())
+    }
+
+    fn cancel_for_session(&self, session_id: &SessionId, message: &str) -> usize {
+        self.pending_permission_store
+            .cancel_for_session(session_id, message)
+    }
+
+    fn pending_count_for_session(&self, session_id: &SessionId) -> usize {
+        self.pending_permission_store
+            .pending_count_for_session(session_id)
+    }
+
+    fn is_pending(&self, tool_call_id: &ToolCallId) -> bool {
+        self.pending_permission_store.is_pending(tool_call_id)
+    }
 }
 
 impl SessionRuntime {
@@ -91,6 +162,7 @@ impl SessionRuntime {
             lead_idle: None,
             cancellation_registry: None,
             host: None,
+            run_activity_controller: None,
             compact_client: None,
             _subscriber_anchors: Vec::new(),
         }
@@ -124,6 +196,7 @@ impl SessionRuntime {
             lead_idle: None,
             cancellation_registry: None,
             host: None,
+            run_activity_controller: None,
             compact_client: None,
             _subscriber_anchors: Vec::new(),
         }
@@ -165,6 +238,14 @@ impl SessionRuntime {
 
     pub fn with_task_notification_queue(mut self, queue: Arc<TaskNotificationQueue>) -> Self {
         self.task_notification_queue = Some(queue);
+        self
+    }
+
+    pub fn with_run_activity_controller(
+        mut self,
+        controller: Arc<dyn RunActivityController>,
+    ) -> Self {
+        self.run_activity_controller = Some(controller);
         self
     }
 
@@ -281,7 +362,11 @@ impl SessionRuntime {
     pub fn permission_control_plane(
         &self,
     ) -> Arc<dyn crate::runtime::store::PendingPermissionControlPlane> {
-        self.pending_permission_store.clone()
+        Arc::new(RuntimePermissionControlPlane {
+            pending_permission_store: self.pending_permission_store.clone(),
+            permission_store: self.permission_store.clone(),
+            event_bus: self.event_bus.clone(),
+        })
     }
 
     /// 暴露交互控制平面，供 IM 协调器等外部组件使用。
@@ -413,6 +498,20 @@ impl SessionRuntime {
             .cancel_for_session(session_id, message)
     }
 
+    pub fn pending_permission_requests_for_session(
+        &self,
+        session_id: &SessionId,
+    ) -> Vec<crate::runtime::store::PendingPermissionRequest> {
+        self.pending_permission_store.list_for_session(session_id)
+    }
+
+    pub fn pending_permission_request_by_id(
+        &self,
+        tool_call_id: &ToolCallId,
+    ) -> Option<crate::runtime::store::PendingPermissionRequest> {
+        self.pending_permission_store.get(tool_call_id)
+    }
+
     pub fn resolve_interaction_request(
         &self,
         interaction_id: &InteractionId,
@@ -421,6 +520,23 @@ impl SessionRuntime {
         use crate::runtime::interaction::PendingInteractionControlPlane;
         self.pending_interaction_store
             .resolve(interaction_id, resolution)
+    }
+
+    pub fn pending_interaction_requests_for_session(
+        &self,
+        session_id: &SessionId,
+    ) -> Vec<crate::runtime::interaction::InteractionRequest> {
+        use crate::runtime::interaction::PendingInteractionControlPlane;
+        self.pending_interaction_store
+            .pending_for_session(session_id.as_str())
+    }
+
+    pub fn pending_interaction_request_by_id(
+        &self,
+        interaction_id: &InteractionId,
+    ) -> Option<crate::runtime::interaction::InteractionRequest> {
+        use crate::runtime::interaction::PendingInteractionControlPlane;
+        self.pending_interaction_store.get_pending(interaction_id)
     }
 
     pub fn cancel_pending_interaction_requests_for_session(
@@ -662,6 +778,9 @@ impl SessionRuntime {
                 host.resolve_turn_stage_path(conv_id)
             }));
         }
+        if let Some(controller) = self.run_activity_controller.clone() {
+            driver = driver.with_run_activity_controller(controller);
+        }
         // Inject compaction backend (Phase R1.1). When None, the driver
         // warns and returns empty summary — auto-compact is effectively
         // a no-op.
@@ -676,126 +795,11 @@ impl SessionRuntime {
         pending_request: &PendingPermissionRequest,
         resolution: &PendingPermissionResolution,
     ) {
-        let Some(permission_store) = self.permission_store.as_ref() else {
-            return;
-        };
-
-        let (remember, destination, decision) = match resolution {
-            PendingPermissionResolution::Allow {
-                remember,
-                destination,
-                ..
-            } => (*remember, *destination, PolicyDecision::Allow),
-            PendingPermissionResolution::Deny {
-                remember,
-                destination,
-                ..
-            } => (*remember, *destination, PolicyDecision::Deny),
-            PendingPermissionResolution::Cancel { .. } => return,
-        };
-
-        if !remember {
-            return;
-        }
-
-        let destination = destination
-            .or(pending_request.default_destination)
-            .unwrap_or(PermissionDestination::Session);
-
-        // path-auth Ask: route to dedicated PermissionStore methods per §7.8.
-        // Only handles Allow (deny via path_auth Ask is not currently surfaced).
-        if let Some(scope) = pending_request.path_auth_scope.as_ref() {
-            if matches!(decision, PolicyDecision::Allow) {
-                self.persist_path_auth_grant(permission_store, scope, destination);
-                return;
-            }
-            // Deny + path_auth: append_deny_rule is not yet implemented per spec §7.8
-            // (deny rules are only a data structure placeholder in Phase 1-4).
-            // Log explicitly so future implementers see the gap; in-memory deny is
-            // not retained either since path_auth_scope encodes path-level intent
-            // not tool-scope intent.
-            log::info!(
-                "[SessionRuntime] path_auth deny-remember for scope '{}' not persisted: deny path not yet implemented (§7.8)",
-                scope
-            );
-            return;
-        }
-
-        if pending_request.capability_scopes.is_empty() {
-            log::warn!(
-                "[SessionRuntime] Skip persisting permission for '{}' because no capability scopes were captured",
-                pending_request.tool_name
-            );
-            return;
-        }
-
-        persist_permission_decision(
-            permission_store,
-            &pending_request.tool_name,
-            &pending_request.capability_scopes,
-            decision,
-            destination,
+        persist_resolved_permission_to_store(
+            self.permission_store.as_deref(),
+            pending_request,
+            resolution,
         );
-    }
-
-    fn persist_path_auth_grant(
-        &self,
-        store: &PermissionStore,
-        scope: &str,
-        destination: PermissionDestination,
-    ) {
-        log::info!(
-            "[persist_path_auth_grant] scope='{}' destination={:?}",
-            scope,
-            destination
-        );
-        let (kind, path_str) = match scope.split_once(':') {
-            Some((k, p)) => (k, p),
-            None => {
-                log::warn!("[SessionRuntime] malformed path_auth_scope: {}", scope);
-                return;
-            }
-        };
-        let path = std::path::PathBuf::from(path_str);
-        match kind {
-            "path" => {
-                // step-6 Ask → working dir grant
-                log::info!(
-                    "[persist_path_auth_grant] -> append_working_dir({:?}, {})",
-                    destination,
-                    path.display()
-                );
-                if let Err(err) = store.append_working_dir(destination, path) {
-                    log::warn!(
-                        "[SessionRuntime] append_working_dir failed: {} (in-memory grant retained)",
-                        err
-                    );
-                }
-            }
-            "pathwrite" => {
-                // step-4b Ask → write allow_rule grant
-                // Pattern is `<dir>/**` so subsequent writes anywhere under the dir are allowed.
-                let pattern = format!("{}/**", path_str);
-                log::info!(
-                    "[persist_path_auth_grant] -> append_path_allow_rule({:?}, {}, op=Write)",
-                    destination,
-                    pattern
-                );
-                if let Err(err) = store.append_path_allow_rule(
-                    destination,
-                    pattern,
-                    Some(crate::runtime::path_auth::PathOp::Write),
-                ) {
-                    log::warn!(
-                        "[SessionRuntime] append_path_allow_rule failed: {} (in-memory grant retained)",
-                        err
-                    );
-                }
-            }
-            other => {
-                log::warn!("[SessionRuntime] unknown path_auth_scope kind: {}", other);
-            }
-        }
     }
 
     fn ensure_active_session_cancel_root(&self, session_id: &SessionId) -> CancellationToken {
@@ -818,6 +822,138 @@ impl SessionRuntime {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .get(session_id.as_str())
             .cloned()
+    }
+}
+
+fn persist_resolved_permission_to_store(
+    permission_store: Option<&PermissionStore>,
+    pending_request: &PendingPermissionRequest,
+    resolution: &PendingPermissionResolution,
+) {
+    let Some(permission_store) = permission_store else {
+        return;
+    };
+
+    let (remember, destination, decision, path_auth_scope_override) = match resolution {
+        PendingPermissionResolution::Allow {
+            remember,
+            destination,
+            path_auth_scope_override,
+            ..
+        } => (
+            *remember,
+            *destination,
+            PolicyDecision::Allow,
+            path_auth_scope_override.as_ref(),
+        ),
+        PendingPermissionResolution::Deny {
+            remember,
+            destination,
+            ..
+        } => (*remember, *destination, PolicyDecision::Deny, None),
+        PendingPermissionResolution::Cancel { .. } => return,
+    };
+
+    if !remember {
+        return;
+    }
+
+    let destination = destination
+        .or(pending_request.default_destination)
+        .unwrap_or(PermissionDestination::Session);
+
+    // path-auth Ask: route to dedicated PermissionStore methods per §7.8.
+    // Only handles Allow (deny via path_auth Ask is not currently surfaced).
+    let path_auth_scope = path_auth_scope_override.or(pending_request.path_auth_scope.as_ref());
+    if let Some(scope) = path_auth_scope {
+        if matches!(decision, PolicyDecision::Allow) {
+            persist_path_auth_grant_to_store(permission_store, scope, destination);
+            return;
+        }
+        // Deny + path_auth: append_deny_rule is not yet implemented per spec §7.8
+        // (deny rules are only a data structure placeholder in Phase 1-4).
+        // Log explicitly so future implementers see the gap; in-memory deny is
+        // not retained either since path_auth_scope encodes path-level intent
+        // not tool-scope intent.
+        log::info!(
+            "[SessionRuntime] path_auth deny-remember for scope '{}' not persisted: deny path not yet implemented (§7.8)",
+            scope
+        );
+        return;
+    }
+
+    if pending_request.capability_scopes.is_empty() {
+        log::warn!(
+            "[SessionRuntime] Skip persisting permission for '{}' because no capability scopes were captured",
+            pending_request.tool_name
+        );
+        return;
+    }
+
+    persist_permission_decision(
+        permission_store,
+        &pending_request.tool_name,
+        &pending_request.capability_scopes,
+        decision,
+        destination,
+    );
+}
+
+fn persist_path_auth_grant_to_store(
+    store: &PermissionStore,
+    scope: &str,
+    destination: PermissionDestination,
+) {
+    log::info!(
+        "[persist_path_auth_grant] scope='{}' destination={:?}",
+        scope,
+        destination
+    );
+    let (kind, path_str) = match scope.split_once(':') {
+        Some((k, p)) => (k, p),
+        None => {
+            log::warn!("[SessionRuntime] malformed path_auth_scope: {}", scope);
+            return;
+        }
+    };
+    let path = std::path::PathBuf::from(path_str);
+    match kind {
+        "path" => {
+            // step-6 Ask -> working dir grant
+            log::info!(
+                "[persist_path_auth_grant] -> append_working_dir({:?}, {})",
+                destination,
+                path.display()
+            );
+            if let Err(err) = store.append_working_dir(destination, path) {
+                log::warn!(
+                    "[SessionRuntime] append_working_dir failed: {} (in-memory grant retained)",
+                    err
+                );
+            }
+        }
+        "pathwrite" => {
+            // step-4b Ask -> write allow_rule grant.
+            let pattern = format!("{}/**", path_str);
+            log::info!(
+                "[persist_path_auth_grant] -> append_path_allow_rule({:?}, {}, op=Write)",
+                destination,
+                pattern
+            );
+            if let Err(err) = store.append_path_allow_rule(
+                destination,
+                pattern,
+                Some(crate::runtime::path_auth::PathOp::Write),
+            ) {
+                log::warn!(
+                    "[SessionRuntime] append_path_allow_rule failed: {} (in-memory grant retained)",
+                    err
+                );
+            }
+        }
+        other => {
+            log::warn!("[SessionRuntime] unknown path_auth_scope kind: {}", other);
+        }
     }
 }
 
@@ -1170,6 +1306,8 @@ mod tests {
                     purpose: None,
                 },
                 path_auth_scope: None,
+                turn_origin: crate::runtime::human_interaction::TurnOrigin::App,
+                output_binding: crate::runtime::human_interaction::OutputBinding::AppOnly,
             })
             .unwrap();
 
@@ -1182,6 +1320,84 @@ mod tests {
             PendingPermissionResolution::Cancel { ref message }
                 if message.contains("session state was cleared")
         ));
+    }
+
+    #[test]
+    fn pending_request_lookup_helpers_return_cloned_requests_by_id() {
+        use crate::runtime::chat::tool_round_types::RuntimeToolCallRequest;
+        use crate::runtime::interaction::{
+            InMemoryInteractionControlPlane, InteractionKind, InteractionRequest,
+            PendingInteractionControlPlane,
+        };
+
+        let pending_permission_store = Arc::new(PendingPermissionRequestStore::new());
+        let pending_interaction_store = Arc::new(InMemoryInteractionControlPlane::new());
+        let runtime = SessionRuntime::new(QueryEngine::new(), RuntimeEventBus::new())
+            .with_pending_permission_store(pending_permission_store.clone())
+            .with_pending_interaction_store(pending_interaction_store.clone());
+
+        let session_id = SessionId::new("session-lookup");
+        let tool_call_id = ToolCallId::new("tc-lookup");
+        let _permission_rx = pending_permission_store
+            .insert(crate::runtime::store::PendingPermissionRequest {
+                tool_call_id: tool_call_id.clone(),
+                session_id: session_id.clone(),
+                run_id: RunId::new("run-lookup"),
+                tool_name: "Read".to_string(),
+                capability_scopes: vec!["read".to_string()],
+                message: "need permission".to_string(),
+                suggestions: vec!["Allow once".to_string()],
+                mode: PermissionMode::Default,
+                remember_options: vec![PermissionDestination::Session],
+                default_destination: Some(PermissionDestination::Session),
+                original_request: RuntimeToolCallRequest {
+                    tool_call_id: tool_call_id.as_str().to_string(),
+                    tool_name: "Read".to_string(),
+                    args: serde_json::json!({}),
+                    purpose: None,
+                },
+                path_auth_scope: None,
+                turn_origin: crate::runtime::human_interaction::TurnOrigin::App,
+                output_binding: crate::runtime::human_interaction::OutputBinding::AppOnly,
+            })
+            .unwrap();
+
+        let interaction_id = InteractionId::new("ask-lookup");
+        let _interaction_rx = pending_interaction_store
+            .insert_pending(InteractionRequest {
+                interaction_id: interaction_id.clone(),
+                session_id: session_id.clone(),
+                run_id: RunId::new("run-lookup"),
+                tool_call_id: ToolCallId::new("tool-ask"),
+                tool_name: "AskUserQuestion".to_string(),
+                kind: InteractionKind::AskUserQuestion,
+                payload: serde_json::json!({"questions": []}),
+                original_request: RuntimeToolCallRequest {
+                    tool_call_id: "tool-ask".to_string(),
+                    tool_name: "AskUserQuestion".to_string(),
+                    args: serde_json::json!({}),
+                    purpose: None,
+                },
+                turn_origin: crate::runtime::human_interaction::TurnOrigin::App,
+                output_binding: crate::runtime::human_interaction::OutputBinding::AppOnly,
+            })
+            .unwrap();
+
+        assert_eq!(
+            runtime
+                .pending_permission_request_by_id(&tool_call_id)
+                .unwrap()
+                .session_id,
+            session_id
+        );
+        assert_eq!(
+            runtime
+                .pending_interaction_request_by_id(&interaction_id)
+                .unwrap()
+                .run_id
+                .as_str(),
+            "run-lookup"
+        );
     }
 
     #[test]
@@ -1217,6 +1433,8 @@ mod tests {
                     purpose: None,
                 },
                 path_auth_scope: None,
+                turn_origin: crate::runtime::human_interaction::TurnOrigin::App,
+                output_binding: crate::runtime::human_interaction::OutputBinding::AppOnly,
             })
             .unwrap();
 
@@ -1227,6 +1445,8 @@ mod tests {
                     updated_input: None,
                     remember: true,
                     destination: Some(PermissionDestination::Workspace),
+                    message: None,
+                    path_auth_scope_override: None,
                 },
             )
             .unwrap();
@@ -1267,6 +1487,8 @@ mod tests {
                     purpose: None,
                 },
                 path_auth_scope: None,
+                turn_origin: crate::runtime::human_interaction::TurnOrigin::App,
+                output_binding: crate::runtime::human_interaction::OutputBinding::AppOnly,
             })
             .unwrap();
 
@@ -1277,6 +1499,7 @@ mod tests {
                     message: "Denied by user".to_string(),
                     remember: true,
                     destination: None,
+                    path_auth_scope_override: None,
                 },
             )
             .unwrap();
@@ -1316,6 +1539,8 @@ mod tests {
                     purpose: None,
                 },
                 path_auth_scope: Some("path:/Users/example/Docs".to_string()),
+                turn_origin: crate::runtime::human_interaction::TurnOrigin::App,
+                output_binding: crate::runtime::human_interaction::OutputBinding::AppOnly,
             })
             .unwrap();
 
@@ -1326,6 +1551,8 @@ mod tests {
                     updated_input: None,
                     remember: true,
                     destination: Some(PermissionDestination::User),
+                    message: None,
+                    path_auth_scope_override: None,
                 },
             )
             .unwrap();
@@ -1344,6 +1571,133 @@ mod tests {
             permission_store.get_for_scope("read_workspace_file", "custom:test"),
             None,
             "capability_scope path must NOT be taken when path_auth_scope is set"
+        );
+    }
+
+    #[test]
+    fn permanent_allow_with_path_auth_scope_override_persists_override() {
+        let pending_permission_store = Arc::new(PendingPermissionRequestStore::new());
+        let permission_store = Arc::new(crate::runtime::store::PermissionStore::in_memory());
+        let runtime = SessionRuntime::new(QueryEngine::new(), RuntimeEventBus::new())
+            .with_pending_permission_store(pending_permission_store.clone())
+            .with_permission_store(permission_store.clone());
+        let tool_call_id = ToolCallId::new("tool-override");
+
+        let _rx = pending_permission_store
+            .insert(crate::runtime::store::PendingPermissionRequest {
+                tool_call_id: tool_call_id.clone(),
+                session_id: SessionId::new("sess-override"),
+                run_id: RunId::new("run-override"),
+                tool_name: "read_workspace_file".to_string(),
+                capability_scopes: vec![],
+                message: "Allow path?".to_string(),
+                suggestions: vec![],
+                mode: PermissionMode::Default,
+                remember_options: vec![PermissionDestination::User],
+                default_destination: Some(PermissionDestination::User),
+                original_request: crate::runtime::chat::tool_round_types::RuntimeToolCallRequest {
+                    tool_call_id: tool_call_id.as_str().to_string(),
+                    tool_name: "read_workspace_file".to_string(),
+                    args: serde_json::json!({}),
+                    purpose: None,
+                },
+                path_auth_scope: Some("path:/Users/example/Old".to_string()),
+                turn_origin: crate::runtime::human_interaction::TurnOrigin::App,
+                output_binding: crate::runtime::human_interaction::OutputBinding::AppOnly,
+            })
+            .unwrap();
+
+        runtime
+            .resolve_permission_request(
+                &tool_call_id,
+                PendingPermissionResolution::Allow {
+                    updated_input: None,
+                    remember: true,
+                    destination: Some(PermissionDestination::User),
+                    message: None,
+                    path_auth_scope_override: Some("path:/Users/example/New".to_string()),
+                },
+            )
+            .unwrap();
+
+        let entries = crate::runtime::path_auth::load_path_auth_entries(&permission_store);
+        let expected = std::path::PathBuf::from("/Users/example/New");
+        assert!(
+            entries.working_dirs.contains_key(&expected),
+            "override path should be persisted instead of original scope: {:?}",
+            entries.working_dirs
+        );
+    }
+
+    #[test]
+    fn exposed_permission_control_plane_persists_path_auth_allow() {
+        let pending_permission_store = Arc::new(PendingPermissionRequestStore::new());
+        let permission_store = Arc::new(crate::runtime::store::PermissionStore::in_memory());
+        let runtime = SessionRuntime::new(QueryEngine::new(), RuntimeEventBus::new())
+            .with_pending_permission_store(pending_permission_store)
+            .with_permission_store(permission_store.clone());
+        let tool_call_id = ToolCallId::new("tool-control-plane-path-auth");
+        let override_scope = "path:/Users/example/New";
+
+        let _rx = runtime
+            .permission_control_plane()
+            .insert_pending_request(crate::runtime::store::PendingPermissionRequest {
+                tool_call_id: tool_call_id.clone(),
+                session_id: SessionId::new("sess-control-plane-path-auth"),
+                run_id: RunId::new("run-control-plane-path-auth"),
+                tool_name: "read_workspace_file".to_string(),
+                capability_scopes: vec![],
+                message: "Allow path?".to_string(),
+                suggestions: vec![],
+                mode: PermissionMode::Default,
+                remember_options: vec![PermissionDestination::User],
+                default_destination: Some(PermissionDestination::User),
+                original_request: crate::runtime::chat::tool_round_types::RuntimeToolCallRequest {
+                    tool_call_id: tool_call_id.as_str().to_string(),
+                    tool_name: "read_workspace_file".to_string(),
+                    args: serde_json::json!({}),
+                    purpose: None,
+                },
+                path_auth_scope: Some("path:/Users/example/Old".to_string()),
+                turn_origin: crate::runtime::human_interaction::TurnOrigin::App,
+                output_binding: crate::runtime::human_interaction::OutputBinding::AppOnly,
+            })
+            .unwrap();
+
+        runtime
+            .permission_control_plane()
+            .resolve_pending_request(
+                &tool_call_id,
+                PendingPermissionResolution::Allow {
+                    updated_input: None,
+                    remember: true,
+                    destination: Some(PermissionDestination::User),
+                    message: None,
+                    path_auth_scope_override: Some(override_scope.to_string()),
+                },
+            )
+            .unwrap();
+
+        let entries = crate::runtime::path_auth::load_path_auth_entries(&permission_store);
+        assert!(
+            entries
+                .working_dirs
+                .contains_key(&std::path::PathBuf::from("/Users/example/New")),
+            "permission_control_plane resolve should persist path auth grants: {:?}",
+            entries.working_dirs
+        );
+        let events = runtime.event_bus().recorded();
+        assert!(
+            events.iter().any(|event| {
+                matches!(
+                    &event.kind,
+                    crate::runtime::events::RuntimeEventKind::PermissionAskResolved {
+                        tool_call_id: resolved_tool_call_id,
+                    } if resolved_tool_call_id == &tool_call_id
+                )
+            }),
+            "permission_control_plane resolve should record a resolved event: {:?}",
+            events
         );
     }
 
@@ -1376,6 +1730,8 @@ mod tests {
                     purpose: None,
                 },
                 path_auth_scope: Some("pathwrite:/Users/example/Docs".to_string()),
+                turn_origin: crate::runtime::human_interaction::TurnOrigin::App,
+                output_binding: crate::runtime::human_interaction::OutputBinding::AppOnly,
             })
             .unwrap();
 
@@ -1386,6 +1742,8 @@ mod tests {
                     updated_input: None,
                     remember: true,
                     destination: Some(PermissionDestination::User),
+                    message: None,
+                    path_auth_scope_override: None,
                 },
             )
             .unwrap();
@@ -1555,6 +1913,8 @@ mod tests {
                     purpose: None,
                 },
                 path_auth_scope: Some(scope),
+                turn_origin: crate::runtime::human_interaction::TurnOrigin::App,
+                output_binding: crate::runtime::human_interaction::OutputBinding::AppOnly,
             })
             .unwrap();
 
@@ -1566,6 +1926,8 @@ mod tests {
                     updated_input: None,
                     remember: true,
                     destination: Some(PermissionDestination::User),
+                    message: None,
+                    path_auth_scope_override: None,
                 },
             )
             .unwrap();

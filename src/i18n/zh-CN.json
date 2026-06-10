@@ -46,6 +46,15 @@
     "copyConversationId": "复制对话 ID",
     "noHistory": "还没有历史任务",
     "defaultFolder": "默认项目",
+    "conversationLoading": "对话运行中",
+    "status": {
+      "permissionReviewChip": "审核",
+      "permissionReviewTooltip": "等待你审核权限请求",
+      "waitingReplyChip": "等待回复",
+      "waitingReplyTooltip": "等待你回复问题"
+    },
+    "showMoreConversations": "显示更多 {{count}} 个",
+    "collapseConversations": "收起",
     "project": "项目",
     "employeeTab": "员工",
     "expertTeamTab": "专家",
@@ -90,7 +99,16 @@
     "cannotOpen": "无法打开文件",
     "cannotDownload": "无法下载文件",
     "cannotReveal": "无法在文件夹中显示",
-    "fileDownloaded": "已下载文件"
+    "fileDownloaded": "已下载文件",
+    "toolReceipt": {
+      "interactionSubmitted": "已记录你的回答",
+      "interactionAsked": "询问了用户 {{count}} 个问题",
+      "interactionReceived": "收到：{{summary}}",
+      "interactionCancelled": "已忽略补充问题",
+      "permissionApproved": "已允许权限申请",
+      "permissionDenied": "用户拒绝了这个权限申请",
+      "permissionCancelled": "已取消权限申请"
+    }
   },
   "subagent": {
     "resultCard": {
@@ -647,14 +665,66 @@
     "collapse": "收起"
   },
   "userMessage": {
+    "copy": "复制用户消息",
     "expandAll": "展开全部",
     "collapse": "收起"
+  },
+  "pendingAction": {
+    "permission": {
+      "title": "需要你允许我用提升权限只读检查 {{target}} 是否可访问。",
+      "allowOnce": "是",
+      "allowRemember": "是，且对于后续同类操作不再询问",
+      "deny": "否，请告知如何调整",
+      "denyPlaceholder": "例如：不要读取这个目录，改用工作区里的摘要文件。",
+      "skip": "拒绝",
+      "submit": "提交",
+      "allowedFeedback": "用户允许了这个权限申请（{{scope}}）。",
+      "allowScopeSession": "仅本次",
+      "allowScopeWorkspace": "后续同工作区同类操作不再询问",
+      "allowScopeUser": "后续同用户同类操作不再询问",
+      "deniedFeedback": "用户拒绝了这个权限申请",
+      "deniedFeedbackWithUserInput": "用户拒绝了这个权限申请，并给出调整说明：{{feedback}}",
+      "skippedFeedback": "用户跳过了这个权限申请，当前任务已停止。",
+      "denyLooksLikeAllow": "这看起来像是在允许权限。请先选择上面的允许选项，再提交。"
+    },
+    "interaction": {
+      "title": "需要补充信息",
+      "previous": "上一题",
+      "next": "下一题",
+      "progress": "{{current}} of {{total}}",
+      "skip": "忽略",
+      "continue": "继续",
+      "stop": "停止任务",
+      "custom": "其他",
+      "customPlaceholder": "请输入你的调整说明",
+      "validationRequired": "请先回答这一题。",
+      "submittedFeedback": "用户回答了补充问题：{{summary}}",
+      "cancelledFeedback": "用户忽略了这个补充问题。请基于已有信息继续；不要输出空标题、空书名号或空占位符，缺少关键名称时请使用通用名称。"
+    },
+    "tabs": {
+      "label": "待处理事项",
+      "permission": "权限 {{name}}",
+      "question": "问题 {{index}}"
+    },
+    "stalePermission": {
+      "title": "需要恢复任务状态",
+      "messageBefore": "上一次任务停在权限确认阶段：",
+      "messageAfter": "。当前运行时没有找到可继续处理的权限申请，请停止当前任务后重新发送。",
+      "stop": "停止任务"
+    },
+    "staleInteraction": {
+      "title": "需要恢复任务状态",
+      "messageBefore": "上一次任务停在补充问题阶段：",
+      "messageAfter": "。当前运行时没有找到可继续处理的问题，请停止当前任务后重新发送。",
+      "stop": "停止任务"
+    }
   },
   "toolGroupSummary": {
     "bucket": {
       "command": "运行了 {{count}} 个命令",
       "file_read": "读取了 {{count}} 个文件",
       "file_edit": "编辑了 {{count}} 个文件",
+      "interaction": "询问了用户 {{count}} 个问题",
       "search": "搜索了 {{count}} 次",
       "mcp": "调用了 {{count}} 个 MCP 工具",
       "other": "使用了 {{count}} 个工具"
@@ -988,15 +1058,7 @@
     "cronEveryDay": "每天 {{time}}",
     "cronWeekdays": "工作日 {{time}}",
     "cronWeekly": "每周{{days}} {{time}}",
-    "dayNames": [
-      "日",
-      "一",
-      "二",
-      "三",
-      "四",
-      "五",
-      "六"
-    ],
+    "dayNames": ["日", "一", "二", "三", "四", "五", "六"],
     "responsibility": "职责",
     "templateVersion": "模板版本",
     "triggerMethod": "触发方式",
@@ -1196,7 +1258,7 @@
   "channel": {
     "title": "IM 频道",
     "heroTitle": "IM 频道",
-    "heroDesc": "配置 IM 频道，让 AI 小家 接收并回复来自各平台的消息。",
+    "heroDesc": "配置 IM 频道，让 {{productName}} 接收并回复来自各平台的消息。",
     "heroPrivacy": "频道配置信息仅存储在本地，不会上传到云端。",
     "status": {
       "unconfigured": "未配置",

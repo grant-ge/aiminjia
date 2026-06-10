@@ -55,7 +55,12 @@ fn manager_reinstall_repairs_corrupt_current_payload() {
     .expect("valid paths");
     let manager = RuntimeManager::new(paths.clone(), "2026.05.03");
     manager.ensure().expect("initial install");
-    std::fs::remove_file(paths.version_dir("2026.05.03").unwrap().join(current_layout().node()))
+    std::fs::remove_file(
+        paths
+            .version_dir("2026.05.03")
+            .unwrap()
+            .join(current_layout().node()),
+    )
     .expect("corrupt node executable");
 
     assert!(manager.dependencies().is_err());
@@ -78,8 +83,13 @@ fn manager_ensure_rejects_corrupt_already_current_payload() {
     .expect("valid paths");
     let manager = RuntimeManager::new(paths.clone(), "2026.05.06");
     manager.ensure().expect("initial install");
-    std::fs::remove_file(paths.version_dir("2026.05.06").unwrap().join(current_layout().uv()))
-        .expect("corrupt uv executable");
+    std::fs::remove_file(
+        paths
+            .version_dir("2026.05.06")
+            .unwrap()
+            .join(current_layout().uv()),
+    )
+    .expect("corrupt uv executable");
 
     let error = manager
         .ensure()

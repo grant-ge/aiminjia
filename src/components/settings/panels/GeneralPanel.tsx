@@ -51,9 +51,9 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
   }
 
   const FONT_SCALE_OPTIONS: Array<{ value: FontScale; description: string; labelKey: string }> = [
-    { value: 'small', description: '14px', labelKey: 'settings.general.fontSmall' },
-    { value: 'medium', description: '16px', labelKey: 'settings.general.fontMedium' },
-    { value: 'large', description: '18px', labelKey: 'settings.general.fontLarge' },
+    { value: 'small', description: '12px', labelKey: 'settings.general.fontSmall' },
+    { value: 'medium', description: '13px', labelKey: 'settings.general.fontMedium' },
+    { value: 'large', description: '14px', labelKey: 'settings.general.fontLarge' },
   ]
 
   const LANGUAGE_OPTIONS: Array<{ value: AppLanguage; label: string }> = [

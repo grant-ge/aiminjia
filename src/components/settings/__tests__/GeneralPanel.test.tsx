@@ -54,8 +54,11 @@ describe('GeneralPanel', () => {
 
     expect(screen.getByText('字体大小')).toBeInTheDocument()
     expect(screen.getByRole('radio', { name: '小' })).toHaveAttribute('aria-checked', 'false')
+    expect(screen.getByRole('radio', { name: '小' })).toHaveAttribute('title', '12px')
     expect(screen.getByRole('radio', { name: '中' })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('radio', { name: '中' })).toHaveAttribute('title', '13px')
     expect(screen.getByRole('radio', { name: '大' })).toHaveAttribute('aria-checked', 'false')
+    expect(screen.getByRole('radio', { name: '大' })).toHaveAttribute('title', '14px')
 
     fireEvent.click(screen.getByRole('radio', { name: '大' }))
     expect(setFontScale).toHaveBeenCalledWith('large')

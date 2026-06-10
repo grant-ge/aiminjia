@@ -6,6 +6,7 @@ use serde_json::Value;
 use tokio::sync::oneshot;
 
 use crate::runtime::chat::tool_round_types::RuntimeToolCallRequest;
+use crate::runtime::human_interaction::{OutputBinding, TurnOrigin};
 use crate::runtime::ids::{RunId, SessionId, ToolCallId};
 use crate::runtime::tools::permission::{PermissionDestination, PermissionMode};
 
@@ -22,6 +23,8 @@ pub struct PendingPermissionRequest {
     pub remember_options: Vec<PermissionDestination>,
     pub default_destination: Option<PermissionDestination>,
     pub original_request: RuntimeToolCallRequest,
+    pub turn_origin: TurnOrigin,
+    pub output_binding: OutputBinding,
     /// Encodes path-auth persistence kind for §7.8 routing.
     /// - `Some("path:<canonical>")` → step-6 Ask → append_working_dir on "永久"
     /// - `Some("pathwrite:<canonical>")` → step-4b write Ask → append_path_allow_rule(Write)
@@ -35,11 +38,14 @@ pub enum PendingPermissionResolution {
         updated_input: Option<Value>,
         remember: bool,
         destination: Option<PermissionDestination>,
+        message: Option<String>,
+        path_auth_scope_override: Option<String>,
     },
     Deny {
         message: String,
         remember: bool,
         destination: Option<PermissionDestination>,
+        path_auth_scope_override: Option<String>,
     },
     Cancel {
         message: String,
@@ -56,6 +62,14 @@ pub trait PendingPermissionControlPlane: Send + Sync {
         &self,
         request: PendingPermissionRequest,
     ) -> Result<oneshot::Receiver<PendingPermissionResolution>>;
+
+    fn get_pending_request(&self, _tool_call_id: &ToolCallId) -> Option<PendingPermissionRequest> {
+        None
+    }
+
+    fn pending_for_session(&self, _session_id: &SessionId) -> Vec<PendingPermissionRequest> {
+        Vec::new()
+    }
 
     fn resolve_pending_request(
         &self,
@@ -110,6 +124,16 @@ impl PendingPermissionRequestStore {
             .unwrap()
             .get(tool_call_id.as_str())
             .map(|entry| entry.request.clone())
+    }
+
+    pub fn list_for_session(&self, session_id: &SessionId) -> Vec<PendingPermissionRequest> {
+        self.inner
+            .lock()
+            .unwrap()
+            .values()
+            .filter(|entry| entry.request.session_id == *session_id)
+            .map(|entry| entry.request.clone())
+            .collect()
     }
 
     pub fn resolve(
@@ -187,6 +211,14 @@ impl PendingPermissionControlPlane for PendingPermissionRequestStore {
         resolution: PendingPermissionResolution,
     ) -> Result<()> {
         self.resolve(tool_call_id, resolution)
+    }
+
+    fn get_pending_request(&self, tool_call_id: &ToolCallId) -> Option<PendingPermissionRequest> {
+        self.get(tool_call_id)
+    }
+
+    fn pending_for_session(&self, session_id: &SessionId) -> Vec<PendingPermissionRequest> {
+        self.list_for_session(session_id)
     }
 
     fn cancel_for_session(&self, session_id: &SessionId, message: &str) -> usize {

@@ -206,7 +206,11 @@ impl AuthManager {
         self.persist_auth(&cloud_auth)?;
         *self.state.write().await = Some(cloud_auth);
 
-        log::info!("[login] success user={} tenant={}", user.username, tenant.name);
+        log::info!(
+            "[login] success user={} tenant={}",
+            user.username,
+            tenant.name
+        );
         Ok(CloudAuthInfo {
             logged_in: true,
             user: Some(user),

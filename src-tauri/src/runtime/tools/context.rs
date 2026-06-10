@@ -5,6 +5,7 @@ use crate::runtime::agent::{
 };
 use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::hooks::config::HookRegistry;
+use crate::runtime::human_interaction::{OutputBinding, TurnOrigin};
 use crate::runtime::ids::{AgentId, RunId, SessionId, ToolCallId};
 use crate::runtime::store::PermissionStore;
 use crate::runtime::tools::capability::SharedCapabilityContext;
@@ -57,6 +58,8 @@ pub struct ToolExecutionContext {
     pub permission_override: Option<PermissionDecision>,
     /// Permission mode transform applied after the pipeline returns a decision.
     pub permission_mode: PermissionMode,
+    pub turn_origin: TurnOrigin,
+    pub output_binding: OutputBinding,
     /// 可选的 PermissionStore，供工具 check_permissions 做细粒度规则查询。
     pub permission_store: Option<Arc<PermissionStore>>,
     /// Optional session-scoped hooks executed around tool dispatch.
@@ -121,6 +124,8 @@ impl ToolExecutionContext {
             capability: None,
             permission_override: None,
             permission_mode: PermissionMode::Default,
+            turn_origin: TurnOrigin::App,
+            output_binding: OutputBinding::AppOnly,
             permission_store: None,
             hook_registry: None,
             interaction_resolution: None,
@@ -153,6 +158,16 @@ impl ToolExecutionContext {
 
     pub fn with_permission_mode(mut self, mode: PermissionMode) -> Self {
         self.permission_mode = mode;
+        self
+    }
+
+    pub fn with_human_interaction_metadata(
+        mut self,
+        turn_origin: TurnOrigin,
+        output_binding: OutputBinding,
+    ) -> Self {
+        self.turn_origin = turn_origin;
+        self.output_binding = output_binding;
         self
     }
 

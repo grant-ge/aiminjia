@@ -20,4 +20,10 @@ describe('TenantHeader', () => {
     expect(logoWrap?.className).toMatch(/h-7/)
     expect(logoWrap?.className).toMatch(/w-7/)
   })
+
+  it('uses the default cursor even when clickable as a hidden entry', () => {
+    render(<TenantHeader name="X" logoUrl="/app-icon.png" onClick={() => {}} />)
+
+    expect(screen.getByRole('button', { name: /X/ }).className).toContain('!cursor-default')
+  })
 })

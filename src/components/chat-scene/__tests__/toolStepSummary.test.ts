@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 
-import { classifyToolBucket, summarizeToolSteps } from '../toolStepSummary'
+import { classifyToolBucket, isUserInteractionTool, summarizeToolSteps } from '../toolStepSummary'
 import type { RenderToolStep } from '@/hooks/useTurnRenderModel'
 
 function step(name: string, status: RenderToolStep['status'] = 'done'): RenderToolStep {
@@ -32,6 +32,12 @@ describe('classifyToolBucket', () => {
   it('unknown → other', () => {
     expect(classifyToolBucket('FancyTool')).toBe('other')
   })
+
+  it('AskUserQuestion 是用户交互工具，不进入普通工具分类', () => {
+    expect(isUserInteractionTool('AskUserQuestion')).toBe(true)
+    expect(isUserInteractionTool('ask_user_question')).toBe(true)
+    expect(isUserInteractionTool('request_user_input')).toBe(true)
+  })
 })
 
 describe('summarizeToolSteps', () => {
@@ -49,6 +55,26 @@ describe('summarizeToolSteps', () => {
     const r = summarizeToolSteps(steps)
     expect(r.runningCount).toBe(1)
     expect(r.errorCount).toBe(1)
+  })
+
+  it('把 AskUserQuestion 作为用户交互工具聚合', () => {
+    const r = summarizeToolSteps([
+      {
+        ...step('AskUserQuestion'),
+        inputJson: JSON.stringify({
+          questions: [
+            { question: '任务类型？' },
+            { question: '输出格式？' },
+            { question: '优先级？' },
+          ],
+        }),
+      },
+      step('Read'),
+    ])
+    expect(r.buckets).toEqual([
+      { key: 'interaction', count: 3 },
+      { key: 'file_read', count: 1 },
+    ])
   })
 
   it('空列表 → buckets 空', () => {

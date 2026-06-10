@@ -92,6 +92,10 @@ pub struct AppSettings {
     /// 空字符串或 "[]" 视为空列表。**前端限定最多 10 条**：超出时 LRU 截断（新加入的在前，超过 10 截断）。
     #[serde(default)]
     pub ui_home_recent_workspaces: String,
+    /// JSON-stringified map of sidebar project id -> collapsed state.
+    /// User-scoped UI preference; empty string means no collapsed projects.
+    #[serde(default)]
+    pub ui_sidebar_collapsed_projects: String,
     /// Manual context window override (in tokens). When set, takes priority
     /// over model-name-based context window resolution.
     #[serde(default)]
@@ -131,6 +135,7 @@ impl Default for AppSettings {
             chat_width_mode: default_chat_width_mode(),
             ui_home_selected_workspace: String::new(),
             ui_home_recent_workspaces: String::new(),
+            ui_sidebar_collapsed_projects: String::new(),
             context_window: None,
         }
     }
@@ -205,6 +210,10 @@ impl AppSettings {
                 "uiHomeRecentWorkspaces",
                 &defaults.ui_home_recent_workspaces,
             ),
+            ui_sidebar_collapsed_projects: get_str(
+                "uiSidebarCollapsedProjects",
+                &defaults.ui_sidebar_collapsed_projects,
+            ),
             context_window: get_usize_option("contextWindow"),
         }
     }
@@ -259,15 +268,17 @@ mod tests {
         let s = AppSettings::default();
         assert_eq!(s.ui_home_selected_workspace, "");
         assert_eq!(s.ui_home_recent_workspaces, "");
+        assert_eq!(s.ui_sidebar_collapsed_projects, "");
     }
 
     #[test]
-    fn home_workspace_fields_round_trip_through_json() {
+    fn ui_preference_fields_round_trip_through_json() {
         let s = AppSettings {
             ui_home_selected_workspace: r#"{"id":"ws-1","rootPath":"/x","displayName":"x"}"#
                 .to_string(),
             ui_home_recent_workspaces: r#"[{"id":"ws-1","rootPath":"/x","displayName":"x"}]"#
                 .to_string(),
+            ui_sidebar_collapsed_projects: r#"{"default":true}"#.to_string(),
             ..AppSettings::default()
         };
         let json = serde_json::to_string(&s).unwrap();
@@ -279,6 +290,26 @@ mod tests {
         assert_eq!(
             parsed.ui_home_recent_workspaces,
             s.ui_home_recent_workspaces
+        );
+        assert_eq!(
+            parsed.ui_sidebar_collapsed_projects,
+            s.ui_sidebar_collapsed_projects
+        );
+    }
+
+    #[test]
+    fn reads_sidebar_collapsed_projects_from_string_map() {
+        let mut map = HashMap::new();
+        map.insert(
+            "uiSidebarCollapsedProjects".to_string(),
+            r#"{"project-a":true}"#.to_string(),
+        );
+
+        let settings = AppSettings::from_string_map(&map);
+
+        assert_eq!(
+            settings.ui_sidebar_collapsed_projects,
+            r#"{"project-a":true}"#
         );
     }
 

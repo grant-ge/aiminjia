@@ -12,7 +12,8 @@ use tokio::task::JoinHandle;
 use crate::auth::AuthDeactivationHandler;
 use crate::runtime::chat::chat_turn_driver::{ChatAttachmentRef, IM_MOBILE_CHANNEL_CONTEXT};
 use crate::runtime::chat::ChatTurnRequest;
-use crate::runtime::event_bus::RuntimeEventBus;
+use crate::runtime::event_bus::{RuntimeEventBus, RuntimeEventSubscriber};
+use crate::runtime::events::{RuntimeEvent, RuntimeEventKind};
 use crate::runtime::ids::SessionId;
 use crate::runtime::run_registry::RuntimeRunRegistry;
 
@@ -37,6 +38,7 @@ struct SessionPending {
     items: Vec<PendingItem>,
     drain_timer: Option<JoinHandle<()>>,
     recently_drained: VecDeque<(String, Instant)>,
+    direct_in_flight: bool,
 }
 
 impl SessionPending {
@@ -45,6 +47,7 @@ impl SessionPending {
             items: Vec::new(),
             drain_timer: None,
             recently_drained: VecDeque::new(),
+            direct_in_flight: false,
         }
     }
 }
@@ -112,14 +115,25 @@ impl PendingQueueManager {
                 reason: EnqueueRejection::SessionArchived,
             });
         }
+        if self
+            .run_registry
+            .is_session_suspended_for_human(session_id.as_str())
+        {
+            return Ok(EnqueueOutcome::HeldForHumanInteraction {
+                interaction_id: self
+                    .run_registry
+                    .suspended_interaction_id(session_id.as_str()),
+            });
+        }
 
-        // 2. Acquire pending lock FIRST, then check busy inside lock.
+        // 2. Acquire pending lock FIRST, then check busy/direct-in-flight inside lock.
         //
         // Lock ordering invariant (spec §5.3): pending mutex is acquired BEFORE
-        // any query into run_registry. This serializes the "send or queue" decision
-        // and prevents races where two concurrent enqueue calls both think the
-        // session is idle and both return SentDirectly, leading to one caller's
-        // run_registry.reserve() failing and the message being silently dropped.
+        // any query into run_registry. A SentDirectly decision also marks this
+        // session as direct-in-flight until the turn-end drain hook or explicit
+        // failure release clears it. This closes the race where two concurrent
+        // idle enqueue calls both return SentDirectly before the downstream
+        // gateway has reserved the session.
         //
         // Important: the std::sync::MutexGuard is NOT Send, so it must NEVER cross
         // an `.await`. We use a scoped block + enum to extract the decision before
@@ -137,7 +151,8 @@ impl PendingQueueManager {
 
             let busy = self.run_registry.is_session_busy(session_id.as_str());
 
-            if !busy && sp.items.is_empty() {
+            if !busy && sp.items.is_empty() && !sp.direct_in_flight {
+                sp.direct_in_flight = true;
                 Decision::SendDirectly
             } else if sp.items.len() >= self.config.max_queue_per_session {
                 Decision::QueueFull
@@ -189,6 +204,87 @@ impl PendingQueueManager {
         }
     }
 
+    /// Release an idle-path direct dispatch marker when the caller failed before
+    /// the normal turn-end drain hook could run. If messages queued behind this
+    /// marker, schedule an immediate drain so they do not remain stuck.
+    pub async fn release_direct_dispatch(&self, session_id: &SessionId) {
+        let should_drain = {
+            let mut guard = self.inner.lock().expect("pending mutex poisoned");
+            let Some(sp) = guard.get_mut(session_id) else {
+                return;
+            };
+            sp.direct_in_flight = false;
+            !sp.items.is_empty()
+        };
+        if should_drain {
+            self.schedule_drain_immediate(session_id.clone()).await;
+        }
+    }
+
+    /// Remove the earliest queued item so a newly registered human interaction
+    /// can interpret it as the user's reply. This covers the timing gap where an
+    /// IM message arrives while the run is still producing the ask, before the
+    /// ask has been registered in the interaction coordinator.
+    pub async fn take_next_for_human_interaction(
+        &self,
+        session_id: &SessionId,
+    ) -> Option<PendingItem> {
+        let (item, snapshot) = {
+            let mut guard = self.inner.lock().expect("pending mutex poisoned");
+            let sp = guard.get_mut(session_id)?;
+            if sp.items.is_empty() {
+                return None;
+            }
+            let item = sp.items.remove(0);
+            (item, sp.items.clone())
+        };
+
+        if let Some(dir) = self.resolver.conversation_dir(session_id) {
+            let path = dir.join("pending.json");
+            let items_for_write = snapshot.clone();
+            tokio::task::spawn_blocking(move || {
+                if let Err(e) = super::store::write_pending(&path, &items_for_write) {
+                    log::warn!(
+                        "[pending] write_pending after human-interaction take failed: {:#}",
+                        e
+                    );
+                }
+            });
+        }
+
+        let event = crate::runtime::events::RuntimeEvent::new(
+            session_id.clone(),
+            crate::runtime::ids::RunId::new("pending"),
+            crate::runtime::events::RuntimeEventKind::PendingRemoved {
+                item_id: item.id.clone(),
+            },
+        );
+        if let Err(e) = self.event_bus.emit(event).await {
+            log::warn!(
+                "[pending] emit PendingRemoved after human-interaction take failed: {:#}",
+                e
+            );
+        }
+
+        Some(item)
+    }
+
+    /// Dispatch a queued item as a fresh turn after the human interaction router
+    /// decided that the user changed topic instead of answering the ask.
+    pub async fn dispatch_taken_human_interaction_item_as_new_turn(
+        &self,
+        session_id: &SessionId,
+        item: PendingItem,
+    ) -> Result<()> {
+        let dispatcher = self.dispatcher.read().await.clone();
+        let Some(dispatcher) = dispatcher else {
+            anyhow::bail!("[pending] no dispatcher set for human-interaction new turn");
+        };
+        dispatcher
+            .dispatch(build_request_from_single(session_id, item))
+            .await
+    }
+
     pub async fn set_dispatcher(&self, dispatcher: Arc<dyn ChatTurnDispatcher>) {
         *self.dispatcher.write().await = Some(dispatcher);
     }
@@ -215,6 +311,7 @@ impl PendingQueueManager {
         let Some(sp) = guard.get_mut(&session_id) else {
             return;
         };
+        sp.direct_in_flight = false;
         if sp.items.is_empty() {
             return;
         }
@@ -248,6 +345,7 @@ impl PendingQueueManager {
             if sp.items.is_empty() {
                 return;
             }
+            sp.direct_in_flight = false;
             let taken = std::mem::take(&mut sp.items);
             sp.drain_timer = None;
             let now = Instant::now();
@@ -285,19 +383,20 @@ impl PendingQueueManager {
             log::warn!("[pending] emit PendingDrained failed: {:#}", e);
         }
 
-        // 4. Build merged request and dispatch
-        let request = build_request_from_batch(&session_id, items);
         let dispatcher = self.dispatcher.read().await.clone();
         let Some(dispatcher) = dispatcher else {
             log::warn!("[pending] no dispatcher set; drained items dropped");
             return;
         };
-        if let Err(e) = dispatcher.dispatch(request).await {
-            log::error!(
-                "[pending] dispatcher failed for session {}: {:#}",
-                session_id.as_str(),
-                e
-            );
+        for batch in split_items_by_output_binding(items) {
+            let request = build_request_from_batch(&session_id, batch);
+            if let Err(e) = dispatcher.dispatch(request).await {
+                log::error!(
+                    "[pending] dispatcher failed for session {}: {:#}",
+                    session_id.as_str(),
+                    e
+                );
+            }
         }
     }
 
@@ -384,6 +483,20 @@ impl PendingQueueManager {
 }
 
 #[async_trait]
+impl RuntimeEventSubscriber for PendingQueueManager {
+    async fn on_event(&self, event: &RuntimeEvent) -> Result<()> {
+        if matches!(
+            event.kind,
+            RuntimeEventKind::PermissionAskRequired { .. }
+                | RuntimeEventKind::UserInteractionRequired { .. }
+        ) {
+            self.release_direct_dispatch(&event.session_id).await;
+        }
+        Ok(())
+    }
+}
+
+#[async_trait]
 impl AuthDeactivationHandler for PendingQueueManager {
     async fn on_deactivated(&self) {
         self.clear_all();
@@ -409,6 +522,8 @@ fn build_request_from_single(session_id: &SessionId, item: PendingItem) -> ChatT
         .collect();
     let mut req = ChatTurnRequest::new(session_id.clone(), item.text, attachments);
     req.channel_context = channel_context_for_pending_source(item.source);
+    req.turn_origin = item.origin;
+    req.output_binding = item.output_binding;
     req.skill_command = item.skill_command;
     req
 }
@@ -449,8 +564,36 @@ fn build_request_from_batch(session_id: &SessionId, items: Vec<PendingItem>) -> 
     let mut req = ChatTurnRequest::new(session_id.clone(), last_text, last_attachments);
     req.channel_context = channel_context_for_pending_source(last.source);
     req.skill_command = last.skill_command.clone();
+    req.turn_origin = last.origin.clone();
+    req.output_binding = last.output_binding.clone();
     req.pending_batch = Some(items);
     req
+}
+
+fn split_items_by_output_binding(items: Vec<PendingItem>) -> Vec<Vec<PendingItem>> {
+    let mut batches: Vec<Vec<PendingItem>> = Vec::new();
+    for item in items {
+        if let Some(last_batch) = batches.last_mut() {
+            if last_batch
+                .last()
+                .map(|last| last.output_binding == item.output_binding)
+                .unwrap_or(false)
+            {
+                last_batch.push(item);
+                continue;
+            }
+        }
+        batches.push(vec![item]);
+    }
+    batches
+}
+
+#[cfg(test)]
+pub fn build_request_from_batch_for_test(
+    session_id: &SessionId,
+    items: Vec<PendingItem>,
+) -> ChatTurnRequest {
+    build_request_from_batch(session_id, items)
 }
 
 fn channel_context_for_pending_source(source: PendingSource) -> Option<String> {
@@ -458,7 +601,9 @@ fn channel_context_for_pending_source(source: PendingSource) -> Option<String> {
         PendingSource::ImDingtalk
         | PendingSource::ImFeishu
         | PendingSource::ImWecom
-        | PendingSource::ImTelegram => Some(IM_MOBILE_CHANNEL_CONTEXT.to_string()),
+        | PendingSource::ImTelegram
+        | PendingSource::ImWechat
+        | PendingSource::ImWhatsapp => Some(IM_MOBILE_CHANNEL_CONTEXT.to_string()),
         PendingSource::App => None,
     }
 }

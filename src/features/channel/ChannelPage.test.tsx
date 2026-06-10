@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ConfirmDialogHost, useConfirmDialogStore } from '@/components/common/ConfirmDialogHost'
+import { DEFAULTS, useBrandingStore } from '@/stores/brandingStore'
 import { useChannelStore } from '@/stores/channelStore'
 import { useChatStore } from '@/stores/chatStore'
 import { ChannelPage } from './ChannelPage'
@@ -88,6 +89,17 @@ function renderPage(ui = <ChannelPage />) {
 describe('ChannelPage domain UI', () => {
   beforeEach(() => {
     useConfirmDialogStore.setState({ request: null })
+    useBrandingStore.setState({
+      productName: DEFAULTS.productName,
+      productNameEn: DEFAULTS.productNameEn,
+      logoUrl: DEFAULTS.logoUrl,
+      accentColor: DEFAULTS.accentColor,
+      primaryColor: DEFAULTS.primaryColor,
+      bgColor: DEFAULTS.bgColor,
+      sidebarBgColor: DEFAULTS.sidebarBgColor,
+      fontFamily: DEFAULTS.fontFamily,
+      isCustom: false,
+    })
     useChannelStore.setState({
       platforms: { dingtalk: unconfigured, feishu },
       conversations: [],
@@ -122,6 +134,14 @@ describe('ChannelPage domain UI', () => {
     expect(screen.getByRole('button', { name: '配置钉钉' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '更多钉钉配置' })).not.toBeInTheDocument()
     expect(screen.queryByRole('switch', { name: /钉钉/ })).not.toBeInTheDocument()
+  })
+
+  it('uses tenant product name in the hero description', () => {
+    useBrandingStore.setState({ productName: '仁励猫' })
+
+    renderPage()
+
+    expect(screen.getByText(/让 仁励猫 接收并回复来自各平台的消息/)).toBeInTheDocument()
   })
 
   it('shows DingTalk, Feishu, WeChat, and Wecom cards when all are available', () => {

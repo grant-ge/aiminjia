@@ -10,12 +10,13 @@
 import i18n from '@/i18n'
 
 import type { ConversationTreeProject } from './ConversationTree'
+import type { SidebarRowStatus } from './SidebarRowStatusIndicator'
 
 export interface RawConversation {
   id: string
   title: string
   workspaceName?: string | null
-  loading?: boolean
+  status?: SidebarRowStatus
   isPinned?: boolean
 }
 
@@ -39,7 +40,7 @@ export function groupConversationsByProject(
       id: c.id,
       title: c.title,
       active: c.id === activeId,
-      loading: c.loading,
+      status: c.status,
       pinned: c.isPinned ?? false,
     })
   }

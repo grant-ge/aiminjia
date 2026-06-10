@@ -140,6 +140,7 @@ fn runtime_event_new_copies_tool_call_id_for_permission_ask_required() {
             mode: PermissionMode::Plan,
             remember_options: vec![PermissionDestination::Session],
             default_destination: Some(PermissionDestination::Session),
+            path_auth_scope: None,
             primary_model: "deepseek-v3".into(),
         },
     );

@@ -2,8 +2,8 @@
  * @designSource design.pen#1JNrw bubble/adaptive-max-80
  * @sizing r-16 padding [8,12] bg primary fg primary-foreground; align right; max-w 80%
  */
-import { Blocks } from 'lucide-react'
-import { useState } from 'react'
+import { Blocks, Check, Copy } from 'lucide-react'
+import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { UserBubbleMarkdown } from './markdown/UserBubbleMarkdown'
 import { DispatchBanner } from './DispatchBanner'
@@ -30,6 +30,21 @@ export function UserMessageBubble({
 }: UserMessageBubbleProps) {
   const { t } = useTranslation()
   const [expanded, setExpanded] = useState(false)
+  const [copied, setCopied] = useState<'idle' | 'ok' | 'fail'>('idle')
+
+  const handleCopy = useCallback(() => {
+    if (!text) return
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        setCopied('ok')
+        setTimeout(() => setCopied('idle'), 1600)
+      })
+      .catch(() => {
+        setCopied('fail')
+        setTimeout(() => setCopied('idle'), 1600)
+      })
+  }, [text])
 
   // If this is a team event XML message, skip rendering (PeerMessageBanner handles it)
   if (TEAM_EVENT_RE.test((text ?? '').trim())) return null
@@ -52,7 +67,7 @@ export function UserMessageBubble({
   if (!text && !tokenLabel) return null
 
   return (
-    <div className="flex w-full flex-col items-end gap-1.5">
+    <div className="group flex w-full flex-col items-end gap-1.5">
       <div
         data-testid="user-bubble"
         // px-3 = 12px:之前是 16px(走 --user-bubble-padding-x 变量),气泡里
@@ -100,6 +115,31 @@ export function UserMessageBubble({
           </button>
         ) : null}
       </div>
+      {text ? (
+        <div className="flex h-6 items-center justify-end">
+          <button
+            type="button"
+            onClick={handleCopy}
+            className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover:opacity-100 group-focus-within:opacity-100"
+            aria-label={t('userMessage.copy', '复制用户消息')}
+            title={t('userMessage.copy', '复制用户消息')}
+            data-testid="user-message-copy-button"
+          >
+            {copied === 'ok' ? (
+              <Check className="h-3.5 w-3.5" aria-hidden="true" />
+            ) : (
+              <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+            )}
+            <span>
+              {copied === 'ok'
+                ? t('common.copied')
+                : copied === 'fail'
+                  ? t('common.copyFailed')
+                  : t('common.copy')}
+            </span>
+          </button>
+        </div>
+      ) : null}
     </div>
   )
 }

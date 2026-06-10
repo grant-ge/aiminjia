@@ -59,6 +59,15 @@ describe('MessageList layout', () => {
     expect(root).not.toHaveClass('px-6')
   })
 
+  it('keeps a larger vertical gap between user and assistant content inside a turn', () => {
+    const { container } = render(<MessageList />)
+    const root = container.firstElementChild
+    const turn = root?.firstElementChild
+
+    expect(turn).toHaveClass('gap-5')
+    expect(turn).not.toHaveClass('gap-4')
+  })
+
   it('passes the active expert team to the inline team progress block for avatar lookup', () => {
     const { container } = render(<MessageList expertTeamId="marketing" />)
 

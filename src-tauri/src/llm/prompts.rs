@@ -72,6 +72,7 @@ const MEMORY_MECHANICS_SECTION: &str = r#"
 不要保存
 - 可从当前文件直接推导的信息
 - 只在本次对话临时有效的状态
+- 项目记忆不能替代本地文件、命令或工具权限；如果你通过 `WriteMemory` 记录了用户偏好，不要声称已经获得或持久化了文件访问授权，只有系统权限审批通过后才算授权生效
 
 类型约定
 - `user_preference`：用户偏好
@@ -750,6 +751,12 @@ mod tests {
         assert!(
             parts.static_section.contains("SearchMemory"),
             "static section must mention SearchMemory guidance"
+        );
+        assert!(
+            parts
+                .static_section
+                .contains("项目记忆不能替代本地文件、命令或工具权限"),
+            "static section must keep memory distinct from permission grants"
         );
         assert!(
             !parts.static_section.contains("save_memory"),

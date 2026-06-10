@@ -5,9 +5,6 @@ import { AuthGate } from '@/components/auth/AuthGate'
 import { ConfirmDialogHost } from '@/components/common/ConfirmDialogHost'
 import { ToastContainer } from '@/components/common/ToastContainer'
 import { UpdaterPanel } from '@/components/common/UpdaterPanel'
-import { PermissionAskDialog } from '@/components/common/PermissionAskDialog'
-import type { PermissionAskDecision } from '@/components/common/PermissionAskDialog'
-import { AskUserQuestionDialog } from '@/components/interactions/AskUserQuestionDialog'
 import { SettingsModal } from '@/components/settings/SettingsModal'
 import { TitleBar } from '@/components/layout/TitleBar'
 import { NetworkStatusIndicator } from '@/components/shell/NetworkStatusIndicator'
@@ -27,9 +24,6 @@ import { useUpdater } from '@/hooks/useUpdater'
 import { useDragDropListener } from '@/hooks/useDragDropListener'
 import { usePendingEventListener } from '@/hooks/usePendingEventListener'
 import {
-  approvePermissionRequest,
-  cancelPermissionRequest,
-  denyPermissionRequest,
   getConversations,
   getPluginInfo,
   getSettings,
@@ -44,8 +38,6 @@ import { useNotificationStore } from '@/stores/notificationStore'
 import { usePluginStore } from '@/stores/pluginStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useSkillStore } from '@/stores/skillStore'
-import { useStreamingStore } from '@/stores/streamingStore'
-import { useInteractionStore } from '@/stores/interactionStore'
 import { useUiStore } from '@/stores/uiStore'
 import { hydrateHomeStore } from '@/stores/homeStore'
 import { initChannelListeners } from '@/stores/channelStore'
@@ -79,77 +71,21 @@ function RouteSwitch() {
 }
 
 function AppShell() {
-  const pendingAsks = useStreamingStore((s) => s.pendingAsks)
-  const removePendingAsk = useStreamingStore((s) => s.removePendingAsk)
-  const pendingInteractions = useInteractionStore((s) => s.pendingInteractions)
-  const removeInteraction = useInteractionStore((s) => s.removeInteraction)
-  const activeAsk = pendingAsks.size > 0 ? (pendingAsks.values().next().value ?? null) : null
-  const activeInteraction = pendingInteractions[0] ?? null
   useUpdater()
-
-  const handleAllowAsk = async ({ remember, destination }: PermissionAskDecision) => {
-    if (!activeAsk) return
-    const toolCallId = activeAsk.toolCallId
-    removePendingAsk(toolCallId)
-    try {
-      await approvePermissionRequest(toolCallId, null, remember, destination)
-    } catch (err) {
-      console.error('[permission:ask] approve failed', err)
-    }
-  }
-
-  const handleDenyAsk = async ({ remember, destination }: PermissionAskDecision) => {
-    if (!activeAsk) return
-    const toolCallId = activeAsk.toolCallId
-    removePendingAsk(toolCallId)
-    try {
-      await denyPermissionRequest(toolCallId, undefined, remember, destination)
-    } catch (err) {
-      console.error('[permission:ask] deny failed', err)
-    }
-  }
-
-  const handleCancelAsk = async () => {
-    if (!activeAsk) return
-    const toolCallId = activeAsk.toolCallId
-    removePendingAsk(toolCallId)
-    try {
-      await cancelPermissionRequest(toolCallId)
-    } catch (err) {
-      console.error('[permission:ask] cancel failed', err)
-    }
-  }
 
   return (
     <div className="flex h-screen w-screen flex-col bg-background text-foreground">
       <TitleBar />
       <NetworkStatusIndicator />
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 bg-sidebar">
         <AppSidebar />
-        <main
-          className="min-w-0 flex-1 overflow-hidden"
-          style={{ boxShadow: 'var(--shadow-sidebar-edge)' }}
-        >
+        <main className="min-w-0 flex-1 overflow-hidden rounded-l-lg border-l border-t border-border bg-background">
           <RouteSwitch />
         </main>
       </div>
       <SettingsModal />
       <ConfirmDialogHost />
       <ToastContainer />
-      <PermissionAskDialog
-        open={activeAsk !== null}
-        ask={activeAsk}
-        onAllow={handleAllowAsk}
-        onDeny={handleDenyAsk}
-        onCancel={handleCancelAsk}
-      />
-      {activeInteraction ? (
-        <AskUserQuestionDialog
-          interactionId={activeInteraction.interactionId}
-          questions={activeInteraction.payload.questions}
-          onClose={() => removeInteraction(activeInteraction.interactionId)}
-        />
-      ) : null}
       <UpdaterPanel />
     </div>
   )
