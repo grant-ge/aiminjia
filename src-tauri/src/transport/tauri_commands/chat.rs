@@ -2014,12 +2014,16 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
 
         // 第二步：独立计算运行时权限白名单（与 schema 过滤是两回事）
         let runtime_allowed_tools: std::collections::HashSet<String> = match &employee_overrides {
-            Some(ov) if !ov.tool_whitelist.is_empty() => {
-                ov.tool_whitelist.iter().cloned().collect()
-            }
-            _ => crate::runtime::tools::catalog::DAILY_ALLOWED_TOOLS
+            Some(ov) if !ov.tool_whitelist.is_empty() => ov
+                .tool_whitelist
                 .iter()
-                .map(|s| s.to_string())
+                .filter(|tool_name| {
+                    crate::runtime::tools::catalog::tool_available_on_current_platform(tool_name)
+                })
+                .cloned()
+                .collect(),
+            _ => crate::runtime::tools::catalog::daily_allowed_tools_for_current_platform()
+                .map(str::to_string)
                 .collect(),
         };
 
@@ -4139,26 +4143,29 @@ impl TauriChatCommandAdapter {
             Arc::new(TauriRuntimeHost::new(self.services.app.clone()));
         // Capture the current span so auto-title logs share the same trace ID as the chat turn.
         let span = tracing::Span::current();
-        tauri::async_runtime::spawn(async move {
-            if delay_ms > 0 {
-                tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
-            }
-            let needs =
-                conversation_service::should_auto_title(&*db, &conversation_id).unwrap_or(false);
-            if !needs {
+        tauri::async_runtime::spawn(
+            async move {
+                if delay_ms > 0 {
+                    tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                }
+                let needs = conversation_service::should_auto_title(&*db, &conversation_id)
+                    .unwrap_or(false);
+                if !needs {
+                    clear_auto_title_inflight(&conversation_id);
+                    return;
+                }
+                conversation_service::generate_and_set_title(
+                    db,
+                    gateway,
+                    host,
+                    conversation_id.clone(),
+                    settings,
+                )
+                .await;
                 clear_auto_title_inflight(&conversation_id);
-                return;
             }
-            conversation_service::generate_and_set_title(
-                db,
-                gateway,
-                host,
-                conversation_id.clone(),
-                settings,
-            )
-            .await;
-            clear_auto_title_inflight(&conversation_id);
-        }.instrument(span));
+            .instrument(span),
+        );
     }
 
     pub async fn create_conversation(&self) -> Result<String, String> {

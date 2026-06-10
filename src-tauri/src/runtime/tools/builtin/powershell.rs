@@ -6,27 +6,28 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::process::Command;
 
 use crate::runtime::agent::async_task_store::AsyncAgentTaskStore;
 use crate::runtime::agent::task_notification::TaskNotificationQueue;
-use crate::runtime::tools::RuntimeTool;
 use crate::runtime::tools::catalog::TOOL_CATALOG;
 use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::ToolDefinition;
 use crate::runtime::tools::executor::{ToolError, ToolResult};
 use crate::runtime::tools::permission::{PermissionDecision, PermissionReason};
+use crate::runtime::tools::RuntimeTool;
 use crate::storage::process_ext::NoWindowExt;
 
-use super::powershell_detect::{PowerShellLocation, detect};
+use super::powershell_detect::{detect, PowerShellEdition, PowerShellLocation};
 use super::shell_common::{
-    ExitKind, MAX_OUTPUT_BYTES, collect_reader, content_from_output, emit_shell_failure_diagnostic,
-    format_cancel_message, format_command_failure, inject_bundled_runtime_path, inject_trace_env,
+    collect_reader, content_from_output, emit_shell_failure_diagnostic, format_cancel_message,
+    format_command_failure, inject_bundled_runtime_path, inject_trace_env,
     interpret_command_result, kill_child_process_tree, optional_transcript_path,
-    read_merged_streams_with_progress_and_optional_transcript, truncated_to_max_bytes,
+    read_merged_streams_with_progress_and_optional_transcript, truncated_to_max_bytes, ExitKind,
+    MAX_OUTPUT_BYTES,
 };
 use super::workspace::require_workspace_root;
 use crate::runtime::cancellation::wait_for_cancellation;
@@ -114,6 +115,35 @@ fn resolve_timeout_secs(input: &Value) -> u64 {
     secs.min(MAX_TIMEOUT_SECS)
 }
 
+fn edition_guidance(edition: Option<PowerShellEdition>) -> &'static str {
+    match edition {
+        Some(PowerShellEdition::Desktop) => {
+            "PowerShell edition: Windows PowerShell 5.1 (powershell.exe)\
+            \n- `&&` 和 `||` 不可用，会触发 parser error；B 只在 A 成功后运行请写 `A; if ($?) { B }`，无条件顺序执行请写 `A; B`。\
+            \n- 三元运算符 `?:`、null-coalescing `??`、null-conditional `?.` 不可用；请使用 `if/else` 和显式 `$null -eq` 判断。\
+            \n- 避免在原生 exe/cmd 后追加 `2>&1`。PowerShell 5.1 会把 native stderr 包成 ErrorRecord (NativeCommandError)，即使进程 exit code 为 0 也可能让 `$?` 变成 false；本工具已经捕获 stderr。\
+            \n- `Out-File` / `Set-Content` 默认写 UTF-16 LE (with BOM)；写给其他工具读取的文件时请显式传 `-Encoding utf8`。\
+            \n- `ConvertFrom-Json` 返回 PSCustomObject，不是 hashtable；`-AsHashtable` 不可用。\
+            \n- 本工具使用 `-NonInteractive`，不要使用 `Read-Host`、`pause`、`Get-Credential`、`Out-GridView` 或 `$Host.UI.PromptForChoice`。"
+        }
+        Some(PowerShellEdition::Core) => {
+            "PowerShell edition: PowerShell 7+ (pwsh)\
+            \n- `&&` 和 `||` 可用；当 B 只应在 A 成功后运行时，优先使用 `A && B`。\
+            \n- 三元运算符 `$cond ? $a : $b`、null-coalescing `??`、null-conditional `?.` 可用。\
+            \n- 默认文件编码是 UTF-8 without BOM。\
+            \n- 本工具使用 `-NonInteractive`，不要使用 `Read-Host`、`pause`、`Get-Credential`、`Out-GridView` 或 `$Host.UI.PromptForChoice`。"
+        }
+        None => {
+            "PowerShell edition: unknown — assume Windows PowerShell 5.1 for compatibility\
+            \n- 不要使用 `&&`、`||`、三元运算符 `?:`、null-coalescing `??` 或 null-conditional `?.`。\
+            \n- 条件串联请写 `A; if ($?) { B }`，无条件顺序执行请写 `A; B`。\
+            \n- 避免在原生 exe/cmd 后追加 `2>&1`；本工具已经捕获 stderr。\
+            \n- 写给其他工具读取的文件时请显式传 `-Encoding utf8`。\
+            \n- 本工具使用 `-NonInteractive`，不要使用 `Read-Host`、`pause`、`Get-Credential`、`Out-GridView` 或 `$Host.UI.PromptForChoice`。"
+        }
+    }
+}
+
 fn resolve_auto_background_after_secs(input: &Value, timeout_secs: u64) -> Option<u64> {
     let secs = AUTO_BACKGROUND_AFTER_SECS;
     #[cfg(test)]
@@ -153,9 +183,16 @@ impl RuntimeTool for PowerShellTool {
         &self,
         _ctx: &crate::runtime::tools::ToolDescriptionContext,
     ) -> ToolDefinition {
-        TOOL_CATALOG
+        let mut definition = TOOL_CATALOG
             .get("PowerShell")
-            .unwrap_or_else(|| ToolDefinition::new("PowerShell", "Execute PowerShell command"))
+            .unwrap_or_else(|| ToolDefinition::new("PowerShell", "Execute PowerShell command"));
+        let edition = detect().map(|location| location.edition);
+        definition.description = format!(
+            "{}\n\n{}",
+            definition.description,
+            edition_guidance(edition)
+        );
+        definition
     }
 
     fn is_concurrency_safe(&self, _input: &Value) -> bool {
@@ -473,5 +510,22 @@ mod tests {
             .and_then(|def| def.default_timeout_secs)
             .unwrap_or(DEFAULT_TIMEOUT_SECS);
         assert_eq!(resolve_timeout_secs(&json!({})), expected);
+    }
+
+    #[test]
+    fn edition_guidance_matches_detected_powershell_edition() {
+        let desktop = edition_guidance(Some(PowerShellEdition::Desktop));
+        assert!(desktop.contains("Windows PowerShell 5.1"));
+        assert!(desktop.contains("`&&` 和 `||` 不可用"));
+        assert!(desktop.contains("避免在原生 exe/cmd 后追加 `2>&1`"));
+
+        let core = edition_guidance(Some(PowerShellEdition::Core));
+        assert!(core.contains("PowerShell 7+"));
+        assert!(core.contains("`&&` 和 `||` 可用"));
+        assert!(core.contains("UTF-8 without BOM"));
+
+        let unknown = edition_guidance(None);
+        assert!(unknown.contains("assume Windows PowerShell 5.1"));
+        assert!(unknown.contains("避免在原生 exe/cmd 后追加 `2>&1`"));
     }
 }
