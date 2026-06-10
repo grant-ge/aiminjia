@@ -45,13 +45,11 @@ jobs:
             label: macos-universal
             os: macos
             args: '--target universal-apple-darwin'
-            rust_targets: 'aarch64-apple-darwin,x86_64-apple-darwin'
             bundle_dir: 'src-tauri/target/universal-apple-darwin/release/bundle'
           - platform: windows-latest
             label: windows-x64
             os: windows
             args: ''
-            rust_targets: ''
             bundle_dir: 'src-tauri/target/release/bundle'
     steps:
       - name: Checkout repository
@@ -70,8 +68,14 @@ jobs:
 
       - name: Rust setup
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.rust_targets }}
+
+      # Explicitly add the macOS universal targets. The dtolnay `targets:`
+      # input proved unreliable here (only aarch64 ended up installed, so the
+      # universal build failed with "x86_64-apple-darwin is not installed").
+      # An explicit rustup call is deterministic regardless of action/caching.
+      - name: Add Rust targets (macOS universal)
+        if: matrix.os == 'macos'
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
