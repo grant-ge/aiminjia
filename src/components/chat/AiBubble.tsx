@@ -88,7 +88,13 @@ function ContentRenderer({
 }) {
   switch (field) {
     case 'text':
-      return <AssistantMarkdown text={value as string} conversationId={message.conversationId} />
+      return (
+        <AssistantMarkdown
+          text={value as string}
+          conversationId={message.conversationId}
+          generatedFiles={message.content.generatedFiles}
+        />
+      )
 
     case 'tables':
       return (

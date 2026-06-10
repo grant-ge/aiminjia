@@ -4,6 +4,7 @@
 // Migrate to CapabilityContext when the command layer is refactored.
 #![allow(deprecated)]
 use std::collections::HashSet;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -59,6 +60,22 @@ pub(crate) use chat_runtime_impl::build_visible_tool_defs;
 
 static AUTO_TITLE_IN_FLIGHT: Lazy<Mutex<HashSet<String>>> =
     Lazy::new(|| Mutex::new(HashSet::new()));
+
+fn resolve_generated_file_display_path(
+    db: &AppStorage,
+    file_mgr: &FileManager,
+    conversation_id: &str,
+    stored_path: &str,
+) -> PathBuf {
+    let conv_dir = db.base_dir().join("conversations").join(conversation_id);
+    if let Ok(path) = FileManager::resolve_existing_file_under_root(&conv_dir, stored_path) {
+        return path;
+    }
+    if let Ok(path) = file_mgr.resolve_existing_file(stored_path) {
+        return path;
+    }
+    file_mgr.full_path(stored_path)
+}
 
 fn format_agenda_trigger_label(title: &str, planned_fire_at: DateTime<Utc>) -> String {
     let local_fire_at = planned_fire_at.with_timezone(&Local);
@@ -1690,8 +1707,6 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             return Ok(message_id);
         }
 
-        let workspace_path = self.services.file_mgr.workspace_path();
-
         // --- Build content JSON, attaching generated files when present ---
         let mut content_value = if !generated_file_ids.is_empty() {
             match self
@@ -1704,7 +1719,12 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                         .iter()
                         .map(|f| {
                             let stored_path = f["storedPath"].as_str().unwrap_or("");
-                            let full_path = workspace_path.join(stored_path);
+                            let full_path = resolve_generated_file_display_path(
+                                self.services.db().as_ref(),
+                                &self.services.file_mgr,
+                                conversation_id,
+                                stored_path,
+                            );
                             let file_id_str = f["id"].as_str().unwrap_or("");
                             // Look up FileMeta JSON to inject degradation info.
                             // file_metas entries are serde_json::Value serialised from FileMeta.

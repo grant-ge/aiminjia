@@ -37,11 +37,10 @@ impl FileManager {
         *guard = new_path.as_ref().to_path_buf();
     }
 
-    /// Resolve a stored_path to a full path and verify it stays within the workspace.
-    /// Returns an error if the resolved path escapes the workspace directory.
-    fn safe_resolve(&self, stored_path: &str) -> Result<PathBuf> {
-        let ws = self.workspace_path();
-        let joined = ws.join(stored_path);
+    /// Resolve a stored_path to a full path and verify it stays within the given root.
+    /// Returns an error if the resolved path escapes the root directory.
+    fn safe_resolve_under_root(root: &Path, stored_path: &str) -> Result<PathBuf> {
+        let joined = root.join(stored_path);
         // Canonicalize to resolve ../ sequences. If the file doesn't exist yet,
         // canonicalize the parent directory instead.
         let canonical = if joined.exists() {
@@ -57,14 +56,20 @@ impl FileManager {
                 joined.clone()
             }
         };
-        let workspace_canonical = ws.canonicalize().unwrap_or_else(|_| ws.clone());
-        if !canonical.starts_with(&workspace_canonical) {
+        let root_canonical = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+        if !canonical.starts_with(&root_canonical) {
             return Err(anyhow!(
-                "Path traversal rejected: '{}' resolves outside workspace",
+                "Path traversal rejected: '{}' resolves outside storage root",
                 stored_path
             ));
         }
         Ok(canonical)
+    }
+
+    /// Resolve a stored_path to a full path and verify it stays within the workspace.
+    /// Returns an error if the resolved path escapes the workspace directory.
+    fn safe_resolve(&self, stored_path: &str) -> Result<PathBuf> {
+        Self::safe_resolve_under_root(&self.workspace_path(), stored_path)
     }
 
     /// Copy an uploaded file to workspace/uploads/ and return its stored info.
@@ -118,20 +123,42 @@ impl FileManager {
         })
     }
 
-    /// Write content to a file in the workspace. Returns the stored_path relative to workspace.
-    pub fn write_file(&self, subdir: &str, file_name: &str, content: &[u8]) -> Result<FileInfo> {
+    /// Write content to a file under the given root. Returns the stored_path relative to that root.
+    pub fn write_file_under_root(
+        root: impl AsRef<Path>,
+        subdir: &str,
+        file_name: &str,
+        content: &[u8],
+    ) -> Result<FileInfo> {
         crate::storage::safe_filename::ensure_safe_filename(file_name)?;
-        let dest_dir = self.workspace_path().join(subdir);
+        let dest_dir = root.as_ref().join(subdir);
         fs::create_dir_all(&dest_dir)?;
         let dest_path = dest_dir.join(file_name);
         fs::write(&dest_path, content)
             .with_context(|| format!("Failed to write {}", dest_path.display()))?;
 
+        Ok(FileInfo {
+            file_name: file_name.to_string(),
+            stored_path: Path::new(subdir)
+                .join(file_name)
+                .to_string_lossy()
+                .replace('\\', "/"),
+            file_size: content.len() as u64,
+            file_type: Self::file_type_for_name(file_name),
+        })
+    }
+
+    /// Write content to a file in the workspace. Returns the stored_path relative to workspace.
+    pub fn write_file(&self, subdir: &str, file_name: &str, content: &[u8]) -> Result<FileInfo> {
+        Self::write_file_under_root(self.workspace_path(), subdir, file_name, content)
+    }
+
+    fn file_type_for_name(file_name: &str) -> String {
         let ext = Path::new(file_name)
             .extension()
             .map(|e| e.to_string_lossy().to_lowercase())
             .unwrap_or_default();
-        let file_type = match ext.as_str() {
+        match ext.as_str() {
             "xlsx" | "xls" => "excel",
             "html" => "html",
             "pdf" => "pdf",
@@ -149,17 +176,7 @@ impl FileManager {
             "py" => "py",
             _ => "csv",
         }
-        .to_string();
-
-        Ok(FileInfo {
-            file_name: file_name.to_string(),
-            stored_path: Path::new(subdir)
-                .join(file_name)
-                .to_string_lossy()
-                .replace('\\', "/"),
-            file_size: content.len() as u64,
-            file_type,
-        })
+        .to_string()
     }
 
     /// Delete a file from workspace by its stored_path (relative to workspace root).
@@ -174,6 +191,17 @@ impl FileManager {
 
     pub fn resolve_existing_file(&self, stored_path: &str) -> Result<PathBuf> {
         let path = self.safe_resolve(stored_path)?;
+        if !path.is_file() {
+            return Err(anyhow!("Stored file does not exist: {}", stored_path));
+        }
+        Ok(path)
+    }
+
+    pub fn resolve_existing_file_under_root(
+        root: impl AsRef<Path>,
+        stored_path: &str,
+    ) -> Result<PathBuf> {
+        let path = Self::safe_resolve_under_root(root.as_ref(), stored_path)?;
         if !path.is_file() {
             return Err(anyhow!("Stored file does not exist: {}", stored_path));
         }

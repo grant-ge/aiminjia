@@ -34,6 +34,21 @@ fn resolve_stored_path(
     Err("File not found or does not belong to this conversation".to_string())
 }
 
+fn resolve_stored_file_path(
+    db: &AppStorage,
+    file_mgr: &FileManager,
+    conversation_id: &str,
+    stored_path: &str,
+) -> Result<std::path::PathBuf, String> {
+    let conv_dir = db.base_dir().join("conversations").join(conversation_id);
+    if let Ok(path) = FileManager::resolve_existing_file_under_root(&conv_dir, stored_path) {
+        return Ok(path);
+    }
+    file_mgr
+        .resolve_existing_file(stored_path)
+        .map_err(|e| e.to_string())
+}
+
 /// Search workspace subdirectories for a file matching the given name.
 fn find_file_in_workspace(
     file_mgr: &FileManager,
@@ -139,7 +154,8 @@ impl TauriFileCommandAdapter {
         conversation_id: String,
     ) -> Result<(), String> {
         let stored_path = resolve_stored_path(&self.db, &file_id, &conversation_id)?;
-        let full_path = self.file_mgr.full_path(&stored_path);
+        let full_path =
+            resolve_stored_file_path(&self.db, &self.file_mgr, &conversation_id, &stored_path)?;
 
         #[cfg(target_os = "macos")]
         std::process::Command::new("open")
@@ -166,7 +182,8 @@ impl TauriFileCommandAdapter {
         conversation_id: String,
     ) -> Result<(), String> {
         let stored_path = resolve_stored_path(&self.db, &file_id, &conversation_id)?;
-        let full_path = self.file_mgr.full_path(&stored_path);
+        let full_path =
+            resolve_stored_file_path(&self.db, &self.file_mgr, &conversation_id, &stored_path)?;
 
         #[cfg(target_os = "macos")]
         std::process::Command::new("open")

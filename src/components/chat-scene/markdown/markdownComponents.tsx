@@ -2,15 +2,18 @@ import type { Components } from 'react-markdown'
 import { MarkdownCodeBlock } from './MarkdownCodeBlock'
 import { MarkdownTable } from './MarkdownTable'
 import { FileLink, FileImage } from './FileLink'
+import type { GeneratedFile } from '@/types/message'
 
 interface MarkdownComponentOptions {
   conversationId?: string
   workspaceRoot?: string
+  generatedFiles?: GeneratedFile[]
 }
 
 export function createMarkdownComponents({
   conversationId,
   workspaceRoot,
+  generatedFiles,
 }: MarkdownComponentOptions = {}): Components {
   return {
     pre({ children }) {
@@ -21,7 +24,12 @@ export function createMarkdownComponents({
     },
     a({ href, children }) {
       return (
-        <FileLink href={href} conversationId={conversationId} workspaceRoot={workspaceRoot}>
+        <FileLink
+          href={href}
+          conversationId={conversationId}
+          workspaceRoot={workspaceRoot}
+          generatedFiles={generatedFiles}
+        >
           {children}
         </FileLink>
       )
@@ -33,6 +41,7 @@ export function createMarkdownComponents({
           alt={typeof alt === 'string' ? alt : ''}
           conversationId={conversationId}
           workspaceRoot={workspaceRoot}
+          generatedFiles={generatedFiles}
         />
       )
     },
