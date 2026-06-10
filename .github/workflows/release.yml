@@ -57,6 +57,40 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install
 
+      # tauri.conf.json declares `resources/runtime` (+ `resources/dws*`) as
+      # bundle resources, so src-tauri/build.rs FAILS AT COMPILE TIME if these
+      # don't exist on disk. These prep steps must run BEFORE tauri-action.
+      - name: Cache bundled runtime sources
+        uses: actions/cache@v4
+        with:
+          path: .runtime-cache
+          key: runtime-sources-v1-${{ runner.os }}-${{ hashFiles('scripts/runtime-sources.json') }}
+          restore-keys: runtime-sources-v1-${{ runner.os }}-
+
+      - name: Prepare bundled runtime (macOS — both arches for universal)
+        if: matrix.platform == 'macos-latest'
+        run: |
+          PLATFORM=darwin-arm64 bash scripts/prepare-bundled-runtime.sh
+          PLATFORM=darwin-x64  bash scripts/prepare-bundled-runtime.sh
+
+      - name: Prepare bundled runtime (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: .\scripts\prepare-bundled-runtime.ps1
+
+      - name: Setup dws CLI (macOS)
+        if: matrix.platform == 'macos-latest'
+        env:
+          DWS_NONINTERACTIVE: '1'
+        run: bash scripts/setup-dws.sh
+
+      - name: Setup dws CLI (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: .\scripts\setup-dws.ps1
+
       - name: Build the app
         uses: tauri-apps/tauri-action@v0
         env:
