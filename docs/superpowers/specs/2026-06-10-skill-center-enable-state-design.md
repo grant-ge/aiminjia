@@ -160,7 +160,17 @@
 - `enabledSkills`: 只包含 enabled 技能。
 - `setSkillEnabled(skillId, enabled)`: 写入本地状态后 reload。
 
-聊天输入框、SkillPopover、WelcomeScreen、HomeTaskComposerCard 等对话入口不能再直接消费全量 `skills`，必须消费 enabled skills。
+聊天输入框、SkillPopover、WelcomeScreen、HomeTaskComposerCard 等对话入口不能再直接消费全量 `skills`，必须消费 enabled skills。实现时需要逐一检查这些入口：
+
+- `src/components/chat/SkillPopover.tsx`
+- `src/components/chat-scene/ChatBottomArea.tsx`
+- `src/components/home/HomeTaskComposerCard.tsx`
+- `src/components/chat/WelcomeScreen.tsx`
+- `src/components/rich-composer/RichComposer.tsx` 中的 slash 候选或 extension options
+- `src/App.tsx` 启动时直接写入 `useSkillStore.setState({ skills })` 的路径
+- `src/components/chat-scene/DispatchBanner.tsx` 和员工派活相关技能展示，至少要明确是否只展示 enabled 技能
+
+详情页和管理页可以读取全量 `skills`，但“使用”动作必须二次确认目标技能仍然 enabled；已经关闭的技能不能写入 pending skill chip。
 
 ### 技能中心
 
@@ -257,6 +267,8 @@ pub async fn set_skill_enabled(
 
 `list_skills` 和 `get_plugin_info` 也要读取 `SkillEnablementStore`，返回全量技能，并给每个 `SkillInfo` 合并 `enabled` 字段。这里必须是全量列表，不能过滤 disabled，否则“已安装/内置”管理页会看不到被关闭的技能。
 
+如果 `skill_id` 不存在于当前 `SkillRegistry`，`set_skill_enabled` 不能写 `skillsConfig.json`；可以先 refresh registry 再确认一次，仍不存在则返回 unknown。这样避免本地配置被拼写错误或模型生成的假 id 污染。
+
 ### 市场与安装拆分
 
 当前代码已经有 `list_marketplace_skills` 和 `install_marketplace_skill`，但登录后的 `sync_builtin_skills` 会走 `global_sync::sync_skill_packages_from_server`，把服务端列表批量安装到本地。这是上下文膨胀的根因。
@@ -340,12 +352,16 @@ impl SkillRegistry {
 - 更新官方技能：只更新必需内置、已全局安装、已用户安装这三类本地存在或必须存在的技能；未添加的市场技能不因更新动作变成已安装。
 - 卸载技能：从 disabled 列表移除该 id，避免残留状态污染未来同名新技能。
 - 同 id 用户技能 shadow 企业/平台技能：enabled 状态按 skill id 生效，作用于当前有效技能。这个行为简单且符合用户认知：“我关的是这个名字的技能”。
+- `skillsConfig.json` 解析失败或损坏：后端记录 warn，并按默认全开启处理，不能因为配置文件损坏导致聊天完全不可用；下一次成功写入时用 atomic write 修复文件。
+- 跨用户隔离：A 用户关闭某技能不能影响 B 用户；所有启用状态读写必须通过当前 `CurrentUserStorage` scope。
+- `Skill` tool miss-refresh 后也必须再次检查 enablement，不能因为 refresh registry 把 disabled 技能重新变成可加载。
 
 ### 事件刷新与小家内存
 
 关闭或开启技能后，必须同时刷新三处：
 
 - 前端 `useSkillStore.reload()`：刷新技能中心、详情页、聊天输入框技能选择器。
+- 前端 pending skill chip：详情页或市场安装流程写入 chip 前需要读取最新 enabled 状态；如果已关闭，只能先开启再使用。
 - 后端 model catalog：下一次 `get_skill_catalog` 读取最新 enablement state，不依赖旧缓存。
 - `Skill` tool definition：下一次工具定义生成读取最新 enablement state。
 
@@ -384,21 +400,28 @@ impl SkillRegistry {
 - `skillStore`：reload 后保留 enabled 字段，`enabledSkills` 正确过滤。
 - 技能中心：市场卡片不显示开关和已关闭；已安装/内置显示开关。
 - 技能详情：三种状态按钮正确切换。
-- ChatBottomArea / SkillPopover：只展示 enabled 技能。
+- ChatBottomArea / SkillPopover / HomeTaskComposerCard / WelcomeScreen / RichComposer slash：只展示 enabled 技能。
+- App 启动或登录恢复时不能绕过 `skillStore` 的 normalize / enabled 派生逻辑直接写入裸 `skills`。
 
 后端：
 
 - `list_skills` 返回全量技能和 enabled 状态。
 - disabled 配置持久化到 user-scoped `skillsConfig.json` 本地文件。
+- `skillsConfig.json` 损坏时默认全开启并记录 warn；跨用户 scope 不互相污染。
+- `set_skill_enabled` 对 unknown skill 不写文件。
 - `format_full_catalog` 仍保持全量语义；新增 `format_enabled_catalog` 且不包含 disabled 技能。
 - `Skill` tool definition 不包含 disabled id。
 - `Skill` tool execute disabled id 返回 unavailable。
+- `Skill` tool miss-refresh 后仍然拒绝 disabled id。
+- `get_plugin_info` 与 `list_skills` 都返回全量技能并合并 enabled 字段。
 - 登录同步只自动安装 allowlist 内的必需内置技能，例如 `skill-creator` / `dingtalk-workspace`；其他服务端新增技能只进入市场，不自动安装。
 - 必需内置技能默认开启，但用户关闭后同步不能重新开启。
+- 必需内置缺包或下载失败时进入 skipped / missing，不阻塞登录。
 - `sync_builtin_skills` 不再自动安装非 allowlist 服务端新增技能，只更新已安装技能或市场目录缓存。
 - `sync_builtin_skills` 更新用户目录中手动添加的官方/企业技能时，仍写回 `~/.renlijia/users/{scope}/skills/<id>/`，并保留关闭状态。
 - “更新官方技能”后，未添加的市场技能仍不进入 `SkillRegistry`、聊天技能入口或 model catalog。
 - `install_marketplace_skill` 安装成功后默认 enabled，并刷新 registry 与前端 store。
+- import / uninstall / market install 要按状态规则清理 disabled override，避免同名技能未来被残留关闭状态污染。
 - refresh/install/sync/toggle 后 registry、enabled 集合与前端 store 都刷新。
 
 建议验证命令：

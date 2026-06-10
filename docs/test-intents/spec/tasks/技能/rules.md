@@ -18,6 +18,15 @@
 - 场景 8：用户关闭必需内置技能后，后续同步不能自动重新开启
 - 场景 9：市场技能未手动添加前，不进入聊天入口、catalog 或 `Skill` 工具可用集合
 - 场景 10：市场技能手动添加后，默认开启并进入聊天入口、catalog 和 `Skill` 工具可用集合
+- 场景 11：点击“更新官方技能”后，市场里未添加的技能仍然不安装、不进入聊天入口
+- 场景 12：点击“更新官方技能”后，用户已经关闭的内置技能仍保持关闭
+
+## 执行约束：技能启用状态改造
+
+- 意图 16-24 默认依赖这些 `tauri-pilot aijia` 原子命令：`skill-center-open`、`skill-center-tab`、`skill-center-list --json`、`skill-market-list --json`、`skill-center-toggle --id --enabled`、`skill-market-add --id`、`skill-detail-open --id`、`skill-picker-open --json`、`slash-suggestions --query --json`、`sync-builtin-skills`。如果命令缺失，runner 应标记为 `CLI gap`，不能把人工点按当成稳定自动化结果。
+- 意图测试不得删除整个 `~/.renlijia/users/{scope}/skillsConfig.json`。需要准备开关状态时，只能通过产品入口或 CLI 对测试 skill id 设置开启/关闭，避免误删用户对其他技能的偏好。
+- 选择市场测试技能时，必须优先使用 `skill-market-list --json` 中 `installed == false` 的项；如果当前环境没有未添加市场技能，本意图记为环境阻塞/跳过，不要卸载真实用户技能来造数据。
+- 校验模型不可用不能只靠“LLM 没有调用”作为唯一证据；需要同时检查 catalog/技能入口不出现，或使用后端 focused test 证明 `Skill` 工具对 disabled/not-installed id 返回 unavailable。
 
 ---
 
@@ -483,7 +492,7 @@
 
 ---
 
-## 意图 16：关闭技能后，聊天入口隐藏
+## 意图-技能-016：关闭技能后，聊天入口隐藏
 
 **场景**
 用户已经安装了一个技能，但暂时不希望它参与后续对话。用户在技能中心「已安装」页关闭该技能后，技能仍然留在管理列表里，但聊天输入框的技能选择入口不再展示它，关闭状态写入当前登录用户的本地配置文件。
@@ -492,9 +501,8 @@
 1. 应用探活：`tauri-pilot aijia health-check`
 2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
 3. 清理可能残留的测试技能目录：`rm -rf ~/.renlijia/users/{scope}/skills/toggle-hidden-skill`
-4. 删除可能残留的测试配置文件：`rm -f ~/.renlijia/users/{scope}/skillsConfig.json`
-5. 创建目录 `~/.renlijia/users/{scope}/skills/toggle-hidden-skill`
-6. 写入 `~/.renlijia/users/{scope}/skills/toggle-hidden-skill/SKILL.md`：
+4. 创建目录 `~/.renlijia/users/{scope}/skills/toggle-hidden-skill`
+5. 写入 `~/.renlijia/users/{scope}/skills/toggle-hidden-skill/SKILL.md`：
    ```
    ---
    name: toggle-hidden-skill
@@ -503,14 +511,15 @@
 
    当用户要求使用 toggle-hidden-skill 时，回复 `[toggle-hidden-skill] visible`。
    ```
-7. 打开技能中心：`tauri-pilot aijia skill-center-open`
-8. 点击「同步技能」下拉里的「同步本地技能」：`tauri-pilot aijia skill-center-sync --action local`
-9. 切到「已安装」页，等待列表中出现 `toggle-hidden-skill`
-10. 点击 `toggle-hidden-skill` 这一行右侧开关，使它变为关闭
+6. 打开技能中心：`tauri-pilot aijia skill-center-open`
+7. 点击「同步技能」下拉里的「同步本地技能」：`tauri-pilot aijia skill-center-sync --action local`
+8. 切到「已安装」页：`tauri-pilot aijia skill-center-tab --name 已安装`，等待列表中出现 `toggle-hidden-skill`
+9. 先确保测试技能处于开启态：`tauri-pilot aijia skill-center-toggle --id toggle-hidden-skill --enabled true`
+10. 再关闭测试技能：`tauri-pilot aijia skill-center-toggle --id toggle-hidden-skill --enabled false`
 11. 读取技能中心列表快照：`tauri-pilot aijia skill-center-list --json`，记为 `$SKILL_LIST`
 12. 返回首页并新建空对话：`tauri-pilot aijia new-task`
-13. 打开聊天输入框的技能选择入口，读取可选技能快照，记为 `$CHAT_SKILLS`
-14. 在输入框输入 `/toggle`，读取 slash 候选快照，记为 `$SLASH_SKILLS`
+13. 打开聊天输入框的技能选择入口：`tauri-pilot aijia skill-picker-open --json`，记为 `$CHAT_SKILLS`
+14. 在输入框输入 `/toggle` 后读取 slash 候选快照：`tauri-pilot aijia slash-suggestions --query /toggle --json`，记为 `$SLASH_SKILLS`
 
 **验收标准**
 - `~/.renlijia/users/{scope}/skills/toggle-hidden-skill/SKILL.md` 存在
@@ -525,7 +534,7 @@
 
 ---
 
-## 意图 17：关闭技能后，模型不再加载
+## 意图-技能-017：关闭技能后，模型不再加载
 
 **场景**
 用户关闭某个已安装技能后，即使下一轮对话里明确提到这个技能名，模型也不能再通过技能目录或 `Skill` 工具加载它。这个意图验证后端过滤，而不是只验证前端开关样式。
@@ -534,9 +543,8 @@
 1. 应用探活：`tauri-pilot aijia health-check`
 2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
 3. 清理可能残留的测试技能目录：`rm -rf ~/.renlijia/users/{scope}/skills/toggle-runtime-skill`
-4. 删除可能残留的测试配置文件：`rm -f ~/.renlijia/users/{scope}/skillsConfig.json`
-5. 创建目录 `~/.renlijia/users/{scope}/skills/toggle-runtime-skill`
-6. 写入 `~/.renlijia/users/{scope}/skills/toggle-runtime-skill/SKILL.md`：
+4. 创建目录 `~/.renlijia/users/{scope}/skills/toggle-runtime-skill`
+5. 写入 `~/.renlijia/users/{scope}/skills/toggle-runtime-skill/SKILL.md`：
    ```
    ---
    name: toggle-runtime-skill
@@ -545,10 +553,11 @@
 
    当用户要求使用 toggle-runtime-skill 时，只能回复 `[toggle-runtime-skill] loaded`。
    ```
-7. 打开技能中心：`tauri-pilot aijia skill-center-open`
-8. 点击「同步技能」下拉里的「同步本地技能」：`tauri-pilot aijia skill-center-sync --action local`
-9. 切到「已安装」页，等待列表中出现 `toggle-runtime-skill`
-10. 点击 `toggle-runtime-skill` 这一行右侧开关，使它变为关闭
+6. 打开技能中心：`tauri-pilot aijia skill-center-open`
+7. 点击「同步技能」下拉里的「同步本地技能」：`tauri-pilot aijia skill-center-sync --action local`
+8. 切到「已安装」页：`tauri-pilot aijia skill-center-tab --name 已安装`，等待列表中出现 `toggle-runtime-skill`
+9. 先确保测试技能处于开启态：`tauri-pilot aijia skill-center-toggle --id toggle-runtime-skill --enabled true`
+10. 再关闭测试技能：`tauri-pilot aijia skill-center-toggle --id toggle-runtime-skill --enabled false`
 11. 新建空对话：`tauri-pilot aijia new-task`，记当前会话为 `$CONV_ID`
 12. 输入：`请使用 toggle-runtime-skill 技能回应，只要加载成功就输出它要求的固定文本。`
 13. `tauri-pilot aijia send` + `tauri-pilot aijia wait-reply --timeout 90`
@@ -564,7 +573,7 @@
 
 ---
 
-## 意图 18：回到市场后，只显示添加状态
+## 意图-技能-018：回到市场后，只显示添加状态
 
 **场景**
 用户在「已安装」页关闭一个企业下发或平台可添加的技能后，回到「市场」页查看同一个技能。市场卡片只表达「可添加 / 已添加」和进入详情，不展示关闭开关、不展示「已关闭」标签，也不出现「去对话」之类的额外入口。
@@ -573,12 +582,12 @@
 1. 应用探活：`tauri-pilot aijia health-check`
 2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
 3. 打开技能中心：`tauri-pilot aijia skill-center-open`
-4. 切到「市场」页，读取市场列表快照：`tauri-pilot aijia skill-market-list --json`，选择一个可添加或已添加的技能，记为 `$MARKET_SKILL_ID` 与 `$MARKET_SKILL_NAME`
-5. 如果 `$MARKET_SKILL_ID` 未添加，点击该卡片右上角「+」完成添加
-6. 切到「已安装」页，等待列表中出现 `$MARKET_SKILL_ID`
-7. 点击 `$MARKET_SKILL_ID` 这一行右侧开关，使它变为关闭
-8. 切回「市场」页，定位 `$MARKET_SKILL_ID` 对应卡片
-9. 点击 `$MARKET_SKILL_ID` 对应卡片进入详情页
+4. 切到「市场」页：`tauri-pilot aijia skill-center-tab --name 市场`，读取市场列表快照：`tauri-pilot aijia skill-market-list --json`，选择一个可添加或已添加的技能，记为 `$MARKET_SKILL_ID` 与 `$MARKET_SKILL_NAME`
+5. 如果 `$MARKET_SKILL_ID` 未添加，通过 `tauri-pilot aijia skill-market-add --id $MARKET_SKILL_ID` 完成添加
+6. 切到「已安装」页：`tauri-pilot aijia skill-center-tab --name 已安装`，等待列表中出现 `$MARKET_SKILL_ID`
+7. 关闭该技能：`tauri-pilot aijia skill-center-toggle --id $MARKET_SKILL_ID --enabled false`
+8. 切回「市场」页：`tauri-pilot aijia skill-center-tab --name 市场`，定位 `$MARKET_SKILL_ID` 对应卡片
+9. 点击 `$MARKET_SKILL_ID` 对应卡片进入详情页：`tauri-pilot aijia skill-detail-open --id $MARKET_SKILL_ID`
 
 **验收标准**
 - 市场页 `$MARKET_SKILL_ID` 卡片可见
@@ -594,7 +603,7 @@
 
 ---
 
-## 意图 19：登录同步后，内置技能默认开启
+## 意图-技能-019：登录同步后，内置技能默认开启
 
 **场景**
 用户登录后，AI 小家会确保产品必需的内置基础技能存在，例如创建技能能力和钉钉工作台技能包装层。它们不是市场技能，不需要用户先点「+」；在用户没有手动关闭过这些技能时，它们应当已安装并处于开启状态。钉钉能力的真实 skill id 是 `dingtalk-workspace`，`dws` 只是 CLI/展示 shorthand。
@@ -603,11 +612,12 @@
 1. 应用探活：`tauri-pilot aijia health-check`
 2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
 3. 触发登录后的内置技能同步：`tauri-pilot aijia sync-builtin-skills`
-4. 打开技能中心：`tauri-pilot aijia skill-center-open`
-5. 切到「内置」页
-6. 读取技能中心列表快照：`tauri-pilot aijia skill-center-list --json`，记为 `$SKILL_LIST`
-7. 返回首页并新建空对话：`tauri-pilot aijia new-task`
-8. 打开聊天输入框的技能选择入口，读取可选技能快照，记为 `$CHAT_SKILLS`
+4. 如果同步结果显示 `skill-creator` 或 `dingtalk-workspace` 在 `skipped` 中，记录为环境阻塞，不继续断言默认开启
+5. 打开技能中心：`tauri-pilot aijia skill-center-open`
+6. 切到「内置」页：`tauri-pilot aijia skill-center-tab --name 内置`
+7. 读取技能中心列表快照：`tauri-pilot aijia skill-center-list --json`，记为 `$SKILL_LIST`
+8. 返回首页并新建空对话：`tauri-pilot aijia new-task`
+9. 打开聊天输入框的技能选择入口：`tauri-pilot aijia skill-picker-open --json`，记为 `$CHAT_SKILLS`
 
 **验收标准**
 - `$SKILL_LIST` 中存在 `id == "skill-creator"` 的技能项
@@ -622,7 +632,7 @@
 
 ---
 
-## 意图 20：关闭内置后，同步保持关闭
+## 意图-技能-020：关闭内置后，同步保持关闭
 
 **场景**
 用户可以关闭内置基础技能。关闭后即使再次触发登录同步或更新技能，系统也只能确保技能文件存在，不能覆盖用户关闭选择。
@@ -632,12 +642,12 @@
 2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
 3. 触发登录后的内置技能同步：`tauri-pilot aijia sync-builtin-skills`
 4. 打开技能中心：`tauri-pilot aijia skill-center-open`
-5. 切到「内置」页，等待列表中出现 `dingtalk-workspace`
-6. 点击 `dingtalk-workspace` 这一行右侧开关，使它变为关闭
+5. 切到「内置」页：`tauri-pilot aijia skill-center-tab --name 内置`，等待列表中出现 `dingtalk-workspace`
+6. 关闭 `dingtalk-workspace`：`tauri-pilot aijia skill-center-toggle --id dingtalk-workspace --enabled false`
 7. 再次触发内置技能同步：`tauri-pilot aijia sync-builtin-skills`
 8. 读取技能中心列表快照：`tauri-pilot aijia skill-center-list --json`，记为 `$SKILL_LIST`
 9. 返回首页并新建空对话：`tauri-pilot aijia new-task`
-10. 打开聊天输入框的技能选择入口，读取可选技能快照，记为 `$CHAT_SKILLS`
+10. 打开聊天输入框的技能选择入口：`tauri-pilot aijia skill-picker-open --json`，记为 `$CHAT_SKILLS`
 
 **验收标准**
 - `~/.renlijia/users/{scope}/skillsConfig.json` 中 `disabledSkillIds` 包含 `dingtalk-workspace`
@@ -649,7 +659,7 @@
 
 ---
 
-## 意图 21：未添加市场技能，聊天不可使用
+## 意图-技能-021：未添加市场技能，聊天不可使用
 
 **场景**
 市场里的企业/平台技能默认只是可发现目录，不是已安装技能。用户未点击「+」之前，它不能进入聊天输入框，也不能进入模型可用技能目录；即使用户直接在对话里念技能 id，`Skill` 工具也不能加载它。
@@ -658,10 +668,10 @@
 1. 应用探活：`tauri-pilot aijia health-check`
 2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
 3. 打开技能中心：`tauri-pilot aijia skill-center-open`
-4. 切到「市场」页，读取市场列表快照：`tauri-pilot aijia skill-market-list --json`，选择一个 `installed == false` 的技能，记为 `$MARKET_ONLY_ID`
+4. 切到「市场」页：`tauri-pilot aijia skill-center-tab --name 市场`，读取市场列表快照：`tauri-pilot aijia skill-market-list --json`，选择一个 `installed == false` 的技能，记为 `$MARKET_ONLY_ID`；如果没有这样的技能，本意图记为环境阻塞/跳过
 5. 读取技能中心列表快照：`tauri-pilot aijia skill-center-list --json`，记为 `$SKILL_LIST`
 6. 返回首页并新建空对话：`tauri-pilot aijia new-task`，记当前会话为 `$CONV_ID`
-7. 打开聊天输入框的技能选择入口，读取可选技能快照，记为 `$CHAT_SKILLS`
+7. 打开聊天输入框的技能选择入口：`tauri-pilot aijia skill-picker-open --json`，记为 `$CHAT_SKILLS`
 8. 在输入框输入：`请使用 $MARKET_ONLY_ID 技能回应一下。`
 9. `tauri-pilot aijia send` + `tauri-pilot aijia wait-reply --timeout 90`
 10. 读取 `$CONV_ID/messages.jsonl`
@@ -677,7 +687,7 @@
 
 ---
 
-## 意图 22：添加市场技能后，聊天可使用
+## 意图-技能-022：添加市场技能后，聊天可使用
 
 **场景**
 市场里的企业/平台技能默认不可用。用户点击某个市场技能卡片右上角「+」完成添加后，该技能进入已安装集合并默认开启，随后聊天输入框可以选择它，新对话也可以通过 `Skill` 工具加载它。
@@ -686,11 +696,11 @@
 1. 应用探活：`tauri-pilot aijia health-check`
 2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
 3. 打开技能中心：`tauri-pilot aijia skill-center-open`
-4. 切到「市场」页，读取市场列表快照：`tauri-pilot aijia skill-market-list --json`，选择一个 `installed == false` 的技能，记为 `$MARKET_INSTALL_ID`
-5. 点击 `$MARKET_INSTALL_ID` 卡片右上角「+」，等待安装完成
+4. 切到「市场」页：`tauri-pilot aijia skill-center-tab --name 市场`，读取市场列表快照：`tauri-pilot aijia skill-market-list --json`，选择一个 `installed == false` 的技能，记为 `$MARKET_INSTALL_ID`；如果没有这样的技能，本意图记为环境阻塞/跳过
+5. 添加市场技能：`tauri-pilot aijia skill-market-add --id $MARKET_INSTALL_ID`，等待安装完成
 6. 读取技能中心列表快照：`tauri-pilot aijia skill-center-list --json`，记为 `$SKILL_LIST`
 7. 返回首页并新建空对话：`tauri-pilot aijia new-task`，记当前会话为 `$CONV_ID`
-8. 打开聊天输入框的技能选择入口，读取可选技能快照，记为 `$CHAT_SKILLS`
+8. 打开聊天输入框的技能选择入口：`tauri-pilot aijia skill-picker-open --json`，记为 `$CHAT_SKILLS`
 9. 在输入框输入：`请使用 $MARKET_INSTALL_ID 技能回应一下。`
 10. `tauri-pilot aijia send` + `tauri-pilot aijia wait-reply --timeout 90`
 11. 读取 `$CONV_ID/messages.jsonl`
@@ -707,7 +717,7 @@
 
 ---
 
-## 意图 23：更新官方后，未添加不安装
+## 意图-技能-023：更新官方后，未添加不安装
 
 **场景**
 用户点击“更新官方技能”时，市场里的未添加技能仍然只是可发现目录。更新动作只能更新必需内置和本地已安装技能，不能把未添加的企业/平台技能安装进本地，也不能让它进入聊天可用技能列表。
@@ -716,12 +726,12 @@
 1. 应用探活：`tauri-pilot aijia health-check`
 2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
 3. 打开技能中心：`tauri-pilot aijia skill-center-open`
-4. 切到「市场」页，读取市场列表快照：`tauri-pilot aijia skill-market-list --json`，选择一个 `installed == false` 的技能，记为 `$MARKET_UPDATE_ONLY_ID`
+4. 切到「市场」页：`tauri-pilot aijia skill-center-tab --name 市场`，读取市场列表快照：`tauri-pilot aijia skill-market-list --json`，选择一个 `installed == false` 的技能，记为 `$MARKET_UPDATE_ONLY_ID`；如果没有这样的技能，本意图记为环境阻塞/跳过
 5. 触发更新官方技能：`tauri-pilot aijia sync-builtin-skills`
 6. 再次读取市场列表快照：`tauri-pilot aijia skill-market-list --json`，记为 `$MARKET_AFTER`
 7. 读取技能中心列表快照：`tauri-pilot aijia skill-center-list --json`，记为 `$SKILL_LIST`
 8. 返回首页并新建空对话：`tauri-pilot aijia new-task`，记当前会话为 `$CONV_ID`
-9. 打开聊天输入框的技能选择入口，读取可选技能快照，记为 `$CHAT_SKILLS`
+9. 打开聊天输入框的技能选择入口：`tauri-pilot aijia skill-picker-open --json`，记为 `$CHAT_SKILLS`
 10. 在输入框输入：`请使用 $MARKET_UPDATE_ONLY_ID 技能回应一下。`
 11. `tauri-pilot aijia send` + `tauri-pilot aijia wait-reply --timeout 90`
 12. 读取 `$CONV_ID/messages.jsonl`
@@ -738,7 +748,7 @@
 
 ---
 
-## 意图 24：更新官方后，关闭仍保留
+## 意图-技能-024：更新官方后，关闭仍保留
 
 **场景**
 用户关闭内置技能后，再点击“更新官方技能”，系统可以更新技能文件，但不能重新打开该技能。关闭状态仍写在当前登录用户的 `skillsConfig.json`，聊天输入框和模型技能目录也不能出现它。
@@ -748,12 +758,12 @@
 2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
 3. 触发登录后的内置技能同步：`tauri-pilot aijia sync-builtin-skills`
 4. 打开技能中心：`tauri-pilot aijia skill-center-open`
-5. 切到「内置」页，等待列表中出现 `dingtalk-workspace`
-6. 点击 `dingtalk-workspace` 这一行右侧开关，使它变为关闭
+5. 切到「内置」页：`tauri-pilot aijia skill-center-tab --name 内置`，等待列表中出现 `dingtalk-workspace`
+6. 关闭 `dingtalk-workspace`：`tauri-pilot aijia skill-center-toggle --id dingtalk-workspace --enabled false`
 7. 触发更新官方技能：`tauri-pilot aijia sync-builtin-skills`
 8. 读取技能中心列表快照：`tauri-pilot aijia skill-center-list --json`，记为 `$SKILL_LIST`
 9. 返回首页并新建空对话：`tauri-pilot aijia new-task`，记当前会话为 `$CONV_ID`
-10. 打开聊天输入框的技能选择入口，读取可选技能快照，记为 `$CHAT_SKILLS`
+10. 打开聊天输入框的技能选择入口：`tauri-pilot aijia skill-picker-open --json`，记为 `$CHAT_SKILLS`
 11. 在输入框输入：`请使用 dingtalk-workspace 技能回应一下。`
 12. `tauri-pilot aijia send` + `tauri-pilot aijia wait-reply --timeout 90`
 13. 读取 `$CONV_ID/messages.jsonl`

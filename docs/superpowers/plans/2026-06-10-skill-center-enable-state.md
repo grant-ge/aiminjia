@@ -20,6 +20,19 @@ Do not implement unrelated skill permission policy, rating, ranking, or marketpl
 
 ---
 
+## Subagent Gap Addendum
+
+This plan incorporates the 2026-06-10 userwiki cross-check from four independent agents:
+
+- Frontend entrypoints: `SkillPopover`, `ChatBottomArea`, `HomeTaskComposerCard`, `WelcomeScreen`, `RichComposer`, `App.tsx` initial hydration, `DispatchBanner`, and employee dispatch labels.
+- Backend enablement: corrupted `skillsConfig.json` must default to enabled; unknown skill ids must not write state; user scopes must be isolated.
+- Runtime enforcement: `get_skill_catalog`, `Skill` tool definition, and `Skill` tool execute must all consume enabled view. A miss-refresh retry must not bypass disabled state.
+- Sync/install: marketplace install currently writes user dir but must also clear override and refresh registry; official sync must not install non-allowlist packages and must update user-installed packages in user root.
+- Intent tests: do not delete the entire user `skillsConfig.json`; use deterministic enable/disable commands for specific ids. AEIT should not run until required `tauri-pilot aijia` commands exist.
+- Wiki writeback: after implementation is validated, create a dedicated RepoWiki/enhancement writeback for skill enablement and marketplace sync boundaries.
+
+---
+
 ## File Structure
 
 Backend core:
@@ -69,10 +82,20 @@ Frontend data and UI:
   - Adds `enabledSkills`, `setSkillEnabled`, marketplace install wrapper.
 - Modify `src/components/auth/AuthGate.tsx`
   - Listens to `skill:enablement-changed`.
+- Modify `src/App.tsx`
+  - Avoids bypassing skillStore normalization when hydrating initial plugin skills.
 - Modify `src/components/chat/SkillPopover.tsx`
   - Uses enabled skills only.
 - Modify `src/components/chat-scene/ChatBottomArea.tsx`
   - Uses enabled skills for slash tokens and picker.
+- Modify `src/components/home/HomeTaskComposerCard.tsx`
+  - Uses enabled skills and validates pending skill before insertion.
+- Modify `src/components/chat/WelcomeScreen.tsx`
+  - Uses enabled skills for shortcuts and welcome suggestions.
+- Modify `src/components/rich-composer/RichComposer.tsx` if slash options cache skill commands.
+  - Ensures slash suggestions refresh when enabled skills change.
+- Review `src/components/chat-scene/DispatchBanner.tsx` and employee dispatch skill labels.
+  - Decide whether closed skills should be hidden or displayed only as historical labels.
 - Modify `src/features/skill-detail/SkillDetailPage.tsx`
   - Implements `使用 / 关闭 / 开启并使用 / 保持关闭`.
 - Modify `src/features/skill-center/SkillCenterPage.tsx`
@@ -175,6 +198,11 @@ mod tests {
     }
 }
 ```
+
+Add these companion tests to the same module before implementation:
+
+- `corrupt_enablement_file_defaults_to_enabled`: write invalid JSON to the current user's `skillsConfig.json`; `load_or_default()` must warn and return default enabled state instead of disabling every skill or blocking chat.
+- `enablement_is_isolated_between_user_scopes`: disable `biz-plan` under `UserScope::new(7, 9)`, switch to another scope, and assert the second scope still treats `biz-plan` as enabled.
 
 - [ ] **Step 2: Run the failing enablement tests**
 
@@ -672,6 +700,11 @@ pub fn list_skills(
 
 Update `get_plugin_info` the same way so `skills` includes `enabled`.
 
+Add companion command tests before implementation:
+
+- `get_plugin_info_merges_enabled_state`: disabled skills remain in `skills`, but carry `enabled: false`.
+- `set_skill_enabled_unknown_skill_does_not_write_config`: when an id is absent before and after registry refresh, the command returns an error and does not create or mutate `skillsConfig.json`.
+
 - [ ] **Step 7: Clear enablement overrides on local install/uninstall**
 
 In `install_custom_skill`, after install succeeds and before/after `refresh_skill_registry`, clear the disabled override for the installed id. Use the installed folder name as the id:
@@ -792,6 +825,12 @@ cargo test load_skill_rejects_disabled_skill --test load_skill_skill_md_test -- 
 ```
 
 Expected: FAIL because the test constructor and enablement-aware tool constructor do not exist.
+
+Add companion runtime tests before implementation:
+
+- `load_skill_definition_excludes_disabled_skill`: the request-scoped `Skill` tool definition/schema/catalog must not advertise disabled ids.
+- `load_skill_refresh_retry_does_not_bypass_disabled_state`: if a disabled id is requested and registry refresh runs, execution still returns unavailable and never returns the SKILL.md body.
+- `explicit_skill_chip_for_disabled_skill_is_ignored_or_rejected`: a stale pending skill chip must not cause `chat_turn_driver` to inject a reminder for a disabled skill.
 
 - [ ] **Step 3: Thread enablement into `LoadSkillRuntimeTool`**
 
@@ -1135,6 +1174,12 @@ cargo test same_package_existing_in_user_and_global_updates_both_roots --lib
 
 Expected: FAIL because `select_packages_for_update`, `SkillPackageInstallRoot`, and `SkillPackageUpdateTarget` do not exist.
 
+Add companion sync tests before implementation:
+
+- `required_builtin_missing_from_remote_is_skipped_not_fatal`: a required builtin absent from `/v1/skill-packages` is reported in `skipped`, login sync still completes, and non-required market packages are not installed.
+- `sync_report_reload_triggers_when_remote_delete_or_status_change`: registry refresh must run when sync changed installed files, deleted a package, or changed package state; do not gate reload only on `report.installed` being non-empty.
+- `marketplace_install_clears_disabled_override_and_refreshes_registry`: if a market skill id is already in `disabledSkillIds`, manual install removes that override and the same process can immediately list/load the skill.
+
 - [ ] **Step 3: Add required builtin allowlist**
 
 Create `src-tauri/src/plugin/skill/required_builtin.rs`:
@@ -1316,6 +1361,8 @@ for required_id in &required_builtin_ids {
 
 Do not block login if a required builtin is missing or fails to download. The next login sync or manual update can retry.
 
+After building the final `SyncSkillsReport`, treat `installed`, `deleted`, `skipped`, and any explicit status-change field as refresh-worthy. A pure delete or remote status correction must still emit `skill:registry-refreshed`; otherwise the frontend memory list will keep stale skills.
+
 - [ ] **Step 7: Ensure marketplace install refreshes registry and enables the skill**
 
 In `install_marketplace_skill`, after extraction succeeds:
@@ -1485,6 +1532,8 @@ async installMarketplace(packageId, pluginId) {
 },
 ```
 
+Update `src/App.tsx` initial hydration so `getPluginInfo()` results go through the same normalization path as `skillStore.reload()`. Do not write raw `skills` into Zustand without also deriving `enabledSkills`; otherwise app startup can show disabled skills until the next manual reload.
+
 - [ ] **Step 5: Listen for enablement event**
 
 In `src/components/auth/AuthGate.tsx`, update the event listener effect to register both events:
@@ -1513,6 +1562,8 @@ handles.forEach((handle) => handle())
 ```
 
 In `AuthGate.integration.test.tsx`, add `SKILL_ENABLEMENT_CHANGED` to the mocked `TAURI_EVENTS`.
+
+Any existing `skill:registry-refreshed` handler should keep listening as-is; the new enablement event is additive because registry file changes and local on/off state changes are different invalidation sources.
 
 - [ ] **Step 6: Run Task 5 tests**
 
@@ -1753,7 +1804,7 @@ git commit -m "feat: add skill center enablement tabs"
 - Modify: `src/components/chat/SkillPopover.tsx`
 - Modify: `src/components/chat-scene/ChatBottomArea.tsx`
 - Modify: `src/components/home/HomeTaskComposerCard.tsx`
-- Modify: `src/features/welcome/WelcomeScreen.tsx` or the actual welcome component if the path differs.
+- Modify: `src/components/chat/WelcomeScreen.tsx`
 - Test: existing focused component tests.
 
 - [ ] **Step 1: Add failing detail tests**
@@ -1908,7 +1959,16 @@ Specific expected changes:
 
 - `src/components/home/HomeTaskComposerCard.tsx`: use enabled skills for skill suggestions.
 - Welcome screen component: use enabled skills for any skill shortcuts.
+- `src/components/rich-composer/RichComposer.tsx`: use enabled skills for slash suggestions if it caches `/skill` command options.
+- `DispatchBanner` and employee dispatch labels: keep historical/localization rendering from the full list, but never offer a disabled skill as a new action.
 - Skill center and detail keep full `skills`.
+
+Add or update focused tests for these entrypoints:
+
+- `HomeTaskComposerCard` does not render disabled skills as selectable suggestions.
+- `WelcomeScreen` quick actions do not include disabled skills; create `src/components/chat/__tests__/WelcomeScreen.test.tsx` if no focused test exists yet.
+- `RichComposer` slash suggestions exclude disabled skill commands.
+- A stale pending skill chip for a disabled skill is dropped or blocked before send.
 
 - [ ] **Step 6: Run Task 7 tests**
 
@@ -1916,6 +1976,7 @@ Run:
 
 ```powershell
 pnpm exec vitest run src/features/skill-detail/SkillDetailPage.test.tsx src/components/chat-scene/__tests__/ChatBottomArea.test.tsx
+pnpm exec vitest run src/components/home/__tests__/HomeTaskComposerCard.test.tsx src/components/chat/__tests__/WelcomeScreen.test.tsx src/components/rich-composer/__tests__/RichComposer.test.tsx
 rg -n "useSkillStore\\(\\(s\\) => s\\.skills\\)" src\\components src\\features
 ```
 
@@ -1939,6 +2000,23 @@ git commit -m "feat: hide disabled skills from chat entrypoints"
 
 - Verify all changed files.
 - Update docs only if implementation discovers a real design correction.
+
+- [ ] **Step 0: Confirm AEIT CLI readiness**
+
+Before enabling the new skill intent tests, confirm or implement the required atomic `tauri-pilot aijia` commands:
+
+- `skill-center-open`
+- `skill-center-tab --name <市场|内置|已安装>`
+- `skill-center-list --json`
+- `skill-market-list --json`
+- `skill-center-toggle --id <skillId> --enabled <true|false>`
+- `skill-market-add --id <skillId>`
+- `skill-detail-open --id <skillId>`
+- `skill-picker-open --json`
+- `slash-suggestions --query <text> --json`
+- `sync-builtin-skills`
+
+Do not run intents 16-24 as passing/ failing product evidence until these commands exist or the rules explicitly mark the missing command as `CLI gap`.
 
 - [ ] **Step 1: Run focused frontend tests**
 
@@ -2025,13 +2103,23 @@ If no files changed during Task 8, do not create an empty commit.
 - Do not add a `去对话` button to cards.
 - Do not rely on frontend filtering for security. Runtime catalog and `Skill` tool must both enforce enablement.
 - New login sync must not increase installed skill count by installing newly published remote packages.
+- `skillsConfig.json` is per logged-in user under the active user scope. Do not create a global `skillsConfig.json`.
+- Never delete the entire `skillsConfig.json` in an automated intent test. Tests may set or clear one test skill id via product/CLI APIs.
+- Manual import and marketplace install should clear a disabled override for that same id, because the user is explicitly adding that skill again.
+- Corrupt `skillsConfig.json` should warn and default to enabled, not silently hide all skills.
+- Unknown skill ids must not create state entries after a refresh retry proves the id does not exist.
 
 ## Handoff Checklist
 
 - [ ] Backend state file exists and survives app restart.
+- [ ] Backend state file is isolated per logged-in user scope.
 - [ ] Toggle event causes `skillStore.reload()`.
 - [ ] Chat picker and slash tokens use `enabledSkills`.
+- [ ] Home composer, welcome shortcuts, and rich-composer slash suggestions use `enabledSkills`.
 - [ ] Model catalog excludes disabled skills.
 - [ ] `Skill` tool rejects disabled skills.
+- [ ] `Skill` tool refresh retry cannot load disabled skills.
 - [ ] Market install explicitly installs and enables one skill.
 - [ ] Login sync no longer installs every remote enterprise/platform skill.
+- [ ] Updating official skills preserves user disabled choices and updates already-installed user-root packages in place.
+- [ ] UserWiki writeback queue has a candidate item for skill enablement/runtime/marketplace sync coverage.

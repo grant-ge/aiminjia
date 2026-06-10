@@ -26,6 +26,7 @@ Writeback queue 的目标是让“还没补完”有明确状态，而不是在�
 | WB-2026-06-04-005 | Release / signing pipeline | P3 | deferred | 未派发 | `.understand-anything/enhancements/release-signing-pipeline.json` | P1/P2 完成后再补，避免本轮过宽 |
 | WB-2026-06-04-006 | Storage / workspace / path auth / file preview | P1 | candidate | 未派发 / tag-intake | `.understand-anything/enhancements/storage-app-data-contract.json` | 基于目标 main 源码补 app data root contract enhancement，更新 runtime/source/coverage/log 并通过校验 |
 | WB-2026-06-04-007 | Managed runtime supply chain | P1 | candidate | 未派发 / tag-intake | `.understand-anything/enhancements/managed-runtime-cache-reinstall.json` | 基于目标 main 源码补 runtime cache reinstall / bundled fallback 行为，更新 runtime-map/coverage/log 并通过校验 |
+| WB-2026-06-10-001 | Skill enablement / marketplace sync / runtime catalog | P1 | candidate | Dalton + Noether + Hypatia + Herschel / current session | `.understand-anything/enhancements/skill-enablement-registry-catalog.json` | 实现完成并验证后，补 skill enablement、marketplace sync、runtime catalog、AEIT CLI coverage，更新 RepoWiki maps/coverage/log 并通过校验 |
 
 ## Active Queue Details
 
@@ -76,6 +77,13 @@ Writeback queue 的目标是让“还没补完”有明确状态，而不是在�
 - Engineering question: 运行时依赖缺失、缓存损坏、用户安装过的 runtime package 被误覆盖、manifest 下载失败或 bundled fallback 触发时，`RuntimeManager` 如何决定保留现有 cache、从 bundled runtime bootstrap、还是执行 reinstall。
 - Current boundary: 当前 wiki 工作树不在 local `main`；补 enhancement 前应在目标 main 上读取源码和测试，确认 `current_cache_result_if_available`、`install_from_bundled_fallback`、`ensure_managed`、`reinstall_managed` 与 runtime Tauri commands 的真实链路。
 - Evidence from tag intake: `git grep main current_cache_result_if_available -- src-tauri/src/runtime/dependencies src-tauri/tests`、`git show main:src-tauri/tests/runtime_dependencies_manager_test.rs`。
+
+### WB-2026-06-10-001
+
+- Trigger: 技能中心改造讨论发现“市场/内置/已安装”不是纯前端状态，而是牵动 `skillsConfig.json`、登录用户作用域、marketplace 安装、官方技能更新、runtime catalog 注入、`Skill` 工具执行和 AEIT CLI 的跨层契约。
+- Engineering question: 修改技能启用/关闭、市场添加、内置默认安装或官方技能更新时，哪些前端入口、Tauri IPC、Rust registry、上下文注入、runtime tool 和意图测试必须同步检查。
+- Current boundary: candidate only。本轮先补设计计划和意图测试；不能在实现前把具体源码行为写成 validated wiki fact。
+- Evidence from userwiki cross-check: `SkillCenterPage`、`SkillDetailPage`、`skillStore`、`App.tsx`、`SkillPopover`、`ChatBottomArea`、`HomeTaskComposerCard`、`WelcomeScreen`、`RichComposer`、`CurrentUserStorage`、`UserScopedPaths`、`skill_management.rs`、`sync_command.rs`、`global_sync.rs`、`get_skill_catalog()`、`LoadSkillRuntimeTool`。
 
 ## Intake Rule
 
