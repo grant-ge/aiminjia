@@ -1,12 +1,11 @@
 import { type PropsWithChildren, useEffect, useRef, useState } from 'react'
-import { listen } from '@tauri-apps/api/event'
 
 import { useAuthStore } from '@/stores/authStore'
 import { useBrandingStore } from '@/stores/brandingStore'
 import { useChat } from '@/hooks/useChat'
 import { useUiStore, type Route } from '@/stores/uiStore'
 import { useSkillStore } from '@/stores/skillStore'
-import { syncBuiltinSkills, TAURI_EVENTS, workplaceDirectoryCatalog } from '@/lib/tauri'
+import { onSkillEnablementChanged, onSkillRegistryRefreshed, syncBuiltinSkills, workplaceDirectoryCatalog } from '@/lib/tauri'
 import i18n from '@/i18n'
 
 import { FullscreenLoader } from './FullscreenLoader'
@@ -97,30 +96,33 @@ export function AuthGate({ children }: PropsWithChildren) {
     }
   }, [isLoggedIn, redirectFrom, setRoute])
 
-  // 监听后端 refresh_skill_registry 广播，自动刷新 skillStore。
+  // 监听后端 skill registry / enabled 状态广播，自动刷新 skillStore。
   // 触发源包括：install_custom_skill / import_skill_package / RefreshSkills RuntimeTool /
   // load_skill miss-retry / refresh_skill_registry_cmd —— 所有路径共用一个事件，
-  // 保证 SkillPopover picker / 技能中心 / 派活 banner 等任何依赖 skillStore 的位置
-  // 在 AI 装完技能后立即看到新技能，无需重启应用或重开对话。
+  // enablement 事件则用于关闭/开启技能后同步 picker / slash / 模型 skill catalog。
   useEffect(() => {
-    let unlisten: (() => void) | null = null
+    let unlistenAll: Array<() => void> = []
     let cancelled = false
+    const reloadSkills = (source: string) => {
+      void useSkillStore.getState().reload().catch((err) => {
+        console.warn(`[${source}] skillStore reload failed:`, err)
+      })
+    }
     void (async () => {
       try {
-        const handle = await listen(TAURI_EVENTS.SKILL_REGISTRY_REFRESHED, () => {
-          void useSkillStore.getState().reload().catch((err) => {
-            console.warn('[skill-registry-refreshed] skillStore reload failed:', err)
-          })
-        })
-        if (cancelled) handle()
-        else unlisten = handle
+        const handles = await Promise.all([
+          onSkillRegistryRefreshed(() => reloadSkills('skill-registry-refreshed')),
+          onSkillEnablementChanged(() => reloadSkills('skill-enablement-changed')),
+        ])
+        if (cancelled) handles.forEach((handle) => handle())
+        else unlistenAll = handles
       } catch (err) {
-        console.warn('[skill-registry-refreshed] listen failed:', err)
+        console.warn('[skill-events] listen failed:', err)
       }
     })()
     return () => {
       cancelled = true
-      if (unlisten) unlisten()
+      unlistenAll.forEach((handle) => handle())
     }
   }, [])
 

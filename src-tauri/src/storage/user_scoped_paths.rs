@@ -53,6 +53,9 @@ impl UserScopedPaths {
     pub fn skills_dir(&self) -> PathBuf {
         self.base.join("skills")
     }
+    pub fn skills_config_path(&self) -> PathBuf {
+        self.base.join("skillsConfig.json")
+    }
     pub fn agents_dir(&self) -> PathBuf {
         self.base.join("agents")
     }
@@ -202,6 +205,7 @@ mod tests {
         assert_eq!(paths.audit_dir(), base.join("audit"));
         assert_eq!(paths.logs_dir(), base.join("logs"));
         assert_eq!(paths.downloads_dir(), base.join("downloads"));
+        assert_eq!(paths.skills_config_path(), base.join("skillsConfig.json"));
         assert_eq!(paths.turn_stages_dir(), base.join("turn_stages"));
         assert_eq!(
             paths.turn_stage_path("conv-abc"),

@@ -5,6 +5,7 @@ import { invoke } from '@tauri-apps/api/core'
 
 import { AppDropdown } from '@/components/common/AppDropdown'
 import { requestConfirm } from '@/components/common/ConfirmDialogHost'
+import { Switch } from '@/components/common/Switch'
 import { PageSectionShell } from '@/components/shell/PageSectionShell'
 import { PageTopBar } from '@/components/shell/PageTopBar'
 import { SkillCard } from '@/components/skills/SkillCard'
@@ -12,9 +13,17 @@ import { SkillCategoryBar } from '@/components/skills/SkillCategoryBar'
 import { SkillOfficeSection } from '@/components/skills/SkillOfficeSection'
 import { getSkillCategoryBg, getSkillIconComponent } from '@/components/skills/skillVisual'
 import { Button } from '@/components/ui/button'
-import { SKILL_CATEGORIES, type SkillCategoryId } from '@/data/skill-categories'
+import { SKILL_CATEGORIES } from '@/data/skill-categories'
 import { useChat } from '@/hooks/useChat'
-import { refreshSkillRegistry, syncBuiltinSkills } from '@/lib/tauri'
+import {
+  canToggleSkillEnablement,
+  isBuiltinSkill,
+  isMarketSkill,
+  isSkillEnabled,
+  skillMatchesCenterView,
+  type SkillCenterView,
+} from '@/lib/skillAvailability'
+import { refreshSkillRegistry, syncBuiltinSkills, type SkillInfo } from '@/lib/tauri'
 import { localizeSkill } from '@/lib/skillLocalization'
 import { useAuthStore } from '@/stores/authStore'
 import { useNotificationStore } from '@/stores/notificationStore'
@@ -34,7 +43,7 @@ function getSkillIcon(icon: string) {
 
 export function SkillCenterPage() {
   const { t, i18n } = useTranslation()
-  const [category, setCategory] = useState<SkillCategoryId>('recommended')
+  const [view, setView] = useState<SkillCenterView>('market')
   const [query, setQuery] = useState('')
   const [loadError, setLoadError] = useState<string | null>(null)
   const [validationFailure, setValidationFailure] = useState<
@@ -47,10 +56,12 @@ export function SkillCenterPage() {
   const reload = useSkillStore((s) => s.reload)
   const upload = useSkillStore((s) => s.upload)
   const uninstall = useSkillStore((s) => s.uninstall)
-  const listByCategory = useSkillStore((s) => s.listByCategory)
+  const setSkillEnabled = useSkillStore((s) => s.setSkillEnabled)
   const setRoute = useUiStore((s) => s.setRoute)
+  const setPendingSkill = useUiStore((s) => s.setPendingSkill)
   const pushNotification = useNotificationStore((s) => s.push)
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
+  const [enablementChangingId, setEnablementChangingId] = useState<string | null>(null)
   useChat()
 
   const runInstall = useCallback(
@@ -294,6 +305,51 @@ export function SkillCenterPage() {
     }
   }
 
+  const handleUseSkill = useCallback(
+    (skill: SkillInfo) => {
+      const localized = localizeSkill(skill, i18n.language)
+      setPendingSkill({
+        id: skill.id,
+        label: localized.name,
+        trigger: skill.triggerText?.trim() || `/${skill.id}`,
+      })
+      setRoute({ kind: 'home' })
+    },
+    [i18n.language, setPendingSkill, setRoute],
+  )
+
+  const handleSetSkillEnabled = useCallback(
+    async (skill: SkillInfo, enabled: boolean) => {
+      if (!canToggleSkillEnablement(skill)) return
+      setEnablementChangingId(skill.id)
+      try {
+        await setSkillEnabled(skill.id, enabled)
+        pushNotification({
+          level: 'success',
+          title: enabled ? '技能已开启' : '技能已关闭',
+          message: localizeSkill(skill, i18n.language).name,
+          actions: [],
+          dismissible: true,
+          autoHide: 3,
+          context: 'toast',
+        })
+      } catch (err) {
+        pushNotification({
+          level: 'error',
+          title: enabled ? '开启技能失败' : '关闭技能失败',
+          message: err instanceof Error ? err.message : String(err),
+          actions: [],
+          dismissible: true,
+          autoHide: 6,
+          context: 'toast',
+        })
+      } finally {
+        setEnablementChangingId(null)
+      }
+    },
+    [i18n.language, pushNotification, setSkillEnabled],
+  )
+
   const handleLoadError = (error: unknown) => {
     const message = error instanceof Error ? error.message : String(error)
     setLoadError(message)
@@ -313,12 +369,13 @@ export function SkillCenterPage() {
     void reload().catch(handleLoadError)
   }, [reload])
 
-  const categoryItems = useMemo(
+  const viewItems = useMemo(
     () => [
-      { key: 'recommended', label: t('skillCenter.allCategory') },
-      ...SKILL_CATEGORIES.map((c) => ({ key: c.id, label: c.name })),
+      { key: 'market', label: '市场' },
+      { key: 'builtin', label: '内置' },
+      { key: 'installed', label: '已安装' },
     ],
-    [t],
+    [],
   )
 
   const normalizedQuery = query.trim().toLowerCase()
@@ -335,38 +392,29 @@ export function SkillCenterPage() {
     ].some((value) => value?.toLowerCase().includes(normalizedQuery))
   }
 
-  const officeSkills =
-    category === 'recommended'
-      ? skills.filter(matchesQuery)
-      : category === 'mine'
-        ? skills.filter((s) => s.source === 'user').filter(matchesQuery)
-        : category === 'tenant'
-          ? skills.filter((s) => s.source === 'tenant').filter(matchesQuery)
-          : listByCategory(category).filter(matchesQuery)
+  const officeSkills = skills
+    .filter((skill) => skillMatchesCenterView(skill, view))
+    .filter(matchesQuery)
 
-  function getSkillMeta(source: string, cat: string) {
-    const normalizedCategory = cat || 'general'
+  const sectionTitle =
+    view === 'market' ? '技能市场' : view === 'builtin' ? '内置技能' : '已安装技能'
+
+  function getSkillMeta(skill: SkillInfo) {
+    const normalizedCategory = skill.category || 'general'
     const label = SKILL_CATEGORIES.find((c) => c.id === normalizedCategory)?.name ?? t('skillCenter.defaultCategory')
-    // Backend emits: 'user' (local upload/own scope), 'tenant' (pushed by
-    // tenant admin via lotus tenant-portal), 'global' (platform/OPS public),
-    // 'builtin' (legacy fixture in tests). Surface each so users can tell
-    // why a skill exists and who can update it.
-    let sourceLabel: string
-    switch (source) {
-      case 'user':
-      case 'builtin':
-        sourceLabel = t('skillCenter.sourceUser')
-        break
-      case 'tenant':
-        sourceLabel = t('skillCenter.sourceTenant')
-        break
-      case 'global':
-        sourceLabel = t('skillCenter.sourcePlatform')
-        break
-      default:
-        sourceLabel = t('skillCenter.custom')
-    }
-    return `${sourceLabel} · ${label}`
+    const sourceLabel = isMarketSkill(skill)
+      ? skill.source === 'tenant'
+        ? '企业下发'
+        : '平台下发'
+      : isBuiltinSkill(skill)
+        ? 'AI 小家内置'
+        : '本地安装'
+    const statusLabel = canToggleSkillEnablement(skill)
+      ? isSkillEnabled(skill)
+        ? '已开启'
+        : '已关闭'
+      : null
+    return [sourceLabel, label, statusLabel].filter(Boolean).join(' · ')
   }
 
   return (
@@ -457,11 +505,12 @@ export function SkillCenterPage() {
       }
     >
       <SkillOfficeSection
+        title={sectionTitle}
         categoryBar={
           <SkillCategoryBar
-            items={categoryItems}
-            activeKey={category}
-            onSelect={(key) => setCategory(key as SkillCategoryId)}
+            items={viewItems}
+            activeKey={view}
+            onSelect={(key) => setView(key as SkillCenterView)}
           />
         }
       >
@@ -470,26 +519,36 @@ export function SkillCenterPage() {
         ) : loadError && skills.length === 0 ? (
           <SkillCenterState title={t('skillCenter.loadFailed')} desc={loadError} actionLabel={t('skillCenter.retry')} onAction={() => void loadSkills()} />
         ) : officeSkills.length === 0 ? (
-          category === 'mine' ? (
-            <SkillCenterState
-              title={t('skillCenter.noLocalSkills')}
-              desc={t('skillCenter.noLocalSkillsDesc')}
-            />
-          ) : normalizedQuery ? (
+          normalizedQuery ? (
             <SkillCenterState
               title={t('skillCenter.noMatch')}
               desc={t('skillCenter.noMatchDesc', { query: normalizedQuery })}
             />
           ) : (
             <SkillCenterState
-              title={t('skillCenter.noSkillsInCategory')}
-              desc={t('skillCenter.noSkillsInCategoryDesc')}
+              title={
+                view === 'market'
+                  ? '暂无市场技能'
+                  : view === 'builtin'
+                    ? '暂无内置技能'
+                    : t('skillCenter.noLocalSkills')
+              }
+              desc={
+                view === 'market'
+                  ? '企业下发的技能会出现在这里；你也可以从本地目录或压缩包导入技能。'
+                  : view === 'builtin'
+                    ? '内置技能会随客户端版本或同步操作更新。'
+                    : t('skillCenter.noLocalSkillsDesc')
+              }
             />
           )
         ) : (
           officeSkills.map((skill) => {
             const localized = localizeSkill(skill, i18n.language)
             const isUserSkill = skill.source === 'user'
+            const marketSkill = isMarketSkill(skill)
+            const manageable = canToggleSkillEnablement(skill)
+            const enabled = isSkillEnabled(skill)
             const menuItems: Array<{
               id: string
               label: string
@@ -511,7 +570,7 @@ export function SkillCenterPage() {
                 className: 'text-destructive [&_svg]:text-destructive',
                 onSelect: () => void handleDeleteSkill(skill.id, localized.name),
               })
-            } else if (isLoggedIn) {
+            } else if (!marketSkill && isLoggedIn) {
               // Non-user skills (builtin / global) can be re-synced from OPS.
               menuItems.push({
                 id: 'check-update',
@@ -525,7 +584,7 @@ export function SkillCenterPage() {
               <SkillCard
                 key={skill.id}
                 title={localized.name}
-                meta={getSkillMeta(skill.source, skill.category)}
+                meta={getSkillMeta(skill)}
                 desc={localized.description}
                 iconNode={getSkillIcon(skill.icon)}
                 iconBg={getSkillCategoryBg(skill.category)}
@@ -534,21 +593,42 @@ export function SkillCenterPage() {
                 skillSource={skill.source}
                 onClick={() => setRoute({ kind: 'skill-detail', skillId: skill.id })}
                 actionsSlot={
-                  menuItems.length === 0 ? (
-                    <div aria-hidden="true" className="h-8 w-8" />
+                  marketSkill ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      aria-label={`添加并使用 ${localized.name}`}
+                      onClick={() => handleUseSkill(skill)}
+                    >
+                      添加并使用
+                    </Button>
                   ) : (
-                    <AppDropdown
-                      ariaLabel={`${localized.name} ${t('skillCenter.moreActions')}`}
-                      trigger={
-                        <button
-                          type="button"
-                          className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                        >
-                          <MoreHorizontal className="h-4 w-4" />
-                        </button>
-                      }
-                      items={menuItems}
-                    />
+                    <div className="flex items-center gap-2">
+                      {manageable ? (
+                        <Switch
+                          checked={enabled}
+                          disabled={enablementChangingId === skill.id}
+                          aria-label={`${localized.name} 技能开关`}
+                          onCheckedChange={(next) => void handleSetSkillEnabled(skill, next)}
+                        />
+                      ) : null}
+                      {menuItems.length === 0 ? (
+                        <div aria-hidden="true" className="h-8 w-8" />
+                      ) : (
+                        <AppDropdown
+                          ariaLabel={`${localized.name} ${t('skillCenter.moreActions')}`}
+                          trigger={
+                            <button
+                              type="button"
+                              className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                            >
+                              <MoreHorizontal className="h-4 w-4" />
+                            </button>
+                          }
+                          items={menuItems}
+                        />
+                      )}
+                    </div>
                   )
                 }
               />

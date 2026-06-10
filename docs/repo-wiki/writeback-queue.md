@@ -84,6 +84,11 @@ Writeback queue 的目标是让“还没补完”有明确状态，而不是在�
 - Engineering question: 修改技能启用/关闭、市场添加、内置默认安装或官方技能更新时，哪些前端入口、Tauri IPC、Rust registry、上下文注入、runtime tool 和意图测试必须同步检查。
 - Current boundary: candidate only。本轮先补设计计划和意图测试；不能在实现前把具体源码行为写成 validated wiki fact。
 - Evidence from userwiki cross-check: `SkillCenterPage`、`SkillDetailPage`、`skillStore`、`App.tsx`、`SkillPopover`、`ChatBottomArea`、`HomeTaskComposerCard`、`WelcomeScreen`、`RichComposer`、`CurrentUserStorage`、`UserScopedPaths`、`skill_management.rs`、`sync_command.rs`、`global_sync.rs`、`get_skill_catalog()`、`LoadSkillRuntimeTool`。
+- Writeback scope for docs/test worker: 已补 `docs/test-intents/spec/tasks/技能/rules.md` 的启用状态意图覆盖，新增重新开启恢复与账号隔离；已补 `docs/test-intents/cli-gap.md` 的技能中心原子命令缺口。仍不得把意图规格当成产品已实现证据。
+- Enablement state boundary to preserve in future RepoWiki/enhancement: 用户开关状态应存为当前登录账号 scope 下的 `~/.renlijia/users/{scope}/skillsConfig.json`，采用 `disabledSkillIds` 默认开启模型；不得新增或依赖 `~/.renlijia/global/skillsConfig.json`。
+- Runtime filtering boundary to preserve in future RepoWiki/enhancement: 管理视图需要全量已安装技能和 `enabled` 字段；聊天输入框技能选择、slash 候选、详情页直接使用入口、模型 skill catalog 与 `Skill` runtime tool 必须消费 enabled 视图，不能只靠前端隐藏。
+- Sync boundary to preserve in future RepoWiki/enhancement: 登录/“更新官方技能”只能自动安装 allowlist 内必需内置技能，并可更新已安装技能；不能把未添加市场技能自动安装进 registry，也不能覆盖用户已关闭状态。
+- CLI boundary to preserve in future RepoWiki/enhancement: AEIT 只能在 `tauri-pilot aijia` 具备 `skill-center-*`、`skill-market-*`、`skill-detail-*`、`skill-picker-open`、`slash-suggestions`、`sync-builtin-skills` 等原子命令后作为 L4 证据；缺命令时记录 `CLI gap`。
 
 ## Intake Rule
 

@@ -206,6 +206,31 @@ pub async fn build_request_scoped_tool_overrides(
         },
     );
 
+    if let (Some(skill_registry), Some(enablement_store)) = (
+        app.try_state::<Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>>(),
+        app.try_state::<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>(),
+    ) {
+        let skill_tool: Arc<dyn RuntimeTool> = Arc::new(
+            crate::runtime::tools::builtin::load_skill::LoadSkillRuntimeTool::with_enablement(
+                skill_registry.inner().clone(),
+                enablement_store.inner().clone(),
+            ),
+        );
+        let rendered = skill_tool.definition(ctx).await;
+        let parameters = crate::runtime::tools::TOOL_CATALOG
+            .get_entry("Skill")
+            .map(|e| e.json_schema.clone())
+            .unwrap_or_else(|| serde_json::json!({"type": "object"}));
+        out.insert(
+            "Skill".to_string(),
+            crate::llm::streaming::ToolDefinition {
+                name: rendered.id,
+                description: rendered.description,
+                parameters,
+            },
+        );
+    }
+
     log::debug!("[tool-desc-trace] returning {} overrides", out.len());
     out
 }

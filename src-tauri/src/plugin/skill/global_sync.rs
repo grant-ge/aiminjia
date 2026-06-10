@@ -12,6 +12,7 @@ use serde_json::Value;
 use crate::plugin::skill::frontmatter::parse_skill_md;
 use crate::plugin::skill::loader::{is_valid_skill_id, load_skill_roots};
 use crate::plugin::skill::registry::SkillRegistry;
+use crate::plugin::skill::required_builtin::is_required_builtin_skill;
 
 const MAX_EXTRACTED_BYTES: u64 = 50 * 1024 * 1024;
 const MANIFEST_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(15);
@@ -103,7 +104,9 @@ impl GlobalSkillsState {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GlobalSkillInstallReport {
     pub installed: Vec<String>,
+    pub updated: Vec<String>,
     pub skipped: Vec<String>,
+    pub changed: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -161,13 +164,16 @@ pub fn install_prepared_global_skills(
 
         if install_one_prepared_skill(&path, global_skills_dir, name).is_ok() {
             report.installed.push(skill_id);
+            report.changed.push(name.to_string());
         } else {
             report.skipped.push(skill_id);
         }
     }
 
     report.installed.sort();
+    report.updated.sort();
     report.skipped.sort();
+    report.changed.sort();
     Ok(report)
 }
 
@@ -523,6 +529,20 @@ async fn install_one_skill_package(
     Ok(())
 }
 
+fn is_global_skill_installed(global_skills_dir: &Path, skill_id: &str) -> bool {
+    global_skills_dir.join(skill_id).join("SKILL.md").is_file()
+}
+
+fn should_sync_remote_skill(
+    item: &SkillPackageItem,
+    local_state: &GlobalSkillsState,
+    config: &GlobalSkillSyncConfig,
+) -> bool {
+    is_required_builtin_skill(&item.plugin_id)
+        || local_state.installed.contains_key(&item.plugin_id)
+        || is_global_skill_installed(&config.global_skills_dir, &item.plugin_id)
+}
+
 pub async fn sync_skill_packages_from_server(
     config: GlobalSkillSyncConfig,
     server_base_url: String,
@@ -572,10 +592,25 @@ pub async fn sync_skill_packages_from_server(
     // 3. Install or update remote skills whose version changed (or are missing locally)
     for item in &list.data {
         remote_ids.insert(item.plugin_id.clone());
-        let need_install = local_state
+        if !should_sync_remote_skill(item, &local_state, &config) {
+            report.skipped.push(item.plugin_id.clone());
+            log::info!(
+                "[skill-sync] skip '{}' v{} (marketplace package not installed locally)",
+                item.plugin_id,
+                item.version
+            );
+            continue;
+        }
+
+        let installed_on_disk =
+            is_global_skill_installed(&config.global_skills_dir, &item.plugin_id);
+        let was_installed =
+            installed_on_disk || local_state.installed.contains_key(&item.plugin_id);
+        let version_changed = local_state
             .installed
             .get(&item.plugin_id)
             .map_or(true, |v| v != &item.version);
+        let need_install = !installed_on_disk || version_changed;
         if !need_install {
             report.skipped.push(item.plugin_id.clone());
             log::info!(
@@ -594,10 +629,15 @@ pub async fn sync_skill_packages_from_server(
             .await
         {
             Ok(()) => {
-                report.installed.push(item.plugin_id.clone());
+                if was_installed {
+                    report.updated.push(item.plugin_id.clone());
+                } else {
+                    report.installed.push(item.plugin_id.clone());
+                }
+                report.changed.push(item.plugin_id.clone());
                 new_installed.insert(item.plugin_id.clone(), item.version.clone());
                 log::info!(
-                    "[skill-sync] installed '{}' v{}",
+                    "[skill-sync] installed/updated '{}' v{}",
                     item.plugin_id,
                     item.version
                 );
@@ -627,6 +667,7 @@ pub async fn sync_skill_packages_from_server(
             match fs::remove_dir_all(&target) {
                 Ok(()) => {
                     new_installed.remove(&name);
+                    report.changed.push(name.clone());
                     log::info!("[skill-sync] uninstalled '{}'", name);
                 }
                 Err(error) => {
@@ -635,6 +676,7 @@ pub async fn sync_skill_packages_from_server(
             }
         } else {
             new_installed.remove(&name);
+            report.changed.push(name);
         }
     }
 
@@ -646,11 +688,16 @@ pub async fn sync_skill_packages_from_server(
     write_global_skills_state(&config.state_path, &new_state)?;
 
     report.installed.sort();
+    report.updated.sort();
     report.skipped.sort();
+    report.changed.sort();
+    report.changed.dedup();
     log::info!(
-        "[skill-sync] done: installed={:?}, skipped={:?}",
+        "[skill-sync] done: installed={:?}, updated={:?}, skipped={:?}, changed={:?}",
         report.installed,
-        report.skipped
+        report.updated,
+        report.skipped,
+        report.changed
     );
     Ok(report)
 }
@@ -737,4 +784,117 @@ fn now_unix_seconds() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_secs())
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use std::io::{Cursor, Write};
+    use wiremock::matchers::{method, path, query_param};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn test_config(root: &Path) -> GlobalSkillSyncConfig {
+        GlobalSkillSyncConfig {
+            state_path: root.join("global").join("state.json"),
+            downloads_dir: root.join("global").join("downloads").join("skills"),
+            prepared_dir: root.join("global").join("prepared").join("skills"),
+            global_skills_dir: root.join("skills"),
+            skill_roots_for_reload: Vec::new(),
+        }
+    }
+
+    fn skill_zip_bytes(skill_id: &str, version: &str) -> Vec<u8> {
+        let cursor = Cursor::new(Vec::new());
+        let mut zip = zip::ZipWriter::new(cursor);
+        let options: zip::write::FileOptions<'_, ()> =
+            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        zip.start_file("SKILL.md", options).unwrap();
+        write!(
+            zip,
+            "---\nname: {skill_id}\ndescription: {skill_id}\nversion: \"{version}\"\n---\nbody\n"
+        )
+        .unwrap();
+        zip.finish().unwrap().into_inner()
+    }
+
+    async fn mock_skill_package(
+        server: &MockServer,
+        package_id: u64,
+        skill_id: &str,
+        version: &str,
+    ) -> serde_json::Value {
+        let artifact_path = format!("/artifacts/{skill_id}-{version}.zip");
+        let artifact_url = format!("{}{}", server.uri(), artifact_path);
+        Mock::given(method("POST"))
+            .and(path(format!("/v1/skill-packages/{package_id}/download")))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": {
+                    "url": artifact_url
+                }
+            })))
+            .mount(server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path(artifact_path))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_bytes(skill_zip_bytes(skill_id, version)),
+            )
+            .mount(server)
+            .await;
+        json!({
+            "id": package_id,
+            "plugin_id": skill_id,
+            "name": skill_id,
+            "version": version,
+            "package_url": artifact_url,
+            "package_size": 128,
+            "scope": "public"
+        })
+    }
+
+    #[tokio::test]
+    async fn first_login_installs_required_builtin_packages_only() {
+        let tmp = tempfile::tempdir().unwrap();
+        let server = MockServer::start().await;
+        let required = mock_skill_package(&server, 1, "dingtalk-workspace", "1.0.0").await;
+        let market_only = mock_skill_package(&server, 2, "market-only", "1.0.0").await;
+
+        Mock::given(method("GET"))
+            .and(path("/v1/skill-packages"))
+            .and(query_param("page", "1"))
+            .and(query_param("size", "100"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": [required, market_only],
+                "total": 2
+            })))
+            .mount(&server)
+            .await;
+
+        let config = test_config(tmp.path());
+        let report = sync_skill_packages_from_server(
+            config.clone(),
+            server.uri(),
+            "session-key".to_string(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(report.installed, vec!["dingtalk-workspace".to_string()]);
+        assert_eq!(report.skipped, vec!["market-only".to_string()]);
+        assert!(config
+            .global_skills_dir
+            .join("dingtalk-workspace")
+            .join("SKILL.md")
+            .is_file());
+        assert!(!config.global_skills_dir.join("market-only").exists());
+
+        let state = read_global_skills_state(&config.state_path)
+            .unwrap()
+            .expect("state written");
+        assert_eq!(
+            state.installed.keys().cloned().collect::<Vec<_>>(),
+            vec!["dingtalk-workspace".to_string()]
+        );
+    }
 }

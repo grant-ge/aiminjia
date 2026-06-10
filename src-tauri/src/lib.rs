@@ -12,8 +12,8 @@ pub mod runtime_audit;
 pub mod search;
 pub mod storage;
 pub mod telemetry;
-pub mod transport;
 pub mod tracing_setup;
+pub mod transport;
 pub mod updater;
 
 use commands::chat;
@@ -34,9 +34,7 @@ pub fn run() {
     // first — Tauri's devtools feature also tries to set a global logger and
     // would otherwise win the race, causing SetLoggerError on LogTracer::init().
     {
-        let renlijia_root = dirs::home_dir()
-            .unwrap_or_default()
-            .join(".renlijia");
+        let renlijia_root = dirs::home_dir().unwrap_or_default().join(".renlijia");
         let logs_dir = renlijia_root.join("logs");
         std::fs::create_dir_all(&logs_dir).ok();
         crate::tracing_setup::init(&logs_dir);
@@ -267,6 +265,11 @@ pub fn run() {
 
             let current_user_storage =
                 Arc::new(storage::CurrentUserStorage::new(aijia_home.clone()));
+            let skill_enablement_store = Arc::new(
+                plugin::skill::enablement::SkillEnablementStore::new(
+                    current_user_storage.clone(),
+                ),
+            );
             let user_scope: Option<storage::UserScope> = {
                 let info = tauri::async_runtime::block_on(auth_manager.get_auth_info());
                 if info.logged_in {
@@ -728,6 +731,7 @@ pub fn run() {
             app.manage(global_store);
             app.manage(current_user_storage.clone());
             app.manage(current_user_storage.clone() as Arc<dyn storage::UserScopedPathResolver>);
+            app.manage(skill_enablement_store);
             app.manage(auth_manager);
             app.manage(dingtalk_bridge);
             app.manage(tool_registry);
@@ -1107,6 +1111,7 @@ pub fn run() {
             commands::skill_management::init_skill_template,
             commands::skill_management::pack_skill,
             commands::skill_management::refresh_skill_registry_cmd,
+            commands::skill_management::set_skill_enabled,
             // Skill package import/export (drag-drop zip / SkillCard export)
             commands::skill_draft::import_skill_package,
             commands::skill_draft::export_installed_skill,

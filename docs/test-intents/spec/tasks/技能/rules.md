@@ -20,13 +20,16 @@
 - 场景 10：市场技能手动添加后，默认开启并进入聊天入口、catalog 和 `Skill` 工具可用集合
 - 场景 11：点击“更新官方技能”后，市场里未添加的技能仍然不安装、不进入聊天入口
 - 场景 12：点击“更新官方技能”后，用户已经关闭的内置技能仍保持关闭
+- 场景 13：重新开启已关闭技能后，聊天输入框技能选择、slash 候选、详情页使用入口、模型 catalog 与 `Skill` 工具恢复可用
+- 场景 14：`skillsConfig.json` 按当前登录账号 scope 隔离，账号 A 的关闭状态不影响账号 B
 
 ## 执行约束：技能启用状态改造
 
-- 意图 16-24 默认依赖这些 `tauri-pilot aijia` 原子命令：`skill-center-open`、`skill-center-tab`、`skill-center-list --json`、`skill-market-list --json`、`skill-center-toggle --id --enabled`、`skill-market-add --id`、`skill-detail-open --id`、`skill-picker-open --json`、`slash-suggestions --query --json`、`sync-builtin-skills`。如果命令缺失，runner 应标记为 `CLI gap`，不能把人工点按当成稳定自动化结果。
+- 意图 16-26 默认依赖这些 `tauri-pilot aijia` 原子命令：`skill-center-open`、`skill-center-tab`、`skill-center-list --json`、`skill-market-list --json`、`skill-center-toggle --id --enabled`、`skill-market-add --id`、`skill-detail-open --id`、`skill-detail-snapshot --json`、`skill-picker-open --json`、`slash-suggestions --query --json`、`sync-builtin-skills`。如果命令缺失，runner 应标记为 `CLI gap`，不能把人工点按当成稳定自动化结果。
 - 意图测试不得删除整个 `~/.renlijia/users/{scope}/skillsConfig.json`。需要准备开关状态时，只能通过产品入口或 CLI 对测试 skill id 设置开启/关闭，避免误删用户对其他技能的偏好。
 - 选择市场测试技能时，必须优先使用 `skill-market-list --json` 中 `installed == false` 的项；如果当前环境没有未添加市场技能，本意图记为环境阻塞/跳过，不要卸载真实用户技能来造数据。
 - 校验模型不可用不能只靠“LLM 没有调用”作为唯一证据；需要同时检查 catalog/技能入口不出现，或使用后端 focused test 证明 `Skill` 工具对 disabled/not-installed id 返回 unavailable。
+- 涉及账号隔离的意图必须使用专用测试账号；如果没有两套可登录测试账号凭据，runner 应标记为环境阻塞/跳过，不得删除或改写当前真实用户的账号文件来造“新账号”现场。
 
 ---
 
@@ -777,3 +780,90 @@
 - `$CONV_ID/messages.jsonl` 中不存在 `role == "tool"` 且内容包含 `dingtalk-workspace` 的 SKILL.md body 文本
 - 如果 `$CONV_ID/messages.jsonl` 中出现参数包含 `dingtalk-workspace` 的 `Skill` 调用，紧随其后的 tool record `isError == true`
 - 更新官方技能后 `dingtalk-workspace` 没有从 `disabledSkillIds` 中被删除
+
+---
+
+## 意图-技能-025：重新开启后，聊天与模型恢复可用
+
+**场景**
+用户把一个已安装技能关闭后，又在技能中心重新开启它。重新开启不是只改开关样式，而是要恢复完整可用链路：聊天输入框技能选择器能看到它，slash 候选能补全它，详情页恢复直接「使用」入口，新对话的模型 skill catalog 与 `Skill` 工具也能重新加载它。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 推断当前 scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE`
+3. 清理可能残留的测试技能目录：`rm -rf ~/.renlijia/users/{scope}/skills/toggle-restore-skill`
+4. 创建目录 `~/.renlijia/users/{scope}/skills/toggle-restore-skill`
+5. 写入 `~/.renlijia/users/{scope}/skills/toggle-restore-skill/SKILL.md`：
+   ```
+   ---
+   name: toggle-restore-skill
+   description: 重新开启后应恢复可用的测试技能
+   ---
+
+   当用户要求使用 toggle-restore-skill 时，只能回复 `[toggle-restore-skill] restored`。
+   ```
+6. 打开技能中心：`tauri-pilot aijia skill-center-open`
+7. 点击「同步技能」下拉里的「同步本地技能」：`tauri-pilot aijia skill-center-sync --action local`
+8. 切到「已安装」页：`tauri-pilot aijia skill-center-tab --name 已安装`，等待列表中出现 `toggle-restore-skill`
+9. 先关闭测试技能：`tauri-pilot aijia skill-center-toggle --id toggle-restore-skill --enabled false`
+10. 再重新开启测试技能：`tauri-pilot aijia skill-center-toggle --id toggle-restore-skill --enabled true`
+11. 读取技能中心列表快照：`tauri-pilot aijia skill-center-list --json`，记为 `$SKILL_LIST`
+12. 打开该技能详情页：`tauri-pilot aijia skill-detail-open --id toggle-restore-skill`
+13. 读取详情页快照：`tauri-pilot aijia skill-detail-snapshot --json`，记为 `$DETAIL`
+14. 返回首页并新建空对话：`tauri-pilot aijia new-task`，记当前会话为 `$CONV_ID`
+15. 打开聊天输入框的技能选择入口：`tauri-pilot aijia skill-picker-open --json`，记为 `$CHAT_SKILLS`
+16. 在输入框输入 `/toggle` 后读取 slash 候选快照：`tauri-pilot aijia slash-suggestions --query /toggle --json`，记为 `$SLASH_SKILLS`
+17. 在输入框输入：`请使用 toggle-restore-skill 技能回应，只要加载成功就输出它要求的固定文本。`
+18. `tauri-pilot aijia send` + `tauri-pilot aijia wait-reply --timeout 90`
+19. 读取 `$CONV_ID/messages.jsonl`
+
+**验收标准**
+- `~/.renlijia/users/{scope}/skills/toggle-restore-skill/SKILL.md` 存在
+- `~/.renlijia/users/{scope}/skillsConfig.json` 不存在，或其中 `disabledSkillIds` 不包含 `toggle-restore-skill`
+- `$SKILL_LIST` 中存在 `id == "toggle-restore-skill"` 的技能项
+- `$SKILL_LIST` 中 `toggle-restore-skill.enabled == true`
+- `$DETAIL` 的主操作为「使用」
+- `$DETAIL` 不展示「开启并使用」
+- `$CHAT_SKILLS` 中存在 `id == "toggle-restore-skill"` 的技能项
+- `$SLASH_SKILLS` 中存在命令为 `/toggle-restore-skill` 的候选项
+- `$CONV_ID/messages.jsonl` 中存在 `toolCalls[].name == "Skill"` 且参数包含 `toggle-restore-skill` 的调用
+- `$CONV_ID/messages.jsonl` 中对应的 `role == "tool"` 记录内容包含 `[toggle-restore-skill] restored`
+- `$CONV_ID/messages.jsonl` 中不存在 `Skill(toggle-restore-skill)` 返回 `Unknown or unavailable skill` / `not found` / `已关闭`
+
+---
+
+## 意图-技能-026：账号切换后，skillsConfig 配置互不污染
+
+**场景**
+同一台电脑上登录过多个账号时，每个账号都有自己的 `~/.renlijia/users/{scope}/skillsConfig.json`。账号 A 关闭某个全局或内置技能后，账号 B 登录不应该继承 A 的关闭状态；切回账号 A 时，A 的关闭状态仍然保留。
+
+**操作步骤**
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 确认当前是专用测试账号 A；如果不是专用测试账号，runner 应标记为环境阻塞/跳过
+3. 推断账号 A scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE_A`
+4. 触发登录后的内置技能同步：`tauri-pilot aijia sync-builtin-skills`
+5. 打开技能中心：`tauri-pilot aijia skill-center-open`
+6. 切到「内置」页：`tauri-pilot aijia skill-center-tab --name 内置`，等待列表中出现 `dingtalk-workspace`
+7. 在账号 A 关闭 `dingtalk-workspace`：`tauri-pilot aijia skill-center-toggle --id dingtalk-workspace --enabled false`
+8. 读取账号 A 的 `~/.renlijia/users/{scope_a}/skillsConfig.json`
+9. 打开设置并退出登录：`tauri-pilot aijia open-settings` + `tauri-pilot aijia settings-select-panel --key account` + `tauri-pilot aijia logout`
+10. 登录专用测试账号 B：`tauri-pilot aijia login --account $AIJIA_E2E_ACCOUNT_B --password $AIJIA_E2E_PASSWORD_B --json`
+11. 推断账号 B scope：`tauri-pilot aijia where --json` 取，记为 `$SCOPE_B`
+12. 触发账号 B 的内置技能同步：`tauri-pilot aijia sync-builtin-skills`
+13. 打开技能中心并切到「内置」页，读取技能中心列表快照：`tauri-pilot aijia skill-center-list --json`，记为 `$SKILL_LIST_B`
+14. 返回首页并新建空对话，打开聊天输入框技能选择入口：`tauri-pilot aijia skill-picker-open --json`，记为 `$CHAT_SKILLS_B`
+15. 打开设置并退出账号 B，再登录回专用测试账号 A
+16. 推断切回后的 scope，记为 `$SCOPE_A_AGAIN`
+17. 读取账号 A 的技能中心列表快照：`tauri-pilot aijia skill-center-list --json`，记为 `$SKILL_LIST_A_AGAIN`
+
+**验收标准**
+- `$SCOPE_A` 与 `$SCOPE_B` 不相等
+- `$SCOPE_A_AGAIN == $SCOPE_A`
+- `~/.renlijia/users/{scope_a}/skillsConfig.json` 中 `disabledSkillIds` 包含 `dingtalk-workspace`
+- `~/.renlijia/users/{scope_b}/skillsConfig.json` 不存在，或其中 `disabledSkillIds` 不包含 `dingtalk-workspace`
+- `$SKILL_LIST_B` 中存在 `id == "dingtalk-workspace"` 的技能项
+- `$SKILL_LIST_B` 中 `dingtalk-workspace.enabled == true`
+- `$CHAT_SKILLS_B` 中存在 `id == "dingtalk-workspace"` 的技能项
+- `$SKILL_LIST_A_AGAIN` 中存在 `id == "dingtalk-workspace"` 的技能项
+- `$SKILL_LIST_A_AGAIN` 中 `dingtalk-workspace.enabled == false`
+- `~/.renlijia/global/skillsConfig.json` 不存在

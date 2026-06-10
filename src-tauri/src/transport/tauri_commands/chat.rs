@@ -2237,11 +2237,37 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
     }
 
     async fn get_skill_catalog(&self, _agent_id: Option<&str>) -> String {
+        use tauri::Manager;
+
+        let enablement = self
+            .services
+            .app
+            .try_state::<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>()
+            .map(|store| store.load_or_default())
+            .unwrap_or_default();
+
         self.services
             .skill_registry
             .lock()
-            .map(|reg| reg.format_full_catalog(200_000))
+            .map(|reg| reg.format_enabled_catalog(&enablement, 200_000))
             .unwrap_or_default()
+    }
+
+    async fn is_skill_enabled_for_context(&self, skill_id: &str) -> bool {
+        use tauri::Manager;
+
+        let enablement = self
+            .services
+            .app
+            .try_state::<Arc<crate::plugin::skill::enablement::SkillEnablementStore>>()
+            .map(|store| store.load_or_default())
+            .unwrap_or_default();
+
+        self.services
+            .skill_registry
+            .lock()
+            .map(|reg| reg.get_enabled(skill_id, &enablement).is_some())
+            .unwrap_or(false)
     }
 
     async fn load_workspace_path(&self) -> Result<std::path::PathBuf, TurnError> {

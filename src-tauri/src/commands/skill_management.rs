@@ -1,3 +1,4 @@
+use crate::plugin::skill::enablement::{SkillEnablementState, SkillEnablementStore};
 use crate::plugin::skill::loader::is_valid_skill_id;
 use crate::plugin::skill::registry::SkillRegistry;
 use crate::storage::UserScopedPathResolver;
@@ -114,12 +115,28 @@ pub struct SkillInfo {
     /// 来自 SKILL.md frontmatter 的 `version:` 字段。前端把它作为
     /// chip 显示在卡片标题旁。读不到时为 None。
     pub version: Option<String>,
+    /// Whether the skill is enabled for the current logged-in user.
+    /// Disabled skills remain visible in management views but are filtered from
+    /// chat entrypoints and runtime catalog.
+    pub enabled: bool,
 }
 
 /// Pure function for testability: list all skills in the new disk-backed registry.
 pub fn list_skills_from_registry(registry: &Arc<Mutex<SkillRegistry>>) -> Vec<SkillInfo> {
     use crate::plugin::skill::updated_at::DirMtimeResolver;
-    list_skills_from_registry_with_resolver(registry, &DirMtimeResolver)
+    list_skills_from_registry_with_resolver(
+        registry,
+        &DirMtimeResolver,
+        &SkillEnablementState::default(),
+    )
+}
+
+pub fn list_skills_from_registry_with_enablement(
+    registry: &Arc<Mutex<SkillRegistry>>,
+    enablement: &SkillEnablementState,
+) -> Vec<SkillInfo> {
+    use crate::plugin::skill::updated_at::DirMtimeResolver;
+    list_skills_from_registry_with_resolver(registry, &DirMtimeResolver, enablement)
 }
 
 /// 同上，但允许调用方注入自定义的 `SkillUpdatedAtResolver`，用于单测或
@@ -127,6 +144,7 @@ pub fn list_skills_from_registry(registry: &Arc<Mutex<SkillRegistry>>) -> Vec<Sk
 pub fn list_skills_from_registry_with_resolver(
     registry: &Arc<Mutex<SkillRegistry>>,
     resolver: &dyn crate::plugin::skill::updated_at::SkillUpdatedAtResolver,
+    enablement: &SkillEnablementState,
 ) -> Vec<SkillInfo> {
     let guard = registry.lock().unwrap();
     guard
@@ -161,10 +179,76 @@ pub fn list_skills_from_registry_with_resolver(
                     },
                     updated_at: resolver.resolve(skill),
                     version: skill.frontmatter.version.clone(),
+                    enabled: enablement.is_enabled(&skill.id),
                 }
             })
         })
         .collect()
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillEnablementChangedPayload {
+    pub skill_id: String,
+    pub enabled: bool,
+}
+
+pub fn set_skill_enabled_for_registry(
+    registry: &Arc<Mutex<SkillRegistry>>,
+    enablement_store: &SkillEnablementStore,
+    skill_id: &str,
+    enabled: bool,
+    refresh_registry: impl FnOnce() -> Result<(), String>,
+) -> Result<SkillInfo, String> {
+    let exists = registry
+        .lock()
+        .map_err(|e| format!("registry lock poisoned: {}", e))?
+        .get(skill_id)
+        .is_some();
+
+    if !exists {
+        refresh_registry()?;
+        let exists_after_refresh = registry
+            .lock()
+            .map_err(|e| format!("registry lock poisoned: {}", e))?
+            .get(skill_id)
+            .is_some();
+        if !exists_after_refresh {
+            return Err(format!("Unknown skill: {}", skill_id));
+        }
+    }
+
+    let enablement = enablement_store
+        .set_enabled(skill_id, enabled)
+        .map_err(|e| e.to_string())?;
+
+    list_skills_from_registry_with_enablement(registry, &enablement)
+        .into_iter()
+        .find(|skill| skill.id == skill_id)
+        .ok_or_else(|| format!("Unknown skill: {}", skill_id))
+}
+
+#[tauri::command]
+pub async fn set_skill_enabled(
+    app: AppHandle,
+    registry: tauri::State<'_, Arc<Mutex<SkillRegistry>>>,
+    enablement_store: tauri::State<'_, Arc<SkillEnablementStore>>,
+    skill_id: String,
+    enabled: bool,
+) -> Result<SkillInfo, String> {
+    let skill = set_skill_enabled_for_registry(
+        registry.inner(),
+        enablement_store.inner().as_ref(),
+        &skill_id,
+        enabled,
+        || refresh_skill_registry(&app),
+    )?;
+
+    let _ = app.emit(
+        "skill:enablement-changed",
+        SkillEnablementChangedPayload { skill_id, enabled },
+    );
+    Ok(skill)
 }
 
 #[derive(serde::Serialize)]
@@ -222,6 +306,13 @@ fn list_custom_skills_in_dir(custom_dir: &Path) -> Result<Vec<CustomSkillInfo>, 
 fn user_skills_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let cus = app.state::<Arc<crate::storage::CurrentUserStorage>>();
     Ok(cus.require_paths().map_err(|e| e.to_string())?.skills_dir())
+}
+
+fn clear_enablement_override_for_skill(app: &AppHandle, skill_id: &str) -> Result<(), String> {
+    if let Some(store) = app.try_state::<Arc<SkillEnablementStore>>() {
+        store.clear_override(skill_id).map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 /// Re-scan both [user_skills_dir, global_skills_dir] roots and replace the
@@ -315,6 +406,9 @@ pub async fn install_custom_skill(
         )));
     };
 
+    if let Some(skill_id) = Path::new(&dest).file_name().and_then(|name| name.to_str()) {
+        clear_enablement_override_for_skill(&app, skill_id).map_err(InstallSkillError::Io)?;
+    }
     refresh_skill_registry(&app).map_err(InstallSkillError::Io)?;
     Ok(dest)
 }
@@ -414,6 +508,7 @@ pub async fn uninstall_custom_skill(app: AppHandle, skill_id: String) -> Result<
     };
 
     std::fs::remove_dir_all(&target).map_err(|e| e.to_string())?;
+    clear_enablement_override_for_skill(&app, &skill_id)?;
     refresh_skill_registry(&app)?;
     Ok(format!("Uninstalled skill '{}'", skill_id))
 }
@@ -719,10 +814,9 @@ pub async fn install_marketplace_skill(
     }
 
     log::info!("Marketplace: installed skill '{}' to {:?}", plugin_id, dest);
-    Ok(format!(
-        "Installed '{}' — restart app to activate",
-        plugin_id
-    ))
+    clear_enablement_override_for_skill(&app, &plugin_id)?;
+    refresh_skill_registry(&app)?;
+    Ok(format!("Installed '{}'", plugin_id))
 }
 
 pub(crate) fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
@@ -748,6 +842,83 @@ pub(crate) fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::plugin::skill::enablement::SkillEnablementState;
+    use crate::plugin::skill::types::{DiskSkill, SkillFrontmatter, SkillMetadata, SkillSource};
+
+    fn test_disk_skill(id: &str, source: SkillSource) -> DiskSkill {
+        DiskSkill {
+            id: id.to_string(),
+            root: PathBuf::from("/tmp").join(id),
+            frontmatter: SkillFrontmatter {
+                name: id.to_string(),
+                description: "desc".to_string(),
+                when_to_use: None,
+                allowed_tools: vec![],
+                argument_hint: None,
+                arguments: vec![],
+                model: None,
+                effort: None,
+                context: None,
+                agent: None,
+                user_invocable: true,
+                disable_model_invocation: false,
+                version: None,
+                paths: vec![],
+                hooks: Default::default(),
+                shell: None,
+                category: None,
+                metadata: SkillMetadata::default(),
+            },
+            body: String::new(),
+            source,
+        }
+    }
+
+    #[test]
+    fn list_skills_merges_enabled_state_without_filtering_disabled() {
+        let registry = Arc::new(Mutex::new(SkillRegistry::from_skills(vec![
+            test_disk_skill("enabled-skill", SkillSource::User),
+            test_disk_skill("disabled-skill", SkillSource::User),
+        ])));
+        let mut enablement = SkillEnablementState::default();
+        enablement
+            .disabled_skill_ids
+            .insert("disabled-skill".to_string());
+
+        let infos = list_skills_from_registry_with_enablement(&registry, &enablement);
+
+        assert_eq!(infos.len(), 2);
+        assert_eq!(
+            infos
+                .iter()
+                .map(|info| (info.id.as_str(), info.enabled))
+                .collect::<Vec<_>>(),
+            vec![("disabled-skill", false), ("enabled-skill", true)]
+        );
+    }
+
+    #[test]
+    fn set_skill_enabled_unknown_skill_does_not_write_config() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = Arc::new(crate::storage::AiJiaHome::from_path(
+            tmp.path().to_path_buf(),
+        ));
+        let current_user = Arc::new(crate::storage::CurrentUserStorage::new(home));
+        current_user
+            .activate_scope(crate::storage::UserScope::new(1, 2))
+            .unwrap();
+        let config_path = current_user.resolve_paths().unwrap().skills_config_path();
+        let store = crate::plugin::skill::enablement::SkillEnablementStore::new(current_user);
+        let registry = Arc::new(Mutex::new(SkillRegistry::from_skills(Vec::new())));
+
+        let err =
+            set_skill_enabled_for_registry(&registry, &store, "missing-skill", false, || Ok(()))
+                .unwrap_err();
+
+        assert!(err.contains("Unknown skill"));
+        assert!(!config_path.exists());
+    }
+
     #[test]
     fn init_skill_template_writes_skill_md_and_subdirs() {
         let tmp = tempfile::tempdir().unwrap();

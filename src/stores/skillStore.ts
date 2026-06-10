@@ -1,7 +1,10 @@
 import { create } from 'zustand'
 
 import type { SkillCategoryId } from '@/data/skill-categories'
-import { installCustomSkill, listSkills, uninstallCustomSkill, type SkillInfo } from '@/lib/tauri'
+import { isSkillEnabled } from '@/lib/skillAvailability'
+import { installCustomSkill, listSkills, setSkillEnabled as setSkillEnabledIpc, uninstallCustomSkill, type SkillInfo } from '@/lib/tauri'
+
+export { isSkillEnabled } from '@/lib/skillAvailability'
 
 export type SkillValidationKind =
   | 'missingSkillMd'
@@ -59,12 +62,19 @@ function toInstallError(err: unknown): Error {
 
 const RECOMMENDED_SKILL_IDS = ['salary-benchmarking', 'biz-writing', 'contract-review', 'org-diagnosis']
 
-function normalizeSkill(skill: SkillInfo): SkillInfo {
+type SkillInfoFromBackend = Omit<SkillInfo, 'enabled'> & { enabled?: boolean }
+
+export function selectEnabledSkills(state: { skills: SkillInfo[] }): SkillInfo[] {
+  return state.skills.filter(isSkillEnabled)
+}
+
+function normalizeSkill(skill: SkillInfoFromBackend, previous?: SkillInfo): SkillInfo {
   return {
     ...skill,
     displayName: skill.displayName || skill.id,
     displayNameEn: skill.displayNameEn || skill.displayName || skill.id,
     description: skill.description || '',
+    enabled: skill.enabled ?? previous?.enabled ?? true,
     icon: skill.icon || '',
     shortDescription: skill.shortDescription || skill.description || '',
     shortDescriptionEn: skill.shortDescriptionEn || skill.displayNameEn || skill.displayName || '',
@@ -84,6 +94,7 @@ interface SkillState {
   install: (id: string) => Promise<void>
   uninstall: (id: string) => Promise<void>
   upload: (sourcePath: string, force?: boolean) => Promise<void>
+  setSkillEnabled: (skillId: string, enabled: boolean) => Promise<void>
   reset: () => void
 }
 
@@ -105,7 +116,8 @@ export const useSkillStore = create<SkillState>((set, get) => ({
   async reload() {
     set({ isLoading: true })
     try {
-      const skills = (await listSkills()).map(normalizeSkill)
+      const previousById = new Map(get().skills.map((skill) => [skill.id, skill]))
+      const skills = (await listSkills()).map((skill) => normalizeSkill(skill, previousById.get(skill.id)))
       set({ skills, isLoading: false })
     } catch (error) {
       set({ isLoading: false })
@@ -125,6 +137,20 @@ export const useSkillStore = create<SkillState>((set, get) => ({
       await get().reload()
     } catch (err) {
       throw toInstallError(err)
+    }
+  },
+  async setSkillEnabled(skillId, enabled) {
+    const previousSkills = get().skills
+    set({
+      skills: previousSkills.map((skill) =>
+        skill.id === skillId ? { ...skill, enabled } : skill,
+      ),
+    })
+    try {
+      await setSkillEnabledIpc(skillId, enabled)
+    } catch (err) {
+      set({ skills: previousSkills })
+      throw err
     }
   },
 }))

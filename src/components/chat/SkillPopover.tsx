@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 
 import { SkillPopoverPanel } from '@/components/chat-scene/SkillPopoverPanel'
 import { localizeSkill } from '@/lib/skillLocalization'
-import { useSkillStore } from '@/stores/skillStore'
+import { selectEnabledSkills, useSkillStore } from '@/stores/skillStore'
 
 interface SkillPopoverProps {
   open?: boolean
@@ -12,7 +12,8 @@ interface SkillPopoverProps {
 
 export function SkillPopover({ open: openProp, onPick, onClose }: SkillPopoverProps) {
   const [internalOpen, setInternalOpen] = useState(false)
-  const skills = useSkillStore((s) => s.skills)
+  const allSkills = useSkillStore((s) => s.skills)
+  const skills = useMemo(() => selectEnabledSkills({ skills: allSkills }), [allSkills])
 
   // Support both controlled (open/onClose) and uncontrolled (internal) usage
   const isOpen = openProp !== undefined ? openProp : internalOpen

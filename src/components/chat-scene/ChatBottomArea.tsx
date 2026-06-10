@@ -18,7 +18,7 @@ import { useChatAttachments } from '@/hooks/useChatAttachments'
 import { useChatStore } from '@/stores/chatStore'
 import { usePendingStore } from '@/stores/pendingStore'
 import { useSettingsStore } from '@/stores/settingsStore'
-import { useSkillStore } from '@/stores/skillStore'
+import { selectEnabledSkills, useSkillStore } from '@/stores/skillStore'
 import { useUiStore } from '@/stores/uiStore'
 import { pendingSnapshotForSession } from '@/lib/tauri'
 import { localizeSkill, localizedSkillName } from '@/lib/skillLocalization'
@@ -62,7 +62,8 @@ export function ChatBottomArea({
   const { sendUserMessage, isStreaming, stopCurrentStream } = useChat()
   const { isPickingAttachments, pickAttachments } = useChatAttachments()
   const [showSkillPopover, setShowSkillPopover] = useState(false)
-  const skills = useSkillStore((s) => s.skills)
+  const allSkills = useSkillStore((s) => s.skills)
+  const skills = useMemo(() => selectEnabledSkills({ skills: allSkills }), [allSkills])
   const getSkillById = useSkillStore((s) => s.getById)
   const chatWidthMode = useSettingsStore((s) => s.chatWidthMode ?? 'full')
   // Snapshot of the installed skills as composer-friendly tokens.  The list

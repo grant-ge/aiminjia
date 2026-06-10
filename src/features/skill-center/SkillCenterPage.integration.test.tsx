@@ -20,34 +20,38 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({
   ask: askDialogMock,
 }))
 
-const HR_SKILL = {
-  id: 'hr-analysis',
-  displayName: 'HR分析',
-  description: '详细描述',
-  source: 'builtin',
+const CORE_SKILL = {
+  id: 'create-skill',
+  displayName: '创建技能',
+  description: '创建 AI 小家技能',
+  source: 'global',
   hasWorkflow: true,
-  icon: 'users',
-  category: 'hr',
-  triggerText: '',
-  shortDescription: '短描述',
-  displayNameEn: 'HR Analysis',
-  shortDescriptionEn: 'short',
+  icon: 'tool',
+  category: 'general',
+  triggerText: '/create-skill',
+  shortDescription: '创建技能',
+  displayNameEn: 'Create Skill',
+  shortDescriptionEn: 'create skill',
   updatedAt: null,
+  enabled: true,
 }
 
-const REC1 = { id: 'rec1', displayName: '推荐1', description: 'd', source: 'builtin', hasWorkflow: false, icon: 'x', category: 'general', triggerText: '', shortDescription: 's', displayNameEn: 'r1', shortDescriptionEn: 's', updatedAt: null }
-const REC2 = { id: 'rec2', displayName: '推荐2', description: 'd', source: 'builtin', hasWorkflow: false, icon: 'x', category: 'general', triggerText: '', shortDescription: 's', displayNameEn: 'r2', shortDescriptionEn: 's', updatedAt: null }
-const REC3 = { id: 'rec3', displayName: '推荐3', description: 'd', source: 'builtin', hasWorkflow: false, icon: 'x', category: 'general', triggerText: '', shortDescription: 's', displayNameEn: 'r3', shortDescriptionEn: 's', updatedAt: null }
-const REC4 = { id: 'rec4', displayName: '推荐4', description: 'd', source: 'builtin', hasWorkflow: false, icon: 'x', category: 'general', triggerText: '', shortDescription: 's', displayNameEn: 'r4', shortDescriptionEn: 's', updatedAt: null }
+const REC1 = { id: 'rec1', displayName: '推荐1', description: 'd', source: 'builtin', hasWorkflow: false, icon: 'x', category: 'general', triggerText: '', shortDescription: 's', displayNameEn: 'r1', shortDescriptionEn: 's', updatedAt: null, enabled: true }
+const REC2 = { id: 'rec2', displayName: '推荐2', description: 'd', source: 'builtin', hasWorkflow: false, icon: 'x', category: 'general', triggerText: '', shortDescription: 's', displayNameEn: 'r2', shortDescriptionEn: 's', updatedAt: null, enabled: true }
+const REC3 = { id: 'rec3', displayName: '推荐3', description: 'd', source: 'builtin', hasWorkflow: false, icon: 'x', category: 'general', triggerText: '', shortDescription: 's', displayNameEn: 'r3', shortDescriptionEn: 's', updatedAt: null, enabled: true }
+const REC4 = { id: 'rec4', displayName: '推荐4', description: 'd', source: 'builtin', hasWorkflow: false, icon: 'x', category: 'general', triggerText: '', shortDescription: 's', displayNameEn: 'r4', shortDescriptionEn: 's', updatedAt: null, enabled: true }
+const TENANT_SKILL = { id: 'tenant-policy', displayName: '企业制度问答', description: '企业下发', source: 'tenant', hasWorkflow: false, icon: 'building', category: 'general', triggerText: '/tenant-policy', shortDescription: '制度问答', displayNameEn: 'Policy Q&A', shortDescriptionEn: 'policy', updatedAt: null, enabled: false }
+const USER_SKILL = { id: 'local-report', displayName: '本地日报', description: '本地导入', source: 'user', hasWorkflow: false, icon: 'file-text', category: 'ops', triggerText: '/local-report', shortDescription: '本地日报', displayNameEn: 'Local Report', shortDescriptionEn: 'local report', updatedAt: null, enabled: false }
 
 function seedStore(extra?: Partial<ReturnType<typeof useSkillStore.getState>>) {
   useSkillStore.setState({
-    skills: [REC1, REC2, REC3, REC4, HR_SKILL],
+    skills: [REC1, REC2, REC3, REC4, CORE_SKILL, TENANT_SKILL, USER_SKILL],
     recommendedIds: ['rec1', 'rec2', 'rec3', 'rec4'],
     isLoading: false,
     reload: vi.fn().mockResolvedValue(undefined),
     upload: vi.fn().mockResolvedValue(undefined),
     uninstall: vi.fn().mockResolvedValue(undefined),
+    setSkillEnabled: vi.fn().mockResolvedValue(undefined),
     ...extra,
   })
 }
@@ -68,7 +72,7 @@ describe('SkillCenterPage', () => {
     expect(topBar).toHaveClass('h-14')
     expect(topBar).not.toHaveClass('h-[45px]')
     expect(screen.getByText('技能中心')).toBeInTheDocument()
-    expect(screen.getByText(/5 个技能/)).toBeInTheDocument()
+    expect(screen.getByText(/7 个技能/)).toBeInTheDocument()
     expect(screen.getByPlaceholderText('搜索技能名称或场景')).toBeInTheDocument()
   })
 
@@ -148,22 +152,22 @@ describe('SkillCenterPage', () => {
     expect(screen.queryByText('技能目录不符合规范')).toBeNull()
   })
 
-  it('分类 bar 包含全部/HR/财务/法务/销售/运营/通用', () => {
+  it('分类 bar 包含市场/内置/已安装', () => {
     render(<SkillCenterPage />)
-    for (const label of ['全部', 'HR', '财务', '法务', '销售', '运营', '通用']) {
+    for (const label of ['市场', '内置', '已安装']) {
       expect(screen.getByRole('button', { name: label })).toBeInTheDocument()
     }
   })
 
-  it('切换到 HR 分类后卡片点击进入详情', async () => {
+  it('切换到内置后卡片点击进入详情', async () => {
     render(<SkillCenterPage />)
-    fireEvent.click(screen.getByRole('button', { name: 'HR' }))
+    fireEvent.click(screen.getByRole('button', { name: '内置' }))
     const cards = screen.getAllByTestId('skill-card')
-    const hrCard = cards.find((c) => c.textContent?.includes('HR分析'))
+    const hrCard = cards.find((c) => c.textContent?.includes('创建技能'))
     expect(hrCard).toBeTruthy()
     fireEvent.click(hrCard!)
     await waitFor(() => {
-      expect(useUiStore.getState().route).toEqual({ kind: 'skill-detail', skillId: 'hr-analysis' })
+      expect(useUiStore.getState().route).toEqual({ kind: 'skill-detail', skillId: 'create-skill' })
     })
   })
 
@@ -178,19 +182,21 @@ describe('SkillCenterPage', () => {
 
   it('搜索框按名称或描述过滤技能', () => {
     render(<SkillCenterPage />)
-    fireEvent.change(screen.getByPlaceholderText('搜索技能名称或场景'), { target: { value: 'HR' } })
+    fireEvent.click(screen.getByRole('button', { name: '内置' }))
+    fireEvent.change(screen.getByPlaceholderText('搜索技能名称或场景'), { target: { value: 'Create' } })
 
-    expect(screen.getByText('HR分析')).toBeInTheDocument()
+    expect(screen.getAllByText('创建技能').length).toBeGreaterThan(0)
     expect(screen.queryByText('推荐1')).toBeNull()
   })
 
   it('英文环境下用技能英文名称和简介渲染卡片', async () => {
     await i18n.changeLanguage('en-US')
     render(<SkillCenterPage />)
+    fireEvent.click(screen.getByRole('button', { name: '内置' }))
 
-    expect(screen.getByText('HR Analysis')).toBeInTheDocument()
-    expect(screen.getByText('short')).toBeInTheDocument()
-    expect(screen.queryByText('HR分析')).toBeNull()
+    expect(screen.getByText('Create Skill')).toBeInTheDocument()
+    expect(screen.getByText('create skill')).toBeInTheDocument()
+    expect(screen.queryByText('创建技能')).toBeNull()
   })
 
   it('加载中显示状态文案', () => {
@@ -213,5 +219,25 @@ describe('SkillCenterPage', () => {
       fireEvent.click(screen.getByRole('button', { name: '重试' }))
     })
     expect(reload).toHaveBeenCalledTimes(2)
+  })
+
+  it('市场视图只提供添加使用入口，不展示关闭开关', () => {
+    render(<SkillCenterPage />)
+
+    expect(screen.getByText('企业制度问答')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '添加并使用 企业制度问答' })).toBeInTheDocument()
+    expect(screen.queryByRole('switch', { name: /企业制度问答/ })).toBeNull()
+    expect(screen.queryByText('已关闭')).toBeNull()
+  })
+
+  it('已安装视图展示关闭开关并调用 setSkillEnabled', async () => {
+    const setSkillEnabled = vi.fn().mockResolvedValue(undefined)
+    seedStore({ setSkillEnabled })
+    render(<SkillCenterPage />)
+
+    fireEvent.click(screen.getByRole('button', { name: '已安装' }))
+    fireEvent.click(screen.getByRole('switch', { name: '本地日报 技能开关' }))
+
+    await waitFor(() => expect(setSkillEnabled).toHaveBeenCalledWith('local-report', true))
   })
 })

@@ -73,6 +73,9 @@ export const TAURI_EVENTS = {
   TURN_HEARTBEAT: 'turn:heartbeat',
   /** Spec 2026-05-26 §5.2 — Network probe result broadcast. */
   NETWORK_STATUS: 'network:status',
+  /** Skill enabled/disabled state changed. Frontend stores reload to keep
+   * composer skill pickers and the model skill catalog in sync. */
+  SKILL_ENABLEMENT_CHANGED: 'skill:enablement-changed',
   /** Skill registry refreshed (any path: install_custom_skill / import / RefreshSkills tool /
    *  load_skill miss-retry). Frontend stores subscribe to reload their cached skill list. */
   SKILL_REGISTRY_REFRESHED: 'skill:registry-refreshed',
@@ -181,6 +184,11 @@ export interface SkillCommandPayload {
   id: string
   label?: string
   command?: string
+}
+
+export interface SkillEnablementChangedPayload {
+  skillId: string
+  enabled: boolean
 }
 
 export interface SavedClipboardAttachmentPayload {
@@ -1531,6 +1539,7 @@ export interface SkillInfo {
   displayNameEn: string
   description: string
   source: string
+  enabled: boolean
   hasWorkflow: boolean
   icon: string
   shortDescription: string
@@ -2159,6 +2168,28 @@ export function onAuthExpired(
   }))
 }
 
+export function onSkillEnablementChanged(
+  handler: (payload: SkillEnablementChangedPayload) => void,
+): Promise<() => void> {
+  return listen<SkillEnablementChangedPayload>(
+    TAURI_EVENTS.SKILL_ENABLEMENT_CHANGED,
+    createInstrumentedEventHandler(TAURI_EVENTS.SKILL_ENABLEMENT_CHANGED, (event) => {
+      handler(event.payload)
+    }),
+  )
+}
+
+export function onSkillRegistryRefreshed(
+  handler: () => void,
+): Promise<() => void> {
+  return listen<unknown>(
+    TAURI_EVENTS.SKILL_REGISTRY_REFRESHED,
+    createInstrumentedEventHandler(TAURI_EVENTS.SKILL_REGISTRY_REFRESHED, () => {
+      handler()
+    }),
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Skill Management Commands
 // ---------------------------------------------------------------------------
@@ -2189,6 +2220,11 @@ export async function installCustomSkill(
 /** Uninstall a custom skill by ID. */
 export function uninstallCustomSkill(skillId: string): Promise<string> {
   return invoke<string>('uninstall_custom_skill', { skillId })
+}
+
+/** Enable or disable a skill without uninstalling it. */
+export function setSkillEnabled(skillId: string, enabled: boolean): Promise<void> {
+  return invoke<void>('set_skill_enabled', { skillId, enabled })
 }
 
 /** Create a new skill template directory with scaffolding files. */
@@ -2487,7 +2523,9 @@ export function dingtalkRefreshStatus(): Promise<DingtalkStatusInfo> {
 
 export interface SyncBuiltinSkillsResult {
   installed: string[]
+  updated: string[]
   skipped: string[]
+  changed: string[]
 }
 
 export async function syncBuiltinSkills(): Promise<SyncBuiltinSkillsResult> {

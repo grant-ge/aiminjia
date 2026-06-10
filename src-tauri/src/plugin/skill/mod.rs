@@ -1,9 +1,11 @@
 pub mod catalog_prompt;
+pub mod enablement;
 pub mod frontmatter;
 pub mod global_sync;
 pub mod invoked;
 pub mod loader;
 pub mod registry;
+pub mod required_builtin;
 pub mod substitution;
 pub mod sync_command;
 pub mod types;

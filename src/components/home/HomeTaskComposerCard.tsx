@@ -38,7 +38,7 @@ import {
 import { localizeSkill, localizedSkillName } from '@/lib/skillLocalization'
 import { useChatStore } from '@/stores/chatStore'
 import { useHomeStore } from '@/stores/homeStore'
-import { useSkillStore } from '@/stores/skillStore'
+import { selectEnabledSkills, useSkillStore } from '@/stores/skillStore'
 import { useUiStore } from '@/stores/uiStore'
 
 export function HomeTaskComposerCard() {
@@ -56,7 +56,8 @@ export function HomeTaskComposerCard() {
     selectedWorkspace,
   )
   const [showSkillPopover, setShowSkillPopover] = useState(false)
-  const skills = useSkillStore((s) => s.skills)
+  const allSkills = useSkillStore((s) => s.skills)
+  const skills = useMemo(() => selectEnabledSkills({ skills: allSkills }), [allSkills])
   const getSkillById = useSkillStore((s) => s.getById)
   // Snapshot of the installed skills as composer-friendly tokens. Drives the
   // slash-command input rule and chip rendering inside the editor (mirrors

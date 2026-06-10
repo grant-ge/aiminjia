@@ -2,15 +2,18 @@
  * WelcomeScreen — greeting + general mode entry + flat skill grid.
  * Skill list is no longer filtered by persona.
   */
-import { useSkillStore } from '@/stores/skillStore'
+import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
+
+import { selectEnabledSkills, useSkillStore } from '@/stores/skillStore'
 import { useProductName } from '@/hooks/useProductName'
 import { useChat } from '@/hooks/useChat'
-import { useTranslation } from 'react-i18next'
 import { localizeSkill } from '@/lib/skillLocalization'
 
 export function WelcomeScreen() {
   const { t, i18n } = useTranslation()
-  const skills = useSkillStore((s) => s.skills)
+  const allSkills = useSkillStore((s) => s.skills)
+  const skills = useMemo(() => selectEnabledSkills({ skills: allSkills }), [allSkills])
   const productName = useProductName()
   const { sendUserMessage } = useChat()
 

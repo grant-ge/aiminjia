@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const tauriMock = vi.hoisted(() => ({
   TAURI_EVENTS: {
     SKILL_REGISTRY_REFRESHED: 'skill:registry-refreshed',
+    SKILL_ENABLEMENT_CHANGED: 'skill:enablement-changed',
   },
   cloudLogin: vi.fn().mockResolvedValue({
     loggedIn: true,
@@ -52,8 +53,22 @@ const tauriMock = vi.hoisted(() => ({
   cloudSendEmailCode: vi.fn().mockResolvedValue(undefined),
   cloudRegister: vi.fn().mockResolvedValue(undefined),
   cloudResetPassword: vi.fn().mockResolvedValue(undefined),
-  syncBuiltinSkills: vi.fn().mockResolvedValue({ installed: [], skipped: [] }),
+  syncBuiltinSkills: vi.fn().mockResolvedValue({ installed: [], updated: [], skipped: [], changed: [] }),
+  onSkillRegistryRefreshed: vi.fn().mockResolvedValue(() => {}),
+  onSkillEnablementChanged: vi.fn().mockResolvedValue(() => {}),
   workplaceDirectoryCatalog: vi.fn().mockResolvedValue({ schemaVersion: 1, categories: [], items: [] }),
+  getDevEnvironment: vi.fn().mockResolvedValue({
+    currentTenant: 'https://ai.renlijia.com',
+    currentOps: 'https://ops.renlijia.com',
+    isOverride: false,
+    presets: [
+      {
+        key: 'prod',
+        tenant: 'https://ai.renlijia.com',
+        ops: 'https://ops.renlijia.com',
+      },
+    ],
+  }),
   getLastBrand: vi.fn().mockResolvedValue(null),
   saveLastBrand: vi.fn().mockResolvedValue(undefined),
 }))
@@ -95,9 +110,23 @@ describe('AuthGate', () => {
     tauriMock.cloudSendEmailCode.mockResolvedValue(undefined)
     tauriMock.cloudRegister.mockResolvedValue(undefined)
     tauriMock.cloudResetPassword.mockResolvedValue(undefined)
-    tauriMock.syncBuiltinSkills.mockResolvedValue({ installed: [], skipped: [] })
+    tauriMock.syncBuiltinSkills.mockResolvedValue({ installed: [], updated: [], skipped: [], changed: [] })
+    tauriMock.onSkillRegistryRefreshed.mockResolvedValue(() => {})
+    tauriMock.onSkillEnablementChanged.mockResolvedValue(() => {})
     tauriMock.workplaceDirectoryCatalog.mockResolvedValue({ schemaVersion: 1, categories: [], items: [] })
     tauriMock.workplaceDirectoryCatalog.mockClear()
+    tauriMock.getDevEnvironment.mockResolvedValue({
+      currentTenant: 'https://ai.renlijia.com',
+      currentOps: 'https://ops.renlijia.com',
+      isOverride: false,
+      presets: [
+        {
+          key: 'prod',
+          tenant: 'https://ai.renlijia.com',
+          ops: 'https://ops.renlijia.com',
+        },
+      ],
+    })
 
     useAuthStore.setState({
       isLoggedIn: false,

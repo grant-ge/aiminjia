@@ -47,20 +47,38 @@ beforeEach(() => {
   mockIsStreaming = false
   useChatStore.setState({ activeConversationId: 'conv-1' })
   useSkillStore.setState({
-    skills: [{
-      id: 'dingtalk-workspace',
-      displayName: '玩转钉钉',
-      displayNameEn: 'DingTalk Workspace',
-      description: 'desc',
-      source: 'global',
-      hasWorkflow: false,
-      icon: '',
-      shortDescription: 'desc',
-      shortDescriptionEn: 'desc',
-      triggerText: '/dingtalk-workspace',
-      category: 'general',
-      updatedAt: null,
-    }],
+    skills: [
+      {
+        id: 'dingtalk-workspace',
+        displayName: '玩转钉钉',
+        displayNameEn: 'DingTalk Workspace',
+        description: 'desc',
+        source: 'global',
+        hasWorkflow: false,
+        icon: '',
+        shortDescription: 'desc',
+        shortDescriptionEn: 'desc',
+        triggerText: '/dingtalk-workspace',
+        category: 'general',
+        updatedAt: null,
+        enabled: true,
+      },
+      {
+        id: 'closed-skill',
+        displayName: '已关闭技能',
+        displayNameEn: 'Closed Skill',
+        description: 'hidden',
+        source: 'user',
+        hasWorkflow: false,
+        icon: '',
+        shortDescription: 'hidden',
+        shortDescriptionEn: 'hidden',
+        triggerText: '/closed-skill',
+        category: 'general',
+        updatedAt: null,
+        enabled: false,
+      },
+    ],
   })
 })
 
@@ -160,6 +178,18 @@ describe('ChatBottomArea', () => {
       label: '玩转钉钉',
       command: '/dingtalk-workspace',
     })
+  })
+
+  it('skill picker only shows enabled skills', async () => {
+    const user = userEvent.setup()
+    const { container } = render(<ChatBottomArea />)
+    await waitFor(() => expect(document.querySelector('.ProseMirror')).toBeTruthy())
+    const skillButton = container.querySelector('[aria-label="composer.openSkillPicker"]') as HTMLElement
+
+    await user.click(skillButton)
+
+    expect(await screen.findByText('玩转钉钉')).toBeInTheDocument()
+    expect(screen.queryByText('已关闭技能')).toBeNull()
   })
 
   it('empty Enter does not call sendUserMessage', async () => {

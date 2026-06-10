@@ -54,7 +54,7 @@ export function SkillCard({ title, meta, desc, iconNode, iconBg = 'bg-brand-prim
         <div className={`flex ${iconSize} shrink-0 items-center justify-center rounded-md ${iconBg}`}>
           {iconNode}
         </div>
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <div className={`flex min-w-0 flex-1 flex-col gap-0.5 ${actionsSlot ? 'pr-28' : ''}`}>
           <div className="flex min-w-0 items-center gap-1.5">
             <span className="truncate text-[15px] font-semibold leading-[22px] text-foreground">{title}</span>
             {version ? (

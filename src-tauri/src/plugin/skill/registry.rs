@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use super::catalog_prompt::format_skill_catalog_with_budget;
+use super::enablement::SkillEnablementState;
 use super::invoked::InvokedSkillStore;
 use super::types::DiskSkill;
 
@@ -48,6 +49,25 @@ impl SkillRegistry {
         ids
     }
 
+    pub fn enabled_skill_ids(&self, state: &SkillEnablementState) -> Vec<String> {
+        let mut ids = self
+            .skills
+            .keys()
+            .filter(|id| state.is_enabled(id))
+            .cloned()
+            .collect::<Vec<_>>();
+        ids.sort();
+        ids
+    }
+
+    pub fn get_enabled(&self, id: &str, state: &SkillEnablementState) -> Option<&DiskSkill> {
+        if state.is_enabled(id) {
+            self.skills.get(id)
+        } else {
+            None
+        }
+    }
+
     /// Render the full skill catalog every call. Stateless and safe to invoke
     /// from any conversation / turn without coordinating with other callers.
     ///
@@ -57,6 +77,21 @@ impl SkillRegistry {
     /// that every new conversation sees the skill listing.
     pub fn format_full_catalog(&self, context_window_tokens: usize) -> String {
         let mut skills = self.skills.values().cloned().collect::<Vec<_>>();
+        skills.sort_by(|a, b| a.id.cmp(&b.id));
+        format_skill_catalog_with_budget(&skills, context_window_tokens)
+    }
+
+    pub fn format_enabled_catalog(
+        &self,
+        state: &SkillEnablementState,
+        context_window_tokens: usize,
+    ) -> String {
+        let mut skills = self
+            .skills
+            .values()
+            .filter(|skill| state.is_enabled(&skill.id))
+            .cloned()
+            .collect::<Vec<_>>();
         skills.sort_by(|a, b| a.id.cmp(&b.id));
         format_skill_catalog_with_budget(&skills, context_window_tokens)
     }
@@ -171,6 +206,32 @@ mod replace_all_tests {
 
         let _ = reg.catalog_delta_for_agent(Some("agent-1"), 100_000);
         let _ = reg.catalog_delta_for_agent(None, 100_000);
+
+        let full = reg.format_full_catalog(100_000);
+        assert!(full.contains("`a`"));
+        assert!(full.contains("`b`"));
+    }
+
+    #[test]
+    fn enabled_skill_ids_excludes_disabled_ids() {
+        let reg = SkillRegistry::from_skills(vec![skill("a"), skill("b")]);
+        let mut state = crate::plugin::skill::enablement::SkillEnablementState::default();
+        state.disabled_skill_ids.insert("b".to_string());
+
+        assert_eq!(reg.enabled_skill_ids(&state), vec!["a".to_string()]);
+        assert!(reg.get_enabled("a", &state).is_some());
+        assert!(reg.get_enabled("b", &state).is_none());
+    }
+
+    #[test]
+    fn format_enabled_catalog_excludes_disabled_skills_but_full_catalog_keeps_all() {
+        let reg = SkillRegistry::from_skills(vec![skill("a"), skill("b")]);
+        let mut state = crate::plugin::skill::enablement::SkillEnablementState::default();
+        state.disabled_skill_ids.insert("b".to_string());
+
+        let enabled = reg.format_enabled_catalog(&state, 100_000);
+        assert!(enabled.contains("`a`"));
+        assert!(!enabled.contains("`b`"));
 
         let full = reg.format_full_catalog(100_000);
         assert!(full.contains("`a`"));
