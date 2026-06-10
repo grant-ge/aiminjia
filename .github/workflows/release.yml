@@ -45,11 +45,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: macos-14
-            label: macos-universal
-            os: macos
-            args: '--target universal-apple-darwin'
-            bundle_dir: 'src-tauri/target/universal-apple-darwin/release/bundle'
+          # macOS temporarily disabled — re-enable once the Developer ID cert
+          # is exported to Secrets (APPLE_CERTIFICATE / _PASSWORD /
+          # _SIGNING_IDENTITY) from the signing machine. Focusing on Windows
+          # for now.
+          # - platform: macos-14
+          #   label: macos-universal
+          #   os: macos
+          #   args: '--target universal-apple-darwin'
+          #   bundle_dir: 'src-tauri/target/universal-apple-darwin/release/bundle'
           - platform: windows-latest
             label: windows-x64
             os: windows
