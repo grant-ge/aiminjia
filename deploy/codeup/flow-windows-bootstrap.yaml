@@ -1,0 +1,131 @@
+# template=true
+variables:
+  - key: windowsRunner
+    type: Object
+    value:
+      group: private/OSsnHcPOpafo85Z1
+      labels: windows,amd64
+      vm: true
+
+stages:
+  windows_bootstrap_stage:
+    name: Windows Runner 环境检查
+    jobs:
+      install_git:
+        name: 检查并安装 Git
+        runsOn:
+          group: {{ .windowsRunner.group }}
+          labels: {{ .windowsRunner.labels }}
+          vm: {{ .windowsRunner.vm }}
+        steps:
+          install_git:
+            name: 检查并安装 Git for Windows
+            step: Command
+            with:
+              run: |
+                $ErrorActionPreference = "Stop"
+
+                $git = Get-Command git.exe -ErrorAction SilentlyContinue
+                if ($git) {
+                  Write-Host "Git found: $($git.Source)"
+                  git --version
+                  exit 0
+                }
+
+                Write-Host "Git not found. Installing Git for Windows..."
+                $installer = Join-Path $env:TEMP "Git-2.45.2-64-bit.exe"
+                $url = "https://registry.npmmirror.com/-/binary/git-for-windows/v2.45.2.windows.1/Git-2.45.2-64-bit.exe"
+                Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing
+                Start-Process -FilePath $installer -ArgumentList "/VERYSILENT","/NORESTART","/NOCANCEL","/SP-","/COMPONENTS=icons,ext\reg\shellhere,assoc,assoc_sh" -Wait
+
+                $gitCmd = "C:\Program Files\Git\cmd"
+                $gitBin = "C:\Program Files\Git\bin"
+                $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+                $pathsToAdd = @()
+                if ($machinePath -notlike "*$gitCmd*") { $pathsToAdd += $gitCmd }
+                if ($machinePath -notlike "*$gitBin*") { $pathsToAdd += $gitBin }
+                if ($pathsToAdd.Count -gt 0) {
+                  [Environment]::SetEnvironmentVariable("Path", ($machinePath + ";" + ($pathsToAdd -join ";")), "Machine")
+                }
+                $env:Path = "$gitCmd;$gitBin;$env:Path"
+
+                git --version
+                where.exe git
+                Write-Host "Git installed. Restart the Yunxiao runner/agent service before running flows that use sources/CloneRepoList."
+
+      install_rust:
+        name: 检查并安装 Rust
+        runsOn:
+          group: {{ .windowsRunner.group }}
+          labels: {{ .windowsRunner.labels }}
+          vm: {{ .windowsRunner.vm }}
+        steps:
+          install_rust:
+            name: 检查并安装 Rust stable
+            step: Command
+            with:
+              run: |
+                $ErrorActionPreference = "Stop"
+
+                $cargo = Get-Command cargo.exe -ErrorAction SilentlyContinue
+                if (-not $cargo) {
+                  Write-Host "Rust/cargo not found. Installing rustup..."
+                  $installer = Join-Path $env:TEMP "rustup-init.exe"
+                  $url = "https://static.rust-lang.org/rustup/dist/x86_64-pc-windows-msvc/rustup-init.exe"
+                  Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing
+                  Start-Process -FilePath $installer -ArgumentList "-y","--default-toolchain","stable","--profile","minimal" -Wait
+
+                  $cargoBin = Join-Path $env:USERPROFILE ".cargo\bin"
+                  $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+                  if ($userPath -notlike "*$cargoBin*") {
+                    [Environment]::SetEnvironmentVariable("Path", "$userPath;$cargoBin", "User")
+                  }
+                  $env:Path = "$cargoBin;$env:Path"
+                }
+
+                rustc --version
+                cargo --version
+                rustup default stable
+                Write-Host "Rust ready. Restart the Yunxiao runner/agent service if Rust was installed in this run."
+
+  windows_uv_stage:
+    name: Windows uv 检查
+    jobs:
+      install_uv:
+        name: 检查并安装 uv
+        runsOn:
+          group: {{ .windowsRunner.group }}
+          labels: {{ .windowsRunner.labels }}
+          vm: {{ .windowsRunner.vm }}
+        steps:
+          setup_python:
+            name: 安装 Python
+            step: SetupPython
+            with:
+              pythonVersion: '3.12'
+          install_uv:
+            name: 检查并安装 uv
+            step: Command
+            with:
+              run: |
+                $ErrorActionPreference = "Stop"
+
+                $uv = Get-Command uv.exe -ErrorAction SilentlyContinue
+                if (-not $uv) {
+                  Write-Host "uv not found. Installing uv with pip..."
+                  $python = Get-Command python.exe -ErrorAction SilentlyContinue
+                  if (-not $python) {
+                    throw "Python is required before installing uv. install_python must pass before this stage."
+                  }
+                  python -m pip install --disable-pip-version-check --user uv
+
+                  $scriptsDir = Join-Path ([Environment]::GetFolderPath("ApplicationData")) "Python\Python312\Scripts"
+                  $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+                  if ($userPath -notlike "*$scriptsDir*") {
+                    [Environment]::SetEnvironmentVariable("Path", "$userPath;$scriptsDir", "User")
+                  }
+                  $env:Path = "$scriptsDir;$env:Path"
+                }
+
+                uv --version
+                Write-Host "uv ready. Restart the Yunxiao runner/agent service if uv was installed in this run."

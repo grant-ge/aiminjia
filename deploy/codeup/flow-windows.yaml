@@ -1,0 +1,251 @@
+# template=true
+variables:
+  - key: npmRegistry
+    type: String
+    value: https://registry.npmmirror.com
+
+  - key: windowsRunner
+    type: Object
+    value:
+      group: private/OSsnHcPOpafo85Z1
+      labels: windows,amd64
+      vm: true
+
+sources:
+  repo_0:
+    type: codeup
+    name: lotus-app_lX0Q
+    endpoint: https://codeup.aliyun.com/renlijia/lotus/lotus-app.git
+    branch: main
+    triggerEvents:
+      - push
+      - tagPush
+    certificate:
+      type: serviceConnection
+      serviceConnection: ackwxwjjh9bd3tra
+
+defaultWorkspace: repo_0
+
+stages:
+  windows_preflight_stage:
+    name: Windows Runner 预检
+    jobs:
+      windows_preflight:
+        name: 检查 Git
+        runsOn:
+          group: {{ .windowsRunner.group }}
+          labels: {{ .windowsRunner.labels }}
+          vm: {{ .windowsRunner.vm }}
+        steps:
+          git_check:
+            name: Git 可用性检查
+            step: Command
+            with:
+              run: |
+                $ErrorActionPreference = "Stop"
+                $git = Get-Command git.exe -ErrorAction SilentlyContinue
+                if (-not $git) {
+                  throw "Git is not available in PATH. Run deploy/codeup/flow-windows-bootstrap.yaml once, then restart the Yunxiao runner/agent service."
+                }
+                Write-Host "Git found: $($git.Source)"
+                git --version
+
+  windows_check_stage:
+    name: Windows 校验
+    jobs:
+      windows_check:
+        name: Windows Rust/前端校验
+        runsOn:
+          group: {{ .windowsRunner.group }}
+          labels: {{ .windowsRunner.labels }}
+          vm: {{ .windowsRunner.vm }}
+        steps:
+          setup_python:
+            name: 安装 Python
+            step: SetupPython
+            with:
+              pythonVersion: '3.12'
+          setup_node:
+            name: 安装 Node 环境
+            step: SetupNode
+            with:
+              versionType: predefined
+              npmType: pnpm
+              nodeVersion: '22.21'
+              installYarn: false
+          check:
+            name: cargo / tsc / lint
+            step: Command
+            with:
+              run: |
+                $ErrorActionPreference = "Stop"
+                $env:npm_config_registry = "{{ .npmRegistry }}"
+                $env:COREPACK_NPM_REGISTRY = "{{ .npmRegistry }}"
+                npm config set registry "{{ .npmRegistry }}"
+                pnpm config set registry "{{ .npmRegistry }}"
+
+                if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
+                  throw "Rust stable is required on the Windows runner."
+                }
+
+                pnpm install --frozen-lockfile --registry "{{ .npmRegistry }}"
+                .\scripts\prepare-bundled-runtime.ps1
+                Push-Location src-tauri
+                cargo check
+                cargo test
+                Pop-Location
+                pnpm exec tsc --noEmit
+                pnpm lint
+
+  windows_build_stage:
+    name: Windows 构建签名上传
+    jobs:
+      windows_build:
+        name: Windows x64 构建签名上传
+        runsOn:
+          group: {{ .windowsRunner.group }}
+          labels: {{ .windowsRunner.labels }}
+          vm: {{ .windowsRunner.vm }}
+        steps:
+          setup_python:
+            name: 安装 Python
+            step: SetupPython
+            with:
+              pythonVersion: '3.12'
+          setup_node:
+            name: 安装 Node 环境
+            step: SetupNode
+            with:
+              versionType: predefined
+              npmType: pnpm
+              nodeVersion: '22.21'
+              installYarn: false
+          build:
+            name: Tauri Windows build
+            step: Command
+            with:
+              run: |
+                $ErrorActionPreference = "Stop"
+                $env:npm_config_registry = "{{ .npmRegistry }}"
+                $env:COREPACK_NPM_REGISTRY = "{{ .npmRegistry }}"
+                $timestampUrl = if ($env:WINDOWS_TIMESTAMP_URL) { $env:WINDOWS_TIMESTAMP_URL } else { "http://time.certum.pl" }
+
+                $ref = $env:CI_COMMIT_REF_NAME
+                $version = $null
+                $releaseType = $null
+                if ($ref -like "beta-v*") {
+                  $version = $ref -replace '^beta-v',''
+                  $releaseType = "beta"
+                } elseif ($ref -like "v*") {
+                  $version = $ref -replace '^v',''
+                  $releaseType = "release"
+                } else {
+                  $version = (Get-Content "src-tauri\tauri.conf.json" -Raw | ConvertFrom-Json).version
+                  $releaseType = "beta"
+                  Write-Host "Non-tag build, using version $version and uploading unsigned staging only."
+                }
+
+                npm config set registry "{{ .npmRegistry }}"
+                pnpm config set registry "{{ .npmRegistry }}"
+
+                if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
+                  throw "Rust stable is required on the Windows runner."
+                }
+
+                pnpm install --frozen-lockfile --registry "{{ .npmRegistry }}"
+                pnpm add -D ali-oss@6 --ignore-workspace-root-check --registry "{{ .npmRegistry }}"
+
+                .\scripts\setup-dws.ps1
+                .\scripts\prepare-bundled-runtime.ps1
+
+                $base = "src-tauri\resources\runtime\win32-x64"
+                if (-not (Test-Path "$base\node\node.exe")) { throw "node.exe missing" }
+                if (-not (Test-Path "$base\python\python.exe")) { throw "python.exe missing" }
+                if (-not (Test-Path "$base\uv\uv.exe")) { throw "uv.exe missing" }
+                if (-not (Test-Path "$base\node\node_modules")) { throw "node_modules dir missing" }
+                if (-not (Test-Path "$base\python\Lib\site-packages")) { throw "site-packages dir missing" }
+                & "$base\node\node.exe" --version
+                & "$base\python\python.exe" --version
+                & "$base\uv\uv.exe" --version
+
+                if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY)) {
+                  throw "TAURI_SIGNING_PRIVATE_KEY is required for Tauri updater .sig generation."
+                }
+                if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD)) {
+                  throw "TAURI_SIGNING_PRIVATE_KEY_PASSWORD is required for Tauri updater .sig generation."
+                }
+                try {
+                  [Convert]::FromBase64String($env:TAURI_SIGNING_PRIVATE_KEY.Trim()) | Out-Null
+                } catch {
+                  throw "TAURI_SIGNING_PRIVATE_KEY is not valid base64. Use the existing GitHub Actions secret value, not the updater public key."
+                }
+
+                $windowsSignedInCi = $false
+                $certThumbprint = $env:AIJIA_WINDOWS_CERT_THUMBPRINT
+                if ([string]::IsNullOrWhiteSpace($certThumbprint)) { $certThumbprint = $env:WINDOWS_CERT_THUMBPRINT }
+                if ([string]::IsNullOrWhiteSpace($certThumbprint)) { $certThumbprint = $env:AUTHENTICODE_CERT_SHA1_THUMBPRINT }
+                if (-not [string]::IsNullOrWhiteSpace($certThumbprint)) {
+                  $certThumbprint = $certThumbprint -replace '[^\da-fA-F]', ''
+                  $installedCert = Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_.Thumbprint -eq $certThumbprint } | Select-Object -First 1
+                  if (-not $installedCert) {
+                    throw "Certum SimplySign certificate thumbprint $certThumbprint not found in Cert:\CurrentUser\My. Log in to SimplySign Desktop as the Yunxiao agent user."
+                  }
+                  $windowsSignedInCi = $true
+                  Write-Host "Using Certum SimplySign certificate thumbprint: $certThumbprint"
+                } else {
+                  Write-Host "No SimplySign thumbprint configured. Building unsigned installer and uploading staging."
+                }
+
+                if ($windowsSignedInCi) {
+                  $configPath = "src-tauri\tauri.codeup.windows.conf.json"
+                  $config = Get-Content "src-tauri\tauri.conf.json" -Raw | ConvertFrom-Json
+                  if (-not $config.bundle.windows) {
+                    $config.bundle | Add-Member -MemberType NoteProperty -Name windows -Value ([pscustomobject]@{})
+                  }
+                  $config.bundle.windows | Add-Member -Force -MemberType NoteProperty -Name certificateThumbprint -Value $certThumbprint
+                  $config.bundle.windows | Add-Member -Force -MemberType NoteProperty -Name digestAlgorithm -Value "sha256"
+                  $config.bundle.windows | Add-Member -Force -MemberType NoteProperty -Name timestampUrl -Value $timestampUrl
+                  $config | ConvertTo-Json -Depth 100 | Set-Content -Path $configPath -Encoding UTF8
+                  pnpm tauri build --config $configPath
+                } else {
+                  pnpm tauri build
+                }
+
+                $artifactDir = if ($windowsSignedInCi) { "build\windows-signed" } else { "build\windows-unsigned" }
+                New-Item -ItemType Directory -Force -Path $artifactDir | Out-Null
+                Copy-Item src-tauri\target\release\bundle\nsis\*.exe $artifactDir -Force
+                Copy-Item src-tauri\target\release\bundle\nsis\*.exe.sig $artifactDir -Force
+
+                $exe = Get-ChildItem src-tauri\target\release\bundle\nsis\*.exe | Select-Object -First 1
+                if (-not $exe) { throw "Windows installer not found" }
+                $sig = "$($exe.FullName).sig"
+
+                if ($windowsSignedInCi -and ($ref -like "v*" -or $ref -like "beta-v*")) {
+                  node scripts\ci-upload-windows.mjs $version $releaseType $exe.FullName
+                } else {
+                  node scripts\ci-upload-staging.mjs $version $exe.FullName $sig
+                }
+
+  windows_notify_stage:
+    name: Windows 下载页刷新
+    jobs:
+      refresh_downloads:
+        name: 刷新 downloads.html
+        runsOn:
+          group: {{ .windowsRunner.group }}
+          labels: {{ .windowsRunner.labels }}
+          vm: {{ .windowsRunner.vm }}
+        steps:
+          setup_python:
+            name: 安装 Python
+            step: SetupPython
+            with:
+              pythonVersion: '3.12'
+          refresh:
+            name: 生成并上传下载页
+            step: Command
+            with:
+              run: |
+                $ErrorActionPreference = "Stop"
+                python -m pip install --disable-pip-version-check --user oss2
+                python scripts\ci-generate-download-page.py

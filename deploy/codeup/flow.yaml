@@ -1,0 +1,251 @@
+# template=true
+variables:
+  - key: npmRegistry
+    type: String
+    value: https://registry.npmmirror.com
+
+  - key: linuxRunner
+    type: Object
+    value:
+      group: public/cn-hangzhou
+      container: build-steps-public-registry.cn-hangzhou.cr.aliyuncs.com/build-steps/alinux3:latest
+
+  - key: windowsRunner
+    type: Object
+    value:
+      group: private/OSsnHcPOpafo85Z1
+      labels: windows,amd64
+      vm: true
+
+sources:
+  lotus_app:
+    type: codeup
+    name: lotus-app_lX0Q
+    endpoint: https://codeup.aliyun.com/renlijia/lotus/lotus-app.git
+    branch: main
+    triggerEvents:
+      - push
+      - tagPush
+    certificate:
+      type: serviceConnection
+      serviceConnection: ackwxwjjh9bd3tra
+
+defaultWorkspace: lotus_app
+
+stages:
+  ci_stage:
+    name: CI 校验（对齐 GitHub ci.yml）
+    jobs:
+      check:
+        name: Windows Rust/前端校验
+        runsOn:
+          group: {{ .windowsRunner.group }}
+          labels: {{ .windowsRunner.labels }}
+          vm: {{ .windowsRunner.vm }}
+        steps:
+          run_ci_checks:
+            name: 执行 GitHub CI 等价校验
+            step: Command
+            with:
+              run: |
+                $ErrorActionPreference = "Stop"
+                $env:npm_config_registry = "{{ .npmRegistry }}"
+                $env:COREPACK_NPM_REGISTRY = "{{ .npmRegistry }}"
+
+                npm config set registry "{{ .npmRegistry }}"
+                if (Get-Command corepack -ErrorAction SilentlyContinue) {
+                  corepack enable
+                  corepack prepare pnpm@9 --activate
+                } else {
+                  npm install -g pnpm@9 --registry "{{ .npmRegistry }}"
+                }
+                pnpm config set registry "{{ .npmRegistry }}"
+
+                if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
+                  throw "Rust stable is required on the Windows runner. Install rustup/cargo on private/OSsnHcPOpafo85Z1."
+                }
+
+                pnpm install --frozen-lockfile --registry "{{ .npmRegistry }}"
+                .\scripts\prepare-bundled-runtime.ps1
+                Push-Location src-tauri
+                cargo check
+                cargo test
+                Pop-Location
+                pnpm exec tsc --noEmit
+                pnpm lint
+
+  build_stage:
+    name: 多平台构建（对齐 GitHub build-desktop.yml）
+    jobs:
+      build_windows:
+        name: Windows x64 构建上传
+        runsOn:
+          group: {{ .windowsRunner.group }}
+          labels: {{ .windowsRunner.labels }}
+          vm: {{ .windowsRunner.vm }}
+        steps:
+          build_and_upload:
+            name: 构建 Tauri Windows 包并上传 OSS staging
+            step: Command
+            with:
+              run: |
+                $ErrorActionPreference = "Stop"
+                $env:npm_config_registry = "{{ .npmRegistry }}"
+                $env:COREPACK_NPM_REGISTRY = "{{ .npmRegistry }}"
+                $timestampUrl = if ($env:WINDOWS_TIMESTAMP_URL) { $env:WINDOWS_TIMESTAMP_URL } else { "http://time.certum.pl" }
+
+                $ref = $env:CI_COMMIT_REF_NAME
+                if (-not ($ref -like "v*" -or $ref -like "beta-v*")) {
+                  Write-Host "Skip Windows staging build: CI_COMMIT_REF_NAME=$ref is not a release tag."
+                  exit 0
+                }
+
+                $version = $ref -replace '^beta-v','' -replace '^v',''
+                $releaseType = if ($ref -like "beta-v*") { "beta" } else { "release" }
+                Write-Host "Building AIjia Windows installer for version $version ($releaseType)"
+
+                npm config set registry "{{ .npmRegistry }}"
+                if (Get-Command corepack -ErrorAction SilentlyContinue) {
+                  corepack enable
+                  corepack prepare pnpm@9 --activate
+                } else {
+                  npm install -g pnpm@9 --registry "{{ .npmRegistry }}"
+                }
+                pnpm config set registry "{{ .npmRegistry }}"
+
+                if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
+                  throw "Rust stable is required on the Windows runner. Install rustup/cargo on private/OSsnHcPOpafo85Z1."
+                }
+
+                pnpm install --frozen-lockfile --registry "{{ .npmRegistry }}"
+                pnpm add -D ali-oss@6 --ignore-workspace-root-check --registry "{{ .npmRegistry }}"
+
+                .\scripts\setup-dws.ps1
+                .\scripts\prepare-bundled-runtime.ps1
+
+                $base = "src-tauri\resources\runtime\win32-x64"
+                if (-not (Test-Path "$base\node\node.exe")) { throw "node.exe missing" }
+                if (-not (Test-Path "$base\python\python.exe")) { throw "python.exe missing" }
+                if (-not (Test-Path "$base\uv\uv.exe")) { throw "uv.exe missing" }
+                if (-not (Test-Path "$base\node\node_modules")) { throw "node_modules dir missing" }
+                if (-not (Test-Path "$base\python\Lib\site-packages")) { throw "site-packages dir missing" }
+                & "$base\node\node.exe" --version
+                & "$base\python\python.exe" --version
+                & "$base\uv\uv.exe" --version
+
+                if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY)) {
+                  throw "TAURI_SIGNING_PRIVATE_KEY is required. Configure it as an encrypted Yunxiao pipeline variable; use the same value as GitHub Actions secret TAURI_SIGNING_PRIVATE_KEY."
+                }
+                if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD)) {
+                  throw "TAURI_SIGNING_PRIVATE_KEY_PASSWORD is required. Configure it as an encrypted Yunxiao pipeline variable; use the same value as GitHub Actions secret TAURI_SIGNING_PRIVATE_KEY_PASSWORD."
+                }
+                try {
+                  [Convert]::FromBase64String($env:TAURI_SIGNING_PRIVATE_KEY.Trim()) | Out-Null
+                } catch {
+                  throw "TAURI_SIGNING_PRIVATE_KEY is not valid base64. Do not use the public key from tauri.conf.json, the password, or a placeholder value. Copy the private signing key from the existing GitHub Actions secret."
+                }
+
+                $windowsSignedInCi = $false
+                $certThumbprint = $null
+
+                $certThumbprint = $env:AIJIA_WINDOWS_CERT_THUMBPRINT
+                if ([string]::IsNullOrWhiteSpace($certThumbprint)) { $certThumbprint = $env:WINDOWS_CERT_THUMBPRINT }
+                if ([string]::IsNullOrWhiteSpace($certThumbprint)) { $certThumbprint = $env:AUTHENTICODE_CERT_SHA1_THUMBPRINT }
+                if (-not [string]::IsNullOrWhiteSpace($certThumbprint)) {
+                  $certThumbprint = $certThumbprint -replace '[^\da-fA-F]', ''
+                  $installedCert = Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_.Thumbprint -eq $certThumbprint } | Select-Object -First 1
+                  if (-not $installedCert) {
+                    throw "Certum SimplySign certificate thumbprint $certThumbprint is configured but not found in Cert:\CurrentUser\My. Log in to SimplySign Desktop on this Windows runner under the same user that runs Yunxiao agent, then retry."
+                  }
+                  $windowsSignedInCi = $true
+                  Write-Host "Using Certum SimplySign certificate thumbprint: $certThumbprint"
+                } else {
+                  Write-Host "AIJIA_WINDOWS_CERT_THUMBPRINT / WINDOWS_CERT_THUMBPRINT not set. Building unsigned Windows installer and uploading OSS staging for local signing."
+                }
+
+                if ($windowsSignedInCi) {
+                  $configPath = "src-tauri\tauri.codeup.windows.conf.json"
+                  $config = Get-Content "src-tauri\tauri.conf.json" -Raw | ConvertFrom-Json
+                  if (-not $config.bundle.windows) {
+                    $config.bundle | Add-Member -MemberType NoteProperty -Name windows -Value ([pscustomobject]@{})
+                  }
+                  $config.bundle.windows | Add-Member -Force -MemberType NoteProperty -Name certificateThumbprint -Value $certThumbprint
+                  $config.bundle.windows | Add-Member -Force -MemberType NoteProperty -Name digestAlgorithm -Value "sha256"
+                  $config.bundle.windows | Add-Member -Force -MemberType NoteProperty -Name timestampUrl -Value $timestampUrl
+                  $config | ConvertTo-Json -Depth 100 | Set-Content -Path $configPath -Encoding UTF8
+                  pnpm tauri build --config $configPath
+                } else {
+                  pnpm tauri build
+                }
+
+                $artifactDir = if ($windowsSignedInCi) { "build\windows-signed" } else { "build\windows-unsigned" }
+                New-Item -ItemType Directory -Force -Path $artifactDir | Out-Null
+                Copy-Item src-tauri\target\release\bundle\nsis\*.exe $artifactDir -Force
+                Copy-Item src-tauri\target\release\bundle\nsis\*.exe.sig $artifactDir -Force
+
+                $exe = Get-ChildItem src-tauri\target\release\bundle\nsis\*.exe | Select-Object -First 1
+                if (-not $exe) { throw "Windows installer not found" }
+                $sig = "$($exe.FullName).sig"
+                if ($windowsSignedInCi) {
+                  node scripts\ci-upload-windows.mjs $version $releaseType $exe.FullName
+                } else {
+                  node scripts\ci-upload-staging.mjs $version $exe.FullName $sig
+                }
+
+  notify_stage:
+    name: 构建后下载页刷新（对齐 GitHub notify）
+    jobs:
+      refresh_downloads:
+        name: 生成并上传 downloads.html
+        runsOn:
+          group: {{ .linuxRunner.group }}
+          container: {{ .linuxRunner.container }}
+        steps:
+          generate_download_page:
+            name: 刷新下载页
+            step: Command
+            with:
+              run: |
+                set -euo pipefail
+                python3 -m pip install --disable-pip-version-check --user oss2
+                python3 scripts/ci-generate-download-page.py
+
+  manual_sign_stage:
+    name: 人工卡点-本地多平台签名上传
+    jobs:
+      manual_sign:
+        name: 等待 macOS 双架构和 Windows 本地签名上传完成
+        component: ManualValidate
+        with:
+          validatorType: pipelineRoles
+          validateMethod: or
+          validatorPipelineRoles: member
+
+  finalize_stage:
+    name: 正式版更新清单（对齐 GitHub finalize-release.yml）
+    jobs:
+      finalize_release:
+        name: 生成 update.json 并刷新下载页
+        runsOn:
+          group: {{ .linuxRunner.group }}
+          container: {{ .linuxRunner.container }}
+        steps:
+          finalize:
+            name: 生成 Tauri updater 清单
+            step: Command
+            with:
+              run: |
+                set -euo pipefail
+
+                ref="${CI_COMMIT_REF_NAME:-}"
+                case "$ref" in
+                  v*) version="${ref#v}" ;;
+                  *)
+                    echo "Skip finalize: CI_COMMIT_REF_NAME=$ref is not a release tag."
+                    exit 0
+                    ;;
+                esac
+
+                python3 -m pip install --disable-pip-version-check --user oss2
+                python3 scripts/ci-finalize.py "$version"
+                python3 scripts/ci-generate-download-page.py
