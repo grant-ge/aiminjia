@@ -54,6 +54,9 @@
       "prompts": "prompts",
       "resources/dws*": "",
       "resources/runtime": "runtime"
+    },
+    "macOS": {
+      "minimumSystemVersion": "10.15"
     }
   }
 }

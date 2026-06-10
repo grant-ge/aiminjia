@@ -2,32 +2,30 @@ name: Build macOS Apps
 
 # ============================================================
 # Cross-platform completion: builds macOS arm64 + x86_64 on
-# GitHub-hosted runners (native per-arch, no cross-compile).
+# GitHub-hosted runners using the official tauri-apps/tauri-action.
 #
 #   macos-14  -> Apple Silicon (darwin-arm64)
 #   macos-13  -> Intel         (darwin-x64)
 #
-# Windows builds live in build-desktop.yml (already on GitHub CI).
+# tauri-action only wraps `tauri build`; the project's custom
+# bundled-runtime + dws steps run BEFORE it, artifact upload runs
+# AFTER it. No tagName is passed, so it builds WITHOUT creating a
+# GitHub Release.
 #
-# NOTE: GitHub produces UNSIGNED .app/.dmg. Apple codesign +
-# notarization still happen LOCALLY (Developer ID cert lives in
-# the maintainer's Keychain) via:
+# Apple codesign + notarization stay LOCAL (Developer ID cert lives
+# in the maintainer's Keychain) via:
 #   scripts/build-and-sign-macos.sh <version> <beta|release>
-# This workflow is for build verification + downloadable unsigned
-# artifacts, not for shipping signed releases.
+# This workflow produces UNSIGNED build-verification artifacts.
+#
+# Windows builds live in build-desktop.yml.
 # ============================================================
 
 on:
   workflow_dispatch:
-    inputs:
-      arch:
-        description: 'Which architecture(s) to build'
-        type: choice
-        options:
-          - both
-          - arm64
-          - x86_64
-        default: both
+  push:
+    tags:
+      - 'v*'
+      - 'beta-v*'
 
 permissions:
   contents: read
@@ -43,78 +41,36 @@ jobs:
         include:
           - runner: macos-14
             plat: darwin-arm64
-            arch: arm64
           - runner: macos-13
             plat: darwin-x64
-            arch: x86_64
     steps:
-      - name: Skip unselected arch
-        id: gate
-        run: |
-          want="${{ github.event.inputs.arch }}"
-          if [ "$want" = "both" ] || [ "$want" = "${{ matrix.arch }}" ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "Arch ${{ matrix.arch }} not selected ($want); skipping."
-          fi
-
-      - name: Checkout
-        if: steps.gate.outputs.run == 'true'
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Extract version
-        if: steps.gate.outputs.run == 'true'
-        id: version
-        run: |
-          version=$(grep '"version"' src-tauri/tauri.conf.json | head -1 | sed 's/.*: *"\(.*\)".*/\1/')
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "Version: $version"
-
-      - name: Setup Node.js
-        if: steps.gate.outputs.run == 'true'
+      - name: Sync node version and setup cache
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
       - name: Install pnpm
-        if: steps.gate.outputs.run == 'true'
         uses: pnpm/action-setup@v4
         with:
           version: 9
 
-      - name: Get pnpm store directory
-        if: steps.gate.outputs.run == 'true'
-        id: pnpm-cache
-        run: echo "store=$(pnpm store path)" >> "$GITHUB_OUTPUT"
-
-      - name: Cache pnpm store
-        if: steps.gate.outputs.run == 'true'
-        uses: actions/cache@v4
-        with:
-          path: ${{ steps.pnpm-cache.outputs.store }}
-          key: pnpm-store-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: pnpm-store-${{ runner.os }}-${{ runner.arch }}-
-
-      - name: Install Rust stable
-        if: steps.gate.outputs.run == 'true'
+      - name: Rust setup
         uses: dtolnay/rust-toolchain@stable
 
       - name: Rust cache
-        if: steps.gate.outputs.run == 'true'
         uses: swatinem/rust-cache@v2.7.3
         with:
           workspaces: src-tauri
           cache-on-failure: true
           cache-all-crates: true
-          save-if: ${{ github.event_name == 'workflow_dispatch' }}
 
       - name: Install frontend dependencies
-        if: steps.gate.outputs.run == 'true'
         run: pnpm install
 
       - name: Cache dws CLI
-        if: steps.gate.outputs.run == 'true'
         id: dws-cache
         uses: actions/cache@v4
         with:
@@ -122,13 +78,12 @@ jobs:
           key: dws-cli-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/setup-dws.sh') }}
 
       - name: Setup dws CLI (macOS)
-        if: steps.gate.outputs.run == 'true' && steps.dws-cache.outputs.cache-hit != 'true'
+        if: steps.dws-cache.outputs.cache-hit != 'true'
         env:
           DWS_NONINTERACTIVE: '1'
         run: bash scripts/setup-dws.sh
 
       - name: Cache bundled runtime sources
-        if: steps.gate.outputs.run == 'true'
         uses: actions/cache@v4
         with:
           path: .runtime-cache
@@ -136,11 +91,9 @@ jobs:
           restore-keys: runtime-sources-v1-${{ runner.arch }}-
 
       - name: Prepare bundled runtime (Node/Python/uv)
-        if: steps.gate.outputs.run == 'true'
         run: PLATFORM=${{ matrix.plat }} bash scripts/prepare-bundled-runtime.sh
 
       - name: Verify bundled runtime layout
-        if: steps.gate.outputs.run == 'true'
         run: |
           base="src-tauri/resources/runtime/${{ matrix.plat }}"
           test -x "$base/node/bin/node"      || { echo "node missing"; exit 1; }
@@ -152,37 +105,22 @@ jobs:
           "$base/python/bin/python3" --version
           "$base/uv/bin/uv" --version
 
-      - name: Build Tauri app
-        if: steps.gate.outputs.run == 'true'
+      - name: Build the app
+        uses: tauri-apps/tauri-action@v0
         env:
+          MACOSX_DEPLOYMENT_TARGET: '10.15'
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: pnpm tauri build
+        # No tagName/releaseName: build only, do NOT create a GitHub Release.
+        # Apple signing + OSS upload happen locally afterwards.
 
       - name: Upload unsigned artifacts
-        if: steps.gate.outputs.run == 'true' && always()
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: macos-${{ matrix.arch }}-unsigned
+          name: macos-${{ matrix.plat }}-unsigned
           path: |
             src-tauri/target/release/bundle/dmg/*.dmg
             src-tauri/target/release/bundle/macos/*.app.tar.gz
             src-tauri/target/release/bundle/macos/*.app.tar.gz.sig
           retention-days: 30
-
-  summary:
-    name: Summary
-    needs: [build-macos]
-    runs-on: ubuntu-latest
-    if: always()
-    steps:
-      - name: Notes
-        run: |
-          echo "## macOS Build Complete" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Produced **unsigned** arm64 / x86_64 artifacts (Apple codesign + notarization are done locally)." >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "To ship a signed release, run locally on a Mac:" >> "$GITHUB_STEP_SUMMARY"
-          echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "bash scripts/build-and-sign-macos.sh <version> <beta|release>" >> "$GITHUB_STEP_SUMMARY"
-          echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
