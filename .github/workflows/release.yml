@@ -3,14 +3,13 @@ name: Release
 # Official Tauri cross-platform build, per
 # https://www.tauri.net.cn/53.html (跨平台编译).
 #
-# Three parallel runners (no universal — split for speed):
-#   macos-14         -> Apple Silicon (darwin-arm64)
-#   macos-13         -> Intel         (darwin-x64)
-#   windows-latest   -> Windows x64
+# Two runners:
+#   macos-14 (Apple Silicon) -> universal-apple-darwin (Intel + Apple Silicon
+#       in ONE package). Built on arm64 only so it never waits on the scarce
+#       macos-13 Intel runner pool.
+#   windows-latest           -> Windows x64
 #
-# Each runner builds its NATIVE arch (no --target / cross-compile), so
-# each only needs the single matching bundled runtime. macOS min system
-# version pinned to 10.15.
+# macOS min system version pinned to 10.15.
 
 on:
   workflow_dispatch:
@@ -33,7 +32,7 @@ jobs:
   release:
     name: Build (${{ matrix.label }})
     runs-on: ${{ matrix.platform }}
-    timeout-minutes: 90
+    timeout-minutes: 120
     env:
       # Mirror the secret to a job env so step `if:` can branch on whether
       # signing is configured (the `secrets` context isn't reliable in `if:`).
@@ -43,16 +42,17 @@ jobs:
       matrix:
         include:
           - platform: macos-14
-            label: macos-arm64
+            label: macos-universal
             os: macos
-            runtime_plat: darwin-arm64
-          - platform: macos-13
-            label: macos-x64
-            os: macos
-            runtime_plat: darwin-x64
+            args: '--target universal-apple-darwin'
+            rust_targets: 'aarch64-apple-darwin,x86_64-apple-darwin'
+            bundle_dir: 'src-tauri/target/universal-apple-darwin/release/bundle'
           - platform: windows-latest
             label: windows-x64
             os: windows
+            args: ''
+            rust_targets: ''
+            bundle_dir: 'src-tauri/target/release/bundle'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -70,6 +70,8 @@ jobs:
 
       - name: Rust setup
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets }}
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -95,9 +97,11 @@ jobs:
           key: runtime-sources-v1-${{ matrix.label }}-${{ hashFiles('scripts/runtime-sources.json') }}
           restore-keys: runtime-sources-v1-${{ matrix.label }}-
 
-      - name: Prepare bundled runtime (macOS)
+      - name: Prepare bundled runtime (macOS — both arches for universal)
         if: matrix.os == 'macos'
-        run: PLATFORM=${{ matrix.runtime_plat }} bash scripts/prepare-bundled-runtime.sh
+        run: |
+          PLATFORM=darwin-arm64 bash scripts/prepare-bundled-runtime.sh
+          PLATFORM=darwin-x64  bash scripts/prepare-bundled-runtime.sh
 
       - name: Prepare bundled runtime (Windows)
         if: matrix.os == 'windows'
@@ -147,6 +151,7 @@ jobs:
           releaseBody: 'See the assets to download and install this version.'
           releaseDraft: true
           prerelease: false
+          args: ${{ matrix.args }}
 
       # Upload installers as run artifacts so branch-push builds are
       # downloadable from the Actions UI (30-day retention). Tag pushes also
@@ -155,10 +160,10 @@ jobs:
         if: matrix.os == 'macos' && always()
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.label }}-app
+          name: ${{ matrix.label }}
           path: |
-            src-tauri/target/release/bundle/macos/*.app
-            src-tauri/target/release/bundle/dmg/*.dmg
+            ${{ matrix.bundle_dir }}/macos/*.app
+            ${{ matrix.bundle_dir }}/dmg/*.dmg
           if-no-files-found: warn
           retention-days: 30
 
@@ -166,7 +171,7 @@ jobs:
         if: matrix.os == 'windows' && always()
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.label }}-installer
-          path: src-tauri/target/release/bundle/nsis/*.exe
+          name: ${{ matrix.label }}
+          path: ${{ matrix.bundle_dir }}/nsis/*.exe
           if-no-files-found: warn
           retention-days: 30
