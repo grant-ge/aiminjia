@@ -162,6 +162,7 @@ pub fn map_runtime_event(event: &RuntimeEvent) -> Option<LegacyEvent> {
                     crate::runtime::tools::permission::PermissionMode::Plan => "plan",
                     crate::runtime::tools::permission::PermissionMode::DontAsk => "dontAsk",
                     crate::runtime::tools::permission::PermissionMode::AcceptEdits => "acceptEdits",
+                    crate::runtime::tools::permission::PermissionMode::FullAccess => "fullAccess",
                 },
                 "rememberOptions": remember_options.iter().map(|destination| match destination {
                     crate::runtime::tools::permission::PermissionDestination::Session => "session",

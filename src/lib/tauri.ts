@@ -244,7 +244,7 @@ export interface PermissionAskPayload {
   toolName: string;
   message: string;
   suggestions: string[] | null;
-  mode: "default" | "plan" | "dontAsk" | "acceptEdits";
+  mode: "default" | "plan" | "dontAsk" | "acceptEdits" | "fullAccess";
   rememberOptions: Array<"session" | "workspace" | "user"> | null;
   defaultDestination: "session" | "workspace" | "user" | null;
 }
@@ -424,6 +424,13 @@ export interface AgentInfo {
   source: "builtin" | "user";
 }
 
+export type PermissionMode =
+  | "default"
+  | "plan"
+  | "dontAsk"
+  | "acceptEdits"
+  | "fullAccess";
+
 // ---------------------------------------------------------------------------
 // Chat Commands
 // ---------------------------------------------------------------------------
@@ -442,11 +449,13 @@ export function sendMessage(
   agentName?: string | null,
   clientMessageId?: string,
   skillCommand?: SkillCommandPayload | null,
+  permissionMode?: PermissionMode | null,
 ): Promise<void> {
   return invoke<void>("send_message", {
     conversationId,
     content,
     attachments: attachments ?? [],
+    permissionMode: permissionMode ?? null,
     agentName: agentName ?? null,
     clientMessageId: clientMessageId ?? null,
     skillCommand: skillCommand ?? null,

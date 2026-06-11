@@ -11,6 +11,17 @@ fn default_chat_width_mode() -> String {
     "full".to_string()
 }
 
+fn default_permission_mode() -> String {
+    "default".to_string()
+}
+
+fn normalize_default_permission_mode(value: &str) -> String {
+    match value {
+        "default" | "fullAccess" => value.to_string(),
+        _ => default_permission_mode(),
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LlmProvider {
@@ -75,6 +86,9 @@ pub struct AppSettings {
     /// Chat content width mode: centered | full.
     #[serde(default = "default_chat_width_mode")]
     pub chat_width_mode: String,
+    /// Default tool permission mode for new turns: default | fullAccess.
+    #[serde(default = "default_permission_mode")]
+    pub default_permission_mode: String,
     /// JSON-stringified `AuthorizedWorkspaceRef` ({id, rootPath, displayName}) — 首页 task composer
     /// 当前选中的 workspace。空字符串视为未选中。
     #[serde(default)]
@@ -123,6 +137,7 @@ impl Default for AppSettings {
             font_scale: default_font_scale(),
             accent_color: String::new(),
             chat_width_mode: default_chat_width_mode(),
+            default_permission_mode: default_permission_mode(),
             ui_home_selected_workspace: String::new(),
             ui_home_recent_workspaces: String::new(),
             ui_sidebar_collapsed_projects: String::new(),
@@ -191,6 +206,10 @@ impl AppSettings {
             font_scale: get_str("fontScale", &defaults.font_scale),
             accent_color: get_str("accentColor", &defaults.accent_color),
             chat_width_mode: get_str("chatWidthMode", &defaults.chat_width_mode),
+            default_permission_mode: normalize_default_permission_mode(&get_str(
+                "defaultPermissionMode",
+                &defaults.default_permission_mode,
+            )),
             ui_home_selected_workspace: get_str(
                 "uiHomeSelectedWorkspace",
                 &defaults.ui_home_selected_workspace,
@@ -240,6 +259,37 @@ mod tests {
     #[test]
     fn defaults_font_scale_to_medium() {
         assert_eq!(AppSettings::default().font_scale, "medium");
+    }
+
+    #[test]
+    fn defaults_permission_mode_to_default() {
+        assert_eq!(AppSettings::default().default_permission_mode, "default");
+    }
+
+    #[test]
+    fn reads_default_permission_mode_from_string_map() {
+        let mut map = HashMap::new();
+        map.insert(
+            "defaultPermissionMode".to_string(),
+            "fullAccess".to_string(),
+        );
+
+        let settings = AppSettings::from_string_map(&map);
+
+        assert_eq!(settings.default_permission_mode, "fullAccess");
+    }
+
+    #[test]
+    fn invalid_default_permission_mode_falls_back() {
+        let mut map = HashMap::new();
+        map.insert(
+            "defaultPermissionMode".to_string(),
+            "sudoForever".to_string(),
+        );
+
+        let settings = AppSettings::from_string_map(&map);
+
+        assert_eq!(settings.default_permission_mode, "default");
     }
 
     #[test]

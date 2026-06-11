@@ -12,7 +12,8 @@ import {
 } from '@/features/chat/ConversationExportDialog'
 import { useExpertTeamForConversation } from '@/features/expert-teams/expertTeamRegistry'
 import { ExpertTeamAvatarStack } from '@/features/expert-teams/ExpertTeamAvatarStack'
-import { getExpertTeam } from '@/features/expert-teams/teams'
+import { loadExpertTeamCatalog } from '@/features/expert-teams/expertTeamCatalog'
+import { getExpertTeam, setRemoteExpertTeams, type ExpertTeam } from '@/features/expert-teams/teams'
 import { useChat } from '@/hooks/useChat'
 import { useConversationExport } from '@/hooks/useConversationExport'
 import { useTeamOverview } from '@/hooks/useTeamOverview'
@@ -82,8 +83,31 @@ export function ChatPage({ conversationId }: ChatPageProps) {
     ? localizedSkillName(defaultSkill, employee.defaultSkillId, i18n.language)
     : null
   const { overview: teamOverview } = useTeamOverview(activeConversationId)
-  const expertTeamId = useExpertTeamForConversation(conversationId)
-  const expertTeam = expertTeamId ? getExpertTeam(expertTeamId, i18n.language) : undefined
+  const registryExpertTeamId = useExpertTeamForConversation(conversationId)
+  const expertTeamId = registryExpertTeamId
+    ?? (conversationSource?.kind === 'expertTeam' ? conversationSource.expertTeamId : undefined)
+  const cachedExpertTeam = expertTeamId ? getExpertTeam(expertTeamId, i18n.language) : undefined
+  const hasCachedExpertTeam = Boolean(cachedExpertTeam)
+  const [catalogExpertTeam, setCatalogExpertTeam] = useState<ExpertTeam | null>(null)
+  useEffect(() => {
+    setCatalogExpertTeam(null)
+    if (!expertTeamId || hasCachedExpertTeam) return
+    let cancelled = false
+    loadExpertTeamCatalog(i18n.language)
+      .then((catalog) => {
+        setRemoteExpertTeams(catalog.teams)
+        if (cancelled) return
+        setCatalogExpertTeam(catalog.teams.find((team) => team.id === expertTeamId) ?? null)
+      })
+      .catch((err) => {
+        console.warn('[ChatPage] expert team catalog load failed:', err)
+        if (!cancelled) setCatalogExpertTeam(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [expertTeamId, i18n.language, hasCachedExpertTeam])
+  const expertTeam = cachedExpertTeam ?? catalogExpertTeam ?? undefined
   const sourceLabel = conv?.kind === 'expertTeam'
     ? expertTeam?.name ?? conv?.sourceLabel
     : conv?.sourceLabel

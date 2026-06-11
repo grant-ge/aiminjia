@@ -1,5 +1,7 @@
 import { create } from 'zustand'
 
+import type { PermissionMode } from '@/lib/tauri'
+
 export type Route =
   | { kind: 'home' }
   | { kind: 'employees' }
@@ -27,7 +29,6 @@ export type SettingsModalState = null | SettingsModalKey
 
 const DISABLED_SETTINGS_KEYS = new Set<SettingsModalKey>([
   'usage',
-  'permissions',
   'mcp',
   'sso',
   'shortcuts',
@@ -41,6 +42,8 @@ export interface PendingSkillSelection {
   trigger: string
 }
 
+export const DRAFT_PERMISSION_SESSION_ID = '__draft__'
+
 interface UiState {
   route: Route
   settingsModal: SettingsModalState
@@ -48,6 +51,7 @@ interface UiState {
   sidebarHidden: boolean
   prefillText: string | null
   pendingSkill: PendingSkillSelection | null
+  permissionModesBySession: Record<string, PermissionMode>
   setRoute: (route: Route) => void
   openSettings: (settingsModal: SettingsModalKey) => void
   closeSettings: () => void
@@ -58,12 +62,22 @@ interface UiState {
   consumePrefillText: () => string | null
   setPendingSkill: (skill: PendingSkillSelection) => void
   consumePendingSkill: () => PendingSkillSelection | null
+  setPermissionModeForSession: (sessionId: string, mode: PermissionMode) => void
+  getPermissionModeForSession: (sessionId: string) => PermissionMode | undefined
 }
 
 const ROUTE_STORAGE_KEY = 'aijia-ui-route'
 const SIDEBAR_TAB_STORAGE_KEY = 'aijia-sidebar-tab'
 const SIDEBAR_HIDDEN_STORAGE_KEY = 'aijia-sidebar-hidden'
+const PERMISSION_MODES_STORAGE_KEY = 'aijia-permission-modes-by-session'
 const DEFAULT_ROUTE: Route = { kind: 'home' }
+const KNOWN_PERMISSION_MODES = new Set<PermissionMode>([
+  'default',
+  'plan',
+  'dontAsk',
+  'acceptEdits',
+  'fullAccess',
+])
 
 function isRoute(value: unknown): value is Route {
   if (!value || typeof value !== 'object') return false
@@ -145,6 +159,36 @@ function persistSidebarHidden(hidden: boolean) {
   }
 }
 
+function isPermissionMode(value: unknown): value is PermissionMode {
+  return typeof value === 'string' && KNOWN_PERMISSION_MODES.has(value as PermissionMode)
+}
+
+function loadPersistedPermissionModes(): Record<string, PermissionMode> {
+  if (typeof localStorage === 'undefined') return {}
+  try {
+    const raw = localStorage.getItem(PERMISSION_MODES_STORAGE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return {}
+    const entries = Object.entries(parsed)
+      .filter((entry): entry is [string, PermissionMode] =>
+        typeof entry[0] === 'string' && isPermissionMode(entry[1]),
+      )
+    return Object.fromEntries(entries)
+  } catch {
+    return {}
+  }
+}
+
+function persistPermissionModes(modes: Record<string, PermissionMode>) {
+  if (typeof localStorage === 'undefined') return
+  try {
+    localStorage.setItem(PERMISSION_MODES_STORAGE_KEY, JSON.stringify(modes))
+  } catch {
+    // Ignore storage failures; current session still keeps the mode in memory.
+  }
+}
+
 export const useUiStore = create<UiState>((set, get) => ({
   route: loadPersistedRoute(),
   settingsModal: null,
@@ -152,6 +196,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   sidebarHidden: loadPersistedSidebarHidden(),
   prefillText: null,
   pendingSkill: null,
+  permissionModesBySession: loadPersistedPermissionModes(),
   setRoute: (route) => {
     persistRoute(route)
     set({ route })
@@ -187,6 +232,12 @@ export const useUiStore = create<UiState>((set, get) => ({
     if (skill !== null) set({ pendingSkill: null })
     return skill
   },
+  setPermissionModeForSession: (sessionId, mode) => {
+    const next = { ...get().permissionModesBySession, [sessionId]: mode }
+    persistPermissionModes(next)
+    set({ permissionModesBySession: next })
+  },
+  getPermissionModeForSession: (sessionId) => get().permissionModesBySession[sessionId],
 }))
 
 // ---------------------------------------------------------------------------

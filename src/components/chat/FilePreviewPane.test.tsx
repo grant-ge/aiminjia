@@ -138,20 +138,20 @@ describe('FilePreviewPane', () => {
     expect(onDownload).toHaveBeenCalledWith({ ...target, fileName: 'mock-status-chart.png', fileType: 'png' })
   })
 
-  it('renders html preview responses in a sandboxed iframe', async () => {
+  it('allows scripts inside generated html preview while keeping it sandboxed', async () => {
     previewMock.getFilePreview.mockResolvedValue({
       kind: 'html',
       fileName: 'report.html',
       mimeType: 'text/html',
-      content: '<h1>Report</h1>',
+      content: '<h1>Report</h1><script>document.body.dataset.ready = "true"</script>',
       sandbox: true,
     })
 
     render(<FilePreviewPane target={{ ...target, fileName: 'report.html', fileType: 'html' }} onOpenExternal={() => {}} />)
 
     const frame = await screen.findByTitle('report.html')
-    expect(frame).toHaveAttribute('sandbox', '')
-    expect(frame).toHaveAttribute('srcdoc', '<h1>Report</h1>')
+    expect(frame).toHaveAttribute('sandbox', 'allow-scripts')
+    expect(frame).toHaveAttribute('srcdoc', '<h1>Report</h1><script>document.body.dataset.ready = "true"</script>')
   })
 
   it('renders unsupported preview responses and keeps external open available', async () => {

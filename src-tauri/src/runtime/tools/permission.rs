@@ -58,6 +58,7 @@ pub enum PermissionMode {
     Plan,
     DontAsk,
     AcceptEdits,
+    FullAccess,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -106,6 +107,10 @@ pub fn apply_permission_mode(
                 tool_name
             ),
             reason: PermissionReason::Mode("plan".into()),
+        },
+        (PermissionMode::FullAccess, PermissionDecision::Ask { .. }) => PermissionDecision::Allow {
+            updated_input: None,
+            reason: PermissionReason::Mode("fullAccess".into()),
         },
         (_, decision) => decision,
     }

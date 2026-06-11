@@ -1,5 +1,5 @@
 import type { StoreApi, UseBoundStore } from 'zustand'
-import type { TurnOutcome, TurnStageKind } from '@/lib/tauri'
+import type { PermissionMode, TurnOutcome, TurnStageKind } from '@/lib/tauri'
 
 export interface ToolExecution {
   toolName: string
@@ -61,7 +61,7 @@ export interface PendingAsk {
   toolName: string
   message: string
   suggestions: string[] | null
-  mode: 'default' | 'plan' | 'dontAsk' | 'acceptEdits'
+  mode: PermissionMode
   rememberOptions: Array<'session' | 'workspace' | 'user'> | null
   defaultDestination: 'session' | 'workspace' | 'user' | null
 }

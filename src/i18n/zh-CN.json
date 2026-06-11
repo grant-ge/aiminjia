@@ -321,6 +321,14 @@
       "chatWidthCentered": "居中",
       "chatWidthFull": "全宽"
     },
+    "permissions": {
+      "title": "系统权限",
+      "description": "设置新会话默认采用的工具权限。会话内显式选择的权限优先于这里的全局默认。",
+      "defaultAccess": "默认访问",
+      "defaultAccessDesc": "用户目录默认可读，敏感路径会询问；工作区可写，其他位置写入会询问；删除始终更严格。",
+      "fullAccess": "完全访问",
+      "fullAccessDesc": "普通读写和常规删除尽量不打断；系统目录、用户主目录等高风险删除仍会被拦截。"
+    },
     "archived": {
       "newChat": "新对话",
       "noRecords": "暂无归档记录",
@@ -463,6 +471,19 @@
     "openSkillPicker": "选择技能",
     "openSkillPickerWithSkill": "当前技能：{{name}}",
     "removeSkill": "移除技能 {{name}}",
+    "permissionModeLabel": "权限模式：{{mode}}",
+    "permissionModeDefault": "默认",
+    "permissionModeFull": "完全",
+    "permissionModeDefaultLong": "默认权限",
+    "permissionModeFullLong": "完全访问权限",
+    "permissionModeDefaultDesc": "使用设置中的默认权限策略",
+    "permissionModeFullDesc": "本会话使用完全访问；普通读写删尽量不询问，高风险删除仍会拦截",
+    "fullAccessRulesTitle": "完全访问权限说明",
+    "fullAccessRulesIntro": "开启后，本会话会这样处理：",
+    "fullAccessRuleLessConfirm": "减少确认步骤，允许 AI 直接执行更多操作",
+    "fullAccessRuleSensitive": "文件修改、命令执行会更少打断你",
+    "fullAccessRuleTrusted": "仅建议在你信任当前任务时使用",
+    "fullAccessRuleSwitchBack": "你可随时切回默认权限",
     "paste": {
       "cannotPaste": "无法粘贴",
       "clipboardImageFailed": "读取剪贴板图片失败",

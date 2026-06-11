@@ -124,6 +124,7 @@ export function PermissionAskDialog({
     plan: '计划模式',
     dontAsk: '禁止询问模式',
     acceptEdits: '自动编辑模式',
+    fullAccess: '完全访问模式',
   }[ask.mode]
 
   return (

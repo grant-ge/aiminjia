@@ -1550,12 +1550,17 @@ fn resolve_permission_path_scope_override(
             )
     });
     let (kind, current_path) = current.split_once(':')?;
-    if kind != "path" && kind != "pathwrite" {
+    if kind != "path" && kind != "pathwrite" && kind != "pathdelete" {
         return None;
     }
     let (scope_kind, raw_path) = raw_path
         .strip_prefix("pathwrite:")
         .map(|value| ("pathwrite", value))
+        .or_else(|| {
+            raw_path
+                .strip_prefix("pathdelete:")
+                .map(|value| ("pathdelete", value))
+        })
         .or_else(|| raw_path.strip_prefix("path:").map(|value| ("path", value)))
         .unwrap_or((kind, raw_path));
     if scope_kind != kind {

@@ -123,6 +123,7 @@ pub struct PathAllowRuleEntry {
 pub enum StoredPathOp {
     Read,
     Write,
+    Delete,
 }
 
 impl From<crate::runtime::path_auth::PathOp> for StoredPathOp {
@@ -131,6 +132,7 @@ impl From<crate::runtime::path_auth::PathOp> for StoredPathOp {
         match op {
             PathOp::Read => StoredPathOp::Read,
             PathOp::Write => StoredPathOp::Write,
+            PathOp::Delete => StoredPathOp::Delete,
         }
     }
 }
@@ -141,6 +143,7 @@ impl From<StoredPathOp> for crate::runtime::path_auth::PathOp {
         match op {
             StoredPathOp::Read => PathOp::Read,
             StoredPathOp::Write => PathOp::Write,
+            StoredPathOp::Delete => PathOp::Delete,
         }
     }
 }
