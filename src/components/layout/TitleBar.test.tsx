@@ -57,10 +57,11 @@ describe('TitleBar', () => {
     expect(screen.getByLabelText('Close')).toBeInTheDocument()
   })
 
-  it('has a bottom border on Windows in production', () => {
+  it('does not add a bottom border on Windows in production', () => {
     Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Windows NT 10.0)', configurable: true })
     const { container } = render(<TitleBar />)
-    expect(container.firstChild).toHaveClass('border-b', 'border-sidebar-border')
+    expect(container.firstChild).not.toHaveClass('border-b')
+    expect(container.firstChild).not.toHaveClass('border-sidebar-border')
   })
 
   it('shows DEV badge when import.meta.env.DEV is true', () => {

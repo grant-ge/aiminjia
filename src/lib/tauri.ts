@@ -1055,6 +1055,10 @@ export function channelRevealSecret(
   return invoke<string>("channel_reveal_secret", { platform });
 }
 
+export function channelSendDingtalkGreeting(): Promise<void> {
+  return invoke<void>("channel_send_dingtalk_greeting");
+}
+
 // ---------------------------------------------------------------------------
 // Wecom-specific channel commands
 // ---------------------------------------------------------------------------

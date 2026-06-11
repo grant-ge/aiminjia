@@ -1328,7 +1328,10 @@
       "addNumber": "Add number",
       "deleteRow": "Delete this row",
       "removeChannel": "Remove entire channel",
-      "saveManualConfig": "Save manual configuration"
+      "saveManualConfig": "Save manual configuration",
+      "sendGreeting": "Wake bot",
+      "sendingGreeting": "Waking…",
+      "sendDingtalkGreetingAria": "Wake DingTalk bot"
     },
     "chat": {
       "groupChat": "Group",
@@ -1440,6 +1443,12 @@
         "errorBeginFailed": "Failed to start DingTalk scan flow. Please retry.",
         "errorNoConfig": "DingTalk authorized, but no channel configuration was returned.",
         "errorScanFailed": "DingTalk scan registration failed"
+      },
+      "greeting": {
+        "sentTitle": "Bot awakened",
+        "sentMessage": "Open DingTalk and check the conversation list for an unread badge; once the bot replies, you can find the conversation there.",
+        "failedTitle": "Failed to wake bot",
+        "failedMessage": "Please try again later."
       },
       "inactive": "This conversation belongs to a retired bot and cannot accept new messages."
     },

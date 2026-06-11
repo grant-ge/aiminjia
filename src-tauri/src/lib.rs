@@ -1143,6 +1143,7 @@ pub fn run() {
             commands::channel::channel_set_enabled,
             commands::channel::channel_remove_platform,
             commands::channel::channel_reveal_secret,
+            commands::channel::channel_send_dingtalk_greeting,
             commands::channel::channel_wecom_save,
             commands::channel::channel_wecom_test_connection,
             commands::channel::channel_wecom_remove,

@@ -6,6 +6,7 @@ import { ConfirmDialogHost, useConfirmDialogStore } from '@/components/common/Co
 import { DEFAULTS, useBrandingStore } from '@/stores/brandingStore'
 import { useChannelStore } from '@/stores/channelStore'
 import { useChatStore } from '@/stores/chatStore'
+import { useNotificationStore } from '@/stores/notificationStore'
 import { ChannelPage } from './ChannelPage'
 
 const getMessagesMock = vi.hoisted(() => vi.fn())
@@ -89,6 +90,7 @@ function renderPage(ui = <ChannelPage />) {
 describe('ChannelPage domain UI', () => {
   beforeEach(() => {
     useConfirmDialogStore.setState({ request: null })
+    useNotificationStore.setState({ notifications: [] })
     useBrandingStore.setState({
       productName: DEFAULTS.productName,
       productNameEn: DEFAULTS.productNameEn,
@@ -110,6 +112,7 @@ describe('ChannelPage domain UI', () => {
       setEnabled: vi.fn().mockResolvedValue(undefined),
       removePlatform: vi.fn().mockResolvedValue(undefined),
       revealSecret: vi.fn().mockResolvedValue('plain-secret'),
+      sendDingtalkGreeting: vi.fn().mockResolvedValue(undefined),
     })
     useChatStore.setState({
       conversations: [],
@@ -203,6 +206,26 @@ describe('ChannelPage domain UI', () => {
     expect(within(dialog).getByText('ding-app-key')).toBeInTheDocument()
     expect(within(dialog).getByText('robot-code')).toBeInTheDocument()
     expect(within(dialog).queryByLabelText('钉钉扫码二维码')).not.toBeInTheDocument()
+  })
+
+  it('configured DingTalk can wake the current bot from the overview', async () => {
+    const sendDingtalkGreeting = vi.fn().mockResolvedValue(undefined)
+    useChannelStore.setState({
+      platforms: { dingtalk: connected, feishu },
+      sendDingtalkGreeting,
+    })
+    renderPage()
+
+    await userEvent.click(screen.getByRole('button', { name: '唤醒钉钉机器人' }))
+
+    await waitFor(() => {
+      expect(sendDingtalkGreeting).toHaveBeenCalledTimes(1)
+    })
+    expect(useNotificationStore.getState().notifications.at(-1)).toMatchObject({
+      level: 'success',
+      title: '机器人已唤醒',
+      message: '请打开钉钉，看看左侧会话列表里有没有未读红点；机器人回复后就能找到这条对话。',
+    })
   })
 
   it('remove requires confirmation and restores unconfigured state through store action', async () => {
@@ -330,6 +353,38 @@ describe('ChannelPage domain UI', () => {
     await userEvent.click(screen.getByRole('button', { name: '打开所在文件夹' }))
     await waitFor(() => {
       expect(revealExportInFolderMock).toHaveBeenCalledWith('/tmp/im-session.zip')
+    })
+  })
+
+  it('钉钉 IM 会话可以从顶栏唤醒机器人并提示去钉钉查看未读红点', async () => {
+    const sendDingtalkGreeting = vi.fn().mockResolvedValue(undefined)
+    useChannelStore.setState({
+      sendDingtalkGreeting,
+      conversations: [
+        {
+          sessionId: 'im-dingtalk-1',
+          platform: 'dingtalk',
+          conversationType: 'private',
+          externalId: 'u',
+          displayName: '姚斌权',
+          unreadCount: 0,
+          robotCode: 'current-robot',
+          isActiveRobot: true,
+        },
+      ],
+    })
+
+    renderPage(<ChannelPage sessionId="im-dingtalk-1" />)
+
+    await userEvent.click(screen.getByRole('button', { name: '唤醒钉钉机器人' }))
+
+    await waitFor(() => {
+      expect(sendDingtalkGreeting).toHaveBeenCalledTimes(1)
+    })
+    expect(useNotificationStore.getState().notifications.at(-1)).toMatchObject({
+      level: 'success',
+      title: '机器人已唤醒',
+      message: '请打开钉钉，看看左侧会话列表里有没有未读红点；机器人回复后就能找到这条对话。',
     })
   })
 })

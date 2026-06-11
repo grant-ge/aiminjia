@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import { MoreHorizontal } from "lucide-react";
+import { BellRing, MoreHorizontal } from "lucide-react";
 import { AppDropdown } from "@/components/common/AppDropdown";
 import { requestConfirm } from "@/components/common/ConfirmDialogHost";
 import { initChannelListeners, useChannelStore } from "@/stores/channelStore";
@@ -195,12 +195,16 @@ function PlatformCard({
   onShowDetails,
   onRemove,
   onToggle,
+  onSendGreeting,
+  sendingGreeting,
 }: {
   platform: PlatformCardModel;
   onRegister: () => void;
   onShowDetails: () => void;
   onRemove: () => void;
   onToggle: (enabled: boolean) => void;
+  onSendGreeting?: () => void;
+  sendingGreeting?: boolean;
 }) {
   const { t } = useTranslation();
   return (
@@ -230,6 +234,20 @@ function PlatformCard({
       </div>
 
       <div className="ml-4 flex shrink-0 items-center gap-3">
+        {platform.state.configured && onSendGreeting && (
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            disabled={sendingGreeting}
+            aria-label={t("channel.actions.sendDingtalkGreetingAria")}
+            onClick={onSendGreeting}
+          >
+            {sendingGreeting
+              ? t("channel.actions.sendingGreeting")
+              : t("channel.actions.sendGreeting")}
+          </Button>
+        )}
         {platform.state.configured && (
           <AppDropdown
             ariaLabel={t("channel.actions.morePlatformConfig", {
@@ -310,6 +328,8 @@ function ChannelOverview({
   onShowDingtalkDetails,
   onRemoveDingtalk,
   onToggleDingtalk,
+  onSendDingtalkGreeting,
+  sendingDingtalkGreeting,
   onRegisterFeishu,
   onShowFeishuDetails,
   onRemoveFeishu,
@@ -336,6 +356,8 @@ function ChannelOverview({
   onShowDingtalkDetails: () => void;
   onRemoveDingtalk: () => void;
   onToggleDingtalk: (enabled: boolean) => void;
+  onSendDingtalkGreeting: () => void;
+  sendingDingtalkGreeting: boolean;
   onRegisterFeishu: () => void;
   onShowFeishuDetails: () => void;
   onRemoveFeishu: () => void;
@@ -441,6 +463,12 @@ function ChannelOverview({
                               ? onToggleWhatsapp
                               : noopToggle
                 }
+                onSendGreeting={
+                  platform.key === "dingtalk" ? onSendDingtalkGreeting : undefined
+                }
+                sendingGreeting={
+                  platform.key === "dingtalk" ? sendingDingtalkGreeting : false
+                }
               />
             ))}
           </div>
@@ -453,7 +481,10 @@ function ChannelOverview({
 function ChannelChatView({ sessionId }: { sessionId: string }) {
   const { t } = useTranslation();
   const conversations = useChannelStore((s) => s.conversations);
+  const sendDingtalkGreeting = useChannelStore((s) => s.sendDingtalkGreeting);
   const pushNotification = useNotificationStore((s) => s.push);
+  const [sendingDingtalkGreeting, setSendingDingtalkGreeting] =
+    useState(false);
   const activeConv = conversations.find((c) => c.sessionId === sessionId);
   // 顶栏副标题：直接展示后端填的 displayName（= sender push_name / nick / userid）。
   // 飞书 / 个人微信目前后端拿不到真实用户名（飞书是 "飞书用户 ou_xxx" 占位，
@@ -475,8 +506,42 @@ function ChannelChatView({ sessionId }: { sessionId: string }) {
       activeConv.platform)
     : "";
   const isInactiveSession = !!activeConv && !activeConv.isActiveRobot;
+  const canWakeDingtalk =
+    activeConv?.platform === "dingtalk" && activeConv.isActiveRobot;
   const { overview: teamOverview } = useTeamOverview(sessionId);
   const conversationExport = useConversationExport(sessionId);
+
+  const handleSendDingtalkGreeting = async () => {
+    if (sendingDingtalkGreeting) return;
+    setSendingDingtalkGreeting(true);
+    try {
+      await sendDingtalkGreeting();
+      pushNotification({
+        level: "success",
+        title: t("channel.dingtalk.greeting.sentTitle"),
+        message: t("channel.dingtalk.greeting.sentMessage"),
+        actions: [],
+        dismissible: true,
+        autoHide: 3,
+        context: "toast",
+      });
+    } catch (error) {
+      pushNotification({
+        level: "error",
+        title: t("channel.dingtalk.greeting.failedTitle"),
+        message:
+          error instanceof Error
+            ? error.message
+            : t("channel.dingtalk.greeting.failedMessage"),
+        actions: [],
+        dismissible: true,
+        autoHide: 5,
+        context: "toast",
+      });
+    } finally {
+      setSendingDingtalkGreeting(false);
+    }
+  };
 
   const handleOpenPreviewTarget = async (target: PreviewTarget) => {
     try {
@@ -531,6 +596,23 @@ function ChannelChatView({ sessionId }: { sessionId: string }) {
         workspace={workspaceLabel}
         onShare={conversationExport.openExportDialog}
         shareLabel="导出对话"
+        trailing={
+          canWakeDingtalk ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              icon={<BellRing />}
+              loading={sendingDingtalkGreeting}
+              aria-label={t("channel.actions.sendDingtalkGreetingAria")}
+              onClick={() => void handleSendDingtalkGreeting()}
+            >
+              {sendingDingtalkGreeting
+                ? t("channel.actions.sendingGreeting")
+                : t("channel.actions.sendGreeting")}
+            </Button>
+          ) : undefined
+        }
       />
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         <div
@@ -568,8 +650,11 @@ export function ChannelPage({ sessionId }: ChannelPageProps) {
   const loadConversations = useChannelStore((s) => s.loadConversations);
   const setEnabled = useChannelStore((s) => s.setEnabled);
   const removePlatform = useChannelStore((s) => s.removePlatform);
+  const sendDingtalkGreeting = useChannelStore((s) => s.sendDingtalkGreeting);
+  const pushNotification = useNotificationStore((s) => s.push);
   const [registrationOpen, setRegistrationOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [sendingDingtalkGreeting, setSendingDingtalkGreeting] = useState(false);
   const [feishuRegistrationOpen, setFeishuRegistrationOpen] = useState(false);
   const [feishuDetailsOpen, setFeishuDetailsOpen] = useState(false);
   const [wecomRegistrationOpen, setWecomRegistrationOpen] = useState(false);
@@ -723,6 +808,38 @@ export function ChannelPage({ sessionId }: ChannelPageProps) {
 
   const handleToggleDingtalk = async (enabled: boolean) => {
     await setEnabled("dingtalk", enabled);
+  };
+
+  const handleSendDingtalkGreeting = async () => {
+    if (sendingDingtalkGreeting) return;
+    setSendingDingtalkGreeting(true);
+    try {
+      await sendDingtalkGreeting();
+      pushNotification({
+        level: "success",
+        title: t("channel.dingtalk.greeting.sentTitle"),
+        message: t("channel.dingtalk.greeting.sentMessage"),
+        actions: [],
+        dismissible: true,
+        autoHide: 3,
+        context: "toast",
+      });
+    } catch (error) {
+      pushNotification({
+        level: "error",
+        title: t("channel.dingtalk.greeting.failedTitle"),
+        message:
+          error instanceof Error
+            ? error.message
+            : t("channel.dingtalk.greeting.failedMessage"),
+        actions: [],
+        dismissible: true,
+        autoHide: 5,
+        context: "toast",
+      });
+    } finally {
+      setSendingDingtalkGreeting(false);
+    }
   };
 
   const handleRemoveFeishu = async () => {
@@ -898,6 +1015,8 @@ export function ChannelPage({ sessionId }: ChannelPageProps) {
           onShowDingtalkDetails={() => setDetailsOpen(true)}
           onRemoveDingtalk={() => void handleRemoveDingtalk()}
           onToggleDingtalk={(enabled) => void handleToggleDingtalk(enabled)}
+          onSendDingtalkGreeting={() => void handleSendDingtalkGreeting()}
+          sendingDingtalkGreeting={sendingDingtalkGreeting}
           onRegisterFeishu={() => setFeishuRegistrationOpen(true)}
           onShowFeishuDetails={() => setFeishuDetailsOpen(true)}
           onRemoveFeishu={() => void handleRemoveFeishu()}

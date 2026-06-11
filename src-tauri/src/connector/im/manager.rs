@@ -36,6 +36,8 @@ use super::dingtalk::download::{DingtalkFileDownloader, DownloadedFile};
 use super::types::AttachmentKind;
 use crate::runtime::chat::chat_turn_driver::{ChatAttachmentRef, IM_MOBILE_CHANNEL_CONTEXT};
 
+const DINGTALK_GREETING_PROMPT: &str = "你好";
+
 /// Per-platform runtime state. Each platform (dingtalk / feishu / ...) owns its
 /// own slot — disabling or reconnecting one MUST NOT touch another's slot.
 /// Prior to PR3.5 these fields were single-slot at the `ChannelManager` level
@@ -51,6 +53,30 @@ struct PerPlatformState {
     /// bail. Kept as `Arc<AtomicU64>` so closures spawned at connect-time
     /// retain access even after the map entry is replaced.
     stream_generation: Arc<AtomicU64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DingtalkGreetingTarget {
+    session_id: String,
+    external_conversation_key: String,
+}
+
+fn select_dingtalk_greeting_target(
+    conversations: &[ChannelConversation],
+    current_robot_code: &str,
+) -> Option<DingtalkGreetingTarget> {
+    conversations
+        .iter()
+        .find(|conversation| {
+            conversation.platform == Platform::Dingtalk
+                && conversation.conversation_type == ConversationType::Private
+                && conversation.is_active_robot
+                && conversation.robot_code == current_robot_code
+        })
+        .map(|conversation| DingtalkGreetingTarget {
+            session_id: conversation.session_id.clone(),
+            external_conversation_key: conversation.external_id.clone(),
+        })
 }
 
 impl PerPlatformState {
@@ -2592,6 +2618,62 @@ impl ChannelManager {
             Platform::Telegram => self.config_store.reveal_telegram_token(),
             other => anyhow::bail!("{} channel is not available yet", other.as_str()),
         }
+    }
+
+    /// Trigger a small self-test turn in the current DingTalk private bot session.
+    ///
+    /// We cannot spoof a DingTalk user inbound event from the outside. Instead,
+    /// reuse the active private channel session that was created by a real
+    /// inbound message, register a DingTalk AI card target, and send a normal
+    /// chat request with a small greeting. The resulting assistant response is
+    /// delivered to the same DingTalk bot conversation.
+    pub async fn send_dingtalk_greeting(&self) -> Result<()> {
+        let config = self
+            .config_store
+            .read_dingtalk_config()?
+            .ok_or_else(|| anyhow::anyhow!("钉钉频道尚未配置"))?;
+        if !config.enabled {
+            anyhow::bail!("钉钉频道已停用，请先启用后再发送问候");
+        }
+        let app_secret = self.config_store.reveal_dingtalk_secret()?;
+        let robot_code = config.bot.robot_code.clone();
+        let target = {
+            let conversations = self.conversations.read().await;
+            select_dingtalk_greeting_target(&conversations, &robot_code).ok_or_else(|| {
+                anyhow::anyhow!("还没有当前钉钉机器人的私聊会话，请先在钉钉里给机器人发送一条消息")
+            })?
+        };
+
+        let request = build_channel_chat_request(
+            target.session_id.clone(),
+            crate::runtime::human_interaction::ImPlatform::Dingtalk,
+            target.external_conversation_key.clone(),
+            &ConversationType::Private,
+            "我",
+            DINGTALK_GREETING_PROMPT,
+            vec![],
+            &[],
+        );
+        let run_id = request.run_id.as_str().to_string();
+
+        self.reply_manager
+            .register(
+                target.session_id,
+                run_id,
+                config.credentials.app_key,
+                app_secret,
+                robot_code,
+                CardTarget::Private {
+                    user_id: target.external_conversation_key,
+                },
+            )
+            .await;
+
+        self.chat_adapter
+            .send_chat_request(request)
+            .await
+            .map_err(|e| anyhow::anyhow!("发送钉钉问候失败：{e}"))?;
+        Ok(())
     }
 
     /// 创建钉钉 OPEN_CLAW 一键注册会话，返回用户需要打开的授权 URL。
@@ -6661,6 +6743,48 @@ mod hydrate_tests {
             .as_deref()
             .unwrap_or_default()
             .contains("IM/移动端渠道"));
+    }
+
+    #[test]
+    fn dingtalk_greeting_target_uses_current_active_private_session() {
+        let conversations = vec![
+            ChannelConversation {
+                session_id: "old-private".into(),
+                platform: Platform::Dingtalk,
+                conversation_type: ConversationType::Private,
+                external_id: "old-user".into(),
+                display_name: "旧机器人".into(),
+                unread_count: 0,
+                robot_code: "old-robot".into(),
+                is_active_robot: false,
+            },
+            ChannelConversation {
+                session_id: "current-group".into(),
+                platform: Platform::Dingtalk,
+                conversation_type: ConversationType::Group,
+                external_id: "group-id".into(),
+                display_name: "群聊".into(),
+                unread_count: 0,
+                robot_code: "robot-current".into(),
+                is_active_robot: true,
+            },
+            ChannelConversation {
+                session_id: "current-private".into(),
+                platform: Platform::Dingtalk,
+                conversation_type: ConversationType::Private,
+                external_id: "user-001".into(),
+                display_name: "姚斌权".into(),
+                unread_count: 0,
+                robot_code: "robot-current".into(),
+                is_active_robot: true,
+            },
+        ];
+
+        let target = select_dingtalk_greeting_target(&conversations, "robot-current")
+            .expect("current private dingtalk session should be selected");
+
+        assert_eq!(target.session_id, "current-private");
+        assert_eq!(target.external_conversation_key, "user-001");
     }
 
     #[test]

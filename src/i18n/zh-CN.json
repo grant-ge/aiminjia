@@ -1317,7 +1317,10 @@
       "addNumber": "添加号码",
       "deleteRow": "删除此行",
       "removeChannel": "移除整个频道",
-      "saveManualConfig": "保存手动配置"
+      "saveManualConfig": "保存手动配置",
+      "sendGreeting": "唤醒机器人",
+      "sendingGreeting": "唤醒中…",
+      "sendDingtalkGreetingAria": "唤醒钉钉机器人"
     },
     "chat": {
       "groupChat": "群聊",
@@ -1429,6 +1432,12 @@
         "errorBeginFailed": "钉钉扫码开通失败，请重试",
         "errorNoConfig": "钉钉已授权，但未返回频道配置",
         "errorScanFailed": "钉钉扫码开通失败"
+      },
+      "greeting": {
+        "sentTitle": "机器人已唤醒",
+        "sentMessage": "请打开钉钉，看看左侧会话列表里有没有未读红点；机器人回复后就能找到这条对话。",
+        "failedTitle": "唤醒机器人失败",
+        "failedMessage": "请稍后重试"
       },
       "inactive": "该会话来自已下线的机器人，无法发送新消息"
     },

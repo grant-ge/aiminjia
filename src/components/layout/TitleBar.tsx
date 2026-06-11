@@ -155,7 +155,7 @@ export function TitleBar() {
   return (
     <div
       data-tauri-drag-region
-      className={`${barClass} ${isDev ? '' : 'border-b border-sidebar-border'}`}
+      className={barClass}
       style={barStyle}
       onMouseDown={handleDragStart}
     >
