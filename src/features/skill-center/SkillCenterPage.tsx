@@ -10,7 +10,10 @@ import { PageTopBar } from "@/components/shell/PageTopBar";
 import { SkillCard } from "@/components/skills/SkillCard";
 import { SkillCategoryBar } from "@/components/skills/SkillCategoryBar";
 import { SkillOfficeSection } from "@/components/skills/SkillOfficeSection";
-import { getSkillAvatarClass } from "@/components/skills/skillVisual";
+import {
+  getSkillAvatarNode,
+  getSkillCardAvatarClass,
+} from "@/components/skills/skillVisual";
 import { Button } from "@/components/ui/button";
 import {
   SKILL_CATEGORIES,
@@ -38,32 +41,6 @@ import {
   HardDrive,
   Package,
 } from "lucide-react";
-
-const SKILL_LOGOS_BY_ID: Record<string, string> = {
-  "html-ppt": "/skill-avatars/pptx-generator.svg",
-  browser: "/skill-avatars/web-access.svg",
-  payslip: "/skill-avatars/smart-payslip.jpg",
-  smartcb: "/skill-avatars/smart-compensation.jpg",
-  rehcm: "/skill-avatars/renlijia-hr.jpg",
-  "dingtalk-workspace": "/logos/dingtalk.png",
-  "xiaojia-doctor": "/brand-avatar-gold.svg",
-};
-
-function getSkillAvatar(skillId: string) {
-  const brandLogo = SKILL_LOGOS_BY_ID[skillId];
-  if (brandLogo) {
-    return (
-      <img
-        src={brandLogo}
-        alt=""
-        draggable={false}
-        className="h-full w-full rounded-md object-cover"
-      />
-    );
-  }
-
-  return null;
-}
 
 export function SkillCenterPage() {
   const { t, i18n } = useTranslation();
@@ -594,10 +571,8 @@ export function SkillCenterPage() {
                   title={localized.name}
                   meta={getSkillMeta(skill.source, skill.category)}
                   desc={localized.description}
-                  iconNode={getSkillAvatar(
-                    skill.id,
-                  )}
-                  iconBg={getSkillAvatarClass(skill.category)}
+                  iconNode={getSkillAvatarNode(skill.id)}
+                  iconBg={getSkillCardAvatarClass(skill.id)}
                   version={skill.version}
                   skillId={skill.id}
                   skillSource={skill.source}

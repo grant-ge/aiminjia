@@ -22,7 +22,7 @@ interface SkillCardProps {
   skillSource?: string
 }
 
-export function SkillCard({ title, meta, desc, iconNode, iconBg = 'bg-brand-primary-subtle', onClick, size = 'office', actionsSlot, version, skillId, skillSource }: SkillCardProps) {
+export function SkillCard({ title, meta, desc, iconNode, iconBg = 'bg-[#fbeed8] text-[#d19b00]', onClick, size = 'office', actionsSlot, version, skillId, skillSource }: SkillCardProps) {
   const isHot = size === 'hot'
   const height = isHot ? 'min-h-32' : 'min-h-28'
   const avatarText = Array.from(title.trim())[0]?.toUpperCase() ?? '?'
@@ -51,9 +51,16 @@ export function SkillCard({ title, meta, desc, iconNode, iconBg = 'bg-brand-prim
       className={`group relative flex ${height} flex-col rounded-md border border-border bg-card p-3 shadow-[var(--shadow-card)] transition-all duration-150 ${interactiveClass}`}
     >
       <div className="flex items-center gap-2.5">
-        <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${iconBg}`}>
+        <div
+          data-testid="skill-card-avatar"
+          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${iconBg}`}
+        >
           {iconNode ?? (
-            <span className="text-[length:var(--text-lg)] font-semibold leading-none" aria-hidden="true">
+            <span
+              data-testid="skill-card-fallback-avatar"
+              className="text-[length:var(--text-lg)] font-semibold leading-none text-inherit"
+              aria-hidden="true"
+            >
               {avatarText}
             </span>
           )}

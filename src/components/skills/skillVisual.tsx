@@ -35,6 +35,7 @@ import {
   Wrench,
   type LucideIcon,
 } from 'lucide-react'
+import type { ReactNode } from 'react'
 
 const ICONS: Record<string, LucideIcon> = {
   'bar-chart-2': BarChart2,
@@ -94,6 +95,39 @@ const CATEGORY_AVATAR_CLASS: Record<string, string> = {
   general: 'bg-[var(--color-accent-bg-light)] text-muted-foreground',
 }
 
+export const SKILL_FALLBACK_AVATAR_CLASS = 'bg-[#fbeed8] text-[#d19b00]'
+
+const SKILL_AVATARS_BY_ID: Record<string, string> = {
+  'bid-writing': '/skill-avatars/bid-writing.jpg',
+  'biz-writing': '/skill-avatars/biz-writing.jpg',
+  'multi-file-handler': '/skill-avatars/biz-writing.jpg',
+  'budget-analysis': '/skill-avatars/finance-yuan.jpg',
+  'finance-analysis': '/skill-avatars/finance-yuan.jpg',
+  'salary-benchmarking': '/skill-avatars/finance-yuan.jpg',
+  'salary-query': '/skill-avatars/finance-yuan.jpg',
+  'competitive-intelligence': '/skill-avatars/competitive-intelligence.jpg',
+  'user-behavior': '/skill-avatars/competitive-intelligence.jpg',
+  'okr-coach': '/skill-avatars/okr-coach.jpg',
+  'org-diagnosis': '/skill-avatars/org-diagnosis.jpg',
+  'talent-9box': '/skill-avatars/org-diagnosis.jpg',
+  'engagement-survey': '/skill-avatars/engagement-survey.jpg',
+  'survey-analysis': '/skill-avatars/engagement-survey.jpg',
+  'recruitment-funnel': '/skill-avatars/recruitment-funnel.jpg',
+  'customer-segmentation': '/skill-avatars/recruitment-funnel.jpg',
+  'html-ppt': '/skill-avatars/html-ppt.jpg',
+  'contract-review': '/skill-avatars/policy-compliance-audit.jpg',
+  'policy-compliance-audit': '/skill-avatars/policy-compliance-audit.jpg',
+  'ops-analysis': '/skill-avatars/ops-analysis.jpg',
+  'sales-analysis': '/skill-avatars/finance-yuan.jpg',
+  'sales-followup-rules': '/skill-avatars/recruitment-funnel.jpg',
+  browser: '/skill-avatars/web-access.svg',
+  payslip: '/skill-avatars/smart-payslip.jpg',
+  smartcb: '/skill-avatars/smart-compensation.jpg',
+  rehcm: '/skill-avatars/renlijia-hr.jpg',
+  'dingtalk-workspace': '/logos/dingtalk.png',
+  'xiaojia-doctor': '/brand-avatar-gold.svg',
+}
+
 export function getSkillIconComponent(icon: string | null | undefined): LucideIcon {
   if (!icon) return FileText
   return ICONS[icon] ?? FileText
@@ -130,4 +164,26 @@ export function getSkillCategoryBg(category: string | null | undefined): string 
 export function getSkillAvatarClass(category: string | null | undefined): string {
   if (!category) return 'bg-muted text-muted-foreground'
   return CATEGORY_AVATAR_CLASS[category] ?? 'bg-muted text-muted-foreground'
+}
+
+export function getSkillAvatarSrc(skillId: string | null | undefined): string | null {
+  if (!skillId) return null
+  return SKILL_AVATARS_BY_ID[skillId] ?? null
+}
+
+export function getSkillAvatarNode(skillId: string | null | undefined): ReactNode | null {
+  const src = getSkillAvatarSrc(skillId)
+  if (!src) return null
+  return (
+    <img
+      src={src}
+      alt=""
+      draggable={false}
+      className="h-full w-full rounded-md object-cover"
+    />
+  )
+}
+
+export function getSkillCardAvatarClass(skillId: string | null | undefined): string {
+  return getSkillAvatarSrc(skillId) ? 'bg-transparent' : SKILL_FALLBACK_AVATAR_CLASS
 }
