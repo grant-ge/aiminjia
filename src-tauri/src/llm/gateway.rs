@@ -211,6 +211,7 @@ fn is_retryable_error(err: &anyhow::Error) -> bool {
     let lower = msg.to_lowercase();
     lower.contains("timed out")
         || lower.contains("timeout")
+        || lower.contains("error sending request")
         || lower.contains("connection reset")
         || lower.contains("connection refused")
         || lower.contains("broken pipe")
@@ -1122,6 +1123,9 @@ mod tests {
         )));
         assert!(is_retryable_error(&anyhow::anyhow!("connection refused")));
         assert!(is_retryable_error(&anyhow::anyhow!("Broken pipe")));
+        assert!(is_retryable_error(&anyhow::anyhow!(
+            "error sending request for url (https://ai-tenant.renlijia.com/aijia/v2/ai/responses)"
+        )));
     }
 
     #[test]
