@@ -6,13 +6,15 @@ import { MessageList } from './MessageList'
 import { useGeneratedFilePreviewStore } from '@/stores/generatedFilePreviewStore'
 import { useChatStore } from '@/stores/chatStore'
 import { useNotificationStore } from '@/stores/notificationStore'
-import { openGeneratedFile, revealFileInFolder } from '@/lib/tauri'
+import { isGeneratedFileAvailable, isLocalFileAvailable, openGeneratedFile, revealFileInFolder } from '@/lib/tauri'
 import type { GeneratedFile, Message } from '@/types/message'
 
 vi.mock('@/lib/tauri', async () => {
   const actual = await vi.importActual<typeof import('@/lib/tauri')>('@/lib/tauri')
   return {
     ...actual,
+    isGeneratedFileAvailable: vi.fn().mockResolvedValue(true),
+    isLocalFileAvailable: vi.fn().mockResolvedValue(true),
     openGeneratedFile: vi.fn().mockResolvedValue(undefined),
     revealFileInFolder: vi.fn().mockResolvedValue(undefined),
     getTeamOverview: vi.fn().mockResolvedValue({ conversationId: '', teams: [] }),
@@ -24,6 +26,8 @@ vi.mock('@/lib/tauri', async () => {
 
 const openGeneratedFileMock = vi.mocked(openGeneratedFile)
 const revealFileInFolderMock = vi.mocked(revealFileInFolder)
+const isGeneratedFileAvailableMock = vi.mocked(isGeneratedFileAvailable)
+const isLocalFileAvailableMock = vi.mocked(isLocalFileAvailable)
 
 function generatedFile(overrides: Partial<GeneratedFile> = {}): GeneratedFile {
   return {
@@ -231,12 +235,14 @@ function renderWithFile(file: GeneratedFile, activeConversationId: string | null
   render(<MessageList />)
 }
 
-function openActionsMenu() {
-  fireEvent.pointerDown(screen.getByRole('button', { name: '更多操作：Summary' }))
+async function openActionsMenu() {
+  fireEvent.pointerDown(await screen.findByRole('button', { name: '更多操作：Summary' }))
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
+  isGeneratedFileAvailableMock.mockResolvedValue(true)
+  isLocalFileAvailableMock.mockResolvedValue(true)
   openGeneratedFileMock.mockResolvedValue(undefined)
   revealFileInFolderMock.mockResolvedValue(undefined)
   resetStores()
@@ -313,7 +319,7 @@ describe('MessageList generated file actions', () => {
   it('uses the generated file owner conversation for preview/open/reveal when active conversation differs', async () => {
     renderWithFile(generatedFile(), 'conv-2')
 
-    fireEvent.click(screen.getByRole('button', { name: '预览 Summary' }))
+    fireEvent.click(await screen.findByRole('button', { name: '预览 Summary' }))
 
     expect(useGeneratedFilePreviewStore.getState().target).toEqual({
       fileId: 'gf-1',
@@ -322,11 +328,11 @@ describe('MessageList generated file actions', () => {
       fileType: 'markdown',
     })
 
-    openActionsMenu()
+    await openActionsMenu()
     fireEvent.click(screen.getByRole('menuitem', { name: '用默认应用打开' }))
     await waitFor(() => expect(openGeneratedFileMock).toHaveBeenCalledWith('gf-1', 'conv-1'))
 
-    openActionsMenu()
+    await openActionsMenu()
     fireEvent.click(screen.getByRole('menuitem', { name: '在文件夹中显示' }))
     await waitFor(() => expect(revealFileInFolderMock).toHaveBeenCalledWith('gf-1', 'conv-1'))
   })
@@ -345,10 +351,10 @@ describe('MessageList generated file actions', () => {
     expect(useGeneratedFilePreviewStore.getState().target).toBeNull()
   })
 
-  it('opens previewable file in the generated file preview store from primary action', () => {
+  it('opens previewable file in the generated file preview store from primary action', async () => {
     renderWithFile(generatedFile())
 
-    fireEvent.click(screen.getByRole('button', { name: '预览 Summary' }))
+    fireEvent.click(await screen.findByRole('button', { name: '预览 Summary' }))
 
     expect(useGeneratedFilePreviewStore.getState().target).toEqual({
       fileId: 'gf-1',
@@ -357,6 +363,45 @@ describe('MessageList generated file actions', () => {
       fileType: 'markdown',
     })
     expect(openGeneratedFileMock).not.toHaveBeenCalled()
+  })
+
+  it('does not render a generated file card when its indexed file is unavailable', async () => {
+    isGeneratedFileAvailableMock.mockResolvedValueOnce(false)
+
+    renderWithFile(generatedFile())
+
+    await waitFor(() => expect(isGeneratedFileAvailableMock).toHaveBeenCalledWith('gf-1', 'conv-1'))
+    expect(screen.queryByTestId('generated-file-card')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '预览 Summary' })).not.toBeInTheDocument()
+  })
+
+  it('does not render an artifact marker card when its explicit local path is unavailable', async () => {
+    isLocalFileAvailableMock.mockResolvedValueOnce(false)
+    resetStores('conv-1')
+    useChatStore.setState({
+      messages: [
+        {
+          id: 'u-1',
+          conversationId: 'conv-1',
+          role: 'user',
+          createdAt: '2026-04-28T00:00:00Z',
+          content: { text: 'create image' },
+        },
+        {
+          id: 'a-1',
+          conversationId: 'conv-1',
+          role: 'assistant',
+          createdAt: '2026-04-28T00:00:01Z',
+          content: { text: 'done\n\n![artifact](/tmp/missing.png)' },
+        },
+      ],
+    })
+
+    render(<MessageList />)
+
+    await waitFor(() => expect(isLocalFileAvailableMock).toHaveBeenCalledWith('/tmp/missing.png'))
+    expect(screen.queryByTestId('generated-file-card')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '预览 missing.png' })).not.toBeInTheDocument()
   })
 
   it('opens non-previewable excel file externally from primary action', async () => {
@@ -372,7 +417,7 @@ describe('MessageList generated file actions', () => {
       }),
     )
 
-    fireEvent.click(screen.getByRole('button', { name: '打开 Summary' }))
+    fireEvent.click(await screen.findByRole('button', { name: '打开 Summary' }))
 
     await waitFor(() => expect(openGeneratedFileMock).toHaveBeenCalledWith('gf-1', 'conv-1'))
     expect(useGeneratedFilePreviewStore.getState().target).toBeNull()
@@ -381,7 +426,7 @@ describe('MessageList generated file actions', () => {
   it('reveals a generated file from the dropdown menu', async () => {
     renderWithFile(generatedFile())
 
-    openActionsMenu()
+    await openActionsMenu()
     fireEvent.click(screen.getByRole('menuitem', { name: '在文件夹中显示' }))
 
     await waitFor(() => expect(revealFileInFolderMock).toHaveBeenCalledWith('gf-1', 'conv-1'))
@@ -391,7 +436,7 @@ describe('MessageList generated file actions', () => {
     openGeneratedFileMock.mockRejectedValueOnce(new Error('boom'))
     renderWithFile(generatedFile({ fileName: 'summary.xlsx', fileType: 'excel' }))
 
-    fireEvent.click(screen.getByRole('button', { name: '打开 Summary' }))
+    fireEvent.click(await screen.findByRole('button', { name: '打开 Summary' }))
 
     await waitFor(() => {
       expect(useNotificationStore.getState().notifications.at(-1)).toMatchObject({
@@ -401,10 +446,10 @@ describe('MessageList generated file actions', () => {
     })
   })
 
-  it('previews using file owner conversation even when active conversation is missing', () => {
+  it('previews using file owner conversation even when active conversation is missing', async () => {
     renderWithFile(generatedFile(), null)
 
-    fireEvent.click(screen.getByRole('button', { name: '预览 Summary' }))
+    fireEvent.click(await screen.findByRole('button', { name: '预览 Summary' }))
 
     expect(useGeneratedFilePreviewStore.getState().target).toEqual({
       fileId: 'gf-1',
@@ -420,7 +465,7 @@ describe('MessageList generated file actions', () => {
   it('opens using file owner conversation even when active conversation is missing', async () => {
     renderWithFile(generatedFile({ fileName: 'summary.xlsx', fileType: 'excel' }), null)
 
-    fireEvent.click(screen.getByRole('button', { name: '打开 Summary' }))
+    fireEvent.click(await screen.findByRole('button', { name: '打开 Summary' }))
 
     await waitFor(() => expect(openGeneratedFileMock).toHaveBeenCalledWith('gf-1', 'conv-1'))
     expect(useNotificationStore.getState().notifications).toEqual([])
@@ -429,7 +474,7 @@ describe('MessageList generated file actions', () => {
   it('reveals using file owner conversation even when active conversation is missing', async () => {
     renderWithFile(generatedFile(), null)
 
-    openActionsMenu()
+    await openActionsMenu()
     fireEvent.click(screen.getByRole('menuitem', { name: '在文件夹中显示' }))
 
     await waitFor(() => expect(revealFileInFolderMock).toHaveBeenCalledWith('gf-1', 'conv-1'))

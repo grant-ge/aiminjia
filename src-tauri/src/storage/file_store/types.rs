@@ -304,6 +304,10 @@ pub struct FileEntry {
     pub uploaded_at: Option<String>,
 
     // ── Generated-specific fields ──
+    #[serde(default = "default_storage_scope")]
+    pub storage_scope: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub storage_root: Option<FileStorageRoot>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -327,6 +331,19 @@ pub struct FileEntry {
 
 fn default_true() -> bool {
     true
+}
+
+fn default_storage_scope() -> String {
+    "conversation".to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct FileStorageRoot {
+    pub kind: String,
+    pub path: PathBuf,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
 }
 
 /// File index stored in `file_index.json`.

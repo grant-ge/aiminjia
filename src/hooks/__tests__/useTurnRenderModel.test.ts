@@ -827,6 +827,44 @@ describe("buildTurnsFromMessages", () => {
     );
   });
 
+  it("uses structured generatedFiles instead of artifact markers for generated outputs", () => {
+    const generatedFile = {
+      id: "file-image",
+      fileName: "image-task-imgtask_lreq_1781059192913657260-1.png",
+      filePath:
+        "/Users/oayzz/.renlijia/users/t_1__u_2/conversations/conv-1/generated/images/image-task-imgtask_lreq_1781059192913657260-1.png",
+      fileType: "png",
+      fileSize: 520553,
+      category: "image",
+      version: 1,
+      isLatest: true,
+      createdAt: "2026-06-10T00:00:00Z",
+      description: "generated image",
+      actions: [],
+    } satisfies GeneratedFile;
+    const msg: Message = {
+      ...aiMsg(
+        "a1",
+        "done\n\n![artifact](/Users/oayzz/.renlijia/generated/images/image-task-imgtask_lreq_1781059192913657260-1.png)",
+      ),
+      content: {
+        text: "done\n\n![artifact](/Users/oayzz/.renlijia/generated/images/image-task-imgtask_lreq_1781059192913657260-1.png)",
+        generatedFiles: [generatedFile],
+      },
+    };
+
+    const turn = buildTurnsFromMessages([userMsg("u1", "go"), msg], [])[0];
+
+    expect(turn.generatedFiles).toHaveLength(1);
+    expect(turn.generatedFiles[0]).toEqual(
+      expect.objectContaining({
+        id: "file-image",
+        filePath: generatedFile.filePath,
+      }),
+    );
+    expect(turn.blocks.filter((block) => block.kind === "generatedFile")).toHaveLength(1);
+  });
+
   it("uses type-based preview for legacy HTML actions that omit preview", () => {
     const msg: Message = {
       ...aiMsg("a1", "done"),

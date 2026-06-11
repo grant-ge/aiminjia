@@ -10,7 +10,7 @@ use chrono::Utc;
 use super::conversations::conv_dir;
 use super::error::StorageResult;
 use super::io::{atomic_write_json, read_json_optional};
-use super::types::{FileEntry, FileIndex};
+use super::types::{FileEntry, FileIndex, FileStorageRoot};
 
 fn file_index_path(base_dir: &Path, conversation_id: &str) -> PathBuf {
     conv_dir(base_dir, conversation_id).join("file_index.json")
@@ -56,6 +56,8 @@ pub fn insert_uploaded_file(
         original_name: Some(original_name.to_string()),
         parsed_summary: parsed_summary.map(|s| s.to_string()),
         uploaded_at: Some(now.clone()),
+        storage_scope: "conversation".to_string(),
+        storage_root: None,
         message_id: None,
         category: None,
         description: None,
@@ -183,6 +185,48 @@ pub fn insert_generated_file(
     created_by_step: Option<i32>,
     expires_at: Option<&str>,
 ) -> StorageResult<()> {
+    insert_generated_file_with_storage(
+        base_dir,
+        id,
+        conversation_id,
+        message_id,
+        file_name,
+        stored_path,
+        file_type,
+        file_size,
+        category,
+        description,
+        version,
+        is_latest,
+        superseded_by,
+        created_by_step,
+        expires_at,
+        "conversation",
+        None,
+    )
+}
+
+/// Insert a generated file record with explicit physical storage ownership.
+#[allow(clippy::too_many_arguments)]
+pub fn insert_generated_file_with_storage(
+    base_dir: &Path,
+    id: &str,
+    conversation_id: &str,
+    message_id: Option<&str>,
+    file_name: &str,
+    stored_path: &str,
+    file_type: &str,
+    file_size: i64,
+    category: &str,
+    description: Option<&str>,
+    version: i32,
+    is_latest: bool,
+    superseded_by: Option<&str>,
+    created_by_step: Option<i32>,
+    expires_at: Option<&str>,
+    storage_scope: &str,
+    storage_root: Option<FileStorageRoot>,
+) -> StorageResult<()> {
     let mut index = read_file_index(base_dir, conversation_id)?;
     let now = Utc::now().to_rfc3339();
 
@@ -196,6 +240,8 @@ pub fn insert_generated_file(
         original_name: None,
         parsed_summary: None,
         uploaded_at: None,
+        storage_scope: storage_scope.to_string(),
+        storage_root,
         message_id: message_id.map(|s| s.to_string()),
         category: Some(category.to_string()),
         description: description.map(|s| s.to_string()),
@@ -417,6 +463,8 @@ fn generated_to_json(file: &FileEntry) -> serde_json::Value {
         "storedPath": file.stored_path,
         "fileType": file.file_type,
         "fileSize": file.file_size,
+        "storageScope": file.storage_scope,
+        "storageRoot": file.storage_root,
         "category": file.category,
         "description": file.description,
         "version": file.version,

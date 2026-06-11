@@ -4,7 +4,7 @@
 // Migrate to CapabilityContext when the command layer is refactored.
 #![allow(deprecated)]
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -53,6 +53,7 @@ use crate::runtime::{ChatTurnRequest, QueryEngine, RuntimeEventBus, SessionRunti
 use crate::storage::crypto::SecureStorage;
 use crate::storage::current_user_storage::CurrentUserStorage;
 use crate::storage::file_manager::FileManager;
+use crate::storage::file_store::types::FileStorageRoot;
 use crate::storage::file_store::AppStorage;
 use crate::storage::message_write_queue::{MessageWriteCompletion, MessageWriteQueue};
 use crate::transport::tauri_event_adapter::TauriEventAdapter;
@@ -71,8 +72,45 @@ fn resolve_generated_file_display_path(
     db: &AppStorage,
     file_mgr: &FileManager,
     conversation_id: &str,
-    stored_path: &str,
+    record: &serde_json::Value,
 ) -> PathBuf {
+    let stored_path = record
+        .get("storedPath")
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
+    let storage_scope = record
+        .get("storageScope")
+        .and_then(|value| value.as_str())
+        .unwrap_or("conversation");
+    if storage_scope == "workspace" {
+        if let Some(root) = record
+            .get("storageRoot")
+            .and_then(|value| value.get("path"))
+            .and_then(|value| value.as_str())
+            .filter(|path| !path.trim().is_empty())
+            .map(PathBuf::from)
+        {
+            if let Ok(path) = FileManager::resolve_existing_file_under_root(&root, stored_path) {
+                return path;
+            }
+            return root.join(stored_path);
+        }
+        if let Ok(meta) = db.get_conversation(conversation_id) {
+            if let Some(workspace) = meta.authorized_workspace {
+                if let Ok(path) =
+                    FileManager::resolve_existing_file_under_root(&workspace.root_path, stored_path)
+                {
+                    return path;
+                }
+                return workspace.root_path.join(stored_path);
+            }
+        }
+        if let Ok(path) = file_mgr.resolve_existing_file(stored_path) {
+            return path;
+        }
+        return file_mgr.full_path(stored_path);
+    }
+
     let conv_dir = db.base_dir().join("conversations").join(conversation_id);
     if let Ok(path) = FileManager::resolve_existing_file_under_root(&conv_dir, stored_path) {
         return path;
@@ -81,6 +119,154 @@ fn resolve_generated_file_display_path(
         return path;
     }
     file_mgr.full_path(stored_path)
+}
+
+fn json_str<'a>(value: &'a serde_json::Value, keys: &[&str]) -> Option<&'a str> {
+    keys.iter()
+        .find_map(|key| value.get(*key).and_then(|value| value.as_str()))
+        .filter(|value| !value.trim().is_empty())
+}
+
+fn generated_storage_root_for_conversation(
+    app: &tauri::AppHandle,
+    file_mgr: &FileManager,
+    conversation_id: &str,
+) -> FileStorageRoot {
+    if let Some(workspace) = chat_runtime_impl::load_authorized_workspace(app, conversation_id) {
+        let kind = if workspace.id == "default" {
+            "defaultFolder"
+        } else {
+            "authorizedWorkspace"
+        };
+        return FileStorageRoot {
+            kind: kind.to_string(),
+            path: workspace.root_path,
+            display_name: Some(workspace.display_name),
+        };
+    }
+
+    FileStorageRoot {
+        kind: "workspacePath".to_string(),
+        path: file_mgr.workspace_path(),
+        display_name: None,
+    }
+}
+
+fn normalize_workspace_stored_path(root: &Path, stored_path: &str) -> Option<String> {
+    let path = PathBuf::from(stored_path);
+    if path.is_absolute() {
+        let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+        let full = path.canonicalize().unwrap_or(path);
+        return full
+            .strip_prefix(root)
+            .ok()
+            .map(|relative| relative.to_string_lossy().replace('\\', "/"));
+    }
+    Some(stored_path.replace('\\', "/"))
+}
+
+fn ensure_generated_file_records_from_metas(
+    db: &AppStorage,
+    app: &tauri::AppHandle,
+    file_mgr: &FileManager,
+    conversation_id: &str,
+    file_metas: &[serde_json::Value],
+) {
+    if file_metas.is_empty() {
+        return;
+    }
+
+    let storage_root = generated_storage_root_for_conversation(app, file_mgr, conversation_id);
+    for meta in file_metas {
+        let Some(file_id) = json_str(meta, &["fileId", "file_id"]) else {
+            continue;
+        };
+        if db
+            .get_generated_file_for_conversation(file_id, conversation_id)
+            .ok()
+            .flatten()
+            .is_some()
+        {
+            continue;
+        }
+        let Some(raw_stored_path) = json_str(meta, &["storedPath", "stored_path"]) else {
+            continue;
+        };
+        let Some(stored_path) =
+            normalize_workspace_stored_path(&storage_root.path, raw_stored_path)
+        else {
+            log::warn!(
+                "[generated-files] skipping FileMeta outside storage root fileId={} path={}",
+                file_id,
+                raw_stored_path
+            );
+            continue;
+        };
+        let full_path =
+            match FileManager::resolve_existing_file_under_root(&storage_root.path, &stored_path) {
+                Ok(path) => path,
+                Err(err) => {
+                    log::warn!(
+                        "[generated-files] skipping unavailable FileMeta fileId={} storedPath={}: {}",
+                        file_id,
+                        stored_path,
+                        err
+                    );
+                    continue;
+                }
+            };
+        let file_name = json_str(meta, &["fileName", "file_name"])
+            .map(ToString::to_string)
+            .or_else(|| {
+                full_path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .map(ToString::to_string)
+            })
+            .unwrap_or_else(|| "generated-file".to_string());
+        let file_type = json_str(
+            meta,
+            &["actualFormat", "actual_format", "fileType", "file_type"],
+        )
+        .unwrap_or("file");
+        let file_size = meta
+            .get("fileSize")
+            .or_else(|| meta.get("file_size"))
+            .and_then(|value| value.as_i64())
+            .or_else(|| {
+                std::fs::metadata(&full_path)
+                    .ok()
+                    .map(|metadata| metadata.len() as i64)
+            })
+            .unwrap_or(0);
+        let category = json_str(meta, &["category"]).unwrap_or("file");
+
+        if let Err(err) = db.insert_generated_file_with_storage(
+            file_id,
+            conversation_id,
+            None,
+            &file_name,
+            &stored_path,
+            file_type,
+            file_size,
+            category,
+            None,
+            1,
+            true,
+            None,
+            None,
+            None,
+            "workspace",
+            Some(storage_root.clone()),
+        ) {
+            log::warn!(
+                "[generated-files] failed to register FileMeta fileId={} storedPath={}: {}",
+                file_id,
+                stored_path,
+                err
+            );
+        }
+    }
 }
 
 fn format_agenda_trigger_label(title: &str, planned_fire_at: DateTime<Utc>) -> String {
@@ -1766,6 +1952,13 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
 
         // --- Build content JSON, attaching generated files when present ---
         let mut content_value = if !generated_file_ids.is_empty() {
+            ensure_generated_file_records_from_metas(
+                self.services.db().as_ref(),
+                &self.services.app,
+                &self.services.file_mgr,
+                conversation_id,
+                file_metas,
+            );
             match self
                 .services
                 .db()
@@ -1775,12 +1968,11 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                     let gen_files: Vec<serde_json::Value> = file_records
                         .iter()
                         .map(|f| {
-                            let stored_path = f["storedPath"].as_str().unwrap_or("");
                             let full_path = resolve_generated_file_display_path(
                                 self.services.db().as_ref(),
                                 &self.services.file_mgr,
                                 conversation_id,
-                                stored_path,
+                                f,
                             );
                             let file_id_str = f["id"].as_str().unwrap_or("");
                             // Look up FileMeta JSON to inject degradation info.
@@ -1795,6 +1987,8 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                                 "id": f["id"],
                                 "fileName": f["fileName"],
                                 "filePath": full_path.to_string_lossy(),
+                                "storageScope": f["storageScope"],
+                                "storageRoot": f["storageRoot"],
                                 "fileType": f["fileType"],
                                 "fileSize": f["fileSize"],
                                 "category": f["category"],
@@ -4886,15 +5080,22 @@ impl crate::runtime::agenda::AgendaRunDispatcher for TauriChatCommandAdapter {
 
 #[cfg(test)]
 mod agenda_dispatch_prompt_tests {
-    use chrono::{TimeZone, Utc};
+    use chrono::{Datelike, Local, TimeZone, Utc};
 
     #[test]
     fn agenda_trigger_label_includes_local_planned_weekday() {
         let planned = Utc.with_ymd_and_hms(2026, 6, 9, 1, 43, 38).unwrap();
+        let local = planned.with_timezone(&Local);
+        let weekday_cn =
+            crate::runtime::chat::prompt::ReminderBuilder::weekday_cn(local.weekday());
         let label = super::format_agenda_trigger_label("门店巡检", planned);
 
         assert!(label.contains("计划触发时间（UTC）：2026-06-09 01:43:38 UTC"));
-        assert!(label.contains("计划触发时间（本地）：2026-06-09 09:43:38 星期二"));
+        assert!(label.contains(&format!(
+            "计划触发时间（本地）：{} {}",
+            local.format("%Y-%m-%d %H:%M:%S"),
+            weekday_cn
+        )));
         assert!(label.contains("任务描述中的每周几是规则描述，不代表本次触发当天星期"));
     }
 }

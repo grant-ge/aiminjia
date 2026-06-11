@@ -1309,6 +1309,20 @@ export function revealFileInFolder(
   });
 }
 
+export function isGeneratedFileAvailable(
+  fileId: string,
+  conversationId: string,
+): Promise<boolean> {
+  return invoke<boolean>("is_generated_file_available", {
+    fileId,
+    conversationId,
+  });
+}
+
+export function isLocalFileAvailable(path: string): Promise<boolean> {
+  return invoke<boolean>("is_local_file_available", { path });
+}
+
 export function saveGeneratedFileAs(
   fileId: string,
   conversationId: string,
