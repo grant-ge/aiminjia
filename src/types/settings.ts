@@ -12,7 +12,6 @@ export type LlmProvider =
   | "openai"
   | "claude"
   | "custom";
-export type DataMaskingLevel = "strict" | "standard" | "relaxed";
 export type FontScale = "small" | "medium" | "large";
 export type ChatWidthMode = "centered" | "full";
 export type CloudGatewayMode = "legacy" | "v2";
@@ -24,7 +23,6 @@ export interface Settings {
   autoModelRouting: boolean;
   workspacePath: string;
   analysisThreshold: number;
-  dataMaskingLevel: DataMaskingLevel;
   autoCleanupEnabled: boolean;
   tempFileRetentionDays: number;
   keepOldVersions: number;
@@ -50,7 +48,6 @@ export const DEFAULT_SETTINGS: Settings = {
   autoModelRouting: true,
   workspacePath: "",
   analysisThreshold: 1.65,
-  dataMaskingLevel: "relaxed",
   autoCleanupEnabled: true,
   tempFileRetentionDays: 7,
   keepOldVersions: 1,

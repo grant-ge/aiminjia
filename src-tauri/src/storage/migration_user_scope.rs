@@ -29,7 +29,6 @@ const USER_CONFIG_KEYS: &[&str] = &[
     "autoModelRouting",
     "cloudModel",
     "cloudModelType",
-    "dataMaskingLevel",
     "autoCleanupEnabled",
     "tempFileRetentionDays",
     "keepOldVersions",

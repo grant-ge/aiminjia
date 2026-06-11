@@ -232,7 +232,6 @@ fn ad3_llm_step_input_exposes_estimated_tokens() {
         tool_defs: &[],
         token_budget: 4096,
         chunk_timeout_secs: 30,
-        masking_level: "strict",
         force_no_tools: false,
         llm_settings: &llm_settings,
         conversation_id: "conv",

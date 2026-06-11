@@ -850,13 +850,6 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         let mut system_prompt_segments = system_prompt_segments(&input.system_message);
         system_prompt_segments.extend(input.extra_system_segments.clone());
 
-        // --- Resolve masking level (always Strict; field kept for forward compat) ---
-        let masking_level = match input.masking_level.to_lowercase().as_str() {
-            "relaxed" => MaskingLevel::Relaxed,
-            "standard" => MaskingLevel::Standard,
-            _ => MaskingLevel::Strict,
-        };
-
         // --- Build effective tool defs (empty when force_no_tools) ---
         let effective_tools: Option<Vec<ToolDefinition>> = if input.force_no_tools {
             log::debug!(
@@ -907,7 +900,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                 .stream_message_with_segments(
                     &settings,
                     chat_messages.clone(),
-                    masking_level.clone(),
+                    MaskingLevel::Relaxed,
                     system_prompt_for_gateway.as_deref(),
                     dynamic_ctx_opt,
                     effective_tools.clone(),
@@ -1134,7 +1127,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                             self.services.gateway.send_message_with_segments(
                                 &settings,
                                 chat_messages.clone(),
-                                masking_level.clone(),
+                                MaskingLevel::Relaxed,
                                 system_prompt_for_gateway.as_deref(),
                                 dynamic_ctx_opt,
                                 effective_tools.clone(),
@@ -1567,11 +1560,6 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             thinking_type: settings.thinking_type,
             thinking_budget_tokens: settings.thinking_budget_tokens,
             context_window: settings.context_window,
-            masking_level: crate::llm::masking::MaskingLevel::from_str_or_strict(
-                &settings.data_masking_level,
-            )
-            .to_str()
-            .to_string(),
         })
     }
 
