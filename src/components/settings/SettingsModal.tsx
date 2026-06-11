@@ -20,6 +20,7 @@ import { AboutPanel } from './panels/AboutPanel'
 import { AccountBillingPanel } from './panels/AccountBillingPanel'
 import { ArchivedPanel } from './panels/ArchivedPanel'
 import { GeneralPanel } from './panels/GeneralPanel'
+import { PermissionsPanel } from './panels/PermissionsPanel'
 import { RuntimePanel } from './panels/RuntimePanel'
 
 export function SettingsModal() {
@@ -166,6 +167,7 @@ export function SettingsModal() {
                 />
               ) : null}
               {settingsModal === 'account-billing' ? <AccountBillingPanel /> : null}
+              {settingsModal === 'permissions' ? <PermissionsPanel /> : null}
               {settingsModal === 'about' ? (
                 <AboutPanel
                   appName={productName}

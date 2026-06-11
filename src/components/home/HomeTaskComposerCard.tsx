@@ -33,13 +33,15 @@ import {
   createConversation,
   getDefaultFolder,
   pickLocalDirectory,
+  type PermissionMode,
   type AuthorizedWorkspaceRef,
 } from '@/lib/tauri'
 import { localizeSkill, localizedSkillName } from '@/lib/skillLocalization'
 import { useChatStore } from '@/stores/chatStore'
 import { useHomeStore } from '@/stores/homeStore'
+import { useSettingsStore } from '@/stores/settingsStore'
 import { useSkillStore } from '@/stores/skillStore'
-import { useUiStore } from '@/stores/uiStore'
+import { DRAFT_PERMISSION_SESSION_ID, useUiStore } from '@/stores/uiStore'
 import { Button } from '@/components/ui/button'
 
 export function HomeTaskComposerCard() {
@@ -59,6 +61,11 @@ export function HomeTaskComposerCard() {
   const [showSkillPopover, setShowSkillPopover] = useState(false)
   const skills = useSkillStore((s) => s.skills)
   const getSkillById = useSkillStore((s) => s.getById)
+  const defaultPermissionMode = useSettingsStore((s) => s.defaultPermissionMode ?? 'default')
+  const permissionMode = useUiStore((s) =>
+    s.permissionModesBySession[DRAFT_PERMISSION_SESSION_ID] ?? defaultPermissionMode,
+  )
+  const setPermissionModeForSession = useUiStore((s) => s.setPermissionModeForSession)
   // Snapshot of the installed skills as composer-friendly tokens. Drives the
   // slash-command input rule and chip rendering inside the editor (mirrors
   // ChatBottomArea — single source of truth for selected skills).
@@ -109,6 +116,10 @@ export function HomeTaskComposerCard() {
     composerRef.current?.focus()
     setShowSkillPopover(false)
   }, [getSkillById, i18n.language])
+
+  const handlePermissionModeChange = useCallback((mode: PermissionMode) => {
+    setPermissionModeForSession(DRAFT_PERMISSION_SESSION_ID, mode)
+  }, [setPermissionModeForSession])
 
   // Load default folder if no workspace has been selected yet
   useEffect(() => {
@@ -167,6 +178,7 @@ export function HomeTaskComposerCard() {
     try {
       // Create conversation first so we have an ID to authorize against
       const backendId = await createConversation()
+      setPermissionModeForSession(backendId, permissionMode)
       const now = new Date().toISOString()
       const store = useChatStore.getState()
       store.setConversations([
@@ -218,11 +230,11 @@ export function HomeTaskComposerCard() {
       // doc, gets cleared automatically on submit, and is collected by the
       // serializer into payload.skills (mirrors ChatBottomArea).
       const skillForThisTurn = payload.skills[0] ?? null
-      await sendUserMessage(payload.markdown, fileInfos, skillForThisTurn)
+      await sendUserMessage(payload.markdown, fileInfos, skillForThisTurn, permissionMode)
     } finally {
       setIsSubmitting(false)
     }
-  }, [displayWorkspace, isSubmitting, sendUserMessage])
+  }, [displayWorkspace, isSubmitting, permissionMode, sendUserMessage, setPermissionModeForSession, t])
 
   const workspaceLabel = displayWorkspace?.displayName ?? t('homeComposer.defaultProject')
   const workspacePath = displayWorkspace?.rootPath
@@ -250,6 +262,8 @@ export function HomeTaskComposerCard() {
         initialMarkdown={initialMarkdown}
         onOpenSkill={() => setShowSkillPopover((prev) => !prev)}
         skillTokens={skillTokens}
+        permissionMode={permissionMode}
+        onPermissionModeChange={handlePermissionModeChange}
         showProjectButton={false}
         limitEditorHeight
         onOpenAttachment={isPickingAttachments ? undefined : () => void handlePickAttachments()}

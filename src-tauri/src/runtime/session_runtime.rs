@@ -117,7 +117,9 @@ impl PendingPermissionControlPlane for RuntimePermissionControlPlane {
             if let Ok(handle) = tokio::runtime::Handle::try_current() {
                 handle.spawn(async move {
                     if let Err(err) = event_bus.emit(event).await {
-                        log::warn!("[permission-control-plane] failed to emit resolved event: {err:#}");
+                        log::warn!(
+                            "[permission-control-plane] failed to emit resolved event: {err:#}"
+                        );
                     }
                 });
             } else {
@@ -944,6 +946,24 @@ fn persist_path_auth_grant_to_store(
                 destination,
                 pattern,
                 Some(crate::runtime::path_auth::PathOp::Write),
+            ) {
+                log::warn!(
+                    "[SessionRuntime] append_path_allow_rule failed: {} (in-memory grant retained)",
+                    err
+                );
+            }
+        }
+        "pathdelete" => {
+            let pattern = format!("{}/**", path_str);
+            log::info!(
+                "[persist_path_auth_grant] -> append_path_allow_rule({:?}, {}, op=Delete)",
+                destination,
+                pattern
+            );
+            if let Err(err) = store.append_path_allow_rule(
+                destination,
+                pattern,
+                Some(crate::runtime::path_auth::PathOp::Delete),
             ) {
                 log::warn!(
                     "[SessionRuntime] append_path_allow_rule failed: {} (in-memory grant retained)",
@@ -1953,6 +1973,7 @@ mod tests {
         let ctx = ToolPermissionContext {
             mode: PermissionMode::Default,
             primary_root: None,
+            read_roots: Vec::new(),
             additional_working_dirs: HashMap::new(),
             allow_rules: entries.allow_rules,
             deny_rules: vec![],

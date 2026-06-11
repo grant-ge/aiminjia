@@ -73,7 +73,7 @@ export function FilePreviewPane({ target, onOpenExternal, onDownload, onClosePre
         requestIdRef.current += 1
       }
     }
-  }, [targetFileId, targetConversationId, targetLocalPath, previewKey])
+  }, [targetFileId, targetConversationId, targetLocalPath, previewKey, t])
 
   const handleOpenExternal = useCallback(() => {
     if (!target) return
@@ -186,12 +186,12 @@ function PreviewContent({
       return (
         <iframe
           title={preview.fileName}
-          sandbox=""
+          sandbox="allow-scripts"
           srcDoc={preview.content}
           className="h-full min-h-[520px] w-full bg-background"
         />
       )
-    case 'image':
+    case 'image': {
       const imagePreview = (
         <div className="flex h-full min-h-[520px] items-center justify-center rounded-md bg-muted/30 p-4">
           <img
@@ -218,6 +218,7 @@ function PreviewContent({
           </ContextMenuPrimitive.Portal>
         </ContextMenuPrimitive.Root>
       )
+    }
     case 'json':
     case 'csv':
     case 'text':

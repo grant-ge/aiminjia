@@ -6,6 +6,7 @@ import i18n from '@/i18n'
 import { useChatStore } from '@/stores/chatStore'
 import { useSkillStore } from '@/stores/skillStore'
 import { setExpertTeam, clearExpertTeam } from '@/features/expert-teams/expertTeamRegistry'
+import { setRemoteExpertTeams } from '@/features/expert-teams/teams'
 import { ChatPage } from './ChatPage'
 
 const switchConversationMock = vi.hoisted(() => vi.fn())
@@ -22,6 +23,9 @@ const tauriMocks = vi.hoisted(() => ({
   getTeamOverview: vi.fn(),
   onMessageUpdated: vi.fn(),
   onToolCompleted: vi.fn(),
+  workplaceDirectoryCatalog: vi.fn(),
+  expertTeamTemplateCatalog: vi.fn(),
+  expertTeamTemplateRefresh: vi.fn(),
 }))
 
 vi.mock('@/hooks/useChat', () => ({
@@ -45,6 +49,9 @@ vi.mock('@/lib/tauri', () => ({
   getTeamOverview: tauriMocks.getTeamOverview,
   onMessageUpdated: tauriMocks.onMessageUpdated,
   onToolCompleted: tauriMocks.onToolCompleted,
+  workplaceDirectoryCatalog: tauriMocks.workplaceDirectoryCatalog,
+  expertTeamTemplateCatalog: tauriMocks.expertTeamTemplateCatalog,
+  expertTeamTemplateRefresh: tauriMocks.expertTeamTemplateRefresh,
 }))
 
 vi.mock('@/components/shell/ChatTopBar', () => ({
@@ -105,14 +112,21 @@ describe('ChatPage layout', () => {
     tauriMocks.getTeamOverview.mockReset()
     tauriMocks.onMessageUpdated.mockReset()
     tauriMocks.onToolCompleted.mockReset()
+    tauriMocks.workplaceDirectoryCatalog.mockReset()
+    tauriMocks.expertTeamTemplateCatalog.mockReset()
+    tauriMocks.expertTeamTemplateRefresh.mockReset()
     tauriMocks.clearConversationSource.mockResolvedValue(undefined)
     tauriMocks.setConversationExpertTeam.mockResolvedValue(undefined)
     tauriMocks.getTeamOverview.mockResolvedValue(null)
     tauriMocks.onMessageUpdated.mockResolvedValue(() => undefined)
     tauriMocks.onToolCompleted.mockResolvedValue(() => undefined)
+    tauriMocks.workplaceDirectoryCatalog.mockResolvedValue({ schemaVersion: 1, categories: [], items: [] })
+    tauriMocks.expertTeamTemplateCatalog.mockResolvedValue([])
+    tauriMocks.expertTeamTemplateRefresh.mockResolvedValue(0)
     tauriMocks.getConversationSource.mockReturnValue(new Promise(() => {}))
     tauriMocks.employeeList.mockResolvedValue([])
     await i18n.changeLanguage('zh-CN')
+    setRemoteExpertTeams([])
     await clearExpertTeam('conv-layout')
     await clearExpertTeam('conv-team')
     await clearExpertTeam('conv-retro')
@@ -189,6 +203,106 @@ describe('ChatPage layout', () => {
       expect(screen.getByTestId('chat-employee-label')).toHaveTextContent('薪酬专家 · 方予衡')
     })
     expect(screen.getByTestId('chat-default-skill')).toHaveTextContent('薪酬公平性分析 v2')
+  })
+
+  it('renders expert team welcome from conversation source even when the store kind is missing', async () => {
+    tauriMocks.getConversationSource.mockResolvedValue({
+      kind: 'expertTeam',
+      expertTeamId: 'marketing',
+    })
+    useChatStore.setState({
+      activeConversationId: 'conv-source-team',
+      conversations: [{
+        id: 'conv-source-team',
+        title: '专家团: 市场营销策划团',
+        createdAt: '',
+        updatedAt: '',
+        isArchived: false,
+      }],
+      messages: [],
+    })
+
+    render(<ChatPage conversationId="conv-source-team" />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('expert-team-welcome-shell')).toBeInTheDocument()
+    })
+    expect(screen.queryByTestId('chat-content')).not.toBeInTheDocument()
+  })
+
+  it('loads a server-authored expert team welcome when the team is not a local built-in', async () => {
+    tauriMocks.getConversationSource.mockResolvedValue({
+      kind: 'expertTeam',
+      expertTeamId: 'talent-acquisition',
+    })
+    tauriMocks.workplaceDirectoryCatalog.mockResolvedValue({
+      schemaVersion: 1,
+      categories: [{
+        categoryId: 'hr-admin',
+        display: { name: '组织人事', description: '组织、招聘、绩效和薪酬议题' },
+        icon: '🏗️',
+        color: '#2563eb',
+        sortOrder: 10,
+        resourceCount: 1,
+      }],
+      items: [{
+        resourceType: 'expert_team_template',
+        resourceId: 'talent-acquisition',
+        version: '1.3',
+        workplaceCategoryId: 'hr-admin',
+        sortOrder: 10,
+        display: {
+          name: '招聘评审团',
+          tagline: '岗位画像 / 候选人评审 / 面试设计',
+          description: '适合招聘项目推进、候选人复核、面试题设计和录用风险讨论。',
+        },
+        icon: '🎯',
+      }],
+    })
+    tauriMocks.expertTeamTemplateCatalog.mockResolvedValue([{
+      teamId: 'talent-acquisition',
+      version: '1.3',
+      facilitationStyle: 'rounds',
+      displayI18n: {
+        'zh-CN': {
+          name: '招聘评审团',
+          tagline: '岗位画像 / 候选人评审 / 面试设计',
+          description: '适合招聘项目推进、候选人复核、面试题设计和录用风险讨论。',
+          examples: ['设计销售总监岗位面试方案'],
+          composerPlaceholder: '告诉他们你要评审的岗位或候选人...',
+        },
+      },
+      experts: [{
+        stableName: 'recruiting-lead',
+        name: '宋知澜',
+        persona: '关注招聘漏斗、候选人体验和交付节奏',
+        emoji: '🎯',
+      }],
+      directorPromptI18n: {
+        'zh-CN': { template: '主持「{{teamName}}」讨论\n{{roster}}\n{{topic}}' },
+      },
+    }])
+    useChatStore.setState({
+      activeConversationId: 'conv-remote-team',
+      conversations: [{
+        id: 'conv-remote-team',
+        title: '专家团: 招聘评审团',
+        createdAt: '',
+        updatedAt: '',
+        isArchived: false,
+        kind: 'expertTeam',
+        sourceLabel: '招聘评审团',
+      }],
+      messages: [],
+    })
+
+    render(<ChatPage conversationId="conv-remote-team" />)
+
+    expect(screen.getByTestId('chat-header')).toHaveTextContent('专家团: 招聘评审团')
+    await waitFor(() => {
+      expect(screen.getByTestId('expert-team-welcome-shell')).toHaveTextContent('招聘评审团')
+    })
+    expect(screen.queryByTestId('chat-content')).not.toBeInTheDocument()
   })
 
 

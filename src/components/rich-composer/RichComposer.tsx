@@ -8,7 +8,7 @@ import {
 } from 'react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ArrowUp, Blocks, Folder, Plus, Sparkles, X } from 'lucide-react'
+import { AlertTriangle, ArrowUp, Blocks, Check, ChevronDown, Folder, Plus, Shield, ShieldCheck, Sparkles, X } from 'lucide-react'
 import { EditorContent, useEditor } from '@tiptap/react'
 import type { Editor } from '@tiptap/react'
 import { buildComposerExtensions } from './composerSchema'
@@ -16,6 +16,14 @@ import { serializeComposerDoc } from './serializer'
 import { parseMarkdownToComposerJson } from './parseMarkdown'
 import type { ComposerAttachmentToken, ComposerJsonNode, ComposerSkillToken, RichComposerSubmitPayload } from './types'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import type { PermissionMode } from '@/lib/tauri'
 
 // `/` should open the skill picker only where a real slash-command could
 // start: an empty doc, or right after whitespace. Anywhere else (mid-word,
@@ -54,6 +62,8 @@ export interface RichComposerProps {
   onOpenSkill?: () => void
   skillCommand?: ComposerSkillCommand | null
   onClearSkillCommand?: () => void
+  permissionMode?: PermissionMode
+  onPermissionModeChange?: (mode: PermissionMode) => void
 
   projectLabel?: string
   onPickProject?: () => void
@@ -91,6 +101,8 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
     onOpenSkill,
     skillCommand,
     onClearSkillCommand,
+    permissionMode = 'default',
+    onPermissionModeChange,
     projectLabel = 'Desktop',
     onPickProject,
     showProjectButton = true,
@@ -231,6 +243,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
   // we still allow send (it queues via PendingQueueManager).
   const sendDisabled = disabled || isEmpty || submittingRef.current
   const stopIcon = <span className="block h-3 w-3 rounded-md bg-current" />
+  const fullAccess = permissionMode === 'fullAccess'
 
   return (
     <div className="relative z-10 flex w-full flex-col gap-2">
@@ -314,6 +327,68 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
             >
               {skillCommand ? t('composer.skillLoaded') : t('composer.skill')}
             </Button>
+            {onPermissionModeChange ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={disabled}
+                    className="focus-visible:ring-0 data-[state=open]:bg-muted/70"
+                    aria-label={t('composer.permissionModeLabel', {
+                      mode: fullAccess
+                        ? t('composer.permissionModeFull')
+                        : t('composer.permissionModeDefault'),
+                    })}
+                    icon={fullAccess ? <ShieldCheck /> : <Shield />}
+                  >
+                    {fullAccess ? t('composer.permissionModeFull') : t('composer.permissionModeDefault')}
+                    <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  side="top"
+                  align="start"
+                  sideOffset={8}
+                  className="w-[288px] p-1.5"
+                >
+                  <DropdownMenuItem
+                    className="flex h-9 cursor-pointer items-center gap-2 rounded-md px-2.5 text-sm"
+                    onSelect={() => onPermissionModeChange('default')}
+                  >
+                    <span className="flex h-4 w-4 items-center justify-center text-foreground">
+                      {!fullAccess ? <Check className="h-4 w-4" aria-hidden="true" /> : null}
+                    </span>
+                    <Shield className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                    <span className="truncate">{t('composer.permissionModeDefaultLong')}</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="flex h-9 cursor-pointer items-center gap-2 rounded-md px-2.5 text-sm"
+                    onSelect={() => onPermissionModeChange('fullAccess')}
+                  >
+                    <span className="flex h-4 w-4 items-center justify-center text-foreground">
+                      {fullAccess ? <Check className="h-4 w-4" aria-hidden="true" /> : null}
+                    </span>
+                    <AlertTriangle className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                    <span className="truncate">{t('composer.permissionModeFullLong')}</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator className="mx-1 my-1.5 bg-border" />
+                  <div className="px-2.5 py-2 text-xs leading-5 text-muted-foreground">
+                    <div className="mb-1 font-semibold text-foreground">
+                      {t('composer.fullAccessRulesTitle')}
+                    </div>
+                    <p className="mb-1">{t('composer.fullAccessRulesIntro')}</p>
+                    <ul className="list-disc space-y-1 pl-4">
+                      <li>{t('composer.fullAccessRuleLessConfirm')}</li>
+                      <li>{t('composer.fullAccessRuleSensitive')}</li>
+                      <li>{t('composer.fullAccessRuleTrusted')}</li>
+                      <li>{t('composer.fullAccessRuleSwitchBack')}</li>
+                    </ul>
+                  </div>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : null}
             {showProjectButton ? (
               <Button
                 type="button"

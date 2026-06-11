@@ -13,6 +13,7 @@ import { useChatStore } from "@/stores/chatStore";
 import { useStreamingStore, type PendingAsk } from "@/stores/streamingStore";
 import { useInteractionStore } from "@/stores/interactionStore";
 import { useSkillStore } from "@/stores/skillStore";
+import { useUiStore } from "@/stores/uiStore";
 import type { InteractionRequiredPayload } from "@/lib/tauri";
 
 const tauriMocks = vi.hoisted(() => ({
@@ -79,6 +80,23 @@ const i18nMock = vi.hoisted(() => ({
       "pendingAction.staleInteraction.messageAfter":
         "。当前运行时没有找到可继续处理的问题，请停止当前任务后重新发送。",
       "pendingAction.staleInteraction.stop": "停止任务",
+      "composer.permissionModeLabel": "权限模式：{{mode}}",
+      "composer.permissionModeDefault": "默认",
+      "composer.permissionModeFull": "完全",
+      "composer.permissionModeDefaultLong": "默认权限",
+      "composer.permissionModeFullLong": "完全访问权限",
+      "composer.permissionModeDefaultDesc": "使用设置中的默认权限策略",
+      "composer.permissionModeFullDesc":
+        "本会话使用完全访问；普通读写删尽量不询问，高风险删除仍会拦截",
+      "composer.fullAccessRulesTitle": "完全访问权限说明",
+      "composer.fullAccessRulesIntro": "开启后，本会话会这样处理：",
+      "composer.fullAccessRuleLessConfirm":
+        "减少确认步骤，允许 AI 直接执行更多操作",
+      "composer.fullAccessRuleSensitive":
+        "文件修改、命令执行会更少打断你",
+      "composer.fullAccessRuleTrusted":
+        "仅建议在你信任当前任务时使用",
+      "composer.fullAccessRuleSwitchBack": "你可随时切回默认权限",
     },
     "en-US": {
       "pendingAction.permission.allowedFeedback":
@@ -194,6 +212,7 @@ beforeEach(() => {
     activeConversationId: "conv-1",
     messages: [],
   });
+  useUiStore.setState({ permissionModesBySession: {} });
   useStreamingStore.setState({ pendingAsks: new Map() });
   useInteractionStore.setState({ pendingInteractions: [] });
   useSkillStore.setState({
@@ -379,6 +398,53 @@ describe("ChatBottomArea", () => {
       label: "玩转钉钉",
       command: "/dingtalk-workspace",
     });
+  });
+
+  it("toggles session permission mode beside skill button and passes it on submit", async () => {
+    const user = userEvent.setup();
+    render(<ChatBottomArea />);
+    await waitFor(() =>
+      expect(document.querySelector(".ProseMirror")).toBeTruthy(),
+    );
+
+    await user.click(screen.getByRole("button", { name: "权限模式：默认" }));
+    expect(await screen.findByText("完全访问权限说明")).toBeInTheDocument();
+    await user.click(screen.getByText("完全访问权限"));
+    const editor = document.querySelector(".ProseMirror") as HTMLElement;
+    await user.click(editor);
+    await user.type(editor, "hello");
+    fireEvent.keyDown(editor, { key: "Enter", code: "Enter" });
+
+    await waitFor(() => expect(mockSendUserMessage).toHaveBeenCalledTimes(1));
+    expect(mockSendUserMessage.mock.calls[0][3]).toBe("fullAccess");
+    expect(useUiStore.getState().permissionModesBySession["conv-1"]).toBe(
+      "fullAccess",
+    );
+  });
+
+  it("uses the permission mode already bound to the active conversation", async () => {
+    useUiStore.setState({
+      permissionModesBySession: {
+        "conv-1": "fullAccess",
+      },
+    });
+    const user = userEvent.setup();
+    render(<ChatBottomArea />);
+    await waitFor(() =>
+      expect(document.querySelector(".ProseMirror")).toBeTruthy(),
+    );
+
+    expect(
+      screen.getByRole("button", { name: "权限模式：完全" }),
+    ).toBeInTheDocument();
+
+    const editor = document.querySelector(".ProseMirror") as HTMLElement;
+    await user.click(editor);
+    await user.type(editor, "hello");
+    fireEvent.keyDown(editor, { key: "Enter", code: "Enter" });
+
+    await waitFor(() => expect(mockSendUserMessage).toHaveBeenCalledTimes(1));
+    expect(mockSendUserMessage.mock.calls[0][3]).toBe("fullAccess");
   });
 
   it("empty Enter does not call sendUserMessage", async () => {

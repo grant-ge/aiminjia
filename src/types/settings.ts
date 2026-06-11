@@ -14,6 +14,7 @@ export type LlmProvider =
   | "custom";
 export type FontScale = "small" | "medium" | "large";
 export type ChatWidthMode = "centered" | "full";
+export type DefaultPermissionMode = "default" | "fullAccess";
 export type CloudGatewayMode = "legacy" | "v2";
 export type AppLogLevel = "error" | "warn" | "info" | "debug";
 
@@ -35,6 +36,7 @@ export interface Settings {
   appLanguage?: AppLanguage;
   fontScale?: FontScale;
   chatWidthMode?: ChatWidthMode;
+  defaultPermissionMode?: DefaultPermissionMode;
   accentColor?: string;
   uiHomeSelectedWorkspace?: string;
   uiHomeRecentWorkspaces?: string;
@@ -60,6 +62,7 @@ export const DEFAULT_SETTINGS: Settings = {
   appLanguage: "zh-CN",
   fontScale: "medium",
   chatWidthMode: "full",
+  defaultPermissionMode: "default",
   accentColor: "",
   uiHomeSelectedWorkspace: "",
   uiHomeRecentWorkspaces: "",

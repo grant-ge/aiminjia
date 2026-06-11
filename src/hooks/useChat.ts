@@ -31,6 +31,7 @@ import {
   setConversationPinned as tauriSetConversationPinned,
   getActiveTurnStage,
   type ChatAttachmentPayload,
+  type PermissionMode,
   type SkillCommandPayload,
 } from '@/lib/tauri'
 import type { Conversation, Message } from '@/types/message'
@@ -289,11 +290,13 @@ export function useChat() {
    *                 the backend persists `skillCommand` metadata on the user
    *                 message which the prompt builder uses to inject SKILL.md
    *                 contents and mark the turn as a skill-driven flow.
+   * @param permissionMode - Optional session-level permission mode override.
    */
   const sendUserMessage = useCallback(async (
     text: string,
     files?: PendingFileInfo[],
     skill?: PendingSkillCommand | null,
+    permissionMode?: PermissionMode | null,
   ): Promise<boolean> => {
     let store = useChatStore.getState()
     let conversationId = store.activeConversationId
@@ -474,7 +477,7 @@ export function useChat() {
 
     try {
       console.log('[useChat] Calling sendMessage IPC, attachments:', files, 'willBeQueued:', willBeQueued)
-      await sendMessage(conversationId, text, files, null, messageId, skillCommand)
+      await sendMessage(conversationId, text, files, null, messageId, skillCommand, permissionMode)
       console.log('[useChat] sendMessage IPC returned OK')
       recordDiagnostic({
         event: 'chat.submit.completed',

@@ -207,11 +207,11 @@ fn ensure_generated_file_records_from_metas(
                 Ok(path) => path,
                 Err(err) => {
                     log::warn!(
-                        "[generated-files] skipping unavailable FileMeta fileId={} storedPath={}: {}",
-                        file_id,
-                        stored_path,
-                        err
-                    );
+                    "[generated-files] skipping unavailable FileMeta fileId={} storedPath={}: {}",
+                    file_id,
+                    stored_path,
+                    err
+                );
                     continue;
                 }
             };
@@ -3335,6 +3335,7 @@ fn permission_mode_to_frontend(mode: crate::runtime::tools::permission::Permissi
         crate::runtime::tools::permission::PermissionMode::Plan => "plan",
         crate::runtime::tools::permission::PermissionMode::DontAsk => "dontAsk",
         crate::runtime::tools::permission::PermissionMode::AcceptEdits => "acceptEdits",
+        crate::runtime::tools::permission::PermissionMode::FullAccess => "fullAccess",
     }
     .to_string()
 }
@@ -4035,6 +4036,21 @@ impl TauriChatCommandAdapter {
         result
     }
 
+    fn default_permission_mode_from_settings(
+        &self,
+    ) -> crate::runtime::tools::permission::PermissionMode {
+        let map = self.services.db().get_all_settings().unwrap_or_default();
+        let settings = if map.is_empty() {
+            AppSettings::default()
+        } else {
+            AppSettings::from_string_map(&map)
+        };
+        match settings.default_permission_mode.as_str() {
+            "fullAccess" => crate::runtime::tools::permission::PermissionMode::FullAccess,
+            _ => crate::runtime::tools::permission::PermissionMode::Default,
+        }
+    }
+
     pub async fn send_message(
         &self,
         conversation_id: String,
@@ -4131,6 +4147,8 @@ impl TauriChatCommandAdapter {
             }
         }
 
+        let effective_permission_mode =
+            permission_mode.unwrap_or_else(|| self.default_permission_mode_from_settings());
         let mut request = ChatTurnRequest::new(conversation_id.clone(), content, attachments);
         request.skill_command = skill_command;
         // Derive per-turn attachment dirs on the backend (frontend paths are untrusted).
@@ -4151,9 +4169,7 @@ impl TauriChatCommandAdapter {
         );
         request.agent_name = agent_name;
         request.client_message_id = client_message_id;
-        if let Some(permission_mode) = permission_mode {
-            request.permission_mode = permission_mode;
-        }
+        request.permission_mode = effective_permission_mode;
         let result = self.run_chat_request_internal(request).await;
         if result.is_err() {
             if let Some(pending_mgr) = direct_dispatch_pending_mgr {
@@ -4186,7 +4202,8 @@ impl TauriChatCommandAdapter {
         }
         request.agent_name = agent_name;
         request.persona_id_override = persona_id_override;
-        request.permission_mode = permission_mode.unwrap_or_default();
+        request.permission_mode =
+            permission_mode.unwrap_or_else(|| self.default_permission_mode_from_settings());
         request.client_message_id = client_message_id;
 
         let captured_run_id = request.run_id.clone();
@@ -5086,8 +5103,7 @@ mod agenda_dispatch_prompt_tests {
     fn agenda_trigger_label_includes_local_planned_weekday() {
         let planned = Utc.with_ymd_and_hms(2026, 6, 9, 1, 43, 38).unwrap();
         let local = planned.with_timezone(&Local);
-        let weekday_cn =
-            crate::runtime::chat::prompt::ReminderBuilder::weekday_cn(local.weekday());
+        let weekday_cn = crate::runtime::chat::prompt::ReminderBuilder::weekday_cn(local.weekday());
         let label = super::format_agenda_trigger_label("门店巡检", planned);
 
         assert!(label.contains("计划触发时间（UTC）：2026-06-09 01:43:38 UTC"));

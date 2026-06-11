@@ -462,6 +462,11 @@ impl QueryEngine {
         };
 
         let mut ctx = base;
+        if let Some(home) = dirs::home_dir() {
+            if !ctx.read_roots.iter().any(|root| root == &home) {
+                ctx.read_roots.push(home);
+            }
+        }
 
         // Set primary_root: authorized_workspace takes precedence over workspace_path.
         ctx.primary_root = self
@@ -1118,6 +1123,7 @@ fn path_auth_scope_to_deny_rule(scope: &str) -> Option<PermissionRule> {
     let op = match kind {
         "path" => Some(PathOp::Read),
         "pathwrite" => Some(PathOp::Write),
+        "pathdelete" => Some(PathOp::Delete),
         _ => return None,
     };
     if path.trim().is_empty() {
