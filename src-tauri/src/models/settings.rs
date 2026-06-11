@@ -20,14 +20,6 @@ pub enum LlmProvider {
     Claude,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum DataMaskingLevel {
-    Strict,
-    Standard,
-    Relaxed,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum CloudGatewayMode {
@@ -49,7 +41,6 @@ pub struct AppSettings {
     pub auto_model_routing: bool,
     pub workspace_path: String,
     pub analysis_threshold: f64,
-    pub data_masking_level: String,
     pub auto_cleanup_enabled: bool,
     pub temp_file_retention_days: u32,
     pub keep_old_versions: u32,
@@ -118,7 +109,6 @@ impl Default for AppSettings {
             auto_model_routing: true,
             workspace_path: default_workspace,
             analysis_threshold: 1.65,
-            data_masking_level: "relaxed".to_string(),
             auto_cleanup_enabled: true,
             temp_file_retention_days: 7,
             keep_old_versions: 1,
@@ -178,7 +168,6 @@ impl AppSettings {
             auto_model_routing: get_bool("autoModelRouting", defaults.auto_model_routing),
             workspace_path: get_str("workspacePath", &defaults.workspace_path),
             analysis_threshold: get_f64("analysisThreshold", defaults.analysis_threshold),
-            data_masking_level: get_str("dataMaskingLevel", &defaults.data_masking_level),
             auto_cleanup_enabled: get_bool("autoCleanupEnabled", defaults.auto_cleanup_enabled),
             temp_file_retention_days: get_u32(
                 "tempFileRetentionDays",
@@ -251,6 +240,13 @@ mod tests {
     #[test]
     fn defaults_font_scale_to_medium() {
         assert_eq!(AppSettings::default().font_scale, "medium");
+    }
+
+    #[test]
+    fn default_settings_do_not_serialize_legacy_data_masking_level() {
+        let value = serde_json::to_value(AppSettings::default()).unwrap();
+
+        assert!(value.get("dataMaskingLevel").is_none());
     }
 
     #[test]

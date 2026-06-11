@@ -1790,7 +1790,6 @@ impl RuntimeChatTurnDriver {
             // per-upstream-model cap (Step 1).
             token_budget: overrides.token_budget.unwrap_or(1_000_000),
             chunk_timeout_secs: 90,
-            masking_level: llm_settings.masking_level.clone(),
             workspace_path: workspace_path.clone(),
             authorized_workspace: overrides.authorized_workspace,
             llm_settings,
@@ -2467,7 +2466,6 @@ impl RuntimeChatTurnDriver {
                 tool_defs: &config.tool_defs,
                 token_budget: config.token_budget,
                 chunk_timeout_secs: config.chunk_timeout_secs,
-                masking_level: &config.masking_level,
                 force_no_tools: state.force_no_tools,
                 llm_settings: &config.llm_settings,
                 conversation_id: config.conversation_id.as_str(),
