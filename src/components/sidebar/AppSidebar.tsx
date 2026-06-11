@@ -437,7 +437,7 @@ export function AppSidebar() {
 
   return (
     <>
-      <aside className="flex h-full w-[256px] shrink-0 flex-col overflow-hidden bg-sidebar px-2 text-sidebar-foreground">
+      <aside className="flex h-full w-[256px] shrink-0 flex-col overflow-hidden bg-sidebar px-2 pt-2 text-sidebar-foreground">
         {isWindows ? null : (
           <TenantHeader
             name={tenantDisplay}

@@ -247,6 +247,7 @@ describe("AppSidebar", () => {
     const aside = container.querySelector("aside");
     expect(aside?.className).toMatch(/w-\[256px\]/);
     expect(aside?.className).toMatch(/bg-sidebar/);
+    expect(aside).toHaveClass("pt-2");
     expect(aside?.className).not.toMatch(/(^|\s)pt-3(\s|$)/);
   });
 
