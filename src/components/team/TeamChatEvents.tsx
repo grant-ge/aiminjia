@@ -8,7 +8,7 @@ import { AssistantMarkdown } from '@/components/chat-scene/AssistantMarkdown'
 import { getExpertDisplayName } from '@/features/expert-teams/teams'
 import type { ExpertTeam } from '@/features/expert-teams/teams'
 import { AgentAvatar } from './AgentAvatar'
-import { getAgentIdentity, formatLeadDisplayName, isLeadName } from './agentIdentity'
+import { formatLeadDisplayName, isLeadName } from './agentIdentity'
 import { formatClock, formatTimestampForGroup } from './formatters'
 import { useTeamVisualContext } from './TeamVisualContext'
 import { Button } from '@/components/ui/button'
@@ -269,17 +269,31 @@ interface SystemDividerProps {
 }
 
 function SystemDivider({ icon, label, ts }: SystemDividerProps) {
+  const markerClass = systemMarkerClass(icon)
   return (
-    <div className="flex items-center justify-center gap-2 text-[11px] text-muted-foreground">
-      <span className="h-px flex-1 bg-border" />
-      <span className="inline-flex items-center gap-1.5">
-        <span aria-hidden>{icon}</span>
-        <span>{label}</span>
-        <span className="opacity-60">{formatClock(ts)}</span>
+    <div className="flex justify-center px-8 py-0.5">
+      <span className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-muted/45 px-2.5 py-1 text-[11px] leading-4 text-muted-foreground">
+        <span aria-hidden className={cn('h-1.5 w-1.5 shrink-0 rounded-full', markerClass)} />
+        <span aria-hidden className="sr-only">{icon}</span>
+        <span className="min-w-0">{label}</span>
+        <span className="shrink-0 text-muted-foreground/55">{formatClock(ts)}</span>
       </span>
-      <span className="h-px flex-1 bg-border" />
     </div>
   )
+}
+
+function systemMarkerClass(icon: string): string {
+  switch (icon) {
+    case '✓':
+      return 'bg-primary/70'
+    case '✗':
+      return 'bg-destructive/70'
+    case '⊙':
+    case '≪':
+      return 'bg-primary/45'
+    default:
+      return 'bg-muted-foreground/55'
+  }
 }
 
 interface MessageBubbleProps {
@@ -297,7 +311,6 @@ function MessageBubble({ side, from, to, text, ts, isError, onDrillAgent }: Mess
   const teamVisual = useTeamVisualContext()
   const displayFromName = formatAgentDisplayName(teamVisual, from)
   const displayToName = formatAgentDisplayName(teamVisual, to)
-  const fromIdentity = getAgentIdentity(displayFromName)
   const isDrillable = !isLeadName(from) && Boolean(onDrillAgent)
 
   const avatarNode = (
@@ -338,10 +351,10 @@ function MessageBubble({ side, from, to, text, ts, isError, onDrillAgent }: Mess
       </div>
       <div
         className={cn(
-          'w-fit max-w-[85%] break-words rounded-md px-3 py-2 text-sm',
+          'w-fit max-w-[85%] break-words rounded-md px-3 py-2 text-sm leading-6 shadow-[var(--shadow-card)]',
           isError
             ? 'border border-destructive/40 bg-destructive/10 text-destructive'
-            : fromIdentity.bubbleClass,
+            : 'border border-border bg-card text-foreground',
         )}
       >
         {text ? (

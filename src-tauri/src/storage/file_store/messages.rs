@@ -553,12 +553,69 @@ fn message_dedup_key(msg: &StoredMessage) -> String {
 /// Strip hallucinated XML from assistant message content.text field.
 fn sanitize_assistant_content(mut content: serde_json::Value) -> serde_json::Value {
     if let Some(text) = content.get("text").and_then(|t| t.as_str()) {
-        let cleaned = strip_hallucinated_xml(text);
+        let cleaned =
+            strip_thinking_block_duplicate_paragraphs(&strip_hallucinated_xml(text), &content);
         if cleaned.len() != text.len() {
             content["text"] = serde_json::Value::String(cleaned);
         }
     }
     content
+}
+
+fn strip_thinking_block_duplicate_paragraphs(text: &str, content: &serde_json::Value) -> String {
+    let thinking_texts = extract_thinking_texts(content);
+    if thinking_texts.is_empty() {
+        return text.to_string();
+    }
+
+    let normalized_thinking = thinking_texts
+        .iter()
+        .map(|thinking| normalize_text_for_overlap(thinking))
+        .filter(|thinking| !thinking.is_empty())
+        .collect::<Vec<_>>();
+    if normalized_thinking.is_empty() {
+        return text.to_string();
+    }
+
+    text.split("\n\n")
+        .filter_map(|paragraph| {
+            let trimmed = paragraph.trim();
+            if trimmed.is_empty() {
+                return None;
+            }
+            let normalized_paragraph = normalize_text_for_overlap(trimmed);
+            if normalized_paragraph.len() >= 32
+                && normalized_thinking.iter().any(|thinking| {
+                    thinking.contains(&normalized_paragraph)
+                        || normalized_paragraph.contains(thinking)
+                })
+            {
+                None
+            } else {
+                Some(trimmed)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+fn extract_thinking_texts(content: &serde_json::Value) -> Vec<String> {
+    ["thinkingBlocks", "_thinking_blocks", "thinking_blocks"]
+        .iter()
+        .filter_map(|key| content.get(*key).and_then(|value| value.as_array()))
+        .flat_map(|blocks| blocks.iter())
+        .filter_map(|block| {
+            block
+                .get("text")
+                .or_else(|| block.get("thinking"))
+                .and_then(|value| value.as_str())
+                .map(str::to_string)
+        })
+        .collect()
+}
+
+fn normalize_text_for_overlap(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 #[cfg(test)]
@@ -588,6 +645,40 @@ mod tests {
         assert_eq!(msgs[0]["content"]["text"], "hello");
         assert_eq!(msgs[1]["role"], "assistant");
         assert_eq!(msgs[1]["content"]["text"], "hi");
+    }
+
+    #[test]
+    fn assistant_content_sanitize_removes_text_proven_by_thinking_blocks() {
+        let content = serde_json::json!({
+            "text": "四位专家已成功加入团队。\n\nAll four experts have been spawned as teammates. Now I need to wait for them to complete and read their outputs. Let me check on their progress.",
+            "_thinking_blocks": [{
+                "type": "thinking",
+                "text": "All four experts have been spawned as teammates. Now I need to wait for them to complete and read their outputs. Let me check on their progress."
+            }]
+        });
+
+        let sanitized = sanitize_assistant_content(content);
+
+        assert_eq!(sanitized["text"], "四位专家已成功加入团队。");
+        assert!(sanitized["_thinking_blocks"].is_array());
+    }
+
+    #[test]
+    fn assistant_content_sanitize_keeps_english_without_thinking_proof() {
+        let content = serde_json::json!({
+            "text": "Keep this English sentence. It is part of the answer.",
+            "_thinking_blocks": [{
+                "type": "thinking",
+                "text": "Unrelated internal reasoning."
+            }]
+        });
+
+        let sanitized = sanitize_assistant_content(content);
+
+        assert_eq!(
+            sanitized["text"],
+            "Keep this English sentence. It is part of the answer."
+        );
     }
 
     #[test]

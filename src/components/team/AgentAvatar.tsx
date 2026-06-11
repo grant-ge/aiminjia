@@ -2,7 +2,7 @@ import { cn } from '@/lib/utils'
 import { ExpertAvatarView } from '@/features/expert-teams/ExpertAvatarView'
 import { getExpertAvatarVisualForAgent } from '@/features/expert-teams/expertAvatar'
 import { getExpertDisplayName } from '@/features/expert-teams/teams'
-import { getAgentIdentity } from './agentIdentity'
+import { formatLeadDisplayName, getAgentIdentity, isLeadName } from './agentIdentity'
 import { useTeamVisualContext } from './TeamVisualContext'
 
 interface AgentAvatarProps {
@@ -17,17 +17,24 @@ const SIZE_CLASS = {
   lg: 'h-10 w-10 text-sm',
 } as const
 
+const LEAD_AVATAR_VISUAL = { kind: 'image', url: '/expert-avatars/lead.svg' } as const
+
 export function AgentAvatar({ name, size = 'md', className }: AgentAvatarProps) {
   const team = useTeamVisualContext()
-  const displayName = getExpertDisplayName(team, name)
+  const isLead = isLeadName(name)
+  const displayName = isLead ? formatLeadDisplayName(name) : getExpertDisplayName(team, name)
   const id = getAgentIdentity(displayName)
-  const expertAvatarVisual = getExpertAvatarVisualForAgent(team, name)
+  const expertAvatarVisual = isLead ? LEAD_AVATAR_VISUAL : getExpertAvatarVisualForAgent(team, name)
+  const hasImageAvatar =
+    expertAvatarVisual?.kind === 'image' || expertAvatarVisual?.kind === 'atlas'
   return (
     <span
       className={cn(
-        'inline-flex shrink-0 items-center justify-center rounded-md font-semibold',
+        'inline-flex shrink-0 items-center justify-center font-semibold',
         SIZE_CLASS[size],
-        id.avatarClass,
+        hasImageAvatar
+          ? 'overflow-hidden rounded-full border border-card bg-muted text-foreground'
+          : cn('rounded-md', id.avatarClass),
         className,
       )}
       aria-label={displayName}
@@ -36,7 +43,7 @@ export function AgentAvatar({ name, size = 'md', className }: AgentAvatarProps) 
       <ExpertAvatarView
         visual={expertAvatarVisual}
         fallback={id.initials}
-        className={expertAvatarVisual?.kind === 'text' ? undefined : 'rounded-md'}
+        className={hasImageAvatar ? 'rounded-full' : undefined}
       />
     </span>
   )

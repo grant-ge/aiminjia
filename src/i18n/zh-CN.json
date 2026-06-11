@@ -1248,6 +1248,11 @@
       "received": "接收到",
       "receivedFrom": "接收到 {{name}}",
       "sentTo": "发送给 {{name}}",
+      "timeline": {
+        "systemReminder": "角色说明",
+        "received": "收到消息",
+        "turn": "思考与行动"
+      },
       "parseHint": "解析提示",
       "rawData": "原始数据",
       "parseWarnings": {

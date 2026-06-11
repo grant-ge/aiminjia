@@ -1259,6 +1259,11 @@
       "received": "Received",
       "receivedFrom": "Received from {{name}}",
       "sentTo": "Sent to {{name}}",
+      "timeline": {
+        "systemReminder": "Role instructions",
+        "received": "Received message",
+        "turn": "Thinking and actions"
+      },
       "parseHint": "Parse note",
       "rawData": "Raw data",
       "parseWarnings": {

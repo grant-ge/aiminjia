@@ -83,6 +83,40 @@ describe('TeamChatEvents – send_message variant 分流', () => {
     expect(container.textContent).not.toContain('team.chat.emptyText')
   })
 
+  it('normal message bubbles use a neutral card surface instead of the old colored boxes', () => {
+    const { getByTestId } = render(
+      <TeamChatEvents events={[textMessage('AI 不应该取代初级程序员')]} />,
+    )
+
+    const bubble = getByTestId('md').parentElement
+    expect(bubble).toHaveClass('bg-card')
+    expect(bubble).toHaveClass('border-border')
+    expect(bubble?.className).not.toMatch(/\bbg-(blue|emerald|rose|amber|violet|cyan)-500\/8\b/)
+    expect(bubble?.className).not.toContain('bg-primary/10')
+  })
+
+  it('renders system events as compact activity rows without horizontal divider lines', () => {
+    const events: TeamEvent[] = [
+      {
+        kind: 'team_create',
+        ts: '2026-05-15T15:00:00Z',
+        teamName: '市场营销策划团',
+      },
+      {
+        kind: 'agent_stop',
+        ts: '2026-05-15T15:01:00Z',
+        agentId: 'brand-lead',
+        agentName: 'brand-lead',
+      },
+    ]
+
+    const { container } = render(<TeamChatEvents events={events} />)
+
+    expect(container.textContent).toContain('team.chat.lifecycle.teamCreatedWithName')
+    expect(container.textContent).toContain('team.chat.lifecycle.agentLeft')
+    expect(container.querySelector('.h-px.bg-border')).not.toBeInTheDocument()
+  })
+
   it('variant=shutdown_request：渲染 ⊙ SystemDivider，含 shutdownRequest key', () => {
     const event: TeamEvent = {
       kind: 'send_message',

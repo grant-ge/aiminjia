@@ -7,7 +7,7 @@ use app_lib::storage::{AiJiaHome, CurrentUserStorage, UserScope};
 use app_lib::transport::tauri_commands::conversation_export::{
     active_export_storage, conversation_export_root, validate_export_zip_path,
 };
-use chrono::{Duration, Utc};
+use chrono::{Duration, Local, Utc};
 use std::io::Read;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
@@ -42,6 +42,15 @@ fn zip_names(zip_path: &std::path::Path) -> Vec<String> {
     names
 }
 
+fn renlijia_log_timestamp(ts: chrono::DateTime<Utc>) -> String {
+    let local = ts.with_timezone(&Local);
+    format!(
+        "[{}][{}]",
+        local.format("%Y-%m-%d"),
+        local.format("%H:%M:%S")
+    )
+}
+
 fn insert_message(storage: &AppStorage, id: &str, conversation_id: &str, role: &str, text: &str) {
     let msg = StoredMessage {
         seq: None,
@@ -54,6 +63,9 @@ fn insert_message(storage: &AppStorage, id: &str, conversation_id: &str, role: &
         tool_calls: None,
         tool_call_id: None,
         name: None,
+        subtype: None,
+        compact_metadata: None,
+        is_compact_summary: None,
         run_id: Some("run-1".to_string()),
         schema_version: Some(2),
         sequence: None,
@@ -63,7 +75,7 @@ fn insert_message(storage: &AppStorage, id: &str, conversation_id: &str, role: &
 }
 
 #[test]
-fn export_zip_contains_readable_html_manifest_raw_messages_and_full_logs() {
+fn export_zip_contains_readable_html_manifest_raw_messages_and_recent_logs() {
     let dir = TempDir::new().unwrap();
     let app_home = dir.path().join("home");
     let export_root = dir.path().join("exports");
@@ -93,8 +105,26 @@ fn export_zip_contains_readable_html_manifest_raw_messages_and_full_logs() {
             Utc::now().to_rfc3339()
         ),
     );
-    write_file(&logs_dir.join("renlijia.log"), "runtime log body\n");
-    write_file(&logs_dir.join("gate.log"), "gate log body\n");
+    let old_at = Utc::now() - Duration::hours(48);
+    let recent_at = Utc::now();
+    let old_ts = old_at.to_rfc3339();
+    let recent_ts = recent_at.to_rfc3339();
+    write_file(
+        &logs_dir.join("renlijia.log"),
+        &format!(
+            "{}[INFO][test] stale runtime log\n{}[INFO][test] recent runtime log\nrecent runtime continuation\n",
+            renlijia_log_timestamp(old_at),
+            renlijia_log_timestamp(recent_at)
+        ),
+    );
+    write_file(
+        &logs_dir.join("gate.log"),
+        &format!(
+            r#"{{"ts":"{}","event":"stale.gate"}}
+{{"ts":"{}","event":"recent.gate"}}"#,
+            old_ts, recent_ts
+        ),
+    );
 
     let exporter = ConversationExporter::new(ExportPaths {
         app_home: app_home.clone(),
@@ -148,14 +178,14 @@ fn export_zip_contains_readable_html_manifest_raw_messages_and_full_logs() {
     assert!(recent.contains("tool.execute.failed"));
     assert!(recent.contains("other-conv"));
 
-    assert_eq!(
-        read_zip_entry(&result.zip_path, "raw/renlijia.log"),
-        "runtime log body\n"
-    );
-    assert_eq!(
-        read_zip_entry(&result.zip_path, "raw/gate.log"),
-        "gate log body\n"
-    );
+    let app_log = read_zip_entry(&result.zip_path, "raw/renlijia.log");
+    assert!(app_log.contains("recent runtime log"));
+    assert!(app_log.contains("recent runtime continuation"));
+    assert!(!app_log.contains("stale runtime log"));
+
+    let gate_log = read_zip_entry(&result.zip_path, "raw/gate.log");
+    assert!(gate_log.contains("recent.gate"));
+    assert!(!gate_log.contains("stale.gate"));
 
     let manifest: serde_json::Value =
         serde_json::from_str(&read_zip_entry(&result.zip_path, "manifest.json")).unwrap();
@@ -484,7 +514,7 @@ fn conversation_export_commands_are_registered_and_exposed_to_typescript() {
     assert!(tauri_ts.contains("fileName: string"));
     assert!(tauri_ts.contains("sizeBytes: number"));
     assert!(tauri_ts.contains("export function exportConversation"));
-    assert!(tauri_ts.contains("invoke<ExportConversationResult>('export_conversation'"));
+    assert!(tauri_ts.contains("invoke<ExportConversationResult>(\"export_conversation\""));
     assert!(tauri_ts.contains("export function revealExportInFolder"));
-    assert!(tauri_ts.contains("invoke<void>('reveal_export_in_folder'"));
+    assert!(tauri_ts.contains("invoke<void>(\"reveal_export_in_folder\""));
 }

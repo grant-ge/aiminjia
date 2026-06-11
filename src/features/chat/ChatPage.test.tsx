@@ -378,7 +378,7 @@ describe('ChatPage layout', () => {
     fireEvent.click(screen.getByRole('button', { name: '导出对话' }))
 
     expect(tauriMocks.exportConversation).not.toHaveBeenCalled()
-    expect(screen.getByText('将生成一个本地 zip 文件，包含当前对话和运行信息。文件只会保存在本机。')).toBeInTheDocument()
+    expect(screen.getByText('将生成一个本地 zip 文件，包含当前对话和最近 24 小时运行信息。文件只会保存在本机。')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '开始导出' }))
 
