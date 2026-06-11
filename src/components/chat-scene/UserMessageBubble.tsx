@@ -9,6 +9,7 @@ import { UserBubbleMarkdown } from './markdown/UserBubbleMarkdown'
 import { DispatchBanner } from './DispatchBanner'
 import { parseDispatchHeader } from './parseDispatchHeader'
 import type { FileAttachment, SkillCommandBreadcrumb } from '@/types/message'
+import { Button } from '@/components/ui/button'
 
 // Team event XML patterns — rendered by PeerMessageBanner instead
 const TEAM_EVENT_RE = /^(?:<peer-messages>[\s\S]*<\/peer-messages>|<task-notification[\s\S]*<\/task-notification>)$/
@@ -106,21 +107,22 @@ export function UserMessageBubble({
           ) : null}
         </div>
         {shouldCollapse ? (
-          <button
+          <Button unstyled
             type="button"
             onClick={() => setExpanded((next) => !next)}
             className="mt-1 text-xs font-semibold text-primary-foreground/80 underline-offset-2 hover:text-primary-foreground hover:underline"
           >
             {expanded ? t('userMessage.collapse') : t('userMessage.expandAll')}
-          </button>
+          </Button>
         ) : null}
       </div>
       {text ? (
-        <div className="flex h-6 items-center justify-end">
-          <button
+        <div className="flex h-6 items-center justify-end text-xs">
+          <Button
             type="button"
+            link
             onClick={handleCopy}
-            className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover:opacity-100 group-focus-within:opacity-100"
+            className="gap-1 text-muted-foreground opacity-0 focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
             aria-label={t('userMessage.copy', '复制用户消息')}
             title={t('userMessage.copy', '复制用户消息')}
             data-testid="user-message-copy-button"
@@ -137,7 +139,7 @@ export function UserMessageBubble({
                   ? t('common.copyFailed')
                   : t('common.copy')}
             </span>
-          </button>
+          </Button>
         </div>
       ) : null}
     </div>

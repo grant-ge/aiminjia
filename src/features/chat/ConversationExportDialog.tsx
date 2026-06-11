@@ -1,6 +1,5 @@
 import { CheckCircle2, FolderOpen, Loader2, Package, XCircle } from 'lucide-react'
 
-import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
@@ -10,6 +9,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import type { ExportConversationResult } from '@/lib/tauri'
+import { Button } from '@/components/ui/button'
 
 export type ConversationExportStatus = 'idle' | 'exporting' | 'success' | 'error'
 

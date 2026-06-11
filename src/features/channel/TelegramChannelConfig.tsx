@@ -4,7 +4,6 @@ import { open as openExternal } from '@tauri-apps/plugin-shell'
 import { CheckCircle2, ExternalLink, Loader2, X } from 'lucide-react'
 import { QrCodeCanvas } from '@/components/registration/QrCodeCanvas'
 import { requestConfirm } from '@/components/common/ConfirmDialogHost'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
   channelTelegramApprovePairing,
@@ -21,6 +20,7 @@ import {
 } from '@/lib/tauri'
 import { useChannelStore } from '@/stores/channelStore'
 import { useNotificationStore } from '@/stores/notificationStore'
+import { Button } from '@/components/ui/button'
 
 interface TelegramChannelConfigProps {
   onSaved?: () => void
@@ -294,13 +294,13 @@ export function TelegramChannelConfig({ onSaved, onClose }: TelegramChannelConfi
             {t('channel.telegram.config.qrExpiry', { time: `${m}:${s.toString().padStart(2, '0')}` })}
           </div>
           {begin?.deepLink && (
-            <button
+            <Button unstyled
               type="button"
               onClick={() => void openExternal(begin.deepLink)}
               className="inline-flex items-center gap-1 text-xs font-medium text-primary underline-offset-4 hover:underline"
             >
               {t('channel.telegram.config.openTelegramDirect')} <ExternalLink className="h-3 w-3" />
-            </button>
+            </Button>
           )}
 
           {pending.length > 0 && (
@@ -313,11 +313,11 @@ export function TelegramChannelConfig({ onSaved, onClose }: TelegramChannelConfi
                     {p.username && <span className="ml-1 text-muted-foreground">@{p.username}</span>}
                   </span>
                   <div className="flex gap-2">
-                    <Button size="sm" className="rounded-md" onClick={() => void handleApprove(p.code)}>
+                    <Button size="sm" onClick={() => void handleApprove(p.code)}>
                       <CheckCircle2 className="mr-1 h-4 w-4" />
                       {t('channel.telegram.config.approve')}
                     </Button>
-                    <Button size="sm" variant="ghost" className="rounded-md" onClick={() => void handleReject(p.code)}>
+                    <Button size="sm" variant="ghost" onClick={() => void handleReject(p.code)}>
                       <X className="h-4 w-4" />
                     </Button>
                   </div>
@@ -332,7 +332,7 @@ export function TelegramChannelConfig({ onSaved, onClose }: TelegramChannelConfi
               {paired.map((u) => (
                 <div key={u.userId} className="flex items-center justify-between gap-2 rounded-md bg-muted px-3 py-2 text-sm">
                   <span className="font-semibold text-foreground">{u.firstName}</span>
-                  <Button size="sm" variant="ghost" className="rounded-md" onClick={() => void handleRevokeUser(u.userId)}>
+                  <Button size="sm" variant="ghost" onClick={() => void handleRevokeUser(u.userId)}>
                     {t('channel.actions.remove')}
                   </Button>
                 </div>
@@ -343,11 +343,11 @@ export function TelegramChannelConfig({ onSaved, onClose }: TelegramChannelConfi
       </div>
       <div className="flex gap-3 border-t border-border bg-background px-10 py-4">
         {alreadyConfigured && (
-          <Button variant="destructive" className="flex-1 rounded-md" onClick={() => void handleRemove()}>
+          <Button danger className="flex-1" onClick={() => void handleRemove()}>
             {t('channel.actions.removeChannel')}
           </Button>
         )}
-        <Button className={`rounded-md ${alreadyConfigured ? 'flex-1' : 'w-full'}`} onClick={onClose}>
+        <Button className={alreadyConfigured ? 'flex-1' : 'w-full'} onClick={onClose}>
           {t('channel.actions.done')}
         </Button>
       </div>

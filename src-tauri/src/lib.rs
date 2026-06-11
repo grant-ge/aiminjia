@@ -1037,6 +1037,7 @@ pub fn run() {
             // Plugin commands
             commands::plugin::list_tools,
             commands::plugin::list_skills,
+            commands::plugin::get_skill_detail,
             commands::plugin::get_plugin_info,
             // Agent commands
             transport::tauri_commands::agents::list_agents,

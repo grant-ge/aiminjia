@@ -6,7 +6,6 @@ import {
   employeeIndexKnowledgeAsync,
   type PendingKnowledgeSource,
 } from '@/lib/tauri'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import type { EmployeeTemplate } from './templates'
@@ -18,6 +17,7 @@ import { WeeklyReportConfigForm } from './forms/WeeklyReportConfigForm'
 import { TechSupportConfigForm } from './forms/TechSupportConfigForm'
 import { CustomerSupportConfigForm } from './forms/CustomerSupportConfigForm'
 import { SchemaForm, type JsonSchema } from './forms/SchemaForm'
+import { Button } from '@/components/ui/button'
 
 /**
  * True when the template ships a non-empty JSON Schema for instance
@@ -218,11 +218,10 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-7 gap-1.5 px-2 text-xs"
                 disabled={syncingTemplates}
                 onClick={() => void handleSyncTemplates()}
+                icon={<RefreshCw className={syncingTemplates ? 'animate-spin' : undefined} />}
               >
-                <RefreshCw className={`h-3 w-3 ${syncingTemplates ? 'animate-spin' : ''}`} />
                 {syncingTemplates ? t('employeesPage.syncing') : t('employeesPage.syncServer')}
               </Button>
             ) : null}
@@ -277,7 +276,7 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
               const skills = requiredSkillNames(template)
               const visual = getEmployeeVisual(template)
               return (
-                <button
+                <Button unstyled
                   key={template.templateId}
                   type="button"
                   data-aijia-hire-template
@@ -329,7 +328,7 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
                       ))}
                     </div>
                   )}
-                </button>
+                </Button>
               )
             })}
           </div>
@@ -376,7 +375,7 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
               <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-medium text-muted-foreground">{t('employee.config.wizard.cronLabel')}</label>
-                  <button
+                  <Button unstyled
                     type="button"
                     onClick={() => setEnableCron((v) => !v)}
                     className={`rounded-md px-2.5 py-0.5 text-xs font-medium transition-colors ${
@@ -386,7 +385,7 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
                     }`}
                   >
                     {enableCron ? t('employee.config.wizard.cronEnabled') : t('employee.config.wizard.cronDisabled')}
-                  </button>
+                  </Button>
                 </div>
                 {enableCron && (
                   <Input

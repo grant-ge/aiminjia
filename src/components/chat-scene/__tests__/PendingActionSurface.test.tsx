@@ -379,8 +379,8 @@ describe("PendingActionSurface", () => {
   it("renders permission action buttons in the compact size", () => {
     renderSurface({ kind: "permission", ask: permissionAsk() });
 
-    expect(screen.getByRole("button", { name: "拒绝" })).toHaveClass("h-7");
-    expect(screen.getByRole("button", { name: "提交" })).toHaveClass("h-7");
+    expect(screen.getByRole("button", { name: "拒绝" })).toHaveClass("h-6");
+    expect(screen.getByRole("button", { name: "提交" })).toHaveClass("h-6");
     expect(screen.getByRole("button", { name: "提交" })).not.toHaveClass("h-9");
   });
 
@@ -694,8 +694,8 @@ describe("PendingActionSurface", () => {
   it("renders AskUserQuestion action buttons in the compact size", () => {
     renderSurface({ kind: "user-question", interaction: userQuestion() });
 
-    expect(screen.getByRole("button", { name: "忽略" })).toHaveClass("h-7");
-    expect(screen.getByRole("button", { name: "继续" })).toHaveClass("h-7");
+    expect(screen.getByRole("button", { name: "忽略" })).toHaveClass("h-6");
+    expect(screen.getByRole("button", { name: "继续" })).toHaveClass("h-6");
   });
 
   it("does not reuse answers when a new AskUserQuestion action replaces the previous one", async () => {

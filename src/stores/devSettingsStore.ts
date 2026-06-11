@@ -4,14 +4,17 @@ export const DEV_SETTINGS_STORAGE_KEY = 'aijia-dev-settings'
 
 interface DevSettingsSnapshot {
   showToolErrorIcon: boolean
+  showRawSkillContent: boolean
 }
 
 interface DevSettingsState extends DevSettingsSnapshot {
   setShowToolErrorIcon: (show: boolean) => void
+  setShowRawSkillContent: (show: boolean) => void
 }
 
 const DEFAULT_DEV_SETTINGS: DevSettingsSnapshot = {
   showToolErrorIcon: false,
+  showRawSkillContent: false,
 }
 
 function loadDevSettings(): DevSettingsSnapshot {
@@ -26,6 +29,10 @@ function loadDevSettings(): DevSettingsSnapshot {
         typeof parsed.showToolErrorIcon === 'boolean'
           ? parsed.showToolErrorIcon
           : DEFAULT_DEV_SETTINGS.showToolErrorIcon,
+      showRawSkillContent:
+        typeof parsed.showRawSkillContent === 'boolean'
+          ? parsed.showRawSkillContent
+          : DEFAULT_DEV_SETTINGS.showRawSkillContent,
     }
   } catch {
     return DEFAULT_DEV_SETTINGS
@@ -40,7 +47,23 @@ function persistDevSettings(snapshot: DevSettingsSnapshot) {
 export const useDevSettingsStore = create<DevSettingsState>((set) => ({
   ...loadDevSettings(),
   setShowToolErrorIcon: (showToolErrorIcon) => {
-    persistDevSettings({ showToolErrorIcon })
-    set({ showToolErrorIcon })
+    set((state) => {
+      const next = { ...state, showToolErrorIcon }
+      persistDevSettings({
+        showToolErrorIcon: next.showToolErrorIcon,
+        showRawSkillContent: next.showRawSkillContent,
+      })
+      return { showToolErrorIcon }
+    })
+  },
+  setShowRawSkillContent: (showRawSkillContent) => {
+    set((state) => {
+      const next = { ...state, showRawSkillContent }
+      persistDevSettings({
+        showToolErrorIcon: next.showToolErrorIcon,
+        showRawSkillContent: next.showRawSkillContent,
+      })
+      return { showRawSkillContent }
+    })
   },
 }))

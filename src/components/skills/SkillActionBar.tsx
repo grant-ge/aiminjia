@@ -1,8 +1,8 @@
+import { Button } from '@/components/ui/button'
 /**
  * @designSource design.pen#C4WXv heroAct
  * @sizing gap 10; outline button + primary button
  */
-import { Button } from '@/components/ui/button'
 
 interface SkillActionBarProps {
   primaryLabel: string

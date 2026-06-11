@@ -953,6 +953,8 @@
     "topicQuote": "\"{{topic}}\"",
     "customTopicHint": "Or enter your own topic below and press Enter.",
     "detail": {
+      "intro": "Capability overview",
+      "overview": "Basics",
       "category": "Group",
       "members": "Members",
       "memberCount": "{{count}} experts",
@@ -1028,6 +1030,8 @@
       "dialogFirst": "Dialog first",
       "contextAware": "Fills gaps from context",
       "resultOriented": "Delivers concrete output",
+      "intro": "Capability overview",
+      "overview": "Template details",
       "strengths": "Strengths",
       "examples": "Good assignments",
       "skillSet": "Callable skills"

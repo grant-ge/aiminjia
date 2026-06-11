@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '@/i18n'
 import { useChatStore } from '@/stores/chatStore'
+import { useSkillStore } from '@/stores/skillStore'
 import { setExpertTeam, clearExpertTeam } from '@/features/expert-teams/expertTeamRegistry'
 import { ChatPage } from './ChatPage'
 
@@ -12,6 +13,7 @@ const tauriMocks = vi.hoisted(() => ({
   exportConversation: vi.fn(),
   revealExportInFolder: vi.fn(),
   getConversationSource: vi.fn(),
+  employeeList: vi.fn(),
   openGeneratedFile: vi.fn(),
   saveGeneratedFileAs: vi.fn(),
   saveLocalFileAs: vi.fn(),
@@ -34,6 +36,7 @@ vi.mock('@/lib/tauri', () => ({
   exportConversation: tauriMocks.exportConversation,
   revealExportInFolder: tauriMocks.revealExportInFolder,
   getConversationSource: tauriMocks.getConversationSource,
+  employeeList: tauriMocks.employeeList,
   openGeneratedFile: tauriMocks.openGeneratedFile,
   saveGeneratedFileAs: tauriMocks.saveGeneratedFileAs,
   saveLocalFileAs: tauriMocks.saveLocalFileAs,
@@ -48,16 +51,25 @@ vi.mock('@/components/shell/ChatTopBar', () => ({
   ChatTopBar: ({
     title,
     sourceLabel,
+    employee,
     onShare,
     shareLabel,
   }: {
     title: string
     sourceLabel?: string
+    employee?: { name: string; role: string; defaultSkillLabel?: string | null }
     onShare?: () => void
     shareLabel?: string
   }) => (
     <header data-testid="chat-header">
-      {title}
+      {employee ? (
+        <span data-testid="chat-employee-label">
+          {employee.role} · {employee.name}
+        </span>
+      ) : title}
+      {employee?.defaultSkillLabel ? (
+        <span data-testid="chat-default-skill">{employee.defaultSkillLabel}</span>
+      ) : null}
       {sourceLabel ? <span data-testid="chat-source-label">{sourceLabel}</span> : null}
       {onShare ? <button onClick={onShare}>{shareLabel ?? '分享'}</button> : null}
     </header>
@@ -86,6 +98,7 @@ describe('ChatPage layout', () => {
     tauriMocks.exportConversation.mockReset()
     tauriMocks.revealExportInFolder.mockReset()
     tauriMocks.getConversationSource.mockReset()
+    tauriMocks.employeeList.mockReset()
     tauriMocks.openGeneratedFile.mockReset()
     tauriMocks.clearConversationSource.mockReset()
     tauriMocks.setConversationExpertTeam.mockReset()
@@ -97,11 +110,14 @@ describe('ChatPage layout', () => {
     tauriMocks.getTeamOverview.mockResolvedValue(null)
     tauriMocks.onMessageUpdated.mockResolvedValue(() => undefined)
     tauriMocks.onToolCompleted.mockResolvedValue(() => undefined)
+    tauriMocks.getConversationSource.mockReturnValue(new Promise(() => {}))
+    tauriMocks.employeeList.mockResolvedValue([])
     await i18n.changeLanguage('zh-CN')
     await clearExpertTeam('conv-layout')
     await clearExpertTeam('conv-team')
     await clearExpertTeam('conv-retro')
     useChatStore.setState({ activeConversationId: null, conversations: [], messages: [] })
+    useSkillStore.setState({ skills: [], isLoading: false })
   })
 
 
@@ -117,6 +133,62 @@ describe('ChatPage layout', () => {
     await waitFor(() => {
       expect(switchConversationMock).toHaveBeenCalledWith('conv-reload')
     })
+  })
+
+  it('renders employee identity from conversation source before the index title is available', async () => {
+    tauriMocks.getConversationSource.mockResolvedValue({ kind: 'employee', employeeId: 'emp-salary' })
+    tauriMocks.employeeList.mockResolvedValue([{
+      id: 'emp-salary',
+      name: '方予衡',
+      role: '薪酬专家',
+      description: '生成薪酬公平性分析报告。',
+      avatar: '',
+      templateId: null,
+      toolWhitelist: [],
+      cron: null,
+      timezone: 'Asia/Shanghai',
+      lifecycle: 'active',
+      cronEnabled: false,
+      resourceConfig: {},
+      systemPromptExtra: null,
+      defaultSkillId: 'salary-fairness-v2',
+      templateRef: null,
+      createdAt: '',
+      updatedAt: '',
+      lastRunAt: null,
+      nextRunAt: null,
+    }])
+    useSkillStore.setState({
+      skills: [{
+        id: 'salary-fairness-v2',
+        displayName: '薪酬公平性分析 v2',
+        displayNameEn: 'Salary Fairness Analysis v2',
+        description: '',
+        source: 'builtin',
+        hasWorkflow: true,
+        shortDescription: '',
+        shortDescriptionEn: '',
+        triggerText: '/salary-fairness-v2',
+        category: 'general',
+        icon: '',
+        updatedAt: null,
+      }],
+      isLoading: false,
+    })
+    useChatStore.setState({
+      activeConversationId: 'conv-employee',
+      conversations: [{ id: 'conv-employee', title: '', createdAt: '', updatedAt: '', isArchived: false }],
+      messages: [],
+    })
+
+    render(<ChatPage conversationId="conv-employee" />)
+
+    expect(screen.queryByTestId('chat-header')).not.toBeInTheDocument()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('chat-employee-label')).toHaveTextContent('薪酬专家 · 方予衡')
+    })
+    expect(screen.getByTestId('chat-default-skill')).toHaveTextContent('薪酬公平性分析 v2')
   })
 
 

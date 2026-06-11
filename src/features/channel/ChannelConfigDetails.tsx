@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { Eye, EyeOff } from 'lucide-react'
 import { requestConfirm } from '@/components/common/ConfirmDialogHost'
-import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
@@ -13,6 +12,7 @@ import {
 } from '@/components/ui/dialog'
 import type { ChannelConfigView } from '@/lib/tauri'
 import { useChannelStore } from '@/stores/channelStore'
+import { Button } from '@/components/ui/button'
 
 interface ChannelConfigDetailsProps {
   config: ChannelConfigView

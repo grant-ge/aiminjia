@@ -112,7 +112,7 @@ describe('snapshotToTemplate', () => {
     const out = snapshotToTemplate(snap, 'zh-CN')
     expect(out.avatarAssetKey).toBe('desktop-resources/employee-avatars/hr-v1/salary-expert.svg')
     expect(out.avatarUrl).toBe('https://lotus-releases.oss-cn-beijing.aliyuncs.com/desktop-resources/employee-avatars/hr-v1/salary-expert.svg')
-    expect(getEmployeeVisual(out).avatarUrl).toBe(out.avatarUrl)
+    expect(getEmployeeVisual(out).avatarUrl).toBe('/employee-avatars/方予衡.svg')
   })
 
   it('derives a public release avatar URL from avatarAssetKey when avatarUrl is absent', () => {

@@ -68,7 +68,11 @@ function makeDirectory(): WorkplaceDirectoryResponse {
         version: '1.1',
         workplaceCategoryId: 'hr-admin',
         sortOrder: 10,
-        display: { name: '招聘评审团', tagline: '岗位画像 / 候选人评审 / 面试设计' },
+        display: {
+          name: '招聘评审团',
+          tagline: '岗位画像 / 候选人评审 / 面试设计',
+          description: '围绕岗位画像、候选人评审和面试设计，组织多位专家一起拆解招聘决策。',
+        },
         icon: '🎯',
       },
     ],
@@ -84,12 +88,14 @@ function makeSnapshot(overrides: Partial<ExpertTeamTemplateSnapshot> = {}): Expe
       'zh-CN': {
         name: '招聘评审团',
         tagline: '岗位画像 / 候选人评审 / 面试设计',
+        description: '结合岗位目标、候选人材料和面试反馈，帮助团队形成更完整的招聘评审意见。',
         examples: ['设计销售总监岗位面试方案'],
         composerPlaceholder: '告诉他们你要评审的岗位或候选人...',
       },
       'en-US': {
         name: 'Talent Acquisition Review Team',
         tagline: 'Role profiles, candidate review, and interview design',
+        description: 'A cross-functional hiring review team that compares role goals, candidate evidence, and interview signals before making a recommendation.',
         examples: ['Design an interview plan for a sales director role'],
         composerPlaceholder: 'Tell the team which role or candidates you want to review...',
       },
@@ -161,6 +167,9 @@ describe('ExpertTeamsPage', () => {
     render(<ExpertTeamsPage />)
 
     expect(await screen.findByText('Talent Acquisition Review Team')).toBeInTheDocument()
+    expect(screen.getByText(/A cross-functional hiring review team.*Recruiting Lead reviews.*hiring funnel health and delivery cadence/)).toBeInTheDocument()
+    expect(screen.getByText('1 experts / Round-robin discussion')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /View Talent Acquisition Review Team details/ }))
     expect(screen.getByText('Recruiting Lead')).toBeInTheDocument()
     expect(screen.queryByText('招聘评审团')).toBeNull()
   })
@@ -241,6 +250,7 @@ describe('ExpertTeamsPage', () => {
     expect(screen.getByRole('button', { name: '组织人事' })).toBeInTheDocument()
     expect(screen.getByText('战略推演团')).toBeInTheDocument()
     expect(screen.getByText('招聘评审团')).toBeInTheDocument()
+    expect(document.querySelector('.grid.min-w-0')).toHaveClass('lg:grid-cols-3', 'xl:grid-cols-4')
 
     fireEvent.click(screen.getByRole('button', { name: '战略与经营' }))
 
@@ -254,8 +264,15 @@ describe('ExpertTeamsPage', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: /查看 招聘评审团 详情/ }))
     expect(mocks.createConversation).not.toHaveBeenCalled()
+    expect(screen.getAllByText(/结合岗位目标、候选人材料和面试反馈.*招聘负责人.*招聘漏斗/).length).toBeGreaterThanOrEqual(2)
+    expect(document.querySelector('[data-aijia-expert-team-detail]')).toHaveClass('max-w-[680px]', 'gap-0', 'rounded-md')
+    expect(document.querySelector('[data-aijia-expert-team-detail-chrome]')).toHaveClass('px-5', 'py-5')
+    expect(document.querySelector('[data-aijia-expert-team-detail-logo]')).toBeNull()
+    expect(document.querySelector('[data-aijia-expert-team-avatar-stack]')).toBeInTheDocument()
+    expect(screen.getByText('基础信息')).toBeInTheDocument()
+    expect(screen.getByText('团队成员')).toBeInTheDocument()
     expect(screen.getByText('适合讨论的议题')).toBeInTheDocument()
-    expect(screen.getAllByText('招聘负责人').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText('招聘负责人')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '召唤专家团' }))
 

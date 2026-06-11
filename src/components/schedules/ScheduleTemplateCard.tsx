@@ -4,8 +4,8 @@
  */
 import { useTranslation } from 'react-i18next'
 
-import { Button } from '@/components/ui/button'
 import type { RecurrenceRule } from '@/lib/tauri'
+import { Button } from '@/components/ui/button'
 
 export interface ScheduleTemplate {
   title: string

@@ -3,11 +3,11 @@ import { useTranslation } from 'react-i18next'
 import { CheckCircle2 } from 'lucide-react'
 import { type ChannelConfigView, type ChannelRegistrationBeginResult } from '@/lib/tauri'
 import { useChannelStore } from '@/stores/channelStore'
-import { Button } from '@/components/ui/button'
 import {
   RegistrationModal,
   type RegistrationPollState,
 } from '@/components/registration/RegistrationModal'
+import { Button } from '@/components/ui/button'
 
 interface ChannelConfigProps {
   onSaved?: () => void
@@ -114,7 +114,8 @@ export function ChannelConfig({ onSaved, onClose }: ChannelConfigProps) {
         </div>
         <div className="border-t border-border bg-background px-10 py-4">
           <Button
-            className="h-10 w-full rounded-md"
+            size="lg"
+            block
             onClick={() => {
               onSaved?.()
               onClose?.()
@@ -131,7 +132,7 @@ export function ChannelConfig({ onSaved, onClose }: ChannelConfigProps) {
     return (
       <div className="flex max-h-[78vh] w-full flex-col items-center justify-center bg-background p-10">
         <p className="text-sm text-red-500">{error}</p>
-        <Button className="mt-4 h-10 w-64 rounded-md" onClick={handleRetry}>
+        <Button size="lg" className="mt-4 w-64" onClick={handleRetry}>
           {t('channel.dingtalk.config.retryQr')}
         </Button>
       </div>

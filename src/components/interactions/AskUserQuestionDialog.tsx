@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 
 import type { Question } from '@/lib/tauri'
 import { cancelUserInteraction, submitUserInteraction } from '@/lib/tauri'
+import { Button } from '@/components/ui/button'
 
 interface Props {
   interactionId: string
@@ -93,7 +94,7 @@ export function AskUserQuestionDialog({ interactionId, questions, onClose }: Pro
                   {question.options.map((option, optIdx) => {
                     const selected = selectedValues.includes(option.label)
                     return (
-                      <button
+                      <Button unstyled
                         key={option.label}
                         type="button"
                         onClick={() => toggleOption(question.question, option.label, !!question.multiSelect)}
@@ -112,10 +113,10 @@ export function AskUserQuestionDialog({ interactionId, questions, onClose }: Pro
                         {option.preview ? (
                           <pre className="mt-2 max-h-24 overflow-auto rounded-md bg-muted p-2 text-xs text-muted-foreground">{option.preview}</pre>
                         ) : null}
-                      </button>
+                      </Button>
                     )
                   })}
-                  <button
+                  <Button unstyled
                     type="button"
                     onClick={() => toggleOption(question.question, OTHER_VALUE, !!question.multiSelect)}
                     className={`rounded-md border px-3 py-2 text-left text-sm transition-colors ${
@@ -130,7 +131,7 @@ export function AskUserQuestionDialog({ interactionId, questions, onClose }: Pro
                   >
                     <div className="font-medium">其他</div>
                     <div className="mt-1 text-xs text-muted-foreground">输入自定义回答</div>
-                  </button>
+                  </Button>
                 </div>
 
                 {hasOther ? (
@@ -150,7 +151,7 @@ export function AskUserQuestionDialog({ interactionId, questions, onClose }: Pro
         </div>
 
         <div className="mt-6 flex justify-end gap-2">
-          <button
+          <Button unstyled
             type="button"
             onClick={handleCancel}
             disabled={submitting}
@@ -158,8 +159,8 @@ export function AskUserQuestionDialog({ interactionId, questions, onClose }: Pro
             data-aijia-dialog-action="cancel"
           >
             取消
-          </button>
-          <button
+          </Button>
+          <Button unstyled
             type="button"
             onClick={handleSubmit}
             disabled={!canSubmit || submitting}
@@ -167,7 +168,7 @@ export function AskUserQuestionDialog({ interactionId, questions, onClose }: Pro
             data-aijia-dialog-action="confirm"
           >
             提交回答
-          </button>
+          </Button>
         </div>
       </div>
     </div>

@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import i18n from '@/i18n'
 import type {
@@ -331,13 +331,11 @@ describe('EmployeesPage', () => {
     expect(screen.queryByText('其他员工')).not.toBeInTheDocument()
   })
 
-  it('only reveals the employee template detail action on card hover or focus', async () => {
+  it('does not render the employee template detail action chip on cards', async () => {
     render(<EmployeesPage />)
 
-    const action = await screen.findByText('查看详情')
-    expect(action).toHaveClass('opacity-0')
-    expect(action).toHaveClass('group-hover:opacity-100')
-    expect(action).toHaveClass('group-focus-visible:opacity-100')
+    expect(await screen.findByRole('button', { name: '查看 程砚舟 详情' })).toBeInTheDocument()
+    expect(screen.queryByText('查看详情')).not.toBeInTheDocument()
   })
 
   it('renders employee template cards in a four-column desktop grid', async () => {
@@ -346,9 +344,32 @@ describe('EmployeesPage', () => {
     const card = await screen.findByRole('button', { name: '查看 程砚舟 详情' })
     expect(card).toHaveClass('w-full')
     expect(card).toHaveClass('h-[154px]')
+    expect(card).toHaveClass('border-border/50')
+    expect(card).toHaveClass('shadow-[0_1px_3px_rgba(0,0,0,0.035)]')
+    expect(card).toHaveClass('hover:border-border/70')
+    expect(card).toHaveClass('hover:bg-muted/20')
+    expect(card).not.toHaveClass('border-border')
+    expect(card).not.toHaveClass('shadow-[var(--shadow-card)]')
+    expect(card).not.toHaveClass('hover:border-primary/50')
+    expect(card).not.toHaveClass('hover:shadow-[var(--shadow-card-hover)]')
     expect(card.closest('.grid')).toHaveClass('xl:grid-cols-4')
     expect(card.querySelector('.h-9.w-9')).toBeInTheDocument()
     expect(card.querySelector('.line-clamp-2')).toHaveClass('mt-1')
+  })
+
+  it('uses tokenized employee template card typography sizes', async () => {
+    render(<EmployeesPage />)
+
+    const card = await screen.findByRole('button', { name: '查看 程砚舟 详情' })
+    const title = within(card).getByText('流程设计师')
+    const name = within(card).getByText('程砚舟')
+    const description = within(card).getByText('通过对话拆解你的工作流程。')
+
+    expect(title).toHaveClass('text-sm')
+    expect(title).not.toHaveClass('text-[15px]')
+    expect(name).toHaveClass('text-xs')
+    expect(description).toHaveClass('text-xs')
+    expect(description).not.toHaveClass('text-[13px]')
   })
 
   it('strips emoji from employee template chips', async () => {
@@ -386,9 +407,12 @@ describe('EmployeesPage', () => {
     ]
 
     for (const chip of chips) {
-      expect(chip).toHaveClass('rounded-md')
+      expect(chip).toHaveClass('rounded-[2px]')
+      expect(chip).not.toHaveClass('rounded-md')
       expect(chip).toHaveClass('bg-muted')
+      expect(chip).toHaveClass('text-2xs')
       expect(chip).toHaveClass('text-muted-foreground')
+      expect(chip).not.toHaveClass('text-xs')
       expect(chip).not.toHaveClass('bg-accent')
       expect(chip).not.toHaveClass('bg-secondary')
       expect(chip).not.toHaveClass('text-accent-foreground')
@@ -424,6 +448,45 @@ describe('EmployeesPage', () => {
     expect(mocks.setMessages).toHaveBeenCalledWith([])
     expect(mocks.setSidebarTab).toHaveBeenCalledWith('employee')
     expect(mocks.setRoute).toHaveBeenCalledWith({ kind: 'chat', conversationId: 'conv-created' })
+  })
+
+  it('renders employee detail as a refined profile modal', async () => {
+    render(<EmployeesPage />)
+
+    fireEvent.click(await screen.findByRole('button', { name: '查看 程砚舟 详情' }))
+
+    const dialog = document.querySelector('[data-aijia-employee-detail]')
+    expect(dialog).toHaveClass('max-w-[680px]')
+    expect(dialog).toHaveClass('rounded-md')
+    expect(dialog).toHaveClass('gap-0')
+
+    const chrome = document.querySelector('[data-aijia-employee-detail-chrome]')
+    expect(chrome).toHaveClass('px-5')
+    expect(chrome).toHaveClass('py-5')
+    expect(chrome).toHaveClass('border-b')
+
+    const avatar = document.querySelector('[data-aijia-employee-detail-avatar]')
+    expect(avatar).toHaveClass('h-14')
+    expect(avatar).toHaveClass('w-14')
+    expect(avatar).toHaveClass('rounded-md')
+
+    expect(screen.getByText('基础信息')).toBeInTheDocument()
+    expect(screen.getByText('分组')).toBeInTheDocument()
+    expect(screen.getByText('模板版本')).toBeInTheDocument()
+    expect(screen.getByText('触发方式')).toBeInTheDocument()
+    expect(screen.getByText('平台技能')).toBeInTheDocument()
+    expect(screen.getByText('能力介绍')).toBeInTheDocument()
+    expect(screen.getByText('能力侧重')).toBeInTheDocument()
+    expect(screen.getByText('适合交给 TA 的任务')).toBeInTheDocument()
+    expect(document.querySelector('.lucide-sparkles')).not.toBeInTheDocument()
+    expect(document.querySelectorAll('[data-aijia-employee-strength-row]')[0]).toHaveClass('items-center')
+    expect(document.querySelectorAll('[data-aijia-employee-strength-index]')).toHaveLength(3)
+    expect(document.querySelectorAll('[data-aijia-employee-strength-index]')[0]).not.toHaveClass('mt-0.5')
+
+    const cta = screen.getByRole('button', { name: '召唤' })
+    expect(cta).toHaveClass('h-8')
+    expect(cta).not.toHaveClass('min-w-[128px]')
+    expect(cta).not.toHaveClass('w-full')
   })
 
   it('reuses an existing employee instead of creating a duplicate', async () => {

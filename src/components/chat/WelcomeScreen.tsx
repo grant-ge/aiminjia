@@ -7,6 +7,7 @@ import { useProductName } from '@/hooks/useProductName'
 import { useChat } from '@/hooks/useChat'
 import { useTranslation } from 'react-i18next'
 import { localizeSkill } from '@/lib/skillLocalization'
+import { Button } from '@/components/ui/button'
 
 export function WelcomeScreen() {
   const { t, i18n } = useTranslation()
@@ -57,7 +58,7 @@ export function WelcomeScreen() {
 
       {/* General mode entry */}
       <div className="w-full max-w-[640px] px-4">
-        <button
+        <Button unstyled
           type="button"
           className="flex w-full items-center gap-3 rounded-md px-4 py-3 text-left transition-all duration-150 cursor-pointer hover:-translate-y-0.5 active:scale-[0.98]"
           style={{
@@ -95,7 +96,7 @@ export function WelcomeScreen() {
           >
             →
           </span>
-        </button>
+        </Button>
       </div>
 
       {/* Flat skill grid */}
@@ -105,7 +106,7 @@ export function WelcomeScreen() {
             {displaySkills.map((skill) => {
               const localized = localizeSkill(skill, i18n.language)
               return (
-                <button
+                <Button unstyled
                   key={skill.id}
                   type="button"
                   className="flex flex-col items-center gap-1.5 rounded-md px-3 py-3.5 text-center transition-all duration-150 hover:-translate-y-0.5 cursor-pointer"
@@ -130,7 +131,7 @@ export function WelcomeScreen() {
                   >
                     {localized.name}
                   </span>
-                </button>
+                </Button>
               )
             })}
           </div>

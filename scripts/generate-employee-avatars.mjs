@@ -1,8 +1,8 @@
 // Generate static SVG portraits for digital employee personas.
-// Uses the same DiceBear personas style as expert team avatars.
+// Uses the same DiceBear lorelei style as expert team avatars.
 
 import { createAvatar } from '@dicebear/core'
-import * as personas from '@dicebear/personas'
+import * as lorelei from '@dicebear/lorelei'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -38,7 +38,7 @@ function safe(name) {
 
 mkdirSync(outRoot, { recursive: true })
 for (const name of names) {
-  const svg = createAvatar(personas, {
+  const svg = createAvatar(lorelei, {
     seed: name,
     size: 96,
     backgroundColor: ['transparent'],

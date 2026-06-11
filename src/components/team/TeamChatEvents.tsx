@@ -11,6 +11,7 @@ import { AgentAvatar } from './AgentAvatar'
 import { getAgentIdentity, formatLeadDisplayName, isLeadName } from './agentIdentity'
 import { formatClock, formatTimestampForGroup } from './formatters'
 import { useTeamVisualContext } from './TeamVisualContext'
+import { Button } from '@/components/ui/button'
 
 interface TeamChatEventsProps {
   events: TeamEvent[]
@@ -307,13 +308,13 @@ function MessageBubble({ side, from, to, text, ts, isError, onDrillAgent }: Mess
     />
   )
   const wrappedAvatar = isDrillable ? (
-    <button
+    <Button unstyled
       type="button"
       onClick={() => onDrillAgent?.(from)}
       title={t('team.process.viewMemberFullProcess', { name: from })}
     >
       {avatarNode}
-    </button>
+    </Button>
   ) : (
     avatarNode
   )

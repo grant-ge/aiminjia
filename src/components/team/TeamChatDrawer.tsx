@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ArrowDown, X } from 'lucide-react'
 
-import { Button } from '@/components/ui/button'
 import { useSettingsStore } from '@/stores/settingsStore'
 import type { TeamOverview, TeamSession } from '@/types/team'
 import { useConversationTeamState, useTeamStore } from '@/stores/teamStore'
@@ -14,6 +13,7 @@ import { TeammateDetailPanel } from './TeammateDetailPanel'
 import { formatDuration, formatShortDateTime } from './formatters'
 import { isLeadName } from './agentIdentity'
 import { useTeamVisualContext } from './TeamVisualContext'
+import { Button } from '@/components/ui/button'
 
 interface TeamChatDrawerProps {
   conversationId: string
@@ -199,14 +199,14 @@ function DrawerOverview({ conversationId, overview, onDrill, onClose }: DrawerOv
         </div>
       </div>
       {showJumpToBottom ? (
-        <button
+        <Button unstyled
           type="button"
           aria-label={t('team.process.jumpToBottom')}
           onClick={jumpToBottom}
           className="absolute bottom-4 left-1/2 z-20 flex h-9 w-9 -translate-x-1/2 items-center justify-center rounded-md border border-border bg-card text-muted-foreground shadow-[var(--shadow-card)] transition-colors hover:bg-muted hover:text-foreground"
         >
           <ArrowDown className="h-4 w-4" />
-        </button>
+        </Button>
       ) : null}
     </div>
   )
@@ -234,7 +234,6 @@ function DrawerHeader({ title, subtitle, memberCount, onClose }: DrawerHeaderPro
         size="icon"
         aria-label={t('team.process.close')}
         onClick={onClose}
-        className="h-7 w-7"
       >
         <X className="h-4 w-4" />
       </Button>
@@ -319,7 +318,6 @@ function MemberButton({ agentName, hasTranscript, onClick }: MemberButtonProps) 
       size="sm"
       disabled={!hasTranscript}
       onClick={onClick}
-      className="h-7 gap-1.5 rounded-md px-2"
       title={hasTranscript
         ? t('team.process.viewMemberProcess', { name: displayName })
         : t('team.process.noMemberTranscript', { name: displayName })}

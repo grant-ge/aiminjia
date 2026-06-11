@@ -4,6 +4,7 @@
  */
 import type { ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
+import { Button } from '@/components/ui/button'
 
 export type PageTopBarVariant = "default" | "title" | "breadcrumb" | "compact";
 
@@ -58,7 +59,7 @@ export function PageTopBar({
                 <li key={i} className="flex items-center gap-2">
                   {i > 0 ? <ChevronRight className="h-3.5 w-3.5" /> : null}
                   {c.onClick ? (
-                    <button
+                    <Button unstyled
                       type="button"
                       className={
                         c.current ? "text-foreground" : "hover:text-foreground"
@@ -66,7 +67,7 @@ export function PageTopBar({
                       onClick={c.onClick}
                     >
                       {c.label}
-                    </button>
+                    </Button>
                   ) : (
                     <span className={c.current ? "text-foreground" : ""}>
                       {c.label}

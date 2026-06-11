@@ -5,10 +5,9 @@ import { useEffect, useState } from 'react'
 import type { ComponentProps } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { Button } from '@/components/ui/button'
 import { getLogLevel, setLogLevel } from '@/lib/tauri'
-import { cn } from '@/lib/utils'
 import type { AppLogLevel } from '@/types/settings'
+import { Button } from '@/components/ui/button'
 
 interface AboutPanelLinks {
   customerService: () => void
@@ -48,11 +47,8 @@ function PillButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      variant={danger ? 'destructive' : 'outline'}
-      className={cn(
-        'h-9 rounded-md px-5 text-sm font-semibold',
-        disabled && 'cursor-not-allowed opacity-60',
-      )}
+      danger={danger}
+      variant={danger ? 'default' : 'outline'}
     >
       {children}
     </Button>
@@ -161,7 +157,7 @@ export function AboutPanel({
               const selected = logLevel === option.value
               const label = t(option.labelKey)
               return (
-                <button
+                <Button unstyled
                   key={option.value}
                   type="button"
                   role="radio"
@@ -175,7 +171,7 @@ export function AboutPanel({
                   }
                 >
                   {label}
-                </button>
+                </Button>
               )
             })}
           </div>

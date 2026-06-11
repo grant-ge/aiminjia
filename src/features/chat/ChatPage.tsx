@@ -11,6 +11,7 @@ import {
   ConversationExportDialog,
 } from '@/features/chat/ConversationExportDialog'
 import { useExpertTeamForConversation } from '@/features/expert-teams/expertTeamRegistry'
+import { ExpertTeamAvatarStack } from '@/features/expert-teams/ExpertTeamAvatarStack'
 import { getExpertTeam } from '@/features/expert-teams/teams'
 import { useChat } from '@/hooks/useChat'
 import { useConversationExport } from '@/hooks/useConversationExport'
@@ -20,11 +21,16 @@ import { useNotificationStore } from '@/stores/notificationStore'
 import { useGeneratedFilePreviewStore } from '@/stores/generatedFilePreviewStore'
 import {
   getConversationSource,
+  type ConversationSourceDto,
   openGeneratedFile,
 } from '@/lib/tauri'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useEmployeeById } from '@/features/employees/useEmployeeById'
+import { getLocalEmployeeAvatarUrl } from '@/features/employees/employeeVisual'
+import { localizeEmployeeDisplay } from '@/features/employees/templates'
+import { localizedSkillName } from '@/lib/skillLocalization'
+import { useSkillStore } from '@/stores/skillStore'
 
 interface ChatPageProps {
   conversationId: string
@@ -43,25 +49,49 @@ export function ChatPage({ conversationId }: ChatPageProps) {
   const title = conv?.title ?? ''
   const conversationExport = useConversationExport(conversationId)
 
-  // employee_id lives in conv.json (not the index); read it lazily when this
-  // conversation is an employee dispatch session.
   const [employeeId, setEmployeeId] = useState<string | null>(null)
+  const [conversationSource, setConversationSource] = useState<ConversationSourceDto | null>(null)
   useEffect(() => {
-    if (conv?.kind !== 'employee') { setEmployeeId(null); return }
     let cancelled = false
+    setConversationSource(null)
+    setEmployeeId(null)
     getConversationSource(conversationId).then((src) => {
-      if (!cancelled && src.kind === 'employee') setEmployeeId(src.employeeId)
-    }).catch(() => { /* non-fatal */ })
+      if (cancelled) return
+      setConversationSource(src)
+      setEmployeeId(src.kind === 'employee' ? src.employeeId : null)
+    }).catch(() => {
+      if (cancelled) return
+      setConversationSource(null)
+      setEmployeeId(null)
+    })
     return () => { cancelled = true }
-  }, [conversationId, conv?.kind])
+  }, [conversationId])
 
   const employee = useEmployeeById(employeeId)
+  const employeeDisplay = employee
+    ? localizeEmployeeDisplay(
+        employee.templateId,
+        { name: employee.name, role: employee.role, description: employee.description },
+        i18n.language,
+      )
+    : null
+  const defaultSkill = useSkillStore((s) =>
+    employee?.defaultSkillId ? s.getById(employee.defaultSkillId) : null,
+  )
+  const defaultSkillLabel = employee?.defaultSkillId
+    ? localizedSkillName(defaultSkill, employee.defaultSkillId, i18n.language)
+    : null
   const { overview: teamOverview } = useTeamOverview(activeConversationId)
   const expertTeamId = useExpertTeamForConversation(conversationId)
   const expertTeam = expertTeamId ? getExpertTeam(expertTeamId, i18n.language) : undefined
   const sourceLabel = conv?.kind === 'expertTeam'
     ? expertTeam?.name ?? conv?.sourceLabel
     : conv?.sourceLabel
+  const isEmployeeConversation = conversationSource?.kind === 'employee' || conv?.kind === 'employee'
+  const isExpertTeamConversation = Boolean(expertTeam) || conv?.kind === 'expertTeam'
+  const headerKind = isEmployeeConversation ? 'employee' : isExpertTeamConversation ? 'expertTeam' : conv?.kind
+  const headerTitle = title || employeeDisplay?.name || expertTeam?.name || ''
+  const shouldRenderHeader = Boolean(headerTitle || employeeDisplay || expertTeam)
 
   const handleOpenPreviewTarget = async (target: PreviewTarget) => {
     try {
@@ -116,22 +146,31 @@ export function ChatPage({ conversationId }: ChatPageProps) {
 
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
-      {title ? (
+      {shouldRenderHeader ? (
         <ChatTopBar
-          title={title}
+          title={headerTitle}
           workspace={conv?.workspaceName}
-          kind={conv?.kind}
+          kind={headerKind}
           sourceLabel={sourceLabel}
           updatedAt={conv?.updatedAt}
           employee={
-            employee
+            employee && employeeDisplay
               ? {
                   avatar: employee.avatar,
-                  name: employee.name,
-                  role: employee.role,
+                  avatarUrl: getLocalEmployeeAvatarUrl(employeeDisplay.name),
+                  name: employeeDisplay.name,
+                  role: employeeDisplay.role,
+                  defaultSkillLabel,
                 }
               : undefined
           }
+          expertTeam={expertTeam
+            ? {
+                avatar: <ExpertTeamAvatarStack team={expertTeam} size="xs" />,
+                name: expertTeam.name,
+                tagline: expertTeam.tagline,
+              }
+            : undefined}
           onShare={conversationExport.openExportDialog}
           shareLabel="导出对话"
         />

@@ -6,6 +6,7 @@ import type { SortState } from './tableUtils'
 import { TableToolbar } from './TableToolbar'
 import { TableHeader } from './TableHeader'
 import { TableBody } from './TableBody'
+import { Button } from '@/components/ui/button'
 
 export interface TableViewProps {
   columns: TableColumn[]
@@ -125,7 +126,7 @@ export function TableView({
           >
             <span>{footerText}</span>
             {truncateRows !== undefined && sorted.length > truncateRows && (
-              <button
+              <Button unstyled
                 type="button"
                 onClick={() => setExpanded((v) => !v)}
                 className="text-xs underline-offset-2 hover:underline"
@@ -135,7 +136,7 @@ export function TableView({
                 {expanded
                   ? t('dataTable.collapse', 'Collapse')
                   : t('dataTable.expandAll', 'Expand all')}
-              </button>
+              </Button>
             )}
           </div>
         )}

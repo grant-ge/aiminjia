@@ -208,7 +208,7 @@ export function FeishuChannelConfig({ onSaved, onClose }: FeishuChannelConfigPro
               {registrationStatus === 'error' && (
                 <Button
                   onClick={handleStartRegistration}
-                  className="h-10 w-64 rounded-md"
+                  size="lg"
                 >
                   {t('channel.feishu.config.retryQr')}
                 </Button>
@@ -247,7 +247,8 @@ export function FeishuChannelConfig({ onSaved, onClose }: FeishuChannelConfigPro
       {registrationDone && (
         <div className="border-t border-border bg-background px-10 py-4">
           <Button
-            className="h-10 w-full rounded-md"
+            size="lg"
+            block
             onClick={() => {
               onSaved?.()
               onClose?.()

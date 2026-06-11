@@ -2,8 +2,8 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
 
 interface SalesTableConfigFormProps {
   initial: Record<string, unknown>
@@ -250,14 +250,14 @@ export function SalesTableConfigForm({ initial, onSubmit, onCancel }: SalesTable
 
       {/* Advanced — field mapping JSON */}
       <div className="flex flex-col gap-1.5">
-        <button
+        <Button unstyled
           type="button"
           onClick={() => update({ showAdvanced: !state.showAdvanced })}
           className="flex items-center gap-1 self-start text-xs text-muted-foreground hover:text-foreground"
         >
           {state.showAdvanced ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
           {t('employee.config.salesTable.advancedToggle')}
-        </button>
+        </Button>
         {state.showAdvanced && (
           <>
             <textarea

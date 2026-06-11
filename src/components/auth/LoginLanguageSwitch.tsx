@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next'
 
 import type { AppLanguage } from '@/i18n'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { Button } from '@/components/ui/button'
 
 // Endonyms: a language is always shown in its own name regardless of the
 // current UI language, so these stay literal rather than going through t().
@@ -32,7 +33,7 @@ export function LoginLanguageSwitch() {
       {LANGUAGE_OPTIONS.map((option) => {
         const selected = current === option.value
         return (
-          <button
+          <Button unstyled
             key={option.value}
             type="button"
             role="radio"
@@ -46,7 +47,7 @@ export function LoginLanguageSwitch() {
             }
           >
             {option.label}
-          </button>
+          </Button>
         )
       })}
     </div>

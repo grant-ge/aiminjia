@@ -5,7 +5,6 @@ import { RefreshCw } from 'lucide-react'
 import { PageSectionShell } from '@/components/shell/PageSectionShell'
 import { PageTopBar } from '@/components/shell/PageTopBar'
 import { SkillCategoryBar } from '@/components/skills/SkillCategoryBar'
-import { Button } from '@/components/ui/button'
 import {
   createConversation,
   renameConversation,
@@ -26,6 +25,7 @@ import {
   loadExpertTeamCatalog,
   type ExpertTeamCategory,
 } from './expertTeamCatalog'
+import { Button } from '@/components/ui/button'
 
 function categoryDescription(category: ExpertTeamCategory | null): string | null {
   const text = category?.description?.trim()
@@ -208,7 +208,7 @@ export function ExpertTeamsPage() {
             <Button
               type="button"
               variant="outline"
-              size="sm"
+              size="md"
               className="gap-1.5"
               disabled={syncing || catalogLoading}
               onClick={() => void handleSync()}
@@ -223,7 +223,7 @@ export function ExpertTeamsPage() {
       {catalogLoading && teams.length === 0 ? (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {[...Array(4)].map((_, i) => (
-            <div key={i} className="h-[220px] animate-pulse rounded-md border border-border bg-card" />
+            <div key={i} className="h-[154px] animate-pulse rounded-md border border-border/50 bg-card" />
           ))}
         </div>
       ) : teams.length === 0 ? (

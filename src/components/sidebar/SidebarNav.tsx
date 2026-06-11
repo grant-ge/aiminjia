@@ -4,6 +4,7 @@
  */
 import { useTranslation } from 'react-i18next'
 import { Blocks, CheckSquare, Clock3, GraduationCap, MessageSquare, Users, type LucideIcon } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 
 export type SidebarNavKey = 'home' | 'employees' | 'skill-center' | 'schedules' | 'expert-teams' | 'channel'
 
@@ -28,7 +29,7 @@ export function SidebarNav({ activeKey = null, onSelect = () => {} }: SidebarNav
       {NAV.map(({ key, i18nKey, icon: Icon }) => {
         const active = key === activeKey
         return (
-          <button
+          <Button unstyled
             key={key}
             type="button"
             data-aijia-nav={key}
@@ -41,7 +42,7 @@ export function SidebarNav({ activeKey = null, onSelect = () => {} }: SidebarNav
           >
             <Icon className="h-4 w-4 shrink-0" />
             <span className="flex-1 truncate">{t(i18nKey)}</span>
-          </button>
+          </Button>
         )
       })}
     </nav>

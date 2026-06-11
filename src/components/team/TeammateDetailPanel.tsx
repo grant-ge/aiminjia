@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 
 import { AssistantMarkdown } from '@/components/chat-scene/AssistantMarkdown'
-import { Button } from '@/components/ui/button'
 import { getExpertDisplayName } from '@/features/expert-teams/teams'
 import { useTeammateTranscript } from '@/hooks/useTeamOverview'
 import { useSettingsStore } from '@/stores/settingsStore'
@@ -12,6 +11,7 @@ import { useSettingsStore } from '@/stores/settingsStore'
 import { AgentAvatar } from './AgentAvatar'
 import { formatLeadDisplayName, isLeadName } from './agentIdentity'
 import { useTeamVisualContext } from './TeamVisualContext'
+import { Button } from '@/components/ui/button'
 
 interface TeammateDetailPanelProps {
   conversationId: string
@@ -107,7 +107,7 @@ export function TeammateDetailPanel({
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-        <Button variant="ghost" size="sm" onClick={onBack} className="h-7 px-2 text-xs">
+        <Button variant="ghost" size="sm" onClick={onBack}>
           {t('team.detail.back')}
         </Button>
         <AgentAvatar name={agentName} size="md" />
@@ -154,7 +154,7 @@ function SystemReminderBlock({ text }: { text: string }) {
   const [open, setOpen] = useState(false)
   return (
     <div className="rounded-md border border-border bg-muted/40">
-      <button
+      <Button unstyled
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted-foreground hover:bg-muted/60"
@@ -162,7 +162,7 @@ function SystemReminderBlock({ text }: { text: string }) {
         {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
         <span>{t('team.detail.systemReminder')}</span>
         <span className="ml-auto opacity-60">system</span>
-      </button>
+      </Button>
       {open && (
         <pre className="whitespace-pre-wrap break-words border-t border-border px-3 py-2 text-[11px] leading-relaxed text-foreground/85">
           {text}
@@ -219,7 +219,7 @@ function ToolChip({ call }: { call: ToolCallView }) {
   const summary = summarizeArgs(call.args)
   return (
     <div className="rounded-md border border-border bg-card">
-      <button
+      <Button unstyled
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-muted/60"
@@ -240,7 +240,7 @@ function ToolChip({ call }: { call: ToolCallView }) {
             <span className="text-[10px] text-destructive">✗</span>
           )}
         </span>
-      </button>
+      </Button>
       {open && (
         <div className="space-y-2 border-t border-border px-2.5 py-2">
           <div>
@@ -358,7 +358,7 @@ function MessageCard({ header, tone, parsed, raw }: MessageCardProps) {
           <AssistantMarkdown text={parsed.text} />
         )}
       </div>
-      <button
+      <Button unstyled
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-1.5 border-t border-current/15 bg-foreground/5 px-3 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-foreground/80 hover:bg-foreground/10"
@@ -374,7 +374,7 @@ function MessageCard({ header, tone, parsed, raw }: MessageCardProps) {
             {parsed.warning}
           </span>
         )}
-      </button>
+      </Button>
       {open && (
         <pre className="overflow-x-auto whitespace-pre-wrap break-all border-t border-current/10 bg-card/60 px-3 py-1.5 font-mono text-[10px] leading-relaxed text-foreground/85">
           {prettyJson(raw)}

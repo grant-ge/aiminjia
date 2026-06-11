@@ -175,6 +175,22 @@ describe('ChannelPage domain UI', () => {
     expect(screen.getByText('企业微信')).toBeInTheDocument()
   })
 
+  it('renders Feishu platform logo without a border', () => {
+    useChannelStore.setState({
+      platforms: {
+        dingtalk: unconfigured,
+        feishu,
+      },
+    })
+
+    const { container } = renderPage()
+    const logo = container.querySelector('img[src="/logos/feishu.png"]')
+
+    expect(logo).toBeInTheDocument()
+    expect(logo).not.toHaveClass('border')
+    expect(logo).not.toHaveClass('border-border')
+  })
+
   it('configured DingTalk opens read-only config details from menu', async () => {
     useChannelStore.setState({ platforms: { dingtalk: connected, feishu } })
     renderPage()

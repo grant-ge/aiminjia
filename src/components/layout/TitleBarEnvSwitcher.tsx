@@ -10,6 +10,7 @@ import { CustomEnvironmentDialog } from '@/components/common/CustomEnvironmentDi
 import { useAuthStore } from '@/stores/authStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { useUiStore } from '@/stores/uiStore'
+import { Button } from '@/components/ui/button'
 
 /**
  * Dev-only environment switcher living in the title bar (the green badge).
@@ -94,13 +95,13 @@ export function TitleBarEnvSwitcher() {
         ariaLabel={t('settings.environment.title')}
         align="end"
         trigger={
-          <button
+          <Button unstyled
             type="button"
             className="inline-flex items-center gap-0.5 rounded-md bg-[var(--color-semantic-green)] px-1.5 py-0.5 text-[11px] font-semibold tracking-wide text-primary-foreground shadow-[var(--shadow-sm)] transition-[filter] hover:brightness-95"
           >
             {currentLabel}
             <ChevronDown className="h-3 w-3" />
-          </button>
+          </Button>
         }
         items={[
           ...state.presets.map((p) => {

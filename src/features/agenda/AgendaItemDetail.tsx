@@ -13,10 +13,10 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Button } from '@/components/ui/button'
 
 import { AgendaItemEditor } from './AgendaItemEditor'
 import { describeFrequency } from './describeFrequency'
+import { Button } from '@/components/ui/button'
 
 interface AgendaItemDetailProps {
   open: boolean

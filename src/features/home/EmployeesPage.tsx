@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { RefreshCw, SendHorizontal } from 'lucide-react'
+import { RefreshCw } from 'lucide-react'
 
 import { PageSectionShell } from '@/components/shell/PageSectionShell'
 import { PageTopBar } from '@/components/shell/PageTopBar'
 import { SkillCategoryBar } from '@/components/skills/SkillCategoryBar'
-import { Button } from '@/components/ui/button'
 import { useUiStore } from '@/stores/uiStore'
 import { useEmployees } from '@/features/employees/useEmployees'
 import { useInbox } from '@/features/employees/useInbox'
@@ -25,21 +24,19 @@ import {
   type EmployeeCatalogCategory,
   type EmployeeTemplateCatalogResult,
 } from '@/features/employees/employeeCatalog'
-import type { EmployeeTemplate } from '@/features/employees/templates'
+import {
+  localizeEmployeeDisplay,
+  type EmployeeTemplate,
+} from '@/features/employees/templates'
 import { EmployeeTemplateDetailDialog } from '@/features/employees/EmployeeTemplateDetailDialog'
-import { getEmployeeVisual } from '@/features/employees/employeeVisual'
+import {
+  employeeInitial,
+  getEmployeeVisual,
+  getLocalEmployeeAvatarUrl,
+} from '@/features/employees/employeeVisual'
+import { Button } from '@/components/ui/button'
 
 // ─── daily feed ──────────────────────────────────────────────────────────────
-
-function kindIcon(kind: string): string {
-  switch (kind) {
-    case 'report': return '📄'
-    case 'signal': return '💡'
-    case 'running': return '⚙️'
-    case 'error': return '⚠️'
-    default: return '•'
-  }
-}
 
 function useTimeLabel() {
   const { t, i18n } = useTranslation()
@@ -56,6 +53,55 @@ function useTimeLabel() {
     if (diffD === 1) return t('employeesPage.timeLabel.yesterday')
     return d.toLocaleDateString(i18n.language, { month: 'numeric', day: 'numeric' })
   }
+}
+
+function TodayFeedAvatar({ name }: { name: string }) {
+  const avatarUrl = getLocalEmployeeAvatarUrl(name)
+  return (
+    <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted text-xs font-semibold leading-none text-muted-foreground shadow-[var(--shadow-sm)]">
+      {avatarUrl ? (
+        <img
+          alt=""
+          className="h-full w-full object-cover"
+          draggable={false}
+          src={avatarUrl}
+        />
+      ) : (
+        employeeInitial(name)
+      )}
+    </span>
+  )
+}
+
+function formatTodayFeedTitleParts(
+  title: string,
+  employee: EmployeeRecord | undefined,
+  language: string,
+): { identity: string | null; status: string } {
+  if (!employee) return { identity: null, status: title }
+  const display = localizeEmployeeDisplay(
+    employee.templateId,
+    {
+      name: employee.name,
+      role: employee.role ?? '',
+      description: employee.description ?? '',
+    },
+    language,
+  )
+  const role = display.role?.trim()
+  const name = display.name.trim()
+  const identity = role ? `${role} · ${name}` : name
+  const spacedPrefix = role ? `${role} ${name}` : name
+  const normalizedTitle = title.trim()
+  let status = normalizedTitle
+  if (normalizedTitle.startsWith(spacedPrefix)) {
+    status = normalizedTitle.slice(spacedPrefix.length).trimStart()
+  } else if (normalizedTitle.startsWith(identity)) {
+    status = normalizedTitle.slice(identity.length).trimStart()
+  } else if (normalizedTitle.startsWith(name)) {
+    status = normalizedTitle.slice(name.length).trimStart()
+  }
+  return { identity, status: status || normalizedTitle }
 }
 
 // ─── greeting ─────────────────────────────────────────────────────────────────
@@ -79,7 +125,7 @@ const ALL_CATALOG_GROUP_KEY = '__all__'
 
 const CHIP_EMOJI_RE = /[\p{Emoji_Presentation}\p{Extended_Pictographic}\uFE0F]/gu
 const EMPLOYEE_TEMPLATE_CHIP_CLASS =
-  'max-w-full truncate rounded-md bg-muted px-2 py-0.5 text-xs text-muted-foreground'
+  'max-w-full truncate rounded-[2px] bg-muted px-2 py-0.5 text-2xs text-muted-foreground'
 
 function stripChipEmoji(value: string): string {
   return value.replace(CHIP_EMOJI_RE, '').replace(/\s+/g, ' ').trim()
@@ -102,15 +148,9 @@ function EmployeeDirectoryCard({
     .filter((skill) => skill.label.length > 0)
   const badgeLabel = stripChipEmoji(template.badge)
   const visual = getEmployeeVisual(template)
-  const actionLabel = busy
-    ? t('employeesPage.summoning')
-    : t('employeesPage.viewDetail')
-  const actionVisibilityClass = busy
-    ? 'opacity-100'
-    : 'opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100'
 
   return (
-    <button
+    <Button unstyled
       type="button"
       data-aijia-employee-template-card
       data-aijia-employee-template-id={template.templateId}
@@ -119,7 +159,7 @@ function EmployeeDirectoryCard({
       aria-busy={busy}
       disabled={busy}
       onClick={() => onOpen(template)}
-      className="group flex h-[154px] w-full flex-col gap-2 rounded-md border border-border bg-card p-3 text-left text-card-foreground shadow-[var(--shadow-card)] transition-all hover:border-primary/50 hover:shadow-[var(--shadow-card-hover)] disabled:cursor-wait disabled:opacity-70"
+      className="group flex h-[154px] w-full flex-col gap-2 rounded-md border border-border/50 bg-card p-3 text-left text-card-foreground shadow-[0_1px_3px_rgba(0,0,0,0.035)] transition-all hover:border-border/70 hover:bg-muted/20 disabled:cursor-wait disabled:opacity-70"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
@@ -131,23 +171,19 @@ function EmployeeDirectoryCard({
             )}
           </span>
           <div className="min-w-0">
-            <p className="truncate text-[15px] font-semibold leading-[22px] text-foreground">{visual.title}</p>
+            <p className="truncate text-sm font-semibold leading-[22px] text-foreground">{visual.title}</p>
             <p className="truncate text-xs leading-4 text-muted-foreground">{visual.name}</p>
           </div>
         </div>
-        <span
-          className={`flex h-7 shrink-0 items-center gap-1 rounded-md bg-brand-primary-subtle px-2 text-xs font-medium text-primary transition-opacity duration-150 ${actionVisibilityClass}`}
-        >
-          {busy ? (
+        {busy ? (
+          <span className="flex h-7 shrink-0 items-center gap-1 rounded-md bg-brand-primary-subtle px-2 text-xs font-medium text-primary">
             <RefreshCw className="h-3 w-3 animate-spin" />
-          ) : (
-            <SendHorizontal className="h-3 w-3" />
-          )}
-          {actionLabel}
-        </span>
+            {t('employeesPage.summoning')}
+          </span>
+        ) : null}
       </div>
 
-      <p className="mt-1 line-clamp-2 text-[13px] leading-5 text-muted-foreground">
+      <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
         {template.description}
       </p>
 
@@ -171,7 +207,7 @@ function EmployeeDirectoryCard({
           </span>
         ))}
       </div>
-    </button>
+    </Button>
   )
 }
 
@@ -408,7 +444,7 @@ export function EmployeesPage() {
             <Button
               type="button"
               variant="outline"
-              size="sm"
+              size="md"
               className="gap-1.5"
               disabled={syncingCatalog || catalogLoading}
               onClick={() => void handleSyncCatalog()}
@@ -519,24 +555,25 @@ export function EmployeesPage() {
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-foreground">{t('employeesPage.todayFeed')}</h2>
           {entries.length > todayEntries.length && (
-            <button
+            <Button unstyled
               type="button"
               className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
               onClick={() => setRoute({ kind: 'inbox' })}
             >
               {t('employeesPage.viewAll')}
-            </button>
+            </Button>
           )}
         </div>
 
         {todayEntries.length === 0 ? (
-          <div className="flex h-[120px] items-center justify-center rounded-md border border-dashed border-border bg-card">
+          <div className="flex h-[120px] items-center justify-center rounded-md border border-dashed border-border/70 bg-card">
             <p className="text-sm text-muted-foreground">{t('employeesPage.noFeedToday')}</p>
           </div>
         ) : (
-          <div className="flex flex-col divide-y divide-border overflow-hidden rounded-md border border-border bg-card shadow-[var(--shadow-card)]">
+          <div className="flex flex-col divide-y divide-border/60 overflow-hidden rounded-md border border-border/70 bg-card shadow-[var(--shadow-card)]">
             {todayEntries.slice(0, 8).map((entry) => {
               const emp = employees.find((e) => e.id === entry.employeeId)
+              const title = formatTodayFeedTitleParts(entry.title, emp, i18n.language)
               const clickable = !!entry.conversationId
               const handleClick = () => {
                 if (!entry.read) {
@@ -548,34 +585,35 @@ export function EmployeesPage() {
                 }
               }
               return (
-                <button
+                <Button unstyled
                   key={entry.id}
                   type="button"
+                  aria-label={title.identity ? `${title.identity} ${title.status}` : title.status}
                   onClick={handleClick}
                   disabled={!clickable}
-                  className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-muted disabled:cursor-default disabled:hover:bg-transparent"
+                  className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40 disabled:cursor-default disabled:hover:bg-transparent"
                 >
-                  <span className="mt-0.5 text-base">{kindIcon(entry.kind)}</span>
+                  <TodayFeedAvatar name={emp?.name ?? entry.employeeId} />
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-baseline gap-2">
-                      {emp && (
-                        <span className="shrink-0 text-xs font-medium text-muted-foreground">
-                          {emp.avatar} {emp.name}
+                    <div className="flex min-w-0 items-center gap-3">
+                      {title.identity && (
+                        <span className="max-w-[44%] shrink-0 truncate text-sm font-semibold text-foreground">
+                          {title.identity}
                         </span>
                       )}
-                      <span className="truncate text-sm text-foreground">{entry.title}</span>
+                      <span className="min-w-0 truncate text-sm font-semibold text-foreground">{title.status}</span>
                     </div>
                     {entry.summary && (
-                      <p className="mt-0.5 truncate text-xs text-muted-foreground">{entry.summary}</p>
+                      <p className="mt-0.5 truncate text-xs leading-5 text-muted-foreground">{entry.summary}</p>
                     )}
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
                     <span className="text-xs text-muted-foreground/60">{timeLabel(entry.createdAt)}</span>
                     {!entry.read && (
-                      <span className="h-1.5 w-1.5 rounded-md bg-blue-500" />
+                      <span className="h-1.5 w-1.5 rounded-md bg-primary" />
                     )}
                   </div>
-                </button>
+                </Button>
               )
             })}
           </div>
