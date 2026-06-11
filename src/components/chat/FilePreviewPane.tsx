@@ -4,9 +4,9 @@ import * as ContextMenuPrimitive from '@radix-ui/react-context-menu'
 import { Download, ExternalLink, FileText, Loader2, X } from 'lucide-react'
 
 import { AssistantMarkdown } from '@/components/chat-scene/AssistantMarkdown'
-import { Button } from '@/components/ui/button'
 import { getFilePreview, getLocalFilePreview, openLocalFile, type FilePreview } from '@/lib/tauri'
 import type { PreviewTarget } from './generatedFileActions'
+import { Button } from '@/components/ui/button'
 
 interface FilePreviewPaneProps {
   target: PreviewTarget | null
@@ -136,7 +136,6 @@ export function FilePreviewPane({ target, onOpenExternal, onDownload, onClosePre
               size="icon"
               aria-label="Close preview"
               onClick={onClosePreview}
-              className="h-8 w-8 text-muted-foreground hover:text-foreground"
             >
               <X className="h-4 w-4" />
             </Button>

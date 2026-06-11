@@ -3,6 +3,7 @@
  */
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Button } from '@/components/ui/button'
 
 interface LoginOptionsRowProps {
   rememberSlot: ReactNode
@@ -14,13 +15,13 @@ export function LoginOptionsRow({ rememberSlot, onForget }: LoginOptionsRowProps
   return (
     <div className="flex w-full items-center justify-between">
       {rememberSlot}
-      <button
+      <Button unstyled
         type="button"
         onClick={onForget}
         className="text-sm font-medium text-brand-secondary transition-colors hover:opacity-80"
       >
         {t('login.forgotPassword')}
-      </button>
+      </Button>
     </div>
   )
 }

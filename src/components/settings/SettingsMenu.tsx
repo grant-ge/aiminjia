@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next'
 import type { SettingsModalKey } from '@/stores/uiStore'
 import { useAuthStore } from '@/stores/authStore'
 import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
 
 export interface SettingsMenuItem {
   key: SettingsModalKey
@@ -53,7 +54,7 @@ export function SettingsMenu({ activeKey, onSelect }: SettingsMenuProps) {
           const active = it.key === activeKey
           const label = t(it.labelKey)
           return (
-            <button
+            <Button unstyled
               key={it.key}
               type="button"
               data-aijia-settings-panel={it.key}
@@ -69,7 +70,7 @@ export function SettingsMenu({ activeKey, onSelect }: SettingsMenuProps) {
               )}
             >
               <span className="min-w-0 flex-1 truncate">{label}</span>
-            </button>
+            </Button>
           )
         })}
       </div>

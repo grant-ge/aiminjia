@@ -8,6 +8,7 @@ import { ChevronDown, Download, ExternalLink, Eye, FolderOpen } from 'lucide-rea
 
 import type { GeneratedFilePrimaryAction } from '@/components/chat/generatedFileActions'
 import { AppDropdown, type AppDropdownItem } from '@/components/common/AppDropdown'
+import { Button } from '@/components/ui/button'
 
 interface GeneratedFileCardProps {
   title: string
@@ -174,7 +175,7 @@ export function GeneratedFileCard({
         </div>
       </div>
       <div className="flex shrink-0 items-center rounded-md border border-border bg-background text-sm text-foreground">
-        <button
+        <Button unstyled
           type="button"
           onClick={handlePrimaryAction}
           disabled={isPrimaryDisabled}
@@ -183,18 +184,18 @@ export function GeneratedFileCard({
         >
           {appIcon}
           <span>{appName}</span>
-        </button>
+        </Button>
         <span className="h-4 w-px bg-border" />
         <AppDropdown
           ariaLabel={`${ACTION_LABELS.more}：${title}`}
           contentClassName="min-w-48"
           trigger={
-            <button
+            <Button unstyled
               type="button"
               className="flex items-center rounded-r-md py-1.5 pl-2 pr-2 transition-colors hover:bg-muted"
             >
               <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-            </button>
+            </Button>
           }
           items={menuItems}
         />

@@ -10,10 +10,7 @@ import { PageTopBar } from "@/components/shell/PageTopBar";
 import { SkillCard } from "@/components/skills/SkillCard";
 import { SkillCategoryBar } from "@/components/skills/SkillCategoryBar";
 import { SkillOfficeSection } from "@/components/skills/SkillOfficeSection";
-import {
-  getSkillCategoryBg,
-  getSkillIconComponent,
-} from "@/components/skills/skillVisual";
+import { getSkillAvatarClass } from "@/components/skills/skillVisual";
 import { Button } from "@/components/ui/button";
 import {
   SKILL_CATEGORIES,
@@ -42,9 +39,30 @@ import {
   Package,
 } from "lucide-react";
 
-function getSkillIcon(icon: string) {
-  const Icon = getSkillIconComponent(icon);
-  return <Icon className="h-4 w-4 text-primary-foreground" />;
+const SKILL_LOGOS_BY_ID: Record<string, string> = {
+  "html-ppt": "/skill-avatars/pptx-generator.svg",
+  browser: "/skill-avatars/web-access.svg",
+  payslip: "/skill-avatars/smart-payslip.jpg",
+  smartcb: "/skill-avatars/smart-compensation.jpg",
+  rehcm: "/skill-avatars/renlijia-hr.jpg",
+  "dingtalk-workspace": "/logos/dingtalk.png",
+  "xiaojia-doctor": "/brand-avatar-gold.svg",
+};
+
+function getSkillAvatar(skillId: string) {
+  const brandLogo = SKILL_LOGOS_BY_ID[skillId];
+  if (brandLogo) {
+    return (
+      <img
+        src={brandLogo}
+        alt=""
+        draggable={false}
+        className="h-full w-full rounded-md object-cover"
+      />
+    );
+  }
+
+  return null;
 }
 
 export function SkillCenterPage() {
@@ -430,7 +448,7 @@ export function SkillCenterPage() {
                     ariaLabel={t("skillCenter.syncSkills")}
                     trigger={
                       <Button
-                        size="sm"
+                        size="md"
                         variant="outline"
                         disabled={syncing}
                         data-testid="skills-sync-builtin"
@@ -464,7 +482,7 @@ export function SkillCenterPage() {
                 <AppDropdown
                   ariaLabel={t("skillCenter.importSkill")}
                   trigger={
-                    <Button size="sm" data-aijia-skill-import-trigger>
+                    <Button size="md" data-aijia-skill-import-trigger>
                       {t("skillCenter.importSkill")}
                       <ChevronDown className="h-3.5 w-3.5" />
                     </Button>
@@ -576,8 +594,10 @@ export function SkillCenterPage() {
                   title={localized.name}
                   meta={getSkillMeta(skill.source, skill.category)}
                   desc={localized.description}
-                  iconNode={getSkillIcon(skill.icon)}
-                  iconBg={getSkillCategoryBg(skill.category)}
+                  iconNode={getSkillAvatar(
+                    skill.id,
+                  )}
+                  iconBg={getSkillAvatarClass(skill.category)}
                   version={skill.version}
                   skillId={skill.id}
                   skillSource={skill.source}
@@ -591,12 +611,12 @@ export function SkillCenterPage() {
                       <AppDropdown
                         ariaLabel={`${localized.name} ${t("skillCenter.moreActions")}`}
                         trigger={
-                          <button
+                          <Button unstyled
                             type="button"
                             className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                           >
                             <MoreHorizontal className="h-4 w-4" />
-                          </button>
+                          </Button>
                         }
                         items={menuItems}
                       />

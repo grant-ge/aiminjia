@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 
-import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
 
 interface CronEditDialogProps {
   open: boolean
@@ -44,7 +44,7 @@ export function CronEditDialog({ open, initial, onSubmit, onCancel }: CronEditDi
             <label className="text-xs font-medium text-muted-foreground">常用预设</label>
             <div className="flex flex-wrap gap-1.5">
               {PRESETS.map((p) => (
-                <button
+                <Button unstyled
                   key={p.cron}
                   type="button"
                   onClick={() => setValue(p.cron)}
@@ -55,7 +55,7 @@ export function CronEditDialog({ open, initial, onSubmit, onCancel }: CronEditDi
                   }`}
                 >
                   {p.label}
-                </button>
+                </Button>
               ))}
             </div>
           </div>

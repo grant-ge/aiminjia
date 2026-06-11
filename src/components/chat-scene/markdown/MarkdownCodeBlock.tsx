@@ -1,5 +1,7 @@
 import { useState, useCallback } from 'react'
+import { Check, Copy } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { Button } from '@/components/ui/button'
 
 interface CodeProps {
   inline?: boolean
@@ -79,31 +81,23 @@ function FencedCodeBlock({ className, children }: { className?: string; children
         }}
       >
         <span>{lang}</span>
-        <button
+        <Button
           type="button"
+          link
           onClick={handleCopy}
-          style={{
-            cursor: 'pointer',
-            border: 'none',
-            background: 'none',
-            fontSize: '0.7rem',
-            color:
-              copied === 'ok'
-                ? 'var(--color-semantic-green)'
-                : copied === 'fail'
-                  ? 'var(--color-semantic-red)'
-                  : 'var(--color-text-muted)',
-            fontFamily: 'var(--font-mono)',
-            padding: '2px 6px',
-            borderRadius: 'var(--radius-md)',
-          }}
+          className="gap-1 font-mono text-[0.7rem] text-[var(--color-text-muted)]"
         >
+          {copied === 'ok' ? (
+            <Check className="h-3.5 w-3.5" aria-hidden="true" />
+          ) : (
+            <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+          )}
           {copied === 'ok'
             ? t('common.copied', 'Copied')
             : copied === 'fail'
               ? t('common.copyFailed', 'Copy failed')
               : t('common.copy', 'Copy')}
-        </button>
+        </Button>
       </div>
       <pre
         style={{

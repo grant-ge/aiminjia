@@ -1,5 +1,6 @@
 import { useState, type ReactNode, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Button } from '@/components/ui/button'
 
 interface ToolTraceIOProps {
   toolName?: string
@@ -103,7 +104,7 @@ function CollapsiblePre({
         {visible}
       </Content>
       {overflow ? (
-        <button
+        <Button unstyled
           type="button"
           onClick={() => setExpanded((e) => !e)}
           className="mt-1 text-xs text-muted-foreground hover:text-foreground"
@@ -113,7 +114,7 @@ function CollapsiblePre({
             : lineOverflow
               ? t('toolTrace.showMoreLines', { count: lines.length - DEFAULT_VISIBLE_LINES })
               : t('toolTrace.showMore')}
-        </button>
+        </Button>
       ) : null}
     </div>
   )

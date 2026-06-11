@@ -71,7 +71,7 @@
   },
   "devDependencies": {
     "@dicebear/core": "^9.4.2",
-    "@dicebear/personas": "^9.4.2",
+    "@dicebear/lorelei": "^9.4.2",
     "@eslint/js": "^9.39.1",
     "@tailwindcss/vite": "^4.2.1",
     "@tauri-apps/cli": "^2.10.0",

@@ -2,6 +2,26 @@ import type { EmployeeTemplate } from './templates'
 
 const SAFE_RE = /[\\/<>:"|?*\s]/g
 const RELEASE_RESOURCE_BASE_URL = 'https://lotus-releases.oss-cn-beijing.aliyuncs.com/'
+const LOCAL_EMPLOYEE_AVATAR_NAMES = new Set([
+  '林知远',
+  '陈景律',
+  '周思齐',
+  '许嘉宁',
+  '丁若安',
+  '赵明川',
+  '何予周',
+  '沈柏川',
+  '顾承远',
+  '韩可欣',
+  '程砚舟',
+  '方予衡',
+  '陆时安',
+  '秦砚知',
+  '温嘉言',
+  '梁承序',
+  '何远策',
+  '唐识衡',
+])
 
 interface EmployeePersona {
   name: string
@@ -111,7 +131,16 @@ function fallbackExamples(template: EmployeeTemplate): string[] {
   return base ? [`围绕「${template.role}」安排一项具体任务`, base] : ['描述目标和上下文，让 TA 开始处理']
 }
 
+export function getLocalEmployeeAvatarUrl(name: string): string | null {
+  const normalized = name.trim()
+  if (!LOCAL_EMPLOYEE_AVATAR_NAMES.has(normalized)) return null
+  return `/employee-avatars/${safeName(normalized)}.svg`
+}
+
 function templateAvatarUrl(template: EmployeeTemplate): string | null {
+  const localUrl = getLocalEmployeeAvatarUrl(template.name)
+  if (localUrl) return localUrl
+
   const explicitUrl = template.avatarUrl?.trim()
   if (explicitUrl) return explicitUrl
 
@@ -138,7 +167,7 @@ export function getEmployeeVisual(template: EmployeeTemplate): EmployeeVisual {
   return {
     name: persona.name,
     title: persona.title || template.role,
-    avatarUrl: `/employee-avatars/${safeName(persona.name)}.svg`,
+    avatarUrl: getLocalEmployeeAvatarUrl(persona.name),
     avatarText: '',
     accent: persona.accent,
     strengths: persona.strengths,

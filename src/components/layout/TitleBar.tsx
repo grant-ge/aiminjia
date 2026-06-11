@@ -6,6 +6,7 @@ import { TitleBarEnvSwitcher } from './TitleBarEnvSwitcher'
 import { useUpdaterStore } from '@/lib/updaterStore'
 import { useBrandingStore } from '@/stores/brandingStore'
 import { useUiStore } from '@/stores/uiStore'
+import { Button } from '@/components/ui/button'
 
 function handleDragStart(e: React.MouseEvent) {
   if (e.buttons === 1 && e.detail === 2) {
@@ -20,23 +21,23 @@ function handleDragStart(e: React.MouseEvent) {
 function WindowControls() {
   // Keep window controls readable on the sidebar-colored title bar; close
   // button hover routes to --destructive instead of hardcoded red.
-  const btnClass =
-    'flex h-7 w-11 items-center justify-center text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/70 hover:text-sidebar-foreground'
   return (
     <div className="flex shrink-0 items-center" onMouseDown={(e) => e.stopPropagation()}>
-      <button className={btnClass} onClick={() => getCurrentWindow().minimize()} aria-label="Minimize">
+      <Button link type="button" className="titlebar-window-button" onClick={() => getCurrentWindow().minimize()} aria-label="Minimize">
         <svg width="10" height="1" viewBox="0 0 10 1"><rect fill="currentColor" width="10" height="1"/></svg>
-      </button>
-      <button className={btnClass} onClick={() => getCurrentWindow().toggleMaximize()} aria-label="Maximize">
+      </Button>
+      <Button link type="button" className="titlebar-window-button" onClick={() => getCurrentWindow().toggleMaximize()} aria-label="Maximize">
         <svg width="10" height="10" viewBox="0 0 10 10"><rect fill="none" stroke="currentColor" strokeWidth="1" x="0.5" y="0.5" width="9" height="9"/></svg>
-      </button>
-      <button
-        className={`${btnClass} hover:!bg-destructive hover:!text-destructive-foreground`}
+      </Button>
+      <Button
+        link
+        type="button"
+        className="titlebar-window-button titlebar-window-button-close"
         onClick={() => getCurrentWindow().close()}
         aria-label="Close"
       >
         <svg width="10" height="10" viewBox="0 0 10 10"><path fill="currentColor" d="M1.7.3.3 1.7 3.6 5 .3 8.3l1.4 1.4L5 6.4l3.3 3.3 1.4-1.4L6.4 5l3.3-3.3L8.3.3 5 3.6 1.7.3z"/></svg>
-      </button>
+      </Button>
     </div>
   )
 }
@@ -48,12 +49,13 @@ function SidebarToggleButton({ className = '' }: { className?: string }) {
   const label = sidebarHidden ? '显示侧栏' : '隐藏侧栏'
 
   return (
-    <button
+    <Button
+      link
       type="button"
       data-aijia-sidebar-toggle="true"
       aria-label={label}
       title={label}
-      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/70 hover:text-sidebar-foreground ${className}`}
+      className={`titlebar-sidebar-toggle ${className}`}
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => {
         e.stopPropagation()
@@ -61,7 +63,7 @@ function SidebarToggleButton({ className = '' }: { className?: string }) {
       }}
     >
       <Icon className="h-4 w-4" aria-hidden="true" />
-    </button>
+    </Button>
   )
 }
 

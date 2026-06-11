@@ -2,8 +2,8 @@ import { AlertCircle, Loader2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { Button } from '@/components/ui/button'
 import { useNetworkStore } from '@/stores/networkStore'
+import { Button } from '@/components/ui/button'
 
 export function NetworkStatusIndicator() {
   const { t } = useTranslation()
@@ -66,8 +66,7 @@ export function NetworkStatusIndicator() {
       <Button
         type="button"
         size="sm"
-        variant="destructive"
-        className="h-7"
+        danger
         disabled={retrying}
         onClick={handleRetry}
       >

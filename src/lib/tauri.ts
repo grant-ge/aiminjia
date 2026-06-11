@@ -1755,6 +1755,28 @@ export interface SkillInfo {
   version?: string | null;
 }
 
+/** Full SKILL.md-backed detail for one skill. Kept out of listSkills so the
+ * skill center grid only loads summary data. */
+export interface SkillDetailInfo {
+  id: string;
+  whenToUse: string | null;
+  allowedTools: string[];
+  argumentHint: string | null;
+  arguments: string[];
+  model: string | null;
+  effort: string | null;
+  context: string | null;
+  agent: string | null;
+  userInvocable: boolean;
+  disableModelInvocation: boolean;
+  version: string | null;
+  category: string | null;
+  paths: string[];
+  shell: string | null;
+  body: string;
+  rawContent: string;
+}
+
 /** Combined plugin info (tools + skills) */
 export interface PluginInfo {
   tools: ToolInfo[];
@@ -1769,6 +1791,11 @@ export function listTools(): Promise<ToolInfo[]> {
 /** List all registered skills. */
 export function listSkills(): Promise<SkillInfo[]> {
   return invoke<SkillInfo[]>("list_skills");
+}
+
+/** Get full details for a single SKILL.md-backed skill. */
+export function getSkillDetail(skillId: string): Promise<SkillDetailInfo | null> {
+  return invoke<SkillDetailInfo | null>("get_skill_detail", { skillId });
 }
 
 /** Get combined tool + skill info. */

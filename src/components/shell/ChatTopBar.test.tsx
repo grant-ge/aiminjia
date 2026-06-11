@@ -19,9 +19,8 @@ describe('ChatTopBar — employee identity card', () => {
     )
     const chip = screen.getByTestId('chat-topbar-employee')
     expect(chip).toBeInTheDocument()
-    expect(chip).toHaveTextContent('小工')
-    expect(chip).toHaveTextContent('技术支持')
-    expect(chip).toHaveTextContent('🛠')
+    expect(chip).toHaveTextContent('技术支持 · 小工')
+    expect(screen.getByTestId('chat-avatar')).toBeInTheDocument()
   })
 
   it('invokes onClick when chip is pressed', () => {
@@ -45,5 +44,24 @@ describe('ChatTopBar — employee identity card', () => {
     )
     const chip = screen.getByTestId('chat-topbar-employee') as HTMLButtonElement
     expect(chip.disabled).toBe(true)
+  })
+
+  it('renders expert team identity with avatar and suppresses duplicate source chip', () => {
+    render(
+      <ChatTopBar
+        title="专家团: 招聘评审团"
+        kind="expertTeam"
+        sourceLabel="招聘评审团"
+        expertTeam={{
+          avatar: <span data-testid="expert-team-avatar" />,
+          name: '招聘评审团',
+          tagline: '岗位画像 / 候选人评审 / 面试设计',
+        }}
+      />,
+    )
+
+    expect(screen.getByTestId('chat-topbar-expert-team')).toHaveTextContent('专家团 · 招聘评审团')
+    expect(screen.getByTestId('expert-team-avatar')).toBeInTheDocument()
+    expect(screen.queryByTestId('chat-source-label')).not.toBeInTheDocument()
   })
 })

@@ -2,6 +2,7 @@ import { NodeViewWrapper } from '@tiptap/react'
 import { Blocks, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { ComposerSkillToken } from './types'
+import { Button } from '@/components/ui/button'
 
 interface SkillTokenViewProps {
   node: { attrs: ComposerSkillToken }
@@ -28,7 +29,7 @@ export function SkillTokenView({ node, deleteNode }: SkillTokenViewProps) {
         style={{ filter: 'drop-shadow(0 0 4px rgba(var(--primary-rgb), 0.45))' }}
       />
       <span className="truncate">{attrs.label}</span>
-      <button
+      <Button unstyled
         type="button"
         aria-label={`remove skill ${attrs.label}`}
         onMouseDown={(event) => event.preventDefault()}
@@ -40,7 +41,7 @@ export function SkillTokenView({ node, deleteNode }: SkillTokenViewProps) {
         className="ml-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-md text-primary/60 transition-all hover:bg-primary/20 hover:text-primary"
       >
         <X className="h-3 w-3" />
-      </button>
+      </Button>
     </NodeViewWrapper>
   )
 }

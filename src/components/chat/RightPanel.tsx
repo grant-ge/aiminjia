@@ -24,6 +24,7 @@ import { useChatStore } from '@/stores/chatStore'
 import type { ConversationTaskState } from '@/stores/streamingStore'
 import { useGeneratedFilePreviewStore } from '@/stores/generatedFilePreviewStore'
 import type { GeneratedFile } from '@/types/message'
+import { Button } from '@/components/ui/button'
 
 const EMPTY_TASKS: ConversationTaskState[] = []
 
@@ -99,7 +100,7 @@ function TaskSection({ conversationId }: { conversationId: string }) {
 
   return (
     <div className="border-b border-border">
-      <button
+      <Button unstyled
         type="button"
         onClick={() => !hasRunning && setUserCollapsed((v) => !v)}
         className="flex w-full items-center justify-between px-4 py-3 text-left"
@@ -111,7 +112,7 @@ function TaskSection({ conversationId }: { conversationId: string }) {
             !open && '-rotate-90',
           )}
         />
-      </button>
+      </Button>
       {open && (
         <div className="px-4 pb-3">
           {tasks.length === 0 ? (
@@ -207,7 +208,7 @@ function ArtifactSection({
 
   return (
     <div className="border-b border-border">
-      <button
+      <Button unstyled
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center justify-between px-4 py-3 text-left"
@@ -219,7 +220,7 @@ function ArtifactSection({
             !open && '-rotate-90',
           )}
         />
-      </button>
+      </Button>
       {open && (
         <div className="px-4 pb-3">
           {files.length === 0 ? (
@@ -269,7 +270,7 @@ function ArtifactItem({
   const actionLabel = canPreviewInside ? '预览' : '打开'
 
   return (
-    <button
+    <Button unstyled
       type="button"
       aria-label={`${actionLabel} ${file.fileName}`}
       disabled={!enabled}
@@ -291,7 +292,7 @@ function ArtifactItem({
       <span className="min-w-0 flex-1 truncate text-xs text-foreground">
         {file.fileName}
       </span>
-    </button>
+    </Button>
   )
 }
 

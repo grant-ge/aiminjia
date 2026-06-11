@@ -40,6 +40,7 @@ import { useChatStore } from '@/stores/chatStore'
 import { useHomeStore } from '@/stores/homeStore'
 import { useSkillStore } from '@/stores/skillStore'
 import { useUiStore } from '@/stores/uiStore'
+import { Button } from '@/components/ui/button'
 
 export function HomeTaskComposerCard() {
   const { t, i18n } = useTranslation()
@@ -260,7 +261,7 @@ export function HomeTaskComposerCard() {
       >
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button
+            <Button unstyled
               type="button"
               data-aijia-workspace-trigger
               disabled={isSubmitting}
@@ -271,7 +272,7 @@ export function HomeTaskComposerCard() {
               <BriefcaseBusiness className="h-5 w-5 shrink-0" />
               <span className="truncate">{t('homeComposer.workingIn', { name: workspaceLabel })}</span>
               <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-            </button>
+            </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent
             align="start"
@@ -292,7 +293,7 @@ export function HomeTaskComposerCard() {
                   >
                     <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
                     <span className="flex-1 truncate text-foreground">{ws.displayName}</span>
-                    <button
+                    <Button unstyled
                       type="button"
                       aria-label={`从最近列表中移除 ${ws.displayName}`}
                       onClick={(e) => {
@@ -304,7 +305,7 @@ export function HomeTaskComposerCard() {
                       className="hidden h-5 w-5 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted-foreground/10 hover:text-foreground group-hover:flex group-data-[highlighted]:flex"
                     >
                       <X className="h-3.5 w-3.5" />
-                    </button>
+                    </Button>
                   </DropdownMenuItem>
                 ))}
               </div>

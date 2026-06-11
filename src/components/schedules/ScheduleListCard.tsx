@@ -14,7 +14,7 @@ interface ScheduleListCardProps {
 export function ScheduleListCard({ header, table, empty, children }: ScheduleListCardProps) {
   return (
     <div className="flex w-full flex-col overflow-hidden rounded-md border border-border bg-card shadow-[var(--shadow-card)]">
-      <div className="px-5 py-4">{header}</div>
+      <div className="px-5 py-2">{header}</div>
       <div className="border-t border-border">{table}</div>
       {children}
       {empty ? (

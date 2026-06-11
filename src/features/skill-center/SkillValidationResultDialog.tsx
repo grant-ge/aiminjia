@@ -1,8 +1,8 @@
 import { Check, X } from 'lucide-react'
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Button } from '@/components/ui/button'
 import type { SkillValidationKind } from '@/stores/skillStore'
+import { Button } from '@/components/ui/button'
 
 interface SkillValidationResultDialogProps {
   open: boolean

@@ -46,6 +46,7 @@ export interface ExpertTeam {
   name: string
   emoji: string
   tagline: string
+  description?: string
   /** 团队成员。`roundtable` 为空数组，主持人按议题动态召集。 */
   experts: ExpertPersona[]
   /** 卡片底部展示的示例话题 chip */
@@ -186,6 +187,7 @@ export const EXPERT_TEAMS: ExpertTeam[] = [
 
 type ExpertTeamLocale = 'zh-CN' | 'en-US'
 type ExpertTeamText = Pick<ExpertTeam, 'name' | 'tagline' | 'examples' | 'composerPlaceholder'> & {
+  description?: string
   experts?: Array<Pick<ExpertPersona, 'name' | 'persona'>>
 }
 
@@ -313,6 +315,7 @@ export function localizeExpertTeam(team: ExpertTeam, language?: string): ExpertT
     ...team,
     name: text.name,
     tagline: text.tagline,
+    description: text.description ?? team.description,
     examples: text.examples,
     composerPlaceholder: text.composerPlaceholder,
     experts: team.experts.map((expert, index) => {

@@ -1,8 +1,8 @@
-// Generate HR workplace avatar assets using the same DiceBear personas style
+// Generate HR workplace avatar assets using the same DiceBear lorelei style
 // as the existing digital employee and expert-team avatars.
 
 import { createAvatar } from '@dicebear/core'
-import * as personas from '@dicebear/personas'
+import * as lorelei from '@dicebear/lorelei'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -46,7 +46,7 @@ function safe(name) {
 }
 
 function avatarSvg(seed) {
-  return createAvatar(personas, {
+  return createAvatar(lorelei, {
     seed,
     size: TILE,
     backgroundColor: ['transparent'],

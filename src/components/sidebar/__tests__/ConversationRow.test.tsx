@@ -60,6 +60,22 @@ describe('ConversationRow', () => {
     expect(screen.getByRole('button', { name: '归档聊天' })).toBeInTheDocument()
   })
 
+  it('does not reserve the right action slot until hover when idle', () => {
+    const { container } = render(
+      <ConversationRow
+        id="c3-idle"
+        title="这是一条很长很长的数字员工会话标题用于验证省略位置"
+        onClick={() => {}}
+      />,
+    )
+
+    expect(container.querySelector('[data-aijia-conversation-row-trailing]')).not.toBeInTheDocument()
+
+    fireEvent.mouseEnter(container.querySelector('[data-aijia-conversation-row]')?.parentElement as HTMLElement)
+
+    expect(container.querySelector('[data-aijia-conversation-row-trailing]')).toBeInTheDocument()
+  })
+
   it('invokes onClick on click', () => {
     const onClick = vi.fn()
     render(<ConversationRow id="c4" title="X" onClick={onClick} />)

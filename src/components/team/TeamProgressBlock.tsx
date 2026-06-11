@@ -5,6 +5,7 @@ import { formatDuration } from './formatters'
 import { isLeadName } from './agentIdentity'
 import { useTeamVisualContext } from './TeamVisualContext'
 import { useTranslation } from 'react-i18next'
+import { Button } from '@/components/ui/button'
 
 interface TeamProgressBlockProps {
   session: TeamSession
@@ -32,7 +33,7 @@ export function TeamProgressBlock({ session, onOpen }: TeamProgressBlockProps) {
   ).length
 
   return (
-    <button
+    <Button unstyled
       type="button"
       onClick={() => onOpen(session.teamId)}
       className={cn(
@@ -73,6 +74,6 @@ export function TeamProgressBlock({ session, onOpen }: TeamProgressBlockProps) {
       <span className="shrink-0 text-xs text-muted-foreground transition-colors group-hover:text-primary">
         {t('team.progress.viewProcess')}
       </span>
-    </button>
+    </Button>
   )
 }

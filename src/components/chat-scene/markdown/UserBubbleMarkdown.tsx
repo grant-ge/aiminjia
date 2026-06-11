@@ -14,6 +14,7 @@ import { getLocalFilePreview, openLocalFile } from '@/lib/tauri'
 import { isPreviewableFileType } from '@/components/chat/generatedFileActions'
 import { useGeneratedFilePreviewStore } from '@/stores/generatedFilePreviewStore'
 import type { FileAttachment } from '@/types/message'
+import { Button } from '@/components/ui/button'
 
 /**
  * 把已知的 fileType 映射到 lucide 图标。fileType 来自 `FileAttachment.fileType`,
@@ -164,7 +165,7 @@ function FileLinkChip({
     (matched?.fileType && FILE_TYPE_ICON[matched.fileType]) || inferIconFromName(fileName)
 
   return (
-    <button
+    <Button unstyled
       type="button"
       onClick={() => openAttachment({ path, fileName, files, conversationId })}
       aria-label={text}
@@ -179,7 +180,7 @@ function FileLinkChip({
     >
       <Icon aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
       <span className="max-w-[200px] truncate">{text}</span>
-    </button>
+    </Button>
   )
 }
 
@@ -209,7 +210,7 @@ function FileImage({
     )
   }
   return (
-    <button
+    <Button unstyled
       type="button"
       onClick={() => openAttachment({ path, fileName, files, conversationId })}
       aria-label={ariaLabel}
@@ -221,7 +222,7 @@ function FileImage({
         alt={alt}
         className="h-40 max-w-[200px] rounded-md object-cover transition-opacity hover:opacity-90"
       />
-    </button>
+    </Button>
   )
 }
 

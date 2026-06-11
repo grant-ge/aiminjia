@@ -100,7 +100,7 @@ function ChannelConversationRow({
   return (
     <ContextMenuPrimitive.Root>
       <ContextMenuPrimitive.Trigger asChild>
-        <button
+        <Button unstyled
           type="button"
           onClick={onSelect}
           className={rowClassName}
@@ -117,7 +117,7 @@ function ChannelConversationRow({
               </span>
             ) : null}
           </span>
-        </button>
+        </Button>
       </ContextMenuPrimitive.Trigger>
       <ContextMenuPrimitive.Portal>
         <ContextMenuPrimitive.Content className="z-50 min-w-[10rem] overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-[var(--shadow-popover)]">
@@ -520,7 +520,7 @@ export function AppSidebar() {
                   <TooltipProvider key={key} delayDuration={400}>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <button
+                        <Button unstyled
                           type="button"
                           aria-label={t(labelKey)}
                           onClick={() => switchTab(key)}
@@ -529,7 +529,7 @@ export function AppSidebar() {
                           }`}
                         >
                           <Icon className="h-3.5 w-3.5 shrink-0" />
-                        </button>
+                        </Button>
                       </TooltipTrigger>
                       <TooltipContent side="bottom">
                         {t(labelKey)}
@@ -579,13 +579,13 @@ export function AppSidebar() {
                   </div>
                   <div className="pl-6">
                     {activeConversations.length === 0 ? (
-                      <button
+                      <Button unstyled
                         type="button"
                         onClick={openChannelOverview}
                         className="w-full rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
                       >
                         {channelEmptyHint(dingtalkState)}
-                      </button>
+                      </Button>
                     ) : (
                       renderChannelRows(activeConversations)
                     )}
@@ -607,13 +607,13 @@ export function AppSidebar() {
                   </div>
                   <div className="pl-6">
                     {activeFeishuConversations.length === 0 ? (
-                      <button
+                      <Button unstyled
                         type="button"
                         onClick={openChannelOverview}
                         className="w-full rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
                       >
                         {channelEmptyHint(feishuState)}
-                      </button>
+                      </Button>
                     ) : (
                       renderChannelRows(activeFeishuConversations)
                     )}
@@ -635,13 +635,13 @@ export function AppSidebar() {
                   </div>
                   <div className="pl-6">
                     {activeWecomConversations.length === 0 ? (
-                      <button
+                      <Button unstyled
                         type="button"
                         onClick={openChannelOverview}
                         className="w-full rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
                       >
                         {channelEmptyHint(wecomState)}
-                      </button>
+                      </Button>
                     ) : (
                       renderChannelRows(activeWecomConversations)
                     )}
@@ -663,13 +663,13 @@ export function AppSidebar() {
                   </div>
                   <div className="pl-6">
                     {activeWechatConversations.length === 0 ? (
-                      <button
+                      <Button unstyled
                         type="button"
                         onClick={openChannelOverview}
                         className="w-full rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
                       >
                         {channelEmptyHint(wechatState)}
-                      </button>
+                      </Button>
                     ) : (
                       renderChannelRows(activeWechatConversations)
                     )}
@@ -691,13 +691,13 @@ export function AppSidebar() {
                   </div>
                   <div className="pl-6">
                     {activeTelegramConversations.length === 0 ? (
-                      <button
+                      <Button unstyled
                         type="button"
                         onClick={openChannelOverview}
                         className="w-full rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
                       >
                         {channelEmptyHint(telegramState)}
-                      </button>
+                      </Button>
                     ) : (
                       renderChannelRows(activeTelegramConversations)
                     )}
@@ -719,13 +719,13 @@ export function AppSidebar() {
                   </div>
                   <div className="pl-6">
                     {activeWhatsappConversations.length === 0 ? (
-                      <button
+                      <Button unstyled
                         type="button"
                         onClick={openChannelOverview}
                         className="w-full rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
                       >
                         {channelEmptyHint(whatsappState)}
-                      </button>
+                      </Button>
                     ) : (
                       renderChannelRows(activeWhatsappConversations)
                     )}

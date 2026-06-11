@@ -2,7 +2,6 @@ import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CalendarClock, Plus } from 'lucide-react'
 
-import { Button } from '@/components/ui/button'
 import { ScheduleEmptyState } from '@/components/schedules/ScheduleEmptyState'
 import { ScheduleListCard } from '@/components/schedules/ScheduleListCard'
 import { ScheduleTableHeader } from '@/components/schedules/ScheduleTableHeader'
@@ -23,6 +22,7 @@ import {
   runAgendaItemNow,
   updateAgendaItem,
 } from '@/lib/tauri'
+import { Button } from '@/components/ui/button'
 
 const TEMPLATE_KEYS = ['dailyReport', 'storeInspection', 'weeklyReview'] as const
 
@@ -200,7 +200,7 @@ export function SchedulesPage() {
             </div>
             <div className="flex items-center gap-2">
               <Button
-                size="sm"
+                size="md"
                 variant={showCancelled ? 'default' : 'outline'}
                 onClick={() => setShowCancelled((v) => !v)}
                 aria-label={showCancelled ? t('schedules.backToListAria') : t('schedules.viewCancelled')}
@@ -212,7 +212,7 @@ export function SchedulesPage() {
                     : t('schedules.cancelled')}
               </Button>
               {showCancelled ? null : (
-                <Button size="sm" onClick={handleCreateBlank} aria-label={t('schedules.newTaskAria')} data-aijia-agenda-new>
+                <Button size="md" onClick={handleCreateBlank} aria-label={t('schedules.newTaskAria')} data-aijia-agenda-new>
                   <Plus className="h-4 w-4" />
                   {t('schedules.newButton')}
                 </Button>

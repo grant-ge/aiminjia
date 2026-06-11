@@ -15,6 +15,7 @@ import { buildComposerExtensions } from './composerSchema'
 import { serializeComposerDoc } from './serializer'
 import { parseMarkdownToComposerJson } from './parseMarkdown'
 import type { ComposerAttachmentToken, ComposerJsonNode, ComposerSkillToken, RichComposerSubmitPayload } from './types'
+import { Button } from '@/components/ui/button'
 
 // `/` should open the skill picker only where a real slash-command could
 // start: an empty doc, or right after whitespace. Anywhere else (mid-word,
@@ -229,6 +230,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
   // Send button is disabled when there's nothing to send. During streaming
   // we still allow send (it queues via PendingQueueManager).
   const sendDisabled = disabled || isEmpty || submittingRef.current
+  const stopIcon = <span className="block h-3 w-3 rounded-md bg-current" />
 
   return (
     <div className="relative z-10 flex w-full flex-col gap-2">
@@ -262,7 +264,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
                 {skillCommand.command}
               </span>
               {onClearSkillCommand ? (
-                <button
+                <Button unstyled
                   type="button"
                   aria-label={t('composer.removeSkill', { name: skillCommand.label })}
                   onClick={onClearSkillCommand}
@@ -270,7 +272,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
                   style={{ color: 'var(--color-accent-700)' }}
                 >
                   <X className="h-3 w-3" />
-                </button>
+                </Button>
               ) : null}
             </div>
           </div>
@@ -281,18 +283,20 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
         />
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-0">
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="sm"
               data-aijia-composer-plus
               aria-label={t('composer.addAttachment')}
               onClick={onOpenAttachment}
               disabled={disabled}
-              className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted disabled:opacity-40"
-            >
-              <Plus className="h-4 w-4" />
-            </button>
-            <button
+              icon={<Plus />}
+            />
+            <Button
               type="button"
+              variant={skillCommand ? 'secondary' : 'ghost'}
+              size="sm"
               onClick={onOpenSkill}
               disabled={disabled}
               aria-label={
@@ -301,30 +305,26 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
                   : t('composer.openSkillPicker')
               }
               aria-pressed={Boolean(skillCommand)}
-              className={
-                skillCommand
-                  ? 'flex items-center gap-1.5 rounded-md px-2 py-1 text-sm font-semibold transition-colors hover:bg-[var(--color-accent-muted)] disabled:opacity-40'
-                  : 'flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-muted-foreground transition-colors hover:bg-muted disabled:opacity-40'
-              }
               style={
                 skillCommand
                   ? { background: 'var(--color-accent-subtle)', color: 'var(--color-accent-700)' }
                   : undefined
               }
+              icon={<Blocks />}
             >
-              <Blocks className="h-3.5 w-3.5" />
-              <span>{skillCommand ? t('composer.skillLoaded') : t('composer.skill')}</span>
-            </button>
+              {skillCommand ? t('composer.skillLoaded') : t('composer.skill')}
+            </Button>
             {showProjectButton ? (
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="sm"
                 onClick={onPickProject}
                 disabled={disabled}
-                className="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-muted-foreground transition-colors hover:bg-muted disabled:opacity-40"
+                icon={<Folder />}
               >
-                <Folder className="h-3.5 w-3.5" />
-                <span>{projectLabel}</span>
-              </button>
+                {projectLabel}
+              </Button>
             ) : null}
           </div>
           <div className="flex items-center gap-3">
@@ -336,30 +336,25 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
               "current turn" UX focused on the stop action.
             */}
             {isStreaming ? (
-              <button
+              <Button
                 type="button"
+                size="sm"
                 aria-label={t('composer.stop')}
                 onClick={() => onStop?.()}
-                className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground transition-colors hover:opacity-90"
-              >
-                <span className="block h-3 w-3 rounded-md bg-current" />
-              </button>
+                icon={stopIcon}
+              />
             ) : (
-              <button
+              <Button
                 type="button"
+                size="sm"
                 aria-label={t('composer.send')}
                 onClick={() => {
                   void trySubmit()
                 }}
                 disabled={sendDisabled}
-                className={
-                  sendDisabled
-                    ? 'flex h-7 w-7 items-center justify-center rounded-md bg-muted text-muted-foreground'
-                    : 'flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground transition-colors hover:opacity-90'
-                }
-              >
-                <ArrowUp className="h-4 w-4" />
-              </button>
+                variant={sendDisabled ? 'secondary' : 'default'}
+                icon={<ArrowUp />}
+              />
             )}
           </div>
         </div>

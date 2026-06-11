@@ -1,10 +1,11 @@
-import { Pause, Pencil, Play, RotateCcw, Trash2, X } from 'lucide-react'
+import { Folder, Pause, Pencil, Play, RotateCcw, Trash2, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Button } from '@/components/ui/button'
 import { OrganizerName } from '@/components/agenda/OrganizerName'
 import { describeFrequency } from '@/features/agenda/describeFrequency'
 import type { AgendaItem } from '@/lib/tauri'
+import { Button } from '@/components/ui/button'
+import { SCHEDULE_TABLE_GRID_COLUMNS } from '@/components/schedules/ScheduleTableHeader'
 
 interface ScheduleTaskRowProps {
   item: AgendaItem
@@ -50,7 +51,7 @@ export function ScheduleTaskRow({
       data-aijia-agenda-id={item.id}
       data-aijia-agenda-title={item.title}
       data-aijia-agenda-status={item.status}
-      className={`group grid grid-cols-4 items-center gap-3 border-t border-border px-5 py-3 text-[0.8125rem] hover:bg-muted/50 ${dimmed}`}
+      className={`grid ${SCHEDULE_TABLE_GRID_COLUMNS} items-center gap-3 border-t border-border px-5 py-3 text-[0.8125rem] ${dimmed}`}
     >
       {/* Column 1: task name */}
       <div className="flex min-w-0 items-center gap-2">
@@ -61,10 +62,11 @@ export function ScheduleTaskRow({
           </div>
           {item.workspacePath ? (
             <div
-              className="truncate text-xs text-muted-foreground/70"
+              className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground/70"
               title={item.workspacePath}
             >
-              📁 {workspaceShortName(item.workspacePath)}
+              <Folder className="h-3 w-3 shrink-0" aria-hidden="true" />
+              <span className="truncate">{workspaceShortName(item.workspacePath)}</span>
             </div>
           ) : null}
         </div>
@@ -90,8 +92,8 @@ export function ScheduleTaskRow({
         </span>
       </div>
 
-      {/* Column 4: actions (hover) */}
-      <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100">
+      {/* Column 4: actions */}
+      <div className="flex w-full justify-end gap-1">
         {isCancelled ? (
           <>
             <Button
@@ -115,15 +117,17 @@ export function ScheduleTaskRow({
           </>
         ) : (
           <>
-            <Button
-              variant="ghost"
-              size="icon"
-              title={t('schedules.row.actions.runNow')}
-              aria-label={t('schedules.row.actions.runNowAria', { title: item.title })}
-              onClick={() => onRunNow(item.id)}
-            >
-              <Play className="h-4 w-4" />
-            </Button>
+            {isPaused ? null : (
+              <Button
+                variant="ghost"
+                size="icon"
+                title={t('schedules.row.actions.runNow')}
+                aria-label={t('schedules.row.actions.runNowAria', { title: item.title })}
+                onClick={() => onRunNow(item.id)}
+              >
+                <Play className="h-4 w-4" />
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="icon"

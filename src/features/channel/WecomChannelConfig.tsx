@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next'
 import { open as openExternal } from '@tauri-apps/plugin-shell'
 import { CheckCircle2, ExternalLink, HelpCircle, Loader2, RefreshCw } from 'lucide-react'
 import { requestConfirm } from '@/components/common/ConfirmDialogHost'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
   channelWecomBeginRegistration,
@@ -15,6 +14,7 @@ import {
 } from '@/lib/tauri'
 import { useChannelStore } from '@/stores/channelStore'
 import { useNotificationStore } from '@/stores/notificationStore'
+import { Button } from '@/components/ui/button'
 
 interface WecomChannelConfigProps {
   onSaved?: () => void
@@ -162,7 +162,7 @@ function HelpPanel() {
           <ul className="space-y-1.5">
             {officialDocs.map((d) => (
               <li key={d.url}>
-                <button
+                <Button unstyled
                   type="button"
                   onClick={() => void openExternal(d.url)}
                   className="group inline-flex items-start gap-1.5 text-left text-primary underline-offset-4 hover:underline"
@@ -174,7 +174,7 @@ function HelpPanel() {
                       <span className="ml-1 text-muted-foreground"> — {d.hint}</span>
                     )}
                   </span>
-                </button>
+                </Button>
               </li>
             ))}
           </ul>
@@ -388,18 +388,18 @@ export function WecomChannelConfig({ onSaved, onClose }: WecomChannelConfigProps
             <div className="flex w-full flex-col items-center gap-4">
               <QrCodePanel value={begin?.authUrl ?? null} loading={registrationStatus === 'opening'} qrAlt={t('channel.wecom.config.qrAlt')} />
               {registrationStatus === 'error' && (
-                <Button onClick={() => void handleStartRegistration()} className="h-10 w-64 rounded-md">
+                <Button size="lg" onClick={() => void handleStartRegistration()} className="w-64">
                   {t('channel.wecom.config.retryQr')}
                 </Button>
               )}
               {begin?.fallbackUrl && busy && (
-                <button
+                <Button unstyled
                   type="button"
                   onClick={() => void openExternal(begin.fallbackUrl)}
                   className="inline-flex items-center gap-1 text-xs font-medium text-primary underline-offset-4 hover:underline"
                 >
                   {t('channel.wecom.config.openInBrowser')} <ExternalLink className="h-3 w-3" />
-                </button>
+                </Button>
               )}
             </div>
           )}
@@ -471,11 +471,10 @@ export function WecomChannelConfig({ onSaved, onClose }: WecomChannelConfigProps
                 </div>
                 <Button
                   size="sm"
-                  className="rounded-md"
+                  loading={manualSaving}
                   onClick={() => void handleManualSave()}
                   disabled={manualSaving || !manualBotId.trim() || !manualSecret.trim()}
                 >
-                  {manualSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   {t('channel.wecom.config.manualSave')}
                 </Button>
               </div>
@@ -486,23 +485,20 @@ export function WecomChannelConfig({ onSaved, onClose }: WecomChannelConfigProps
 
       <div className="flex flex-col gap-3 border-t border-border bg-background px-10 py-4">
         {done ? (
-          <Button className="h-10 w-full rounded-md" onClick={onClose}>
+          <Button size="lg" block onClick={onClose}>
             {t('channel.actions.done')}
           </Button>
         ) : (
           <div className="flex gap-3">
             {alreadyConfigured && (
-              <Button
-                variant="destructive"
-                className="flex-1 rounded-md"
-                onClick={() => void handleRemove()}
-              >
+              <Button danger className="flex-1" onClick={() => void handleRemove()}>
                 {t('channel.actions.remove')}
               </Button>
             )}
             <Button
               variant="ghost"
-              className={`rounded-md ${alreadyConfigured ? 'flex-1' : 'w-full'}`}
+              className={alreadyConfigured ? 'flex-1' : undefined}
+              block={!alreadyConfigured}
               onClick={onClose}
             >
               {t('channel.actions.close')}

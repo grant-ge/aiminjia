@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react'
+import { Button } from '@/components/ui/button'
 
 export interface ExecutionTraceCardSection {
   title: string
@@ -51,7 +52,7 @@ export function ExecutionTraceCard({
       }}
     >
       {headerCollapsible ? (
-        <button
+        <Button unstyled
           type="button"
           aria-expanded={headerExpanded}
           onClick={() => setHeaderExpanded((prev) => !prev)}
@@ -98,7 +99,7 @@ export function ExecutionTraceCard({
           >
             {badge}
           </span>
-        </button>
+        </Button>
       ) : (
         <div
           className="flex items-center justify-between rounded-t-md border-b px-4 py-2.5 border-border"
@@ -180,7 +181,7 @@ export function ExecutionTraceCard({
           className={hasContentBeforeExpander ? 'border-t border-border' : ''}
           style={{ borderColor: 'var(--color-border)' }}
         >
-          <button
+          <Button unstyled
             type="button"
             onClick={() => setExpanded((prev) => !prev)}
             className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-xs transition-colors hover:bg-[var(--color-bg-hover)]"
@@ -206,7 +207,7 @@ export function ExecutionTraceCard({
               />
             </svg>
             <span className="font-medium">{expanded ? collapseLabel ?? expandLabel : expandLabel}</span>
-          </button>
+          </Button>
           {body ? (
             <div className="border-t border-border" style={{ borderColor: 'var(--color-border)' }}>
               {body}

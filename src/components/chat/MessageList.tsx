@@ -46,6 +46,7 @@ import {
   revealFileInFolder,
 } from "@/lib/tauri";
 import { useConversationTeamState, useTeamStore } from "@/stores/teamStore";
+import { Button } from '@/components/ui/button'
 
 type FileActionKind = "preview" | "open" | "download" | "reveal";
 
@@ -126,7 +127,7 @@ function ToolReceiptBlock({
     return (
       <div className="flex max-w-full flex-col gap-2 py-1 text-sm">
         {step ? (
-          <button
+          <Button unstyled
             type="button"
             aria-label={title}
             onClick={() => setOpen((value) => !value)}
@@ -148,7 +149,7 @@ function ToolReceiptBlock({
                 aria-hidden="true"
               />
             )}
-          </button>
+          </Button>
         ) : (
           <div className="inline-flex min-w-0 items-center gap-1.5 text-muted-foreground">
             <MessageCircleQuestion
@@ -511,9 +512,9 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
           );
         }
         const teamSession = teamSessionForTurnIdx[i];
-        // Dispatch-prompt user turns render as a centered system banner
-        // (handled inside UserMessageBubble). For those, skip the chat-row
-        // avatar wrapper — the banner already announces the dispatch.
+        // Employee dispatch prompts are represented by the chat top bar now
+        // (employee avatar + identity + default skill), so the synthetic
+        // user-message banner should not take space in the message stream.
         const isDispatchTurn = !!(
           t.userMessage && parseDispatchHeader(t.userMessage.text)
         );
@@ -524,15 +525,7 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
               <PeerMessageBanner banners={t.peerBanners} />
             ) : null}
             {t.userMessage ? (
-              isDispatchTurn ? (
-                <UserMessageBubble
-                  text={t.userMessage.text}
-                  commandText={t.userMessage.commandText}
-                  skillCommand={t.userMessage.skillCommand}
-                  files={t.userMessage.files}
-                  conversationId={activeConversationId ?? undefined}
-                />
-              ) : (
+              isDispatchTurn ? null : (
                 <ChatRow
                   role="user"
                   name={userName}

@@ -183,7 +183,7 @@ function PlatformIcon({ platform }: { platform: PlatformCardModel }) {
     <img
       src={platform.logoSrc}
       alt=""
-      className="h-10 w-10 shrink-0 rounded-md border border-border bg-card"
+      className="h-10 w-10 shrink-0 rounded-md bg-card"
       draggable={false}
     />
   );
@@ -236,12 +236,12 @@ function PlatformCard({
               name: platform.name,
             })}
             trigger={
-              <button
+              <Button unstyled
                 type="button"
                 className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
               >
                 <MoreHorizontal className="h-4 w-4" />
-              </button>
+              </Button>
             }
             items={[
               {
@@ -272,7 +272,6 @@ function PlatformCard({
           <Button
             type="button"
             size="sm"
-            className="px-4"
             onClick={onRegister}
             aria-label={t("channel.actions.configureWith", {
               name: platform.name,
@@ -281,7 +280,7 @@ function PlatformCard({
             {t("channel.actions.configure")}
           </Button>
         ) : (
-          <Button type="button" size="sm" className="px-4" disabled>
+          <Button type="button" size="sm" disabled>
             {t("channel.actions.configure")}
           </Button>
         )}

@@ -206,7 +206,10 @@ describe("AppSidebar", () => {
       localStorage.removeItem("aijia-sidebar-tab");
     if (typeof localStorage !== "undefined")
       localStorage.removeItem(DEV_SETTINGS_STORAGE_KEY);
-    useDevSettingsStore.setState({ showToolErrorIcon: false });
+    useDevSettingsStore.setState({
+      showToolErrorIcon: false,
+      showRawSkillContent: false,
+    });
     chatState.activeConversationId = null;
     chatState.conversations = [];
     chatState.busyConversations = new Set();
@@ -302,6 +305,21 @@ describe("AppSidebar", () => {
       JSON.parse(localStorage.getItem(DEV_SETTINGS_STORAGE_KEY) ?? "{}"),
     ).toMatchObject({
       showToolErrorIcon: true,
+    });
+
+    const rawSkillSwitch = screen.getByRole("switch", {
+      name: "显示技能原始内容",
+    });
+    expect(rawSkillSwitch).not.toBeChecked();
+
+    await user.click(rawSkillSwitch);
+
+    expect(rawSkillSwitch).toBeChecked();
+    expect(
+      JSON.parse(localStorage.getItem(DEV_SETTINGS_STORAGE_KEY) ?? "{}"),
+    ).toMatchObject({
+      showToolErrorIcon: true,
+      showRawSkillContent: true,
     });
   });
 

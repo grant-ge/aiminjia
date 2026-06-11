@@ -9,7 +9,7 @@ vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn(),
 }))
 
-import { getPluginInfo, installCustomSkill, listSkills } from './tauri'
+import { getPluginInfo, getSkillDetail, installCustomSkill, listSkills } from './tauri'
 
 describe('skill tauri ipc wrappers', () => {
   it('listSkills 调用后端 list_skills', async () => {
@@ -26,6 +26,14 @@ describe('skill tauri ipc wrappers', () => {
     await getPluginInfo()
 
     expect(invokeMock).toHaveBeenCalledWith('get_plugin_info')
+  })
+
+  it('getSkillDetail 调用后端 get_skill_detail', async () => {
+    invokeMock.mockResolvedValueOnce(null)
+
+    await getSkillDetail('html-ppt')
+
+    expect(invokeMock).toHaveBeenCalledWith('get_skill_detail', { skillId: 'html-ppt' })
   })
 
   it('installCustomSkill 调用后端 install_custom_skill', async () => {

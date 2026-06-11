@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 
 import { getSubagentTranscript } from '@/lib/tauri'
 import type { SubAgentTranscriptEntry } from '@/types/message'
+import { Button } from '@/components/ui/button'
 
 interface SubAgentTranscriptViewerProps {
   transcriptRef: string
@@ -153,7 +154,7 @@ export function SubAgentTranscriptViewer({
 
   return (
     <div>
-      <button
+      <Button unstyled
         onClick={handleToggle}
         className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-xs transition-colors hover:bg-[var(--color-bg-hover)]"
         style={{ color: 'var(--color-text-muted)' }}
@@ -195,7 +196,7 @@ export function SubAgentTranscriptViewer({
             {entries.length}
           </span>
         )}
-      </button>
+      </Button>
 
       {expanded && (
         <div

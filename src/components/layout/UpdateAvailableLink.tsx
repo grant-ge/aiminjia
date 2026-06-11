@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { useUpdaterStore } from '@/lib/updaterStore'
+import { Button } from '@/components/ui/button'
 
 const READY_DOT_COLOR = '#22c55e'
 
@@ -12,7 +13,7 @@ export function UpdateAvailableLink() {
   if (phase !== 'ready' || !version) return null
 
   return (
-    <button
+    <Button unstyled
       data-aijia-updater-link
       data-aijia-updater-version={version}
       type="button"
@@ -27,6 +28,6 @@ export function UpdateAvailableLink() {
         aria-hidden
       />
       <span>{t('updater.linkReady', { version })}</span>
-    </button>
+    </Button>
   )
 }

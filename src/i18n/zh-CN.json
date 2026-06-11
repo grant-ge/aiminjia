@@ -945,6 +945,8 @@
     "topicQuote": "「{{topic}}」",
     "customTopicHint": "或在下方输入你自己的议题，回车发送。",
     "detail": {
+      "intro": "能力介绍",
+      "overview": "基础信息",
       "category": "分组",
       "members": "成员",
       "memberCount": "{{count}} 位专家",
@@ -1020,6 +1022,8 @@
       "dialogFirst": "对话补全",
       "contextAware": "按上下文补全信息",
       "resultOriented": "交付清晰结果",
+      "intro": "能力介绍",
+      "overview": "基础信息",
       "strengths": "能力侧重",
       "examples": "适合交给 TA 的任务",
       "skillSet": "可调用技能"
