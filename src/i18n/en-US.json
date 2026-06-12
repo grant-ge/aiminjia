@@ -34,6 +34,32 @@
     "loading": "Loading...",
     "openFile": "Open file"
   },
+  "chatHeader": {
+    "more": "More",
+    "exportConversation": "Export conversation",
+    "createSkillFromConversation": "Summarize and create skill",
+    "createScheduleFromConversation": "Summarize and create scheduled task"
+  },
+  "resultCards": {
+    "copyId": "Copy ID",
+    "skill": {
+      "created": "Skill created",
+      "view": "View skill",
+      "nameLabel": "Skill name",
+      "triggerLabel": "Trigger",
+      "descriptionLabel": "Description",
+      "fallbackDescription": "The skill was created and can be opened from skill details."
+    },
+    "schedule": {
+      "created": "Scheduled task created",
+      "edit": "Edit",
+      "view": "View scheduled tasks",
+      "frequency": "Frequency",
+      "nextFire": "Next run",
+      "fallbackPrompt": "The scheduled task was created.",
+      "unavailable": "This scheduled task cannot be loaded. It may have been deleted or is temporarily unavailable."
+    }
+  },
   "sidebar": {
     "archiveChat": "Archive chat",
     "archiveChatTooltip": "Archive conversation",
@@ -1204,7 +1230,7 @@
     "loadFailed": "Failed to load skills",
     "retry": "Retry",
     "noLocalSkills": "No local skills yet",
-    "noLocalSkillsDesc": "Chat with the \"XiaoCheng\" employee to turn your workflow into a reusable skill, or click \"+ Import Skill\" to upload a local skill directory.",
+    "noLocalSkillsDesc": "Click \"+ Import Skill\" to upload a local skill directory.",
     "noMatch": "No matching skills",
     "noMatchDesc": "No skills found for \"{{query}}\". Try switching to \"All\" or using a different keyword.",
     "noSkillsInCategory": "No skills in this category",

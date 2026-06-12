@@ -495,7 +495,7 @@ export function MessageList({ expertTeamId }: MessageListProps = {}) {
   const hasRenderedCompactBoundary = turns.some((turn) => turn.compactBoundary);
   return (
     <div
-      className="flex flex-col gap-5 px-2 py-3"
+      className="flex flex-col gap-10 px-2 py-3"
       data-aijia-message-list
       data-aijia-streaming={isStreaming ? "true" : "false"}
     >

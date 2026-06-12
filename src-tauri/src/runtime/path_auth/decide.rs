@@ -69,6 +69,22 @@ fn is_under_any(path: &Path, mut roots: impl Iterator<Item = PathBuf>) -> bool {
     })
 }
 
+fn system_temp_roots() -> Vec<PathBuf> {
+    let mut roots = vec![std::env::temp_dir()];
+
+    if let Some(tmpdir) = std::env::var_os("TMPDIR") {
+        roots.push(PathBuf::from(tmpdir));
+    }
+
+    #[cfg(unix)]
+    {
+        roots.push(PathBuf::from("/tmp"));
+        roots.push(PathBuf::from("/private/tmp"));
+    }
+
+    roots
+}
+
 fn path_text_lc(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/").to_lowercase()
 }
@@ -268,6 +284,27 @@ pub fn is_path_allowed(path: &Path, op: PathOp, ctx: &ToolPermissionContext) -> 
         return Decision::Allow;
     }
 
+    if is_under_any(&canonical, system_temp_roots().into_iter()) {
+        if matches!(op, PathOp::Read | PathOp::Write) && path_has_sensitive_component(&canonical) {
+            return Decision::Ask {
+                reason: format!(
+                    "需要确认：访问临时目录中的敏感路径，路径={}",
+                    canonical.display()
+                ),
+            };
+        }
+        return match op {
+            PathOp::Read | PathOp::Write => Decision::Allow,
+            PathOp::Delete if ctx.mode == PermissionMode::FullAccess => Decision::Allow,
+            PathOp::Delete => Decision::Ask {
+                reason: format!(
+                    "需要确认：删除系统临时目录内的文件，路径={}",
+                    canonical.display()
+                ),
+            },
+        };
+    }
+
     // Step 5: allow_rules
     for rule in &ctx.allow_rules {
         if op_matches(rule.op, op) && glob_matches(&rule.pattern, &canonical) {
@@ -309,6 +346,18 @@ mod tests {
         ctx.additional_working_dirs
             .insert(dir.to_path_buf(), RuleSource::Session);
         ctx
+    }
+
+    fn non_temp_test_file(name: &str) -> PathBuf {
+        let dir = std::env::current_dir()
+            .unwrap()
+            .join("target")
+            .join("path-auth-step6-tests")
+            .join(std::process::id().to_string());
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join(name);
+        std::fs::write(&file, b"").unwrap();
+        file
     }
 
     #[test]
@@ -427,6 +476,50 @@ mod tests {
     }
 
     #[test]
+    fn system_temp_dir_allows_read_and_write_in_default_mode() {
+        let tmp_root = std::env::temp_dir();
+        let dir = tmp_root.join(format!("lotus-path-auth-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("SKILL.md");
+        std::fs::write(&file, b"draft").unwrap();
+        let ctx = ToolPermissionContext::empty();
+
+        assert_eq!(is_path_allowed(&file, PathOp::Read, &ctx), Decision::Allow);
+        assert_eq!(is_path_allowed(&file, PathOp::Write, &ctx), Decision::Allow);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn slash_tmp_alias_allows_not_yet_created_files() {
+        let path = Path::new("/tmp")
+            .join(format!("lotus-path-auth-test-{}", std::process::id()))
+            .join("new-skill")
+            .join("SKILL.md");
+        let ctx = ToolPermissionContext::empty();
+
+        assert_eq!(is_path_allowed(&path, PathOp::Write, &ctx), Decision::Allow);
+    }
+
+    #[test]
+    fn system_temp_delete_still_asks_in_default_mode() {
+        let tmp_root = std::env::temp_dir();
+        let file = tmp_root.join(format!(
+            "lotus-path-auth-delete-test-{}.txt",
+            std::process::id()
+        ));
+        std::fs::write(&file, b"draft").unwrap();
+        let ctx = ToolPermissionContext::empty();
+
+        assert!(matches!(
+            is_path_allowed(&file, PathOp::Delete, &ctx),
+            Decision::Ask { .. }
+        ));
+
+        let _ = std::fs::remove_file(&file);
+    }
+
+    #[test]
     fn primary_root_delete_in_default_returns_ask() {
         let tmp = TempDir::new().unwrap();
         let file = tmp.path().join("old.txt");
@@ -535,10 +628,8 @@ mod tests {
 
     #[test]
     fn allow_rule_pathglob_op_mismatch_does_not_match() {
-        let tmp = TempDir::new().unwrap();
-        let file = tmp.path().join("data.csv");
-        std::fs::write(&file, b"").unwrap();
-        let canonical_dir = std::fs::canonicalize(tmp.path()).unwrap();
+        let file = non_temp_test_file("data.csv");
+        let canonical_dir = std::fs::canonicalize(file.parent().unwrap()).unwrap();
         let pattern = format!("{}/**", canonical_dir.display());
 
         let mut ctx = ToolPermissionContext::empty();
@@ -558,9 +649,7 @@ mod tests {
 
     #[test]
     fn default_mode_returns_ask() {
-        let tmp = TempDir::new().unwrap();
-        let file = tmp.path().join("unknown.txt");
-        std::fs::write(&file, b"").unwrap();
+        let file = non_temp_test_file("unknown.txt");
         let ctx = ToolPermissionContext::empty(); // mode=Default, no roots
 
         assert!(matches!(
@@ -571,9 +660,7 @@ mod tests {
 
     #[test]
     fn acceptedits_mode_step6_returns_ask() {
-        let tmp = TempDir::new().unwrap();
-        let file = tmp.path().join("outside.txt");
-        std::fs::write(&file, b"").unwrap();
+        let file = non_temp_test_file("outside.txt");
         let mut ctx = ToolPermissionContext::empty();
         ctx.mode = PermissionMode::AcceptEdits;
         // no primary_root, no additional dirs → hits step 6
@@ -586,9 +673,7 @@ mod tests {
 
     #[test]
     fn plan_mode_returns_deny() {
-        let tmp = TempDir::new().unwrap();
-        let file = tmp.path().join("file.txt");
-        std::fs::write(&file, b"").unwrap();
+        let file = non_temp_test_file("plan-file.txt");
         let mut ctx = ToolPermissionContext::empty();
         ctx.mode = PermissionMode::Plan;
 
@@ -600,9 +685,7 @@ mod tests {
 
     #[test]
     fn dontask_mode_returns_deny() {
-        let tmp = TempDir::new().unwrap();
-        let file = tmp.path().join("file.txt");
-        std::fs::write(&file, b"").unwrap();
+        let file = non_temp_test_file("dontask-file.txt");
         let mut ctx = ToolPermissionContext::empty();
         ctx.mode = PermissionMode::DontAsk;
 

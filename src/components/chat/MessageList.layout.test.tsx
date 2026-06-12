@@ -59,6 +59,14 @@ describe('MessageList layout', () => {
     expect(root).not.toHaveClass('px-6')
   })
 
+  it('uses a roomy gap between top-level message turns', () => {
+    const { container } = render(<MessageList />)
+    const root = container.firstElementChild
+
+    expect(root).toHaveClass('gap-10')
+    expect(root).not.toHaveClass('gap-5')
+  })
+
   it('keeps a larger vertical gap between user and assistant content inside a turn', () => {
     const { container } = render(<MessageList />)
     const root = container.firstElementChild

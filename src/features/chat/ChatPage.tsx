@@ -4,6 +4,7 @@ import { RightPanel } from '@/components/chat/RightPanel'
 import { savePreviewTargetToDisk } from '@/components/chat/fileDownload'
 import type { PreviewTarget } from '@/components/chat/generatedFileActions'
 import { ChatArea } from '@/components/layout/ChatArea'
+import { ConversationRenameDialog } from '@/components/sidebar/ConversationRenameDialog'
 import { ChatTopBar } from '@/components/shell/ChatTopBar'
 import { TeamChatDrawer } from '@/components/team/TeamChatDrawer'
 import { TeamVisualProvider } from '@/components/team/TeamVisualContext'
@@ -14,6 +15,10 @@ import { useExpertTeamForConversation } from '@/features/expert-teams/expertTeam
 import { ExpertTeamAvatarStack } from '@/features/expert-teams/ExpertTeamAvatarStack'
 import { loadExpertTeamCatalog } from '@/features/expert-teams/expertTeamCatalog'
 import { getExpertTeam, setRemoteExpertTeams, type ExpertTeam } from '@/features/expert-teams/teams'
+import {
+  buildCreateScheduleFromConversationPrompt,
+  buildCreateSkillFromConversationPrompt,
+} from '@/features/chat/conversationCreatePrompts'
 import { useChat } from '@/hooks/useChat'
 import { useConversationExport } from '@/hooks/useConversationExport'
 import { useTeamOverview } from '@/hooks/useTeamOverview'
@@ -32,6 +37,7 @@ import { getLocalEmployeeAvatarUrl } from '@/features/employees/employeeVisual'
 import { localizeEmployeeDisplay } from '@/features/employees/templates'
 import { localizedSkillName } from '@/lib/skillLocalization'
 import { useSkillStore } from '@/stores/skillStore'
+import { Archive, Blocks, CalendarClock, Copy, Download, Pencil, Pin, PinOff } from 'lucide-react'
 
 interface ChatPageProps {
   conversationId: string
@@ -39,7 +45,13 @@ interface ChatPageProps {
 
 export function ChatPage({ conversationId }: ChatPageProps) {
   const { i18n, t } = useTranslation()
-  const { switchConversation } = useChat()
+  const {
+    switchConversation,
+    renameConversation,
+    archiveConversation,
+    setConversationPinned,
+    sendUserMessage,
+  } = useChat()
   const conversations = useChatStore((s) => s.conversations)
   const activeConversationId = useChatStore((s) => s.activeConversationId)
   const messageCount = useChatStore((s) => s.messages.length)
@@ -49,6 +61,7 @@ export function ChatPage({ conversationId }: ChatPageProps) {
   const conv = conversations.find((c) => c.id === conversationId)
   const title = conv?.title ?? ''
   const conversationExport = useConversationExport(conversationId)
+  const [renameOpen, setRenameOpen] = useState(false)
 
   const [employeeId, setEmployeeId] = useState<string | null>(null)
   const [conversationSource, setConversationSource] = useState<ConversationSourceDto | null>(null)
@@ -116,6 +129,73 @@ export function ChatPage({ conversationId }: ChatPageProps) {
   const headerKind = isEmployeeConversation ? 'employee' : isExpertTeamConversation ? 'expertTeam' : conv?.kind
   const headerTitle = title || employeeDisplay?.name || expertTeam?.name || ''
   const shouldRenderHeader = Boolean(headerTitle || employeeDisplay || expertTeam)
+
+  const handleRenameConfirm = async (nextTitle: string) => {
+    if (!conv) return
+    await renameConversation(conv.id, nextTitle)
+    setRenameOpen(false)
+  }
+
+  const handleCopyConversationId = () => {
+    if (!conv) return
+    void navigator.clipboard.writeText(conv.id)
+  }
+
+  const handleCreateSkillFromConversation = () => {
+    void sendUserMessage(buildCreateSkillFromConversationPrompt())
+  }
+
+  const handleCreateScheduleFromConversation = () => {
+    void sendUserMessage(buildCreateScheduleFromConversationPrompt())
+  }
+
+  const moreMenuItems = conv
+    ? [
+        {
+          id: 'rename',
+          label: t('sidebar.renameChat'),
+          icon: <Pencil />,
+          onSelect: () => setRenameOpen(true),
+        },
+        {
+          id: 'pin',
+          label: conv.isPinned ? t('sidebar.unpinChat') : t('sidebar.pinChat'),
+          icon: conv.isPinned ? <PinOff /> : <Pin />,
+          onSelect: () => void setConversationPinned(conv.id, !conv.isPinned),
+        },
+        {
+          id: 'export',
+          label: t('chatHeader.exportConversation', '导出对话'),
+          icon: <Download />,
+          onSelect: conversationExport.openExportDialog,
+        },
+        {
+          id: 'copy-id',
+          label: t('sidebar.copyConversationId'),
+          icon: <Copy />,
+          onSelect: handleCopyConversationId,
+        },
+        {
+          id: 'create-skill',
+          label: t('chatHeader.createSkillFromConversation', '总结对话并创建技能'),
+          icon: <Blocks />,
+          onSelect: handleCreateSkillFromConversation,
+        },
+        {
+          id: 'create-schedule',
+          label: t('chatHeader.createScheduleFromConversation', '总结对话并创建定时任务'),
+          icon: <CalendarClock />,
+          onSelect: handleCreateScheduleFromConversation,
+        },
+        {
+          id: 'archive',
+          label: t('sidebar.archiveChat'),
+          icon: <Archive />,
+          className: 'text-destructive focus:text-destructive',
+          onSelect: () => void archiveConversation(conv.id),
+        },
+      ]
+    : []
 
   const handleOpenPreviewTarget = async (target: PreviewTarget) => {
     try {
@@ -196,7 +276,8 @@ export function ChatPage({ conversationId }: ChatPageProps) {
               }
             : undefined}
           onShare={conversationExport.openExportDialog}
-          shareLabel="导出对话"
+          shareLabel={t('chatHeader.exportConversation', '导出对话')}
+          moreMenuItems={moreMenuItems}
         />
       ) : null}
       <div className="relative flex flex-1 overflow-hidden">
@@ -225,6 +306,12 @@ export function ChatPage({ conversationId }: ChatPageProps) {
       </div>
       <ConversationExportDialog
         {...conversationExport.dialogProps}
+      />
+      <ConversationRenameDialog
+        open={renameOpen}
+        initialTitle={conv?.title ?? ''}
+        onOpenChange={setRenameOpen}
+        onConfirm={handleRenameConfirm}
       />
     </div>
   )

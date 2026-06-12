@@ -9,7 +9,13 @@ import { setExpertTeam, clearExpertTeam } from '@/features/expert-teams/expertTe
 import { setRemoteExpertTeams } from '@/features/expert-teams/teams'
 import { ChatPage } from './ChatPage'
 
-const switchConversationMock = vi.hoisted(() => vi.fn())
+const chatMocks = vi.hoisted(() => ({
+  switchConversation: vi.fn(),
+  renameConversation: vi.fn(),
+  archiveConversation: vi.fn(),
+  setConversationPinned: vi.fn(),
+  sendUserMessage: vi.fn(),
+}))
 const tauriMocks = vi.hoisted(() => ({
   exportConversation: vi.fn(),
   revealExportInFolder: vi.fn(),
@@ -29,7 +35,7 @@ const tauriMocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@/hooks/useChat', () => ({
-  useChat: () => ({ switchConversation: switchConversationMock }),
+  useChat: () => chatMocks,
 }))
 
 vi.mock('@/hooks/useTeamOverview', () => ({
@@ -61,12 +67,19 @@ vi.mock('@/components/shell/ChatTopBar', () => ({
     employee,
     onShare,
     shareLabel,
+    moreMenuItems,
   }: {
     title: string
     sourceLabel?: string
     employee?: { name: string; role: string; defaultSkillLabel?: string | null }
     onShare?: () => void
     shareLabel?: string
+    moreMenuItems?: Array<{
+      id: string
+      label: string
+      icon?: React.ReactNode
+      onSelect?: () => void
+    }>
   }) => (
     <header data-testid="chat-header">
       {employee ? (
@@ -79,6 +92,12 @@ vi.mock('@/components/shell/ChatTopBar', () => ({
       ) : null}
       {sourceLabel ? <span data-testid="chat-source-label">{sourceLabel}</span> : null}
       {onShare ? <button onClick={onShare}>{shareLabel ?? '分享'}</button> : null}
+      {moreMenuItems?.map((item) => (
+        <button key={item.id} onClick={() => item.onSelect?.()}>
+          {item.icon}
+          {item.label}
+        </button>
+      ))}
     </header>
   ),
 }))
@@ -101,7 +120,11 @@ vi.mock('@/components/team/TeamChatDrawer', () => ({
 
 describe('ChatPage layout', () => {
   beforeEach(async () => {
-    switchConversationMock.mockClear()
+    chatMocks.switchConversation.mockReset()
+    chatMocks.renameConversation.mockReset()
+    chatMocks.archiveConversation.mockReset()
+    chatMocks.setConversationPinned.mockReset()
+    chatMocks.sendUserMessage.mockReset()
     tauriMocks.exportConversation.mockReset()
     tauriMocks.revealExportInFolder.mockReset()
     tauriMocks.getConversationSource.mockReset()
@@ -145,8 +168,81 @@ describe('ChatPage layout', () => {
     render(<ChatPage conversationId="conv-reload" />)
 
     await waitFor(() => {
-      expect(switchConversationMock).toHaveBeenCalledWith('conv-reload')
+      expect(chatMocks.switchConversation).toHaveBeenCalledWith('conv-reload')
     })
+  })
+
+  it('sends a generated message for creating a skill from the current conversation', async () => {
+    useChatStore.setState({
+      activeConversationId: 'conv-create',
+      conversations: [{ id: 'conv-create', title: '需求讨论', createdAt: '', updatedAt: '', isArchived: false }],
+      messages: [],
+    })
+
+    render(<ChatPage conversationId="conv-create" />)
+
+    fireEvent.click(screen.getByRole('button', { name: '总结对话并创建技能' }))
+
+    await waitFor(() => {
+      expect(chatMocks.sendUserMessage).toHaveBeenCalledTimes(1)
+    })
+    expect(chatMocks.sendUserMessage.mock.calls[0][0]).toContain('创建为一个技能')
+    expect(chatMocks.sendUserMessage.mock.calls[0][0]).toContain('"type": "skill_created"')
+  })
+
+  it('uses the skill center icon for creating a skill from conversation', async () => {
+    useChatStore.setState({
+      activeConversationId: 'conv-create-icon',
+      conversations: [{ id: 'conv-create-icon', title: '需求讨论', createdAt: '', updatedAt: '', isArchived: false }],
+      messages: [],
+    })
+
+    const { container } = render(<ChatPage conversationId="conv-create-icon" />)
+
+    const button = screen.getByRole('button', { name: '总结对话并创建技能' })
+    expect(button.querySelector('.lucide-blocks')).toBeTruthy()
+    expect(container.querySelector('.lucide-sparkles')).toBeFalsy()
+  })
+
+  it('sends a generated message for creating a scheduled task from the current conversation', async () => {
+    useChatStore.setState({
+      activeConversationId: 'conv-schedule',
+      conversations: [{ id: 'conv-schedule', title: '日报讨论', createdAt: '', updatedAt: '', isArchived: false }],
+      messages: [],
+    })
+
+    render(<ChatPage conversationId="conv-schedule" />)
+
+    fireEvent.click(screen.getByRole('button', { name: '总结对话并创建定时任务' }))
+
+    await waitFor(() => {
+      expect(chatMocks.sendUserMessage).toHaveBeenCalledTimes(1)
+    })
+    expect(chatMocks.sendUserMessage.mock.calls[0][0]).toContain('创建一个定时任务')
+    expect(chatMocks.sendUserMessage.mock.calls[0][0]).toContain('"type": "schedule_created"')
+  })
+
+  it('wires pin archive copy and export actions in the header more menu', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+    useChatStore.setState({
+      activeConversationId: 'conv-actions',
+      conversations: [{ id: 'conv-actions', title: '操作会话', createdAt: '', updatedAt: '', isArchived: false, isPinned: false }],
+      messages: [],
+    })
+
+    render(<ChatPage conversationId="conv-actions" />)
+
+    fireEvent.click(screen.getByRole('button', { name: '置顶对话' }))
+    expect(chatMocks.setConversationPinned).toHaveBeenCalledWith('conv-actions', true)
+
+    expect(screen.getAllByRole('button', { name: '导出对话' }).length).toBeGreaterThan(0)
+
+    fireEvent.click(screen.getByRole('button', { name: '复制对话 ID' }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('conv-actions'))
+
+    fireEvent.click(screen.getByRole('button', { name: '归档聊天' }))
+    expect(chatMocks.archiveConversation).toHaveBeenCalledWith('conv-actions')
   })
 
   it('renders employee identity from conversation source before the index title is available', async () => {
@@ -375,7 +471,7 @@ describe('ChatPage layout', () => {
     })
 
     render(<ChatPage conversationId="conv-export" />)
-    fireEvent.click(screen.getByRole('button', { name: '导出对话' }))
+    fireEvent.click(screen.getAllByRole('button', { name: '导出对话' })[0])
 
     expect(tauriMocks.exportConversation).not.toHaveBeenCalled()
     expect(screen.getByText('将生成一个本地 zip 文件，包含当前对话和最近 24 小时运行信息。文件只会保存在本机。')).toBeInTheDocument()
@@ -415,7 +511,7 @@ describe('ChatPage layout', () => {
     })
 
     const { rerender } = render(<ChatPage conversationId="conv-a" />)
-    fireEvent.click(screen.getByRole('button', { name: '导出对话' }))
+    fireEvent.click(screen.getAllByRole('button', { name: '导出对话' })[0])
     fireEvent.click(screen.getByRole('button', { name: '开始导出' }))
     await waitFor(() => {
       expect(tauriMocks.exportConversation).toHaveBeenCalledWith('conv-a')
@@ -437,7 +533,7 @@ describe('ChatPage layout', () => {
 
     expect(screen.queryByText('conv-a.zip')).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: '导出对话' }))
+    fireEvent.click(screen.getAllByRole('button', { name: '导出对话' })[0])
     fireEvent.click(screen.getByRole('button', { name: '开始导出' }))
     await waitFor(() => {
       expect(tauriMocks.exportConversation).toHaveBeenCalledWith('conv-b')

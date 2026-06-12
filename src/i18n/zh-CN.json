@@ -34,6 +34,32 @@
     "loading": "加载中...",
     "openFile": "打开文件"
   },
+  "chatHeader": {
+    "more": "更多",
+    "exportConversation": "导出对话",
+    "createSkillFromConversation": "总结对话并创建技能",
+    "createScheduleFromConversation": "总结对话并创建定时任务"
+  },
+  "resultCards": {
+    "copyId": "复制 ID",
+    "skill": {
+      "created": "技能已创建",
+      "view": "查看技能",
+      "nameLabel": "技能名称",
+      "triggerLabel": "触发方式",
+      "descriptionLabel": "技能描述",
+      "fallbackDescription": "技能已创建，可前往技能详情查看。"
+    },
+    "schedule": {
+      "created": "定时任务已创建",
+      "edit": "编辑",
+      "view": "查看定时任务",
+      "frequency": "频率",
+      "nextFire": "下次运行",
+      "fallbackPrompt": "定时任务已创建。",
+      "unavailable": "当前无法读取这个定时任务，可能已被删除或暂时不可用。"
+    }
+  },
   "sidebar": {
     "archiveChat": "归档聊天",
     "archiveChatTooltip": "归档对话",
@@ -1196,7 +1222,7 @@
     "loadFailed": "技能加载失败",
     "retry": "重试",
     "noLocalSkills": "还没有本地技能",
-    "noLocalSkillsDesc": "在对话里找数字员工\"小程\"聊聊，让它帮你把工作流程沉淀成可复用技能；或点右上角\"+ 导入技能\"选一个本地技能目录上传。",
+    "noLocalSkillsDesc": "点右上角\"+ 导入技能\"选择一个本地技能目录上传。",
     "noMatch": "没有匹配的技能",
     "noMatchDesc": "\"{{query}}\" 下没找到技能。试试切到\"全部\"或换个关键词。",
     "noSkillsInCategory": "该分类下还没有技能",

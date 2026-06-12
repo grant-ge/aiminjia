@@ -1,6 +1,7 @@
 import '@testing-library/jest-dom'
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { ChatTopBar } from './ChatTopBar'
 
 describe('ChatTopBar — employee identity card', () => {
@@ -63,5 +64,27 @@ describe('ChatTopBar — employee identity card', () => {
     expect(screen.getByTestId('chat-topbar-expert-team')).toHaveTextContent('专家团 · 招聘评审团')
     expect(screen.getByTestId('expert-team-avatar')).toBeInTheDocument()
     expect(screen.queryByTestId('chat-source-label')).not.toBeInTheDocument()
+  })
+
+  it('renders more menu items through AppDropdown', async () => {
+    const onSelect = vi.fn()
+
+    render(
+      <ChatTopBar
+        title="新对话"
+        moreMenuItems={[
+          {
+            id: 'copy-id',
+            label: '复制对话 ID',
+            onSelect: () => onSelect(),
+          },
+        ]}
+      />,
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: '更多' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: '复制对话 ID' }))
+
+    expect(onSelect).toHaveBeenCalledTimes(1)
   })
 })

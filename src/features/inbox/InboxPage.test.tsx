@@ -9,16 +9,16 @@ const mocks = vi.hoisted(() => ({
   setSidebarTab: vi.fn(),
   employees: [{
     id: 'emp-1',
-    name: '小程',
-    avatar: '🛠️',
+    name: '小研',
+    avatar: '🔍',
     lifecycle: 'active',
   }],
   entries: [{
     id: 'entry-1',
     employeeId: 'emp-1',
     kind: 'report' as const,
-    title: '小程 已完成任务',
-    summary: '我是小程，流程设计师。',
+    title: '小研 已完成任务',
+    summary: '我是小研，行业情报分析师。',
     reportPath: null,
     conversationId: 'conv-1',
     read: false,
@@ -61,7 +61,7 @@ describe('InboxPage', () => {
   it('switches to the employee sidebar tab before opening an inbox conversation', () => {
     render(<InboxPage />)
 
-    fireEvent.click(screen.getByRole('button', { name: /小程 已完成任务/ }))
+    fireEvent.click(screen.getByRole('button', { name: /小研 已完成任务/ }))
 
     expect(mocks.markRead).toHaveBeenCalledWith('emp-1', 'entry-1')
     expect(mocks.setSidebarTab).toHaveBeenCalledWith('employee')

@@ -27,15 +27,7 @@ import { useChannelStore } from "@/stores/channelStore";
 import { useInteractionStore } from "@/stores/interactionStore";
 import { hasExpertTeam } from "@/features/expert-teams/expertTeamRegistry";
 import { selectPendingActionForSession } from "@/components/chat-scene/pendingActionSelectors";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Tooltip,
   TooltipContent,
@@ -44,6 +36,7 @@ import {
 } from "@/components/ui/tooltip";
 
 import { ConversationRow } from "./ConversationRow";
+import { ConversationRenameDialog } from "./ConversationRenameDialog";
 import { ConversationTree } from "./ConversationTree";
 import { groupConversationsByProject } from "./conversationProjects";
 import { DevControlPanel } from "./DevControlPanel";
@@ -169,7 +162,6 @@ export function AppSidebar() {
   const pendingInteractions = useInteractionStore((s) => s.pendingInteractions);
 
   const [renamingId, setRenamingId] = useState<string | null>(null);
-  const [renameValue, setRenameValue] = useState("");
   const [devPanelOpen, setDevPanelOpen] = useState(false);
   const [, setTenantHeaderClickCount] = useState(0);
 
@@ -216,14 +208,12 @@ export function AppSidebar() {
   );
 
   const handleRenameOpen = (id: string) => {
-    const conv = conversations.find((c) => c.id === id);
-    setRenameValue(conv?.title ?? "");
     setRenamingId(id);
   };
 
-  const handleRenameConfirm = async () => {
-    if (!renamingId || !renameValue.trim()) return;
-    await renameConversation(renamingId, renameValue.trim());
+  const handleRenameConfirm = async (title: string) => {
+    if (!renamingId) return;
+    await renameConversation(renamingId, title);
     setRenamingId(null);
   };
 
@@ -240,6 +230,9 @@ export function AppSidebar() {
   const nonChannelConversations = conversations.filter(
     (c) => !channelSessionIdSet.has(c.id),
   );
+  const renamingConversation = renamingId
+    ? conversations.find((conversation) => conversation.id === renamingId) ?? null
+    : null;
   // 员工 / 专家团 tab 走独立列表渲染；项目 tab 走白名单：只展示 `kind=user`
   // 或 `kind` 未标记的旧会话（视作 user 兼容）。员工 / 专家团 / IM 类的会话
   // 都被显式排除，避免未来加 kind 时项目 tab 误带入新类型。
@@ -739,34 +732,14 @@ export function AppSidebar() {
         <SidebarFooterSettings onClick={() => openSettings("account")} />
       </aside>
 
-      {/* 重命名弹窗 */}
-      <Dialog
-        open={!!renamingId}
-        onOpenChange={(open) => !open && setRenamingId(null)}
-      >
-        <DialogContent className="w-[400px]">
-          <DialogHeader>
-            <DialogTitle>重命名聊天</DialogTitle>
-          </DialogHeader>
-          <Input
-            value={renameValue}
-            onChange={(e) => setRenameValue(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && void handleRenameConfirm()}
-            autoFocus
-          />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRenamingId(null)}>
-              取消
-            </Button>
-            <Button
-              onClick={() => void handleRenameConfirm()}
-              disabled={!renameValue.trim()}
-            >
-              确认
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConversationRenameDialog
+        open={Boolean(renamingId)}
+        initialTitle={renamingConversation?.title ?? ""}
+        onOpenChange={(open) => {
+          if (!open) setRenamingId(null);
+        }}
+        onConfirm={handleRenameConfirm}
+      />
       <DevControlPanel open={devPanelOpen} onOpenChange={setDevPanelOpen} />
     </>
   );

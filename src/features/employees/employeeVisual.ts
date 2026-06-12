@@ -13,7 +13,6 @@ const LOCAL_EMPLOYEE_AVATAR_NAMES = new Set([
   '沈柏川',
   '顾承远',
   '韩可欣',
-  '程砚舟',
   '方予衡',
   '陆时安',
   '秦砚知',
@@ -111,13 +110,6 @@ const EMPLOYEE_PERSONAS: Record<string, EmployeePersona> = {
     accent: 'bg-pink-50 text-pink-700',
     strengths: ['业务咨询分流', 'FAQ 话术', '客户沟通复盘'],
     examples: ['整理客户咨询并给出回复草稿', '把这段对话沉淀成 FAQ', '分析客户最关心的产品问题'],
-  },
-  'builtin:xiaocheng': {
-    name: '程砚舟',
-    title: '流程设计师',
-    accent: 'bg-orange-50 text-orange-700',
-    strengths: ['流程拆解', '技能沉淀', '重复任务标准化'],
-    examples: ['把这个重复流程整理成可复用技能', '帮我拆解一项团队交付 SOP', '把口头经验改写成 SKILL.md'],
   },
 }
 

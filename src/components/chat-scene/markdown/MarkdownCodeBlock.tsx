@@ -9,7 +9,7 @@ interface CodeProps {
   children?: React.ReactNode
 }
 
-function textFromNode(node: React.ReactNode): string {
+export function textFromNode(node: React.ReactNode): string {
   if (node == null || typeof node === 'boolean') return ''
   if (typeof node === 'string' || typeof node === 'number') return String(node)
   if (Array.isArray(node)) return node.map(textFromNode).join('')

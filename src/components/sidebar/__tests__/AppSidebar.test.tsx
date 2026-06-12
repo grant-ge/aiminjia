@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom";
 import * as React from "react";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -72,15 +72,23 @@ const channelState = vi.hoisted(() => ({
   ],
 }));
 
+const chatMocks = vi.hoisted(() => ({
+  switchConversation: vi.fn(),
+  createNewConversation: vi.fn(),
+  renameConversation: vi.fn(),
+  archiveConversation: vi.fn(),
+  setConversationPinned: vi.fn(),
+}));
+
 vi.mock("@/hooks/useChat", () => ({
   useChat: () => ({
     conversations: chatState.conversations,
     activeConversationId: chatState.activeConversationId,
-    switchConversation: vi.fn(),
-    createNewConversation: vi.fn(),
-    renameConversation: vi.fn(),
-    archiveConversation: vi.fn(),
-    setConversationPinned: vi.fn(),
+    switchConversation: chatMocks.switchConversation,
+    createNewConversation: chatMocks.createNewConversation,
+    renameConversation: chatMocks.renameConversation,
+    archiveConversation: chatMocks.archiveConversation,
+    setConversationPinned: chatMocks.setConversationPinned,
   }),
 }));
 
@@ -215,6 +223,11 @@ describe("AppSidebar", () => {
     chatState.busyConversations = new Set();
     chatState.streamStates = {};
     chatState.pendingAsks = new Map();
+    chatMocks.switchConversation.mockReset();
+    chatMocks.createNewConversation.mockReset();
+    chatMocks.renameConversation.mockReset();
+    chatMocks.archiveConversation.mockReset();
+    chatMocks.setConversationPinned.mockReset();
     channelState.conversations = [
       {
         sessionId: "dt-session-1",
@@ -254,6 +267,34 @@ describe("AppSidebar", () => {
   it("renders TenantHeader name", () => {
     render(<AppSidebar />);
     expect(screen.getByText("仁励家网络科技(杭州)")).toBeInTheDocument();
+  });
+
+  it("renames a conversation from the shared rename dialog", async () => {
+    chatState.conversations = [
+      {
+        id: "conv-1",
+        title: "测试会话",
+        workspaceName: "默认项目",
+      },
+    ];
+
+    render(<AppSidebar />);
+
+    fireEvent.contextMenu(screen.getByRole("button", { name: "测试会话" }));
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "重命名聊天" }),
+    );
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "新的标题" },
+    });
+    await userEvent.click(screen.getByRole("button", { name: "确认" }));
+
+    await waitFor(() => {
+      expect(chatMocks.renameConversation).toHaveBeenCalledWith(
+        "conv-1",
+        "新的标题",
+      );
+    });
   });
 
   it("does not render TenantHeader in the sidebar on Windows", () => {

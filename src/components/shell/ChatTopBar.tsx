@@ -13,6 +13,7 @@ import {
 import type { ReactNode } from "react";
 import { Button } from '@/components/ui/button'
 import { ChatAvatar } from '@/components/chat-scene/ChatAvatar'
+import { AppDropdown, type AppDropdownItem } from '@/components/common/AppDropdown'
 
 export interface ChatTopBarEmployee {
   avatar: string;
@@ -51,6 +52,7 @@ interface ChatTopBarProps {
   onShare?: () => void;
   shareLabel?: string;
   onMore?: () => void;
+  moreMenuItems?: AppDropdownItem[];
   onToggleSidebar?: () => void;
   /** extra node rendered at the right edge */
   trailing?: ReactNode;
@@ -83,6 +85,7 @@ export function ChatTopBar({
   onShare,
   shareLabel = "分享",
   onMore,
+  moreMenuItems,
   onToggleSidebar,
   trailing,
 }: ChatTopBarProps) {
@@ -166,7 +169,23 @@ export function ChatTopBar({
             <Share2 className="h-4 w-4" />
           </Button>
         ) : null}
-        {onMore ? (
+        {moreMenuItems && moreMenuItems.length > 0 ? (
+          <AppDropdown
+            ariaLabel="更多"
+            align="end"
+            sideOffset={6}
+            items={moreMenuItems}
+            trigger={
+              <Button unstyled
+                type="button"
+                title="更多"
+                className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <Ellipsis className="h-4 w-4" />
+              </Button>
+            }
+          />
+        ) : onMore ? (
           <Button unstyled
             type="button"
             aria-label="更多"

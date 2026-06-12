@@ -2,9 +2,8 @@
 """Pack all in-tree built-in skills (under ../docs/skill-bundles/) into a
 single distributable artifact + a sync script.
 
-Used at build time to ship the "managed global skills" that every AIjia
-install gets out-of-the-box (currently: 小程 / meeting-notes-polish /
-wechat-article-ideation / weekly-priority-planner).
+Used at build time to ship the managed global skills that every AIjia
+install gets out of the box.
 
 Outputs (under code/dist-skills/):
 - <skill-id>-v<version>.aijia-skill   per-skill zip packs (same format
