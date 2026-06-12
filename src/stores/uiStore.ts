@@ -46,6 +46,8 @@ export const DRAFT_PERMISSION_SESSION_ID = '__draft__'
 
 interface UiState {
   route: Route
+  backStack: Route[]
+  forwardStack: Route[]
   settingsModal: SettingsModalState
   sidebarTab: SidebarBodyTab
   sidebarHidden: boolean
@@ -53,6 +55,11 @@ interface UiState {
   pendingSkill: PendingSkillSelection | null
   permissionModesBySession: Record<string, PermissionMode>
   setRoute: (route: Route) => void
+  replaceRoute: (route: Route) => void
+  goBack: () => void
+  goForward: () => void
+  canGoBack: () => boolean
+  canGoForward: () => boolean
   openSettings: (settingsModal: SettingsModalKey) => void
   closeSettings: () => void
   setSidebarTab: (tab: SidebarBodyTab) => void
@@ -71,6 +78,7 @@ const SIDEBAR_TAB_STORAGE_KEY = 'aijia-sidebar-tab'
 const SIDEBAR_HIDDEN_STORAGE_KEY = 'aijia-sidebar-hidden'
 const PERMISSION_MODES_STORAGE_KEY = 'aijia-permission-modes-by-session'
 const DEFAULT_ROUTE: Route = { kind: 'home' }
+const MAX_ROUTE_HISTORY = 80
 const KNOWN_PERMISSION_MODES = new Set<PermissionMode>([
   'default',
   'plan',
@@ -120,6 +128,16 @@ function persistRoute(route: Route) {
   } catch {
     // Ignore storage failures; routing should keep working in memory.
   }
+}
+
+function routesEqual(a: Route, b: Route): boolean {
+  return JSON.stringify(a) === JSON.stringify(b)
+}
+
+function pushRoute(stack: Route[], route: Route): Route[] {
+  const last = stack[stack.length - 1]
+  const next = last && routesEqual(last, route) ? stack : [...stack, route]
+  return next.length > MAX_ROUTE_HISTORY ? next.slice(next.length - MAX_ROUTE_HISTORY) : next
 }
 
 function loadPersistedSidebarTab(): SidebarBodyTab {
@@ -191,6 +209,8 @@ function persistPermissionModes(modes: Record<string, PermissionMode>) {
 
 export const useUiStore = create<UiState>((set, get) => ({
   route: loadPersistedRoute(),
+  backStack: [],
+  forwardStack: [],
   settingsModal: null,
   sidebarTab: loadPersistedSidebarTab(),
   sidebarHidden: loadPersistedSidebarHidden(),
@@ -198,9 +218,46 @@ export const useUiStore = create<UiState>((set, get) => ({
   pendingSkill: null,
   permissionModesBySession: loadPersistedPermissionModes(),
   setRoute: (route) => {
+    const current = get().route
+    if (routesEqual(current, route)) {
+      persistRoute(route)
+      return
+    }
+    persistRoute(route)
+    set({
+      route,
+      backStack: pushRoute(get().backStack, current),
+      forwardStack: [],
+    })
+  },
+  replaceRoute: (route) => {
     persistRoute(route)
     set({ route })
   },
+  goBack: () => {
+    const { backStack, route, forwardStack } = get()
+    const previous = backStack[backStack.length - 1]
+    if (!previous) return
+    persistRoute(previous)
+    set({
+      route: previous,
+      backStack: backStack.slice(0, -1),
+      forwardStack: pushRoute(forwardStack, route),
+    })
+  },
+  goForward: () => {
+    const { backStack, route, forwardStack } = get()
+    const next = forwardStack[forwardStack.length - 1]
+    if (!next) return
+    persistRoute(next)
+    set({
+      route: next,
+      backStack: pushRoute(backStack, route),
+      forwardStack: forwardStack.slice(0, -1),
+    })
+  },
+  canGoBack: () => get().backStack.length > 0,
+  canGoForward: () => get().forwardStack.length > 0,
   openSettings: (key) => {
     const normalized: SettingsModalKey =
       (key as string) === 'general' ? 'permissions' : (key as SettingsModalKey)

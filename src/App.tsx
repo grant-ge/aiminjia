@@ -24,6 +24,7 @@ import { useStreaming } from '@/hooks/useStreaming'
 import { useUpdater } from '@/hooks/useUpdater'
 import { useDragDropListener } from '@/hooks/useDragDropListener'
 import { usePendingEventListener } from '@/hooks/usePendingEventListener'
+import { useAppNavigationMenu } from '@/hooks/useAppNavigationMenu'
 import {
   getConversations,
   getPluginInfo,
@@ -104,6 +105,7 @@ function App() {
   useNetworkStatus()
   useDragDropListener()
   usePendingEventListener()
+  useAppNavigationMenu()
   const { t } = useTranslation()
 
   useEffect(() => {

@@ -1,6 +1,6 @@
 import React from 'react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { PanelLeft, PanelRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, PanelLeft, PanelRight } from 'lucide-react'
 import { UpdateAvailableLink } from './UpdateAvailableLink'
 import { TitleBarEnvSwitcher } from './TitleBarEnvSwitcher'
 import { useUpdaterStore } from '@/lib/updaterStore'
@@ -64,6 +64,46 @@ function SidebarToggleButton({ className = '' }: { className?: string }) {
     >
       <Icon className="h-4 w-4" aria-hidden="true" />
     </Button>
+  )
+}
+
+function TitleBarNavigationButtons() {
+  const canGoBack = useUiStore((s) => s.canGoBack())
+  const canGoForward = useUiStore((s) => s.canGoForward())
+  const goBack = useUiStore((s) => s.goBack)
+  const goForward = useUiStore((s) => s.goForward)
+
+  return (
+    <div className="ml-2 flex items-center gap-0.5" onMouseDown={(e) => e.stopPropagation()}>
+      <Button
+        link
+        type="button"
+        aria-label="后退"
+        title="后退"
+        className="titlebar-navigation-button"
+        disabled={!canGoBack}
+        onClick={(e) => {
+          e.stopPropagation()
+          goBack()
+        }}
+      >
+        <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+      </Button>
+      <Button
+        link
+        type="button"
+        aria-label="前进"
+        title="前进"
+        className="titlebar-navigation-button"
+        disabled={!canGoForward}
+        onClick={(e) => {
+          e.stopPropagation()
+          goForward()
+        }}
+      >
+        <ChevronRight className="h-4 w-4" aria-hidden="true" />
+      </Button>
+    </div>
   )
 }
 
@@ -138,6 +178,7 @@ export function TitleBar() {
       >
         <div className="flex items-center pl-20">
           <SidebarToggleButton />
+          <TitleBarNavigationButtons />
         </div>
         <div className="flex items-center">
           {showUpdateLink ? (
@@ -161,6 +202,7 @@ export function TitleBar() {
     >
       <CompactTenantBrand />
       <SidebarToggleButton className="ml-2" />
+      <TitleBarNavigationButtons />
       <div className="flex-1" data-tauri-drag-region />
       <div onMouseDown={(e) => e.stopPropagation()}>
         <UpdateAvailableLink />

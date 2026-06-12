@@ -184,8 +184,17 @@ export function SkillDetailPage({ skillId }: SkillDetailPageProps) {
   const skill = useSkillStore((s) => s.getById(skillId))
   const [detail, setDetail] = useState<SkillDetailInfo | null>(null)
   const setRoute = useUiStore((s) => s.setRoute)
+  const goBack = useUiStore((s) => s.goBack)
+  const canGoBack = useUiStore((s) => s.canGoBack)
   const setPendingSkill = useUiStore((s) => s.setPendingSkill)
   const goToSkillCenter = () => setRoute({ kind: 'skill-center' })
+  const handleBack = () => {
+    if (canGoBack()) {
+      goBack()
+      return
+    }
+    goToSkillCenter()
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -220,8 +229,8 @@ export function SkillDetailPage({ skillId }: SkillDetailPageProps) {
       type="button"
       variant="ghost"
       size="icon"
-      aria-label="返回技能中心"
-      onClick={goToSkillCenter}
+      aria-label="返回"
+      onClick={handleBack}
       icon={<ArrowLeft />}
     />
   )

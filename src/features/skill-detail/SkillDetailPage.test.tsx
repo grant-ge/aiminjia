@@ -64,6 +64,34 @@ describe('SkillDetailPage', () => {
     expect(useUiStore.getState().route).toEqual({ kind: 'home' })
   })
 
+  it('returns to the previous route when opened from a chat card', () => {
+    useUiStore.setState({
+      route: { kind: 'skill-detail', skillId: 'biz-proposal' },
+      backStack: [{ kind: 'chat', conversationId: 'conv-1' }],
+      forwardStack: [],
+    })
+
+    render(<SkillDetailPage skillId="biz-proposal" />)
+
+    fireEvent.click(screen.getByRole('button', { name: '返回' }))
+
+    expect(useUiStore.getState().route).toEqual({ kind: 'chat', conversationId: 'conv-1' })
+  })
+
+  it('falls back to skill center when there is no previous route', () => {
+    useUiStore.setState({
+      route: { kind: 'skill-detail', skillId: 'biz-proposal' },
+      backStack: [],
+      forwardStack: [],
+    })
+
+    render(<SkillDetailPage skillId="biz-proposal" />)
+
+    fireEvent.click(screen.getByRole('button', { name: '返回' }))
+
+    expect(useUiStore.getState().route).toEqual({ kind: 'skill-center' })
+  })
+
   it('renders the English skill name and description when language is English', async () => {
     await i18n.changeLanguage('en-US')
 

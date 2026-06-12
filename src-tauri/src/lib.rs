@@ -25,6 +25,34 @@ use storage::UserScopedPathResolver;
 use tauri::{Emitter, Manager};
 
 const APP_LOG_RETENTION_DAYS: u64 = 3;
+const NAVIGATION_MENU_EVENT: &str = "navigation:menu-command";
+const NAVIGATION_BACK_MENU_ID: &str = "navigation.back";
+const NAVIGATION_FORWARD_MENU_ID: &str = "navigation.forward";
+
+fn install_app_navigation_menu(app: &mut tauri::App) -> tauri::Result<()> {
+    let navigation_menu = tauri::menu::SubmenuBuilder::new(app, "导航")
+        .text(NAVIGATION_BACK_MENU_ID, "后退")
+        .text(NAVIGATION_FORWARD_MENU_ID, "前进")
+        .build()?;
+    let menu = tauri::menu::MenuBuilder::new(app)
+        .item(&navigation_menu)
+        .build()?;
+    app.set_menu(menu)?;
+    app.on_menu_event(|app_handle, event| match event.id().0.as_str() {
+        NAVIGATION_BACK_MENU_ID => {
+            if let Err(err) = app_handle.emit(NAVIGATION_MENU_EVENT, "back") {
+                log::warn!("[app-menu] failed to emit navigation back event: {err}");
+            }
+        }
+        NAVIGATION_FORWARD_MENU_ID => {
+            if let Err(err) = app_handle.emit(NAVIGATION_MENU_EVENT, "forward") {
+                log::warn!("[app-menu] failed to emit navigation forward event: {err}");
+            }
+        }
+        _ => {}
+    });
+    Ok(())
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -55,6 +83,8 @@ pub fn run() {
 
     builder
         .setup(|app| {
+            install_app_navigation_menu(app)?;
+
             // Keep the legacy app data dir only as migration input; runtime data lives in ~/.renlijia/.
             let app_data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&app_data_dir)?;

@@ -80,6 +80,8 @@ export const TAURI_EVENTS = {
   /** Skill registry refreshed (any path: install_custom_skill / import / RefreshSkills tool /
    *  load_skill miss-retry). Frontend stores subscribe to reload their cached skill list. */
   SKILL_REGISTRY_REFRESHED: "skill:registry-refreshed",
+  /** Native app menu requested route history navigation. Payload: "back" | "forward". */
+  NAVIGATION_MENU_COMMAND: "navigation:menu-command",
 } as const;
 
 // ---------------------------------------------------------------------------

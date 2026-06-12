@@ -402,6 +402,22 @@ button:not(:disabled) {
   color: var(--sidebar-foreground);
 }
 
+.titlebar-navigation-button {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  color: color-mix(in srgb, var(--sidebar-foreground) 62%, transparent);
+}
+
+.titlebar-navigation-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--sidebar-accent) 70%, transparent);
+  color: var(--sidebar-foreground);
+}
+
+.titlebar-navigation-button:disabled {
+  opacity: 0.32;
+}
+
 /* ===== Assistant Markdown ===== */
 .assistant-markdown {
   color: var(--color-text-primary);
