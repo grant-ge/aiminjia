@@ -103,13 +103,6 @@ pub enum TeamEvent {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         feedback: Option<String>,
     },
-    PeerMessage {
-        ts: String,
-        from: String,
-        to: String,
-        text: String,
-        variant: String,
-    },
 }
 
 impl TeamEvent {
@@ -120,7 +113,6 @@ impl TeamEvent {
             TeamEvent::AgentSpawn { ts, .. } => ts,
             TeamEvent::AgentStop { ts, .. } => ts,
             TeamEvent::SendMessage { ts, .. } => ts,
-            TeamEvent::PeerMessage { ts, .. } => ts,
         }
     }
 }
@@ -433,7 +425,6 @@ fn scan_teams_dir(
             members.iter().map(|m| m.agent_name.clone()).collect();
         let mut events = lc.drain_for(&team_name, &member_names);
         append_events_from_team_chat_jsonl(&mut events, &paths.team_chat_jsonl(), &team_name);
-        append_peer_messages_from_teammate_transcripts(&mut events, &members, &paths);
         events.sort_by(|a, b| a.ts().cmp(b.ts()));
 
         sessions.push(TeamSession {
@@ -543,113 +534,6 @@ fn append_events_from_team_chat_jsonl(out: &mut Vec<TeamEvent>, path: &Path, _te
     }
 }
 
-fn append_peer_messages_from_teammate_transcripts(
-    out: &mut Vec<TeamEvent>,
-    members: &[TeamAgent],
-    paths: &TeamPaths<'_>,
-) {
-    for member in members {
-        if member.agent_name == "team-lead" {
-            continue;
-        }
-        let path = paths.teammate_transcript(&member.agent_id);
-        let Ok(raw) = fs::read_to_string(&path) else {
-            continue;
-        };
-
-        let mut anchor_ts = member.spawned_at.clone();
-        let mut assistant_after_anchor = 0usize;
-
-        for line in raw.lines() {
-            let trimmed = strip_trailing_marker(line.trim());
-            if trimmed.is_empty() {
-                continue;
-            }
-            let Ok(v) = serde_json::from_str::<Value>(trimmed) else {
-                continue;
-            };
-            let role = v.get("role").and_then(|x| x.as_str()).unwrap_or("");
-            let content = v
-                .get("content")
-                .and_then(|x| x.as_str())
-                .unwrap_or("")
-                .trim();
-
-            if role == "user" {
-                if let Some(ts) = matching_prompt_ts(out, &member.agent_name, content) {
-                    anchor_ts = ts.to_string();
-                    assistant_after_anchor = 0;
-                }
-                continue;
-            }
-
-            if role != "assistant" || content.is_empty() || has_transcript_tool_calls(&v) {
-                continue;
-            }
-            if event_has_message(out, &member.agent_name, "team-lead", content) {
-                continue;
-            }
-
-            assistant_after_anchor += 1;
-            out.push(TeamEvent::PeerMessage {
-                ts: ts_after(&anchor_ts, assistant_after_anchor),
-                from: member.agent_name.clone(),
-                to: "team-lead".to_string(),
-                text: content.to_string(),
-                variant: "text".to_string(),
-            });
-        }
-    }
-}
-
-fn matching_prompt_ts<'a>(events: &'a [TeamEvent], to: &str, text: &str) -> Option<&'a str> {
-    if text.is_empty() {
-        return None;
-    }
-    events.iter().find_map(|event| match event {
-        TeamEvent::SendMessage {
-            ts,
-            to: event_to,
-            text: event_text,
-            variant,
-            ..
-        } if event_to == to && variant == "text" && event_text.trim() == text => Some(ts.as_str()),
-        _ => None,
-    })
-}
-
-fn has_transcript_tool_calls(value: &Value) -> bool {
-    match value.get("tool_calls").and_then(|x| x.as_array()) {
-        Some(calls) => !calls.is_empty(),
-        None => false,
-    }
-}
-
-fn event_has_message(events: &[TeamEvent], from: &str, to: &str, text: &str) -> bool {
-    events.iter().any(|event| match event {
-        TeamEvent::SendMessage {
-            from: event_from,
-            to: event_to,
-            text: event_text,
-            ..
-        }
-        | TeamEvent::PeerMessage {
-            from: event_from,
-            to: event_to,
-            text: event_text,
-            ..
-        } => event_from == from && event_to == to && event_text.trim() == text.trim(),
-        _ => false,
-    })
-}
-
-fn ts_after(anchor: &str, offset_seconds: usize) -> String {
-    let Ok(dt) = chrono::DateTime::parse_from_rfc3339(anchor) else {
-        return anchor.to_string();
-    };
-    (dt.with_timezone(&chrono::Utc) + chrono::Duration::seconds(offset_seconds as i64)).to_rfc3339()
-}
-
 fn parse_team_name_from_text(text: &str) -> Option<String> {
     let prefix = "Team `";
     let suffix = "` created";
@@ -744,7 +628,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn scan_teams_dir_surfaces_teammate_assistant_output_as_peer_message() {
+    async fn scan_teams_dir_does_not_surface_private_assistant_transcript_as_team_message() {
         let dir = tempdir().unwrap();
         let conv_dir = dir.path().join("conversations").join("conv-peer");
         std::fs::create_dir_all(&conv_dir).unwrap();
@@ -798,14 +682,12 @@ mod tests {
 
         let sessions = scan_teams_dir(&conv_dir, "conv-peer", &LifecycleByTeam::default());
         assert_eq!(sessions.len(), 1);
-        assert!(
-            sessions[0].events.iter().any(|event| matches!(
-                event,
-                TeamEvent::PeerMessage { from, to, text, .. }
-                    if from == "researcher" && to == "team-lead" && text == "reply from researcher"
-            )),
-            "teammate assistant transcript output should be visible in the team process"
-        );
+        assert_eq!(sessions[0].events.len(), 1);
+        assert!(matches!(
+            &sessions[0].events[0],
+            TeamEvent::SendMessage { from, to, text, .. }
+                if from == "team-lead" && to == "researcher" && text == "hello"
+        ));
     }
 
     #[tokio::test]

@@ -960,7 +960,7 @@
     "openTableHint": "主持人按议题召集",
     "moreMembers": "更多",
     "members": "团队成员",
-    "directorInvites": "主持人将按议题召集 3-5 位专家",
+    "directorInvites": "主持人将按议题召集 3-4 位专家",
     "pickTopic": "点击一个议题直接开始：",
     "startingTopic": "正在启动：{{topic}}...",
     "topicQuote": "「{{topic}}」",
@@ -1282,6 +1282,15 @@
         "planApprove": "{{from}} 同意方案",
         "planReject": "{{from}} 修改建议：{{feedback}}",
         "planRejectNoFeedback": "{{from}} 不同意方案"
+      },
+      "facilitation": {
+        "assignment": "Lead 向 {{count}} 位专家发起首轮观点征集",
+        "cross_review": "Lead 发起交叉点评",
+        "debate": "Lead 推进辩论轮次",
+        "instruction": "Lead 发出主持指令",
+        "hiddenLowSignal": "Lead 主持进度更新（{{count}} 条）",
+        "expand": "展开",
+        "collapse": "收起"
       }
     }
   },
@@ -1707,6 +1716,25 @@
   },
   "schedules": {
     "pageTitle": "定时任务",
+    "console": {
+      "kicker": "自动化控制台",
+      "title": "定时任务运行台",
+      "desc": "集中查看任务健康状态、下次触发时间和常用操作，让周期性工作像一个稳定的后台队列一样可控。",
+      "active": "运行中",
+      "paused": "已暂停",
+      "next24h": "未来 24h",
+      "needsCare": "需处理",
+      "cancelledHint": "管理已停止触发的任务。",
+      "listHint": "按下次触发时间和运行状态检查任务。",
+      "nextUp": "下一次执行",
+      "nextUpTask": "即将触发：{{title}}",
+      "noNext": "暂无即将触发的任务",
+      "health": "任务健康"
+    },
+    "quickCreate": "快捷创建",
+    "quickCreateDesc": "从常见场景开始，再按实际节奏微调。",
+    "templatesTitle": "常用模板",
+    "templatesDesc": "适合周期性例行工作的起点。",
     "newTaskAria": "新建日程",
     "taskList": "任务列表",
     "cancelled": "已取消",

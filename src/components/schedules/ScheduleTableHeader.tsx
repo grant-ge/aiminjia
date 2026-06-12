@@ -7,7 +7,7 @@ interface ScheduleTableHeaderProps {
 }
 
 export const SCHEDULE_TABLE_GRID_COLUMNS =
-  'grid-cols-[minmax(20rem,1fr)_minmax(13rem,0.75fr)_7rem_9rem]'
+  'grid-cols-[minmax(0,1.25fr)_minmax(8rem,0.8fr)_max-content_max-content]'
 
 export function ScheduleTableHeader({ columns }: ScheduleTableHeaderProps) {
   return (

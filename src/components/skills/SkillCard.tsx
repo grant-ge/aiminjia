@@ -38,7 +38,7 @@ export function SkillCard({ title, meta, desc, iconNode, iconBg = 'bg-[#fbeed8] 
       }
     : {}
   const interactiveClass = onClick
-    ? 'cursor-pointer hover:border-primary/50 hover:shadow-[var(--shadow-card-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+    ? 'cursor-pointer hover:border-primary/40 hover:bg-card/95 hover:shadow-[var(--shadow-skill-card-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
     : ''
 
   return (
@@ -48,7 +48,7 @@ export function SkillCard({ title, meta, desc, iconNode, iconBg = 'bg-[#fbeed8] 
       data-aijia-skill-id={skillId}
       data-aijia-skill-source={skillSource}
       {...interactiveProps}
-      className={`group relative flex ${height} flex-col rounded-md border border-border bg-card p-3 shadow-[var(--shadow-card)] transition-all duration-150 ${interactiveClass}`}
+      className={`group relative flex ${height} flex-col rounded-md border border-border/65 bg-card p-3 shadow-[var(--shadow-skill-card)] transition-[border-color,background-color,box-shadow] duration-150 ${interactiveClass}`}
     >
       <div className="flex items-center gap-2.5">
         <div

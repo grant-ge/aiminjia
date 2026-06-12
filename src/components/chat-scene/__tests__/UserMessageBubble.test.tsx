@@ -10,7 +10,7 @@ describe("UserMessageBubble", () => {
     await i18n.changeLanguage("zh-CN");
   });
 
-  it("renders text on a primary-colored bubble", () => {
+  it("renders text on a sidebar-colored bubble", () => {
     render(<UserMessageBubble text="Hello" />);
     expect(screen.getByText("Hello")).toBeInTheDocument();
   });
@@ -33,10 +33,13 @@ describe("UserMessageBubble", () => {
     await waitFor(() => expect(screen.getByText("已复制")).toBeInTheDocument());
   });
 
-  it("bubble uses bg-primary; right-top corner is squared to point at the avatar", () => {
+  it("bubble uses sidebar background with normal foreground text", () => {
     const { container } = render(<UserMessageBubble text="X" />);
     const bubble = container.querySelector('[data-testid="user-bubble"]');
-    expect(bubble?.className).toMatch(/bg-primary/);
+    expect(bubble?.className).toMatch(/bg-sidebar/);
+    expect(bubble?.className).toMatch(/text-foreground/);
+    expect(bubble?.className).not.toMatch(/bg-primary/);
+    expect(bubble?.className).not.toMatch(/text-primary-foreground/);
     expect(bubble?.className).toMatch(/rounded-md/);
     expect(bubble?.className).not.toMatch(/rounded-tr-md/);
     // 仍保持下角对称，未引入 rounded-bl-md / rounded-br-md 这类形变

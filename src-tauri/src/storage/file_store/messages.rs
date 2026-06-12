@@ -553,13 +553,38 @@ fn message_dedup_key(msg: &StoredMessage) -> String {
 /// Strip hallucinated XML from assistant message content.text field.
 fn sanitize_assistant_content(mut content: serde_json::Value) -> serde_json::Value {
     if let Some(text) = content.get("text").and_then(|t| t.as_str()) {
-        let cleaned =
-            strip_thinking_block_duplicate_paragraphs(&strip_hallucinated_xml(text), &content);
+        let cleaned = collapse_adjacent_duplicate_paragraphs(
+            &strip_thinking_block_duplicate_paragraphs(&strip_hallucinated_xml(text), &content),
+        );
         if cleaned.len() != text.len() {
             content["text"] = serde_json::Value::String(cleaned);
         }
     }
     content
+}
+
+fn collapse_adjacent_duplicate_paragraphs(text: &str) -> String {
+    let mut out = Vec::new();
+    let mut previous_normalized: Option<String> = None;
+
+    for paragraph in text.split("\n\n") {
+        let trimmed = paragraph.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let normalized = normalize_text_for_overlap(trimmed);
+        if normalized.chars().count() >= 16
+            && previous_normalized
+                .as_deref()
+                .is_some_and(|previous| previous == normalized)
+        {
+            continue;
+        }
+        previous_normalized = Some(normalized);
+        out.push(trimmed);
+    }
+
+    out.join("\n\n")
 }
 
 fn strip_thinking_block_duplicate_paragraphs(text: &str, content: &serde_json::Value) -> String {
@@ -678,6 +703,20 @@ mod tests {
         assert_eq!(
             sanitized["text"],
             "Keep this English sentence. It is part of the answer."
+        );
+    }
+
+    #[test]
+    fn assistant_content_sanitize_collapses_adjacent_duplicate_paragraphs() {
+        let content = serde_json::json!({
+            "text": "四位专家均已入场。现在逐一读取他们的首轮观点。\n\n四位专家均已入场。现在逐一读取他们的首轮观点。\n\nThe agents are still working through their processes. Let me wait a bit more and check again.\n\nThe agents are still working through their processes. Let me wait a bit more and check again.\n\nThe agents are still working through their processes. Let me wait a bit more and check again."
+        });
+
+        let sanitized = sanitize_assistant_content(content);
+
+        assert_eq!(
+            sanitized["text"],
+            "四位专家均已入场。现在逐一读取他们的首轮观点。\n\nThe agents are still working through their processes. Let me wait a bit more and check again."
         );
     }
 

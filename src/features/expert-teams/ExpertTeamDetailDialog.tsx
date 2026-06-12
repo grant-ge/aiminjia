@@ -155,6 +155,9 @@ export function ExpertTeamDetailDialog({
               loading={busy}
               icon={<UsersRound />}
               onClick={() => onStart(team.id)}
+              data-aijia-expert-team-action="start"
+              data-aijia-expert-team-id={team.id}
+              data-aijia-expert-team-name={team.name}
             >
               {busy ? t('ExpertTeams.starting') : t('ExpertTeams.summon')}
             </Button>

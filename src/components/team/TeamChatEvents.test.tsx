@@ -12,7 +12,7 @@
  * 这样断言可以精确锁定调用的 key。
  */
 import '@testing-library/jest-dom'
-import { render } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('react-i18next', () => ({
@@ -44,6 +44,19 @@ function textMessage(text: string): TeamEvent {
     ts: '2026-05-15T15:01:00Z',
     from: 'con-debater',
     to: 'team-lead',
+    text,
+    isError: false,
+    toolCallId: '',
+    variant: 'text',
+  }
+}
+
+function leadMessage(to: string, text: string, ts = '2026-05-15T15:01:00Z'): TeamEvent {
+  return {
+    kind: 'send_message',
+    ts,
+    from: 'team-lead',
+    to,
     text,
     isError: false,
     toolCallId: '',
@@ -105,7 +118,6 @@ describe('TeamChatEvents – send_message variant 分流', () => {
       {
         kind: 'agent_stop',
         ts: '2026-05-15T15:01:00Z',
-        agentId: 'brand-lead',
         agentName: 'brand-lead',
       },
     ]
@@ -209,5 +221,81 @@ describe('TeamChatEvents – send_message variant 分流', () => {
     )
     expect(container.textContent).toContain('薪酬专家')
     expect(container.textContent).not.toContain('compensation-expert')
+  })
+
+  it('merges repeated Lead assignments and displays the instruction directly', () => {
+    const text = '请就议题「618 大促营销节奏怎么排」发表你的观点，200-400 字。'
+    const events: TeamEvent[] = [
+      leadMessage('brand-lead', text),
+      leadMessage('content-lead', text, '2026-05-15T15:01:01Z'),
+      leadMessage('channel-manager', text, '2026-05-15T15:01:02Z'),
+      leadMessage('growth-hacker', text, '2026-05-15T15:01:03Z'),
+    ]
+
+    const { container } = render(<TeamChatEvents events={events} />)
+
+    expect(container.textContent).toContain('team.chat.facilitation.assignment')
+    expect(container.textContent).toContain('"count":4')
+    expect(container.textContent).toContain('brand-lead、content-lead、channel-manager、growth-hacker')
+    expect(container.querySelectorAll('[data-testid="md"]')).toHaveLength(1)
+    expect(container.querySelector('[aria-expanded]')).not.toBeInTheDocument()
+  })
+
+  it('hides low-signal Lead waiting chatter from the discussion stream', () => {
+    const events: TeamEvent[] = [
+      leadMessage('legal-director', '收到法务总监的观点，已记录。正在等待其他专家发言。'),
+      textMessage('我从法务角度看，核心风险是合同变更依据不足。'),
+    ]
+
+    const { container } = render(<TeamChatEvents events={events} />)
+
+    expect(container.textContent).toContain('我从法务角度看')
+    expect(container.textContent).toContain('team.chat.facilitation.hiddenLowSignal')
+    expect(container.textContent).not.toContain('收到法务总监')
+  })
+
+  it('classifies cross-review invitations before low-signal progress words', () => {
+    const text = '各位专家，第一轮观点已全部收到。进入互相点评环节，请各位发表简短看法。'
+    const events: TeamEvent[] = [
+      leadMessage('business-lead', text),
+      leadMessage('analyst', text, '2026-05-15T15:01:01Z'),
+      leadMessage('hr', text, '2026-05-15T15:01:02Z'),
+      leadMessage('process-advisor', text, '2026-05-15T15:01:03Z'),
+    ]
+
+    const { container } = render(<TeamChatEvents events={events} />)
+
+    expect(container.textContent).toContain('team.chat.facilitation.cross_review')
+    expect(container.textContent).not.toContain('team.chat.facilitation.hiddenLowSignal')
+  })
+
+  it('shows valuable facilitation notes directly without a duplicate folded preview', () => {
+    const text = '各位专家，第一轮观点已全部收到。进入互相点评环节，请各位就核心根因发表看法。'
+    const events: TeamEvent[] = [
+      leadMessage('business-lead', text),
+      leadMessage('analyst', text, '2026-05-15T15:01:01Z'),
+    ]
+
+    const { container } = render(<TeamChatEvents events={events} />)
+
+    expect(screen.getByLabelText('Lead')).toBeInTheDocument()
+    expect(container.textContent).toContain('Lead → business-lead、analyst')
+    expect(screen.queryByRole('button', { name: /team.chat.facilitation.expand/ })).not.toBeInTheDocument()
+    expect(screen.getAllByTestId('md')).toHaveLength(1)
+    expect(screen.getByTestId('md')).toHaveTextContent(text)
+  })
+
+  it('keeps progress-only Lead chatter compact but expandable', () => {
+    const text = '收到法务总监的观点，已记录。正在等待其他专家发言。'
+    const events: TeamEvent[] = [
+      leadMessage('legal-director', text),
+      leadMessage('cfo', '仍在等待 CEO 的发言。', '2026-05-15T15:01:01Z'),
+    ]
+
+    render(<TeamChatEvents events={events} />)
+
+    expect(screen.queryByText(text)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /team.chat.facilitation.expand/ }))
+    expect(screen.getAllByTestId('md')[0]).toHaveTextContent(text)
   })
 })

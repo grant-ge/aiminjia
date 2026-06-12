@@ -208,7 +208,7 @@ function PlatformCard({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="flex min-h-[72px] items-center justify-between rounded-md border border-border bg-card px-4 py-3 shadow-[var(--shadow-card)] transition-shadow hover:shadow-[var(--shadow-card-hover)]">
+    <div className="flex min-h-[72px] items-center justify-between rounded-md border border-border/65 bg-card px-4 py-3 shadow-[var(--shadow-channel-item)] transition-[border-color,background-color,box-shadow] hover:border-border/80 hover:bg-card/95 hover:shadow-[var(--shadow-channel-item-hover)]">
       <div className="flex min-w-0 items-center gap-3">
         <PlatformIcon platform={platform} />
         <div className="min-w-0">

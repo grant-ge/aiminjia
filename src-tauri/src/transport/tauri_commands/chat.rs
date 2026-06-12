@@ -2264,7 +2264,8 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         };
 
         // 第二步：独立计算运行时权限白名单（与 schema 过滤是两回事）
-        let runtime_allowed_tools: std::collections::HashSet<String> = match &employee_overrides {
+        let mut runtime_allowed_tools: std::collections::HashSet<String> = match &employee_overrides
+        {
             Some(ov) if !ov.tool_whitelist.is_empty() => ov
                 .tool_whitelist
                 .iter()
@@ -2287,6 +2288,30 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             &self.services.app,
             request.conversation_id.as_str(),
         );
+        let is_expert_team_conversation = {
+            let base = self.services.db().base_dir().to_path_buf();
+            match crate::storage::file_store::conversations::read_conversation_source(
+                &base,
+                request.conversation_id.as_str(),
+            ) {
+                Ok(crate::storage::file_store::types::ConversationSource::ExpertTeam {
+                    ..
+                }) => true,
+                Ok(_) => false,
+                Err(e) => {
+                    log::warn!(
+                        "[expert-team-tools] conv={} source unreadable: {e:#}",
+                        request.conversation_id
+                    );
+                    false
+                }
+            }
+        };
+        if is_expert_team_conversation {
+            chat_runtime_impl::filter_expert_team_director_allowed_tools(
+                &mut runtime_allowed_tools,
+            );
+        }
 
         // ── Build ToolDescriptionContext for this turn ──────────────────
         // Tools whose description depends on session state (notably
@@ -2331,7 +2356,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             log::debug!("[tool-desc-trace] built overrides: keys={:?}", keys);
         }
 
-        let visible_tool_defs = chat_runtime_impl::build_visible_tool_defs(
+        let mut visible_tool_defs = chat_runtime_impl::build_visible_tool_defs(
             self.services.tool_registry.as_ref(),
             authorized_workspace.is_some(),
             schema_filter,
@@ -2339,6 +2364,16 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             &request_scoped_overrides,
         )
         .await;
+        if is_expert_team_conversation {
+            let before = visible_tool_defs.len();
+            chat_runtime_impl::filter_expert_team_director_tool_defs(&mut visible_tool_defs);
+            log::info!(
+                "[expert-team-tools] filtered director tools conv={} before={} after={}",
+                request.conversation_id,
+                before,
+                visible_tool_defs.len()
+            );
+        }
         {
             let agent_has_emp = visible_tool_defs
                 .iter()

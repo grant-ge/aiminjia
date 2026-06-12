@@ -159,8 +159,7 @@ function FileLinkChip({
   // 未知值,直接 FILE_TYPE_ICON[fileType] 会 undefined → React "Element type
   // is invalid")。
   // 视觉:旧版本是显示 "XLS"/"PDF" text label,但内层 badge bg 与 button text
-  // 都是 primary-foreground 系(15% white on white)对比度太低,蓝色 bubble
-  // 上几乎看不见。换 lucide 图标 + currentColor 描边,清晰多了。
+  // 对比度太低,在用户 bubble 上几乎看不见。换 lucide 图标 + currentColor 描边,清晰多了。
   const Icon: LucideIcon =
     (matched?.fileType && FILE_TYPE_ICON[matched.fileType]) || inferIconFromName(fileName)
 
@@ -175,7 +174,7 @@ function FileLinkChip({
       // `px-1.5` 稍宽)让 icon 与文字之间不挤;尺寸略大于输入框 chip 是
       // 故意的——气泡 text-sm 比 composer text-sm 视觉密度更松,小一点的
       // chip 在这里反而显薄。
-      className="mx-0.5 inline-flex items-center gap-1 rounded-md bg-primary-foreground/15 px-2 py-1 align-middle text-xs leading-none text-primary-foreground transition-opacity hover:opacity-80"
+      className="mx-0.5 inline-flex items-center gap-1 rounded-md bg-foreground/10 px-2 py-1 align-middle text-xs leading-none text-foreground transition-opacity hover:opacity-80"
       title={text}
     >
       <Icon aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
@@ -308,20 +307,20 @@ export function UserBubbleMarkdown({ text, conversationId, files }: UserBubbleMa
               return <code className={className}>{children}</code>
             }
             return (
-              <code className="rounded-md bg-primary-foreground/15 px-1 text-[0.8125em]">
+              <code className="rounded-md bg-foreground/10 px-1 text-[0.8125em]">
                 {children}
               </code>
             )
           },
           pre: ({ children }) => (
-            <pre className="overflow-x-auto rounded-md bg-primary-foreground/10 p-2 text-xs">
+            <pre className="overflow-x-auto rounded-md bg-foreground/10 p-2 text-xs">
               {children}
             </pre>
           ),
           ul: ({ children }) => <ul className="list-disc pl-5">{children}</ul>,
           ol: ({ children }) => <ol className="list-decimal pl-5">{children}</ol>,
           blockquote: ({ children }) => (
-            <blockquote className="border-l-2 border-primary-foreground/40 pl-3 opacity-90">
+            <blockquote className="border-l-2 border-foreground/30 pl-3 opacity-90">
               {children}
             </blockquote>
           ),

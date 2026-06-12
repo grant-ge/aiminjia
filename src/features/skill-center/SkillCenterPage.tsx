@@ -630,7 +630,7 @@ function SkillCenterState({
   onAction?: () => void;
 }) {
   return (
-    <div className="col-span-full rounded-md border border-dashed border-border bg-card p-6 text-sm shadow-[var(--shadow-card)]">
+    <div className="col-span-full rounded-md border border-dashed border-border/70 bg-card p-6 text-sm shadow-[var(--shadow-skill-card)]">
       <div className="font-semibold text-foreground">{title}</div>
       {desc ? <p className="mt-1 text-muted-foreground">{desc}</p> : null}
       {actionLabel && onAction ? (

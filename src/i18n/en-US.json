@@ -968,7 +968,7 @@
     "openTableHint": "Director invites experts by topic",
     "moreMembers": "More",
     "members": "Members",
-    "directorInvites": "The director will invite 3-5 experts based on the topic",
+    "directorInvites": "The director will invite 3-4 experts based on the topic",
     "pickTopic": "Start with a topic:",
     "startingTopic": "Starting: {{topic}}...",
     "topicQuote": "\"{{topic}}\"",
@@ -1293,6 +1293,15 @@
         "planApprove": "{{from}} approved the plan",
         "planReject": "{{from}} suggested changes: {{feedback}}",
         "planRejectNoFeedback": "{{from}} rejected the plan"
+      },
+      "facilitation": {
+        "assignment": "Lead asked {{count}} experts for first-round views",
+        "cross_review": "Lead started cross-review",
+        "debate": "Lead advanced the debate round",
+        "instruction": "Lead sent a facilitation instruction",
+        "hiddenLowSignal": "Lead progress updates ({{count}})",
+        "expand": "Expand",
+        "collapse": "Collapse"
       }
     }
   },
@@ -1718,6 +1727,25 @@
   },
   "schedules": {
     "pageTitle": "Scheduled Tasks",
+    "console": {
+      "kicker": "Automation console",
+      "title": "Scheduled task console",
+      "desc": "Track task health, next run times, and common operations in one place so recurring work stays under control.",
+      "active": "Active",
+      "paused": "Paused",
+      "next24h": "Next 24h",
+      "needsCare": "Needs care",
+      "cancelledHint": "Manage tasks that no longer trigger.",
+      "listHint": "Review tasks by next run time and operating state.",
+      "nextUp": "Next run",
+      "nextUpTask": "Up next: {{title}}",
+      "noNext": "No upcoming runs",
+      "health": "Task health"
+    },
+    "quickCreate": "Quick create",
+    "quickCreateDesc": "Start from a common scenario, then tune the cadence.",
+    "templatesTitle": "Common templates",
+    "templatesDesc": "Starting points for recurring routine work.",
     "newTaskAria": "New scheduled task",
     "taskList": "Task list",
     "cancelled": "Cancelled",

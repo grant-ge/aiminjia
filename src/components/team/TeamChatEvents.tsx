@@ -1,4 +1,4 @@
-import type { JSX } from 'react'
+import { useState, type JSX } from 'react'
 import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 
@@ -32,7 +32,8 @@ interface TeamChatEventsProps {
  */
 export function TeamChatEvents({ events, onDrillAgent }: TeamChatEventsProps) {
   const { t } = useTranslation()
-  if (events.length === 0) {
+  const renderItems = buildTeamChatRenderItems(events)
+  if (renderItems.length === 0) {
     return (
       <div className="flex h-full items-center justify-center px-6 py-12 text-sm text-muted-foreground">
         {t('team.chat.empty')}
@@ -45,17 +46,18 @@ export function TeamChatEvents({ events, onDrillAgent }: TeamChatEventsProps) {
 
   return (
     <div className="flex flex-col py-4">
-      {events.map((event, idx) => {
+      {renderItems.map((item, idx) => {
+        const event = item.kind === 'event' ? item.event : item.anchor
         const groupLabel = formatTimestampForGroup(event.ts, lastTsForGroup)
         if (groupLabel) {
           lastTsForGroup = event.ts
         }
-        const currentSpeaker = speakerKey(event)
+        const currentSpeaker = item.kind === 'event' ? speakerKey(event) : null
         const speakerChanged = currentSpeaker !== null && lastSpeaker !== null && currentSpeaker !== lastSpeaker
         if (currentSpeaker !== null) lastSpeaker = currentSpeaker
         return (
           <div
-            key={idx}
+            key={`${item.kind}-${idx}`}
             className={cn(
               'flex flex-col gap-1.5',
               idx === 0 ? '' : speakerChanged ? 'mt-5' : 'mt-3',
@@ -68,12 +70,152 @@ export function TeamChatEvents({ events, onDrillAgent }: TeamChatEventsProps) {
                 </span>
               </div>
             )}
-            <TeamEventRow event={event} onDrillAgent={onDrillAgent} />
+            {item.kind === 'event' ? (
+              <TeamEventRow event={item.event} onDrillAgent={onDrillAgent} />
+            ) : (
+              <FacilitationNote item={item} />
+            )}
           </div>
         )
       })}
     </div>
   )
+}
+
+type TeamChatRenderItem =
+  | { kind: 'event'; event: TeamEvent }
+  | {
+      kind: 'facilitation'
+      anchor: Extract<TeamEvent, { kind: 'send_message' }>
+      category: FacilitationCategory
+      count: number
+      recipients: string[]
+      text: string
+      details: FacilitationDetail[]
+    }
+
+type FacilitationCategory = 'assignment' | 'cross_review' | 'debate' | 'instruction' | 'hidden_low_signal'
+
+interface FacilitationDetail {
+  to: string
+  text: string
+  ts: string
+}
+
+function buildTeamChatRenderItems(events: TeamEvent[]): TeamChatRenderItem[] {
+  const items: TeamChatRenderItem[] = []
+  let idx = 0
+  while (idx < events.length) {
+    const event = events[idx]
+    if (!isLeadTextMessage(event)) {
+      items.push({ kind: 'event', event })
+      idx += 1
+      continue
+    }
+
+    const category = classifyLeadMessage(event.text)
+    if (category === 'hidden_low_signal') {
+      let count = 1
+      const details: FacilitationDetail[] = [facilitationDetail(event)]
+      let next = idx + 1
+      while (
+        next < events.length &&
+        isLeadTextMessage(events[next]) &&
+        classifyLeadMessage((events[next] as Extract<TeamEvent, { kind: 'send_message' }>).text) ===
+          'hidden_low_signal'
+      ) {
+        details.push(facilitationDetail(events[next] as Extract<TeamEvent, { kind: 'send_message' }>))
+        count += 1
+        next += 1
+      }
+      items.push({
+        kind: 'facilitation',
+        anchor: event,
+        category,
+        count,
+        recipients: [],
+        text: '',
+        details,
+      })
+      idx = next
+      continue
+    }
+
+    const normalized = normalizeLeadText(event.text)
+    const recipients = [event.to]
+    const details: FacilitationDetail[] = [facilitationDetail(event)]
+    let count = 1
+    let next = idx + 1
+    while (
+      next < events.length &&
+      isLeadTextMessage(events[next]) &&
+      normalizeLeadText((events[next] as Extract<TeamEvent, { kind: 'send_message' }>).text) ===
+        normalized &&
+      classifyLeadMessage((events[next] as Extract<TeamEvent, { kind: 'send_message' }>).text) ===
+        category
+    ) {
+      const nextEvent = events[next] as Extract<TeamEvent, { kind: 'send_message' }>
+      recipients.push(nextEvent.to)
+      details.push(facilitationDetail(nextEvent))
+      count += 1
+      next += 1
+    }
+
+    if (count > 1 || category !== 'instruction') {
+      items.push({
+        kind: 'facilitation',
+        anchor: event,
+        category,
+        count,
+        recipients,
+        text: event.text,
+        details,
+      })
+    } else {
+      items.push({ kind: 'event', event })
+    }
+    idx = next
+  }
+  return items
+}
+
+function facilitationDetail(event: Extract<TeamEvent, { kind: 'send_message' }>): FacilitationDetail {
+  return {
+    to: event.to,
+    text: event.text,
+    ts: event.ts,
+  }
+}
+
+function isLeadTextMessage(
+  event: TeamEvent,
+): event is Extract<TeamEvent, { kind: 'send_message' }> {
+  return event.kind === 'send_message' && event.variant === 'text' && isLeadName(event.from)
+}
+
+function normalizeLeadText(text: string): string {
+  return text.replace(/\s+/g, ' ').trim()
+}
+
+function classifyLeadMessage(text: string): FacilitationCategory {
+  const normalized = normalizeLeadText(text)
+  if (/交叉点评|互相点评|第二轮|其他三位|核心观点摘要|阅后点评|回应、补充或质疑|质询|反驳|最后一轮/.test(normalized)) {
+    return 'cross_review'
+  }
+  if (/正方|反方|观察员|辩手|论点|陈词/.test(normalized)) {
+    return 'debate'
+  }
+  if (/欢迎加入|自我介绍|开场热身|圆桌讨论正式开始|各自给出|第一轮|首轮|发表你的观点|直接发表|请就议题|请开始|请分享/.test(normalized)) {
+    return 'assignment'
+  }
+  if (
+    /收到|已记录|正在等待|保持等待|尚未提交|尚未发言|其他成员已就位|请尽快|准备好了吗/.test(
+      normalized,
+    )
+  ) {
+    return 'hidden_low_signal'
+  }
+  return 'instruction'
 }
 
 /** 区分发言人，用于决定相邻消息之间是否加大间隔。系统事件返回 null（不影响发言人切换判断）。 */
@@ -294,6 +436,109 @@ function systemMarkerClass(icon: string): string {
     default:
       return 'bg-muted-foreground/55'
   }
+}
+
+function FacilitationNote({ item }: { item: Extract<TeamChatRenderItem, { kind: 'facilitation' }> }) {
+  const { t } = useTranslation()
+  const [expanded, setExpanded] = useState(false)
+  const teamVisual = useTeamVisualContext()
+  const recipientNames = item.recipients
+    .map((name) => formatAgentDisplayName(teamVisual, name))
+    .join('、')
+  const label =
+    item.category === 'hidden_low_signal'
+      ? t('team.chat.facilitation.hiddenLowSignal', { count: item.count })
+      : t(`team.chat.facilitation.${item.category}`, {
+          count: item.count,
+          recipients: recipientNames,
+        })
+  if (item.category !== 'hidden_low_signal') {
+    return (
+      <div className="flex flex-col items-end gap-1 px-2">
+        <div className="flex flex-row-reverse items-center gap-2 text-[11px] text-muted-foreground">
+          <AgentAvatar name="team-lead" size="md" />
+          <div className="flex flex-col items-end">
+            <div className="flex flex-wrap items-center justify-end gap-1.5">
+              <span>
+                <span className="font-medium text-foreground">{formatLeadDisplayName('team-lead')}</span>
+                {recipientNames ? ` → ${recipientNames}` : null}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                {label}
+              </span>
+              <span className="opacity-60">{formatClock(item.anchor.ts)}</span>
+            </div>
+          </div>
+        </div>
+        <div className="w-fit max-w-[85%] break-words rounded-md border border-border bg-card px-3 py-2 text-sm leading-6 text-foreground shadow-[var(--shadow-card)]">
+          {item.text ? (
+            <AssistantMarkdown text={item.text} />
+          ) : (
+            <span className="italic text-muted-foreground">{t('team.chat.emptyText')}</span>
+          )}
+        </div>
+      </div>
+    )
+  }
+  const actionLabel = expanded ? t('team.chat.facilitation.collapse') : t('team.chat.facilitation.expand')
+  return (
+    <div className="flex justify-end px-2">
+      <div
+        className={cn(
+          'max-w-[88%] overflow-hidden rounded-md border text-xs leading-5 text-muted-foreground',
+          item.category === 'hidden_low_signal'
+            ? 'border-primary/20 bg-primary/5'
+            : 'border-border bg-muted/35',
+        )}
+      >
+        <button
+          type="button"
+          className="flex w-full items-start justify-between gap-3 px-3 py-2 text-left transition-colors hover:bg-muted/45"
+          onClick={() => setExpanded((value) => !value)}
+          aria-expanded={expanded}
+          aria-label={`${actionLabel} ${label}`}
+        >
+          <span className="min-w-0">
+            <span className="flex items-center gap-1.5 font-medium text-foreground/80">
+              <span
+                aria-hidden
+                className={cn(
+                  'h-1.5 w-1.5 shrink-0 rounded-full',
+                  item.category === 'hidden_low_signal' ? 'bg-primary/70' : 'bg-muted-foreground/55',
+                )}
+              />
+              <span>{label}</span>
+            </span>
+            {item.text ? <span className="mt-1 line-clamp-3 block whitespace-pre-wrap">{item.text}</span> : null}
+          </span>
+          <span className="shrink-0 rounded-md border border-border bg-card px-1.5 py-0.5 text-[11px] text-muted-foreground">
+            {actionLabel}
+          </span>
+        </button>
+        {expanded && (
+          <div className="border-t border-border/70 bg-card/70 px-3 py-2">
+            <div className="flex flex-col gap-2">
+              {item.details.map((detail, index) => (
+                <div key={`${detail.to}-${detail.ts}-${index}`} className="rounded-md bg-muted/30 px-2.5 py-2">
+                  <div className="mb-1 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                    <span>{formatLeadDisplayName('team-lead')} → {formatAgentDisplayName(teamVisual, detail.to)}</span>
+                    <span className="shrink-0 opacity-70">{formatClock(detail.ts)}</span>
+                  </div>
+                  {detail.text ? (
+                    <AssistantMarkdown text={detail.text} />
+                  ) : (
+                    <span className="italic text-muted-foreground">{t('team.chat.emptyText')}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
 }
 
 interface MessageBubbleProps {

@@ -1069,6 +1069,7 @@ use crate::runtime::agent::output_writer::{
 use crate::runtime::agent::team::Team;
 use crate::runtime::cancellation::wait_for_cancellation;
 use crate::runtime::ids::{AgentId, SessionId};
+use crate::runtime::tools::builtin::team_tools::LEAD_NAME;
 use std::path::PathBuf;
 use tokio::sync::Mutex;
 
@@ -1212,10 +1213,19 @@ async fn run_teammate_idle(
         }
     }
 
-    // P2.3b: inject the team_context <system-reminder> as the FIRST item in
-    // the inbox so the LLM sees it before the dispatch prompt.  Only fires
-    // when we know where on disk the team / tasks data lives (conv_dir set);
-    // without that we can't render absolute paths and skip the attachment.
+    // ── Per-Teammate persistent state ─────────────────────────────────────
+    // `messages` accumulates across every inbox-driven turn so the LLM sees
+    // the full conversation history each call (cf. claude-code-best's
+    // `allMessages` accumulator in inProcessRunner.ts).  It's a local
+    // variable — when the idle loop exits, it dies with the worker; future
+    // resume-from-transcript paths would rebuild this from JSONL.
+    let mut messages: Vec<crate::llm::streaming::ChatMessage> = Vec::new();
+
+    // P2.3b: seed the team_context <system-reminder> as the FIRST history
+    // item so the LLM sees it before the dispatch prompt.  This must not be
+    // sent through the inbox: processing it as a standalone turn makes the
+    // teammate answer the reminder itself ("let me check tasks") before it
+    // ever receives its real assignment.
     if let Some(ref conv_dir) = ctx.conv_dir {
         let team_name_snapshot = {
             let team = team_handle.lock().await;
@@ -1226,13 +1236,20 @@ async fn run_teammate_idle(
             &agent_name,
             conv_dir,
         );
-        let _ = ctx
-            .inbox
-            .send(InboxItem::ChatMessage {
-                message: crate::runtime::messaging::StructuredMessage::text(attachment),
-                source: MessageSource::System,
-            })
-            .await;
+        messages.push(crate::llm::streaming::ChatMessage::text(
+            "user",
+            attachment.clone(),
+        ));
+        let jl_path = transcript_path_for_kind(
+            conv_dir,
+            &TranscriptKind::Teammate,
+            &ctx.team_name,
+            ctx.agent_id.as_str(),
+        );
+        let _ = append_line(
+            &jl_path,
+            &TranscriptLine::user_from(attachment, from_label_for_source(&MessageSource::System)),
+        );
     }
 
     // If an initial prompt was given, seed the inbox so the first iteration
@@ -1253,14 +1270,6 @@ async fn run_teammate_idle(
     let mut heartbeat = tokio::time::interval(std::time::Duration::from_secs(heartbeat_secs));
     // Skip the first tick that fires immediately.
     heartbeat.tick().await;
-
-    // ── Per-Teammate persistent state ─────────────────────────────────────
-    // `messages` accumulates across every inbox-driven turn so the LLM sees
-    // the full conversation history each call (cf. claude-code-best's
-    // `allMessages` accumulator in inProcessRunner.ts).  It's a local
-    // variable — when the idle loop exits, it dies with the worker; future
-    // resume-from-transcript paths would rebuild this from JSONL.
-    let mut messages: Vec<crate::llm::streaming::ChatMessage> = Vec::new();
 
     loop {
         tokio::select! {
@@ -1394,10 +1403,194 @@ fn render_inbox_message_as_user_text(
 /// without parsing free-form text.
 fn from_label_for_source(source: &MessageSource) -> String {
     match source {
-        MessageSource::Lead => "team-lead".to_string(),
+        MessageSource::Lead => LEAD_NAME.to_string(),
         MessageSource::Teammate(name) => name.clone(),
         MessageSource::System => "system".to_string(),
     }
+}
+
+fn fallback_reply_target(source: &MessageSource, agent_name: &str) -> Option<String> {
+    match source {
+        MessageSource::Lead => Some(LEAD_NAME.to_string()),
+        MessageSource::Teammate(name) if name != agent_name => Some(name.clone()),
+        MessageSource::Teammate(_) | MessageSource::System => None,
+    }
+}
+
+const MAX_NON_DELIVERABLE_TEAMMATE_REPLIES: usize = 2;
+const MIN_FALLBACK_DELIVERABLE_TEAMMATE_REPLY_CHARS: usize = 120;
+
+pub(crate) fn non_deliverable_teammate_reply_reason(content: &str) -> Option<&'static str> {
+    let text = content.trim();
+    if text.is_empty() {
+        return Some("empty");
+    }
+    if is_preparatory_teammate_reply(text) {
+        return Some("preparatory");
+    }
+    if text.chars().count() < MIN_FALLBACK_DELIVERABLE_TEAMMATE_REPLY_CHARS {
+        return Some("too_short");
+    }
+    None
+}
+
+fn is_preparatory_teammate_reply(content: &str) -> bool {
+    let text = content.trim();
+    if text.chars().count() > 240 {
+        return false;
+    }
+
+    let lower = text.to_ascii_lowercase();
+    let has_prep_marker = [
+        "我先整理",
+        "让我先整理",
+        "先整理",
+        "正在整理",
+        "稍后发",
+        "再发给",
+        "发给 team-lead",
+        "发给team-lead",
+    ]
+    .iter()
+    .any(|marker| text.contains(marker))
+        || lower.contains("let me check")
+        || lower.contains("let me first")
+        || lower.contains("i will send");
+
+    let has_answer_shape = [
+        "\n1.",
+        "\n1、",
+        "\n- ",
+        "建议：",
+        "风险：",
+        "观点：",
+        "分析：",
+        "结论：",
+        "我的结论是",
+        "我的观点是",
+    ]
+    .iter()
+    .any(|marker| text.contains(marker));
+
+    has_prep_marker && !has_answer_shape
+}
+
+fn teammate_non_deliverable_retry_prompt(target_name: &str, reason: &str) -> String {
+    let reason_cn = match reason {
+        "empty" => "你刚才没有输出任何可交付内容",
+        "preparatory" => "你刚才只输出了准备语，没有给出正式回复",
+        "too_short" => "你刚才输出的内容太短，不足以作为正式回复",
+        _ => "你刚才没有给出可交付内容",
+    };
+    format!(
+        "<system-reminder>\n{reason_cn}。请立刻给出完整的专业回复正文，目标读者是 {target_name}。\n本轮不要调用任何工具，不要调用 SendMessage；只在 assistant 正文中直接输出可转发的完整内容，系统会自动把正文送达。\n不要只说“我先整理”“稍后发送”“让我检查”之类的准备语。\n</system-reminder>"
+    )
+}
+
+fn should_fallback_deliver_teammate_reply(
+    source: &MessageSource,
+    agent_name: &str,
+    content: &str,
+    sent_with_send_message: bool,
+) -> bool {
+    if sent_with_send_message || non_deliverable_teammate_reply_reason(content).is_some() {
+        return false;
+    }
+    fallback_reply_target(source, agent_name).is_some()
+}
+
+async fn fallback_deliver_teammate_reply(
+    ctx: &TeammateWorkerCtx,
+    engine: &TeammateLlmEngine,
+    agent_name: &str,
+    source: &MessageSource,
+    content: &str,
+) {
+    let body = content.trim();
+    if body.is_empty() {
+        return;
+    }
+    let Some(target_name) = fallback_reply_target(source, agent_name) else {
+        return;
+    };
+    let Some(inbox_reg) = ctx
+        .inbox_registry
+        .as_ref()
+        .or_else(|| engine.inbox_registry.as_ref())
+    else {
+        log::warn!(
+            "[TeammateIdle] fallback SendMessage skipped: inbox_registry missing agent={} target={}",
+            agent_name,
+            target_name
+        );
+        return;
+    };
+    let Some(target_id) = ctx
+        .agent_names
+        .resolve(&ctx.session_id, &ctx.team_name, &target_name)
+        .await
+    else {
+        log::warn!(
+            "[TeammateIdle] fallback SendMessage skipped: target name unresolved agent={} target={}",
+            agent_name,
+            target_name
+        );
+        return;
+    };
+    let Some(inbox) = inbox_reg
+        .get(&ctx.session_id, &ctx.team_name, &target_id)
+        .await
+    else {
+        log::warn!(
+            "[TeammateIdle] fallback SendMessage skipped: target inbox missing agent={} target={}",
+            agent_name,
+            target_name
+        );
+        return;
+    };
+
+    let message = crate::runtime::messaging::StructuredMessage::text(body.to_string());
+    if inbox
+        .send(InboxItem::ChatMessage {
+            message: message.clone(),
+            source: MessageSource::Teammate(agent_name.to_string()),
+        })
+        .await
+        .is_err()
+    {
+        log::warn!(
+            "[TeammateIdle] fallback SendMessage skipped: target inbox closed agent={} target={}",
+            agent_name,
+            target_name
+        );
+        return;
+    }
+
+    crate::runtime::tools::builtin::send_message::append_team_chat_entry(
+        ctx.conv_dir.as_deref(),
+        Some(ctx.team_name.as_str()),
+        agent_name,
+        &target_name,
+        &message,
+    );
+
+    if target_name == LEAD_NAME {
+        if let Some(sup) = engine.lead_idle.as_ref() {
+            let key = (ctx.session_id.clone(), target_id);
+            let _ = sup.enqueue(&key, ctx.team_name.clone()).await;
+        } else {
+            log::warn!(
+                "[TeammateIdle] fallback SendMessage delivered to Lead but lead_idle missing"
+            );
+        }
+    }
+
+    log::info!(
+        "[TeammateIdle] fallback SendMessage delivered agent={} target={} chars={}",
+        agent_name,
+        target_name,
+        body.chars().count()
+    );
 }
 
 /// P1 stub: record a user message + placeholder assistant reply in the
@@ -1677,6 +1870,8 @@ async fn teammate_real_turn(
     //    287-617 but trimmed for Teammate.
     let max_iterations = engine.max_iterations_per_turn;
     let mut cancelled = false;
+    let mut sent_with_send_message = false;
+    let mut non_deliverable_end_turns = 0usize;
     for iteration in 0..max_iterations {
         if turn_cancel.is_cancelled() {
             cancelled = true;
@@ -1784,17 +1979,80 @@ async fn teammate_real_turn(
 
         // EndTurn (no more tool calls) — push final assistant text and exit
         if stop_reason != StopReason::ToolUse || tool_calls.is_empty() {
-            if !iter_content.is_empty() {
+            if !iter_content.trim().is_empty() {
                 let assistant = ChatMessage::text("assistant", iter_content.clone());
                 messages.push(assistant.clone());
                 if let Some(ref path) = jl_path {
                     let _ = append_line(path, &TranscriptLine::from_chat_message(&assistant));
                 }
+                if should_fallback_deliver_teammate_reply(
+                    source,
+                    agent_name,
+                    &iter_content,
+                    sent_with_send_message,
+                ) {
+                    fallback_deliver_teammate_reply(ctx, engine, agent_name, source, &iter_content)
+                        .await;
+                    break;
+                }
+            }
+
+            if sent_with_send_message {
+                break;
+            }
+
+            if let (Some(target_name), Some(reason)) = (
+                fallback_reply_target(source, agent_name),
+                non_deliverable_teammate_reply_reason(&iter_content),
+            ) {
+                if non_deliverable_end_turns < MAX_NON_DELIVERABLE_TEAMMATE_REPLIES {
+                    non_deliverable_end_turns += 1;
+                    let retry_prompt = teammate_non_deliverable_retry_prompt(&target_name, reason);
+                    let retry_msg = ChatMessage::text("user", retry_prompt.clone());
+                    messages.push(retry_msg);
+                    if let Some(ref path) = jl_path {
+                        let _ = append_line(
+                            path,
+                            &TranscriptLine::user_from(
+                                retry_prompt,
+                                from_label_for_source(&MessageSource::System),
+                            ),
+                        );
+                    }
+                    log::warn!(
+                        "[TeammateIdle] agent={} name={} produced non-deliverable reply reason={} retry={}/{}",
+                        ctx.agent_id.as_str(),
+                        agent_name,
+                        reason,
+                        non_deliverable_end_turns,
+                        MAX_NON_DELIVERABLE_TEAMMATE_REPLIES
+                    );
+                    continue;
+                }
+
+                if let Some(ref path) = jl_path {
+                    let _ = append_line(
+                        path,
+                        &TranscriptLine::failed(format!(
+                            "Teammate ended without deliverable reply after {MAX_NON_DELIVERABLE_TEAMMATE_REPLIES} retries: {reason}"
+                        )),
+                    );
+                }
+                log::warn!(
+                    "[TeammateIdle] agent={} name={} gave up after non-deliverable replies reason={}",
+                    ctx.agent_id.as_str(),
+                    agent_name,
+                    reason
+                );
             }
             break;
         }
 
         // ToolUse — push assistant w/ tool_calls, execute round, push tool_results
+        sent_with_send_message = sent_with_send_message
+            || tool_calls
+                .iter()
+                .any(|tc| tc.name.eq_ignore_ascii_case("SendMessage"));
         let assistant_with_calls = ChatMessage::assistant_with_tool_calls(
             iter_content.clone(),
             tool_calls
@@ -2185,5 +2443,131 @@ mod tests {
         let message = ChatMessage::tool_result("call_1", "Bash", "ok".to_string());
 
         assert!(!message.is_error);
+    }
+
+    #[test]
+    fn fallback_reply_target_routes_lead_messages_back_to_lead() {
+        assert_eq!(
+            fallback_reply_target(&MessageSource::Lead, "compensation-expert"),
+            Some(LEAD_NAME.to_string())
+        );
+    }
+
+    #[test]
+    fn fallback_reply_target_routes_peer_messages_back_to_sender() {
+        assert_eq!(
+            fallback_reply_target(
+                &MessageSource::Teammate("reviewer".to_string()),
+                "compensation-expert"
+            ),
+            Some("reviewer".to_string())
+        );
+    }
+
+    #[test]
+    fn fallback_reply_target_skips_system_and_self_messages() {
+        assert_eq!(
+            fallback_reply_target(&MessageSource::System, "compensation-expert"),
+            None
+        );
+        assert_eq!(
+            fallback_reply_target(
+                &MessageSource::Teammate("compensation-expert".to_string()),
+                "compensation-expert"
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn fallback_delivery_is_disabled_after_explicit_send_message() {
+        assert!(!should_fallback_deliver_teammate_reply(
+            &MessageSource::Lead,
+            "compensation-expert",
+            "已经用 SendMessage 发过了",
+            true
+        ));
+    }
+
+    #[test]
+    fn fallback_delivery_requires_non_empty_reply() {
+        assert!(!should_fallback_deliver_teammate_reply(
+            &MessageSource::Lead,
+            "compensation-expert",
+            "   \n\t",
+            false
+        ));
+    }
+
+    #[test]
+    fn fallback_delivery_blocks_preparatory_reply() {
+        let content = "好的，作为资深劳动法律师陈景律，我现在就一轮调薪方案的法律合规风险，系统阐述我的观点。让我先整理完整论述，再发给 team-lead。";
+
+        assert_eq!(
+            non_deliverable_teammate_reply_reason(content),
+            Some("preparatory")
+        );
+        assert!(!should_fallback_deliver_teammate_reply(
+            &MessageSource::Lead,
+            "legal-advisor",
+            content,
+            false
+        ));
+    }
+
+    #[test]
+    fn fallback_delivery_blocks_short_reply_even_if_substantive() {
+        let content = "我的结论是：本轮调薪风险主要在内部公平性和预算分配，需要先做同岗同级校准。";
+
+        assert_eq!(
+            non_deliverable_teammate_reply_reason(content),
+            Some("too_short")
+        );
+        assert!(!should_fallback_deliver_teammate_reply(
+            &MessageSource::Lead,
+            "hrbp",
+            content,
+            false
+        ));
+    }
+
+    #[test]
+    fn fallback_delivery_does_not_block_long_answer_with_intro() {
+        let content = format!(
+            "{}{}",
+            "我先整理完整论述。我的观点是：薪酬方案的核心风险不在调薪本身，而在预算口径、岗位价值、绩效分布三者没有建立稳定映射。\n1. 风险：预算分摊会放大部门间差异。\n2. 建议：先做岗位族群和绩效等级校准。\n",
+            "具体执行上，应把高绩效低薪酬竞争力员工单独识别，并设置复核阈值，避免平均主义。同时要保留部门负责人复核入口，防止算法评分直接替代管理判断；对关键岗位、稀缺岗位和近期晋升员工，需要单独建立例外审批和预算追踪，确保调薪理由可解释、可追溯。最后建议在发布前做一次样本复盘，检查同岗同绩效区间内的调薪差异是否有清晰依据。"
+        );
+
+        assert!(content.chars().count() > 240);
+        assert_eq!(non_deliverable_teammate_reply_reason(&content), None);
+        assert!(should_fallback_deliver_teammate_reply(
+            &MessageSource::Lead,
+            "compensation-expert",
+            &content,
+            false
+        ));
+    }
+
+    #[test]
+    fn non_deliverable_retry_prompt_targets_sender() {
+        let prompt = teammate_non_deliverable_retry_prompt(LEAD_NAME, "preparatory");
+
+        assert!(prompt.contains("不要调用 SendMessage"));
+        assert!(prompt.contains("不要调用任何工具"));
+        assert!(prompt.contains(LEAD_NAME));
+        assert!(prompt.contains("准备语"));
+    }
+
+    #[test]
+    fn fallback_delivery_allows_plain_assistant_reply_to_lead() {
+        let content = "这是专家直接生成的观点正文。我的结论是：本轮调薪方案需要先完成薪酬带宽、绩效等级和合规留痕三项校验，再进入预算分配。具体风险包括内部公平性失衡、绩效通胀导致预算错配、业务沟通口径不一致，以及低涨幅群体的离职风险。建议先用统一模板做数据诊断，再输出可解释的调薪矩阵。";
+
+        assert!(should_fallback_deliver_teammate_reply(
+            &MessageSource::Lead,
+            "compensation-expert",
+            content,
+            false
+        ));
     }
 }
