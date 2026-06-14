@@ -26,14 +26,6 @@ const STATUS_BADGE: Record<AgendaItem['status'], string> = {
   cancelled: 'bg-muted text-foreground line-through shadow-[inset_0_0_0_1px_rgba(0,0,0,0.04)]',
 }
 
-const STATUS_DOT: Record<AgendaItem['status'], string> = {
-  active: 'bg-primary',
-  paused: 'bg-muted-foreground/55',
-  completed: 'bg-emerald-500',
-  orphaned: 'bg-destructive',
-  cancelled: 'bg-muted-foreground/35',
-}
-
 const ACTION_BUTTON_CLASS =
   'h-7 w-7 rounded-md border border-transparent text-muted-foreground transition-[border-color,background-color,color] hover:border-foreground/15 hover:bg-foreground hover:text-background'
 
@@ -68,7 +60,6 @@ export function ScheduleTaskRow({
     >
       {/* Column 1: task name */}
       <div className="flex min-w-0 items-center gap-2">
-        <span className={`h-2 w-2 shrink-0 rounded-full ${STATUS_DOT[item.status]}`} aria-hidden="true" />
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             {onOpenDetail ? (

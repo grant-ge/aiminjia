@@ -235,22 +235,18 @@ export function SchedulesPage() {
           <ScheduleStat
             label={t('schedules.console.active', '运行中')}
             value={activeItems.length}
-            tone="primary"
           />
           <ScheduleStat
             label={t('schedules.console.paused', '已暂停')}
             value={pausedItems.length}
-            tone="muted"
           />
           <ScheduleStat
             label={t('schedules.console.next24h', '未来 24h')}
             value={next24hCount}
-            tone="warm"
           />
           <ScheduleStat
             label={t('schedules.console.needsCare', '需处理')}
             value={orphanedItems.length}
-            tone={orphanedItems.length > 0 ? 'danger' : 'muted'}
           />
         </div>
       </div>
@@ -395,24 +391,14 @@ function formatError(err: unknown) {
 function ScheduleStat({
   label,
   value,
-  tone,
 }: {
   label: string
   value: number
-  tone: 'primary' | 'muted' | 'warm' | 'danger'
 }) {
-  const dotClass = {
-    primary: 'bg-primary',
-    muted: 'bg-muted-foreground/55',
-    warm: 'bg-amber-400',
-    danger: 'bg-destructive',
-  }[tone]
-
   return (
     <div className="rounded-md border border-sidebar-border bg-card/70 px-3 py-2">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex items-center gap-2">
         <span className="text-xs font-medium text-muted-foreground">{label}</span>
-        <span className={`h-2 w-2 rounded-full ${dotClass}`} aria-hidden="true" />
       </div>
       <div className="mt-1 text-xl font-semibold leading-none text-foreground">{value}</div>
     </div>
