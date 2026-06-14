@@ -25,6 +25,7 @@ import {
 } from "@/stores/uiStore";
 import { useChannelStore } from "@/stores/channelStore";
 import { useInteractionStore } from "@/stores/interactionStore";
+import { useSidebarStatusStore } from "@/stores/sidebarStatusStore";
 import { hasExpertTeam } from "@/features/expert-teams/expertTeamRegistry";
 import { selectPendingActionForSession } from "@/components/chat-scene/pendingActionSelectors";
 import { Button } from "@/components/ui/button";
@@ -160,6 +161,7 @@ export function AppSidebar() {
   const streamStates = useChatStore((s) => s.streamStates);
   const pendingAsks = useChatStore((s) => s.pendingAsks);
   const pendingInteractions = useInteractionStore((s) => s.pendingInteractions);
+  const cachedStatuses = useSidebarStatusStore((s) => s.statuses);
 
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [devPanelOpen, setDevPanelOpen] = useState(false);
@@ -276,6 +278,11 @@ export function AppSidebar() {
       action?.kind === "stale-interaction"
     ) {
       return "waiting-reply";
+    }
+
+    const cachedStatus = cachedStatuses[conversationId]?.kind;
+    if (cachedStatus === "permission-review" || cachedStatus === "waiting-reply") {
+      return cachedStatus;
     }
 
     if (isConversationBusy(conversationId)) {

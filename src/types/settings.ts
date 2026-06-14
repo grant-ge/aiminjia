@@ -41,6 +41,7 @@ export interface Settings {
   uiHomeSelectedWorkspace?: string;
   uiHomeRecentWorkspaces?: string;
   uiSidebarCollapsedProjects?: string;
+  uiSidebarConversationStatuses?: string;
   contextWindow?: number | null;
 }
 
@@ -67,6 +68,7 @@ export const DEFAULT_SETTINGS: Settings = {
   uiHomeSelectedWorkspace: "",
   uiHomeRecentWorkspaces: "",
   uiSidebarCollapsedProjects: "",
+  uiSidebarConversationStatuses: "",
 };
 
 export const LLM_PROVIDER_LABELS: Record<LlmProvider, string> = {

@@ -89,6 +89,7 @@ import type {
 import { useStreamingStore } from '@/stores/streamingStore'
 import type { ConversationTaskState } from '@/stores/streamingStore'
 import { useInteractionStore } from '@/stores/interactionStore'
+import { useSidebarStatusStore } from '@/stores/sidebarStatusStore'
 import { useTauriEvent } from './useTauriEvent'
 
 /** How long (ms) since the last activity (delta / tool event / turn:heartbeat)
@@ -333,6 +334,37 @@ export function useStreaming() {
       useChatStore.getState().appendConversationStreamingContent(conversationId, buffered)
     }
     delete deltaBufferRef.current[conversationId]
+  }
+
+  function syncSidebarStatusCache(conversationId: string) {
+    const pendingAsk = Array.from(useStreamingStore.getState().pendingAsks.values())
+      .find((ask) => ask.conversationId === conversationId)
+    const sidebarStatusStore = useSidebarStatusStore.getState()
+    if (pendingAsk) {
+      void sidebarStatusStore.setStatus(conversationId, {
+        kind: 'permission-review',
+        runId: pendingAsk.runId,
+        toolCallId: pendingAsk.toolCallId,
+      })
+      return
+    }
+
+    const pendingInteraction = useInteractionStore
+      .getState()
+      .pendingInteractions.find(
+        (interaction) => interaction.conversationId === conversationId,
+      )
+    if (pendingInteraction) {
+      void sidebarStatusStore.setStatus(conversationId, {
+        kind: 'waiting-reply',
+        runId: pendingInteraction.runId,
+        toolCallId: pendingInteraction.toolCallId,
+        interactionId: pendingInteraction.interactionId,
+      })
+      return
+    }
+
+    void sidebarStatusStore.clearStatus(conversationId)
   }
 
   // --- streaming:delta -------------------------------------------------
@@ -717,6 +749,7 @@ export function useStreaming() {
       store.clearConversationStreamState(conversationId)
       useStreamingStore.getState().clearConversationPendingAsks(conversationId)
       useInteractionStore.getState().clearForConversation(conversationId)
+      void useSidebarStatusStore.getState().clearStatus(conversationId)
     }),
   )
 
@@ -732,6 +765,7 @@ export function useStreaming() {
         payload: { toolName: payload.toolName, mode: payload.mode },
       })
       useStreamingStore.getState().addPendingAsk(payload)
+      syncSidebarStatusCache(payload.conversationId)
     }),
   )
 
@@ -754,6 +788,7 @@ export function useStreaming() {
       ) {
         useStreamingStore.getState().clearConversationTurnStage(payload.conversationId)
       }
+      syncSidebarStatusCache(payload.conversationId)
     }),
   )
 
@@ -770,6 +805,7 @@ export function useStreaming() {
         payload: { toolName: payload.toolName, kind: payload.kind },
       })
       useInteractionStore.getState().addInteraction(payload)
+      syncSidebarStatusCache(payload.conversationId)
     }),
   )
 
@@ -783,6 +819,7 @@ export function useStreaming() {
       ) {
         useStreamingStore.getState().clearConversationTurnStage(payload.conversationId)
       }
+      syncSidebarStatusCache(payload.conversationId)
     }),
   )
 
@@ -836,6 +873,7 @@ export function useStreaming() {
       }
 
       useStreamingStore.getState().clearConversationPendingAsks(conversationId)
+      void useSidebarStatusStore.getState().clearStatus(conversationId)
 
       // MaxIterationsReached / BudgetExceeded / ExecutionError toasts removed (PR2 D' 原则):
       // these outcomes produce a persisted message with an error field that

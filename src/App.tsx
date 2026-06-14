@@ -39,6 +39,7 @@ import { useChatStore } from '@/stores/chatStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { usePluginStore } from '@/stores/pluginStore'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { useSidebarStatusStore } from '@/stores/sidebarStatusStore'
 import { useSkillStore } from '@/stores/skillStore'
 import { useUiStore } from '@/stores/uiStore'
 import { hydrateHomeStore } from '@/stores/homeStore'
@@ -121,6 +122,7 @@ function App() {
     getSettings()
       .then((settings) => {
         useSettingsStore.getState().setSettings(settings)
+        useSidebarStatusStore.getState().hydrateFromSettings(settings)
       })
       .catch((err) => console.error('Failed to load settings:', err))
   }, [])

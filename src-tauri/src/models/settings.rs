@@ -101,6 +101,10 @@ pub struct AppSettings {
     /// User-scoped UI preference; empty string means no collapsed projects.
     #[serde(default)]
     pub ui_sidebar_collapsed_projects: String,
+    /// JSON-stringified map of conversation id -> cached sidebar pending status.
+    /// UI hint only; live runtime state remains the source of truth.
+    #[serde(default)]
+    pub ui_sidebar_conversation_statuses: String,
     /// Manual context window override (in tokens). When set, takes priority
     /// over model-name-based context window resolution.
     #[serde(default)]
@@ -141,6 +145,7 @@ impl Default for AppSettings {
             ui_home_selected_workspace: String::new(),
             ui_home_recent_workspaces: String::new(),
             ui_sidebar_collapsed_projects: String::new(),
+            ui_sidebar_conversation_statuses: String::new(),
             context_window: None,
         }
     }
@@ -221,6 +226,10 @@ impl AppSettings {
             ui_sidebar_collapsed_projects: get_str(
                 "uiSidebarCollapsedProjects",
                 &defaults.ui_sidebar_collapsed_projects,
+            ),
+            ui_sidebar_conversation_statuses: get_str(
+                "uiSidebarConversationStatuses",
+                &defaults.ui_sidebar_conversation_statuses,
             ),
             context_window: get_usize_option("contextWindow"),
         }
@@ -325,6 +334,8 @@ mod tests {
             ui_home_recent_workspaces: r#"[{"id":"ws-1","rootPath":"/x","displayName":"x"}]"#
                 .to_string(),
             ui_sidebar_collapsed_projects: r#"{"default":true}"#.to_string(),
+            ui_sidebar_conversation_statuses:
+                r#"{"conv-a":{"kind":"permission-review","updatedAt":1}}"#.to_string(),
             ..AppSettings::default()
         };
         let json = serde_json::to_string(&s).unwrap();
@@ -341,6 +352,10 @@ mod tests {
             parsed.ui_sidebar_collapsed_projects,
             s.ui_sidebar_collapsed_projects
         );
+        assert_eq!(
+            parsed.ui_sidebar_conversation_statuses,
+            s.ui_sidebar_conversation_statuses
+        );
     }
 
     #[test]
@@ -356,6 +371,22 @@ mod tests {
         assert_eq!(
             settings.ui_sidebar_collapsed_projects,
             r#"{"project-a":true}"#
+        );
+    }
+
+    #[test]
+    fn reads_sidebar_conversation_statuses_from_string_map() {
+        let mut map = HashMap::new();
+        map.insert(
+            "uiSidebarConversationStatuses".to_string(),
+            r#"{"conv-a":{"kind":"permission-review","updatedAt":1}}"#.to_string(),
+        );
+
+        let settings = AppSettings::from_string_map(&map);
+
+        assert_eq!(
+            settings.ui_sidebar_conversation_statuses,
+            r#"{"conv-a":{"kind":"permission-review","updatedAt":1}}"#
         );
     }
 

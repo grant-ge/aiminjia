@@ -17,6 +17,7 @@ import { useChat, type PendingFileInfo } from "@/hooks/useChat";
 import { useChatAttachments } from "@/hooks/useChatAttachments";
 import { useChatStore } from "@/stores/chatStore";
 import { usePendingStore } from "@/stores/pendingStore";
+import { useSidebarStatusStore } from "@/stores/sidebarStatusStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useSkillStore } from "@/stores/skillStore";
 import { useStreamingStore } from "@/stores/streamingStore";
@@ -329,6 +330,7 @@ export function ChatBottomArea({
     try {
       await clearActiveTurnStage(sessionId);
       useStreamingStore.getState().clearConversationStreamState(sessionId);
+      useChatStore.getState().removeBusyConversation(sessionId);
     } catch (err) {
       console.error("[permission:stale] clear failed", err);
     }
@@ -343,6 +345,7 @@ export function ChatBottomArea({
     try {
       await clearActiveTurnStage(sessionId);
       useStreamingStore.getState().clearConversationStreamState(sessionId);
+      useChatStore.getState().removeBusyConversation(sessionId);
     } catch (err) {
       console.error("[interaction:stale] clear failed", err);
     }
@@ -373,6 +376,21 @@ export function ChatBottomArea({
       .then((asks) => {
         const store = useStreamingStore.getState();
         asks.forEach((ask) => store.addPendingAsk(ask));
+        if (asks[0]) {
+          void useSidebarStatusStore.getState().setStatus(pendingSessionId, {
+            kind: "permission-review",
+            runId: asks[0].runId,
+            toolCallId: asks[0].toolCallId,
+          });
+        } else if (
+          !useInteractionStore
+            .getState()
+            .pendingInteractions.some(
+              (interaction) => interaction.conversationId === pendingSessionId,
+            )
+        ) {
+          void useSidebarStatusStore.getState().clearStatus(pendingSessionId);
+        }
       })
       .catch((e) => {
         console.warn("[permission] snapshot fetch failed", e);
@@ -390,6 +408,20 @@ export function ChatBottomArea({
         interactions.forEach((interaction) =>
           store.addInteraction(interaction),
         );
+        if (interactions[0]) {
+          void useSidebarStatusStore.getState().setStatus(pendingSessionId, {
+            kind: "waiting-reply",
+            runId: interactions[0].runId,
+            toolCallId: interactions[0].toolCallId,
+            interactionId: interactions[0].interactionId,
+          });
+        } else if (
+          !Array.from(useStreamingStore.getState().pendingAsks.values()).some(
+            (ask) => ask.conversationId === pendingSessionId,
+          )
+        ) {
+          void useSidebarStatusStore.getState().clearStatus(pendingSessionId);
+        }
       })
       .catch((e) => {
         console.warn("[interaction] snapshot fetch failed", e);

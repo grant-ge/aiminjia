@@ -73,6 +73,10 @@ const channelState = vi.hoisted(() => ({
   ],
 }));
 
+const sidebarStatusState = vi.hoisted(() => ({
+  statuses: {} as Record<string, { kind: "permission-review" | "waiting-reply" }>,
+}));
+
 const chatMocks = vi.hoisted(() => ({
   switchConversation: vi.fn(),
   createNewConversation: vi.fn(),
@@ -168,6 +172,11 @@ vi.mock("@/stores/channelStore", () => ({
     }),
 }));
 
+vi.mock("@/stores/sidebarStatusStore", () => ({
+  useSidebarStatusStore: (sel: (s: unknown) => unknown) =>
+    sel({ statuses: sidebarStatusState.statuses }),
+}));
+
 vi.mock("@/stores/brandingStore", () => ({
   useBrandingStore: (sel: (s: unknown) => unknown) =>
     sel({ productName: "仁励家网络科技(杭州)", logoUrl: "/app-icon.png" }),
@@ -224,6 +233,7 @@ describe("AppSidebar", () => {
     chatState.busyConversations = new Set();
     chatState.streamStates = {};
     chatState.pendingAsks = new Map();
+    sidebarStatusState.statuses = {};
     chatMocks.switchConversation.mockReset();
     chatMocks.createNewConversation.mockReset();
     chatMocks.renameConversation.mockReset();
@@ -522,6 +532,19 @@ describe("AppSidebar", () => {
     expect(screen.queryByText("审批")).not.toBeInTheDocument();
   });
 
+  it("shows cached permission review chip after a frontend reload", () => {
+    chatState.conversations = [
+      { id: "conv-cached", title: "刷新后的审批", workspaceName: "默认项目" },
+    ];
+    sidebarStatusState.statuses = {
+      "conv-cached": { kind: "permission-review" },
+    };
+
+    render(<AppSidebar />);
+
+    expect(screen.getByText("审核")).toBeInTheDocument();
+  });
+
   it("shows waiting reply chip for regular conversations waiting on ask user question", () => {
     chatState.conversations = [
       { id: "conv-question", title: "等回复的对话", workspaceName: "默认项目" },
@@ -670,6 +693,17 @@ describe("AppSidebar", () => {
     expect(screen.getByText("审核")).toBeInTheDocument();
   });
 
+  it("shows cached waiting reply chip for channel conversations after a frontend reload", () => {
+    localStorage.setItem("aijia-sidebar-tab", "channel");
+    sidebarStatusState.statuses = {
+      "dt-session-1": { kind: "waiting-reply" },
+    };
+
+    render(<AppSidebar />);
+
+    expect(screen.getByText("等待回复")).toBeInTheDocument();
+  });
+
   it("shows waiting reply chip for channel conversations waiting on ask user question", () => {
     localStorage.setItem("aijia-sidebar-tab", "channel");
     useInteractionStore.getState().addInteraction({
@@ -743,6 +777,7 @@ describe("AppSidebar route-derived sidebarTab", () => {
     chatState.busyConversations = new Set();
     chatState.streamStates = {};
     chatState.pendingAsks = new Map();
+    sidebarStatusState.statuses = {};
     channelState.conversations = [
       {
         sessionId: "dt-session-1",
