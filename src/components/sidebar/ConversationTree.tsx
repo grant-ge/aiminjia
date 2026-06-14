@@ -15,7 +15,7 @@ import { type SidebarRowStatus } from './SidebarRowStatusIndicator'
 import { loadCollapsedProjects, saveCollapsedProjects } from './sidebarProjectPrefs'
 import { Button } from '@/components/ui/button'
 
-const CONVERSATION_LIMIT_PER_PROJECT = 8
+const CONVERSATION_LIMIT_PER_PROJECT = 6
 
 export interface ConversationTreeItem {
   id: string

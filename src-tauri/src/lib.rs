@@ -22,6 +22,7 @@ use commands::settings;
 use commands::workspace;
 use std::sync::Arc;
 use storage::UserScopedPathResolver;
+use tauri::menu::{AboutMetadata, Menu, PredefinedMenuItem, Submenu, SubmenuBuilder};
 use tauri::{Emitter, Manager};
 
 const APP_LOG_RETENTION_DAYS: u64 = 3;
@@ -29,15 +30,175 @@ const NAVIGATION_MENU_EVENT: &str = "navigation:menu-command";
 const NAVIGATION_BACK_MENU_ID: &str = "navigation.back";
 const NAVIGATION_FORWARD_MENU_ID: &str = "navigation.forward";
 
-fn install_app_navigation_menu(app: &mut tauri::App) -> tauri::Result<()> {
-    let navigation_menu = tauri::menu::SubmenuBuilder::new(app, "导航")
-        .text(NAVIGATION_BACK_MENU_ID, "后退")
-        .text(NAVIGATION_FORWARD_MENU_ID, "前进")
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct AppMenuLabels {
+    file: &'static str,
+    edit: &'static str,
+    view: &'static str,
+    window: &'static str,
+    help: &'static str,
+    navigation: &'static str,
+    back: &'static str,
+    forward: &'static str,
+}
+
+fn app_menu_labels(language: &str) -> AppMenuLabels {
+    if language.to_ascii_lowercase().starts_with("en") {
+        AppMenuLabels {
+            file: "File",
+            edit: "Edit",
+            view: "View",
+            window: "Window",
+            help: "Help",
+            navigation: "Navigation",
+            back: "Back",
+            forward: "Forward",
+        }
+    } else {
+        AppMenuLabels {
+            file: "文件",
+            edit: "编辑",
+            view: "显示",
+            window: "窗口",
+            help: "帮助",
+            navigation: "导航",
+            back: "后退",
+            forward: "前进",
+        }
+    }
+}
+
+fn app_about_metadata<R: tauri::Runtime>(
+    app_handle: &tauri::AppHandle<R>,
+) -> AboutMetadata<'static> {
+    let pkg_info = app_handle.package_info();
+    let config = app_handle.config();
+    AboutMetadata {
+        name: Some(pkg_info.name.clone()),
+        version: Some(pkg_info.version.to_string()),
+        copyright: config.bundle.copyright.clone(),
+        authors: config
+            .bundle
+            .publisher
+            .clone()
+            .map(|publisher| vec![publisher]),
+        ..Default::default()
+    }
+}
+
+fn build_localized_app_menu<R: tauri::Runtime>(
+    app_handle: &tauri::AppHandle<R>,
+    language: &str,
+) -> tauri::Result<Menu<R>> {
+    let labels = app_menu_labels(language);
+    let pkg_info = app_handle.package_info();
+    let about_metadata = app_about_metadata(app_handle);
+
+    let navigation_menu = SubmenuBuilder::new(app_handle, labels.navigation)
+        .text(NAVIGATION_BACK_MENU_ID, labels.back)
+        .text(NAVIGATION_FORWARD_MENU_ID, labels.forward)
         .build()?;
-    let menu = tauri::menu::MenuBuilder::new(app)
-        .item(&navigation_menu)
-        .build()?;
-    app.set_menu(menu)?;
+
+    let window_menu = Submenu::with_id_and_items(
+        app_handle,
+        tauri::menu::WINDOW_SUBMENU_ID,
+        labels.window,
+        true,
+        &[
+            &PredefinedMenuItem::minimize(app_handle, None)?,
+            &PredefinedMenuItem::maximize(app_handle, None)?,
+            #[cfg(target_os = "macos")]
+            &PredefinedMenuItem::separator(app_handle)?,
+            &PredefinedMenuItem::close_window(app_handle, None)?,
+        ],
+    )?;
+
+    let help_menu = Submenu::with_id_and_items(
+        app_handle,
+        tauri::menu::HELP_SUBMENU_ID,
+        labels.help,
+        true,
+        &[
+            #[cfg(not(target_os = "macos"))]
+            &PredefinedMenuItem::about(app_handle, None, Some(about_metadata))?,
+        ],
+    )?;
+
+    Menu::with_items(
+        app_handle,
+        &[
+            #[cfg(target_os = "macos")]
+            &Submenu::with_items(
+                app_handle,
+                pkg_info.name.clone(),
+                true,
+                &[
+                    &PredefinedMenuItem::about(app_handle, None, Some(about_metadata))?,
+                    &PredefinedMenuItem::separator(app_handle)?,
+                    &PredefinedMenuItem::services(app_handle, None)?,
+                    &PredefinedMenuItem::separator(app_handle)?,
+                    &PredefinedMenuItem::hide(app_handle, None)?,
+                    &PredefinedMenuItem::hide_others(app_handle, None)?,
+                    &PredefinedMenuItem::separator(app_handle)?,
+                    &PredefinedMenuItem::quit(app_handle, None)?,
+                ],
+            )?,
+            #[cfg(not(any(
+                target_os = "linux",
+                target_os = "dragonfly",
+                target_os = "freebsd",
+                target_os = "netbsd",
+                target_os = "openbsd"
+            )))]
+            &Submenu::with_items(
+                app_handle,
+                labels.file,
+                true,
+                &[
+                    &PredefinedMenuItem::close_window(app_handle, None)?,
+                    #[cfg(not(target_os = "macos"))]
+                    &PredefinedMenuItem::quit(app_handle, None)?,
+                ],
+            )?,
+            &Submenu::with_items(
+                app_handle,
+                labels.edit,
+                true,
+                &[
+                    &PredefinedMenuItem::undo(app_handle, None)?,
+                    &PredefinedMenuItem::redo(app_handle, None)?,
+                    &PredefinedMenuItem::separator(app_handle)?,
+                    &PredefinedMenuItem::cut(app_handle, None)?,
+                    &PredefinedMenuItem::copy(app_handle, None)?,
+                    &PredefinedMenuItem::paste(app_handle, None)?,
+                    &PredefinedMenuItem::select_all(app_handle, None)?,
+                ],
+            )?,
+            #[cfg(target_os = "macos")]
+            &Submenu::with_items(
+                app_handle,
+                labels.view,
+                true,
+                &[&PredefinedMenuItem::fullscreen(app_handle, None)?],
+            )?,
+            &window_menu,
+            &help_menu,
+            &navigation_menu,
+        ],
+    )
+}
+
+fn set_app_navigation_menu<R: tauri::Runtime>(
+    app_handle: &tauri::AppHandle<R>,
+    language: &str,
+) -> tauri::Result<()> {
+    let menu = build_localized_app_menu(app_handle, language)?;
+    app_handle.set_menu(menu)?;
+    Ok(())
+}
+
+fn install_app_navigation_menu<R: tauri::Runtime>(app: &mut tauri::App<R>) -> tauri::Result<()> {
+    set_app_navigation_menu(app.handle(), "zh-CN")?;
     app.on_menu_event(|app_handle, event| match event.id().0.as_str() {
         NAVIGATION_BACK_MENU_ID => {
             if let Err(err) = app_handle.emit(NAVIGATION_MENU_EVENT, "back") {
@@ -52,6 +213,11 @@ fn install_app_navigation_menu(app: &mut tauri::App) -> tauri::Result<()> {
         _ => {}
     });
     Ok(())
+}
+
+#[tauri::command]
+fn set_app_menu_language(app: tauri::AppHandle, language: String) -> Result<(), String> {
+    set_app_navigation_menu(&app, &language).map_err(|err| err.to_string())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1207,6 +1373,7 @@ pub fn run() {
             // Network status commands (spec docs/superpowers/specs/2026-05-26-network-detection-design.md)
             transport::tauri_commands::network::network_get_status,
             transport::tauri_commands::network::network_force_probe,
+            set_app_menu_language,
             // Dev-only environment switcher (not compiled in release builds)
             #[cfg(debug_assertions)]
             commands::dev_environment::get_dev_environment,
@@ -1257,6 +1424,85 @@ pub fn run() {
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod app_menu_tests {
+    use super::*;
+
+    #[test]
+    fn localized_app_menu_preserves_standard_edit_actions() {
+        let source = include_str!("lib.rs");
+        let function_start = source
+            .find("fn build_localized_app_menu")
+            .expect("build_localized_app_menu should exist");
+        let setup_start = source
+            .find("fn install_app_navigation_menu")
+            .expect("install_app_navigation_menu should exist");
+        let menu_setup = &source[function_start..setup_start];
+
+        assert!(
+            menu_setup.contains("PredefinedMenuItem::copy")
+                && menu_setup.contains("PredefinedMenuItem::paste")
+                && menu_setup.contains("PredefinedMenuItem::cut")
+                && menu_setup.contains("PredefinedMenuItem::undo")
+                && menu_setup.contains("PredefinedMenuItem::redo")
+                && menu_setup.contains("PredefinedMenuItem::select_all"),
+            "localized Edit menu must keep Tauri predefined items so Cmd+C/V/X/Z/A continue to work"
+        );
+        assert!(
+            menu_setup.contains("labels.file")
+                && menu_setup.contains("labels.edit")
+                && menu_setup.contains("labels.view")
+                && menu_setup.contains("labels.window")
+                && menu_setup.contains("labels.help")
+                && menu_setup.contains("labels.navigation"),
+            "all visible top-level menu labels should come from the app language"
+        );
+    }
+
+    #[test]
+    fn app_menu_labels_follow_supported_app_languages() {
+        assert_eq!(
+            app_menu_labels("en-US"),
+            AppMenuLabels {
+                file: "File",
+                edit: "Edit",
+                view: "View",
+                window: "Window",
+                help: "Help",
+                navigation: "Navigation",
+                back: "Back",
+                forward: "Forward",
+            }
+        );
+        assert_eq!(
+            app_menu_labels("zh-CN"),
+            AppMenuLabels {
+                file: "文件",
+                edit: "编辑",
+                view: "显示",
+                window: "窗口",
+                help: "帮助",
+                navigation: "导航",
+                back: "后退",
+                forward: "前进",
+            }
+        );
+        assert_eq!(
+            app_menu_labels("fr-FR"),
+            AppMenuLabels {
+                file: "文件",
+                edit: "编辑",
+                view: "显示",
+                window: "窗口",
+                help: "帮助",
+                navigation: "导航",
+                back: "后退",
+                forward: "前进",
+            }
+        );
+    }
 }
 
 /// Scan a plugin directory for external plugins.

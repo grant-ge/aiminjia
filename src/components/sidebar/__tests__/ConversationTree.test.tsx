@@ -22,7 +22,7 @@ describe('ConversationTree', () => {
     vi.clearAllMocks()
   })
 
-  it('limits each project to eight conversations until the user expands it', () => {
+  it('limits each project to six conversations until the user expands it', () => {
     const conversations = Array.from({ length: 10 }, (_, index) => ({
       id: `c-${index + 1}`,
       title: `对话 ${index + 1}`,
@@ -34,12 +34,12 @@ describe('ConversationTree', () => {
       />,
     )
 
-    expect(screen.getByText('对话 8')).toBeInTheDocument()
-    expect(screen.queryByText('对话 9')).not.toBeInTheDocument()
+    expect(screen.getByText('对话 6')).toBeInTheDocument()
+    expect(screen.queryByText('对话 7')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: /显示更多/ }))
 
-    expect(screen.getByText('对话 9')).toBeInTheDocument()
+    expect(screen.getByText('对话 7')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /收起/ })).toBeInTheDocument()
   })
 

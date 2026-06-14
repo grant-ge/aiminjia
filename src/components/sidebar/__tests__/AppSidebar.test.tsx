@@ -38,6 +38,7 @@ const chatState = vi.hoisted(() => ({
     title: string;
     workspaceName?: string | null;
     kind?: string;
+    isPinned?: boolean;
   }>,
   busyConversations: new Set<string>(),
   streamStates: {} as Record<
@@ -255,13 +256,39 @@ describe("AppSidebar", () => {
     });
   });
 
-  it("has sidebar background and 256 px width", () => {
+  it("lets the parent own sidebar width and keeps horizontal padding inside children", () => {
+    chatState.conversations = [
+      {
+        id: "conv-pinned",
+        title: "置顶对话",
+        workspaceName: "默认项目",
+        isPinned: true,
+      },
+      {
+        id: "conv-project",
+        title: "项目对话",
+        workspaceName: "默认项目",
+      },
+    ];
+
     const { container } = render(<AppSidebar />);
     const aside = container.querySelector("aside");
-    expect(aside?.className).toMatch(/w-\[256px\]/);
     expect(aside?.className).toMatch(/bg-sidebar/);
     expect(aside).toHaveClass("pt-2");
+    expect(aside?.className).not.toMatch(/(^|\s)w-\[256px\](\s|$)/);
+    expect(aside?.className).not.toMatch(/(^|\s)px-2(\s|$)/);
     expect(aside?.className).not.toMatch(/(^|\s)pt-3(\s|$)/);
+    expect(container.innerHTML).not.toContain("-mr-2");
+    const homeNavButton = screen.getByRole("button", { name: /新任务/ });
+    expect(homeNavButton.closest("nav")).toHaveClass("px-2");
+    expect(homeNavButton.className).toMatch(/px-2\.5/);
+    expect(screen.getByText("置顶").parentElement).toHaveClass("px-2");
+    const sidebarTab = screen.getByRole("button", { name: "项目" }).parentElement;
+    expect(sidebarTab).toHaveClass("px-1");
+    expect(sidebarTab).toHaveClass("h-8");
+    expect(sidebarTab?.className).not.toContain("30px");
+    expect(sidebarTab?.parentElement).toHaveClass("px-2");
+    expect(screen.getByText("默认项目").closest(".overflow-auto")).toHaveClass("px-2");
   });
 
   it("renders TenantHeader name", () => {

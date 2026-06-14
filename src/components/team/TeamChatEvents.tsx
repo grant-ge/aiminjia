@@ -493,7 +493,8 @@ function FacilitationNote({ item }: { item: Extract<TeamChatRenderItem, { kind: 
             : 'border-border bg-muted/35',
         )}
       >
-        <button
+        <Button
+          unstyled
           type="button"
           className="flex w-full items-start justify-between gap-3 px-3 py-2 text-left transition-colors hover:bg-muted/45"
           onClick={() => setExpanded((value) => !value)}
@@ -516,7 +517,7 @@ function FacilitationNote({ item }: { item: Extract<TeamChatRenderItem, { kind: 
           <span className="shrink-0 rounded-md border border-border bg-card px-1.5 py-0.5 text-[11px] text-muted-foreground">
             {actionLabel}
           </span>
-        </button>
+        </Button>
         {expanded && (
           <div className="border-t border-border/70 bg-card/70 px-3 py-2">
             <div className="flex flex-col gap-2">

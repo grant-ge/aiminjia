@@ -87,8 +87,8 @@ function ChannelConversationRow({
   onSelect,
 }: ChannelConversationRowProps) {
   const rowClassName = active
-    ? "flex h-8 w-full items-center justify-between rounded-md bg-sidebar-accent px-2.5 text-left text-sm font-medium text-sidebar-foreground"
-    : "flex h-8 w-full items-center justify-between rounded-md px-2.5 text-left text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground";
+    ? `flex h-8 w-full items-center justify-between rounded-md bg-sidebar-accent px-2.5 text-left text-sm font-medium text-sidebar-foreground`
+    : `flex h-8 w-full items-center justify-between rounded-md px-2.5 text-left text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground`;
 
   return (
     <ContextMenuPrimitive.Root>
@@ -430,7 +430,9 @@ export function AppSidebar() {
 
   return (
     <>
-      <aside className="flex h-full w-[256px] shrink-0 flex-col overflow-hidden bg-sidebar px-2 pt-2 text-sidebar-foreground">
+      <aside
+        className="flex h-full shrink-0 flex-col overflow-hidden bg-sidebar pt-2 text-sidebar-foreground"
+      >
         {isWindows ? null : (
           <TenantHeader
             name={tenantDisplay}
@@ -446,7 +448,7 @@ export function AppSidebar() {
 
         <div className="flex min-h-0 flex-1 flex-col gap-2">
           {globalPinned.length > 0 ? (
-            <div className="flex flex-col mb-1">
+            <div className="flex flex-col mb-1 px-2">
               <div className="px-2 py-1 text-xs font-medium text-muted-foreground">
                 {t("sidebar.pinnedSection")}
               </div>
@@ -496,46 +498,48 @@ export function AppSidebar() {
             ];
             const activeIndex = TABS.findIndex((tab) => tab.key === sidebarTab);
             return (
-              <div className="relative grid h-8 grid-cols-4 rounded-md border border-sidebar-border bg-sidebar-accent/70 px-1 py-0.5 text-xs font-medium text-muted-foreground">
-                {/* Sliding indicator — left/width account for px-1 (4px) horizontal padding */}
-                <div
-                  className="absolute rounded-md bg-card shadow-sm"
-                  style={{
-                    top: "2px",
-                    bottom: "2px",
-                    left: "4px",
-                    width: "calc(25% - 2px)",
-                    transform: `translateX(${activeIndex * 100}%)`,
-                    transition: "transform 200ms ease-in-out",
-                  }}
-                />
-                {TABS.map(({ key, Icon, labelKey }) => (
-                  <TooltipProvider key={key} delayDuration={400}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button unstyled
-                          type="button"
-                          aria-label={t(labelKey)}
-                          onClick={() => switchTab(key)}
-                          className={`relative z-10 flex items-center justify-center rounded-md transition-colors duration-200 ${
-                            sidebarTab === key ? "text-foreground" : ""
-                          }`}
-                        >
-                          <Icon className="h-3.5 w-3.5 shrink-0" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom">
-                        {t(labelKey)}
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                ))}
+              <div className="px-2">
+                <div className="relative grid h-8 grid-cols-4 rounded-md border border-sidebar-border bg-sidebar-accent/70 px-1 py-0.5 text-xs font-medium text-muted-foreground">
+                  {/* Sliding indicator — left/width account for px-1 (4px) horizontal padding */}
+                  <div
+                    className="absolute rounded-md bg-card shadow-sm"
+                    style={{
+                      top: "2px",
+                      bottom: "2px",
+                      left: "4px",
+                      width: "calc(25% - 2px)",
+                      transform: `translateX(${activeIndex * 100}%)`,
+                      transition: "transform 200ms ease-in-out",
+                    }}
+                  />
+                  {TABS.map(({ key, Icon, labelKey }) => (
+                    <TooltipProvider key={key} delayDuration={400}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button unstyled
+                            type="button"
+                            aria-label={t(labelKey)}
+                            onClick={() => switchTab(key)}
+                            className={`relative z-10 flex items-center justify-center rounded-md transition-colors duration-200 ${
+                              sidebarTab === key ? "text-foreground" : ""
+                            }`}
+                          >
+                            <Icon className="h-3.5 w-3.5 shrink-0" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom">
+                          {t(labelKey)}
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  ))}
+                </div>
               </div>
             );
           })()}
 
           {sidebarTab === "project" ? (
-            <div className="-mr-2 flex-1 overflow-auto">
+            <div className="flex-1 overflow-auto px-2">
               <ConversationTree
                 projects={projects}
                 onSelectConversation={(id) => void switchConversation(id)}
@@ -547,15 +551,15 @@ export function AppSidebar() {
               />
             </div>
           ) : sidebarTab === "employee" ? (
-            <div className="-mr-2 flex-1 overflow-auto py-1">
+            <div className="flex-1 overflow-auto px-2 py-1">
               {renderFlatTab(employeeConversations)}
             </div>
           ) : sidebarTab === "expert-team" ? (
-            <div className="-mr-2 flex-1 overflow-auto py-1">
+            <div className="flex-1 overflow-auto px-2 py-1">
               {renderFlatTab(expertTeamConversations)}
             </div>
           ) : (
-            <div className="-mr-2 flex-1 overflow-auto pr-2">
+            <div className="flex-1 overflow-auto px-2">
               <div className="mt-2 flex flex-col gap-3">
                 <div>
                   <div className="mb-1.5 flex items-center gap-2 px-2 text-sm font-medium text-sidebar-foreground">

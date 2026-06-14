@@ -90,7 +90,10 @@ describe('RichComposer — disabled / streaming / clearOnSubmit', () => {
     const editor = document.querySelector('.ProseMirror') as HTMLElement
     fireEvent.keyDown(editor, { key: 'Enter', code: 'Enter' })
     expect(onSubmit).not.toHaveBeenCalled()
-    expect(screen.getByLabelText('发送')).toBeDisabled()
+    const sendButton = screen.getByLabelText('发送')
+    expect(sendButton).toBeDisabled()
+    expect(sendButton).toHaveClass('h-8', 'w-8')
+    expect(sendButton).not.toHaveClass('h-6', 'w-6')
   })
 
   it('isStreaming=true → shows stop button and clicking calls onStop', async () => {

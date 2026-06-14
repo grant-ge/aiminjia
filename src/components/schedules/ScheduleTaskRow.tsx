@@ -72,13 +72,14 @@ export function ScheduleTaskRow({
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             {onOpenDetail ? (
-              <button
+              <Button
+                unstyled
                 type="button"
                 className="min-w-0 truncate text-left font-semibold text-foreground underline-offset-4 hover:underline"
                 onClick={() => onOpenDetail(item)}
               >
                 {item.title}
-              </button>
+              </Button>
             ) : (
               <span className="truncate font-semibold text-foreground">{item.title}</span>
             )}

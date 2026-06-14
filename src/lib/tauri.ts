@@ -22,6 +22,7 @@ export { recordFrontendDiagnostic } from "./tauriDiagnostics";
 
 import type { Message, SubAgentTranscriptEntry } from "@/types/message";
 import type { TeamOverview } from "@/types/team";
+import type { AppLanguage } from "@/i18n";
 import type {
   PendingItem,
   PendingSnapshotPayload,
@@ -2820,6 +2821,10 @@ export interface RuntimeDiagnostics {
 
 export function runtimeDiagnostics(): Promise<RuntimeDiagnostics> {
   return invoke<RuntimeDiagnostics>("runtime_diagnostics");
+}
+
+export function setAppMenuLanguage(language: AppLanguage): Promise<void> {
+  return invoke<void>("set_app_menu_language", { language });
 }
 
 // ---------------------------------------------------------------------------

@@ -421,7 +421,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
             ) : (
               <Button
                 type="button"
-                size="sm"
+                size="md"
                 aria-label={t('composer.send')}
                 onClick={() => {
                   void trySubmit()

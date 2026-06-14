@@ -1,13 +1,22 @@
-import { renderHook, waitFor } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import i18n from '@/i18n'
 import { TAURI_EVENTS } from '@/lib/tauri'
 import { useUiStore } from '@/stores/uiStore'
 
 const listenMock = vi.hoisted(() => vi.fn())
+const setAppMenuLanguageMock = vi.hoisted(() => vi.fn())
 
 vi.mock('@tauri-apps/api/event', () => ({
   listen: listenMock,
+}))
+
+vi.mock('@/lib/tauri', () => ({
+  TAURI_EVENTS: {
+    NAVIGATION_MENU_COMMAND: 'navigation:menu-command',
+  },
+  setAppMenuLanguage: setAppMenuLanguageMock,
 }))
 
 import { useAppNavigationMenu } from './useAppNavigationMenu'
@@ -18,9 +27,12 @@ describe('useAppNavigationMenu', () => {
 
   beforeEach(() => {
     localStorage.clear()
+    void i18n.changeLanguage('zh-CN')
     handler = null
     unlisten = vi.fn()
     listenMock.mockReset()
+    setAppMenuLanguageMock.mockReset()
+    setAppMenuLanguageMock.mockResolvedValue(undefined)
     listenMock.mockImplementation(async (_event: string, nextHandler: (event: { payload: string }) => void) => {
       handler = nextHandler
       return unlisten
@@ -76,5 +88,21 @@ describe('useAppNavigationMenu', () => {
     unmount()
 
     expect(unlisten).toHaveBeenCalled()
+  })
+
+  it('syncs native menu language on mount and when the app language changes', async () => {
+    renderHook(() => useAppNavigationMenu())
+
+    await waitFor(() => {
+      expect(setAppMenuLanguageMock).toHaveBeenCalledWith('zh-CN')
+    })
+
+    await act(async () => {
+      await i18n.changeLanguage('en-US')
+    })
+
+    await waitFor(() => {
+      expect(setAppMenuLanguageMock).toHaveBeenCalledWith('en-US')
+    })
   })
 })

@@ -31,7 +31,7 @@ export function ScheduleTemplateCard({ template, onPick }: ScheduleTemplateCardP
         <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{template.desc}</p>
       </div>
       <div className="shrink-0 pt-0.5">
-        <Button variant="outline" size="sm" className="h-7 px-2.5 text-xs" onClick={() => onPick(template)}>
+        <Button variant="outline" onClick={() => onPick(template)}>
           {t('schedules.template.useThis')}
         </Button>
       </div>

@@ -11,6 +11,8 @@ describe('ConversationRow', () => {
     )
     const wrapper = container.firstElementChild?.firstElementChild
     expect(wrapper?.className).toMatch(/pl-\[32px\]/)
+    expect(wrapper).toHaveClass('h-8')
+    expect(wrapper?.className).not.toContain('30px')
   })
 
   it('uses sidebar-accent bg on the row wrapper when active', () => {

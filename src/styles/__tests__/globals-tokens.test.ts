@@ -56,7 +56,7 @@ describe("design.pen token alignment", () => {
     expect(tokenValue("--text-2xs")).toBe("0.6875rem");
     expect(tokenValue("--text-xs")).toBe("0.75rem");
     expect(tokenValue("--text-sm")).toBe("0.8125rem");
-    expect(tokenValue("--text-base")).toBe("0.875rem");
+    expect(tokenValue("--text-base")).toBe("0.8125rem");
     expect(tokenValue("--text-lg")).toBe("1.125rem");
   });
 
@@ -66,6 +66,19 @@ describe("design.pen token alignment", () => {
     expect(tokenValue("--radius-md")).toBe("6px");
     expect(tokenValue("--radius-lg")).toBe("10px");
     expect(tokenValue("--radius-xl")).toBe("14px");
+  });
+
+  it("sets Tailwind spacing so h-8 resolves to 30px on the rem scale", () => {
+    expect(tokenValue("--spacing")).toBe("0.234375rem");
+  });
+
+  it("does not add custom control height utilities", () => {
+    expect(CSS).not.toMatch(/\.h-8\s*\{/);
+    expect(CSS).not.toMatch(/\.w-8\s*\{/);
+  });
+
+  it("uses the Tailwind text base as the default body font size", () => {
+    expect(CSS).toMatch(/body\s*\{[^}]*font-size:\s*var\(--text-base\);/s);
   });
 
   it("uses a crisp, low-blur composer outline instead of the generic card shadow", () => {
