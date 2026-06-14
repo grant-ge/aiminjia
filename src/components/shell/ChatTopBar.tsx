@@ -8,7 +8,6 @@ import {
   GraduationCap,
   MessageSquare,
   PanelLeft,
-  Share2,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from '@/components/ui/button'
@@ -49,8 +48,6 @@ interface ChatTopBarProps {
   employee?: ChatTopBarEmployee;
   /** Expert-team identity chip, matching the employee top-bar treatment. */
   expertTeam?: ChatTopBarExpertTeam;
-  onShare?: () => void;
-  shareLabel?: string;
   onMore?: () => void;
   moreMenuItems?: AppDropdownItem[];
   onToggleSidebar?: () => void;
@@ -82,8 +79,6 @@ export function ChatTopBar({
   sourceLabel,
   employee,
   expertTeam,
-  onShare,
-  shareLabel = "分享",
   onMore,
   moreMenuItems,
   onToggleSidebar,
@@ -158,17 +153,6 @@ export function ChatTopBar({
       </div>
       <div className="flex items-center gap-1.5">
         {trailing}
-        {onShare ? (
-          <Button unstyled
-            type="button"
-            aria-label={shareLabel}
-            title={shareLabel}
-            onClick={onShare}
-            className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            <Share2 className="h-4 w-4" />
-          </Button>
-        ) : null}
         {moreMenuItems && moreMenuItems.length > 0 ? (
           <AppDropdown
             ariaLabel="更多"

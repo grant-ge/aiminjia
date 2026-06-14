@@ -64,7 +64,7 @@ export function ScheduleTaskRow({
       data-aijia-agenda-id={item.id}
       data-aijia-agenda-title={item.title}
       data-aijia-agenda-status={item.status}
-      className={`grid ${SCHEDULE_TABLE_GRID_COLUMNS} items-center gap-3 border-t border-border/55 bg-card px-5 py-3.5 text-[0.8125rem] transition-colors hover:bg-muted/20 ${dimmed}`}
+      className={`grid ${SCHEDULE_TABLE_GRID_COLUMNS} items-center gap-3 border-t border-border/55 bg-card px-4 py-2.5 text-[0.8125rem] transition-colors hover:bg-muted/20 ${dimmed}`}
     >
       {/* Column 1: task name */}
       <div className="flex min-w-0 items-center gap-2">
@@ -87,7 +87,7 @@ export function ScheduleTaskRow({
           </div>
           {item.workspacePath ? (
             <div
-              className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground"
+              className="mt-0.5 flex min-w-0 items-center gap-1 text-xs text-muted-foreground"
               title={item.workspacePath}
             >
               <Folder className="h-3 w-3 shrink-0" aria-hidden="true" />
@@ -102,7 +102,7 @@ export function ScheduleTaskRow({
         <div className="truncate font-medium">
           {describeFrequency(item.rule, item.startAt, item.timezone, t, i18n.language)}
         </div>
-        <div className="mt-1 flex min-w-0 items-center gap-1 truncate text-xs text-muted-foreground">
+        <div className="mt-0.5 flex min-w-0 items-center gap-1 truncate text-xs text-muted-foreground">
           <CalendarClock className="h-3 w-3 shrink-0" aria-hidden="true" />
           <span>{t('schedules.row.nextFireLabel')}</span>
           {item.nextFireAt ? formatNextFire(item.nextFireAt, i18n.language) : '-'}

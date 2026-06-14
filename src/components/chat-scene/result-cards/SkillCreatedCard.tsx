@@ -1,4 +1,4 @@
-import { Blocks, ExternalLink } from 'lucide-react'
+import { ExternalLink } from 'lucide-react'
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -40,27 +40,23 @@ export function SkillCreatedCard({ payload }: SkillCreatedCardProps) {
       data-aijia-result-card="skill_created"
     >
       <div className="flex items-start gap-2.5 pr-0.5">
-        <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted/45 text-muted-foreground">
-          <Blocks className="h-4 w-4" aria-hidden />
-        </div>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <SkillField label={t('resultCards.skill.nameLabel', '技能名称')} value={title} prominent />
-            <Button
-              unstyled
-              type="button"
-              aria-label={t('resultCards.skill.view')}
-              onClick={() => setRoute({ kind: 'skill-detail', skillId: payload.skillId })}
-              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border-transparent bg-transparent p-0 text-muted-foreground opacity-70 transition-colors hover:bg-muted hover:text-foreground hover:opacity-100 group-hover:opacity-100"
-            >
-              <ExternalLink className="h-3.5 w-3.5" aria-hidden />
-            </Button>
-          </div>
+          <SkillField label={t('resultCards.skill.nameLabel', '技能名称')} value={title} prominent />
           <div className="mt-1.5 grid gap-1 text-sm leading-5">
             <SkillField label={t('resultCards.skill.triggerLabel', '触发方式')} value={triggerText} mono />
             <SkillField label={t('resultCards.skill.descriptionLabel', '技能描述')} value={description} />
           </div>
         </div>
+        <Button
+          unstyled
+          type="button"
+          aria-label={t('resultCards.skill.view')}
+          onClick={() => setRoute({ kind: 'skill-detail', skillId: payload.skillId })}
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border-transparent bg-transparent p-0 text-muted-foreground opacity-70 transition-colors hover:bg-muted hover:text-foreground hover:opacity-100 group-hover:opacity-100"
+          data-testid="skill-created-card-view"
+        >
+          <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+        </Button>
       </div>
     </div>
   )

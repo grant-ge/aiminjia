@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import { BellRing, MoreHorizontal } from "lucide-react";
+import { BellRing, Copy, Download, MoreHorizontal } from "lucide-react";
 import { AppDropdown } from "@/components/common/AppDropdown";
 import { requestConfirm } from "@/components/common/ConfirmDialogHost";
 import { initChannelListeners, useChannelStore } from "@/stores/channelStore";
@@ -511,6 +511,25 @@ function ChannelChatView({ sessionId }: { sessionId: string }) {
   const { overview: teamOverview } = useTeamOverview(sessionId);
   const conversationExport = useConversationExport(sessionId);
 
+  const handleCopyConversationId = () => {
+    void navigator.clipboard.writeText(sessionId);
+  };
+
+  const moreMenuItems = [
+    {
+      id: "export",
+      label: t("chatHeader.exportConversation", "导出对话"),
+      icon: <Download />,
+      onSelect: conversationExport.openExportDialog,
+    },
+    {
+      id: "copy-id",
+      label: t("sidebar.copyConversationId"),
+      icon: <Copy />,
+      onSelect: handleCopyConversationId,
+    },
+  ];
+
   const handleSendDingtalkGreeting = async () => {
     if (sendingDingtalkGreeting) return;
     setSendingDingtalkGreeting(true);
@@ -594,8 +613,6 @@ function ChannelChatView({ sessionId }: { sessionId: string }) {
       <ChatTopBar
         title={platformTitle}
         workspace={workspaceLabel}
-        onShare={conversationExport.openExportDialog}
-        shareLabel="导出对话"
         trailing={
           canWakeDingtalk ? (
             <Button
@@ -613,6 +630,7 @@ function ChannelChatView({ sessionId }: { sessionId: string }) {
             </Button>
           ) : undefined
         }
+        moreMenuItems={moreMenuItems}
       />
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         <div

@@ -7,12 +7,12 @@ interface ScheduleTableHeaderProps {
 }
 
 export const SCHEDULE_TABLE_GRID_COLUMNS =
-  'grid-cols-[minmax(0,1.25fr)_minmax(8rem,0.8fr)_max-content_max-content]'
+  'grid-cols-[minmax(0,1.25fr)_minmax(8rem,0.8fr)_6rem_8rem]'
 
 export function ScheduleTableHeader({ columns }: ScheduleTableHeaderProps) {
   return (
     <div
-      className={`grid ${SCHEDULE_TABLE_GRID_COLUMNS} items-center gap-3 px-5 py-2.5 text-sm font-medium text-muted-foreground`}
+      className={`grid ${SCHEDULE_TABLE_GRID_COLUMNS} items-center gap-3 px-4 py-2 text-xs font-medium text-muted-foreground`}
     >
       {columns.map((c, index) => (
         <span key={c} className={index === columns.length - 1 ? 'justify-self-end' : undefined}>

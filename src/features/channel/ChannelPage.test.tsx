@@ -26,8 +26,8 @@ vi.mock('@/lib/tauri', async () => {
     getMessages: getMessagesMock,
     getTasks: getTasksMock,
     exportConversation: exportConversationMock,
-    revealExportInFolder: revealExportInFolderMock,
     openGeneratedFile: vi.fn(),
+    revealExportInFolder: revealExportInFolderMock,
     onChannelPlatformState: vi.fn().mockResolvedValue(() => {}),
     onChannelMessage: vi.fn().mockResolvedValue(() => {}),
   }
@@ -315,47 +315,6 @@ describe('ChannelPage domain UI', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('IM 会话可以从顶栏导出当前频道对话', async () => {
-    exportConversationMock.mockResolvedValue({
-      zipPath: '/tmp/im-session.zip',
-      fileName: 'im-session.zip',
-      sizeBytes: 2048,
-    })
-    revealExportInFolderMock.mockResolvedValue(undefined)
-    useChannelStore.setState({
-      conversations: [
-        {
-          sessionId: 'im-session-1',
-          platform: 'dingtalk',
-          conversationType: 'private',
-          externalId: 'u',
-          displayName: '姚斌权',
-          unreadCount: 0,
-          robotCode: 'current-robot',
-          isActiveRobot: true,
-        },
-      ],
-    })
-
-    renderPage(<ChannelPage sessionId="im-session-1" />)
-    await userEvent.click(screen.getByRole('button', { name: '导出对话' }))
-
-    expect(exportConversationMock).not.toHaveBeenCalled()
-    expect(screen.getByText('将生成一个本地 zip 文件，包含当前对话和最近 24 小时运行信息。文件只会保存在本机。')).toBeInTheDocument()
-
-    await userEvent.click(screen.getByRole('button', { name: '开始导出' }))
-
-    await waitFor(() => {
-      expect(exportConversationMock).toHaveBeenCalledWith('im-session-1')
-    })
-    expect(await screen.findByText('im-session.zip')).toBeInTheDocument()
-
-    await userEvent.click(screen.getByRole('button', { name: '打开所在文件夹' }))
-    await waitFor(() => {
-      expect(revealExportInFolderMock).toHaveBeenCalledWith('/tmp/im-session.zip')
-    })
-  })
-
   it('钉钉 IM 会话可以从顶栏唤醒机器人并提示去钉钉查看未读红点', async () => {
     const sendDingtalkGreeting = vi.fn().mockResolvedValue(undefined)
     useChannelStore.setState({
@@ -385,6 +344,59 @@ describe('ChannelPage domain UI', () => {
       level: 'success',
       title: '机器人已唤醒',
       message: '请打开钉钉，看看左侧会话列表里有没有未读红点；机器人回复后就能找到这条对话。',
+    })
+  })
+
+  it('IM 会话顶栏更多菜单只提供导出和复制 ID', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+    exportConversationMock.mockResolvedValue({
+      zipPath: '/tmp/im-session-export.zip',
+      fileName: 'im-session-export.zip',
+      sizeBytes: 2048,
+    })
+    revealExportInFolderMock.mockResolvedValue(undefined)
+    useChannelStore.setState({
+      conversations: [
+        {
+          sessionId: 'im-session-1',
+          platform: 'dingtalk',
+          conversationType: 'private',
+          externalId: 'u',
+          displayName: '姚斌权',
+          unreadCount: 0,
+          robotCode: 'current-robot',
+          isActiveRobot: true,
+        },
+      ],
+    })
+
+    renderPage(<ChannelPage sessionId="im-session-1" />)
+
+    await userEvent.click(screen.getByRole('button', { name: '更多' }))
+
+    expect(screen.getByRole('menuitem', { name: '导出对话' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: '复制对话 ID' })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: /重命名|置顶|取消置顶|归档聊天/ })).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('menuitem', { name: '复制对话 ID' }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('im-session-1'))
+
+    await userEvent.click(screen.getByRole('button', { name: '更多' }))
+    await userEvent.click(screen.getByRole('menuitem', { name: '导出对话' }))
+
+    expect(exportConversationMock).not.toHaveBeenCalled()
+    expect(screen.getByText('准备生成对话文件')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: '开始导出' }))
+    await waitFor(() => {
+      expect(exportConversationMock).toHaveBeenCalledWith('im-session-1')
+    })
+    expect(await screen.findByText('im-session-export.zip')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: '打开所在文件夹' }))
+    await waitFor(() => {
+      expect(revealExportInFolderMock).toHaveBeenCalledWith('/tmp/im-session-export.zip')
     })
   })
 })

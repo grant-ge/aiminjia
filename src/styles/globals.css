@@ -408,16 +408,16 @@ button:not(:disabled) {
   width: 24px;
   height: 24px;
   flex-shrink: 0;
-  color: color-mix(in srgb, var(--sidebar-foreground) 62%, transparent);
+  color: color-mix(in srgb, var(--sidebar-foreground) 46%, transparent);
 }
 
 .titlebar-navigation-button:hover:not(:disabled) {
   background: color-mix(in srgb, var(--sidebar-accent) 70%, transparent);
-  color: var(--sidebar-foreground);
+  color: color-mix(in srgb, var(--sidebar-foreground) 70%, transparent);
 }
 
 .titlebar-navigation-button:disabled {
-  opacity: 0.32;
+  opacity: 0.45;
 }
 
 /* ===== Assistant Markdown ===== */

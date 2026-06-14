@@ -1,4 +1,4 @@
-import { CalendarClock, Pencil } from 'lucide-react'
+import { Pencil } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -46,25 +46,8 @@ export function ScheduleCreatedCard({ payload }: ScheduleCreatedCardProps) {
       data-aijia-result-card="schedule_created"
     >
       <div className="flex items-start gap-2.5 pr-0.5">
-        <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted/45 text-muted-foreground">
-          <CalendarClock className="h-4 w-4" aria-hidden />
-        </div>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-[15px] font-semibold leading-5 text-foreground">{title}</div>
-            </div>
-            <Button
-              unstyled
-              type="button"
-              aria-label={t('resultCards.schedule.edit')}
-              onClick={() => setEditorOpen(true)}
-              disabled={!item}
-              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border-transparent bg-transparent p-0 text-muted-foreground opacity-70 transition-colors hover:bg-muted hover:text-foreground hover:opacity-100 disabled:pointer-events-none disabled:opacity-45 group-hover:opacity-100"
-            >
-              <Pencil className="h-3.5 w-3.5" aria-hidden />
-            </Button>
-          </div>
+          <div className="truncate text-[15px] font-semibold leading-5 text-foreground">{title}</div>
           <div className="mt-1 line-clamp-2 text-sm leading-5 text-muted-foreground">
             {prompt}
           </div>
@@ -81,6 +64,17 @@ export function ScheduleCreatedCard({ payload }: ScheduleCreatedCardProps) {
             </div>
           ) : null}
         </div>
+        <Button
+          unstyled
+          type="button"
+          aria-label={t('resultCards.schedule.edit')}
+          onClick={() => setEditorOpen(true)}
+          disabled={!item}
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border-transparent bg-transparent p-0 text-muted-foreground opacity-70 transition-colors hover:bg-muted hover:text-foreground hover:opacity-100 disabled:pointer-events-none disabled:opacity-45 group-hover:opacity-100"
+          data-testid="schedule-created-card-edit"
+        >
+          <Pencil className="h-3.5 w-3.5" aria-hidden />
+        </Button>
       </div>
       <AgendaItemEditor
         open={editorOpen}

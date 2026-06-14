@@ -65,15 +65,11 @@ vi.mock('@/components/shell/ChatTopBar', () => ({
     title,
     sourceLabel,
     employee,
-    onShare,
-    shareLabel,
     moreMenuItems,
   }: {
     title: string
     sourceLabel?: string
     employee?: { name: string; role: string; defaultSkillLabel?: string | null }
-    onShare?: () => void
-    shareLabel?: string
     moreMenuItems?: Array<{
       id: string
       label: string
@@ -91,7 +87,6 @@ vi.mock('@/components/shell/ChatTopBar', () => ({
         <span data-testid="chat-default-skill">{employee.defaultSkillLabel}</span>
       ) : null}
       {sourceLabel ? <span data-testid="chat-source-label">{sourceLabel}</span> : null}
-      {onShare ? <button onClick={onShare}>{shareLabel ?? '分享'}</button> : null}
       {moreMenuItems?.map((item) => (
         <button key={item.id} onClick={() => item.onSelect?.()}>
           {item.icon}

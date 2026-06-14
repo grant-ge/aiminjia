@@ -275,8 +275,6 @@ export function ChatPage({ conversationId }: ChatPageProps) {
                 tagline: expertTeam.tagline,
               }
             : undefined}
-          onShare={conversationExport.openExportDialog}
-          shareLabel={t('chatHeader.exportConversation', '导出对话')}
           moreMenuItems={moreMenuItems}
         />
       ) : null}

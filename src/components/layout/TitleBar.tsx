@@ -1,6 +1,6 @@
 import React from 'react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { ChevronLeft, ChevronRight, PanelLeft, PanelRight } from 'lucide-react'
+import { ArrowLeft, ArrowRight, PanelLeft, PanelRight } from 'lucide-react'
 import { UpdateAvailableLink } from './UpdateAvailableLink'
 import { TitleBarEnvSwitcher } from './TitleBarEnvSwitcher'
 import { useUpdaterStore } from '@/lib/updaterStore'
@@ -74,7 +74,7 @@ function TitleBarNavigationButtons() {
   const goForward = useUiStore((s) => s.goForward)
 
   return (
-    <div className="ml-2 flex items-center gap-0.5" onMouseDown={(e) => e.stopPropagation()}>
+    <div className="ml-2 flex items-center" onMouseDown={(e) => e.stopPropagation()}>
       <Button
         link
         type="button"
@@ -87,7 +87,7 @@ function TitleBarNavigationButtons() {
           goBack()
         }}
       >
-        <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+        <ArrowLeft className="h-4 w-4" aria-hidden="true" />
       </Button>
       <Button
         link
@@ -101,7 +101,7 @@ function TitleBarNavigationButtons() {
           goForward()
         }}
       >
-        <ChevronRight className="h-4 w-4" aria-hidden="true" />
+        <ArrowRight className="h-4 w-4" aria-hidden="true" />
       </Button>
     </div>
   )
