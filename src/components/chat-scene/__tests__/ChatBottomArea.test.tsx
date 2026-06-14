@@ -14,9 +14,12 @@ import { useStreamingStore, type PendingAsk } from "@/stores/streamingStore";
 import { useInteractionStore } from "@/stores/interactionStore";
 import { useSkillStore } from "@/stores/skillStore";
 import { useUiStore } from "@/stores/uiStore";
+import { DEFAULT_SETTINGS } from "@/types/settings";
 import type { InteractionRequiredPayload } from "@/lib/tauri";
 
 const tauriMocks = vi.hoisted(() => ({
+  getSettings: vi.fn(),
+  updateSettings: vi.fn(),
   pendingSnapshotForSession: vi.fn(),
   pendingPermissionSnapshotForSession: vi.fn(),
   pendingInteractionSnapshotForSession: vi.fn(),
@@ -133,6 +136,8 @@ vi.mock("@/lib/tauri", async (importOriginal) => {
       tauriMocks.pendingInteractionSnapshotForSession,
     clearActiveTurnStage: tauriMocks.clearActiveTurnStage,
     stopStreaming: tauriMocks.stopStreaming,
+    getSettings: tauriMocks.getSettings,
+    updateSettings: tauriMocks.updateSettings,
     approvePermissionRequest: tauriMocks.approvePermissionRequest,
     denyPermissionRequest: tauriMocks.denyPermissionRequest,
     cancelPermissionRequest: tauriMocks.cancelPermissionRequest,
@@ -200,6 +205,8 @@ beforeEach(() => {
   tauriMocks.pendingInteractionSnapshotForSession
     .mockReset()
     .mockResolvedValue([]);
+  tauriMocks.getSettings.mockReset().mockResolvedValue({ ...DEFAULT_SETTINGS });
+  tauriMocks.updateSettings.mockReset().mockResolvedValue(undefined);
   tauriMocks.clearActiveTurnStage.mockReset().mockResolvedValue(undefined);
   tauriMocks.stopStreaming.mockReset().mockResolvedValue(undefined);
   tauriMocks.approvePermissionRequest.mockReset().mockResolvedValue(undefined);
@@ -538,6 +545,7 @@ describe("ChatBottomArea", () => {
 
   it("intercepts the composer from persisted waitingPermission stage when no pending ask survived reload", async () => {
     const user = userEvent.setup();
+    useChatStore.setState({ busyConversations: new Set(["conv-1"]) });
     useStreamingStore.setState({
       pendingAsks: new Map(),
       streamStates: {
@@ -571,11 +579,13 @@ describe("ChatBottomArea", () => {
     await waitFor(() =>
       expect(tauriMocks.clearActiveTurnStage).toHaveBeenCalledWith("conv-1"),
     );
+    expect(useChatStore.getState().busyConversations.has("conv-1")).toBe(false);
     expect(document.querySelector(".ProseMirror")).toBeTruthy();
   });
 
   it("intercepts the composer from persisted waitingInteraction stage when no pending interaction survived reload", async () => {
     const user = userEvent.setup();
+    useChatStore.setState({ busyConversations: new Set(["conv-1"]) });
     useStreamingStore.setState({
       pendingAsks: new Map(),
       streamStates: {
@@ -609,6 +619,7 @@ describe("ChatBottomArea", () => {
     await waitFor(() =>
       expect(tauriMocks.clearActiveTurnStage).toHaveBeenCalledWith("conv-1"),
     );
+    expect(useChatStore.getState().busyConversations.has("conv-1")).toBe(false);
     expect(document.querySelector(".ProseMirror")).toBeTruthy();
   });
 

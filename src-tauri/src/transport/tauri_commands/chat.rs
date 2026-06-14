@@ -3857,6 +3857,39 @@ impl TauriChatCommandAdapter {
         Ok(crate::runtime::agenda::AgendaStore::new(paths.base_dir()))
     }
 
+    fn fail_running_agenda_occurrences_for_conversation(&self, conversation_id: &str) {
+        let store = match self.agenda_store_for_current_user() {
+            Ok(store) => store,
+            Err(err) => {
+                log::warn!(
+                    "[agenda-dispatch] skip stop occurrence cleanup conv={} err={}",
+                    conversation_id,
+                    err
+                );
+                return;
+            }
+        };
+        match store
+            .fail_running_occurrences_for_conversation(conversation_id, "用户停止任务".to_string())
+        {
+            Ok(count) if count > 0 => {
+                log::info!(
+                    "[agenda-dispatch] marked {} running occurrence(s) failed for stopped conv={}",
+                    count,
+                    conversation_id
+                );
+            }
+            Ok(_) => {}
+            Err(err) => {
+                log::warn!(
+                    "[agenda-dispatch] failed to mark stopped occurrence conv={} err={}",
+                    conversation_id,
+                    err
+                );
+            }
+        }
+    }
+
     /// 返回当前 workspace 根目录，供 ChannelManager 等调用方构造下载目录。
     pub fn workspace_path(&self) -> std::path::PathBuf {
         self.services.file_mgr.workspace_path().to_path_buf()
@@ -4392,6 +4425,7 @@ impl TauriChatCommandAdapter {
             &session_id,
             crate::runtime::cancellation::CancellationReason::Interrupt,
         );
+        self.fail_running_agenda_occurrences_for_conversation(&conversation_id);
         conversation_service::stop_streaming(self.services.gateway.clone(), conversation_id).await
     }
 

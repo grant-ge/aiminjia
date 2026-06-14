@@ -264,8 +264,18 @@ export function useChat() {
     // immediately reflects the in-flight turn's state without waiting for
     // the next 2s heartbeat.  Returns null when no turn is active.
     void getActiveTurnStage(id)
-      .then((snapshot) => {
-        if (!snapshot) return
+      .then(async (snapshot) => {
+        if (!snapshot) {
+          if (switchVersionRef.current !== loadVersion) return
+          const store = useChatStore.getState()
+          store.clearConversationTurnStage(id)
+          if (!store.busyConversations.has(id)) return
+          const busyIds = await syncBusyConversations()
+          if (!busyIds.has(id)) {
+            useChatStore.getState().removeBusyConversation(id)
+          }
+          return
+        }
         if (switchVersionRef.current !== loadVersion) return
         const store = useChatStore.getState()
         store.setConversationTurnStage(id, snapshot.stage, snapshot.stageStartedAtMs)
@@ -519,6 +529,7 @@ export function useChat() {
     if (convId) {
       recordDiagnostic({ event: 'streaming.stop.requested', conversationId: convId })
       store.clearConversationStreamState(convId)
+      store.removeBusyConversation(convId)
       stopStreaming(convId).catch((err) => {
         console.error('[useChat] stopStreaming IPC failed:', err)
       })

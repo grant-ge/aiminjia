@@ -235,6 +235,76 @@ impl AgendaStore {
         Ok(out)
     }
 
+    pub fn fail_running_occurrences_for_conversation(
+        &self,
+        conversation_id: &str,
+        error_summary: String,
+    ) -> anyhow::Result<usize> {
+        use super::occurrence::OccurrenceStatus;
+
+        let _guard = self.lock.lock().unwrap();
+        let root = self.occurrences_dir();
+        if !root.exists() {
+            return Ok(0);
+        }
+
+        let mut latest: std::collections::HashMap<String, Occurrence> = Default::default();
+        let mut shards = Vec::new();
+        for item_dir in std::fs::read_dir(&root)?.filter_map(|e| e.ok()) {
+            let item_path = item_dir.path();
+            if !item_path.is_dir() {
+                continue;
+            }
+            for shard in std::fs::read_dir(item_path)?.filter_map(|e| e.ok()) {
+                let path = shard.path();
+                if path.extension().and_then(|s| s.to_str()) == Some("jsonl") {
+                    shards.push(path);
+                }
+            }
+        }
+        shards.sort();
+
+        for shard in shards {
+            let bytes = std::fs::read(&shard)?;
+            for line in bytes.split(|b| *b == b'\n') {
+                if line.is_empty() {
+                    continue;
+                }
+                let occ: Occurrence = serde_json::from_slice(line)?;
+                latest.insert(occ.id.clone(), occ);
+            }
+        }
+
+        let finished_at = chrono::Utc::now();
+        let mut updated = 0;
+        for occ in latest.values() {
+            if occ.conversation_id != conversation_id
+                || !matches!(occ.status, OccurrenceStatus::Running)
+            {
+                continue;
+            }
+            validate_item_id_for_path(&occ.agenda_item_id)?;
+            let mut final_occ = occ.clone();
+            final_occ.finished_at = Some(finished_at);
+            final_occ.status = OccurrenceStatus::Failed;
+            final_occ.error_summary = Some(error_summary.clone());
+
+            let path = self.occurrence_shard_path(&final_occ.agenda_item_id, final_occ.fired_at);
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            let mut file = std::fs::OpenOptions::new()
+                .append(true)
+                .create(true)
+                .open(&path)?;
+            let line = serde_json::to_string(&final_occ)?;
+            writeln!(file, "{}", line)?;
+            updated += 1;
+        }
+
+        Ok(updated)
+    }
+
     pub fn take_due(&self, now: chrono::DateTime<chrono::Utc>) -> anyhow::Result<Vec<AgendaItem>> {
         use super::item::ItemStatus;
         let _guard = self.lock.lock().unwrap();
@@ -487,6 +557,31 @@ mod tests {
         let occs = store.list_occurrences(&item.id, 10).unwrap();
         assert_eq!(occs.len(), 1);
         assert_eq!(occs[0].status, OccurrenceStatus::Succeeded);
+        assert!(occs[0].finished_at.is_some());
+    }
+
+    #[test]
+    fn fail_running_occurrences_for_conversation_appends_terminal_state() {
+        use super::super::occurrence::OccurrenceStatus;
+        let dir = TempDir::new().unwrap();
+        let store = AgendaStore::new(dir.path());
+        let item = store.create(make_valid_item("p1")).unwrap();
+        let running = make_running_occurrence(&item.id);
+        store.append_occurrence(&running).unwrap();
+
+        let updated = store
+            .fail_running_occurrences_for_conversation(
+                &running.conversation_id,
+                "用户停止任务".to_string(),
+            )
+            .unwrap();
+
+        assert_eq!(updated, 1);
+        let occs = store.list_occurrences(&item.id, 10).unwrap();
+        assert_eq!(occs.len(), 1);
+        assert_eq!(occs[0].id, running.id);
+        assert_eq!(occs[0].status, OccurrenceStatus::Failed);
+        assert_eq!(occs[0].error_summary.as_deref(), Some("用户停止任务"));
         assert!(occs[0].finished_at.is_some());
     }
 

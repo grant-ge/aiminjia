@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, renderHook } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 
 const tauriMock = vi.hoisted(() => ({
   sendMessage: vi.fn().mockResolvedValue(undefined),
@@ -11,6 +11,7 @@ const tauriMock = vi.hoisted(() => ({
   deleteConversation: vi.fn(),
   getConversations: vi.fn(),
   isAgentBusy: vi.fn(),
+  getActiveTurnStage: vi.fn(),
   renameConversation: vi.fn(),
   archiveConversation: vi.fn(),
 }))
@@ -35,6 +36,10 @@ describe('useChat sendUserMessage', () => {
       streamingContent: '',
       toolExecutions: [],
     })
+    tauriMock.getMessages.mockResolvedValue([])
+    tauriMock.getTasks.mockResolvedValue([])
+    tauriMock.isAgentBusy.mockResolvedValue([])
+    tauriMock.getActiveTurnStage.mockResolvedValue(null)
   })
 
   it('sends slash-prefixed text verbatim without skill metadata', async () => {
@@ -51,6 +56,7 @@ describe('useChat sendUserMessage', () => {
       null,
       expect.any(String),
       null,
+      undefined,
     )
   })
 
@@ -92,6 +98,7 @@ describe('useChat sendUserMessage', () => {
         label: '玩转钉钉',
         command: '/dingtalk-workspace',
       },
+      undefined,
     )
     expect(useChatStore.getState().messages[0].content.skillCommand).toEqual({
       id: 'dingtalk-workspace',
@@ -101,7 +108,7 @@ describe('useChat sendUserMessage', () => {
     expect(useChatStore.getState().messages[0].content.commandText).toBe('/dingtalk-workspace')
   })
 
-  it('stopCurrentStream keeps conversation busy until backend terminal event clears it', () => {
+  it('stopCurrentStream clears busy state immediately so stopped turns do not keep rendering as active', () => {
     useChatStore.setState({
       activeConversationId: 'conv-test',
       busyConversations: new Set(['conv-test']),
@@ -123,6 +130,35 @@ describe('useChat sendUserMessage', () => {
 
     expect(tauriMock.stopStreaming).toHaveBeenCalledWith('conv-test')
     expect(useChatStore.getState().isStreaming).toBe(false)
-    expect(useChatStore.getState().busyConversations.has('conv-test')).toBe(true)
+    expect(useChatStore.getState().busyConversations.has('conv-test')).toBe(false)
+  })
+
+  it('clears stale busy state when switched conversation has no active turn stage and backend is idle', async () => {
+    useChatStore.setState({
+      activeConversationId: 'other-conv',
+      busyConversations: new Set(['conv-test']),
+      streamStates: {
+        'conv-test': {
+          isStreaming: false,
+          streamingContent: '',
+          toolExecutions: [],
+          turnStage: {
+            kind: 'waitingPermission',
+            toolName: 'Read',
+            toolCallId: 'tool-1',
+          },
+        },
+      },
+    })
+    const { result } = renderHook(() => useChat())
+
+    await act(async () => {
+      await result.current.switchConversation('conv-test')
+    })
+
+    await waitFor(() =>
+      expect(useChatStore.getState().busyConversations.has('conv-test')).toBe(false),
+    )
+    expect(useChatStore.getState().streamStates['conv-test']?.turnStage).toBeNull()
   })
 })
