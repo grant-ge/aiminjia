@@ -33,13 +33,16 @@ const tauriMocks = vi.hoisted(() => ({
   expertTeamTemplateCatalog: vi.fn(),
   expertTeamTemplateRefresh: vi.fn(),
 }))
+const teamOverviewMock = vi.hoisted(() => ({
+  overview: null as import('@/types/team').TeamOverview | null,
+}))
 
 vi.mock('@/hooks/useChat', () => ({
   useChat: () => chatMocks,
 }))
 
 vi.mock('@/hooks/useTeamOverview', () => ({
-  useTeamOverview: () => ({ overview: null, loaded: true, refetch: vi.fn() }),
+  useTeamOverview: () => ({ overview: teamOverviewMock.overview, loaded: true, refetch: vi.fn() }),
 }))
 
 vi.mock('@/lib/tauri', () => ({
@@ -148,6 +151,7 @@ describe('ChatPage layout', () => {
     await clearExpertTeam('conv-layout')
     await clearExpertTeam('conv-team')
     await clearExpertTeam('conv-retro')
+    teamOverviewMock.overview = null
     useChatStore.setState({ activeConversationId: null, conversations: [], messages: [] })
     useSkillStore.setState({ skills: [], isLoading: false })
   })
@@ -450,6 +454,51 @@ describe('ChatPage layout', () => {
     expect(screen.getByTestId('chat-content')).toBeInTheDocument()
     expect(screen.getByTestId('chat-footer-input')).toBeInTheDocument()
     expect(screen.queryByTestId('right-panel')).not.toBeInTheDocument()
+  })
+
+  it('groups the header with the chat column as the left pane beside the team drawer', () => {
+    useChatStore.setState({
+      activeConversationId: 'conv-layout',
+      conversations: [{ id: 'conv-layout', title: '布局测试', createdAt: '', updatedAt: '', isArchived: false }],
+    })
+
+    render(<ChatPage conversationId="conv-layout" />)
+
+    const layout = screen.getByTestId('chat-main-layout')
+    const primaryPane = screen.getByTestId('chat-primary-pane')
+    const chatColumn = screen.getByTestId('chat-layout-column')
+    const drawer = screen.getByTestId('team-chat-drawer')
+
+    expect(layout).toHaveClass('flex')
+    expect(layout).toHaveClass('h-full')
+    expect(primaryPane).toHaveClass('h-full')
+    expect(layout).toContainElement(primaryPane)
+    expect(primaryPane).toContainElement(screen.getByTestId('chat-header'))
+    expect(primaryPane).toContainElement(chatColumn)
+    expect(primaryPane.parentElement).toBe(layout)
+    expect(drawer.parentElement).toBe(layout)
+  })
+
+  it('keeps the chat header visible from the team overview when the conversation title is temporarily unavailable', () => {
+    teamOverviewMock.overview = {
+      conversationId: 'conv-layout',
+      teams: [{
+        teamId: 'team-debate',
+        teamName: '辩论团',
+        createdAt: '',
+        deletedAt: null,
+        members: [],
+        events: [],
+      }],
+    }
+    useChatStore.setState({
+      activeConversationId: 'conv-layout',
+      conversations: [{ id: 'conv-layout', title: '', createdAt: '', updatedAt: '', isArchived: false }],
+    })
+
+    render(<ChatPage conversationId="conv-layout" />)
+
+    expect(screen.getByTestId('chat-header')).toHaveTextContent('辩论团')
   })
 
   it('asks for confirmation before exporting the current conversation', async () => {

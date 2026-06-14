@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button'
 
 interface TeamChatEventsProps {
   events: TeamEvent[]
+  className?: string
   /** When set, clicking a teammate's avatar fires this callback to open their detail view. */
   onDrillAgent?: (agentName: string) => void
 }
@@ -30,12 +31,18 @@ interface TeamChatEventsProps {
  * Date/time labels appear when there's a 5-minute gap between adjacent
  * events to avoid timestamp pollution in tight bursts.
  */
-export function TeamChatEvents({ events, onDrillAgent }: TeamChatEventsProps) {
+export function TeamChatEvents({ events, className, onDrillAgent }: TeamChatEventsProps) {
   const { t } = useTranslation()
   const renderItems = buildTeamChatRenderItems(events)
   if (renderItems.length === 0) {
     return (
-      <div className="flex h-full items-center justify-center px-6 py-12 text-sm text-muted-foreground">
+      <div
+        data-testid="team-chat-events"
+        className={cn(
+          'flex min-h-32 items-center justify-center px-6 py-12 text-sm text-muted-foreground',
+          className,
+        )}
+      >
         {t('team.chat.empty')}
       </div>
     )
@@ -45,7 +52,7 @@ export function TeamChatEvents({ events, onDrillAgent }: TeamChatEventsProps) {
   let lastSpeaker: string | null = null
 
   return (
-    <div className="flex flex-col py-4">
+    <div data-testid="team-chat-events" className={cn('flex flex-col py-4', className)}>
       {renderItems.map((item, idx) => {
         const event = item.kind === 'event' ? item.event : item.anchor
         const groupLabel = formatTimestampForGroup(event.ts, lastTsForGroup)

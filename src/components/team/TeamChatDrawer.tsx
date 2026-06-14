@@ -45,9 +45,9 @@ export function TeamChatDrawer({ conversationId, overview }: TeamChatDrawerProps
   if (!state.drawerOpen) return null
 
   return (
-    <aside
+    <div
       data-testid="team-split-panel"
-      className="flex h-full min-w-0 flex-1 flex-col border-l border-border bg-background"
+      className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-l border-border bg-background"
     >
       {drillAgent ? (
         <TeammateDetailPanel
@@ -64,7 +64,7 @@ export function TeamChatDrawer({ conversationId, overview }: TeamChatDrawerProps
           onClose={() => closeDrawer(conversationId, true)}
         />
       )}
-    </aside>
+    </div>
   )
 }
 
@@ -144,7 +144,10 @@ function DrawerOverview({ conversationId, overview, onDrill, onClose }: DrawerOv
     const raf = requestAnimationFrame(() => {
       const target = content.querySelector<HTMLElement>(`[data-team-id="${CSS.escape(focusedTeamId)}"]`)
       if (target) {
-        target.scrollIntoView({ block: 'start', behavior: 'auto' })
+        const scrollContainer = scrollRef.current
+        if (scrollContainer) {
+          scrollContainer.scrollTop = target.offsetTop
+        }
         userScrolledUp.current = true
         setShowJumpToBottom(true)
       }
@@ -155,22 +158,22 @@ function DrawerOverview({ conversationId, overview, onDrill, onClose }: DrawerOv
 
   if (!overview || overview.teams.length === 0) {
     return (
-      <div className="flex h-full flex-col">
+      <>
         <DrawerHeader
           title={t('team.process.title')}
           subtitle={t('team.process.emptySubtitle')}
           memberCount={0}
           onClose={onClose}
         />
-        <div className="flex flex-1 items-center justify-center px-6 text-sm text-muted-foreground">
+        <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-sm text-muted-foreground">
           {t('team.process.emptyBody')}
         </div>
-      </div>
+      </>
     )
   }
 
   return (
-    <div className="relative flex h-full flex-col">
+    <>
       <DrawerHeader
         title={t('team.process.title')}
         subtitle={t('team.process.sessionCount', { count: overview.teams.length })}
@@ -179,13 +182,14 @@ function DrawerOverview({ conversationId, overview, onDrill, onClose }: DrawerOv
       />
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto overscroll-contain px-4"
+        data-testid="team-process-scroll-region"
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4"
         onScroll={handleScroll}
         onWheel={markUserIntent}
         onTouchMove={markUserIntent}
         onKeyDown={markUserIntent}
       >
-        <div ref={contentRef}>
+        <div ref={contentRef} data-testid="team-process-content" className="flex flex-col">
           {overview.teams.map((team) => (
             <TeamSessionSection
               key={team.teamId}
@@ -208,7 +212,7 @@ function DrawerOverview({ conversationId, overview, onDrill, onClose }: DrawerOv
           <ArrowDown className="h-4 w-4" />
         </Button>
       ) : null}
-    </div>
+    </>
   )
 }
 
@@ -222,7 +226,10 @@ interface DrawerHeaderProps {
 function DrawerHeader({ title, subtitle, memberCount, onClose }: DrawerHeaderProps) {
   const { t } = useTranslation()
   return (
-    <div className="flex items-center gap-3 border-b border-border bg-muted/30 px-4 py-3">
+    <div
+      data-testid="team-process-header"
+      className="flex h-12 items-center gap-3 border-b border-border bg-muted/30 px-4"
+    >
       <h2 className="text-base font-medium text-foreground">{title}</h2>
       <span className="text-xs text-muted-foreground">{subtitle}</span>
       <span className="ml-auto shrink-0 text-xs text-muted-foreground">
@@ -294,9 +301,11 @@ function TeamSessionSection({ session, onDrill }: TeamSessionSectionProps) {
         )}
       </div>
 
-      <div className={chatWidthMode === 'full' ? 'w-full' : 'mx-auto w-full max-w-[736px]'}>
-        <TeamChatEvents events={session.events} onDrillAgent={onDrill} />
-      </div>
+      <TeamChatEvents
+        events={session.events}
+        className={chatWidthMode === 'full' ? 'w-full' : 'mx-auto w-full max-w-[736px]'}
+        onDrillAgent={onDrill}
+      />
     </section>
   )
 }

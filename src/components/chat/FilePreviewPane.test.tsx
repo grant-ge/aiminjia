@@ -51,6 +51,16 @@ describe('FilePreviewPane', () => {
     expect(onClosePreview).toHaveBeenCalledTimes(1)
   })
 
+  it('uses the compact fixed app chrome height for the preview header', () => {
+    previewMock.getFilePreview.mockReturnValue(new Promise(() => {}))
+
+    render(<FilePreviewPane target={target} onOpenExternal={() => {}} />)
+
+    const header = screen.getByTestId('file-preview-header')
+    expect(header).toHaveClass('h-12')
+    expect(header).not.toHaveClass('py-2')
+  })
+
   it('loads and renders markdown content', async () => {
     previewMock.getFilePreview.mockResolvedValue({
       kind: 'markdown',

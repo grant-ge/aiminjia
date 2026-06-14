@@ -41,6 +41,22 @@ describe('TeammateDetailPanel', () => {
     expect(screen.queryByText('完整内部过程')).not.toBeInTheDocument()
   })
 
+  it('uses the compact fixed drawer header height', () => {
+    render(
+      <TeammateDetailPanel
+        conversationId="conv-1"
+        agentId="pro-agent"
+        agentName="pro"
+        onBack={vi.fn()}
+      />,
+    )
+
+    const header = screen.getByTestId('teammate-detail-header')
+
+    expect(header).toHaveClass('h-12')
+    expect(header).not.toHaveClass('py-3')
+  })
+
   it('renders teammate records as a timeline', () => {
     transcriptState.entries = [
       {

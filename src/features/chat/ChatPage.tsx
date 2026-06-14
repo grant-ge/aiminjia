@@ -121,13 +121,14 @@ export function ChatPage({ conversationId }: ChatPageProps) {
     }
   }, [expertTeamId, i18n.language, hasCachedExpertTeam])
   const expertTeam = cachedExpertTeam ?? catalogExpertTeam ?? undefined
+  const teamOverviewTitle = teamOverview?.teams.find((team) => team.teamName)?.teamName ?? null
   const sourceLabel = conv?.kind === 'expertTeam'
     ? expertTeam?.name ?? conv?.sourceLabel
     : conv?.sourceLabel
   const isEmployeeConversation = conversationSource?.kind === 'employee' || conv?.kind === 'employee'
   const isExpertTeamConversation = Boolean(expertTeam) || conv?.kind === 'expertTeam'
   const headerKind = isEmployeeConversation ? 'employee' : isExpertTeamConversation ? 'expertTeam' : conv?.kind
-  const headerTitle = title || employeeDisplay?.name || expertTeam?.name || ''
+  const headerTitle = title || employeeDisplay?.name || expertTeam?.name || teamOverviewTitle || ''
   const shouldRenderHeader = Boolean(headerTitle || employeeDisplay || expertTeam)
 
   const handleRenameConfirm = async (nextTitle: string) => {
@@ -250,44 +251,46 @@ export function ChatPage({ conversationId }: ChatPageProps) {
 
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
-      {shouldRenderHeader ? (
-        <ChatTopBar
-          title={headerTitle}
-          workspace={conv?.workspaceName}
-          kind={headerKind}
-          sourceLabel={sourceLabel}
-          updatedAt={conv?.updatedAt}
-          employee={
-            employee && employeeDisplay
-              ? {
-                  avatar: employee.avatar,
-                  avatarUrl: getLocalEmployeeAvatarUrl(employeeDisplay.name),
-                  name: employeeDisplay.name,
-                  role: employeeDisplay.role,
-                  defaultSkillLabel,
-                }
-              : undefined
-          }
-          expertTeam={expertTeam
-            ? {
-                avatar: <ExpertTeamAvatarStack team={expertTeam} size="xs" />,
-                name: expertTeam.name,
-                tagline: expertTeam.tagline,
+      <div data-testid="chat-main-layout" className="relative flex h-full min-h-0 flex-1 overflow-hidden">
+        <div data-testid="chat-primary-pane" className="relative flex h-full min-w-0 flex-1 flex-col overflow-hidden">
+          {shouldRenderHeader ? (
+            <ChatTopBar
+              title={headerTitle}
+              workspace={conv?.workspaceName}
+              kind={headerKind}
+              sourceLabel={sourceLabel}
+              updatedAt={conv?.updatedAt}
+              employee={
+                employee && employeeDisplay
+                  ? {
+                      avatar: employee.avatar,
+                      avatarUrl: getLocalEmployeeAvatarUrl(employeeDisplay.name),
+                      name: employeeDisplay.name,
+                      role: employeeDisplay.role,
+                      defaultSkillLabel,
+                    }
+                  : undefined
               }
-            : undefined}
-          moreMenuItems={moreMenuItems}
-        />
-      ) : null}
-      <div className="relative flex flex-1 overflow-hidden">
-        <div data-testid="chat-layout-column" className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
-          {expertTeam && messageCount === 0 ? (
-            <div className="flex-1 overflow-y-auto overscroll-contain">
-              <ExpertTeamWelcome team={expertTeam} />
-            </div>
-          ) : (
-            <ChatArea expertTeamId={expertTeamId} />
-          )}
-          <ChatBottomArea placeholderOverride={expertTeam?.composerPlaceholder} />
+              expertTeam={expertTeam
+                ? {
+                    avatar: <ExpertTeamAvatarStack team={expertTeam} size="xs" />,
+                    name: expertTeam.name,
+                    tagline: expertTeam.tagline,
+                  }
+                : undefined}
+              moreMenuItems={moreMenuItems}
+            />
+          ) : null}
+          <div data-testid="chat-layout-column" className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+            {expertTeam && messageCount === 0 ? (
+              <div className="flex-1 overflow-y-auto overscroll-contain">
+                <ExpertTeamWelcome team={expertTeam} />
+              </div>
+            ) : (
+              <ChatArea expertTeamId={expertTeamId} />
+            )}
+            <ChatBottomArea placeholderOverride={expertTeam?.composerPlaceholder} />
+          </div>
         </div>
         {activeConversationId ? (
           <TeamVisualProvider value={expertTeam ?? null}>
