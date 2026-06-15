@@ -1272,7 +1272,7 @@ PDF 不在前端 `generatedFileActions.PREVIEWABLE_FILE_TYPES` 白名单（同�
 1. 应用探活：`tauri-pilot aijia health-check`
 2. 打开新对话：`tauri-pilot aijia new-task`
 3. 通过 `tauri-pilot aijia where --json` 记录 `{scope}` 和 `{conversationId}`
-4. 发送消息：请使用 Agent 工具运行一个前台子 Agent 任务，不要主动放到后台；工具参数不要包含 `run_in_background`，或设置为 `false`。请让这个子 Agent 只做一件事：先等待超过 20 秒，再返回字符串 `aijia-agent-auto-bg-029`。当系统把子任务自动转后台后，请不要等待子任务自然结束，立刻告诉我 task_id。
+4. 发送消息：请使用 Agent 工具运行一个前台子 Agent 任务，不要主动放到后台；工具参数不要包含 `run_in_background`，或设置为 `false`。请让这个子 Agent 只做一件事：使用当前平台的 shell 工具以前台方式运行一个真实等待命令，等待超过 20 秒后输出字符串 `aijia-agent-auto-bg-029`；Windows 环境使用 PowerShell 命令 `Start-Sleep -Seconds 25; Write-Output 'aijia-agent-auto-bg-029'`，macOS/Linux 环境使用 Bash 命令 `sleep 25; printf 'aijia-agent-auto-bg-029\n'`。子 Agent 内部调用 shell 工具时也不要设置 `run_in_background=true`。当系统把子任务自动转后台后，请不要等待子任务自然结束，立刻告诉我 task_id。
 5. 等待 assistant 在 45 秒内返回，记录这次自动后台化对应的 `{taskId}`。
 6. 等待 25 秒。
 7. 发送消息：请使用 TaskOutput 从 offset 0 读取刚才 `{taskId}` 的输出，并告诉我是否读到了 `aijia-agent-auto-bg-029`。
