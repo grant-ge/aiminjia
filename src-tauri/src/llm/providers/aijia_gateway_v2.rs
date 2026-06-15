@@ -497,6 +497,7 @@ fn build_aijia_request_for_route_with_stream(
     stream: bool,
 ) -> AijiaResponseRequest {
     let plan = resolve_v2_model_plan(&request, model_type, use_tools);
+    let visible_reply_language = infer_visible_reply_language(&request.messages);
 
     let mut system: Vec<SystemSegment> = request
         .system_segments
@@ -527,6 +528,9 @@ fn build_aijia_request_for_route_with_stream(
         if let Some(message) = to_canonical_message(message) {
             messages.push(message);
         }
+    }
+    if let Some(segment) = visible_reply_language_system_segment(visible_reply_language) {
+        system.push(segment);
     }
 
     let tools = if plan.use_tools {
@@ -569,6 +573,97 @@ fn build_aijia_request_for_route_with_stream(
             platform: client_platform(),
         },
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum VisibleReplyLanguage {
+    Chinese,
+    English,
+}
+
+fn infer_visible_reply_language(messages: &[ChatMessage]) -> Option<VisibleReplyLanguage> {
+    messages
+        .iter()
+        .rev()
+        .filter(|message| message.role == "user")
+        .filter_map(|message| infer_visible_reply_language_from_text(&message.content))
+        .next()
+}
+
+fn infer_visible_reply_language_from_text(text: &str) -> Option<VisibleReplyLanguage> {
+    let trimmed = text.trim();
+    if trimmed.is_empty()
+        || trimmed.starts_with("[动态上下文")
+        || trimmed.starts_with("<system-reminder>")
+        || trimmed.starts_with("# agentsMd")
+        || is_link_or_code_only(trimmed)
+    {
+        return None;
+    }
+
+    let cjk_count = trimmed.chars().filter(|ch| is_cjk(*ch)).count();
+    if cjk_count > 0 {
+        return Some(VisibleReplyLanguage::Chinese);
+    }
+
+    let ascii_alpha_count = trimmed
+        .chars()
+        .filter(|ch| ch.is_ascii_alphabetic())
+        .count();
+    if ascii_alpha_count >= 3 {
+        return Some(VisibleReplyLanguage::English);
+    }
+
+    None
+}
+
+fn is_cjk(ch: char) -> bool {
+    matches!(
+        ch as u32,
+        0x3400..=0x4dbf
+            | 0x4e00..=0x9fff
+            | 0xf900..=0xfaff
+            | 0x20000..=0x2a6df
+            | 0x2a700..=0x2b73f
+            | 0x2b740..=0x2b81f
+            | 0x2b820..=0x2ceaf
+    )
+}
+
+fn is_link_or_code_only(text: &str) -> bool {
+    text.starts_with("```")
+        || text.starts_with("`")
+        || text.starts_with("http://")
+        || text.starts_with("https://")
+}
+
+fn visible_reply_language_system_segment(
+    language: Option<VisibleReplyLanguage>,
+) -> Option<SystemSegment> {
+    let text = match language? {
+        VisibleReplyLanguage::Chinese => concat!(
+            "<system-reminder>\n",
+            "Visible Reply Language: Chinese (zh-CN, 中文).\n",
+            "The latest natural-language user request in this turn is Chinese. ",
+            "All user-visible assistant prose must stay in Chinese, including brief status/narration before tool calls. ",
+            "Keep code, file paths, commands, API fields, proper nouns, and requested foreign-language content unchanged.\n",
+            "</system-reminder>"
+        ),
+        VisibleReplyLanguage::English => concat!(
+            "<system-reminder>\n",
+            "Visible Reply Language: English.\n",
+            "The latest natural-language user request in this turn is English. ",
+            "All user-visible assistant prose must stay in English, including brief status/narration before tool calls. ",
+            "Keep code, file paths, commands, API fields, proper nouns, and requested foreign-language content unchanged.\n",
+            "</system-reminder>"
+        ),
+    };
+
+    Some(SystemSegment {
+        kind: "text".to_string(),
+        text: text.to_string(),
+        cache: None,
+    })
 }
 
 fn client_platform() -> String {
@@ -1287,8 +1382,11 @@ mod tests {
 
         let canonical = build_aijia_request(req);
 
-        assert_eq!(canonical.context.system.len(), 1);
+        assert_eq!(canonical.context.system.len(), 2);
         assert_eq!(canonical.context.system[0].text, "system prompt");
+        assert!(canonical.context.system[1]
+            .text
+            .contains("Visible Reply Language"));
         assert_eq!(canonical.context.messages.len(), 1);
         assert_eq!(canonical.context.messages[0].role, "user");
     }
@@ -1333,14 +1431,90 @@ mod tests {
 
         let canonical = build_aijia_request(req);
 
-        assert_eq!(canonical.context.system.len(), 1);
+        assert_eq!(canonical.context.system.len(), 2);
         assert_eq!(canonical.context.system[0].text, "segmented system");
         assert_eq!(
             canonical.context.system[0].cache.as_deref(),
             Some("ephemeral")
         );
+        assert_eq!(canonical.context.system[1].cache, None);
+        assert!(canonical.context.system[1]
+            .text
+            .contains("Visible Reply Language"));
         assert_eq!(canonical.context.messages.len(), 1);
         assert_eq!(canonical.context.messages[0].role, "user");
+    }
+
+    #[test]
+    fn build_request_anchors_visible_reply_language_from_latest_user_message() {
+        let tool_call = ToolCall {
+            id: "call_1".to_string(),
+            name: "Bash".to_string(),
+            arguments: json!({"command":"ls templates"}),
+        };
+        let req = LlmRequest {
+            messages: vec![
+                ChatMessage::text("user", "请用 html-ppt 生成一份产品发布会 PPT。"),
+                ChatMessage::assistant_with_tool_calls(
+                    "".to_string(),
+                    vec![tool_call],
+                    Some("Let me inspect the templates.".to_string()),
+                    None,
+                ),
+                ChatMessage::tool_result(
+                    "call_1",
+                    "Bash",
+                    "product-launch\nsingle-page layouts".to_string(),
+                ),
+            ],
+            system_segments: Some(vec![SystemPromptSegment {
+                text: "base system".to_string(),
+                cache: true,
+            }]),
+            ..Default::default()
+        };
+
+        let canonical = build_aijia_request(req);
+
+        let language_segment = canonical
+            .context
+            .system
+            .iter()
+            .find(|segment| segment.text.contains("Visible Reply Language"))
+            .expect("visible reply language segment");
+        assert_eq!(language_segment.cache, None);
+        assert!(language_segment.text.contains("Chinese"));
+        assert!(language_segment.text.contains("中文"));
+    }
+
+    #[test]
+    fn visible_reply_language_uses_latest_real_user_language() {
+        let messages = vec![
+            ChatMessage::text("user", "先用中文聊一下。"),
+            ChatMessage::text("assistant", "好的。"),
+            ChatMessage::text("user", "Please summarize this file."),
+        ];
+
+        assert_eq!(
+            infer_visible_reply_language(&messages),
+            Some(VisibleReplyLanguage::English)
+        );
+    }
+
+    #[test]
+    fn visible_reply_language_ignores_user_system_reminders() {
+        let messages = vec![
+            ChatMessage::text("user", "帮我看一下这个文件。"),
+            ChatMessage::text(
+                "user",
+                "<system-reminder>\nCurrent time is 2026-06-15.\n</system-reminder>",
+            ),
+        ];
+
+        assert_eq!(
+            infer_visible_reply_language(&messages),
+            Some(VisibleReplyLanguage::Chinese)
+        );
     }
 
     #[test]
