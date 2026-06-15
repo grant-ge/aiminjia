@@ -222,7 +222,7 @@ export function HomeTaskComposerCard() {
     } finally {
       setIsSubmitting(false)
     }
-  }, [displayWorkspace, isSubmitting, sendUserMessage])
+  }, [displayWorkspace, isSubmitting, sendUserMessage, t])
 
   const workspaceLabel = displayWorkspace?.displayName ?? t('homeComposer.defaultProject')
   const workspacePath = displayWorkspace?.rootPath

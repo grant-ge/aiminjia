@@ -176,7 +176,6 @@ export function ChatBottomArea({
         usePendingStore.getState().applySnapshot(pendingSessionId, items),
       )
       .catch((e) => {
-        // eslint-disable-next-line no-console
         console.warn('[pending] snapshot fetch failed', e)
       })
   }, [pendingSessionId])
