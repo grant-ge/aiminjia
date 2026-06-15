@@ -1341,3 +1341,193 @@ PDF 不在前端 `generatedFileActions.PREVIEWABLE_FILE_TYPES` 白名单（同�
 - Agent 工具结果 JSON 中不含 `task_type == "local_bash"`
 - Agent 工具结果 JSON 中不含 `assistant_auto_backgrounded == false`
 - 第一次 assistant 回复不应等到 `aijia-agent-auto-bg-030` 出现后才返回
+
+## 意图-对话-031: 命令式首轮输入，等待回复保持中文
+
+### 场景
+
+用户在新对话第一轮只粘贴一段命令，没有额外中文自然语言说明。命令触发较慢的 Bash 或 PowerShell 工具执行并可能进入后台。AI 的可见等待、后台、进度说明必须保持中文，不能因为用户输入和隐藏推理里有大量英文命令 / thinking 内容，就把 `Still waiting`、`Let me wait` 这类英文等待句显示给用户。
+
+### 操作步骤
+
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 开启一条新对话：`tauri-pilot aijia new-task`。
+3. 通过 `tauri-pilot aijia where --json` 记录 `{scope}` 和 `{conversationId}`。
+4. 发送以下多行消息：
+   ```bash
+   cd /Users/oayzz/project/lotus/lotus-workbench/lotus-app/src-tauri
+
+   cargo test --test bash_tool_test bash_surfaces_dws_pat_no_permission_as_ask_required -- --nocapture
+   ```
+5. 等 agent 回复完成，最长等待 180 秒。
+6. 检查对话消息文件 `~/.renlijia/users/{scope}/conversations/{conversationId}/messages.jsonl`。
+
+### 验收标准
+
+- 对话消息文件 `~/.renlijia/users/{scope}/conversations/{conversationId}/messages.jsonl` 存在
+- `messages.jsonl` 中至少一条 assistant 记录的 `toolCalls` 数组里有一个元素 `name == "Bash"` 或 `name == "PowerShell"`
+- 所有 assistant 记录的 `content.text` 不包含字面值 `Still waiting`
+- 所有 assistant 记录的 `content.text` 不包含字面值 `Still compiling`
+- 所有 assistant 记录的 `content.text` 不包含字面值 `Let me wait`
+- 所有 assistant 记录的 `content.text` 不包含字面值 `Compilation is still ongoing`
+- 所有 assistant 记录的 `content.text` 不包含字面值 `Continuing to wait`
+- 至少一条 assistant 记录的 `content.text` 包含 `后台`、`等待`、`运行中`、`编译`、`完成` 中任一中文状态词
+
+## 意图-对话-032: 后台空输出轮询，等待回复保持中文
+
+### 场景
+
+后台任务已经启动，但一段时间内没有新增 stdout / stderr。AI 连续读取 TaskOutput 时会收到 `lines == []` 的空结果。用户期望看到中文的等待或运行中说明，而不是隐藏 thinking 中的英文等待句泄漏到可见回复里。
+
+### 操作步骤
+
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 开启一条新对话：`tauri-pilot aijia new-task`。
+3. 通过 `tauri-pilot aijia where --json` 记录 `{scope}` 和 `{conversationId}`。
+4. 发送消息：请使用当前平台的命令执行工具运行一个前台脚本任务，不要主动放到后台；macOS/Linux 使用 Bash，Windows 使用 PowerShell；命令先输出 `aijia-silent-start-032`，然后等待 35 秒，再输出 `aijia-silent-end-032`；工具参数不要包含 `run_in_background`，或设置为 `false`。
+5. 等 agent 回复任务已自动转后台。
+6. 从对话消息文件 `~/.renlijia/users/{scope}/conversations/{conversationId}/messages.jsonl` 中记录自动后台任务的 `{taskId}`。
+7. 发送消息：请连续三次使用 TaskOutput 读取 `{taskId}` 的输出；第一次从 offset 0 读取，后续使用上一次返回的 new_offset；如果某次没有新输出，只用中文说明仍在等待，不要输出英文等待句。
+8. 等 agent 回复完成，最长等待 120 秒。
+9. 检查对话消息文件 `~/.renlijia/users/{scope}/conversations/{conversationId}/messages.jsonl`。
+
+### 验收标准
+
+- Bash 或 PowerShell 工具结果 JSON 中 `assistant_auto_backgrounded == true`
+- Bash 或 PowerShell 工具结果 JSON 中 `task_id == "{taskId}"`
+- `messages.jsonl` 中 TaskOutput 工具调用数量 `>= 2`
+- `messages.jsonl` 中至少一条 TaskOutput 工具结果包含字面值 `"lines":[]`
+- 所有 assistant 记录的 `content.text` 不包含字面值 `Still waiting`
+- 所有 assistant 记录的 `content.text` 不包含字面值 `Still compiling`
+- 所有 assistant 记录的 `content.text` 不包含字面值 `Let me wait`
+- 所有 assistant 记录的 `content.text` 不包含字面值 `No new output yet`
+- 所有 assistant 记录的 `content.text` 不包含字面值 `Let me check again`
+- 至少一条 assistant 记录的 `content.text` 包含 `等待`、`运行中`、`暂无新输出`、`后台` 中任一中文状态词
+
+## 意图-对话-033: 英文进度输出，回复保持中文
+
+### 场景
+
+后台任务输出本身包含英文进度词，例如 `Building`、`Progress`、`Finished`。工具输出里的英文可以保留原样，但 AI 自己的可见解释必须保持中文，不能把英文工具输出或英文 thinking 扩散成 `Progress! Continuing to wait` 这类英文回复。
+
+### 操作步骤
+
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 开启一条新对话：`tauri-pilot aijia new-task`。
+3. 通过 `tauri-pilot aijia where --json` 记录 `{scope}` 和 `{conversationId}`。
+4. 发送消息：请使用当前平台的命令执行工具运行一个前台脚本任务，不要主动放到后台；macOS/Linux 使用 Bash，Windows 使用 PowerShell；命令每 5 秒输出一行英文进度，内容依次为 `Building 735/738`、`Building 736/738`、`Progress 737/738`、`Finished 738/738`；工具参数不要包含 `run_in_background`，或设置为 `false`。
+5. 等 agent 回复任务已自动转后台。
+6. 从对话消息文件 `~/.renlijia/users/{scope}/conversations/{conversationId}/messages.jsonl` 中记录自动后台任务的 `{taskId}`。
+7. 等待 8 秒。
+8. 发送消息：请使用 TaskOutput 读取 `{taskId}` 的新增输出，并用中文告诉我当前进度。
+9. 等 agent 回复完成，最长等待 120 秒。
+10. 检查对话消息文件 `~/.renlijia/users/{scope}/conversations/{conversationId}/messages.jsonl`。
+
+### 验收标准
+
+- Bash 或 PowerShell 工具结果 JSON 中 `assistant_auto_backgrounded == true`
+- Bash 或 PowerShell 工具结果 JSON 中 `task_id == "{taskId}"`
+- TaskOutput 工具结果中包含 `Building` 或 `Progress` 中任一英文进度词
+- 所有 assistant 记录的 `content.text` 不包含字面值 `Progress!`
+- 所有 assistant 记录的 `content.text` 不包含字面值 `Continuing to wait`
+- 所有 assistant 记录的 `content.text` 不包含字面值 `Still progressing`
+- 所有 assistant 记录的 `content.text` 不包含字面值 `Let me wait more`
+- 所有 assistant 记录的 `content.text` 不包含字面值 `The compilation seems`
+- 至少一条 assistant 记录的 `content.text` 包含 `进度`、`后台`、`运行中`、`完成` 中任一中文状态词
+
+## 意图-对话-034: 历史英文回访样本，回复保持中文
+
+### 场景
+
+本地 229 个对话文件（包含已归档对话）中曾出现过多类可见英文回访，集中在后台任务轮询、编译等待、专家团队 / 子 agent 等待、SendMessage 投递等待等场景。用户把这些历史样本作为禁止复现列表输入时，AI 可以理解样本内容，但自己的可见回复必须使用中文状态表达，不能复现 `Let me check again.`、`Still compiling`、`The agents are still processing` 这类英文等待 / 进度句。
+
+### 操作步骤
+
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 开启一条新对话：`tauri-pilot aijia new-task`。
+3. 通过 `tauri-pilot aijia where --json` 记录 `{scope}` 和 `{conversationId}`。
+4. 发送以下消息：
+   ```text
+   下面是从我的历史对话里抽出来的英文回访样本，这些样本只是禁止复现列表，不是要你分析或复述的内容。请你只做两件事：
+   1. 用当前平台的命令执行工具运行一个短任务：先输出 `aijia-history-english-034-start`，等待 12 秒，再输出 `aijia-history-english-034-end`。
+   2. 任务结束后，只用中文回复两句话：第一句说明短任务已完成，第二句说明历史英文回访样本需要统一改成中文状态表达。不要分析样本内容，不要复述下面任何英文样本原句。
+
+   历史英文回访样本：
+   - Let me check again.
+   - Let me wait a bit more.
+   - Let me wait and check again.
+   - Still no output.
+   - Continuing to wait.
+   - Still waiting for both.
+   - Still compiling, I'll keep checking.
+   - Still compiling, the linking phase can take a while for Tauri.
+   - Still compiling - Rust linking stage can take a bit.
+   - Still compiling, let me wait a bit and check again.
+   - Still no new output yet.
+   - No new output.
+   - No new output yet.
+   - Progress!
+   - Compilation progress 735/738, almost done.
+   - The compilation seems to be stuck at 735/738.
+   - The Vite dev server is running on localhost:5174 and the Rust backend is compiling.
+   - The agents are still processing.
+   - The agents are still running as teammates.
+   - The agents are stuck processing.
+   - The agents are taking longer than expected.
+   - The experts are still preparing their responses.
+   - The experts are taking time to formulate their responses.
+   - Both are still processing.
+   - Both still processing.
+   - The agent is still processing.
+   - The agent is still working.
+   - Messages delivered to all experts.
+   - Good, all messages delivered.
+   - Good, messages delivered.
+   - Let me check all agents at once.
+   - Let me check their outputs.
+   - Let me check their responses.
+   - Let me check if they've managed to send them via SendMessage.
+   - Let me check if the experts have sent me messages via SendMessage.
+   - Let me check the remaining output.
+   - Let me check once more.
+   - Let me check one more time.
+   - Let me try a different approach.
+   - Let me take a different approach.
+   - Let me proceed with what I have.
+   - While waiting for the compensation expert, let me check on the other experts too.
+   ```
+5. 等 agent 回复完成，最长等待 120 秒。
+6. 检查对话消息文件 `~/.renlijia/users/{scope}/conversations/{conversationId}/messages.jsonl`。
+
+### 验收标准
+
+- 对话消息文件 `~/.renlijia/users/{scope}/conversations/{conversationId}/messages.jsonl` 存在
+- `messages.jsonl` 中至少一条 assistant 记录的 `toolCalls` 数组里有一个元素 `name == "Bash"` 或 `name == "PowerShell"`
+- Bash 或 PowerShell 工具结果中包含 `aijia-history-english-034-start`
+- Bash 或 PowerShell 工具结果中包含 `aijia-history-english-034-end`
+- 所有 assistant 记录的 `content.text` 不包含字面值 `Let me check`
+- 所有 assistant 记录的 `content.text` 不包含字面值 `Let me wait`
+- 所有 assistant 记录的 `content.text` 不包含字面值 `Still waiting`
+- 所有 assistant 记录的 `content.text` 不包含字面值 `Still compiling`
+- 所有 assistant 记录的 `content.text` 不包含字面值 `Still no output`
+- 所有 assistant 记录的 `content.text` 不包含字面值 `Still no new output`
+- 所有 assistant 记录的 `content.text` 不包含字面值 `No new output`
+- 所有 assistant 记录的 `content.text` 不包含字面值 `Continuing to wait`
+- 所有 assistant 记录的 `content.text` 不包含字面值 `Progress!`
+- 所有 assistant 记录的 `content.text` 不包含字面值 `almost done`
+- 所有 assistant 记录的 `content.text` 不包含字面值 `The compilation seems`
+- 所有 assistant 记录的 `content.text` 不包含字面值 `The Vite dev server is running`
+- 所有 assistant 记录的 `content.text` 不包含字面值 `The agents are`
+- 所有 assistant 记录的 `content.text` 不包含字面值 `The experts are`
+- 所有 assistant 记录的 `content.text` 不包含字面值 `Both are still`
+- 所有 assistant 记录的 `content.text` 不包含字面值 `Both still`
+- 所有 assistant 记录的 `content.text` 不包含字面值 `The agent is still`
+- 所有 assistant 记录的 `content.text` 不包含字面值 `Messages delivered`
+- 所有 assistant 记录的 `content.text` 不包含字面值 `Good, messages delivered`
+- 所有 assistant 记录的 `content.text` 不包含字面值 `Good, all messages delivered`
+- 所有 assistant 记录的 `content.text` 不包含字面值 `SendMessage`
+- 所有 assistant 记录的 `content.text` 不包含字面值 `Let me try a different approach`
+- 所有 assistant 记录的 `content.text` 不包含字面值 `Let me take a different approach`
+- 所有 assistant 记录的 `content.text` 不包含字面值 `Let me proceed with what I have`
+- 所有 assistant 记录的 `content.text` 不包含字面值 `While waiting for`
+- 至少一条 assistant 记录的 `content.text` 包含 `等待`、`运行`、`完成`、`历史样本`、`中文` 中任一中文状态词
