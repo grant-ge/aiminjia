@@ -1,6 +1,7 @@
 import { Check, Sparkles, X } from 'lucide-react'
 
 import { LLM_PROVIDER_LABELS, PROVIDER_CAPABILITIES, type LlmProvider } from '@/types/settings'
+import { Button } from '@/components/ui/button'
 
 const MODEL_OPTIONS: Array<{
   value: LlmProvider
@@ -102,14 +103,14 @@ export function ModelPickerPopover({ open, value, onChange, onClose }: ModelPick
             固定弹层宽高，列表在卡片内部滚动，避免页面和弹层一起跳动。
           </p>
         </div>
-        <button
+        <Button unstyled
           type="button"
           aria-label="关闭模型弹窗"
           onClick={onClose}
           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           <X className="h-4 w-4" />
-        </button>
+        </Button>
       </div>
 
       <div className="min-h-0 flex-1 px-4 py-4">
@@ -120,7 +121,7 @@ export function ModelPickerPopover({ open, value, onChange, onClose }: ModelPick
           {MODEL_OPTIONS.map((option) => {
             const selected = option.value === value
             return (
-              <button
+              <Button unstyled
                 key={option.value}
                 type="button"
                 onClick={() => {
@@ -160,7 +161,7 @@ export function ModelPickerPopover({ open, value, onChange, onClose }: ModelPick
                 <div className="mt-auto text-xs font-medium" style={{ color: option.tone.text }}>
                   {PROVIDER_CAPABILITIES[option.value].hasReasoning ? '支持推理模型' : '标准模型入口'}
                 </div>
-              </button>
+              </Button>
             )
           })}
         </div>

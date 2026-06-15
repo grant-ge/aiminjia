@@ -5,7 +5,7 @@ import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { HomeTaskComposerCard } from '../HomeTaskComposerCard'
 import { useChatStore } from '@/stores/chatStore'
-import { useUiStore } from '@/stores/uiStore'
+import { DRAFT_PERMISSION_SESSION_ID, useUiStore } from '@/stores/uiStore'
 import { useHomeStore } from '@/stores/homeStore'
 
 vi.mock('@tiptap/react', async (importOriginal) => {
@@ -56,7 +56,11 @@ beforeEach(() => {
   mockGetSettings.mockReset().mockResolvedValue({})
   mockUpdateSettings.mockReset().mockResolvedValue(undefined)
   useChatStore.setState({ activeConversationId: null, conversations: [], messages: [] })
-  useUiStore.setState({ route: { kind: 'home' }, prefillText: undefined })
+  useUiStore.setState({
+    route: { kind: 'home' },
+    prefillText: undefined,
+    permissionModesBySession: {},
+  })
   useHomeStore.setState({ selectedWorkspace: null, recentWorkspaces: [] })
 })
 
@@ -99,6 +103,26 @@ describe('HomeTaskComposerCard', () => {
     expect(useChatStore.getState().activeConversationId).toBe('new-conv-1')
     expect(useUiStore.getState().route).toEqual({ kind: 'chat', conversationId: 'new-conv-1' })
     expect(mockSendUserMessage.mock.calls[0][0]).toBe('analyze sales')
+  })
+
+  it('binds the selected permission mode to the new conversation and sends with it', async () => {
+    const user = userEvent.setup()
+    render(<HomeTaskComposerCard />)
+    await waitFor(() => expect(document.querySelector('.ProseMirror')).toBeTruthy())
+
+    await user.click(screen.getByRole('button', { name: '权限模式：默认' }))
+    expect(await screen.findByText('完全访问权限说明')).toBeInTheDocument()
+    await user.click(screen.getByText('完全访问权限'))
+
+    const editor = document.querySelector('.ProseMirror') as HTMLElement
+    await user.click(editor)
+    await user.type(editor, 'go')
+    fireEvent.keyDown(editor, { key: 'Enter', code: 'Enter' })
+
+    await waitFor(() => expect(mockSendUserMessage).toHaveBeenCalledTimes(1))
+    expect(mockSendUserMessage.mock.calls[0][3]).toBe('fullAccess')
+    expect(useUiStore.getState().permissionModesBySession[DRAFT_PERMISSION_SESSION_ID]).toBe('fullAccess')
+    expect(useUiStore.getState().permissionModesBySession['new-conv-1']).toBe('fullAccess')
   })
 
   it('attachment via picker shows token + Enter sends with file refs', async () => {

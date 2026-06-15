@@ -34,6 +34,32 @@
     "loading": "Loading...",
     "openFile": "Open file"
   },
+  "chatHeader": {
+    "more": "More",
+    "exportConversation": "Export conversation",
+    "createSkillFromConversation": "Summarize and create skill",
+    "createScheduleFromConversation": "Summarize and create scheduled task"
+  },
+  "resultCards": {
+    "copyId": "Copy ID",
+    "skill": {
+      "created": "Skill created",
+      "view": "View skill",
+      "nameLabel": "Skill name",
+      "triggerLabel": "Trigger",
+      "descriptionLabel": "Description",
+      "fallbackDescription": "The skill was created and can be opened from skill details."
+    },
+    "schedule": {
+      "created": "Scheduled task created",
+      "edit": "Edit",
+      "view": "View scheduled tasks",
+      "frequency": "Frequency",
+      "nextFire": "Next run",
+      "fallbackPrompt": "The scheduled task was created.",
+      "unavailable": "This scheduled task cannot be loaded. It may have been deleted or is temporarily unavailable."
+    }
+  },
   "sidebar": {
     "archiveChat": "Archive chat",
     "archiveChatTooltip": "Archive conversation",
@@ -321,6 +347,14 @@
       "chatWidthCentered": "Centered",
       "chatWidthFull": "Full width"
     },
+    "permissions": {
+      "title": "Permissions",
+      "description": "Set the default tool permission mode for new conversations. A session-level choice overrides this global default.",
+      "defaultAccess": "Default access",
+      "defaultAccessDesc": "Home is readable by default, sensitive paths ask; workspace writes are allowed, other writes ask; deletes stay stricter.",
+      "fullAccess": "Full access",
+      "fullAccessDesc": "Ordinary reads, writes, and deletes avoid interruptions; high-risk deletes like system folders or the home root are still blocked."
+    },
     "archived": {
       "newChat": "New chat",
       "noRecords": "No archived records",
@@ -463,6 +497,19 @@
     "openSkillPicker": "Pick a skill",
     "openSkillPickerWithSkill": "Current skill: {{name}}",
     "removeSkill": "Remove skill {{name}}",
+    "permissionModeLabel": "Permission mode: {{mode}}",
+    "permissionModeDefault": "Default",
+    "permissionModeFull": "Full",
+    "permissionModeDefaultLong": "Default permissions",
+    "permissionModeFullLong": "Full access permissions",
+    "permissionModeDefaultDesc": "Use the default permission policy from Settings",
+    "permissionModeFullDesc": "Use full access for this conversation; ordinary reads/writes/deletes avoid prompts, high-risk deletes stay blocked",
+    "fullAccessRulesTitle": "Full access permissions",
+    "fullAccessRulesIntro": "When enabled, this conversation will:",
+    "fullAccessRuleLessConfirm": "Reduce confirmation steps and let AI execute more operations directly",
+    "fullAccessRuleSensitive": "Interrupt less often for file changes and command execution",
+    "fullAccessRuleTrusted": "Recommended only when you trust the current task",
+    "fullAccessRuleSwitchBack": "You can switch back to default permissions anytime",
     "paste": {
       "cannotPaste": "Cannot paste",
       "clipboardImageFailed": "Failed to read image from clipboard",
@@ -947,12 +994,14 @@
     "openTableHint": "Director invites experts by topic",
     "moreMembers": "More",
     "members": "Members",
-    "directorInvites": "The director will invite 3-5 experts based on the topic",
+    "directorInvites": "The director will invite 3-4 experts based on the topic",
     "pickTopic": "Start with a topic:",
     "startingTopic": "Starting: {{topic}}...",
     "topicQuote": "\"{{topic}}\"",
     "customTopicHint": "Or enter your own topic below and press Enter.",
     "detail": {
+      "intro": "Capability overview",
+      "overview": "Basics",
       "category": "Group",
       "members": "Members",
       "memberCount": "{{count}} experts",
@@ -1028,6 +1077,8 @@
       "dialogFirst": "Dialog first",
       "contextAware": "Fills gaps from context",
       "resultOriented": "Delivers concrete output",
+      "intro": "Capability overview",
+      "overview": "Template details",
       "strengths": "Strengths",
       "examples": "Good assignments",
       "skillSet": "Callable skills"
@@ -1179,7 +1230,7 @@
     "loadFailed": "Failed to load skills",
     "retry": "Retry",
     "noLocalSkills": "No local skills yet",
-    "noLocalSkillsDesc": "Chat with the \"XiaoCheng\" employee to turn your workflow into a reusable skill, or click \"+ Import Skill\" to upload a local skill directory.",
+    "noLocalSkillsDesc": "Click \"+ Import Skill\" to upload a local skill directory.",
     "noMatch": "No matching skills",
     "noMatchDesc": "No skills found for \"{{query}}\". Try switching to \"All\" or using a different keyword.",
     "noSkillsInCategory": "No skills in this category",
@@ -1234,6 +1285,11 @@
       "received": "Received",
       "receivedFrom": "Received from {{name}}",
       "sentTo": "Sent to {{name}}",
+      "timeline": {
+        "systemReminder": "Role instructions",
+        "received": "Received message",
+        "turn": "Thinking and actions"
+      },
       "parseHint": "Parse note",
       "rawData": "Raw data",
       "parseWarnings": {
@@ -1263,6 +1319,15 @@
         "planApprove": "{{from}} approved the plan",
         "planReject": "{{from}} suggested changes: {{feedback}}",
         "planRejectNoFeedback": "{{from}} rejected the plan"
+      },
+      "facilitation": {
+        "assignment": "Lead asked {{count}} experts for first-round views",
+        "cross_review": "Lead started cross-review",
+        "debate": "Lead advanced the debate round",
+        "instruction": "Lead sent a facilitation instruction",
+        "hiddenLowSignal": "Lead progress updates ({{count}})",
+        "expand": "Expand",
+        "collapse": "Collapse"
       }
     }
   },
@@ -1303,7 +1368,10 @@
       "addNumber": "Add number",
       "deleteRow": "Delete this row",
       "removeChannel": "Remove entire channel",
-      "saveManualConfig": "Save manual configuration"
+      "saveManualConfig": "Save manual configuration",
+      "sendGreeting": "Wake bot",
+      "sendingGreeting": "Waking…",
+      "sendDingtalkGreetingAria": "Wake DingTalk bot"
     },
     "chat": {
       "groupChat": "Group",
@@ -1415,6 +1483,12 @@
         "errorBeginFailed": "Failed to start DingTalk scan flow. Please retry.",
         "errorNoConfig": "DingTalk authorized, but no channel configuration was returned.",
         "errorScanFailed": "DingTalk scan registration failed"
+      },
+      "greeting": {
+        "sentTitle": "Bot awakened",
+        "sentMessage": "Open DingTalk and check the conversation list for an unread badge; once the bot replies, you can find the conversation there.",
+        "failedTitle": "Failed to wake bot",
+        "failedMessage": "Please try again later."
       },
       "inactive": "This conversation belongs to a retired bot and cannot accept new messages."
     },
@@ -1679,6 +1753,25 @@
   },
   "schedules": {
     "pageTitle": "Scheduled Tasks",
+    "console": {
+      "kicker": "Automation console",
+      "title": "Scheduled task console",
+      "desc": "Track task health, next run times, and common operations in one place so recurring work stays under control.",
+      "active": "Active",
+      "paused": "Paused",
+      "next24h": "Next 24h",
+      "needsCare": "Needs care",
+      "cancelledHint": "Manage tasks that no longer trigger.",
+      "listHint": "Review tasks by next run time and operating state.",
+      "nextUp": "Next run",
+      "nextUpTask": "Up next: {{title}}",
+      "noNext": "No upcoming runs",
+      "health": "Task health"
+    },
+    "quickCreate": "Quick create",
+    "quickCreateDesc": "Start from a common scenario, then tune the cadence.",
+    "templatesTitle": "Common templates",
+    "templatesDesc": "Starting points for recurring routine work.",
     "newTaskAria": "New scheduled task",
     "taskList": "Task list",
     "cancelled": "Cancelled",

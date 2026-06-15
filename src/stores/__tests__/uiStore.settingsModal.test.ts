@@ -16,7 +16,7 @@ describe('uiStore.settingsModal', () => {
   })
 
   it('falls back to account for unimplemented settings keys', () => {
-    const keys = ['usage', 'permissions', 'mcp', 'sso', 'shortcuts'] as const
+    const keys = ['usage', 'mcp', 'sso', 'shortcuts'] as const
     for (const k of keys) {
       useUiStore.getState().openSettings(k)
       expect(useUiStore.getState().settingsModal).toBe('account')

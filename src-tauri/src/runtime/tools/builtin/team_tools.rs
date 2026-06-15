@@ -108,11 +108,23 @@ impl RuntimeTool for TeamCreateRuntimeTool {
             .clone()
             .unwrap_or_else(|| AgentId::new(format!("lead-{}", session.as_str())));
 
-        let team_name = team_name_input.unwrap_or_else(|| default_team_name(session.as_str()));
+        let requested_team_name = team_name_input.clone();
+        let mut team_name = team_name_input.unwrap_or_else(|| default_team_name(session.as_str()));
 
-        // PR5: 强制 ASCII 校验。LLM 起的中文/特殊字符名直接拒绝。
-        validate_team_name(&team_name)
-            .map_err(|e| ToolError::ExecutionFailed(format!("invalid team_name: {e}")))?;
+        // The LLM sometimes passes the human-facing display name (often
+        // Chinese) even when the prompt supplies an internal ASCII name. Keep
+        // TeamPaths strict, but normalize the tool boundary to a stable safe
+        // fallback instead of burning a failed tool round.
+        if let Err(e) = validate_team_name(&team_name) {
+            let fallback = default_team_name(session.as_str());
+            log::warn!(
+                "[TeamCreate] invalid team_name {:?}: {}; using fallback {}",
+                requested_team_name,
+                e,
+                fallback
+            );
+            team_name = fallback;
+        }
 
         let ws = crate::telemetry::diagnostics_workspace();
         record_diagnostic(
@@ -123,7 +135,10 @@ impl RuntimeTool for TeamCreateRuntimeTool {
                 .tool_call_id(ctx.tool_call_id.as_str())
                 .agent_id(lead_id.as_str())
                 .team_name(team_name.as_str())
-                .payload(serde_json::json!({ "team_name": team_name })),
+                .payload(serde_json::json!({
+                    "team_name": team_name,
+                    "requested_team_name": requested_team_name,
+                })),
         );
 
         let lead = Member {
@@ -277,6 +292,7 @@ impl RuntimeTool for TeamCreateRuntimeTool {
             ),
             Some(json!({
                 "team_name": team_name,
+                "requested_team_name": requested_team_name,
                 "session_id": session.as_str(),
                 "lead_name": LEAD_NAME,
             })),
@@ -577,6 +593,33 @@ mod tests {
             "TeamCreate must publish active_team_name to TeamRegistry so the \
              next tool call in the same turn sees it"
         );
+    }
+
+    #[tokio::test]
+    async fn team_create_falls_back_when_llm_uses_display_name() {
+        let team_registry = TeamRegistry::new();
+        let names = AgentNameRegistry::new();
+        let inboxes = InboxRegistry::new();
+        let ctx = ToolExecutionContext::for_test("conv-display-name", "run-1", "call-tc")
+            .with_team_registry(team_registry.clone())
+            .with_agent_names(names.clone())
+            .with_inbox_registry(inboxes.clone());
+        let session = ctx.session_id.clone();
+
+        let result = TeamCreateRuntimeTool
+            .execute(serde_json::json!({ "team_name": "市场营销策划团" }), ctx)
+            .await
+            .expect("display-name team_name should be normalized instead of failing");
+
+        assert_eq!(
+            team_registry.active(&session).await,
+            Some("team-conv-dis".into())
+        );
+        let data = result
+            .data
+            .expect("TeamCreate should return structured data");
+        assert_eq!(data["team_name"], "team-conv-dis");
+        assert_eq!(data["requested_team_name"], "市场营销策划团");
     }
 
     #[tokio::test]

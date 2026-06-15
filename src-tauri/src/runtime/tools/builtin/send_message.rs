@@ -16,6 +16,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};
+use std::path::Path;
 
 use crate::runtime::agent::inbox::{InboxItem, MessageSource};
 use crate::runtime::messaging::StructuredMessage;
@@ -32,7 +33,7 @@ pub const BROADCAST_TOKEN: &str = "*";
 /// Append one SendMessage delivery to `<conv_dir>/teams/{name}/team-chat.jsonl`.
 /// Best-effort: any IO error is logged at warn but never surfaced — inbox
 /// delivery is the authoritative path; this file is a UI-only mirror.
-fn append_team_chat_entry(
+pub(crate) fn append_team_chat_entry(
     conv_dir: Option<&std::path::Path>,
     team_name: Option<&str>,
     from: &str,
@@ -107,7 +108,82 @@ fn append_team_chat_entry(
     }
 }
 
+fn lead_has_pending_outbound_to_recipient(
+    conv_dir: Option<&Path>,
+    team_name: Option<&str>,
+    from: &str,
+    to: &str,
+) -> bool {
+    let Some(dir) = conv_dir else { return false };
+    let Some(team_name) = team_name else {
+        return false;
+    };
+    use crate::runtime::agent::team_paths::TeamPaths;
+    let path = TeamPaths::for_team(dir, team_name).team_chat_jsonl();
+    let Ok(raw) = std::fs::read_to_string(&path) else {
+        return false;
+    };
+
+    let mut pending = false;
+    for line in raw.lines().filter(|line| !line.trim().is_empty()) {
+        let Ok(entry) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        let entry_from = entry.get("from").and_then(Value::as_str);
+        let entry_to = entry.get("to").and_then(Value::as_str);
+        if entry_from == Some(from) && entry_to == Some(to) {
+            pending = true;
+        } else if entry_from == Some(to) && entry_to == Some(from) {
+            pending = false;
+        }
+    }
+    pending
+}
+
 pub struct SendMessageRuntimeTool;
+
+fn decode_structured_message(
+    message_value: Value,
+) -> std::result::Result<StructuredMessage, String> {
+    match serde_json::from_value::<StructuredMessage>(message_value.clone()) {
+        Ok(message) => Ok(message),
+        Err(primary_err) => {
+            let Some(raw) = message_value.as_str() else {
+                return Err(primary_err.to_string());
+            };
+            match serde_json::from_str::<StructuredMessage>(raw) {
+                Ok(message) => Ok(message),
+                Err(secondary_err) => {
+                    if let Some(message) = decode_lenient_text_message_string(raw) {
+                        return Ok(message);
+                    }
+                    Err(format!(
+                        "{primary_err}; also failed to parse JSON-string payload: {secondary_err}"
+                    ))
+                }
+            }
+        }
+    }
+}
+
+fn decode_lenient_text_message_string(raw: &str) -> Option<StructuredMessage> {
+    if !raw.contains("\"type\"") || !raw.contains("\"text\"") || !raw.contains("\"content\"") {
+        return None;
+    }
+    let content_key = raw.find("\"content\"")?;
+    let after_key = &raw[content_key + "\"content\"".len()..];
+    let colon = after_key.find(':')?;
+    let after_colon = after_key[colon + 1..].trim_start();
+    let after_open_quote = after_colon.strip_prefix('"')?;
+    let close_quote = after_open_quote.rfind('"')?;
+    let content = &after_open_quote[..close_quote];
+    Some(StructuredMessage::text(
+        content
+            .replace("\\n", "\n")
+            .replace("\\\"", "\"")
+            .replace("\\\\", "\\"),
+    ))
+}
 
 #[async_trait]
 impl RuntimeTool for SendMessageRuntimeTool {
@@ -144,7 +220,7 @@ impl RuntimeTool for SendMessageRuntimeTool {
         let message_value = input.get("message").cloned().ok_or_else(|| {
             ToolError::ExecutionFailed("missing required object field `message`".into())
         })?;
-        let message: StructuredMessage = serde_json::from_value(message_value).map_err(|e| {
+        let message: StructuredMessage = decode_structured_message(message_value).map_err(|e| {
             ToolError::ExecutionFailed(format!(
                 "invalid `message` payload: {e}. Expected a StructuredMessage \
                  ({{type:'text'|'shutdown_request'|...}})"
@@ -330,6 +406,47 @@ impl RuntimeTool for SendMessageRuntimeTool {
             ))
         })?;
 
+        let caller_label = caller_name.as_deref().unwrap_or("system");
+        if caller_label == LEAD_NAME
+            && to != LEAD_NAME
+            && lead_has_pending_outbound_to_recipient(
+                ctx.conv_dir.as_deref(),
+                ctx.active_team_name.as_deref(),
+                caller_label,
+                &to,
+            )
+        {
+            record_diagnostic(
+                &ws,
+                DiagnosticEvent::new(
+                    "tool.send_message.duplicate_pending_suppressed",
+                    DiagnosticSource::Backend,
+                )
+                .conversation_id(ctx.session_id.as_str())
+                .run_id(ctx.run_id.as_str())
+                .tool_call_id(ctx.tool_call_id.as_str())
+                .team_name(team_name)
+                .ok(true)
+                .payload(serde_json::json!({
+                    "to_name": to,
+                    "variant": message.variant_name(),
+                })),
+            );
+            return Ok(ToolResult::new(
+                "SendMessage",
+                format!(
+                    "suppressed duplicate {} to `{to}`; previous Lead message is still pending",
+                    message.variant_name()
+                ),
+                Some(json!({
+                    "delivered_to": to,
+                    "variant": message.variant_name(),
+                    "duplicate_suppressed": true,
+                    "reason": "pending_outbound_without_reply",
+                })),
+            ));
+        }
+
         inbox
             .send(InboxItem::ChatMessage {
                 message: message.clone(),
@@ -343,7 +460,7 @@ impl RuntimeTool for SendMessageRuntimeTool {
         append_team_chat_entry(
             ctx.conv_dir.as_deref(),
             ctx.active_team_name.as_deref(),
-            caller_name.as_deref().unwrap_or("system"),
+            caller_label,
             &to,
             &message,
         );
@@ -543,5 +660,81 @@ mod tests {
         assert!(entries[0].get("approve").is_none());
         assert!(entries[0].get("reason").is_none());
         assert!(entries[0].get("feedback").is_none());
+    }
+
+    #[test]
+    fn pending_outbound_tracks_reply_from_recipient() {
+        let dir = tempdir().unwrap();
+        let conv_dir = dir.path();
+
+        assert!(!lead_has_pending_outbound_to_recipient(
+            Some(conv_dir),
+            Some("alpha"),
+            LEAD_NAME,
+            "growth-hacker"
+        ));
+
+        append_team_chat_entry(
+            Some(conv_dir),
+            Some("alpha"),
+            LEAD_NAME,
+            "growth-hacker",
+            &StructuredMessage::text("请发言"),
+        );
+        assert!(lead_has_pending_outbound_to_recipient(
+            Some(conv_dir),
+            Some("alpha"),
+            LEAD_NAME,
+            "growth-hacker"
+        ));
+
+        append_team_chat_entry(
+            Some(conv_dir),
+            Some("alpha"),
+            "growth-hacker",
+            LEAD_NAME,
+            &StructuredMessage::text("观点如下"),
+        );
+        assert!(!lead_has_pending_outbound_to_recipient(
+            Some(conv_dir),
+            Some("alpha"),
+            LEAD_NAME,
+            "growth-hacker"
+        ));
+    }
+
+    #[test]
+    fn decode_structured_message_accepts_json_object() {
+        let value = json!({ "type": "text", "content": "hello" });
+
+        let message = decode_structured_message(value).unwrap();
+
+        assert_eq!(message, StructuredMessage::text("hello"));
+    }
+
+    #[test]
+    fn decode_structured_message_accepts_json_string_object() {
+        let value = Value::String(r#"{"type":"text","content":"hello"}"#.to_string());
+
+        let message = decode_structured_message(value).unwrap();
+
+        assert_eq!(message, StructuredMessage::text("hello"));
+    }
+
+    #[test]
+    fn decode_structured_message_accepts_json_string_with_raw_newlines() {
+        let value =
+            Value::String("{\"type\":\"text\",\"content\":\"第一行\n\n第二行\"}".to_string());
+
+        let message = decode_structured_message(value).unwrap();
+
+        assert_eq!(message, StructuredMessage::text("第一行\n\n第二行"));
+    }
+
+    #[test]
+    fn decode_structured_message_rejects_plain_text_string() {
+        let err = decode_structured_message(Value::String("hello".to_string())).unwrap_err();
+
+        assert!(err.contains("failed to parse JSON-string payload"));
     }
 }

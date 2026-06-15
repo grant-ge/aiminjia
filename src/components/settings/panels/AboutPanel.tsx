@@ -5,10 +5,9 @@ import { useEffect, useState } from 'react'
 import type { ComponentProps } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { Button } from '@/components/ui/button'
 import { getLogLevel, setLogLevel } from '@/lib/tauri'
-import { cn } from '@/lib/utils'
-import type { AppLogLevel, DataMaskingLevel } from '@/types/settings'
+import type { AppLogLevel } from '@/types/settings'
+import { Button } from '@/components/ui/button'
 
 interface AboutPanelLinks {
   customerService: () => void
@@ -25,8 +24,6 @@ interface AboutPanelProps {
   onCheckUpdate: () => void
   onUploadLogs: () => void | Promise<void>
   onResetData: () => void
-  dataMaskingLevel: DataMaskingLevel
-  onDataMaskingChange: (level: DataMaskingLevel) => void
   links: AboutPanelLinks
 }
 
@@ -50,11 +47,8 @@ function PillButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      variant={danger ? 'destructive' : 'outline'}
-      className={cn(
-        'h-9 rounded-md px-5 text-sm font-semibold',
-        disabled && 'cursor-not-allowed opacity-60',
-      )}
+      danger={danger}
+      variant={danger ? 'default' : 'outline'}
     >
       {children}
     </Button>
@@ -125,27 +119,6 @@ export function AboutPanel({
 
       <div className="h-px bg-border mb-2" />
 
-      {/*
-      <section className="flex flex-col gap-4">
-        <div className="text-xl font-bold text-foreground">隐私</div>
-        <div className="flex items-center justify-between gap-8">
-          <div className="flex min-w-0 flex-col gap-1">
-            <div className="text-base font-semibold text-foreground">隐私保护增强</div>
-            <div className="text-sm text-muted-foreground">
-              开启后，发送给模型前会自动隐藏部分敏感信息。关闭后可获得更完整的上下文体验。
-            </div>
-          </div>
-          <Switch
-            aria-label="隐私保护增强"
-            checked={dataMaskingLevel !== 'relaxed'}
-            onCheckedChange={(checked) => onDataMaskingChange(checked ? 'strict' : 'relaxed')}
-          />
-        </div>
-      </section>
-
-      <div className="h-px bg-border mb-2" />
-      */}
-
       <section className="flex flex-col gap-3">
         <div className="text-xl font-bold text-foreground">{t('settings.about.policiesTitle')}</div>
 
@@ -184,7 +157,7 @@ export function AboutPanel({
               const selected = logLevel === option.value
               const label = t(option.labelKey)
               return (
-                <button
+                <Button unstyled
                   key={option.value}
                   type="button"
                   role="radio"
@@ -198,7 +171,7 @@ export function AboutPanel({
                   }
                 >
                   {label}
-                </button>
+                </Button>
               )
             })}
           </div>

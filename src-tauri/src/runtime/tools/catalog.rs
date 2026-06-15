@@ -463,7 +463,7 @@ fn build_default_catalog() -> ToolCatalog {
             \n\n适用场景：任务需要干净上下文、专属 Agent 类型或不同模型。`subagent_type` 取值范围在每轮 turn 的工具描述动态列表中给出，包含 builtin 类型、用户自定义 agent、以及当前用户已雇佣的数字员工 ID（`emp-...`）。\
             \n\n默认路径（run_in_background=false 或省略）：子 Agent 先以前台方式运行；如果在前台阻塞预算内完成，直接返回最终输出文本；如果超过预算，系统会自动返回 `task_id`（`task_type=local_agent`）并让同一个子 Agent 继续在后台执行。\
             \n\n异步路径（run_in_background=true）：立即返回 `agent_id/task_id`（`task_type=local_agent`）；子 Agent 从一开始就在后台运行。后台任务都可用 TaskOutput(task_id=..., task_type=\"local_agent\", offset=N) 增量读取 transcript；子 Agent 完成时父的下一轮会收到 <task-notification> XML。\
-            \n\nTeammate 派活路径（subagent_type 选数字员工 + team_name + name）：从该 Employee 加载系统提示和工具白名单，加入当前 Session 的 Team 作为 Teammate 运行。`team_name` 非空时 `name` 为必填。",
+            \n\nTeammate 派活路径（显式传 team_name + name）：加入当前 Session 的 Team 作为 Teammate 运行。`subagent_type` 可以是 builtin/通用 Agent，也可以是用户明确要求或确需其专属能力的数字员工 `emp-...`。省略 `team_name` 时即使当前已有 active team，也按普通独立子 Agent 运行。",
         )
         .with_kind(ToolKind::Composite)
         .with_capability_scope(["workspace:write"]),
@@ -498,7 +498,7 @@ fn build_default_catalog() -> ToolCatalog {
                 },
                 "team_name": {
                     "type": "string",
-                    "description": "目标 Team 名称。非空时将此 Agent 作为 Teammate 加入当前 Session 的 Team（Team 必须已通过 TeamCreate 创建）。此时 name 为必填。"
+                    "description": "目标 Team 名称。非空时将此 Agent 作为 Teammate 加入当前 Session 的 Team（Team 必须已通过 TeamCreate 创建）。此时 name 为必填。省略时始终按普通独立子 Agent 运行，不会因 active team 自动加入团队。"
                 }
             }
         }),
@@ -512,6 +512,7 @@ fn build_default_catalog() -> ToolCatalog {
             Bash/PowerShell({run_in_background: true}) 立即返回 task_id（task_type=local_bash）。\
             子 Agent 完成时通过 <task-notification> XML 通知（含 <output-file> 路径）。\
             期间或之后用 TaskOutput(task_id=..., offset=N) 读取产出。\
+            \n\n不要用 TaskOutput 读取 Team/Teammate 成员发言；团队成员的对外发言只通过 SendMessage / peer-messages 进入主对话。\
             \n\n返回 {lines: [string], new_offset: number}。下次调用传 offset=new_offset 拉取增量。",
         )
         .with_kind(ToolKind::Support)
@@ -733,7 +734,7 @@ fn build_default_catalog() -> ToolCatalog {
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
             "TeamDelete",
-            "解散一个具名 team：取消该 team 内所有 Teammate 的 cancel token、移除 in-memory entry、删除 teams/{team_name}/ 目录、清理三元 key 注册表。team_name 省略时使用当前 active team；team 不存在静默 noop。一个 conversation 可能有多个 team，删除一个不影响其他。",
+            "解散一个具名 team：取消该 team 内所有 Teammate 的 cancel token、移除 in-memory entry、标记 teams/{team_name}/config.json 为 deleted、清理三元 key 注册表。team_name 省略时使用当前 active team；team 不存在静默 noop。TeamDelete 是本轮 Team 编排的终止信号，成功后当前 Lead turn 会停止；不要在没有收到真实 Teammate 回复时调用它再继续用普通 Agent/Bash/Write 模拟专家讨论。",
         )
         .with_kind(ToolKind::Support),
         json!({

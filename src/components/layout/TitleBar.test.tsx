@@ -57,10 +57,11 @@ describe('TitleBar', () => {
     expect(screen.getByLabelText('Close')).toBeInTheDocument()
   })
 
-  it('has a bottom border on Windows in production', () => {
+  it('does not add a bottom border on Windows in production', () => {
     Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Windows NT 10.0)', configurable: true })
     const { container } = render(<TitleBar />)
-    expect(container.firstChild).toHaveClass('border-b', 'border-sidebar-border')
+    expect(container.firstChild).not.toHaveClass('border-b')
+    expect(container.firstChild).not.toHaveClass('border-sidebar-border')
   })
 
   it('shows DEV badge when import.meta.env.DEV is true', () => {
@@ -84,6 +85,32 @@ describe('TitleBar', () => {
     expect(toggle).toHaveAttribute('data-aijia-sidebar-toggle', 'true')
     expect(container.querySelector('.lucide-panel-left')).toBeInTheDocument()
     expect(titleBar.lastElementChild).toHaveTextContent(getDevBadgeLabel())
+  })
+
+  it('renders route back and forward buttons in the macOS title bar', () => {
+    Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Macintosh)', configurable: true })
+    useUiStore.setState({
+      route: { kind: 'skill-detail', skillId: 'sales-followup' },
+      backStack: [{ kind: 'chat', conversationId: 'conv-1' }],
+      forwardStack: [],
+    })
+
+    render(<TitleBar />)
+
+    const back = screen.getByRole('button', { name: '后退' })
+    const forward = screen.getByRole('button', { name: '前进' })
+    expect(back).toBeEnabled()
+    expect(forward).toBeDisabled()
+
+    fireEvent.click(back)
+    expect(useUiStore.getState().route).toEqual({ kind: 'chat', conversationId: 'conv-1' })
+    expect(screen.getByRole('button', { name: '前进' })).toBeEnabled()
+
+    fireEvent.click(screen.getByRole('button', { name: '前进' }))
+    expect(useUiStore.getState().route).toEqual({
+      kind: 'skill-detail',
+      skillId: 'sales-followup',
+    })
   })
 
   it('switches to the collapsed sidebar icon after clicking the toggle', () => {

@@ -8,15 +8,25 @@ import {
   GraduationCap,
   MessageSquare,
   PanelLeft,
-  Share2,
 } from "lucide-react";
 import type { ReactNode } from "react";
+import { Button } from '@/components/ui/button'
+import { ChatAvatar } from '@/components/chat-scene/ChatAvatar'
+import { AppDropdown, type AppDropdownItem } from '@/components/common/AppDropdown'
 
 export interface ChatTopBarEmployee {
   avatar: string;
+  avatarUrl?: string | null;
   name: string;
   role: string;
+  defaultSkillLabel?: string | null;
   onClick?: () => void;
+}
+
+export interface ChatTopBarExpertTeam {
+  avatar: ReactNode;
+  name: string;
+  tagline?: string;
 }
 
 export type ChatTopBarKind = "user" | "employee" | "expertTeam" | "im";
@@ -36,9 +46,10 @@ interface ChatTopBarProps {
    * dispatch. Click handler typically opens the employee drawer.
    */
   employee?: ChatTopBarEmployee;
-  onShare?: () => void;
-  shareLabel?: string;
+  /** Expert-team identity chip, matching the employee top-bar treatment. */
+  expertTeam?: ChatTopBarExpertTeam;
   onMore?: () => void;
+  moreMenuItems?: AppDropdownItem[];
   onToggleSidebar?: () => void;
   /** extra node rendered at the right edge */
   trailing?: ReactNode;
@@ -67,9 +78,9 @@ export function ChatTopBar({
   kind,
   sourceLabel,
   employee,
-  onShare,
-  shareLabel = "分享",
+  expertTeam,
   onMore,
+  moreMenuItems,
   onToggleSidebar,
   trailing,
 }: ChatTopBarProps) {
@@ -80,30 +91,45 @@ export function ChatTopBar({
     >
       <div className="flex min-w-0 items-center gap-3">
         {employee ? (
-          <button
+          <Button unstyled
             type="button"
             data-testid="chat-topbar-employee"
             onClick={employee.onClick}
             disabled={!employee.onClick}
-            className="flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-[15px] font-semibold text-foreground transition-colors hover:bg-accent disabled:cursor-default disabled:hover:bg-transparent"
+            className="flex min-w-0 items-center gap-2 rounded-md px-1.5 py-1 text-sm font-semibold text-foreground transition-colors hover:bg-accent disabled:cursor-default disabled:hover:bg-transparent"
           >
-            <span aria-hidden className="text-base leading-none">
-              {employee.avatar}
+            <ChatAvatar
+              name={employee.name}
+              src={employee.avatarUrl}
+              size={30}
+              variant="neutral"
+            />
+            <span className="min-w-0 truncate">
+              {employee.role ? `${employee.role} · ${employee.name}` : employee.name}
             </span>
-            <span className="truncate">{employee.name}</span>
-            {employee.role ? (
-              <>
-                <span aria-hidden className="text-sm text-muted-foreground">
-                  ·
-                </span>
-                <span className="truncate text-sm font-normal text-muted-foreground">
-                  {employee.role}
-                </span>
-              </>
+            {employee.defaultSkillLabel ? (
+              <span className="ml-1 max-w-[220px] shrink-0 truncate rounded-[2px] bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                {employee.defaultSkillLabel}
+              </span>
             ) : null}
-          </button>
+          </Button>
+        ) : expertTeam ? (
+          <div
+            className="flex min-w-0 items-center gap-2 rounded-md px-1.5 py-1 text-sm font-semibold text-foreground"
+            data-testid="chat-topbar-expert-team"
+          >
+            {expertTeam.avatar}
+            <span className="min-w-0 truncate">
+              专家团 · {expertTeam.name}
+            </span>
+            {expertTeam.tagline ? (
+              <span className="ml-1 max-w-[220px] shrink-0 truncate text-xs font-medium text-muted-foreground">
+                {expertTeam.tagline}
+              </span>
+            ) : null}
+          </div>
         ) : (
-          <div className="truncate text-[15px] font-semibold leading-[22px] tracking-normal text-foreground">
+          <div className="truncate text-sm font-semibold leading-[22px] tracking-normal text-foreground">
             {title}
           </div>
         )}
@@ -116,7 +142,7 @@ export function ChatTopBar({
             <span className="truncate">{workspace}</span>
           </span>
         ) : null}
-        {kind && kind !== "user" && kind !== "employee" && sourceLabel ? (
+        {kind && kind !== "user" && kind !== "employee" && !expertTeam && sourceLabel ? (
           <>
             <span aria-hidden className="text-xs text-muted-foreground/40">
               ·
@@ -127,36 +153,41 @@ export function ChatTopBar({
       </div>
       <div className="flex items-center gap-1.5">
         {trailing}
-        {onShare ? (
-          <button
-            type="button"
-            aria-label={shareLabel}
-            title={shareLabel}
-            onClick={onShare}
-            className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            <Share2 className="h-4 w-4" />
-          </button>
-        ) : null}
-        {onMore ? (
-          <button
+        {moreMenuItems && moreMenuItems.length > 0 ? (
+          <AppDropdown
+            ariaLabel="更多"
+            align="end"
+            sideOffset={6}
+            items={moreMenuItems}
+            trigger={
+              <Button unstyled
+                type="button"
+                title="更多"
+                className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <Ellipsis className="h-4 w-4" />
+              </Button>
+            }
+          />
+        ) : onMore ? (
+          <Button unstyled
             type="button"
             aria-label="更多"
             onClick={onMore}
             className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             <Ellipsis className="h-4 w-4" />
-          </button>
+          </Button>
         ) : null}
         {onToggleSidebar ? (
-          <button
+          <Button unstyled
             type="button"
             aria-label="折叠侧栏"
             onClick={onToggleSidebar}
             className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             <PanelLeft className="h-4 w-4" />
-          </button>
+          </Button>
         ) : null}
       </div>
     </header>

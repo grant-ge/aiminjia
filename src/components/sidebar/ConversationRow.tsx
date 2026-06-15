@@ -18,6 +18,7 @@ import {
   SidebarRowStatusIndicator,
   type SidebarRowStatus,
 } from "./SidebarRowStatusIndicator";
+import { Button } from '@/components/ui/button'
 
 interface ConversationRowProps {
   id: string;
@@ -87,14 +88,15 @@ export function ConversationRow({
 
   const paddingCls = indent ? "pl-[32px] pr-2" : "pl-2 pr-2";
   const wrapperCls = active
-    ? `flex h-8 items-center rounded-md ${paddingCls} bg-sidebar-accent text-sidebar-foreground`
-    : `flex h-8 items-center rounded-md ${paddingCls} text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground`;
+    ? `flex h-8 w-full min-w-0 items-center rounded-md ${paddingCls} bg-sidebar-accent text-sidebar-foreground`
+    : `flex h-8 w-full min-w-0 items-center rounded-md ${paddingCls} text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground`;
+  const showTrailing = showActions || showStatus;
 
   return (
     <ContextMenuPrimitive.Root>
       <ContextMenuPrimitive.Trigger asChild>
         <div
-          className="pr-1"
+          className="w-full min-w-0 pr-1"
           onMouseEnter={() => setHovered(true)}
           onMouseLeave={() => {
             setHovered(false);
@@ -104,80 +106,88 @@ export function ConversationRow({
           }}
         >
           <div className={wrapperCls}>
-            <button
+            <Button unstyled
               type="button"
               onClick={onClick}
-              className="group flex min-w-0 flex-1 items-center pr-2 text-left text-sm"
+              className={cn(
+                "group flex min-w-0 flex-1 items-center text-left text-sm",
+                showTrailing ? "pr-2" : "pr-0",
+              )}
               data-aijia-conversation-row
               data-aijia-conversation-id={id}
             >
-              <span className="truncate">{title}</span>
-            </button>
+              <span className="min-w-0 flex-1 truncate">{title}</span>
+            </Button>
 
-            <div className="flex min-w-[44px] shrink-0 items-center justify-end">
-              {showActions ? (
-                <div className="flex items-center gap-0.5">
-                  <TooltipProvider delayDuration={400}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          type="button"
-                          aria-label={
-                            pinned
-                              ? t("sidebar.unpinChat")
-                              : t("sidebar.pinChat")
-                          }
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onTogglePin?.();
-                          }}
-                          className="flex h-5 w-5 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
-                        >
-                          {pinned ? (
-                            <PinOff className="h-3.5 w-3.5" />
-                          ) : (
-                            <Pin className="h-3.5 w-3.5" />
-                          )}
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent side="top">
-                        {pinned ? t("sidebar.unpinChat") : t("sidebar.pinChat")}
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                  <TooltipProvider delayDuration={400}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          type="button"
-                          aria-label={t("sidebar.archiveChat")}
-                          onClick={handleArchiveClick}
-                          className={cn(
-                            "flex h-5 items-center justify-center rounded-md transition-colors",
-                            armed
-                              ? "w-auto bg-destructive px-1.5 text-[10px] font-semibold leading-none text-destructive-foreground"
-                              : "w-5 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground",
-                          )}
-                        >
-                          {armed ? (
-                            <span>{t("common.confirm")}</span>
-                          ) : (
-                            <Archive className="h-3.5 w-3.5" />
-                          )}
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent side="top">
-                        {armed
-                          ? t("sidebar.archiveChatConfirmTooltip")
-                          : t("sidebar.archiveChatTooltip")}
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </div>
-              ) : showStatus ? (
-                <SidebarRowStatusIndicator status={status} />
-              ) : null}
-            </div>
+            {showTrailing ? (
+              <div
+                className="flex min-w-[44px] shrink-0 items-center justify-end"
+                data-aijia-conversation-row-trailing
+              >
+                {showActions ? (
+                  <div className="flex items-center gap-0.5">
+                    <TooltipProvider delayDuration={400}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button unstyled
+                            type="button"
+                            aria-label={
+                              pinned
+                                ? t("sidebar.unpinChat")
+                                : t("sidebar.pinChat")
+                            }
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onTogglePin?.();
+                            }}
+                            className="flex h-5 w-5 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                          >
+                            {pinned ? (
+                              <PinOff className="h-3.5 w-3.5" />
+                            ) : (
+                              <Pin className="h-3.5 w-3.5" />
+                            )}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">
+                          {pinned ? t("sidebar.unpinChat") : t("sidebar.pinChat")}
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                    <TooltipProvider delayDuration={400}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button unstyled
+                            type="button"
+                            aria-label={t("sidebar.archiveChat")}
+                            onClick={handleArchiveClick}
+                            className={cn(
+                              "flex h-5 items-center justify-center rounded-md transition-colors",
+                              armed
+                                ? "w-auto bg-destructive px-1.5 text-[10px] font-semibold leading-none text-destructive-foreground"
+                                : "w-5 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground",
+                            )}
+                          >
+                            {armed ? (
+                              <span>{t("common.confirm")}</span>
+                            ) : (
+                              <Archive className="h-3.5 w-3.5" />
+                            )}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">
+                          {armed
+                            ? t("sidebar.archiveChatConfirmTooltip")
+                            : t("sidebar.archiveChatTooltip")}
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                ) : showStatus ? (
+                  <SidebarRowStatusIndicator status={status} />
+                ) : null}
+              </div>
+            ) : null}
           </div>
         </div>
       </ContextMenuPrimitive.Trigger>

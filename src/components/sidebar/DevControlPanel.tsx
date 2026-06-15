@@ -10,6 +10,8 @@ interface DevControlPanelProps {
 export function DevControlPanel({ open, onOpenChange }: DevControlPanelProps) {
   const showToolErrorIcon = useDevSettingsStore((s) => s.showToolErrorIcon)
   const setShowToolErrorIcon = useDevSettingsStore((s) => s.setShowToolErrorIcon)
+  const showRawSkillContent = useDevSettingsStore((s) => s.showRawSkillContent)
+  const setShowRawSkillContent = useDevSettingsStore((s) => s.setShowRawSkillContent)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -39,6 +41,19 @@ export function DevControlPanel({ open, onOpenChange }: DevControlPanelProps) {
                     aria-label="显示工具失败图标"
                     checked={showToolErrorIcon}
                     onCheckedChange={setShowToolErrorIcon}
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-4 py-4">
+                  <div className="min-w-0 pr-4">
+                    <div className="text-sm font-medium text-foreground">显示技能原始内容</div>
+                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                      开启后，技能详情页会显示完整 SKILL.md 原文和调试参数；默认隐藏给普通使用视图。
+                    </p>
+                  </div>
+                  <Switch
+                    aria-label="显示技能原始内容"
+                    checked={showRawSkillContent}
+                    onCheckedChange={setShowRawSkillContent}
                   />
                 </div>
               </div>

@@ -27,8 +27,6 @@ const baseProps = {
   onCheckUpdate: vi.fn(),
   onUploadLogs: vi.fn(),
   onResetData: vi.fn(),
-  dataMaskingLevel: 'relaxed' as const,
-  onDataMaskingChange: vi.fn(),
   links: {
     customerService: vi.fn(),
     productSuggestion: vi.fn(),
@@ -157,17 +155,10 @@ describe('AboutPanel', () => {
     expect(screen.queryByRole('switch', { name: '用户体验改进计划' })).not.toBeInTheDocument()
   })
 
-  it('does not render privacy protection section while it is hidden', () => {
-    render(<AboutPanel {...baseProps} dataMaskingLevel="relaxed" onDataMaskingChange={() => {}} />)
+  it('does not render privacy protection section', () => {
+    render(<AboutPanel {...baseProps} />)
     expect(screen.queryByText('隐私')).not.toBeInTheDocument()
     expect(screen.queryByText('隐私保护增强')).not.toBeInTheDocument()
     expect(screen.queryByRole('switch', { name: '隐私保护增强' })).not.toBeInTheDocument()
-  })
-
-  it('does not call onDataMaskingChange while privacy protection section is hidden', () => {
-    const onChange = vi.fn()
-    render(<AboutPanel {...baseProps} dataMaskingLevel="relaxed" onDataMaskingChange={onChange} />)
-    expect(screen.queryByRole('switch', { name: '隐私保护增强' })).not.toBeInTheDocument()
-    expect(onChange).not.toHaveBeenCalled()
   })
 })

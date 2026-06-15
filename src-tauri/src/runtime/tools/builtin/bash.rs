@@ -139,6 +139,254 @@ fn plain_path_rule_matches(pattern: &str, canonical: &Path) -> bool {
     canonical == rule_path || (rule_path.is_dir() && canonical.starts_with(&rule_path))
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ShellPathAccess {
+    path: PathBuf,
+    op: crate::runtime::path_auth::PathOp,
+}
+
+fn shell_separator(token: &str) -> bool {
+    matches!(token, ";" | "&&" | "||" | "|" | "|&")
+}
+
+fn command_name(token: &str) -> String {
+    Path::new(token)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(token)
+        .to_ascii_lowercase()
+}
+
+fn clean_path_token(token: &str) -> Option<String> {
+    let token = token
+        .trim_matches(|ch: char| {
+            ch.is_whitespace()
+                || matches!(
+                    ch,
+                    ';' | ',' | '"' | '\'' | '(' | ')' | '[' | ']' | '{' | '}'
+                )
+        })
+        .trim();
+    if token.is_empty()
+        || token == "-"
+        || token.starts_with('-')
+        || token.contains("://")
+        || token.starts_with("$(")
+        || token.starts_with('`')
+    {
+        return None;
+    }
+    Some(token.to_string())
+}
+
+fn resolve_shell_path_token(token: &str, root: &Path) -> Option<PathBuf> {
+    let token = clean_path_token(token)?;
+    let token = token.strip_prefix("file://").unwrap_or(&token);
+    let path = if token == "~" {
+        dirs::home_dir()?
+    } else if let Some(rest) = token.strip_prefix("~/") {
+        dirs::home_dir()?.join(rest)
+    } else if let Some(rest) = token.strip_prefix("$HOME/") {
+        dirs::home_dir()?.join(rest)
+    } else {
+        let path = PathBuf::from(token);
+        if path.is_absolute() {
+            path
+        } else if path.starts_with(".") || path.starts_with("..") || token.contains('/') {
+            root.join(path)
+        } else {
+            return None;
+        }
+    };
+    Some(path)
+}
+
+fn push_access(
+    accesses: &mut Vec<ShellPathAccess>,
+    token: &str,
+    root: &Path,
+    op: crate::runtime::path_auth::PathOp,
+) {
+    if let Some(path) = resolve_shell_path_token(token, root) {
+        accesses.push(ShellPathAccess { path, op });
+    }
+}
+
+fn shell_command_path_accesses(command: &str, root: &Path) -> Vec<ShellPathAccess> {
+    use crate::runtime::path_auth::PathOp;
+
+    let tokens = shell_words::split(command)
+        .unwrap_or_else(|_| command.split_whitespace().map(str::to_string).collect());
+    let mut accesses = Vec::new();
+
+    for (idx, token) in tokens.iter().enumerate() {
+        if token == ">" || token == ">>" || token == "2>" || token == "2>>" {
+            if let Some(next) = tokens.get(idx + 1) {
+                push_access(&mut accesses, next, root, PathOp::Write);
+            }
+            continue;
+        }
+        if let Some(path) = token.strip_prefix(">>").or_else(|| token.strip_prefix('>')) {
+            push_access(&mut accesses, path, root, PathOp::Write);
+            continue;
+        }
+        if let Some(path) = token.strip_prefix("of=") {
+            push_access(&mut accesses, path, root, PathOp::Write);
+            continue;
+        }
+        if let Some(path) = token.strip_prefix("if=") {
+            push_access(&mut accesses, path, root, PathOp::Read);
+            continue;
+        }
+    }
+
+    let mut idx = 0;
+    while idx < tokens.len() {
+        let token = &tokens[idx];
+        if shell_separator(token) || token.contains('=') && !token.contains('/') {
+            idx += 1;
+            continue;
+        }
+
+        let command = command_name(token);
+        let op = if matches!(command.as_str(), "rm" | "rmdir" | "unlink") {
+            Some(PathOp::Delete)
+        } else if matches!(
+            command.as_str(),
+            "touch" | "mkdir" | "cp" | "mv" | "install" | "tee"
+        ) {
+            Some(PathOp::Write)
+        } else if matches!(
+            command.as_str(),
+            "cat"
+                | "head"
+                | "tail"
+                | "less"
+                | "more"
+                | "ls"
+                | "find"
+                | "grep"
+                | "rg"
+                | "sed"
+                | "awk"
+                | "wc"
+                | "stat"
+                | "file"
+                | "du"
+        ) {
+            Some(PathOp::Read)
+        } else {
+            None
+        };
+
+        let Some(default_op) = op else {
+            idx += 1;
+            continue;
+        };
+
+        let mut segment_paths = Vec::new();
+        let mut j = idx + 1;
+        while j < tokens.len() && !shell_separator(&tokens[j]) {
+            if let Some(path) = resolve_shell_path_token(&tokens[j], root) {
+                segment_paths.push(path);
+            }
+            j += 1;
+        }
+
+        if command == "cp" || command == "mv" {
+            if let Some((last, sources)) = segment_paths.split_last() {
+                for source in sources {
+                    accesses.push(ShellPathAccess {
+                        path: source.clone(),
+                        op: PathOp::Read,
+                    });
+                }
+                accesses.push(ShellPathAccess {
+                    path: last.clone(),
+                    op: PathOp::Write,
+                });
+            }
+        } else {
+            for path in segment_paths {
+                accesses.push(ShellPathAccess {
+                    path,
+                    op: default_op,
+                });
+            }
+        }
+        idx = j;
+    }
+
+    accesses
+}
+
+fn path_auth_scope(canonical: &Path, op: crate::runtime::path_auth::PathOp) -> String {
+    let scope_path = if canonical.is_dir() {
+        canonical.to_path_buf()
+    } else {
+        canonical
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| canonical.to_path_buf())
+    };
+    match op {
+        crate::runtime::path_auth::PathOp::Read => format!("path:{}", scope_path.display()),
+        crate::runtime::path_auth::PathOp::Write => format!("pathwrite:{}", scope_path.display()),
+        crate::runtime::path_auth::PathOp::Delete => {
+            format!("pathdelete:{}", scope_path.display())
+        }
+    }
+}
+
+fn command_path_permission_decision(
+    command: &str,
+    ctx: &ToolExecutionContext,
+) -> Option<PermissionDecision> {
+    let root = require_workspace_root(ctx).ok()?;
+    let storage = ctx.capability.as_ref()?.storage.as_ref()?;
+    let perm_ctx = storage.permission_ctx.as_ref();
+    let effective_ctx;
+    let ctx_ref = if perm_ctx.primary_root.is_none() {
+        effective_ctx = crate::runtime::path_auth::ToolPermissionContext {
+            primary_root: Some(root.clone()),
+            ..(*perm_ctx).clone()
+        };
+        &effective_ctx
+    } else {
+        perm_ctx
+    };
+
+    for access in shell_command_path_accesses(command, &root) {
+        let canonical = crate::runtime::path_auth::decide::canonicalize_or_ancestor(&access.path)
+            .unwrap_or(access.path);
+        match crate::runtime::path_auth::decide::is_path_allowed(&canonical, access.op, ctx_ref) {
+            crate::runtime::path_auth::Decision::Allow => {}
+            crate::runtime::path_auth::Decision::Deny(message) => {
+                return Some(PermissionDecision::Deny {
+                    message,
+                    reason: PermissionReason::Capability,
+                });
+            }
+            crate::runtime::path_auth::Decision::Ask { reason } => {
+                return Some(PermissionDecision::Ask {
+                    message: reason,
+                    suggestions: vec!["仅本次允许".into(), "永久允许".into(), "拒绝".into()],
+                    remember_options: vec![
+                        crate::runtime::tools::permission::PermissionDestination::Session,
+                        crate::runtime::tools::permission::PermissionDestination::User,
+                    ],
+                    default_destination: Some(
+                        crate::runtime::tools::permission::PermissionDestination::Session,
+                    ),
+                    reason: PermissionReason::Capability,
+                    path_auth_scope: Some(path_auth_scope(&canonical, access.op)),
+                });
+            }
+        }
+    }
+    None
+}
+
 #[derive(Clone, Default)]
 pub struct BashTool {
     background: Option<super::shell_task::ShellBackgroundDeps>,
@@ -442,6 +690,10 @@ impl RuntimeTool for BashTool {
                 message,
                 reason: PermissionReason::StoredPolicy,
             });
+        }
+
+        if let Some(decision) = command_path_permission_decision(command, ctx) {
+            return Some(decision);
         }
 
         if let Some(store) = ctx.permission_store.as_ref() {
@@ -752,6 +1004,33 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    fn ctx_with_permission(
+        workspace: &Path,
+        permission_ctx: crate::runtime::path_auth::ToolPermissionContext,
+    ) -> crate::runtime::tools::ToolExecutionContext {
+        let capability = Arc::new(crate::runtime::tools::CapabilityContext {
+            storage: Some(crate::runtime::tools::StorageCapability {
+                workspace_path: workspace.to_path_buf(),
+                authorized_workspace: None,
+                permission_ctx: Arc::new(permission_ctx),
+            }),
+            workspace_id: Some("ws-bash-path-auth".to_string()),
+            runtime_resolver: None,
+            file_ops: None,
+            read_file_state: None,
+            file_reading_limits: None,
+            notification_sink: None,
+            tool_progress_sink: None,
+            is_subagent: false,
+        });
+        crate::runtime::tools::ToolExecutionContext::for_test(
+            "conv-bash-path-auth",
+            "run-bash-path-auth",
+            "tc-bash-path-auth",
+        )
+        .with_capability(capability)
+    }
+
     #[test]
     fn resolve_timeout_secs_prefers_input_override() {
         // 5000ms = 5s
@@ -885,6 +1164,68 @@ mod tests {
             .await;
 
         assert!(matches!(decision, Some(PermissionDecision::Deny { .. })));
+    }
+
+    #[tokio::test]
+    async fn check_permissions_asks_for_delete_in_workspace_by_default() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let target = temp.path().join("old.txt");
+        std::fs::write(&target, "old").expect("write target");
+        let ctx = ctx_with_permission(
+            temp.path(),
+            crate::runtime::path_auth::ToolPermissionContext::empty(),
+        );
+        let tool = BashTool::default();
+
+        let decision = tool
+            .check_permissions(
+                &json!({"command": format!("rm {}", target.display())}),
+                &ctx,
+            )
+            .await;
+
+        assert!(matches!(decision, Some(PermissionDecision::Ask { .. })));
+    }
+
+    #[tokio::test]
+    async fn check_permissions_allows_regular_delete_in_full_access() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let target = temp.path().join("old.txt");
+        std::fs::write(&target, "old").expect("write target");
+        let mut permission_ctx = crate::runtime::path_auth::ToolPermissionContext::empty();
+        permission_ctx.mode = crate::runtime::tools::permission::PermissionMode::FullAccess;
+        let ctx = ctx_with_permission(temp.path(), permission_ctx);
+        let tool = BashTool::default();
+
+        let decision = tool
+            .check_permissions(
+                &json!({"command": format!("rm {}", target.display())}),
+                &ctx,
+            )
+            .await;
+
+        assert!(decision.is_none());
+    }
+
+    #[tokio::test]
+    async fn check_permissions_asks_for_redirect_write_outside_workspace() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let outside = tempfile::tempdir().expect("outside");
+        let target = outside.path().join("out.txt");
+        let ctx = ctx_with_permission(
+            workspace.path(),
+            crate::runtime::path_auth::ToolPermissionContext::empty(),
+        );
+        let tool = BashTool::default();
+
+        let decision = tool
+            .check_permissions(
+                &json!({"command": format!("printf hi > {}", target.display())}),
+                &ctx,
+            )
+            .await;
+
+        assert!(matches!(decision, Some(PermissionDecision::Ask { .. })));
     }
 }
 

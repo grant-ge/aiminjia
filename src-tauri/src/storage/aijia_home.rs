@@ -125,11 +125,6 @@ impl AiJiaHome {
         self.user_dir(scope).join("skills")
     }
 
-    /// `~/.renlijia/users/{scope}/skill-drafts/` — Skill-Smith (小程) 草稿区。
-    pub fn user_skill_drafts_dir(&self, scope: &UserScope) -> PathBuf {
-        self.user_dir(scope).join("skill-drafts")
-    }
-
     pub fn user_agents_dir(&self, scope: &UserScope) -> PathBuf {
         self.user_dir(scope).join("agents")
     }

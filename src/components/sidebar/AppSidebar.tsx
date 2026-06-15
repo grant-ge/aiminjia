@@ -25,17 +25,10 @@ import {
 } from "@/stores/uiStore";
 import { useChannelStore } from "@/stores/channelStore";
 import { useInteractionStore } from "@/stores/interactionStore";
+import { useSidebarStatusStore } from "@/stores/sidebarStatusStore";
 import { hasExpertTeam } from "@/features/expert-teams/expertTeamRegistry";
 import { selectPendingActionForSession } from "@/components/chat-scene/pendingActionSelectors";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Tooltip,
   TooltipContent,
@@ -44,6 +37,7 @@ import {
 } from "@/components/ui/tooltip";
 
 import { ConversationRow } from "./ConversationRow";
+import { ConversationRenameDialog } from "./ConversationRenameDialog";
 import { ConversationTree } from "./ConversationTree";
 import { groupConversationsByProject } from "./conversationProjects";
 import { DevControlPanel } from "./DevControlPanel";
@@ -94,13 +88,13 @@ function ChannelConversationRow({
   onSelect,
 }: ChannelConversationRowProps) {
   const rowClassName = active
-    ? "flex h-8 w-full items-center justify-between rounded-md bg-sidebar-accent px-2.5 text-left text-sm font-medium text-sidebar-foreground"
-    : "flex h-8 w-full items-center justify-between rounded-md px-2.5 text-left text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground";
+    ? `flex h-8 w-full items-center justify-between rounded-md bg-sidebar-accent px-2.5 text-left text-sm font-medium text-sidebar-foreground`
+    : `flex h-8 w-full items-center justify-between rounded-md px-2.5 text-left text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground`;
 
   return (
     <ContextMenuPrimitive.Root>
       <ContextMenuPrimitive.Trigger asChild>
-        <button
+        <Button unstyled
           type="button"
           onClick={onSelect}
           className={rowClassName}
@@ -117,7 +111,7 @@ function ChannelConversationRow({
               </span>
             ) : null}
           </span>
-        </button>
+        </Button>
       </ContextMenuPrimitive.Trigger>
       <ContextMenuPrimitive.Portal>
         <ContextMenuPrimitive.Content className="z-50 min-w-[10rem] overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-[var(--shadow-popover)]">
@@ -167,9 +161,9 @@ export function AppSidebar() {
   const streamStates = useChatStore((s) => s.streamStates);
   const pendingAsks = useChatStore((s) => s.pendingAsks);
   const pendingInteractions = useInteractionStore((s) => s.pendingInteractions);
+  const cachedStatuses = useSidebarStatusStore((s) => s.statuses);
 
   const [renamingId, setRenamingId] = useState<string | null>(null);
-  const [renameValue, setRenameValue] = useState("");
   const [devPanelOpen, setDevPanelOpen] = useState(false);
   const [, setTenantHeaderClickCount] = useState(0);
 
@@ -216,14 +210,12 @@ export function AppSidebar() {
   );
 
   const handleRenameOpen = (id: string) => {
-    const conv = conversations.find((c) => c.id === id);
-    setRenameValue(conv?.title ?? "");
     setRenamingId(id);
   };
 
-  const handleRenameConfirm = async () => {
-    if (!renamingId || !renameValue.trim()) return;
-    await renameConversation(renamingId, renameValue.trim());
+  const handleRenameConfirm = async (title: string) => {
+    if (!renamingId) return;
+    await renameConversation(renamingId, title);
     setRenamingId(null);
   };
 
@@ -240,6 +232,9 @@ export function AppSidebar() {
   const nonChannelConversations = conversations.filter(
     (c) => !channelSessionIdSet.has(c.id),
   );
+  const renamingConversation = renamingId
+    ? conversations.find((conversation) => conversation.id === renamingId) ?? null
+    : null;
   // 员工 / 专家团 tab 走独立列表渲染；项目 tab 走白名单：只展示 `kind=user`
   // 或 `kind` 未标记的旧会话（视作 user 兼容）。员工 / 专家团 / IM 类的会话
   // 都被显式排除，避免未来加 kind 时项目 tab 误带入新类型。
@@ -283,6 +278,11 @@ export function AppSidebar() {
       action?.kind === "stale-interaction"
     ) {
       return "waiting-reply";
+    }
+
+    const cachedStatus = cachedStatuses[conversationId]?.kind;
+    if (cachedStatus === "permission-review" || cachedStatus === "waiting-reply") {
+      return cachedStatus;
     }
 
     if (isConversationBusy(conversationId)) {
@@ -437,7 +437,9 @@ export function AppSidebar() {
 
   return (
     <>
-      <aside className="flex h-full w-[256px] shrink-0 flex-col overflow-hidden bg-sidebar px-2 text-sidebar-foreground">
+      <aside
+        className="flex h-full shrink-0 flex-col overflow-hidden bg-sidebar pt-2 text-sidebar-foreground"
+      >
         {isWindows ? null : (
           <TenantHeader
             name={tenantDisplay}
@@ -453,7 +455,7 @@ export function AppSidebar() {
 
         <div className="flex min-h-0 flex-1 flex-col gap-2">
           {globalPinned.length > 0 ? (
-            <div className="flex flex-col mb-1">
+            <div className="flex flex-col mb-1 px-2">
               <div className="px-2 py-1 text-xs font-medium text-muted-foreground">
                 {t("sidebar.pinnedSection")}
               </div>
@@ -503,46 +505,48 @@ export function AppSidebar() {
             ];
             const activeIndex = TABS.findIndex((tab) => tab.key === sidebarTab);
             return (
-              <div className="relative grid h-8 grid-cols-4 rounded-md border border-sidebar-border bg-sidebar-accent/70 px-1 py-0.5 text-xs font-medium text-muted-foreground">
-                {/* Sliding indicator — left/width account for px-1 (4px) horizontal padding */}
-                <div
-                  className="absolute rounded-md bg-card shadow-sm"
-                  style={{
-                    top: "2px",
-                    bottom: "2px",
-                    left: "4px",
-                    width: "calc(25% - 2px)",
-                    transform: `translateX(${activeIndex * 100}%)`,
-                    transition: "transform 200ms ease-in-out",
-                  }}
-                />
-                {TABS.map(({ key, Icon, labelKey }) => (
-                  <TooltipProvider key={key} delayDuration={400}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          type="button"
-                          aria-label={t(labelKey)}
-                          onClick={() => switchTab(key)}
-                          className={`relative z-10 flex items-center justify-center rounded-md transition-colors duration-200 ${
-                            sidebarTab === key ? "text-foreground" : ""
-                          }`}
-                        >
-                          <Icon className="h-3.5 w-3.5 shrink-0" />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom">
-                        {t(labelKey)}
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                ))}
+              <div className="px-2">
+                <div className="relative grid h-8 grid-cols-4 rounded-md border border-sidebar-border bg-sidebar-accent/70 px-1 py-0.5 text-xs font-medium text-muted-foreground">
+                  {/* Sliding indicator — left/width account for px-1 (4px) horizontal padding */}
+                  <div
+                    className="absolute rounded-md bg-card shadow-sm"
+                    style={{
+                      top: "2px",
+                      bottom: "2px",
+                      left: "4px",
+                      width: "calc(25% - 2px)",
+                      transform: `translateX(${activeIndex * 100}%)`,
+                      transition: "transform 200ms ease-in-out",
+                    }}
+                  />
+                  {TABS.map(({ key, Icon, labelKey }) => (
+                    <TooltipProvider key={key} delayDuration={400}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button unstyled
+                            type="button"
+                            aria-label={t(labelKey)}
+                            onClick={() => switchTab(key)}
+                            className={`relative z-10 flex items-center justify-center rounded-md transition-colors duration-200 ${
+                              sidebarTab === key ? "text-foreground" : ""
+                            }`}
+                          >
+                            <Icon className="h-3.5 w-3.5 shrink-0" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom">
+                          {t(labelKey)}
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  ))}
+                </div>
               </div>
             );
           })()}
 
           {sidebarTab === "project" ? (
-            <div className="-mr-2 flex-1 overflow-auto">
+            <div className="flex-1 overflow-auto px-2">
               <ConversationTree
                 projects={projects}
                 onSelectConversation={(id) => void switchConversation(id)}
@@ -554,15 +558,15 @@ export function AppSidebar() {
               />
             </div>
           ) : sidebarTab === "employee" ? (
-            <div className="-mr-2 flex-1 overflow-auto py-1">
+            <div className="flex-1 overflow-auto px-2 py-1">
               {renderFlatTab(employeeConversations)}
             </div>
           ) : sidebarTab === "expert-team" ? (
-            <div className="-mr-2 flex-1 overflow-auto py-1">
+            <div className="flex-1 overflow-auto px-2 py-1">
               {renderFlatTab(expertTeamConversations)}
             </div>
           ) : (
-            <div className="-mr-2 flex-1 overflow-auto pr-2">
+            <div className="flex-1 overflow-auto px-2">
               <div className="mt-2 flex flex-col gap-3">
                 <div>
                   <div className="mb-1.5 flex items-center gap-2 px-2 text-sm font-medium text-sidebar-foreground">
@@ -579,13 +583,13 @@ export function AppSidebar() {
                   </div>
                   <div className="pl-6">
                     {activeConversations.length === 0 ? (
-                      <button
+                      <Button unstyled
                         type="button"
                         onClick={openChannelOverview}
                         className="w-full rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
                       >
                         {channelEmptyHint(dingtalkState)}
-                      </button>
+                      </Button>
                     ) : (
                       renderChannelRows(activeConversations)
                     )}
@@ -607,13 +611,13 @@ export function AppSidebar() {
                   </div>
                   <div className="pl-6">
                     {activeFeishuConversations.length === 0 ? (
-                      <button
+                      <Button unstyled
                         type="button"
                         onClick={openChannelOverview}
                         className="w-full rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
                       >
                         {channelEmptyHint(feishuState)}
-                      </button>
+                      </Button>
                     ) : (
                       renderChannelRows(activeFeishuConversations)
                     )}
@@ -635,13 +639,13 @@ export function AppSidebar() {
                   </div>
                   <div className="pl-6">
                     {activeWecomConversations.length === 0 ? (
-                      <button
+                      <Button unstyled
                         type="button"
                         onClick={openChannelOverview}
                         className="w-full rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
                       >
                         {channelEmptyHint(wecomState)}
-                      </button>
+                      </Button>
                     ) : (
                       renderChannelRows(activeWecomConversations)
                     )}
@@ -663,13 +667,13 @@ export function AppSidebar() {
                   </div>
                   <div className="pl-6">
                     {activeWechatConversations.length === 0 ? (
-                      <button
+                      <Button unstyled
                         type="button"
                         onClick={openChannelOverview}
                         className="w-full rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
                       >
                         {channelEmptyHint(wechatState)}
-                      </button>
+                      </Button>
                     ) : (
                       renderChannelRows(activeWechatConversations)
                     )}
@@ -691,13 +695,13 @@ export function AppSidebar() {
                   </div>
                   <div className="pl-6">
                     {activeTelegramConversations.length === 0 ? (
-                      <button
+                      <Button unstyled
                         type="button"
                         onClick={openChannelOverview}
                         className="w-full rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
                       >
                         {channelEmptyHint(telegramState)}
-                      </button>
+                      </Button>
                     ) : (
                       renderChannelRows(activeTelegramConversations)
                     )}
@@ -719,13 +723,13 @@ export function AppSidebar() {
                   </div>
                   <div className="pl-6">
                     {activeWhatsappConversations.length === 0 ? (
-                      <button
+                      <Button unstyled
                         type="button"
                         onClick={openChannelOverview}
                         className="w-full rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
                       >
                         {channelEmptyHint(whatsappState)}
-                      </button>
+                      </Button>
                     ) : (
                       renderChannelRows(activeWhatsappConversations)
                     )}
@@ -739,34 +743,14 @@ export function AppSidebar() {
         <SidebarFooterSettings onClick={() => openSettings("account")} />
       </aside>
 
-      {/* 重命名弹窗 */}
-      <Dialog
-        open={!!renamingId}
-        onOpenChange={(open) => !open && setRenamingId(null)}
-      >
-        <DialogContent className="w-[400px]">
-          <DialogHeader>
-            <DialogTitle>重命名聊天</DialogTitle>
-          </DialogHeader>
-          <Input
-            value={renameValue}
-            onChange={(e) => setRenameValue(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && void handleRenameConfirm()}
-            autoFocus
-          />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRenamingId(null)}>
-              取消
-            </Button>
-            <Button
-              onClick={() => void handleRenameConfirm()}
-              disabled={!renameValue.trim()}
-            >
-              确认
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConversationRenameDialog
+        open={Boolean(renamingId)}
+        initialTitle={renamingConversation?.title ?? ""}
+        onOpenChange={(open) => {
+          if (!open) setRenamingId(null);
+        }}
+        onConfirm={handleRenameConfirm}
+      />
       <DevControlPanel open={devPanelOpen} onOpenChange={setDevPanelOpen} />
     </>
   );

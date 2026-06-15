@@ -34,6 +34,32 @@
     "loading": "加载中...",
     "openFile": "打开文件"
   },
+  "chatHeader": {
+    "more": "更多",
+    "exportConversation": "导出对话",
+    "createSkillFromConversation": "总结对话并创建技能",
+    "createScheduleFromConversation": "总结对话并创建定时任务"
+  },
+  "resultCards": {
+    "copyId": "复制 ID",
+    "skill": {
+      "created": "技能已创建",
+      "view": "查看技能",
+      "nameLabel": "技能名称",
+      "triggerLabel": "触发方式",
+      "descriptionLabel": "技能描述",
+      "fallbackDescription": "技能已创建，可前往技能详情查看。"
+    },
+    "schedule": {
+      "created": "定时任务已创建",
+      "edit": "编辑",
+      "view": "查看定时任务",
+      "frequency": "频率",
+      "nextFire": "下次运行",
+      "fallbackPrompt": "定时任务已创建。",
+      "unavailable": "当前无法读取这个定时任务，可能已被删除或暂时不可用。"
+    }
+  },
   "sidebar": {
     "archiveChat": "归档聊天",
     "archiveChatTooltip": "归档对话",
@@ -321,6 +347,14 @@
       "chatWidthCentered": "居中",
       "chatWidthFull": "全宽"
     },
+    "permissions": {
+      "title": "系统权限",
+      "description": "设置新会话默认采用的工具权限。会话内显式选择的权限优先于这里的全局默认。",
+      "defaultAccess": "默认访问",
+      "defaultAccessDesc": "用户目录默认可读，敏感路径会询问；工作区可写，其他位置写入会询问；删除始终更严格。",
+      "fullAccess": "完全访问",
+      "fullAccessDesc": "普通读写和常规删除尽量不打断；系统目录、用户主目录等高风险删除仍会被拦截。"
+    },
     "archived": {
       "newChat": "新对话",
       "noRecords": "暂无归档记录",
@@ -463,6 +497,19 @@
     "openSkillPicker": "选择技能",
     "openSkillPickerWithSkill": "当前技能：{{name}}",
     "removeSkill": "移除技能 {{name}}",
+    "permissionModeLabel": "权限模式：{{mode}}",
+    "permissionModeDefault": "默认",
+    "permissionModeFull": "完全",
+    "permissionModeDefaultLong": "默认权限",
+    "permissionModeFullLong": "完全访问权限",
+    "permissionModeDefaultDesc": "使用设置中的默认权限策略",
+    "permissionModeFullDesc": "本会话使用完全访问；普通读写删尽量不询问，高风险删除仍会拦截",
+    "fullAccessRulesTitle": "完全访问权限说明",
+    "fullAccessRulesIntro": "开启后，本会话会这样处理：",
+    "fullAccessRuleLessConfirm": "减少确认步骤，允许 AI 直接执行更多操作",
+    "fullAccessRuleSensitive": "文件修改、命令执行会更少打断你",
+    "fullAccessRuleTrusted": "仅建议在你信任当前任务时使用",
+    "fullAccessRuleSwitchBack": "你可随时切回默认权限",
     "paste": {
       "cannotPaste": "无法粘贴",
       "clipboardImageFailed": "读取剪贴板图片失败",
@@ -939,12 +986,14 @@
     "openTableHint": "主持人按议题召集",
     "moreMembers": "更多",
     "members": "团队成员",
-    "directorInvites": "主持人将按议题召集 3-5 位专家",
+    "directorInvites": "主持人将按议题召集 3-4 位专家",
     "pickTopic": "点击一个议题直接开始：",
     "startingTopic": "正在启动：{{topic}}...",
     "topicQuote": "「{{topic}}」",
     "customTopicHint": "或在下方输入你自己的议题，回车发送。",
     "detail": {
+      "intro": "能力介绍",
+      "overview": "基础信息",
       "category": "分组",
       "members": "成员",
       "memberCount": "{{count}} 位专家",
@@ -1020,6 +1069,8 @@
       "dialogFirst": "对话补全",
       "contextAware": "按上下文补全信息",
       "resultOriented": "交付清晰结果",
+      "intro": "能力介绍",
+      "overview": "基础信息",
       "strengths": "能力侧重",
       "examples": "适合交给 TA 的任务",
       "skillSet": "可调用技能"
@@ -1171,7 +1222,7 @@
     "loadFailed": "技能加载失败",
     "retry": "重试",
     "noLocalSkills": "还没有本地技能",
-    "noLocalSkillsDesc": "在对话里找数字员工\"小程\"聊聊，让它帮你把工作流程沉淀成可复用技能；或点右上角\"+ 导入技能\"选一个本地技能目录上传。",
+    "noLocalSkillsDesc": "点右上角\"+ 导入技能\"选择一个本地技能目录上传。",
     "noMatch": "没有匹配的技能",
     "noMatchDesc": "\"{{query}}\" 下没找到技能。试试切到\"全部\"或换个关键词。",
     "noSkillsInCategory": "该分类下还没有技能",
@@ -1223,6 +1274,11 @@
       "received": "接收到",
       "receivedFrom": "接收到 {{name}}",
       "sentTo": "发送给 {{name}}",
+      "timeline": {
+        "systemReminder": "角色说明",
+        "received": "收到消息",
+        "turn": "思考与行动"
+      },
       "parseHint": "解析提示",
       "rawData": "原始数据",
       "parseWarnings": {
@@ -1252,6 +1308,15 @@
         "planApprove": "{{from}} 同意方案",
         "planReject": "{{from}} 修改建议：{{feedback}}",
         "planRejectNoFeedback": "{{from}} 不同意方案"
+      },
+      "facilitation": {
+        "assignment": "Lead 向 {{count}} 位专家发起首轮观点征集",
+        "cross_review": "Lead 发起交叉点评",
+        "debate": "Lead 推进辩论轮次",
+        "instruction": "Lead 发出主持指令",
+        "hiddenLowSignal": "Lead 主持进度更新（{{count}} 条）",
+        "expand": "展开",
+        "collapse": "收起"
       }
     }
   },
@@ -1292,7 +1357,10 @@
       "addNumber": "添加号码",
       "deleteRow": "删除此行",
       "removeChannel": "移除整个频道",
-      "saveManualConfig": "保存手动配置"
+      "saveManualConfig": "保存手动配置",
+      "sendGreeting": "唤醒机器人",
+      "sendingGreeting": "唤醒中…",
+      "sendDingtalkGreetingAria": "唤醒钉钉机器人"
     },
     "chat": {
       "groupChat": "群聊",
@@ -1404,6 +1472,12 @@
         "errorBeginFailed": "钉钉扫码开通失败，请重试",
         "errorNoConfig": "钉钉已授权，但未返回频道配置",
         "errorScanFailed": "钉钉扫码开通失败"
+      },
+      "greeting": {
+        "sentTitle": "机器人已唤醒",
+        "sentMessage": "请打开钉钉，看看左侧会话列表里有没有未读红点；机器人回复后就能找到这条对话。",
+        "failedTitle": "唤醒机器人失败",
+        "failedMessage": "请稍后重试"
       },
       "inactive": "该会话来自已下线的机器人，无法发送新消息"
     },
@@ -1668,6 +1742,25 @@
   },
   "schedules": {
     "pageTitle": "定时任务",
+    "console": {
+      "kicker": "自动化控制台",
+      "title": "定时任务运行台",
+      "desc": "集中查看任务健康状态、下次触发时间和常用操作，让周期性工作像一个稳定的后台队列一样可控。",
+      "active": "运行中",
+      "paused": "已暂停",
+      "next24h": "未来 24h",
+      "needsCare": "需处理",
+      "cancelledHint": "管理已停止触发的任务。",
+      "listHint": "按下次触发时间和运行状态检查任务。",
+      "nextUp": "下一次执行",
+      "nextUpTask": "即将触发：{{title}}",
+      "noNext": "暂无即将触发的任务",
+      "health": "任务健康"
+    },
+    "quickCreate": "快捷创建",
+    "quickCreateDesc": "从常见场景开始，再按实际节奏微调。",
+    "templatesTitle": "常用模板",
+    "templatesDesc": "适合周期性例行工作的起点。",
     "newTaskAria": "新建日程",
     "taskList": "任务列表",
     "cancelled": "已取消",

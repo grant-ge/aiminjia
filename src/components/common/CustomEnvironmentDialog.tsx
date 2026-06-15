@@ -2,10 +2,10 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { normalizeOrigin } from '@/lib/environment'
-import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Button } from '@/components/ui/button'
 
 interface CustomEnvironmentDialogProps {
   open: boolean

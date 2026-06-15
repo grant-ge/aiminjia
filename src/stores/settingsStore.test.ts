@@ -19,7 +19,7 @@ describe('settingsStore — defaults', () => {
     expect(state.primaryApiKey).toBe('')
     expect(state.autoModelRouting).toBe(true)
     expect(state.analysisThreshold).toBe(1.65)
-    expect(state.dataMaskingLevel).toBe('relaxed')
+    expect('dataMaskingLevel' in state).toBe(false)
     expect(state.autoCleanupEnabled).toBe(true)
     expect(state.tempFileRetentionDays).toBe(7)
     expect(state.keepOldVersions).toBe(1)
@@ -155,11 +155,10 @@ describe('settingsStore — appLanguage consistency', () => {
   })
 })
 
-describe('settingsStore — setDataMaskingLevel', () => {
-  it('updates dataMaskingLevel in store', () => {
-    useSettingsStore.getState().setDataMaskingLevel('strict')
-    expect(useSettingsStore.getState().dataMaskingLevel).toBe('strict')
-    useSettingsStore.getState().setDataMaskingLevel('relaxed')
-    expect(useSettingsStore.getState().dataMaskingLevel).toBe('relaxed')
+describe('settingsStore — removed legacy data masking setting', () => {
+  it('does not expose dataMaskingLevel or its setter', () => {
+    const state = useSettingsStore.getState()
+    expect('dataMaskingLevel' in state).toBe(false)
+    expect('setDataMaskingLevel' in state).toBe(false)
   })
 })

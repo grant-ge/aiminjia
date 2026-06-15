@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { runtimeDiagnostics, type RuntimeDiagnostics } from '@/lib/tauri'
-
 import { Button } from '@/components/ui/button'
+
 
 function useResolverLabel(): Record<RuntimeDiagnostics['activeResolver'], string> {
   const { t } = useTranslation()

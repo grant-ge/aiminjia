@@ -474,7 +474,7 @@ mod tests {
             }],
             items: vec![WorkplaceDirectoryItem {
                 resource_type: "employee_template".to_string(),
-                resource_id: "builtin:xiaocheng".to_string(),
+                resource_id: "builtin:xiaoyuan".to_string(),
                 version: "1.0.0".to_string(),
                 workplace_category_id: "delivery".to_string(),
                 ..Default::default()
@@ -492,7 +492,7 @@ mod tests {
             .expect("fresh cache should be readable");
 
         assert_eq!(cached.categories[0].category_id, "delivery");
-        assert_eq!(cached.items[0].resource_id, "builtin:xiaocheng");
+        assert_eq!(cached.items[0].resource_id, "builtin:xiaoyuan");
     }
 
     #[test]

@@ -240,7 +240,6 @@ function PermissionPanel({
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="h-7 px-2 text-xs"
                 disabled={submitting}
                 onClick={() =>
                   void runOnce(() =>
@@ -253,7 +252,6 @@ function PermissionPanel({
               <Button
                 type="button"
                 size="sm"
-                className="h-7 rounded-full px-3 text-xs"
                 disabled={submitting}
                 onClick={() => void submitPermissionChoice()}
               >
@@ -398,7 +396,6 @@ function PermissionGroupPanel({
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="h-7 px-2 text-xs"
                 disabled={submitting}
                 onClick={() => void denyPermissionChoice()}
               >
@@ -407,7 +404,6 @@ function PermissionGroupPanel({
               <Button
                 type="button"
                 size="sm"
-                className="h-7 rounded-full px-3 text-xs"
                 disabled={submitting}
                 onClick={() => void submitPermissionChoice()}
               >
@@ -694,7 +690,6 @@ function UserQuestionPanel({
         type="button"
         variant="ghost"
         size="sm"
-        className="h-7 px-2 text-xs"
         aria-label={t("pendingAction.interaction.skip")}
         disabled={submitting}
         onClick={() => void cancelInteraction()}
@@ -707,7 +702,6 @@ function UserQuestionPanel({
       <Button
         type="button"
         size="sm"
-        className="h-7 rounded-full px-4 text-xs"
         disabled={submitting}
         onClick={() => void submitInteractionChoice()}
       >
@@ -768,7 +762,7 @@ function UserQuestionPanel({
           </legend>
           {questions.length > 1 ? (
             <div className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
-              <button
+              <Button unstyled
                 type="button"
                 aria-label={t("pendingAction.interaction.previous")}
                 className="inline-flex h-6 w-6 items-center justify-center rounded-md hover:bg-accent disabled:opacity-35"
@@ -776,14 +770,14 @@ function UserQuestionPanel({
                 onClick={() => move(-1)}
               >
                 <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-              </button>
+              </Button>
               <span>
                 {t("pendingAction.interaction.progress", {
                   current: activeIndex + 1,
                   total: questions.length,
                 })}
               </span>
-              <button
+              <Button unstyled
                 type="button"
                 aria-label={t("pendingAction.interaction.next")}
                 className="inline-flex h-6 w-6 items-center justify-center rounded-md hover:bg-accent disabled:opacity-35"
@@ -791,7 +785,7 @@ function UserQuestionPanel({
                 onClick={() => move(1)}
               >
                 <ChevronRight className="h-4 w-4" aria-hidden="true" />
-              </button>
+              </Button>
             </div>
           ) : null}
         </div>
@@ -1137,7 +1131,7 @@ export function PendingActionSurface(props: Props) {
           const key = actionKey(action);
           const selected = key === activeActionKey;
           return (
-            <button
+            <Button unstyled
               key={key}
               type="button"
               role="tab"
@@ -1151,7 +1145,7 @@ export function PendingActionSurface(props: Props) {
               onClick={() => setActiveKey(key)}
             >
               {actionTabLabel(action, actions, index, t)}
-            </button>
+            </Button>
           );
         })}
       </div>

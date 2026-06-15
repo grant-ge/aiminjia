@@ -62,6 +62,116 @@ fn glob_matches(pattern: &str, path: &Path) -> bool {
     matcher.is_match(path)
 }
 
+fn is_under_any(path: &Path, mut roots: impl Iterator<Item = PathBuf>) -> bool {
+    roots.any(|root| {
+        let canonical_root = std::fs::canonicalize(&root).unwrap_or(root);
+        path.starts_with(&canonical_root)
+    })
+}
+
+fn system_temp_roots() -> Vec<PathBuf> {
+    let mut roots = vec![std::env::temp_dir()];
+
+    if let Some(tmpdir) = std::env::var_os("TMPDIR") {
+        roots.push(PathBuf::from(tmpdir));
+    }
+
+    #[cfg(unix)]
+    {
+        roots.push(PathBuf::from("/tmp"));
+        roots.push(PathBuf::from("/private/tmp"));
+    }
+
+    roots
+}
+
+fn path_text_lc(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/").to_lowercase()
+}
+
+fn path_has_sensitive_component(path: &Path) -> bool {
+    let sensitive_dirs = [
+        ".ssh",
+        ".aws",
+        ".kube",
+        ".gnupg",
+        ".config/gcloud",
+        "library/keychains",
+        "appdata/roaming/microsoft/credentials",
+        "appdata/local/microsoft/credentials",
+    ];
+    let sensitive_names = [".env", ".env.local", ".netrc", "credentials", "ntuser.dat"];
+    let sensitive_exts = ["pem", "key", "pfx", "p12", "kdbx"];
+    let text = path_text_lc(path);
+
+    if sensitive_dirs.iter().any(|segment| {
+        text.contains(&format!("/{segment}/")) || text.ends_with(&format!("/{segment}"))
+    }) {
+        return true;
+    }
+
+    let Some(file_name) = path
+        .file_name()
+        .map(|name| name.to_string_lossy().to_lowercase())
+    else {
+        return false;
+    };
+    if sensitive_names
+        .iter()
+        .any(|name| file_name == *name || file_name.starts_with(".env."))
+    {
+        return true;
+    }
+    path.extension()
+        .map(|ext| {
+            let ext = ext.to_string_lossy().to_lowercase();
+            sensitive_exts.iter().any(|candidate| ext == *candidate)
+        })
+        .unwrap_or(false)
+}
+
+fn dangerous_delete_reason(path: &Path) -> Option<String> {
+    if path.parent().is_none() {
+        return Some(format!("禁止删除文件系统根目录：路径={}", path.display()));
+    }
+    if let Some(home) = dirs::home_dir() {
+        let canonical_home = std::fs::canonicalize(&home).unwrap_or(home);
+        if path == canonical_home {
+            return Some(format!("禁止删除用户主目录：路径={}", path.display()));
+        }
+    }
+
+    let text = path_text_lc(path);
+    let dangerous_prefixes = [
+        "/bin",
+        "/etc",
+        "/private/etc",
+        "/sbin",
+        "/system",
+        "/library",
+        "/applications",
+        "/usr/bin",
+        "/usr/lib",
+        "/usr/sbin",
+        "/usr/share",
+        "/var/db",
+        "/var/root",
+        "/volumes",
+        "c:/windows",
+        "c:/program files",
+        "c:/program files (x86)",
+    ];
+    dangerous_prefixes.iter().find_map(|prefix| {
+        (text == *prefix || text.starts_with(&format!("{prefix}/"))).then(|| {
+            format!(
+                "禁止删除系统或高风险目录：路径={}，命中={}",
+                path.display(),
+                prefix
+            )
+        })
+    })
+}
+
 pub fn is_path_allowed(path: &Path, op: PathOp, ctx: &ToolPermissionContext) -> Decision {
     // Step 1: canonicalize
     let canonical = match canonicalize_or_ancestor(path) {
@@ -77,6 +187,12 @@ pub fn is_path_allowed(path: &Path, op: PathOp, ctx: &ToolPermissionContext) -> 
                 rule.pattern,
                 canonical.display()
             ));
+        }
+    }
+
+    if op == PathOp::Delete {
+        if let Some(reason) = dangerous_delete_reason(&canonical) {
+            return Decision::Deny(reason);
         }
     }
 
@@ -99,7 +215,16 @@ pub fn is_path_allowed(path: &Path, op: PathOp, ctx: &ToolPermissionContext) -> 
     if let Some(ref root) = ctx.primary_root {
         let canonical_root = std::fs::canonicalize(root).unwrap_or_else(|_| root.clone());
         if canonical.starts_with(&canonical_root) {
-            return Decision::Allow;
+            return match op {
+                PathOp::Read | PathOp::Write => Decision::Allow,
+                PathOp::Delete if ctx.mode == PermissionMode::FullAccess => Decision::Allow,
+                PathOp::Delete => Decision::Ask {
+                    reason: format!(
+                        "需要确认：删除已授权工作区内的文件，路径={}",
+                        canonical.display()
+                    ),
+                },
+            };
         }
     }
 
@@ -120,7 +245,10 @@ pub fn is_path_allowed(path: &Path, op: PathOp, ctx: &ToolPermissionContext) -> 
                 if rule_allows {
                     return Decision::Allow;
                 }
-                if ctx.mode == PermissionMode::AcceptEdits {
+                if matches!(
+                    ctx.mode,
+                    PermissionMode::AcceptEdits | PermissionMode::FullAccess
+                ) {
                     return Decision::Allow;
                 }
                 return Decision::Ask {
@@ -130,7 +258,51 @@ pub fn is_path_allowed(path: &Path, op: PathOp, ctx: &ToolPermissionContext) -> 
                     ),
                 };
             }
+            PathOp::Delete => {
+                if ctx.mode == PermissionMode::FullAccess {
+                    return Decision::Allow;
+                }
+                return Decision::Ask {
+                    reason: format!(
+                        "需要确认：删除已授权目录内的文件，路径={}",
+                        canonical.display()
+                    ),
+                };
+            }
         }
+    }
+
+    if op == PathOp::Read && is_under_any(&canonical, ctx.read_roots.iter().cloned()) {
+        if path_has_sensitive_component(&canonical) {
+            return Decision::Ask {
+                reason: format!(
+                    "需要确认：读取用户目录中的敏感路径，路径={}",
+                    canonical.display()
+                ),
+            };
+        }
+        return Decision::Allow;
+    }
+
+    if is_under_any(&canonical, system_temp_roots().into_iter()) {
+        if matches!(op, PathOp::Read | PathOp::Write) && path_has_sensitive_component(&canonical) {
+            return Decision::Ask {
+                reason: format!(
+                    "需要确认：访问临时目录中的敏感路径，路径={}",
+                    canonical.display()
+                ),
+            };
+        }
+        return match op {
+            PathOp::Read | PathOp::Write => Decision::Allow,
+            PathOp::Delete if ctx.mode == PermissionMode::FullAccess => Decision::Allow,
+            PathOp::Delete => Decision::Ask {
+                reason: format!(
+                    "需要确认：删除系统临时目录内的文件，路径={}",
+                    canonical.display()
+                ),
+            },
+        };
     }
 
     // Step 5: allow_rules
@@ -142,6 +314,7 @@ pub fn is_path_allowed(path: &Path, op: PathOp, ctx: &ToolPermissionContext) -> 
 
     // Step 6: default by mode
     match ctx.mode {
+        PermissionMode::FullAccess => Decision::Allow,
         PermissionMode::Default | PermissionMode::AcceptEdits => Decision::Ask {
             reason: format!("该路径未授权，需要用户确认：路径={}", canonical.display()),
         },
@@ -173,6 +346,18 @@ mod tests {
         ctx.additional_working_dirs
             .insert(dir.to_path_buf(), RuleSource::Session);
         ctx
+    }
+
+    fn non_temp_test_file(name: &str) -> PathBuf {
+        let dir = std::env::current_dir()
+            .unwrap()
+            .join("target")
+            .join("path-auth-step6-tests")
+            .join(std::process::id().to_string());
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join(name);
+        std::fs::write(&file, b"").unwrap();
+        file
     }
 
     #[test]
@@ -264,6 +449,115 @@ mod tests {
     }
 
     #[test]
+    fn read_root_allows_regular_home_reads() {
+        let tmp = TempDir::new().unwrap();
+        let file = tmp.path().join("notes.txt");
+        std::fs::write(&file, b"").unwrap();
+        let mut ctx = ToolPermissionContext::empty();
+        ctx.read_roots.push(tmp.path().to_path_buf());
+
+        assert_eq!(is_path_allowed(&file, PathOp::Read, &ctx), Decision::Allow);
+    }
+
+    #[test]
+    fn read_root_sensitive_file_asks() {
+        let tmp = TempDir::new().unwrap();
+        let ssh_dir = tmp.path().join(".ssh");
+        std::fs::create_dir_all(&ssh_dir).unwrap();
+        let file = ssh_dir.join("id_rsa");
+        std::fs::write(&file, b"secret").unwrap();
+        let mut ctx = ToolPermissionContext::empty();
+        ctx.read_roots.push(tmp.path().to_path_buf());
+
+        assert!(matches!(
+            is_path_allowed(&file, PathOp::Read, &ctx),
+            Decision::Ask { .. }
+        ));
+    }
+
+    #[test]
+    fn system_temp_dir_allows_read_and_write_in_default_mode() {
+        let tmp_root = std::env::temp_dir();
+        let dir = tmp_root.join(format!("lotus-path-auth-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("SKILL.md");
+        std::fs::write(&file, b"draft").unwrap();
+        let ctx = ToolPermissionContext::empty();
+
+        assert_eq!(is_path_allowed(&file, PathOp::Read, &ctx), Decision::Allow);
+        assert_eq!(is_path_allowed(&file, PathOp::Write, &ctx), Decision::Allow);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn slash_tmp_alias_allows_not_yet_created_files() {
+        let path = Path::new("/tmp")
+            .join(format!("lotus-path-auth-test-{}", std::process::id()))
+            .join("new-skill")
+            .join("SKILL.md");
+        let ctx = ToolPermissionContext::empty();
+
+        assert_eq!(is_path_allowed(&path, PathOp::Write, &ctx), Decision::Allow);
+    }
+
+    #[test]
+    fn system_temp_delete_still_asks_in_default_mode() {
+        let tmp_root = std::env::temp_dir();
+        let file = tmp_root.join(format!(
+            "lotus-path-auth-delete-test-{}.txt",
+            std::process::id()
+        ));
+        std::fs::write(&file, b"draft").unwrap();
+        let ctx = ToolPermissionContext::empty();
+
+        assert!(matches!(
+            is_path_allowed(&file, PathOp::Delete, &ctx),
+            Decision::Ask { .. }
+        ));
+
+        let _ = std::fs::remove_file(&file);
+    }
+
+    #[test]
+    fn primary_root_delete_in_default_returns_ask() {
+        let tmp = TempDir::new().unwrap();
+        let file = tmp.path().join("old.txt");
+        std::fs::write(&file, b"").unwrap();
+        let ctx = ctx_with_primary(tmp.path());
+
+        assert!(matches!(
+            is_path_allowed(&file, PathOp::Delete, &ctx),
+            Decision::Ask { .. }
+        ));
+    }
+
+    #[test]
+    fn full_access_allows_regular_delete() {
+        let tmp = TempDir::new().unwrap();
+        let file = tmp.path().join("old.txt");
+        std::fs::write(&file, b"").unwrap();
+        let mut ctx = ToolPermissionContext::empty();
+        ctx.mode = PermissionMode::FullAccess;
+
+        assert_eq!(
+            is_path_allowed(&file, PathOp::Delete, &ctx),
+            Decision::Allow
+        );
+    }
+
+    #[test]
+    fn full_access_still_denies_root_delete() {
+        let mut ctx = ToolPermissionContext::empty();
+        ctx.mode = PermissionMode::FullAccess;
+
+        assert!(matches!(
+            is_path_allowed(Path::new("/"), PathOp::Delete, &ctx),
+            Decision::Deny(_)
+        ));
+    }
+
+    #[test]
     fn additional_dir_read_allows() {
         let tmp = TempDir::new().unwrap();
         let file = tmp.path().join("report.csv");
@@ -334,10 +628,8 @@ mod tests {
 
     #[test]
     fn allow_rule_pathglob_op_mismatch_does_not_match() {
-        let tmp = TempDir::new().unwrap();
-        let file = tmp.path().join("data.csv");
-        std::fs::write(&file, b"").unwrap();
-        let canonical_dir = std::fs::canonicalize(tmp.path()).unwrap();
+        let file = non_temp_test_file("data.csv");
+        let canonical_dir = std::fs::canonicalize(file.parent().unwrap()).unwrap();
         let pattern = format!("{}/**", canonical_dir.display());
 
         let mut ctx = ToolPermissionContext::empty();
@@ -357,9 +649,7 @@ mod tests {
 
     #[test]
     fn default_mode_returns_ask() {
-        let tmp = TempDir::new().unwrap();
-        let file = tmp.path().join("unknown.txt");
-        std::fs::write(&file, b"").unwrap();
+        let file = non_temp_test_file("unknown.txt");
         let ctx = ToolPermissionContext::empty(); // mode=Default, no roots
 
         assert!(matches!(
@@ -370,9 +660,7 @@ mod tests {
 
     #[test]
     fn acceptedits_mode_step6_returns_ask() {
-        let tmp = TempDir::new().unwrap();
-        let file = tmp.path().join("outside.txt");
-        std::fs::write(&file, b"").unwrap();
+        let file = non_temp_test_file("outside.txt");
         let mut ctx = ToolPermissionContext::empty();
         ctx.mode = PermissionMode::AcceptEdits;
         // no primary_root, no additional dirs → hits step 6
@@ -385,9 +673,7 @@ mod tests {
 
     #[test]
     fn plan_mode_returns_deny() {
-        let tmp = TempDir::new().unwrap();
-        let file = tmp.path().join("file.txt");
-        std::fs::write(&file, b"").unwrap();
+        let file = non_temp_test_file("plan-file.txt");
         let mut ctx = ToolPermissionContext::empty();
         ctx.mode = PermissionMode::Plan;
 
@@ -399,9 +685,7 @@ mod tests {
 
     #[test]
     fn dontask_mode_returns_deny() {
-        let tmp = TempDir::new().unwrap();
-        let file = tmp.path().join("file.txt");
-        std::fs::write(&file, b"").unwrap();
+        let file = non_temp_test_file("dontask-file.txt");
         let mut ctx = ToolPermissionContext::empty();
         ctx.mode = PermissionMode::DontAsk;
 

@@ -1,6 +1,7 @@
 import type { ButtonHTMLAttributes } from 'react'
 
 import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
 
 interface SwitchProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'checked' | 'onChange' | 'role'> {
   checked: boolean
@@ -20,7 +21,7 @@ export function Switch({
   }
 
   return (
-    <button
+    <Button unstyled
       type="button"
       role="switch"
       aria-checked={checked}
@@ -42,6 +43,6 @@ export function Switch({
           disabled && 'bg-card',
         )}
       />
-    </button>
+    </Button>
   )
 }

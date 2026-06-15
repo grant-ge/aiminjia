@@ -53,9 +53,32 @@ describe("design.pen token alignment", () => {
   });
 
   it("maps Tailwind text size utilities to the compact app scale", () => {
+    expect(tokenValue("--text-2xs")).toBe("0.6875rem");
     expect(tokenValue("--text-xs")).toBe("0.75rem");
     expect(tokenValue("--text-sm")).toBe("0.8125rem");
-    expect(tokenValue("--text-base")).toBe("0.875rem");
+    expect(tokenValue("--text-base")).toBe("0.8125rem");
+    expect(tokenValue("--text-lg")).toBe("1.125rem");
+  });
+
+  it("maps radius utilities to the tighter app scale", () => {
+    expect(tokenValue("--radius-sm")).toBe("2px");
+    expect(tokenValue("--radius")).toBe("4px");
+    expect(tokenValue("--radius-md")).toBe("6px");
+    expect(tokenValue("--radius-lg")).toBe("10px");
+    expect(tokenValue("--radius-xl")).toBe("14px");
+  });
+
+  it("sets Tailwind spacing so h-8 resolves to 30px on the rem scale", () => {
+    expect(tokenValue("--spacing")).toBe("0.234375rem");
+  });
+
+  it("does not add custom control height utilities", () => {
+    expect(CSS).not.toMatch(/\.h-8\s*\{/);
+    expect(CSS).not.toMatch(/\.w-8\s*\{/);
+  });
+
+  it("uses the Tailwind text base as the default body font size", () => {
+    expect(CSS).toMatch(/body\s*\{[^}]*font-size:\s*var\(--text-base\);/s);
   });
 
   it("uses a crisp, low-blur composer outline instead of the generic card shadow", () => {
@@ -90,7 +113,7 @@ describe("assistant markdown typography", () => {
     expect(CSS).toMatch(
       /\.assistant-markdown \.markdown-table-wrap,[\s\S]*margin-top:\s*0\.625rem;[\s\S]*margin-bottom:\s*0\.375rem;/,
     );
-    expect(CSS).toMatch(
+    expect(CSS).not.toMatch(
       /\.assistant-markdown \.markdown-table-copy\s*\{[\s\S]*display:\s*inline-flex;/,
     );
     expect(CSS).toMatch(

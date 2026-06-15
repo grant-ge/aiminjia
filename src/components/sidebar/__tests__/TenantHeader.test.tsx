@@ -30,7 +30,9 @@ describe('TenantHeader', () => {
     expect(header).not.toHaveClass('py-2')
     expect(header).not.toHaveClass('pt-2')
     expect(header).not.toHaveClass('pb-2')
-    expect(header).toHaveClass('my-2')
+    expect(header).not.toHaveClass('mt-2')
+    expect(header).not.toHaveClass('my-2')
+    expect(header).toHaveClass('mb-2')
     expect(header.className).not.toMatch(/hover:/)
 
     fireEvent.click(header)

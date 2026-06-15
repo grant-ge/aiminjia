@@ -13,8 +13,9 @@ import { ConversationRow } from './ConversationRow'
 import { ProjectAccordion } from './ProjectAccordion'
 import { type SidebarRowStatus } from './SidebarRowStatusIndicator'
 import { loadCollapsedProjects, saveCollapsedProjects } from './sidebarProjectPrefs'
+import { Button } from '@/components/ui/button'
 
-const CONVERSATION_LIMIT_PER_PROJECT = 8
+const CONVERSATION_LIMIT_PER_PROJECT = 6
 
 export interface ConversationTreeItem {
   id: string
@@ -56,7 +57,7 @@ export function ConversationTree({
   }
 
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex w-full min-w-0 flex-col gap-1">
       {projects.map((p) => {
         const showAll = expandedProjectIds[p.id] ?? false
         const visibleConversations = showAll
@@ -92,7 +93,7 @@ export function ConversationTree({
               />
             ))}
             {hiddenCount > 0 ? (
-              <button
+              <Button unstyled
                 type="button"
                 onClick={() =>
                   setExpandedProjectIds((s) => ({
@@ -112,7 +113,7 @@ export function ConversationTree({
                     ? t('sidebar.collapseConversations')
                     : t('sidebar.showMoreConversations', { count: hiddenCount })}
                 </span>
-              </button>
+              </Button>
             ) : null}
           </ProjectAccordion>
         )

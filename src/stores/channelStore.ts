@@ -10,6 +10,7 @@ import {
   channelPollRegistration,
   channelRemovePlatform,
   channelRevealSecret,
+  channelSendDingtalkGreeting,
   channelSetEnabled,
   onChannelMessage,
   onChannelPlatformState,
@@ -36,6 +37,7 @@ interface ChannelState {
   setEnabled: (platform: ChannelPlatform, enabled: boolean) => Promise<ChannelPlatformState>
   removePlatform: (platform: ChannelPlatform) => Promise<ChannelPlatformState>
   revealSecret: (platform: ChannelPlatform) => Promise<string>
+  sendDingtalkGreeting: () => Promise<void>
   loadConversations: (platform?: ChannelPlatform) => Promise<void>
   reset: () => void
 }
@@ -130,6 +132,8 @@ export const useChannelStore = create<ChannelState>((set, get) => ({
   },
 
   revealSecret: (platform) => channelRevealSecret(platform),
+
+  sendDingtalkGreeting: () => channelSendDingtalkGreeting(),
 
   loadConversations: async (platform) => {
     try {

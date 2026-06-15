@@ -4,6 +4,7 @@
  */
 import { CheckCircle2, ChevronDown, ChevronRight, Loader2 } from 'lucide-react'
 import type { ReactNode } from 'react'
+import { Button } from '@/components/ui/button'
 
 export interface ToolStep {
   index: number
@@ -29,7 +30,7 @@ export function ToolGroupStepRow({ step, expanded, onToggle }: ToolGroupStepRowP
   const StatusIcon =
     step.status === 'running' ? Loader2 : step.status === 'done' ? CheckCircle2 : ChevronRight
   return (
-    <button
+    <Button unstyled
       type="button"
       onClick={onToggle}
       className="flex w-full items-center justify-between gap-2 px-3.5 py-2.5 text-left text-sm hover:bg-muted/50"
@@ -51,6 +52,6 @@ export function ToolGroupStepRow({ step, expanded, onToggle }: ToolGroupStepRowP
         <span className="text-xs">{seconds}</span>
         {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
       </div>
-    </button>
+    </Button>
   )
 }

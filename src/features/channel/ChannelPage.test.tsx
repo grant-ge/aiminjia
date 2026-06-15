@@ -6,6 +6,7 @@ import { ConfirmDialogHost, useConfirmDialogStore } from '@/components/common/Co
 import { DEFAULTS, useBrandingStore } from '@/stores/brandingStore'
 import { useChannelStore } from '@/stores/channelStore'
 import { useChatStore } from '@/stores/chatStore'
+import { useNotificationStore } from '@/stores/notificationStore'
 import { ChannelPage } from './ChannelPage'
 
 const getMessagesMock = vi.hoisted(() => vi.fn())
@@ -25,8 +26,8 @@ vi.mock('@/lib/tauri', async () => {
     getMessages: getMessagesMock,
     getTasks: getTasksMock,
     exportConversation: exportConversationMock,
-    revealExportInFolder: revealExportInFolderMock,
     openGeneratedFile: vi.fn(),
+    revealExportInFolder: revealExportInFolderMock,
     onChannelPlatformState: vi.fn().mockResolvedValue(() => {}),
     onChannelMessage: vi.fn().mockResolvedValue(() => {}),
   }
@@ -89,6 +90,7 @@ function renderPage(ui = <ChannelPage />) {
 describe('ChannelPage domain UI', () => {
   beforeEach(() => {
     useConfirmDialogStore.setState({ request: null })
+    useNotificationStore.setState({ notifications: [] })
     useBrandingStore.setState({
       productName: DEFAULTS.productName,
       productNameEn: DEFAULTS.productNameEn,
@@ -110,6 +112,7 @@ describe('ChannelPage domain UI', () => {
       setEnabled: vi.fn().mockResolvedValue(undefined),
       removePlatform: vi.fn().mockResolvedValue(undefined),
       revealSecret: vi.fn().mockResolvedValue('plain-secret'),
+      sendDingtalkGreeting: vi.fn().mockResolvedValue(undefined),
     })
     useChatStore.setState({
       conversations: [],
@@ -175,6 +178,22 @@ describe('ChannelPage domain UI', () => {
     expect(screen.getByText('企业微信')).toBeInTheDocument()
   })
 
+  it('renders Feishu platform logo without a border', () => {
+    useChannelStore.setState({
+      platforms: {
+        dingtalk: unconfigured,
+        feishu,
+      },
+    })
+
+    const { container } = renderPage()
+    const logo = container.querySelector('img[src="/logos/feishu.png"]')
+
+    expect(logo).toBeInTheDocument()
+    expect(logo).not.toHaveClass('border')
+    expect(logo).not.toHaveClass('border-border')
+  })
+
   it('configured DingTalk opens read-only config details from menu', async () => {
     useChannelStore.setState({ platforms: { dingtalk: connected, feishu } })
     renderPage()
@@ -187,6 +206,26 @@ describe('ChannelPage domain UI', () => {
     expect(within(dialog).getByText('ding-app-key')).toBeInTheDocument()
     expect(within(dialog).getByText('robot-code')).toBeInTheDocument()
     expect(within(dialog).queryByLabelText('钉钉扫码二维码')).not.toBeInTheDocument()
+  })
+
+  it('configured DingTalk can wake the current bot from the overview', async () => {
+    const sendDingtalkGreeting = vi.fn().mockResolvedValue(undefined)
+    useChannelStore.setState({
+      platforms: { dingtalk: connected, feishu },
+      sendDingtalkGreeting,
+    })
+    renderPage()
+
+    await userEvent.click(screen.getByRole('button', { name: '唤醒钉钉机器人' }))
+
+    await waitFor(() => {
+      expect(sendDingtalkGreeting).toHaveBeenCalledTimes(1)
+    })
+    expect(useNotificationStore.getState().notifications.at(-1)).toMatchObject({
+      level: 'success',
+      title: '机器人已唤醒',
+      message: '请打开钉钉，看看左侧会话列表里有没有未读红点；机器人回复后就能找到这条对话。',
+    })
   })
 
   it('remove requires confirmation and restores unconfigured state through store action', async () => {
@@ -276,10 +315,44 @@ describe('ChannelPage domain UI', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('IM 会话可以从顶栏导出当前频道对话', async () => {
+  it('钉钉 IM 会话可以从顶栏唤醒机器人并提示去钉钉查看未读红点', async () => {
+    const sendDingtalkGreeting = vi.fn().mockResolvedValue(undefined)
+    useChannelStore.setState({
+      sendDingtalkGreeting,
+      conversations: [
+        {
+          sessionId: 'im-dingtalk-1',
+          platform: 'dingtalk',
+          conversationType: 'private',
+          externalId: 'u',
+          displayName: '姚斌权',
+          unreadCount: 0,
+          robotCode: 'current-robot',
+          isActiveRobot: true,
+        },
+      ],
+    })
+
+    renderPage(<ChannelPage sessionId="im-dingtalk-1" />)
+
+    await userEvent.click(screen.getByRole('button', { name: '唤醒钉钉机器人' }))
+
+    await waitFor(() => {
+      expect(sendDingtalkGreeting).toHaveBeenCalledTimes(1)
+    })
+    expect(useNotificationStore.getState().notifications.at(-1)).toMatchObject({
+      level: 'success',
+      title: '机器人已唤醒',
+      message: '请打开钉钉，看看左侧会话列表里有没有未读红点；机器人回复后就能找到这条对话。',
+    })
+  })
+
+  it('IM 会话顶栏更多菜单只提供导出和复制 ID', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
     exportConversationMock.mockResolvedValue({
-      zipPath: '/tmp/im-session.zip',
-      fileName: 'im-session.zip',
+      zipPath: '/tmp/im-session-export.zip',
+      fileName: 'im-session-export.zip',
       sizeBytes: 2048,
     })
     revealExportInFolderMock.mockResolvedValue(undefined)
@@ -299,21 +372,31 @@ describe('ChannelPage domain UI', () => {
     })
 
     renderPage(<ChannelPage sessionId="im-session-1" />)
-    await userEvent.click(screen.getByRole('button', { name: '导出对话' }))
+
+    await userEvent.click(screen.getByRole('button', { name: '更多' }))
+
+    expect(screen.getByRole('menuitem', { name: '导出对话' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: '复制对话 ID' })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: /重命名|置顶|取消置顶|归档聊天/ })).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('menuitem', { name: '复制对话 ID' }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('im-session-1'))
+
+    await userEvent.click(screen.getByRole('button', { name: '更多' }))
+    await userEvent.click(screen.getByRole('menuitem', { name: '导出对话' }))
 
     expect(exportConversationMock).not.toHaveBeenCalled()
-    expect(screen.getByText('将生成一个本地 zip 文件，包含当前对话和运行信息。文件只会保存在本机。')).toBeInTheDocument()
+    expect(screen.getByText('准备生成对话文件')).toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: '开始导出' }))
-
     await waitFor(() => {
       expect(exportConversationMock).toHaveBeenCalledWith('im-session-1')
     })
-    expect(await screen.findByText('im-session.zip')).toBeInTheDocument()
+    expect(await screen.findByText('im-session-export.zip')).toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: '打开所在文件夹' }))
     await waitFor(() => {
-      expect(revealExportInFolderMock).toHaveBeenCalledWith('/tmp/im-session.zip')
+      expect(revealExportInFolderMock).toHaveBeenCalledWith('/tmp/im-session-export.zip')
     })
   })
 })

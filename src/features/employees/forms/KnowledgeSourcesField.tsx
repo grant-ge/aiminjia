@@ -97,13 +97,13 @@ export function KnowledgeSourcesField({ value, onChange, onRetry }: Props) {
               {statusLabel(s)}
             </span>
             {s.status === 'failed' && onRetry && (
-              <button type="button" onClick={() => onRetry(s)} className="text-blue-600 hover:underline">
+              <Button unstyled type="button" onClick={() => onRetry(s)} className="text-blue-600 hover:underline">
                 {t('employee.config.knowledge.retry')}
-              </button>
+              </Button>
             )}
-            <button type="button" onClick={() => remove(i)} className="text-muted-foreground hover:text-destructive">
+            <Button unstyled type="button" onClick={() => remove(i)} className="text-muted-foreground hover:text-destructive">
               ×
-            </button>
+            </Button>
           </div>
         ))}
       </div>

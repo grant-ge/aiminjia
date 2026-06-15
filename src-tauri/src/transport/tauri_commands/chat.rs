@@ -207,11 +207,11 @@ fn ensure_generated_file_records_from_metas(
                 Ok(path) => path,
                 Err(err) => {
                     log::warn!(
-                        "[generated-files] skipping unavailable FileMeta fileId={} storedPath={}: {}",
-                        file_id,
-                        stored_path,
-                        err
-                    );
+                    "[generated-files] skipping unavailable FileMeta fileId={} storedPath={}: {}",
+                    file_id,
+                    stored_path,
+                    err
+                );
                     continue;
                 }
             };
@@ -1036,13 +1036,6 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         let mut system_prompt_segments = system_prompt_segments(&input.system_message);
         system_prompt_segments.extend(input.extra_system_segments.clone());
 
-        // --- Resolve masking level (always Strict; field kept for forward compat) ---
-        let masking_level = match input.masking_level.to_lowercase().as_str() {
-            "relaxed" => MaskingLevel::Relaxed,
-            "standard" => MaskingLevel::Standard,
-            _ => MaskingLevel::Strict,
-        };
-
         // --- Build effective tool defs (empty when force_no_tools) ---
         let effective_tools: Option<Vec<ToolDefinition>> = if input.force_no_tools {
             log::debug!(
@@ -1093,7 +1086,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                 .stream_message_with_segments(
                     &settings,
                     chat_messages.clone(),
-                    masking_level.clone(),
+                    MaskingLevel::Relaxed,
                     system_prompt_for_gateway.as_deref(),
                     dynamic_ctx_opt,
                     effective_tools.clone(),
@@ -1320,7 +1313,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                             self.services.gateway.send_message_with_segments(
                                 &settings,
                                 chat_messages.clone(),
-                                masking_level.clone(),
+                                MaskingLevel::Relaxed,
                                 system_prompt_for_gateway.as_deref(),
                                 dynamic_ctx_opt,
                                 effective_tools.clone(),
@@ -1753,11 +1746,6 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             thinking_type: settings.thinking_type,
             thinking_budget_tokens: settings.thinking_budget_tokens,
             context_window: settings.context_window,
-            masking_level: crate::llm::masking::MaskingLevel::from_str_or_strict(
-                &settings.data_masking_level,
-            )
-            .to_str()
-            .to_string(),
         })
     }
 
@@ -2276,7 +2264,8 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         };
 
         // 第二步：独立计算运行时权限白名单（与 schema 过滤是两回事）
-        let runtime_allowed_tools: std::collections::HashSet<String> = match &employee_overrides {
+        let mut runtime_allowed_tools: std::collections::HashSet<String> = match &employee_overrides
+        {
             Some(ov) if !ov.tool_whitelist.is_empty() => ov
                 .tool_whitelist
                 .iter()
@@ -2299,6 +2288,30 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             &self.services.app,
             request.conversation_id.as_str(),
         );
+        let is_expert_team_conversation = {
+            let base = self.services.db().base_dir().to_path_buf();
+            match crate::storage::file_store::conversations::read_conversation_source(
+                &base,
+                request.conversation_id.as_str(),
+            ) {
+                Ok(crate::storage::file_store::types::ConversationSource::ExpertTeam {
+                    ..
+                }) => true,
+                Ok(_) => false,
+                Err(e) => {
+                    log::warn!(
+                        "[expert-team-tools] conv={} source unreadable: {e:#}",
+                        request.conversation_id
+                    );
+                    false
+                }
+            }
+        };
+        if is_expert_team_conversation {
+            chat_runtime_impl::filter_expert_team_director_allowed_tools(
+                &mut runtime_allowed_tools,
+            );
+        }
 
         // ── Build ToolDescriptionContext for this turn ──────────────────
         // Tools whose description depends on session state (notably
@@ -2343,7 +2356,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             log::debug!("[tool-desc-trace] built overrides: keys={:?}", keys);
         }
 
-        let visible_tool_defs = chat_runtime_impl::build_visible_tool_defs(
+        let mut visible_tool_defs = chat_runtime_impl::build_visible_tool_defs(
             self.services.tool_registry.as_ref(),
             authorized_workspace.is_some(),
             schema_filter,
@@ -2351,6 +2364,16 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             &request_scoped_overrides,
         )
         .await;
+        if is_expert_team_conversation {
+            let before = visible_tool_defs.len();
+            chat_runtime_impl::filter_expert_team_director_tool_defs(&mut visible_tool_defs);
+            log::info!(
+                "[expert-team-tools] filtered director tools conv={} before={} after={}",
+                request.conversation_id,
+                before,
+                visible_tool_defs.len()
+            );
+        }
         {
             let agent_has_emp = visible_tool_defs
                 .iter()
@@ -3347,6 +3370,7 @@ fn permission_mode_to_frontend(mode: crate::runtime::tools::permission::Permissi
         crate::runtime::tools::permission::PermissionMode::Plan => "plan",
         crate::runtime::tools::permission::PermissionMode::DontAsk => "dontAsk",
         crate::runtime::tools::permission::PermissionMode::AcceptEdits => "acceptEdits",
+        crate::runtime::tools::permission::PermissionMode::FullAccess => "fullAccess",
     }
     .to_string()
 }
@@ -3833,6 +3857,39 @@ impl TauriChatCommandAdapter {
         Ok(crate::runtime::agenda::AgendaStore::new(paths.base_dir()))
     }
 
+    fn fail_running_agenda_occurrences_for_conversation(&self, conversation_id: &str) {
+        let store = match self.agenda_store_for_current_user() {
+            Ok(store) => store,
+            Err(err) => {
+                log::warn!(
+                    "[agenda-dispatch] skip stop occurrence cleanup conv={} err={}",
+                    conversation_id,
+                    err
+                );
+                return;
+            }
+        };
+        match store
+            .fail_running_occurrences_for_conversation(conversation_id, "用户停止任务".to_string())
+        {
+            Ok(count) if count > 0 => {
+                log::info!(
+                    "[agenda-dispatch] marked {} running occurrence(s) failed for stopped conv={}",
+                    count,
+                    conversation_id
+                );
+            }
+            Ok(_) => {}
+            Err(err) => {
+                log::warn!(
+                    "[agenda-dispatch] failed to mark stopped occurrence conv={} err={}",
+                    conversation_id,
+                    err
+                );
+            }
+        }
+    }
+
     /// 返回当前 workspace 根目录，供 ChannelManager 等调用方构造下载目录。
     pub fn workspace_path(&self) -> std::path::PathBuf {
         self.services.file_mgr.workspace_path().to_path_buf()
@@ -4047,6 +4104,21 @@ impl TauriChatCommandAdapter {
         result
     }
 
+    fn default_permission_mode_from_settings(
+        &self,
+    ) -> crate::runtime::tools::permission::PermissionMode {
+        let map = self.services.db().get_all_settings().unwrap_or_default();
+        let settings = if map.is_empty() {
+            AppSettings::default()
+        } else {
+            AppSettings::from_string_map(&map)
+        };
+        match settings.default_permission_mode.as_str() {
+            "fullAccess" => crate::runtime::tools::permission::PermissionMode::FullAccess,
+            _ => crate::runtime::tools::permission::PermissionMode::Default,
+        }
+    }
+
     pub async fn send_message(
         &self,
         conversation_id: String,
@@ -4143,6 +4215,8 @@ impl TauriChatCommandAdapter {
             }
         }
 
+        let effective_permission_mode =
+            permission_mode.unwrap_or_else(|| self.default_permission_mode_from_settings());
         let mut request = ChatTurnRequest::new(conversation_id.clone(), content, attachments);
         request.skill_command = skill_command;
         // Derive per-turn attachment dirs on the backend (frontend paths are untrusted).
@@ -4163,9 +4237,7 @@ impl TauriChatCommandAdapter {
         );
         request.agent_name = agent_name;
         request.client_message_id = client_message_id;
-        if let Some(permission_mode) = permission_mode {
-            request.permission_mode = permission_mode;
-        }
+        request.permission_mode = effective_permission_mode;
         let result = self.run_chat_request_internal(request).await;
         if result.is_err() {
             if let Some(pending_mgr) = direct_dispatch_pending_mgr {
@@ -4198,7 +4270,8 @@ impl TauriChatCommandAdapter {
         }
         request.agent_name = agent_name;
         request.persona_id_override = persona_id_override;
-        request.permission_mode = permission_mode.unwrap_or_default();
+        request.permission_mode =
+            permission_mode.unwrap_or_else(|| self.default_permission_mode_from_settings());
         request.client_message_id = client_message_id;
 
         let captured_run_id = request.run_id.clone();
@@ -4352,6 +4425,7 @@ impl TauriChatCommandAdapter {
             &session_id,
             crate::runtime::cancellation::CancellationReason::Interrupt,
         );
+        self.fail_running_agenda_occurrences_for_conversation(&conversation_id);
         conversation_service::stop_streaming(self.services.gateway.clone(), conversation_id).await
     }
 
@@ -5098,8 +5172,7 @@ mod agenda_dispatch_prompt_tests {
     fn agenda_trigger_label_includes_local_planned_weekday() {
         let planned = Utc.with_ymd_and_hms(2026, 6, 9, 1, 43, 38).unwrap();
         let local = planned.with_timezone(&Local);
-        let weekday_cn =
-            crate::runtime::chat::prompt::ReminderBuilder::weekday_cn(local.weekday());
+        let weekday_cn = crate::runtime::chat::prompt::ReminderBuilder::weekday_cn(local.weekday());
         let label = super::format_agenda_trigger_label("门店巡检", planned);
 
         assert!(label.contains("计划触发时间（UTC）：2026-06-09 01:43:38 UTC"));

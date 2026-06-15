@@ -12,9 +12,9 @@ export type LlmProvider =
   | "openai"
   | "claude"
   | "custom";
-export type DataMaskingLevel = "strict" | "standard" | "relaxed";
 export type FontScale = "small" | "medium" | "large";
 export type ChatWidthMode = "centered" | "full";
+export type DefaultPermissionMode = "default" | "fullAccess";
 export type CloudGatewayMode = "legacy" | "v2";
 export type AppLogLevel = "error" | "warn" | "info" | "debug";
 
@@ -24,7 +24,6 @@ export interface Settings {
   autoModelRouting: boolean;
   workspacePath: string;
   analysisThreshold: number;
-  dataMaskingLevel: DataMaskingLevel;
   autoCleanupEnabled: boolean;
   tempFileRetentionDays: number;
   keepOldVersions: number;
@@ -37,10 +36,12 @@ export interface Settings {
   appLanguage?: AppLanguage;
   fontScale?: FontScale;
   chatWidthMode?: ChatWidthMode;
+  defaultPermissionMode?: DefaultPermissionMode;
   accentColor?: string;
   uiHomeSelectedWorkspace?: string;
   uiHomeRecentWorkspaces?: string;
   uiSidebarCollapsedProjects?: string;
+  uiSidebarConversationStatuses?: string;
   contextWindow?: number | null;
 }
 
@@ -50,7 +51,6 @@ export const DEFAULT_SETTINGS: Settings = {
   autoModelRouting: true,
   workspacePath: "",
   analysisThreshold: 1.65,
-  dataMaskingLevel: "relaxed",
   autoCleanupEnabled: true,
   tempFileRetentionDays: 7,
   keepOldVersions: 1,
@@ -63,10 +63,12 @@ export const DEFAULT_SETTINGS: Settings = {
   appLanguage: "zh-CN",
   fontScale: "medium",
   chatWidthMode: "full",
+  defaultPermissionMode: "default",
   accentColor: "",
   uiHomeSelectedWorkspace: "",
   uiHomeRecentWorkspaces: "",
   uiSidebarCollapsedProjects: "",
+  uiSidebarConversationStatuses: "",
 };
 
 export const LLM_PROVIDER_LABELS: Record<LlmProvider, string> = {

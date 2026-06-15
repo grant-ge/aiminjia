@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Plus, X } from 'lucide-react'
 
 import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
 
 export interface GroupMatchConfig {
   keywords: string[]
@@ -80,13 +81,13 @@ function TagInput({
           className="flex items-center gap-0.5 rounded-md bg-accent px-2 py-0.5 text-xs font-medium text-foreground"
         >
           {tag}
-          <button
+          <Button unstyled
             type="button"
             onClick={() => onRemove(i)}
             className="ml-0.5 text-muted-foreground hover:text-destructive"
           >
             <X className="h-3 w-3" />
-          </button>
+          </Button>
         </span>
       ))}
       <div className="flex items-center gap-1">
@@ -97,14 +98,14 @@ function TagInput({
           placeholder={tags.length === 0 ? placeholder : ''}
           className="h-6 min-w-[80px] flex-1 border-0 bg-transparent p-0 text-xs shadow-none focus-visible:ring-0"
         />
-        <button
+        <Button unstyled
           type="button"
           onClick={handleAdd}
           disabled={!input.trim()}
           className="flex items-center gap-0.5 text-xs text-primary hover:underline disabled:opacity-30"
         >
           <Plus className="h-3 w-3" />
-        </button>
+        </Button>
       </div>
     </div>
   )

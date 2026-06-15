@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom";
 import * as React from "react";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -38,6 +38,7 @@ const chatState = vi.hoisted(() => ({
     title: string;
     workspaceName?: string | null;
     kind?: string;
+    isPinned?: boolean;
   }>,
   busyConversations: new Set<string>(),
   streamStates: {} as Record<
@@ -72,15 +73,27 @@ const channelState = vi.hoisted(() => ({
   ],
 }));
 
+const sidebarStatusState = vi.hoisted(() => ({
+  statuses: {} as Record<string, { kind: "permission-review" | "waiting-reply" }>,
+}));
+
+const chatMocks = vi.hoisted(() => ({
+  switchConversation: vi.fn(),
+  createNewConversation: vi.fn(),
+  renameConversation: vi.fn(),
+  archiveConversation: vi.fn(),
+  setConversationPinned: vi.fn(),
+}));
+
 vi.mock("@/hooks/useChat", () => ({
   useChat: () => ({
     conversations: chatState.conversations,
     activeConversationId: chatState.activeConversationId,
-    switchConversation: vi.fn(),
-    createNewConversation: vi.fn(),
-    renameConversation: vi.fn(),
-    archiveConversation: vi.fn(),
-    setConversationPinned: vi.fn(),
+    switchConversation: chatMocks.switchConversation,
+    createNewConversation: chatMocks.createNewConversation,
+    renameConversation: chatMocks.renameConversation,
+    archiveConversation: chatMocks.archiveConversation,
+    setConversationPinned: chatMocks.setConversationPinned,
   }),
 }));
 
@@ -159,6 +172,11 @@ vi.mock("@/stores/channelStore", () => ({
     }),
 }));
 
+vi.mock("@/stores/sidebarStatusStore", () => ({
+  useSidebarStatusStore: (sel: (s: unknown) => unknown) =>
+    sel({ statuses: sidebarStatusState.statuses }),
+}));
+
 vi.mock("@/stores/brandingStore", () => ({
   useBrandingStore: (sel: (s: unknown) => unknown) =>
     sel({ productName: "仁励家网络科技(杭州)", logoUrl: "/app-icon.png" }),
@@ -206,12 +224,21 @@ describe("AppSidebar", () => {
       localStorage.removeItem("aijia-sidebar-tab");
     if (typeof localStorage !== "undefined")
       localStorage.removeItem(DEV_SETTINGS_STORAGE_KEY);
-    useDevSettingsStore.setState({ showToolErrorIcon: false });
+    useDevSettingsStore.setState({
+      showToolErrorIcon: false,
+      showRawSkillContent: false,
+    });
     chatState.activeConversationId = null;
     chatState.conversations = [];
     chatState.busyConversations = new Set();
     chatState.streamStates = {};
     chatState.pendingAsks = new Map();
+    sidebarStatusState.statuses = {};
+    chatMocks.switchConversation.mockReset();
+    chatMocks.createNewConversation.mockReset();
+    chatMocks.renameConversation.mockReset();
+    chatMocks.archiveConversation.mockReset();
+    chatMocks.setConversationPinned.mockReset();
     channelState.conversations = [
       {
         sessionId: "dt-session-1",
@@ -239,17 +266,72 @@ describe("AppSidebar", () => {
     });
   });
 
-  it("has sidebar background and 256 px width", () => {
+  it("lets the parent own sidebar width and keeps horizontal padding inside children", () => {
+    chatState.conversations = [
+      {
+        id: "conv-pinned",
+        title: "置顶对话",
+        workspaceName: "默认项目",
+        isPinned: true,
+      },
+      {
+        id: "conv-project",
+        title: "项目对话",
+        workspaceName: "默认项目",
+      },
+    ];
+
     const { container } = render(<AppSidebar />);
     const aside = container.querySelector("aside");
-    expect(aside?.className).toMatch(/w-\[256px\]/);
     expect(aside?.className).toMatch(/bg-sidebar/);
+    expect(aside).toHaveClass("pt-2");
+    expect(aside?.className).not.toMatch(/(^|\s)w-\[256px\](\s|$)/);
+    expect(aside?.className).not.toMatch(/(^|\s)px-2(\s|$)/);
     expect(aside?.className).not.toMatch(/(^|\s)pt-3(\s|$)/);
+    expect(container.innerHTML).not.toContain("-mr-2");
+    const homeNavButton = screen.getByRole("button", { name: /新任务/ });
+    expect(homeNavButton.closest("nav")).toHaveClass("px-2");
+    expect(homeNavButton.className).toMatch(/px-2\.5/);
+    expect(screen.getByText("置顶").parentElement).toHaveClass("px-2");
+    const sidebarTab = screen.getByRole("button", { name: "项目" }).parentElement;
+    expect(sidebarTab).toHaveClass("px-1");
+    expect(sidebarTab).toHaveClass("h-8");
+    expect(sidebarTab?.className).not.toContain("30px");
+    expect(sidebarTab?.parentElement).toHaveClass("px-2");
+    expect(screen.getByText("默认项目").closest(".overflow-auto")).toHaveClass("px-2");
   });
 
   it("renders TenantHeader name", () => {
     render(<AppSidebar />);
     expect(screen.getByText("仁励家网络科技(杭州)")).toBeInTheDocument();
+  });
+
+  it("renames a conversation from the shared rename dialog", async () => {
+    chatState.conversations = [
+      {
+        id: "conv-1",
+        title: "测试会话",
+        workspaceName: "默认项目",
+      },
+    ];
+
+    render(<AppSidebar />);
+
+    fireEvent.contextMenu(screen.getByRole("button", { name: "测试会话" }));
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "重命名聊天" }),
+    );
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "新的标题" },
+    });
+    await userEvent.click(screen.getByRole("button", { name: "确认" }));
+
+    await waitFor(() => {
+      expect(chatMocks.renameConversation).toHaveBeenCalledWith(
+        "conv-1",
+        "新的标题",
+      );
+    });
   });
 
   it("does not render TenantHeader in the sidebar on Windows", () => {
@@ -302,6 +384,21 @@ describe("AppSidebar", () => {
       JSON.parse(localStorage.getItem(DEV_SETTINGS_STORAGE_KEY) ?? "{}"),
     ).toMatchObject({
       showToolErrorIcon: true,
+    });
+
+    const rawSkillSwitch = screen.getByRole("switch", {
+      name: "显示技能原始内容",
+    });
+    expect(rawSkillSwitch).not.toBeChecked();
+
+    await user.click(rawSkillSwitch);
+
+    expect(rawSkillSwitch).toBeChecked();
+    expect(
+      JSON.parse(localStorage.getItem(DEV_SETTINGS_STORAGE_KEY) ?? "{}"),
+    ).toMatchObject({
+      showToolErrorIcon: true,
+      showRawSkillContent: true,
     });
   });
 
@@ -433,6 +530,19 @@ describe("AppSidebar", () => {
 
     expect(screen.getByText("审核")).toBeInTheDocument();
     expect(screen.queryByText("审批")).not.toBeInTheDocument();
+  });
+
+  it("shows cached permission review chip after a frontend reload", () => {
+    chatState.conversations = [
+      { id: "conv-cached", title: "刷新后的审批", workspaceName: "默认项目" },
+    ];
+    sidebarStatusState.statuses = {
+      "conv-cached": { kind: "permission-review" },
+    };
+
+    render(<AppSidebar />);
+
+    expect(screen.getByText("审核")).toBeInTheDocument();
   });
 
   it("shows waiting reply chip for regular conversations waiting on ask user question", () => {
@@ -583,6 +693,17 @@ describe("AppSidebar", () => {
     expect(screen.getByText("审核")).toBeInTheDocument();
   });
 
+  it("shows cached waiting reply chip for channel conversations after a frontend reload", () => {
+    localStorage.setItem("aijia-sidebar-tab", "channel");
+    sidebarStatusState.statuses = {
+      "dt-session-1": { kind: "waiting-reply" },
+    };
+
+    render(<AppSidebar />);
+
+    expect(screen.getByText("等待回复")).toBeInTheDocument();
+  });
+
   it("shows waiting reply chip for channel conversations waiting on ask user question", () => {
     localStorage.setItem("aijia-sidebar-tab", "channel");
     useInteractionStore.getState().addInteraction({
@@ -656,6 +777,7 @@ describe("AppSidebar route-derived sidebarTab", () => {
     chatState.busyConversations = new Set();
     chatState.streamStates = {};
     chatState.pendingAsks = new Map();
+    sidebarStatusState.statuses = {};
     channelState.conversations = [
       {
         sessionId: "dt-session-1",

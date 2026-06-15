@@ -39,6 +39,7 @@ const REC1 = { id: 'rec1', displayName: '推荐1', description: 'd', source: 'bu
 const REC2 = { id: 'rec2', displayName: '推荐2', description: 'd', source: 'builtin', hasWorkflow: false, icon: 'x', category: 'general', triggerText: '', shortDescription: 's', displayNameEn: 'r2', shortDescriptionEn: 's', updatedAt: null }
 const REC3 = { id: 'rec3', displayName: '推荐3', description: 'd', source: 'builtin', hasWorkflow: false, icon: 'x', category: 'general', triggerText: '', shortDescription: 's', displayNameEn: 'r3', shortDescriptionEn: 's', updatedAt: null }
 const REC4 = { id: 'rec4', displayName: '推荐4', description: 'd', source: 'builtin', hasWorkflow: false, icon: 'x', category: 'general', triggerText: '', shortDescription: 's', displayNameEn: 'r4', shortDescriptionEn: 's', updatedAt: null }
+const BID_WRITING = { id: 'bid-writing', displayName: '标书撰写工作流', description: 'd', source: 'builtin', hasWorkflow: false, icon: '', category: 'general', triggerText: '', shortDescription: 's', displayNameEn: 'Bid Writing', shortDescriptionEn: 's', updatedAt: null }
 
 function seedStore(extra?: Partial<ReturnType<typeof useSkillStore.getState>>) {
   useSkillStore.setState({
@@ -183,6 +184,25 @@ describe('SkillCenterPage', () => {
 
     expect(screen.getByText('HR分析')).toBeInTheDocument()
     expect(screen.queryByText('推荐1')).toBeNull()
+  })
+
+  it('按技能 id 命中本地图标资源', () => {
+    seedStore({ skills: [BID_WRITING], recommendedIds: ['bid-writing'] })
+
+    render(<SkillCenterPage />)
+
+    const card = screen.getByTestId('skill-card')
+    const image = card.querySelector('img')
+    expect(image).toHaveAttribute('src', '/skill-avatars/bid-writing.jpg')
+  })
+
+  it('未命中图标时使用浅金底和金色文字 fallback', () => {
+    seedStore({ skills: [REC1], recommendedIds: ['rec1'] })
+
+    render(<SkillCenterPage />)
+
+    expect(screen.getByTestId('skill-card-avatar')).toHaveClass('bg-[#fbeed8]', 'text-[#d19b00]')
+    expect(screen.getByTestId('skill-card-fallback-avatar')).toHaveTextContent('推')
   })
 
   it('英文环境下用技能英文名称和简介渲染卡片', async () => {

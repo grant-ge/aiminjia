@@ -1,6 +1,6 @@
 /**
  * @designSource design.pen#1JNrw bubble/adaptive-max-80
- * @sizing r-16 padding [8,12] bg primary fg primary-foreground; align right; max-w 80%
+ * @sizing r-16 padding [8,12] bg sidebar fg foreground; align right; max-w 80%
  */
 import { Blocks, Check, Copy } from 'lucide-react'
 import { useCallback, useState } from 'react'
@@ -9,9 +9,12 @@ import { UserBubbleMarkdown } from './markdown/UserBubbleMarkdown'
 import { DispatchBanner } from './DispatchBanner'
 import { parseDispatchHeader } from './parseDispatchHeader'
 import type { FileAttachment, SkillCommandBreadcrumb } from '@/types/message'
+import { Button } from '@/components/ui/button'
 
 // Team event XML patterns — rendered by PeerMessageBanner instead
 const TEAM_EVENT_RE = /^(?:<peer-messages>[\s\S]*<\/peer-messages>|<task-notification[\s\S]*<\/task-notification>)$/
+const COLLAPSED_CONTENT_MASK_CLASS =
+  '[mask-image:linear-gradient(to_bottom,black_calc(100%_-_28px),transparent_100%)] [-webkit-mask-image:linear-gradient(to_bottom,black_calc(100%_-_28px),transparent_100%)]'
 
 interface UserMessageBubbleProps {
   text: string
@@ -73,21 +76,21 @@ export function UserMessageBubble({
         // px-3 = 12px:之前是 16px(走 --user-bubble-padding-x 变量),气泡里
         // 只夹一个附件 chip 时显得空,12px 视觉更紧凑且对纯文字也够呼吸。
         // 该变量只此一处使用,已从 globals.css 移除。
-        className="max-w-[80%] overflow-hidden rounded-md bg-primary px-3 py-2 text-sm leading-relaxed text-primary-foreground"
+        className="max-w-[80%] overflow-hidden rounded-md bg-sidebar px-3 py-2 text-sm leading-relaxed text-foreground"
       >
         <div
           data-testid="user-bubble-content"
           className={
             shouldCollapse && !expanded
-              ? 'relative max-h-[220px] overflow-hidden'
+              ? `relative max-h-[220px] overflow-hidden ${COLLAPSED_CONTENT_MASK_CLASS}`
               : 'relative'
           }
         >
           {tokenLabel ? (
             <span
               data-testid="user-skill-token"
-              // bubble 外层是 bg-primary，内嵌 token 用半透明 primary-foreground 维持文字/图标对比度
-              className="mr-2 inline-flex translate-y-[1px] items-center gap-1.5 rounded-md bg-primary-foreground/20 px-2 py-1 text-xs font-semibold leading-none text-primary-foreground shadow-[inset_0_0_0_1px_rgba(255,255,255,0.24)]"
+              // bubble 外层是 bg-sidebar，内嵌 token 用前景色低透明底维持层次。
+              className="mr-2 inline-flex translate-y-[1px] items-center gap-1.5 rounded-md bg-foreground/10 px-2 py-1 text-xs font-semibold leading-none text-foreground shadow-[inset_0_0_0_1px_var(--border)]"
               title={command}
             >
               <Blocks
@@ -101,26 +104,24 @@ export function UserMessageBubble({
           {text ? (
             <UserBubbleMarkdown text={text} files={files} conversationId={conversationId} />
           ) : null}
-          {shouldCollapse && !expanded ? (
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12" style={{ backgroundImage: 'linear-gradient(to top, var(--primary), transparent)' }} />
-          ) : null}
         </div>
         {shouldCollapse ? (
-          <button
+          <Button unstyled
             type="button"
             onClick={() => setExpanded((next) => !next)}
-            className="mt-1 text-xs font-semibold text-primary-foreground/80 underline-offset-2 hover:text-primary-foreground hover:underline"
+            className="mt-1 text-xs font-semibold text-foreground/70 underline-offset-2 hover:text-foreground hover:underline"
           >
             {expanded ? t('userMessage.collapse') : t('userMessage.expandAll')}
-          </button>
+          </Button>
         ) : null}
       </div>
       {text ? (
-        <div className="flex h-6 items-center justify-end">
-          <button
+        <div className="flex h-6 items-center justify-end text-xs">
+          <Button
             type="button"
+            link
             onClick={handleCopy}
-            className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover:opacity-100 group-focus-within:opacity-100"
+            className="gap-1 text-muted-foreground opacity-0 focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
             aria-label={t('userMessage.copy', '复制用户消息')}
             title={t('userMessage.copy', '复制用户消息')}
             data-testid="user-message-copy-button"
@@ -137,7 +138,7 @@ export function UserMessageBubble({
                   ? t('common.copyFailed')
                   : t('common.copy')}
             </span>
-          </button>
+          </Button>
         </div>
       ) : null}
     </div>

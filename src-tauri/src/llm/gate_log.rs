@@ -123,6 +123,14 @@ pub fn record_stream_error(request_id: &str, error: &str) {
     );
 }
 
+pub fn record_request_error(request_id: &str, error: &str) {
+    let path = gate_log_path();
+    let row = request_error_event_row(request_id, error);
+    if let Err(err) = append_event_to_path(&path, row) {
+        log::warn!("[gate-log] failed to append {}: {}", path.display(), err);
+    }
+}
+
 pub fn record_stream_started(request_id: &str) {
     record_event("gateway.stream_started", request_id, json!({}));
 }
@@ -309,6 +317,18 @@ fn stream_closed_event_row(request_id: &str, reason: &str, error: Option<&str>) 
     row
 }
 
+fn request_error_event_row(request_id: &str, error: &str) -> Value {
+    let row = event_row(
+        "gateway.request_error",
+        request_id,
+        json!({
+            "error": error,
+        }),
+    );
+    forget_request_context(request_id);
+    row
+}
+
 fn append_event_to_path(path: &Path, row: Value) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -447,6 +467,39 @@ mod tests {
         assert_eq!(row["run_id"], "run");
         assert_eq!(row["trace_id"], "trace");
         assert_eq!(row["gateway_request_id"], "lreq_1");
+    }
+
+    #[test]
+    fn request_error_row_is_enriched_and_forgets_request_context() {
+        let request_id = "gate-test-request-error";
+        super::remember_request_context(
+            request_id,
+            "aijia-v2",
+            "https://ai-tenant.renlijia.com/aijia/v2/ai/responses",
+            &json!({
+                "conversation_id": "conv",
+                "run_id": "run",
+                "trace_id": "trace"
+            }),
+        );
+
+        let error_row = super::request_error_event_row(
+            request_id,
+            "error sending request for url (https://ai-tenant.renlijia.com/aijia/v2/ai/responses); caused_by[1]: connection reset by peer",
+        );
+        let later_row = super::event_row("gateway.stream_end", request_id, json!({}));
+
+        assert_eq!(error_row["event"], "gateway.request_error");
+        assert_eq!(error_row["conversation_id"], "conv");
+        assert_eq!(error_row["run_id"], "run");
+        assert_eq!(error_row["trace_id"], "trace");
+        assert_eq!(
+            error_row["error"],
+            "error sending request for url (https://ai-tenant.renlijia.com/aijia/v2/ai/responses); caused_by[1]: connection reset by peer"
+        );
+        assert!(later_row.get("conversation_id").is_none());
+        assert!(later_row.get("run_id").is_none());
+        assert!(later_row.get("trace_id").is_none());
     }
 
     #[test]

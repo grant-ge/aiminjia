@@ -4,6 +4,7 @@
  */
 import { Settings } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { Button } from '@/components/ui/button'
 
 interface SidebarFooterSettingsProps {
   onClick: () => void
@@ -12,7 +13,7 @@ interface SidebarFooterSettingsProps {
 export function SidebarFooterSettings({ onClick }: SidebarFooterSettingsProps) {
   const { t } = useTranslation()
   return (
-    <button
+    <Button unstyled
       type="button"
       data-aijia-open-settings
       onClick={onClick}
@@ -20,6 +21,6 @@ export function SidebarFooterSettings({ onClick }: SidebarFooterSettingsProps) {
     >
       <Settings className="h-4 w-4 shrink-0 text-muted-foreground" />
       <span>{t('nav.settings')}</span>
-    </button>
+    </Button>
   )
 }

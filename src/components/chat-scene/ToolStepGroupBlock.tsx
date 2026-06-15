@@ -24,6 +24,7 @@ import {
 } from "./toolStepSummary";
 import type { RenderToolStep } from "@/hooks/useTurnRenderModel";
 import { useDevSettingsStore } from "@/stores/devSettingsStore";
+import { Button } from '@/components/ui/button'
 
 const MIN_RUNNING_DISPLAY_MS = 800;
 
@@ -174,7 +175,7 @@ export function ToolStepGroupBlock({ steps }: ToolStepGroupBlockProps) {
 
   return (
     <div>
-      <button
+      <Button unstyled
         type="button"
         aria-label={text}
         onClick={() => setOpen((o) => !o)}
@@ -198,7 +199,7 @@ export function ToolStepGroupBlock({ steps }: ToolStepGroupBlockProps) {
         ) : (
           <ChevronRight className="h-3.5 w-3.5 shrink-0" />
         )}
-      </button>
+      </Button>
       {open ? (
         // 垂直主干：border-l 一条线从 summary 下方贯通到最后一个 row。
         // ml-[7px] 对齐 summary 行 leading icon 中心（h-3.5 = 14px，center

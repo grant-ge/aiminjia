@@ -35,9 +35,9 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Plus, X } from 'lucide-react'
 
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { Button } from '@/components/ui/button'
 
 // Minimal subset of JSON Schema we care about.
 export interface JsonSchemaProperty {
@@ -443,13 +443,13 @@ function ArrayWidget({ prop, value, onChange, placeholder }: ArrayWidgetProps) {
             className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-xs"
           >
             {tag}
-            <button
+            <Button unstyled
               type="button"
               onClick={() => onChange(value.filter((_, idx) => idx !== i))}
               className="text-muted-foreground hover:text-destructive"
             >
               <X className="h-3 w-3" />
-            </button>
+            </Button>
           </span>
         ))}
       </div>
@@ -466,13 +466,13 @@ function ArrayWidget({ prop, value, onChange, placeholder }: ArrayWidgetProps) {
           }}
           onBlur={commitDraft}
         />
-        <button
+        <Button unstyled
           type="button"
           onClick={commitDraft}
           className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
         >
           <Plus className="h-3 w-3" />
-        </button>
+        </Button>
       </div>
     </div>
   )

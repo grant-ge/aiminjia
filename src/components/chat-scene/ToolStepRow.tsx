@@ -4,6 +4,7 @@ import { useState, type ReactNode } from 'react'
 import { ToolTraceIO } from './ToolTraceIO'
 import type { RenderToolStep } from '@/hooks/useTurnRenderModel'
 import { useDevSettingsStore } from '@/stores/devSettingsStore'
+import { Button } from '@/components/ui/button'
 
 interface ToolStepRowProps {
   step: RenderToolStep
@@ -46,7 +47,7 @@ export function ToolStepRow({ step }: ToolStepRowProps) {
     // 的延伸（border-l 是从父容器顶到底贯通的，最后一行 stub 在 row 中段，
     // stub 下面还会延伸 ~12px 到容器底），这样最后一行视觉上自然收成"└"。
     <div className="relative before:absolute before:left-[-12px] before:top-3 before:h-px before:w-3 before:bg-border/60 last:after:absolute last:after:left-[-13px] last:after:top-3 last:after:bottom-0 last:after:w-px last:after:bg-background last:after:content-['']">
-      <button
+      <Button unstyled
         type="button"
         onClick={() => setManualOpen(open ? false : true)}
         className="inline-flex max-w-full items-center gap-1.5 py-1 text-left text-xs text-muted-foreground hover:text-foreground"
@@ -58,7 +59,7 @@ export function ToolStepRow({ step }: ToolStepRowProps) {
         ) : (
           <ChevronRight className="h-3 w-3 shrink-0" />
         )}
-      </button>
+      </Button>
       {open ? (
         <div className="mt-1">
           <ToolTraceIO

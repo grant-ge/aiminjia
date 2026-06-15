@@ -11,8 +11,8 @@ import { SkillCard } from "@/components/skills/SkillCard";
 import { SkillCategoryBar } from "@/components/skills/SkillCategoryBar";
 import { SkillOfficeSection } from "@/components/skills/SkillOfficeSection";
 import {
-  getSkillCategoryBg,
-  getSkillIconComponent,
+  getSkillAvatarNode,
+  getSkillCardAvatarClass,
 } from "@/components/skills/skillVisual";
 import { Button } from "@/components/ui/button";
 import {
@@ -41,11 +41,6 @@ import {
   HardDrive,
   Package,
 } from "lucide-react";
-
-function getSkillIcon(icon: string) {
-  const Icon = getSkillIconComponent(icon);
-  return <Icon className="h-4 w-4 text-primary-foreground" />;
-}
 
 export function SkillCenterPage() {
   const { t, i18n } = useTranslation();
@@ -430,7 +425,7 @@ export function SkillCenterPage() {
                     ariaLabel={t("skillCenter.syncSkills")}
                     trigger={
                       <Button
-                        size="sm"
+                        size="md"
                         variant="outline"
                         disabled={syncing}
                         data-testid="skills-sync-builtin"
@@ -464,7 +459,7 @@ export function SkillCenterPage() {
                 <AppDropdown
                   ariaLabel={t("skillCenter.importSkill")}
                   trigger={
-                    <Button size="sm" data-aijia-skill-import-trigger>
+                    <Button size="md" data-aijia-skill-import-trigger>
                       {t("skillCenter.importSkill")}
                       <ChevronDown className="h-3.5 w-3.5" />
                     </Button>
@@ -576,8 +571,8 @@ export function SkillCenterPage() {
                   title={localized.name}
                   meta={getSkillMeta(skill.source, skill.category)}
                   desc={localized.description}
-                  iconNode={getSkillIcon(skill.icon)}
-                  iconBg={getSkillCategoryBg(skill.category)}
+                  iconNode={getSkillAvatarNode(skill.id)}
+                  iconBg={getSkillCardAvatarClass(skill.id)}
                   version={skill.version}
                   skillId={skill.id}
                   skillSource={skill.source}
@@ -591,12 +586,12 @@ export function SkillCenterPage() {
                       <AppDropdown
                         ariaLabel={`${localized.name} ${t("skillCenter.moreActions")}`}
                         trigger={
-                          <button
+                          <Button unstyled
                             type="button"
                             className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                           >
                             <MoreHorizontal className="h-4 w-4" />
-                          </button>
+                          </Button>
                         }
                         items={menuItems}
                       />
@@ -635,7 +630,7 @@ function SkillCenterState({
   onAction?: () => void;
 }) {
   return (
-    <div className="col-span-full rounded-md border border-dashed border-border bg-card p-6 text-sm shadow-[var(--shadow-card)]">
+    <div className="col-span-full rounded-md border border-dashed border-border/70 bg-card p-6 text-sm shadow-[var(--shadow-skill-card)]">
       <div className="font-semibold text-foreground">{title}</div>
       {desc ? <p className="mt-1 text-muted-foreground">{desc}</p> : null}
       {actionLabel && onAction ? (

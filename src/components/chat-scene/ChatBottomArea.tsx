@@ -17,11 +17,12 @@ import { useChat, type PendingFileInfo } from "@/hooks/useChat";
 import { useChatAttachments } from "@/hooks/useChatAttachments";
 import { useChatStore } from "@/stores/chatStore";
 import { usePendingStore } from "@/stores/pendingStore";
+import { useSidebarStatusStore } from "@/stores/sidebarStatusStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useSkillStore } from "@/stores/skillStore";
 import { useStreamingStore } from "@/stores/streamingStore";
 import { useInteractionStore } from "@/stores/interactionStore";
-import { useUiStore } from "@/stores/uiStore";
+import { DRAFT_PERMISSION_SESSION_ID, useUiStore } from "@/stores/uiStore";
 import {
   approvePermissionRequest,
   cancelPermissionRequest,
@@ -33,6 +34,7 @@ import {
   pendingSnapshotForSession,
   stopStreaming,
   submitUserInteraction,
+  type PermissionMode,
 } from "@/lib/tauri";
 import { localizeSkill, localizedSkillName } from "@/lib/skillLocalization";
 import { PendingChips } from "@/features/chat/PendingChips";
@@ -83,6 +85,9 @@ export function ChatBottomArea({
   const skills = useSkillStore((s) => s.skills);
   const getSkillById = useSkillStore((s) => s.getById);
   const chatWidthMode = useSettingsStore((s) => s.chatWidthMode ?? "full");
+  const defaultPermissionMode = useSettingsStore((s) => s.defaultPermissionMode ?? "default");
+  const permissionModesBySession = useUiStore((s) => s.permissionModesBySession);
+  const setPermissionModeForSession = useUiStore((s) => s.setPermissionModeForSession);
   const pendingAsks = useStreamingStore((s) => s.pendingAsks);
   const pendingTurnStage = useStreamingStore((s) =>
     pendingSessionId
@@ -98,6 +103,8 @@ export function ChatBottomArea({
     pendingInteractions,
     turnStage: pendingTurnStage,
   });
+  const permissionModeKey = pendingSessionId ?? DRAFT_PERMISSION_SESSION_ID;
+  const permissionMode = permissionModesBySession[permissionModeKey] ?? defaultPermissionMode;
   // Snapshot of the installed skills as composer-friendly tokens.  The list
   // drives both the slash-command input rule inside the editor and the chip
   // rendered for any inline skill token already in the document.
@@ -193,14 +200,25 @@ export function ChatBottomArea({
           markdownToSend,
           fileInfos.length > 0 ? fileInfos : undefined,
           skillForThisTurn,
+          permissionMode,
         );
       } catch (err) {
         console.error("[ChatBottomArea] sendUserMessage failed:", err);
         throw err;
       }
     },
-    [sendUserMessage, activeConversationId, messageCount, i18n.language],
+    [
+      sendUserMessage,
+      activeConversationId,
+      messageCount,
+      i18n.language,
+      permissionMode,
+    ],
   );
+
+  const handlePermissionModeChange = useCallback((mode: PermissionMode) => {
+    setPermissionModeForSession(permissionModeKey, mode);
+  }, [permissionModeKey, setPermissionModeForSession]);
 
   const handlePickAttachments = useCallback(async () => {
     const results = await pickAttachments();
@@ -312,6 +330,7 @@ export function ChatBottomArea({
     try {
       await clearActiveTurnStage(sessionId);
       useStreamingStore.getState().clearConversationStreamState(sessionId);
+      useChatStore.getState().removeBusyConversation(sessionId);
     } catch (err) {
       console.error("[permission:stale] clear failed", err);
     }
@@ -326,6 +345,7 @@ export function ChatBottomArea({
     try {
       await clearActiveTurnStage(sessionId);
       useStreamingStore.getState().clearConversationStreamState(sessionId);
+      useChatStore.getState().removeBusyConversation(sessionId);
     } catch (err) {
       console.error("[interaction:stale] clear failed", err);
     }
@@ -340,7 +360,6 @@ export function ChatBottomArea({
         usePendingStore.getState().applySnapshot(pendingSessionId, items),
       )
       .catch((e) => {
-        // eslint-disable-next-line no-console
         console.warn("[pending] snapshot fetch failed", e);
       });
   }, [pendingSessionId]);
@@ -357,9 +376,23 @@ export function ChatBottomArea({
       .then((asks) => {
         const store = useStreamingStore.getState();
         asks.forEach((ask) => store.addPendingAsk(ask));
+        if (asks[0]) {
+          void useSidebarStatusStore.getState().setStatus(pendingSessionId, {
+            kind: "permission-review",
+            runId: asks[0].runId,
+            toolCallId: asks[0].toolCallId,
+          });
+        } else if (
+          !useInteractionStore
+            .getState()
+            .pendingInteractions.some(
+              (interaction) => interaction.conversationId === pendingSessionId,
+            )
+        ) {
+          void useSidebarStatusStore.getState().clearStatus(pendingSessionId);
+        }
       })
       .catch((e) => {
-        // eslint-disable-next-line no-console
         console.warn("[permission] snapshot fetch failed", e);
       });
   }, [pendingSessionId]);
@@ -375,9 +408,22 @@ export function ChatBottomArea({
         interactions.forEach((interaction) =>
           store.addInteraction(interaction),
         );
+        if (interactions[0]) {
+          void useSidebarStatusStore.getState().setStatus(pendingSessionId, {
+            kind: "waiting-reply",
+            runId: interactions[0].runId,
+            toolCallId: interactions[0].toolCallId,
+            interactionId: interactions[0].interactionId,
+          });
+        } else if (
+          !Array.from(useStreamingStore.getState().pendingAsks.values()).some(
+            (ask) => ask.conversationId === pendingSessionId,
+          )
+        ) {
+          void useSidebarStatusStore.getState().clearStatus(pendingSessionId);
+        }
       })
       .catch((e) => {
-        // eslint-disable-next-line no-console
         console.warn("[interaction] snapshot fetch failed", e);
       });
   }, [pendingSessionId]);
@@ -428,6 +474,8 @@ export function ChatBottomArea({
                 showProjectButton={false}
                 onOpenSkill={() => setShowSkillPopover((prev) => !prev)}
                 skillTokens={skillTokens}
+                permissionMode={permissionMode}
+                onPermissionModeChange={handlePermissionModeChange}
                 onOpenAttachment={
                   isPickingAttachments
                     ? undefined

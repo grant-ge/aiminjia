@@ -14,7 +14,6 @@ import {
   type InboxEntry,
   type TemplateUpgradeCheck,
 } from '@/lib/tauri'
-import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { requestConfirm } from '@/components/common/ConfirmDialogHost'
 import { deriveStatus, type EmployeeStatus } from './EmployeeCard'
@@ -28,6 +27,7 @@ import { runTriggerPrechecks } from './triggerPrechecks'
 import { CronEditDialog } from './CronEditDialog'
 import { formatRelativeNextRun } from './timeFormat'
 import { seedDispatchConversation } from './seedDispatchConversation'
+import { Button } from '@/components/ui/button'
 
 function statusBadgeClass(status: EmployeeStatus): string {
   switch (status) {
@@ -319,9 +319,9 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
             <span className={`rounded-md px-2.5 py-0.5 text-xs font-medium ${statusBadgeClass(status)}`}>
               {t(STATUS_TEXT_KEY[status])}
             </span>
-            <button type="button" onClick={onClose} data-aijia-employee-action="close" className="rounded-md p-1 hover:bg-accent">
+            <Button unstyled type="button" onClick={onClose} data-aijia-employee-action="close" className="rounded-md p-1 hover:bg-accent">
               <X className="h-4 w-4 text-muted-foreground" />
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -387,7 +387,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
                       <span className="text-muted-foreground">{t('employeeDrawer.cronTrigger')}</span>
                       <span className="font-mono text-xs text-foreground">{cronToHuman(emp.cron)}</span>
                     </div>
-                    <button
+                    <Button unstyled
                       type="button"
                       data-aijia-employee-action="toggle-cron-badge"
                       onClick={handleToggleCron}
@@ -399,7 +399,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
                       }`}
                     >
                       {emp.cronEnabled ? t('employeeDrawer.cronEnabled') : t('employeeDrawer.cronPaused')}
-                    </button>
+                    </Button>
                   </div>
                 ) : (
                   <div className="flex items-center gap-2">
@@ -547,16 +547,16 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
                     )}
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
-                    <button
+                    <Button unstyled
                       type="button"
                       data-aijia-employee-action="edit-cron"
                       onClick={() => setCronModalOpen(true)}
                       className="text-muted-foreground hover:text-foreground"
                     >
                       {t('employeeDrawer.editCron')}
-                    </button>
+                    </Button>
                     <span className="text-muted-foreground/40">·</span>
-                    <button
+                    <Button unstyled
                       type="button"
                       data-aijia-employee-action="toggle-cron"
                       onClick={handleToggleCron}
@@ -568,33 +568,33 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
                       disabled={busy}
                     >
                       {emp.cronEnabled ? t('employeeDrawer.toggleCronOff') : t('employeeDrawer.toggleCronOn')}
-                    </button>
+                    </Button>
                   </div>
                 </div>
               ) : (
-                <button
+                <Button unstyled
                   type="button"
                   data-aijia-employee-action="add-cron-trigger"
                   onClick={() => setCronModalOpen(true)}
                   className="flex items-center gap-1.5 self-start text-xs text-muted-foreground hover:text-foreground"
                 >
                   <Clock className="h-3 w-3" /> {t('employeeDrawer.addCronTrigger')}
-                </button>
+                </Button>
               )}
 
               {/* Tertiary actions */}
               <div className="flex items-center justify-end gap-3 border-t border-border/50 pt-2 text-xs">
                 {template && template.resourceConfigKind !== 'none' && (
-                  <button
+                  <Button unstyled
                     type="button"
                     data-aijia-employee-action="config-resource"
                     onClick={() => setResourceModalOpen(true)}
                     className="text-muted-foreground hover:text-foreground"
                   >
                     {t('employeeDrawer.configResource')}
-                  </button>
+                  </Button>
                 )}
-                <button
+                <Button unstyled
                   type="button"
                   data-aijia-employee-action="fire"
                   onClick={handleDismiss}
@@ -602,7 +602,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
                   className="text-muted-foreground hover:text-destructive"
                 >
                   {t('employeeDrawer.deleteEmployee')}
-                </button>
+                </Button>
               </div>
             </div>
           )}

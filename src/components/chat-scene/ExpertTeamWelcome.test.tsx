@@ -12,14 +12,15 @@ vi.mock('@/hooks/useChat', () => ({
 }))
 
 describe('ExpertTeamWelcome', () => {
-  it('renders the shared team logo and expert avatars', () => {
+  it('renders the team avatar stack and expert avatars', () => {
     useSettingsStore.setState({ ...DEFAULT_SETTINGS, chatWidthMode: 'full' })
     const team = EXPERT_TEAMS.find((t) => t.id === 'marketing')!
     const { container } = render(<ExpertTeamWelcome team={team} />)
 
-    expect(screen.getByTestId('expert-team-welcome-logo')).toBeInTheDocument()
+    expect(container.querySelector('[data-aijia-expert-team-avatar-stack]')).toBeInTheDocument()
     expect(container.querySelector('img[src="/expert-avatars/marketing/品牌负责人.svg"]')).toBeInTheDocument()
     expect(container).toHaveTextContent('品牌负责人')
+    expect(container).toHaveTextContent('多角色轮询')
   })
 
   it('uses centered width when chat width mode is centered', () => {
@@ -29,6 +30,6 @@ describe('ExpertTeamWelcome', () => {
 
     const shell = screen.getByTestId('expert-team-welcome-shell')
     expect(shell).toHaveClass('mx-auto')
-    expect(shell).toHaveClass('max-w-[640px]')
+    expect(shell).toHaveClass('max-w-[680px]')
   })
 })

@@ -32,32 +32,26 @@ describe('ChatTopBar', () => {
     expect(container.querySelector(`[title="${updatedAt}"]`)).not.toBeInTheDocument()
   })
 
-  it('fires share/more/toggleSidebar callbacks', () => {
-    const onShare = vi.fn()
+  it('fires more/toggleSidebar callbacks', () => {
     const onMore = vi.fn()
     const onToggleSidebar = vi.fn()
     render(
       <ChatTopBar
         title="X"
         workspace="W"
-        onShare={onShare}
         onMore={onMore}
         onToggleSidebar={onToggleSidebar}
       />,
     )
-    screen.getByRole('button', { name: /分享/ }).click()
     screen.getByRole('button', { name: /更多/ }).click()
     screen.getByRole('button', { name: /折叠侧栏/ }).click()
-    expect(onShare).toHaveBeenCalled()
     expect(onMore).toHaveBeenCalled()
     expect(onToggleSidebar).toHaveBeenCalled()
   })
 
-  it('allows the share action to be labeled as conversation export', () => {
-    const onShare = vi.fn()
-    render(<ChatTopBar title="X" onShare={onShare} shareLabel="导出对话" />)
-    screen.getByRole('button', { name: '导出对话' }).click()
-    expect(onShare).toHaveBeenCalledTimes(1)
+  it('does not render a standalone share/export button in the header', () => {
+    render(<ChatTopBar title="X" />)
+    expect(screen.queryByRole('button', { name: /分享|导出对话/ })).not.toBeInTheDocument()
   })
 
   it('header has 48px height, px-6 and bottom border', () => {

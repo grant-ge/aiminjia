@@ -352,6 +352,7 @@ impl DefaultSpawnSubagentLauncher {
             authorized_workspace: scoped_deps.authorized_workspace.clone(),
             read_file_state: scoped_deps.read_file_state.clone(),
             app_handle: scoped_deps.app_handle.clone(),
+            auth_manager: scoped_deps.auth_manager.clone(),
             runtime_resolver: scoped_deps.runtime_resolver.clone(),
             // Phase 5: snapshot of the parent turn's merged permission_ctx,
             // extracted from SpawnSubagentContext which received it from the
@@ -730,6 +731,7 @@ impl SpawnSubagentLauncher for DefaultSpawnSubagentLauncher {
             authorized_workspace: self.deps.authorized_workspace.clone(),
             read_file_state: self.deps.read_file_state.clone(),
             app_handle: self.deps.app_handle.clone(),
+            auth_manager: self.deps.auth_manager.clone(),
             runtime_resolver: self.deps.runtime_resolver.clone(),
             permission_ctx: context.permission_ctx.clone(),
             current_persona_id: self.deps.current_persona_id.clone(),

@@ -4,9 +4,9 @@ import * as ContextMenuPrimitive from '@radix-ui/react-context-menu'
 import { Download, ExternalLink, FileText, Loader2, X } from 'lucide-react'
 
 import { AssistantMarkdown } from '@/components/chat-scene/AssistantMarkdown'
-import { Button } from '@/components/ui/button'
 import { getFilePreview, getLocalFilePreview, openLocalFile, type FilePreview } from '@/lib/tauri'
 import type { PreviewTarget } from './generatedFileActions'
+import { Button } from '@/components/ui/button'
 
 interface FilePreviewPaneProps {
   target: PreviewTarget | null
@@ -73,7 +73,7 @@ export function FilePreviewPane({ target, onOpenExternal, onDownload, onClosePre
         requestIdRef.current += 1
       }
     }
-  }, [targetFileId, targetConversationId, targetLocalPath, previewKey])
+  }, [targetFileId, targetConversationId, targetLocalPath, previewKey, t])
 
   const handleOpenExternal = useCallback(() => {
     if (!target) return
@@ -101,7 +101,7 @@ export function FilePreviewPane({ target, onOpenExternal, onDownload, onClosePre
 
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col bg-background">
-      <div data-testid="file-preview-header" data-aijia-file-preview-header className="flex items-center justify-between gap-3 border-b border-border px-4 py-2">
+      <div data-testid="file-preview-header" data-aijia-file-preview-header className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-border px-4">
         <div className="flex min-w-0 items-center gap-2">
           <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
           <h2 className="truncate text-sm font-semibold text-foreground">{target.fileName}</h2>
@@ -136,7 +136,6 @@ export function FilePreviewPane({ target, onOpenExternal, onDownload, onClosePre
               size="icon"
               aria-label="Close preview"
               onClick={onClosePreview}
-              className="h-8 w-8 text-muted-foreground hover:text-foreground"
             >
               <X className="h-4 w-4" />
             </Button>
@@ -187,12 +186,12 @@ function PreviewContent({
       return (
         <iframe
           title={preview.fileName}
-          sandbox=""
+          sandbox="allow-scripts"
           srcDoc={preview.content}
           className="h-full min-h-[520px] w-full bg-background"
         />
       )
-    case 'image':
+    case 'image': {
       const imagePreview = (
         <div className="flex h-full min-h-[520px] items-center justify-center rounded-md bg-muted/30 p-4">
           <img
@@ -219,6 +218,7 @@ function PreviewContent({
           </ContextMenuPrimitive.Portal>
         </ContextMenuPrimitive.Root>
       )
+    }
     case 'json':
     case 'csv':
     case 'text':

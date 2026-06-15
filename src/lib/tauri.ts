@@ -22,6 +22,7 @@ export { recordFrontendDiagnostic } from "./tauriDiagnostics";
 
 import type { Message, SubAgentTranscriptEntry } from "@/types/message";
 import type { TeamOverview } from "@/types/team";
+import type { AppLanguage } from "@/i18n";
 import type {
   PendingItem,
   PendingSnapshotPayload,
@@ -80,6 +81,8 @@ export const TAURI_EVENTS = {
   /** Skill registry refreshed (any path: install_custom_skill / import / RefreshSkills tool /
    *  load_skill miss-retry). Frontend stores subscribe to reload their cached skill list. */
   SKILL_REGISTRY_REFRESHED: "skill:registry-refreshed",
+  /** Native app menu requested route history navigation. Payload: "back" | "forward". */
+  NAVIGATION_MENU_COMMAND: "navigation:menu-command",
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -244,7 +247,7 @@ export interface PermissionAskPayload {
   toolName: string;
   message: string;
   suggestions: string[] | null;
-  mode: "default" | "plan" | "dontAsk" | "acceptEdits";
+  mode: "default" | "plan" | "dontAsk" | "acceptEdits" | "fullAccess";
   rememberOptions: Array<"session" | "workspace" | "user"> | null;
   defaultDestination: "session" | "workspace" | "user" | null;
 }
@@ -424,6 +427,13 @@ export interface AgentInfo {
   source: "builtin" | "user";
 }
 
+export type PermissionMode =
+  | "default"
+  | "plan"
+  | "dontAsk"
+  | "acceptEdits"
+  | "fullAccess";
+
 // ---------------------------------------------------------------------------
 // Chat Commands
 // ---------------------------------------------------------------------------
@@ -442,11 +452,13 @@ export function sendMessage(
   agentName?: string | null,
   clientMessageId?: string,
   skillCommand?: SkillCommandPayload | null,
+  permissionMode?: PermissionMode | null,
 ): Promise<void> {
   return invoke<void>("send_message", {
     conversationId,
     content,
     attachments: attachments ?? [],
+    permissionMode: permissionMode ?? null,
     agentName: agentName ?? null,
     clientMessageId: clientMessageId ?? null,
     skillCommand: skillCommand ?? null,
@@ -1044,6 +1056,10 @@ export function channelRevealSecret(
   platform: ChannelPlatform,
 ): Promise<string> {
   return invoke<string>("channel_reveal_secret", { platform });
+}
+
+export function channelSendDingtalkGreeting(): Promise<void> {
+  return invoke<void>("channel_send_dingtalk_greeting");
 }
 
 // ---------------------------------------------------------------------------
@@ -1755,6 +1771,28 @@ export interface SkillInfo {
   version?: string | null;
 }
 
+/** Full SKILL.md-backed detail for one skill. Kept out of listSkills so the
+ * skill center grid only loads summary data. */
+export interface SkillDetailInfo {
+  id: string;
+  whenToUse: string | null;
+  allowedTools: string[];
+  argumentHint: string | null;
+  arguments: string[];
+  model: string | null;
+  effort: string | null;
+  context: string | null;
+  agent: string | null;
+  userInvocable: boolean;
+  disableModelInvocation: boolean;
+  version: string | null;
+  category: string | null;
+  paths: string[];
+  shell: string | null;
+  body: string;
+  rawContent: string;
+}
+
 /** Combined plugin info (tools + skills) */
 export interface PluginInfo {
   tools: ToolInfo[];
@@ -1769,6 +1807,11 @@ export function listTools(): Promise<ToolInfo[]> {
 /** List all registered skills. */
 export function listSkills(): Promise<SkillInfo[]> {
   return invoke<SkillInfo[]>("list_skills");
+}
+
+/** Get full details for a single SKILL.md-backed skill. */
+export function getSkillDetail(skillId: string): Promise<SkillDetailInfo | null> {
+  return invoke<SkillDetailInfo | null>("get_skill_detail", { skillId });
 }
 
 /** Get combined tool + skill info. */
@@ -2778,6 +2821,10 @@ export interface RuntimeDiagnostics {
 
 export function runtimeDiagnostics(): Promise<RuntimeDiagnostics> {
   return invoke<RuntimeDiagnostics>("runtime_diagnostics");
+}
+
+export function setAppMenuLanguage(language: AppLanguage): Promise<void> {
+  return invoke<void>("set_app_menu_language", { language });
 }
 
 // ---------------------------------------------------------------------------
