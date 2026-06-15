@@ -27,7 +27,8 @@ Writeback queue 的目标是让“还没补完”有明确状态，而不是在�
 | WB-2026-06-04-006 | Storage / workspace / path auth / file preview | P1 | candidate | 未派发 / tag-intake | `.understand-anything/enhancements/storage-app-data-contract.json` | 基于目标 main 源码补 app data root contract enhancement，更新 runtime/source/coverage/log 并通过校验 |
 | WB-2026-06-04-007 | Managed runtime supply chain | P1 | candidate | 未派发 / tag-intake | `.understand-anything/enhancements/managed-runtime-cache-reinstall.json` | 基于目标 main 源码补 runtime cache reinstall / bundled fallback 行为，更新 runtime-map/coverage/log 并通过校验 |
 | WB-2026-06-15-001 | Shell auto-background / background task IO | P1 | validated | Dirac + Lagrange + Russell / gpt-5.3-codex-spark + gpt-5.4 + gpt-5.4-mini | `.understand-anything/enhancements/runtime-shell-auto-background.json` | enhancement 已合并，runtime-map/coverage/index/log 已更新并通过 RepoWiki 校验 |
-| WB-2026-06-15-002 | Agent foreground auto-background target gap | P1 | candidate | 主线程 + Dirac + Lagrange + Russell / gpt-5.3-codex-spark + gpt-5.4 + gpt-5.4-mini | `.understand-anything/enhancements/runtime-agent-foreground-auto-background-gap.json`, 后续 runtime 实现与测试 | 当前已记录目标语义和源码缺口；关闭需要实现 foreground Agent promotion 并补回归测试 |
+| WB-2026-06-15-002 | Agent foreground auto-background | P1 | validated | 主线程 / current main source | `.understand-anything/enhancements/runtime-agent-foreground-auto-background.json` | main 已实现 foreground Agent promotion，enhancement/runtime-map/coverage 已更新并通过校验 |
+| WB-2026-06-15-003 | LLM gateway / provider / streaming | P1 | validated | 主线程 / origin-main@c4bcc8b7 | `.understand-anything/enhancements/llm-visible-reply-language-anchor.json` | target-branch enhancement 已合并，runtime-map/coverage/index/log 已更新并通过 RepoWiki 校验 |
 
 ## Active Queue Details
 
@@ -91,9 +92,18 @@ Writeback queue 的目标是让“还没补完”有明确状态，而不是在�
 
 - Trigger: 用户澄清期望的是“前台运行了一段时间之后自动转化为后台”的 Agent 能力，而不是一开始显式 `run_in_background=true`。
 - Engineering question: 如何让 `SpawnSubagent`/Agent 默认前台先运行，超过 blocking budget 后返回 task_id 并把同一个 run 提升为后台任务，同时保持 transcript、TaskOutput、TaskStop 和完成通知连续。
-- Current boundary: 已新增 gap enhancement 记录当前源码缺口和可复用基础设施；尚未实现 runtime promotion，也未新增 cargo 回归测试。
-- Claude code best reference: foreground Agent task、background signal、backgroundAgentTask、sidechain transcript、message queue 是目标设计参考；AIjia 需要按 Tauri/runtime store 结构重做，不能直接复制 CLI singleton/message queue。
-- Close criteria: 实现前台 Agent promotion；补测试覆盖默认前台超预算自动后台化、显式后台不变、短任务前台完成、TaskStop 可取消、TaskOutput 连续读取、完成通知注入；更新 enhancement/RepoWiki 并通过 `cargo test` 与 RepoWiki 校验。
+- Current boundary: `origin/main` 已实现 runtime promotion：默认前台路径 race subagent 完成、15 秒默认预算和父 cancellation；超预算后登记 LocalAgent、返回 `async_launched/task_id/task_type=local_agent/assistant_auto_backgrounded=true`。
+- Evidence: `src-tauri/src/runtime/tools/builtin/spawn_subagent.rs`、`src-tauri/src/llm/tool_executor/spawn_subagent.rs`、`src-tauri/tests/spawn_subagent_auto_background_test.rs`、`src-tauri/tests/spawn_subagent_async_test.rs`。
+- Close criteria: 已完成 enhancement/RepoWiki/coverage/writeback/log 更新；回归覆盖默认前台超预算自动后台化、显式后台不变、短任务前台完成、TaskStop 可取消、TaskOutput 最终输出读取、完成通知注入和 promotion 前父取消。
+
+### WB-2026-06-15-003
+
+- Trigger: 用户询问当前 wiki 是否齐全、是否还需要补充；检查 `origin/main` 后发现 `b0152fee` 新增 AIjia gateway v2 可见回复语言锚定。
+- Engineering question: AIjia v2 provider 构造 canonical request 时，如何从最新真实 user message 推断中文/英文，并在 system segments 末尾注入 Visible Reply Language reminder；哪些 synthetic context、system-reminder、agentsMd、link/code-only user message 应被忽略。
+- Current boundary: 已按用户要求补入 target-branch enhancement；本地 `main` 已快进到 `origin/main@c4bcc8b7`，wiki 分支已 rebase 到最新 main。
+- Evidence from origin-main intake: `git show origin/main:src-tauri/src/llm/providers/aijia_gateway_v2.rs`，提交 `b0152fee6e87ce9303c1d90470e78663edcdaa12`；`git show origin/main:docs/test-intents/spec/tasks/对话/rules.md`，提交 `c4bcc8b7e4c12e622e91def848278e051b754c72`。
+- Execution note: 新增 `.understand-anything/enhancements/llm-visible-reply-language-anchor.json`，同步 `runtime-map.md`、`coverage-manifest.md`、`index.md` 和 `log.md`；图谱新增 4 个 architecture review 节点、8 条边和 3 个 guided tour steps。
+- Close criteria: 已完成 enhancement/RepoWiki/coverage/writeback/log 更新；`node scripts/apply-understand-enhancements.mjs`、`node scripts/check-repowiki.mjs`、`node scripts/run-userwiki-qa-smoke.mjs --validate-only` 通过。
 
 ## Intake Rule
 

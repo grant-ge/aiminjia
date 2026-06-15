@@ -2,12 +2,19 @@
 
 ## 2026-06-15
 
+- Confirmed `origin/main` / local `main` at `1744d119` contains the RepoWiki merge (`e043aa57`) and the original Understand-Anything RepoWiki branch (`f60bbfe9`).
+- Replaced the earlier Agent foreground auto-background gap writeback with current-source implementation coverage in `runtime-agent-foreground-auto-background.json`: default `SpawnSubagent` foreground path now promotes long-running Agent work to `task_type=local_agent` after the blocking budget, while explicit `run_in_background=true` still uses direct async launch.
+- Updated `runtime-shell-auto-background.json` and `runtime-map.md` so Shell `LocalBash` handoff and Agent `LocalAgent` promotion are both covered without treating Agent auto-background as an unresolved gap.
 - Added `runtime-shell-auto-background.json` for Bash/PowerShell foreground command auto-backgrounding, LocalBash background task registration, transcript handoff, TaskOutput, TaskStop and task-notification visibility.
-- Added `runtime-agent-foreground-auto-background-gap.json` after the user clarified the desired capability: Agent/Subagent should start in foreground, run past a blocking budget, then automatically promote to a background task.
-- Clarified the boundary that current AIjia `SpawnSubagent`/Agent backgrounding is still explicit `run_in_background`; Claude code best's foreground Agent -> background lifecycle is only a target design reference for this supplement.
+- Earlier in the day, recorded the target Agent/Subagent foreground auto-background behavior as a gap; this has now been superseded by current-source implementation coverage in `runtime-agent-foreground-auto-background.json`.
+- Clarified the current boundary that AIjia now has both explicit `run_in_background=true` async subagent launch and default foreground auto-promotion; Claude code best remains a design reference, not a current-source evidence path.
 - Cross-validated the writeback with Dirac (`gpt-5.3-codex-spark`), Lagrange (`gpt-5.4`) and Russell (`gpt-5.4-mini`): current source boundary, Claude code best full-chain reference and existing graph gap were checked separately.
-- Updated `runtime-map.md`, `coverage-manifest.md`, `writeback-queue.md` and `index.md` to expose both the implemented Shell Auto Background domain and the queued Agent foreground auto-background product gap.
-- Graph snapshot after merge: 9356 nodes, 10344 edges, 25 layers, 116 guided tour steps, 409 LLM-enhanced nodes, 128 architecture review nodes and 25 enhancement files.
+- Updated `runtime-map.md`, `coverage-manifest.md`, `writeback-queue.md` and `index.md` to expose both implemented Shell `LocalBash` auto-background and Agent `LocalAgent` foreground auto-background domains.
+- Graph snapshot after merge: 9357 nodes, 10345 edges, 25 layers, 116 guided tour steps, 411 LLM-enhanced nodes, 128 architecture review nodes and 25 enhancement files.
+- Checked the latest `origin/main` after the user asked whether the wiki is complete. Commit `b0152fee` adds AIjia gateway v2 visible reply language anchoring in `src-tauri/src/llm/providers/aijia_gateway_v2.rs`; commit `c4bcc8b7` adds Chinese visible reply regression intents in `docs/test-intents/spec/tasks/对话/rules.md`.
+- Added `.understand-anything/enhancements/llm-visible-reply-language-anchor.json` from target-branch source `origin/main@c4bcc8b7e4c12e622e91def848278e051b754c72`, and updated `runtime-map.md`, `coverage-manifest.md`, `writeback-queue.md` and `index.md`.
+- Fast-forwarded local `main` to `origin/main@c4bcc8b7` and rebased the wiki update branch on top of the updated main before pushing, so the wiki commit is no longer based on the stale `1744d119` main.
+- Graph snapshot after visible language merge: 9361 nodes, 10353 edges, 25 layers, 119 guided tour steps, 415 LLM-enhanced nodes, 132 architecture review nodes and 26 enhancement files.
 
 ## 2026-06-04
 

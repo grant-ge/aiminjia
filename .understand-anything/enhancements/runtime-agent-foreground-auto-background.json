@@ -1,0 +1,245 @@
+{
+  "module": "runtime-agent-foreground-auto-background",
+  "source_basis": "code-tests-only",
+  "key_nodes": [
+    {
+      "filePath": "src-tauri/src/runtime/tools/builtin/spawn_subagent.rs",
+      "summary": "SpawnSubagent 工具入口现在把 run_in_background=true 保留为显式后台启动；false 或缺省进入 launch_foreground_auto_background。默认前台路径会返回同步结果，或在超出阻塞预算后返回 async_launched JSON，包含 task_id、task_type=local_agent、assistant_auto_backgrounded=true 和 auto_background_after_ms。",
+      "tags": ["runtime", "tools", "subagent", "foreground-auto-background"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src-tauri/src/llm/tool_executor/spawn_subagent.rs",
+      "summary": "DefaultSpawnSubagentLauncher 实现 Agent 前台自动后台化：启动时生成 AgentId、transcript path 和独立 cancel token，把 run_sub_agent 放入 worker task；父会话 race 完成、15 秒默认预算和取消信号，预算到达时把同一个 worker 标记为 Promoted 并注册 LocalAgent 后台任务。",
+      "tags": ["runtime", "agent", "launcher", "foreground-promotion"],
+      "complexity": "complex"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/agent/async_task_store.rs",
+      "summary": "后台任务句柄索引同时支持 LocalAgent 与 LocalBash。Agent 前台 promotion 和显式 async subagent 都登记为 AsyncTaskType::LocalAgent，保存 task id、name index、状态、transcript 输出路径和 cancel token。",
+      "tags": ["runtime", "agent", "async-task-store", "local-agent"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/tools/builtin/task_output.rs",
+      "summary": "TaskOutput 按 task_id 读取后台任务 transcript。对 LocalAgent 类型会跳过 shell transcript，优先读取会话 subagents/teammate transcript，再回退到 legacy subagent_transcripts，并在返回 JSON 中保留 task_type。",
+      "tags": ["runtime", "tools", "task-output", "transcript"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/tools/builtin/task_stop.rs",
+      "summary": "TaskStop 通过 AsyncAgentTaskStore 查找 task_id，校验 requested task_type 与实际类型一致后，用 CancellationReason::BackgroundStop 取消运行中的 LocalAgent 或 LocalBash，并把任务状态置为 Killed。",
+      "tags": ["runtime", "tools", "task-stop", "cancel"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/agent/task_notification.rs",
+      "summary": "TaskNotificationQueue 是后台 Agent 完成后回到父会话的注入队列。promotion 后的 LocalAgent worker 完成、失败或 panic 时会构造 task-notification XML，后续 chat turn 按 session drain。",
+      "tags": ["runtime", "agent", "task-notification", "continuation"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/src/runtime/agent/output_writer.rs",
+      "summary": "后台 Agent 完成收尾时通过 output_writer 把 assistant 或 failed transcript line 追加到 task_id 对应文件，供 TaskOutput 在父会话继续后读取最终输出或失败信息。",
+      "tags": ["runtime", "agent", "transcript", "output"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/tests/spawn_subagent_auto_background_test.rs",
+      "summary": "Agent 前台自动后台化的行为回归测试：短任务仍同步返回且不注册后台 handle；长任务超预算后返回 async_launched/local_agent，TaskOutput 能读最终输出，TaskNotificationQueue 收到 completed XML；TaskStop 可取消 promotion 后任务；父取消发生在 promotion 前不会留下后台任务。",
+      "tags": ["tests", "subagent", "foreground-auto-background", "contracts"],
+      "complexity": "medium"
+    },
+    {
+      "filePath": "src-tauri/tests/spawn_subagent_async_test.rs",
+      "summary": "SpawnSubagent 路由测试已更新：run_in_background=true 仍只走 launch_async；run_in_background=false 或缺省走 launch_foreground_auto_background；前台自动后台化可以返回 async_launched/task_id/local_agent/assistant_auto_backgrounded 合同。",
+      "tags": ["tests", "subagent", "routing", "background"],
+      "complexity": "low"
+    }
+  ],
+  "semantic_edges": [
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/spawn_subagent.rs",
+      "targetFilePath": "src-tauri/src/llm/tool_executor/spawn_subagent.rs",
+      "type": "calls",
+      "reason": "SpawnSubagent 默认前台路径调用 launch_foreground_auto_background；只有 run_in_background=true 才绕过 promotion 路径直接 launch_async。",
+      "weight": 0.98
+    },
+    {
+      "sourceFilePath": "src-tauri/src/llm/tool_executor/spawn_subagent.rs",
+      "targetFilePath": "src-tauri/src/runtime/agent/async_task_store.rs",
+      "type": "calls",
+      "reason": "阻塞预算到达时，DefaultSpawnSubagentLauncher 把已经运行中的 subagent worker 注册进 AsyncAgentTaskStore，形成 LocalAgent task_id/name/state/cancel handle。",
+      "weight": 0.96
+    },
+    {
+      "sourceFilePath": "src-tauri/src/llm/tool_executor/spawn_subagent.rs",
+      "targetFilePath": "src-tauri/src/runtime/agent/output_writer.rs",
+      "type": "writes_to",
+      "reason": "promotion 后 worker 终态由 finish_background_subagent 收尾，并用 output_writer 追加 assistant 或 failed transcript line，供 TaskOutput 后续读取。",
+      "weight": 0.9
+    },
+    {
+      "sourceFilePath": "src-tauri/src/llm/tool_executor/spawn_subagent.rs",
+      "targetFilePath": "src-tauri/src/runtime/agent/task_notification.rs",
+      "type": "calls",
+      "reason": "promotion 后的 LocalAgent 完成、失败或 panic 时会构造 task-notification XML 并入队到父 session，让后续 chat turn 可见。",
+      "weight": 0.91
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/task_output.rs",
+      "targetFilePath": "src-tauri/src/runtime/agent/output_writer.rs",
+      "type": "reads_from",
+      "reason": "TaskOutput 读取 promotion 后 LocalAgent 的 transcript 候选路径，返回增量 lines/new_offset 和 task_type。",
+      "weight": 0.85
+    },
+    {
+      "sourceFilePath": "src-tauri/src/runtime/tools/builtin/task_stop.rs",
+      "targetFilePath": "src-tauri/src/runtime/agent/async_task_store.rs",
+      "type": "depends_on",
+      "reason": "TaskStop 依赖 AsyncAgentTaskStore 中的 LocalAgent handle 才能校验 task_type、拒绝终态任务并触发 BackgroundStop cancellation token。",
+      "weight": 0.94
+    },
+    {
+      "sourceFilePath": "src-tauri/tests/spawn_subagent_auto_background_test.rs",
+      "targetFilePath": "src-tauri/src/runtime/tools/builtin/spawn_subagent.rs",
+      "type": "tested_by",
+      "reason": "测试覆盖短任务同步完成、超预算返回 async_launched/local_agent、TaskStop 取消 promotion 后任务，以及 promotion 前父取消不登记后台 handle。",
+      "weight": 0.97
+    },
+    {
+      "sourceFilePath": "src-tauri/tests/spawn_subagent_auto_background_test.rs",
+      "targetFilePath": "src-tauri/src/runtime/tools/builtin/task_output.rs",
+      "type": "tested_by",
+      "reason": "测试在 promoted LocalAgent 完成后通过 TaskOutput 读取包含最终 subagent 输出的 transcript，验证 task_id 输出通道可用。",
+      "weight": 0.9
+    },
+    {
+      "sourceFilePath": "src-tauri/tests/spawn_subagent_auto_background_test.rs",
+      "targetFilePath": "src-tauri/src/runtime/agent/task_notification.rs",
+      "type": "tested_by",
+      "reason": "测试 drain 父 session 的 TaskNotificationQueue 并断言 completed XML 包含 promoted task_id，验证完成通知回灌。",
+      "weight": 0.88
+    },
+    {
+      "sourceFilePath": "src-tauri/tests/spawn_subagent_async_test.rs",
+      "targetFilePath": "src-tauri/src/runtime/tools/builtin/spawn_subagent.rs",
+      "type": "tested_by",
+      "reason": "路由测试锁定 run_in_background=true 仍走显式 async，false 或缺省走 foreground auto path，避免两种后台化合同混淆。",
+      "weight": 0.93
+    }
+  ],
+  "architecture_findings": [
+    {
+      "title": "SpawnSubagent 默认前台路径已具备超预算自动后台化",
+      "description": "当前 main 上，run_in_background=false 或缺省不再直接等同 launch_sync；工具入口调用 launch_foreground_auto_background。短任务在预算内完成时仍返回普通同步输出，长任务超出预算时返回 async_launched/task_id/local_agent，并带 assistant_auto_backgrounded=true。",
+      "evidence": [
+        "src-tauri/src/runtime/tools/builtin/spawn_subagent.rs",
+        "src-tauri/src/llm/tool_executor/spawn_subagent.rs",
+        "src-tauri/tests/spawn_subagent_auto_background_test.rs",
+        "src-tauri/tests/spawn_subagent_async_test.rs"
+      ]
+    },
+    {
+      "title": "Agent promotion 复用 LocalAgent 后台控制面但改变注册时机",
+      "description": "显式 async subagent 在启动前登记 AsyncAgentTaskStore；前台自动后台化则先启动同一个 subagent worker，只有阻塞预算到达且 worker 仍未完成时才登记 LocalAgent handle。两者后续都用 task_id/name/state/cancel token 表示后台任务。",
+      "evidence": [
+        "src-tauri/src/llm/tool_executor/spawn_subagent.rs",
+        "src-tauri/src/runtime/agent/async_task_store.rs",
+        "src-tauri/tests/spawn_subagent_async_test.rs"
+      ]
+    },
+    {
+      "title": "promotion 后的可见性闭环是 transcript、TaskOutput、TaskStop 和 task-notification",
+      "description": "promotion 返回父会话后，后台 worker 继续执行；完成或失败时写 transcript、更新 AsyncTaskState 并入队 task-notification。用户可用 TaskOutput 读取最终输出，也可用 TaskStop 对仍运行的 LocalAgent 触发 BackgroundStop。",
+      "evidence": [
+        "src-tauri/src/llm/tool_executor/spawn_subagent.rs",
+        "src-tauri/src/runtime/tools/builtin/task_output.rs",
+        "src-tauri/src/runtime/tools/builtin/task_stop.rs",
+        "src-tauri/src/runtime/agent/task_notification.rs",
+        "src-tauri/tests/spawn_subagent_auto_background_test.rs"
+      ]
+    },
+    {
+      "title": "取消边界区分 promotion 前父取消和 promotion 后后台停止",
+      "description": "父 run cancellation 若发生在 promotion 前，会取消 child token 并返回错误，不留下可见后台任务；promotion 之后父会话已拿到 task_id，后续停止走 TaskStop/BackgroundStop，并把 store 状态置为 Killed。",
+      "evidence": [
+        "src-tauri/src/llm/tool_executor/spawn_subagent.rs",
+        "src-tauri/src/runtime/tools/builtin/task_stop.rs",
+        "src-tauri/tests/spawn_subagent_auto_background_test.rs"
+      ]
+    },
+    {
+      "title": "Shell 与 Agent 都有自动后台化，但任务类型和 handoff 对象不同",
+      "description": "Shell 自动后台化迁移 OS child、stream reader 和 stdout/stderr transcript，登记 LocalBash；Agent 自动后台化迁移的是 subagent worker 的生命周期可见性，登记 LocalAgent。RepoWiki 不应再把 Agent 写成未实现 gap，也不应把 Shell handoff 细节套到 Agent 上。",
+      "evidence": [
+        "src-tauri/src/runtime/tools/builtin/spawn_subagent.rs",
+        "src-tauri/src/llm/tool_executor/spawn_subagent.rs",
+        "src-tauri/src/runtime/tools/builtin/bash.rs",
+        "src-tauri/src/runtime/tools/builtin/shell_task.rs",
+        "src-tauri/src/runtime/agent/async_task_store.rs"
+      ]
+    }
+  ],
+  "tour_steps": [
+    {
+      "title": "从 SpawnSubagent 判断默认前台自动后台化合同",
+      "description": "先看 run_in_background 解析和 execute 分支：true 直接 launch_async，false 或缺省进入 launch_foreground_auto_background，并按 Completed/Backgrounded outcome 返回同步输出或 async_launched JSON。",
+      "filePaths": [
+        "src-tauri/src/runtime/tools/builtin/spawn_subagent.rs",
+        "src-tauri/tests/spawn_subagent_async_test.rs"
+      ]
+    },
+    {
+      "title": "看 launcher 如何 race 完成、预算和父取消",
+      "description": "DefaultSpawnSubagentLauncher 创建 AgentId、transcript path、cancel token 和 worker state；父会话同时等待 worker 完成、auto_background_after_ms 到达或父 cancellation。",
+      "filePaths": [
+        "src-tauri/src/llm/tool_executor/spawn_subagent.rs"
+      ]
+    },
+    {
+      "title": "跟踪 promoted LocalAgent 的后台注册与收尾",
+      "description": "预算到达时 register_background_task 把当前 worker 登记为 LocalAgent；worker 后续完成时 finish_background_subagent 写 transcript、入队 task-notification 并更新 AsyncTaskState。",
+      "filePaths": [
+        "src-tauri/src/llm/tool_executor/spawn_subagent.rs",
+        "src-tauri/src/runtime/agent/async_task_store.rs",
+        "src-tauri/src/runtime/agent/task_notification.rs"
+      ]
+    },
+    {
+      "title": "检查 TaskOutput 与 TaskStop 的 promoted task 合同",
+      "description": "TaskOutput 通过 task_id 读取 LocalAgent transcript；TaskStop 通过 AsyncAgentTaskStore 校验 task_type 并取消运行中的 promoted LocalAgent。",
+      "filePaths": [
+        "src-tauri/src/runtime/tools/builtin/task_output.rs",
+        "src-tauri/src/runtime/tools/builtin/task_stop.rs",
+        "src-tauri/tests/spawn_subagent_auto_background_test.rs"
+      ]
+    },
+    {
+      "title": "用回归测试确认短任务、超预算和取消边界",
+      "description": "spawn_subagent_auto_background_test 覆盖短任务同步完成、长任务 promotion、TaskOutput/TaskNotificationQueue 可见性、TaskStop 取消和 promotion 前父取消。",
+      "filePaths": [
+        "src-tauri/tests/spawn_subagent_auto_background_test.rs",
+        "src-tauri/tests/spawn_subagent_async_test.rs"
+      ]
+    }
+  ],
+  "risks_or_gaps": [
+    {
+      "title": "当前测试确认最终输出可读，不等同于逐 token 实时转储",
+      "description": "promotion 后 TaskOutput 回归覆盖最终 subagent 输出和完成通知；如果未来产品要求前台阶段/后台阶段的实时流式 transcript 连续可见，需要补更细粒度的 streaming transcript 测试。",
+      "evidence": [
+        "src-tauri/src/llm/tool_executor/spawn_subagent.rs",
+        "src-tauri/tests/spawn_subagent_auto_background_test.rs"
+      ]
+    },
+    {
+      "title": "自动后台化预算目前是 runtime 常量加隐藏测试 override",
+      "description": "默认预算来自 DEFAULT_AGENT_AUTO_BACKGROUND_AFTER_MS，输入里的 _auto_background_after_ms 是隐藏测试/调试 override；若要给用户或配置面板暴露预算，需要另补设置、文案和测试。",
+      "evidence": [
+        "src-tauri/src/llm/tool_executor/spawn_subagent.rs",
+        "src-tauri/src/runtime/tools/builtin/spawn_subagent.rs"
+      ]
+    }
+  ]
+}

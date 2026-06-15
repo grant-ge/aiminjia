@@ -49,6 +49,19 @@ flowchart LR
 - provider 只消费执行参数并返回标准 streaming 事件。
 - token/cost 统计应在 runtime 层闭环，前端只展示。
 
+### AIjia V2 Visible Reply Language Anchor
+
+AIjia gateway v2 的可见回复语言锚定由 `llm-visible-reply-language-anchor` 增强覆盖，来源为 `origin/main@c4bcc8b7` 的 `src-tauri/src/llm/providers/aijia_gateway_v2.rs` 和 `docs/test-intents/spec/tasks/对话/rules.md`。
+
+- `build_aijia_request_for_route_with_stream` 在 canonical request 组装前读取 `LlmRequest.messages`，从倒序最新真实 `user` message 推断可见回复语言。
+- 推断规则会忽略空消息、`[动态上下文...]`、`<system-reminder>`、`# agentsMd`、纯链接和纯代码类 user message；包含 CJK 字符判定为中文，ASCII 字母数达到阈值时判定为英文。
+- 推断成功后，provider 会在已有 system segments 末尾追加非 cache 的 `Visible Reply Language` system-reminder；已有 base system segment 的 `ephemeral` cache 语义不变。
+- 该锚点只约束用户可见 assistant prose 的语言；代码、路径、命令、API 字段、专有名词和用户要求保留的外语内容不应被翻译。
+- 单文件 unit tests 覆盖中文请求经工具调用后仍锚定中文、最新真实 user message 可切到英文，以及用户态 `system-reminder` 不覆盖前一条真实中文请求。
+- `意图-对话-031` 到 `034` 提供 E2E 回归验收：命令式首轮输入、后台空输出轮询、英文进度输出和历史英文回访样本都要求 assistant 可见状态说明保持中文，避免 `Still waiting`、`Let me wait`、`No new output` 等英文句泄漏。
+
+边界：本地 `main` 已快进到 `origin/main@c4bcc8b7` 后重放本 wiki 分支；后续若 visible reply language 策略或 intent 规则继续变化，应同步更新 enhancement 与本节。
+
 ## Prompt, Context, Compaction And Cost
 
 Prompt/context/cost 链路由 `prompt-context-compaction-cost` 增强：
@@ -208,26 +221,20 @@ Task V2 链路由 `runtime-task-tools` 增强：
 - `src-tauri/src/runtime/tools/builtin/task_stop.rs` 走 `AsyncAgentTaskStore` 停后台任务。
 - `src-tauri/src/runtime/tools/builtin/task_output.rs` 读 transcript，支持 offset 增量输出。
 
-## Agent Foreground Auto Background Gap
+## Agent Foreground Auto Background
 
-用户期望的能力由 `runtime-agent-foreground-auto-background-gap` 记录：**Agent/Subagent 先以前台同步方式运行，运行一段时间超过阻塞预算后，自动转成后台任务继续执行**。
+Agent/Subagent 前台自动转后台链路由 `runtime-agent-foreground-auto-background` 增强：**默认先以前台方式运行，超过阻塞预算后自动转成 LocalAgent 后台任务继续执行**。
 
 当前源码事实：
 
-1. `src-tauri/src/runtime/tools/builtin/spawn_subagent.rs` 只按 `run_in_background` 显式分流：`true` 走 `launch_async`，`false` 或缺省走 `launch_sync`。
-2. `src-tauri/src/llm/tool_executor/spawn_subagent.rs` 的 `launch_sync` 会等待 `run_sub_agent` 完成；`launch_async` 会预先生成 `AgentId`、登记 `AsyncAgentTaskStore`、后台 `tokio::spawn` 并在完成时写输出/通知。两条路径在启动前就分开。
-3. `src-tauri/src/runtime/agent/agent_runtime.rs` / `worker_runtime.rs` 能处理 `background=true` 的 child run completion、summary/transcript_ref 和 `AgentIdle`，但这里消费的是已经存在的 background 标记，不负责把前台 run 改成后台 run。
-4. `AsyncAgentTaskStore`、`TaskOutput`、`TaskStop`、`TaskNotificationQueue` 是未来实现可复用的后台控制面，但当前缺少 foreground task registry、blocking budget timer、promotion signal 和运行中 handoff。
+1. `src-tauri/src/runtime/tools/builtin/spawn_subagent.rs` 保留 `run_in_background=true` 的显式 async 分支；`false` 或缺省进入 `launch_foreground_auto_background`。
+2. `src-tauri/src/llm/tool_executor/spawn_subagent.rs` 在默认前台路径中生成 `AgentId`、transcript path 和独立 cancel token，启动同一个 subagent worker，并 race worker 完成、15 秒默认预算和父 cancellation。
+3. 如果 worker 在预算内完成，工具返回普通同步输出；如果预算先到，launcher 调 `register_background_task` 把同一个 worker 登记进 `AsyncAgentTaskStore`，返回 `async_launched`、`task_id`、`task_type=local_agent`、`assistant_auto_backgrounded=true` 和 `auto_background_after_ms`。
+4. promotion 后的 worker 完成、失败或 panic 由 `finish_background_subagent` 收尾：写 transcript、更新 `AsyncTaskState`，并通过 `TaskNotificationQueue` 给父 session 注入 `<task-notification>`。
+5. `src-tauri/src/runtime/tools/builtin/task_output.rs` 按 task id 读取 LocalAgent transcript；`src-tauri/src/runtime/tools/builtin/task_stop.rs` 校验 task type 后用 `CancellationReason::BackgroundStop` 取消仍在运行的 promoted LocalAgent。
+6. `src-tauri/tests/spawn_subagent_auto_background_test.rs` 覆盖短任务同步完成、长任务超预算 promotion、TaskOutput 读取最终输出、完成通知注入、TaskStop 取消和 promotion 前父取消不遗留后台任务；`spawn_subagent_async_test.rs` 锁定显式后台与默认 foreground auto path 的路由边界。
 
-目标实现应补的链路：
-
-1. 前台 Agent 启动时就有可提升的 foreground identity、cancel token 和 transcript/metadata 锚点。
-2. 父会话阻塞等待时 race 一个类似 shell 的 blocking budget；预算到达后返回 `async_launched`/`task_id`，父会话继续。
-3. 同一个 Agent run 继续后台执行，进入 `AsyncAgentTaskStore` 可查询、可 `TaskStop`、可 `TaskOutput` 读取。
-4. 前台阶段和后台阶段 transcript 连续，后台完成后通过 task-notification 或 `AgentIdle(child)` 回到后续 chat turn。
-5. 回归测试要覆盖默认前台超预算自动后台化、显式 `run_in_background=true` 仍直接后台、短任务仍前台完成、TaskStop 取消 promotion 后任务、TaskOutput 连续读取和完成通知注入。
-
-对标边界：Claude code best 的 foreground Agent task、background signal、backgroundAgentTask 链路是目标设计参考；当前 AIjia 不能把它写成已实现事实。
+边界：Claude code best 的 foreground Agent task/background signal 只作为历史对标参考。当前 RepoWiki 的事实以 AIjia `SpawnSubagent`/`DefaultSpawnSubagentLauncher` 和对应 Rust 测试为准。
 
 ## Shell Auto Background
 
@@ -239,7 +246,7 @@ Shell 前台自动转后台链路由 `runtime-shell-auto-background` 增强：
 4. 显式 `run_in_background=true` 与自动后台化后续都注册为 `AsyncTaskType::LocalBash`，依赖 `src-tauri/src/runtime/agent/async_task_store.rs` 保存 task id、取消 token、状态和 task type；自动后台化返回数据会带 `assistant_auto_backgrounded=true`。
 5. 后台化后的可见性分两条链：`TaskOutput` 从 `conv_dir/tasks/{task_id}.jsonl` 等 transcript 候选路径按 offset 读取输出；`TaskNotificationQueue` 在后台任务终态时把 `<task-notification>` 注入后续 chat turn。
 6. `TaskStop` 只负责按 task id 找后台 handle 并用 `CancellationReason::BackgroundStop` 取消运行中任务；它不参与自动后台化触发决策。
-7. 边界：当前 AIjia 的 `SpawnSubagent`/Agent 路径仍由 `run_in_background` 显式分流，false 或缺省是前台同步，true 才走 `launch_async`。`claude-code-best` 有 foreground Agent 升后台的成熟链路，可作为对标参考，但不是当前仓库已实现事实。
+7. 边界：`SpawnSubagent`/Agent 路径现在也有默认前台超预算自动后台化，但登记的是 `task_type=local_agent`；Shell 自动后台化登记 `task_type=local_bash`，两者共享 `AsyncAgentTaskStore` / `TaskOutput` / `TaskStop` / `TaskNotificationQueue` 这类控制面，不共享 OS child/reader handoff 细节。
 
 已知缺口：Bash 模块内有 foreground -> background 行为测试和 transcript 去重测试；PowerShell 当前主要有阈值 override、前台取消等边界覆盖，尚未达到 Bash 同等强度的行为级回归。
 

@@ -1,0 +1,122 @@
+{
+  "module": "llm-visible-reply-language-anchor",
+  "source_basis": "target-branch-code-tests-only",
+  "source_ref": "origin/main@c4bcc8b7e4c12e622e91def848278e051b754c72",
+  "coverage": "目标分支源码/测试来源：origin/main 的 src-tauri/src/llm/providers/aijia_gateway_v2.rs 与 docs/test-intents/spec/tasks/对话/rules.md。b0152fee 实现 AIjia v2 visible reply language anchor；c4bcc8b7 补中文可见回复回归 intents。",
+  "key_nodes": [
+    {
+      "filePath": "src-tauri/src/llm/providers/aijia_gateway_v2.rs",
+      "summary": "AIjia gateway v2 provider 的 canonical request builder 在 origin/main@b0152fee 新增可见回复语言锚定：从倒序最新真实 user message 推断中文或英文，并把 Visible Reply Language system-reminder 追加到 system segments 末尾。",
+      "tags": ["llm", "provider", "aijia-v2", "prompt", "language-anchor"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src-tauri/src/llm/gateway.rs",
+      "summary": "LLM gateway 仍是 provider dispatch 和请求组装入口；cloud gateway v2 路径最终把 LlmRequest 交给 AIjia gateway v2 provider，再由 provider 补充可见回复语言锚点。",
+      "tags": ["llm", "gateway", "provider-routing"],
+      "complexity": "high"
+    },
+    {
+      "filePath": "src-tauri/src/llm/streaming.rs",
+      "summary": "定义 LlmRequest、ChatMessage、SystemPromptSegment 和统一 streaming contract；visible reply language 推断直接读取 ChatMessage 列表，并把现有 system segments 作为追加锚点的前置上下文。",
+      "tags": ["llm", "streaming", "request-contract"],
+      "complexity": "moderate"
+    },
+    {
+      "filePath": "docs/test-intents/spec/tasks/对话/rules.md",
+      "summary": "对话 intent rules 在 origin/main@c4bcc8b7 新增 031-034 中文可见回复回归：覆盖命令式首轮输入、后台空输出轮询、英文进度输出和历史英文回访样本，要求 assistant 可见状态说明保持中文。",
+      "tags": ["test-intents", "dialogue", "language-anchor", "regression"],
+      "complexity": "moderate"
+    }
+  ],
+  "semantic_edges": [
+    {
+      "sourceFilePath": "src-tauri/src/llm/gateway.rs",
+      "targetFilePath": "src-tauri/src/llm/providers/aijia_gateway_v2.rs",
+      "type": "calls",
+      "weight": 0.86,
+      "reason": "gateway 负责 cloud gateway v2 provider dispatch；visible reply language anchor 在 AIjia gateway v2 provider 的 request builder 内完成。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/llm/providers/aijia_gateway_v2.rs",
+      "targetFilePath": "src-tauri/src/llm/streaming.rs",
+      "type": "depends_on",
+      "weight": 0.9,
+      "reason": "infer_visible_reply_language 读取 LlmRequest.messages / ChatMessage，并保留 SystemPromptSegment 的 cache 语义后追加非 cache 的语言锚点。"
+    },
+    {
+      "sourceFilePath": "src-tauri/src/llm/providers/aijia_gateway_v2.rs",
+      "targetFilePath": "src-tauri/src/llm/gateway.rs",
+      "type": "related",
+      "weight": 0.72,
+      "reason": "语言锚定是 provider 内的请求组装补强，不改变 gateway 的路由、鉴权、重试和错误封装职责。"
+    },
+    {
+      "sourceFilePath": "docs/test-intents/spec/tasks/对话/rules.md",
+      "targetFilePath": "src-tauri/src/llm/providers/aijia_gateway_v2.rs",
+      "type": "validates",
+      "weight": 0.82,
+      "reason": "意图-对话-031 到 034 把中文可见回复作为 E2E 回归验收，覆盖命令输入、后台轮询、英文进度和历史英文等待句泄漏场景。"
+    }
+  ],
+  "architecture_findings": [
+    {
+      "title": "可见回复语言锚定发生在 AIjia v2 canonical request builder 内",
+      "description": "origin/main@b0152fee 在 build_aijia_request_for_route_with_stream 中先基于 request.messages 推断语言，再处理 system messages 与 canonical messages，最后把 Visible Reply Language system-reminder 追加到 system segments 末尾；该锚点不参与 prompt cache。",
+      "evidence": ["src-tauri/src/llm/providers/aijia_gateway_v2.rs"]
+    },
+    {
+      "title": "语言推断只看最新真实自然语言 user message",
+      "description": "infer_visible_reply_language 从后往前扫描 user role，忽略空消息、[动态上下文]、<system-reminder>、# agentsMd 以及纯链接/代码消息；包含 CJK 字符判定为中文，ASCII 字母数达到阈值时判定为英文。",
+      "evidence": ["src-tauri/src/llm/providers/aijia_gateway_v2.rs"]
+    },
+    {
+      "title": "单文件 unit tests 固定了中文锚定、最新真实用户语言和 system-reminder 忽略规则",
+      "description": "新增测试覆盖中文用户请求后工具调用/工具结果仍锚定中文、最新真实 user message 可把语言切到英文，以及用户态 system-reminder 不应覆盖前一条真实中文请求。",
+      "evidence": ["src-tauri/src/llm/providers/aijia_gateway_v2.rs"]
+    },
+    {
+      "title": "中文可见回复还需要 E2E intent 回归覆盖",
+      "description": "origin/main@c4bcc8b7 在对话 rules 中新增 031-034，要求命令式首轮输入、后台空输出轮询、英文进度输出和历史英文回访样本场景下，assistant 可见状态说明保持中文，避免 Still waiting、Let me wait、No new output 等英文句泄漏。",
+      "evidence": ["docs/test-intents/spec/tasks/对话/rules.md"]
+    }
+  ],
+  "tour_steps": [
+    {
+      "title": "检查 AIjia v2 可见回复语言锚点",
+      "description": "先看 gateway 如何进入 AIjia v2 provider，再看 build_aijia_request_for_route_with_stream 如何从 LlmRequest.messages 推断语言并追加 system-reminder。",
+      "filePaths": [
+        "src-tauri/src/llm/gateway.rs",
+        "src-tauri/src/llm/providers/aijia_gateway_v2.rs",
+        "src-tauri/src/llm/streaming.rs"
+      ]
+    },
+    {
+      "title": "确认哪些 user message 不参与语言推断",
+      "description": "在 aijia_gateway_v2.rs 中查看 infer_visible_reply_language_from_text、is_cjk、is_link_or_code_only 以及对应 tests，确认动态上下文、system reminder、agentsMd 和 link/code-only 消息不会误导语言锚点。",
+      "filePaths": [
+        "src-tauri/src/llm/providers/aijia_gateway_v2.rs"
+      ]
+    },
+    {
+      "title": "用对话 intent 回归检查中文可见回复",
+      "description": "阅读 docs/test-intents/spec/tasks/对话/rules.md 的意图-对话-031 到 034，确认命令、后台轮询、英文进度和历史英文等待样本不会让 assistant 可见回复切到英文。",
+      "filePaths": [
+        "docs/test-intents/spec/tasks/对话/rules.md",
+        "src-tauri/src/llm/providers/aijia_gateway_v2.rs"
+      ]
+    }
+  ],
+  "risks_or_gaps": [
+    {
+      "title": "维护工作树仍落后于 source_ref",
+      "description": "当前维护工作树 HEAD=1744d119，不包含 b0152fee 的源码内容；本 enhancement 是基于 origin/main 对象取证。后续同步工作树后应复查本文件与实际源码是否仍一致。",
+      "evidence": ["src-tauri/src/llm/providers/aijia_gateway_v2.rs"]
+    },
+    {
+      "title": "语言锚定只支持中文和英文",
+      "description": "当前实现只识别 CJK 与 ASCII 英文字母阈值；其他语言或混合短文本不会生成专门语言锚点。",
+      "evidence": ["src-tauri/src/llm/providers/aijia_gateway_v2.rs"]
+    }
+  ]
+}

@@ -6,13 +6,15 @@ AIjia / lotus-app 是一个 Tauri 2 桌面端应用，前端使用 React、TypeS
 
 当前 Understand-Anything 图谱覆盖：
 
-- 9356 个节点
-- 10344 条边
+- 9361 个节点
+- 10353 条边
 - 25 个 architecture layers
-- 116 个 guided tour steps
-- 409 个 LLM-enhanced 节点
-- 128 个代码/维护架构评审概念节点
-- 25 份当前源码/测试/skill 来源 enhancement JSON
+- 119 个 guided tour steps
+- 415 个 LLM-enhanced 节点
+- 132 个代码/维护架构评审概念节点
+- 26 份当前源码/测试/skill 来源 enhancement JSON
+
+注：其中 `.understand-anything/enhancements/llm-visible-reply-language-anchor.json` 带 `source_ref=origin/main@c4bcc8b7`，覆盖 AIjia v2 provider 语言锚定实现和中文回复回归 intents。
 
 ## Architecture Layers
 
@@ -42,7 +44,7 @@ AIjia / lotus-app 是一个 Tauri 2 桌面端应用，前端使用 React、TypeS
 | 本地存储与文件系统能力 | workspace-first、file_store、path_auth 和本地路径安全 | 37 |
 | 遗留插件桥接 | 旧插件系统与 RuntimeTool 的过渡桥 | 18 |
 | Rust 集成测试 | runtime、transport、tools、storage 和 review_ 架构护栏 | 302 |
-| 代码架构评审 | 当前源码、测试和 repo-local skill 来源的增强材料生成的 architecture review 概念节点 | 128 |
+| 代码架构评审 | 当前源码、目标分支源码、测试和 repo-local skill 来源的增强材料生成的 architecture review 概念节点 | 132 |
 
 ## Guided Tour
 
@@ -60,12 +62,12 @@ AIjia / lotus-app 是一个 Tauri 2 桌面端应用，前端使用 React、TypeS
 12. Workspace 与文件安全边界：CurrentUserStorage、UserScope、WorkspaceManager、FileManager、file_store、authorized workspace store 和 path_auth。
 13. Managed Runtime 供应链：ensure/prepare、resolver chain、bundled resolver、manager、RuntimePanel。
 14. 技能、Pending 与员工派活：SkillCenter、skillStore、pendingStore、employee runner/store/template。
-15. 代码增强 tour：以代码/测试为事实源的 guided tour steps 覆盖 app shell/settings/updater/billing/network、auth/user-scope/storage boundary、Tauri command/event contract、前端 chat、employee/settings/file preview、skill/pending、LLM gateway、prompt/context/compaction/cost、managed runtime、MCP、runtime permission、storage/path_auth、employee dispatch、agenda scheduler、task tools、Agent foreground auto-background gap、shell auto-background、team mode、IM core、skill registry 和 test-intents/AEIT。
+15. 代码增强 tour：以代码/测试为事实源的 guided tour steps 覆盖 app shell/settings/updater/billing/network、auth/user-scope/storage boundary、Tauri command/event contract、前端 chat、employee/settings/file preview、skill/pending、LLM gateway、AIjia v2 visible reply language anchor 与中文回复回归 intents、prompt/context/compaction/cost、managed runtime、MCP、runtime permission、storage/path_auth、employee dispatch、agenda scheduler、task tools、Agent foreground auto-background、shell auto-background、team mode、IM core、skill registry 和 test-intents/AEIT。
 16. UserWiki skill tour：以 repo-local skill/script 为事实源的 guided tour steps 覆盖 userwiki 问答入口、wiki-maintainer 维护入口、校验脚本和 LLM Wiki 知识中间层原则。
 
 ## Current-Source Enhancements
 
-本轮图谱增强主体来自当前源码、测试和 repo-local skill/script，不从 docs 推断架构事实。已合并的 enhancement 文件：
+本轮图谱增强主体来自当前源码、目标分支源码、测试和 repo-local skill/script，不从 docs 推断架构事实。已合并的 enhancement 文件：
 
 - `.understand-anything/enhancements/frontend-chat-state-rendering.json`
 - `.understand-anything/enhancements/app-shell-settings-updater-billing.json`
@@ -75,10 +77,11 @@ AIjia / lotus-app 是一个 Tauri 2 桌面端应用，前端使用 React、TypeS
 - `.understand-anything/enhancements/frontend-skill-pending.json`
 - `.understand-anything/enhancements/im-channel-core-manager.json`
 - `.understand-anything/enhancements/llm-gateway-provider-streaming.json`
+- `.understand-anything/enhancements/llm-visible-reply-language-anchor.json`
 - `.understand-anything/enhancements/managed-runtime-supply-chain.json`
 - `.understand-anything/enhancements/prompt-context-compaction-cost.json`
 - `.understand-anything/enhancements/runtime-agenda-scheduler.json`
-- `.understand-anything/enhancements/runtime-agent-foreground-auto-background-gap.json`
+- `.understand-anything/enhancements/runtime-agent-foreground-auto-background.json`
 - `.understand-anything/enhancements/runtime-employee-dispatch.json`
 - `.understand-anything/enhancements/runtime-shell-auto-background.json`
 - `.understand-anything/enhancements/runtime-task-tools.json`

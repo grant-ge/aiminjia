@@ -52,8 +52,8 @@
     },
     {
       "filePath": "src-tauri/src/runtime/tools/builtin/spawn_subagent.rs",
-      "summary": "Agent/Subagent 的前后台语义边界：当前源码只按 run_in_background 显式选择 launch_async 或 launch_sync；默认或 false 是前台同步，不存在通用的 Agent 前台运行后自动转后台链路。",
-      "tags": ["runtime", "tools", "subagent", "boundary"],
+      "summary": "Agent/Subagent 现在也具备默认前台超预算自动后台化，但走 LocalAgent 生命周期：false 或缺省进入 launch_foreground_auto_background，true 仍直接 launch_async。它用于和 Shell 的 LocalBash handoff 对照，不能把 OS child/reader 迁移细节套到 Agent 上。",
+      "tags": ["runtime", "tools", "subagent", "agent-auto-background-boundary"],
       "complexity": "medium"
     },
     {
@@ -88,7 +88,7 @@
     },
     {
       "filePath": "src-tauri/tests/spawn_subagent_async_test.rs",
-      "summary": "SpawnSubagent 异步开关测试明确锁定 run_in_background=true 调 launch_async，false 或缺省调 launch_sync，防止把 shell 自动后台化误推广到 Agent 工具。",
+      "summary": "SpawnSubagent 路由测试锁定 run_in_background=true 仍直接 launch_async，false 或缺省进入 launch_foreground_auto_background，并允许前台自动后台化返回 async_launched/local_agent。",
       "tags": ["tests", "subagent", "background", "boundary"],
       "complexity": "low"
     }
@@ -182,7 +182,7 @@
       "sourceFilePath": "src-tauri/tests/spawn_subagent_async_test.rs",
       "targetFilePath": "src-tauri/src/runtime/tools/builtin/spawn_subagent.rs",
       "type": "tested_by",
-      "reason": "该测试把 Agent 工具的显式 run_in_background 开关钉住，作为 shell 自动后台化不可泛化到 subagent 的边界证据。",
+      "reason": "该测试把 Agent 工具的显式 run_in_background=true 与默认 foreground auto path 区分开，作为 Shell LocalBash handoff 与 Agent LocalAgent promotion 不混淆的边界证据。",
       "weight": 0.95
     }
   ],
@@ -239,12 +239,13 @@
       ]
     },
     {
-      "title": "当前 AIjia Agent/Subagent 路径仍是显式后台，不具备 Claude code best 那种前台 Agent 升后台",
-      "description": "spawn_subagent.rs 与 llm/tool_executor/spawn_subagent.rs 当前按 run_in_background 显式分流：true 走 launch_async，false 或缺省走 launch_sync。Claude code best 可作为对标参考，它有 registerAgentForeground/backgroundAgentTask 这类前台 Agent 转后台链路；但本仓库当前源码事实只支持 shell 自动后台化和 subagent 显式后台。",
+      "title": "Agent/Subagent 也已具备前台超预算自动后台化，但任务类型与 Shell 分离",
+      "description": "spawn_subagent.rs 与 llm/tool_executor/spawn_subagent.rs 当前保留 run_in_background=true 的显式 async，同时让 false 或缺省进入 launch_foreground_auto_background。Agent promotion 登记 LocalAgent；Shell 自动后台化登记 LocalBash。Claude code best 仍只作为历史对标参考，当前事实以本仓库源码和测试为准。",
       "evidence": [
         "src-tauri/src/runtime/tools/builtin/spawn_subagent.rs",
         "src-tauri/src/llm/tool_executor/spawn_subagent.rs",
-        "src-tauri/tests/spawn_subagent_async_test.rs"
+        "src-tauri/tests/spawn_subagent_async_test.rs",
+        "src-tauri/tests/spawn_subagent_auto_background_test.rs"
       ]
     },
     {
@@ -301,12 +302,13 @@
       ]
     },
     {
-      "title": "最后用 SpawnSubagent 收束 Agent 边界",
-      "description": "spawn_subagent 的后台只由 run_in_background 显式触发；这一步用于避免把 Shell 的自动后台化误写成所有 Agent 都能前台自动转后台。",
+      "title": "最后对照 SpawnSubagent 的 LocalAgent 自动后台化",
+      "description": "spawn_subagent 默认前台路径也能超预算自动后台化，但它返回 task_type=local_agent；这一步用于区分 Agent promotion 与 Shell LocalBash handoff 的不同生命周期对象。",
       "filePaths": [
         "src-tauri/src/runtime/tools/builtin/spawn_subagent.rs",
         "src-tauri/src/llm/tool_executor/spawn_subagent.rs",
-        "src-tauri/tests/spawn_subagent_async_test.rs"
+        "src-tauri/tests/spawn_subagent_async_test.rs",
+        "src-tauri/tests/spawn_subagent_auto_background_test.rs"
       ]
     }
   ]
