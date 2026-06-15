@@ -55,6 +55,17 @@ pub fn effective_settings_for_subagent(
     s
 }
 
+fn normalize_subagent_stop_reason_for_tool_calls(
+    stop_reason: StopReason,
+    has_tool_calls: bool,
+) -> (StopReason, Option<StopReason>) {
+    if has_tool_calls && stop_reason != StopReason::ToolUse {
+        (StopReason::ToolUse, Some(stop_reason))
+    } else {
+        (stop_reason, None)
+    }
+}
+
 /// 单次 worker turn 所需的 LLM 请求快照。
 pub struct WorkerTurnRequest {
     pub subagent_conversation_id: String,
@@ -399,8 +410,22 @@ impl<'a> SubagentWorkerRuntime<'a> {
                 stop_reason
             );
 
-            if stop_reason != StopReason::ToolUse || tool_calls.is_empty() {
-                last_stop_reason = Some(stop_reason.clone());
+            let (normalized_stop_reason, raw_stop_reason) =
+                normalize_subagent_stop_reason_for_tool_calls(
+                    stop_reason.clone(),
+                    !tool_calls.is_empty(),
+                );
+            if let Some(raw) = raw_stop_reason {
+                log::debug!(
+                    "[SubAgent] normalized stop_reason={:?} raw_stop_reason={:?} tool_calls={}",
+                    normalized_stop_reason,
+                    raw,
+                    tool_calls.len()
+                );
+            }
+
+            if normalized_stop_reason != StopReason::ToolUse || tool_calls.is_empty() {
+                last_stop_reason = Some(normalized_stop_reason.clone());
                 let had_content = !iter_content.is_empty();
                 let had_tools = !tool_calls.is_empty();
 
@@ -419,7 +444,7 @@ impl<'a> SubagentWorkerRuntime<'a> {
                     .push(ChatMessage::text("assistant", assistant_text));
 
                 match recovery.decide(
-                    stop_reason.clone(),
+                    normalized_stop_reason.clone(),
                     had_content,
                     had_tools,
                     max_tokens,
@@ -429,7 +454,7 @@ impl<'a> SubagentWorkerRuntime<'a> {
                         info!(
                             "[SubAgent] empty-response recovery attempt {} (stop={:?})",
                             recovery.attempts_used(),
-                            stop_reason
+                            normalized_stop_reason
                         );
                         request
                             .messages
@@ -441,7 +466,7 @@ impl<'a> SubagentWorkerRuntime<'a> {
                         break;
                     }
                     RecoveryDecision::NoRecovery => {
-                        // had_content == true && stop_reason != ToolUse
+                        // had_content == true && normalized_stop_reason != ToolUse
                         output = iter_content;
                         break;
                     }
@@ -1977,8 +2002,23 @@ async fn teammate_real_turn(
             break;
         }
 
+        let (normalized_stop_reason, raw_stop_reason) =
+            normalize_subagent_stop_reason_for_tool_calls(
+                stop_reason.clone(),
+                !tool_calls.is_empty(),
+            );
+        if let Some(raw) = raw_stop_reason {
+            log::debug!(
+                "[TeammateIdle] agent={} normalized stop_reason={:?} raw_stop_reason={:?} tool_calls={}",
+                ctx.agent_id.as_str(),
+                normalized_stop_reason,
+                raw,
+                tool_calls.len()
+            );
+        }
+
         // EndTurn (no more tool calls) — push final assistant text and exit
-        if stop_reason != StopReason::ToolUse || tool_calls.is_empty() {
+        if normalized_stop_reason != StopReason::ToolUse || tool_calls.is_empty() {
             if !iter_content.trim().is_empty() {
                 let assistant = ChatMessage::text("assistant", iter_content.clone());
                 messages.push(assistant.clone());
@@ -2443,6 +2483,24 @@ mod tests {
         let message = ChatMessage::tool_result("call_1", "Bash", "ok".to_string());
 
         assert!(!message.is_error);
+    }
+
+    #[test]
+    fn subagent_tool_calls_normalize_end_turn_to_tool_use() {
+        let (normalized, raw) =
+            normalize_subagent_stop_reason_for_tool_calls(StopReason::EndTurn, true);
+
+        assert_eq!(normalized, StopReason::ToolUse);
+        assert_eq!(raw, Some(StopReason::EndTurn));
+    }
+
+    #[test]
+    fn subagent_without_tool_calls_keeps_original_stop_reason() {
+        let (normalized, raw) =
+            normalize_subagent_stop_reason_for_tool_calls(StopReason::EndTurn, false);
+
+        assert_eq!(normalized, StopReason::EndTurn);
+        assert_eq!(raw, None);
     }
 
     #[test]
