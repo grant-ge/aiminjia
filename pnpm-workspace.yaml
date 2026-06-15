@@ -1,4 +1,4 @@
 packages:
   - '.'
-ignoredBuiltDependencies:
-  - esbuild
+allowBuilds:
+  esbuild: true

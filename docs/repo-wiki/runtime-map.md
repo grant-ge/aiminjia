@@ -208,6 +208,41 @@ Task V2 链路由 `runtime-task-tools` 增强：
 - `src-tauri/src/runtime/tools/builtin/task_stop.rs` 走 `AsyncAgentTaskStore` 停后台任务。
 - `src-tauri/src/runtime/tools/builtin/task_output.rs` 读 transcript，支持 offset 增量输出。
 
+## Agent Foreground Auto Background Gap
+
+用户期望的能力由 `runtime-agent-foreground-auto-background-gap` 记录：**Agent/Subagent 先以前台同步方式运行，运行一段时间超过阻塞预算后，自动转成后台任务继续执行**。
+
+当前源码事实：
+
+1. `src-tauri/src/runtime/tools/builtin/spawn_subagent.rs` 只按 `run_in_background` 显式分流：`true` 走 `launch_async`，`false` 或缺省走 `launch_sync`。
+2. `src-tauri/src/llm/tool_executor/spawn_subagent.rs` 的 `launch_sync` 会等待 `run_sub_agent` 完成；`launch_async` 会预先生成 `AgentId`、登记 `AsyncAgentTaskStore`、后台 `tokio::spawn` 并在完成时写输出/通知。两条路径在启动前就分开。
+3. `src-tauri/src/runtime/agent/agent_runtime.rs` / `worker_runtime.rs` 能处理 `background=true` 的 child run completion、summary/transcript_ref 和 `AgentIdle`，但这里消费的是已经存在的 background 标记，不负责把前台 run 改成后台 run。
+4. `AsyncAgentTaskStore`、`TaskOutput`、`TaskStop`、`TaskNotificationQueue` 是未来实现可复用的后台控制面，但当前缺少 foreground task registry、blocking budget timer、promotion signal 和运行中 handoff。
+
+目标实现应补的链路：
+
+1. 前台 Agent 启动时就有可提升的 foreground identity、cancel token 和 transcript/metadata 锚点。
+2. 父会话阻塞等待时 race 一个类似 shell 的 blocking budget；预算到达后返回 `async_launched`/`task_id`，父会话继续。
+3. 同一个 Agent run 继续后台执行，进入 `AsyncAgentTaskStore` 可查询、可 `TaskStop`、可 `TaskOutput` 读取。
+4. 前台阶段和后台阶段 transcript 连续，后台完成后通过 task-notification 或 `AgentIdle(child)` 回到后续 chat turn。
+5. 回归测试要覆盖默认前台超预算自动后台化、显式 `run_in_background=true` 仍直接后台、短任务仍前台完成、TaskStop 取消 promotion 后任务、TaskOutput 连续读取和完成通知注入。
+
+对标边界：Claude code best 的 foreground Agent task、background signal、backgroundAgentTask 链路是目标设计参考；当前 AIjia 不能把它写成已实现事实。
+
+## Shell Auto Background
+
+Shell 前台自动转后台链路由 `runtime-shell-auto-background` 增强：
+
+1. `src-tauri/src/runtime/tools/builtin/bash.rs` 和 `src-tauri/src/runtime/tools/builtin/powershell.rs` 在前台命令执行时都有 10 秒自动后台化预算；只有命令 timeout 更长、后台依赖存在且当前工具上下文有 `conv_dir` 时才启用。
+2. 自动后台化不是重启命令，而是把同一个前台 child、stream reader、剩余 timeout 和已捕获输出快照交给 `src-tauri/src/runtime/tools/builtin/shell_task.rs` 继续后台收尾。
+3. `src-tauri/src/runtime/tools/builtin/shell_common.rs` 提供可选 transcript 桥接：前台阶段先捕获输出，后台化时 flush 已捕获字节，并记录 `pre_background_flushed_bytes` 避免输出丢失或重复。
+4. 显式 `run_in_background=true` 与自动后台化后续都注册为 `AsyncTaskType::LocalBash`，依赖 `src-tauri/src/runtime/agent/async_task_store.rs` 保存 task id、取消 token、状态和 task type；自动后台化返回数据会带 `assistant_auto_backgrounded=true`。
+5. 后台化后的可见性分两条链：`TaskOutput` 从 `conv_dir/tasks/{task_id}.jsonl` 等 transcript 候选路径按 offset 读取输出；`TaskNotificationQueue` 在后台任务终态时把 `<task-notification>` 注入后续 chat turn。
+6. `TaskStop` 只负责按 task id 找后台 handle 并用 `CancellationReason::BackgroundStop` 取消运行中任务；它不参与自动后台化触发决策。
+7. 边界：当前 AIjia 的 `SpawnSubagent`/Agent 路径仍由 `run_in_background` 显式分流，false 或缺省是前台同步，true 才走 `launch_async`。`claude-code-best` 有 foreground Agent 升后台的成熟链路，可作为对标参考，但不是当前仓库已实现事实。
+
+已知缺口：Bash 模块内有 foreground -> background 行为测试和 transcript 去重测试；PowerShell 当前主要有阈值 override、前台取消等边界覆盖，尚未达到 Bash 同等强度的行为级回归。
+
 ## Team Mode And Subagent
 
 Team mode 链路由 `runtime-team-mode-subagent` 增强：

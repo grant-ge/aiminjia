@@ -1,5 +1,14 @@
 # RepoWiki Log
 
+## 2026-06-15
+
+- Added `runtime-shell-auto-background.json` for Bash/PowerShell foreground command auto-backgrounding, LocalBash background task registration, transcript handoff, TaskOutput, TaskStop and task-notification visibility.
+- Added `runtime-agent-foreground-auto-background-gap.json` after the user clarified the desired capability: Agent/Subagent should start in foreground, run past a blocking budget, then automatically promote to a background task.
+- Clarified the boundary that current AIjia `SpawnSubagent`/Agent backgrounding is still explicit `run_in_background`; Claude code best's foreground Agent -> background lifecycle is only a target design reference for this supplement.
+- Cross-validated the writeback with Dirac (`gpt-5.3-codex-spark`), Lagrange (`gpt-5.4`) and Russell (`gpt-5.4-mini`): current source boundary, Claude code best full-chain reference and existing graph gap were checked separately.
+- Updated `runtime-map.md`, `coverage-manifest.md`, `writeback-queue.md` and `index.md` to expose both the implemented Shell Auto Background domain and the queued Agent foreground auto-background product gap.
+- Graph snapshot after merge: 9356 nodes, 10344 edges, 25 layers, 116 guided tour steps, 409 LLM-enhanced nodes, 128 architecture review nodes and 25 enhancement files.
+
 ## 2026-06-04
 
 - Updated the repo-local `userwiki` skill with a Karpathy-style LLM Wiki mental model.

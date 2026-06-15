@@ -55,6 +55,12 @@ pub fn effective_settings_for_subagent(
     s
 }
 
+fn should_execute_stream_tool_calls(tool_call_count: usize) -> bool {
+    // Some providers stream valid tool calls but still finish with EndTurn.
+    // Once a valid tool call is present, executing it is safer than dropping it.
+    tool_call_count > 0
+}
+
 /// 单次 worker turn 所需的 LLM 请求快照。
 pub struct WorkerTurnRequest {
     pub subagent_conversation_id: String,
@@ -399,7 +405,15 @@ impl<'a> SubagentWorkerRuntime<'a> {
                 stop_reason
             );
 
-            if stop_reason != StopReason::ToolUse || tool_calls.is_empty() {
+            if !tool_calls.is_empty() && stop_reason != StopReason::ToolUse {
+                warn!(
+                    "[SubAgent] executing {} tool call(s) despite stop={:?}",
+                    tool_calls.len(),
+                    stop_reason
+                );
+            }
+
+            if !should_execute_stream_tool_calls(tool_calls.len()) {
                 last_stop_reason = Some(stop_reason.clone());
                 let had_content = !iter_content.is_empty();
                 let had_tools = !tool_calls.is_empty();
@@ -1783,7 +1797,16 @@ async fn teammate_real_turn(
         }
 
         // EndTurn (no more tool calls) — push final assistant text and exit
-        if stop_reason != StopReason::ToolUse || tool_calls.is_empty() {
+        if !tool_calls.is_empty() && stop_reason != StopReason::ToolUse {
+            warn!(
+                "[TeammateIdle] agent={} executing {} tool call(s) despite stop={:?}",
+                ctx.agent_id.as_str(),
+                tool_calls.len(),
+                stop_reason
+            );
+        }
+
+        if !should_execute_stream_tool_calls(tool_calls.len()) {
             if !iter_content.is_empty() {
                 let assistant = ChatMessage::text("assistant", iter_content.clone());
                 messages.push(assistant.clone());
@@ -2169,6 +2192,12 @@ mod tests {
             .messages
             .iter()
             .all(|message| message.role != "system"));
+    }
+
+    #[test]
+    fn stream_tool_calls_execute_even_when_stop_reason_is_end_turn() {
+        assert!(should_execute_stream_tool_calls(1));
+        assert!(!should_execute_stream_tool_calls(0));
     }
 
     #[test]

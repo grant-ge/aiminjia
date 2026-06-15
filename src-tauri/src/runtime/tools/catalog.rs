@@ -461,8 +461,8 @@ fn build_default_catalog() -> ToolCatalog {
             "Agent",
             "【Composite 工具】启动一个子 Agent 执行聚焦任务。\
             \n\n适用场景：任务需要干净上下文、专属 Agent 类型或不同模型。`subagent_type` 取值范围在每轮 turn 的工具描述动态列表中给出，包含 builtin 类型、用户自定义 agent、以及当前用户已雇佣的数字员工 ID（`emp-...`）。\
-            \n\n同步路径（run_in_background=false 或省略）：阻塞等待子 Agent 完成并返回最终输出文本。\
-            \n\n异步路径（run_in_background=true）：立即返回 agent_id；子 Agent 在后台运行；用 TaskOutput(task_id=agent_id, offset=N) 增量读取 transcript；子 Agent 完成时父的下一轮会收到 <task-notification> XML。\
+            \n\n默认路径（run_in_background=false 或省略）：子 Agent 先以前台方式运行；如果在前台阻塞预算内完成，直接返回最终输出文本；如果超过预算，系统会自动返回 `task_id`（`task_type=local_agent`）并让同一个子 Agent 继续在后台执行。\
+            \n\n异步路径（run_in_background=true）：立即返回 `agent_id/task_id`（`task_type=local_agent`）；子 Agent 从一开始就在后台运行。后台任务都可用 TaskOutput(task_id=..., task_type=\"local_agent\", offset=N) 增量读取 transcript；子 Agent 完成时父的下一轮会收到 <task-notification> XML。\
             \n\nTeammate 派活路径（subagent_type 选数字员工 + team_name + name）：从该 Employee 加载系统提示和工具白名单，加入当前 Session 的 Team 作为 Teammate 运行。`team_name` 非空时 `name` 为必填。",
         )
         .with_kind(ToolKind::Composite)
