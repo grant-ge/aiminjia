@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::plugin::skill::frontmatter::parse_skill_md;
-use crate::plugin::skill::loader::{is_valid_skill_id, load_skill_roots};
+use crate::plugin::skill::loader::is_valid_skill_id;
 use crate::plugin::skill::registry::SkillRegistry;
 use crate::plugin::skill::required_builtin::is_required_builtin_skill;
 
@@ -177,7 +177,7 @@ pub fn install_prepared_global_skills(
     Ok(report)
 }
 
-fn install_one_prepared_skill(
+pub(crate) fn install_one_prepared_skill(
     source: &Path,
     global_skills_dir: &Path,
     skill_id: &str,
@@ -287,7 +287,7 @@ fn copy_dir_without_symlinks(source: &Path, destination: &Path) -> Result<()> {
 /// Mirrors lotus tenant-portal `zipContainsSkillMd`: matches any first-level
 /// folder, not just one named exactly after plugin_id. Returns `None` if no
 /// such subdir exists (caller treats that as a missing-SKILL.md error).
-fn find_single_level_skill_root(prepared: &Path) -> Result<Option<std::path::PathBuf>> {
+pub(crate) fn find_single_level_skill_root(prepared: &Path) -> Result<Option<std::path::PathBuf>> {
     let entries = fs::read_dir(prepared)
         .with_context(|| format!("read prepared dir '{}'", prepared.display()))?;
     for entry in entries {
@@ -533,14 +533,77 @@ fn is_global_skill_installed(global_skills_dir: &Path, skill_id: &str) -> bool {
     global_skills_dir.join(skill_id).join("SKILL.md").is_file()
 }
 
-fn should_sync_remote_skill(
-    item: &SkillPackageItem,
-    local_state: &GlobalSkillsState,
-    config: &GlobalSkillSyncConfig,
-) -> bool {
+fn prune_non_required_global_skills(
+    state: &mut GlobalSkillsState,
+    global_skills_dir: &Path,
+) -> Result<Vec<String>> {
+    let mut changed: HashSet<String> = HashSet::new();
+    let tracked_ids: Vec<String> = state.installed.keys().cloned().collect();
+    for skill_id in tracked_ids {
+        if is_required_builtin_skill(&skill_id) {
+            continue;
+        }
+        state.installed.remove(&skill_id);
+        let target = global_skills_dir.join(&skill_id);
+        if target.exists() {
+            fs::remove_dir_all(&target).with_context(|| {
+                format!("remove non-required global skill '{}'", target.display())
+            })?;
+        }
+        changed.insert(skill_id);
+    }
+
+    if global_skills_dir.is_dir() {
+        for entry in fs::read_dir(global_skills_dir)
+            .with_context(|| format!("read global skills dir '{}'", global_skills_dir.display()))?
+        {
+            let entry = entry?;
+            let path = entry.path();
+            if !entry.file_type()?.is_dir() {
+                continue;
+            }
+            let Some(skill_id) = path.file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            if !is_valid_skill_id(skill_id) || is_required_builtin_skill(skill_id) {
+                continue;
+            }
+            // Only remove managed remote leftovers. Locally-created folders
+            // without the sync sidecar are ignored here, and the loader still
+            // keeps them out of the runtime catalog.
+            if path.join(".scope").is_file() {
+                fs::remove_dir_all(&path).with_context(|| {
+                    format!(
+                        "remove legacy marketplace global skill '{}'",
+                        path.display()
+                    )
+                })?;
+                changed.insert(skill_id.to_string());
+            }
+        }
+    }
+
+    let mut changed: Vec<String> = changed.into_iter().collect();
+    changed.sort();
+    Ok(changed)
+}
+
+pub fn prune_non_required_global_skill_installs(
+    state_path: &Path,
+    global_skills_dir: &Path,
+) -> Result<Vec<String>> {
+    let mut state = read_global_skills_state(state_path)?.unwrap_or_default();
+    let changed = prune_non_required_global_skills(&mut state, global_skills_dir)?;
+    if !changed.is_empty() {
+        state.updated_at_unix_seconds = now_unix_seconds();
+        write_global_skills_state(state_path, &state)?;
+    }
+    Ok(changed)
+}
+
+fn should_sync_remote_skill(item: &SkillPackageItem, local_state: &GlobalSkillsState) -> bool {
     is_required_builtin_skill(&item.plugin_id)
         || local_state.installed.contains_key(&item.plugin_id)
-        || is_global_skill_installed(&config.global_skills_dir, &item.plugin_id)
 }
 
 pub async fn sync_skill_packages_from_server(
@@ -573,7 +636,7 @@ pub async fn sync_skill_packages_from_server(
     );
 
     // 2. Read local installed-version state (None if first run or schema mismatch)
-    let local_state = read_global_skills_state(&config.state_path)?.unwrap_or_default();
+    let mut local_state = read_global_skills_state(&config.state_path)?.unwrap_or_default();
     log::info!(
         "[skill-sync] local state has {} installed skills: {:?}",
         local_state.installed.len(),
@@ -581,6 +644,10 @@ pub async fn sync_skill_packages_from_server(
     );
 
     let mut report = GlobalSkillInstallReport::default();
+    report.changed.extend(prune_non_required_global_skills(
+        &mut local_state,
+        &config.global_skills_dir,
+    )?);
     let mut new_installed: HashMap<String, String> = local_state.installed.clone();
     let mut remote_ids: HashSet<String> = HashSet::new();
 
@@ -592,7 +659,7 @@ pub async fn sync_skill_packages_from_server(
     // 3. Install or update remote skills whose version changed (or are missing locally)
     for item in &list.data {
         remote_ids.insert(item.plugin_id.clone());
-        if !should_sync_remote_skill(item, &local_state, &config) {
+        if !should_sync_remote_skill(item, &local_state) {
             report.skipped.push(item.plugin_id.clone());
             log::info!(
                 "[skill-sync] skip '{}' v{} (marketplace package not installed locally)",
@@ -703,7 +770,26 @@ pub async fn sync_skill_packages_from_server(
 }
 
 pub fn reload_skill_registry(skill_roots: &[PathBuf], registry: &Arc<Mutex<SkillRegistry>>) {
-    match load_skill_roots(skill_roots) {
+    let tagged: Vec<(PathBuf, crate::plugin::skill::types::SkillSource)> = match skill_roots {
+        [] => Vec::new(),
+        [global] => vec![(
+            global.clone(),
+            crate::plugin::skill::types::SkillSource::Global,
+        )],
+        roots => roots
+            .iter()
+            .enumerate()
+            .map(|(idx, root)| {
+                let source = if idx == 0 {
+                    crate::plugin::skill::types::SkillSource::User
+                } else {
+                    crate::plugin::skill::types::SkillSource::Global
+                };
+                (root.clone(), source)
+            })
+            .collect(),
+    };
+    match crate::plugin::skill::loader::load_skill_roots_tagged(&tagged) {
         Ok(skills) => match registry.lock() {
             Ok(mut guard) => {
                 *guard = SkillRegistry::from_skills(skills.into_values().collect());
@@ -818,6 +904,19 @@ mod tests {
         zip.finish().unwrap().into_inner()
     }
 
+    fn write_managed_global_skill(config: &GlobalSkillSyncConfig, skill_id: &str, scope: &str) {
+        let dir = config.global_skills_dir.join(skill_id);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("SKILL.md"),
+            format!(
+                "---\nname: {skill_id}\ndescription: {skill_id}\nversion: \"1.0.0\"\n---\nbody\n"
+            ),
+        )
+        .unwrap();
+        fs::write(dir.join(".scope"), scope).unwrap();
+    }
+
     async fn mock_skill_package(
         server: &MockServer,
         package_id: u64,
@@ -888,6 +987,64 @@ mod tests {
             .join("SKILL.md")
             .is_file());
         assert!(!config.global_skills_dir.join("market-only").exists());
+
+        let state = read_global_skills_state(&config.state_path)
+            .unwrap()
+            .expect("state written");
+        assert_eq!(
+            state.installed.keys().cloned().collect::<Vec<_>>(),
+            vec!["dingtalk-workspace".to_string()]
+        );
+    }
+
+    #[tokio::test]
+    async fn sync_prunes_legacy_non_required_global_skills() {
+        let tmp = tempfile::tempdir().unwrap();
+        let server = MockServer::start().await;
+        let required = mock_skill_package(&server, 1, "dingtalk-workspace", "1.0.0").await;
+        let market_only = mock_skill_package(&server, 2, "market-only", "1.0.0").await;
+
+        Mock::given(method("GET"))
+            .and(path("/v1/skill-packages"))
+            .and(query_param("page", "1"))
+            .and(query_param("size", "100"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": [required, market_only],
+                "total": 2
+            })))
+            .mount(&server)
+            .await;
+
+        let config = test_config(tmp.path());
+        write_managed_global_skill(&config, "dingtalk-workspace", "tenant");
+        write_managed_global_skill(&config, "market-only", "public");
+        write_global_skills_state(
+            &config.state_path,
+            &GlobalSkillsState {
+                installed: HashMap::from([
+                    ("dingtalk-workspace".to_string(), "1.0.0".to_string()),
+                    ("market-only".to_string(), "1.0.0".to_string()),
+                ]),
+                updated_at_unix_seconds: 1,
+            },
+        )
+        .unwrap();
+
+        let report = sync_skill_packages_from_server(
+            config.clone(),
+            server.uri(),
+            "session-key".to_string(),
+        )
+        .await
+        .unwrap();
+
+        assert!(report.changed.contains(&"market-only".to_string()));
+        assert!(!config.global_skills_dir.join("market-only").exists());
+        assert!(config
+            .global_skills_dir
+            .join("dingtalk-workspace")
+            .join("SKILL.md")
+            .is_file());
 
         let state = read_global_skills_state(&config.state_path)
             .unwrap()

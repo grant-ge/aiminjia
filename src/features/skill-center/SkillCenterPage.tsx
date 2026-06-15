@@ -1,4 +1,4 @@
-import { MoreHorizontal, Search, Trash2 } from 'lucide-react'
+import { MoreHorizontal, Plus, Search, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { invoke } from '@tauri-apps/api/core'
@@ -23,7 +23,7 @@ import {
   skillMatchesCenterView,
   type SkillCenterView,
 } from '@/lib/skillAvailability'
-import { refreshSkillRegistry, syncBuiltinSkills, type SkillInfo } from '@/lib/tauri'
+import { listMarketplaceSkills, refreshSkillRegistry, syncBuiltinSkills, type MarketplaceSkillItem, type SkillInfo } from '@/lib/tauri'
 import { localizeSkill } from '@/lib/skillLocalization'
 import { useAuthStore } from '@/stores/authStore'
 import { useNotificationStore } from '@/stores/notificationStore'
@@ -49,12 +49,17 @@ export function SkillCenterPage() {
   const [validationFailure, setValidationFailure] = useState<
     { kind: SkillValidationKind; detail?: string } | null
   >(null)
+  const [marketItems, setMarketItems] = useState<MarketplaceSkillItem[]>([])
+  const [marketLoading, setMarketLoading] = useState(false)
+  const [marketError, setMarketError] = useState<string | null>(null)
+  const [installingMarketId, setInstallingMarketId] = useState<string | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [checkingId, setCheckingId] = useState<string | null>(null)
   const skills = useSkillStore((s) => s.skills)
   const isLoading = useSkillStore((s) => s.isLoading)
   const reload = useSkillStore((s) => s.reload)
   const upload = useSkillStore((s) => s.upload)
+  const installMarketplace = useSkillStore((s) => s.installMarketplace)
   const uninstall = useSkillStore((s) => s.uninstall)
   const setSkillEnabled = useSkillStore((s) => s.setSkillEnabled)
   const setRoute = useUiStore((s) => s.setRoute)
@@ -318,6 +323,55 @@ export function SkillCenterPage() {
     [i18n.language, setPendingSkill, setRoute],
   )
 
+  const loadMarketSkills = useCallback(async () => {
+    if (!isLoggedIn) {
+      setMarketItems([])
+      setMarketError(null)
+      return
+    }
+    setMarketLoading(true)
+    setMarketError(null)
+    try {
+      const result = await listMarketplaceSkills(1, 100, undefined, query.trim() || undefined)
+      setMarketItems(result.items)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setMarketError(message)
+      setMarketItems([])
+    } finally {
+      setMarketLoading(false)
+    }
+  }, [isLoggedIn, query])
+
+  const handleInstallMarketplace = useCallback(
+    async (item: MarketplaceSkillItem) => {
+      if (installingMarketId) return
+      setInstallingMarketId(item.pluginId)
+      try {
+        await installMarketplace(item.id, item.pluginId)
+        setPendingSkill({
+          id: item.pluginId,
+          label: item.name || item.pluginId,
+          trigger: `/${item.pluginId}`,
+        })
+        setRoute({ kind: 'home' })
+      } catch (err) {
+        pushNotification({
+          level: 'error',
+          title: '添加技能失败',
+          message: err instanceof Error ? err.message : String(err),
+          actions: [],
+          dismissible: true,
+          autoHide: 6,
+          context: 'toast',
+        })
+      } finally {
+        setInstallingMarketId(null)
+      }
+    },
+    [installMarketplace, installingMarketId, pushNotification, setPendingSkill, setRoute],
+  )
+
   const handleSetSkillEnabled = useCallback(
     async (skill: SkillInfo, enabled: boolean) => {
       if (!canToggleSkillEnablement(skill)) return
@@ -369,6 +423,12 @@ export function SkillCenterPage() {
     void reload().catch(handleLoadError)
   }, [reload])
 
+  useEffect(() => {
+    if (view === 'market') {
+      void loadMarketSkills()
+    }
+  }, [loadMarketSkills, view])
+
   const viewItems = useMemo(
     () => [
       { key: 'market', label: '市场' },
@@ -396,6 +456,20 @@ export function SkillCenterPage() {
     .filter((skill) => skillMatchesCenterView(skill, view))
     .filter(matchesQuery)
 
+  const installedSkillIds = useMemo(() => new Set(skills.map((skill) => skill.id)), [skills])
+  const marketSkills = useMemo(() => {
+    if (!normalizedQuery) return marketItems
+    return marketItems.filter((item) =>
+      [
+        item.name,
+        item.pluginId,
+        item.description,
+        item.category,
+        item.scope,
+      ].some((value) => value?.toLowerCase().includes(normalizedQuery)),
+    )
+  }, [marketItems, normalizedQuery])
+
   const sectionTitle =
     view === 'market' ? '技能市场' : view === 'builtin' ? '内置技能' : '已安装技能'
 
@@ -416,6 +490,17 @@ export function SkillCenterPage() {
       : null
     return [sourceLabel, label, statusLabel].filter(Boolean).join(' · ')
   }
+
+  function getMarketSkillMeta(item: MarketplaceSkillItem) {
+    const normalizedCategory = item.category || 'general'
+    const label = SKILL_CATEGORIES.find((c) => c.id === normalizedCategory)?.name ?? t('skillCenter.defaultCategory')
+    const sourceLabel = item.scope === 'tenant' ? '企业下发' : '平台技能'
+    return [sourceLabel, label].filter(Boolean).join(' · ')
+  }
+
+  const listLoading = view === 'market' ? marketLoading : isLoading && skills.length === 0
+  const listError = view === 'market' ? marketError : loadError
+  const listEmpty = view === 'market' ? marketSkills.length === 0 : officeSkills.length === 0
 
   return (
     <>
@@ -516,11 +601,11 @@ export function SkillCenterPage() {
           />
         }
       >
-        {isLoading && skills.length === 0 ? (
+        {listLoading ? (
           <SkillCenterState title={t('skillCenter.loading')} />
-        ) : loadError && skills.length === 0 ? (
-          <SkillCenterState title={t('skillCenter.loadFailed')} desc={loadError} actionLabel={t('skillCenter.retry')} onAction={() => void loadSkills()} />
-        ) : officeSkills.length === 0 ? (
+        ) : listError ? (
+          <SkillCenterState title={t('skillCenter.loadFailed')} desc={listError} actionLabel={t('skillCenter.retry')} onAction={() => view === 'market' ? void loadMarketSkills() : void loadSkills()} />
+        ) : listEmpty ? (
           normalizedQuery ? (
             <SkillCenterState
               title={t('skillCenter.noMatch')}
@@ -544,6 +629,47 @@ export function SkillCenterPage() {
               }
             />
           )
+        ) : view === 'market' ? (
+          marketSkills.map((item) => {
+            const installed = installedSkillIds.has(item.pluginId)
+            return (
+              <SkillCard
+                key={`${item.id}:${item.pluginId}`}
+                title={item.name || item.pluginId}
+                meta={getMarketSkillMeta(item)}
+                desc={item.description}
+                iconNode={getSkillIcon(item.icon)}
+                iconBg={getSkillCategoryBg(item.category)}
+                version={item.version}
+                skillId={item.pluginId}
+                skillSource={item.scope === 'tenant' ? 'tenant' : 'global'}
+                marketCard
+                marketInstalled={installed}
+                onClick={installed ? () => setRoute({ kind: 'skill-detail', skillId: item.pluginId }) : undefined}
+                actionsSlot={
+                  installed ? (
+                    <span
+                      data-aijia-skill-market-action="added"
+                      className="rounded-md bg-muted px-2 py-1 text-xs font-medium text-muted-foreground"
+                    >
+                      已添加
+                    </span>
+                  ) : (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      disabled={installingMarketId === item.pluginId}
+                      data-aijia-skill-market-action="add"
+                      aria-label={`添加 ${item.name || item.pluginId}`}
+                      onClick={() => void handleInstallMarketplace(item)}
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  )
+                }
+              />
+            )
+          })
         ) : (
           officeSkills.map((skill) => {
             const localized = localizeSkill(skill, i18n.language)

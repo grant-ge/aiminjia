@@ -320,18 +320,23 @@ fn clear_enablement_override_for_skill(app: &AppHandle, skill_id: &str) -> Resul
 /// skills shadow same-id global skills; a single-root scan would mis-resurrect
 /// or hide skills after uninstall.
 pub fn refresh_skill_registry(app: &AppHandle) -> Result<(), String> {
-    use crate::plugin::skill::loader::load_skill_roots;
+    use crate::plugin::skill::loader::load_skill_roots_tagged;
+    use crate::plugin::skill::types::SkillSource;
     use crate::storage::AiJiaHome;
 
     let aijia_home = app.state::<Arc<AiJiaHome>>();
     let global_root = aijia_home.skills_dir();
     let user_root = user_skills_dir(app).ok();
-    let roots: Vec<PathBuf> = match user_root {
-        Some(user) => vec![user, global_root],
-        None => vec![global_root],
+    let roots: Vec<(PathBuf, SkillSource)> = match user_root {
+        Some(user) => vec![
+            (user, SkillSource::User),
+            (global_root, SkillSource::Global),
+        ],
+        None => vec![(global_root, SkillSource::Global)],
     };
 
-    let loaded = load_skill_roots(&roots).map_err(|e| format!("load_skill_roots failed: {}", e))?;
+    let loaded =
+        load_skill_roots_tagged(&roots).map_err(|e| format!("load_skill_roots failed: {}", e))?;
     let registry = app.state::<Arc<Mutex<SkillRegistry>>>();
     registry
         .lock()
@@ -603,18 +608,31 @@ pub async fn pack_skill(skill_dir: String, dest_path: String) -> Result<String, 
 #[serde(rename_all = "camelCase")]
 pub struct MarketplaceSkillItem {
     pub id: i64,
+    #[serde(alias = "plugin_id")]
     pub plugin_id: String,
+    #[serde(default)]
     pub name: String,
+    #[serde(default)]
     pub description: String,
+    #[serde(default)]
     pub category: String,
+    #[serde(default)]
     pub icon: String,
+    #[serde(default)]
     pub version: String,
+    #[serde(default)]
     pub scope: String,
+    #[serde(default)]
     pub status: String,
+    #[serde(default)]
     pub downloads: i64,
+    #[serde(default)]
     pub featured: bool,
+    #[serde(default, alias = "package_size")]
     pub package_size: i64,
+    #[serde(default, alias = "tenant_name")]
     pub tenant_name: String,
+    #[serde(default, alias = "created_at")]
     pub created_at: String,
 }
 
@@ -626,6 +644,152 @@ pub struct MarketplaceResponse {
     pub total: i64,
     pub page: i64,
     pub size: i64,
+}
+
+fn parse_marketplace_response(
+    body: serde_json::Value,
+    requested_page: u32,
+    requested_size: u32,
+) -> Result<MarketplaceResponse, String> {
+    let data = body
+        .get("data")
+        .ok_or_else(|| "No data in marketplace response".to_string())?;
+    let (item_values, total, page, size) = if data.is_array() {
+        let items = data.as_array().cloned().unwrap_or_default();
+        let total = body
+            .get("total")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(items.len() as i64);
+        (
+            items,
+            total,
+            body.get("page")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(requested_page as i64),
+            body.get("size")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(requested_size as i64),
+        )
+    } else {
+        let items = data
+            .get("items")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        (
+            items,
+            data.get("total").and_then(|v| v.as_i64()).unwrap_or(0),
+            data.get("page")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(requested_page as i64),
+            data.get("size")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(requested_size as i64),
+        )
+    };
+
+    let mut items: Vec<MarketplaceSkillItem> =
+        serde_json::from_value(serde_json::Value::Array(item_values))
+            .map_err(|e| format!("Failed to parse marketplace items: {}", e))?;
+    for item in &mut items {
+        if item.name.trim().is_empty() {
+            item.name = item.plugin_id.clone();
+        }
+    }
+
+    Ok(MarketplaceResponse {
+        items,
+        total,
+        page,
+        size,
+    })
+}
+
+fn marketplace_download_url(body: &serde_json::Value) -> Option<String> {
+    body["package_url"]
+        .as_str()
+        .or_else(|| body["url"].as_str())
+        .or_else(|| body["data"]["package_url"].as_str())
+        .or_else(|| body["data"]["url"].as_str())
+        .map(ToString::to_string)
+}
+
+fn marketplace_download_meta(body: &serde_json::Value) -> Option<serde_json::Value> {
+    let category = body["category"]
+        .as_str()
+        .or_else(|| body["data"]["category"].as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string);
+    let display_i18n = body
+        .get("displayI18n")
+        .or_else(|| body.get("display_i18n"))
+        .or_else(|| body["data"].get("displayI18n"))
+        .or_else(|| body["data"].get("display_i18n"))
+        .filter(|value| !value.is_null())
+        .cloned();
+
+    if category.is_none() && display_i18n.is_none() {
+        return None;
+    }
+
+    let mut payload = serde_json::Map::new();
+    if let Some(category) = category {
+        payload.insert("category".to_string(), serde_json::Value::String(category));
+    }
+    if let Some(display_i18n) = display_i18n {
+        payload.insert("displayI18n".to_string(), display_i18n);
+    }
+    Some(serde_json::Value::Object(payload))
+}
+
+fn install_marketplace_archive(
+    archive_path: &Path,
+    tmp_root: &Path,
+    custom_dir: &Path,
+    plugin_id: &str,
+) -> Result<String, String> {
+    if plugin_id.starts_with('_') || plugin_id.starts_with('.') || !is_valid_skill_id(plugin_id) {
+        return Err(format!("Invalid plugin_id: {}", plugin_id));
+    }
+
+    std::fs::create_dir_all(custom_dir).map_err(|e| e.to_string())?;
+    let prepared = tmp_root.join("prepared").join(plugin_id);
+    crate::plugin::skill::global_sync::extract_global_skills_zip(archive_path, &prepared)
+        .map_err(|e| e.to_string())?;
+
+    let source = if prepared.join("SKILL.md").is_file() {
+        prepared
+    } else if let Some(subdir) =
+        crate::plugin::skill::global_sync::find_single_level_skill_root(&prepared)
+            .map_err(|e| e.to_string())?
+    {
+        subdir
+    } else {
+        return Err(format!(
+            "skill package '{}' missing SKILL.md after extraction",
+            plugin_id
+        ));
+    };
+
+    crate::plugin::skill::global_sync::install_one_prepared_skill(&source, custom_dir, plugin_id)
+        .map_err(|e| e.to_string())?;
+    Ok(custom_dir.join(plugin_id).to_string_lossy().to_string())
+}
+
+fn write_marketplace_sidecar(dest: &Path, meta: Option<serde_json::Value>) {
+    let Some(meta) = meta else {
+        return;
+    };
+    if let Ok(bytes) = serde_json::to_vec(&meta) {
+        if let Err(error) = std::fs::write(dest.join(".lotus-meta.json"), bytes) {
+            log::warn!(
+                "Marketplace: write .lotus-meta.json for '{}' failed: {}",
+                dest.display(),
+                error
+            );
+        }
+    }
 }
 
 /// List skill packages from the cloud marketplace.
@@ -691,22 +855,12 @@ pub async fn list_marketplace_skills(
     }
 
     let body: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
-
-    // Parse { code: 0, data: { items, total, page, size } }
-    let data = &body["data"];
-    let items: Vec<MarketplaceSkillItem> =
-        serde_json::from_value(data["items"].clone()).unwrap_or_default();
-
-    Ok(MarketplaceResponse {
-        items,
-        total: data["total"].as_i64().unwrap_or(0),
-        page: data["page"].as_i64().unwrap_or(1),
-        size: data["size"].as_i64().unwrap_or(20),
-    })
+    parse_marketplace_response(body, page, size)
 }
 
 /// Download and install a skill package from the marketplace.
-/// Downloads the zip from `package_url` and extracts to `~/.renlijia/skills/{plugin_id}/`.
+/// Downloads the zip from `package_url` and installs it under the current
+/// user's `~/.renlijia/users/{scope}/skills/{plugin_id}/`.
 #[tauri::command]
 pub async fn install_marketplace_skill(
     app: AppHandle,
@@ -738,11 +892,8 @@ pub async fn install_marketplace_skill(
     }
 
     let body: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
-    let package_url = body["package_url"]
-        .as_str()
-        .or_else(|| body["data"]["package_url"].as_str())
-        .ok_or("No package_url in response")?
-        .to_string();
+    let package_url = marketplace_download_url(&body).ok_or("No package_url in response")?;
+    let sidecar_meta = marketplace_download_meta(&body);
 
     // Step 2: Download the zip file
     let zip_resp = client
@@ -764,54 +915,21 @@ pub async fn install_marketplace_skill(
         .await
         .map_err(|e| format!("Download error: {}", e))?;
 
-    // Step 3: Extract to ~/.renlijia/skills/{plugin_id}/
+    // Step 3: Extract to the current user's skills dir.
     let custom_dir = user_skills_dir(&app)?;
-    std::fs::create_dir_all(&custom_dir).map_err(|e| e.to_string())?;
-
-    let dest = custom_dir.join(&plugin_id);
-    if dest.exists() {
-        std::fs::remove_dir_all(&dest).map_err(|e| e.to_string())?;
-    }
-    std::fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
-
-    let cursor = std::io::Cursor::new(zip_bytes.as_ref());
-    let mut archive = zip::ZipArchive::new(cursor).map_err(|e| format!("Invalid zip: {}", e))?;
-
-    const MAX_EXTRACT_SIZE: u64 = 50 * 1024 * 1024; // 50 MB limit
-    let mut total_extracted: u64 = 0;
-
-    for i in 0..archive.len() {
-        let mut file = archive.by_index(i).map_err(|e| e.to_string())?;
-
-        total_extracted += file.size();
-        if total_extracted > MAX_EXTRACT_SIZE {
-            let _ = std::fs::remove_dir_all(&dest);
-            return Err("Package too large (exceeds 50MB extraction limit)".to_string());
-        }
-
-        // Use enclosed_name() to prevent path traversal attacks — it returns
-        // None for entries whose resolved path would escape the destination.
-        let relative = file
-            .enclosed_name()
-            .ok_or_else(|| format!("Unsafe zip entry path: {:?}", file.name()))?
-            .to_path_buf();
-        let out_path = dest.join(&relative);
-
-        // Belt-and-suspenders: verify the resolved path is still under dest
-        if !out_path.starts_with(&dest) {
-            return Err(format!("Path traversal detected: {:?}", relative));
-        }
-
-        if file.is_dir() {
-            std::fs::create_dir_all(&out_path).map_err(|e| e.to_string())?;
-        } else {
-            if let Some(parent) = out_path.parent() {
-                std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-            }
-            let mut outfile = std::fs::File::create(&out_path).map_err(|e| e.to_string())?;
-            std::io::copy(&mut file, &mut outfile).map_err(|e| e.to_string())?;
-        }
-    }
+    let tmp = archive_tmp_root(&app);
+    std::fs::create_dir_all(&tmp).map_err(|e| e.to_string())?;
+    let archive_path = tmp.join("marketplace-skill.zip");
+    std::fs::write(&archive_path, zip_bytes.as_ref()).map_err(|e| e.to_string())?;
+    let dest = install_marketplace_archive(
+        &archive_path,
+        &tmp.join("unpacked"),
+        &custom_dir,
+        &plugin_id,
+    );
+    let _ = std::fs::remove_dir_all(&tmp);
+    let dest = dest?;
+    write_marketplace_sidecar(Path::new(&dest), sidecar_meta);
 
     log::info!("Marketplace: installed skill '{}' to {:?}", plugin_id, dest);
     clear_enablement_override_for_skill(&app, &plugin_id)?;
@@ -872,6 +990,65 @@ mod tests {
             body: String::new(),
             source,
         }
+    }
+
+    #[test]
+    fn parses_marketplace_array_response_from_gateway() {
+        let body = serde_json::json!({
+            "code": 0,
+            "data": [
+                {
+                    "id": 42,
+                    "plugin_id": "bid-writing",
+                    "name": "标书撰写",
+                    "description": "解析招标文件",
+                    "category": "general",
+                    "icon": "file",
+                    "version": "0.4",
+                    "scope": "tenant",
+                    "status": "published",
+                    "package_size": 1234,
+                    "created_at": "2026-06-15T00:00:00Z"
+                }
+            ],
+            "total": 1,
+            "page": 1,
+            "size": 100
+        });
+
+        let parsed = parse_marketplace_response(body, 1, 100).unwrap();
+
+        assert_eq!(parsed.total, 1);
+        assert_eq!(parsed.items.len(), 1);
+        assert_eq!(parsed.items[0].plugin_id, "bid-writing");
+        assert_eq!(parsed.items[0].package_size, 1234);
+    }
+
+    #[test]
+    fn parses_marketplace_paged_items_response() {
+        let body = serde_json::json!({
+            "code": 0,
+            "data": {
+                "items": [
+                    {
+                        "id": 7,
+                        "pluginId": "deep-research",
+                        "description": "研究报告",
+                        "scope": "public"
+                    }
+                ],
+                "total": 1,
+                "page": 2,
+                "size": 10
+            }
+        });
+
+        let parsed = parse_marketplace_response(body, 2, 10).unwrap();
+
+        assert_eq!(parsed.page, 2);
+        assert_eq!(parsed.size, 10);
+        assert_eq!(parsed.items[0].plugin_id, "deep-research");
+        assert_eq!(parsed.items[0].name, "deep-research");
     }
 
     #[test]
@@ -1137,5 +1314,92 @@ mod tests {
             "got {:?}",
             err
         );
+    }
+
+    fn write_marketplace_zip(path: &Path, entries: &[(&str, &str)]) {
+        let file = std::fs::File::create(path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let opts: zip::write::FileOptions<'_, ()> =
+            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        use std::io::Write;
+        for (name, content) in entries {
+            zip.start_file(name, opts).unwrap();
+            zip.write_all(content.as_bytes()).unwrap();
+        }
+        zip.finish().unwrap();
+    }
+
+    #[test]
+    fn install_marketplace_archive_accepts_server_sidecars() {
+        let tmp = tempfile::tempdir().unwrap();
+        let archive = tmp.path().join("server.zip");
+        write_marketplace_zip(
+            &archive,
+            &[
+                (
+                    "SKILL.md",
+                    "---\nname: xiaojia-doctor\ndescription: doctor\n---\nbody",
+                ),
+                (".lotus-meta.json", r#"{"category":"runtime"}"#),
+                (".scope", "tenant"),
+                ("scripts/doctor.ps1", "Write-Output ok"),
+                ("references/runtime-doctor.md", "# ref"),
+            ],
+        );
+
+        let custom_dir = tmp.path().join("user-skills");
+        let dest = install_marketplace_archive(
+            &archive,
+            &tmp.path().join("unpack"),
+            &custom_dir,
+            "xiaojia-doctor",
+        )
+        .unwrap();
+        let dest = PathBuf::from(dest);
+
+        assert_eq!(
+            dest.file_name().unwrap().to_string_lossy(),
+            "xiaojia-doctor"
+        );
+        assert!(dest.join("SKILL.md").is_file());
+        assert!(dest.join(".lotus-meta.json").is_file());
+        assert!(dest.join(".scope").is_file());
+        assert!(dest.join("scripts").join("doctor.ps1").is_file());
+        assert!(dest.join("references").join("runtime-doctor.md").is_file());
+    }
+
+    #[test]
+    fn install_marketplace_archive_accepts_inner_skill_layout_and_i18n() {
+        let tmp = tempfile::tempdir().unwrap();
+        let archive = tmp.path().join("server-inner.zip");
+        write_marketplace_zip(
+            &archive,
+            &[
+                (
+                    "bid-writing/SKILL.md",
+                    "---\nname: bid-writing\ndescription: bid\n---\nbody",
+                ),
+                (
+                    "bid-writing/i18n/en-US/SKILL.md",
+                    "---\nname: bid-writing\ndescription: bid\n---\nbody",
+                ),
+                ("bid-writing/references/outline_check.py", "print('ok')"),
+            ],
+        );
+
+        let custom_dir = tmp.path().join("user-skills");
+        let dest = install_marketplace_archive(
+            &archive,
+            &tmp.path().join("unpack"),
+            &custom_dir,
+            "bid-writing",
+        )
+        .unwrap();
+        let dest = PathBuf::from(dest);
+
+        assert_eq!(dest.file_name().unwrap().to_string_lossy(), "bid-writing");
+        assert!(dest.join("SKILL.md").is_file());
+        assert!(dest.join("i18n").join("en-US").join("SKILL.md").is_file());
+        assert!(dest.join("references").join("outline_check.py").is_file());
     }
 }

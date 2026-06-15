@@ -66,6 +66,30 @@ describe('SkillPopoverPanel', () => {
     expect(screen.getByText('文案助手')).toBeInTheDocument()
   })
 
+  it('filters slash commands by leading command text', () => {
+    render(
+      <SkillPopoverPanel
+        items={[
+          ...ITEMS,
+          {
+            id: 'toggle-restore-skill',
+            title: 'Toggle Restore',
+            subtitle: 'restore skill',
+            command: '/toggle-restore-skill',
+          },
+        ]}
+        onPick={() => {}}
+        onClose={() => {}}
+      />,
+    )
+    fireEvent.change(screen.getByTestId('skill-popover-search'), { target: { value: '/toggle' } })
+    expect(screen.getByRole('option', { name: /Toggle Restore/ })).toHaveAttribute(
+      'data-aijia-skill-command',
+      '/toggle-restore-skill',
+    )
+    expect(screen.queryByText('鏁版嵁鍒嗘瀽')).not.toBeInTheDocument()
+  })
+
   it('ranks title matches above subtitle matches', () => {
     const items = [
       { id: 'a', title: '数据分析', subtitle: '报告生成' },

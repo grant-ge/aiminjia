@@ -6,6 +6,7 @@ use anyhow::Result;
 use serde::Deserialize;
 
 use super::frontmatter::parse_skill_md;
+use super::required_builtin::is_required_builtin_skill;
 use super::types::{DiskSkill, SkillDisplayI18nText, SkillSource};
 
 /// Sidecar metadata written by the lotus skill-sync path. Used to overlay
@@ -103,6 +104,14 @@ fn load_one_root(
             continue;
         };
         if name.starts_with('_') || name.starts_with('.') || !is_valid_skill_id(name) {
+            continue;
+        }
+        if matches!(source, SkillSource::Global) && !is_required_builtin_skill(name) {
+            log::info!(
+                "skip non-required global skill '{}' from {}",
+                name,
+                path.display()
+            );
             continue;
         }
         if let Some(existing) = loaded.get(name) {
@@ -210,7 +219,7 @@ mod tests {
             Some(r#"{"category":"hr"}"#),
         );
         let loaded =
-            load_skill_roots_tagged(&[(tmp.path().to_path_buf(), SkillSource::Global)]).unwrap();
+            load_skill_roots_tagged(&[(tmp.path().to_path_buf(), SkillSource::User)]).unwrap();
         let skill = loaded.get("legacy-skill").expect("loaded");
         assert_eq!(skill.frontmatter.category.as_deref(), Some("hr"));
     }
@@ -227,7 +236,7 @@ mod tests {
             ),
         );
         let loaded =
-            load_skill_roots_tagged(&[(tmp.path().to_path_buf(), SkillSource::Global)]).unwrap();
+            load_skill_roots_tagged(&[(tmp.path().to_path_buf(), SkillSource::User)]).unwrap();
         let skill = loaded.get("legacy-skill").expect("loaded");
         let en = skill
             .frontmatter
@@ -251,7 +260,7 @@ mod tests {
             ),
         );
         let loaded =
-            load_skill_roots_tagged(&[(tmp.path().to_path_buf(), SkillSource::Global)]).unwrap();
+            load_skill_roots_tagged(&[(tmp.path().to_path_buf(), SkillSource::User)]).unwrap();
         let skill = loaded.get("legacy-skill").expect("loaded");
         let en = skill
             .frontmatter
@@ -273,7 +282,7 @@ mod tests {
             Some(r#"{"category":"finance"}"#),
         );
         let loaded =
-            load_skill_roots_tagged(&[(tmp.path().to_path_buf(), SkillSource::Global)]).unwrap();
+            load_skill_roots_tagged(&[(tmp.path().to_path_buf(), SkillSource::User)]).unwrap();
         let skill = loaded.get("explicit-skill").expect("loaded");
         // SKILL.md wins; sidecar is fallback only
         assert_eq!(skill.frontmatter.category.as_deref(), Some("hr"));
@@ -284,7 +293,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         write_skill(tmp.path(), "no-sidecar", MD_WITHOUT_CATEGORY, None);
         let loaded =
-            load_skill_roots_tagged(&[(tmp.path().to_path_buf(), SkillSource::Global)]).unwrap();
+            load_skill_roots_tagged(&[(tmp.path().to_path_buf(), SkillSource::User)]).unwrap();
         let skill = loaded.get("no-sidecar").expect("loaded");
         assert!(skill.frontmatter.category.is_none());
     }
@@ -299,7 +308,7 @@ mod tests {
             Some("not json"),
         );
         let loaded =
-            load_skill_roots_tagged(&[(tmp.path().to_path_buf(), SkillSource::Global)]).unwrap();
+            load_skill_roots_tagged(&[(tmp.path().to_path_buf(), SkillSource::User)]).unwrap();
         let skill = loaded
             .get("bad-sidecar")
             .expect("still loads despite bad sidecar");
@@ -316,8 +325,21 @@ mod tests {
             Some(r#"{"category":"   "}"#),
         );
         let loaded =
-            load_skill_roots_tagged(&[(tmp.path().to_path_buf(), SkillSource::Global)]).unwrap();
+            load_skill_roots_tagged(&[(tmp.path().to_path_buf(), SkillSource::User)]).unwrap();
         let skill = loaded.get("blank-sidecar").expect("loaded");
         assert!(skill.frontmatter.category.is_none());
+    }
+
+    #[test]
+    fn global_root_loads_required_builtin_only() {
+        let tmp = TempDir::new().unwrap();
+        write_skill(tmp.path(), "market-only", MD_WITHOUT_CATEGORY, None);
+        write_skill(tmp.path(), "dingtalk-workspace", MD_WITHOUT_CATEGORY, None);
+
+        let loaded =
+            load_skill_roots_tagged(&[(tmp.path().to_path_buf(), SkillSource::Global)]).unwrap();
+
+        assert!(!loaded.contains_key("market-only"));
+        assert!(loaded.contains_key("dingtalk-workspace"));
     }
 }

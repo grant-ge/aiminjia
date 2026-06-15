@@ -27,6 +27,8 @@ export interface SkillPopoverItem {
   icon?: string | null
   /** Skill category slug (`hr` / `finance` / ...). Drives the icon tile color. */
   category?: string | null
+  /** Slash command shown in the composer, e.g. `/toggle-restore-skill`. */
+  command?: string | null
 }
 
 interface SkillPopoverPanelProps {
@@ -57,15 +59,18 @@ export function SkillPopoverPanel({ items, onPick, onClose }: SkillPopoverPanelP
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return items
-    // Rank: title prefix (0) > title contains (1) > subtitle (2); drop non-matches.
+    // Rank: command/title prefix (0) > title contains (1) > subtitle/id (2); drop non-matches.
     const ranked: Array<{ item: SkillPopoverItem; rank: number }> = []
     for (const it of items) {
       const title = it.title.toLowerCase()
       const sub = it.subtitle.toLowerCase()
+      const command = (it.command?.trim() || `/${it.id}`).toLowerCase()
+      const bareCommand = command.startsWith('/') ? command.slice(1) : command
+      const bareQuery = q.startsWith('/') ? q.slice(1) : q
       let rank = -1
-      if (title.startsWith(q)) rank = 0
+      if (command.startsWith(q) || (bareQuery && bareCommand.startsWith(bareQuery)) || title.startsWith(q)) rank = 0
       else if (title.includes(q)) rank = 1
-      else if (sub.includes(q)) rank = 2
+      else if (sub.includes(q) || it.id.toLowerCase().includes(bareQuery)) rank = 2
       if (rank >= 0) ranked.push({ item: it, rank })
     }
     ranked.sort((a, b) => a.rank - b.rank)
@@ -158,6 +163,7 @@ export function SkillPopoverPanel({ items, onPick, onClose }: SkillPopoverPanelP
                     data-skill-index={idx}
                     data-aijia-skill-picker-item="true"
                     data-aijia-skill-id={it.id}
+                    data-aijia-skill-command={it.command?.trim() || `/${it.id}`}
                     data-active={isActive ? 'true' : undefined}
                     onMouseEnter={() => setActiveIndex(idx)}
                     onClick={() => onPick(it.id)}

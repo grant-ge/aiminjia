@@ -43,6 +43,7 @@ export function SkillPopover({ open: openProp, onPick, onClose }: SkillPopoverPr
       subtitle: localized.description,
       icon: s.icon || undefined,
       category: s.category || undefined,
+      command: s.triggerText?.trim() || `/${s.id}`,
     }
   })
 

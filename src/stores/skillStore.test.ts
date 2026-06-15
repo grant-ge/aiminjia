@@ -6,7 +6,9 @@ const tauriMock = vi.hoisted(() => ({
     { id: 'shop-report', displayName: '店铺日报', description: 'desc', source: 'user', hasWorkflow: false, icon: 'store', category: 'ops', triggerText: '', shortDescription: 'short', displayNameEn: 'Ops', shortDescriptionEn: 'short', enabled: false },
   ]),
   installCustomSkill: vi.fn().mockResolvedValue('installed'),
+  installMarketplaceSkill: vi.fn().mockResolvedValue('installed'),
   setSkillEnabled: vi.fn().mockResolvedValue(undefined),
+  uninstallCustomSkill: vi.fn().mockResolvedValue('uninstalled'),
 }))
 
 vi.mock('@/lib/tauri', () => tauriMock)
@@ -105,6 +107,13 @@ describe('skillStore', () => {
     await useSkillStore.getState().upload('/tmp/dup-skill', true)
 
     expect(tauriMock.installCustomSkill).toHaveBeenCalledWith('/tmp/dup-skill', true)
+    expect(tauriMock.listSkills).toHaveBeenCalled()
+  })
+
+  it('installMarketplace installs a marketplace package then reloads skills', async () => {
+    await useSkillStore.getState().installMarketplace(101, 'deep-research')
+
+    expect(tauriMock.installMarketplaceSkill).toHaveBeenCalledWith(101, 'deep-research')
     expect(tauriMock.listSkills).toHaveBeenCalled()
   })
 })

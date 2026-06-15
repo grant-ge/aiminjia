@@ -446,6 +446,17 @@ pub fn run() {
             // response), but at load time the registry currently tags them
             // Global. A future change can split the global dir into
             // managed/{public,tenant}/ and emit Tenant labels here.
+            if let Err(error) =
+                plugin::skill::global_sync::prune_non_required_global_skill_installs(
+                    &aijia_home.global_state_path(),
+                    &global_skills_dir,
+                )
+            {
+                log::warn!(
+                    "[setup] prune legacy marketplace global skills failed: {}",
+                    error
+                );
+            }
             let skill_roots_tagged: Vec<(std::path::PathBuf, plugin::skill::types::SkillSource)> =
                 match user_skills_dir {
                     Some(user) => vec![

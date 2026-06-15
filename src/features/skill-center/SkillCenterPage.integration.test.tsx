@@ -5,11 +5,22 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { SkillCenterPage } from '@/features/skill-center/SkillCenterPage'
 import i18n from '@/i18n'
 import { SkillAlreadyExistsError, SkillValidationError, useSkillStore } from '@/stores/skillStore'
+import { useAuthStore } from '@/stores/authStore'
 import { useUiStore } from '@/stores/uiStore'
 
 const createConversationFromSkillMock = vi.hoisted(() => vi.fn())
 const openDialogMock = vi.hoisted(() => vi.fn())
 const askDialogMock = vi.hoisted(() => vi.fn())
+const tauriMock = vi.hoisted(() => ({
+  listMarketplaceSkills: vi.fn(),
+  refreshSkillRegistry: vi.fn().mockResolvedValue(undefined),
+  syncBuiltinSkills: vi.fn().mockResolvedValue({ installed: [], updated: [], skipped: [], changed: [] }),
+  listSkills: vi.fn().mockResolvedValue([]),
+  installCustomSkill: vi.fn().mockResolvedValue('installed'),
+  installMarketplaceSkill: vi.fn().mockResolvedValue('installed'),
+  setSkillEnabled: vi.fn().mockResolvedValue(undefined),
+  uninstallCustomSkill: vi.fn().mockResolvedValue('uninstalled'),
+}))
 
 vi.mock('@/hooks/useChat', () => ({
   useChat: () => ({ createConversationFromSkill: createConversationFromSkillMock }),
@@ -19,6 +30,8 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({
   open: openDialogMock,
   ask: askDialogMock,
 }))
+
+vi.mock('@/lib/tauri', () => tauriMock)
 
 const CORE_SKILL = {
   id: 'create-skill',
@@ -43,6 +56,9 @@ const REC4 = { id: 'rec4', displayName: '推荐4', description: 'd', source: 'bu
 const TENANT_SKILL = { id: 'tenant-policy', displayName: '企业制度问答', description: '企业下发', source: 'tenant', hasWorkflow: false, icon: 'building', category: 'general', triggerText: '/tenant-policy', shortDescription: '制度问答', displayNameEn: 'Policy Q&A', shortDescriptionEn: 'policy', updatedAt: null, enabled: false }
 const USER_SKILL = { id: 'local-report', displayName: '本地日报', description: '本地导入', source: 'user', hasWorkflow: false, icon: 'file-text', category: 'ops', triggerText: '/local-report', shortDescription: '本地日报', displayNameEn: 'Local Report', shortDescriptionEn: 'local report', updatedAt: null, enabled: false }
 
+const MARKET_NEW = { id: 101, pluginId: 'deep-research', name: '深入研究', description: '通过来源验证生成研究报告', category: 'general', icon: 'search', version: '1.0', scope: 'public', status: 'published', downloads: 22000, featured: true, packageSize: 128, tenantName: '', createdAt: '2026-06-10T00:00:00Z' }
+const MARKET_ADDED = { id: 102, pluginId: 'local-report', name: '本地日报', description: '已添加的市场技能', category: 'ops', icon: 'file-text', version: '1.0', scope: 'tenant', status: 'published', downloads: 100, featured: false, packageSize: 128, tenantName: 'ACME', createdAt: '2026-06-10T00:00:00Z' }
+
 function seedStore(extra?: Partial<ReturnType<typeof useSkillStore.getState>>) {
   useSkillStore.setState({
     skills: [REC1, REC2, REC3, REC4, CORE_SKILL, TENANT_SKILL, USER_SKILL],
@@ -50,6 +66,7 @@ function seedStore(extra?: Partial<ReturnType<typeof useSkillStore.getState>>) {
     isLoading: false,
     reload: vi.fn().mockResolvedValue(undefined),
     upload: vi.fn().mockResolvedValue(undefined),
+    installMarketplace: vi.fn().mockResolvedValue(undefined),
     uninstall: vi.fn().mockResolvedValue(undefined),
     setSkillEnabled: vi.fn().mockResolvedValue(undefined),
     ...extra,
@@ -62,8 +79,16 @@ describe('SkillCenterPage', () => {
     createConversationFromSkillMock.mockClear()
     openDialogMock.mockReset()
     askDialogMock.mockReset()
+    tauriMock.listMarketplaceSkills.mockReset()
+    tauriMock.listMarketplaceSkills.mockResolvedValue({
+      items: [MARKET_NEW, MARKET_ADDED],
+      total: 2,
+      page: 1,
+      size: 100,
+    })
     seedStore()
-    useUiStore.setState({ route: { kind: 'skill-center' }, settingsModal: null })
+    useAuthStore.setState({ isLoggedIn: true })
+    useUiStore.setState({ route: { kind: 'skill-center' }, settingsModal: null, pendingSkill: null })
   })
 
   it('顶栏渲染标题、技能数量徽章和搜索框', () => {
@@ -199,35 +224,79 @@ describe('SkillCenterPage', () => {
     expect(screen.queryByText('创建技能')).toBeNull()
   })
 
-  it('加载中显示状态文案', () => {
-    seedStore({ skills: [], isLoading: true })
+  it('加载中显示状态文案', async () => {
+    tauriMock.listMarketplaceSkills.mockReturnValueOnce(new Promise(() => {}))
+    seedStore({ skills: [], isLoading: false })
 
     render(<SkillCenterPage />)
 
-    expect(screen.getByText('正在加载技能...')).toBeInTheDocument()
+    expect(await screen.findByText('正在加载技能...')).toBeInTheDocument()
   })
 
   it('加载失败显示错误和重试按钮', async () => {
-    const reload = vi.fn().mockRejectedValue(new Error('backend down'))
+    tauriMock.listMarketplaceSkills.mockRejectedValueOnce(new Error('market down'))
+    const reload = vi.fn().mockResolvedValue(undefined)
     seedStore({ skills: [], reload })
 
     render(<SkillCenterPage />)
 
     await waitFor(() => expect(screen.getByText('技能加载失败')).toBeInTheDocument())
-    expect(screen.getByText('backend down')).toBeInTheDocument()
+    expect(screen.getByText('market down')).toBeInTheDocument()
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: '重试' }))
     })
-    expect(reload).toHaveBeenCalledTimes(2)
+    expect(tauriMock.listMarketplaceSkills).toHaveBeenCalledTimes(2)
   })
 
-  it('市场视图只提供添加使用入口，不展示关闭开关', () => {
+  it('market view reads marketplace API and shows add or added only', async () => {
     render(<SkillCenterPage />)
 
-    expect(screen.getByText('企业制度问答')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '添加并使用 企业制度问答' })).toBeInTheDocument()
-    expect(screen.queryByRole('switch', { name: /企业制度问答/ })).toBeNull()
+    expect(await screen.findByText('深入研究')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '添加 深入研究' })).toBeInTheDocument()
+    expect(screen.getByText('本地日报')).toBeInTheDocument()
+    expect(screen.getByText('已添加')).toBeInTheDocument()
+    expect(screen.queryByRole('switch')).toBeNull()
     expect(screen.queryByText('已关闭')).toBeNull()
+    expect(screen.queryByText('去对话')).toBeNull()
+  })
+
+  it('does not keep duplicate-plugin market cards after switching tabs', async () => {
+    tauriMock.listMarketplaceSkills.mockResolvedValueOnce({
+      items: [
+        { ...MARKET_NEW, id: 201, pluginId: 'duplicate-market', name: 'Duplicate v1', version: '1.0' },
+        { ...MARKET_NEW, id: 202, pluginId: 'duplicate-market', name: 'Duplicate v2', version: '2.0' },
+      ],
+      total: 2,
+      page: 1,
+      size: 100,
+    })
+    const { container } = render(<SkillCenterPage />)
+
+    await waitFor(() => {
+      expect(container.querySelectorAll('[data-aijia-skill-id="duplicate-market"]').length).toBe(2)
+    })
+    fireEvent.click(container.querySelector('[data-aijia-skill-tab="builtin"]')!)
+
+    await waitFor(() => expect(container.querySelector('[data-aijia-skill-id="create-skill"]')).toBeInTheDocument())
+    expect(container.querySelector('[data-aijia-skill-id="duplicate-market"]')).toBeNull()
+    expect(container.querySelector('[data-aijia-skill-market-action="add"]')).toBeNull()
+  })
+
+  it('market add installs package and prepares one pending skill chip', async () => {
+    const installMarketplace = vi.fn().mockResolvedValue(undefined)
+    seedStore({ installMarketplace })
+    render(<SkillCenterPage />)
+
+    const addButton = await screen.findByRole('button', { name: '添加 深入研究' })
+    fireEvent.click(addButton)
+
+    await waitFor(() => expect(installMarketplace).toHaveBeenCalledWith(101, 'deep-research'))
+    expect(useUiStore.getState().pendingSkill).toEqual({
+      id: 'deep-research',
+      label: '深入研究',
+      trigger: '/deep-research',
+    })
+    expect(useUiStore.getState().route).toEqual({ kind: 'home' })
   })
 
   it('已安装视图展示关闭开关并调用 setSkillEnabled', async () => {

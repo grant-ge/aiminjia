@@ -2,7 +2,7 @@ import { create } from 'zustand'
 
 import type { SkillCategoryId } from '@/data/skill-categories'
 import { isSkillEnabled } from '@/lib/skillAvailability'
-import { installCustomSkill, listSkills, setSkillEnabled as setSkillEnabledIpc, uninstallCustomSkill, type SkillInfo } from '@/lib/tauri'
+import { installCustomSkill, installMarketplaceSkill, listSkills, setSkillEnabled as setSkillEnabledIpc, uninstallCustomSkill, type SkillInfo } from '@/lib/tauri'
 
 export { isSkillEnabled } from '@/lib/skillAvailability'
 
@@ -92,6 +92,7 @@ interface SkillState {
   getById: (id: string) => SkillInfo | null
   reload: () => Promise<void>
   install: (id: string) => Promise<void>
+  installMarketplace: (packageId: number, pluginId: string) => Promise<void>
   uninstall: (id: string) => Promise<void>
   upload: (sourcePath: string, force?: boolean) => Promise<void>
   setSkillEnabled: (skillId: string, enabled: boolean) => Promise<void>
@@ -126,6 +127,10 @@ export const useSkillStore = create<SkillState>((set, get) => ({
   },
   async install() {
     throw new Error('技能市场即将开放')
+  },
+  async installMarketplace(packageId, pluginId) {
+    await installMarketplaceSkill(packageId, pluginId)
+    await get().reload()
   },
   async uninstall(id) {
     await uninstallCustomSkill(id)
