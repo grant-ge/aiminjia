@@ -1341,3 +1341,40 @@ PDF 不在前端 `generatedFileActions.PREVIEWABLE_FILE_TYPES` 白名单（同�
 - Agent 工具结果 JSON 中不含 `task_type == "local_bash"`
 - Agent 工具结果 JSON 中不含 `assistant_auto_backgrounded == false`
 - 第一次 assistant 回复不应等到 `aijia-agent-auto-bg-030` 出现后才返回
+
+## 意图-对话-031: 后台同事完成后，自动续聊
+
+### 场景
+
+用户把一个后台同事任务交给 AI 后，不再继续追问。期望后台同事完成时，主对话能被系统通知唤醒并继续回复，而不是必须等用户再发一条消息才消费完成通知。
+
+### 操作步骤
+
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 打开新对话：`tauri-pilot aijia new-task`
+3. 通过 `tauri-pilot aijia where --json` 记录 `{scope}` 和 `{conversationId}`
+4. 发送消息：请严格调用 Agent 工具一次创建后台同事任务：`subagent_type` 使用 `general-purpose`；`run_in_background` 设置为 `true`；Agent 的 prompt 写成：不要调用任何工具，不要解释，只返回一行固定文本 `aijia-agent-bg-wake-031`。Agent 工具返回后，只把其中 `task_id` 原样告诉我；不要调用 TaskList，不要调用 TaskOutput，不要等待子任务自然结束。
+5. 等待 assistant 在 45 秒内回复，并记录后台同事任务的 `{taskId}`。
+6. 不再发送任何用户消息，继续等待 60 秒。
+7. 检查 `~/.renlijia/users/{scope}/conversations/{conversationId}/messages.jsonl`。
+
+### 验收标准
+
+应该看到：
+
+- `messages.jsonl` 中出现 `name == "Agent"` 的 tool call
+- 该 `Agent` tool call 的 `arguments.run_in_background == true`
+- Agent 工具结果 JSON 中 `status == "async_launched"` 或 `assistant_auto_backgrounded == true`
+- Agent 工具结果 JSON 中 `task_type == "local_agent"`
+- Agent 工具结果 JSON 中 `task_id == "{taskId}"`
+- `messages.jsonl` 中出现包含 `<task-notification>` 的 user 记录
+- 该 `<task-notification>` 记录中包含 `<task-id>{taskId}</task-id>`
+- 该 `<task-notification>` 记录中包含 `<result>aijia-agent-bg-wake-031</result>`
+- 在 `<task-notification>` 记录之后出现 assistant 记录
+- 该 assistant 记录的正文包含 `aijia-agent-bg-wake-031`
+
+不应该看到：
+
+- 发送步骤 4 之后，`messages.jsonl` 中出现第二条真实用户追问文本
+- `<task-notification>` 记录之后的 assistant 记录中出现 `No task found`
+- `<task-notification>` 记录之后的 assistant 记录里先调用 `TaskOutput` 才回答
