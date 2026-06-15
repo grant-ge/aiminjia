@@ -31,6 +31,8 @@ cargo install --path crates/tauri-pilot-cli --force
 
 2026-06-10 复核当前 `tauri-pilot aijia --help`：已有 `goto skill-center`、`skill-import-queue`、`skill-import-open`、`skill-import-pick`、`skill-cards`，但还没有覆盖技能中心启用状态改造所需的市场、开关、详情、聊天入口和同步原子命令。`docs/test-intents/spec/tasks/技能/rules.md` 的意图 16-26 在这些命令补齐前只能标记为 `CLI gap`，不能把人工点击或 generic eval 当成稳定 L4 结果。
 
+2026-06-15 补充：lotus-app 已补齐本场景所需的大部分 WebView DOM selector 前置，包括技能中心页签、技能卡片 enabled 状态、市场添加按钮、开关、详情页根节点/动作按钮、聊天技能 picker 项。`tauri-pilot aijia` 仍缺下表的原子命令；下一步应在 sibling `../tauri-pilot/` 仓库按这些 selector 封装命令，而不是在意图测试里绕回 generic eval。
+
 | CLI | 原子动作 | 参数 | 返回/断言字段 |
 |---|---|---|---|
 | `aijia skill-center-open` | 打开技能中心 | 无；可以先作为 `goto skill-center` 的语义别名实现 | `{ok, route}` |

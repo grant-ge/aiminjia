@@ -115,6 +115,7 @@ export function SkillDetailPage({ skillId }: SkillDetailPageProps) {
       ? () => void handleSetEnabled(false)
       : goToSkillCenter
     : undefined
+  const secondaryAction = manageable ? (enabled ? 'disable' : 'keep-disabled') : undefined
 
   return (
     <PageSectionShell
@@ -129,6 +130,12 @@ export function SkillDetailPage({ skillId }: SkillDetailPageProps) {
         />
       }
     >
+      <div
+        data-aijia-skill-detail
+        data-aijia-skill-id={skill.id}
+        data-aijia-skill-enabled={String(enabled)}
+        className="contents"
+      >
       <SkillDetailHero
         title={localized.name}
         subtitle={localized.description || `通过命令 ${trigger} 快速调用`}
@@ -140,6 +147,7 @@ export function SkillDetailPage({ skillId }: SkillDetailPageProps) {
                 <Switch
                   checked={enabled}
                   disabled={isChangingEnabled}
+                  data-aijia-skill-toggle={skill.id}
                   aria-label={`${localized.name} 技能开关`}
                   onCheckedChange={(next) => void handleSetEnabled(next)}
                 />
@@ -151,6 +159,7 @@ export function SkillDetailPage({ skillId }: SkillDetailPageProps) {
               onPrimary={() => void handleUseSkill()}
               secondaryLabel={secondaryLabel}
               onSecondary={handleSecondary}
+              secondaryAction={secondaryAction}
             />
           </div>
         }
@@ -187,6 +196,7 @@ export function SkillDetailPage({ skillId }: SkillDetailPageProps) {
               : '本地安装技能可以重新导入新版 SKILL 包完成更新。',
         ]}
       />
+      </div>
     </PageSectionShell>
   )
 }

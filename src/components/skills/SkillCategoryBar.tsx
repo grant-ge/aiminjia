@@ -7,17 +7,20 @@ interface SkillCategoryBarProps {
   items: SkillCategoryItem[]
   activeKey: string
   onSelect: (key: string) => void
+  itemDataAttribute?: string
 }
 
-export function SkillCategoryBar({ items, activeKey, onSelect }: SkillCategoryBarProps) {
+export function SkillCategoryBar({ items, activeKey, onSelect, itemDataAttribute }: SkillCategoryBarProps) {
   return (
     <div className="flex w-full min-w-0 items-center gap-1 overflow-x-auto overflow-y-hidden rounded-md bg-card p-1">
       {items.map((it) => {
         const active = it.key === activeKey
+        const dataAttrs = itemDataAttribute ? { [itemDataAttribute]: it.key } : {}
         return (
           <button
             key={it.key}
             type="button"
+            {...dataAttrs}
             onClick={() => onSelect(it.key)}
             className={
               active

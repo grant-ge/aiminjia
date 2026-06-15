@@ -72,22 +72,15 @@ export function SkillPopoverPanel({ items, onPick, onClose }: SkillPopoverPanelP
     return ranked.map((r) => r.item)
   }, [items, query])
 
-  // Reset / clamp highlight whenever the filtered list shape changes (search input changes).
-  useEffect(() => {
-    setActiveIndex((prev) => {
-      if (filtered.length === 0) return 0
-      if (prev > filtered.length - 1) return 0
-      return prev
-    })
-  }, [filtered.length])
+  const safeActiveIndex = filtered.length === 0 ? 0 : Math.min(activeIndex, filtered.length - 1)
 
   // Keep highlighted row visible during keyboard navigation.
   useEffect(() => {
     const list = listRef.current
     if (!list) return
-    const row = list.querySelector<HTMLElement>(`[data-skill-index="${activeIndex}"]`)
+    const row = list.querySelector<HTMLElement>(`[data-skill-index="${safeActiveIndex}"]`)
     row?.scrollIntoView?.({ block: 'nearest' })
-  }, [activeIndex])
+  }, [safeActiveIndex])
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (event.key === 'ArrowDown') {
@@ -100,7 +93,7 @@ export function SkillPopoverPanel({ items, onPick, onClose }: SkillPopoverPanelP
       setActiveIndex((prev) => (prev - 1 + filtered.length) % filtered.length)
     } else if (event.key === 'Enter') {
       event.preventDefault()
-      const target = filtered[activeIndex]
+      const target = filtered[safeActiveIndex]
       if (target) onPick(target.id)
     } else if (event.key === 'Escape') {
       event.preventDefault()
@@ -152,7 +145,7 @@ export function SkillPopoverPanel({ items, onPick, onClose }: SkillPopoverPanelP
             className="flex flex-col py-1"
           >
             {filtered.map((it, idx) => {
-              const isActive = idx === activeIndex
+              const isActive = idx === safeActiveIndex
               const Icon = getSkillIconComponent(it.icon)
               const iconBg = getSkillCategoryBg(it.category)
               return (
@@ -162,6 +155,8 @@ export function SkillPopoverPanel({ items, onPick, onClose }: SkillPopoverPanelP
                     role="option"
                     aria-selected={isActive}
                     data-skill-index={idx}
+                    data-aijia-skill-picker-item="true"
+                    data-aijia-skill-id={it.id}
                     data-active={isActive ? 'true' : undefined}
                     onMouseEnter={() => setActiveIndex(idx)}
                     onClick={() => onPick(it.id)}

@@ -510,6 +510,7 @@ export function SkillCenterPage() {
           <SkillCategoryBar
             items={viewItems}
             activeKey={view}
+            itemDataAttribute="data-aijia-skill-tab"
             onSelect={(key) => setView(key as SkillCenterView)}
           />
         }
@@ -591,12 +592,16 @@ export function SkillCenterPage() {
                 version={skill.version}
                 skillId={skill.id}
                 skillSource={skill.source}
+                skillEnabled={enabled}
+                marketCard={marketSkill}
+                marketInstalled={!marketSkill}
                 onClick={() => setRoute({ kind: 'skill-detail', skillId: skill.id })}
                 actionsSlot={
                   marketSkill ? (
                     <Button
                       size="sm"
                       variant="outline"
+                      data-aijia-skill-market-action="add"
                       aria-label={`添加并使用 ${localized.name}`}
                       onClick={() => handleUseSkill(skill)}
                     >
@@ -608,6 +613,7 @@ export function SkillCenterPage() {
                         <Switch
                           checked={enabled}
                           disabled={enablementChangingId === skill.id}
+                          data-aijia-skill-toggle={skill.id}
                           aria-label={`${localized.name} 技能开关`}
                           onCheckedChange={(next) => void handleSetSkillEnabled(skill, next)}
                         />

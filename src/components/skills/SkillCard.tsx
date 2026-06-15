@@ -20,9 +20,12 @@ interface SkillCardProps {
   skillId?: string
   /** Skill source (`builtin` / `user`)—used for e2e selectors. */
   skillSource?: string
+  skillEnabled?: boolean
+  marketCard?: boolean
+  marketInstalled?: boolean
 }
 
-export function SkillCard({ title, meta, desc, iconNode, iconBg = 'bg-brand-primary-subtle', onClick, size = 'office', actionsSlot, version, skillId, skillSource }: SkillCardProps) {
+export function SkillCard({ title, meta, desc, iconNode, iconBg = 'bg-brand-primary-subtle', onClick, size = 'office', actionsSlot, version, skillId, skillSource, skillEnabled, marketCard, marketInstalled }: SkillCardProps) {
   const isHot = size === 'hot'
   const height = isHot ? 'min-h-[156px]' : 'min-h-[140px]'
   const iconSize = isHot ? 'h-11 w-11' : 'h-10 w-10'
@@ -47,6 +50,9 @@ export function SkillCard({ title, meta, desc, iconNode, iconBg = 'bg-brand-prim
       data-aijia-skill-card
       data-aijia-skill-id={skillId}
       data-aijia-skill-source={skillSource}
+      data-aijia-skill-enabled={skillEnabled === undefined ? undefined : String(skillEnabled)}
+      data-aijia-skill-market-card={marketCard ? 'true' : undefined}
+      data-aijia-skill-installed={marketInstalled === undefined ? undefined : String(marketInstalled)}
       {...interactiveProps}
       className={`group relative flex ${height} flex-col rounded-md border border-border bg-card p-4 shadow-[var(--shadow-card)] transition-all duration-150 ${interactiveClass}`}
     >
