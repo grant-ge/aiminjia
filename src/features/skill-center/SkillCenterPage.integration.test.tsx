@@ -260,11 +260,62 @@ describe('SkillCenterPage', () => {
     expect(screen.queryByText('去对话')).toBeNull()
   })
 
-  it('does not keep duplicate-plugin market cards after switching tabs', async () => {
+  it('dedupes market packages by plugin id and keeps the best package card', async () => {
     tauriMock.listMarketplaceSkills.mockResolvedValueOnce({
       items: [
-        { ...MARKET_NEW, id: 201, pluginId: 'duplicate-market', name: 'Duplicate v1', version: '1.0' },
-        { ...MARKET_NEW, id: 202, pluginId: 'duplicate-market', name: 'Duplicate v2', version: '2.0' },
+        { ...MARKET_NEW, id: 201, pluginId: 'html-ppt', name: 'html-ppt', version: '0.5', scope: 'public' },
+        { ...MARKET_NEW, id: 202, pluginId: 'html-ppt', name: 'html-ppt', version: '0.6', scope: 'public' },
+        { ...MARKET_NEW, id: 203, pluginId: 'html-ppt', name: 'html-ppt', version: '0.4', scope: 'public' },
+        { ...MARKET_NEW, id: 204, pluginId: 'tenant-priority', name: 'Tenant Priority', version: '1.0', scope: 'tenant' },
+        { ...MARKET_NEW, id: 205, pluginId: 'tenant-priority', name: 'Tenant Priority', version: '2.0', scope: 'public' },
+      ],
+      total: 5,
+      page: 1,
+      size: 100,
+    })
+    const { container } = render(<SkillCenterPage />)
+
+    await waitFor(() => {
+      expect(container.querySelectorAll('[data-aijia-skill-id="html-ppt"]').length).toBe(1)
+    })
+    const htmlPptCard = container.querySelector('[data-aijia-skill-id="html-ppt"]')
+    expect(htmlPptCard?.querySelector('[data-testid="skill-card-version"]')?.textContent).toBe('0.6')
+
+    const tenantCard = container.querySelector('[data-aijia-skill-id="tenant-priority"]')
+    expect(tenantCard).toHaveAttribute('data-aijia-skill-source', 'tenant')
+    expect(tenantCard?.querySelector('[data-testid="skill-card-version"]')?.textContent).toBe('1.0')
+
+    fireEvent.click(container.querySelector('[data-aijia-skill-tab="builtin"]')!)
+
+    await waitFor(() => expect(container.querySelector('[data-aijia-skill-id="create-skill"]')).toBeInTheDocument())
+    expect(container.querySelector('[data-aijia-skill-id="html-ppt"]')).toBeNull()
+    expect(container.querySelector('[data-aijia-skill-market-action="add"]')).toBeNull()
+  })
+
+  it('uses the installed local version on an already-added market card', async () => {
+    seedStore({
+      skills: [
+        REC1,
+        REC2,
+        REC3,
+        REC4,
+        CORE_SKILL,
+        TENANT_SKILL,
+        USER_SKILL,
+        {
+          ...USER_SKILL,
+          id: 'html-ppt',
+          displayName: 'html-ppt',
+          description: 'installed html ppt',
+          version: '0.5',
+          enabled: true,
+        },
+      ],
+    })
+    tauriMock.listMarketplaceSkills.mockResolvedValueOnce({
+      items: [
+        { ...MARKET_NEW, id: 301, pluginId: 'html-ppt', name: 'html-ppt', version: '0.6', scope: 'public' },
+        { ...MARKET_NEW, id: 302, pluginId: 'html-ppt', name: 'html-ppt', version: '0.5', scope: 'public' },
       ],
       total: 2,
       page: 1,
@@ -273,13 +324,13 @@ describe('SkillCenterPage', () => {
     const { container } = render(<SkillCenterPage />)
 
     await waitFor(() => {
-      expect(container.querySelectorAll('[data-aijia-skill-id="duplicate-market"]').length).toBe(2)
+      expect(container.querySelectorAll('[data-aijia-skill-id="html-ppt"]').length).toBe(1)
     })
-    fireEvent.click(container.querySelector('[data-aijia-skill-tab="builtin"]')!)
-
-    await waitFor(() => expect(container.querySelector('[data-aijia-skill-id="create-skill"]')).toBeInTheDocument())
-    expect(container.querySelector('[data-aijia-skill-id="duplicate-market"]')).toBeNull()
-    expect(container.querySelector('[data-aijia-skill-market-action="add"]')).toBeNull()
+    const card = container.querySelector('[data-aijia-skill-id="html-ppt"]')
+    expect(card).toHaveAttribute('data-aijia-skill-installed', 'true')
+    expect(card?.querySelector('[data-testid="skill-card-version"]')?.textContent).toBe('0.5')
+    expect(card?.querySelector('[data-aijia-skill-market-action="added"]')).toBeInTheDocument()
+    expect(card?.querySelector('[data-aijia-skill-market-action="add"]')).toBeNull()
   })
 
   it('market add installs package and prepares one pending skill chip', async () => {

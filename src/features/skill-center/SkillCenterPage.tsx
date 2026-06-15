@@ -41,6 +41,56 @@ function getSkillIcon(icon: string) {
   return <Icon className="h-4 w-4 text-primary-foreground" />
 }
 
+function compareVersionText(a?: string | null, b?: string | null) {
+  const left = (a || '').trim()
+  const right = (b || '').trim()
+  if (left === right) return 0
+  if (!left) return -1
+  if (!right) return 1
+
+  const leftParts = left.split(/[._-]/)
+  const rightParts = right.split(/[._-]/)
+  const len = Math.max(leftParts.length, rightParts.length)
+  for (let i = 0; i < len; i += 1) {
+    const lp = leftParts[i] ?? '0'
+    const rp = rightParts[i] ?? '0'
+    const ln = Number(lp)
+    const rn = Number(rp)
+    if (Number.isFinite(ln) && Number.isFinite(rn) && ln !== rn) {
+      return ln - rn
+    }
+    if (lp !== rp) {
+      return lp.localeCompare(rp)
+    }
+  }
+  return 0
+}
+
+function marketScopeRank(item: MarketplaceSkillItem) {
+  return item.scope === 'tenant' ? 2 : 1
+}
+
+function shouldReplaceMarketItem(current: MarketplaceSkillItem, candidate: MarketplaceSkillItem) {
+  const scopeDelta = marketScopeRank(candidate) - marketScopeRank(current)
+  if (scopeDelta !== 0) return scopeDelta > 0
+
+  const versionDelta = compareVersionText(candidate.version, current.version)
+  if (versionDelta !== 0) return versionDelta > 0
+
+  return candidate.id > current.id
+}
+
+function dedupeMarketItems(items: MarketplaceSkillItem[]) {
+  const byPluginId = new Map<string, MarketplaceSkillItem>()
+  for (const item of items) {
+    const current = byPluginId.get(item.pluginId)
+    if (!current || shouldReplaceMarketItem(current, item)) {
+      byPluginId.set(item.pluginId, item)
+    }
+  }
+  return Array.from(byPluginId.values())
+}
+
 export function SkillCenterPage() {
   const { t, i18n } = useTranslation()
   const [view, setView] = useState<SkillCenterView>('market')
@@ -456,10 +506,11 @@ export function SkillCenterPage() {
     .filter((skill) => skillMatchesCenterView(skill, view))
     .filter(matchesQuery)
 
-  const installedSkillIds = useMemo(() => new Set(skills.map((skill) => skill.id)), [skills])
+  const installedSkillsById = useMemo(() => new Map(skills.map((skill) => [skill.id, skill])), [skills])
   const marketSkills = useMemo(() => {
-    if (!normalizedQuery) return marketItems
-    return marketItems.filter((item) =>
+    const uniqueItems = dedupeMarketItems(marketItems)
+    if (!normalizedQuery) return uniqueItems
+    return uniqueItems.filter((item) =>
       [
         item.name,
         item.pluginId,
@@ -631,7 +682,8 @@ export function SkillCenterPage() {
           )
         ) : view === 'market' ? (
           marketSkills.map((item) => {
-            const installed = installedSkillIds.has(item.pluginId)
+            const installedSkill = installedSkillsById.get(item.pluginId)
+            const installed = Boolean(installedSkill)
             return (
               <SkillCard
                 key={`${item.id}:${item.pluginId}`}
@@ -640,7 +692,7 @@ export function SkillCenterPage() {
                 desc={item.description}
                 iconNode={getSkillIcon(item.icon)}
                 iconBg={getSkillCategoryBg(item.category)}
-                version={item.version}
+                version={installedSkill?.version ?? item.version}
                 skillId={item.pluginId}
                 skillSource={item.scope === 'tenant' ? 'tenant' : 'global'}
                 marketCard
