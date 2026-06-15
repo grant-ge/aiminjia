@@ -26,6 +26,8 @@ Writeback queue 的目标是让“还没补完”有明确状态，而不是在�
 | WB-2026-06-04-005 | Release / signing pipeline | P3 | deferred | 未派发 | `.understand-anything/enhancements/release-signing-pipeline.json` | P1/P2 完成后再补，避免本轮过宽 |
 | WB-2026-06-04-006 | Storage / workspace / path auth / file preview | P1 | candidate | 未派发 / tag-intake | `.understand-anything/enhancements/storage-app-data-contract.json` | 基于目标 main 源码补 app data root contract enhancement，更新 runtime/source/coverage/log 并通过校验 |
 | WB-2026-06-04-007 | Managed runtime supply chain | P1 | candidate | 未派发 / tag-intake | `.understand-anything/enhancements/managed-runtime-cache-reinstall.json` | 基于目标 main 源码补 runtime cache reinstall / bundled fallback 行为，更新 runtime-map/coverage/log 并通过校验 |
+| WB-2026-06-15-001 | Shell auto-background / background task IO | P1 | validated | Dirac + Lagrange + Russell / gpt-5.3-codex-spark + gpt-5.4 + gpt-5.4-mini | `.understand-anything/enhancements/runtime-shell-auto-background.json` | enhancement 已合并，runtime-map/coverage/index/log 已更新并通过 RepoWiki 校验 |
+| WB-2026-06-15-002 | Agent foreground auto-background target gap | P1 | candidate | 主线程 + Dirac + Lagrange + Russell / gpt-5.3-codex-spark + gpt-5.4 + gpt-5.4-mini | `.understand-anything/enhancements/runtime-agent-foreground-auto-background-gap.json`, 后续 runtime 实现与测试 | 当前已记录目标语义和源码缺口；关闭需要实现 foreground Agent promotion 并补回归测试 |
 
 ## Active Queue Details
 
@@ -76,6 +78,22 @@ Writeback queue 的目标是让“还没补完”有明确状态，而不是在�
 - Engineering question: 运行时依赖缺失、缓存损坏、用户安装过的 runtime package 被误覆盖、manifest 下载失败或 bundled fallback 触发时，`RuntimeManager` 如何决定保留现有 cache、从 bundled runtime bootstrap、还是执行 reinstall。
 - Current boundary: 当前 wiki 工作树不在 local `main`；补 enhancement 前应在目标 main 上读取源码和测试，确认 `current_cache_result_if_available`、`install_from_bundled_fallback`、`ensure_managed`、`reinstall_managed` 与 runtime Tauri commands 的真实链路。
 - Evidence from tag intake: `git grep main current_cache_result_if_available -- src-tauri/src/runtime/dependencies src-tauri/tests`、`git show main:src-tauri/tests/runtime_dependencies_manager_test.rs`。
+
+### WB-2026-06-15-001
+
+- Trigger: 用户要求补充“agent 前台运行之后自动转化为后台”能力，并要求先了解当前项目、参考 Claude code best 全链路、派多个指定模型交叉验证。
+- Engineering question: 当前 AIjia 中哪些链路已经具备“前台运行后自动转后台”，后台化后 task id、输出读取、停止、完成通知如何闭环，哪些地方不能从 Claude code best 直接照搬。
+- Current boundary: 当前源码能证明 Bash/PowerShell shell tool 具备 foreground -> LocalBash background handoff；`SpawnSubagent`/Agent 仍是 `run_in_background` 显式 async，不具备用户期望的前台 Agent 自动升后台。
+- Cross-check note: Dirac 确认当前实现边界，Lagrange 对标 `C:\Users\Administrator\Desktop\github\claude-code-best` 的 Agent/Task/notification 链路，Russell 确认现有图谱缺口与应新建 enhancement。
+- Execution note: 新增 `runtime-shell-auto-background.json`，同步 `runtime-map.md`、`coverage-manifest.md`、`index.md` 和 `log.md`；Claude code best 只作为对标参考，不写入 current-source evidence。
+
+### WB-2026-06-15-002
+
+- Trigger: 用户澄清期望的是“前台运行了一段时间之后自动转化为后台”的 Agent 能力，而不是一开始显式 `run_in_background=true`。
+- Engineering question: 如何让 `SpawnSubagent`/Agent 默认前台先运行，超过 blocking budget 后返回 task_id 并把同一个 run 提升为后台任务，同时保持 transcript、TaskOutput、TaskStop 和完成通知连续。
+- Current boundary: 已新增 gap enhancement 记录当前源码缺口和可复用基础设施；尚未实现 runtime promotion，也未新增 cargo 回归测试。
+- Claude code best reference: foreground Agent task、background signal、backgroundAgentTask、sidechain transcript、message queue 是目标设计参考；AIjia 需要按 Tauri/runtime store 结构重做，不能直接复制 CLI singleton/message queue。
+- Close criteria: 实现前台 Agent promotion；补测试覆盖默认前台超预算自动后台化、显式后台不变、短任务前台完成、TaskStop 可取消、TaskOutput 连续读取、完成通知注入；更新 enhancement/RepoWiki 并通过 `cargo test` 与 RepoWiki 校验。
 
 ## Intake Rule
 
