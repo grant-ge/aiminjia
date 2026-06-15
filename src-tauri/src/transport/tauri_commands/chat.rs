@@ -3284,6 +3284,7 @@ pub struct TauriChatCommandAdapter {
     runtime: SessionRuntime,
     services: TauriChatServices,
     stopped_conversations_pending_drain: Arc<Mutex<HashSet<String>>>,
+    task_notification_resume_inflight: Arc<Mutex<HashSet<String>>>,
     im_app_feedback: Option<Arc<IMAppFeedbackCoordinator>>,
 }
 
@@ -3622,6 +3623,7 @@ impl TauriChatCommandAdapter {
             runtime,
             services,
             stopped_conversations_pending_drain: Arc::new(Mutex::new(HashSet::new())),
+            task_notification_resume_inflight: Arc::new(Mutex::new(HashSet::new())),
             im_app_feedback: None,
         }
     }
@@ -3675,6 +3677,132 @@ impl TauriChatCommandAdapter {
                 }
             });
         }
+    }
+
+    fn request_task_notification_resume_after_turn(&self, conversation_id: &str) {
+        let Some(queue) = self
+            .services
+            .app
+            .try_state::<Arc<crate::runtime::agent::task_notification::TaskNotificationQueue>>()
+        else {
+            return;
+        };
+        let session_id = crate::runtime::ids::SessionId::new(conversation_id.to_string());
+        if queue.pending_count_for_session(&session_id) > 0 {
+            log::info!(
+                "[task_notification_wake] pending notification(s) remain after turn; requesting resume conv={}",
+                conversation_id
+            );
+            queue.request_wake_for_session(session_id);
+        }
+    }
+
+    fn schedule_task_notification_resume(
+        self: Arc<Self>,
+        session_id: crate::runtime::ids::SessionId,
+        reason: &'static str,
+    ) {
+        let conversation_id = session_id.as_str().to_string();
+        {
+            let mut guard = self
+                .task_notification_resume_inflight
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if !guard.insert(conversation_id.clone()) {
+                log::debug!(
+                    "[task_notification_wake] resume already scheduled conv={} reason={}",
+                    conversation_id,
+                    reason
+                );
+                return;
+            }
+        }
+
+        tauri::async_runtime::spawn(async move {
+            let clear_inflight = |adapter: &Self, conversation_id: &str| {
+                adapter
+                    .task_notification_resume_inflight
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .remove(conversation_id);
+            };
+
+            for _ in 0..300 {
+                if !self.services.gateway.is_conversation_busy(&conversation_id) {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            }
+
+            if self.services.gateway.is_conversation_busy(&conversation_id) {
+                log::warn!(
+                    "[task_notification_wake] timed out waiting for idle conversation; pending notification will remain queued conv={} reason={}",
+                    conversation_id,
+                    reason
+                );
+                clear_inflight(&self, &conversation_id);
+                return;
+            }
+
+            let Some(queue) = self
+                .services
+                .app
+                .try_state::<Arc<crate::runtime::agent::task_notification::TaskNotificationQueue>>(
+                )
+            else {
+                log::warn!(
+                    "[task_notification_wake] TaskNotificationQueue missing when resume fired conv={}",
+                    conversation_id
+                );
+                clear_inflight(&self, &conversation_id);
+                return;
+            };
+
+            if queue.pending_count_for_session(&session_id) == 0 {
+                log::debug!(
+                    "[task_notification_wake] no pending notifications left; skipping resume conv={} reason={}",
+                    conversation_id,
+                    reason
+                );
+                clear_inflight(&self, &conversation_id);
+                return;
+            }
+
+            log::info!(
+                "[task_notification_wake] spawning resume turn conv={} reason={}",
+                conversation_id,
+                reason
+            );
+            let req = ChatTurnRequest::new(
+                session_id.clone(),
+                "__resume_from_task_notification__".to_string(),
+                Vec::new(),
+            );
+            let resume_ok = match self.send_chat_request(req).await {
+                Ok(()) => {
+                    log::info!(
+                        "[task_notification_wake] resume turn completed conv={}",
+                        conversation_id
+                    );
+                    true
+                }
+                Err(e) => {
+                    log::warn!(
+                        "[task_notification_wake] resume turn rejected conv={} reason={}: {}",
+                        conversation_id,
+                        reason,
+                        e
+                    );
+                    false
+                }
+            };
+
+            clear_inflight(&self, &conversation_id);
+            if resume_ok && queue.pending_count_for_session(&session_id) > 0 {
+                self.clone()
+                    .schedule_task_notification_resume(session_id, "post-resume-pending");
+            }
+        });
     }
 
     async fn load_llm_settings_for_turn(
@@ -4009,6 +4137,43 @@ impl TauriChatCommandAdapter {
         }
     }
 
+    pub fn wire_task_notification_wake_to_self(self: &Arc<Self>) {
+        let Some(queue) = self
+            .services
+            .app
+            .try_state::<Arc<crate::runtime::agent::task_notification::TaskNotificationQueue>>()
+        else {
+            log::warn!(
+                "[task_notification_wake] TaskNotificationQueue not in app state — \
+                 async sub-agent completion will wait for the next user turn"
+            );
+            return;
+        };
+        let weak_self = Arc::downgrade(self);
+        let installed = queue.set_wake_fn(Arc::new(
+            move |session_id: crate::runtime::ids::SessionId| {
+                let Some(adapter) = weak_self.upgrade() else {
+                    log::warn!(
+                        "[task_notification_wake] adapter dropped — skipping resume conv={}",
+                        session_id.as_str()
+                    );
+                    return;
+                };
+                adapter.schedule_task_notification_resume(session_id, "queue-enqueue");
+            },
+        ));
+        if installed {
+            log::info!(
+                "[task_notification_wake] wake_fn installed — async task notifications \
+                 will spawn resume turns"
+            );
+        } else {
+            log::warn!(
+                "[task_notification_wake] wake_fn already installed; keeping previous callback"
+            );
+        }
+    }
+
     /// 暴露权限控制平面，供 IM 协调器等外部组件使用。
     pub fn permission_control_plane(
         &self,
@@ -4066,7 +4231,7 @@ impl TauriChatCommandAdapter {
             tool_registry: Some(self.services.tool_registry.clone()),
             app_settings: Some(Arc::new(AppSettings::default())),
             agent_runtime,
-            event_bus: None,
+            event_bus: Some(self.runtime.event_bus().clone()),
             skill_registry: Some(self.services.skill_registry.clone()),
             authorized_workspace: None,
             read_file_state: None,
@@ -4100,6 +4265,9 @@ impl TauriChatCommandAdapter {
         // get merged into the next turn.
         self.schedule_pending_drain_after_turn(&conversation_id)
             .await;
+        if result.is_ok() {
+            self.request_task_notification_resume_after_turn(&conversation_id);
+        }
 
         result
     }
@@ -4345,7 +4513,7 @@ impl TauriChatCommandAdapter {
             tool_registry: Some(self.services.tool_registry.clone()),
             app_settings: Some(app_settings_arc),
             agent_runtime,
-            event_bus: None,
+            event_bus: Some(self.runtime.event_bus().clone()),
             skill_registry: Some(self.services.skill_registry.clone()),
             authorized_workspace: chat_runtime_impl::load_authorized_workspace(
                 &self.services.app,
@@ -4403,6 +4571,9 @@ impl TauriChatCommandAdapter {
         // sit in the queue forever after the SentDirectly turn finishes.
         self.schedule_pending_drain_after_turn(&conversation_id)
             .await;
+        if result.is_ok() {
+            self.request_task_notification_resume_after_turn(&conversation_id);
+        }
 
         result
     }

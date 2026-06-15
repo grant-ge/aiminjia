@@ -38,9 +38,104 @@ enum ForegroundPromotionState {
     Finished,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::llm::sub_agent::SubAgentResult;
+    use crate::runtime::agent::async_task_store::{AsyncTaskHandle, AsyncTaskState};
+    use crate::runtime::agent::subagent_result_envelope::SubAgentResultEnvelope;
+    use crate::runtime::agent::task_notification::TaskNotificationQueue;
+    use crate::runtime::cancellation::CancellationToken;
+    use crate::runtime::event_bus::RuntimeEventBus;
+    use crate::runtime::events::{AgentIdleScope, RuntimeEventKind};
+    use crate::runtime::ids::{AgentId, RunId, SessionId};
+    use std::sync::Arc;
+    use tempfile::TempDir;
+
+    fn completed_result(output: &str) -> SubAgentResult {
+        SubAgentResult {
+            output: output.to_string(),
+            files: Vec::new(),
+            iterations_used: 1,
+            envelope: SubAgentResultEnvelope {
+                schema_version: 1,
+                output: output.to_string(),
+                iterations_used: 1,
+                generated_files: Vec::new(),
+                terminal_tool_results: Vec::new(),
+                transcript_snapshot: Vec::new(),
+                transcript_ref: None,
+                terminal_stop_reason: None,
+                max_tokens_recovery_attempts: 0,
+            },
+        }
+    }
+
+    #[tokio::test]
+    async fn background_completion_emits_child_agent_idle_after_enqueuing_notification() {
+        let task_store = Arc::new(AsyncAgentTaskStore::new());
+        let notif_queue = Arc::new(TaskNotificationQueue::new());
+        let event_bus = RuntimeEventBus::new();
+        let tmp = TempDir::new().expect("tempdir");
+        let agent_id = AgentId::new("agent-finished");
+        let transcript_path = tmp.path().join("agent-finished.jsonl");
+        let session_id = SessionId::new("session-finished");
+        let parent_run_id = RunId::new("run-parent");
+
+        task_store.register_anonymous(AsyncTaskHandle {
+            agent_id: agent_id.clone(),
+            state: AsyncTaskState::Running,
+            output_file: transcript_path.clone(),
+            description: "test background agent".to_string(),
+            cancel_token: CancellationToken::new(),
+        });
+
+        let ctx = SpawnBackgroundTaskCtx {
+            task_store: task_store.clone(),
+            notif_queue: notif_queue.clone(),
+            event_bus: Some(event_bus.clone()),
+            agent_id: agent_id.clone(),
+            transcript_path,
+            parent_tool_use_id: "tool-call-1".to_string(),
+            parent_session_id: session_id.clone(),
+            parent_run_id: Some(parent_run_id.clone()),
+            subagent_type: "general-purpose".to_string(),
+        };
+
+        finish_background_subagent(
+            ctx,
+            SubAgentTaskOutcome::Completed(completed_result("done")),
+        )
+        .await;
+
+        assert_eq!(
+            task_store.find_by_id(&agent_id).expect("task handle").state,
+            AsyncTaskState::Completed
+        );
+        assert_eq!(notif_queue.drain_for_session(&session_id).len(), 1);
+
+        let events = event_bus.recorded();
+        assert!(
+            events.iter().any(|event| {
+                event.session_id == session_id
+                    && event.run_id == parent_run_id
+                    && matches!(
+                        &event.kind,
+                        RuntimeEventKind::AgentIdle {
+                            agent_id: emitted_agent_id,
+                            scope: AgentIdleScope::Child,
+                        } if emitted_agent_id == &agent_id
+                    )
+            }),
+            "background completion must emit child AgentIdle so the frontend can wake the parent loop; events: {events:?}"
+        );
+    }
+}
+
 struct SpawnBackgroundTaskCtx {
     task_store: Arc<AsyncAgentTaskStore>,
     notif_queue: Arc<TaskNotificationQueue>,
+    event_bus: Option<crate::runtime::event_bus::RuntimeEventBus>,
     agent_id: AgentId,
     transcript_path: PathBuf,
     parent_tool_use_id: String,
@@ -67,7 +162,35 @@ fn panic_payload_to_string(panic_payload: Box<dyn std::any::Any + Send>) -> Stri
         .unwrap_or_else(|| "panic with non-string payload".to_string())
 }
 
-fn finish_background_subagent(ctx: SpawnBackgroundTaskCtx, outcome: SubAgentTaskOutcome) {
+async fn emit_child_agent_idle(ctx: &SpawnBackgroundTaskCtx) {
+    let Some(event_bus) = ctx.event_bus.as_ref() else {
+        return;
+    };
+    let Some(parent_run_id) = ctx.parent_run_id.clone() else {
+        log::debug!(
+            "[spawn_subagent async {}] no parent run id; skipping child AgentIdle event",
+            ctx.agent_id.as_str()
+        );
+        return;
+    };
+
+    let event = crate::runtime::events::RuntimeEvent::new(
+        ctx.parent_session_id.clone(),
+        parent_run_id,
+        crate::runtime::events::RuntimeEventKind::AgentIdle {
+            agent_id: ctx.agent_id.clone(),
+            scope: crate::runtime::events::AgentIdleScope::Child,
+        },
+    );
+    if let Err(e) = event_bus.emit(event).await {
+        log::warn!(
+            "[spawn_subagent async {}] emit child AgentIdle failed: {e}",
+            ctx.agent_id.as_str()
+        );
+    }
+}
+
+async fn finish_background_subagent(ctx: SpawnBackgroundTaskCtx, outcome: SubAgentTaskOutcome) {
     if matches!(
         ctx.task_store
             .find_by_id(&ctx.agent_id)
@@ -107,11 +230,12 @@ fn finish_background_subagent(ctx: SpawnBackgroundTaskCtx, outcome: SubAgentTask
             ctx.notif_queue.enqueue(
                 ctx.agent_id.as_str(),
                 xml,
-                ctx.parent_session_id,
-                ctx.parent_run_id,
+                ctx.parent_session_id.clone(),
+                ctx.parent_run_id.clone(),
             );
             ctx.task_store
                 .update_state(&ctx.agent_id, AsyncTaskState::Completed);
+            emit_child_agent_idle(&ctx).await;
         }
         SubAgentTaskOutcome::Failed(err_str) => {
             log::warn!(
@@ -143,11 +267,12 @@ fn finish_background_subagent(ctx: SpawnBackgroundTaskCtx, outcome: SubAgentTask
             ctx.notif_queue.enqueue(
                 ctx.agent_id.as_str(),
                 xml,
-                ctx.parent_session_id,
-                ctx.parent_run_id,
+                ctx.parent_session_id.clone(),
+                ctx.parent_run_id.clone(),
             );
             ctx.task_store
                 .update_state(&ctx.agent_id, AsyncTaskState::Failed);
+            emit_child_agent_idle(&ctx).await;
         }
         SubAgentTaskOutcome::Panicked(panic_msg) => {
             log::error!(
@@ -180,11 +305,12 @@ fn finish_background_subagent(ctx: SpawnBackgroundTaskCtx, outcome: SubAgentTask
             ctx.notif_queue.enqueue(
                 ctx.agent_id.as_str(),
                 xml,
-                ctx.parent_session_id,
-                ctx.parent_run_id,
+                ctx.parent_session_id.clone(),
+                ctx.parent_run_id.clone(),
             );
             ctx.task_store
                 .update_state(&ctx.agent_id, AsyncTaskState::Failed);
+            emit_child_agent_idle(&ctx).await;
         }
     }
 }
@@ -546,6 +672,7 @@ impl SpawnSubagentLauncher for DefaultSpawnSubagentLauncher {
         let worker_finish_ctx = SpawnBackgroundTaskCtx {
             task_store: self.task_store.clone(),
             notif_queue: self.notif_queue.clone(),
+            event_bus: self.deps.event_bus.clone(),
             agent_id: agent_id.clone(),
             transcript_path: transcript_path.clone(),
             parent_tool_use_id: parent_tool_use_id.clone(),
@@ -577,7 +704,7 @@ impl SpawnSubagentLauncher for DefaultSpawnSubagentLauncher {
                 }
                 ForegroundPromotionState::Promoted => {
                     drop(guard);
-                    finish_background_subagent(worker_finish_ctx, outcome);
+                    finish_background_subagent(worker_finish_ctx, outcome).await;
                 }
                 ForegroundPromotionState::Finished => {}
             }
@@ -671,6 +798,7 @@ impl SpawnSubagentLauncher for DefaultSpawnSubagentLauncher {
         let finish_ctx = SpawnBackgroundTaskCtx {
             task_store: task_store.clone(),
             notif_queue: notif_queue.clone(),
+            event_bus: self.deps.event_bus.clone(),
             agent_id: id_for_task.clone(),
             transcript_path: transcript_path_for_task.clone(),
             parent_tool_use_id: parent_tool_use_id.clone(),
@@ -694,7 +822,7 @@ impl SpawnSubagentLauncher for DefaultSpawnSubagentLauncher {
                 log_ctx,
             )
             .await;
-            finish_background_subagent(finish_ctx, outcome);
+            finish_background_subagent(finish_ctx, outcome).await;
         });
 
         Ok(SpawnAsyncOutcome {

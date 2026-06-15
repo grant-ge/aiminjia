@@ -917,6 +917,7 @@ pub fn run() {
             // tool call inside a continuation turn errored with
             // "tool dispatcher not configured" and polluted messages.jsonl.
             chat_adapter.wire_path_c_wake_to_self();
+            chat_adapter.wire_task_notification_wake_to_self();
 
             // Register managed state
             app.manage(db);
