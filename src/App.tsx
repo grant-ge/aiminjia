@@ -87,7 +87,7 @@ function AppShell() {
         </SidebarCollapseFrame>
         <main
           className={`min-w-0 flex-1 overflow-hidden border-t border-border bg-background ${
-            sidebarHidden ? '' : 'rounded-l-lg border-l'
+            sidebarHidden ? '' : 'rounded-l-md border-l'
           }`}
         >
           <RouteSwitch />

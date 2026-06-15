@@ -8,7 +8,9 @@ const SIDEBAR_SOURCE = readFileSync(resolve(process.cwd(), 'src/components/sideb
 describe('App shell layout', () => {
   it('keeps the main/sider separator owned by the rounded main surface', () => {
     expect(APP_SOURCE).toContain('flex min-h-0 flex-1 bg-sidebar')
-    expect(APP_SOURCE).toContain('rounded-l-lg border-l border-t border-border bg-background')
+    expect(APP_SOURCE).toContain('border-t border-border bg-background')
+    expect(APP_SOURCE).toContain("sidebarHidden ? '' : 'rounded-l-md border-l'")
+    expect(APP_SOURCE).not.toContain('rounded-l-lg')
     expect(APP_SOURCE).not.toContain('shadow-sidebar-edge')
     expect(SIDEBAR_SOURCE).not.toContain('border-r border-sidebar-border')
   })
