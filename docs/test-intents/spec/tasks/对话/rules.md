@@ -1261,21 +1261,62 @@ PDF 不在前端 `generatedFileActions.PREVIEWABLE_FILE_TYPES` 白名单（同�
 - Bash 或 PowerShell 工具结果 JSON 中不含 `status == "backgrounded"`
 - Bash 或 PowerShell 工具结果中不含 `aijia-timeout-end-028`
 
-## 意图-对话-029: 前台长子任务，自动转后台
+## 意图-对话-029: 慢同事任务，转后台可追踪
 
 ### 场景
 
-用户让 AI 通过 Agent 工具处理一个会超过前台等待预算的子任务，但没有显式要求 `run_in_background=true`。期望 Agent 工具先以前台方式启动，超过预算后自动返回 `task_id`，工具结果标出 `assistant_auto_backgrounded=true` 且 `task_type == "local_agent"`；后续再用 TaskOutput 读取同一个子任务的输出，能看到 `aijia-agent-auto-bg-029`。
+用户把一个会慢一点的小验证交给 AI 同事处理，不希望当前对话一直卡到同事自然完成。期望 AI 先把事情交出去，等待超出前台预算后自动转后台，并把可追踪的任务编号告诉用户；后续用户再询问结果时，AI 能读到同一个后台任务的输出 `aijia-agent-auto-bg-029`。
 
 ### 操作步骤
 
 1. 应用探活：`tauri-pilot aijia health-check`
 2. 打开新对话：`tauri-pilot aijia new-task`
 3. 通过 `tauri-pilot aijia where --json` 记录 `{scope}` 和 `{conversationId}`
-4. 发送消息：请使用 Agent 工具运行一个前台子 Agent 任务，不要主动放到后台；工具参数不要包含 `run_in_background`，或设置为 `false`。请让这个子 Agent 只做一件事：使用当前平台的 shell 工具以前台方式运行一个真实等待命令，等待超过 20 秒后输出字符串 `aijia-agent-auto-bg-029`；Windows 环境使用 PowerShell 命令 `Start-Sleep -Seconds 25; Write-Output 'aijia-agent-auto-bg-029'`，macOS/Linux 环境使用 Bash 命令 `sleep 25; printf 'aijia-agent-auto-bg-029\n'`。子 Agent 内部调用 shell 工具时也不要设置 `run_in_background=true`。当系统把子任务自动转后台后，请不要等待子任务自然结束，立刻告诉我 task_id。
+4. 发送消息：帮我找个 AI 同事做一个会慢一点的小验证：让他实际等半分钟左右后，只告诉我暗号 `aijia-agent-auto-bg-029`。你先按普通方式把这件事交给同事处理；如果等太久，就别让我一直卡在当前对话里，转到后台后把我后续能追踪的编号告诉我。
 5. 等待 assistant 在 45 秒内返回，记录这次自动后台化对应的 `{taskId}`。
 6. 等待 25 秒。
-7. 发送消息：请使用 TaskOutput 从 offset 0 读取刚才 `{taskId}` 的输出，并告诉我是否读到了 `aijia-agent-auto-bg-029`。
+7. 发送消息：刚才那个后台同事任务现在有结果了吗？请读取它的输出，并告诉我有没有看到 `aijia-agent-auto-bg-029`。
+8. 等待 assistant 回复。
+
+### 验收标准
+
+应该看到：
+
+- `messages.jsonl` 中出现 `name == "Agent"` 的 tool call
+- 该 `Agent` tool call 的 `arguments` 中不含 `run_in_background`，或其值为 `false`
+- Agent 工具结果 JSON 中 `assistant_auto_backgrounded == true`
+- Agent 工具结果 JSON 中 `task_type == "local_agent"`
+- Agent 工具结果 JSON 中 `task_id == "{taskId}"`
+- 第一次 assistant 回复中包含 `{taskId}`
+- 第一次 assistant 回复早于子任务输出 `aijia-agent-auto-bg-029` 落到当前对话
+- 第二轮 assistant 记录的 `toolCalls` 数组里有一个元素 `name == "TaskOutput"`
+- 该 `TaskOutput` 调用的 `arguments.task_id == "{taskId}"`
+- 该 `TaskOutput` 调用的 `arguments.offset == 0`
+- `TaskOutput` 工具结果中包含字符串 `aijia-agent-auto-bg-029`
+- 第二次 assistant 回复中包含 `aijia-agent-auto-bg-029`
+
+不应该看到：
+
+- `TaskOutput` 工具结果中不含 `No task found`
+- Agent 工具结果 JSON 中不含 `task_type == "local_bash"`
+- Agent 工具结果 JSON 中不含 `assistant_auto_backgrounded == false`
+- 第一次 assistant 回复不应等到 `aijia-agent-auto-bg-029` 出现后才返回
+
+## 意图-对话-030: 长子任务探针，返回任务编号
+
+### 场景
+
+这是 Agent 工具自动后台化协议的白盒回归探针，不代表普通用户话术。期望 Agent 工具在未显式 `run_in_background=true` 时先以前台方式启动，超过前台等待预算后自动返回 `task_id`，工具结果标出 `assistant_auto_backgrounded=true` 且 `task_type == "local_agent"`；后续再用 TaskOutput 读取同一个子任务的输出，能看到 `aijia-agent-auto-bg-030`。
+
+### 操作步骤
+
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 打开新对话：`tauri-pilot aijia new-task`
+3. 通过 `tauri-pilot aijia where --json` 记录 `{scope}` 和 `{conversationId}`
+4. 发送消息：请严格调用 Agent 工具一次来做测试：`subagent_type` 使用 `general-purpose`；不要传 `run_in_background`，也不要显式放到后台。Agent 的 prompt 请写成：使用当前平台的 shell 工具以前台方式运行一个真实等待命令，等待超过 20 秒后输出字符串 `aijia-agent-auto-bg-030`；Windows 环境使用 PowerShell 命令 `Start-Sleep -Seconds 25; Write-Output 'aijia-agent-auto-bg-030'`，macOS/Linux 环境使用 Bash 命令 `sleep 25; printf 'aijia-agent-auto-bg-030\n'`。Agent 工具返回后，如果返回的是自动转后台 JSON，请立刻把其中 `task_id` 原样告诉我；不要调用 TaskList，不要调用 TaskOutput，不要等待子任务自然结束。
+5. 等待 assistant 在 45 秒内返回，记录这次自动后台化对应的 `{taskId}`。
+6. 等待 25 秒。
+7. 发送消息：请使用 TaskOutput 从 offset 0 读取刚才 `{taskId}` 的输出，并告诉我是否读到了 `aijia-agent-auto-bg-030`。
 8. 等待 assistant 回复。
 
 ### 验收标准
@@ -1291,12 +1332,12 @@ PDF 不在前端 `generatedFileActions.PREVIEWABLE_FILE_TYPES` 白名单（同�
 - 第二轮 assistant 记录的 `toolCalls` 数组里有一个元素 `name == "TaskOutput"`
 - 该 `TaskOutput` 调用的 `arguments.task_id == "{taskId}"`
 - 该 `TaskOutput` 调用的 `arguments.offset == 0`
-- `TaskOutput` 工具结果中包含字符串 `aijia-agent-auto-bg-029`
-- 第二次 assistant 回复中包含 `aijia-agent-auto-bg-029`
+- `TaskOutput` 工具结果中包含字符串 `aijia-agent-auto-bg-030`
+- 第二次 assistant 回复中包含 `aijia-agent-auto-bg-030`
 
 不应该看到：
 
 - `TaskOutput` 工具结果中不含 `No task found`
 - Agent 工具结果 JSON 中不含 `task_type == "local_bash"`
 - Agent 工具结果 JSON 中不含 `assistant_auto_backgrounded == false`
-- 第一次 assistant 回复不应等到 `aijia-agent-auto-bg-029` 出现后才返回
+- 第一次 assistant 回复不应等到 `aijia-agent-auto-bg-030` 出现后才返回
