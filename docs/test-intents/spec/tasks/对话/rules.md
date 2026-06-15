@@ -1260,3 +1260,43 @@ PDF 不在前端 `generatedFileActions.PREVIEWABLE_FILE_TYPES` 白名单（同�
 - Bash 或 PowerShell 工具结果 JSON 中不含 `assistant_auto_backgrounded == true`
 - Bash 或 PowerShell 工具结果 JSON 中不含 `status == "backgrounded"`
 - Bash 或 PowerShell 工具结果中不含 `aijia-timeout-end-028`
+
+## 意图-对话-029: 前台长子任务，自动转后台
+
+### 场景
+
+用户让 AI 通过 Agent 工具处理一个会超过前台等待预算的子任务，但没有显式要求 `run_in_background=true`。期望 Agent 工具先以前台方式启动，超过预算后自动返回 `task_id`，工具结果标出 `assistant_auto_backgrounded=true` 且 `task_type == "local_agent"`；后续再用 TaskOutput 读取同一个子任务的输出，能看到 `aijia-agent-auto-bg-029`。
+
+### 操作步骤
+
+1. 应用探活：`tauri-pilot aijia health-check`
+2. 打开新对话：`tauri-pilot aijia new-task`
+3. 通过 `tauri-pilot aijia where --json` 记录 `{scope}` 和 `{conversationId}`
+4. 发送消息：请使用 Agent 工具运行一个前台子 Agent 任务，不要主动放到后台；工具参数不要包含 `run_in_background`，或设置为 `false`。请让这个子 Agent 只做一件事：先等待超过 20 秒，再返回字符串 `aijia-agent-auto-bg-029`。当系统把子任务自动转后台后，请不要等待子任务自然结束，立刻告诉我 task_id。
+5. 等待 assistant 在 45 秒内返回，记录这次自动后台化对应的 `{taskId}`。
+6. 等待 25 秒。
+7. 发送消息：请使用 TaskOutput 从 offset 0 读取刚才 `{taskId}` 的输出，并告诉我是否读到了 `aijia-agent-auto-bg-029`。
+8. 等待 assistant 回复。
+
+### 验收标准
+
+应该看到：
+
+- `messages.jsonl` 中出现 `name == "Agent"` 的 tool call
+- 该 `Agent` tool call 的 `arguments` 中不含 `run_in_background`，或其值为 `false`
+- Agent 工具结果 JSON 中 `assistant_auto_backgrounded == true`
+- Agent 工具结果 JSON 中 `task_type == "local_agent"`
+- Agent 工具结果 JSON 中 `task_id == "{taskId}"`
+- 第一次 assistant 回复中包含 `{taskId}`
+- 第二轮 assistant 记录的 `toolCalls` 数组里有一个元素 `name == "TaskOutput"`
+- 该 `TaskOutput` 调用的 `arguments.task_id == "{taskId}"`
+- 该 `TaskOutput` 调用的 `arguments.offset == 0`
+- `TaskOutput` 工具结果中包含字符串 `aijia-agent-auto-bg-029`
+- 第二次 assistant 回复中包含 `aijia-agent-auto-bg-029`
+
+不应该看到：
+
+- `TaskOutput` 工具结果中不含 `No task found`
+- Agent 工具结果 JSON 中不含 `task_type == "local_bash"`
+- Agent 工具结果 JSON 中不含 `assistant_auto_backgrounded == false`
+- 第一次 assistant 回复不应等到 `aijia-agent-auto-bg-029` 出现后才返回

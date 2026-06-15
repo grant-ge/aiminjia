@@ -7,8 +7,9 @@
 //! `LlmGateway` / `SubAgentRuntimeDeps` imports.
 //!
 //! ## Sync path (`run_in_background = false` or omitted)
-//! Awaits `launcher.launch_sync()` and returns the final output as a
-//! [`ToolResult`].
+//! Awaits `launcher.launch_foreground_auto_background()` and returns either the
+//! final output as a [`ToolResult`] or an `async_launched` task JSON if the
+//! sub-agent is auto-promoted to background execution.
 //!
 //! ## Async path (`run_in_background = true`)
 //! Calls `launcher.launch_async()` which registers the agent in
@@ -61,6 +62,8 @@ pub struct SpawnSubagentRequest {
     pub run_in_background: bool,
     /// Optional instance name for SendMessage routing (async path only).
     pub name: Option<String>,
+    /// Hidden test/debug override for foreground auto-background timeout.
+    pub auto_background_after_ms: Option<u64>,
 }
 
 /// Runtime context the launcher needs to invoke the sub-agent.
@@ -86,6 +89,18 @@ pub struct SpawnAsyncOutcome {
     pub name: Option<String>,
 }
 
+/// Outcome from the default foreground path, which may auto-promote to a
+/// background task after the blocking budget elapses.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SpawnForegroundAutoOutcome {
+    Completed(String),
+    Backgrounded {
+        agent_id: AgentId,
+        name: Option<String>,
+        auto_background_after_ms: u64,
+    },
+}
+
 // ─── Launcher trait ───────────────────────────────────────────────────────────
 
 /// Injected dependency that performs the actual sub-agent execution.
@@ -108,6 +123,18 @@ pub trait SpawnSubagentLauncher: Send + Sync {
         request: SpawnSubagentRequest,
         context: SpawnSubagentContext,
     ) -> Result<SpawnAsyncOutcome>;
+
+    /// Default foreground path: wait up to a foreground budget, then keep the
+    /// same sub-agent running in background if it exceeds that budget.
+    async fn launch_foreground_auto_background(
+        &self,
+        request: SpawnSubagentRequest,
+        context: SpawnSubagentContext,
+    ) -> Result<SpawnForegroundAutoOutcome> {
+        self.launch_sync(request, context)
+            .await
+            .map(SpawnForegroundAutoOutcome::Completed)
+    }
 
     /// Build a `TeammateLlmEngine` for a Teammate idle loop.
     ///
@@ -294,6 +321,10 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
             .get("run_in_background")
             .and_then(Value::as_bool)
             .unwrap_or(false);
+        let auto_background_after_ms = input
+            .get("_auto_background_after_ms")
+            .and_then(Value::as_u64)
+            .map(|value| value.max(1));
         let name = input
             .get("name")
             .and_then(Value::as_str)
@@ -442,6 +473,7 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
             effective_model,
             run_in_background,
             name: name.clone(),
+            auto_background_after_ms,
         };
 
         let launch_ctx = SpawnSubagentContext {
@@ -686,19 +718,41 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
                 "status": "async_launched",
                 "agent_id": agent_id_str.clone(),
                 "task_id": agent_id_str,
+                "task_type": "local_agent",
                 "name": outcome.name,
             });
             return Ok(ToolResult::new("Agent", json.to_string(), None));
         }
 
-        // ── Legacy sync path ───────────────────────────────────────────────
-        let output = self
+        // ── Foreground auto-background path ────────────────────────────────
+        let outcome = self
             .launcher
-            .launch_sync(request, launch_ctx)
+            .launch_foreground_auto_background(request, launch_ctx)
             .await
             .map_err(|e| ToolError::ExecutionFailed(format!("sub-agent launch failed: {e}")))?;
 
-        Ok(ToolResult::new("Agent", output, None))
+        match outcome {
+            SpawnForegroundAutoOutcome::Completed(output) => {
+                Ok(ToolResult::new("Agent", output, None))
+            }
+            SpawnForegroundAutoOutcome::Backgrounded {
+                agent_id,
+                name,
+                auto_background_after_ms,
+            } => {
+                let agent_id_str = agent_id.as_str().to_string();
+                let json = serde_json::json!({
+                    "status": "async_launched",
+                    "agent_id": agent_id_str.clone(),
+                    "task_id": agent_id_str,
+                    "task_type": "local_agent",
+                    "name": name,
+                    "assistant_auto_backgrounded": true,
+                    "auto_background_after_ms": auto_background_after_ms,
+                });
+                Ok(ToolResult::new("Agent", json.to_string(), None))
+            }
+        }
     }
 }
 

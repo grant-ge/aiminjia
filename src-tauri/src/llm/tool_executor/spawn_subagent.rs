@@ -25,9 +25,169 @@ use crate::runtime::agent::task_notification::{
 use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::ids::AgentId;
 use crate::runtime::tools::builtin::spawn_subagent::{
-    SpawnAsyncOutcome, SpawnSubagentContext, SpawnSubagentLauncher, SpawnSubagentRequest,
+    SpawnAsyncOutcome, SpawnForegroundAutoOutcome, SpawnSubagentContext, SpawnSubagentLauncher,
+    SpawnSubagentRequest,
 };
 use crate::storage::user_scoped_paths::UserScopedPathResolver;
+
+const DEFAULT_AGENT_AUTO_BACKGROUND_AFTER_MS: u64 = 15_000;
+
+enum ForegroundPromotionState {
+    Waiting(tokio::sync::oneshot::Sender<SubAgentTaskOutcome>),
+    Promoted,
+    Finished,
+}
+
+struct SpawnBackgroundTaskCtx {
+    task_store: Arc<AsyncAgentTaskStore>,
+    notif_queue: Arc<TaskNotificationQueue>,
+    agent_id: AgentId,
+    transcript_path: PathBuf,
+    parent_tool_use_id: String,
+    parent_session_id: crate::runtime::ids::SessionId,
+    parent_run_id: Option<crate::runtime::ids::RunId>,
+    subagent_type: String,
+}
+
+enum SubAgentTaskOutcome {
+    Completed(crate::llm::sub_agent::SubAgentResult),
+    Failed(String),
+    Panicked(String),
+}
+
+fn panic_payload_to_string(panic_payload: Box<dyn std::any::Any + Send>) -> String {
+    panic_payload
+        .downcast_ref::<String>()
+        .cloned()
+        .or_else(|| {
+            panic_payload
+                .downcast_ref::<&'static str>()
+                .map(|s| (*s).to_string())
+        })
+        .unwrap_or_else(|| "panic with non-string payload".to_string())
+}
+
+fn finish_background_subagent(ctx: SpawnBackgroundTaskCtx, outcome: SubAgentTaskOutcome) {
+    if matches!(
+        ctx.task_store
+            .find_by_id(&ctx.agent_id)
+            .map(|handle| handle.state),
+        Some(AsyncTaskState::Killed)
+    ) {
+        log::info!(
+            "[spawn_subagent async {}] task was killed; suppressing late worker result",
+            ctx.agent_id.as_str()
+        );
+        return;
+    }
+
+    match outcome {
+        SubAgentTaskOutcome::Completed(sub_result) => {
+            let output_ref = sub_result.envelope.output.as_str();
+            if let Err(e) = output_writer::append_line(
+                &ctx.transcript_path,
+                &output_writer::TranscriptLine::assistant(output_ref),
+            ) {
+                log::warn!(
+                    "[spawn_subagent async {}] transcript append failed: {}; downstream task_output may be empty",
+                    ctx.agent_id.as_str(),
+                    e
+                );
+            }
+            let p_str = ctx.transcript_path.to_string_lossy();
+            let xml = build_task_notification_xml(
+                ctx.agent_id.as_str(),
+                Some(&ctx.parent_tool_use_id),
+                &p_str,
+                "completed",
+                &format!("Agent '{}' completed", ctx.subagent_type),
+                Some(output_ref),
+                None,
+            );
+            ctx.notif_queue.enqueue(
+                ctx.agent_id.as_str(),
+                xml,
+                ctx.parent_session_id,
+                ctx.parent_run_id,
+            );
+            ctx.task_store
+                .update_state(&ctx.agent_id, AsyncTaskState::Completed);
+        }
+        SubAgentTaskOutcome::Failed(err_str) => {
+            log::warn!(
+                "[spawn_subagent async] agent '{}' ({}) failed: {}",
+                ctx.subagent_type,
+                ctx.agent_id.as_str(),
+                err_str
+            );
+            if let Err(append_err) = output_writer::append_line(
+                &ctx.transcript_path,
+                &output_writer::TranscriptLine::failed(&err_str),
+            ) {
+                log::warn!(
+                    "[spawn_subagent async {}] transcript append failed: {}; downstream task_output may be empty",
+                    ctx.agent_id.as_str(),
+                    append_err
+                );
+            }
+            let p_str = ctx.transcript_path.to_string_lossy();
+            let xml = build_task_notification_xml(
+                ctx.agent_id.as_str(),
+                Some(&ctx.parent_tool_use_id),
+                &p_str,
+                "failed",
+                &format!("Agent '{}' failed", ctx.subagent_type),
+                Some(&err_str),
+                None,
+            );
+            ctx.notif_queue.enqueue(
+                ctx.agent_id.as_str(),
+                xml,
+                ctx.parent_session_id,
+                ctx.parent_run_id,
+            );
+            ctx.task_store
+                .update_state(&ctx.agent_id, AsyncTaskState::Failed);
+        }
+        SubAgentTaskOutcome::Panicked(panic_msg) => {
+            log::error!(
+                "[spawn_subagent async] agent '{}' ({}) PANICKED: {}",
+                ctx.subagent_type,
+                ctx.agent_id.as_str(),
+                panic_msg
+            );
+            let panic_summary = format!("panic: {}", panic_msg);
+            if let Err(append_err) = output_writer::append_line(
+                &ctx.transcript_path,
+                &output_writer::TranscriptLine::failed(&panic_summary),
+            ) {
+                log::warn!(
+                    "[spawn_subagent async {}] transcript append failed: {}; downstream task_output may be empty",
+                    ctx.agent_id.as_str(),
+                    append_err
+                );
+            }
+            let p_str = ctx.transcript_path.to_string_lossy();
+            let xml = build_task_notification_xml(
+                ctx.agent_id.as_str(),
+                Some(&ctx.parent_tool_use_id),
+                &p_str,
+                "failed",
+                &format!("Agent '{}' panicked", ctx.subagent_type),
+                Some(&panic_summary),
+                None,
+            );
+            ctx.notif_queue.enqueue(
+                ctx.agent_id.as_str(),
+                xml,
+                ctx.parent_session_id,
+                ctx.parent_run_id,
+            );
+            ctx.task_store
+                .update_state(&ctx.agent_id, AsyncTaskState::Failed);
+        }
+    }
+}
 
 /// Deps snapshot captured at request-scope construction time.
 #[derive(Clone)]
@@ -92,6 +252,7 @@ impl DefaultSpawnSubagentLauncher {
         request: &SpawnSubagentRequest,
         context: &SpawnSubagentContext,
         background: bool,
+        cancel_token: CancellationToken,
     ) -> Result<(
         crate::llm::sub_agent::SubAgentConfig,
         crate::llm::sub_agent::SubAgentRuntimeDeps,
@@ -128,7 +289,7 @@ impl DefaultSpawnSubagentLauncher {
         let scoped_deps = self.deps.clone().with_run_scope(
             context.parent_run_id.clone(),
             context.parent_agent_id.clone(),
-            Some(context.cancellation.clone()),
+            Some(cancel_token.clone()),
             self.deps
                 .read_file_state
                 .as_ref()
@@ -170,7 +331,7 @@ impl DefaultSpawnSubagentLauncher {
             parent_run_id: context.parent_run_id.clone(),
             background,
             app_handle: scoped_deps.app_handle.clone(),
-            cancel_token: Some(context.cancellation.clone()),
+            cancel_token: Some(cancel_token),
             permission_mode: context.permission_mode,
             model_override: request.effective_model.clone(),
             agent_name: request.name.clone(),
@@ -208,6 +369,110 @@ impl DefaultSpawnSubagentLauncher {
 
         Ok((config, runtime_deps))
     }
+
+    fn transcript_path_for_agent(&self, agent_id: &AgentId) -> PathBuf {
+        match self.paths.require_paths() {
+            Ok(p) => {
+                output_writer::transcript_path(&p.subagent_transcripts_dir(), agent_id.as_str())
+            }
+            Err(e) => {
+                log::warn!(
+                    "[spawn_subagent async] no user scope: {}; transcript disabled",
+                    e
+                );
+                PathBuf::new()
+            }
+        }
+    }
+
+    fn register_background_task(
+        &self,
+        request: &SpawnSubagentRequest,
+        agent_id: &AgentId,
+        transcript_path: &PathBuf,
+        cancel_token: CancellationToken,
+    ) {
+        let handle = AsyncTaskHandle {
+            agent_id: agent_id.clone(),
+            state: AsyncTaskState::Running,
+            output_file: transcript_path.clone(),
+            description: request.description.clone(),
+            cancel_token,
+        };
+        if let Some(ref name) = request.name {
+            self.task_store.register(name, handle);
+        } else {
+            self.task_store.register_anonymous(handle);
+        }
+    }
+
+    async fn run_sub_agent_task(
+        gateway: Arc<crate::llm::gateway::LlmGateway>,
+        tool_registry: Arc<crate::plugin::registry::ToolRegistry>,
+        runtime_deps: crate::llm::sub_agent::SubAgentRuntimeDeps,
+        config: crate::llm::sub_agent::SubAgentConfig,
+        app_settings: Arc<crate::models::settings::AppSettings>,
+        log_ctx: crate::log_context::LogContext,
+    ) -> SubAgentTaskOutcome {
+        use futures::FutureExt;
+
+        let body = std::panic::AssertUnwindSafe(crate::log_context::scoped(log_ctx, async {
+            crate::llm::sub_agent::run_sub_agent(
+                &gateway,
+                &tool_registry,
+                &runtime_deps,
+                config,
+                &app_settings,
+            )
+            .await
+        }));
+        match body.catch_unwind().await {
+            Ok(Ok(sub_result)) => SubAgentTaskOutcome::Completed(sub_result),
+            Ok(Err(e)) => SubAgentTaskOutcome::Failed(e.to_string()),
+            Err(panic_payload) => {
+                SubAgentTaskOutcome::Panicked(panic_payload_to_string(panic_payload))
+            }
+        }
+    }
+
+    fn sync_result_from_outcome(
+        subagent_type: &str,
+        outcome: SubAgentTaskOutcome,
+    ) -> Result<SpawnForegroundAutoOutcome> {
+        match outcome {
+            SubAgentTaskOutcome::Completed(result) => {
+                log::info!(
+                    "[spawn_subagent] '{}' complete: iterations={}, output_len={}",
+                    subagent_type,
+                    result.iterations_used,
+                    result.output.len()
+                );
+                Ok(SpawnForegroundAutoOutcome::Completed(
+                    result.envelope.output,
+                ))
+            }
+            SubAgentTaskOutcome::Failed(err_str) => {
+                log::warn!(
+                    "[spawn_subagent] sub-agent '{}' failed: {}",
+                    subagent_type,
+                    err_str
+                );
+                Err(anyhow!("Sub-agent '{}' failed: {}", subagent_type, err_str))
+            }
+            SubAgentTaskOutcome::Panicked(panic_msg) => {
+                log::error!(
+                    "[spawn_subagent] sub-agent '{}' panicked: {}",
+                    subagent_type,
+                    panic_msg
+                );
+                Err(anyhow!(
+                    "Sub-agent '{}' panicked: {}",
+                    subagent_type,
+                    panic_msg
+                ))
+            }
+        }
+    }
 }
 
 #[async_trait]
@@ -218,7 +483,9 @@ impl SpawnSubagentLauncher for DefaultSpawnSubagentLauncher {
         context: SpawnSubagentContext,
     ) -> Result<String> {
         let (gateway, tool_registry, app_settings) = self.build_run_components()?;
-        let (config, runtime_deps) = self.build_sub_agent_args(&request, &context, false).await?;
+        let (config, runtime_deps) = self
+            .build_sub_agent_args(&request, &context, false, context.cancellation.clone())
+            .await?;
 
         let result = crate::llm::sub_agent::run_sub_agent(
             &gateway,
@@ -247,55 +514,150 @@ impl SpawnSubagentLauncher for DefaultSpawnSubagentLauncher {
         Ok(result.envelope.output)
     }
 
+    async fn launch_foreground_auto_background(
+        &self,
+        request: SpawnSubagentRequest,
+        context: SpawnSubagentContext,
+    ) -> Result<SpawnForegroundAutoOutcome> {
+        let agent_id = AgentId::new(uuid::Uuid::new_v4().to_string());
+        let transcript_path = self.transcript_path_for_agent(&agent_id);
+        let cancel_token = CancellationToken::new();
+        let (gateway, tool_registry, app_settings) = self.build_run_components()?;
+        let (config, runtime_deps) = self
+            .build_sub_agent_args(&request, &context, false, cancel_token.clone())
+            .await?;
+
+        let parent_tool_use_id = context.parent_tool_use_id.as_str().to_owned();
+        let parent_session_id = context.session_id.clone();
+        let parent_run_id = context.parent_run_id.clone();
+        let subagent_type = request.subagent_type.clone();
+        let auto_background_after_ms = request
+            .auto_background_after_ms
+            .unwrap_or(DEFAULT_AGENT_AUTO_BACKGROUND_AFTER_MS)
+            .max(1);
+        let (done_tx, done_rx) = tokio::sync::oneshot::channel();
+        let mut done_rx = done_rx;
+        let state = Arc::new(tokio::sync::Mutex::new(ForegroundPromotionState::Waiting(
+            done_tx,
+        )));
+
+        let worker_state = state.clone();
+        let worker_finish_ctx = SpawnBackgroundTaskCtx {
+            task_store: self.task_store.clone(),
+            notif_queue: self.notif_queue.clone(),
+            agent_id: agent_id.clone(),
+            transcript_path: transcript_path.clone(),
+            parent_tool_use_id: parent_tool_use_id.clone(),
+            parent_session_id: parent_session_id.clone(),
+            parent_run_id: parent_run_id.clone(),
+            subagent_type: subagent_type.clone(),
+        };
+        let log_ctx = crate::log_context::LogContext::new(
+            parent_session_id.as_str(),
+            parent_run_id.as_ref().map(|r| r.as_str()).unwrap_or(""),
+        )
+        .with_agent(agent_id.as_str());
+
+        tokio::spawn(async move {
+            let outcome = Self::run_sub_agent_task(
+                gateway,
+                tool_registry,
+                runtime_deps,
+                config,
+                app_settings,
+                log_ctx,
+            )
+            .await;
+
+            let mut guard = worker_state.lock().await;
+            match std::mem::replace(&mut *guard, ForegroundPromotionState::Finished) {
+                ForegroundPromotionState::Waiting(tx) => {
+                    let _ = tx.send(outcome);
+                }
+                ForegroundPromotionState::Promoted => {
+                    drop(guard);
+                    finish_background_subagent(worker_finish_ctx, outcome);
+                }
+                ForegroundPromotionState::Finished => {}
+            }
+        });
+
+        tokio::select! {
+            result = &mut done_rx => {
+                match result {
+                    Ok(outcome) => Self::sync_result_from_outcome(&subagent_type, outcome),
+                    Err(_) => Err(anyhow!("sub-agent worker finished without result")),
+                }
+            }
+            _ = tokio::time::sleep(std::time::Duration::from_millis(auto_background_after_ms)) => {
+                let mut guard = state.lock().await;
+                match &*guard {
+                    ForegroundPromotionState::Waiting(_) => {
+                        self.register_background_task(
+                            &request,
+                            &agent_id,
+                            &transcript_path,
+                            cancel_token.clone(),
+                        );
+                        *guard = ForegroundPromotionState::Promoted;
+                        Ok(SpawnForegroundAutoOutcome::Backgrounded {
+                            agent_id,
+                            name: request.name.clone(),
+                            auto_background_after_ms,
+                        })
+                    }
+                    ForegroundPromotionState::Finished => {
+                        drop(guard);
+                        match done_rx.await {
+                            Ok(outcome) => Self::sync_result_from_outcome(&subagent_type, outcome),
+                            Err(_) => Err(anyhow!("sub-agent worker finished without result")),
+                        }
+                    }
+                    ForegroundPromotionState::Promoted => unreachable!("foreground launch cannot re-enter promoted state"),
+                }
+            }
+            _ = crate::runtime::cancellation::wait_for_cancellation(context.cancellation.clone()) => {
+                let mut guard = state.lock().await;
+                match &*guard {
+                    ForegroundPromotionState::Waiting(_) => {
+                        *guard = ForegroundPromotionState::Finished;
+                        drop(guard);
+                        cancel_token.cancel();
+                        Err(anyhow!("Sub-agent '{}' cancelled before auto-background promotion", subagent_type))
+                    }
+                    ForegroundPromotionState::Finished => {
+                        drop(guard);
+                        match done_rx.await {
+                            Ok(outcome) => Self::sync_result_from_outcome(&subagent_type, outcome),
+                            Err(_) => Err(anyhow!("sub-agent worker finished without result")),
+                        }
+                    }
+                    ForegroundPromotionState::Promoted => unreachable!("foreground launch cannot observe promoted state after returning"),
+                }
+            }
+        }
+    }
+
     async fn launch_async(
         &self,
         request: SpawnSubagentRequest,
         context: SpawnSubagentContext,
     ) -> Result<SpawnAsyncOutcome> {
         let (gateway, tool_registry, app_settings) = self.build_run_components()?;
-        let (mut config, runtime_deps) =
-            self.build_sub_agent_args(&request, &context, true).await?;
 
         // Generate a fresh AgentId for this async sub-agent.
         let agent_id = AgentId::new(uuid::Uuid::new_v4().to_string());
-
-        let transcript_path = match self.paths.require_paths() {
-            Ok(p) => {
-                output_writer::transcript_path(&p.subagent_transcripts_dir(), agent_id.as_str())
-            }
-            Err(e) => {
-                log::warn!(
-                    "[spawn_subagent async] no user scope: {}; transcript disabled",
-                    e
-                );
-                std::path::PathBuf::new()
-            }
-        };
+        let transcript_path = self.transcript_path_for_agent(&agent_id);
         let transcript_path_for_task = transcript_path.clone();
 
         // Create a fresh cancellation token for this async sub-agent so that
         // TaskStop can cancel it independently of the parent run's token.
         let cancel_token = CancellationToken::new();
+        let (config, runtime_deps) = self
+            .build_sub_agent_args(&request, &context, true, cancel_token.clone())
+            .await?;
 
-        // Always register in AsyncAgentTaskStore (by name if provided,
-        // otherwise anonymously) so that TaskStop can find it by agent_id
-        // regardless of whether the LLM provided a name.
-        let handle = AsyncTaskHandle {
-            agent_id: agent_id.clone(),
-            state: AsyncTaskState::Running,
-            output_file: transcript_path.clone(),
-            description: request.description.clone(),
-            cancel_token: cancel_token.clone(),
-        };
-        if let Some(ref name) = request.name {
-            self.task_store.register(name, handle);
-        } else {
-            self.task_store.register_anonymous(handle);
-        }
-
-        // Override the sub-agent config's cancel token with the one we
-        // stored in the handle, so that TaskStop can cancel via the handle.
-        config.cancel_token = Some(cancel_token);
+        self.register_background_task(&request, &agent_id, &transcript_path, cancel_token);
 
         // Capture all Arcs + owned data for the spawned task (no &-references).
         let task_store = self.task_store.clone();
@@ -305,151 +667,33 @@ impl SpawnSubagentLauncher for DefaultSpawnSubagentLauncher {
         let parent_session_id = context.session_id.clone();
         let parent_run_id = context.parent_run_id.clone();
         let subagent_type = request.subagent_type.clone();
+        let finish_ctx = SpawnBackgroundTaskCtx {
+            task_store: task_store.clone(),
+            notif_queue: notif_queue.clone(),
+            agent_id: id_for_task.clone(),
+            transcript_path: transcript_path_for_task.clone(),
+            parent_tool_use_id: parent_tool_use_id.clone(),
+            parent_session_id: parent_session_id.clone(),
+            parent_run_id: parent_run_id.clone(),
+            subagent_type: subagent_type.clone(),
+        };
 
         tokio::spawn(async move {
-            // catch_unwind protects against panics inside run_sub_agent so
-            // the lifecycle always terminates with state update + notification.
-            // Without this, a panic would drop the JoinHandle silently and
-            // the parent would observe Running forever.
-            use futures::FutureExt;
-            // `tokio::spawn` does not inherit the parent turn's task-local
-            // correlation context, so re-bind it here (parent ids + agent id)
-            // to keep sub-agent logs greppable under the same request.
             let log_ctx = crate::log_context::LogContext::new(
                 parent_session_id.as_str(),
                 parent_run_id.as_ref().map(|r| r.as_str()).unwrap_or(""),
             )
             .with_agent(id_for_task.as_str());
-            let body = std::panic::AssertUnwindSafe(crate::log_context::scoped(log_ctx, async {
-                crate::llm::sub_agent::run_sub_agent(
-                    &gateway,
-                    &tool_registry,
-                    &runtime_deps,
-                    config,
-                    &app_settings,
-                )
-                .await
-            }));
-            let outcome = body.catch_unwind().await;
-
-            match outcome {
-                Ok(Ok(sub_result)) => {
-                    let output_ref = sub_result.envelope.output.as_str();
-                    if let Err(e) = output_writer::append_line(
-                        &transcript_path_for_task,
-                        &output_writer::TranscriptLine::assistant(output_ref),
-                    ) {
-                        log::warn!(
-                            "[spawn_subagent async {}] transcript append failed: {}; downstream task_output may be empty",
-                            id_for_task.as_str(),
-                            e
-                        );
-                    }
-                    let p_str = transcript_path_for_task.to_string_lossy();
-                    let xml = build_task_notification_xml(
-                        id_for_task.as_str(),
-                        Some(&parent_tool_use_id),
-                        &p_str,
-                        "completed",
-                        &format!("Agent '{}' completed", subagent_type),
-                        Some(output_ref),
-                        None,
-                    );
-                    notif_queue.enqueue(
-                        id_for_task.as_str(),
-                        xml,
-                        parent_session_id.clone(),
-                        parent_run_id.clone(),
-                    );
-                    // Terminal state LAST — guarantees that any observer seeing
-                    // AsyncTaskState::Completed can already read the transcript
-                    // and find the notification in the queue. Inverting this
-                    // order would let parents see Completed but get an empty
-                    // task_output / missing notification.
-                    task_store.update_state(&id_for_task, AsyncTaskState::Completed);
-                }
-                Ok(Err(e)) => {
-                    let err_str = e.to_string();
-                    log::warn!(
-                        "[spawn_subagent async] agent '{}' ({}) failed: {}",
-                        subagent_type,
-                        id_for_task.as_str(),
-                        err_str
-                    );
-                    if let Err(append_err) = output_writer::append_line(
-                        &transcript_path_for_task,
-                        &output_writer::TranscriptLine::failed(&err_str),
-                    ) {
-                        log::warn!(
-                            "[spawn_subagent async {}] transcript append failed: {}; downstream task_output may be empty",
-                            id_for_task.as_str(),
-                            append_err
-                        );
-                    }
-                    let p_str = transcript_path_for_task.to_string_lossy();
-                    let xml = build_task_notification_xml(
-                        id_for_task.as_str(),
-                        Some(&parent_tool_use_id),
-                        &p_str,
-                        "failed",
-                        &format!("Agent '{}' failed", subagent_type),
-                        Some(&err_str),
-                        None,
-                    );
-                    notif_queue.enqueue(
-                        id_for_task.as_str(),
-                        xml,
-                        parent_session_id.clone(),
-                        parent_run_id.clone(),
-                    );
-                    task_store.update_state(&id_for_task, AsyncTaskState::Failed);
-                }
-                Err(panic_payload) => {
-                    let panic_msg = panic_payload
-                        .downcast_ref::<String>()
-                        .cloned()
-                        .or_else(|| {
-                            panic_payload
-                                .downcast_ref::<&'static str>()
-                                .map(|s| (*s).to_string())
-                        })
-                        .unwrap_or_else(|| "panic with non-string payload".to_string());
-                    log::error!(
-                        "[spawn_subagent async] agent '{}' ({}) PANICKED: {}",
-                        subagent_type,
-                        id_for_task.as_str(),
-                        panic_msg
-                    );
-                    let panic_summary = format!("panic: {}", panic_msg);
-                    if let Err(append_err) = output_writer::append_line(
-                        &transcript_path_for_task,
-                        &output_writer::TranscriptLine::failed(&panic_summary),
-                    ) {
-                        log::warn!(
-                            "[spawn_subagent async {}] transcript append failed: {}; downstream task_output may be empty",
-                            id_for_task.as_str(),
-                            append_err
-                        );
-                    }
-                    let p_str = transcript_path_for_task.to_string_lossy();
-                    let xml = build_task_notification_xml(
-                        id_for_task.as_str(),
-                        Some(&parent_tool_use_id),
-                        &p_str,
-                        "failed",
-                        &format!("Agent '{}' panicked", subagent_type),
-                        Some(&panic_summary),
-                        None,
-                    );
-                    notif_queue.enqueue(
-                        id_for_task.as_str(),
-                        xml,
-                        parent_session_id.clone(),
-                        parent_run_id.clone(),
-                    );
-                    task_store.update_state(&id_for_task, AsyncTaskState::Failed);
-                }
-            }
+            let outcome = Self::run_sub_agent_task(
+                gateway,
+                tool_registry,
+                runtime_deps,
+                config,
+                app_settings,
+                log_ctx,
+            )
+            .await;
+            finish_background_subagent(finish_ctx, outcome);
         });
 
         Ok(SpawnAsyncOutcome {
