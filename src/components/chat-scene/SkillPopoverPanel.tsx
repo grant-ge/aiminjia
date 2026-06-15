@@ -121,6 +121,7 @@ export function SkillPopoverPanel({ items, onPick, onClose }: SkillPopoverPanelP
           onChange={(e) => setQuery(e.target.value)}
           placeholder={t('skillPopover.searchPlaceholder')}
           className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+          data-aijia-skill-picker-search
           data-testid="skill-popover-search"
         />
       </header>

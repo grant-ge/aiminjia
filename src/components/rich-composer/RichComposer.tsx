@@ -103,6 +103,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
   const { t } = useTranslation()
   const isComposingRef = useRef(false)
   const submittingRef = useRef(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   // Force a re-render when content/submit state changes so the send button's disabled state stays accurate.
   const [, forceTick] = useState(0)
   const editor = useEditor({
@@ -130,6 +131,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
     const payload = serializeComposerDoc(json)
     if (payload.isEmpty) return
     submittingRef.current = true
+    setIsSubmitting(true)
     // Clear synchronously so the user can start typing the next message while
     // onSubmit is still in flight. If onSubmit rejects we restore the prior
     // content (markdown round-trip via parseMarkdownToComposerJson keeps text /
@@ -143,6 +145,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
     // backend is the real serialization point.
     queueMicrotask(() => {
       submittingRef.current = false
+      setIsSubmitting(false)
       forceTick((n) => n + 1)
     })
     try {
@@ -228,7 +231,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
   const isEmpty = !editor || editor.isEmpty
   // Send button is disabled when there's nothing to send. During streaming
   // we still allow send (it queues via PendingQueueManager).
-  const sendDisabled = disabled || isEmpty || submittingRef.current
+  const sendDisabled = disabled || isEmpty || isSubmitting
 
   return (
     <div className="relative z-10 flex w-full flex-col gap-2">
@@ -293,6 +296,7 @@ export const RichComposer = forwardRef<RichComposerHandle, RichComposerProps>(fu
             </button>
             <button
               type="button"
+              data-aijia-skill-picker-trigger
               onClick={onOpenSkill}
               disabled={disabled}
               aria-label={

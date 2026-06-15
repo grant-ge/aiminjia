@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { SkillCenterPage } from '@/features/skill-center/SkillCenterPage'
 import i18n from '@/i18n'
+import { useAuthStore } from '@/stores/authStore'
 import { useSkillStore } from '@/stores/skillStore'
 import { useUiStore } from '@/stores/uiStore'
 
@@ -81,6 +82,7 @@ describe('SkillCenterPage e2e selectors', () => {
     openDialogMock.mockReset()
     askDialogMock.mockReset()
     seedStore()
+    useAuthStore.setState({ isLoggedIn: true })
     useUiStore.setState({ route: { kind: 'skill-center' }, settingsModal: null })
   })
 
@@ -90,6 +92,7 @@ describe('SkillCenterPage e2e selectors', () => {
     expect(container.querySelector('[data-aijia-skill-tab="market"]')).toBeInTheDocument()
     expect(container.querySelector('[data-aijia-skill-tab="builtin"]')).toBeInTheDocument()
     expect(container.querySelector('[data-aijia-skill-tab="installed"]')).toBeInTheDocument()
+    expect(container.querySelector('[data-aijia-skill-sync-trigger]')).toBeInTheDocument()
 
     const marketCard = container.querySelector('[data-aijia-skill-card][data-aijia-skill-id="tenant-policy"]')
     expect(marketCard).toHaveAttribute('data-aijia-skill-source', 'tenant')

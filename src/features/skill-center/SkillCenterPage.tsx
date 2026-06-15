@@ -450,6 +450,7 @@ export function SkillCenterPage() {
                       size="sm"
                       variant="outline"
                       disabled={syncing}
+                      data-aijia-skill-sync-trigger
                       data-testid="skills-sync-builtin"
                     >
                       {syncing ? t('skillCenter.syncing') : t('skillCenter.syncSkills')}

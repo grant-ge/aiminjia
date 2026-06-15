@@ -14,6 +14,7 @@ describe('SkillPopoverPanel e2e selectors', () => {
     render(<SkillPopoverPanel items={ITEMS} onPick={() => {}} onClose={() => {}} />)
 
     const options = screen.getAllByRole('option')
+    expect(screen.getByTestId('skill-popover-search')).toHaveAttribute('data-aijia-skill-picker-search')
     expect(options[0]).toHaveAttribute('data-aijia-skill-picker-item', 'true')
     expect(options[0]).toHaveAttribute('data-aijia-skill-id', 'analysis')
     expect(options[1]).toHaveAttribute('data-aijia-skill-picker-item', 'true')

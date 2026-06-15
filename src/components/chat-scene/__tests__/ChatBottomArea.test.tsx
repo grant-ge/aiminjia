@@ -162,7 +162,8 @@ describe('ChatBottomArea', () => {
     const user = userEvent.setup()
     const { container } = render(<ChatBottomArea />)
     await waitFor(() => expect(document.querySelector('.ProseMirror')).toBeTruthy())
-    const skillButton = container.querySelector('[aria-label="composer.openSkillPicker"]') as HTMLElement
+    const skillButton = container.querySelector('[data-aijia-skill-picker-trigger]') as HTMLElement
+    expect(skillButton).toHaveAttribute('aria-label', 'composer.openSkillPicker')
     await user.click(skillButton)
     await user.click(await screen.findByText('玩转钉钉'))
     const editor = document.querySelector('.ProseMirror') as HTMLElement
@@ -184,7 +185,7 @@ describe('ChatBottomArea', () => {
     const user = userEvent.setup()
     const { container } = render(<ChatBottomArea />)
     await waitFor(() => expect(document.querySelector('.ProseMirror')).toBeTruthy())
-    const skillButton = container.querySelector('[aria-label="composer.openSkillPicker"]') as HTMLElement
+    const skillButton = container.querySelector('[data-aijia-skill-picker-trigger]') as HTMLElement
 
     await user.click(skillButton)
 
